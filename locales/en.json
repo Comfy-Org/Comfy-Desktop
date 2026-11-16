@@ -47,6 +47,7 @@
       "noBuilds": "Add a local build in Comfy Desktop to run apps on this computer.",
       "tooOld": "This app needs ComfyUI {version} or newer. Update a local build in Comfy Desktop.",
       "couldNotStart": "Comfy Desktop could not start {name}.",
+      "stillInstalling": "{name} is still installing. Try again once it finishes.",
       "notRunning": "ComfyUI is not running on this computer.",
       "notForwarded": "Comfy Desktop does not pass this request to ComfyUI.",
       "modelRefused": "Comfy Desktop only downloads safetensors models from Hugging Face.",

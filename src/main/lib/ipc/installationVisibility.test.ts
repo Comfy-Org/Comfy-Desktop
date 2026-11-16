@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { InstallationRecord } from '../../installations'
 import {
   isInstallationVisibleToRenderer,
+  isInstallRunning,
   markInstallRunning,
   markInstallSettled
 } from './installationVisibility'
@@ -40,5 +41,17 @@ describe('isInstallationVisibleToRenderer', () => {
 
   it('shows failed installations so the user can act on them', () => {
     expect(isInstallationVisibleToRenderer(installation({ status: 'failed' }))).toBe(true)
+  })
+})
+
+describe('isInstallRunning', () => {
+  it('is true from the start of an install until it settles, however many times it was started', () => {
+    expect(isInstallRunning('inst-twice')).toBe(false)
+    markInstallRunning('inst-twice')
+    markInstallRunning('inst-twice')
+    markInstallSettled('inst-twice')
+    expect(isInstallRunning('inst-twice')).toBe(true)
+    markInstallSettled('inst-twice')
+    expect(isInstallRunning('inst-twice')).toBe(false)
   })
 })

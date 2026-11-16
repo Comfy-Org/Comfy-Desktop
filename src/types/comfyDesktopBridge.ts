@@ -187,11 +187,13 @@ export interface ComfyDesktopLocalRequirements {
 /**
  * The ComfyUI on this computer that Desktop uses for a hosted page.
  * `running`: it answers now. `stopped`: one of the person's builds fits and
- * `startLocal` starts it. `unsupported`: no build here can run the page, and
- * `error` says why in words for the person.
+ * `startLocal` starts it. `installing`: the person's first build is still
+ * installing; `localDownload` already works, and `startLocal` waits for the
+ * install to finish, then starts it. `unsupported`: no build here can run the
+ * page, and `error` says why in words for the person.
  */
 export interface ComfyDesktopLocalComfy {
-  state: 'running' | 'stopped' | 'unsupported'
+  state: 'running' | 'stopped' | 'installing' | 'unsupported'
   /** True when it is one of the person's own builds. */
   own?: boolean
   name?: string
@@ -281,11 +283,11 @@ export interface ComfyDesktopLocalBuild {
  */
 export interface ComfyDesktopHostedLocalBridge {
   getLocal(want?: ComfyDesktopLocalRequirements): Promise<ComfyDesktopLocalComfy>
-  /** Starts the ComfyUI if it is stopped and resolves once it answers, or with the state and `error` if it could not start. */
+  /** Starts the ComfyUI if it is stopped, after its install finishes if it is installing, and resolves once it answers, or with the state and `error` if it could not start. */
   startLocal(want?: ComfyDesktopLocalRequirements): Promise<ComfyDesktopLocalComfy>
   /** Rejects when no ComfyUI is running to forward to. */
   localFetch(request: ComfyDesktopLocalRequest): Promise<ComfyDesktopLocalAnswer>
-  /** Downloads into the running ComfyUI's models folder and resolves when the file is there. */
+  /** Downloads into the models folder of the build `getLocal` named, running, stopped or still installing, and resolves when the file is there. A build that keeps its models inside its own folder gets them once its install finishes. */
   localDownload(model: ComfyDesktopLocalModel): Promise<ComfyDesktopLocalDownload>
   onLocalEvent(callback: (event: ComfyDesktopLocalEvent) => void): () => void
   /**

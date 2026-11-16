@@ -4,6 +4,8 @@ import semver from 'semver'
 
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
+import { isInstallRunning } from '../lib/ipc/installationVisibility'
+import { resolveDownloadContextById } from '../lib/modelDownloadPaths'
 import { _hasActiveLaunch, _operationAborts, _runningSessions, sourceMap } from '../lib/ipc/shared'
 import { resolveComfyDir } from '../lib/models'
 import { coreSemver, coreVerifiedSemver } from '../lib/version'
@@ -50,14 +52,21 @@ export function runningPortOf(installationId: string): number | null {
   return (session.sourceInstallationId ?? installationId) === installationId ? session.port : null
 }
 
-function runsOnThisComputer(inst: InstallationRecord): boolean {
+function isLocalBuild(inst: InstallationRecord): boolean {
   return (
     sourceMap[inst.sourceId]?.category === 'local' &&
     inst.sourceId !== LEGACY_DESKTOP_SOURCE &&
-    inst.status === 'installed' &&
     typeof inst.installPath === 'string' &&
     inst.installPath !== ''
   )
+}
+
+function runsOnThisComputer(inst: InstallationRecord): boolean {
+  return isLocalBuild(inst) && inst.status === 'installed'
+}
+
+function isFirstInstallUnderWay(inst: InstallationRecord): boolean {
+  return isLocalBuild(inst) && inst.status === 'installing' && isInstallRunning(inst.id)
 }
 
 function isBeingChanged(installationId: string): boolean {
@@ -65,20 +74,54 @@ function isBeingChanged(installationId: string): boolean {
   return _operationAborts.has(installationId)
 }
 
+async function describeBuild(inst: InstallationRecord): Promise<LocalBuild> {
+  return {
+    id: inst.id,
+    name: inst.name,
+    version: await installedVersion(inst),
+    port: runningPortOf(inst.id),
+    starting: _hasActiveLaunch(inst.id),
+    lastLaunchedAt: typeof inst.lastLaunchedAt === 'number' ? inst.lastLaunchedAt : 0
+  }
+}
+
 export async function usableLocalBuilds(): Promise<LocalBuild[]> {
   const usable = (await installations.list()).filter(
     (inst) => runsOnThisComputer(inst) && !isBeingChanged(inst.id)
   )
-  return Promise.all(
-    usable.map(async (inst) => ({
-      id: inst.id,
-      name: inst.name,
-      version: await installedVersion(inst),
-      port: runningPortOf(inst.id),
-      starting: _hasActiveLaunch(inst.id),
-      lastLaunchedAt: typeof inst.lastLaunchedAt === 'number' ? inst.lastLaunchedAt : 0
-    }))
-  )
+  return Promise.all(usable.map(describeBuild))
+}
+
+export async function installingLocalBuilds(): Promise<LocalBuild[]> {
+  const installing = (await installations.list()).filter(isFirstInstallUnderWay)
+  return Promise.all(installing.map(describeBuild))
+}
+
+export async function isStillInstalling(installationId: string): Promise<boolean> {
+  const inst = await installations.get(installationId)
+  return inst !== null && isFirstInstallUnderWay(inst)
+}
+
+export interface ModelTarget {
+  installing: boolean
+  modelsInsideBuild: boolean
+}
+
+function isInside(child: string, parent: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(child))
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+export async function modelTargetOf(installationId: string): Promise<ModelTarget | null> {
+  const inst = await installations.get(installationId)
+  if (!inst) return null
+  const installing = isFirstInstallUnderWay(inst)
+  if (!installing && (!runsOnThisComputer(inst) || isBeingChanged(inst.id))) return null
+  const search = await resolveDownloadContextById(installationId)
+  return {
+    installing,
+    modelsInsideBuild: search === null || isInside(search.downloadBaseDir, inst.installPath)
+  }
 }
 
 function fits(build: LocalBuild, wanted: string | null): boolean {
@@ -91,6 +134,13 @@ function newerFirst(one: LocalBuild, other: LocalBuild): number {
     return Number(other.version !== null) - Number(one.version !== null)
   }
   return semver.rcompare(one.version, other.version)
+}
+
+export function chooseInstallingBuild(
+  builds: readonly LocalBuild[],
+  wanted: string | null
+): LocalBuild | null {
+  return builds.find((build) => build.version === null || fits(build, wanted)) ?? null
 }
 
 export function chooseLocalBuild(

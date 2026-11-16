@@ -47,6 +47,7 @@
       "noBuilds": "请先在 Comfy Desktop 中添加一个本地构建，才能在这台电脑上运行应用。",
       "tooOld": "此应用需要 ComfyUI {version} 或更高版本。请在 Comfy Desktop 中更新一个本地构建。",
       "couldNotStart": "Comfy Desktop 无法启动{name}。",
+      "stillInstalling": "{name}仍在安装中。安装完成后再试一次。",
       "notRunning": "这台电脑上的 ComfyUI 没有在运行。",
       "notForwarded": "Comfy Desktop 不会把这个请求转给 ComfyUI。",
       "modelRefused": "Comfy Desktop 只从 Hugging Face 下载 safetensors 模型。",
