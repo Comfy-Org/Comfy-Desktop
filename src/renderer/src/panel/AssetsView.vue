@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage, useScroll } from '@vueuse/core'
 import { DropdownMenuRadioGroup } from 'reka-ui'
@@ -29,6 +29,8 @@ import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
 import ContextMenu from '../components/ContextMenu.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import OutputDetailDialog from './OutputDetailDialog.vue'
+import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -185,7 +187,7 @@ function cardShape(index: number): Shape {
   return showSkeleton.value || !asset ? skeletonShape(index) : assetShape(asset)
 }
 
-const { cards, galleryStyle, cardStyle, measureCard } = useVirtualMasonry({
+const { cards, galleryStyle, cardStyle, measureCard, scrollToIndex } = useVirtualMasonry({
   scroller,
   gallery: useTemplateRef<HTMLElement>('gallery'),
   count: () => (showSkeleton.value ? SKELETON_COUNT : visibleAssets.value.length),
@@ -269,6 +271,49 @@ watch(
   () => void loadAssets(),
   { immediate: true }
 )
+
+const detailKey = ref<string | null>(null)
+
+const detailIndex = computed<number | null>({
+  get: () => {
+    if (detailKey.value === null) return null
+    const index = visibleAssets.value.findIndex((asset) => cardKey(asset) === detailKey.value)
+    return index >= 0 ? index : null
+  },
+  set: (index) => {
+    const asset = index === null ? undefined : visibleAssets.value[index]
+    detailKey.value = asset ? cardKey(asset) : null
+  }
+})
+
+const detailItems = computed<OutputDetailItem[]>(() =>
+  visibleAssets.value.map((asset) => ({
+    key: cardKey(asset),
+    name: asset.name,
+    kind: asset.kind,
+    sizeBytes: asset.sizeBytes,
+    createdAt: asset.createdAt,
+    tags: asset.tags,
+    previewUrl: asset.previewUrl,
+    thumbnailUrl: asset.thumbnailUrl
+  }))
+)
+
+watch(detailIndex, (index) => {
+  if (index === null) detailKey.value = null
+  else scrollToIndex(index)
+})
+
+function openDetail(asset: GalleryAsset): void {
+  detailKey.value = cardKey(asset)
+}
+
+async function closeDetail(): Promise<void> {
+  const viewedKey = detailKey.value ?? ''
+  detailKey.value = null
+  await nextTick()
+  scroller.value?.querySelector<HTMLElement>(`[data-card-key="${CSS.escape(viewedKey)}"]`)?.focus()
+}
 
 function warmNameTooltips(): void {
   clearTimeout(warmTimer)
@@ -631,7 +676,7 @@ function extensionOf(name: string): string {
           :key="String(card.key)"
           :ref="measureCard"
           :data-index="card.index"
-          class="group rounded-card bg-[rgb(29_29_29/0.72)] p-1"
+          class="group rounded-card bg-[rgb(29_29_29/0.72)] p-1 has-[[data-card-key]:focus-visible]:shadow-[0_0_0_2px_var(--color-ring)]"
           :style="cardStyle(card)"
           :data-testid="`asset-${asset.id}`"
           @contextmenu.prevent="openAssetMenu(asset, $event)"
@@ -642,7 +687,14 @@ function extensionOf(name: string): string {
             :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
             class="w-full align-top"
           >
-            <div class="block w-full">
+            <button
+              type="button"
+              class="block w-full cursor-pointer text-left outline-none"
+              :aria-label="t('assets.inspect', { name: asset.name })"
+              :data-testid="`asset-open-${asset.id}`"
+              :data-card-key="cardKey(asset)"
+              @click="openDetail(asset)"
+            >
               <span
                 class="relative block overflow-hidden rounded-control bg-[rgb(235_235_235/0.05)]"
                 :style="aspectStyle(assetShape(asset))"
@@ -695,7 +747,7 @@ function extensionOf(name: string): string {
                   >{{ assetDetails(asset) }}</span
                 >
               </span>
-            </div>
+            </button>
           </Tooltip>
 
           <div
@@ -729,6 +781,14 @@ function extensionOf(name: string): string {
         </li>
       </ul>
     </div>
+
+    <OutputDetailDialog
+      v-if="detailIndex !== null"
+      v-model:index="detailIndex"
+      :items="detailItems"
+      @close="closeDetail"
+      @download="download(visibleAssets[$event]!)"
+    />
 
     <ContextMenu
       :open="assetMenu !== null"
