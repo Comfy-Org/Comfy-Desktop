@@ -128,7 +128,7 @@ export const SCENARIOS: PreviewScenario[] = [
       installations: everydayBuilds(machine),
       replies: {
         listOutputFolders: async () => outputFolders(machine),
-        listOutputFolder: async () => ({ folders: [], files: localAssets(), truncated: false })
+        listOutputFolder: async () => ({ folders: [], files: localAssets() })
       }
     }),
     arrange: async ({ click }) => {

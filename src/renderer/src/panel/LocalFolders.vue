@@ -8,13 +8,7 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import FolderActionsMenu from './FolderActionsMenu.vue'
 import type { OutputFolder, OutputSubfolder } from '../types/ipc'
 
-export interface FolderCrumb {
-  name: string
-  path: string
-}
-
 const SHOWN_BUILD_NAMES = 2
-const MAX_TOOLTIP_BUILD_NAMES = 10
 const WINDOWS_PATH = /^([A-Za-z]:|\\\\)/
 const DRIVE_ONLY = /^[A-Za-z]:$/
 const NETWORK_PATH = /^\\\\/
@@ -22,12 +16,12 @@ const NETWORK_PATH = /^\\\\/
 const { folders, failed, trail, subfolders } = defineProps<{
   folders: OutputFolder[] | null
   failed: boolean
-  trail: FolderCrumb[]
+  trail: string[]
   subfolders: OutputSubfolder[]
 }>()
 
 const emit = defineEmits<{
-  enter: [crumb: FolderCrumb]
+  enter: [folderPath: string]
   go: [depth: number]
 }>()
 
@@ -35,7 +29,7 @@ const { t } = useI18n()
 const idPrefix = useId()
 
 const current = computed(() => trail.at(-1) ?? null)
-const crumbs = computed(() => [{ name: t('assets.thisComputer'), path: '' }, ...trail])
+const crumbs = computed(() => [t('assets.thisComputer'), ...trail.map(folderName)])
 
 function pathParts(path: string): string[] {
   return path.split(/[\\/]/).filter(Boolean)
@@ -99,7 +93,7 @@ function openFolder(path: string): void {
               class="truncate text-foreground"
               aria-current="page"
             >
-              {{ crumb.name }}
+              {{ crumb }}
             </span>
             <button
               v-else
@@ -108,7 +102,7 @@ function openFolder(path: string): void {
               :data-testid="`local-crumb-${depth}`"
               @click="emit('go', depth)"
             >
-              {{ crumb.name }}
+              {{ crumb }}
             </button>
           </template>
         </nav>
@@ -117,9 +111,9 @@ function openFolder(path: string): void {
           variant="secondary"
           size="md"
           class="ml-auto shrink-0 gap-1.5 px-3 text-ui"
-          :title="current.path"
+          :title="current"
           data-testid="local-open-folder"
-          @click="openFolder(current.path)"
+          @click="openFolder(current)"
         >
           <FolderOpen :size="15" aria-hidden="true" />
           {{ t('assets.local.openFolder') }}
@@ -140,7 +134,7 @@ function openFolder(path: string): void {
             type="button"
             class="min-w-0 flex-1 cursor-pointer truncate text-left text-ui text-foreground after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
             :data-testid="`local-subfolder-${entry.name}`"
-            @click="emit('enter', entry)"
+            @click="emit('enter', entry.path)"
           >
             {{ entry.name }}
           </button>
@@ -152,18 +146,8 @@ function openFolder(path: string): void {
       </ul>
     </template>
 
-    <section
-      v-else-if="failed"
-      class="flex flex-col items-center gap-1.5 px-6 py-16 text-center"
-      data-testid="local-failed"
-    >
-      <h2 class="m-0 text-heading font-semibold text-foreground">
-        {{ t('assets.loadFailed') }}
-      </h2>
-    </section>
-
     <ul
-      v-else-if="folders === null"
+      v-else-if="folders === null && !failed"
       class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-x-4 gap-y-6 p-0"
       role="status"
       :aria-label="t('common.loading')"
@@ -176,14 +160,16 @@ function openFolder(path: string): void {
     </ul>
 
     <section
-      v-else-if="folders.length === 0"
+      v-else-if="failed || !folders?.length"
       class="flex flex-col items-center gap-1.5 px-6 py-16 text-center"
-      data-testid="local-no-folders"
+      data-testid="local-folders-empty"
     >
       <h2 class="m-0 text-heading font-semibold text-foreground">
-        {{ t('assets.local.noFoldersTitle') }}
+        {{ failed ? t('assets.loadFailed') : t('assets.local.noFoldersTitle') }}
       </h2>
-      <p class="m-0 text-ui text-muted-foreground">{{ t('assets.local.noFoldersBody') }}</p>
+      <p v-if="!failed" class="m-0 text-ui text-muted-foreground">
+        {{ t('assets.local.noFoldersBody') }}
+      </p>
     </section>
 
     <ul
@@ -221,15 +207,7 @@ function openFolder(path: string): void {
             </Button>
             <template #content>
               <span class="mb-0.5 block">{{ t('assets.local.savedBy') }}</span>
-              <span
-                v-for="name in output.builds.slice(0, MAX_TOOLTIP_BUILD_NAMES)"
-                :key="name"
-                class="block"
-                >{{ name }}</span
-              >
-              <span v-if="output.builds.length > MAX_TOOLTIP_BUILD_NAMES" class="block">{{
-                t('assets.local.moreBuilds', output.builds.length - MAX_TOOLTIP_BUILD_NAMES)
-              }}</span>
+              <span v-for="name in output.builds" :key="name" class="block">{{ name }}</span>
             </template>
           </Tooltip>
           <span :id="`${idPrefix}-builds-${index}`" class="sr-only">{{
@@ -246,7 +224,7 @@ function openFolder(path: string): void {
             :aria-describedby="`${idPrefix}-builds-${index}`"
             :title="output.path"
             :data-testid="`local-folder-${output.path}`"
-            @click="emit('enter', { name: folderName(output.path), path: output.path })"
+            @click="emit('enter', output.path)"
           >
             <span class="truncate text-ui font-medium text-foreground">{{
               folderName(output.path)
