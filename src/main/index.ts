@@ -1112,11 +1112,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       const requester = [...comfyWindows.values()].find(
         (entry) => entry.panelView?.webContents === event.sender
       )
-      if (!requester) {
-        openOrFocusHomeHostWindow()
-        return true
-      }
-      await openBuild(installationId, requester.windowKey)
+      await openBuild(installationId, requester?.windowKey ?? -1)
       return true
     })
 
