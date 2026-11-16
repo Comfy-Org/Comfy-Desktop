@@ -61,9 +61,7 @@ function isParentStep(step: string): boolean {
 }
 
 function startsAtRoot(subfolder: string): boolean {
-  return (
-    STARTS_AT_ROOT.test(subfolder) || (isWindows() && STARTS_AT_WINDOWS_DRIVE.test(subfolder))
-  )
+  return STARTS_AT_ROOT.test(subfolder) || (isWindows() && STARTS_AT_WINDOWS_DRIVE.test(subfolder))
 }
 
 function staysInOutputFolder(subfolder: string): boolean {
