@@ -1081,13 +1081,16 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     ): Promise<void> => {
       const requester =
         requesterEntryId === undefined ? undefined : comfyWindows.get(requesterEntryId)
-      const route = routeBuildOpen(installationId, requester)
+      const route = routeBuildOpen(installationId, requester, _getLaunchingInstallationIds())
       onRoute?.(route)
       switch (route.kind) {
         case 'ignore':
           return
         case 'focus':
           bringToFront(route.entry.window)
+          return
+        case 'show-starting':
+          openOrFocusHomeHostWindow()
           return
         case 'start-from':
           deliverPickToEntry(route.entry, installationId)

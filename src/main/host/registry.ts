@@ -356,15 +356,26 @@ export type BuildOpenRoute =
   | { kind: 'focus'; entry: ComfyWindowEntry }
   | { kind: 'start-from'; entry: ComfyWindowEntry }
   | { kind: 'start-from-home' }
+  | { kind: 'show-starting' }
   | { kind: 'ignore' }
+
+function findWindowForBuild(installationId: string): ComfyWindowEntry | undefined {
+  const hosted = getEntryByInstallationId(installationId)
+  if (hosted && !hosted.window.isDestroyed()) return hosted
+  const claimedKey = pendingAttachClaims.get(installationId)
+  const claimed = claimedKey === undefined ? undefined : comfyWindows.get(claimedKey)
+  return claimed && !claimed.window.isDestroyed() ? claimed : undefined
+}
 
 export function routeBuildOpen(
   installationId: string,
-  requester: ComfyWindowEntry | undefined
+  requester: ComfyWindowEntry | undefined,
+  launchingInstallationIds: readonly string[]
 ): BuildOpenRoute {
-  const existing = getEntryByInstallationId(installationId)
-  if (existing && !existing.window.isDestroyed()) return { kind: 'focus', entry: existing }
+  const own = findWindowForBuild(installationId)
+  if (own) return { kind: 'focus', entry: own }
   if (requester?.installationId === installationId) return { kind: 'ignore' }
+  if (launchingInstallationIds.includes(installationId)) return { kind: 'show-starting' }
   if (requester && isHomeHostEntry(requester)) return { kind: 'start-from', entry: requester }
   return { kind: 'start-from-home' }
 }
