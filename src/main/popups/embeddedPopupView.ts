@@ -1,6 +1,6 @@
-import { WebContentsView } from 'electron'
-import type { BrowserWindow } from 'electron'
+import type { BrowserWindow, WebContentsView } from 'electron'
 import path from 'path'
+import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { _registerExtraBroadcastTarget } from '../lib/ipc/broadcast'
 import { attachContextMenu } from '../lib/contextMenu'
 
@@ -33,7 +33,7 @@ export class EmbeddedPopupView {
     this.parentWindowId = parent.id
     this.onHideCallback = opts.onHide
 
-    const popup = new WebContentsView({
+    const popup = createWebContentsView({
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,

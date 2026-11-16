@@ -10,6 +10,10 @@ import { getShellOpenExternalCalls } from './support/devHooks'
 import { claimsOf, FakeCloud, reply, type BearerClaims } from './support/fakeCloud'
 
 const SIDEBAR_APPS = '[data-testid="app-sidebar-apps"]'
+const SIDEBAR_HOME = '[data-testid="app-sidebar-home"]'
+const HOME_VIEW = '[data-testid="home-view"]'
+const HOME_APP_TITLES = '[data-testid="home-carousel-name"] > span:first-child'
+const HOME_APP_IN_FRONT = '[data-testid="home-carousel-card"][aria-current="true"]'
 const APPS_GRID = '[data-testid="apps-grid"]'
 const CUTOUT_CARD = '[data-testid="app-card-remove-background"]'
 const DOWN_CARD = '[data-testid="app-card-down-for-now"]'
@@ -163,6 +167,12 @@ function cutoutPage(): WebContentsPage {
   return new WebContentsPage(ctx.app, CUTOUT_PAGE)
 }
 
+function sidebarIsOpenAndStill(): Promise<boolean> {
+  return ctx.panel.evaluate<boolean>(
+    `(() => { const sidebar = document.querySelector('${SIDEBAR}'); return sidebar.dataset.collapsed === 'false' && sidebar.getAnimations().length === 0 })()`
+  )
+}
+
 function sidebarHasFoldedToItsRail(): Promise<boolean> {
   return ctx.panel.evaluate<boolean>(
     `(() => { const sidebar = document.querySelector('${SIDEBAR}'); return sidebar.dataset.collapsed === 'true' && sidebar.getAnimations().length === 0 })()`
@@ -185,25 +195,6 @@ async function appPageAreaInWindow(): Promise<Box> {
 function allowPageToCallCloud(res: ServerResponse): void {
   res.setHeader('access-control-allow-origin', '*')
   res.setHeader('access-control-allow-headers', 'authorization, content-type')
-}
-
-function completeSignInsLikeABrowser(app: ElectronApplication): () => Promise<void> {
-  let followed = 0
-  let stopped = false
-  const loop = (async () => {
-    while (!stopped) {
-      const opened = await getShellOpenExternalCalls(app).catch(() => [] as string[])
-      for (const url of opened.slice(followed)) {
-        followed += 1
-        if (url.startsWith(cloud.url)) await fetch(url).catch(() => {})
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-  })()
-  return async () => {
-    stopped = true
-    await loop
-  }
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -239,7 +230,7 @@ test.beforeAll(async () => {
     { userDataDir, settings: { firstUseCompleted: true, telemetryEnabled: false } },
     { stayOnHome: true }
   )
-  stopBrowser = completeSignInsLikeABrowser(ctx.app)
+  stopBrowser = cloud.completeSignInsLikeABrowser(ctx.app)
 })
 
 test.afterAll(async () => {
@@ -349,4 +340,34 @@ test('An app whose page is down says so, and Try again opens it once the site an
     .poll(async () => (await viewShowing(ctx.app, DOWN_PAGE))?.visible ?? false, LONG_WAIT)
     .toBe(true)
   expect(await new WebContentsPage(ctx.app, DOWN_PAGE).textOf('#title')).toBe('Down For Now page')
+})
+
+test("Home shows the website's apps, and the one in front opens inside Desktop, not in the browser @macos @windows @linux", async () => {
+  expect(await ctx.panel.click(SIDEBAR_HOME)).toBe(true)
+  await ctx.panel.waitForVisible(HOME_VIEW)
+  await expect
+    .poll(() => ctx.panel.allText(HOME_APP_TITLES), LONG_WAIT)
+    .toEqual(['Remove Background', 'Down For Now'])
+  await expect.poll(sidebarIsOpenAndStill, LONG_WAIT).toBe(true)
+  const openedInBrowserBefore = await getShellOpenExternalCalls(ctx.app)
+
+  expect(await ctx.panel.click(HOME_APP_IN_FRONT)).toBe(true)
+
+  await expect
+    .poll(async () => (await viewShowing(ctx.app, CUTOUT_PAGE))?.visible ?? false, LONG_WAIT)
+    .toBe(true)
+  expect(await cutoutPage().textOf('#title')).toBe('Remove Background page')
+  expect(await ctx.panel.exists(HOME_VIEW)).toBe(false)
+  expect(
+    await ctx.panel.evaluate<string | null>(
+      `document.querySelector('${SIDEBAR_APPS}').getAttribute('aria-current')`
+    )
+  ).toBe('page')
+  expect(await getShellOpenExternalCalls(ctx.app)).toEqual(openedInBrowserBefore)
+
+  await expect.poll(sidebarHasFoldedToItsRail, LONG_WAIT).toBe(true)
+  await expect(async () => {
+    const area = await appPageAreaInWindow()
+    expect((await viewShowing(ctx.app, CUTOUT_PAGE))?.bounds).toEqual(area)
+  }).toPass(LONG_WAIT)
 })

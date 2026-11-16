@@ -45,7 +45,6 @@ import {
 import {
   registerTitlePopupIpc,
   triggerPickerSnapshotBroadcast,
-  openDownloadsTrayForInstall,
   type InstancePickerInstall
 } from './popups/titlePopup'
 import { registerPickerSettingsIpc } from './popups/pickerSettingsHandlers'
@@ -56,6 +55,10 @@ import {
   setQuitReason,
   setSessionEnding
 } from './lib/quit-state'
+import {
+  postponeQuitWhileDestroyedWindowsHaveLiveWebContents,
+  trackWindowWebContents
+} from './lib/quitAfterWindowWebContents'
 import { showUpdateInstallSplash } from './lib/updateSplash'
 import type { InstallationRecord } from './installations'
 import {
@@ -70,11 +73,7 @@ import {
 } from './lib/comfyDownloadManager'
 import { stopAgentPrefetches } from './lib/agentRequirementsLaunch'
 import { prefetchEnrolledAgents } from './lib/agentPrefetch'
-import {
-  hasActiveTemplateDownloads,
-  getTemplateDownloadState
-} from './sources/standalone/templateDownloadTask'
-import { isTerminal as isTemplateDownloadTerminal } from './sources/standalone/templateDownloadCore'
+import { hasActiveTemplateDownloads } from './sources/standalone/templateDownloadTask'
 import { registerAssetDownloadHandlers } from './lib/ipc/registerAssetDownloadHandlers'
 import { registerDownloadHandlers } from './lib/ipc/registerDownloadHandlers'
 import { registerTemplateInputAssetHandlers } from './lib/ipc/registerTemplateInputAssetHandlers'
@@ -125,6 +124,8 @@ import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initAppsFlag } from './apps/appsFlag'
+import { runningPortOf } from './apps/localBuild'
+import { isRunningForAppsOnly, stopBuildsRunningForAppsOnly } from './apps/localComfy'
 import { initWorkspaceMintSwitchFlag } from './lib/workspaceMintSwitchFlag'
 import { getCloudSession } from './devplatform/session'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
@@ -132,6 +133,7 @@ import { initUserTier } from './lib/userTier'
 import { readSmartAppControlState } from './lib/smartAppControl'
 
 import {
+  canRestartFromPicker,
   claimAttachHost,
   comfyWindows,
   computeBodyMode,
@@ -511,7 +513,6 @@ function onLaunch({
     if (proc) {
       proc.on('exit', () => {})
     }
-    scheduleTemplateTrayAutoOpen(installationId)
     return
   }
 
@@ -527,7 +528,6 @@ function onLaunch({
         if (proc) {
           proc.on('exit', () => {})
         }
-        scheduleTemplateTrayAutoOpen(installationId)
         return
       }
     }
@@ -566,21 +566,6 @@ function onLaunch({
   if (proc) {
     proc.on('exit', () => {})
   }
-
-  scheduleTemplateTrayAutoOpen(installationId)
-}
-
-const TEMPLATE_TRAY_AUTO_OPEN_MS = 2500
-
-function scheduleTemplateTrayAutoOpen(installationId: string): void {
-  const state = getTemplateDownloadState(installationId)
-  if (!state || isTemplateDownloadTerminal(state.status)) return
-  setTimeout(() => {
-    const cur = getTemplateDownloadState(installationId)
-    if (cur && !isTemplateDownloadTerminal(cur.status)) {
-      openDownloadsTrayForInstall(installationId)
-    }
-  }, TEMPLATE_TRAY_AUTO_OPEN_MS)
 }
 
 ipcMain.handle('quit-app', () => quitApp())
@@ -774,14 +759,32 @@ ipcMain.on('comfy-window:new-chooser-window', () => {
   openChooserHostWindow()
 })
 
-ipcMain.handle('focus-comfy-window', (_event, installationId: string) => {
-  recordIpcInvocation('focus-comfy-window', { installationId })
+function focusOpenComfyWindow(installationId: string): boolean {
   const entry = getEntryByInstallationId(installationId)
-  if (entry && !entry.window.isDestroyed()) {
-    entry.window.show()
-    entry.window.focus()
-    return true
-  }
+  if (!entry || entry.window.isDestroyed()) return false
+  entry.window.show()
+  entry.window.focus()
+  return true
+}
+
+async function openWindowForAppsBuild(installationId: string): Promise<boolean> {
+  const installation = await getInstallation(installationId)
+  if (focusOpenComfyWindow(installationId)) return true
+  const port = runningPortOf(installationId)
+  if (!installation || port === null) return false
+  onLaunch({
+    port,
+    process: ipc.getSessionProcess(installationId),
+    installation,
+    mode: 'window'
+  })
+  return focusOpenComfyWindow(installationId)
+}
+
+ipcMain.handle('focus-comfy-window', async (_event, installationId: string) => {
+  recordIpcInvocation('focus-comfy-window', { installationId })
+  if (focusOpenComfyWindow(installationId)) return true
+  if (isRunningForAppsOnly(installationId)) return openWindowForAppsBuild(installationId)
 
   const proc = ipc.getSessionProcess(installationId)
   if (proc?.pid) {
@@ -895,6 +898,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   }
 
   app.on('browser-window-created', (_event, window) => {
+    trackWindowWebContents(window)
     window.on('query-session-end', () => {
       updater.suppressInstallOnQuit()
     })
@@ -1323,26 +1327,30 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
               actionId
             )
             const wantsRelaunch = wasRunning && IN_PLACE_RELAUNCH.has(actionId)
+            let relaunchFailure: string | null = null
             if (actionResult.ok && wantsRelaunch) {
               const freshInst = (await getInstallation(installationId)) ?? inst
-              await handleLaunch({
+              const relaunch = await handleLaunch({
                 event: stubEvent,
                 installationId,
                 inst: freshInst,
                 actionData: undefined
               })
+              if (!relaunch.ok && !relaunch.cancelled) {
+                relaunchFailure = relaunch.message ?? i18n.t('progress.unknownError')
+              }
             }
             const wasCancelled = actionResult.cancelled === true
             result = {
               status: '',
               percent: wasCancelled ? -1 : 100,
               done: true,
-              ok: !wasCancelled && actionResult.ok !== false,
+              ok: !wasCancelled && actionResult.ok !== false && relaunchFailure === null,
               error: wasCancelled
                 ? MSG_CANCELLED
                 : actionResult.ok === false
                   ? (actionResult.message ?? 'Failed.')
-                  : null,
+                  : relaunchFailure,
               cancellable,
               title,
               actionId,
@@ -1483,8 +1491,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       restartInstallFromPicker: async (installationId, parentEntryId, opts) => {
         const parentEntry = comfyWindows.get(parentEntryId)
         if (!parentEntry || parentEntry.window.isDestroyed()) return
-        const boundInstallationId = parentEntry.installationId ?? parentEntry.previewInstallationId
-        if (boundInstallationId !== installationId) return
+        if (!canRestartFromPicker(parentEntry, installationId, _getLaunchingInstallationIds())) {
+          return
+        }
         if (opts?.confirmed !== true && shouldConfirmKillForEntry(parentEntry)) {
           const confirmed = await openSystemModalAsync({
             parent: parentEntry.window,
@@ -1664,6 +1673,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         tray = null
       }
     }
+    if (postponeQuitWhileDestroyedWindowsHaveLiveWebContents(event)) return
     updater.recordProcessExit()
     if (_stopPeriodicReleaseChecks) {
       _stopPeriodicReleaseChecks()
@@ -1691,8 +1701,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   })
 
   app.on('window-all-closed', () => {
-    if (!ipc.hasRunningSessions()) {
-      app.quit()
-    }
+    void stopBuildsRunningForAppsOnly().finally(() => {
+      if (BrowserWindow.getAllWindows().length > 0) return
+      if (!ipc.hasRunningSessions()) {
+        app.quit()
+      }
+    })
   })
 }

@@ -49,10 +49,9 @@ import {
   SUCCESS_ACTION_GO_DASHBOARD,
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
-import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import { provideBuildLogs } from '../composables/useBuildProgress'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
-import type { DashboardPage, Installation } from '../types/ipc'
+import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -106,12 +105,16 @@ const firstUseChain = useFirstUseChain({
 })
 const {
   chainingFirstUseToNewInstall,
+  setupConsent,
+  savedSetup,
   completeFirstUseAndDismiss,
   handleSetupInstall,
   handleSetupChange,
+  handleNewInstallConsentChange,
   handleFirstUseChainMigrate,
   handleNewInstallTakeoverClose,
-  handleNewInstallBackToSetup
+  handleNewInstallBackToSetup,
+  handleNewInstallSaveSetup
 } = firstUseChain
 
 overlays = usePanelOverlays({
@@ -144,27 +147,6 @@ const buildProgressId = ref<string | null>(null)
 provideBuildLogs((id) => {
   buildProgressId.value = id
 })
-
-const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
-  isBusy: () => sessionStore.runningTabCount > 0
-})
-
-let warmTemplateThumbnailsOnce: Promise<void> | null = null
-function warmTemplateThumbnails(): Promise<void> {
-  if (firstUseCompleted.value) return Promise.resolve()
-  warmTemplateThumbnailsOnce ??= (async () => {
-    try {
-      const options = await window.api.getFieldOptions('standalone', 'bundledTemplate', {}, {})
-      prefetchThumbnails(
-        options.map((o) => {
-          const url = o.data?.thumbnailUrl
-          return typeof url === 'string' ? url : null
-        })
-      )
-    } catch {}
-  })()
-  return warmTemplateThumbnailsOnce
-}
 
 if (params.get('e2e') === '1') {
   bindE2EPanelHooks({
@@ -228,6 +210,22 @@ async function showHome(): Promise<void> {
 
 const appsVisits = ref(0)
 const appIsOpen = ref(false)
+const appPickedOnHome = ref<AppCard | null>(null)
+
+function openAppFromHome(app: AppCard): void {
+  appPickedOnHome.value = app
+  dashboardHomePage.value = 'apps'
+}
+
+const SIDEBAR_PAGE_OPENED_EVENT = 'comfy.desktop.sidebar.page_opened'
+
+function handleSidebarClick(page: DashboardPage): void {
+  const fromPage = sidebarPage.value
+  if (page !== fromPage) {
+    emitTelemetryAction(SIDEBAR_PAGE_OPENED_EVENT, { page, from_page: fromPage })
+  }
+  handleSidebarNavigate(page)
+}
 
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
@@ -440,7 +438,6 @@ onMounted(async () => {
       (!urlFirstUseCompleted && (!launcherPrefsLoaded.value || !firstUseCompleted.value))
 
     if (shouldOpenFirstUse && !isFlowPanel(initialPanel)) {
-      void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
 
@@ -458,7 +455,6 @@ onMounted(async () => {
     }
 
     if (!firstUseCompleted.value && !isFlowPanel(initialPanel)) {
-      void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
   } catch (err) {
@@ -495,7 +491,7 @@ onUnmounted(() => {
         :active-page="sidebarPage"
         :active-build-id="sidebarBuildId"
         :make-room="appIsOpen"
-        @navigate="handleSidebarNavigate"
+        @navigate="handleSidebarClick"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
       />
@@ -521,12 +517,15 @@ onUnmounted(() => {
           >
             <HomeView
               v-if="dashboardHomePage === 'home'"
+              @open-app="openAppFromHome"
               @pick="handleChooserPick"
               @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
+              @show-apps="handleSidebarNavigate('apps')"
             />
             <AppsView
               v-else-if="dashboardHomePage === 'apps'"
+              v-model:start-with="appPickedOnHome"
               :revisit="appsVisits"
               @app-open-change="appIsOpen = $event"
             />
@@ -576,6 +575,8 @@ onUnmounted(() => {
         @navigate-list="handleNewInstallTakeoverClose"
         @show-progress="handleShowProgress"
         @back-to-setup="handleNewInstallBackToSetup"
+        @save-setup="handleNewInstallSaveSetup"
+        @consent-change="handleNewInstallConsentChange"
       />
       <TrackModal
         v-else-if="currentOverlay.component === 'track'"
@@ -598,6 +599,8 @@ onUnmounted(() => {
       <FirstUseTakeover
         v-else-if="currentOverlay.component === 'first-use'"
         ref="firstUseRef"
+        :consent="setupConsent"
+        :saved-plan="savedSetup?.plan ?? null"
         @install="handleSetupInstall"
         @change="handleSetupChange"
         @complete-skip="completeFirstUseAndDismiss"

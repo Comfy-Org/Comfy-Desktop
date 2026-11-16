@@ -20,6 +20,8 @@ export type {
 import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
 
+import type { KnownSettingKey, KnownSettings } from '../main/settings'
+
 export interface CoachmarkBeakPayload {
   beakFraction: number
   cardCentreInView: number | null
@@ -127,12 +129,7 @@ export interface Installation {
 }
 
 export type DashboardPage =
-  | 'home'
-  | 'apps'
-  | 'assets'
-  | 'chooser'
-  | 'benchmarks'
-  | 'performance-test'
+  'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
 
 export interface AppCard {
   id: string
@@ -150,6 +147,7 @@ export interface AppPagePlacement {
   height: number
   cornerRadius: number
   justOpened?: boolean
+  retry?: boolean
 }
 
 export interface CatalogWorkflow {
@@ -607,12 +605,7 @@ export interface DiskSpaceInfo {
 export type PathIssue = 'insideAppBundle' | 'oneDrive' | 'insideSharedDir' | 'insideExistingInstall'
 
 export type ModelDownloadStatus =
-  | 'pending'
-  | 'downloading'
-  | 'paused'
-  | 'completed'
-  | 'error'
-  | 'cancelled'
+  'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
 
 export interface ModelDownloadProgress {
   id?: string
@@ -1145,7 +1138,6 @@ export interface ElectronApi {
   probeInstallation(dirPath: string): Promise<ProbeResult[]>
   trackInstallation(data: Record<string, unknown>): Promise<TrackResult>
   installInstance(installationId: string, express?: boolean): Promise<void>
-  skipTemplateDownload(installationId: string): Promise<void>
   updateInstallation(
     installationId: string,
     data: Record<string, unknown>
@@ -1176,14 +1168,14 @@ export interface ElectronApi {
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
-  openCatalogWorkflowHub(): Promise<boolean>
   getAppsEnabled(): Promise<boolean>
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>
   hideAppPage(): void
-  reloadAppPage(): void
-  onAppPageStatusChanged(callback: (status: AppPageStatus) => void): () => void
+  onAppPageStatusChanged(
+    callback: (appId: string | null, status: AppPageStatus) => void
+  ): () => void
   onAppPageClosed(callback: () => void): () => void
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
@@ -1280,8 +1272,8 @@ export interface ElectronApi {
   getModelsSections(): Promise<ModelsResult>
   getMediaSections(): Promise<SettingsSection[]>
   getUniqueName(baseName: string): Promise<string>
-  setSetting(key: string, value: unknown): Promise<void>
-  getSetting(key: string): Promise<unknown>
+  setSetting<K extends KnownSettingKey>(key: K, value: KnownSettings[K]): Promise<void>
+  getSetting<K extends KnownSettingKey>(key: K): Promise<KnownSettings[K]>
 
   getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
   acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>

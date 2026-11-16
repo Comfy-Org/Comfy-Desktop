@@ -2,14 +2,15 @@ import { createTestingPinia } from '@pinia/testing'
 import { stubWindowApi } from '../lib/stubWindowApi'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
+import { defineComponent, h, nextTick, ref, unref, type Ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import type { ActionResult, FieldOption, ShowProgressOpts, Source } from '../types/ipc'
 import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useFirstUseChain, type FirstUseChainApi } from './useFirstUseChain'
 import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
-import type { SetupPlan } from '../lib/setupPlan'
+import type { SetupConsent } from '../lib/setupConsent'
+import type { SavedSetup, SetupPlan } from '../lib/setupPlan'
 
 const modal = vi.hoisted(() => ({ confirm: vi.fn(), alert: vi.fn() }))
 vi.mock('../composables/useModal', () => ({ useModal: () => modal }))
@@ -42,6 +43,18 @@ const recommendedVariant: FieldOption = {
   data: { variantId: 'nvidia-cuda' }
 }
 
+function setupConsent(overrides: Partial<SetupConsent> = {}): SetupConsent {
+  return {
+    acceptedTos: false,
+    telemetryEnabled: true,
+    betaFeaturesEnabled: true,
+    betaTouched: false,
+    preservePersistedBetaOptIn: false,
+    locale: 'en',
+    ...overrides
+  }
+}
+
 function setupPlan(): SetupPlan {
   return {
     sourceId: 'standalone',
@@ -49,6 +62,52 @@ function setupPlan(): SetupPlan {
     installRoot: '/Users/test/ComfyUI',
     downloadBytes: 1024 ** 3,
     requiredBytes: 2.25 * 1024 ** 3
+  }
+}
+
+function savedSetup(plan: SetupPlan): SavedSetup {
+  return {
+    plan,
+    draft: {
+      sourceKey: 'source-standalone',
+      selections: plan.selections,
+      fieldOptions: new Map(),
+      fieldLoading: new Map(),
+      fieldErrors: new Map(),
+      textFieldValues: new Map(),
+      saveDisabled: false,
+      sourceError: '',
+      instPath: plan.installRoot,
+      selectedBuildId: '',
+      selectedBuildTargetId: '',
+      instName: plan.name ?? ''
+    }
+  }
+}
+
+function changedPlan(): SetupPlan {
+  return {
+    ...setupPlan(),
+    selections: { release: fallbackRelease, variant: recommendedVariant },
+    installRoot: '/Volumes/Studio/ComfyUI',
+    name: 'Studio'
+  }
+}
+
+function teamBuildPlan(): SetupPlan {
+  return {
+    sourceId: '',
+    selections: {},
+    installRoot: '/Users/test/ComfyUI',
+    downloadBytes: 2_000,
+    requiredBytes: 4_500,
+    workspaceBuild: {
+      buildId: 'ready',
+      buildName: 'Ready Build',
+      artifactId: 'cuda',
+      releaseVersion: 3,
+      targetLabel: 'Windows - NVIDIA (CUDA 12.8)'
+    }
   }
 }
 
@@ -72,6 +131,7 @@ interface TestApi {
   onErrorDetail: ReturnType<typeof vi.fn>
   onInstallProgress: ReturnType<typeof vi.fn>
   onComfyOutput: ReturnType<typeof vi.fn>
+  comfybuilder: { installBuild: ReturnType<typeof vi.fn> }
 }
 
 function buildApi(overrides: Partial<TestApi> = {}): TestApi {
@@ -103,6 +163,11 @@ function buildApi(overrides: Partial<TestApi> = {}): TestApi {
     onErrorDetail: vi.fn().mockReturnValue(() => {}),
     onInstallProgress: vi.fn().mockReturnValue(() => {}),
     onComfyOutput: vi.fn().mockReturnValue(() => {}),
+    comfybuilder: {
+      installBuild: vi
+        .fn()
+        .mockResolvedValue({ ok: true, entry: { id: 'managed-1', name: 'Ready Build' } })
+    },
     ...overrides
   }
 }
@@ -236,15 +301,168 @@ describe('useFirstUseChain — Set up', () => {
 
   it('opens every install option from Change, with a way back to Set up', async () => {
     const chain = mountChain()
-    await chain.api!.handleSetupChange()
+    await chain.api!.handleSetupChange(setupConsent({ acceptedTos: true }))
 
     expect(chain.switchPanel).toHaveBeenCalledWith('new-install', 'first_use')
     expect(testApi.setFirstUseMode).toHaveBeenCalledWith('post-consent')
-    expect(chain.api!.hooks.consumeCameFromSetup()).toBe(true)
-    expect(chain.api!.hooks.consumeCameFromSetup()).toBe(false)
+    expect(chain.api!.hooks.consumeSetupHandoff()).toEqual({ needsConsent: false })
+    expect(chain.api!.hooks.consumeSetupHandoff()).toBeNull()
 
     await chain.api!.handleNewInstallBackToSetup()
     expect(chain.openFirstUseTakeover).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the EULA lock through Change until the EULA is accepted in New Build', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent())
+
+    expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('consent-lockdown')
+    expect(chain.api!.hooks.consumeSetupHandoff()).toEqual({ needsConsent: true })
+
+    chain.api!.handleNewInstallConsentChange(true)
+    expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('post-consent')
+
+    chain.api!.handleNewInstallConsentChange(false)
+    expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('consent-lockdown')
+  })
+
+  it('saves the Set up choices only once the EULA is accepted in New Build', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent({ telemetryEnabled: false }))
+    expect(testApi.setSetting).not.toHaveBeenCalledWith('telemetryEnabled', expect.anything())
+
+    chain.api!.handleNewInstallConsentChange(true)
+    await vi.waitFor(() =>
+      expect(emitTelemetryAction).toHaveBeenCalledWith(
+        'comfy.desktop.first_use.consent_decision',
+        expect.objectContaining({ decision: 'decline', telemetry_enabled: false })
+      )
+    )
+    expect(testApi.setSetting).toHaveBeenCalledWith('telemetryEnabled', false)
+    expect(testApi.setSetting).toHaveBeenCalledWith('betaFeaturesEnabled', true)
+
+    chain.api!.handleNewInstallConsentChange(false)
+    chain.api!.handleNewInstallConsentChange(true)
+    await nextTick()
+    expect(
+      testApi.setSetting.mock.calls.filter(([key]) => key === 'telemetryEnabled')
+    ).toHaveLength(1)
+  })
+
+  it('goes back to Set up, not past it, when New Build closes before the EULA is accepted', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent())
+
+    await chain.api!.handleNewInstallTakeoverClose()
+
+    expect(chain.openFirstUseTakeover).toHaveBeenCalledTimes(1)
+    expect(chain.dismissTakeoverDirect).not.toHaveBeenCalled()
+    expect(testApi.setSetting).not.toHaveBeenCalledWith('firstUseCompleted', true)
+    expect(testApi.setFirstUseMode).not.toHaveBeenCalledWith('none')
+    expect(unref(chain.api!.setupConsent)).toEqual(setupConsent())
+  })
+
+  it('goes back to Set up when the EULA was accepted in New Build and then unticked', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent())
+    chain.api!.handleNewInstallConsentChange(true)
+    chain.api!.handleNewInstallConsentChange(false)
+
+    await chain.api!.handleNewInstallTakeoverClose()
+
+    expect(chain.openFirstUseTakeover).toHaveBeenCalledTimes(1)
+    expect(testApi.setSetting).not.toHaveBeenCalledWith('firstUseCompleted', true)
+  })
+
+  it('finishes first use when New Build closes after the EULA was accepted there', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent())
+    chain.api!.handleNewInstallConsentChange(true)
+
+    await chain.api!.handleNewInstallTakeoverClose()
+
+    expect(testApi.setSetting).toHaveBeenCalledWith('firstUseCompleted', true)
+    expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('none')
+    expect(chain.openFirstUseTakeover).not.toHaveBeenCalled()
+  })
+
+  it('brings the setup saved in Change back to Set up, and back into Change when it opens again', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent({ acceptedTos: true }))
+    chain.api!.hooks.consumeSetupHandoff()
+    const saved = savedSetup(changedPlan())
+
+    await chain.api!.handleNewInstallSaveSetup(saved)
+    expect(chain.openFirstUseTakeover).toHaveBeenCalledTimes(1)
+    expect(unref(chain.api!.savedSetup)?.plan).toEqual(saved.plan)
+
+    await chain.api!.handleSetupChange(setupConsent({ acceptedTos: true }))
+    expect(chain.api!.hooks.consumeSetupHandoff()).toEqual({
+      needsConsent: false,
+      restore: saved.draft
+    })
+    await chain.api!.handleNewInstallBackToSetup()
+    expect(unref(chain.api!.savedSetup)?.plan).toEqual(saved.plan)
+  })
+
+  it('installs the setup saved in Change under its name, and forgets it once first use is done', async () => {
+    const chain = mountChain()
+    const saved = savedSetup(changedPlan())
+    await chain.api!.handleNewInstallSaveSetup(saved)
+
+    await chain.api!.handleSetupInstall(saved.plan)
+
+    expect(testApi.buildInstallation).toHaveBeenCalledWith('standalone', {
+      release: fallbackRelease,
+      variant: recommendedVariant
+    })
+    expect(testApi.getUniqueName).toHaveBeenCalledWith('Studio')
+    expect(testApi.addInstallation).toHaveBeenCalledWith(
+      expect.objectContaining({ installPath: '/Volumes/Studio/ComfyUI', status: 'installing' })
+    )
+    expect(vi.mocked(emitTelemetryAction)).toHaveBeenCalledWith(
+      'comfy.desktop.install.dispatched',
+      expect.objectContaining({ express: false, entrypoint: 'first_use' })
+    )
+    chain.api!.hooks.onBackgroundInstall()
+    await vi.waitFor(() => expect(unref(chain.api!.savedSetup)).toBeNull())
+  })
+
+  it('installs a team build saved in Change through the workspace build installer', async () => {
+    const chain = mountChain()
+    const plan = teamBuildPlan()
+    await chain.api!.handleNewInstallSaveSetup(savedSetup(plan))
+
+    await chain.api!.handleSetupInstall(plan)
+
+    expect(testApi.comfybuilder.installBuild).toHaveBeenCalledExactlyOnceWith({
+      buildId: 'ready',
+      artifactId: 'cuda',
+      releaseVersion: 3,
+      installRoot: '/Users/test/ComfyUI'
+    })
+    expect(testApi.addInstallation).not.toHaveBeenCalled()
+    const showOpts = chain.handleShowProgress.mock.calls[0]![0] as ShowProgressOpts
+    expect(showOpts).toMatchObject({ installationId: 'managed-1', opKind: 'install' })
+    await showOpts.apiCall()
+    expect(testApi.installInstance).toHaveBeenCalledWith('managed-1', true)
+    expect(vi.mocked(emitTelemetryAction)).toHaveBeenCalledWith(
+      'comfy.desktop.install.dispatched',
+      expect.objectContaining({ source_id: 'platform', express: false })
+    )
+  })
+
+  it('hands Set up the same choices on Back, with the EULA as it was left', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent({ telemetryEnabled: false }))
+    chain.api!.handleNewInstallConsentChange(true)
+
+    await chain.api!.handleNewInstallBackToSetup()
+
+    expect(chain.openFirstUseTakeover).toHaveBeenCalledTimes(1)
+    expect(unref(chain.api!.setupConsent)).toEqual(
+      setupConsent({ acceptedTos: true, telemetryEnabled: false })
+    )
   })
 })
 
@@ -272,7 +490,7 @@ describe('useFirstUseChain — chainSpan stamping', () => {
 
   it('stamps chainSpan=install when the first-use chain captures a takeover op', async () => {
     const chain = mountChain()
-    await chain.api!.handleSetupChange()
+    await chain.api!.handleSetupChange(setupConsent({ acceptedTos: true }))
 
     const showOpts = progressOpts('inst-chain-1')
     chain.api!.hooks.onShowProgress(showOpts)

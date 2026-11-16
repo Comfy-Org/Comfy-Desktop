@@ -2,7 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useResizeObserver } from '@vueuse/core'
-import { ChevronLeft } from 'lucide-vue-next'
+import { ChevronLeft } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import { useCoveredByPage } from '../composables/useCoveredByPage'
@@ -23,6 +23,7 @@ const status = ref<AppPageStatus | null>(null)
 const frozenFrame = ref<string | null>(null)
 
 let justOpened = true
+let retrying = false
 let latestTurn = 0
 let stopStatusUpdates: (() => void) | null = null
 
@@ -38,9 +39,11 @@ function takePlacement(): AppPagePlacement | null {
     width: rect.width,
     height: rect.height,
     cornerRadius,
-    justOpened
+    justOpened,
+    retry: retrying
   }
   justOpened = false
+  retrying = false
   return placement
 }
 
@@ -73,7 +76,8 @@ async function conceal(): Promise<void> {
 
 function retry(): void {
   status.value = 'loading'
-  window.api.reloadAppPage()
+  retrying = true
+  void reveal()
 }
 
 watch(covered, (isCovered) => void (isCovered ? conceal() : reveal()))
@@ -93,8 +97,8 @@ useResizeObserver(host, () => {
 })
 
 onMounted(() => {
-  stopStatusUpdates = window.api.onAppPageStatusChanged((next) => {
-    status.value = next
+  stopStatusUpdates = window.api.onAppPageStatusChanged((pageAppId, next) => {
+    if (pageAppId === appId) status.value = next
   })
   if (!covered.value) void reveal()
 })

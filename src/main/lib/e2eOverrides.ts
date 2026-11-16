@@ -37,42 +37,61 @@ export function resetIpcInvocations(channel?: string): void {
   else ipcInvocations.clear()
 }
 
-let launchSpawnHoldArmed = false
-let launchSpawnHoldRelease: (() => void) | null = null
+interface LaunchHold {
+  arm: () => void
+  release: () => void
+  isHeld: () => boolean
+  wait: (signal: AbortSignal) => Promise<void>
+}
 
-export function armLaunchSpawnHold(): void {
-  if (launchSpawnHoldRelease !== null) {
-    throw new Error('armLaunchSpawnHold: a launch is already parked at the spawn hold')
+function createLaunchHold(point: string): LaunchHold {
+  let armed = false
+  let releaseParkedLaunch: (() => void) | null = null
+  return {
+    arm() {
+      if (releaseParkedLaunch !== null) {
+        throw new Error(`a launch is already parked at the ${point} hold`)
+      }
+      armed = true
+    },
+    release() {
+      armed = false
+      releaseParkedLaunch?.()
+    },
+    isHeld: () => releaseParkedLaunch !== null,
+    async wait(signal) {
+      if (process.env['E2E'] !== '1' || !armed) return
+      armed = false
+      await new Promise<void>((resolve) => {
+        const release = (): void => {
+          if (releaseParkedLaunch === release) releaseParkedLaunch = null
+          signal.removeEventListener('abort', release)
+          resolve()
+        }
+        releaseParkedLaunch = release
+        if (signal.aborted) {
+          release()
+          return
+        }
+        signal.addEventListener('abort', release, { once: true })
+      })
+    }
   }
-  launchSpawnHoldArmed = true
 }
 
-export function releaseLaunchSpawnHold(): void {
-  launchSpawnHoldArmed = false
-  launchSpawnHoldRelease?.()
-}
+export const {
+  arm: armLaunchSpawnHold,
+  release: releaseLaunchSpawnHold,
+  isHeld: isLaunchSpawnHeld,
+  wait: waitLaunchSpawnHold
+} = createLaunchHold('spawn')
 
-export function isLaunchSpawnHeld(): boolean {
-  return launchSpawnHoldRelease !== null
-}
-
-export async function waitLaunchSpawnHold(signal: AbortSignal): Promise<void> {
-  if (process.env['E2E'] !== '1' || !launchSpawnHoldArmed) return
-  launchSpawnHoldArmed = false
-  await new Promise<void>((resolve) => {
-    const release = (): void => {
-      if (launchSpawnHoldRelease === release) launchSpawnHoldRelease = null
-      signal.removeEventListener('abort', release)
-      resolve()
-    }
-    launchSpawnHoldRelease = release
-    if (signal.aborted) {
-      release()
-      return
-    }
-    signal.addEventListener('abort', release, { once: true })
-  })
-}
+export const {
+  arm: armLaunchReadyHold,
+  release: releaseLaunchReadyHold,
+  isHeld: isLaunchReadyHeld,
+  wait: waitLaunchReadyHold
+} = createLaunchHold('ready')
 
 const shellOpenExternalCalls: string[] = []
 

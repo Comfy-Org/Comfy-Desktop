@@ -130,6 +130,17 @@ describe('isLikelyDownloadUrl (regression for #582 cloud zip handoff)', () => {
     expect(isLikelyDownloadUrl('')).toBe(false)
   })
 
+  it('returns false for a file, share or app link that ends in a download extension', () => {
+    for (const url of [
+      'file:///C:/Users/me/Documents/taxes.zip',
+      'file://attacker.example/share/model.safetensors',
+      'smb://attacker.example/share/model.safetensors',
+      'search-ms:query=model.ckpt'
+    ]) {
+      expect(isLikelyDownloadUrl(url)).toBe(false)
+    }
+  })
+
   it('matching is case-insensitive (.ZIP works too)', () => {
     expect(isLikelyDownloadUrl('https://example.com/FILE.ZIP')).toBe(true)
   })

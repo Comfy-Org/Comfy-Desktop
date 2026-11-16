@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
+import { onMounted, onUnmounted, ref, shallowRef, watch, type Ref, type ShallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useProgressStore } from '../stores/progressStore'
@@ -9,10 +9,11 @@ import { useOverlay } from '../composables/useOverlay'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { checkDiskSpaceOrWarn } from '../lib/installHelpers'
 import { emitTelemetryAction, toVariantBucket } from '../lib/telemetry'
-import type { SetupPlan } from '../lib/setupPlan'
-import type { Installation, ShowProgressOpts } from '../types/ipc'
+import { saveSetupConsent, type SetupConsent } from '../lib/setupConsent'
+import type { SavedSetup, SetupPlan } from '../lib/setupPlan'
+import type { InstallBuildResult, Installation, ShowProgressOpts } from '../types/ipc'
 import type { ChooserLaunchOutcome } from './useChooserHandoff'
-import type { FirstUseChainHooks, PanelKey } from './usePanelOverlays'
+import type { FirstUseChainHooks, PanelKey, SetupHandoff } from './usePanelOverlays'
 
 export interface FirstUseChainOpts {
   handleShowProgress: (opts: ShowProgressOpts) => Promise<void>
@@ -29,12 +30,16 @@ export interface FirstUseChainOpts {
 export interface FirstUseChainApi {
   hooks: FirstUseChainHooks
   chainingFirstUseToNewInstall: Ref<boolean>
+  setupConsent: Ref<SetupConsent | null>
+  savedSetup: Readonly<ShallowRef<SavedSetup | null>>
   completeFirstUseAndDismiss: () => Promise<void>
   handleSetupInstall: (plan: SetupPlan) => Promise<void>
-  handleSetupChange: () => Promise<void>
+  handleSetupChange: (consent: SetupConsent) => Promise<void>
+  handleNewInstallConsentChange: (accepted: boolean) => void
   handleFirstUseChainMigrate: (payload?: { express?: boolean }) => Promise<void>
   handleNewInstallTakeoverClose: () => Promise<void>
   handleNewInstallBackToSetup: () => Promise<void>
+  handleNewInstallSaveSetup: (saved: SavedSetup) => Promise<void>
 }
 
 export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
@@ -52,24 +57,32 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
 
   const pendingAutoLaunchId = ref<string | null>(null)
 
-  const pendingCameFromSetup = ref(false)
+  const pendingSetupHandoff = ref<SetupHandoff | null>(null)
+
+  const setupConsent = ref<SetupConsent | null>(null)
+
+  const savedSetup = shallowRef<SavedSetup | null>(null)
+
+  let setupConsentSaved = false
 
   const pendingChainedLaunch = ref(false)
 
   async function finishFirstUse(): Promise<void> {
     chainingFirstUseToNewInstall.value = false
     pendingFirstUseAutoLaunchId.value = null
-    pendingCameFromSetup.value = false
+    pendingSetupHandoff.value = null
+    setupConsent.value = null
+    savedSetup.value = null
     await launcherPrefs.markFirstUseCompleted()
     window.api.setFirstUseMode('none')
   }
 
   const hooks: FirstUseChainHooks = {
     shouldForceTakeover: () => chainingFirstUseToNewInstall.value,
-    consumeCameFromSetup: () => {
-      const v = pendingCameFromSetup.value
-      pendingCameFromSetup.value = false
-      return v
+    consumeSetupHandoff: () => {
+      const handoff = pendingSetupHandoff.value
+      pendingSetupHandoff.value = null
+      return handoff
     },
     onBackgroundInstall: () => {
       if (chainingFirstUseToNewInstall.value || !launcherPrefs.firstUseCompleted.value) {
@@ -100,6 +113,30 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     opts.dismissTakeoverDirect()
   }
 
+  async function addPlannedInstallation(plan: SetupPlan): Promise<InstallBuildResult> {
+    const build = plan.workspaceBuild
+    if (build) {
+      return window.api.comfybuilder.installBuild({
+        buildId: build.buildId,
+        ...(build.artifactId
+          ? { artifactId: build.artifactId, releaseVersion: build.releaseVersion }
+          : {}),
+        ...(plan.name ? { name: plan.name } : {}),
+        ...(plan.installRoot ? { installRoot: plan.installRoot } : {})
+      })
+    }
+    const selections = JSON.parse(JSON.stringify(plan.selections)) as SetupPlan['selections']
+    const instData = await window.api.buildInstallation(plan.sourceId, selections)
+    const name = await window.api.getUniqueName(plan.name || DEFAULT_INSTALL_NAME)
+    return window.api.addInstallation({
+      name,
+      installPath: plan.installRoot,
+      ...instData,
+      status: 'installing',
+      ...(plan.workspaceId ? { workspaceId: plan.workspaceId } : {})
+    })
+  }
+
   async function handleSetupInstall(plan: SetupPlan): Promise<void> {
     try {
       if (plan.installRoot) {
@@ -115,15 +152,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
           return
         }
       }
-      const selections = JSON.parse(JSON.stringify(plan.selections)) as SetupPlan['selections']
-      const instData = await window.api.buildInstallation(plan.sourceId, selections)
-      const name = await window.api.getUniqueName(DEFAULT_INSTALL_NAME)
-      const result = await window.api.addInstallation({
-        name,
-        installPath: plan.installRoot,
-        ...instData,
-        status: 'installing'
-      })
+      const result = await addPlannedInstallation(plan)
       if (!result.ok || !result.entry) {
         await modal.alert({ title: t('errors.cannotAdd'), message: result.message || '' })
         opts.resetFirstUseSpinner()
@@ -133,9 +162,9 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       const variantId = plan.selections.variant?.data?.variantId as string | undefined
       emitTelemetryAction('comfy.desktop.install.dispatched', {
         installation_id: entry.id,
-        source_id: plan.sourceId,
+        source_id: plan.workspaceBuild ? 'platform' : plan.sourceId,
         variant: variantId ? toVariantBucket(variantId) : null,
-        express: true,
+        express: savedSetup.value === null,
         entrypoint: 'first_use',
         template_selected: false
       })
@@ -157,19 +186,41 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     }
   }
 
-  async function handleSetupChange(): Promise<void> {
+  async function handleSetupChange(consent: SetupConsent): Promise<void> {
+    const needsConsent = !consent.acceptedTos
+    setupConsent.value = consent
+    setupConsentSaved = consent.acceptedTos
     chainingFirstUseToNewInstall.value = true
     pendingFirstUseAutoLaunchId.value = null
-    pendingCameFromSetup.value = true
-    window.api.setFirstUseMode('post-consent')
+    pendingSetupHandoff.value = {
+      needsConsent,
+      ...(savedSetup.value ? { restore: savedSetup.value.draft } : {})
+    }
+    window.api.setFirstUseMode(needsConsent ? 'consent-lockdown' : 'post-consent')
     await opts.switchPanel('new-install', 'first_use')
+  }
+
+  function handleNewInstallConsentChange(accepted: boolean): void {
+    if (!chainingFirstUseToNewInstall.value) return
+    window.api.setFirstUseMode(accepted ? 'post-consent' : 'consent-lockdown')
+    const consent = setupConsent.value
+    if (!consent) return
+    setupConsent.value = { ...consent, acceptedTos: accepted }
+    if (!accepted || setupConsentSaved) return
+    setupConsentSaved = true
+    void saveSetupConsent(consent)
   }
 
   async function handleNewInstallBackToSetup(): Promise<void> {
     chainingFirstUseToNewInstall.value = false
     pendingFirstUseAutoLaunchId.value = null
-    pendingCameFromSetup.value = false
+    pendingSetupHandoff.value = null
     await opts.openFirstUseTakeover()
+  }
+
+  async function handleNewInstallSaveSetup(saved: SavedSetup): Promise<void> {
+    savedSetup.value = saved
+    await handleNewInstallBackToSetup()
   }
 
   async function handleFirstUseChainMigrate(payload?: { express?: boolean }): Promise<void> {
@@ -203,6 +254,10 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
   }
 
   async function handleNewInstallTakeoverClose(): Promise<void> {
+    if (chainingFirstUseToNewInstall.value && setupConsent.value?.acceptedTos === false) {
+      await handleNewInstallBackToSetup()
+      return
+    }
     if (chainingFirstUseToNewInstall.value) await finishFirstUse()
     if (
       currentOverlay.value?.kind === 'takeover' &&
@@ -273,11 +328,15 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
   return {
     hooks,
     chainingFirstUseToNewInstall,
+    setupConsent,
+    savedSetup,
     completeFirstUseAndDismiss,
     handleSetupInstall,
     handleSetupChange,
+    handleNewInstallConsentChange,
     handleFirstUseChainMigrate,
     handleNewInstallTakeoverClose,
-    handleNewInstallBackToSetup
+    handleNewInstallBackToSetup,
+    handleNewInstallSaveSetup
   }
 }

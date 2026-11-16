@@ -2,9 +2,11 @@ import { computed, inject, provide, type ComputedRef, type InjectionKey } from '
 import { useI18n } from 'vue-i18n'
 import { useProgressStore } from '../stores/progressStore'
 import { useModal } from './useModal'
-import type { Installation } from '../types/ipc'
+import { isUninstallOpKind } from '../lib/progressOpKind'
+import { progressStepName } from '../lib/progressStatusLabel'
+import type { Installation, ProgressStep } from '../types/ipc'
 
-export type BuildProgressKind = 'install' | 'launch'
+export type BuildProgressKind = 'install' | 'launch' | 'uninstall'
 
 export interface BuildProgress {
   kind: BuildProgressKind
@@ -25,24 +27,38 @@ export function useViewBuildLogs(): (installationId: string) => void {
 
 export function buildProgressOf(
   progressStore: ReturnType<typeof useProgressStore>,
-  installationId: string
+  installationId: string,
+  nameStep: (step: ProgressStep) => string = (step) => step.label
 ): BuildProgress | null {
   const op = progressStore.operations.get(installationId)
-  if (!op || op.finished) return null
-  if (op.opKind !== 'install' && op.opKind !== 'launch') return null
+  if (!op) return null
+  const activeStep = op.steps?.find((step) => step.phase === op.activePhase)
+  if (isUninstallOpKind(op.opKind)) {
+    const removedButStillListed = op.finished && op.result?.ok === true
+    if (op.finished && !removedButStillListed) return null
+    const { percent, indeterminate } = progressStore.globalProgressFor(op)
+    return {
+      kind: 'uninstall',
+      percent: indeterminate ? null : Math.round(percent),
+      phase: '',
+      cancelling: op.cancelRequested
+    }
+  }
+  if (op.finished) return null
   if (op.opKind === 'launch') {
     return {
       kind: 'launch',
       percent: op.flatPercent >= 0 ? Math.round(op.flatPercent) : null,
-      phase: op.steps?.find((step) => step.phase === op.activePhase)?.label ?? op.flatStatus,
+      phase: activeStep ? nameStep(activeStep) : op.flatStatus,
       cancelling: op.cancelRequested
     }
   }
+  if (op.opKind !== 'install') return null
   const { percent } = progressStore.globalProgressFor(op)
   return {
     kind: 'install',
     percent: Math.round(percent),
-    phase: op.steps?.find((step) => step.phase === op.activePhase)?.label ?? '',
+    phase: activeStep ? nameStep(activeStep) : '',
     cancelling: op.cancelRequested
   }
 }
@@ -53,6 +69,15 @@ export function launchFailed(
 ): boolean {
   const op = progressStore.operations.get(installationId)
   return !!op && op.opKind === 'launch' && op.finished && !!op.error
+}
+
+export function uninstallFailureOf(
+  progressStore: ReturnType<typeof useProgressStore>,
+  installationId: string
+): string | null {
+  const op = progressStore.operations.get(installationId)
+  if (!op || !isUninstallOpKind(op.opKind) || !op.finished) return null
+  return op.error
 }
 
 export function useInstallingBuilds(): (installationId: string) => boolean {
@@ -66,19 +91,24 @@ export function useBuildProgress(build: () => Installation): {
   viewLogs: () => void
   cancel: () => Promise<void>
 } {
-  const { t } = useI18n()
+  const i18n = useI18n()
+  const { t } = i18n
   const progressStore = useProgressStore()
   const modal = useModal()
   const view = useViewBuildLogs()
 
-  const progress = computed(() => buildProgressOf(progressStore, build().id))
+  const progress = computed(() =>
+    buildProgressOf(progressStore, build().id, (step) => progressStepName(step, i18n))
+  )
   const detail = computed(() => {
     const current = progress.value
     if (!current) return ''
     if (current.cancelling) return t('installProgress.cancelling')
-    if (!current.phase) return t('installProgress.starting')
-    if (current.percent === null) return current.phase
-    return t('installProgress.detail', { phase: current.phase, percent: current.percent })
+    const phase =
+      current.kind === 'uninstall' ? t('uninstallProgress.removingFiles') : current.phase
+    if (!phase) return t('installProgress.starting')
+    if (current.percent === null) return phase
+    return t('installProgress.detail', { phase, percent: current.percent })
   })
 
   function viewLogs(): void {
@@ -91,10 +121,15 @@ export function useBuildProgress(build: () => Installation): {
       progressStore.cancelOperation(current.id)
       return
     }
+    const uninstalling = progress.value?.kind === 'uninstall'
     const confirmed = await modal.confirm({
-      title: t('installProgress.cancelTitle'),
-      message: t('installProgress.cancelMessage', { name: current.name }),
-      confirmLabel: t('installProgress.cancelConfirm'),
+      title: uninstalling ? t('uninstallProgress.cancelTitle') : t('installProgress.cancelTitle'),
+      message: uninstalling
+        ? t('uninstallProgress.cancelMessage', { name: current.name })
+        : t('installProgress.cancelMessage', { name: current.name }),
+      confirmLabel: uninstalling
+        ? t('uninstallProgress.cancelConfirm')
+        : t('installProgress.cancelConfirm'),
       confirmStyle: 'danger'
     })
     if (confirmed) progressStore.cancelOperation(current.id)

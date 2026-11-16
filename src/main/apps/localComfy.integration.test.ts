@@ -36,6 +36,7 @@ vi.mock('../installations', () => ({
 }))
 vi.mock('../lib/comfyDownloadManager', () => ({ startManagedModelJob: vi.fn() }))
 vi.mock('../lib/comfyProcessRecord', () => ({ probeQueue: async () => null }))
+vi.mock('../lib/modelDownloadPaths', () => ({ resolveDownloadContextById: async () => null }))
 vi.mock('../lib/i18n', () => ({ t: (key: string) => key }))
 vi.mock('../lib/ipc/sessionActions/launch', () => ({ handleLaunch: vi.fn() }))
 vi.mock('../lib/ipc/shared', async () => {

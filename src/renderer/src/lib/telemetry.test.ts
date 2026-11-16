@@ -4,7 +4,6 @@ import {
   toErrorBucket,
   toFileExtension,
   toModelDirectoryBucket,
-  toSizeBucket,
   toVariantBucket
 } from './telemetry'
 
@@ -46,16 +45,6 @@ describe('toCountBucket', () => {
     expect(toCountBucket(4)).toBe('3_4')
     expect(toCountBucket(9)).toBe('5_9')
     expect(toCountBucket(50)).toBe('10_plus')
-  })
-})
-
-describe('toSizeBucket', () => {
-  it('buckets by byte size', () => {
-    expect(toSizeBucket(undefined)).toBe('unknown')
-    expect(toSizeBucket(1024)).toBe('lt_10mb')
-    expect(toSizeBucket(50 * 1024 * 1024)).toBe('10_99mb')
-    expect(toSizeBucket(500 * 1024 * 1024)).toBe('100mb_1gb')
-    expect(toSizeBucket(5 * 1024 * 1024 * 1024)).toBe('gte_1gb')
   })
 })
 

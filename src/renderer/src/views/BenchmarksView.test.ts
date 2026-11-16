@@ -40,10 +40,6 @@ vi.mock('../lib/performanceTestResultsSvg', async (importOriginal) => ({
   createResultsPng: createResultsPngMock
 }))
 
-vi.mock('./devplatform/DevPlatformAccountChip.vue', () => ({
-  default: { template: '<div data-testid="account-chip" />' }
-}))
-
 const DEFAULT_FOLDER = 'C:\\results\\performance-tests'
 
 interface RunOptions {

@@ -30,10 +30,6 @@ export interface InstallationRecord {
   modelDirsPrimary?: string | null
   inputDir?: string
   outputDir?: string
-  bundledTemplateId?: string
-  bundledTemplateSizeBytes?: number
-  pendingTemplateOpen?: string | null
-  downloadTemplateModels?: boolean
   [key: string]: unknown
 }
 
@@ -360,19 +356,6 @@ export async function markLaunched(
     installationEvents.emit('changed')
   }
   return updated
-}
-
-export async function clearPendingTemplateOpen(installationId: string): Promise<boolean> {
-  return enqueue(async () => {
-    const list = await loadForWrite()
-    const index = list.findIndex((i) => i.id === installationId)
-    if (index === -1) return false
-    const existing = list[index]!
-    if (existing.pendingTemplateOpen == null) return false
-    list[index] = { ...existing, pendingTemplateOpen: null } as InstallationRecord
-    await save(list)
-    return true
-  })
 }
 
 export async function getRecent(): Promise<InstallationRecord | null> {

@@ -65,6 +65,18 @@ export async function openTitleMenu(titleBar: WebContentsPage): Promise<void> {
   expect(ok, 'Title menu button click dispatched').toBe(true)
 }
 
+export async function openDesktopSettings(
+  app: ElectronApplication,
+  panel: WebContentsPage
+): Promise<WebContentsPage> {
+  const selector = '[data-testid="app-sidebar-settings"]'
+  await panel.waitForVisible(selector)
+  expect(await panel.click(selector), 'Desktop Settings clicked in the sidebar').toBe(true)
+  const popup = titlePopupPage(app)
+  await popup.waitForVisible('.global-settings', { timeout: 10_000 })
+  return popup
+}
+
 export async function pickFromTitleMenu(
   app: ElectronApplication,
   titleBar: WebContentsPage,
@@ -94,6 +106,7 @@ export async function openManageViaDashboard(
   installationId: string,
   tabKey?: string
 ): Promise<WebContentsPage> {
+  await expectChooserVisible(panel)
   await panel.waitForVisible(byTestId(TID.dashboardTile(installationId)), { timeout: 15_000 })
   await panel.evaluate<void>(
     `window.api.openInstancePicker({ installationId: ${JSON.stringify(installationId)} })`
@@ -165,13 +178,6 @@ export async function openNewBuildChangeSetup(panel: WebContentsPage): Promise<v
     true
   )
   await panel.waitForVisible('[data-testid="config-change-form"]', { timeout: 5_000 })
-}
-
-export async function saveNewBuildChangeSetup(panel: WebContentsPage): Promise<void> {
-  expect(await panel.click('[data-testid="config-save-changes"]'), 'Save changes clicked').toBe(
-    true
-  )
-  await panel.waitForVisible('[data-testid="config-summary"]', { timeout: 5_000 })
 }
 
 export async function dismissOverlay(panel: WebContentsPage): Promise<void> {

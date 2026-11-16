@@ -22,6 +22,7 @@ vi.mock('../components/TermsModal.vue', () => ({
 import FirstUseTakeover from './FirstUseTakeover.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { SetupPlan } from '../lib/setupPlan'
+import type { SetupConsent } from '../lib/setupConsent'
 
 const GB = 1024 ** 3
 
@@ -63,8 +64,7 @@ function installApi(overrides: ApiOverrides = {}): void {
         fields: [
           { id: 'release', label: 'Release', type: 'select' },
           { id: 'comfyVersion', label: 'ComfyUI version', type: 'select' },
-          { id: 'variant', label: 'Variant', type: 'select' },
-          { id: 'bundledTemplate', label: 'Starter template', type: 'select' }
+          { id: 'variant', label: 'Variant', type: 'select' }
         ]
       }
     ]),
@@ -93,10 +93,7 @@ function installApi(overrides: ApiOverrides = {}): void {
           }
         ]
       }
-      return [
-        { value: 'flux', label: 'Flux' },
-        { value: 'none', label: 'None' }
-      ]
+      return []
     }),
     setFirstUseMode: vi.fn()
   } as unknown as typeof window.api
@@ -186,23 +183,135 @@ describe('Set up, the first screen', () => {
     expect(plan.selections.release?.value).toBe('stable')
     expect(plan.selections.comfyVersion?.value).toBe('v0.42.4')
     expect(plan.selections.variant?.value).toBe('mac-mps')
-    expect(plan.selections.bundledTemplate?.value).toBe('none')
+    expect(Object.keys(plan.selections)).toEqual(['release', 'comfyVersion', 'variant'])
     expect(emitTelemetryAction).toHaveBeenCalledWith(
       'comfy.desktop.first_use.completed',
       expect.objectContaining({ exit_path: 'local-new' })
     )
   })
 
-  it('opens every option with Change, once the terms are agreed', async () => {
+  it('shows and installs the setup saved in Change instead of working out a new one', async () => {
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        release: {
+          value: 'latest',
+          label: 'Latest on GitHub',
+          data: { latestStableTag: 'v0.43.0' }
+        },
+        variant: {
+          value: 'mac-cpu',
+          label: 'CPU',
+          data: { variantId: 'mac-cpu', downloadFiles: [] }
+        }
+      },
+      installRoot: '/Volumes/Studio SSD',
+      downloadBytes: 0,
+      requiredBytes: 0,
+      name: 'Studio'
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+
+    expect(window.api.getFieldOptions).not.toHaveBeenCalled()
+    expect(text(w, 'setup-hardware')).toBe('CPU')
+    expect(text(w, 'setup-row-location')).toContain('/Volumes/Studio SSD/ComfyUI')
+    expect(text(w, 'setup-version')).toContain('v0.43.0')
+    expect(text(w, 'setup-version')).toContain('Latest on GitHub')
+
+    await agree(w)
+    await install(w)
+    expect(w.emitted('install')).toEqual([[savedPlan]])
+  })
+
+  it('names a team build saved in Change by its build and hardware, not as detected', async () => {
+    const w = mount(FirstUseTakeover, {
+      props: {
+        savedPlan: {
+          sourceId: '',
+          selections: {},
+          installRoot: '/Users/ada/ComfyUI-Installs',
+          downloadBytes: 2 * GB,
+          requiredBytes: 4.5 * GB,
+          workspaceBuild: {
+            buildId: 'ready',
+            buildName: 'Ready Build',
+            artifactId: 'cuda',
+            releaseVersion: 3,
+            targetLabel: 'Windows - NVIDIA (CUDA 12.8)'
+          }
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(text(w, 'setup-hardware')).toBe('Windows - NVIDIA (CUDA 12.8)')
+    expect(text(w, 'setup-row-hardware')).not.toContain('Detected')
+    expect(text(w, 'setup-version')).toBe('Ready Build')
+  })
+
+  it('opens every option with Change before the EULA is ticked, and saves nothing yet', async () => {
     const w = await mountSetup()
+    await setChecked(w.find('[data-testid="setup-consent-telemetry"] [role="checkbox"]'), false)
     await w.find('[data-testid="setup-change"]').trigger('click')
     await flushPromises()
-    expect(w.emitted('change')).toBeUndefined()
 
+    expect(w.emitted('change')).toEqual([
+      [expect.objectContaining({ acceptedTos: false, telemetryEnabled: false, locale: 'en' })]
+    ])
+    expect(w.find('[data-testid="setup-agree-hint"]').exists()).toBe(false)
+    expect(window.api.setSetting).not.toHaveBeenCalled()
+    expect(emitTelemetryAction).not.toHaveBeenCalledWith(
+      'comfy.desktop.first_use.consent_decision',
+      expect.anything()
+    )
+  })
+
+  it('saves the consent choices on Change when the EULA was ticked first', async () => {
+    const w = await mountSetup()
     await agree(w)
     await w.find('[data-testid="setup-change"]').trigger('click')
     await flushPromises()
-    expect(w.emitted('change')).toHaveLength(1)
+
+    expect(w.emitted('change')).toEqual([
+      [expect.objectContaining({ acceptedTos: true, telemetryEnabled: true })]
+    ])
+    expect(window.api.setSetting).toHaveBeenCalledWith('telemetryEnabled', true)
+    expect(window.api.setSetting).toHaveBeenCalledWith('betaFeaturesEnabled', true)
+  })
+
+  it('comes back from Change with the same boxes ticked', async () => {
+    const w = mount(FirstUseTakeover, {
+      props: {
+        consent: {
+          acceptedTos: true,
+          telemetryEnabled: false,
+          betaFeaturesEnabled: false,
+          betaTouched: false,
+          preservePersistedBetaOptIn: false,
+          locale: 'en'
+        }
+      }
+    })
+    await flushPromises()
+
+    const checked = (id: string) =>
+      w.find(`[data-testid="${id}"] [role="checkbox"]`).attributes('aria-checked')
+    expect(checked('setup-consent-tos')).toBe('true')
+    expect(checked('setup-consent-telemetry')).toBe('false')
+    expect(checked('setup-consent-beta')).toBe('false')
+
+    await install(w)
+    expect(w.emitted('install')).toHaveLength(1)
+    expect(window.api.setSetting).toHaveBeenCalledWith('telemetryEnabled', false)
+  })
+
+  it('still needs the EULA to install, even after Change was usable', async () => {
+    const w = await mountSetup()
+    await install(w)
+
+    expect(w.emitted('install')).toBeUndefined()
+    expect(w.find('[data-testid="setup-agree-hint"]').exists()).toBe(true)
   })
 
   it('warns in the location row when the disk is too small', async () => {
@@ -259,6 +368,43 @@ describe('Set up, the first screen', () => {
     expect(fresh.emitted('chain-migrate')).toBeUndefined()
   })
 
+  it('keeps migration unticked through Change and installs the saved setup instead of migrating', async () => {
+    const before = await mountSetup({ hasLegacyDesktop: true })
+    await setChecked(before.find('[data-testid="setup-migrate-existing"] [role="checkbox"]'), false)
+    await before.find('[data-testid="setup-change"]').trigger('click')
+    await flushPromises()
+    const [consent] = before.emitted('change')![0] as [SetupConsent]
+    before.unmount()
+
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        release: { value: 'stable', label: 'Stable' },
+        variant: { value: 'mac-cpu', label: 'CPU', data: { variantId: 'mac-cpu' } }
+      },
+      installRoot: '/Users/ada/ComfyUI-Installs',
+      downloadBytes: 0,
+      requiredBytes: 0
+    }
+    const after = mount(FirstUseTakeover, {
+      props: { consent: { ...consent, acceptedTos: true }, savedPlan }
+    })
+    await (
+      after.vm as unknown as { open: (o: { hasLegacyDesktop: boolean }) => Promise<void> }
+    ).open({ hasLegacyDesktop: true })
+    await flushPromises()
+
+    expect(
+      after
+        .find('[data-testid="setup-migrate-existing"] [role="checkbox"]')
+        .attributes('aria-checked')
+    ).toBe('false')
+    expect(text(after, 'setup-install')).toBe('Install')
+    await install(after)
+    expect(after.emitted('install')).toEqual([[savedPlan]])
+    expect(after.emitted('chain-migrate')).toBeUndefined()
+  })
+
   it('lets someone who already has builds keep them instead of installing', async () => {
     const w = await mountSetup({ skipPick: true })
     await agree(w)
@@ -280,6 +426,35 @@ describe('Set up, the first screen', () => {
     expect(window.api.setSetting).toHaveBeenCalledWith('useChineseMirrors', true)
     expect(window.api.setSetting).toHaveBeenCalledWith('chineseMirrorsPrompted', true)
     expect(w.emitted('install')).toHaveLength(1)
+  })
+
+  it('does not ask about mirrors again once they were answered before Change', async () => {
+    installApi({ locale: 'zh-CN', settings: { chineseMirrorsPrompted: true } })
+    const w = await mountSetup()
+    await agree(w)
+    await install(w)
+
+    expect(w.find('[data-testid="setup-mirrors-accept"]').exists()).toBe(false)
+    expect(w.emitted('install')).toHaveLength(1)
+  })
+
+  it('waits for the mirrors answer saved earlier before deciding to ask again', async () => {
+    installApi({ locale: 'zh-CN' })
+    let finishRead: (prompted: boolean) => void = () => {}
+    const pendingRead = new Promise<boolean>((resolve) => {
+      finishRead = resolve
+    })
+    window.api.getSetting = vi.fn(async (key: string) =>
+      key === 'chineseMirrorsPrompted' ? pendingRead : undefined
+    ) as unknown as typeof window.api.getSetting
+    const w = await mountSetup()
+
+    await w.find('[data-testid="setup-change"]').trigger('click')
+    finishRead(true)
+    await flushPromises()
+
+    expect(w.find('[data-testid="setup-mirrors-accept"]').exists()).toBe(false)
+    expect(w.emitted('change')).toHaveLength(1)
   })
 
   it('opens the EULA, the Terms and the privacy policy from their links', async () => {

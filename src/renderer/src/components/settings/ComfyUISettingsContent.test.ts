@@ -29,6 +29,7 @@ vi.mock('../../composables/useComfyUISettings', () => ({
     ...useComfyUISettingsState,
     updateField: vi.fn(),
     renameInstallation: vi.fn().mockResolvedValue(true),
+    clearPendingRestart: vi.fn(),
     runAction: useComfyUISettingsState.runActionStub,
     sectionsForTab: (tab: string) =>
       computed(() => {
@@ -587,6 +588,24 @@ describe('ComfyUISettingsContent', () => {
       expect(w.find('.settings-v2-relaunch').text()).toBe('Switch')
       await w.find('.settings-v2-relaunch').trigger('click')
       expect(emittedDecision(w)).toMatchObject({ verb: 'focus' })
+    })
+
+    it('labels "Restart to apply changes" on the dashboard when a build starting with no window has edited args', async () => {
+      useSessionStore().launchingInstances.set('inst-1', { installationName: 'X' })
+      useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])
+      try {
+        const w = await mountContent({
+          currentView: 'dashboard',
+          currentCategory: null,
+          activeInstallationId: null,
+          startingWithoutWindow: true
+        })
+        expect(w.find('.settings-v2-relaunch').text()).toBe('Restart to apply changes')
+        await w.find('.settings-v2-relaunch').trigger('click')
+        expect(emittedDecision(w)).toMatchObject({ window: 'same', verb: 'restart' })
+      } finally {
+        useComfyUISettingsState.pendingRestartFieldIds.value = new Set()
+      }
     })
   })
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 
 import ChannelPicker from './ChannelPicker.vue'
@@ -432,5 +432,118 @@ describe('ChannelPicker - change-pytorch footer action', () => {
     const emitted = wrapper.emitted('action')
     expect(emitted).toHaveLength(1)
     expect((emitted![0]![0] as { id: string }).id).toBe('copy-pytorch')
+  })
+})
+
+describe('ChannelPicker - status card sized for every option', () => {
+  const checkUpdate = { id: 'check-update', label: 'Check for updates', enabled: true }
+  const updateNow = { id: 'update-comfyui', label: 'Update Now', style: 'primary', enabled: true }
+
+  function stable(): NonNullable<DetailField['options']>[number] {
+    return {
+      value: 'stable',
+      label: 'Stable',
+      data: {
+        productName: 'ComfyUI',
+        installedVersion: 'v0.3.75',
+        latestVersion: 'v0.3.75',
+        updateAvailable: false
+      }
+    }
+  }
+
+  function latest(data: Record<string, unknown> = {}): NonNullable<DetailField['options']>[number] {
+    return {
+      value: 'latest',
+      label: 'Latest on GitHub',
+      data: {
+        productName: 'ComfyUI',
+        installedVersion: 'v0.3.75',
+        latestVersion: 'v0.3.75 (a1b2c3d)',
+        updateAvailable: true,
+        actions: [updateNow],
+        ...data
+      }
+    }
+  }
+
+  function mountWithCheck(options: DetailField['options'], value = 'stable') {
+    return mount(ChannelPicker, {
+      props: { field: field(options, value), sectionActions: [checkUpdate] },
+      global: { stubs: { BaseSelect: true, InfoTooltip: true } }
+    })
+  }
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('shows the selected option and keeps every other option as a hidden, inert row', () => {
+    const wrapper = mountWithCheck([stable(), latest()])
+    const shown = wrapper.findAll('[data-testid="channel-picker-status"]')
+    expect(shown).toHaveLength(1)
+    expect(shown[0].text()).toContain('Up to date')
+    expect(shown[0].attributes('aria-hidden')).toBeUndefined()
+    expect((shown[0].element as HTMLElement).inert).toBe(false)
+
+    const reserved = wrapper.findAll('.channel-picker-status-reserve')
+    expect(reserved).toHaveLength(1)
+    expect(reserved[0].text()).toContain('Update available')
+    expect(reserved[0].classes()).toContain('invisible')
+    expect(reserved[0].attributes('aria-hidden')).toBe('true')
+    expect((reserved[0].element as HTMLElement).inert).toBe(true)
+  })
+
+  it('swaps which option is shown when another one is picked', async () => {
+    const wrapper = mountWithCheck([stable(), latest()])
+    await wrapper.findComponent({ name: 'BaseSelect' }).vm.$emit('update:modelValue', 'latest')
+    expect(wrapper.get('[data-testid="channel-picker-status"]').text()).toContain(
+      'Update available'
+    )
+    const reserved = wrapper.findAll('.channel-picker-status-reserve')
+    expect(reserved).toHaveLength(1)
+    expect(reserved[0].text()).toContain('Up to date')
+  })
+
+  it('offers Check for updates once even when several options carry it in their card', async () => {
+    const wrapper = mountWithCheck([stable(), latest({ updateAvailable: false, actions: [] })])
+    expect(wrapper.findAll('.channel-picker-action')).toHaveLength(2)
+    const buttons = wrapper.findAll('[data-testid="update-action-check-update"]')
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0].element.closest('[data-testid="channel-picker-status"]')).not.toBeNull()
+    await buttons[0].trigger('click')
+    expect(wrapper.emitted('action')).toHaveLength(1)
+  })
+
+  it('shows the commits-ahead hint inside the card of the selected option only while it is enriching', async () => {
+    const wrapper = mountWithCheck([stable(), latest({ enriching: true })], 'latest')
+    const hint = wrapper.get('.channel-picker-enriching')
+    expect(hint.text()).toContain('Computing commits ahead')
+    expect(hint.element.closest('[data-testid="channel-picker-status"]')).not.toBeNull()
+
+    await wrapper.setProps({
+      field: field(
+        [stable(), latest({ latestVersion: 'v0.3.75 + 12 commits (a1b2c3d)' })],
+        'latest'
+      )
+    })
+    expect(wrapper.find('.channel-picker-enriching').exists()).toBe(false)
+  })
+
+  it('does not show the hint for an enriching option that is not the selected one', () => {
+    const wrapper = mountWithCheck([stable(), latest({ enriching: true })])
+    expect(wrapper.find('.channel-picker-enriching').exists()).toBe(false)
+  })
+
+  it('drops the commits-ahead hint after ten seconds without an answer', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountWithCheck([stable(), latest({ enriching: true })], 'latest')
+    expect(wrapper.find('.channel-picker-enriching').exists()).toBe(true)
+    vi.advanceTimersByTime(9_999)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.channel-picker-enriching').exists()).toBe(true)
+    vi.advanceTimersByTime(1)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.channel-picker-enriching').exists()).toBe(false)
   })
 })

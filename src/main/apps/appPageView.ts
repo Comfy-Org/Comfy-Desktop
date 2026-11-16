@@ -1,5 +1,5 @@
-import { WebContentsView, app, session, shell } from 'electron'
-import type { Event, Session, WebContents } from 'electron'
+import { session } from 'electron'
+import type { Event, Session, WebContents, WebContentsView } from 'electron'
 import path from 'path'
 
 import { isAppsListUrl, isInAppsScope, isWebUrl } from '../../shared/appsLocation'
@@ -9,9 +9,10 @@ import { comfyWindows } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
 import { attachContextMenu } from '../lib/contextMenu'
-import { recordShellOpenExternal } from '../lib/e2eOverrides'
+import { tryOpenExternalUrl } from '../lib/openExternal'
 import * as mainTelemetry from '../lib/telemetry'
 import { COMFY_BG } from '../lib/theme'
+import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { pageUrlForListedApp } from './appsCatalog'
 import { areAppsEnabled, currentAppsLocation } from './appsConfig'
 import { registerAppsPage } from './appsPages'
@@ -26,11 +27,21 @@ const NAVIGATION_ABORTED = -3
 const FIRST_HTTP_ERROR_STATUS = 400
 const PAGE_PERMISSIONS: ReadonlySet<string> = new Set(['clipboard-sanitized-write', 'fullscreen'])
 
-type PageFailure = 'http_status' | 'network' | 'crashed'
+type PageFailure = 'http_status' | 'network' | 'crashed' | 'redirected'
+
+export interface LoadedAppPage {
+  appId: string
+  document: number
+}
 
 interface HostedPage {
   view: WebContentsView
   appId: string | null
+  loaded: LoadedAppPage | null
+  loadStarted: boolean
+  loadingUrl: string | null
+  routeBase: string | null
+  documents: number
   status: AppPageStatus
   wanted: boolean
   focusWhenReady: boolean
@@ -69,12 +80,7 @@ function secureSession(appsSession: Session, location: AppsLocation): void {
 }
 
 function openOutside(url: string): void {
-  if (!isWebUrl(url)) return
-  if (process.env['E2E'] === '1' && !app.isPackaged) {
-    recordShellOpenExternal(url)
-    return
-  }
-  void shell.openExternal(url).catch(() => {})
+  if (isWebUrl(url)) void tryOpenExternalUrl(url)
 }
 
 function panelOf(windowKey: number): WebContents | null {
@@ -105,7 +111,7 @@ function setStatus(windowKey: number, hosted: HostedPage, status: AppPageStatus)
   if (hosted.status === status) return
   hosted.status = status
   applyVisibility(hosted)
-  panelOf(windowKey)?.send(APP_PAGE_STATUS_CHANNEL, status)
+  panelOf(windowKey)?.send(APP_PAGE_STATUS_CHANNEL, hosted.appId, status)
 }
 
 function fail(windowKey: number, hosted: HostedPage, reason: PageFailure): void {
@@ -115,13 +121,83 @@ function fail(windowKey: number, hosted: HostedPage, reason: PageFailure): void 
   setStatus(windowKey, hosted, 'failed')
 }
 
+const pagePath = (url: string): string | null => {
+  try {
+    const { origin, pathname } = new URL(url)
+    return origin + pathname.replace(/(\/index)?\.html$|\/$/, '')
+  } catch {
+    return null
+  }
+}
+
+const routeOf = (url: string): string => {
+  try {
+    return (new URL(url).hash.split('?', 1)[0] ?? '').replace(/^(#\/.+?)\/+$/, '$1')
+  } catch {
+    return ''
+  }
+}
+
+function isInAppRoute(base: string, url: string): boolean {
+  if (pagePath(base) === null || pagePath(base) !== pagePath(url)) return false
+  const route = routeOf(base)
+  if (!route.startsWith('#/')) return true
+  const at = routeOf(url)
+  return at === route || at.startsWith(`${route}/`)
+}
+
+function routeBaseOf(hosted: HostedPage): string | null {
+  if (hosted.routeBase !== null) return hosted.routeBase
+  return hosted.appId === null ? null : pageUrlForListedApp(hosted.appId)
+}
+
+function isInLoadedRoute(hosted: HostedPage, url: string): boolean {
+  const base = routeBaseOf(hosted)
+  return base !== null && isInAppRoute(base, url)
+}
+
+function commitDocument(hosted: HostedPage, url: string): void {
+  hosted.documents += 1
+  const appId = hosted.appId
+  const started = hosted.loadStarted
+  hosted.loadStarted = false
+  hosted.loadingUrl = null
+  if (started) hosted.routeBase = url
+  hosted.loaded =
+    appId !== null && (started || isInLoadedRoute(hosted, url))
+      ? { appId, document: hosted.documents }
+      : null
+}
+
+function moveWithinDocument(hosted: HostedPage, url: string): void {
+  const appId = hosted.appId
+  if (hosted.loadStarted) {
+    if (appId === null || url !== hosted.loadingUrl) return
+    hosted.loadStarted = false
+    hosted.loadingUrl = null
+    hosted.routeBase = url
+    hosted.loaded = { appId, document: hosted.documents }
+    return
+  }
+  hosted.loaded =
+    appId !== null && isInLoadedRoute(hosted, url) ? { appId, document: hosted.documents } : null
+}
+
 function load(windowKey: number, hosted: HostedPage, url: string): void {
+  hosted.loaded = null
+  hosted.loadStarted = true
+  hosted.loadingUrl = url
+  hosted.routeBase = null
   setStatus(windowKey, hosted, 'loading')
   void hosted.view.webContents.loadURL(url).catch(() => {})
 }
 
 function closeForList(windowKey: number, hosted: HostedPage, pageStillShowsApp: boolean): void {
-  if (!pageStillShowsApp) hosted.appId = null
+  if (!pageStillShowsApp) {
+    hosted.appId = null
+    hosted.loaded = null
+    hosted.routeBase = null
+  }
   conceal(hosted)
   panelOf(windowKey)?.send(APP_PAGE_CLOSED_CHANNEL)
 }
@@ -137,7 +213,7 @@ function disposeHostedPage(windowKey: number): void {
 function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation): HostedPage {
   const appsSession = session.fromPartition(APPS_PARTITION)
   secureSession(appsSession, location)
-  const view = new WebContentsView({
+  const view = createWebContentsView({
     webPreferences: {
       session: appsSession,
       preload: path.join(__dirname, '../preload/appsPreload.js'),
@@ -154,6 +230,11 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
   const hosted: HostedPage = {
     view,
     appId: null,
+    loaded: null,
+    loadStarted: false,
+    loadingUrl: null,
+    routeBase: null,
+    documents: 0,
     status: 'loading',
     wanted: false,
     focusWhenReady: false,
@@ -171,18 +252,27 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
   }
   contents.on('will-navigate', (event, url) => steer(event, url, true))
   contents.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
-    if (isMainFrame) steer(event, url, false)
+    if (!isMainFrame) return
+    if (hosted.status === 'loading' && !isInAppsScope(location, url)) {
+      event.preventDefault()
+      fail(windowKey, hosted, 'redirected')
+      return
+    }
+    steer(event, url, false)
   })
   contents.setWindowOpenHandler(({ url }) => {
     openOutside(url)
     return { action: 'deny' }
   })
   contents.on('did-navigate', (_event, url, httpResponseCode) => {
+    commitDocument(hosted, url)
     if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
     else if (httpResponseCode >= FIRST_HTTP_ERROR_STATUS) fail(windowKey, hosted, 'http_status')
   })
   contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
-    if (isMainFrame && isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
+    if (!isMainFrame) return
+    if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
+    else moveWithinDocument(hosted, url)
   })
   contents.on('dom-ready', () => {
     if (hosted.status !== 'loading' || !isInAppsScope(location, contents.getURL())) return
@@ -222,10 +312,18 @@ function isMeasure(value: unknown): value is number {
 
 function parsePlacement(raw: unknown): AppPagePlacement | null {
   if (!raw || typeof raw !== 'object') return null
-  const { x, y, width, height, cornerRadius, justOpened } = raw as Record<string, unknown>
+  const { x, y, width, height, cornerRadius, justOpened, retry } = raw as Record<string, unknown>
   if (!isMeasure(x) || !isMeasure(y) || !isMeasure(width) || !isMeasure(height)) return null
   if (!isMeasure(cornerRadius)) return null
-  return { x, y, width, height, cornerRadius, justOpened: justOpened === true }
+  return {
+    x,
+    y,
+    width,
+    height,
+    cornerRadius,
+    justOpened: justOpened === true,
+    retry: retry === true
+  }
 }
 
 function place(entry: ComfyWindowEntry, view: WebContentsView, placement: AppPagePlacement): void {
@@ -267,6 +365,13 @@ function concealWhenPanelGoes(windowKey: number, panel: WebContents): void {
   })
 }
 
+export function loadedAppPage(contents: WebContents): LoadedAppPage | null {
+  for (const hosted of hostedByWindow.values()) {
+    if (hosted.view.webContents === contents) return hosted.loaded
+  }
+  return null
+}
+
 export async function showAppPage(
   panel: WebContents,
   appId: unknown,
@@ -279,14 +384,15 @@ export async function showAppPage(
   if (!pageUrl || !host) return 'failed'
   const hosted = hostedFor(host) ?? createHostedPage(host, currentAppsLocation())
   concealWhenPanelGoes(host.windowKey, panel)
-  const retriesFailedPage = placement.justOpened === true && hosted.status === 'failed'
+  const askedFresh = placement.justOpened === true || placement.retry === true
+  const retriesFailedPage = askedFresh && hosted.status === 'failed'
   if (hosted.appId !== appId || retriesFailedPage) {
     hosted.appId = appId
     load(host.windowKey, hosted, pageUrl)
   }
   if (placement.justOpened) mainTelemetry.capture(APP_OPENED_EVENT, { app_id: appId })
   hosted.wanted = true
-  hosted.focusWhenReady = hosted.focusWhenReady || placement.justOpened === true
+  hosted.focusWhenReady = hosted.focusWhenReady || askedFresh
   place(host.entry, hosted.view, placement)
   raiseAbovePanel(host.entry, hosted.view)
   applyVisibility(hosted)
@@ -309,14 +415,6 @@ export async function captureAppPage(panel: WebContents): Promise<string | null>
   } catch {
     return null
   }
-}
-
-export function reloadAppPage(panel: WebContents): void {
-  const host = hostOf(panel)
-  const hosted = host && hostedFor(host)
-  const pageUrl = hosted?.appId ? pageUrlForListedApp(hosted.appId) : null
-  if (!host || !hosted || !pageUrl) return
-  load(host.windowKey, hosted, pageUrl)
 }
 
 export function _resetForTest(): void {

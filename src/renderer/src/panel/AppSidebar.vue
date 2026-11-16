@@ -11,8 +11,9 @@ import {
   Laptop,
   LoaderCircle,
   Plus,
-  Server
-} from 'lucide-vue-next'
+  Server,
+  Settings
+} from '@lucide/vue'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
@@ -26,6 +27,7 @@ import { useProgressStore } from '../stores/progressStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { emitTelemetryAction } from '../lib/telemetry'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import type { DashboardPage, Installation } from '../types/ipc'
 
@@ -133,6 +135,11 @@ const buildRows = computed(() =>
 function navigate(page: DashboardPage): void {
   emit('navigate', page)
   window.api.navigatePanel(page)
+}
+
+function openSettings(): void {
+  emitTelemetryAction('comfy.desktop.sidebar.settings_opened', { from_page: activePage })
+  window.api.openGlobalSettings()
 }
 </script>
 
@@ -282,7 +289,7 @@ function navigate(page: DashboardPage): void {
             </span>
             <span class="min-w-0 flex-1 truncate text-left">{{ build.name }}</span>
             <span
-              v-if="install?.kind === 'install' && install.percent !== null"
+              v-if="install && install.kind !== 'launch' && install.percent !== null"
               class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
               data-testid="app-sidebar-build-percent"
               >{{ t('installProgress.percent', { percent: install.percent }) }}</span
@@ -292,6 +299,24 @@ function navigate(page: DashboardPage): void {
       </template>
     </nav>
 
-    <SidebarAccount class="mt-2 w-full shrink-0" :collapsed="collapsed" />
+    <div class="mt-2 flex w-full shrink-0 flex-col gap-1">
+      <Button
+        variant="muted-textonly"
+        size="unset"
+        class="h-8 w-full shrink-0 rounded-lg text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+        :class="collapsed ? 'justify-center px-0' : 'justify-start gap-2.5 px-3'"
+        :aria-label="t('fileMenu.globalSettings')"
+        aria-haspopup="dialog"
+        :title="collapsed ? t('fileMenu.globalSettings') : undefined"
+        data-testid="app-sidebar-settings"
+        @click="openSettings"
+      >
+        <Settings :size="15" aria-hidden="true" />
+        <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
+          t('fileMenu.globalSettings')
+        }}</span>
+      </Button>
+      <SidebarAccount :collapsed="collapsed" />
+    </div>
   </aside>
 </template>

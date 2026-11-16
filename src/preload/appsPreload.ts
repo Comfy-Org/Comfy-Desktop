@@ -4,6 +4,7 @@ import type {
   ComfyDesktop2AuthState,
   ComfyDesktopHostedAuthBridge,
   ComfyDesktopHostedLocalBridge,
+  ComfyDesktopHostedTelemetryBridge,
   ComfyDesktopLocalEvent
 } from '../types/comfyDesktopBridge'
 
@@ -27,6 +28,8 @@ const local: ComfyDesktopHostedLocalBridge = {
   startLocal: (want) => ipcRenderer.invoke('apps-local:start', want),
   localFetch: (request) => ipcRenderer.invoke('apps-local:fetch', request),
   localDownload: (model) => ipcRenderer.invoke('apps-local:download', model),
+  openInComfy: (request) => ipcRenderer.invoke('apps-local:open-in-comfy', request),
+  localBuilds: () => ipcRenderer.invoke('apps-local:builds'),
   onLocalEvent: (callback) => {
     const handler = (_event: IpcRendererEvent, update: ComfyDesktopLocalEvent): void =>
       callback(update)
@@ -35,5 +38,10 @@ const local: ComfyDesktopHostedLocalBridge = {
   }
 }
 
+const telemetry: ComfyDesktopHostedTelemetryBridge = {
+  track: (name, props) => ipcRenderer.send('apps-telemetry:track', { name, props })
+}
+
 contextBridge.exposeInMainWorld('comfyDesktopAuth', auth)
 contextBridge.exposeInMainWorld('comfyDesktopLocal', local)
+contextBridge.exposeInMainWorld('comfyDesktopTelemetry', telemetry)

@@ -89,19 +89,19 @@ Contributions are welcome. The app is an [Electron](https://www.electronjs.org/)
 
 ### Prerequisites
 
-- [**Node.js**](https://nodejs.org/) v22 LTS or later
+- [**Node.js**](https://nodejs.org/) 24 LTS (the version in `.nvmrc`)
 - [**pnpm**](https://pnpm.io/) v10 or later (via Corepack)
 
-```bash
-nvm install 22 && nvm use 22   # recommended — https://github.com/nvm-sh/nvm
-corepack enable                # enables pnpm (bundled with Node)
-```
+Development, CI and ToDesktop builds all use the Node version in `.nvmrc`, which is the same major as the Node runtime bundled with Electron.
 
 ### Setup
 
 ```bash
 git clone https://github.com/Comfy-Org/Comfy-Desktop.git
 cd Comfy-Desktop
+nvm install                # installs the Node version in .nvmrc — https://github.com/nvm-sh/nvm
+nvm use
+corepack enable            # enables pnpm (bundled with Node)
 pnpm run init
 ```
 
@@ -135,6 +135,14 @@ pnpm test
 ```
 
 Main, preload, and shared code is tested in Node. Renderer tests run in headless Chromium through [Vitest browser mode](https://vitest.dev/guide/browser/). To watch them in a visible browser, run `pnpm exec vitest --project browser --browser.headless=false`.
+
+To record a video of an e2e test for a reviewer, set `E2E_VIDEO` to any value other than empty or `0`:
+
+```bash
+E2E_VIDEO=1 pnpm exec playwright test e2e/home.test.ts --project=macos -g "Auto start"
+```
+
+The videos land in `test-results/videos/` at 1280x800. Playwright writes one `.webm` per view; the page view is the largest file. While recording, each `click`, `clickNth`, `clickByText` and `fill` in `e2e/support/cdpPages.ts` pauses about 1 s before and after, so each change shows on screen. Dropdown helpers (`clickUntilVisible`, `selectOption`) and clicks made in the page's own script are not slowed down.
 
 ## Releasing
 

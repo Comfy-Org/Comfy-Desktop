@@ -5,7 +5,8 @@ type Listener = (...args: unknown[]) => void
 
 const mocks = vi.hoisted(() => ({
   createBrowserWindow: vi.fn(),
-  findEntryByComfySender: vi.fn()
+  findEntryByComfySender: vi.fn(),
+  openExternal: vi.fn(() => Promise.resolve())
 }))
 
 vi.mock('electron', () => ({
@@ -13,7 +14,8 @@ vi.mock('electron', () => ({
     constructor(options: unknown) {
       return mocks.createBrowserWindow(options)
     }
-  }
+  },
+  shell: { openExternal: mocks.openExternal }
 }))
 
 vi.mock('../host/registry', () => ({
@@ -252,9 +254,11 @@ describe('openModelAccessPageWindow', () => {
     const requestPermission = session.setPermissionRequestHandler.mock.calls[0]![0] as (
       contents: unknown,
       permission: string,
-      callback: (allowed: boolean) => void
+      callback: (allowed: boolean) => void,
+      details?: { externalURL?: string }
     ) => void
     const accessCallback = vi.fn()
+    const accessMailCallback = vi.fn()
     const comfyCallback = vi.fn()
     const unknownCallback = vi.fn()
 
@@ -279,10 +283,15 @@ describe('openModelAccessPageWindow', () => {
       })
     ).toBe(true)
     requestPermission(accessWindow.webContents, 'media', accessCallback)
+    requestPermission(accessWindow.webContents, 'openExternal', accessMailCallback, {
+      externalURL: 'mailto:hello@comfy.org'
+    })
     requestPermission({}, 'media', comfyCallback)
     requestPermission(null, 'notifications', unknownCallback)
 
     expect(accessCallback).toHaveBeenCalledWith(false)
+    expect(accessMailCallback).toHaveBeenCalledWith(false)
+    expect(mocks.openExternal).not.toHaveBeenCalled()
     expect(comfyCallback).toHaveBeenCalledWith(true)
     expect(unknownCallback).toHaveBeenCalledWith(false)
   })

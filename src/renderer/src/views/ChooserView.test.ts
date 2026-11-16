@@ -11,6 +11,7 @@ import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import { TID } from '../../../shared/testIds'
+import { setChecked } from './testHelpers'
 import type { DevPlatformBuild, Installation } from '../types/ipc'
 
 vi.mock('../components/ContextMenu.vue', () => ({
@@ -255,6 +256,35 @@ describe('ChooserView', () => {
     await flushPromises()
 
     expect(wrapper.emitted('pick')).toHaveLength(1)
+    expect(wrapper.emitted('open-details')).toBeUndefined()
+  })
+
+  it('ticks auto start on a tile, moving it from the other build without opening either', async () => {
+    const api = installMockApi([
+      makeInstall({ id: 'a', name: 'Alpha' }),
+      makeInstall({ id: 'b', name: 'Beta' })
+    ])
+    api.getSetting.mockImplementation(async (key: string) =>
+      key === 'autoLaunchOnStartup' ? 'a' : undefined
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+    const autoStartBox = (id: string) =>
+      wrapper.get(`[data-testid="chooser-tile-auto-start-${id}"] [role="checkbox"]`)
+    expect(autoStartBox('a').attributes('aria-checked')).toBe('true')
+
+    await setChecked(autoStartBox('b'), true)
+    await flushPromises()
+
+    expect(api.setSetting).toHaveBeenCalledWith('autoLaunchOnStartup', 'b')
+    expect(autoStartBox('a').attributes('aria-checked')).toBe('false')
+    expect(wrapper.emitted('open-details')).toBeUndefined()
+    expect(wrapper.emitted('pick')).toBeUndefined()
+
+    await setChecked(autoStartBox('b'), false)
+    await flushPromises()
+
+    expect(api.setSetting).toHaveBeenLastCalledWith('autoLaunchOnStartup', 'none')
     expect(wrapper.emitted('open-details')).toBeUndefined()
   })
 

@@ -12,7 +12,7 @@ import {
   FolderOpen,
   MoreHorizontal,
   Plus
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 import StorageTag from '../../components/StorageTag.vue'

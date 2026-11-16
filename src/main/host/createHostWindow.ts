@@ -1,9 +1,14 @@
-import { BrowserWindow, WebContentsView, ipcMain, shell } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
+import type { WebContentsView } from 'electron'
 import path from 'path'
+import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import type { DatadogForwardedError } from '../../types/ipc'
 import type { InstallationRecord } from '../installations'
 import { getAppVersion } from '../lib/ipc'
+import { hasBuildsRunningForAppsOnly, stopEveryBuildRunningForAppsOnly } from '../apps/localComfy'
 import { attachContextMenu } from '../lib/contextMenu'
+import { tryOpenExternalUrl } from '../lib/openExternal'
+import { guardPermissionRequests } from '../lib/sessionPermissions'
 import {
   attachSessionDownloadHandler,
   detachWindowDownloads,
@@ -107,6 +112,13 @@ export function shouldShowInstallCloseConfirm(
     consult === 'defer' &&
     !forceClose
   )
+}
+
+export function closeStopsLocalComfy(
+  entry: ComfyWindowEntry | null | undefined,
+  isLastWindow: boolean
+): boolean {
+  return shouldConfirmKillForEntry(entry) || (isLastWindow && hasBuildsRunningForAppsOnly())
 }
 
 export function shouldBailAfterCloseChoice(
@@ -254,7 +266,7 @@ const CHECKOUT_CLOSE_BUTTON_HTML = `<!doctype html>
 const CHECKOUT_CLOSE_BUTTON_SIZE = 48
 
 function attachCheckoutCloseButton(childWindow: BrowserWindow, onClose: () => void): void {
-  const overlay = new WebContentsView({
+  const overlay = createWebContentsView({
     webPreferences: { contextIsolation: false, nodeIntegration: true, sandbox: false }
   })
   overlay.setBackgroundColor('#00000000')
@@ -280,7 +292,10 @@ function attachCheckoutCloseButton(childWindow: BrowserWindow, onClose: () => vo
     if (event.sender.id === closeId) onClose()
   }
   ipcMain.on('comfy-checkout:close', handler)
-  childWindow.once('closed', () => ipcMain.removeListener('comfy-checkout:close', handler))
+  childWindow.once('closed', () => {
+    ipcMain.removeListener('comfy-checkout:close', handler)
+    if (!overlay.webContents.isDestroyed()) overlay.webContents.close()
+  })
 }
 
 export interface CreateHostWindowOpts {
@@ -360,6 +375,55 @@ export function isWindowLayoutable(
   return !win.isDestroyed() && !win.isMinimized()
 }
 
+export async function confirmHostWindowClose(
+  comfyWindow: BrowserWindow,
+  windowKey: number,
+  fx: Pick<
+    HostWindowFactories,
+    'consultPanelRendererClose' | 'confirmCloseInstanceWindow' | 'preClearedClose'
+  >
+): Promise<boolean> {
+  const entry = comfyWindows.get(windowKey)
+  const skipConsult = fx.preClearedClose.has(comfyWindow)
+  if (!skipConsult) hideTitlePopupForParent(comfyWindow)
+  const consult: CloseConsultResult = skipConsult
+    ? 'cleared'
+    : await fx.consultPanelRendererClose(entry?.panelView)
+  if (shouldBailAfterConsult(consult, fx.preClearedClose.has(comfyWindow))) return false
+  const entryForClose = comfyWindows.get(windowKey)
+  const isLastWindow =
+    Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed()).length <= 1
+  const isInstallHostWindow = !!entryForClose && isInstallHost(entryForClose)
+  const isLastInstallWindow = isLastWindow && isInstallHostWindow
+  const stopsLocalComfy = closeStopsLocalComfy(entryForClose, isLastWindow)
+  let agreedToStopAppsBuilds = false
+  if (
+    shouldShowInstallCloseConfirm(
+      settings.get('confirmBeforeClosingWindow') === true,
+      consult,
+      stopsLocalComfy,
+      fx.preClearedClose.has(comfyWindow),
+      isLastInstallWindow
+    ) &&
+    entryForClose
+  ) {
+    const closeChoice = await fx.confirmCloseInstanceWindow(
+      comfyWindow,
+      isLastWindow,
+      stopsLocalComfy,
+      entryForClose.lastTheme
+    )
+    if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) {
+      return false
+    }
+    agreedToStopAppsBuilds = isLastWindow && closeChoice === 'close'
+  }
+  fx.preClearedClose.delete(comfyWindow)
+  if (comfyWindow.isDestroyed()) return false
+  if (agreedToStopAppsBuilds) void stopEveryBuildRunningForAppsOnly()
+  return true
+}
+
 export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowResult {
   const fx = getFactories()
   const windowKey = nextWindowKey()
@@ -393,7 +457,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
 
   prewarmTitlePopup(comfyWindow)
 
-  const titleBarView = new WebContentsView({
+  const titleBarView = createWebContentsView({
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -541,37 +605,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     void (async () => {
       try {
         const entry = comfyWindows.get(windowKey)
-        const skipConsult = fx.preClearedClose.has(comfyWindow)
-        const isLastWindow =
-          Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed()).length <= 1
-        if (!skipConsult) hideTitlePopupForParent(comfyWindow)
-        const consult: CloseConsultResult = skipConsult
-          ? 'cleared'
-          : await fx.consultPanelRendererClose(entry?.panelView)
-        if (shouldBailAfterConsult(consult, fx.preClearedClose.has(comfyWindow))) return
-        const entryForClose = comfyWindows.get(windowKey)
-        const isInstallHostWindow = !!entryForClose && isInstallHost(entryForClose)
-        const isLastInstallWindow = isLastWindow && isInstallHostWindow
-        if (
-          shouldShowInstallCloseConfirm(
-            settings.get('confirmBeforeClosingWindow') === true,
-            consult,
-            shouldConfirmKillForEntry(entryForClose),
-            fx.preClearedClose.has(comfyWindow),
-            isLastInstallWindow
-          ) &&
-          entryForClose
-        ) {
-          const closeChoice = await fx.confirmCloseInstanceWindow(
-            comfyWindow,
-            isLastWindow,
-            shouldConfirmKillForEntry(entryForClose),
-            entryForClose.lastTheme
-          )
-          if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) return
-        }
-        fx.preClearedClose.delete(comfyWindow)
-        if (comfyWindow.isDestroyed()) return
+        if (!(await confirmHostWindowClose(comfyWindow, windowKey, fx))) return
         const safeTeardown = (source: string, fn: () => void): void => {
           try {
             fn()
@@ -681,7 +715,7 @@ export function buildComfyView(
           ? 'Consolas'
           : 'monospace'
   }
-  const comfyView = new WebContentsView({
+  const comfyView = createWebContentsView({
     webPreferences: { ...webPreferences, defaultFontFamily }
   })
   comfyView.setBackgroundColor(COMFY_BG)
@@ -689,6 +723,7 @@ export function buildComfyView(
   const comfyContents = comfyView.webContents
   trackFirebaseAuthReporter(comfyContents)
   attachSessionDownloadHandler(comfyContents.session)
+  guardPermissionRequests(comfyContents.session)
 
   let nextPopupIsCheckout = false
   let nextCheckoutOpenedAt = 0
@@ -718,7 +753,7 @@ export function buildComfyView(
         source: 'system_browser',
         user_tier: getUserTier()
       })
-      void shell.openExternal(childUrl)
+      void tryOpenExternalUrl(childUrl)
       return { action: 'deny' }
     }
 
@@ -732,7 +767,7 @@ export function buildComfyView(
       comfyContents.session.downloadURL(childUrl)
       return { action: 'deny' }
     }
-    shell.openExternal(childUrl)
+    void tryOpenExternalUrl(childUrl)
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {

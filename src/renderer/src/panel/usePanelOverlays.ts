@@ -5,9 +5,11 @@ import type TrackModal from '../views/TrackModal.vue'
 import type LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
 import type QuickInstallModal from '../views/QuickInstallModal.vue'
 import type FirstUseTakeover from '../views/FirstUseTakeover.vue'
+import type { ChangeSetupDraft } from '../lib/setupPlan'
 import { useOverlay, type FlowComponent, type Overlay } from '../composables/useOverlay'
 import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
+import { isUninstallOpKind } from '../lib/progressOpKind'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -67,7 +69,12 @@ export interface FirstUseChainHooks {
   shouldForceTakeover: () => boolean
   onShowProgress: (opts: ShowProgressOpts) => void
   onBackgroundInstall: () => void
-  consumeCameFromSetup: () => boolean
+  consumeSetupHandoff: () => SetupHandoff | null
+}
+
+export interface SetupHandoff {
+  needsConsent: boolean
+  restore?: ChangeSetupDraft
 }
 
 export interface UsePanelOverlaysOpts {
@@ -181,7 +188,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
 
   function runsInBackground(showOpts: ShowProgressOpts): boolean {
     if (installationId) return false
-    if (showOpts.opKind === 'install') return true
+    if (showOpts.opKind === 'install' || isUninstallOpKind(showOpts.opKind)) return true
     return showOpts.opKind === 'launch' && !opts.launchesInPlace?.(showOpts.installationId)
   }
 
@@ -215,6 +222,13 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     const operationName = showOpts.title.split(' — ')[0] || showOpts.title
     if (runsInBackground(showOpts)) {
       startOperationOnce({ ...showOpts, chainSpan: undefined })
+      if (isUninstallOpKind(showOpts.opKind)) {
+        if (activePanel.value === 'progress') {
+          activePanel.value = defaultBodyPanel()
+          window.api.closeCurrentPanel()
+        }
+        return
+      }
       if (currentOverlay.value?.kind === 'takeover') dismissTakeoverDirect()
       if (showOpts.opKind === 'launch') {
         resolvePortConflictInTakeover(showOpts.installationId)
@@ -253,15 +267,19 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     })
     await nextTick()
     if (component === 'new-install') {
-      const cameFromSetup = opts.firstUseChain
-        ? opts.firstUseChain.consumeCameFromSetup() === true
-        : false
+      const setupHandoff = opts.firstUseChain?.consumeSetupHandoff() ?? null
       await dashboardScope.initialize()
       if (currentOverlay.value !== openedOverlay) return
       await newInstallRef.value?.open({
         entrypoint,
         workspaceId: dashboardScope.selectedWorkspaceId,
-        ...(cameFromSetup ? { cameFromSetup } : {})
+        ...(setupHandoff
+          ? {
+              cameFromSetup: true,
+              needsConsent: setupHandoff.needsConsent,
+              restore: setupHandoff.restore
+            }
+          : {})
       })
     } else if (component === 'track') trackRef.value?.open()
     else if (component === 'load-snapshot') loadSnapshotRef.value?.open()
