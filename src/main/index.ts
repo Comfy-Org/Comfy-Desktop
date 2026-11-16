@@ -1107,13 +1107,19 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     }
 
     ipcMain.handle('open-install-window', async (event, installationId: unknown) => {
-      if (typeof installationId !== 'string') return false
+      if (typeof installationId !== 'string' || installationId === '') return false
       recordIpcInvocation('open-install-window', { installationId })
       const requester = [...comfyWindows.values()].find(
-        (entry) => entry.panelView?.webContents === event.sender
+        (entry) => !entry.window.isDestroyed() && entry.panelView?.webContents === event.sender
       )
-      await openBuild(installationId, requester?.windowKey ?? -1)
-      return true
+      if (!requester) return false
+      try {
+        await openBuild(installationId, requester.windowKey)
+        return true
+      } catch (error) {
+        console.error('open-install-window: could not open the build', { installationId, error })
+        return false
+      }
     })
 
     registerTitlePopupIpc({
