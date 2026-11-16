@@ -169,7 +169,7 @@ export async function listOutputFolder(target: unknown): Promise<OutputFolderLis
   }
   const found: AssetSummary[] = []
   await runPool(files, STATS_AT_ONCE, async (file) => {
-    const stat = await fsp.stat(file).catch(() => null)
+    const stat = await fsp.lstat(file).catch(() => null)
     if (!stat?.isFile()) return
     const modifiedMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0
     found.push(localSummary(file, stat.size, modifiedMs))
