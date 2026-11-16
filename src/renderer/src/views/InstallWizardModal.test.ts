@@ -272,6 +272,95 @@ describe('InstallWizardModal heading', () => {
     again.unmount()
   })
 
+  it('keeps the saved choices when hardware picked after reopening Change is discarded', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'nvidia', label: 'NVIDIA', recommended: true, data: { variantId: 'win-nvidia' } },
+      { value: 'cpu', label: 'CPU', data: { variantId: 'win-cpu' } }
+    ])
+    const pick = async (wrapper: ReturnType<typeof mountModal>, label: string) => {
+      await wrapper
+        .findAll('.setup-option')
+        .find((option) => option.text().includes(label))
+        ?.trigger('click')
+      await flushPromises()
+    }
+    const checkedHardware = (wrapper: ReturnType<typeof mountModal>) =>
+      wrapper
+        .findAll('.setup-option')
+        .filter((option) => option.attributes('aria-checked') === 'true')
+        .map((option) => option.text())
+        .filter((text) => text.includes('CPU') || text.includes('NVIDIA'))
+
+    const first = mountModal({ hideBackToDashboard: true })
+    await first.vm.open({ cameFromSetup: true, entrypoint: 'first_use' })
+    await flushPromises()
+    await pick(first, 'CPU')
+    await first.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    const [saved] = savedSetups(first)
+    first.unmount()
+    if (!saved) throw new Error('Save changes emitted nothing')
+
+    const edited = mountModal({ hideBackToDashboard: true })
+    await edited.vm.open({ cameFromSetup: true, entrypoint: 'first_use', restore: saved.draft })
+    await flushPromises()
+    await pick(edited, 'NVIDIA')
+    await edited.get('[data-testid="config-discard-changes"]').trigger('click')
+    expect(edited.emitted('back-to-setup')).toEqual([[]])
+    edited.unmount()
+
+    const again = mountModal({ hideBackToDashboard: true })
+    await again.vm.open({ cameFromSetup: true, entrypoint: 'first_use', restore: saved.draft })
+    await flushPromises()
+    expect(checkedHardware(again)).toEqual([expect.stringContaining('CPU')])
+    again.unmount()
+  })
+
+  it('holds Discard and a second Save while Save is still checking the folder', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'cpu', label: 'CPU', recommended: true, data: { variantId: 'win-cpu' } }
+    ])
+    const wrapper = mountModal({ hideBackToDashboard: true })
+    await wrapper.vm.open({ cameFromSetup: true, entrypoint: 'first_use' })
+    await flushPromises()
+    let finishFolderCheck: (issues: string[]) => void = () => {}
+    ;(window.api.validateInstallPath as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        finishFolderCheck = resolve
+      })
+    )
+
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    expect(
+      wrapper.get('[data-testid="config-discard-changes"]').attributes('disabled')
+    ).toBeDefined()
+    expect(wrapper.get('[data-testid="config-save-changes"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+
+    finishFolderCheck([])
+    await flushPromises()
+    expect(wrapper.emitted('back-to-setup')).toBeUndefined()
+    expect(savedSetups(wrapper)).toHaveLength(1)
+    expect(window.api.validateInstallPath).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
   it('does not ask for the EULA again when it was accepted on Set up', async () => {
     const wrapper = mountModal({ hideBackToDashboard: true })
     await wrapper.vm.open({ cameFromSetup: true, needsConsent: false, entrypoint: 'first_use' })

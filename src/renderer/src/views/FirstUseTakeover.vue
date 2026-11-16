@@ -73,6 +73,7 @@ const migrateExisting = ref(true)
 const busy = ref(false)
 const pendingAction = ref<SetupAction | null>(null)
 const mirrorsPrompted = ref(false)
+let mirrorsPromptedRead: Promise<void> = Promise.resolve()
 const locale = ref('en')
 
 let openGeneration = 0
@@ -213,6 +214,7 @@ async function request(action: SetupAction): Promise<void> {
     action: action === 'install' && migrating.value ? 'migrate' : action,
     plan_ready: planState.value === 'ready'
   })
+  if (isChinese.value) await mirrorsPromptedRead
   if (isChinese.value && !mirrorsPrompted.value) {
     pendingAction.value = action
     step.value = 'mirrors'
@@ -329,7 +331,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       locale.value = next
     })
     .catch(() => {})
-  void window.api
+  mirrorsPromptedRead = window.api
     .getSetting('chineseMirrorsPrompted')
     .then((prompted) => {
       if (gen === openGeneration) mirrorsPrompted.value = prompted === true

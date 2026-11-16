@@ -405,6 +405,25 @@ describe('Set up, the first screen', () => {
     expect(w.emitted('install')).toHaveLength(1)
   })
 
+  it('waits for the mirrors answer saved earlier before deciding to ask again', async () => {
+    installApi({ locale: 'zh-CN' })
+    let finishRead: (prompted: boolean) => void = () => {}
+    const pendingRead = new Promise<boolean>((resolve) => {
+      finishRead = resolve
+    })
+    window.api.getSetting = vi.fn(async (key: string) =>
+      key === 'chineseMirrorsPrompted' ? pendingRead : undefined
+    ) as unknown as typeof window.api.getSetting
+    const w = await mountSetup()
+
+    await w.find('[data-testid="setup-change"]').trigger('click')
+    finishRead(true)
+    await flushPromises()
+
+    expect(w.find('[data-testid="setup-mirrors-accept"]').exists()).toBe(false)
+    expect(w.emitted('change')).toHaveLength(1)
+  })
+
   it('opens the EULA, the Terms and the privacy policy from their links', async () => {
     const w = await mountSetup()
     for (const [link, doc] of [

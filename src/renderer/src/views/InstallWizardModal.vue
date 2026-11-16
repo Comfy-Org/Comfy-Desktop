@@ -1277,20 +1277,30 @@ function sourcePlan(source: Source): SetupPlan {
   }
 }
 
-async function saveSetupForInstall(): Promise<void> {
-  if (!canProceed.value || !(await validateSelectedInstallRoot())) return
-  let plan: SetupPlan
+const savingSetup = ref(false)
+
+async function checkedSetupPlan(): Promise<SetupPlan | null> {
+  if (!canProceed.value || !(await validateSelectedInstallRoot())) return null
   if (managedBuildMode.value) {
-    if (!selectedBuild.value) return
-    plan = workspaceBuildPlan(selectedBuild.value)
-  } else {
-    const source = currentSource.value
-    if (!source || !(await confirmNvidiaDriver(source))) return
-    commitTextFields(source)
-    plan = sourcePlan(source)
+    return selectedBuild.value ? workspaceBuildPlan(selectedBuild.value) : null
   }
-  resolved.value = true
-  emit('save-setup', { plan, draft: { ...captureNewInstallSetup(), instName: instName.value } })
+  const source = currentSource.value
+  if (!source || !(await confirmNvidiaDriver(source))) return null
+  commitTextFields(source)
+  return sourcePlan(source)
+}
+
+async function saveSetupForInstall(): Promise<void> {
+  if (savingSetup.value) return
+  savingSetup.value = true
+  try {
+    const plan = await checkedSetupPlan()
+    if (!plan) return
+    resolved.value = true
+    emit('save-setup', { plan, draft: { ...captureNewInstallSetup(), instName: instName.value } })
+  } finally {
+    savingSetup.value = false
+  }
 }
 
 async function restoreSourceCard(key: string): Promise<void> {
@@ -1332,11 +1342,11 @@ async function restoreNewInstallSetup(setup: NewInstallSetup): Promise<void> {
   }
   loadGeneration++
   heldFields.value.clear()
-  selections.value = setup.selections
-  fieldOptions.value = setup.fieldOptions
-  fieldLoading.value = setup.fieldLoading
-  fieldErrors.value = setup.fieldErrors
-  textFieldValues.value = setup.textFieldValues
+  selections.value = { ...setup.selections }
+  fieldOptions.value = new Map(setup.fieldOptions)
+  fieldLoading.value = new Map(setup.fieldLoading)
+  fieldErrors.value = new Map(setup.fieldErrors)
+  textFieldValues.value = new Map(setup.textFieldValues)
   saveDisabled.value = setup.saveDisabled
   sourceError.value = setup.sourceError
   const interruptedLoad =
@@ -1646,6 +1656,7 @@ const modalLead = computed(() => {
 const ariaLabel = computed(() => t('newInstall.newBuildTitle'))
 
 function discardChanges(): void {
+  if (savingSetup.value) return
   if (cameFromSetup.value) handleBackToSetup()
   else void discardChangeSetup()
 }
@@ -2234,7 +2245,7 @@ defineExpose({ open })
           type="button"
           class="h-9 rounded-[10px] config-discard-changes"
           data-testid="config-discard-changes"
-          :disabled="submittingExisting"
+          :disabled="submittingExisting || savingSetup"
           @click="discardChanges"
         >
           {{ $t('newInstall.discardChanges') }}
@@ -2258,7 +2269,7 @@ defineExpose({ open })
           variant="inverted"
           class="h-9 rounded-[10px] config-save-changes min-w-[104px]"
           data-testid="config-save-changes"
-          :disabled="cameFromSetup && !canProceed"
+          :disabled="cameFromSetup && (!canProceed || savingSetup)"
           @click="saveChanges"
         >
           {{ $t('newInstall.saveChanges') }}
