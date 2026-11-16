@@ -183,7 +183,9 @@ test.beforeAll(async () => {
         const list = await ctx.panel.evaluate<SnapshotListLite>(
           `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`
         )
-        const target = list.snapshots.find((s) => s.label === 'real-comfy-restore-target')
+        const target =
+          list.snapshots.find((s) => s.label === 'real-comfy-restore-target') ??
+          list.snapshots.find((s) => s.label === 'lifecycle-restore-target')
         if (target) {
           _restoreSnapshotFilename = target.filename
           const snapPath = path.join(_updateInstallPath, '.launcher', 'snapshots', target.filename)
