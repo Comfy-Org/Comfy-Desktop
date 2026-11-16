@@ -8,7 +8,7 @@ import {
 } from '../../lib/modelDownloadPaths'
 import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 import { getDiskSpace } from '../../lib/disk'
-import { resolveTemplateModels, resolveTemplateModelsFromJson } from './templateModels'
+import { resolveTemplateModelsFromJson } from './templateModels'
 import { downloadTemplateInputAssets } from './templateInputAssets'
 import {
   isTerminal,
@@ -39,24 +39,18 @@ export function hasActiveTemplateDownloads(): boolean {
   return false
 }
 
-export function getTemplateDownloadState(
-  installationId: string
-): TemplateDownloadState | undefined {
-  return _templateDownloads.get(installationId)
-}
-
-export function abortTemplateDownload(installationId: string): void {
-  const ctrl = _templateAborts.get(installationId)
+function abortTemplateDownload(taskId: string): void {
+  const ctrl = _templateAborts.get(taskId)
   if (ctrl) {
     ctrl.abort()
-    _templateAborts.delete(installationId)
+    _templateAborts.delete(taskId)
   }
-  const leases = _templateJobLeases.get(installationId)
+  const leases = _templateJobLeases.get(taskId)
   if (leases) {
     for (const release of [...leases]) release()
-    _templateJobLeases.delete(installationId)
+    _templateJobLeases.delete(taskId)
   }
-  const state = _templateDownloads.get(installationId)
+  const state = _templateDownloads.get(taskId)
   if (state && !isTerminal(state.status)) {
     state.status = 'cancelled'
   }
@@ -66,23 +60,13 @@ interface StartOpts {
   sendOutput: (text: string) => void
 }
 
-export function startTemplateDownload(
-  installation: InstallationRecord,
-  estimatedSizeBytes: number,
-  opts: StartOpts
-): void {
-  const templateId = installation.bundledTemplateId
-  if (!templateId) return
-  startTemplateDownloadTask(installation.id, installation, templateId, estimatedSizeBytes, opts)
-}
-
 export function startTemplateDownloadTask(
   taskId: string,
   installation: InstallationRecord,
   templateId: string,
   estimatedSizeBytes: number,
   opts: StartOpts,
-  workflowJson?: unknown
+  workflowJson: unknown
 ): void {
   const existing = _templateDownloads.get(taskId)
   if (existing && !isTerminal(existing.status)) return
@@ -201,18 +185,16 @@ async function runTask(
   state: TemplateDownloadState,
   signal: AbortSignal,
   { sendOutput }: StartOpts,
-  workflowJson?: unknown
+  workflowJson: unknown
 ): Promise<void> {
-  await downloadTemplateInputAssets(installation, templateId, sendOutput, signal, workflowJson)
+  await downloadTemplateInputAssets(installation, workflowJson, sendOutput, signal)
   if (signal.aborted) {
     state.status = 'cancelled'
     return
   }
 
   sendOutput(`[templates] Resolving model list for "${templateId}"...\n`)
-  const models = workflowJson
-    ? resolveTemplateModelsFromJson(workflowJson)
-    : await resolveTemplateModels(installation, templateId)
+  const models = resolveTemplateModelsFromJson(workflowJson)
 
   if (signal.aborted) {
     state.status = 'cancelled'

@@ -157,6 +157,19 @@ describe('settings unset/default semantics', () => {
     expect(persisted['maxCachedDownloads']).toBe(1)
   })
 
+  it('discards the retired skipTemplatePickerStep key from the starter workflow step', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ skipTemplatePickerStep: true, theme: 'dark' }, null, 2),
+      'utf-8'
+    )
+
+    expect(settings.get('skipTemplatePickerStep')).toBeUndefined()
+    expect(settings.get('theme')).toBe('dark')
+    expect(readPersistedSettings()).not.toHaveProperty('skipTemplatePickerStep')
+  })
+
   it('preserves a manual maxCachedDownloads edit', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify({ maxCachedDownloads: 9 }, null, 2), 'utf-8')

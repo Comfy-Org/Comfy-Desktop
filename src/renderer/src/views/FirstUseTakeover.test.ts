@@ -64,8 +64,7 @@ function installApi(overrides: ApiOverrides = {}): void {
         fields: [
           { id: 'release', label: 'Release', type: 'select' },
           { id: 'comfyVersion', label: 'ComfyUI version', type: 'select' },
-          { id: 'variant', label: 'Variant', type: 'select' },
-          { id: 'bundledTemplate', label: 'Starter template', type: 'select' }
+          { id: 'variant', label: 'Variant', type: 'select' }
         ]
       }
     ]),
@@ -94,10 +93,7 @@ function installApi(overrides: ApiOverrides = {}): void {
           }
         ]
       }
-      return [
-        { value: 'flux', label: 'Flux' },
-        { value: 'none', label: 'None' }
-      ]
+      return []
     }),
     setFirstUseMode: vi.fn()
   } as unknown as typeof window.api
@@ -187,7 +183,7 @@ describe('Set up, the first screen', () => {
     expect(plan.selections.release?.value).toBe('stable')
     expect(plan.selections.comfyVersion?.value).toBe('v0.42.4')
     expect(plan.selections.variant?.value).toBe('mac-mps')
-    expect(plan.selections.bundledTemplate?.value).toBe('none')
+    expect(Object.keys(plan.selections)).toEqual(['release', 'comfyVersion', 'variant'])
     expect(emitTelemetryAction).toHaveBeenCalledWith(
       'comfy.desktop.first_use.completed',
       expect.objectContaining({ exit_path: 'local-new' })
@@ -207,8 +203,7 @@ describe('Set up, the first screen', () => {
           value: 'mac-cpu',
           label: 'CPU',
           data: { variantId: 'mac-cpu', downloadFiles: [] }
-        },
-        bundledTemplate: { value: 'none', label: 'None' }
+        }
       },
       installRoot: '/Volumes/Studio SSD',
       downloadBytes: 0,

@@ -2,7 +2,6 @@ import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import type { FieldOption, Source } from '../types/ipc'
 import type { SystemInfo } from '../../../types/ipc'
 
-export const NO_TEMPLATE_VALUE = 'none'
 export const INSTALL_SPACE_FACTOR = 2.25
 
 export interface WorkspaceBuildChoice {
@@ -49,10 +48,7 @@ export interface SavedSetup {
 
 export class SetupPlanUnavailable extends Error {}
 
-function pickOption(fieldId: string, options: FieldOption[]): FieldOption | undefined {
-  if (fieldId === 'bundledTemplate') {
-    return options.find((o) => o.value === NO_TEMPLATE_VALUE) ?? options[0]
-  }
+function pickOption(options: FieldOption[]): FieldOption | undefined {
   return options.find((o) => o.recommended) ?? options[0]
 }
 
@@ -84,7 +80,7 @@ export async function resolveSetupPlan(): Promise<SetupPlan> {
       field.id === 'release' ? { includeLatestStable: true } : undefined
     )
     if (field.id === 'comfyVersion' && options.length === 0) continue
-    const pick = pickOption(field.id, options ?? [])
+    const pick = pickOption(options ?? [])
     if (!pick) throw new SetupPlanUnavailable(`no options for ${field.id}`)
     selections[field.id] = pick
   }

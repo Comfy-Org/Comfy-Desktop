@@ -90,10 +90,7 @@ const stepNames = (w: Dialog) =>
 const activeStepDetail = (w: Dialog) => w.get('[data-testid="build-progress-step-detail"]').text()
 
 function startLikeMain() {
-  const phases = buildLaunchPhases(null, {
-    preLaunchPhases: ['repair', 'torchRepair'],
-    templateModels: true
-  })
+  const phases = buildLaunchPhases(null, { preLaunchPhases: ['repair', 'torchRepair'] })
   let sentPhases: string[] = []
   const tracker = createLaunchProgressTracker({
     phases,

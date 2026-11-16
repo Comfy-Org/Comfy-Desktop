@@ -45,7 +45,6 @@ import type {
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
 import {
   INSTALL_SPACE_FACTOR,
-  NO_TEMPLATE_VALUE,
   downloadBytesOf,
   type ChangeSetupDraft,
   type NewInstallSetup,
@@ -848,11 +847,7 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
     fieldOptions.value.set(field.id, options)
     heldFields.value.delete(field.id)
 
-    if (field.id === 'bundledTemplate') {
-      const none = options.find((opt) => opt.value === NO_TEMPLATE_VALUE)
-      if (none) selections.value[field.id] = none
-      else delete selections.value[field.id]
-    } else if (options.length > 0) {
+    if (options.length > 0) {
       let defaultIndex = options.findIndex((opt) => opt.recommended)
       if (defaultIndex < 0) defaultIndex = 0
       const defaultOption = options[defaultIndex]
@@ -1385,7 +1380,6 @@ async function discardChangeSetup(): Promise<void> {
 function isHiddenWhenEmpty(field: SourceField): boolean {
   const held = heldFields.value.get(field.id)
   if (held) return held.hidden
-  if (field.id === 'bundledTemplate') return true
   if (field.type === 'text' || field.renderAs === 'cards') return false
   const options = fieldOptions.value.get(field.id)
   if (options === undefined) return false
