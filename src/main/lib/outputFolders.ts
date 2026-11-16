@@ -161,13 +161,14 @@ async function addMediaFacts(asset: AssetSummary): Promise<void> {
   Object.assign(asset, await mediaFactsFromFile(asset.id, asset.kind))
 }
 
-async function buildOutputFolder(installationId: string): Promise<string | null> {
+async function buildOutputFolder(installationId: string | undefined): Promise<string | null> {
+  if (installationId === undefined) return realDir(sharedOutputDir())
   const inst = (await installations.list()).find((record) => record.id === installationId)
   const dir = inst ? outputDirFor(inst, sharedOutputDir()) : null
   return dir ? realDir(dir) : null
 }
 
-export async function listLocalAssets(installationId: string): Promise<AssetSummary[]> {
+export async function listLocalAssets(installationId?: string): Promise<AssetSummary[]> {
   await listOutputFolders()
   const folder = await buildOutputFolder(installationId)
   const files = folder ? await collectMediaFiles(folder) : []
@@ -312,6 +313,6 @@ export function registerOutputFilesScheme(): void {
 export function registerOutputFolderHandlers(): void {
   protocol.handle(OUTPUT_FILES_SCHEME, serveOutputFile)
   ipcMain.handle(LIST_LOCAL_CHANNEL, (_event, installationId: unknown) =>
-    typeof installationId === 'string' ? listLocalAssets(installationId) : []
+    listLocalAssets(typeof installationId === 'string' ? installationId : undefined)
   )
 }

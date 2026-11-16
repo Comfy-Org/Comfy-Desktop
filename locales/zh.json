@@ -65,6 +65,8 @@
     "kindLabel": "资产类型",
     "buildPickerLabel": "构建",
     "browseAssetsOf": "浏览以下构建的资产",
+    "thisComputer": "这台电脑",
+    "outputFolder": "输出文件夹",
     "buildStatus": "{where} · {state}",
     "buildWhere": {
       "local": "本地",

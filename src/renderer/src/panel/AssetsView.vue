@@ -65,6 +65,7 @@ type BuildState = 'running' | 'starting' | 'stopped'
 interface AssetBuild {
   build: Installation
   cloud: boolean
+  computer: boolean
   state: BuildState
 }
 
@@ -135,11 +136,27 @@ function hasAssets(build: Installation): boolean {
   )
 }
 
-const assetBuilds = computed<AssetBuild[]>(() =>
-  installationStore.installations
-    .filter(hasAssets)
-    .map((build) => ({ build, cloud: isCloudBuild(build), state: buildState(build) }))
-)
+const thisComputer = computed<AssetBuild>(() => ({
+  build: {
+    id: LOCAL_ASSETS_SOURCE,
+    name: t('assets.thisComputer'),
+    sourceLabel: '',
+    sourceCategory: 'local'
+  },
+  cloud: false,
+  computer: true,
+  state: 'stopped'
+}))
+
+const assetBuilds = computed<AssetBuild[]>(() => {
+  const builds = installationStore.installations.filter(hasAssets).map((build) => ({
+    build,
+    cloud: isCloudBuild(build),
+    computer: false,
+    state: buildState(build)
+  }))
+  return builds.some((option) => !option.cloud) ? builds : [...builds, thisComputer.value]
+})
 
 function lastLaunched({ build }: AssetBuild): number {
   return typeof build.lastLaunchedAt === 'number' ? build.lastLaunchedAt : -Infinity
@@ -153,7 +170,10 @@ const selectedBuild = computed<AssetBuild | null>(() => {
     withId(installationId) ??
     withId(savedBuildId.value) ??
     builds.find((option) => !option.cloud && option.state === 'running') ??
-    builds.toSorted((a, b) => lastLaunched(b) - lastLaunched(a))[0] ??
+    builds
+      .filter((option) => authStore.isSignedIn || !option.cloud)
+      .toSorted((a, b) => lastLaunched(b) - lastLaunched(a))[0] ??
+    builds[0] ??
     null
   )
 })
@@ -163,7 +183,8 @@ function pickBuild(id: string): void {
   savedBuildId.value = id
 }
 
-function buildStatusLabel({ cloud, state }: AssetBuild): string {
+function buildStatusLabel({ cloud, computer, state }: AssetBuild): string {
+  if (computer) return t('assets.outputFolder')
   return t('assets.buildStatus', {
     where: t(cloud ? 'assets.buildWhere.cloud' : 'assets.buildWhere.local'),
     state: t(`assets.buildState.${state}`)
@@ -303,7 +324,8 @@ const emptyState = computed<EmptyState>(() => {
 })
 
 let requestId = 0
-function listBuildAssets({ build, cloud }: AssetBuild): Promise<AssetSummary[]> {
+function listBuildAssets({ build, cloud, computer }: AssetBuild): Promise<AssetSummary[]> {
+  if (computer) return window.api.listLocalAssets()
   return cloud ? window.api.listAssets(build.id) : window.api.listLocalAssets(build.id)
 }
 

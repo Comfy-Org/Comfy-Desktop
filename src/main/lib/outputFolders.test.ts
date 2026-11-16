@@ -250,6 +250,10 @@ describe('listLocalAssets', () => {
     expect(await namesFor('Cloud'), 'Cloud has no folder on this computer').toEqual([])
     expect(await namesFor('Old Desktop'), 'a build that manages its own paths').toEqual([])
     expect(await namesFor('deleted'), 'a build that is gone').toEqual([])
+    expect(
+      (await listLocalAssets()).map((a) => a.name),
+      'no build: the shared output folder'
+    ).toEqual(['shared.png'])
   })
 
   it('keeps only the newest files when the folders are very large', async () => {

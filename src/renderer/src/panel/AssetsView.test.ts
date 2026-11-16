@@ -403,8 +403,25 @@ describe('AssetsView', () => {
     ])
   })
 
+  it('shows the output folder as This computer when there is no local build', async () => {
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: [cloudBuild('cloud', 'Comfy Cloud')]
+    })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('This computer')
+    expect(
+      listLocalAssets,
+      'the shared output folder, not a build'
+    ).toHaveBeenCalledExactlyOnceWith()
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    await openBuildPicker(wrapper)
+    expect(buildRows()).toEqual(['Comfy Cloud Cloud · Running', 'This computer Output folder'])
+  })
+
   it('asks a signed-out user who picked Comfy Cloud to log in', async () => {
     const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
+    await openBuildPicker(wrapper)
+    await pickBuild('cloud')
 
     expect(listAssets).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('Log in to see your assets')
@@ -419,7 +436,9 @@ describe('AssetsView', () => {
 
   it('ignores a cancelled log-in', async () => {
     signIn.mockRejectedValueOnce(new Error('cancelled'))
-    const wrapper = await mountAssets([], { builds: [] })
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
+    await openBuildPicker(wrapper)
+    await pickBuild('cloud')
 
     await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
     await flushPromises()

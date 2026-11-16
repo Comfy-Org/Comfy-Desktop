@@ -65,6 +65,8 @@
     "kindLabel": "Asset type",
     "buildPickerLabel": "Build",
     "browseAssetsOf": "Browse the assets of",
+    "thisComputer": "This computer",
+    "outputFolder": "Output folder",
     "buildStatus": "{where} · {state}",
     "buildWhere": {
       "local": "Local",

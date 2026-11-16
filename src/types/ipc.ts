@@ -1161,7 +1161,7 @@ export interface ElectronApi {
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
-  listLocalAssets(installationId: string): Promise<AssetSummary[]>
+  listLocalAssets(installationId?: string): Promise<AssetSummary[]>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
   copyAsset(source: string, assetId: string): Promise<boolean>
