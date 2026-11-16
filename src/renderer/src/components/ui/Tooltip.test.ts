@@ -161,9 +161,8 @@ describe('Tooltip shared adapter', () => {
     document.addEventListener('keydown', hostListener)
     try {
       target().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-      await flushPromises()
+      await expect.poll(() => document.querySelector('.tooltip-bubble')).toBeNull()
       expect(hostListener).not.toHaveBeenCalled()
-      expect(document.querySelector('.tooltip-bubble')).toBeNull()
     } finally {
       window.removeEventListener('keydown', hostListener)
       document.removeEventListener('keydown', hostListener)
