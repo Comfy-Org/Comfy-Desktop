@@ -33,9 +33,7 @@ export function useCentralPillCoachmark(
   async function isSeen(): Promise<boolean> {
     if (hasCoachmarkRetired) return true
     try {
-      const v = await (window.api.getSetting(CENTRAL_PILL_HINT_SEEN_KEY) as Promise<
-        boolean | undefined
-      >)
+      const v = await window.api.getSetting(CENTRAL_PILL_HINT_SEEN_KEY)
       return v === true
     } catch {
       return false

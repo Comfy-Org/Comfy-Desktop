@@ -35,14 +35,6 @@ export function toCountBucket(count: number): string {
   return '10_plus'
 }
 
-export function toSizeBucket(bytes: number | undefined): string {
-  if (!bytes || bytes <= 0) return 'unknown'
-  if (bytes < 10 * 1024 * 1024) return 'lt_10mb'
-  if (bytes < 100 * 1024 * 1024) return '10_99mb'
-  if (bytes < 1024 * 1024 * 1024) return '100mb_1gb'
-  return 'gte_1gb'
-}
-
 export function toFileExtension(filename: string | undefined): string {
   if (!filename) return 'unknown'
   const idx = filename.lastIndexOf('.')

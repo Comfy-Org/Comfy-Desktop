@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import type { BrowserWindow, WebContentsView } from 'electron'
+import { stopEveryBuildRunningForAppsOnly } from '../apps/localComfy'
 import * as ipc from '../lib/ipc'
 import { _runningSessions } from '../lib/ipc/shared'
 import { COMFY_BG } from '../lib/theme'
@@ -14,6 +15,7 @@ import {
   applyChooserHostTheme,
   CHOOSER_HOST_TITLE_TEXT,
   CHOOSER_HOST_WINDOW_TITLE,
+  closeStopsLocalComfy,
   installCloseNeedsConfirm
 } from './createHostWindow'
 import type { CloseWindowChoice } from './createHostWindow'
@@ -231,20 +233,22 @@ export async function confirmAndCloseHostWindow(parentWindow: BrowserWindow): Pr
     (e) => !e.window.isDestroyed()
   ).length
   const isLastWindow = liveWindowCount <= 1
+  const stopsLocalComfy = closeStopsLocalComfy(entry, isLastWindow)
   if (
     installCloseNeedsConfirm(
       settings.get('confirmBeforeClosingWindow') === true,
-      shouldConfirmKillForEntry(entry),
+      stopsLocalComfy,
       isLastWindow && isInstallHost(entry)
     )
   ) {
     const choice = await confirmCloseInstanceWindow(
       entry.window,
       isLastWindow,
-      shouldConfirmKillForEntry(entry),
+      stopsLocalComfy,
       entry.lastTheme
     )
     if (choice === 'cancel') return
+    if (isLastWindow) void stopEveryBuildRunningForAppsOnly()
   }
   preClearedClose.add(entry.window)
   entry.window.close()

@@ -278,3 +278,15 @@ test('The page cannot reach anything that is not its own run @linux', async () =
   ).toHaveLength(1)
   expect(seen.interrupted).toEqual([])
 })
+
+test('Opening the build an app started shows ComfyUI in its own window @linux', async () => {
+  const windowsBefore = await windowCount()
+
+  expect(
+    await ctx.panel.evaluate<boolean>(`window.api.focusComfyWindow(${JSON.stringify(BUILD_ID)})`)
+  ).toBe(true)
+
+  await expect.poll(() => windowCount(), LONG_WAIT).toBe(windowsBefore + 1)
+  const port = (await getRunningSessionSnapshot(ctx.app, BUILD_ID))?.port
+  await waitForWebContents(ctx.app, `127.0.0.1:${port}`)
+})

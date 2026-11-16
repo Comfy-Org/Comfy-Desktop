@@ -11,13 +11,28 @@ import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import { startManagedModelJob } from '../lib/comfyDownloadManager'
 import { probeQueue } from '../lib/comfyProcessRecord'
+import type { QueueAnswer } from '../lib/comfyProcessRecord'
 import * as i18n from '../lib/i18n'
 import { handleLaunch } from '../lib/ipc/sessionActions/launch'
 import type { ActionResult } from '../lib/ipc/sessionActions/types'
-import { _hasActiveLaunch, sessionLifecycleEvents, stopRunning } from '../lib/ipc/shared'
+import {
+  _hasActiveLaunch,
+  _runningSessions,
+  sessionLifecycleEvents,
+  stopRunning
+} from '../lib/ipc/shared'
 import { COMFY_BOOT_TIMEOUT_MS } from '../lib/process'
 import { liveAppsPages } from './appsPages'
-import { chooseLocalBuild, runningPortOf, usableLocalBuilds, wantedVersion } from './localBuild'
+import {
+  chooseInstallingBuild,
+  chooseLocalBuild,
+  installingLocalBuilds,
+  isStillInstalling,
+  modelTargetOf,
+  runningPortOf,
+  usableLocalBuilds,
+  wantedVersion
+} from './localBuild'
 import type { LocalBuild, LocalChoice } from './localBuild'
 import {
   outputFileKey,
@@ -42,6 +57,8 @@ const MAX_RUNS_REMEMBERED = 200
 const MAX_FILES_REMEMBERED = 2_000
 const RELAY_READY_MS = 5_000
 const OTHER_LAUNCH_POLL_MS = 500
+const INSTALL_POLL_MS = 1_000
+const INSTALL_WAIT_MS = 60 * 60_000
 const DOWNLOAD_EVENT_GAP_MS = 250
 const REFUSED = 403
 const JSON_TYPE = 'application/json'
@@ -58,6 +75,10 @@ const RUN_UPDATES: ReadonlySet<string> = new Set([
 interface Target {
   id: string
   name: string
+}
+
+interface ChosenBuild extends LocalBuild {
+  installing: boolean
 }
 
 let idleTimer: ReturnType<typeof setTimeout> | null = null
@@ -117,20 +138,28 @@ function watchSessions(): void {
   sessionLifecycleEvents.on('changed', stopFollowingStoppedBuilds)
 }
 
+function isEmpty(queue: QueueAnswer): boolean {
+  return queue !== null && queue !== 'not_queue' && queue.running + queue.pending === 0
+}
+
+async function idleState(installationId: string): Promise<'gone' | 'busy' | 'replaced' | 'idle'> {
+  const port = runningPortOf(installationId)
+  if (port === null || !isRunningForAppsOnly(installationId)) return 'gone'
+  const session = _runningSessions.get(installationId)
+  const queue = await probeQueue(port)
+  if (!isRunningForAppsOnly(installationId)) return 'gone'
+  if (_runningSessions.get(installationId) !== session) return 'replaced'
+  return isEmpty(queue) ? 'idle' : 'busy'
+}
+
 async function stopIdleBuilds(): Promise<void> {
   idleTimer = null
   if (downloadsUnderWay > 0) return noteUse()
   for (const id of [...startedHere]) {
-    const port = runningPortOf(id)
-    if (port === null || getEntryByInstallationId(id)) {
-      startedHere.delete(id)
-      continue
-    }
-    const queue = await probeQueue(port)
-    const isIdle = queue !== null && queue !== 'not_queue' && queue.running + queue.pending === 0
-    if (!isIdle) continue
+    const state = await idleState(id)
+    if (state === 'busy' || state === 'replaced') continue
     startedHere.delete(id)
-    await stopRunning(id)
+    if (state === 'idle') await stopRunning(id)
   }
   if (startedHere.size > 0) noteUse()
 }
@@ -147,9 +176,14 @@ function whyNoBuild(choice: Exclude<LocalChoice, { kind: 'build' }>): string {
     : i18n.t('apps.local.noBuilds')
 }
 
-function describe(build: LocalBuild): ComfyDesktopLocalComfy {
+function stateOf(build: ChosenBuild): ComfyDesktopLocalComfy['state'] {
+  if (build.installing) return 'installing'
+  return build.port === null ? 'stopped' : 'running'
+}
+
+function describe(build: ChosenBuild): ComfyDesktopLocalComfy {
   return {
-    state: build.port === null ? 'stopped' : 'running',
+    state: stateOf(build),
     own: true,
     name: build.name,
     ...(build.version ? { version: build.version } : {}),
@@ -157,11 +191,19 @@ function describe(build: LocalBuild): ComfyDesktopLocalComfy {
   }
 }
 
-async function chooseTarget(page: WebContents, want: unknown): Promise<LocalBuild | string> {
-  const choice = chooseLocalBuild(await usableLocalBuilds(), wantedVersion(want))
-  if (choice.kind !== 'build') return whyNoBuild(choice)
-  targetByPage.set(page, { id: choice.build.id, name: choice.build.name })
-  return choice.build
+function rememberTarget(page: WebContents, build: LocalBuild, installing: boolean): ChosenBuild {
+  targetByPage.set(page, { id: build.id, name: build.name })
+  return { ...build, installing }
+}
+
+async function chooseTarget(page: WebContents, want: unknown): Promise<ChosenBuild | string> {
+  const wanted = wantedVersion(want)
+  const choice = chooseLocalBuild(await usableLocalBuilds(), wanted)
+  if (choice.kind === 'build') return rememberTarget(page, choice.build, false)
+  const installing = chooseInstallingBuild(await installingLocalBuilds(), wanted)
+  if (installing) return rememberTarget(page, installing, true)
+  const recheck = chooseLocalBuild(await usableLocalBuilds(), wanted)
+  return recheck.kind === 'build' ? rememberTarget(page, recheck.build, false) : whyNoBuild(recheck)
 }
 
 export function pageBuildId(page: WebContents): string | null {
@@ -186,6 +228,13 @@ export async function otherLaunchSettled(installationId: string): Promise<void> 
   const giveUpAt = Date.now() + COMFY_BOOT_TIMEOUT_MS
   while (_hasActiveLaunch(installationId) && Date.now() < giveUpAt) {
     await pause(OTHER_LAUNCH_POLL_MS)
+  }
+}
+
+async function installSettled(installationId: string): Promise<void> {
+  const giveUpAt = Date.now() + INSTALL_WAIT_MS
+  while ((await isStillInstalling(installationId)) && Date.now() < giveUpAt) {
+    await pause(INSTALL_POLL_MS)
   }
 }
 
@@ -216,6 +265,36 @@ async function launchWithoutWindow(installationId: string): Promise<ActionResult
   return result
 }
 
+export function isRunningForAppsOnly(installationId: string): boolean {
+  return (
+    startedHere.has(installationId) &&
+    runningPortOf(installationId) !== null &&
+    !getEntryByInstallationId(installationId)
+  )
+}
+
+export function hasBuildsRunningForAppsOnly(): boolean {
+  return [...startedHere].some(isRunningForAppsOnly)
+}
+
+async function stopIfIdle(installationId: string): Promise<void> {
+  if ((await idleState(installationId)) !== 'idle') return
+  startedHere.delete(installationId)
+  await stopRunning(installationId)
+}
+
+export async function stopBuildsRunningForAppsOnly(): Promise<void> {
+  await Promise.all([...startedHere].filter(isRunningForAppsOnly).map(stopIfIdle))
+  noteUse()
+}
+
+export async function stopEveryBuildRunningForAppsOnly(): Promise<void> {
+  const ids = [...startedHere].filter(isRunningForAppsOnly)
+  for (const id of ids) startedHere.delete(id)
+  noteUse()
+  await Promise.all(ids.map((id) => stopRunning(id)))
+}
+
 export function launchOnce(installationId: string): Promise<ActionResult> {
   const pending = launches.get(installationId)
   if (pending) return pending
@@ -226,12 +305,29 @@ export function launchOnce(installationId: string): Promise<ActionResult> {
   return launch
 }
 
+async function chooseInstalledTarget(
+  page: WebContents,
+  want: unknown
+): Promise<ChosenBuild | string> {
+  const build = await chooseTarget(page, want)
+  if (typeof build === 'string' || !build.installing) return build
+  await installSettled(build.id)
+  const installed = await chooseTarget(page, want)
+  if (typeof installed !== 'string' && !installed.installing) {
+    page.send(LOCAL_EVENT_CHANNEL, { type: 'setup', data: { state: 'done' } })
+  }
+  return installed
+}
+
 export async function startLocal(
   page: WebContents,
   want: unknown
 ): Promise<ComfyDesktopLocalComfy> {
-  const build = await chooseTarget(page, want)
+  const build = await chooseInstalledTarget(page, want)
   if (typeof build === 'string') return { state: 'unsupported', error: build }
+  if (build.installing) {
+    return { ...describe(build), error: i18n.t('apps.local.stillInstalling', { name: build.name }) }
+  }
   watchSessions()
   const launched = build.port === null ? await launchOnce(build.id) : null
   const port = runningPortOf(build.id)
@@ -426,6 +522,14 @@ async function downloadInto(
   }
 }
 
+async function readyForModels(installationId: string): Promise<boolean> {
+  const target = await modelTargetOf(installationId)
+  if (!target?.installing || !target.modelsInsideBuild) return target !== null
+  await installSettled(installationId)
+  const after = await modelTargetOf(installationId)
+  return after !== null && !after.installing
+}
+
 export async function localDownload(
   page: WebContents,
   raw: unknown
@@ -433,8 +537,8 @@ export async function localDownload(
   const model = readModelRequest(raw)
   if (!model) return { state: 'failed', error: i18n.t('apps.local.modelRefused') }
   const target = targetByPage.get(page)
-  if (!target || runningPortOf(target.id) === null) {
-    return { state: 'failed', error: i18n.t('apps.local.notRunning') }
+  if (!target || !(await readyForModels(target.id))) {
+    return { state: 'failed', error: i18n.t('apps.local.noBuilds') }
   }
   downloadsUnderWay += 1
   try {

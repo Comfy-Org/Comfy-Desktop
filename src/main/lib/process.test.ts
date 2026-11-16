@@ -214,6 +214,110 @@ describe('waitForPort abort settlement', () => {
   })
 })
 
+function listenAnswering(
+  ready: () => boolean
+): Promise<{ close: () => Promise<void>; port: number }> {
+  return new Promise((resolve, reject) => {
+    const sockets = new Set<net.Socket>()
+    const server = net.createServer((socket) => {
+      sockets.add(socket)
+      socket.on('close', () => sockets.delete(socket))
+      if (!ready()) {
+        socket.destroy()
+        return
+      }
+      socket.end('HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
+    })
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address()
+      if (addr && typeof addr === 'object') {
+        resolve({
+          port: addr.port,
+          close: () => {
+            for (const socket of sockets) socket.destroy()
+            return closeServer(server)
+          }
+        })
+      } else {
+        reject(new Error('listen returned no address'))
+      }
+    })
+  })
+}
+
+describe('waitForPort quiet window', () => {
+  it('keeps waiting past quietMs while output keeps arriving, then resolves', async () => {
+    let ready = false
+    const { close, port } = await listenAnswering(() => ready)
+    try {
+      const start = Date.now()
+      const wait = waitForPort(port, '127.0.0.1', {
+        timeoutMs: 600_000,
+        quietMs: 50,
+        lastOutputAt: () => Date.now(),
+        intervalMs: 10
+      })
+      setTimeout(() => (ready = true), 300)
+      await expect(wait).resolves.toBeUndefined()
+      expect(Date.now() - start).toBeGreaterThanOrEqual(250)
+    } finally {
+      await close()
+    }
+  })
+
+  it('gives up once the last output is older than quietMs, naming the quiet stretch', async () => {
+    const { close, port } = await listenAnswering(() => false)
+    try {
+      const last = Date.now() - 10_000
+      const wait = waitForPort(port, '127.0.0.1', {
+        timeoutMs: 600_000,
+        quietMs: 5_000,
+        lastOutputAt: () => last,
+        intervalMs: 10
+      })
+      await expect(wait).rejects.toThrow(
+        new RegExp(`^Timed out waiting for port ${port} after \\d+s \\(no output for 10s\\)$`)
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  it('still ends at timeoutMs while output keeps arriving, with the old message', async () => {
+    const { close, port } = await listenAnswering(() => false)
+    try {
+      const wait = waitForPort(port, '127.0.0.1', {
+        timeoutMs: 200,
+        quietMs: 50,
+        lastOutputAt: () => Date.now(),
+        intervalMs: 10
+      })
+      await expect(wait).rejects.toThrow(
+        new RegExp(`^Timed out waiting for port ${port} after \\d+s$`)
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  it('ignores quietMs when no output clock is given', async () => {
+    let ready = false
+    const { close, port } = await listenAnswering(() => ready)
+    try {
+      const wait = waitForPort(port, '127.0.0.1', {
+        timeoutMs: 600_000,
+        quietMs: 1,
+        intervalMs: 10
+      })
+      setTimeout(() => (ready = true), 100)
+      await expect(wait).resolves.toBeUndefined()
+    } finally {
+      await close()
+    }
+  })
+})
+
 describe('waitForUrl abort settlement', () => {
   it('rejects promptly when aborted while a request is in flight', async () => {
     const { close, port } = await listenHanging()

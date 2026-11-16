@@ -41,20 +41,23 @@ while omitting part of it.
 
 ## Comfy pages hosted in Desktop's Apps view
 
-A Comfy page that Desktop shows in its Apps view gets two objects instead, and
-nothing else of the bridge above: `window.comfyDesktopAuth`, Desktop's account
-session, and `window.comfyDesktopLocal`, a ComfyUI on this computer.
+A Comfy page that Desktop shows in its Apps view gets three objects instead,
+and nothing else of the bridge above: `window.comfyDesktopAuth`, Desktop's
+account session, `window.comfyDesktopLocal`, a ComfyUI on this computer, and
+`window.comfyDesktopTelemetry`, the page's usage events.
 
 ```ts
 import type {
   ComfyDesktopHostedAuthBridge,
-  ComfyDesktopHostedLocalBridge
+  ComfyDesktopHostedLocalBridge,
+  ComfyDesktopHostedTelemetryBridge
 } from '@comfyorg/comfyui-desktop-bridge-types'
 
 declare global {
   interface Window {
     comfyDesktopAuth?: ComfyDesktopHostedAuthBridge
     comfyDesktopLocal?: ComfyDesktopHostedLocalBridge
+    comfyDesktopTelemetry?: ComfyDesktopHostedTelemetryBridge
   }
 }
 ```
@@ -69,7 +72,10 @@ the person's builds Desktop would use, starts it with `startLocal()`, and then
 talks to it through `localFetch()`. Desktop forwards only the calls a run
 needs, and only for runs the page started; `onLocalEvent()` carries ComfyUI's
 updates for those runs. `localDownload()` saves a safetensors model from
-Hugging Face into that build's models folder.
+Hugging Face into that build's models folder. While the person's first build
+is still installing, `getLocal()` answers `installing`: `localDownload()`
+works already, and `startLocal()` waits for the install, then starts the
+build.
 
 `openInComfy({ prompt, where, name, build })` opens a run's API-format
 workflow in a ComfyUI window in Desktop: the build the page runs on (or the
@@ -80,8 +86,36 @@ the workflow, or `{ opened: false, error }` with the reason in words. Both
 members are absent on Desktop builds that predate them, so a page checks for
 them and keeps its file download as the fallback.
 
-Both objects are absent in a browser, so a page keeps its own sign-in and its
-own way to reach a local ComfyUI as the fallback.
+`track(name, props)` reports what the person does on the page, such as
+`track('click', { target: 'run' })`. Desktop sends it as
+`comfy.desktop.apps.<name>` only when the person allows telemetry, and adds
+`app_id`, the app whose page Desktop loaded in that view. An event the page
+sends while the view loads another app is dropped.
+
+- A name starts with a lowercase letter, then lowercase letters, digits and
+  `_`, up to 48 characters in all (`^[a-z][a-z0-9_]{0,47}$`), so `2_click` is
+  dropped. `app_opened` and `app_page_failed` are Desktop's own and are
+  refused, and so is `error`.
+- Desktop keeps up to 16 properties. A key starts with a lowercase letter,
+  then lowercase letters, digits and `_`, up to 32 characters in all
+  (`^[a-z][a-z0-9_]{0,31}$`), so `{ Run: true }` is dropped. A value is a
+  boolean, a finite number or a slug of up to 64 characters
+  (`^[a-z0-9][a-z0-9._-]{0,63}$`). Free text, any other key or value, and an
+  `app` or `app_id` from the page are dropped.
+- Desktop sets these keys on every event itself, so the page's value for any
+  of them is dropped: `app_version`, `app_channel`, `app_env`, `is_packaged`,
+  `platform`, `arch`, `client`, `installation_id` and `sac_state`.
+- Desktop sends at most 60 events a minute for one app and 1,000 page events a
+  session. Events telemetry did not send, as while consent is off, do not
+  count.
+- Desktop's telemetry also sends at most 60 of one event name a minute, shared
+  by every app. If one app sends 60 `click` events in a minute, a `click` from
+  another app in that minute is dropped too.
+
+The page is not told when Desktop drops an event.
+
+All three objects are absent in a browser, so a page keeps its own sign-in and
+its own way to reach a local ComfyUI as the fallback, and sends no events.
 
 ## Provenance
 

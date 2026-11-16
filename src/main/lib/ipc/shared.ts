@@ -55,7 +55,8 @@ import {
   writePortLock,
   readPortLock,
   removePortLock,
-  COMFY_BOOT_TIMEOUT_MS
+  COMFY_BOOT_TIMEOUT_MS,
+  COMFY_BOOT_QUIET_MS
 } from '../process'
 import {
   detectGPU,
@@ -185,6 +186,7 @@ export {
   readPortLock,
   removePortLock,
   COMFY_BOOT_TIMEOUT_MS,
+  COMFY_BOOT_QUIET_MS,
   detectGPU,
   detectGPUCached,
   validateHardware,
