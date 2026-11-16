@@ -5,6 +5,9 @@ export const MAX_OUTPUTS_BYTES = 100_000_000
 const MAX_NAME_LENGTH = 200
 const MAX_TAGS = 8
 const MAX_TAG_LENGTH = 40
+const BIDI_CONTROL = /[\u202a-\u202e\u2066-\u2069]/
+const FIRST_PRINTABLE_CODE = 32
+const DELETE_CODE = 127
 const SHOWN_MEDIA_TYPE =
   /^(image\/(png|jpeg|webp|gif|avif)|video\/(mp4|webm|quicktime)|audio\/(mpeg|mp4|wav|x-wav|ogg|webm|flac|aac))$/
 
@@ -16,8 +19,19 @@ function isIndex(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0
 }
 
+function hasHiddenCharacters(value: string): boolean {
+  return (
+    BIDI_CONTROL.test(value) ||
+    Array.from(value).some((char) => {
+      const code = char.charCodeAt(0)
+      return code < FIRST_PRINTABLE_CODE || code === DELETE_CODE
+    })
+  )
+}
+
 function trimmed(value: unknown, max: number): string | null {
-  return typeof value === 'string' && value.trim() !== '' ? value.trim().slice(0, max) : null
+  if (typeof value !== 'string' || value.trim() === '' || hasHiddenCharacters(value)) return null
+  return value.trim().slice(0, max)
 }
 
 function readTags(value: unknown): string[] {

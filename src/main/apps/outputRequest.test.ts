@@ -61,6 +61,17 @@ describe('readOutputRequest', () => {
     expect(request?.items[0]?.tags[0]).toHaveLength(40)
   })
 
+  it('refuses a name with hidden characters, and drops such tags', () => {
+    for (const name of ['cut\u202eout.png', 'cut\nout.png', 'cut\u0000out.png']) {
+      expect(readOutputRequest({ items: [picture({ name })], index: 0 }), name).toBeNull()
+    }
+    const request = readOutputRequest({
+      items: [picture({ tags: ['portrait', 'sea\u2066side', 'night\u007f'] })],
+      index: 0
+    })
+    expect(request?.items[0]?.tags).toEqual(['portrait'])
+  })
+
   it('refuses outputs it cannot show', () => {
     expect(readOutputRequest(null)).toBeNull()
     expect(readOutputRequest({ items: [], index: 0 })).toBeNull()
