@@ -39,7 +39,6 @@ import {
   buildInstallLocationFields
 } from '../lib/ipc/registerSettingsHandlers'
 import { globalSettingsEvents } from '../lib/globalSettingsEvents'
-import * as installations from '../installations'
 import { getCachedGithubStarCount, getGithubStarCount } from '../lib/githubStars'
 import {
   comfyWindows,
@@ -1049,7 +1048,7 @@ function openGlobalSettingsForHost(
     parent: parentEntry.window,
     parentEntryId,
     kind: 'global-settings',
-    snapshot: buildGlobalSettingsSnapshot(undefined, initialTab, highlightFieldId),
+    snapshot: buildGlobalSettingsSnapshot(initialTab, highlightFieldId),
     anchor: { x: 0, y: TITLEBAR_HEIGHT },
     theme: parentEntry.lastTheme,
     titleBarSender
@@ -1292,11 +1291,10 @@ function findSettingsFields(
 }
 
 function buildGlobalSettingsSnapshot(
-  installs?: Pick<{ id: string; name: string }, 'id' | 'name'>[],
   initialTab: GlobalSettingsTab | null = null,
   highlightFieldId: string | null = null
 ): GlobalSettingsSnapshot {
-  const settingsSections = buildSettingsSections(installs)
+  const settingsSections = buildSettingsSections()
   const mediaSections = buildMediaSections()
   const modelsPayload = buildModelsPayload()
   const generalRaw = findSettingsFields(settingsSections, 'settings.general', 0)
@@ -1364,16 +1362,11 @@ function buildGlobalSettingsSnapshot(
 async function broadcastGlobalSettingsSnapshotToTitlePopups(
   _bindings: TitlePopupHostBindings
 ): Promise<void> {
-  const hasOpen = Array.from(titlePopupsByParent.values()).some(
-    (e) => e.kind === 'global-settings' && (e.view.isOpen || e.view.pendingShowTimer !== null)
-  )
-  if (!hasOpen) return
-  const installs = (await installations.list()).map((i) => ({ id: i.id, name: i.name }))
   for (const entry of titlePopupsByParent.values()) {
     if (entry.kind !== 'global-settings') continue
     if (!entry.view.isOpen && entry.view.pendingShowTimer === null) continue
     if (entry.view.popup.webContents.isDestroyed()) continue
-    const snapshot = buildGlobalSettingsSnapshot(installs)
+    const snapshot = buildGlobalSettingsSnapshot()
     const snapshotJson = JSON.stringify(snapshot)
     if (entry.lastGlobalSettingsBroadcastJson === snapshotJson) continue
     entry.lastGlobalSettingsBroadcastJson = snapshotJson

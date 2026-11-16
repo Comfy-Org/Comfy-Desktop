@@ -28,7 +28,8 @@ const h = vi.hoisted(() => ({
   masterSha: '',
   updateScriptExitCode: 0,
   updateScriptRuns: [] as string[][],
-  restoredSnapshots: [] as string[]
+  restoredSnapshots: [] as string[],
+  settings: new Map<string, unknown>()
 }))
 
 vi.mock('electron', () => ({
@@ -63,9 +64,14 @@ vi.mock('../../settings', () => ({
   get: vi.fn((key: string): unknown => {
     if (key === 'cacheDir') return h.cacheDir
     if (key === 'maxCachedDownloads') return 5
-    return undefined
+    if (key === 'autoLaunchOnStartup') return h.settings.get(key) ?? 'none'
+    return h.settings.get(key)
   }),
-  set: vi.fn(async () => {}),
+  set: vi.fn((key: string, value: unknown) => {
+    h.settings.set(key, value)
+  }),
+  getTrackedSettingsTelemetryProperties: vi.fn(() => ({})),
+  AUTO_LAUNCH_NONE: 'none',
   getAll: vi.fn(() => ({})),
   getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false })),
   defaults: { modelsDirs: ['/unused'], inputDir: '/unused', outputDir: '/unused' }
@@ -252,6 +258,7 @@ vi.mock('child_process', async (importOriginal) => {
 })
 
 import { registerInstallationHandlers } from './registerInstallationHandlers'
+import { download } from '../download'
 import { getLogsBuffer } from '../logsBroadcast'
 import { clearVersionCache } from '../version-resolve'
 import { standalone } from '../../sources/standalone'
@@ -411,6 +418,7 @@ describe.skipIf(!gitAvailable())('installing a standalone build', () => {
     h.updateScriptExitCode = 0
     h.updateScriptRuns = []
     h.restoredSnapshots = []
+    h.settings.clear()
     buildBundle(root)
     clearVersionCache()
     sent = []
@@ -478,6 +486,56 @@ describe.skipIf(!gitAvailable())('installing a standalone build', () => {
   function record(): InstallationRecord {
     return h.records.get(installId) as unknown as InstallationRecord
   }
+
+  describe('Auto start after the first build installs', () => {
+    const autoStart = (): unknown => h.settings.get('autoLaunchOnStartup') ?? 'none'
+    const otherBuild = (id: string, sourceId: string): Record<string, unknown> => ({
+      id,
+      name: id,
+      sourceId,
+      installPath: path.join(root, id),
+      status: 'installed',
+      createdAt: new Date(0).toISOString()
+    })
+
+    it('starts the first build with Desktop once it installs', async () => {
+      h.records.set('cloud', otherBuild('cloud', 'cloud'))
+
+      expect(await install(picked({ release: 'stable', comfyVersion: NEWEST_STABLE_TAG }))).toEqual(
+        {
+          ok: true
+        }
+      )
+
+      expect(autoStart()).toBe(installId)
+    })
+
+    it('leaves Auto start off when another build is already installed', async () => {
+      h.records.set('older', otherBuild('older', 'standalone'))
+
+      await install(picked({ release: 'stable', comfyVersion: NEWEST_STABLE_TAG }))
+
+      expect(autoStart()).toBe('none')
+    })
+
+    it('keeps a build the user already picked for Auto start', async () => {
+      h.settings.set('autoLaunchOnStartup', 'cloud')
+      h.records.set('cloud', otherBuild('cloud', 'cloud'))
+
+      await install(picked({ release: 'stable', comfyVersion: NEWEST_STABLE_TAG }))
+
+      expect(autoStart()).toBe('cloud')
+    })
+
+    it('leaves Auto start off when the install fails', async () => {
+      vi.mocked(download).mockRejectedValueOnce(new Error('The network went away'))
+
+      const result = await install(picked({ release: 'stable', comfyVersion: NEWEST_STABLE_TAG }))
+
+      expect(result.ok).toBe(false)
+      expect(autoStart()).toBe('none')
+    })
+  })
 
   it('lists four steps for the default install and names the version it will get', async () => {
     const result = await install(picked({ release: 'stable', comfyVersion: NEWEST_STABLE_TAG }))
