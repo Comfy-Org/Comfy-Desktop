@@ -1153,7 +1153,6 @@ export interface ElectronApi {
   terminalResize(installationId: string, cols: number, rows: number): Promise<void>
   terminalRestart(installationId: string): Promise<TerminalRestore>
   openInstallWindow(installationId: string): Promise<boolean>
-  openInstallInNewWindow(installationId: string): void
   closeComfyWindow(installationId: string, opts?: { skipConfirm?: boolean }): Promise<boolean>
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>

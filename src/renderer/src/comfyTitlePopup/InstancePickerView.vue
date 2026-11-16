@@ -130,7 +130,6 @@ interface PickerBridge {
   activate?: (id: string) => void
   close?: () => void
   pickInstall: (installationId: string) => void
-  openInstallNewWindow: (installationId: string, opts?: { allowDuplicate?: boolean }) => void
   restartInstall: (installationId: string, opts?: { confirmed?: boolean }) => void
   setPickerSelectedInstall: (installationId: string | null) => void
   pickerUpdateField: (
@@ -433,26 +432,6 @@ const instanceActions = useInstanceActions({
       ]
     })
     return result === 'primary'
-  },
-  confirmSwitch: async (inst) => {
-    const hostIsLocalInstall =
-      props.snapshot.currentView === 'instance' && props.snapshot.currentCategory === 'local'
-    if (!hostIsLocalInstall) return 'switch'
-    const result = await dialogs.confirm({
-      title: t('instancePicker.switchConfirmTitle'),
-      message: t('instancePicker.switchConfirmMessage', { name: inst.name }),
-      confirmLabel: t('instancePicker.switchConfirmAction'),
-      secondaryLabel: t('instancePicker.switchConfirmSecondary'),
-      cancelLabel: t('common.cancel'),
-      showCancel: true,
-      messageDetails: [
-        {
-          label: t('instancePicker.confirmHeadsUp'),
-          items: [t('instancePicker.switchConfirmItem1'), t('instancePicker.switchConfirmItem2')]
-        }
-      ]
-    })
-    return result === 'primary' ? 'switch' : result === 'secondary' ? 'new-window' : 'cancel'
   }
 })
 
@@ -600,7 +579,6 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
               @request-close="handleSettingsNavigateList"
               @request-dismiss="handleClose"
               @primary-action="handleExpandedNav"
-              @open-new-window="handleExpandedNav"
               @op-cancel="handleInlineProgressCancel"
               @op-retry="handleInlineProgressRetry"
               @op-dismiss="handleInlineProgressDismiss"
