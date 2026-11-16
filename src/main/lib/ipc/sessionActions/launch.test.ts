@@ -72,7 +72,7 @@ const launchHarness = vi.hoisted(() => ({
   duringResourceAcquire: null as null | (() => void),
   spawn: null as null | ((...args: unknown[]) => unknown),
   spawnFails: false,
-  waitForPort: null as null | (() => Promise<void>),
+  waitForPort: null as null | ((...args: unknown[]) => Promise<void>),
   nextPort: 48999,
   busyPorts: null as null | number[],
   portFreeWaits: [] as number[],
@@ -158,7 +158,7 @@ vi.mock('../shared', async (importOriginal) => {
     waitForUrl: (...args: Parameters<typeof actual.waitForUrl>) =>
       launchHarness.waitForUrl ? launchHarness.waitForUrl() : actual.waitForUrl(...args),
     waitForPort: (...args: Parameters<typeof actual.waitForPort>) =>
-      launchHarness.waitForPort ? launchHarness.waitForPort() : actual.waitForPort(...args),
+      launchHarness.waitForPort ? launchHarness.waitForPort(...args) : actual.waitForPort(...args),
     getComfyFeatureFlagRegistry: async () => {
       launchHarness.registryCalls += 1
       if (launchHarness.registryThrows) throw new Error('feature registry unavailable')
@@ -374,6 +374,7 @@ import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
 import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
+import type { WaitForPortOptions } from '../../process'
 import type { ComfyArgsSchema } from '../../comfy-args'
 import type { LaunchCommand } from '../../../types/sources'
 import { ASSETS_MIN_CORE_COMMIT, NO_CORE_COMMITS } from '../../coreBetaGrants'
@@ -382,6 +383,8 @@ import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import * as i18nModule from '../../i18n'
 import {
+  COMFY_BOOT_QUIET_MS,
+  COMFY_BOOT_TIMEOUT_MS,
   makeSendOutput,
   _getLaunchingInstallationIds,
   _markLaunching,
@@ -789,7 +792,7 @@ describe('attachLaunchStreams event-log tap wiring', () => {
     const tracker = { ingest: vi.fn() } as unknown as LaunchProgressTracker
     const sendOutput = vi.fn()
 
-    const { getStderr } = attachLaunchStreams(
+    const { getStderr, lastOutputAt } = attachLaunchStreams(
       proc,
       logStream,
       sendOutput,
@@ -799,8 +802,23 @@ describe('attachLaunchStreams event-log tap wiring', () => {
       agentTap,
       tracker
     )
-    return { stdout, stderr, execTap, hwTap, assetsTap, agentTap, getStderr }
+    return { stdout, stderr, execTap, hwTap, assetsTap, agentTap, getStderr, lastOutputAt }
   }
+
+  it('stamps lastOutputAt at attach and on every chunk from either stream', () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    onTestFinished(() => now.mockRestore())
+    const h = harness()
+    expect(h.lastOutputAt()).toBe(1_000)
+    now.mockReturnValue(2_000)
+    h.stderr.emit('data', Buffer.from('Loading: ComfyUI-Impact-Pack\n'))
+    expect(h.lastOutputAt()).toBe(2_000)
+    now.mockReturnValue(3_000)
+    h.stdout.emit('data', Buffer.from('still importing\n'))
+    expect(h.lastOutputAt()).toBe(3_000)
+    now.mockReturnValue(9_000)
+    expect(h.lastOutputAt()).toBe(3_000)
+  })
 
   it('feeds stdout chunks to the assets tap tagged as stdout', () => {
     const h = harness()
@@ -5207,6 +5225,31 @@ describe('prior ComfyUI process handling at launch', () => {
     expect(res.ok).toBe(true)
     expect(res.port).toBe(launchHarness.nextPort)
     expect(children).toHaveLength(2)
+  })
+
+  it('waits on the boot with the quiet window and the spawned ComfyUI output clock', async () => {
+    let options: WaitForPortOptions | undefined
+    const stamps: number[] = []
+    launchHarness.waitForPort = async (...args) => {
+      if (options) return
+      options = args[2] as WaitForPortOptions
+      const now = vi.spyOn(Date, 'now').mockReturnValue(5_000_000)
+      children[0]!.stderr.emit('data', Buffer.from('Loading custom node 37 of 120\n'))
+      stamps.push(options?.lastOutputAt?.() ?? -1)
+      now.mockReturnValue(5_060_000)
+      children[0]!.stdout.emit('data', Buffer.from('still importing\n'))
+      stamps.push(options?.lastOutputAt?.() ?? -1)
+      now.mockRestore()
+    }
+
+    const res = await handleLaunch(ctxFor('prior-quiet-window'))
+
+    expect(res.ok).toBe(true)
+    expect(options).toMatchObject({
+      timeoutMs: COMFY_BOOT_TIMEOUT_MS,
+      quietMs: COMFY_BOOT_QUIET_MS
+    })
+    expect(stamps).toEqual([5_000_000, 5_060_000])
   })
 
   it('does not retry on top of a failed boot whose process outlived the kill', async () => {
