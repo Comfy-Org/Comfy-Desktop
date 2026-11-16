@@ -526,7 +526,7 @@ onUnmounted(() => {
         <House :size="15" aria-hidden="true" />
         <span>{{ t('titleBar.home') }}</span>
       </button>
-      <div v-else-if="isFirstUseLockdown" class="title-install-pill" :class="titleInstallPillClass">
+      <div v-if="isFirstUseLockdown" class="title-install-pill" :class="titleInstallPillClass">
         <div
           class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_18px] items-center justify-center"
         >
@@ -554,9 +554,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div
-      class="title-center flex min-w-0 max-w-full items-center justify-center gap-1 justify-self-center"
-    ></div>
+    <div class="title-center"></div>
 
     <div ref="titleTrailing" class="title-trailing flex items-center gap-2 [justify-self:end]">
       <button
