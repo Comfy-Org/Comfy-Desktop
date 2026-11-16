@@ -80,7 +80,7 @@ test.afterAll(async () => {
   if (stagedPath) await rm(stagedPath, { recursive: true, force: true })
 })
 
-test('Builds menu → Add Existing → Browse probes the staged directory → Add Build registers it @nightly', async () => {
+test('Builds menu → Add Existing → Browse probes the staged directory → Add Build registers it @real-comfy', async () => {
   expect(await ctx.panel.click('[data-testid="build-actions-menu-trigger"]')).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="build-actions-add-existing"]')
   expect(await ctx.panel.click('[data-testid="build-actions-add-existing"]')).toBe(true)
@@ -89,7 +89,10 @@ test('Builds menu → Add Existing → Browse probes the staged directory → Ad
 
   expect(await ctx.panel.click(byTestId(TID.trackBrowse))).toBe(true)
   await ctx.panel.waitFor(
-    async () => (await ctx.panel.allText('.track-path-open')).some((t) => t.includes(stagedPath)),
+    async () =>
+      (await ctx.panel.allText('.track-location .config-path-open')).some((t) =>
+        t.includes(stagedPath)
+      ),
     { timeout: 10_000, message: 'picked directory never appeared in the path field' }
   )
 

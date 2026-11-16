@@ -6,27 +6,9 @@ import { useSessionStore } from '../stores/sessionStore'
 import { NAV_LABEL, type NavDecision } from '../../../shared/navigation/navDecision'
 import InstancePickerView from './InstancePickerView.vue'
 
-const SWITCH_DECISION: NavDecision = {
-  window: 'same',
-  verb: 'switch',
-  primaryLabel: NAV_LABEL.start,
-  secondary: [],
-  telemetry: 'instance.switched'
-}
-const RESTART_DECISION: NavDecision = {
-  window: 'same',
-  verb: 'restart',
-  primaryLabel: NAV_LABEL.restart,
-  secondary: [],
-  telemetry: null
-}
-const FOCUS_DECISION: NavDecision = {
-  window: 'same',
-  verb: 'focus',
-  primaryLabel: NAV_LABEL.switch,
-  secondary: [],
-  telemetry: null
-}
+const START_DECISION: NavDecision = { verb: 'start', primaryLabel: NAV_LABEL.start }
+const RESTART_DECISION: NavDecision = { verb: 'restart', primaryLabel: NAV_LABEL.restart }
+const FOCUS_DECISION: NavDecision = { verb: 'focus', primaryLabel: NAV_LABEL.switch }
 import type { SnapshotListData } from '../types/ipc'
 
 vi.mock('../views/comfyUISettings/ConsoleTerminalPane.vue', () => ({
@@ -78,10 +60,13 @@ interface MockSnapshot {
   runningInstallationIds: string[]
   runningSessionStartedAt?: Record<string, number>
   launchingInstallationIds?: string[]
+  unhostedLaunchingInstallationIds?: string[]
   selectedInstallationId?: string | null
   pickerSelectionEpoch?: number
   selectedSettings?: unknown[] | null
   selectedSnapshots?: unknown | null
+  currentView?: 'dashboard' | 'instance' | 'cloud'
+  currentCategory?: string | null
 }
 
 interface BridgeState {
@@ -512,7 +497,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       })
       const settings = wrapper.findComponent(ComfyUISettingsContent)
       expect(settings.exists()).toBe(true)
-      settings.vm.$emit('primary-action', SWITCH_DECISION)
+      settings.vm.$emit('primary-action', START_DECISION)
       await flushPromises()
       expect(bridge.picks).toEqual(['a'])
       expect(bridge.restarts).toEqual([])
@@ -540,6 +525,70 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       await flushPromises()
       expect(bridge.restarts).toEqual([{ id: 'a', opts: { confirmed: true } }])
       expect(bridge.picks).toEqual([])
+    })
+
+    it('offers Restart from the dashboard for a build that is starting with no window', async () => {
+      const { useDialogs } = await import('../composables/useDialogs')
+      const wrapper = await mountPicker({
+        installs: [makeInstall({ id: 'a', name: 'Alpha', sourceCategory: 'local' })],
+        activeInstallationId: null,
+        selectedInstallationId: 'a',
+        runningInstallationIds: [],
+        launchingInstallationIds: ['a'],
+        unhostedLaunchingInstallationIds: ['a']
+      })
+      await flushPromises()
+      const primary = wrapper.get('[data-testid="picker-primary-cta"]')
+      expect(primary.text()).toBe('Restart')
+      await primary.trigger('click')
+      await flushPromises()
+      const dialogs = useDialogs()
+      expect(dialogs.state.open).toBe(true)
+      dialogs.confirmPrimary()
+      await flushPromises()
+      expect(bridge.restarts).toEqual([{ id: 'a', opts: { confirmed: true } }])
+      expect(bridge.picks).toEqual([])
+    })
+
+    it('starts another stopped build from a build window in its own window, with no Switch prompt', async () => {
+      const { useDialogs } = await import('../composables/useDialogs')
+      const wrapper = await mountPicker({
+        installs: [
+          makeInstall({ id: 'a', name: 'Alpha', sourceCategory: 'local' }),
+          makeInstall({ id: 'b', name: 'Bravo', sourceCategory: 'local' })
+        ],
+        activeInstallationId: 'a',
+        selectedInstallationId: 'b',
+        runningInstallationIds: ['a'],
+        currentView: 'instance',
+        currentCategory: 'local'
+      })
+      await flushPromises()
+      const primary = wrapper.get('[data-testid="picker-primary-cta"]')
+      expect(primary.text()).toBe('Start')
+      await primary.trigger('click')
+      await flushPromises()
+      expect(useDialogs().state.open).toBe(false)
+      expect(bridge.picks).toEqual(['b'])
+      expect(bridge.restarts).toEqual([])
+    })
+
+    it('keeps Switch from the dashboard for a build another window is starting', async () => {
+      const wrapper = await mountPicker({
+        installs: [makeInstall({ id: 'a', name: 'Alpha', sourceCategory: 'local' })],
+        activeInstallationId: null,
+        selectedInstallationId: 'a',
+        runningInstallationIds: [],
+        launchingInstallationIds: ['a'],
+        unhostedLaunchingInstallationIds: []
+      })
+      await flushPromises()
+      const primary = wrapper.get('[data-testid="picker-primary-cta"]')
+      expect(primary.text()).toBe('Switch')
+      await primary.trigger('click')
+      await flushPromises()
+      expect(bridge.picks).toEqual(['a'])
+      expect(bridge.restarts).toEqual([])
     })
 
     it('does not dispatch restartInstall when the in-drawer confirm is cancelled', async () => {

@@ -72,7 +72,7 @@ const launchHarness = vi.hoisted(() => ({
   duringResourceAcquire: null as null | (() => void),
   spawn: null as null | ((...args: unknown[]) => unknown),
   spawnFails: false,
-  waitForPort: null as null | (() => Promise<void>),
+  waitForPort: null as null | ((...args: unknown[]) => Promise<void>),
   nextPort: 48999,
   busyPorts: null as null | number[],
   portFreeWaits: [] as number[],
@@ -158,7 +158,7 @@ vi.mock('../shared', async (importOriginal) => {
     waitForUrl: (...args: Parameters<typeof actual.waitForUrl>) =>
       launchHarness.waitForUrl ? launchHarness.waitForUrl() : actual.waitForUrl(...args),
     waitForPort: (...args: Parameters<typeof actual.waitForPort>) =>
-      launchHarness.waitForPort ? launchHarness.waitForPort() : actual.waitForPort(...args),
+      launchHarness.waitForPort ? launchHarness.waitForPort(...args) : actual.waitForPort(...args),
     getComfyFeatureFlagRegistry: async () => {
       launchHarness.registryCalls += 1
       if (launchHarness.registryThrows) throw new Error('feature registry unavailable')
@@ -346,6 +346,7 @@ import {
   handleLaunch,
   recordCampaignEnrolments,
   isCrashedExit,
+  isPortInUseOutput,
   launchedCoreCommit,
   onProcessTerminated,
   writeLog,
@@ -373,6 +374,7 @@ import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
 import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
+import type { WaitForPortOptions } from '../../process'
 import type { ComfyArgsSchema } from '../../comfy-args'
 import type { LaunchCommand } from '../../../types/sources'
 import { ASSETS_MIN_CORE_COMMIT, NO_CORE_COMMITS } from '../../coreBetaGrants'
@@ -381,6 +383,8 @@ import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import * as i18nModule from '../../i18n'
 import {
+  COMFY_BOOT_QUIET_MS,
+  COMFY_BOOT_TIMEOUT_MS,
   makeSendOutput,
   _getLaunchingInstallationIds,
   _markLaunching,
@@ -788,7 +792,7 @@ describe('attachLaunchStreams event-log tap wiring', () => {
     const tracker = { ingest: vi.fn() } as unknown as LaunchProgressTracker
     const sendOutput = vi.fn()
 
-    const { getStderr } = attachLaunchStreams(
+    const { getStderr, lastOutputAt } = attachLaunchStreams(
       proc,
       logStream,
       sendOutput,
@@ -798,8 +802,23 @@ describe('attachLaunchStreams event-log tap wiring', () => {
       agentTap,
       tracker
     )
-    return { stdout, stderr, execTap, hwTap, assetsTap, agentTap, getStderr }
+    return { stdout, stderr, execTap, hwTap, assetsTap, agentTap, getStderr, lastOutputAt }
   }
+
+  it('stamps lastOutputAt at attach and on every chunk from either stream', () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    onTestFinished(() => now.mockRestore())
+    const h = harness()
+    expect(h.lastOutputAt()).toBe(1_000)
+    now.mockReturnValue(2_000)
+    h.stderr.emit('data', Buffer.from('Loading: ComfyUI-Impact-Pack\n'))
+    expect(h.lastOutputAt()).toBe(2_000)
+    now.mockReturnValue(3_000)
+    h.stdout.emit('data', Buffer.from('still importing\n'))
+    expect(h.lastOutputAt()).toBe(3_000)
+    now.mockReturnValue(9_000)
+    expect(h.lastOutputAt()).toBe(3_000)
+  })
 
   it('feeds stdout chunks to the assets tap tagged as stdout', () => {
     const h = harness()
@@ -5135,6 +5154,104 @@ describe('prior ComfyUI process handling at launch', () => {
     expect(started?.port_bumped_from).toBe(PORT)
   })
 
+  const neighbourOn = (port: number, proc: ChildProcess | null): void => {
+    _runningSessions.set('neighbour', {
+      proc,
+      port,
+      mode: 'window',
+      installationName: 'Studio',
+      startedAt: Date.now()
+    })
+  }
+
+  it('starts on the next port while the build that owns this one is restarting', async () => {
+    neighbourOn(PORT, fakeChild() as unknown as ChildProcess)
+
+    const res = await handleLaunch(ctxFor('port-of-restarting-neighbour'))
+
+    expect(res.ok).toBe(true)
+    expect(res.port).toBe(launchHarness.nextPort)
+    const [started] = eventsNamed('comfy.desktop.comfyui.boot_started')
+    expect(started?.port_bumped_from).toBe(PORT)
+  })
+
+  it('names the restarting build when the installation asks before changing port', async () => {
+    neighbourOn(PORT, fakeChild() as unknown as ChildProcess)
+
+    const res = await handleLaunch({
+      ...ctxFor('port-of-restarting-neighbour-ask'),
+      inst: { ...install(), portConflict: 'ask' } as InstallationRecord
+    })
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe('errors.portConflictLauncher')
+    expect(res.portConflict).toEqual({
+      port: PORT,
+      pids: [],
+      isComfy: true,
+      nextPort: launchHarness.nextPort
+    })
+    expect(children).toHaveLength(0)
+  })
+
+  it('does not hold a port for a session that connects to a server Desktop did not start', async () => {
+    neighbourOn(PORT, null)
+
+    const res = await handleLaunch(ctxFor('port-of-remote-neighbour'))
+
+    expect(res.ok).toBe(true)
+    expect(res.port).toBe(PORT)
+  })
+
+  it('moves to the next port when an older core on Windows cannot bind', async () => {
+    let attempt = 0
+    launchHarness.waitForPort = async () => {
+      attempt++
+      if (attempt > 1) return
+      const first = children[0]!
+      first.stderr.emit(
+        'data',
+        Buffer.from(
+          `OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', ${PORT}): ` +
+            'only one usage of each socket address (protocol/network address/port) is normally permitted\n'
+        )
+      )
+      first.emit('close', 1, null)
+      return new Promise<void>(() => {})
+    }
+
+    const res = await handleLaunch(ctxFor('port-taken-older-windows-core'))
+
+    expect(res.ok).toBe(true)
+    expect(res.port).toBe(launchHarness.nextPort)
+    expect(children).toHaveLength(2)
+  })
+
+  it('waits on the boot with the quiet window and the spawned ComfyUI output clock', async () => {
+    let options: WaitForPortOptions | undefined
+    const stamps: number[] = []
+    launchHarness.waitForPort = async (...args) => {
+      if (options) return
+      options = args[2] as WaitForPortOptions
+      const now = vi.spyOn(Date, 'now').mockReturnValue(5_000_000)
+      children[0]!.stderr.emit('data', Buffer.from('Loading custom node 37 of 120\n'))
+      stamps.push(options?.lastOutputAt?.() ?? -1)
+      now.mockReturnValue(5_060_000)
+      children[0]!.stdout.emit('data', Buffer.from('still importing\n'))
+      stamps.push(options?.lastOutputAt?.() ?? -1)
+      now.mockRestore()
+    }
+
+    const res = await handleLaunch(ctxFor('prior-quiet-window'))
+
+    expect(res.ok).toBe(true)
+    expect(options).toMatchObject({
+      timeoutMs: COMFY_BOOT_TIMEOUT_MS,
+      quietMs: COMFY_BOOT_QUIET_MS
+    })
+    expect(stamps).toEqual([5_000_000, 5_060_000])
+  })
+
   it('does not retry on top of a failed boot whose process outlived the kill', async () => {
     launchHarness.killExits = false
     launchHarness.waitForPort = async () => {
@@ -5406,6 +5523,33 @@ describe('prior ComfyUI process handling at launch', () => {
       expect(res.ok).toBe(false)
       expect(children).toHaveLength(1)
     })
+  })
+})
+
+describe('isPortInUseOutput', () => {
+  it.each([
+    [
+      'a current core',
+      'Port 8188 is already in use on address 127.0.0.1. Please close the other application or use a different port with --port.'
+    ],
+    [
+      'an older core on macOS or Linux',
+      "OSError: [Errno 48] error while attempting to bind on address ('127.0.0.1', 8188): address already in use"
+    ],
+    [
+      'an older core on Windows',
+      "OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8188): only one usage of each socket address (protocol/network address/port) is normally permitted"
+    ],
+    ['a Node server', 'Error: listen EADDRINUSE: 127.0.0.1:8188']
+  ])('recognises the bind failure of %s', (_server, output) => {
+    expect(isPortInUseOutput(output)).toBe(true)
+  })
+
+  it.each([
+    ['a crash that mentions imports and memory in use', 'ImportError: viewport\nVRAM in use: 4 GB'],
+    ['a normal start', 'To see the GUI go to: http://127.0.0.1:8188']
+  ])('does not read %s as a taken port', (_case, output) => {
+    expect(isPortInUseOutput(output)).toBe(false)
   })
 })
 

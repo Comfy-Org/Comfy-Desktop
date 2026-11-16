@@ -6,13 +6,14 @@ import {
   Bell,
   ChevronDown,
   CloudDownload,
+  House,
   Loader2,
   Menu as MenuIcon,
   MessageSquarePlus,
   RefreshCw,
   RotateCw,
   ZoomIn
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
 import { useTitleBarMenus } from './useTitleBarMenus'
 import { useTitleBarIdentity } from './useTitleBarIdentity'
@@ -59,6 +60,7 @@ interface DownloadsTrayState {
 interface Bridge {
   getInstallationId: () => string | null
   isMac: () => boolean
+  isLinux: () => boolean
   setPanel: (panel: ComfyPanelKey) => void
   openNewWindow: () => void
   openFileMenu: (anchor: MenuAnchor) => void
@@ -112,6 +114,7 @@ interface Bridge {
   clickFeedback: () => void
   clickAnnouncement: () => void
   clickRefreshInstance: () => void
+  clickHome: () => void
   resetZoom: () => void
   ready: () => void
 }
@@ -138,10 +141,14 @@ const titleInstallPillClass = [
   '[.title-bar.is-light_&.is-interactive.is-open]:border-[color-mix(in_srgb,var(--neutral-700)_55%,transparent)] [.title-bar.is-light_&.is-interactive.is-open]:text-neutral-700'
 ].join(' ')
 
+const titleHomeButtonClass =
+  '[-webkit-app-region:no-drag] inline-flex h-7 shrink-0 items-center gap-2 rounded-control border border-solid border-transparent bg-transparent py-0 pr-2.5 pl-2 [font-family:inherit] text-[13px] leading-5 font-normal text-[var(--titlebar-icon)] opacity-85 cursor-pointer transition-[background-color,opacity] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&]:hover:opacity-100 [.title-bar.is-hover-active_&]:hover:bg-secondary focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-1'
+
 const titleDownloadsBadgeClass =
   'pointer-events-none absolute -top-1 -right-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-[999px] bg-[var(--action,#60a5fa)] px-1 py-0 text-[9px] leading-none font-bold text-white tabular-nums [box-shadow:0_0_0_2px_var(--titlebar-bg-active,var(--titlebar-bg,var(--neutral-900)))] [.title-bar:not(.is-light)_&:not(.is-unseen,.is-error)]:text-background [&.is-unseen]:bg-[#22c55e] [&.is-error]:bg-[var(--danger)] [.title-downloads-tray.has-active_&]:animate-[title-downloads-pulse_1.6s_ease-in-out_infinite] [.title-downloads-tray.is-flashing_&]:[animation:title-downloads-flash_0.55s_cubic-bezier(0.2,0.9,0.3,1.4)_1,title-downloads-pulse_1.6s_ease-in-out_infinite_0.6s]'
 
 const isMac = ref(bridge?.isMac() ?? false)
+const isLinux = ref(bridge?.isLinux() ?? false)
 const activePanel = ref<ComfyPanelKey>('comfy')
 const installationId = ref(bridge?.getInstallationId() ?? '')
 const isInstallLess = ref((bridge?.getInstallationId() ?? '') === '')
@@ -152,7 +159,6 @@ const {
   themeBg,
   themeText,
   isFullscreen,
-  firstUseMode,
   isConsentLockdown,
   isFirstUseLockdown,
   isLoadingLockdown,
@@ -171,7 +177,8 @@ const showRefreshButton = computed(
     !isInstallLess.value &&
     !isFirstUseLockdown.value
 )
-void firstUseMode
+
+const showHomeButton = computed(() => !isInstallLess.value && !isFirstUseLockdown.value)
 
 const zoomLevel = ref(0)
 const zoomPercent = computed(() => Math.round(Math.pow(1.2, zoomLevel.value) * 100))
@@ -196,6 +203,11 @@ function handleFeedback(): void {
 
 function handleRefreshInstance(): void {
   bridge?.clickRefreshInstance()
+}
+
+function handleHome(): void {
+  hideTip()
+  bridge?.clickHome()
 }
 
 function handleResetZoom(): void {
@@ -558,9 +570,10 @@ onUnmounted(() => {
 <template>
   <header
     ref="titleBar"
-    class="title-bar relative box-border grid h-screen w-screen grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] px-3 py-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&.is-mac]:pl-[78px] [&.is-mac.is-fullscreen]:pl-3 [&:not(.is-mac)]:pr-[140px] [&:not(.is-light)]:border-b-border"
+    class="title-bar relative box-border grid h-screen w-screen grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] px-3 py-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&.is-mac]:pl-[78px] [&.is-mac.is-fullscreen]:pl-3 [&:not(.is-mac,.is-linux)]:pr-[140px] [&.is-linux]:[--title-controls-left:env(titlebar-area-x,0px)] [&.is-linux]:[--title-controls-right:calc(100vw_-_env(titlebar-area-x,0px)_-_env(titlebar-area-width,100vw))] [&.is-linux]:pl-[calc(var(--title-controls-left)_+_12px)] [&.is-linux]:pr-[calc(var(--title-controls-right)_+_12px)] [&:not(.is-light)]:border-b-border [&.is-collapsed-update]:grid-cols-[minmax(0,max-content)_minmax(200px,1fr)_auto] [&.is-collapsed-update]:gap-x-4"
     :class="{
       'is-mac': isMac,
+      'is-linux': isLinux,
       'is-light': isLight,
       'is-fullscreen': isFullscreen,
       'is-hover-active': isHoverActive,
@@ -577,29 +590,22 @@ onUnmounted(() => {
     }"
   >
     <div
-      class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
+      class="title-cluster flex items-center gap-1"
+      :class="
+        collapsedUpdate
+          ? 'w-[var(--title-trailing-width,0px)] min-w-0 max-w-full [.title-bar:not(.is-mac,.is-linux)_&]:w-[calc(var(--title-trailing-width,0px)_+_128px)] [.title-bar.is-linux_&]:w-[calc(var(--title-trailing-width,0px)_+_max(0px,var(--title-controls-right)_-_var(--title-controls-left)))]'
+          : 'min-w-[var(--title-trailing-width,0px)] [.title-bar:not(.is-mac,.is-linux)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)] [.title-bar.is-linux_&]:min-w-[calc(var(--title-trailing-width,0px)_+_max(0px,var(--title-controls-right)_-_var(--title-controls-left)))]'
+      "
     >
       <button
-        v-if="!isConsentLockdown"
-        ref="fileBtn"
+        v-if="showHomeButton"
         type="button"
-        class="title-menu-button title-menu-button--icon"
-        :class="titleMenuButtonClass"
-        aria-haspopup="menu"
-        v-bind="tooltipAttrs(t('titleBar.menu'))"
-        @click="handleFileMenu"
+        class="title-home-button"
+        :class="titleHomeButtonClass"
+        @click="handleHome"
       >
-        <MenuIcon :size="18" />
-      </button>
-      <button
-        v-if="showRefreshButton"
-        type="button"
-        class="title-menu-button title-menu-button--icon title-refresh-button"
-        :class="titleMenuButtonClass"
-        v-bind="tooltipAttrs(t('titleBar.refreshInstanceTooltip'))"
-        @click="handleRefreshInstance"
-      >
-        <RotateCw :size="16" />
+        <House :size="15" aria-hidden="true" />
+        <span>{{ t('titleBar.home') }}</span>
       </button>
     </div>
 
@@ -696,7 +702,10 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div ref="titleTrailing" class="title-trailing flex items-center gap-2 [justify-self:end]">
+    <div
+      ref="titleTrailing"
+      class="title-trailing flex items-center gap-2 [justify-self:end] [.title-bar.is-linux_&]:pl-[max(0px,var(--title-controls-left)_-_var(--title-controls-right))]"
+    >
       <button
         v-if="!isFirstUseLockdown && showAppUpdatePill"
         type="button"
@@ -732,6 +741,16 @@ onUnmounted(() => {
           <span class="title-zoom-reset-percent tracking-[0.01em]">{{ zoomPercent }}%</span>
         </button>
       </Transition>
+      <button
+        v-if="showRefreshButton"
+        type="button"
+        class="title-menu-button title-menu-button--icon title-refresh-button"
+        :class="titleMenuButtonClass"
+        v-bind="tooltipAttrs(t('titleBar.refreshInstanceTooltip'))"
+        @click="handleRefreshInstance"
+      >
+        <RotateCw :size="16" />
+      </button>
       <button
         v-if="!isFirstUseLockdown"
         ref="announcementBtn"
@@ -801,6 +820,18 @@ onUnmounted(() => {
           class="title-downloads-error-dot pointer-events-none absolute -top-[3px] -left-[3px] size-2 rounded-[999px] bg-[var(--danger)] [box-shadow:0_0_0_2px_var(--titlebar-bg-active,var(--titlebar-bg,var(--neutral-900)))]"
           aria-hidden="true"
         />
+      </button>
+      <button
+        v-if="!isConsentLockdown"
+        ref="fileBtn"
+        type="button"
+        class="title-menu-button title-menu-button--icon"
+        :class="titleMenuButtonClass"
+        aria-haspopup="menu"
+        v-bind="tooltipAttrs(t('titleBar.menu'))"
+        @click="handleFileMenu"
+      >
+        <MenuIcon :size="16" />
       </button>
     </div>
   </header>

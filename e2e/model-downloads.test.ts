@@ -219,7 +219,7 @@ test.afterAll(async () => {
   if (modelRoot) await rm(modelRoot, { recursive: true, force: true })
 })
 
-test('startup hydrates interrupted downloads as actionable paused rows @nightly', async () => {
+test('startup hydrates interrupted downloads as actionable paused rows @real-comfy', async () => {
   await openFullDownloads()
   await expect
     .poll(() => popup.count('.dlm-row'), {
@@ -234,7 +234,7 @@ test('startup hydrates interrupted downloads as actionable paused rows @nightly'
   }
 })
 
-test('resume continues from staged bytes with Range/If-Range and completes atomically @nightly', async () => {
+test('resume continues from staged bytes with Range/If-Range and completes atomically @real-comfy', async () => {
   const job = JOBS.complete
   server.clearLog()
   expect(await clickRowButton(job.file, 'Resume')).toBe(true)
@@ -248,7 +248,7 @@ test('resume continues from staged bytes with Range/If-Range and completes atomi
   expect(requests[0]!.status).toBe(206)
 })
 
-test('pause stops network activity and preserves staged bytes @nightly', async () => {
+test('pause stops network activity and preserves staged bytes @real-comfy', async () => {
   const job = JOBS.pause
   const part = finalPath(job) + '.part'
   expect(await clickRowButton(job.file, 'Resume')).toBe(true)
@@ -271,7 +271,7 @@ test('pause stops network activity and preserves staged bytes @nightly', async (
   pausedPartSize = sizeAtPause
 })
 
-test('network interruption preserves staged bytes and Retry resumes them @nightly', async () => {
+test('network interruption preserves staged bytes and Retry resumes them @real-comfy', async () => {
   const job = JOBS.retry
   const part = finalPath(job) + '.part'
   server.configure(job.file, { failAfterBytes: 2 * job.chunkSize })
@@ -298,7 +298,7 @@ test('network interruption preserves staged bytes and Retry resumes them @nightl
   expect(requests[0]!.status).toBe(206)
 })
 
-test('cancel stops the transfer and removes staged bytes and metadata @nightly', async () => {
+test('cancel stops the transfer and removes staged bytes and metadata @real-comfy', async () => {
   const job = JOBS.cancel
   const part = finalPath(job) + '.part'
   expect(await clickRowButton(job.file, 'Resume')).toBe(true)
@@ -322,7 +322,7 @@ test('cancel stops the transfer and removes staged bytes and metadata @nightly',
   expect(await fileSize(finalPath(job))).toBe(-1)
 })
 
-test('quit + relaunch rehydrates the paused job and resume completes it @nightly', async () => {
+test('quit + relaunch rehydrates the paused job and resume completes it @real-comfy', async () => {
   const job = JOBS.pause
   const part = finalPath(job) + '.part'
 

@@ -7,7 +7,7 @@
 **Install, run, and manage [ComfyUI](https://github.com/Comfy-Org/ComfyUI) from one app — no dependency hell.**
 
 [![Release](https://img.shields.io/github/v/release/Comfy-Org/Comfy-Desktop?display_name=tag&style=flat&label=release&color=4f46e5)](https://github.com/Comfy-Org/Comfy-Desktop/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/Comfy-Org/Comfy-Desktop/ci.yml?branch=main&style=flat&label=CI)](https://github.com/Comfy-Org/Comfy-Desktop/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/Comfy-Org/Comfy-Desktop/ci.yml?event=merge_group&style=flat&label=CI)](https://github.com/Comfy-Org/Comfy-Desktop/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/Comfy-Org/Comfy-Desktop?style=flat&color=blue)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Comfy-Org/Comfy-Desktop?style=flat&logo=github&color=f5c518)](https://github.com/Comfy-Org/Comfy-Desktop/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-comfy.org-5865F2?style=flat&logo=discord&logoColor=white)](https://www.comfy.org/discord)
@@ -89,19 +89,19 @@ Contributions are welcome. The app is an [Electron](https://www.electronjs.org/)
 
 ### Prerequisites
 
-- [**Node.js**](https://nodejs.org/) v22 LTS or later
+- [**Node.js**](https://nodejs.org/) 24 LTS (the version in `.nvmrc`)
 - [**pnpm**](https://pnpm.io/) v10 or later (via Corepack)
 
-```bash
-nvm install 22 && nvm use 22   # recommended — https://github.com/nvm-sh/nvm
-corepack enable                # enables pnpm (bundled with Node)
-```
+Development, CI and ToDesktop builds all use the Node version in `.nvmrc`, which is the same major as the Node runtime bundled with Electron.
 
 ### Setup
 
 ```bash
 git clone https://github.com/Comfy-Org/Comfy-Desktop.git
 cd Comfy-Desktop
+nvm install                # installs the Node version in .nvmrc — https://github.com/nvm-sh/nvm
+nvm use
+corepack enable            # enables pnpm (bundled with Node)
 pnpm run init
 ```
 
@@ -127,6 +127,22 @@ At runtime the main process picks a git backend in priority order ([`src/main/li
 
 </details>
 
+### Preview a screen without Electron
+
+```bash
+pnpm run preview                 # opens http://127.0.0.1:5199/preview.html, a list of screens
+pnpm run preview:shots           # writes one PNG per screen to preview-shots/
+pnpm run preview:shots --scenario first-use --platform win32 --size 800x563
+```
+
+The preview mounts the real `PanelApp` in a browser against a fake of the preload bridge, so a screen can be opened by URL (`?scenario=home&platform=win32`) and edits hot-reload. `--platform` takes `darwin`, `win32` or `linux` and can be repeated, as can `--scenario`.
+
+- [`src/renderer/src/preview/fakeBridge.ts`](src/renderer/src/preview/fakeBridge.ts) is the fake. It is typed as `ElectronApi`, so a bridge method added in `src/types/ipc.ts` fails the type-check until the fake answers it.
+- [`src/renderer/src/preview/scenarios.ts`](src/renderer/src/preview/scenarios.ts) lists the screens. A scenario seeds the bridge (builds, settings, replies), optionally clicks its way to a state, and names the element that shows the screen is drawn.
+- [`src/renderer/src/preview/fixtures.ts`](src/renderer/src/preview/fixtures.ts) holds the builds, machines and install steps the scenarios share.
+
+`pnpm test` loads every scenario on all three platforms and fails on a screen that does not draw or logs an error.
+
 ### Run tests
 
 ```bash
@@ -135,6 +151,14 @@ pnpm test
 ```
 
 Main, preload, and shared code is tested in Node. Renderer tests run in headless Chromium through [Vitest browser mode](https://vitest.dev/guide/browser/). To watch them in a visible browser, run `pnpm exec vitest --project browser --browser.headless=false`.
+
+To record a video of an e2e test for a reviewer, set `E2E_VIDEO` to any value other than empty or `0`:
+
+```bash
+E2E_VIDEO=1 pnpm exec playwright test e2e/home.test.ts --project=macos -g "Auto start"
+```
+
+The videos land in `test-results/videos/` at 1280x800. Playwright writes one `.webm` per view; the page view is the largest file. While recording, each `click`, `clickNth`, `clickByText` and `fill` in `e2e/support/cdpPages.ts` pauses about 1 s before and after, so each change shows on screen. Dropdown helpers (`clickUntilVisible`, `selectOption`) and clicks made in the page's own script are not slowed down.
 
 ## Releasing
 

@@ -4,4 +4,13 @@ export { listWorkspaceMembers, listWorkspaces } from './workspaces'
 export { getAuthStatus, clearTokens } from './tokenStore'
 export { statusFromAccessToken, workspaceIdOf } from './claims'
 export { CLOUD_CONFIG, CLOUD_ISSUER } from './config'
-export type { AuthStatus, AuthTokens, Workspace, WorkspaceMember } from './types'
+export type {
+  AuthStatus,
+  AuthTokens,
+  Workspace,
+  WorkspaceMember,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent,
+  WorkspaceSwitchOutcome,
+  WorkspaceSwitchStatus
+} from './types'

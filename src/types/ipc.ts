@@ -2,11 +2,25 @@ import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
 
-import type { AuthStatus, Workspace } from '../main/cloud/types'
-export type { AuthStatus, Workspace }
+import type {
+  AuthStatus,
+  Workspace,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent,
+  WorkspaceSwitchStatus
+} from '../main/cloud/types'
+export type {
+  AuthStatus,
+  Workspace,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent,
+  WorkspaceSwitchStatus
+}
 
 import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
+
+import type { KnownSettingKey, KnownSettings } from '../main/settings'
 
 export interface CoachmarkBeakPayload {
   beakFraction: number
@@ -107,6 +121,7 @@ export interface Installation {
   launchMode?: string
   launchArgs?: string
   hasConsole?: boolean
+  hasOutputFolder?: boolean
   installPath?: string
   status?: string
   lastLaunchedAt?: number
@@ -114,7 +129,51 @@ export interface Installation {
   [key: string]: unknown
 }
 
-export type DashboardPage = 'chooser' | 'benchmarks' | 'performance-test'
+export type DashboardPage =
+  'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
+
+export interface AppCard {
+  id: string
+  title: string
+  description: string
+  coverUrl: string | null
+}
+
+export type AppPageStatus = 'loading' | 'ready' | 'failed'
+
+export interface AppPagePlacement {
+  x: number
+  y: number
+  width: number
+  height: number
+  cornerRadius: number
+  justOpened?: boolean
+  retry?: boolean
+}
+
+export interface CatalogWorkflow {
+  id: string
+  title: string
+  description: string
+  thumbnailUrl: string | null
+}
+
+export type AssetKind = 'image' | 'video' | 'audio' | '3d'
+
+export interface AssetSummary {
+  id: string
+  name: string
+  kind: AssetKind | null
+  sizeBytes: number | null
+  createdAt: string | null
+  mimeType: string | null
+  tags: string[]
+  previewUrl: string | null
+  thumbnailUrl: string | null
+  width: number | null
+  height: number | null
+  durationSeconds: number | null
+}
 
 export interface BuildStorageSnapshot {
   sharedDirectoriesFields: Record<string, unknown>[]
@@ -547,12 +606,7 @@ export interface DiskSpaceInfo {
 export type PathIssue = 'insideAppBundle' | 'oneDrive' | 'insideSharedDir' | 'insideExistingInstall'
 
 export type ModelDownloadStatus =
-  | 'pending'
-  | 'downloading'
-  | 'paused'
-  | 'completed'
-  | 'error'
-  | 'cancelled'
+  'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
 
 export interface ModelDownloadProgress {
   id?: string
@@ -729,8 +783,15 @@ export interface PerformanceTestBenchmark {
   averageJobDurationSeconds: number | null
   medianJobDurationSeconds: number | null
   measuredJobCount: number
-  hardwareName: string | null
+  machine: PerformanceTestMachine
   result: Record<string, PerformanceTestResultValue>
+}
+
+export interface PerformanceTestMachine {
+  gpu: string | null
+  cpu: string | null
+  memoryGb: number | null
+  platform: string | null
 }
 
 export interface SnapshotDiffEntry {
@@ -1078,7 +1139,6 @@ export interface ElectronApi {
   probeInstallation(dirPath: string): Promise<ProbeResult[]>
   trackInstallation(data: Record<string, unknown>): Promise<TrackResult>
   installInstance(installationId: string, express?: boolean): Promise<void>
-  skipTemplateDownload(installationId: string): Promise<void>
   updateInstallation(
     installationId: string,
     data: Record<string, unknown>
@@ -1093,7 +1153,6 @@ export interface ElectronApi {
   terminalResize(installationId: string, cols: number, rows: number): Promise<void>
   terminalRestart(installationId: string): Promise<TerminalRestore>
   openInstallWindow(installationId: string): Promise<boolean>
-  openInstallInNewWindow(installationId: string): void
   closeComfyWindow(installationId: string, opts?: { skipConfirm?: boolean }): Promise<boolean>
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
@@ -1101,6 +1160,23 @@ export interface ElectronApi {
   closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
+  listAssets(installationId: string): Promise<AssetSummary[]>
+  listLocalAssets(installationId?: string): Promise<AssetSummary[]>
+  downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
+  revealAsset(source: string, assetId: string): Promise<boolean>
+  copyAsset(source: string, assetId: string): Promise<boolean>
+  trashAsset(source: string, assetId: string): Promise<boolean>
+  listHomeWorkflows(): Promise<CatalogWorkflow[]>
+  openCatalogWorkflow(id: string): Promise<boolean>
+  getAppsEnabled(): Promise<boolean>
+  listApps(): Promise<AppCard[]>
+  showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
+  captureAppPage(): Promise<string | null>
+  hideAppPage(): void
+  onAppPageStatusChanged(
+    callback: (appId: string | null, status: AppPageStatus) => void
+  ): () => void
+  onAppPageClosed(callback: () => void): () => void
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(
@@ -1196,8 +1272,8 @@ export interface ElectronApi {
   getModelsSections(): Promise<ModelsResult>
   getMediaSections(): Promise<SettingsSection[]>
   getUniqueName(baseName: string): Promise<string>
-  setSetting(key: string, value: unknown): Promise<void>
-  getSetting(key: string): Promise<unknown>
+  setSetting<K extends KnownSettingKey>(key: K, value: KnownSettings[K]): Promise<void>
+  getSetting<K extends KnownSettingKey>(key: K): Promise<KnownSettings[K]>
 
   getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
   acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>
@@ -1222,7 +1298,10 @@ export interface ElectronApi {
     getAuthStatus(): Promise<AuthStatus>
     onAuthChanged(callback: (status: AuthStatus) => void): Unsubscribe
     listWorkspaces(): Promise<Workspace[]>
-    switchWorkspace(workspaceId: string): Promise<AuthStatus>
+    switchWorkspace(
+      workspaceId: string,
+      intent?: WorkspaceSwitchIntent
+    ): Promise<WorkspaceSwitchStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
     openBuildsPage(workspaceId: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
@@ -1343,6 +1422,8 @@ export interface ElectronApi {
     }) => void
   ): Unsubscribe
 }
+
+export const LOCAL_ASSETS_SOURCE = 'local'
 
 export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore', 'change-pytorch'])
 

@@ -75,7 +75,7 @@ test.afterAll(async () => {
   if (legacyBasePath) await rm(legacyBasePath, { recursive: true, force: true })
 })
 
-test('auto-tracker registers Legacy Desktop install on boot @nightly', async () => {
+test('auto-tracker registers Legacy Desktop install on boot @real-comfy', async () => {
   await ctx.panel.waitFor(
     async () => {
       const names = await ctx.panel.allText(
@@ -93,7 +93,7 @@ test('auto-tracker registers Legacy Desktop install on boot @nightly', async () 
   legacyInstallId = desktop!.id
 })
 
-test('chooser kebab Migrate opens the real adoption confirm; Cancel backs out cleanly @nightly', async () => {
+test('chooser kebab Migrate opens the real adoption confirm; Cancel backs out cleanly @real-comfy', async () => {
   expect(legacyInstallId, 'legacyInstallId not captured by the prior test').toBeTruthy()
   await resetIpcInvocations(ctx.app, 'run-action')
 
@@ -129,7 +129,7 @@ test('chooser kebab Migrate opens the real adoption confirm; Cancel backs out cl
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('standalone source exposes a CPU variant the migration variant pick can pin @nightly', async () => {
+test('standalone source exposes a CPU variant the migration variant pick can pin @real-comfy', async () => {
   const releaseOptions = await ctx.panel.evaluate<FieldOption[]>(
     `window.api.getFieldOptions('standalone', 'release', {}, { includeLatestStable: true })`
   )

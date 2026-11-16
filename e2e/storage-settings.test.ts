@@ -3,7 +3,7 @@ import path from 'node:path'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { openTitleMenu } from './support/chooserHelpers'
+import { openDesktopSettings } from './support/chooserHelpers'
 import { titlePopupPage, type WebContentsPage } from './support/cdpPages'
 import { evalWithRetry } from './support/evalRetry'
 
@@ -84,10 +84,7 @@ test.afterAll(async () => {
 })
 
 test('Desktop Settings Storage renders the seeded shared model directory @windows @macos @linux', async () => {
-  await openTitleMenu(ctx.titleBar)
-  await popup.waitForVisible('[role="menuitem"]', { timeout: 5_000 })
-  expect(await popup.clickByText('[role="menuitem"]', 'Desktop Settings')).toBe(true)
-  await popup.waitForVisible('.global-settings', { timeout: 5_000 })
+  await openDesktopSettings(ctx.app, ctx.panel)
   expect(await popup.clickByText('.gs-tab', 'Storage')).toBe(true)
   await popup.waitFor(
     async () => (await popup.allText('.models-dir-name')).includes(defaultModelsDir),

@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import InputGroupButton from '@comfyorg/design-system/input-group/InputGroupButton'
-import { FolderOpen } from 'lucide-vue-next'
+import { FolderOpen } from '@lucide/vue'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import StorageDirRow from './StorageDirRow.vue'
 import type { DetailField } from '../../types/ipc'
@@ -41,6 +41,7 @@ function handleOpen(): void {
   <StorageDirRow
     v-if="isBrowseOnly"
     :path="stringValue"
+    variant="field"
     @open="handleOpen"
     @browse="handleBrowse"
   />

@@ -114,6 +114,30 @@ export function getEntryByInstallationId(installationId: string): ComfyWindowEnt
   return key === undefined ? undefined : comfyWindows.get(key)
 }
 
+function isInstallationShownInWindow(installationId: string): boolean {
+  if (pendingAttachClaims.has(installationId)) return true
+  for (const entry of comfyWindows.values()) {
+    if (entry.window.isDestroyed()) continue
+    if (entry.installationId === installationId) return true
+    if (entry.previewInstallationId === installationId) return true
+  }
+  return false
+}
+
+export function unhostedLaunches(launchingInstallationIds: readonly string[]): string[] {
+  return launchingInstallationIds.filter((id) => !isInstallationShownInWindow(id))
+}
+
+export function canRestartFromPicker(
+  parentEntry: ComfyWindowEntry,
+  installationId: string,
+  launchingInstallationIds: readonly string[]
+): boolean {
+  const boundInstallationId = parentEntry.installationId ?? parentEntry.previewInstallationId
+  if (boundInstallationId != null) return boundInstallationId === installationId
+  return unhostedLaunches(launchingInstallationIds).includes(installationId)
+}
+
 export function indexInstallationId(installationId: string, windowKey: number): void {
   installationIdToWindowKey.set(installationId, windowKey)
   hostInstallEvents.emit('changed')
@@ -194,6 +218,13 @@ export function isPanelSender(wc: WebContents): boolean {
     if (entry.panelView?.webContents === wc) return true
   }
   return false
+}
+
+export function findHostWindowByPanelSender(wc: WebContents): BrowserWindow | null {
+  for (const entry of comfyWindows.values()) {
+    if (entry.panelView?.webContents === wc) return entry.window
+  }
+  return null
 }
 
 export function findEntryByComfySender(wc: WebContents): ComfyWindowEntry | null {
@@ -294,6 +325,62 @@ export function openOrFocusChooserHostWindow(): BrowserWindow {
     return existing
   }
   return requireChooserFactory()()
+}
+
+function isHandingOffToBuild(entry: ComfyWindowEntry): boolean {
+  if (entry.previewInstallationId !== null) return true
+  for (const claimedKey of pendingAttachClaims.values()) {
+    if (claimedKey === entry.windowKey) return true
+  }
+  return false
+}
+
+export function isHomeHostEntry(entry: ComfyWindowEntry): boolean {
+  return !entry.window.isDestroyed() && isChooserHost(entry) && !isHandingOffToBuild(entry)
+}
+
+function findHomeHostWindow(): BrowserWindow | null {
+  return findPreferredHostByVisibility(isHomeHostEntry)?.window ?? null
+}
+
+export function openOrFocusHomeHostWindow(): BrowserWindow {
+  const existing = findHomeHostWindow()
+  if (existing) {
+    bringToFront(existing)
+    return existing
+  }
+  return requireChooserFactory()()
+}
+
+export type BuildOpenRoute =
+  | { kind: 'focus'; entry: ComfyWindowEntry }
+  | { kind: 'start-from'; entry: ComfyWindowEntry }
+  | { kind: 'start-from-home' }
+  | { kind: 'show-starting'; entry: ComfyWindowEntry | null }
+  | { kind: 'ignore' }
+
+function findWindowForBuild(installationId: string): ComfyWindowEntry | undefined {
+  const hosted = getEntryByInstallationId(installationId)
+  if (hosted && !hosted.window.isDestroyed()) return hosted
+  const claimedKey = pendingAttachClaims.get(installationId)
+  const claimed = claimedKey === undefined ? undefined : comfyWindows.get(claimedKey)
+  return claimed && !claimed.window.isDestroyed() ? claimed : undefined
+}
+
+export function routeBuildOpen(
+  installationId: string,
+  requester: ComfyWindowEntry | undefined,
+  launchingInstallationIds: readonly string[]
+): BuildOpenRoute {
+  const own = findWindowForBuild(installationId)
+  if (own) return { kind: 'focus', entry: own }
+  if (requester?.installationId === installationId) return { kind: 'ignore' }
+  const homeRequester = requester && isHomeHostEntry(requester) ? requester : null
+  if (launchingInstallationIds.includes(installationId)) {
+    return { kind: 'show-starting', entry: homeRequester }
+  }
+  if (homeRequester) return { kind: 'start-from', entry: homeRequester }
+  return { kind: 'start-from-home' }
 }
 
 export function openOrFocusAnyHostWindow(): BrowserWindow {

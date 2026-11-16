@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import ChooserInstallTile from './ChooserInstallTile.vue'
+import { homeBuildTones } from '../../panel/home/homeBuild'
+import { useInstallationStore } from '../../stores/installationStore'
+import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
 import type { Installation } from '../../types/ipc'
 
 const props = withDefaults(
@@ -27,6 +31,10 @@ const emit = defineEmits<{
   'view-danger': [installation: Installation]
   'why-cloud': []
 }>()
+
+const installationStore = useInstallationStore()
+const tones = computed(() => homeBuildTones(props.installations, installationStore.installations))
+const autoStart = useAutoStartBuild()
 
 function lockLeavingTileSize(el: Element): void {
   const node = el as HTMLElement
@@ -58,18 +66,20 @@ function unlockTileSize(el: Element): void {
     leave-active-class="tile-leave-active absolute [transition:opacity_140ms_ease,transform_140ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
     leave-to-class="tile-leave-to opacity-0 [transform:scale(0.98)] motion-reduce:transform-none"
     move-class="tile-move [transition:transform_220ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
-    class="chooser-family-grid relative grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5"
+    class="chooser-family-grid relative grid w-full grid-cols-2 gap-[15px]"
     @before-leave="lockLeavingTileSize"
     @leave-cancelled="unlockTileSize"
   >
     <ChooserInstallTile
-      v-for="installation in props.installations"
+      v-for="(installation, index) in props.installations"
       :key="`install:${installation.id}`"
       :installation="installation"
+      :tone="tones[index]"
       :show-free-runs-pill="props.showFreeRunsPill && installation.sourceCategory === 'cloud'"
       :show-why-cloud="props.showWhyCloud && installation.sourceCategory === 'cloud'"
       :is-stopped-action-gated="props.isStoppedActionGated(installation)"
       :is-promoting-to-workspace="props.isPromotingToWorkspace(installation)"
+      :auto-start="autoStart.startsOnOpen(installation.id)"
       @why-cloud="emit('why-cloud')"
       @pick="emit('pick', $event)"
       @open-details="emit('open-details', $event)"
@@ -78,6 +88,7 @@ function unlockTileSize(el: Element): void {
       @trigger-action="(action, inst) => emit('trigger-action', action, inst)"
       @view-error="emit('view-error', $event)"
       @view-danger="emit('view-danger', $event)"
+      @auto-start="(inst, on) => autoStart.setStartsOnOpen(inst.id, on)"
     />
   </TransitionGroup>
 </template>

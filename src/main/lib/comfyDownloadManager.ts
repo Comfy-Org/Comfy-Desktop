@@ -3,6 +3,7 @@ import { app, BrowserWindow, dialog, nativeImage, net, session as electronSessio
 import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
+import { pathToFileURL } from 'url'
 import * as settings from '../settings'
 import * as installations from '../installations'
 import { findInstallationIdByComfySender } from '../host/registry'
@@ -73,6 +74,7 @@ export interface DownloadProgress {
   error?: string
   createdAt?: number
   isImage?: boolean
+  canPause?: boolean
   templateInputs?: ComfyTemplateInputReference[]
 }
 
@@ -93,6 +95,8 @@ interface PendingDownload {
   subscriberWindows: Set<BrowserWindow>
   subscriberContents: Set<Electron.WebContents>
   item?: Electron.DownloadItem
+  abort?: AbortController
+  canPause?: boolean
   transport?: ModelTransferHandle | null
   suspended?: boolean
   resumeOnWake?: boolean
@@ -277,7 +281,8 @@ function filesHaveEqualContent(a: string, b: string): boolean {
 let mainWindow: BrowserWindow | null = null
 
 interface RetryParams {
-  kind: 'model' | 'asset'
+  kind: 'model' | 'asset' | 'file'
+  restart?: () => void
   url: string
   filename: string
   window?: BrowserWindow
@@ -604,7 +609,7 @@ function resolveServerFilename(item: Electron.DownloadItem): string | null {
 function findPendingForItem(item: Electron.DownloadItem): PendingDownload | undefined {
   const candidates = [...item.getURLChain(), item.getURL()].filter(Boolean)
   for (const u of candidates) {
-    const pending = activeJobsForUrl(u).find((p) => p.kind !== 'model' && !p.item)
+    const pending = activeJobsForUrl(u).find((p) => p.kind === 'asset' && !p.item)
     if (pending) return pending
   }
   return undefined
@@ -1289,6 +1294,103 @@ export async function startAssetDownload(
   return admission.status !== 'not-started'
 }
 
+export interface FileSaveTransfer {
+  signal: AbortSignal
+  progress: (receivedBytes: number, totalBytes: number) => void
+}
+
+export interface FileSaveOptions {
+  window: BrowserWindow
+  savePath: string
+  transfer: (job: FileSaveTransfer) => Promise<void>
+}
+
+const FILE_SAVE_PROGRESS_INTERVAL_MS = 250
+
+function fileSaveFailure(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : 'The file could not be saved.'
+}
+
+async function runFileSave(
+  pending: PendingDownload,
+  signal: AbortSignal,
+  transfer: FileSaveOptions['transfer']
+): Promise<void> {
+  let lastReportAt = 0
+  const progress = (receivedBytes: number, totalBytes: number): void => {
+    if (!pendingDownloads.has(pending.id)) return
+    const now = Date.now()
+    if (now - lastReportAt < FILE_SAVE_PROGRESS_INTERVAL_MS) return
+    lastReportAt = now
+    reportTransferProgress(pending, receivedBytes, totalBytes, 'downloading')
+  }
+  const row = {
+    id: pending.id,
+    url: pending.url,
+    filename: pending.filename,
+    directory: pending.directory
+  }
+  try {
+    await transfer({ signal, progress })
+    if (!pendingDownloads.has(pending.id)) return
+    reportProgress({
+      ...row,
+      savePath: pending.savePath,
+      progress: 1,
+      status: 'completed',
+      isImage: hasImageExtension(pending.savePath)
+    })
+  } catch (error) {
+    if (!pendingDownloads.has(pending.id)) return
+    reportProgress({ ...row, progress: 0, status: 'error', error: fileSaveFailure(error) })
+  }
+  unregisterPending(pending)
+}
+
+export function startFileSave(options: FileSaveOptions): string {
+  const { window, savePath, transfer } = options
+  const id = randomUUID()
+  const abort = new AbortController()
+  const url = pathToFileURL(savePath).href
+  const filename = path.basename(savePath)
+  const pending: PendingDownload = {
+    id,
+    kind: 'general',
+    url,
+    filename,
+    directory: '',
+    savePath,
+    window,
+    subscriberWindows: new Set(),
+    subscriberContents: new Set(),
+    abort,
+    canPause: false,
+    lastProgress: {
+      id,
+      url,
+      filename,
+      directory: '',
+      progress: 0,
+      status: 'pending',
+      canPause: false
+    },
+    lastSpeedBytes: 0,
+    lastSpeedTime: Date.now()
+  }
+  registerPending(pending)
+  retryParamsById.set(id, {
+    kind: 'file',
+    url,
+    filename,
+    window,
+    savePath,
+    restart: () => startFileSave(options)
+  })
+  reportProgress(pending.lastProgress)
+  void runFileSave(pending, abort.signal, transfer)
+  return id
+}
+
 export function getActiveAssetDownload(
   url: string,
   filename: string,
@@ -1317,42 +1419,53 @@ async function deduplicatePath(filePath: string): Promise<string> {
   return candidate
 }
 
+function reportTransferProgress(
+  pending: PendingDownload,
+  received: number,
+  total: number,
+  status: 'downloading' | 'paused'
+): void {
+  const now = Date.now()
+  const elapsed = (now - pending.lastSpeedTime) / 1000
+  let speed: number | undefined
+  let eta: number | undefined
+  if (elapsed >= 0.5) {
+    const delta = received - pending.lastSpeedBytes
+    speed = delta / elapsed
+    pending.lastSpeedBytes = received
+    pending.lastSpeedTime = now
+    if (speed > 0 && total > 0) {
+      eta = (total - received) / speed
+    }
+  } else {
+    speed = pending.lastProgress.speedBytesPerSec
+    eta = pending.lastProgress.etaSeconds
+  }
+
+  reportProgress({
+    id: pending.id,
+    url: pending.url,
+    filename: pending.filename,
+    directory: pending.directory,
+    progress: total > 0 ? Math.min(1, received / total) : 0,
+    receivedBytes: received,
+    totalBytes: total,
+    speedBytesPerSec: speed,
+    etaSeconds: eta,
+    status,
+    canPause: pending.canPause
+  })
+}
+
 function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDownload): void {
   item.on('updated', (_ev, state) => {
     if (state !== 'progressing') return
-    const total = item.getTotalBytes()
-    const received = item.getReceivedBytes()
-    const progress = total > 0 ? received / total : 0
-
-    const now = Date.now()
-    const elapsed = (now - pending.lastSpeedTime) / 1000
-    let speed: number | undefined
-    let eta: number | undefined
-    if (elapsed >= 0.5) {
-      const delta = received - pending.lastSpeedBytes
-      speed = delta / elapsed
-      pending.lastSpeedBytes = received
-      pending.lastSpeedTime = now
-      if (speed > 0 && total > 0) {
-        eta = (total - received) / speed
-      }
-    } else {
-      speed = pending.lastProgress.speedBytesPerSec
-      eta = pending.lastProgress.etaSeconds
-    }
-
-    reportProgress({
-      id: pending.id,
-      url: pending.url,
-      filename: pending.filename,
-      directory: pending.directory,
-      progress,
-      receivedBytes: received,
-      totalBytes: total,
-      speedBytesPerSec: speed,
-      etaSeconds: eta,
-      status: item.isPaused() ? 'paused' : 'downloading'
-    })
+    reportTransferProgress(
+      pending,
+      item.getReceivedBytes(),
+      item.getTotalBytes(),
+      item.isPaused() ? 'paused' : 'downloading'
+    )
   })
 
   item.once('done', (_ev, state) => {
@@ -1595,6 +1708,7 @@ export function pauseModelDownload(ref: string): boolean {
     reportProgress({ ...pending.lastProgress, status: 'paused' })
     return true
   }
+  if (pending.canPause === false) return false
   if (pending.item && !pending.item.isPaused()) {
     pending.item.pause()
     reportProgress({
@@ -1670,7 +1784,7 @@ export function cancelModelDownload(ref: string): boolean {
   if (pending.item) {
     pending.item.cancel()
   } else {
-    unregisterPending(pending)
+    pending.abort?.abort()
     reportProgress({
       id: pending.id,
       url: pending.url,
@@ -1679,6 +1793,7 @@ export function cancelModelDownload(ref: string): boolean {
       progress: 0,
       status: 'cancelled'
     })
+    unregisterPending(pending)
   }
   return true
 }
@@ -1727,7 +1842,9 @@ export function retryDownload(ref: string): boolean {
   _broadcastToRenderer('model-download-removed', { url: row.url, id: row.id })
   downloadEvents.emit('tray-state-changed')
 
-  if (params.kind === 'asset') {
+  if (params.kind === 'file') {
+    params.restart?.()
+  } else if (params.kind === 'asset') {
     void startAssetDownload(
       win!,
       params.url,

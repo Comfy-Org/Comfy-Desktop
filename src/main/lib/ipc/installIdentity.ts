@@ -1,8 +1,7 @@
 import { allocateUniqueDir, findDuplicatePath, sanitizeDirName, uniqueName } from './shared'
 
 export type InstallIdentity =
-  | { ok: true; name: string; installPath?: string }
-  | { ok: false; message: string }
+  { ok: true; name: string; installPath?: string } | { ok: false; message: string }
 
 export async function allocateInstallIdentity(
   baseName: string,

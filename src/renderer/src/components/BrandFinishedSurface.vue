@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X, Power, ChevronDown } from 'lucide-vue-next'
+import { X, Power, ChevronDown } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import BrandTakeoverLayout from './BrandTakeoverLayout.vue'
 import BrandProgressGlyph from './icons/BrandProgressGlyph.vue'

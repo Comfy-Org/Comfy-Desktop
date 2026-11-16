@@ -35,7 +35,12 @@ import { registerLogsHandlers } from './registerLogsHandlers'
 import { registerCrashHandlers } from './registerCrashHandlers'
 import { registerTelemetryHandlers } from './registerTelemetryHandlers'
 import { registerDevPlatformHandlers } from './registerDevPlatformHandlers'
+import { registerAssetsHandlers } from '../assets'
 import { registerEmbeddedSessionHandlers } from './registerEmbeddedSessionHandlers'
+import { registerCatalogHandlers } from './registerCatalogHandlers'
+import { registerAppsHandlers } from './registerAppsHandlers'
+import { registerAppsLocalHandlers } from './registerAppsLocalHandlers'
+import { registerAppsTelemetryHandlers } from './registerAppsTelemetryHandlers'
 import { reconcileAdoptedSettings } from '../desktopAdopt'
 import {
   finalizeComfyBuilderRecovery,
@@ -278,6 +283,11 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerCrashHandlers()
   registerTelemetryHandlers()
   registerDevPlatformHandlers()
+  registerAssetsHandlers()
   registerEmbeddedSessionHandlers()
+  registerCatalogHandlers()
+  registerAppsHandlers()
+  registerAppsLocalHandlers()
+  registerAppsTelemetryHandlers()
   return startupRecovery.then(() => undefined)
 }

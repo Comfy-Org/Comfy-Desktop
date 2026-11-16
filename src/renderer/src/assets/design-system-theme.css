@@ -1,14 +1,14 @@
 @import '@comfyorg/design-system/css/baseline.css';
 
 :root {
-  --background: oklch(0.19 0.003 285);
-  --foreground: oklch(0.955 0.002 285);
-  --card: oklch(0.23 0.008 285);
-  --popover: oklch(0.23 0.008 285);
+  --background: oklch(0.19 0 0);
+  --foreground: oklch(0.955 0 0);
+  --card: oklch(0.23 0 0);
+  --popover: oklch(0.23 0 0);
   --primary: var(--foreground);
   --secondary: oklch(1 0 0 / 0.06);
   --muted: oklch(1 0 0 / 0.06);
-  --muted-foreground: oklch(0.76 0.006 285);
+  --muted-foreground: oklch(0.76 0 0);
   --accent: oklch(1 0 0 / 0.1);
   --input: oklch(1 0 0 / 0.06);
   --ring: oklch(1 0 0 / 0.45);
@@ -20,15 +20,13 @@
   --font-display: 'PP Formula', 'Inter', system-ui, sans-serif;
 
   --color-success: oklch(0.78 0.15 155);
-  --color-window-background: oklch(0.119 0.003 285);
-  --color-sidebar-background: oklch(0.196 0.003 285);
-  --color-content-background: oklch(0.14 0.005 285);
-  --color-card-hover: oklch(0.265 0.009 285);
-  --color-subtle-foreground: oklch(0.6 0.008 285);
+  --color-window-background: oklch(0.119 0 0);
+  --color-sidebar-background: oklch(0.196 0 0);
+  --color-content-background: oklch(0.14 0 0);
+  --color-card-hover: oklch(0.265 0 0);
+  --color-subtle-foreground: oklch(0.6 0 0);
   --color-border-strong: oklch(1 0 0 / 0.14);
   --color-media-overlay: oklch(0 0 0 / 0.55);
-  --color-snapshot-chip: #202020;
-  --color-snapshot-ring: #262729;
 
   --text-ui: 13px;
   --text-ui--line-height: 20px;

@@ -231,7 +231,14 @@ export async function handleReleaseUpdate(ctx: ActionContext): Promise<ActionRes
         settings.get('cacheDir') as string,
         settings.get('maxCachedDownloads') as number
       )
-      await source.install!(installRecord, { sendProgress, download, cache, extract, signal })
+      await source.install!(installRecord, {
+        sendProgress,
+        sendOutput,
+        download,
+        cache,
+        extract,
+        signal
+      })
 
       const finalName = await uniqueName(name)
       entry = await installations.add({
@@ -255,7 +262,12 @@ export async function handleReleaseUpdate(ctx: ActionContext): Promise<ActionRes
 
       const newUpdate = (data: Record<string, unknown>): Promise<void> =>
         installations.update(entry!.id, data).then(() => {})
-      await source.postInstall!(installRecord, { sendProgress, update: newUpdate, signal })
+      await source.postInstall!(installRecord, {
+        sendProgress,
+        sendOutput,
+        update: newUpdate,
+        signal
+      })
       installComplete = true
 
       const newInst = await installations.get(entry.id)

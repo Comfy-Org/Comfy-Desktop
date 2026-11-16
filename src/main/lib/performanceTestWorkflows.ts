@@ -3,6 +3,7 @@ import path from 'path'
 import type {
   AcceleratorSnapshot,
   PerformanceTestBenchmark,
+  PerformanceTestMachine,
   PerformanceTestResultValue,
   PerformanceTestResultsSummary,
   PerformanceTestStatistics,
@@ -29,6 +30,24 @@ export interface PerformanceTestJobsResponse {
 
 function isDuration(value: unknown): value is number | null {
   return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0)
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+function parsePerformanceTestMachine(
+  summary: Partial<PerformanceTestResultsSummary>
+): PerformanceTestMachine {
+  const hardware = summary.hardware
+  const systemInfo = summary.systemInfo as Partial<SystemInfo> | undefined
+  const memoryGb = systemInfo?.total_memory_gb
+  return {
+    gpu: stringOrNull(hardware?.deviceName) ?? stringOrNull(hardware?.deviceType),
+    cpu: stringOrNull(systemInfo?.cpu_model),
+    memoryGb: typeof memoryGb === 'number' && Number.isFinite(memoryGb) ? memoryGb : null,
+    platform: stringOrNull(systemInfo?.platform)
+  }
 }
 
 function parsePerformanceTestBenchmark(
@@ -58,13 +77,6 @@ function parsePerformanceTestBenchmark(
   ) {
     return null
   }
-  const hardware = summary.hardware
-  const hardwareName =
-    hardware && typeof hardware.deviceName === 'string'
-      ? hardware.deviceName
-      : hardware && typeof hardware.deviceType === 'string'
-        ? hardware.deviceType
-        : null
   return {
     id,
     createdAt: summary.createdAt ?? null,
@@ -76,7 +88,7 @@ function parsePerformanceTestBenchmark(
     averageJobDurationSeconds: summary.averageJobDurationSeconds,
     medianJobDurationSeconds: summary.medianJobDurationSeconds,
     measuredJobCount: summary.measuredJobCount!,
-    hardwareName,
+    machine: parsePerformanceTestMachine(summary),
     result: value as Record<string, PerformanceTestResultValue>
   }
 }

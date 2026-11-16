@@ -8,19 +8,29 @@ function mountMenu() {
     defineComponent({
       components: { MoreMenu },
       setup() {
+        const field = ref<HTMLElement | null>(null)
+        const picked = ref('')
+        function pick(action: { id: string }): void {
+          picked.value = action.id
+          if (action.id === 'rename') field.value?.focus()
+        }
         return {
           open: ref(false),
           anchor: ref<HTMLElement | null>(null),
-          picked: ref(''),
+          field,
+          picked,
+          pick,
           actions: [
             { id: 'copy', label: 'Copy' },
+            { id: 'rename', label: 'Rename' },
             { id: 'delete', label: 'Delete', enabled: false }
           ]
         }
       },
       template: `<div>
       <button ref="anchor" type="button" data-testid="trigger" @click="open = !open">More</button>
-      <MoreMenu :open="open" :anchor="anchor" :actions="actions" @close="open = false" @pick="picked = $event.id" />
+      <input ref="field" data-testid="field" />
+      <MoreMenu :open="open" :anchor="anchor" :actions="actions" @close="open = false" @pick="pick" />
       <output>{{ picked }}</output>
     </div>`
     }),
@@ -63,5 +73,28 @@ describe('MoreMenu', () => {
     window.dispatchEvent(new Event('blur'))
     await flushPromises()
     expect(page().find('.more-menu').exists()).toBe(false)
+  })
+  it('returns focus to the trigger after an action that leaves focus alone', async () => {
+    const wrapper = mountMenu()
+    await wrapper.get('[data-testid="trigger"]').trigger('click')
+    await flushPromises()
+    await page().get('[role="menuitem"]').trigger('click')
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="trigger"]').element)
+  })
+
+  it('leaves focus where the picked action moved it', async () => {
+    const wrapper = mountMenu()
+    await wrapper.get('[data-testid="trigger"]').trigger('click')
+    await flushPromises()
+    const rename = page()
+      .findAll('[role="menuitem"]')
+      .find((item) => item.text() === 'Rename')!
+    await rename.trigger('click')
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(wrapper.get('output').text()).toBe('rename')
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="field"]').element)
   })
 })

@@ -35,12 +35,12 @@ test.beforeEach(async () => {
 test('empty drawer fits content (popup height < 260px) @windows @macos @linux', async () => {
   await openDownloadsTray(ctx.titleBar)
   await waitForPopupVisible(ctx.app)
-  await waitForStableBounds(ctx.app)
-
-  const bounds = await getTitlePopupBounds(ctx.app)
-  expect(bounds?.kind).toBe('downloads')
-  expect(bounds!.bounds.height).toBeLessThan(260)
-  expect(bounds!.bounds.height).toBeGreaterThan(40)
+  await expect(async () => {
+    const bounds = await getTitlePopupBounds(ctx.app)
+    expect(bounds?.kind).toBe('downloads')
+    expect(bounds!.bounds.height).toBeLessThan(260)
+    expect(bounds!.bounds.height).toBeGreaterThan(40)
+  }).toPass({ timeout: 5_000 })
 })
 
 test('one downloading entry fits content (NOT clipped at 396 ceiling) @windows @macos @linux', async () => {
@@ -57,11 +57,12 @@ test('one downloading entry fits content (NOT clipped at 396 ceiling) @windows @
   })
   await openDownloadsTray(ctx.titleBar)
   await waitForPopupVisible(ctx.app)
-  await waitForStableBounds(ctx.app)
-
-  const bounds = await getTitlePopupBounds(ctx.app)
-  expect(bounds!.bounds.height).toBeGreaterThan(80)
-  expect(bounds!.bounds.height).toBeLessThan(260)
+  await expect(async () => {
+    const bounds = await getTitlePopupBounds(ctx.app)
+    expect(bounds?.kind).toBe('downloads')
+    expect(bounds!.bounds.height).toBeGreaterThan(80)
+    expect(bounds!.bounds.height).toBeLessThan(260)
+  }).toPass({ timeout: 5_000 })
 })
 
 test('many entries cap at the ceiling and the list scrolls @windows @macos @linux', async () => {
@@ -80,17 +81,18 @@ test('many entries cap at the ceiling and the list scrolls @windows @macos @linu
   await seedDownloads(ctx.app, { active, recent: [] })
   await openDownloadsTray(ctx.titleBar)
   await waitForPopupVisible(ctx.app)
-  await waitForStableBounds(ctx.app)
+  await expect(async () => {
+    const bounds = await getTitlePopupBounds(ctx.app)
+    expect(bounds?.kind).toBe('downloads')
+    expect(bounds!.bounds.height).toBeLessThanOrEqual(396)
+    expect(bounds!.bounds.height).toBeGreaterThan(356)
 
-  const bounds = await getTitlePopupBounds(ctx.app)
-  expect(bounds!.bounds.height).toBeLessThanOrEqual(396)
-  expect(bounds!.bounds.height).toBeGreaterThan(356)
-
-  const overflow = await popup.evaluate<{ scroll: number; client: number }>(`(() => {
-    const el = document.querySelector('.downloads-list')
-    return el ? { scroll: el.scrollHeight, client: el.clientHeight } : { scroll: 0, client: 0 }
-  })()`)
-  expect(overflow.scroll).toBeGreaterThan(overflow.client)
+    const overflow = await popup.evaluate<{ scroll: number; client: number }>(`(() => {
+      const el = document.querySelector('.downloads-list')
+      return el ? { scroll: el.scrollHeight, client: el.clientHeight } : { scroll: 0, client: 0 }
+    })()`)
+    expect(overflow.scroll).toBeGreaterThan(overflow.client)
+  }).toPass({ timeout: 5_000 })
 })
 
 test('per-status row close button maps to the right action @windows @macos @linux', async () => {

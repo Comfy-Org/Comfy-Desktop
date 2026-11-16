@@ -25,8 +25,7 @@ const details = ref<MigrateDetailGroup[]>([])
 const checkboxes = ref<MigrateCheckbox[]>([])
 
 let resolver:
-  | ((value: { confirmed: boolean; checkboxValues: Record<string, boolean> }) => void)
-  | null = null
+  ((value: { confirmed: boolean; checkboxValues: Record<string, boolean> }) => void) | null = null
 
 async function open(
   initialTitle: string,

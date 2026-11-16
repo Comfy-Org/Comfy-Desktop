@@ -1,6 +1,13 @@
 import type { ScannedNode } from '../nodes'
 import type { SnapshotTorchStack } from '../../sources/standalone/torchStackTypes'
 
+export type {
+  SnapshotDetailData,
+  SnapshotDiffData,
+  SnapshotDiffSummary,
+  SnapshotSummary
+} from '../../../types/ipc'
+
 export type RestoreMode = 'exact' | 'compatible'
 
 export interface Snapshot {
@@ -68,54 +75,6 @@ export interface SnapshotDiff {
   pipsAdded: Array<{ name: string; version: string }>
   pipsRemoved: Array<{ name: string; version: string }>
   pipsChanged: Array<{ name: string; from: string; to: string }>
-}
-
-export interface SnapshotDiffSummary {
-  nodesAdded: number
-  nodesRemoved: number
-  nodesChanged: number
-  pipsAdded: number
-  pipsRemoved: number
-  pipsChanged: number
-  comfyuiChanged: boolean
-  updateChannelChanged: boolean
-}
-
-export interface SnapshotSummary {
-  filename: string
-  createdAt: string
-  trigger: 'boot' | 'restart' | 'manual' | 'pre-update' | 'post-update' | 'post-restore'
-  label: string | null
-  comfyuiVersion: string
-  nodeCount: number
-  pipPackageCount: number
-  diffVsPrevious?: SnapshotDiffSummary
-}
-
-export interface SnapshotDetailData {
-  filename: string
-  createdAt: string
-  trigger: string
-  label: string | null
-  comfyuiVersion: string
-  comfyui: {
-    ref: string
-    commit: string | null
-    releaseTag: string
-    variant: string
-  }
-  pythonVersion?: string
-  updateChannel?: string
-  customNodes: ScannedNode[]
-  pipPackageCount: number
-  pipPackages: Record<string, string>
-}
-
-export interface SnapshotDiffData {
-  mode: 'previous' | 'current'
-  baseLabel: string
-  diff: SnapshotDiff
-  empty: boolean
 }
 
 export interface RestoreRevertOutcome {

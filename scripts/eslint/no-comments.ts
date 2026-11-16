@@ -119,8 +119,7 @@ export default {
       Program() {
         for (const comment of source.getAllComments()) check(comment as CommentLike)
         const getDocumentFragment = source.parserServices?.getDocumentFragment as
-          | (() => AST.VDocumentFragment | null)
-          | undefined
+          (() => AST.VDocumentFragment | null) | undefined
         for (const comment of getDocumentFragment?.()?.comments ?? []) {
           check(comment as CommentLike)
         }

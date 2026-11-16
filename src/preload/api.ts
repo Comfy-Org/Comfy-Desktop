@@ -1,6 +1,6 @@
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
+import type { AppPageStatus, ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
 
 export function buildElectronApi(): ElectronApi {
   return {
@@ -70,8 +70,6 @@ export function buildElectronApi(): ElectronApi {
     trackInstallation: (data) => ipcRenderer.invoke('track-installation', data),
     installInstance: (installationId, express) =>
       ipcRenderer.invoke('install-instance', installationId, express),
-    skipTemplateDownload: (installationId) =>
-      ipcRenderer.invoke('skip-template-download', installationId),
     updateInstallation: (installationId, data) =>
       ipcRenderer.invoke('update-installation', installationId, data),
 
@@ -86,8 +84,6 @@ export function buildElectronApi(): ElectronApi {
     terminalResize: (installationId, cols, rows) =>
       ipcRenderer.invoke('terminal-resize', installationId, cols, rows),
     terminalRestart: (installationId) => ipcRenderer.invoke('terminal-restart', installationId),
-    openInstallInNewWindow: (installationId) =>
-      ipcRenderer.send('comfy-window:open-install-new-window', installationId),
     openInstallWindow: (installationId) =>
       ipcRenderer.invoke('open-install-window', installationId),
     closeComfyWindow: (installationId, opts) =>
@@ -98,6 +94,35 @@ export function buildElectronApi(): ElectronApi {
     closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
+    listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
+    listLocalAssets: (installationId?: string) =>
+      ipcRenderer.invoke('assets:list-local', installationId),
+    downloadAsset: (source, assetId, fileName) =>
+      ipcRenderer.invoke('assets:download', source, assetId, fileName),
+    revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),
+    copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),
+    trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
+    listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
+    openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
+    getAppsEnabled: () => ipcRenderer.invoke('apps:get-enabled'),
+    listApps: () => ipcRenderer.invoke('apps:list'),
+    showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
+    captureAppPage: () => ipcRenderer.invoke('apps:capture-page'),
+    hideAppPage: () => ipcRenderer.send('apps:hide-page'),
+    onAppPageStatusChanged: (callback) => {
+      const handler = (
+        _event: IpcRendererEvent,
+        appId: string | null,
+        status: AppPageStatus
+      ): void => callback(appId, status)
+      ipcRenderer.on('apps:page-status-changed', handler)
+      return () => ipcRenderer.removeListener('apps:page-status-changed', handler)
+    },
+    onAppPageClosed: (callback) => {
+      const handler = (): void => callback()
+      ipcRenderer.on('apps:page-closed', handler)
+      return () => ipcRenderer.removeListener('apps:page-closed', handler)
+    },
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
@@ -238,8 +263,8 @@ export function buildElectronApi(): ElectronApi {
         return () => ipcRenderer.removeListener('comfybuilder:authChanged', handler)
       },
       listWorkspaces: () => ipcRenderer.invoke('comfybuilder:listWorkspaces'),
-      switchWorkspace: (workspaceId) =>
-        ipcRenderer.invoke('comfybuilder:switchWorkspace', workspaceId),
+      switchWorkspace: (workspaceId, intent) =>
+        ipcRenderer.invoke('comfybuilder:switchWorkspace', workspaceId, intent),
       listBuilds: () => ipcRenderer.invoke('comfybuilder:listBuilds'),
       openBuildsPage: (workspaceId) =>
         ipcRenderer.invoke('comfybuilder:openBuildsPage', workspaceId),

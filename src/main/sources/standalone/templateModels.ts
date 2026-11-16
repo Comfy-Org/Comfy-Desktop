@@ -109,14 +109,6 @@ function walkNodes(nodes: unknown, out: RawModel[]): void {
   }
 }
 
-export async function resolveTemplateModels(
-  installation: InstallationRecord | null,
-  templateId: string
-): Promise<TemplateModelDownload[]> {
-  const json = await loadTemplateJson(installation, templateId)
-  return resolveTemplateModelsFromJson(json)
-}
-
 export function resolveTemplateModelsFromJson(json: unknown): TemplateModelDownload[] {
   if (!json || typeof json !== 'object') return []
 

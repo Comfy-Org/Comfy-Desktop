@@ -6,6 +6,7 @@ import { handleCopy, handleCopyUpdate, handleCopyChangePytorch, handleReleaseUpd
 import { handleMigrateToStandalone } from './migrate'
 import { handleLaunch } from './launch'
 import { handleDelegateToSource } from './delegate'
+import { occupiesInstall } from './occupiesInstall'
 
 export type { ActionContext, ActionResult } from './types'
 export { handleRemove, handleOpenFolder, handleRename } from './basic'
@@ -83,9 +84,13 @@ export async function dispatchSessionAction(
   actionId: string
 ): Promise<ActionResult> {
   const { installationId } = ctx
-  const owned = !_activeActions.has(installationId)
+  const running = _activeActions.get(installationId)
+  const takesOverFromLookup =
+    running !== undefined && occupiesInstall(actionId) && !occupiesInstall(running.actionId)
+  const owned = running === undefined || takesOverFromLookup
+  const entry = { actionId }
   if (owned) {
-    _activeActions.set(installationId, { actionId })
+    _activeActions.set(installationId, entry)
     _broadcastToRenderer('operation-changed', { installationId, actionId, active: true })
   }
   try {
@@ -94,7 +99,7 @@ export async function dispatchSessionAction(
     }
     return await handleDelegateToSource(ctx, actionId)
   } finally {
-    if (owned) {
+    if (owned && _activeActions.get(installationId) === entry) {
       _activeActions.delete(installationId)
       _broadcastToRenderer('operation-changed', { installationId, actionId, active: false })
     }

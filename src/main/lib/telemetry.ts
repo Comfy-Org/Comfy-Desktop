@@ -5,8 +5,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 export type FeatureFlagValue = string | boolean
 
 export type OpsFlagFetchResult =
-  | { kind: 'value'; value: FeatureFlagValue; payload: unknown }
-  | { kind: 'unreachable' }
+  { kind: 'value'; value: FeatureFlagValue; payload: unknown } | { kind: 'unreachable' }
 import {
   DEFAULT_POSTHOG_API_KEY,
   DEFAULT_POSTHOG_HOST,

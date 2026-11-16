@@ -30,21 +30,16 @@ import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
+import { registerOutputFilesScheme, registerOutputFolderHandlers } from './lib/outputFolders'
 import { initAppLog, flushOperationOutput } from './lib/appLog'
 import { pruneCrashDumps } from './lib/crashDumps'
 import { createStartupReentryGate } from './lib/startupReentryGate'
 import { registerTitleTooltipIpc } from './popups/titleTooltip'
 import { registerTitleCoachmarkIpc } from './popups/titleCoachmark'
-import {
-  openSystemModal,
-  openSystemModalAsync,
-  openSystemModalChoiceAsync,
-  registerSystemModalIpc
-} from './popups/systemModal'
+import { openSystemModal, openSystemModalAsync, registerSystemModalIpc } from './popups/systemModal'
 import {
   registerTitlePopupIpc,
   triggerPickerSnapshotBroadcast,
-  openDownloadsTrayForInstall,
   type InstancePickerInstall
 } from './popups/titlePopup'
 import { registerPickerSettingsIpc } from './popups/pickerSettingsHandlers'
@@ -55,6 +50,10 @@ import {
   setQuitReason,
   setSessionEnding
 } from './lib/quit-state'
+import {
+  postponeQuitWhileDestroyedWindowsHaveLiveWebContents,
+  trackWindowWebContents
+} from './lib/quitAfterWindowWebContents'
 import { showUpdateInstallSplash } from './lib/updateSplash'
 import type { InstallationRecord } from './installations'
 import {
@@ -69,11 +68,7 @@ import {
 } from './lib/comfyDownloadManager'
 import { stopAgentPrefetches } from './lib/agentRequirementsLaunch'
 import { prefetchEnrolledAgents } from './lib/agentPrefetch'
-import {
-  hasActiveTemplateDownloads,
-  getTemplateDownloadState
-} from './sources/standalone/templateDownloadTask'
-import { isTerminal as isTemplateDownloadTerminal } from './sources/standalone/templateDownloadCore'
+import { hasActiveTemplateDownloads } from './sources/standalone/templateDownloadTask'
 import { registerAssetDownloadHandlers } from './lib/ipc/registerAssetDownloadHandlers'
 import { registerDownloadHandlers } from './lib/ipc/registerDownloadHandlers'
 import { registerTemplateInputAssetHandlers } from './lib/ipc/registerTemplateInputAssetHandlers'
@@ -123,11 +118,18 @@ import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
+import { initAppsFlag } from './apps/appsFlag'
+import { runningPortOf } from './apps/localBuild'
+import { isRunningForAppsOnly, stopBuildsRunningForAppsOnly } from './apps/localComfy'
+import { initWorkspaceMintSwitchFlag } from './lib/workspaceMintSwitchFlag'
+import { getCloudSession } from './devplatform/session'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
 import { readSmartAppControlState } from './lib/smartAppControl'
 
 import {
+  bringToFront,
+  canRestartFromPicker,
   claimAttachHost,
   comfyWindows,
   computeBodyMode,
@@ -141,11 +143,13 @@ import {
   isInstallHost,
   openOrFocusAnyHostWindow,
   openOrFocusChooserHostWindow,
+  openOrFocusHomeHostWindow,
   raiseAllHostWindows,
+  routeBuildOpen,
   setHostFactories,
   shouldConfirmKillForEntry
 } from './host/registry'
-import type { ComfyWindowEntry } from './host/registry'
+import type { BuildOpenRoute, ComfyWindowEntry } from './host/registry'
 import {
   applyChooserHostThemeToAll,
   createHostWindow,
@@ -191,6 +195,8 @@ try {
 if (settings.get('hardwareAcceleration') === false) {
   app.disableHardwareAcceleration()
 }
+
+registerOutputFilesScheme()
 
 todesktop.init({ autoUpdater: false })
 
@@ -505,7 +511,6 @@ function onLaunch({
     if (proc) {
       proc.on('exit', () => {})
     }
-    scheduleTemplateTrayAutoOpen(installationId)
     return
   }
 
@@ -521,7 +526,6 @@ function onLaunch({
         if (proc) {
           proc.on('exit', () => {})
         }
-        scheduleTemplateTrayAutoOpen(installationId)
         return
       }
     }
@@ -555,26 +559,11 @@ function onLaunch({
     return
   }
 
-  entry.layoutViews()
+  prewarmAttachedPanel(entry)
 
   if (proc) {
     proc.on('exit', () => {})
   }
-
-  scheduleTemplateTrayAutoOpen(installationId)
-}
-
-const TEMPLATE_TRAY_AUTO_OPEN_MS = 2500
-
-function scheduleTemplateTrayAutoOpen(installationId: string): void {
-  const state = getTemplateDownloadState(installationId)
-  if (!state || isTemplateDownloadTerminal(state.status)) return
-  setTimeout(() => {
-    const cur = getTemplateDownloadState(installationId)
-    if (cur && !isTemplateDownloadTerminal(cur.status)) {
-      openDownloadsTrayForInstall(installationId)
-    }
-  }, TEMPLATE_TRAY_AUTO_OPEN_MS)
 }
 
 ipcMain.handle('quit-app', () => quitApp())
@@ -618,7 +607,6 @@ ipcMain.on('comfy-window:set-first-use-mode', (event, payload: { mode: unknown }
       }
       return
     }
-    return
   }
 })
 
@@ -769,14 +757,39 @@ ipcMain.on('comfy-window:new-chooser-window', () => {
   openChooserHostWindow()
 })
 
-ipcMain.handle('focus-comfy-window', (_event, installationId: string) => {
-  recordIpcInvocation('focus-comfy-window', { installationId })
+ipcMain.on('comfy-window:show-home', (event) => {
+  const found = findEntryByTitleBarSender(event.sender)
+  if (!found || !isInstallHost(found.entry)) return
+  recordIpcInvocation('comfy-window:show-home')
+  openOrFocusHomeHostWindow()
+})
+
+function focusOpenComfyWindow(installationId: string): boolean {
   const entry = getEntryByInstallationId(installationId)
-  if (entry && !entry.window.isDestroyed()) {
-    entry.window.show()
-    entry.window.focus()
-    return true
-  }
+  if (!entry || entry.window.isDestroyed()) return false
+  entry.window.show()
+  entry.window.focus()
+  return true
+}
+
+async function openWindowForAppsBuild(installationId: string): Promise<boolean> {
+  const installation = await getInstallation(installationId)
+  if (focusOpenComfyWindow(installationId)) return true
+  const port = runningPortOf(installationId)
+  if (!installation || port === null) return false
+  onLaunch({
+    port,
+    process: ipc.getSessionProcess(installationId),
+    installation,
+    mode: 'window'
+  })
+  return focusOpenComfyWindow(installationId)
+}
+
+ipcMain.handle('focus-comfy-window', async (_event, installationId: string) => {
+  recordIpcInvocation('focus-comfy-window', { installationId })
+  if (focusOpenComfyWindow(installationId)) return true
+  if (isRunningForAppsOnly(installationId)) return openWindowForAppsBuild(installationId)
 
   const proc = ipc.getSessionProcess(installationId)
   if (proc?.pid) {
@@ -890,6 +903,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   }
 
   app.on('browser-window-created', (_event, window) => {
+    trackWindowWebContents(window)
     window.on('query-session-end', () => {
       updater.suppressInstallOnQuit()
     })
@@ -934,6 +948,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     })
     setHostFactories({ createChooser: openChooserHostWindow })
     registerPanelViewIpc()
+    registerOutputFolderHandlers()
 
     migrateXdgPaths()
     persistWinDataRootChoice()
@@ -1017,6 +1032,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
 
+    void initAppsFlag({ distinctId: installationId })
+
+    void initWorkspaceMintSwitchFlag({ distinctId: installationId })
+
+    getCloudSession().resumeRevocations()
+
     const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
     i18n.init(locale)
 
@@ -1053,107 +1074,48 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       })
     }
 
-    const openInstallInNewWindow = async (
-      installationId: string,
-      opts?: { allowDuplicate?: boolean }
-    ): Promise<void> => {
-      const existing = getEntryByInstallationId(installationId)
-      const willFocusExisting =
-        !!existing && !existing.window.isDestroyed() && !opts?.allowDuplicate
-      recordIpcInvocation('open-install-new-window', {
-        installationId,
-        allowDuplicate: opts?.allowDuplicate === true,
-        focusedExisting: willFocusExisting
-      })
-      if (willFocusExisting) {
-        existing.window.show()
-        existing.window.focus()
-        return
-      }
-      try {
-        const inst = await getInstallation(installationId)
-        if (!inst) {
-          console.error('openInstallInNewWindow: unknown installation, not spawning', {
-            installationId
-          })
-          return
-        }
-        const target = findEntryByHostWindow(openChooserHostWindow())
-        if (!target) {
-          console.error('openInstallInNewWindow: spawned chooser host not in registry', {
-            installationId
-          })
-          return
-        }
+    const recordBuildOpen = (installationId: string, route: BuildOpenRoute): void => {
+      recordIpcInvocation('open-build', { installationId, route: route.kind })
+      if (route.kind === 'start-from' || route.kind === 'start-from-home') {
         mainTelemetry.emit('comfy.desktop.instance.opened_new_window', {
           to_installation_id: installationId,
           method: 'picker'
         })
-        deliverPickToEntry(target, installationId)
-      } catch (err) {
-        console.error('openInstallInNewWindow failed:', err)
       }
     }
 
-    const pickInstallFromPicker = async (
-      installationId: string,
-      parentEntryId: number,
-      opts?: { confirmed?: boolean }
-    ): Promise<void> => {
-      const existing = getEntryByInstallationId(installationId)
-      if (existing && !existing.window.isDestroyed()) {
-        existing.window.show()
-        existing.window.focus()
-        return
-      }
-      const parentEntry = comfyWindows.get(parentEntryId)
-      if (!parentEntry || parentEntry.window.isDestroyed()) return
-
-      if (parentEntry.installationId === installationId) return
-
-      if (parentEntry.installationId != null) {
-        if (!opts?.confirmed && shouldConfirmKillForEntry(parentEntry)) {
-          let targetName = installationId
-          try {
-            const target = await getInstallation(installationId)
-            if (target?.name) targetName = target.name
-          } catch {}
-          const choice = await openSystemModalChoiceAsync({
-            parent: parentEntry.window,
-            spec: {
-              title: 'Switch instance?',
-              message: `Switch to ${targetName}?`,
-              details: [
-                {
-                  label: 'Heads up',
-                  items: [
-                    'Switch stops the current instance and replaces it in this window.',
-                    'Open in new window keeps the current instance running.'
-                  ]
-                }
-              ],
-              confirmLabel: 'Switch',
-              secondaryLabel: 'Open in new window',
-              cancelLabel: 'Cancel',
-              confirmStyle: 'primary',
-              theme: parentEntry.lastTheme
-            }
-          })
-          if (choice === 'cancel') return
-          if (choice === 'secondary') {
-            openInstallInNewWindow(installationId)
+    const openBuild = async (installationId: string, requesterEntryId: number): Promise<void> => {
+      const requester = comfyWindows.get(requesterEntryId)
+      const route = routeBuildOpen(installationId, requester, _getLaunchingInstallationIds())
+      recordBuildOpen(installationId, route)
+      switch (route.kind) {
+        case 'ignore':
+          return
+        case 'focus':
+          bringToFront(route.entry.window)
+          return
+        case 'show-starting':
+          if (route.entry) bringToFront(route.entry.window)
+          else openOrFocusHomeHostWindow()
+          return
+        case 'start-from':
+          deliverPickToEntry(route.entry, installationId)
+          return
+        case 'start-from-home': {
+          const inst = await getInstallation(installationId)
+          if (!inst) {
+            console.error('openBuild: unknown installation, not starting it', { installationId })
             return
           }
+          const homeEntry = findEntryByHostWindow(openOrFocusHomeHostWindow())
+          if (!homeEntry) {
+            console.error('openBuild: Desktop window not in registry', { installationId })
+            return
+          }
+          deliverPickToEntry(homeEntry, installationId)
+          return
         }
-        mainTelemetry.emit('comfy.desktop.instance.switched', {
-          from_installation_id: parentEntry.installationId,
-          to_installation_id: installationId,
-          method: 'picker'
-        })
-        parentEntry.detachInstall()
       }
-
-      deliverPickToEntry(parentEntry, installationId)
     }
 
     registerTitlePopupIpc({
@@ -1311,26 +1273,30 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
               actionId
             )
             const wantsRelaunch = wasRunning && IN_PLACE_RELAUNCH.has(actionId)
+            let relaunchFailure: string | null = null
             if (actionResult.ok && wantsRelaunch) {
               const freshInst = (await getInstallation(installationId)) ?? inst
-              await handleLaunch({
+              const relaunch = await handleLaunch({
                 event: stubEvent,
                 installationId,
                 inst: freshInst,
                 actionData: undefined
               })
+              if (!relaunch.ok && !relaunch.cancelled) {
+                relaunchFailure = relaunch.message ?? i18n.t('progress.unknownError')
+              }
             }
             const wasCancelled = actionResult.cancelled === true
             result = {
               status: '',
               percent: wasCancelled ? -1 : 100,
               done: true,
-              ok: !wasCancelled && actionResult.ok !== false,
+              ok: !wasCancelled && actionResult.ok !== false && relaunchFailure === null,
               error: wasCancelled
                 ? MSG_CANCELLED
                 : actionResult.ok === false
                   ? (actionResult.message ?? 'Failed.')
-                  : null,
+                  : relaunchFailure,
               cancellable,
               title,
               actionId,
@@ -1466,13 +1432,13 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           return { ok: false, message: err instanceof Error ? err.message : 'Action failed.' }
         }
       },
-      pickInstallFromPicker,
-      openInstallInNewWindow,
+      pickInstallFromPicker: openBuild,
       restartInstallFromPicker: async (installationId, parentEntryId, opts) => {
         const parentEntry = comfyWindows.get(parentEntryId)
         if (!parentEntry || parentEntry.window.isDestroyed()) return
-        const boundInstallationId = parentEntry.installationId ?? parentEntry.previewInstallationId
-        if (boundInstallationId !== installationId) return
+        if (!canRestartFromPicker(parentEntry, installationId, _getLaunchingInstallationIds())) {
+          return
+        }
         if (opts?.confirmed !== true && shouldConfirmKillForEntry(parentEntry)) {
           const confirmed = await openSystemModalAsync({
             parent: parentEntry.window,
@@ -1652,6 +1618,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         tray = null
       }
     }
+    if (postponeQuitWhileDestroyedWindowsHaveLiveWebContents(event)) return
     updater.recordProcessExit()
     if (_stopPeriodicReleaseChecks) {
       _stopPeriodicReleaseChecks()
@@ -1679,8 +1646,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   })
 
   app.on('window-all-closed', () => {
-    if (!ipc.hasRunningSessions()) {
-      app.quit()
-    }
+    void stopBuildsRunningForAppsOnly().finally(() => {
+      if (BrowserWindow.getAllWindows().length > 0) return
+      if (!ipc.hasRunningSessions()) {
+        app.quit()
+      }
+    })
   })
 }

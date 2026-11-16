@@ -26,8 +26,7 @@ const { t } = useI18n()
           : 'max-h-[200px] py-2.5 pr-[38px] pl-3 text-xs'
       "
       :data-testid="TID.pickerOpErrorMessage"
-      >{{ props.error }}</pre
-    >
+      >{{ props.error }}</pre>
     <BaseCopyButton
       class="op-error-detail__copy absolute"
       :class="compact ? 'top-1 right-1' : 'top-1.5 right-1.5'"

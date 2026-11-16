@@ -63,6 +63,35 @@ describe('getPhaseWeights', () => {
     expect(w.extract).toBe(0.3)
   })
 
+  it('weights a standalone install by how long each of its four steps takes', () => {
+    const w = getPhaseWeights(steps('download', 'extract', 'setup', 'update'))
+    expect(w).toEqual({ download: 0.4, extract: 0.2, setup: 0.3, update: 0.1 })
+    expect(sum(w)).toBeCloseTo(1.0, 5)
+  })
+
+  it('gives the whole bar to the other steps when a standalone install has no version step', () => {
+    const w = getPhaseWeights(steps('download', 'extract', 'setup'))
+    expect(w).toEqual({ download: 0.45, extract: 0.2, setup: 0.35 })
+    expect(sum(w)).toBeCloseTo(1.0, 5)
+  })
+
+  it('leaves room for the two restore steps when a snapshot is restored after the install', () => {
+    const restored = getPhaseWeights(
+      steps('download', 'extract', 'setup', 'restore-nodes', 'restore-pip')
+    )
+    expect(sum(restored)).toBeCloseTo(1.0, 5)
+    expect(restored['restore-nodes']).toBe(0.18)
+    expect(restored['restore-pip']).toBe(0.12)
+    expect(restored.download).toBeGreaterThan(restored.setup!)
+
+    const restoredAndUpdated = getPhaseWeights(
+      steps('download', 'extract', 'setup', 'update', 'restore-nodes', 'restore-pip')
+    )
+    expect(sum(restoredAndUpdated)).toBeCloseTo(1.0, 5)
+    expect(restoredAndUpdated.update).toBe(0.1)
+    expect(restoredAndUpdated['restore-nodes']).toBe(0.15)
+  })
+
   it('uses the curated table for a comfybuilder build install', () => {
     const w = getPhaseWeights(steps('download', 'extract', 'models'))
     expect(sum(w)).toBeCloseTo(1.0, 5)

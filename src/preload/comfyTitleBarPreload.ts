@@ -41,6 +41,7 @@ export interface DownloadsTrayState {
 export interface ComfyTitleBarBridge {
   getInstallationId(): string | null
   isMac(): boolean
+  isLinux(): boolean
   setPanel(panel: ComfyPanelKey): void
   openNewWindow(): void
   openFileMenu(anchor: TitleMenuAnchor): void
@@ -75,6 +76,7 @@ export interface ComfyTitleBarBridge {
   clickFeedback(): void
   clickAnnouncement(): void
   clickRefreshInstance(): void
+  clickHome(): void
   resetZoom(): void
   showTooltip(payload: { text: string; leftX: number; rightX: number; bottomY: number }): void
   hideTooltip(): void
@@ -116,6 +118,7 @@ function readInstallationId(): string | null {
 const bridge: ComfyTitleBarBridge = {
   getInstallationId: () => readInstallationId(),
   isMac: () => (g.navigator?.userAgent ?? '').toLowerCase().includes('mac'),
+  isLinux: () => (g.navigator?.userAgent ?? '').toLowerCase().includes('linux'),
   setPanel: (panel) => {
     ipcRenderer.send('comfy-window:set-panel', { panel })
   },
@@ -263,6 +266,9 @@ const bridge: ComfyTitleBarBridge = {
   },
   clickRefreshInstance: () => {
     ipcRenderer.send('comfy-window:click-refresh-instance')
+  },
+  clickHome: () => {
+    ipcRenderer.send('comfy-window:show-home')
   },
   resetZoom: () => {
     ipcRenderer.send('comfy-window:reset-zoom')

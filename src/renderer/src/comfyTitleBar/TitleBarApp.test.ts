@@ -48,6 +48,7 @@ interface MockBridgeState {
   installPillClicks: { x: number; y: number }[]
   feedbackClicks: number
   refreshInstanceClicks: number
+  homeClicks: number
   resetZoomClicks: number
   showTooltipCalls: { text: string; leftX: number; rightX: number; bottomY: number }[]
   hideTooltipCalls: number
@@ -71,7 +72,7 @@ interface MockBridgeState {
 }
 
 function installMockBridge(
-  opts: { isMac?: boolean; installationId?: string | null } = {}
+  opts: { isMac?: boolean; isLinux?: boolean; installationId?: string | null } = {}
 ): MockBridgeState {
   const state: MockBridgeState = {
     panelChangedCallbacks: [],
@@ -98,6 +99,7 @@ function installMockBridge(
     installPillClicks: [],
     feedbackClicks: 0,
     refreshInstanceClicks: 0,
+    homeClicks: 0,
     resetZoomClicks: 0,
     showTooltipCalls: [],
     hideTooltipCalls: 0,
@@ -114,6 +116,7 @@ function installMockBridge(
   const bridge = {
     getInstallationId: () => installationId,
     isMac: () => !!opts.isMac,
+    isLinux: () => !!opts.isLinux,
     setPanel: (panel: string) => state.setPanelCalls.push(panel),
     openNewWindow: () => {
       state.newWindowCalls += 1
@@ -208,6 +211,9 @@ function installMockBridge(
     clickRefreshInstance: () => {
       state.refreshInstanceClicks += 1
     },
+    clickHome: () => {
+      state.homeClicks += 1
+    },
     resetZoom: () => {
       state.resetZoomClicks += 1
     },
@@ -270,7 +276,7 @@ describe('TitleBarApp', () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
-    const fileBtn = wrapper.find('.title-menu-button')
+    const fileBtn = wrapper.find('.title-menu-button[aria-haspopup="menu"]')
     expect(fileBtn.exists()).toBe(true)
     expect(fileBtn.attributes('aria-label')).toBe('Menu')
     expect(fileBtn.classes()).toContain('title-menu-button--icon')
@@ -307,7 +313,7 @@ describe('TitleBarApp', () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp, { attachTo: document.body })
     await flushPromises()
-    await wrapper.find('.title-menu-button').trigger('click')
+    await wrapper.find('.title-menu-button[aria-haspopup="menu"]').trigger('click')
     expect(bridgeState.fileMenuAnchors.length).toBe(1)
     const anchor = bridgeState.fileMenuAnchors[0]!
     expect(typeof anchor.x).toBe('number')
@@ -393,13 +399,13 @@ describe('TitleBarApp', () => {
     const wrapper = mount(TitleBarApp, { attachTo: document.body })
     await flushPromises()
 
-    await wrapper.find('.title-menu-button').trigger('click')
+    await wrapper.find('.title-menu-button[aria-haspopup="menu"]').trigger('click')
     expect(bridgeState.fileMenuAnchors.length).toBe(1)
 
     bridgeState.menuClosedCallbacks.forEach((cb) => cb({ menu: 'menu' }))
     await flushPromises()
 
-    await wrapper.find('.title-menu-button').trigger('click')
+    await wrapper.find('.title-menu-button[aria-haspopup="menu"]').trigger('click')
     expect(bridgeState.fileMenuAnchors.length).toBe(1)
 
     wrapper.unmount()
@@ -409,7 +415,7 @@ describe('TitleBarApp', () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
-    expect(wrapper.find('.title-menu-button--icon').exists()).toBe(true)
+    expect(wrapper.find('.title-menu-button[aria-haspopup="menu"]').exists()).toBe(true)
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(true)
     expect(wrapper.find('.title-feedback-button').exists()).toBe(true)
     expect(wrapper.find('.title-install-pill.is-interactive').exists()).toBe(true)
@@ -418,7 +424,7 @@ describe('TitleBarApp', () => {
     bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('consent-lockdown'))
     await flushPromises()
     expect(wrapper.find('header').classes()).toContain('is-consent-lockdown')
-    expect(wrapper.find('.title-menu-button--icon').exists()).toBe(false)
+    expect(wrapper.find('.title-menu-button[aria-haspopup="menu"]').exists()).toBe(false)
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(false)
     expect(wrapper.find('.title-feedback-button').exists()).toBe(false)
     expect(wrapper.find('.title-install-pill.is-interactive').exists()).toBe(false)
@@ -426,7 +432,7 @@ describe('TitleBarApp', () => {
     bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('post-consent'))
     await flushPromises()
     expect(wrapper.find('header').classes()).not.toContain('is-consent-lockdown')
-    expect(wrapper.find('.title-menu-button--icon').exists()).toBe(true)
+    expect(wrapper.find('.title-menu-button[aria-haspopup="menu"]').exists()).toBe(true)
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(false)
     expect(wrapper.find('.title-feedback-button').exists()).toBe(false)
     expect(wrapper.find('.title-install-pill.is-interactive').exists()).toBe(false)
@@ -434,7 +440,7 @@ describe('TitleBarApp', () => {
     bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('loading-lockdown'))
     await flushPromises()
     expect(wrapper.find('header').classes()).not.toContain('is-consent-lockdown')
-    expect(wrapper.find('.title-menu-button--icon').exists()).toBe(true)
+    expect(wrapper.find('.title-menu-button[aria-haspopup="menu"]').exists()).toBe(true)
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(true)
     expect(wrapper.find('.title-feedback-button').exists()).toBe(true)
     expect(wrapper.find('.title-install-pill.is-interactive').exists()).toBe(true)
@@ -442,11 +448,104 @@ describe('TitleBarApp', () => {
     bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('none'))
     await flushPromises()
     expect(wrapper.find('header').classes()).not.toContain('is-consent-lockdown')
-    expect(wrapper.find('.title-menu-button--icon').exists()).toBe(true)
+    expect(wrapper.find('.title-menu-button[aria-haspopup="menu"]').exists()).toBe(true)
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(true)
     expect(wrapper.find('.title-feedback-button').exists()).toBe(true)
     expect(wrapper.find('.title-install-pill.is-interactive').exists()).toBe(true)
     wrapper.unmount()
+  })
+
+  describe('Home button and the ☰ on the right', () => {
+    const menuButton = '.title-menu-button[aria-haspopup="menu"]'
+
+    it('puts Home alone on the left of a build window and sends the click to the Desktop window', async () => {
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp)
+      await flushPromises()
+      bridgeState.sourceCategoryChangedCallbacks.forEach((cb) => cb('local'))
+      await flushPromises()
+
+      const leading = wrapper.find('.title-cluster')
+      const home = leading.find('.title-home-button')
+      expect(home.exists()).toBe(true)
+      expect(home.text()).toBe('Home')
+      expect(leading.find(menuButton).exists()).toBe(false)
+      expect(leading.find('.title-refresh-button').exists()).toBe(false)
+
+      await home.trigger('click')
+      expect(bridgeState.homeClicks).toBe(1)
+      wrapper.unmount()
+    })
+
+    it("ends the right side with the ☰, after refresh, What's new, Feedback and Downloads", async () => {
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp)
+      await flushPromises()
+      bridgeState.sourceCategoryChangedCallbacks.forEach((cb) => cb('local'))
+      await flushPromises()
+
+      const trailing = wrapper.find('.title-trailing').element
+      const controls: [string, string][] = [
+        ['.title-refresh-button', 'refresh'],
+        ['.title-announcement-button', 'whats-new'],
+        ['.title-feedback-button', 'feedback'],
+        ['.title-downloads-tray', 'downloads'],
+        [menuButton, 'menu']
+      ]
+      const order = Array.from(trailing.children).flatMap((el) =>
+        controls.filter(([selector]) => el.matches(selector)).map(([, name]) => name)
+      )
+      expect(order).toEqual(['refresh', 'whats-new', 'feedback', 'downloads', 'menu'])
+      wrapper.unmount()
+    })
+
+    it('shows no Home button in the Desktop window, and keeps its ☰ on the right', async () => {
+      bridgeState = installMockBridge({ installationId: null })
+      vi.resetModules()
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp)
+      await flushPromises()
+
+      expect(wrapper.find('.title-home-button').exists()).toBe(false)
+      expect(wrapper.find('.title-cluster').element.children.length).toBe(0)
+      expect(wrapper.find('.title-trailing').element.lastElementChild?.matches(menuButton)).toBe(
+        true
+      )
+      wrapper.unmount()
+    })
+
+    it('adds Home when the Desktop window starts a build in place', async () => {
+      bridgeState = installMockBridge({ installationId: null })
+      vi.resetModules()
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp)
+      await flushPromises()
+      expect(wrapper.find('.title-home-button').exists()).toBe(false)
+
+      bridgeState.installationIdChangedCallbacks.forEach((cb) => cb('inst-started-here'))
+      await flushPromises()
+      expect(wrapper.find('.title-home-button').exists()).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('hides Home through the first-use takeover and brings it back for loading', async () => {
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp)
+      await flushPromises()
+
+      bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('consent-lockdown'))
+      await flushPromises()
+      expect(wrapper.find('.title-home-button').exists()).toBe(false)
+
+      bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('post-consent'))
+      await flushPromises()
+      expect(wrapper.find('.title-home-button').exists()).toBe(false)
+
+      bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('loading-lockdown'))
+      await flushPromises()
+      expect(wrapper.find('.title-home-button').exists()).toBe(true)
+      wrapper.unmount()
+    })
   })
 
   it('toggles is-fullscreen in response to onFullscreenChanged', async () => {
@@ -1005,7 +1104,7 @@ describe('TitleBarApp', () => {
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp, { attachTo: document.body })
       await flushPromises()
-      const btn = wrapper.find('.title-menu-button').element as HTMLElement
+      const btn = wrapper.find('.title-menu-button[aria-haspopup="menu"]').element as HTMLElement
       btn.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }))
       vi.advanceTimersByTime(1000)
       await flushPromises()
@@ -1023,7 +1122,7 @@ describe('TitleBarApp', () => {
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp)
       await flushPromises()
-      const btn = wrapper.find('.title-menu-button')
+      const btn = wrapper.find('.title-menu-button[aria-haspopup="menu"]')
       expect(btn.attributes('aria-label')).toBe('Menu')
       expect(btn.attributes('data-title-tooltip')).toBe('Menu')
       expect(btn.attributes('title')).toBeUndefined()
@@ -1035,7 +1134,7 @@ describe('TitleBarApp', () => {
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp)
       await flushPromises()
-      const btn = wrapper.find('.title-menu-button')
+      const btn = wrapper.find('.title-menu-button[aria-haspopup="menu"]')
       expect(btn.attributes('aria-label')).toBe('Menu')
       expect(btn.attributes('title')).toBe('Menu')
       expect(btn.attributes('data-title-tooltip')).toBeUndefined()
@@ -1051,7 +1150,7 @@ describe('TitleBarApp', () => {
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp, { attachTo: document.body })
       await flushPromises()
-      const btn = wrapper.find('.title-menu-button').element as HTMLElement
+      const btn = wrapper.find('.title-menu-button[aria-haspopup="menu"]').element as HTMLElement
       btn.getBoundingClientRect = () =>
         ({ left: 20, top: 6, right: 50, bottom: 30, width: 30, height: 24, x: 20, y: 6 }) as DOMRect
       btn.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }))

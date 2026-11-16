@@ -13,6 +13,7 @@ function platformProjects(name: string, tag: string) {
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: '**/e2e/support/**',
   timeout: 45_000,
   fullyParallel: false,
   workers: 1,
@@ -28,6 +29,6 @@ export default defineConfig({
     ...platformProjects('macos', '@macos'),
     ...platformProjects('windows', '@windows'),
     { name: 'linux', grep: /@linux/ },
-    { name: 'nightly', grep: /@nightly/, timeout: 180_000 }
+    { name: 'real-comfy', grep: /@real-comfy/, timeout: 180_000 }
   ]
 })

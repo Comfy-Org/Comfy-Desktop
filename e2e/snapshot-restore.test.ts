@@ -191,7 +191,7 @@ test.afterAll(async () => {
   if (workTmpPath) await rm(workTmpPath, { recursive: true, force: true })
 })
 
-test('seeded HEADs start at commit B (sanity) @nightly @windows @macos @linux', async () => {
+test('seeded HEADs start at commit B (sanity) @real-comfy @windows @macos @linux', async () => {
   const comfyHead = gitIn(path.join(stagedInstallPath, 'ComfyUI'), ['rev-parse', 'HEAD'])
   const nodeHead = gitIn(path.join(stagedInstallPath, 'ComfyUI', 'custom_nodes', NODE_DIRNAME), [
     'rev-parse',
@@ -201,7 +201,7 @@ test('seeded HEADs start at commit B (sanity) @nightly @windows @macos @linux', 
   expect(nodeHead).toBe(nodeCommitB)
 })
 
-test('snapshot-restore moves ComfyUI + node HEAD back to commit A @nightly @windows @macos @linux', async () => {
+test('snapshot-restore moves ComfyUI + node HEAD back to commit A @real-comfy @windows @macos @linux', async () => {
   const list = await ctx.panel.evaluate<SnapshotListResult>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`
   )
@@ -254,7 +254,7 @@ test('snapshot-restore moves ComfyUI + node HEAD back to commit A @nightly @wind
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('restore captures a post-restore snapshot @nightly @windows @macos @linux', async () => {
+test('restore captures a post-restore snapshot @real-comfy @windows @macos @linux', async () => {
   await expect
     .poll(
       async () =>
@@ -270,7 +270,7 @@ test('restore captures a post-restore snapshot @nightly @windows @macos @linux',
     })
 })
 
-test('picker-driven restore surfaces inline op-card + auto-dismisses on success @nightly', async () => {
+test('picker-driven restore surfaces inline op-card + auto-dismisses on success @real-comfy', async () => {
   test.setTimeout(120_000)
 
   const list = await ctx.panel.evaluate<SnapshotListResult>(
@@ -320,13 +320,12 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
     .toBe(true)
 
   await expect
-    .poll(async () => popup.evaluate<boolean>(`!!document.querySelector('.snapshots-rail-cta')`), {
-      timeout: 8_000,
-      intervals: [200, 400]
-    })
+    .poll(
+      async () =>
+        popup.evaluate<boolean>(
+          `!document.querySelector('${byTestId(TID.snapshotsOpCard)}') && document.querySelector('${byTestId(TID.snapshotsSaveCta)}')?.disabled === false`
+        ),
+      { timeout: 8_000, intervals: [200, 400] }
+    )
     .toBe(true)
-
-  expect(
-    await popup.evaluate<boolean>(`!!document.querySelector('${byTestId(TID.snapshotsOpCard)}')`)
-  ).toBe(false)
 })
