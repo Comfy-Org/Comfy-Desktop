@@ -57,7 +57,7 @@ export const SCENARIOS: PreviewScenario[] = [
   {
     id: 'installing',
     title: 'First build installing, on Home',
-    ready: '[data-testid="home-build-install-detail"]',
+    ready: '[data-testid="home-build-progress"]',
     seed: () => FIRST_USE,
     arrange: async (stage) => {
       stage.bridge.reply({ installInstance: installThatKeepsRunning(stage.bridge) })
@@ -72,7 +72,7 @@ export const SCENARIOS: PreviewScenario[] = [
     arrange: async (stage) => {
       stage.bridge.reply({ installInstance: installThatKeepsRunning(stage.bridge) })
       await acceptTermsAndInstall(stage)
-      await stage.click('[data-testid="home-build-view-logs"]')
+      await stage.click('[data-testid="home-build-open"]')
     }
   },
   {

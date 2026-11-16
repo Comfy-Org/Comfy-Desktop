@@ -83,6 +83,7 @@ import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import { clearCrash, recordCrash } from '../../crashBuffer'
+import { settleAutoStartOnFirstStart } from '../../firstBuildAutoStart'
 import type { ComfyExitedData } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
 import { buildErrorFields, errorTail } from '../../../../shared/errorEvent'
@@ -905,7 +906,11 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   const launch = _beginLaunch(sessionId)
   const prefetchHold = { release: (): void => {} }
   try {
-    return await runLaunch(ctx, launch.abort, prefetchHold)
+    const result = await runLaunch(ctx, launch.abort, prefetchHold)
+    if (sessionId === installationId && !result.cancelled) {
+      settleAutoStartOnFirstStart(installationId, result.ok)
+    }
+    return result
   } finally {
     prefetchHold.release()
     if (_operationAborts.get(sessionId) === launch.abort) _operationAborts.delete(sessionId)

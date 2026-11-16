@@ -67,6 +67,7 @@ import * as i18n from '../../i18n'
 import { lookupEnMessage } from '../../localeTestHelper'
 import { isPortListening } from '../../process'
 import * as telemetry from '../../telemetry'
+import * as settings from '../../../settings'
 import type { ActionContext, ActionResult } from './types'
 
 const FAKE_COMFY = `
@@ -77,6 +78,10 @@ const args = process.argv.slice(2)
 const valueOf = (flag) => args[args.lastIndexOf(flag) + 1]
 const port = Number(valueOf('--port'))
 const name = valueOf('--name')
+if (fs.existsSync(path.join(valueOf('--state'), 'crash-on-boot'))) {
+  process.stderr.write('RuntimeError: Torch not compiled with CUDA enabled\\n')
+  process.exit(1)
+}
 const bootFile = path.join(valueOf('--state'), 'boot-ms')
 const bootMs = fs.existsSync(bootFile) ? Number(fs.readFileSync(bootFile, 'utf-8')) : 0
 const server = http.createServer((req, res) => {
@@ -137,6 +142,10 @@ async function whoAnswersOn(port: number): Promise<string> {
   return (await fetch(`http://127.0.0.1:${port}/`)).text()
 }
 
+function crashOnBoot(inst: InstallationRecord): void {
+  fs.writeFileSync(path.join(inst.installPath, 'crash-on-boot'), '')
+}
+
 function slowNextBoot(inst: InstallationRecord, ms: number): void {
   fs.writeFileSync(path.join(inst.installPath, 'boot-ms'), String(ms))
 }
@@ -184,6 +193,8 @@ afterEach(async () => {
   await Promise.all(outsiders.splice(0).map(stopOutsider))
   _pendingPorts.clear()
   builds.commands.clear()
+  settings.set('autoLaunchOnStartup', undefined)
+  settings.set('autoStartAwaitingFirstStart', undefined)
   vi.restoreAllMocks()
 })
 
@@ -251,5 +262,50 @@ describe('two builds that want the same port', { timeout: 30_000 }, () => {
     )
     expect(result.message).toContain(`Port ${defaultPort} is already in use`)
     expect(_runningSessions.has('studio')).toBe(false)
+  })
+})
+
+describe('Auto start on the first build, decided by its first start', { timeout: 30_000 }, () => {
+  function justInstalled(inst: InstallationRecord): void {
+    settings.set('autoLaunchOnStartup', inst.id)
+    settings.set('autoStartAwaitingFirstStart', inst.id)
+  }
+
+  it('keeps Auto start on once the new build starts', async () => {
+    const fresh = build('fresh-install')
+    justInstalled(fresh)
+
+    const result = await start(fresh)
+
+    expect(result.ok, result.message).toBe(true)
+    expect(settings.get('autoLaunchOnStartup')).toBe('fresh-install')
+  })
+
+  it('turns Auto start off when the new build fails to start', async () => {
+    const fresh = build('fresh-install')
+    crashOnBoot(fresh)
+    justInstalled(fresh)
+
+    const result = await start(fresh)
+
+    expect(result.ok).toBe(false)
+    expect(settings.get('autoLaunchOnStartup')).toBe('none')
+  })
+
+  it('leaves Auto start on when a build that already started once fails later', async () => {
+    const studio = build('studio')
+    justInstalled(studio)
+    expect((await start(studio)).ok).toBe(true)
+    for (const id of [..._runningSessions.keys()]) {
+      const session = _runningSessions.get(id)
+      _runningSessions.delete(id)
+      if (session?.proc) await killProcessTree(session.proc)
+    }
+    crashOnBoot(studio)
+
+    const result = await start(studio)
+
+    expect(result.ok).toBe(false)
+    expect(settings.get('autoLaunchOnStartup')).toBe('studio')
   })
 })

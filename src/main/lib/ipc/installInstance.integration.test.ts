@@ -508,6 +508,10 @@ describe.skipIf(!gitAvailable())('installing a standalone build', () => {
       )
 
       expect(autoStart()).toBe(installId)
+      expect(
+        h.settings.get('autoStartAwaitingFirstStart'),
+        'its first start decides whether Auto start stays on'
+      ).toBe(installId)
     })
 
     it('leaves Auto start off when another build is already installed', async () => {

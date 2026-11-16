@@ -271,6 +271,7 @@ export function registerSettingsHandlers(): void {
 
   ipcMain.handle('set-setting', (_event, key: string, value: unknown) => {
     recordIpcInvocation('set-setting', { key, value })
+    if (key === 'autoLaunchOnStartup') settings.set('autoStartAwaitingFirstStart', undefined)
     applySettingSet(key, value)
   })
 
