@@ -406,6 +406,7 @@ function installMockApi(initial?: {
     hideAppPage: vi.fn(),
     onAppPageStatusChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
+    onAppOutputs: vi.fn(() => () => {}),
     getListActions: vi.fn(async () => []),
     runAction: vi.fn(async () => ({ ok: true })),
     getFieldOptions: vi.fn(async () => []),

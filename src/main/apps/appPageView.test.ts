@@ -2,6 +2,8 @@ import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IpcMainEvent, WebContents, WebFrameMain } from 'electron'
 
+import type { AppOutputs } from '../../types/ipc'
+
 type PermissionCheck = (contents: unknown, permission: string, requestingOrigin: string) => boolean
 type PermissionRequest = (
   contents: unknown,
@@ -60,6 +62,8 @@ vi.mock('./appsConfig', () => ({
 import { _resetForTest as forgetAppsPages, isAppsPageSender, liveAppsPages } from './appsPages'
 import {
   APP_OPENED_EVENT,
+  APP_OUTPUT_ACTION_CHANNEL,
+  APP_OUTPUTS_CHANNEL,
   APP_PAGE_CLOSED_CHANNEL,
   APP_PAGE_FAILED_EVENT,
   APP_PAGE_STATUS_CHANNEL,
@@ -67,6 +71,8 @@ import {
   captureAppPage,
   hideAppPage,
   loadedAppPage,
+  sendAppOutputAction,
+  showAppOutputs,
   showAppPage
 } from './appPageView'
 import { trackFromAppsPage } from '../lib/ipc/registerAppsTelemetryHandlers'
@@ -132,6 +138,7 @@ class FakeView {
 
 class FakeWindow extends EventEmitter {
   stack: unknown[] = []
+  focused = true
   contentView = {
     get children(): unknown[] {
       return [...stackOf(this)]
@@ -145,6 +152,9 @@ class FakeWindow extends EventEmitter {
   }
   isDestroyed(): boolean {
     return false
+  }
+  isFocused(): boolean {
+    return this.focused
   }
 }
 
@@ -973,5 +983,130 @@ describe('usage events from a hosted page that switches apps', () => {
 
     expect(await sending).toBe(false)
     expect(runsSent()).toEqual([])
+  })
+})
+
+describe('outputs an app page shows', () => {
+  const OUTPUTS = {
+    items: [
+      {
+        name: 'cutout-1.png',
+        mimeType: 'image/png',
+        bytes: new Uint8Array([1]),
+        tags: [],
+        workflow: true
+      },
+      {
+        name: 'cutout-2.png',
+        mimeType: 'image/png',
+        bytes: new Uint8Array([2]),
+        tags: [],
+        workflow: false
+      }
+    ],
+    index: 0
+  } as AppOutputs
+
+  function pageContents(): WebContents {
+    return hostedPage().webContents as unknown as WebContents
+  }
+
+  function shownFromPage(): boolean {
+    return showAppOutputs(pageContents(), loadedAppPage(pageContents())!, OUTPUTS)
+  }
+
+  function sentToPage(): unknown[][] {
+    return hostedPage().webContents.send.mock.calls.filter(
+      ([channel]) => channel === APP_OUTPUT_ACTION_CHANNEL
+    )
+  }
+
+  beforeEach(async () => {
+    await openCutout()
+    finishLoading()
+  })
+
+  it('hands them to the panel with the app they came from, and gives the panel the keyboard', () => {
+    expect(shownFromPage()).toBe(true)
+
+    expect(sentToPanel(APP_OUTPUTS_CHANNEL)).toEqual([[APP_OUTPUTS_CHANNEL, CUTOUT, OUTPUTS]])
+    expect(panel.webContents.focus).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the keyboard alone while the window is in the background', () => {
+    hostWindow.focused = false
+
+    expect(shownFromPage()).toBe(true)
+    expect(panel.webContents.focus).not.toHaveBeenCalled()
+  })
+
+  it('shows nothing while the app is not on screen', () => {
+    hideAppPage(panelContents())
+
+    expect(shownFromPage()).toBe(false)
+    expect(sentToPanel(APP_OUTPUTS_CHANNEL)).toEqual([])
+  })
+
+  it('shows nothing from a page that was replaced while Desktop checked it', () => {
+    const sentFrom = loadedAppPage(pageContents())!
+    finishLoading()
+
+    expect(showAppOutputs(pageContents(), sentFrom, OUTPUTS)).toBe(false)
+    expect(sentToPanel(APP_OUTPUTS_CHANNEL)).toEqual([])
+  })
+
+  it('shows nothing for contents Desktop does not host', () => {
+    const other = new FakeContents() as unknown as WebContents
+
+    expect(showAppOutputs(other, { appId: CUTOUT, document: 1 }, OUTPUTS)).toBe(false)
+  })
+
+  it('sends Download and Open workflow back to the page that showed the outputs', () => {
+    shownFromPage()
+
+    sendAppOutputAction(panelContents(), { action: 'download', index: 1 })
+    sendAppOutputAction(panelContents(), { action: 'open-workflow', index: 0 })
+
+    expect(sentToPage()).toEqual([
+      [APP_OUTPUT_ACTION_CHANNEL, { action: 'download', index: 1 }],
+      [APP_OUTPUT_ACTION_CHANNEL, { action: 'open-workflow', index: 0 }]
+    ])
+  })
+
+  it('drops an action before any outputs were shown, and one for an output the page did not send', () => {
+    sendAppOutputAction(panelContents(), { action: 'download', index: 0 })
+    shownFromPage()
+    sendAppOutputAction(panelContents(), { action: 'download', index: 2 })
+
+    expect(sentToPage()).toEqual([])
+  })
+
+  it('drops an action once the page that showed the outputs is replaced', () => {
+    shownFromPage()
+    finishLoading()
+
+    sendAppOutputAction(panelContents(), { action: 'download', index: 0 })
+
+    expect(sentToPage()).toEqual([])
+  })
+
+  it('takes actions only from the panel of the window the page is in', () => {
+    shownFromPage()
+
+    sendAppOutputAction(new FakeContents() as unknown as WebContents, {
+      action: 'download',
+      index: 0
+    })
+
+    expect(sentToPage()).toEqual([])
+  })
+
+  it('gives the page the keyboard when the panel asks for it, and not on a plain resize', async () => {
+    await openCutout()
+    expect(hostedPage().webContents.focus).not.toHaveBeenCalled()
+
+    await openCutout({ ...PLACEMENT, focus: true })
+
+    expect(hostedPage().webContents.focus).toHaveBeenCalledTimes(1)
   })
 })

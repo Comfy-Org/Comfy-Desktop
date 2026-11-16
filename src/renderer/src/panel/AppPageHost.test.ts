@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import '../assets/main.css'
 import AppPageHost from './AppPageHost.vue'
-import type { AppPagePlacement, AppPageStatus } from '../types/ipc'
+import type { AppOutputAction, AppOutputs, AppPagePlacement, AppPageStatus } from '../types/ipc'
 
 const PAGE_LEFT = 260
 const PAGE_TOP = 12
@@ -16,6 +16,7 @@ const FRAME =
 const showAppPage = vi.fn<(appId: string, placement: AppPagePlacement) => Promise<AppPageStatus>>()
 const captureAppPage = vi.fn<() => Promise<string | null>>()
 const hideAppPage = vi.fn()
+const sendAppOutputAction = vi.fn<(action: AppOutputAction) => void>()
 
 const mountPointFillsThePage = document.createElement('style')
 mountPointFillsThePage.textContent = '[data-apps-page] > div { display: flex; flex: 1 1 auto; }'
@@ -24,6 +25,8 @@ document.head.append(mountPointFillsThePage)
 let page: HTMLElement
 let tellStatusOf: (appId: string | null, status: AppPageStatus) => void = () => {}
 let stoppedListening = false
+let tellOutputsOf: (appId: string, outputs: AppOutputs) => void = () => {}
+let stoppedListeningForOutputs = false
 
 function tellStatus(status: AppPageStatus): void {
   tellStatusOf('remove-background', status)
@@ -35,6 +38,33 @@ async function nextFrame(): Promise<void> {
 }
 
 const CUTOUT = { appId: 'remove-background', title: 'Remove Background' }
+
+function pngBytes(): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(atob(FRAME.split(',')[1]!), (char) => char.charCodeAt(0))
+}
+
+const TWO_CUTOUTS: AppOutputs = {
+  items: [
+    { name: 'cutout-1.png', mimeType: 'image/png', bytes: pngBytes(), tags: [], workflow: true },
+    { name: 'cutout-2.png', mimeType: 'image/png', bytes: pngBytes(), tags: [], workflow: false }
+  ],
+  index: 1
+}
+
+function outputDialog(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-testid="output-detail"]')
+}
+
+function inOutputDialog(testId: string): HTMLElement | null {
+  return outputDialog()?.querySelector<HTMLElement>(`[data-testid="${testId}"]`) ?? null
+}
+
+async function showOutputs(appId = 'remove-background', outputs = TWO_CUTOUTS): Promise<void> {
+  tellOutputsOf(appId, outputs)
+  await flushPromises()
+  await nextFrame()
+  await nextFrame()
+}
 
 async function mountHost(status: AppPageStatus = 'ready') {
   showAppPage.mockResolvedValue(status)
@@ -57,6 +87,7 @@ beforeAll(() => browserPage.viewport(1280, 800))
 beforeEach(() => {
   vi.clearAllMocks()
   stoppedListening = false
+  stoppedListeningForOutputs = false
   page = document.createElement('div')
   page.dataset.appsPage = ''
   page.style.cssText = `position: fixed; display: flex; left: ${PAGE_LEFT}px; top: ${PAGE_TOP}px; width: ${PAGE_WIDTH}px; height: ${PAGE_HEIGHT}px`
@@ -71,7 +102,14 @@ beforeEach(() => {
       return () => {
         stoppedListening = true
       }
-    }
+    },
+    onAppOutputs: (listener: (appId: string, outputs: AppOutputs) => void) => {
+      tellOutputsOf = listener
+      return () => {
+        stoppedListeningForOutputs = true
+      }
+    },
+    sendAppOutputAction
   }
 })
 
@@ -91,7 +129,8 @@ describe('AppPageHost', () => {
       height: PAGE_HEIGHT,
       cornerRadius: 14,
       justOpened: true,
-      retry: false
+      retry: false,
+      focus: false
     })
   })
 
@@ -273,5 +312,89 @@ describe('AppPageHost', () => {
 
     expect(hideAppPage).toHaveBeenCalledTimes(1)
     expect(stoppedListening).toBe(true)
+    expect(stoppedListeningForOutputs).toBe(true)
+  })
+})
+
+describe('AppPageHost outputs', () => {
+  afterEach(async () => {
+    inOutputDialog('output-detail-close')?.click()
+    await flushPromises()
+  })
+
+  it('opens the output dialog over the app with the outputs its page sent, and swaps the app for a still frame', async () => {
+    await mountHost()
+
+    await showOutputs()
+
+    expect(outputDialog()?.querySelector('h2')?.textContent?.trim()).toBe('cutout-2.png')
+    expect(inOutputDialog('output-detail-image')?.getAttribute('src')).toMatch(/^blob:/)
+    expect(inOutputDialog('output-detail-thumb-0')).not.toBeNull()
+    expect(hideAppPage).toHaveBeenCalledTimes(1)
+  })
+
+  it("ignores outputs from another app's page", async () => {
+    await mountHost()
+
+    await showOutputs('upscale')
+
+    expect(outputDialog()).toBeNull()
+  })
+
+  it('sends Download back to the page for the output on show, and stays open', async () => {
+    await mountHost()
+    await showOutputs()
+
+    inOutputDialog('output-detail-download')!.click()
+    await flushPromises()
+
+    expect(sendAppOutputAction).toHaveBeenCalledExactlyOnceWith({ action: 'download', index: 1 })
+    expect(outputDialog()).not.toBeNull()
+  })
+
+  it('offers Open workflow only for an output with a saved workflow, sends it to the page and closes', async () => {
+    await mountHost()
+    await showOutputs()
+    expect(inOutputDialog('output-detail-workflow')).toBeNull()
+
+    inOutputDialog('output-detail-thumb-0')!.click()
+    await flushPromises()
+    inOutputDialog('output-detail-workflow')!.click()
+    await flushPromises()
+
+    expect(sendAppOutputAction).toHaveBeenCalledExactlyOnceWith({
+      action: 'open-workflow',
+      index: 0
+    })
+    expect(outputDialog()).toBeNull()
+  })
+
+  it('brings the app back with the keyboard once the dialog closes, and lets go of the files', async () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    await mountHost()
+    await showOutputs()
+    showAppPage.mockClear()
+
+    inOutputDialog('output-detail-close')!.click()
+    await flushPromises()
+    await nextFrame()
+    await nextFrame()
+
+    expect(outputDialog()).toBeNull()
+    expect(showAppPage).toHaveBeenCalledExactlyOnceWith(
+      'remove-background',
+      expect.objectContaining({ focus: true, justOpened: false })
+    )
+    expect(revoke).toHaveBeenCalledTimes(2)
+
+    page.style.width = `${PAGE_WIDTH - 180}px`
+    await nextFrame()
+    await nextFrame()
+
+    expect(showAppPage).toHaveBeenLastCalledWith(
+      'remove-background',
+      expect.objectContaining({ focus: false })
+    )
+    revoke.mockRestore()
   })
 })

@@ -120,6 +120,7 @@
       "fit": "适应",
       "zoom": "缩放",
       "zoomLevel": "缩放：{level}",
+      "openWorkflow": "打开工作流",
       "savedIn": "保存位置"
     },
     "kindSingular": {

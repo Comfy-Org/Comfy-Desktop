@@ -120,6 +120,7 @@
       "fit": "Fit",
       "zoom": "Zoom",
       "zoomLevel": "Zoom: {level}",
+      "openWorkflow": "Open workflow",
       "savedIn": "Saved in"
     },
     "kindSingular": {

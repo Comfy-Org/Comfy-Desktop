@@ -1,6 +1,12 @@
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { AppPageStatus, ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
+import type {
+  AppOutputs,
+  AppPageStatus,
+  ElectronApi,
+  ResolvedTheme,
+  AdoptPromptRequest
+} from '../types/ipc'
 
 export function buildElectronApi(): ElectronApi {
   return {
@@ -123,6 +129,13 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('apps:page-closed', handler)
       return () => ipcRenderer.removeListener('apps:page-closed', handler)
     },
+    onAppOutputs: (callback) => {
+      const handler = (_event: IpcRendererEvent, appId: string, outputs: AppOutputs): void =>
+        callback(appId, outputs)
+      ipcRenderer.on('apps:outputs', handler)
+      return () => ipcRenderer.removeListener('apps:outputs', handler)
+    },
+    sendAppOutputAction: (action) => ipcRenderer.send('apps:output-action', action),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),

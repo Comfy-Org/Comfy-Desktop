@@ -65,6 +65,11 @@ describe('Content-Security-Policy: panel.html', () => {
   it('allows GitHub-hosted starter-template thumbnails in img-src', () => {
     expect(csp['img-src']).toContain('https://raw.githubusercontent.com')
   })
+
+  it('shows the outputs an app page sends, which the panel holds as blob URLs', () => {
+    expect(csp['img-src']).toContain('blob:')
+    expect(csp['media-src']).toContain('blob:')
+  })
 })
 
 describe.each(TELEMETRY_RENDERER_HTMLS)(
