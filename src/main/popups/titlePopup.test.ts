@@ -131,23 +131,31 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items[0]).toMatchObject({ id: 'skip-onboarding' })
   })
 
-  it.each([null, 'inst-1'] as const)(
-    'lists the tools, settings and window actions on host %s',
-    (installationId) => {
-      const items = buildTitlePopupMenuItems(makeEntry({ installationId }))
-      expect(items.map((item) => item.id ?? 'separator')).toEqual([
-        'performance-test',
-        'benchmarks',
-        'separator',
-        'settings',
-        'separator',
-        'exit-window',
-        'close-all-windows'
-      ])
-    }
-  )
+  it('chooser host leaves Desktop Settings to the sidebar', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    expect(items.map((item) => item.id ?? 'separator')).toEqual([
+      'performance-test',
+      'benchmarks',
+      'separator',
+      'exit-window',
+      'close-all-windows'
+    ])
+  })
 
-  it('install host lists Reset Zoom after Settings when zoomed', () => {
+  it('install host keeps Desktop Settings because it has no sidebar', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
+    expect(items.map((item) => item.id ?? 'separator')).toEqual([
+      'performance-test',
+      'benchmarks',
+      'separator',
+      'settings',
+      'separator',
+      'exit-window',
+      'close-all-windows'
+    ])
+  })
+
+  it('install host lists Reset Zoom after Desktop Settings when zoomed', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
     const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
     expect(ids).toEqual([
@@ -897,45 +905,5 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
 
   it('does not grant on an explicit opt-out', () => {
     expect(snapshotWithConsent(false).telemetryGranted).toBe(false)
-  })
-})
-
-describe('build page open-in-new-window IPC', () => {
-  type IpcListener = (event: Electron.IpcMainEvent, installationId: unknown) => void
-  const panelContents = {}
-  const openInstallInNewWindow = vi.fn(async () => {})
-  let open: IpcListener
-
-  beforeAll(async () => {
-    const { ipcMain } = await import('electron')
-    vi.mocked(ipcMain.on).mockClear()
-    registerTitlePopupIpc({ openInstallInNewWindow } as unknown as TitlePopupHostBindings)
-    const call = vi
-      .mocked(ipcMain.on)
-      .mock.calls.find(([channel]) => channel === 'comfy-window:open-install-new-window')
-    if (!call) throw new Error('IPC listener not registered')
-    open = call[1] as IpcListener
-  })
-
-  beforeEach(() => {
-    openInstallInNewWindow.mockClear()
-    comfyWindows.set(nextWindowKey(), {
-      panelView: { webContents: panelContents }
-    } as unknown as ComfyWindowEntry)
-  })
-
-  it('opens the build for a window panel', () => {
-    open({ sender: panelContents } as Electron.IpcMainEvent, 'inst-a')
-
-    expect(openInstallInNewWindow).toHaveBeenCalledExactlyOnceWith('inst-a')
-  })
-
-  it.each([
-    ['a sender that is not a panel', {}, 'inst-a'],
-    ['a missing installation id', panelContents, undefined]
-  ])('ignores %s', (_label, sender, installationId) => {
-    open({ sender } as Electron.IpcMainEvent, installationId)
-
-    expect(openInstallInNewWindow).not.toHaveBeenCalled()
   })
 })

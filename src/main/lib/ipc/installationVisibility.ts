@@ -15,3 +15,7 @@ export function markInstallSettled(installationId: string): void {
 export function isInstallationVisibleToRenderer(installation: InstallationRecord): boolean {
   return installation.status !== 'installing' || runningInstalls.has(installation.id)
 }
+
+export function isInstallRunning(installationId: string): boolean {
+  return runningInstalls.has(installationId)
+}

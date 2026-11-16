@@ -107,6 +107,7 @@ export interface SourcePlugin {
   category: string
   hasConsole?: boolean
   skipInstall?: boolean
+  managesOwnPaths?: boolean
   platforms?: readonly string[]
   hidden?: boolean
   fields: readonly SourceField[]

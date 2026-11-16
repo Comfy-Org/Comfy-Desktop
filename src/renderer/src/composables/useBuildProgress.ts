@@ -3,7 +3,8 @@ import { useI18n } from 'vue-i18n'
 import { useProgressStore } from '../stores/progressStore'
 import { useModal } from './useModal'
 import { isUninstallOpKind } from '../lib/progressOpKind'
-import type { Installation } from '../types/ipc'
+import { progressStepName } from '../lib/progressStatusLabel'
+import type { Installation, ProgressStep } from '../types/ipc'
 
 export type BuildProgressKind = 'install' | 'launch' | 'uninstall'
 
@@ -26,10 +27,12 @@ export function useViewBuildLogs(): (installationId: string) => void {
 
 export function buildProgressOf(
   progressStore: ReturnType<typeof useProgressStore>,
-  installationId: string
+  installationId: string,
+  nameStep: (step: ProgressStep) => string = (step) => step.label
 ): BuildProgress | null {
   const op = progressStore.operations.get(installationId)
   if (!op) return null
+  const activeStep = op.steps?.find((step) => step.phase === op.activePhase)
   if (isUninstallOpKind(op.opKind)) {
     const removedButStillListed = op.finished && op.result?.ok === true
     if (op.finished && !removedButStillListed) return null
@@ -46,7 +49,7 @@ export function buildProgressOf(
     return {
       kind: 'launch',
       percent: op.flatPercent >= 0 ? Math.round(op.flatPercent) : null,
-      phase: op.steps?.find((step) => step.phase === op.activePhase)?.label ?? op.flatStatus,
+      phase: activeStep ? nameStep(activeStep) : op.flatStatus,
       cancelling: op.cancelRequested
     }
   }
@@ -55,7 +58,7 @@ export function buildProgressOf(
   return {
     kind: 'install',
     percent: Math.round(percent),
-    phase: op.steps?.find((step) => step.phase === op.activePhase)?.label ?? '',
+    phase: activeStep ? nameStep(activeStep) : '',
     cancelling: op.cancelRequested
   }
 }
@@ -88,12 +91,15 @@ export function useBuildProgress(build: () => Installation): {
   viewLogs: () => void
   cancel: () => Promise<void>
 } {
-  const { t } = useI18n()
+  const i18n = useI18n()
+  const { t } = i18n
   const progressStore = useProgressStore()
   const modal = useModal()
   const view = useViewBuildLogs()
 
-  const progress = computed(() => buildProgressOf(progressStore, build().id))
+  const progress = computed(() =>
+    buildProgressOf(progressStore, build().id, (step) => progressStepName(step, i18n))
+  )
   const detail = computed(() => {
     const current = progress.value
     if (!current) return ''

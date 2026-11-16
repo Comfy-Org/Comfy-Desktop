@@ -191,15 +191,24 @@ export type ComfyDesktopHostedAuthBridge = Required<
 export interface ComfyDesktopLocalRequirements {
   /** The oldest ComfyUI the page can run on, such as `0.41.0`. */
   minVersion?: string
+  /**
+   * The build the person picked to run on, an id from `localBuilds`. Desktop
+   * uses it when it is installed and new enough, and otherwise chooses as if
+   * none was named: a running build first, then one that is starting, then
+   * the one used last. The answer names the build Desktop chose.
+   */
+  build?: string
 }
 /**
  * The ComfyUI on this computer that Desktop uses for a hosted page.
  * `running`: it answers now. `stopped`: one of the person's builds fits and
- * `startLocal` starts it. `unsupported`: no build here can run the page, and
- * `error` says why in words for the person.
+ * `startLocal` starts it. `installing`: the person's first build is still
+ * installing; `localDownload` already works, and `startLocal` waits for the
+ * install to finish, then starts it. `unsupported`: no build here can run the
+ * page, and `error` says why in words for the person.
  */
 export interface ComfyDesktopLocalComfy {
-  state: 'running' | 'stopped' | 'unsupported'
+  state: 'running' | 'stopped' | 'installing' | 'unsupported'
   /** True when it is one of the person's own builds. */
   own?: boolean
   name?: string
@@ -276,6 +285,10 @@ export type ComfyDesktopOpenInComfy =
 export interface ComfyDesktopLocalBuild {
   id: string
   name: string
+  /** Its ComfyUI version, such as `0.42.1`, when Desktop knows it. Absent on Desktop builds that predate it. */
+  version?: string
+  /** True when it is running now. Absent on Desktop builds that predate it. */
+  running?: boolean
 }
 /**
  * A ComfyUI on this computer, run by Desktop, for a Comfy page hosted in
@@ -287,11 +300,11 @@ export interface ComfyDesktopLocalBuild {
  */
 export interface ComfyDesktopHostedLocalBridge {
   getLocal(want?: ComfyDesktopLocalRequirements): Promise<ComfyDesktopLocalComfy>
-  /** Starts the ComfyUI if it is stopped and resolves once it answers, or with the state and `error` if it could not start. */
+  /** Starts the ComfyUI if it is stopped, after its install finishes if it is installing, and resolves once it answers, or with the state and `error` if it could not start. */
   startLocal(want?: ComfyDesktopLocalRequirements): Promise<ComfyDesktopLocalComfy>
   /** Rejects when no ComfyUI is running to forward to. */
   localFetch(request: ComfyDesktopLocalRequest): Promise<ComfyDesktopLocalAnswer>
-  /** Downloads into the running ComfyUI's models folder and resolves when the file is there. */
+  /** Downloads into the models folder of the build `getLocal` named, running, stopped or still installing, and resolves when the file is there. A build that keeps its models inside its own folder gets them once its install finishes. */
   localDownload(model: ComfyDesktopLocalModel): Promise<ComfyDesktopLocalDownload>
   onLocalEvent(callback: (event: ComfyDesktopLocalEvent) => void): () => void
   /**
@@ -302,6 +315,23 @@ export interface ComfyDesktopHostedLocalBridge {
   openInComfy?(request: ComfyDesktopOpenInComfyRequest): Promise<ComfyDesktopOpenInComfy>
   /** The person's ComfyUI builds on this computer. Absent on Desktop builds that predate it. */
   localBuilds?(): Promise<ComfyDesktopLocalBuild[]>
+}
+/**
+ * Usage events from a Comfy page hosted in Desktop's Apps view. Desktop
+ * exposes it to that page as `window.comfyDesktopTelemetry` and sends an event
+ * as `comfy.desktop.apps.<name>` only when the person allows telemetry.
+ * `name` matches `^[a-z][a-z0-9_]{0,47}$`; `app_opened` and `app_page_failed`
+ * are refused because Desktop sends them itself, and so is `error`. Desktop
+ * sends at most 60 events a minute for one app and 1,000 page events a
+ * session, and drops the rest. Desktop keeps at most 16
+ * properties, each named `^[a-z][a-z0-9_]{0,31}$` with a boolean, a finite
+ * number or a slug of at most 64 characters (`^[a-z0-9][a-z0-9._-]{0,63}$`),
+ * and drops anything else. Desktop sets `app_id` itself, to the app whose
+ * page it loaded in that view; an `app` or `app_id` from the page is ignored,
+ * and an event sent while the view loads another app is dropped.
+ */
+export interface ComfyDesktopHostedTelemetryBridge {
+  track(name: string, props?: Record<string, string | number | boolean>): void
 }
 export interface ComfyDesktop2TerminalBridge {
   subscribe(installationId?: string): Promise<TerminalRestore>

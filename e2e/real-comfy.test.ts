@@ -44,32 +44,36 @@ import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
 
-async function waitForConfigContinueEnabled(message: string): Promise<void> {
+const SAVE_CHANGES = '[data-testid="config-save-changes"]'
+
+async function waitForButtonEnabled(selector: string, message: string): Promise<void> {
   await ctx.panel.waitFor(
     async () =>
       evalWithRetry(() =>
-        ctx.app.evaluate(({ webContents }) => {
+        ctx.app.evaluate(({ webContents }, selector) => {
           const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('panel.html'))
           if (!wc) return false
           return wc.executeJavaScript(`(() => {
-        const btn = document.querySelector('.config-continue')
+        const btn = document.querySelector(${JSON.stringify(selector)})
         return !!btn && !btn.disabled
       })()`) as Promise<boolean>
-        })
+        }, selector)
       ),
     { timeout: 60_000, message }
   )
 }
 
+let pickedVersion = ''
+
 let HYDRATED = false
 
-function resolveLifecycleVariant(): 'cpu' | 'nvidia' | 'amd' | 'default' {
-  const raw = (process.env['LIFECYCLE_VARIANT'] ?? '').toLowerCase()
+function resolveRealComfyVariant(): 'cpu' | 'nvidia' | 'amd' | 'default' {
+  const raw = (process.env['REAL_COMFY_VARIANT'] ?? '').toLowerCase()
   if (raw === '') return process.platform === 'win32' ? 'cpu' : 'default'
   if (raw === 'nvidia' || raw === 'amd') {
     if (process.platform === 'darwin') {
       throw new Error(
-        `LIFECYCLE_VARIANT=${raw} is not supported on macOS (only mac-mps is published)`
+        `REAL_COMFY_VARIANT=${raw} is not supported on macOS (only mac-mps is published)`
       )
     }
     return raw
@@ -77,31 +81,31 @@ function resolveLifecycleVariant(): 'cpu' | 'nvidia' | 'amd' | 'default' {
   if (raw === 'cpu') {
     if (process.platform !== 'win32') {
       throw new Error(
-        'LIFECYCLE_VARIANT=cpu is only published for Windows (no linux-cpu / mac-cpu variant)'
+        'REAL_COMFY_VARIANT=cpu is only published for Windows (no linux-cpu / mac-cpu variant)'
       )
     }
     return 'cpu'
   }
   throw new Error(
-    `Unsupported LIFECYCLE_VARIANT "${process.env['LIFECYCLE_VARIANT']}" - use "cpu", "nvidia" or "amd"`
+    `Unsupported REAL_COMFY_VARIANT "${process.env['REAL_COMFY_VARIANT']}" - use "cpu", "nvidia" or "amd"`
   )
 }
-const LIFECYCLE_VARIANT = resolveLifecycleVariant()
-const GPU_VARIANT = LIFECYCLE_VARIANT === 'nvidia' || LIFECYCLE_VARIANT === 'amd'
+const REAL_COMFY_VARIANT = resolveRealComfyVariant()
+const GPU_VARIANT = REAL_COMFY_VARIANT === 'nvidia' || REAL_COMFY_VARIANT === 'amd'
 
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async () => {
-  if (LIFECYCLE_VARIANT === 'nvidia') {
+  if (REAL_COMFY_VARIANT === 'nvidia') {
     try {
       execFileSync('nvidia-smi', ['-L'], { encoding: 'utf-8', windowsHide: true, timeout: 30_000 })
     } catch {
       throw new Error(
-        'LIFECYCLE_VARIANT=nvidia requires a working NVIDIA driver (`nvidia-smi -L` failed); refusing to run the CUDA lifecycle on this machine'
+        'REAL_COMFY_VARIANT=nvidia requires a working NVIDIA driver (`nvidia-smi -L` failed); refusing to run the CUDA real-comfy suite on this machine'
       )
     }
   }
-  if (LIFECYCLE_VARIANT === 'amd') {
+  if (REAL_COMFY_VARIANT === 'amd') {
     let adapters = ''
     try {
       adapters =
@@ -119,7 +123,7 @@ test.beforeAll(async () => {
     } catch {}
     if (!/\b(AMD|Radeon)\b/i.test(adapters)) {
       throw new Error(
-        'LIFECYCLE_VARIANT=amd requires an AMD GPU (no AMD/Radeon display adapter found); refusing to run the ROCm lifecycle on this machine'
+        'REAL_COMFY_VARIANT=amd requires an AMD GPU (no AMD/Radeon display adapter found); refusing to run the ROCm real-comfy suite on this machine'
       )
     }
   }
@@ -136,7 +140,7 @@ test.beforeAll(async () => {
   }
   ctx = await launchApp()
 
-  if (process.env['LIFECYCLE_REUSE_DIR']) {
+  if (process.env['REAL_COMFY_REUSE_DIR']) {
     try {
       await ctx.panel.waitForVisible('.chooser-view', { timeout: 10_000 })
     } catch {}
@@ -160,17 +164,17 @@ test.beforeAll(async () => {
       try {
         _installedTorchSignature = queryTorchSignature()
       } catch {}
-      if (_installedTorchSignature && LIFECYCLE_VARIANT !== 'default') {
+      if (_installedTorchSignature && REAL_COMFY_VARIANT !== 'default') {
         const buildVariant =
           _installedTorchSignature.hip !== null
             ? 'amd'
             : _installedTorchSignature.cuda !== null
               ? 'nvidia'
               : 'cpu'
-        if (LIFECYCLE_VARIANT !== buildVariant) {
+        if (REAL_COMFY_VARIANT !== buildVariant) {
           throw new Error(
-            `LIFECYCLE_VARIANT=${LIFECYCLE_VARIANT} but the reused profile carries a ${buildVariant} torch build` +
-              ' - point LIFECYCLE_REUSE_DIR at a matching profile or unset it'
+            `REAL_COMFY_VARIANT=${REAL_COMFY_VARIANT} but the reused profile carries a ${buildVariant} torch build` +
+              ' - point REAL_COMFY_REUSE_DIR at a matching profile or unset it'
           )
         }
       }
@@ -178,7 +182,9 @@ test.beforeAll(async () => {
         const list = await ctx.panel.evaluate<SnapshotListLite>(
           `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`
         )
-        const target = list.snapshots.find((s) => s.label === 'lifecycle-restore-target')
+        const target =
+          list.snapshots.find((s) => s.label === 'real-comfy-restore-target') ??
+          list.snapshots.find((s) => s.label === 'lifecycle-restore-target')
         if (target) {
           _restoreSnapshotFilename = target.filename
           const snapPath = path.join(_updateInstallPath, '.launcher', 'snapshots', target.filename)
@@ -190,7 +196,7 @@ test.beforeAll(async () => {
       } catch {}
       HYDRATED = true
       console.log(
-        `[lifecycle] hydrated from reused profile: installId=${_updateInstallId} commit=${_installedCommit || '(none)'} restoreSnapshot=${_restoreSnapshotFilename || '(none)'}`
+        `[real-comfy] hydrated from reused profile: installId=${_updateInstallId} commit=${_installedCommit || '(none)'} restoreSnapshot=${_restoreSnapshotFilename || '(none)'}`
       )
 
       try {
@@ -198,16 +204,16 @@ test.beforeAll(async () => {
         await ensureInstallPanelView(ctx.app, _updateInstallId)
         await waitForWebContents(ctx.app, 'panel.html')
         console.log(
-          '[lifecycle] auto-launched reused install + remounted install-backed panel view'
+          '[real-comfy] auto-launched reused install + remounted install-backed panel view'
         )
       } catch (err) {
         console.log(
-          `[lifecycle] auto-launch failed (tests that require running comfy will fail): ${(err as Error).message}`
+          `[real-comfy] auto-launch failed (tests that require running comfy will fail): ${(err as Error).message}`
         )
       }
     } else {
       console.log(
-        '[lifecycle] LIFECYCLE_REUSE_DIR set but no install found — running fresh setup tests to populate the profile'
+        '[real-comfy] REAL_COMFY_REUSE_DIR set but no install found — running fresh setup tests to populate the profile'
       )
     }
   }
@@ -234,7 +240,7 @@ function isolatedInstallationsStorePath(homeDir: string): string {
 test.afterAll(async () => {
   if (typeof ctx === 'undefined') return
 
-  if (!process.env['LIFECYCLE_REUSE_DIR']) {
+  if (!process.env['REAL_COMFY_REUSE_DIR']) {
     try {
       const storePath = isolatedInstallationsStorePath(ctx.homeDir)
       const records = JSON.parse(readFileSync(storePath, 'utf-8')) as { installPath?: unknown }[]
@@ -248,17 +254,17 @@ test.afterAll(async () => {
 
   await ctx.cleanup()
 
-  if (!process.env['LIFECYCLE_REUSE_DIR']) {
+  if (!process.env['REAL_COMFY_REUSE_DIR']) {
     if (_runCreatedInstallPaths.size > 0) {
       console.log(
-        `[lifecycle] afterAll sweep over ${_runCreatedInstallPaths.size} run-created install path(s): ${[..._runCreatedInstallPaths].join(', ')}`
+        `[real-comfy] afterAll sweep over ${_runCreatedInstallPaths.size} run-created install path(s): ${[..._runCreatedInstallPaths].join(', ')}`
       )
     }
     for (const p of _runCreatedInstallPaths) {
       try {
         rmSync(p, { recursive: true, force: true })
       } catch (err) {
-        console.log(`[lifecycle] afterAll sweep failed to remove ${p}: ${(err as Error).message}`)
+        console.log(`[real-comfy] afterAll sweep failed to remove ${p}: ${(err as Error).message}`)
       }
     }
   }
@@ -274,7 +280,7 @@ async function comfyFrontendIsLoaded(): Promise<boolean> {
   )
 }
 
-test('cold start lands on Set up with the detected computer and one Install @sec-setup @lifecycle', async () => {
+test('cold start lands on Set up with the detected computer and one Install @sec-setup @real-comfy', async () => {
   test.skip(HYDRATED, 'reuse mode: first-use already completed on the persisted profile')
   await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 15_000 })
   await ctx.panel.waitForVisible('[data-testid="setup-machine"]')
@@ -282,7 +288,7 @@ test('cold start lands on Set up with the detected computer and one Install @sec
   await ctx.panel.waitForVisible('[data-testid="setup-install"]')
 })
 
-test('accept ToS + Change opens the name and every option in one step @sec-setup @lifecycle', async () => {
+test('accept ToS + Change opens the name and every option in one sheet @sec-setup @real-comfy', async () => {
   test.skip(HYDRATED, 'reuse mode: first-use already completed on the persisted profile')
 
   expect(await ctx.panel.click('[data-testid="setup-consent-tos"] [role="checkbox"]')).toBe(true)
@@ -296,7 +302,10 @@ test('accept ToS + Change opens the name and every option in one step @sec-setup
   expect(await ctx.panel.click('[data-testid="setup-change"]')).toBe(true)
   await expectNewBuildModalOpen(ctx.panel)
 
-  await waitForConfigContinueEnabled('Continue button never became enabled (form did not pre-fill)')
+  await waitForButtonEnabled(
+    SAVE_CHANGES,
+    'Save changes never became enabled (form did not pre-fill)'
+  )
   await ctx.panel.waitForVisible('[data-testid="config-change-form"]', { timeout: 5_000 })
   await ctx.panel.waitForVisible('#inst-name-standalone', { timeout: 5_000 })
 
@@ -312,6 +321,13 @@ test('accept ToS + Change opens the name and every option in one step @sec-setup
     await ctx.panel.click('#source-fields button[role="combobox"][aria-label="Version"]')
   ).toBe(true)
   await ctx.panel.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
+  pickedVersion =
+    (
+      await ctx.panel.evaluate<string>(
+        `document.querySelectorAll('[role="listbox"] [role="option"]')[1]?.textContent ?? ''`
+      )
+    ).match(/v\d+\.\d+\.\d+/)?.[0] ?? ''
+  expect(pickedVersion, 'the second-newest Version option names a release tag').not.toBe('')
   expect(
     await ctx.panel.clickNth('[role="listbox"] [role="option"]', 1),
     'failed to click the second-newest ComfyUI Version option in BaseSelect listbox'
@@ -319,9 +335,9 @@ test('accept ToS + Change opens the name and every option in one step @sec-setup
 
   await ctx.panel.waitForSelector('#source-fields .setup-option--selected', { timeout: 60_000 })
 
-  if (LIFECYCLE_VARIANT !== 'default') {
+  if (REAL_COMFY_VARIANT !== 'default') {
     const rowLabel =
-      LIFECYCLE_VARIANT === 'nvidia' ? 'NVIDIA' : LIFECYCLE_VARIANT === 'amd' ? 'AMD' : 'CPU'
+      REAL_COMFY_VARIANT === 'nvidia' ? 'NVIDIA' : REAL_COMFY_VARIANT === 'amd' ? 'AMD' : 'CPU'
     await ctx.panel.waitForSelector('.setup-option', { timeout: 5_000 })
     expect(
       await ctx.panel.clickByText('.setup-option', rowLabel),
@@ -340,14 +356,26 @@ test('accept ToS + Change opens the name and every option in one step @sec-setup
   }
 })
 
-test('installs on the Home build card, then Open ComfyUI launches it @sec-setup @lifecycle', async () => {
+test('installs on the Home build card, then Open ComfyUI launches it @sec-setup @real-comfy', async () => {
   test.skip(HYDRATED, 'reuse mode: install already on disk on the persisted profile')
-  const LINUX_AMD = LIFECYCLE_VARIANT === 'amd' && process.platform === 'linux'
+  const LINUX_AMD = REAL_COMFY_VARIANT === 'amd' && process.platform === 'linux'
   test.setTimeout(LINUX_AMD ? 1_020_000 : 600_000)
-  await waitForConfigContinueEnabled('Continue button never re-enabled after the variant pick')
-  expect(await ctx.panel.click('.config-continue')).toBe(true)
-  await ctx.panel.waitForVisible('.template-skip', { timeout: 10_000 })
-  expect(await ctx.panel.clickByText('.template-skip', 'Skip & Install')).toBe(true)
+  await waitForButtonEnabled(SAVE_CHANGES, 'Save changes never re-enabled after the variant pick')
+  expect(await ctx.panel.click(SAVE_CHANGES), 'Save changes pressed in Change setup').toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 10_000 })
+  expect(
+    await ctx.panel.exists('[data-testid="config-change-form"]'),
+    'Save changes leaves the Change sheet'
+  ).toBe(false)
+  await expect
+    .poll(() => ctx.panel.textOf('[data-testid="setup-version"]'), {
+      timeout: 10_000,
+      message: 'Set up shows the version picked in Change'
+    })
+    .toContain(pickedVersion)
+  expect(await ctx.panel.click('[data-testid="setup-install"]'), 'Install pressed on Set up').toBe(
+    true
+  )
 
   await ctx.panel.waitForVisible('[data-testid="home-build-installing"]', { timeout: 15_000 })
   expect(
@@ -370,7 +398,7 @@ test('installs on the Home build card, then Open ComfyUI launches it @sec-setup 
     .toBe(true)
 })
 
-test('first-use Change chain marks firstUseCompleted once and cycles firstUseMode @sec-setup @lifecycle', async () => {
+test('first-use Change chain marks firstUseCompleted once and cycles firstUseMode @sec-setup @real-comfy', async () => {
   test.skip(HYDRATED, 'reuse mode: first-use IPC log only exists on the boot that drove the chain')
   const setSettingCalls = (await getIpcInvocations(ctx.app, 'set-setting')) as Array<{
     key: string
@@ -394,7 +422,7 @@ test('first-use Change chain marks firstUseCompleted once and cycles firstUseMod
   )
 })
 
-test('the launch opened ComfyUI in its own window next to the dashboard @sec-setup @lifecycle', async () => {
+test('the launch opened ComfyUI in its own window next to the dashboard @sec-setup @real-comfy', async () => {
   test.skip(HYDRATED, 'reuse mode: install was not launched on this boot')
   const state = await evalWithRetry(() =>
     ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
@@ -421,7 +449,7 @@ test('the launch opened ComfyUI in its own window next to the dashboard @sec-set
   await closeExtraWindowsKeepComfyHost()
 })
 
-test('ComfyUI window has dark background and split-view architecture @sec-setup @lifecycle', async () => {
+test('ComfyUI window has dark background and split-view architecture @sec-setup @real-comfy', async () => {
   test.skip(HYDRATED, 'reuse mode: comfy is not auto-running on this boot')
   const arch = await evalWithRetry(() =>
     ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
@@ -472,7 +500,7 @@ async function closeExtraWindowsKeepComfyHost(): Promise<void> {
   await keepOnlyComfyHostWindow(ctx.app)
 }
 
-test('picker Dashboard opens a chooser without stopping the running install @sec-setup @lifecycle', async () => {
+test('picker Dashboard opens a chooser without stopping the running install @sec-setup @real-comfy', async () => {
   test.skip(HYDRATED, 'reuse mode: no running install-backed host exists')
   const before = await evalWithRetry(() =>
     ctx.app.evaluate(({ BrowserWindow }) => {
@@ -655,13 +683,13 @@ async function stopAndReturnToDashboardViaUI(): Promise<void> {
   await expectChooserVisible(ctx.panel)
 }
 
-test('stop ComfyUI again so update-comfyui (requires stopped) can run @sec-update @lifecycle', async () => {
+test('stop ComfyUI again so update-comfyui (requires stopped) can run @sec-update @real-comfy', async () => {
   test.setTimeout(300_000)
 
   await stopAndReturnToDashboardViaUI()
 })
 
-test('captures install metadata for the update tests @sec-meta @lifecycle', async () => {
+test('captures install metadata for the update tests @sec-meta @real-comfy', async () => {
   const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
   expect(installs.length, 'no tracked installation after install').toBeGreaterThan(0)
   const inst = installs[0]!
@@ -682,7 +710,7 @@ test('captures install metadata for the update tests @sec-meta @lifecycle', asyn
     _installedTorchSignature.torch,
     'torch failed to import from the installed venv'
   ).toBeTruthy()
-  if (LIFECYCLE_VARIANT === 'nvidia') {
+  if (REAL_COMFY_VARIANT === 'nvidia') {
     expect(
       _installedTorchSignature.cuda,
       `NVIDIA-variant install must carry a CUDA torch build (torch ${_installedTorchSignature.torch})`
@@ -691,7 +719,7 @@ test('captures install metadata for the update tests @sec-meta @lifecycle', asyn
       _installedTorchSignature.cudaAvailable,
       `torch.cuda.is_available() must be true on an NVIDIA-variant install (torch ${_installedTorchSignature.torch}, cuda ${_installedTorchSignature.cuda})`
     ).toBe(true)
-  } else if (LIFECYCLE_VARIANT === 'amd') {
+  } else if (REAL_COMFY_VARIANT === 'amd') {
     expect(
       _installedTorchSignature.hip,
       `AMD-variant install must carry a ROCm torch build (torch ${_installedTorchSignature.torch})`
@@ -700,7 +728,7 @@ test('captures install metadata for the update tests @sec-meta @lifecycle', asyn
       _installedTorchSignature.cudaAvailable,
       `torch.cuda.is_available() must be true on an AMD-variant install (torch ${_installedTorchSignature.torch}, hip ${_installedTorchSignature.hip})`
     ).toBe(true)
-  } else if (LIFECYCLE_VARIANT === 'cpu') {
+  } else if (REAL_COMFY_VARIANT === 'cpu') {
     expect(
       _installedTorchSignature.cuda,
       `CPU-variant install must not carry a CUDA torch build (torch ${_installedTorchSignature.torch}, cuda ${_installedTorchSignature.cuda})`
@@ -712,7 +740,7 @@ test('captures install metadata for the update tests @sec-meta @lifecycle', asyn
   }
 })
 
-test('update-comfyui drives the real updater and moves HEAD forward @sec-update @lifecycle', async () => {
+test('update-comfyui drives the real updater and moves HEAD forward @sec-update @real-comfy', async () => {
   test.setTimeout(600_000)
   expect(_installedCommit, 'installed commit not captured').toBeTruthy()
 
@@ -766,7 +794,7 @@ test('update-comfyui drives the real updater and moves HEAD forward @sec-update 
   expectTorchFamilyUnchanged('update-comfyui changed the installed torch family')
 })
 
-test('re-launch ComfyUI after update validates the updated install runs @sec-update @lifecycle', async () => {
+test('re-launch ComfyUI after update validates the updated install runs @sec-update @real-comfy', async () => {
   await launchFromDashboard('ComfyUI')
 })
 
@@ -891,7 +919,7 @@ async function changePytorchStack(option: PytorchPickerOption): Promise<void> {
   await closeTitlePopupIfOpen(ctx.app)
 }
 
-test('captures the baseline pytorch stack @sec-pytorch @lifecycle', async () => {
+test('captures the baseline pytorch stack @sec-pytorch @real-comfy', async () => {
   test.setTimeout(300_000)
   expect(await ensureInstallPanelView(ctx.app, _updateInstallId)).toBe(true)
   await waitForWebContents(ctx.app, 'panel.html')
@@ -908,7 +936,7 @@ test('captures the baseline pytorch stack @sec-pytorch @lifecycle', async () => 
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('switches to a different compatible stack via the picker @sec-pytorch @lifecycle', async () => {
+test('switches to a different compatible stack via the picker @sec-pytorch @real-comfy', async () => {
   test.setTimeout(GPU_VARIANT ? 2_700_000 : 1_200_000)
   expect(_baselinePytorchOption, 'baseline PyTorch picker option not captured').not.toBeNull()
   const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
@@ -926,18 +954,18 @@ test('switches to a different compatible stack via the picker @sec-pytorch @life
   await changePytorchStack(_targetPytorchOption!)
 })
 
-test('venv reflects the switched stack @sec-pytorch @lifecycle', async () => {
+test('venv reflects the switched stack @sec-pytorch @real-comfy', async () => {
   expect(_targetPytorchOption, 'target PyTorch picker option not captured').not.toBeNull()
   expect(_baselinePytorchSignature, 'baseline PyTorch signature not captured').not.toBeNull()
   const switched = queryTorchSignature()
   expect(switched.torch).toBe(_targetPytorchOption!.version)
   expect(switched.torch).not.toBe(_baselinePytorchSignature!.torch)
   expect(switched.torchDistInfoCount, 'venv must contain exactly one torch distribution').toBe(1)
-  if (LIFECYCLE_VARIANT === 'nvidia') {
+  if (REAL_COMFY_VARIANT === 'nvidia') {
     expect(switched.cuda, 'NVIDIA stack must report a CUDA runtime version').not.toBeNull()
-  } else if (LIFECYCLE_VARIANT === 'amd') {
+  } else if (REAL_COMFY_VARIANT === 'amd') {
     expect(switched.hip, 'AMD stack must report a ROCm/HIP runtime version').not.toBeNull()
-  } else if (LIFECYCLE_VARIANT === 'cpu') {
+  } else if (REAL_COMFY_VARIANT === 'cpu') {
     expect(switched.cuda, 'CPU stack must not report a CUDA runtime version').toBeNull()
     expect(switched.torch, 'CPU stack must not carry a CUDA local-version suffix').not.toMatch(
       /\+cu\d+/i
@@ -945,7 +973,7 @@ test('venv reflects the switched stack @sec-pytorch @lifecycle', async () => {
   }
 })
 
-test('switches back to the baseline pytorch stack @sec-pytorch @lifecycle', async () => {
+test('switches back to the baseline pytorch stack @sec-pytorch @real-comfy', async () => {
   test.setTimeout(GPU_VARIANT ? 2_700_000 : 1_200_000)
   expect(_baselinePytorchOption, 'baseline PyTorch picker option not captured').not.toBeNull()
   expect(_baselinePytorchSignature, 'baseline PyTorch signature not captured').not.toBeNull()
@@ -1127,7 +1155,7 @@ async function restoreSnapshotViaPicker(filename: string): Promise<void> {
 let _pytorchSwitchedSnapshotFile = ''
 let _pytorchBaselineSnapshotFile = ''
 
-test('pytorch changes recorded pre/post snapshots carrying the stack identity @sec-pytorch @sec-snapshot @lifecycle', async () => {
+test('pytorch changes recorded pre/post snapshots carrying the stack identity @sec-pytorch @sec-snapshot @real-comfy', async () => {
   test.skip(
     !_targetPytorchOption,
     'pytorch switch tests did not run (standalone @sec-snapshot subset)'
@@ -1156,7 +1184,7 @@ test('pytorch changes recorded pre/post snapshots carrying the stack identity @s
   _pytorchBaselineSnapshotFile = postBaseline!.filename
 })
 
-test('snapshot restore re-applies the switched pytorch stack @sec-pytorch @sec-snapshot @lifecycle', async () => {
+test('snapshot restore re-applies the switched pytorch stack @sec-pytorch @sec-snapshot @real-comfy', async () => {
   test.skip(!_pytorchSwitchedSnapshotFile, 'pytorch stack snapshots not captured')
   test.setTimeout(GPU_VARIANT ? 2_700_000 : 1_200_000)
 
@@ -1186,7 +1214,7 @@ test('snapshot restore re-applies the switched pytorch stack @sec-pytorch @sec-s
   expect(signature.torchDistInfoCount, 'venv must contain exactly one torch distribution').toBe(1)
 })
 
-test('snapshot restore returns the venv to the baseline pytorch stack @sec-pytorch @sec-snapshot @lifecycle', async () => {
+test('snapshot restore returns the venv to the baseline pytorch stack @sec-pytorch @sec-snapshot @real-comfy', async () => {
   test.skip(!_pytorchBaselineSnapshotFile, 'pytorch stack snapshots not captured')
   test.setTimeout(GPU_VARIANT ? 2_700_000 : 1_200_000)
 
@@ -1200,7 +1228,7 @@ test('snapshot restore returns the venv to the baseline pytorch stack @sec-pytor
 let _restoreSnapshotFilename = ''
 let _snapshotHeadAtCapture = ''
 
-test('captures a snapshot for the picker-driven restore test @sec-snapshot @lifecycle', async () => {
+test('captures a snapshot for the picker-driven restore test @sec-snapshot @real-comfy', async () => {
   expect(_updateInstallId, 'update install id not captured').toBeTruthy()
   expect(await ensureInstallPanelView(ctx.app, _updateInstallId)).toBe(true)
   await waitForWebContents(ctx.app, 'panel.html')
@@ -1217,7 +1245,7 @@ test('captures a snapshot for the picker-driven restore test @sec-snapshot @life
   await popup.waitForVisible(byTestId(TID.snapshotsSaveCta), { timeout: 15_000 })
   expect(await popup.click(byTestId(TID.snapshotsSaveCta))).toBe(true)
   await popup.waitForVisible(byTestId(TID.basePromptInput), { timeout: 15_000 })
-  await popup.fill(byTestId(TID.basePromptInput), 'lifecycle-restore-target')
+  await popup.fill(byTestId(TID.basePromptInput), 'real-comfy-restore-target')
   expect(await popup.click(byTestId(TID.basePromptAction))).toBe(true)
 
   let target: SnapshotListLite['snapshots'][number] | undefined
@@ -1228,7 +1256,7 @@ test('captures a snapshot for the picker-driven restore test @sec-snapshot @life
           `window.api.getSnapshots(${JSON.stringify(_updateInstallId)})`
         )
         target = list.snapshots.find(
-          (s) => s.label === 'lifecycle-restore-target' && !filenamesBefore.has(s.filename)
+          (s) => s.label === 'real-comfy-restore-target' && !filenamesBefore.has(s.filename)
         )
         return target ?? null
       },
@@ -1239,7 +1267,7 @@ test('captures a snapshot for the picker-driven restore test @sec-snapshot @life
   await popup.waitForVisible(byTestId(TID.snapshotsSaveCta), { timeout: 15_000 })
   expect(await popup.click(byTestId(TID.snapshotsSaveCta))).toBe(true)
   await popup.waitForVisible(byTestId(TID.basePromptInput), { timeout: 15_000 })
-  await popup.fill(byTestId(TID.basePromptInput), 'lifecycle-latest-marker')
+  await popup.fill(byTestId(TID.basePromptInput), 'real-comfy-latest-marker')
   expect(await popup.click(byTestId(TID.basePromptAction))).toBe(true)
   await expect
     .poll(
@@ -1249,7 +1277,7 @@ test('captures a snapshot for the picker-driven restore test @sec-snapshot @life
         )
         return (
           list.snapshots.find(
-            (s) => s.label === 'lifecycle-latest-marker' && !filenamesBefore.has(s.filename)
+            (s) => s.label === 'real-comfy-latest-marker' && !filenamesBefore.has(s.filename)
           ) ?? null
         )
       },
@@ -1267,7 +1295,7 @@ test('captures a snapshot for the picker-driven restore test @sec-snapshot @life
   expect(_snapshotHeadAtCapture).toMatch(/^[a-f0-9]{40}$/)
 })
 
-test('per-install Manager security level + network mode land in Manager config.ini and apply after relaunch @sec-manager @lifecycle', async () => {
+test('per-install Manager security level + network mode land in Manager config.ini and apply after relaunch @sec-manager @real-comfy', async () => {
   test.setTimeout(600_000)
   expect(_updateInstallPath, 'install path not captured').toBeTruthy()
 
@@ -1317,7 +1345,7 @@ test('per-install Manager security level + network mode land in Manager config.i
     expect(origin, 'no running ComfyUI frontend to derive the server origin from').toBeTruthy()
     return origin!
   }
-  const probeTarget = `lifecycle-enforcement-probe-${randomUUID()}`
+  const probeTarget = `real-comfy-enforcement-probe-${randomUUID()}`
   const managerBlocksMiddleRisk = async (): Promise<boolean> => {
     const probeSnapshotPath = path.join(
       _updateInstallPath,
@@ -1452,7 +1480,7 @@ test('per-install Manager security level + network mode land in Manager config.i
   expectTorchFamilyUnchanged('manager security-level relaunch changed the installed torch family')
 })
 
-test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RELAUNCH while running @sec-crosschannel @lifecycle', async () => {
+test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RELAUNCH while running @sec-crosschannel @real-comfy', async () => {
   test.setTimeout(GPU_VARIANT ? 3_000_000 : 1_500_000)
 
   const installsBefore = await ctx.panel.evaluate<Array<{ id: string; updateChannel?: string }>>(
@@ -1571,7 +1599,7 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @sec-snapshot @lifecycle', async () => {
+test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @sec-snapshot @real-comfy', async () => {
   test.setTimeout(600_000)
   expect(_restoreSnapshotFilename, 'restore-target snapshot not captured').toBeTruthy()
 
@@ -1638,7 +1666,7 @@ test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @sec-snapsh
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('picker primary CTA Restart drives in-drawer confirm + re-launch @sec-picker @lifecycle', async () => {
+test('picker primary CTA Restart drives in-drawer confirm + re-launch @sec-picker @real-comfy', async () => {
   test.setTimeout(300_000)
 
   await waitForOperationDrain(_updateInstallId)
@@ -1707,7 +1735,7 @@ test('picker primary CTA Restart drives in-drawer confirm + re-launch @sec-picke
   ).toBeGreaterThanOrEqual(1)
 })
 
-test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores it @sec-picker @lifecycle', async () => {
+test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores it @sec-picker @real-comfy', async () => {
   test.setTimeout(300_000)
 
   await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(true)
@@ -1858,7 +1886,7 @@ async function restartAndHoldTheBootBeforeItCountsAsRunning(): Promise<void> {
     .toBe(true)
 }
 
-test('boot-window --port edit surfaces Restart-to-apply and the restart applies it @sec-bootwindow @lifecycle', async () => {
+test('boot-window --port edit surfaces Restart-to-apply and the restart applies it @sec-bootwindow @real-comfy', async () => {
   test.setTimeout(600_000)
   await waitForOperationDrain(_updateInstallId)
 
@@ -1941,7 +1969,7 @@ test('boot-window --port edit surfaces Restart-to-apply and the restart applies 
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('restart clicked during boot cancels the in-flight boot and applies the edited --port @sec-bootwindow @lifecycle', async () => {
+test('restart clicked during boot cancels the in-flight boot and applies the edited --port @sec-bootwindow @real-comfy', async () => {
   test.setTimeout(600_000)
   await waitForOperationDrain(_updateInstallId)
 
@@ -2022,7 +2050,7 @@ test('restart clicked during boot cancels the in-flight boot and applies the edi
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('restart clicked during a FRESH chooser boot (unattached window) cancels it and applies the edited --port @sec-bootwindow @lifecycle', async () => {
+test('restart clicked during a FRESH chooser boot (unattached window) cancels it and applies the edited --port @sec-bootwindow @real-comfy', async () => {
   test.setTimeout(600_000)
   await waitForOperationDrain(_updateInstallId)
 
@@ -2124,7 +2152,7 @@ test('restart clicked during a FRESH chooser boot (unattached window) cancels it
 let _copyInstallId = ''
 let _copyInstallPath = ''
 
-test('picker pin-bottom Copy creates a real ~500MB copy of the install @sec-copy @lifecycle', async () => {
+test('picker pin-bottom Copy creates a real ~500MB copy of the install @sec-copy @real-comfy', async () => {
   test.setTimeout(600_000)
 
   await stopAndReturnToDashboardViaUI()
@@ -2174,7 +2202,7 @@ test('picker pin-bottom Copy creates a real ~500MB copy of the install @sec-copy
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('cleans up the copy install before the original delete test runs @sec-copy @lifecycle', async () => {
+test('cleans up the copy install before the original delete test runs @sec-copy @real-comfy', async () => {
   test.setTimeout(300_000)
   expect(_copyInstallId, 'no copy install id captured to clean up').toBeTruthy()
 
@@ -2212,7 +2240,7 @@ test('cleans up the copy install before the original delete test runs @sec-copy 
 let _kebabCopyInstallId = ''
 let _kebabCopyInstallPath = ''
 
-test('dashboard kebab "Copy Installation" creates a real ~500MB copy @sec-copy @lifecycle', async () => {
+test('dashboard kebab "Copy Installation" creates a real ~500MB copy @sec-copy @real-comfy', async () => {
   test.setTimeout(600_000)
 
   await expectChooserVisible(ctx.panel)
@@ -2270,7 +2298,7 @@ test('dashboard kebab "Copy Installation" creates a real ~500MB copy @sec-copy @
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('Manage drawer "Untrack" removes the install from the registry without touching disk @sec-copy @lifecycle', async () => {
+test('Manage drawer "Untrack" removes the install from the registry without touching disk @sec-copy @real-comfy', async () => {
   test.setTimeout(60_000)
   expect(_kebabCopyInstallId, 'no kebab-copy install id to untrack').toBeTruthy()
   expect(_kebabCopyInstallPath, 'no kebab-copy install path captured').toBeTruthy()
@@ -2313,7 +2341,7 @@ test('Manage drawer "Untrack" removes the install from the registry without touc
   ).toBeDefined()
 })
 
-test('cleans up the untracked kebab-copy on disk before the final Delete test runs @sec-copy @lifecycle', async () => {
+test('cleans up the untracked kebab-copy on disk before the final Delete test runs @sec-copy @real-comfy', async () => {
   test.setTimeout(120_000)
   expect(_kebabCopyInstallPath, 'no kebab-copy install path to clean up').toBeTruthy()
   expect(
@@ -2408,7 +2436,7 @@ function listFilesRecursive(dir: string): string[] {
   return out
 }
 
-test('creates a Remote Connection record pointed at the running local server through the wizard @sec-remote @lifecycle', async () => {
+test('creates a Remote Connection record pointed at the running local server through the wizard @sec-remote @real-comfy', async () => {
   test.setTimeout(120_000)
 
   if (!(await comfyFrontendIsLoaded())) {
@@ -2431,7 +2459,7 @@ test('creates a Remote Connection record pointed at the running local server thr
   expect(outputDir, 'shared outputDir setting is unset').toBeTruthy()
   expect(existsSync(outputDir!), `shared output dir does not exist: ${outputDir}`).toBe(true)
 
-  _remoteRunId = `remote-lifecycle-${randomUUID().slice(0, 8)}`
+  _remoteRunId = `remote-real-comfy-${randomUUID().slice(0, 8)}`
   _remoteOutputRoot = path.join(outputDir!, _remoteRunId)
   _remoteExpectedFile = path.join(_remoteOutputRoot, 'nested', 'output_00001_.png')
   expect(existsSync(_remoteOutputRoot), 'unique output root unexpectedly pre-exists').toBe(false)
@@ -2439,7 +2467,8 @@ test('creates a Remote Connection record pointed at the running local server thr
   _remoteDashboardWindowId = await openDashboardWindowViaPickerHome()
   await clickNewInstallTile(ctx.panel)
   await expectNewBuildModalOpen(ctx.panel)
-  await waitForConfigContinueEnabled(
+  await waitForButtonEnabled(
+    '.config-continue',
     'Continue never enabled after the wizard opened (standalone pre-fill)'
   )
 
@@ -2483,7 +2512,7 @@ test('creates a Remote Connection record pointed at the running local server thr
   await expectChooserVisible(ctx.panel)
 })
 
-test('remote workflow output is saved exactly once - no "(1)" duplicate next to the server-written file @sec-remote @lifecycle', async () => {
+test('remote workflow output is saved exactly once - no "(1)" duplicate next to the server-written file @sec-remote @real-comfy', async () => {
   test.setTimeout(180_000)
   expect(_remoteInstallId, 'no remote install id from the wizard test').toBeTruthy()
   expect(_remoteOutputRoot, 'no output root captured').toBeTruthy()
@@ -2650,7 +2679,7 @@ test('remote workflow output is saved exactly once - no "(1)" duplicate next to 
   expect(statSync(_remoteExpectedFile).size).toBeGreaterThan(0)
 })
 
-test('cleans up the remote connection: window closed, record untracked, local install untouched @sec-remote @lifecycle', async () => {
+test('cleans up the remote connection: window closed, record untracked, local install untouched @sec-remote @real-comfy', async () => {
   test.setTimeout(120_000)
   expect(_remoteInstallId, 'no remote install id to clean up').toBeTruthy()
 
@@ -2744,7 +2773,7 @@ test('cleans up the remote connection: window closed, record untracked, local in
 let _deleteInstallId = ''
 let _deleteInstallPath = ''
 
-test('stops comfy and captures the installed dir state before driving delete @sec-delete @lifecycle', async () => {
+test('stops comfy and captures the installed dir state before driving delete @sec-delete @real-comfy', async () => {
   await stopAndReturnToDashboardViaUI()
 
   const installs = await ctx.panel.evaluate<InstallationLite[]>(`window.api.getInstallations()`)
@@ -2767,7 +2796,7 @@ test('stops comfy and captures the installed dir state before driving delete @se
   ).toBe(true)
 })
 
-test('real delete wipes the fully-installed ~500MB tree off disk @sec-delete @lifecycle', async () => {
+test('real delete wipes the fully-installed ~500MB tree off disk @sec-delete @real-comfy', async () => {
   test.setTimeout(300_000)
   expect(_deleteInstallPath, 'install path not captured').toBeTruthy()
 

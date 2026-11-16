@@ -95,14 +95,6 @@ export async function resolveTemplateInputAssetSnapshot(
   return snapshot
 }
 
-export async function resolveTemplateInputAssets(
-  installation: InstallationRecord,
-  templateId: string
-): Promise<TemplateInputAsset[]> {
-  const json = await loadTemplateJson(installation, templateId)
-  return resolveTemplateInputAssetsFromJson(json)
-}
-
 function resolveTemplateInputAssetsFromJson(json: unknown): TemplateInputAsset[] {
   if (!json || typeof json !== 'object') return []
 
@@ -185,14 +177,11 @@ export interface PlacedInputAsset {
 
 export async function downloadTemplateInputAssets(
   installation: InstallationRecord,
-  templateId: string,
+  workflowJson: unknown,
   log: (text: string) => void,
-  signal?: AbortSignal,
-  workflowJson?: unknown
+  signal?: AbortSignal
 ): Promise<PlacedInputAsset[]> {
-  const assets = workflowJson
-    ? resolveTemplateInputAssetsFromJson(workflowJson)
-    : await resolveTemplateInputAssets(installation, templateId)
+  const assets = resolveTemplateInputAssetsFromJson(workflowJson)
   if (assets.length === 0) return []
 
   let destDir: string

@@ -20,6 +20,8 @@ export type {
 import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
 
+import type { KnownSettingKey, KnownSettings } from '../main/settings'
+
 export interface CoachmarkBeakPayload {
   beakFraction: number
   cardCentreInView: number | null
@@ -119,6 +121,7 @@ export interface Installation {
   launchMode?: string
   launchArgs?: string
   hasConsole?: boolean
+  hasOutputFolder?: boolean
   installPath?: string
   status?: string
   lastLaunchedAt?: number
@@ -145,6 +148,7 @@ export interface AppPagePlacement {
   height: number
   cornerRadius: number
   justOpened?: boolean
+  retry?: boolean
 }
 
 export interface CatalogWorkflow {
@@ -1135,7 +1139,6 @@ export interface ElectronApi {
   probeInstallation(dirPath: string): Promise<ProbeResult[]>
   trackInstallation(data: Record<string, unknown>): Promise<TrackResult>
   installInstance(installationId: string, express?: boolean): Promise<void>
-  skipTemplateDownload(installationId: string): Promise<void>
   updateInstallation(
     installationId: string,
     data: Record<string, unknown>
@@ -1150,7 +1153,6 @@ export interface ElectronApi {
   terminalResize(installationId: string, cols: number, rows: number): Promise<void>
   terminalRestart(installationId: string): Promise<TerminalRestore>
   openInstallWindow(installationId: string): Promise<boolean>
-  openInstallInNewWindow(installationId: string): void
   closeComfyWindow(installationId: string, opts?: { skipConfirm?: boolean }): Promise<boolean>
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
@@ -1159,7 +1161,7 @@ export interface ElectronApi {
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
-  listLocalAssets(): Promise<AssetSummary[]>
+  listLocalAssets(installationId?: string): Promise<AssetSummary[]>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
   copyAsset(source: string, assetId: string): Promise<boolean>
@@ -1171,8 +1173,9 @@ export interface ElectronApi {
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>
   hideAppPage(): void
-  reloadAppPage(): void
-  onAppPageStatusChanged(callback: (status: AppPageStatus) => void): () => void
+  onAppPageStatusChanged(
+    callback: (appId: string | null, status: AppPageStatus) => void
+  ): () => void
   onAppPageClosed(callback: () => void): () => void
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
@@ -1277,8 +1280,8 @@ export interface ElectronApi {
   getModelsSections(): Promise<ModelsResult>
   getMediaSections(): Promise<SettingsSection[]>
   getUniqueName(baseName: string): Promise<string>
-  setSetting(key: string, value: unknown): Promise<void>
-  getSetting(key: string): Promise<unknown>
+  setSetting<K extends KnownSettingKey>(key: K, value: KnownSettings[K]): Promise<void>
+  getSetting<K extends KnownSettingKey>(key: K): Promise<KnownSettings[K]>
 
   getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
   acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>

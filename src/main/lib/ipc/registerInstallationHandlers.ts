@@ -38,16 +38,12 @@ import * as releaseCache from '../release-cache'
 import { runStartupReleaseChecks } from '../release-cache-startup'
 import { _broadcastToRenderer } from './shared'
 import { hasGitDir } from '../git'
+import { hasOutputFolder } from '../outputFolders'
 import { parseUrl } from '../util'
 import { restoreSnapshotIntoInstallation } from '../standaloneMigration'
 import * as mainTelemetry from '../telemetry'
 import { buildErrorFields } from '../../../shared/errorEvent'
 import { invalidateModelDownloadStartupPass } from '../comfyDownloadManager'
-import {
-  startTemplateDownload,
-  abortTemplateDownload,
-  requestSkipTemplateDownload
-} from '../../sources/standalone/templateDownloadTask'
 import { abortModelStaging } from '../../sources/comfybuilder/modelStagingTask'
 import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
@@ -134,6 +130,7 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
       sourceLabel: source.label,
       sourceCategory: source.category,
       hasConsole: source.hasConsole !== false,
+      hasOutputFolder: hasOutputFolder(inst),
       ...(buildVersion ? { distributionVersion: buildVersion } : {}),
       ...(listPreview != null ? { listPreview } : {}),
       ...(statusTag ? { statusTag } : {})
@@ -280,11 +277,6 @@ export function registerInstallationHandlers(): void {
 
       let snapshotRestoreError: string | null = null
 
-      if (inst.bundledTemplateId && inst.downloadTemplateModels && inst.pendingTemplateOpen) {
-        const sizeBytes = inst.bundledTemplateSizeBytes ?? 0
-        startTemplateDownload(inst, sizeBytes, { sendOutput })
-      }
-
       const cache = createCache(
         settings.get('cacheDir') as string,
         settings.get('maxCachedDownloads') as number
@@ -328,7 +320,6 @@ export function registerInstallationHandlers(): void {
         if (!snapshotRestoreError) sendProgress('done', { percent: 100, status: 'Complete' })
       } catch (err) {
         _operationAborts.delete(installationId)
-        abortTemplateDownload(installationId)
         abortModelStaging(installationId)
         if (abort.signal.aborted) {
           if (isComfyUpdate) {
@@ -433,12 +424,6 @@ export function registerInstallationHandlers(): void {
     const source = sourceMap[inst.sourceId]
     if (!source) return []
     return source.getListActions ? source.getListActions(inst) : []
-  })
-
-  ipcMain.handle('skip-template-download', (_event, installationId: string) => {
-    if (typeof installationId === 'string' && installationId) {
-      requestSkipTemplateDownload(installationId)
-    }
   })
 
   ipcMain.handle(

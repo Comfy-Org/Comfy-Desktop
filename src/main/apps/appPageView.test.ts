@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { WebContents, WebFrameMain } from 'electron'
+import type { IpcMainEvent, WebContents, WebFrameMain } from 'electron'
 
 type PermissionCheck = (contents: unknown, permission: string, requestingOrigin: string) => boolean
 type PermissionRequest = (
@@ -41,7 +41,10 @@ vi.mock('../lib/comfyDownloadManager', () => ({
   attachSessionDownloadHandler: mocks.attachDownloads
 }))
 vi.mock('../lib/contextMenu', () => ({ attachContextMenu: vi.fn() }))
-vi.mock('../lib/telemetry', () => ({ capture: mocks.capture }))
+vi.mock('../lib/telemetry', () => ({
+  capture: mocks.capture,
+  DEFAULT_EVENT_PROPERTY_NAMES: new Set<string>()
+}))
 vi.mock('./appsCatalog', () => ({
   pageUrlForListedApp: (id: string) => mocks.pages.get(id) ?? null
 }))
@@ -63,9 +66,10 @@ import {
   _resetForTest,
   captureAppPage,
   hideAppPage,
-  reloadAppPage,
+  loadedAppPage,
   showAppPage
 } from './appPageView'
+import { trackFromAppsPage } from '../lib/ipc/registerAppsTelemetryHandlers'
 
 const APPS_URL = 'https://comfy.org/apps/'
 const CUTOUT = 'remove-background'
@@ -187,7 +191,7 @@ function sentToPanel(channel: string): unknown[][] {
 }
 
 function lastStatusSentToPanel(): unknown {
-  return sentToPanel(APP_PAGE_STATUS_CHANNEL).at(-1)?.[1]
+  return sentToPanel(APP_PAGE_STATUS_CHANNEL).at(-1)?.[2]
 }
 
 function openCutout(placement: Record<string, unknown> = PLACEMENT): Promise<string> {
@@ -484,7 +488,7 @@ describe('an app page that cannot load', () => {
       reason: 'network'
     })
 
-    reloadAppPage(panelContents())
+    expect(await openCutout({ ...PLACEMENT, retry: true })).toBe('loading')
     expect(lastStatusSentToPanel()).toBe('loading')
     expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(2)
     expect(hostedPage().webContents.loadURL).toHaveBeenLastCalledWith(CUTOUT_URL)
@@ -492,6 +496,88 @@ describe('an app page that cannot load', () => {
     finishLoading()
     expect(hostedPage().visible).toBe(true)
     expect(lastStatusSentToPanel()).toBe('ready')
+    expect(mocks.capture).not.toHaveBeenCalledWith(APP_OPENED_EVENT, expect.anything())
+  })
+
+  it('follows a redirect that stays on the apps site while the page loads', async () => {
+    await openCutout()
+    const event = navigationEvent()
+    hostedPage().webContents.emit('will-redirect', event, `${CUTOUT_URL}?v=2`, false, true)
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(mocks.capture).not.toHaveBeenCalledWith(APP_PAGE_FAILED_EVENT, expect.anything())
+
+    finishLoading(`${CUTOUT_URL}?v=2`)
+    expect(lastStatusSentToPanel()).toBe('ready')
+  })
+
+  it('says the page did not load, without opening the browser, when the site sends it to another site while it loads', async () => {
+    await openCutout()
+    const event = navigationEvent()
+    hostedPage().webContents.emit(
+      'will-redirect',
+      event,
+      'https://www.comfy.org/apps/',
+      false,
+      true
+    )
+
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+    expect(hostedPage().visible).toBe(false)
+    expect(lastStatusSentToPanel()).toBe('failed')
+    expect(mocks.capture).toHaveBeenCalledWith(APP_PAGE_FAILED_EVENT, {
+      app_id: CUTOUT,
+      reason: 'redirected'
+    })
+  })
+
+  it('asks again whether a refused app may open when the person retries it, and loads it once it may', async () => {
+    await openCutout()
+    finishLoading()
+    hideAppPage(panelContents())
+    mocks.pages.delete(UPSCALE)
+    expect(await showAppPage(panelContents(), UPSCALE, PLACEMENT)).toBe('failed')
+
+    expect(await showAppPage(panelContents(), UPSCALE, { ...PLACEMENT, retry: true })).toBe(
+      'failed'
+    )
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(1)
+    expect(hostedPage().visible).toBe(false)
+
+    mocks.pages.set(UPSCALE, UPSCALE_URL)
+    expect(await showAppPage(panelContents(), UPSCALE, { ...PLACEMENT, retry: true })).toBe(
+      'loading'
+    )
+    expect(hostedPage().webContents.loadURL).toHaveBeenLastCalledWith(UPSCALE_URL)
+    finishLoading(UPSCALE_URL)
+    expect(hostedPage().visible).toBe(true)
+  })
+
+  it('does not load a failed app again on Try again once Apps is switched off', async () => {
+    await openCutout()
+    finishLoading(CUTOUT_URL, 503)
+    mocks.appsEnabled = false
+
+    expect(await openCutout({ ...PLACEMENT, retry: true })).toBe('failed')
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(1)
+    expect(hostedPage().visible).toBe(false)
+  })
+
+  it("names the app with every status, so the panel can tell a hidden app's page from the one it shows", async () => {
+    await openCutout()
+    hideAppPage(panelContents())
+    mocks.pages.delete(UPSCALE)
+    expect(await showAppPage(panelContents(), UPSCALE, PLACEMENT)).toBe('failed')
+
+    finishLoading()
+
+    expect(sentToPanel(APP_PAGE_STATUS_CHANNEL).at(-1)).toEqual([
+      APP_PAGE_STATUS_CHANNEL,
+      CUTOUT,
+      'ready'
+    ])
+    expect(hostedPage().visible).toBe(false)
   })
 
   it('tries a failed app again when the person opens it once more', async () => {
@@ -668,5 +754,224 @@ describe('isAppsPageSender', () => {
     const page = hostedPage().webContents as unknown as WebContents
 
     expect(isAppsPageSender(page, null)).toBe(false)
+  })
+})
+
+const HDR = 'sdr-to-hdr'
+const HDR_URL = `${APPS_URL}sdr-to-hdr/desktop.html`
+const RUN = { name: 'run_started', props: { where: 'cloud' } }
+
+function eventFrom(contents: FakeContents): IpcMainEvent {
+  return {
+    sender: contents,
+    senderFrame: { ...contents.mainFrame, url: contents.url }
+  } as unknown as IpcMainEvent
+}
+
+function runsSent(): unknown[][] {
+  return mocks.capture.mock.calls.filter(([name]) => name === 'comfy.desktop.apps.run_started')
+}
+
+describe('the app a hosted page has loaded', () => {
+  beforeEach(() => {
+    mocks.pages.set(HDR, HDR_URL)
+  })
+
+  it('is no app until the page Desktop loads commits, then the app with that document', async () => {
+    await openCutout()
+    const page = hostedPage().webContents as unknown as WebContents
+    expect(loadedAppPage(page)).toBeNull()
+
+    finishLoading()
+
+    expect(loadedAppPage(page)).toEqual({ appId: CUTOUT, document: 1 })
+  })
+
+  it('is no app while the next app loads, then the next app once its page commits', async () => {
+    await openCutout()
+    finishLoading()
+    const page = hostedPage().webContents as unknown as WebContents
+
+    await showAppPage(panelContents(), HDR, PLACEMENT)
+    expect(loadedAppPage(page)).toBeNull()
+
+    finishLoading(HDR_URL)
+    expect(loadedAppPage(page)).toEqual({ appId: HDR, document: 2 })
+  })
+
+  it("keeps the app when the page moves within its own address, and drops it when the page goes to another app's", async () => {
+    await openCutout()
+    finishLoading()
+    const page = hostedPage().webContents
+
+    page.emit('did-navigate', {}, `${CUTOUT_URL}?example=dog`, 200)
+    expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: CUTOUT, document: 2 })
+
+    page.emit('did-navigate', {}, HDR_URL, 200)
+    expect(loadedAppPage(page as unknown as WebContents)).toBeNull()
+  })
+
+  it('keeps the app while the page moves within its own page, by query or hash', async () => {
+    await openCutout()
+    finishLoading()
+    const page = hostedPage().webContents
+
+    page.emit('did-navigate-in-page', {}, `${CUTOUT_URL}?example=dog`, true)
+    page.emit('did-navigate-in-page', {}, `${CUTOUT_URL}#result`, true)
+
+    expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: CUTOUT, document: 1 })
+  })
+
+  it('keeps the app on the address its page was redirected to, through moves within it', async () => {
+    await openCutout()
+    const moved = `${APPS_URL}remove-background/v2/desktop.html`
+    finishLoading(moved)
+    const page = hostedPage().webContents
+
+    page.emit('did-navigate-in-page', {}, `${moved}#result`, true)
+    expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: CUTOUT, document: 1 })
+  })
+
+  it("keeps a hash-route app within its route, and drops it on another app's route", async () => {
+    await showAppPage(panelContents(), UPSCALE, PLACEMENT)
+    finishLoading(UPSCALE_URL)
+    const page = hostedPage().webContents as unknown as WebContents
+    const moveTo = (url: string) =>
+      hostedPage().webContents.emit('did-navigate-in-page', {}, url, true)
+
+    moveTo(`${UPSCALE_URL}/step-2`)
+    expect(loadedAppPage(page)).toEqual({ appId: UPSCALE, document: 1 })
+
+    moveTo(`${APPS_URL}#/upscale-pro`)
+    expect(loadedAppPage(page)).toBeNull()
+
+    moveTo(`${APPS_URL}#/other-app`)
+    expect(loadedAppPage(page)).toBeNull()
+  })
+
+  it.each([
+    [`${UPSCALE_URL}?mode=before`, `${UPSCALE_URL}?mode=after`],
+    [`${UPSCALE_URL}/`, `${UPSCALE_URL}/step-2`]
+  ])('keeps a hash-route app listed at %s while it moves to %s', async (listedUrl, nextUrl) => {
+    mocks.pages.set(UPSCALE, listedUrl)
+    await showAppPage(panelContents(), UPSCALE, PLACEMENT)
+    finishLoading(listedUrl)
+    const page = hostedPage().webContents
+
+    page.url = nextUrl
+    page.emit('did-navigate-in-page', {}, nextUrl, true)
+
+    expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: UPSCALE, document: 1 })
+    await trackFromAppsPage(eventFrom(page), RUN)
+    expect(runsSent()).toEqual([
+      ['comfy.desktop.apps.run_started', { where: 'cloud', app_id: UPSCALE }]
+    ])
+  })
+
+  it.each([`${UPSCALE_URL}?mode=before`, `${UPSCALE_URL}/`])(
+    "drops a hash-route app listed at %s on another app's route and on the list",
+    async (listedUrl) => {
+      mocks.pages.set(UPSCALE, listedUrl)
+      await showAppPage(panelContents(), UPSCALE, PLACEMENT)
+      finishLoading(listedUrl)
+      const page = hostedPage().webContents as unknown as WebContents
+      const moveTo = (url: string) =>
+        hostedPage().webContents.emit('did-navigate-in-page', {}, url, true)
+
+      moveTo(`${APPS_URL}#/upscale-pro`)
+      expect(loadedAppPage(page)).toBeNull()
+
+      moveTo(listedUrl)
+      expect(loadedAppPage(page)).toEqual({ appId: UPSCALE, document: 1 })
+
+      moveTo(`${APPS_URL}#/other-app?mode=before`)
+      expect(loadedAppPage(page)).toBeNull()
+
+      moveTo(listedUrl)
+      moveTo(`${APPS_URL}#/`)
+      expect(loadedAppPage(page)).toBeNull()
+    }
+  )
+
+  it('is no app for contents Desktop does not host', async () => {
+    await openCutout()
+    finishLoading()
+
+    expect(loadedAppPage(panelContents())).toBeNull()
+    expect(loadedAppPage(new FakeContents() as unknown as WebContents)).toBeNull()
+  })
+})
+
+describe('usage events from a hosted page that switches apps', () => {
+  beforeEach(() => {
+    mocks.pages.set(HDR, HDR_URL)
+  })
+
+  it('drops what the old page sends while the next app loads, and tags the next page with its own app', async () => {
+    await openCutout()
+    finishLoading()
+    const page = hostedPage().webContents
+
+    await trackFromAppsPage(eventFrom(page), RUN)
+    expect(runsSent()).toEqual([
+      ['comfy.desktop.apps.run_started', { where: 'cloud', app_id: CUTOUT }]
+    ])
+
+    await showAppPage(panelContents(), HDR, PLACEMENT)
+    expect(await trackFromAppsPage(eventFrom(page), RUN)).toBe(false)
+    expect(runsSent()).toHaveLength(1)
+
+    finishLoading(HDR_URL)
+    await trackFromAppsPage(eventFrom(page), RUN)
+    expect(runsSent()).toEqual([
+      ['comfy.desktop.apps.run_started', { where: 'cloud', app_id: CUTOUT }],
+      ['comfy.desktop.apps.run_started', { where: 'cloud', app_id: HDR }]
+    ])
+  })
+
+  it('tags events again after the person goes back to the list and reopens an app drawn by a hash route', async () => {
+    await showAppPage(panelContents(), UPSCALE, PLACEMENT)
+    finishLoading(UPSCALE_URL)
+    const page = hostedPage().webContents
+
+    page.url = `${APPS_URL}#/`
+    page.emit('did-navigate-in-page', {}, page.url, true)
+    expect(loadedAppPage(page as unknown as WebContents)).toBeNull()
+
+    await showAppPage(panelContents(), UPSCALE, PLACEMENT)
+    expect(await trackFromAppsPage(eventFrom(page), RUN)).toBe(false)
+
+    page.url = UPSCALE_URL
+    page.emit('did-navigate-in-page', {}, UPSCALE_URL, true)
+    expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: UPSCALE, document: 1 })
+
+    await trackFromAppsPage(eventFrom(page), RUN)
+    expect(runsSent()).toEqual([
+      ['comfy.desktop.apps.run_started', { where: 'cloud', app_id: UPSCALE }]
+    ])
+  })
+
+  it('takes no app from a hash change that is not the route Desktop is loading', async () => {
+    await openCutout()
+    finishLoading()
+    const page = hostedPage().webContents
+
+    await showAppPage(panelContents(), HDR, PLACEMENT)
+    page.emit('did-navigate-in-page', {}, `${CUTOUT_URL}#step-2`, true)
+    page.emit('did-navigate-in-page', {}, HDR_URL, false)
+
+    expect(loadedAppPage(page as unknown as WebContents)).toBeNull()
+  })
+
+  it('drops an event whose page was replaced while Desktop was checking it', async () => {
+    await openCutout()
+    finishLoading()
+    const page = hostedPage().webContents
+
+    const sending = trackFromAppsPage(eventFrom(page), RUN)
+    page.emit('did-navigate', {}, CUTOUT_URL, 200)
+
+    expect(await sending).toBe(false)
+    expect(runsSent()).toEqual([])
   })
 })

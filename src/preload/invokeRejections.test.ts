@@ -173,7 +173,9 @@ describe('a failed call from a Desktop window to the main process', () => {
   it('passes on untouched a failure that never reached a handler', async () => {
     const notSendable = (): void => {}
 
-    await expect(mainWindowApi().setSetting('theme', notSendable)).rejects.toMatchObject({
+    await expect(
+      mainWindowApi().runAction('install-1', 'snapshot-save', { label: notSendable })
+    ).rejects.toMatchObject({
       name: 'DataCloneError',
       message: errorThrownBy(() => structuredClone(notSendable)).message
     })

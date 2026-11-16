@@ -65,24 +65,6 @@ const currentOp = computed(() => {
 
 const displayId = computed(() => currentId.value ?? props.installationId)
 
-const templateSkipped = ref(false)
-const canSkipTemplateDownload = computed<boolean>(() => {
-  if (templateSkipped.value) return false
-  const op = currentOp.value
-  if (!op || op.finished || op.activePhase !== 'template-models') return false
-  return !op.phaseErrors?.['template-models'] && globalProgress.value.percent < 100
-})
-
-async function handleSkipTemplateDownload(): Promise<void> {
-  const id = displayId.value
-  if (!id) return
-  emitTelemetryAction('comfy.desktop.template.download.skipped', { flow: 'launch' })
-  try {
-    await window.api.skipTemplateDownload(id)
-    templateSkipped.value = true
-  } catch {}
-}
-
 const isChainHandoff = computed<boolean>(() => {
   const op = currentOp.value
   return !!op?.finished && !!op.result?.ok && op.chainSpan === 'install'
@@ -290,7 +272,6 @@ function toggleBrandLogs(): void {
 watch(displayId, () => {
   brandLogsExpanded.value = false
   brandIsAtBottom.value = true
-  templateSkipped.value = false
 })
 
 watch(
@@ -895,17 +876,6 @@ defineExpose({ startOperation, showOperation })
               </Button>
             </template>
           </div>
-          <Button
-            v-if="canSkipTemplateDownload"
-            size="unset"
-            variant="textonly"
-            type="button"
-            class="brand-progress__footer-skip mx-auto"
-            :class="[footerButtonClass, secondaryClass]"
-            @click="handleSkipTemplateDownload"
-          >
-            {{ $t('standalone.skipTemplateDownloadOpen') }}
-          </Button>
           <Button
             v-if="currentOp.terminalOutput"
             size="unset"

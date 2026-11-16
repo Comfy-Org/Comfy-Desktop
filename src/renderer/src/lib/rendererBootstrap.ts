@@ -83,7 +83,7 @@ function toDatadogTrackingConsent(enabled: boolean | undefined): DatadogTracking
 
 async function getTelemetryEnabledSetting(): Promise<boolean | undefined> {
   try {
-    return (await window.api.getSetting('telemetryEnabled')) as boolean | undefined
+    return await window.api.getSetting('telemetryEnabled')
   } catch {
     return undefined
   }
