@@ -39,6 +39,7 @@ export interface LoadedAppPage {
 interface ShownOutputs {
   page: LoadedAppPage
   count: number
+  files: readonly (string | null)[]
 }
 
 interface HostedPage {
@@ -437,13 +438,14 @@ function isStillLoaded(hosted: HostedPage, page: LoadedAppPage): boolean {
 export function showAppOutputs(
   contents: WebContents,
   sentFrom: LoadedAppPage,
-  outputs: AppOutputs
+  outputs: AppOutputs,
+  files: readonly (string | null)[] = []
 ): boolean {
   for (const [windowKey, hosted] of hostedByWindow) {
     if (hosted.view.webContents !== contents) continue
     const panel = panelOf(windowKey)
     if (!panel || !isOnScreen(hosted) || !isStillLoaded(hosted, sentFrom)) return false
-    hosted.outputs = { page: sentFrom, count: outputs.items.length }
+    hosted.outputs = { page: sentFrom, count: outputs.items.length, files }
     if (comfyWindows.get(windowKey)?.window.isFocused()) panel.focus()
     panel.send(APP_OUTPUTS_CHANNEL, sentFrom.appId, outputs)
     return true
@@ -451,12 +453,21 @@ export function showAppOutputs(
   return false
 }
 
-export function sendAppOutputAction(panel: WebContents, action: AppOutputAction): void {
+function shownOutputsOf(panel: WebContents): { hosted: HostedPage; shown: ShownOutputs } | null {
   const host = hostOf(panel)
   const hosted = host && hostedFor(host)
   const shown = hosted?.outputs
-  if (!hosted || !shown || action.index >= shown.count || !isStillLoaded(hosted, shown.page)) return
-  hosted.view.webContents.send(APP_OUTPUT_ACTION_CHANNEL, action)
+  return hosted && shown && isStillLoaded(hosted, shown.page) ? { hosted, shown } : null
+}
+
+export function shownOutputFile(panel: WebContents, index: number): string | null {
+  return shownOutputsOf(panel)?.shown.files[index] ?? null
+}
+
+export function sendAppOutputAction(panel: WebContents, action: AppOutputAction): void {
+  const found = shownOutputsOf(panel)
+  if (!found || action.index >= found.shown.count) return
+  found.hosted.view.webContents.send(APP_OUTPUT_ACTION_CHANNEL, action)
 }
 
 export function _resetForTest(): void {

@@ -98,6 +98,8 @@
     "showInFinder": "Show in Finder",
     "showInExplorer": "Show in File Explorer",
     "showInFolder": "Show in folder",
+    "viewInAssets": "View in Assets",
+    "notFoundInCloud": "Couldn't find {name} in your Comfy Cloud assets. It may have a different name here.",
     "copy": "Copy",
     "copyFailed": "Couldn't copy asset",
     "delete": "Delete",
@@ -121,7 +123,8 @@
       "zoom": "Zoom",
       "zoomLevel": "Zoom: {level}",
       "openWorkflow": "Open workflow",
-      "savedIn": "Saved in"
+      "savedIn": "Saved in",
+      "cloudAssets": "Comfy Cloud assets"
     },
     "kindSingular": {
       "image": "Image",

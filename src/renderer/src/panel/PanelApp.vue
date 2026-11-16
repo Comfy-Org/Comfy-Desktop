@@ -210,6 +210,7 @@ async function showHome(): Promise<void> {
 
 const appsVisits = ref(0)
 const appIsOpen = ref(false)
+const assetsFocusName = ref<string | null>(null)
 const appPickedOnHome = ref<AppCard | null>(null)
 
 function openAppFromHome(app: AppCard): void {
@@ -227,8 +228,14 @@ function handleSidebarClick(page: DashboardPage): void {
   handleSidebarNavigate(page)
 }
 
+function viewInAssets(name: string): void {
+  handleSidebarNavigate('assets')
+  assetsFocusName.value = name
+}
+
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
+  assetsFocusName.value = null
   if (page === 'apps') appsVisits.value += 1
   if (page === 'home' || page === 'apps' || page === 'chooser' || page === 'assets')
     dashboardHomePage.value = page
@@ -528,10 +535,13 @@ onUnmounted(() => {
               v-model:start-with="appPickedOnHome"
               :revisit="appsVisits"
               @app-open-change="appIsOpen = $event"
+              @view-in-assets="viewInAssets"
             />
             <AssetsView
               v-else-if="dashboardHomePage === 'assets'"
               :installation-id="installationId"
+              :focus-name="assetsFocusName"
+              @focus-used="assetsFocusName = null"
             />
             <BuildDetailsView
               v-else-if="buildDetailsInstall"

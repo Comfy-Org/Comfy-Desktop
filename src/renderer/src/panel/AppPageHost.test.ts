@@ -369,6 +369,61 @@ describe('AppPageHost outputs', () => {
     expect(outputDialog()).toBeNull()
   })
 
+  it('says where a result on this computer is saved, and sends Show in folder to the page', async () => {
+    await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [first!, { ...second!, savedOn: 'computer', folder: '/Users/me/ComfyUI/output/apps' }],
+      index: 1
+    })
+
+    expect(inOutputDialog('output-detail-saved-in')?.textContent).toContain('apps')
+    expect(inOutputDialog('output-detail-saved-in')?.textContent).toContain(
+      '/Users/me/ComfyUI/output'
+    )
+    expect(inOutputDialog('output-detail-view-in-assets')).toBeNull()
+
+    inOutputDialog('output-detail-show-in-folder')!.click()
+    await flushPromises()
+
+    expect(sendAppOutputAction).toHaveBeenCalledExactlyOnceWith({
+      action: 'show-in-folder',
+      index: 1
+    })
+    expect(outputDialog()).not.toBeNull()
+  })
+
+  it('shows no saved place for a result on this computer whose folder Desktop does not know', async () => {
+    await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [first!, { ...second!, savedOn: 'computer' }],
+      index: 1
+    })
+
+    expect(inOutputDialog('output-detail-saved-in')).toBeNull()
+    expect(inOutputDialog('output-detail-show-in-folder')).toBeNull()
+  })
+
+  it('says a Cloud result is saved in Comfy Cloud assets, and View in Assets asks for it by name', async () => {
+    const wrapper = await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [first!, { ...second!, savedOn: 'cloud' }],
+      index: 1
+    })
+
+    expect(inOutputDialog('output-detail-saved-in')?.textContent).toContain('Comfy Cloud assets')
+    expect(inOutputDialog('output-detail-show-in-folder')).toBeNull()
+
+    inOutputDialog('output-detail-view-in-assets')!.click()
+    await flushPromises()
+
+    expect(wrapper.emitted('view-in-assets')).toEqual([['cutout-2.png']])
+    expect(sendAppOutputAction).not.toHaveBeenCalled()
+    expect(outputDialog()).toBeNull()
+  })
+
   it('brings the app back with the keyboard once the dialog closes, and lets go of the files', async () => {
     const revoke = vi.spyOn(URL, 'revokeObjectURL')
     await mountHost()

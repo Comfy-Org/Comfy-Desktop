@@ -73,6 +73,7 @@ import {
   loadedAppPage,
   sendAppOutputAction,
   showAppOutputs,
+  shownOutputFile,
   showAppPage
 } from './appPageView'
 import { trackFromAppsPage } from '../lib/ipc/registerAppsTelemetryHandlers'
@@ -1088,6 +1089,34 @@ describe('outputs an app page shows', () => {
     sendAppOutputAction(panelContents(), { action: 'download', index: 0 })
 
     expect(sentToPage()).toEqual([])
+  })
+
+  it('names the file Desktop found for a shown output, only while that page is loaded', () => {
+    expect(shownOutputFile(panelContents(), 0)).toBeNull()
+
+    showAppOutputs(pageContents(), loadedAppPage(pageContents())!, OUTPUTS, [
+      null,
+      '/out/cutout-2.png'
+    ])
+
+    expect(shownOutputFile(panelContents(), 0)).toBeNull()
+    expect(shownOutputFile(panelContents(), 1)).toBe('/out/cutout-2.png')
+    expect(shownOutputFile(panelContents(), 2)).toBeNull()
+    expect(shownOutputFile(new FakeContents() as unknown as WebContents, 1)).toBeNull()
+
+    finishLoading()
+
+    expect(shownOutputFile(panelContents(), 1)).toBeNull()
+  })
+
+  it('sends Show in folder back to the page like any other action', () => {
+    shownFromPage()
+
+    sendAppOutputAction(panelContents(), { action: 'show-in-folder', index: 1 })
+
+    expect(sentToPage()).toEqual([
+      [APP_OUTPUT_ACTION_CHANNEL, { action: 'show-in-folder', index: 1 }]
+    ])
   })
 
   it('takes actions only from the panel of the window the page is in', () => {

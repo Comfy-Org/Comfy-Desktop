@@ -11,6 +11,7 @@ import {
   Download,
   File,
   FolderSearch,
+  Images,
   Workflow,
   X
 } from '@lucide/vue'
@@ -36,6 +37,7 @@ export interface OutputDetailItem {
   previewUrl: string | null
   thumbnailUrl: string | null
   savedIn?: string | null
+  inCloud?: boolean
   workflow?: boolean
 }
 
@@ -54,6 +56,7 @@ const emit = defineEmits<{
   download: [index: number]
   'show-in-folder': [index: number]
   'open-workflow': [index: number]
+  'view-in-assets': [index: number]
 }>()
 
 const { t, locale } = useI18n()
@@ -291,11 +294,22 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </div>
       </div>
 
-      <div v-if="savedFolder" class="flex flex-col gap-2.5" data-testid="output-detail-saved-in">
+      <div
+        v-if="savedFolder || item.inCloud"
+        class="flex flex-col gap-2.5"
+        data-testid="output-detail-saved-in"
+      >
         <div class="text-xs font-medium tracking-wide text-subtle-foreground uppercase">
           {{ t('assets.detail.savedIn') }}
         </div>
-        <div class="flex min-w-0 flex-col gap-0.5 text-ui" :title="item.savedIn ?? undefined">
+        <span v-if="item.inCloud" class="text-ui text-foreground">
+          {{ t('assets.detail.cloudAssets') }}
+        </span>
+        <div
+          v-if="savedFolder"
+          class="flex min-w-0 flex-col gap-0.5 text-ui"
+          :title="item.savedIn ?? undefined"
+        >
           <span class="truncate text-foreground">{{ savedFolder.name }}</span>
           <span v-if="savedFolder.parent" class="truncate text-subtle-foreground">{{
             savedFolder.parent
@@ -338,6 +352,18 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         >
           <FolderSearch :size="15" aria-hidden="true" />
           {{ t(revealKey) }}
+        </Button>
+        <Button
+          v-if="item.inCloud"
+          type="button"
+          variant="secondary"
+          size="md"
+          class="gap-1.5 text-[13px]/5"
+          data-testid="output-detail-view-in-assets"
+          @click="emit('view-in-assets', index)"
+        >
+          <Images :size="15" aria-hidden="true" />
+          {{ t('assets.viewInAssets') }}
         </Button>
       </div>
     </aside>

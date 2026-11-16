@@ -17,7 +17,10 @@ const { revisit = 0 } = defineProps<{ revisit?: number }>()
 
 const startWith = defineModel<AppCard | null>('startWith', { default: null })
 
-const emit = defineEmits<{ 'app-open-change': [open: boolean] }>()
+const emit = defineEmits<{
+  'app-open-change': [open: boolean]
+  'view-in-assets': [name: string]
+}>()
 
 const { t } = useI18n()
 
@@ -222,7 +225,12 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <div v-if="openApp" class="absolute inset-0 flex">
-      <AppPageHost :app-id="openApp.id" :title="openApp.title" @close="closeApp" />
+      <AppPageHost
+        :app-id="openApp.id"
+        :title="openApp.title"
+        @close="closeApp"
+        @view-in-assets="emit('view-in-assets', $event)"
+      />
     </div>
   </div>
 </template>

@@ -98,6 +98,8 @@
     "showInFinder": "在 Finder 中显示",
     "showInExplorer": "在文件资源管理器中显示",
     "showInFolder": "在文件夹中显示",
+    "viewInAssets": "在资产中查看",
+    "notFoundInCloud": "在你的 Comfy Cloud 资产中找不到 {name}。它在这里的名称可能不同。",
     "copy": "复制",
     "copyFailed": "无法复制资产",
     "delete": "删除",
@@ -121,7 +123,8 @@
       "zoom": "缩放",
       "zoomLevel": "缩放：{level}",
       "openWorkflow": "打开工作流",
-      "savedIn": "保存位置"
+      "savedIn": "保存位置",
+      "cloudAssets": "Comfy Cloud 资产"
     },
     "kindSingular": {
       "image": "图片",

@@ -21,7 +21,7 @@ const { appId, title } = defineProps<{
   title: string
 }>()
 
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; 'view-in-assets': [name: string] }>()
 
 const { t } = useI18n()
 
@@ -114,7 +114,9 @@ function showOutputs(shown: AppOutputs): void {
     tags: output.tags,
     previewUrl: URL.createObjectURL(new Blob([output.bytes], { type: output.mimeType })),
     thumbnailUrl: null,
-    workflow: output.workflow
+    workflow: output.workflow,
+    savedIn: output.savedOn === 'computer' ? (output.folder ?? null) : null,
+    inCloud: output.savedOn === 'cloud'
   }))
   outputIndex.value = shown.index
   outputsShown.value += 1
@@ -129,6 +131,12 @@ function closeOutputs(): void {
 function sendOutputAction(action: AppOutputAction['action'], index: number): void {
   window.api.sendAppOutputAction({ action, index })
   if (action === 'open-workflow') closeOutputs()
+}
+
+function viewInAssets(index: number): void {
+  const name = outputs.value?.[index]?.name
+  releaseOutputs()
+  if (name) emit('view-in-assets', name)
 }
 
 function retry(): void {
@@ -254,6 +262,8 @@ onBeforeUnmount(() => {
       @close="closeOutputs"
       @download="sendOutputAction('download', $event)"
       @open-workflow="sendOutputAction('open-workflow', $event)"
+      @show-in-folder="sendOutputAction('show-in-folder', $event)"
+      @view-in-assets="viewInAssets"
     />
   </section>
 </template>

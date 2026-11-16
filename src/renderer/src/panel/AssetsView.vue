@@ -103,7 +103,12 @@ const PLACEHOLDER_TINT = {
   file: 'bg-[linear-gradient(168deg,rgb(200_211_222/0.09),rgb(255_255_255/0.02))] text-[rgb(160_166_175)]'
 } as const
 
-const { installationId = '' } = defineProps<{ installationId?: string }>()
+const { installationId = '', focusName = null } = defineProps<{
+  installationId?: string
+  focusName?: string | null
+}>()
+
+const emit = defineEmits<{ 'focus-used': [] }>()
 
 const { t } = useI18n()
 const modal = useModal()
@@ -126,8 +131,10 @@ const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newes
 const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
 const savedPlace = useLocalStorage<Place>('comfy.desktop.assets.place', 'computer')
-const pickedPlace = ref<Place | null>(null)
+const pickedPlace = ref<Place | null>(focusName ? 'cloud' : null)
 const cloudChosenHere = ref(false)
+const pendingFocus = ref<string | null>(null)
+const notFoundName = ref<string | null>(null)
 let windowFolderOpened = false
 const trail = ref<FolderCrumb[]>([])
 const outputFolders = ref<OutputFolder[] | null>(null)
@@ -168,6 +175,10 @@ const cloudBuild = computed(
     ) ?? null
 )
 
+const cloudListable = computed(
+  () => buildsKnown.value && authStore.isSignedIn && cloudBuild.value !== null
+)
+
 const currentFolder = computed(() =>
   place.value === 'computer' ? (trail.value.at(-1) ?? null) : null
 )
@@ -180,6 +191,7 @@ const placeOptions = computed(() => [
 
 function choosePlace(next: Place): void {
   pickedPlace.value = next
+  notFoundName.value = null
   savedPlace.value = next
   cloudChosenHere.value = next === 'cloud'
 }
@@ -427,11 +439,13 @@ async function loadAssets(userAsked = false): Promise<void> {
     outputFolders.value = loaded.folders
     subfolders.value = loaded.subfolders
     truncated.value = loaded.truncated
+    openPendingFocus()
   } catch {
     if (current !== requestId) return
     assets.value = []
     subfolders.value = []
     failed.value = true
+    openPendingFocus()
   } finally {
     if (current === requestId) loading.value = false
   }
@@ -470,6 +484,39 @@ function refresh(): void {
 }
 
 const detailKey = ref<string | null>(null)
+
+function newestNamed(name: string): GalleryAsset | null {
+  return visibleAssets.value
+    .filter((asset) => asset.name === name)
+    .reduce<GalleryAsset | null>(
+      (newest, asset) => (newest && createdMs(newest) >= createdMs(asset) ? newest : asset),
+      null
+    )
+}
+
+function openPendingFocus(): void {
+  const name = pendingFocus.value
+  if (!name || (place.value === 'cloud' && !cloudListable.value)) return
+  pendingFocus.value = null
+  if (place.value !== 'cloud' || failed.value) return
+  const asset = newestNamed(name)
+  if (asset) openDetail(asset)
+  else notFoundName.value = name
+}
+
+watch(
+  () => focusName,
+  (name) => {
+    if (!name) return
+    emit('focus-used')
+    const cloudShown = place.value === 'cloud' && !loading.value
+    pendingFocus.value = name
+    cloudChosenHere.value = true
+    pickedPlace.value = 'cloud'
+    if (cloudShown) openPendingFocus()
+  },
+  { immediate: true }
+)
 
 const detailIndex = computed<number | null>({
   get: () => {
@@ -873,6 +920,14 @@ function extensionOf(name: string): string {
     />
 
     <div v-if="inGallery" class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
+      <p
+        v-if="notFoundName && place === 'cloud'"
+        role="status"
+        class="m-0 mb-4 text-ui text-subtle-foreground"
+        data-testid="assets-not-found"
+      >
+        {{ t('assets.notFoundInCloud', { name: notFoundName }) }}
+      </p>
       <div v-if="showSkeleton" role="status" :aria-label="t('common.loading')">
         <ul
           ref="gallery"
