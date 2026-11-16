@@ -62,7 +62,15 @@ describe('readOutputRequest', () => {
   })
 
   it('refuses a name with hidden characters, and drops such tags', () => {
-    for (const name of ['cut\u202eout.png', 'cut\nout.png', 'cut\u0000out.png']) {
+    for (const name of [
+      'cut\u202eout.png',
+      'cut\nout.png',
+      'cut\u0000out.png',
+      'cut\u200fout.png',
+      'cut\u200bout.png',
+      'cut\u0085out.png',
+      'cut\ufeffout.png'
+    ]) {
       expect(readOutputRequest({ items: [picture({ name })], index: 0 }), name).toBeNull()
     }
     const request = readOutputRequest({
@@ -70,6 +78,15 @@ describe('readOutputRequest', () => {
       index: 0
     })
     expect(request?.items[0]?.tags).toEqual(['portrait'])
+  })
+
+  it('checks only the part of a long name it keeps', () => {
+    const request = readOutputRequest({
+      items: [picture({ name: 'n'.repeat(5_000_000) + '\u202e' })],
+      index: 0
+    })
+
+    expect(request?.items[0]?.name).toBe('n'.repeat(200))
   })
 
   it('refuses outputs it cannot show', () => {

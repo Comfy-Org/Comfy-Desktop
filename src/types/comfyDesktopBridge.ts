@@ -337,7 +337,8 @@ export interface ComfyDesktopHostedTelemetryBridge {
  * `audio/aac`. `name` is at most 200 characters. Desktop keeps the first 8
  * `tags`, each cut to 40 characters, and offers Open workflow only when
  * `workflow` is true. Desktop refuses a `name`, and drops a tag, that has
- * control or bidirectional-override characters.
+ * control, bidirectional or zero-width formatting characters in the part it
+ * keeps.
  */
 export interface ComfyDesktopOutput {
   name: string
