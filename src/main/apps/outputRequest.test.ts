@@ -88,7 +88,7 @@ describe('readOutputRequest', () => {
     expect(request?.items.map((item) => item.folder)).toEqual(folders.map(() => undefined))
   })
 
-  it('drops a ComfyUI file that is not a ComfyUI output', () => {
+  it('drops a ComfyUI file that is not a ComfyUI output, or has a very long path', () => {
     const file = (extra: Record<string, unknown>) => ({
       filename: 'cutout.png',
       subfolder: '',
@@ -100,6 +100,8 @@ describe('readOutputRequest', () => {
       file({ type: undefined }),
       file({ filename: 7 }),
       file({ subfolder: 7 }),
+      file({ filename: 'n'.repeat(1025) }),
+      file({ subfolder: 's'.repeat(1020) }),
       'cutout.png'
     ]
     const request = readOutputRequest({

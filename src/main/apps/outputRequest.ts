@@ -18,7 +18,7 @@ export const MAX_OUTPUTS_BYTES = 100_000_000
 const MAX_NAME_LENGTH = 200
 const MAX_TAGS = 8
 const MAX_TAG_LENGTH = 40
-const MAX_FOLDER_LENGTH = 1024
+const MAX_PATH_LENGTH = 1024
 const ABSOLUTE_LOCAL_PATH = /^(\/|[A-Za-z]:[\\/])/
 const BIDI_CONTROL = /[\u202a-\u202e\u2066-\u2069]/
 const FIRST_PRINTABLE_CODE = 32
@@ -58,7 +58,7 @@ function readTags(value: unknown): string[] {
 }
 
 function readFolder(value: unknown): string | null {
-  if (typeof value !== 'string' || value.length > MAX_FOLDER_LENGTH) return null
+  if (typeof value !== 'string' || value.length > MAX_PATH_LENGTH) return null
   if (hasHiddenCharacters(value)) return null
   return ABSOLUTE_LOCAL_PATH.test(value) ? value : null
 }
@@ -66,9 +66,9 @@ function readFolder(value: unknown): string | null {
 function readComfyFile(value: unknown): ComfyOutputFile | null {
   if (!isRecord(value)) return null
   const { filename, subfolder = '', type } = value
-  return type === 'output' && typeof filename === 'string' && typeof subfolder === 'string'
-    ? { filename, subfolder }
-    : null
+  if (type !== 'output' || typeof filename !== 'string' || typeof subfolder !== 'string')
+    return null
+  return filename.length + subfolder.length > MAX_PATH_LENGTH ? null : { filename, subfolder }
 }
 
 function readSavedPlace(value: Record<string, unknown>): Partial<RequestedOutput> {

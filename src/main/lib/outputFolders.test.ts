@@ -396,6 +396,29 @@ describe('comfyOutputPath', () => {
     ).toBeNull()
   })
 
+  it("refuses a subfolder that climbs out of the build's output folder, and an absolute filename", async () => {
+    const secret = path.join(outsideDir, 'secret.png')
+    write(secret, CUTOUT)
+    const bytes = new Uint8Array(CUTOUT)
+
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: 'secret.png', subfolder: '../outside' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(
+        appsBuild(),
+        { filename: 'secret.png', subfolder: 'apps/../../outside' },
+        bytes
+      )
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: secret, subfolder: '' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: '/etc/passwd', subfolder: '' }, bytes)
+    ).toBeNull()
+  })
+
   it('finds nothing for Cloud or a build that manages its own paths', async () => {
     write(path.join(sharedDir, 'cutout_00001_.png'), CUTOUT)
     const file = { filename: 'cutout_00001_.png', subfolder: '' }
