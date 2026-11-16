@@ -1,20 +1,23 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { createWidget } from '@typeform/embed'
+import '@typeform/embed/build/css/widget.css'
 import BaseModal from './ui/BaseModal.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 
-const TYPEFORM_ORIGIN = 'https://form.typeform.com'
+const FEEDBACK_FORM_ID = 'VhOXmuaL'
 const AUTOCLOSE_MS = 2000
 
 const props = defineProps<{
   open: boolean
-  url: string
+  hiddenFields: Record<string, string>
 }>()
 
 const emit = defineEmits<{ close: [] }>()
 
 const { t } = useI18n()
+const container = ref<HTMLElement | null>(null)
 const loading = ref(true)
 const submitted = ref(false)
 let autocloseTimer: ReturnType<typeof setTimeout> | null = null
@@ -26,33 +29,13 @@ function clearAutoclose(): void {
   }
 }
 
-watch(
-  () => props.open,
-  (isOpen) => {
-    if (isOpen) {
-      loading.value = true
-      submitted.value = false
-    } else {
-      clearAutoclose()
-    }
-  }
-)
-
-function onFrameLoad(): void {
-  loading.value = false
-}
-
 function onClose(): void {
   clearAutoclose()
   emit('close')
 }
 
-function handleTypeformMessage(event: MessageEvent): void {
-  if (event.origin !== TYPEFORM_ORIGIN) return
+function onSubmit(): void {
   if (!props.open || submitted.value) return
-  const data = event.data as { type?: string } | string | null
-  const type = typeof data === 'string' ? data : data?.type
-  if (typeof type !== 'string' || !type.toLowerCase().includes('submit')) return
   submitted.value = true
   emitTelemetryAction('comfy.desktop.feedback.submitted', {})
   autocloseTimer = setTimeout(() => {
@@ -61,14 +44,36 @@ function handleTypeformMessage(event: MessageEvent): void {
   }, AUTOCLOSE_MS)
 }
 
-onMounted(() => {
-  window.addEventListener('message', handleTypeformMessage)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('message', handleTypeformMessage)
-  clearAutoclose()
-})
+watch(
+  [() => props.open, container],
+  ([open, element], _previous, onCleanup) => {
+    if (!open || !element) return
+    loading.value = true
+    submitted.value = false
+    let active = true
+    const widget = createWidget(FEEDBACK_FORM_ID, {
+      container: element,
+      hidden: props.hiddenFields,
+      inlineOnMobile: true,
+      iframeProps: {
+        title: t('feedback.modalLabel'),
+        allow: 'camera; microphone; autoplay; encrypted-media; fullscreen'
+      },
+      onReady: () => {
+        if (active) loading.value = false
+      },
+      onSubmit: () => {
+        if (active) onSubmit()
+      }
+    })
+    onCleanup(() => {
+      active = false
+      clearAutoclose()
+      widget.unmount()
+    })
+  },
+  { flush: 'post' }
+)
 </script>
 
 <template>
@@ -82,21 +87,13 @@ onBeforeUnmount(() => {
     <div class="feedback-modal-body relative h-[clamp(520px,76vh,820px)] w-full overflow-hidden">
       <div
         v-if="loading"
-        class="feedback-modal-loading pointer-events-none absolute inset-0 grid place-items-center text-[13px] text-[color:color-mix(in_oklab,var(--neutral-100,#fff)_65%,transparent)]"
+        class="feedback-modal-loading pointer-events-none absolute inset-0 z-1 grid place-items-center text-[13px] text-[color:color-mix(in_oklab,var(--neutral-100,#fff)_65%,transparent)]"
         role="status"
         aria-live="polite"
       >
         {{ t('feedback.loading') }}
       </div>
-      <iframe
-        v-if="open && url"
-        class="feedback-modal-frame absolute inset-0 size-full border-0 bg-transparent"
-        :src="url"
-        :title="t('feedback.modalLabel')"
-        loading="eager"
-        allow="camera; microphone; autoplay; encrypted-media; fullscreen"
-        @load="onFrameLoad"
-      />
+      <div ref="container" class="absolute inset-0 size-full" data-testid="feedback-widget" />
     </div>
   </BaseModal>
 </template>
