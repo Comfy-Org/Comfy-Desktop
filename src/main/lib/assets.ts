@@ -237,6 +237,14 @@ async function writeThroughPartFile(
   }
 }
 
+function trackBytes(stream: Readable, total: number, job: FileSaveTransfer): void {
+  let received = 0
+  stream.on('data', (chunk: Buffer) => {
+    received += chunk.length
+    job.progress(received, total)
+  })
+}
+
 function contentLength(res: Response): number {
   const length = Number(res.headers.get('content-length'))
   return Number.isFinite(length) && length > 0 ? length : 0
@@ -246,22 +254,18 @@ async function saveDownload(url: string, filePath: string, job: FileSaveTransfer
   const controller = new AbortController()
   const cancel = (): void => controller.abort()
   job.signal.addEventListener('abort', cancel, { once: true })
-  let timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const stall = (): void => controller.abort(new Error('The download stopped sending data.'))
+  let timer = setTimeout(stall, REQUEST_TIMEOUT_MS)
   const keepAlive = (): void => {
     clearTimeout(timer)
-    timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    timer = setTimeout(stall, REQUEST_TIMEOUT_MS)
   }
   try {
     const res = await fetch(url, { redirect: 'error', signal: controller.signal })
     if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
-    const total = contentLength(res)
-    let received = 0
     const body = Readable.fromWeb(res.body as WebReadableStream)
-    body.on('data', (chunk: Buffer) => {
-      keepAlive()
-      received += chunk.length
-      job.progress(received, total)
-    })
+    body.on('data', keepAlive)
+    trackBytes(body, contentLength(res), job)
     body.on('pause', () => clearTimeout(timer))
     await writeThroughPartFile(filePath, job.signal, (partPath) => {
       const file = fs.createWriteStream(partPath, { flags: 'wx' })
@@ -286,7 +290,7 @@ async function cloudSaveTo(installationId: string, assetId: string): Promise<Sav
       'attachment',
       AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), job.signal])
     )
-    if (!url) throw new Error('The asset has no download link.')
+    if (!url) throw new Error('Could not get a download link from Comfy Cloud.')
     await saveDownload(url, filePath, job)
   }
 }
@@ -295,9 +299,14 @@ async function localSaveTo(assetId: string): Promise<SaveTo | null> {
   const file = await outputFilePath(assetId)
   if (!file) return null
   return (filePath, job) =>
-    writeThroughPartFile(filePath, job.signal, (partPath) =>
-      fs.promises.copyFile(file, partPath, fs.constants.COPYFILE_EXCL)
-    )
+    writeThroughPartFile(filePath, job.signal, async (partPath) => {
+      const { size } = await fs.promises.stat(file)
+      const source = fs.createReadStream(file)
+      trackBytes(source, size, job)
+      await pipeline(source, fs.createWriteStream(partPath, { flags: 'wx' }), {
+        signal: job.signal
+      })
+    })
 }
 
 function isUsableFileName(name: string): boolean {

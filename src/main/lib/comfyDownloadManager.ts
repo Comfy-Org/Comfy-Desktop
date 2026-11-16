@@ -609,7 +609,7 @@ function resolveServerFilename(item: Electron.DownloadItem): string | null {
 function findPendingForItem(item: Electron.DownloadItem): PendingDownload | undefined {
   const candidates = [...item.getURLChain(), item.getURL()].filter(Boolean)
   for (const u of candidates) {
-    const pending = activeJobsForUrl(u).find((p) => p.kind !== 'model' && !p.item)
+    const pending = activeJobsForUrl(u).find((p) => p.kind === 'asset' && !p.item)
     if (pending) return pending
   }
   return undefined
@@ -1447,7 +1447,7 @@ function reportTransferProgress(
     url: pending.url,
     filename: pending.filename,
     directory: pending.directory,
-    progress: total > 0 ? received / total : 0,
+    progress: total > 0 ? Math.min(1, received / total) : 0,
     receivedBytes: received,
     totalBytes: total,
     speedBytesPerSec: speed,

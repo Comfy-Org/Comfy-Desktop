@@ -1,7 +1,7 @@
 import type * as NodeFs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { Writable } from 'stream'
+import { Readable, Writable } from 'stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DownloadProgress } from './comfyDownloadManager'
 
@@ -41,18 +41,18 @@ const renameFile = vi.fn(async (from: string, to: string) => {
   written.set(to, written.get(from) ?? '')
   written.delete(from)
 })
-const copyFile = vi.fn(async (from: string, to: string, _mode: number) => {
-  written.set(to, `copy of ${from}`)
-})
+const copyOf = (filePath: string): string => `copy of ${filePath}`
+const createReadStream = vi.fn((filePath: string) => Readable.from([Buffer.from(copyOf(filePath))]))
+const statFile = vi.fn(async (filePath: string) => ({ size: copyOf(filePath).length }))
 const savedSettings = new Map<string, string>()
 vi.mock('fs', () => ({
   default: {
-    constants: { COPYFILE_EXCL: 1 },
     existsSync: (dir: string) => dir === '/remembered',
+    createReadStream: (filePath: string) => createReadStream(filePath),
     createWriteStream: (filePath: string, options?: { flags: string }) =>
       createWriteStream(filePath, options),
     promises: {
-      copyFile: (from: string, to: string, mode: number) => copyFile(from, to, mode),
+      stat: (filePath: string) => statFile(filePath),
       rm: (path: string, options: { force: boolean }) => removeFile(path, options),
       rename: (from: string, to: string) => renameFile(from, to)
     }
@@ -362,9 +362,11 @@ describe('downloadAsset', () => {
       isImage: true
     })
     expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/downloads/still.png')
-    expect(copyFile.mock.calls[0]![0]).toBe('/out/still.png')
-    expect(copyFile.mock.calls[0]![1]).toMatch(/^\/picked\/still\.png\..+\.part$/)
-    expect(copyFile.mock.calls[0]![2], 'never overwrites a partial file').toBe(1)
+    expect(createReadStream).toHaveBeenCalledExactlyOnceWith('/out/still.png')
+    expect(partFilePath()).toMatch(/^\/picked\/still\.png\..+\.part$/)
+    expect(createWriteStream.mock.calls[0]![1], 'never overwrites a partial file').toEqual({
+      flags: 'wx'
+    })
     expect(written.get('/picked/still.png')).toBe('copy of /out/still.png')
     expect(savedSettings.get('lastSaveDialogDir')).toBe('/picked')
     expect(fetchMock).not.toHaveBeenCalled()
@@ -377,19 +379,26 @@ describe('downloadAsset', () => {
       'not available'
     )
     expect(showSaveDialog).not.toHaveBeenCalled()
-    expect(copyFile).not.toHaveBeenCalled()
+    expect(createReadStream).not.toHaveBeenCalled()
   })
 
   it('shows a failed copy in Downloads, and Retry saves the file to the same place', async () => {
     fileOnThisComputer('/out/still.png')
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
-    copyFile.mockRejectedValueOnce(new Error('disk full'))
+    createReadStream.mockImplementationOnce(
+      () =>
+        new Readable({
+          read() {
+            this.destroy(new Error('disk read error'))
+          }
+        })
+    )
 
     await downloadAsset(win, 'local', '/out/still.png', 'still.png')
 
     const failed = await finishedRow('/picked/still.png')
-    expect(failed).toMatchObject({ status: 'error', error: 'disk full' })
-    expect(removeFile).toHaveBeenCalledWith(copyFile.mock.calls[0]![1], { force: true })
+    expect(failed).toMatchObject({ status: 'error', error: 'disk read error' })
+    expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true })
     expect(renameFile, 'the file the user picked is never overwritten').not.toHaveBeenCalled()
     expect(savedSettings.has('lastSaveDialogDir'), 'remembered only once saved').toBe(false)
 
@@ -425,7 +434,7 @@ describe('downloadAsset', () => {
     showSaveDialog.mockResolvedValue({ canceled: true })
 
     expect(await downloadAsset(win, 'local', '/out/still.png', 'still.png')).toBe(false)
-    expect(copyFile).not.toHaveBeenCalled()
+    expect(createReadStream).not.toHaveBeenCalled()
     expect(createWriteStream).not.toHaveBeenCalled()
     expect(getDownloadsTrayState()).toEqual({ active: [], recent: [] })
   })
@@ -497,28 +506,51 @@ describe('downloadAsset', () => {
     expect(win.setProgressBar, 'the Dock icon stops showing progress').toHaveBeenLastCalledWith(-1)
   })
 
-  it('leaves the picked file untouched when a copy on this computer is cancelled mid-copy', async () => {
+  it('shows the progress of a copy on this computer while it runs', async () => {
+    fileOnThisComputer('/out/clip.mp4')
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
+    statFile.mockResolvedValueOnce({ size: 8 })
+    const source = new Readable({ read() {} })
+    createReadStream.mockReturnValueOnce(source)
+
+    await downloadAsset(win, 'local', '/out/clip.mp4', 'clip.mp4')
+    source.push('half')
+
+    await vi.waitFor(() =>
+      expect(downloadsRow('/picked/clip.mp4')).toMatchObject({
+        status: 'downloading',
+        progress: 0.5,
+        receivedBytes: 4,
+        totalBytes: 8
+      })
+    )
+
+    source.push('done')
+    source.push(null)
+
+    expect((await finishedRow('/picked/clip.mp4')).status).toBe('completed')
+    expect(written.get('/picked/clip.mp4')).toBe('halfdone')
+  })
+
+  it('stops a copy on this computer cancelled mid-copy and leaves the picked file untouched', async () => {
     fileOnThisComputer('/out/still.png')
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
-    let finishCopy = (): void => {}
-    copyFile.mockImplementationOnce(async (from: string, to: string) => {
-      await new Promise<void>((resolve) => {
-        finishCopy = resolve
-      })
-      written.set(to, `copy of ${from}`)
-    })
+    const source = new Readable({ read() {} })
+    createReadStream.mockReturnValueOnce(source)
 
     await downloadAsset(win, 'local', '/out/still.png', 'still.png')
-    await vi.waitFor(() => expect(copyFile).toHaveBeenCalledOnce())
-    const copying = downloadsRow('/picked/still.png')!
+    source.push('part')
+    const copying = await vi.waitFor(() => {
+      const row = downloadsRow('/picked/still.png')
+      expect(row?.status).toBe('downloading')
+      return row!
+    })
 
     expect(cancelModelDownload(copying.id!)).toBe(true)
-    finishCopy()
 
     expect((await finishedRow('/picked/still.png')).status).toBe('cancelled')
-    await vi.waitFor(() =>
-      expect(removeFile).toHaveBeenCalledWith(copyFile.mock.calls[0]![1], { force: true })
-    )
+    await vi.waitFor(() => expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true }))
+    expect(source.destroyed, 'the copy stops reading the source').toBe(true)
     expect(renameFile, 'the file the user picked is never replaced').not.toHaveBeenCalled()
     expect(written.has('/picked/still.png')).toBe(false)
     expect(savedSettings.has('lastSaveDialogDir')).toBe(false)
@@ -645,7 +677,7 @@ describe('downloadAsset', () => {
           new ReadableStream({
             start(controller) {
               controller.enqueue(new TextEncoder().encode('part'))
-              init.signal.addEventListener('abort', () => controller.error(new Error('stalled')))
+              init.signal.addEventListener('abort', () => controller.error(init.signal.reason))
             }
           })
         )
@@ -660,7 +692,7 @@ describe('downloadAsset', () => {
     }
     expect(await finishedRow('/picked/clip.mp4')).toMatchObject({
       status: 'error',
-      error: 'stalled'
+      error: 'The download stopped sending data.'
     })
     expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true })
   })
