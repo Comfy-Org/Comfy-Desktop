@@ -161,9 +161,16 @@ async function addMediaFacts(asset: AssetSummary): Promise<void> {
   Object.assign(asset, await mediaFactsFromFile(asset.id, asset.kind))
 }
 
-export async function listLocalAssets(): Promise<AssetSummary[]> {
-  const folders = await listOutputFolders()
-  const files = [...new Set((await Promise.all(folders.map(collectMediaFiles))).flat())]
+async function buildOutputFolder(installationId: string): Promise<string | null> {
+  const inst = (await installations.list()).find((record) => record.id === installationId)
+  const dir = inst ? outputDirFor(inst, sharedOutputDir()) : null
+  return dir ? realDir(dir) : null
+}
+
+export async function listLocalAssets(installationId: string): Promise<AssetSummary[]> {
+  await listOutputFolders()
+  const folder = await buildOutputFolder(installationId)
+  const files = folder ? await collectMediaFiles(folder) : []
   const found: AssetSummary[] = []
   await runPool(files, STATS_AT_ONCE, async (file) => {
     const stat = await fsp.stat(file).catch(() => null)
@@ -304,5 +311,7 @@ export function registerOutputFilesScheme(): void {
 
 export function registerOutputFolderHandlers(): void {
   protocol.handle(OUTPUT_FILES_SCHEME, serveOutputFile)
-  ipcMain.handle(LIST_LOCAL_CHANNEL, () => listLocalAssets())
+  ipcMain.handle(LIST_LOCAL_CHANNEL, (_event, installationId: unknown) =>
+    typeof installationId === 'string' ? listLocalAssets(installationId) : []
+  )
 }

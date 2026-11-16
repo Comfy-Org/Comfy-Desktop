@@ -97,7 +97,8 @@ export function buildElectronApi(): ElectronApi {
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
-    listLocalAssets: () => ipcRenderer.invoke('assets:list-local'),
+    listLocalAssets: (installationId: string) =>
+      ipcRenderer.invoke('assets:list-local', installationId),
     downloadAsset: (source, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
     revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),

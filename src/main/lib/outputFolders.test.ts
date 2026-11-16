@@ -182,22 +182,18 @@ describe('listOutputFolders', () => {
 })
 
 describe('listLocalAssets', () => {
-  it('lists media from every output folder and its subfolders, newest first', async () => {
+  it("lists the media in the picked build's output folder and its subfolders, newest first", async () => {
     write(path.join(sharedDir, 'old.png'), 'x', new Date('2026-10-01T00:00:00Z'))
     write(path.join(sharedDir, 'video', 'new.mp4'), 'xx', new Date('2026-11-05T00:00:00Z'))
+    write(path.join(sharedDir, 'mesh.glb'), 'x', new Date('2026-11-02T00:00:00Z'))
     write(path.join(ownDir, 'voice.wav'), 'xxx', new Date('2026-11-03T00:00:00Z'))
-    write(
-      path.join(installDir, 'ComfyUI', 'output', 'mesh.glb'),
-      'x',
-      new Date('2026-11-02T00:00:00Z')
-    )
     write(path.join(sharedDir, 'notes.txt'))
     write(path.join(sharedDir, '.hidden.png'))
     write(path.join(sharedDir, '.cache', 'inside-hidden.png'))
 
-    const assets = await listLocalAssets()
+    const assets = await listLocalAssets('Test Instance')
 
-    expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'voice.wav', 'mesh.glb', 'old.png'])
+    expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'mesh.glb', 'old.png'])
     const newVideo = path.join(sharedDir, 'video', 'new.mp4')
     expect(assets[0]).toEqual({
       id: newVideo,
@@ -214,10 +210,10 @@ describe('listLocalAssets', () => {
       durationSeconds: null
     })
     const oldPicture = path.join(sharedDir, 'old.png')
-    expect(assets[3]!.thumbnailUrl, 'an image thumbnail link changes when the file does').toBe(
+    expect(assets[2]!.thumbnailUrl, 'an image thumbnail link changes when the file does').toBe(
       outputFileUrl(oldPicture, fs.statSync(oldPicture).mtimeMs)
     )
-    expect(assets[2]!.previewUrl, '3D files have no preview').toBeNull()
+    expect(assets[1]!.previewUrl, '3D files have no preview').toBeNull()
   })
 
   it('reports the size of each picture and video, and how long a video runs, before they load', async () => {
@@ -226,7 +222,7 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, 'broken.png'), 'not a picture')
 
     const facts = Object.fromEntries(
-      (await listLocalAssets()).map((a) => [
+      (await listLocalAssets('Test Instance')).map((a) => [
         a.name,
         [a.width, a.height, a.durationSeconds && Math.round(a.durationSeconds)]
       ])
@@ -239,17 +235,28 @@ describe('listLocalAssets', () => {
     })
   })
 
-  it('finds a file once when two builds save to the same folder', async () => {
+  it('shows each build the files in its own output folder', async () => {
     write(path.join(sharedDir, 'shared.png'))
+    write(path.join(ownDir, 'own.png'))
+    write(path.join(installDir, 'ComfyUI', 'output', 'install.png'))
+    const namesFor = async (id: string) => (await listLocalAssets(id)).map((a) => a.name)
 
-    expect((await listLocalAssets()).map((a) => a.name)).toEqual(['shared.png'])
+    expect(await namesFor('Test Instance'), 'a build on the shared folder').toEqual(['shared.png'])
+    expect(await namesFor('My Local 1'), 'another build on the shared folder').toEqual([
+      'shared.png'
+    ])
+    expect(await namesFor('Apps'), 'a build with its own folder').toEqual(['own.png'])
+    expect(await namesFor('Bare'), 'a build that saves inside its install').toEqual(['install.png'])
+    expect(await namesFor('Cloud'), 'Cloud has no folder on this computer').toEqual([])
+    expect(await namesFor('Old Desktop'), 'a build that manages its own paths').toEqual([])
+    expect(await namesFor('deleted'), 'a build that is gone').toEqual([])
   })
 
   it('keeps only the newest files when the folders are very large', async () => {
     for (let i = 0; i <= MAX_LOCAL_ASSETS; i++)
       write(path.join(sharedDir, `f${i}.png`), '', new Date(Date.UTC(2026, 0, 1, 0, 0, i)))
 
-    const assets = await listLocalAssets()
+    const assets = await listLocalAssets('Test Instance')
 
     expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
     expect(assets.map((a) => a.name)).not.toContain('f0.png')
@@ -264,7 +271,7 @@ describe('listLocalAssets', () => {
     )
     write(path.join(deep, 'too-deep.png'))
 
-    expect(await listLocalAssets()).toEqual([])
+    expect(await listLocalAssets('Test Instance')).toEqual([])
   })
 })
 

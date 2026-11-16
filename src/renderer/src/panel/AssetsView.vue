@@ -7,14 +7,16 @@ import {
   AudioLines,
   Box,
   Check,
+  ChevronDown,
+  Cloud,
   Copy,
   Download,
   Ellipsis,
   File,
   FolderOpen,
+  Laptop,
   LayoutGrid,
   LayoutDashboard,
-  ListFilter,
   RefreshCw,
   Search,
   Trash2,
@@ -28,10 +30,15 @@ import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
 import ContextMenu from '../components/ContextMenu.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
+import { useSessionStore } from '../stores/sessionStore'
+import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
+import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import { useVirtualMasonry } from '../composables/useVirtualMasonry'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatPlaybackTime, formatRelativeFromMs } from '../lib/datetime'
@@ -53,6 +60,13 @@ interface AssetMenu {
 type KindFilter = 'all' | AssetKind
 type Layout = 'masonry' | 'grid'
 type SortOrder = 'newest' | 'oldest'
+type BuildState = 'running' | 'starting' | 'stopped'
+
+interface AssetBuild {
+  build: Installation
+  cloud: boolean
+  state: BuildState
+}
 
 interface Shape {
   width: number
@@ -79,10 +93,15 @@ const PLACEHOLDER_TINT = {
   file: 'bg-[linear-gradient(168deg,rgb(200_211_222/0.09),rgb(255_255_255/0.02))] text-[rgb(160_166_175)]'
 } as const
 
+const { installationId = '' } = defineProps<{ installationId?: string }>()
+
 const { t } = useI18n()
 const modal = useModal()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
+const sessionStore = useSessionStore()
+const dashboardScope = useDashboardScopeStore()
+void dashboardScope.initialize()
 
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
@@ -92,6 +111,8 @@ const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
 const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newest')
 const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
+const savedBuildId = useLocalStorage('comfy.desktop.assets.build', '')
+const pickedBuildId = ref('')
 
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
@@ -101,26 +122,55 @@ let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
 const failed = ref(false)
 
-function isCloudBuild(inst: Installation): boolean {
-  return inst.sourceCategory === 'cloud'
+function buildState(build: Installation): BuildState {
+  const status = homeBuildStatus(build, sessionStore)
+  if (status === 'running' || status === 'always-on') return 'running'
+  return status === 'starting' ? 'starting' : 'stopped'
 }
 
-const cloudBuildId = computed(() =>
-  authStore.isSignedIn ? (installationStore.installations.find(isCloudBuild)?.id ?? null) : null
+function hasAssets(build: Installation): boolean {
+  return (
+    (build.sourceCategory === 'local' || isCloudBuild(build)) &&
+    isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId)
+  )
+}
+
+const assetBuilds = computed<AssetBuild[]>(() =>
+  installationStore.installations
+    .filter(hasAssets)
+    .map((build) => ({ build, cloud: isCloudBuild(build), state: buildState(build) }))
 )
 
-const kindOptions = computed(() => [
-  { value: 'all' as const, label: t('assets.kind.all') },
-  { value: 'image' as const, label: t('assets.kind.image') },
-  { value: 'video' as const, label: t('assets.kind.video') },
-  { value: '3d' as const, label: t('assets.kind.3d') },
-  { value: 'audio' as const, label: t('assets.kind.audio') }
-])
-const filterLabel = computed(() =>
-  kindFilter.value === 'all'
-    ? t('assets.filter')
-    : (kindOptions.value.find((option) => option.value === kindFilter.value)?.label ?? '')
-)
+function lastLaunched({ build }: AssetBuild): number {
+  return typeof build.lastLaunchedAt === 'number' ? build.lastLaunchedAt : -Infinity
+}
+
+const selectedBuild = computed<AssetBuild | null>(() => {
+  const builds = assetBuilds.value
+  const withId = (id: string) => (id ? builds.find(({ build }) => build.id === id) : undefined)
+  return (
+    withId(pickedBuildId.value) ??
+    withId(installationId) ??
+    withId(savedBuildId.value) ??
+    builds.find((option) => !option.cloud && option.state === 'running') ??
+    builds.toSorted((a, b) => lastLaunched(b) - lastLaunched(a))[0] ??
+    null
+  )
+})
+
+function pickBuild(id: string): void {
+  pickedBuildId.value = id
+  savedBuildId.value = id
+}
+
+function buildStatusLabel({ cloud, state }: AssetBuild): string {
+  return t('assets.buildStatus', {
+    where: t(cloud ? 'assets.buildWhere.cloud' : 'assets.buildWhere.local'),
+    state: t(`assets.buildState.${state}`)
+  })
+}
+
+const kinds: KindFilter[] = ['all', 'image', 'video', '3d', 'audio']
 const layoutOptions = computed(() => [
   { value: 'masonry' as const, label: t('assets.layout.masonry'), icon: LayoutDashboard },
   { value: 'grid' as const, label: t('assets.layout.grid'), icon: LayoutGrid }
@@ -138,18 +188,36 @@ function cardKey(asset: GalleryAsset): string {
   return `${asset.source}:${asset.id}`
 }
 
-const visibleAssets = computed(() => {
+const searchedAssets = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
-  const filtered = assets.value.filter(
-    (asset) =>
-      (kindFilter.value === 'all' || asset.kind === kindFilter.value) &&
-      (!query || asset.name.toLowerCase().includes(query))
+  return query
+    ? assets.value.filter((asset) => asset.name.toLowerCase().includes(query))
+    : assets.value
+})
+
+const kindOptions = computed(() =>
+  kinds.map((kind) => ({
+    value: kind,
+    label: t(`assets.kind.${kind}`),
+    count:
+      kind === 'all'
+        ? searchedAssets.value.length
+        : searchedAssets.value.filter((asset) => asset.kind === kind).length,
+    testId: `assets-kind-${kind}`
+  }))
+)
+
+const visibleAssets = computed(() => {
+  const filtered = searchedAssets.value.filter(
+    (asset) => kindFilter.value === 'all' || asset.kind === kindFilter.value
   )
   const direction = sortOrder.value === 'newest' ? -1 : 1
   return filtered.toSorted((a, b) => direction * (createdMs(a) - createdMs(b)))
 })
 
-const showSkeleton = computed(() => loading.value && assets.value.length === 0)
+const showSkeleton = computed(
+  () => (loading.value || installationStore.loading) && assets.value.length === 0
+)
 
 function assetShape(asset: AssetSummary): Shape {
   if (layout.value === 'grid' || asset.kind === 'audio') return WIDE
@@ -221,7 +289,7 @@ const emptyState = computed<EmptyState>(() => {
   if (assets.value.length > 0) {
     return { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
   }
-  if (!authStore.isSignedIn) {
+  if (!authStore.isSignedIn && (selectedBuild.value?.cloud ?? true)) {
     return {
       title: t('assets.signedOutTitle'),
       body: t('assets.signedOutBody'),
@@ -235,24 +303,29 @@ const emptyState = computed<EmptyState>(() => {
 })
 
 let requestId = 0
+function listBuildAssets({ build, cloud }: AssetBuild): Promise<AssetSummary[]> {
+  return cloud ? window.api.listAssets(build.id) : window.api.listLocalAssets(build.id)
+}
+
 async function loadAssets(): Promise<void> {
   const current = ++requestId
-  loading.value = true
+  const selected = selectedBuild.value
   failed.value = false
+  if (!selected || (selected.cloud && !authStore.isSignedIn)) {
+    assets.value = []
+    loading.value = false
+    return
+  }
+  loading.value = true
+  const source = selected.cloud ? selected.build.id : LOCAL_ASSETS_SOURCE
   try {
-    const cloudId = cloudBuildId.value
-    const sources = [
-      { source: LOCAL_ASSETS_SOURCE, load: () => window.api.listLocalAssets() },
-      ...(cloudId ? [{ source: cloudId, load: () => window.api.listAssets(cloudId) }] : [])
-    ]
-    const results = await Promise.allSettled(sources.map(({ load }) => load()))
+    const listed = await listBuildAssets(selected)
     if (current !== requestId) return
-    assets.value = results.flatMap((result, i) =>
-      result.status === 'fulfilled'
-        ? result.value.map((asset) => ({ ...asset, source: sources[i]!.source }))
-        : []
-    )
-    failed.value = assets.value.length === 0 && results.some((r) => r.status === 'rejected')
+    assets.value = listed.map((asset) => ({ ...asset, source }))
+  } catch {
+    if (current !== requestId) return
+    assets.value = []
+    failed.value = true
   } finally {
     if (current === requestId) loading.value = false
   }
@@ -262,11 +335,12 @@ const accountContext = computed(
   () => `${authStore.isSignedIn}:${authStore.status.workspaceId ?? ''}`
 )
 
-watch(accountContext, () => (assets.value = []))
-
 watch(
-  () => `${cloudBuildId.value ?? ''}\n${accountContext.value}`,
-  () => void loadAssets(),
+  () => `${selectedBuild.value?.build.id ?? ''}\n${accountContext.value}`,
+  () => {
+    assets.value = []
+    void loadAssets()
+  },
   { immediate: true }
 )
 
@@ -421,6 +495,82 @@ function extensionOf(name: string): string {
       data-testid="assets-toolbar"
     >
       <div class="mx-auto flex min-h-8 w-full max-w-300 flex-wrap items-center gap-2 px-10 py-3">
+        <Menu
+          v-if="selectedBuild"
+          :modal="false"
+          align="start"
+          :side-offset="6"
+          class="z-20 w-80 min-w-0 rounded-[14px] border-[rgb(240_240_240/0.07)] bg-[rgb(17_17_17/0.86)] px-1.5 pt-0 pb-1.5 shadow-[0_18px_24px_rgb(0_0_0/0.65),0_1px_1px_rgb(0_0_0/0.2)] backdrop-blur-[16px]"
+          :aria-label="t('assets.buildPickerLabel')"
+        >
+          <template #trigger>
+            <button
+              type="button"
+              class="flex h-[34px] max-w-60 shrink-0 items-center gap-2 rounded-[10px] bg-secondary pr-[13px] pl-[15px] text-[13px]/5 text-foreground outline-none backdrop-blur-[8px] transition-colors hover:bg-[rgb(238_238_238/0.1)] focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
+              :aria-label="t('assets.buildPickerLabel')"
+              data-testid="assets-build-picker"
+            >
+              <component
+                :is="selectedBuild.cloud ? Cloud : Laptop"
+                :size="14"
+                class="shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <span class="truncate">{{ selectedBuild.build.name }}</span>
+              <ChevronDown :size="13" class="shrink-0 text-muted-foreground" aria-hidden="true" />
+            </button>
+          </template>
+          <div
+            class="px-[9px] pt-[12.5px] pb-[8.6px] text-[11px]/[15.4px] font-medium tracking-[0.88px] text-subtle-foreground uppercase"
+          >
+            {{ t('assets.browseAssetsOf') }}
+          </div>
+          <DropdownMenuRadioGroup
+            :model-value="selectedBuild.build.id"
+            class="flex flex-col gap-0.5"
+          >
+            <MenuRadioItem
+              v-for="option in assetBuilds"
+              :key="option.build.id"
+              as="button"
+              type="button"
+              :value="option.build.id"
+              class="min-h-0 gap-2.5 rounded-lg px-2.5 py-2 data-highlighted:bg-[rgb(255_255_255/0.06)] data-[state=checked]:bg-[rgb(255_255_255/0.06)]"
+              :data-testid="`assets-build-${option.build.id}`"
+              @select="pickBuild(option.build.id)"
+            >
+              <span
+                class="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-[rgb(240_240_240/0.07)] text-muted-foreground"
+              >
+                <component :is="option.cloud ? Cloud : Laptop" :size="15" aria-hidden="true" />
+              </span>
+              <span class="flex min-w-0 flex-1 flex-col text-left">
+                <span class="truncate text-[13px]/5 text-foreground">{{ option.build.name }}</span>
+                <span
+                  class="flex h-4 items-center gap-1.5 text-[12px]/[16.2px] text-subtle-foreground"
+                >
+                  <span
+                    class="size-1.5 shrink-0 rounded-[3px]"
+                    :class="option.state === 'running' ? 'bg-success' : 'bg-subtle-foreground'"
+                    aria-hidden="true"
+                  />
+                  {{ buildStatusLabel(option) }}
+                </span>
+              </span>
+              <Check
+                v-if="option.build.id === selectedBuild.build.id"
+                :size="14"
+                class="shrink-0 text-foreground"
+                aria-hidden="true"
+              />
+            </MenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </Menu>
+        <SegmentedControl
+          v-model="kindFilter"
+          :options="kindOptions"
+          :label="t('assets.kindLabel')"
+        />
         <div class="ml-auto flex items-center gap-2">
           <Button
             variant="muted-textonly"
@@ -438,40 +588,6 @@ function extensionOf(name: string): string {
               aria-hidden="true"
             />
           </Button>
-          <Menu
-            :modal="false"
-            align="end"
-            class="z-20 min-w-[180px]"
-            :aria-label="t('assets.kindLabel')"
-          >
-            <template #trigger>
-              <Button
-                type="button"
-                variant="secondary"
-                size="md"
-                class="gap-1.5 px-3 text-[13px]/5"
-                data-testid="assets-filter"
-              >
-                <ListFilter :size="15" aria-hidden="true" />
-                {{ filterLabel }}
-              </Button>
-            </template>
-            <DropdownMenuRadioGroup :model-value="kindFilter">
-              <MenuRadioItem
-                v-for="option in kindOptions"
-                :key="option.value"
-                as="button"
-                type="button"
-                :value="option.value"
-                class="w-full"
-                :data-testid="`assets-filter-${option.value}`"
-                @select="kindFilter = option.value"
-              >
-                <span class="flex-1 text-left">{{ option.label }}</span>
-                <Check v-if="kindFilter === option.value" :size="15" aria-hidden="true" />
-              </MenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </Menu>
           <div class="w-[220px]">
             <BaseInput
               v-model="searchQuery"
