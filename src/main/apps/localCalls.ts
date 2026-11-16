@@ -6,13 +6,11 @@ const PATHNAME = /^(\/[A-Za-z0-9_.+-]+){1,2}$/
 const PROMPT_ID = /^[A-Za-z0-9-]{1,64}$/
 const NODE_CLASS = /^[A-Za-z0-9_][A-Za-z0-9_.+-]{0,127}$/
 const FILE_NAME = /^[^\\/\0]{1,255}$/
-// ComfyUI on Windows reports a nested output folder with backslashes, so both
-// separators are folder steps; a folder may not start at a root or drive.
 const SUBFOLDER = /^[^\0]{0,255}$/
-const FOLDER_STEP = /[\\/]/
-const ROOTED = /^([\\/]|[A-Za-z]:)/
-// Windows drops trailing dots and spaces from a name, so '.. ' is also '..'.
-const PARENT_STEP = /^\.\.[. ]*$/
+const FOLDER_SEPARATOR = /[\\/]/
+const STARTS_AT_ROOT = /^[\\/]/
+const STARTS_AT_WINDOWS_DRIVE = /^[A-Za-z]:/
+const WINDOWS_PARENT_STEP_WITH_TRAILING_DOTS_OR_SPACES = /^\.\.[. ]*$/
 const UPLOAD_NAME =
   /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(png|jpe?g|webp|gif|mp4|mov|m4v|webm|mp3|wav|flac|ogg|m4a)$/i
 const FILE_TYPES: ReadonlySet<string> = new Set(['output', 'temp'])
@@ -54,9 +52,23 @@ function bytesOf(body: unknown): Uint8Array | null {
   return null
 }
 
+function isWindows(): boolean {
+  return process.platform === 'win32'
+}
+
+function isParentStep(step: string): boolean {
+  return isWindows() ? WINDOWS_PARENT_STEP_WITH_TRAILING_DOTS_OR_SPACES.test(step) : step === '..'
+}
+
+function startsAtRoot(subfolder: string): boolean {
+  return (
+    STARTS_AT_ROOT.test(subfolder) || (isWindows() && STARTS_AT_WINDOWS_DRIVE.test(subfolder))
+  )
+}
+
 function staysInOutputFolder(subfolder: string): boolean {
-  if (!SUBFOLDER.test(subfolder) || ROOTED.test(subfolder)) return false
-  return !subfolder.split(FOLDER_STEP).some((step) => PARENT_STEP.test(step))
+  if (!SUBFOLDER.test(subfolder) || startsAtRoot(subfolder)) return false
+  return !subfolder.split(FOLDER_SEPARATOR).some(isParentStep)
 }
 
 function viewCall(query: URLSearchParams): LocalCall | null {

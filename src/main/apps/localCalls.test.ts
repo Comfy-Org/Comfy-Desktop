@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   MAX_JSON_BODY_CHARS,
@@ -11,6 +11,16 @@ import {
 
 const RUN = '0b1c2d3e-aaaa-bbbb-cccc-0123456789ab'
 const picture = new Uint8Array([1, 2, 3])
+const realPlatform = process.platform
+
+function setPlatform(platform: NodeJS.Platform): void {
+  Object.defineProperty(process, 'platform', { value: platform })
+}
+
+function viewIn(subfolder: string): ReturnType<typeof readLocalCall> {
+  const query = new URLSearchParams({ filename: 'a.png', subfolder, type: 'output' })
+  return readLocalCall({ path: `/view?${query}` })
+}
 
 describe('what an app page may ask the ComfyUI on this computer', () => {
   it('reads the queue', () => {
@@ -170,26 +180,6 @@ describe('what an app page may not ask', () => {
     expect(readLocalCall({ path })).toBeNull()
   })
 
-  it.each([
-    '..\\x',
-    'apps\\..\\..\\secret',
-    '../x',
-    'apps/../../secret',
-    'apps\\..',
-    'apps\\.. \\secret',
-    'apps/../secret',
-    '/etc',
-    '\\Windows',
-    'C:\\x',
-    'c:x',
-    '\\\\server\\share',
-    'apps\0'
-  ])('refuses a file in the folder %j, outside the output folder', (subfolder) => {
-    const query = new URLSearchParams({ filename: 'a.png', subfolder, type: 'output' })
-
-    expect(readLocalCall({ path: `/view?${query}` })).toBeNull()
-  })
-
   it('refuses a run that is not a graph', () => {
     const post = (body: unknown) => readLocalCall({ method: 'POST', path: '/prompt', body })
 
@@ -232,6 +222,54 @@ describe('what an app page may not ask', () => {
     expect(post('/interrupt', { prompt_id: '' })).toBeNull()
     expect(readLocalCall({ method: 'POST', path: '/interrupt' })).toBeNull()
   })
+})
+
+describe('a result folder name that could leave the output folder', () => {
+  afterEach(() => setPlatform(realPlatform))
+
+  const outsideEverywhere = [
+    '..\\x',
+    'apps\\..\\..\\secret',
+    '../x',
+    'apps/../../secret',
+    'apps\\..',
+    'apps/../secret',
+    '/etc',
+    '\\Windows',
+    '\\\\server\\share',
+    'apps\0'
+  ]
+  const platforms: NodeJS.Platform[] = ['darwin', 'linux', 'win32']
+
+  const outsideOnEveryPlatform = platforms.flatMap((platform) =>
+    outsideEverywhere.map((name): [NodeJS.Platform, string] => [platform, name])
+  )
+
+  it.each(outsideOnEveryPlatform)('is refused on %s: %j', (platform, subfolder) => {
+    setPlatform(platform)
+
+    expect(viewIn(subfolder)).toBeNull()
+  })
+
+  it.each(['C:\\x', 'c:x', 'apps\\.. \\secret', 'apps\\...\\secret', 'apps/.. /secret'])(
+    'is refused on Windows, which reads a drive or drops trailing dots and spaces: %j',
+    (subfolder) => {
+      setPlatform('win32')
+
+      expect(viewIn(subfolder)).toBeNull()
+    }
+  )
+
+  it.each(['apps/.../cutout', 'apps/.. /cutout', 'c:x'])(
+    'is a folder inside it on macOS and Linux: %j',
+    (subfolder) => {
+      for (const platform of ['darwin', 'linux'] as const) {
+        setPlatform(platform)
+
+        expect(viewIn(subfolder)).toMatchObject({ kind: 'view', file: { subfolder } })
+      }
+    }
+  )
 })
 
 describe('the files a finished run made', () => {
