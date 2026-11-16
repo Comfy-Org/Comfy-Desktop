@@ -297,6 +297,43 @@ describe('finding a ComfyUI on this computer for an app', () => {
   })
 })
 
+describe('a build the person picked on the app page', () => {
+  const LAB = 'inst-lab'
+
+  beforeEach(() => {
+    mocks.records = [
+      build(),
+      build({ id: LAB, name: 'Lab', installPath: '/builds/lab', version: 'v0.43.0' })
+    ]
+  })
+
+  it('is the one the app runs on, even when another build is running', async () => {
+    running()
+
+    expect(await localState({ ...WANT, build: LAB })).toMatchObject({
+      state: 'stopped',
+      name: 'Lab'
+    })
+  })
+
+  it('is started for the run, and the running build is left alone', async () => {
+    running(STUDIO, PORT)
+    startsWhenLaunched(PORT + 1)
+
+    const started = await startLocal({ ...WANT, build: LAB })
+
+    expect(started).toMatchObject({ state: 'running', name: 'Lab' })
+    expect(launches.map((launch) => launch['installationId'])).toEqual([LAB])
+    expect(stopped).toEqual([])
+  })
+
+  it('gives way to the usual choice when it is too old for the app', async () => {
+    mocks.records = [build(), build({ id: LAB, name: 'Lab', version: 'v0.30.0' })]
+
+    expect(await localState({ ...WANT, build: LAB })).toMatchObject({ name: 'Studio' })
+  })
+})
+
 describe('starting it', () => {
   it('starts the build without a window and answers once Desktop is listening to it', async () => {
     startsWhenLaunched()

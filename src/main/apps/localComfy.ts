@@ -29,6 +29,7 @@ import {
   installingLocalBuilds,
   isStillInstalling,
   modelTargetOf,
+  pickedBuild,
   runningPortOf,
   usableLocalBuilds,
   wantedVersion
@@ -198,11 +199,12 @@ function rememberTarget(page: WebContents, build: LocalBuild, installing: boolea
 
 async function chooseTarget(page: WebContents, want: unknown): Promise<ChosenBuild | string> {
   const wanted = wantedVersion(want)
-  const choice = chooseLocalBuild(await usableLocalBuilds(), wanted)
+  const picked = pickedBuild(want)
+  const choice = chooseLocalBuild(await usableLocalBuilds(), wanted, picked)
   if (choice.kind === 'build') return rememberTarget(page, choice.build, false)
   const installing = chooseInstallingBuild(await installingLocalBuilds(), wanted)
   if (installing) return rememberTarget(page, installing, true)
-  const recheck = chooseLocalBuild(await usableLocalBuilds(), wanted)
+  const recheck = chooseLocalBuild(await usableLocalBuilds(), wanted, picked)
   return recheck.kind === 'build' ? rememberTarget(page, recheck.build, false) : whyNoBuild(recheck)
 }
 

@@ -54,6 +54,7 @@ import {
   installingLocalBuilds,
   isStillInstalling,
   modelTargetOf,
+  pickedBuild,
   runningPortOf,
   usableLocalBuilds,
   wantedVersion
@@ -291,5 +292,38 @@ describe('choosing the build for a run', () => {
     ]
 
     expect(chooseLocalBuild(builds, '0.41.0')).toMatchObject({ build: { id: 'fits' } })
+  })
+
+  it('takes the build the person picked over a running one', () => {
+    const builds = [
+      build({ id: 'running', port: 8188 }),
+      build({ id: 'picked', version: '0.43.0' })
+    ]
+
+    expect(chooseLocalBuild(builds, '0.41.0', 'picked')).toMatchObject({
+      build: { id: 'picked' }
+    })
+  })
+
+  it('chooses as usual when the picked build is too old or gone', () => {
+    const builds = [build({ id: 'running', port: 8188 }), build({ id: 'old', version: '0.30.0' })]
+
+    expect(chooseLocalBuild(builds, '0.41.0', 'old')).toMatchObject({ build: { id: 'running' } })
+    expect(chooseLocalBuild(builds, '0.41.0', 'deleted')).toMatchObject({
+      build: { id: 'running' }
+    })
+  })
+})
+
+describe('the build a page picked', () => {
+  it('is the build id it sent', () => {
+    expect(pickedBuild({ minVersion: '0.41.0', build: 'lab' })).toBe('lab')
+  })
+
+  it('is none when the page sent none, or something that is not an id', () => {
+    expect(pickedBuild(undefined)).toBeNull()
+    expect(pickedBuild({ minVersion: '0.41.0' })).toBeNull()
+    expect(pickedBuild({ build: '' })).toBeNull()
+    expect(pickedBuild({ build: 7 })).toBeNull()
   })
 })
