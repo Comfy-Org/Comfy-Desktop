@@ -217,7 +217,6 @@ describe('listOutputFolder', () => {
       { name: 'Apps', path: path.join(sharedDir, 'Apps') },
       { name: 'video', path: path.join(sharedDir, 'video') }
     ])
-    expect(listing!.truncated).toBe(false)
     expect(listing!.files.map((a) => a.name)).toEqual(['new.mp4', 'mesh.glb', 'old.png'])
     const newVideo = path.join(sharedDir, 'new.mp4')
     expect(listing!.files[0]).toEqual({
@@ -296,7 +295,7 @@ describe('listOutputFolder', () => {
     }
   })
 
-  it('keeps only the newest files when a folder is very large, and says so', async () => {
+  it('keeps only the newest files when a folder is very large', async () => {
     for (let i = 0; i <= MAX_LOCAL_ASSETS; i++)
       write(path.join(sharedDir, `f${i}.png`), '', new Date(Date.UTC(2026, 0, 1, 0, 0, i)))
     await listOutputFolders()
@@ -305,7 +304,6 @@ describe('listOutputFolder', () => {
 
     expect(listing!.files).toHaveLength(MAX_LOCAL_ASSETS)
     expect(listing!.files.map((a) => a.name)).not.toContain('f0.png')
-    expect(listing!.truncated).toBe(true)
   })
 
   it('does not follow links out of an output folder', async () => {
@@ -314,7 +312,7 @@ describe('listOutputFolder', () => {
     fs.symlinkSync(path.join(outsideDir, 'secret.png'), path.join(sharedDir, 'secret.png'))
     await listOutputFolders()
 
-    expect(await listOutputFolder(sharedDir)).toEqual({ folders: [], files: [], truncated: false })
+    expect(await listOutputFolder(sharedDir)).toEqual({ folders: [], files: [] })
     expect(await listOutputFolder(path.join(sharedDir, 'escape'))).toBeNull()
   })
 })

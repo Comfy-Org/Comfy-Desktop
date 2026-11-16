@@ -137,15 +137,13 @@
       "folderActions": "Folder actions",
       "noBuilds": "No build saves here yet",
       "savedBy": "Saved here by",
-      "moreBuilds": "and 1 more | and {count} more",
       "openFolder": "Open folder",
       "path": "Folder path",
       "noFoldersTitle": "No output folders yet",
       "noFoldersBody": "Files appear here after you run a workflow with ComfyUI on this computer.",
       "emptyFolder": "No images, videos, audio or 3D files here.",
       "folderFailed": "Couldn't open this folder. It may have been moved or deleted.",
-      "backToComputer": "Back to This computer",
-      "truncated": "Showing the newest file. Open the folder to see all of them. | Showing the newest {count} files. Open the folder to see all of them."
+      "backToComputer": "Back to This computer"
     }
   },
   "home": {

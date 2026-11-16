@@ -209,7 +209,6 @@ export interface OutputSubfolder {
 export interface OutputFolderListing {
   folders: OutputSubfolder[]
   files: AssetSummary[]
-  truncated: boolean
 }
 
 export interface BuildStorageSnapshot {

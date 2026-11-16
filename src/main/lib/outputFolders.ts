@@ -210,11 +210,7 @@ export async function listOutputFolder(target: unknown): Promise<OutputFolderLis
     .sort((a, b) => b.createdAt!.localeCompare(a.createdAt!))
     .slice(0, MAX_LOCAL_ASSETS)
   await runPool(newest, STATS_AT_ONCE, addMediaFacts)
-  return {
-    folders: folders.sort((a, b) => a.name.localeCompare(b.name)),
-    files: newest,
-    truncated: found.length > MAX_LOCAL_ASSETS
-  }
+  return { folders: folders.sort((a, b) => a.name.localeCompare(b.name)), files: newest }
 }
 
 function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeImage | null {
