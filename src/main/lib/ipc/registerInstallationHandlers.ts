@@ -408,7 +408,7 @@ export function registerInstallationHandlers(): void {
           method: express ? 'express' : 'manual',
           express: !!express
         })
-        await startFirstBuildWithDesktop(installationId)
+        if (!snapshotRestoreError) await startFirstBuildWithDesktop(installationId)
       }
       if (snapshotRestoreError) {
         return snapshotRestoreFailureResult(installationId, snapshotRestoreError)
