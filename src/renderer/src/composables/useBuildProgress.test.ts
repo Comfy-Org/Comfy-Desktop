@@ -44,7 +44,8 @@ describe('useBuildProgress', () => {
       installationId: BUILD.id,
       title: 'Starting — ComfyUI',
       opKind: 'launch',
-      apiCall: () => new Promise<ActionResult>(() => {})
+      apiCall: () => new Promise<ActionResult>(() => {}),
+      events: window.api
     })
     const tracker = createLaunchProgressTracker({
       phases: buildLaunchPhases(null),
