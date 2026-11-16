@@ -142,6 +142,7 @@ import {
   isInstallHost,
   openOrFocusAnyHostWindow,
   openOrFocusChooserHostWindow,
+  openOrFocusHomeHostWindow,
   raiseAllHostWindows,
   setHostFactories,
   shouldConfirmKillForEntry
@@ -753,6 +754,13 @@ ipcMain.on('comfy-window:click-announcement', (event) => {
 
 ipcMain.on('comfy-window:new-chooser-window', () => {
   openChooserHostWindow()
+})
+
+ipcMain.on('comfy-window:show-home', (event) => {
+  const found = findEntryByTitleBarSender(event.sender)
+  if (!found || !isInstallHost(found.entry)) return
+  recordIpcInvocation('comfy-window:show-home')
+  openOrFocusHomeHostWindow()
 })
 
 function focusOpenComfyWindow(installationId: string): boolean {

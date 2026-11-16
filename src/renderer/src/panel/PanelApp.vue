@@ -530,7 +530,10 @@ onUnmounted(() => {
               :revisit="appsVisits"
               @app-open-change="appIsOpen = $event"
             />
-            <AssetsView v-else-if="dashboardHomePage === 'assets'" />
+            <AssetsView
+              v-else-if="dashboardHomePage === 'assets'"
+              :installation-id="installationId"
+            />
             <BuildDetailsView
               v-else-if="buildDetailsInstall"
               :installation="buildDetailsInstall"

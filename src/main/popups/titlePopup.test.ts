@@ -137,23 +137,31 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items[0]).toMatchObject({ id: 'skip-onboarding' })
   })
 
-  it.each([null, 'inst-1'] as const)(
-    'lists the tools, settings and window actions on host %s',
-    (installationId) => {
-      const items = buildTitlePopupMenuItems(makeEntry({ installationId }))
-      expect(items.map((item) => item.id ?? 'separator')).toEqual([
-        'performance-test',
-        'benchmarks',
-        'separator',
-        'settings',
-        'separator',
-        'exit-window',
-        'close-all-windows'
-      ])
-    }
-  )
+  it('chooser host leaves Desktop Settings to the sidebar', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    expect(items.map((item) => item.id ?? 'separator')).toEqual([
+      'performance-test',
+      'benchmarks',
+      'separator',
+      'exit-window',
+      'close-all-windows'
+    ])
+  })
 
-  it('install host lists Reset Zoom after Settings when zoomed', () => {
+  it('install host keeps Desktop Settings because it has no sidebar', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
+    expect(items.map((item) => item.id ?? 'separator')).toEqual([
+      'performance-test',
+      'benchmarks',
+      'separator',
+      'settings',
+      'separator',
+      'exit-window',
+      'close-all-windows'
+    ])
+  })
+
+  it('install host lists Reset Zoom after Desktop Settings when zoomed', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
     const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
     expect(ids).toEqual([

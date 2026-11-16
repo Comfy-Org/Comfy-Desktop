@@ -36,6 +36,12 @@ export function wantedVersion(want: unknown): string | null {
   return releaseVersion((want as { minVersion?: unknown }).minVersion)
 }
 
+export function pickedBuild(want: unknown): string | null {
+  if (typeof want !== 'object' || want === null) return null
+  const build = (want as { build?: unknown }).build
+  return typeof build === 'string' && build !== '' ? build : null
+}
+
 async function versionOnDisk(inst: InstallationRecord): Promise<string | null> {
   const file = path.join(resolveComfyDir(inst.installPath), VERSION_FILE)
   const text = await fsp.readFile(file, 'utf8').catch(() => null)
@@ -145,11 +151,14 @@ export function chooseInstallingBuild(
 
 export function chooseLocalBuild(
   builds: readonly LocalBuild[],
-  wanted: string | null
+  wanted: string | null,
+  picked: string | null = null
 ): LocalChoice {
   if (builds.length === 0) return { kind: 'no-builds' }
   const fitting = builds.filter((build) => fits(build, wanted))
   if (fitting.length === 0) return { kind: 'too-old', wanted: wanted ?? '' }
+  const named = fitting.find((build) => build.id === picked)
+  if (named) return { kind: 'build', build: named }
   const [build] = [...fitting].sort(
     (one, other) =>
       Number(other.port !== null) - Number(one.port !== null) ||

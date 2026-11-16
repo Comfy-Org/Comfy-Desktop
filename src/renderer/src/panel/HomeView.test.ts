@@ -677,6 +677,102 @@ describe('Home builds', () => {
   })
 })
 
+describe('Home build card while a build starts', () => {
+  const CARD_PADDING_AND_BORDER = 38
+  let observers: { target?: Element; report: (width: number) => void }[]
+  const originalResizeObserver = globalThis.ResizeObserver
+
+  beforeEach(() => {
+    observers = []
+    globalThis.ResizeObserver = class {
+      private readonly entry: { target?: Element; report: (width: number) => void }
+      constructor(callback: ResizeObserverCallback) {
+        this.entry = {
+          report: (width) =>
+            callback(
+              [
+                {
+                  target: this.entry.target!,
+                  contentRect: {
+                    width: width - CARD_PADDING_AND_BORDER,
+                    height: 98
+                  } as DOMRectReadOnly,
+                  contentBoxSize: [{ inlineSize: width - CARD_PADDING_AND_BORDER, blockSize: 98 }],
+                  borderBoxSize: [{ inlineSize: width, blockSize: 100 }],
+                  devicePixelContentBoxSize: []
+                } as unknown as ResizeObserverEntry
+              ],
+              this as unknown as ResizeObserver
+            )
+        }
+        observers.push(this.entry)
+      }
+      observe(target: Element) {
+        this.entry.target = target
+      }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+    Object.assign(window.api, {
+      onInstallProgress: vi.fn(() => () => {}),
+      onComfyOutput: vi.fn(() => () => {}),
+      cancelOperation: vi.fn(),
+      stopComfyUI: vi.fn()
+    })
+  })
+
+  afterEach(() => {
+    globalThis.ResizeObserver = originalResizeObserver
+  })
+
+  async function startBuildBesideTwoOthers(cardWidth: number) {
+    getInstallations.mockResolvedValue([OLDEST, CLOUD, NEWEST])
+    const wrapper = await openHome()
+    useProgressStore().startOperation({
+      installationId: NEWEST.id,
+      title: 'Starting',
+      opKind: 'launch',
+      apiCall: () => new Promise(() => {})
+    })
+    await flushPromises()
+    const starting = wrapper.get('[data-testid="home-build-starting"]')
+    const card = starting.get('[data-testid="home-build-busy-card"]')
+    for (const observer of observers) {
+      if (observer.target === card.element) observer.report(cardWidth)
+    }
+    await flushPromises()
+    return { wrapper, starting }
+  }
+
+  it('moves View logs and Cancel under a card in a row of three, so its name and status keep the room', async () => {
+    const { starting } = await startBuildBesideTwoOthers(300)
+
+    const card = starting.get('[data-testid="home-build-busy-card"]')
+    expect(card.find('[data-testid="home-build-cancel"]').exists()).toBe(false)
+    expect(card.find('[data-testid="home-build-view-logs"]').exists()).toBe(false)
+    expect(card.text()).toContain('Starting ComfyUI')
+    expect(card.text()).toContain(NEWEST.name)
+
+    await starting.get('[data-testid="home-build-cancel"]').trigger('click')
+    expect(window.api.cancelOperation).toHaveBeenCalledWith(NEWEST.id)
+  })
+
+  it('keeps View logs and Cancel inside a 460px card, counting its padding and border', async () => {
+    const { starting } = await startBuildBesideTwoOthers(460)
+
+    const card = starting.get('[data-testid="home-build-busy-card"]')
+    expect(card.find('[data-testid="home-build-cancel"]').exists()).toBe(true)
+  })
+
+  it('keeps View logs and Cancel inside a card that has room for them', async () => {
+    const { starting } = await startBuildBesideTwoOthers(560)
+
+    const card = starting.get('[data-testid="home-build-busy-card"]')
+    expect(card.find('[data-testid="home-build-view-logs"]').exists()).toBe(true)
+    expect(card.find('[data-testid="home-build-cancel"]').exists()).toBe(true)
+  })
+})
+
 describe('Home build auto start', () => {
   let saved: unknown
   let settingsListeners: Array<(change: { key: string }) => void>
