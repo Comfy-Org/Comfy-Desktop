@@ -41,7 +41,7 @@ test.afterAll(async () => {
   if (legacyBasePath) await rm(legacyBasePath, { recursive: true, force: true })
 })
 
-test('cold start with legacy desktop offers to migrate it on Set up, ticked by default @lifecycle', async () => {
+test('cold start with legacy desktop offers to migrate it on Set up, ticked by default @real-comfy', async () => {
   await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 15_000 })
   await ctx.panel.waitForVisible('[data-testid="setup-migrate-existing"]', { timeout: 5_000 })
   expect(
@@ -57,7 +57,7 @@ test('cold start with legacy desktop offers to migrate it on Set up, ticked by d
   ).toBe('Migrate')
 })
 
-test('Migrate on Set up opens MigrateConfirmTakeover (takeover surface) @lifecycle', async () => {
+test('Migrate on Set up opens MigrateConfirmTakeover (takeover surface) @real-comfy', async () => {
   await resetIpcInvocations(ctx.app, 'run-action')
   await resetIpcInvocations(ctx.app, 'comfy-window:set-first-use-mode')
 

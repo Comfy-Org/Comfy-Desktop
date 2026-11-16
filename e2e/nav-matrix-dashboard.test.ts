@@ -11,7 +11,12 @@ import {
   resetIpcInvocations,
   seedRunningSession
 } from './support/devHooks'
-import { expectNoIpcInvocation, liveWindowCount, openPicker } from './support/navMatrixHelpers'
+import {
+  desktopWindowCount,
+  expectNoIpcInvocation,
+  liveWindowCount,
+  openPicker
+} from './support/navMatrixHelpers'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -72,11 +77,11 @@ test.beforeEach(async () => {
   await closeTitlePopupIfOpen(ctx.app)
   await resetIpcInvocations(ctx.app, 'focus-comfy-window')
   await resetIpcInvocations(ctx.app, 'run-action')
-  await resetIpcInvocations(ctx.app, 'open-install-new-window')
+  await resetIpcInvocations(ctx.app, 'open-build')
   await clearRunningSessions(ctx.app)
 })
 
-test('Home → Builds → Update settings opens the selected installation @windows @macos @linux @lifecycle', async () => {
+test('Home → Builds → Update settings opens the selected installation @windows @macos @linux @real-comfy', async () => {
   expect(await ctx.panel.click('[data-testid="app-sidebar-home"]')).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="home-view"]')
   expect(await ctx.panel.exists('.chooser-view')).toBe(true)
@@ -96,7 +101,7 @@ test('Home → Builds → Update settings opens the selected installation @windo
 
 test('Dashboard → stopped instance: same-window launch, no new window @windows @macos @linux', async () => {
   const before = await liveWindowCount(ctx.app)
-  await openPicker(ctx.app, ctx.panel, 'pickInstall')
+  await openPicker(ctx.app, ctx.panel)
 
   const popup = titlePopupPage(ctx.app)
   await popup.evaluate<void>(
@@ -135,7 +140,7 @@ test('Dashboard → running instance: focus existing window @windows @macos @lin
     installationName: INSTALL_A_NAME
   })
   const before = await liveWindowCount(ctx.app)
-  await openPicker(ctx.app, ctx.panel, 'pickInstall')
+  await openPicker(ctx.app, ctx.panel)
 
   const popup = titlePopupPage(ctx.app)
   await popup.evaluate<void>(
@@ -160,29 +165,36 @@ test('Dashboard → running instance: focus existing window @windows @macos @lin
   expect(await liveWindowCount(ctx.app)).toBe(before)
 })
 
-test('Dashboard → cloud via "Open in new window": spawns a new window @windows @macos @linux', async () => {
-  const before = await liveWindowCount(ctx.app)
-  await openPicker(ctx.app, ctx.panel, 'pickInstall')
+test('Dashboard → closed Cloud: Open Cloud starts it from this Desktop window, no second Desktop window @windows @macos @linux', async () => {
+  const desktopWindowsBefore = await desktopWindowCount(ctx.app)
+  await openPicker(ctx.app, ctx.panel)
 
   const popup = titlePopupPage(ctx.app)
-  await popup.evaluate<void>(
-    `window.__comfyTitlePopup.openInstallNewWindow(${JSON.stringify(CLOUD_ID)})`
-  )
+  await popup.evaluate<void>(`window.__comfyTitlePopup.pickInstall(${JSON.stringify(CLOUD_ID)})`)
 
   await expect
     .poll(
       async () => {
-        const calls = (await getIpcInvocations(ctx.app, 'open-install-new-window')) as {
+        const calls = (await getIpcInvocations(ctx.app, 'open-build')) as {
           installationId?: string
-          focusedExisting?: boolean
+          route?: string
         }[]
-        return calls.some((c) => c.installationId === CLOUD_ID && c.focusedExisting === false)
+        return calls.some((c) => c.installationId === CLOUD_ID && c.route === 'start-from')
       },
       { timeout: 5_000, intervals: [100, 250] }
     )
     .toBe(true)
 
   await expect
-    .poll(() => liveWindowCount(ctx.app), { timeout: 5_000, intervals: [200, 400] })
-    .toBe(before + 1)
+    .poll(
+      async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'run-action')) as {
+          installationId?: string
+        }[]
+        return calls.some((c) => c.installationId === CLOUD_ID)
+      },
+      { timeout: 10_000, intervals: [200, 500] }
+    )
+    .toBe(true)
+  expect(await desktopWindowCount(ctx.app), 'no second Desktop window').toBe(desktopWindowsBefore)
 })

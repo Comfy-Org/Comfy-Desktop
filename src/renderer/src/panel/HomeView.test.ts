@@ -459,7 +459,7 @@ describe('Home builds', () => {
     expect(kept).toEqual(['My Local 1', 'Video Lab'])
   })
 
-  it('shows a stopped local build as ready, with its ComfyUI version and no folder', async () => {
+  it('shows a stopped local build as ready, with its ComfyUI version and no folder path', async () => {
     getInstallations.mockResolvedValue([OLDEST])
     const wrapper = await openHome()
 

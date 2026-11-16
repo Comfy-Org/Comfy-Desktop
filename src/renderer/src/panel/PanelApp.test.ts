@@ -3,6 +3,10 @@ import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSv
 import type { ExampleWorkflowDownload, RunPerformanceTestWorkflowResult } from '../types/ipc'
 
 const installWizardOpen = vi.hoisted(() => vi.fn())
+const createFeedbackWidget = vi.hoisted(() =>
+  vi.fn(() => ({ unmount: vi.fn(), refresh: vi.fn(), focus: vi.fn() }))
+)
+vi.mock('@typeform/embed', () => ({ createWidget: createFeedbackWidget }))
 const createResultsPngMock = vi.hoisted(() =>
   vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer)
 )
@@ -602,6 +606,7 @@ describe('PanelApp', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     installWizardOpen.mockClear()
+    createFeedbackWidget.mockClear()
     __resetLauncherPrefsForTest()
     useOverlay().current.value = null
     mockModal.alert.mockReset()
@@ -3340,7 +3345,7 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
   })
 
-  it('emits comfy.desktop.feedback.opened with the originating source and opens the support URL', async () => {
+  it('emits comfy.desktop.feedback.opened with the originating source and passes feedback metadata to Typeform', async () => {
     mountPanel()
     await flushPromises()
 
@@ -3366,12 +3371,13 @@ describe('PanelApp', () => {
       (e) => e.actionName === 'comfy.desktop.feedback.opened'
     )
     expect(feedbackTelemetry.map((e) => e.context?.source)).toEqual(['titlebar', 'menu'])
-    const frame = document.body.querySelector<HTMLIFrameElement>('iframe.feedback-modal-frame')
-    expect(frame).not.toBeNull()
-    const url = frame?.getAttribute('src') ?? ''
-    expect(url).toContain('form.typeform.com/to/VhOXmuaL')
-    expect(url).toContain('ver=0.5.0')
-    expect(url).toMatch(/[?&]platform=/)
+    expect(createFeedbackWidget).toHaveBeenCalledWith(
+      'VhOXmuaL',
+      expect.objectContaining({
+        container: document.querySelector('[data-testid="feedback-widget"]'),
+        hidden: { ver: '0.5.0', platform: expect.any(String) }
+      })
+    )
   })
 
   it('keeps the comfy-lifecycle body when a panel-switch IPC event re-confirms it', async () => {

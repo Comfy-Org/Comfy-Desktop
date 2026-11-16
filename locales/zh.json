@@ -63,6 +63,20 @@
   },
   "assets": {
     "kindLabel": "资产类型",
+    "buildPickerLabel": "构建",
+    "browseAssetsOf": "浏览以下构建的资产",
+    "thisComputer": "这台电脑",
+    "outputFolder": "输出文件夹",
+    "buildStatus": "{where} · {state}",
+    "buildWhere": {
+      "local": "本地",
+      "cloud": "云端"
+    },
+    "buildState": {
+      "running": "运行中",
+      "starting": "启动中",
+      "stopped": "已停止"
+    },
     "kind": {
       "all": "全部",
       "image": "图片",
@@ -104,7 +118,6 @@
     "deleteFailed": "无法删除资产",
     "noMatches": "没有匹配的资产",
     "noMatchesHint": "试试其他类型或搜索词。",
-    "filter": "筛选",
     "signedOutTitle": "登录以查看你的资产",
     "signedOutBody": "你在 Comfy Cloud 中生成的资产会显示在这里。",
     "signIn": "登录 Comfy Cloud",
@@ -229,6 +242,7 @@
     "appUpdateReady": "重启以更新",
     "installUpdateAvailable": "有可用更新",
     "installUpdateShort": "更新",
+    "home": "主页",
     "menu": "菜单",
     "feedback": "反馈",
     "feedbackTooltip": "发送反馈",
@@ -1936,7 +1950,6 @@
     "switch": "切换",
     "openCloud": "打开云端",
     "openRemote": "打开远程",
-    "openInNewWindow": "在新窗口中打开",
     "windowOptions": "窗口选项",
     "moreWindowOptions": "窗口选项",
     "restartConfirmTitle": "重启此构建？",
@@ -1946,12 +1959,6 @@
     "confirmHeadsUp": "请注意",
     "restartConfirmItem1": "重启将停止正在运行的会话。",
     "restartConfirmItem2": "工作流中任何未保存的工作都会丢失。",
-    "switchConfirmTitle": "切换构建？",
-    "switchConfirmMessage": "切换到 {name}？",
-    "switchConfirmAction": "切换",
-    "switchConfirmSecondary": "在新窗口中打开",
-    "switchConfirmItem1": "切换会停止当前构建并在此窗口中将其替换。",
-    "switchConfirmItem2": "在新窗口中打开会让当前构建继续运行。",
     "more": "更多",
     "settings": "设置",
     "snapshots": "快照",

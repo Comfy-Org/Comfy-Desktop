@@ -29,6 +29,6 @@ export default defineConfig({
     ...platformProjects('macos', '@macos'),
     ...platformProjects('windows', '@windows'),
     { name: 'linux', grep: /@linux/ },
-    { name: 'lifecycle', grep: /@lifecycle/, timeout: 180_000 }
+    { name: 'real-comfy', grep: /@real-comfy/, timeout: 180_000 }
   ]
 })

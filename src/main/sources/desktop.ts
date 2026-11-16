@@ -25,6 +25,7 @@ export const desktop: SourcePlugin = {
   category: 'local',
   hasConsole: true,
   skipInstall: true,
+  managesOwnPaths: true,
   platforms: ['win32', 'darwin'],
   hidden: true,
 

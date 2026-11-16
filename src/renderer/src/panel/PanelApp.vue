@@ -74,7 +74,7 @@ const { loaded: launcherPrefsLoaded, firstUseCompleted } = launcherPrefs
 const modal = useModal()
 useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
-const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback()
+const { feedbackOpen, feedbackHiddenFields, closeFeedback } = useSendFeedback()
 const { announcementOpen, closeAnnouncement } = useAnnouncement()
 
 const installation = computed<Installation | null>(() =>
@@ -538,7 +538,10 @@ onUnmounted(() => {
               :revisit="appsVisits"
               @app-open-change="appIsOpen = $event"
             />
-            <AssetsView v-else-if="dashboardHomePage === 'assets'" />
+            <AssetsView
+              v-else-if="dashboardHomePage === 'assets'"
+              :installation-id="installationId"
+            />
             <BuildDetailsView
               v-else-if="buildDetailsInstall"
               :installation="buildDetailsInstall"
@@ -623,7 +626,11 @@ onUnmounted(() => {
       @close="buildProgressId = null"
       @retry="retryLaunch(buildProgressId)"
     />
-    <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
+    <FeedbackModal
+      :open="feedbackOpen"
+      :hidden-fields="feedbackHiddenFields"
+      @close="closeFeedback"
+    />
     <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
 
     <ModalDialog />
