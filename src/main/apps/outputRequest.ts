@@ -20,7 +20,7 @@ const MAX_TAGS = 8
 const MAX_TAG_LENGTH = 40
 const MAX_PATH_LENGTH = 1024
 const ABSOLUTE_LOCAL_PATH = /^(\/|[A-Za-z]:[\\/])/
-const BIDI_CONTROL = /[\u202a-\u202e\u2066-\u2069]/
+const INVISIBLE_FORMATTING = /[\u0080-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/
 const FIRST_PRINTABLE_CODE = 32
 const DELETE_CODE = 127
 const SHOWN_MEDIA_TYPE =
@@ -36,7 +36,7 @@ function isIndex(value: unknown): value is number {
 
 function hasHiddenCharacters(value: string): boolean {
   return (
-    BIDI_CONTROL.test(value) ||
+    INVISIBLE_FORMATTING.test(value) ||
     Array.from(value).some((char) => {
       const code = char.charCodeAt(0)
       return code < FIRST_PRINTABLE_CODE || code === DELETE_CODE
@@ -45,8 +45,9 @@ function hasHiddenCharacters(value: string): boolean {
 }
 
 function trimmed(value: unknown, max: number): string | null {
-  if (typeof value !== 'string' || value.trim() === '' || hasHiddenCharacters(value)) return null
-  return value.trim().slice(0, max)
+  if (typeof value !== 'string') return null
+  const text = value.trim().slice(0, max)
+  return text === '' || hasHiddenCharacters(text) ? null : text
 }
 
 function readTags(value: unknown): string[] {

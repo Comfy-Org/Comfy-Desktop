@@ -259,7 +259,7 @@ let fitRun = 0
 async function fitToolbar(): Promise<void> {
   const row = toolbarRow.value
   const run = ++fitRun
-  if (!row) return
+  if (!row || searchOpen.value) return
   for (let level = 0; level <= KINDS_AS_MENU; level++) {
     toolbarCompactness.value = level
     await nextTick()
@@ -269,7 +269,7 @@ async function fitToolbar(): Promise<void> {
 
 useResizeObserver(toolbarRow, () => void fitToolbar())
 watch(
-  [inGallery, place, () => kindOptions.value.map((option) => option.count).join()],
+  [inGallery, place, searchOpen, () => kindOptions.value.map((option) => option.count).join()],
   () => void fitToolbar(),
   { flush: 'post' }
 )
