@@ -80,6 +80,5 @@ export function homeBuildDetail(build: Installation): string {
   if (build.sourceCategory === 'cloud' || build.sourceCategory === 'remote') {
     return build.listPreview ? hostOf(build.listPreview) : build.sourceLabel
   }
-  const parts = [build.version ? `ComfyUI ${build.version}` : '', build.installPath ?? '']
-  return parts.filter(Boolean).join(' · ') || build.sourceLabel
+  return build.version ? `ComfyUI ${build.version}` : build.sourceLabel
 }
