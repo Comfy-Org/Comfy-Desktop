@@ -347,7 +347,8 @@ export interface ComfyDesktopOutputFile {
  * `audio/wav`, `audio/x-wav`, `audio/ogg`, `audio/webm`, `audio/flac` or
  * `audio/aac`. `name` is at most 200 characters. Desktop keeps the first 8
  * `tags`, each cut to 40 characters, and offers Open workflow only when
- * `workflow` is true.
+ * `workflow` is true. Desktop refuses a `name`, and drops a tag, that has
+ * control or bidirectional-override characters.
  *
  * `savedOn` says where the output is saved. For `cloud`, Desktop shows
  * "Saved in Comfy Cloud assets" and View in Assets, which opens Desktop's

@@ -34,18 +34,6 @@ function isIndex(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0
 }
 
-function trimmed(value: unknown, max: number): string | null {
-  return typeof value === 'string' && value.trim() !== '' ? value.trim().slice(0, max) : null
-}
-
-function readTags(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .slice(0, MAX_TAGS)
-    .map((tag) => trimmed(tag, MAX_TAG_LENGTH))
-    .filter((tag): tag is string => tag !== null)
-}
-
 function hasHiddenCharacters(value: string): boolean {
   return (
     BIDI_CONTROL.test(value) ||
@@ -54,6 +42,19 @@ function hasHiddenCharacters(value: string): boolean {
       return code < FIRST_PRINTABLE_CODE || code === DELETE_CODE
     })
   )
+}
+
+function trimmed(value: unknown, max: number): string | null {
+  if (typeof value !== 'string' || value.trim() === '' || hasHiddenCharacters(value)) return null
+  return value.trim().slice(0, max)
+}
+
+function readTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .slice(0, MAX_TAGS)
+    .map((tag) => trimmed(tag, MAX_TAG_LENGTH))
+    .filter((tag): tag is string => tag !== null)
 }
 
 function readFolder(value: unknown): string | null {

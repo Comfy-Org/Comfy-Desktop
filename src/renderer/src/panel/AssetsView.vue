@@ -249,13 +249,15 @@ const currentKind = computed(() =>
   kindOptions.value.find((option) => option.value === kindFilter.value)!
 )
 
+let fitRun = 0
 async function fitToolbar(): Promise<void> {
   const row = toolbarRow.value
+  const run = ++fitRun
   if (!row) return
   for (let level = 0; level <= KINDS_AS_MENU; level++) {
     toolbarCompactness.value = level
     await nextTick()
-    if (row.scrollWidth <= row.clientWidth) return
+    if (run !== fitRun || row.scrollWidth <= row.clientWidth) return
   }
 }
 
