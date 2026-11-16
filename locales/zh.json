@@ -921,7 +921,20 @@
     "cancelConfirm": "取消安装",
     "failedTitle": "ComfyUI 未能安装",
     "launchFailedTitle": "ComfyUI 未能启动",
-    "startAgain": "重新启动"
+    "startAgain": "重新启动",
+    "stepName": {
+      "launchStart": "启动 ComfyUI",
+      "repair": "修复安装",
+      "torchRepair": "恢复 GPU PyTorch",
+      "agentRequirements": "安装代理依赖",
+      "frontendRestore": "恢复前端",
+      "securityScan": "运行安全扫描",
+      "mountLibraries": "加载库",
+      "gpu": "初始化 GPU",
+      "customNodes": "加载自定义节点",
+      "startingServer": "启动服务器",
+      "template-models": "下载模型"
+    }
   },
   "uninstallProgress": {
     "status": "正在卸载",
