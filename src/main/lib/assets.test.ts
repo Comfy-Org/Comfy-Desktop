@@ -1,7 +1,9 @@
 import type * as NodeFs from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { Writable } from 'stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { DownloadProgress } from './comfyDownloadManager'
 
 const getInstallation = vi.fn()
 const getAccessToken = vi.fn()
@@ -60,9 +62,6 @@ vi.mock('../settings', () => ({
   get: (key: string) => savedSettings.get(key),
   set: (key: string, value: string) => savedSettings.set(key, value)
 }))
-vi.mock('./comfyDownloadManager', () => ({
-  buildSaveDialogFilters: (name: string) => [{ name, extensions: ['*'] }]
-}))
 const panelSender = { panel: true }
 const trashOutputFile = vi.fn()
 vi.mock('../host/registry', () => ({
@@ -80,6 +79,7 @@ vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({ getAccessToken })
 }))
 vi.mock('./ipc/shared', () => ({
+  _broadcastToRenderer: vi.fn(),
   sourceMap: {
     cloud: { category: 'cloud' },
     standalone: { category: 'local' },
@@ -89,6 +89,13 @@ vi.mock('./ipc/shared', () => ({
 
 const { assetKind, downloadAsset, listAssets, registerAssetsHandlers, signedStorageUrl } =
   await import('./assets')
+const {
+  cancelModelDownload,
+  clearFinishedDownloads,
+  getDownloadsTrayState,
+  pauseModelDownload,
+  retryDownload
+} = await import('./comfyDownloadManager')
 
 const fetchMock = vi.fn()
 const realFs = await vi.importActual<typeof NodeFs>('node:fs')
@@ -284,9 +291,27 @@ describe('listAssets', () => {
 })
 
 describe('downloadAsset', () => {
-  const win = {} as Parameters<typeof downloadAsset>[0]
+  const win = {
+    isDestroyed: () => false,
+    setProgressBar: vi.fn(),
+    webContents: { isDestroyed: () => false, send: vi.fn() }
+  } as unknown as Parameters<typeof downloadAsset>[0]
   const signedUrl = 'https://storage.googleapis.com/bucket/v1?sig=1'
   const partFilePath = (): string => createWriteStream.mock.calls[0]![0]
+
+  function downloadsRow(savePath: string): DownloadProgress | undefined {
+    const { active, recent } = getDownloadsTrayState()
+    const url = pathToFileURL(savePath).href
+    return [...recent, ...active].find((row) => row.url === url)
+  }
+
+  async function finishedRow(savePath: string): Promise<DownloadProgress> {
+    return vi.waitFor(() => {
+      const row = downloadsRow(savePath)
+      expect(row?.status).toMatch(/^(completed|error|cancelled)$/)
+      return row!
+    })
+  }
 
   function fileOnThisComputer(file: string): void {
     outputFile.mockImplementation(async (target: string) => (target === file ? file : null))
@@ -302,11 +327,40 @@ describe('downloadAsset', () => {
     )
   }
 
-  it('copies a file on this computer to where the user picks, without asking a build', async () => {
+  function heldOpenStream(
+    init: { signal: AbortSignal },
+    first: string
+  ): { response: Response; finish: () => void } {
+    let finish = (): void => {}
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(first))
+        finish = () => controller.close()
+        init.signal.addEventListener('abort', () => controller.error(new Error('aborted')))
+      }
+    })
+    return {
+      response: new Response(body, { headers: { 'Content-Length': String(first.length * 2) } }),
+      finish: () => finish()
+    }
+  }
+
+  afterEach(() => {
+    clearFinishedDownloads()
+  })
+
+  it('copies a file on this computer to where the user picks and lists it in Downloads as finished', async () => {
     fileOnThisComputer('/out/still.png')
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
 
     expect(await downloadAsset(win, 'local', '/out/still.png', '../still.png')).toBe(true)
+
+    expect(await finishedRow('/picked/still.png')).toMatchObject({
+      status: 'completed',
+      filename: 'still.png',
+      savePath: '/picked/still.png',
+      isImage: true
+    })
     expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/downloads/still.png')
     expect(copyFile.mock.calls[0]![0]).toBe('/out/still.png')
     expect(copyFile.mock.calls[0]![1]).toMatch(/^\/picked\/still\.png\..+\.part$/)
@@ -326,16 +380,25 @@ describe('downloadAsset', () => {
     expect(copyFile).not.toHaveBeenCalled()
   })
 
-  it('removes the partial copy when copying a file on this computer fails', async () => {
+  it('shows a failed copy in Downloads, and Retry saves the file to the same place', async () => {
     fileOnThisComputer('/out/still.png')
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
     copyFile.mockRejectedValueOnce(new Error('disk full'))
 
-    await expect(downloadAsset(win, 'local', '/out/still.png', 'still.png')).rejects.toThrow(
-      'disk full'
-    )
+    await downloadAsset(win, 'local', '/out/still.png', 'still.png')
+
+    const failed = await finishedRow('/picked/still.png')
+    expect(failed).toMatchObject({ status: 'error', error: 'disk full' })
     expect(removeFile).toHaveBeenCalledWith(copyFile.mock.calls[0]![1], { force: true })
     expect(renameFile, 'the file the user picked is never overwritten').not.toHaveBeenCalled()
+    expect(savedSettings.has('lastSaveDialogDir'), 'remembered only once saved').toBe(false)
+
+    expect(retryDownload(failed.id!)).toBe(true)
+
+    await vi.waitFor(() => expect(downloadsRow('/picked/still.png')?.status).toBe('completed'))
+    expect(showSaveDialog, 'Retry does not ask again').toHaveBeenCalledOnce()
+    expect(written.get('/picked/still.png')).toBe('copy of /out/still.png')
+    expect(savedSettings.get('lastSaveDialogDir')).toBe('/picked')
   })
 
   it('offers only a plain file name in the save dialog when the name is unusable', async () => {
@@ -357,23 +420,80 @@ describe('downloadAsset', () => {
     expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/remembered/still.png')
   })
 
-  it('writes nothing when the save dialog is cancelled', async () => {
+  it('writes nothing and lists nothing in Downloads when the save dialog is cancelled', async () => {
     fileOnThisComputer('/out/still.png')
     showSaveDialog.mockResolvedValue({ canceled: true })
 
     expect(await downloadAsset(win, 'local', '/out/still.png', 'still.png')).toBe(false)
     expect(copyFile).not.toHaveBeenCalled()
     expect(createWriteStream).not.toHaveBeenCalled()
+    expect(getDownloadsTrayState()).toEqual({ active: [], recent: [] })
   })
 
-  it('saves a Cloud asset through its signed storage link', async () => {
+  it('saves a Cloud asset through its signed storage link and lists it in Downloads', async () => {
     cloudFile(() => new Response('video'))
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
 
     expect(await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).toBe(true)
+
+    expect(await finishedRow('/picked/clip.mp4')).toMatchObject({
+      status: 'completed',
+      filename: 'clip.mp4',
+      savePath: '/picked/clip.mp4',
+      isImage: false
+    })
     expect(fetchMock.mock.calls[0]![0]).toContain('/api/assets/v1/content?disposition=attachment')
     expect(fetchMock.mock.calls[1]![0]).toBe(signedUrl)
     expect(written.get('/picked/clip.mp4')).toBe('video')
+  })
+
+  it('shows a Cloud download in Downloads with its progress while it runs', async () => {
+    let stream: ReturnType<typeof heldOpenStream> | undefined
+    cloudFile((init) => {
+      stream = heldOpenStream(init, 'half')
+      return stream.response
+    })
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
+
+    await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+
+    const running = await vi.waitFor(() => {
+      const row = downloadsRow('/picked/clip.mp4')
+      expect(row).toMatchObject({
+        status: 'downloading',
+        filename: 'clip.mp4',
+        progress: 0.5,
+        receivedBytes: 4,
+        totalBytes: 8,
+        canPause: false
+      })
+      return row!
+    })
+    expect(win.setProgressBar, 'the Dock icon shows progress').toHaveBeenCalledWith(0.5)
+    expect(pauseModelDownload(running.id!), 'a streamed save offers no Pause').toBe(false)
+
+    stream!.finish()
+
+    expect((await finishedRow('/picked/clip.mp4')).status).toBe('completed')
+    expect(win.setProgressBar).toHaveBeenLastCalledWith(-1)
+  })
+
+  it('stops a Cloud download cancelled from Downloads and removes the partial file', async () => {
+    cloudFile((init) => heldOpenStream(init, 'half').response)
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
+
+    await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+    const running = await vi.waitFor(() => {
+      const row = downloadsRow('/picked/clip.mp4')
+      expect(row?.status).toBe('downloading')
+      return row!
+    })
+
+    expect(cancelModelDownload(running.id!)).toBe(true)
+
+    expect((await finishedRow('/picked/clip.mp4')).status).toBe('cancelled')
+    await vi.waitFor(() => expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true }))
+    expect(renameFile, 'the file the user picked is never written').not.toHaveBeenCalled()
   })
 
   it('does not follow a redirect away from the signed storage link', async () => {
@@ -381,19 +501,9 @@ describe('downloadAsset', () => {
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
 
     await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+    await finishedRow('/picked/clip.mp4')
 
     expect(fetchMock.mock.calls[1]![1].redirect).toBe('error')
-  })
-
-  it('remembers the save folder only after the file is saved', async () => {
-    fileOnThisComputer('/out/still.png')
-    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
-    copyFile.mockRejectedValueOnce(new Error('disk full'))
-
-    await expect(downloadAsset(win, 'local', '/out/still.png', 'still.png')).rejects.toThrow(
-      'disk full'
-    )
-    expect(savedSettings.has('lastSaveDialogDir')).toBe(false)
   })
 
   it('fails before asking where to save when signed out of Cloud', async () => {
@@ -410,6 +520,7 @@ describe('downloadAsset', () => {
 
     await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
     await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+    await vi.waitFor(() => expect(renameFile).toHaveBeenCalledTimes(2))
 
     const [first, second] = createWriteStream.mock.calls
     expect(first![0]).toMatch(/^\/picked\/clip\.mp4\..+\.part$/)
@@ -417,7 +528,7 @@ describe('downloadAsset', () => {
     expect(first![1]).toEqual({ flags: 'wx' })
   })
 
-  it('fails without writing a file when storage cannot serve the asset', async () => {
+  it('shows the failure in Downloads without writing a file when storage cannot serve the asset', async () => {
     let signal: AbortSignal | undefined
     cloudFile((init) => {
       signal = init.signal
@@ -425,7 +536,12 @@ describe('downloadAsset', () => {
     })
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
 
-    await expect(downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).rejects.toThrow('HTTP 503')
+    await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+
+    expect(await finishedRow('/picked/clip.mp4')).toMatchObject({
+      status: 'error',
+      error: 'Download failed: HTTP 503'
+    })
     expect(createWriteStream).not.toHaveBeenCalled()
     expect(signal?.aborted, 'the failed response is released').toBe(true)
   })
@@ -444,9 +560,12 @@ describe('downloadAsset', () => {
     )
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
 
-    await expect(downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).rejects.toThrow(
-      'connection reset'
-    )
+    await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+
+    expect(await finishedRow('/picked/clip.mp4')).toMatchObject({
+      status: 'error',
+      error: 'connection reset'
+    })
     expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true })
     expect(renameFile, 'the file the user picked is never overwritten').not.toHaveBeenCalled()
   })
@@ -482,12 +601,12 @@ describe('downloadAsset', () => {
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
-      const download = downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+      expect(await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).toBe(true)
       await vi.advanceTimersByTimeAsync(90_000)
-      expect(await download).toBe(true)
     } finally {
       vi.useRealTimers()
     }
+    expect((await finishedRow('/picked/clip.mp4')).status).toBe('completed')
     expect(written.get('/picked/clip.mp4')).toBe('ab')
   })
 
@@ -506,13 +625,15 @@ describe('downloadAsset', () => {
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
-      const download = downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
-      const failed = expect(download).rejects.toThrow('stalled')
+      await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
       await vi.advanceTimersByTimeAsync(20_000)
-      await failed
     } finally {
       vi.useRealTimers()
     }
+    expect(await finishedRow('/picked/clip.mp4')).toMatchObject({
+      status: 'error',
+      error: 'stalled'
+    })
     expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true })
   })
 })

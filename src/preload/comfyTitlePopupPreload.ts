@@ -125,6 +125,7 @@ export interface PopupDownloadEntry {
   error?: string
   createdAt?: number
   isImage?: boolean
+  canPause?: boolean
 }
 
 export interface PopupDownloadsState {

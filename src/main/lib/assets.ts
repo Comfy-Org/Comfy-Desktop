@@ -10,7 +10,8 @@ import { getCloudSession } from '../devplatform/session'
 import { findHostWindowByPanelSender, isPanelSender } from '../host/registry'
 import * as installations from '../installations'
 import * as settings from '../settings'
-import { buildSaveDialogFilters } from './comfyDownloadManager'
+import { buildSaveDialogFilters, startFileSave } from './comfyDownloadManager'
+import type { FileSaveTransfer } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
 import { copyImageToClipboard } from './clipboardImage'
 import { copyOutputImage, outputFilePath, revealOutputFile, trashOutputFile } from './outputFolders'
@@ -218,7 +219,7 @@ export async function listAssets(installationId: string): Promise<AssetSummary[]
   return accessToken ? listCloudAssets(accessToken) : []
 }
 
-type SaveTo = (filePath: string) => Promise<void>
+type SaveTo = (filePath: string, job: FileSaveTransfer) => Promise<void>
 
 async function writeThroughPartFile(
   filePath: string,
@@ -234,8 +235,15 @@ async function writeThroughPartFile(
   }
 }
 
-async function saveDownload(url: string, filePath: string): Promise<void> {
+function contentLength(res: Response): number {
+  const length = Number(res.headers.get('content-length'))
+  return Number.isFinite(length) && length > 0 ? length : 0
+}
+
+async function saveDownload(url: string, filePath: string, job: FileSaveTransfer): Promise<void> {
   const controller = new AbortController()
+  const cancel = (): void => controller.abort()
+  job.signal.addEventListener('abort', cancel, { once: true })
   let timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   const keepAlive = (): void => {
     clearTimeout(timer)
@@ -244,8 +252,14 @@ async function saveDownload(url: string, filePath: string): Promise<void> {
   try {
     const res = await fetch(url, { redirect: 'error', signal: controller.signal })
     if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
+    const total = contentLength(res)
+    let received = 0
     const body = Readable.fromWeb(res.body as WebReadableStream)
-    body.on('data', keepAlive)
+    body.on('data', (chunk: Buffer) => {
+      keepAlive()
+      received += chunk.length
+      job.progress(received, total)
+    })
     body.on('pause', () => clearTimeout(timer))
     await writeThroughPartFile(filePath, (partPath) => {
       const file = fs.createWriteStream(partPath, { flags: 'wx' })
@@ -254,22 +268,24 @@ async function saveDownload(url: string, filePath: string): Promise<void> {
     })
   } finally {
     clearTimeout(timer)
+    job.signal.removeEventListener('abort', cancel)
     controller.abort()
   }
 }
 
 async function cloudSaveTo(installationId: string, assetId: string): Promise<SaveTo | null> {
-  const accessToken = await cloudAccessToken(installationId)
-  if (!accessToken) return null
-  return async (filePath) => {
+  if (!(await cloudAccessToken(installationId))) return null
+  return async (filePath, job) => {
+    const accessToken = await cloudAccessToken(installationId)
+    if (!accessToken) throw new Error('Log in to Comfy Cloud to download this asset.')
     const url = await resolveCloudContentUrl(
       assetId,
       accessToken,
       'attachment',
-      AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), job.signal])
     )
     if (!url) throw new Error('The asset has no download link.')
-    await saveDownload(url, filePath)
+    await saveDownload(url, filePath, job)
   }
 }
 
@@ -307,8 +323,14 @@ export async function downloadAsset(
     filters: buildSaveDialogFilters(name)
   })
   if (canceled || !filePath) return false
-  await saveTo(filePath)
-  settings.set('lastSaveDialogDir', path.dirname(filePath))
+  startFileSave({
+    window: win,
+    savePath: filePath,
+    transfer: async (job) => {
+      await saveTo(filePath, job)
+      settings.set('lastSaveDialogDir', path.dirname(filePath))
+    }
+  })
   return true
 }
 
