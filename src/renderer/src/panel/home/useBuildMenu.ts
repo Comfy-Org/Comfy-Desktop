@@ -1,5 +1,5 @@
 import { computed, inject, provide, type Component, type InjectionKey } from 'vue'
-import { AppWindow, CircleStop, Play, RotateCw, ScrollText, X } from '@lucide/vue'
+import { CircleStop, Play, RotateCw, ScrollText, X } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { until } from '@vueuse/core'
 import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
@@ -105,12 +105,10 @@ export function useBuildMenu(build: () => Installation) {
         danger: style === 'danger'
       }))
 
-    const busy = !!progress || sessionStore.isLaunching(inst.id) || sessionStore.isStopping(inst.id)
-    const windowGroup: BuildMenuEntry[] = busy
-      ? []
-      : [{ id: 'open-new-window', label: t('instancePicker.openInNewWindow'), icon: AppWindow }]
-    windowGroup.push(...existing.filter((item) => item.id === 'auto-start'))
-    startsGroup(windowGroup, items)
+    startsGroup(
+      existing.filter((item) => item.id === 'auto-start'),
+      items
+    )
 
     startsGroup(
       existing.filter(
@@ -160,9 +158,6 @@ export function useBuildMenu(build: () => Installation) {
         return install.cancel()
       case 'restart':
         return restart(inst)
-      case 'open-new-window':
-        window.api.openInstallInNewWindow(inst.id)
-        return
       default:
         return installMenu.triggerAction(id, inst, opts)
     }

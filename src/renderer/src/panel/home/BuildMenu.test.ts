@@ -27,20 +27,10 @@ type State = 'ready' | 'starting' | 'installing' | 'running' | 'uninstalling'
 
 const REST = ['|', 'manage', 'copy-install', 'reveal-in-folder', '|', 'share', 'restore-snapshot']
 const EXPECTED: Record<State, string[]> = {
-  ready: ['launch', '|', 'open-new-window', 'auto-start', ...REST, '|', 'delete'],
+  ready: ['launch', '|', 'auto-start', ...REST, '|', 'delete'],
   starting: ['view-logs', 'cancel', '|', 'auto-start', ...REST, '|', 'delete'],
   installing: ['view-logs', 'cancel', '|', 'auto-start', ...REST, '|', 'delete'],
-  running: [
-    'view-logs',
-    'restart',
-    'stop',
-    '|',
-    'open-new-window',
-    'auto-start',
-    ...REST,
-    '|',
-    'delete'
-  ],
+  running: ['view-logs', 'restart', 'stop', '|', 'auto-start', ...REST, '|', 'delete'],
   uninstalling: ['cancel', '|', 'auto-start', ...REST, '|', 'delete']
 }
 const OPERATIONS: Partial<Record<State, Partial<Operation>>> = {
@@ -71,7 +61,6 @@ beforeEach(() => {
       if (key === 'autoLaunchOnStartup') saved = value
     }),
     onSettingsChanged: vi.fn(() => () => {}),
-    openInstallInNewWindow: vi.fn(),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       onAuthChanged: vi.fn(() => () => {})
@@ -229,20 +218,6 @@ describe('Build menu', () => {
     expect(document.querySelector('[data-testid="build-menu-uninstall-question"]')).toBeNull()
     expect(document.querySelector('[data-testid="build-menu-confirm-uninstall"]')).toBeNull()
     expect(host.showProgress).not.toHaveBeenCalled()
-  })
-
-  it('offers no new window while the build is launching or stopping', async () => {
-    const tile = await mountTile('ready')
-    const sessions = useSessionStore()
-    const busyStates = [vi.spyOn(sessions, 'isLaunching'), vi.spyOn(sessions, 'isStopping')]
-
-    for (const busy of busyStates) {
-      busy.mockReturnValue(true)
-      await tile.get('[data-testid="home-build-more"]').trigger('click')
-      expect(await shownMenu()).not.toContain('open-new-window')
-      await closeMenu()
-      busy.mockRestore()
-    }
   })
 
   it('returns focus to the ⋯ button when the menu closes', async () => {
