@@ -4,19 +4,15 @@ import { useI18n } from 'vue-i18n'
 import {
   ArrowDownToLine,
   Bell,
-  CloudDownload,
   House,
-  Loader2,
   Menu as MenuIcon,
   MessageSquarePlus,
-  RefreshCw,
   RotateCw,
   ZoomIn
 } from '@lucide/vue'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
 import { useTitleBarMenus } from './useTitleBarMenus'
 import { useTitleBarIdentity } from './useTitleBarIdentity'
-import { useUpdatePills } from './useUpdatePills'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
 import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
@@ -172,14 +168,6 @@ const showZoomReset = computed(
   () => zoomLevel.value !== 0 && !isInstallLess.value && !isFirstUseLockdown.value
 )
 
-const {
-  appUpdateState,
-  appUpdatePillLabel,
-  appUpdatePillTooltip,
-  showAppUpdatePill,
-  handleAppUpdatePill
-} = useUpdatePills({ bridge, isInstallLess })
-
 function handleFeedback(): void {
   bridge?.clickFeedback()
 }
@@ -231,17 +219,13 @@ const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
 const titleClusterRef = useTemplateRef<HTMLElement>('titleCluster')
 const titleTrailingRef = useTemplateRef<HTMLElement>('titleTrailing')
 
-type CollapseMode = 'full' | 'no-feedback' | 'icons-only'
+type CollapseMode = 'full' | 'no-feedback'
 const collapseMode = ref<CollapseMode>('full')
-const collapsedFeedback = computed(
-  () => collapseMode.value === 'no-feedback' || collapseMode.value === 'icons-only'
-)
-const collapsedUpdate = computed(() => collapseMode.value === 'icons-only')
+const collapsedFeedback = computed(() => collapseMode.value === 'no-feedback')
 
 const MIN_GAP_PX = 16
 const RESTORE_BUFFER_PX = 24
 let feedbackRestoreCostPx = 0
-let updateRestoreCostPx = 0
 let fitObserver: ResizeObserver | undefined
 let fitRaf: number | null = null
 let transitionRaf: number | null = null
@@ -279,14 +263,10 @@ function scheduleFit(): void {
 function evaluateFit(): void {
   const { gap } = measureFit()
   if (!Number.isFinite(gap)) return
-  const mode = collapseMode.value
-  if (mode === 'full') {
+  if (collapseMode.value === 'full') {
     if (gap < MIN_GAP_PX) transitionTo('no-feedback')
-  } else if (mode === 'no-feedback') {
-    if (gap < MIN_GAP_PX) transitionTo('icons-only')
-    else if (gap > feedbackRestoreCostPx + RESTORE_BUFFER_PX) transitionTo('full')
-  } else {
-    if (gap > updateRestoreCostPx + RESTORE_BUFFER_PX) transitionTo('no-feedback')
+  } else if (gap > feedbackRestoreCostPx + RESTORE_BUFFER_PX) {
+    transitionTo('full')
   }
 }
 
@@ -305,8 +285,6 @@ function transitionTo(next: CollapseMode): void {
         const delta = before.trailingWidth - after.trailingWidth
         if (prev === 'full' && next === 'no-feedback') {
           feedbackRestoreCostPx = Math.max(feedbackRestoreCostPx, delta)
-        } else if (prev === 'no-feedback' && next === 'icons-only') {
-          updateRestoreCostPx = Math.max(updateRestoreCostPx, delta)
         }
       }
       scheduleFit()
@@ -316,7 +294,6 @@ function transitionTo(next: CollapseMode): void {
 
 function invalidateRestoreCosts(): void {
   feedbackRestoreCostPx = 0
-  updateRestoreCostPx = 0
   scheduleFit()
 }
 
@@ -461,9 +438,7 @@ watch(
   { immediate: true }
 )
 
-watch([locale, installLabel, appUpdatePillLabel, showAppUpdatePill, isFirstUseLockdown], () =>
-  invalidateRestoreCosts()
-)
+watch([locale, installLabel, isFirstUseLockdown], () => invalidateRestoreCosts())
 
 onUnmounted(() => {
   unmounted = true
@@ -505,8 +480,7 @@ onUnmounted(() => {
       'is-fullscreen': isFullscreen,
       'is-hover-active': isHoverActive,
       'is-consent-lockdown': isConsentLockdown,
-      'is-collapsed-feedback': collapsedFeedback,
-      'is-collapsed-update': collapsedUpdate
+      'is-collapsed-feedback': collapsedFeedback
     }"
     :data-collapse-mode="collapseMode"
     :style="{
@@ -557,29 +531,6 @@ onUnmounted(() => {
     <div class="title-center"></div>
 
     <div ref="titleTrailing" class="title-trailing flex items-center gap-2 [justify-self:end]">
-      <button
-        v-if="!isFirstUseLockdown && showAppUpdatePill"
-        type="button"
-        class="title-update-pill is-app-update [-webkit-app-region:no-drag] inline-flex items-center gap-1 rounded-[999px] border border-solid border-[color-mix(in_srgb,var(--comfy-yellow)_55%,transparent)] bg-[color-mix(in_srgb,var(--comfy-yellow)_8%,transparent)] px-2.5 py-0.5 [font-family:inherit] text-[12px] leading-4 font-normal text-comfy-yellow cursor-pointer transition-[background-color,border-color,opacity] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&]:hover:enabled:bg-[color-mix(in_srgb,var(--comfy-yellow)_14%,transparent)] [.title-bar.is-hover-active_&]:hover:enabled:border-comfy-yellow [.title-bar.is-light_&]:bg-[color-mix(in_srgb,var(--comfy-yellow)_18%,transparent)] [.title-bar.is-light_&]:border-[color-mix(in_srgb,var(--comfy-yellow)_65%,var(--neutral-700))] [.title-bar.is-light_&]:text-neutral-700 [.title-bar.is-light.is-hover-active_&]:hover:enabled:bg-[color-mix(in_srgb,var(--comfy-yellow)_26%,transparent)] [.title-bar.is-light.is-hover-active_&]:hover:enabled:border-[color-mix(in_srgb,var(--comfy-yellow)_85%,var(--neutral-700))] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 [.title-bar.is-collapsed-update_&]:size-6 [.title-bar.is-collapsed-update_&]:justify-center [.title-bar.is-collapsed-update_&]:gap-0 [.title-bar.is-collapsed-update_&]:p-0"
-        :class="{
-          'is-ready': appUpdateState.kind === 'ready',
-          'is-downloading': appUpdateState.kind === 'downloading'
-        }"
-        v-bind="tooltipAttrs(appUpdatePillTooltip)"
-        @click="handleAppUpdatePill"
-      >
-        <CloudDownload v-if="appUpdateState.kind === 'available'" :size="14" />
-        <Loader2
-          v-else-if="appUpdateState.kind === 'downloading'"
-          :size="14"
-          class="title-update-pill-spinner animate-spin"
-        />
-        <RefreshCw v-else-if="appUpdateState.kind === 'ready'" :size="14" />
-        <span
-          class="title-update-pill-label max-w-[clamp(80px,14cqi,200px)] truncate [.title-bar.is-collapsed-update_&]:hidden"
-          >{{ appUpdatePillLabel ?? 'Desktop Update' }}</span
-        >
-      </button>
       <Transition name="title-zoom-fade">
         <button
           v-if="showZoomReset"

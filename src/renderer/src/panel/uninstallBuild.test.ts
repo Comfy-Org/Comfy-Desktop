@@ -133,6 +133,7 @@ function openDesktop(installations: Installation[]): Desktop {
     listHomeWorkflows: async () => [],
     listApps: async () => [],
     getAppsEnabled: async () => false,
+    getAppUpdateState: async () => ({ kind: null, version: null, autoUpdate: true }),
     getCloudFreeRunsEnabled: async () => false,
     getCloudUserTier: async () => 'unknown',
     getDetailSections: async () => UNINSTALL_ACTION_SECTIONS,
