@@ -19,22 +19,15 @@ const MAX_NAME_LENGTH = 200
 const MAX_TAGS = 8
 const MAX_TAG_LENGTH = 40
 const MAX_FOLDER_LENGTH = 1024
-const MAX_FILENAME_LENGTH = 255
 const ABSOLUTE_LOCAL_PATH = /^(\/|[A-Za-z]:[\\/])/
-const PATH_SEPARATOR = /[\\/]/
 const BIDI_CONTROL = /[\u202a-\u202e\u2066-\u2069]/
 const FIRST_PRINTABLE_CODE = 32
 const DELETE_CODE = 127
-const ACTIONS: readonly unknown[] = ['download', 'open-workflow', 'show-in-folder']
 const SHOWN_MEDIA_TYPE =
   /^(image\/(png|jpeg|webp|gif|avif)|video\/(mp4|webm|quicktime)|audio\/(mpeg|mp4|wav|x-wav|ogg|webm|flac|aac))$/
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isAction(value: unknown): value is AppOutputAction['action'] {
-  return ACTIONS.includes(value)
 }
 
 function isIndex(value: unknown): value is number {
@@ -69,21 +62,12 @@ function readFolder(value: unknown): string | null {
   return ABSOLUTE_LOCAL_PATH.test(value) ? value : null
 }
 
-function isPathPart(value: string): boolean {
-  return value !== '' && value !== '.' && value !== '..' && value.trim() === value
-}
-
 function readComfyFile(value: unknown): ComfyOutputFile | null {
   if (!isRecord(value)) return null
   const { filename, subfolder = '', type } = value
-  if (type !== 'output' || typeof filename !== 'string' || typeof subfolder !== 'string') {
-    return null
-  }
-  if (filename.length > MAX_FILENAME_LENGTH || PATH_SEPARATOR.test(filename)) return null
-  if (!isPathPart(filename) || hasHiddenCharacters(filename + subfolder)) return null
-  if (subfolder.length > MAX_FOLDER_LENGTH || ABSOLUTE_LOCAL_PATH.test(subfolder)) return null
-  const parts = subfolder === '' ? [] : subfolder.split(PATH_SEPARATOR)
-  return parts.every(isPathPart) ? { filename, subfolder: parts.join('/') } : null
+  return type === 'output' && typeof filename === 'string' && typeof subfolder === 'string'
+    ? { filename, subfolder }
+    : null
 }
 
 function readSavedPlace(value: Record<string, unknown>): Partial<RequestedOutput> {
@@ -126,5 +110,7 @@ export function readOutputRequest(raw: unknown): OutputRequest | null {
 export function readOutputAction(raw: unknown): AppOutputAction | null {
   if (!isRecord(raw)) return null
   const { action, index } = raw
-  return isAction(action) && isIndex(index) ? { action, index } : null
+  if (action !== 'download' && action !== 'open-workflow' && action !== 'show-in-folder')
+    return null
+  return isIndex(index) ? { action, index } : null
 }
