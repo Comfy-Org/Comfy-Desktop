@@ -73,27 +73,27 @@ test.beforeEach(async () => {
   await closeTitlePopupIfOpen(ctx.app)
   await resetIpcInvocations(ctx.app, 'focus-comfy-window')
   await resetIpcInvocations(ctx.app, 'run-action')
-  await resetIpcInvocations(ctx.app, 'open-install-new-window')
+  await resetIpcInvocations(ctx.app, 'open-build')
   await clearRunningSessions(ctx.app)
 })
 
-test('Instance B via "Open in new window": starts B from this Desktop window and opens no second Desktop window @windows @macos @linux', async () => {
+test('Instance B (stopped): Start starts B from this Desktop window and opens no second Desktop window @windows @macos @linux', async () => {
   const desktopWindowsBefore = await desktopWindowCount(ctx.app)
-  await openPicker(ctx.app, ctx.panel, 'openInstallNewWindow')
+  await openPicker(ctx.app, ctx.panel)
 
   const popup = titlePopupPage(ctx.app)
   await popup.evaluate<void>(
-    `window.__comfyTitlePopup.openInstallNewWindow(${JSON.stringify(INSTALL_B_ID)})`
+    `window.__comfyTitlePopup.pickInstall(${JSON.stringify(INSTALL_B_ID)})`
   )
 
   await expect
     .poll(
       async () => {
-        const calls = (await getIpcInvocations(ctx.app, 'open-install-new-window')) as {
+        const calls = (await getIpcInvocations(ctx.app, 'open-build')) as {
           installationId?: string
-          focusedExisting?: boolean
+          route?: string
         }[]
-        return calls.some((c) => c.installationId === INSTALL_B_ID && c.focusedExisting === false)
+        return calls.some((c) => c.installationId === INSTALL_B_ID && c.route === 'start-from')
       },
       { timeout: 5_000, intervals: [100, 250] }
     )
@@ -123,7 +123,7 @@ test('Instance B (running elsewhere): focus its existing window @windows @macos 
     installationName: INSTALL_B_NAME
   })
   const before = await liveWindowCount(ctx.app)
-  await openPicker(ctx.app, ctx.panel, 'openInstallNewWindow')
+  await openPicker(ctx.app, ctx.panel)
 
   const popup = titlePopupPage(ctx.app)
   await popup.evaluate<void>(

@@ -4,7 +4,6 @@ import type { Installation } from '../types/ipc'
 export interface InstanceActionsBridge {
   pickInstall: (installationId: string) => void
   restartInstall: (installationId: string, opts?: { confirmed?: boolean }) => void
-  openInstallNewWindow?: (installationId: string) => void
   openNewInstall?: () => void
 }
 
@@ -30,12 +29,9 @@ export function useInstanceActions(deps: InstanceActionsDeps): InstanceActions {
           return
         }
         case 'start':
-        case 'focus': {
-          bridge.pickInstall(target.id)
-          return
-        }
+        case 'focus':
         case 'open-new': {
-          bridge.openInstallNewWindow?.(target.id)
+          bridge.pickInstall(target.id)
           return
         }
         case 'install-wizard': {

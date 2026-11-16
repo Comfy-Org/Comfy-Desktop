@@ -981,10 +981,6 @@ export interface TitlePopupHostBindings {
   getRunningSessionStartedAt?: () => Record<string, number>
   getLaunchingInstallationIds: () => string[]
   pickInstallFromPicker: (installationId: string, parentEntryId: number) => Promise<void> | void
-  openInstallInNewWindow: (
-    installationId: string,
-    requesterEntryId?: number
-  ) => Promise<void> | void
   restartInstallFromPicker: (
     installationId: string,
     parentEntryId: number,
@@ -1767,20 +1763,6 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       (err) => console.error('pickInstallFromPicker failed:', err)
     )
   })
-
-  ipcMain.on(
-    'comfy-titlepopup:open-install-new-window',
-    (event, payload: { installationId?: unknown }) => {
-      const entry = titlePopupsByWebContents.get(event.sender.id)
-      if (!entry || entry.kind !== POPUP_KIND.instancePicker) return
-      const installationId = payload?.installationId
-      if (typeof installationId !== 'string' || installationId.length === 0) return
-      hideTitlePopup(entry, { releaseFocusToParent: false })
-      Promise.resolve(bindings.openInstallInNewWindow(installationId, entry.parentEntryId)).catch(
-        (err) => console.error('openInstallInNewWindow failed:', err)
-      )
-    }
-  )
 
   ipcMain.on(
     'comfy-titlepopup:restart-install',

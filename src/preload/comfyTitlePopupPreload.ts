@@ -158,7 +158,6 @@ export interface ComfyTitlePopupBridge {
   requestSize(height: number): void
   onInstancePickerSnapshot(cb: (snapshot: PopupInstancePickerSnapshot) => void): () => void
   pickInstall(installationId: string): void
-  openInstallNewWindow(installationId: string): void
   openNewInstall(): void
   restartInstall(installationId: string, opts?: { confirmed?: boolean }): void
   getDownloadThumbnail(savePath: string): Promise<string | null>
@@ -454,9 +453,6 @@ const bridge: ComfyTitlePopupBridge = {
   },
   pickInstall: (installationId) => {
     ipcRenderer.send('comfy-titlepopup:pick-install', { installationId })
-  },
-  openInstallNewWindow: (installationId) => {
-    ipcRenderer.send('comfy-titlepopup:open-install-new-window', { installationId })
   },
   openNewInstall: () => {
     ipcRenderer.send('comfy-titlepopup:open-new-install')

@@ -164,7 +164,7 @@ describe('useInstanceNavState → decideNavigation (end to end)', () => {
       activeInstallationId: 'A'
     })
     const decision = decideNavigation(navState.navInput())
-    expect(decision).toEqual({ verb: 'open-new', primaryLabel: NAV_LABEL.start })
+    expect(decision).toEqual({ verb: 'start', primaryLabel: NAV_LABEL.start })
   })
 
   it('dashboard host picking a stopped cloud install → Open Cloud', () => {
@@ -186,7 +186,7 @@ describe('useInstanceNavState → decideNavigation (end to end)', () => {
       activeInstallationId: 'cloud'
     })
     const decision = decideNavigation(navState.navInput())
-    expect(decision).toEqual({ verb: 'open-new', primaryLabel: NAV_LABEL.start })
+    expect(decision).toEqual({ verb: 'start', primaryLabel: NAV_LABEL.start })
   })
 
   it('cloud host picking a stopped REMOTE connection → opens in a new window (not a dead no-op)', () => {
@@ -196,7 +196,7 @@ describe('useInstanceNavState → decideNavigation (end to end)', () => {
       activeInstallationId: 'cloud'
     })
     const decision = decideNavigation(navState.navInput())
-    expect(decision).toEqual({ verb: 'open-new', primaryLabel: NAV_LABEL.openCloud })
+    expect(decision).toEqual({ verb: 'start', primaryLabel: NAV_LABEL.openCloud })
   })
 
   it('instance host → stopped REMOTE routes identically to stopped Cloud (no in-place 3-way)', () => {
@@ -211,7 +211,7 @@ describe('useInstanceNavState → decideNavigation (end to end)', () => {
     const cloud = decideNavigation(
       useInstanceNavState(ref(installation('C', 'cloud')), sources).navInput()
     )
-    expect(remote).toEqual({ verb: 'open-new', primaryLabel: NAV_LABEL.openCloud })
+    expect(remote).toEqual({ verb: 'start', primaryLabel: NAV_LABEL.openCloud })
     expect(remote).toEqual(cloud)
   })
 })

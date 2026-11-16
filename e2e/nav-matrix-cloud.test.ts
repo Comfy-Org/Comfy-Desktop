@@ -18,7 +18,7 @@ async function cloudRunActions(): Promise<{ installationId?: string }[]> {
 }
 
 async function openCloudFromPicker(): Promise<void> {
-  await openPicker(ctx.app, ctx.panel, 'pickInstall')
+  await openPicker(ctx.app, ctx.panel)
   const popup = titlePopupPage(ctx.app)
   const cloudRow = byTestId(TID.pickerRow(CLOUD_ID))
   await popup.waitForVisible(cloudRow)

@@ -47,17 +47,17 @@ const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
 
   [cellKey('instance', 'dashboard', 'self'), dec('open-new', NAV_LABEL.openDashboard)],
   [cellKey('instance', 'instance', 'self'), dec('restart', NAV_LABEL.restart)],
-  [cellKey('instance', 'instance', 'stopped'), dec('open-new', NAV_LABEL.start)],
+  [cellKey('instance', 'instance', 'stopped'), dec('start', NAV_LABEL.start)],
   [cellKey('instance', 'instance', 'running-elsewhere'), dec('focus', NAV_LABEL.switch)],
-  [cellKey('instance', 'cloud', 'stopped'), dec('open-new', NAV_LABEL.openCloud)],
+  [cellKey('instance', 'cloud', 'stopped'), dec('start', NAV_LABEL.openCloud)],
   [cellKey('instance', 'cloud', 'running-elsewhere'), dec('focus', NAV_LABEL.switch)],
 
   [cellKey('cloud', 'dashboard', 'self'), dec('open-new', NAV_LABEL.openDashboard)],
-  [cellKey('cloud', 'instance', 'stopped'), dec('open-new', NAV_LABEL.start)],
+  [cellKey('cloud', 'instance', 'stopped'), dec('start', NAV_LABEL.start)],
   [cellKey('cloud', 'instance', 'running-elsewhere'), dec('focus', NAV_LABEL.switch)],
   [cellKey('cloud', 'cloud', 'self'), dec('restart', NAV_LABEL.restart)],
   [cellKey('cloud', 'cloud', 'running-elsewhere'), dec('focus', NAV_LABEL.switch)],
-  [cellKey('cloud', 'cloud', 'stopped'), dec('open-new', NAV_LABEL.openCloud)],
+  [cellKey('cloud', 'cloud', 'stopped'), dec('start', NAV_LABEL.openCloud)],
   [cellKey('cloud', 'new-instance', 'stopped'), dec('install-wizard', NAV_LABEL.newInstall)]
 ])
 

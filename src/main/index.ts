@@ -1074,15 +1074,20 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       })
     }
 
-    const openBuild = async (
-      installationId: string,
-      requesterEntryId: number | undefined,
-      onRoute?: (route: BuildOpenRoute) => void
-    ): Promise<void> => {
-      const requester =
-        requesterEntryId === undefined ? undefined : comfyWindows.get(requesterEntryId)
+    const recordBuildOpen = (installationId: string, route: BuildOpenRoute): void => {
+      recordIpcInvocation('open-build', { installationId, route: route.kind })
+      if (route.kind === 'start-from' || route.kind === 'start-from-home') {
+        mainTelemetry.emit('comfy.desktop.instance.opened_new_window', {
+          to_installation_id: installationId,
+          method: 'picker'
+        })
+      }
+    }
+
+    const openBuild = async (installationId: string, requesterEntryId: number): Promise<void> => {
+      const requester = comfyWindows.get(requesterEntryId)
       const route = routeBuildOpen(installationId, requester, _getLaunchingInstallationIds())
-      onRoute?.(route)
+      recordBuildOpen(installationId, route)
       switch (route.kind) {
         case 'ignore':
           return
@@ -1112,26 +1117,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         }
       }
     }
-
-    const openInstallInNewWindow = (
-      installationId: string,
-      requesterEntryId?: number
-    ): Promise<void> =>
-      openBuild(installationId, requesterEntryId, (route) => {
-        recordIpcInvocation('open-install-new-window', {
-          installationId,
-          focusedExisting: route.kind === 'focus'
-        })
-        if (route.kind === 'start-from' || route.kind === 'start-from-home') {
-          mainTelemetry.emit('comfy.desktop.instance.opened_new_window', {
-            to_installation_id: installationId,
-            method: 'picker'
-          })
-        }
-      }).catch((err) => console.error('openInstallInNewWindow failed:', err))
-
-    const pickInstallFromPicker = (installationId: string, parentEntryId: number): Promise<void> =>
-      openBuild(installationId, parentEntryId)
 
     registerTitlePopupIpc({
       openChooserHostWindow,
@@ -1447,8 +1432,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           return { ok: false, message: err instanceof Error ? err.message : 'Action failed.' }
         }
       },
-      pickInstallFromPicker,
-      openInstallInNewWindow,
+      pickInstallFromPicker: openBuild,
       restartInstallFromPicker: async (installationId, parentEntryId, opts) => {
         const parentEntry = comfyWindows.get(parentEntryId)
         if (!parentEntry || parentEntry.window.isDestroyed()) return

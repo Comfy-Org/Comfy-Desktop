@@ -34,16 +34,12 @@ describe('decideNavigation — totality', () => {
         }
   })
 
-  it('never puts a different build into a build or Cloud window', () => {
-    for (const currentView of ['instance', 'cloud'] as const)
-      for (const target of ['instance', 'cloud'] as const)
-        for (const targetRun of RUNS) {
-          if (targetRun === 'self') continue
-          const d = decideNavigation(input({ currentView, target, targetRun }))
-          expect(['open-new', 'focus'], `${currentView} → ${target} (${targetRun})`).toContain(
-            d.verb
-          )
-        }
+  it('asks main to start a stopped build the same way from every window, since main picks the window', () => {
+    for (const currentView of VIEWS)
+      for (const target of ['instance', 'cloud'] as const) {
+        const d = decideNavigation(input({ currentView, target, targetRun: 'stopped' }))
+        expect(d.verb, `${currentView} → ${target} (stopped)`).toBe('start')
+      }
   })
 
   it('never produces a dead no-op CTA for a reachable (host, install-target, run) combo', () => {
@@ -124,13 +120,13 @@ describe('decideNavigation — every build opens in its own window', () => {
 
   it('build window → stopped build B: Start opens B in its own window', () => {
     expect(decisionFor('instance', 'instance', 'stopped')).toEqual({
-      verb: 'open-new',
+      verb: 'start',
       primaryLabel: NAV_LABEL.start
     })
   })
   it('build window → closed Cloud: Open Cloud in its own window', () => {
     expect(decisionFor('instance', 'cloud', 'stopped')).toEqual({
-      verb: 'open-new',
+      verb: 'start',
       primaryLabel: NAV_LABEL.openCloud
     })
   })
@@ -153,13 +149,13 @@ describe('decideNavigation — every build opens in its own window', () => {
 
   it('Cloud window → stopped build: Start opens it in its own window', () => {
     expect(decisionFor('cloud', 'instance', 'stopped')).toEqual({
-      verb: 'open-new',
+      verb: 'start',
       primaryLabel: NAV_LABEL.start
     })
   })
   it('Cloud window → another closed Cloud or remote build: Open Cloud in its own window', () => {
     expect(decisionFor('cloud', 'cloud', 'stopped')).toEqual({
-      verb: 'open-new',
+      verb: 'start',
       primaryLabel: NAV_LABEL.openCloud
     })
   })

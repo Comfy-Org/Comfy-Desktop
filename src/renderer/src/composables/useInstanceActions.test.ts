@@ -7,7 +7,6 @@ function makeBridge() {
   return {
     pickInstall: vi.fn(),
     restartInstall: vi.fn(),
-    openInstallNewWindow: vi.fn(),
     openNewInstall: vi.fn()
   } satisfies InstanceActionsBridge
 }
@@ -42,7 +41,6 @@ describe('useInstanceActions.dispatch', () => {
     await useInstanceActions(deps).dispatch(decision({ verb: 'start' }), installation())
     expect(bridge.pickInstall).toHaveBeenCalledExactlyOnceWith('a')
     expect(deps.confirmLocalKill).not.toHaveBeenCalled()
-    expect(bridge.openInstallNewWindow).not.toHaveBeenCalled()
   })
 
   it('routes restart → restartInstall(confirmed:true) after a confirm', async () => {
@@ -60,14 +58,13 @@ describe('useInstanceActions.dispatch', () => {
     expect(bridge.restartInstall).not.toHaveBeenCalled()
   })
 
-  it('routes open-new → openInstallNewWindow', async () => {
+  it('routes open-new → pickInstall, the one channel main routes every build pick through', async () => {
     const bridge = makeBridge()
     await useInstanceActions(makeDeps(bridge)).dispatch(
       decision({ verb: 'open-new' }),
       installation()
     )
-    expect(bridge.openInstallNewWindow).toHaveBeenCalledExactlyOnceWith('a')
-    expect(bridge.pickInstall).not.toHaveBeenCalled()
+    expect(bridge.pickInstall).toHaveBeenCalledExactlyOnceWith('a')
   })
 
   it('routes focus → pickInstall (main short-circuits to focus when already up)', async () => {
@@ -90,7 +87,6 @@ describe('useInstanceActions.dispatch', () => {
     await useInstanceActions(makeDeps(bridge)).dispatch(decision({ verb: 'no-op' }), installation())
     expect(bridge.pickInstall).not.toHaveBeenCalled()
     expect(bridge.restartInstall).not.toHaveBeenCalled()
-    expect(bridge.openInstallNewWindow).not.toHaveBeenCalled()
   })
 
   it('no-ops when the bridge is undefined', async () => {

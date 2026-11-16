@@ -71,7 +71,6 @@ interface MockSnapshot {
 
 interface BridgeState {
   picks: string[]
-  newWindows: string[]
   restarts: { id: string; opts?: { confirmed?: boolean } }[]
   backgroundOps: { installationId: string; actionId: string }[]
   newInstallCount: number
@@ -83,7 +82,6 @@ interface BridgeState {
 function installMockBridge(): BridgeState {
   const state: BridgeState = {
     picks: [],
-    newWindows: [],
     restarts: [],
     backgroundOps: [],
     newInstallCount: 0,
@@ -94,9 +92,6 @@ function installMockBridge(): BridgeState {
   const bridge = {
     pickInstall: (id: string) => {
       state.picks.push(id)
-    },
-    openInstallNewWindow: (id: string) => {
-      state.newWindows.push(id)
     },
     restartInstall: (id: string, opts?: { confirmed?: boolean }) => {
       state.restarts.push({ id, opts })
@@ -574,8 +569,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       await primary.trigger('click')
       await flushPromises()
       expect(useDialogs().state.open).toBe(false)
-      expect(bridge.newWindows).toEqual(['b'])
-      expect(bridge.picks).toEqual([])
+      expect(bridge.picks).toEqual(['b'])
       expect(bridge.restarts).toEqual([])
     })
 
