@@ -333,10 +333,7 @@ async function moveSessionToWorkspaceOf(build: Installation): Promise<void> {
   const dashboardWorkspaceId = installationWorkspaceId(build)
   if (!authStore.sessionWorkspaceFor(dashboardWorkspaceId)) await authStore.fetchWorkspaces()
   const workspaceId = authStore.sessionWorkspaceFor(dashboardWorkspaceId)
-  if (!workspaceId) {
-    if (authStore.status.workspaceId) throw new Error("the build's workspace is unknown")
-    return
-  }
+  if (!workspaceId) throw new Error("the build's workspace is unknown")
   if (authStore.status.workspaceId === workspaceId) return
   await authStore.switchWorkspace(workspaceId)
   if (authStore.status.workspaceId !== workspaceId) throw new Error('workspace switch failed')

@@ -21,6 +21,7 @@ const alert = vi.fn()
 const confirm = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
 const switchWorkspace = vi.fn(async (workspaceId: string) => ({ signedIn: true, workspaceId }))
+const listWorkspaces = vi.fn()
 const MASONRY_GAP = 14
 const FOUR_COLUMN_PAGE_WIDTH = 1100
 const TALL_PAGE_HEIGHT = 3000
@@ -153,6 +154,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
   listLocalAssets.mockResolvedValue([])
+  listWorkspaces.mockResolvedValue([
+    { id: 'me', name: 'Personal Workspace', type: 'personal' },
+    { id: 'team-b', name: 'Team B', type: 'team' }
+  ])
   ;(window as unknown as { api: unknown }).api = {
     listAssets,
     listLocalAssets,
@@ -170,7 +175,7 @@ beforeEach(() => {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       signIn,
       switchWorkspace,
-      listWorkspaces: vi.fn().mockResolvedValue([{ id: 'team-b', name: 'Team B', type: 'team' }]),
+      listWorkspaces,
       onAuthChanged: vi.fn(() => () => {})
     }
   }
@@ -602,6 +607,7 @@ describe('AssetsView', () => {
 
   it("says the load failed instead of showing another workspace's files when the personal workspace is unknown", async () => {
     listAssets.mockResolvedValue([asset('t1', 'team.png', 'image')])
+    listWorkspaces.mockResolvedValue([{ id: 'team-b', name: 'Team B', type: 'team' }])
     const wrapper = await mountAssets([], { builds: [cloudBuild('cloud', 'Comfy Cloud')] })
     useAuthStore().status = { signedIn: true, workspaceId: 'team-b', workspaceType: 'team' }
     await flushPromises()
@@ -609,6 +615,17 @@ describe('AssetsView', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
+    expect(listAssets).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain("Couldn't load assets")
+  })
+
+  it('does not list Cloud files with a session tied to no known workspace', async () => {
+    listAssets.mockResolvedValue([asset('x1', 'unknown.png', 'image')])
+    listWorkspaces.mockResolvedValue([{ id: 'team-b', name: 'Team B', type: 'team' }])
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud', 'Comfy Cloud')] })
+    useAuthStore().status = { signedIn: true }
+    await flushPromises()
+
     expect(listAssets).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain("Couldn't load assets")
   })
