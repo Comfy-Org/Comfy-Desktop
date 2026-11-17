@@ -182,6 +182,7 @@ export interface ComfyTitlePopupBridge {
   globalSettingsDownloadUpdate(): Promise<void>
   globalSettingsInstallUpdate(): void
   globalSettingsSetLastCheckedAt(value: number): void
+  globalSettingsRemoveAppData(options: { deleteInstances: boolean; deleteModels: boolean }): void
 
   pickerSettingsGetDetailSections(installationId: string): Promise<Record<string, unknown>[]>
   pickerSettingsGetDiskSpace(path: string): Promise<{ total: number; free: number }>
@@ -530,6 +531,9 @@ const bridge: ComfyTitlePopupBridge = {
   },
   globalSettingsSetLastCheckedAt: (value) => {
     ipcRenderer.send('comfy-titlepopup:global-settings-set-last-checked', { value })
+  },
+  globalSettingsRemoveAppData: (options) => {
+    ipcRenderer.send('comfy-titlepopup:global-settings-remove-app-data', options)
   },
   pickerSettingsGetDetailSections: (installationId) =>
     ipcRenderer.invoke(CH.getDetailSections, { installationId }),

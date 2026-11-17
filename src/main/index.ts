@@ -1,3 +1,4 @@
+import './lib/uninstallCleanupEntry'
 import {
   app,
   Menu,
@@ -27,6 +28,7 @@ import * as settings from './settings'
 import { installAppMenu } from './menu'
 import * as i18n from './lib/i18n'
 import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
+import { relaunchIntoUninstallCleanup } from './lib/uninstallCleanup'
 import { saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
@@ -1110,6 +1112,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       confirmAndCloseAllHostWindows: (parentWindow) =>
         confirmAndCloseAllHostWindows(parentWindow, quitApp),
       confirmAndCloseHostWindow,
+      removeAppDataAndQuit: (options) => relaunchIntoUninstallCleanup(options, quitApp),
       setActivePanel,
       triggerOpenFeedback,
       resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),

@@ -954,3 +954,52 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
     expect(snapshotWithConsent(false).telemetryGranted).toBe(false)
   })
 })
+
+describe('global settings remove app data', () => {
+  type IpcListener = (event: Electron.IpcMainEvent, payload: unknown) => void
+
+  const CHANNEL = 'comfy-titlepopup:global-settings-remove-app-data'
+  const POPUP_WEB_CONTENTS_ID = 406
+  const removeAppDataAndQuit = vi.fn()
+  let removeAppData: IpcListener
+
+  beforeAll(async () => {
+    const { ipcMain } = await import('electron')
+    registerTitlePopupIpc({ removeAppDataAndQuit } as unknown as TitlePopupHostBindings)
+    const calls = vi.mocked(ipcMain.on).mock.calls.filter(([channel]) => channel === CHANNEL)
+    const call = calls.at(-1)
+    if (!call) throw new Error(`IPC listener not registered: ${CHANNEL}`)
+    removeAppData = call[1] as IpcListener
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    _test_deleteTitlePopupEntry(POPUP_WEB_CONTENTS_ID)
+  })
+
+  function openPopup(kind: string): Electron.IpcMainEvent {
+    _test_setTitlePopupEntry(POPUP_WEB_CONTENTS_ID, { kind } as unknown as TitlePopupEntry)
+    return { sender: { id: POPUP_WEB_CONTENTS_ID } } as Electron.IpcMainEvent
+  }
+
+  it.each(['darwin', 'linux'] as const)('relaunches into the cleanup on %s', (platform) => {
+    vi.stubGlobal('process', { ...process, platform })
+    removeAppData(openPopup('global-settings'), { deleteInstances: true, deleteModels: 'yes' })
+    expect(removeAppDataAndQuit).toHaveBeenCalledExactlyOnceWith({
+      deleteInstances: true,
+      deleteModels: false
+    })
+  })
+
+  it('ignores the request on Windows, where the uninstaller does the cleanup', () => {
+    vi.stubGlobal('process', { ...process, platform: 'win32' })
+    removeAppData(openPopup('global-settings'), { deleteInstances: true, deleteModels: true })
+    expect(removeAppDataAndQuit).not.toHaveBeenCalled()
+  })
+
+  it('ignores a request from any popup other than global settings', () => {
+    vi.stubGlobal('process', { ...process, platform: 'darwin' })
+    removeAppData(openPopup('menu'), { deleteInstances: true, deleteModels: true })
+    expect(removeAppDataAndQuit).not.toHaveBeenCalled()
+  })
+})
