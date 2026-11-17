@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { until } from '@vueuse/core'
 import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
 import { buildProgressOf, useBuildProgress } from '../../composables/useBuildProgress'
+import { useCanPromoteToWorkspace } from '../../composables/useCanPromoteToWorkspace'
 import { useInstallContextMenu } from '../../composables/useInstallContextMenu'
 import { useModal } from '../../composables/useModal'
 import { useQuickUpdate } from '../../composables/useQuickUpdate'
@@ -26,6 +27,7 @@ export interface BuildMenuEntry {
   danger?: boolean
   disabled?: boolean
   title?: string
+  hint?: string
 }
 
 const BUILD_MENU_HOST: InjectionKey<BuildMenuHost> = Symbol('buildMenuHost')
@@ -63,6 +65,7 @@ export function useBuildMenu(build: () => Installation) {
       options ? openInstallManager(inst, options) : void host.openDetails(inst),
     onShowProgress: (opts) => void host.showProgress(opts),
     onUpdate: runQuickUpdate,
+    canPromoteToWorkspace: useCanPromoteToWorkspace(),
     autoStart: useAutoStartBuild()
   })
 
@@ -95,12 +98,13 @@ export function useBuildMenu(build: () => Installation) {
 
     const existing = installMenu
       .getMenuItems(inst)
-      .map(({ id, label, icon, disabled, title, style, separator }): BuildMenuEntry => ({
+      .map(({ id, label, icon, disabled, title, hint, style, separator }): BuildMenuEntry => ({
         id,
         label,
         icon,
         disabled,
         title,
+        hint,
         separator,
         danger: style === 'danger'
       }))
