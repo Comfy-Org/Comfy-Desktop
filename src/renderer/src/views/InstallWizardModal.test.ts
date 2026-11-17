@@ -153,11 +153,31 @@ function chosenStartFrom(wrapper: ReturnType<typeof mountModal>): string | undef
     ?.text()
 }
 
+function existingSelect(wrapper: ReturnType<typeof mountModal>) {
+  const select = wrapper
+    .findAllComponents(BaseSelect)
+    .find((candidate) => candidate.vm.$attrs['data-testid'] === 'existing-comfy-tabs')
+  if (!select) throw new Error('the Where it is dropdown is missing')
+  return select
+}
+
 function existingComfyCards(wrapper: ReturnType<typeof mountModal>): string[] {
-  return wrapper
-    .get('[data-testid="existing-comfy-tabs"]')
-    .findAll('.setup-option__label')
-    .map((label) => label.text())
+  return (existingSelect(wrapper).props('options') as BaseSelectOption[]).map(
+    (option) => option.label
+  )
+}
+
+function existingOption(wrapper: ReturnType<typeof mountModal>, testId: string): BaseSelectOption {
+  const option = (existingSelect(wrapper).props('options') as BaseSelectOption[]).find(
+    (candidate) => candidate.testId === testId
+  )
+  if (!option) throw new Error(`the Where it is dropdown has no ${testId}`)
+  return option
+}
+
+async function pickExisting(wrapper: ReturnType<typeof mountModal>, testId: string): Promise<void> {
+  existingSelect(wrapper).vm.$emit('update:modelValue', existingOption(wrapper, testId).value)
+  await flushPromises()
 }
 
 function startFromIsHeld(wrapper: ReturnType<typeof mountModal>): boolean {
@@ -765,11 +785,11 @@ describe('InstallWizardModal workspace Builds', () => {
     const wrapper = await openWorkspaceModal()
 
     await startFrom(wrapper, ALREADY_HAVE)
-    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
+    await pickExisting(wrapper, 'install-source-remote')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="install-source-remote"]').attributes('aria-checked')).toBe(
-      'true'
+    expect(existingSelect(wrapper).props('modelValue')).toBe(
+      existingOption(wrapper, 'install-source-remote').value
     )
     expect(wrapper.find('[data-testid="install-source-tabs"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
@@ -810,7 +830,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await flushPromises()
 
     await startFrom(wrapper, ALREADY_HAVE)
-    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
+    await pickExisting(wrapper, 'install-source-remote')
     await flushPromises()
     await startFrom(wrapper, NEW_INSTALL)
 
@@ -1651,7 +1671,7 @@ describe('InstallWizardModal onboarding->install handoff telemetry (#1224)', () 
     await showChangeSetup(wrapper)
 
     await startFrom(wrapper, ALREADY_HAVE)
-    await wrapper.get('[data-testid="existing-comfy-snapshot"]').trigger('click')
+    await pickExisting(wrapper, 'existing-comfy-snapshot')
     await flushPromises()
     const createBuild = wrapper.get('[data-testid="config-use-existing"]')
     expect(createBuild.text()).toBe('Create build')
@@ -1752,7 +1772,7 @@ describe('InstallWizardModal hardware warning', () => {
     await startFrom(wrapper, ALREADY_HAVE)
     expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
+    await pickExisting(wrapper, 'install-source-remote')
     await flushPromises()
     expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(false)
   })
@@ -1795,7 +1815,7 @@ describe('InstallWizardModal hardware warning', () => {
 
     await showChangeSetup(wrapper)
     await startFrom(wrapper, ALREADY_HAVE)
-    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
+    await pickExisting(wrapper, 'install-source-remote')
     await flushPromises()
     const connect = wrapper.get('[data-testid="config-use-existing"]')
     expect(connect.text()).toBe('Connect')
@@ -1823,7 +1843,7 @@ describe('InstallWizardModal hardware warning', () => {
     await showChangeSetup(wrapper)
 
     await startFrom(wrapper, ALREADY_HAVE)
-    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
+    await pickExisting(wrapper, 'install-source-remote')
     await flushPromises()
     await startFrom(wrapper, NEW_INSTALL)
 
@@ -1940,7 +1960,7 @@ describe('InstallWizardModal Change setup', () => {
     const wrapper = await openChangeSetup()
 
     await startFrom(wrapper, ALREADY_HAVE)
-    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
+    await pickExisting(wrapper, 'install-source-remote')
     await flushPromises()
     await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
     await flushPromises()
@@ -1989,7 +2009,7 @@ describe('InstallWizardModal Change setup', () => {
     const loadsBefore = (window.api.getFieldOptions as ReturnType<typeof vi.fn>).mock.calls.length
 
     await startFrom(wrapper, ALREADY_HAVE)
-    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
+    await pickExisting(wrapper, 'install-source-remote')
     await flushPromises()
     await startFrom(wrapper, NEW_INSTALL)
 
@@ -2111,7 +2131,7 @@ describe('InstallWizardModal Change setup', () => {
 
     await startFrom(wrapper, ALREADY_HAVE)
     expect(wrapper.find('.config-error').exists()).toBe(false)
-    await wrapper.get('[data-testid="existing-comfy-snapshot"]').trigger('click')
+    await pickExisting(wrapper, 'existing-comfy-snapshot')
     await flushPromises()
     expect(wrapper.find('.config-error').exists()).toBe(false)
 
@@ -2131,9 +2151,9 @@ describe('InstallWizardModal Change setup', () => {
     await startFrom(wrapper, ALREADY_HAVE)
     await wrapper.get('.track-location .config-path-browse').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="existing-comfy-snapshot"]').trigger('click')
+    await pickExisting(wrapper, 'existing-comfy-snapshot')
     await flushPromises()
-    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
+    await pickExisting(wrapper, 'install-source-remote')
     await flushPromises()
     await startFrom(wrapper, NEW_INSTALL)
     await startFrom(wrapper, ALREADY_HAVE)
@@ -2157,14 +2177,14 @@ describe('InstallWizardModal Change setup', () => {
 
     await startFrom(wrapper, ALREADY_HAVE)
     expect(dropIsHeldBack()).toBe(false)
-    await wrapper.get('[data-testid="existing-comfy-snapshot"]').trigger('click')
+    await pickExisting(wrapper, 'existing-comfy-snapshot')
     await flushPromises()
     expect(dropIsHeldBack()).toBe(true)
 
-    await wrapper.get('[data-testid="existing-comfy-folder"]').trigger('click')
+    await pickExisting(wrapper, 'existing-comfy-folder')
     await flushPromises()
     expect(dropIsHeldBack()).toBe(false)
-    await wrapper.get('[data-testid="existing-comfy-snapshot"]').trigger('click')
+    await pickExisting(wrapper, 'existing-comfy-snapshot')
     await flushPromises()
     expect(dropIsHeldBack()).toBe(true)
   })
@@ -2196,7 +2216,7 @@ describe('InstallWizardModal Change setup', () => {
     )
     const wrapper = await openChangeSetup()
     await startFrom(wrapper, ALREADY_HAVE)
-    await wrapper.get('[data-testid="existing-comfy-snapshot"]').trigger('click')
+    await pickExisting(wrapper, 'existing-comfy-snapshot')
     await flushPromises()
     await wrapper.get('.load-snapshot-tertiary').trigger('click')
     await flushPromises()
@@ -2204,12 +2224,10 @@ describe('InstallWizardModal Change setup', () => {
     await flushPromises()
 
     const discard = wrapper.get('[data-testid="config-discard-changes"]')
-    const folderCard = wrapper.get('[data-testid="existing-comfy-folder"]')
     expect(discard.attributes('disabled')).toBeDefined()
-    expect(folderCard.attributes('disabled')).toBeDefined()
+    expect(existingSelect(wrapper).props('disabled')).toBe(true)
     expect(startFromIsHeld(wrapper)).toBe(true)
     await discard.trigger('click')
-    await folderCard.trigger('click')
     await startFrom(wrapper, NEW_INSTALL)
 
     finishCreating({ ok: true, entry: { id: 'inst-1', name: 'Studio' } })
@@ -2495,12 +2513,11 @@ describe('InstallWizardModal Change setup', () => {
       'On a server',
       'In a snapshot file'
     ])
-    expect(wrapper.get('[data-testid="existing-comfy-folder"]').attributes('aria-checked')).toBe(
-      'true'
-    )
+    expect(existingSelect(wrapper).props('modelValue')).toBe('track')
     const form = wrapper.get('[data-testid="config-change-form"]')
     expect(startFromLabels(wrapper)).toEqual([NEW_INSTALL, ALREADY_HAVE])
     expect(form.findAll('.config-label').map((label) => label.text())).toEqual([
+      'How to start',
       'Where it is',
       'Install location',
       'Name',
@@ -2509,7 +2526,7 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.get('[data-testid="config-use-existing"]').text()).toBe('Add build')
     expect(wrapper.find('[data-testid="config-save-changes"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="existing-comfy-snapshot"]').trigger('click')
+    await pickExisting(wrapper, 'existing-comfy-snapshot')
     await flushPromises()
 
     expect(form.find('.load-snapshot-dropzone').exists()).toBe(true)

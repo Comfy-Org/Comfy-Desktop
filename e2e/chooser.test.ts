@@ -7,9 +7,11 @@ import {
   expectNewBuildModalOpen,
   openNewBuildChangeSetup,
   pickFromTitleMenu,
+  pickFromSetupDropdown,
   setupDropdownOffers,
   setupDropdownValue,
   SOURCE_DROPDOWN,
+  WHERE_IT_IS_DROPDOWN,
   openDesktopSettings,
   showBuildsPage
 } from './support/chooserHelpers'
@@ -121,7 +123,13 @@ test('Change setup asks first for a new install or a ComfyUI already there, and 
   expect(await ctx.panel.exists('[data-testid="config-save-changes"]')).toBe(false)
   expect(await ctx.panel.textOf('[data-testid="config-use-existing"]')).toBe('Add build')
 
-  expect(await ctx.panel.click('[data-testid="existing-comfy-snapshot"]')).toBe(true)
+  expect(
+    await pickFromSetupDropdown(
+      ctx.panel,
+      WHERE_IT_IS_DROPDOWN,
+      '[data-testid="existing-comfy-snapshot"]'
+    )
+  ).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="existing-comfy-snapshot-form"]')
   expect(await ctx.panel.exists('[data-testid="existing-comfy-folder-form"]')).toBe(false)
   expect(await ctx.panel.textOf('[data-testid="config-use-existing"]')).toBe('Create build')

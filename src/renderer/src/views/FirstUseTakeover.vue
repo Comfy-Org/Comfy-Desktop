@@ -429,11 +429,11 @@ defineExpose({ open, resetContinue })
             aria-hidden="true"
           />
           <BuildDeviceArt
-            class="relative h-[104px] w-[162px] shrink-0"
+            class="relative h-[80px] w-[124px] shrink-0"
             :kind="deviceKindForPlatform(platform)"
             glow="#46464A"
           />
-          <div class="relative ml-[33px] flex min-w-0 flex-1 flex-col">
+          <div class="relative ml-6 flex min-w-0 flex-1 flex-col">
             <span class="flex h-[15px] items-center gap-1.5 text-xs/[15px] text-muted-foreground">
               <Check :size="11" :stroke-width="2" aria-hidden="true" />
               {{ t('setup.detected') }}

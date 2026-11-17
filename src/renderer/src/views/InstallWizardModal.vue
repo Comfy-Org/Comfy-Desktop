@@ -20,6 +20,7 @@ import {
   Globe,
   HardDrive,
   MapPin,
+  Split,
   Monitor,
   Package,
   RefreshCw,
@@ -70,7 +71,7 @@ import InstallNameInput from '../components/InstallNameInput.vue'
 import TrackBuildForm from '../components/TrackBuildForm.vue'
 import LoadSnapshotForm from '../components/LoadSnapshotForm.vue'
 import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
-import SetupOptionCards, { type SetupOptionCard } from '../components/SetupOptionCards.vue'
+import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
 import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
@@ -1593,6 +1594,8 @@ function toCardSelectOption(card: SetupOptionCard): BaseSelectOption {
   }
 }
 
+const existingSelectOptions = computed(() => existingCards.value.map(toCardSelectOption))
+
 function hardwareSelectOptions(field: SourceField): BaseSelectOption[] {
   const options = sortedCardOptions(shownOptions(field) ?? [])
   const cards = field.id === HARDWARE_FIELD_ID ? toHardwareCards(options) : toOptionCards(options)
@@ -1781,11 +1784,11 @@ defineExpose({ open })
       </div>
 
       <div
-        class="config-machine relative mt-3 flex items-center gap-7 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
+        class="config-machine relative mt-3 flex items-center gap-5 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
         :class="machineBlocked && 'config-machine--unsupported'"
       >
         <SetupMachineIllustration
-          class="h-[88px] w-[136px] flex-none max-[640px]:hidden"
+          class="h-[68px] w-[104px] flex-none max-[640px]:hidden"
           :os="platform"
           :bad="machineBlocked"
         />
@@ -1903,9 +1906,10 @@ defineExpose({ open })
             />
           </div>
           <Button
-            variant="textonly"
+            size="sm"
+            variant="secondary"
             type="button"
-            class="config-path-browse flex-none px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
+            class="config-path-browse flex-none rounded-lg bg-white/10 hover:bg-white/14"
             data-testid="config-summary-browse"
             @click="handleBrowse"
           >
@@ -1927,8 +1931,15 @@ defineExpose({ open })
       class="config-change-form mt-3 flex flex-col [&_.setup-form-row]:py-1.5"
       data-testid="config-change-form"
     >
-      <div v-if="existingCards.length > 0" class="config-start-from flex pt-1 pb-2">
+      <SetupFormRow
+        v-if="existingCards.length > 0"
+        class="config-start-from"
+        :label="$t('newInstall.startFrom')"
+        :icon="Split"
+        control-height="centered"
+      >
         <SegmentedControl
+          class="self-start"
           data-testid="config-start-from"
           :model-value="startFrom"
           :options="startFromOptions"
@@ -1936,7 +1947,7 @@ defineExpose({ open })
           :disabled="startFromLocked"
           @update:model-value="selectStartFrom"
         />
-      </div>
+      </SetupFormRow>
 
       <SetupFormRow
         v-if="!buildImportChoice && (cameFromSetup || startFrom === 'existing')"
@@ -1982,16 +1993,15 @@ defineExpose({ open })
         class="config-existing-comfy"
         :label="$t('newInstall.whereItIs')"
         :icon="MapPin"
-        control-height="cards"
       >
-        <SetupOptionCards
+        <BaseSelect
+          class="config-existing-select text-[13px]"
           data-testid="existing-comfy-tabs"
-          layout="grid"
-          activation="manual"
+          :model-value="selectedExistingCard ?? ''"
+          :options="existingSelectOptions"
+          :disabled="choiceLocked"
           :aria-label="$t('newInstall.whereItIs')"
-          :options="existingCards"
-          :selected-value="selectedExistingCard"
-          @select="selectExistingCard"
+          @update:model-value="selectExistingCard"
         />
       </SetupFormRow>
 

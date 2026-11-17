@@ -186,6 +186,7 @@ export async function dismissOverlay(panel: WebContentsPage): Promise<void> {
 
 export const SOURCE_DROPDOWN = '[data-testid="install-source-tabs"]'
 export const HARDWARE_DROPDOWN = '[data-testid="config-select-variant"]'
+export const WHERE_IT_IS_DROPDOWN = '[data-testid="existing-comfy-tabs"]'
 
 export async function openSetupDropdown(panel: WebContentsPage, trigger: string): Promise<void> {
   await panel.waitForVisible(`${trigger}:not([disabled])`, { timeout: 15_000 })

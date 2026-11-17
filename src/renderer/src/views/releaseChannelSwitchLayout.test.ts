@@ -291,6 +291,19 @@ describe('switching where Change setup gets ComfyUI', () => {
     await nextFrame()
   }
 
+  async function pickWhereItIs(testId: string): Promise<void> {
+    only('[data-testid="existing-comfy-tabs"]').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+    )
+    await flushPromises()
+    await nextFrame()
+    only(`[data-testid="${testId}"]`).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    )
+    await flushPromises()
+    await nextFrame()
+  }
+
   it.each([
     [1100, 860],
     [800, 563]
@@ -312,7 +325,7 @@ describe('switching where Change setup gets ComfyUI', () => {
       expectFooterInWindow(height)
       expect(onScreen('[data-testid="existing-comfy-folder-form"]')).toHaveLength(1)
 
-      await pick('existing-comfy-snapshot')
+      await pickWhereItIs('existing-comfy-snapshot')
       expect(navigationLayout()).toEqual(settled)
       only('.load-snapshot-tertiary').click()
       await flushPromises()
@@ -320,7 +333,7 @@ describe('switching where Change setup gets ComfyUI', () => {
       expect(navigationLayout()).toEqual(settled)
       expectFooterInWindow(height)
 
-      await pick('install-source-remote')
+      await pickWhereItIs('install-source-remote')
       expect(navigationLayout()).toEqual(settled)
       expectFooterInWindow(height)
       expect(onScreen('#sf-url')).toHaveLength(1)
@@ -370,6 +383,7 @@ describe('switching the release channel in Change setup', () => {
     const settled = formLayout()
     expect(settled.map((box) => box.what)).toEqual([
       'dialog',
+      'How to start',
       'Source',
       'Release',
       'Location',
