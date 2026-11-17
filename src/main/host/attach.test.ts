@@ -87,8 +87,6 @@ beforeEach(() => {
   mocks.stopRunning.mockClear()
   mocks.keepComfyRunning = undefined
   setAttachFactories({
-    comfyFailRetryTimerCancels: new Map(),
-    comfyReloads: new Map(),
     comfyZoomResets: new Map(),
     relaunchStates: new Map(),
     computeInstallUpdateAvailable: async () => ({ available: false })
