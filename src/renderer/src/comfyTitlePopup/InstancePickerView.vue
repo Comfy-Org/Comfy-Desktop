@@ -3,7 +3,6 @@ import Button from '@comfyorg/design-system/button/Button'
 import { computed, provide, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Search, X } from '@lucide/vue'
-import BaseInput from '../components/ui/BaseInput.vue'
 import { useInstallList } from '../composables/useInstallList'
 import { useDialogs } from '../composables/useDialogs'
 import { useInstanceActions } from '../composables/useInstanceActions'
@@ -436,21 +435,29 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
         >
           <div class="picker-list-section -mx-2 flex min-h-0 flex-auto flex-col overflow-hidden">
             <div
-              class="picker-list-section-title mb-1.5 flex flex-none items-center gap-1 px-4 pt-2 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+              class="picker-list-section-title mb-1.5 flex flex-none items-center gap-1 pt-2 pr-4 pl-[19px] text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
             >
               {{ $t('instancePicker.instances')
               }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" />
             </div>
 
-            <div class="picker-search mb-2 px-2">
-              <BaseInput
-                v-model="searchQuery"
-                class="picker-search-input h-8 [&_input]:text-[13px]"
-                :placeholder="$t('instancePicker.searchPlaceholder')"
-                :aria-label="$t('instancePicker.searchPlaceholder')"
+            <div class="picker-search mb-1 px-2">
+              <label
+                class="picker-search-field grid cursor-text grid-cols-[24px_minmax(0,1fr)] items-center gap-2 rounded-lg border border-solid border-transparent bg-[var(--picker-search-bg)] py-2 pr-2 pl-2.5 transition-[background-color] duration-[120ms] ease-[ease] [--picker-search-bg:color-mix(in_oklch,var(--foreground)_9%,var(--modal-surface-bg))] hover:bg-[var(--picker-row-hover)] focus-within:bg-[var(--picker-row-hover)]"
               >
-                <template #leading><Search :size="14" class="picker-search-icon" /></template>
-              </BaseInput>
+                <span
+                  class="picker-search-icon flex size-6 items-center justify-center text-muted-foreground"
+                  aria-hidden="true"
+                  ><Search :size="16"
+                /></span>
+                <input
+                  v-model="searchQuery"
+                  type="text"
+                  class="picker-search-input m-0 min-w-0 border-0 bg-transparent p-0 text-[14px] leading-5 text-foreground outline-none placeholder:text-muted-foreground"
+                  :placeholder="$t('instancePicker.searchPlaceholder')"
+                  :aria-label="$t('instancePicker.searchPlaceholder')"
+                />
+              </label>
             </div>
 
             <TransitionGroup
