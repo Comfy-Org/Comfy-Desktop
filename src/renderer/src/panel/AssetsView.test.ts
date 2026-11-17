@@ -843,6 +843,22 @@ describe('AssetsView', () => {
       expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
     })
 
+    it('drops the note when Refresh finds the file', async () => {
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(true)
+      listAssets.mockResolvedValue([
+        asset('other', 'other.png', 'image'),
+        asset('new', 'cutout.png', 'image')
+      ])
+
+      await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+      await flushPromises()
+
+      expect(listAssets).toHaveBeenLastCalledWith('cloud', 'cutout.png')
+      expect(assetNames(wrapper)).toContain('cutout.png')
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+    })
+
     it('shows no note when the file opened', async () => {
       await mountWithFocus([asset('new', 'cutout.png', 'image')])
       expect(viewerTitle()).toBe('cutout.png')

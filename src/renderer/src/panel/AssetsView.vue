@@ -448,6 +448,7 @@ async function loadAssets(userAsked = false): Promise<void> {
     if (current !== requestId) return
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
     truncated.value = listed.truncated
+    if (assets.value.some((asset) => asset.name === notFoundName.value)) notFoundName.value = null
     openPendingFocus(settled)
   } catch {
     if (current !== requestId) return
