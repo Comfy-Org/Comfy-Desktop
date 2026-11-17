@@ -6,18 +6,14 @@ import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useAuthStore } from '../stores/authStore'
-import { useCanPromoteToWorkspace } from '../composables/useCanPromoteToWorkspace'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
-import { useAutoStartBuild } from '../composables/useAutoStartBuild'
 import { useInstallList } from '../composables/useInstallList'
 import { useInstallingBuilds } from '../composables/useBuildProgress'
-import { useQuickUpdate } from '../composables/useQuickUpdate'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { Plus, RefreshCw, Search } from '@lucide/vue'
-import ContextMenu from '../components/ContextMenu.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
@@ -168,32 +164,10 @@ async function refreshWorkspace(): Promise<void> {
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
 
-const canPromoteToWorkspace = useCanPromoteToWorkspace()
-
-const { runQuickUpdate } = useQuickUpdate({
-  onShowProgress: (showOpts) => emit('show-progress', showOpts),
-  onUnavailable: (inst) => openInstallManager(inst, { initialTab: 'update' })
-})
-
-const {
-  ctxMenu,
-  ctxMenuItems,
-  openCardMenu,
-  openKebabMenu,
-  handleCtxMenuSelect,
-  closeMenu,
-  triggerAction,
-  viewError,
-  viewDanger,
-  isStoppedActionGated,
-  isPromotingToWorkspace
-} = useInstallContextMenu({
+const { viewError, viewDanger } = useInstallContextMenu({
   onManage: (inst, options) =>
     options ? openInstallManager(inst, options) : emit('open-details', inst),
-  onShowProgress: (showOpts) => emit('show-progress', showOpts),
-  onUpdate: runQuickUpdate,
-  canPromoteToWorkspace,
-  autoStart: useAutoStartBuild()
+  onShowProgress: (showOpts) => emit('show-progress', showOpts)
 })
 
 async function pickInstall(inst: Installation): Promise<void> {
@@ -255,10 +229,6 @@ function handleNewInstallClick(): void {
 const gridHandlers = {
   pick: pickInstall,
   'open-details': (inst: Installation) => emit('open-details', inst),
-  'open-card-menu': openCardMenu,
-  'open-kebab-menu': openKebabMenu,
-  'trigger-action': (action: 'update' | 'migrate', inst: Installation) =>
-    triggerAction(action, inst),
   'view-error': viewError,
   'view-danger': viewDanger,
   'why-cloud': openWhyCloud
@@ -431,20 +401,9 @@ const gridHandlers = {
         :installations="scopedVisibleInstalls"
         :show-free-runs-pill="showCloudFreeRunsPill"
         :show-why-cloud="showWhyCloud"
-        :is-stopped-action-gated="isStoppedActionGated"
-        :is-promoting-to-workspace="isPromotingToWorkspace"
         v-on="gridHandlers"
       />
     </div>
-
-    <ContextMenu
-      :open="ctxMenu.open"
-      :x="ctxMenu.x"
-      :y="ctxMenu.y"
-      :items="ctxMenuItems"
-      @close="closeMenu"
-      @select="handleCtxMenuSelect"
-    />
 
     <WhyTryCloudModal
       v-if="whyCloudOpen"

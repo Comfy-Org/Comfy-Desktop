@@ -5,7 +5,10 @@ import { until } from '@vueuse/core'
 import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
 import { buildProgressOf, useBuildProgress } from '../../composables/useBuildProgress'
 import { useCanPromoteToWorkspace } from '../../composables/useCanPromoteToWorkspace'
-import { useInstallContextMenu } from '../../composables/useInstallContextMenu'
+import {
+  isPromotingToWorkspace,
+  useInstallContextMenu
+} from '../../composables/useInstallContextMenu'
 import { useModal } from '../../composables/useModal'
 import { useQuickUpdate } from '../../composables/useQuickUpdate'
 import { openInstallManager } from '../../lib/openInstallManager'
@@ -69,6 +72,14 @@ export function useBuildMenu(build: () => Installation) {
     canPromoteToWorkspace: useCanPromoteToWorkspace(),
     autoStart: useAutoStartBuild()
   })
+  const status = computed(() => homeBuildStatus(build(), sessionStore))
+  const canLaunch = computed(
+    () =>
+      !install.progress.value &&
+      !isPromotingToWorkspace(build()) &&
+      !isBuildOpenBlocked(status.value) &&
+      status.value !== 'starting'
+  )
 
   function isLocal(inst: Installation): boolean {
     return inst.sourceCategory !== 'cloud'
@@ -77,8 +88,7 @@ export function useBuildMenu(build: () => Installation) {
   const items = computed<BuildMenuEntry[]>(() => {
     const inst = build()
     const progress = buildProgressOf(progressStore, inst.id)
-    const status = homeBuildStatus(inst, sessionStore)
-    const running = isLocal(inst) && status === 'running'
+    const running = canLaunch.value && isLocal(inst) && status.value === 'running'
     const items: BuildMenuEntry[] = []
 
     const now: BuildMenuEntry[] = []
@@ -93,7 +103,7 @@ export function useBuildMenu(build: () => Installation) {
         { id: 'restart', label: t('actions.restart'), icon: RotateCw },
         { id: 'stop', label: t('actions.stop'), icon: CircleStop }
       )
-    } else if (!isBuildOpenBlocked(status) && status !== 'starting') {
+    } else if (canLaunch.value) {
       now.push({ id: 'launch', label: t('actions.launch'), icon: Play })
     }
     startsGroup(now, items)
@@ -155,7 +165,8 @@ export function useBuildMenu(build: () => Installation) {
     const inst = build()
     switch (id) {
       case 'launch':
-        return host.launch(inst)
+        if (canLaunch.value) return host.launch(inst)
+        return
       case 'view-logs':
         if (install.progress.value) install.viewLogs()
         else openInstallManager(inst, { initialTab: 'console' })
@@ -163,7 +174,8 @@ export function useBuildMenu(build: () => Installation) {
       case 'cancel':
         return install.cancel()
       case 'restart':
-        return restart(inst)
+        if (canLaunch.value) return restart(inst)
+        return
       default:
         return installMenu.triggerAction(id, inst, opts)
     }

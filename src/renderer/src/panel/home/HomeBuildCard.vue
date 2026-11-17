@@ -7,16 +7,19 @@ import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
+import Tooltip from '../../components/ui/Tooltip.vue'
 import {
   HOME_BUILD_TONES,
   isBuildOpenBlocked,
   homeBuildDetail,
   buildDeviceKind,
+  isCloudBuild,
   isComfyCloud,
   type HomeBuildStatus,
   type HomeBuildTone
 } from './homeBuild'
 import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useProgressStore } from '../../stores/progressStore'
 import type { Installation } from '../../types/ipc'
 
@@ -40,7 +43,10 @@ const progressStore = useProgressStore()
 const busy = computed(() => install.progress.value !== null)
 const starting = computed(() => install.progress.value?.kind === 'launch')
 const uninstalling = computed(() => install.progress.value?.kind === 'uninstall')
-const canOpen = computed(() => !uninstalling.value && !isBuildOpenBlocked(status))
+const promoting = computed(() => isPromotingToWorkspace(build))
+const canOpen = computed(
+  () => !uninstalling.value && !promoting.value && !isBuildOpenBlocked(status)
+)
 const busyTestId = computed(() => {
   if (uninstalling.value) return 'home-build-uninstalling'
   return starting.value ? 'home-build-starting' : 'home-build-installing'
@@ -59,6 +65,7 @@ const statusLabel = computed(() => {
     const percent = install.progress.value?.percent
     return percent == null ? phase : t('installProgress.detail', { phase, percent })
   }
+  if (promoting.value) return t('devPlatform.workspace.promoting')
   if (status === 'stopping') return t('chooser.statusStopping')
   if (status === 'updating') return t('instancePicker.progressUpdating')
   if (broken.value) return broken.value
@@ -67,11 +74,11 @@ const statusLabel = computed(() => {
       return t('home.buildRunning')
     case 'starting':
       return t('home.buildStarting')
-    case 'update':
-      return build.statusTag?.label || t('chooser.updatePill')
     case 'always-on':
       return t('home.buildAlwaysOn')
+    case 'update':
     case 'ready':
+      if (isCloudBuild(build)) return t('home.buildAlwaysOn')
       return autoStart ? t('home.autoStartOn') : t('home.buildReady')
     default:
       return status satisfies never
@@ -80,8 +87,29 @@ const statusLabel = computed(() => {
 const detail = computed(() =>
   isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
 )
-const isLive = computed(() => !busy.value && (status === 'running' || status === 'always-on'))
+const isLive = computed(
+  () =>
+    status === 'running' || status === 'always-on' || (status === 'update' && isCloudBuild(build))
+)
+const resting = computed(() => status === 'ready' || status === 'update')
+const updateNote = computed(() =>
+  !uninstalling.value && status !== 'updating' && build.statusTag?.style === 'update'
+    ? t('chooser.updatePill')
+    : ''
+)
 const subtitle = computed(() => (uninstalling.value ? install.detail.value : detail.value))
+const openHint = computed(() => {
+  if (!canOpen.value) return ''
+  if (
+    busy.value ||
+    (build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id))
+  ) {
+    return t('home.buildClickToViewLogs')
+  }
+  if (broken.value || isLive.value || status === 'starting' || build.sourceCategory === 'remote')
+    return t('home.buildClickToOpen')
+  return t('home.buildClickToStart')
+})
 const testId = computed(() => (busy.value ? busyTestId.value : 'home-build'))
 
 function onClick(): void {
@@ -125,15 +153,24 @@ function openContextMenu(event: MouseEvent): void {
     @click="onClick"
     @contextmenu.prevent="openContextMenu"
   >
-    <button
-      v-if="!uninstalling"
-      ref="openButton"
-      type="button"
-      class="absolute inset-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-      :aria-label="`${build.name}, ${statusLabel}`"
+    <Tooltip
+      v-if="!uninstalling && !promoting"
+      class="absolute inset-0 flex"
+      :text="openHint"
       :disabled="!canOpen"
-      data-testid="home-build-open"
-    />
+      side="top"
+      :delay-ms="500"
+      :should-open="() => !menuOpen"
+    >
+      <button
+        ref="openButton"
+        type="button"
+        class="absolute inset-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        :aria-label="`${build.name}, ${statusLabel}`"
+        :disabled="!canOpen"
+        data-testid="home-build-open"
+      />
+    </Tooltip>
     <span
       class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
       :class="canOpen && !busy && 'group-hover:scale-[2.6] group-has-[:focus-visible]:scale-[2.6]'"
@@ -158,7 +195,7 @@ function openContextMenu(event: MouseEvent): void {
         data-testid="home-build-status"
       >
         <LoaderCircle
-          v-if="busy || status === 'updating'"
+          v-if="busy || promoting || status === 'updating'"
           :size="12"
           class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
           aria-hidden="true"
@@ -175,13 +212,13 @@ function openContextMenu(event: MouseEvent): void {
           aria-hidden="true"
         />
         <Power
-          v-else-if="status === 'ready' && autoStart"
+          v-else-if="resting && autoStart && !isCloudBuild(build)"
           :size="12"
           class="shrink-0"
           aria-hidden="true"
           data-testid="home-build-starts-with-desktop"
         />
-        <Check v-else-if="status === 'ready'" :size="12" aria-hidden="true" />
+        <Check v-else-if="resting" :size="12" aria-hidden="true" />
         <span class="truncate">{{ statusLabel }}</span>
       </span>
       <span
@@ -191,10 +228,13 @@ function openContextMenu(event: MouseEvent): void {
         {{ build.name }}
       </span>
       <span
-        class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground"
+        class="mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
         :data-testid="uninstalling ? 'home-build-install-detail' : 'home-build-detail'"
       >
-        {{ subtitle }}
+        <span v-if="subtitle" class="min-w-0 truncate">{{ subtitle }}</span>
+        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
+          >{{ subtitle ? ' · ' : '' }}{{ updateNote }}</span
+        >
       </span>
     </span>
     <Button

@@ -256,8 +256,9 @@ test('cancelling from the busy check stops nothing and starts nothing @linux', a
     await crashDesktop(ctx!)
     const app = await start()
     await clickInstallTile(app.panel, INSTALL_NAME)
-    await app.panel.waitForVisible('[data-testid^="chooser-tile-view-logs-"]', { timeout: 15_000 })
-    expect(await app.panel.click('[data-testid^="chooser-tile-view-logs-"]')).toBe(true)
+    const startingTile = '.chooser-tile:has([data-testid^="chooser-tile-progress-"])'
+    await app.panel.waitForVisible(startingTile, { timeout: 15_000 })
+    expect(await app.panel.click(startingTile), 'the starting tile opens its logs').toBe(true)
     await app.panel.waitFor(
       async () =>
         (await app.panel.allText('[data-testid="build-progress-steps"]'))

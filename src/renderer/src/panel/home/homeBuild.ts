@@ -99,5 +99,5 @@ export function homeBuildDetail(build: Installation): string {
   if (build.sourceCategory === 'cloud' || build.sourceCategory === 'remote') {
     return build.listPreview ? hostOf(build.listPreview) : build.sourceLabel
   }
-  return build.version ? `ComfyUI ${build.version}` : build.sourceLabel
+  return build.version || build.sourceLabel
 }

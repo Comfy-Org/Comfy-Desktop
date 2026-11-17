@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import en from '../locales/en.json'
 import { launchApp, type AppContext } from './launchApp'
-import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
+import { expectChooserVisible, pickFromBuildsTileMenu } from './support/chooserHelpers'
 import { hasActiveLaunch } from './support/devHooks'
 import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 
@@ -34,7 +34,7 @@ async function launchAndReadError(stderr: string): Promise<string | null> {
     document.querySelector('.chooser-tile-error-badge')?.setAttribute('data-earlier-failure', '')
     return true
   })()`)
-  await clickInstallTile(ctx!.panel, INSTALL_NAME)
+  await pickFromBuildsTileMenu(ctx!.panel, INSTALL_ID, 'launch')
   await expect.poll(() => hasActiveLaunch(ctx!.app, INSTALL_ID), { timeout: 60_000 }).toBe(false)
   await ctx!.panel.waitForVisible(NEW_ERROR_BADGE, { timeout: 30_000 })
   expect(await ctx!.panel.click(NEW_ERROR_BADGE)).toBe(true)
