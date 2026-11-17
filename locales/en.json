@@ -65,7 +65,8 @@
     "kindLabel": "Asset type",
     "buildPickerLabel": "Build",
     "browseAssetsOf": "Browse the assets of",
-    "thisComputer": "This computer",
+    "cloud": "Comfy Cloud",
+    "sharedFolder": "Shared folder",
     "outputFolder": "Output folder",
     "buildStatus": "{where} · {state}",
     "buildWhere": {
@@ -121,6 +122,9 @@
     "signedOutTitle": "Log in to see your assets",
     "signedOutBody": "Assets that you make in Comfy Cloud show here.",
     "signIn": "Log in to Comfy Cloud",
+    "noCloudBuildTitle": "This workspace has no Comfy Cloud build yet",
+    "noCloudBuildBody": "Add Comfy Cloud to this workspace to see its assets here.",
+    "truncated": "Showing the newest file only. | Showing the newest {count} files only.",
     "inspect": "Inspect {name}",
     "detail": {
       "tags": "Tags",
@@ -128,7 +132,8 @@
       "createdAt": "Created {date}",
       "fit": "Fit",
       "zoom": "Zoom",
-      "zoomLevel": "Zoom: {level}"
+      "zoomLevel": "Zoom: {level}",
+      "savedIn": "Saved in"
     },
     "kindSingular": {
       "image": "Image",

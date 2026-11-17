@@ -5,6 +5,7 @@ export type {
   AppPageStatus,
   AssetKind,
   AssetSummary,
+  LocalAssetListing,
   CatalogWorkflow,
   Unsubscribe,
   BetaActivationNotice,

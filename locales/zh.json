@@ -65,7 +65,8 @@
     "kindLabel": "资产类型",
     "buildPickerLabel": "构建",
     "browseAssetsOf": "浏览以下构建的资产",
-    "thisComputer": "这台电脑",
+    "cloud": "Comfy Cloud",
+    "sharedFolder": "共享文件夹",
     "outputFolder": "输出文件夹",
     "buildStatus": "{where} · {state}",
     "buildWhere": {
@@ -121,6 +122,9 @@
     "signedOutTitle": "登录以查看你的资产",
     "signedOutBody": "你在 Comfy Cloud 中生成的资产会显示在这里。",
     "signIn": "登录 Comfy Cloud",
+    "noCloudBuildTitle": "此工作区还没有 Comfy Cloud 构建",
+    "noCloudBuildBody": "将 Comfy Cloud 添加到此工作区后，这里会显示它的资产。",
+    "truncated": "仅显示最新的 {count} 个文件。",
     "inspect": "查看 {name}",
     "detail": {
       "tags": "标签",
@@ -128,7 +132,8 @@
       "createdAt": "创建于 {date}",
       "fit": "适应",
       "zoom": "缩放",
-      "zoomLevel": "缩放：{level}"
+      "zoomLevel": "缩放：{level}",
+      "savedIn": "保存位置"
     },
     "kindSingular": {
       "image": "图片",
