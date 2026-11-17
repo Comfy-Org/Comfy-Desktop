@@ -4,6 +4,7 @@ import type { MaybeRefOrGetter, Ref } from 'vue'
 const PROBE_SPACING_PX = 40
 const EDGE_INSET_PX = 1
 const SETTLED_EVENTS = ['transitionend', 'animationend'] as const
+const FLOATING_LAYERS = '[data-reka-popper-content-wrapper]'
 
 function probeOffsets(length: number): number[] {
   const last = length - EDGE_INSET_PX
@@ -14,8 +15,15 @@ function probeOffsets(length: number): number[] {
   return offsets
 }
 
+function overlaps(a: DOMRect, b: DOMRect): boolean {
+  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+}
+
 export function isCoveredByPage(target: HTMLElement): boolean {
   const rect = target.getBoundingClientRect()
+  for (const layer of document.querySelectorAll(FLOATING_LAYERS)) {
+    if (!target.contains(layer) && overlaps(layer.getBoundingClientRect(), rect)) return true
+  }
   const columns = probeOffsets(rect.width)
   for (const top of probeOffsets(rect.height)) {
     for (const left of columns) {

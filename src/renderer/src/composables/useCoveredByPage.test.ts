@@ -51,6 +51,25 @@ describe('isCoveredByPage', () => {
     expect(isCoveredByPage(area)).toBe(true)
   })
 
+  it('is true for a small floating layer, like a tooltip, over the edge between probe points', () => {
+    const area = place('left: 300px; top: 20px; width: 600px; height: 400px')
+    const tooltip = place('left: 290px; top: 30px; width: 20px; height: 20px; z-index: 5')
+    tooltip.setAttribute('data-reka-popper-content-wrapper', '')
+
+    expect(isCoveredByPage(area)).toBe(true)
+
+    tooltip.remove()
+    expect(isCoveredByPage(area)).toBe(false)
+  })
+
+  it('is false for a floating layer that stops just short of the area', () => {
+    const area = place('left: 300px; top: 20px; width: 600px; height: 400px')
+    const tooltip = place('left: 280px; top: 30px; width: 20px; height: 20px; z-index: 5')
+    tooltip.setAttribute('data-reka-popper-content-wrapper', '')
+
+    expect(isCoveredByPage(area)).toBe(false)
+  })
+
   it('is false for something that stops just short of the area', () => {
     const area = place('left: 300px; top: 20px; width: 600px; height: 400px')
     place('left: 100px; top: 380px; width: 200px; height: 40px; z-index: 5')
