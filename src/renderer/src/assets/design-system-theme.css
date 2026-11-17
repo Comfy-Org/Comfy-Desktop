@@ -59,6 +59,9 @@
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
   --animate-brand-takeover: brand-takeover-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-gs-field-flash: gs-field-flash 2.2s ease-out;
+  --animate-first-use-ghost: first-use-ghost 320ms ease both;
+  --animate-first-use-fill: first-use-fill 1050ms 250ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  --animate-first-use-rise: first-use-rise 560ms cubic-bezier(0.19, 1, 0.22, 1) both;
 
   @keyframes pop-in {
     from {
@@ -102,6 +105,25 @@
     100% {
       box-shadow: 0 0 0 2px transparent;
       background: transparent;
+    }
+  }
+  @keyframes first-use-ghost {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes first-use-fill {
+    from {
+      clip-path: polygon(0 0, 4px 0, -4px 100%, 0 100%);
+    }
+    to {
+      clip-path: polygon(0 0, calc(100% + 4px) 0, calc(100% - 4px) 100%, 0 100%);
+    }
+  }
+  @keyframes first-use-rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
     }
   }
   @keyframes brand-takeover-in {

@@ -76,6 +76,23 @@ const mirrorsPrompted = ref(false)
 let mirrorsPromptedRead: Promise<void> = Promise.resolve()
 const locale = ref('en')
 
+const OPENING_RISE_CLASS = [
+  '[&>*]:animate-first-use-rise [&>*]:[animation-delay:1600ms] motion-reduce:[&>*]:animate-none',
+  '[&>:nth-child(2)]:[animation-delay:1650ms] [&>:nth-child(3)]:[animation-delay:1710ms]',
+  '[&>:nth-child(4)]:[animation-delay:1770ms] [&>:nth-child(n+5)]:[animation-delay:1830ms]'
+].join(' ')
+const OPENING_BEAT_MS = 1600
+const OPENING_LAST_RISE_MS = 230 + 560
+const prefersReducedMotion =
+  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+const opening = ref(!props.consent && !props.savedPlan && !prefersReducedMotion)
+let openingTimer: ReturnType<typeof setTimeout> | undefined
+if (opening.value) {
+  openingTimer = setTimeout(() => {
+    opening.value = false
+  }, OPENING_BEAT_MS + OPENING_LAST_RISE_MS)
+}
+
 let openGeneration = 0
 let mountedAt = Date.now()
 let completedFired = false
@@ -381,6 +398,7 @@ watch(
 )
 
 onUnmounted(() => {
+  clearTimeout(openingTimer)
   if (!completedFired) {
     emitTelemetryAction('comfy.desktop.first_use.abandoned', {
       step: step.value,
@@ -405,12 +423,29 @@ defineExpose({ open, resetContinue })
     content-class="relative flex size-full max-h-none max-w-none flex-col overflow-y-auto rounded-shell bg-[#0d0d0f] bg-[radial-gradient(70%_62%_at_50%_0%,rgb(241_241_241/0.07),rgb(241_241_241/0)_70%)] outline-none"
     data-testid="setup-screen"
   >
-    <ComfyWordmark
+    <div
       class="absolute top-5 left-1/2 h-7 w-[100px] -translate-x-1/2 text-[#f0f0f0]"
+      :data-opening="opening || undefined"
       aria-hidden="true"
-    />
+      data-testid="setup-wordmark"
+    >
+      <ComfyWordmark
+        v-if="opening"
+        class="absolute inset-0 size-full animate-first-use-ghost opacity-16 motion-reduce:animate-none"
+        data-testid="setup-wordmark-ghost"
+      />
+      <ComfyWordmark
+        class="relative size-full"
+        :class="opening && 'animate-first-use-fill motion-reduce:animate-none'"
+      />
+    </div>
 
-    <div class="m-auto flex w-[638px] max-w-[calc(100%-48px)] flex-col py-24">
+    <div
+      class="m-auto flex w-[638px] max-w-[calc(100%-48px)] flex-col py-24"
+      :class="opening && OPENING_RISE_CLASS"
+      :data-opening="opening || undefined"
+      data-testid="setup-column"
+    >
       <template v-if="step === 'setup'">
         <h1 class="m-0 text-[22px]/[27px] font-semibold text-foreground">{{ title }}</h1>
         <p class="mt-1.5 mb-0 text-[13px]/4 text-muted-foreground" data-testid="setup-lead">
