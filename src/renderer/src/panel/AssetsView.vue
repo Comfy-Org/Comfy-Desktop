@@ -46,7 +46,7 @@ import { formatBytes } from '../lib/downloadFormatters'
 import { formatPlaybackTime, formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { LOCAL_ASSETS_SOURCE } from '../types/ipc'
-import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
+import type { AssetKind, AssetSummary, Installation, LocalAssetListing } from '../types/ipc'
 import type { ContextMenuItem } from '../types/context-menu'
 
 interface GalleryAsset extends AssetSummary {
@@ -125,6 +125,7 @@ const nameTooltipsWarm = ref(false)
 let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
 const failed = ref(false)
+const provenanceIncomplete = ref(false)
 
 const buildsKnown = computed(
   () =>
@@ -163,7 +164,7 @@ const assetBuilds = computed<AssetBuild[]>(() => {
     computer: false,
     state: buildState(build)
   }))
-  return builds.some((option) => !option.cloud) ? builds : [...builds, thisComputer.value]
+  return [...builds, thisComputer.value]
 })
 
 function lastLaunched({ build }: AssetBuild): number {
@@ -325,16 +326,43 @@ interface EmptyState {
   action?: { label: string; run: () => void }
 }
 
+function browseComputer(): void {
+  pickBuild(LOCAL_ASSETS_SOURCE)
+}
+
 const emptyState = computed<EmptyState>(() => {
-  if (failed.value) return { title: t('assets.loadFailed'), body: '' }
+  const selected = selectedBuild.value
+  const localBuild = selected && !selected.cloud && !selected.computer
+  const browseAction = { label: t('assets.browseComputer'), run: browseComputer }
+  if (localBuild && assets.value.length === 0 && provenanceIncomplete.value) {
+    return {
+      title: t('assets.outputRecordsUnavailable'),
+      body: t('assets.outputRecordsUnavailableHint'),
+      action: browseAction
+    }
+  }
+  if (failed.value) {
+    return {
+      title: t('assets.loadFailed'),
+      body: '',
+      action: localBuild ? browseAction : undefined
+    }
+  }
   if (assets.value.length > 0) {
     return { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
   }
-  if (!authStore.isSignedIn && selectedBuild.value?.cloud) {
+  if (!authStore.isSignedIn && selected?.cloud) {
     return {
       title: t('assets.signedOutTitle'),
       body: t('assets.signedOutBody'),
       action: { label: t('assets.signIn'), run: () => void signIn() }
+    }
+  }
+  if (localBuild) {
+    return {
+      title: t('assets.noRecordedOutputs'),
+      body: t('assets.noRecordedOutputsHint'),
+      action: browseAction
     }
   }
   return {
@@ -344,9 +372,12 @@ const emptyState = computed<EmptyState>(() => {
 })
 
 let requestId = 0
-function listBuildAssets({ build, cloud, computer }: AssetBuild): Promise<AssetSummary[]> {
+async function listBuildAssets({ build, cloud, computer }: AssetBuild): Promise<LocalAssetListing> {
+  if (cloud) {
+    return { assets: await window.api.listAssets(build.id), provenanceIncomplete: false }
+  }
   if (computer) return window.api.listLocalAssets()
-  return cloud ? window.api.listAssets(build.id) : window.api.listLocalAssets(build.id)
+  return window.api.listLocalAssets(build.id)
 }
 
 async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean): Promise<void> {
@@ -364,6 +395,7 @@ async function loadAssets(userAsked = false): Promise<void> {
   const current = ++requestId
   const selected = selectedBuild.value
   failed.value = false
+  provenanceIncomplete.value = false
   if (!selected || (selected.cloud && !authStore.isSignedIn)) {
     assets.value = []
     loading.value = false
@@ -379,7 +411,8 @@ async function loadAssets(userAsked = false): Promise<void> {
     }
     const listed = await listBuildAssets(selected)
     if (current !== requestId) return
-    assets.value = listed.map((asset) => ({ ...asset, source }))
+    provenanceIncomplete.value = listed.provenanceIncomplete
+    assets.value = listed.assets.map((asset) => ({ ...asset, source }))
   } catch {
     if (current !== requestId) return
     assets.value = []
@@ -430,10 +463,11 @@ const detailItems = computed<OutputDetailItem[]>(() =>
   visibleAssets.value.map((asset) => ({
     key: cardKey(asset),
     name: asset.name,
+    filePath: asset.filePath,
     kind: asset.kind,
     sizeBytes: asset.sizeBytes,
     createdAt: asset.createdAt,
-    tags: asset.tags,
+    tags: [],
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl
   }))
@@ -797,6 +831,17 @@ function extensionOf(name: string): string {
     </div>
 
     <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
+      <div
+        v-if="provenanceIncomplete && assets.length > 0"
+        class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-card bg-secondary px-3 py-2"
+        role="status"
+        data-testid="assets-provenance-warning"
+      >
+        <p class="m-0 text-ui text-foreground">{{ t('assets.outputRecordsIncomplete') }}</p>
+        <Button type="button" variant="secondary" size="sm" @click="browseComputer">
+          {{ t('assets.browseComputer') }}
+        </Button>
+      </div>
       <div v-if="showSkeleton" role="status" :aria-label="t('common.loading')">
         <ul
           ref="gallery"
@@ -869,7 +914,7 @@ function extensionOf(name: string): string {
           @contextmenu.prevent="openAssetMenu(asset, $event)"
         >
           <Tooltip
-            :text="asset.name"
+            :text="asset.filePath || asset.name"
             side="bottom"
             :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
             class="w-full align-top"

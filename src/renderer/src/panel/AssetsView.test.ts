@@ -103,13 +103,16 @@ async function mountAssets(
   local: AssetSummary[] | Promise<AssetSummary[]> = [],
   {
     builds = [localBuild('lab')],
-    installationId
-  }: { builds?: Installation[]; installationId?: string } = {}
+    installationId,
+    provenanceIncomplete = false
+  }: { builds?: Installation[]; installationId?: string; provenanceIncomplete?: boolean } = {}
 ) {
   const installationStore = useInstallationStore()
   installationStore.installations = builds
   installationStore.loading = false
-  listLocalAssets.mockReturnValue(Promise.resolve(local))
+  listLocalAssets.mockReturnValue(
+    Promise.resolve(local).then((assets) => ({ assets, provenanceIncomplete }))
+  )
   const wrapper = mount(AssetsView, { attachTo: page, props: { installationId } })
   await flushPromises()
   return wrapper
@@ -191,7 +194,7 @@ beforeEach(() => {
   document.body.append(page)
   vi.clearAllMocks()
   window.localStorage.clear()
-  listLocalAssets.mockResolvedValue([])
+  listLocalAssets.mockResolvedValue({ assets: [], provenanceIncomplete: false })
   listWorkspaces.mockResolvedValue([
     { id: 'me', name: 'Personal Workspace', type: 'personal' },
     { id: 'team-b', name: 'Team B', type: 'team' }
@@ -391,7 +394,8 @@ describe('AssetsView', () => {
     expect(buildRows()).toEqual([
       'My Local 1 Local · Stopped',
       'Video Lab Local · Running',
-      'Comfy Cloud Cloud · Running'
+      'Comfy Cloud Cloud · Running',
+      'This computer Output folder'
     ])
 
     await pickBuild('cloud')
@@ -427,7 +431,7 @@ describe('AssetsView', () => {
 
     await openBuildPicker(wrapper)
 
-    expect(buildRows()).toEqual(['My Local 1 Local · Stopped'])
+    expect(buildRows()).toEqual(['My Local 1 Local · Stopped', 'This computer Output folder'])
   })
 
   it('opens on a build it can list, not on a running build that keeps its files to itself', async () => {
@@ -464,7 +468,9 @@ describe('AssetsView', () => {
     useInstallationStore().loading = true
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('No assets yet')
+    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe(
+      'No recorded outputs from this build'
+    )
     expect(wrapper.find('[data-testid="assets-skeleton"]').exists()).toBe(false)
   })
 
@@ -559,13 +565,48 @@ describe('AssetsView', () => {
     ).toBeUndefined()
   })
 
-  it('tells a signed-in user with no assets where they come from', async () => {
+  it('leads from a build with no recordings to other files on this computer', async () => {
     const wrapper = await mountAssets()
-    await signInWith([])
+    listLocalAssets.mockResolvedValue({
+      assets: [asset('/out/legacy.png', 'legacy.png', 'image')],
+      provenanceIncomplete: false
+    })
 
-    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('No assets yet')
-    expect(wrapper.get('[data-testid="assets-empty"] p').text()).toBe('Open an app to make assets.')
-    expect(wrapper.find('[data-testid="assets-empty-action"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe(
+      'No recorded outputs from this build'
+    )
+    await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('This computer')
+    expect(listLocalAssets).toHaveBeenLastCalledWith()
+    expect(assetNames(wrapper)).toEqual(['legacy.png'])
+  })
+
+  it('explains when a build’s records cannot be read and offers its files by location', async () => {
+    const wrapper = await mountAssets([], { provenanceIncomplete: true })
+    listLocalAssets.mockResolvedValue({
+      assets: [asset('/out/saved.png', 'saved.png', 'image')],
+      provenanceIncomplete: false
+    })
+
+    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe(
+      "Couldn't read this build's output records"
+    )
+    await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
+    await flushPromises()
+    expect(listLocalAssets).toHaveBeenLastCalledWith()
+    expect(assetNames(wrapper)).toEqual(['saved.png'])
+  })
+
+  it('warns that the results may be incomplete while keeping verified files visible', async () => {
+    const wrapper = await mountAssets([asset('/out/verified.png', 'verified.png', 'image')], {
+      provenanceIncomplete: true
+    })
+
+    expect(assetNames(wrapper)).toEqual(['verified.png'])
+    expect(wrapper.get('[data-testid="assets-provenance-warning"]').text()).toContain(
+      'This view may be incomplete.'
+    )
   })
 
   it('shows a skeleton card per slot while the first load is pending', async () => {
@@ -879,6 +920,7 @@ describe('AssetsView', () => {
   it('opens a picture full size when its card is clicked, and puts focus back on the card when Escape closes it', async () => {
     const wrapper = await mountAssets([
       asset('/out/forest.png', 'forest.png', 'image', {
+        filePath: '/out/forest.png',
         previewUrl: 'comfy-output://file/full',
         thumbnailUrl: 'comfy-output://file/full?thumbnail=1'
       })
@@ -889,6 +931,10 @@ describe('AssetsView', () => {
     await flushPromises()
 
     expect(viewerTitle()).toBe('forest.png')
+    expect(viewer()!.querySelector('[data-testid="output-detail-path"]')!.textContent).toContain(
+      '/out/forest.png'
+    )
+    expect(viewer()!.textContent).not.toContain('Tags')
     expect(
       viewer()!.querySelector('[data-testid="output-detail-image"]')!.getAttribute('src')
     ).toBe('comfy-output://file/full')

@@ -120,7 +120,9 @@ export const SCENARIOS: PreviewScenario[] = [
     ready: '[data-testid="app-sidebar-assets"][aria-current="page"]',
     seed: (machine) => ({
       installations: everydayBuilds(machine),
-      replies: { listLocalAssets: async () => localAssets() }
+      replies: {
+        listLocalAssets: async () => ({ assets: localAssets(), provenanceIncomplete: false })
+      }
     }),
     arrange: async ({ click }) => {
       await click('[data-testid="app-sidebar-assets"]')

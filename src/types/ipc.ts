@@ -165,6 +165,7 @@ export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 export interface AssetSummary {
   id: string
   name: string
+  filePath?: string | null
   kind: AssetKind | null
   sizeBytes: number | null
   createdAt: string | null
@@ -175,6 +176,11 @@ export interface AssetSummary {
   width: number | null
   height: number | null
   durationSeconds: number | null
+}
+
+export interface LocalAssetListing {
+  assets: AssetSummary[]
+  provenanceIncomplete: boolean
 }
 
 export interface BuildStorageSnapshot {
@@ -1163,7 +1169,7 @@ export interface ElectronApi {
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
-  listLocalAssets(installationId?: string): Promise<AssetSummary[]>
+  listLocalAssets(installationId?: string): Promise<LocalAssetListing>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
   copyAsset(source: string, assetId: string): Promise<boolean>

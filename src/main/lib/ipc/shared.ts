@@ -28,6 +28,11 @@ import { ensureRemoteUrl } from '../github-mirror'
 import { runPool } from '../../sources/standalone/templateDownloadCore'
 import * as settings from '../../settings'
 import { defaultInstallDir, sanitizeDirName, allocateUniqueDir } from '../paths'
+import {
+  OUTPUT_JOURNAL_ENV,
+  OUTPUT_PRODUCER_ENV,
+  outputJournalDirectory
+} from '../outputProvenance'
 import { download } from '../download'
 import { createCache } from '../cache'
 import { holdAgentPrefetch } from '../agentRequirementsLaunch'
@@ -276,7 +281,9 @@ export const RESERVED_ENV_VARS = new Set([
   'PYTHONFAULTHANDLER',
   '__COMFY_CLI_SESSION__',
   'CM_USE_PYGIT2',
-  '__COMFYUI_DESKTOP_VERSION__'
+  '__COMFYUI_DESKTOP_VERSION__',
+  OUTPUT_JOURNAL_ENV,
+  OUTPUT_PRODUCER_ENV
 ])
 
 const DESKTOP_MANAGED_SOURCES = new Set(['standalone', 'comfybuilder'])
@@ -881,6 +888,12 @@ export function buildLaunchEnv(
       : {})
   }
   if (!desktopManaged) delete env.__COMFYUI_DESKTOP_VERSION__
+  delete env[OUTPUT_JOURNAL_ENV]
+  delete env[OUTPUT_PRODUCER_ENV]
+  if (desktopManaged) {
+    env[OUTPUT_JOURNAL_ENV] = outputJournalDirectory(inst.id)
+    env[OUTPUT_PRODUCER_ENV] = inst.id
+  }
   return env
 }
 

@@ -18,6 +18,7 @@ import type { AssetKind } from '../types/ipc'
 export interface OutputDetailItem {
   key: string
   name: string
+  filePath?: string | null
   kind: AssetKind | null
   sizeBytes: number | null
   createdAt: string | null
@@ -255,6 +256,13 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         <div v-if="facts.length > 0" class="flex flex-wrap gap-1.5">
           <Tag v-for="fact in facts" :key="fact" :label="fact" />
         </div>
+      </div>
+
+      <div v-if="item.filePath" class="flex flex-col gap-2.5" data-testid="output-detail-path">
+        <div class="text-xs font-medium tracking-wide text-subtle-foreground uppercase">
+          {{ t('assets.detail.filePath') }}
+        </div>
+        <p class="m-0 text-ui wrap-anywhere text-foreground select-text">{{ item.filePath }}</p>
       </div>
 
       <div v-if="item.tags.length > 0" class="flex flex-col gap-2.5">
