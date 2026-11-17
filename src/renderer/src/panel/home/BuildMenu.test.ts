@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { userEvent } from 'vitest/browser'
 import { defineComponent, h } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -243,35 +242,7 @@ describe('Build menu', () => {
     expect(await shownMenu()).not.toContain('auto-start')
   })
 
-  it('updates from the Update link beside the version without opening the build', async () => {
-    const getDetailSections = vi.fn().mockResolvedValue([])
-    const openInstancePicker = vi.fn()
-    Object.assign(window.api, { getDetailSections, openInstancePicker })
-    const build: Installation = {
-      ...BUILD,
-      statusTag: { label: 'Update available', style: 'update' }
-    }
-    const onOpen = vi.fn()
-    const wrapper = mount(
-      withHost(() => h(HomeBuildCard, { build, status: 'update', tone: 'ember', onOpen })),
-      { attachTo: document.body }
-    )
-    mounted.push(wrapper)
-    await flushPromises()
-
-    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe('v0.42.4 · Update')
-    await wrapper.get('[data-testid="build-update-link"]').trigger('click')
-    await flushPromises()
-
-    expect(getDetailSections).toHaveBeenCalledWith(build.id)
-    expect(openInstancePicker).toHaveBeenCalledWith(
-      expect.objectContaining({ installationId: build.id, initialTab: 'update' })
-    )
-    expect(onOpen).not.toHaveBeenCalled()
-    expect(host.launch).not.toHaveBeenCalled()
-  })
-
-  it('shows no Click to start hint while the pointer is on the Update link', async () => {
+  it('names the update in grey text beside the version, with no button on the card but ⋯', async () => {
     const build: Installation = {
       ...BUILD,
       statusTag: { label: 'Update available', style: 'update' }
@@ -283,15 +254,13 @@ describe('Build menu', () => {
     mounted.push(wrapper)
     await flushPromises()
 
-    await userEvent.hover(wrapper.get('[data-testid="home-build-open"]').element)
-    await vi.waitFor(() =>
-      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Click to start')
+    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe(
+      'v0.42.4 · Update available'
     )
-    await userEvent.hover(wrapper.get('[data-testid="build-update-link"]').element)
-
-    await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull())
-    await new Promise((resolve) => setTimeout(resolve, 700))
-    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    const buttons = [...wrapper.element.querySelectorAll('button')].map((b) =>
+      b.getAttribute('data-testid')
+    )
+    expect(buttons).toEqual(['home-build-open', 'home-build-more'])
   })
 
   it('asks inside the menu before it uninstalls, then uninstalls without another dialog', async () => {

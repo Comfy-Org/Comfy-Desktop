@@ -433,7 +433,7 @@ describe('Home builds', () => {
     await flushPromises()
 
     expect(wrapper.findAll('[data-testid="home-build"]').map((card) => card.text())).toEqual([
-      'ReadyMy Local 1Standalone · Update',
+      'ReadyMy Local 1Standalone · Update available',
       'RunningVideo LabStandalone',
       'Always onComfy CloudRTX 6000 Pro · 96 GB'
     ])
@@ -451,7 +451,9 @@ describe('Home builds', () => {
 
     const card = wrapper.get('[data-testid="home-build"]')
     expect(card.get('[data-testid="home-build-status"]').text()).toBe('Running')
-    expect(card.get('[data-testid="home-build-detail"]').text()).toBe('Standalone · Update')
+    expect(card.get('[data-testid="home-build-detail"]').text()).toBe(
+      'Standalone · Update available'
+    )
     expect(card.get('[data-testid="home-build-open"]').attributes('aria-label')).toBe(
       'My Local 1, Running'
     )
@@ -467,7 +469,9 @@ describe('Home builds', () => {
     ])
     const wrapper = await openHome()
 
-    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe('v0.3.68 · Update')
+    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe(
+      'v0.3.68 · Update available'
+    )
   })
 
   it('starts a build with an update from its card, saying Ready on top', async () => {

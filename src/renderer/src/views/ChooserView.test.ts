@@ -392,7 +392,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
 
-    expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · Update')
+    expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · Update available')
     expect(wrapper.get('.chooser-tile-body').text()).toMatch(/^Ready/)
     expect(wrapper.find('.chooser-tile-pill-update').exists()).toBe(false)
 
@@ -640,7 +640,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Updatable'))!
-    expect(tile.get('.chooser-tile-meta-line').text()).toMatch(/v0\.22\.3 · Update$/)
+    expect(tile.get('.chooser-tile-meta-line').text()).toMatch(/v0\.22\.3 · Update available$/)
     expect(tile.get('.chooser-tile-body').text()).toMatch(/^Ready/)
   })
 

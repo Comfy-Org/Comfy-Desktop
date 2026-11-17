@@ -253,7 +253,7 @@ describe('Builds page grid', () => {
         'Running'
       )
       expect(tile.querySelector('.chooser-tile-meta-line')!.textContent?.trim()).toBe(
-        'Standalone · v0.3.68 · Update'
+        'Standalone · v0.3.68 · Update available'
       )
     }
     if (state === 'starting') {
