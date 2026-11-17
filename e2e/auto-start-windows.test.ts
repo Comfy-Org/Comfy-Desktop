@@ -71,7 +71,7 @@ async function windowState() {
   )
 }
 
-test('restarting Desktop with Auto start opens Home and a separate ComfyUI window @macos @linux', async () => {
+test('restarting Desktop with Auto start opens only Home and starts the build in the background @macos @linux', async () => {
   const profileDir = path.join(rootDir, 'profile')
   ctx = await launchApp(
     {
@@ -92,16 +92,21 @@ test('restarting Desktop with Auto start opens Home and a separate ComfyUI windo
   ctx = undefined
 
   ctx = await launchApp({ profileDir }, { stayOnHome: true })
-  await expect.poll(windowState, { timeout: 90_000 }).toEqual({
-    total: 2,
-    visibleBuilds: 1,
-    visibleDashboards: 1
-  })
+  await expect.poll(() => ctx!.panel.textOf(CARD), { timeout: 90_000 }).toContain('Running')
   expect(await ctx.panel.isVisible(HOME)).toBe(true)
-  await expect.poll(() => ctx!.panel.textOf(CARD)).toContain('Running')
+  expect(await windowState()).toEqual({ total: 1, visibleBuilds: 0, visibleDashboards: 1 })
+
+  await test.step('Open ComfyUI on the card opens a window on the running build', async () => {
+    expect(await ctx!.panel.click(CARD)).toBe(true)
+    await expect
+      .poll(windowState, { timeout: 30_000 })
+      .toEqual({ total: 2, visibleBuilds: 1, visibleDashboards: 1 })
+    expect(await getIpcInvocations(ctx!.app, 'run-action')).toEqual([])
+    expect(await ctx!.panel.textOf(CARD)).toContain('Running')
+  })
 })
 
-test('an auto-start failure remains accessible from Home @macos @linux', async () => {
+test("an auto-start failure shows Didn't start on Home and opens no window @macos @linux", async () => {
   await writeFile(path.join(build.installPath!, 'startup-failure'), 'E2E auto-start failure\n')
   ctx = await launchApp(
     {
@@ -112,11 +117,6 @@ test('an auto-start failure remains accessible from Home @macos @linux', async (
   )
   await expect.poll(() => ctx!.panel.textOf(CARD), { timeout: 90_000 }).toContain("Didn't start")
   expect(await ctx.panel.isVisible(HOME)).toBe(true)
-  expect(await ctx.panel.click(CARD)).toBe(true)
-  await ctx.panel.waitForVisible('[data-testid="build-progress-dialog"]')
-  await expect
-    .poll(() => ctx!.panel.textOf('[data-testid="build-progress-dialog"]'))
-    .toContain('E2E auto-start failure')
   await expect.poll(windowState).toEqual({ total: 1, visibleBuilds: 0, visibleDashboards: 1 })
 })
 

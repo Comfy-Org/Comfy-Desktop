@@ -126,8 +126,6 @@ export function buildElectronApi(): ElectronApi {
       return () => ipcRenderer.removeListener('apps:page-closed', handler)
     },
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
-    resolveStartupRestoreReveal: (result) =>
-      ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
     openGlobalSettings: (tab, opts) =>
       ipcRenderer.send(
         'comfy-titlepopup:open-global-settings',
@@ -554,7 +552,6 @@ export function buildElectronApi(): ElectronApi {
             actionId?: string
             version?: string | null
             settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
-            startupRestore?: boolean
           }
         )
       ipcRenderer.on('panel-trigger-overlay', handler)
