@@ -54,6 +54,15 @@ const MODEL_POINTER_FILES = ['settings.json', 'settings.json.bak', 'data-locatio
 const INSTALL_LIST_FILES = ['installations.json', 'installations.json.bak']
 const PARTIAL_DELETE_STATUS = 'partial-delete'
 
+const PATH_ROLES_BY_KEY = new Map<string, PathRole>([
+  ['modelsDirs', 'models'],
+  ['modelDirs', 'models'],
+  ['modelDirsPrimary', 'models'],
+  ['inputDir', 'input'],
+  ['outputDir', 'output'],
+  ['cacheDir', 'cache']
+])
+
 const MAC_LIBRARY_FOLDERS = ['Caches', 'Logs', 'Preferences', 'Application Support']
 
 const TEMP_ENTRY_PATTERNS = [
@@ -106,13 +115,20 @@ export interface CleanupFolders {
   output: string
 }
 
+export type PathRole = 'models' | 'input' | 'output' | 'cache' | 'other'
+
+export interface NamedPath {
+  path: string
+  role: PathRole
+}
+
 export interface InstallationOnDisk {
   id: string
   installPath: string
   marker: string | null
   adoptedBaseDir: string | null
   adoptionMarker: string | null
-  recordedPaths: string[]
+  recordedPaths: NamedPath[]
 }
 
 export interface CleanupInputs {
@@ -124,7 +140,7 @@ export interface CleanupInputs {
   tempEntries: string[]
   modelsDirs: string[]
   outputDir: string | null
-  storedPaths: string[]
+  storedPaths: NamedPath[]
   installations: InstallationOnDisk[]
   desktopOneBasePath: string | null
   configuredCacheEntries: string[]
@@ -143,6 +159,7 @@ export interface DeletionGuard {
   protectedPaths: string[]
   keptPaths: string[]
   allowedRoots: string[]
+  linkedFolders: string[]
 }
 
 export interface CleanupPlan {
@@ -196,8 +213,12 @@ function samePath(a: string, b: string): boolean {
   return comparable(a) === comparable(b)
 }
 
+function distinct(paths: string[]): string[] {
+  return paths.filter((p, i) => paths.findIndex((q) => samePath(p, q)) === i)
+}
+
 function outermost(paths: string[]): string[] {
-  const unique = paths.filter((p, i) => paths.findIndex((q) => samePath(p, q)) === i)
+  const unique = distinct(paths)
   return unique.filter((p) => !unique.some((q) => !samePath(p, q) && isSameOrInside(p, q)))
 }
 
@@ -233,14 +254,16 @@ function windowsAppDataDirs(platform: NodeJS.Platform, folders: CleanupFolders):
   return dirs.filter((dir) => !isSameOrInside(folders.userData, dir))
 }
 
-function windowsLocalDataRoot(inputs: CleanupInputs): string | null {
+function windowsLocalDataRoot(inputs: Pick<CleanupInputs, 'platform' | 'folders'>): string | null {
   const { localAppData } = inputs.folders
   return inputs.platform === 'win32' && localAppData
     ? path.join(localAppData, DATA_ROOT_DIR_NAME)
     : null
 }
 
-function partialDownloadDirs(inputs: CleanupInputs): string[] {
+function partialDownloadDirs(
+  inputs: Pick<CleanupInputs, 'folders' | 'modelsDirs' | 'outputDir'>
+): string[] {
   const { folders } = inputs
   return [
     path.join(inputs.modelsDirs[0] ?? folders.models, TEMP_DIR_NAME),
@@ -261,14 +284,31 @@ function presentPaths(paths: (string | null | undefined)[]): string[] {
   return paths.filter((p): p is string => typeof p === 'string' && p.trim() !== '')
 }
 
+function withRoles(paths: [PathRole, string | null][]): NamedPath[] {
+  return paths.flatMap(([role, p]) => (p ? [{ path: p, role }] : []))
+}
+
+function cleanupRoots(platform: NodeJS.Platform, folders: CleanupFolders): string[] {
+  return presentPaths([
+    ...appOwnedDirs(folders),
+    ...windowsAppDataDirs(platform, folders),
+    windowsLocalDataRoot({ platform, folders }),
+    dataRootFolder(folders),
+    folders.installDir,
+    path.dirname(folders.models),
+    path.dirname(folders.benchmarks),
+    cacheParentDir(folders),
+    folders.downloadCache
+  ])
+}
+
 function adoptionMarkerToRetire(inst: InstallationOnDisk): string | null {
   return inst.adoptedBaseDir && inst.adoptionMarker === inst.id
     ? path.join(inst.adoptedBaseDir, INSTALL_MARKER_FILE)
     : null
 }
 
-interface KeptCandidate {
-  path: string
+interface KeptCandidate extends NamedPath {
   installId?: string
 }
 
@@ -279,35 +319,38 @@ type KeptSources = Pick<
 
 function keptCandidates(sources: KeptSources): KeptCandidate[] {
   const { folders } = sources
-  const unowned = presentPaths([
-    ...sources.storedPaths,
-    folders.models,
-    folders.input,
-    folders.output,
-    sources.unreadableFiles.length > 0 ? folders.installDir : null
+  const defaults = withRoles([
+    ['models', folders.models],
+    ['input', folders.input],
+    ['output', folders.output],
+    ['other', sources.unreadableFiles.length > 0 ? folders.installDir : null]
   ])
   return [
-    ...unowned.map((p) => ({ path: p })),
-    ...sources.installations.flatMap((inst) =>
-      [inst.installPath, ...inst.recordedPaths].map((p) => ({ path: p, installId: inst.id }))
-    )
+    ...sources.storedPaths,
+    ...defaults,
+    ...sources.installations.flatMap((inst) => {
+      const named = [...withRoles([['other', inst.installPath]]), ...inst.recordedPaths]
+      return named.map((p) => ({ ...p, installId: inst.id }))
+    })
   ]
 }
 
 function keptPaths(
   inputs: CleanupInputs,
   installs: InstallationOnDisk[],
-  removedOnPurpose: string[],
+  removedOnPurpose: NamedPath[],
   pointerNames: string[]
 ): string[] {
   const releasedByRemoval = (candidate: KeptCandidate): boolean =>
     installs.some(
       (inst) => inst.id === candidate.installId && isSameOrInside(candidate.path, inst.installPath)
     )
+  const releasedOnPurpose = (candidate: KeptCandidate): boolean =>
+    removedOnPurpose.some(
+      (target) => target.role === candidate.role && samePath(target.path, candidate.path)
+    )
   const kept = keptCandidates(inputs).filter(
-    (candidate) =>
-      !releasedByRemoval(candidate) &&
-      !removedOnPurpose.some((dir) => samePath(dir, candidate.path))
+    (candidate) => !releasedByRemoval(candidate) && !releasedOnPurpose(candidate)
   )
   return [...keptPointerPaths(inputs.folders, pointerNames), ...kept.map((c) => c.path)]
 }
@@ -356,7 +399,7 @@ function buildGuard(
     ...installs.map(adoptionMarkerToRetire)
   ])
 
-  return { protectedPaths, keptPaths: kept, allowedRoots }
+  return { protectedPaths, keptPaths: kept, allowedRoots, linkedFolders: inputs.appDirLinks }
 }
 
 export function planUninstallCleanup(
@@ -390,11 +433,11 @@ export function planUninstallCleanup(
     ...(keptIds.length > 0 ? INSTALL_LIST_FILES : []),
     ...(ownershipKnown ? [] : INSTANCE_POINTER_FILES)
   ]
-  const removedOnPurpose = presentPaths([
-    folders.downloadCache,
-    deletingModels ? folders.models : null,
-    deletingSharedInputOutput ? folders.input : null,
-    deletingSharedInputOutput ? folders.output : null
+  const removedOnPurpose = withRoles([
+    ['cache', folders.downloadCache],
+    ['models', deletingModels ? folders.models : null],
+    ['input', deletingSharedInputOutput ? folders.input : null],
+    ['output', deletingSharedInputOutput ? folders.output : null]
   ])
   const kept = keptPaths(inputs, installs, removedOnPurpose, keptPointerNames)
   const guard = buildGuard(inputs, kept, installs)
@@ -413,6 +456,7 @@ export function planUninstallCleanup(
   }
 
   const held = [...guard.protectedPaths, ...guard.keptPaths]
+  const holdsAny = (dir: string): boolean => held.some((p) => isSameOrInside(p, dir))
   const isLink = (dir: string): boolean => inputs.appDirLinks.some((link) => samePath(link, dir))
   const addAround = (dir: string, reason: string): void => {
     const inner = held.filter((p) => isSameOrInside(p, dir))
@@ -423,6 +467,10 @@ export function planUninstallCleanup(
         addAround(path.join(dir, name), reason)
       }
     }
+  }
+  const addWhenEmpty = (dir: string, bucket: CleanupBucket, name: string): void => {
+    if (!isLink(dir)) add(dir, bucket, `${name} when empty`, { onlyIfEmpty: true })
+    else if (!holdsAny(dir)) add(dir, 'A', `link in place of the ${name}`)
   }
   if (ownershipKnown) {
     for (const dir of appOwnedDirs(folders)) addAround(dir, 'app settings, logs and caches')
@@ -440,20 +488,15 @@ export function planUninstallCleanup(
     }
   }
 
-  const whenEmpty = { onlyIfEmpty: true } as const
-  if (deletingInstances) {
-    add(folders.installDir, 'B', 'installs folder when empty', whenEmpty)
-  }
-  if (deletingModels) {
-    add(path.dirname(folders.models), 'C', 'shared folder when empty', whenEmpty)
-  }
-  add(path.dirname(folders.benchmarks), 'A', 'shared folder when empty', whenEmpty)
+  if (deletingInstances) addWhenEmpty(folders.installDir, 'B', 'installs folder')
+  if (deletingModels) addWhenEmpty(path.dirname(folders.models), 'C', 'shared folder')
+  addWhenEmpty(path.dirname(folders.benchmarks), 'A', 'shared folder')
   const cacheParent = cacheParentDir(folders)
-  if (cacheParent) add(cacheParent, 'A', 'cache folder when empty', whenEmpty)
+  if (cacheParent) addWhenEmpty(cacheParent, 'A', 'cache folder')
   const dataRoot = dataRootFolder(folders)
-  if (dataRoot) add(dataRoot, 'A', 'data folder when empty', whenEmpty)
+  if (dataRoot) addWhenEmpty(dataRoot, 'A', 'data folder')
   const localDataRoot = windowsLocalDataRoot(inputs)
-  if (localDataRoot) add(localDataRoot, 'A', 'data folder when empty', whenEmpty)
+  if (localDataRoot) addWhenEmpty(localDataRoot, 'A', 'data folder')
 
   return { entries, guard }
 }
@@ -466,6 +509,10 @@ export function deletionRefusal(
   if (!path.isAbsolute(target)) return 'not an absolute path'
   const resolved = path.resolve(target)
   if (resolved === path.parse(resolved).root) return 'drive root'
+  const throughLink = guard.linkedFolders.find(
+    (link) => !samePath(link, resolved) && isSameOrInside(resolved, link)
+  )
+  if (throughLink) return `inside a linked folder: ${throughLink}`
   const shielded = guard.protectedPaths.find((p) => isSameOrInside(p, resolved))
   if (shielded) return `would remove a protected folder: ${shielded}`
   const kept = onlyIfEmpty ? undefined : guard.keptPaths.find((p) => isSameOrInside(p, resolved))
@@ -615,6 +662,13 @@ function absolutePathsIn(value: unknown): string[] {
   return Object.values(asRecord(value)).flatMap(absolutePathsIn)
 }
 
+function namedPathsIn(record: Record<string, unknown>): NamedPath[] {
+  return Object.entries(record).flatMap(([key, value]) => {
+    const role: PathRole = PATH_ROLES_BY_KEY.get(key) ?? 'other'
+    return absolutePathsIn(value).map((p) => ({ path: p, role }))
+  })
+}
+
 function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null
 }
@@ -654,14 +708,24 @@ function isSymbolicLink(p: string): boolean {
   }
 }
 
-function passesThroughLink(dir: string, appDirs: string[]): boolean {
-  const root = appDirs.find((appDir) => isSameOrInside(dir, appDir))
-  let current = path.resolve(dir)
-  while (root && isSameOrInside(current, root) && !samePath(current, root)) {
-    if (isSymbolicLink(current)) return true
+function linksFromRoot(p: string, root: string): string[] {
+  const links: string[] = []
+  let current = path.resolve(p)
+  while (isSameOrInside(current, root)) {
+    if (isSymbolicLink(current)) links.push(current)
+    if (samePath(current, root)) break
     current = path.dirname(current)
   }
-  return false
+  return links
+}
+
+function linksAlong(paths: string[], roots: string[]): string[] {
+  const outer = outermost(roots)
+  const linksFor = (p: string): string[] => {
+    const root = outer.find((r) => isSameOrInside(p, r))
+    return root ? linksFromRoot(p, root) : []
+  }
+  return distinct(paths.flatMap(linksFor))
 }
 
 function listSubdirs(dir: string): string[] {
@@ -727,7 +791,7 @@ function installationsOnDisk(records: Record<string, unknown>[]): InstallationOn
         marker: readInstallMarker(identity.installPath),
         adoptedBaseDir,
         adoptionMarker: adoptedBaseDir ? readInstallMarker(adoptedBaseDir) : null,
-        recordedPaths: absolutePathsIn(record)
+        recordedPaths: namedPathsIn(record)
       }
     ]
   })
@@ -830,8 +894,8 @@ export function collectUninstallCleanupInputs(
     listFile.kind === 'value' && Array.isArray(listFile.value) ? listFile.value.map(asRecord) : []
   const installations = installationsOnDisk(records)
   const storedPaths = [
-    ...absolutePathsIn(settings),
-    ...records.filter((record) => !installIdentity(record)).flatMap(absolutePathsIn)
+    ...namedPathsIn(settings),
+    ...records.filter((record) => !installIdentity(record)).flatMap(namedPathsIn)
   ]
   const modelsDirs = stringList(settings.modelsDirs)
   const outputDir = nonEmptyString(settings.outputDir)
@@ -860,11 +924,28 @@ export function collectUninstallCleanupInputs(
     input: settingsDefaults.inputDir,
     output: settingsDefaults.outputDir
   }
+  const cacheEntries = configuredCacheEntries(
+    nonEmptyString(settings.cacheDir),
+    folders.downloadCache,
+    records
+  )
   const kept = keptCandidates({ folders, storedPaths, installations, unreadableFiles })
-  const roots = [...appOwnedDirs(folders), ...windowsAppDataDirs(platform, folders)]
+  const appDirs = [...appOwnedDirs(folders), ...windowsAppDataDirs(platform, folders)]
   const keptOnDisk = presentPaths([...kept.map((c) => c.path), desktopOneBasePath])
-  const listings = dirsToList(roots, keptOnDisk)
-    .filter((dir) => !passesThroughLink(dir, roots))
+  const dirs = dirsToList(appDirs, keptOnDisk)
+  const roots = cleanupRoots(platform, folders)
+  const targets = [
+    ...installations.map((inst) => inst.installPath),
+    folders.models,
+    folders.input,
+    folders.output,
+    folders.benchmarks,
+    ...partialDownloadDirs({ folders, modelsDirs, outputDir }),
+    ...cacheEntries
+  ]
+  const links = linksAlong([...roots, ...dirs, ...targets], roots)
+  const listings = dirs
+    .filter((dir) => !links.some((link) => isSameOrInside(dir, link)))
     .map((dir) => ({ dir, ...listAppDir(dir) }))
 
   return {
@@ -872,18 +953,14 @@ export function collectUninstallCleanupInputs(
     options,
     folders,
     appDirEntries: Object.fromEntries(listings.map(({ dir, names }) => [dir, names])),
-    appDirLinks: listings.flatMap(({ links }) => links),
+    appDirLinks: distinct([...links, ...listings.flatMap((listing) => listing.links)]),
     tempEntries: listDir(temp),
     modelsDirs,
     outputDir,
     storedPaths,
     installations,
     desktopOneBasePath,
-    configuredCacheEntries: configuredCacheEntries(
-      nonEmptyString(settings.cacheDir),
-      folders.downloadCache,
-      records
-    ),
+    configuredCacheEntries: cacheEntries,
     unreadableFiles
   }
 }

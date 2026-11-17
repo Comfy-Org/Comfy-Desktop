@@ -568,6 +568,71 @@ describe('links inside app data', () => {
     expect(fs.existsSync(linked)).toBe(false)
     expect(fs.readFileSync(path.join(external, 'photos', 'family.png'), 'utf-8')).toBe('keep')
   })
+
+  it('leaves a linked older-name folder alone when kept models lie behind it', async () => {
+    const external = path.join(caseRoot, 'external')
+    const linked = path.join(appData, 'ComfyUI Launcher')
+    write(path.join(external, 'models', 'model.safetensors'))
+    write(path.join(external, 'photos', 'family.png'), 'keep')
+    fs.symlinkSync(external, linked, linkType)
+    const settings = { modelsDirs: [path.join(linked, 'models')] }
+    write(path.join(userData, 'settings.json'), JSON.stringify(settings))
+    write(path.join(userData, 'logs', 'main.log'))
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
+    expect(fs.readFileSync(path.join(external, 'photos', 'family.png'), 'utf-8')).toBe('keep')
+    expect(fs.existsSync(path.join(linked, 'models', 'model.safetensors'))).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
+  })
+
+  it('leaves a linked app data folder alone when kept data lies behind it', async () => {
+    const external = path.join(caseRoot, 'external')
+    write(path.join(external, 'models', 'model.safetensors'))
+    write(path.join(external, 'photos', 'family.png'), 'keep')
+    fs.rmSync(userData, { recursive: true, force: true })
+    fs.symlinkSync(external, userData, linkType)
+    const settings = { modelsDirs: [path.join(userData, 'models')] }
+    write(path.join(userData, 'settings.json'), JSON.stringify(settings))
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
+    expect(fs.readFileSync(path.join(external, 'photos', 'family.png'), 'utf-8')).toBe('keep')
+    expect(fs.existsSync(path.join(external, 'models', 'model.safetensors'))).toBe(true)
+    expect(fs.lstatSync(userData).isSymbolicLink()).toBe(true)
+  })
+
+  it('removes a linked cache folder as a link and keeps what it points to', async () => {
+    const external = path.join(caseRoot, 'external')
+    const linked = path.join(localRoot(), 'ComfyUI-Cache')
+    write(path.join(external, 'download-cache', 'a.bin'), 'cached')
+    write(path.join(external, 'photos', 'family.png'), 'keep')
+    fs.mkdirSync(localRoot(), { recursive: true })
+    fs.symlinkSync(external, linked, linkType)
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
+    expect(fs.existsSync(linked)).toBe(false)
+    const cached = path.join(external, 'download-cache', 'a.bin')
+    expect(fs.readFileSync(cached, 'utf-8')).toBe('cached')
+    expect(fs.readFileSync(path.join(external, 'photos', 'family.png'), 'utf-8')).toBe('keep')
+  })
+})
+
+describe('folders with more than one role', () => {
+  it.each([
+    ['download cache', ['ComfyUI-Cache', 'download-cache'], noBoxes],
+    ['models folder', ['ComfyUI-Shared', 'models'], bothBoxes]
+  ])('keeps an output folder set to the default %s', async (_name, parts, options) => {
+    const folder = path.join(localRoot(), ...parts)
+    write(path.join(folder, 'family.png'), 'keep')
+    write(path.join(userData, 'settings.json'), JSON.stringify({ outputDir: folder }))
+
+    const c = await loadAs('win32')
+    const results = c.runCleanup(c.collectUninstallCleanupInputs(options))
+    expect(results.find((r) => r.entry.path === folder)?.outcome).toBe('refused')
+    expect(fs.readFileSync(path.join(folder, 'family.png'), 'utf-8')).toBe('keep')
+  })
 })
 
 describe('configured download cache', () => {
@@ -858,7 +923,7 @@ describe('deletionRefusal', () => {
 
   it('keeps going after a failed delete and reports it', async () => {
     const c = await loadAs('win32')
-    const guard = { protectedPaths: [], keptPaths: [], allowedRoots: [userData] }
+    const guard = { protectedPaths: [], keptPaths: [], allowedRoots: [userData], linkedFolders: [] }
     const first = path.join(userData, 'first')
     const second = path.join(userData, 'second')
     const removed: string[] = []
