@@ -267,7 +267,6 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
       modelsDirs: settings.modelsDirs.map((path, index) => ({ path, isPrimary: index === 0 })),
       modelsSystemDefault: settings.modelsDirs[0] ?? ''
     }),
-    resolveStartupRestoreReveal: () => {},
     openGlobalSettings: () => {},
     openInstancePicker: () => {},
     setFirstUseMode: () => {},

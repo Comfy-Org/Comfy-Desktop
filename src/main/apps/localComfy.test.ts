@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
   probeQueue: (_port: number): Promise<unknown> => Promise.resolve({ running: 0, pending: 0 }),
   startModelJob: (_options: Record<string, unknown>): Promise<unknown> => Promise.resolve(null),
   makeRelay: (): unknown => null,
-  hearFromComfy: (_message: unknown): void => {}
+  hearFromComfy: (_message: unknown): void => {},
+  broadcasts: [] as [string, unknown][]
 }))
 
 vi.mock('fs', () => ({
@@ -57,6 +58,8 @@ vi.mock('../lib/ipc/sessionActions/launch', () => ({
 vi.mock('../lib/ipc/shared', async () => {
   const { EventEmitter: Emitter } = await import('node:events')
   return {
+    _broadcastToRenderer: (channel: string, data: unknown) =>
+      mocks.broadcasts.push([channel, data]),
     _hasActiveLaunch: (id: string) => mocks.launching.has(id),
     _operationAborts: new Map(),
     _runningSessions: mocks.sessions,
@@ -77,6 +80,8 @@ vi.mock('./localRelay', () => ({
   }
 }))
 
+import { _resetCrashBuffer, getAllCrashes } from '../lib/crashBuffer'
+import type { InstallationRecord } from '../installations'
 import { sessionLifecycleEvents } from '../lib/ipc/shared'
 import * as local from './localComfy'
 
@@ -240,6 +245,8 @@ beforeEach(() => {
   mocks.installing.clear()
   mocks.ownModels.clear()
   mocks.windows.clear()
+  mocks.broadcasts = []
+  _resetCrashBuffer()
   mocks.handleLaunch = async () => ({ ok: false })
   mocks.stopRunning = async (id) => {
     stopped.push(id)
@@ -1181,6 +1188,97 @@ describe('a ComfyUI that Desktop started for apps', () => {
     await local.stopBuildsRunningForAppsOnly()
 
     expect(stopped).toEqual([])
+  })
+})
+
+describe('the Auto start build, started when Desktop opens', () => {
+  const startWithDesktop = () => local.startWithDesktop(build() as unknown as InstallationRecord)
+
+  it('starts in the background with no ComfyUI window, the way apps start one', async () => {
+    startsWhenLaunched()
+
+    await startWithDesktop()
+
+    expect(launches).toHaveLength(1)
+    expect(launches[0]).toMatchObject({
+      installationId: STUDIO,
+      actionData: { launchModeOverride: 'console', autoPortOnConflict: true }
+    })
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(true)
+    expect(mocks.broadcasts).toEqual([])
+  })
+
+  it('keeps running however long it sits unused, also after an app ran on it', async () => {
+    startsWhenLaunched()
+    await startWithDesktop()
+    await startLocal(WANT)
+    await localFetch({ path: '/queue' })
+
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    expect(launches).toHaveLength(1)
+    expect(stopped).toEqual([])
+  })
+
+  it('is stopped by the idle stop once it stopped and an app started it again', async () => {
+    startsWhenLaunched()
+    await startWithDesktop()
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed')
+    await startLocal(WANT)
+
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    expect(launches).toHaveLength(2)
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it('is stopped like the apps builds when every Desktop window closes', async () => {
+    startsWhenLaunched()
+    await startWithDesktop()
+
+    await local.stopBuildsRunningForAppsOnly()
+
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it("tells Home it didn't start, with the reason, when its start fails", async () => {
+    mocks.handleLaunch = async () => ({ ok: false, message: 'ComfyUI exited with code 1' })
+
+    await startWithDesktop()
+
+    const failure = {
+      installationId: STUDIO,
+      installationName: 'Studio',
+      message: 'ComfyUI exited with code 1'
+    }
+    expect(mocks.broadcasts).toEqual([['instance-crashed', failure]])
+    expect(getAllCrashes()).toMatchObject([failure])
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+  })
+
+  it('names the build when its start fails without a reason', async () => {
+    await startWithDesktop()
+
+    expect(mocks.broadcasts).toEqual([
+      [
+        'instance-crashed',
+        {
+          installationId: STUDIO,
+          installationName: 'Studio',
+          message: 'apps.local.couldNotStart Studio'
+        }
+      ]
+    ])
+  })
+
+  it('says nothing when its start was cancelled', async () => {
+    mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
+
+    await startWithDesktop()
+
+    expect(mocks.broadcasts).toEqual([])
+    expect(getAllCrashes()).toEqual([])
   })
 })
 

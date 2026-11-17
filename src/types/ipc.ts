@@ -571,6 +571,7 @@ export interface ComfyExitedData {
   crashKind?: CrashKind
   vcRuntimeMissing?: string[]
   crashedAtMs?: number
+  message?: string
 }
 
 export interface ComfyBootLogData {
@@ -1185,7 +1186,6 @@ export interface ElectronApi {
   ): () => void
   onAppPageClosed(callback: () => void): () => void
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
-  resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(
     tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
     opts?: {
@@ -1422,7 +1422,6 @@ export interface ElectronApi {
       settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
       title?: string
       cancellable?: boolean
-      startupRestore?: boolean
       triggersInstanceStart?: boolean
       opKind?: 'launch' | 'install' | 'update' | 'destructive' | 'snapshot' | 'generic'
       isRestart?: boolean

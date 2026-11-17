@@ -21,6 +21,7 @@ import {
 import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useProgressStore } from '../../stores/progressStore'
+import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
 
 const {
@@ -40,6 +41,7 @@ const emit = defineEmits<{ open: [] }>()
 const { t } = useI18n()
 const install = useBuildProgress(() => build)
 const progressStore = useProgressStore()
+const sessionStore = useSessionStore()
 const busy = computed(() => install.progress.value !== null)
 const starting = computed(() => install.progress.value?.kind === 'launch')
 const uninstalling = computed(() => install.progress.value?.kind === 'uninstall')
@@ -53,7 +55,9 @@ const busyTestId = computed(() => {
 })
 const broken = computed(() => {
   if (build.statusTag?.style === 'danger') return build.statusTag.label
-  return launchFailed(progressStore, build.id) ? t('home.buildDidntStart') : undefined
+  const startFailed = sessionStore.errorInstances.get(build.id)?.message !== undefined
+  const failed = launchFailed(progressStore, build.id) || startFailed
+  return failed ? t('home.buildDidntStart') : undefined
 })
 
 const toneStyle = computed(() => HOME_BUILD_TONES[tone])

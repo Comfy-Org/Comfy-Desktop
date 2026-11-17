@@ -249,6 +249,16 @@ describe('useSessionStore', () => {
       expect(err?.crashedAtMs).toBe(123)
     })
 
+    it('records why a build started in the background did not start', () => {
+      handlers['instance-crashed']!({
+        installationId: 'inst-1',
+        installationName: 'My Install',
+        message: 'ComfyUI exited with code 1'
+      })
+
+      expect(store.errorInstances.get('inst-1')?.message).toBe('ComfyUI exited with code 1')
+    })
+
     it('clears a prior error when the install is relaunched (instance-launching)', () => {
       store.errorInstances.set('inst-1', { installationName: 'My Install', exitCode: 1 })
       handlers['instance-launching']!({ installationId: 'inst-1', installationName: 'My Install' })
@@ -375,6 +385,22 @@ describe('useSessionStore', () => {
       expect(err?.installationName).toBe('My Install')
       expect(err?.exitCode).toBe(1)
       expect(err?.lastStderr).toBe('boom')
+    })
+
+    it('hydrates a build that did not start with the reason it gave', async () => {
+      installApi({
+        crashes: [
+          {
+            installationId: 'inst-1',
+            installationName: 'My Install',
+            message: 'ComfyUI exited with code 1'
+          }
+        ]
+      })
+
+      await store.init()
+
+      expect(store.errorInstances.get('inst-1')?.message).toBe('ComfyUI exited with code 1')
     })
 
     it('does not hydrate a crash for an install that is mid-launch', async () => {

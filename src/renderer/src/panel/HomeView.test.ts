@@ -887,6 +887,34 @@ describe('Home build auto start', () => {
     ).toBe(`${OLDEST.name}, Auto start`)
   })
 
+  it("says Didn't start on the card of an Auto start build that failed to start in the background", async () => {
+    saved = OLDEST.id
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
+    const wrapper = await openHome()
+
+    useSessionStore().errorInstances.set(OLDEST.id, {
+      installationName: OLDEST.name,
+      message: 'ComfyUI exited with code 1'
+    })
+    await flushPromises()
+
+    expect(statusOf(wrapper, OLDEST.id)).toBe("Didn't start")
+  })
+
+  it("does not say Didn't start on the card of a build that ran and then crashed", async () => {
+    saved = OLDEST.id
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
+    const wrapper = await openHome()
+
+    useSessionStore().errorInstances.set(OLDEST.id, {
+      installationName: OLDEST.name,
+      exitCode: 1
+    })
+    await flushPromises()
+
+    expect(statusOf(wrapper, OLDEST.id)).not.toBe("Didn't start")
+  })
+
   it('moves Auto start to the card whose menu says Auto start', async () => {
     saved = OLDEST.id
     getInstallations.mockResolvedValue([OLDEST, RUNNING])

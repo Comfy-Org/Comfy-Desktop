@@ -275,16 +275,6 @@ provideBuildMenuHost({
   showProgress: handleShowProgress
 })
 
-async function handleStartupRestorePick(inst: Installation): Promise<void> {
-  try {
-    await chooserHandoff.performChooserLaunch(inst)
-  } catch (err) {
-    console.error('startup restore launch failed', err)
-  } finally {
-    window.api.resolveStartupRestoreReveal('dashboard-fallback')
-  }
-}
-
 if (!installationId) {
   watch(currentOverlay, (next, prev) => {
     if (prev && !next) {
@@ -329,11 +319,7 @@ useDeepLinkRouter({
       pickerWorkspaceId: pickOpts?.pickerWorkspaceId
     }
     if (!installationId) {
-      if (pickOpts?.startupRestore) {
-        await handleStartupRestorePick(inst)
-      } else {
-        await chooserHandoff.handleChooserPick(inst, launchOpts)
-      }
+      await chooserHandoff.handleChooserPick(inst, launchOpts)
     } else {
       await chooserHandoff.performPickerLaunch(inst, launchOpts)
     }
