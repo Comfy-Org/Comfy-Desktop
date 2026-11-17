@@ -85,7 +85,7 @@ const isLive = computed(
 )
 const resting = computed(() => status === 'ready' || status === 'update')
 const updateNote = computed(() =>
-  build.statusTag?.style === 'update' ? t('chooser.updateAvailable') : ''
+  build.statusTag?.style === 'update' ? t('chooser.updatePill') : ''
 )
 const subtitle = computed(() => {
   if (uninstalling.value) return install.detail.value

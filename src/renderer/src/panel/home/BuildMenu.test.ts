@@ -254,9 +254,7 @@ describe('Build menu', () => {
     mounted.push(wrapper)
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe(
-      'v0.42.4 · Update available'
-    )
+    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe('v0.42.4 · Update')
     const buttons = [...wrapper.element.querySelectorAll('button')].map((b) =>
       b.getAttribute('data-testid')
     )

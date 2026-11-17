@@ -194,7 +194,7 @@ const leadingFact = computed(() =>
   isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
 
-const updateNote = computed(() => (hasUpdate.value ? t('chooser.updateAvailable') : ''))
+const updateNote = computed(() => (hasUpdate.value ? t('chooser.updatePill') : ''))
 
 const metaLine = computed(() =>
   [leadingFact.value, trailingFact.value, updateNote.value].filter(Boolean).join(' · ')
