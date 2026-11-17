@@ -6,7 +6,6 @@ import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
-import BuildUpdateLink from './BuildUpdateLink.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import {
@@ -88,13 +87,11 @@ const resting = computed(() => status === 'ready' || status === 'update')
 const updateNote = computed(() =>
   build.statusTag?.style === 'update' ? t('chooser.updateAvailable') : ''
 )
-const FACT_SEPARATOR = ' · '
-const updateLink = computed(() => Boolean(updateNote.value) && !busy.value && !isCloudBuild(build))
 const subtitle = computed(() => {
   if (uninstalling.value) return install.detail.value
   const lead =
     updateNote.value && build.version && !isComfyCloud(build) ? build.version : detail.value
-  return [lead, updateLink.value ? '' : updateNote.value].filter(Boolean).join(' · ')
+  return [lead, updateNote.value].filter(Boolean).join(' · ')
 })
 const openHint = computed(() => {
   if (uninstalling.value) return ''
@@ -212,14 +209,10 @@ function openContextMenu(event: MouseEvent): void {
         {{ build.name }}
       </span>
       <span
-        class="mt-0.5 flex min-w-0 items-center text-xs/[17px] text-subtle-foreground"
+        class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground"
         :data-testid="uninstalling ? 'home-build-install-detail' : 'home-build-detail'"
       >
-        <span class="min-w-0 truncate" :class="updateLink && 'shrink-0'">{{ subtitle }}</span>
-        <template v-if="updateLink">
-          <span class="shrink-0 whitespace-pre" aria-hidden="true">{{ FACT_SEPARATOR }}</span>
-          <BuildUpdateLink :build="build" />
-        </template>
+        {{ subtitle }}
       </span>
     </span>
     <Button
