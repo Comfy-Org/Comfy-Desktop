@@ -6,6 +6,7 @@ import path from 'path'
 import { pathToFileURL } from 'url'
 import * as settings from '../settings'
 import * as installations from '../installations'
+import { sendBridgeEvent } from '../host/bridgeEvents'
 import { findInstallationIdByComfySender } from '../host/registry'
 import { expectedPartitionFor } from '../host/partition'
 import { TEMP_DIR_NAME } from './models'
@@ -520,9 +521,7 @@ function broadcastProgress(progress: DownloadProgress): void {
     const target =
       pending.senderContents ||
       (pending.window && !pending.window.isDestroyed() ? pending.window.webContents : undefined)
-    if (target && !target.isDestroyed()) {
-      target.send('desktop2-download-progress', progress)
-    }
+    if (target) sendBridgeEvent(target, 'desktop2-download-progress', progress)
     for (const sub of pending.subscriberWindows) {
       if (!sub.isDestroyed()) {
         sub.webContents.send('desktop2-download-progress', progress)
@@ -534,7 +533,7 @@ function broadcastProgress(progress: DownloadProgress): void {
       if (contents.isDestroyed()) {
         pending.subscriberContents.delete(contents)
       } else if (contents !== target) {
-        contents.send('desktop2-download-progress', progress)
+        sendBridgeEvent(contents, 'desktop2-download-progress', progress)
       }
     }
   }
@@ -1158,7 +1157,7 @@ function joinActiveAssetDownload(
   const joiner = senderContents ?? (win.isDestroyed() ? undefined : win.webContents)
   if (joiner && !joiner.isDestroyed()) {
     if (joiner !== existing.senderContents) existing.subscriberContents.add(joiner)
-    joiner.send('desktop2-download-progress', existing.lastProgress)
+    sendBridgeEvent(joiner, 'desktop2-download-progress', existing.lastProgress)
   }
   return existing
 }

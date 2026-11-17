@@ -17,6 +17,12 @@ const publishedApiSpecs = ['./src/types/comfyDesktopBridge.ts']
 const useOpenExternalHelper =
   'Use openExternalUrl or tryOpenExternalUrl from src/main/lib/openExternal.ts. They hand the OS only http, https and mailto links.'
 
+const useComfyBridge =
+  "Register a ComfyUI bridge channel with handleBridge, onBridge or answerBridge from src/main/lib/ipc/comfyBridge.ts. They apply the channel's caller rule."
+
+const comfyBridgeChannel =
+  '/^(desktop2-|logs-(subscribe|unsubscribe|snapshot|popout-open)$|model-download-(pause|resume|cancel)$|telemetry:(capture|captureException|firebaseAuthState)$)/'
+
 const desktop = {
   rules: { 'no-comments': noComments, 'no-new-vue-style-blocks': noNewVueStyleBlocks }
 }
@@ -114,6 +120,15 @@ export default defineConfig([
           selector: "NewExpression[callee.name='WebContentsView']",
           message:
             'Create the view with createWebContentsView. Electron crashes the app at quit when a WebContentsView is garbage-collected while its webContents is alive.'
+        },
+        {
+          selector: `CallExpression[callee.object.name='ipcMain'][arguments.0.value=${comfyBridgeChannel}]`,
+          message: useComfyBridge
+        },
+        {
+          selector:
+            "CallExpression[callee.object.name='ipcMain'][arguments.0.object.name='EMBEDDED_SESSION_CHANNELS']",
+          message: useComfyBridge
         },
         {
           selector:

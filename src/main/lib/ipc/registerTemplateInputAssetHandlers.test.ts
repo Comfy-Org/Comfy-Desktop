@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  viewUrl: 'http://127.0.0.1:8188/',
   fromWebContents: vi.fn(),
   getInstallation: vi.fn(),
   handle: vi.fn(),
@@ -20,6 +21,18 @@ vi.mock('../../installations', () => ({
   get: mocks.getInstallation
 }))
 
+vi.mock('../../host/registry', () => ({
+  findEntryByComfySender: () => ({
+    installationId: 'install-1',
+    comfyUrl: 'http://127.0.0.1:8188'
+  }),
+  findEntryByTitleBarSender: () => null,
+  isPanelSender: () => false
+}))
+vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => false }))
+vi.mock('../embeddedSession', () => ({ isTrustedSender: () => false }))
+vi.mock('../logsPopoutWindow', () => ({ findLogsPopoutInstallationIdBySender: () => null }))
+
 vi.mock('../../sources/standalone/templateInputAssets', () => ({
   resolveTemplateInputAssetAvailability: mocks.resolveAvailability,
   resolveTemplateInputAssetSnapshot: mocks.resolveSnapshot,
@@ -33,7 +46,10 @@ vi.mock('../comfyDownloadManager', () => ({
 
 import { registerTemplateInputAssetHandlers } from './registerTemplateInputAssetHandlers'
 
-type IpcHandler = (event: { sender: object }, payload: Record<string, unknown>) => Promise<unknown>
+type IpcHandler = (
+  event: { sender: object; senderFrame: object },
+  payload: Record<string, unknown>
+) => Promise<unknown>
 
 function handler(channel: string): IpcHandler {
   const call = mocks.handle.mock.calls.find(([name]) => name === channel)
@@ -42,8 +58,16 @@ function handler(channel: string): IpcHandler {
 }
 
 describe('registerTemplateInputAssetHandlers', () => {
-  const sender = {}
+  const mainFrame = {
+    processId: 3,
+    routingId: 1,
+    get url() {
+      return mocks.viewUrl
+    }
+  }
+  const sender = { mainFrame }
   const win = { webContents: sender }
+  const fromView = { sender, senderFrame: mainFrame }
   const installation = { id: 'install-1', sourceId: 'standalone' }
   const declaredAsset = {
     assetId: 'sample-asset',
@@ -52,14 +76,14 @@ describe('registerTemplateInputAssetHandlers', () => {
   }
 
   function getAssets(templateId = 'template-1') {
-    return handler('desktop2-get-template-input-assets')({ sender }, { templateId })
+    return handler('desktop2-get-template-input-assets')(fromView, { templateId })
   }
 
   function downloadAsset(
     assetId: unknown = declaredAsset.assetId,
     templateId: unknown = 'template-1'
   ) {
-    return handler('desktop2-download-template-input-asset')({ sender }, { templateId, assetId })
+    return handler('desktop2-download-template-input-asset')(fromView, { templateId, assetId })
   }
 
   function mockMissingAsset() {
@@ -69,6 +93,7 @@ describe('registerTemplateInputAssetHandlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.viewUrl = 'http://127.0.0.1:8188/'
     mocks.fromWebContents.mockReturnValue(win)
     mocks.getInstallation.mockResolvedValue(installation)
     mocks.resolveInputDir.mockReturnValue('/comfy/input')
@@ -160,6 +185,16 @@ describe('registerTemplateInputAssetHandlers', () => {
       reason: 'unavailable'
     })
     expect(mocks.resolveAvailability).not.toHaveBeenCalled()
+    expect(mocks.startManagedAssetDownload).not.toHaveBeenCalled()
+  })
+
+  it('gives a page from another site no template inputs and starts no download for it', async () => {
+    mockMissingAsset()
+    mocks.viewUrl = 'https://elsewhere.example.test/'
+
+    expect(await getAssets()).toBeNull()
+    expect(await downloadAsset()).toEqual({ status: 'not-started', reason: 'unavailable' })
+    expect(mocks.resolveSnapshot).not.toHaveBeenCalled()
     expect(mocks.startManagedAssetDownload).not.toHaveBeenCalled()
   })
 

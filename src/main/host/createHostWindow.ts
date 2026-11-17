@@ -20,7 +20,7 @@ import {
   isFirebaseAuthHandlerUrl,
   type SignInFailureContext
 } from '../auth/firebaseBridge'
-import { isCheckoutUrl, isLikelyDownloadUrl, shouldOpenInPopup } from '../lib/allowedPopups'
+import { isCheckoutUrl, shouldOpenInPopup } from '../lib/allowedPopups'
 import { COMFY_BG, TITLEBAR_BG } from '../lib/theme'
 import {
   TITLEBAR_HEIGHT,
@@ -42,6 +42,11 @@ import * as updater from '../lib/updater'
 import { getSavedBounds, getWindowOptions, saveWindowBounds } from '../lib/windowState'
 import { ensureSystemModal } from '../popups/systemModal'
 import { hideTitlePopupForParent, prewarmTitlePopup } from '../popups/titlePopup'
+import {
+  comfyViewShowsItsInstall,
+  keepComfyViewOnInstallSite,
+  openOutsideComfyView
+} from './comfyViewNavigation'
 import { destroyPanelView, ensurePanelView } from './panelView'
 import { expectedPartitionFor } from './partition'
 import {
@@ -624,6 +629,9 @@ export function buildComfyView(
   attachSessionDownloadHandler(comfyContents.session)
   guardPermissionRequests(comfyContents.session)
 
+  const hostEntry = (): ComfyWindowEntry | undefined => comfyWindows.get(windowKey)
+  keepComfyViewOnInstallSite(comfyContents, hostEntry)
+
   comfyContents.on('did-create-window', (childWindow) => {
     childWindow.setIcon(APP_ICON)
     if (process.platform !== 'darwin') childWindow.removeMenu()
@@ -631,12 +639,14 @@ export function buildComfyView(
   })
   comfyContents.setWindowOpenHandler(({ url: childUrl }) => {
     if (isFirebaseAuthHandlerUrl(childUrl)) {
-      void handleFirebasePopup(childUrl, comfyContents, {
-        parentWindow: comfyWindow,
-        onError: (failure) => {
-          forwardDatadogError(buildFirebaseAuthForwardedError(failure))
-        }
-      })
+      if (comfyViewShowsItsInstall(comfyContents, hostEntry)) {
+        void handleFirebasePopup(childUrl, comfyContents, {
+          parentWindow: comfyWindow,
+          onError: (failure) => {
+            forwardDatadogError(buildFirebaseAuthForwardedError(failure))
+          }
+        })
+      }
       return { action: 'deny' }
     }
     if (isCheckoutUrl(childUrl)) {
@@ -654,11 +664,7 @@ export function buildComfyView(
         overrideBrowserWindowOptions: { webPreferences: { preload: undefined } }
       }
     }
-    if (isLikelyDownloadUrl(childUrl)) {
-      comfyContents.session.downloadURL(childUrl)
-      return { action: 'deny' }
-    }
-    void tryOpenExternalUrl(childUrl)
+    openOutsideComfyView(comfyContents, childUrl)
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {

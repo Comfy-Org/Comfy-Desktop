@@ -1,8 +1,9 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow } from 'electron'
 import { get as getInstallation } from '../../installations'
 import type { InstallationRecord } from '../../installations'
 import * as settings from '../../settings'
 import { startAssetDownload } from '../comfyDownloadManager'
+import { handleBridge } from './comfyBridge'
 
 function resolveOutputDir(inst: InstallationRecord): string | null {
   if ((inst.autoDownloadOutputs as boolean | undefined) === false) return null
@@ -18,8 +19,9 @@ function resolveOutputDir(inst: InstallationRecord): string | null {
 export function registerAssetDownloadHandlers(opts: {
   findInstallationIdForWindow: (win: BrowserWindow) => string | undefined
 }): void {
-  ipcMain.handle(
+  handleBridge(
     'desktop2-download-asset',
+    false,
     async (
       event,
       { url, filename, authToken }: { url: string; filename: string; authToken?: string }

@@ -22,6 +22,7 @@ import * as settings from '../settings'
 import { defaultInstallDir } from '../lib/paths'
 import { convertLevelToZoomPercent } from '../lib/zoom'
 import { getAppLogDir } from '../lib/appLog'
+import { handleBridge } from '../lib/ipc/comfyBridge'
 import { tryOpenExternalUrl } from '../lib/openExternal'
 import {
   openPath as openPathHelper,
@@ -1416,7 +1417,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 
   ipcMain.handle('comfy-window:build-storage-snapshot', () => buildPickerStorageSlice())
 
-  ipcMain.handle('desktop2-open-terminal', (event): boolean => {
+  handleBridge('desktop2-open-terminal', false, (event): boolean => {
     const parentEntry = findEntryByComfySender(event.sender)
     if (!parentEntry?.installationId || parentEntry.sourceCategory !== 'local') return false
     openInstancePickerForHost(

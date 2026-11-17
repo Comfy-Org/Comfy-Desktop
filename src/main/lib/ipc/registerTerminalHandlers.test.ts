@@ -31,8 +31,12 @@ vi.mock('../../popups/titlePopup', () => ({
 
 vi.mock('../../host/registry', () => ({
   findEntryByComfySender: mocks.findEntryByComfySender,
+  findEntryByTitleBarSender: () => null,
   isPanelSender: mocks.isPanelSender
 }))
+vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => false }))
+vi.mock('../embeddedSession', () => ({ isTrustedSender: () => false }))
+vi.mock('../logsPopoutWindow', () => ({ findLogsPopoutInstallationIdBySender: () => null }))
 
 vi.mock('../terminalPopoutWindow', () => ({
   findTerminalPopoutInstallationIdBySender: mocks.findTerminalPopoutInstallationIdBySender,
@@ -105,16 +109,38 @@ describe('registerTerminalHandlers', () => {
     expect(restore).toEqual(emptyRestore)
   })
 
+  function comfyViewShowing(url: string): { sender: object; senderFrame: object } {
+    const mainFrame = { processId: 3, routingId: 1, url }
+    return { sender: { mainFrame }, senderFrame: mainFrame }
+  }
+
   it('opens a popout bound to the local installation resolved by main', async () => {
-    const event = { sender: {} }
     mocks.findEntryByComfySender.mockReturnValue({
       installationId: 'inst-a',
+      comfyUrl: 'http://127.0.0.1:8188',
       sourceCategory: 'local'
     })
 
-    await getHandler('desktop2-open-terminal-popout')(event, 'inst-b')
+    await getHandler('desktop2-open-terminal-popout')(
+      comfyViewShowing('http://127.0.0.1:8188/'),
+      'inst-b'
+    )
 
     expect(mocks.openTerminalPopout).toHaveBeenCalledWith('inst-a')
+  })
+
+  it('opens no popout for a page from another site in the ComfyUI view', async () => {
+    mocks.findEntryByComfySender.mockReturnValue({
+      installationId: 'inst-a',
+      comfyUrl: 'http://127.0.0.1:8188',
+      sourceCategory: 'local'
+    })
+
+    await getHandler('desktop2-open-terminal-popout')(
+      comfyViewShowing('https://elsewhere.example.test/')
+    )
+
+    expect(mocks.openTerminalPopout).not.toHaveBeenCalled()
   })
 
   it('allows the trusted title popup to operate on its selected installation', async () => {

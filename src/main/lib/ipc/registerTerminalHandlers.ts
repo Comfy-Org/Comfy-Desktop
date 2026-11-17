@@ -15,6 +15,7 @@ import {
   findTerminalPopoutInstallationIdBySender,
   openTerminalPopout
 } from '../terminalPopoutWindow'
+import { handleBridge } from './comfyBridge'
 
 const EMPTY_RESTORE: TerminalRestore = {
   buffer: [],
@@ -34,7 +35,7 @@ function resolveInstallationId(
 }
 
 export function registerTerminalHandlers(): void {
-  ipcMain.handle('desktop2-open-terminal-popout', async (event): Promise<void> => {
+  handleBridge('desktop2-open-terminal-popout', undefined, async (event): Promise<void> => {
     const entry = findEntryByComfySender(event.sender)
     if (!entry?.installationId || entry.sourceCategory !== 'local') return
     await openTerminalPopout(entry.installationId)
