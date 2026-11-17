@@ -547,6 +547,14 @@ describe('registerDevPlatformHandlers', () => {
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
   })
 
+  it('forces a fresh credit balance read when the workspace switches', async () => {
+    mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })
+
+    await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+    expect(mocks.creditBalanceAuthChanged).toHaveBeenCalledOnce()
+  })
+
   it('lets no view hold the target when a newer auth operation superseded the dashboard switch', async () => {
     mocks.currentAuthGeneration.mockReturnValueOnce(1).mockReturnValueOnce(2)
     mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })

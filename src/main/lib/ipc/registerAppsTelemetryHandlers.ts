@@ -28,9 +28,8 @@ export async function trackFromAppsPage(event: IpcMainEvent, payload: unknown): 
   if (sentFrom === null || !(await isFromAppsPage(event))) return false
   if (!isSamePage(loadedAppPage(event.sender), sentFrom)) return false
   const { name, props } = (payload && typeof payload === 'object' ? payload : {}) as TrackPayload
-  const tracked = trackAppPageEvent(name, props, sentFrom.appId)
-  if (tracked && name === 'run_started') refreshCreditBalanceAfterRun()
-  return tracked
+  if (name === 'run_started') refreshCreditBalanceAfterRun()
+  return trackAppPageEvent(name, props, sentFrom.appId)
 }
 
 export function registerAppsTelemetryHandlers(): void {

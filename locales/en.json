@@ -33,7 +33,8 @@
     "failedToStartReason": "Failed to start: {reason}",
     "credits": "Credits",
     "creditsTooltip": "{credits} Credits",
-    "creditsError": "Unable to load balance"
+    "creditsError": "Unable to load balance",
+    "creditsLabel": "{balance}. {action}"
   },
   "apps": {
     "search": "Search apps",

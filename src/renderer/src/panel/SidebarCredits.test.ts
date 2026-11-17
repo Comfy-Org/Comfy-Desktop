@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
+import '../assets/main.css'
 import SidebarCredits from './SidebarCredits.vue'
 import { useAuthStore } from '../stores/authStore'
 import type { CreditBalanceState } from '../types/ipc'
@@ -30,6 +31,7 @@ beforeEach(() => {
     }
   }
   setActivePinia(createPinia())
+  useAuthStore().status = { signedIn: true, workspaceId: 'ws-1' }
 })
 
 afterEach(() => {
@@ -53,16 +55,45 @@ async function announce(state: CreditBalanceState) {
   await flushPromises()
 }
 
+async function openTooltip(wrapper: VueWrapper, how: 'hover' | 'focus') {
+  if (how === 'hover') {
+    wrapper
+      .get('.tooltip-wrap')
+      .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+  } else {
+    row(wrapper).element.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+  }
+  await vi.advanceTimersByTimeAsync(200)
+  await flushPromises()
+  return document.querySelector<HTMLElement>('.tooltip-bubble')
+}
+
+async function mountWithTimers(collapsed: boolean) {
+  vi.useFakeTimers()
+  const wrapper = mount(SidebarCredits, { props: { collapsed }, attachTo: document.body })
+  wrappers.push(wrapper)
+  await vi.advanceTimersByTimeAsync(1)
+  await flushPromises()
+  return wrapper
+}
+
 describe('SidebarCredits', () => {
   it('shows the balance in credits, 211 to the dollar, and asks main for a fresh one', async () => {
     const wrapper = await mountCredits()
 
     expect(row(wrapper).text()).toBe('Credits2,110')
-    expect(row(wrapper).attributes('aria-label')).toBe('Manage plan & credits')
-    expect(wrapper.get('[data-testid="app-sidebar-credits-value"]').classes()).toContain(
-      'tabular-nums'
-    )
+    expect(row(wrapper).attributes('aria-label')).toBe('2,110 Credits. Manage plan & credits')
     expect(refreshCreditBalance).toHaveBeenCalledOnce()
+  })
+
+  it('lines the number up in fixed-width digits and draws the coin in the text color', async () => {
+    const wrapper = await mountCredits()
+
+    const value = wrapper.get('[data-testid="app-sidebar-credits-value"]').element
+    const coin = row(wrapper).get('svg').element
+    expect(getComputedStyle(value).fontVariantNumeric).toContain('tabular-nums')
+    expect(getComputedStyle(coin).stroke).toBe(getComputedStyle(value).color)
+    expect(getComputedStyle(coin).fill).toBe('none')
   })
 
   it('rounds to whole credits and shows a negative balance', async () => {
@@ -81,6 +112,9 @@ describe('SidebarCredits', () => {
     await announce({ status: 'error' })
 
     expect(row(wrapper).text()).toBe('CreditsUnable to load balance')
+    expect(row(wrapper).attributes('aria-label')).toBe(
+      'Unable to load balance. Manage plan & credits'
+    )
   })
 
   it('is hidden while signed out and follows the balance main announces', async () => {
@@ -96,12 +130,21 @@ describe('SidebarCredits', () => {
   })
 
   it('opens the Platform billing settings of the signed-in workspace on click', async () => {
-    useAuthStore().status = { signedIn: true, workspaceId: 'ws-1' }
     const wrapper = await mountCredits()
 
     await row(wrapper).trigger('click')
 
     expect(openSettingsPage).toHaveBeenCalledExactlyOnceWith('billing', 'ws-1')
+  })
+
+  it('cannot be clicked while Desktop knows no workspace to open billing for', async () => {
+    useAuthStore().status = { signedIn: true }
+    const wrapper = await mountCredits()
+
+    await row(wrapper).trigger('click')
+
+    expect(row(wrapper).attributes('disabled')).toBeDefined()
+    expect(openSettingsPage).not.toHaveBeenCalled()
   })
 
   it('asks for a fresh balance on hover and when an app page closes, and shows it', async () => {
@@ -117,42 +160,32 @@ describe('SidebarCredits', () => {
     expect(row(wrapper).text()).toBe('Credits422')
   })
 
-  it('shows only the coin when collapsed, with the balance in a tooltip on the right', async () => {
-    vi.useFakeTimers()
-    const wrapper = mount(SidebarCredits, { props: { collapsed: true }, attachTo: document.body })
-    wrappers.push(wrapper)
-    await vi.advanceTimersByTimeAsync(1)
-    await flushPromises()
+  it.each(['hover', 'focus'] as const)(
+    'gives the full balance in a tooltip on the right when folded, on %s',
+    async (how) => {
+      refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: 39663 })
+      const wrapper = await mountWithTimers(true)
 
-    expect(row(wrapper).text()).toBe('')
-    expect(row(wrapper).get('svg').classes()).toEqual(
-      expect.arrayContaining(['stroke-current', 'text-foreground'])
-    )
+      const bubble = await openTooltip(wrapper, how)
 
-    wrapper
-      .get('.tooltip-wrap')
-      .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
-    await vi.advanceTimersByTimeAsync(200)
-    await flushPromises()
+      expect(bubble?.textContent).toContain('83,689 Credits')
+      expect(bubble?.dataset['side']).toBe('right')
+      expect(row(wrapper).attributes('aria-label')).toBe('83,689 Credits. Manage plan & credits')
+    }
+  )
 
-    const bubble = document.querySelector<HTMLElement>('.tooltip-bubble')
-    expect(bubble?.textContent).toContain('2,110 Credits')
-    expect(bubble?.dataset['side']).toBe('right')
+  it('says the balance cannot load in the folded tooltip', async () => {
+    refreshCreditBalance.mockResolvedValue({ status: 'error' })
+    const wrapper = await mountWithTimers(true)
+
+    const bubble = await openTooltip(wrapper, 'hover')
+
+    expect(bubble?.textContent).toContain('Unable to load balance')
   })
 
   it('has no tooltip when expanded, where the label shows', async () => {
-    vi.useFakeTimers()
-    const wrapper = mount(SidebarCredits, { props: { collapsed: false }, attachTo: document.body })
-    wrappers.push(wrapper)
-    await vi.advanceTimersByTimeAsync(1)
-    await flushPromises()
+    const wrapper = await mountWithTimers(false)
 
-    wrapper
-      .get('.tooltip-wrap')
-      .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
-    await vi.advanceTimersByTimeAsync(200)
-    await flushPromises()
-
-    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    expect(await openTooltip(wrapper, 'hover')).toBeNull()
   })
 })

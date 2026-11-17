@@ -303,9 +303,10 @@ function openSettings(): void {
             <Tooltip
               :text="failure ? `${build.name} · ${failure}` : build.name"
               side="right"
-              class="min-w-0 flex-1"
+              class="min-w-0 flex-1 items-center self-stretch"
             >
               <span class="min-w-0 truncate text-left">{{ build.name }}</span>
+              <span v-if="failure" class="sr-only">· {{ failure }}</span>
             </Tooltip>
             <span
               v-if="install && install.kind !== 'launch' && install.percent !== null"

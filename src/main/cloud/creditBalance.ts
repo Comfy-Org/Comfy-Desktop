@@ -14,16 +14,6 @@ export function balanceCentsOf(body: unknown): number | null {
   return finite(fields['effective_balance_micros']) ?? finite(fields['amount_micros'])
 }
 
-async function fetchCents(accessToken: string): Promise<number> {
-  const res = await fetch(`${CLOUD_CONFIG.apiBase}/billing/balance`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    signal: AbortSignal.timeout(15_000)
-  })
-  const cents = res.ok ? balanceCentsOf(await res.json().catch(() => null)) : null
-  if (cents === null) throw new Error(`Credit balance unreadable: HTTP ${res.status}`)
-  return cents
-}
-
 export class CreditBalance {
   private state: CreditBalanceState = { status: 'loading' }
   private inFlight: Promise<void> | null = null
@@ -34,6 +24,7 @@ export class CreditBalance {
     private readonly session: {
       isSignedIn(): boolean
       getAccessToken(): Promise<string | null>
+      rejectAccessToken(accessToken: string): void
     },
     private readonly broadcast: (state: CreditBalanceState) => void
   ) {}
@@ -60,13 +51,24 @@ export class CreditBalance {
     return Date.now() - this.lastFetchAt >= CREDIT_BALANCE_MIN_INTERVAL_MS
   }
 
+  private async fetchCents(accessToken: string): Promise<number> {
+    const res = await fetch(`${CLOUD_CONFIG.apiBase}/billing/balance`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(15_000)
+    })
+    if (res.status === 401) this.session.rejectAccessToken(accessToken)
+    const cents = res.ok ? balanceCentsOf(await res.json().catch(() => null)) : null
+    if (cents === null) throw new Error(`Credit balance unreadable: HTTP ${res.status}`)
+    return cents
+  }
+
   private async fetchOnce(): Promise<void> {
     this.lastFetchAt = Date.now()
     let next: CreditBalanceState | null
     try {
       const token = await this.session.getAccessToken()
       if (!token) throw new Error('No Cloud access token')
-      next = { status: 'ready', cents: await fetchCents(token) }
+      next = { status: 'ready', cents: await this.fetchCents(token) }
     } catch {
       next = this.state.status === 'ready' ? null : { status: 'error' }
     }

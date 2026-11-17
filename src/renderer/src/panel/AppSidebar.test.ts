@@ -275,8 +275,10 @@ describe('AppSidebar', () => {
 
     const credits = wrapper.get('[data-testid="app-sidebar-credits"]')
     const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
-    expect(settings.element.nextElementSibling).toBe(credits.element)
-    expect(credits.element.nextElementSibling?.classList).toContain('sidebar-account')
+    expect(settings.element.nextElementSibling?.contains(credits.element)).toBe(true)
+    expect(credits.element.parentElement?.nextElementSibling?.classList).toContain(
+      'sidebar-account'
+    )
   })
 
   describe('Builds group', () => {
@@ -341,6 +343,7 @@ describe('AppSidebar', () => {
       expect(tooltipOf(wrapper, 'app-sidebar-build-old')).toBe(
         'Flux Sandbox · Failed to start: Port 8188 is in use'
       )
+      expect(row.get('.sr-only').text()).toBe('· Failed to start: Port 8188 is in use')
     })
 
     it('says a build crashed, with its exit code, rather than that it failed to start', async () => {

@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 
 import { CreditBalance } from '../../cloud/creditBalance'
-import { getCloudSession } from '../../devplatform/session'
+import { getCloudSession, rejectAccessToken } from '../../devplatform/session'
 import { _broadcastToRenderer } from './broadcast'
 
 export const AFTER_RUN_REFRESH_DELAY_MS = 60_000
@@ -9,12 +9,13 @@ export const AFTER_RUN_REFRESH_DELAY_MS = 60_000
 const creditBalance = new CreditBalance(
   {
     isSignedIn: () => getCloudSession().isSignedIn(),
-    getAccessToken: () => getCloudSession().getAccessToken()
+    getAccessToken: () => getCloudSession().getAccessToken(),
+    rejectAccessToken
   },
   (state) => _broadcastToRenderer('credit-balance:changed', state)
 )
 
-let afterRunRefresh: ReturnType<typeof setTimeout> | null = null
+let afterRunRefresh: ReturnType<typeof setTimeout> | undefined
 
 export function refreshCreditBalance(): void {
   void creditBalance.refresh()
@@ -25,10 +26,8 @@ export function creditBalanceAuthChanged(): void {
 }
 
 export function refreshCreditBalanceAfterRun(): void {
-  afterRunRefresh ??= setTimeout(() => {
-    afterRunRefresh = null
-    refreshCreditBalance()
-  }, AFTER_RUN_REFRESH_DELAY_MS)
+  clearTimeout(afterRunRefresh)
+  afterRunRefresh = setTimeout(refreshCreditBalance, AFTER_RUN_REFRESH_DELAY_MS)
 }
 
 export function registerCreditBalanceHandlers(): void {

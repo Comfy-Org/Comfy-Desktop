@@ -181,6 +181,14 @@ describe('the credit balance after a run', () => {
     expect(mocks.refreshCreditBalanceAfterRun).toHaveBeenCalledOnce()
   })
 
+  it('asks for the refetch even when telemetry does not send the event', async () => {
+    mocks.capture.mockReturnValue(false)
+
+    expect(await trackFromAppsPage(EVENT, RUN)).toBe(false)
+
+    expect(mocks.refreshCreditBalanceAfterRun).toHaveBeenCalledOnce()
+  })
+
   it('asks for no refetch for a run event Desktop refused', async () => {
     mocks.isAppsPage = false
 

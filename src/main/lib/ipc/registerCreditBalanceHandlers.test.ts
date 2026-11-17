@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as HandlersModule from './registerCreditBalanceHandlers'
+
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, () => unknown>(),
   broadcast: vi.fn(),
-  isSignedIn: vi.fn(() => true)
+  rejectAccessToken: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -13,25 +15,22 @@ vi.mock('electron', () => ({
 }))
 vi.mock('./broadcast', () => ({ _broadcastToRenderer: mocks.broadcast }))
 vi.mock('../../devplatform/session', () => ({
-  getCloudSession: () => ({
-    isSignedIn: mocks.isSignedIn,
-    getAccessToken: async () => 'ws-token'
-  })
+  getCloudSession: () => ({ isSignedIn: () => true, getAccessToken: async () => 'ws-token' }),
+  rejectAccessToken: mocks.rejectAccessToken
 }))
 
-import {
-  AFTER_RUN_REFRESH_DELAY_MS,
-  creditBalanceAuthChanged,
-  refreshCreditBalanceAfterRun,
-  registerCreditBalanceHandlers
-} from './registerCreditBalanceHandlers'
+type Handlers = typeof HandlersModule
 
 const fetchMock = vi.fn(async () => new Response(JSON.stringify({ amount_micros: 100 })))
+let handlers: Handlers
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks()
+  vi.useFakeTimers()
   vi.stubGlobal('fetch', fetchMock)
-  registerCreditBalanceHandlers()
+  vi.resetModules()
+  handlers = await import('./registerCreditBalanceHandlers')
+  handlers.registerCreditBalanceHandlers()
 })
 
 afterEach(() => {
@@ -41,7 +40,7 @@ afterEach(() => {
 
 describe('credit balance handlers', () => {
   it('broadcasts each new balance to the Desktop windows and answers refresh with it', async () => {
-    creditBalanceAuthChanged()
+    handlers.creditBalanceAuthChanged()
 
     await vi.waitFor(() =>
       expect(mocks.broadcast).toHaveBeenLastCalledWith('credit-balance:changed', {
@@ -53,20 +52,25 @@ describe('credit balance handlers', () => {
       status: 'ready',
       cents: 100
     })
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 
-  it('refetches a minute after a run starts, once however many runs start meanwhile', async () => {
-    vi.useFakeTimers()
-    creditBalanceAuthChanged()
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    fetchMock.mockClear()
-
-    refreshCreditBalanceAfterRun()
-    refreshCreditBalanceAfterRun()
-    await vi.advanceTimersByTimeAsync(AFTER_RUN_REFRESH_DELAY_MS - 1)
+  it('refetches a minute after the last run starts', async () => {
+    handlers.refreshCreditBalanceAfterRun()
+    await vi.advanceTimersByTimeAsync(handlers.AFTER_RUN_REFRESH_DELAY_MS - 1)
+    handlers.refreshCreditBalanceAfterRun()
+    await vi.advanceTimersByTimeAsync(handlers.AFTER_RUN_REFRESH_DELAY_MS - 1)
     expect(fetchMock).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(1)
     expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it('hands a refused token to the session so a revoked workspace token is dropped', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 401 }))
+
+    await mocks.handlers.get('credit-balance:refresh')?.()
+
+    expect(mocks.rejectAccessToken).toHaveBeenCalledExactlyOnceWith('ws-token')
   })
 })

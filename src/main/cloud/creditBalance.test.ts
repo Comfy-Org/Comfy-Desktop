@@ -33,14 +33,16 @@ afterEach(() => {
 function setup(over: { signedIn?: boolean; token?: string | null } = {}) {
   const signed = { in: over.signedIn ?? true }
   const states: CreditBalanceState[] = []
+  const rejectAccessToken = vi.fn()
   const balance = new CreditBalance(
     {
       isSignedIn: () => signed.in,
-      getAccessToken: async () => (over.token === undefined ? 'ws-token' : over.token)
+      getAccessToken: async () => (over.token === undefined ? 'ws-token' : over.token),
+      rejectAccessToken
     },
     (state) => states.push(state)
   )
-  return { balance, signed, states }
+  return { balance, signed, states, rejectAccessToken }
 }
 
 describe('balanceCentsOf', () => {
@@ -157,6 +159,19 @@ describe('CreditBalance', () => {
     fetchMock.mockResolvedValueOnce(new Response('not json'))
 
     await expect(balance.refresh()).resolves.toEqual({ status: 'ready', cents: 500 })
+  })
+
+  it('hands a token Cloud refuses back to the session, and only that one', async () => {
+    const { balance, rejectAccessToken } = setup()
+    fetchMock.mockResolvedValueOnce(balanceReply({}, 503))
+    await balance.refresh()
+    expect(rejectAccessToken).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(CREDIT_BALANCE_MIN_INTERVAL_MS)
+    fetchMock.mockResolvedValueOnce(balanceReply({}, 401))
+
+    await expect(balance.refresh()).resolves.toEqual({ status: 'error' })
+    expect(rejectAccessToken).toHaveBeenCalledExactlyOnceWith('ws-token')
   })
 
   it('shows an error when Desktop has no Cloud token to read with', async () => {
