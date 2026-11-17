@@ -166,6 +166,11 @@ export function useBuildMenu(build: () => Installation) {
     await host.launch(inst, { isRestart: true })
   }
 
+  async function cancelLeftStart(inst: Installation): Promise<void> {
+    await window.api.cancelOperation(inst.id)
+    await window.api.stopComfyUI(inst.id)
+  }
+
   async function run(id: string, opts: { confirmed?: boolean } = {}): Promise<void> {
     const inst = build()
     switch (id) {
@@ -177,7 +182,7 @@ export function useBuildMenu(build: () => Installation) {
         else openInstallManager(inst, { initialTab: 'console' })
         return
       case 'cancel':
-        return install.progress.value ? install.cancel() : window.api.cancelOperation(inst.id)
+        return install.progress.value ? install.cancel() : cancelLeftStart(inst)
       case 'restart':
         if (canLaunch.value) return restart(inst)
         return
