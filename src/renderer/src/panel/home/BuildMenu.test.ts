@@ -5,7 +5,10 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import AppSidebar from '../AppSidebar.vue'
 import HomeBuildCard from './HomeBuildCard.vue'
+import ChooserInstallTile from '../../views/chooser/ChooserInstallTile.vue'
+import Tooltip from '../../components/ui/Tooltip.vue'
 import { provideBuildMenuHost, type BuildMenuHost } from './useBuildMenu'
+import { homeBuildStatus } from './homeBuild'
 import { provideBuildLogs } from '../../composables/useBuildProgress'
 import { useAuthStore } from '../../stores/authStore'
 import { useInstallationStore } from '../../stores/installationStore'
@@ -64,7 +67,8 @@ beforeEach(() => {
     onSettingsChanged: vi.fn(() => () => {}),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
-      onAuthChanged: vi.fn(() => () => {})
+      onAuthChanged: vi.fn(() => () => {}),
+      promoteLocalInstance: vi.fn()
     }
   }
   host = { launch: vi.fn(), openDetails: vi.fn(), showProgress: vi.fn() }
@@ -101,7 +105,13 @@ function putIn(state: State): void {
 
 async function mountTile(state: State): Promise<VueWrapper> {
   const wrapper = mount(
-    withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+    withHost(() =>
+      h(HomeBuildCard, {
+        build: BUILD,
+        status: homeBuildStatus(BUILD, useSessionStore()),
+        tone: 'ember'
+      })
+    ),
     { attachTo: document.body }
   )
   mounted.push(wrapper)
@@ -109,6 +119,19 @@ async function mountTile(state: State): Promise<VueWrapper> {
   await flushPromises()
   return wrapper
 }
+
+async function mountBuildsTile(state: State): Promise<VueWrapper> {
+  const wrapper = mount(
+    withHost(() => h(ChooserInstallTile, { installation: BUILD })),
+    { attachTo: document.body }
+  )
+  mounted.push(wrapper)
+  putIn(state)
+  await flushPromises()
+  return wrapper
+}
+
+const BUILDS_TILE = `[data-testid="dashboard-tile-${BUILD.id}"]`
 
 async function mountSidebar(state: State): Promise<VueWrapper> {
   const wrapper = mount(
@@ -185,9 +208,20 @@ describe('Build menu', () => {
       const sidebar = await mountSidebar(state)
       await rightClick(sidebar.get(`[data-testid="app-sidebar-build-${BUILD.id}"]`).element)
       const fromSidebar = await shownMenu()
+      await closeMenu()
+
+      const buildsTile = await mountBuildsTile(state)
+      await buildsTile.get('.chooser-tile-kebab').trigger('click')
+      const fromBuildsMore = await shownMenu()
+      await closeMenu()
+
+      await rightClick(buildsTile.get(BUILDS_TILE).element)
+      const fromBuildsTile = await shownMenu()
 
       expect(fromTile).toEqual(fromMore)
       expect(fromSidebar).toEqual(fromMore)
+      expect(fromBuildsMore).toEqual(fromMore)
+      expect(fromBuildsTile).toEqual(fromMore)
     }
   )
 
@@ -208,6 +242,52 @@ describe('Build menu', () => {
     await wrapper.get('[data-testid="home-build-more"]').trigger('click')
 
     expect(await shownMenu()).not.toContain('auto-start')
+  })
+
+  it('shows the update beside the version and keeps the whole tile as the primary button', async () => {
+    const build: Installation = {
+      ...BUILD,
+      statusTag: { label: 'Update available', style: 'update' }
+    }
+    const wrapper = mount(
+      withHost(() => h(HomeBuildCard, { build, status: 'update', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(wrapper)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe('v0.42.4 · Update')
+    const buttons = [...wrapper.element.querySelectorAll('button')].map((b) =>
+      b.getAttribute('data-testid')
+    )
+    expect(buttons).toEqual(['home-build-open', 'home-build-more'])
+  })
+
+  it('shows upload progress on Home and holds the tile and menu launch actions until it finishes', async () => {
+    const signedIn = { signedIn: true, workspaceId: 'ws-1' }
+    vi.mocked(window.api.comfybuilder.getAuthStatus).mockResolvedValue(signedIn)
+    useAuthStore().status = signedIn
+    const upload = Promise.withResolvers<{ ok: true }>()
+    vi.mocked(window.api.comfybuilder.promoteLocalInstance).mockReturnValue(upload.promise)
+    const tile = await mountTile('ready')
+    const more = tile.get('[data-testid="home-build-more"]')
+    await more.trigger('click')
+    expect(await shownMenu()).toContain('promote-to-workspace')
+    document.querySelector<HTMLElement>('[data-testid="build-menu-promote-to-workspace"]')!.click()
+
+    try {
+      await flushPromises()
+      expect(tile.get('[data-testid="home-build-status"]').text()).toBe('Creating...')
+      expect(tile.find('[data-testid="home-build-open"]').exists()).toBe(false)
+      await more.trigger('click')
+      expect(await shownMenu()).not.toContain('launch')
+    } finally {
+      upload.resolve({ ok: true })
+      await flushPromises()
+    }
+
+    expect(tile.get('[data-testid="home-build-status"]').text()).toBe('Ready')
+    expect(tile.find('[data-testid="home-build-open"]').exists()).toBe(true)
   })
 
   it('offers Upload build after Restore snapshot when signed in to a workspace, from the ⋯ and a right-click', async () => {
@@ -354,6 +434,89 @@ describe('Build menu', () => {
     await flushPromises()
 
     expect(host.launch).toHaveBeenCalledExactlyOnceWith(BUILD)
+  })
+
+  it.each([
+    ['ready', 'pick'],
+    ['running', 'pick'],
+    ['starting', 'logs'],
+    ['installing', 'logs'],
+    ['uninstalling', 'nothing']
+  ] as const)(
+    'clicking a %s build card does the same on Home and on the Builds page: %s',
+    async (state, outcome) => {
+      const home = await mountTile(state)
+      await home.get(`[data-build-id="${BUILD.id}"]`).trigger('click')
+      const homeCard = home.findComponent(HomeBuildCard)
+      expect(homeCard.emitted('open')?.length ?? 0).toBe(outcome === 'pick' ? 1 : 0)
+      expect(viewLogs).toHaveBeenCalledTimes(outcome === 'logs' ? 1 : 0)
+
+      const builds = await mountBuildsTile(state)
+      await builds.get(BUILDS_TILE).trigger('click')
+      const buildsTile = builds.findComponent(ChooserInstallTile)
+      expect(buildsTile.emitted('pick')?.length ?? 0).toBe(outcome === 'pick' ? 1 : 0)
+      expect(viewLogs).toHaveBeenCalledTimes(outcome === 'logs' ? 2 : 0)
+      expect(buildsTile.emitted('open-details')).toBeUndefined()
+      expect(host.launch).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    ['ready', 'Click to start'],
+    ['running', 'Click to open'],
+    ['starting', 'Click to view logs'],
+    ['installing', 'Click to view logs'],
+    ['uninstalling', '']
+  ] as const)(
+    'hints what a click does on a %s build card, on Home and on the Builds page',
+    async (state, hint) => {
+      const home = await mountTile(state)
+      const homeHint = home.findAllComponents(Tooltip)[0]
+      if (hint) expect(homeHint?.props('text')).toBe(hint)
+      else expect(home.find('[data-testid="home-build-open"]').exists()).toBe(false)
+
+      const builds = await mountBuildsTile(state)
+      const open = builds.find('[data-testid="chooser-tile-open"]')
+      expect(open.exists()).toBe(Boolean(hint))
+      if (hint) expect(builds.findAllComponents(Tooltip)[0]?.props('text')).toBe(hint)
+    }
+  )
+
+  it('hints Click to open on an idle remote build, on Home and on the Builds page', async () => {
+    const remote: Installation = { ...BUILD, sourceCategory: 'remote' }
+    const home = mount(
+      withHost(() => h(HomeBuildCard, { build: remote, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(home)
+    const builds = mount(
+      withHost(() => h(ChooserInstallTile, { installation: remote })),
+      { attachTo: document.body }
+    )
+    mounted.push(builds)
+    await flushPromises()
+
+    expect(home.findAllComponents(Tooltip)[0]?.props('text')).toBe('Click to open')
+    expect(builds.findAllComponents(Tooltip)[0]?.props('text')).toBe('Click to open')
+  })
+
+  it('names a clipped build in full in the Builds page click hint, and only the action when it fits', async () => {
+    const builds = await mountBuildsTile('ready')
+    const label = builds.get('.chooser-tile-name .truncated-text').element
+    const hint = () => builds.findAllComponents(Tooltip)[0]!.props('text')
+
+    Object.defineProperty(label, 'clientWidth', { configurable: true, value: 120 })
+    Object.defineProperty(label, 'scrollWidth', { configurable: true, value: 120 })
+    await builds.get(BUILDS_TILE).trigger('pointerenter')
+    expect(hint()).toBe('Click to start')
+
+    Object.defineProperty(label, 'scrollWidth', { configurable: true, value: 300 })
+    await builds.get(BUILDS_TILE).trigger('pointerenter')
+    expect(hint()).toBe(`${BUILD.name} · Click to start`)
+
+    Object.defineProperty(label, 'scrollWidth', { configurable: true, value: 120 })
+    await builds.get('[data-testid="chooser-tile-open"]').trigger('focus')
+    expect(hint()).toBe('Click to start')
   })
 
   it('opens no menu on a right-click on a page in the sidebar', async () => {
