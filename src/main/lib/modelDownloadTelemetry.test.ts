@@ -4,6 +4,14 @@ import { ModelDownloadTelemetry } from './modelDownloadTelemetry'
 const capture = vi.hoisted(() => vi.fn())
 vi.mock('./telemetry', () => ({ capture }))
 
+const model = {
+  url: 'https://huggingface.co/private/model',
+  source: 'comfyui',
+  filename: 'private-model.SafeTensors',
+  directory: 'C:\\models\\checkpoints',
+  installationId: 'build-id'
+} as const
+
 beforeEach(() => {
   capture.mockReset()
   vi.useFakeTimers()
@@ -14,7 +22,7 @@ afterEach(() => vi.useRealTimers())
 
 describe('model download telemetry', () => {
   it('counts transitions once and retains unthrottled bytes in terminal events', () => {
-    const telemetry = new ModelDownloadTelemetry('https://huggingface.co/private/model', 'comfyui')
+    const telemetry = new ModelDownloadTelemetry(model)
     telemetry.report({ status: 'pending' })
     for (let bytes = 1; bytes <= 100; bytes++) {
       telemetry.updateBytes(bytes, 200)
@@ -35,17 +43,26 @@ describe('model download telemetry', () => {
       'comfy.desktop.model_download.started',
       'comfy.desktop.model_download.paused',
       'comfy.desktop.model_download.resumed',
-      'comfy.desktop.model_download.cancelled'
+      'comfy.desktop.model_download.result'
     ])
-    expect(capture).toHaveBeenLastCalledWith('comfy.desktop.model_download.cancelled', {
+    expect(capture.mock.calls[0]?.[1]).toMatchObject({
+      size_bucket: 'unknown',
+      installation_id: 'build-id'
+    })
+    expect(capture).toHaveBeenLastCalledWith('comfy.desktop.model_download.result', {
       download_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      installation_id: 'build-id',
       source: 'comfyui',
       provider: 'huggingface',
       is_retry: false,
+      directory_bucket: 'checkpoints',
+      file_ext: 'safetensors',
       received_bytes: 100,
       total_bytes: 200,
+      size_bucket: 'lt_10mb',
       duration_ms: 4000,
-      resume_count: 1
+      resume_count: 1,
+      result: 'cancelled'
     })
     expect(new Set(capture.mock.calls.map(([, properties]) => properties.download_id)).size).toBe(1)
   })
@@ -57,9 +74,25 @@ describe('model download telemetry', () => {
     ['https://huggingface.co.evil.example/model', 'other'],
     ['not a url', 'other']
   ])('only records a provider category for %s', (url, provider) => {
-    new ModelDownloadTelemetry(url, 'app').report({ status: 'pending' })
+    new ModelDownloadTelemetry({ ...model, url, source: 'app' }).report({ status: 'pending' })
     expect(capture.mock.calls[0]?.[1].provider).toBe(provider)
     expect(JSON.stringify(capture.mock.calls)).not.toContain(url)
+  })
+
+  it('buckets custom directory names and unsupported file extensions without exposing them', () => {
+    new ModelDownloadTelemetry({
+      ...model,
+      filename: 'model.private-extension',
+      directory: 'models/private-directory',
+      installationId: null
+    }).report({ status: 'pending' })
+
+    expect(capture.mock.lastCall?.[1]).toMatchObject({
+      directory_bucket: 'other',
+      file_ext: 'other',
+      installation_id: null
+    })
+    expect(JSON.stringify(capture.mock.calls)).not.toContain('private')
   })
 
   it.each([
@@ -82,12 +115,14 @@ describe('model download telemetry', () => {
     ],
     ['EACCES: permission denied /Users/private/model.safetensors', 'permissions', undefined]
   ])('categorizes %s without sending error text', (error, errorBucket, httpStatus) => {
-    new ModelDownloadTelemetry('https://private.example.com/model', 'template').report({
-      status: 'error',
-      error
-    })
+    new ModelDownloadTelemetry({
+      ...model,
+      url: 'https://private.example.com/model',
+      source: 'template'
+    }).report({ status: 'error', error })
     const properties = capture.mock.lastCall?.[1]
-    expect(properties).toMatchObject({ error_bucket: errorBucket })
+    expect(capture.mock.lastCall?.[0]).toBe('comfy.desktop.model_download.result')
+    expect(properties).toMatchObject({ result: 'error', error_bucket: errorBucket })
     expect(properties.http_status).toBe(httpStatus)
     expect(JSON.stringify(capture.mock.calls)).not.toContain(error)
     expect(JSON.stringify(capture.mock.calls)).not.toContain('private')
@@ -98,7 +133,7 @@ describe('model download telemetry', () => {
     capture.mockImplementation(() => {
       throw new Error('telemetry unavailable')
     })
-    const telemetry = new ModelDownloadTelemetry('https://example.com/model', 'app')
+    const telemetry = new ModelDownloadTelemetry(model)
     expect(() => {
       telemetry.report({ status: 'pending' })
       telemetry.report({ status: 'completed', receivedBytes: 4, totalBytes: 4 })

@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { bucketError } from '../../shared/errorBucket'
+import { ALLOWED_EXTENSIONS } from './downloadFilename'
 import { capture, type TelemetryContext } from './telemetry'
 
 export type ModelDownloadSource = 'comfyui' | 'template' | 'app' | 'restored' | 'unknown'
@@ -11,6 +12,52 @@ interface DownloadState {
   receivedBytes?: number
   totalBytes?: number
   error?: string
+}
+
+interface ModelDownloadTelemetryOptions {
+  url: string
+  source: ModelDownloadSource
+  filename: string
+  directory: string
+  installationId: string | null
+  isRetry?: boolean
+}
+
+const MODEL_DIRECTORIES = new Set([
+  'checkpoints',
+  'loras',
+  'vae',
+  'controlnet',
+  'embeddings',
+  'upscale_models',
+  'diffusion_models',
+  'clip_vision',
+  'clip',
+  'text_encoders',
+  'unet',
+  'vae_approx'
+])
+
+function toModelDirectoryBucket(directory: string): string {
+  if (!directory) return 'unknown'
+  const leaf = directory.replace(/\\/g, '/').toLowerCase().split('/').filter(Boolean).at(-1)
+  return leaf && MODEL_DIRECTORIES.has(leaf) ? leaf : 'other'
+}
+
+function toModelFileExtension(filename: string): string {
+  if (!filename) return 'unknown'
+  const index = filename.lastIndexOf('.')
+  if (index < 0 || index === filename.length - 1) return 'none'
+  const extension = filename.slice(index).toLowerCase()
+  return ALLOWED_EXTENSIONS.includes(extension) ? extension.slice(1) : 'other'
+}
+
+function toSizeBucket(bytes: number | null): string {
+  if (!bytes) return 'unknown'
+  if (bytes < 10 * 1024 * 1024) return 'lt_10mb'
+  if (bytes < 100 * 1024 * 1024) return '10_99mb'
+  if (bytes < 1024 * 1024 * 1024) return '100mb_1gb'
+  return 'gte_1gb'
 }
 
 function providerOf(rawUrl: string): string {
@@ -53,12 +100,22 @@ export class ModelDownloadTelemetry {
   private resumeCount = 0
   private settled = false
 
-  constructor(url: string, source: ModelDownloadSource, isRetry = false) {
+  constructor({
+    url,
+    source,
+    filename,
+    directory,
+    installationId,
+    isRetry = false
+  }: ModelDownloadTelemetryOptions) {
     this.properties = {
       download_id: randomUUID(),
+      installation_id: installationId,
       source,
       provider: providerOf(url),
-      is_retry: isRetry
+      is_retry: isRetry,
+      directory_bucket: toModelDirectoryBucket(directory),
+      file_ext: toModelFileExtension(filename)
     }
   }
 
@@ -86,22 +143,30 @@ export class ModelDownloadTelemetry {
       this.send('resumed')
     } else if (state.status === 'paused' && this.status !== 'paused') {
       this.send('paused')
-    } else if (state.status === 'completed' || state.status === 'cancelled') {
+    } else if (
+      state.status === 'completed' ||
+      state.status === 'cancelled' ||
+      state.status === 'error'
+    ) {
       this.settled = true
-      this.send(state.status)
-    } else if (state.status === 'error') {
-      this.settled = true
-      this.send('failed', failureProperties(state.error))
+      this.send('result', {
+        result: state.status,
+        ...(state.status === 'error' ? failureProperties(state.error) : {})
+      })
     }
     this.status = state.status
   }
 
-  private send(event: string, extra: TelemetryContext = {}): void {
+  private send(
+    event: 'started' | 'paused' | 'resumed' | 'result',
+    extra: TelemetryContext = {}
+  ): void {
     try {
       capture(`comfy.desktop.model_download.${event}`, {
         ...this.properties,
         received_bytes: this.receivedBytes,
         total_bytes: this.totalBytes,
+        size_bucket: toSizeBucket(this.totalBytes),
         duration_ms: Math.max(0, Date.now() - this.startedAt!),
         resume_count: this.resumeCount,
         ...extra

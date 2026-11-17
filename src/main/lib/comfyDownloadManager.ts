@@ -14,7 +14,7 @@ import { ALLOWED_EXTENSIONS, stripQueryParams } from './downloadFilename'
 import type { ComfyTemplateInputReference } from '../../types/comfyDesktopBridge'
 import {
   buildExistenceCandidates,
-  collectModelScanRoots,
+  collectModelScanContext,
   getModelsBaseDir,
   regularFileExists,
   resolveDownloadContextById
@@ -878,7 +878,15 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   const savePath = path.join(baseDir, directory, filename)
 
   const id = randomUUID()
-  const telemetry = new ModelDownloadTelemetry(url, opts.source ?? 'unknown', opts.isRetry)
+  const telemetry = new ModelDownloadTelemetry({
+    url,
+    filename,
+    directory,
+    installationId: ctx ? resolvedInstallId : null,
+    source: opts.source ?? 'unknown',
+    isRetry: opts.isRetry
+  })
+  telemetry.updateBytes(0, opts.expectedSize)
 
   retryParamsById.set(id, {
     kind: 'model',
@@ -1051,7 +1059,6 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   )
   registerPending(pending)
   modelJobIdByDest.set(destKey, id)
-  telemetry.updateBytes(0, opts.expectedSize)
   reportProgress(initial)
 
   pending.starting = true
@@ -2128,13 +2135,14 @@ function reconcileUnsafeModelWarnings(
 }
 
 async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety> {
-  let roots: string[]
+  let scanContext: Awaited<ReturnType<typeof collectModelScanContext>>
   try {
-    roots = await collectModelScanRoots()
+    scanContext = await collectModelScanContext()
   } catch (err) {
     console.error('Model download startup: collecting model roots failed:', err)
     return { safe: false, unsafePaths: [] }
   }
+  const { roots, installationIds } = scanContext
   let migrationUnsafe: string[] | null
   try {
     migrationUnsafe = (await migrateLegacyModelDownloadArtifacts(roots)).unsafe
@@ -2208,7 +2216,16 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       sha256: meta.sha256,
       settleJob,
       completion,
-      telemetry: new ModelDownloadTelemetry(meta.url, 'restored'),
+      telemetry: new ModelDownloadTelemetry({
+        url: meta.url,
+        filename: meta.filename,
+        directory: meta.directory,
+        installationId:
+          meta.installationId && installationIds.has(meta.installationId)
+            ? meta.installationId
+            : null,
+        source: 'restored'
+      }),
       lastProgress: progress,
       lastSpeedBytes: stagedBytes,
       lastSpeedTime: Date.now()
