@@ -813,8 +813,8 @@
   background:
     radial-gradient(
       ellipse 62% 100% at 50% 0%,
-      color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
-      color-mix(in oklch, var(--color-base-foreground) 2.5%, transparent) 50%,
+      color-mix(in oklch, var(--color-base-foreground) calc(6% * var(--mar-glow)), transparent),
+      color-mix(in oklch, var(--color-base-foreground) calc(2.5% * var(--mar-glow)), transparent) 50%,
       transparent 100%
     ),
     var(--color-content-background);
@@ -825,7 +825,7 @@
 :root[data-mar-ui='on'][data-ds-theme='light'] .mar-backdrop.is-spotlight .mar-bg {
   background: radial-gradient(
     ellipse 55% 85% at 50% -15%,
-    oklch(0.84 0.06 290 / 0.45),
+    oklch(0.84 0.06 290 / calc(0.45 * var(--mar-glow))),
     transparent 70%
   );
 }
@@ -833,9 +833,9 @@
   background:
     radial-gradient(
       ellipse 62% 100% at 50% 0%,
-      oklch(0.9 0.04 290 / 0.3),
-      oklch(0.92 0.03 290 / 0.14) 40%,
-      oklch(0.94 0.02 290 / 0.05) 70%,
+      oklch(0.9 0.04 290 / calc(0.3 * var(--mar-glow))),
+      oklch(0.92 0.03 290 / calc(0.14 * var(--mar-glow))) 40%,
+      oklch(0.94 0.02 290 / calc(0.05 * var(--mar-glow))) 70%,
       transparent 100%
     ),
     var(--color-content-background);
@@ -850,8 +850,8 @@
   background:
     radial-gradient(
       ellipse 62% 100% at 50% 0%,
-      color-mix(in oklch, var(--color-base-foreground) 3%, transparent),
-      color-mix(in oklch, var(--color-base-foreground) 1%, transparent) 50%,
+      color-mix(in oklch, var(--color-base-foreground) calc(3% * var(--mar-glow)), transparent),
+      color-mix(in oklch, var(--color-base-foreground) calc(1% * var(--mar-glow)), transparent) 50%,
       transparent 100%
     ),
     var(--color-content-background);
@@ -862,12 +862,38 @@
   background:
     radial-gradient(
       ellipse 62% 100% at 50% 0%,
-      oklch(0.9 0.04 290 / 0.14),
-      oklch(0.94 0.02 290 / 0.04) 60%,
+      oklch(0.9 0.04 290 / calc(0.14 * var(--mar-glow))),
+      oklch(0.94 0.02 290 / calc(0.04 * var(--mar-glow))) 60%,
       transparent 100%
     ),
     var(--color-content-background);
   background-attachment: local;
+}
+/* Once a page's toolbar sticks at the top, the light behind it fades out,
+   so the bar's solid fill and the page meet as one colour; scroll back to
+   the top and it returns. */
+@property --mar-glow {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+:root[data-mar-ui='on'] .proto-main:has(> .mar-backdrop.is-spotlight) {
+  transition: --mar-glow 320ms ease;
+}
+:root[data-mar-ui='on'] .proto-main:has(> .mar-backdrop.is-spotlight):has(.mar-page-bar.is-stuck) {
+  --mar-glow: 0;
+}
+:root[data-mar-ui='on'] .mar-backdrop.is-spotlight .mar-bg {
+  transition: opacity 320ms ease;
+}
+:root[data-mar-ui='on'] .proto-main:has(.mar-page-bar.is-stuck) > .mar-backdrop.is-spotlight .mar-bg {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mar-ui='on'] .proto-main:has(> .mar-backdrop.is-spotlight),
+  :root[data-mar-ui='on'] .mar-backdrop.is-spotlight .mar-bg {
+    transition: none;
+  }
 }
 /* Aurora: slow, wide bands of muted light drifting sideways. */
 :root[data-mar-ui='on'] .mar-backdrop.is-aurora .mar-bg {
