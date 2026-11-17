@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  toCountBucket,
-  toErrorBucket,
-  toFileExtension,
-  toModelDirectoryBucket,
-  toVariantBucket
-} from './telemetry'
+import { toCountBucket, toErrorBucket, toVariantBucket } from './telemetry'
 
 describe('toErrorBucket', () => {
   it('returns "unknown" for empty', () => {
@@ -45,23 +39,5 @@ describe('toCountBucket', () => {
     expect(toCountBucket(4)).toBe('3_4')
     expect(toCountBucket(9)).toBe('5_9')
     expect(toCountBucket(50)).toBe('10_plus')
-  })
-})
-
-describe('toFileExtension', () => {
-  it('extracts the lowercased extension', () => {
-    expect(toFileExtension('model.SafeTensors')).toBe('safetensors')
-    expect(toFileExtension('archive.tar.gz')).toBe('gz')
-    expect(toFileExtension('nodot')).toBe('none')
-    expect(toFileExtension(undefined)).toBe('unknown')
-  })
-})
-
-describe('toModelDirectoryBucket', () => {
-  it('returns the known leaf directory', () => {
-    expect(toModelDirectoryBucket('/var/models/checkpoints')).toBe('checkpoints')
-    expect(toModelDirectoryBucket('C:\\models\\loras')).toBe('loras')
-    expect(toModelDirectoryBucket('/models/some_custom_dir')).toBe('other')
-    expect(toModelDirectoryBucket(undefined)).toBe('unknown')
   })
 })

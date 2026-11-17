@@ -4,12 +4,16 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { InstallationRecord } from '../installations'
 import type * as DownloadManager from './comfyDownloadManager'
+import { createExecutionTap } from './executionTap'
 import type * as Telemetry from './telemetry'
 import { stagingMetaPathFor, stagingPathFor, writeStagedMeta } from './modelDownloadStaging'
 
 let root: string
 let modelsDir: string
+const buildId = 'test-build'
+let installation: InstallationRecord
 const captured: Array<{ event: string; properties: Record<string, unknown> }> = []
 
 vi.mock('electron', () => ({
@@ -29,8 +33,12 @@ vi.mock('../settings', () => ({
     }
   }
 }))
-vi.mock('../installations', () => ({ get: async () => null, list: async () => [] }))
-vi.mock('../host/registry', () => ({ findInstallationIdByComfySender: () => null }))
+vi.mock('../installations', () => ({
+  get: async (id: string) => (id === buildId ? installation : null),
+  list: async () => [installation],
+  update: async () => {}
+}))
+vi.mock('../host/registry', () => ({ findInstallationIdByComfySender: () => buildId }))
 vi.mock('./ipc/shared', () => ({ _broadcastToRenderer: vi.fn() }))
 vi.mock('./paths', () => ({ configDir: () => root, dataDir: () => root }))
 vi.mock('posthog-node', () => ({
@@ -66,6 +74,7 @@ function options(
     url: `${baseUrl}/${route}?token=private-token`,
     filename,
     directory: 'checkpoints',
+    installationId: buildId,
     source: 'app'
   }
 }
@@ -108,6 +117,14 @@ beforeAll(async () => {
 
 beforeEach(() => {
   modelsDir = fs.mkdtempSync(path.join(root, 'models-'))
+  installation = {
+    id: buildId,
+    name: 'Local build',
+    createdAt: new Date().toISOString(),
+    installPath: path.join(root, 'build'),
+    sourceId: 'standalone',
+    useSharedModels: true
+  }
   requestPaths = []
   manager._test_resetModelDownloadsInit()
   manager._test_resetModelDownloadsQuitLatch()
@@ -140,7 +157,7 @@ afterAll(async () => {
 
 describe('model download events through the real manager and transfer', () => {
   it.each(['comfyui', 'template', 'app'] as const)(
-    'records one started and completed pair for a %s download',
+    'records one started and result pair for a %s download',
     async (source) => {
       const opts = { ...options('success'), source }
       if (source === 'comfyui') {
@@ -149,29 +166,70 @@ describe('model download events through the real manager and transfer', () => {
           webContents: { send: vi.fn(), isDestroyed: () => false },
           setProgressBar: vi.fn()
         } as unknown as Electron.BrowserWindow
-        expect(await manager.startModelDownload(win, opts.url, opts.filename, opts.directory)).toBe(
-          true
-        )
-        await vi.waitFor(() => expect(eventNames()).toEqual(['started', 'completed']))
+        expect(
+          await manager.startModelDownload(
+            win,
+            opts.url,
+            opts.filename,
+            opts.directory,
+            win.webContents
+          )
+        ).toBe(true)
+        await vi.waitFor(() => expect(eventNames()).toEqual(['started', 'result']))
       } else {
         const job = await manager.startManagedModelJob(opts)
         await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
       }
       expect(fs.readFileSync(path.join(modelsDir, opts.directory, opts.filename))).toEqual(content)
-      expect(eventNames()).toEqual(['started', 'completed'])
-      const [started, completed] = events()
-      expect(started!.properties).toMatchObject({ source, is_retry: false, received_bytes: 0 })
-      expect(completed!.properties).toMatchObject({
-        download_id: started!.properties.download_id,
+      expect(eventNames()).toEqual(['started', 'result'])
+      const [started, result] = events()
+      const context = {
+        installation_id: buildId,
         source,
+        directory_bucket: 'checkpoints',
+        file_ext: 'safetensors'
+      }
+      expect(started!.properties).toMatchObject({
+        ...context,
+        is_retry: false,
+        received_bytes: 0
+      })
+      expect(result!.properties).toMatchObject({
+        ...context,
+        download_id: started!.properties.download_id,
+        result: 'completed',
         received_bytes: content.length,
         total_bytes: content.length,
+        size_bucket: 'lt_10mb',
         duration_ms: expect.any(Number)
       })
-      expect(JSON.stringify(events())).not.toMatch(/private|127\.0\.0\.1|checkpoints|safetensors/)
+      expect(JSON.stringify(events())).not.toMatch(/private|127\.0\.0\.1/)
       expect(JSON.stringify(events())).not.toContain(modelsDir)
     }
   )
+
+  it('records install, download and first successful run with the same build ID', async () => {
+    telemetry.captureInstallCompleted({ installationId: buildId, method: 'express', express: true })
+    const job = await manager.startManagedModelJob(options('success'))
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+    createExecutionTap({ installationId: buildId }).ingest(
+      'got prompt\nPrompt executed in 0.5 seconds\n',
+      'stdout'
+    )
+
+    await vi.waitFor(() =>
+      expect(
+        captured
+          .filter(({ properties }) => properties.installation_id === buildId)
+          .map(({ event }) => event)
+      ).toEqual([
+        'comfy.desktop.install.completed',
+        'comfy.desktop.model_download.started',
+        'comfy.desktop.model_download.result',
+        'comfy.desktop.execution.first_completed'
+      ])
+    )
+  })
 
   it('does not count a cached model as a new download', async () => {
     const opts = options('success')
@@ -182,7 +240,7 @@ describe('model download events through the real manager and transfer', () => {
       status: 'completed',
       alreadyPresent: true
     })
-    expect(eventNames()).toEqual(['started', 'completed'])
+    expect(eventNames()).toEqual(['started', 'result'])
     expect(requestPaths).toEqual(['/success'])
   })
 
@@ -201,7 +259,7 @@ describe('model download events through the real manager and transfer', () => {
     expect(manager.resumeModelDownload(first.id)).toBe(true)
     expect(manager.resumeModelDownload(first.id)).toBe(true)
     await expect(joined.completion).resolves.toMatchObject({ status: 'completed' })
-    expect(eventNames()).toEqual(['started', 'paused', 'resumed', 'completed'])
+    expect(eventNames()).toEqual(['started', 'paused', 'resumed', 'result'])
     expect(new Set(events().map(({ properties }) => properties.download_id)).size).toBe(1)
     expect(events().at(-1)!.properties).toMatchObject({
       received_bytes: content.length,
@@ -216,8 +274,9 @@ describe('model download events through the real manager and transfer', () => {
     expect(manager.cancelModelDownload(job.id)).toBe(true)
     await expect(job.completion).resolves.toEqual({ status: 'cancelled' })
     expect(manager.cancelModelDownload(job.id)).toBe(false)
-    expect(eventNames()).toEqual(['started', 'cancelled'])
+    expect(eventNames()).toEqual(['started', 'result'])
     expect(events().at(-1)!.properties).toMatchObject({
+      result: 'cancelled',
       received_bytes: 3,
       total_bytes: content.length
     })
@@ -228,12 +287,13 @@ describe('model download events through the real manager and transfer', () => {
     opts.url = opts.url.replace('http://', 'http://private-user:private-password@')
     const job = await manager.startManagedModelJob(opts)
     await expect(job.completion).resolves.toMatchObject({ status: 'error' })
-    expect(eventNames()).toEqual(['started', 'failed'])
+    expect(eventNames()).toEqual(['started', 'result'])
     expect(events().at(-1)!.properties).toMatchObject({
+      result: 'error',
       error_bucket: 'access_denied',
       http_status: 403
     })
-    expect(JSON.stringify(events())).not.toMatch(/private|127\.0\.0\.1|checkpoints|safetensors/)
+    expect(JSON.stringify(events())).not.toMatch(/private|127\.0\.0\.1/)
     expect(JSON.stringify(events())).not.toContain(modelsDir)
   })
 
@@ -241,11 +301,15 @@ describe('model download events through the real manager and transfer', () => {
     const job = await manager.startManagedModelJob({ ...options('retry'), source: 'template' })
     await expect(job.completion).resolves.toMatchObject({ status: 'error' })
     expect(manager.retryDownload(job.id)).toBe(true)
-    await vi.waitFor(() =>
-      expect(eventNames()).toEqual(['started', 'failed', 'started', 'completed'])
-    )
+    await vi.waitFor(() => expect(eventNames()).toEqual(['started', 'result', 'started', 'result']))
     expect(events()[0]!.properties.is_retry).toBe(false)
-    expect(events()[2]!.properties).toMatchObject({ is_retry: true, source: 'template' })
+    expect(events()[1]!.properties.result).toBe('error')
+    expect(events()[2]!.properties).toMatchObject({
+      installation_id: buildId,
+      is_retry: true,
+      source: 'template'
+    })
+    expect(events()[3]!.properties.result).toBe('completed')
     expect(events()[2]!.properties.download_id).not.toBe(events()[0]!.properties.download_id)
   })
 
@@ -253,7 +317,8 @@ describe('model download events through the real manager and transfer', () => {
     fs.writeFileSync(path.join(modelsDir, 'checkpoints'), 'not a directory')
     const job = await manager.startManagedModelJob(options('success'))
     await expect(job.completion).resolves.toMatchObject({ status: 'error' })
-    expect(eventNames()).toEqual(['started', 'failed'])
+    expect(eventNames()).toEqual(['started', 'result'])
+    expect(events().at(-1)!.properties.result).toBe('error')
     expect(requestPaths).toHaveLength(0)
     expect(JSON.stringify(events())).not.toContain(modelsDir)
   })
@@ -264,37 +329,53 @@ describe('model download events through the real manager and transfer', () => {
       directory: '../outside'
     })
     await expect(job.completion).resolves.toMatchObject({ status: 'error' })
-    expect(eventNames()).toEqual(['started', 'failed'])
-    expect(events().at(-1)!.properties.error_bucket).toBe('path')
+    expect(eventNames()).toEqual(['started', 'result'])
+    expect(events().at(-1)!.properties).toMatchObject({ result: 'error', error_bucket: 'path' })
     expect(JSON.stringify(events())).not.toMatch(/outside|private|checkpoints/)
     expect(requestPaths).toHaveLength(0)
   })
 
-  it('starts observing restored downloads only when they are resumed', async () => {
-    const opts = options('slow')
-    const finalPath = path.join(modelsDir, opts.directory, opts.filename)
-    fs.mkdirSync(path.dirname(stagingPathFor(finalPath)), { recursive: true })
-    fs.writeFileSync(stagingPathFor(finalPath), content.subarray(0, 3))
-    expect(
-      writeStagedMeta(stagingMetaPathFor(finalPath), {
-        version: 2,
-        jobId: 'private-persisted-id',
-        url: opts.url,
-        filename: opts.filename,
-        directory: opts.directory,
-        expectedSize: content.length,
-        etag: '"model-v1"'
+  it.each([
+    { stagedBuildId: buildId, attributedBuildId: buildId },
+    { stagedBuildId: 'private-staged-build', attributedBuildId: null },
+    { stagedBuildId: undefined, attributedBuildId: null }
+  ])(
+    'observes restored downloads with build ID $stagedBuildId on resume',
+    async ({ stagedBuildId, attributedBuildId }) => {
+      const opts = options('slow')
+      const finalPath = path.join(modelsDir, opts.directory, opts.filename)
+      fs.mkdirSync(path.dirname(stagingPathFor(finalPath)), { recursive: true })
+      fs.writeFileSync(stagingPathFor(finalPath), content.subarray(0, 3))
+      expect(
+        writeStagedMeta(stagingMetaPathFor(finalPath), {
+          version: 2,
+          jobId: 'private-persisted-id',
+          url: opts.url,
+          filename: opts.filename,
+          directory: opts.directory,
+          expectedSize: content.length,
+          installationId: stagedBuildId,
+          etag: '"model-v1"'
+        })
+      ).toBe(true)
+      await manager.initializeModelDownloads()
+      expect(eventNames()).toEqual([])
+      const restored = manager.getActiveDownloads()[0]!
+      expect(manager.resumeModelDownload(restored.id!)).toBe(true)
+      await vi.waitFor(() => expect(eventNames()).toEqual(['started', 'result']))
+      expect(events()[0]!.properties).toMatchObject({
+        source: 'restored',
+        installation_id: attributedBuildId,
+        received_bytes: 3
       })
-    ).toBe(true)
-    await manager.initializeModelDownloads()
-    expect(eventNames()).toEqual([])
-    const restored = manager.getActiveDownloads()[0]!
-    expect(manager.resumeModelDownload(restored.id!)).toBe(true)
-    await vi.waitFor(() => expect(eventNames()).toEqual(['started', 'completed']))
-    expect(events()[0]!.properties).toMatchObject({ source: 'restored', received_bytes: 3 })
-    expect(JSON.stringify(events())).not.toContain('private-persisted-id')
-    expect(fs.readFileSync(finalPath)).toEqual(content)
-  })
+      expect(events()[1]!.properties).toMatchObject({
+        installation_id: attributedBuildId,
+        result: 'completed'
+      })
+      expect(JSON.stringify(events())).not.toMatch(/private-(persisted-id|staged-build)/)
+      expect(fs.readFileSync(finalPath)).toEqual(content)
+    }
+  )
 
   it.each(['denied', 'undecided'] as const)(
     'respects %s consent while still downloading',

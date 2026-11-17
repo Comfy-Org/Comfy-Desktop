@@ -22,17 +22,20 @@ export function resolveDownloadContext(inst: installations.InstallationRecord): 
   return resolveInstallModelSearchPaths(inst, getSharedModelsDirs())
 }
 
-export async function collectModelScanRoots(): Promise<string[]> {
-  const roots = new Set<string>()
-  const shared = getSharedModelsDirs()
-  for (const dir of shared) roots.add(dir)
+export async function collectModelScanContext(): Promise<{
+  roots: string[]
+  installationIds: ReadonlySet<string>
+}> {
+  const roots = new Set(getSharedModelsDirs())
+  const installationIds = new Set<string>()
   for (const inst of await installations.list()) {
     if (!inst.installPath) continue
+    installationIds.add(inst.id)
     const search = resolveDownloadContext(inst)
     for (const root of search.modelRoots) roots.add(root)
     for (const extra of search.extraPaths) roots.add(extra.dir)
   }
-  return [...roots]
+  return { roots: [...roots], installationIds }
 }
 
 export async function resolveDownloadContextById(

@@ -265,11 +265,13 @@ test('resume completes atomically and records model download telemetry @real-com
     total_bytes: job.totalSize,
     is_retry: false
   })
-  const completed = (await downloadEvents('completed')).filter(
+  const completed = (await downloadEvents('result')).filter(
     (event) => event.download_id === started.download_id
   )
   expect(completed).toHaveLength(1)
   expect(completed[0]).toMatchObject({
+    result: 'completed',
+    file_ext: 'safetensors',
     received_bytes: job.totalSize,
     total_bytes: job.totalSize,
     duration_ms: expect.any(Number)
@@ -320,11 +322,11 @@ test('network interruption and Retry record separate download attempts @real-com
 
   const firstStarts = (await downloadEvents('started')).slice(startsBefore)
   expect(firstStarts).toHaveLength(1)
-  const failed = (await downloadEvents('failed')).filter(
+  const failed = (await downloadEvents('result')).filter(
     (event) => event.download_id === firstStarts[0]!.download_id
   )
   expect(failed).toHaveLength(1)
-  expect(failed[0]!.error_bucket).toEqual(expect.any(String))
+  expect(failed[0]).toMatchObject({ result: 'error', error_bucket: expect.any(String) })
 
   server.configure(job.file, { failAfterBytes: undefined })
   server.clearLog()
@@ -343,11 +345,11 @@ test('network interruption and Retry record separate download attempts @real-com
   expect(starts).toHaveLength(2)
   expect(starts[1]).toMatchObject({ source: 'restored', is_retry: true })
   expect(starts[1]!.download_id).not.toBe(starts[0]!.download_id)
-  const completed = (await downloadEvents('completed')).filter(
+  const completed = (await downloadEvents('result')).filter(
     (event) => event.download_id === starts[1]!.download_id
   )
   expect(completed).toHaveLength(1)
-  expect(completed[0]!.received_bytes).toBe(job.totalSize)
+  expect(completed[0]).toMatchObject({ result: 'completed', received_bytes: job.totalSize })
 })
 
 test('cancel stops the transfer and removes staged bytes and metadata @real-comfy', async () => {
