@@ -84,7 +84,7 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-test('a first beta activation raises a nonblocking notice over live ComfyUI @linux', async () => {
+test('a first beta activation raises a nonblocking notice over live ComfyUI @linux @macos', async () => {
   await clickInstallTile(ctx.panel, INSTALL_NAME)
 
   await ctx.panel.waitFor(
@@ -119,7 +119,7 @@ test('a first beta activation raises a nonblocking notice over live ComfyUI @lin
   test.info().attach('notice over ComfyUI', { path: shot, contentType: 'image/png' })
 })
 
-test('the card is anchored on the bell it points at @linux', async () => {
+test('the card is anchored on the bell it points at @linux @macos', async () => {
   const bellCentre = await ctx.titleBar.evaluate<number>(`(() => {
     const el = document.querySelector('.title-announcement-button')
     if (!el) return -1
@@ -216,7 +216,7 @@ test('the card is anchored on the bell it points at @linux', async () => {
   }
 })
 
-test('the notice does not block the canvas underneath it @linux', async () => {
+test('the notice does not block the canvas underneath it @linux @macos', async () => {
   const bounds = await ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
     const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.isVisible())
     if (!win) throw new Error('no visible window')
@@ -235,7 +235,7 @@ test('the notice does not block the canvas underneath it @linux', async () => {
   expect(bounds!.card.width).toBeLessThan(bounds!.window.width / 2)
 })
 
-test('the settings link lands on the beta opt-in row and retires the card @linux', async () => {
+test('the settings link lands on the beta opt-in row and retires the card @linux @macos', async () => {
   const popup = coachmarkPopup(ctx.app)
   expect(await popup.click('.coachmark-action')).toBe(true)
 
@@ -265,7 +265,7 @@ test('the settings link lands on the beta opt-in row and retires the card @linux
   test.info().attach('settings opt-out highlighted', { path: shot, contentType: 'image/png' })
 })
 
-test('the notice is spent: a second launch stays silent @linux', async () => {
+test('the notice is spent: a second launch stays silent @linux @macos', async () => {
   const stillPending = await ctx.titleBar.evaluate<unknown>(
     `window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`
   )
