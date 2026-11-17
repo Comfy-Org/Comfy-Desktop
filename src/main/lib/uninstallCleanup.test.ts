@@ -418,6 +418,41 @@ describe('instances', () => {
     expect(fs.existsSync(basePath)).toBe(true)
   })
 
+  it('refuses an install that holds the shared input, output and kept models folders', async () => {
+    const shared = path.join(localRoot(), 'ComfyUI-Shared')
+    write(path.join(shared, '.comfyui-desktop-2'), 'inst-1')
+    write(path.join(shared, 'ComfyUI', 'main.py'))
+    write(path.join(shared, 'models', 'a.safetensors'))
+    write(path.join(shared, 'input', 'a.png'))
+    write(path.join(shared, 'output', 'b.png'))
+    writeRecords([{ id: 'inst-1', installPath: shared }])
+
+    const c = await loadAs('win32')
+    const results = c.runCleanup(c.collectUninstallCleanupInputs(instancesBox))
+    expect(results.find((r) => r.entry.path === shared)?.outcome).toBe('refused')
+    expect(fs.existsSync(path.join(shared, 'models', 'a.safetensors'))).toBe(true)
+    expect(fs.existsSync(path.join(shared, 'input', 'a.png'))).toBe(true)
+    expect(fs.existsSync(path.join(shared, 'output', 'b.png'))).toBe(true)
+  })
+
+  it('keeps every folder named in the settings or an install record', async () => {
+    const dir = installAt('named')
+    write(path.join(dir, '.comfyui-desktop-2'), 'inst-1')
+    const named = ['Installs', 'Saved', 'venv', 'nested'].map((name) => path.join(userData, name))
+    for (const folder of named) write(path.join(folder, 'keep.txt'))
+    const [installDir, saved, venv, nested] = named
+    const settings = { installDir, lastSaveDialogDir: saved }
+    write(path.join(userData, 'settings.json'), JSON.stringify(settings))
+    writeRecords([{ id: 'inst-1', installPath: dir, venvPath: venv, extra: { paths: [nested] } }])
+    write(path.join(userData, 'logs', 'main.log'))
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
+    expect(fs.existsSync(dir)).toBe(false)
+    for (const folder of named) expect(fs.existsSync(path.join(folder, 'keep.txt'))).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
+  })
+
   it('keeps shared input and output folders', async () => {
     const shared = path.join(localRoot(), 'ComfyUI-Shared')
     write(path.join(shared, 'input', 'a.png'))
@@ -536,8 +571,14 @@ describe('links inside app data', () => {
 })
 
 describe('configured download cache', () => {
-  function cacheSetup(): { cache: string; portable: string; standalone: string; mine: string } {
-    const cache = path.join(home, 'MyCache')
+  interface CacheSetup {
+    cache: string
+    portable: string
+    standalone: string
+    mine: string
+  }
+
+  function cacheSetup(cache = path.join(home, 'MyCache')): CacheSetup {
     const portable = path.join(cache, 'v0.3.40_ComfyUI_windows_portable_nvidia.7z')
     const standalone = path.join(cache, 'v1.2.0_cu128')
     const mine = path.join(cache, 'my-files')
@@ -573,6 +614,19 @@ describe('configured download cache', () => {
     expect(fs.existsSync(cache)).toBe(true)
   })
 
+  it('keeps a configured cache folder inside the app data folder', async () => {
+    const { cache, portable, standalone, mine } = cacheSetup(path.join(userData, 'MyCache'))
+    write(path.join(userData, 'logs', 'main.log'))
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
+    expect(fs.existsSync(portable)).toBe(false)
+    expect(fs.existsSync(standalone)).toBe(false)
+    expect(fs.existsSync(path.join(mine, 'c.txt'))).toBe(true)
+    expect(fs.existsSync(cache)).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
+  })
+
   it('refuses the configured folder itself', async () => {
     const { cache } = cacheSetup()
 
@@ -581,6 +635,79 @@ describe('configured download cache', () => {
     const plan = c.planUninstallCleanup(inputs)
     expect(plannedPaths(plan)).not.toContain(cache)
     expect(c.deletionRefusal(cache, plan.guard)).not.toBeNull()
+  })
+})
+
+describe('unreadable settings and install list', () => {
+  const brokenList = '[{"id": "inst-1",'
+
+  function installInsideAppData(): string {
+    const dir = path.join(userData, 'ComfyUI-Installs', 'inside')
+    write(path.join(dir, '.comfyui-desktop-2'), 'inst-1')
+    write(path.join(dir, 'ComfyUI', 'main.py'))
+    write(path.join(userData, 'logs', 'main.log'))
+    return dir
+  }
+
+  function cleanupLog(c: CleanupModule): string {
+    return fs.readFileSync(path.join(temp, c.UNINSTALL_CLEANUP_LOG_FILE), 'utf-8')
+  }
+
+  it('reads the backup when the install list cannot be parsed', async () => {
+    const dir = installInsideAppData()
+    write(path.join(userData, 'installations.json'), brokenList)
+    const backup = JSON.stringify([{ id: 'inst-1', installPath: dir }])
+    write(path.join(userData, 'installations.json.bak'), backup)
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
+    expect(fs.existsSync(path.join(dir, 'ComfyUI', 'main.py'))).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
+  })
+
+  it('keeps installs, models and app data when no install list can be read', async () => {
+    const inside = installInsideAppData()
+    const outside = path.join(localRoot(), 'ComfyUI-Installs', 'outside')
+    write(path.join(outside, '.comfyui-desktop-2'), 'inst-2')
+    const models = path.join(localRoot(), 'ComfyUI-Shared', 'models')
+    write(path.join(models, 'a.safetensors'))
+    write(path.join(userData, 'installations.json'), brokenList)
+    write(path.join(userData, 'installations.json.bak'), '')
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
+    expect(fs.existsSync(path.join(inside, 'ComfyUI', 'main.py'))).toBe(true)
+    expect(fs.existsSync(path.join(outside, '.comfyui-desktop-2'))).toBe(true)
+    expect(fs.existsSync(path.join(models, 'a.safetensors'))).toBe(true)
+    const list = fs.readFileSync(path.join(userData, 'installations.json'), 'utf-8')
+    expect(list).toBe(brokenList)
+    expect(fs.existsSync(path.join(userData, 'installations.json.bak'))).toBe(true)
+    expect(cleanupLog(c)).toContain('installations.json and its backup could not be read')
+  })
+
+  it('keeps models and app data when the settings cannot be read', async () => {
+    const added = path.join(userData, 'MyModels')
+    write(path.join(added, 'b.safetensors'))
+    const models = path.join(localRoot(), 'ComfyUI-Shared', 'models')
+    write(path.join(models, 'a.safetensors'))
+    write(path.join(userData, 'settings.json'), '{"modelsDirs": [')
+    write(path.join(userData, 'logs', 'main.log'))
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
+    expect(fs.existsSync(path.join(added, 'b.safetensors'))).toBe(true)
+    expect(fs.existsSync(path.join(models, 'a.safetensors'))).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'settings.json'))).toBe(true)
+    expect(cleanupLog(c)).toContain('settings.json and its backup could not be read')
+  })
+
+  it('treats a missing install list as an empty one', async () => {
+    write(path.join(userData, 'logs', 'main.log'))
+
+    const c = await loadAs('win32')
+    expect(c.collectUninstallCleanupInputs(noBoxes).unreadableFiles).toEqual([])
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
+    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
   })
 })
 
@@ -731,7 +858,7 @@ describe('deletionRefusal', () => {
 
   it('keeps going after a failed delete and reports it', async () => {
     const c = await loadAs('win32')
-    const guard = { protectedPaths: [], allowedRoots: [userData] }
+    const guard = { protectedPaths: [], keptPaths: [], allowedRoots: [userData] }
     const first = path.join(userData, 'first')
     const second = path.join(userData, 'second')
     const removed: string[] = []

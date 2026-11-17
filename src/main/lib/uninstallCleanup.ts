@@ -12,7 +12,7 @@ import {
   homeDir,
   stateDir
 } from './paths'
-import { readFileSafe, writeFileSafe } from './safe-file'
+import { readFileSafe, readFileWithRetrySync, writeFileSafe } from './safe-file'
 import { TEMP_DIR_NAME } from './models'
 import { defaults as settingsDefaults } from '../settings'
 
@@ -112,7 +112,7 @@ export interface InstallationOnDisk {
   marker: string | null
   adoptedBaseDir: string | null
   adoptionMarker: string | null
-  addedFolders: string[]
+  recordedPaths: string[]
 }
 
 export interface CleanupInputs {
@@ -123,12 +123,12 @@ export interface CleanupInputs {
   appDirLinks: string[]
   tempEntries: string[]
   modelsDirs: string[]
-  oemManagedModelDirs: string[]
-  inputDir: string | null
   outputDir: string | null
+  storedPaths: string[]
   installations: InstallationOnDisk[]
   desktopOneBasePath: string | null
   configuredCacheEntries: string[]
+  unreadableFiles: string[]
 }
 
 export interface CleanupEntry {
@@ -141,6 +141,7 @@ export interface CleanupEntry {
 
 export interface DeletionGuard {
   protectedPaths: string[]
+  keptPaths: string[]
   allowedRoots: string[]
 }
 
@@ -221,9 +222,8 @@ function appOwnedDirs(folders: CleanupFolders): string[] {
   ])
 }
 
-function windowsAppDataDirs(inputs: CleanupInputs): string[] {
-  const { folders } = inputs
-  if (inputs.platform !== 'win32' || !folders.localAppData) return []
+function windowsAppDataDirs(platform: NodeJS.Platform, folders: CleanupFolders): string[] {
+  if (platform !== 'win32' || !folders.localAppData) return []
   const localAppData = folders.localAppData
   const dirs = WINDOWS_APP_DATA_DIR_NAMES.flatMap((name) => [
     path.join(folders.appData, name),
@@ -267,14 +267,49 @@ function adoptionMarkerToRetire(inst: InstallationOnDisk): string | null {
     : null
 }
 
-function installAddedFolders(inputs: CleanupInputs): string[] {
-  const shared = [inputs.folders.models, inputs.folders.input, inputs.folders.output]
-  return inputs.installations.flatMap((inst) =>
-    inst.addedFolders.filter(
-      (dir) =>
-        !isSameOrInside(dir, inst.installPath) && !shared.some((folder) => samePath(dir, folder))
+interface KeptCandidate {
+  path: string
+  installId?: string
+}
+
+type KeptSources = Pick<
+  CleanupInputs,
+  'folders' | 'storedPaths' | 'installations' | 'unreadableFiles'
+>
+
+function keptCandidates(sources: KeptSources): KeptCandidate[] {
+  const { folders } = sources
+  const unowned = presentPaths([
+    ...sources.storedPaths,
+    folders.models,
+    folders.input,
+    folders.output,
+    sources.unreadableFiles.length > 0 ? folders.installDir : null
+  ])
+  return [
+    ...unowned.map((p) => ({ path: p })),
+    ...sources.installations.flatMap((inst) =>
+      [inst.installPath, ...inst.recordedPaths].map((p) => ({ path: p, installId: inst.id }))
     )
+  ]
+}
+
+function keptPaths(
+  inputs: CleanupInputs,
+  installs: InstallationOnDisk[],
+  removedOnPurpose: string[],
+  pointerNames: string[]
+): string[] {
+  const releasedByRemoval = (candidate: KeptCandidate): boolean =>
+    installs.some(
+      (inst) => inst.id === candidate.installId && isSameOrInside(candidate.path, inst.installPath)
+    )
+  const kept = keptCandidates(inputs).filter(
+    (candidate) =>
+      !releasedByRemoval(candidate) &&
+      !removedOnPurpose.some((dir) => samePath(dir, candidate.path))
   )
+  return [...keptPointerPaths(inputs.folders, pointerNames), ...kept.map((c) => c.path)]
 }
 
 function listingOf(listings: Record<string, string[]>, dir: string): string[] {
@@ -284,18 +319,11 @@ function listingOf(listings: Record<string, string[]>, dir: string): string[] {
 
 function buildGuard(
   inputs: CleanupInputs,
-  keptPaths: string[],
+  kept: string[],
   installs: InstallationOnDisk[]
 ): DeletionGuard {
   const { folders } = inputs
   const ownedDirs = appOwnedDirs(folders)
-  const addedModelsDirs = [...inputs.modelsDirs, ...inputs.oemManagedModelDirs].filter(
-    (dir) => !samePath(dir, folders.models)
-  )
-  const customInputOutput = [
-    inputs.inputDir && !samePath(inputs.inputDir, folders.input) ? inputs.inputDir : null,
-    inputs.outputDir && !samePath(inputs.outputDir, folders.output) ? inputs.outputDir : null
-  ]
   const protectedPaths = presentPaths([
     folders.home,
     folders.appData,
@@ -308,16 +336,12 @@ function buildGuard(
     ...ownedDirs.map((dir) => path.dirname(dir)),
     path.join(folders.appData, DESKTOP_ONE_CONFIG_DIR_NAME),
     inputs.desktopOneBasePath,
-    ...inputs.installations.map((inst) => inst.adoptedBaseDir),
-    ...installAddedFolders(inputs),
-    ...addedModelsDirs,
-    ...customInputOutput,
-    ...keptPaths
+    ...inputs.installations.map((inst) => inst.adoptedBaseDir)
   ])
 
   const allowedRoots = presentPaths([
     ...ownedDirs,
-    ...windowsAppDataDirs(inputs),
+    ...windowsAppDataDirs(inputs.platform, folders),
     folders.temp,
     folders.downloadCache,
     cacheParentDir(folders),
@@ -332,7 +356,7 @@ function buildGuard(
     ...installs.map(adoptionMarkerToRetire)
   ])
 
-  return { protectedPaths, allowedRoots }
+  return { protectedPaths, keptPaths: kept, allowedRoots }
 }
 
 export function planUninstallCleanup(
@@ -341,6 +365,7 @@ export function planUninstallCleanup(
   keptIds: readonly string[] = []
 ): CleanupPlan {
   const { folders, options } = inputs
+  const ownershipKnown = inputs.unreadableFiles.length === 0
   const entries: CleanupEntry[] = []
   const add = (
     p: string,
@@ -352,49 +377,58 @@ export function planUninstallCleanup(
     entries.push({ path: p, bucket, reason, ...extra })
   }
 
-  const installs = options.deleteInstances
+  const deletingInstances = options.deleteInstances && ownershipKnown
+  const deletingModels = options.deleteModels && ownershipKnown
+  const deletingSharedInputOutput = deletingInstances && policy.deleteSharedInputOutput
+  const installs = deletingInstances
     ? inputs.installations.filter(
         (inst) => hasExactInstallMarker(inst) && !keptIds.includes(inst.id)
       )
     : []
   const keptPointerNames = [
     ...pointerFilesToKeep(options, policy.keepPointerFiles),
-    ...(keptIds.length > 0 ? INSTALL_LIST_FILES : [])
+    ...(keptIds.length > 0 ? INSTALL_LIST_FILES : []),
+    ...(ownershipKnown ? [] : INSTANCE_POINTER_FILES)
   ]
-  const keptPaths = [
-    ...keptPointerPaths(folders, keptPointerNames),
-    ...inputs.installations.filter((inst) => !installs.includes(inst)).map((i) => i.installPath)
-  ]
-  const guard = buildGuard(inputs, keptPaths, installs)
+  const removedOnPurpose = presentPaths([
+    folders.downloadCache,
+    deletingModels ? folders.models : null,
+    deletingSharedInputOutput ? folders.input : null,
+    deletingSharedInputOutput ? folders.output : null
+  ])
+  const kept = keptPaths(inputs, installs, removedOnPurpose, keptPointerNames)
+  const guard = buildGuard(inputs, kept, installs)
 
   for (const inst of installs) {
     add(inst.installPath, 'B', `ComfyUI install ${inst.id}`, { installId: inst.id })
   }
-  if (options.deleteModels) add(folders.models, 'C', 'shared models folder')
+  if (deletingModels) add(folders.models, 'C', 'shared models folder')
   for (const inst of installs) {
     const marker = adoptionMarkerToRetire(inst)
     if (marker) add(marker, 'B', `adoption marker of ComfyUI install ${inst.id}`)
   }
-  if (options.deleteInstances && policy.deleteSharedInputOutput) {
+  if (deletingSharedInputOutput) {
     add(folders.input, 'B', 'shared input folder')
     add(folders.output, 'B', 'shared output folder')
   }
 
+  const held = [...guard.protectedPaths, ...guard.keptPaths]
   const isLink = (dir: string): boolean => inputs.appDirLinks.some((link) => samePath(link, dir))
-  const addAppDataAround = (dir: string): void => {
-    const inner = guard.protectedPaths.filter((p) => isSameOrInside(p, dir))
+  const addAround = (dir: string, reason: string): void => {
+    const inner = held.filter((p) => isSameOrInside(p, dir))
     if (inner.length === 0) {
-      add(dir, 'A', 'app settings, logs and caches')
+      add(dir, 'A', reason)
     } else if (!isLink(dir) && !inner.some((p) => samePath(p, dir))) {
       for (const name of listingOf(inputs.appDirEntries, dir)) {
-        addAppDataAround(path.join(dir, name))
+        addAround(path.join(dir, name), reason)
       }
     }
   }
-  for (const dir of appOwnedDirs(folders)) addAppDataAround(dir)
-
-  for (const dir of windowsAppDataDirs(inputs)) {
-    add(dir, 'A', 'app data under a current or earlier app name')
+  if (ownershipKnown) {
+    for (const dir of appOwnedDirs(folders)) addAround(dir, 'app settings, logs and caches')
+    for (const dir of windowsAppDataDirs(inputs.platform, folders)) {
+      addAround(dir, 'app data under a current or earlier app name')
+    }
   }
   add(folders.downloadCache, 'A', 'download cache')
   for (const entry of inputs.configuredCacheEntries) add(entry, 'A', 'download cache entry')
@@ -407,10 +441,10 @@ export function planUninstallCleanup(
   }
 
   const whenEmpty = { onlyIfEmpty: true } as const
-  if (options.deleteInstances) {
+  if (deletingInstances) {
     add(folders.installDir, 'B', 'installs folder when empty', whenEmpty)
   }
-  if (options.deleteModels) {
+  if (deletingModels) {
     add(path.dirname(folders.models), 'C', 'shared folder when empty', whenEmpty)
   }
   add(path.dirname(folders.benchmarks), 'A', 'shared folder when empty', whenEmpty)
@@ -424,12 +458,18 @@ export function planUninstallCleanup(
   return { entries, guard }
 }
 
-export function deletionRefusal(target: string, guard: DeletionGuard): string | null {
+export function deletionRefusal(
+  target: string,
+  guard: DeletionGuard,
+  onlyIfEmpty = false
+): string | null {
   if (!path.isAbsolute(target)) return 'not an absolute path'
   const resolved = path.resolve(target)
   if (resolved === path.parse(resolved).root) return 'drive root'
   const shielded = guard.protectedPaths.find((p) => isSameOrInside(p, resolved))
   if (shielded) return `would remove a protected folder: ${shielded}`
+  const kept = onlyIfEmpty ? undefined : guard.keptPaths.find((p) => isSameOrInside(p, resolved))
+  if (kept) return `would remove kept data: ${kept}`
   if (!guard.allowedRoots.some((root) => isSameOrInside(resolved, root))) {
     return 'outside the folders Comfy Desktop writes'
   }
@@ -465,7 +505,7 @@ export function executeUninstallCleanup(
   ops: CleanupFs = nodeCleanupFs
 ): CleanupResult[] {
   return plan.entries.map((entry): CleanupResult => {
-    const refusal = deletionRefusal(entry.path, plan.guard)
+    const refusal = deletionRefusal(entry.path, plan.guard, entry.onlyIfEmpty === true)
     if (refusal) return { entry, outcome: 'refused', detail: refusal }
     try {
       if (!ops.exists(entry.path)) return { entry, outcome: 'absent' }
@@ -540,20 +580,39 @@ export function runCleanup(
   return [...dataResults, ...restResults]
 }
 
-function readJson(file: string): unknown {
-  const read = readFileSafe(file, { restore: false })
-  if (read.kind !== 'data') return null
+type StoredJson = { kind: 'value'; value: unknown } | { kind: 'absent' } | { kind: 'unreadable' }
+
+function readStoredJsonFile(file: string, accepts: (value: unknown) => boolean): StoredJson {
+  const read = readFileWithRetrySync(file)
+  if (read.kind !== 'data') return read
   try {
-    return JSON.parse(read.data) as unknown
+    const value: unknown = JSON.parse(read.data)
+    return accepts(value) ? { kind: 'value', value } : { kind: 'unreadable' }
   } catch {
-    return null
+    return { kind: 'unreadable' }
   }
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
+function readStoredJson(file: string, accepts: (value: unknown) => boolean): StoredJson {
+  const primary = readStoredJsonFile(file, accepts)
+  if (primary.kind === 'value') return primary
+  const backup = readStoredJsonFile(`${file}.bak`, accepts)
+  if (backup.kind === 'value') return backup
+  return primary.kind === 'absent' && backup.kind === 'absent' ? primary : { kind: 'unreadable' }
+}
+
+function isObject(value: unknown): boolean {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return isObject(value) ? (value as Record<string, unknown>) : {}
+}
+
+function absolutePathsIn(value: unknown): string[] {
+  if (typeof value === 'string') return path.isAbsolute(value) ? [value] : []
+  if (Array.isArray(value)) return value.flatMap(absolutePathsIn)
+  return Object.values(asRecord(value)).flatMap(absolutePathsIn)
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -646,30 +705,29 @@ function electronPath(name: ElectronFolder, fallback: string): string {
   }
 }
 
-function readInstallationRecords(): Record<string, unknown>[] {
-  const parsed = readJson(path.join(dataDir(), 'installations.json'))
-  return Array.isArray(parsed) ? parsed.map(asRecord) : []
+interface InstallIdentity {
+  id: string
+  installPath: string
+}
+
+function installIdentity(record: Record<string, unknown>): InstallIdentity | null {
+  const id = nonEmptyString(record.id)
+  const installPath = nonEmptyString(record.installPath)
+  return id && installPath && path.isAbsolute(installPath) ? { id, installPath } : null
 }
 
 function installationsOnDisk(records: Record<string, unknown>[]): InstallationOnDisk[] {
   return records.flatMap((record): InstallationOnDisk[] => {
-    const id = nonEmptyString(record.id)
-    const installPath = nonEmptyString(record.installPath)
-    if (!id || !installPath || !path.isAbsolute(installPath)) return []
+    const identity = installIdentity(record)
+    if (!identity) return []
     const adoptedBaseDir = nonEmptyString(record.adoptedBaseDir)
-    const addedFolders = [
-      ...stringList(record.modelDirs),
-      nonEmptyString(record.inputDir),
-      nonEmptyString(record.outputDir)
-    ]
     return [
       {
-        id,
-        installPath,
-        marker: readInstallMarker(installPath),
+        ...identity,
+        marker: readInstallMarker(identity.installPath),
         adoptedBaseDir,
         adoptionMarker: adoptedBaseDir ? readInstallMarker(adoptedBaseDir) : null,
-        addedFolders: presentPaths(addedFolders).filter((dir) => path.isAbsolute(dir))
+        recordedPaths: absolutePathsIn(record)
       }
     ]
   })
@@ -761,12 +819,21 @@ export function collectUninstallCleanupInputs(
   const temp = app.getPath('temp')
   const localAppData =
     platform === 'win32' ? process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local') : null
-  const settings = asRecord(readJson(path.join(configDir(), 'settings.json')))
-  const records = readInstallationRecords()
+  const settingsFile = readStoredJson(path.join(configDir(), 'settings.json'), isObject)
+  const listFile = readStoredJson(path.join(dataDir(), 'installations.json'), Array.isArray)
+  const unreadableFiles = [
+    ...(settingsFile.kind === 'unreadable' ? ['settings.json'] : []),
+    ...(listFile.kind === 'unreadable' ? ['installations.json'] : [])
+  ]
+  const settings = asRecord(settingsFile.kind === 'value' ? settingsFile.value : null)
+  const records =
+    listFile.kind === 'value' && Array.isArray(listFile.value) ? listFile.value.map(asRecord) : []
   const installations = installationsOnDisk(records)
+  const storedPaths = [
+    ...absolutePathsIn(settings),
+    ...records.filter((record) => !installIdentity(record)).flatMap(absolutePathsIn)
+  ]
   const modelsDirs = stringList(settings.modelsDirs)
-  const oemManagedModelDirs = stringList(settings.oemManagedModelDirs)
-  const inputDir = nonEmptyString(settings.inputDir)
   const outputDir = nonEmptyString(settings.outputDir)
   const desktopOneBasePath = readDesktopOneBasePath(appData)
   const folders: CleanupFolders = {
@@ -793,21 +860,11 @@ export function collectUninstallCleanupInputs(
     input: settingsDefaults.inputDir,
     output: settingsDefaults.outputDir
   }
-  const keptCandidates = presentPaths([
-    ...installations.flatMap((inst) => [
-      inst.installPath,
-      inst.adoptedBaseDir,
-      ...inst.addedFolders
-    ]),
-    ...modelsDirs,
-    ...oemManagedModelDirs,
-    inputDir,
-    outputDir,
-    desktopOneBasePath
-  ])
-  const appDirs = appOwnedDirs(folders)
-  const listings = dirsToList(appDirs, keptCandidates)
-    .filter((dir) => !passesThroughLink(dir, appDirs))
+  const kept = keptCandidates({ folders, storedPaths, installations, unreadableFiles })
+  const roots = [...appOwnedDirs(folders), ...windowsAppDataDirs(platform, folders)]
+  const keptOnDisk = presentPaths([...kept.map((c) => c.path), desktopOneBasePath])
+  const listings = dirsToList(roots, keptOnDisk)
+    .filter((dir) => !passesThroughLink(dir, roots))
     .map((dir) => ({ dir, ...listAppDir(dir) }))
 
   return {
@@ -818,16 +875,16 @@ export function collectUninstallCleanupInputs(
     appDirLinks: listings.flatMap(({ links }) => links),
     tempEntries: listDir(temp),
     modelsDirs,
-    oemManagedModelDirs,
-    inputDir,
     outputDir,
+    storedPaths,
     installations,
     desktopOneBasePath,
     configuredCacheEntries: configuredCacheEntries(
       nonEmptyString(settings.cacheDir),
       folders.downloadCache,
       records
-    )
+    ),
+    unreadableFiles
   }
 }
 
@@ -835,7 +892,7 @@ export function formatCleanupLog(
   options: CleanupOptions,
   results: CleanupResult[],
   startedAt: Date,
-  crash?: string
+  extras: { notes?: string[]; crash?: string } = {}
 ): string {
   const count = (outcome: CleanupOutcome): number =>
     results.filter((r) => r.outcome === outcome).length
@@ -848,6 +905,7 @@ export function formatCleanupLog(
   const lines = [
     `Comfy Desktop uninstall cleanup ${startedAt.toISOString()}`,
     `delete-instances=${options.deleteInstances} delete-models=${options.deleteModels}`,
+    ...(extras.notes ?? []),
     ...results.map(describe),
     summary
   ]
@@ -857,8 +915,14 @@ export function formatCleanupLog(
       `kept in the install list because their folders were not removed: ${kept.join(', ')}`
     )
   }
-  if (crash) lines.push(`stopped: ${crash}`)
+  if (extras.crash) lines.push(`stopped: ${extras.crash}`)
   return `${lines.join('\n')}\n`
+}
+
+function unreadableFileNotes(inputs: CleanupInputs): string[] {
+  return inputs.unreadableFiles.map(
+    (name) => `${name} and its backup could not be read: kept installs, models and app data`
+  )
 }
 
 function writeCleanupLog(text: string): void {
@@ -875,11 +939,13 @@ export function runUninstallCleanup(
   const options = parseCleanupOptions(argv)
   const startedAt = new Date()
   try {
-    const results = runCleanup(collectUninstallCleanupInputs(options, platform))
-    writeCleanupLog(formatCleanupLog(options, results, startedAt))
+    const inputs = collectUninstallCleanupInputs(options, platform)
+    const results = runCleanup(inputs)
+    const notes = unreadableFileNotes(inputs)
+    writeCleanupLog(formatCleanupLog(options, results, startedAt, { notes }))
     return results.some((r) => r.outcome === 'failed') ? 1 : 0
   } catch (err) {
-    writeCleanupLog(formatCleanupLog(options, [], startedAt, errorCode(err)))
+    writeCleanupLog(formatCleanupLog(options, [], startedAt, { crash: errorCode(err) }))
     return 2
   }
 }
