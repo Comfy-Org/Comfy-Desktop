@@ -372,6 +372,7 @@ interface ActiveLaunch {
   settled: Promise<void>
   _resolveSettled: () => void
   pickerWorkspaceId?: string
+  hadWindow?: boolean
 }
 const _activeLaunches = new Map<string, ActiveLaunch>()
 
@@ -1432,6 +1433,12 @@ export function keepsComfyRunningWhenWindowCloses(): boolean {
 export function noteWindowClosed(installationId: string): void {
   const session = _runningSessions.get(installationId)
   if (session) session.hadWindow = true
+  const launch = _activeLaunches.get(installationId)
+  if (launch) launch.hadWindow = true
+}
+
+export function launchHadWindow(installationId: string): boolean {
+  return _activeLaunches.get(installationId)?.hadWindow === true
 }
 
 export function hasRunningSessions(): boolean {

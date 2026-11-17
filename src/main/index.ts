@@ -91,6 +91,8 @@ import {
   _activeOperationStatus,
   _getLaunchingInstallationIds,
   _setActiveLaunchPickerWorkspace,
+  _getActiveLaunchIds,
+  launchHadWindow,
   stopRunning,
   resolveTheme,
   MSG_CANCELLED,
@@ -473,6 +475,8 @@ function onLaunch({
       }
     }
   }
+
+  if (launchHadWindow(installationId)) return
 
   const initialSourceCategory = sourceMap[installation.sourceId]?.category ?? null
 
@@ -1634,7 +1638,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     void stopBuildsRunningForAppsOnly().finally(() => {
       if (BrowserWindow.getAllWindows().length > 0) return
-      if (quitsOnceEveryWindowClosed()) {
+      if (
+        quitsOnceEveryWindowClosed() &&
+        (process.platform !== 'darwin' || _getActiveLaunchIds().length === 0)
+      ) {
         app.quit()
       }
     })

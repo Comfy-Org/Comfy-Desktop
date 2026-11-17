@@ -14,7 +14,13 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
-import { _runningSessions, _stoppingInstallationIds } from '../lib/ipc/shared'
+import {
+  _beginLaunch,
+  _endLaunch,
+  _runningSessions,
+  _stoppingInstallationIds,
+  launchHadWindow
+} from '../lib/ipc/shared'
 import {
   _resetAttachClaimsForTest,
   canRestartFromPicker,
@@ -315,6 +321,21 @@ describe('attach-claim helpers', () => {
     expect(consumeAttachClaim('inst-A')).toBeUndefined()
     expect(consumeAttachClaim('inst-C')).toBeUndefined()
     expect(consumeAttachClaim('inst-B')).toBe(9)
+  })
+
+  it('remembers that a start lost the window it was to open in, and only that start', () => {
+    const left = _beginLaunch('inst-A')
+    const kept = _beginLaunch('inst-B')
+    try {
+      claimAttachHost('inst-A', 7)
+      claimAttachHost('inst-B', 9)
+      dropAttachClaimsForWindow(7)
+      expect(launchHadWindow('inst-A')).toBe(true)
+      expect(launchHadWindow('inst-B')).toBe(false)
+    } finally {
+      _endLaunch('inst-A', left)
+      _endLaunch('inst-B', kept)
+    }
   })
 })
 

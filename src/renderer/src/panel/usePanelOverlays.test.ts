@@ -1,7 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h, ref } from 'vue'
+import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 
-import { firstUseModeForOverlaySwap } from './usePanelOverlays'
+import { firstUseModeForOverlaySwap, usePanelOverlays } from './usePanelOverlays'
 import type { Overlay } from '../composables/useOverlay'
+import { useInstallationStore } from '../stores/installationStore'
+import { useProgressStore, type Operation } from '../stores/progressStore'
+import type { Installation } from '../types/ipc'
+
+const modal = vi.hoisted(() => ({ confirm: vi.fn(async () => true) }))
+
+vi.mock('../composables/useModal', () => ({
+  useModal: () => ({ alert: vi.fn(), confirm: modal.confirm, close: vi.fn() })
+}))
+vi.mock('../stores/dashboardScopeStore', () => ({ useDashboardScopeStore: () => ({}) }))
 
 const progressTakeover: Overlay = { kind: 'takeover', component: 'update' }
 const firstUseTakeover: Overlay = { kind: 'takeover', component: 'first-use' }
@@ -44,5 +57,94 @@ describe('firstUseModeForOverlaySwap', () => {
 
   it('pushes none on the immediate mount fire with no overlay (clears stale lockdown drift)', () => {
     expect(firstUseModeForOverlaySwap(null, undefined, false)).toBe('none')
+  })
+})
+
+describe('closing the window while its build is starting', () => {
+  const BUILD = 'studio'
+  const api = {
+    setFirstUseMode: vi.fn(),
+    onInstallationsChanged: vi.fn(() => () => {}),
+    onInstallationsVersionsUpdated: vi.fn(() => () => {}),
+    cancelOperation: vi.fn(),
+    stopComfyUI: vi.fn(),
+    closeCurrentPanel: vi.fn(),
+    getSetting: vi.fn().mockResolvedValue(undefined)
+  }
+
+  async function showInWindow(
+    opKind: Operation['opKind']
+  ): Promise<ReturnType<typeof usePanelOverlays>> {
+    let overlays!: ReturnType<typeof usePanelOverlays>
+    mount(
+      defineComponent({
+        setup() {
+          overlays = usePanelOverlays({
+            installationId: BUILD,
+            progressRef: ref(null),
+            newInstallRef: ref(null),
+            trackRef: ref(null),
+            loadSnapshotRef: ref(null),
+            quickInstallRef: ref(null),
+            firstUseRef: ref(null)
+          })
+          return () => h('div')
+        }
+      })
+    )
+    overlays.currentOverlay.value = null
+    useInstallationStore().installations = [
+      { id: BUILD, name: 'Studio', sourceCategory: 'local' } as Installation
+    ]
+    useProgressStore().operations.set(BUILD, {
+      title: 'Studio',
+      opKind,
+      finished: false,
+      cancelRequested: false
+    } as Operation)
+    await overlays.handleShowProgress({
+      installationId: BUILD,
+      title: 'Studio',
+      apiCall: async () => ({ ok: true }),
+      opKind
+    })
+    expect(overlays.currentOverlay.value?.kind).toBe('takeover')
+    return overlays
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    ;(window as unknown as { api: typeof api }).api = api
+    for (const fn of Object.values(api)) fn.mockClear()
+    modal.confirm.mockClear()
+  })
+
+  it('leaves the start running, without asking', async () => {
+    const overlays = await showInWindow('launch')
+
+    await expect(overlays.closeOverlay()).resolves.toBe(true)
+
+    expect(modal.confirm).not.toHaveBeenCalled()
+    expect(api.cancelOperation).not.toHaveBeenCalled()
+    expect(overlays.currentOverlay.value).toBeNull()
+  })
+
+  it('asks, then cancels the start when keepComfyRunningWhenWindowCloses is off', async () => {
+    const overlays = await showInWindow('launch')
+    api.getSetting.mockResolvedValueOnce(false)
+
+    await expect(overlays.closeOverlay()).resolves.toBe(true)
+
+    expect(modal.confirm).toHaveBeenCalledOnce()
+    expect(api.cancelOperation).toHaveBeenCalledWith(BUILD)
+  })
+
+  it('still asks, then cancels an install', async () => {
+    const overlays = await showInWindow('install')
+
+    await expect(overlays.closeOverlay()).resolves.toBe(true)
+
+    expect(modal.confirm).toHaveBeenCalledOnce()
+    expect(api.cancelOperation).toHaveBeenCalledWith(BUILD)
   })
 })

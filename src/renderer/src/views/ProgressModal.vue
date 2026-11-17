@@ -5,6 +5,7 @@ import { Check, X, TriangleAlert, ChevronDown, ArrowLeft, RefreshCcw } from '@lu
 import Button from '@comfyorg/design-system/button/Button'
 import { useModal } from '../composables/useModal'
 import {
+  keepsComfyRunningWhenWindowCloses,
   useReturnToDashboardConfirm,
   type ReturnToDashboardReason
 } from '../composables/useReturnToDashboardConfirm'
@@ -381,9 +382,14 @@ async function returnToDashboard(reason: ReturnToDashboardReason): Promise<void>
   const id = displayId.value
   const op = id ? progressStore.operations.get(id) : null
   const installation = id ? (installationStore.getById(id) ?? null) : null
-  const ok = await confirmReturnToDashboard(installation, reason)
+  const leavesStartRunning =
+    reason === 'in_flight' &&
+    op?.opKind === 'launch' &&
+    installation?.sourceCategory === 'local' &&
+    (await keepsComfyRunningWhenWindowCloses())
+  const ok = leavesStartRunning || (await confirmReturnToDashboard(installation, reason))
   if (!ok) return
-  if (reason === 'in_flight' && op && !op.finished && id) {
+  if (reason === 'in_flight' && !leavesStartRunning && op && !op.finished && id) {
     progressStore.cancelOperation(id)
   }
   emitTelemetryAction('comfy.desktop.instance.return_to_dashboard', { from: 'progress', reason })

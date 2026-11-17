@@ -5,6 +5,7 @@ import { getModelDownloadContentScript } from '../lib/comfyContentScript'
 import { getComfyTerminalContentScript } from '../lib/comfyTerminalContentScript'
 import { closeInstallPopouts } from '../lib/popoutWindows'
 import {
+  _hasActiveLaunch,
   _operationAborts,
   keepsComfyRunningWhenWindowCloses,
   noteWindowClosed,
@@ -419,8 +420,9 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     }
     const id = entry.installationId
     if (id !== null) {
+      const keepsRunning = isLocal && keepsComfyRunningWhenWindowCloses()
       const inFlight = _operationAborts.get(id)
-      if (inFlight) {
+      if (inFlight && !(keepsRunning && _hasActiveLaunch(id))) {
         inFlight.abort()
         _operationAborts.delete(id)
       }
@@ -430,7 +432,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       if (relaunch && !comfyContents.isDestroyed()) {
         comfyContents.off('will-navigate', relaunch.navBlocker)
       }
-      if (isLocal && keepsComfyRunningWhenWindowCloses()) noteWindowClosed(id)
+      if (keepsRunning) noteWindowClosed(id)
       else ipc.stopRunning(id)
       closeInstallPopouts(id)
       fx.comfyZoomResets.delete(id)

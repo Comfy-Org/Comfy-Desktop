@@ -5,7 +5,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import ProgressModal from './ProgressModal.vue'
 import { useProgressStore } from '../stores/progressStore'
 import type { Operation } from '../stores/progressStore'
-import type { ActionResult, PortConflictInfo } from '../types/ipc'
+import { useInstallationStore } from '../stores/installationStore'
+import type { ActionResult, Installation, PortConflictInfo } from '../types/ipc'
 
 const mockModal = {
   alert: vi.fn().mockResolvedValue(undefined),
@@ -25,6 +26,7 @@ interface MockApi {
   runAction: ReturnType<typeof vi.fn>
   killPortProcess: ReturnType<typeof vi.fn>
   returnToDashboard: ReturnType<typeof vi.fn>
+  getSetting?: ReturnType<typeof vi.fn>
   getInstallations: ReturnType<typeof vi.fn>
   onInstallationsChanged: ReturnType<typeof vi.fn>
   onInstallationsVersionsUpdated: ReturnType<typeof vi.fn>
@@ -561,6 +563,59 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(op?.cancelRequested).toBe(true)
     const api = (window as unknown as { api: MockApi }).api
     expect(api.returnToDashboard).toHaveBeenCalled()
+  })
+
+  it('leaves a start of a build on this computer running when Return to Home is clicked', async () => {
+    mockModal.confirm.mockClear()
+    useInstallationStore().installations = [
+      { id: 'inst-1', name: 'Studio', sourceCategory: 'local' } as Installation
+    ]
+    const { wrapper, body } = await mountWithOp('inst-1', { opKind: 'launch' })
+
+    body.buttonByText('Return to Home')!.click()
+    await flushPromises()
+
+    expect(mockModal.confirm).not.toHaveBeenCalled()
+    expect(useProgressStore().operations.get('inst-1')?.cancelRequested).toBe(false)
+    const api = (window as unknown as { api: MockApi }).api
+    expect(api.cancelOperation).not.toHaveBeenCalled()
+    expect(wrapper.emitted('close')?.length).toBeGreaterThan(0)
+    expect(api.returnToDashboard).toHaveBeenCalled()
+  })
+
+  it('asks, then cancels a start when Return to Home is clicked with keepComfyRunningWhenWindowCloses off', async () => {
+    mockModal.confirm.mockClear()
+    useInstallationStore().installations = [
+      { id: 'inst-1', name: 'Studio', sourceCategory: 'local' } as Installation
+    ]
+    const { body } = await mountWithOp('inst-1', { opKind: 'launch' })
+    const api = (window as unknown as { api: MockApi }).api
+    api.getSetting = vi.fn().mockResolvedValue(false)
+
+    body.buttonByText('Return to Home')!.click()
+    await flushPromises()
+
+    expect(api.getSetting).toHaveBeenCalledWith('keepComfyRunningWhenWindowCloses')
+    expect(mockModal.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Cancel current operation?' })
+    )
+    expect(useProgressStore().operations.get('inst-1')?.cancelRequested).toBe(true)
+  })
+
+  it('still asks, then cancels an install in flight when Return to Home is clicked', async () => {
+    mockModal.confirm.mockClear()
+    useInstallationStore().installations = [
+      { id: 'inst-1', name: 'Studio', sourceCategory: 'local' } as Installation
+    ]
+    const { body } = await mountWithOp('inst-1', { opKind: 'install' })
+
+    body.buttonByText('Return to Home')!.click()
+    await flushPromises()
+
+    expect(mockModal.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Cancel current operation?' })
+    )
+    expect(useProgressStore().operations.get('inst-1')?.cancelRequested).toBe(true)
   })
 
   it('uses friendlyCaption (not launchCaption) for non-launch ops', async () => {
