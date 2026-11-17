@@ -86,6 +86,31 @@ function fullyShown(element: Element): boolean {
   return element.scrollWidth <= element.clientWidth && element.clientWidth > 0
 }
 
+it('keeps the update note visible when build metadata truncates on Home and Builds', async () => {
+  const studio: Installation = {
+    ...STUDIO,
+    sourceLabel: 'Standalone installation with a long name',
+    version: `v0.3.68+preview.${'weekend-render.'.repeat(4)}7`,
+    statusTag: { style: 'update', label: 'Update to v0.3.70' }
+  }
+  vi.mocked(window.api.getInstallations).mockResolvedValue([studio, PORTRAITS])
+  page.style.cssText = `position: absolute; left: 0; top: 0; width: ${LARGE_WINDOW_WIDTH - FRAME_AND_EXPANDED_SIDEBAR_WIDTH}px`
+  const home = track(mount(HomeView, { attachTo: page }))
+  const builds = track(
+    mount(ChooserFamilyGrid, { attachTo: page, props: { installations: [studio, PORTRAITS] } })
+  )
+  await flushPromises()
+
+  for (const wrapper of [home, builds]) {
+    const note = onlyIn(wrapper, '[data-testid="build-update-note"]')
+    const line = note.parentElement!
+    expect(note.textContent?.trim()).toBe('· Update')
+    expect(fullyShown(line.firstElementChild!)).toBe(false)
+    expect(fullyShown(note)).toBe(true)
+    expect(boxOf(note).right).toBeLessThanOrEqual(boxOf(line).right + 0.5)
+  }
+})
+
 describe('Auto start on Home build cards in the smallest window with the sidebar open', () => {
   it('shows the whole status and leaves each name the width the card has after its picture', async () => {
     page.style.cssText = `position: absolute; left: 0; top: 0; width: ${HOME_WIDTH_IN_SMALLEST_WINDOW}px`
@@ -256,11 +281,9 @@ describe('Builds page grid', () => {
     }
     const tile = onlyIn(wrapper, `[data-testid="${TID.dashboardTile(STUDIO.id)}"]`)
     expect(tile.querySelector('.chooser-tile-launch')).toBeNull()
-    expect(
-      tile.querySelectorAll(
-        'button:not(.chooser-tile-kebab):not([data-testid="build-update-link"])'
-      )
-    ).toHaveLength(0)
+    expect(tile.querySelectorAll('button:not(.chooser-tile-kebab)')).toHaveLength(
+      state === 'uninstalling' ? 0 : 1
+    )
     if (state === 'running with an update') {
       expect(tile.querySelector('.chooser-tile-body .truncate')!.textContent?.trim()).toBe(
         'Running'
@@ -284,7 +307,7 @@ describe('Builds page grid', () => {
   it('lets the pointer through the whole tile to its click hint, and keeps the hint shut while the menu is open', async () => {
     const wrapper = await buildsGridWithStudioIn('ready', BUILDS_GRID_WIDTH_IN_LARGE_WINDOW)
     const tile = onlyIn(wrapper, `[data-testid="${TID.dashboardTile(STUDIO.id)}"]`)
-    const area = tile.querySelector('[data-testid="chooser-tile-hint-area"]')!
+    const area = tile.querySelector('[data-testid="chooser-tile-open"]')!
     const tileBox = boxOf(tile)
     expect(boxOf(area).width).toBeCloseTo(tileBox.width - 2, 0)
     expect(boxOf(area).height).toBeCloseTo(tileBox.height - 2, 0)

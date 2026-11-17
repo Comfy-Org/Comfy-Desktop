@@ -46,6 +46,10 @@ export interface ManageOpenOptions {
 
 const promotingInstallationIds = ref<ReadonlySet<string>>(new Set())
 
+export function isPromotingToWorkspace(inst: Installation): boolean {
+  return promotingInstallationIds.value.has(inst.id)
+}
+
 export function useInstallContextMenu(
   opts: {
     onManage?: (inst: Installation, options?: ManageOpenOptions) => void
@@ -75,10 +79,6 @@ export function useInstallContextMenu(
     if (promoting) next.add(installationId)
     else next.delete(installationId)
     promotingInstallationIds.value = next
-  }
-
-  function isPromotingToWorkspace(inst: Installation): boolean {
-    return promotingInstallationIds.value.has(inst.id)
   }
 
   function isLocalLikeInstall(inst: Installation): boolean {

@@ -18,6 +18,7 @@ import {
   type HomeBuildTone
 } from './homeBuild'
 import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useProgressStore } from '../../stores/progressStore'
 import type { Installation } from '../../types/ipc'
 
@@ -41,6 +42,8 @@ const progressStore = useProgressStore()
 const busy = computed(() => install.progress.value !== null)
 const starting = computed(() => install.progress.value?.kind === 'launch')
 const uninstalling = computed(() => install.progress.value?.kind === 'uninstall')
+const promoting = computed(() => isPromotingToWorkspace(build))
+const canActivate = computed(() => !uninstalling.value && !promoting.value)
 const busyTestId = computed(() => {
   if (uninstalling.value) return 'home-build-uninstalling'
   return starting.value ? 'home-build-starting' : 'home-build-installing'
@@ -59,6 +62,7 @@ const statusLabel = computed(() => {
     const percent = install.progress.value?.percent
     return percent == null ? phase : t('installProgress.detail', { phase, percent })
   }
+  if (promoting.value) return t('devPlatform.workspace.promoting')
   if (broken.value) return broken.value
   switch (status) {
     case 'running':
@@ -80,31 +84,31 @@ const detail = computed(() =>
 )
 const isLive = computed(
   () =>
-    !busy.value &&
-    (status === 'running' || status === 'always-on' || (status === 'update' && isCloudBuild(build)))
+    status === 'running' || status === 'always-on' || (status === 'update' && isCloudBuild(build))
 )
 const resting = computed(() => status === 'ready' || status === 'update')
 const updateNote = computed(() =>
-  build.statusTag?.style === 'update' ? t('chooser.updatePill') : ''
+  !uninstalling.value && build.statusTag?.style === 'update' ? t('chooser.updatePill') : ''
 )
-const subtitle = computed(() => {
-  if (uninstalling.value) return install.detail.value
-  const lead =
-    updateNote.value && build.version && !isComfyCloud(build) ? build.version : detail.value
-  return [lead, updateNote.value].filter(Boolean).join(' · ')
-})
+const subtitle = computed(() => (uninstalling.value ? install.detail.value : detail.value))
 const openHint = computed(() => {
-  if (uninstalling.value) return ''
-  if (busy.value) return t('home.buildClickToViewLogs')
-  if (broken.value || isLive.value || status === 'starting' || isCloudBuild(build))
+  if (!canActivate.value) return ''
+  if (
+    busy.value ||
+    (build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id))
+  ) {
+    return t('home.buildClickToViewLogs')
+  }
+  if (broken.value || isLive.value || status === 'starting' || build.sourceCategory === 'remote')
     return t('home.buildClickToOpen')
   return t('home.buildClickToStart')
 })
 const testId = computed(() => (busy.value ? busyTestId.value : 'home-build'))
 
 function onClick(): void {
+  if (!canActivate.value) return
   if (!busy.value) emit('open')
-  else if (!uninstalling.value) install.viewLogs()
+  else install.viewLogs()
 }
 
 const openButton = useTemplateRef<HTMLButtonElement>('openButton')
@@ -134,7 +138,7 @@ function openContextMenu(event: MouseEvent): void {
 <template>
   <div
     class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
-    :class="!uninstalling && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
+    :class="canActivate && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
     :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
     :data-testid="testId"
     :data-build-id="build.id"
@@ -142,7 +146,7 @@ function openContextMenu(event: MouseEvent): void {
     @contextmenu.prevent="openContextMenu"
   >
     <Tooltip
-      v-if="!uninstalling"
+      v-if="canActivate"
       class="absolute inset-0 flex"
       :text="openHint"
       side="top"
@@ -159,7 +163,9 @@ function openContextMenu(event: MouseEvent): void {
     </Tooltip>
     <span
       class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
-      :class="!busy && 'group-hover:scale-[2.6] group-has-[:focus-visible]:scale-[2.6]'"
+      :class="
+        canActivate && !busy && 'group-hover:scale-[2.6] group-has-[:focus-visible]:scale-[2.6]'
+      "
       :style="{
         background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
       }"
@@ -177,11 +183,11 @@ function openContextMenu(event: MouseEvent): void {
     >
       <span
         class="flex h-4 items-center gap-1.5 text-xs/4"
-        :class="!busy && broken ? 'text-destructive' : 'text-muted-foreground'"
+        :class="!busy && !promoting && broken ? 'text-destructive' : 'text-muted-foreground'"
         data-testid="home-build-status"
       >
         <LoaderCircle
-          v-if="busy"
+          v-if="busy || promoting"
           :size="12"
           class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
           aria-hidden="true"
@@ -209,10 +215,13 @@ function openContextMenu(event: MouseEvent): void {
         {{ build.name }}
       </span>
       <span
-        class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground"
+        class="mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
         :data-testid="uninstalling ? 'home-build-install-detail' : 'home-build-detail'"
       >
-        {{ subtitle }}
+        <span v-if="subtitle" class="min-w-0 truncate">{{ subtitle }}</span>
+        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
+          >{{ subtitle ? ' · ' : '' }}{{ updateNote }}</span
+        >
       </span>
     </span>
     <Button

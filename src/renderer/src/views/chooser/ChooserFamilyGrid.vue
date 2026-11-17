@@ -11,12 +11,10 @@ const props = withDefaults(
     installations: Installation[]
     showFreeRunsPill?: boolean
     showWhyCloud?: boolean
-    isPromotingToWorkspace?: (inst: Installation) => boolean
   }>(),
   {
     showFreeRunsPill: false,
-    showWhyCloud: false,
-    isPromotingToWorkspace: () => false
+    showWhyCloud: false
   }
 )
 
@@ -104,7 +102,6 @@ function unlockTileSize(el: Element): void {
         :tone="tones[index]"
         :show-free-runs-pill="props.showFreeRunsPill && installation.sourceCategory === 'cloud'"
         :show-why-cloud="props.showWhyCloud && installation.sourceCategory === 'cloud'"
-        :is-promoting-to-workspace="props.isPromotingToWorkspace(installation)"
         :auto-start="autoStart.startsOnOpen(installation.id)"
         @why-cloud="emit('why-cloud')"
         @pick="emit('pick', $event)"
