@@ -2,7 +2,7 @@ import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import type { WebContentsView } from 'electron'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
-import type { PopupTheme, TitlePopupKind } from '../../types/ipc'
+import type { PopupTheme, TitlePopupKind, TitlePopupMenuIcon } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
 import {
   cancelModelDownload,
@@ -66,6 +66,8 @@ interface TitlePopupMenuItem {
   id?: string
   label?: string
   labelKey?: string
+  labelParams?: Record<string, string | number>
+  icon?: TitlePopupMenuIcon
   kind?: 'separator'
 }
 
@@ -459,13 +461,28 @@ const POPUP_ITEM_HEIGHT = 28
 const POPUP_SEPARATOR_HEIGHT = 9
 const POPUP_VPADDING = 8
 const POPUP_VBORDER = 2
+const POPUP_ICON_ROW_GAP = 2
 
 export function computePopupHeight(items: readonly TitlePopupMenuItem[]): number {
   const content = items.reduce(
     (sum, item) => sum + (item.kind === 'separator' ? POPUP_SEPARATOR_HEIGHT : POPUP_ITEM_HEIGHT),
     0
   )
-  return content + POPUP_VPADDING + POPUP_VBORDER
+  const rowGap = items.some((item) => item.icon) ? POPUP_ICON_ROW_GAP : 0
+  const gaps = rowGap * Math.max(0, items.length - 1)
+  return content + gaps + POPUP_VPADDING + POPUP_VBORDER
+}
+
+function desktopWindowMenuItems(): TitlePopupMenuItem[] {
+  return [
+    {
+      id: 'performance-test',
+      label: 'Performance tests',
+      labelKey: 'fileMenu.performanceTests',
+      icon: 'performance-test'
+    },
+    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks', icon: 'benchmarks' }
+  ]
 }
 
 export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMenuItem[] {
@@ -478,6 +495,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
       }
     ]
   }
+  if (isChooserHost(entry)) return desktopWindowMenuItems()
   const items: TitlePopupMenuItem[] = [
     {
       id: 'performance-test',
@@ -496,7 +514,12 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     const level = entry.comfyView.webContents.getZoomLevel()
     if (level !== 0) {
       const percent = convertLevelToZoomPercent(level)
-      items.push({ id: 'reset-zoom', label: `Reset Zoom (${percent}%)` })
+      items.push({
+        id: 'reset-zoom',
+        label: `Reset Zoom (${percent}%)`,
+        labelKey: 'fileMenu.resetZoom',
+        labelParams: { percent }
+      })
     }
   }
   items.push(

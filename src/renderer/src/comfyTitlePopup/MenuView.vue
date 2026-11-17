@@ -1,12 +1,22 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
+import { computed, onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
+import type { Component } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ChartColumn, Gauge } from '@lucide/vue'
+import type { TitlePopupMenuIcon } from '../../../types/ipc'
 
 interface MenuItem {
   id?: string
   label?: string
   labelKey?: string
+  labelParams?: Record<string, string | number>
+  icon?: TitlePopupMenuIcon
   kind?: 'separator'
+}
+
+const MENU_ICONS: Record<TitlePopupMenuIcon, Component> = {
+  'performance-test': Gauge,
+  benchmarks: ChartColumn
 }
 
 const props = defineProps<{
@@ -19,9 +29,12 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
+const hasIcons = computed(() => props.items.some((item) => item.icon))
+
 function labelFor(item: MenuItem): string {
-  if (item.labelKey) return t(item.labelKey, item.label ?? '')
-  return item.label ?? ''
+  if (!item.labelKey) return item.label ?? ''
+  if (item.labelParams) return t(item.labelKey, item.labelParams, { default: item.label ?? '' })
+  return t(item.labelKey, item.label ?? '')
 }
 
 function handleClick(item: MenuItem): void {
@@ -99,7 +112,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <ul ref="menu" class="menu m-0 list-none p-1" role="menu">
+  <ul
+    ref="menu"
+    class="menu m-0 list-none p-1"
+    :class="{ 'flex flex-col gap-0.5': hasIcons }"
+    role="menu"
+  >
     <template v-for="(item, idx) in items" :key="idx">
       <li
         v-if="item.kind === 'separator'"
@@ -114,6 +132,13 @@ onUnmounted(() => {
         :tabindex="item.id ? -1 : undefined"
         @click="handleClick(item)"
       >
+        <component
+          :is="MENU_ICONS[item.icon]"
+          v-if="item.icon"
+          :size="15"
+          class="item-icon shrink-0"
+          aria-hidden="true"
+        />
         <span class="label flex-auto overflow-hidden text-ellipsis">{{ labelFor(item) }}</span>
       </li>
     </template>
