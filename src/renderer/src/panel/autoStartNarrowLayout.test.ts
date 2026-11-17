@@ -243,7 +243,11 @@ describe('Builds page grid', () => {
     }
     const tile = onlyIn(wrapper, `[data-testid="${TID.dashboardTile(STUDIO.id)}"]`)
     expect(tile.querySelector('.chooser-tile-launch')).toBeNull()
-    expect(tile.querySelectorAll('button:not(.chooser-tile-kebab)')).toHaveLength(0)
+    expect(
+      tile.querySelectorAll(
+        'button:not(.chooser-tile-kebab):not([data-testid="build-update-link"])'
+      )
+    ).toHaveLength(0)
     if (state === 'running with an update') {
       expect(tile.querySelector('.chooser-tile-body .truncate')!.textContent?.trim()).toBe(
         'Running'

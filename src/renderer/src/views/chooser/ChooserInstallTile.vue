@@ -17,6 +17,7 @@ import Tooltip from '../../components/ui/Tooltip.vue'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from '../../panel/home/BuildMenu.vue'
 import BuildProgressBar from '../../panel/home/BuildProgressBar.vue'
+import BuildUpdateLink from '../../panel/home/BuildUpdateLink.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
 import { isBuildInstall } from '../../devplatform/buildState'
@@ -196,8 +197,13 @@ const leadingFact = computed(() =>
 
 const updateNote = computed(() => (hasUpdate.value ? t('chooser.updateAvailable') : ''))
 
+const FACT_SEPARATOR = ' · '
+const updateLink = computed(() => hasUpdate.value && !isBusy.value && !isCloudBuild(inst.value))
+
 const metaLine = computed(() =>
-  [leadingFact.value, trailingFact.value, updateNote.value].filter(Boolean).join(' · ')
+  [leadingFact.value, trailingFact.value, updateLink.value ? '' : updateNote.value]
+    .filter(Boolean)
+    .join(' · ')
 )
 
 const openHint = computed(() => {
@@ -420,11 +426,18 @@ function openContextMenu(event: MouseEvent): void {
           </Button>
         </Tooltip>
       </div>
-      <TruncatedText
-        v-if="metaLine"
-        class="chooser-tile-meta-line mt-0.5 max-w-full min-w-0 text-xs/[17px] text-subtle-foreground [&.tooltip-wrap]:block"
-        :text="metaLine"
-      />
+      <span
+        v-if="metaLine || updateLink"
+        class="chooser-tile-meta-line mt-0.5 flex max-w-full min-w-0 items-center text-xs/[17px] text-subtle-foreground"
+      >
+        <TruncatedText v-if="metaLine" class="min-w-0 [&.tooltip-wrap]:block" :text="metaLine" />
+        <template v-if="updateLink">
+          <span v-if="metaLine" class="shrink-0 whitespace-pre" aria-hidden="true">{{
+            FACT_SEPARATOR
+          }}</span>
+          <BuildUpdateLink class="shrink-0" :build="inst" />
+        </template>
+      </span>
     </div>
 
     <Button

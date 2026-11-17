@@ -242,6 +242,36 @@ describe('Build menu', () => {
     expect(await shownMenu()).not.toContain('auto-start')
   })
 
+  it('updates from the Update available link beside the version without opening the build', async () => {
+    const getDetailSections = vi.fn().mockResolvedValue([])
+    const openInstancePicker = vi.fn()
+    Object.assign(window.api, { getDetailSections, openInstancePicker })
+    const build: Installation = {
+      ...BUILD,
+      statusTag: { label: 'Update available', style: 'update' }
+    }
+    const onOpen = vi.fn()
+    const wrapper = mount(
+      withHost(() => h(HomeBuildCard, { build, status: 'update', tone: 'ember', onOpen })),
+      { attachTo: document.body }
+    )
+    mounted.push(wrapper)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe(
+      'v0.42.4 · Update available'
+    )
+    await wrapper.get('[data-testid="build-update-link"]').trigger('click')
+    await flushPromises()
+
+    expect(getDetailSections).toHaveBeenCalledWith(build.id)
+    expect(openInstancePicker).toHaveBeenCalledWith(
+      expect.objectContaining({ installationId: build.id, initialTab: 'update' })
+    )
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(host.launch).not.toHaveBeenCalled()
+  })
+
   it('asks inside the menu before it uninstalls, then uninstalls without another dialog', async () => {
     const tile = await mountTile('ready')
     await tile.get('[data-testid="home-build-more"]').trigger('click')
