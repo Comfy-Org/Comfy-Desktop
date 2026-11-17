@@ -499,7 +499,7 @@ describe('TitleBarApp', () => {
       wrapper.unmount()
     })
 
-    it('shows no Home button and no ☰ in the Desktop window, only the tests menu on the right', async () => {
+    it('shows no Home button in the Desktop window, and keeps its ☰ on the right', async () => {
       bridgeState = installMockBridge({ installationId: null })
       vi.resetModules()
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
@@ -508,44 +508,8 @@ describe('TitleBarApp', () => {
 
       expect(wrapper.find('.title-home-button').exists()).toBe(false)
       expect(wrapper.find('.title-cluster').element.children.length).toBe(0)
-      const trigger = wrapper.find('.title-trailing').element.lastElementChild
-      expect(trigger?.matches(`${menuButton}.title-tests-menu-button`)).toBe(true)
-      expect(trigger?.getAttribute('aria-label')).toBe('Performance tests and benchmarks')
-      expect(trigger?.querySelector('.lucide-gauge')).not.toBeNull()
-      expect(trigger?.querySelector('.lucide-menu')).toBeNull()
-
-      await wrapper.find(menuButton).trigger('click')
-      expect(bridgeState.fileMenuAnchors).toHaveLength(1)
-      wrapper.unmount()
-    })
-
-    it('keeps the ☰ on a build window', async () => {
-      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
-      const wrapper = mount(TitleBarApp)
-      await flushPromises()
-
-      const trigger = wrapper.find(menuButton)
-      expect(trigger.classes()).not.toContain('title-tests-menu-button')
-      expect(trigger.attributes('aria-label')).toBe('Menu')
-      expect(trigger.find('.lucide-menu').exists()).toBe(true)
-      wrapper.unmount()
-    })
-
-    it('keeps the ☰ for Skip onboarding while the Desktop window is in first use', async () => {
-      bridgeState = installMockBridge({ installationId: null })
-      vi.resetModules()
-      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
-      const wrapper = mount(TitleBarApp)
-      await flushPromises()
-
-      bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('post-consent'))
-      await flushPromises()
-      expect(wrapper.find(menuButton).attributes('aria-label')).toBe('Menu')
-
-      bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('none'))
-      await flushPromises()
-      expect(wrapper.find(menuButton).attributes('aria-label')).toBe(
-        'Performance tests and benchmarks'
+      expect(wrapper.find('.title-trailing').element.lastElementChild?.matches(menuButton)).toBe(
+        true
       )
       wrapper.unmount()
     })
@@ -561,7 +525,6 @@ describe('TitleBarApp', () => {
       bridgeState.installationIdChangedCallbacks.forEach((cb) => cb('inst-started-here'))
       await flushPromises()
       expect(wrapper.find('.title-home-button').exists()).toBe(true)
-      expect(wrapper.find(menuButton).attributes('aria-label')).toBe('Menu')
       wrapper.unmount()
     })
 

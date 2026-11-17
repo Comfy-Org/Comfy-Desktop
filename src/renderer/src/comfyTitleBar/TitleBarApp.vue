@@ -6,7 +6,6 @@ import {
   Bell,
   ChevronDown,
   CloudDownload,
-  Gauge,
   House,
   Loader2,
   Menu as MenuIcon,
@@ -180,8 +179,6 @@ const showRefreshButton = computed(
 )
 
 const showHomeButton = computed(() => !isInstallLess.value && !isFirstUseLockdown.value)
-
-const showTestsMenuTrigger = computed(() => isInstallLess.value && !isFirstUseLockdown.value)
 
 const zoomLevel = ref(0)
 const zoomPercent = computed(() => Math.round(Math.pow(1.2, zoomLevel.value) * 100))
@@ -829,13 +826,12 @@ onUnmounted(() => {
         ref="fileBtn"
         type="button"
         class="title-menu-button title-menu-button--icon"
-        :class="[titleMenuButtonClass, { 'title-tests-menu-button': showTestsMenuTrigger }]"
+        :class="titleMenuButtonClass"
         aria-haspopup="menu"
-        v-bind="tooltipAttrs(showTestsMenuTrigger ? t('titleBar.testsMenu') : t('titleBar.menu'))"
+        v-bind="tooltipAttrs(t('titleBar.menu'))"
         @click="handleFileMenu"
       >
-        <Gauge v-if="showTestsMenuTrigger" :size="16" />
-        <MenuIcon v-else :size="16" />
+        <MenuIcon :size="16" />
       </button>
     </div>
   </header>
