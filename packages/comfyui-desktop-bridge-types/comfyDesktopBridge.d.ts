@@ -334,6 +334,16 @@ export interface ComfyDesktopHostedTelemetryBridge {
   track(name: string, props?: Record<string, string | number | boolean>): void
 }
 /**
+ * A file ComfyUI saved in its output folder, named as a run's history names
+ * it. `filename` has no folder in it, and `subfolder` is relative, with no
+ * `.` or `..` parts. Only `type: 'output'` is kept.
+ */
+export interface ComfyDesktopOutputFile {
+  filename: string
+  subfolder?: string
+  type: 'output'
+}
+/**
  * One output a hosted page asks Desktop to show. `mimeType` is one of
  * `image/png`, `image/jpeg`, `image/webp`, `image/gif`, `image/avif`,
  * `video/mp4`, `video/webm`, `video/quicktime`, `audio/mpeg`, `audio/mp4`,
@@ -343,6 +353,11 @@ export interface ComfyDesktopHostedTelemetryBridge {
  * `workflow` is true. Desktop refuses a `name`, and drops a tag, that has
  * control, bidirectional or zero-width formatting characters in the part it
  * keeps.
+ *
+ * `savedOn` says where the output is saved. For `cloud`, Desktop shows
+ * "Saved in Comfy Cloud assets" and View in Assets, which opens Desktop's
+ * Assets page on Comfy Cloud with the newest file of that `name` open. For
+ * `computer`, Desktop shows the folder it is saved in and Show in folder.
  */
 export interface ComfyDesktopOutput {
   name: string
@@ -350,6 +365,20 @@ export interface ComfyDesktopOutput {
   bytes: Uint8Array
   tags?: string[]
   workflow?: boolean
+  savedOn?: 'cloud' | 'computer'
+  /**
+   * For `computer` without `comfyFile`: the absolute path of the folder the
+   * page saved the output in. Desktop only shows it, and Show in folder comes
+   * back to the page on `onOutputAction`.
+   */
+  folder?: string
+  /**
+   * For `computer`: the file ComfyUI saved for this output. Desktop looks for
+   * it in the output folder of the build the page runs on, and uses it only
+   * when it has exactly the output's `bytes`. Desktop then shows its folder
+   * and shows the file in its folder itself; otherwise it shows no folder.
+   */
+  comfyFile?: ComfyDesktopOutputFile
 }
 /** At most 40 outputs and 100 MB of bytes in all, and the index of the one to show first. */
 export interface ComfyDesktopShowOutputRequest {
@@ -358,22 +387,25 @@ export interface ComfyDesktopShowOutputRequest {
 }
 /**
  * What the person picked in Desktop's output dialog for the output at `index`
- * of the page's last `showOutput` request: download it, or open its workflow.
+ * of the page's last `showOutput` request: download it, open its workflow, or
+ * show it in its `folder`. Desktop does not send `show-in-folder` for an
+ * output whose `comfyFile` it found, because it shows that file itself.
  */
 export interface ComfyDesktopOutputAction {
-  action: 'download' | 'open-workflow'
+  action: 'download' | 'open-workflow' | 'show-in-folder'
   index: number
 }
 /**
  * Desktop's output dialog, for a Comfy page hosted in Desktop's Apps view.
  * Desktop exposes it to that page as `window.comfyDesktopOutputs`. Desktop
  * shows the outputs over the Apps view and does not save or open anything
- * itself: Download and Open workflow come back to the page on
+ * itself: Download, Open workflow and Show in folder come back to the page on
  * `onOutputAction`, only while the page that showed the outputs is still the
- * app's loaded page.
+ * app's loaded page. Desktop itself only shows a found `comfyFile` in its
+ * folder, and opens the Assets page for View in Assets.
  */
 export interface ComfyDesktopHostedOutputsBridge {
-  /** Resolves true once Desktop shows the outputs, and false when the app is not on screen. Rejects a request Desktop cannot show. */
+  /** Resolves true once Desktop shows the outputs, and false when the app is not on screen or a newer request from the page replaced this one. Rejects a request Desktop cannot show. */
   showOutput(request: ComfyDesktopShowOutputRequest): Promise<boolean>
   onOutputAction(callback: (action: ComfyDesktopOutputAction) => void): () => void
 }
