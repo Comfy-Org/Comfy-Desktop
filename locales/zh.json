@@ -102,6 +102,9 @@
     "showDetails": "文件详情",
     "emptyTitle": "暂无资产",
     "emptyBody": "打开一个应用来生成资产。",
+    "noRecordedOutputs": "此构建暂无已记录的输出",
+    "noRecordedOutputsHint": "在此电脑中可浏览追踪启用前保存的文件，以及由不支持追踪的节点保存的文件。",
+    "browseComputer": "浏览此电脑",
     "loadFailed": "无法加载资产",
     "download": "下载",
     "downloadFailed": "无法下载资产",
@@ -123,6 +126,7 @@
     "signIn": "登录 Comfy Cloud",
     "inspect": "查看 {name}",
     "detail": {
+      "filePath": "保存路径",
       "tags": "标签",
       "tagsHint": "标签在 ComfyUI 中编辑。",
       "createdAt": "创建于 {date}",

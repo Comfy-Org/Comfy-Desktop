@@ -1,5 +1,6 @@
 import fsp from 'fs/promises'
 import type { Dirent } from 'fs'
+import type { FileHandle } from 'fs/promises'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { ipcMain, nativeImage, net, protocol, shell } from 'electron'
@@ -9,6 +10,12 @@ import * as settings from '../settings'
 import { assetKind } from './assets'
 import { copyImageToClipboard } from './clipboardImage'
 import { mediaFactsFromFile } from './mediaFacts'
+import {
+  outputAssetId,
+  outputReference,
+  outputRevision,
+  readOutputProvenance
+} from './outputProvenance'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
 import { sourceMap } from './ipc/shared'
@@ -63,7 +70,6 @@ async function realDir(dir: string): Promise<string | null> {
 
 interface OutputFolders {
   all: string[]
-  shared: string | null
   ofBuild: Map<string, string>
 }
 
@@ -79,7 +85,7 @@ async function findOutputFolders(): Promise<OutputFolders> {
   const all = [...new Set([...(shared ? [shared] : []), ...ofBuild.values()])]
   allowedRoots = all
   allowedRootsAt = Date.now()
-  return { all, shared, ofBuild }
+  return { all, ofBuild }
 }
 
 export async function listOutputFolders(): Promise<string[]> {
@@ -100,10 +106,32 @@ async function allowedPath(target: string): Promise<string | null> {
 }
 
 export async function outputFilePath(target: string): Promise<string | null> {
-  const file = await allowedPath(target)
+  const reference = outputReference(target)
+  if (!reference) return null
+  const file = await allowedPath(reference.file)
   if (!file) return null
-  const stat = await fsp.stat(file).catch(() => null)
-  return stat?.isFile() ? file : null
+  const stat = await fsp.stat(file, { bigint: true }).catch(() => null)
+  if (!stat?.isFile()) return null
+  return reference.revision === undefined || outputRevision(stat) === reference.revision
+    ? file
+    : null
+}
+
+export async function openOutputFile(target: string): Promise<FileHandle | null> {
+  const reference = outputReference(target)
+  if (!reference) return null
+  const file = await allowedPath(reference.file)
+  if (!file) return null
+  const handle = await fsp.open(file, 'r').catch(() => null)
+  if (!handle) return null
+  const stat = await handle.stat({ bigint: true }).catch(() => null)
+  if (
+    stat?.isFile() &&
+    (reference.revision === undefined || outputRevision(stat) === reference.revision)
+  )
+    return handle
+  await handle.close()
+  return null
 }
 
 export async function revealOutputFile(target: string): Promise<boolean> {
@@ -125,6 +153,7 @@ export async function copyOutputImage(target: string): Promise<boolean> {
   if (!file || assetKind(file) !== 'image') return false
   const image = nativeImage.createFromPath(file)
   if (image.isEmpty()) return false
+  if (outputReference(target)?.revision && !(await outputFilePath(target))) return false
   await copyImageToClipboard(image)
   return true
 }
@@ -153,18 +182,25 @@ async function collectMediaFiles(root: string): Promise<string[]> {
   return files
 }
 
-function localSummary(file: string, sizeBytes: number, modifiedMs: number): AssetSummary {
+function localSummary(
+  file: string,
+  sizeBytes: number,
+  modifiedMs: number,
+  revision?: string
+): AssetSummary {
   const kind = assetKind(file)
+  const id = revision === undefined ? file : outputAssetId(file, revision)
   return {
-    id: file,
+    id,
     name: path.basename(file),
+    filePath: file,
     kind,
     sizeBytes,
     createdAt: new Date(modifiedMs).toISOString(),
     mimeType: null,
-    tags: ['output'],
-    previewUrl: kind && SERVED_KINDS.has(kind) ? outputFileUrl(file) : null,
-    thumbnailUrl: kind === 'image' ? outputFileUrl(file, modifiedMs) : null,
+    tags: [],
+    previewUrl: kind && SERVED_KINDS.has(kind) ? outputFileUrl(id) : null,
+    thumbnailUrl: kind === 'image' ? outputFileUrl(id, modifiedMs) : null,
     width: null,
     height: null,
     durationSeconds: null
@@ -172,15 +208,35 @@ function localSummary(file: string, sizeBytes: number, modifiedMs: number): Asse
 }
 
 async function addMediaFacts(asset: AssetSummary): Promise<void> {
-  Object.assign(asset, await mediaFactsFromFile(asset.id, asset.kind))
+  const file = asset.filePath
+  if (!file) return
+  const facts = await mediaFactsFromFile(file, asset.kind)
+  if (!outputReference(asset.id)?.revision || (await outputFilePath(asset.id))) {
+    Object.assign(asset, facts)
+  }
 }
 
 export async function listLocalAssets(installationId?: string): Promise<AssetSummary[]> {
   const folders = await findOutputFolders()
-  const folder = installationId === undefined ? folders.shared : folders.ofBuild.get(installationId)
-  const files = folder ? await collectMediaFiles(folder) : []
+  if (installationId !== undefined && !folders.ofBuild.has(installationId)) return []
+  const provenance =
+    installationId === undefined ? undefined : await readOutputProvenance(installationId)
+  const files = provenance
+    ? [...provenance.keys()]
+    : [...new Set((await Promise.all(folders.all.map(collectMediaFiles))).flat())]
   const found: AssetSummary[] = []
   await runPool(files, STATS_AT_ONCE, async (file) => {
+    if (provenance) {
+      if (!assetKind(file)) return
+      const real = await allowedPath(file)
+      if (!real || path.relative(file, real) !== '') return
+      const stat = await fsp.stat(real, { bigint: true }).catch(() => null)
+      const revision = stat && outputRevision(stat)
+      if (stat && revision && provenance.get(file)?.has(revision)) {
+        found.push(localSummary(real, Number(stat.size), Number(stat.mtimeMs), revision))
+      }
+      return
+    }
     const stat = await fsp.stat(file).catch(() => null)
     if (!stat?.isFile()) return
     const modifiedMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0
@@ -235,15 +291,17 @@ async function fewAtATime<T>(work: () => Promise<T>): Promise<T> {
 }
 
 async function thumbnailFor(file: string): Promise<Buffer | null> {
-  const stat = await fsp.stat(file).catch(() => null)
-  if (!stat) return null
-  const key = `${file}\n${stat.mtimeMs}`
+  const stat = await fsp.stat(file, { bigint: true }).catch(() => null)
+  const revision = stat && outputRevision(stat)
+  if (!stat || !revision) return null
+  const key = `${file}\n${revision}`
   const cached = thumbnails.get(key)
   if (cached) return cached
   let making = thumbnailsInFlight.get(key)
   if (!making) {
-    making = fewAtATime(() => makeThumbnail(file, stat.size))
-      .then((made) => {
+    making = fewAtATime(() => makeThumbnail(file, Number(stat.size)))
+      .then(async (made) => {
+        if (made && !(await outputFilePath(outputAssetId(file, revision)))) return null
         if (made) {
           thumbnails.set(key, made)
           if (thumbnails.size > MAX_CACHED_THUMBNAILS)
@@ -293,19 +351,26 @@ async function fetchFile(file: string, request: Request): Promise<Response> {
 export async function serveOutputFile(request: Request): Promise<Response> {
   const url = new URL(request.url)
   const target = decodedPath(url)
-  const kind = target ? assetKind(target) : null
-  const file = target && kind && SERVED_KINDS.has(kind) ? await allowedPath(target) : null
+  const reference = target && outputReference(target)
+  const kind = reference ? assetKind(reference.file) : null
+  if (!target || !kind || !SERVED_KINDS.has(kind)) return notFound()
+  const file = await outputFilePath(target)
   if (!file) return notFound()
-  if (!url.searchParams.has('thumbnail')) return fetchFile(file, request)
-  const jpeg = await thumbnailFor(file)
-  if (!jpeg) return fetchFile(file, request)
-  return new Response(new Uint8Array(jpeg), {
-    headers: {
-      'Content-Type': 'image/jpeg',
-      'Cache-Control': 'private, max-age=3600',
-      'X-Content-Type-Options': 'nosniff'
-    }
-  })
+  const jpeg = url.searchParams.has('thumbnail') ? await thumbnailFor(file) : null
+  const response = jpeg
+    ? new Response(new Uint8Array(jpeg), {
+        headers: {
+          'Content-Type': 'image/jpeg',
+          'Cache-Control': 'private, max-age=3600',
+          'X-Content-Type-Options': 'nosniff'
+        }
+      })
+    : await fetchFile(file, request)
+  if (reference && reference.revision && !(await outputFilePath(target))) {
+    await response.body?.cancel().catch(() => {})
+    return notFound()
+  }
+  return response
 }
 
 export function registerOutputFilesScheme(): void {

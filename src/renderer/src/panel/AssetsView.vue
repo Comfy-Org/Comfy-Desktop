@@ -163,7 +163,7 @@ const assetBuilds = computed<AssetBuild[]>(() => {
     computer: false,
     state: buildState(build)
   }))
-  return builds.some((option) => !option.cloud) ? builds : [...builds, thisComputer.value]
+  return [...builds, thisComputer.value]
 })
 
 function lastLaunched({ build }: AssetBuild): number {
@@ -337,6 +337,13 @@ const emptyState = computed<EmptyState>(() => {
       action: { label: t('assets.signIn'), run: () => void signIn() }
     }
   }
+  if (selectedBuild.value && !selectedBuild.value.cloud && !selectedBuild.value.computer) {
+    return {
+      title: t('assets.noRecordedOutputs'),
+      body: t('assets.noRecordedOutputsHint'),
+      action: { label: t('assets.browseComputer'), run: () => pickBuild(LOCAL_ASSETS_SOURCE) }
+    }
+  }
   return {
     title: t('assets.emptyTitle'),
     body: t('assets.emptyBody')
@@ -430,10 +437,11 @@ const detailItems = computed<OutputDetailItem[]>(() =>
   visibleAssets.value.map((asset) => ({
     key: cardKey(asset),
     name: asset.name,
+    filePath: asset.filePath,
     kind: asset.kind,
     sizeBytes: asset.sizeBytes,
     createdAt: asset.createdAt,
-    tags: asset.tags,
+    tags: [],
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl
   }))
@@ -869,7 +877,7 @@ function extensionOf(name: string): string {
           @contextmenu.prevent="openAssetMenu(asset, $event)"
         >
           <Tooltip
-            :text="asset.name"
+            :text="asset.filePath || asset.name"
             side="bottom"
             :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
             class="w-full align-top"

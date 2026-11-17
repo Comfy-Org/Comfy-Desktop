@@ -70,6 +70,16 @@ vi.mock('../host/registry', () => ({
 }))
 vi.mock('./outputFolders', () => ({
   outputFilePath: (target: string) => outputFile(target),
+  openOutputFile: async (target: string) => {
+    const file = await outputFile(target)
+    return file
+      ? {
+          stat: () => statFile(file),
+          createReadStream: () => createReadStream(file),
+          close: async () => {}
+        }
+      : null
+  },
   revealOutputFile: vi.fn(),
   copyOutputImage: vi.fn(),
   trashOutputFile: (target: string) => trashOutputFile(target)
@@ -216,7 +226,12 @@ describe('listAssets', () => {
       .mockResolvedValueOnce(
         jsonResponse({
           assets: [
-            { id: 'v1', name: 'clip.mp4', created_at: '2026-11-09T10:00:00Z' },
+            {
+              id: 'v1',
+              name: 'clip.mp4',
+              file_path: 'output/project/clip.mp4',
+              created_at: '2026-11-09T10:00:00Z'
+            },
             { id: 's1', name: 'audio/voice.wav', created_at: '2026-11-09T09:00:00Z' },
             { id: 'm1', name: 'mesh.glb', created_at: '2026-11-09T08:00:00Z' }
           ]
@@ -240,6 +255,7 @@ describe('listAssets', () => {
       ['voice.wav', 'audio', 'https://storage.googleapis.com/bucket/s1?sig=1'],
       ['mesh.glb', '3d', null]
     ])
+    expect(assets.map((a) => a.filePath)).toEqual(['output/project/clip.mp4', null, null])
     expect(fetchMock).toHaveBeenCalledTimes(4)
   })
 
@@ -380,6 +396,18 @@ describe('downloadAsset', () => {
     )
     expect(showSaveDialog).not.toHaveBeenCalled()
     expect(createReadStream).not.toHaveBeenCalled()
+  })
+
+  it('refuses an output replaced while the save dialog is open', async () => {
+    outputFile.mockResolvedValueOnce('/out/still.png').mockResolvedValueOnce(null)
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+
+    await downloadAsset(win, 'local', 'versioned-asset-id', 'still.png')
+
+    const failed = await finishedRow('/picked/still.png')
+    expect(failed).toMatchObject({ status: 'error', error: 'This asset is no longer available.' })
+    expect(createReadStream).not.toHaveBeenCalled()
+    expect(renameFile).not.toHaveBeenCalled()
   })
 
   it('shows a failed copy in Downloads, and Retry saves the file to the same place', async () => {

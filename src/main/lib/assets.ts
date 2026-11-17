@@ -14,7 +14,13 @@ import { buildSaveDialogFilters, startFileSave } from './comfyDownloadManager'
 import type { FileSaveTransfer } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
 import { copyImageToClipboard } from './clipboardImage'
-import { copyOutputImage, outputFilePath, revealOutputFile, trashOutputFile } from './outputFolders'
+import {
+  copyOutputImage,
+  openOutputFile,
+  outputFilePath,
+  revealOutputFile,
+  trashOutputFile
+} from './outputFolders'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { mediaFactsFromBytes } from './mediaFacts'
 import { LOCAL_ASSETS_SOURCE } from '../../types/ipc'
@@ -51,6 +57,7 @@ const KIND_BY_EXTENSION = new Map<string, AssetKind>([
 interface AssetRow {
   id: string
   name: string
+  file_path?: string | null
   size?: number | null
   mime_type?: string | null
   created_at?: string | null
@@ -70,6 +77,7 @@ function isAssetRow(value: unknown): value is AssetRow {
   return (
     typeof row.id === 'string' &&
     typeof row.name === 'string' &&
+    isOptional(row.file_path, 'string') &&
     isOptional(row.size, 'number') &&
     isOptional(row.mime_type, 'string') &&
     isOptional(row.created_at, 'string') &&
@@ -90,6 +98,7 @@ function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
   return {
     id: row.id,
     name: row.name.slice(row.name.lastIndexOf('/') + 1),
+    filePath: row.file_path ?? null,
     kind: assetKind(row.name, row.mime_type),
     sizeBytes: typeof row.size === 'number' ? row.size : null,
     createdAt: row.created_at ?? null,
@@ -296,16 +305,21 @@ async function cloudSaveTo(installationId: string, assetId: string): Promise<Sav
 }
 
 async function localSaveTo(assetId: string): Promise<SaveTo | null> {
-  const file = await outputFilePath(assetId)
-  if (!file) return null
+  if (!(await outputFilePath(assetId))) return null
   return (filePath, job) =>
     writeThroughPartFile(filePath, job.signal, async (partPath) => {
-      const { size } = await fs.promises.stat(file)
-      const source = fs.createReadStream(file)
-      trackBytes(source, size, job)
-      await pipeline(source, fs.createWriteStream(partPath, { flags: 'wx' }), {
-        signal: job.signal
-      })
+      const handle = await openOutputFile(assetId)
+      if (!handle) throw new Error('This asset is no longer available.')
+      try {
+        const { size } = await handle.stat()
+        const source = handle.createReadStream({ autoClose: false })
+        trackBytes(source, size, job)
+        await pipeline(source, fs.createWriteStream(partPath, { flags: 'wx' }), {
+          signal: job.signal
+        })
+      } finally {
+        await handle.close()
+      }
     })
 }
 

@@ -63,6 +63,7 @@ vi.mock('../settings', () => ({
   get: (key: string) => (key === 'outputDir' ? sharedDir : undefined),
   defaults: { outputDir: path.join(root, 'default-output') }
 }))
+vi.mock('./paths', () => ({ stateDir: () => root }))
 vi.mock('./ipc/shared', () => ({
   sourceMap: {
     standalone: { category: 'local' },
@@ -91,11 +92,13 @@ import {
   trashOutputFile,
   listLocalAssets,
   listOutputFolders,
+  openOutputFile,
   outputDirOverride,
   outputFilePath,
   outputFileUrl,
   serveOutputFile
 } from './outputFolders'
+import { outputJournalDirectory } from './outputProvenance'
 
 function install(name: string, extra: Record<string, unknown> = {}): InstallationRecord {
   return {
@@ -132,11 +135,40 @@ function write(
   fs.utimesSync(file, modified, modified)
 }
 
+function encodedOutput(file: string, producerId: string, version = 1): string {
+  const stat = fs.statSync(file, { bigint: true })
+  return JSON.stringify({
+    version,
+    producer_id: producerId,
+    job_id: 'prompt',
+    path: file,
+    device: BigInt.asUintN(64, stat.dev).toString(),
+    inode: BigInt.asUintN(64, stat.ino).toString(),
+    size: stat.size.toString(),
+    mtime_ns: stat.mtimeNs.toString()
+  })
+}
+
+function appendOutput(producerId: string, ...lines: string[]): void {
+  const directory = outputJournalDirectory(producerId)
+  fs.mkdirSync(directory, { recursive: true })
+  fs.appendFileSync(
+    path.join(directory, '100-012345678901234567890123456789ab.jsonl'),
+    lines.join('')
+  )
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   thumbnailImage.mockReset()
   fullImage.mockReset()
-  for (const dir of [sharedDir, ownDir, outsideDir, installDir])
+  for (const dir of [
+    sharedDir,
+    ownDir,
+    outsideDir,
+    installDir,
+    path.join(root, 'output-provenance')
+  ])
     fs.rmSync(dir, { recursive: true, force: true })
   for (const dir of [sharedDir, ownDir, outsideDir, path.join(installDir, 'ComfyUI', 'output')])
     fs.mkdirSync(dir, { recursive: true })
@@ -196,7 +228,7 @@ describe('listOutputFolders', () => {
 })
 
 describe('listLocalAssets', () => {
-  it("lists the media in the picked build's output folder and its subfolders, newest first", async () => {
+  it('lists media from all known output folders and their subfolders, newest first', async () => {
     write(path.join(sharedDir, 'old.png'), 'x', new Date('2026-10-01T00:00:00Z'))
     write(path.join(sharedDir, 'video', 'new.mp4'), 'xx', new Date('2026-11-05T00:00:00Z'))
     write(path.join(sharedDir, 'mesh.glb'), 'x', new Date('2026-11-02T00:00:00Z'))
@@ -205,18 +237,19 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, '.hidden.png'))
     write(path.join(sharedDir, '.cache', 'inside-hidden.png'))
 
-    const assets = await listLocalAssets('Test Instance')
+    const assets = await listLocalAssets()
 
-    expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'mesh.glb', 'old.png'])
+    expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'voice.wav', 'mesh.glb', 'old.png'])
     const newVideo = path.join(sharedDir, 'video', 'new.mp4')
     expect(assets[0]).toEqual({
       id: newVideo,
       name: 'new.mp4',
+      filePath: newVideo,
       kind: 'video',
       sizeBytes: 2,
       createdAt: '2026-11-05T00:00:00.000Z',
       mimeType: null,
-      tags: ['output'],
+      tags: [],
       previewUrl: outputFileUrl(newVideo),
       thumbnailUrl: null,
       width: null,
@@ -224,10 +257,10 @@ describe('listLocalAssets', () => {
       durationSeconds: null
     })
     const oldPicture = path.join(sharedDir, 'old.png')
-    expect(assets[2]!.thumbnailUrl, 'an image thumbnail link changes when the file does').toBe(
+    expect(assets[3]!.thumbnailUrl, 'an image thumbnail link changes when the file does').toBe(
       outputFileUrl(oldPicture, fs.statSync(oldPicture).mtimeMs)
     )
-    expect(assets[1]!.previewUrl, '3D files have no preview').toBeNull()
+    expect(assets[2]!.previewUrl, '3D files have no preview').toBeNull()
   })
 
   it('reports the size of each picture and video, and how long a video runs, before they load', async () => {
@@ -236,7 +269,7 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, 'broken.png'), 'not a picture')
 
     const facts = Object.fromEntries(
-      (await listLocalAssets('Test Instance')).map((a) => [
+      (await listLocalAssets()).map((a) => [
         a.name,
         [a.width, a.height, a.durationSeconds && Math.round(a.durationSeconds)]
       ])
@@ -249,25 +282,32 @@ describe('listLocalAssets', () => {
     })
   })
 
-  it('shows each build the files in its own output folder', async () => {
-    write(path.join(sharedDir, 'shared.png'))
-    write(path.join(ownDir, 'own.png'))
+  it('filters stopped builds by recorded producer even when the output folder is shared', async () => {
+    const left = path.join(sharedDir, 'one.png')
+    const right = path.join(sharedDir, 'nested', 'two.png')
+    const own = path.join(ownDir, 'own.png')
+    for (const file of [left, right, own]) write(file)
+    write(path.join(sharedDir, 'untracked.png'))
     write(path.join(installDir, 'ComfyUI', 'output', 'install.png'))
+    appendOutput('Test Instance', encodedOutput(left, 'Test Instance') + '\n')
+    appendOutput('My Local 1', encodedOutput(right, 'My Local 1') + '\n')
+    appendOutput('Apps', encodedOutput(own, 'Apps') + '\n')
     const namesFor = async (id: string) => (await listLocalAssets(id)).map((a) => a.name)
 
-    expect(await namesFor('Test Instance'), 'a build on the shared folder').toEqual(['shared.png'])
-    expect(await namesFor('My Local 1'), 'another build on the shared folder').toEqual([
-      'shared.png'
-    ])
+    expect(await namesFor('Test Instance')).toEqual(['one.png'])
+    expect(await namesFor('My Local 1')).toEqual(['two.png'])
     expect(await namesFor('Apps'), 'a build with its own folder').toEqual(['own.png'])
-    expect(await namesFor('Bare'), 'a build that saves inside its install').toEqual(['install.png'])
+    expect(await namesFor('Bare'), 'a dedicated folder is not evidence of generation').toEqual([])
     expect(await namesFor('Cloud'), 'Cloud has no folder on this computer').toEqual([])
     expect(await namesFor('Old Desktop'), 'a build that manages its own paths').toEqual([])
     expect(await namesFor('deleted'), 'a build that is gone').toEqual([])
-    expect(
-      (await listLocalAssets()).map((a) => a.name),
-      'no build: the shared output folder'
-    ).toEqual(['shared.png'])
+    expect((await listLocalAssets()).map((a) => a.name).sort()).toEqual([
+      'install.png',
+      'one.png',
+      'own.png',
+      'two.png',
+      'untracked.png'
+    ])
   })
 
   it('opens a file it listed for a build added a moment ago', async () => {
@@ -277,9 +317,10 @@ describe('listLocalAssets', () => {
     write(file)
     installs.mockResolvedValue([install('New', { useSharedOutput: false, outputDir: newDir })])
     try {
+      appendOutput('New', encodedOutput(file, 'New') + '\n')
       const [listed] = await listLocalAssets('New')
 
-      expect(listed!.id).toBe(file)
+      expect(listed!.filePath).toBe(file)
       expect(await outputFilePath(listed!.id)).toBe(file)
     } finally {
       fs.rmSync(newDir, { recursive: true, force: true })
@@ -290,7 +331,7 @@ describe('listLocalAssets', () => {
     for (let i = 0; i <= MAX_LOCAL_ASSETS; i++)
       write(path.join(sharedDir, `f${i}.png`), '', new Date(Date.UTC(2026, 0, 1, 0, 0, i)))
 
-    const assets = await listLocalAssets('Test Instance')
+    const assets = await listLocalAssets()
 
     expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
     expect(assets.map((a) => a.name)).not.toContain('f0.png')
@@ -305,7 +346,63 @@ describe('listLocalAssets', () => {
     )
     write(path.join(deep, 'too-deep.png'))
 
+    expect(await listLocalAssets()).toEqual([])
+  })
+
+  it('reads appended records incrementally and ignores incomplete or unsupported entries', async () => {
+    const build = 'Test Instance'
+    const file = path.join(sharedDir, 'new.png')
+    const outside = path.join(outsideDir, 'outside.png')
+    write(file)
+    write(outside)
+    const line = encodedOutput(file, build)
+
+    appendOutput(
+      build,
+      'malformed\n',
+      encodedOutput(file, build, 2) + '\n',
+      encodedOutput(file, 'another-build') + '\n',
+      encodedOutput(outside, build) + '\n',
+      line.slice(0, -1)
+    )
+    expect(await listLocalAssets(build)).toEqual([])
+    appendOutput(build, '}\n', line + '\n')
+    expect((await listLocalAssets(build)).map(({ name }) => name)).toEqual(['new.png'])
+  })
+
+  it('refuses to open the previous build’s card after a same-size replacement with the same mtime', async () => {
+    const file = path.join(sharedDir, 'same.png')
+    const replacement = path.join(sharedDir, 'replacing.png')
+    write(file, 'first')
+    appendOutput('Test Instance', encodedOutput(file, 'Test Instance') + '\n')
+    const [asset] = await listLocalAssets('Test Instance')
+
+    write(replacement, 'other')
+    fs.renameSync(replacement, file)
+    appendOutput('My Local 1', encodedOutput(file, 'My Local 1') + '\n')
+
     expect(await listLocalAssets('Test Instance')).toEqual([])
+    expect((await listLocalAssets('My Local 1')).map(({ filePath }) => filePath)).toEqual([file])
+    expect(await outputFilePath(asset!.id)).toBeNull()
+    expect(await openOutputFile(asset!.id)).toBeNull()
+    expect(await trashOutputFile(asset!.id)).toBe(false)
+    expect((await serveOutputFile(new Request(asset!.previewUrl!))).status).toBe(404)
+    expect(fs.readFileSync(file, 'utf8')).toBe('other')
+  })
+
+  it('drops a preview response if the file is replaced while it opens', async () => {
+    const file = path.join(sharedDir, 'same.png')
+    write(file)
+    appendOutput('Test Instance', encodedOutput(file, 'Test Instance') + '\n')
+    const [asset] = await listLocalAssets('Test Instance')
+    fetchFile.mockImplementationOnce(async () => {
+      const replacement = path.join(sharedDir, 'replacement.png')
+      write(replacement)
+      fs.renameSync(replacement, file)
+      return new Response('replacement')
+    })
+
+    expect((await serveOutputFile(new Request(asset!.previewUrl!))).status).toBe(404)
   })
 })
 

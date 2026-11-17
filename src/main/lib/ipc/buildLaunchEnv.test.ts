@@ -26,6 +26,11 @@ import type * as nodeCrypto from 'crypto'
 import os from 'os'
 import path from 'path'
 import { buildLaunchEnv, createSessionPath } from './shared'
+import {
+  OUTPUT_JOURNAL_ENV,
+  OUTPUT_PRODUCER_ENV,
+  outputJournalDirectory
+} from '../outputProvenance'
 
 function inst(sourceId: string, envVars?: Record<string, string>): InstallationRecord {
   return {
@@ -70,6 +75,29 @@ describe('buildLaunchEnv __COMFYUI_DESKTOP_VERSION__', () => {
   it('ignores a user env var override', () => {
     const env = buildLaunchEnv(inst('git', { __COMFYUI_DESKTOP_VERSION__: '9.9.9' }))
     expect(env).not.toHaveProperty('__COMFYUI_DESKTOP_VERSION__')
+  })
+})
+
+describe('output journal launch environment', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('passes the stable build identity and journal directory to managed processes', () => {
+    const build = inst('standalone', { [OUTPUT_PRODUCER_ENV]: 'wrong' })
+    const other = { ...build, id: 'i2', installPath: build.installPath }
+    const env = buildLaunchEnv(build, 'temporary-session-path')
+
+    expect(env[OUTPUT_PRODUCER_ENV]).toBe(build.id)
+    expect(env[OUTPUT_JOURNAL_ENV]).toBe(outputJournalDirectory(build.id))
+    expect(buildLaunchEnv(other)[OUTPUT_JOURNAL_ENV]).not.toBe(env[OUTPUT_JOURNAL_ENV])
+  })
+
+  it('removes journal settings inherited by a user-managed process', () => {
+    vi.stubEnv(OUTPUT_JOURNAL_ENV, '/inherited')
+    vi.stubEnv(OUTPUT_PRODUCER_ENV, 'inherited')
+    const env = buildLaunchEnv(inst('git'))
+
+    expect(env).not.toHaveProperty(OUTPUT_JOURNAL_ENV)
+    expect(env).not.toHaveProperty(OUTPUT_PRODUCER_ENV)
   })
 })
 

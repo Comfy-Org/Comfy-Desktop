@@ -102,6 +102,9 @@
     "showDetails": "File details",
     "emptyTitle": "No assets yet",
     "emptyBody": "Open an app to make assets.",
+    "noRecordedOutputs": "No recorded outputs from this build",
+    "noRecordedOutputsHint": "Browse This computer for files saved before tracking started or saved by nodes without tracking.",
+    "browseComputer": "Browse This computer",
     "loadFailed": "Couldn't load assets",
     "download": "Download",
     "downloadFailed": "Couldn't download asset",
@@ -123,6 +126,7 @@
     "signIn": "Log in to Comfy Cloud",
     "inspect": "Inspect {name}",
     "detail": {
+      "filePath": "Saved path",
       "tags": "Tags",
       "tagsHint": "Tags are edited in ComfyUI.",
       "createdAt": "Created {date}",
