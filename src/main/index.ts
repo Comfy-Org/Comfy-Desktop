@@ -54,7 +54,7 @@ import {
   trackWindowWebContents
 } from './lib/quitAfterWindowWebContents'
 import { showUpdateInstallSplash } from './lib/updateSplash'
-import { cloudWorkspaceNavigationVersion, syncCloudWindowWorkspace } from './lib/cloudWorkspace'
+import { syncCloudWindowWorkspace } from './lib/cloudWorkspace'
 import type { InstallationRecord } from './installations'
 import {
   cleanupTempDownloads,
@@ -80,7 +80,6 @@ import {
   list as listInstallations
 } from './installations'
 import { startPeriodicReleaseChecks } from './lib/release-cache-startup'
-import { showSplashPage } from './lib/relaunchPage'
 import { COMFY_BG, SPLASH_DARK, TITLEBAR_BG, type SplashTheme } from './lib/theme'
 import { titleBarOverlayForTheme } from './lib/titleBarOverlay'
 import {
@@ -161,6 +160,7 @@ import {
   setHostWindowFactories
 } from './host/createHostWindow'
 import { attachInstall, setAttachFactories, type ZoomResetSource } from './host/attach'
+import { navigatorFor } from './host/buildNavigator'
 import { resetCanvasRendered } from './lib/canvasEntry'
 import { IN_PLACE_RELAUNCH, REQUIRES_STOPPED } from '../types/ipc'
 import { dispatchSessionAction, handleLaunch } from './lib/ipc/sessionActions'
@@ -330,11 +330,8 @@ interface RelaunchState {
 }
 
 const relaunchStates = new Map<string, RelaunchState>()
-const comfyFailRetryTimerCancels = new Map<string, () => void>()
-const comfyReloads = new Map<string, () => void>()
 const comfyZoomResets = new Map<string, (source: ZoomResetSource) => void>()
 let relaunchTokenCounter = 0
-const comfyRevealTokens = new Map<string, number>()
 
 async function onModelFolderRelaunch({
   installationId
@@ -351,9 +348,6 @@ async function onModelFolderRelaunch({
   const currentUrl = comfyContents.getURL()
   const originalUrl = prev ? prev.originalUrl : currentUrl
 
-  const cancelRetry = comfyFailRetryTimerCancels.get(installationId)
-  if (cancelRetry) cancelRetry()
-
   const blockNav = (e: Electron.Event): void => {
     e.preventDefault()
   }
@@ -363,7 +357,7 @@ async function onModelFolderRelaunch({
   const token = ++relaunchTokenCounter
 
   relaunchStates.set(installationId, { originalUrl, theme, navBlocker: blockNav, token })
-  await showSplashPage(comfyContents, theme)
+  await navigatorFor(entry).showSplash(theme)
 }
 
 function onComfyRestarted({
@@ -420,7 +414,7 @@ function onComfyRestarted({
       if (relaunchStates.has(installationId) && !state) return
       cleanupRelaunchState()
       entry.comfyView.setBackgroundColor(state?.theme.bg ?? COMFY_BG)
-      await comfyContents.loadURL(currentUrl)
+      await navigatorFor(entry).open(currentUrl)
     })
     .catch((err) => {
       cleanupRelaunchState()
@@ -476,34 +470,24 @@ function onLaunch({
     }
 
     if (!existing.comfyView.webContents.isDestroyed()) {
-      const comfyContents = existing.comfyView.webContents
-      comfyFailRetryTimerCancels.get(installationId)?.()
-      const revealToken = (comfyRevealTokens.get(installationId) ?? 0) + 1
-      comfyRevealTokens.set(installationId, revealToken)
-      const workspaceNavigationVersion = cloudWorkspaceNavigationVersion(existing)
-      void (async () => {
-        existing.comfyView.setBackgroundColor(SPLASH_DARK.bg)
-        await showSplashPage(comfyContents, SPLASH_DARK, {
+      existing.comfyView.setBackgroundColor(SPLASH_DARK.bg)
+      void navigatorFor(existing).reopenBehindSplash({
+        url: comfyUrl,
+        theme: SPLASH_DARK,
+        copy: {
           title: i18n.t('launch.launchSplashTitle'),
           desc: i18n.t('launch.launchSplashDesc')
-        }).catch(() => {})
-        if (
-          comfyRevealTokens.get(installationId) !== revealToken ||
-          existing.window.isDestroyed() ||
-          comfyContents.isDestroyed() ||
-          existing.installationId !== installationId
-        ) {
-          return
+        },
+        reveal: () => {
+          if (existing.installationId !== installationId) return false
+          if (!_runningSessions.has(installationId)) {
+            refreshComfyTabBody(installationId)
+            return false
+          }
+          revealReusedComfy()
+          return true
         }
-        if (!_runningSessions.has(installationId)) {
-          refreshComfyTabBody(installationId)
-          return
-        }
-        revealReusedComfy()
-        if (cloudWorkspaceNavigationVersion(existing) === workspaceNavigationVersion) {
-          void comfyContents.loadURL(comfyUrl).catch(() => {})
-        }
-      })()
+      })
     } else {
       revealReusedComfy()
     }
@@ -643,9 +627,8 @@ ipcMain.on('comfy-window:click-refresh-instance', (event) => {
   if (!found) return
   const { entry } = found
   if (entry.window.isDestroyed()) return
-  const id = entry.installationId
-  if (id === null) return
-  comfyReloads.get(id)?.()
+  if (entry.installationId === null) return
+  navigatorFor(entry).refresh()
   focusActiveBody(entry)
 })
 
@@ -769,13 +752,9 @@ async function prepareBuildWindowFocus(
   requester?: BrowserWindow | null,
   pickerWorkspaceId?: string
 ): Promise<boolean> {
-  const cancelLoadRetry = entry.installationId
-    ? comfyFailRetryTimerCancels.get(entry.installationId)
-    : undefined
   try {
     return (
-      (await syncCloudWindowWorkspace(entry, { pickerWorkspaceId, cancelLoadRetry })) &&
-      !entry.window.isDestroyed()
+      (await syncCloudWindowWorkspace(entry, { pickerWorkspaceId })) && !entry.window.isDestroyed()
     )
   } catch (error) {
     if (entry.window.isDestroyed()) return false
@@ -982,8 +961,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       computeInstallUpdateAvailable
     })
     setAttachFactories({
-      comfyFailRetryTimerCancels,
-      comfyReloads,
       comfyZoomResets,
       relaunchStates,
       computeInstallUpdateAvailable

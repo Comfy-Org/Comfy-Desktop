@@ -11,6 +11,7 @@ import { recordDashboardSurface } from '../lib/lastSession'
 import * as settings from '../settings'
 import { comfyWindows, isChooserHost, isInstallHost, shouldConfirmKillForEntry } from './registry'
 import type { ComfyWindowEntry } from './registry'
+import { navigatorFor } from './buildNavigator'
 import {
   applyChooserHostTheme,
   CHOOSER_HOST_TITLE_TEXT,
@@ -263,7 +264,7 @@ export function _detachInstallImpl(entry: ComfyWindowEntry): void {
   entry._installCleanup?.()
 
   if (!entry.comfyView.webContents.isDestroyed()) {
-    void entry.comfyView.webContents.loadURL('about:blank').catch(() => {})
+    navigatorFor(entry).blank()
     entry.comfyView.setBackgroundColor(COMFY_BG)
   }
 
