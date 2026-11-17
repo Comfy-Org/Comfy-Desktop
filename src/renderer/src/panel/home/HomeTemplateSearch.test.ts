@@ -1056,6 +1056,22 @@ describe('HomeTemplateSearch telemetry', () => {
     expect(named('picked')[0]!.context).toMatchObject({ session_search_count: 1 })
   })
 
+  it('does not count time with the window away as time looking at the results', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    const away = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+    await wrapper
+      .get('[data-testid="home-template-search"]')
+      .trigger('focusout', { relatedTarget: null })
+    away.mockRestore()
+    wrapper.unmount()
+    expect(named('abandoned')[0]!.context).toMatchObject({
+      reason: 'left',
+      last_results_shown_ms: null,
+      last_outcome: 'template'
+    })
+  })
+
   it('sends nothing while search answers that it is switched off', async () => {
     searchTemplates.mockResolvedValue(unavailable({ kind: 'off' }))
     const wrapper = mountSearch()
