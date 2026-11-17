@@ -1731,9 +1731,7 @@ describe('Auto start for a migrated legacy Desktop build', () => {
       const again = await adoptLegacy(legacy)
 
       expect(again.id).toBe(first.id)
-      expect(autoStart(), 'the person turned Auto start off after the first migration').toBe(
-        'none'
-      )
+      expect(autoStart(), 'the person turned Auto start off after the first migration').toBe('none')
     } finally {
       legacy.cleanup()
     }
