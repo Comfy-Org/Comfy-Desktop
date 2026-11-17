@@ -7,6 +7,7 @@ import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInsta
 import { evalWithRetry } from './support/evalRetry'
 
 const INSTALL_ID = 'inst-template-open'
+const SIDECAR_PATH_ENV = 'COMFY_DESKTOP_TEMPLATE_SEARCH_SIDECAR'
 const CARD = `[data-testid="home-build"][data-build-id="${INSTALL_ID}"]`
 
 let ctx: AppContext
@@ -19,6 +20,7 @@ test.beforeAll(async () => {
   installPath = await mkdtemp(path.join(os.tmpdir(), 'comfyui-template-open-'))
   port = await reserveFreePort()
   await writeFakeComfyInstall({ installPath, port })
+  process.env[SIDECAR_PATH_ENV] = path.join(installPath, 'search-process-not-included.pyz')
   ctx = await launchApp(
     {
       settings: { firstUseCompleted: true, telemetryEnabled: false, templateSearchEnabled: true },
@@ -44,22 +46,27 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await ctx?.cleanup()
+  delete process.env[SIDECAR_PATH_ENV]
   if (installPath) await rm(installPath, { recursive: true, force: true })
 })
 
-function buildWindowUrl(): Promise<string | null> {
+function buildView(): Promise<{ id: number; url: string } | null> {
   return evalWithRetry(() =>
     ctx.app.evaluate(({ BrowserWindow, WebContentsView }, p) => {
       for (const win of BrowserWindow.getAllWindows()) {
         for (const view of win.contentView.children) {
           if (!(view instanceof WebContentsView)) continue
           const url = view.webContents.getURL()
-          if (url.includes(`:${p}`)) return url
+          if (url.includes(`:${p}`)) return { id: view.webContents.id, url }
         }
       }
       return null
     }, port)
   )
+}
+
+async function buildWindowUrl(): Promise<string | null> {
+  return (await buildView())?.url ?? null
 }
 
 function openTemplate(templateId: string): Promise<string> {
@@ -86,16 +93,16 @@ test('a template picked for a running build opens in its window straight away @l
 })
 
 test('a template picked after its build stopped opens when the build starts again in the same window @linux @macos', async () => {
+  const before = await buildView()
+  expect(before?.url).toContain('template=banner_template')
   await ctx.panel.evaluate<void>(`window.api.stopComfyUI(${JSON.stringify(INSTALL_ID)})`)
-  await ctx.panel.waitFor(async () => !(await ctx.panel.textOf(CARD))?.includes('Running'), {
-    timeout: 30_000,
-    message: 'the build never stopped'
-  })
-  expect(await buildWindowUrl()).not.toContain('template=mural_template')
   expect(await openTemplate('mural_template')).toBe('launch')
-  void ctx.panel.evaluate(`window.api.runAction(${JSON.stringify(INSTALL_ID)}, 'launch', {})`)
+  const launched = ctx.panel.evaluate<{ ok?: boolean }>(
+    `window.api.runAction(${JSON.stringify(INSTALL_ID)}, 'launch', {})`
+  )
 
   await expect
-    .poll(buildWindowUrl, { timeout: 90_000, intervals: [250, 500, 1_000] })
-    .toContain('template=mural_template')
+    .poll(buildView, { timeout: 90_000, intervals: [250, 500, 1_000] })
+    .toEqual({ id: before!.id, url: expect.stringContaining('template=mural_template') })
+  expect(await launched).toMatchObject({ ok: true })
 })

@@ -115,14 +115,21 @@ export async function areModelsPresent(
   const ctx = await resolveDownloadContextById(installationId)
   const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
   const checks = await Promise.all(
-    models.map(async ({ directory, filename }) => {
-      for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
-        if (await regularFileExists(candidate)) return true
-      }
-      return false
-    })
+    models.map(({ directory, filename }) => modelOnDisk(ctx, baseDir, directory, filename))
   )
   return checks.every(Boolean)
+}
+
+export async function modelOnDisk(
+  ctx: InstallModelSearch | null,
+  baseDir: string,
+  directory: string,
+  filename: string
+): Promise<boolean> {
+  for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
+    if (await regularFileExists(candidate)) return true
+  }
+  return false
 }
 
 export async function resolveModelsPresence(

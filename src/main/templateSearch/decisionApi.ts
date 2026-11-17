@@ -11,7 +11,7 @@ export const DOWNLOAD_LIMIT = 2
 export const ALSO_TRY_LIMIT = 3
 const REQUESTED_CANDIDATES = 8
 const PARTNER_PREFIX = 'api_'
-export const OUTCOMES: readonly TemplateSearchOutcome[] = [
+const OUTCOMES: readonly TemplateSearchOutcome[] = [
   'template',
   'agent',
   'bad_input',

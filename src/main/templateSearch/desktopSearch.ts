@@ -1,9 +1,5 @@
 import { list as listInstallations, type InstallationRecord } from '../installations'
-import {
-  buildExistenceCandidates,
-  regularFileExists,
-  resolveDownloadContext
-} from '../lib/modelDownloadPaths'
+import { modelOnDisk, resolveDownloadContext } from '../lib/modelDownloadPaths'
 import type { TerminalEnv } from '../types/sources'
 import type { TemplateSearchResponse } from '../../types/ipc'
 import { readBuildTemplates, type BuildTemplates } from './buildTemplates'
@@ -18,31 +14,22 @@ export interface DesktopSearchOptions {
   process: Pick<SearchProcess, 'decide'>
   isLocalInstallation: (installation: InstallationRecord) => boolean
   terminalEnvOf: (installation: InstallationRecord) => TerminalEnv | null
-  enabled: () => boolean
+  searchOn: () => boolean
   readTemplates?: typeof readBuildTemplates
   now?: () => number
 }
 
 function modelLookup(installation: InstallationRecord) {
   const context = resolveDownloadContext(installation)
-  return async (directory: string, filename: string): Promise<boolean> => {
-    for (const candidate of buildExistenceCandidates(
-      context,
-      context.downloadBaseDir,
-      directory,
-      filename
-    )) {
-      if (await regularFileExists(candidate)) return true
-    }
-    return false
-  }
+  return (directory: string, filename: string): Promise<boolean> =>
+    modelOnDisk(context, context.downloadBaseDir, directory, filename)
 }
 
 export function createDesktopSearch({
   process,
   isLocalInstallation,
   terminalEnvOf,
-  enabled,
+  searchOn,
   readTemplates = readBuildTemplates,
   now = Date.now
 }: DesktopSearchOptions) {
@@ -63,10 +50,10 @@ export function createDesktopSearch({
     query: string,
     installationId: string | null
   ): Promise<TemplateSearchResponse> {
-    if (!enabled()) return { kind: 'unavailable', availability: { kind: 'off' } }
-    const build = installationId
-      ? (await listInstallations()).find((b) => b.id === installationId && isLocalInstallation(b))
-      : undefined
+    const build =
+      installationId && searchOn()
+        ? (await listInstallations()).find((b) => b.id === installationId && isLocalInstallation(b))
+        : undefined
     const known = build ? await templatesFor(build) : null
     const decision = await process.decide(decideRequest(query, known?.installed ?? null))
     if (decision.kind === 'unavailable') {

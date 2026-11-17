@@ -3,12 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   sitePackages: '/sp' as string | null,
-  regularFileExists: vi.fn(async (_file: string) => false),
-  buildExistenceCandidates: vi.fn(
-    (_ctx: unknown, _base: string, directory: string, filename: string) => [
-      `/shared/${directory}/${filename}`,
-      `/extra/${directory}/${filename}`
-    ]
+  modelOnDisk: vi.fn(
+    async (_ctx: unknown, _base: string, _directory: string, _filename: string) => false
   )
 }))
 
@@ -20,8 +16,7 @@ vi.mock('../lib/modelDownloadPaths', () => ({
     extraPaths: [],
     downloadBaseDir: '/build-models'
   }),
-  buildExistenceCandidates: mocks.buildExistenceCandidates,
-  regularFileExists: mocks.regularFileExists
+  modelOnDisk: mocks.modelOnDisk
 }))
 vi.mock('./buildRuntime', () => ({
   buildRuntime: (build: { id: string }) => ({
@@ -57,7 +52,9 @@ const ANSWER = {
   options: []
 }
 
-function setup(answer: SidecarDecision = { kind: 'answer', body: ANSWER }, enabled = true) {
+const OFF: SidecarDecision = { kind: 'unavailable', availability: { kind: 'off' } }
+
+function setup(answer: SidecarDecision = { kind: 'answer', body: ANSWER }, on = true) {
   let clock = 0
   const decide = vi.fn(async (_body: unknown) => answer)
   const readTemplates = vi.fn(
@@ -72,7 +69,7 @@ function setup(answer: SidecarDecision = { kind: 'answer', body: ANSWER }, enabl
     process: { decide },
     isLocalInstallation: (b) => b.sourceId === 'standalone',
     terminalEnvOf: () => null,
-    enabled: () => enabled,
+    searchOn: () => on,
     readTemplates,
     now: () => clock
   })
@@ -109,22 +106,19 @@ describe('createDesktopSearch', () => {
     })
   })
 
-  it("finds a template's models wherever Desktop's model lookup would for that build", async () => {
+  it("looks for a template's models in the build's own model folder", async () => {
     const { search, readTemplates } = setup()
     await search.search('a poster', 'local-1')
     const hasModel = readTemplates.mock.calls[0]![1]
-    await hasModel('vae', 'v.safetensors')
-    expect(mocks.buildExistenceCandidates).toHaveBeenCalledWith(
+
+    mocks.modelOnDisk.mockResolvedValueOnce(true)
+    expect(await hasModel('vae', 'v.safetensors')).toBe(true)
+    expect(mocks.modelOnDisk).toHaveBeenCalledWith(
       expect.anything(),
       '/build-models',
       'vae',
       'v.safetensors'
     )
-
-    mocks.regularFileExists.mockImplementation(async (file) => file === '/extra/vae/v.safetensors')
-    expect(await hasModel('vae', 'v.safetensors')).toBe(true)
-    mocks.regularFileExists.mockResolvedValue(false)
-    expect(await hasModel('vae', 'v.safetensors')).toBe(false)
   })
 
   it.each([
@@ -138,14 +132,19 @@ describe('createDesktopSearch', () => {
     expect(decide.mock.calls[0]![0]).not.toHaveProperty('installed')
   })
 
-  it('reads nothing about the build while search is off', async () => {
-    const { search, decide, readTemplates } = setup(undefined, false)
-    expect(await search.search('a poster', 'local-1')).toEqual({
-      kind: 'unavailable',
-      availability: { kind: 'off' }
-    })
+  it('reads nothing about the build while search is off, and lets search stop itself', async () => {
+    const { search, decide, readTemplates } = setup(OFF, false)
+    expect(await search.search('a poster', 'local-1')).toEqual(OFF)
     expect(readTemplates).not.toHaveBeenCalled()
-    expect(decide).not.toHaveBeenCalled()
+    expect(mocks.list).not.toHaveBeenCalled()
+    expect(decide.mock.calls[0]![0]).not.toHaveProperty('installed')
+  })
+
+  it("treats nothing as installed for a build whose template index can't be read", async () => {
+    const { search, decide, readTemplates } = setup()
+    readTemplates.mockRejectedValueOnce(new Error('bad index'))
+    expect((await search.search('a poster', 'local-1')).kind).toBe('result')
+    expect(decide.mock.calls[0]![0]).toMatchObject({ installed: [] })
   })
 
   it('treats nothing as installed for a build whose runtime cannot be found', async () => {

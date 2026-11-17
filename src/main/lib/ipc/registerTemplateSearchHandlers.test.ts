@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   getInstallation: vi.fn(),
   getEntryByInstallationId: vi.fn(),
-  runningSessions: new Map<string, object>(),
+  runningSessions: new Map<string, { mode: string }>(),
   busy: new Set<string>(),
   settings: { templateSearchEnabled: true } as Record<string, unknown>,
   observer: null as {
@@ -30,12 +30,15 @@ vi.mock('./shared', async () => {
 vi.mock('../../templateSearch/searchProcess', () => ({
   changesBuildEnv: (actionId: string) => actionId !== 'rename',
   isBuildBusy: (installationId: string) => mocks.busy.has(installationId),
+  templateSearchOn: () => mocks.settings.templateSearchEnabled === true,
   createSearchProcess: vi.fn()
 }))
 vi.mock('../../templateSearch/desktopSearch', () => ({ createDesktopSearch: vi.fn() }))
 
 import { registerTemplateSearchHandlers } from './registerTemplateSearchHandlers'
 import { sessionLifecycleEvents } from './shared'
+import { createDesktopSearch } from '../../templateSearch/desktopSearch'
+import { templateSearchOn } from '../../templateSearch/searchProcess'
 import {
   CLAIM_WINDOW_MS,
   dropTemplateOpen,
@@ -245,16 +248,36 @@ describe('template-search:open', () => {
     expect(queuedUrl()).toBe(COMFY_URL)
   })
 
+  it('gives search the same on switch that opening a template uses', () => {
+    const { process } = fakes()
+    registerTemplateSearchHandlers({
+      isLocalInstallation: () => true,
+      terminalEnvOf: () => null,
+      process
+    })
+    expect(vi.mocked(createDesktopSearch).mock.calls[0]![0].searchOn).toBe(templateSearchOn)
+  })
+
   it('refuses a build that is running without a window to open the template in', async () => {
-    mocks.runningSessions.set('local-1', {})
+    mocks.runningSessions.set('local-1', { mode: 'window' })
     register()
     expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('refused')
     expect(queuedUrl()).toBe(COMFY_URL)
   })
 
+  it('refuses a build Apps started without a window, even with its old window still open', async () => {
+    const loadURL = attachedView()
+    mocks.runningSessions.set('local-1', { mode: 'console' })
+    register()
+
+    expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('refused')
+    expect(loadURL).not.toHaveBeenCalled()
+    expect(queuedUrl()).toBe(COMFY_URL)
+  })
+
   it('opens the template straight away in a running build', async () => {
     const loadURL = attachedView()
-    mocks.runningSessions.set('local-1', {})
+    mocks.runningSessions.set('local-1', { mode: 'window' })
     register()
 
     expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('opened')
@@ -273,20 +296,23 @@ describe('template-search:open', () => {
 
   it('reports a running build that fails to load the template as not opened', async () => {
     attachedView(vi.fn(async () => Promise.reject(new Error('ERR_CONNECTION_REFUSED'))))
-    mocks.runningSessions.set('local-1', {})
+    mocks.runningSessions.set('local-1', { mode: 'window' })
     register()
 
     expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('refused')
   })
 
   it.each([
-    ['another operation runs on it', 'copy-update'],
-    ['it is still starting', 'launch']
-  ])('refuses a build while %s, and queues nothing', async () => {
+    ['stopped', false],
+    ['running in its window', true]
+  ])('refuses a busy build that is %s, and opens or queues nothing', async (_state, running) => {
+    const loadURL = attachedView()
+    if (running) mocks.runningSessions.set('local-1', { mode: 'window' })
     mocks.busy.add('local-1')
     register()
 
     expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('refused')
+    expect(loadURL).not.toHaveBeenCalled()
     expect(queuedUrl()).toBe(COMFY_URL)
   })
 

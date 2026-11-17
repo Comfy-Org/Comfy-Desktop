@@ -1,5 +1,4 @@
 import { ipcMain, type WebContents } from 'electron'
-import * as settings from '../../settings'
 import { get as getInstallation, type InstallationRecord } from '../../installations'
 import { getEntryByInstallationId } from '../../host/registry'
 import { isPersistableTemplateId } from '../../sources/standalone/curatedTemplates'
@@ -9,6 +8,7 @@ import {
   changesBuildEnv,
   createSearchProcess,
   isBuildBusy,
+  templateSearchOn,
   type SearchProcess
 } from '../../templateSearch/searchProcess'
 import { createDesktopSearch, type DesktopSearch } from '../../templateSearch/desktopSearch'
@@ -56,10 +56,6 @@ function comfyView(installationId: string): { url: string; contents: WebContents
   return { url: entry.comfyUrl, contents }
 }
 
-function searchEnabled(): boolean {
-  return settings.get('templateSearchEnabled') === true
-}
-
 function opensInAWindow(installation: InstallationRecord): boolean {
   return (installation.launchMode ?? 'window') === 'window'
 }
@@ -76,7 +72,7 @@ export function registerTemplateSearchHandlers({
     process,
     isLocalInstallation,
     terminalEnvOf,
-    enabled: searchEnabled
+    searchOn: templateSearchOn
   })
 }: TemplateSearchHandlerOptions): void {
   setSessionActionObserver({
@@ -116,17 +112,18 @@ export function registerTemplateSearchHandlers({
   ipcMain.handle(
     'template-search:open',
     async (_event, installationId: unknown, templateId: unknown): Promise<OpenTemplateOutcome> => {
-      if (!searchEnabled()) return 'refused'
+      if (!templateSearchOn()) return 'refused'
       if (typeof installationId !== 'string' || !isPersistableTemplateId(templateId))
         return 'refused'
       const installation = await getInstallation(installationId)
       if (!installation || !isLocalInstallation(installation)) return 'refused'
       if (!opensInAWindow(installation) || isBuildBusy(installationId)) return 'refused'
-      if (!_runningSessions.has(installationId)) {
+      const session = _runningSessions.get(installationId)
+      if (!session) {
         queueTemplateOpen(installationId, templateId)
         return 'launch'
       }
-      const view = comfyView(installationId)
+      const view = session.mode === 'window' ? comfyView(installationId) : null
       if (!view) return 'refused'
       try {
         await view.contents.loadURL(buildTemplateDeeplink(view.url, templateId))

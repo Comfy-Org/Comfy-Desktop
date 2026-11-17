@@ -10,9 +10,8 @@ vi.mock('../lib/fetch', () => ({ fetchJSON: vi.fn() }))
 
 import { readBuildTemplates, type HasModel } from './buildTemplates'
 
-function onDiskIn(...roots: string[]): HasModel {
-  return async (directory, filename) =>
-    roots.some((root) => fs.existsSync(path.join(root, directory, filename)))
+function onDiskIn(root: string): HasModel {
+  return async (directory, filename) => fs.existsSync(path.join(root, directory, filename))
 }
 
 let root: string
