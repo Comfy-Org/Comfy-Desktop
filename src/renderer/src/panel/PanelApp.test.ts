@@ -347,6 +347,8 @@ function installMockApi(initial?: {
       state.appUpdateUserActionFailedCallbacks.push(cb)
       return () => {}
     }),
+    getAppUpdateState: vi.fn().mockResolvedValue({ kind: null, version: null, autoUpdate: true }),
+    onAppUpdateStateChanged: vi.fn(() => () => {}),
     installUpdate: state.installUpdate,
     downloadUpdate: state.downloadUpdate,
     setFirstUseMode: vi.fn(),
