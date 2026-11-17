@@ -35,7 +35,6 @@ const MAX_PAGE_SIZE = 200
 const SCAN_PAGE_SIZE = 500
 const MAX_SCAN_PAGES = 100
 const SCAN_CONCURRENCY = 4
-const SCAN_REUSE_MS = 10 * 60_000
 const ASSET_KINDS: readonly AssetKind[] = ['image', 'video', 'audio', '3d']
 const EMPTY_PAGE: CloudAssetPage = { assets: [], total: 0 }
 const REQUEST_TIMEOUT_MS = 20_000
@@ -144,12 +143,10 @@ async function fetchAssetRows(
   if (!res.ok) throw new Error(`List assets failed: HTTP ${res.status}`)
   const body: unknown = await res.json().catch(() => null)
   const page = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
-  if (!Array.isArray(page.assets)) throw new Error('List assets returned an invalid page')
-  const rows = page.assets.filter(isAssetRow).slice(0, request.limit)
-  const total = isCount(page.total, 0, Number.MAX_SAFE_INTEGER)
-    ? page.total
-    : request.offset + rows.length
-  return { rows, total }
+  if (!Array.isArray(page.assets) || !isCount(page.total, 0, Number.MAX_SAFE_INTEGER)) {
+    throw new Error('List assets returned an invalid page')
+  }
+  return { rows: page.assets.filter(isAssetRow).slice(0, request.limit), total: page.total }
 }
 
 export function signedStorageUrl(location: string | null): string | null {
@@ -231,11 +228,12 @@ async function cloudAccessToken(installationId: string): Promise<string | null> 
 
 interface OutputScan {
   key: string
-  savedAt: number
   rows: AssetRow[]
 }
 
-let lastScan: OutputScan | null = null
+interface ScanSlot {
+  scan?: OutputScan
+}
 
 async function scanAllRows(
   order: CloudAssetPageRequest['order'],
@@ -260,20 +258,21 @@ async function scanAllRows(
     signal
   )
   signal.throwIfAborted()
-  return pages.flat()
+  return [...new Map(pages.flat().map((row) => [row.id, row])).values()]
 }
 
 async function rowsOfKind(
   accessToken: string,
   request: CloudAssetPageRequest & { kind: AssetKind },
-  signal: AbortSignal
+  signal: AbortSignal,
+  slot: ScanSlot
 ): Promise<AssetRowPage> {
   const key = [accessToken, request.order].join('\n')
-  let scan = lastScan
-  if (request.offset === 0 || scan?.key !== key || Date.now() - scan.savedAt >= SCAN_REUSE_MS) {
+  let scan = slot.scan
+  if (request.offset === 0 || scan?.key !== key) {
     const headers = { Authorization: `Bearer ${accessToken}` }
-    scan = { key, savedAt: Date.now(), rows: await scanAllRows(request.order, headers, signal) }
-    lastScan = scan
+    scan = { key, rows: await scanAllRows(request.order, headers, signal) }
+    slot.scan = scan
   }
   const matches = scan.rows.filter((row) => assetKind(row.name, row.mime_type) === request.kind)
   return {
@@ -285,11 +284,12 @@ async function rowsOfKind(
 async function listCloudAssets(
   accessToken: string,
   request: CloudAssetPageRequest,
-  signal: AbortSignal
+  signal: AbortSignal,
+  slot: ScanSlot
 ): Promise<CloudAssetPage> {
   const { kind } = request
   const { rows, total } = kind
-    ? await rowsOfKind(accessToken, { ...request, kind }, signal)
+    ? await rowsOfKind(accessToken, { ...request, kind }, signal, slot)
     : await fetchAssetRows(request, { Authorization: `Bearer ${accessToken}` }, signal)
   const summaries = rows.map((row) => toSummary(row, null))
   const deadline = AbortSignal.any([AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS), signal])
@@ -310,10 +310,11 @@ async function listCloudAssets(
 export async function listAssets(
   installationId: string,
   request: CloudAssetPageRequest,
-  signal: AbortSignal = new AbortController().signal
+  signal: AbortSignal = new AbortController().signal,
+  slot: ScanSlot = {}
 ): Promise<CloudAssetPage> {
   const accessToken = await cloudAccessToken(installationId)
-  return accessToken ? listCloudAssets(accessToken, request, signal) : EMPTY_PAGE
+  return accessToken ? listCloudAssets(accessToken, request, signal, slot) : EMPTY_PAGE
 }
 
 function isCount(value: unknown, min: number, max: number): value is number {
@@ -333,6 +334,7 @@ function pageRequest(value: unknown): CloudAssetPageRequest | null {
 }
 
 const pageListings = new WeakMap<object, AbortController>()
+const scanSlots = new WeakMap<object, ScanSlot>()
 
 async function listLatestPage(
   sender: object,
@@ -342,8 +344,10 @@ async function listLatestPage(
   pageListings.get(sender)?.abort()
   const listing = new AbortController()
   pageListings.set(sender, listing)
+  const slot = scanSlots.get(sender) ?? {}
+  scanSlots.set(sender, slot)
   try {
-    return await listAssets(installationId, request, listing.signal)
+    return await listAssets(installationId, request, listing.signal, slot)
   } catch (error) {
     if (listing.signal.aborted) return null
     throw error

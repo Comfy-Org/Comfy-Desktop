@@ -50,6 +50,7 @@ const pageSizeOptions = computed(() =>
             variant="muted-textonly"
             size="icon"
             :aria-label="t('assets.pagination.previous')"
+            :title="t('assets.pagination.previous')"
           >
             <ChevronLeft :size="15" aria-hidden="true" />
           </Button>
@@ -81,6 +82,7 @@ const pageSizeOptions = computed(() =>
             variant="muted-textonly"
             size="icon"
             :aria-label="t('assets.pagination.next')"
+            :title="t('assets.pagination.next')"
           >
             <ChevronRight :size="15" aria-hidden="true" />
           </Button>
@@ -94,6 +96,7 @@ const pageSizeOptions = computed(() =>
       :model-value="String(pageSize)"
       :options="pageSizeOptions"
       :aria-label="t('assets.pagination.pageSize')"
+      :title="t('assets.pagination.pageSize')"
       compact
       class="w-20 shrink-0"
       data-testid="assets-page-size"

@@ -130,7 +130,7 @@ const SHARED = 'shared'
 const savedPlace = useLocalStorage('comfy.desktop.assets.place', '')
 const pickedPlace = ref('')
 const truncated = ref(false)
-const pageSize = useLocalStorage<number>('comfy.desktop.assets.pageSize', DEFAULT_PAGE_SIZE)
+const pageSize = ref(DEFAULT_PAGE_SIZE)
 const currentPage = ref(1)
 const cloudTotal = ref(0)
 
