@@ -1324,6 +1324,27 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 
+  it('starts a picked build that this window has not loaded yet, such as a copy made a moment ago', async () => {
+    mockState.installations = []
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    api.getListActions.mockResolvedValue([
+      { id: 'launch', label: 'Start', style: 'primary', showProgress: true }
+    ])
+    api.runAction.mockReturnValueOnce(new Promise(() => {}))
+    Object.assign(api, { onInstallProgress: vi.fn(() => () => {}) })
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    mountPanel()
+    await flushPromises()
+
+    mockState.installations = [SAMPLE_INSTALL]
+    mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
+      cb({ kind: 'picker-pick-install', installationId: 'test-id' })
+    )
+    await flushPromises()
+
+    expect(api.runAction).toHaveBeenCalledWith('test-id', 'launch')
+  })
+
   it('Start on a Home build card starts it there and leaves this window on Home', async () => {
     mockState.installations = [SAMPLE_INSTALL]
     const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
