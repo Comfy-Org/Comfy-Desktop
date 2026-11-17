@@ -1112,7 +1112,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       confirmAndCloseAllHostWindows: (parentWindow) =>
         confirmAndCloseAllHostWindows(parentWindow, quitApp),
       confirmAndCloseHostWindow,
-      removeAppDataAndQuit: (options) => relaunchIntoUninstallCleanup(options, quitApp),
+      removeAppDataAndQuit: (options) =>
+        relaunchIntoUninstallCleanup(options, {
+          suppressInstallOnQuit: updater.suppressInstallOnQuit,
+          quit: quitApp
+        }),
       setActivePanel,
       triggerOpenFeedback,
       resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),

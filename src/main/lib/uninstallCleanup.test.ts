@@ -4,6 +4,7 @@ import path from 'path'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type CleanupModule = typeof import('./uninstallCleanup')
+type CleanupFs = import('./uninstallCleanup').CleanupFs
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'comfyui-desktop-2-uninstall-'))
 const ENV_KEYS = [
@@ -129,6 +130,33 @@ function allFlags(c: CleanupModule): string[] {
 
 const noBoxes = { deleteInstances: false, deleteModels: false }
 const bothBoxes = { deleteInstances: true, deleteModels: true }
+const instancesBox = { deleteInstances: true, deleteModels: false }
+
+function diskOps(order: string[], failing: string | null = null): CleanupFs {
+  return {
+    exists: (p) => fs.existsSync(p),
+    remove: (p) => {
+      order.push(p)
+      if (p === failing) {
+        fs.rmSync(path.join(p, '.comfyui-desktop-2'), { force: true })
+        throw Object.assign(new Error('busy'), { code: 'EBUSY' })
+      }
+      fs.rmSync(p, { recursive: true, force: true })
+    },
+    isEmptyDir: (p) => fs.readdirSync(p).length === 0,
+    removeEmptyDir: (p) => {
+      order.push(p)
+      fs.rmdirSync(p)
+    },
+    writeFile: (p, content) => write(p, content)
+  }
+}
+
+function writeInstallRecords(records: Record<string, unknown>[]): void {
+  const text = JSON.stringify(records)
+  write(path.join(userData, 'installations.json'), text)
+  write(path.join(userData, 'installations.json.bak'), text)
+}
 
 describe('plan per data-root mode', () => {
   it('uses LOCALAPPDATA\\Comfy-Desktop in the default mode', async () => {
@@ -225,8 +253,19 @@ describe('instances', () => {
     return dir
   }
 
-  function writeRecords(records: { id: string; installPath: string }[]): void {
+  function writeRecords(records: Record<string, unknown>[]): void {
     write(path.join(userData, 'installations.json'), JSON.stringify(records))
+  }
+
+  function adoptedSetup(): { dir: string; legacy: string } {
+    const legacy = path.join(home, 'LegacyComfyUI')
+    write(path.join(legacy, '.comfyui-desktop-2'), 'inst-1\n')
+    write(path.join(legacy, '.venv', 'pyvenv.cfg'))
+    write(path.join(legacy, 'user', 'default', 'workflow.json'))
+    const dir = installAt('adopted')
+    write(path.join(dir, '.comfyui-desktop-2'), 'inst-1')
+    writeRecords([{ id: 'inst-1', installPath: dir, adoptedBaseDir: legacy }])
+    return { dir, legacy }
   }
 
   it('removes only installs whose marker matches the record id', async () => {
@@ -285,6 +324,89 @@ describe('instances', () => {
     expect(fs.existsSync(path.join(userData, 'installations.json'))).toBe(true)
   })
 
+  it('keeps an install inside the app data folder when the box is not checked', async () => {
+    const dir = path.join(userData, 'ComfyUI-Installs', 'inside')
+    write(path.join(dir, '.comfyui-desktop-2'), 'inst-1')
+    write(path.join(dir, 'ComfyUI', 'main.py'))
+    writeRecords([{ id: 'inst-1', installPath: dir }])
+    write(path.join(userData, 'logs', 'main.log'))
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
+    expect(fs.existsSync(path.join(dir, 'ComfyUI', 'main.py'))).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
+  })
+
+  it('keeps installs inside the app data folder that are not being removed', async () => {
+    const tracked = path.join(userData, 'tracked')
+    write(path.join(tracked, '.comfyui-desktop-2'), 'tracked')
+    const mismatched = path.join(userData, 'mismatched')
+    write(path.join(mismatched, '.comfyui-desktop-2'), 'inst-other')
+    writeRecords([
+      { id: 'inst-2', installPath: tracked },
+      { id: 'inst-4', installPath: mismatched }
+    ])
+    write(path.join(userData, 'logs', 'main.log'))
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
+    expect(fs.existsSync(tracked)).toBe(true)
+    expect(fs.existsSync(mismatched)).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
+  })
+
+  it('keeps a per-install models folder inside the shared models folder', async () => {
+    const dir = installAt('own-models')
+    write(path.join(dir, '.comfyui-desktop-2'), 'inst-1')
+    const extra = path.join(localRoot(), 'ComfyUI-Shared', 'models', 'inst-1-loras')
+    write(path.join(extra, 'a.safetensors'))
+    writeRecords([{ id: 'inst-1', installPath: dir, modelDirs: [extra] }])
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
+    expect(fs.existsSync(dir)).toBe(false)
+    expect(fs.existsSync(path.join(extra, 'a.safetensors'))).toBe(true)
+  })
+
+  it('keeps per-install input and output folders outside the install', async () => {
+    const dir = installAt('own-io')
+    write(path.join(dir, '.comfyui-desktop-2'), 'inst-1')
+    write(path.join(dir, 'ComfyUI', 'input', 'inside.png'))
+    const input = path.join(userData, 'inst-1-input')
+    const output = path.join(userData, 'inst-1-output')
+    write(path.join(input, 'a.png'))
+    write(path.join(output, 'b.png'))
+    writeRecords([{ id: 'inst-1', installPath: dir, inputDir: input, outputDir: output }])
+    write(path.join(userData, 'logs', 'main.log'))
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
+    expect(fs.existsSync(dir)).toBe(false)
+    expect(fs.existsSync(path.join(input, 'a.png'))).toBe(true)
+    expect(fs.existsSync(path.join(output, 'b.png'))).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
+  })
+
+  it('retires the adoption marker and keeps the legacy files', async () => {
+    const { dir, legacy } = adoptedSetup()
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG, c.DELETE_INSTANCES_FLAG])).toBe(0)
+    expect(fs.existsSync(dir)).toBe(false)
+    expect(fs.existsSync(path.join(legacy, '.comfyui-desktop-2'))).toBe(false)
+    expect(fs.existsSync(path.join(legacy, '.venv', 'pyvenv.cfg'))).toBe(true)
+    expect(fs.existsSync(path.join(legacy, 'user', 'default', 'workflow.json'))).toBe(true)
+  })
+
+  it('keeps the adoption marker when the adopted install is not removed', async () => {
+    const { dir, legacy } = adoptedSetup()
+
+    const c = await loadAs('win32')
+    const inputs = c.collectUninstallCleanupInputs(instancesBox)
+    c.runCleanup(inputs, c.DEFAULT_CLEANUP_POLICY, diskOps([], dir))
+    expect(fs.readFileSync(path.join(legacy, '.comfyui-desktop-2'), 'utf-8')).toBe('inst-1\n')
+  })
+
   it('refuses the Desktop One base path even with a matching marker', async () => {
     const basePath = path.join(home, 'Documents', 'ComfyUI')
     write(path.join(basePath, '.comfyui-desktop-2'), 'inst-1')
@@ -306,6 +428,100 @@ describe('instances', () => {
     expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
     expect(fs.existsSync(path.join(shared, 'input', 'a.png'))).toBe(true)
     expect(fs.existsSync(path.join(shared, 'output', 'b.png'))).toBe(true)
+  })
+})
+
+describe('order and failures', () => {
+  function installWithModels(): { install: string; models: string } {
+    const install = path.join(localRoot(), 'ComfyUI-Installs', 'a')
+    write(path.join(install, '.comfyui-desktop-2'), 'inst-1')
+    write(path.join(install, 'ComfyUI', 'main.py'))
+    writeInstallRecords([{ id: 'inst-1', installPath: install }])
+    const models = path.join(localRoot(), 'ComfyUI-Shared', 'models')
+    write(path.join(models, 'a.safetensors'))
+    write(path.join(userData, 'logs', 'main.log'))
+    return { install, models }
+  }
+
+  it('removes installs and models before app data', async () => {
+    const { install, models } = installWithModels()
+
+    const c = await loadAs('win32')
+    const order: string[] = []
+    const inputs = c.collectUninstallCleanupInputs(bothBoxes)
+    c.runCleanup(inputs, c.DEFAULT_CLEANUP_POLICY, diskOps(order))
+
+    expect(order).toContain(install)
+    expect(order).toContain(models)
+    expect(order.indexOf(userData)).toBeGreaterThan(order.indexOf(install))
+    expect(order.indexOf(userData)).toBeGreaterThan(order.indexOf(models))
+  })
+
+  it('keeps the install list and the marker when an install cannot be removed', async () => {
+    const { install } = installWithModels()
+
+    const c = await loadAs('win32')
+    const inputs = c.collectUninstallCleanupInputs(bothBoxes)
+    const results = c.runCleanup(inputs, c.DEFAULT_CLEANUP_POLICY, diskOps([], install))
+
+    expect(results.find((r) => r.entry.path === install)?.outcome).toBe('failed')
+    expect(fs.readFileSync(path.join(install, '.comfyui-desktop-2'), 'utf-8')).toBe('inst-1')
+    expect(fs.existsSync(path.join(userData, 'installations.json'))).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'installations.json.bak'))).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
+    expect(c.keptInstallIds(results)).toEqual(['inst-1'])
+    expect(c.formatCleanupLog(bothBoxes, results, new Date())).toContain(
+      'kept in the install list because their folders were not removed: inst-1'
+    )
+  })
+})
+
+describe('configured download cache', () => {
+  function cacheSetup(): { cache: string; portable: string; standalone: string; mine: string } {
+    const cache = path.join(home, 'MyCache')
+    const portable = path.join(cache, 'v0.3.40_ComfyUI_windows_portable_nvidia.7z')
+    const standalone = path.join(cache, 'v1.2.0_cu128')
+    const mine = path.join(cache, 'my-files')
+    write(path.join(portable, 'a.bin'))
+    write(path.join(standalone, 'b.bin'))
+    write(path.join(mine, 'c.txt'))
+    write(path.join(userData, 'settings.json'), JSON.stringify({ cacheDir: cache }))
+    writeInstallRecords([
+      {
+        id: 'inst-1',
+        installPath: path.join(home, 'portable'),
+        version: 'v0.3.40',
+        asset: 'ComfyUI_windows_portable_nvidia.7z'
+      },
+      {
+        id: 'inst-2',
+        installPath: path.join(home, 'standalone'),
+        releaseTag: 'v1.2.0',
+        variant: 'cu128'
+      }
+    ])
+    return { cache, portable, standalone, mine }
+  }
+
+  it('removes only the entries Desktop downloaded there', async () => {
+    const { cache, portable, standalone, mine } = cacheSetup()
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
+    expect(fs.existsSync(portable)).toBe(false)
+    expect(fs.existsSync(standalone)).toBe(false)
+    expect(fs.existsSync(path.join(mine, 'c.txt'))).toBe(true)
+    expect(fs.existsSync(cache)).toBe(true)
+  })
+
+  it('refuses the configured folder itself', async () => {
+    const { cache } = cacheSetup()
+
+    const c = await loadAs('win32')
+    const inputs = c.collectUninstallCleanupInputs(bothBoxes)
+    const plan = c.planUninstallCleanup(inputs)
+    expect(plannedPaths(plan)).not.toContain(cache)
+    expect(c.deletionRefusal(cache, plan.guard)).not.toBeNull()
   })
 })
 
@@ -475,7 +691,8 @@ describe('deletionRefusal', () => {
           removed.push(p)
         },
         isEmptyDir: () => true,
-        removeEmptyDir: () => undefined
+        removeEmptyDir: () => undefined,
+        writeFile: () => undefined
       }
     )
     expect(results.map((r) => r.outcome)).toEqual(['failed', 'removed'])
@@ -739,13 +956,14 @@ describe('relaunching into the cleanup', () => {
     })
   })
 
-  it('asks Electron to relaunch with the flags, then quits', async () => {
+  it('turns off install-on-quit, relaunches with the flags, then quits', async () => {
     process.env.APPIMAGE = '/home/user/Comfy-Desktop.AppImage'
     const c = await loadAs('linux')
     const { app } = await import('electron')
     const quit = vi.fn()
+    const suppressInstallOnQuit = vi.fn()
 
-    c.relaunchIntoUninstallCleanup({ deleteInstances: true, deleteModels: false }, quit)
+    c.relaunchIntoUninstallCleanup(instancesBox, { suppressInstallOnQuit, quit })
 
     const relaunch = vi.mocked(app.relaunch)
     expect(relaunch).toHaveBeenCalledTimes(1)
@@ -754,5 +972,9 @@ describe('relaunching into the cleanup', () => {
     expect(options?.args?.slice(-2)).toEqual([c.UNINSTALL_CLEANUP_FLAG, c.DELETE_INSTANCES_FLAG])
     expect(quit).toHaveBeenCalledTimes(1)
     expect(relaunch.mock.invocationCallOrder[0]).toBeLessThan(quit.mock.invocationCallOrder[0]!)
+    expect(suppressInstallOnQuit).toHaveBeenCalledTimes(1)
+    expect(suppressInstallOnQuit.mock.invocationCallOrder[0]).toBeLessThan(
+      relaunch.mock.invocationCallOrder[0]!
+    )
   })
 })

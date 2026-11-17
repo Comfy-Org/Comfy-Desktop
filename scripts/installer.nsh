@@ -304,6 +304,9 @@
     ${If} ${Silent}
       Abort
     ${EndIf}
+    ${If} $installMode == "all"
+      Abort
+    ${EndIf}
 
     !insertmacro MUI_HEADER_TEXT "Choose what to remove" "Comfy Desktop's logs, caches and temporary files are always removed."
 
@@ -318,18 +321,18 @@
     ${If} $comfyRemoveInstances == ${BST_CHECKED}
       ${NSD_Check} $comfyRemoveInstancesCheckbox
     ${EndIf}
-    ${NSD_CreateLabel} 12u 14u 92% 24u "Removes every ComfyUI install Comfy Desktop created, with its custom nodes and Python packages. Your input and output files are kept."
+    ${NSD_CreateLabel} 12u 14u 92% 32u "Removes every ComfyUI install Comfy Desktop created and everything in it, including an install's own input and output if it does not use the shared ones. Only the shared input and output folders are kept."
     Pop $0
 
-    ${NSD_CreateCheckbox} 0 46u 100% 12u "Delete all model files"
+    ${NSD_CreateCheckbox} 0 52u 100% 12u "Delete all model files"
     Pop $comfyRemoveModelsCheckbox
     ${If} $comfyRemoveModels == ${BST_CHECKED}
       ${NSD_Check} $comfyRemoveModelsCheckbox
     ${EndIf}
-    ${NSD_CreateLabel} 12u 60u 92% 24u "Removes the shared models folder Comfy Desktop downloads into. Model folders you added yourself are kept."
+    ${NSD_CreateLabel} 12u 66u 92% 24u "Removes the shared models folder Comfy Desktop downloads into. Model folders you added yourself are kept."
     Pop $0
 
-    ${NSD_CreateLabel} 0 98u 100% 24u "Leave both unchecked to keep your ComfyUI instances and models. Installing Comfy Desktop again will find them."
+    ${NSD_CreateLabel} 0 104u 100% 24u "Leave both unchecked to keep your ComfyUI instances and models. Installing Comfy Desktop again will find them."
     Pop $0
 
     nsDialogs::Show
@@ -360,6 +363,9 @@
     nsExec::Exec /TIMEOUT=1800000 '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --uninstall-cleanup$1'
     Pop $0
     DetailPrint "  Data cleanup finished: $0"
+    ${If} $0 != "0"
+      DetailPrint "  Some data was kept. See $TEMP\comfy-desktop-uninstall-cleanup.log"
+    ${EndIf}
   ${EndIf}
 
   Pop $1
@@ -384,6 +390,7 @@
   Pop $R1
 
   ${If} $comfyFullUninstall == "1"
+  ${AndIf} $installMode != "all"
     !insertmacro runComfyUninstallCleanup
   ${EndIf}
 
