@@ -102,7 +102,7 @@ onUnmounted(() => unsubscribeSettings?.())
           <div class="flex min-w-0 items-center gap-2">
             <h1
               :id="TITLE_ID"
-              class="m-0 flex min-w-0 font-display text-display font-semibold text-foreground"
+              class="m-0 flex min-w-0 text-display font-semibold text-foreground"
             >
               <span v-if="uninstallReplacesSettings" class="truncate">{{ installation.name }}</span>
             </h1>

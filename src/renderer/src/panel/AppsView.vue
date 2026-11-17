@@ -104,7 +104,7 @@ onBeforeUnmount(() => {
       data-testid="apps-view"
     >
       <header class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
-        <h1 class="m-0 font-display text-display font-semibold text-foreground">
+        <h1 class="m-0 text-display font-semibold text-foreground">
           {{ t('sidebar.apps') }}
         </h1>
       </header>
