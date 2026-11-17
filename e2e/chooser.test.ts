@@ -204,7 +204,7 @@ test('title popup + system modal webContents are pre-warmed on the chooser host 
   await waitForWebContents(ctx.app, 'comfySystemModal.html', 10_000)
 })
 
-test('title popup opens, renders menu items, and closes via bridge @windows @macos @linux', async () => {
+test('the Desktop window tests menu opens with Performance tests and Benchmarks, and closes via bridge @windows @macos @linux', async () => {
   await openTitleMenu(ctx.titleBar)
 
   await expect
@@ -215,7 +215,7 @@ test('title popup opens, renders menu items, and closes via bridge @windows @mac
     .toBe(true)
 
   const popupItems = await readPopupMenuItems(ctx.app, 'comfyTitlePopup.html')
-  expect(popupItems).toEqual(['Performance Tests', 'Benchmarks', 'Close Window', 'Quit Desktop'])
+  expect(popupItems).toEqual(['Performance tests', 'Benchmarks'])
 
   await evalWithRetry(() =>
     ctx.app.evaluate(({ webContents }) => {
@@ -234,9 +234,9 @@ test('title popup opens, renders menu items, and closes via bridge @windows @mac
     .toBe(false)
 })
 
-test('the ☰ menu opens Performance Tests and Benchmarks in the dashboard window itself @windows @macos @linux', async () => {
+test('the tests menu opens Performance tests and Benchmarks in the Desktop window itself @windows @macos @linux', async () => {
   for (const [label, page] of [
-    ['Performance Tests', '[data-testid="performance-test"]'],
+    ['Performance tests', '[data-testid="performance-test"]'],
     ['Benchmarks', '[data-testid="benchmarks"]']
   ] as const) {
     await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))

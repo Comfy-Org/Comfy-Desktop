@@ -1453,6 +1453,17 @@ export const POPUP_KIND = {
 
 export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
 
+export type TitlePopupMenuIcon = 'performance-test' | 'benchmarks'
+
+export interface TitlePopupMenuItem {
+  id?: string
+  label?: string
+  labelKey?: string
+  labelParams?: Record<string, string | number>
+  icon?: TitlePopupMenuIcon
+  kind?: 'separator'
+}
+
 export interface PopupTheme {
   bg: string
   text: string

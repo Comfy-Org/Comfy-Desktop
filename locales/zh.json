@@ -1744,6 +1744,8 @@
     "loadSnapshot": "加载快照",
     "performanceTest": "性能测试",
     "benchmarks": "基准比较",
+    "performanceTests": "性能测试",
+    "resetZoom": "重置缩放（{percent}%）",
     "globalSettings": "桌面端设置",
     "sendFeedback": "发送反馈",
     "returnToDashboard": "返回仪表板",

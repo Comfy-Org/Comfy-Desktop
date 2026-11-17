@@ -1744,6 +1744,8 @@
     "loadSnapshot": "Load Snapshot",
     "performanceTest": "Performance Tests",
     "benchmarks": "Benchmarks",
+    "performanceTests": "Performance tests",
+    "resetZoom": "Reset Zoom ({percent}%)",
     "globalSettings": "Desktop Settings",
     "sendFeedback": "Send Feedback",
     "returnToDashboard": "Return to Dashboard",
