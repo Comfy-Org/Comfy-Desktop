@@ -8,8 +8,8 @@ import {
   CloudDownload,
   House,
   Loader2,
+  Megaphone,
   Menu as MenuIcon,
-  MessageSquarePlus,
   RefreshCw,
   RotateCw,
   ZoomIn
@@ -775,7 +775,7 @@ onUnmounted(() => {
         v-bind="tooltipAttrs(t('titleBar.feedbackTooltip'), t('titleBar.feedback'))"
         @click="handleFeedback"
       >
-        <MessageSquarePlus :size="16" />
+        <Megaphone :size="16" />
       </button>
       <button
         v-if="!isFirstUseLockdown"
