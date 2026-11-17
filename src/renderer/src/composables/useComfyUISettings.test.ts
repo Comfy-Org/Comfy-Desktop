@@ -505,6 +505,23 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     scope.stop()
   })
 
+  it('stop: dismisses the preview and alerts when ComfyUI stopped but its window did not close', async () => {
+    const api = installMockApi({
+      closeComfyWindow: vi.fn().mockRejectedValue(new Error('close failed'))
+    })
+    markRunning('a', 'A')
+    dialogsSpies.confirm.mockResolvedValue('primary')
+    const { composable, onDismissPreview, scope } = mountComposable(makeInstall('a', 'A'))
+
+    await composable.runAction({ id: 'stop', label: 'Stop' } as ActionDef)
+
+    expect(api.stopComfyUI).toHaveBeenCalledExactlyOnceWith('a')
+    expect(dialogsSpies.alert).toHaveBeenCalledTimes(1)
+    expect(dialogsSpies.alert.mock.calls[0]![0].message).toBe('close failed')
+    expect(onDismissPreview).toHaveBeenCalledTimes(1)
+    scope.stop()
+  })
+
   it('IN_PLACE_RELAUNCH apiCall stops the session, runs the op, and relaunches when the op succeeds', async () => {
     const api = installMockApi({
       stopComfyUI: vi.fn().mockImplementation(async (id: string) => {
