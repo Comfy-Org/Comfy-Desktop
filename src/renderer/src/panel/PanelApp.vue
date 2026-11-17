@@ -26,6 +26,7 @@ import { useTheme } from '../composables/useTheme'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { isDashboardHomePage, type DashboardHomePage } from '../../../shared/dashboardPages'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import { seedLauncherPrefsFromUrl, useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useModal } from '../composables/useModal'
@@ -157,9 +158,10 @@ if (params.get('e2e') === '1') {
   })
 }
 
-type DashboardHomePage = Extract<DashboardPage, 'home' | 'apps' | 'chooser' | 'assets'>
-
-const dashboardHomePage = ref<DashboardHomePage>('home')
+const initialDashboardPage = params.get('dashboardPage')
+const dashboardHomePage = ref<DashboardHomePage>(
+  isDashboardHomePage(initialDashboardPage) ? initialDashboardPage : 'home'
+)
 
 const sidebarPage = computed<DashboardPage | null>(() => {
   const panel = activePanel.value
@@ -232,8 +234,7 @@ function handleSidebarClick(page: DashboardPage): void {
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
   if (page === 'apps') appsVisits.value += 1
-  if (page === 'home' || page === 'apps' || page === 'chooser' || page === 'assets')
-    dashboardHomePage.value = page
+  if (isDashboardHomePage(page)) dashboardHomePage.value = page
 }
 
 function retryLaunch(id: string): void {

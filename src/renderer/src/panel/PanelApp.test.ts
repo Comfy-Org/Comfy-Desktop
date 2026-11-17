@@ -1452,6 +1452,30 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('false')
   })
 
+  it.each([
+    ['apps', 'apps', 'apps-view'],
+    ['assets', 'assets', 'assets-view'],
+    ['chooser', 'chooser', 'chooser-view'],
+    ['benchmarks', 'home', 'home-view']
+  ])('opens a new dashboard with dashboardPage=%s on %s', async (requested, page, view) => {
+    window.history.replaceState(
+      {},
+      '',
+      `/?panel=chooser&firstUseCompleted=true&dashboardPage=${requested}`
+    )
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.get(`[data-testid="${view}"]`).isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe(
+      String(page === 'chooser')
+    )
+    expect(wrapper.get(`[data-testid="app-sidebar-${page}"]`).attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
   it('opens Apps from the sidebar in place of Home, and leaves it again', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)

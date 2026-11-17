@@ -56,6 +56,7 @@ beforeEach(() => {
   ;(window as unknown as { api: unknown }).api = {
     platform: 'darwin',
     navigatePanel: vi.fn(),
+    openPageInNewWindow: vi.fn(),
     getAppsEnabled: vi.fn().mockResolvedValue(false),
     getInstallations: vi.fn().mockResolvedValue([]),
     onInstallationsChanged: vi.fn(() => () => {}),
@@ -519,15 +520,31 @@ describe('Build menu', () => {
     expect(hint()).toBe('Click to start')
   })
 
-  it('opens no menu on a right-click on a page in the sidebar', async () => {
-    const sidebar = await mountSidebar('ready')
-
-    for (const page of ['home', 'assets']) {
+  it.each(['home', 'apps', 'assets', 'chooser'])(
+    'opens %s in a new window from the sidebar page menu',
+    async (page) => {
+      vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+      const sidebar = await mountSidebar('ready')
       await rightClick(sidebar.get(`[data-testid="app-sidebar-${page}"]`).element)
-    }
 
-    expect(document.querySelector('[data-reka-menu-content]')).toBeNull()
-  })
+      const actions = document.querySelectorAll<HTMLElement>(
+        '[data-testid="sidebar-page-menu"] [role="menuitem"]'
+      )
+      expect([...actions].map((action) => action.textContent?.trim())).toEqual([
+        'Open in new window'
+      ])
+      expect(document.querySelector('[data-testid="build-menu"]')).toBeNull()
+
+      actions[0]!.click()
+      await flushPromises()
+
+      expect(window.api.openPageInNewWindow).toHaveBeenCalledExactlyOnceWith(page)
+      expect(window.api.navigatePanel).not.toHaveBeenCalled()
+      expect(sidebar.get('[data-testid="app-sidebar-home"]').attributes('aria-current')).toBe(
+        'page'
+      )
+    }
+  )
 
   it.each([
     ['tile ⋯', 'more'],

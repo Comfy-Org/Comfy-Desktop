@@ -1,5 +1,6 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
+import type { DashboardHomePage } from '../shared/dashboardPages'
 export type { FirstUseMode }
 import type { PlatformSettingsPage } from '../main/devplatform/config'
 export type { PlatformSettingsPage }
@@ -131,8 +132,7 @@ export interface Installation {
   [key: string]: unknown
 }
 
-export type DashboardPage =
-  'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
+export type DashboardPage = DashboardHomePage | 'benchmarks' | 'performance-test'
 
 export interface AppCard {
   id: string
@@ -1167,6 +1167,7 @@ export interface ElectronApi {
   closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
+  openPageInNewWindow(page: DashboardHomePage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
   listLocalAssets(installationId?: string): Promise<LocalAssetListing>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>

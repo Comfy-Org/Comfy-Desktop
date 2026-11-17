@@ -249,6 +249,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     closeAnnouncement: () => {},
     signalOverlayReady: () => {},
     navigatePanel: () => {},
+    openPageInNewWindow: () => {},
     listAssets: async () => [],
     listLocalAssets: async () => ({ assets: [], truncated: false }),
     downloadAsset: async () => true,

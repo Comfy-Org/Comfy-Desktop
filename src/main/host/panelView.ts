@@ -21,6 +21,7 @@ import {
   VALID_PANELS
 } from './registry'
 import type { BodyMode, ComfyPanelKey, ComfyWindowEntry } from './registry'
+import type { DashboardHomePage } from '../../shared/dashboardPages'
 
 const DASHBOARD_PAGE_PANELS: ReadonlyMap<unknown, ComfyPanelKey> = new Map([
   ['home', 'comfy'],
@@ -49,7 +50,8 @@ function isOpaqueBodyMode(mode: BodyMode): boolean {
 export function ensurePanelView(
   windowKey: number,
   entry: ComfyWindowEntry,
-  initialPanel: BodyMode
+  initialPanel: BodyMode,
+  dashboardPage?: DashboardHomePage
 ): WebContentsView {
   if (entry.panelView) return entry.panelView
 
@@ -88,6 +90,7 @@ export function ensurePanelView(
     panel: initialPanel,
     firstUseCompleted: String(firstUseCompleted)
   }
+  if (dashboardPage) panelQuery['dashboardPage'] = dashboardPage
   if (process.env['E2E'] === '1') {
     panelQuery['e2e'] = '1'
   }

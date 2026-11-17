@@ -16,6 +16,7 @@
     }
   },
   "sidebar": {
+    "openInNewWindow": "在新窗口中打开",
     "builds": "构建",
     "navigation": "导航",
     "home": "主页",

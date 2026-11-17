@@ -13,6 +13,7 @@ import type { MessageBoxOptions, Tray, WebContentsView } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { normaliseFirstUseMode } from '../shared/firstUseMode'
+import { isDashboardHomePage } from '../shared/dashboardPages'
 import { execFile } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import todesktop from '@todesktop/runtime'
@@ -755,6 +756,11 @@ ipcMain.on('comfy-window:click-announcement', (event) => {
 
 ipcMain.on('comfy-window:new-chooser-window', () => {
   openChooserHostWindow()
+})
+
+ipcMain.on('comfy-window:open-page-in-new-window', (event, page: unknown) => {
+  if (!findHostWindowByPanelSender(event.sender) || !isDashboardHomePage(page)) return
+  openChooserHostWindow('comfy', { dashboardPage: page })
 })
 
 ipcMain.on('comfy-window:show-home', (event) => {
