@@ -416,6 +416,7 @@ function installMockApi(initial?: {
     hideAppPage: vi.fn(),
     onAppPageStatusChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
+    onAppOutputs: vi.fn(() => () => {}),
     refreshCreditBalance: vi.fn(async () => ({ status: 'signed_out' })),
     onCreditBalanceChanged: vi.fn(() => () => {}),
     getListActions: vi.fn(async () => []),

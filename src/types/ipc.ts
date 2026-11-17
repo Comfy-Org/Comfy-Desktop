@@ -158,6 +158,25 @@ export interface AppPagePlacement {
   cornerRadius: number
   justOpened?: boolean
   retry?: boolean
+  focus?: boolean
+}
+
+export interface AppOutput {
+  name: string
+  mimeType: string
+  bytes: Uint8Array<ArrayBuffer>
+  tags: string[]
+  workflow: boolean
+}
+
+export interface AppOutputs {
+  items: AppOutput[]
+  index: number
+}
+
+export interface AppOutputAction {
+  action: 'download' | 'open-workflow'
+  index: number
 }
 
 export interface CatalogWorkflow {
@@ -1194,6 +1213,8 @@ export interface ElectronApi {
     callback: (appId: string | null, status: AppPageStatus) => void
   ): () => void
   onAppPageClosed(callback: () => void): () => void
+  onAppOutputs(callback: (appId: string, outputs: AppOutputs | null) => void): () => void
+  sendAppOutputAction(action: AppOutputAction): void
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   openGlobalSettings(
     tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',

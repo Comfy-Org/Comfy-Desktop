@@ -4,7 +4,7 @@ import path from 'path'
 
 import { isAppsListUrl, isInAppsScope, isWebUrl } from '../../shared/appsLocation'
 import type { AppsLocation } from '../../shared/appsLocation'
-import type { AppPagePlacement, AppPageStatus } from '../../types/ipc'
+import type { AppOutputAction, AppOutputs, AppPagePlacement, AppPageStatus } from '../../types/ipc'
 import { comfyWindows } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
@@ -20,6 +20,8 @@ import { registerAppsPage } from './appsPages'
 export const APPS_PARTITION = 'persist:comfy-apps'
 export const APP_PAGE_STATUS_CHANNEL = 'apps:page-status-changed'
 export const APP_PAGE_CLOSED_CHANNEL = 'apps:page-closed'
+export const APP_OUTPUTS_CHANNEL = 'apps:outputs'
+export const APP_OUTPUT_ACTION_CHANNEL = 'apps-outputs:action'
 export const APP_OPENED_EVENT = 'comfy.desktop.apps.app_opened'
 export const APP_PAGE_FAILED_EVENT = 'comfy.desktop.apps.app_page_failed'
 
@@ -34,6 +36,11 @@ export interface LoadedAppPage {
   document: number
 }
 
+interface ShownOutputs {
+  page: LoadedAppPage
+  count: number
+}
+
 interface HostedPage {
   view: WebContentsView
   appId: string | null
@@ -45,6 +52,7 @@ interface HostedPage {
   status: AppPageStatus
   wanted: boolean
   focusWhenReady: boolean
+  outputs: ShownOutputs | null
   forget: () => void
 }
 
@@ -183,6 +191,13 @@ function moveWithinDocument(hosted: HostedPage, url: string): void {
     appId !== null && isInLoadedRoute(hosted, url) ? { appId, document: hosted.documents } : null
 }
 
+function dismissStaleOutputs(windowKey: number, hosted: HostedPage): void {
+  const shown = hosted.outputs
+  if (!shown || isStillLoaded(hosted, shown.page)) return
+  hosted.outputs = null
+  panelOf(windowKey)?.send(APP_OUTPUTS_CHANNEL, shown.page.appId, null)
+}
+
 function load(windowKey: number, hosted: HostedPage, url: string): void {
   hosted.loaded = null
   hosted.loadStarted = true
@@ -238,6 +253,7 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     status: 'loading',
     wanted: false,
     focusWhenReady: false,
+    outputs: null,
     forget: registerAppsPage(contents)
   }
   const steer = (event: Event, url: string, pageStillShowsApp: boolean): void => {
@@ -266,6 +282,7 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
   })
   contents.on('did-navigate', (_event, url, httpResponseCode) => {
     commitDocument(hosted, url)
+    dismissStaleOutputs(windowKey, hosted)
     if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
     else if (httpResponseCode >= FIRST_HTTP_ERROR_STATUS) fail(windowKey, hosted, 'http_status')
   })
@@ -273,6 +290,7 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     if (!isMainFrame) return
     if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
     else moveWithinDocument(hosted, url)
+    dismissStaleOutputs(windowKey, hosted)
   })
   contents.on('dom-ready', () => {
     if (hosted.status !== 'loading' || !isInAppsScope(location, contents.getURL())) return
@@ -312,7 +330,10 @@ function isMeasure(value: unknown): value is number {
 
 function parsePlacement(raw: unknown): AppPagePlacement | null {
   if (!raw || typeof raw !== 'object') return null
-  const { x, y, width, height, cornerRadius, justOpened, retry } = raw as Record<string, unknown>
+  const { x, y, width, height, cornerRadius, justOpened, retry, focus } = raw as Record<
+    string,
+    unknown
+  >
   if (!isMeasure(x) || !isMeasure(y) || !isMeasure(width) || !isMeasure(height)) return null
   if (!isMeasure(cornerRadius)) return null
   return {
@@ -322,7 +343,8 @@ function parsePlacement(raw: unknown): AppPagePlacement | null {
     height,
     cornerRadius,
     justOpened: justOpened === true,
-    retry: retry === true
+    retry: retry === true,
+    focus: focus === true
   }
 }
 
@@ -392,7 +414,7 @@ export async function showAppPage(
   }
   if (placement.justOpened) mainTelemetry.capture(APP_OPENED_EVENT, { app_id: appId })
   hosted.wanted = true
-  hosted.focusWhenReady = hosted.focusWhenReady || askedFresh
+  hosted.focusWhenReady = hosted.focusWhenReady || askedFresh || placement.focus === true
   place(host.entry, hosted.view, placement)
   raiseAbovePanel(host.entry, hosted.view)
   applyVisibility(hosted)
@@ -415,6 +437,35 @@ export async function captureAppPage(panel: WebContents): Promise<string | null>
   } catch {
     return null
   }
+}
+
+function isStillLoaded(hosted: HostedPage, page: LoadedAppPage): boolean {
+  return hosted.loaded?.appId === page.appId && hosted.loaded.document === page.document
+}
+
+export function showAppOutputs(
+  contents: WebContents,
+  sentFrom: LoadedAppPage,
+  outputs: AppOutputs
+): boolean {
+  for (const [windowKey, hosted] of hostedByWindow) {
+    if (hosted.view.webContents !== contents) continue
+    const panel = panelOf(windowKey)
+    if (!panel || !isOnScreen(hosted) || !isStillLoaded(hosted, sentFrom)) return false
+    hosted.outputs = { page: sentFrom, count: outputs.items.length }
+    if (comfyWindows.get(windowKey)?.window.isFocused()) panel.focus()
+    panel.send(APP_OUTPUTS_CHANNEL, sentFrom.appId, outputs)
+    return true
+  }
+  return false
+}
+
+export function sendAppOutputAction(panel: WebContents, action: AppOutputAction): void {
+  const host = hostOf(panel)
+  const hosted = host && hostedFor(host)
+  const shown = hosted?.outputs
+  if (!hosted || !shown || action.index >= shown.count || !isStillLoaded(hosted, shown.page)) return
+  hosted.view.webContents.send(APP_OUTPUT_ACTION_CHANNEL, action)
 }
 
 export function _resetForTest(): void {
