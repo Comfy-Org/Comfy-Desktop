@@ -358,7 +358,7 @@ test('accept ToS + Change opens the name and every option in one sheet @sec-setu
   }
 })
 
-test('installs on the Home build card, then Open ComfyUI launches it @sec-setup @real-comfy', async () => {
+test('installs on the Home build card, then starts it there and turns on Auto start @sec-setup @real-comfy', async () => {
   test.skip(HYDRATED, 'reuse mode: install already on disk on the persisted profile')
   const LINUX_AMD = REAL_COMFY_VARIANT === 'amd' && process.platform === 'linux'
   test.setTimeout(LINUX_AMD ? 1_020_000 : 600_000)
@@ -385,19 +385,26 @@ test('installs on the Home build card, then Open ComfyUI launches it @sec-setup 
     'Open ComfyUI stays hidden while the only local build installs'
   ).toBe(false)
   await expect
-    .poll(() => ctx.panel.exists('[data-testid="home-open-comfyui"]'), {
+    .poll(() => ctx.panel.exists('[data-testid="home-build-installing"]'), {
       timeout: LINUX_AMD ? 840_000 : 420_000,
       intervals: [1_000, 2_000]
     })
-    .toBe(true)
-  expect(await ctx.panel.exists('[data-testid="home-build-installing"]')).toBe(false)
-  expect(await ctx.panel.click('[data-testid="home-open-comfyui"]')).toBe(true)
+    .toBe(false)
   await expect
     .poll(comfyFrontendIsLoaded, {
       timeout: 180_000,
-      intervals: [1_000, 2_000]
+      intervals: [1_000, 2_000],
+      message: 'the build starts on its own once its install finishes'
     })
     .toBe(true)
+  const builds = await ctx.panel.evaluate<Array<{ id: string; sourceId: string }>>(
+    'window.api.getInstallations()'
+  )
+  const localBuilds = builds.filter((b) => b.sourceId !== 'cloud')
+  expect(localBuilds).toHaveLength(1)
+  await expect
+    .poll(() => ctx.panel.evaluate("window.api.getSetting('autoLaunchOnStartup')"))
+    .toBe(localBuilds[0]!.id)
 })
 
 test('first-use Change chain marks firstUseCompleted once and cycles firstUseMode @sec-setup @real-comfy', async () => {

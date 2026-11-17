@@ -26,6 +26,7 @@ import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import * as telemetry from './telemetry'
+import { startFirstBuildWithDesktop } from './firstBuildAutoStart'
 import { DEFAULT_INSTALL_NAME } from '../../shared/defaultInstallName'
 import * as i18n from './i18n'
 import {
@@ -1011,6 +1012,7 @@ async function runAdoption(
     method: 'adopt',
     express: false
   })
+  await startFirstBuildWithDesktop(record.id)
 
   sendProgress('done', { percent: 100 })
   return record
