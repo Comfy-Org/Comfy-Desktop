@@ -538,6 +538,25 @@ describe('Build menu', () => {
     expect(cancelOperation).toHaveBeenCalledExactlyOnceWith(BUILD.id)
   })
 
+  it('offers Cancel for a left start still in its checks, before main says it is launching', async () => {
+    const cancelOperation = vi.fn(async () => {})
+    Object.assign(window.api, { cancelOperation, stopComfyUI: vi.fn(async () => {}) })
+    useSessionStore().operationInstances.set(BUILD.id, { actionId: 'launch' })
+    const tile = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(tile)
+    await flushPromises()
+
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    expect(await shownMenu()).toEqual(EXPECTED.starting)
+    document.querySelector<HTMLElement>('[data-testid="build-menu-cancel"]')!.click()
+    await flushPromises()
+
+    expect(cancelOperation).toHaveBeenCalledExactlyOnceWith(BUILD.id)
+  })
+
   it('also stops a left start on Cancel, in case it finished starting before the cancel reached it', async () => {
     const calls: string[] = []
     const cancelOperation = vi.fn(async () => {

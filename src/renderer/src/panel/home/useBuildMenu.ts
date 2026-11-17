@@ -85,6 +85,13 @@ export function useBuildMenu(build: () => Installation) {
     return inst.sourceCategory !== 'cloud'
   }
 
+  function isStarting(inst: Installation): boolean {
+    return (
+      sessionStore.isLaunching(inst.id) ||
+      sessionStore.operationInstances.get(inst.id)?.actionId === 'launch'
+    )
+  }
+
   const items = computed<BuildMenuEntry[]>(() => {
     const inst = build()
     const progress = buildProgressOf(progressStore, inst.id)
@@ -103,7 +110,7 @@ export function useBuildMenu(build: () => Installation) {
         { id: 'restart', label: t('actions.restart'), icon: RotateCw },
         { id: 'stop', label: t('actions.stop'), icon: CircleStop }
       )
-    } else if (isLocal(inst) && sessionStore.isLaunching(inst.id)) {
+    } else if (isLocal(inst) && isStarting(inst)) {
       now.push(
         { id: 'view-logs', label: t('installProgress.viewLogs'), icon: ScrollText },
         { id: 'cancel', label: t('common.cancel'), icon: X }
