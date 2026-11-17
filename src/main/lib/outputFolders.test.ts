@@ -205,9 +205,10 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, '.hidden.png'))
     write(path.join(sharedDir, '.cache', 'inside-hidden.png'))
 
-    const assets = await listLocalAssets('Test Instance')
+    const { assets, truncated } = await listLocalAssets('Test Instance')
 
     expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'mesh.glb', 'old.png'])
+    expect(truncated).toBe(false)
     const newVideo = path.join(sharedDir, 'video', 'new.mp4')
     expect(assets[0]).toEqual({
       id: newVideo,
@@ -236,7 +237,7 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, 'broken.png'), 'not a picture')
 
     const facts = Object.fromEntries(
-      (await listLocalAssets('Test Instance')).map((a) => [
+      (await listLocalAssets('Test Instance')).assets.map((a) => [
         a.name,
         [a.width, a.height, a.durationSeconds && Math.round(a.durationSeconds)]
       ])
@@ -253,7 +254,7 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, 'shared.png'))
     write(path.join(ownDir, 'own.png'))
     write(path.join(installDir, 'ComfyUI', 'output', 'install.png'))
-    const namesFor = async (id: string) => (await listLocalAssets(id)).map((a) => a.name)
+    const namesFor = async (id: string) => (await listLocalAssets(id)).assets.map((a) => a.name)
 
     expect(await namesFor('Test Instance'), 'a build on the shared folder').toEqual(['shared.png'])
     expect(await namesFor('My Local 1'), 'another build on the shared folder').toEqual([
@@ -265,7 +266,7 @@ describe('listLocalAssets', () => {
     expect(await namesFor('Old Desktop'), 'a build that manages its own paths').toEqual([])
     expect(await namesFor('deleted'), 'a build that is gone').toEqual([])
     expect(
-      (await listLocalAssets()).map((a) => a.name),
+      (await listLocalAssets()).assets.map((a) => a.name),
       'no build: the shared output folder'
     ).toEqual(['shared.png'])
   })
@@ -277,7 +278,7 @@ describe('listLocalAssets', () => {
     write(file)
     installs.mockResolvedValue([install('New', { useSharedOutput: false, outputDir: newDir })])
     try {
-      const [listed] = await listLocalAssets('New')
+      const [listed] = (await listLocalAssets('New')).assets
 
       expect(listed!.id).toBe(file)
       expect(await outputFilePath(listed!.id)).toBe(file)
@@ -286,17 +287,33 @@ describe('listLocalAssets', () => {
     }
   })
 
-  it('keeps only the newest files when the folders are very large', async () => {
+  it('keeps only the newest files when the folders are very large, and says the list was cut', async () => {
     for (let i = 0; i <= MAX_LOCAL_ASSETS; i++)
       write(path.join(sharedDir, `f${i}.png`), '', new Date(Date.UTC(2026, 0, 1, 0, 0, i)))
 
-    const assets = await listLocalAssets('Test Instance')
+    const { assets, truncated } = await listLocalAssets('Test Instance')
 
     expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
     expect(assets.map((a) => a.name)).not.toContain('f0.png')
+    expect(truncated).toBe(true)
   })
 
-  it('does not follow links out of an output folder or walk without end', async () => {
+  it('keeps a new nested output when the shared folder has 5,000 older files', async () => {
+    for (let i = 0; i < 5_000; i++) write(path.join(sharedDir, `f${i}.glb`))
+    write(
+      path.join(sharedDir, 'later', 'newest.png'),
+      pngHeader(512, 512),
+      new Date('2026-11-02T00:00:00Z')
+    )
+
+    const { assets, truncated } = await listLocalAssets()
+
+    expect(assets[0]?.name).toBe('newest.png')
+    expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
+    expect(truncated).toBe(true)
+  })
+
+  it('does not follow links to folders or files outside, or walk without end', async () => {
     write(path.join(outsideDir, 'secret.png'))
     fs.symlinkSync(outsideDir, path.join(sharedDir, 'escape'))
     const deep = path.join(
@@ -304,8 +321,9 @@ describe('listLocalAssets', () => {
       ...Array.from({ length: MAX_FOLDER_DEPTH + 1 }, (_, i) => `d${i}`)
     )
     write(path.join(deep, 'too-deep.png'))
+    fs.symlinkSync(path.join(outsideDir, 'secret.png'), path.join(sharedDir, 'linked.png'))
 
-    expect(await listLocalAssets('Test Instance')).toEqual([])
+    expect(await listLocalAssets('Test Instance')).toEqual({ assets: [], truncated: false })
   })
 })
 

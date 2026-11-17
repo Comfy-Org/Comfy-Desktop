@@ -11,6 +11,7 @@ import { recordDashboardSurface } from '../lib/lastSession'
 import * as settings from '../settings'
 import { comfyWindows, isChooserHost, isInstallHost, shouldConfirmKillForEntry } from './registry'
 import type { ComfyWindowEntry } from './registry'
+import { navigatorFor } from './buildNavigator'
 import {
   applyChooserHostTheme,
   CHOOSER_HOST_TITLE_TEXT,
@@ -136,9 +137,9 @@ async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): 
   return openSystemModalAsync({
     parent: entry.window,
     spec: {
-      title: 'Return to Dashboard?',
+      title: 'Return to Home?',
       message: 'This will stop the current ComfyUI.',
-      confirmLabel: 'Return to Dashboard',
+      confirmLabel: 'Return to Home',
       cancelLabel: 'Cancel',
       confirmStyle: 'danger',
       theme: entry.lastTheme
@@ -263,7 +264,7 @@ export function _detachInstallImpl(entry: ComfyWindowEntry): void {
   entry._installCleanup?.()
 
   if (!entry.comfyView.webContents.isDestroyed()) {
-    void entry.comfyView.webContents.loadURL('about:blank').catch(() => {})
+    navigatorFor(entry).blank()
     entry.comfyView.setBackgroundColor(COMFY_BG)
   }
 

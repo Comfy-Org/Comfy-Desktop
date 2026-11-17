@@ -1,12 +1,19 @@
+import { app as electronApp } from 'electron'
+import path from 'path'
+
 import { APP_ID_PATTERN, isAppsListUrl, isInAppsScope } from '../../shared/appsLocation'
 import type { AppsLocation } from '../../shared/appsLocation'
 import type { AppCard } from '../../types/ipc'
 import { fetchJSON } from '../lib/fetch'
+import { readFileSafeAsync, writeFileSafeAsync } from '../lib/safe-file'
 import { currentAppsLocation } from './appsConfig'
 
 const LIST_FILE = 'apps.json'
 const FETCH_TIMEOUT_MS = 8000
 const CACHE_TTL_MS = 5 * 60 * 1000
+const EMPTY_LIST_TTL_MS = 30 * 1000
+const RETRY_DELAYS_MS = [1000, 3000]
+const SAVED_LIST_FILE = 'apps-catalog.json'
 const MAX_APPS = 200
 const MAX_TEXT_LENGTH = 4096
 
@@ -95,29 +102,104 @@ function fetchList(url: string): Promise<unknown> {
 
 interface CacheEntry {
   listUrl: string
-  loadedAt: number
+  expiresAt: number
   apps: ListedApp[]
+}
+
+interface SavedList {
+  listUrl: string
+  apps: unknown[]
 }
 
 let cache: CacheEntry | null = null
 let inFlight: { listUrl: string; request: Promise<ListedApp[]> } | null = null
+let savedList: Promise<SavedList | null> | null = null
+
+function savedListPath(): string {
+  return path.join(electronApp.getPath('userData'), SAVED_LIST_FILE)
+}
+
+async function readSavedListFile(): Promise<SavedList | null> {
+  try {
+    const outcome = await readFileSafeAsync(savedListPath())
+    if (outcome.kind !== 'data') return null
+    const saved = asRecord(JSON.parse(outcome.data))
+    const listUrl = saved?.listUrl
+    const apps = saved?.apps
+    if (typeof listUrl !== 'string' || !Array.isArray(apps)) return null
+    return { listUrl, apps }
+  } catch {
+    return null
+  }
+}
+
+async function savedAppsFor(listUrl: string, location: AppsLocation): Promise<ListedApp[] | null> {
+  savedList ??= readSavedListFile()
+  const saved = await savedList
+  if (saved?.listUrl !== listUrl) return null
+  const apps = parseAppsList(saved.apps, location)
+  return apps.length > 0 ? apps : null
+}
+
+async function saveList(listUrl: string, apps: unknown[]): Promise<void> {
+  savedList = Promise.resolve({ listUrl, apps })
+  try {
+    await writeFileSafeAsync(savedListPath(), JSON.stringify({ listUrl, apps }))
+  } catch (err) {
+    console.warn('[apps] could not save the apps list:', err)
+  }
+}
+
+async function hasGoodList(listUrl: string, location: AppsLocation): Promise<boolean> {
+  if (cache?.listUrl === listUrl && cache.apps.length > 0) return true
+  return (await savedAppsFor(listUrl, location)) !== null
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms).unref?.()
+  })
+}
+
+async function fetchApps(listUrl: string, location: AppsLocation): Promise<ListedApp[]> {
+  let failure: unknown
+  for (const delay of [0, ...RETRY_DELAYS_MS]) {
+    if (delay > 0) await wait(delay)
+    try {
+      const raw = await fetchList(listUrl)
+      const apps = parseAppsList(raw, location)
+      if (apps.length > 0) {
+        await saveList(listUrl, raw as unknown[])
+        return apps
+      }
+      if (!(await hasGoodList(listUrl, location))) return apps
+      failure = new Error('The apps list came back empty')
+    } catch (err) {
+      failure = err
+    }
+  }
+  throw failure
+}
 
 function loadApps(): Promise<ListedApp[]> {
   const location = currentAppsLocation()
   const listUrl = appsListUrl(location)
-  if (cache && cache.listUrl === listUrl && Date.now() - cache.loadedAt < CACHE_TTL_MS) {
+  if (cache && cache.listUrl === listUrl && Date.now() < cache.expiresAt) {
     return Promise.resolve(cache.apps)
   }
   if (inFlight?.listUrl === listUrl) return inFlight.request
-  const request = fetchList(listUrl)
-    .then((raw) => {
-      const apps = parseAppsList(raw, location)
-      cache = { listUrl, loadedAt: Date.now(), apps }
+  const request = fetchApps(listUrl, location)
+    .then((apps) => {
+      const ttl = apps.length > 0 ? CACHE_TTL_MS : EMPTY_LIST_TTL_MS
+      cache = { listUrl, expiresAt: Date.now() + ttl, apps }
       return apps
     })
-    .catch((err: unknown) => {
+    .catch(async (err: unknown) => {
       if (cache?.listUrl === listUrl) return cache.apps
-      throw err
+      const saved = await savedAppsFor(listUrl, location)
+      if (!saved) throw err
+      cache = { listUrl, expiresAt: 0, apps: saved }
+      return saved
     })
     .finally(() => {
       if (inFlight?.request === request) inFlight = null
@@ -137,4 +219,5 @@ export function pageUrlForListedApp(id: string): string | null {
 export function _resetAppsCatalogForTest(): void {
   cache = null
   inFlight = null
+  savedList = null
 }

@@ -13,7 +13,7 @@ const props = withDefaults(
     title?: string
     lead?: string
     wide?: boolean
-    fixedHeight?: boolean
+    anchorTop?: boolean
     brandBackdrop?: boolean
     closable?: boolean
     closeTitle?: string
@@ -23,7 +23,7 @@ const props = withDefaults(
     title: '',
     lead: '',
     wide: false,
-    fixedHeight: false,
+    anchorTop: false,
     brandBackdrop: false,
     closable: true,
     closeTitle: undefined,
@@ -33,6 +33,12 @@ const props = withDefaults(
 
 const emit = defineEmits<{ close: [] }>()
 
+const frameSpacing = computed(() => {
+  if (!props.anchorTop) return props.brandBackdrop ? 'min-h-full py-[clamp(1.5rem,4vh,3rem)]' : ''
+  if (!props.brandBackdrop) return 'pt-(--setup-top) [--setup-chrome:calc(48px+var(--setup-top))]'
+  return 'pt-[calc(var(--setup-top)+clamp(1.5rem,4vh,3rem))] pb-6 -mb-[clamp(2rem,5vw,48px)] [--setup-chrome:calc(var(--setup-top)+clamp(1.5rem,4vh,3rem)+clamp(2rem,5vw,48px)+24px)]'
+})
+
 const hostProps = computed(() =>
   props.brandBackdrop
     ? { scrollContent: true, ariaLabel: props.dialogLabel, dismissible: props.dismissOnEscape }
@@ -41,8 +47,10 @@ const hostProps = computed(() =>
         ariaLabel: props.dialogLabel,
         dismissOnEscape: props.dismissOnEscape,
         dismissOnOutside: false,
-        overlayClass:
-          'setup-modal-overlay fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/60 p-6 animate-fade-in motion-reduce:animate-none',
+        overlayClass: [
+          'setup-modal-overlay fixed inset-0 z-50 grid overflow-y-auto bg-black/60 p-6 animate-fade-in motion-reduce:animate-none',
+          props.anchorTop ? 'justify-items-center items-start' : 'place-items-center'
+        ].join(' '),
         contentClass: 'setup-modal-surface relative max-w-full outline-none'
       }
 )
@@ -55,15 +63,20 @@ const hostProps = computed(() =>
     @close="emit('close')"
   >
     <div
-      class="setup-modal-frame flex w-full items-center justify-center"
-      :class="brandBackdrop && 'min-h-full py-[clamp(1.5rem,4vh,3rem)]'"
+      class="setup-modal-frame flex w-full justify-center"
+      :class="[
+        anchorTop ? 'items-start [--setup-top:clamp(0px,calc(50vh_-_384px),96px)]' : 'items-center',
+        frameSpacing
+      ]"
     >
       <section
         v-bind="$attrs"
-        class="setup-modal-panel relative flex max-h-[calc(100vh-48px)] max-w-full flex-col rounded-[16px] bg-neutral-900 text-left [box-shadow:0_24px_64px_rgb(0_0_0/0.5),inset_0_0_0_1px_rgb(255_255_255/0.06)] animate-pop-in motion-reduce:animate-none"
+        class="setup-modal-panel relative flex max-w-full flex-col rounded-[16px] bg-neutral-900 text-left [box-shadow:0_24px_64px_rgb(0_0_0/0.5),inset_0_0_0_1px_rgb(255_255_255/0.06)] animate-pop-in motion-reduce:animate-none"
         :class="[
           wide ? 'w-[min(960px,calc(100vw-48px))]' : 'w-[min(760px,calc(100vw-48px))]',
-          fixedHeight && 'h-[720px]'
+          anchorTop
+            ? 'setup-modal-panel--anchored max-h-[calc(100vh-var(--setup-chrome))]'
+            : 'max-h-[calc(100vh-48px)]'
         ]"
       >
         <Button
@@ -80,8 +93,8 @@ const hostProps = computed(() =>
         </Button>
 
         <div
-          class="setup-modal-body min-h-0 flex-auto overflow-y-auto px-8 pt-7 pb-6 [scrollbar-width:thin]"
-          :class="fixedHeight && '[scrollbar-gutter:stable]'"
+          class="setup-modal-body min-h-0 flex-auto overflow-y-auto px-8 pt-7 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          :class="anchorTop ? 'pb-4' : 'pb-6'"
         >
           <h2
             v-if="title"

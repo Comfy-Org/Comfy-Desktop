@@ -433,10 +433,52 @@ describe('Home builds', () => {
     await flushPromises()
 
     expect(wrapper.findAll('[data-testid="home-build"]').map((card) => card.text())).toEqual([
-      'Update availableMy Local 1Standalone',
+      'ReadyMy Local 1Standalone · Update',
       'RunningVideo LabStandalone',
       'Always onComfy CloudRTX 6000 Pro · 96 GB'
     ])
+  })
+
+  it('keeps Running on top of a running build with an update, and names the update at the bottom', async () => {
+    getInstallations.mockResolvedValue([NEWEST])
+    const wrapper = await openHome()
+    useSessionStore().runningInstances.set(NEWEST.id, {
+      installationId: NEWEST.id,
+      installationName: NEWEST.name,
+      mode: 'window'
+    })
+    await flushPromises()
+
+    const card = wrapper.get('[data-testid="home-build"]')
+    expect(card.get('[data-testid="home-build-status"]').text()).toBe('Running')
+    expect(card.get('[data-testid="home-build-detail"]').text()).toBe('Standalone · Update')
+    expect(card.get('[data-testid="home-build-open"]').attributes('aria-label')).toBe(
+      'My Local 1, Running'
+    )
+  })
+
+  it('keeps the update note short so the bottom line fits a narrow card', async () => {
+    getInstallations.mockResolvedValue([
+      {
+        ...NEWEST,
+        version: 'v0.3.68',
+        statusTag: { style: 'update', label: 'Update available: v0.45.4' }
+      }
+    ])
+    const wrapper = await openHome()
+
+    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe('v0.3.68 · Update')
+  })
+
+  it('starts a build with an update from its card, saying Ready on top', async () => {
+    getInstallations.mockResolvedValue([NEWEST])
+    const wrapper = await openHome()
+
+    const card = wrapper.get('[data-testid="home-build"]')
+    expect(card.get('[data-testid="home-build-status"]').text()).toBe('Ready')
+    await card.get('[data-testid="home-build-open"]').trigger('click')
+
+    expect(wrapper.emitted('pick')?.[0]?.[0]).toMatchObject({ id: NEWEST.id })
   })
 
   it('keeps only the latest build and Cloud when the window is narrow', async () => {
@@ -459,13 +501,11 @@ describe('Home builds', () => {
     expect(kept).toEqual(['My Local 1', 'Video Lab'])
   })
 
-  it('shows a stopped local build as ready, with its ComfyUI version and no folder path', async () => {
+  it('shows a stopped local build as ready, with its version and no folder path', async () => {
     getInstallations.mockResolvedValue([OLDEST])
     const wrapper = await openHome()
 
-    expect(wrapper.get('[data-testid="home-build"]').text()).toBe(
-      'ReadyFlux SandboxComfyUI v0.42.4'
-    )
+    expect(wrapper.get('[data-testid="home-build"]').text()).toBe('ReadyFlux Sandboxv0.42.4')
   })
 
   it('shows the address of a remote ComfyUI instead of hardware', async () => {
@@ -516,6 +556,25 @@ describe('Home builds', () => {
     await wrapper.findAll('[data-testid="home-build"]')[1]!.trigger('click')
 
     expect(wrapper.emitted('pick')).toEqual([[OLDEST]])
+  })
+
+  it('keeps Comfy Cloud available when moving between Personal and team workspaces', async () => {
+    const teamBuild = build({ id: 'team', name: 'Team build', workspaceId: 'team-a' })
+    getInstallations.mockResolvedValue([CLOUD, OLDEST, teamBuild])
+    const wrapper = await openHome()
+    const names = () =>
+      wrapper.findAll('[data-testid="home-build"] .font-semibold').map((name) => name.text())
+
+    expect(names()).toEqual(['Comfy Cloud', 'Flux Sandbox'])
+    useDashboardScopeStore().selectedWorkspaceId = 'team-a'
+    await flushPromises()
+    expect(names()).toEqual(['Comfy Cloud', 'Team build'])
+    await wrapper.findAll('[data-testid="home-build"]')[0]!.trigger('click')
+    expect(wrapper.emitted('pick')).toEqual([[CLOUD]])
+
+    useDashboardScopeStore().selectedWorkspaceId = 'personal'
+    await flushPromises()
+    expect(names()).toEqual(['Comfy Cloud', 'Flux Sandbox'])
   })
 
   it('opens the most recently used build from Open ComfyUI', async () => {
@@ -696,11 +755,56 @@ describe('Home builds', () => {
     expect(wrapper.emitted('show-builds')).toHaveLength(1)
   })
 
-  it('leaves the builds row and Open ComfyUI out when there is no build', async () => {
+  it('offers New build in the builds row and leaves Open ComfyUI out when there is no build', async () => {
     const wrapper = await openHome()
 
-    expect(wrapper.find('[data-testid="home-builds"]').exists()).toBe(false)
+    expect(
+      wrapper.find('[data-testid="home-builds"] [data-testid="home-new-build"]').exists()
+    ).toBe(true)
+    expect(wrapper.find('[data-testid="home-build"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-open-comfyui"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="home-new-build"]').trigger('click')
+    expect(wrapper.emitted('new-build')).toHaveLength(1)
+  })
+})
+
+describe('Home build cards during a stop or update', () => {
+  it.each([
+    ['Stopping…', 'stop'],
+    ['Updating…', 'update']
+  ] as const)('shows %s and blocks opening until the operation finishes', async (label, action) => {
+    getInstallations.mockResolvedValue([RUNNING])
+    const session = useSessionStore()
+    if (action === 'stop') {
+      session.runningInstances.set(RUNNING.id, {
+        installationId: RUNNING.id,
+        installationName: RUNNING.name,
+        mode: 'window'
+      })
+      session.stoppingInstances.add(RUNNING.id)
+    } else {
+      session.operationInstances.set(RUNNING.id, { actionId: 'update-comfyui' })
+    }
+    const wrapper = await openHome()
+    const card = wrapper.get('[data-testid="home-build"]')
+    const open = card.get<HTMLButtonElement>('[data-testid="home-build-open"]')
+
+    expect(card.get('[data-testid="home-build-status"]').text()).toBe(label)
+    expect(open.element.disabled).toBe(true)
+    expect(wrapper.find('[data-testid="home-open-comfyui"]').exists()).toBe(false)
+    await card.trigger('click')
+    expect(wrapper.emitted('pick')).toBeUndefined()
+
+    session.runningInstances.delete(RUNNING.id)
+    session.stoppingInstances.delete(RUNNING.id)
+    session.operationInstances.delete(RUNNING.id)
+    await flushPromises()
+
+    expect(open.element.disabled).toBe(false)
+    expect(wrapper.find('[data-testid="home-open-comfyui"]').exists()).toBe(true)
+    await open.trigger('click')
+    expect(wrapper.emitted('pick')).toEqual([[RUNNING]])
   })
 })
 
@@ -787,6 +891,58 @@ describe('Home build auto start', () => {
     expect(
       cardOf(wrapper, OLDEST.id).get('[data-testid="home-build-open"]').attributes('aria-label')
     ).toBe(`${OLDEST.name}, Auto start`)
+  })
+
+  it("says Didn't start on the card of an Auto start build that failed to start in the background", async () => {
+    saved = OLDEST.id
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
+    const wrapper = await openHome()
+
+    useSessionStore().errorInstances.set(OLDEST.id, {
+      installationName: OLDEST.name,
+      message: 'ComfyUI exited with code 1',
+      startFailed: true
+    })
+    await flushPromises()
+
+    expect(statusOf(wrapper, OLDEST.id)).toBe("Didn't start")
+  })
+
+  it("does not say Didn't start on the card of a build whose update failed", async () => {
+    Object.assign(window.api, {
+      onInstallProgress: vi.fn(() => () => {}),
+      onComfyOutput: vi.fn(() => () => {})
+    })
+    saved = OLDEST.id
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
+    const wrapper = await openHome()
+
+    useProgressStore().startOperation({
+      installationId: OLDEST.id,
+      title: 'Updating',
+      opKind: 'update',
+      apiCall: async () => ({ ok: false, message: 'Could not install the new dependencies' })
+    })
+    await flushPromises()
+
+    expect(useSessionStore().errorInstances.get(OLDEST.id)?.message).toBe(
+      'Could not install the new dependencies'
+    )
+    expect(statusOf(wrapper, OLDEST.id)).not.toBe("Didn't start")
+  })
+
+  it("does not say Didn't start on the card of a build that ran and then crashed", async () => {
+    saved = OLDEST.id
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
+    const wrapper = await openHome()
+
+    useSessionStore().errorInstances.set(OLDEST.id, {
+      installationName: OLDEST.name,
+      exitCode: 1
+    })
+    await flushPromises()
+
+    expect(statusOf(wrapper, OLDEST.id)).not.toBe("Didn't start")
   })
 
   it('moves Auto start to the card whose menu says Auto start', async () => {

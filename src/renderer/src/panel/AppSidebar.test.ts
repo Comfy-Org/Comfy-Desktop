@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -27,6 +27,7 @@ const TEAM = build({ id: 'team', name: 'Team Build', lastLaunchedAt: 400, worksp
 
 const navigatePanel = vi.fn()
 const openGlobalSettings = vi.fn()
+const openPageInNewWindow = vi.fn()
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 
 beforeEach(() => {
@@ -36,6 +37,7 @@ beforeEach(() => {
   ;(window as unknown as { api: unknown }).api = {
     navigatePanel,
     openGlobalSettings,
+    openPageInNewWindow,
     getAppsEnabled,
     getAppUpdateState: vi.fn().mockResolvedValue({ kind: null, version: null, autoUpdate: true }),
     onAppUpdateStateChanged: vi.fn(() => () => {}),
@@ -232,12 +234,19 @@ describe('AppSidebar', () => {
     })
 
     it('follows the workspace picked in the sidebar', async () => {
-      const wrapper = await mountSidebar('home', [OLD, TEAM])
+      const wrapper = await mountSidebar('home', [OLD, TEAM, CLOUD])
+
+      expect(buildNames(wrapper)).toEqual(['Comfy Cloud', 'Flux Sandbox'])
 
       useDashboardScopeStore().selectedWorkspaceId = 'ws-team'
       await flushPromises()
 
-      expect(buildNames(wrapper)).toEqual(['Team Build'])
+      expect(buildNames(wrapper)).toEqual(['Team Build', 'Comfy Cloud'])
+
+      useDashboardScopeStore().selectedWorkspaceId = 'personal'
+      await flushPromises()
+
+      expect(buildNames(wrapper)).toEqual(['Comfy Cloud', 'Flux Sandbox'])
     })
 
     it('marks only the open build, not the Builds title', async () => {
@@ -327,6 +336,87 @@ describe('AppSidebar', () => {
       const builds = wrapper.get('[data-testid="app-sidebar-chooser"]')
       expect(builds.attributes('title')).toBe('Builds')
       expect(builds.attributes('aria-current')).toBe('page')
+    })
+  })
+
+  describe('page right-click menu', () => {
+    const mounted: ReturnType<typeof mount>[] = []
+
+    afterEach(() => {
+      for (const wrapper of mounted.splice(0)) wrapper.unmount()
+      document.body.innerHTML = ''
+    })
+
+    async function mountAttached(builds: Installation[] = []) {
+      getAppsEnabled.mockResolvedValue(true)
+      useInstallationStore().installations = builds
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'home' },
+        attachTo: document.body
+      })
+      mounted.push(wrapper)
+      await flushPromises()
+      return wrapper
+    }
+
+    async function rightClick(element: Element): Promise<void> {
+      element.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 })
+      )
+      await flushPromises()
+    }
+
+    function pageMenu(): Element | null {
+      return document.querySelector('[data-testid="sidebar-page-menu"]')
+    }
+
+    async function shownPageMenu(): Promise<Element> {
+      await vi.waitFor(() => expect(pageMenu()).not.toBeNull())
+      return pageMenu()!
+    }
+
+    it.each([
+      ['app-sidebar-home', 'home'],
+      ['app-sidebar-apps', 'apps'],
+      ['app-sidebar-assets', 'assets'],
+      ['app-sidebar-chooser', 'chooser']
+    ] as const)('right-clicking %s offers only Open in new window', async (testId, page) => {
+      const wrapper = await mountAttached()
+
+      await rightClick(wrapper.get(`[data-testid="${testId}"]`).element)
+
+      const menu = await shownPageMenu()
+      expect(menu.getAttribute('data-page')).toBe(page)
+      expect(
+        [...menu.querySelectorAll('[role="menuitem"]')].map((row) => row.textContent?.trim())
+      ).toEqual(['Open in new window'])
+      expect(navigatePanel).not.toHaveBeenCalled()
+    })
+
+    it('opens the right-clicked page in a new window and closes the menu', async () => {
+      const wrapper = await mountAttached()
+
+      await rightClick(wrapper.get('[data-testid="app-sidebar-assets"]').element)
+      const item = (await shownPageMenu()).querySelector(
+        '[data-testid="sidebar-page-menu-new-window"]'
+      ) as HTMLElement
+      item.click()
+      await flushPromises()
+
+      expect(openPageInNewWindow).toHaveBeenCalledExactlyOnceWith('assets')
+      expect(navigatePanel).not.toHaveBeenCalled()
+      await vi.waitFor(() => expect(pageMenu()).toBeNull())
+    })
+
+    it('leaves a build row to the build menu', async () => {
+      const wrapper = await mountAttached([OLD])
+
+      await rightClick(wrapper.get('[data-testid="app-sidebar-build-old"]').element)
+
+      await vi.waitFor(() =>
+        expect(document.querySelector('[data-testid="build-menu"]')).not.toBeNull()
+      )
+      expect(pageMenu()).toBeNull()
     })
   })
 })

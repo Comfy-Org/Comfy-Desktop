@@ -384,9 +384,9 @@ defineExpose({ create, canCreate, creating, hasPreview })
         </div>
         <Button
           size="md"
-          variant="secondary"
+          variant="textonly"
           type="button"
-          class="load-snapshot-tertiary px-3"
+          class="load-snapshot-tertiary rounded-lg px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
           @click="handleBrowse"
         >
           {{ $t('common.browse') }}
