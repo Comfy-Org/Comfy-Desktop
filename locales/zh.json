@@ -151,6 +151,7 @@
     "openComfyUIIn": "在 {name} 中打开 ComfyUI",
     "opensIn": "在 {name} 中打开",
     "allBuilds": "全部构建",
+    "newBuildDetail": "在这台电脑上运行 ComfyUI",
     "turnOnAutoStart": "自动启动",
     "turnOffAutoStart": "关闭自动启动",
     "autoStartOn": "自动启动",
