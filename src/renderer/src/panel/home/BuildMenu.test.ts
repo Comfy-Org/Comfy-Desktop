@@ -65,6 +65,9 @@ beforeEach(() => {
       if (key === 'autoLaunchOnStartup') saved = value
     }),
     onSettingsChanged: vi.fn(() => () => {}),
+    refreshCreditBalance: vi.fn().mockResolvedValue({ status: 'signed_out' }),
+    onCreditBalanceChanged: vi.fn(() => () => {}),
+    onAppPageClosed: vi.fn(() => () => {}),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       onAuthChanged: vi.fn(() => () => {}),
@@ -519,14 +522,17 @@ describe('Build menu', () => {
     expect(hint()).toBe('Click to start')
   })
 
-  it('opens no menu on a right-click on a page in the sidebar', async () => {
+  it('keeps the build menu closed on a right-click on a page in the sidebar', async () => {
     const sidebar = await mountSidebar('ready')
 
     for (const page of ['home', 'assets']) {
       await rightClick(sidebar.get(`[data-testid="app-sidebar-${page}"]`).element)
     }
 
-    expect(document.querySelector('[data-reka-menu-content]')).toBeNull()
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-testid="sidebar-page-menu"]')).not.toBeNull()
+    )
+    expect(document.querySelector('[data-testid="build-menu"]')).toBeNull()
   })
 
   it.each([

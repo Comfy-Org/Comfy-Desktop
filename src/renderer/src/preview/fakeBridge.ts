@@ -249,6 +249,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     closeAnnouncement: () => {},
     signalOverlayReady: () => {},
     navigatePanel: () => {},
+    openPageInNewWindow: () => {},
     listAssets: async () => [],
     listLocalAssets: async () => ({ assets: [], truncated: false }),
     downloadAsset: async () => true,
@@ -271,7 +272,6 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
       modelsDirs: settings.modelsDirs.map((path, index) => ({ path, isPrimary: index === 0 })),
       modelsSystemDefault: settings.modelsDirs[0] ?? ''
     }),
-    resolveStartupRestoreReveal: () => {},
     openGlobalSettings: () => {},
     openInstancePicker: () => {},
     setFirstUseMode: () => {},
@@ -368,6 +368,8 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     getAppVersion: async () => machine.systemInfo.app_version,
     getStableTags: async () => [],
     getCloudUserTier: async () => 'unknown',
+    refreshCreditBalance: async () =>
+      auth.signedIn ? { status: 'ready', cents: 2_000 } : { status: 'signed_out' },
     getCloudFreeRunsEnabled: async () => false,
     quitApp: async () => {},
     relaunchApp: async () => {},
@@ -441,6 +443,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     onAppPageStatusChanged: listen('onAppPageStatusChanged'),
     onAppPageClosed: listen('onAppPageClosed'),
     onTemplateSearchAvailability: listen('onTemplateSearchAvailability'),
+    onCreditBalanceChanged: listen('onCreditBalanceChanged'),
     onFirstUseSkip: listen('onFirstUseSkip'),
     onOpenFeedback: listen('onOpenFeedback'),
     onOpenAnnouncement: listen('onOpenAnnouncement'),

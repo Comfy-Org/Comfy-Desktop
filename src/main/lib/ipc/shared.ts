@@ -290,6 +290,7 @@ export interface SessionInfo {
   installationName: string
   sourceInstallationId?: string
   startedAt: number
+  hadWindow?: boolean
   flushTelemetry?: () => void
   getAcceleratorInfo?: () => AcceleratorSnapshot | null
   coreBetaArgs?: readonly BetaArgView[]
@@ -1423,6 +1424,15 @@ export async function cancelLaunching(
     throw new Error(`Timed out waiting for the cancelled launch of ${installationId} to wind down`)
   }
   return true
+}
+
+export function keepsComfyRunningWhenWindowCloses(): boolean {
+  return settings.get('keepComfyRunningWhenWindowCloses') !== false
+}
+
+export function noteWindowClosed(installationId: string): void {
+  const session = _runningSessions.get(installationId)
+  if (session) session.hadWindow = true
 }
 
 export function hasRunningSessions(): boolean {
