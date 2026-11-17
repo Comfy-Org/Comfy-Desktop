@@ -237,7 +237,7 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, '.hidden.png'))
     write(path.join(sharedDir, '.cache', 'inside-hidden.png'))
 
-    const assets = await listLocalAssets()
+    const { assets } = await listLocalAssets()
 
     expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'voice.wav', 'mesh.glb', 'old.png'])
     const newVideo = path.join(sharedDir, 'video', 'new.mp4')
@@ -269,7 +269,7 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, 'broken.png'), 'not a picture')
 
     const facts = Object.fromEntries(
-      (await listLocalAssets()).map((a) => [
+      (await listLocalAssets()).assets.map((a) => [
         a.name,
         [a.width, a.height, a.durationSeconds && Math.round(a.durationSeconds)]
       ])
@@ -292,7 +292,7 @@ describe('listLocalAssets', () => {
     appendOutput('Test Instance', encodedOutput(left, 'Test Instance') + '\n')
     appendOutput('My Local 1', encodedOutput(right, 'My Local 1') + '\n')
     appendOutput('Apps', encodedOutput(own, 'Apps') + '\n')
-    const namesFor = async (id: string) => (await listLocalAssets(id)).map((a) => a.name)
+    const namesFor = async (id: string) => (await listLocalAssets(id)).assets.map((a) => a.name)
 
     expect(await namesFor('Test Instance')).toEqual(['one.png'])
     expect(await namesFor('My Local 1')).toEqual(['two.png'])
@@ -301,7 +301,7 @@ describe('listLocalAssets', () => {
     expect(await namesFor('Cloud'), 'Cloud has no folder on this computer').toEqual([])
     expect(await namesFor('Old Desktop'), 'a build that manages its own paths').toEqual([])
     expect(await namesFor('deleted'), 'a build that is gone').toEqual([])
-    expect((await listLocalAssets()).map((a) => a.name).sort()).toEqual([
+    expect((await listLocalAssets()).assets.map((a) => a.name).sort()).toEqual([
       'install.png',
       'one.png',
       'own.png',
@@ -318,7 +318,9 @@ describe('listLocalAssets', () => {
     installs.mockResolvedValue([install('New', { useSharedOutput: false, outputDir: newDir })])
     try {
       appendOutput('New', encodedOutput(file, 'New') + '\n')
-      const [listed] = await listLocalAssets('New')
+      const {
+        assets: [listed]
+      } = await listLocalAssets('New')
 
       expect(listed!.filePath).toBe(file)
       expect(await outputFilePath(listed!.id)).toBe(file)
@@ -331,7 +333,7 @@ describe('listLocalAssets', () => {
     for (let i = 0; i <= MAX_LOCAL_ASSETS; i++)
       write(path.join(sharedDir, `f${i}.png`), '', new Date(Date.UTC(2026, 0, 1, 0, 0, i)))
 
-    const assets = await listLocalAssets()
+    const { assets } = await listLocalAssets()
 
     expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
     expect(assets.map((a) => a.name)).not.toContain('f0.png')
@@ -346,28 +348,59 @@ describe('listLocalAssets', () => {
     )
     write(path.join(deep, 'too-deep.png'))
 
-    expect(await listLocalAssets()).toEqual([])
+    expect(await listLocalAssets()).toEqual({ assets: [], provenanceIncomplete: false })
   })
 
-  it('reads appended records incrementally and ignores incomplete or unsupported entries', async () => {
+  it('waits for the end of an appended record before attributing the output', async () => {
     const build = 'Test Instance'
     const file = path.join(sharedDir, 'new.png')
-    const outside = path.join(outsideDir, 'outside.png')
     write(file)
-    write(outside)
     const line = encodedOutput(file, build)
+
+    appendOutput(build, line)
+    expect(await listLocalAssets(build)).toEqual({ assets: [], provenanceIncomplete: false })
+
+    appendOutput(build, '\n', line + '\n')
+    const listed = await listLocalAssets(build)
+    expect(listed.provenanceIncomplete).toBe(false)
+    expect(listed.assets.map(({ name }) => name)).toEqual(['new.png'])
+  })
+
+  it('reports incompatible or damaged records and keeps verified outputs visible', async () => {
+    const build = 'Test Instance'
+    const file = path.join(sharedDir, 'new.png')
+    const newer = path.join(sharedDir, 'newer.png')
+    const outside = path.join(outsideDir, 'outside.png')
+    for (const candidate of [file, newer, outside]) write(candidate)
 
     appendOutput(
       build,
       'malformed\n',
-      encodedOutput(file, build, 2) + '\n',
+      encodedOutput(newer, build, 2) + '\n',
       encodedOutput(file, 'another-build') + '\n',
-      encodedOutput(outside, build) + '\n',
-      line.slice(0, -1)
+      encodedOutput(outside, build) + '\n'
     )
-    expect(await listLocalAssets(build)).toEqual([])
-    appendOutput(build, '}\n', line + '\n')
-    expect((await listLocalAssets(build)).map(({ name }) => name)).toEqual(['new.png'])
+    expect(await listLocalAssets(build)).toEqual({ assets: [], provenanceIncomplete: true })
+    appendOutput(build, encodedOutput(file, build) + '\n')
+
+    const listed = await listLocalAssets(build)
+    expect(listed.provenanceIncomplete).toBe(true)
+    expect(listed.assets.map(({ name }) => name)).toEqual(['new.png'])
+    const all = await listLocalAssets()
+    expect(all.provenanceIncomplete).toBe(false)
+    expect(all.assets.map(({ name }) => name).sort()).toEqual(['new.png', 'newer.png'])
+  })
+
+  it('reports a journal directory read error and still browses the saved file by location', async () => {
+    const build = 'Test Instance'
+    const file = path.join(sharedDir, 'new.png')
+    write(file)
+    write(outputJournalDirectory(build))
+
+    expect(await listLocalAssets(build)).toEqual({ assets: [], provenanceIncomplete: true })
+    const all = await listLocalAssets()
+    expect(all.provenanceIncomplete).toBe(false)
+    expect(all.assets.map(({ filePath }) => filePath)).toEqual([file])
   })
 
   it('refuses to open the previous build’s card after a same-size replacement with the same mtime', async () => {
@@ -375,14 +408,18 @@ describe('listLocalAssets', () => {
     const replacement = path.join(sharedDir, 'replacing.png')
     write(file, 'first')
     appendOutput('Test Instance', encodedOutput(file, 'Test Instance') + '\n')
-    const [asset] = await listLocalAssets('Test Instance')
+    const {
+      assets: [asset]
+    } = await listLocalAssets('Test Instance')
 
     write(replacement, 'other')
     fs.renameSync(replacement, file)
     appendOutput('My Local 1', encodedOutput(file, 'My Local 1') + '\n')
 
-    expect(await listLocalAssets('Test Instance')).toEqual([])
-    expect((await listLocalAssets('My Local 1')).map(({ filePath }) => filePath)).toEqual([file])
+    expect((await listLocalAssets('Test Instance')).assets).toEqual([])
+    expect((await listLocalAssets('My Local 1')).assets.map(({ filePath }) => filePath)).toEqual([
+      file
+    ])
     expect(await outputFilePath(asset!.id)).toBeNull()
     expect(await openOutputFile(asset!.id)).toBeNull()
     expect(await trashOutputFile(asset!.id)).toBe(false)
@@ -394,7 +431,9 @@ describe('listLocalAssets', () => {
     const file = path.join(sharedDir, 'same.png')
     write(file)
     appendOutput('Test Instance', encodedOutput(file, 'Test Instance') + '\n')
-    const [asset] = await listLocalAssets('Test Instance')
+    const {
+      assets: [asset]
+    } = await listLocalAssets('Test Instance')
     fetchFile.mockImplementationOnce(async () => {
       const replacement = path.join(sharedDir, 'replacement.png')
       write(replacement)

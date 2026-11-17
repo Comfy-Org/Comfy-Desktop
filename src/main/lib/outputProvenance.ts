@@ -20,6 +20,12 @@ interface Journal {
   identity: string
   offset: number
   outputs: RevisionsByPath
+  incomplete: boolean
+}
+
+interface BuildOutputs {
+  outputs: RevisionsByPath
+  incomplete: boolean
 }
 
 export function outputJournalDirectory(installationId: string): string {
@@ -49,17 +55,16 @@ export function outputReference(id: string): { file: string; revision?: string }
     : null
 }
 
-function includeRecord(line: Buffer, producerId: string, outputs: RevisionsByPath): void {
-  if (line.length > MAX_LINE_BYTES) return
+function includeRecord(line: Buffer, producerId: string, outputs: RevisionsByPath): boolean {
   let value: unknown
   try {
     value = JSON.parse(line.toString())
   } catch {
-    return
+    return false
   }
-  if (!value || typeof value !== 'object') return
+  if (!value || typeof value !== 'object') return false
   const record = value as Record<string, unknown>
-  if (record.version !== 1 || record.producer_id !== producerId) return
+  if (record.version !== 1 || record.producer_id !== producerId) return false
   const { path: file, device, inode, size, mtime_ns: mtime } = record
   if (
     typeof file !== 'string' ||
@@ -75,30 +80,34 @@ function includeRecord(line: Buffer, producerId: string, outputs: RevisionsByPat
     typeof mtime !== 'string' ||
     !SIGNED_DECIMAL.test(mtime)
   )
-    return
+    return false
 
   const existing = outputs.get(file) ?? new Set<string>()
   existing.add(`${device}:${inode}:${size}:${mtime}`)
   outputs.set(file, existing)
+  return true
 }
 
 async function readJournal(
   file: string,
   producerId: string,
   journals: Map<string, Journal>
-): Promise<void> {
+): Promise<boolean> {
   const handle = await open(file, 'r')
   try {
     const stat = await handle.stat({ bigint: true })
-    if (!stat.isFile()) return
+    if (!stat.isFile()) {
+      journals.delete(file)
+      return false
+    }
     const end = Number(stat.size)
     const id = identity(stat)
     let journal = journals.get(file)
     if (!journal || journal.identity !== id || journal.offset > end) {
-      journal = { identity: id, offset: 0, outputs: new Map() }
+      journal = { identity: id, offset: 0, outputs: new Map(), incomplete: false }
       journals.set(file, journal)
     }
-    if (journal.offset === end) return
+    if (journal.offset === end) return true
 
     let consumed = journal.offset
     let remainder = Buffer.alloc(0)
@@ -112,8 +121,12 @@ async function readJournal(
       let offset = 0
       for (let newline = chunk.indexOf(10); newline >= 0; newline = chunk.indexOf(10, offset)) {
         const part = chunk.subarray(offset, newline)
-        if (!oversized && remainder.length + part.length <= MAX_LINE_BYTES) {
-          includeRecord(Buffer.concat([remainder, part]), producerId, journal.outputs)
+        if (
+          oversized ||
+          remainder.length + part.length > MAX_LINE_BYTES ||
+          !includeRecord(Buffer.concat([remainder, part]), producerId, journal.outputs)
+        ) {
+          journal.incomplete = true
         }
         offset = newline + 1
         journal.offset = consumed + offset
@@ -125,20 +138,23 @@ async function readJournal(
       if (!oversized) remainder = Buffer.concat([remainder, tail])
       consumed += chunk.length
     }
+    return true
   } finally {
     await handle.close()
   }
 }
 
 const journalsByProducer = new Map<string, Map<string, Journal>>()
-const pendingByProducer = new Map<string, Promise<RevisionsByPath>>()
+const pendingByProducer = new Map<string, Promise<BuildOutputs>>()
 
-async function readBuildOutputs(producerId: string): Promise<RevisionsByPath> {
+async function readBuildOutputs(producerId: string): Promise<BuildOutputs> {
   const directory = outputJournalDirectory(producerId)
+  let incomplete = false
   const entries = await readdir(directory, { withFileTypes: true }).catch(
     (error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') return []
-      throw error
+      if (!error.code) throw error
+      incomplete = error.code !== 'ENOENT'
+      return []
     }
   )
   const files = entries
@@ -149,23 +165,28 @@ async function readBuildOutputs(producerId: string): Promise<RevisionsByPath> {
   const active = new Set(files)
   for (const file of journals.keys()) if (!active.has(file)) journals.delete(file)
   for (const file of files) {
-    await readJournal(file, producerId, journals).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'ENOENT') throw error
-      journals.delete(file)
-    })
+    const readable = await readJournal(file, producerId, journals).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (!error.code) throw error
+        journals.delete(file)
+        return error.code === 'ENOENT'
+      }
+    )
+    if (!readable) incomplete = true
   }
   const outputs: RevisionsByPath = new Map()
   for (const journal of journals.values()) {
+    if (journal.incomplete) incomplete = true
     for (const [file, revisions] of journal.outputs) {
       const versions = outputs.get(file)
       if (versions) for (const revision of revisions) versions.add(revision)
       else outputs.set(file, new Set(revisions))
     }
   }
-  return outputs
+  return { outputs, incomplete }
 }
 
-export function readOutputProvenance(producerId: string): Promise<RevisionsByPath> {
+export function readOutputProvenance(producerId: string): Promise<BuildOutputs> {
   const directory = outputJournalDirectory(producerId)
   const pending = pendingByProducer.get(directory)
   if (pending) return pending

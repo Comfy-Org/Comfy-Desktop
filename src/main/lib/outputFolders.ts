@@ -19,7 +19,7 @@ import {
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
 import { sourceMap } from './ipc/shared'
-import type { AssetSummary } from '../../types/ipc'
+import type { AssetSummary, LocalAssetListing } from '../../types/ipc'
 
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
 
@@ -216,13 +216,15 @@ async function addMediaFacts(asset: AssetSummary): Promise<void> {
   }
 }
 
-export async function listLocalAssets(installationId?: string): Promise<AssetSummary[]> {
+export async function listLocalAssets(installationId?: string): Promise<LocalAssetListing> {
   const folders = await findOutputFolders()
-  if (installationId !== undefined && !folders.ofBuild.has(installationId)) return []
+  if (installationId !== undefined && !folders.ofBuild.has(installationId)) {
+    return { assets: [], provenanceIncomplete: false }
+  }
   const provenance =
     installationId === undefined ? undefined : await readOutputProvenance(installationId)
   const files = provenance
-    ? [...provenance.keys()]
+    ? [...provenance.outputs.keys()]
     : [...new Set((await Promise.all(folders.all.map(collectMediaFiles))).flat())]
   const found: AssetSummary[] = []
   await runPool(files, STATS_AT_ONCE, async (file) => {
@@ -232,7 +234,7 @@ export async function listLocalAssets(installationId?: string): Promise<AssetSum
       if (!real || path.relative(file, real) !== '') return
       const stat = await fsp.stat(real, { bigint: true }).catch(() => null)
       const revision = stat && outputRevision(stat)
-      if (stat && revision && provenance.get(file)?.has(revision)) {
+      if (stat && revision && provenance.outputs.get(file)?.has(revision)) {
         found.push(localSummary(real, Number(stat.size), Number(stat.mtimeMs), revision))
       }
       return
@@ -246,7 +248,7 @@ export async function listLocalAssets(installationId?: string): Promise<AssetSum
     .sort((a, b) => b.createdAt!.localeCompare(a.createdAt!))
     .slice(0, MAX_LOCAL_ASSETS)
   await runPool(newest, STATS_AT_ONCE, addMediaFacts)
-  return newest
+  return { assets: newest, provenanceIncomplete: provenance?.incomplete ?? false }
 }
 
 function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeImage | null {

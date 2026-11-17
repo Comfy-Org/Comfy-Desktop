@@ -112,7 +112,9 @@ test('A stopped build shows its recorded outputs and the computer view keeps oth
                 inode: BigInt.asUintN(64, info.ino).toString(),
                 size: info.size.toString(),
                 mtime_ns: info.mtimeNs.toString()
-              }) + '\n'
+              }) +
+                '\n' +
+                (id === 'producer-b' ? JSON.stringify({ version: 2, producer_id: id }) + '\n' : '')
             )
           }
         }
@@ -144,6 +146,7 @@ test('A stopped build shows its recorded outputs and the computer view keeps oth
     expect(await panel.click('[data-testid="output-detail-close"]')).toBe(true)
     await select('producer-b')
     await expect.poll(names).toEqual(['Inspect two.jpg'])
+    await panel.waitForVisible('[data-testid="assets-provenance-warning"]')
     await select('local')
     await expect.poll(names).toEqual(['Inspect older.jpg', 'Inspect one.jpg', 'Inspect two.jpg'])
   } finally {

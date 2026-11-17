@@ -103,13 +103,16 @@ async function mountAssets(
   local: AssetSummary[] | Promise<AssetSummary[]> = [],
   {
     builds = [localBuild('lab')],
-    installationId
-  }: { builds?: Installation[]; installationId?: string } = {}
+    installationId,
+    provenanceIncomplete = false
+  }: { builds?: Installation[]; installationId?: string; provenanceIncomplete?: boolean } = {}
 ) {
   const installationStore = useInstallationStore()
   installationStore.installations = builds
   installationStore.loading = false
-  listLocalAssets.mockReturnValue(Promise.resolve(local))
+  listLocalAssets.mockReturnValue(
+    Promise.resolve(local).then((assets) => ({ assets, provenanceIncomplete }))
+  )
   const wrapper = mount(AssetsView, { attachTo: page, props: { installationId } })
   await flushPromises()
   return wrapper
@@ -191,7 +194,7 @@ beforeEach(() => {
   document.body.append(page)
   vi.clearAllMocks()
   window.localStorage.clear()
-  listLocalAssets.mockResolvedValue([])
+  listLocalAssets.mockResolvedValue({ assets: [], provenanceIncomplete: false })
   listWorkspaces.mockResolvedValue([
     { id: 'me', name: 'Personal Workspace', type: 'personal' },
     { id: 'team-b', name: 'Team B', type: 'team' }
@@ -564,7 +567,10 @@ describe('AssetsView', () => {
 
   it('leads from a build with no recordings to other files on this computer', async () => {
     const wrapper = await mountAssets()
-    listLocalAssets.mockResolvedValue([asset('/out/legacy.png', 'legacy.png', 'image')])
+    listLocalAssets.mockResolvedValue({
+      assets: [asset('/out/legacy.png', 'legacy.png', 'image')],
+      provenanceIncomplete: false
+    })
 
     expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe(
       'No recorded outputs from this build'
@@ -574,6 +580,33 @@ describe('AssetsView', () => {
     expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('This computer')
     expect(listLocalAssets).toHaveBeenLastCalledWith()
     expect(assetNames(wrapper)).toEqual(['legacy.png'])
+  })
+
+  it('explains when a build’s records cannot be read and offers its files by location', async () => {
+    const wrapper = await mountAssets([], { provenanceIncomplete: true })
+    listLocalAssets.mockResolvedValue({
+      assets: [asset('/out/saved.png', 'saved.png', 'image')],
+      provenanceIncomplete: false
+    })
+
+    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe(
+      "Couldn't read this build's output records"
+    )
+    await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
+    await flushPromises()
+    expect(listLocalAssets).toHaveBeenLastCalledWith()
+    expect(assetNames(wrapper)).toEqual(['saved.png'])
+  })
+
+  it('warns that the results may be incomplete while keeping verified files visible', async () => {
+    const wrapper = await mountAssets([asset('/out/verified.png', 'verified.png', 'image')], {
+      provenanceIncomplete: true
+    })
+
+    expect(assetNames(wrapper)).toEqual(['verified.png'])
+    expect(wrapper.get('[data-testid="assets-provenance-warning"]').text()).toContain(
+      'This view may be incomplete.'
+    )
   })
 
   it('shows a skeleton card per slot while the first load is pending', async () => {
