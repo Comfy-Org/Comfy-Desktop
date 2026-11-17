@@ -271,11 +271,9 @@ describe('AppPageHost', () => {
     showAppPage.mockClear()
 
     const menu = coverPartOfThePage()
-    await nextFrame()
-    await nextFrame()
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
 
     expect(captureAppPage).toHaveBeenCalledTimes(1)
-    expect(hideAppPage).toHaveBeenCalledTimes(1)
     expect(wrapper.get('[data-testid="app-page-frozen-frame"]').attributes('src')).toBe(FRAME)
     expect(showAppPage).not.toHaveBeenCalled()
 
@@ -333,7 +331,7 @@ describe('AppPageHost outputs', () => {
     expect(outputDialog()?.querySelector('h2')?.textContent?.trim()).toBe('cutout-2.png')
     expect(inOutputDialog('output-detail-image')?.getAttribute('src')).toMatch(/^blob:/)
     expect(inOutputDialog('output-detail-thumb-0')).not.toBeNull()
-    expect(hideAppPage).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
   })
 
   it("ignores outputs from another app's page", async () => {
