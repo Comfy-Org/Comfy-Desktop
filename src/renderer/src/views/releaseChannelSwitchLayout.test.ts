@@ -36,7 +36,7 @@ const STANDALONE = {
   label: 'Standalone',
   fields: [
     { id: 'release', label: 'Release', type: 'select' },
-    { id: 'comfyVersion', label: 'ComfyUI version', type: 'select' },
+    { id: 'comfyVersion', label: 'Version', type: 'select' },
     { id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }
   ]
 }

@@ -1168,7 +1168,7 @@
     "comfyui": "ComfyUI",
     "currentVersion": "当前版本",
     "variant": "硬件",
-    "comfyVersion": "ComfyUI 版本",
+    "comfyVersion": "版本",
     "templatePickerTitle": "选择入门工作流",
     "templateModelsDownloaded": "已下载",
     "templateTabsAria": "按类型筛选入门工作流",

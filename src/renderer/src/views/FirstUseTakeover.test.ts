@@ -63,7 +63,7 @@ function installApi(overrides: ApiOverrides = {}): void {
         label: 'Standalone',
         fields: [
           { id: 'release', label: 'Release', type: 'select' },
-          { id: 'comfyVersion', label: 'ComfyUI version', type: 'select' },
+          { id: 'comfyVersion', label: 'Version', type: 'select' },
           { id: 'variant', label: 'Variant', type: 'select' }
         ]
       }

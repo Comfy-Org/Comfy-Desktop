@@ -459,7 +459,7 @@ describe('InstallWizardModal heading', () => {
       {
         id: 'standalone',
         label: 'Standalone',
-        fields: [{ id: 'comfyVersion', label: 'ComfyUI version', type: 'select' }]
+        fields: [{ id: 'comfyVersion', label: 'Version', type: 'select' }]
       }
     ])
     ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
@@ -476,7 +476,7 @@ describe('InstallWizardModal heading', () => {
     expect(wrapper.find('.config-advanced__summary').exists()).toBe(false)
     const fieldLabel = wrapper.get('#source-fields label')
     expect(fieldLabel.classes()).toContain('config-label')
-    expect(fieldLabel.text()).toBe('ComfyUI version')
+    expect(fieldLabel.text()).toBe('Version')
     expect(
       wrapper
         .get('[data-testid="install-source-tabs"]')
@@ -1808,7 +1808,7 @@ describe('InstallWizardModal Change setup', () => {
     label: 'Standalone',
     fields: [
       { id: 'release', label: 'Release', type: 'select' },
-      { id: 'comfyVersion', label: 'ComfyUI version', type: 'select' }
+      { id: 'comfyVersion', label: 'Version', type: 'select' }
     ]
   }
   const remoteSource = { id: 'remote', label: 'Remote Connection', skipInstall: true, fields: [] }
