@@ -123,13 +123,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          SKIP_REAL_COMFY: ${{ contains(github.event.pull_request.labels.*.name, 'skip-real-comfy') }}
         run: |
           set -euo pipefail
+
+          skip_args=()
+          if [[ "${SKIP_REAL_COMFY}" == "true" ]]; then
+            echo "::warning::PR #${PR_NUMBER} has the skip-real-comfy label; ${TAG} will be released without the real-ComfyUI gate."
+            skip_args=(--field skip_real_comfy=true)
+          fi
 
           gh workflow run build-release.yml \
             --repo "${GITHUB_REPOSITORY}" \
             --ref "${TAG}" \
-            --field pr_number="${PR_NUMBER}"
+            --field pr_number="${PR_NUMBER}" \
+            "${skip_args[@]}"
 
       - name: Print results
         if: steps.version.outputs.changed == 'true'

@@ -82,13 +82,15 @@ vi.mock('./assets', () => ({
 
 import type { InstallationRecord } from '../installations'
 import {
+  MAX_FOLDER_DEPTH,
   MAX_LOCAL_ASSETS,
+  MAX_SCANNED_FILES,
   THUMBNAIL_WAIT_MS,
   copyOutputImage,
   hasOutputFolder,
   revealOutputFile,
   trashOutputFile,
-  listOutputFolder,
+  listLocalAssets,
   listOutputFolders,
   outputDirOverride,
   outputFilePath,
@@ -178,47 +180,38 @@ describe('hasOutputFolder', () => {
 })
 
 describe('listOutputFolders', () => {
-  it('lists each real output folder once with the builds that save there, leaving out Cloud and builds that manage their own paths', async () => {
+  it('lists each real output folder once, leaving out Cloud and builds that manage their own paths', async () => {
     expect(await listOutputFolders()).toEqual([
-      {
-        path: sharedDir,
-        builds: ['Test Instance', 'My Local 1'],
-        buildIds: ['Test Instance', 'My Local 1']
-      },
-      { path: ownDir, builds: ['Apps'], buildIds: ['Apps'] },
-      { path: path.join(installDir, 'ComfyUI', 'output'), builds: ['Bare'], buildIds: ['Bare'] }
+      sharedDir,
+      ownDir,
+      path.join(installDir, 'ComfyUI', 'output')
     ])
   })
 
-  it('leaves out folders that do not exist yet, and keeps the shared folder when no build saves there', async () => {
+  it('leaves out folders that do not exist yet', async () => {
     installs.mockResolvedValue([
       install('Gone', { useSharedOutput: false, outputDir: path.join(root, 'missing') })
     ])
-    expect(await listOutputFolders()).toEqual([{ path: sharedDir, builds: [], buildIds: [] }])
+    expect(await listOutputFolders()).toEqual([sharedDir])
   })
 })
 
-describe('listOutputFolder', () => {
-  it('lists the subfolders by name and the media files newest first, leaving out hidden and other files', async () => {
+describe('listLocalAssets', () => {
+  it("lists the media in the picked build's output folder and its subfolders, newest first", async () => {
     write(path.join(sharedDir, 'old.png'), 'x', new Date('2026-10-01T00:00:00Z'))
-    write(path.join(sharedDir, 'new.mp4'), 'xx', new Date('2026-11-05T00:00:00Z'))
+    write(path.join(sharedDir, 'video', 'new.mp4'), 'xx', new Date('2026-11-05T00:00:00Z'))
     write(path.join(sharedDir, 'mesh.glb'), 'x', new Date('2026-11-02T00:00:00Z'))
-    write(path.join(sharedDir, 'video', 'inside.mp4'))
-    write(path.join(sharedDir, 'Apps', 'inside.png'))
+    write(path.join(ownDir, 'voice.wav'), 'xxx', new Date('2026-11-03T00:00:00Z'))
     write(path.join(sharedDir, 'notes.txt'))
     write(path.join(sharedDir, '.hidden.png'))
     write(path.join(sharedDir, '.cache', 'inside-hidden.png'))
-    await listOutputFolders()
 
-    const listing = await listOutputFolder(sharedDir)
+    const { assets, truncated } = await listLocalAssets('Test Instance')
 
-    expect(listing!.folders).toEqual([
-      { name: 'Apps', path: path.join(sharedDir, 'Apps') },
-      { name: 'video', path: path.join(sharedDir, 'video') }
-    ])
-    expect(listing!.files.map((a) => a.name)).toEqual(['new.mp4', 'mesh.glb', 'old.png'])
-    const newVideo = path.join(sharedDir, 'new.mp4')
-    expect(listing!.files[0]).toEqual({
+    expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'mesh.glb', 'old.png'])
+    expect(truncated).toBe(false)
+    const newVideo = path.join(sharedDir, 'video', 'new.mp4')
+    expect(assets[0]).toEqual({
       id: newVideo,
       name: 'new.mp4',
       kind: 'video',
@@ -233,21 +226,19 @@ describe('listOutputFolder', () => {
       durationSeconds: null
     })
     const oldPicture = path.join(sharedDir, 'old.png')
-    expect(
-      listing!.files[2]!.thumbnailUrl,
-      'an image thumbnail link changes when the file does'
-    ).toBe(outputFileUrl(oldPicture, fs.statSync(oldPicture).mtimeMs))
-    expect(listing!.files[1]!.previewUrl, '3D files have no preview').toBeNull()
+    expect(assets[2]!.thumbnailUrl, 'an image thumbnail link changes when the file does').toBe(
+      outputFileUrl(oldPicture, fs.statSync(oldPicture).mtimeMs)
+    )
+    expect(assets[1]!.previewUrl, '3D files have no preview').toBeNull()
   })
 
   it('reports the size of each picture and video, and how long a video runs, before they load', async () => {
     write(path.join(sharedDir, 'portrait.png'), pngHeader(640, 960))
     write(path.join(sharedDir, 'clip.webm'), fs.readFileSync(SAMPLE_VIDEO))
     write(path.join(sharedDir, 'broken.png'), 'not a picture')
-    await listOutputFolders()
 
     const facts = Object.fromEntries(
-      (await listOutputFolder(sharedDir))!.files.map((a) => [
+      (await listLocalAssets('Test Instance')).assets.map((a) => [
         a.name,
         [a.width, a.height, a.durationSeconds && Math.round(a.durationSeconds)]
       ])
@@ -260,21 +251,25 @@ describe('listOutputFolder', () => {
     })
   })
 
-  it('lists a subfolder, and refuses folders outside the output folders', async () => {
-    write(path.join(ownDir, 'nested', 'still.png'))
-    write(path.join(outsideDir, 'secret.png'))
-    await listOutputFolders()
+  it('shows each build the files in its own output folder', async () => {
+    write(path.join(sharedDir, 'shared.png'))
+    write(path.join(ownDir, 'own.png'))
+    write(path.join(installDir, 'ComfyUI', 'output', 'install.png'))
+    const namesFor = async (id: string) => (await listLocalAssets(id)).assets.map((a) => a.name)
 
-    const nested = await listOutputFolder(path.join(ownDir, 'nested'))
-    expect(nested!.files.map((a) => a.name)).toEqual(['still.png'])
-    expect(await listOutputFolder(outsideDir), 'a folder outside').toBeNull()
+    expect(await namesFor('Test Instance'), 'a build on the shared folder').toEqual(['shared.png'])
+    expect(await namesFor('My Local 1'), 'another build on the shared folder').toEqual([
+      'shared.png'
+    ])
+    expect(await namesFor('Apps'), 'a build with its own folder').toEqual(['own.png'])
+    expect(await namesFor('Bare'), 'a build that saves inside its install').toEqual(['install.png'])
+    expect(await namesFor('Cloud'), 'Cloud has no folder on this computer').toEqual([])
+    expect(await namesFor('Old Desktop'), 'a build that manages its own paths').toEqual([])
+    expect(await namesFor('deleted'), 'a build that is gone').toEqual([])
     expect(
-      await listOutputFolder(path.join(ownDir, '..', 'outside')),
-      'a path that climbs out'
-    ).toBeNull()
-    expect(await listOutputFolder('nested'), 'a relative path').toBeNull()
-    expect(await listOutputFolder(path.join(ownDir, 'missing')), 'a folder that is gone').toBeNull()
-    expect(await listOutputFolder(42), 'not a path').toBeNull()
+      (await listLocalAssets()).assets.map((a) => a.name),
+      'no build: the shared output folder'
+    ).toEqual(['shared.png'])
   })
 
   it('opens a file it listed for a build added a moment ago', async () => {
@@ -284,8 +279,7 @@ describe('listOutputFolder', () => {
     write(file)
     installs.mockResolvedValue([install('New', { useSharedOutput: false, outputDir: newDir })])
     try {
-      await listOutputFolders()
-      const [listed] = (await listOutputFolder(newDir))!.files
+      const [listed] = (await listLocalAssets('New')).assets
 
       expect(listed!.id).toBe(file)
       expect(await outputFilePath(listed!.id)).toBe(file)
@@ -294,25 +288,38 @@ describe('listOutputFolder', () => {
     }
   })
 
-  it('keeps only the newest files when a folder is very large', async () => {
+  it('keeps only the newest files when the folders are very large, and says the list was cut', async () => {
     for (let i = 0; i <= MAX_LOCAL_ASSETS; i++)
       write(path.join(sharedDir, `f${i}.png`), '', new Date(Date.UTC(2026, 0, 1, 0, 0, i)))
-    await listOutputFolders()
 
-    const listing = await listOutputFolder(sharedDir)
+    const { assets, truncated } = await listLocalAssets('Test Instance')
 
-    expect(listing!.files).toHaveLength(MAX_LOCAL_ASSETS)
-    expect(listing!.files.map((a) => a.name)).not.toContain('f0.png')
+    expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
+    expect(assets.map((a) => a.name)).not.toContain('f0.png')
+    expect(truncated).toBe(true)
   })
 
-  it('does not follow links out of an output folder', async () => {
+  it(`stops looking after ${MAX_SCANNED_FILES} files, and says the list was cut`, async () => {
+    for (let i = 0; i < MAX_SCANNED_FILES; i++) write(path.join(sharedDir, `f${i}.glb`))
+    write(path.join(sharedDir, 'later', 'one-more.png'))
+
+    const { assets, truncated } = await listLocalAssets('Test Instance')
+
+    expect(assets.map((a) => a.name)).not.toContain('one-more.png')
+    expect(truncated).toBe(true)
+  })
+
+  it('does not follow links to folders or files outside, or walk without end', async () => {
     write(path.join(outsideDir, 'secret.png'))
     fs.symlinkSync(outsideDir, path.join(sharedDir, 'escape'))
-    fs.symlinkSync(path.join(outsideDir, 'secret.png'), path.join(sharedDir, 'secret.png'))
-    await listOutputFolders()
+    const deep = path.join(
+      sharedDir,
+      ...Array.from({ length: MAX_FOLDER_DEPTH + 1 }, (_, i) => `d${i}`)
+    )
+    write(path.join(deep, 'too-deep.png'))
+    fs.symlinkSync(path.join(outsideDir, 'secret.png'), path.join(sharedDir, 'linked.png'))
 
-    expect(await listOutputFolder(sharedDir)).toEqual({ folders: [], files: [] })
-    expect(await listOutputFolder(path.join(sharedDir, 'escape'))).toBeNull()
+    expect(await listLocalAssets('Test Instance')).toEqual({ assets: [], truncated: false })
   })
 })
 

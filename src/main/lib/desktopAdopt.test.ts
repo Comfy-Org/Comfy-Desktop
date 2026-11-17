@@ -22,6 +22,8 @@ vi.mock('./paths', async (importOriginal) => {
 vi.mock('../settings', () => {
   const store: Record<string, unknown> = {}
   return {
+    AUTO_LAUNCH_NONE: 'none',
+    AUTO_LAUNCH_LAST: 'last',
     defaults: { modelsDirs: ['/shared/models'] },
     get: vi.fn((key: string) => store[key]),
     set: vi.fn((key: string, value: unknown) => {
@@ -33,6 +35,13 @@ vi.mock('../settings', () => {
     getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false })),
     getTrackedSettingsTelemetryProperties: vi.fn(() => ({})),
     __store: store
+  }
+})
+
+vi.mock('./ipc/registerSettingsHandlers', async () => {
+  const settingsModule = await import('../settings')
+  return {
+    applySettingSet: (key: string, value: unknown) => settingsModule.set(key, value)
   }
 })
 
@@ -103,6 +112,7 @@ vi.mock('../installations', () => {
   const records: Record<string, unknown>[] = []
   let nextSeq = 0
   return {
+    CLOUD_SOURCE_ID: 'cloud',
     add: vi.fn(async (data: Record<string, unknown>) => {
       const entry = { id: `inst-test-${++nextSeq}`, createdAt: new Date().toISOString(), ...data }
       records.unshift(entry)
@@ -156,6 +166,7 @@ import {
 import type { DesktopInstallInfo } from './desktopDetect'
 import * as settings from '../settings'
 import * as installations from '../installations'
+import type { InstallationRecord } from '../installations'
 import * as telemetry from './telemetry'
 
 interface SettingsMock {
@@ -1618,6 +1629,139 @@ describe('adoptDesktopInstall', () => {
       } finally {
         spy.mockRestore()
       }
+    } finally {
+      legacy.cleanup()
+    }
+  })
+})
+
+describe('Auto start for a migrated legacy Desktop build', () => {
+  const autoStart = (): unknown => settingsMock.__store['autoLaunchOnStartup'] ?? 'none'
+
+  async function adoptLegacy(legacy: FakeLegacy): Promise<InstallationRecord> {
+    return adoptDesktopInstall({ tools: buildSilentTools(), deps: buildDeps({}, legacy.info) })
+  }
+
+  it('starts the migrated build with Desktop when it is the only build, until its first start decides', async () => {
+    const legacy = buildFakeLegacy({ configFiles: { 'comfy.settings.json': '{}' } })
+    try {
+      await installations.add({ name: 'Comfy Cloud', sourceId: 'cloud', status: 'installed' })
+      await installations.add({
+        name: 'ComfyUI Legacy Desktop',
+        sourceId: 'desktop',
+        installPath: legacy.info.basePath,
+        launchMode: 'external',
+        status: 'installed'
+      })
+
+      const record = await adoptLegacy(legacy)
+
+      expect(autoStart()).toBe(record.id)
+      expect(
+        settingsMock.__store['autoStartAwaitingFirstStart'],
+        'its first start decides whether Auto start stays on'
+      ).toBe(record.id)
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('leaves Auto start off when another local build is already installed', async () => {
+    const legacy = buildFakeLegacy({ configFiles: { 'comfy.settings.json': '{}' } })
+    try {
+      await installations.add({
+        name: 'Older build',
+        sourceId: 'standalone',
+        installPath: path.join(legacy.info.basePath, '..', 'older'),
+        status: 'installed'
+      })
+
+      await adoptLegacy(legacy)
+
+      expect(autoStart()).toBe('none')
+      expect(settingsMock.__store['autoStartAwaitingFirstStart']).toBeUndefined()
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('keeps a saved Last used choice', async () => {
+    const legacy = buildFakeLegacy({ configFiles: { 'comfy.settings.json': '{}' } })
+    try {
+      settingsMock.__store['autoLaunchOnStartup'] = 'last'
+
+      await adoptLegacy(legacy)
+
+      expect(autoStart()).toBe('last')
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('leaves Auto start off when the migration is cancelled', async () => {
+    const legacy = buildFakeLegacy({ configFiles: { 'comfy.settings.json': '{}' } })
+    try {
+      const prompt = vi.fn(async (): Promise<UserChoice> => ({
+        kind: 'venv-broken',
+        choice: 'cancel'
+      }))
+      const validate = vi.fn(async () => ({ ok: false as const, message: 'no torch' }))
+
+      await expect(
+        adoptDesktopInstall({
+          tools: buildSilentTools(prompt),
+          deps: buildDeps({ validateLegacyVenv: validate }, legacy.info)
+        })
+      ).rejects.toThrow(/venv-broken-cancelled/)
+
+      expect(autoStart()).toBe('none')
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('leaves Auto start off when the migration is cancelled while requirements install', async () => {
+    const legacy = buildFakeLegacy({ configFiles: { 'comfy.settings.json': '{}' } })
+    try {
+      const uvPath = getLegacyVenvUvPath(legacy.basePath)
+      fs.mkdirSync(path.dirname(uvPath), { recursive: true })
+      fs.writeFileSync(uvPath, '')
+      const cloneFn = vi.fn(async (_url: string, dest: string) => {
+        fs.mkdirSync(dest, { recursive: true })
+        fs.writeFileSync(path.join(dest, 'main.py'), '# clone')
+        fs.writeFileSync(path.join(dest, 'requirements.txt'), 'torch>=2.0\n')
+        return { ok: true as const }
+      })
+      const cancel = new AbortController()
+      installFilteredRequirementsMock.mockImplementationOnce(async () => {
+        cancel.abort()
+        return 1
+      })
+
+      await adoptDesktopInstall({
+        tools: { ...buildSilentTools(), signal: cancel.signal },
+        deps: buildDeps({ cloneSourceFromGit: cloneFn }, legacy.info)
+      }).catch(() => undefined)
+
+      expect(installFilteredRequirementsMock).toHaveBeenCalled()
+      expect(autoStart()).toBe('none')
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
+  it('does not turn Auto start back on when a build that was already migrated is migrated again', async () => {
+    const legacy = buildFakeLegacy({ configFiles: { 'comfy.settings.json': '{}' } })
+    try {
+      const first = await adoptLegacy(legacy)
+      expect(autoStart()).toBe(first.id)
+      delete settingsMock.__store['autoLaunchOnStartup']
+      delete settingsMock.__store['autoStartAwaitingFirstStart']
+
+      const again = await adoptLegacy(legacy)
+
+      expect(again.id).toBe(first.id)
+      expect(autoStart(), 'the person turned Auto start off after the first migration').toBe('none')
     } finally {
       legacy.cleanup()
     }

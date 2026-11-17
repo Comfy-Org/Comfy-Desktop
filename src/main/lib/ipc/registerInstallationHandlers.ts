@@ -38,6 +38,7 @@ import * as releaseCache from '../release-cache'
 import { runStartupReleaseChecks } from '../release-cache-startup'
 import { _broadcastToRenderer } from './shared'
 import { hasGitDir } from '../git'
+import { hasOutputFolder } from '../outputFolders'
 import { parseUrl } from '../util'
 import { restoreSnapshotIntoInstallation } from '../standaloneMigration'
 import * as mainTelemetry from '../telemetry'
@@ -52,6 +53,7 @@ import {
   markInstallSettled
 } from './installationVisibility'
 import { answerCoreBetaArgs } from '../coreBetaPreview'
+import { startFirstBuildWithDesktop } from '../firstBuildAutoStart'
 
 function _kickReleaseCachePrewarm(allInstalls: InstallationRecord[]): void {
   void runStartupReleaseChecks(allInstalls, {
@@ -129,6 +131,7 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
       sourceLabel: source.label,
       sourceCategory: source.category,
       hasConsole: source.hasConsole !== false,
+      hasOutputFolder: hasOutputFolder(inst),
       ...(buildVersion ? { distributionVersion: buildVersion } : {}),
       ...(listPreview != null ? { listPreview } : {}),
       ...(statusTag ? { statusTag } : {})
@@ -405,6 +408,7 @@ export function registerInstallationHandlers(): void {
           method: express ? 'express' : 'manual',
           express: !!express
         })
+        if (!snapshotRestoreError) await startFirstBuildWithDesktop(installationId)
       }
       if (snapshotRestoreError) {
         return snapshotRestoreFailureResult(installationId, snapshotRestoreError)
