@@ -123,6 +123,7 @@ export interface Installation {
   launchMode?: string
   launchArgs?: string
   hasConsole?: boolean
+  hasOutputFolder?: boolean
   installPath?: string
   status?: string
   lastLaunchedAt?: number
@@ -176,20 +177,9 @@ export interface AssetSummary {
   durationSeconds: number | null
 }
 
-export interface OutputFolder {
-  path: string
-  builds: string[]
-  buildIds: string[]
-}
-
-export interface OutputSubfolder {
-  name: string
-  path: string
-}
-
-export interface OutputFolderListing {
-  folders: OutputSubfolder[]
-  files: AssetSummary[]
+export interface LocalAssetListing {
+  assets: AssetSummary[]
+  truncated: boolean
 }
 
 export interface BuildStorageSnapshot {
@@ -1178,8 +1168,7 @@ export interface ElectronApi {
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
-  listOutputFolders(): Promise<OutputFolder[]>
-  listOutputFolder(folderPath: string): Promise<OutputFolderListing | null>
+  listLocalAssets(installationId?: string): Promise<LocalAssetListing>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
   copyAsset(source: string, assetId: string): Promise<boolean>

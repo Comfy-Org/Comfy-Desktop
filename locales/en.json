@@ -63,9 +63,21 @@
   },
   "assets": {
     "kindLabel": "Asset type",
-    "placeLabel": "Where files are saved",
+    "buildPickerLabel": "Build",
+    "browseAssetsOf": "Browse the assets of",
     "cloud": "Comfy Cloud",
-    "thisComputer": "This computer",
+    "sharedFolder": "Shared folder",
+    "outputFolder": "Output folder",
+    "buildStatus": "{where} · {state}",
+    "buildWhere": {
+      "local": "Local",
+      "cloud": "Cloud"
+    },
+    "buildState": {
+      "running": "Running",
+      "starting": "Starting",
+      "stopped": "Stopped"
+    },
     "kind": {
       "all": "All",
       "image": "Images",
@@ -112,6 +124,7 @@
     "signIn": "Log in to Comfy Cloud",
     "noCloudBuildTitle": "This workspace has no Comfy Cloud build yet",
     "noCloudBuildBody": "Add Comfy Cloud to this workspace to see its assets here.",
+    "truncated": "Showing the newest file only. | Showing the newest {count} files only.",
     "inspect": "Inspect {name}",
     "detail": {
       "tags": "Tags",
@@ -128,18 +141,6 @@
       "audio": "Audio",
       "3d": "3D",
       "file": "File"
-    },
-    "local": {
-      "folderActions": "Folder actions",
-      "noBuilds": "No build saves here yet",
-      "savedBy": "Saved here by",
-      "openFolder": "Open folder",
-      "path": "Folder path",
-      "noFoldersTitle": "No output folders yet",
-      "noFoldersBody": "Files appear here after you run a workflow with ComfyUI on this computer.",
-      "emptyFolder": "No images, videos, audio or 3D files here.",
-      "folderFailed": "Couldn't open this folder. It may have been moved or deleted.",
-      "backToComputer": "Back to This computer"
     }
   },
   "home": {

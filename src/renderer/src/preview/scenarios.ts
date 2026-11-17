@@ -1,11 +1,5 @@
 import type { BridgeSeed, FakeBridge } from './fakeBridge'
-import {
-  INSTALL_STEPS,
-  everydayBuilds,
-  localAssets,
-  outputFolders,
-  type PreviewMachine
-} from './fixtures'
+import { INSTALL_STEPS, everydayBuilds, localAssets, type PreviewMachine } from './fixtures'
 
 export interface PreviewStage {
   bridge: FakeBridge
@@ -126,10 +120,7 @@ export const SCENARIOS: PreviewScenario[] = [
     ready: '[data-testid="app-sidebar-assets"][aria-current="page"]',
     seed: (machine) => ({
       installations: everydayBuilds(machine),
-      replies: {
-        listOutputFolders: async () => outputFolders(machine),
-        listOutputFolder: async () => ({ folders: [], files: localAssets() })
-      }
+      replies: { listLocalAssets: async () => ({ assets: localAssets(), truncated: false }) }
     }),
     arrange: async ({ click }) => {
       await click('[data-testid="app-sidebar-assets"]')

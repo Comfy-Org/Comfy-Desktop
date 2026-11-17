@@ -63,9 +63,21 @@
   },
   "assets": {
     "kindLabel": "资产类型",
-    "placeLabel": "文件保存位置",
+    "buildPickerLabel": "构建",
+    "browseAssetsOf": "浏览以下构建的资产",
     "cloud": "Comfy Cloud",
-    "thisComputer": "这台电脑",
+    "sharedFolder": "共享文件夹",
+    "outputFolder": "输出文件夹",
+    "buildStatus": "{where} · {state}",
+    "buildWhere": {
+      "local": "本地",
+      "cloud": "云端"
+    },
+    "buildState": {
+      "running": "运行中",
+      "starting": "启动中",
+      "stopped": "已停止"
+    },
     "kind": {
       "all": "全部",
       "image": "图片",
@@ -112,6 +124,7 @@
     "signIn": "登录 Comfy Cloud",
     "noCloudBuildTitle": "此工作区还没有 Comfy Cloud 构建",
     "noCloudBuildBody": "将 Comfy Cloud 添加到此工作区后，这里会显示它的资产。",
+    "truncated": "仅显示最新的 {count} 个文件。",
     "inspect": "查看 {name}",
     "detail": {
       "tags": "标签",
@@ -128,18 +141,6 @@
       "audio": "音频",
       "3d": "3D",
       "file": "文件"
-    },
-    "local": {
-      "folderActions": "文件夹操作",
-      "noBuilds": "还没有构建保存到这里",
-      "savedBy": "保存到这里的构建",
-      "openFolder": "打开文件夹",
-      "path": "文件夹路径",
-      "noFoldersTitle": "还没有输出文件夹",
-      "noFoldersBody": "在这台电脑上用 ComfyUI 运行工作流后，文件会显示在这里。",
-      "emptyFolder": "这里没有图片、视频、音频或 3D 文件。",
-      "folderFailed": "无法打开此文件夹。它可能已被移动或删除。",
-      "backToComputer": "返回这台电脑"
     }
   },
   "home": {
