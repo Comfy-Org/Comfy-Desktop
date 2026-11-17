@@ -1,8 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { ComfyDesktop2TerminalBridge, TerminalRestore } from '../types/comfyDesktopBridge'
+import { rejectingWithHandlerMessages } from './invokeRejections'
 
-const Terminal: ComfyDesktop2TerminalBridge = {
+const Terminal = rejectingWithHandlerMessages<ComfyDesktop2TerminalBridge>({
   subscribe: (): Promise<TerminalRestore> => ipcRenderer.invoke('terminal-subscribe', null),
   unsubscribe: (): Promise<void> => ipcRenderer.invoke('terminal-unsubscribe', null),
   write: (data: string): Promise<void> => ipcRenderer.invoke('terminal-write', null, data),
@@ -20,6 +21,6 @@ const Terminal: ComfyDesktop2TerminalBridge = {
     ipcRenderer.on('terminal-exited', handler)
     return () => ipcRenderer.removeListener('terminal-exited', handler)
   }
-}
+})
 
 contextBridge.exposeInMainWorld('__comfyDesktopTerminal', Terminal)

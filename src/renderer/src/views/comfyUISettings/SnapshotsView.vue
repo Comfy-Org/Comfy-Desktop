@@ -28,7 +28,9 @@ import {
 } from '../../lib/snapshots'
 import type {
   ActionDef,
+  ActionResult,
   CopyEvent,
+  ElectronApi,
   SnapshotDiffData,
   SnapshotListData,
   SnapshotSummary
@@ -357,6 +359,26 @@ watch(
   { immediate: true }
 )
 
+async function alertFailure(title: string, message: string | undefined): Promise<void> {
+  await dialogs.alert({ title, message: message || t('progress.unknownError'), tone: 'danger' })
+}
+
+async function runSnapshotAction(
+  actionId: 'snapshot-save' | 'snapshot-delete',
+  actionData: Record<string, unknown>,
+  errorTitle: string
+): Promise<boolean> {
+  let result: ActionResult
+  try {
+    result = await window.api.runAction(props.installationId, actionId, actionData)
+  } catch (err: unknown) {
+    result = { ok: false, message: (err as Error)?.message }
+  }
+  if (result.ok) return true
+  if (!result.cancelled) await alertFailure(errorTitle, result.message)
+  return false
+}
+
 async function handleSave(): Promise<void> {
   const label = await dialogs.prompt({
     title: t('standalone.snapshotCreateTitle'),
@@ -366,18 +388,12 @@ async function handleSave(): Promise<void> {
     required: false
   })
   if (label === null) return
-  try {
-    await window.api.runAction(props.installationId, 'snapshot-save', {
-      label: label || undefined
-    })
-  } catch (err: unknown) {
-    await dialogs.alert({
-      title: t('snapshots.saveErrorTitle'),
-      message: (err as Error).message || String(err),
-      tone: 'danger'
-    })
-    return
-  }
+  const saved = await runSnapshotAction(
+    'snapshot-save',
+    { label: label || undefined },
+    t('snapshots.saveErrorTitle')
+  )
+  if (!saved) return
   emitTelemetryAction('comfy.desktop.snapshot.flow', {
     action: 'save',
     snapshot_count_bucket: toCountBucket(snapshots.value.length)
@@ -431,16 +447,12 @@ async function handleDelete(filename: string): Promise<void> {
     tone: 'danger'
   })
   if (result !== 'primary') return
-  try {
-    await window.api.runAction(props.installationId, 'snapshot-delete', { file: filename })
-  } catch (err: unknown) {
-    await dialogs.alert({
-      title: t('snapshots.deleteErrorTitle'),
-      message: (err as Error).message || String(err),
-      tone: 'danger'
-    })
-    return
-  }
+  const deleted = await runSnapshotAction(
+    'snapshot-delete',
+    { file: filename },
+    t('snapshots.deleteErrorTitle')
+  )
+  if (!deleted) return
   emitTelemetryAction('comfy.desktop.snapshot.flow', {
     action: 'delete',
     snapshot_count_bucket: toCountBucket(snapshots.value.length)
@@ -454,32 +466,47 @@ async function handleDelete(filename: string): Promise<void> {
   emit('refresh-all')
 }
 
-async function handleExport(filename: string): Promise<void> {
-  await window.api.exportSnapshot(props.installationId, filename)
+type ExportResult = Awaited<ReturnType<ElectronApi['exportSnapshot']>>
+
+async function exportAndRecord(
+  action: 'export_one' | 'export_all',
+  errorTitle: string,
+  runExport: () => Promise<ExportResult>
+): Promise<void> {
+  let exported: ExportResult
+  try {
+    exported = await runExport()
+  } catch (err: unknown) {
+    exported = { ok: false, message: (err as Error)?.message }
+  }
+  if (exported.cancelled) return
+  if (!exported.ok) {
+    await alertFailure(errorTitle, exported.message)
+    return
+  }
   emitTelemetryAction('comfy.desktop.snapshot.flow', {
-    action: 'export_one',
+    action,
     snapshot_count_bucket: toCountBucket(snapshots.value.length)
   })
 }
 
+async function handleExport(filename: string): Promise<void> {
+  await exportAndRecord('export_one', t('snapshots.exportErrorTitle'), () =>
+    window.api.exportSnapshot(props.installationId, filename)
+  )
+}
+
 async function handleExportAll(): Promise<void> {
-  await window.api.exportAllSnapshots(props.installationId)
-  emitTelemetryAction('comfy.desktop.snapshot.flow', {
-    action: 'export_all',
-    snapshot_count_bucket: toCountBucket(snapshots.value.length)
-  })
+  await exportAndRecord('export_all', t('snapshots.exportAllErrorTitle'), () =>
+    window.api.exportAllSnapshots(props.installationId)
+  )
 }
 
 async function handleImport(): Promise<void> {
   const preview = await window.api.importSnapshotsPreview()
+  if (preview.cancelled) return
   if (!preview.ok) {
-    if (preview.message) {
-      await dialogs.alert({
-        title: t('snapshots.importErrorTitle'),
-        message: preview.message,
-        tone: 'danger'
-      })
-    }
+    await alertFailure(t('snapshots.importErrorTitle'), preview.message)
     return
   }
   const previewItems = preview.preview?.snapshots ?? []

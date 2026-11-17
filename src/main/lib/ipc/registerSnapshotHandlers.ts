@@ -247,7 +247,7 @@ export function registerSnapshotHandlers(): void {
       defaultPath: `snapshot-${safeName}-${snapshot.trigger}-${dateStr}.json`,
       filters: [{ name: 'JSON', extensions: ['json'] }]
     })
-    if (canceled || !filePath) return { ok: false }
+    if (canceled || !filePath) return { ok: false, cancelled: true }
     await fs.promises.writeFile(filePath, JSON.stringify(envelope, null, 2))
     telemetry.emit('comfy.desktop.snapshot.shared', {
       installation_id: installationId,
@@ -271,7 +271,7 @@ export function registerSnapshotHandlers(): void {
       defaultPath: `snapshots-${safeName}-${dateStr}.json`,
       filters: [{ name: 'JSON', extensions: ['json'] }]
     })
-    if (canceled || !filePath) return { ok: false }
+    if (canceled || !filePath) return { ok: false, cancelled: true }
     await fs.promises.writeFile(filePath, JSON.stringify(envelope, null, 2))
     telemetry.emit('comfy.desktop.snapshot.shared', {
       installation_id: installationId,
@@ -291,7 +291,7 @@ export function registerSnapshotHandlers(): void {
       filters: [{ name: 'JSON', extensions: ['json'] }],
       properties: ['openFile']
     })
-    if (canceled || filePaths.length === 0) return { ok: false }
+    if (canceled || filePaths.length === 0) return { ok: false, cancelled: true }
     try {
       const content = await fs.promises.readFile(filePaths[0]!, 'utf-8')
       let parsed: unknown
@@ -406,7 +406,7 @@ export function registerSnapshotHandlers(): void {
       filters: [{ name: 'Snapshot', extensions: ['json'] }],
       properties: ['openFile']
     })
-    if (canceled || filePaths.length === 0) return { ok: false }
+    if (canceled || filePaths.length === 0) return { ok: false, cancelled: true }
 
     const content = await fs.promises.readFile(filePaths[0]!, 'utf-8')
     let parsed: unknown

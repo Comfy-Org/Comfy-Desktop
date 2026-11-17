@@ -464,7 +464,7 @@ describe('useInstallContextMenu - export latest snapshot', () => {
     const inst = makeInstall()
     const { menu } = mountHarnessWithManage(() => {})
 
-    apiMock.exportSnapshot.mockResolvedValueOnce({ ok: false })
+    apiMock.exportSnapshot.mockResolvedValueOnce({ ok: false, cancelled: true })
     await menu.triggerAction('share', inst)
     expect(modalMock.alert).not.toHaveBeenCalled()
 
@@ -472,6 +472,17 @@ describe('useInstallContextMenu - export latest snapshot', () => {
     await menu.triggerAction('share', inst)
     expect(modalMock.alert).toHaveBeenCalledTimes(1)
     expect(modalMock.alert.mock.calls[0]![0].message).toBe('Disk full')
+  })
+
+  it('reports an export that failed without a reason instead of taking it for a cancel', async () => {
+    apiMock.getSnapshots.mockResolvedValue({ snapshots: [{ filename: 'snap.json' }] })
+    apiMock.exportSnapshot.mockResolvedValue({ ok: false })
+    const { menu } = mountHarnessWithManage(() => {})
+
+    await menu.triggerAction('share', makeInstall())
+
+    expect(modalMock.alert).toHaveBeenCalledTimes(1)
+    expect(modalMock.alert.mock.calls[0]![0].message).toBe('Could not share the snapshot.')
   })
 })
 

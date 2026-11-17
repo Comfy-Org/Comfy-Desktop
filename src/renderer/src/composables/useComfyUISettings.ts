@@ -379,7 +379,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
 
     if (action.id === 'share') {
       const result = await shareLatestSnapshot(inst.id)
-      if (!result.ok) {
+      if (!result.ok && result.reason !== 'cancelled') {
         await dialogs.alert({
           title: action.label,
           message:

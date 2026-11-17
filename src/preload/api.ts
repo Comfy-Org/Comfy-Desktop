@@ -1,9 +1,10 @@
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { AppPageStatus, ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
+import { rejectingWithHandlerMessages } from './invokeRejections'
 
 export function buildElectronApi(): ElectronApi {
-  return {
+  return rejectingWithHandlerMessages<ElectronApi>({
     platform: process.platform,
 
     getSources: () => ipcRenderer.invoke('get-sources'),
@@ -558,5 +559,5 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('panel-trigger-overlay', handler)
       return () => ipcRenderer.removeListener('panel-trigger-overlay', handler)
     }
-  }
+  })
 }

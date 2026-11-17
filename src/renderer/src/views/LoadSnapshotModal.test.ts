@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import LoadSnapshotModal from './LoadSnapshotModal.vue'
+import { useModal } from '../composables/useModal'
 
 function mountLoadSnapshot() {
   return mount(LoadSnapshotModal, {
@@ -118,6 +119,41 @@ describe('LoadSnapshotModal preview', () => {
     await flushPromises()
 
     expect(api.previewSnapshotFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('says nothing when picking the snapshot file is cancelled', async () => {
+    installApi()
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    api.previewSnapshotFile = vi.fn().mockResolvedValue({ ok: false, cancelled: true })
+    const wrapper = mountLoadSnapshot()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+
+    await wrapper.get('.load-snapshot-tertiary').trigger('click')
+    await flushPromises()
+
+    expect(useModal().state.visible).toBe(false)
+    expect(wrapper.find('.load-snapshot-file').exists()).toBe(false)
+  })
+
+  it('reports a snapshot file that could not be read, even when no reason came back', async () => {
+    installApi()
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    api.previewSnapshotFile = vi.fn().mockResolvedValue({ ok: false })
+    const wrapper = mountLoadSnapshot()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+
+    await wrapper.get('.load-snapshot-tertiary').trigger('click')
+    await flushPromises()
+
+    const modal = useModal()
+    expect(modal.state).toMatchObject({
+      visible: true,
+      title: 'Load Snapshot',
+      message: 'An unknown error occurred'
+    })
+    modal.dismiss()
   })
 
   it('hides folded snapshot lists from assistive technology', async () => {

@@ -24,6 +24,7 @@ export default defineConfig({
   preload: {
     build: {
       sourcemap: 'hidden',
+      isolatedEntries: true,
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),

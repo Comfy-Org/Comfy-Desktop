@@ -5,18 +5,20 @@ import { nextTick } from 'vue'
 
 import { TID } from '../../../../shared/testIds'
 import SnapshotsView from './SnapshotsView.vue'
+import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../../lib/telemetry'
 import type { SnapshotSummary, SnapshotListData, CopyEvent } from '../../types/ipc'
 
-const { mockConfirm, mockAlert, mockCheckBeforeAction } = vi.hoisted(() => ({
+const { mockConfirm, mockAlert, mockPrompt, mockCheckBeforeAction } = vi.hoisted(() => ({
   mockConfirm: vi.fn(),
   mockAlert: vi.fn(),
+  mockPrompt: vi.fn(),
   mockCheckBeforeAction: vi.fn()
 }))
 vi.mock('../../composables/useDialogs', () => ({
   useDialogs: () => ({
     confirm: mockConfirm,
     alert: mockAlert,
-    prompt: vi.fn(),
+    prompt: mockPrompt,
     actionSheet: vi.fn()
   })
 }))
@@ -81,18 +83,27 @@ async function mountView(
 }
 
 describe('comfyUISettings/SnapshotsView', () => {
+  let recordedSnapshotActions: unknown[] = []
+  function recordSnapshotAction(event: Event): void {
+    const { actionName, context } = (event as CustomEvent<TelemetryActionEventDetail>).detail
+    if (actionName === 'comfy.desktop.snapshot.flow') recordedSnapshotActions.push(context?.action)
+  }
+
   beforeEach(() => {
     setActivePinia(createPinia())
     ;(window as unknown as { api: Record<string, unknown> }).api = {
       getSnapshots: vi.fn().mockResolvedValue(makeListData()),
       getSnapshotDiff: vi.fn().mockResolvedValue(null),
-      runAction: vi.fn(),
-      exportSnapshot: vi.fn(),
-      exportAllSnapshots: vi.fn()
+      runAction: vi.fn().mockResolvedValue({ ok: true }),
+      exportSnapshot: vi.fn().mockResolvedValue({ ok: true }),
+      exportAllSnapshots: vi.fn().mockResolvedValue({ ok: true })
     }
+    recordedSnapshotActions = []
+    window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, recordSnapshotAction)
   })
 
   afterEach(() => {
+    window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, recordSnapshotAction)
     vi.restoreAllMocks()
     vi.useRealTimers()
   })
@@ -490,6 +501,10 @@ describe('comfyUISettings/SnapshotsView', () => {
 
   describe('row ⋯ menu', () => {
     let w: VueWrapper | null = null
+    beforeEach(() => {
+      mockConfirm.mockReset()
+      mockAlert.mockReset()
+    })
     afterEach(() => {
       w?.unmount()
       w = null
@@ -524,15 +539,89 @@ describe('comfyUISettings/SnapshotsView', () => {
       })
     })
 
-    it('Export exports that snapshot', async () => {
-      await openRowMenu('snap-oldest.json')
-
-      document.body
-        .querySelector<HTMLElement>(`[data-testid="${TID.snapshotRowExport('snap-oldest.json')}"]`)!
-        .click()
+    async function chooseFromRowMenu(filename: string, itemTestId: string): Promise<void> {
+      await openRowMenu(filename)
+      document.body.querySelector<HTMLElement>(`[data-testid="${itemTestId}"]`)!.click()
       await flushPromises()
+    }
+
+    it('Export exports that snapshot', async () => {
+      await chooseFromRowMenu('snap-oldest.json', TID.snapshotRowExport('snap-oldest.json'))
 
       expect(window.api.exportSnapshot).toHaveBeenCalledWith('install-A', 'snap-oldest.json')
+    })
+
+    it('Export is recorded once the main process has written the file', async () => {
+      await chooseFromRowMenu('snap-oldest.json', TID.snapshotRowExport('snap-oldest.json'))
+
+      expect(recordedSnapshotActions).toEqual(['export_one'])
+      expect(mockAlert).not.toHaveBeenCalled()
+    })
+
+    it('Export records nothing and says nothing when the save dialog is cancelled', async () => {
+      vi.mocked(window.api.exportSnapshot).mockResolvedValue({ ok: false, cancelled: true })
+
+      await chooseFromRowMenu('snap-oldest.json', TID.snapshotRowExport('snap-oldest.json'))
+
+      expect(recordedSnapshotActions).toEqual([])
+      expect(mockAlert).not.toHaveBeenCalled()
+    })
+
+    it('Export says why the main process refused and records nothing', async () => {
+      vi.mocked(window.api.exportSnapshot).mockResolvedValue({
+        ok: false,
+        message: 'Installation not found.'
+      })
+
+      await chooseFromRowMenu('snap-oldest.json', TID.snapshotRowExport('snap-oldest.json'))
+
+      expect(mockAlert).toHaveBeenCalledExactlyOnceWith({
+        title: "Couldn't export snapshot",
+        message: 'Installation not found.',
+        tone: 'danger'
+      })
+      expect(recordedSnapshotActions).toEqual([])
+    })
+
+    it('Export shows the reason when writing the file fails in the main process', async () => {
+      vi.mocked(window.api.exportSnapshot).mockRejectedValue(
+        new Error("EACCES: permission denied, open '/exports/snapshot.json'")
+      )
+
+      await chooseFromRowMenu('snap-oldest.json', TID.snapshotRowExport('snap-oldest.json'))
+
+      expect(mockAlert).toHaveBeenCalledExactlyOnceWith({
+        title: "Couldn't export snapshot",
+        message: "EACCES: permission denied, open '/exports/snapshot.json'",
+        tone: 'danger'
+      })
+      expect(recordedSnapshotActions).toEqual([])
+    })
+
+    it('Delete is recorded once the main process has deleted the snapshot', async () => {
+      mockConfirm.mockResolvedValueOnce('primary')
+
+      await chooseFromRowMenu('snap-middle.json', TID.snapshotRowDelete('snap-middle.json'))
+
+      expect(recordedSnapshotActions).toEqual(['delete'])
+      expect(mockAlert).not.toHaveBeenCalled()
+    })
+
+    it('Delete says why the main process refused and records nothing', async () => {
+      mockConfirm.mockResolvedValueOnce('primary')
+      vi.mocked(window.api.runAction).mockResolvedValue({
+        ok: false,
+        message: 'Installation not found.'
+      })
+
+      await chooseFromRowMenu('snap-middle.json', TID.snapshotRowDelete('snap-middle.json'))
+
+      expect(mockAlert).toHaveBeenCalledExactlyOnceWith({
+        title: "Couldn't delete snapshot",
+        message: 'Installation not found.',
+        tone: 'danger'
+      })
+      expect(recordedSnapshotActions).toEqual([])
     })
 
     it('Escape closes the menu without reaching a window listener, so a host popup stays open', async () => {
@@ -558,6 +647,89 @@ describe('comfyUISettings/SnapshotsView', () => {
       window.dispatchEvent(new Event('blur'))
       await flushPromises()
       expect(document.body.querySelector('.snapshot-row-menu')).toBeNull()
+    })
+  })
+
+  describe('toolbar', () => {
+    beforeEach(() => {
+      mockAlert.mockReset()
+      mockConfirm.mockReset()
+      mockPrompt.mockReset().mockResolvedValue('Before the update')
+    })
+
+    async function clickToolbarButton(testId: string): Promise<void> {
+      const w = await mountView()
+      await w.get(`[data-testid="${testId}"]`).trigger('click')
+      await flushPromises()
+    }
+
+    it('Export All is recorded once the main process has written the file', async () => {
+      await clickToolbarButton(TID.snapshotsExportAll)
+
+      expect(window.api.exportAllSnapshots).toHaveBeenCalledWith('install-A')
+      expect(recordedSnapshotActions).toEqual(['export_all'])
+      expect(mockAlert).not.toHaveBeenCalled()
+    })
+
+    it('Export All records nothing and says nothing when the save dialog is cancelled', async () => {
+      vi.mocked(window.api.exportAllSnapshots).mockResolvedValue({ ok: false, cancelled: true })
+
+      await clickToolbarButton(TID.snapshotsExportAll)
+
+      expect(recordedSnapshotActions).toEqual([])
+      expect(mockAlert).not.toHaveBeenCalled()
+    })
+
+    it('Export All says why the main process refused and records nothing', async () => {
+      vi.mocked(window.api.exportAllSnapshots).mockResolvedValue({
+        ok: false,
+        message: 'No snapshots to export.'
+      })
+
+      await clickToolbarButton(TID.snapshotsExportAll)
+
+      expect(mockAlert).toHaveBeenCalledExactlyOnceWith({
+        title: "Couldn't export snapshots",
+        message: 'No snapshots to export.',
+        tone: 'danger'
+      })
+      expect(recordedSnapshotActions).toEqual([])
+    })
+
+    it('Create Snapshot is recorded once the main process has saved it', async () => {
+      await clickToolbarButton(TID.snapshotsSaveCta)
+
+      expect(window.api.runAction).toHaveBeenCalledWith('install-A', 'snapshot-save', {
+        label: 'Before the update'
+      })
+      expect(recordedSnapshotActions).toEqual(['save'])
+      expect(mockAlert).not.toHaveBeenCalled()
+    })
+
+    it('Create Snapshot says why the main process refused and records nothing', async () => {
+      vi.mocked(window.api.runAction).mockResolvedValue({
+        ok: false,
+        message: "EACCES: permission denied, open '/install/.launcher/snapshots/new.json'"
+      })
+
+      await clickToolbarButton(TID.snapshotsSaveCta)
+
+      expect(mockAlert).toHaveBeenCalledExactlyOnceWith({
+        title: "Couldn't save snapshot",
+        message: "EACCES: permission denied, open '/install/.launcher/snapshots/new.json'",
+        tone: 'danger'
+      })
+      expect(recordedSnapshotActions).toEqual([])
+    })
+
+    it('Import says nothing and asks nothing when the file dialog is cancelled', async () => {
+      window.api.importSnapshotsPreview = vi.fn().mockResolvedValue({ ok: false, cancelled: true })
+
+      await clickToolbarButton(TID.snapshotsImport)
+
+      expect(mockAlert).not.toHaveBeenCalled()
+      expect(mockConfirm).not.toHaveBeenCalled()
+      expect(recordedSnapshotActions).toEqual([])
     })
   })
 

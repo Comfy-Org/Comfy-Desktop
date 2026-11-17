@@ -1418,6 +1418,8 @@
     "delete": "Delete",
     "saveErrorTitle": "Couldn't save snapshot",
     "deleteErrorTitle": "Couldn't delete snapshot",
+    "exportErrorTitle": "Couldn't export snapshot",
+    "exportAllErrorTitle": "Couldn't export snapshots",
     "restoreConfirmTitle": "Restore this snapshot?",
     "restoreConfirmMessage": "Replace the current build state with this snapshot? A backup is made first.",
     "importConfirmTitle": "Import snapshot?",

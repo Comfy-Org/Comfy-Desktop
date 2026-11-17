@@ -2,6 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
+import en from '../locales/en.json'
 import { launchApp, type AppContext } from './launchApp'
 import { titlePopupPage } from './support/cdpPages'
 import { evalWithRetry } from './support/evalRetry'
@@ -65,20 +66,7 @@ test.beforeAll(async () => {
     ]
   })
 
-  await evalWithRetry(() =>
-    ctx.app.evaluate(({ dialog }, dir) => {
-      ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
-        _win: unknown,
-        opts: { defaultPath?: string }
-      ) => {
-        const raw = opts.defaultPath ?? 'snapshot-export.json'
-        const lastSep = Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
-        const base = lastSep >= 0 ? raw.slice(lastSep + 1) : raw
-        const sep = dir.includes('\\') ? '\\' : '/'
-        return { canceled: false, filePath: `${dir}${sep}${base}` }
-      }
-    }, exportDir)
-  )
+  await answerSaveDialogs({ saveInto: exportDir })
 })
 
 test.afterAll(async () => {
@@ -87,7 +75,63 @@ test.afterAll(async () => {
   if (exportDir) await rm(exportDir, { recursive: true, force: true })
 })
 
-async function openSnapshotsTab(): Promise<ReturnType<typeof titlePopupPage>> {
+type SaveDialogAnswer = 'cancel' | { saveInto: string }
+
+async function answerSaveDialogs(answer: SaveDialogAnswer): Promise<void> {
+  await evalWithRetry(() =>
+    ctx.app.evaluate(
+      ({ dialog }, saveInto) => {
+        ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
+          _win: unknown,
+          opts: { defaultPath?: string }
+        ) => {
+          const shown = globalThis as unknown as { __e2eSaveDialogsShown?: number }
+          shown.__e2eSaveDialogsShown = (shown.__e2eSaveDialogsShown ?? 0) + 1
+          if (saveInto === null) return { canceled: true, filePath: '' }
+          const raw = opts.defaultPath ?? 'snapshot-export.json'
+          const lastSep = Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
+          const base = lastSep >= 0 ? raw.slice(lastSep + 1) : raw
+          const sep = saveInto.includes('\\') ? '\\' : '/'
+          return { canceled: false, filePath: `${saveInto}${sep}${base}` }
+        }
+      },
+      answer === 'cancel' ? null : answer.saveInto
+    )
+  )
+}
+
+function saveDialogsShown(): Promise<number> {
+  return evalWithRetry(() =>
+    ctx.app.evaluate(
+      () => (globalThis as unknown as { __e2eSaveDialogsShown?: number }).__e2eSaveDialogsShown ?? 0
+    )
+  )
+}
+
+type TitlePopup = ReturnType<typeof titlePopupPage>
+
+async function startRecordingSnapshotTelemetry(popup: TitlePopup): Promise<void> {
+  await popup.evaluate<boolean>(`(() => {
+    if (window.__e2eSnapshotActions) {
+      window.__e2eSnapshotActions.length = 0
+      return true
+    }
+    window.__e2eSnapshotActions = []
+    window.addEventListener('launcher-telemetry-action', (event) => {
+      const { actionName, context } = event.detail
+      if (actionName === 'comfy.desktop.snapshot.flow') {
+        window.__e2eSnapshotActions.push(context.action)
+      }
+    })
+    return true
+  })()`)
+}
+
+function recordedSnapshotTelemetry(popup: TitlePopup): Promise<string[]> {
+  return popup.evaluate<string[]>('window.__e2eSnapshotActions.slice()')
+}
+
+async function openSnapshotsTab(): Promise<TitlePopup> {
   await ctx.panel.evaluate<boolean>(
     `(() => {
       window.api.openInstancePicker({
@@ -102,17 +146,17 @@ async function openSnapshotsTab(): Promise<ReturnType<typeof titlePopupPage>> {
   return popup
 }
 
-async function findExportedFile(prefix: string): Promise<string | null> {
+async function findExportedFile(prefix: string, dir: string): Promise<string | null> {
   const { readdir } = await import('node:fs/promises')
-  const entries = await readdir(exportDir)
+  const entries = await readdir(dir)
   const match = entries.find((e) => e.startsWith(prefix) && e.endsWith('.json'))
-  return match ? path.join(exportDir, match) : null
+  return match ? path.join(dir, match) : null
 }
 
-async function waitForExportedEnvelope<T>(prefix: string): Promise<T> {
+async function waitForExportedEnvelope<T>(prefix: string, dir = exportDir): Promise<T> {
   const deadline = Date.now() + 10_000
   for (;;) {
-    const match = await findExportedFile(prefix)
+    const match = await findExportedFile(prefix, dir)
     if (match) {
       try {
         return JSON.parse(await readFile(match, 'utf-8')) as T
@@ -172,4 +216,58 @@ test('Export All writes an envelope containing every seeded snapshot @windows @m
   const labels = envelope.snapshots?.map((s) => s.label) ?? []
   expect(labels).toContain('first-seeded')
   expect(labels).toContain('second-seeded')
+})
+
+test('a cancelled save dialog records no export and shows no error @windows @macos @linux', async () => {
+  const popup = await openSnapshotsTab()
+  await startRecordingSnapshotTelemetry(popup)
+  await popup.waitForVisible(byTestId(TID.snapshotsExportAll), { timeout: 5_000 })
+
+  const dialogsBefore = await saveDialogsShown()
+  await answerSaveDialogs('cancel')
+  expect(await popup.click(byTestId(TID.snapshotsExportAll))).toBe(true)
+  await expect
+    .poll(saveDialogsShown, {
+      timeout: 10_000,
+      message: 'Export All never asked where to save'
+    })
+    .toBe(dialogsBefore + 1)
+
+  const laterExportDir = path.join(exportDir, 'exported-after-the-cancel')
+  await mkdir(laterExportDir)
+  await answerSaveDialogs({ saveInto: laterExportDir })
+  expect(await popup.click(byTestId(TID.snapshotsExportAll))).toBe(true)
+  await waitForExportedEnvelope('snapshots-', laterExportDir)
+
+  await expect
+    .poll(() => recordedSnapshotTelemetry(popup), {
+      timeout: 10_000,
+      message: 'only the export that wrote a file should be recorded'
+    })
+    .toEqual(['export_all'])
+  expect(
+    await popup.isVisible(byTestId(TID.baseAlertAction)),
+    'cancelling the save dialog must not raise an error dialog'
+  ).toBe(false)
+})
+
+test('a failed export shows the reason without Electron IPC wording @windows @macos @linux', async () => {
+  const popup = await openSnapshotsTab()
+  await startRecordingSnapshotTelemetry(popup)
+  await popup.waitForVisible(byTestId(TID.snapshotsExportAll), { timeout: 5_000 })
+
+  const folderThatIsGone = path.join(exportDir, 'folder-removed-after-it-was-picked')
+  await answerSaveDialogs({ saveInto: folderThatIsGone })
+  expect(await popup.click(byTestId(TID.snapshotsExportAll))).toBe(true)
+
+  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
+  expect(await popup.textOf('.base-alert-title')).toBe(en.snapshots.exportAllErrorTitle)
+  const reasonOnScreen = (await popup.textOf('.base-alert-message-text')) ?? ''
+  expect(reasonOnScreen).toMatch(/^ENOENT: no such file or directory/)
+  expect(reasonOnScreen).toContain(folderThatIsGone)
+  expect(reasonOnScreen).not.toContain('Error invoking remote method')
+  expect(await recordedSnapshotTelemetry(popup)).toEqual([])
+
+  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+  await answerSaveDialogs({ saveInto: exportDir })
 })

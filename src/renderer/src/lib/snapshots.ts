@@ -12,14 +12,14 @@ export function setCachedSnapshotList(installationId: string, data: SnapshotList
 
 export async function shareLatestSnapshot(
   installationId: string
-): Promise<{ ok: true } | { ok: false; reason: 'none' | 'error'; message?: string }> {
+): Promise<{ ok: true } | { ok: false; reason: 'none' | 'cancelled' | 'error'; message?: string }> {
   const list = await window.api.getSnapshots(installationId)
   const latest = list?.snapshots?.[0]?.filename
   if (!latest) return { ok: false, reason: 'none' }
   const result = await window.api.exportSnapshot(installationId, latest)
   if (result.ok) return { ok: true }
-  if (result.message) return { ok: false, reason: 'error', message: result.message }
-  return { ok: true }
+  if (result.cancelled) return { ok: false, reason: 'cancelled' }
+  return { ok: false, reason: 'error', message: result.message }
 }
 
 const LEGACY_SENTINEL_LABELS = new Set(['before-update', 'after-update', 'after-restore'])

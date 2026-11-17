@@ -165,7 +165,7 @@ export function registerAppHandlers(): void {
         filters: [{ name: 'JSON', extensions: ['json'] }],
         properties: ['openFile']
       })
-      if (canceled || filePaths.length === 0) return { ok: false, canceled: true }
+      if (canceled || filePaths.length === 0) return { ok: false, cancelled: true }
       sourcePath = filePaths[0]!
     }
     try {
@@ -333,7 +333,7 @@ export function registerAppHandlers(): void {
         defaultPath,
         properties: ['openDirectory', 'createDirectory']
       })
-      if (canceled || filePaths.length === 0) return { ok: false, canceled: true }
+      if (canceled || filePaths.length === 0) return { ok: false, cancelled: true }
 
       try {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23)
