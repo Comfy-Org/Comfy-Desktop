@@ -175,4 +175,40 @@ describe('leaving a window while its build is starting', () => {
     expect(modal.confirm).toHaveBeenCalledOnce()
     expect(api.cancelOperation).toHaveBeenCalledWith(BUILD)
   })
+
+  function replaceTakeoverWhileReadingTheSetting(
+    overlays: ReturnType<typeof usePanelOverlays>
+  ): Overlay {
+    const setupFlow: Overlay = {
+      kind: 'takeover',
+      component: 'new-install',
+      cancelCopyKey: 'discard-setup'
+    }
+    api.getSetting.mockImplementationOnce(async () => {
+      await overlays.openOverlay(setupFlow)
+      return undefined
+    })
+    return setupFlow
+  }
+
+  it('returning to Home asks before closing a takeover that replaced the start while the setting was read', async () => {
+    const overlays = await showInWindow('launch')
+    const setupFlow = replaceTakeoverWhileReadingTheSetting(overlays)
+    modal.confirm.mockResolvedValueOnce(false)
+
+    await expect(overlays.closeOverlay()).resolves.toBe(false)
+
+    expect(modal.confirm).toHaveBeenCalledOnce()
+    expect(overlays.currentOverlay.value).toEqual(setupFlow)
+  })
+
+  it('asks before clearing a takeover that replaced the start while the setting was read, when its window closes', async () => {
+    const overlays = await showInWindow('launch')
+    replaceTakeoverWhileReadingTheSetting(overlays)
+
+    await expect(overlays.answerCloseRequest()).resolves.toEqual({ cleared: true })
+
+    expect(modal.confirm).toHaveBeenCalledOnce()
+    expect(overlays.currentOverlay.value).toBeNull()
+  })
 })

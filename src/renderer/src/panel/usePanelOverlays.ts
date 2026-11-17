@@ -233,25 +233,24 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     return op?.opKind === 'launch' && !op.finished && installation?.sourceCategory === 'local'
   }
 
+  async function leavesLocalStartRunning(overlay: Overlay | null): Promise<boolean> {
+    return (
+      showsLocalStartInFlight(overlay) &&
+      (await keepsComfyRunningWhenWindowCloses()) &&
+      currentOverlay.value === overlay
+    )
+  }
+
   async function closeOverlay(): Promise<boolean> {
-    if (
-      !showsLocalStartInFlight(currentOverlay.value) ||
-      !(await keepsComfyRunningWhenWindowCloses())
-    ) {
-      return confirmAndCloseOverlay()
-    }
+    if (!(await leavesLocalStartRunning(currentOverlay.value))) return confirmAndCloseOverlay()
     currentOverlay.value = null
     return true
   }
 
   async function answerCloseRequest(): Promise<{ cleared: boolean } | { defer: true }> {
-    if (currentOverlay.value === null) return { defer: true }
-    if (
-      showsLocalStartInFlight(currentOverlay.value) &&
-      (await keepsComfyRunningWhenWindowCloses())
-    ) {
-      return { defer: true }
-    }
+    const overlay = currentOverlay.value
+    if (overlay === null) return { defer: true }
+    if (await leavesLocalStartRunning(overlay)) return { defer: true }
     return { cleared: await confirmAndCloseOverlay() }
   }
 
