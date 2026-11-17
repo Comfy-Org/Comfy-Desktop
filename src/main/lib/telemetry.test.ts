@@ -2041,6 +2041,21 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(captured.at(-1)?.distinctId).toBe('user-123')
   })
 
+  it('does not replay a held event of a feature switched off while it was held', () => {
+    let on = true
+    telemetry.gateEventsByPrefix('comfy.desktop.held_feature.', () => on)
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture('comfy.desktop.held_feature.used', { request_text: 'a poster' })
+    telemetry.capture('pending.event')
+    on = false
+    telemetry.applyFirebaseUserConsensus('user-123')
+    const events = captured.map((call) => call.event)
+    expect(events).toContain('pending.event')
+    expect(events).not.toContain('comfy.desktop.held_feature.used')
+  })
+
   it('discards quarantined writes when pending resolves to a different user', () => {
     telemetry.applyFirebaseUserConsensus('user-a')
     captured.length = 0

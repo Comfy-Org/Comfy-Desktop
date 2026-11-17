@@ -53,6 +53,7 @@ export function _resetTelemetryRelayTargets(): void {
 
 export function _resetForTest(): void {
   client = null
+  eventGates.length = 0
   distinctId = null
   anonymousDistinctId = null
   nextAnonymousDistinctId = null
@@ -447,7 +448,7 @@ function flushQuarantinedWrites(): void {
   for (const write of writes) {
     if (write.kind === 'exception') {
       if (consentState === 'granted') deliverException(write.error, write.properties, write.forward)
-    } else if (write.event && isAllowedToFire(write.event)) {
+    } else if (write.event && isAllowedToFire(write.event) && !gatedOff(write.event)) {
       deliverEvent(write.event, write.properties, write.forward, write.timestamp)
     }
   }
