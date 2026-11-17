@@ -204,10 +204,12 @@ const selectedBuild = computed<AssetBuild | null>(() => {
   if (!buildsKnown.value) return null
   const options = assetBuilds.value
   const withId = (id: string) => (id ? options.find(({ build }) => build.id === id) : undefined)
+  const restorablePlace =
+    savedPlace.value === CLOUD && !authStore.isSignedIn ? '' : savedPlace.value
   return (
     withId(pickedPlace.value) ??
     withId(windowPlace.value) ??
-    withId(savedPlace.value) ??
+    withId(restorablePlace) ??
     (hasLocalBuild.value || !cloudBuild.value || !authStore.isSignedIn
       ? options.find((option) => !option.cloud)
       : undefined) ??
@@ -440,12 +442,12 @@ const loadKey = computed(() => {
   const selected = selectedBuild.value
   if (!selected) return ''
   return selected.cloud
-    ? `${CLOUD}\n${cloudBuild.value?.id ?? ''}\n${accountContext.value}`
+    ? `${selected.build.id}\n${dashboardScope.selectedWorkspaceId}\n${accountContext.value}`
     : selected.build.id
 })
 
 watch(
-  loadKey,
+  [loadKey, () => (selectedBuild.value?.cloud ? cloudBuild.value?.id : undefined)],
   () => {
     assets.value = []
     void loadAssets()

@@ -84,7 +84,6 @@ import type { InstallationRecord } from '../installations'
 import {
   MAX_FOLDER_DEPTH,
   MAX_LOCAL_ASSETS,
-  MAX_SCANNED_FILES,
   THUMBNAIL_WAIT_MS,
   copyOutputImage,
   hasOutputFolder,
@@ -299,13 +298,18 @@ describe('listLocalAssets', () => {
     expect(truncated).toBe(true)
   })
 
-  it(`stops looking after ${MAX_SCANNED_FILES} files, and says the list was cut`, async () => {
-    for (let i = 0; i < MAX_SCANNED_FILES; i++) write(path.join(sharedDir, `f${i}.glb`))
-    write(path.join(sharedDir, 'later', 'one-more.png'))
+  it('keeps a new nested output when the shared folder has 5,000 older files', async () => {
+    for (let i = 0; i < 5_000; i++) write(path.join(sharedDir, `f${i}.glb`))
+    write(
+      path.join(sharedDir, 'later', 'newest.png'),
+      pngHeader(512, 512),
+      new Date('2026-11-02T00:00:00Z')
+    )
 
-    const { assets, truncated } = await listLocalAssets('Test Instance')
+    const { assets, truncated } = await listLocalAssets()
 
-    expect(assets.map((a) => a.name)).not.toContain('one-more.png')
+    expect(assets[0]?.name).toBe('newest.png')
+    expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
     expect(truncated).toBe(true)
   })
 
