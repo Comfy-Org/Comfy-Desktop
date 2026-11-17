@@ -802,13 +802,19 @@
     "preferences": "偏好设置",
     "privacy": "隐私",
     "community": "社区",
-    "storageTab": "存储",
+    "storageTab": "文件夹",
     "sharedDirectories": "共享目录",
     "storageSharedHint": "这些文件夹由所有构建共享。每个构建可在自己的“存储”标签页中选择是否使用。",
     "installLocation": "默认安装位置",
     "updatesTab": "更新",
     "diagnostics": "诊断",
-    "openLogsFolder": "打开日志文件夹"
+    "openLogsFolder": "打开日志文件夹",
+    "sharedFolders": "共享文件夹",
+    "folderKindModels": "模型",
+    "folderKindInput": "输入",
+    "folderKindOutput": "输出",
+    "useForDownloads": "用于下载",
+    "addModelsFolder": "添加模型文件夹"
   },
   "zoom": {
     "changed": "缩放级别已更改",
@@ -1709,7 +1715,8 @@
     "envVars": "ComfyUI 启动时传入的自定义环境变量。警告：这些值会以未加密形式存储在配置文件中——不要添加 API 密钥、令牌或其他敏感信息。",
     "managerSecurityLevel": "控制 ComfyUI-Manager 允许安装哪些节点包。级别越严格，越会阻止高风险安装，尤其是在使用 --listen 将 ComfyUI 暴露到网络时。下次启动时生效。",
     "managerNetworkMode": "控制此安装中 ComfyUI-Manager 的联网方式。选择“个人云”可在 ComfyUI 通过 --listen 暴露时（例如你自己的云 GPU 机器）允许安装节点包。下次启动时生效。",
-    "betaFeaturesNeedTelemetry": "Beta 功能需要在设置中确认数据共享，即使遥测当前已开启。"
+    "betaFeaturesNeedTelemetry": "Beta 功能需要在设置中确认数据共享，即使遥测当前已开启。",
+    "sharedFolders": "所有构建都可使用的文件夹，避免重复下载模型。新模型会下载到标记为“下载”的文件夹；可通过“用于下载”选择其他文件夹。每个构建可在自己的存储标签页中选择是否使用共享的输入和输出文件夹，也可以添加仅供自己使用的模型文件夹。"
   },
   "envVars": {
     "name": "名称",

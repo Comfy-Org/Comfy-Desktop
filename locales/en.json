@@ -802,13 +802,19 @@
     "preferences": "Preferences",
     "privacy": "Privacy",
     "community": "Community",
-    "storageTab": "Storage",
+    "storageTab": "Folders",
     "sharedDirectories": "Shared Directories",
     "storageSharedHint": "These folders are shared by every build. Each build chooses in its own Storage tab whether to use them.",
     "installLocation": "Default Install Location",
     "updatesTab": "Updates",
     "diagnostics": "Diagnostics",
-    "openLogsFolder": "Open logs folder"
+    "openLogsFolder": "Open logs folder",
+    "sharedFolders": "Shared Folders",
+    "folderKindModels": "Models",
+    "folderKindInput": "Input",
+    "folderKindOutput": "Output",
+    "useForDownloads": "Use for downloads",
+    "addModelsFolder": "Add models folder"
   },
   "zoom": {
     "changed": "Zoom level has been changed",
@@ -1709,7 +1715,8 @@
     "envVars": "Custom environment variables passed to ComfyUI when it starts. Warning: values are stored unencrypted in the configuration file. Do not add API keys, tokens, or other sensitive information.",
     "managerSecurityLevel": "Controls which node packs ComfyUI-Manager allows installing for this install. Stricter levels block higher-risk installs, especially when ComfyUI is exposed to your network with --listen. Applies the next time you launch.",
     "managerNetworkMode": "Controls how ComfyUI-Manager reaches the network for this install. Choose Personal cloud to allow node pack installs while ComfyUI is exposed with --listen (e.g. your own cloud GPU machine). Applies the next time you launch.",
-    "betaFeaturesNeedTelemetry": "Beta features require confirming data sharing in Settings, even if telemetry is currently on."
+    "betaFeaturesNeedTelemetry": "Beta features require confirming data sharing in Settings, even if telemetry is currently on.",
+    "sharedFolders": "Folders every build can use, so models aren't downloaded twice. New models download to the folder marked Downloads; pick another with Use for downloads. Each build chooses in its own Storage tab whether to use the shared input and output folders, and can add model folders just for itself."
   },
   "envVars": {
     "name": "Name",
