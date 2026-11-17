@@ -36,7 +36,7 @@ const STANDALONE = {
   label: 'Standalone',
   fields: [
     { id: 'release', label: 'Release', type: 'select' },
-    { id: 'comfyVersion', label: 'ComfyUI version', type: 'select' },
+    { id: 'comfyVersion', label: 'Version', type: 'select' },
     { id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }
   ]
 }
@@ -191,17 +191,26 @@ function releaseButton(label: string): HTMLElement {
   return button
 }
 
-function hardwareGroup(): HTMLElement {
-  return only('#source-fields [role="radiogroup"]')
+function hardwareTrigger(): HTMLElement {
+  return only('[data-testid="config-select-variant"]')
 }
 
-function hardwareDescriptions(): string[] {
-  return onScreen('#source-fields .setup-option__meta').map(
-    (meta) => meta.textContent?.trim() ?? ''
+type Mounted = Awaited<ReturnType<typeof openChangeSetup>>
+
+function hardwareDescriptions(wrapper: Mounted): string[] {
+  const select = wrapper
+    .findAllComponents(BaseSelect)
+    .find((candidate) => candidate.props('ariaLabel') === 'Hardware')
+  if (!select) throw new Error('the Hardware dropdown is missing')
+  return (select.props('options') as { description?: string }[]).map(
+    (option) => option.description ?? ''
   )
 }
 
-async function openChangeSetup(props: { hideBackToDashboard?: boolean } = {}) {
+async function openChangeSetup(
+  props: { hideBackToDashboard?: boolean } = {},
+  options: { needsConsent?: boolean } = {}
+) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const wrapper = mount(InstallWizardModal, {
@@ -209,7 +218,9 @@ async function openChangeSetup(props: { hideBackToDashboard?: boolean } = {}) {
     attachTo: document.body,
     global: { plugins: [pinia] }
   })
-  await wrapper.vm.open(props.hideBackToDashboard ? { cameFromSetup: true } : {})
+  await wrapper.vm.open(
+    props.hideBackToDashboard ? { cameFromSetup: true, needsConsent: options.needsConsent } : {}
+  )
   await flushPromises()
   if (!props.hideBackToDashboard) {
     only('[data-testid="config-change-setup"]').click()
@@ -268,11 +279,15 @@ describe('switching where Change setup gets ComfyUI', () => {
 
   function navigationLayout(): Box[] {
     return [
-      boxOf('dialog', only('.setup-modal-panel')),
+      { ...boxOf('dialog top', only('.setup-modal-panel')), height: 0 },
       boxOf('title', only('.setup-modal-title')),
-      boxOf('Start from', only('[data-testid="config-start-from"]')),
-      boxOf('footer', only('.setup-modal-foot'))
+      boxOf('Start from', only('[data-testid="config-start-from"]'))
     ]
+  }
+
+  function expectFooterInWindow(height: number): void {
+    const footer = only('.setup-modal-foot').getBoundingClientRect()
+    expect(footer.bottom).toBeLessThanOrEqual(height)
   }
 
   async function pick(testId: string): Promise<void> {
@@ -281,11 +296,24 @@ describe('switching where Change setup gets ComfyUI', () => {
     await nextFrame()
   }
 
+  async function pickWhereItIs(testId: string): Promise<void> {
+    only('[data-testid="existing-comfy-tabs"]').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+    )
+    await flushPromises()
+    await nextFrame()
+    only(`[data-testid="${testId}"]`).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    )
+    await flushPromises()
+    await nextFrame()
+  }
+
   it.each([
     [1100, 860],
     [800, 563]
   ])(
-    'keeps the title, Start from and footer still across all choices at %i × %i',
+    'keeps the title and Start from still across all choices at %i × %i, and only the footer moves',
     async (width, height) => {
       await browserPage.viewport(width, height)
       installSetupChoices()
@@ -294,39 +322,31 @@ describe('switching where Change setup gets ComfyUI', () => {
       const dialog = only('.setup-modal-panel').getBoundingClientRect()
       expect(dialog.top).toBeGreaterThanOrEqual(0)
       expect(dialog.bottom).toBeLessThanOrEqual(height)
+      const body = only('.setup-modal-body')
+      expect(body.scrollHeight).toBeLessThanOrEqual(body.clientHeight)
 
       await pick('config-start-from-existing')
       expect(navigationLayout()).toEqual(settled)
+      expectFooterInWindow(height)
       expect(onScreen('[data-testid="existing-comfy-folder-form"]')).toHaveLength(1)
 
-      await pick('existing-comfy-snapshot')
+      await pickWhereItIs('existing-comfy-snapshot')
       expect(navigationLayout()).toEqual(settled)
       only('.load-snapshot-tertiary').click()
       await flushPromises()
       await nextFrame()
       expect(navigationLayout()).toEqual(settled)
+      expectFooterInWindow(height)
 
-      const body = only('.setup-modal-body')
-      expect(body.scrollHeight).toBeGreaterThan(body.clientHeight)
-      const footer = boxOf('footer', only('.setup-modal-foot'))
-      body.scrollTop = body.scrollHeight
-      await nextFrame()
-      expect(body.scrollTop).toBeGreaterThan(0)
-      expect(boxOf('footer', only('.setup-modal-foot'))).toEqual(footer)
-      body.scrollTop = 0
-
-      await pick('install-source-remote')
+      await pickWhereItIs('install-source-remote')
       expect(navigationLayout()).toEqual(settled)
+      expectFooterInWindow(height)
       expect(onScreen('#sf-url')).toHaveLength(1)
 
       await pick('config-start-from-new')
       expect(navigationLayout()).toEqual(settled)
+      expectFooterInWindow(height)
       expect(onScreen('[data-testid="wizard-hardware-warning"]')).toHaveLength(1)
-
-      await pick('config-discard-changes')
-      expect(only('.setup-modal-panel').getBoundingClientRect().height).toBeLessThanOrEqual(
-        dialog.height
-      )
     }
   )
 
@@ -335,15 +355,41 @@ describe('switching where Change setup gets ComfyUI', () => {
     installSetupChoices()
     await openChangeSetup({ hideBackToDashboard: true })
     const settled = navigationLayout()
-    const footer = only('.setup-modal-foot').getBoundingClientRect()
-    expect(footer.bottom).toBeLessThanOrEqual(window.innerHeight)
+    expectFooterInWindow(window.innerHeight)
 
     await pick('config-start-from-existing')
     expect(navigationLayout()).toEqual(settled)
+    expectFooterInWindow(window.innerHeight)
     expect(onScreen('#sf-url')).toHaveLength(1)
 
     await pick('config-start-from-new')
     expect(navigationLayout()).toEqual(settled)
+    expectFooterInWindow(window.innerHeight)
+  })
+
+  it.each([
+    ['first-use', { hideBackToDashboard: true }],
+    ['New build', {}]
+  ])('fits the %s Change setup in the smallest window without scrolling', async (_flow, props) => {
+    await browserPage.viewport(800, 563)
+    installStandaloneApi(createLoadGate())
+    await openChangeSetup(props)
+    const body = only('.setup-modal-body')
+    expect(body.scrollHeight).toBeLessThanOrEqual(body.clientHeight)
+    expectFooterInWindow(563)
+  })
+
+  it('fits the first-use Change setup that asks for the EULA in the smallest window, on both choices', async () => {
+    await browserPage.viewport(800, 563)
+    installSetupChoices()
+    await openChangeSetup({ hideBackToDashboard: true }, { needsConsent: true })
+    expectFooterInWindow(563)
+
+    await pick('config-start-from-existing')
+    expect(onScreen('[data-testid="config-consent-tos"]')).toHaveLength(1)
+    const body = only('.setup-modal-body')
+    expect(body.scrollHeight).toBeLessThanOrEqual(body.clientHeight)
+    expectFooterInWindow(563)
   })
 })
 
@@ -351,12 +397,12 @@ describe('switching the release channel in Change setup', () => {
   it('keeps the dialog and every row in place from the click until the other channel has loaded', async () => {
     const gate = createLoadGate()
     installStandaloneApi(gate)
-    await openChangeSetup()
+    const wrapper = await openChangeSetup()
     const settled = formLayout()
     expect(settled.map((box) => box.what)).toEqual([
       'dialog',
-      'Start from',
-      'Get ComfyUI from',
+      'How to start',
+      'Source',
       'Release',
       'Location',
       'Hardware',
@@ -367,21 +413,23 @@ describe('switching the release channel in Change setup', () => {
     releaseButton('Latest on GitHub').click()
     await flushPromises()
     expect(gate.pending()).toBe(1)
-    expect(hardwareGroup().getAttribute('aria-busy')).toBe('true')
-    expect(hardwareGroup().inert).toBe(true)
-    expect(onScreen('#source-fields [role="radio"]')).toHaveLength(HARDWARE.length)
+    expect(hardwareTrigger().getAttribute('aria-busy')).toBe('true')
+    expect((hardwareTrigger() as HTMLButtonElement).disabled).toBe(true)
+    expect(hardwareDescriptions(wrapper)).toHaveLength(HARDWARE.length)
     expect(onScreen('.config-loading')).toEqual([])
 
     for (const layout of await layoutsWhileLoading(gate)) expect(layout).toEqual(settled)
     expect(onScreen('.config-release-version')).toEqual([])
-    expect(hardwareGroup().hasAttribute('aria-busy')).toBe(false)
-    expect(hardwareGroup().inert).toBe(false)
-    expect(hardwareDescriptions().every((text) => text.includes('0.4.2 (nightly)'))).toBe(true)
+    expect(hardwareTrigger().hasAttribute('aria-busy')).toBe(false)
+    expect((hardwareTrigger() as HTMLButtonElement).disabled).toBe(false)
+    expect(hardwareDescriptions(wrapper).every((text) => text.includes('0.4.2 (nightly)'))).toBe(
+      true
+    )
 
     releaseButton('Stable').click()
     for (const layout of await layoutsWhileLoading(gate)) expect(layout).toEqual(settled)
     expect(only('.config-release-version .ui-select-label').textContent?.trim()).toBe('v0.4.2')
-    expect(hardwareDescriptions().some((text) => text.includes('nightly'))).toBe(false)
+    expect(hardwareDescriptions(wrapper).some((text) => text.includes('nightly'))).toBe(false)
   })
 
   it('keeps the first-run Change setup still while the other channel loads', async () => {
@@ -401,7 +449,7 @@ describe('switching the release channel in Change setup', () => {
   it('applies only the last choice when the channel is switched back before the first switch loaded', async () => {
     const gate = createLoadGate()
     const getFieldOptions = installStandaloneApi(gate)
-    await openChangeSetup()
+    const wrapper = await openChangeSetup()
     const settled = formLayout()
     gate.hold()
 
@@ -411,7 +459,7 @@ describe('switching the release channel in Change setup', () => {
 
     for (const layout of await layoutsWhileLoading(gate)) expect(layout).toEqual(settled)
     expect(only('.config-release-version .ui-select-label').textContent?.trim()).toBe('v0.4.2')
-    expect(hardwareDescriptions().some((text) => text.includes('nightly'))).toBe(false)
+    expect(hardwareDescriptions(wrapper).some((text) => text.includes('nightly'))).toBe(false)
     const hardwareLoadsForLatest = getFieldOptions.mock.calls.filter(
       ([, fieldId, selections]) => fieldId === 'variant' && selections.release?.value === 'latest'
     )
