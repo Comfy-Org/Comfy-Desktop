@@ -420,7 +420,7 @@ describe('useInstallContextMenu - export latest snapshot', () => {
 
   it('shows Export Snapshot for an installed local install', () => {
     const { menu } = mountHarness(makeInstall({ sourceCategory: 'local' }))
-    expect(findItem(menu.ctxMenuItems.value, 'share')?.label).toBe('Export Snapshot')
+    expect(findItem(menu.ctxMenuItems.value, 'share')?.label).toBe('Export snapshot')
   })
 
   it('hides Export Snapshot for cloud installs (snapshots are local-only)', () => {
@@ -485,7 +485,7 @@ describe('useInstallContextMenu - promote to workspace', () => {
   it('shows the item only when the dashboard eligibility gate accepts the install', () => {
     const eligible = mountHarness(makeInstall(), undefined, () => true)
     expect(findItem(eligible.menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
-      label: 'Upload Build',
+      label: 'Upload build',
       hint: 'Upload this build to Comfy Developer Platform.',
       hintUrl: 'https://platform.comfy.org/profile/deploy',
       hintLinkLabel: 'Read more'

@@ -177,6 +177,11 @@ export interface AssetSummary {
   durationSeconds: number | null
 }
 
+export interface LocalAssetListing {
+  assets: AssetSummary[]
+  truncated: boolean
+}
+
 export interface BuildStorageSnapshot {
   sharedDirectoriesFields: Record<string, unknown>[]
   modelsDirs: { path: string; isPrimary: boolean }[]
@@ -1147,7 +1152,7 @@ export interface ElectronApi {
   ): Promise<ActionResult | void>
 
   stopComfyUI(installationId: string): Promise<void>
-  focusComfyWindow(installationId: string): Promise<boolean>
+  focusComfyWindow(installationId: string, pickerWorkspaceId?: string): Promise<boolean>
 
   terminalSubscribe(installationId: string): Promise<TerminalRestore>
   terminalUnsubscribe(installationId: string): Promise<void>
@@ -1163,7 +1168,7 @@ export interface ElectronApi {
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
-  listLocalAssets(installationId?: string): Promise<AssetSummary[]>
+  listLocalAssets(installationId?: string): Promise<LocalAssetListing>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
   copyAsset(source: string, assetId: string): Promise<boolean>
@@ -1452,6 +1457,17 @@ export const POPUP_KIND = {
 } as const
 
 export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
+
+export type TitlePopupMenuIcon = 'performance-test' | 'benchmarks'
+
+export interface TitlePopupMenuItem {
+  id?: string
+  label?: string
+  labelKey?: string
+  labelParams?: Record<string, string | number>
+  icon?: TitlePopupMenuIcon
+  kind?: 'separator'
+}
 
 export interface PopupTheme {
   bg: string

@@ -142,7 +142,7 @@ test('Return-to-Dashboard from in-flight op cancels and closes the takeover @win
     .toBe(true)
 
   await startInFlightOp()
-  expect(await ctx.panel.clickByText('button', 'Return to Dashboard')).toBe(true)
+  expect(await ctx.panel.clickByText('button', 'Return to Home')).toBe(true)
 
   await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
   expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)

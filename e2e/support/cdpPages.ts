@@ -377,10 +377,11 @@ export function isPopupVisible(app: ElectronApplication, marker: string): Promis
     app.evaluate(({ BrowserWindow, WebContentsView }, m) => {
       for (const win of BrowserWindow.getAllWindows()) {
         for (const child of win.contentView.children) {
-          if (!(child instanceof WebContentsView) || !child.getVisible()) continue
+          if (!(child instanceof WebContentsView)) continue
           if (!child.webContents.getURL().includes(m)) continue
-          const { width, height } = child.getBounds()
-          if (width > 0 && height > 0) return true
+          if (!child.getVisible()) continue
+          const b = child.getBounds()
+          if (b.width > 0 && b.height > 0) return true
         }
       }
       return false

@@ -2,14 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { Category, ViewKind } from '../shared/viewKind'
 import { PICKER_SETTINGS_CHANNELS as CH, POPUP_KIND } from '../types/ipc'
-import type { PopupTheme, TerminalRestore } from '../types/ipc'
-
-export interface TitlePopupMenuItem {
-  id?: string
-  label?: string
-  labelKey?: string
-  kind?: 'separator'
-}
+import type { PopupTheme, TerminalRestore, TitlePopupMenuItem } from '../types/ipc'
 
 export interface PopupInstancePickerInstall {
   id: string
