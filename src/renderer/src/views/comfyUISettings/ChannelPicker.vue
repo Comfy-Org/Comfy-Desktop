@@ -475,7 +475,9 @@ function actionClass(
 
 <template>
   <div class="channel-picker flex flex-col gap-3">
-    <div class="channel-picker-status-stack grid grid-cols-1 rounded-[14px] bg-card">
+    <div
+      class="channel-picker-status-stack grid grid-cols-1 rounded-[14px] border border-solid border-transparent bg-card"
+    >
       <div
         v-for="(status, index) in selectedFirstThenEveryOtherOption"
         :key="index"
