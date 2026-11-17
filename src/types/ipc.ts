@@ -1,5 +1,6 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
+import type { NewWindowDashboardPage } from '../shared/dashboardPages'
 export type { FirstUseMode }
 import type { PlatformSettingsPage } from '../main/devplatform/config'
 export type { PlatformSettingsPage }
@@ -571,6 +572,8 @@ export interface ComfyExitedData {
   crashKind?: CrashKind
   vcRuntimeMissing?: string[]
   crashedAtMs?: number
+  message?: string
+  startFailed?: boolean
 }
 
 export interface ComfyBootLogData {
@@ -1172,6 +1175,7 @@ export interface ElectronApi {
   closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
+  openPageInNewWindow(page: NewWindowDashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
   listLocalAssets(installationId?: string): Promise<LocalAssetListing>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
@@ -1190,7 +1194,6 @@ export interface ElectronApi {
   ): () => void
   onAppPageClosed(callback: () => void): () => void
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
-  resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(
     tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
     opts?: {
@@ -1427,7 +1430,6 @@ export interface ElectronApi {
       settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
       title?: string
       cancellable?: boolean
-      startupRestore?: boolean
       triggersInstanceStart?: boolean
       opKind?: 'launch' | 'install' | 'update' | 'destructive' | 'snapshot' | 'generic'
       isRestart?: boolean

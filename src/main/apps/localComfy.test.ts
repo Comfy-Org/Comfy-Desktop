@@ -15,7 +15,9 @@ const mocks = vi.hoisted(() => ({
   probeQueue: (_port: number): Promise<unknown> => Promise.resolve({ running: 0, pending: 0 }),
   startModelJob: (_options: Record<string, unknown>): Promise<unknown> => Promise.resolve(null),
   makeRelay: (): unknown => null,
-  hearFromComfy: (_message: unknown): void => {}
+  hearFromComfy: (_message: unknown): void => {},
+  broadcasts: [] as [string, unknown][],
+  keepComfyRunning: true
 }))
 
 vi.mock('fs', () => ({
@@ -57,11 +59,14 @@ vi.mock('../lib/ipc/sessionActions/launch', () => ({
 vi.mock('../lib/ipc/shared', async () => {
   const { EventEmitter: Emitter } = await import('node:events')
   return {
+    _broadcastToRenderer: (channel: string, data: unknown) =>
+      mocks.broadcasts.push([channel, data]),
     _hasActiveLaunch: (id: string) => mocks.launching.has(id),
     _operationAborts: new Map(),
     _runningSessions: mocks.sessions,
+    keepsComfyRunningWhenWindowCloses: () => mocks.keepComfyRunning,
     sessionLifecycleEvents: new Emitter(),
-    sourceMap: { standalone: { category: 'local' } },
+    sourceMap: { standalone: { category: 'local' }, remote: { category: 'remote' } },
     stopRunning: (id: string) => mocks.stopRunning(id)
   }
 })
@@ -77,6 +82,8 @@ vi.mock('./localRelay', () => ({
   }
 }))
 
+import { _resetCrashBuffer, getAllCrashes } from '../lib/crashBuffer'
+import type { InstallationRecord } from '../installations'
 import { sessionLifecycleEvents } from '../lib/ipc/shared'
 import * as local from './localComfy'
 
@@ -240,6 +247,8 @@ beforeEach(() => {
   mocks.installing.clear()
   mocks.ownModels.clear()
   mocks.windows.clear()
+  mocks.broadcasts = []
+  _resetCrashBuffer()
   mocks.handleLaunch = async () => ({ ok: false })
   mocks.stopRunning = async (id) => {
     stopped.push(id)
@@ -781,7 +790,8 @@ describe('downloading a model for an app', () => {
         url: BIREFNET.url,
         filename: 'birefnet.safetensors',
         directory: 'background_removal',
-        installationId: STUDIO
+        installationId: STUDIO,
+        source: 'app'
       })
     ])
     expect(job.release).toHaveBeenCalledTimes(1)
@@ -1183,6 +1193,130 @@ describe('a ComfyUI that Desktop started for apps', () => {
   })
 })
 
+describe('the Auto start build, started when Desktop opens', () => {
+  const startWithDesktop = () => local.startWithDesktop(build() as unknown as InstallationRecord)
+
+  it('starts in the background with no ComfyUI window, the way apps start one', async () => {
+    startsWhenLaunched()
+
+    await startWithDesktop()
+
+    expect(launches).toHaveLength(1)
+    expect(launches[0]).toMatchObject({
+      installationId: STUDIO,
+      actionData: { launchModeOverride: 'console', autoPortOnConflict: true }
+    })
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(true)
+    expect(mocks.broadcasts).toEqual([])
+  })
+
+  it('keeps running however long it sits unused, also after an app ran on it', async () => {
+    startsWhenLaunched()
+    await startWithDesktop()
+    await startLocal(WANT)
+    await localFetch({ path: '/queue' })
+
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    expect(launches).toHaveLength(1)
+    expect(stopped).toEqual([])
+  })
+
+  it('is stopped by the idle stop once it stopped and an app started it again', async () => {
+    startsWhenLaunched()
+    await startWithDesktop()
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed')
+    await startLocal(WANT)
+
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    expect(launches).toHaveLength(2)
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it('is stopped like the apps builds when every Desktop window closes', async () => {
+    startsWhenLaunched()
+    await startWithDesktop()
+
+    await local.stopBuildsRunningForAppsOnly()
+
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it.each([
+    ['it has work queued', { running: 1, pending: 2 }],
+    ['its queue does not answer', null]
+  ])(
+    'keeps running when every Desktop window closes while %s, and is stopped once idle after that',
+    async (_case, queue) => {
+      startsWhenLaunched()
+      await startWithDesktop()
+      mocks.probeQueue = async () => queue
+      await local.stopBuildsRunningForAppsOnly()
+      expect(stopped).toEqual([])
+
+      mocks.probeQueue = async () => ({ running: 0, pending: 0 })
+      await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+      expect(stopped).toEqual([STUDIO])
+    }
+  )
+
+  it("tells Home it didn't start, with the reason, when its start fails", async () => {
+    mocks.handleLaunch = async () => ({ ok: false, message: 'ComfyUI exited with code 1' })
+
+    await startWithDesktop()
+
+    const failure = {
+      installationId: STUDIO,
+      installationName: 'Studio',
+      message: 'ComfyUI exited with code 1',
+      startFailed: true
+    }
+    expect(mocks.broadcasts).toEqual([['instance-crashed', failure]])
+    expect(getAllCrashes()).toMatchObject([failure])
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+  })
+
+  it('names the build when its start fails without a reason', async () => {
+    await startWithDesktop()
+
+    expect(mocks.broadcasts).toEqual([
+      [
+        'instance-crashed',
+        {
+          installationId: STUDIO,
+          installationName: 'Studio',
+          message: 'apps.local.couldNotStart Studio',
+          startFailed: true
+        }
+      ]
+    ])
+  })
+
+  it('leaves a remote connection to connect when Open is pressed, with no background connection', async () => {
+    startsWhenLaunched()
+
+    await local.startWithDesktop(
+      build({ sourceId: 'remote', installPath: '' }) as unknown as InstallationRecord
+    )
+
+    expect(launches).toEqual([])
+    expect(mocks.broadcasts).toEqual([])
+    expect(getAllCrashes()).toEqual([])
+  })
+
+  it('says nothing when its start was cancelled', async () => {
+    mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
+
+    await startWithDesktop()
+
+    expect(mocks.broadcasts).toEqual([])
+    expect(getAllCrashes()).toEqual([])
+  })
+})
+
 describe('a ComfyUI the person started themselves', () => {
   it('is never stopped by apps, however long it sits unused', async () => {
     running()
@@ -1208,5 +1342,61 @@ describe('a ComfyUI the person started themselves', () => {
     await local.stopBuildsRunningForAppsOnly()
 
     expect(stopped).toEqual([])
+  })
+})
+
+describe('a ComfyUI whose window the person closed, with keepComfyRunningWhenWindowCloses off', () => {
+  beforeEach(() => {
+    mocks.keepComfyRunning = false
+  })
+
+  afterEach(() => {
+    mocks.keepComfyRunning = true
+  })
+
+  it('does not run with its window closed, since closing the window stops it', () => {
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'window', hadWindow: true })
+
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(false)
+  })
+})
+
+describe('a ComfyUI whose window the person closed', () => {
+  it('runs with its window closed, so opening it shows it in a new window', () => {
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'window' })
+
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(true)
+  })
+
+  it('does not while its window is open', () => {
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'window' })
+    mocks.windows.set(STUDIO, { window: {} })
+
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(false)
+  })
+
+  it.each(['console', 'external'])('does not when the person started it in %s mode', (mode) => {
+    mocks.sessions.set(STUDIO, { port: PORT, mode })
+
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(false)
+  })
+
+  it('does not once it stops', () => {
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(false)
+  })
+
+  it('runs with its window closed when apps started it and let it go while its window was open', async () => {
+    startsWhenLaunched()
+    await startLocal(WANT)
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'console' })
+    mocks.windows.set(STUDIO, { window: {} })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    mocks.windows.delete(STUDIO)
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'console', hadWindow: true })
+
+    expect(stopped).toEqual([])
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(true)
   })
 })

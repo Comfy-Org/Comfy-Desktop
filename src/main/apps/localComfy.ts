@@ -12,13 +12,17 @@ import type { InstallationRecord } from '../installations'
 import { startManagedModelJob } from '../lib/comfyDownloadManager'
 import { probeQueue } from '../lib/comfyProcessRecord'
 import type { QueueAnswer } from '../lib/comfyProcessRecord'
+import { recordCrash } from '../lib/crashBuffer'
 import * as i18n from '../lib/i18n'
 import { handleLaunch } from '../lib/ipc/sessionActions/launch'
 import type { ActionResult } from '../lib/ipc/sessionActions/types'
 import {
+  _broadcastToRenderer,
   _hasActiveLaunch,
   _runningSessions,
+  keepsComfyRunningWhenWindowCloses,
   sessionLifecycleEvents,
+  sourceMap,
   stopRunning
 } from '../lib/ipc/shared'
 import { COMFY_BOOT_TIMEOUT_MS } from '../lib/process'
@@ -88,6 +92,7 @@ let downloadsUnderWay = 0
 const targetByPage = new WeakMap<WebContents, Target>()
 const relayByBuild = new Map<string, LocalRelay>()
 const startedHere = new Set<string>()
+const keptRunning = new Set<string>()
 const launches = new Map<string, Promise<ActionResult>>()
 const ownRuns = new Map<string, string>()
 const ownFiles = new Map<string, Set<string>>()
@@ -125,7 +130,11 @@ function relayFor(installationId: string, port: number): LocalRelay {
 }
 
 function stopFollowingStoppedBuilds(): void {
-  for (const id of startedHere) if (runningPortOf(id) === null) startedHere.delete(id)
+  for (const id of startedHere) {
+    if (runningPortOf(id) !== null) continue
+    startedHere.delete(id)
+    keptRunning.delete(id)
+  }
   for (const [id, relay] of relayByBuild) {
     if (runningPortOf(id) !== null) continue
     relay.stop()
@@ -153,10 +162,14 @@ async function idleState(installationId: string): Promise<'gone' | 'busy' | 'rep
   return isEmpty(queue) ? 'idle' : 'busy'
 }
 
+function idleStoppable(): string[] {
+  return [...startedHere].filter((id) => !keptRunning.has(id))
+}
+
 async function stopIdleBuilds(): Promise<void> {
   idleTimer = null
   if (downloadsUnderWay > 0) return noteUse()
-  for (const id of [...startedHere]) {
+  for (const id of idleStoppable()) {
     const state = await idleState(id)
     if (state === 'busy' || state === 'replaced') continue
     startedHere.delete(id)
@@ -168,7 +181,7 @@ async function stopIdleBuilds(): Promise<void> {
 function noteUse(): void {
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer =
-    startedHere.size > 0 ? setTimeout(() => void stopIdleBuilds(), LOCAL_IDLE_STOP_MS) : null
+    idleStoppable().length > 0 ? setTimeout(() => void stopIdleBuilds(), LOCAL_IDLE_STOP_MS) : null
 }
 
 function whyNoBuild(choice: Exclude<LocalChoice, { kind: 'build' }>): string {
@@ -255,7 +268,10 @@ export function launchQuietly(
   return handleLaunch({ event: QUIET_EVENT, installationId: inst.id, inst, actionData })
 }
 
-async function launchWithoutWindow(installationId: string): Promise<ActionResult> {
+async function launchWithoutWindow(
+  installationId: string,
+  keepRunning: boolean
+): Promise<ActionResult> {
   if (_hasActiveLaunch(installationId)) return waitForOtherLaunch(installationId)
   const inst = await installations.get(installationId)
   if (!inst) return { ok: false }
@@ -263,13 +279,27 @@ async function launchWithoutWindow(installationId: string): Promise<ActionResult
     launchModeOverride: 'console',
     autoPortOnConflict: true
   })
-  if (result.ok) startedHere.add(installationId)
+  if (result.ok) {
+    startedHere.add(installationId)
+    if (keepRunning) keptRunning.add(installationId)
+    else keptRunning.delete(installationId)
+  }
   return result
 }
 
 export function isRunningForAppsOnly(installationId: string): boolean {
   return (
     startedHere.has(installationId) &&
+    runningPortOf(installationId) !== null &&
+    !getEntryByInstallationId(installationId)
+  )
+}
+
+export function runsWithItsWindowClosed(installationId: string): boolean {
+  if (!keepsComfyRunningWhenWindowCloses()) return false
+  const session = _runningSessions.get(installationId)
+  return (
+    (session?.mode === 'window' || session?.hadWindow === true) &&
     runningPortOf(installationId) !== null &&
     !getEntryByInstallationId(installationId)
   )
@@ -286,6 +316,7 @@ async function stopIfIdle(installationId: string): Promise<void> {
 }
 
 export async function stopBuildsRunningForAppsOnly(): Promise<void> {
+  keptRunning.clear()
   await Promise.all([...startedHere].filter(isRunningForAppsOnly).map(stopIfIdle))
   noteUse()
 }
@@ -297,14 +328,33 @@ export async function stopEveryBuildRunningForAppsOnly(): Promise<void> {
   await Promise.all(ids.map((id) => stopRunning(id)))
 }
 
-export function launchOnce(installationId: string): Promise<ActionResult> {
+export function launchOnce(installationId: string, keepRunning = false): Promise<ActionResult> {
   const pending = launches.get(installationId)
   if (pending) return pending
-  const launch = launchWithoutWindow(installationId)
+  const launch = launchWithoutWindow(installationId, keepRunning)
     .catch((err: unknown): ActionResult => ({ ok: false, message: (err as Error)?.message }))
     .finally(() => launches.delete(installationId))
   launches.set(installationId, launch)
   return launch
+}
+
+function isLocalSource(inst: InstallationRecord): boolean {
+  return sourceMap[inst.sourceId]?.category === 'local'
+}
+
+export async function startWithDesktop(inst: InstallationRecord): Promise<void> {
+  if (!isLocalSource(inst)) return
+  watchSessions()
+  const result = await launchOnce(inst.id, true)
+  if (result.ok || result.cancelled) return
+  const failure = {
+    installationId: inst.id,
+    installationName: inst.name,
+    message: result.message || i18n.t('apps.local.couldNotStart', { name: inst.name }),
+    startFailed: true
+  }
+  recordCrash(failure)
+  _broadcastToRenderer('instance-crashed', failure)
 }
 
 async function chooseInstalledTarget(
@@ -550,6 +600,7 @@ async function downloadInto(
     filename: model.name,
     directory: model.folder,
     installationId,
+    source: 'app',
     onProgress: downloadProgress(model.name)
   })
   try {
@@ -598,6 +649,7 @@ export function _resetForTest(): void {
   if (watchingSessions) sessionLifecycleEvents.off('changed', stopFollowingStoppedBuilds)
   watchingSessions = false
   startedHere.clear()
+  keptRunning.clear()
   launches.clear()
   ownRuns.clear()
   ownFiles.clear()

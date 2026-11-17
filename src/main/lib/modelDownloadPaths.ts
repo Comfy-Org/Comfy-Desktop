@@ -35,14 +35,21 @@ export async function collectModelScanRoots(): Promise<string[]> {
   return [...roots]
 }
 
+interface ModelDownloadContext extends InstallModelSearch {
+  hasSuccessfulRun: boolean
+}
+
 export async function resolveDownloadContextById(
   installationId: string | null
-): Promise<InstallModelSearch | null> {
+): Promise<ModelDownloadContext | null> {
   if (!installationId) return null
   try {
     const inst = await installations.get(installationId)
     if (!inst || !inst.installPath) return null
-    return resolveDownloadContext(inst)
+    return {
+      ...resolveDownloadContext(inst),
+      hasSuccessfulRun: Boolean(inst.firstRunAt)
+    }
   } catch {
     return null
   }
