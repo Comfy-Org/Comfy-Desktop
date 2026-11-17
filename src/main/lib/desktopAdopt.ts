@@ -1012,7 +1012,7 @@ async function runAdoption(
     method: 'adopt',
     express: false
   })
-  await startFirstBuildWithDesktop(record.id)
+  if (!signal.aborted) await startFirstBuildWithDesktop(record.id)
 
   sendProgress('done', { percent: 100 })
   return record

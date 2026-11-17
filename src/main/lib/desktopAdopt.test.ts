@@ -1720,6 +1720,36 @@ describe('Auto start for a migrated legacy Desktop build', () => {
     }
   })
 
+  it('leaves Auto start off when the migration is cancelled while requirements install', async () => {
+    const legacy = buildFakeLegacy({ configFiles: { 'comfy.settings.json': '{}' } })
+    try {
+      const uvPath = getLegacyVenvUvPath(legacy.basePath)
+      fs.mkdirSync(path.dirname(uvPath), { recursive: true })
+      fs.writeFileSync(uvPath, '')
+      const cloneFn = vi.fn(async (_url: string, dest: string) => {
+        fs.mkdirSync(dest, { recursive: true })
+        fs.writeFileSync(path.join(dest, 'main.py'), '# clone')
+        fs.writeFileSync(path.join(dest, 'requirements.txt'), 'torch>=2.0\n')
+        return { ok: true as const }
+      })
+      const cancel = new AbortController()
+      installFilteredRequirementsMock.mockImplementationOnce(async () => {
+        cancel.abort()
+        return 1
+      })
+
+      await adoptDesktopInstall({
+        tools: { ...buildSilentTools(), signal: cancel.signal },
+        deps: buildDeps({ cloneSourceFromGit: cloneFn }, legacy.info)
+      }).catch(() => undefined)
+
+      expect(installFilteredRequirementsMock).toHaveBeenCalled()
+      expect(autoStart()).toBe('none')
+    } finally {
+      legacy.cleanup()
+    }
+  })
+
   it('does not turn Auto start back on when a build that was already migrated is migrated again', async () => {
     const legacy = buildFakeLegacy({ configFiles: { 'comfy.settings.json': '{}' } })
     try {
