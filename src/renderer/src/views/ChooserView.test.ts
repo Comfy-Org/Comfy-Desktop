@@ -239,7 +239,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('show-new-install')).toEqual([[]])
   })
 
-  it('filters by where a build runs, counting each tab and hiding empty ones', async () => {
+  it('filters by where a build runs, hiding empty tabs and showing no counts', async () => {
     installMockApi([
       makeInstall({ id: 'a', name: 'Alpha' }),
       makeInstall({ id: 'b', name: 'Beta' }),
@@ -248,7 +248,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     const tabs = (): string[] => tabButtons(wrapper).map((tab) => tab.text())
-    expect(tabs()).toEqual(['All3', 'This computer2', 'Cloud1'])
+    expect(tabs()).toEqual(['All', 'This computer', 'Cloud'])
 
     await tabButtons(wrapper)[2]!.trigger('click')
     await flushPromises()
@@ -789,10 +789,10 @@ describe('ChooserView', () => {
     await flushPromises()
 
     expect(tabButtons(wrapper).map((tab) => tab.text())).toEqual([
-      'All4',
-      'This computer2',
-      'Cloud1',
-      'Remote1'
+      'All',
+      'This computer',
+      'Cloud',
+      'Remote'
     ])
     expect(tabButtons(wrapper)[0]!.attributes('data-state')).toBe('on')
 

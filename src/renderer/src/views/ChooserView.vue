@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
-import { useEventListener } from '@vueuse/core'
-import { computed, onMounted, ref, toRef, watch } from 'vue'
+import { useElementSize, useEventListener } from '@vueuse/core'
+import { computed, nextTick, onMounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useAuthStore } from '../stores/authStore'
@@ -127,16 +127,12 @@ const scopedInstalls = computed(() => effectiveInstalls.value.filter(installatio
 const whereOptions = computed(() => {
   const count = (category: string): number =>
     scopedInstalls.value.filter((inst) => inst.sourceCategory === category).length
-  const options: { value: FilterKey; label: string; count: number }[] = [
-    { value: 'all', label: t('chooser.filterAll'), count: scopedInstalls.value.length },
-    { value: 'local', label: t('chooser.filterThisComputer'), count: count('local') }
+  const options: { value: FilterKey; label: string }[] = [
+    { value: 'all', label: t('chooser.filterAll') },
+    { value: 'local', label: t('chooser.filterThisComputer') }
   ]
-  if (count('cloud') > 0) {
-    options.push({ value: 'cloud', label: t('chooser.filterCloud'), count: count('cloud') })
-  }
-  if (count('remote') > 0) {
-    options.push({ value: 'remote', label: t('chooser.filterRemote'), count: count('remote') })
-  }
+  if (count('cloud') > 0) options.push({ value: 'cloud', label: t('chooser.filterCloud') })
+  if (count('remote') > 0) options.push({ value: 'remote', label: t('chooser.filterRemote') })
   return options
 })
 watch(whereOptions, (options) => {
@@ -152,6 +148,40 @@ const showNoBuilds = computed(() => scopedVisibleInstalls.value.length === 0 && 
 function clearFilters(): void {
   searchQuery.value = ''
   activeFilter.value = 'all'
+}
+
+const TOOLBAR_GAP = 8
+const SORT_WIDTH = 152
+const SEARCH_WIDTH = 220
+const ICON_WIDTH = 32
+const { width: toolbarWidth } = useElementSize(useTemplateRef<HTMLElement>('toolbar'))
+const { width: tabsWidth } = useElementSize(useTemplateRef<HTMLElement>('toolbarTabs'))
+const toolbarLayout = computed<'full' | 'icon' | 'stacked'>(() => {
+  const refresh = authStore.isSignedIn ? ICON_WIDTH + TOOLBAR_GAP : 0
+  const line = tabsWidth.value + TOOLBAR_GAP + refresh + SORT_WIDTH + TOOLBAR_GAP
+  if (toolbarWidth.value >= line + SEARCH_WIDTH) return 'full'
+  if (toolbarWidth.value >= line + ICON_WIDTH) return 'icon'
+  return 'stacked'
+})
+const searchOpen = ref(false)
+const searchFolded = computed(() => toolbarLayout.value === 'icon' && !searchOpen.value)
+const searchField = useTemplateRef<HTMLElement>('searchField')
+
+async function openSearch(): Promise<void> {
+  searchOpen.value = true
+  await nextTick()
+  searchField.value?.querySelector('input')?.focus()
+}
+
+function closeSearchIfEmpty(event: FocusEvent): void {
+  const next = event.relatedTarget as Node | null
+  if (next && searchField.value?.contains(next)) return
+  if (!searchQuery.value.trim()) searchOpen.value = false
+}
+
+function closeSearch(): void {
+  searchQuery.value = ''
+  searchOpen.value = false
 }
 
 const refreshingWorkspace = computed(() => authStore.loadingWorkspaces || authStore.loadingBuilds)
@@ -292,19 +322,28 @@ const gridHandlers = {
         </SplitButton>
       </header>
 
-      <div class="chooser-toolbar mb-5 flex min-h-8 flex-wrap items-center gap-2">
-        <SegmentedControl
-          v-model="activeFilter"
-          :options="whereOptions"
-          :label="t('chooser.whereLabel')"
-        />
-        <div class="ml-auto flex items-center gap-2">
+      <div
+        ref="toolbar"
+        class="chooser-toolbar mb-5 flex min-h-8 flex-wrap items-center gap-2"
+        :data-layout="toolbarLayout"
+      >
+        <div ref="toolbarTabs" class="shrink-0">
+          <SegmentedControl
+            v-model="activeFilter"
+            :options="whereOptions"
+            :label="t('chooser.whereLabel')"
+          />
+        </div>
+        <div
+          class="flex min-w-0 items-center gap-2"
+          :class="toolbarLayout === 'stacked' ? 'basis-full' : 'ml-auto'"
+        >
           <Button
             v-if="authStore.isSignedIn"
             variant="muted-textonly"
             size="icon"
             type="button"
-            class="chooser-workspace-refresh"
+            class="chooser-workspace-refresh shrink-0"
             :disabled="refreshingWorkspace"
             :aria-label="t('devPlatform.workspace.refresh')"
             :title="t('devPlatform.workspace.refresh')"
@@ -319,7 +358,7 @@ const gridHandlers = {
               }"
             />
           </Button>
-          <div class="w-38">
+          <div v-show="toolbarLayout !== 'icon' || !searchOpen" class="w-38 shrink-0">
             <BaseSelect
               v-model="sortOrder"
               :options="sortOptions"
@@ -327,7 +366,31 @@ const gridHandlers = {
               compact
             />
           </div>
-          <div class="chooser-search w-[220px]">
+          <Button
+            v-if="searchFolded"
+            variant="muted-textonly"
+            size="icon"
+            type="button"
+            class="chooser-search-toggle shrink-0"
+            :aria-label="t('chooser.searchBuilds')"
+            :title="t('chooser.searchBuilds')"
+            data-testid="chooser-search-toggle"
+            @click="openSearch"
+          >
+            <Search :size="14" />
+          </Button>
+          <div
+            v-else
+            ref="searchField"
+            class="chooser-search"
+            :class="{
+              'w-[220px]': toolbarLayout === 'full',
+              'w-[192px]': toolbarLayout === 'icon',
+              'min-w-0 flex-1': toolbarLayout === 'stacked'
+            }"
+            @focusout="closeSearchIfEmpty"
+            @keydown.esc="closeSearch"
+          >
             <BaseInput
               v-model="searchQuery"
               class="h-8 [&_input]:text-[13px]"
