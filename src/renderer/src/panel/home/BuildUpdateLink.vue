@@ -13,11 +13,13 @@ const { run } = useBuildMenu(() => build)
   <button
     type="button"
     class="pointer-events-auto relative min-w-0 cursor-pointer truncate rounded-sm text-subtle-foreground underline decoration-current/40 underline-offset-2 transition-colors hover:text-foreground hover:decoration-current focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+    :title="t('chooser.updateAvailable')"
+    :aria-label="t('chooser.updateAvailable')"
     data-testid="build-update-link"
     @click.stop="run('update')"
     @keydown.enter.stop
     @keydown.space.stop
   >
-    {{ t('chooser.updateAvailable') }}
+    {{ t('chooser.updatePill') }}
   </button>
 </template>

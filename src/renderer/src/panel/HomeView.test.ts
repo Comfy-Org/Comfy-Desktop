@@ -433,7 +433,7 @@ describe('Home builds', () => {
     await flushPromises()
 
     expect(wrapper.findAll('[data-testid="home-build"]').map((card) => card.text())).toEqual([
-      'ReadyMy Local 1Standalone · Update available',
+      'ReadyMy Local 1Standalone · Update',
       'RunningVideo LabStandalone',
       'Always onComfy CloudRTX 6000 Pro · 96 GB'
     ])
@@ -451,9 +451,7 @@ describe('Home builds', () => {
 
     const card = wrapper.get('[data-testid="home-build"]')
     expect(card.get('[data-testid="home-build-status"]').text()).toBe('Running')
-    expect(card.get('[data-testid="home-build-detail"]').text()).toBe(
-      'Standalone · Update available'
-    )
+    expect(card.get('[data-testid="home-build-detail"]').text()).toBe('Standalone · Update')
     expect(card.get('[data-testid="home-build-open"]').attributes('aria-label')).toBe(
       'My Local 1, Running'
     )
@@ -469,9 +467,7 @@ describe('Home builds', () => {
     ])
     const wrapper = await openHome()
 
-    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe(
-      'v0.3.68 · Update available'
-    )
+    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe('v0.3.68 · Update')
   })
 
   it('starts a build with an update from its card, saying Ready on top', async () => {
@@ -505,13 +501,11 @@ describe('Home builds', () => {
     expect(kept).toEqual(['My Local 1', 'Video Lab'])
   })
 
-  it('shows a stopped local build as ready, with its ComfyUI version and no folder path', async () => {
+  it('shows a stopped local build as ready, with its version and no folder path', async () => {
     getInstallations.mockResolvedValue([OLDEST])
     const wrapper = await openHome()
 
-    expect(wrapper.get('[data-testid="home-build"]').text()).toBe(
-      'ReadyFlux SandboxComfyUI v0.42.4'
-    )
+    expect(wrapper.get('[data-testid="home-build"]').text()).toBe('ReadyFlux Sandboxv0.42.4')
   })
 
   it('shows the address of a remote ComfyUI instead of hardware', async () => {

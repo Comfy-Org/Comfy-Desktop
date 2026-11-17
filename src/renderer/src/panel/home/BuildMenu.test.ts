@@ -242,7 +242,7 @@ describe('Build menu', () => {
     expect(await shownMenu()).not.toContain('auto-start')
   })
 
-  it('updates from the Update available link beside the version without opening the build', async () => {
+  it('updates from the Update link beside the version without opening the build', async () => {
     const getDetailSections = vi.fn().mockResolvedValue([])
     const openInstancePicker = vi.fn()
     Object.assign(window.api, { getDetailSections, openInstancePicker })
@@ -258,9 +258,7 @@ describe('Build menu', () => {
     mounted.push(wrapper)
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe(
-      'v0.42.4 · Update available'
-    )
+    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe('v0.42.4 · Update')
     await wrapper.get('[data-testid="build-update-link"]').trigger('click')
     await flushPromises()
 
