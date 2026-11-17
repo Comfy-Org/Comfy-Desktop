@@ -79,6 +79,7 @@ const launchHarness = vi.hoisted(() => ({
   busyPids: [31337] as number[],
   portLockPid: null as null | number,
   killExits: true,
+  killGate: null as null | ((proc: unknown) => Promise<void>),
   campaigns: { registry: [] as unknown[], answers: new Map<string, unknown>() },
   campaignRecords: {} as Record<string, Record<string, { epoch: number; enrolledAt: number }>>,
   recordWrites: [] as Array<[string, string, number]>,
@@ -213,7 +214,10 @@ vi.mock('../shared', async (importOriginal) => {
       launchHarness.busyPorts
         ? Promise.resolve({ name: 'python', commandLine: 'python -s ComfyUI/main.py' })
         : actual.getProcessInfo(...args),
-    killProcessTree: async () => ({ exited: launchHarness.killExits, waitMs: 0 })
+    killProcessTree: async (proc: unknown) => {
+      if (launchHarness.killGate) await launchHarness.killGate(proc)
+      return { exited: launchHarness.killExits, waitMs: 0 }
+    }
   }
 })
 
@@ -398,8 +402,10 @@ import {
   _hasActiveLocalLaunch,
   _setActiveLaunchPickerWorkspace,
   _stoppingInstallationIds,
+  cancelAll,
   noteWindowClosed,
-  setCallbacks
+  setCallbacks,
+  stopRunning
 } from '../shared'
 import { clearCrash, getCrash } from '../../crashBuffer'
 import type { InstanceStartedCallbackInfo, SessionInfo } from '../shared'
@@ -5650,6 +5656,79 @@ describe('prior ComfyUI process handling at launch', () => {
       expect(res.ok).toBe(false)
       expect(children).toHaveLength(1)
     })
+  })
+
+  describe('stopped while it restarts for model folders a custom node added', () => {
+    let modelsDir = ''
+
+    beforeEach(() => {
+      modelsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'model-folder-restart-'))
+      fs.mkdirSync(path.join(installDir, 'ComfyUI', 'models'), { recursive: true })
+      launchHarness.waitForPort = async () => {
+        fs.mkdirSync(path.join(installDir, 'ComfyUI', 'models', 'node_added_models'), {
+          recursive: true
+        })
+      }
+      launchHarness.spawn = () => {
+        const child = fakeChild()
+        child.pid = 0
+        children.push(child)
+        return child
+      }
+    })
+
+    afterEach(() => {
+      launchHarness.killGate = null
+      fs.rmSync(modelsDir, { recursive: true, force: true })
+    })
+
+    it.each([
+      {
+        by: "Home's Cancel",
+        id: 'model-restart-home-cancel',
+        stop: (id: string): Promise<void> => {
+          _operationAborts.get(id)?.abort()
+          return stopRunning(id)
+        }
+      },
+      {
+        by: 'quitting Desktop',
+        id: 'model-restart-quit',
+        stop: async (): Promise<void> => cancelAll()
+      }
+    ])(
+      'leaves no ComfyUI running untracked when $by arrives while the first process stops',
+      async ({ id, stop }) => {
+        const killed: unknown[] = []
+        let releaseFirstKill = (): void => {}
+        let firstKillHeld = (): void => {}
+        const firstKillStarted = new Promise<void>((resolve) => (firstKillHeld = resolve))
+        launchHarness.killGate = (proc) => {
+          killed.push(proc)
+          if (proc !== children[0]) return Promise.resolve()
+          firstKillHeld()
+          return new Promise<void>((resolve) => (releaseFirstKill = resolve))
+        }
+        const inst = {
+          ...install(),
+          useSharedModels: false,
+          modelDirs: [modelsDir]
+        } as unknown as InstallationRecord
+
+        const launching = handleLaunch({ ...ctxFor(id), inst })
+        await firstKillStarted
+        await stop(id)
+        releaseFirstKill()
+        const res = await launching
+
+        expect(
+          children.filter((child) => !killed.includes(child)),
+          'ComfyUI processes still running with nothing tracking them'
+        ).toHaveLength(0)
+        expect(_runningSessions.has(id)).toBe(false)
+        expect(res).toMatchObject({ ok: false, cancelled: true })
+      }
+    )
   })
 })
 

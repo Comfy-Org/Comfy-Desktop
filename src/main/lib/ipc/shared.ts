@@ -1372,6 +1372,7 @@ export async function stopRunning(
   if (installationId) {
     const session = _runningSessions.get(installationId)
     if (!session) return
+    _activeLaunches.get(installationId)?.abort.abort()
     _stoppingInstallationIds.add(installationId)
     _broadcastToRenderer('instance-stopping', { installationId })
     onEnterStopping?.({ installationId })
@@ -1388,6 +1389,7 @@ export async function stopRunning(
   } else {
     const sessions = [..._runningSessions.entries()]
     for (const [id] of sessions) {
+      _activeLaunches.get(id)?.abort.abort()
       _stoppingInstallationIds.add(id)
       _broadcastToRenderer('instance-stopping', { installationId: id })
       onEnterStopping?.({ installationId: id })

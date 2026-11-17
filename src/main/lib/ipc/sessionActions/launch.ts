@@ -2213,6 +2213,10 @@ async function runLaunch(
         abandonRelaunch()
         return { ok: false, message: i18n.t('errors.priorProcessStuck', { pid: proc.pid ?? 0 }) }
       }
+      if (abort.signal.aborted) {
+        abandonRelaunch()
+        return { ok: false, cancelled: true }
+      }
       const respawned = await spawnComfy()
       proc = respawned.proc
       const session = _runningSessions.get(sessionId)
