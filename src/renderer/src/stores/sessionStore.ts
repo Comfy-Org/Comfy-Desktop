@@ -21,6 +21,7 @@ interface ErrorInstance {
   crashKind?: CrashKind
   vcRuntimeMissing?: string[]
   crashedAtMs?: number
+  startFailed?: boolean
 }
 
 export const useSessionStore = defineStore('session', () => {
@@ -181,7 +182,9 @@ export const useSessionStore = defineStore('session', () => {
           exitCodeHex: data.exitCodeHex,
           crashKind: data.crashKind,
           vcRuntimeMissing: data.vcRuntimeMissing,
-          crashedAtMs: data.crashedAtMs ?? Date.now()
+          crashedAtMs: data.crashedAtMs ?? Date.now(),
+          message: data.message,
+          startFailed: data.startFailed
         })
       })
     )
@@ -217,7 +220,9 @@ export const useSessionStore = defineStore('session', () => {
           exitCodeHex: c.exitCodeHex,
           crashKind: c.crashKind,
           vcRuntimeMissing: c.vcRuntimeMissing,
-          crashedAtMs: c.crashedAtMs
+          crashedAtMs: c.crashedAtMs,
+          message: c.message,
+          startFailed: c.startFailed
         })
       }
     }
