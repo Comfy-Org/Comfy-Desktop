@@ -84,8 +84,16 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       pendingSetupHandoff.value = null
       return handoff
     },
-    onBackgroundInstall: () => {
-      if (chainingFirstUseToNewInstall.value || !launcherPrefs.firstUseCompleted.value) {
+    onBackgroundInstall: (showOpts) => {
+      const firstUseInstall = chainingFirstUseToNewInstall.value
+      if (
+        firstUseInstall &&
+        showOpts.autoLaunchOnFinish === true &&
+        pendingAutoLaunchId.value === null
+      ) {
+        pendingAutoLaunchId.value = showOpts.installationId
+      }
+      if (firstUseInstall || !launcherPrefs.firstUseCompleted.value) {
         void finishFirstUse()
       }
     },
@@ -173,6 +181,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
         installationId: entry.id,
         title: `${t('newInstall.installing')} — ${entry.name}`,
         apiCall: () => window.api.installInstance(entry.id, true),
+        autoLaunchOnFinish: true,
         opKind: 'install'
       })
     } catch (err) {
