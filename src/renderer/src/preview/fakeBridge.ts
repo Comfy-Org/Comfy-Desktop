@@ -425,6 +425,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     switchWorkspace: async () => auth,
     listBuilds: async () => [],
     openBuildsPage: async () => {},
+    openSettingsPage: async () => {},
     installBuild: async () => ({ ok: false }),
     promoteLocalInstance: async () => ({ ok: false }),
     ...seed.cloud
