@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page as browserPage } from 'vitest/browser'
+import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -35,6 +35,12 @@ const STUDIO = build('studio', 'Flux Sandbox for the long weekend render', 400)
 const PORTRAITS = build('portraits', 'Portrait retouching with the new upscaler', 300)
 
 let page: HTMLElement
+const mounted: VueWrapper[] = []
+
+function track(wrapper: VueWrapper): VueWrapper {
+  mounted.push(wrapper)
+  return wrapper
+}
 
 function boxOf(element: Element): DOMRect {
   return element.getBoundingClientRect()
@@ -71,7 +77,10 @@ beforeEach(() => {
   document.body.append(page)
 })
 
-afterEach(() => page.remove())
+afterEach(() => {
+  for (const wrapper of mounted.splice(0)) wrapper.unmount()
+  page.remove()
+})
 
 function fullyShown(element: Element): boolean {
   return element.scrollWidth <= element.clientWidth && element.clientWidth > 0
@@ -80,7 +89,7 @@ function fullyShown(element: Element): boolean {
 describe('Auto start on Home build cards in the smallest window with the sidebar open', () => {
   it('shows the whole status and leaves each name the width the card has after its picture', async () => {
     page.style.cssText = `position: absolute; left: 0; top: 0; width: ${HOME_WIDTH_IN_SMALLEST_WINDOW}px`
-    const wrapper = mount(HomeView, { attachTo: page })
+    const wrapper = track(mount(HomeView, { attachTo: page }))
     await flushPromises()
 
     const studioStatus = onlyIn(
@@ -109,10 +118,12 @@ describe('Auto start on Home build cards in the smallest window with the sidebar
 
 async function mountBuildsGrid(width: number): Promise<VueWrapper> {
   page.style.cssText = `position: absolute; left: 0; top: 0; width: ${width}px`
-  const wrapper = mount(ChooserFamilyGrid, {
-    attachTo: page,
-    props: { installations: [STUDIO, PORTRAITS] }
-  })
+  const wrapper = track(
+    mount(ChooserFamilyGrid, {
+      attachTo: page,
+      props: { installations: [STUDIO, PORTRAITS] }
+    })
+  )
   await flushPromises()
   return wrapper
 }
@@ -184,10 +195,12 @@ async function buildsGridWithStudioIn(state: TileState, width: number): Promise<
     ? { ...STUDIO, version: 'v0.3.68', statusTag: { style: 'update', label: 'Update to v0.3.70' } }
     : STUDIO
   page.style.cssText = `position: absolute; left: 0; top: 0; width: ${width}px`
-  const wrapper = mount(ChooserFamilyGrid, {
-    attachTo: page,
-    props: { installations: [studio, PORTRAITS] }
-  })
+  const wrapper = track(
+    mount(ChooserFamilyGrid, {
+      attachTo: page,
+      props: { installations: [studio, PORTRAITS] }
+    })
+  )
   await flushPromises()
   const operation = TILE_OPERATIONS[state]
   if (operation) {
@@ -283,20 +296,44 @@ describe('Builds page grid', () => {
       expect(document.elementFromPoint(box.left + 2, box.top + box.height / 2)).toBe(area)
     }
 
-    area.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
-    await vi.waitFor(() =>
-      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Click to start')
-    )
-    area.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
-    await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull())
+    for (const element of [
+      tile.querySelector<HTMLElement>('.chooser-tile-name')!,
+      tile.querySelector<HTMLElement>('.chooser-tile-icon')!
+    ]) {
+      await userEvent.hover(element)
+      await vi.waitFor(
+        () =>
+          expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
+            'Click to start'
+          ),
+        { timeout: 3000 }
+      )
+      await userEvent.unhover(element)
+      await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull(), {
+        timeout: 3000
+      })
+    }
 
-    tile.querySelector<HTMLElement>('.chooser-tile-kebab')!.click()
+    await userEvent.click(tile.querySelector<HTMLElement>('.chooser-tile-kebab')!)
     await vi.waitFor(() =>
       expect(document.querySelector('[data-testid="build-menu"]')).not.toBeNull()
     )
-    area.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
-    await flushPromises()
+    await userEvent.hover(tile.querySelector<HTMLElement>('.chooser-tile-name')!)
+    await new Promise((resolve) => setTimeout(resolve, 800))
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
-    wrapper.unmount()
+  })
+
+  it('closes the build menu on a second press of the ⋯ button', async () => {
+    const wrapper = await buildsGridWithStudioIn('ready', BUILDS_GRID_WIDTH_IN_LARGE_WINDOW)
+    const kebab = onlyIn(
+      wrapper,
+      `[data-testid="${TID.dashboardTile(STUDIO.id)}"] .chooser-tile-kebab`
+    ) as HTMLElement
+    await userEvent.click(kebab)
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-testid="build-menu"]')).not.toBeNull()
+    )
+    await userEvent.click(kebab)
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="build-menu"]')).toBeNull())
   })
 })

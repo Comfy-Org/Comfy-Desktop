@@ -61,12 +61,21 @@ async function mountAt(pageWidth: number): Promise<HTMLElement> {
 }
 
 function rowsOf(toolbar: HTMLElement): number {
-  const tops = new Set(
-    [...toolbar.children]
-      .filter((child) => (child as HTMLElement).offsetParent !== null)
-      .map((child) => Math.round(child.getBoundingClientRect().top))
-  )
-  return tops.size
+  const boxes = [...toolbar.children]
+    .filter((child) => (child as HTMLElement).offsetParent !== null)
+    .map((child) => child.getBoundingClientRect())
+    .sort((a, b) => a.top - b.top)
+  let rows = 0
+  let rowBottom = Number.NEGATIVE_INFINITY
+  for (const box of boxes) {
+    if (box.top >= rowBottom) {
+      rows++
+      rowBottom = box.bottom
+    } else {
+      rowBottom = Math.max(rowBottom, box.bottom)
+    }
+  }
+  return rows
 }
 
 function insideToolbar(toolbar: HTMLElement): boolean {
@@ -109,6 +118,16 @@ describe('Builds toolbar', () => {
     await wrapper!.get('.chooser-search').trigger('keydown', { key: 'Escape' })
     await flushPromises()
     expect(toolbar.querySelector('[data-testid="chooser-search-toggle"]')).not.toBeNull()
+  })
+
+  it('keeps a typed search visible when the window narrows to the icon layout', async () => {
+    const toolbar = await mountAt(BUILDS_PAGE_WIDTH(1280))
+    await wrapper!.get('.chooser-search input').setValue('studio')
+    host.style.width = `${BUILDS_PAGE_WIDTH(800)}px`
+    await vi.waitFor(() => expect(toolbar.dataset.layout).toBe('icon'))
+    await flushPromises()
+    expect(toolbar.querySelector<HTMLInputElement>('.chooser-search input')?.value).toBe('studio')
+    expect(rowsOf(toolbar)).toBe(1)
   })
 
   it('puts the tabs on top and sort and search across the full width when one line does not fit', async () => {

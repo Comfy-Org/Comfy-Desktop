@@ -164,7 +164,9 @@ const toolbarLayout = computed<'full' | 'icon' | 'stacked'>(() => {
   return 'stacked'
 })
 const searchOpen = ref(false)
-const searchFolded = computed(() => toolbarLayout.value === 'icon' && !searchOpen.value)
+const searchFolded = computed(
+  () => toolbarLayout.value === 'icon' && !searchOpen.value && !searchQuery.value.trim()
+)
 const searchField = useTemplateRef<HTMLElement>('searchField')
 
 async function openSearch(): Promise<void> {
@@ -358,7 +360,7 @@ const gridHandlers = {
               }"
             />
           </Button>
-          <div v-show="toolbarLayout !== 'icon' || !searchOpen" class="w-38 shrink-0">
+          <div v-show="toolbarLayout !== 'icon' || searchFolded" class="w-38 shrink-0">
             <BaseSelect
               v-model="sortOrder"
               :options="sortOptions"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
-import { computed, ref, shallowRef } from 'vue'
+import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
+import { computed, shallowRef, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Ellipsis, Info, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -228,37 +229,35 @@ function open(): void {
   else emit('pick', inst.value)
 }
 
-const menuOpen = ref(false)
-const menuAt = shallowRef<{
-  anchor: BuildMenuAnchor
-  align: 'start' | 'end'
-  returnFocus: HTMLElement | null
-} | null>(null)
-
-function presentMenu(
-  anchor: BuildMenuAnchor,
-  align: 'start' | 'end',
-  returnFocus: HTMLElement | null
-): void {
-  if (!canOpenMenu.value) return
-  menuAt.value = { anchor, align, returnFocus }
-  menuOpen.value = true
-}
+const tileEl = useTemplateRef<HTMLElement>('tile')
+const { open: menuOpen, menuProps, show: showMenuAtPointer, toggle: toggleMenu } = usePointMenu()
+const moreButton = shallowRef<HTMLElement | null>(null)
+const menuReturnFocus = shallowRef<HTMLElement | null>(null)
+const menuAnchor = computed<BuildMenuAnchor | undefined>(() => {
+  const button = moreButton.value
+  if (!button) return menuProps.value.reference
+  return { getBoundingClientRect: () => button.getBoundingClientRect() }
+})
 
 function openMoreMenu(event: MouseEvent): void {
+  if (!canOpenMenu.value) return
   const button = event.currentTarget as HTMLElement
-  presentMenu({ getBoundingClientRect: () => button.getBoundingClientRect() }, 'end', button)
+  moreButton.value = button
+  menuReturnFocus.value = button
+  toggleMenu(event)
 }
 
 function openContextMenu(event: MouseEvent): void {
-  const { clientX: x, clientY: y } = event
-  const tile = event.currentTarget as HTMLElement
-  presentMenu({ getBoundingClientRect: () => new DOMRect(x, y, 0, 0) }, 'start', tile)
+  if (!canOpenMenu.value) return
+  moreButton.value = null
+  menuReturnFocus.value = tileEl.value
+  showMenuAtPointer(event)
 }
 </script>
 
 <template>
   <div
+    ref="tile"
     role="button"
     :tabindex="isUpdating ? -1 : 0"
     :aria-disabled="isUpdating || undefined"
@@ -451,12 +450,12 @@ function openContextMenu(event: MouseEvent): void {
       :data-testid="`chooser-tile-progress-bar-${inst.id}`"
     />
     <BuildMenu
-      v-if="menuAt"
+      v-if="menuAnchor"
       v-model:open="menuOpen"
       :build="inst"
-      :anchor="menuAt.anchor"
-      :align="menuAt.align"
-      :return-focus="menuAt.returnFocus"
+      :anchor="menuAnchor"
+      :align="moreButton ? 'end' : 'start'"
+      :return-focus="menuReturnFocus"
     />
   </div>
 </template>
