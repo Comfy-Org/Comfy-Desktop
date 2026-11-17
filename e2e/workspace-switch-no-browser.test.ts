@@ -2,11 +2,18 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import type * as Http from 'node:http'
+import type * as Https from 'node:https'
 import { expect, test } from '@playwright/test'
 import en from '../locales/en.json'
 import { launchApp, type AppContext } from './launchApp'
 import { FakeCloud, type FakeReply } from './support/fakeCloud'
 import { captureHostWindow } from './support/windowCapture'
+import { openPicker } from './support/navMatrixHelpers'
+import { findWebContentsId, titlePopupPage, WebContentsPage } from './support/cdpPages'
+import { openPickerViaTitlePill } from './support/chooserHelpers'
+import type { SeedInstallation } from './support/electronHarness'
+import { byTestId, TID } from './support/testIds'
 
 const UNAVAILABLE_COPY = en.devPlatform.workspace.switchUnavailable
 const RETRYABLE_COPY = en.devPlatform.workspace.switchRetryable
@@ -31,8 +38,11 @@ function panel(): AppContext['panel'] {
   return ctx.panel
 }
 
-async function launch(settings: Record<string, unknown> = { firstUseCompleted: true }) {
-  ctx = await launchApp({ userDataDir, settings })
+async function launch(
+  settings: Record<string, unknown> = { firstUseCompleted: true },
+  installations?: SeedInstallation[]
+) {
+  ctx = await launchApp({ userDataDir, settings, installations })
   const actual = await ctx.app.evaluate(({ app }) => app.getPath('userData'))
   expect(await realpath(actual), 'the run stays off the real profile').toBe(userDataDir)
   stopBrowser = cloud.completeSignInsLikeABrowser(ctx.app, (url) => browserOpens.push(url))
@@ -92,8 +102,8 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
 }
 
-async function signInOnFreshProfile(): Promise<void> {
-  await launch()
+async function signInOnFreshProfile(installations?: SeedInstallation[]): Promise<void> {
+  await launch(undefined, installations)
   await panel().waitForVisible(SIGN_IN)
   expect(await panel().click(SIGN_IN), 'clicked sign in').toBe(true)
   await expectActive('A')
@@ -123,7 +133,12 @@ test.afterAll(() => {
 })
 
 test.beforeEach(async () => {
-  cloud = new FakeCloud()
+  cloud = new FakeCloud((_req, res, url) => {
+    if (url.pathname !== '/team-a-build') return false
+    res.writeHead(200, { 'content-type': 'text/html' })
+    res.end('<html><body>Team A build</body></html>')
+    return true
+  })
   await cloud.start()
   process.env['COMFY_CLOUD_ISSUER'] = cloud.url
   process.env['COMFY_BUILDER_BASE_URL'] = cloud.url
@@ -224,6 +239,142 @@ test('T-V2: a non-member 404 opens no browser, shows the unavailable caption and
   expect(browserOpens).toHaveLength(1)
   expect(cloud.authorizeUrls).toHaveLength(1)
   expect(cloud.mints).toEqual([{ workspaceId: 'B', bearerWorkspace: 'A' }])
+})
+
+test('Comfy Cloud stays available and reopens in the selected team or Personal workspace @macos @windows', async () => {
+  const hostId = 'team-a-build'
+  cloud.workspaces.push({ id: 'P', name: 'Personal Workspace', type: 'personal', role: 'owner' })
+  await signInOnFreshProfile([
+    {
+      id: hostId,
+      name: 'Team A build',
+      sourceId: 'remote',
+      workspaceId: 'A',
+      remoteUrl: `${cloud.url}/team-a-build`,
+      launchMode: 'window'
+    }
+  ])
+  await ctx!.app.evaluate(async ({ session, net }, baseUrl) => {
+    const mainProcess = globalThis.process
+    const https = mainProcess.getBuiltinModule('node:https') as typeof Https
+    const http = mainProcess.getBuiltinModule('node:http') as typeof Http
+    const get = https.get
+    https.get = ((...args: unknown[]) => {
+      if (typeof args[0] !== 'string' && !(args[0] instanceof URL)) {
+        return Reflect.apply(get, https, args)
+      }
+      const url = new URL(String(args[0]))
+      if (url.hostname !== 'cloud.comfy.org') return Reflect.apply(get, https, args)
+      args[0] = `${baseUrl}/cloud-view${url.search}`
+      return Reflect.apply(http.get, http, args)
+    }) as typeof https.get
+    await session.fromPartition('persist:shared').protocol.handle('https', (request) => {
+      const url = new URL(request.url)
+      if (url.hostname !== 'cloud.comfy.org') {
+        return net.fetch(request, { bypassCustomProtocolHandlers: true })
+      }
+      return new Response(
+        `<html><body><script>
+          const url = new URL(location.href)
+          const target = url.searchParams.get('workspace')
+          const switchTarget = sessionStorage.getItem('Comfy.Workspace.SwitchTargetId')
+          const active = target ?? switchTarget ??
+            JSON.parse(sessionStorage.getItem('Comfy.Workspace.Current') ?? 'null')?.id
+          sessionStorage.removeItem('Comfy.Workspace.SwitchTargetId')
+          sessionStorage.setItem('Comfy.Workspace.Current', JSON.stringify({ id: active }))
+          url.searchParams.delete('workspace')
+          history.replaceState(null, '', url)
+          document.body.dataset.workspace = active
+          document.body.dataset.page = crypto.randomUUID()
+        </script></body></html>`,
+        { headers: { 'content-type': 'text/html' } }
+      )
+    })
+  }, cloud.url)
+
+  expect(await panel().click('[data-testid="app-sidebar-home"]')).toBe(true)
+  const cloudInstallId = await panel().evaluate<string>(
+    "window.api.getInstallations().then((installs) => installs.find((install) => install.sourceId === 'cloud').id)"
+  )
+  const app = ctx!.app
+  const cloudPage = new WebContentsPage(app, 'https://cloud.comfy.org/')
+  const hostTitleBar = new WebContentsPage(app, `comfyTitleBar.html?installationId=${hostId}`)
+  const cloudRow = byTestId(TID.pickerRow(cloudInstallId))
+  const selectDashboard = async (selected: string): Promise<void> => {
+    await select(selected)
+    await expect
+      .poll(() => panel().evaluate<string>('window.api.getSetting("dashboardWorkspaceId")'))
+      .toBe(selected)
+  }
+  const openCloudFromPicker = async (picker: WebContentsPage): Promise<void> => {
+    await picker.waitForVisible(cloudRow)
+    expect(await picker.click(cloudRow)).toBe(true)
+    expect(await picker.click(byTestId(TID.pickerPrimaryCta))).toBe(true)
+  }
+  const openCloudFromHome = async (): Promise<void> => {
+    expect(await panel().clickByText('[data-testid="home-build"]', 'Comfy Cloud')).toBe(true)
+  }
+  const expectCloudWorkspace = async (workspaceId: string): Promise<void> => {
+    await cloudPage.waitForSelector(`body[data-workspace="${workspaceId}"]`)
+  }
+
+  expect(await panel().clickByText('[data-testid="home-build"]', 'Team A build')).toBe(true)
+  await hostTitleBar.waitForVisible('.title-bar')
+  await selectDashboard('B')
+  await openCloudFromPicker(await openPickerViaTitlePill(app, hostTitleBar))
+  await expectCloudWorkspace('A')
+  const cloudViewId = await findWebContentsId(app, 'https://cloud.comfy.org/')
+  expect(cloudViewId).not.toBeNull()
+
+  await openCloudFromHome()
+  await expectCloudWorkspace('B')
+  await openCloudFromPicker(await openPickerViaTitlePill(app, hostTitleBar))
+  await expectCloudWorkspace('A')
+
+  for (const selected of ['B', 'personal', 'A']) {
+    await selectDashboard(selected)
+    await panel().waitForVisible('[data-testid="home-build"]')
+    if (selected === 'personal') {
+      await openPicker(app, panel())
+      await openCloudFromPicker(titlePopupPage(app))
+    } else {
+      await openCloudFromHome()
+    }
+    await expectCloudWorkspace(selected === 'personal' ? 'P' : selected)
+  }
+
+  const switchCloudTabToB = async (): Promise<void> => {
+    await cloudPage.evaluate(`(() => {
+      sessionStorage.removeItem('Comfy.Workspace.Current')
+      sessionStorage.setItem('Comfy.Workspace.SwitchTargetId', 'B')
+      setTimeout(() => location.reload(), 0)
+    })()`)
+    await expectCloudWorkspace('B')
+  }
+
+  await switchCloudTabToB()
+  await selectDashboard('B')
+  const page = await cloudPage.evaluate<string>('document.body.dataset.page')
+  await expect(
+    panel().evaluate<boolean>(`window.api.focusComfyWindow(${JSON.stringify(cloudInstallId)})`)
+  ).resolves.toBe(true)
+  expect(await cloudPage.evaluate<string>('document.body.dataset.page')).toBe(page)
+
+  await selectDashboard('A')
+  await openCloudFromHome()
+  await expectCloudWorkspace('A')
+  await switchCloudTabToB()
+  await openCloudFromHome()
+  await expectCloudWorkspace('A')
+
+  const views = await app.evaluate(({ webContents }) =>
+    webContents
+      .getAllWebContents()
+      .filter((view) => view.getURL().startsWith('https://cloud.comfy.org/'))
+      .map((view) => view.id)
+  )
+  expect(views, 'the existing Cloud view is reused').toEqual([cloudViewId])
+  expect(browserOpens, 'workspace navigation asks for no extra sign-in').toHaveLength(1)
 })
 
 test('T-V4: sso_required opens exactly one more browser carrying B, then B is active @macos @windows', async () => {

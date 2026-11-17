@@ -379,9 +379,9 @@ export function isPopupVisible(app: ElectronApplication, marker: string): Promis
         for (const child of win.contentView.children) {
           if (!(child instanceof WebContentsView)) continue
           if (!child.webContents.getURL().includes(m)) continue
-          if (!child.getVisible()) return false
+          if (!child.getVisible()) continue
           const b = child.getBounds()
-          return b.width > 0 && b.height > 0
+          if (b.width > 0 && b.height > 0) return true
         }
       }
       return false

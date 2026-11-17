@@ -470,6 +470,23 @@ describe('scopeInstancePicker', () => {
     expect(scope.selectedInstallationId).toBe('local')
   })
 
+  it('keeps the shared Cloud host picker in the selected team workspace', () => {
+    mockSettings({ dashboardWorkspaceId: 'team-a' })
+    const cloud = makeInstall({ id: 'cloud', sourceId: 'cloud', sourceCategory: 'cloud' })
+    const scope = scopeInstancePicker([...workspaceInstalls, cloud], 'cloud', null, null)
+
+    expect(scope.installs.map((install) => install.id)).toEqual(['team-a', 'cloud'])
+    expect(scope.selectedInstallationId).toBe('cloud')
+  })
+
+  it('applies the hide Cloud preference to the shared tile in a team workspace', () => {
+    mockSettings({ dashboardWorkspaceId: 'team-a', hideCloudFromPicker: true })
+    const cloud = makeInstall({ id: 'cloud', sourceId: 'cloud', sourceCategory: 'cloud' })
+    const scope = scopeInstancePicker([...workspaceInstalls, cloud], null, null, null)
+
+    expect(scope.installs.map((install) => install.id)).toEqual(['team-a'])
+  })
+
   it('keeps a hidden cloud host visible and selected', () => {
     mockSettings({ hideCloudFromPicker: true })
     const scope = scopeInstancePicker(

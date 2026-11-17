@@ -220,6 +220,40 @@ describe('ChooserView', () => {
     expect(input.attributes('aria-label')).toBe('Search builds')
   })
 
+  it('offers the shared Comfy Cloud in team workspaces while filtering local builds', async () => {
+    const cloud = makeInstall({
+      id: 'cloud',
+      name: 'Comfy Cloud',
+      sourceId: 'cloud',
+      sourceCategory: 'cloud'
+    })
+    installMockApiSignedIn(
+      [
+        cloud,
+        makeInstall({ name: 'Personal local' }),
+        makeInstall({ name: 'Team local', workspaceId: 'w1' })
+      ],
+      [],
+      { id: 'w1', name: 'Team' }
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Comfy Cloud')
+    expect(wrapper.text()).toContain('Team local')
+    expect(wrapper.text()).not.toContain('Personal local')
+    const tabs = tabButtons(wrapper)
+    await tabs.find((tab) => tab.text().includes('This computer'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Comfy Cloud')
+    expect(wrapper.text()).toContain('Team local')
+
+    await tabs.find((tab) => tab.text().includes('Cloud'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Comfy Cloud')
+    expect(wrapper.text()).not.toContain('Team local')
+  })
+
   it('invites a first build when the user has zero installs', async () => {
     installMockApi([])
     const wrapper = mountChooser()
