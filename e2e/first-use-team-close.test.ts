@@ -39,7 +39,7 @@ test.afterAll(async () => {
   if (userDataDir) await rm(userDataDir, { recursive: true, force: true })
 })
 
-test('a team sign-in that cannot reach the Personal workspace returns to Set up with onboarding still pending @lifecycle', async () => {
+test('a team sign-in that cannot reach the Personal workspace returns to Set up with onboarding still pending @real-comfy', async () => {
   if (!ctx) throw new Error('app is not running')
   const { app, panel, titleBar } = ctx
 

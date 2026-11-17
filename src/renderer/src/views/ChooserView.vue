@@ -8,6 +8,7 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
+import { useAutoStartBuild } from '../composables/useAutoStartBuild'
 import { useInstallList } from '../composables/useInstallList'
 import { useInstallingBuilds } from '../composables/useBuildProgress'
 import { useQuickUpdate } from '../composables/useQuickUpdate'
@@ -198,7 +199,8 @@ const {
     options ? openInstallManager(inst, options) : emit('open-details', inst),
   onShowProgress: (showOpts) => emit('show-progress', showOpts),
   onUpdate: runQuickUpdate,
-  canPromoteToWorkspace
+  canPromoteToWorkspace,
+  autoStart: useAutoStartBuild()
 })
 
 async function pickInstall(inst: Installation): Promise<void> {

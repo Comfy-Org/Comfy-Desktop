@@ -11,6 +11,7 @@ import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInsta
 const INSTALL_ID = 'inst-assets-startup-failure'
 const INSTALL_NAME = 'Assets Startup Failure Install'
 const DISABLE_HINT = 'Or start ComfyUI without the assets system: --disable-assets'
+const NEW_ERROR_BADGE = '.chooser-tile-error-badge:not([data-earlier-failure])'
 
 let rootDir = ''
 let installPath = ''
@@ -29,10 +30,14 @@ function coreRefusal(kind: string, ...message: string[]): string {
 
 async function launchAndReadError(stderr: string): Promise<string | null> {
   await writeFile(path.join(installPath, 'startup-failure'), stderr)
+  await ctx!.panel.evaluate<boolean>(`(() => {
+    document.querySelector('.chooser-tile-error-badge')?.setAttribute('data-earlier-failure', '')
+    return true
+  })()`)
   await clickInstallTile(ctx!.panel, INSTALL_NAME)
   await expect.poll(() => hasActiveLaunch(ctx!.app, INSTALL_ID), { timeout: 60_000 }).toBe(false)
-  await ctx!.panel.waitForVisible('.chooser-tile-error-badge', { timeout: 30_000 })
-  expect(await ctx!.panel.click('.chooser-tile-error-badge')).toBe(true)
+  await ctx!.panel.waitForVisible(NEW_ERROR_BADGE, { timeout: 30_000 })
+  expect(await ctx!.panel.click(NEW_ERROR_BADGE)).toBe(true)
   await ctx!.panel.waitForVisible('[data-testid="build-progress-step-detail"]', {
     timeout: 10_000
   })
@@ -83,7 +88,7 @@ test.afterAll(async () => {
   if (rootDir) await rm(rootDir, { recursive: true, force: true })
 })
 
-test("shows the core's message for an asset database it cannot open @linux", async () => {
+test("shows the core's message for an asset database it cannot open @linux @macos", async () => {
   const what = "The asset database '/x/user/comfyui.db' is corrupt (file is not a database)."
   const fix = 'Move that file aside, or delete it, and start again.'
 
@@ -92,7 +97,7 @@ test("shows the core's message for an asset database it cannot open @linux", asy
   expect(text).toBe(`${what}\n${fix}\n${DISABLE_HINT}`)
 })
 
-test('shows the lock message when another ComfyUI holds the database, without --enable-assets @linux', async () => {
+test('shows the lock message when another ComfyUI holds the database, without --enable-assets @linux @macos', async () => {
   const text = await launchAndReadError(
     coreRefusal(
       'in_use',

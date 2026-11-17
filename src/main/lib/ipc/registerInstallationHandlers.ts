@@ -52,6 +52,7 @@ import {
   markInstallSettled
 } from './installationVisibility'
 import { answerCoreBetaArgs } from '../coreBetaPreview'
+import { startFirstBuildWithDesktop } from '../firstBuildAutoStart'
 
 function _kickReleaseCachePrewarm(allInstalls: InstallationRecord[]): void {
   void runStartupReleaseChecks(allInstalls, {
@@ -405,6 +406,7 @@ export function registerInstallationHandlers(): void {
           method: express ? 'express' : 'manual',
           express: !!express
         })
+        if (!snapshotRestoreError) await startFirstBuildWithDesktop(installationId)
       }
       if (snapshotRestoreError) {
         return snapshotRestoreFailureResult(installationId, snapshotRestoreError)

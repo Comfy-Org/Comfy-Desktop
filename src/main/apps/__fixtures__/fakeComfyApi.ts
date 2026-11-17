@@ -107,7 +107,12 @@ const server = http.createServer((req, res) => {
   if (url.pathname.startsWith('/object_info/')) return json(res, {})
   if (url.pathname === '/system_stats') return json(res, { system: { comfyui_version: '0.42.1' } })
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-  res.end('<!doctype html><title>ComfyUI (e2e stub)</title><p>ComfyUI stub</p>')
+  res.end(
+    '<!doctype html><title>ComfyUI (e2e stub)</title>' +
+      '<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;' +
+      'background:#16121a;color:#e3ff3c;font:32px system-ui,sans-serif">' +
+      '<p>ComfyUI stub, started by the app page</p></body>'
+  )
 })
 
 server.on('upgrade', (req, socket) => {
