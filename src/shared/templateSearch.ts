@@ -1,0 +1,1 @@
+export const TEMPLATE_SEARCH_MAX_QUERY = 2000

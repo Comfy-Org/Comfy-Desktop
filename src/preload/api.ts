@@ -111,14 +111,6 @@ export function buildElectronApi(): ElectronApi {
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
-    prepareTemplateSearch: () => ipcRenderer.invoke('template-search:prepare'),
-    downloadTemplateSearch: () => ipcRenderer.invoke('template-search:download'),
-    onTemplateSearchAvailability: (callback) => {
-      const handler = (_event: IpcRendererEvent, availability: TemplateSearchAvailability): void =>
-        callback(availability)
-      ipcRenderer.on('template-search:availability', handler)
-      return () => ipcRenderer.removeListener('template-search:availability', handler)
-    },
     getAppsEnabled: () => ipcRenderer.invoke('apps:get-enabled'),
     listApps: () => ipcRenderer.invoke('apps:list'),
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
@@ -138,6 +130,18 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('apps:page-closed', handler)
       return () => ipcRenderer.removeListener('apps:page-closed', handler)
     },
+    searchTemplates: (query, installationId) =>
+      ipcRenderer.invoke('template-search:search', query, installationId),
+    prepareTemplateSearch: () => ipcRenderer.invoke('template-search:prepare'),
+    downloadTemplateSearch: () => ipcRenderer.invoke('template-search:download'),
+    onTemplateSearchAvailability: (callback) => {
+      const handler = (_event: IpcRendererEvent, availability: TemplateSearchAvailability): void =>
+        callback(availability)
+      ipcRenderer.on('template-search:availability', handler)
+      return () => ipcRenderer.removeListener('template-search:availability', handler)
+    },
+    openTemplateInBuild: (installationId, templateId) =>
+      ipcRenderer.invoke('template-search:open', installationId, templateId),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),

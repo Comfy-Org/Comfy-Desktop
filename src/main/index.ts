@@ -19,6 +19,7 @@ import todesktop from '@todesktop/runtime'
 import * as ipc from './lib/ipc'
 import { getAppVersion } from './lib/ipc'
 import type { ExitCallbackInfo } from './lib/ipc'
+import { takeLaunchUrl } from './templateSearch/openTemplate'
 import { closeAllPopouts } from './lib/popoutWindows'
 import { disposeAllTerminals } from './lib/terminal'
 import * as updater from './lib/updater'
@@ -477,6 +478,7 @@ function onLaunch({
 
     if (!existing.comfyView.webContents.isDestroyed()) {
       const comfyContents = existing.comfyView.webContents
+      const launchUrl = url ? comfyUrl : takeLaunchUrl(installationId, comfyUrl)
       comfyFailRetryTimerCancels.get(installationId)?.()
       const revealToken = (comfyRevealTokens.get(installationId) ?? 0) + 1
       comfyRevealTokens.set(installationId, revealToken)
@@ -501,7 +503,7 @@ function onLaunch({
         }
         revealReusedComfy()
         if (cloudWorkspaceNavigationVersion(existing) === workspaceNavigationVersion) {
-          void comfyContents.loadURL(comfyUrl).catch(() => {})
+          void comfyContents.loadURL(launchUrl).catch(() => {})
         }
       })()
     } else {

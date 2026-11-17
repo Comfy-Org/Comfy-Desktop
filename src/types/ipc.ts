@@ -160,20 +160,6 @@ export interface CatalogWorkflow {
   thumbnailUrl: string | null
 }
 
-export type TemplateSearchUnavailableReason =
-  'runtime_unsupported' | 'update_desktop' | 'offline' | 'download_failed' | 'failed'
-
-export type TemplateSearchAvailability =
-  | { kind: 'off' }
-  | { kind: 'idle' }
-  | { kind: 'ready' }
-  | { kind: 'starting' }
-  | { kind: 'no_local_build' }
-  | { kind: 'waiting_for_build' }
-  | { kind: 'needs_download'; bytes: number }
-  | { kind: 'downloading'; received: number; total: number }
-  | { kind: 'unavailable'; reason: TemplateSearchUnavailableReason }
-
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 
 export interface AssetSummary {
@@ -195,6 +181,50 @@ export interface LocalAssetListing {
   assets: AssetSummary[]
   truncated: boolean
 }
+
+export type TemplateSearchOutcome = 'template' | 'agent' | 'bad_input' | 'unsat' | 'download'
+
+export interface TemplateSearchCandidate {
+  templateId: string
+  title: string
+  thumbnailUrl: string | null
+  family: string | null
+  partner: boolean
+  needsDownload: boolean
+  score: number | null
+  calibrated: number | null
+  belowThreshold: boolean
+  missing: string[]
+}
+
+export interface TemplateSearchResult {
+  outcome: TemplateSearchOutcome
+  reply: string | null
+  run: TemplateSearchCandidate[]
+  download: TemplateSearchCandidate[]
+  alsoTry: TemplateSearchCandidate[]
+}
+
+export type TemplateSearchUnavailableReason =
+  'runtime_unsupported' | 'update_desktop' | 'offline' | 'download_failed' | 'failed'
+
+export type TemplateSearchAvailability =
+  | { kind: 'off' }
+  | { kind: 'idle' }
+  | { kind: 'ready' }
+  | { kind: 'starting' }
+  | { kind: 'no_local_build' }
+  | { kind: 'waiting_for_build' }
+  | { kind: 'needs_download'; bytes: number }
+  | { kind: 'downloading'; received: number; total: number }
+  | { kind: 'unavailable'; reason: TemplateSearchUnavailableReason }
+
+export type TemplateSearchResponse =
+  | { kind: 'result'; result: TemplateSearchResult }
+  | { kind: 'unavailable'; availability: TemplateSearchAvailability }
+  | { kind: 'failed' }
+
+export type OpenTemplateOutcome = 'opened' | 'launch' | 'refused'
 
 export interface BuildStorageSnapshot {
   sharedDirectoriesFields: Record<string, unknown>[]
@@ -1189,11 +1219,6 @@ export interface ElectronApi {
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
-  prepareTemplateSearch(): Promise<void>
-  downloadTemplateSearch(): Promise<void>
-  onTemplateSearchAvailability(
-    callback: (availability: TemplateSearchAvailability) => void
-  ): () => void
   getAppsEnabled(): Promise<boolean>
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
@@ -1203,6 +1228,13 @@ export interface ElectronApi {
     callback: (appId: string | null, status: AppPageStatus) => void
   ): () => void
   onAppPageClosed(callback: () => void): () => void
+  searchTemplates(query: string, installationId: string): Promise<TemplateSearchResponse>
+  prepareTemplateSearch(): Promise<void>
+  downloadTemplateSearch(): Promise<void>
+  onTemplateSearchAvailability(
+    callback: (availability: TemplateSearchAvailability) => void
+  ): () => void
+  openTemplateInBuild(installationId: string, templateId: string): Promise<OpenTemplateOutcome>
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(
