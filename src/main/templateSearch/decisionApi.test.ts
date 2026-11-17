@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decideRequest, parseDecision } from './decisionApi'
+import { decideRequest, decisionMetrics, parseDecision } from './decisionApi'
 
 function variant(templateId: string, title: string | null = null) {
   return {
@@ -236,5 +236,26 @@ describe('decideRequest', () => {
 
   it('leaves installed out when the build is not known, so every template counts as there', () => {
     expect(decideRequest('a poster', null)).not.toHaveProperty('installed')
+  })
+})
+
+describe('decisionMetrics', () => {
+  it("reads the process's total time, its bundle version and the protocol", () => {
+    expect(
+      decisionMetrics({
+        protocol: 1,
+        bundle: { version: '2.3.0', name: 'templates' },
+        latency_ms: { encode: 12.2, total: 30.5 }
+      })
+    ).toEqual({ processMs: 31, bundleVersion: '2.3.0', protocol: 1 })
+  })
+
+  it('leaves each figure empty when the answer does not carry it', () => {
+    expect(decisionMetrics({ latency_ms: { total: 'fast' }, bundle: [] })).toEqual({
+      processMs: null,
+      bundleVersion: null,
+      protocol: null
+    })
+    expect(decisionMetrics(null)).toEqual({ processMs: null, bundleVersion: null, protocol: null })
   })
 })

@@ -17,6 +17,7 @@ import { createSearchService, type SidecarDecision, type SidecarPython } from '.
 import { RUNTIME_UNSUPPORTED_EXIT, startSidecar } from './sidecar'
 import { postToSidecar } from './sidecarClient'
 import { asRecord } from './json'
+import { reportBundleDownload, reportStartAttempt } from './searchTelemetry'
 
 export const SIDECAR_PATH_ENV = 'COMFY_DESKTOP_TEMPLATE_SEARCH_SIDECAR'
 const SEARCH_TIMEOUT_MS = 3000
@@ -230,7 +231,8 @@ export function createSearchProcess({
       const out = await withPyz(['check', dir])
       return out === null || out.code === 0
     },
-    onAvailability: broadcast
+    onAvailability: broadcast,
+    onDownloaded: reportBundleDownload
   })
 
   const service = createSearchService({
@@ -241,7 +243,8 @@ export function createSearchProcess({
     bundles: store,
     start: (launch, signal) => startSidecar(launch, { signal }),
     post: (sidecar, body) => postToSidecar(sidecar.ready, '/api/decide', body, SEARCH_TIMEOUT_MS),
-    onAvailability: broadcast
+    onAvailability: broadcast,
+    onStartAttempt: reportStartAttempt
   })
 
   async function onBuildAction(installationId: string): Promise<void> {

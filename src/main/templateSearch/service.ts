@@ -29,7 +29,16 @@ export interface SearchServiceDeps {
   start: (launch: SidecarLaunch, signal: AbortSignal) => Promise<SidecarStart>
   post: (sidecar: RunningSidecar, body: unknown) => Promise<unknown>
   onAvailability: (availability: TemplateSearchAvailability) => void
+  onStartAttempt?: (attempt: StartAttempt) => void
+  now?: () => number
   idleStopMs?: number
+}
+
+export interface StartAttempt {
+  result: SidecarProblem | 'ready' | 'aborted'
+  startMs: number
+  bundleVersion: string
+  verified: boolean
 }
 
 interface Running {
@@ -43,7 +52,7 @@ type Ensure =
 type Started = { ok: true; running: Running } | { ok: false; problem: SidecarProblem | 'busy' }
 
 export type SidecarDecision =
-  | { kind: 'answer'; body: unknown }
+  | { kind: 'answer'; body: unknown; coldStart: boolean }
   | { kind: 'unavailable'; availability: TemplateSearchAvailability }
 
 const UNSUPPORTED: TemplateSearchAvailability = {
@@ -59,6 +68,7 @@ function availabilityFor(problem: SidecarProblem): TemplateSearchAvailability {
 
 export function createSearchService(deps: SearchServiceDeps) {
   const idleStopMs = deps.idleStopMs ?? IDLE_STOP_MS
+  const now = deps.now ?? Date.now
   const unsupportedPythons = new Set<string>()
   let running: Running | null = null
   let starting: Promise<Ensure> | null = null
@@ -121,13 +131,15 @@ export function createSearchService(deps: SearchServiceDeps) {
       if (unsupportedPythons.has(candidate.python) || deps.isBusy(candidate.installationId))
         continue
       const abort = new AbortController()
+      const startedAt = now()
+      const verify = verifyNext
       const attempt = deps.start(
         {
           python: candidate.python,
           pyz,
           bundleDir: bundle.dir,
           cacheDir: deps.cacheDir,
-          verify: verifyNext
+          verify
         },
         abort.signal
       )
@@ -138,6 +150,12 @@ export function createSearchService(deps: SearchServiceDeps) {
       }
       const started = await attempt.finally(() => {
         spawning = null
+      })
+      deps.onStartAttempt?.({
+        result: abort.signal.aborted ? 'aborted' : started.ok ? 'ready' : started.problem,
+        startMs: now() - startedAt,
+        bundleVersion: bundle.version,
+        verified: verify
       })
       if (abort.signal.aborted) {
         if (started.ok) await started.sidecar.stop()
@@ -222,15 +240,17 @@ export function createSearchService(deps: SearchServiceDeps) {
   }
 
   async function decide(body: unknown): Promise<SidecarDecision> {
+    let coldStart = running === null
     for (let attempt = 0; attempt < 2; attempt++) {
       const ensured = await ensureRunning()
       if (!ensured.ok) return { kind: 'unavailable', availability: ensured.availability }
       try {
         const answer = await deps.post(ensured.running.sidecar, body)
         armIdleStop()
-        return { kind: 'answer', body: answer }
+        return { kind: 'answer', body: answer, coldStart }
       } catch (err) {
         if (!(err instanceof SidecarRequestError) || !err.unreachable) throw err
+        coldStart = true
         if (running === ensured.running) {
           running = null
           verifyNext = true

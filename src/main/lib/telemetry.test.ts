@@ -2700,3 +2700,38 @@ describe('telemetry SDK-level volume guards', () => {
     ).toHaveLength(1)
   })
 })
+
+describe('the Home template search request text', () => {
+  const SEARCHED = 'comfy.desktop.template_search.searched'
+  const TOKEN = 'sk-abcdefghijklmnopqrstuvwxyz123456'
+  const REQUEST = `a flyer for the bake sale, proofs to ada.lovelace@example.com, logo in /home/ada/Pictures/logo.png, key ${TOKEN}`
+
+  it('sends the request text with consent granted, without emails, home folder names or tokens', () => {
+    setupTelemetry()
+    captured.length = 0
+    telemetry.emit(SEARCHED, { request_text: REQUEST, request_chars_count: REQUEST.length })
+    expect(captured.map((c) => c.event)).toEqual([SEARCHED])
+    const text = captured[0]!.properties?.request_text as string
+    expect(text).toContain('a flyer for the bake sale, proofs to')
+    expect(text).not.toContain('ada.lovelace@example.com')
+    expect(text).not.toContain('/home/ada/')
+    expect(text).not.toContain(TOKEN)
+  })
+
+  it.each(['undecided', 'denied'] as const)(
+    'sends nothing about a search while consent is %s',
+    (consent) => {
+      setupTelemetry({ consent })
+      captured.length = 0
+      telemetry.emit(SEARCHED, { request_text: REQUEST })
+      expect(captured).toEqual([])
+    }
+  )
+
+  it('sends nothing about a search from a development build', () => {
+    setupTelemetry({ isPackaged: false })
+    captured.length = 0
+    telemetry.emit(SEARCHED, { request_text: REQUEST })
+    expect(captured).toEqual([])
+  })
+})

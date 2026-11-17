@@ -54,7 +54,10 @@ const ANSWER = {
 
 const OFF: SidecarDecision = { kind: 'unavailable', availability: { kind: 'off' } }
 
-function setup(answer: SidecarDecision = { kind: 'answer', body: ANSWER }, on = true) {
+function setup(
+  answer: SidecarDecision = { kind: 'answer', body: ANSWER, coldStart: false },
+  on = true
+) {
   let clock = 0
   const decide = vi.fn(async (_body: unknown) => answer)
   const readTemplates = vi.fn(
@@ -83,6 +86,20 @@ beforeEach(() => {
 })
 
 describe('createDesktopSearch', () => {
+  it("passes on the search process's own time, bundle version and whether the search waited for a start", async () => {
+    const body = {
+      ...ANSWER,
+      protocol: 1,
+      bundle: { version: '2.3.0' },
+      latency_ms: { total: 41.6 }
+    }
+    const { search } = setup({ kind: 'answer', body, coldStart: true })
+    expect(await search.search('a poster', 'local-1')).toMatchObject({
+      kind: 'result',
+      metrics: { processMs: 42, bundleVersion: '2.3.0', protocol: 1, coldStart: true }
+    })
+  })
+
   it("sends what the build has installed, and labels results from the build's own index", async () => {
     const { search, decide, readTemplates } = setup()
     const response = await search.search('a poster', 'local-1')
@@ -181,7 +198,7 @@ describe('createDesktopSearch', () => {
   })
 
   it('reports an answer it cannot read as failed', async () => {
-    const { search } = setup({ kind: 'answer', body: { nothing: true } })
+    const { search } = setup({ kind: 'answer', body: { nothing: true }, coldStart: false })
     expect(await search.search('a poster', 'local-1')).toEqual({ kind: 'failed' })
   })
 })

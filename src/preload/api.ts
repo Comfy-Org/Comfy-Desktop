@@ -140,8 +140,8 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('template-search:availability', handler)
       return () => ipcRenderer.removeListener('template-search:availability', handler)
     },
-    openTemplateInBuild: (installationId, templateId) =>
-      ipcRenderer.invoke('template-search:open', installationId, templateId),
+    openTemplateInBuild: (installationId, templateId, searchId) =>
+      ipcRenderer.invoke('template-search:open', installationId, templateId, searchId),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),

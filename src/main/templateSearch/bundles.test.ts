@@ -10,6 +10,7 @@ import {
   isBundlePath,
   parseIndex,
   parseManifest,
+  type BundleDownload,
   type BundleStoreDeps,
   type IndexEntry,
   type Supported
@@ -456,6 +457,58 @@ describe('bundle store', () => {
     const progressReports = announced.filter((a) => a.kind === 'downloading').length
     expect(progressReports).toBeGreaterThan(1)
     expect(progressReports).toBeLessThanOrEqual(1 + Math.ceil((3 * 10 * 100) / 250))
+  })
+})
+
+describe('bundle store download reports', () => {
+  it('reports a finished download with its version, the bytes fetched and how long it took', async () => {
+    publish(server, '1.0.0', V1)
+    let clock = 5000
+    const downloads: BundleDownload[] = []
+    const { store: s, transfer } = store({
+      now: () => clock,
+      onDownloaded: (d) => downloads.push(d)
+    })
+    const realTransfer = transfer.getMockImplementation()!
+    transfer.mockImplementation(async (file) => {
+      clock += 100
+      return realTransfer(file)
+    })
+    await s.download()
+    expect(downloads).toEqual([
+      { result: 'completed', bytes: V1_BYTES, durationMs: 300, background: false, version: '1.0.0' }
+    ])
+  })
+
+  it('reports an update check that finds nothing new, and counts only the files a newer version changed', async () => {
+    publish(server, '1.0.0', V1)
+    const downloads: BundleDownload[] = []
+    const { store: s } = store({ now: () => 0, onDownloaded: (d) => downloads.push(d) })
+    await s.download()
+    await s.download({ quietly: true })
+    publish(server, '1.1.0', { ...V1, 'router/catalog.json': '{"v":2}' })
+    await s.download({ quietly: true })
+    expect(downloads.slice(1)).toEqual([
+      { result: 'up_to_date', bytes: 0, durationMs: 0, background: true, version: null },
+      {
+        result: 'completed',
+        bytes: Buffer.byteLength('{"v":2}'),
+        durationMs: 0,
+        background: true,
+        version: '1.1.0'
+      }
+    ])
+  })
+
+  it('reports a download that failed, with the bytes it had fetched', async () => {
+    publish(server, '1.0.0', V1)
+    server.blobs.set(sha('weights-v1'), Buffer.from('weights-XX'))
+    const downloads: BundleDownload[] = []
+    const { store: s } = store({ now: () => 0, onDownloaded: (d) => downloads.push(d) })
+    await s.download()
+    expect(downloads).toHaveLength(1)
+    expect(downloads[0]).toMatchObject({ result: 'failed', version: null, background: false })
+    expect(downloads[0]!.bytes).toBeLessThan(V1_BYTES)
   })
 })
 

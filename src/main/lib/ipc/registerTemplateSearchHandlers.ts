@@ -18,6 +18,7 @@ import {
   dropTemplateOpen,
   queueTemplateOpen
 } from '../../templateSearch/openTemplate'
+import { reportTemplateLoaded } from '../../templateSearch/searchTelemetry'
 import type {
   OpenTemplateOutcome,
   TemplateSearchAvailability,
@@ -47,6 +48,12 @@ function broadcastAvailability(availability: TemplateSearchAvailability): void {
 function queryFrom(value: unknown): string | null {
   const query = typeof value === 'string' ? value.trim() : ''
   return query && query.length <= TEMPLATE_SEARCH_MAX_QUERY ? query : null
+}
+
+const SEARCH_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+function searchIdFrom(value: unknown): string | null {
+  return typeof value === 'string' && SEARCH_ID.test(value) ? value : null
 }
 
 function comfyView(installationId: string): { url: string; contents: WebContents } | null {
@@ -107,22 +114,29 @@ export function registerTemplateSearchHandlers({
 
   ipcMain.handle(
     'template-search:open',
-    async (_event, installationId: unknown, templateId: unknown): Promise<OpenTemplateOutcome> => {
+    async (
+      _event,
+      installationId: unknown,
+      templateId: unknown,
+      searchIdValue: unknown
+    ): Promise<OpenTemplateOutcome> => {
       if (!templateSearchOn()) return 'refused'
       if (typeof installationId !== 'string' || !isPersistableTemplateId(templateId))
         return 'refused'
       const installation = await getInstallation(installationId)
       if (!installation || !isLocalInstallation(installation)) return 'refused'
       if (!opensInAWindow(installation.launchMode) || isBuildBusy(installationId)) return 'refused'
+      const searchId = searchIdFrom(searchIdValue)
       const session = _runningSessions.get(installationId)
       if (!session) {
-        queueTemplateOpen(installationId, templateId)
+        queueTemplateOpen(installationId, templateId, Date.now(), searchId)
         return 'launch'
       }
       const view = session.mode === 'window' ? comfyView(installationId) : null
       if (!view) return 'refused'
       try {
         await view.contents.loadURL(buildTemplateDeeplink(view.url, templateId))
+        reportTemplateLoaded({ searchId, templateId, buildStarted: false, pickToLoadMs: null })
         return 'opened'
       } catch {
         return 'refused'

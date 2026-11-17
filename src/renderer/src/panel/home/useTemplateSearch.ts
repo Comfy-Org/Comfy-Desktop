@@ -1,6 +1,12 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import type { TemplateSearchAvailability, TemplateSearchResult } from '../../types/ipc'
 import { searchRows, type SearchRow } from './templateSearch'
+import {
+  createSearchTelemetry,
+  type AbandonReason,
+  type InputMethod,
+  type SearchTelemetry
+} from './templateSearchTelemetry'
 
 export const SEARCH_DELAY_MS = 300
 
@@ -16,9 +22,13 @@ const READY_AGAIN: ReadonlySet<TemplateSearchAvailability['kind']> = new Set(['i
 export interface TemplateSearchOptions {
   buildId: () => string | null
   onOpened: (buildId: string) => void
+  telemetry?: SearchTelemetry
+  now?: () => number
 }
 
 export function useTemplateSearch(options: TemplateSearchOptions) {
+  const now = options.now ?? Date.now
+  const telemetry = options.telemetry ?? createSearchTelemetry({ now })
   const query = ref('')
   const state = ref<SearchState>({ kind: 'idle' })
   const panelOpen = ref(false)
@@ -46,7 +56,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     state.value = { kind: 'idle' }
   }
 
-  async function search(text: string): Promise<void> {
+  async function search(text: string, triggeredAt = now()): Promise<void> {
     cancelPendingSearch()
     const trimmed = text.trim()
     if (!trimmed) {
@@ -56,10 +66,12 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     const request = ++latestRequest
     state.value = { kind: 'searching' }
     openFailed.value = false
+    const requestedAt = now()
     const response = await window.api
       .searchTemplates(trimmed, options.buildId() ?? '')
       .catch(() => null)
     if (request !== latestRequest) return
+    telemetry.answered(trimmed, response ?? { kind: 'failed' }, { triggeredAt, requestedAt })
     if (response?.kind === 'result') {
       state.value = { kind: 'result', query: trimmed, result: response.result }
       activeIndex.value = Math.max(
@@ -88,16 +100,23 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
 
   watch(panelOpen, (open) => {
     if (!open) leaveResults()
+    else if (state.value.kind === 'result') telemetry.reopened()
   })
 
   watch(query, (text) => {
+    const typedAt = now()
     leaveResults()
     cancelPendingSearch()
     if (!text.trim()) {
+      telemetry.abandoned('cleared')
       forgetAnswer()
       return
     }
-    pendingSearch = setTimeout(() => void search(text), SEARCH_DELAY_MS)
+    pendingSearch = setTimeout(() => void search(text, typedAt), SEARCH_DELAY_MS)
+  })
+
+  watch(state, (current) => {
+    telemetry.stateShown(current.kind === 'unavailable' ? current.availability : null)
   })
 
   watch(options.buildId, () => {
@@ -107,6 +126,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   })
 
   onScopeDispose(() => {
+    telemetry.abandoned('left')
     cancelPendingSearch()
     unsubscribe()
   })
@@ -125,11 +145,16 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     return state.value.kind === 'result' && state.value.query === query.value.trim()
   }
 
-  async function openRow(row: SearchRow): Promise<void> {
+  async function openRow(row: SearchRow, inputMethod: InputMethod): Promise<void> {
     const buildId = options.buildId()
+    const templateId = row.candidate.templateId
+    const searchId = telemetry.picked(rows.value, row, inputMethod)
     const outcome = buildId
-      ? await window.api.openTemplateInBuild(buildId, row.candidate.templateId).catch(() => null)
+      ? await window.api
+          .openTemplateInBuild(buildId, templateId, searchId ?? undefined)
+          .catch(() => null)
       : null
+    telemetry.opened(searchId, templateId, outcome ?? 'failed')
     if (!buildId || (outcome !== 'opened' && outcome !== 'launch')) {
       openFailed.value = true
       return
@@ -144,12 +169,17 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     if (query.value.trim() && state.value.kind === 'idle') void search(query.value)
   }
 
+  function close(reason: AbandonReason): void {
+    panelOpen.value = false
+    telemetry.abandoned(reason)
+  }
+
   function onEnter(): void {
     const wasOpen = panelOpen.value
     panelOpen.value = true
     if (isCurrent()) {
       const row = activeRow.value
-      if (wasOpen && row) void openRow(row)
+      if (wasOpen && row) void openRow(row, 'keyboard')
       return
     }
     void search(query.value)
@@ -163,6 +193,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     panelOpen.value = true
     inResults.value = true
     activeIndex.value = index
+    telemetry.moved()
   }
 
   function move(step: number): void {
@@ -185,6 +216,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     openFailed,
     prepare,
     open,
+    close,
     download,
     openRow,
     onEnter,

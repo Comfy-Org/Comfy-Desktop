@@ -145,6 +145,23 @@ export function parseDecision(
   }
 }
 
+export interface DecisionMetrics {
+  processMs: number | null
+  bundleVersion: string | null
+  protocol: number | null
+}
+
+export function decisionMetrics(body: unknown): DecisionMetrics {
+  const decision = asRecord(body)
+  const latency = asRecord(decision?.latency_ms)
+  const total = asNumber(latency?.total)
+  return {
+    processMs: total === null ? null : Math.round(total),
+    bundleVersion: asText(asRecord(decision?.bundle)?.version),
+    protocol: asNumber(decision?.protocol)
+  }
+}
+
 export function decideRequest(query: string, installed: readonly string[] | null): object {
   return {
     text: query,

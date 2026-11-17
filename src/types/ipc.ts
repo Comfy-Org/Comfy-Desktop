@@ -219,8 +219,15 @@ export type TemplateSearchAvailability =
   | { kind: 'downloading'; received: number; total: number }
   | { kind: 'unavailable'; reason: TemplateSearchUnavailableReason }
 
+export interface TemplateSearchMetrics {
+  processMs: number | null
+  bundleVersion: string | null
+  protocol: number | null
+  coldStart: boolean
+}
+
 export type TemplateSearchResponse =
-  | { kind: 'result'; result: TemplateSearchResult }
+  | { kind: 'result'; result: TemplateSearchResult; metrics?: TemplateSearchMetrics }
   | { kind: 'unavailable'; availability: TemplateSearchAvailability }
   | { kind: 'failed' }
 
@@ -1234,7 +1241,11 @@ export interface ElectronApi {
   onTemplateSearchAvailability(
     callback: (availability: TemplateSearchAvailability) => void
   ): () => void
-  openTemplateInBuild(installationId: string, templateId: string): Promise<OpenTemplateOutcome>
+  openTemplateInBuild(
+    installationId: string,
+    templateId: string,
+    searchId?: string
+  ): Promise<OpenTemplateOutcome>
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(

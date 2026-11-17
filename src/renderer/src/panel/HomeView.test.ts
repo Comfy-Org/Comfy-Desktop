@@ -7,6 +7,7 @@ import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { CatalogWorkflow, Installation, TemplateSearchResponse } from '../types/ipc'
+import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
 
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
 const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
@@ -1020,10 +1021,18 @@ describe('Home template search', () => {
     await flushPromises()
   }
 
-  it('stays hidden unless template search is switched on', async () => {
+  it('stays hidden unless template search is switched on, and sends no search events', async () => {
+    const sent: string[] = []
+    const collect = (event: Event): void => {
+      sent.push((event as CustomEvent<TelemetryActionEventDetail>).detail.actionName)
+    }
+    window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, collect)
     Object.assign(window.api, { getSetting: vi.fn().mockResolvedValue(undefined) })
     const wrapper = await openHome()
     expect(wrapper.find('[data-testid="home-template-search"]').exists()).toBe(false)
+    wrapper.unmount()
+    window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, collect)
+    expect(sent.filter((name) => name.startsWith('comfy.desktop.template_search.'))).toEqual([])
   })
 
   it('shows the search bar under the title', async () => {
@@ -1042,7 +1051,11 @@ describe('Home template search', () => {
     await searchAndPick(wrapper)
 
     expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'running')
-    expect(openTemplateInBuild).toHaveBeenCalledWith('running', 'poster_template')
+    expect(openTemplateInBuild).toHaveBeenCalledWith(
+      'running',
+      'poster_template',
+      expect.any(String)
+    )
     expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'running' })]])
   })
 
@@ -1054,7 +1067,11 @@ describe('Home template search', () => {
     await searchAndPick(wrapper)
 
     expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'running')
-    expect(openTemplateInBuild).toHaveBeenCalledWith('running', 'poster_template')
+    expect(openTemplateInBuild).toHaveBeenCalledWith(
+      'running',
+      'poster_template',
+      expect.any(String)
+    )
   })
 
   it('does not open a build the template was refused by', async () => {
@@ -1101,7 +1118,11 @@ describe('Home template search', () => {
     finish('opened')
     await flushPromises()
 
-    expect(openTemplateInBuild).toHaveBeenCalledWith('running', 'poster_template')
+    expect(openTemplateInBuild).toHaveBeenCalledWith(
+      'running',
+      'poster_template',
+      expect.any(String)
+    )
     expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'running' })]])
   })
 

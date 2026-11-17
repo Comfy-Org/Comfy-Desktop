@@ -35,11 +35,13 @@ vi.mock('../../templateSearch/searchProcess', () => ({
   createSearchProcess: vi.fn()
 }))
 vi.mock('../../templateSearch/desktopSearch', () => ({ createDesktopSearch: vi.fn() }))
+vi.mock('../../templateSearch/searchTelemetry', () => ({ reportTemplateLoaded: vi.fn() }))
 
 import { registerTemplateSearchHandlers } from './registerTemplateSearchHandlers'
 import { sessionLifecycleEvents } from './shared'
 import { createDesktopSearch } from '../../templateSearch/desktopSearch'
 import { templateSearchOn } from '../../templateSearch/searchProcess'
+import { reportTemplateLoaded } from '../../templateSearch/searchTelemetry'
 import {
   CLAIM_WINDOW_MS,
   dropTemplateOpen,
@@ -240,6 +242,33 @@ describe('build operations', () => {
 })
 
 describe('template-search:open', () => {
+  const SEARCH_ID = '2b1c7a3e-9f4d-4c8a-8e1b-5d6f7a8b9c0d'
+
+  it('reports a template opened straight away in a running build, with the search it came from', async () => {
+    attachedView()
+    mocks.runningSessions.set('local-1', { mode: 'window' })
+    register()
+    await handler('template-search:open')({}, 'local-1', 'poster_template', SEARCH_ID)
+    expect(reportTemplateLoaded).toHaveBeenCalledExactlyOnceWith({
+      searchId: SEARCH_ID,
+      templateId: 'poster_template',
+      buildStarted: false,
+      pickToLoadMs: null
+    })
+  })
+
+  it('keeps the search a queued template came from for its launch, and drops one that is not a search id', async () => {
+    register()
+    await handler('template-search:open')({}, 'local-1', 'poster_template', SEARCH_ID)
+    queuedUrl()
+    await handler('template-search:open')({}, 'local-1', 'poster_template', 'a poster for my aunt')
+    queuedUrl()
+    expect(vi.mocked(reportTemplateLoaded).mock.calls.map(([loaded]) => loaded.searchId)).toEqual([
+      SEARCH_ID,
+      null
+    ])
+  })
+
   it('queues the template for a local build that is not running, for its launch to open once', async () => {
     register()
     expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('launch')

@@ -48,7 +48,16 @@ export interface BundleStoreDeps {
   supports: () => Promise<Supported | null>
   check: (bundleDir: string) => Promise<boolean>
   onAvailability: (availability: TemplateSearchAvailability) => void
+  onDownloaded?: (download: BundleDownload) => void
   now?: () => number
+}
+
+export interface BundleDownload {
+  result: 'completed' | 'up_to_date' | 'failed'
+  bytes: number
+  durationMs: number
+  background: boolean
+  version: string | null
 }
 
 type Semver = [number, number, number]
@@ -234,7 +243,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     )
   }
 
-  async function fetchFiles(base: string, files: BundleFile[]): Promise<void> {
+  async function fetchFiles(base: string, files: BundleFile[]): Promise<number> {
     const missing: BundleFile[] = []
     for (const file of files) {
       if (await storedSound(file)) continue
@@ -258,6 +267,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       if (!result.ok) throw new Error(result.error)
       done += file.size
     }
+    return done
   }
 
   async function assemble(version: string, raw: Buffer, files: BundleFile[]): Promise<void> {
@@ -306,24 +316,25 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     }
   }
 
-  async function fetchNewest(base: string): Promise<void> {
+  async function fetchNewest(base: string): Promise<{ version: string; bytes: number } | null> {
     progress = { received: 0, total: 0 }
     await clearPartials()
     const found = await wanted(base)
-    if (!found) return
+    if (!found) return null
     const local = await localVersions()
     const current = local.find((b) => b.version === found.entry.version)
     if (current) {
       const onDisk = await fs.promises.readFile(path.join(current.dir, MANIFEST)).catch(() => null)
-      if (onDisk && sha256Of(onDisk) === found.entry.manifestSha256) return
+      if (onDisk && sha256Of(onDisk) === found.entry.manifestSha256) return null
     }
     const manifest = parseManifest(JSON.parse(found.raw.toString('utf8')))
     if (!manifest || manifest.version !== found.entry.version) {
       throw new Error('the manifest does not match the index')
     }
-    await fetchFiles(base, manifest.files)
+    const bytes = await fetchFiles(base, manifest.files)
     await assemble(manifest.version, found.raw, manifest.files)
     await removeUnlistedFiles()
+    return { version: manifest.version, bytes }
   }
 
   function download({ quietly = false } = {}): Promise<void> {
@@ -337,9 +348,22 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       return downloading
     }
     quiet = quietly
+    const startedAt = now()
+    const reportDownload = (download: Pick<BundleDownload, 'result' | 'bytes' | 'version'>): void =>
+      deps.onDownloaded?.({ ...download, durationMs: now() - startedAt, background: quietly })
     downloading = fetchNewest(base)
-      .then(() => report({ kind: 'idle' }))
-      .catch(() => report({ kind: 'unavailable', reason: 'download_failed' }))
+      .then((fetched) => {
+        reportDownload(
+          fetched
+            ? { result: 'completed', ...fetched }
+            : { result: 'up_to_date', bytes: 0, version: null }
+        )
+        report({ kind: 'idle' })
+      })
+      .catch(() => {
+        reportDownload({ result: 'failed', bytes: progress.received, version: null })
+        report({ kind: 'unavailable', reason: 'download_failed' })
+      })
       .finally(() => {
         downloading = null
         quiet = false

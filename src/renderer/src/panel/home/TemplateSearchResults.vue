@@ -254,7 +254,7 @@ defineExpose({ verticalTarget, revealActive })
           "
           :data-testid="`home-template-search-row-${row.kind}`"
           @mousemove="controller.highlight(index)"
-          @click="controller.openRow(row)"
+          @click="controller.openRow(row, 'pointer')"
         >
           <span
             class="flex aspect-[4/3] items-center justify-center overflow-hidden bg-[rgb(137_137_137/0.12)]"

@@ -4,7 +4,7 @@ import type { TerminalEnv } from '../types/sources'
 import type { TemplateSearchResponse } from '../../types/ipc'
 import { readBuildTemplates, type BuildTemplates } from './buildTemplates'
 import { buildRuntime } from './buildRuntime'
-import { decideRequest, parseDecision } from './decisionApi'
+import { decideRequest, decisionMetrics, parseDecision } from './decisionApi'
 import type { SearchProcess } from './searchProcess'
 
 const TEMPLATES_TTL_MS = 60_000
@@ -60,7 +60,12 @@ export function createDesktopSearch({
       return { kind: 'unavailable', availability: decision.availability }
     }
     const result = parseDecision(decision.body, (id) => known?.labels.get(id) ?? null)
-    return result ? { kind: 'result', result } : { kind: 'failed' }
+    if (!result) return { kind: 'failed' }
+    return {
+      kind: 'result',
+      result,
+      metrics: { ...decisionMetrics(decision.body), coldStart: decision.coldStart }
+    }
   }
 
   return {
