@@ -12,6 +12,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import type { AssetSummary, Installation, RunningInstance } from '../types/ipc'
 
 const listAssets = vi.fn()
+const findCloudAsset = vi.fn()
 const listLocalAssets = vi.fn()
 let localListCut = false
 const downloadAsset = vi.fn()
@@ -213,8 +214,10 @@ beforeEach(() => {
   getAuthStatus.mockResolvedValue({ signedIn: false })
   getSetting.mockResolvedValue(undefined)
   localListCut = false
+  findCloudAsset.mockResolvedValue({ status: 'absent' })
   ;(window as unknown as { api: unknown }).api = {
     listAssets,
+    findCloudAsset,
     listLocalAssets: async (installationId?: string) => ({
       assets: await listLocalAssets(installationId),
       truncated: localListCut
@@ -814,7 +817,8 @@ describe('AssetsView', () => {
 
       expect(wrapper.emitted('focus-used')).toHaveLength(1)
       expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
-      expect(listAssets).toHaveBeenCalledWith('cloud', 'cutout.png')
+      expect(listAssets).toHaveBeenCalledWith('cloud')
+      expect(findCloudAsset).toHaveBeenCalledWith('cloud', 'cutout.png')
       expect(listLocalAssets).not.toHaveBeenCalled()
       expect(viewerTitle()).toBe('cutout.png')
       expect(
@@ -842,15 +846,16 @@ describe('AssetsView', () => {
 
     it('asks Comfy Cloud again, by name, for a file the shown list does not have', async () => {
       const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
-      listAssets.mockResolvedValue([
-        asset('other', 'other.png', 'image'),
-        asset('older', 'older.png', 'image')
-      ])
+      findCloudAsset.mockResolvedValue({
+        status: 'found',
+        asset: asset('older', 'older.png', 'image')
+      })
 
       await wrapper.setProps({ focusName: 'older.png' })
       await flushPromises()
 
-      expect(listAssets).toHaveBeenLastCalledWith('cloud', 'older.png')
+      expect(findCloudAsset).toHaveBeenLastCalledWith('cloud', 'older.png')
+      expect(assetNames(wrapper)).toEqual(['other.png', 'older.png'])
       expect(viewerTitle()).toBe('older.png')
       expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
     })
@@ -866,9 +871,49 @@ describe('AssetsView', () => {
       await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
       await flushPromises()
 
-      expect(listAssets).toHaveBeenLastCalledWith('cloud', 'cutout.png')
+      expect(findCloudAsset).toHaveBeenLastCalledWith('cloud', 'cutout.png')
       expect(assetNames(wrapper)).toContain('cutout.png')
       expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+    })
+
+    it('opens a file Comfy Cloud found past the gallery, once', async () => {
+      findCloudAsset.mockResolvedValue({
+        status: 'found',
+        asset: asset('old', 'cutout.png', 'image')
+      })
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+
+      expect(assetNames(wrapper)).toEqual(['other.png', 'cutout.png'])
+      expect(viewerTitle()).toBe('cutout.png')
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+    })
+
+    it('says it could not check, not that the file is missing, when the search did not finish', async () => {
+      findCloudAsset.mockResolvedValue({ status: 'incomplete' })
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+
+      expect(assetNames(wrapper)).toEqual(['other.png'])
+      expect(viewer()).toBeNull()
+      expect(wrapper.get('[data-testid="assets-not-found"]').text()).toBe(
+        "Couldn't check Comfy Cloud for cutout.png. Refresh to try again."
+      )
+
+      findCloudAsset.mockRejectedValue(new Error('ipc gone'))
+      await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+      await flushPromises()
+
+      expect(assetNames(wrapper), 'the gallery stays').toEqual(['other.png'])
+      expect(wrapper.get('[data-testid="assets-not-found"]').text()).toBe(
+        "Couldn't check Comfy Cloud for cutout.png. Refresh to try again."
+      )
+
+      findCloudAsset.mockResolvedValue({ status: 'absent' })
+      await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="assets-not-found"]').text()).toBe(
+        "Couldn't find cutout.png in your Comfy Cloud assets. It may have a different name here."
+      )
     })
 
     it('shows no note when the file opened', async () => {

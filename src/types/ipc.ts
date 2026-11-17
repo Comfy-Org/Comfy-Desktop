@@ -183,6 +183,9 @@ export interface CatalogWorkflow {
 
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 
+export type CloudAssetLookup =
+  { status: 'found'; asset: AssetSummary } | { status: 'absent' } | { status: 'incomplete' }
+
 export interface AssetSummary {
   id: string
   name: string
@@ -1188,10 +1191,11 @@ export interface ElectronApi {
   closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
-  listAssets(installationId: string, findName?: string): Promise<AssetSummary[]>
+  listAssets(installationId: string): Promise<AssetSummary[]>
   listLocalAssets(installationId?: string): Promise<LocalAssetListing>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
+  findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>

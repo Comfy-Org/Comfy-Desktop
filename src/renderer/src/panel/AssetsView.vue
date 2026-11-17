@@ -48,7 +48,7 @@ import { formatBytes } from '../lib/downloadFormatters'
 import { formatPlaybackTime, formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { LOCAL_ASSETS_SOURCE } from '../types/ipc'
-import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
+import type { AssetKind, AssetSummary, CloudAssetLookup, Installation } from '../types/ipc'
 import type { ContextMenuItem } from '../types/context-menu'
 
 interface GalleryAsset extends AssetSummary {
@@ -131,7 +131,8 @@ const SHARED = 'shared'
 const savedPlace = useLocalStorage('comfy.desktop.assets.place', '')
 const pickedPlace = ref(focusName ? CLOUD : '')
 const pendingFocus = ref<string | null>(focusName)
-const notFoundName = ref<string | null>(null)
+const focusMiss = ref<{ name: string; checked: boolean } | null>(null)
+let lastLookup: { name: string; status: CloudAssetLookup['status'] } | null = null
 const truncated = ref(false)
 
 const assets = ref<GalleryAsset[]>([])
@@ -236,7 +237,7 @@ const selectedBuild = computed<AssetBuild | null>(() => {
 
 function choosePlace(id: string): void {
   pickedPlace.value = id
-  notFoundName.value = null
+  focusMiss.value = null
   savedPlace.value = id
 }
 
@@ -419,9 +420,25 @@ async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean)
   if (authStore.status.workspaceId !== workspaceId) throw new Error('workspace switch failed')
 }
 
-function listCloudAssets(cloudId: string): Promise<AssetSummary[]> {
-  const wanted = pendingFocus.value ?? notFoundName.value
-  return wanted ? window.api.listAssets(cloudId, wanted) : window.api.listAssets(cloudId)
+function lookUpCloudAsset(cloudId: string, name: string): Promise<CloudAssetLookup> {
+  return window.api
+    .findCloudAsset(cloudId, name)
+    .catch((): CloudAssetLookup => ({ status: 'incomplete' }))
+}
+
+async function listCloudAssets(cloudId: string): Promise<AssetSummary[]> {
+  const wanted = pendingFocus.value ?? focusMiss.value?.name ?? null
+  const [listed, lookup] = await Promise.all([
+    window.api.listAssets(cloudId),
+    wanted ? lookUpCloudAsset(cloudId, wanted) : null
+  ])
+  lastLookup = wanted && lookup ? { name: wanted, status: lookup.status } : null
+  if (lookup?.status !== 'found' || listed.some(({ id }) => id === lookup.asset.id)) return listed
+  return [...listed, lookup.asset]
+}
+
+function lookedUpAbsent(name: string): boolean {
+  return lastLookup?.name === name && lastLookup.status === 'absent'
 }
 
 async function loadAssets(userAsked = false): Promise<void> {
@@ -450,7 +467,9 @@ async function loadAssets(userAsked = false): Promise<void> {
     if (current !== requestId) return
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
     truncated.value = listed.truncated
-    if (assets.value.some((asset) => asset.name === notFoundName.value)) notFoundName.value = null
+    const miss = focusMiss.value
+    if (miss && assets.value.some((asset) => asset.name === miss.name)) focusMiss.value = null
+    else if (miss) focusMiss.value = { name: miss.name, checked: lookedUpAbsent(miss.name) }
     openPendingFocus(settled)
   } catch {
     if (current !== requestId) return
@@ -505,7 +524,7 @@ function openPendingFocus(settled: boolean): void {
   if (!selectedBuild.value?.cloud || failed.value || !cloudListable.value) return
   const asset = newestNamed(name)
   if (asset) openDetail(asset)
-  else notFoundName.value = name
+  else focusMiss.value = { name, checked: lookedUpAbsent(name) }
 }
 
 watch(
@@ -523,7 +542,7 @@ watch(
     emit('focus-used')
     const cloudShown = selectedBuild.value?.cloud === true && !loading.value
     pendingFocus.value = name
-    notFoundName.value = null
+    focusMiss.value = null
     pickedPlace.value = CLOUD
     if (!cloudShown) return
     if (cloudListable.value && !failed.value && !newestNamed(name)) void loadAssets()
@@ -991,12 +1010,16 @@ function extensionOf(name: string): string {
 
     <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
       <p
-        v-if="notFoundName && selectedBuild?.cloud"
+        v-if="focusMiss && selectedBuild?.cloud"
         role="status"
         class="m-0 mb-4 text-ui text-subtle-foreground"
         data-testid="assets-not-found"
       >
-        {{ t('assets.notFoundInCloud', { name: notFoundName }) }}
+        {{
+          t(focusMiss.checked ? 'assets.notFoundInCloud' : 'assets.notCheckedInCloud', {
+            name: focusMiss.name
+          })
+        }}
       </p>
       <div v-if="showSkeleton" role="status" :aria-label="t('common.loading')">
         <ul

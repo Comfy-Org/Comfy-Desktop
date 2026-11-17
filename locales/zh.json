@@ -112,6 +112,7 @@
     "showInFolder": "在文件夹中显示",
     "viewInAssets": "在资产中查看",
     "notFoundInCloud": "在你的 Comfy Cloud 资产中找不到 {name}。它在这里的名称可能不同。",
+    "notCheckedInCloud": "无法在 Comfy Cloud 中查找 {name}。请刷新后重试。",
     "copy": "复制",
     "copyFailed": "无法复制资产",
     "delete": "删除",

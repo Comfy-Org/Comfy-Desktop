@@ -112,6 +112,7 @@
     "showInFolder": "Show in folder",
     "viewInAssets": "View in Assets",
     "notFoundInCloud": "Couldn't find {name} in your Comfy Cloud assets. It may have a different name here.",
+    "notCheckedInCloud": "Couldn't check Comfy Cloud for {name}. Refresh to try again.",
     "copy": "Copy",
     "copyFailed": "Couldn't copy asset",
     "delete": "Delete",

@@ -15,6 +15,7 @@ import type { FileSaveTransfer } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
 import { copyImageToClipboard } from './clipboardImage'
 import { copyOutputImage, outputFilePath, revealOutputFile, trashOutputFile } from './outputFolders'
+import type { CloudAssetLookup } from '../../types/ipc'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { mediaFactsFromBytes } from './mediaFacts'
 import { LOCAL_ASSETS_SOURCE } from '../../types/ipc'
@@ -27,7 +28,6 @@ const ASSETS_COPY_CHANNEL = 'assets:copy'
 const ASSETS_TRASH_CHANNEL = 'assets:trash'
 
 const PAGE_SIZE = 100
-const MAX_SEARCHED_PAGES = 20
 const LIST_QUERY = `tags_any=output&sort=created_at&order=desc&limit=${PAGE_SIZE}`
 const REQUEST_TIMEOUT_MS = 20_000
 const PREVIEW_BATCH_TIMEOUT_MS = 30_000
@@ -193,34 +193,90 @@ async function addMediaFacts(summary: AssetSummary, deadline: AbortSignal): Prom
   }
 }
 
+const ASSETS_FIND_CHANNEL = 'assets:find'
+const LOOKUP_PAGE_SIZE = 100
+const MAX_LOOKUP_PAGES = 10
+const LOOKUP_INCOMPLETE: CloudAssetLookup = { status: 'incomplete' }
+
+interface LookupPage {
+  rows: unknown[]
+  hasMore: boolean
+  nextCursor: string | null
+}
+
+function lookupUrl(name: string, after: string | null): string {
+  const query = new URLSearchParams({
+    tags_any: 'output',
+    name_contains: name,
+    sort: 'created_at',
+    order: 'desc',
+    limit: String(LOOKUP_PAGE_SIZE),
+    include_public: 'false'
+  })
+  if (after !== null) query.set('after', after)
+  return `${CLOUD_CONFIG.apiBase}/assets?${query}`
+}
+
+async function fetchLookupPage(url: string, accessToken: string): Promise<LookupPage | null> {
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  })
+  if (!res.ok) return null
+  const body: unknown = await res.json().catch(() => null)
+  if (!body || typeof body !== 'object') return null
+  const { assets, has_more: hasMore, next_cursor: nextCursor } = body as Record<string, unknown>
+  if (!Array.isArray(assets) || typeof hasMore !== 'boolean') return null
+  if (nextCursor !== undefined && nextCursor !== null && typeof nextCursor !== 'string') return null
+  return { rows: assets, hasMore, nextCursor: nextCursor ?? null }
+}
+
+async function withPreview(row: AssetRow, accessToken: string): Promise<AssetSummary> {
+  const summary = toSummary(row, null)
+  if (summary.kind === null || summary.kind === '3d') return summary
+  const deadline = AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS)
+  summary.previewUrl = await resolveCloudContentUrl(summary.id, accessToken, 'inline', deadline)
+  await addMediaFacts(summary, deadline)
+  return summary
+}
+
+async function lookUpCloudAsset(accessToken: string, name: string): Promise<CloudAssetLookup> {
+  let after: string | null = null
+  let unreadable = false
+  for (let page = 0; page < MAX_LOOKUP_PAGES; page++) {
+    const result = await fetchLookupPage(lookupUrl(name, after), accessToken)
+    if (!result) return LOOKUP_INCOMPLETE
+    const readable = result.rows.filter(isAssetRow)
+    unreadable ||= readable.length !== result.rows.length
+    const found = readable.find((row) => fileNameOf(row) === name)
+    if (found) return { status: 'found', asset: await withPreview(found, accessToken) }
+    if (!result.hasMore) return unreadable ? LOOKUP_INCOMPLETE : { status: 'absent' }
+    if (result.nextCursor === null || result.nextCursor === after) return LOOKUP_INCOMPLETE
+    after = result.nextCursor
+  }
+  return LOOKUP_INCOMPLETE
+}
+
+export async function findCloudAsset(
+  installationId: string,
+  name: string
+): Promise<CloudAssetLookup> {
+  const accessToken = name ? await cloudAccessToken(installationId) : null
+  if (!accessToken) return LOOKUP_INCOMPLETE
+  return lookUpCloudAsset(accessToken, name).catch(() => LOOKUP_INCOMPLETE)
+}
+
 async function cloudAccessToken(installationId: string): Promise<string | null> {
   const inst = await installations.get(installationId)
   if (!inst || sourceMap[inst.sourceId]?.category !== 'cloud') return null
   return getCloudSession().getAccessToken()
 }
 
-async function findOlderRow(
-  listUrl: string,
-  headers: Record<string, string>,
-  name: string
-): Promise<AssetRow | null> {
-  for (let page = 1; page < MAX_SEARCHED_PAGES; page++) {
-    const rows = await fetchAssetRows(`${listUrl}&offset=${page * PAGE_SIZE}`, headers)
-    const found = rows.find((row) => fileNameOf(row) === name)
-    if (found) return found
-    if (rows.length < PAGE_SIZE) return null
-  }
-  return null
-}
-
-async function listCloudAssets(accessToken: string, findName?: string): Promise<AssetSummary[]> {
-  const listUrl = `${CLOUD_CONFIG.apiBase}/assets?${LIST_QUERY}&include_public=false`
-  const headers = { Authorization: `Bearer ${accessToken}` }
-  const rows = await fetchAssetRows(listUrl, headers)
-  if (findName && rows.length === PAGE_SIZE && !rows.some((row) => fileNameOf(row) === findName)) {
-    const older = await findOlderRow(listUrl, headers, findName).catch(() => null)
-    if (older) rows.push(older)
-  }
+async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
+  const rows = await fetchAssetRows(
+    `${CLOUD_CONFIG.apiBase}/assets?${LIST_QUERY}&include_public=false`,
+    { Authorization: `Bearer ${accessToken}` }
+  )
   const summaries = rows.map((row) => toSummary(row, null))
   const deadline = AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS)
   await runPool(
@@ -236,12 +292,9 @@ async function listCloudAssets(accessToken: string, findName?: string): Promise<
   return summaries
 }
 
-export async function listAssets(
-  installationId: string,
-  findName?: string
-): Promise<AssetSummary[]> {
+export async function listAssets(installationId: string): Promise<AssetSummary[]> {
   const accessToken = await cloudAccessToken(installationId)
-  return accessToken ? listCloudAssets(accessToken, findName) : []
+  return accessToken ? listCloudAssets(accessToken) : []
 }
 
 type SaveTo = (filePath: string, job: FileSaveTransfer) => Promise<void>
@@ -398,10 +451,8 @@ function localFileAction(
 }
 
 export function registerAssetsHandlers(): void {
-  ipcMain.handle(ASSETS_LIST_CHANNEL, (_event, installationId: unknown, findName: unknown) =>
-    typeof installationId === 'string'
-      ? listAssets(installationId, typeof findName === 'string' ? findName : undefined)
-      : []
+  ipcMain.handle(ASSETS_LIST_CHANNEL, (_event, installationId: unknown) =>
+    typeof installationId === 'string' ? listAssets(installationId) : []
   )
   ipcMain.handle(
     ASSETS_DOWNLOAD_CHANNEL,
@@ -420,5 +471,10 @@ export function registerAssetsHandlers(): void {
     isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'
       ? copyAsset(source, assetId)
       : false
+  )
+  ipcMain.handle(ASSETS_FIND_CHANNEL, (_event, installationId: unknown, name: unknown) =>
+    typeof installationId === 'string' && typeof name === 'string'
+      ? findCloudAsset(installationId, name)
+      : LOOKUP_INCOMPLETE
   )
 }

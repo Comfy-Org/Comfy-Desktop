@@ -87,8 +87,14 @@ vi.mock('./ipc/shared', () => ({
   }
 }))
 
-const { assetKind, downloadAsset, listAssets, registerAssetsHandlers, signedStorageUrl } =
-  await import('./assets')
+const {
+  assetKind,
+  downloadAsset,
+  findCloudAsset,
+  listAssets,
+  registerAssetsHandlers,
+  signedStorageUrl
+} = await import('./assets')
 const {
   cancelModelDownload,
   clearFinishedDownloads,
@@ -209,67 +215,6 @@ describe('listAssets', () => {
     expect(assets.at(-1)!.id).toBe('a99')
   })
 
-  describe('a file asked for by name', () => {
-    const page = (from: number, count: number, name = (i: number) => `old-${i}.png`) => ({
-      assets: Array.from({ length: count }, (_, i) => ({
-        id: `a${from + i}`,
-        name: name(from + i)
-      }))
-    })
-
-    function serveAssetPages(pages: (offset: number) => unknown): string[] {
-      const offsetsAsked: string[] = []
-      fetchMock.mockImplementation(async (url: string) => {
-        if (!url.includes('/assets?')) return new Response(null, { status: 404 })
-        const offset = new URL(url).searchParams.get('offset') ?? '0'
-        offsetsAsked.push(offset)
-        return jsonResponse(pages(Number(offset)))
-      })
-      return offsetsAsked
-    }
-
-    beforeEach(() => {
-      getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
-      getAccessToken.mockResolvedValue('token')
-    })
-
-    it('looks past the newest 100 outputs and adds the newest older file with that name', async () => {
-      const offsetsAsked = serveAssetPages((offset) =>
-        offset === 200
-          ? page(200, 100, (i) => (i === 230 || i === 250 ? 'audio/cutout.png' : `old-${i}.png`))
-          : page(offset, 100)
-      )
-
-      const assets = await listAssets('cloud-1', 'cutout.png')
-
-      expect(offsetsAsked).toEqual(['0', '100', '200'])
-      expect(assets).toHaveLength(101)
-      expect(assets.at(-1)).toMatchObject({ id: 'a230', name: 'cutout.png' })
-    })
-
-    it('asks for no more pages when the newest 100 already have it, or there are no more', async () => {
-      const offsetsAsked = serveAssetPages((offset) =>
-        page(offset, 100, (i) => (i === 5 ? 'cutout.png' : `old-${i}.png`))
-      )
-      await listAssets('cloud-1', 'cutout.png')
-      expect(offsetsAsked).toEqual(['0'])
-
-      const shortList = serveAssetPages((offset) => page(offset, 40))
-      expect(await listAssets('cloud-1', 'cutout.png')).toHaveLength(40)
-      expect(shortList).toEqual(['0'])
-    })
-
-    it('stops after 20 pages, and keeps the newest 100 when a later page fails', async () => {
-      const offsetsAsked = serveAssetPages((offset) => page(offset, 100))
-      expect(await listAssets('cloud-1', 'cutout.png')).toHaveLength(100)
-      expect(offsetsAsked).toHaveLength(20)
-      expect(offsetsAsked.at(-1)).toBe('1900')
-
-      serveAssetPages((offset) => (offset === 0 ? page(0, 100) : { assets: 'broken' }))
-      expect(await listAssets('cloud-1', 'cutout.png')).toHaveLength(100)
-    })
-  })
-
   it('lists the signed-in cloud workspace and resolves signed media links for playable kinds', async () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue('token')
@@ -348,6 +293,123 @@ describe('listAssets', () => {
       'bytes=0-524287',
       'bytes=0-65535'
     ])
+  })
+})
+
+describe('findCloudAsset', () => {
+  type LookupPage = { assets: unknown; has_more?: unknown; next_cursor?: unknown }
+
+  function serveLookup(pages: Record<string, LookupPage | Response>): URL[] {
+    const asked: URL[] = []
+    fetchMock.mockImplementation(async (url: string) => {
+      const id = /\/assets\/([^/?]+)\/content/.exec(url)?.[1]
+      if (id)
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `https://storage.googleapis.com/bucket/${id}?sig=1` }
+        })
+      if (url.startsWith('https://storage.googleapis.com/'))
+        return new Response(null, { status: 404 })
+      const request = new URL(url)
+      asked.push(request)
+      const page = pages[request.searchParams.get('after') ?? 'first']
+      if (!page) return new Response(null, { status: 404 })
+      return page instanceof Response ? page : jsonResponse(page)
+    })
+    return asked
+  }
+
+  const row = (id: string, name: string) => ({ id, name, created_at: '2026-11-01T00:00:00Z' })
+
+  beforeEach(() => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+  })
+
+  it('asks Comfy Cloud by name, follows the cursor, and returns the newest exact match', async () => {
+    const asked = serveLookup({
+      first: { assets: [row('a1', 'my-cutout.png')], has_more: true, next_cursor: 'c1' },
+      c1: {
+        assets: [row('a2', 'audio/cutout.png'), row('a3', 'cutout.png')],
+        has_more: true,
+        next_cursor: 'c2'
+      }
+    })
+
+    const lookup = await findCloudAsset('cloud-1', 'cutout.png')
+
+    expect(lookup).toMatchObject({
+      status: 'found',
+      asset: {
+        id: 'a2',
+        name: 'cutout.png',
+        previewUrl: 'https://storage.googleapis.com/bucket/a2?sig=1'
+      }
+    })
+    expect(asked.map((url) => url.searchParams.get('name_contains'))).toEqual([
+      'cutout.png',
+      'cutout.png'
+    ])
+    expect(asked.map((url) => url.searchParams.get('after'))).toEqual([null, 'c1'])
+    expect(asked[0]!.searchParams.get('tags_any')).toBe('output')
+    expect(asked[0]!.searchParams.get('include_public')).toBe('false')
+  })
+
+  it('says the file is absent only after Comfy Cloud reports no more pages', async () => {
+    serveLookup({
+      first: { assets: [row('a1', 'my-cutout.png')], has_more: true, next_cursor: 'c1' },
+      c1: { assets: [row('a2', 'cutout.png.webp')], has_more: false }
+    })
+
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'absent' })
+  })
+
+  it('says the search is incomplete when a later page fails', async () => {
+    serveLookup({
+      first: { assets: [row('a1', 'my-cutout.png')], has_more: true, next_cursor: 'c1' },
+      c1: new Response(null, { status: 500 })
+    })
+
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+  })
+
+  it('says the search is incomplete when it reaches its page limit', async () => {
+    const pages: Record<string, LookupPage> = {}
+    for (let i = 0; i < 12; i++) {
+      pages[i === 0 ? 'first' : `c${i}`] = {
+        assets: [row(`a${i}`, `other-${i}.png`)],
+        has_more: true,
+        next_cursor: `c${i + 1}`
+      }
+    }
+    const asked = serveLookup(pages)
+
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+    expect(asked).toHaveLength(10)
+  })
+
+  it('says the search is incomplete for unreadable rows or unusable page details', async () => {
+    serveLookup({ first: { assets: [{ id: 7, name: 'cutout.png' }], has_more: false } })
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+
+    serveLookup({ first: { assets: [], has_more: true } })
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+
+    serveLookup({ first: { assets: [] } })
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+
+    serveLookup({
+      first: { assets: [], has_more: true, next_cursor: 'c1' },
+      c1: { assets: [], has_more: true, next_cursor: 'c1' }
+    })
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+  })
+
+  it('says the search is incomplete when signed out, and asks nothing', async () => {
+    getAccessToken.mockResolvedValue(null)
+
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 

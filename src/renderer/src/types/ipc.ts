@@ -9,6 +9,7 @@ export type {
   AssetSummary,
   LocalAssetListing,
   CatalogWorkflow,
+  CloudAssetLookup,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,
