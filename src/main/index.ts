@@ -90,6 +90,7 @@ import {
   _operationAborts,
   _activeOperationStatus,
   _getLaunchingInstallationIds,
+  _setActiveLaunchPickerWorkspace,
   stopRunning,
   resolveTheme,
   MSG_CANCELLED,
@@ -1135,6 +1136,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       pickerWorkspaceId?: string
     ): Promise<void> => {
       const requester = comfyWindows.get(requesterEntryId)
+      if (pickerWorkspaceId) _setActiveLaunchPickerWorkspace(installationId, pickerWorkspaceId)
       const route = routeBuildOpen(installationId, requester, _getLaunchingInstallationIds())
       recordBuildOpen(installationId, route)
       switch (route.kind) {
