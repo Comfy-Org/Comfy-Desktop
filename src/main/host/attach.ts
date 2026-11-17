@@ -395,7 +395,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
 
   attachSessionDownloadHandler(comfyContents.session)
 
-  void navigator.open(comfyUrl)
+  navigator.startOpening(comfyUrl)
 
   entry._installCleanup = (): void => {
     if (entry._installCleanup === null) return

@@ -23,6 +23,7 @@ export interface BuildNavigator {
   attach(build: AttachedBuild): void
   detach(): void
   open(url: string): Promise<NavigationResult>
+  startOpening(url: string): void
   refresh(): void
   readonly retryPending: boolean
   retryAfterFailure(): void
@@ -62,6 +63,10 @@ function createBuildNavigator(entry: ComfyWindowEntry): BuildNavigator {
     return navigation === latestNavigation ? 'loaded' : 'superseded'
   }
 
+  const startOpening = (url: string): void => {
+    void open(url).catch(() => {})
+  }
+
   return {
     attach(attached) {
       build = attached
@@ -75,11 +80,13 @@ function createBuildNavigator(entry: ComfyWindowEntry): BuildNavigator {
 
     open,
 
+    startOpening,
+
     refresh() {
       if (!build || entry.window.isDestroyed() || !build.mayReload()) return
       const url = build.reloadUrl()
       contents().stop()
-      void open(url)
+      startOpening(url)
     },
 
     get retryPending() {
@@ -92,7 +99,7 @@ function createBuildNavigator(entry: ComfyWindowEntry): BuildNavigator {
       retryTimer = setTimeout(() => {
         retryTimer = null
         if (build !== failedBuild || !failedBuild.mayReload() || entry.window.isDestroyed()) return
-        void open(failedBuild.reloadUrl())
+        startOpening(failedBuild.reloadUrl())
       }, LOAD_RETRY_DELAY_MS)
     },
 
@@ -108,7 +115,7 @@ function createBuildNavigator(entry: ComfyWindowEntry): BuildNavigator {
       await showSplashPage(splashed, theme, copy).catch(() => {})
       if (reopen !== latestReopen || entry.window.isDestroyed() || splashed.isDestroyed()) return
       if (!reveal()) return
-      if (navigation === latestNavigation) void open(url).catch(() => {})
+      if (navigation === latestNavigation) startOpening(url)
     },
 
     keepCurrentPage() {

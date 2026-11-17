@@ -50,6 +50,22 @@ function splashOnScreen(): PromiseWithResolvers<void> {
 
 const reopenCopy = { title: 'Starting', desc: 'One moment' }
 
+async function unhandledRejectionsAfter(act: () => void): Promise<unknown[]> {
+  const unhandled: unknown[] = []
+  const record = (reason: unknown): void => {
+    unhandled.push(reason)
+  }
+  process.on('unhandledRejection', record)
+  try {
+    act()
+    vi.useRealTimers()
+    await new Promise((resolve) => setImmediate(resolve))
+  } finally {
+    process.off('unhandledRejection', record)
+  }
+  return unhandled
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   splash.show.mockReset()
@@ -104,6 +120,25 @@ describe('opening an address in a build window', () => {
   })
 })
 
+describe('opening an address nobody waits for', () => {
+  it('loads the address', () => {
+    const { navigator, loaded } = openBuildWindow()
+
+    navigator.startOpening(BUILD_URL)
+
+    expect(loaded()).toEqual([BUILD_URL])
+  })
+
+  it('leaves a page that cannot load to the retry instead of reporting an unhandled error', async () => {
+    const { navigator, fail } = openBuildWindow()
+    navigator.startOpening(BUILD_URL)
+
+    const unhandled = await unhandledRejectionsAfter(() => fail(BUILD_URL, OFFLINE))
+
+    expect(unhandled).toEqual([])
+  })
+})
+
 describe('refreshing a build window', () => {
   it('stops the page and reloads the build address', () => {
     const { navigator, stop, loadURL } = openBuildWindow()
@@ -123,6 +158,15 @@ describe('refreshing a build window', () => {
 
     await expect(workspaceSwitch).resolves.toBe('superseded')
     expect(loaded()).toEqual([TEAM_A_URL, BUILD_URL])
+  })
+
+  it('leaves a refresh that cannot load to the retry instead of reporting an unhandled error', async () => {
+    const { navigator, fail } = openBuildWindow()
+    navigator.refresh()
+
+    const unhandled = await unhandledRejectionsAfter(() => fail(BUILD_URL, OFFLINE))
+
+    expect(unhandled).toEqual([])
   })
 
   it.each([
@@ -157,6 +201,16 @@ describe('retrying after a page fails to load', () => {
 
     expect(loaded()).toEqual([BUILD_URL])
     expect(navigator.retryPending).toBe(false)
+  })
+
+  it('leaves a retry that cannot load to the next retry instead of reporting an unhandled error', async () => {
+    const { navigator, fail } = openBuildWindow()
+    navigator.retryAfterFailure()
+    vi.advanceTimersByTime(LOAD_RETRY_DELAY_MS)
+
+    const unhandled = await unhandledRejectionsAfter(() => fail(BUILD_URL, OFFLINE))
+
+    expect(unhandled).toEqual([])
   })
 
   it('retries once however many failures arrive before it runs', () => {
