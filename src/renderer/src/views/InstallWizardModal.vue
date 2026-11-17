@@ -2191,6 +2191,7 @@ defineExpose({ open })
                   :model-value="shownSelections[field.id]?.value ?? ''"
                   :options="hardwareSelectOptions(field)"
                   :loading="isRefreshing(field)"
+                  :disabled="isRefreshing(field)"
                   :aria-label="field.label"
                   @update:model-value="(value) => selectCardOptionByValue(field, fieldIndex, value)"
                 />

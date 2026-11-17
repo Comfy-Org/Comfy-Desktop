@@ -207,7 +207,10 @@ function hardwareDescriptions(wrapper: Mounted): string[] {
   )
 }
 
-async function openChangeSetup(props: { hideBackToDashboard?: boolean } = {}) {
+async function openChangeSetup(
+  props: { hideBackToDashboard?: boolean } = {},
+  options: { needsConsent?: boolean } = {}
+) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const wrapper = mount(InstallWizardModal, {
@@ -215,7 +218,9 @@ async function openChangeSetup(props: { hideBackToDashboard?: boolean } = {}) {
     attachTo: document.body,
     global: { plugins: [pinia] }
   })
-  await wrapper.vm.open(props.hideBackToDashboard ? { cameFromSetup: true } : {})
+  await wrapper.vm.open(
+    props.hideBackToDashboard ? { cameFromSetup: true, needsConsent: options.needsConsent } : {}
+  )
   await flushPromises()
   if (!props.hideBackToDashboard) {
     only('[data-testid="config-change-setup"]').click()
@@ -373,6 +378,19 @@ describe('switching where Change setup gets ComfyUI', () => {
     expect(body.scrollHeight).toBeLessThanOrEqual(body.clientHeight)
     expectFooterInWindow(563)
   })
+
+  it('fits the first-use Change setup that asks for the EULA in the smallest window, on both choices', async () => {
+    await browserPage.viewport(800, 563)
+    installSetupChoices()
+    await openChangeSetup({ hideBackToDashboard: true }, { needsConsent: true })
+    expectFooterInWindow(563)
+
+    await pick('config-start-from-existing')
+    expect(onScreen('[data-testid="config-consent-tos"]')).toHaveLength(1)
+    const body = only('.setup-modal-body')
+    expect(body.scrollHeight).toBeLessThanOrEqual(body.clientHeight)
+    expectFooterInWindow(563)
+  })
 })
 
 describe('switching the release channel in Change setup', () => {
@@ -396,12 +414,14 @@ describe('switching the release channel in Change setup', () => {
     await flushPromises()
     expect(gate.pending()).toBe(1)
     expect(hardwareTrigger().getAttribute('aria-busy')).toBe('true')
+    expect((hardwareTrigger() as HTMLButtonElement).disabled).toBe(true)
     expect(hardwareDescriptions(wrapper)).toHaveLength(HARDWARE.length)
     expect(onScreen('.config-loading')).toEqual([])
 
     for (const layout of await layoutsWhileLoading(gate)) expect(layout).toEqual(settled)
     expect(onScreen('.config-release-version')).toEqual([])
     expect(hardwareTrigger().hasAttribute('aria-busy')).toBe(false)
+    expect((hardwareTrigger() as HTMLButtonElement).disabled).toBe(false)
     expect(hardwareDescriptions(wrapper).every((text) => text.includes('0.4.2 (nightly)'))).toBe(
       true
     )
