@@ -1147,7 +1147,7 @@ export interface ElectronApi {
   ): Promise<ActionResult | void>
 
   stopComfyUI(installationId: string): Promise<void>
-  focusComfyWindow(installationId: string): Promise<boolean>
+  focusComfyWindow(installationId: string, pickerWorkspaceId?: string): Promise<boolean>
 
   terminalSubscribe(installationId: string): Promise<TerminalRestore>
   terminalUnsubscribe(installationId: string): Promise<void>

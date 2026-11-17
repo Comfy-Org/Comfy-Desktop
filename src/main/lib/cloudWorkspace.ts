@@ -14,10 +14,13 @@ import { isTrustedCloudUrl } from './trustedCloudUrl'
 
 const pendingWorkspaceSyncs = new WeakMap<ComfyWindowEntry, Promise<boolean>>()
 const failedWorkspaceLoads = new WeakSet<WebContents>()
+const CLOUD_TAB_WORKSPACE_KEY = 'Comfy.Workspace.Current'
+const CLOUD_TAB_SWITCH_TARGET_KEY = 'Comfy.Workspace.SwitchTargetId'
 
 export async function cloudWorkspaceUrl(
   installation: InstallationRecord,
-  rawUrl: string
+  rawUrl: string,
+  pickerWorkspaceId?: string
 ): Promise<string> {
   if (installation.sourceId !== 'cloud' || !isTrustedCloudUrl(rawUrl)) return rawUrl
 
@@ -28,7 +31,9 @@ export async function cloudWorkspaceUrl(
   const selectedWorkspaceId = (): string =>
     installationWorkspaceId(
       installation,
-      settings.get(DASHBOARD_WORKSPACE_SETTING) || workspaceContextId(session.status())
+      pickerWorkspaceId ||
+        settings.get(DASHBOARD_WORKSPACE_SETTING) ||
+        workspaceContextId(session.status())
     )
   const selected = selectedWorkspaceId()
   const subject = session.currentSubject()
@@ -49,11 +54,41 @@ export async function cloudWorkspaceUrl(
   return url.href
 }
 
+async function canKeepCloudPage(contents: WebContents, launchUrl: string): Promise<boolean> {
+  if (!isTrustedCloudUrl(launchUrl) || !getCloudSession().status().signedIn) return true
+  const target = new URL(launchUrl)
+  const workspaceId = target.searchParams.get('workspace')
+  if (!workspaceId) return true
+
+  const pageUrl = contents.getURL()
+  if (!isTrustedCloudUrl(pageUrl) || new URL(pageUrl).origin !== target.origin) return true
+
+  const currentWorkspaceId: unknown = await contents
+    .executeJavaScript(
+      `(() => {
+      if (location.origin !== ${JSON.stringify(target.origin)}) return null
+      const pending = sessionStorage.getItem(${JSON.stringify(CLOUD_TAB_SWITCH_TARGET_KEY)})
+      if (pending) return pending
+      const workspace = sessionStorage.getItem(${JSON.stringify(CLOUD_TAB_WORKSPACE_KEY)})
+      return workspace ? JSON.parse(workspace)?.id : null
+    })()`
+    )
+    .catch(() => null)
+  if (typeof currentWorkspaceId === 'string') return currentWorkspaceId === workspaceId
+
+  return new URL(pageUrl).searchParams.get('workspace') === workspaceId
+}
+
+interface CloudWindowOpenOptions {
+  pickerWorkspaceId?: string
+  cancelLoadRetry?: () => void
+}
+
 async function navigateToSelectedWorkspace(
   entry: ComfyWindowEntry,
   installationId: string,
   isLatest: () => boolean,
-  cancelLoadRetry?: () => void
+  { pickerWorkspaceId, cancelLoadRetry }: CloudWindowOpenOptions
 ): Promise<boolean> {
   const installation = await getInstallation(installationId)
   if (!installation || !isLatest() || entry.window.isDestroyed()) return false
@@ -67,9 +102,13 @@ async function navigateToSelectedWorkspace(
     entry.installationId === installationId &&
     entry.comfyUrl === previousUrl
 
-  const nextUrl = await cloudWorkspaceUrl(installation, previousUrl)
+  const nextUrl = await cloudWorkspaceUrl(installation, previousUrl, pickerWorkspaceId)
   if (!isLatest() || !stillAttached()) return false
-  if (nextUrl === previousUrl && !failedWorkspaceLoads.has(contents)) return true
+  if (nextUrl === previousUrl && !failedWorkspaceLoads.has(contents)) {
+    const keepPage = await canKeepCloudPage(contents, nextUrl)
+    if (!isLatest() || !stillAttached()) return false
+    if (keepPage) return true
+  }
 
   cancelLoadRetry?.()
   try {
@@ -87,7 +126,7 @@ async function navigateToSelectedWorkspace(
 
 export async function syncCloudWindowWorkspace(
   entry: ComfyWindowEntry,
-  cancelLoadRetry?: () => void
+  options: CloudWindowOpenOptions = {}
 ): Promise<boolean> {
   const { installationId } = entry
   if (entry.sourceCategory !== 'cloud' || !installationId) return true
@@ -96,10 +135,7 @@ export async function syncCloudWindowWorkspace(
   const isLatest = (): boolean => pendingWorkspaceSyncs.get(entry) === sync
   const sync: Promise<boolean> = Promise.resolve(previousSync)
     .catch(() => false)
-    .then(
-      () =>
-        isLatest() && navigateToSelectedWorkspace(entry, installationId, isLatest, cancelLoadRetry)
-    )
+    .then(() => isLatest() && navigateToSelectedWorkspace(entry, installationId, isLatest, options))
   pendingWorkspaceSyncs.set(entry, sync)
 
   try {

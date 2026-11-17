@@ -218,6 +218,7 @@ export function resolvePickerSelectedInstallId(
 export interface InstancePickerScope {
   installs: InstancePickerInstall[]
   selectedInstallationId: string | null
+  workspaceId: string
 }
 
 export function scopeInstancePicker(
@@ -243,6 +244,7 @@ export function scopeInstancePicker(
   )
   return {
     installs,
+    workspaceId,
     selectedInstallationId: resolvePickerSelectedInstallId(
       requestedInstallationId,
       hostInstallationId,
@@ -322,6 +324,7 @@ export interface TitlePopupEntry {
   lastConfigJson: string | null
   lastSyncedConfigJson: string | null
   pickerSelectedInstallationId: string | null
+  pickerWorkspaceId: string | null
   pickerScopeAnchor: { installationId: string; dashboardWorkspaceId: unknown } | null
   pickerSelectionEpoch: number
   pickerInitialTab: string | null
@@ -549,7 +552,11 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
     const parentEntry = comfyWindows.get(entry.parentEntryId)
     const effectiveHostInstallationId =
       parentEntry?.installationId ?? parentEntry?.previewInstallationId ?? null
-    const { installs, selectedInstallationId: selectedId } = scopeInstancePicker(
+    const {
+      installs,
+      selectedInstallationId: selectedId,
+      workspaceId
+    } = scopeInstancePicker(
       allInstalls,
       effectiveHostInstallationId,
       entry.pickerSelectedInstallationId,
@@ -563,6 +570,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
         }))
       : { settings: null, snapshots: null }
     if (mySeq !== pickerSnapshotBroadcastSeq) return
+    entry.pickerWorkspaceId = workspaceId
     const snapshot = buildInstancePickerSnapshot({
       installs,
       hostInstallationId: parentEntry?.installationId ?? null,
@@ -647,6 +655,7 @@ function ensureTitlePopup(parent: BrowserWindow): TitlePopupEntry {
     lastConfigJson: null,
     lastSyncedConfigJson: null,
     pickerSelectedInstallationId: null,
+    pickerWorkspaceId: null,
     pickerScopeAnchor: null,
     pickerSelectionEpoch: 0,
     pickerInitialTab: null,
@@ -982,7 +991,11 @@ export interface TitlePopupHostBindings {
   getRunningInstallationIds: () => string[]
   getRunningSessionStartedAt?: () => Record<string, number>
   getLaunchingInstallationIds: () => string[]
-  pickInstallFromPicker: (installationId: string, parentEntryId: number) => Promise<void> | void
+  pickInstallFromPicker: (
+    installationId: string,
+    parentEntryId: number,
+    pickerWorkspaceId?: string
+  ) => Promise<void> | void
   restartInstallFromPicker: (
     installationId: string,
     parentEntryId: number,
@@ -1119,7 +1132,11 @@ function showInstancePickerForHost(
   const launchingInstallationIds = bindings.getLaunchingInstallationIds()
   const effectiveHostInstallationId =
     parentEntry.installationId ?? parentEntry.previewInstallationId ?? null
-  const { installs, selectedInstallationId: initialSelectedId } = scopeInstancePicker(
+  const {
+    installs,
+    selectedInstallationId: initialSelectedId,
+    workspaceId
+  } = scopeInstancePicker(
     allInstalls,
     effectiveHostInstallationId,
     selectedInstallationId ?? null,
@@ -1130,6 +1147,7 @@ function showInstancePickerForHost(
   const popupEntry = ensureTitlePopup(parentEntry.window)
   const pickerSelectionEpoch = popupEntry.pickerSelectionEpoch + 1
   popupEntry.pickerSelectedInstallationId = initialSelectedId
+  popupEntry.pickerWorkspaceId = workspaceId
   popupEntry.pickerScopeAnchor = selectedInstallationId
     ? {
         installationId: selectedInstallationId,
@@ -1753,9 +1771,13 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     const installationId = payload?.installationId
     if (typeof installationId !== 'string' || installationId.length === 0) return
     hideTitlePopup(entry, { releaseFocusToParent: false })
-    Promise.resolve(bindings.pickInstallFromPicker(installationId, entry.parentEntryId)).catch(
-      (err) => console.error('pickInstallFromPicker failed:', err)
-    )
+    Promise.resolve(
+      bindings.pickInstallFromPicker(
+        installationId,
+        entry.parentEntryId,
+        entry.pickerWorkspaceId ?? undefined
+      )
+    ).catch((err) => console.error('pickInstallFromPicker failed:', err))
   })
 
   ipcMain.on(

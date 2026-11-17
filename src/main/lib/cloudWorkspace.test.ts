@@ -1,3 +1,4 @@
+import { runInNewContext } from 'node:vm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthStatus, Workspace } from '../../types/ipc'
 import type { InstallationRecord } from '../installations'
@@ -84,7 +85,14 @@ describe('Cloud launch workspace', () => {
 
   it('preserves explicit Cloud installation ownership', async () => {
     state.selected = 'team-b'
-    const url = await cloudWorkspaceUrl({ ...CLOUD, workspaceId: 'team-a' }, CLOUD_URL)
+    const url = await cloudWorkspaceUrl({ ...CLOUD, workspaceId: 'team-a' }, CLOUD_URL, 'team-c')
+
+    expect(new URL(url).searchParams.get('workspace')).toBe('team-a')
+  })
+
+  it('opens the picker workspace when the dashboard workspace differs', async () => {
+    state.selected = 'team-b'
+    const url = await cloudWorkspaceUrl(CLOUD, CLOUD_URL, 'team-a')
 
     expect(new URL(url).searchParams.get('workspace')).toBe('team-a')
   })
@@ -133,15 +141,40 @@ describe('Cloud launch workspace', () => {
 
 describe('reopening a Cloud window', () => {
   function openWindow() {
-    const loadURL = vi.fn(async () => {})
+    let pageUrl = CLOUD_URL
+    const storage = new Map<string, string>()
+    const setActiveWorkspace = (id: string | null): void => {
+      storage.set('Comfy.Workspace.Current', JSON.stringify(id ? { id } : null))
+    }
+    setActiveWorkspace('personal-id')
+    const loadURL = vi.fn(async (url: string) => {
+      setActiveWorkspace(new URL(url).searchParams.get('workspace'))
+    })
+    const executeJavaScript = vi.fn(async (script: string): Promise<unknown> =>
+      runInNewContext(script, {
+        location: new URL(pageUrl),
+        sessionStorage: { getItem: (key: string) => storage.get(key) ?? null }
+      })
+    )
     const entry = {
       sourceCategory: 'cloud',
       installationId: CLOUD.id,
       comfyUrl: `${CLOUD_URL}&workspace=personal-id`,
       window: { isDestroyed: () => false },
-      comfyView: { webContents: { isDestroyed: () => false, loadURL } }
+      comfyView: {
+        webContents: { isDestroyed: () => false, loadURL, getURL: () => pageUrl, executeJavaScript }
+      }
     } as unknown as ComfyWindowEntry
-    return { entry, loadURL }
+    return {
+      entry,
+      loadURL,
+      executeJavaScript,
+      setActiveWorkspace,
+      storage,
+      setPageUrl: (url: string) => {
+        pageUrl = url
+      }
+    }
   }
 
   it('retargets the existing window across team and Personal selections', async () => {
@@ -161,7 +194,7 @@ describe('reopening a Cloud window', () => {
     const { entry, loadURL } = openWindow()
     const cancelLoadRetry = vi.fn()
 
-    await syncCloudWindowWorkspace(entry, cancelLoadRetry)
+    await syncCloudWindowWorkspace(entry, { cancelLoadRetry })
 
     expect(loadURL).not.toHaveBeenCalled()
     expect(cancelLoadRetry).not.toHaveBeenCalled()
@@ -172,21 +205,61 @@ describe('reopening a Cloud window', () => {
     const cancelLoadRetry = vi.fn()
     state.selected = 'team-a'
 
-    await syncCloudWindowWorkspace(entry, cancelLoadRetry)
+    await syncCloudWindowWorkspace(entry, { cancelLoadRetry })
 
     expect(cancelLoadRetry).toHaveBeenCalledExactlyOnceWith()
     expect(cancelLoadRetry).toHaveBeenCalledBefore(loadURL)
   })
 
+  it('returns to the requested workspace after the Cloud tab switched internally', async () => {
+    const { entry, loadURL, setActiveWorkspace } = openWindow()
+    setActiveWorkspace('team-b')
+
+    await expect(syncCloudWindowWorkspace(entry)).resolves.toBe(true)
+
+    expect(loadURL).toHaveBeenCalledExactlyOnceWith(entry.comfyUrl)
+  })
+
+  it('reasserts the requested workspace while the Cloud tab is switching away', async () => {
+    const { entry, loadURL, storage } = openWindow()
+    storage.set('Comfy.Workspace.SwitchTargetId', 'team-b')
+
+    await expect(syncCloudWindowWorkspace(entry)).resolves.toBe(true)
+
+    expect(loadURL).toHaveBeenCalledExactlyOnceWith(entry.comfyUrl)
+  })
+
+  it('leaves an external sign-in page in place when reopening the same workspace', async () => {
+    const { entry, loadURL, executeJavaScript, setPageUrl } = openWindow()
+    setPageUrl('https://auth.example.com/')
+
+    await expect(syncCloudWindowWorkspace(entry)).resolves.toBe(true)
+
+    expect(executeJavaScript).not.toHaveBeenCalled()
+    expect(loadURL).not.toHaveBeenCalled()
+  })
+
+  it('uses the picker workspace when focusing an existing Cloud window', async () => {
+    const { entry, loadURL } = openWindow()
+    state.selected = 'team-b'
+
+    await expect(syncCloudWindowWorkspace(entry, { pickerWorkspaceId: 'team-a' })).resolves.toBe(
+      true
+    )
+
+    expect(loadURL).toHaveBeenCalledExactlyOnceWith(`${CLOUD_URL}&workspace=team-a`)
+  })
+
   it.each(['personal', 'team-a', 'team-b'])(
     'settles both opens on the latest request for %s while the first navigation is pending',
     async (selected) => {
-      const { entry, loadURL } = openWindow()
+      const { entry, loadURL, setActiveWorkspace } = openWindow()
       const started = Promise.withResolvers<void>()
       const firstNavigation = Promise.withResolvers<void>()
-      loadURL.mockImplementationOnce(() => {
+      loadURL.mockImplementationOnce(async () => {
         started.resolve()
-        return firstNavigation.promise
+        await firstNavigation.promise
+        setActiveWorkspace('team-a')
       })
 
       state.selected = 'team-a'

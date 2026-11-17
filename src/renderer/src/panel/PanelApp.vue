@@ -326,16 +326,18 @@ useDeepLinkRouter({
   showAppUpdateRestartPrompt,
   showAppUpdateDownloadPrompt,
   pickInstallFromPicker: async (inst, pickOpts) => {
+    const launchOpts = {
+      isRestart: pickOpts?.isRestart === true,
+      pickerWorkspaceId: pickOpts?.pickerWorkspaceId
+    }
     if (!installationId) {
       if (pickOpts?.startupRestore) {
         await handleStartupRestorePick(inst)
       } else {
-        await chooserHandoff.handleChooserPick(inst, {
-          isRestart: pickOpts?.isRestart === true
-        })
+        await chooserHandoff.handleChooserPick(inst, launchOpts)
       }
     } else {
-      await chooserHandoff.performPickerLaunch(inst, { isRestart: pickOpts?.isRestart === true })
+      await chooserHandoff.performPickerLaunch(inst, launchOpts)
     }
   },
   runInstallActionFromPicker: async (inst, actionId) => {

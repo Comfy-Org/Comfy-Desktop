@@ -74,7 +74,8 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('update-installation', installationId, data),
 
     stopComfyUI: (installationId) => ipcRenderer.invoke('stop-comfyui', installationId),
-    focusComfyWindow: (installationId) => ipcRenderer.invoke('focus-comfy-window', installationId),
+    focusComfyWindow: (installationId, pickerWorkspaceId) =>
+      ipcRenderer.invoke('focus-comfy-window', installationId, pickerWorkspaceId),
 
     terminalSubscribe: (installationId) => ipcRenderer.invoke('terminal-subscribe', installationId),
     terminalUnsubscribe: (installationId) =>

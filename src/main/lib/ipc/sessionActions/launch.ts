@@ -1462,7 +1462,12 @@ async function runLaunch(
     applyStorageLaunchArgs(inst, installationId, launchCmd, storageSettings)
 
   if (launchCmd.remote) {
-    launchCmd.url = await cloudWorkspaceUrl(inst, launchCmd.url!)
+    const pickerWorkspaceId = actionData?.pickerWorkspaceId
+    launchCmd.url = await cloudWorkspaceUrl(
+      inst,
+      launchCmd.url!,
+      typeof pickerWorkspaceId === 'string' ? pickerWorkspaceId : undefined
+    )
     if (abort.signal.aborted) return { ok: false, cancelled: true }
     const displayUrl = displayLaunchUrl(launchCmd.url || '')
     sendProgress('launch', {
