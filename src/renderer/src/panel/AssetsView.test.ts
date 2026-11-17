@@ -802,7 +802,7 @@ describe('AssetsView', () => {
 
       expect(wrapper.emitted('focus-used')).toHaveLength(1)
       expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
-      expect(listAssets).toHaveBeenCalledWith('cloud')
+      expect(listAssets).toHaveBeenCalledWith('cloud', 'cutout.png')
       expect(listLocalAssets).not.toHaveBeenCalled()
       expect(viewerTitle()).toBe('cutout.png')
       expect(
@@ -825,6 +825,21 @@ describe('AssetsView', () => {
       await choose(wrapper, 'lab')
       await choose(wrapper, 'cloud')
 
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+    })
+
+    it('asks Comfy Cloud again, by name, for a file the shown list does not have', async () => {
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+      listAssets.mockResolvedValue([
+        asset('other', 'other.png', 'image'),
+        asset('older', 'older.png', 'image')
+      ])
+
+      await wrapper.setProps({ focusName: 'older.png' })
+      await flushPromises()
+
+      expect(listAssets).toHaveBeenLastCalledWith('cloud', 'older.png')
+      expect(viewerTitle()).toBe('older.png')
       expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
     })
 

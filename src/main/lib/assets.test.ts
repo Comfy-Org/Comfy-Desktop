@@ -209,6 +209,67 @@ describe('listAssets', () => {
     expect(assets.at(-1)!.id).toBe('a99')
   })
 
+  describe('a file asked for by name', () => {
+    const page = (from: number, count: number, name = (i: number) => `old-${i}.png`) => ({
+      assets: Array.from({ length: count }, (_, i) => ({
+        id: `a${from + i}`,
+        name: name(from + i)
+      }))
+    })
+
+    function serveAssetPages(pages: (offset: number) => unknown): string[] {
+      const offsetsAsked: string[] = []
+      fetchMock.mockImplementation(async (url: string) => {
+        if (!url.includes('/assets?')) return new Response(null, { status: 404 })
+        const offset = new URL(url).searchParams.get('offset') ?? '0'
+        offsetsAsked.push(offset)
+        return jsonResponse(pages(Number(offset)))
+      })
+      return offsetsAsked
+    }
+
+    beforeEach(() => {
+      getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+      getAccessToken.mockResolvedValue('token')
+    })
+
+    it('looks past the newest 100 outputs and adds the newest older file with that name', async () => {
+      const offsetsAsked = serveAssetPages((offset) =>
+        offset === 200
+          ? page(200, 100, (i) => (i === 230 || i === 250 ? 'audio/cutout.png' : `old-${i}.png`))
+          : page(offset, 100)
+      )
+
+      const assets = await listAssets('cloud-1', 'cutout.png')
+
+      expect(offsetsAsked).toEqual(['0', '100', '200'])
+      expect(assets).toHaveLength(101)
+      expect(assets.at(-1)).toMatchObject({ id: 'a230', name: 'cutout.png' })
+    })
+
+    it('asks for no more pages when the newest 100 already have it, or there are no more', async () => {
+      const offsetsAsked = serveAssetPages((offset) =>
+        page(offset, 100, (i) => (i === 5 ? 'cutout.png' : `old-${i}.png`))
+      )
+      await listAssets('cloud-1', 'cutout.png')
+      expect(offsetsAsked).toEqual(['0'])
+
+      const shortList = serveAssetPages((offset) => page(offset, 40))
+      expect(await listAssets('cloud-1', 'cutout.png')).toHaveLength(40)
+      expect(shortList).toEqual(['0'])
+    })
+
+    it('stops after 20 pages, and keeps the newest 100 when a later page fails', async () => {
+      const offsetsAsked = serveAssetPages((offset) => page(offset, 100))
+      expect(await listAssets('cloud-1', 'cutout.png')).toHaveLength(100)
+      expect(offsetsAsked).toHaveLength(20)
+      expect(offsetsAsked.at(-1)).toBe('1900')
+
+      serveAssetPages((offset) => (offset === 0 ? page(0, 100) : { assets: 'broken' }))
+      expect(await listAssets('cloud-1', 'cutout.png')).toHaveLength(100)
+    })
+  })
+
   it('lists the signed-in cloud workspace and resolves signed media links for playable kinds', async () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue('token')

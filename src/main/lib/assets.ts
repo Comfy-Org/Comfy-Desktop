@@ -27,6 +27,7 @@ const ASSETS_COPY_CHANNEL = 'assets:copy'
 const ASSETS_TRASH_CHANNEL = 'assets:trash'
 
 const PAGE_SIZE = 100
+const MAX_SEARCHED_PAGES = 20
 const LIST_QUERY = `tags_any=output&sort=created_at&order=desc&limit=${PAGE_SIZE}`
 const REQUEST_TIMEOUT_MS = 20_000
 const PREVIEW_BATCH_TIMEOUT_MS = 30_000
@@ -86,10 +87,14 @@ export function assetKind(name: string, mimeType?: string | null): AssetKind | n
   return KIND_BY_EXTENSION.get(name.slice(dot + 1).toLowerCase()) ?? null
 }
 
+function fileNameOf(row: AssetRow): string {
+  return row.name.slice(row.name.lastIndexOf('/') + 1)
+}
+
 function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
   return {
     id: row.id,
-    name: row.name.slice(row.name.lastIndexOf('/') + 1),
+    name: fileNameOf(row),
     kind: assetKind(row.name, row.mime_type),
     sizeBytes: typeof row.size === 'number' ? row.size : null,
     createdAt: row.created_at ?? null,
@@ -194,11 +199,28 @@ async function cloudAccessToken(installationId: string): Promise<string | null> 
   return getCloudSession().getAccessToken()
 }
 
-async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
-  const rows = await fetchAssetRows(
-    `${CLOUD_CONFIG.apiBase}/assets?${LIST_QUERY}&include_public=false`,
-    { Authorization: `Bearer ${accessToken}` }
-  )
+async function findOlderRow(
+  listUrl: string,
+  headers: Record<string, string>,
+  name: string
+): Promise<AssetRow | null> {
+  for (let page = 1; page < MAX_SEARCHED_PAGES; page++) {
+    const rows = await fetchAssetRows(`${listUrl}&offset=${page * PAGE_SIZE}`, headers)
+    const found = rows.find((row) => fileNameOf(row) === name)
+    if (found) return found
+    if (rows.length < PAGE_SIZE) return null
+  }
+  return null
+}
+
+async function listCloudAssets(accessToken: string, findName?: string): Promise<AssetSummary[]> {
+  const listUrl = `${CLOUD_CONFIG.apiBase}/assets?${LIST_QUERY}&include_public=false`
+  const headers = { Authorization: `Bearer ${accessToken}` }
+  const rows = await fetchAssetRows(listUrl, headers)
+  if (findName && rows.length === PAGE_SIZE && !rows.some((row) => fileNameOf(row) === findName)) {
+    const older = await findOlderRow(listUrl, headers, findName).catch(() => null)
+    if (older) rows.push(older)
+  }
   const summaries = rows.map((row) => toSummary(row, null))
   const deadline = AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS)
   await runPool(
@@ -214,9 +236,12 @@ async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
   return summaries
 }
 
-export async function listAssets(installationId: string): Promise<AssetSummary[]> {
+export async function listAssets(
+  installationId: string,
+  findName?: string
+): Promise<AssetSummary[]> {
   const accessToken = await cloudAccessToken(installationId)
-  return accessToken ? listCloudAssets(accessToken) : []
+  return accessToken ? listCloudAssets(accessToken, findName) : []
 }
 
 type SaveTo = (filePath: string, job: FileSaveTransfer) => Promise<void>
@@ -373,8 +398,10 @@ function localFileAction(
 }
 
 export function registerAssetsHandlers(): void {
-  ipcMain.handle(ASSETS_LIST_CHANNEL, (_event, installationId: unknown) =>
-    typeof installationId === 'string' ? listAssets(installationId) : []
+  ipcMain.handle(ASSETS_LIST_CHANNEL, (_event, installationId: unknown, findName: unknown) =>
+    typeof installationId === 'string'
+      ? listAssets(installationId, typeof findName === 'string' ? findName : undefined)
+      : []
   )
   ipcMain.handle(
     ASSETS_DOWNLOAD_CHANNEL,

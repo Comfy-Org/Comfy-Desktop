@@ -130,7 +130,7 @@ const CLOUD = 'cloud'
 const SHARED = 'shared'
 const savedPlace = useLocalStorage('comfy.desktop.assets.place', '')
 const pickedPlace = ref(focusName ? CLOUD : '')
-const pendingFocus = ref<string | null>(null)
+const pendingFocus = ref<string | null>(focusName)
 const notFoundName = ref<string | null>(null)
 const truncated = ref(false)
 
@@ -417,6 +417,11 @@ async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean)
   if (authStore.status.workspaceId !== workspaceId) throw new Error('workspace switch failed')
 }
 
+function listCloudAssets(cloudId: string): Promise<AssetSummary[]> {
+  const wanted = pendingFocus.value ?? notFoundName.value
+  return wanted ? window.api.listAssets(cloudId, wanted) : window.api.listAssets(cloudId)
+}
+
 async function loadAssets(userAsked = false): Promise<void> {
   const current = ++requestId
   const settled = cloudSettled.value
@@ -438,7 +443,7 @@ async function loadAssets(userAsked = false): Promise<void> {
       if (current !== requestId) return
     }
     const listed = cloud
-      ? { assets: await window.api.listAssets(cloud.id), truncated: false }
+      ? { assets: await listCloudAssets(cloud.id), truncated: false }
       : await window.api.listLocalAssets(selected.computer ? undefined : selected.build.id)
     if (current !== requestId) return
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
@@ -515,8 +520,11 @@ watch(
     emit('focus-used')
     const cloudShown = selectedBuild.value?.cloud === true && !loading.value
     pendingFocus.value = name
+    notFoundName.value = null
     pickedPlace.value = CLOUD
-    if (cloudShown) openPendingFocus(cloudSettled.value)
+    if (!cloudShown) return
+    if (cloudListable.value && !failed.value && !newestNamed(name)) void loadAssets()
+    else openPendingFocus(cloudSettled.value)
   },
   { immediate: true }
 )
