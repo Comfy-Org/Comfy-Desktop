@@ -418,6 +418,79 @@ describe('HomeTemplateSearch opening a template', () => {
     expect(openTemplateInBuild).toHaveBeenCalledWith('build-2', 'poster_template')
   })
 
+  it('searches again on ArrowDown after the build changed while the results were closed', async () => {
+    const wrapper = mountSearch('build-1')
+    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    searchTemplates.mockClear()
+    await wrapper.setProps({ buildId: 'build-2' })
+    await flushPromises()
+
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    expect(searchTemplates).toHaveBeenCalledWith('a poster', 'build-2')
+    expect(panel(wrapper).exists()).toBe(true)
+  })
+
+  it('drops an answer for the old build that arrives after the results closed and the build changed', async () => {
+    const wrapper = mountSearch('build-1')
+    await searchFor(wrapper, 'a poster')
+    let answerOld!: (value: TemplateSearchResponse) => void
+    searchTemplates.mockReturnValueOnce(new Promise((resolve) => (answerOld = resolve)))
+    await searchFor(wrapper, 'a banner')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    await wrapper.setProps({ buildId: 'build-2' })
+    answerOld(answer({ run: [BANNER] }))
+    await flushPromises()
+    searchTemplates.mockClear()
+
+    await input(wrapper).trigger('focus')
+    await flushPromises()
+    expect(searchTemplates).toHaveBeenCalledWith('a banner', 'build-2')
+  })
+
+  it('cancels a typed search still waiting when the build changes while the results are closed', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountSearch('build-1')
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).setValue('a banner')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    searchTemplates.mockClear()
+
+    await wrapper.setProps({ buildId: 'build-2' })
+    await vi.advanceTimersByTimeAsync(SEARCH_DELAY_MS)
+    expect(searchTemplates).not.toHaveBeenCalled()
+  })
+
+  it('keeps the answer and the highlight when the bar takes focus again', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    searchTemplates.mockClear()
+
+    await input(wrapper).trigger('focus')
+    await flushPromises()
+    expect(searchTemplates).not.toHaveBeenCalled()
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(opened()).toEqual(['banner_template'])
+  })
+
+  it('starts on the first row of a new answer that has no best match', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    searchTemplates.mockResolvedValue(
+      answer({ outcome: 'agent', reply: 'This needs the agent.', run: [BANNER], alsoTry: [POSTER] })
+    )
+    await searchFor(wrapper, 'edit my last video')
+
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(opened()).toEqual(['banner_template'])
+  })
+
   it('forgets the answer for the old build while the results are closed, and searches again on focus', async () => {
     const wrapper = mountSearch('build-1')
     await searchFor(wrapper, 'a poster')

@@ -150,7 +150,10 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   }
 
   function move(step: number): void {
-    if (!rows.value.length) return
+    if (!rows.value.length) {
+      if (state.value.kind === 'idle') open()
+      return
+    }
     panelOpen.value = true
     activeIndex.value = (activeIndex.value + step + rows.value.length) % rows.value.length
   }
