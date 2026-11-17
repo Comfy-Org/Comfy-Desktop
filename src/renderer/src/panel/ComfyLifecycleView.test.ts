@@ -83,10 +83,10 @@ describe('ComfyLifecycleView', () => {
     expect(button.text()).toContain('Relaunch ComfyUI')
   })
 
-  it('labels the stopped-surface back button "Return to Dashboard" and routes to the dashboard', async () => {
+  it('labels the stopped-surface back button "Return to Home" and routes to the dashboard', async () => {
     const wrapper = mountView()
     await flushPromises()
-    const back = wrapper.findAll('button').find((b) => b.text().includes('Return to Dashboard'))
+    const back = wrapper.findAll('button').find((b) => b.text().includes('Return to Home'))
     expect(back?.exists()).toBe(true)
     expect(back!.attributes('data-testid')).toBe(TID.lifecycleReturnDashboard)
     await back!.trigger('click')

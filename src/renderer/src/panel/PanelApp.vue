@@ -284,12 +284,10 @@ provideBuildMenuHost({
 
 async function handleStartupRestorePick(inst: Installation): Promise<void> {
   try {
-    const outcome = await chooserHandoff.performChooserLaunch(inst, undefined, { inPlace: true })
-    await nextTick()
-    const takeoverReady = outcome === 'launched' && currentOverlay.value?.kind === 'takeover'
-    window.api.resolveStartupRestoreReveal(takeoverReady ? 'takeover-ready' : 'dashboard-fallback')
+    await chooserHandoff.performChooserLaunch(inst)
   } catch (err) {
     console.error('startup restore launch failed', err)
+  } finally {
     window.api.resolveStartupRestoreReveal('dashboard-fallback')
   }
 }
@@ -333,16 +331,18 @@ useDeepLinkRouter({
   showAppUpdateRestartPrompt,
   showAppUpdateDownloadPrompt,
   pickInstallFromPicker: async (inst, pickOpts) => {
+    const launchOpts = {
+      isRestart: pickOpts?.isRestart === true,
+      pickerWorkspaceId: pickOpts?.pickerWorkspaceId
+    }
     if (!installationId) {
       if (pickOpts?.startupRestore) {
         await handleStartupRestorePick(inst)
       } else {
-        await chooserHandoff.handleChooserPick(inst, {
-          isRestart: pickOpts?.isRestart === true
-        })
+        await chooserHandoff.handleChooserPick(inst, launchOpts)
       }
     } else {
-      await chooserHandoff.performPickerLaunch(inst, { isRestart: pickOpts?.isRestart === true })
+      await chooserHandoff.performPickerLaunch(inst, launchOpts)
     }
   },
   runInstallActionFromPicker: async (inst, actionId) => {

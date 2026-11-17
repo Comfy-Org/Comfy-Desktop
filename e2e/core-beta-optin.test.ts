@@ -10,7 +10,7 @@ import {
 
 test.describe.configure({ mode: 'serial' })
 
-const BETA_LABEL = 'Opt-in to beta features'
+const BETA_LABEL = 'Opt in to beta features'
 const BETA_SWITCH = `.global-settings button[role="switch"][aria-label="${BETA_LABEL}"]`
 const NEEDS_TELEMETRY_TOOLTIP =
   'Beta features require confirming data sharing in Settings, even if telemetry is currently on.'

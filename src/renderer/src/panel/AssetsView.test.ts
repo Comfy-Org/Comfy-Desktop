@@ -584,6 +584,18 @@ describe('AssetsView', () => {
     expect(assetNames(wrapper)).toEqual(['forest.png'])
   })
 
+  it('opens the Shared folder when a signed-out user last picked Comfy Cloud', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: [cloudBuild('cloud'), sharedBuild('a', 'Shared A')]
+    })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Shared folder')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith(undefined)
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('cloud')
+  })
+
   it('turns an old This computer choice into Shared folder, or the first build without one', async () => {
     window.localStorage.setItem('comfy.desktop.assets.place', 'computer')
     const shared = await mountAssets([], { builds: [localBuild('lab'), sharedBuild('a')] })
@@ -621,12 +633,12 @@ describe('AssetsView', () => {
     )
   })
 
-  it('says when the list shows only part of the folder', async () => {
+  it('says when the list keeps only the newest files', async () => {
     localListCut = true
     const wrapper = await mountAssets([asset('/out/a.png', 'a.png', 'image')])
 
     expect(wrapper.get('[data-testid="assets-truncated"]').text()).toBe(
-      'Showing only 1 file from this folder.'
+      'Showing the newest file only.'
     )
   })
 
@@ -949,6 +961,26 @@ describe('AssetsView', () => {
     expect(assetNames(wrapper), "the team's files, not the personal workspace's").toEqual([
       'team.png'
     ])
+  })
+
+  it('lists the selected workspace assets through the same shared Cloud installation', async () => {
+    signedInToPersonalWithTeamDashboard()
+    const cloud = { ...cloudBuild('cloud', 'Comfy Cloud'), sourceId: 'cloud' }
+    listAssets.mockImplementation(async () => [
+      asset('current', `${useAuthStore().status.workspaceId}.png`, 'image')
+    ])
+    const wrapper = await mountAssets([], { builds: [cloud] })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
+    expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('team-b', 'restored')
+    expect(assetNames(wrapper)).toEqual(['team-b.png'])
+
+    useDashboardScopeStore().selectWorkspace('personal')
+    await flushPromises()
+
+    expect(switchWorkspace).toHaveBeenLastCalledWith('me', 'chosen')
+    expect(assetNames(wrapper)).toEqual(['me.png'])
+    expect(listAssets).toHaveBeenLastCalledWith('cloud')
   })
 
   it("says the load failed instead of showing another workspace's files when the personal workspace is unknown", async () => {

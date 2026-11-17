@@ -230,12 +230,19 @@ describe('AppSidebar', () => {
     })
 
     it('follows the workspace picked in the sidebar', async () => {
-      const wrapper = await mountSidebar('home', [OLD, TEAM])
+      const wrapper = await mountSidebar('home', [OLD, TEAM, CLOUD])
+
+      expect(buildNames(wrapper)).toEqual(['Comfy Cloud', 'Flux Sandbox'])
 
       useDashboardScopeStore().selectedWorkspaceId = 'ws-team'
       await flushPromises()
 
-      expect(buildNames(wrapper)).toEqual(['Team Build'])
+      expect(buildNames(wrapper)).toEqual(['Team Build', 'Comfy Cloud'])
+
+      useDashboardScopeStore().selectedWorkspaceId = 'personal'
+      await flushPromises()
+
+      expect(buildNames(wrapper)).toEqual(['Comfy Cloud', 'Flux Sandbox'])
     })
 
     it('marks only the open build, not the Builds title', async () => {

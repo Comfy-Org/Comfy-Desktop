@@ -781,7 +781,8 @@ describe('downloading a model for an app', () => {
         url: BIREFNET.url,
         filename: 'birefnet.safetensors',
         directory: 'background_removal',
-        installationId: STUDIO
+        installationId: STUDIO,
+        source: 'app'
       })
     ])
     expect(job.release).toHaveBeenCalledTimes(1)

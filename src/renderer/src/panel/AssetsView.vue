@@ -221,10 +221,12 @@ const selectedBuild = computed<AssetBuild | null>(() => {
   if (!buildsKnown.value) return null
   const options = assetBuilds.value
   const withId = (id: string) => (id ? options.find(({ build }) => build.id === id) : undefined)
+  const restorablePlace =
+    savedPlace.value === CLOUD && !authStore.isSignedIn ? '' : savedPlace.value
   return (
     withId(pickedPlace.value) ??
     withId(windowPlace.value) ??
-    withId(savedPlace.value) ??
+    withId(restorablePlace) ??
     (hasLocalBuild.value || !cloudBuild.value || !authStore.isSignedIn
       ? options.find((option) => !option.cloud)
       : undefined) ??
@@ -407,7 +409,7 @@ const emptyState = computed<EmptyState>(() => {
 let requestId = 0
 
 async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean): Promise<void> {
-  const dashboardWorkspaceId = installationWorkspaceId(build)
+  const dashboardWorkspaceId = installationWorkspaceId(build, dashboardScope.selectedWorkspaceId)
   if (!authStore.sessionWorkspaceFor(dashboardWorkspaceId)) await authStore.fetchWorkspaces()
   const workspaceId = authStore.sessionWorkspaceFor(dashboardWorkspaceId)
   if (!workspaceId) throw new Error("the build's workspace is unknown")
@@ -468,12 +470,12 @@ const loadKey = computed(() => {
   const selected = selectedBuild.value
   if (!selected) return ''
   return selected.cloud
-    ? `${CLOUD}\n${cloudBuild.value?.id ?? ''}\n${accountContext.value}`
+    ? `${selected.build.id}\n${dashboardScope.selectedWorkspaceId}\n${accountContext.value}`
     : selected.build.id
 })
 
 watch(
-  loadKey,
+  [loadKey, () => (selectedBuild.value?.cloud ? cloudBuild.value?.id : undefined)],
   () => {
     assets.value = []
     void loadAssets()

@@ -382,6 +382,7 @@ import { appliedPassThrough, parseCampaignAnswer } from '../../coreBetaCampaigns
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import * as i18nModule from '../../i18n'
+import { getCloudSession } from '../../../devplatform/session'
 import {
   COMFY_BOOT_QUIET_MS,
   COMFY_BOOT_TIMEOUT_MS,
@@ -394,6 +395,7 @@ import {
   _reservePort,
   _beginLaunch,
   _endLaunch,
+  _setActiveLaunchPickerWorkspace,
   _stoppingInstallationIds,
   setCallbacks
 } from '../shared'
@@ -1820,6 +1822,60 @@ describe('core beta report placement', () => {
 
       expect(res.ok).toBe(true)
       expect(reads).toBe(0)
+    })
+
+    it('opens Cloud in the latest picker workspace requested while it connects', async () => {
+      const installationId = 'harness-cloud-picker'
+      const ctx = ctxFor(installationId)
+      const session = getCloudSession()
+      vi.spyOn(session, 'status').mockReturnValue({ signedIn: true })
+      launchHarness.waitForUrl = async () => {
+        _setActiveLaunchPickerWorkspace(installationId, 'team-b')
+      }
+
+      const result = await handleLaunch({
+        ...ctx,
+        inst: {
+          ...ctx.inst,
+          id: installationId,
+          sourceId: 'cloud',
+          remoteUrl: 'https://cloud.comfy.org/'
+        },
+        actionData: { pickerWorkspaceId: 'team-a' }
+      })
+
+      expect(result.ok).toBe(true)
+      expect(new URL(result.url!).searchParams.get('workspace')).toBe('team-b')
+    })
+
+    it('opens the newer picker workspace even when the superseded Personal lookup fails', async () => {
+      const installationId = 'harness-cloud-picker-after-personal'
+      const ctx = ctxFor(installationId)
+      const session = getCloudSession()
+      vi.spyOn(session, 'status').mockReturnValue({
+        signedIn: true,
+        workspaceId: 'team-a',
+        workspaceType: 'team'
+      })
+      vi.spyOn(session, 'listWorkspaces').mockImplementationOnce(async () => {
+        _setActiveLaunchPickerWorkspace(installationId, 'team-b')
+        throw new Error('Workspace list unavailable')
+      })
+      launchHarness.waitForUrl = async () => {}
+
+      const result = await handleLaunch({
+        ...ctx,
+        inst: {
+          ...ctx.inst,
+          id: installationId,
+          sourceId: 'cloud',
+          remoteUrl: 'https://cloud.comfy.org/'
+        },
+        actionData: { pickerWorkspaceId: 'personal' }
+      })
+
+      expect(result.ok).toBe(true)
+      expect(new URL(result.url!).searchParams.get('workspace')).toBe('team-b')
     })
 
     it('still launches a command that takes none of the folder arguments', async () => {
