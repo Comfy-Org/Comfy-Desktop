@@ -31,7 +31,11 @@
     "crashed": "Crashed",
     "crashedWithCode": "Crashed (exit code {code})",
     "crashedWithSignal": "Crashed ({signal})",
-    "failedToStartReason": "Failed to start: {reason}"
+    "failedToStartReason": "Failed to start: {reason}",
+    "credits": "Credits",
+    "creditsTooltip": "{credits} Credits",
+    "creditsError": "Unable to load balance",
+    "creditsLabel": "{balance}. {action}"
   },
   "apps": {
     "search": "Search apps",
@@ -251,7 +255,6 @@
     "appUpdateAvailable": "Update {version}",
     "appUpdateReady": "Restart to update",
     "installUpdateAvailable": "Update available",
-    "installUpdateShort": "Update",
     "home": "Home",
     "menu": "Menu",
     "feedback": "Feedback",
@@ -269,9 +272,6 @@
     "installUpdateVersion": "ComfyUI {version}",
     "refreshInstanceTooltip": "Refresh",
     "resetZoomTooltip": "Reset zoom to 100%",
-    "pillHintTitle": "Switch and manage builds",
-    "pillHintBody": "Click here to switch builds, start a new local build, or return to Home.",
-    "pillHintDismiss": "Got it",
     "betaNoticeTitle": "A beta feature is on",
     "betaNoticeBody": "This build started with a beta feature enabled. You can turn beta features off in Settings.",
     "betaNoticeTitleNamed": "The {feature} beta is on",

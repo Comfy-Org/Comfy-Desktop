@@ -37,6 +37,9 @@ vi.mock('../host/registry', () => ({
     return mocks.windows
   }
 }))
+vi.mock('../lib/ipc/registerCreditBalanceHandlers', () => ({
+  refreshCreditBalanceAfterRun: vi.fn()
+}))
 vi.mock('../lib/comfyDownloadManager', () => ({
   attachSessionDownloadHandler: mocks.attachDownloads
 }))

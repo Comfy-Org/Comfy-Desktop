@@ -6,7 +6,7 @@ import { launchApp, type AppContext } from './launchApp'
 import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { evalWithRetry } from './support/evalRetry'
 import { titlePopupPage, waitForWebContents } from './support/cdpPages'
-import { openPickerViaTitlePill } from './support/chooserHelpers'
+import { openPickerInWindow } from './support/chooserHelpers'
 import { byTestId, TID } from './support/testIds'
 
 const STOPPED_ID = 'inst-stop-window'
@@ -200,7 +200,7 @@ test('Stop in the only Desktop window shows the dashboard there and keeps Deskto
   })
 
   await test.step('Confirming Stop in the build settings stops ComfyUI and shows the dashboard in the same window', async () => {
-    const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
+    const popup = await openPickerInWindow(ctx.app, ctx.titleBar)
     await popup.waitForVisible(byTestId(TID.pickerMoreTrigger))
     await popup.clickUntilVisible(
       byTestId(TID.pickerMoreTrigger),

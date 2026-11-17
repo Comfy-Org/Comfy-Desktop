@@ -11,7 +11,7 @@ import { FakeCloud, type FakeReply } from './support/fakeCloud'
 import { captureHostWindow } from './support/windowCapture'
 import { openPicker } from './support/navMatrixHelpers'
 import { findWebContentsId, titlePopupPage, WebContentsPage } from './support/cdpPages'
-import { openPickerViaTitlePill } from './support/chooserHelpers'
+import { openPickerInWindow } from './support/chooserHelpers'
 import type { SeedInstallation } from './support/electronHarness'
 import { byTestId, TID } from './support/testIds'
 
@@ -321,14 +321,14 @@ test('Comfy Cloud stays available and reopens in the selected team or Personal w
   expect(await panel().clickByText('[data-testid="home-build"]', 'Team A build')).toBe(true)
   await hostTitleBar.waitForVisible('.title-bar')
   await selectDashboard('B')
-  await openCloudFromPicker(await openPickerViaTitlePill(app, hostTitleBar))
+  await openCloudFromPicker(await openPickerInWindow(app, hostTitleBar))
   await expectCloudWorkspace('A')
   const cloudViewId = await findWebContentsId(app, 'https://cloud.comfy.org/')
   expect(cloudViewId).not.toBeNull()
 
   await openCloudFromHome()
   await expectCloudWorkspace('B')
-  await openCloudFromPicker(await openPickerViaTitlePill(app, hostTitleBar))
+  await openCloudFromPicker(await openPickerInWindow(app, hostTitleBar))
   await expectCloudWorkspace('A')
 
   for (const selected of ['B', 'personal', 'A']) {
