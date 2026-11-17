@@ -22,6 +22,7 @@ import {
   planVersion,
   resolveSetupPlan,
   setupPlatform,
+  splitPathTail,
   type SetupPlan
 } from '../lib/setupPlan'
 import type { SystemInfo } from '../../../types/ipc'
@@ -106,6 +107,7 @@ const lead = computed(() =>
 const location = computed(() =>
   displayPath(installLocation(plan.value?.installRoot ?? '', platform), platform)
 )
+const locationParts = computed(() => splitPathTail(location.value))
 const lowDisk = computed(
   () =>
     diskFree.value !== null &&
@@ -427,11 +429,11 @@ defineExpose({ open, resetContinue })
             aria-hidden="true"
           />
           <BuildDeviceArt
-            class="relative h-[104px] w-[162px] shrink-0"
+            class="relative h-[80px] w-[124px] shrink-0"
             :kind="deviceKindForPlatform(platform)"
             glow="#46464A"
           />
-          <div class="relative ml-[33px] flex min-w-0 flex-1 flex-col">
+          <div class="relative ml-6 flex min-w-0 flex-1 flex-col">
             <span class="flex h-[15px] items-center gap-1.5 text-xs/[15px] text-muted-foreground">
               <Check :size="11" :stroke-width="2" aria-hidden="true" />
               {{ t('setup.detected') }}
@@ -495,9 +497,16 @@ defineExpose({ open, resetContinue })
                   t('setup.location')
                 }}
               </span>
-              <span class="truncate text-foreground" :title="location || undefined">
-                {{ location || t('setup.checking') }}
+              <span
+                v-if="location"
+                class="flex min-w-0 text-foreground"
+                :title="location"
+                data-testid="setup-location"
+              >
+                <span class="min-w-0 truncate">{{ locationParts.head }}</span>
+                <span class="max-w-full shrink-0 truncate">{{ locationParts.tail }}</span>
               </span>
+              <span v-else class="truncate text-foreground">{{ t('setup.checking') }}</span>
               <span
                 class="ml-4 text-right whitespace-nowrap"
                 :class="lowDisk ? 'text-[#f0b135]' : 'text-subtle-foreground'"

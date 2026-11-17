@@ -90,3 +90,23 @@ describe('SetupOptionCards refreshing', () => {
     wrapper.unmount()
   })
 })
+
+describe('SetupOptionCards picked option', () => {
+  it('marks the picked option with its fill and aria-checked, with no check icon', () => {
+    const wrapper = mountCards('c')
+    const radios = wrapper.findAll('[role="radio"]')
+    expect(radios.map((radio) => radio.attributes('aria-checked'))).toEqual([
+      'false',
+      'false',
+      'true'
+    ])
+    expect(radios.map((radio) => radio.classes('setup-option--selected'))).toEqual([
+      false,
+      false,
+      true
+    ])
+    expect(wrapper.find('.setup-option__check').exists()).toBe(false)
+    expect(wrapper.find('svg.lucide-check').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})

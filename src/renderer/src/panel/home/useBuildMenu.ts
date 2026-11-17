@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { until } from '@vueuse/core'
 import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
 import { buildProgressOf, useBuildProgress } from '../../composables/useBuildProgress'
+import { useCanPromoteToWorkspace } from '../../composables/useCanPromoteToWorkspace'
 import { useInstallContextMenu } from '../../composables/useInstallContextMenu'
 import { useModal } from '../../composables/useModal'
 import { useQuickUpdate } from '../../composables/useQuickUpdate'
@@ -11,6 +12,7 @@ import { openInstallManager } from '../../lib/openInstallManager'
 import { useProgressStore } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation, ShowProgressOpts } from '../../types/ipc'
+import { homeBuildStatus, isBuildOpenBlocked } from './homeBuild'
 
 export interface BuildMenuHost {
   launch: (build: Installation, opts?: { isRestart?: boolean }) => void | Promise<void>
@@ -26,6 +28,7 @@ export interface BuildMenuEntry {
   danger?: boolean
   disabled?: boolean
   title?: string
+  hint?: string
 }
 
 const BUILD_MENU_HOST: InjectionKey<BuildMenuHost> = Symbol('buildMenuHost')
@@ -63,6 +66,7 @@ export function useBuildMenu(build: () => Installation) {
       options ? openInstallManager(inst, options) : void host.openDetails(inst),
     onShowProgress: (opts) => void host.showProgress(opts),
     onUpdate: runQuickUpdate,
+    canPromoteToWorkspace: useCanPromoteToWorkspace(),
     autoStart: useAutoStartBuild()
   })
 
@@ -73,7 +77,8 @@ export function useBuildMenu(build: () => Installation) {
   const items = computed<BuildMenuEntry[]>(() => {
     const inst = build()
     const progress = buildProgressOf(progressStore, inst.id)
-    const running = !progress && isLocal(inst) && sessionStore.isRunning(inst.id)
+    const status = homeBuildStatus(inst, sessionStore)
+    const running = isLocal(inst) && status === 'running'
     const items: BuildMenuEntry[] = []
 
     const now: BuildMenuEntry[] = []
@@ -88,19 +93,20 @@ export function useBuildMenu(build: () => Installation) {
         { id: 'restart', label: t('actions.restart'), icon: RotateCw },
         { id: 'stop', label: t('actions.stop'), icon: CircleStop }
       )
-    } else if (!sessionStore.isStopping(inst.id) && !sessionStore.isLaunching(inst.id)) {
+    } else if (!isBuildOpenBlocked(status) && status !== 'starting') {
       now.push({ id: 'launch', label: t('actions.launch'), icon: Play })
     }
     startsGroup(now, items)
 
     const existing = installMenu
       .getMenuItems(inst)
-      .map(({ id, label, icon, disabled, title, style, separator }): BuildMenuEntry => ({
+      .map(({ id, label, icon, disabled, title, hint, style, separator }): BuildMenuEntry => ({
         id,
         label,
         icon,
         disabled,
         title,
+        hint,
         separator,
         danger: style === 'danger'
       }))

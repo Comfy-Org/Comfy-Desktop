@@ -9,6 +9,7 @@ import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
 import {
   HOME_BUILD_TONES,
+  isBuildOpenBlocked,
   homeBuildDetail,
   buildDeviceKind,
   isComfyCloud,
@@ -39,6 +40,7 @@ const progressStore = useProgressStore()
 const busy = computed(() => install.progress.value !== null)
 const starting = computed(() => install.progress.value?.kind === 'launch')
 const uninstalling = computed(() => install.progress.value?.kind === 'uninstall')
+const canOpen = computed(() => !uninstalling.value && !isBuildOpenBlocked(status))
 const busyTestId = computed(() => {
   if (uninstalling.value) return 'home-build-uninstalling'
   return starting.value ? 'home-build-starting' : 'home-build-installing'
@@ -57,6 +59,8 @@ const statusLabel = computed(() => {
     const percent = install.progress.value?.percent
     return percent == null ? phase : t('installProgress.detail', { phase, percent })
   }
+  if (status === 'stopping') return t('chooser.statusStopping')
+  if (status === 'updating') return t('instancePicker.progressUpdating')
   if (broken.value) return broken.value
   switch (status) {
     case 'running':
@@ -81,8 +85,9 @@ const subtitle = computed(() => (uninstalling.value ? install.detail.value : det
 const testId = computed(() => (busy.value ? busyTestId.value : 'home-build'))
 
 function onClick(): void {
-  if (!busy.value) emit('open')
-  else if (!uninstalling.value) install.viewLogs()
+  if (!canOpen.value) return
+  if (busy.value) install.viewLogs()
+  else emit('open')
 }
 
 const openButton = useTemplateRef<HTMLButtonElement>('openButton')
@@ -103,6 +108,7 @@ function openMoreMenu(event: MouseEvent): void {
 }
 
 function openContextMenu(event: MouseEvent): void {
+  if (status === 'updating') return
   moreButton.value = null
   menuReturnFocus.value = openButton.value
   showMenuAtPointer(event)
@@ -112,7 +118,7 @@ function openContextMenu(event: MouseEvent): void {
 <template>
   <div
     class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
-    :class="!uninstalling && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
+    :class="canOpen && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
     :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
     :data-testid="testId"
     :data-build-id="build.id"
@@ -125,11 +131,12 @@ function openContextMenu(event: MouseEvent): void {
       type="button"
       class="absolute inset-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       :aria-label="`${build.name}, ${statusLabel}`"
+      :disabled="!canOpen"
       data-testid="home-build-open"
     />
     <span
       class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
-      :class="!busy && 'group-hover:scale-[2.6] group-has-[:focus-visible]:scale-[2.6]'"
+      :class="canOpen && !busy && 'group-hover:scale-[2.6] group-has-[:focus-visible]:scale-[2.6]'"
       :style="{
         background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
       }"
@@ -147,16 +154,21 @@ function openContextMenu(event: MouseEvent): void {
     >
       <span
         class="flex h-4 items-center gap-1.5 text-xs/4"
-        :class="!busy && broken ? 'text-destructive' : 'text-muted-foreground'"
+        :class="canOpen && !busy && broken ? 'text-destructive' : 'text-muted-foreground'"
         data-testid="home-build-status"
       >
         <LoaderCircle
-          v-if="busy"
+          v-if="busy || status === 'updating'"
           :size="12"
           class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
           aria-hidden="true"
         />
-        <OctagonAlert v-else-if="broken" :size="12" class="shrink-0" aria-hidden="true" />
+        <OctagonAlert
+          v-else-if="canOpen && broken"
+          :size="12"
+          class="shrink-0"
+          aria-hidden="true"
+        />
         <span
           v-else-if="isLive"
           class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
@@ -186,6 +198,7 @@ function openContextMenu(event: MouseEvent): void {
       </span>
     </span>
     <Button
+      v-if="status !== 'updating'"
       type="button"
       variant="muted-textonly"
       size="unset"
@@ -206,7 +219,7 @@ function openContextMenu(event: MouseEvent): void {
       data-testid="home-build-progress"
     />
     <BuildMenu
-      v-if="menuAnchor"
+      v-if="status !== 'updating' && menuAnchor"
       v-model:open="menuOpen"
       :build="build"
       :anchor="menuAnchor"

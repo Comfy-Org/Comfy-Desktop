@@ -127,6 +127,12 @@ export function installLocation(root: string, platform: string | undefined): str
   return `${root.replace(/[\\/]+$/, '')}${sep}${DEFAULT_INSTALL_NAME}`
 }
 
+export function splitPathTail(path: string): { head: string; tail: string } {
+  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  if (cut <= 0) return { head: '', tail: path }
+  return { head: path.slice(0, cut), tail: path.slice(cut) }
+}
+
 export function displayPath(fullPath: string, platform: string | undefined): string {
   if (platform === 'darwin') return fullPath.replace(/^\/Users\/[^/]+(?=\/|$)/, '~')
   if (platform === 'linux') return fullPath.replace(/^\/home\/[^/]+(?=\/|$)/, '~')

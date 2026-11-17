@@ -37,6 +37,7 @@ export type {
   ModalDetailGroup,
   ListAction,
   ShowProgressOpts,
+  SystemInfo,
   ActionResult,
   ComfyArgDef,
   PortConflictInfo,

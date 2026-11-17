@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, type Component } from 'vue'
-import { Check, Crown } from '@lucide/vue'
+import { Crown } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 
 export interface SetupOptionCard {
@@ -141,13 +141,6 @@ function setOptionEl(el: unknown, index: number): void {
           {{ opt.description }}
         </span>
       </span>
-      <Check
-        class="setup-option__check size-[18px] flex-none self-start text-neutral-100"
-        :class="selectedValue === opt.value ? 'visible' : 'invisible'"
-        :size="15"
-        :stroke-width="2.5"
-        aria-hidden="true"
-      />
     </Button>
   </div>
 </template>

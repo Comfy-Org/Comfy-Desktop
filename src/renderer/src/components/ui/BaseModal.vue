@@ -14,6 +14,7 @@ interface Props {
   dismissOnEscape?: boolean
   dismissOnOutside?: boolean
   showCloseButton?: boolean
+  closeOutside?: boolean
   preventScroll?: boolean
   blurOverlay?: boolean
   contentClass?: string | string[] | Record<string, boolean>
@@ -26,6 +27,7 @@ const props = withDefaults(defineProps<Props>(), {
   dismissOnEscape: true,
   dismissOnOutside: true,
   showCloseButton: true,
+  closeOutside: false,
   preventScroll: true,
   blurOverlay: false,
   contentClass: undefined
@@ -67,7 +69,8 @@ const sizeStyleClass = computed(() => {
       { 'base-modal-overlay--blur backdrop-blur-[8px] backdrop-saturate-[115%]': blurOverlay }
     ]"
     :content-class="[
-      'base-modal-panel relative flex w-[var(--base-modal-width,var(--base-modal-width-md))] max-w-full flex-col overflow-hidden rounded-panel border border-solid border-border bg-[var(--modal-surface-bg)] text-neutral-100 shadow-[var(--modal-surface-shadow)] [--base-modal-width-sm:480px] [--base-modal-width-md:640px] [--base-modal-width-lg:800px] [--base-modal-width-xl:min(1080px,92vw)] max-h-[clamp(360px,80vh,920px)]',
+      'base-modal-panel relative flex w-[var(--base-modal-width,var(--base-modal-width-md))] max-w-full flex-col rounded-panel border border-solid border-border bg-[var(--modal-surface-bg)] text-neutral-100 shadow-[var(--modal-surface-shadow)] [--base-modal-width-sm:480px] [--base-modal-width-md:640px] [--base-modal-width-lg:800px] [--base-modal-width-xl:min(1080px,92vw)] max-h-[clamp(360px,80vh,920px)]',
+      closeOutside ? 'overflow-visible' : 'overflow-hidden',
       sizeClass,
       sizeStyleClass,
       contentClass
@@ -79,7 +82,12 @@ const sizeStyleClass = computed(() => {
       type="button"
       variant="muted-textonly"
       size="icon"
-      class="base-modal-close absolute top-3.5 right-3.5 z-2"
+      class="base-modal-close absolute z-2"
+      :class="
+        closeOutside
+          ? 'top-0 -right-12 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white max-[860px]:top-3 max-[860px]:right-3'
+          : 'top-3.5 right-3.5'
+      "
       :aria-label="$t('common.close')"
       data-testid="base-modal-close"
       @click="emit('close')"
