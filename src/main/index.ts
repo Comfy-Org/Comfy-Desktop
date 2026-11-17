@@ -278,9 +278,7 @@ async function openStartupSurface(): Promise<void> {
   })
   const explicitInst = settings.get('firstUseCompleted') === true ? autoStartBuild : null
 
-  const chooserWindow = explicitInst
-    ? openChooserHostWindow('comfy', { deferColdStartReveal: true })
-    : openOrFocusChooserHostWindow()
+  const chooserWindow = openOrFocusHomeHostWindow()
 
   if (!explicitInst) return
   const installationId = explicitInst.id

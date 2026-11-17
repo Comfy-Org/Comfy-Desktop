@@ -7,7 +7,7 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
-import { homeBuildStatus, homeBuildTones, isCloudBuild } from './home/homeBuild'
+import { homeBuildStatus, homeBuildTones, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
 import { useInstallList } from '../composables/useInstallList'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
@@ -17,6 +17,7 @@ import {
   useInstallingBuilds,
   useViewBuildLogs
 } from '../composables/useBuildProgress'
+import { isPromotingToWorkspace } from '../composables/useInstallContextMenu'
 import { useProgressStore } from '../stores/progressStore'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -71,7 +72,12 @@ const narrowBuildIds = computed(() => {
   return new Set([latest.id, ...(second ? [second.id] : [])])
 })
 const openableBuilds = computed(() =>
-  workspaceBuilds.value.filter((build) => buildProgressOf(progressStore, build.id) === null)
+  workspaceBuilds.value.filter(
+    (build) =>
+      buildProgressOf(progressStore, build.id) === null &&
+      !isBuildOpenBlocked(buildStatus(build)) &&
+      !isPromotingToWorkspace(build)
+  )
 )
 const mostRecentBuild = computed(
   () =>

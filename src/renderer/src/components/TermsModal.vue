@@ -39,18 +39,17 @@ const titleKey = computed(() => {
     :open="open"
     size="lg"
     blur-overlay
+    close-outside
     :aria-label="t(titleKey)"
     content-class="terms-content"
     @close="emit('close')"
   >
     <template #header>
-      <h2
-        class="terms-title mt-0 mr-0 mb-2 ml-0 font-display text-[length:var(--takeover-fs-h3)] font-extrabold tracking-normal text-neutral-100"
-      >
+      <h2 class="terms-title mt-0 mr-0 mb-2 ml-0 text-[22px]/[27px] font-semibold text-neutral-100">
         {{ t(titleKey) }}
       </h2>
       <div
-        class="terms-meta flex flex-wrap gap-4 text-[length:var(--takeover-fs-caption)] text-neutral-300 [&_strong]:font-semibold [&_strong]:text-neutral-100"
+        class="terms-meta flex flex-wrap gap-4 text-xs/[15px] text-muted-foreground [&_strong]:font-semibold [&_strong]:text-neutral-100"
       >
         <span
           ><strong>{{ t('firstUse.legalDocEffective') }}:</strong> {{ policy.effectiveDate }}</span
@@ -61,19 +60,19 @@ const titleKey = computed(() => {
       </div>
     </template>
     <div
-      class="terms-body select-text text-[length:var(--takeover-fs-body)] leading-[1.6] text-neutral-300 focus:outline-none [&_strong]:font-semibold [&_strong]:text-neutral-100"
+      class="terms-body select-text text-[13px] leading-[1.6] text-muted-foreground focus:outline-none [&_strong]:font-semibold [&_strong]:text-neutral-100"
       tabindex="0"
     >
       <template v-for="(block, i) in policy.blocks" :key="`${doc}-${i}`">
         <h2
           v-if="block.kind === 'h2'"
-          class="terms-h2 mt-[18px] mr-0 mb-2 ml-0 text-[length:var(--takeover-fs-lead)] font-semibold text-neutral-100 first:mt-0"
+          class="terms-h2 mt-[18px] mr-0 mb-2 ml-0 text-[15px] font-semibold text-neutral-100 first:mt-0"
         >
           {{ block.text }}
         </h2>
         <h3
           v-else-if="block.kind === 'h3'"
-          class="terms-h3 mt-3.5 mr-0 mb-1.5 ml-0 text-[length:var(--takeover-fs-body)] font-semibold text-neutral-100"
+          class="terms-h3 mt-3.5 mr-0 mb-1.5 ml-0 text-[13px] font-semibold text-neutral-100"
         >
           {{ block.text }}
         </h3>
