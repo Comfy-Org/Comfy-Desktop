@@ -39,6 +39,7 @@ const titleKey = computed(() => {
     :open="open"
     size="lg"
     blur-overlay
+    close-outside
     :aria-label="t(titleKey)"
     content-class="terms-content"
     @close="emit('close')"
