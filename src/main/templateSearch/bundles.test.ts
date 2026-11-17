@@ -305,16 +305,95 @@ describe('bundle store', () => {
     publish(server, '1.1.0', { ...V1, 'router/catalog.json': '{"v":2}' })
     const realTransfer = transfer.getMockImplementation()!
     transfer.mockImplementation(async (file) => {
+      const result = await realTransfer(file)
       await held
-      return realTransfer(file)
+      return result
     })
 
     const downloading = s.download()
+    await vi.waitFor(() => expect(entriesIn(path.join(root, 'files'))).toContain(sha('{"v":2}')))
     expect(await s.prepare()).toEqual({ kind: 'ready' })
     expect((await s.newest())?.version).toBe('1.0.0')
     release()
     await downloading
     expect((await s.newest())?.version).toBe('1.1.0')
+  })
+
+  it('keeps the newest version this sidecar can read', async () => {
+    const { store: newer } = store({
+      now: () => 0,
+      supports: async () => ({ ...SUPPORTED, sidecar: '0.2.0' })
+    })
+    publish(server, '1.0.0', V1)
+    await newer.download()
+    publish(server, '1.1.0', { ...V1, 'router/catalog.json': 'b' }, { min_sidecar: '0.2.0' })
+    await newer.download()
+    const { store: older } = store({ now: () => 0 })
+    expect(await older.prepare()).toEqual({ kind: 'ready' })
+    expect(fs.readdirSync(path.join(root, 'bundles'))).toEqual(['1.0.0'])
+  })
+
+  describe('a background look for a newer version', () => {
+    const A_DAY_LATER = 24 * 60 * 60_000 + 1
+
+    async function withOneVersion() {
+      publish(server, '1.0.0', V1)
+      let clock = 0
+      const { store: s, transfer } = store({ now: () => clock })
+      await s.download()
+      transfer.mockClear()
+      announced.length = 0
+      return { s, transfer, later: () => (clock = A_DAY_LATER) }
+    }
+
+    function holdTransfers(transfer: ReturnType<typeof store>['transfer']) {
+      let release!: () => void
+      const held = new Promise<void>((resolve) => (release = resolve))
+      const realTransfer = transfer.getMockImplementation()!
+      transfer.mockImplementation(async (file) => {
+        await held
+        return realTransfer(file)
+      })
+      return release
+    }
+
+    it('stays quiet when it fails', async () => {
+      const { s, later } = await withOneVersion()
+      server.small.delete(`${BASE}index.json`)
+      later()
+      expect(await s.prepare()).toEqual({ kind: 'ready' })
+      await s.download({ quietly: true })
+      expect(announced).toEqual([])
+    })
+
+    it('reports its download once a search is waiting on it', async () => {
+      const { s, transfer, later } = await withOneVersion()
+      publish(server, '1.1.0', { ...V1, 'router/catalog.json': '{"v":2}' })
+      const release = holdTransfers(transfer)
+      later()
+      expect(await s.prepare()).toEqual({ kind: 'ready' })
+      await vi.waitFor(() => expect(transfer).toHaveBeenCalled())
+      await s.discard('1.0.0')
+
+      expect(await s.prepare()).toMatchObject({ kind: 'downloading' })
+      release()
+      await vi.waitFor(() => expect(announced.at(-1)).toEqual({ kind: 'idle' }))
+    })
+
+    it('reports its download once the user asks for it', async () => {
+      const { s, transfer, later } = await withOneVersion()
+      publish(server, '1.1.0', { ...V1, 'router/catalog.json': '{"v":2}' })
+      const release = holdTransfers(transfer)
+      later()
+      await s.prepare()
+      await vi.waitFor(() => expect(transfer).toHaveBeenCalled())
+
+      const asked = s.download()
+      expect(announced).toEqual([{ kind: 'downloading', received: 0, total: 7 }])
+      release()
+      await asked
+      expect(announced.at(-1)).toEqual({ kind: 'idle' })
+    })
   })
 
   it('reports download progress at most every quarter second', async () => {

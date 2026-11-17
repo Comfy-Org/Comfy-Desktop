@@ -231,7 +231,7 @@ describe('search service', () => {
     let finishStart!: (value: SidecarStart) => void
     let busy = false
     const pending = fakeSidecar()
-    const { service } = setup({
+    const { service, announced } = setup({
       start: () => new Promise((resolve) => (finishStart = resolve)),
       isBusy: () => busy
     })
@@ -245,6 +245,23 @@ describe('search service', () => {
       availability: { kind: 'waiting_for_build' }
     })
     expect(pending.sidecar.stop).toHaveBeenCalled()
+    expect(announced.at(-1)).toEqual({ kind: 'waiting_for_build' })
+  })
+
+  it('waits, rather than passing on what the bundle store said, when every build became busy meanwhile', async () => {
+    let busy = false
+    const prepare = vi.fn(async (): Promise<TemplateSearchAvailability> => {
+      busy = true
+      return { kind: 'unavailable', reason: 'update_desktop' }
+    })
+    const { service, announced } = setup({ isBusy: () => busy, bundles: bundles({ prepare }) })
+    expect(await service.decide({ text: 'x' })).toEqual({
+      kind: 'unavailable',
+      availability: { kind: 'waiting_for_build' }
+    })
+    busy = false
+    service.onBuildActionEnd()
+    expect(announced.at(-1)).toEqual({ kind: 'idle' })
   })
 
   it('moves on from a Python that cannot run search, and remembers it', async () => {
@@ -321,6 +338,16 @@ describe('search service', () => {
     expect(started[0]!.sidecar.stop).toHaveBeenCalled()
     await service.decide({ text: 'x' })
     expect(start).toHaveBeenCalledTimes(2)
+  })
+
+  it('counts getting ready as use of a sidecar that is already running', async () => {
+    vi.useFakeTimers()
+    const { service, started } = setup()
+    await service.decide({ text: 'x' })
+    await vi.advanceTimersByTimeAsync(IDLE_STOP_MS - 1000)
+    await service.prepare()
+    await vi.advanceTimersByTimeAsync(IDLE_STOP_MS - 1000)
+    expect(started[0]!.sidecar.stop).not.toHaveBeenCalled()
   })
 
   it('verifies the bundle on the next start after the sidecar dies', async () => {

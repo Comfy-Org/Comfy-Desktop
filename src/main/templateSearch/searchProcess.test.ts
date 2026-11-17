@@ -2,12 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   operationAborts: new Map<string, AbortController>(),
+  activeLaunches: new Set<string>(),
   activeOperations: vi.fn((): { installationId: string; actionId: string }[] => []),
   buildRuntime: vi.fn()
 }))
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp/userdata' }, net: {} }))
-vi.mock('../lib/ipc/shared', () => ({ _operationAborts: mocks.operationAborts }))
+vi.mock('../lib/ipc/shared', () => ({
+  _operationAborts: mocks.operationAborts,
+  _hasActiveLaunch: (id: string) => mocks.activeLaunches.has(id)
+}))
 vi.mock('../lib/ipc/sessionActions', () => ({ _getActiveOperations: mocks.activeOperations }))
 vi.mock('./buildRuntime', () => ({ buildRuntime: mocks.buildRuntime }))
 
@@ -24,6 +28,7 @@ import {
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.operationAborts.clear()
+  mocks.activeLaunches.clear()
   mocks.activeOperations.mockReturnValue([])
   mocks.buildRuntime.mockImplementation((build: InstallationRecord) =>
     build.id === 'no-python' ? null : { python: `/py/${build.id}`, sitePackages: null }
@@ -103,6 +108,12 @@ describe('isBuildBusy and changesBuildEnv', () => {
   it('counts a build that is still installing', () => {
     mocks.operationAborts.set('a', new AbortController())
     expect(isBuildBusy('a')).toBe(true)
+  })
+
+  it('counts a build launching outside a session action, as Apps launches it', () => {
+    mocks.activeLaunches.add('a')
+    expect(isBuildBusy('a')).toBe(true)
+    expect(isBuildBusy('b')).toBe(false)
   })
 })
 

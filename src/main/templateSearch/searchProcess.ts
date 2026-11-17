@@ -6,7 +6,7 @@ import { list as listInstallations, type InstallationRecord } from '../installat
 import { cacheDir, dataDir } from '../lib/paths'
 import { killProcessTree } from '../lib/process'
 import { startModelTransfer } from '../lib/modelDownloadTransport'
-import { _operationAborts } from '../lib/ipc/shared'
+import { _hasActiveLaunch, _operationAborts } from '../lib/ipc/shared'
 import { _getActiveOperations } from '../lib/ipc/sessionActions'
 import { occupiesInstall } from '../lib/ipc/sessionActions/occupiesInstall'
 import type { TerminalEnv } from '../types/sources'
@@ -20,7 +20,6 @@ import { asRecord } from './json'
 
 export const SIDECAR_PATH_ENV = 'COMFY_DESKTOP_TEMPLATE_SEARCH_SIDECAR'
 const SEARCH_TIMEOUT_MS = 3000
-const SMALL_FILE_LIMIT = 8 * 1024 * 1024
 const TOOL_TIMEOUT_MS = 120_000
 const ACTIONS_THAT_LEAVE_THE_ENV = new Set(['rename', 'open-folder'])
 
@@ -31,6 +30,7 @@ export function changesBuildEnv(actionId: string): boolean {
 export function isBuildBusy(installationId: string): boolean {
   return (
     _operationAborts.has(installationId) ||
+    _hasActiveLaunch(installationId) ||
     _getActiveOperations().some(
       (op) => op.installationId === installationId && changesBuildEnv(op.actionId)
     )
@@ -49,27 +49,10 @@ export function parseSupports(stdout: string): Supported | null {
   }
 }
 
-export async function readCapped(response: Response, limit: number): Promise<Buffer> {
-  const reader = response.body?.getReader()
-  if (!reader) return Buffer.alloc(0)
-  const chunks: Uint8Array[] = []
-  let size = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) return Buffer.concat(chunks)
-    size += value.byteLength
-    if (size > limit) {
-      await reader.cancel()
-      throw new Error(`more than ${limit} bytes`)
-    }
-    chunks.push(value)
-  }
-}
-
 async function getSmall(url: string): Promise<Buffer> {
   const response = await net.fetch(url, { signal: AbortSignal.timeout(30_000) })
   if (!response.ok) throw new Error(`${url} answered ${response.status}`)
-  return readCapped(response, SMALL_FILE_LIMIT)
+  return Buffer.from(await response.arrayBuffer())
 }
 
 export interface HelperResult {
@@ -202,6 +185,7 @@ export function createSearchProcess({
       if (!zipapp) return null
       if (isBuildBusy(candidate.installationId)) continue
       const out = await runHelper(candidate, ['-I', '-B', zipapp, ...args])
+      if (isBuildBusy(candidate.installationId)) continue
       if (out.code !== RUNTIME_UNSUPPORTED_EXIT) return out
       service.markUnsupported(candidate.python)
     }
@@ -214,7 +198,10 @@ export function createSearchProcess({
     getSmall,
     transfer,
     supports,
-    check: async (dir) => (await withPyz(['check', dir]))?.code === 0,
+    check: async (dir) => {
+      const out = await withPyz(['check', dir])
+      return out === null || out.code === 0
+    },
     onAvailability: broadcast
   })
 

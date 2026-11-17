@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from 'child_process'
+import type { ChildProcess } from 'child_process'
+import crypto from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -8,15 +9,16 @@ const mocks = vi.hoisted(() => ({
   settings: {} as Record<string, unknown>,
   builds: [] as { id: string; lastLaunchedAt: number }[],
   activeOperations: vi.fn((): { installationId: string; actionId: string }[] => []),
-  fetch: vi.fn()
+  fetch: vi.fn(),
+  transfer: vi.fn()
 }))
 
 vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir() }, net: { fetch: mocks.fetch } }))
 vi.mock('../settings', () => ({ get: (key: string) => mocks.settings[key] }))
 vi.mock('../installations', () => ({ list: async () => mocks.builds }))
-vi.mock('../lib/ipc/shared', () => ({ _operationAborts: new Map() }))
+vi.mock('../lib/ipc/shared', () => ({ _operationAborts: new Map(), _hasActiveLaunch: () => false }))
 vi.mock('../lib/ipc/sessionActions', () => ({ _getActiveOperations: mocks.activeOperations }))
-vi.mock('../lib/modelDownloadTransport', () => ({ startModelTransfer: vi.fn() }))
+vi.mock('../lib/modelDownloadTransport', () => ({ startModelTransfer: mocks.transfer }))
 vi.mock('./buildRuntime', () => ({
   buildRuntime: (build: { id: string }) => ({ python: `python-${build.id}`, sitePackages: null })
 }))
@@ -24,29 +26,64 @@ vi.mock('./buildRuntime', () => ({
 import { killProcessTree } from '../lib/process'
 import {
   createSearchProcess,
-  readCapped,
+  helperResult,
   SIDECAR_PATH_ENV,
   spawnHelperProcess,
   type SpawnHelper
 } from './searchProcess'
 
+const BASE = 'https://b.example.test/'
 const SUPPORTS = JSON.stringify({ sidecar: '0.1.0', accepts: { major: 1, min_minor: 0 } })
+const PRINT_SUPPORTS = `process.stdout.write(${JSON.stringify(SUPPORTS + '\n')})`
+const STUCK = 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)'
 const SCRIPTS: Record<string, string> = {
   'python-unsupported': 'process.exit(3)',
-  'python-ok': `process.stdout.write(${JSON.stringify(SUPPORTS + '\n')})`,
-  'python-stuck': 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)'
+  'python-ok': PRINT_SUPPORTS,
+  'python-stuck': STUCK,
+  'python-checker': PRINT_SUPPORTS
 }
+const CHECKS: Record<string, string> = { 'python-checker': STUCK }
 
 let root: string
-let spawned: { python: string; child: ChildProcess }[]
+let spawned: { python: string; args: string[]; child: ChildProcess }[]
 
-const spawnHelper: SpawnHelper = (python) => {
-  const child = spawn(process.execPath, ['-e', SCRIPTS[python] ?? 'process.exit(1)'], {
-    stdio: ['ignore', 'pipe', 'ignore'],
-    detached: process.platform !== 'win32'
-  })
-  spawned.push({ python, child })
+const spawnHelper: SpawnHelper = (python, args) => {
+  const script = (args.includes('check') && CHECKS[python]) || SCRIPTS[python] || 'process.exit(1)'
+  const child = spawnHelperProcess(process.execPath, ['-e', script])
+  spawned.push({ python, args, child })
   return child
+}
+
+const sha = (text: string): string => crypto.createHash('sha256').update(text).digest('hex')
+
+function serveBundle(files: Record<string, string>): void {
+  const listed = Object.entries(files).map(([file, text]) => ({
+    path: file,
+    size: Buffer.byteLength(text),
+    sha256: sha(text)
+  }))
+  const manifest = JSON.stringify({ version: '1.0.0', min_sidecar: null, files: listed })
+  const small: Record<string, string> = {
+    [`${BASE}index.json`]: JSON.stringify({
+      bundles: [
+        { version: '1.0.0', manifest: 'manifests/1.0.0.json', manifest_sha256: sha(manifest) }
+      ]
+    }),
+    [`${BASE}manifests/1.0.0.json`]: manifest
+  }
+  mocks.fetch.mockImplementation(async (url: string) =>
+    small[url] ? new Response(small[url]) : new Response('', { status: 404 })
+  )
+  mocks.transfer.mockImplementation((file: { url: string; finalPath: string }) => {
+    const text = Object.values(files).find((t) => file.url.endsWith(sha(t)))!
+    fs.mkdirSync(path.dirname(file.finalPath), { recursive: true })
+    fs.writeFileSync(file.finalPath, text)
+    return { done: Promise.resolve({ outcome: 'completed' }) }
+  })
+}
+
+function exited(child: ChildProcess): boolean {
+  return (child.exitCode ?? child.signalCode) !== null
 }
 
 function setup() {
@@ -67,10 +104,12 @@ beforeEach(() => {
   spawned = []
   mocks.settings = {
     templateSearchEnabled: true,
-    templateSearchBundleBase: 'https://b.example.test/'
+    templateSearchBundleBase: BASE
   }
   mocks.activeOperations.mockReturnValue([])
+  mocks.fetch.mockReset()
   mocks.fetch.mockRejectedValue(new Error('offline'))
+  mocks.transfer.mockReset()
   process.env[SIDECAR_PATH_ENV] = '/opt/search.pyz'
 })
 
@@ -105,49 +144,82 @@ describe('createSearchProcess', () => {
   it('skips a build that became busy before its helper would start', async () => {
     mocks.builds = [
       { id: 'unsupported', lastLaunchedAt: 3 },
-      { id: 'stuck', lastLaunchedAt: 2 },
+      { id: 'busy', lastLaunchedAt: 2 },
       { id: 'ok', lastLaunchedAt: 1 }
     ]
     mocks.activeOperations.mockImplementation(() =>
-      spawned.length > 0 ? [{ installationId: 'stuck', actionId: 'copy-update' }] : []
+      spawned.length > 0 ? [{ installationId: 'busy', actionId: 'copy-update' }] : []
     )
     const { search } = setup()
     await search.prepare()
     expect(spawned.map((s) => s.python)).toEqual(['python-unsupported', 'python-ok'])
   })
 
-  it('kills a helper running on a build before an operation on that build', async () => {
+  it('kills a helper running on a build before an operation on that build, and waits for it', async () => {
     mocks.builds = [{ id: 'stuck', lastLaunchedAt: 1 }]
-    const { search } = setup()
+    const { search, announced } = setup()
     const preparing = search.prepare()
     await vi.waitFor(() => expect(spawned).toHaveLength(1))
 
     mocks.activeOperations.mockReturnValue([{ installationId: 'stuck', actionId: 'copy-update' }])
     await search.onBuildAction('stuck')
 
-    const { child } = spawned[0]!
-    await vi.waitFor(() => expect(child.exitCode ?? child.signalCode).not.toBeNull())
+    await vi.waitFor(() => expect(exited(spawned[0]!.child)).toBe(true))
     await preparing
     expect(spawned).toHaveLength(1)
+    expect(announced.at(-1)).toEqual({ kind: 'waiting_for_build' })
+  })
+
+  it('kills a helper on a build about to change even after search was switched off', async () => {
+    mocks.builds = [{ id: 'stuck', lastLaunchedAt: 1 }]
+    const { search } = setup()
+    const preparing = search.prepare()
+    await vi.waitFor(() => expect(spawned).toHaveLength(1))
+
+    mocks.settings.templateSearchEnabled = false
+    mocks.activeOperations.mockReturnValue([{ installationId: 'stuck', actionId: 'copy-update' }])
+    await search.onBuildAction('stuck')
+
+    await vi.waitFor(() => expect(exited(spawned[0]!.child)).toBe(true))
+    await preparing
+  })
+
+  it('puts a download in place when the build checking it is about to change', async () => {
+    mocks.builds = [{ id: 'checker', lastLaunchedAt: 1 }]
+    serveBundle({ 'catalog.json': '{}' })
+    const { search, announced } = setup()
+    const downloading = search.download()
+    await vi.waitFor(() => expect(spawned.some(({ args }) => args.includes('check'))).toBe(true))
+
+    mocks.activeOperations.mockReturnValue([{ installationId: 'checker', actionId: 'copy-update' }])
+    await search.onBuildAction('checker')
+    await downloading
+
+    expect(announced.at(-1)).toEqual({ kind: 'idle' })
+    expect(fs.readdirSync(path.join(root, 'store', 'bundles'))).toEqual(['1.0.0'])
   })
 })
 
 describe('spawnHelperProcess', () => {
-  it('starts a helper that can be killed with everything it started', async () => {
-    const child = spawnHelperProcess(process.execPath, [
-      '-e',
-      'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)'
-    ])
-    spawned.push({ python: 'node', child })
+  it('starts a helper that a tree kill stops even when it ignores SIGTERM', async () => {
+    const child = spawnHelperProcess(process.execPath, ['-e', STUCK])
+    spawned.push({ python: 'node', args: [], child })
     await new Promise((resolve) => child.once('spawn', resolve))
     await killProcessTree(child)
-    await vi.waitFor(() => expect(child.exitCode ?? child.signalCode).not.toBeNull())
+    await vi.waitFor(() => expect(exited(child)).toBe(true))
   })
 })
 
-describe('readCapped', () => {
-  it('reads a small body and refuses one past the limit without reading it all', async () => {
-    expect((await readCapped(new Response('hello'), 10)).toString()).toBe('hello')
-    await expect(readCapped(new Response('x'.repeat(100)), 10)).rejects.toThrow('more than 10')
+describe('helperResult', () => {
+  it('answers a failed exit for a Python that cannot be started', async () => {
+    const child = spawnHelperProcess(path.join(root, 'no-such-python'), [])
+    expect(await helperResult(child, 5_000)).toEqual({ code: 1, stdout: '' })
+  })
+
+  it('kills a helper that runs past its time', async () => {
+    const child = spawnHelperProcess(process.execPath, ['-e', STUCK])
+    spawned.push({ python: 'node', args: [], child })
+    expect((await helperResult(child, 200)).code).toBe(1)
+    expect(exited(child)).toBe(true)
   })
 })

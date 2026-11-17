@@ -118,7 +118,8 @@ export function createSearchService(deps: SearchServiceDeps) {
   ): Promise<Started> {
     let unsupported = false
     for (const candidate of candidates) {
-      if (deps.isBusy(candidate.installationId)) continue
+      if (unsupportedPythons.has(candidate.python) || deps.isBusy(candidate.installationId))
+        continue
       const abort = new AbortController()
       const attempt = deps.start(
         {
@@ -156,22 +157,26 @@ export function createSearchService(deps: SearchServiceDeps) {
     return { ok: false, problem: unsupported ? 'runtime_unsupported' : 'busy' }
   }
 
-  async function launch(pyz: string): Promise<Ensure> {
-    const pythons = await deps.pythons()
+  function blockedBy(pythons: SidecarPython[]): Ensure | null {
     const supported = pythons.filter((p) => !unsupportedPythons.has(p.python))
     if (supported.length === 0) {
       return { ok: false, availability: pythons.length ? UNSUPPORTED : { kind: 'no_local_build' } }
     }
     if (supported.every((p) => deps.isBusy(p.installationId))) return waitForBuild()
+    return null
+  }
+
+  async function launch(pyz: string): Promise<Ensure> {
+    const pythons = await deps.pythons()
+    const blocked = blockedBy(pythons)
+    if (blocked) return blocked
     const prepared = await deps.bundles.prepare()
-    if (prepared.kind !== 'ready') {
-      const stillSupported = pythons.some((p) => !unsupportedPythons.has(p.python))
-      return { ok: false, availability: stillSupported ? prepared : UNSUPPORTED }
-    }
+    if (prepared.kind !== 'ready')
+      return blockedBy(pythons) ?? { ok: false, availability: prepared }
     const bundle = await deps.bundles.newest()
     if (!bundle) return { ok: false, availability: { kind: 'unavailable', reason: 'failed' } }
     announce({ kind: 'starting' })
-    const started = await startOn(pyz, bundle, supported)
+    const started = await startOn(pyz, bundle, pythons)
     if (started.ok) return started
     if (started.problem === 'busy') return waitForBuild()
     if (started.problem === 'bundle_invalid') {

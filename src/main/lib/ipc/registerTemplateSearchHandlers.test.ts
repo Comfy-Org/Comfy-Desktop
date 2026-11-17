@@ -15,14 +15,10 @@ vi.mock('./sessionActions', () => ({
   }
 }))
 vi.mock('./broadcast', () => ({ _broadcastToRenderer: vi.fn() }))
-vi.mock('../../templateSearch/searchProcess', async () => {
-  const { occupiesInstall } = await import('./sessionActions/occupiesInstall')
-  return {
-    changesBuildEnv: (actionId: string) =>
-      occupiesInstall(actionId) && actionId !== 'rename' && actionId !== 'open-folder',
-    createSearchProcess: vi.fn()
-  }
-})
+vi.mock('../../templateSearch/searchProcess', () => ({
+  changesBuildEnv: (actionId: string) => actionId === 'copy-update',
+  createSearchProcess: vi.fn()
+}))
 
 import { registerTemplateSearchHandlers } from './registerTemplateSearchHandlers'
 
@@ -88,14 +84,11 @@ describe('build operations', () => {
     expect(ready).toBe(true)
   })
 
-  it.each(['rename', 'open-folder', 'check-update'])(
-    'leaves search running for %s',
-    async (actionId) => {
-      const process = register()
-      await mocks.observer!.before('local-1', actionId)
-      expect(process.onBuildAction).not.toHaveBeenCalled()
-    }
-  )
+  it("leaves search running for an operation that keeps the build's environment", async () => {
+    const process = register()
+    await mocks.observer!.before('local-1', 'rename')
+    expect(process.onBuildAction).not.toHaveBeenCalled()
+  })
 
   it('tells search when an operation ends', () => {
     const process = register()

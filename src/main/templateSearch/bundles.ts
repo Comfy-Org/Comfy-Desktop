@@ -278,11 +278,15 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     }
   }
 
-  async function prune(): Promise<void> {
+  async function removeOlderVersions(): Promise<void> {
     const kept = await newest()
     for (const old of (await localVersions()).filter((b) => b.dir !== kept?.dir)) {
       await fs.promises.rm(old.dir, { recursive: true, force: true }).catch(() => {})
     }
+  }
+
+  async function removeUnlistedFiles(): Promise<void> {
+    const kept = await newest()
     const listed = new Set<string>()
     if (kept) {
       const manifest = parseManifest(await readJson(path.join(kept.dir, MANIFEST)))
@@ -318,21 +322,27 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     }
     await fetchFiles(base, manifest.files)
     await assemble(manifest.version, found.raw, manifest.files)
+    await removeUnlistedFiles()
   }
 
   function download({ quietly = false } = {}): Promise<void> {
     const base = baseUrl()
     if (!base) return Promise.resolve()
-    if (!downloading) {
-      quiet = quietly
-      downloading = fetchNewest(base)
-        .then(() => report({ kind: 'idle' }))
-        .catch(() => report({ kind: 'unavailable', reason: 'download_failed' }))
-        .finally(() => {
-          downloading = null
-          quiet = false
-        })
+    if (downloading) {
+      if (!quietly && quiet) {
+        quiet = false
+        reportProgress(true)
+      }
+      return downloading
     }
+    quiet = quietly
+    downloading = fetchNewest(base)
+      .then(() => report({ kind: 'idle' }))
+      .catch(() => report({ kind: 'unavailable', reason: 'download_failed' }))
+      .finally(() => {
+        downloading = null
+        quiet = false
+      })
     return downloading
   }
 
@@ -340,7 +350,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     const local = await newest()
     const base = baseUrl()
     if (local) {
-      if (!downloading) await prune()
+      if (!downloading) await removeOlderVersions()
       if (base && now() - lastUpdateCheck > UPDATE_CHECK_MS) {
         lastUpdateCheck = now()
         void download({ quietly: true })
@@ -348,7 +358,10 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       return { kind: 'ready' }
     }
     if (!base) return { kind: 'off' }
-    if (downloading) return { kind: 'downloading', ...progress }
+    if (downloading) {
+      quiet = false
+      return { kind: 'downloading', ...progress }
+    }
     try {
       const found = await wanted(base)
       if (!found) return { kind: 'unavailable', reason: 'update_desktop' }

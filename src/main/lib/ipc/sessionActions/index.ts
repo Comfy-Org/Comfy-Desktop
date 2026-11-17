@@ -70,7 +70,12 @@ function dispatchToSessionHandler(
   }
 }
 
-const _activeActions = new Map<string, { actionId: string }>()
+interface ActiveAction {
+  actionId: string
+  ready?: Promise<void>
+}
+
+const _activeActions = new Map<string, ActiveAction>()
 
 export interface SessionActionObserver {
   before(installationId: string, actionId: string): Promise<void>
@@ -78,7 +83,6 @@ export interface SessionActionObserver {
 }
 
 let observer: SessionActionObserver | null = null
-const gettingReady = new Map<string, Promise<void>>()
 
 export function setSessionActionObserver(next: SessionActionObserver | null): void {
   observer = next
@@ -100,20 +104,15 @@ export async function dispatchSessionAction(
   const takesOverFromLookup =
     running !== undefined && occupiesInstall(actionId) && !occupiesInstall(running.actionId)
   const owned = running === undefined || takesOverFromLookup
-  const entry = { actionId }
+  const entry: ActiveAction = { actionId }
   if (owned) {
     _activeActions.set(installationId, entry)
     _broadcastToRenderer('operation-changed', { installationId, actionId, active: true })
+    entry.ready = observer?.before(installationId, actionId).catch(() => {})
   }
   try {
-    if (owned && observer) {
-      const ready = observer.before(installationId, actionId).catch(() => {})
-      gettingReady.set(installationId, ready)
-      await ready
-      if (gettingReady.get(installationId) === ready) gettingReady.delete(installationId)
-    } else if (!owned && gettingReady.has(installationId)) {
-      await gettingReady.get(installationId)
-    }
+    const ready = owned ? entry.ready : running?.ready
+    if (ready) await ready
     if (isSessionActionId(actionId)) {
       return await dispatchToSessionHandler(ctx, actionId)
     }
