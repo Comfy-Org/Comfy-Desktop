@@ -374,10 +374,14 @@ interface ActiveLaunch {
   _resolveSettled: () => void
   pickerWorkspaceId?: string
   hadWindow?: boolean
+  local: boolean
 }
 const _activeLaunches = new Map<string, ActiveLaunch>()
 
-export function _beginLaunch(installationId: string): ActiveLaunch {
+export function _beginLaunch(
+  installationId: string,
+  { local = true }: { local?: boolean } = {}
+): ActiveLaunch {
   let resolveSettled!: () => void
   const settled = new Promise<void>((resolve) => {
     resolveSettled = resolve
@@ -385,7 +389,8 @@ export function _beginLaunch(installationId: string): ActiveLaunch {
   const launch: ActiveLaunch = {
     abort: new AbortController(),
     settled,
-    _resolveSettled: resolveSettled
+    _resolveSettled: resolveSettled,
+    local
   }
   _activeLaunches.set(installationId, launch)
   return launch
@@ -410,6 +415,10 @@ export function _hasActiveLaunch(installationId: string): boolean {
 
 export function _getActiveLaunchIds(): string[] {
   return Array.from(_activeLaunches.keys())
+}
+
+export function _hasActiveLocalLaunch(): boolean {
+  return [..._activeLaunches.values()].some((launch) => launch.local)
 }
 
 export const sessionLifecycleEvents = new EventEmitter()

@@ -395,6 +395,7 @@ import {
   _reservePort,
   _beginLaunch,
   _endLaunch,
+  _hasActiveLocalLaunch,
   _setActiveLaunchPickerWorkspace,
   _stoppingInstallationIds,
   noteWindowClosed,
@@ -1868,6 +1869,30 @@ describe('core beta report placement', () => {
 
       expect(res.ok).toBe(true)
       expect(reads).toBe(0)
+    })
+
+    it('does not count a Cloud connection that is still connecting as a local start', async () => {
+      const installationId = 'harness-cloud-not-local'
+      const ctx = ctxFor(installationId)
+      vi.spyOn(getCloudSession(), 'status').mockReturnValue({ signedIn: true })
+      let localWhileConnecting: boolean | undefined
+      launchHarness.waitForUrl = async () => {
+        localWhileConnecting = _hasActiveLocalLaunch()
+      }
+
+      const result = await handleLaunch({
+        ...ctx,
+        inst: {
+          ...ctx.inst,
+          id: installationId,
+          sourceId: 'cloud',
+          remoteUrl: 'https://cloud.comfy.org/'
+        },
+        actionData: { pickerWorkspaceId: 'team-a' }
+      })
+
+      expect(result.ok).toBe(true)
+      expect(localWhileConnecting).toBe(false)
     })
 
     it('opens Cloud in the latest picker workspace requested while it connects', async () => {

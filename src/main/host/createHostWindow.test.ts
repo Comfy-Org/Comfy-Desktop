@@ -564,6 +564,21 @@ describe('closeStopsLocalComfy', () => {
 
       expect(closeStopsLocalComfy(null, true)).toBe(false)
     })
+
+    it.each(['cloud', 'remote'])(
+      'does not count a %s connection still starting as a ComfyUI on this computer',
+      (connection) => {
+        const launch = _beginLaunch(connection, { local: false })
+        onTestFinished(() => _endLaunch(connection, launch))
+
+        Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+        expect(closeStopsLocalComfy(null, true)).toBe(false)
+
+        Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+        expect(desktopStaysWithoutWindows()).toBe(false)
+        expect(quitsOnceEveryWindowClosed()).toBe(true)
+      }
+    )
   })
 })
 

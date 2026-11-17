@@ -28,7 +28,7 @@ import {
   titleBarOverlayForTheme
 } from '../lib/titleBarOverlay'
 import {
-  _getActiveLaunchIds,
+  _hasActiveLocalLaunch,
   _registerExtraBroadcastTarget,
   _runningSessions,
   _unregisterExtraBroadcastTarget,
@@ -113,10 +113,7 @@ export function shouldShowInstallCloseConfirm(
 }
 
 function localComfyRunningOrStarting(): boolean {
-  return (
-    [..._runningSessions.values()].some((session) => !session.url) ||
-    _getActiveLaunchIds().length > 0
-  )
+  return [..._runningSessions.values()].some((session) => !session.url) || _hasActiveLocalLaunch()
 }
 
 export function desktopStaysWithoutWindows(): boolean {

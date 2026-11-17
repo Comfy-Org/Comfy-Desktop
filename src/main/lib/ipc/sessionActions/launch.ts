@@ -905,7 +905,7 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   if (_operationAborts.has(sessionId)) {
     return { ok: false, message: 'Another operation is already running for this installation.' }
   }
-  const launch = _beginLaunch(sessionId)
+  const launch = _beginLaunch(sessionId, { local: isLocalSource(ctx.inst.sourceId) })
   const prefetchHold = { release: (): void => {} }
   const settleFirstStart = (started: boolean): void => {
     if (sessionId === installationId) settleAutoStartOnFirstStart(installationId, started)
