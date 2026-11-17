@@ -133,7 +133,7 @@ test('clicking a not-ready ComfyBuilder tile opens its build page instead of the
 
   await ctx.panel.waitForVisible('[data-testid="build-details"]', { timeout: 10_000 })
   expect(await ctx.panel.exists(NEW_INSTALL_WIZARD)).toBe(false)
-  expect(await ctx.panel.click('.build-details-back')).toBe(true)
+  expect(await ctx.panel.click('[data-testid="app-sidebar-chooser"]')).toBe(true)
   await expectChooserVisible(ctx.panel)
 })
 

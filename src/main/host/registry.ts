@@ -296,14 +296,6 @@ export function revealColdStartHostIfPending(windowKey: number): void {
   bringToFront(entry.window)
 }
 
-export function forceRevealHostWindow(windowKey: number): void {
-  const entry = comfyWindows.get(windowKey)
-  if (!entry || entry.window.isDestroyed()) return
-  entry.coldStartPendingReveal = false
-  entry.layoutViews()
-  bringToFront(entry.window)
-}
-
 interface HostFactories {
   createChooser: () => BrowserWindow
 }

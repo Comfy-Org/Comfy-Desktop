@@ -26,16 +26,16 @@ import {
 describe('buildCoachmarkConfig', () => {
   it('stamps the coachmark variant and carries title + body + dismiss copy', () => {
     const cfg = buildCoachmarkConfig({
-      kind: 'pill-hint',
-      title: 'Switch & manage instances',
-      body: 'Click here to switch instances.',
+      kind: 'beta-notice',
+      title: 'A beta feature is on',
+      body: 'This instance started with a beta feature enabled.',
       dismissLabel: 'Got it',
       token: 'cm-1'
     })
     expect(cfg.variant).toBe('coachmark')
-    expect(cfg.kind).toBe('pill-hint')
-    expect(cfg.title).toBe('Switch & manage instances')
-    expect(cfg.body).toBe('Click here to switch instances.')
+    expect(cfg.kind).toBe('beta-notice')
+    expect(cfg.title).toBe('A beta feature is on')
+    expect(cfg.body).toBe('This instance started with a beta feature enabled.')
     expect(cfg.dismissLabel).toBe('Got it')
     expect(cfg.configToken).toBe('cm-1')
     expect(cfg.theme.accent).toMatch(/^#/)
@@ -43,9 +43,9 @@ describe('buildCoachmarkConfig', () => {
 
   it('omits actionLabel entirely for a card with no secondary action', () => {
     const cfg = buildCoachmarkConfig({
-      kind: 'pill-hint',
-      title: 'Switch & manage instances',
-      body: 'Click here to switch instances.',
+      kind: 'beta-notice',
+      title: 'A beta feature is on',
+      body: 'This instance started with a beta feature enabled.',
       dismissLabel: 'Got it',
       token: 'cm-1'
     })

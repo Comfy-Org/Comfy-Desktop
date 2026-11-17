@@ -6,6 +6,7 @@ import { loadedAppPage } from '../../apps/appPageView'
 import type { LoadedAppPage } from '../../apps/appPageView'
 import { areAppsEnabled } from '../../apps/appsConfig'
 import { isAppsPageSender } from '../../apps/appsPages'
+import { refreshCreditBalanceAfterRun } from './registerCreditBalanceHandlers'
 
 export const APPS_TELEMETRY_TRACK_CHANNEL = 'apps-telemetry:track'
 
@@ -27,6 +28,7 @@ export async function trackFromAppsPage(event: IpcMainEvent, payload: unknown): 
   if (sentFrom === null || !(await isFromAppsPage(event))) return false
   if (!isSamePage(loadedAppPage(event.sender), sentFrom)) return false
   const { name, props } = (payload && typeof payload === 'object' ? payload : {}) as TrackPayload
+  if (name === 'run_started') refreshCreditBalanceAfterRun()
   return trackAppPageEvent(name, props, sentFrom.appId)
 }
 

@@ -13,7 +13,6 @@ interface Bridge {
   openFileMenu: ReturnType<typeof vi.fn>
   dismissFileMenu: ReturnType<typeof vi.fn>
   clickDownloadsTray: ReturnType<typeof vi.fn>
-  clickInstallPill: ReturnType<typeof vi.fn>
   onMenuOpened: (cb: (info: { menu: TitleMenuKind }) => void) => () => void
   onMenuClosed: (cb: (info: { menu: TitleMenuKind }) => void) => () => void
   onDownloadsChanged: (cb: (s: unknown) => void) => () => void
@@ -26,7 +25,6 @@ function setup() {
     openFileMenu: vi.fn(),
     dismissFileMenu: vi.fn(),
     clickDownloadsTray: vi.fn(),
-    clickInstallPill: vi.fn(),
     onMenuOpened: (cb) => {
       opened.push(cb)
       return () => {}
@@ -45,8 +43,7 @@ function setup() {
         bridge: bridge as never,
         hideTip: () => {},
         fileBtnRef: nullRef,
-        downloadsBtnRef: nullRef,
-        installPillRef: nullRef
+        downloadsBtnRef: nullRef
       })
       return () => h('div')
     }
