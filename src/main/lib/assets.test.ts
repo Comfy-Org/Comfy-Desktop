@@ -66,6 +66,7 @@ const panelSender = { panel: true }
 const trashOutputFile = vi.fn()
 vi.mock('../host/registry', () => ({
   findHostWindowByPanelSender: (sender: unknown) => panelHostWindow(sender),
+  findEntryByComfySender: () => null,
   isPanelSender: (sender: unknown) => sender === panelSender
 }))
 vi.mock('./outputFolders', () => ({
