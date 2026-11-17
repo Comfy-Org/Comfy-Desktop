@@ -1092,6 +1092,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         case 'ignore':
           return
         case 'focus':
+          await syncCloudWindowWorkspace(route.entry)
           bringToFront(route.entry.window)
           return
         case 'show-starting':

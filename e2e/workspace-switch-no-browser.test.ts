@@ -9,6 +9,9 @@ import en from '../locales/en.json'
 import { launchApp, type AppContext } from './launchApp'
 import { FakeCloud, type FakeReply } from './support/fakeCloud'
 import { captureHostWindow } from './support/windowCapture'
+import { openPicker } from './support/navMatrixHelpers'
+import { titlePopupPage } from './support/cdpPages'
+import { byTestId, TID } from './support/testIds'
 
 const UNAVAILABLE_COPY = en.devPlatform.workspace.switchUnavailable
 const RETRYABLE_COPY = en.devPlatform.workspace.switchRetryable
@@ -257,13 +260,25 @@ test('Comfy Cloud stays available and reopens in the selected team or Personal w
   }, cloud.url)
 
   expect(await panel().click('[data-testid="app-sidebar-home"]')).toBe(true)
+  const cloudInstallId = await panel().evaluate<string>(
+    "window.api.getInstallations().then((installs) => installs.find((install) => install.sourceId === 'cloud').id)"
+  )
   let cloudViewId: number | undefined
   for (const selected of ['B', 'personal', 'A']) {
     await select(selected)
     const workspaceId = selected === 'personal' ? 'P' : selected
     await expectActive(workspaceId)
     await panel().waitForVisible('[data-testid="home-build"]')
-    expect(await panel().clickByText('[data-testid="home-build"]', 'Comfy Cloud')).toBe(true)
+    if (selected === 'personal') {
+      await openPicker(ctx!.app, panel())
+      const picker = titlePopupPage(ctx!.app)
+      const row = byTestId(TID.pickerRow(cloudInstallId))
+      await picker.waitForVisible(row)
+      expect(await picker.click(row)).toBe(true)
+      expect(await picker.click(byTestId(TID.pickerPrimaryCta))).toBe(true)
+    } else {
+      expect(await panel().clickByText('[data-testid="home-build"]', 'Comfy Cloud')).toBe(true)
+    }
 
     await expect
       .poll(() =>
