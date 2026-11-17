@@ -66,6 +66,7 @@ test.beforeAll(async () => {
       settings: {
         firstUseCompleted: true,
         telemetryEnabled: false,
+        hideCloudFromPicker: true,
         warnBeforeRunningMultipleInstances: false,
         confirmBeforeClosingWindow: true
       },
@@ -140,9 +141,9 @@ test('Home Stop closes only the confirmed build window after stopping ComfyUI @m
       .toBe(false)
     expect((await fetch(`http://127.0.0.1:${runningPort}/queue`)).ok).toBe(true)
     expect(await ctx.panel.isVisible(HOME)).toBe(true)
-    expect(
-      await ctx.panel.textOf(`${card(STOPPED_ID)} [data-testid="home-build-status"]`)
-    ).toContain('Ready')
+    await expect
+      .poll(() => ctx.panel.textOf(`${card(STOPPED_ID)} [data-testid="home-build-status"]`))
+      .toContain('Ready')
     expect(
       await ctx.panel.textOf(`${card(RUNNING_ID)} [data-testid="home-build-status"]`)
     ).toContain('Running')
@@ -169,8 +170,8 @@ test('Home Stop closes only the confirmed build window after stopping ComfyUI @m
       runningBuild: []
     })
     expect(await ctx.panel.isVisible(HOME)).toBe(true)
-    expect(
-      await ctx.panel.textOf(`${card(RUNNING_ID)} [data-testid="home-build-status"]`)
-    ).toContain('Ready')
+    await expect
+      .poll(() => ctx.panel.textOf(`${card(RUNNING_ID)} [data-testid="home-build-status"]`))
+      .toContain('Ready')
   })
 })
