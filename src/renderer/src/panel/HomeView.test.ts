@@ -633,10 +633,13 @@ describe('Home builds', () => {
     ).toBe('danger')
     failed.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe(OLDEST.name)
+
+    await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
     expect(wrapper.emitted('pick')).toEqual([[OLDEST]])
   })
 
-  it('opens ComfyUI in the build picked in the menu, without changing the current one', async () => {
+  it('aims Open ComfyUI at the build picked in the menu without opening it', async () => {
     getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
     const wrapper = await openHome()
     await openBuildMenu(wrapper)
@@ -644,8 +647,33 @@ describe('Home builds', () => {
     buildOptions()[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
 
+    expect(wrapper.emitted('pick')).toBeUndefined()
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe(CLOUD.name)
+    expect(
+      (wrapper.get('[data-testid="home-open-comfyui-icon"]').element as SVGElement).dataset.kind
+    ).toBe('cloud')
+
+    await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
+
     expect(wrapper.emitted('pick')).toEqual([[CLOUD]])
-    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('My Local 1')
+  })
+
+  it('fills the picked build in the menu, with no check mark', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
+    const wrapper = await openHome()
+    await openBuildMenu(wrapper)
+    buildOptions()[2]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    await openBuildMenu(wrapper)
+
+    expect(buildOptions().map((option) => option.getAttribute('aria-checked'))).toEqual([
+      'false',
+      'false',
+      'true'
+    ])
+    expect(buildOptions()[2]!.className).toContain('data-[state=checked]:bg-muted')
+    expect(document.querySelector('[data-testid="menu-radio-item-check"]')).toBeNull()
   })
 
   it('leaves the build menu out with one build, keeping the icon and no arrow', async () => {
