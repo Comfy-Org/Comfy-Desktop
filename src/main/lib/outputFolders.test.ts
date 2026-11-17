@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as AssetProvenance from './assetProvenance'
 
 const {
   root,
@@ -59,6 +60,10 @@ vi.mock('electron', () => ({
   }
 }))
 vi.mock('../installations', () => ({ list: () => installs() }))
+vi.mock('./assetProvenance', async (importOriginal) => {
+  const original = await importOriginal<typeof AssetProvenance>()
+  return { ...original, assetProvenanceStore: () => provenance }
+})
 vi.mock('../settings', () => ({
   get: (key: string) => (key === 'outputDir' ? sharedDir : undefined),
   defaults: { outputDir: path.join(root, 'default-output') }
@@ -79,6 +84,10 @@ vi.mock('./assets', () => ({
       name.split('.').pop() ?? ''
     ] ?? null
 }))
+
+import { createAssetProvenanceStore } from './assetProvenance'
+
+let provenance: ReturnType<typeof createAssetProvenanceStore>
 
 import type { InstallationRecord } from '../installations'
 import {
@@ -134,6 +143,9 @@ function write(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  const index = path.join(root, 'provenance.json')
+  fs.rmSync(index, { force: true })
+  provenance = createAssetProvenanceStore(index)
   thumbnailImage.mockReset()
   fullImage.mockReset()
   for (const dir of [sharedDir, ownDir, outsideDir, installDir])
@@ -195,8 +207,24 @@ describe('listOutputFolders', () => {
   })
 })
 
+async function generatedBy(id: string, directory: string, filename: string): Promise<void> {
+  const file = path.join(directory, filename)
+  const { mtimeMs } = fs.statSync(file)
+  await provenance.recordHistory(id, directory, {
+    [filename]: {
+      outputs: { '1': { images: [{ filename, subfolder: '', type: 'output' }] } },
+      status: {
+        messages: [
+          ['execution_start', { timestamp: mtimeMs - 1 }],
+          ['execution_success', { timestamp: mtimeMs + 1 }]
+        ]
+      }
+    }
+  })
+}
+
 describe('listLocalAssets', () => {
-  it("lists the media in the picked build's output folder and its subfolders, newest first", async () => {
+  it('lists all local media and its paths, newest first', async () => {
     write(path.join(sharedDir, 'old.png'), 'x', new Date('2026-10-01T00:00:00Z'))
     write(path.join(sharedDir, 'video', 'new.mp4'), 'xx', new Date('2026-11-05T00:00:00Z'))
     write(path.join(sharedDir, 'mesh.glb'), 'x', new Date('2026-11-02T00:00:00Z'))
@@ -205,9 +233,9 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, '.hidden.png'))
     write(path.join(sharedDir, '.cache', 'inside-hidden.png'))
 
-    const assets = await listLocalAssets('Test Instance')
+    const assets = await listLocalAssets()
 
-    expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'mesh.glb', 'old.png'])
+    expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'voice.wav', 'mesh.glb', 'old.png'])
     const newVideo = path.join(sharedDir, 'video', 'new.mp4')
     expect(assets[0]).toEqual({
       id: newVideo,
@@ -216,7 +244,8 @@ describe('listLocalAssets', () => {
       sizeBytes: 2,
       createdAt: '2026-11-05T00:00:00.000Z',
       mimeType: null,
-      tags: ['output'],
+      tags: [],
+      filePath: newVideo,
       previewUrl: outputFileUrl(newVideo),
       thumbnailUrl: null,
       width: null,
@@ -224,10 +253,10 @@ describe('listLocalAssets', () => {
       durationSeconds: null
     })
     const oldPicture = path.join(sharedDir, 'old.png')
-    expect(assets[2]!.thumbnailUrl, 'an image thumbnail link changes when the file does').toBe(
+    expect(assets[3]!.thumbnailUrl, 'an image thumbnail link changes when the file does').toBe(
       outputFileUrl(oldPicture, fs.statSync(oldPicture).mtimeMs)
     )
-    expect(assets[1]!.previewUrl, '3D files have no preview').toBeNull()
+    expect(assets[2]!.previewUrl, '3D files have no preview').toBeNull()
   })
 
   it('reports the size of each picture and video, and how long a video runs, before they load', async () => {
@@ -236,7 +265,7 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, 'broken.png'), 'not a picture')
 
     const facts = Object.fromEntries(
-      (await listLocalAssets('Test Instance')).map((a) => [
+      (await listLocalAssets()).map((a) => [
         a.name,
         [a.width, a.height, a.durationSeconds && Math.round(a.durationSeconds)]
       ])
@@ -249,25 +278,38 @@ describe('listLocalAssets', () => {
     })
   })
 
-  it('shows each build the files in its own output folder', async () => {
-    write(path.join(sharedDir, 'shared.png'))
+  it('shows only outputs traced to each build, including builds sharing the same folder', async () => {
+    write(path.join(sharedDir, 'first.png'))
+    write(path.join(sharedDir, 'second.png'))
+    write(path.join(sharedDir, 'legacy.png'))
     write(path.join(ownDir, 'own.png'))
     write(path.join(installDir, 'ComfyUI', 'output', 'install.png'))
+    await generatedBy('Test Instance', sharedDir, 'first.png')
+    await generatedBy('My Local 1', sharedDir, 'second.png')
+    await generatedBy('Apps', ownDir, 'own.png')
+    await generatedBy('Bare', path.join(installDir, 'ComfyUI', 'output'), 'install.png')
     const namesFor = async (id: string) => (await listLocalAssets(id)).map((a) => a.name)
 
-    expect(await namesFor('Test Instance'), 'a build on the shared folder').toEqual(['shared.png'])
-    expect(await namesFor('My Local 1'), 'another build on the shared folder').toEqual([
-      'shared.png'
+    expect(await namesFor('Test Instance')).toEqual(['first.png'])
+    expect(await namesFor('My Local 1')).toEqual(['second.png'])
+    expect(await namesFor('Apps')).toEqual(['own.png'])
+    expect(await namesFor('Bare')).toEqual(['install.png'])
+    expect(await namesFor('Cloud')).toEqual([])
+    expect(await namesFor('Old Desktop')).toEqual([])
+    expect(await namesFor('deleted')).toEqual([])
+    expect((await listLocalAssets()).map((a) => a.name).sort()).toEqual([
+      'first.png',
+      'install.png',
+      'legacy.png',
+      'own.png',
+      'second.png'
     ])
-    expect(await namesFor('Apps'), 'a build with its own folder').toEqual(['own.png'])
-    expect(await namesFor('Bare'), 'a build that saves inside its install').toEqual(['install.png'])
-    expect(await namesFor('Cloud'), 'Cloud has no folder on this computer').toEqual([])
-    expect(await namesFor('Old Desktop'), 'a build that manages its own paths').toEqual([])
-    expect(await namesFor('deleted'), 'a build that is gone').toEqual([])
-    expect(
-      (await listLocalAssets()).map((a) => a.name),
-      'no build: the shared output folder'
-    ).toEqual(['shared.png'])
+  })
+
+  it('does not attribute an untracked file to a build with a dedicated output folder', async () => {
+    write(path.join(ownDir, 'legacy.png'))
+    expect(await listLocalAssets('Apps')).toEqual([])
+    expect((await listLocalAssets()).map((a) => a.name)).toEqual(['legacy.png'])
   })
 
   it('opens a file it listed for a build added a moment ago', async () => {
@@ -277,6 +319,7 @@ describe('listLocalAssets', () => {
     write(file)
     installs.mockResolvedValue([install('New', { useSharedOutput: false, outputDir: newDir })])
     try {
+      await generatedBy('New', newDir, 'first.png')
       const [listed] = await listLocalAssets('New')
 
       expect(listed!.id).toBe(file)
@@ -290,7 +333,7 @@ describe('listLocalAssets', () => {
     for (let i = 0; i <= MAX_LOCAL_ASSETS; i++)
       write(path.join(sharedDir, `f${i}.png`), '', new Date(Date.UTC(2026, 0, 1, 0, 0, i)))
 
-    const assets = await listLocalAssets('Test Instance')
+    const assets = await listLocalAssets()
 
     expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
     expect(assets.map((a) => a.name)).not.toContain('f0.png')
@@ -305,7 +348,7 @@ describe('listLocalAssets', () => {
     )
     write(path.join(deep, 'too-deep.png'))
 
-    expect(await listLocalAssets('Test Instance')).toEqual([])
+    expect(await listLocalAssets()).toEqual([])
   })
 })
 

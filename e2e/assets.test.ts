@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { test, expect } from '@playwright/test'
@@ -16,7 +16,7 @@ let outputDir: string
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async () => {
-  outputDir = await mkdtemp(path.join(os.tmpdir(), 'comfy-assets-output-'))
+  outputDir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'comfy-assets-output-')))
   await mkdir(path.join(outputDir, 'landscapes'), { recursive: true })
   await copyFile(SAMPLE_IMAGE, path.join(outputDir, 'landscapes', 'ComfyUI_00001_.jpg'))
   await copyFile(SAMPLE_VIDEO, path.join(outputDir, 'ComfyUI_00002_.webm'))
@@ -66,4 +66,17 @@ test('A video in the output folder keeps its shape and shows how long it runs @w
     `(() => { const box = ${lengthLabel}.parentElement.getBoundingClientRect(); return box.width / box.height })()`
   )
   expect(shape, 'the card has the video shape, not a 16:9 crop').toBeCloseTo(SAMPLE_VIDEO_SHAPE, 1)
+})
+
+test('An untracked asset remains accessible with its full file path @windows @macos @linux', async () => {
+  const file = path.join(outputDir, 'landscapes', 'ComfyUI_00001_.jpg')
+  expect(await ctx.panel.click(`[data-testid="asset-open-${file.replaceAll('\\', '\\\\')}"]`)).toBe(
+    true
+  )
+  await ctx.panel.waitForVisible('[data-testid="output-detail-path"]')
+  expect(
+    await ctx.panel.evaluate<string>(
+      `document.querySelector('[data-testid="output-detail-path"]').textContent`
+    )
+  ).toContain(file)
 })

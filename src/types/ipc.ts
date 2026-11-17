@@ -165,6 +165,7 @@ export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 export interface AssetSummary {
   id: string
   name: string
+  filePath?: string | null
   kind: AssetKind | null
   sizeBytes: number | null
   createdAt: string | null

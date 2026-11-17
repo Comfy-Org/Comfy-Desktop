@@ -90,6 +90,7 @@ function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
   return {
     id: row.id,
     name: row.name.slice(row.name.lastIndexOf('/') + 1),
+    filePath: row.name,
     kind: assetKind(row.name, row.mime_type),
     sizeBytes: typeof row.size === 'number' ? row.size : null,
     createdAt: row.created_at ?? null,

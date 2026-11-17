@@ -391,7 +391,8 @@ describe('AssetsView', () => {
     expect(buildRows()).toEqual([
       'My Local 1 Local · Stopped',
       'Video Lab Local · Running',
-      'Comfy Cloud Cloud · Running'
+      'Comfy Cloud Cloud · Running',
+      'This computer Output folder'
     ])
 
     await pickBuild('cloud')
@@ -427,7 +428,7 @@ describe('AssetsView', () => {
 
     await openBuildPicker(wrapper)
 
-    expect(buildRows()).toEqual(['My Local 1 Local · Stopped'])
+    expect(buildRows()).toEqual(['My Local 1 Local · Stopped', 'This computer Output folder'])
   })
 
   it('opens on a build it can list, not on a running build that keeps its files to itself', async () => {
@@ -897,6 +898,36 @@ describe('AssetsView', () => {
 
     expect(viewer()).toBeNull()
     expect(document.activeElement).toBe(card.element)
+  })
+
+  it('shows the full file path and removes unexplained result tags', async () => {
+    const filePath = '/shared/outputs/portraits/forest.png'
+    const wrapper = await mountAssets([
+      asset(filePath, 'forest.png', 'image', { filePath, tags: ['output', 'unknown-tag'] })
+    ])
+
+    await wrapper.get(`[data-testid="asset-open-${filePath}"]`).trigger('click')
+    await flushPromises()
+
+    expect(viewer()!.querySelector('[data-testid="output-detail-path"]')?.textContent).toContain(
+      filePath
+    )
+    expect(viewer()!.textContent).not.toContain('unknown-tag')
+    expect(wrapper.get('[data-testid="assets-provenance-hint"]').text()).toContain(
+      'older or untracked'
+    )
+  })
+
+  it('keeps untracked files reachable under This computer when local builds exist', async () => {
+    const wrapper = await mountAssets([], { builds: [localBuild('lab')] })
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('lab')
+    await openBuildPicker(wrapper)
+    listLocalAssets.mockResolvedValue([asset('/out/legacy.png', 'legacy.png', 'image')])
+    await pickBuild('local')
+
+    expect(listLocalAssets).toHaveBeenLastCalledWith()
+    expect(assetNames(wrapper)).toEqual(['legacy.png'])
+    expect(wrapper.find('[data-testid="assets-provenance-hint"]').exists()).toBe(false)
   })
 
   it('steps through the files in page order with the arrow keys and the filmstrip', async () => {
