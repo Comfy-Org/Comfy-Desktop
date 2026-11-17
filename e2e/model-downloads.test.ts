@@ -11,7 +11,7 @@ import {
   TITLE_REOPEN_SUPPRESSION_MS,
   type WebContentsPage
 } from './support/cdpPages'
-import { getTitlePopupBounds } from './support/devHooks'
+import { getIpcInvocations, getTitlePopupBounds } from './support/devHooks'
 import { deterministicBytes, ModelDownloadServer } from './support/modelDownloadServer'
 
 test.describe.configure({ mode: 'serial' })
@@ -192,6 +192,13 @@ async function expectCompletedOnDisk(job: SeededJob): Promise<void> {
   expect(await fileSize(dest + '.part.dl-meta')).toBe(-1)
 }
 
+async function downloadEvents(event: string): Promise<Array<Record<string, unknown>>> {
+  return (await getIpcInvocations(
+    ctx.app,
+    `telemetry:comfy.desktop.model_download.${event}`
+  )) as Array<Record<string, unknown>>
+}
+
 test.beforeAll(async () => {
   server = new ModelDownloadServer()
   await server.start()
@@ -234,7 +241,9 @@ test('startup hydrates interrupted downloads as actionable paused rows @real-com
   }
 })
 
-test('resume continues from staged bytes with Range/If-Range and completes atomically @real-comfy', async () => {
+test('resume completes atomically and records model download telemetry @real-comfy @windows @macos @linux', async () => {
+  await openFullDownloads()
+  const startsBefore = (await downloadEvents('started')).length
   const job = JOBS.complete
   server.clearLog()
   expect(await clickRowButton(job.file, 'Resume')).toBe(true)
@@ -246,6 +255,29 @@ test('resume continues from staged bytes with Range/If-Range and completes atomi
   expect(requests[0]!.range).toBe(`bytes=${job.stagedSize}-`)
   expect(requests[0]!.ifRange).toBe(ETAG)
   expect(requests[0]!.status).toBe(206)
+
+  const starts = (await downloadEvents('started')).slice(startsBefore)
+  expect(starts).toHaveLength(1)
+  const started = starts[0]!
+  expect(started).toMatchObject({
+    source: 'restored',
+    received_bytes: job.stagedSize,
+    total_bytes: job.totalSize,
+    is_retry: false
+  })
+  const completed = (await downloadEvents('completed')).filter(
+    (event) => event.download_id === started.download_id
+  )
+  expect(completed).toHaveLength(1)
+  expect(completed[0]).toMatchObject({
+    received_bytes: job.totalSize,
+    total_bytes: job.totalSize,
+    duration_ms: expect.any(Number)
+  })
+  const serialized = JSON.stringify([started, ...completed])
+  expect(serialized).not.toContain(job.file)
+  expect(serialized).not.toContain(modelRoot)
+  expect(serialized).not.toContain(server.urlFor(job.file))
 })
 
 test('pause stops network activity and preserves staged bytes @real-comfy', async () => {
@@ -271,7 +303,9 @@ test('pause stops network activity and preserves staged bytes @real-comfy', asyn
   pausedPartSize = sizeAtPause
 })
 
-test('network interruption preserves staged bytes and Retry resumes them @real-comfy', async () => {
+test('network interruption and Retry record separate download attempts @real-comfy @windows @macos @linux', async () => {
+  await openFullDownloads()
+  const startsBefore = (await downloadEvents('started')).length
   const job = JOBS.retry
   const part = finalPath(job) + '.part'
   server.configure(job.file, { failAfterBytes: 2 * job.chunkSize })
@@ -283,6 +317,14 @@ test('network interruption preserves staged bytes and Retry resumes them @real-c
   expect(sizeAtError).toBeLessThan(job.totalSize)
   expect(await fileSize(finalPath(job))).toBe(-1)
   expect(await fileSize(finalPath(job) + '.part.dl-meta')).toBeGreaterThan(0)
+
+  const firstStarts = (await downloadEvents('started')).slice(startsBefore)
+  expect(firstStarts).toHaveLength(1)
+  const failed = (await downloadEvents('failed')).filter(
+    (event) => event.download_id === firstStarts[0]!.download_id
+  )
+  expect(failed).toHaveLength(1)
+  expect(failed[0]!.error_bucket).toEqual(expect.any(String))
 
   server.configure(job.file, { failAfterBytes: undefined })
   server.clearLog()
@@ -296,6 +338,16 @@ test('network interruption preserves staged bytes and Retry resumes them @real-c
   expect(requests[0]!.range).toBe(`bytes=${sizeBeforeRetry}-`)
   expect(requests[0]!.ifRange).toBe(ETAG)
   expect(requests[0]!.status).toBe(206)
+
+  const starts = (await downloadEvents('started')).slice(startsBefore)
+  expect(starts).toHaveLength(2)
+  expect(starts[1]).toMatchObject({ source: 'restored', is_retry: true })
+  expect(starts[1]!.download_id).not.toBe(starts[0]!.download_id)
+  const completed = (await downloadEvents('completed')).filter(
+    (event) => event.download_id === starts[1]!.download_id
+  )
+  expect(completed).toHaveLength(1)
+  expect(completed[0]!.received_bytes).toBe(job.totalSize)
 })
 
 test('cancel stops the transfer and removes staged bytes and metadata @real-comfy', async () => {

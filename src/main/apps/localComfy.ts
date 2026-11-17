@@ -550,6 +550,7 @@ async function downloadInto(
     filename: model.name,
     directory: model.folder,
     installationId,
+    source: 'app',
     onProgress: downloadProgress(model.name)
   })
   try {
