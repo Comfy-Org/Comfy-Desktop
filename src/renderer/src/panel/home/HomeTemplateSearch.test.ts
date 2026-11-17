@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { userEvent } from 'vitest/browser'
 
 import HomeTemplateSearch from './HomeTemplateSearch.vue'
 import { SEARCH_DELAY_MS } from './useTemplateSearch'
@@ -338,13 +337,29 @@ describe('HomeTemplateSearch opening a template', () => {
     expect(opened()).toEqual(['banner_template'])
   })
 
-  it('opens a template when its result is clicked with the mouse, as the input loses focus', async () => {
+  it('keeps focus in the bar when a result is pressed, so the click can open it', async () => {
     const wrapper = mountSearch()
-    ;(input(wrapper).element as HTMLInputElement).focus()
     await searchFor(wrapper, 'a poster')
-    await userEvent.click(wrapper.findAll('[role="option"]')[2]!.element)
+    const row = wrapper.findAll('[role="option"]')[2]!
+    const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    row.element.dispatchEvent(press)
+    expect(press.defaultPrevented).toBe(true)
+
+    await row.trigger('click')
     await flushPromises()
     expect(opened()).toEqual(['mural_template'])
+  })
+
+  it('tells Home the build the template went to, even if the build changes meanwhile', async () => {
+    let finishOpen!: (outcome: OpenTemplateOutcome) => void
+    openTemplateInBuild.mockReturnValueOnce(new Promise((resolve) => (finishOpen = resolve)))
+    const wrapper = mountSearch('build-1')
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await wrapper.setProps({ buildId: 'build-2' })
+    finishOpen('launch')
+    await flushPromises()
+    expect(wrapper.emitted('opened')).toEqual([['build-1']])
   })
 
   it('does not open the highlighted template on Enter once the results are closed', async () => {

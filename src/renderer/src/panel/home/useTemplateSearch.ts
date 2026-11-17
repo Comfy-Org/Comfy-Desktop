@@ -7,7 +7,7 @@ export const SEARCH_DELAY_MS = 300
 type SearchState =
   | { kind: 'idle' }
   | { kind: 'searching'; query: string }
-  | { kind: 'result'; query: string; buildId: string | null; result: TemplateSearchResult }
+  | { kind: 'result'; query: string; result: TemplateSearchResult }
   | { kind: 'unavailable'; query: string; availability: TemplateSearchAvailability }
   | { kind: 'failed'; query: string }
 
@@ -47,14 +47,15 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
       return
     }
     const request = ++latestRequest
-    const buildId = options.buildId()
     state.value = { kind: 'searching', query: trimmed }
     openFailed.value = false
-    const response = await window.api.searchTemplates(trimmed, buildId ?? '').catch(() => null)
+    const response = await window.api
+      .searchTemplates(trimmed, options.buildId() ?? '')
+      .catch(() => null)
     if (request !== latestRequest) return
     activeIndex.value = 0
     if (response?.kind === 'result') {
-      state.value = { kind: 'result', query: trimmed, buildId, result: response.result }
+      state.value = { kind: 'result', query: trimmed, result: response.result }
       activeIndex.value = Math.max(
         0,
         rows.value.findIndex((row) => row.best)
@@ -105,17 +106,11 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   }
 
   function isCurrent(): boolean {
-    const current = state.value
-    return (
-      current.kind === 'result' &&
-      current.query === query.value.trim() &&
-      current.buildId === options.buildId()
-    )
+    return state.value.kind === 'result' && state.value.query === query.value.trim()
   }
 
   async function openRow(row: SearchRow): Promise<void> {
-    const current = state.value
-    const buildId = current.kind === 'result' ? current.buildId : null
+    const buildId = options.buildId()
     const outcome = buildId
       ? await window.api.openTemplateInBuild(buildId, row.candidate.templateId).catch(() => null)
       : null
