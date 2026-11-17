@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { defineComponent, h } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -268,6 +269,29 @@ describe('Build menu', () => {
     )
     expect(onOpen).not.toHaveBeenCalled()
     expect(host.launch).not.toHaveBeenCalled()
+  })
+
+  it('shows no Click to start hint while the pointer is on the Update link', async () => {
+    const build: Installation = {
+      ...BUILD,
+      statusTag: { label: 'Update available', style: 'update' }
+    }
+    const wrapper = mount(
+      withHost(() => h(HomeBuildCard, { build, status: 'update', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(wrapper)
+    await flushPromises()
+
+    await userEvent.hover(wrapper.get('[data-testid="home-build-open"]').element)
+    await vi.waitFor(() =>
+      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Click to start')
+    )
+    await userEvent.hover(wrapper.get('[data-testid="build-update-link"]').element)
+
+    await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull())
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
   })
 
   it('asks inside the menu before it uninstalls, then uninstalls without another dialog', async () => {
