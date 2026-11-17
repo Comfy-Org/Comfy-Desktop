@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick, ref, unref, type Ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import type { ActionResult, FieldOption, ShowProgressOpts, Source } from '../types/ipc'
+import { useInstallationStore } from '../stores/installationStore'
 import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useFirstUseChain, type FirstUseChainApi } from './useFirstUseChain'
@@ -249,7 +250,11 @@ describe('useFirstUseChain — Set up', () => {
       })
     )
     const showOpts = chain.handleShowProgress.mock.calls[0]![0] as ShowProgressOpts
-    expect(showOpts).toMatchObject({ installationId: 'inst-express-1', opKind: 'install' })
+    expect(showOpts).toMatchObject({
+      installationId: 'inst-express-1',
+      opKind: 'install',
+      autoLaunchOnFinish: true
+    })
     await showOpts.apiCall()
     expect(testApi.installInstance).toHaveBeenCalledWith('inst-express-1', true)
     expect(vi.mocked(emitTelemetryAction)).toHaveBeenCalledWith(
@@ -266,7 +271,7 @@ describe('useFirstUseChain — Set up', () => {
   it('finishes first use once the install runs in the background', async () => {
     const chain = mountChain()
     await chain.api!.handleSetupInstall(setupPlan())
-    chain.api!.hooks.onBackgroundInstall()
+    chain.api!.hooks.onBackgroundInstall(chain.handleShowProgress.mock.calls[0]![0])
     await vi.waitFor(() => {
       expect(testApi.setSetting).toHaveBeenCalledWith('firstUseCompleted', true)
       expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('none')
@@ -424,7 +429,7 @@ describe('useFirstUseChain — Set up', () => {
       'comfy.desktop.install.dispatched',
       expect.objectContaining({ express: false, entrypoint: 'first_use' })
     )
-    chain.api!.hooks.onBackgroundInstall()
+    chain.api!.hooks.onBackgroundInstall(chain.handleShowProgress.mock.calls[0]![0])
     await vi.waitFor(() => expect(unref(chain.api!.savedSetup)).toBeNull())
   })
 
@@ -591,5 +596,135 @@ describe('useFirstUseChain — chainSpan stamping', () => {
     const after = progressOpts('inst-after-missing')
     chain.api!.hooks.onShowProgress(after)
     expect(after.chainSpan).toBeUndefined()
+  })
+})
+
+describe('useFirstUseChain — the first install starts its build', () => {
+  let testApi: TestApi
+
+  beforeEach(() => {
+    setActivePinia(createTestingPinia({ stubActions: false }))
+    testApi = buildApi()
+    stubWindowApi(testApi)
+    vi.clearAllMocks()
+    vi.mocked(modal.confirm).mockResolvedValue(true)
+    __resetLauncherPrefsForTest()
+  })
+
+  function seedBuild(id: string): void {
+    useInstallationStore().installations = [
+      {
+        id,
+        name: 'ComfyUI',
+        sourceCategory: 'local',
+        sourceId: 'standalone',
+        createdAt: new Date().toISOString()
+      } as never
+    ]
+  }
+
+  function installOpts(installationId: string): ShowProgressOpts {
+    return {
+      installationId,
+      title: `Installing — ${installationId}`,
+      apiCall: () => Promise.resolve({ ok: true } as ActionResult) as Promise<unknown>,
+      autoLaunchOnFinish: true,
+      opKind: 'install'
+    }
+  }
+
+  function installInBackground(
+    chain: MountedChain,
+    showOpts: ShowProgressOpts
+  ): (result: ActionResult) => void {
+    let finish: (result: ActionResult) => void = () => {}
+    useProgressStore().startOperation({
+      installationId: showOpts.installationId,
+      title: showOpts.title,
+      apiCall: () =>
+        new Promise<ActionResult>((resolve) => {
+          finish = resolve
+        }),
+      opKind: showOpts.opKind
+    })
+    chain.api!.hooks.onBackgroundInstall(showOpts)
+    return (result) => finish(result)
+  }
+
+  async function settled(installationId: string): Promise<void> {
+    await vi.waitFor(() =>
+      expect(useProgressStore().operations.get(installationId)?.finished).toBe(true)
+    )
+    await nextTick()
+    await nextTick()
+  }
+
+  it('starts the build Set up installed, the way its Home card Start does, once the install finishes', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupInstall(setupPlan())
+    seedBuild('inst-express-1')
+    const finish = installInBackground(chain, chain.handleShowProgress.mock.calls[0]![0])
+    await nextTick()
+    expect(chain.performChooserLaunch, 'nothing starts while it installs').not.toHaveBeenCalled()
+
+    finish({ ok: true })
+
+    await vi.waitFor(() =>
+      expect(chain.performChooserLaunch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: 'inst-express-1' })
+      )
+    )
+    expect(testApi.setSetting).toHaveBeenCalledWith('firstUseCompleted', true)
+  })
+
+  it('starts the build installed from Change on Set up', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent({ acceptedTos: true }))
+    seedBuild('inst-from-change')
+
+    const finish = installInBackground(chain, installOpts('inst-from-change'))
+    finish({ ok: true })
+
+    await vi.waitFor(() =>
+      expect(chain.performChooserLaunch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: 'inst-from-change' })
+      )
+    )
+  })
+
+  it('starts nothing when the first install fails', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupInstall(setupPlan())
+    seedBuild('inst-express-1')
+
+    const finish = installInBackground(chain, chain.handleShowProgress.mock.calls[0]![0])
+    finish({ ok: false, message: 'The network went away' })
+
+    await settled('inst-express-1')
+    expect(chain.performChooserLaunch).not.toHaveBeenCalled()
+  })
+
+  it('starts nothing when the first install is cancelled', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupInstall(setupPlan())
+    seedBuild('inst-express-1')
+
+    const finish = installInBackground(chain, chain.handleShowProgress.mock.calls[0]![0])
+    finish({ ok: false, cancelled: true })
+
+    await settled('inst-express-1')
+    expect(chain.performChooserLaunch).not.toHaveBeenCalled()
+  })
+
+  it('does not start a build added from New Build after first use', async () => {
+    const chain = mountChain()
+    await chain.api!.completeFirstUseAndDismiss()
+    seedBuild('inst-new-build')
+
+    const finish = installInBackground(chain, installOpts('inst-new-build'))
+    finish({ ok: true })
+
+    await settled('inst-new-build')
+    expect(chain.performChooserLaunch).not.toHaveBeenCalled()
   })
 })

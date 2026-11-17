@@ -165,13 +165,13 @@ async function expectAnsweredWithNoPill(popup: WebContentsPage, message: string)
   }
 }
 
-test('a commit grant whose range contains HEAD shows before any launch @linux', async () => {
+test('a commit grant whose range contains HEAD shows before any launch @linux @macos', async () => {
   const popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 15_000 })
   expect(await pillLabel(popup)).toBe('1 beta argument eligible for the next launch, show details')
 })
 
-test('moving HEAD below the range hides it @linux', async () => {
+test('moving HEAD below the range hides it @linux @macos', async () => {
   git('reset', '-q', '--hard', sha.base!)
   const popup = await openCounted()
   await expectAnsweredWithNoPill(popup, 'the grant was still shown with HEAD below its range')
@@ -180,7 +180,7 @@ test('moving HEAD below the range hides it @linux', async () => {
   await back.waitForVisible(PILL, { timeout: 15_000 })
 })
 
-test('an object store git cannot read hides the grant, and the settings view still loads @linux', async () => {
+test('an object store git cannot read hides the grant, and the settings view still loads @linux @macos', async () => {
   sha.next = commit('next')
   const objects = path.join(repo, '.git', 'objects')
   for (const entry of await readdir(objects)) {

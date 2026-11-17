@@ -111,7 +111,7 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-test('first-use lockdown never costs the user the beta notice @linux', async () => {
+test('first-use lockdown never costs the user the beta notice @linux @macos', async () => {
   const popup = coachmarkPopup(ctx.app)
 
   await ctx.panel.evaluate(`window.api.setFirstUseMode('post-consent')`)

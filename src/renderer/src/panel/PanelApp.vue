@@ -50,6 +50,8 @@ import {
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
 import { provideBuildLogs } from '../composables/useBuildProgress'
+import { provideBuildMenuHost } from './home/useBuildMenu'
+import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
@@ -265,6 +267,13 @@ chooserHandoff = useChooserHandoff({
   hostOwnsPerformanceTestRun: () => performanceTestRunActive.value
 })
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
+
+provideAutoStartBuild()
+provideBuildMenuHost({
+  launch: (inst, launchOpts) => handleChooserPick(inst, launchOpts),
+  openDetails: openBuildFromSidebar,
+  showProgress: handleShowProgress
+})
 
 async function handleStartupRestorePick(inst: Installation): Promise<void> {
   try {

@@ -81,6 +81,13 @@ const mostRecentBuild = computed(
         (typeof build.lastLaunchedAt === 'number' || !isCloudBuild(build))
     ) ?? null
 )
+const pickedBuildId = ref<string | null>(null)
+const openTarget = computed(
+  () =>
+    openableBuilds.value.find(
+      (build) => build.id === pickedBuildId.value && build.statusTag?.style !== 'danger'
+    ) ?? mostRecentBuild.value
+)
 function openBuild(build: Installation): void {
   if (build.statusTag?.style === 'danger') emit('open-build', build)
   else if (launchFailed(progressStore, build.id)) viewBuildLogs(build.id)
@@ -140,12 +147,13 @@ onMounted(() => {
     data-testid="home-view"
   >
     <HomeOpenBuildButton
-      v-if="mostRecentBuild"
+      v-if="openTarget"
       class="absolute top-4 right-4 z-10"
       :builds="openableBuilds"
-      :target="mostRecentBuild"
+      :target="openTarget"
       :status-of="buildStatus"
       @open="emit('pick', $event)"
+      @pick="pickedBuildId = $event.id"
     />
 
     <div class="mx-auto w-full max-w-300 px-10 pb-16">
@@ -258,9 +266,10 @@ onMounted(() => {
         </div>
         <ul
           class="m-0 grid list-none gap-[15px] p-0"
-          :class="
-            builds.length > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2'
-          "
+          :class="[
+            builds.length > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2',
+            '@max-[40rem]/home-builds:grid-cols-1'
+          ]"
         >
           <li
             v-for="(build, index) in builds"
@@ -275,7 +284,6 @@ onMounted(() => {
               :tone="buildTones[index]!"
               :auto-start="autoStart.startsOnOpen(build.id)"
               @open="openBuild(build)"
-              @auto-start="autoStart.setStartsOnOpen(build.id, $event)"
             />
           </li>
         </ul>

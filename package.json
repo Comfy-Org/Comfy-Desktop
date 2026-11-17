@@ -61,6 +61,7 @@
     "test:e2e:linux": "playwright test --project=linux",
     "test:e2e:real-comfy": "playwright test --project=real-comfy",
     "test:e2e:real-comfy:install": "playwright test --project=real-comfy e2e/real-comfy.test.ts --grep \"@sec-setup|@sec-meta\"",
+    "test:e2e:real-comfy:models": "playwright test --project=real-comfy e2e/real-comfy.test.ts --grep \"@sec-setup|@sec-models\"",
     "test:e2e:real-comfy:update": "playwright test --project=real-comfy e2e/real-comfy.test.ts --grep \"@sec-setup|@sec-meta|@sec-update\"",
     "test:e2e:real-comfy:crosschannel": "playwright test --project=real-comfy e2e/real-comfy.test.ts --grep \"@sec-setup|@sec-meta|@sec-crosschannel\"",
     "test:e2e:real-comfy:snapshot": "playwright test --project=real-comfy e2e/real-comfy.test.ts --grep \"@sec-setup|@sec-meta|@sec-snapshot\"",
