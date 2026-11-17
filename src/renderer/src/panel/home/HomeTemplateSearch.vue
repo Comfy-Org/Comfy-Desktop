@@ -7,13 +7,13 @@ import { useTemplateSearch } from './useTemplateSearch'
 import { TEMPLATE_SEARCH_MAX_QUERY } from '../../../../shared/templateSearch'
 
 const props = defineProps<{ buildId: string | null }>()
-const emit = defineEmits<{ opened: [] }>()
+const emit = defineEmits<{ opened: [buildId: string] }>()
 
 const { t } = useI18n()
 const listboxId = useId()
 const search = useTemplateSearch({
   buildId: () => props.buildId,
-  onOpened: () => emit('opened')
+  onOpened: (buildId) => emit('opened', buildId)
 })
 const { query, state, panelOpen, activeIndex, activeRow } = search
 

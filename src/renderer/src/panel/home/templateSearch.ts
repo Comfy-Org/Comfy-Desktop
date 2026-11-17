@@ -2,8 +2,8 @@ import type { TemplateSearchCandidate, TemplateSearchResult } from '../../types/
 
 export type SearchRowKind = 'run' | 'download' | 'also'
 
-export const WEAK_MATCH_FLOOR = 0.05
-export const STRONG_MATCH = 0.85
+const WEAK_MATCH_FLOOR = 0.05
+const STRONG_MATCH = 0.85
 
 export type MatchLevel = 'strong' | 'good' | 'weak'
 
@@ -16,7 +16,7 @@ export interface SearchRow {
   best: boolean
 }
 
-export function matchValue(candidate: TemplateSearchCandidate): number | null {
+function matchValue(candidate: TemplateSearchCandidate): number | null {
   return candidate.calibrated ?? candidate.score
 }
 

@@ -7,7 +7,7 @@ export const SEARCH_DELAY_MS = 300
 type SearchState =
   | { kind: 'idle' }
   | { kind: 'searching'; query: string }
-  | { kind: 'result'; query: string; result: TemplateSearchResult }
+  | { kind: 'result'; query: string; buildId: string | null; result: TemplateSearchResult }
   | { kind: 'unavailable'; query: string; availability: TemplateSearchAvailability }
   | { kind: 'failed'; query: string }
 
@@ -15,7 +15,7 @@ const READY_AGAIN: ReadonlySet<TemplateSearchAvailability['kind']> = new Set(['i
 
 export interface TemplateSearchOptions {
   buildId: () => string | null
-  onOpened: () => void
+  onOpened: (buildId: string) => void
 }
 
 export function useTemplateSearch(options: TemplateSearchOptions) {
@@ -47,15 +47,18 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
       return
     }
     const request = ++latestRequest
+    const buildId = options.buildId()
     state.value = { kind: 'searching', query: trimmed }
     openFailed.value = false
-    const response = await window.api
-      .searchTemplates(trimmed, options.buildId() ?? '')
-      .catch(() => null)
+    const response = await window.api.searchTemplates(trimmed, buildId ?? '').catch(() => null)
     if (request !== latestRequest) return
     activeIndex.value = 0
     if (response?.kind === 'result') {
-      state.value = { kind: 'result', query: trimmed, result: response.result }
+      state.value = { kind: 'result', query: trimmed, buildId, result: response.result }
+      activeIndex.value = Math.max(
+        0,
+        rows.value.findIndex((row) => row.best)
+      )
     } else if (response?.kind === 'unavailable') {
       state.value = { kind: 'unavailable', query: trimmed, availability: response.availability }
     } else {
@@ -66,7 +69,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   function onAvailability(availability: TemplateSearchAvailability): void {
     const current = state.value
     if (current.kind !== 'unavailable') return
-    if (READY_AGAIN.has(availability.kind)) void search(current.query)
+    if (READY_AGAIN.has(availability.kind)) void search(query.value)
     else state.value = { ...current, availability }
   }
 
@@ -80,6 +83,10 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
       return
     }
     pendingSearch = setTimeout(() => void search(text), SEARCH_DELAY_MS)
+  })
+
+  watch(options.buildId, () => {
+    if (query.value.trim() && state.value.kind !== 'idle') void search(query.value)
   })
 
   onScopeDispose(() => {
@@ -98,26 +105,35 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   }
 
   function isCurrent(): boolean {
-    return state.value.kind === 'result' && state.value.query === query.value.trim()
+    const current = state.value
+    return (
+      current.kind === 'result' &&
+      current.query === query.value.trim() &&
+      current.buildId === options.buildId()
+    )
   }
 
   async function openRow(row: SearchRow): Promise<void> {
-    const buildId = options.buildId()
+    const current = state.value
+    const buildId = current.kind === 'result' ? current.buildId : null
     const outcome = buildId
       ? await window.api.openTemplateInBuild(buildId, row.candidate.templateId).catch(() => null)
       : null
-    const opened = outcome === 'opened' || outcome === 'launch'
-    openFailed.value = !opened
-    if (!opened) return
+    if (!buildId || (outcome !== 'opened' && outcome !== 'launch')) {
+      openFailed.value = true
+      return
+    }
+    openFailed.value = false
     panelOpen.value = false
-    options.onOpened()
+    options.onOpened(buildId)
   }
 
   function onEnter(): void {
+    const wasOpen = panelOpen.value
     panelOpen.value = true
-    const row = activeRow.value
-    if (isCurrent() && row) {
-      void openRow(row)
+    if (isCurrent()) {
+      const row = activeRow.value
+      if (wasOpen && row) void openRow(row)
       return
     }
     void search(query.value)
@@ -142,7 +158,6 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     activeIndex,
     activeRow,
     openFailed,
-    search,
     prepare,
     download,
     openRow,

@@ -25,7 +25,6 @@ const icon = computed(() => ICONS[props.tone] ?? Gauge)
   <span
     class="inline-flex h-[22px] shrink-0 items-center gap-1 rounded-md px-2 text-[12px] leading-none font-medium whitespace-nowrap ring-1 ring-inset"
     :class="TONES[tone]"
-    :data-tone="tone"
   >
     <component :is="icon" :size="12" :stroke-width="2.25" aria-hidden="true" />
     <slot />

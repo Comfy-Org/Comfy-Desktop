@@ -94,8 +94,7 @@ const notice = computed<Notice | null>(() => {
   const state = props.controller.state.value
   if (state.kind === 'unavailable') return availabilityNotice(state.availability)
   if (state.kind === 'failed') return { text: t('home.search.failed') }
-  if (state.kind === 'searching' && !props.controller.rows.value.length)
-    return { text: t('home.search.searching') }
+  if (state.kind === 'searching') return { text: t('home.search.searching') }
   return null
 })
 
@@ -164,7 +163,6 @@ function optionId(index: number): string {
       v-if="notice"
       class="flex items-center justify-between gap-3 px-2.5 py-2"
       data-testid="home-template-search-notice"
-      :data-state="controller.state.value.kind"
     >
       <p class="m-0 text-[13px]/5 text-muted-foreground">{{ notice.text }}</p>
       <Button

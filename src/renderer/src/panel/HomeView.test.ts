@@ -6,7 +6,7 @@ import HomeView from './HomeView.vue'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { CatalogWorkflow, Installation } from '../types/ipc'
+import type { CatalogWorkflow, Installation, TemplateSearchResponse } from '../types/ipc'
 
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
 const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
@@ -972,7 +972,7 @@ describe('Home build auto start', () => {
   })
 })
 
-function posterAnswer() {
+function posterAnswer(): TemplateSearchResponse {
   return {
     kind: 'result',
     result: {
@@ -1071,6 +1071,30 @@ describe('Home template search', () => {
     const wrapper = await openHome()
     await searchAndPick(wrapper)
     expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'running' })]])
+  })
+
+  it('searches for and opens in the build picked in the Open ComfyUI menu', async () => {
+    getInstallations.mockResolvedValue([RUNNING, OLDEST])
+    openTemplateInBuild.mockResolvedValue('launch')
+    const wrapper = await openHome()
+    await openBuildMenu(wrapper)
+    const oldest = buildOptions().find((option) => option.textContent?.includes(OLDEST.name))!
+    oldest.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    await searchAndPick(wrapper)
+    expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'oldest')
+    expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'oldest' })]])
+  })
+
+  it('passes over builds that are not local, or that start without a window', async () => {
+    const remote = { ...NEWEST, sourceCategory: 'remote', lastLaunchedAt: 900 }
+    const consoleOnly = { ...RUNNING, launchMode: 'console' }
+    getInstallations.mockResolvedValue([remote, consoleOnly, OLDEST])
+    openTemplateInBuild.mockResolvedValue('launch')
+    const wrapper = await openHome()
+    await searchAndPick(wrapper)
+    expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'oldest')
   })
 
   it('passes over a local build that is marked broken', async () => {

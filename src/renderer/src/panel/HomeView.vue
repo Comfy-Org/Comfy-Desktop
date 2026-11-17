@@ -109,15 +109,18 @@ const appsEnabled = computed(() => appsState.value !== 'checking' && appsState.v
 
 const templateSearchBuild = computed(() => {
   const usable = (build: Installation): boolean =>
-    build.sourceCategory === 'local' && build.statusTag?.style !== 'danger'
+    build.sourceCategory === 'local' &&
+    build.statusTag?.style !== 'danger' &&
+    (build.launchMode ?? 'window') === 'window'
   const target = openTarget.value
   if (target && usable(target)) return target
   return openableBuilds.value.find(usable) ?? null
 })
 const templateSearchEnabled = ref(false)
 
-function openTemplateSearchBuild(): void {
-  if (templateSearchBuild.value) emit('pick', templateSearchBuild.value)
+function openTemplateSearchBuild(buildId: string): void {
+  const build = workspaceBuilds.value.find((candidate) => candidate.id === buildId)
+  if (build) emit('pick', build)
 }
 
 const state = ref<LoadState>('loading')
