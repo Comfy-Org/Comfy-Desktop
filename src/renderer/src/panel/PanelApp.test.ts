@@ -1365,6 +1365,38 @@ describe('PanelApp', () => {
     await flushPromises()
   })
 
+  it('Launch in the build menu starts a build that crashed with its window still open', async () => {
+    mockState.installations = [SAMPLE_INSTALL]
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    api.getListActions.mockResolvedValue([
+      { id: 'launch', label: 'Start', style: 'primary', showProgress: true }
+    ])
+    api.runAction.mockReturnValueOnce(new Promise(() => {}))
+    api.focusComfyWindow.mockResolvedValue(true)
+    Object.assign(api, { onInstallProgress: vi.fn(() => () => {}) })
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    const crashed = api.onInstanceCrashed.mock.calls[0]![0] as (data: {
+      installationId: string
+      installationName: string
+      crashed: boolean
+      exitCode: number
+    }) => void
+    crashed({ installationId: 'test-id', installationName: 'Test', crashed: true, exitCode: 1 })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-build-more"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-testid="build-menu-launch"]')).not.toBeNull()
+    )
+    document.querySelector<HTMLElement>('[data-testid="build-menu-launch"]')!.click()
+    await flushPromises()
+
+    expect(api.runAction).toHaveBeenCalledWith('test-id', 'launch')
+    expect(api.focusComfyWindow).not.toHaveBeenCalled()
+  })
+
   it('opens on Home, with the list of builds hidden until Builds is picked', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
@@ -3127,7 +3159,7 @@ describe('PanelApp', () => {
     expect(card.text()).toContain('Installing ComfyUI')
     expect(wrapper.find('[data-testid="home-open-build"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="home-build-view-logs"]').trigger('click')
+    await card.trigger('click')
     await flushPromises()
     const dialog = () => document.body.querySelector('[data-testid="build-progress-dialog"]')
     expect(dialog()).not.toBeNull()
