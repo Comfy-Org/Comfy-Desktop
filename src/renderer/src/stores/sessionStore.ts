@@ -11,6 +11,17 @@ interface ActiveSession {
   label: string
 }
 
+interface OperationInstance {
+  actionId: string
+  sessionId?: string
+}
+
+function operationInstanceOf(op: OperationInstance): OperationInstance {
+  return op.sessionId
+    ? { actionId: op.actionId, sessionId: op.sessionId }
+    : { actionId: op.actionId }
+}
+
 interface ErrorInstance {
   installationName: string
   exitCode?: number | string
@@ -30,7 +41,7 @@ export const useSessionStore = defineStore('session', () => {
   const activeSessions = reactive(new Map<string, ActiveSession>())
   const errorInstances = reactive(new Map<string, ErrorInstance>())
   const stoppingInstances = reactive(new Set<string>())
-  const operationInstances = reactive(new Map<string, { actionId: string }>())
+  const operationInstances = reactive(new Map<string, OperationInstance>())
   const stoppingTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
   const sessions = reactive(new Map<string, SessionBuffer>())
 
@@ -150,9 +161,14 @@ export const useSessionStore = defineStore('session', () => {
         markStopping(data.installationId)
       }),
       window.api.onOperationChanged?.(
-        (data: { installationId: string; actionId: string; active: boolean }) => {
+        (data: {
+          installationId: string
+          actionId: string
+          sessionId?: string
+          active: boolean
+        }) => {
           if (data.active) {
-            operationInstances.set(data.installationId, { actionId: data.actionId })
+            operationInstances.set(data.installationId, operationInstanceOf(data))
           } else {
             operationInstances.delete(data.installationId)
           }
@@ -206,7 +222,7 @@ export const useSessionStore = defineStore('session', () => {
 
     const activeOps = (await window.api.getActiveOperations?.()) ?? []
     for (const op of activeOps) {
-      operationInstances.set(op.installationId, { actionId: op.actionId })
+      operationInstances.set(op.installationId, operationInstanceOf(op))
     }
 
     const crashes = (await window.api.getCrashInstances?.()) ?? []

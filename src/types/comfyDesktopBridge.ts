@@ -329,6 +329,54 @@ export interface ComfyDesktopHostedTelemetryBridge {
   track(name: string, props?: Record<string, string | number | boolean>): void
 }
 
+/**
+ * One output a hosted page asks Desktop to show. `mimeType` is one of
+ * `image/png`, `image/jpeg`, `image/webp`, `image/gif`, `image/avif`,
+ * `video/mp4`, `video/webm`, `video/quicktime`, `audio/mpeg`, `audio/mp4`,
+ * `audio/wav`, `audio/x-wav`, `audio/ogg`, `audio/webm`, `audio/flac` or
+ * `audio/aac`. `name` is at most 200 characters. Desktop keeps the first 8
+ * `tags`, each cut to 40 characters, and offers Open workflow only when
+ * `workflow` is true. Desktop refuses a `name`, and drops a tag, that has
+ * control, bidirectional or zero-width formatting characters in the part it
+ * keeps.
+ */
+export interface ComfyDesktopOutput {
+  name: string
+  mimeType: string
+  bytes: Uint8Array
+  tags?: string[]
+  workflow?: boolean
+}
+
+/** At most 40 outputs and 100 MB of bytes in all, and the index of the one to show first. */
+export interface ComfyDesktopShowOutputRequest {
+  items: ComfyDesktopOutput[]
+  index: number
+}
+
+/**
+ * What the person picked in Desktop's output dialog for the output at `index`
+ * of the page's last `showOutput` request: download it, or open its workflow.
+ */
+export interface ComfyDesktopOutputAction {
+  action: 'download' | 'open-workflow'
+  index: number
+}
+
+/**
+ * Desktop's output dialog, for a Comfy page hosted in Desktop's Apps view.
+ * Desktop exposes it to that page as `window.comfyDesktopOutputs`. Desktop
+ * shows the outputs over the Apps view and does not save or open anything
+ * itself: Download and Open workflow come back to the page on
+ * `onOutputAction`, only while the page that showed the outputs is still the
+ * app's loaded page.
+ */
+export interface ComfyDesktopHostedOutputsBridge {
+  /** Resolves true once Desktop shows the outputs, and false when the app is not on screen. Rejects a request Desktop cannot show. */
+  showOutput(request: ComfyDesktopShowOutputRequest): Promise<boolean>
+  onOutputAction(callback: (action: ComfyDesktopOutputAction) => void): () => void
+}
+
 export interface ComfyDesktop2TerminalBridge {
   subscribe(installationId?: string): Promise<TerminalRestore>
   unsubscribe(installationId?: string): Promise<void>

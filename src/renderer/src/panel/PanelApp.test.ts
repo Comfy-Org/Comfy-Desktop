@@ -347,6 +347,8 @@ function installMockApi(initial?: {
       state.appUpdateUserActionFailedCallbacks.push(cb)
       return () => {}
     }),
+    getAppUpdateState: vi.fn().mockResolvedValue({ kind: null, version: null, autoUpdate: true }),
+    onAppUpdateStateChanged: vi.fn(() => () => {}),
     installUpdate: state.installUpdate,
     downloadUpdate: state.downloadUpdate,
     setFirstUseMode: vi.fn(),
@@ -414,6 +416,7 @@ function installMockApi(initial?: {
     hideAppPage: vi.fn(),
     onAppPageStatusChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
+    onAppOutputs: vi.fn(() => () => {}),
     refreshCreditBalance: vi.fn(async () => ({ status: 'signed_out' })),
     onCreditBalanceChanged: vi.fn(() => () => {}),
     getListActions: vi.fn(async () => []),
@@ -1322,6 +1325,27 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
+  })
+
+  it('starts a picked build that this window has not loaded yet, such as a copy made a moment ago', async () => {
+    mockState.installations = []
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    api.getListActions.mockResolvedValue([
+      { id: 'launch', label: 'Start', style: 'primary', showProgress: true }
+    ])
+    api.runAction.mockReturnValueOnce(new Promise(() => {}))
+    Object.assign(api, { onInstallProgress: vi.fn(() => () => {}) })
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    mountPanel()
+    await flushPromises()
+
+    mockState.installations = [SAMPLE_INSTALL]
+    mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
+      cb({ kind: 'picker-pick-install', installationId: 'test-id' })
+    )
+    await flushPromises()
+
+    expect(api.runAction).toHaveBeenCalledWith('test-id', 'launch')
   })
 
   it('Start on a Home build card starts it there and leaves this window on Home', async () => {

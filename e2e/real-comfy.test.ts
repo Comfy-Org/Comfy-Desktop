@@ -45,7 +45,7 @@ import {
   isPopupVisible,
   titlePopupPage,
   waitForWebContents,
-  type WebContentsPage
+  WebContentsPage
 } from './support/cdpPages'
 import { evalWithRetry } from './support/evalRetry'
 import { ModelDownloadServer } from './support/modelDownloadServer'
@@ -54,6 +54,7 @@ import { byTestId, TID } from './support/testIds'
 let ctx: AppContext
 
 const SAVE_CHANGES = '[data-testid="config-save-changes"]'
+const HOME_VIEW = byTestId('home-view')
 
 async function waitForButtonEnabled(selector: string, message: string): Promise<void> {
   await ctx.panel.waitFor(
@@ -741,35 +742,47 @@ async function untrackViaManageDrawer(installationId: string): Promise<void> {
   expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
 }
 
-async function stopAndReturnToDashboardViaUI(): Promise<void> {
-  if (!(await comfyFrontendIsLoaded())) {
-    const dashboardMounted = await ctx.panel.exists('.chooser-view').catch(() => false)
-    if (dashboardMounted) {
-      await expectChooserVisible(ctx.panel)
-      return
-    }
-  }
-  const popup = await openPickerInWindow(ctx.app, ctx.titleBar)
+async function openBuildStopMenu(tab?: string) {
+  await closeExtraWindowsKeepComfyHost()
+  const [buildWindowId] = await desktopWindowIds()
+  const buildTitleBar = new WebContentsPage(ctx.app, await ctx.titleBar.url())
+  const homeWindowId = await openHomeWindowViaTitleBar({ stayOnHome: true })
+  const popup = await openPickerInWindow(ctx.app, buildTitleBar, tab)
   await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
   await popup.clickUntilVisible(
     byTestId(TID.pickerMoreTrigger),
     byTestId(TID.pinBottomAction('stop')),
     { timeout: 30_000 }
   )
+  return { popup, buildWindowId, homeWindowId }
+}
+
+async function confirmBuildStop(popup: WebContentsPage, homeWindowId: number): Promise<void> {
   expect(await popup.click(byTestId(TID.pinBottomAction('stop')))).toBe(true)
   await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
   expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
 
   await expect
-    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
-      timeout: 120_000,
-      intervals: [250, 500]
+    .poll(desktopWindowIds, {
+      timeout: 60_000,
+      message: 'Stop should close the build window and leave Home open'
     })
-    .toBe(false)
-  await waitForWebContents(ctx.app, 'panel.html')
-  await ctx.panel.waitForVisible(byTestId(TID.lifecycleReturnDashboard), { timeout: 120_000 })
-  expect(await ctx.panel.click(byTestId(TID.lifecycleReturnDashboard))).toBe(true)
+    .toEqual([homeWindowId])
+  await ctx.panel.waitForVisible(HOME_VIEW)
+}
 
+async function stopAndReturnToDashboardViaUI(): Promise<void> {
+  if (!(await comfyFrontendIsLoaded())) {
+    const dashboardMounted = await ctx.panel
+      .exists(`.chooser-view, ${HOME_VIEW}`)
+      .catch(() => false)
+    if (dashboardMounted) {
+      await expectChooserVisible(ctx.panel)
+      return
+    }
+  }
+  const { popup, homeWindowId } = await openBuildStopMenu()
+  await confirmBuildStop(popup, homeWindowId)
   await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(false)
   await expectChooserVisible(ctx.panel)
 }
@@ -1816,7 +1829,7 @@ test('picker primary CTA Restart drives in-drawer confirm + re-launch @sec-picke
   ).toBeGreaterThanOrEqual(1)
 })
 
-test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores it @sec-picker @real-comfy', async () => {
+test('picker Stop closes the build window and Home launches a new one @sec-picker @real-comfy', async () => {
   test.setTimeout(300_000)
 
   await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(true)
@@ -1826,14 +1839,7 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
   await resetIpcInvocations(ctx.app, 'stop-comfyui')
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'config')
-
-  await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
-  await popup.clickUntilVisible(
-    byTestId(TID.pickerMoreTrigger),
-    byTestId(TID.pinBottomAction('stop')),
-    { timeout: 30_000 }
-  )
+  const { popup, buildWindowId, homeWindowId } = await openBuildStopMenu('config')
   expect(
     await popup.exists(byTestId(TID.pinBottomAction('launch'))),
     'launch must not render in the More menu'
@@ -1842,10 +1848,7 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
     await popup.exists(byTestId(TID.pinBottomAction('restart'))),
     'restart must not render in the More menu'
   ).toBe(false)
-  expect(await popup.click(byTestId(TID.pinBottomAction('stop')))).toBe(true)
-
-  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
-  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+  await confirmBuildStop(popup, homeWindowId)
 
   await expect
     .poll(async () => (await getStopsFor(_updateInstallId)).length, {
@@ -1859,17 +1862,10 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
       intervals: [1_000, 2_000]
     })
     .toBeNull()
-  await ctx.panel.waitForVisible('.panel-comfy-lifecycle', { timeout: 30_000 })
-
-  await expect
-    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
-      timeout: 10_000,
-      intervals: [100, 200]
-    })
-    .toBe(false)
-
-  await ctx.panel.waitForVisible(byTestId(TID.lifecycleRelaunch), { timeout: 120_000 })
-  expect(await ctx.panel.click(byTestId(TID.lifecycleRelaunch))).toBe(true)
+  const card = `${byTestId('home-build')}[data-build-id=${JSON.stringify(_updateInstallId)}]`
+  const openBuild = `${card} ${byTestId('home-build-open')}:enabled`
+  await ctx.panel.waitForVisible(openBuild)
+  expect(await ctx.panel.click(openBuild), 'launch the stopped build from Home').toBe(true)
 
   await waitForRunAction(_updateInstallId, 'launch', {
     timeout: 180_000,
@@ -1886,7 +1882,11 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
     )
     .toBe(true)
   await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
-  await closeTitlePopupIfOpen(ctx.app)
+  const windowsAfter = await desktopWindowIds()
+  expect(windowsAfter).toHaveLength(2)
+  expect(windowsAfter).toContain(homeWindowId)
+  expect(windowsAfter).not.toContain(buildWindowId)
+  await closeExtraWindowsKeepComfyHost()
 })
 
 async function findFreeLoopbackPort(start: number): Promise<number> {
@@ -2447,27 +2447,25 @@ let _remoteOutputRoot = ''
 let _remoteExpectedFile = ''
 let _remoteRunId = ''
 
-async function openHomeWindowViaTitleBar(): Promise<number> {
-  const beforeWinIds = await evalWithRetry(() =>
+function desktopWindowIds(): Promise<number[]> {
+  return evalWithRetry(() =>
     ctx.app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
         .filter((w) => !w.isDestroyed())
         .map((w) => w.id)
     )
   )
+}
+
+async function openHomeWindowViaTitleBar({ stayOnHome = false } = {}): Promise<number> {
+  const beforeWinIds = await desktopWindowIds()
   await ctx.titleBar.waitForVisible('.title-home-button', { timeout: 10_000 })
   expect(await ctx.titleBar.click('.title-home-button')).toBe(true)
   let newWindowId = 0
   await expect
     .poll(
       async () => {
-        const ids = await evalWithRetry(() =>
-          ctx.app.evaluate(({ BrowserWindow }) =>
-            BrowserWindow.getAllWindows()
-              .filter((w) => !w.isDestroyed())
-              .map((w) => w.id)
-          )
-        )
+        const ids = await desktopWindowIds()
         const fresh = ids.filter((id) => !beforeWinIds.includes(id))
         if (fresh.length > 0) newWindowId = fresh[0]!
         return fresh.length
@@ -2475,7 +2473,8 @@ async function openHomeWindowViaTitleBar(): Promise<number> {
       { timeout: 30_000, intervals: [250, 500] }
     )
     .toBe(1)
-  await expectChooserVisible(ctx.panel)
+  if (stayOnHome) await ctx.panel.waitForVisible(HOME_VIEW)
+  else await expectChooserVisible(ctx.panel)
   return newWindowId
 }
 

@@ -127,8 +127,8 @@
     "signedOutTitle": "Log in to see your assets",
     "signedOutBody": "Assets that you make in Comfy Cloud show here.",
     "signIn": "Log in to Comfy Cloud",
-    "noCloudBuildTitle": "This workspace has no Comfy Cloud build yet",
-    "noCloudBuildBody": "Add Comfy Cloud to this workspace to see its assets here.",
+    "noCloudBuildTitle": "This workspace has no Comfy Cloud build",
+    "noCloudBuildBody": "Restart Comfy Desktop to add Comfy Cloud back.",
     "truncated": "Showing the newest file only. | Showing the newest {count} files only.",
     "inspect": "Inspect {name}",
     "detail": {
@@ -138,6 +138,7 @@
       "fit": "Fit",
       "zoom": "Zoom",
       "zoomLevel": "Zoom: {level}",
+      "openWorkflow": "Open workflow",
       "savedIn": "Saved in"
     },
     "kindSingular": {
@@ -1030,7 +1031,7 @@
     "restartProgressTitle": "Restarting ComfyUI",
     "stop": "Stop",
     "stopConfirmTitle": "Stop ComfyUI",
-    "stopConfirmMessage": "This will stop ComfyUI. Any unsaved work will be lost. The window stays open so you can relaunch anytime.",
+    "stopConfirmMessage": "This will stop ComfyUI. Any unsaved work will be lost.",
     "connect": "Connect",
     "connecting": "Connecting",
     "openDirectory": "Open Directory",

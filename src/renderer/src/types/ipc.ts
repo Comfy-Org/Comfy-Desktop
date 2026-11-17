@@ -1,6 +1,8 @@
 export type {
   DashboardPage,
   AppCard,
+  AppOutputAction,
+  AppOutputs,
   AppPagePlacement,
   AppPageStatus,
   AssetKind,

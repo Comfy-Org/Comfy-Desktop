@@ -127,8 +127,8 @@
     "signedOutTitle": "登录以查看你的资产",
     "signedOutBody": "你在 Comfy Cloud 中生成的资产会显示在这里。",
     "signIn": "登录 Comfy Cloud",
-    "noCloudBuildTitle": "此工作区还没有 Comfy Cloud 构建",
-    "noCloudBuildBody": "将 Comfy Cloud 添加到此工作区后，这里会显示它的资产。",
+    "noCloudBuildTitle": "此工作区没有 Comfy Cloud 构建",
+    "noCloudBuildBody": "重启 Comfy Desktop 以重新添加 Comfy Cloud。",
     "truncated": "仅显示最新的 {count} 个文件。",
     "inspect": "查看 {name}",
     "detail": {
@@ -138,6 +138,7 @@
       "fit": "适应",
       "zoom": "缩放",
       "zoomLevel": "缩放：{level}",
+      "openWorkflow": "打开工作流",
       "savedIn": "保存位置"
     },
     "kindSingular": {
@@ -1030,7 +1031,7 @@
     "restartProgressTitle": "正在重启 ComfyUI",
     "stop": "停止",
     "stopConfirmTitle": "停止 ComfyUI",
-    "stopConfirmMessage": "这将停止 ComfyUI。任何未保存的工作都会丢失。窗口会保持打开，因此你可以随时重新启动。",
+    "stopConfirmMessage": "这将停止 ComfyUI。任何未保存的工作都会丢失。",
     "connect": "连接",
     "connecting": "正在连接",
     "openDirectory": "打开目录",
