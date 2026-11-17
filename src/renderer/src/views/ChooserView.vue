@@ -395,7 +395,7 @@ const gridHandlers = {
           >
             <BaseInput
               v-model="searchQuery"
-              class="h-8 [&_input]:text-[13px]"
+              class="h-8 [&_input]:text-xs"
               :placeholder="t('chooser.searchBuilds')"
               :aria-label="t('chooser.searchBuilds')"
             >

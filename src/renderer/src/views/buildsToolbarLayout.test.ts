@@ -130,6 +130,18 @@ describe('Builds toolbar', () => {
     expect(rowsOf(toolbar)).toBe(1)
   })
 
+  it('gives the sort and the search the same text and height', async () => {
+    const toolbar = await mountAt(BUILDS_PAGE_WIDTH(1280))
+    const label = getComputedStyle(toolbar.querySelector('.ui-select-label')!)
+    const input = getComputedStyle(toolbar.querySelector('.chooser-search input')!)
+    expect(input.fontSize).toBe(label.fontSize)
+    expect(input.fontWeight).toBe(label.fontWeight)
+    expect(input.fontFamily).toBe(label.fontFamily)
+    const trigger = toolbar.querySelector('.ui-select-trigger')!.getBoundingClientRect()
+    const field = toolbar.querySelector('.chooser-search .ui-input')!.getBoundingClientRect()
+    expect(field.height).toBe(trigger.height)
+  })
+
   it('puts the tabs on top and sort and search across the full width when one line does not fit', async () => {
     const toolbar = await mountAt(360)
     expect(toolbar.dataset.layout).toBe('stacked')
