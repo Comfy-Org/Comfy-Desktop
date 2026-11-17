@@ -574,9 +574,9 @@ describe('AssetsView', () => {
     ])
   })
 
-  it('opens on the Shared folder with no build installed, so the default output folder still shows', async () => {
+  it('opens a signed-out user with no local build on the Shared folder, so the default output folder still shows', async () => {
     const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
-      builds: []
+      builds: [cloudBuild('cloud')]
     })
 
     expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Shared folder')

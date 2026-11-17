@@ -225,7 +225,7 @@ const selectedBuild = computed<AssetBuild | null>(() => {
     withId(pickedPlace.value) ??
     withId(windowPlace.value) ??
     withId(savedPlace.value) ??
-    (hasLocalBuild.value || !cloudBuild.value
+    (hasLocalBuild.value || !cloudBuild.value || !authStore.isSignedIn
       ? options.find((option) => !option.cloud)
       : undefined) ??
     options[0]!
