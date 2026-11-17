@@ -445,10 +445,13 @@ describe('ProgressModal — brand branch state transitions', () => {
       result: { ok: false, message: 'Port 8188 is already in use', portConflict } as ActionResult
     })
 
+    const before = useProgressStore().operations.get('inst-1')
     body.buttonByText(fix)!.click()
     await flushPromises()
 
-    expect(useProgressStore().operations.get('inst-1')?.opKind).toBe('launch')
+    const retried = useProgressStore().operations.get('inst-1')
+    expect(retried).not.toBe(before)
+    expect(retried?.opKind).toBe('launch')
   })
 
   it('never claims a prompt is running when the earlier ComfyUI did not answer', async () => {
