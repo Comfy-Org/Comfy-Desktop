@@ -223,6 +223,11 @@ export async function listLocalAssets(installationId?: string): Promise<LocalAss
   }
   const provenance =
     installationId === undefined ? undefined : await readOutputProvenance(installationId)
+  const otherBuilds = provenance
+    ? await Promise.all(
+        [...folders.ofBuild.keys()].filter((id) => id !== installationId).map(readOutputProvenance)
+      )
+    : []
   const files = provenance
     ? [...provenance.outputs.keys()]
     : [...new Set((await Promise.all(folders.all.map(collectMediaFiles))).flat())]
@@ -234,7 +239,11 @@ export async function listLocalAssets(installationId?: string): Promise<LocalAss
       if (!real || path.relative(file, real) !== '') return
       const stat = await fsp.stat(real, { bigint: true }).catch(() => null)
       const revision = stat && outputRevision(stat)
-      if (stat && revision && provenance.outputs.get(file)?.has(revision)) {
+      const recordedOnlyByThisBuild =
+        revision &&
+        provenance.outputs.get(file)?.has(revision) &&
+        !otherBuilds.some((other) => other.outputs.get(file)?.has(revision))
+      if (stat && revision && recordedOnlyByThisBuild) {
         found.push(localSummary(real, Number(stat.size), Number(stat.mtimeMs), revision))
       }
       return

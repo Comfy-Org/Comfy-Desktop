@@ -310,6 +310,23 @@ describe('listLocalAssets', () => {
     ])
   })
 
+  it('leaves a file that two builds both recorded out of each build and still browses it by location', async () => {
+    const contested = path.join(sharedDir, 'contested.png')
+    const mine = path.join(sharedDir, 'mine.png')
+    for (const file of [contested, mine]) write(file)
+    appendOutput(
+      'Test Instance',
+      encodedOutput(contested, 'Test Instance') + '\n',
+      encodedOutput(mine, 'Test Instance') + '\n'
+    )
+    appendOutput('My Local 1', encodedOutput(contested, 'My Local 1') + '\n')
+    const namesFor = async (id?: string) => (await listLocalAssets(id)).assets.map((a) => a.name)
+
+    expect(await namesFor('Test Instance')).toEqual(['mine.png'])
+    expect(await namesFor('My Local 1')).toEqual([])
+    expect((await namesFor()).sort()).toEqual(['contested.png', 'mine.png'])
+  })
+
   it('opens a file it listed for a build added a moment ago', async () => {
     await listOutputFolders()
     const newDir = path.join(root, 'new-output')
