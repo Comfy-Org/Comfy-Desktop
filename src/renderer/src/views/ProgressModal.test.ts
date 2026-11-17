@@ -404,14 +404,17 @@ describe('ProgressModal — brand branch state transitions', () => {
       'ComfyUI is still running a prompt'
     )
     expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
-    expect(body.selectorText('.brand-progress__footer')).toContain('Stop it and start')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Stop it and start this build')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Use next available port')
 
     expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
     await flushPromises()
 
     expect(mockModal.confirm).toHaveBeenCalledWith(
-      expect.objectContaining({ confirmLabel: 'Stop it and start', confirmStyle: 'danger' })
+      expect.objectContaining({
+        confirmLabel: 'Stop it and start this build',
+        confirmStyle: 'danger'
+      })
     )
     expect(api.killPortProcess).not.toHaveBeenCalled()
     expect(api.runAction).toHaveBeenCalledWith('inst-1', 'launch', { stopBusyPriorProcess: true })
@@ -465,14 +468,14 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__banner')).toContain(
       'Processes from an earlier ComfyUI are still running'
     )
-    expect(body.selectorText('.brand-progress__footer')).toContain('Stop them and start')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Stop them and start this build')
     expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
     await flushPromises()
     expect(mockModal.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'Processes from an earlier ComfyUI are still running',
         message: 'This stops those processes and anything they are doing.',
-        confirmLabel: 'Stop them and start'
+        confirmLabel: 'Stop them and start this build'
       })
     )
   })
