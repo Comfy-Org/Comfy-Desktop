@@ -17,13 +17,20 @@ const { t, locale } = useI18n()
 const auth = useAuthStore()
 const balance = ref<CreditBalanceState>({ status: 'signed_out' })
 
-const credits = computed(() =>
-  balance.value.status === 'ready'
-    ? new Intl.NumberFormat(locale.value, { maximumFractionDigits: 0 }).format(
-        Math.round(balance.value.cents * CREDITS_PER_CENT)
-      )
-    : null
+const count = computed(() =>
+  balance.value.status === 'ready' ? Math.round(balance.value.cents * CREDITS_PER_CENT) : null
 )
+const credits = computed(() =>
+  count.value === null
+    ? null
+    : new Intl.NumberFormat(locale.value, { maximumFractionDigits: 0 }).format(count.value)
+)
+const shortCredits = computed(() => {
+  if (count.value !== null) {
+    return new Intl.NumberFormat(locale.value, { notation: 'compact' }).format(count.value)
+  }
+  return balance.value.status === 'error' ? '–' : ''
+})
 const tooltip = computed(() =>
   balance.value.status === 'error'
     ? t('sidebar.creditsError')
@@ -67,8 +74,8 @@ onUnmounted(() => unsubscribes.forEach((unsubscribe) => unsubscribe()))
     <Button
       variant="muted-textonly"
       size="unset"
-      class="h-8 w-full shrink-0 rounded-lg text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-      :class="collapsed ? 'justify-center px-0' : 'justify-start gap-2.5 px-3'"
+      class="w-full shrink-0 rounded-lg text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+      :class="collapsed ? 'flex-col gap-0.5 px-0 py-1.5' : 'h-8 justify-start gap-2.5 px-3'"
       :aria-label="label"
       :disabled="!auth.status.workspaceId"
       data-testid="app-sidebar-credits"
@@ -84,7 +91,13 @@ onUnmounted(() => unsubscribes.forEach((unsubscribe) => unsubscribe()))
           d="M12.0597 6.91211C12.6899 7.14706 13.2507 7.53713 13.6902 8.04624C14.1297 8.55535 14.4338 9.16707 14.5742 9.82482C14.7147 10.4826 14.687 11.1651 14.4938 11.8093C14.3005 12.4536 13.948 13.0387 13.4687 13.5105C12.9894 13.9824 12.3989 14.3258 11.7517 14.5089C11.1046 14.6921 10.4217 14.7091 9.76619 14.5584C9.11071 14.4077 8.50381 14.0942 8.00162 13.6468C7.49943 13.1994 7.11816 12.6326 6.89307 11.9988M4.66634 3.9987H5.33301V6.66536M11.1397 9.25195L11.6064 9.72529L9.7264 11.6053M9.33301 5.33203C9.33301 7.54117 7.54215 9.33203 5.33301 9.33203C3.12387 9.33203 1.33301 7.54117 1.33301 5.33203C1.33301 3.12289 3.12387 1.33203 5.33301 1.33203C7.54215 1.33203 9.33301 3.12289 9.33301 5.33203Z"
         />
       </svg>
-      <template v-if="!collapsed">
+      <span
+        v-if="collapsed"
+        class="text-2xs/tight text-foreground tabular-nums"
+        data-testid="app-sidebar-credits-short"
+        >{{ shortCredits }}</span
+      >
+      <template v-else>
         <span class="min-w-0 flex-1 truncate text-left">{{ t('sidebar.credits') }}</span>
         <LoaderCircle
           v-if="balance.status === 'loading'"

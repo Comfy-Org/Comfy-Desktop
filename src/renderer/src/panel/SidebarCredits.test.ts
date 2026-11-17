@@ -160,6 +160,30 @@ describe('SidebarCredits', () => {
     expect(row(wrapper).text()).toBe('Credits422')
   })
 
+  it.each([
+    [393.37, '830'],
+    [3966, '8.4K'],
+    [39663, '84K'],
+    [585103, '1.2M'],
+    [-3966, '-8.4K']
+  ])('folds %s cents to the short count %s under the coin', async (cents, short) => {
+    refreshCreditBalance.mockResolvedValue({ status: 'ready', cents })
+
+    const wrapper = await mountCredits(true)
+
+    expect(row(wrapper).text()).toBe(short)
+  })
+
+  it('shows nothing under the folded coin while loading and a dash on error', async () => {
+    refreshCreditBalance.mockResolvedValue({ status: 'loading' })
+    const wrapper = await mountCredits(true)
+    expect(row(wrapper).text()).toBe('')
+
+    await announce({ status: 'error' })
+
+    expect(row(wrapper).text()).toBe('–')
+  })
+
   it.each(['hover', 'focus'] as const)(
     'gives the full balance in a tooltip on the right when folded, on %s',
     async (how) => {
@@ -168,6 +192,7 @@ describe('SidebarCredits', () => {
 
       const bubble = await openTooltip(wrapper, how)
 
+      expect(row(wrapper).text()).toBe('84K')
       expect(bubble?.textContent).toContain('83,689 Credits')
       expect(bubble?.dataset['side']).toBe('right')
       expect(row(wrapper).attributes('aria-label')).toBe('83,689 Credits. Manage plan & credits')
