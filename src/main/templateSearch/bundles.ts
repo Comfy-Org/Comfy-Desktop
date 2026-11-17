@@ -307,6 +307,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
   }
 
   async function fetchNewest(base: string): Promise<void> {
+    progress = { received: 0, total: 0 }
     await clearPartials()
     const found = await wanted(base)
     if (!found) return

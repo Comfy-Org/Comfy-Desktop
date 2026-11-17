@@ -398,6 +398,7 @@ export function _endLaunch(installationId: string, launch: { abort: AbortControl
   if (current && current.abort === launch.abort) {
     _activeLaunches.delete(installationId)
     current._resolveSettled()
+    sessionLifecycleEvents.emit('launch-ended', installationId)
   }
 }
 

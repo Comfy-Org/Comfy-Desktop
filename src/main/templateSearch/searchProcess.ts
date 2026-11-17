@@ -21,6 +21,7 @@ import { asRecord } from './json'
 export const SIDECAR_PATH_ENV = 'COMFY_DESKTOP_TEMPLATE_SEARCH_SIDECAR'
 const SEARCH_TIMEOUT_MS = 3000
 const TOOL_TIMEOUT_MS = 120_000
+const SMALL_FILE_LIMIT = 8 * 1024 * 1024
 const ACTIONS_THAT_LEAVE_THE_ENV = new Set(['rename', 'open-folder'])
 
 export function changesBuildEnv(actionId: string): boolean {
@@ -49,10 +50,27 @@ export function parseSupports(stdout: string): Supported | null {
   }
 }
 
+export async function readCapped(response: Response, limit: number): Promise<Buffer> {
+  const reader = response.body?.getReader()
+  if (!reader) return Buffer.alloc(0)
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) return Buffer.concat(chunks)
+    size += value.byteLength
+    if (size > limit) {
+      await reader.cancel()
+      throw new Error(`more than ${limit} bytes`)
+    }
+    chunks.push(value)
+  }
+}
+
 async function getSmall(url: string): Promise<Buffer> {
   const response = await net.fetch(url, { signal: AbortSignal.timeout(30_000) })
   if (!response.ok) throw new Error(`${url} answered ${response.status}`)
-  return Buffer.from(await response.arrayBuffer())
+  return readCapped(response, SMALL_FILE_LIMIT)
 }
 
 export interface HelperResult {
@@ -158,6 +176,7 @@ export function createSearchProcess({
   cacheRoot = path.join(cacheDir(), 'template-search-cache')
 }: SearchProcessOptions) {
   const helpers = new Map<string, Set<ChildProcess>>()
+  const cancelled = new WeakSet<ChildProcess>()
 
   const pyz = (): string | null =>
     zipappPath(settings.get('templateSearchEnabled'), process.env[SIDECAR_PATH_ENV])
@@ -171,12 +190,14 @@ export function createSearchProcess({
     return out ? parseSupports(out.stdout) : null
   })
 
-  function runHelper(candidate: SidecarPython, args: string[]): Promise<HelperResult> {
+  function runHelper(candidate: SidecarPython, args: string[]): Promise<HelperResult | null> {
     const active = helpers.get(candidate.installationId) ?? new Set<ChildProcess>()
     helpers.set(candidate.installationId, active)
     const child = spawnHelper(candidate.python, args)
     active.add(child)
-    return helperResult(child, TOOL_TIMEOUT_MS).finally(() => active.delete(child))
+    return helperResult(child, TOOL_TIMEOUT_MS)
+      .then((out) => (cancelled.has(child) ? null : out))
+      .finally(() => active.delete(child))
   }
 
   async function withPyz(args: string[]): Promise<HelperResult | null> {
@@ -185,7 +206,7 @@ export function createSearchProcess({
       if (!zipapp) return null
       if (isBuildBusy(candidate.installationId)) continue
       const out = await runHelper(candidate, ['-I', '-B', zipapp, ...args])
-      if (isBuildBusy(candidate.installationId)) continue
+      if (!out) continue
       if (out.code !== RUNTIME_UNSUPPORTED_EXIT) return out
       service.markUnsupported(candidate.python)
     }
@@ -218,6 +239,7 @@ export function createSearchProcess({
 
   async function onBuildAction(installationId: string): Promise<void> {
     const active = [...(helpers.get(installationId) ?? [])]
+    for (const child of active) cancelled.add(child)
     await Promise.all([
       service.onBuildAction(installationId),
       ...active.map((child) => killProcessTree(child))

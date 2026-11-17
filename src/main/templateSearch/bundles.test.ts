@@ -92,11 +92,24 @@ function store(over: Partial<BundleStoreDeps> = {}) {
 }
 
 const V1 = {
-  NOTICE: 'Gemma notice\n',
+  NOTICE: 'notice text\n',
   'encoder/model.safetensors': 'weights-v1',
   'router/catalog.json': '{"v":1}'
 }
 const V1_BYTES = Object.values(V1).reduce((sum, text) => sum + Buffer.byteLength(text), 0)
+
+const A_DAY_LATER = 24 * 60 * 60_000 + 1
+
+function holdTransfers(transfer: ReturnType<typeof store>['transfer']): () => void {
+  let release!: () => void
+  const held = new Promise<void>((resolve) => (release = resolve))
+  const realTransfer = transfer.getMockImplementation()!
+  transfer.mockImplementation(async (file) => {
+    await held
+    return realTransfer(file)
+  })
+  return release
+}
 
 function entriesIn(dir: string): string[] {
   return fs.existsSync(dir) ? fs.readdirSync(dir) : []
@@ -235,14 +248,8 @@ describe('bundle store', () => {
 
   it('says it is downloading while the first download runs', async () => {
     publish(server, '1.0.0', V1)
-    let release!: () => void
-    const held = new Promise<void>((resolve) => (release = resolve))
     const { store: s, transfer } = store({ now: () => 0 })
-    const realTransfer = transfer.getMockImplementation()!
-    transfer.mockImplementation(async (file) => {
-      await held
-      return realTransfer(file)
-    })
+    const release = holdTransfers(transfer)
     const downloading = s.download()
     await vi.waitFor(() => expect(transfer).toHaveBeenCalled())
     expect(await s.prepare()).toMatchObject({ kind: 'downloading' })
@@ -285,7 +292,7 @@ describe('bundle store', () => {
       (a) => a.kind === 'downloading' || a.kind === 'idle'
     ).length
 
-    clock = 24 * 60 * 60_000 + 1
+    clock = A_DAY_LATER
     publish(server, '1.1.0', { ...V1, 'router/catalog.json': '{"v":2}' })
     expect(await s.prepare()).toEqual({ kind: 'ready' })
     await vi.waitFor(async () => expect((await s.newest())?.version).toBe('1.1.0'))
@@ -319,6 +326,55 @@ describe('bundle store', () => {
     expect((await s.newest())?.version).toBe('1.1.0')
   })
 
+  it('keeps the files an unfinished update already fetched, for its next try', async () => {
+    publish(server, '1.0.0', V1)
+    const { store: s, transfer } = store({ now: () => 0 })
+    await s.download()
+    publish(server, '1.1.0', {
+      ...V1,
+      'encoder/model.safetensors': 'weights-v2',
+      'router/catalog.json': '{"v":2}'
+    })
+    const realTransfer = transfer.getMockImplementation()!
+    transfer.mockImplementation(async (file) =>
+      file.sha256 === sha('{"v":2}') ? { ok: false, error: 'network' } : realTransfer(file)
+    )
+    await s.download()
+    expect(await s.prepare()).toEqual({ kind: 'ready' })
+
+    transfer.mockClear()
+    transfer.mockImplementation(realTransfer)
+    await s.download()
+    expect(transfer.mock.calls.map(([f]) => f.sha256)).toEqual([sha('{"v":2}')])
+    expect((await s.newest())?.version).toBe('1.1.0')
+  })
+
+  it('reports a background download from zero once the user asks for it before it fetches files', async () => {
+    publish(server, '1.0.0', V1)
+    let clock = 0
+    const index: { release?: () => void } = {}
+    const { store: s } = store({
+      now: () => clock,
+      getSmall: async (url) => {
+        if (clock > 0 && url.endsWith('index.json'))
+          await new Promise<void>((resolve) => (index.release = resolve))
+        const body = server.small.get(url)
+        if (!body) throw new Error(`${url} answered 404`)
+        return body
+      }
+    })
+    await s.download()
+    announced.length = 0
+    clock = A_DAY_LATER
+    await s.prepare()
+    await vi.waitFor(() => expect(index.release).toBeDefined())
+
+    const asked = s.download()
+    expect(announced).toEqual([{ kind: 'downloading', received: 0, total: 0 }])
+    index.release!()
+    await asked
+  })
+
   it('keeps the newest version this sidecar can read', async () => {
     const { store: newer } = store({
       now: () => 0,
@@ -334,8 +390,6 @@ describe('bundle store', () => {
   })
 
   describe('a background look for a newer version', () => {
-    const A_DAY_LATER = 24 * 60 * 60_000 + 1
-
     async function withOneVersion() {
       publish(server, '1.0.0', V1)
       let clock = 0
@@ -344,17 +398,6 @@ describe('bundle store', () => {
       transfer.mockClear()
       announced.length = 0
       return { s, transfer, later: () => (clock = A_DAY_LATER) }
-    }
-
-    function holdTransfers(transfer: ReturnType<typeof store>['transfer']) {
-      let release!: () => void
-      const held = new Promise<void>((resolve) => (release = resolve))
-      const realTransfer = transfer.getMockImplementation()!
-      transfer.mockImplementation(async (file) => {
-        await held
-        return realTransfer(file)
-      })
-      return release
     }
 
     it('stays quiet when it fails', async () => {

@@ -23,7 +23,8 @@ import {
   cancelAll,
   cancelLaunching,
   _test_addRunningSession,
-  _test_clearRunningSessions
+  _test_clearRunningSessions,
+  sessionLifecycleEvents
 } from './shared'
 
 const INSTALL = 'install-under-test'
@@ -59,6 +60,19 @@ describe('launch tracking (_beginLaunch/_endLaunch/_hasActiveLaunch)', () => {
     _endLaunch(INSTALL, launch)
     _endLaunch(INSTALL, launch)
     expect(_hasActiveLaunch(INSTALL)).toBe(false)
+  })
+
+  it('announces the end of a launch once, and not for a stale end', () => {
+    const ended = vi.fn()
+    sessionLifecycleEvents.on('launch-ended', ended)
+    const stale = _beginLaunch(INSTALL)
+    _endLaunch(INSTALL, stale)
+    const fresh = _beginLaunch(INSTALL)
+    _endLaunch(INSTALL, stale)
+    _endLaunch(INSTALL, fresh)
+    _endLaunch(INSTALL, fresh)
+    sessionLifecycleEvents.off('launch-ended', ended)
+    expect(ended.mock.calls).toEqual([[INSTALL], [INSTALL]])
   })
 
   it('a stale end cannot remove a newer launch (generation safety)', () => {

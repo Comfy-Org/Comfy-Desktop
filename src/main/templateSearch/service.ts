@@ -178,7 +178,7 @@ export function createSearchService(deps: SearchServiceDeps) {
     announce({ kind: 'starting' })
     const started = await startOn(pyz, bundle, pythons)
     if (started.ok) return started
-    if (started.problem === 'busy') return waitForBuild()
+    if (started.problem === 'busy') return blockedBy(pythons) ?? waitForBuild()
     if (started.problem === 'bundle_invalid') {
       await deps.bundles.discard(bundle.version)
       return { ok: false, availability: await deps.bundles.prepare() }

@@ -15,12 +15,17 @@ vi.mock('./sessionActions', () => ({
   }
 }))
 vi.mock('./broadcast', () => ({ _broadcastToRenderer: vi.fn() }))
+vi.mock('./shared', async () => {
+  const { EventEmitter } = await import('events')
+  return { sessionLifecycleEvents: new EventEmitter() }
+})
 vi.mock('../../templateSearch/searchProcess', () => ({
   changesBuildEnv: (actionId: string) => actionId === 'copy-update',
   createSearchProcess: vi.fn()
 }))
 
 import { registerTemplateSearchHandlers } from './registerTemplateSearchHandlers'
+import { sessionLifecycleEvents } from './shared'
 
 type IpcHandler = (event: object, ...args: unknown[]) => Promise<unknown> | unknown
 
@@ -49,6 +54,7 @@ function register() {
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.observer = null
+  sessionLifecycleEvents.removeAllListeners()
 })
 
 describe('template-search:prepare and download', () => {
@@ -88,6 +94,12 @@ describe('build operations', () => {
     const process = register()
     await mocks.observer!.before('local-1', 'rename')
     expect(process.onBuildAction).not.toHaveBeenCalled()
+  })
+
+  it('tells search when a launch that did not come through a session action ends', () => {
+    const process = register()
+    sessionLifecycleEvents.emit('launch-ended', 'local-1')
+    expect(process.onBuildActionEnd).toHaveBeenCalled()
   })
 
   it('tells search when an operation ends', () => {

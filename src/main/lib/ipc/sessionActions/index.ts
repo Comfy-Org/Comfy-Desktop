@@ -108,9 +108,9 @@ export async function dispatchSessionAction(
   if (owned) {
     _activeActions.set(installationId, entry)
     _broadcastToRenderer('operation-changed', { installationId, actionId, active: true })
-    entry.ready = observer?.before(installationId, actionId).catch(() => {})
   }
   try {
+    if (owned) entry.ready = observer?.before(installationId, actionId).catch(() => {})
     const ready = owned ? entry.ready : running?.ready
     if (ready) await ready
     if (isSessionActionId(actionId)) {

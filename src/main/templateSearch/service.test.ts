@@ -166,6 +166,20 @@ describe('search service', () => {
     })
   })
 
+  it('says no build can run search when every Python was found unable to while it got ready', async () => {
+    const probe: { service?: ReturnType<typeof createSearchService> } = {}
+    const prepare = vi.fn(async (): Promise<TemplateSearchAvailability> => {
+      probe.service!.markUnsupported('/a/python')
+      probe.service!.markUnsupported('/b/python')
+      return { kind: 'ready' }
+    })
+    probe.service = setup({ bundles: bundles({ prepare }) }).service
+    expect(await probe.service.decide({ text: 'x' })).toEqual({
+      kind: 'unavailable',
+      availability: { kind: 'unavailable', reason: 'runtime_unsupported' }
+    })
+  })
+
   it("uses another build's Python while the first build is busy", async () => {
     const { service, start } = setup({ isBusy: (id) => id === 'a' })
     await service.decide({ text: 'x' })

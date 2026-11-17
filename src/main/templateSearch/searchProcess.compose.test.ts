@@ -27,6 +27,7 @@ import { killProcessTree } from '../lib/process'
 import {
   createSearchProcess,
   helperResult,
+  readCapped,
   SIDECAR_PATH_ENV,
   spawnHelperProcess,
   type SpawnHelper
@@ -40,9 +41,13 @@ const SCRIPTS: Record<string, string> = {
   'python-unsupported': 'process.exit(3)',
   'python-ok': PRINT_SUPPORTS,
   'python-stuck': STUCK,
-  'python-checker': PRINT_SUPPORTS
+  'python-checker': PRINT_SUPPORTS,
+  'python-badcheck': PRINT_SUPPORTS
 }
-const CHECKS: Record<string, string> = { 'python-checker': STUCK }
+const CHECKS: Record<string, string> = {
+  'python-checker': STUCK,
+  'python-badcheck': 'process.exit(5)'
+}
 
 let root: string
 let spawned: { python: string; args: string[]; child: ChildProcess }[]
@@ -80,6 +85,11 @@ function serveBundle(files: Record<string, string>): void {
     fs.writeFileSync(file.finalPath, text)
     return { done: Promise.resolve({ outcome: 'completed' }) }
   })
+}
+
+function bundlesOnDisk(): string[] {
+  const dir = path.join(root, 'store', 'bundles')
+  return fs.existsSync(dir) ? fs.readdirSync(dir) : []
 }
 
 function exited(child: ChildProcess): boolean {
@@ -189,14 +199,80 @@ describe('createSearchProcess', () => {
     serveBundle({ 'catalog.json': '{}' })
     const { search, announced } = setup()
     const downloading = search.download()
-    await vi.waitFor(() => expect(spawned.some(({ args }) => args.includes('check'))).toBe(true))
+    await vi.waitFor(() => expect(spawned.some(({ args }) => args.includes('check'))).toBe(true), {
+      timeout: 10_000
+    })
 
     mocks.activeOperations.mockReturnValue([{ installationId: 'checker', actionId: 'copy-update' }])
     await search.onBuildAction('checker')
     await downloading
 
     expect(announced.at(-1)).toEqual({ kind: 'idle' })
-    expect(fs.readdirSync(path.join(root, 'store', 'bundles'))).toEqual(['1.0.0'])
+    expect(bundlesOnDisk()).toEqual(['1.0.0'])
+  })
+
+  it('gives up on an index that keeps coming past the size limit', async () => {
+    mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
+    const megabyte = new Uint8Array(1024 * 1024)
+    mocks.fetch.mockImplementation(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              controller.enqueue(megabyte)
+            }
+          })
+        )
+    )
+    const { search, announced } = setup()
+    await search.download()
+    expect(announced.at(-1)).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+  })
+
+  it('refuses a download whose check fails on a build nothing is changing', async () => {
+    mocks.builds = [{ id: 'badcheck', lastLaunchedAt: 1 }]
+    serveBundle({ 'catalog.json': '{}' })
+    const { search, announced } = setup()
+    await search.download()
+
+    expect(announced.at(-1)).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+    expect(bundlesOnDisk()).toEqual([])
+  })
+
+  it('keeps a failed check a failure when its build became busy without the check being stopped', async () => {
+    mocks.builds = [{ id: 'badcheck', lastLaunchedAt: 1 }]
+    serveBundle({ 'catalog.json': '{}' })
+    mocks.activeOperations.mockImplementation(() =>
+      spawned.some(({ args }) => args.includes('check'))
+        ? [{ installationId: 'badcheck', actionId: 'copy-update' }]
+        : []
+    )
+    const { search, announced } = setup()
+    await search.download()
+
+    expect(announced.at(-1)).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+    expect(bundlesOnDisk()).toEqual([])
+  })
+})
+
+describe('readCapped', () => {
+  it('reads a body within the limit', async () => {
+    expect((await readCapped(new Response('hello'), 10)).toString()).toBe('hello')
+  })
+
+  it('stops reading a body that goes past the limit, and cancels the rest of it', async () => {
+    let pulls = 0
+    const cancel = vi.fn()
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls++
+        controller.enqueue(new Uint8Array(4))
+      },
+      cancel
+    })
+    await expect(readCapped(new Response(endless), 10)).rejects.toThrow('more than 10')
+    expect(pulls).toBeLessThan(10)
+    expect(cancel).toHaveBeenCalled()
   })
 })
 

@@ -8,6 +8,7 @@ import {
 } from '../../templateSearch/searchProcess'
 import type { TemplateSearchAvailability } from '../../../types/ipc'
 import { _broadcastToRenderer } from './broadcast'
+import { sessionLifecycleEvents } from './shared'
 import { setSessionActionObserver } from './sessionActions'
 
 type SearchProcessApi = Pick<
@@ -42,6 +43,7 @@ export function registerTemplateSearchHandlers({
       process.onBuildActionEnd()
     }
   })
+  sessionLifecycleEvents.on('launch-ended', () => process.onBuildActionEnd())
 
   ipcMain.handle('template-search:prepare', () => process.prepare())
   ipcMain.handle('template-search:download', () => process.download())
