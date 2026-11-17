@@ -5703,9 +5703,11 @@ describe('prior ComfyUI process handling at launch', () => {
         let releaseFirstKill = (): void => {}
         let firstKillHeld = (): void => {}
         const firstKillStarted = new Promise<void>((resolve) => (firstKillHeld = resolve))
+        let firstKillGated = false
         launchHarness.killGate = (proc) => {
           killed.push(proc)
-          if (proc !== children[0]) return Promise.resolve()
+          if (proc !== children[0] || firstKillGated) return Promise.resolve()
+          firstKillGated = true
           firstKillHeld()
           return new Promise<void>((resolve) => (releaseFirstKill = resolve))
         }
