@@ -101,6 +101,7 @@ export function buildElectronApi(): ElectronApi {
     closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
+    openPageInNewWindow: (page) => ipcRenderer.send('comfy-window:open-page-in-new-window', page),
     listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
     listLocalAssets: (installationId?: string) =>
       ipcRenderer.invoke('assets:list-local', installationId),
@@ -138,8 +139,6 @@ export function buildElectronApi(): ElectronApi {
     },
     sendAppOutputAction: (action) => ipcRenderer.send('apps:output-action', action),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
-    resolveStartupRestoreReveal: (result) =>
-      ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
     openGlobalSettings: (tab, opts) =>
       ipcRenderer.send(
         'comfy-titlepopup:open-global-settings',
@@ -256,6 +255,13 @@ export function buildElectronApi(): ElectronApi {
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     getStableTags: (): Promise<string[]> => ipcRenderer.invoke('get-stable-tags'),
     getCloudUserTier: () => ipcRenderer.invoke('get-cloud-user-tier'),
+    refreshCreditBalance: () => ipcRenderer.invoke('credit-balance:refresh'),
+    onCreditBalanceChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, state: unknown) =>
+        callback(state as Parameters<typeof callback>[0])
+      ipcRenderer.on('credit-balance:changed', handler)
+      return () => ipcRenderer.removeListener('credit-balance:changed', handler)
+    },
     getCloudFreeRunsEnabled: () => ipcRenderer.invoke('get-cloud-free-runs-enabled'),
     quitApp: () => ipcRenderer.invoke('quit-app'),
     relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
@@ -566,7 +572,6 @@ export function buildElectronApi(): ElectronApi {
             actionId?: string
             version?: string | null
             settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
-            startupRestore?: boolean
           }
         )
       ipcRenderer.on('panel-trigger-overlay', handler)

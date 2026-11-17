@@ -143,7 +143,7 @@ function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
     i18n: {
       overview: 'General',
       updates: 'Updates',
-      storage: 'Storage',
+      storage: 'Folders',
       models: 'Models',
       advanced: 'Advanced',
       logs: 'Logs',
@@ -161,7 +161,7 @@ function mountView(snapshot = makeSnapshot()) {
 }
 
 function menuItems() {
-  return [...document.querySelectorAll<HTMLElement>('.models-dir-menu [role="menuitem"]')].map(
+  return [...document.querySelectorAll<HTMLElement>('.shared-folder-menu [role="menuitem"]')].map(
     (el) => new DOMWrapper(el)
   )
 }
@@ -175,7 +175,7 @@ describe('GlobalSettingsView', () => {
     installMockBridge()
     const wrapper = mountView()
     const tabLabels = wrapper.findAll('.gs-tab').map((t) => t.text())
-    expect(tabLabels).toEqual(['General', 'Updates', 'Storage', 'Advanced', 'Logs'])
+    expect(tabLabels).toEqual(['General', 'Updates', 'Folders', 'Advanced', 'Logs'])
     expect(wrapper.find('.gs-tab.active').text()).toBe('General')
   })
 
@@ -195,7 +195,7 @@ describe('GlobalSettingsView', () => {
     document.activeElement!.dispatchEvent(new FocusEvent('focus'))
     await flushPromises()
 
-    expect(wrapper.find('.gs-tab.active').text()).toBe('Storage')
+    expect(wrapper.find('.gs-tab.active').text()).toBe('Folders')
     expect(wrapper.findAll('.gs-tab[tabindex="0"]').map((t) => t.text())).not.toContain('Updates')
   })
 
@@ -216,7 +216,7 @@ describe('GlobalSettingsView', () => {
   it('lands on the tab named by snapshot.initialTab', () => {
     installMockBridge()
     const wrapper = mountView(makeSnapshot({ initialTab: 'storage' }))
-    expect(wrapper.find('.gs-tab.active').text()).toBe('Storage')
+    expect(wrapper.find('.gs-tab.active').text()).toBe('Folders')
   })
 
   describe('settings deep-link highlight', () => {
@@ -293,7 +293,7 @@ describe('GlobalSettingsView', () => {
       .trigger('keydown', { key: 'Enter' })
     await nextTick()
     await wrapper.setProps({ snapshot: makeSnapshot({ initialTab: 'storage' }) as never })
-    expect(wrapper.find('.gs-tab.active').text()).toBe('Storage')
+    expect(wrapper.find('.gs-tab.active').text()).toBe('Folders')
   })
 
   it('GitHub link card click routes through the bridge', async () => {
@@ -305,135 +305,171 @@ describe('GlobalSettingsView', () => {
     expect(bridge.openExternalCalls).toEqual(['https://github.com/comfyanonymous/ComfyUI'])
   })
 
-  it('Storage tab routes a make-primary click through the bridge', async () => {
-    const bridge = installMockBridge()
-    const wrapper = mountView()
+  const SHARED_IO = [
+    { id: 'inputDir', label: 'Input Directory', value: '/shared/in', type: 'path' },
+    { id: 'outputDir', label: 'Output Directory', value: '/shared/out', type: 'path' }
+  ]
+
+  async function openFolders(snapshot = makeSnapshot()) {
+    const wrapper = mountView(snapshot)
     await wrapper
       .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
+      .find((t) => t.text() === 'Folders')!
       .trigger('keydown', { key: 'Enter' })
     await nextTick()
-    const toggles = wrapper.findAll('.models-dir-menu-wrap > button')
-    expect(toggles).toHaveLength(1)
-    await toggles[0]!.trigger('click')
-    await nextTick()
-    await flushPromises()
-    const makePrimary = menuItems()[0]!
-    await makePrimary.trigger('click')
-    await flushPromises()
-    expect(bridge.setModelsDirsCalls).toEqual([['/mnt/extra/models', '/home/u/ComfyUI/models']])
-  })
+    return wrapper
+  }
 
-  it('Storage tab browses and re-points a models dir through the bridge', async () => {
+  function folderRows(wrapper: Awaited<ReturnType<typeof openFolders>>, kind: string) {
+    return wrapper.findAll(`.shared-folder-row[data-kind="${kind}"]`)
+  }
+
+  it('Folders tab shows the Default Install Location first and browses it through the bridge', async () => {
     const bridge = installMockBridge()
-    bridge.browseFolderReturn = '/mnt/new/models'
-    const wrapper = mountView()
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    const browseBtns = wrapper.findAll('.models-dir-row .models-dir-action')
-    await browseBtns[0]!.trigger('click')
+    bridge.browseFolderReturn = '/picked/installs'
+    const wrapper = await openFolders()
+    expect(wrapper.findAll('.gs-micro-title').map((el) => el.text())).toEqual([
+      'Default Install Location',
+      'Shared Folders'
+    ])
+    const row = wrapper.find('.storage-dir-row')
+    expect(row.find('.storage-dir-name').text()).toBe('/home/u/ComfyUI-Installs')
+    await row.find('.storage-dir-name').trigger('click')
+    expect(bridge.openPathCalls).toEqual(['/home/u/ComfyUI-Installs'])
+    await row.find('.storage-dir-action').trigger('click')
     await flushPromises()
-    expect(bridge.setModelsDirsCalls).toEqual([['/mnt/new/models', '/mnt/extra/models']])
+    expect(bridge.updateFieldCalls).toEqual([{ id: 'installDir', value: '/picked/installs' }])
   })
 
-  it('Storage tab labels the add button "Add Shared Directory"', async () => {
+  it('Advanced tab no longer shows the Default Install Location', async () => {
     installMockBridge()
     const wrapper = mountView()
     await wrapper
       .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
+      .find((t) => t.text() === 'Advanced')!
       .trigger('keydown', { key: 'Enter' })
     await nextTick()
-    expect(wrapper.find('.models-dir-add').text()).toBe('Add Shared Directory')
+    expect(wrapper.text()).not.toContain('Install Location')
   })
 
-  it('Storage tab adds a shared models directory through the bridge', async () => {
+  it('Folders tab lists models, input and output in one Shared Folders list', async () => {
+    installMockBridge()
+    const wrapper = await openFolders(makeSnapshot({ sharedDirectoriesFields: SHARED_IO }))
+    const rows = wrapper.findAll('.shared-folder-row')
+    expect(rows.map((r) => r.find('.shared-folder-path').text())).toEqual([
+      '/home/u/ComfyUI/models',
+      '/mnt/extra/models',
+      '/shared/in',
+      '/shared/out'
+    ])
+    expect(rows.map((r) => r.find('.shared-folder-kind').text())).toEqual([
+      'Models',
+      'Models',
+      'Input',
+      'Output'
+    ])
+    expect(rows.every((r) => r.find('.storage-item-icon.is-shared').exists())).toBe(true)
+    expect(wrapper.find('.gs-storage-hint').text()).toContain('shared by every build')
+  })
+
+  it('Folders tab shows which models folder gets downloads without opening a menu', async () => {
+    installMockBridge()
+    const wrapper = await openFolders(makeSnapshot({ sharedDirectoriesFields: SHARED_IO }))
+    const [primary, extra] = folderRows(wrapper, 'models')
+    expect(primary!.find('.shared-folder-downloads-tag').text()).toContain('Downloads')
+    expect(primary!.find('.shared-folder-use-downloads').exists()).toBe(false)
+    expect(extra!.find('.shared-folder-use-downloads').text()).toBe('Use for downloads')
+    for (const row of [...folderRows(wrapper, 'input'), ...folderRows(wrapper, 'output')]) {
+      expect(row.find('.shared-folder-downloads').text()).toBe('')
+    }
+  })
+
+  it('Folders tab moves downloads to another models folder with one click', async () => {
+    const bridge = installMockBridge()
+    const wrapper = await openFolders()
+    await folderRows(wrapper, 'models')[1]!.find('.shared-folder-use-downloads').trigger('click')
+    await flushPromises()
+    expect(bridge.setModelsDirsCalls).toEqual([['/mnt/extra/models', '/home/u/ComfyUI/models']])
+  })
+
+  it('Folders tab keeps Remove as the only item in a models folder menu', async () => {
+    installMockBridge()
+    const wrapper = await openFolders()
+    const [primary, extra] = folderRows(wrapper, 'models')
+    expect(primary!.find('.shared-folder-more').exists()).toBe(false)
+    await extra!.find('.shared-folder-more').trigger('click')
+    await nextTick()
+    await flushPromises()
+    expect(menuItems().map((item) => item.text())).toEqual(['Remove'])
+  })
+
+  it('Folders tab browses and re-points a models folder through the bridge', async () => {
+    const bridge = installMockBridge()
+    bridge.browseFolderReturn = '/mnt/new/models'
+    const wrapper = await openFolders()
+    await folderRows(wrapper, 'models')[0]!.find('.shared-folder-action').trigger('click')
+    await flushPromises()
+    expect(bridge.setModelsDirsCalls).toEqual([['/mnt/new/models', '/mnt/extra/models']])
+  })
+
+  it('Folders tab ignores re-pointing a models folder at another listed folder', async () => {
+    const bridge = installMockBridge()
+    bridge.browseFolderReturn = '/mnt/extra/models'
+    const wrapper = await openFolders()
+    await folderRows(wrapper, 'models')[0]!.find('.shared-folder-action').trigger('click')
+    await flushPromises()
+    expect(bridge.setModelsDirsCalls).toEqual([])
+  })
+
+  it('Folders tab labels the add button "Add models folder"', async () => {
+    installMockBridge()
+    const wrapper = await openFolders()
+    expect(wrapper.find('.shared-folders-add').text()).toBe('Add models folder')
+  })
+
+  it('Folders tab adds a shared models folder through the bridge', async () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/new/models'
-    const wrapper = mountView()
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    await wrapper.find('.models-dir-add').trigger('click')
+    const wrapper = await openFolders()
+    await wrapper.find('.shared-folders-add').trigger('click')
     await flushPromises()
     expect(bridge.setModelsDirsCalls).toEqual([
       ['/home/u/ComfyUI/models', '/mnt/extra/models', '/new/models']
     ])
   })
 
-  it('Storage tab does not add a shared models directory when browsing is cancelled', async () => {
+  it('Folders tab does not add a models folder when browsing is cancelled', async () => {
     const bridge = installMockBridge()
-    const wrapper = mountView()
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    await wrapper.find('.models-dir-add').trigger('click')
+    const wrapper = await openFolders()
+    await wrapper.find('.shared-folders-add').trigger('click')
     await flushPromises()
     expect(bridge.setModelsDirsCalls).toEqual([])
   })
 
-  it('Storage tab ignores adding a directory that is already listed', async () => {
+  it('Folders tab ignores adding a folder that is already listed', async () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/mnt/extra/models'
-    const wrapper = mountView()
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    await wrapper.find('.models-dir-add').trigger('click')
+    const wrapper = await openFolders()
+    await wrapper.find('.shared-folders-add').trigger('click')
     await flushPromises()
     expect(bridge.setModelsDirsCalls).toEqual([])
   })
 
-  it('Storage tab ignores adding a listed directory with different separators or trailing slash', async () => {
+  it('Folders tab ignores adding a listed folder with different separators or trailing slash', async () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/mnt/extra/models/'
-    const wrapper = mountView()
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    await wrapper.find('.models-dir-add').trigger('click')
+    const wrapper = await openFolders()
+    await wrapper.find('.shared-folders-add').trigger('click')
     await flushPromises()
     expect(bridge.setModelsDirsCalls).toEqual([])
   })
 
-  it('Storage tab ignores re-pointing a models dir at another listed directory', async () => {
+  it('Folders tab removes a models folder after confirmation', async () => {
     const bridge = installMockBridge()
-    bridge.browseFolderReturn = '/mnt/extra/models'
-    const wrapper = mountView()
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
+    const wrapper = await openFolders()
+    await folderRows(wrapper, 'models')[1]!.find('.shared-folder-more').trigger('click')
     await nextTick()
-    const browseBtns = wrapper.findAll('.models-dir-row .models-dir-action')
-    await browseBtns[0]!.trigger('click')
-    await flushPromises()
-    expect(bridge.setModelsDirsCalls).toEqual([])
-  })
-
-  it('Storage tab removes a non-primary shared models directory after confirmation', async () => {
-    const bridge = installMockBridge()
-    const wrapper = mountView()
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    await wrapper.find('.models-dir-menu-wrap > button').trigger('click')
-    await nextTick()
-    const remove = menuItems().find((item) => item.text().includes('Remove'))!
-    await remove.trigger('click')
+    await menuItems()[0]!.trigger('click')
     await flushPromises()
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
@@ -442,18 +478,12 @@ describe('GlobalSettingsView', () => {
     expect(bridge.setModelsDirsCalls).toEqual([['/home/u/ComfyUI/models']])
   })
 
-  it('Storage tab keeps a shared models directory when removal is declined', async () => {
+  it('Folders tab keeps a models folder when removal is declined', async () => {
     const bridge = installMockBridge()
-    const wrapper = mountView()
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
+    const wrapper = await openFolders()
+    await folderRows(wrapper, 'models')[1]!.find('.shared-folder-more').trigger('click')
     await nextTick()
-    await wrapper.find('.models-dir-menu-wrap > button').trigger('click')
-    await nextTick()
-    const remove = menuItems().find((item) => item.text().includes('Remove'))!
-    await remove.trigger('click')
+    await menuItems()[0]!.trigger('click')
     await flushPromises()
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
@@ -462,166 +492,39 @@ describe('GlobalSettingsView', () => {
     expect(bridge.setModelsDirsCalls).toEqual([])
   })
 
-  it('Storage tab offers no Remove action for the primary Downloads row', async () => {
-    installMockBridge()
-    const wrapper = mountView()
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    const primaryRow = wrapper.findAll('.models-dir-row')[0]!
-    expect(primaryRow.find('.tag-primary').text()).toContain('Downloads')
-    expect(primaryRow.find('.models-dir-menu-wrap').exists()).toBe(false)
-  })
-
-  it('Storage tab routes a Shared Directories browse through the bridge', async () => {
+  it('Folders tab browses the shared input folder through the bridge', async () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/picked/in'
-    const snapshot = makeSnapshot({
-      sharedDirectoriesFields: [
-        { id: 'inputDir', label: 'Input Directory', value: '/shared/in', type: 'path' },
-        { id: 'outputDir', label: 'Output Directory', value: '/shared/out', type: 'path' }
-      ]
-    })
-    const wrapper = mountView(snapshot)
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    const rows = wrapper.findAll('.storage-dir-row')
-    expect(rows).toHaveLength(2)
-    expect(rows[0]!.find('.storage-dir-name').text()).toBe('/shared/in')
-    await rows[0]!.find('.storage-dir-action').trigger('click')
+    const wrapper = await openFolders(makeSnapshot({ sharedDirectoriesFields: SHARED_IO }))
+    await folderRows(wrapper, 'input')[0]!.find('.shared-folder-action').trigger('click')
     await flushPromises()
     expect(bridge.updateFieldCalls).toEqual([{ id: 'inputDir', value: '/picked/in' }])
   })
 
-  it('Storage tab browses the shared output directory through the bridge', async () => {
+  it('Folders tab browses the shared output folder through the bridge', async () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/picked/out'
-    const snapshot = makeSnapshot({
-      sharedDirectoriesFields: [
-        { id: 'inputDir', label: 'Input Directory', value: '/shared/in', type: 'path' },
-        { id: 'outputDir', label: 'Output Directory', value: '/shared/out', type: 'path' }
-      ]
-    })
-    const wrapper = mountView(snapshot)
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    const outputRow = wrapper.findAll('.storage-dir-row')[1]!
-    expect(outputRow.find('.storage-dir-name').text()).toBe('/shared/out')
-    await outputRow.find('.storage-dir-action').trigger('click')
+    const wrapper = await openFolders(makeSnapshot({ sharedDirectoriesFields: SHARED_IO }))
+    await folderRows(wrapper, 'output')[0]!.find('.shared-folder-action').trigger('click')
     await flushPromises()
     expect(bridge.updateFieldCalls).toEqual([{ id: 'outputDir', value: '/picked/out' }])
   })
 
-  it('Storage tab marks shared models and input/output dirs with the shared glyph', async () => {
-    installMockBridge()
-    const snapshot = makeSnapshot({
-      sharedDirectoriesFields: [
-        { id: 'inputDir', label: 'Input Directory', value: '/shared/in', type: 'path' },
-        { id: 'outputDir', label: 'Output Directory', value: '/shared/out', type: 'path' }
-      ]
-    })
-    const wrapper = mountView(snapshot)
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    const modelRows = wrapper.findAll('.models-dir-row')
-    expect(modelRows.length).toBeGreaterThan(0)
-    expect(modelRows.every((r) => r.find('.storage-item-icon.is-shared').exists())).toBe(true)
-    const dirRows = wrapper.findAll('.storage-dir-row')
-    expect(dirRows).toHaveLength(2)
-    expect(dirRows.every((r) => r.find('.storage-item-icon.is-shared').exists())).toBe(true)
-  })
-
-  it('Storage tab explains the folders are shared and drops the redundant Shared tag', async () => {
-    installMockBridge()
-    const snapshot = makeSnapshot({
-      sharedDirectoriesFields: [
-        { id: 'inputDir', label: 'Input Directory', value: '/shared/in', type: 'path' },
-        { id: 'outputDir', label: 'Output Directory', value: '/shared/out', type: 'path' }
-      ]
-    })
-    const wrapper = mountView(snapshot)
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    expect(wrapper.find('.gs-storage-hint').text()).toContain('shared by every build')
-    expect(wrapper.find('.tag-shared').exists()).toBe(false)
-    expect(wrapper.find('.storage-dir-shared-tag').exists()).toBe(false)
-    const dirTags = wrapper.findAll('.gs-shared-dirs .storage-dir-tag').map((el) => el.text())
-    expect(dirTags).toEqual(['Input Directory', 'Output Directory'])
-  })
-
-  it('Storage tab section tooltips state the global-vs-instance scope', async () => {
-    installMockBridge()
-    const snapshot = makeSnapshot({
-      sharedDirectoriesFields: [
-        { id: 'inputDir', label: 'Input Directory', value: '/shared/in', type: 'path' },
-        { id: 'outputDir', label: 'Output Directory', value: '/shared/out', type: 'path' }
-      ]
-    })
-    const wrapper = mountView(snapshot)
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    const tooltips = wrapper
-      .findAll('.gs-micro-title .info-tooltip-trigger')
-      .map((el) => el.attributes('aria-label') ?? '')
-    expect(
-      tooltips.some((text) => text.includes('a build can add directories just for itself'))
-    ).toBe(true)
-    expect(tooltips.some((text) => text.includes('Each build independently chooses'))).toBe(true)
-  })
-
-  it('Storage tab opens a Shared Directory in the OS file manager when clicked', async () => {
+  it('Folders tab opens a shared folder in the OS file manager when clicked', async () => {
     const bridge = installMockBridge()
-    const snapshot = makeSnapshot({
-      sharedDirectoriesFields: [
-        { id: 'inputDir', label: 'Input Directory', value: '/shared/in', type: 'path' },
-        { id: 'outputDir', label: 'Output Directory', value: '/shared/out', type: 'path' }
-      ]
-    })
-    const wrapper = mountView(snapshot)
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    await wrapper.findAll('.storage-dir-row')[1]!.find('.storage-dir-name').trigger('click')
+    const wrapper = await openFolders(makeSnapshot({ sharedDirectoriesFields: SHARED_IO }))
+    await folderRows(wrapper, 'output')[0]!.find('.shared-folder-path').trigger('click')
     expect(bridge.openPathCalls).toEqual(['/shared/out'])
   })
 
-  it('Advanced tab renders the global Default Install Location as a readonly path row', async () => {
-    const bridge = installMockBridge()
-    bridge.browseFolderReturn = '/picked/installs'
-    const wrapper = mountView()
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Advanced')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    expect(wrapper.text()).toContain('Default Install Location')
-    const row = wrapper.find('.storage-dir-row')
-    expect(row.exists()).toBe(true)
-    expect(row.find('.storage-dir-name').text()).toBe('/home/u/ComfyUI-Installs')
-    await row.find('.storage-dir-name').trigger('click')
-    expect(bridge.openPathCalls).toEqual(['/home/u/ComfyUI-Installs'])
-    await row.find('.storage-dir-action').trigger('click')
-    await flushPromises()
-    expect(bridge.updateFieldCalls).toEqual([{ id: 'installDir', value: '/picked/installs' }])
+  it('Folders tab tooltip says how downloads and per-build choices work', async () => {
+    installMockBridge()
+    const wrapper = await openFolders(makeSnapshot({ sharedDirectoriesFields: SHARED_IO }))
+    const tooltips = wrapper
+      .findAll('.gs-micro-title .info-tooltip-trigger')
+      .map((el) => el.attributes('aria-label') ?? '')
+    expect(tooltips.some((text) => text.includes('Use for downloads'))).toBe(true)
+    expect(tooltips.some((text) => text.includes('in its own Storage tab'))).toBe(true)
   })
 
   it('Advanced tab renders the cache dir as a readonly path row that browses + opens', async () => {
@@ -644,7 +547,7 @@ describe('GlobalSettingsView', () => {
       .find((t) => t.text() === 'Advanced')!
       .trigger('keydown', { key: 'Enter' })
     await nextTick()
-    const row = wrapper.findAll('.storage-dir-row')[1]!
+    const row = wrapper.find('.storage-dir-row')
     expect(row.exists()).toBe(true)
     expect(row.find('.storage-dir-name').text()).toBe('/home/u/cache')
     await row.find('.storage-dir-name').trigger('click')
@@ -673,17 +576,6 @@ describe('GlobalSettingsView', () => {
     expect(wrapper.find('.gs-logs-btn').text()).toContain('Open logs folder')
     await wrapper.find('.gs-logs-btn').trigger('click')
     expect(bridge.openLogsFolderCalls).toBe(1)
-  })
-
-  it('does not render the Install Location section in the Storage tab', async () => {
-    installMockBridge()
-    const wrapper = mountView()
-    await wrapper
-      .findAll('.gs-tab')
-      .find((t) => t.text() === 'Storage')!
-      .trigger('keydown', { key: 'Enter' })
-    await nextTick()
-    expect(wrapper.text()).not.toContain('Install Location')
   })
 
   it('close button routes to bridge.close', async () => {

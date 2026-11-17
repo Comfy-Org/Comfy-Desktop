@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import '../assets/main.css'
 import AppPageHost from './AppPageHost.vue'
+import { appPageShown, sidebarHovered } from './appPageCover'
 import type { AppOutputAction, AppOutputs, AppPagePlacement, AppPageStatus } from '../types/ipc'
 
 const PAGE_LEFT = 260
@@ -89,6 +90,7 @@ beforeAll(() => browserPage.viewport(1280, 800))
 
 beforeEach(() => {
   vi.clearAllMocks()
+  sidebarHovered.value = false
   stoppedListening = false
   stoppedListeningForOutputs = false
   page = document.createElement('div')
@@ -284,6 +286,26 @@ describe('AppPageHost', () => {
     await nextFrame()
 
     expect(showAppPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('swaps the app for a still frame while the pointer is over the sidebar, then brings it back', async () => {
+    const wrapper = await mountHost()
+    expect(appPageShown.value).toBe(true)
+    showAppPage.mockClear()
+
+    sidebarHovered.value = true
+    await nextFrame()
+
+    expect(captureAppPage).toHaveBeenCalledTimes(1)
+    expect(hideAppPage).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="app-page-frozen-frame"]').exists()).toBe(true)
+    expect(appPageShown.value).toBe(false)
+
+    sidebarHovered.value = false
+    await nextFrame()
+
+    expect(showAppPage).toHaveBeenCalledTimes(1)
+    expect(appPageShown.value).toBe(true)
   })
 
   it('leaves the app up for a menu that opens beside the host', async () => {

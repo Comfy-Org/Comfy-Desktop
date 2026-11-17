@@ -31,7 +31,6 @@ import {
   hostInstallEvents,
   indexInstallationId,
   nextWindowKey,
-  forceRevealHostWindow,
   openOrFocusHomeHostWindow,
   routeBuildOpen,
   hasRunningSessionForEntry,
@@ -286,30 +285,6 @@ describe('hasRunningSessionForEntry', () => {
   it('returns false for null/undefined entries', () => {
     expect(hasRunningSessionForEntry(null)).toBe(false)
     expect(hasRunningSessionForEntry(undefined)).toBe(false)
-  })
-})
-
-describe('forceRevealHostWindow', () => {
-  it('reveals a deferred host regardless of the coldStartPendingReveal flag', () => {
-    const entry = makeEntry({ installationId: null })
-    entry.coldStartPendingReveal = false
-    registerHostEntry(entry)
-
-    forceRevealHostWindow(entry.windowKey)
-
-    expect(entry.coldStartPendingReveal).toBe(false)
-    expect((entry.window as unknown as FakeWindow).raised).toContain('show')
-  })
-
-  it('no-ops for a destroyed window', () => {
-    const entry = makeEntry({ installationId: null, destroyed: true })
-    registerHostEntry(entry)
-    forceRevealHostWindow(entry.windowKey)
-    expect((entry.window as unknown as FakeWindow).raised).not.toContain('show')
-  })
-
-  it('no-ops for an unknown window key', () => {
-    expect(() => forceRevealHostWindow(999_999)).not.toThrow()
   })
 })
 
