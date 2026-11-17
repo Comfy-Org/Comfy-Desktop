@@ -958,7 +958,7 @@ describe('ChooserView', () => {
 
     expect(await shownBuildMenu('local')).toContain('promote-to-workspace')
     const upload = buildMenuItem('local', 'promote-to-workspace')!
-    expect(upload.textContent?.trim()).toBe('Upload Build')
+    expect(upload.textContent?.trim()).toBe('Upload build')
     expect(upload.hasAttribute('data-disabled')).toBe(false)
   })
 
@@ -1539,7 +1539,7 @@ describe('ChooserView - why-Cloud explainer', () => {
     expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(true)
     expect(mockModal.alert).toHaveBeenCalledWith({
       title: "Couldn't open Comfy Cloud",
-      message: 'Check your connection and try again from the dashboard.'
+      message: 'Check your connection and try again from Home.'
     })
   })
 
