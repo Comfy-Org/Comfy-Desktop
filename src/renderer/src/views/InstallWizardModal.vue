@@ -24,7 +24,6 @@ import {
   Package,
   RefreshCw,
   SlidersHorizontal,
-  Split,
   Tag,
   Users,
   Zap
@@ -40,12 +39,15 @@ import type {
   SourceField,
   FieldOption,
   HardwareValidation,
-  ShowProgressOpts
+  ShowProgressOpts,
+  SystemInfo
 } from '../types/ipc'
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
 import {
   INSTALL_SPACE_FACTOR,
   downloadBytesOf,
+  isCpuVariant,
+  machineName,
   type ChangeSetupDraft,
   type NewInstallSetup,
   type SavedSetup,
@@ -112,6 +114,7 @@ const instPath = ref('')
 const defaultInstPath = ref('')
 const detectedGpu = ref('')
 const gpuName = ref('')
+const systemInfo = ref<SystemInfo | null>(null)
 const machineUnsupported = ref(false)
 const unsupportedReason = ref('')
 const view = ref<'summary' | 'change'>('summary')
@@ -458,7 +461,7 @@ onMounted(() => {
     .detectGPU()
     .then((gpu) => {
       if (gpu) {
-        gpuName.value = gpu.label
+        gpuName.value = gpu.model || gpu.label
         detectedGpu.value = t('newInstall.detectedGpu', { label: gpu.label })
       } else {
         detectedGpu.value = t('newInstall.noGpuDetected')
@@ -469,6 +472,15 @@ onMounted(() => {
     })
     .finally(() => {
       gpuDetectionDone = true
+    })
+
+  Promise.resolve()
+    .then(() => window.api.getSystemInfo())
+    .then((info) => {
+      systemInfo.value = info
+    })
+    .catch(() => {
+      systemInfo.value = null
     })
 
   installDirPromise = window.api.getDefaultInstallDir().catch(() => '')
@@ -1392,10 +1404,20 @@ const machineBlocked = computed(
     !managedBuildMode.value &&
     (!currentSource.value || currentSource.value.id === 'standalone')
 )
-const machineTitle = computed(() =>
-  machineBlocked.value ? unsupportedReason.value : gpuName.value || detectedGpu.value
+const systemMachineName = computed(() =>
+  machineName(systemInfo.value, isCpuVariant(selections.value.variant))
 )
-const machineDetected = computed(() => !machineBlocked.value && !!gpuName.value)
+const machineTitle = computed(() =>
+  machineBlocked.value
+    ? unsupportedReason.value
+    : systemMachineName.value || gpuName.value || detectedGpu.value
+)
+const machineDetected = computed(
+  () => !machineBlocked.value && !!(systemMachineName.value || gpuName.value)
+)
+const machineMemoryGb = computed(() =>
+  systemInfo.value?.total_memory_gb ? Math.round(systemInfo.value.total_memory_gb) : null
+)
 const buildCatalogFailed = computed(() => managedBuildMode.value && authStore.buildsError)
 const blockingFieldError = computed(
   () => urlFieldError.value || fieldErrors.value.values().next().value || ''
@@ -1482,7 +1504,9 @@ const startFromOptions = computed<{ value: StartFrom; label: string; testId: str
   { value: 'new', label: t('newInstall.startFromNew'), testId: 'config-start-from-new' },
   {
     value: 'existing',
-    label: t('newInstall.startFromExisting'),
+    label: t(
+      offersBuildImport.value ? 'newInstall.startFromExisting' : 'newInstall.startFromServer'
+    ),
     testId: 'config-start-from-existing'
   }
 ])
@@ -1760,6 +1784,12 @@ defineExpose({ open })
             data-testid="detected-gpu-field"
             >{{ machineTitle }}</span
           >
+          <span
+            v-if="machineMemoryGb && !machineBlocked"
+            class="config-machine-memory mt-[3px] text-[13px] leading-4 text-text-muted"
+            data-testid="detected-machine-memory"
+            >{{ $t('setup.memory', { gb: machineMemoryGb }) }}</span
+          >
         </span>
         <Button
           size="md"
@@ -1870,15 +1900,8 @@ defineExpose({ open })
     </div>
 
     <div v-else class="config-change-form mt-4 flex flex-col" data-testid="config-change-form">
-      <SetupFormRow
-        v-if="existingCards.length > 0"
-        class="config-start-from"
-        :label="$t('newInstall.startFrom')"
-        :icon="Split"
-        control-height="centered"
-      >
+      <div v-if="existingCards.length > 0" class="config-start-from flex py-3">
         <SegmentedControl
-          class="self-start"
           data-testid="config-start-from"
           :model-value="startFrom"
           :options="startFromOptions"
@@ -1886,7 +1909,7 @@ defineExpose({ open })
           :disabled="startFromLocked"
           @update:model-value="selectStartFrom"
         />
-      </SetupFormRow>
+      </div>
 
       <div
         v-if="showsHardwareWarning"
@@ -1916,7 +1939,7 @@ defineExpose({ open })
       </SetupFormRow>
 
       <SetupFormRow
-        v-if="startFrom === 'existing'"
+        v-if="startFrom === 'existing' && existingCards.length > 1"
         class="config-existing-comfy"
         :label="$t('newInstall.whereItIs')"
         :icon="MapPin"

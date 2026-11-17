@@ -355,8 +355,7 @@ describe('switching the release channel in Change setup', () => {
     const settled = formLayout()
     expect(settled.map((box) => box.what)).toEqual([
       'dialog',
-      'Start from',
-      'Get ComfyUI from',
+      'Source',
       'Release',
       'Location',
       'Hardware',

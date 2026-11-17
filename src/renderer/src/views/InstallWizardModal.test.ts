@@ -43,8 +43,9 @@ async function showChangeSetup(wrapper: ReturnType<typeof mountModal>): Promise<
   await flushPromises()
 }
 
-const NEW_INSTALL = 'A new install'
-const ALREADY_HAVE = 'ComfyUI I already have'
+const NEW_INSTALL = 'Install a new build'
+const ALREADY_HAVE = 'Use an existing build'
+const CONNECT_TO_SERVER = 'Connect to a server'
 
 async function startFrom(wrapper: ReturnType<typeof mountModal>, label: string): Promise<void> {
   const option = wrapper
@@ -54,6 +55,13 @@ async function startFrom(wrapper: ReturnType<typeof mountModal>, label: string):
   if (!option) throw new Error(`Start from has no option named ${label}`)
   await option.trigger('click')
   await flushPromises()
+}
+
+function startFromLabels(wrapper: ReturnType<typeof mountModal>): string[] {
+  return wrapper
+    .get('[data-testid="config-start-from"]')
+    .findAll('button')
+    .map((button) => button.text())
 }
 
 function chosenStartFrom(wrapper: ReturnType<typeof mountModal>): string | undefined {
@@ -173,7 +181,7 @@ describe('InstallWizardModal heading', () => {
       .get('[data-testid="config-change-form"]')
       .findAll('.config-label')
       .map((label) => label.text())
-    expect(rows).toEqual(['Get ComfyUI from', 'Name', 'Location', 'Hardware'])
+    expect(rows).toEqual(['Source', 'Name', 'Location', 'Hardware'])
     expect(wrapper.find('.config-name-row #inst-name-standalone').exists()).toBe(true)
     expect(wrapper.find('[data-testid="install-source-tabs"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(false)
@@ -391,7 +399,7 @@ describe('InstallWizardModal heading', () => {
 
     expect(wrapper.get('.setup-modal-title').text()).toBe('New Build')
     expect(wrapper.find('[aria-label="New Build"]').exists()).toBe(true)
-    expect(wrapper.get('.setup-modal-lead').text()).toBe('Setup a fresh ComfyUI install.')
+    expect(wrapper.get('.setup-modal-lead').text()).toBe('Set up a fresh ComfyUI install.')
     expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-change-form"]').exists()).toBe(false)
   })
@@ -797,7 +805,7 @@ describe('InstallWizardModal workspace Builds', () => {
 
     expect(wrapper.find('[data-testid="workspace-authorization-status"]').exists()).toBe(true)
     expect(startFromIsHeld(wrapper)).toBe(true)
-    await startFrom(wrapper, ALREADY_HAVE)
+    await startFrom(wrapper, CONNECT_TO_SERVER)
 
     finishAuthorization({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
     await opening
@@ -1662,6 +1670,25 @@ describe('InstallWizardModal hardware warning', () => {
     expect(wrapper.get('[data-testid="detected-gpu-field"]').text()).toBe('Radeon RX 7900')
   })
 
+  it('names the computer the way first use does, with its memory', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([standaloneSource])
+    ;(window.api.detectGPU as ReturnType<typeof vi.fn>).mockResolvedValue({ label: 'NVIDIA' })
+    window.api.getSystemInfo = vi.fn().mockResolvedValue({
+      gpu_label: 'NVIDIA',
+      gpu_model: 'NVIDIA GeForce RTX 5080 Laptop GPU',
+      cpu_model: 'Intel Core Ultra 9',
+      total_memory_gb: 31.4
+    })
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="detected-gpu-field"]').text()).toBe(
+      'NVIDIA GeForce RTX 5080 Laptop GPU'
+    )
+    expect(wrapper.get('[data-testid="detected-machine-memory"]').text()).toBe('31 GB memory')
+  })
+
   it('renders no warning element when validateHardware reports none', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([standaloneSource])
     const wrapper = mountModal()
@@ -1945,7 +1972,7 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.get('[data-testid="config-summary"]').text()).toContain('Latest on GitHub')
   })
 
-  it('saves what was picked in first use after ComfyUI I already have was only looked at', async () => {
+  it('saves what was picked in first use after Connect to a server was only looked at', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       releaseSource,
       remoteSource
@@ -1956,10 +1983,9 @@ describe('InstallWizardModal Change setup', () => {
     await flushPromises()
     await pickRelease(wrapper, 'Latest on GitHub')
 
-    await startFrom(wrapper, ALREADY_HAVE)
-    expect(wrapper.get('[data-testid="install-source-remote"]').attributes('aria-checked')).toBe(
-      'true'
-    )
+    await startFrom(wrapper, CONNECT_TO_SERVER)
+    expect(chosenStartFrom(wrapper)).toBe(CONNECT_TO_SERVER)
+    expect(wrapper.find('[data-testid="config-use-existing"]').text()).toBe('Connect')
     await startFrom(wrapper, NEW_INSTALL)
 
     expect(pickedRelease(wrapper)).toBe('Latest on GitHub')
@@ -2015,7 +2041,7 @@ describe('InstallWizardModal Change setup', () => {
     await flushPromises()
 
     expect(startFromIsHeld(wrapper)).toBe(true)
-    await startFrom(wrapper, ALREADY_HAVE)
+    await startFrom(wrapper, CONNECT_TO_SERVER)
     await startFrom(wrapper, NEW_INSTALL)
     finishHardwareCheck({ supported: true })
     await opening
@@ -2451,8 +2477,8 @@ describe('InstallWizardModal Change setup', () => {
       'true'
     )
     const form = wrapper.get('[data-testid="config-change-form"]')
+    expect(startFromLabels(wrapper)).toEqual([NEW_INSTALL, ALREADY_HAVE])
     expect(form.findAll('.config-label').map((label) => label.text())).toEqual([
-      'Start from',
       'Where it is',
       'Install location',
       'Name',
@@ -2476,7 +2502,7 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.get('[data-testid="config-save-changes"]').text()).toBe('Save changes')
   })
 
-  it('offers only a server as the ComfyUI already there in first use, and connects to it once the EULA is agreed', async () => {
+  it('offers Connect to a server in first use with no place to pick, and connects once the EULA is agreed', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       releaseSource,
       remoteSource
@@ -2489,12 +2515,10 @@ describe('InstallWizardModal Change setup', () => {
     await wrapper.vm.open({ cameFromSetup: true, needsConsent: true, entrypoint: 'first_use' })
     await flushPromises()
 
-    await startFrom(wrapper, ALREADY_HAVE)
+    expect(startFromLabels(wrapper)).toEqual([NEW_INSTALL, CONNECT_TO_SERVER])
+    await startFrom(wrapper, CONNECT_TO_SERVER)
 
-    expect(existingComfyCards(wrapper)).toEqual(['On a server'])
-    expect(wrapper.get('[data-testid="install-source-remote"]').attributes('aria-checked')).toBe(
-      'true'
-    )
+    expect(wrapper.find('[data-testid="existing-comfy-tabs"]').exists()).toBe(false)
     expect(wrapper.find('.track-form').exists()).toBe(false)
     expect(wrapper.find('[data-testid="config-save-changes"]').exists()).toBe(false)
     const connect = wrapper.get('[data-testid="config-use-existing"]')

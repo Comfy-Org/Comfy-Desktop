@@ -129,7 +129,7 @@ describe('Set up, the first screen', () => {
 
     expect(w.find('[role="dialog"]').attributes('aria-label')).toBe('Install ComfyUI on this Mac')
     expect(text(w, 'setup-lead')).toBe(
-      'Checked for your Apple M3 Max. Change anything before you install.'
+      'The best settings for your Apple M3 Max are picked. Change any you like.'
     )
     expect(text(w, 'setup-machine-name')).toBe('Apple M3 Max')
     expect(text(w, 'setup-machine')).toContain('36 GB memory')
