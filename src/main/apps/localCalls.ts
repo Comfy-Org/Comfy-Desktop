@@ -6,7 +6,7 @@ const PATHNAME = /^(\/[A-Za-z0-9_.+-]+){1,2}$/
 const PROMPT_ID = /^[A-Za-z0-9-]{1,64}$/
 const NODE_CLASS = /^[A-Za-z0-9_][A-Za-z0-9_.+-]{0,127}$/
 const FILE_NAME = /^[^\\/\0]{1,255}$/
-const SUBFOLDER = /^[^\\\0]{0,255}$/
+const SUBFOLDER = /^[^\0]{0,255}$/
 const UPLOAD_NAME =
   /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(png|jpe?g|webp|gif|mp4|mov|m4v|webm|mp3|wav|flac|ogg|m4a)$/i
 const FILE_TYPES: ReadonlySet<string> = new Set(['output', 'temp'])
@@ -21,7 +21,7 @@ export interface OutputFile {
 export type LocalCall =
   | { kind: 'queue' }
   | { kind: 'history'; promptId: string }
-  | { kind: 'view'; file: OutputFile }
+  | { kind: 'view'; file: OutputFile; promptId?: string }
   | { kind: 'object-info'; node: string }
   | { kind: 'prompt'; prompt: Record<string, unknown>; extraData: Record<string, unknown> }
   | { kind: 'upload'; bytes: Uint8Array; fileName: string }
@@ -49,7 +49,7 @@ function bytesOf(body: unknown): Uint8Array | null {
 }
 
 function hasParentStep(subfolder: string): boolean {
-  return subfolder.split('/').includes('..')
+  return subfolder.split(/[\\/]/).includes('..')
 }
 
 function viewCall(query: URLSearchParams): LocalCall | null {
@@ -62,9 +62,14 @@ function viewCall(query: URLSearchParams): LocalCall | null {
   return FILE_TYPES.has(type) ? { kind: 'view', file: { filename, subfolder, type } } : null
 }
 
+function withRunOf(call: LocalCall | null, promptId: string | null): LocalCall | null {
+  if (call?.kind !== 'view' || promptId === null) return call
+  return PROMPT_ID.test(promptId) ? { ...call, promptId } : null
+}
+
 function readGet(pathname: string, query: URLSearchParams): LocalCall | null {
   if (pathname === '/queue') return { kind: 'queue' }
-  if (pathname === '/view') return viewCall(query)
+  if (pathname === '/view') return withRunOf(viewCall(query), query.get('prompt_id'))
   const [, area, name = ''] = pathname.split('/')
   if (area === 'history' && PROMPT_ID.test(name)) return { kind: 'history', promptId: name }
   if (area === 'object_info' && NODE_CLASS.test(name)) return { kind: 'object-info', node: name }

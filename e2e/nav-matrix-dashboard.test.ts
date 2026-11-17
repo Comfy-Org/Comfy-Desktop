@@ -81,7 +81,7 @@ test.beforeEach(async () => {
   await clearRunningSessions(ctx.app)
 })
 
-test('Home → Builds → Update settings opens the selected installation @windows @macos @linux @lifecycle', async () => {
+test('Home → Builds → Update settings opens the selected installation @windows @macos @linux @real-comfy', async () => {
   expect(await ctx.panel.click('[data-testid="app-sidebar-home"]')).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="home-view"]')
   expect(await ctx.panel.exists('.chooser-view')).toBe(true)

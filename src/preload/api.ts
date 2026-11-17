@@ -101,8 +101,8 @@ export function buildElectronApi(): ElectronApi {
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
-    listOutputFolders: () => ipcRenderer.invoke('assets:output-folders'),
-    listOutputFolder: (folderPath) => ipcRenderer.invoke('assets:output-folder', folderPath),
+    listLocalAssets: (installationId?: string) =>
+      ipcRenderer.invoke('assets:list-local', installationId),
     downloadAsset: (source, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
     revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),
@@ -281,6 +281,8 @@ export function buildElectronApi(): ElectronApi {
       listBuilds: () => ipcRenderer.invoke('comfybuilder:listBuilds'),
       openBuildsPage: (workspaceId) =>
         ipcRenderer.invoke('comfybuilder:openBuildsPage', workspaceId),
+      openSettingsPage: (page, workspaceId) =>
+        ipcRenderer.invoke('comfybuilder:openSettingsPage', page, workspaceId),
       installBuild: (request) => ipcRenderer.invoke('comfybuilder:installBuild', request),
       promoteLocalInstance: (installationId) =>
         ipcRenderer.invoke('comfybuilder:promoteLocalInstance', installationId)

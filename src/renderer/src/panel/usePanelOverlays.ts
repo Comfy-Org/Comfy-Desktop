@@ -68,7 +68,7 @@ export function isFlowPanel(panel: PanelKey): boolean {
 export interface FirstUseChainHooks {
   shouldForceTakeover: () => boolean
   onShowProgress: (opts: ShowProgressOpts) => void
-  onBackgroundInstall: () => void
+  onBackgroundInstall: (opts: ShowProgressOpts) => void
   consumeSetupHandoff: () => SetupHandoff | null
 }
 
@@ -234,7 +234,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
         resolvePortConflictInTakeover(showOpts.installationId)
         return
       }
-      opts.firstUseChain?.onBackgroundInstall()
+      opts.firstUseChain?.onBackgroundInstall(showOpts)
       opts.onBackgroundInstall?.(showOpts.installationId)
       return
     }

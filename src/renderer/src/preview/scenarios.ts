@@ -1,11 +1,5 @@
 import type { BridgeSeed, FakeBridge } from './fakeBridge'
-import {
-  INSTALL_STEPS,
-  everydayBuilds,
-  localAssets,
-  outputFolders,
-  type PreviewMachine
-} from './fixtures'
+import { INSTALL_STEPS, everydayBuilds, localAssets, type PreviewMachine } from './fixtures'
 
 export interface PreviewStage {
   bridge: FakeBridge
@@ -63,7 +57,7 @@ export const SCENARIOS: PreviewScenario[] = [
   {
     id: 'installing',
     title: 'First build installing, on Home',
-    ready: '[data-testid="home-build-install-detail"]',
+    ready: '[data-testid="home-build-progress"]',
     seed: () => FIRST_USE,
     arrange: async (stage) => {
       stage.bridge.reply({ installInstance: installThatKeepsRunning(stage.bridge) })
@@ -78,7 +72,7 @@ export const SCENARIOS: PreviewScenario[] = [
     arrange: async (stage) => {
       stage.bridge.reply({ installInstance: installThatKeepsRunning(stage.bridge) })
       await acceptTermsAndInstall(stage)
-      await stage.click('[data-testid="home-build-view-logs"]')
+      await stage.click('[data-testid="home-build-open"]')
     }
   },
   {
@@ -126,14 +120,50 @@ export const SCENARIOS: PreviewScenario[] = [
     ready: '[data-testid="app-sidebar-assets"][aria-current="page"]',
     seed: (machine) => ({
       installations: everydayBuilds(machine),
-      replies: {
-        listOutputFolders: async () => outputFolders(machine),
-        listOutputFolder: async () => ({ folders: [], files: localAssets() })
-      }
+      replies: { listLocalAssets: async () => ({ assets: localAssets(), truncated: false }) }
     }),
     arrange: async ({ click }) => {
       await click('[data-testid="app-sidebar-assets"]')
     }
+  },
+  {
+    id: 'signed-in',
+    title: 'Signed in to a team workspace',
+    ready: '[data-testid="workspace-switcher-trigger"]',
+    seed: (machine) => ({
+      installations: everydayBuilds(machine),
+      auth: {
+        signedIn: true,
+        email: 'someone@comfy.org',
+        workspaceId: 'w-silverside',
+        workspaceName: 'Silverside',
+        workspaceType: 'team'
+      },
+      settings: { dashboardWorkspaceId: 'w-silverside' },
+      workspaces: [
+        {
+          id: 'w-personal',
+          name: 'Personal Workspace',
+          type: 'personal',
+          role: 'owner',
+          subscriptionTier: null
+        },
+        {
+          id: 'w-silverside',
+          name: 'Silverside',
+          type: 'team',
+          role: 'owner',
+          subscriptionTier: 'CREATOR'
+        },
+        {
+          id: 'w-harbor',
+          name: 'Harbor',
+          type: 'team',
+          role: 'member',
+          subscriptionTier: 'ENTERPRISE'
+        }
+      ]
+    })
   }
 ]
 

@@ -6,6 +6,7 @@ import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { waitForWebContents, WebContentsPage } from './support/cdpPages'
+import { pacedForVideo } from './support/videoRecording'
 import { getRunningSessionSnapshot } from './support/devHooks'
 import {
   FAKE_COMFY_API_SERVER,
@@ -217,7 +218,7 @@ test.afterAll(async () => {
   else process.env['COMFY_APPS_URL'] = inheritedAppsUrl
 })
 
-test('An app page is offered the build on this computer, stopped, by name and version @linux', async () => {
+test('An app page is offered the build on this computer, stopped, by name and version @linux @macos', async () => {
   await ctx.panel.waitForVisible(SIDEBAR_APPS)
   expect(await ctx.panel.click(SIDEBAR_APPS)).toBe(true)
   await ctx.panel.waitForVisible(CUTOUT_CARD)
@@ -230,7 +231,7 @@ test('An app page is offered the build on this computer, stopped, by name and ve
   expect(await getRunningSessionSnapshot(ctx.app, BUILD_ID)).toBeNull()
 })
 
-test('Starting from the page runs that build with no ComfyUI window @linux', async () => {
+test('Starting from the page runs that build with no ComfyUI window @linux @macos', async () => {
   const windowsBefore = await windowCount()
 
   expect(await appPage().click('#start')).toBe(true)
@@ -242,7 +243,7 @@ test('Starting from the page runs that build with no ComfyUI window @linux', asy
   expect(await windowCount(), 'no window was opened for ComfyUI').toBe(windowsBefore)
 })
 
-test('A run goes from a picture to its result, with updates on the way, through Desktop only @linux', async () => {
+test('A run goes from a picture to its result, with updates on the way, through Desktop only @linux @macos', async () => {
   expect(await appPage().click('#run')).toBe(true)
 
   await expect.poll(() => appPage().textOf('#result'), LONG_WAIT).toContain('"result"')
@@ -265,7 +266,7 @@ test('A run goes from a picture to its result, with updates on the way, through 
   ])
 })
 
-test('The page cannot reach anything that is not its own run @linux', async () => {
+test('The page cannot reach anything that is not its own run @linux @macos', async () => {
   expect(await appPage().click('#pry')).toBe(true)
 
   await expect.poll(() => appPage().textOf('#pried'), LONG_WAIT).toBe('403,403,403,403,403')
@@ -279,7 +280,7 @@ test('The page cannot reach anything that is not its own run @linux', async () =
   expect(seen.interrupted).toEqual([])
 })
 
-test('Opening the build an app started shows ComfyUI in its own window @linux', async () => {
+test('Opening the build an app started shows ComfyUI in its own window @linux @macos', async () => {
   const windowsBefore = await windowCount()
 
   expect(
@@ -289,4 +290,9 @@ test('Opening the build an app started shows ComfyUI in its own window @linux', 
   await expect.poll(() => windowCount(), LONG_WAIT).toBe(windowsBefore + 1)
   const port = (await getRunningSessionSnapshot(ctx.app, BUILD_ID))?.port
   await waitForWebContents(ctx.app, `127.0.0.1:${port}`)
+  const comfyPage = new WebContentsPage(ctx.app, `127.0.0.1:${port}`)
+  await comfyPage.waitFor(() =>
+    comfyPage.evaluate<boolean>(`document.body?.innerText.includes('ComfyUI stub') ?? false`)
+  )
+  expect(await pacedForVideo(() => comfyPage.isVisible('body'))).toBe(true)
 })

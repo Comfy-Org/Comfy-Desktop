@@ -39,10 +39,31 @@ describe('what an app page may ask the ComfyUI on this computer', () => {
     })
   })
 
+  it('reads a result file in the folder a ComfyUI on Windows names with backslashes', () => {
+    const query = new URLSearchParams({
+      filename: 'cutout_00001_.png',
+      subfolder: 'apps\\remove-background',
+      type: 'output'
+    })
+
+    expect(readLocalCall({ path: `/view?${query}` })).toEqual({
+      kind: 'view',
+      file: { filename: 'cutout_00001_.png', subfolder: 'apps\\remove-background', type: 'output' }
+    })
+  })
+
   it('reads what one node offers, such as its model files', () => {
     expect(readLocalCall({ path: '/object_info/LoadBackgroundRemovalModel' })).toEqual({
       kind: 'object-info',
       node: 'LoadBackgroundRemovalModel'
+    })
+  })
+
+  it('reads which run a result file came from, kept apart from the file', () => {
+    expect(readLocalCall({ path: `/view?filename=a.png&prompt_id=${RUN}` })).toEqual({
+      kind: 'view',
+      file: { filename: 'a.png', subfolder: '', type: 'output' },
+      promptId: RUN
     })
   })
 
@@ -151,7 +172,10 @@ describe('what an app page may not ask', () => {
     '/view?filename=a%2Fb.png',
     '/view?filename=a.png&subfolder=..%2F..%2Fuser',
     '/view?filename=a.png&subfolder=ok%5C..',
+    '/view?filename=a.png&subfolder=..%5C..%5Cuser',
+    '/view?filename=a.png&subfolder=apps%5C..%2F..',
     '/view?filename=a.png&type=input',
+    '/view?filename=a.png&prompt_id=..%2Fx',
     '/view?filename=a.png&type=..'
   ])('refuses the file request %s', (path) => {
     expect(readLocalCall({ path })).toBeNull()

@@ -1,6 +1,8 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
+import type { PlatformSettingsPage } from '../main/devplatform/config'
+export type { PlatformSettingsPage }
 
 import type {
   AuthStatus,
@@ -121,6 +123,7 @@ export interface Installation {
   launchMode?: string
   launchArgs?: string
   hasConsole?: boolean
+  hasOutputFolder?: boolean
   installPath?: string
   status?: string
   lastLaunchedAt?: number
@@ -195,20 +198,9 @@ export interface AssetSummary {
   durationSeconds: number | null
 }
 
-export interface OutputFolder {
-  path: string
-  builds: string[]
-  buildIds: string[]
-}
-
-export interface OutputSubfolder {
-  name: string
-  path: string
-}
-
-export interface OutputFolderListing {
-  folders: OutputSubfolder[]
-  files: AssetSummary[]
+export interface LocalAssetListing {
+  assets: AssetSummary[]
+  truncated: boolean
 }
 
 export interface BuildStorageSnapshot {
@@ -1197,8 +1189,7 @@ export interface ElectronApi {
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
-  listOutputFolders(): Promise<OutputFolder[]>
-  listOutputFolder(folderPath: string): Promise<OutputFolderListing | null>
+  listLocalAssets(installationId?: string): Promise<LocalAssetListing>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
   copyAsset(source: string, assetId: string): Promise<boolean>
@@ -1343,6 +1334,7 @@ export interface ElectronApi {
     ): Promise<WorkspaceSwitchStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
     openBuildsPage(workspaceId: string): Promise<void>
+    openSettingsPage(page: PlatformSettingsPage, workspaceId: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
     promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }
