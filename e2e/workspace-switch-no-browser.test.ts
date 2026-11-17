@@ -367,6 +367,22 @@ test('Comfy Cloud stays available and reopens in the selected team or Personal w
   await openCloudFromHome()
   await expectCloudWorkspace('A')
 
+  await switchCloudTabToB()
+  const cloudTitleBar = new WebContentsPage(
+    app,
+    `comfyTitleBar.html?installationId=${cloudInstallId}`
+  )
+  const pageBeforeRefresh = await cloudPage.evaluate<string>('document.body.dataset.page')
+  await cloudTitleBar.waitForVisible('.title-refresh-button')
+  expect(await cloudTitleBar.click('.title-refresh-button')).toBe(true)
+  await expect
+    .poll(
+      () => cloudPage.evaluate<string>('document.body.dataset.page').catch(() => pageBeforeRefresh),
+      { message: 'refresh reloads the Cloud editor' }
+    )
+    .not.toBe(pageBeforeRefresh)
+  await expectCloudWorkspace('B')
+
   const views = await app.evaluate(({ webContents }) =>
     webContents
       .getAllWebContents()
