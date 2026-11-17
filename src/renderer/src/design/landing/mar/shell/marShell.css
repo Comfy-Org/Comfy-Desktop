@@ -814,7 +814,8 @@
     radial-gradient(
       ellipse 62% 100% at 50% 0%,
       color-mix(in oklch, var(--color-base-foreground) calc(6% * var(--mar-glow)), transparent),
-      color-mix(in oklch, var(--color-base-foreground) calc(2.5% * var(--mar-glow)), transparent) 50%,
+      color-mix(in oklch, var(--color-base-foreground) calc(2.5% * var(--mar-glow)), transparent)
+        50%,
       transparent 100%
     ),
     var(--color-content-background);
@@ -886,7 +887,10 @@
 :root[data-mar-ui='on'] .mar-backdrop.is-spotlight .mar-bg {
   transition: opacity 320ms ease;
 }
-:root[data-mar-ui='on'] .proto-main:has(.mar-page-bar.is-stuck) > .mar-backdrop.is-spotlight .mar-bg {
+:root[data-mar-ui='on']
+  .proto-main:has(.mar-page-bar.is-stuck)
+  > .mar-backdrop.is-spotlight
+  .mar-bg {
   opacity: 0;
 }
 @media (prefers-reduced-motion: reduce) {
