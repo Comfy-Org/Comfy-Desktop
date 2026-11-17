@@ -103,6 +103,7 @@ export interface UsePanelOverlaysApi {
   currentOverlay: ReturnType<typeof useOverlay>['current']
   openOverlay: ReturnType<typeof useOverlay>['openOverlay']
   closeOverlay: ReturnType<typeof useOverlay>['closeOverlay']
+  answerCloseRequest: () => Promise<{ cleared: boolean } | { defer: true }>
 
   handleShowProgress: (opts: ShowProgressOpts) => Promise<void>
   handleProgressClose: () => void
@@ -243,6 +244,17 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     return true
   }
 
+  async function answerCloseRequest(): Promise<{ cleared: boolean } | { defer: true }> {
+    if (currentOverlay.value === null) return { defer: true }
+    if (
+      showsLocalStartInFlight(currentOverlay.value) &&
+      (await keepsComfyRunningWhenWindowCloses())
+    ) {
+      return { defer: true }
+    }
+    return { cleared: await confirmAndCloseOverlay() }
+  }
+
   async function handleShowProgress(showOpts: ShowProgressOpts): Promise<void> {
     const operationName = showOpts.title.split(' — ')[0] || showOpts.title
     if (runsInBackground(showOpts)) {
@@ -363,6 +375,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     currentOverlay,
     openOverlay,
     closeOverlay,
+    answerCloseRequest,
     handleShowProgress,
     handleProgressClose,
     openFlowTakeover,

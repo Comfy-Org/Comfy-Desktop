@@ -60,7 +60,7 @@ describe('firstUseModeForOverlaySwap', () => {
   })
 })
 
-describe('closing the window while its build is starting', () => {
+describe('leaving a window while its build is starting', () => {
   const BUILD = 'studio'
   const api = {
     setFirstUseMode: vi.fn(),
@@ -119,7 +119,7 @@ describe('closing the window while its build is starting', () => {
     modal.confirm.mockClear()
   })
 
-  it('leaves the start running, without asking', async () => {
+  it('returning to Home leaves the start running, without asking', async () => {
     const overlays = await showInWindow('launch')
 
     await expect(overlays.closeOverlay()).resolves.toBe(true)
@@ -129,7 +129,7 @@ describe('closing the window while its build is starting', () => {
     expect(overlays.currentOverlay.value).toBeNull()
   })
 
-  it('asks, then cancels the start when keepComfyRunningWhenWindowCloses is off', async () => {
+  it('returning to Home asks, then cancels the start when keepComfyRunningWhenWindowCloses is off', async () => {
     const overlays = await showInWindow('launch')
     api.getSetting.mockResolvedValueOnce(false)
 
@@ -139,10 +139,38 @@ describe('closing the window while its build is starting', () => {
     expect(api.cancelOperation).toHaveBeenCalledWith(BUILD)
   })
 
-  it('still asks, then cancels an install', async () => {
+  it('returning to Home still asks, then cancels an install', async () => {
     const overlays = await showInWindow('install')
 
     await expect(overlays.closeOverlay()).resolves.toBe(true)
+
+    expect(modal.confirm).toHaveBeenCalledOnce()
+    expect(api.cancelOperation).toHaveBeenCalledWith(BUILD)
+  })
+
+  it('leaves the close of a window whose build starts to Desktop, which asks if the close quits', async () => {
+    const overlays = await showInWindow('launch')
+
+    await expect(overlays.answerCloseRequest()).resolves.toEqual({ defer: true })
+
+    expect(modal.confirm).not.toHaveBeenCalled()
+    expect(api.cancelOperation).not.toHaveBeenCalled()
+  })
+
+  it('asks itself, then cancels the start, when its window closes with keepComfyRunningWhenWindowCloses off', async () => {
+    const overlays = await showInWindow('launch')
+    api.getSetting.mockResolvedValueOnce(false)
+
+    await expect(overlays.answerCloseRequest()).resolves.toEqual({ cleared: true })
+
+    expect(modal.confirm).toHaveBeenCalledOnce()
+    expect(api.cancelOperation).toHaveBeenCalledWith(BUILD)
+  })
+
+  it('asks itself, then cancels an install, when its window closes', async () => {
+    const overlays = await showInWindow('install')
+
+    await expect(overlays.answerCloseRequest()).resolves.toEqual({ cleared: true })
 
     expect(modal.confirm).toHaveBeenCalledOnce()
     expect(api.cancelOperation).toHaveBeenCalledWith(BUILD)

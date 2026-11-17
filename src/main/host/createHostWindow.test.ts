@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import type * as SettingsModule from '../settings'
 
@@ -41,12 +41,14 @@ vi.mock('../settings', async (importOriginal) => {
 })
 
 import type { InstallationRecord } from '../installations'
-import { _runningSessions, type SessionInfo } from '../lib/ipc/shared'
+import { _beginLaunch, _endLaunch, _runningSessions, type SessionInfo } from '../lib/ipc/shared'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from './registry'
 import {
   buildFirebaseAuthForwardedError,
   cascadeOffsetForCollisions,
+  closeQuitsDesktop,
   closeStopsLocalComfy,
+  desktopStaysWithoutWindows,
   confirmHostWindowClose,
   type CloseConsultResult,
   type CloseWindowChoice,
@@ -294,7 +296,12 @@ describe('confirmHostWindowClose', () => {
     _runningSessions.set('studio', { port: 8188, mode: 'window' } as SessionInfo)
   }
 
-  function closeEffects(): {
+  function comfyStarting(): void {
+    const launch = _beginLaunch('studio')
+    onTestFinished(() => _endLaunch('studio', launch))
+  }
+
+  function closeEffects(answer: CloseWindowChoice = 'close'): {
     asked: { quitsDesktop: boolean; stopsLocalComfy: boolean }[]
     fx: Parameters<typeof confirmHostWindowClose>[2]
     consults: ((result: CloseConsultResult) => void)[]
@@ -311,7 +318,7 @@ describe('confirmHostWindowClose', () => {
         stopsLocalComfy: boolean
       ): Promise<CloseWindowChoice> => {
         asked.push({ quitsDesktop, stopsLocalComfy })
-        return 'close'
+        return answer
       }
     }
     return { asked, fx, consults }
@@ -415,7 +422,77 @@ describe('confirmHostWindowClose', () => {
       expect(await closing).toBe(true)
       expect(asked).toEqual([])
     })
+
+    it.each(['win32', 'linux'] as const)(
+      'on %s, asks before the last window closes while its build starts, and keeps the window when declined',
+      async (platform) => {
+        onPlatform(platform)
+        comfyStarting()
+        const only = openDashboard()
+        const { asked, fx, consults } = closeEffects('cancel')
+
+        const closing = confirmHostWindowClose(
+          only.win as unknown as Electron.BrowserWindow,
+          only.entry.windowKey,
+          fx
+        )
+        consults[0]?.('defer')
+
+        expect(await closing).toBe(false)
+        expect(asked).toEqual([{ quitsDesktop: true, stopsLocalComfy: true }])
+      }
+    )
+
+    it('closes the last window on macOS without asking while its build starts, since the start keeps going', async () => {
+      onPlatform('darwin')
+      comfyStarting()
+      const only = openDashboard('studio')
+      const { asked, fx, consults } = closeEffects()
+
+      const closing = confirmHostWindowClose(
+        only.win as unknown as Electron.BrowserWindow,
+        only.entry.windowKey,
+        fx
+      )
+      consults[0]?.('defer')
+
+      expect(await closing).toBe(true)
+      expect(asked).toEqual([])
+    })
   })
+})
+
+describe('whether closing the last window quits Desktop', () => {
+  const realPlatform = process.platform
+
+  afterEach(() => {
+    _runningSessions.clear()
+    Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
+  })
+
+  it.each([
+    ['darwin', 'nothing', true],
+    ['darwin', 'running', false],
+    ['darwin', 'starting', false],
+    ['win32', 'starting', true],
+    ['linux', 'running', true]
+  ] as const)(
+    'on %s with a local ComfyUI %s, the close confirmation and the last-window quit agree: quits %s',
+    (platform, comfy, quits) => {
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+      if (comfy === 'running') {
+        _runningSessions.set('studio', { port: 8188, mode: 'window' } as SessionInfo)
+      }
+      if (comfy === 'starting') {
+        const launch = _beginLaunch('studio')
+        onTestFinished(() => _endLaunch('studio', launch))
+      }
+
+      expect(closeQuitsDesktop(true)).toBe(quits)
+      expect(quitsOnceEveryWindowClosed()).toBe(quits)
+      expect(desktopStaysWithoutWindows()).toBe(!quits)
+    }
+  )
 })
 
 describe('closeStopsLocalComfy', () => {

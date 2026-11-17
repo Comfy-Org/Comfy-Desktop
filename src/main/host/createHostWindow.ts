@@ -28,6 +28,7 @@ import {
   titleBarOverlayForTheme
 } from '../lib/titleBarOverlay'
 import {
+  _getActiveLaunchIds,
   _registerExtraBroadcastTarget,
   _runningSessions,
   _unregisterExtraBroadcastTarget,
@@ -111,18 +112,25 @@ export function shouldShowInstallCloseConfirm(
   )
 }
 
-function localComfyRunning(): boolean {
-  return [..._runningSessions.values()].some((session) => !session.url)
+function localComfyRunningOrStarting(): boolean {
+  return (
+    [..._runningSessions.values()].some((session) => !session.url) ||
+    _getActiveLaunchIds().length > 0
+  )
+}
+
+export function desktopStaysWithoutWindows(): boolean {
+  return process.platform === 'darwin' && localComfyRunningOrStarting()
 }
 
 export function closeQuitsDesktop(isLastWindow: boolean): boolean {
   if (!keepsComfyRunningWhenWindowCloses()) return isLastWindow
-  return isLastWindow && (process.platform !== 'darwin' || !localComfyRunning())
+  return isLastWindow && !desktopStaysWithoutWindows()
 }
 
 export function quitsOnceEveryWindowClosed(): boolean {
-  if (keepsComfyRunningWhenWindowCloses() && process.platform !== 'darwin') return true
-  return !hasRunningSessions()
+  if (!keepsComfyRunningWhenWindowCloses()) return !hasRunningSessions()
+  return !desktopStaysWithoutWindows()
 }
 
 export function closeStopsLocalComfy(
@@ -130,7 +138,7 @@ export function closeStopsLocalComfy(
   isLastWindow: boolean
 ): boolean {
   if (keepsComfyRunningWhenWindowCloses()) {
-    return closeQuitsDesktop(isLastWindow) && localComfyRunning()
+    return closeQuitsDesktop(isLastWindow) && localComfyRunningOrStarting()
   }
   return shouldConfirmKillForEntry(entry) || (isLastWindow && hasBuildsRunningForAppsOnly())
 }

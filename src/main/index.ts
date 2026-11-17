@@ -91,7 +91,6 @@ import {
   _activeOperationStatus,
   _getLaunchingInstallationIds,
   _setActiveLaunchPickerWorkspace,
-  _getActiveLaunchIds,
   launchHadWindow,
   stopRunning,
   resolveTheme,
@@ -1638,12 +1637,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     void stopBuildsRunningForAppsOnly().finally(() => {
       if (BrowserWindow.getAllWindows().length > 0) return
-      if (
-        quitsOnceEveryWindowClosed() &&
-        (process.platform !== 'darwin' || _getActiveLaunchIds().length === 0)
-      ) {
-        app.quit()
-      }
+      if (quitsOnceEveryWindowClosed()) app.quit()
     })
   })
 }
