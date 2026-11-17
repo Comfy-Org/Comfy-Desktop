@@ -170,6 +170,7 @@ import { attachInstall, setAttachFactories, type ZoomResetSource } from './host/
 import { navigatorFor } from './host/buildNavigator'
 import { resetCanvasRendered } from './lib/canvasEntry'
 import { IN_PLACE_RELAUNCH, REQUIRES_STOPPED } from '../types/ipc'
+import type { CloseComfyWindowOptions } from '../types/ipc'
 import { dispatchSessionAction, handleLaunch } from './lib/ipc/sessionActions'
 import { applyAttachHostPreview, clearAttachHostPreview } from './host/attachHostPreview'
 import { takePriorSessionUnclean } from './lib/comfyProcessRecord'
@@ -183,6 +184,7 @@ import {
   preClearedClose,
   returnToDashboard
 } from './host/detach'
+import { closeBuildWindow } from './host/closeBuildWindow'
 import {
   destroyPanelView,
   ensurePanelView,
@@ -781,13 +783,8 @@ ipcMain.handle(
 
 ipcMain.handle(
   'close-comfy-window',
-  (_event, installationId: string, opts?: { skipConfirm?: boolean }) => {
-    const entry = getEntryByInstallationId(installationId)
-    if (!entry || entry.window.isDestroyed()) return false
-    if (opts?.skipConfirm) preClearedClose.add(entry.window)
-    entry.window.close()
-    return true
-  }
+  (_event, installationId: string, opts?: CloseComfyWindowOptions) =>
+    closeBuildWindow(installationId, opts)
 )
 
 ipcMain.handle('close-host-window', (event) => {

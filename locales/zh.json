@@ -1031,7 +1031,7 @@
     "restartProgressTitle": "正在重启 ComfyUI",
     "stop": "停止",
     "stopConfirmTitle": "停止 ComfyUI",
-    "stopConfirmMessage": "这将停止 ComfyUI。任何未保存的工作都会丢失。窗口会保持打开，因此你可以随时重新启动。",
+    "stopConfirmMessage": "这将停止 ComfyUI。任何未保存的工作都会丢失。",
     "connect": "连接",
     "connecting": "正在连接",
     "openDirectory": "打开目录",

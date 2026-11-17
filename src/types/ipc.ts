@@ -1077,6 +1077,11 @@ export interface AppUpdateDownloadProgress {
   bytesPerSecond: number | null
 }
 
+export interface CloseComfyWindowOptions {
+  skipConfirm?: boolean
+  keepDesktopOpen?: boolean
+}
+
 export interface ElectronApi {
   platform: NodeJS.Platform
 
@@ -1188,7 +1193,7 @@ export interface ElectronApi {
   terminalResize(installationId: string, cols: number, rows: number): Promise<void>
   terminalRestart(installationId: string): Promise<TerminalRestore>
   openInstallWindow(installationId: string): Promise<boolean>
-  closeComfyWindow(installationId: string, opts?: { skipConfirm?: boolean }): Promise<boolean>
+  closeComfyWindow(installationId: string, opts?: CloseComfyWindowOptions): Promise<boolean>
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
   closeCurrentPanel(): void
@@ -1519,6 +1524,7 @@ export const PICKER_SETTINGS_CHANNELS = {
   getFieldOptions: 'comfy-titlepopup:picker-settings-get-field-options',
   getInstallations: 'comfy-titlepopup:picker-settings-get-installations',
   stopComfyUI: 'comfy-titlepopup:picker-settings-stop-comfyui',
+  closeComfyWindow: 'comfy-titlepopup:picker-settings-close-comfy-window',
   cancelOperation: 'comfy-titlepopup:picker-settings-cancel-operation',
   getSnapshots: 'comfy-titlepopup:picker-settings-get-snapshots',
   getSnapshotDetail: 'comfy-titlepopup:picker-settings-get-snapshot-detail',
