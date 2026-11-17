@@ -270,6 +270,7 @@ async function rowsOfKind(
   const key = [accessToken, request.order].join('\n')
   let scan = slot.scan
   if (request.offset === 0 || scan?.key !== key) {
+    slot.scan = undefined
     const headers = { Authorization: `Bearer ${accessToken}` }
     scan = { key, rows: await scanAllRows(request.order, headers, signal) }
     slot.scan = scan

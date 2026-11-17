@@ -301,6 +301,21 @@ describe('listAssets', () => {
       expect(offsetsAsked, 'page 1 reads the list again').toHaveLength(6)
     })
 
+    it('reads again for a later page when a new read of page 1 was stopped', async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+      const slot = {}
+      const threeD = { ...FIRST_PAGE, limit: 5, kind: '3d' } as const
+      await listAssets('cloud-1', threeD, new AbortController().signal, slot)
+
+      const stopped = new AbortController()
+      stopped.abort()
+      await expect(listAssets('cloud-1', threeD, stopped.signal, slot)).rejects.toThrow()
+      const asksBefore = offsetsAsked.length
+      await listAssets('cloud-1', { ...threeD, offset: 5 }, new AbortController().signal, slot)
+
+      expect(offsetsAsked.length - asksBefore, 'page 2 does not reuse the old read').toBe(3)
+    })
+
     it("keeps each window's read apart", async () => {
       const offsetsAsked = cloudOfOutputs(1200)
       registerAssetsHandlers()
