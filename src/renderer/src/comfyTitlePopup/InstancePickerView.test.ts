@@ -372,16 +372,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(bridge.selectedInstallSets.at(-1)).toBeNull()
     })
 
-    it('hides search while the list is short', async () => {
-      const wrapper = await mountPicker({
-        installs: fewBuilds(5),
-        activeInstallationId: null,
-        runningInstallationIds: []
-      })
-      expect(wrapper.find('.picker-search').exists()).toBe(false)
-    })
-
-    it('filters install rows by search query once there are six builds', async () => {
+    it('filters install rows by search query under the Builds title', async () => {
       const wrapper = await mountPicker({
         installs: [
           makeInstall({ id: 'a', name: 'Alpha' }),

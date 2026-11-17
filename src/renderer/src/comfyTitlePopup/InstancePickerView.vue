@@ -176,8 +176,6 @@ const { searchQuery, visibleInstalls, showEmptyHint, lastLaunchedShortLabel } = 
 
 const headerTitle = useTemplateRef<HTMLElement>('headerTitle')
 const headerActions = useTemplateRef<HTMLElement>('headerActions')
-const SEARCH_MIN_BUILDS = 6
-const showSearch = computed(() => installations.value.length >= SEARCH_MIN_BUILDS)
 
 function mostRecentInstallId(installs: PickerInstall[]): string | null {
   let best: PickerInstall | undefined
@@ -434,25 +432,25 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
     >
       <div class="picker-body grid min-h-0 flex-[1_1_0] grid-cols-[280px_minmax(0,1fr)]">
         <div
-          class="picker-left m-2 mr-0 flex min-h-0 min-w-0 flex-col gap-2 rounded-[14px] bg-[color-mix(in_oklch,var(--foreground)_6%,var(--modal-surface-bg))] p-2"
+          class="picker-left m-2 mr-0 flex min-h-0 min-w-0 flex-col gap-2 rounded-[14px] bg-[var(--picker-side-bg)] p-2 [--picker-row-hover:color-mix(in_oklch,var(--foreground)_11%,var(--modal-surface-bg))] [--picker-row-active:color-mix(in_oklch,var(--foreground)_15%,var(--modal-surface-bg))] [--picker-side-bg:color-mix(in_oklch,var(--foreground)_6%,var(--modal-surface-bg))]"
         >
-          <div v-if="showSearch" class="picker-search">
-            <BaseInput
-              v-model="searchQuery"
-              class="picker-search-input h-8 [&_input]:text-[13px]"
-              :placeholder="$t('instancePicker.searchPlaceholder')"
-              :aria-label="$t('instancePicker.searchPlaceholder')"
-            >
-              <template #leading><Search :size="14" class="picker-search-icon" /></template>
-            </BaseInput>
-          </div>
-
           <div class="picker-list-section -mx-2 flex min-h-0 flex-auto flex-col overflow-hidden">
             <div
               class="picker-list-section-title mb-1.5 flex flex-none items-center gap-1 px-4 pt-2 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
             >
               {{ $t('instancePicker.instances')
               }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" />
+            </div>
+
+            <div class="picker-search mb-2 px-2">
+              <BaseInput
+                v-model="searchQuery"
+                class="picker-search-input h-8 [&_input]:text-[13px]"
+                :placeholder="$t('instancePicker.searchPlaceholder')"
+                :aria-label="$t('instancePicker.searchPlaceholder')"
+              >
+                <template #leading><Search :size="14" class="picker-search-icon" /></template>
+              </BaseInput>
             </div>
 
             <TransitionGroup
@@ -540,7 +538,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
         type="button"
         variant="muted-textonly"
         size="icon"
-        class="picker-close size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
+        class="picker-close size-9 rounded-full bg-[var(--modal-surface-bg)] text-white [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.06)] hover:bg-[color-mix(in_oklch,var(--foreground)_10%,var(--modal-surface-bg))] hover:text-white"
         :aria-label="$t('common.close')"
         :title="$t('common.close')"
         @click="handleClose"
