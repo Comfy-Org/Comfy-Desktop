@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, useId, useTemplateRef } from 'vue'
+import { computed, useId, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LoaderCircle, Search } from '@lucide/vue'
 import TemplateSearchResults from './TemplateSearchResults.vue'
@@ -48,8 +48,7 @@ function onEnter(event: KeyboardEvent): void {
 
 const results = useTemplateRef<InstanceType<typeof TemplateSearchResults>>('results')
 
-async function revealActive(): Promise<void> {
-  await nextTick()
+function revealActive(): void {
   results.value?.revealActive()
 }
 
@@ -58,17 +57,16 @@ function moveVertically(event: KeyboardEvent, step: 1 | -1): void {
   event.preventDefault()
   const target = results.value?.verticalTarget(step) ?? null
   if (!showPanel.value && search.rows.value.length) search.moveTo(search.activeIndex.value)
-  else if (target === null) search.move(step)
+  else if (target === null || target === search.activeIndex.value) search.move(step)
   else search.moveTo(target)
-  void revealActive()
+  revealActive()
 }
 
 function moveAcross(event: KeyboardEvent, step: 1 | -1): void {
-  if (event.isComposing || !showPanel.value || !search.inResults.value) return
-  if (!search.rows.value.length) return
+  if (event.isComposing || !search.inResults.value || !search.rows.value.length) return
   event.preventDefault()
   search.move(step)
-  void revealActive()
+  revealActive()
 }
 </script>
 

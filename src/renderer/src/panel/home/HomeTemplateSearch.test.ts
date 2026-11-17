@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount } from '@vue/test-utils'
 import '../../assets/main.css'
 
@@ -54,6 +55,8 @@ function answer(result: Partial<TemplateSearchResult>): TemplateSearchResponse {
 function unavailable(availability: TemplateSearchAvailability): TemplateSearchResponse {
   return { kind: 'unavailable', availability }
 }
+
+beforeAll(() => browserPage.viewport(1440, 900))
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -576,6 +579,17 @@ describe('HomeTemplateSearch opening a template', () => {
 describe('HomeTemplateSearch cards', () => {
   const CARDS = ['a', 'b', 'c', 'd', 'e'].map((letter) => candidate(`card_${letter}`))
 
+  function inView(wrapper: Wrapper, selector: string): boolean {
+    const box = wrapper.get(selector).element.getBoundingClientRect()
+    const scroller = panel(wrapper).element.getBoundingClientRect()
+    return (
+      box.top >= Math.max(scroller.top, 0) - 1 &&
+      box.bottom <= Math.min(scroller.bottom, window.innerHeight) + 1
+    )
+  }
+
+  const SELECTED = '[role="option"][aria-selected="true"]'
+
   function cardBoxes(wrapper: Wrapper): DOMRect[] {
     return wrapper.findAll('[role="option"]').map((card) => card.element.getBoundingClientRect())
   }
@@ -667,11 +681,33 @@ describe('HomeTemplateSearch cards', () => {
     await press(wrapper, 'ArrowUp')
     await press(wrapper, 'ArrowLeft')
     expect(highlighted(wrapper)).toBe('mural_template title')
+    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    expect(inView(wrapper, SELECTED)).toBe(true)
     await press(wrapper, 'ArrowRight')
     await press(wrapper, 'ArrowRight')
     await press(wrapper, 'ArrowRight')
     await press(wrapper, 'ArrowRight')
     expect(highlighted(wrapper)).toBe('card_d title')
+  })
+
+  it('moves Up and Down one card at a time when every card is in one row', async () => {
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER, BANNER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await press(wrapper, 'ArrowDown')
+    expect(highlighted(wrapper)).toBe('banner_template title')
+    await press(wrapper, 'ArrowUp')
+    expect(highlighted(wrapper)).toBe('poster_template title')
+  })
+
+  it('leaves Left and Right to the text cursor while a new search for the same request is running', async () => {
+    const wrapper = mountSearch('build-1')
+    await searchCards(wrapper)
+    await press(wrapper, 'ArrowDown')
+    searchTemplates.mockReturnValueOnce(new Promise(() => {}))
+    await wrapper.setProps({ buildId: 'build-2' })
+    await flushPromises()
+    expect(await press(wrapper, 'ArrowRight')).toBe(false)
   })
 
   it('gives Left and Right back to the text cursor once the request is edited', async () => {
@@ -711,7 +747,7 @@ describe('HomeTemplateSearch cards', () => {
     expect(await press(wrapper, 'ArrowRight')).toBe(true)
   })
 
-  it('leaves modified arrows and arrows during IME composition to the text box', async () => {
+  it('leaves modified Left and Right, and any arrow during IME composition, to the text box', async () => {
     const wrapper = mountSearch()
     await searchCards(wrapper)
     await press(wrapper, 'ArrowDown')
@@ -761,17 +797,38 @@ describe('HomeTemplateSearch cards', () => {
     wrapper.get('[role="listbox"]').element.dispatchEvent(press)
     expect(press.defaultPrevented).toBe(true)
     expect(panel(wrapper).attributes('tabindex')).toBe('-1')
+
+    input(wrapper).element.focus()
+    await userEvent.click(wrapper.findAll('[role="presentation"]')[0]!.element)
+    expect(document.activeElement).toBe(input(wrapper).element)
   })
 
-  it('shows the could-not-open message above the cards', async () => {
+  it('keeps the could-not-open message in view when a card lower down could not be opened', async () => {
     openTemplateInBuild.mockResolvedValue('refused')
     const wrapper = mountSearch()
     await searchCards(wrapper)
+    await press(wrapper, 'ArrowUp')
+    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    const message = wrapper.get('[data-testid="home-template-search-open-failed"]').element
-    const list = wrapper.get('[role="listbox"]').element
-    expect(message.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(inView(wrapper, '[data-testid="home-template-search-open-failed"]')).toBe(true)
+  })
+
+  it('brings a first-row card into view past the page scrolling, not only the panel', async () => {
+    const spacer = document.body.insertBefore(
+      document.createElement('div'),
+      document.body.firstChild
+    )
+    spacer.style.height = '2000px'
+    try {
+      const wrapper = mountSearch()
+      await searchCards(wrapper)
+      expect(highlighted(wrapper)).toBe('card_a title')
+      const card = wrapper.get(SELECTED).element.getBoundingClientRect()
+      expect(card.bottom).toBeLessThanOrEqual(window.innerHeight + 1)
+    } finally {
+      spacer.remove()
+    }
   })
 
   it('shows the best match of a new answer even when it is below the fold, and again after the panel reopens', async () => {
@@ -779,20 +836,15 @@ describe('HomeTemplateSearch cards', () => {
     searchTemplates.mockResolvedValue(answer({ outcome: 'download', run: many, download: [MURAL] }))
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a mural')
-    const visible = (): boolean => {
-      const card = wrapper
-        .get('[role="option"][aria-selected="true"]')
-        .element.getBoundingClientRect()
-      const box = panel(wrapper).element.getBoundingClientRect()
-      return card.top >= box.top - 1 && card.bottom <= box.bottom + 1
-    }
     expect(highlighted(wrapper)).toBe('mural_template title')
-    expect(visible()).toBe(true)
+    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    expect(inView(wrapper, SELECTED)).toBe(true)
 
     await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
     await input(wrapper).trigger('focus')
     await flushPromises()
-    expect(visible()).toBe(true)
+    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    expect(inView(wrapper, SELECTED)).toBe(true)
   })
 
   it('scrolls back to the top, heading included, when the highlight wraps to the first row', async () => {

@@ -173,7 +173,7 @@ function revealActive(): void {
   const active = all[props.controller.activeIndex.value]
   if (!active) return
   if (active.offsetTop === all[0]!.offsetTop) panel.value?.scrollTo({ top: 0 })
-  else active.scrollIntoView({ block: 'nearest' })
+  active.scrollIntoView({ block: 'nearest' })
 }
 
 watch(() => props.controller.rows.value, revealActive, { flush: 'post' })
@@ -220,7 +220,7 @@ defineExpose({ verticalTarget, revealActive })
 
     <p
       v-if="controller.openFailed.value"
-      class="m-0 px-2.5 py-2 text-xs/4 text-muted-foreground"
+      class="sticky top-0 z-10 m-0 rounded-lg bg-content-background px-2.5 py-2 text-xs/4 text-muted-foreground"
       data-testid="home-template-search-open-failed"
     >
       {{ t('home.search.openFailed') }}
