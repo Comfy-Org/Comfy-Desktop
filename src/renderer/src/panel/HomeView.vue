@@ -7,7 +7,7 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
-import { homeBuildStatus, homeBuildTones, isCloudBuild } from './home/homeBuild'
+import { homeBuildStatus, homeBuildTones, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
 import { useInstallList } from '../composables/useInstallList'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
@@ -71,7 +71,10 @@ const narrowBuildIds = computed(() => {
   return new Set([latest.id, ...(second ? [second.id] : [])])
 })
 const openableBuilds = computed(() =>
-  workspaceBuilds.value.filter((build) => buildProgressOf(progressStore, build.id) === null)
+  workspaceBuilds.value.filter(
+    (build) =>
+      buildProgressOf(progressStore, build.id) === null && !isBuildOpenBlocked(buildStatus(build))
+  )
 )
 const mostRecentBuild = computed(
   () =>
