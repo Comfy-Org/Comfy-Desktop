@@ -72,13 +72,12 @@ const statusIsCurrent = computed(
   () => workspaceContextId(store.status) === dashboardScope.selectedWorkspaceId
 )
 const personalLabel = computed(() => t('devPlatform.workspace.personalLabel'))
-const currentWorkspaceName = computed(
-  () =>
-    currentWorkspace.value?.name ??
-    (statusIsCurrent.value ? store.status.workspaceName : undefined) ??
-    (dashboardScope.selectedWorkspaceId === PERSONAL_WORKSPACE_ID
-      ? personalLabel.value
-      : t('devPlatform.workspace.switchLabel'))
+const currentWorkspaceName = computed(() =>
+  dashboardScope.selectedWorkspaceId === PERSONAL_WORKSPACE_ID
+    ? personalLabel.value
+    : (currentWorkspace.value?.name ??
+      (statusIsCurrent.value ? store.status.workspaceName : undefined) ??
+      t('devPlatform.workspace.switchLabel'))
 )
 const currentWorkspaceTier = computed(() => currentWorkspace.value?.subscriptionTier)
 const currentWorkspaceMeta = computed(() => {
@@ -95,14 +94,15 @@ const settingsPage = computed<PlatformSettingsPage>(() => {
   return type === 'team' ? 'general' : 'people'
 })
 
-const localPersonalWorkspace = computed<Workspace>(() => ({
+const personalWorkspace = computed<Workspace>(() => ({
   id: PERSONAL_WORKSPACE_ID,
-  name: personalLabel.value,
   type: 'personal',
-  role: 'owner'
+  role: 'owner',
+  ...store.workspaces.find(isPersonalWorkspace),
+  name: personalLabel.value
 }))
 const listedWorkspaces = computed(() => [
-  store.workspaces.find(isPersonalWorkspace) ?? localPersonalWorkspace.value,
+  personalWorkspace.value,
   ...store.workspaces.filter((workspace) => !isPersonalWorkspace(workspace))
 ])
 
@@ -135,7 +135,9 @@ watch(
 
 watch(menuOpen, (open) => {
   if (open) {
-    if (store.workspacesError && !store.loadingWorkspaces) void store.fetchWorkspaces()
+    if (!store.loadingWorkspaces && (store.workspacesError || !store.workspacesLoaded)) {
+      void store.fetchWorkspaces()
+    }
     return
   }
   workspacesOpen.value = false
@@ -349,19 +351,7 @@ async function signOut(): Promise<void> {
                 :clear-label="t('devPlatform.workspaceMenu.clearSearch')"
               />
             </div>
-            <div v-if="loadingWorkspaces" class="flex flex-col gap-2 px-1">
-              <div
-                v-for="index in 2"
-                :key="index"
-                class="flex h-10 items-center gap-2 px-2 py-1"
-                data-testid="workspace-skeleton"
-              >
-                <Skeleton class="size-8 rounded-md" />
-                <Skeleton class="h-4 w-24 rounded-sm" />
-              </div>
-            </div>
             <div
-              v-else
               class="flex min-h-0 flex-col gap-2 overflow-y-auto px-1"
               role="listbox"
               :aria-label="t('devPlatform.workspace.switchLabel')"
@@ -369,14 +359,14 @@ async function signOut(): Promise<void> {
             >
               <Button
                 v-for="workspace in filteredWorkspaces"
-                :key="workspace.id"
+                :key="scopeId(workspace)"
                 type="button"
                 variant="textonly"
                 size="unset"
                 role="option"
                 class="h-10 w-full shrink-0 justify-start gap-2 rounded-md px-2 py-1 text-left"
                 :aria-selected="isCurrent(workspace)"
-                :data-testid="`workspace-option-${workspace.id}`"
+                :data-testid="`workspace-option-${scopeId(workspace)}`"
                 @click="selectWorkspace(workspace)"
               >
                 <WorkspaceAvatar
@@ -393,6 +383,17 @@ async function signOut(): Promise<void> {
                 </span>
                 <Check v-if="isCurrent(workspace)" :size="16" aria-hidden="true" />
               </Button>
+            </div>
+            <div v-if="loadingWorkspaces" class="flex flex-col gap-2 px-1">
+              <div
+                v-for="index in 2"
+                :key="index"
+                class="flex h-10 items-center gap-2 px-2 py-1"
+                data-testid="workspace-skeleton"
+              >
+                <Skeleton class="size-8 rounded-md" />
+                <Skeleton class="h-4 w-24 rounded-sm" />
+              </div>
             </div>
             <small
               v-if="store.workspacesError"

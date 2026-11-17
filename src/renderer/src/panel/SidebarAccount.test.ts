@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { workspaceAvatarStyle } from '@comfyorg/design-system/workspaceAvatar'
 
 import SidebarAccount from './SidebarAccount.vue'
+import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import type { AuthStatus, Workspace } from '../../../types/ipc'
 
@@ -155,7 +156,7 @@ describe('SidebarAccount', () => {
 
     const options = body.findAll('[role="option"]')
     expect(options.map((option) => option.text())).toEqual([
-      'PPersonal Workspace',
+      'PPersonal',
       'SSilversideCreator',
       'HHarborEnterprise',
       'LLegacy'
@@ -182,8 +183,8 @@ describe('SidebarAccount', () => {
     expect(avatar('workspace-option-w1').style.backgroundColor).toBe(
       toComputedColor(workspaceAvatarStyle('Silverside', 'CREATOR').backgroundColor)
     )
-    expect(avatar('workspace-option-p1').style.backgroundColor).toBe(
-      toComputedColor(workspaceAvatarStyle('Personal Workspace', null).backgroundColor)
+    expect(avatar('workspace-option-personal').style.backgroundColor).toBe(
+      toComputedColor(workspaceAvatarStyle('Personal', null).backgroundColor)
     )
     expect(avatar('workspace-option-legacy').style.backgroundColor).toBe('')
   })
@@ -214,7 +215,7 @@ describe('SidebarAccount', () => {
     const { wrapper } = await mountAccount(SIGNED_IN)
 
     const body = await openWorkspaces(wrapper)
-    await body.get('[data-testid="workspace-option-p1"]').trigger('click')
+    await body.get('[data-testid="workspace-option-personal"]').trigger('click')
     await flushPromises()
 
     expect(useDashboardScopeStore().selectedWorkspaceId).toBe('personal')
@@ -332,7 +333,7 @@ describe('SidebarAccount', () => {
     expect(credits.attributes('disabled')).toBeDefined()
   })
 
-  it('shows two loading rows while the workspaces load', async () => {
+  it('keeps Personal pickable beside two loading rows while the workspaces load', async () => {
     const { wrapper } = await mountAccount(SIGNED_IN, false, {
       listWorkspaces: () => new Promise(() => {})
     })
@@ -343,6 +344,22 @@ describe('SidebarAccount', () => {
     expect(body.get('[data-testid="workspace-switcher-panel"]').attributes('aria-busy')).toBe(
       'true'
     )
+    await body.get('[data-testid="workspace-option-personal"]').trigger('click')
+    await flushPromises()
+    expect(useDashboardScopeStore().selectedWorkspaceId).toBe('personal')
+  })
+
+  it('loads the workspaces again on open when an earlier load was dropped', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_IN)
+    const auth = useAuthStore()
+    auth.workspaces = []
+    auth.workspacesLoaded = false
+    comfybuilder.listWorkspaces.mockClear()
+
+    const body = await openWorkspaces(wrapper)
+
+    expect(comfybuilder.listWorkspaces).toHaveBeenCalledOnce()
+    expect(body.findAll('[role="option"]')).toHaveLength(4)
   })
 
   it('says when the workspaces cannot load and tries again when the menu opens', async () => {
