@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef, watch } from 'vue'
+import { computed, onMounted, provide, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
@@ -19,6 +19,8 @@ import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import { TOOLTIP_GATE } from '../components/ui/tooltipGate'
+import { appPageShown, sidebarHovered } from './appPageCover'
 import SidebarAccount from './SidebarAccount.vue'
 import SidebarCredits from './SidebarCredits.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
@@ -56,6 +58,7 @@ interface SidebarRow {
 }
 
 const { t } = useI18n()
+provide(TOOLTIP_GATE, () => !appPageShown.value)
 
 const collapsedByChoice = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
 const reopenedWhileMakingRoom = ref(false)
@@ -152,6 +155,8 @@ function openSettings(): void {
     :aria-label="t('sidebar.navigation')"
     data-testid="app-sidebar"
     :data-collapsed="collapsed"
+    @pointerenter="sidebarHovered = true"
+    @pointerleave="sidebarHovered = false"
   >
     <div
       class="flex shrink-0 items-center"

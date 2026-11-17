@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import '../assets/main.css'
 import AppSidebar from './AppSidebar.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import { appPageShown, sidebarHovered } from './appPageCover'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -56,6 +57,12 @@ beforeEach(() => {
     }
   }
   setActivePinia(createPinia())
+  appPageShown.value = false
+  sidebarHovered.value = false
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 async function mountSidebar(
@@ -266,6 +273,41 @@ describe('AppSidebar', () => {
         .element.getBoundingClientRect()
       expect([trigger.width, trigger.height], testId).toEqual([row.width, row.height])
     }
+    wrapper.unmount()
+  })
+
+  it('tells the app page the pointer is over the sidebar, and when it leaves', async () => {
+    const wrapper = await mountSidebar()
+    const sidebar = wrapper.get('[data-testid="app-sidebar"]')
+
+    await sidebar.trigger('pointerenter')
+    expect(sidebarHovered.value).toBe(true)
+
+    await sidebar.trigger('pointerleave')
+    expect(sidebarHovered.value).toBe(false)
+  })
+
+  it('holds a folded row tooltip while an app page is on screen, and opens it once the page is hidden', async () => {
+    window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+    appPageShown.value = true
+    vi.useFakeTimers()
+    const wrapper = mount(AppSidebar, { props: { activePage: 'apps' }, attachTo: document.body })
+    await vi.advanceTimersByTimeAsync(1)
+    await flushPromises()
+
+    wrapper
+      .get('[data-testid="app-sidebar-home"] .tooltip-wrap')
+      .element.dispatchEvent(
+        new PointerEvent('pointermove', { pointerType: 'mouse', bubbles: true })
+      )
+    await vi.advanceTimersByTimeAsync(200)
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+
+    appPageShown.value = false
+    await flushPromises()
+
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Home')
     wrapper.unmount()
   })
 
