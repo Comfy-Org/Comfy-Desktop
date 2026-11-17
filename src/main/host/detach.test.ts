@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as SystemModalModule from '../popups/systemModal'
-import type * as TitlePopupModule from '../popups/titlePopup'
 import type * as SettingsModule from '../settings'
 
 const mocks = vi.hoisted(() => ({
@@ -9,8 +8,7 @@ const mocks = vi.hoisted(() => ({
   appsBuildRunning: false,
   agrees: true,
   asked: [] as { spec: { message: string } }[],
-  stopAppsBuilds: vi.fn(async () => {}),
-  hideTitlePopup: vi.fn()
+  stopAppsBuilds: vi.fn(async () => {})
 }))
 
 vi.mock('electron', () => ({
@@ -39,10 +37,6 @@ vi.mock('../popups/systemModal', async (importOriginal) => ({
     return mocks.agrees
   }
 }))
-vi.mock('../popups/titlePopup', async (importOriginal) => ({
-  ...(await importOriginal<typeof TitlePopupModule>()),
-  hideTitlePopupForParent: (parent: unknown) => mocks.hideTitlePopup(parent)
-}))
 vi.mock('../settings', async (importOriginal) => {
   const actual = await importOriginal<typeof SettingsModule>()
   return {
@@ -53,16 +47,9 @@ vi.mock('../settings', async (importOriginal) => {
 })
 
 import { _runningSessions } from '../lib/ipc/shared'
-import {
-  comfyWindows,
-  nextWindowKey,
-  registerHostEntry,
-  unregisterHostEntry,
-  type ComfyWindowEntry
-} from './registry'
+import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from './registry'
 import {
   closeAllHostWindows,
-  closeBuildWindow,
   confirmAndCloseHostWindow,
   detachOrphanedInstallHosts,
   preClearedClose
@@ -279,102 +266,5 @@ describe('closing the last Desktop window while an app uses a ComfyUI Desktop st
 
     expect(mocks.stopAppsBuilds).toHaveBeenCalledTimes(1)
     expect(win.closed).toBe(true)
-  })
-})
-
-describe('closing a build window once its ComfyUI has stopped', () => {
-  const STOP = { skipConfirm: true, keepDesktopOpen: true }
-  let opened: ComfyWindowEntry[] = []
-
-  function openBuildWindow(installationId: string, win = makeWindow()) {
-    const returnsToHome = vi.fn()
-    const entry = { ...makeEntry(win), installationId, detachInstall: returnsToHome }
-    registerHostEntry(entry)
-    opened.push(entry)
-    return { win, returnsToHome }
-  }
-
-  function openHome(win = makeWindow()): FakeWindow {
-    const entry = makeEntry(win)
-    registerHostEntry(entry)
-    opened.push(entry)
-    return win
-  }
-
-  beforeEach(() => {
-    mocks.hideTitlePopup.mockClear()
-  })
-
-  afterEach(() => {
-    for (const entry of opened) unregisterHostEntry(entry)
-    opened = []
-  })
-
-  it('returns the only Desktop window to Home instead of closing it', () => {
-    const { win, returnsToHome } = openBuildWindow('build-A')
-
-    expect(closeBuildWindow('build-A', STOP)).toBe(true)
-
-    expect(returnsToHome).toHaveBeenCalledTimes(1)
-    expect(win.closed).toBe(false)
-    expect(preClearedClose.has(win as unknown as Electron.BrowserWindow)).toBe(false)
-    expect(mocks.hideTitlePopup).toHaveBeenCalledExactlyOnceWith(win)
-  })
-
-  it('closes the build window without asking while Home is open in another window', () => {
-    const { win, returnsToHome } = openBuildWindow('build-A')
-    const home = openHome()
-
-    expect(closeBuildWindow('build-A', STOP)).toBe(true)
-
-    expect(win.closed).toBe(true)
-    expect(preClearedClose.has(win as unknown as Electron.BrowserWindow)).toBe(true)
-    expect(returnsToHome).not.toHaveBeenCalled()
-    expect(home.closed).toBe(false)
-  })
-
-  it('counts only windows that are still open when deciding it is the last one', () => {
-    const { win, returnsToHome } = openBuildWindow('build-A')
-    openHome(makeWindow({ destroyed: true }))
-
-    expect(closeBuildWindow('build-A', STOP)).toBe(true)
-
-    expect(returnsToHome).toHaveBeenCalledTimes(1)
-    expect(win.closed).toBe(false)
-  })
-
-  it('closes the only window for a caller that does not ask to keep Desktop open', () => {
-    const { win, returnsToHome } = openBuildWindow('build-A')
-
-    expect(closeBuildWindow('build-A', { skipConfirm: true })).toBe(true)
-
-    expect(win.closed).toBe(true)
-    expect(returnsToHome).not.toHaveBeenCalled()
-  })
-
-  it('leaves the close prompt in place when the caller does not skip it', () => {
-    const { win } = openBuildWindow('build-A')
-    openHome()
-
-    expect(closeBuildWindow('build-A')).toBe(true)
-
-    expect(win.closed).toBe(true)
-    expect(preClearedClose.has(win as unknown as Electron.BrowserWindow)).toBe(false)
-  })
-
-  it('reports that a build with no window had nothing to close', () => {
-    const home = openHome()
-
-    expect(closeBuildWindow('build-A', STOP)).toBe(false)
-
-    expect(home.closed).toBe(false)
-  })
-
-  it('reports nothing to close for a build whose window is already gone', () => {
-    const { returnsToHome } = openBuildWindow('build-A', makeWindow({ destroyed: true }))
-
-    expect(closeBuildWindow('build-A', STOP)).toBe(false)
-
-    expect(returnsToHome).not.toHaveBeenCalled()
   })
 })

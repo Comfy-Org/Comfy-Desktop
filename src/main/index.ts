@@ -169,7 +169,6 @@ import { applyAttachHostPreview, clearAttachHostPreview } from './host/attachHos
 import { takePriorSessionUnclean } from './lib/comfyProcessRecord'
 import {
   _detachInstallImpl,
-  closeBuildWindow,
   confirmAndCloseAllHostWindows,
   confirmAndCloseHostWindow,
   confirmCloseInstanceWindow,
@@ -178,6 +177,7 @@ import {
   preClearedClose,
   returnToDashboard
 } from './host/detach'
+import { closeBuildWindow } from './host/closeBuildWindow'
 import {
   destroyPanelView,
   ensurePanelView,
