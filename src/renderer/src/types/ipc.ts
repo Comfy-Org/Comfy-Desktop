@@ -85,6 +85,7 @@ export type {
   AppUpdateState,
   AppUpdateDownloadProgress,
   CloudUserTier,
+  CreditBalanceState,
   InstallBuildResult,
   ElectronApi
 } from '../../../types/ipc'

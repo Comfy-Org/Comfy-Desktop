@@ -16,6 +16,7 @@
     }
   },
   "sidebar": {
+    "openInNewWindow": "在新窗口中打开",
     "builds": "构建",
     "navigation": "导航",
     "home": "主页",
@@ -30,7 +31,11 @@
     "crashed": "已崩溃",
     "crashedWithCode": "已崩溃（退出代码 {code}）",
     "crashedWithSignal": "已崩溃（{signal}）",
-    "failedToStartReason": "启动失败：{reason}"
+    "failedToStartReason": "启动失败：{reason}",
+    "credits": "积分",
+    "creditsTooltip": "{credits} 积分",
+    "creditsError": "无法加载余额",
+    "creditsLabel": "{balance}。{action}"
   },
   "apps": {
     "search": "搜索应用",
@@ -155,6 +160,7 @@
     "openComfyUIIn": "在 {name} 中打开 ComfyUI",
     "opensIn": "在 {name} 中打开",
     "allBuilds": "全部构建",
+    "newBuildDetail": "在这台电脑上运行 ComfyUI",
     "turnOnAutoStart": "自动启动",
     "turnOffAutoStart": "关闭自动启动",
     "autoStartOn": "自动启动",
@@ -254,7 +260,6 @@
     "appUpdateAvailable": "更新 {version}",
     "appUpdateReady": "重启以更新",
     "installUpdateAvailable": "有可用更新",
-    "installUpdateShort": "更新",
     "home": "主页",
     "menu": "菜单",
     "feedback": "反馈",
@@ -272,9 +277,6 @@
     "installUpdateVersion": "ComfyUI {version}",
     "refreshInstanceTooltip": "刷新",
     "resetZoomTooltip": "将缩放重置为 100%",
-    "pillHintTitle": "切换和管理实例",
-    "pillHintBody": "点击这里切换实例、启动新的本地实例，或返回仪表板。",
-    "pillHintDismiss": "知道了",
     "betaNoticeTitle": "已启用 Beta 功能",
     "betaNoticeBody": "此实例启动时启用了一项 Beta 功能。你可以在设置中关闭 Beta 功能。",
     "betaNoticeTitleNamed": "已启用 {feature} Beta 功能",
@@ -289,8 +291,7 @@
   "comfyUISettings": {
     "title": "设置",
     "tabConfig": "启动参数",
-    "tabStatus": "关于",
-    "tabUpdate": "更新",
+    "tabOverview": "概览",
     "tabSnapshots": "快照",
     "tabStorage": "存储",
     "tabTerminal": "终端",
@@ -665,6 +666,24 @@
     "switchingToTitle": "正在切换到 {channel}",
     "computingCommitsAhead": "正在计算领先的提交…"
   },
+  "buildOverview": {
+    "notChecked": "尚未检查",
+    "comfyui": "ComfyUI",
+    "pytorch": "PyTorch",
+    "onDisk": "磁盘占用",
+    "free": "可用 {size}",
+    "python": "Python",
+    "available": "{version} 可用",
+    "savesSnapshot": "会先保存快照",
+    "checked": "检查于 {time}",
+    "update": "更新",
+    "moreUpdateOptions": "更多更新选项",
+    "change": "更改",
+    "inUse": "使用中",
+    "details": "详情",
+    "openFolder": "打开文件夹",
+    "copyPath": "复制路径"
+  },
   "track": {
     "title": "添加现有构建",
     "grandTitle": "添加现有构建",
@@ -770,7 +789,7 @@
     "autoInstallUpdates": "自动安装桌面端更新",
     "appBehavior": "应用行为",
     "confirmBeforeClosingWindow": "关闭窗口前确认",
-    "confirmBeforeClosingWindowDescription": "关闭正在运行本地安装的窗口前请求确认。",
+    "confirmBeforeClosingWindowDescription": "关闭窗口会停止 ComfyUI 或退出 Comfy Desktop 时，先请求确认。",
     "warnBeforeRunningMultipleInstances": "运行多个构建前发出警告",
     "warnBeforeRunningMultipleInstancesDescription": "当一个本地 ComfyUI 构建正在运行或启动时，在启动另一个构建前显示警告。",
     "hardwareAcceleration": "使用硬件加速",
@@ -806,13 +825,19 @@
     "preferences": "偏好设置",
     "privacy": "隐私",
     "community": "社区",
-    "storageTab": "存储",
+    "storageTab": "文件夹",
     "sharedDirectories": "共享目录",
     "storageSharedHint": "这些文件夹由所有构建共享。每个构建可在自己的“存储”标签页中选择是否使用。",
     "installLocation": "默认安装位置",
     "updatesTab": "更新",
     "diagnostics": "诊断",
-    "openLogsFolder": "打开日志文件夹"
+    "openLogsFolder": "打开日志文件夹",
+    "sharedFolders": "共享文件夹",
+    "folderKindModels": "模型",
+    "folderKindInput": "输入",
+    "folderKindOutput": "输出",
+    "useForDownloads": "用于下载",
+    "addModelsFolder": "添加模型文件夹"
   },
   "zoom": {
     "changed": "缩放级别已更改",
@@ -1671,10 +1696,9 @@
     "instances": "一个独立的 ComfyUI 构建，拥有自己的版本、模型和设置。",
     "snapshots": "构建某一时间点的保存状态（版本 + 自定义节点），之后可恢复。",
     "console": "在此构建文件夹中运行的交互式 shell。无论 ComfyUI 正在运行还是已停止都可使用。",
-    "tabUpdate": "检查并安装此 ComfyUI 构建的更新。更新前请先选择发行通道并查看发行说明。",
+    "tabOverview": "一览此构建：ComfyUI 及其更新通道、PyTorch、磁盘占用、Python 以及安装位置。",
     "tabConfig": "启动时传递给 ComfyUI 的命令行参数——端口、低显存模式、自定义目录和其他启动覆盖项。",
     "tabStorage": "显示此构建及其读取的共享模型、输入和输出目录的磁盘占用。",
-    "tabStatus": "构建详情——版本、安装位置、上次启动时间、来源以及该构建的其他元数据。",
     "standalone": "自包含构建，带有自己的 Python 和依赖。易于更新和管理。",
     "portable": "官方 Windows 便携版，内置 Python。可从单个文件夹运行，无需系统级安装。",
     "git": "从 ComfyUI 仓库克隆的基于 git 的安装。需要系统中安装 git 和 Python。",
@@ -1713,7 +1737,8 @@
     "envVars": "ComfyUI 启动时传入的自定义环境变量。警告：这些值会以未加密形式存储在配置文件中——不要添加 API 密钥、令牌或其他敏感信息。",
     "managerSecurityLevel": "控制 ComfyUI-Manager 允许安装哪些节点包。级别越严格，越会阻止高风险安装，尤其是在使用 --listen 将 ComfyUI 暴露到网络时。下次启动时生效。",
     "managerNetworkMode": "控制此安装中 ComfyUI-Manager 的联网方式。选择“个人云”可在 ComfyUI 通过 --listen 暴露时（例如你自己的云 GPU 机器）允许安装节点包。下次启动时生效。",
-    "betaFeaturesNeedTelemetry": "Beta 功能需要在设置中确认数据共享，即使遥测当前已开启。"
+    "betaFeaturesNeedTelemetry": "Beta 功能需要在设置中确认数据共享，即使遥测当前已开启。",
+    "sharedFolders": "所有构建都可使用的文件夹，避免重复下载模型。新模型会下载到标记为“下载”的文件夹；可通过“用于下载”选择其他文件夹。每个构建可在自己的存储标签页中选择是否使用共享的输入和输出文件夹，也可以添加仅供自己使用的模型文件夹。"
   },
   "envVars": {
     "name": "名称",

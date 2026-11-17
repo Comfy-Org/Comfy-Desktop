@@ -818,6 +818,16 @@ function computeCenteredCardBounds(
   return { x, y, width, height }
 }
 
+export const GLOBAL_SETTINGS_CLOSE_GUTTER = 48
+
+function withOutsideCloseGutter(
+  kind: CenteredCardKind,
+  bounds: { x: number; y: number; width: number; height: number }
+): { x: number; y: number; width: number; height: number } {
+  if (kind !== POPUP_KIND.globalSettings) return bounds
+  return { ...bounds, width: bounds.width + GLOBAL_SETTINGS_CLOSE_GUTTER }
+}
+
 const POPUP_EDGE_GUTTER = 8
 
 function clampPopupX(x: number, width: number, parent: BrowserWindow): number {
@@ -849,7 +859,7 @@ function refitPopupForParent(entry: TitlePopupEntry): void {
   }
 
   if (kindIsCentered(entry.kind)) {
-    const target = computeCenteredCardBounds(entry.kind, parent)
+    const target = withOutsideCloseGutter(entry.kind, computeCenteredCardBounds(entry.kind, parent))
     if (
       target.x === cur.x &&
       target.y === cur.y &&
@@ -960,7 +970,10 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     x = bounds.x
     y = bounds.y
   } else {
-    ;({ x, y, width, height } = computeCenteredCardBounds(opts.kind, opts.parent))
+    ;({ x, y, width, height } = withOutsideCloseGutter(
+      opts.kind,
+      computeCenteredCardBounds(opts.kind, opts.parent)
+    ))
   }
 
   entry.view.popup.setBounds({ x, y, width, height })
@@ -1642,34 +1655,6 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     if (!popup) return
     hideTitlePopup(popup, { releaseFocusToParent: true })
   })
-
-  ipcMain.on(
-    'comfy-window:click-install-pill',
-    (event, payload: { anchor?: { x?: number; y?: number } } | undefined) => {
-      const found = findEntryByTitleBarSender(event.sender)
-      if (!found) return
-      const { id: windowKey, entry } = found
-      if (entry.window.isDestroyed()) return
-
-      const existingPopup = titlePopupsByParent.get(entry.window.id)
-      if (
-        existingPopup &&
-        existingPopup.kind === 'instance-picker' &&
-        (existingPopup.view.isOpen || existingPopup.view.pendingShowTimer !== null)
-      ) {
-        hideTitlePopup(existingPopup, { releaseFocusToParent: true })
-        return
-      }
-
-      const x = Math.max(0, Math.round(payload?.anchor?.x ?? 0))
-      const y = Math.max(0, Math.round(payload?.anchor?.y ?? TITLEBAR_HEIGHT))
-
-      openInstancePickerForHost(entry, windowKey, bindings, entry.titleBarView.webContents, {
-        x,
-        y
-      })
-    }
-  )
 
   ipcMain.on(
     'comfy-window:open-instance-picker-for-install',

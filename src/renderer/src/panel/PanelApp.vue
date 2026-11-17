@@ -27,6 +27,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import { isNewWindowDashboardPage } from '../../../shared/dashboardPages'
 import { seedLauncherPrefsFromUrl, useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useModal } from '../composables/useModal'
 import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
@@ -159,7 +160,10 @@ if (params.get('e2e') === '1') {
 
 type DashboardHomePage = Extract<DashboardPage, 'home' | 'apps' | 'chooser' | 'assets'>
 
-const dashboardHomePage = ref<DashboardHomePage>('home')
+const urlDashboardPage = params.get('dashboardPage')
+const dashboardHomePage = ref<DashboardHomePage>(
+  isNewWindowDashboardPage(urlDashboardPage) ? urlDashboardPage : 'home'
+)
 
 const sidebarPage = computed<DashboardPage | null>(() => {
   const panel = activePanel.value
@@ -282,16 +286,6 @@ provideBuildMenuHost({
   showProgress: handleShowProgress
 })
 
-async function handleStartupRestorePick(inst: Installation): Promise<void> {
-  try {
-    await chooserHandoff.performChooserLaunch(inst)
-  } catch (err) {
-    console.error('startup restore launch failed', err)
-  } finally {
-    window.api.resolveStartupRestoreReveal('dashboard-fallback')
-  }
-}
-
 if (!installationId) {
   watch(currentOverlay, (next, prev) => {
     if (prev && !next) {
@@ -336,11 +330,7 @@ useDeepLinkRouter({
       pickerWorkspaceId: pickOpts?.pickerWorkspaceId
     }
     if (!installationId) {
-      if (pickOpts?.startupRestore) {
-        await handleStartupRestorePick(inst)
-      } else {
-        await chooserHandoff.handleChooserPick(inst, launchOpts)
-      }
+      await chooserHandoff.handleChooserPick(inst, launchOpts)
     } else {
       await chooserHandoff.performPickerLaunch(inst, launchOpts)
     }
@@ -538,6 +528,7 @@ onUnmounted(() => {
               @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
               @show-apps="handleSidebarNavigate('apps')"
+              @new-build="handleChooserShowNewInstall"
             />
             <AppsView
               v-else-if="dashboardHomePage === 'apps'"

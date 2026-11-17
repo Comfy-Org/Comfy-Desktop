@@ -50,7 +50,7 @@ test('the WebContents facade drives shared selects and tabs with native input @w
     await expect.poll(() => ctx.panel.evaluate("window.api.getSetting('language')")).toBe('en')
 
     expect(await popup.clickNth('[role="tab"]', 2)).toBe(true)
-    await expect.poll(() => popup.textOf('[role="tab"][aria-selected="true"]')).toBe('Storage')
+    await expect.poll(() => popup.textOf('[role="tab"][aria-selected="true"]')).toBe('Folders')
     await popup.pressKey('Home')
     await expect
       .poll(() =>

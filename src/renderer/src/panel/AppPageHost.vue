@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  useTemplateRef,
+  watch
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useResizeObserver } from '@vueuse/core'
 import { ChevronLeft } from '@lucide/vue'
@@ -8,6 +17,7 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useCoveredByPage } from '../composables/useCoveredByPage'
+import { appPageShown, sidebarHovered } from './appPageCover'
 import type {
   AppOutputAction,
   AppOutputs,
@@ -26,7 +36,8 @@ const emit = defineEmits<{ close: []; 'view-in-assets': [name: string] }>()
 const { t } = useI18n()
 
 const host = useTemplateRef<HTMLElement>('host')
-const covered = useCoveredByPage(host)
+const coveredByPage = useCoveredByPage(host)
+const covered = computed(() => coveredByPage.value || sidebarHovered.value)
 const status = ref<AppPageStatus | null>(null)
 const frozenFrame = ref<string | null>(null)
 const outputs = shallowRef<OutputDetailItem[] | null>(null)
@@ -72,6 +83,7 @@ async function reveal(): Promise<void> {
   const turn = ++latestTurn
   const placement = takePlacement()
   if (!placement) return
+  appPageShown.value = true
   const shown = await window.api.showAppPage(appId, placement)
   if (turn !== latestTurn) return
   status.value = shown
@@ -87,6 +99,7 @@ async function conceal(): Promise<void> {
   await nextTick()
   if (turn !== latestTurn) return
   window.api.hideAppPage()
+  appPageShown.value = false
 }
 
 function outputKind(mimeType: string): AssetKind | null {
@@ -180,6 +193,7 @@ onBeforeUnmount(() => {
   stopOutputs?.()
   releaseOutputs()
   window.api.hideAppPage()
+  appPageShown.value = false
 })
 </script>
 

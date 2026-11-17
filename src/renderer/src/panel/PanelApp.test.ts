@@ -421,6 +421,8 @@ function installMockApi(initial?: {
     onAppPageStatusChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
     onAppOutputs: vi.fn(() => () => {}),
+    refreshCreditBalance: vi.fn(async () => ({ status: 'signed_out' })),
+    onCreditBalanceChanged: vi.fn(() => () => {}),
     getListActions: vi.fn(async () => []),
     runAction: vi.fn(async () => ({ ok: true })),
     getFieldOptions: vi.fn(async () => []),
@@ -1234,6 +1236,25 @@ describe('PanelApp', () => {
     await waitForBuildMenuFocusReturn()
   })
 
+  it.each([
+    ['chooser', 'chooser'],
+    ['assets', 'assets'],
+    ['benchmarks', 'home'],
+    ['', 'home']
+  ] as const)('opens a new window asked for %s on the %s page', async (requested, shown) => {
+    window.history.replaceState(
+      {},
+      '',
+      `/?panel=chooser&firstUseCompleted=true&dashboardPage=${requested}`
+    )
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.get(`[data-testid="app-sidebar-${shown}"]`).attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
   it('opens the new-install takeover above the chooser body when show-new-install fires', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
@@ -1308,73 +1329,6 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
-  })
-
-  it('auto-starts a build in its own window and keeps Home available with launch errors', async () => {
-    mockState.installations = [SAMPLE_INSTALL]
-    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
-    api.getListActions.mockResolvedValue([
-      { id: 'launch', label: 'Start', style: 'primary', showProgress: true }
-    ])
-    let finishLaunch: (result: { ok: boolean; message?: string }) => void = () => {}
-    api.runAction.mockReturnValueOnce(
-      new Promise((resolve) => {
-        finishLaunch = resolve
-      })
-    )
-    Object.assign(api, {
-      onInstallProgress: vi.fn(() => () => {}),
-      resolveStartupRestoreReveal: vi.fn()
-    })
-    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    const wrapper = mountPanel()
-    await flushPromises()
-
-    mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
-      cb({ kind: 'picker-pick-install', installationId: 'test-id', startupRestore: true })
-    )
-    await flushPromises()
-
-    expect(api.runAction).toHaveBeenCalledWith('test-id', 'launch')
-    expect(api.claimAttachHost).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
-    expect(wrapper.get('[data-testid="home-build-starting"]').text()).toContain('Starting ComfyUI')
-    expect(api.resolveStartupRestoreReveal).toHaveBeenCalledWith('dashboard-fallback')
-
-    finishLaunch({ ok: false, message: 'ComfyUI exited with code 1' })
-    await flushPromises()
-    const card = wrapper.get('[data-testid="home-build"][data-build-id="test-id"]')
-    expect(card.text()).toContain("Didn't start")
-
-    await card.trigger('click')
-    await flushPromises()
-    const dialog = document.body.querySelector('[data-testid="build-progress-dialog"]')
-    expect(dialog?.textContent).toContain("ComfyUI didn't start")
-    expect(dialog?.textContent).toContain('ComfyUI exited with code 1')
-    document.body.querySelector<HTMLButtonElement>('[data-testid="build-progress-close"]')!.click()
-    await flushPromises()
-  })
-
-  it('keeps Home available when the auto-start build has no launch action', async () => {
-    mockState.installations = [SAMPLE_INSTALL]
-    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
-    api.getListActions.mockResolvedValue([])
-    api.resolveStartupRestoreReveal = vi.fn()
-    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    const wrapper = mountPanel()
-    await flushPromises()
-
-    mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
-      cb({ kind: 'picker-pick-install', installationId: 'test-id', startupRestore: true })
-    )
-    await flushPromises()
-
-    expect(api.runAction).not.toHaveBeenCalled()
-    expect(api.claimAttachHost).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
-    expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(false)
-    expect(api.resolveStartupRestoreReveal).toHaveBeenCalledWith('dashboard-fallback')
   })
 
   it('Start on a Home build card starts it there and leaves this window on Home', async () => {
@@ -1758,6 +1712,22 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+  })
+
+  it("returns from a build's details to the list when Builds is picked in the sidebar", async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await showBuilds(wrapper)
+    wrapper.findComponent({ name: 'ChooserView' }).vm.$emit('open-details', SAMPLE_INSTALL)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="build-details"]').text()).toBe(SAMPLE_INSTALL.name)
+
+    await wrapper.get('[data-testid="app-sidebar-chooser"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 
   it("leaves a build's details when the window switches screens", async () => {
