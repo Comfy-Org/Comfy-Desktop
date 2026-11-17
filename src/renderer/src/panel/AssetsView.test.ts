@@ -574,6 +574,16 @@ describe('AssetsView', () => {
     ])
   })
 
+  it('opens on the Shared folder with no build installed, so the default output folder still shows', async () => {
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: []
+    })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Shared folder')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith(undefined)
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+  })
+
   it('turns an old This computer choice into Shared folder, or the first build without one', async () => {
     window.localStorage.setItem('comfy.desktop.assets.place', 'computer')
     const shared = await mountAssets([], { builds: [localBuild('lab'), sharedBuild('a')] })
