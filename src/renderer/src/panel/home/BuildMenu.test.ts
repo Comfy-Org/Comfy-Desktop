@@ -53,6 +53,8 @@ beforeEach(() => {
     platform: 'darwin',
     navigatePanel: vi.fn(),
     getAppsEnabled: vi.fn().mockResolvedValue(false),
+    getAppUpdateState: vi.fn().mockResolvedValue({ kind: null, version: null, autoUpdate: true }),
+    onAppUpdateStateChanged: vi.fn(() => () => {}),
     getInstallations: vi.fn().mockResolvedValue([]),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
