@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  sitePackages: '/sp' as string | null,
   regularFileExists: vi.fn(async (_file: string) => false),
   buildExistenceCandidates: vi.fn(
     (_ctx: unknown, _base: string, directory: string, filename: string) => [
@@ -14,13 +15,19 @@ const mocks = vi.hoisted(() => ({
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp/userdata' }, net: {} }))
 vi.mock('../installations', () => ({ list: mocks.list }))
 vi.mock('../lib/modelDownloadPaths', () => ({
-  resolveDownloadContext: () => ({ modelRoots: [], extraPaths: [] }),
-  getModelsBaseDir: () => '/shared',
+  resolveDownloadContext: () => ({
+    modelRoots: [],
+    extraPaths: [],
+    downloadBaseDir: '/build-models'
+  }),
   buildExistenceCandidates: mocks.buildExistenceCandidates,
   regularFileExists: mocks.regularFileExists
 }))
 vi.mock('./buildRuntime', () => ({
-  buildRuntime: (build: { id: string }) => ({ python: '/py', sitePackages: `/sp/${build.id}` })
+  buildRuntime: (build: { id: string }) => ({
+    python: '/py',
+    sitePackages: mocks.sitePackages && `${mocks.sitePackages}/${build.id}`
+  })
 }))
 
 import { createDesktopSearch } from './desktopSearch'
@@ -50,7 +57,7 @@ const ANSWER = {
   options: []
 }
 
-function setup(answer: SidecarDecision = { kind: 'answer', body: ANSWER }) {
+function setup(answer: SidecarDecision = { kind: 'answer', body: ANSWER }, enabled = true) {
   let clock = 0
   const decide = vi.fn(async (_body: unknown) => answer)
   const readTemplates = vi.fn(
@@ -65,6 +72,7 @@ function setup(answer: SidecarDecision = { kind: 'answer', body: ANSWER }) {
     process: { decide },
     isLocalInstallation: (b) => b.sourceId === 'standalone',
     terminalEnvOf: () => null,
+    enabled: () => enabled,
     readTemplates,
     now: () => clock
   })
@@ -74,6 +82,7 @@ function setup(answer: SidecarDecision = { kind: 'answer', body: ANSWER }) {
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.list.mockResolvedValue([LOCAL, CLOUD])
+  mocks.sitePackages = '/sp'
 })
 
 describe('createDesktopSearch', () => {
@@ -100,10 +109,17 @@ describe('createDesktopSearch', () => {
     })
   })
 
-  it("finds a template's models wherever Desktop's model lookup would", async () => {
+  it("finds a template's models wherever Desktop's model lookup would for that build", async () => {
     const { search, readTemplates } = setup()
     await search.search('a poster', 'local-1')
     const hasModel = readTemplates.mock.calls[0]![1]
+    await hasModel('vae', 'v.safetensors')
+    expect(mocks.buildExistenceCandidates).toHaveBeenCalledWith(
+      expect.anything(),
+      '/build-models',
+      'vae',
+      'v.safetensors'
+    )
 
     mocks.regularFileExists.mockImplementation(async (file) => file === '/extra/vae/v.safetensors')
     expect(await hasModel('vae', 'v.safetensors')).toBe(true)
@@ -120,6 +136,24 @@ describe('createDesktopSearch', () => {
     await search.search('a poster', installationId)
     expect(readTemplates).not.toHaveBeenCalled()
     expect(decide.mock.calls[0]![0]).not.toHaveProperty('installed')
+  })
+
+  it('reads nothing about the build while search is off', async () => {
+    const { search, decide, readTemplates } = setup(undefined, false)
+    expect(await search.search('a poster', 'local-1')).toEqual({
+      kind: 'unavailable',
+      availability: { kind: 'off' }
+    })
+    expect(readTemplates).not.toHaveBeenCalled()
+    expect(decide).not.toHaveBeenCalled()
+  })
+
+  it('treats nothing as installed for a build whose runtime cannot be found', async () => {
+    mocks.sitePackages = null
+    const { search, decide, readTemplates } = setup()
+    await search.search('a poster', 'local-1')
+    expect(readTemplates).not.toHaveBeenCalled()
+    expect(decide.mock.calls[0]![0]).toMatchObject({ installed: [] })
   })
 
   it('reads a build once a minute at most, and again after it changes', async () => {

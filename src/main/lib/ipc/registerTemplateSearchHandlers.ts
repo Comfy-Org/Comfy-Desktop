@@ -1,4 +1,5 @@
 import { ipcMain, type WebContents } from 'electron'
+import * as settings from '../../settings'
 import { get as getInstallation, type InstallationRecord } from '../../installations'
 import { getEntryByInstallationId } from '../../host/registry'
 import { isPersistableTemplateId } from '../../sources/standalone/curatedTemplates'
@@ -7,6 +8,7 @@ import { TEMPLATE_SEARCH_MAX_QUERY } from '../../../shared/templateSearch'
 import {
   changesBuildEnv,
   createSearchProcess,
+  isBuildBusy,
   type SearchProcess
 } from '../../templateSearch/searchProcess'
 import { createDesktopSearch, type DesktopSearch } from '../../templateSearch/desktopSearch'
@@ -23,7 +25,7 @@ import type {
 } from '../../../types/ipc'
 import { _broadcastToRenderer } from './broadcast'
 import { _runningSessions, sessionLifecycleEvents } from './shared'
-import { _getActiveOperations, setSessionActionObserver } from './sessionActions'
+import { setSessionActionObserver } from './sessionActions'
 
 type SearchProcessApi = Pick<
   SearchProcess,
@@ -47,22 +49,19 @@ function queryFrom(value: unknown): string | null {
   return query && query.length <= TEMPLATE_SEARCH_MAX_QUERY ? query : null
 }
 
-function runningComfyView(installationId: string): { url: string; contents: WebContents } | null {
-  if (!_runningSessions.has(installationId)) return null
+function comfyView(installationId: string): { url: string; contents: WebContents } | null {
   const entry = getEntryByInstallationId(installationId)
   const contents = entry?.comfyView.webContents
   if (!entry?.comfyUrl || !contents || contents.isDestroyed()) return null
   return { url: entry.comfyUrl, contents }
 }
 
-function opensInAWindow(installation: InstallationRecord): boolean {
-  return (installation.launchMode ?? 'window') === 'window'
+function searchEnabled(): boolean {
+  return settings.get('templateSearchEnabled') === true
 }
 
-function hasOperationOtherThanLaunch(installationId: string): boolean {
-  return _getActiveOperations().some(
-    (operation) => operation.installationId === installationId && operation.actionId !== 'launch'
-  )
+function opensInAWindow(installation: InstallationRecord): boolean {
+  return (installation.launchMode ?? 'window') === 'window'
 }
 
 export function registerTemplateSearchHandlers({
@@ -73,7 +72,12 @@ export function registerTemplateSearchHandlers({
     terminalEnvOf,
     broadcast: broadcastAvailability
   }),
-  search = createDesktopSearch({ process, isLocalInstallation, terminalEnvOf })
+  search = createDesktopSearch({
+    process,
+    isLocalInstallation,
+    terminalEnvOf,
+    enabled: searchEnabled
+  })
 }: TemplateSearchHandlerOptions): void {
   setSessionActionObserver({
     async before(installationId, actionId) {
@@ -112,23 +116,24 @@ export function registerTemplateSearchHandlers({
   ipcMain.handle(
     'template-search:open',
     async (_event, installationId: unknown, templateId: unknown): Promise<OpenTemplateOutcome> => {
+      if (!searchEnabled()) return 'refused'
       if (typeof installationId !== 'string' || !isPersistableTemplateId(templateId))
         return 'refused'
       const installation = await getInstallation(installationId)
       if (!installation || !isLocalInstallation(installation)) return 'refused'
-      if (!opensInAWindow(installation) || hasOperationOtherThanLaunch(installationId))
-        return 'refused'
-      const running = runningComfyView(installationId)
-      if (running) {
-        try {
-          await running.contents.loadURL(buildTemplateDeeplink(running.url, templateId))
-          return 'opened'
-        } catch {
-          return 'refused'
-        }
+      if (!opensInAWindow(installation) || isBuildBusy(installationId)) return 'refused'
+      if (!_runningSessions.has(installationId)) {
+        queueTemplateOpen(installationId, templateId)
+        return 'launch'
       }
-      queueTemplateOpen(installationId, templateId)
-      return 'launch'
+      const view = comfyView(installationId)
+      if (!view) return 'refused'
+      try {
+        await view.contents.loadURL(buildTemplateDeeplink(view.url, templateId))
+        return 'opened'
+      } catch {
+        return 'refused'
+      }
     }
   )
 }

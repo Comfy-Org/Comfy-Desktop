@@ -21,7 +21,7 @@ test.beforeAll(async () => {
   await writeFakeComfyInstall({ installPath, port })
   ctx = await launchApp(
     {
-      settings: { firstUseCompleted: true, telemetryEnabled: false },
+      settings: { firstUseCompleted: true, telemetryEnabled: false, templateSearchEnabled: true },
       installations: [
         {
           id: INSTALL_ID,
@@ -83,4 +83,19 @@ test('a template picked for a running build opens in its window straight away @l
   await expect
     .poll(buildWindowUrl, { timeout: 15_000, intervals: [250, 500] })
     .toContain('template=banner_template')
+})
+
+test('a template picked after its build stopped opens when the build starts again in the same window @linux @macos', async () => {
+  await ctx.panel.evaluate<void>(`window.api.stopComfyUI(${JSON.stringify(INSTALL_ID)})`)
+  await ctx.panel.waitFor(async () => !(await ctx.panel.textOf(CARD))?.includes('Running'), {
+    timeout: 30_000,
+    message: 'the build never stopped'
+  })
+  expect(await buildWindowUrl()).not.toContain('template=mural_template')
+  expect(await openTemplate('mural_template')).toBe('launch')
+  void ctx.panel.evaluate(`window.api.runAction(${JSON.stringify(INSTALL_ID)}, 'launch', {})`)
+
+  await expect
+    .poll(buildWindowUrl, { timeout: 90_000, intervals: [250, 500, 1_000] })
+    .toContain('template=mural_template')
 })

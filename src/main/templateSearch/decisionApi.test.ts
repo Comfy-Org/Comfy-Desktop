@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decideRequest, OUTCOMES, parseDecision } from './decisionApi'
+import { decideRequest, parseDecision } from './decisionApi'
 
 function variant(templateId: string, title: string | null = null) {
   return {
@@ -229,10 +229,9 @@ describe('decideRequest', () => {
       text: 'a poster',
       run_n: 8,
       download_m: 8,
-      outcomes: OUTCOMES,
+      outcomes: ['template', 'agent', 'bad_input', 'unsat', 'download'],
       installed: ['poster_template']
     })
-    expect(OUTCOMES).toContain('download')
   })
 
   it('leaves installed out when the build is not known, so every template counts as there', () => {

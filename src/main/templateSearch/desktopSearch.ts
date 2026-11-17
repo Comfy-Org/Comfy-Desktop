@@ -1,7 +1,6 @@
 import { list as listInstallations, type InstallationRecord } from '../installations'
 import {
   buildExistenceCandidates,
-  getModelsBaseDir,
   regularFileExists,
   resolveDownloadContext
 } from '../lib/modelDownloadPaths'
@@ -13,20 +12,26 @@ import { decideRequest, parseDecision } from './decisionApi'
 import type { SearchProcess } from './searchProcess'
 
 const TEMPLATES_TTL_MS = 60_000
+const NOTHING_KNOWN: BuildTemplates = { installed: [], labels: new Map() }
 
 export interface DesktopSearchOptions {
   process: Pick<SearchProcess, 'decide'>
   isLocalInstallation: (installation: InstallationRecord) => boolean
   terminalEnvOf: (installation: InstallationRecord) => TerminalEnv | null
+  enabled: () => boolean
   readTemplates?: typeof readBuildTemplates
   now?: () => number
 }
 
 function modelLookup(installation: InstallationRecord) {
   const context = resolveDownloadContext(installation)
-  const baseDir = getModelsBaseDir()
   return async (directory: string, filename: string): Promise<boolean> => {
-    for (const candidate of buildExistenceCandidates(context, baseDir, directory, filename)) {
+    for (const candidate of buildExistenceCandidates(
+      context,
+      context.downloadBaseDir,
+      directory,
+      filename
+    )) {
       if (await regularFileExists(candidate)) return true
     }
     return false
@@ -37,18 +42,19 @@ export function createDesktopSearch({
   process,
   isLocalInstallation,
   terminalEnvOf,
+  enabled,
   readTemplates = readBuildTemplates,
   now = Date.now
 }: DesktopSearchOptions) {
-  const templates = new Map<string, { at: number; value: Promise<BuildTemplates | null> }>()
+  const templates = new Map<string, { at: number; value: Promise<BuildTemplates> }>()
 
-  function templatesFor(installation: InstallationRecord): Promise<BuildTemplates | null> {
+  function templatesFor(installation: InstallationRecord): Promise<BuildTemplates> {
     const cached = templates.get(installation.id)
     if (cached && now() - cached.at < TEMPLATES_TTL_MS) return cached.value
     const sitePackages = buildRuntime(installation, terminalEnvOf(installation))?.sitePackages
     const value = sitePackages
-      ? readTemplates(sitePackages, modelLookup(installation)).catch(() => null)
-      : Promise.resolve(null)
+      ? readTemplates(sitePackages, modelLookup(installation)).catch(() => NOTHING_KNOWN)
+      : Promise.resolve(NOTHING_KNOWN)
     templates.set(installation.id, { at: now(), value })
     return value
   }
@@ -57,6 +63,7 @@ export function createDesktopSearch({
     query: string,
     installationId: string | null
   ): Promise<TemplateSearchResponse> {
+    if (!enabled()) return { kind: 'unavailable', availability: { kind: 'off' } }
     const build = installationId
       ? (await listInstallations()).find((b) => b.id === installationId && isLocalInstallation(b))
       : undefined

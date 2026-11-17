@@ -5,7 +5,8 @@ const mocks = vi.hoisted(() => ({
   getInstallation: vi.fn(),
   getEntryByInstallationId: vi.fn(),
   runningSessions: new Map<string, object>(),
-  activeOperations: vi.fn((): { installationId: string; actionId: string }[] => []),
+  busy: new Set<string>(),
+  settings: { templateSearchEnabled: true } as Record<string, unknown>,
   observer: null as {
     before(id: string, action: string): Promise<void>
     after(id: string, action: string): void
@@ -16,11 +17,11 @@ vi.mock('electron', () => ({ ipcMain: { handle: mocks.handle } }))
 vi.mock('../../installations', () => ({ get: mocks.getInstallation }))
 vi.mock('../../host/registry', () => ({ getEntryByInstallationId: mocks.getEntryByInstallationId }))
 vi.mock('./sessionActions', () => ({
-  _getActiveOperations: mocks.activeOperations,
   setSessionActionObserver: (next: typeof mocks.observer) => {
     mocks.observer = next
   }
 }))
+vi.mock('../../settings', () => ({ get: (key: string) => mocks.settings[key] }))
 vi.mock('./broadcast', () => ({ _broadcastToRenderer: vi.fn() }))
 vi.mock('./shared', async () => {
   const { EventEmitter } = await import('events')
@@ -28,6 +29,7 @@ vi.mock('./shared', async () => {
 })
 vi.mock('../../templateSearch/searchProcess', () => ({
   changesBuildEnv: (actionId: string) => actionId !== 'rename',
+  isBuildBusy: (installationId: string) => mocks.busy.has(installationId),
   createSearchProcess: vi.fn()
 }))
 vi.mock('../../templateSearch/desktopSearch', () => ({ createDesktopSearch: vi.fn() }))
@@ -111,7 +113,8 @@ beforeEach(() => {
   )
   mocks.getEntryByInstallationId.mockReturnValue(undefined)
   mocks.runningSessions.clear()
-  mocks.activeOperations.mockReturnValue([])
+  mocks.busy.clear()
+  mocks.settings = { templateSearchEnabled: true }
   dropTemplateOpen('local-1')
   dropTemplateOpen('console-1')
 })
@@ -156,12 +159,18 @@ describe('template-search:search', () => {
 })
 
 describe('template-search:prepare and download', () => {
-  it('gets search ready ahead of the first request, and starts the model download', async () => {
+  it('gets search ready ahead of the first request', async () => {
     const { process } = register()
     await handler('template-search:prepare')({})
+    expect(process.prepare).toHaveBeenCalledTimes(1)
+    expect(process.download).not.toHaveBeenCalled()
+  })
+
+  it('starts the model download', async () => {
+    const { process } = register()
     await handler('template-search:download')({})
-    expect(process.prepare).toHaveBeenCalled()
-    expect(process.download).toHaveBeenCalled()
+    expect(process.download).toHaveBeenCalledTimes(1)
+    expect(process.prepare).not.toHaveBeenCalled()
   })
 })
 
@@ -171,6 +180,21 @@ describe('build operations', () => {
     await mocks.observer!.before('local-1', 'copy-update')
     expect(process.onBuildAction).toHaveBeenCalledWith('local-1')
     expect(search.forget).toHaveBeenCalledWith('local-1')
+  })
+
+  it('holds an operation that can change a build until search there has stopped', async () => {
+    const { process } = register()
+    let stopped!: () => void
+    process.onBuildAction.mockReturnValue(
+      new Promise<undefined>((resolve) => (stopped = () => resolve(undefined)))
+    )
+    let ready = false
+    const before = mocks.observer!.before('local-1', 'copy-update').then(() => (ready = true))
+    await Promise.resolve()
+    expect(ready).toBe(false)
+    stopped()
+    await before
+    expect(ready).toBe(true)
   })
 
   it("leaves search running for an operation that keeps the build's environment", async () => {
@@ -214,6 +238,20 @@ describe('template-search:open', () => {
     expect(queuedUrl()).toBe(COMFY_URL)
   })
 
+  it('refuses to open a template while search is off', async () => {
+    mocks.settings = {}
+    register()
+    expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('refused')
+    expect(queuedUrl()).toBe(COMFY_URL)
+  })
+
+  it('refuses a build that is running without a window to open the template in', async () => {
+    mocks.runningSessions.set('local-1', {})
+    register()
+    expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('refused')
+    expect(queuedUrl()).toBe(COMFY_URL)
+  })
+
   it('opens the template straight away in a running build', async () => {
     const loadURL = attachedView()
     mocks.runningSessions.set('local-1', {})
@@ -241,20 +279,15 @@ describe('template-search:open', () => {
     expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('refused')
   })
 
-  it('refuses while another operation runs on the build, and queues nothing', async () => {
-    mocks.activeOperations.mockReturnValue([{ installationId: 'local-1', actionId: 'copy-update' }])
+  it.each([
+    ['another operation runs on it', 'copy-update'],
+    ['it is still starting', 'launch']
+  ])('refuses a build while %s, and queues nothing', async () => {
+    mocks.busy.add('local-1')
     register()
 
     expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('refused')
     expect(queuedUrl()).toBe(COMFY_URL)
-  })
-
-  it('queues behind a launch already in progress on the build', async () => {
-    mocks.activeOperations.mockReturnValue([{ installationId: 'local-1', actionId: 'launch' }])
-    register()
-
-    expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('launch')
-    expect(queuedUrl()).toBe(DEEPLINK)
   })
 
   it.each([

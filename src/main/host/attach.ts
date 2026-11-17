@@ -296,7 +296,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
 
   const currentComfyUrl = (): string => entry.comfyUrl || comfyUrl
   const reloadUrl = (): string => cloudReloadUrl(currentComfyUrl(), comfyContents.getURL())
-  let templateUrlUntilLoaded: string | null = null
   const reloadComfy = (): void => {
     if (comfyWindow.isDestroyed()) return
     const id = entry.installationId
@@ -395,7 +394,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       if (currentId === null) return
       if (fx.relaunchStates.has(currentId)) return
       if (!comfyWindow.isDestroyed()) {
-        comfyContents.loadURL(templateUrlUntilLoaded ?? reloadUrl())
+        comfyContents.loadURL(reloadUrl())
       }
     }, 2000)
   }
@@ -422,17 +421,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
 
   attachSessionDownloadHandler(comfyContents.session)
 
-  const firstUrl = isLocal ? takeLaunchUrl(installationId, comfyUrl) : comfyUrl
-  if (firstUrl !== comfyUrl) {
-    templateUrlUntilLoaded = firstUrl
-    const forgetOnceLoaded = (_e: Electron.Event, _url: string, httpStatus: number): void => {
-      if (httpStatus < 200 || httpStatus >= 400) return
-      templateUrlUntilLoaded = null
-      comfyContents.off('did-navigate', forgetOnceLoaded)
-    }
-    comfyContents.on('did-navigate', forgetOnceLoaded)
-  }
-  comfyContents.loadURL(firstUrl)
+  comfyContents.loadURL(isLocal ? takeLaunchUrl(installationId, comfyUrl) : comfyUrl)
 
   entry._installCleanup = (): void => {
     if (entry._installCleanup === null) return

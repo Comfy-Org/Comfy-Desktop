@@ -66,15 +66,17 @@ describe('readBuildTemplates', () => {
     expect((await readBuildTemplates(sitePackages, onDiskIn(models))).installed).toEqual(['video'])
   })
 
-  it('finds a model in any of the model folders it is given', async () => {
+  it('asks the model check about each model by its folder and file name', async () => {
     const dir = path.join(sitePackages, 'comfyui_workflow_templates_json', 'templates')
-    write(path.join(dir, 'index.json'), index({ name: 'poster' }))
-    write(path.join(dir, 'poster.json'), { models: [model('sdxl.safetensors')] })
-    const shared = path.join(root, 'shared-models')
-    write(path.join(shared, 'checkpoints', 'sdxl.safetensors'), 'x')
-
-    expect((await readBuildTemplates(sitePackages, onDiskIn(models, shared))).installed).toEqual([
-      'poster'
+    write(path.join(dir, 'index.json'), index({ name: 'video' }))
+    write(path.join(dir, 'video.json'), {
+      models: [model('wan.safetensors', 'diffusion_models'), model('vae.safetensors', 'vae')]
+    })
+    const hasModel = vi.fn<HasModel>(async () => true)
+    expect((await readBuildTemplates(sitePackages, hasModel)).installed).toEqual(['video'])
+    expect(hasModel.mock.calls).toEqual([
+      ['diffusion_models', 'wan.safetensors'],
+      ['vae', 'vae.safetensors']
     ])
   })
 
