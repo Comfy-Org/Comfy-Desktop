@@ -59,6 +59,7 @@ vi.mock('./shared', () => ({
   i18n: { t: (key: string) => key }
 }))
 vi.mock('../telemetry', () => ({ emit: vi.fn() }))
+vi.mock('./registerCreditBalanceHandlers', () => ({ creditBalanceAuthChanged: vi.fn() }))
 vi.mock('../embeddedSessionFlag', () => ({ isEmbeddedSessionEnabled: async () => false }))
 vi.mock('../workspaceMintSwitchFlag', () => ({ isWorkspaceMintSwitchEnabled: async () => true }))
 

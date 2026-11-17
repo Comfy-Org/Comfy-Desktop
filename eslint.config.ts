@@ -114,6 +114,12 @@ export default defineConfig([
           selector: "NewExpression[callee.name='WebContentsView']",
           message:
             'Create the view with createWebContentsView. Electron crashes the app at quit when a WebContentsView is garbage-collected while its webContents is alive.'
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='loadURL']:matches([callee.object.name='comfyContents'], [callee.object.property.name='webContents'][callee.object.object.property.name='comfyView'])",
+          message:
+            'Navigate a build window through navigatorFor(entry) in src/main/host/buildNavigator.ts. It decides which request wins when a refresh, retry, restart or workspace switch overlap.'
         }
       ]
     }

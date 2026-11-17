@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { evalWithRetry } from './support/evalRetry'
-import { openPickerViaTitlePill } from './support/chooserHelpers'
+import { openPickerInWindow } from './support/chooserHelpers'
 import { WebContentsPage } from './support/cdpPages'
 import { byTestId, TID } from './support/testIds'
 
@@ -154,7 +154,7 @@ test('Start on another build from a build window opens it in its own window and 
     ctx.app,
     `comfyTitleBar.html?installationId=${INSTALL_ID}`
   )
-  const popup = await openPickerViaTitlePill(ctx.app, firstBuildTitleBar)
+  const popup = await openPickerInWindow(ctx.app, firstBuildTitleBar)
   const secondRow = byTestId(TID.pickerRow(SECOND_INSTALL_ID))
   await popup.waitForVisible(secondRow, { timeout: 15_000 })
   expect(await popup.click(secondRow), 'second build selected').toBe(true)

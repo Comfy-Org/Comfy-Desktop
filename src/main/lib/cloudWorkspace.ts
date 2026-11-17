@@ -1,6 +1,7 @@
 import type { WebContents } from 'electron'
 import { get as getInstallation, type InstallationRecord } from '../installations'
 import { getCloudSession } from '../devplatform/session'
+import { navigatorFor, type NavigationResult } from '../host/buildNavigator'
 import type { ComfyWindowEntry } from '../host/registry'
 import * as settings from '../settings'
 import {
@@ -14,13 +15,8 @@ import { isTrustedCloudUrl } from './trustedCloudUrl'
 
 const pendingWorkspaceSyncs = new WeakMap<ComfyWindowEntry, Promise<boolean>>()
 const failedWorkspaceLoads = new WeakSet<WebContents>()
-const workspaceNavigationVersions = new WeakMap<ComfyWindowEntry, number>()
 const CLOUD_TAB_WORKSPACE_KEY = 'Comfy.Workspace.Current'
 const CLOUD_TAB_SWITCH_TARGET_KEY = 'Comfy.Workspace.SwitchTargetId'
-
-export function cloudWorkspaceNavigationVersion(entry: ComfyWindowEntry): number {
-  return workspaceNavigationVersions.get(entry) ?? 0
-}
 
 export async function cloudWorkspaceUrl(
   installation: InstallationRecord,
@@ -101,14 +97,13 @@ async function canKeepCloudPage(
 
 interface CloudWindowOpenOptions {
   pickerWorkspaceId?: string
-  cancelLoadRetry?: () => void
 }
 
 async function navigateToSelectedWorkspace(
   entry: ComfyWindowEntry,
   installationId: string,
   isLatest: () => boolean,
-  { pickerWorkspaceId, cancelLoadRetry }: CloudWindowOpenOptions
+  { pickerWorkspaceId }: CloudWindowOpenOptions
 ): Promise<boolean> {
   const installation = await getInstallation(installationId)
   if (!installation || !isLatest() || entry.window.isDestroyed()) return false
@@ -131,16 +126,18 @@ async function navigateToSelectedWorkspace(
   if (!isLatest() || !stillAttached()) return false
   if (keepPage && sameLaunchUrl) return true
 
-  cancelLoadRetry?.()
-  workspaceNavigationVersions.set(entry, cloudWorkspaceNavigationVersion(entry) + 1)
-  if (!keepPage) {
+  const navigator = navigatorFor(entry)
+  if (keepPage) {
+    navigator.keepCurrentPage()
+  } else {
+    let navigation: NavigationResult
     try {
-      await contents.loadURL(nextUrl)
+      navigation = await navigator.open(nextUrl)
     } catch (error) {
       if (stillAttached()) failedWorkspaceLoads.add(contents)
       throw error
     }
-    if (!stillAttached()) return false
+    if (navigation === 'superseded' || !stillAttached()) return false
   }
 
   failedWorkspaceLoads.delete(contents)
