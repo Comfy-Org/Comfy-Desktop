@@ -4,7 +4,7 @@ import ToggleGroup from '@comfyorg/design-system/toggle-group/ToggleGroup'
 import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupItem'
 import { computed, provide, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { LayoutDashboard, Search, X } from '@lucide/vue'
+import { Search, X } from '@lucide/vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import { FILTER_CHIPS, useInstallList } from '../composables/useInstallList'
 import { useDialogs } from '../composables/useDialogs'
@@ -15,7 +15,6 @@ import { useSessionStore } from '../stores/sessionStore'
 import ComfyUISettingsContent from '../components/settings/ComfyUISettingsContent.vue'
 import { SETTINGS_REOPEN_EPOCH } from '../views/comfyUISettings/settingsReopenEpoch'
 import InfoTooltip from '../components/InfoTooltip.vue'
-import Tooltip from '../components/ui/Tooltip.vue'
 import InstanceRow from './instancePicker/InstanceRow.vue'
 import { resolvePickerTab, type PickerTab } from '../lib/pickerTabs'
 import { resolveProgressRouting } from '../lib/pickerProgressRouting'
@@ -297,12 +296,6 @@ function handleClose(): void {
   bridge?.close?.()
 }
 
-const isInstallHost = computed(() => !!props.snapshot.activeInstallationId)
-
-function handleOpenDashboard(): void {
-  bridge?.activate?.('new-window')
-}
-
 watch(
   () => selectedInstall.value?.id ?? null,
   (next) => {
@@ -471,27 +464,6 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
     <div
       class="picker-chips-row flex items-center gap-2 border-b border-solid border-[var(--brand-surface-border-hover,var(--chooser-surface-border))] px-4 pt-2 pb-2.5"
     >
-      <template v-if="isInstallHost">
-        <Tooltip :text="$t('instancePicker.openDashboardHint')" side="bottom">
-          <Button
-            type="button"
-            variant="textonly"
-            size="sm"
-            class="picker-home shrink-0"
-            :aria-label="$t('instancePicker.openDashboard')"
-            @click="handleOpenDashboard"
-          >
-            <LayoutDashboard :size="14" />
-            <span class="picker-home-label text-[11px] leading-4 font-medium whitespace-nowrap">{{
-              $t('instancePicker.openDashboard')
-            }}</span>
-          </Button>
-        </Tooltip>
-        <span
-          class="picker-chips-divider inline-block h-4 w-px flex-none bg-[var(--brand-surface-border-hover,var(--chooser-surface-border))]"
-          aria-hidden="true"
-        ></span>
-      </template>
       <ToggleGroup
         v-model="activeFilter"
         type="single"

@@ -509,7 +509,7 @@ async function closeExtraWindowsKeepComfyHost(): Promise<void> {
   await keepOnlyComfyHostWindow(ctx.app)
 }
 
-test('picker Dashboard opens a chooser without stopping the running install @sec-setup @real-comfy', async () => {
+test('title bar Home opens Home without stopping the running install @sec-setup @real-comfy', async () => {
   test.skip(HYDRATED, 'reuse mode: no running install-backed host exists')
   const before = await evalWithRetry(() =>
     ctx.app.evaluate(({ BrowserWindow }) => {
@@ -518,11 +518,8 @@ test('picker Dashboard opens a chooser without stopping the running install @sec
     })
   )
 
-  expect(await ctx.titleBar.click('.title-install-pill.is-interactive')).toBe(true)
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
-  await popup.waitForVisible('.picker-home', { timeout: 10_000 })
-  expect(await popup.click('.picker-home')).toBe(true)
+  await ctx.titleBar.waitForVisible('.title-home-button', { timeout: 10_000 })
+  expect(await ctx.titleBar.click('.title-home-button')).toBe(true)
 
   await waitForWebContents(ctx.app, 'panel.html')
   await expectChooserVisible(ctx.panel)
@@ -2468,7 +2465,7 @@ let _remoteOutputRoot = ''
 let _remoteExpectedFile = ''
 let _remoteRunId = ''
 
-async function openDashboardWindowViaPickerHome(): Promise<number> {
+async function openHomeWindowViaTitleBar(): Promise<number> {
   const beforeWinIds = await evalWithRetry(() =>
     ctx.app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
@@ -2476,10 +2473,8 @@ async function openDashboardWindowViaPickerHome(): Promise<number> {
         .map((w) => w.id)
     )
   )
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
-  await popup.waitForVisible('.picker-home', { timeout: 10_000 })
-  expect(await popup.click('.picker-home')).toBe(true)
-  await closeTitlePopupIfOpen(ctx.app)
+  await ctx.titleBar.waitForVisible('.title-home-button', { timeout: 10_000 })
+  expect(await ctx.titleBar.click('.title-home-button')).toBe(true)
   let newWindowId = 0
   await expect
     .poll(
@@ -2557,7 +2552,7 @@ test('creates a Remote Connection record pointed at the running local server thr
   _remoteExpectedFile = path.join(_remoteOutputRoot, 'nested', 'output_00001_.png')
   expect(existsSync(_remoteOutputRoot), 'unique output root unexpectedly pre-exists').toBe(false)
 
-  _remoteDashboardWindowId = await openDashboardWindowViaPickerHome()
+  _remoteDashboardWindowId = await openHomeWindowViaTitleBar()
   await clickNewInstallTile(ctx.panel)
   await expectNewBuildModalOpen(ctx.panel)
   await waitForButtonEnabled(
@@ -2819,7 +2814,7 @@ test('cleans up the remote connection: window closed, record untracked, local in
     })
     .toBe(true)
 
-  await openDashboardWindowViaPickerHome()
+  await openHomeWindowViaTitleBar()
   await ctx.panel.waitForVisible(byTestId(TID.dashboardTile(_remoteInstallId)), { timeout: 15_000 })
   await untrackViaManageDrawer(_remoteInstallId)
   await expect

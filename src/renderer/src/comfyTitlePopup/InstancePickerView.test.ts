@@ -322,37 +322,15 @@ describe('comfyTitlePopup/InstancePickerView', () => {
   })
 
   describe('home icon', () => {
-    it('renders Home only when the picker is hosted by an install', async () => {
+    it('leaves Home to the title bar, so the picker has no Home button', async () => {
       const installHost = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha' })],
         activeInstallationId: 'a',
         runningInstallationIds: []
       })
-      expect(installHost.find('.picker-home').exists()).toBe(true)
-
-      const chooserHost = await mountPicker({
-        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
-        activeInstallationId: null,
-        runningInstallationIds: []
-      })
-      expect(chooserHost.find('.picker-home').exists()).toBe(false)
-    })
-
-    it('routes dashboard-button clicks through bridge.activate("new-window") so the running instance is not stopped', async () => {
-      const activate = vi.fn()
-      const existing = (window as unknown as { __comfyTitlePopup: Record<string, unknown> })
-        .__comfyTitlePopup
-      ;(window as unknown as { __comfyTitlePopup: Record<string, unknown> }).__comfyTitlePopup = {
-        ...existing,
-        activate
-      }
-      const wrapper = await mountPicker({
-        installs: [makeInstall({ id: 'a', name: 'Alpha' })],
-        activeInstallationId: 'a',
-        runningInstallationIds: []
-      })
-      await wrapper.find('.picker-home').trigger('click')
-      expect(activate).toHaveBeenCalledWith('new-window')
+      expect(installHost.find('.picker-home').exists()).toBe(false)
+      expect(installHost.find('.picker-chips-divider').exists()).toBe(false)
+      expect(installHost.text()).not.toContain('Open Dashboard')
     })
   })
 
