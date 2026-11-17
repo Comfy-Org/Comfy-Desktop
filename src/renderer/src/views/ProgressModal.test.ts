@@ -422,6 +422,35 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(api.runAction).toHaveBeenCalledWith('inst-1', 'launch', { stopBusyPriorProcess: true })
   })
 
+  it.each([
+    {
+      fix: 'Use next available port',
+      portConflict: { port: 8188, nextPort: 8189, isComfy: false } as PortConflictInfo
+    },
+    {
+      fix: 'Stop it and start this build',
+      portConflict: { port: 8188, pids: [777], isComfy: true, priorBusy: true } as PortConflictInfo
+    },
+    {
+      fix: 'Stop process and retry',
+      portConflict: { port: 8188, pids: [777], isComfy: true } as PortConflictInfo
+    }
+  ])('keeps a start retried with "$fix" a launch', async ({ fix, portConflict }) => {
+    installMockApi()
+    const { body } = await mountWithOp('inst-1', {
+      title: 'Launching',
+      opKind: 'launch',
+      finished: true,
+      apiCall: () => Promise.resolve({ ok: true }),
+      result: { ok: false, message: 'Port 8188 is already in use', portConflict } as ActionResult
+    })
+
+    body.buttonByText(fix)!.click()
+    await flushPromises()
+
+    expect(useProgressStore().operations.get('inst-1')?.opKind).toBe('launch')
+  })
+
   it('never claims a prompt is running when the earlier ComfyUI did not answer', async () => {
     installMockApi()
     const portConflict: PortConflictInfo = {

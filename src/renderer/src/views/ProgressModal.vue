@@ -467,7 +467,8 @@ function handleUseNextPort(nextPort: number): void {
     installationId: id,
     title: op.title,
     apiCall: () => window.api.runAction(id, 'launch', { portOverride: nextPort }),
-    returnTo: op.returnTo
+    returnTo: op.returnTo,
+    opKind: 'launch'
   })
 }
 
@@ -503,7 +504,8 @@ async function handleStopBusyPrior(): Promise<void> {
     installationId: id,
     title: op.title,
     apiCall: () => window.api.runAction(id, 'launch', { stopBusyPriorProcess: true }),
-    returnTo: op.returnTo
+    returnTo: op.returnTo,
+    opKind: 'launch'
   })
 }
 
@@ -530,7 +532,8 @@ async function handleKillProcess(port: number): Promise<void> {
       installationId: id,
       title: op.title,
       apiCall: op.apiCall || (() => window.api.runAction(id, 'launch')),
-      returnTo: op.returnTo
+      returnTo: op.returnTo,
+      opKind: op.opKind
     })
   } else {
     killFailedPort.value = port
