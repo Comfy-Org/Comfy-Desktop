@@ -1229,10 +1229,16 @@ describe('AssetsView Comfy Cloud pages', () => {
   it('scrolls to the top when another page opens', async () => {
     cloudOutputs(250)
     const wrapper = await mountCloud()
+    await nextPagePrefetched(100)
     const scroller = wrapper.get('[data-testid="assets-view"]').element
-    scroller.scrollTop = 400
+    const scrolled = new Promise((resolve) =>
+      scroller.addEventListener('scroll', resolve, { once: true })
+    )
+    scroller.scrollTop = scroller.scrollHeight
+    await scrolled
 
     await goToPage(wrapper, 2)
+    await new Promise(requestAnimationFrame)
 
     expect(scroller.scrollTop).toBe(0)
   })

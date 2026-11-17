@@ -351,7 +351,7 @@ function cardShape(index: number): Shape {
   return showSkeleton.value || !asset ? skeletonShape(index) : assetShape(asset)
 }
 
-const { cards, galleryStyle, cardStyle, measureCard, scrollToIndex } = useVirtualMasonry({
+const masonry = useVirtualMasonry({
   scroller,
   gallery: useTemplateRef<HTMLElement>('gallery'),
   count: () => (showSkeleton.value ? SKELETON_COUNT : visibleAssets.value.length),
@@ -368,6 +368,7 @@ const { cards, galleryStyle, cardStyle, measureCard, scrollToIndex } = useVirtua
   gap: CARD_GAP,
   relayoutWhen: () => [visibleAssets.value, showSkeleton.value, layout.value, captionHeight.value]
 })
+const { cards, galleryStyle, cardStyle, measureCard, scrollToIndex, scrollToTop } = masonry
 
 const assetCards = computed(() =>
   cards.value.flatMap((card) => {
@@ -520,7 +521,7 @@ let reloadAskedByUser = false
 watch(
   [loadKey, listedCloudId, cloudQuery, currentPage],
   () => {
-    scroller.value?.scrollTo({ top: 0 })
+    scrollToTop()
     assets.value = []
     const userAsked = reloadAskedByUser
     reloadAskedByUser = false
