@@ -536,8 +536,17 @@ describe('The first open', () => {
     expect(mark().findAll('svg')).toHaveLength(1)
     expect(w.find('[data-testid="setup-light"]').exists()).toBe(false)
     expect(column().attributes('data-rise-after-arrival')).toBe('true')
+    expect(column().element.inert).toBe(true)
 
-    vi.advanceTimersByTime(2219 - 1100)
+    vi.advanceTimersByTime(1359 - 1100)
+    await nextTick()
+    expect(column().element.inert).toBe(true)
+
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(column().element.inert).toBe(false)
+
+    vi.advanceTimersByTime(2219 - 1360)
     await nextTick()
     expect(column().attributes('data-rise-after-arrival')).toBe('true')
 
@@ -564,6 +573,7 @@ describe('The first open', () => {
     expect(
       w.find('[data-testid="setup-column"]').attributes('data-rise-after-arrival')
     ).toBeUndefined()
+    expect(w.find<HTMLElement>('[data-testid="setup-column"]').element.inert).toBe(false)
     w.unmount()
   })
 })

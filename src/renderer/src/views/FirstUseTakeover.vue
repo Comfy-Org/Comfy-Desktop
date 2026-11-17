@@ -94,12 +94,16 @@ const prefersReducedMotion =
 const firstOpen = !props.consent && !props.savedPlan && !prefersReducedMotion
 const arriving = ref(firstOpen)
 const riseAfterArrival = ref(firstOpen)
+const setUpHidden = ref(firstOpen)
 const openingTimers: ReturnType<typeof setTimeout>[] = []
 if (firstOpen) {
   openingTimers.push(
     setTimeout(() => {
       arriving.value = false
     }, ARRIVE_MS),
+    setTimeout(() => {
+      setUpHidden.value = false
+    }, RISE_AFTER_ARRIVAL_MS),
     setTimeout(() => {
       riseAfterArrival.value = false
     }, LAST_RISE_END_MS)
@@ -468,6 +472,7 @@ defineExpose({ open, resetContinue })
       :class="RISE_CLASS"
       :style="{ '--rise-after': riseAfterArrival ? `${RISE_AFTER_ARRIVAL_MS}ms` : '0ms' }"
       :data-rise-after-arrival="riseAfterArrival || undefined"
+      :inert="setUpHidden"
       data-testid="setup-column"
     >
       <template v-if="step === 'setup'">
