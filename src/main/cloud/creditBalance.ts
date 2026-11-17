@@ -2,104 +2,85 @@ import type { CreditBalanceState } from '../../types/ipc'
 import { CLOUD_CONFIG } from './config'
 
 export const CREDIT_BALANCE_MIN_INTERVAL_MS = 30_000
-const TIMEOUT_MS = 15_000
 
 const SIGNED_OUT: CreditBalanceState = { status: 'signed_out' }
-const LOADING: CreditBalanceState = { status: 'loading' }
 
-function finiteNumber(value: unknown): number | null {
+function finite(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 export function balanceCentsOf(body: unknown): number | null {
-  if (!body || typeof body !== 'object') return null
-  const { effective_balance_micros: effective, amount_micros: amount } = body as Record<
-    string,
-    unknown
-  >
-  return finiteNumber(effective) ?? finiteNumber(amount)
+  const fields = (body ?? {}) as Record<string, unknown>
+  return finite(fields['effective_balance_micros']) ?? finite(fields['amount_micros'])
 }
 
-export async function fetchCreditBalanceCents(
-  accessToken: string,
-  apiBase: string = CLOUD_CONFIG.apiBase
-): Promise<number> {
-  const res = await fetch(`${apiBase.replace(/\/+$/, '')}/billing/balance`, {
-    headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
-    signal: AbortSignal.timeout(TIMEOUT_MS)
+async function fetchCents(accessToken: string): Promise<number> {
+  const res = await fetch(`${CLOUD_CONFIG.apiBase}/billing/balance`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15_000)
   })
-  if (!res.ok) throw new Error(`Credit balance failed: HTTP ${res.status}`)
-  const cents = balanceCentsOf(await res.json().catch(() => null))
-  if (cents === null) throw new Error('Credit balance returned an invalid body')
+  const cents = res.ok ? balanceCentsOf(await res.json().catch(() => null)) : null
+  if (cents === null) throw new Error(`Credit balance unreadable: HTTP ${res.status}`)
   return cents
 }
 
-export interface CreditBalanceDeps {
-  isSignedIn(): boolean
-  getAccessToken(): Promise<string | null>
-  broadcast(state: CreditBalanceState): void
-  fetchCents?: (accessToken: string) => Promise<number>
-  now?: () => number
-}
-
 export class CreditBalance {
-  private state: CreditBalanceState = LOADING
+  private state: CreditBalanceState = { status: 'loading' }
   private inFlight: Promise<void> | null = null
   private forceQueued = false
   private lastFetchAt = Number.NEGATIVE_INFINITY
-  private generation = 0
 
-  constructor(private readonly deps: CreditBalanceDeps) {}
+  constructor(
+    private readonly session: {
+      isSignedIn(): boolean
+      getAccessToken(): Promise<string | null>
+    },
+    private readonly broadcast: (state: CreditBalanceState) => void
+  ) {}
 
   current(): CreditBalanceState {
-    return this.deps.isSignedIn() ? this.state : SIGNED_OUT
+    return this.session.isSignedIn() ? this.state : SIGNED_OUT
   }
 
-  authChanged(signedIn: boolean): void {
-    this.generation++
-    this.lastFetchAt = Number.NEGATIVE_INFINITY
-    this.publish(signedIn ? LOADING : SIGNED_OUT)
-    if (signedIn) void this.refresh({ force: true })
+  authChanged(): void {
+    this.publish({ status: 'loading' })
+    void this.refresh(true)
   }
 
-  refresh({ force = false }: { force?: boolean } = {}): Promise<void> {
-    if (!this.deps.isSignedIn()) return Promise.resolve()
-    if (this.inFlight) {
-      if (force) this.forceQueued = true
-      return this.inFlight
+  async refresh(force = false): Promise<CreditBalanceState> {
+    if (this.inFlight) this.forceQueued ||= force
+    else if (this.session.isSignedIn() && (force || this.isStale())) {
+      this.inFlight = this.fetchOnce()
     }
-    if (!force && this.now() - this.lastFetchAt < CREDIT_BALANCE_MIN_INTERVAL_MS) {
-      return Promise.resolve()
-    }
-    this.inFlight = this.fetchOnce().finally(() => {
-      this.inFlight = null
-      if (!this.forceQueued) return
-      this.forceQueued = false
-      void this.refresh({ force: true })
-    })
-    return this.inFlight
+    await this.inFlight
+    return this.current()
+  }
+
+  private isStale(): boolean {
+    return Date.now() - this.lastFetchAt >= CREDIT_BALANCE_MIN_INTERVAL_MS
   }
 
   private async fetchOnce(): Promise<void> {
-    const generation = this.generation
-    this.lastFetchAt = this.now()
-    const settled = (): boolean => generation === this.generation && !this.forceQueued
+    this.lastFetchAt = Date.now()
+    let next: CreditBalanceState | null
     try {
-      const token = await this.deps.getAccessToken()
+      const token = await this.session.getAccessToken()
       if (!token) throw new Error('No Cloud access token')
-      const cents = await (this.deps.fetchCents ?? fetchCreditBalanceCents)(token)
-      if (settled()) this.publish({ status: 'ready', cents })
+      next = { status: 'ready', cents: await fetchCents(token) }
     } catch {
-      if (settled() && this.state.status !== 'ready') this.publish({ status: 'error' })
+      next = this.state.status === 'ready' ? null : { status: 'error' }
+    }
+    this.inFlight = null
+    if (this.forceQueued) {
+      this.forceQueued = false
+      void this.refresh(true)
+    } else if (next) {
+      this.publish(next)
     }
   }
 
   private publish(state: CreditBalanceState): void {
     this.state = state
-    this.deps.broadcast(this.current())
-  }
-
-  private now(): number {
-    return (this.deps.now ?? Date.now)()
+    this.broadcast(this.current())
   }
 }

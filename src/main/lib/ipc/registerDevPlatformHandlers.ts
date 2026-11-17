@@ -93,7 +93,7 @@ export function broadcastAuthChanged(status: AuthStatus): void {
       panel.webContents.send(DEVPLATFORM_CHANNELS.authChanged, status)
   }
   void broadcastEmbeddedSessionChanged()
-  creditBalanceAuthChanged(status.signedIn)
+  creditBalanceAuthChanged()
 }
 
 export async function signInToCloud(): Promise<AuthStatus> {

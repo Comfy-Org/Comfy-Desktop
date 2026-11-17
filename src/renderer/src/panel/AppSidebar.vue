@@ -165,7 +165,6 @@ function openSettings(): void {
           size="unset"
           class="h-auto rounded-[7px] p-0.5 text-foreground hover:bg-transparent"
           :aria-label="t('sidebar.home')"
-          data-testid="app-sidebar-logo"
           @click="navigate('home')"
         >
           <ComfyCLogo v-if="collapsed" :size="20" />
@@ -266,57 +265,51 @@ function openSettings(): void {
           >
             <Server :size="15" aria-hidden="true" />{{ t('sidebar.noBuilds') }}
           </p>
-          <Tooltip
+          <Button
             v-for="{ build, install, failure, live } in buildRows"
             :key="build.id"
-            :text="failure ? `${build.name} · ${failure}` : build.name"
-            side="right"
-            class="w-full shrink-0"
+            variant="muted-textonly"
+            size="unset"
+            class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+            :class="build.id === activeBuildId && 'bg-accent text-foreground hover:bg-accent'"
+            :aria-current="build.id === activeBuildId ? 'page' : undefined"
+            :data-testid="`app-sidebar-build-${build.id}`"
+            @click="emit('open-build', build)"
           >
-            <Button
-              variant="muted-textonly"
-              size="unset"
-              class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-              :class="build.id === activeBuildId && 'bg-accent text-foreground hover:bg-accent'"
-              :aria-current="build.id === activeBuildId ? 'page' : undefined"
-              :data-testid="`app-sidebar-build-${build.id}`"
-              @click="emit('open-build', build)"
-            >
-              <LoaderCircle
-                v-if="install"
-                :size="16"
-                class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-                aria-hidden="true"
-                data-testid="app-sidebar-build-installing"
-              />
-              <span v-else class="relative flex shrink-0">
-                <component
-                  :is="isCloudBuild(build) ? Cloud : Laptop"
-                  :size="16"
-                  aria-hidden="true"
-                />
-                <span
-                  v-if="failure || live"
-                  class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2"
-                  :class="[
-                    failure ? 'bg-destructive' : 'bg-success',
-                    build.id === activeBuildId
-                      ? 'ring-[oklch(0.27_0_0)]'
-                      : 'ring-sidebar-background'
-                  ]"
-                  :data-testid="failure ? 'app-sidebar-dot-failed' : 'app-sidebar-dot-live'"
-                  aria-hidden="true"
-                />
-              </span>
-              <span class="min-w-0 flex-1 truncate text-left">{{ build.name }}</span>
+            <LoaderCircle
+              v-if="install"
+              :size="16"
+              class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+              aria-hidden="true"
+              data-testid="app-sidebar-build-installing"
+            />
+            <span v-else class="relative flex shrink-0">
+              <component :is="isCloudBuild(build) ? Cloud : Laptop" :size="16" aria-hidden="true" />
               <span
-                v-if="install && install.kind !== 'launch' && install.percent !== null"
-                class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
-                data-testid="app-sidebar-build-percent"
-                >{{ t('installProgress.percent', { percent: install.percent }) }}</span
-              >
-            </Button>
-          </Tooltip>
+                v-if="failure || live"
+                class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2"
+                :class="[
+                  failure ? 'bg-destructive' : 'bg-success',
+                  build.id === activeBuildId ? 'ring-[oklch(0.27_0_0)]' : 'ring-sidebar-background'
+                ]"
+                :data-testid="failure ? 'app-sidebar-dot-failed' : 'app-sidebar-dot-live'"
+                aria-hidden="true"
+              />
+            </span>
+            <Tooltip
+              :text="failure ? `${build.name} · ${failure}` : build.name"
+              side="right"
+              class="min-w-0 flex-1"
+            >
+              <span class="min-w-0 truncate text-left">{{ build.name }}</span>
+            </Tooltip>
+            <span
+              v-if="install && install.kind !== 'launch' && install.percent !== null"
+              class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
+              data-testid="app-sidebar-build-percent"
+              >{{ t('installProgress.percent', { percent: install.percent }) }}</span
+            >
+          </Button>
         </div>
       </template>
     </nav>

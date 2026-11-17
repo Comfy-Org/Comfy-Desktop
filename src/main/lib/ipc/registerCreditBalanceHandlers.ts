@@ -1,36 +1,20 @@
 import { app, ipcMain } from 'electron'
 
-import { CreditBalance } from '../../cloud/creditBalance'
 import { issueBillingHandoff } from '../../cloud/billingHandoff'
-import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
+import { CreditBalance } from '../../cloud/creditBalance'
 import { getCloudSession } from '../../devplatform/session'
-import { comfyWindows } from '../../host/registry'
 import { openExternalUrl } from '../openExternal'
-import type { CreditBalanceState } from '../../../types/ipc'
-
-export const CREDIT_BALANCE_CHANNELS = {
-  get: 'credit-balance:get',
-  refresh: 'credit-balance:refresh',
-  openManage: 'credit-balance:open-manage',
-  changed: 'credit-balance:changed'
-} as const
+import { _broadcastToRenderer } from './broadcast'
 
 export const AFTER_RUN_REFRESH_DELAY_MS = 60_000
 
-function broadcastCreditBalance(state: CreditBalanceState): void {
-  for (const entry of comfyWindows.values()) {
-    const panel = entry.panelView
-    if (panel && !panel.webContents.isDestroyed()) {
-      panel.webContents.send(CREDIT_BALANCE_CHANNELS.changed, state)
-    }
-  }
-}
-
-const creditBalance = new CreditBalance({
-  isSignedIn: () => getCloudSession().isSignedIn(),
-  getAccessToken: () => getCloudSession().getAccessToken(),
-  broadcast: broadcastCreditBalance
-})
+const creditBalance = new CreditBalance(
+  {
+    isSignedIn: () => getCloudSession().isSignedIn(),
+    getAccessToken: () => getCloudSession().getAccessToken()
+  },
+  (state) => _broadcastToRenderer('credit-balance:changed', state)
+)
 
 let afterRunRefresh: ReturnType<typeof setTimeout> | null = null
 
@@ -38,13 +22,12 @@ export function refreshCreditBalance(): void {
   void creditBalance.refresh()
 }
 
-export function creditBalanceAuthChanged(signedIn: boolean): void {
-  creditBalance.authChanged(signedIn)
+export function creditBalanceAuthChanged(): void {
+  creditBalance.authChanged()
 }
 
 export function refreshCreditBalanceAfterRun(): void {
-  if (afterRunRefresh) return
-  afterRunRefresh = setTimeout(() => {
+  afterRunRefresh ??= setTimeout(() => {
     afterRunRefresh = null
     refreshCreditBalance()
   }, AFTER_RUN_REFRESH_DELAY_MS)
@@ -60,14 +43,10 @@ async function openManageCredits(): Promise<void> {
     receiver: 'platform',
     clientVersion: app.getVersion()
   })
-  if (handoff.status === 'issued') return openExternalUrl(handoff.entryUrl)
-  const billing = new URL('/profile/billing', PLATFORM_WEB_BASE_URL)
-  billing.searchParams.set('workspace', workspaceId)
-  return openExternalUrl(billing.toString())
+  if (handoff.status === 'issued') await openExternalUrl(handoff.entryUrl)
 }
 
 export function registerCreditBalanceHandlers(): void {
-  ipcMain.handle(CREDIT_BALANCE_CHANNELS.get, () => creditBalance.current())
-  ipcMain.handle(CREDIT_BALANCE_CHANNELS.refresh, () => creditBalance.refresh())
-  ipcMain.handle(CREDIT_BALANCE_CHANNELS.openManage, () => openManageCredits())
+  ipcMain.handle('credit-balance:refresh', () => creditBalance.refresh())
+  ipcMain.handle('credit-balance:open-manage', () => openManageCredits())
 }

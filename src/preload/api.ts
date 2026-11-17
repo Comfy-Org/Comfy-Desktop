@@ -1,12 +1,6 @@
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type {
-  AppPageStatus,
-  CreditBalanceState,
-  ElectronApi,
-  ResolvedTheme,
-  AdoptPromptRequest
-} from '../types/ipc'
+import type { AppPageStatus, ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
 
 export function buildElectronApi(): ElectronApi {
   return {
@@ -248,11 +242,11 @@ export function buildElectronApi(): ElectronApi {
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     getStableTags: (): Promise<string[]> => ipcRenderer.invoke('get-stable-tags'),
     getCloudUserTier: () => ipcRenderer.invoke('get-cloud-user-tier'),
-    getCreditBalance: () => ipcRenderer.invoke('credit-balance:get'),
     refreshCreditBalance: () => ipcRenderer.invoke('credit-balance:refresh'),
     openManageCredits: () => ipcRenderer.invoke('credit-balance:open-manage'),
     onCreditBalanceChanged: (callback) => {
-      const handler = (_event: IpcRendererEvent, state: CreditBalanceState): void => callback(state)
+      const handler = (_event: IpcRendererEvent, state: unknown) =>
+        callback(state as Parameters<typeof callback>[0])
       ipcRenderer.on('credit-balance:changed', handler)
       return () => ipcRenderer.removeListener('credit-balance:changed', handler)
     },

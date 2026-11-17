@@ -1289,8 +1289,7 @@ export interface ElectronApi {
   getAppVersion(): Promise<string>
   getStableTags(): Promise<string[]>
   getCloudUserTier(): Promise<CloudUserTier>
-  getCreditBalance(): Promise<CreditBalanceState>
-  refreshCreditBalance(): Promise<void>
+  refreshCreditBalance(): Promise<CreditBalanceState>
   openManageCredits(): Promise<void>
   onCreditBalanceChanged(callback: (state: CreditBalanceState) => void): Unsubscribe
   getCloudFreeRunsEnabled(): Promise<boolean>
