@@ -1,0 +1,268 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
+import TemplateSearchBadge from './TemplateSearchBadge.vue'
+import type { TemplateSearchAvailability, TemplateSearchCandidate } from '../../types/ipc'
+import { matchLevel, type BadgeTone, type SearchRow } from './templateSearch'
+import type { TemplateSearchController } from './useTemplateSearch'
+
+const props = defineProps<{
+  controller: TemplateSearchController
+  listboxId: string
+}>()
+
+const { t } = useI18n()
+
+const GROUP_TITLE_KEYS: Record<SearchRow['kind'], string> = {
+  run: 'home.search.run',
+  download: 'home.search.downloadAndRun',
+  also: 'home.search.alsoTry'
+}
+
+const MATCH_LEVEL_KEYS = {
+  strong: 'home.search.matchStrong',
+  good: 'home.search.matchGood',
+  weak: 'home.search.matchWeak'
+} as const
+
+const UNAVAILABLE_KEYS = {
+  runtime_unsupported: 'home.search.runtimeUnsupported',
+  update_desktop: 'home.search.updateDesktop',
+  offline: 'home.search.offline',
+  download_failed: 'home.search.downloadFailed',
+  failed: 'home.search.failed'
+} as const
+
+interface Badge {
+  tone: BadgeTone
+  label: string
+  testId: string
+}
+
+interface Notice {
+  text: string
+  action?: { label: string; run: () => void; testId: string }
+}
+
+function megabytes(bytes: number): number {
+  return Math.max(1, Math.round(bytes / 1_000_000))
+}
+
+function availabilityNotice(availability: TemplateSearchAvailability): Notice {
+  switch (availability.kind) {
+    case 'off':
+      return { text: t('home.search.notSetUp') }
+    case 'no_local_build':
+      return { text: t('home.search.needsLocalBuildToSearch') }
+    case 'waiting_for_build':
+      return { text: t('home.search.waitingForBuild') }
+    case 'needs_download':
+      return {
+        text: t('home.search.needsModel', { size: megabytes(availability.bytes) }),
+        action: {
+          label: t('home.search.downloadModel'),
+          run: props.controller.download,
+          testId: 'home-template-search-download'
+        }
+      }
+    case 'downloading':
+      return {
+        text: t('home.search.downloadingModel', {
+          percent: availability.total
+            ? Math.floor((availability.received / availability.total) * 100)
+            : 0
+        })
+      }
+    case 'unavailable':
+      return availability.reason === 'download_failed'
+        ? {
+            text: t(UNAVAILABLE_KEYS.download_failed),
+            action: {
+              label: t('home.retry'),
+              run: props.controller.download,
+              testId: 'home-template-search-download'
+            }
+          }
+        : { text: t(UNAVAILABLE_KEYS[availability.reason]) }
+    default:
+      return { text: t('home.search.starting') }
+  }
+}
+
+const notice = computed<Notice | null>(() => {
+  const state = props.controller.state.value
+  if (state.kind === 'unavailable') return availabilityNotice(state.availability)
+  if (state.kind === 'failed') return { text: t('home.search.failed') }
+  if (state.kind === 'searching' && !props.controller.rows.value.length)
+    return { text: t('home.search.searching') }
+  return null
+})
+
+function matchBadge(candidate: TemplateSearchCandidate): Badge | null {
+  const level = matchLevel(candidate)
+  if (level === null) return null
+  return {
+    tone: level,
+    label:
+      candidate.calibrated === null
+        ? t(MATCH_LEVEL_KEYS[level])
+        : t('home.search.matchPercent', { percent: Math.round(candidate.calibrated * 100) }),
+    testId: 'home-template-search-match'
+  }
+}
+
+function badges(row: SearchRow): Badge[] {
+  const candidate = row.candidate
+  const list: Badge[] = []
+  if (row.best)
+    list.push({
+      tone: 'best',
+      label: t('home.search.bestMatch'),
+      testId: 'home-template-search-best'
+    })
+  const match = matchBadge(candidate)
+  if (match) list.push(match)
+  if (candidate.partner)
+    list.push({
+      tone: 'partner',
+      label: t('home.search.partner'),
+      testId: 'home-template-search-partner'
+    })
+  return list
+}
+
+function isWeak(row: SearchRow): boolean {
+  return row.candidate.belowThreshold
+}
+
+function rowMeta(row: SearchRow): string {
+  const candidate = row.candidate
+  if (!candidate.needsDownload) return candidate.family ?? t('home.search.template')
+  return candidate.missing.length
+    ? t('home.search.needsDownload', { items: candidate.missing.join(', ') })
+    : t('home.search.needsTemplateDownload')
+}
+
+function rowAction(row: SearchRow): string {
+  return row.candidate.needsDownload ? t('home.search.downloadAndRun') : t('home.search.run')
+}
+
+function startsGroup(index: number): boolean {
+  const rows = props.controller.rows.value
+  return index === 0 || rows[index - 1]!.kind !== rows[index]!.kind
+}
+
+function optionId(index: number): string {
+  return `${props.listboxId}-${index}`
+}
+</script>
+
+<template>
+  <div>
+    <div
+      v-if="notice"
+      class="flex items-center justify-between gap-3 px-2.5 py-2"
+      data-testid="home-template-search-notice"
+      :data-state="controller.state.value.kind"
+    >
+      <p class="m-0 text-[13px]/5 text-muted-foreground">{{ notice.text }}</p>
+      <Button
+        v-if="notice.action"
+        type="button"
+        variant="secondary"
+        size="md"
+        :data-testid="notice.action.testId"
+        @mousedown.prevent
+        @click="notice.action.run"
+      >
+        {{ notice.action.label }}
+      </Button>
+    </div>
+    <template v-else-if="controller.state.value.kind === 'result'">
+      <p
+        v-if="controller.reply.value"
+        class="m-0 px-2.5 py-2 text-[13px]/5 text-foreground"
+        data-testid="home-template-search-reply"
+      >
+        {{ controller.reply.value }}
+      </p>
+      <p
+        v-else-if="!controller.rows.value.length"
+        class="m-0 px-2.5 py-2 text-[13px]/5 text-muted-foreground"
+        data-testid="home-template-search-no-match"
+      >
+        {{ t('home.search.noMatch') }}
+      </p>
+    </template>
+
+    <ul
+      :id="listboxId"
+      role="listbox"
+      class="m-0 list-none p-0"
+      :aria-label="t('home.search.label')"
+    >
+      <template v-for="(row, index) in controller.rows.value" :key="row.key">
+        <li
+          v-if="startsGroup(index)"
+          role="presentation"
+          class="px-2.5 pt-2 pb-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+        >
+          {{ t(GROUP_TITLE_KEYS[row.kind]) }}
+        </li>
+        <li
+          :id="optionId(index)"
+          role="option"
+          :aria-selected="index === controller.activeIndex.value"
+          :data-weak="isWeak(row) || undefined"
+          class="flex min-h-14 cursor-pointer items-center gap-3 rounded-[8px] px-2.5 py-2"
+          :class="index === controller.activeIndex.value ? 'bg-[rgb(137_137_137/0.12)]' : ''"
+          :data-testid="`home-template-search-row-${row.kind}`"
+          @mouseenter="controller.highlight(index)"
+          @mousedown.prevent
+          @click="controller.openRow(row)"
+        >
+          <span
+            class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-[7px] bg-[rgb(137_137_137/0.12)]"
+          >
+            <img
+              v-if="row.candidate.thumbnailUrl"
+              :src="row.candidate.thumbnailUrl"
+              alt=""
+              class="size-full object-cover"
+              :class="isWeak(row) ? 'opacity-60 grayscale' : ''"
+              loading="lazy"
+            />
+          </span>
+          <span class="flex min-w-0 flex-auto flex-col" :class="isWeak(row) ? 'opacity-60' : ''">
+            <span class="truncate text-[13px]/5 font-medium text-foreground">
+              {{ row.candidate.title }}
+            </span>
+            <span class="truncate text-xs/4 text-subtle-foreground">{{ rowMeta(row) }}</span>
+          </span>
+          <span class="flex shrink-0 flex-wrap justify-end gap-1.5">
+            <TemplateSearchBadge
+              v-for="badge in badges(row)"
+              :key="badge.testId"
+              :tone="badge.tone"
+              :data-testid="badge.testId"
+            >
+              {{ badge.label }}
+            </TemplateSearchBadge>
+          </span>
+          <span class="w-26 shrink-0 text-right text-xs/4 font-medium text-muted-foreground">
+            {{ rowAction(row) }}
+          </span>
+        </li>
+      </template>
+    </ul>
+
+    <p
+      v-if="controller.openFailed.value"
+      class="m-0 px-2.5 pt-1 pb-2 text-xs/4 text-muted-foreground"
+      data-testid="home-template-search-open-failed"
+    >
+      {{ t('home.search.openFailed') }}
+    </p>
+  </div>
+</template>

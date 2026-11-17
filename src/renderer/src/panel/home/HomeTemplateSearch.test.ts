@@ -1,0 +1,504 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+
+import HomeTemplateSearch from './HomeTemplateSearch.vue'
+import { SEARCH_DELAY_MS } from './useTemplateSearch'
+import { TEMPLATE_SEARCH_MAX_QUERY } from '../../../../shared/templateSearch'
+import type {
+  OpenTemplateOutcome,
+  TemplateSearchAvailability,
+  TemplateSearchCandidate,
+  TemplateSearchResponse,
+  TemplateSearchResult
+} from '../../types/ipc'
+
+const searchTemplates = vi.fn<(query: string, buildId: string) => Promise<TemplateSearchResponse>>()
+const openTemplateInBuild =
+  vi.fn<(buildId: string, templateId: string) => Promise<OpenTemplateOutcome>>()
+const prepare = vi.fn<() => Promise<void>>()
+const download = vi.fn<() => Promise<void>>()
+let announce: (availability: TemplateSearchAvailability) => void = () => {}
+
+function candidate(
+  templateId: string,
+  over: Partial<TemplateSearchCandidate> = {}
+): TemplateSearchCandidate {
+  return {
+    templateId,
+    title: `${templateId} title`,
+    thumbnailUrl: null,
+    family: null,
+    partner: false,
+    needsDownload: false,
+    score: 0.92,
+    calibrated: null,
+    calibratedThreshold: null,
+    belowThreshold: false,
+    missing: [],
+    ...over
+  }
+}
+
+const POSTER = candidate('poster_template')
+const BANNER = candidate('banner_template')
+const MURAL = candidate('mural_template', { missing: ['mural.safetensors'], needsDownload: true })
+
+function answer(result: Partial<TemplateSearchResult>): TemplateSearchResponse {
+  return {
+    kind: 'result',
+    result: { outcome: 'template', reply: null, run: [], download: [], alsoTry: [], ...result }
+  }
+}
+
+function unavailable(availability: TemplateSearchAvailability): TemplateSearchResponse {
+  return { kind: 'unavailable', availability }
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  searchTemplates.mockResolvedValue(answer({ run: [POSTER, BANNER], download: [MURAL] }))
+  openTemplateInBuild.mockResolvedValue('launch')
+  prepare.mockResolvedValue()
+  download.mockResolvedValue()
+  ;(window as unknown as { api: unknown }).api = {
+    searchTemplates,
+    openTemplateInBuild,
+    prepareTemplateSearch: prepare,
+    downloadTemplateSearch: download,
+    onTemplateSearchAvailability: (
+      callback: (availability: TemplateSearchAvailability) => void
+    ) => {
+      announce = callback
+      return () => {}
+    }
+  }
+})
+
+afterEach(() => {
+  while (mounted.length) mounted.pop()?.unmount()
+  vi.useRealTimers()
+})
+
+const mounted: ReturnType<typeof mountSearch>[] = []
+
+function mountSearch(buildId: string | null = 'build-1') {
+  const wrapper = mount(HomeTemplateSearch, { props: { buildId }, attachTo: document.body })
+  mounted.push(wrapper)
+  return wrapper
+}
+
+type Wrapper = ReturnType<typeof mountSearch>
+
+function input(wrapper: Wrapper) {
+  return wrapper.get('[data-testid="home-template-search-input"]')
+}
+
+async function searchFor(wrapper: Wrapper, text: string) {
+  await input(wrapper).setValue(text)
+  await input(wrapper).trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+}
+
+function rowTitles(wrapper: Wrapper): string[] {
+  return wrapper.findAll('[role="option"]').map((row) => row.find('.font-medium').text())
+}
+
+function opened(): string[] {
+  return openTemplateInBuild.mock.calls.map(([, templateId]) => templateId)
+}
+
+function notice(wrapper: Wrapper): string {
+  return wrapper.get('[data-testid="home-template-search-notice"]').text()
+}
+
+function panel(wrapper: Wrapper) {
+  return wrapper.find('[data-testid="home-template-search-results"]')
+}
+
+describe('HomeTemplateSearch results', () => {
+  it('lists the templates to run, then the ones to download, then Also try', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({ run: [POSTER], download: [MURAL], alsoTry: [candidate('card_template')] })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster for a bake sale')
+
+    expect(rowTitles(wrapper)).toEqual([
+      'poster_template title',
+      'mural_template title',
+      'card_template title'
+    ])
+    expect(wrapper.findAll('[role="option"]').map((row) => row.attributes('data-testid'))).toEqual([
+      'home-template-search-row-run',
+      'home-template-search-row-download',
+      'home-template-search-row-also'
+    ])
+  })
+
+  it('labels partner templates, and says what a template downloads', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({ run: [candidate('api_poster', { partner: true })], download: [MURAL] })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    const [partner, mural] = wrapper.findAll('[role="option"]')
+    expect(partner!.find('[data-testid="home-template-search-partner"]').exists()).toBe(true)
+    expect(mural!.text()).toContain('Downloads mural.safetensors')
+  })
+
+  it('shows the calibrated match as a percentage, and the level word alone without one', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({
+        run: [candidate('calibrated', { calibrated: 0.734 }), candidate('raw', { score: 0.6 })]
+      })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    const matches = wrapper
+      .findAll('[data-testid="home-template-search-match"]')
+      .map((b) => b.text())
+    expect(matches).toEqual(['73% match', 'Good match'])
+  })
+
+  it('greys out a template below the bar and calls it a weaker match', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({ run: [POSTER], alsoTry: [candidate('weak', { belowThreshold: true, score: 0.3 })] })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    const weak = wrapper.findAll('[role="option"]')[1]!
+    expect(weak.attributes('data-weak')).toBe('true')
+    expect(weak.get('[data-testid="home-template-search-match"]').text()).toBe('Weaker match')
+  })
+
+  it('leaves out matches below the bar under 5%, judged on the calibrated value when there is one', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({
+        run: [POSTER],
+        alsoTry: [
+          candidate('raw_high_calibrated_low', {
+            belowThreshold: true,
+            score: 0.3,
+            calibrated: 0.02
+          }),
+          candidate('raw_low', { belowThreshold: true, score: 0.02 }),
+          candidate('raw_low_calibrated_high', {
+            belowThreshold: true,
+            score: 0.02,
+            calibrated: 0.3
+          }),
+          candidate('clears_with_low_score', { score: 0.01 })
+        ]
+      })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    expect(rowTitles(wrapper)).toEqual([
+      'poster_template title',
+      'raw_low_calibrated_high title',
+      'clears_with_low_score title'
+    ])
+  })
+
+  it('shows the template family under its title', async () => {
+    searchTemplates.mockResolvedValue(answer({ run: [candidate('poster', { family: 'Image' })] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    expect(wrapper.get('[role="option"]').text()).toContain('Image')
+  })
+
+  it('marks the first template the search chose as the best match', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    const best = wrapper.findAll('[data-testid="home-template-search-best"]')
+    expect(best).toHaveLength(1)
+    expect(
+      wrapper
+        .findAll('[role="option"]')[0]!
+        .find('[data-testid="home-template-search-best"]')
+        .exists()
+    ).toBe(true)
+  })
+
+  it('marks the first download as the best match when the answer is to download one', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({ outcome: 'download', run: [BANNER], download: [MURAL] })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a mural')
+    const [banner, mural] = wrapper.findAll('[role="option"]')
+    expect(banner!.find('[data-testid="home-template-search-best"]').exists()).toBe(false)
+    expect(mural!.find('[data-testid="home-template-search-best"]').exists()).toBe(true)
+  })
+
+  it('shows the reply and suggestions, with nothing marked best, when the request needs the agent', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({ outcome: 'agent', reply: 'This needs the agent.', alsoTry: [POSTER] })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'edit my last video')
+    expect(wrapper.get('[data-testid="home-template-search-reply"]').text()).toBe(
+      'This needs the agent.'
+    )
+    expect(rowTitles(wrapper)).toEqual(['poster_template title'])
+    expect(wrapper.find('[data-testid="home-template-search-best"]').exists()).toBe(false)
+  })
+
+  it('shows only the reply for input the search cannot use', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({ outcome: 'bad_input', reply: 'Say what you want to make.', alsoTry: [POSTER] })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'asdf')
+    expect(wrapper.get('[data-testid="home-template-search-reply"]').text()).toBe(
+      'Say what you want to make.'
+    )
+    expect(wrapper.findAll('[role="option"]')).toHaveLength(0)
+  })
+
+  it('says nothing fits when the search finds nothing and has no reply', async () => {
+    searchTemplates.mockResolvedValue(answer({ outcome: 'unsat' }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a sculpture made of fog')
+    expect(wrapper.get('[data-testid="home-template-search-no-match"]').text()).toBe(
+      'No template fits this yet.'
+    )
+  })
+
+  it('says the search is not answering when it fails', async () => {
+    searchTemplates.mockResolvedValue({ kind: 'failed' })
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    expect(notice(wrapper)).toContain("isn't answering")
+  })
+
+  it('keeps a request within the length search accepts', () => {
+    const wrapper = mountSearch()
+    expect(input(wrapper).attributes('maxlength')).toBe(String(TEMPLATE_SEARCH_MAX_QUERY))
+  })
+})
+
+describe('HomeTemplateSearch opening a template', () => {
+  it('opens the best template when Enter is pressed on its result', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(opened()).toEqual(['poster_template'])
+    expect(panel(wrapper).exists()).toBe(false)
+  })
+
+  it('opens the template picked with the arrow keys', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(opened()).toEqual(['banner_template'])
+  })
+
+  it('opens a template when its result is clicked', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.findAll('[role="option"]')[2]!.trigger('click')
+    await flushPromises()
+    expect(opened()).toEqual(['mural_template'])
+  })
+
+  it('searches the new text instead of opening an answer to older text', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    searchTemplates.mockClear()
+
+    await input(wrapper).setValue('a banner')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(openTemplateInBuild).not.toHaveBeenCalled()
+    expect(searchTemplates).toHaveBeenCalledWith('a banner', 'build-1')
+  })
+
+  it('does nothing on the Enter that ends an IME composition', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    searchTemplates.mockClear()
+    await input(wrapper).trigger('keydown', { key: 'Enter', isComposing: true })
+    await flushPromises()
+    expect(openTemplateInBuild).not.toHaveBeenCalled()
+    expect(searchTemplates).not.toHaveBeenCalled()
+  })
+
+  it('says so and keeps the results open when the template cannot be opened', async () => {
+    openTemplateInBuild.mockResolvedValue('refused')
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.findAll('[role="option"]')[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-template-search-open-failed"]').exists()).toBe(true)
+    expect(panel(wrapper).exists()).toBe(true)
+  })
+
+  it('says it could not open a template when there is no local build to open it in', async () => {
+    const wrapper = mountSearch(null)
+    await searchFor(wrapper, 'a poster')
+    await wrapper.findAll('[role="option"]')[0]!.trigger('click')
+    await flushPromises()
+    expect(openTemplateInBuild).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="home-template-search-open-failed"]').exists()).toBe(true)
+  })
+
+  it.each(['launch', 'opened'] as const)(
+    'tells Home a template is on its way when the build answers %s',
+    async (outcome) => {
+      openTemplateInBuild.mockResolvedValue(outcome)
+      const wrapper = mountSearch()
+      await searchFor(wrapper, 'a poster')
+      await wrapper.findAll('[role="option"]')[0]!.trigger('click')
+      await flushPromises()
+      expect(openTemplateInBuild).toHaveBeenCalledWith('build-1', 'poster_template')
+      expect(wrapper.emitted('opened')).toHaveLength(1)
+    }
+  )
+})
+
+describe('HomeTemplateSearch typing', () => {
+  it('searches once typing pauses, with the latest text only', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountSearch()
+    await input(wrapper).setValue('a pos')
+    await vi.advanceTimersByTimeAsync(SEARCH_DELAY_MS - 1)
+    await input(wrapper).setValue('a poster')
+    await vi.advanceTimersByTimeAsync(SEARCH_DELAY_MS - 1)
+    expect(searchTemplates).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(searchTemplates.mock.calls).toEqual([['a poster', 'build-1']])
+  })
+
+  it('shows only the answer to the latest request when an older one arrives late', async () => {
+    let finishOld!: (value: TemplateSearchResponse) => void
+    searchTemplates.mockReturnValueOnce(new Promise((resolve) => (finishOld = resolve)))
+    searchTemplates.mockResolvedValueOnce(answer({ run: [BANNER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await searchFor(wrapper, 'a banner')
+    finishOld(answer({ run: [POSTER] }))
+    await flushPromises()
+    expect(rowTitles(wrapper)).toEqual(['banner_template title'])
+  })
+
+  it('closes the results on Escape and keeps them closed when a typed search answers later', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountSearch()
+    await input(wrapper).trigger('focus')
+    await input(wrapper).setValue('a poster')
+    await input(wrapper).trigger('input')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+
+    await vi.advanceTimersByTimeAsync(SEARCH_DELAY_MS)
+    await flushPromises()
+
+    expect(searchTemplates).toHaveBeenCalledWith('a poster', 'build-1')
+    expect(panel(wrapper).exists()).toBe(false)
+  })
+
+  it('keeps the results closed after focus leaves, when a typed search answers later', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountSearch()
+    await input(wrapper).trigger('focus')
+    await input(wrapper).setValue('a poster')
+    await input(wrapper).trigger('input')
+    await wrapper
+      .get('[data-testid="home-template-search"]')
+      .trigger('focusout', { relatedTarget: null })
+
+    await vi.advanceTimersByTimeAsync(SEARCH_DELAY_MS)
+    await flushPromises()
+
+    expect(panel(wrapper).exists()).toBe(false)
+  })
+})
+
+describe('HomeTemplateSearch before search is ready', () => {
+  it('gets search ready the first time the bar takes focus', async () => {
+    const wrapper = mountSearch()
+    await input(wrapper).trigger('focus')
+    await input(wrapper).trigger('blur')
+    await input(wrapper).trigger('focus')
+    expect(prepare).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks before the one-time download, with its size, and starts it on the click', async () => {
+    searchTemplates.mockResolvedValue(unavailable({ kind: 'needs_download', bytes: 178_958_799 }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    expect(notice(wrapper)).toContain('one-time 179 MB download')
+    expect(download).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="home-template-search-download"]').trigger('click')
+    expect(download).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows download progress, then answers the waiting search when it is done', async () => {
+    searchTemplates.mockResolvedValueOnce(unavailable({ kind: 'needs_download', bytes: 1000 }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    announce({ kind: 'downloading', received: 420, total: 1000 })
+    await flushPromises()
+    expect(notice(wrapper)).toContain('42%')
+
+    announce({ kind: 'idle' })
+    await flushPromises()
+    expect(searchTemplates).toHaveBeenLastCalledWith('a poster', 'build-1')
+    expect(rowTitles(wrapper)[0]).toBe('poster_template title')
+  })
+
+  it('answers a search made while the build is busy once the build is free', async () => {
+    searchTemplates.mockResolvedValueOnce(unavailable({ kind: 'waiting_for_build' }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    expect(notice(wrapper)).toContain('as soon as your build is free')
+
+    announce({ kind: 'idle' })
+    await flushPromises()
+    expect(rowTitles(wrapper)[0]).toBe('poster_template title')
+  })
+
+  it('offers to try a failed download again', async () => {
+    searchTemplates.mockResolvedValue(
+      unavailable({ kind: 'unavailable', reason: 'download_failed' })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search-download"]').trigger('click')
+    expect(download).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    [{ kind: 'off' } as const, "isn't set up"],
+    [{ kind: 'no_local_build' } as const, 'Install a local build to search'],
+    [{ kind: 'starting' } as const, 'Getting search ready'],
+    [{ kind: 'unavailable', reason: 'runtime_unsupported' } as const, "builds can't run search"],
+    [{ kind: 'unavailable', reason: 'update_desktop' } as const, 'Update Desktop'],
+    [{ kind: 'unavailable', reason: 'offline' } as const, 'Check your connection']
+  ])('says why search cannot answer: %o', async (availability, text) => {
+    searchTemplates.mockResolvedValue(unavailable(availability))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    expect(notice(wrapper)).toContain(text)
+  })
+
+  it('ignores news about search when no search is waiting', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    searchTemplates.mockClear()
+    announce({ kind: 'idle' })
+    await flushPromises()
+    expect(searchTemplates).not.toHaveBeenCalled()
+  })
+})

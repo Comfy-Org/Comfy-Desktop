@@ -9,6 +9,7 @@ import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
 import { homeBuildStatus, homeBuildTones, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
+import HomeTemplateSearch from './home/HomeTemplateSearch.vue'
 import { useInstallList } from '../composables/useInstallList'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
 import {
@@ -106,6 +107,19 @@ function buildStatus(build: Installation) {
 const { state: appsState, apps, loadApps } = useHomeApps()
 const appsEnabled = computed(() => appsState.value !== 'checking' && appsState.value !== 'off')
 
+const templateSearchBuild = computed(() => {
+  const usable = (build: Installation): boolean =>
+    build.sourceCategory === 'local' && build.statusTag?.style !== 'danger'
+  const target = openTarget.value
+  if (target && usable(target)) return target
+  return openableBuilds.value.find(usable) ?? null
+})
+const templateSearchEnabled = ref(false)
+
+function openTemplateSearchBuild(): void {
+  if (templateSearchBuild.value) emit('pick', templateSearchBuild.value)
+}
+
 const state = ref<LoadState>('loading')
 const workflows = ref<CatalogWorkflow[]>([])
 const carouselIsLoading = computed(() =>
@@ -143,6 +157,9 @@ watch(appsState, (now) => {
 
 onMounted(() => {
   if (installationStore.installations.length === 0) void installationStore.fetchInstallations()
+  void window.api.getSetting('templateSearchEnabled').then((enabled) => {
+    templateSearchEnabled.value = enabled === true
+  })
 })
 </script>
 
@@ -168,6 +185,13 @@ onMounted(() => {
       >
         {{ t('home.title') }}
       </h1>
+
+      <HomeTemplateSearch
+        v-if="templateSearchEnabled"
+        class="mt-8"
+        :build-id="templateSearchBuild?.id ?? null"
+        @opened="openTemplateSearchBuild"
+      />
 
       <section
         class="mt-[74px]"
