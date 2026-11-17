@@ -916,7 +916,7 @@ describe('TitleBarApp', () => {
     const badge = wrapper.find('.title-downloads-badge.is-unseen')
     expect(badge.exists()).toBe(true)
     expect(badge.text()).toBe('1')
-    expect(tray.attributes('title')).toBe('1 download finished — click to review')
+    expect(tray.attributes('title')).toBe('1 download finished. Click to review')
   })
 
   it('clears the unseen indicator when the downloads popup is opened', async () => {
@@ -1335,7 +1335,7 @@ describe('TitleBarApp', () => {
 
       expect(bridgeState.showCoachmarkCalls.length).toBe(1)
       const payload = bridgeState.showCoachmarkCalls[0]
-      expect(payload.title).toBe('Switch & manage instances')
+      expect(payload.title).toBe('Switch and manage builds')
       wrapper.unmount()
     })
 

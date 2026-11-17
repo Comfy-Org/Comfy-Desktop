@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useLocalStorage, useScroll } from '@vueuse/core'
-import { DropdownMenuRadioGroup } from 'reka-ui'
+import { useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
+import { DropdownMenuRadioGroup, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import {
   AudioLines,
   Box,
@@ -28,6 +28,7 @@ import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
+import PopoverContent from '@comfyorg/design-system/popover/PopoverContent'
 import BaseInput from '../components/ui/BaseInput.vue'
 import ContextMenu from '../components/ContextMenu.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
@@ -35,6 +36,7 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useModal } from '../composables/useModal'
+import { revealInFolderKey } from '../composables/usePlatform'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -114,9 +116,16 @@ const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
 const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newest')
 const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
-const savedBuildId = useLocalStorage('comfy.desktop.assets.build', '')
-const pickedBuildId = ref('')
-const shownBuild = ref({ id: '', context: '' })
+const searchOpen = ref(false)
+const toolbarRow = useTemplateRef<HTMLElement>('toolbarRow')
+const toolbarCompactness = ref(0)
+const SEARCH_AS_ICON = 1
+const KINDS_AS_MENU = 2
+const CLOUD = 'cloud'
+const SHARED = 'shared'
+const savedPlace = useLocalStorage('comfy.desktop.assets.place', '')
+const pickedPlace = ref('')
+const truncated = ref(false)
 
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
@@ -137,70 +146,80 @@ function buildState(build: Installation): BuildState {
   return sessionStore.isRunning(build.id) || isCloudBuild(build) ? 'running' : 'stopped'
 }
 
-function hasAssets(build: Installation): boolean {
-  return (
-    (build.hasOutputFolder === true || isCloudBuild(build)) &&
-    isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId)
-  )
+function inWorkspace(build: Installation): boolean {
+  return isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId)
 }
 
-const thisComputer = computed<AssetBuild>(() => ({
-  build: {
-    id: LOCAL_ASSETS_SOURCE,
-    name: t('assets.thisComputer'),
-    sourceLabel: '',
-    sourceCategory: 'local'
-  },
-  cloud: false,
-  computer: true,
-  state: 'stopped'
-}))
+function savesToSharedFolder(build: Installation): boolean {
+  return build.useSharedOutput !== false
+}
+
+function placeOption(id: string, name: string, cloud: boolean): AssetBuild {
+  return {
+    build: { id, name, sourceLabel: '', sourceCategory: cloud ? 'cloud' : 'local' },
+    cloud,
+    computer: !cloud,
+    state: cloud ? 'running' : 'stopped'
+  }
+}
+
+const cloudBuild = computed(
+  () =>
+    installationStore.installations.find((build) => isCloudBuild(build) && inWorkspace(build)) ??
+    null
+)
+
+const localBuilds = computed(() =>
+  installationStore.installations.filter(
+    (build) => build.hasOutputFolder === true && inWorkspace(build)
+  )
+)
+const hasLocalBuild = computed(() => localBuilds.value.length > 0)
 
 const assetBuilds = computed<AssetBuild[]>(() => {
-  const builds = installationStore.installations.filter(hasAssets).map((build) => ({
-    build,
-    cloud: isCloudBuild(build),
-    computer: false,
-    state: buildState(build)
-  }))
-  return builds.some((option) => !option.cloud) ? builds : [...builds, thisComputer.value]
+  const local = localBuilds.value
+  const dedicated = local.filter((build) => !savesToSharedFolder(build))
+  return [
+    placeOption(CLOUD, t('assets.cloud'), true),
+    ...(!hasLocalBuild.value || local.some(savesToSharedFolder)
+      ? [placeOption(SHARED, t('assets.sharedFolder'), false)]
+      : []),
+    ...dedicated.map((build) => ({
+      build,
+      cloud: false,
+      computer: false,
+      state: buildState(build)
+    }))
+  ]
 })
 
-function lastLaunched({ build }: AssetBuild): number {
-  return typeof build.lastLaunchedAt === 'number' ? build.lastLaunchedAt : -Infinity
-}
-
-const selectionContext = computed(
-  () => `${authStore.isSignedIn}\n${dashboardScope.selectedWorkspaceId}`
-)
+const windowPlace = computed(() => {
+  const build = installationId ? installationStore.getById(installationId) : null
+  if (!build) return ''
+  if (isCloudBuild(build)) return CLOUD
+  return savesToSharedFolder(build) ? SHARED : build.id
+})
 
 const selectedBuild = computed<AssetBuild | null>(() => {
   if (!buildsKnown.value) return null
-  const builds = assetBuilds.value
-  const openable = builds.filter((option) => authStore.isSignedIn || !option.cloud)
-  const withId = (options: AssetBuild[], id: string) =>
-    id ? options.find(({ build }) => build.id === id) : undefined
+  const options = assetBuilds.value
+  const withId = (id: string) => (id ? options.find(({ build }) => build.id === id) : undefined)
+  const restorablePlace =
+    savedPlace.value === CLOUD && !authStore.isSignedIn ? '' : savedPlace.value
   return (
-    withId(builds, pickedBuildId.value) ??
-    withId(builds, installationId) ??
-    withId(openable, savedBuildId.value) ??
-    withId(
-      openable,
-      shownBuild.value.context === selectionContext.value ? shownBuild.value.id : ''
-    ) ??
-    openable.find((option) => !option.cloud && option.state === 'running') ??
-    openable.toSorted((a, b) => lastLaunched(b) - lastLaunched(a))[0] ??
-    null
+    withId(pickedPlace.value) ??
+    withId(windowPlace.value) ??
+    withId(restorablePlace) ??
+    (hasLocalBuild.value || !cloudBuild.value || !authStore.isSignedIn
+      ? options.find((option) => !option.cloud)
+      : undefined) ??
+    options[0]!
   )
 })
 
-watch([selectedBuild, selectionContext], ([selected, context]) => {
-  shownBuild.value = { id: selected?.build.id ?? '', context }
-})
-
-function pickBuild(id: string): void {
-  pickedBuildId.value = id
-  savedBuildId.value = id
+function choosePlace(id: string): void {
+  pickedPlace.value = id
+  savedPlace.value = id
 }
 
 function buildStatusLabel({ cloud, computer, state }: AssetBuild): string {
@@ -246,6 +265,29 @@ const kindOptions = computed(() =>
         : searchedAssets.value.filter((asset) => asset.kind === kind).length,
     testId: `assets-kind-${kind}`
   }))
+)
+
+const currentKind = computed(() =>
+  kindOptions.value.find((option) => option.value === kindFilter.value)!
+)
+
+let fitRun = 0
+async function fitToolbar(): Promise<void> {
+  const row = toolbarRow.value
+  const run = ++fitRun
+  if (!row || searchOpen.value) return
+  for (let level = 0; level <= KINDS_AS_MENU; level++) {
+    toolbarCompactness.value = level
+    await nextTick()
+    if (run !== fitRun || row.scrollWidth <= row.clientWidth) return
+  }
+}
+
+useResizeObserver(toolbarRow, () => void fitToolbar())
+watch(
+  [selectedBuild, searchOpen, () => kindOptions.value.map((option) => option.count).join()],
+  () => void fitToolbar(),
+  { flush: 'post' }
 )
 
 const visibleAssets = computed(() => {
@@ -337,6 +379,9 @@ const emptyState = computed<EmptyState>(() => {
       action: { label: t('assets.signIn'), run: () => void signIn() }
     }
   }
+  if (selectedBuild.value?.cloud && !cloudBuild.value) {
+    return { title: t('assets.noCloudBuildTitle'), body: t('assets.noCloudBuildBody') }
+  }
   return {
     title: t('assets.emptyTitle'),
     body: t('assets.emptyBody')
@@ -344,10 +389,6 @@ const emptyState = computed<EmptyState>(() => {
 })
 
 let requestId = 0
-function listBuildAssets({ build, cloud, computer }: AssetBuild): Promise<AssetSummary[]> {
-  if (computer) return window.api.listLocalAssets()
-  return cloud ? window.api.listAssets(build.id) : window.api.listLocalAssets(build.id)
-}
 
 async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean): Promise<void> {
   const dashboardWorkspaceId = installationWorkspaceId(build, dashboardScope.selectedWorkspaceId)
@@ -363,23 +404,27 @@ async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean)
 async function loadAssets(userAsked = false): Promise<void> {
   const current = ++requestId
   const selected = selectedBuild.value
+  const cloud = selected?.cloud ? cloudBuild.value : null
   failed.value = false
-  if (!selected || (selected.cloud && !authStore.isSignedIn)) {
+  truncated.value = false
+  if (!selected || (selected.cloud && (!cloud || !authStore.isSignedIn))) {
     assets.value = []
     loading.value = false
     return
   }
   loading.value = true
-  const source = selected.cloud ? selected.build.id : LOCAL_ASSETS_SOURCE
+  const source = cloud ? cloud.id : LOCAL_ASSETS_SOURCE
   try {
-    if (selected.cloud) {
-      const pickedHere = selected.build.id === pickedBuildId.value
-      await moveSessionToWorkspaceOf(selected.build, userAsked || pickedHere)
+    if (cloud) {
+      await moveSessionToWorkspaceOf(cloud, userAsked || pickedPlace.value === CLOUD)
       if (current !== requestId) return
     }
-    const listed = await listBuildAssets(selected)
+    const listed = cloud
+      ? { assets: await window.api.listAssets(cloud.id), truncated: false }
+      : await window.api.listLocalAssets(selected.computer ? undefined : selected.build.id)
     if (current !== requestId) return
-    assets.value = listed.map((asset) => ({ ...asset, source }))
+    assets.value = listed.assets.map((asset) => ({ ...asset, source }))
+    truncated.value = listed.truncated
   } catch {
     if (current !== requestId) return
     assets.value = []
@@ -402,7 +447,7 @@ const loadKey = computed(() => {
 })
 
 watch(
-  loadKey,
+  [loadKey, () => (selectedBuild.value?.cloud ? cloudBuild.value?.id : undefined)],
   () => {
     assets.value = []
     void loadAssets()
@@ -437,7 +482,8 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     createdAt: asset.createdAt,
     tags: asset.tags,
     previewUrl: asset.previewUrl,
-    thumbnailUrl: asset.thumbnailUrl
+    thumbnailUrl: asset.thumbnailUrl,
+    savedIn: isLocal(asset) ? folderOf(asset.id) : null
   }))
 )
 
@@ -503,10 +549,12 @@ function isLocal(asset: GalleryAsset): boolean {
   return asset.source === LOCAL_ASSETS_SOURCE
 }
 
-function revealLabel(): string {
-  if (window.api.platform === 'darwin') return t('assets.showInFinder')
-  if (window.api.platform === 'win32') return t('assets.showInExplorer')
-  return t('assets.showInFolder')
+function folderOf(file: string): string {
+  return file.slice(0, Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')))
+}
+
+function reveal(asset: GalleryAsset): void {
+  void window.api.revealAsset(asset.source, asset.id)
 }
 
 const assetMenuItems = computed<ContextMenuItem[]>(() => {
@@ -514,7 +562,9 @@ const assetMenuItems = computed<ContextMenuItem[]>(() => {
   if (!asset) return []
   return [
     { id: 'download', label: t('assets.download'), icon: Download },
-    ...(isLocal(asset) ? [{ id: 'reveal', label: revealLabel(), icon: FolderOpen }] : []),
+    ...(isLocal(asset)
+      ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: FolderOpen }]
+      : []),
     ...(asset.kind === 'image' && asset.previewUrl
       ? [{ id: 'copy', label: t('assets.copy'), icon: Copy }]
       : []),
@@ -607,7 +657,10 @@ function extensionOf(name: string): string {
       :class="scrollTop > 0 && 'bg-content-background/75 backdrop-blur-lg'"
       data-testid="assets-toolbar"
     >
-      <div class="mx-auto flex min-h-8 w-full max-w-300 flex-wrap items-center gap-2 px-10 py-3">
+      <div
+        ref="toolbarRow"
+        class="mx-auto flex min-h-8 w-full max-w-300 flex-nowrap items-center gap-2 px-10 py-3"
+      >
         <Menu
           v-if="selectedBuild"
           :modal="false"
@@ -650,7 +703,7 @@ function extensionOf(name: string): string {
               :value="option.build.id"
               class="min-h-0 gap-2.5 rounded-lg px-2.5 py-2 data-highlighted:bg-[rgb(255_255_255/0.06)] data-[state=checked]:bg-[rgb(255_255_255/0.06)]"
               :data-testid="`assets-build-${option.build.id}`"
-              @select="pickBuild(option.build.id)"
+              @select="choosePlace(option.build.id)"
             >
               <span
                 class="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-[rgb(240_240_240/0.07)] text-muted-foreground"
@@ -685,11 +738,50 @@ function extensionOf(name: string): string {
           data-testid="assets-build-picker-loading"
         />
         <SegmentedControl
+          v-if="toolbarCompactness < KINDS_AS_MENU"
           v-model="kindFilter"
           :options="kindOptions"
           :label="t('assets.kindLabel')"
         />
-        <div class="ml-auto flex items-center gap-2">
+        <div v-else class="shrink-0">
+          <Menu
+            :modal="false"
+            align="start"
+            class="z-20 min-w-50"
+            :aria-label="t('assets.kindLabel')"
+          >
+            <template #trigger>
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                class="gap-1.5 text-[13px]"
+                data-testid="assets-kind-menu"
+              >
+                {{ currentKind.label }}
+                <span class="text-subtle-foreground tabular-nums">{{ currentKind.count }}</span>
+                <ChevronDown :size="14" aria-hidden="true" />
+              </Button>
+            </template>
+            <DropdownMenuRadioGroup :model-value="kindFilter">
+              <MenuRadioItem
+                v-for="option in kindOptions"
+                :key="option.value"
+                as="button"
+                type="button"
+                :value="option.value"
+                class="w-full gap-2.5"
+                :data-testid="`assets-kind-menu-${option.value}`"
+                @select.prevent="kindFilter = option.value"
+              >
+                <span class="flex-1 text-left">{{ option.label }}</span>
+                <span class="text-subtle-foreground tabular-nums">{{ option.count }}</span>
+                <Check v-if="kindFilter === option.value" :size="15" aria-hidden="true" />
+              </MenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </Menu>
+        </div>
+        <div class="ml-auto flex min-w-0 items-center gap-2">
           <Button
             variant="muted-textonly"
             size="icon"
@@ -706,7 +798,7 @@ function extensionOf(name: string): string {
               aria-hidden="true"
             />
           </Button>
-          <div class="w-[220px]">
+          <div v-if="toolbarCompactness < SEARCH_AS_ICON" class="w-[220px] min-w-[150px] shrink">
             <BaseInput
               v-model="searchQuery"
               class="h-8 [&_input]:text-ui"
@@ -715,6 +807,34 @@ function extensionOf(name: string): string {
             >
               <template #leading><Search :size="14" /></template>
             </BaseInput>
+          </div>
+          <div v-else>
+            <PopoverRoot v-model:open="searchOpen">
+              <PopoverTrigger as-child>
+                <Button
+                  type="button"
+                  :variant="searchQuery ? 'secondary' : 'muted-textonly'"
+                  size="icon"
+                  :aria-label="t('assets.search')"
+                  :title="t('assets.search')"
+                  data-testid="assets-search-toggle"
+                >
+                  <Search :size="15" aria-hidden="true" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" :side-offset="6" class="w-64 p-1.5">
+                <BaseInput
+                  v-model="searchQuery"
+                  class="h-8 [&_input]:text-ui"
+                  :placeholder="t('assets.search')"
+                  :aria-label="t('assets.search')"
+                  data-testid="assets-search-compact"
+                  @keydown.enter="searchOpen = false"
+                >
+                  <template #leading><Search :size="14" /></template>
+                </BaseInput>
+              </PopoverContent>
+            </PopoverRoot>
           </div>
           <Menu
             :modal="false"
@@ -969,6 +1089,13 @@ function extensionOf(name: string): string {
           </div>
         </li>
       </ul>
+      <p
+        v-if="truncated && !showSkeleton"
+        class="m-0 mt-6 text-center text-ui text-subtle-foreground"
+        data-testid="assets-truncated"
+      >
+        {{ t('assets.truncated', assets.length) }}
+      </p>
     </div>
 
     <OutputDetailDialog
@@ -977,6 +1104,7 @@ function extensionOf(name: string): string {
       :items="detailItems"
       @close="closeDetail"
       @download="download(visibleAssets[$event]!)"
+      @show-in-folder="reveal(visibleAssets[$event]!)"
     />
 
     <ContextMenu

@@ -477,8 +477,8 @@ describe('InstallWizardModal heading', () => {
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
-    expect(wrapper.get('.setup-modal-title').text()).toBe('New Build')
-    expect(wrapper.find('[aria-label="New Build"]').exists()).toBe(true)
+    expect(wrapper.get('.setup-modal-title').text()).toBe('New build')
+    expect(wrapper.find('[aria-label="New build"]').exists()).toBe(true)
     expect(wrapper.get('.setup-modal-lead').text()).toBe('Set up a fresh ComfyUI install.')
     expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-change-form"]').exists()).toBe(false)
