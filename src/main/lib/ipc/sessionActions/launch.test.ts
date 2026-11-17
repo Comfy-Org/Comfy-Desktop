@@ -1848,6 +1848,36 @@ describe('core beta report placement', () => {
       expect(new URL(result.url!).searchParams.get('workspace')).toBe('team-b')
     })
 
+    it('opens the newer picker workspace even when the superseded Personal lookup fails', async () => {
+      const installationId = 'harness-cloud-picker-after-personal'
+      const ctx = ctxFor(installationId)
+      const session = getCloudSession()
+      vi.spyOn(session, 'status').mockReturnValue({
+        signedIn: true,
+        workspaceId: 'team-a',
+        workspaceType: 'team'
+      })
+      vi.spyOn(session, 'listWorkspaces').mockImplementationOnce(async () => {
+        _setActiveLaunchPickerWorkspace(installationId, 'team-b')
+        throw new Error('Workspace list unavailable')
+      })
+      launchHarness.waitForUrl = async () => {}
+
+      const result = await handleLaunch({
+        ...ctx,
+        inst: {
+          ...ctx.inst,
+          id: installationId,
+          sourceId: 'cloud',
+          remoteUrl: 'https://cloud.comfy.org/'
+        },
+        actionData: { pickerWorkspaceId: 'personal' }
+      })
+
+      expect(result.ok).toBe(true)
+      expect(new URL(result.url!).searchParams.get('workspace')).toBe('team-b')
+    })
+
     it('still launches a command that takes none of the folder arguments', async () => {
       launchHarness.launchCommand = { ...launchHarness.launchCommand, skipSharedPaths: true }
       let reads = 0

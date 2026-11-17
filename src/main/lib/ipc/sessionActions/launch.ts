@@ -1496,7 +1496,12 @@ async function runLaunch(
     do {
       if (abort.signal.aborted) return { ok: false, cancelled: true }
       pickerWorkspaceId = getPickerWorkspaceId()
-      launchCmd.url = await cloudWorkspaceUrl(inst, rawUrl, pickerWorkspaceId)
+      try {
+        launchCmd.url = await cloudWorkspaceUrl(inst, rawUrl, pickerWorkspaceId)
+      } catch (error) {
+        if (abort.signal.aborted) return { ok: false, cancelled: true }
+        if (getPickerWorkspaceId() === pickerWorkspaceId) throw error
+      }
     } while (getPickerWorkspaceId() !== pickerWorkspaceId)
     if (abort.signal.aborted) return { ok: false, cancelled: true }
 
