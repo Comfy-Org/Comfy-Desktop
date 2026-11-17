@@ -101,7 +101,7 @@ test('first run: the hint takes the popup, and dismissing it releases the beta c
     { timeout: 30_000, message: 'no coachmark appeared at all on a first run' }
   )
 
-  expect(await popup.textOf('.coachmark-title')).toBe('Switch & manage instances')
+  expect(await popup.textOf('.coachmark-title')).toBe('Switch and manage builds')
 
   expect(
     await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`)

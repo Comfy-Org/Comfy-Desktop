@@ -7,6 +7,11 @@ import {
   expectNewBuildModalOpen,
   openNewBuildChangeSetup,
   pickFromTitleMenu,
+  pickFromSetupDropdown,
+  setupDropdownOffers,
+  setupDropdownValue,
+  SOURCE_DROPDOWN,
+  WHERE_IT_IS_DROPDOWN,
   openDesktopSettings,
   showBuildsPage
 } from './support/chooserHelpers'
@@ -79,12 +84,16 @@ test('Desktop Settings opens from the sidebar footer when expanded and collapsed
 test('clicking New Install tile opens the new-install takeover @windows @macos @linux', async () => {
   await clickNewInstallTile(ctx.panel)
   await expectNewBuildModalOpen(ctx.panel)
-  const pickedSource = (): Promise<string | null> =>
-    ctx.panel.evaluate<string | null>(
-      `document.querySelector('[data-testid="install-source-tabs"] [aria-checked="true"]')?.getAttribute('data-testid') ?? null`
-    )
+  const pickedSource = (): Promise<string> => setupDropdownValue(ctx.panel, SOURCE_DROPDOWN)
   await openNewBuildChangeSetup(ctx.panel)
-  expect(await ctx.panel.exists('[data-testid="workspace-install-source-managed"]')).toBe(true)
+  expect(
+    await setupDropdownOffers(
+      ctx.panel,
+      SOURCE_DROPDOWN,
+      '[data-testid="workspace-install-source-managed"]'
+    ),
+    "the Source dropdown offers Your team's builds"
+  ).toBe(true)
   expect(await ctx.panel.exists('.setup-modal-close')).toBe(false)
   const sourceBeforeDiscard = await pickedSource()
   expect(await ctx.panel.click('[data-testid="config-discard-changes"]')).toBe(true)
@@ -102,19 +111,25 @@ test('Change setup asks first for a new install or a ComfyUI already there, and 
   await clickNewInstallTile(ctx.panel)
   await expectNewBuildModalOpen(ctx.panel)
   await openNewBuildChangeSetup(ctx.panel)
-  await ctx.panel.waitForVisible('[data-testid="install-source-tabs"]')
+  await ctx.panel.waitForVisible(SOURCE_DROPDOWN)
   expect(
-    await ctx.panel.exists('[data-testid="install-source-remote"]'),
+    await setupDropdownOffers(ctx.panel, SOURCE_DROPDOWN, '[data-testid="install-source-remote"]'),
     'a server is not offered as a place to get a new install from'
   ).toBe(false)
 
   expect(await ctx.panel.click('[data-testid="config-start-from-existing"]')).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="existing-comfy-folder-form"]')
-  expect(await ctx.panel.exists('[data-testid="install-source-tabs"]')).toBe(false)
+  expect(await ctx.panel.exists(SOURCE_DROPDOWN)).toBe(false)
   expect(await ctx.panel.exists('[data-testid="config-save-changes"]')).toBe(false)
   expect(await ctx.panel.textOf('[data-testid="config-use-existing"]')).toBe('Add build')
 
-  expect(await ctx.panel.click('[data-testid="existing-comfy-snapshot"]')).toBe(true)
+  expect(
+    await pickFromSetupDropdown(
+      ctx.panel,
+      WHERE_IT_IS_DROPDOWN,
+      '[data-testid="existing-comfy-snapshot"]'
+    )
+  ).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="existing-comfy-snapshot-form"]')
   expect(await ctx.panel.exists('[data-testid="existing-comfy-folder-form"]')).toBe(false)
   expect(await ctx.panel.textOf('[data-testid="config-use-existing"]')).toBe('Create build')
@@ -123,12 +138,18 @@ test('Change setup asks first for a new install or a ComfyUI already there, and 
     'the snapshot is asked for in the sheet, not in a second window'
   ).toBe(false)
 
-  expect(await ctx.panel.click('[data-testid="install-source-remote"]')).toBe(true)
+  expect(
+    await pickFromSetupDropdown(
+      ctx.panel,
+      WHERE_IT_IS_DROPDOWN,
+      '[data-testid="install-source-remote"]'
+    )
+  ).toBe(true)
   await ctx.panel.waitForVisible('#sf-url')
   expect(await ctx.panel.textOf('[data-testid="config-use-existing"]')).toBe('Connect')
 
   expect(await ctx.panel.click('[data-testid="config-start-from-new"]')).toBe(true)
-  await ctx.panel.waitForVisible('[data-testid="install-source-tabs"]')
+  await ctx.panel.waitForVisible(SOURCE_DROPDOWN)
   await ctx.panel.waitForVisible('[data-testid="config-save-changes"]')
   expect(await ctx.panel.exists('#sf-url')).toBe(false)
 
@@ -183,7 +204,7 @@ test('title popup + system modal webContents are pre-warmed on the chooser host 
   await waitForWebContents(ctx.app, 'comfySystemModal.html', 10_000)
 })
 
-test('title popup opens, renders menu items, and closes via bridge @windows @macos @linux', async () => {
+test('the Desktop window tests menu opens with Performance tests and Benchmarks, and closes via bridge @windows @macos @linux', async () => {
   await openTitleMenu(ctx.titleBar)
 
   await expect
@@ -194,7 +215,7 @@ test('title popup opens, renders menu items, and closes via bridge @windows @mac
     .toBe(true)
 
   const popupItems = await readPopupMenuItems(ctx.app, 'comfyTitlePopup.html')
-  expect(popupItems).toEqual(['Performance Tests', 'Benchmarks', 'Close Window', 'Quit Desktop'])
+  expect(popupItems).toEqual(['Performance tests', 'Benchmarks'])
 
   await evalWithRetry(() =>
     ctx.app.evaluate(({ webContents }) => {
@@ -213,9 +234,9 @@ test('title popup opens, renders menu items, and closes via bridge @windows @mac
     .toBe(false)
 })
 
-test('the ☰ menu opens Performance Tests and Benchmarks in the dashboard window itself @windows @macos @linux', async () => {
+test('the tests menu opens Performance tests and Benchmarks in the Desktop window itself @windows @macos @linux', async () => {
   for (const [label, page] of [
-    ['Performance Tests', '[data-testid="performance-test"]'],
+    ['Performance tests', '[data-testid="performance-test"]'],
     ['Benchmarks', '[data-testid="benchmarks"]']
   ] as const) {
     await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))

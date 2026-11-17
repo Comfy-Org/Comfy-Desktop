@@ -12,6 +12,11 @@ export interface ChooserHandoffOpts {
 
 export type ChooserLaunchOutcome = 'focused-running' | 'launched' | 'missing-action'
 
+interface PickerLaunchOptions {
+  isRestart?: boolean
+  pickerWorkspaceId?: string
+}
+
 export interface ChooserHandoffApi {
   prepareChooserHostHandoff: (
     installationId: string,
@@ -20,14 +25,14 @@ export interface ChooserHandoffApi {
   performChooserLaunch: (
     installation: Installation,
     onMissingLaunchAction?: () => void,
-    opts?: { isRestart?: boolean; inPlace?: boolean }
+    opts?: PickerLaunchOptions & { inPlace?: boolean }
   ) => Promise<ChooserLaunchOutcome>
   launchesInPlace: (installationId: string) => boolean
-  handleChooserPick: (installation: Installation, opts?: { isRestart?: boolean }) => Promise<void>
+  handleChooserPick: (installation: Installation, opts?: PickerLaunchOptions) => Promise<void>
   handleChooserShowNewInstall: () => void
   performPickerLaunch: (
     installation: Installation,
-    opts?: { isRestart?: boolean }
+    opts?: PickerLaunchOptions
   ) => Promise<ChooserLaunchOutcome>
 }
 
@@ -62,10 +67,16 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
   async function performChooserLaunch(
     installation: Installation,
     onMissingLaunchAction: () => void = () => {},
-    opts?: { isRestart?: boolean; inPlace?: boolean }
+    opts?: PickerLaunchOptions & { inPlace?: boolean }
   ): Promise<ChooserLaunchOutcome> {
+    const pickerWorkspaceId =
+      installation.sourceId === 'cloud' ? opts?.pickerWorkspaceId : undefined
     if (sessionStore.isRunning(installation.id)) {
-      await window.api.focusComfyWindow(installation.id)
+      if (pickerWorkspaceId) {
+        await window.api.focusComfyWindow(installation.id, pickerWorkspaceId)
+      } else {
+        await window.api.focusComfyWindow(installation.id)
+      }
       return 'focused-running'
     }
     const actions = await window.api.getListActions(installation.id)
@@ -75,17 +86,19 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
       onMissingLaunchAction()
       return 'missing-action'
     }
+    const launchHooks = {
+      isRestart: opts?.isRestart === true,
+      actionData: pickerWorkspaceId ? { pickerWorkspaceId } : undefined
+    }
     if (!opts?.inPlace) {
-      await executeChooserAction(installation, launchAction, {
-        isRestart: opts?.isRestart === true
-      })
+      await executeChooserAction(installation, launchAction, launchHooks)
       return 'launched'
     }
     inPlaceLaunches.add(installation.id)
     try {
       await executeChooserAction(installation, launchAction, {
-        onGuardsPassed: () => prepareChooserHostHandoff(installation.id),
-        isRestart: opts?.isRestart === true
+        ...launchHooks,
+        onGuardsPassed: () => prepareChooserHostHandoff(installation.id)
       })
     } finally {
       inPlaceLaunches.delete(installation.id)
@@ -99,31 +112,22 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
 
   async function handleChooserPick(
     installation: Installation,
-    launchOpts?: { isRestart?: boolean }
+    launchOpts?: PickerLaunchOptions
   ): Promise<void> {
     await performChooserLaunch(
       installation,
       () => {
         void opts.switchPanel('new-install', 'chooser_pick')
       },
-      { isRestart: launchOpts?.isRestart === true }
+      launchOpts
     )
   }
 
   async function performPickerLaunch(
     installation: Installation,
-    opts?: { isRestart?: boolean }
+    opts?: PickerLaunchOptions
   ): Promise<ChooserLaunchOutcome> {
-    if (sessionStore.isRunning(installation.id)) {
-      await window.api.focusComfyWindow(installation.id)
-      return 'focused-running'
-    }
-    const actions = await window.api.getListActions(installation.id)
-    const launchAction =
-      actions.find((a) => a.id === 'launch') ?? actions.find((a) => a.style === 'primary') ?? null
-    if (!launchAction) return 'missing-action'
-    await executeChooserAction(installation, launchAction, { isRestart: opts?.isRestart === true })
-    return 'launched'
+    return performChooserLaunch(installation, undefined, opts)
   }
 
   function handleChooserShowNewInstall(): void {
