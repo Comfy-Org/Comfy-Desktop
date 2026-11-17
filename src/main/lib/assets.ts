@@ -33,9 +33,9 @@ const ASSETS_COPY_CHANNEL = 'assets:copy'
 const ASSETS_TRASH_CHANNEL = 'assets:trash'
 
 const MAX_PAGE_SIZE = 200
+const CLOUD_COUNT_CAP = 10_000
 const SCAN_PAGE_SIZE = 500
 const MAX_SCAN_PAGES = 100
-const SCAN_CONCURRENCY = 4
 const SCAN_TIMEOUT_MS = 120_000
 const SCAN_REUSE_MS = 30 * 60_000
 const ASSET_KINDS: readonly AssetKind[] = ['image', 'video', 'audio', '3d']
@@ -121,26 +121,24 @@ function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
   }
 }
 
-interface AssetRowPage {
+interface AssetRowPage extends Omit<CloudAssetPage, 'assets'> {
   rows: AssetRow[]
-  total: number
 }
 
-type TotalCount = 'exact' | 'skipped'
-
 function cloudListUrl(
-  { offset, limit, order }: CloudAssetPageRequest,
-  totalCount: TotalCount
+  { offset, after, limit, order }: CloudAssetPageRequest,
+  count: boolean
 ): string {
   const query = new URLSearchParams({
     tags_any: 'output',
     sort: 'created_at',
     order: order === 'oldest' ? 'asc' : 'desc',
     limit: String(limit),
-    offset: String(offset),
     include_public: 'false',
-    ...(totalCount === 'exact' ? { capped_total: 'false' } : { include_total: 'false' })
+    ...(count ? { capped_total: 'true' } : { include_total: 'false' })
   })
+  if (after !== undefined) query.set('after', after)
+  else if (offset > 0) query.set('offset', String(offset))
   return `${CLOUD_CONFIG.apiBase}/assets?${query}`
 }
 
@@ -148,19 +146,38 @@ async function fetchAssetRows(
   request: CloudAssetPageRequest,
   headers: Record<string, string>,
   signal: AbortSignal,
-  totalCount: TotalCount = 'exact'
+  count: boolean
 ): Promise<AssetRowPage> {
-  const res = await fetch(cloudListUrl(request, totalCount), {
+  const res = await fetch(cloudListUrl(request, count), {
     headers: { Accept: 'application/json', ...headers },
     signal: AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), signal])
   })
   if (!res.ok) throw new Error(`List assets failed: HTTP ${res.status}`)
   const body: unknown = await res.json().catch(() => null)
   const page = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
-  if (!Array.isArray(page.assets) || !isCount(page.total, 0, Number.MAX_SAFE_INTEGER)) {
+  const { assets, has_more: hasMore, next_cursor: cursor } = page
+  if (!Array.isArray(assets) || typeof hasMore !== 'boolean') {
     throw new Error('List assets returned an invalid page')
   }
-  return { rows: page.assets.filter(isAssetRow).slice(0, request.limit), total: page.total }
+  const slice = assets.slice(0, request.limit)
+  const rows = slice.filter(isAssetRow)
+  if (!hasMore) {
+    const total = request.offset === 0 || slice.length ? request.offset + slice.length : null
+    return { rows, total }
+  }
+  if (!slice.length || typeof cursor !== 'string' || !cursor || cursor === request.after) {
+    throw new Error('List assets returned an invalid cursor')
+  }
+  if (!count) return { rows, total: null, nextCursor: cursor }
+  if (!isCount(page.total, 0, Number.MAX_SAFE_INTEGER)) {
+    throw new Error('List assets returned an invalid count')
+  }
+  return {
+    rows,
+    total: Math.min(page.total, CLOUD_COUNT_CAP),
+    nextCursor: cursor,
+    ...(page.total >= CLOUD_COUNT_CAP && { totalIsLowerBound: true })
+  }
 }
 
 export function signedStorageUrl(location: string | null): string | null {
@@ -252,7 +269,8 @@ function lookupUrl(name: string, after: string | null): string {
     sort: 'created_at',
     order: 'desc',
     limit: String(LOOKUP_PAGE_SIZE),
-    include_public: 'false'
+    include_public: 'false',
+    include_total: 'false'
   })
   if (after !== null) query.set('after', after)
   return `${CLOUD_CONFIG.apiBase}/assets?${query}`
@@ -313,10 +331,14 @@ async function cloudAccessToken(installationId: string): Promise<string | null> 
   return getCloudSession().getAccessToken()
 }
 
-interface OutputScan {
+interface ScannedRows {
+  rows: AssetRow[]
+  scanLimit?: number
+}
+
+interface OutputScan extends ScannedRows {
   key: string
   savedAt: number
-  rows: AssetRow[]
 }
 
 interface ScanSlot {
@@ -327,34 +349,26 @@ async function scanAllRows(
   order: CloudAssetPageRequest['order'],
   headers: Record<string, string>,
   signal: AbortSignal
-): Promise<AssetRow[]> {
-  const failed = new AbortController()
-  const scanSignal = AbortSignal.any([signal, failed.signal, AbortSignal.timeout(SCAN_TIMEOUT_MS)])
-  const scanPage = (index: number, totalCount: TotalCount) =>
-    fetchAssetRows(
-      { offset: index * SCAN_PAGE_SIZE, limit: SCAN_PAGE_SIZE, order },
+): Promise<ScannedRows> {
+  const scanSignal = AbortSignal.any([signal, AbortSignal.timeout(SCAN_TIMEOUT_MS)])
+  const rows = new Map<string, AssetRow>()
+  const visited = new Set<string>()
+  let after: string | undefined
+  for (let page = 0; page < MAX_SCAN_PAGES; page++) {
+    const listed = await fetchAssetRows(
+      { offset: 0, limit: SCAN_PAGE_SIZE, order, after },
       headers,
       scanSignal,
-      totalCount
+      false
     )
-  const first = await scanPage(0, 'exact')
-  const pageCount = Math.min(MAX_SCAN_PAGES, Math.ceil(first.total / SCAN_PAGE_SIZE))
-  const pages: AssetRow[][] = [first.rows]
-  try {
-    await runPool(
-      Array.from({ length: Math.max(0, pageCount - 1) }, (_, i) => i + 1),
-      SCAN_CONCURRENCY,
-      async (index) => {
-        pages[index] = (await scanPage(index, 'skipped')).rows
-      },
-      scanSignal
-    )
-  } catch (error) {
-    failed.abort()
-    throw error
+    scanSignal.throwIfAborted()
+    for (const row of listed.rows) rows.set(row.id, row)
+    after = listed.nextCursor
+    if (!after) return { rows: [...rows.values()] }
+    if (visited.has(after)) throw new Error('List assets returned a repeated cursor')
+    visited.add(after)
   }
-  scanSignal.throwIfAborted()
-  return [...new Map(pages.flat().map((row) => [row.id, row])).values()]
+  return { rows: [...rows.values()], scanLimit: MAX_SCAN_PAGES * SCAN_PAGE_SIZE }
 }
 
 async function rowsOfKind(
@@ -368,14 +382,15 @@ async function rowsOfKind(
   if (request.offset === 0 || scan?.key !== key || Date.now() - scan.savedAt >= SCAN_REUSE_MS) {
     slot.scan = undefined
     const headers = { Authorization: `Bearer ${accessToken}` }
-    const rows = await scanAllRows(request.order, headers, signal)
-    scan = { key, savedAt: Date.now(), rows }
+    const scanned = await scanAllRows(request.order, headers, signal)
+    scan = { key, savedAt: Date.now(), ...scanned }
     slot.scan = scan
   }
   const matches = scan.rows.filter((row) => assetKind(row.name, row.mime_type) === request.kind)
   return {
     rows: matches.slice(request.offset, request.offset + request.limit),
-    total: matches.length
+    total: matches.length,
+    ...(scan.scanLimit && { scanLimit: scan.scanLimit })
   }
 }
 
@@ -386,9 +401,14 @@ async function listCloudAssets(
   slot: ScanSlot
 ): Promise<CloudAssetPage> {
   const { kind } = request
-  const { rows, total } = kind
+  const { rows, ...paging } = kind
     ? await rowsOfKind(accessToken, { ...request, kind }, signal, slot)
-    : await fetchAssetRows(request, { Authorization: `Bearer ${accessToken}` }, signal)
+    : await fetchAssetRows(
+        request,
+        { Authorization: `Bearer ${accessToken}` },
+        signal,
+        request.offset === 0 && request.after === undefined
+      )
   const summaries = rows.map((row) => toSummary(row, null))
   const deadline = AbortSignal.any([AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS), signal])
   await runPool(
@@ -402,7 +422,7 @@ async function listCloudAssets(
     deadline
   )
   signal.throwIfAborted()
-  return { assets: summaries, total }
+  return { assets: summaries, ...paging }
 }
 
 export async function listAssets(
@@ -421,13 +441,15 @@ function isCount(value: unknown, min: number, max: number): value is number {
 
 function pageRequest(value: unknown): CloudAssetPageRequest | null {
   if (!value || typeof value !== 'object') return null
-  const { offset, limit, order, kind } = value as Record<string, unknown>
+  const { offset, after, limit, order, kind } = value as Record<string, unknown>
   const knownKind = ASSET_KINDS.find((known) => known === kind)
   return isCount(offset, 0, Number.MAX_SAFE_INTEGER) &&
     isCount(limit, 1, MAX_PAGE_SIZE) &&
     (order === 'newest' || order === 'oldest') &&
-    (kind === undefined || knownKind)
-    ? { offset, limit, order, ...(knownKind && { kind: knownKind }) }
+    (kind === undefined || knownKind) &&
+    (after === undefined || (typeof after === 'string' && after.length > 0 && offset > 0)) &&
+    (offset < CLOUD_COUNT_CAP || after !== undefined || knownKind)
+    ? { offset, limit, order, ...(after && { after }), ...(knownKind && { kind: knownKind }) }
     : null
 }
 

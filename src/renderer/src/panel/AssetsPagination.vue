@@ -13,14 +13,18 @@ import { ChevronLeft, ChevronRight } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 
-const { total, pageSizes } = defineProps<{ total: number; pageSizes: readonly number[] }>()
+const { total, totalIsLowerBound, pageSizes } = defineProps<{
+  total: number
+  totalIsLowerBound: boolean
+  pageSizes: readonly number[]
+}>()
 const page = defineModel<number>('page', { required: true })
 const pageSize = defineModel<number>('pageSize', { required: true })
 
 const { t } = useI18n()
 
 const range = computed(() =>
-  t('assets.pagination.range', {
+  t(totalIsLowerBound ? 'assets.pagination.rangeLowerBound' : 'assets.pagination.range', {
     first: (page.value - 1) * pageSize.value + 1,
     last: Math.min(page.value * pageSize.value, total),
     total

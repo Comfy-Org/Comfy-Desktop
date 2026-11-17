@@ -135,12 +135,14 @@
     "truncated": "Showing the newest file only. | Showing the newest {count} files only.",
     "noMatchesOnPage": "No matching assets on this page",
     "noMatchesOnPageHint": "Try another page, type or search.",
+    "cloudScanLimit": "Type filters cover the first {limit} Cloud outputs in this sort order.",
     "pagination": {
       "label": "Pages",
       "previous": "Previous page",
       "next": "Next page",
       "page": "Page {page}",
       "range": "{first}–{last} of {total}",
+      "rangeLowerBound": "{first}–{last} of {total}+",
       "pageSize": "Assets per page"
     },
     "inspect": "Inspect {name}",

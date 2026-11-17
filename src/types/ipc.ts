@@ -212,6 +212,7 @@ export type AssetOrder = 'newest' | 'oldest'
 
 export interface CloudAssetPageRequest {
   offset: number
+  after?: string
   limit: number
   order: AssetOrder
   kind?: AssetKind
@@ -219,7 +220,10 @@ export interface CloudAssetPageRequest {
 
 export interface CloudAssetPage {
   assets: AssetSummary[]
-  total: number
+  total: number | null
+  totalIsLowerBound?: true
+  nextCursor?: string
+  scanLimit?: number
 }
 
 export interface LocalAssetListing {

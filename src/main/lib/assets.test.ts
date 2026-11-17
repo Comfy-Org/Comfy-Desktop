@@ -192,7 +192,8 @@ describe('listAssets', () => {
             { id: 'bad', name: 'bad.png', mime_type: 1 },
             { id: 'good', name: 'good.png', mime_type: null, created_at: null, size: 0 }
           ],
-          total: 2
+          total: 2,
+          has_more: false
         })
       )
       .mockResolvedValue(new Response(null, { status: 404 }))
@@ -209,7 +210,9 @@ describe('listAssets', () => {
       .mockResolvedValueOnce(
         jsonResponse({
           assets: Array.from({ length: 150 }, (_, i) => ({ id: `a${i}`, name: `a${i}.bin` })),
-          total: 150
+          total: 150,
+          has_more: true,
+          next_cursor: 'next'
         })
       )
       .mockResolvedValue(new Response(null, { status: 404 }))
@@ -220,11 +223,37 @@ describe('listAssets', () => {
     expect(assets.at(-1)!.id).toBe('a99')
   })
 
-  it('asks Cloud for one page of outputs at the offset, size and order the page asks for, with an exact total', async () => {
+  it('asks for a capped total on the first page and treats 10,000 as a lower bound', async () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue('token')
     fetchMock.mockResolvedValueOnce(
-      jsonResponse({ assets: [{ id: 'a1', name: 'a1.bin' }], total: 1561, has_more: true })
+      jsonResponse({
+        assets: [{ id: 'a1', name: 'a1.bin' }],
+        total: 10_000,
+        has_more: true,
+        next_cursor: 'start-2'
+      })
+    )
+
+    const page = await listAssets('cloud-1', FIRST_PAGE)
+
+    const query = new URL(fetchMock.mock.calls[0]![0]).searchParams
+    expect(query.get('capped_total')).toBe('true')
+    expect(query.has('include_total')).toBe(false)
+    expect(query.has('offset')).toBe(false)
+    expect(page).toMatchObject({ total: 10_000, totalIsLowerBound: true, nextCursor: 'start-2' })
+  })
+
+  it('jumps to a numbered page at the requested offset, size and order without a count', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        assets: [{ id: 'a1', name: 'a1.bin' }],
+        total: 152,
+        has_more: true,
+        next_cursor: 'next'
+      })
     )
 
     const page = await listAssets('cloud-1', { offset: 150, limit: 50, order: 'oldest' })
@@ -237,17 +266,44 @@ describe('listAssets', () => {
       limit: '50',
       offset: '150',
       include_public: 'false',
-      capped_total: 'false'
+      include_total: 'false'
     })
-    expect(page.total).toBe(1561)
+    expect(page).toMatchObject({ total: null, nextCursor: 'next' })
   })
 
-  it('fails when Cloud leaves out the total, because pages cannot be counted without it', async () => {
+  it('follows the cursor past 10,000 with no offset or count, and uses raw rows to find the end', async () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue('token')
-    fetchMock.mockResolvedValueOnce(jsonResponse({ assets: [{ id: 'a1', name: 'a1.bin' }] }))
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        assets: [
+          { id: 42, name: 'bad.bin' },
+          { id: 'a10002', name: 'last.bin' }
+        ],
+        total: 2,
+        has_more: false
+      })
+    )
 
-    await expect(listAssets('cloud-1', FIRST_PAGE)).rejects.toThrow('invalid page')
+    const page = await listAssets('cloud-1', { ...FIRST_PAGE, offset: 10_000, after: 'next' })
+
+    const query = new URL(fetchMock.mock.calls[0]![0]).searchParams
+    expect(query.get('after')).toBe('next')
+    expect(query.get('include_total')).toBe('false')
+    expect(query.has('offset')).toBe(false)
+    expect(query.has('capped_total')).toBe(false)
+    expect(page.assets.map((asset) => asset.name)).toEqual(['last.bin'])
+    expect(page.total).toBe(10_002)
+  })
+
+  it('rejects a continuing Cloud page with no next cursor', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ assets: [{ id: 'a1', name: 'a1.bin' }], total: 101, has_more: true })
+    )
+
+    await expect(listAssets('cloud-1', FIRST_PAGE)).rejects.toThrow('invalid cursor')
   })
 
   describe('with a type', () => {
@@ -257,7 +313,7 @@ describe('listAssets', () => {
       getAccessToken.mockResolvedValue('token')
       fetchMock.mockImplementation(async (url: string) => {
         const asked = new URL(url)
-        const offset = Number(asked.searchParams.get('offset'))
+        const offset = Number(asked.searchParams.get('after')?.replace('cursor-', '') ?? 0)
         const limit = Number(asked.searchParams.get('limit'))
         offsetsAsked.push(offset)
         const count = Math.max(0, Math.min(limit, total - offset))
@@ -268,7 +324,9 @@ describe('listAssets', () => {
               ? { id: `m${index}`, name: `mesh-${index}.glb` }
               : { id: `a${index}`, name: `out-${index}.bin` }
           }),
-          total
+          total: count,
+          has_more: offset + count < total,
+          next_cursor: offset + count < total ? `cursor-${offset + count}` : undefined
         })
       })
       return offsetsAsked
@@ -279,7 +337,7 @@ describe('listAssets', () => {
 
       const page = await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
 
-      expect(offsetsAsked.toSorted((a, b) => a - b)).toEqual([0, 500, 1000])
+      expect(offsetsAsked).toEqual([0, 500, 1000])
       expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.get('limit')).toBe('500')
       expect(page.total).toBe(12)
       expect(page.assets.map((a) => a.name)).toEqual([
@@ -292,40 +350,47 @@ describe('listAssets', () => {
       expect(fetchMock).toHaveBeenCalledTimes(3)
     })
 
-    it('counts exactly once and skips the count for the other large pages', async () => {
+    it('scans by cursor without asking for any count or offset', async () => {
       cloudOfOutputs(1200)
 
       await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
 
       const counts = fetchMock.mock.calls.map(([url]) => {
         const asked = new URL(url as string).searchParams
-        return [asked.get('offset'), asked.get('capped_total'), asked.get('include_total')]
+        return [asked.get('after'), asked.get('offset'), asked.get('include_total')]
       })
-      expect(counts.toSorted()).toEqual([
-        ['0', 'false', null],
-        ['1000', null, 'false'],
-        ['500', null, 'false']
+      expect(counts).toEqual([
+        [null, null, 'false'],
+        ['cursor-500', null, 'false'],
+        ['cursor-1000', null, 'false']
       ])
     })
 
-    it('stops the other large pages when one of them fails', async () => {
+    it('stops a cursor scan when a page fails', async () => {
       getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
       getAccessToken.mockResolvedValue('token')
-      const stillOpen: AbortSignal[] = []
-      fetchMock.mockImplementation(async (url: string, init: { signal: AbortSignal }) => {
-        const offset = Number(new URL(url).searchParams.get('offset'))
-        if (offset === 0) return jsonResponse({ assets: [], total: 2500 })
-        if (offset === 500) return new Response(null, { status: 500 })
-        stillOpen.push(init.signal)
-        return new Promise((_resolve, reject) =>
-          init.signal.addEventListener('abort', () => reject(init.signal.reason))
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            assets: [{ id: 'a1', name: 'asset.bin' }],
+            has_more: true,
+            next_cursor: 'next'
+          })
         )
-      })
+        .mockResolvedValueOnce(new Response(null, { status: 500 }))
 
       await expect(listAssets('cloud-1', { ...FIRST_PAGE, kind: '3d' })).rejects.toThrow('HTTP 500')
 
-      expect(stillOpen.length).toBeGreaterThan(0)
-      expect(stillOpen.every((signal) => signal.aborted)).toBe(true)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('reports when it reaches the 50,000-output scan limit with more rows available', async () => {
+      const checked = cloudOfOutputs(50_001)
+
+      const page = await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
+
+      expect(checked).toHaveLength(100)
+      expect(page).toMatchObject({ total: 500, scanLimit: 50_000 })
     })
 
     it('reads the list again for a later page once the read is 30 minutes old', async () => {
@@ -396,15 +461,16 @@ describe('listAssets', () => {
       expect(second.assets[0]!.name).toBe('mesh-503.glb')
     })
 
-    it('lists an output once when new outputs push it from one large page into the next during the read', async () => {
+    it('keeps only one copy when Cloud returns the same output across two scan pages', async () => {
       getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
       getAccessToken.mockResolvedValue('token')
       fetchMock.mockImplementation(async (url: string) => {
-        const offset = Number(new URL(url).searchParams.get('offset'))
-        const indexes = offset === 0 ? Array.from({ length: 500 }, (_, i) => i) : [499, 500]
+        const first = !new URL(url).searchParams.has('after')
+        const indexes = first ? Array.from({ length: 500 }, (_, i) => i) : [499, 500]
         return jsonResponse({
           assets: indexes.map((i) => ({ id: `m${i}`, name: `mesh-${i}.glb` })),
-          total: 502
+          has_more: first,
+          next_cursor: first ? 'next' : undefined
         })
       })
 
@@ -426,7 +492,8 @@ describe('listAssets', () => {
             { id: 's1', name: 'audio/voice.wav', created_at: '2026-11-09T09:00:00Z' },
             { id: 'm1', name: 'mesh.glb', created_at: '2026-11-09T08:00:00Z' }
           ],
-          total: 3
+          total: 3,
+          has_more: false
         })
       )
       .mockImplementation(
@@ -465,7 +532,8 @@ describe('listAssets', () => {
             { id: 'p1', name: 'portrait.png', created_at: '2026-11-09T10:00:00Z' },
             { id: 'v1', name: 'clip.webm', created_at: '2026-11-09T09:00:00Z' }
           ],
-          total: 2
+          total: 2,
+          has_more: false
         })
       const id = /\/assets\/([^/]+)\/content/.exec(url)?.[1]
       if (id)
@@ -555,6 +623,7 @@ describe('findCloudAsset', () => {
     expect(asked.map((url) => url.searchParams.get('after'))).toEqual([null, 'c1'])
     expect(asked[0]!.searchParams.get('tags_any')).toBe('output')
     expect(asked[0]!.searchParams.get('include_public')).toBe('false')
+    expect(asked.every((url) => url.searchParams.get('include_total') === 'false')).toBe(true)
   })
 
   it('says the file is absent only after Comfy Cloud reports no more pages', async () => {
@@ -1048,7 +1117,7 @@ describe('the list handler', () => {
         new Promise((resolve, reject) => {
           signals.push(init.signal)
           init.signal.addEventListener('abort', () => reject(init.signal.reason))
-          setTimeout(() => resolve(jsonResponse({ assets: [], total: 0 })), 50)
+          setTimeout(() => resolve(jsonResponse({ assets: [], total: 0, has_more: false })), 50)
         })
     )
     return signals
@@ -1066,7 +1135,7 @@ describe('the list handler', () => {
 
     expect(await first, 'the replaced page').toBeNull()
     expect(signals[0]!.aborted).toBe(true)
-    expect(await second).toEqual({ assets: [], total: 0 })
+    expect(await second).toEqual({ assets: [], total: null })
   })
 
   it('lets two windows list pages at the same time', async () => {
@@ -1089,6 +1158,8 @@ describe('the list handler', () => {
   it.each([
     ['no page', undefined],
     ['a negative offset', { ...FIRST_PAGE, offset: -1 }],
+    ['an offset beyond the count cap without a cursor', { ...FIRST_PAGE, offset: 10_000 }],
+    ['an empty cursor', { ...FIRST_PAGE, offset: 100, after: '' }],
     ['a page larger than Cloud allows here', { ...FIRST_PAGE, limit: 500 }],
     ['an unknown order', { ...FIRST_PAGE, order: 'random' }],
     ['an unknown type', { ...FIRST_PAGE, kind: 'font' }]

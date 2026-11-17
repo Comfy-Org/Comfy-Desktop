@@ -148,6 +148,8 @@ const truncated = ref(false)
 const pageSize = ref(DEFAULT_PAGE_SIZE)
 const currentPage = ref(1)
 const cloudTotal = ref(0)
+const cloudTotalIsLowerBound = ref(false)
+const cloudScanLimit = ref<number | undefined>()
 
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
@@ -443,9 +445,37 @@ interface CachedPage {
 
 const pageCache = new Map<string, CachedPage>()
 const pagesInFlight = new Map<string, Promise<CloudAssetPage>>()
+const pageCursors = new Map<number, string>()
+
+function resetCloudPageNumbers(): void {
+  pageCursors.clear()
+  cloudTotal.value = 0
+  cloudTotalIsLowerBound.value = false
+}
+
+function resetCloudPaging(): void {
+  pageCache.clear()
+  pagesInFlight.clear()
+  resetCloudPageNumbers()
+}
+
+function recordCloudPage(page: CloudAssetPage, pageNumber: number): void {
+  if (page.total !== null && (!page.nextCursor || cloudTotal.value === 0)) {
+    cloudTotal.value = page.total
+    cloudTotalIsLowerBound.value = page.totalIsLowerBound === true
+  }
+  if (!page.nextCursor) return
+  pageCursors.set(pageNumber + 1, page.nextCursor)
+  const minimum = pageNumber * pageSize.value + 1
+  if (minimum > cloudTotal.value) {
+    cloudTotal.value = minimum
+    cloudTotalIsLowerBound.value = true
+  }
+}
 
 function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage> {
   const kind = kindFilter.value === 'all' ? undefined : kindFilter.value
+  const after = pageCursors.get(pageNumber)
   const key = [loadKey.value, cloudId, sortOrder.value, kind, pageSize.value, pageNumber].join('\n')
   const cached = pageCache.get(key)
   if (cached && Date.now() - cached.savedAt < PAGE_CACHE_TTL_MS) return cached.page
@@ -456,6 +486,7 @@ function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage>
       offset: (pageNumber - 1) * pageSize.value,
       limit: pageSize.value,
       order: sortOrder.value,
+      ...(after && { after }),
       kind
     })
     .then((listed) => listed ?? Promise.reject(new Error('a newer page replaced this one')))
@@ -506,6 +537,7 @@ async function loadAssets(userAsked = false): Promise<void> {
   const cloud = selected?.cloud ? cloudBuild.value : null
   failed.value = false
   truncated.value = false
+  cloudScanLimit.value = undefined
   if (!selected || (selected.cloud && (!cloud || !authStore.isSignedIn))) {
     assets.value = []
     loading.value = false
@@ -519,19 +551,29 @@ async function loadAssets(userAsked = false): Promise<void> {
       await moveSessionToWorkspaceOf(cloud, userAsked || pickedPlace.value === CLOUD)
       if (current !== requestId) return
     }
+    const pageNumber = currentPage.value
     const wanted = pendingFocus.value ?? focusMiss.value?.name
     const [listed, lookup] = await Promise.all([
       cloud
-        ? cloudPage(cloud.id, currentPage.value)
+        ? cloudPage(cloud.id, pageNumber)
         : window.api.listLocalAssets(selected.computer ? undefined : selected.build.id),
       cloud && wanted ? lookUpCloudAsset(cloud.id, wanted) : null
     ])
-    if (current !== requestId) return
-    if ('total' in listed) cloudTotal.value = listed.total
-    if (cloud && currentPage.value > pageCount.value) {
-      pageCache.clear()
-      currentPage.value = pageCount.value
-      return
+    if (current !== requestId || (cloud && pageNumber !== currentPage.value)) return
+    if ('total' in listed) {
+      if (pageNumber > 1 && listed.total === null && !listed.nextCursor) {
+        resetCloudPaging()
+        currentPage.value = 1
+        return
+      }
+      recordCloudPage(listed, pageNumber)
+      if (pageNumber > pageCount.value) {
+        pageCache.clear()
+        pageCursors.clear()
+        currentPage.value = pageCount.value
+        return
+      }
+      cloudScanLimit.value = listed.scanLimit
     }
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
     truncated.value = 'truncated' in listed && listed.truncated
@@ -539,7 +581,7 @@ async function loadAssets(userAsked = false): Promise<void> {
       void loadAssets(userAsked)
       return
     }
-    if (cloud) prefetchPage(cloud.id, currentPage.value + 1)
+    if (cloud) prefetchPage(cloud.id, pageNumber + 1)
     const miss = focusMiss.value
     if (cloud && miss && miss.name === wanted) {
       if (assets.value.some((asset) => asset.name === miss.name)) focusMiss.value = null
@@ -579,15 +621,14 @@ const cloudQuery = computed(() =>
 )
 
 watch([loadKey, listedCloudId], () => {
-  pageCache.clear()
-  cloudTotal.value = 0
+  resetCloudPaging()
   currentPage.value = 1
   focusMiss.value = null
   lookedUpDetail.value = null
   detailKey.value = null
 })
 watch(cloudQuery, () => {
-  cloudTotal.value = 0
+  resetCloudPageNumbers()
   currentPage.value = 1
 })
 let reloadAskedByUser = false
@@ -605,7 +646,7 @@ watch(
 )
 
 function refresh(): void {
-  pageCache.clear()
+  resetCloudPaging()
   if (currentPage.value === 1) {
     void loadAssets(true)
     return
@@ -1327,11 +1368,19 @@ function extensionOf(name: string): string {
       >
         {{ t('assets.truncated', assets.length) }}
       </p>
+      <p
+        v-if="cloudScanLimit !== undefined && !showSkeleton"
+        class="m-0 mt-6 text-center text-ui text-subtle-foreground"
+        data-testid="assets-scan-limit"
+      >
+        {{ t('assets.cloudScanLimit', { limit: cloudScanLimit }) }}
+      </p>
       <AssetsPagination
         v-if="showPagination"
         v-model:page="currentPage"
         v-model:page-size="pageSize"
         :total="cloudTotal"
+        :total-is-lower-bound="cloudTotalIsLowerBound"
         :page-sizes="CLOUD_PAGE_SIZES"
       />
     </div>

@@ -1347,6 +1347,7 @@ describe('AssetsView', () => {
 describe('AssetsView Comfy Cloud pages', () => {
   interface PageRequest {
     offset: number
+    after?: string
     limit: number
     order: string
     kind?: string
@@ -1359,9 +1360,23 @@ describe('AssetsView Comfy Cloud pages', () => {
   }
 
   function outputPage(total: number, { offset, limit, kind }: PageRequest): CloudAssetPage {
-    const all = Array.from({ length: total }, (_, i) => output(i))
-    const matches = kind ? all.filter((candidate) => candidate.kind === kind) : all
-    return { assets: matches.slice(offset, offset + limit), total: matches.length }
+    if (kind) {
+      const matches = Array.from({ length: total }, (_, i) => output(i)).filter(
+        (candidate) => candidate.kind === kind
+      )
+      return { assets: matches.slice(offset, offset + limit), total: matches.length }
+    }
+    const length = Math.max(0, Math.min(limit, total - offset))
+    const assets = Array.from({ length }, (_, i) => output(offset + i))
+    const end = offset + length
+    if (offset >= total && offset > 0) return { assets, total: null }
+    if (end >= total) return { assets, total: end }
+    return {
+      assets,
+      total: offset === 0 ? Math.min(total, 10_000) : null,
+      ...(offset === 0 && total >= 10_000 && { totalIsLowerBound: true }),
+      nextCursor: `cursor-${end}`
+    }
   }
 
   function cloudOutputs(total: number): void {
@@ -1417,6 +1432,43 @@ describe('AssetsView Comfy Cloud pages', () => {
     )
   })
 
+  it('continues past a capped Cloud total using cursors and shows an exact count at the end', async () => {
+    cloudOutputs(10_137)
+    const wrapper = await mountCloud()
+    const pager = wrapper.get('[data-testid="assets-pagination"]')
+
+    expect(shownText(pager.element)).toContain('1–100 of 10000+')
+    expect(pager.find('[data-testid="assets-page-101"]').exists()).toBe(false)
+
+    await goToPage(wrapper, 100)
+    expect(asked()).toContainEqual({ ...FIRST_PAGE, offset: 9900 })
+    expect(shownText(pager.element)).toContain('9901–10000 of 10001+')
+    await nextPagePrefetched(10_000)
+    expect(asked()).toContainEqual({ ...FIRST_PAGE, offset: 10_000, after: 'cursor-10000' })
+
+    await goToPage(wrapper, 101)
+    expect(assetNames(wrapper)[0]).toBe('out-10000.png')
+    expect(shownText(pager.element)).toContain('10001–10100 of 10101+')
+    await goToPage(wrapper, 102)
+    expect(shownText(pager.element)).toContain('10101–10137 of 10137')
+
+    await goToPage(wrapper, 1)
+    expect(shownText(pager.element)).toContain('1–100 of 10137')
+    expect(pager.find('[data-testid="assets-page-102"]').exists()).toBe(true)
+  })
+
+  it('shows an exact count when the page at the cap really is the last page', async () => {
+    cloudOutputs(10_000)
+    const wrapper = await mountCloud()
+    const pager = wrapper.get('[data-testid="assets-pagination"]')
+
+    await goToPage(wrapper, 100)
+
+    expect(shownText(pager.element)).toContain('9901–10000 of 10000')
+    expect(pager.find('[data-testid="assets-page-101"]').exists()).toBe(false)
+    expect(timesAskedFor(10_000)).toBe(0)
+  })
+
   it('opens the next page from Cloud and goes back to a seen page without asking again', async () => {
     cloudOutputs(250)
     const wrapper = await mountCloud()
@@ -1440,7 +1492,7 @@ describe('AssetsView Comfy Cloud pages', () => {
     const wrapper = await mountCloud()
 
     await nextPagePrefetched(100)
-    expect(asked()).toEqual([FIRST_PAGE, { ...FIRST_PAGE, offset: 100 }])
+    expect(asked()).toEqual([FIRST_PAGE, { ...FIRST_PAGE, offset: 100, after: 'cursor-100' }])
 
     await goToPage(wrapper, 2)
     expect(assetNames(wrapper)[0]).toBe('out-100.png')
@@ -1493,7 +1545,7 @@ describe('AssetsView Comfy Cloud pages', () => {
     expect(timesAskedFor(100)).toBe(2)
   })
 
-  it('opens the last page that still exists when Cloud now has fewer outputs', async () => {
+  it('recounts from the first page when a stale jump comes back empty', async () => {
     let total = 250
     listAssets.mockImplementation(async (_id: string, request: PageRequest) =>
       outputPage(total, request)
@@ -1504,10 +1556,10 @@ describe('AssetsView Comfy Cloud pages', () => {
 
     await goToPage(wrapper, 3)
 
-    expect(timesAskedFor(100), 'page 2 is asked for again, not taken from the cache').toBe(2)
-    expect(assetNames(wrapper)[0]).toBe('out-100.png')
+    expect(timesAskedFor(0)).toBe(2)
+    expect(assetNames(wrapper)[0]).toBe('out-0.png')
     expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
-      '101–150 of 150'
+      '1–100 of 150'
     )
   })
 
@@ -1669,6 +1721,20 @@ describe('AssetsView Comfy Cloud pages', () => {
     expect(asked()).toContainEqual({ ...FIRST_PAGE, kind: 'audio' })
     expect(shownText(wrapper.get('[data-testid="assets-empty"]').element)).toBe(
       'No matching assets Try another type or search.'
+    )
+  })
+
+  it('explains the scan limit even when a type did not match any of the scanned Cloud outputs', async () => {
+    listAssets.mockImplementation(async (_id: string, request: PageRequest) =>
+      request.kind ? { assets: [], total: 0, scanLimit: 50_000 } : outputPage(65_000, request)
+    )
+    const wrapper = await mountCloud()
+
+    await wrapper.get('[data-testid="assets-kind-3d"]').trigger('click')
+    await flushPromises()
+
+    expect(shownText(wrapper.get('[data-testid="assets-scan-limit"]').element)).toBe(
+      'Type filters cover the first 50000 Cloud outputs in this sort order.'
     )
   })
 
