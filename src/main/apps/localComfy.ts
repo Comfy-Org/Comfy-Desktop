@@ -451,6 +451,11 @@ async function readRun(
   return answer
 }
 
+function isOwnFile(call: Extract<LocalCall, { kind: 'view' }>, buildId: string): boolean {
+  const fromNamedRun = call.promptId === undefined || ownRuns.get(call.promptId) === buildId
+  return fromNamedRun && ownFiles.get(outputFileKey(call.file))?.has(buildId) === true
+}
+
 async function answerCall(
   buildId: string,
   port: number,
@@ -472,7 +477,7 @@ async function answerCall(
     case 'history':
       return ownRuns.has(call.promptId) ? readRun(buildId, port, call.promptId) : refusal()
     case 'view':
-      return ownFiles.get(outputFileKey(call.file))?.has(buildId)
+      return isOwnFile(call, buildId)
         ? forward(port, `/view?${new URLSearchParams({ ...call.file })}`, {
             timeoutMs: FILE_TIMEOUT_MS
           })
@@ -492,8 +497,7 @@ function viewBuildOf(
   call: Extract<LocalCall, { kind: 'view' }>,
   targetId: string | undefined
 ): string | undefined {
-  const runBuild = call.promptId === undefined ? undefined : ownRuns.get(call.promptId)
-  if (runBuild !== undefined) return runBuild
+  if (call.promptId !== undefined) return ownRuns.get(call.promptId)
   const builds = [...(ownFiles.get(outputFileKey(call.file)) ?? [])]
   if (targetId !== undefined && builds.includes(targetId)) return targetId
   return builds.length === 1 ? builds[0] : targetId

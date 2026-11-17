@@ -634,6 +634,17 @@ describe('two runs from one page on two builds', () => {
     expect((await localFetch({ path: `/view?${new URLSearchParams(named)}` })).status).toBe(403)
     expect(comfy.calls(`/view?${new URLSearchParams(CUTOUT)}`)).toEqual([])
   })
+
+  it('refuses a file when the page names a run Desktop does not know', async () => {
+    running()
+    await localState(WANT)
+    await startARun()
+    await localFetch({ path: `/history/${RUN}` })
+    const named = { ...CUTOUT, prompt_id: OTHER_RUN }
+
+    expect((await localFetch({ path: `/view?${new URLSearchParams(named)}` })).status).toBe(403)
+    expect(comfy.calls(`/view?${new URLSearchParams(CUTOUT)}`)).toEqual([])
+  })
 })
 
 describe('two app pages on two builds that each made a file of the same name', () => {
