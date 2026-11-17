@@ -267,7 +267,7 @@ const pagedCloud = computed(() => !!selectedBuild.value?.cloud && pageCount.valu
 const showPagination = computed(() => !!selectedBuild.value?.cloud && cloudTotal.value > 0)
 
 function kindCount(kind: KindFilter): number | undefined {
-  if (pagedCloud.value) return undefined
+  if (selectedBuild.value?.cloud) return undefined
   return kind === 'all'
     ? searchedAssets.value.length
     : searchedAssets.value.filter((asset) => asset.kind === kind).length
@@ -387,9 +387,8 @@ const emptyState = computed<EmptyState>(() => {
   if (assets.value.length > 0 && pagedCloud.value) {
     return { title: t('assets.noMatchesOnPage'), body: t('assets.noMatchesOnPageHint') }
   }
-  if (assets.value.length > 0) {
-    return { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
-  }
+  const noMatches = { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
+  if (assets.value.length > 0) return noMatches
   if (!authStore.isSignedIn && selectedBuild.value?.cloud) {
     return {
       title: t('assets.signedOutTitle'),
@@ -400,6 +399,7 @@ const emptyState = computed<EmptyState>(() => {
   if (selectedBuild.value?.cloud && !cloudBuild.value) {
     return { title: t('assets.noCloudBuildTitle'), body: t('assets.noCloudBuildBody') }
   }
+  if (selectedBuild.value?.cloud && kindFilter.value !== 'all') return noMatches
   return {
     title: t('assets.emptyTitle'),
     body: t('assets.emptyBody')
@@ -417,14 +417,16 @@ interface CachedPage {
 const pageCache = new Map<string, CachedPage>()
 
 function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage> {
-  const key = [loadKey.value, cloudId, sortOrder.value, pageSize.value, pageNumber].join('\n')
+  const kind = kindFilter.value === 'all' ? undefined : kindFilter.value
+  const key = [loadKey.value, cloudId, sortOrder.value, kind, pageSize.value, pageNumber].join('\n')
   const cached = pageCache.get(key)
   if (cached && Date.now() - cached.savedAt < PAGE_CACHE_TTL_MS) return cached.page
   const page = window.api
     .listAssets(cloudId, {
       offset: (pageNumber - 1) * pageSize.value,
       limit: pageSize.value,
-      order: sortOrder.value
+      order: sortOrder.value,
+      kind
     })
     .then((listed) => listed ?? Promise.reject(new Error('a newer page replaced this one')))
   pageCache.set(key, { savedAt: Date.now(), page })
@@ -508,7 +510,7 @@ const listedCloudId = computed(() =>
   selectedBuild.value?.cloud ? cloudBuild.value?.id : undefined
 )
 const cloudQuery = computed(() =>
-  selectedBuild.value?.cloud ? `${sortOrder.value}\n${pageSize.value}` : ''
+  selectedBuild.value?.cloud ? [sortOrder.value, kindFilter.value, pageSize.value].join('\n') : ''
 )
 
 watch([loadKey, listedCloudId], () => {
@@ -517,19 +519,25 @@ watch([loadKey, listedCloudId], () => {
   currentPage.value = 1
 })
 watch(cloudQuery, () => (currentPage.value = 1))
+let reloadAskedByUser = false
+
 watch(
   [loadKey, listedCloudId, cloudQuery, currentPage],
   () => {
     scroller.value?.scrollTo({ top: 0 })
     assets.value = []
-    void loadAssets()
+    const userAsked = reloadAskedByUser
+    reloadAskedByUser = false
+    void loadAssets(userAsked)
   },
   { immediate: true }
 )
 
 function refresh(): void {
   pageCache.clear()
-  void loadAssets(true)
+  if (currentPage.value === 1) return void loadAssets(true)
+  reloadAskedByUser = true
+  currentPage.value = 1
 }
 
 const detailKey = ref<string | null>(null)

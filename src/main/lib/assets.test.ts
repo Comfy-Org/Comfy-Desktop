@@ -242,6 +242,61 @@ describe('listAssets', () => {
     expect(page.total).toBe(101)
   })
 
+  describe('with a type', () => {
+    function cloudOfOutputs(total: number): number[] {
+      const offsetsAsked: number[] = []
+      getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+      getAccessToken.mockResolvedValue('token')
+      fetchMock.mockImplementation(async (url: string) => {
+        const asked = new URL(url)
+        const offset = Number(asked.searchParams.get('offset'))
+        const limit = Number(asked.searchParams.get('limit'))
+        offsetsAsked.push(offset)
+        const count = Math.max(0, Math.min(limit, total - offset))
+        return jsonResponse({
+          assets: Array.from({ length: count }, (_, i) => {
+            const index = offset + i
+            return index % 100 === 3
+              ? { id: `m${index}`, name: `mesh-${index}.glb` }
+              : { id: `a${index}`, name: `out-${index}.bin` }
+          }),
+          total
+        })
+      })
+      return offsetsAsked
+    }
+
+    it('reads the whole Cloud list in large pages and keeps only that type, without opening any file', async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+
+      const page = await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
+
+      expect(offsetsAsked.toSorted((a, b) => a - b)).toEqual([0, 500, 1000])
+      expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.get('limit')).toBe('500')
+      expect(page.total).toBe(12)
+      expect(page.assets.map((a) => a.name)).toEqual([
+        'mesh-3.glb',
+        'mesh-103.glb',
+        'mesh-203.glb',
+        'mesh-303.glb',
+        'mesh-403.glb'
+      ])
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    })
+
+    it('reuses that read for the later pages of the type, and reads again for the first page', async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+      await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
+
+      const second = await listAssets('cloud-1', { ...FIRST_PAGE, offset: 5, limit: 5, kind: '3d' })
+      expect(offsetsAsked, 'page 2 reads nothing new').toHaveLength(3)
+      expect(second.assets[0]!.name).toBe('mesh-503.glb')
+
+      await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
+      expect(offsetsAsked, 'page 1 reads the list again').toHaveLength(6)
+    })
+  })
+
   it('lists the signed-in cloud workspace and resolves signed media links for playable kinds', async () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue('token')
@@ -798,7 +853,8 @@ describe('the list handler', () => {
     ['no page', undefined],
     ['a negative offset', { ...FIRST_PAGE, offset: -1 }],
     ['a page larger than Cloud allows here', { ...FIRST_PAGE, limit: 500 }],
-    ['an unknown order', { ...FIRST_PAGE, order: 'random' }]
+    ['an unknown order', { ...FIRST_PAGE, order: 'random' }],
+    ['an unknown type', { ...FIRST_PAGE, kind: 'font' }]
   ])('asks Cloud nothing for %s', async (_case, page) => {
     registerAssetsHandlers()
 

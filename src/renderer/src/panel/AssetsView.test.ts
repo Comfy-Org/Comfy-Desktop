@@ -1128,16 +1128,19 @@ describe('AssetsView Comfy Cloud pages', () => {
     offset: number
     limit: number
     order: string
+    kind?: string
   }
 
-  function outputPage(total: number, { offset, limit }: PageRequest): CloudAssetPage {
-    const count = Math.max(0, Math.min(limit, total - offset))
-    return {
-      assets: Array.from({ length: count }, (_, i) =>
-        asset(`c${offset + i}`, `out-${offset + i}.png`, 'image')
-      ),
-      total
-    }
+  function output(index: number): AssetSummary {
+    return index % 50 === 7
+      ? asset(`c${index}`, `mesh-${index}.glb`, '3d')
+      : asset(`c${index}`, `out-${index}.png`, 'image')
+  }
+
+  function outputPage(total: number, { offset, limit, kind }: PageRequest): CloudAssetPage {
+    const all = Array.from({ length: total }, (_, i) => output(i))
+    const matches = kind ? all.filter((candidate) => candidate.kind === kind) : all
+    return { assets: matches.slice(offset, offset + limit), total: matches.length }
   }
 
   function cloudOutputs(total: number): void {
@@ -1183,7 +1186,7 @@ describe('AssetsView Comfy Cloud pages', () => {
     expect(pages.find('[data-testid="assets-page-16"]').exists(), 'the last page').toBe(true)
   })
 
-  it('keeps the page bar and the type counts when every Cloud output fits on one page', async () => {
+  it('keeps the page bar when every Cloud output fits on one page', async () => {
     cloudOutputs(30)
     const wrapper = await mountCloud()
 
@@ -1191,7 +1194,6 @@ describe('AssetsView Comfy Cloud pages', () => {
     expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
       '1–30 of 30'
     )
-    expect(wrapper.get('[data-testid="assets-kind-all"]').text()).toBe('All30')
   })
 
   it('opens the next page from Cloud and goes back to a seen page without asking again', async () => {
@@ -1264,15 +1266,17 @@ describe('AssetsView Comfy Cloud pages', () => {
     expect(timesAskedFor(100)).toBe(2)
   })
 
-  it('asks Cloud again after Refresh', async () => {
+  it('asks Cloud again from page 1 after Refresh', async () => {
     cloudOutputs(250)
     const wrapper = await mountCloud()
     await nextPagePrefetched(100)
+    await goToPage(wrapper, 2)
 
     await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
     await flushPromises()
 
     expect(timesAskedFor(0)).toBe(2)
+    expect(assetNames(wrapper)[0]).toBe('out-0.png')
   })
 
   it('starts again from page 1 with fresh pages when the user leaves Comfy Cloud and comes back', async () => {
@@ -1312,18 +1316,51 @@ describe('AssetsView Comfy Cloud pages', () => {
     )
   })
 
-  it('hides the type counts while Cloud outputs are split into pages, because Cloud cannot count by type', async () => {
-    cloudOutputs(250)
+  it('shows no type counts for Comfy Cloud, because Cloud cannot count by type', async () => {
+    cloudOutputs(30)
     const wrapper = await mountCloud()
 
     expect(wrapper.get('[data-testid="assets-kind-all"]').text()).toBe('All')
-    expect(wrapper.get('[data-testid="assets-kind-image"]').text()).toBe('Images')
+    expect(wrapper.get('[data-testid="assets-kind-3d"]').text()).toBe('3D')
+  })
+
+  it('asks Cloud for every output of the picked type, not only those on the open page', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud()
+    await nextPagePrefetched(100)
 
     await wrapper.get('[data-testid="assets-kind-3d"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain(
-      'No matching assets on this page'
+    expect(asked()).toContainEqual({ ...FIRST_PAGE, kind: '3d' })
+    expect(assetNames(wrapper)).toEqual([
+      'mesh-7.glb',
+      'mesh-57.glb',
+      'mesh-107.glb',
+      'mesh-157.glb',
+      'mesh-207.glb'
+    ])
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '1–5 of 5'
+    )
+
+    await wrapper.get('[data-testid="assets-kind-all"]').trigger('click')
+    await flushPromises()
+
+    expect(assetNames(wrapper)[0]).toBe('out-0.png')
+    expect(timesAskedFor(0), 'All comes back from the cache').toBe(2)
+  })
+
+  it('says nothing matches when Comfy Cloud has no outputs of the picked type', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud()
+
+    await wrapper.get('[data-testid="assets-kind-audio"]').trigger('click')
+    await flushPromises()
+
+    expect(asked()).toContainEqual({ ...FIRST_PAGE, kind: 'audio' })
+    expect(shownText(wrapper.get('[data-testid="assets-empty"]').element)).toBe(
+      'No matching assets Try another type or search.'
     )
   })
 

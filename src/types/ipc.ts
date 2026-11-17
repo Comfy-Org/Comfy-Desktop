@@ -184,6 +184,7 @@ export interface CloudAssetPageRequest {
   offset: number
   limit: number
   order: AssetOrder
+  kind?: AssetKind
 }
 
 export interface CloudAssetPage {

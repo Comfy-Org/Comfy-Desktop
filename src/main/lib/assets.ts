@@ -32,6 +32,11 @@ const ASSETS_COPY_CHANNEL = 'assets:copy'
 const ASSETS_TRASH_CHANNEL = 'assets:trash'
 
 const MAX_PAGE_SIZE = 200
+const SCAN_PAGE_SIZE = 500
+const MAX_SCAN_PAGES = 100
+const SCAN_CONCURRENCY = 4
+const SCAN_REUSE_MS = 10 * 60_000
+const ASSET_KINDS: readonly AssetKind[] = ['image', 'video', 'audio', '3d']
 const EMPTY_PAGE: CloudAssetPage = { assets: [], total: 0 }
 const REQUEST_TIMEOUT_MS = 20_000
 const PREVIEW_BATCH_TIMEOUT_MS = 30_000
@@ -224,16 +229,68 @@ async function cloudAccessToken(installationId: string): Promise<string | null> 
   return getCloudSession().getAccessToken()
 }
 
+interface OutputScan {
+  key: string
+  savedAt: number
+  rows: AssetRow[]
+}
+
+let lastScan: OutputScan | null = null
+
+async function scanAllRows(
+  order: CloudAssetPageRequest['order'],
+  headers: Record<string, string>,
+  signal: AbortSignal
+): Promise<AssetRow[]> {
+  const scanPage = (index: number) =>
+    fetchAssetRows(
+      { offset: index * SCAN_PAGE_SIZE, limit: SCAN_PAGE_SIZE, order },
+      headers,
+      signal
+    )
+  const first = await scanPage(0)
+  const pageCount = Math.min(MAX_SCAN_PAGES, Math.ceil(first.total / SCAN_PAGE_SIZE))
+  const pages: AssetRow[][] = [first.rows]
+  await runPool(
+    Array.from({ length: Math.max(0, pageCount - 1) }, (_, i) => i + 1),
+    SCAN_CONCURRENCY,
+    async (index) => {
+      pages[index] = (await scanPage(index)).rows
+    },
+    signal
+  )
+  signal.throwIfAborted()
+  return pages.flat()
+}
+
+async function rowsOfKind(
+  accessToken: string,
+  request: CloudAssetPageRequest & { kind: AssetKind },
+  signal: AbortSignal
+): Promise<AssetRowPage> {
+  const key = [accessToken, request.order].join('\n')
+  const reusable =
+    request.offset > 0 && lastScan?.key === key && Date.now() - lastScan.savedAt < SCAN_REUSE_MS
+  const rows = reusable
+    ? lastScan!.rows
+    : await scanAllRows(request.order, { Authorization: `Bearer ${accessToken}` }, signal)
+  if (!reusable) lastScan = { key, savedAt: Date.now(), rows }
+  const matches = rows.filter((row) => assetKind(row.name, row.mime_type) === request.kind)
+  return {
+    rows: matches.slice(request.offset, request.offset + request.limit),
+    total: matches.length
+  }
+}
+
 async function listCloudAssets(
   accessToken: string,
   request: CloudAssetPageRequest,
   signal: AbortSignal
 ): Promise<CloudAssetPage> {
-  const { rows, total } = await fetchAssetRows(
-    request,
-    { Authorization: `Bearer ${accessToken}` },
-    signal
-  )
+  const { kind } = request
+  const { rows, total } = kind
+    ? await rowsOfKind(accessToken, { ...request, kind }, signal)
+    : await fetchAssetRows(request, { Authorization: `Bearer ${accessToken}` }, signal)
   const summaries = rows.map((row) => toSummary(row, null))
   const deadline = AbortSignal.any([AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS), signal])
   await runPool(
@@ -265,11 +322,13 @@ function isCount(value: unknown, min: number, max: number): value is number {
 
 function pageRequest(value: unknown): CloudAssetPageRequest | null {
   if (!value || typeof value !== 'object') return null
-  const { offset, limit, order } = value as Record<string, unknown>
+  const { offset, limit, order, kind } = value as Record<string, unknown>
+  const knownKind = ASSET_KINDS.find((known) => known === kind)
   return isCount(offset, 0, Number.MAX_SAFE_INTEGER) &&
     isCount(limit, 1, MAX_PAGE_SIZE) &&
-    (order === 'newest' || order === 'oldest')
-    ? { offset, limit, order }
+    (order === 'newest' || order === 'oldest') &&
+    (kind === undefined || knownKind)
+    ? { offset, limit, order, ...(knownKind && { kind: knownKind }) }
     : null
 }
 
