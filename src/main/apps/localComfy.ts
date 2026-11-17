@@ -89,19 +89,19 @@ const targetByPage = new WeakMap<WebContents, Target>()
 const relayByBuild = new Map<string, LocalRelay>()
 const startedHere = new Set<string>()
 const launches = new Map<string, Promise<ActionResult>>()
-const ownRuns = new Set<string>()
-const ownFiles = new Set<string>()
+const ownRuns = new Map<string, string>()
+const ownFiles = new Map<string, Set<string>>()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function rememberBounded(set: Set<string>, value: string, limit: number): void {
-  set.delete(value)
-  set.add(value)
-  for (const oldest of set) {
-    if (set.size <= limit) break
-    set.delete(oldest)
+function rememberBounded<T>(map: Map<string, T>, key: string, value: T, limit: number): void {
+  map.delete(key)
+  map.set(key, value)
+  for (const oldest of map.keys()) {
+    if (map.size <= limit) break
+    map.delete(oldest)
   }
 }
 
@@ -419,6 +419,7 @@ function uploadForm(call: Extract<LocalCall, { kind: 'upload' }>): FormData {
 }
 
 async function sendRun(
+  buildId: string,
   port: number,
   relay: LocalRelay,
   call: Extract<LocalCall, { kind: 'prompt' }>
@@ -430,21 +431,33 @@ async function sendRun(
   })
   const started = parsed(answer)
   if (isRecord(started) && typeof started['prompt_id'] === 'string') {
-    rememberBounded(ownRuns, started['prompt_id'], MAX_RUNS_REMEMBERED)
+    rememberBounded(ownRuns, started['prompt_id'], buildId, MAX_RUNS_REMEMBERED)
   }
   return answer
 }
 
-async function readRun(port: number, promptId: string): Promise<ComfyDesktopLocalAnswer> {
+async function readRun(
+  buildId: string,
+  port: number,
+  promptId: string
+): Promise<ComfyDesktopLocalAnswer> {
   const answer = await forward(port, `/history/${promptId}`)
   const history = parsed(answer)
   for (const file of outputFilesOf(isRecord(history) ? history[promptId] : null)) {
-    rememberBounded(ownFiles, outputFileKey(file), MAX_FILES_REMEMBERED)
+    const key = outputFileKey(file)
+    const builds = ownFiles.get(key) ?? new Set<string>()
+    rememberBounded(ownFiles, key, builds.add(buildId), MAX_FILES_REMEMBERED)
   }
   return answer
 }
 
+function isOwnFile(call: Extract<LocalCall, { kind: 'view' }>, buildId: string): boolean {
+  const fromNamedRun = call.promptId === undefined || ownRuns.get(call.promptId) === buildId
+  return fromNamedRun && ownFiles.get(outputFileKey(call.file))?.has(buildId) === true
+}
+
 async function answerCall(
+  buildId: string,
   port: number,
   relay: LocalRelay,
   call: LocalCall
@@ -460,17 +473,17 @@ async function answerCall(
     case 'upload':
       return forward(port, '/upload/image', { method: 'POST', form: uploadForm(call) })
     case 'prompt':
-      return sendRun(port, relay, call)
+      return sendRun(buildId, port, relay, call)
     case 'history':
-      return ownRuns.has(call.promptId) ? readRun(port, call.promptId) : refusal()
+      return ownRuns.has(call.promptId) ? readRun(buildId, port, call.promptId) : refusal()
     case 'view':
-      return ownFiles.has(outputFileKey(call.file))
+      return isOwnFile(call, buildId)
         ? forward(port, `/view?${new URLSearchParams({ ...call.file })}`, {
             timeoutMs: FILE_TIMEOUT_MS
           })
         : refusal()
     case 'leave-queue':
-      return call.promptIds.every((id) => ownRuns.has(id))
+      return call.promptIds.every((id) => ownRuns.get(id) === buildId)
         ? forward(port, '/queue', { method: 'POST', json: { delete: call.promptIds } })
         : refusal()
     case 'interrupt':
@@ -480,17 +493,42 @@ async function answerCall(
   }
 }
 
+function viewBuildOf(
+  call: Extract<LocalCall, { kind: 'view' }>,
+  targetId: string | undefined
+): string | undefined {
+  if (call.promptId !== undefined) return ownRuns.get(call.promptId)
+  const builds = [...(ownFiles.get(outputFileKey(call.file)) ?? [])]
+  if (targetId !== undefined && builds.includes(targetId)) return targetId
+  return builds.length === 1 ? builds[0] : targetId
+}
+
+function runBuildOf(call: LocalCall, targetId: string | undefined): string | undefined {
+  switch (call.kind) {
+    case 'history':
+    case 'interrupt':
+      return ownRuns.get(call.promptId)
+    case 'view':
+      return viewBuildOf(call, targetId)
+    case 'leave-queue':
+      return ownRuns.get(call.promptIds[0] ?? '')
+    default:
+      return undefined
+  }
+}
+
 export async function localFetch(
   page: WebContents,
   raw: unknown
 ): Promise<ComfyDesktopLocalAnswer> {
   const call = readLocalCall(raw)
   if (!call) return refusal()
-  const target = targetByPage.get(page)
-  const port = target ? runningPortOf(target.id) : null
-  if (!target || port === null) throw new Error(i18n.t('apps.local.notRunning'))
+  const targetId = targetByPage.get(page)?.id
+  const buildId = runBuildOf(call, targetId) ?? targetId
+  const port = buildId ? runningPortOf(buildId) : null
+  if (!buildId || port === null) throw new Error(i18n.t('apps.local.notRunning'))
   noteUse()
-  return answerCall(port, relayFor(target.id, port), call)
+  return answerCall(buildId, port, relayFor(buildId, port), call)
 }
 
 function downloadProgress(name: string): (done: number, total: number) => void {

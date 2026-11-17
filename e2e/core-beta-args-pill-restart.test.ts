@@ -94,7 +94,7 @@ const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
     `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`
   )
 
-test('the pill follows the new session after a Restart that drops a grant @linux', async () => {
+test('the pill follows the new session after a Restart that drops a grant @linux @macos', async () => {
   await clickInstallTile(ctx.panel, INSTALL_NAME)
   let before: Awaited<ReturnType<typeof getRunningSessionSnapshot>> = null
   await expect

@@ -11,7 +11,9 @@ import { captureHostWindow } from './support/windowCapture'
 const UNAVAILABLE_COPY = en.devPlatform.workspace.switchUnavailable
 const RETRYABLE_COPY = en.devPlatform.workspace.switchRetryable
 const FAILURE_CAPTION = '[data-testid="chooser-workspace-switch-failure"]'
-const SELECTOR = '[data-testid="devplatform-workspace-selector"]'
+const SWITCHER = '[data-testid="workspace-switcher-trigger"]'
+const SWITCHER_NAME = '[data-testid="workspace-switcher-name"]'
+const SWITCH_ACTION = '[data-testid="workspace-switch-action"]'
 const REFRESH = '[data-testid="chooser-workspace-refresh"]'
 const SIGN_IN = '[data-testid="devplatform-account-signin"]'
 const SETTLE_MS = 1_500
@@ -62,7 +64,7 @@ async function expectActive(workspaceId: string): Promise<void> {
 
 async function expectSelected(workspaceId: string): Promise<void> {
   await expect
-    .poll(() => panel().textOf(`${SELECTOR} .workspace-selector__name`), { timeout: 15_000 })
+    .poll(() => panel().textOf(SWITCHER_NAME), { timeout: 15_000 })
     .toBe(`Workspace ${workspaceId}`)
 }
 
@@ -71,9 +73,10 @@ async function expectBuildsFrom(workspaceId: string): Promise<void> {
 }
 
 async function select(workspaceId: string): Promise<void> {
-  const item = `[data-testid="devplatform-workspace-${workspaceId}"]`
-  await panel().waitForVisible(SELECTOR)
-  await panel().clickUntilVisible(SELECTOR, item)
+  const item = `[data-testid="workspace-option-${workspaceId}"]`
+  await panel().waitForVisible(SWITCHER)
+  await panel().clickUntilVisible(SWITCHER, SWITCH_ACTION)
+  await panel().clickUntilVisible(SWITCH_ACTION, item)
   expect(await panel().click(item), `selected ${workspaceId}`).toBe(true)
 }
 

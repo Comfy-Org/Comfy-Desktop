@@ -30,6 +30,7 @@ export interface KnownSettings {
   autoUpdate?: boolean
   autoInstallUpdates?: boolean
   autoLaunchOnStartup?: string
+  autoStartAwaitingFirstStart?: string
   confirmBeforeClosingWindow?: boolean
   warnBeforeRunningMultipleInstances?: boolean
   hardwareAcceleration?: boolean
@@ -142,6 +143,7 @@ const SETTINGS_SCHEMA = {
     }
   },
   autoLaunchOnStartup: { nullable: false, telemetry: { policy: 'presence' } },
+  autoStartAwaitingFirstStart: { nullable: false, telemetry: { policy: 'omit' } },
   confirmBeforeClosingWindow: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }

@@ -426,4 +426,77 @@ describe('useSessionStore', () => {
       expect(store.errorInstances.size).toBe(0)
     })
   })
+
+  describe('init with events arriving during hydration', () => {
+    let handlers: Record<string, (data: unknown) => void>
+    let releaseLaunching: (value: unknown[]) => void
+    let runningRead: Promise<void>
+
+    beforeEach(() => {
+      handlers = {}
+      const on =
+        (name: string) =>
+        (cb: (data: unknown) => void): (() => void) => {
+          handlers[name] = cb
+          return () => {}
+        }
+      let markRunningRead: () => void = () => {}
+      runningRead = new Promise((resolve) => {
+        markRunningRead = resolve
+      })
+      ;(window as Record<string, unknown>).api = {
+        getRunningInstances: vi.fn(() => {
+          markRunningRead()
+          return Promise.resolve([
+            { installationId: 'inst-1', installationName: 'Install 1', port: 8188, mode: 'window' }
+          ])
+        }),
+        getLaunchingInstances: vi.fn(
+          () =>
+            new Promise<unknown[]>((resolve) => {
+              releaseLaunching = resolve
+            })
+        ),
+        getStoppingInstances: vi.fn().mockResolvedValue([]),
+        getActiveOperations: vi.fn().mockResolvedValue([]),
+        getCrashInstances: vi.fn().mockResolvedValue([]),
+        onInstanceLaunching: vi.fn(on('instance-launching')),
+        onInstanceLaunchFailed: vi.fn(on('instance-launch-failed')),
+        onInstanceStarted: vi.fn(on('instance-started')),
+        onInstanceStopped: vi.fn(on('instance-stopped')),
+        onInstanceStopping: vi.fn(on('instance-stopping')),
+        onOperationChanged: vi.fn(on('operation-changed')),
+        onComfyOutput: vi.fn(() => () => {}),
+        onComfyExited: vi.fn(() => () => {}),
+        onInstanceCrashed: vi.fn(on('instance-crashed'))
+      }
+    })
+
+    it('keeps an install that starts while a new window is still reading the running list', async () => {
+      const init = store.init()
+      await runningRead
+      handlers['instance-started']?.({
+        installationId: 'inst-2',
+        installationName: 'Install 2',
+        port: 0,
+        mode: 'window'
+      })
+      releaseLaunching([])
+      await init
+
+      expect(store.isRunning('inst-2')).toBe(true)
+      expect(store.isRunning('inst-1')).toBe(true)
+    })
+
+    it('drops an install that stops while a new window is still reading the running list', async () => {
+      const init = store.init()
+      await runningRead
+      await vi.waitFor(() => expect(window.api.getLaunchingInstances).toHaveBeenCalled())
+      handlers['instance-stopped']?.({ installationId: 'inst-1' })
+      releaseLaunching([])
+      await init
+
+      expect(store.isRunning('inst-1')).toBe(false)
+    })
+  })
 })
