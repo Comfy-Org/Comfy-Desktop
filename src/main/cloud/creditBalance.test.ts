@@ -1,39 +1,46 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  CREDIT_BALANCE_MIN_INTERVAL_MS,
-  CreditBalance,
-  balanceCentsOf,
-  fetchCreditBalanceCents
-} from './creditBalance'
+import { CREDIT_BALANCE_MIN_INTERVAL_MS, CreditBalance, balanceCentsOf } from './creditBalance'
+import { CLOUD_CONFIG } from './config'
 import type { CreditBalanceState } from '../../types/ipc'
 
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
+const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>()
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => {
+function balanceReply(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status })
+}
+
+function deferred(): { promise: Promise<Response>; resolve: (value: Response) => void } {
+  let resolve!: (value: Response) => void
+  const promise = new Promise<Response>((done) => {
     resolve = done
   })
   return { promise, resolve }
 }
 
+beforeEach(() => {
+  vi.useFakeTimers()
+  fetchMock.mockReset()
+  fetchMock.mockImplementation(async () => balanceReply({ amount_micros: 500, currency: 'usd' }))
+  vi.stubGlobal('fetch', fetchMock)
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
+
 function setup(over: { signedIn?: boolean; token?: string | null } = {}) {
-  const clock = { now: 1_000_000 }
   const signed = { in: over.signedIn ?? true }
   const states: CreditBalanceState[] = []
-  const fetchCents = vi.fn<(token: string) => Promise<number>>(async () => 500)
-  const getAccessToken = vi.fn(async () => (over.token === undefined ? 'ws-token' : over.token))
-  const balance = new CreditBalance({
-    isSignedIn: () => signed.in,
-    getAccessToken,
-    broadcast: (state) => states.push(state),
-    fetchCents,
-    now: () => clock.now
-  })
-  return { balance, clock, signed, states, fetchCents, getAccessToken }
+  const balance = new CreditBalance(
+    {
+      isSignedIn: () => signed.in,
+      getAccessToken: async () => (over.token === undefined ? 'ws-token' : over.token)
+    },
+    (state) => states.push(state)
+  )
+  return { balance, signed, states }
 }
 
 describe('balanceCentsOf', () => {
@@ -56,140 +63,106 @@ describe('balanceCentsOf', () => {
   })
 })
 
-describe('fetchCreditBalanceCents', () => {
-  it('reads the workspace balance with the bearer token', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ amount_micros: 1_234, currency: 'usd' })))
-    )
-
-    await expect(fetchCreditBalanceCents('ws-token', 'https://cloud.test/api/')).resolves.toBe(
-      1_234
-    )
-    expect(fetch).toHaveBeenCalledExactlyOnceWith(
-      'https://cloud.test/api/billing/balance',
-      expect.objectContaining({
-        headers: { Accept: 'application/json', Authorization: 'Bearer ws-token' }
-      })
-    )
-  })
-
-  it('fails on an HTTP error or a body it cannot read', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('{}', { status: 503 }))
-    )
-    await expect(fetchCreditBalanceCents('t', 'https://cloud.test/api')).rejects.toThrow('503')
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('not json'))
-    )
-    await expect(fetchCreditBalanceCents('t', 'https://cloud.test/api')).rejects.toThrow(
-      'invalid body'
-    )
-  })
-})
-
 describe('CreditBalance', () => {
-  it('fetches with the workspace token and broadcasts the value to every panel', async () => {
-    const { balance, states, fetchCents } = setup()
+  it('reads the workspace balance with the workspace token and broadcasts it', async () => {
+    const { balance, states } = setup()
 
-    await balance.refresh()
+    await expect(balance.refresh()).resolves.toEqual({ status: 'ready', cents: 500 })
 
-    expect(fetchCents).toHaveBeenCalledExactlyOnceWith('ws-token')
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      `${CLOUD_CONFIG.apiBase}/billing/balance`,
+      expect.objectContaining({ headers: { Authorization: 'Bearer ws-token' } })
+    )
     expect(states).toEqual([{ status: 'ready', cents: 500 }])
-    expect(balance.current()).toEqual({ status: 'ready', cents: 500 })
   })
 
   it('fetches at most once every 30 seconds', async () => {
-    const { balance, clock, fetchCents } = setup()
+    const { balance } = setup()
 
     await balance.refresh()
-    clock.now += CREDIT_BALANCE_MIN_INTERVAL_MS - 1
+    vi.advanceTimersByTime(CREDIT_BALANCE_MIN_INTERVAL_MS - 1)
     await balance.refresh()
-    expect(fetchCents).toHaveBeenCalledOnce()
+    expect(fetchMock).toHaveBeenCalledOnce()
 
-    clock.now += 1
+    vi.advanceTimersByTime(1)
     await balance.refresh()
-    expect(fetchCents).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('shares one fetch between callers while it is in flight', async () => {
-    const { balance, fetchCents } = setup()
-    const reply = deferred<number>()
-    fetchCents.mockReturnValueOnce(reply.promise)
+    const { balance } = setup()
+    const reply = deferred()
+    fetchMock.mockReturnValueOnce(reply.promise)
 
     const first = balance.refresh()
     const second = balance.refresh()
-    reply.resolve(700)
-    await Promise.all([first, second])
+    reply.resolve(balanceReply({ amount_micros: 700 }))
 
-    expect(fetchCents).toHaveBeenCalledOnce()
-    expect(balance.current()).toEqual({ status: 'ready', cents: 700 })
+    expect(await Promise.all([first, second])).toEqual([
+      { status: 'ready', cents: 700 },
+      { status: 'ready', cents: 700 }
+    ])
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 
   it('refetches at once on sign-in or a workspace switch, inside the 30 seconds', async () => {
-    const { balance, states, fetchCents } = setup()
+    const { balance, states } = setup()
     await balance.refresh()
 
-    balance.authChanged(true)
-    await vi.waitFor(() => expect(fetchCents).toHaveBeenCalledTimes(2))
+    balance.authChanged()
 
-    expect(states).toContainEqual({ status: 'loading' })
+    expect(states.at(-1)).toEqual({ status: 'loading' })
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
   })
 
   it('drops the old workspace value when the workspace switches mid-fetch', async () => {
-    const { balance, fetchCents } = setup()
-    const oldWorkspace = deferred<number>()
-    fetchCents.mockReturnValueOnce(oldWorkspace.promise).mockResolvedValueOnce(42)
+    const { balance, states } = setup()
+    const oldWorkspace = deferred()
+    fetchMock
+      .mockReturnValueOnce(oldWorkspace.promise)
+      .mockResolvedValueOnce(balanceReply({ amount_micros: 42 }))
 
-    void balance.refresh()
-    balance.authChanged(true)
-    oldWorkspace.resolve(999)
+    const pending = balance.refresh()
+    balance.authChanged()
+    oldWorkspace.resolve(balanceReply({ amount_micros: 999 }))
+    await pending
 
     await vi.waitFor(() => expect(balance.current()).toEqual({ status: 'ready', cents: 42 }))
-    expect(fetchCents).toHaveBeenCalledTimes(2)
+    expect(states).not.toContainEqual({ status: 'ready', cents: 999 })
   })
 
   it('has no value and fetches nothing while signed out', async () => {
-    const { balance, signed, states, fetchCents } = setup({ signedIn: false })
+    const { balance, signed, states } = setup({ signedIn: false })
 
-    await balance.refresh()
-    expect(fetchCents).not.toHaveBeenCalled()
-    expect(balance.current()).toEqual({ status: 'signed_out' })
+    await expect(balance.refresh()).resolves.toEqual({ status: 'signed_out' })
+    expect(fetchMock).not.toHaveBeenCalled()
 
     signed.in = true
     await balance.refresh()
     signed.in = false
-    balance.authChanged(false)
+    balance.authChanged()
 
     expect(states.at(-1)).toEqual({ status: 'signed_out' })
     expect(balance.current()).toEqual({ status: 'signed_out' })
   })
 
-  it('shows an error when the first fetch fails, and keeps a known value when a later one fails', async () => {
-    const { balance, clock, fetchCents } = setup()
-    fetchCents.mockRejectedValueOnce(new Error('HTTP 503'))
+  it('shows an error when the first read fails, and keeps a known value when a later one fails', async () => {
+    const { balance } = setup()
+    fetchMock.mockResolvedValueOnce(balanceReply({}, 503))
+    await expect(balance.refresh()).resolves.toEqual({ status: 'error' })
 
+    vi.advanceTimersByTime(CREDIT_BALANCE_MIN_INTERVAL_MS)
     await balance.refresh()
-    expect(balance.current()).toEqual({ status: 'error' })
+    vi.advanceTimersByTime(CREDIT_BALANCE_MIN_INTERVAL_MS)
+    fetchMock.mockResolvedValueOnce(new Response('not json'))
 
-    clock.now += CREDIT_BALANCE_MIN_INTERVAL_MS
-    await balance.refresh()
-    clock.now += CREDIT_BALANCE_MIN_INTERVAL_MS
-    fetchCents.mockRejectedValueOnce(new Error('HTTP 503'))
-    await balance.refresh()
-
-    expect(balance.current()).toEqual({ status: 'ready', cents: 500 })
+    await expect(balance.refresh()).resolves.toEqual({ status: 'ready', cents: 500 })
   })
 
   it('shows an error when Desktop has no Cloud token to read with', async () => {
-    const { balance, fetchCents } = setup({ token: null })
+    const { balance } = setup({ token: null })
 
-    await balance.refresh()
-
-    expect(fetchCents).not.toHaveBeenCalled()
-    expect(balance.current()).toEqual({ status: 'error' })
+    await expect(balance.refresh()).resolves.toEqual({ status: 'error' })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

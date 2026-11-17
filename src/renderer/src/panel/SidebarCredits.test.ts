@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 
 import SidebarCredits from './SidebarCredits.vue'
+import { useAuthStore } from '../stores/authStore'
 import type { CreditBalanceState } from '../types/ipc'
 
-const getCreditBalance = vi.fn<() => Promise<CreditBalanceState>>()
-const refreshCreditBalance = vi.fn(async () => {})
-const openManageCredits = vi.fn(async () => {})
+const refreshCreditBalance = vi.fn<() => Promise<CreditBalanceState>>()
+const openSettingsPage = vi.fn(async () => {})
 const balanceListeners = new Set<(state: CreditBalanceState) => void>()
 const pageClosedListeners = new Set<() => void>()
 const wrappers: VueWrapper[] = []
@@ -15,11 +16,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   balanceListeners.clear()
   pageClosedListeners.clear()
-  getCreditBalance.mockResolvedValue({ status: 'ready', cents: 1_000 })
+  refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: 1_000 })
   ;(window as unknown as { api: unknown }).api = {
-    getCreditBalance,
     refreshCreditBalance,
-    openManageCredits,
+    comfybuilder: { openSettingsPage, onAuthChanged: () => () => {} },
     onCreditBalanceChanged: (callback: (state: CreditBalanceState) => void) => {
       balanceListeners.add(callback)
       return () => balanceListeners.delete(callback)
@@ -29,6 +29,7 @@ beforeEach(() => {
       return () => pageClosedListeners.delete(callback)
     }
   }
+  setActivePinia(createPinia())
 })
 
 afterEach(() => {
@@ -65,7 +66,7 @@ describe('SidebarCredits', () => {
   })
 
   it('rounds to whole credits and shows a negative balance', async () => {
-    getCreditBalance.mockResolvedValue({ status: 'ready', cents: -5 })
+    refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: -5 })
 
     const wrapper = await mountCredits()
 
@@ -73,19 +74,17 @@ describe('SidebarCredits', () => {
   })
 
   it('shows a spinner while loading and says so when the balance cannot load', async () => {
-    getCreditBalance.mockResolvedValue({ status: 'loading' })
+    refreshCreditBalance.mockResolvedValue({ status: 'loading' })
     const wrapper = await mountCredits()
     expect(wrapper.find('[data-testid="app-sidebar-credits-loading"]').exists()).toBe(true)
 
     await announce({ status: 'error' })
 
-    expect(wrapper.get('[data-testid="app-sidebar-credits-error"]').text()).toBe(
-      'Unable to load balance'
-    )
+    expect(row(wrapper).text()).toBe('CreditsUnable to load balance')
   })
 
   it('is hidden while signed out and follows the balance main announces', async () => {
-    getCreditBalance.mockResolvedValue({ status: 'signed_out' })
+    refreshCreditBalance.mockResolvedValue({ status: 'signed_out' })
     const wrapper = await mountCredits()
     expect(row(wrapper).exists()).toBe(false)
 
@@ -96,34 +95,26 @@ describe('SidebarCredits', () => {
     expect(row(wrapper).exists()).toBe(false)
   })
 
-  it('keeps a balance main announced before its first answer arrived', async () => {
-    let answer!: (state: CreditBalanceState) => void
-    getCreditBalance.mockReturnValue(new Promise((resolve) => (answer = resolve)))
-    const wrapper = await mountCredits()
-
-    await announce({ status: 'ready', cents: 200 })
-    answer({ status: 'loading' })
-    await flushPromises()
-
-    expect(row(wrapper).text()).toBe('Credits422')
-  })
-
-  it('opens Manage plan & credits on click', async () => {
+  it('opens the Platform billing settings of the signed-in workspace on click', async () => {
+    useAuthStore().status = { signedIn: true, workspaceId: 'ws-1' }
     const wrapper = await mountCredits()
 
     await row(wrapper).trigger('click')
 
-    expect(openManageCredits).toHaveBeenCalledOnce()
+    expect(openSettingsPage).toHaveBeenCalledExactlyOnceWith('billing', 'ws-1')
   })
 
-  it('asks for a fresh balance on hover and when an app page closes', async () => {
+  it('asks for a fresh balance on hover and when an app page closes, and shows it', async () => {
     const wrapper = await mountCredits()
     refreshCreditBalance.mockClear()
+    refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: 200 })
 
     await row(wrapper).trigger('pointerenter')
     for (const listener of pageClosedListeners) listener()
+    await flushPromises()
 
     expect(refreshCreditBalance).toHaveBeenCalledTimes(2)
+    expect(row(wrapper).text()).toBe('Credits422')
   })
 
   it('shows only the coin when collapsed, with the balance in a tooltip on the right', async () => {
@@ -134,9 +125,9 @@ describe('SidebarCredits', () => {
     await flushPromises()
 
     expect(row(wrapper).text()).toBe('')
-    const icon = wrapper.get('[data-testid="app-sidebar-credits-icon"]')
-    expect(icon.attributes('stroke')).toBe('currentColor')
-    expect(icon.classes()).toContain('text-foreground')
+    expect(row(wrapper).get('svg').classes()).toEqual(
+      expect.arrayContaining(['stroke-current', 'text-foreground'])
+    )
 
     wrapper
       .get('.tooltip-wrap')

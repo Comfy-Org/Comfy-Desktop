@@ -33,8 +33,7 @@
     "failedToStartReason": "启动失败：{reason}",
     "credits": "积分",
     "creditsTooltip": "{credits} 积分",
-    "creditsError": "无法加载余额",
-    "manageCredits": "管理套餐和积分"
+    "creditsError": "无法加载余额"
   },
   "apps": {
     "search": "搜索应用",

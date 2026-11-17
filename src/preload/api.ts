@@ -243,7 +243,6 @@ export function buildElectronApi(): ElectronApi {
     getStableTags: (): Promise<string[]> => ipcRenderer.invoke('get-stable-tags'),
     getCloudUserTier: () => ipcRenderer.invoke('get-cloud-user-tier'),
     refreshCreditBalance: () => ipcRenderer.invoke('credit-balance:refresh'),
-    openManageCredits: () => ipcRenderer.invoke('credit-balance:open-manage'),
     onCreditBalanceChanged: (callback) => {
       const handler = (_event: IpcRendererEvent, state: unknown) =>
         callback(state as Parameters<typeof callback>[0])

@@ -366,7 +366,6 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     getCloudUserTier: async () => 'unknown',
     refreshCreditBalance: async () =>
       auth.signedIn ? { status: 'ready', cents: 2_000 } : { status: 'signed_out' },
-    openManageCredits: async () => {},
     getCloudFreeRunsEnabled: async () => false,
     quitApp: async () => {},
     relaunchApp: async () => {},

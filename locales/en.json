@@ -33,8 +33,7 @@
     "failedToStartReason": "Failed to start: {reason}",
     "credits": "Credits",
     "creditsTooltip": "{credits} Credits",
-    "creditsError": "Unable to load balance",
-    "manageCredits": "Manage plan & credits"
+    "creditsError": "Unable to load balance"
   },
   "apps": {
     "search": "Search apps",

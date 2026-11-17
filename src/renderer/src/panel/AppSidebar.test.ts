@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
+import '../assets/main.css'
 import AppSidebar from './AppSidebar.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -29,13 +30,13 @@ const TEAM = build({ id: 'team', name: 'Team Build', lastLaunchedAt: 400, worksp
 const navigatePanel = vi.fn()
 const openGlobalSettings = vi.fn()
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
-const getCreditBalance = vi.fn<() => Promise<CreditBalanceState>>()
+const refreshCreditBalance = vi.fn<() => Promise<CreditBalanceState>>()
 
 beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
   getAppsEnabled.mockResolvedValue(false)
-  getCreditBalance.mockResolvedValue({ status: 'signed_out' })
+  refreshCreditBalance.mockResolvedValue({ status: 'signed_out' })
   ;(window as unknown as { api: unknown }).api = {
     navigatePanel,
     openGlobalSettings,
@@ -46,9 +47,7 @@ beforeEach(() => {
     getSetting: vi.fn().mockResolvedValue(undefined),
     setSetting: vi.fn().mockResolvedValue(undefined),
     onSettingsChanged: vi.fn(() => () => {}),
-    getCreditBalance,
-    refreshCreditBalance: vi.fn().mockResolvedValue(undefined),
-    openManageCredits: vi.fn().mockResolvedValue(undefined),
+    refreshCreditBalance,
     onCreditBalanceChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
     comfybuilder: {
@@ -76,10 +75,7 @@ function tooltipOf(
   wrapper: Awaited<ReturnType<typeof mountSidebar>>,
   testId: string
 ): string | undefined {
-  return wrapper
-    .findAllComponents(Tooltip)
-    .find((tip) => tip.find(`[data-testid="${testId}"]`).exists())
-    ?.props('text')
+  return wrapper.get(`[data-testid="${testId}"]`).findComponent(Tooltip).props('text')
 }
 
 describe('AppSidebar', () => {
@@ -169,8 +165,10 @@ describe('AppSidebar', () => {
   it('returns Home from the Comfy mark', async () => {
     const wrapper = await mountSidebar('benchmarks')
 
-    expect(tooltipOf(wrapper, 'app-sidebar-logo')).toBe('Home')
-    await wrapper.get('[data-testid="app-sidebar-logo"]').trigger('click')
+    const logo = wrapper.get('button[aria-label="Home"]')
+    expect(logo.element.closest('nav')).toBeNull()
+    expect(logo.findComponent(Tooltip).props('text')).toBe('Home')
+    await logo.trigger('click')
 
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('home')
   })
@@ -182,9 +180,7 @@ describe('AppSidebar', () => {
     expect(settings.text()).toBe('Desktop Settings')
     expect(settings.attributes('aria-haspopup')).toBe('dialog')
     expect(settings.element.closest('nav')).toBeNull()
-    expect(settings.element.parentElement?.nextElementSibling?.classList).toContain(
-      'sidebar-account'
-    )
+    expect(settings.element.nextElementSibling?.classList.contains('sidebar-account')).toBe(true)
 
     const events: TelemetryActionEventDetail[] = []
     const record: EventListener = (event) => {
@@ -257,16 +253,30 @@ describe('AppSidebar', () => {
     ).toHaveLength(0)
   })
 
+  it('gives a folded row its tooltip over the whole row, not only the icon', async () => {
+    window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+
+    for (const testId of ['app-sidebar-home', 'app-sidebar-settings', 'app-sidebar-toggle']) {
+      const row = wrapper.get(`[data-testid="${testId}"]`).element.getBoundingClientRect()
+      const trigger = wrapper
+        .get(`[data-testid="${testId}"] .tooltip-wrap`)
+        .element.getBoundingClientRect()
+      expect([trigger.width, trigger.height], testId).toEqual([row.width, row.height])
+    }
+    wrapper.unmount()
+  })
+
   it('shows Credits between Desktop Settings and the account once signed in', async () => {
-    getCreditBalance.mockResolvedValue({ status: 'ready', cents: 100 })
+    refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: 100 })
     const wrapper = await mountSidebar()
 
     const credits = wrapper.get('[data-testid="app-sidebar-credits"]')
-    const settingsWrap = wrapper.get('[data-testid="app-sidebar-settings"]').element.parentElement
-    expect(settingsWrap?.nextElementSibling?.contains(credits.element)).toBe(true)
-    expect(credits.element.parentElement?.nextElementSibling?.classList).toContain(
-      'sidebar-account'
-    )
+    const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
+    expect(settings.element.nextElementSibling).toBe(credits.element)
+    expect(credits.element.nextElementSibling?.classList).toContain('sidebar-account')
   })
 
   describe('Builds group', () => {

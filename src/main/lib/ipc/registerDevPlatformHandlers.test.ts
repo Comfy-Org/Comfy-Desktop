@@ -352,13 +352,13 @@ describe('registerDevPlatformHandlers', () => {
     expect(live).toHaveBeenCalledOnce()
   })
 
-  it('refetches the credit balance on sign-in and clears it on sign-out', async () => {
+  it('resets the credit balance on sign-in and on sign-out', async () => {
     mocks.login.mockResolvedValue({ signedIn: true, workspaceId: 'ws-1' })
 
     await handler('comfybuilder:signIn')({})
     await handler('comfybuilder:signOut')({})
 
-    expect(mocks.creditBalanceAuthChanged.mock.calls).toEqual([[true], [false]])
+    expect(mocks.creditBalanceAuthChanged).toHaveBeenCalledTimes(2)
   })
 
   it('signOut clears the session and broadcasts signed-out', async () => {

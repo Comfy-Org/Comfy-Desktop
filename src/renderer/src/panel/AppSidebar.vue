@@ -159,31 +159,31 @@ function openSettings(): void {
         collapsed ? 'mt-2.5 mb-3.5 flex-col gap-3' : 'mt-2 mb-3.5 h-9 w-full justify-between pl-1.5'
       "
     >
-      <Tooltip :text="t('sidebar.home')" side="right">
-        <Button
-          variant="textonly"
-          size="unset"
-          class="h-auto rounded-[7px] p-0.5 text-foreground hover:bg-transparent"
-          :aria-label="t('sidebar.home')"
-          @click="navigate('home')"
-        >
+      <Button
+        variant="textonly"
+        size="unset"
+        class="h-auto rounded-[7px] p-0.5 text-foreground hover:bg-transparent"
+        :aria-label="t('sidebar.home')"
+        @click="navigate('home')"
+      >
+        <Tooltip :text="t('sidebar.home')" side="right">
           <ComfyCLogo v-if="collapsed" :size="20" />
           <ComfyWordmark v-else class="h-[22px] w-auto" />
-        </Button>
-      </Tooltip>
-      <Tooltip :text="toggleLabel" side="right">
-        <Button
-          variant="muted-textonly"
-          size="unset"
-          class="group size-[30px] rounded-[7px] p-0 hover:bg-secondary hover:text-foreground"
-          data-testid="app-sidebar-toggle"
-          :aria-label="toggleLabel"
-          :aria-expanded="!collapsed"
-          @click="toggleCollapsed"
-        >
+        </Tooltip>
+      </Button>
+      <Button
+        variant="muted-textonly"
+        size="unset"
+        class="group size-[30px] rounded-[7px] p-0 hover:bg-secondary hover:text-foreground"
+        data-testid="app-sidebar-toggle"
+        :aria-label="toggleLabel"
+        :aria-expanded="!collapsed"
+        @click="toggleCollapsed"
+      >
+        <Tooltip :text="toggleLabel" side="right" class="size-full items-center justify-center">
           <SidebarToggleIcon />
-        </Button>
-      </Tooltip>
+        </Tooltip>
+      </Button>
     </div>
 
     <nav
@@ -199,30 +199,30 @@ function openSettings(): void {
             {{ group.title }}
           </div>
         </template>
-        <Tooltip
+        <Button
           v-for="row in group.rows"
           :key="row.page"
-          :text="collapsed ? row.label : undefined"
-          side="right"
-          class="w-full shrink-0"
+          variant="muted-textonly"
+          size="unset"
+          class="h-8 w-full shrink-0 rounded-lg text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+          :class="[
+            collapsed ? 'justify-center px-0' : 'justify-start gap-2.5 px-3',
+            row.page === activePage && 'bg-accent text-foreground hover:bg-accent'
+          ]"
+          :aria-current="row.page === activePage ? 'page' : undefined"
+          :aria-label="row.label"
+          :data-testid="`app-sidebar-${row.page}`"
+          @click="navigate(row.page)"
         >
-          <Button
-            variant="muted-textonly"
-            size="unset"
-            class="h-8 w-full shrink-0 rounded-lg text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-            :class="[
-              collapsed ? 'justify-center px-0' : 'justify-start gap-2.5 px-3',
-              row.page === activePage && 'bg-accent text-foreground hover:bg-accent'
-            ]"
-            :aria-current="row.page === activePage ? 'page' : undefined"
-            :aria-label="row.label"
-            :data-testid="`app-sidebar-${row.page}`"
-            @click="navigate(row.page)"
+          <Tooltip
+            :text="collapsed ? row.label : undefined"
+            side="right"
+            :class="collapsed && 'size-full items-center justify-center'"
           >
             <component :is="row.icon" :size="15" aria-hidden="true" />
-            <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{ row.label }}</span>
-          </Button>
-        </Tooltip>
+          </Tooltip>
+          <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{ row.label }}</span>
+        </Button>
         <div
           v-if="group.key === 'main' && !collapsed"
           class="flex flex-col gap-px"
@@ -245,18 +245,22 @@ function openSettings(): void {
                 aria-hidden="true"
               />
             </Button>
-            <Tooltip :text="t('sidebar.newBuild')" side="right">
-              <Button
-                variant="muted-textonly"
-                size="unset"
-                class="size-6 rounded-md p-0 hover:bg-secondary hover:text-foreground"
-                :aria-label="t('sidebar.newBuild')"
-                data-testid="app-sidebar-new-build"
-                @click="emit('new-build')"
+            <Button
+              variant="muted-textonly"
+              size="unset"
+              class="size-6 rounded-md p-0 hover:bg-secondary hover:text-foreground"
+              :aria-label="t('sidebar.newBuild')"
+              data-testid="app-sidebar-new-build"
+              @click="emit('new-build')"
+            >
+              <Tooltip
+                :text="t('sidebar.newBuild')"
+                side="right"
+                class="size-full items-center justify-center"
               >
                 <Plus :size="13" aria-hidden="true" />
-              </Button>
-            </Tooltip>
+              </Tooltip>
+            </Button>
           </div>
           <p
             v-if="!buildRows.length"
@@ -315,27 +319,27 @@ function openSettings(): void {
     </nav>
 
     <div class="mt-2 flex w-full shrink-0 flex-col gap-1">
-      <Tooltip
-        :text="collapsed ? t('fileMenu.globalSettings') : undefined"
-        side="right"
-        class="w-full"
+      <Button
+        variant="muted-textonly"
+        size="unset"
+        class="h-8 w-full shrink-0 rounded-lg text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+        :class="collapsed ? 'justify-center px-0' : 'justify-start gap-2.5 px-3'"
+        :aria-label="t('fileMenu.globalSettings')"
+        aria-haspopup="dialog"
+        data-testid="app-sidebar-settings"
+        @click="openSettings"
       >
-        <Button
-          variant="muted-textonly"
-          size="unset"
-          class="h-8 w-full shrink-0 rounded-lg text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-          :class="collapsed ? 'justify-center px-0' : 'justify-start gap-2.5 px-3'"
-          :aria-label="t('fileMenu.globalSettings')"
-          aria-haspopup="dialog"
-          data-testid="app-sidebar-settings"
-          @click="openSettings"
+        <Tooltip
+          :text="collapsed ? t('fileMenu.globalSettings') : undefined"
+          side="right"
+          :class="collapsed && 'size-full items-center justify-center'"
         >
           <Settings :size="15" aria-hidden="true" />
-          <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
-            t('fileMenu.globalSettings')
-          }}</span>
-        </Button>
-      </Tooltip>
+        </Tooltip>
+        <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
+          t('fileMenu.globalSettings')
+        }}</span>
+      </Button>
       <SidebarCredits :collapsed="collapsed" />
       <SidebarAccount :collapsed="collapsed" />
     </div>
