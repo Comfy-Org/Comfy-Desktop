@@ -88,6 +88,36 @@ describe('dispatchSessionAction operation tracking', () => {
     })
   })
 
+  it('names the Performance Test session on its launch operation, so Home can tell it from a start of the build', async () => {
+    let finishLaunch!: (value: { ok: boolean }) => void
+    launch.mockReturnValue(new Promise((resolve) => (finishLaunch = resolve)))
+
+    const pending = dispatchSessionAction(
+      { ...ctx(), sessionId: 'performance-test:inst-1' },
+      'launch'
+    )
+
+    expect(broadcast).toHaveBeenCalledWith('operation-changed', {
+      installationId: 'inst-1',
+      actionId: 'launch',
+      sessionId: 'performance-test:inst-1',
+      active: true
+    })
+    expect(_getActiveOperations()).toEqual([
+      { installationId: 'inst-1', actionId: 'launch', sessionId: 'performance-test:inst-1' }
+    ])
+
+    finishLaunch({ ok: true })
+    await pending
+
+    expect(broadcast).toHaveBeenLastCalledWith('operation-changed', {
+      installationId: 'inst-1',
+      actionId: 'launch',
+      sessionId: 'performance-test:inst-1',
+      active: false
+    })
+  })
+
   it('clears the entry and broadcasts the end even when the handler throws', async () => {
     delegate.mockRejectedValue(new Error('boom'))
 

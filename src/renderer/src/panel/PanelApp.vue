@@ -139,6 +139,7 @@ const {
   currentOverlay,
   openOverlay,
   closeOverlay,
+  answerCloseRequest,
   handleShowProgress,
   handleProgressClose,
   openFirstUseTakeover,
@@ -377,11 +378,7 @@ onMounted(async () => {
   unsubCloseRequest = window.api.onCloseRequest(({ requestId }) => {
     window.api.ackCloseRequest({ requestId })
     void (async () => {
-      if (currentOverlay.value !== null) {
-        window.api.respondCloseRequest({ requestId, cleared: await closeOverlay() })
-      } else {
-        window.api.respondCloseRequest({ requestId, defer: true })
-      }
+      window.api.respondCloseRequest({ requestId, ...(await answerCloseRequest()) })
     })()
   })
 

@@ -15,6 +15,7 @@ import { useInstallationStore } from '../../stores/installationStore'
 import { useProgressStore, type Operation } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
+import { performanceTestSessionKey } from '../../../../shared/performanceTestSession'
 
 const BUILD: Installation = {
   id: 'flux',
@@ -522,6 +523,121 @@ describe('Build menu', () => {
     Object.defineProperty(label, 'scrollWidth', { configurable: true, value: 120 })
     await builds.get('[data-testid="chooser-tile-open"]').trigger('focus')
     expect(hint()).toBe('Click to start')
+  })
+
+  it('offers Cancel for a start left running by a window that went back to Home, and cancels it', async () => {
+    const cancelOperation = vi.fn(async () => {})
+    Object.assign(window.api, { cancelOperation, stopComfyUI: vi.fn(async () => {}) })
+    useSessionStore().launchingInstances.set(BUILD.id, { installationName: BUILD.name })
+    const tile = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'starting', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(tile)
+    await flushPromises()
+
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    expect(await shownMenu()).toEqual(EXPECTED.starting)
+    document.querySelector<HTMLElement>('[data-testid="build-menu-cancel"]')!.click()
+    await flushPromises()
+
+    expect(cancelOperation).toHaveBeenCalledExactlyOnceWith(BUILD.id)
+  })
+
+  it('offers Cancel for a left start still in its checks, before main says it is launching', async () => {
+    const cancelOperation = vi.fn(async () => {})
+    Object.assign(window.api, { cancelOperation, stopComfyUI: vi.fn(async () => {}) })
+    useSessionStore().operationInstances.set(BUILD.id, { actionId: 'launch' })
+    const tile = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(tile)
+    await flushPromises()
+
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    expect(await shownMenu()).toEqual(EXPECTED.starting)
+    document.querySelector<HTMLElement>('[data-testid="build-menu-cancel"]')!.click()
+    await flushPromises()
+
+    expect(cancelOperation).toHaveBeenCalledExactlyOnceWith(BUILD.id)
+  })
+
+  it('does not offer Cancel for a Performance Test that is starting, since that Cancel cannot reach it', async () => {
+    const cancelOperation = vi.fn(async () => {})
+    Object.assign(window.api, { cancelOperation, stopComfyUI: vi.fn(async () => {}) })
+    const performanceTest = performanceTestSessionKey(BUILD.id)
+    useSessionStore().operationInstances.set(BUILD.id, {
+      actionId: 'launch',
+      sessionId: performanceTest
+    })
+    useSessionStore().launchingInstances.set(performanceTest, { installationName: BUILD.name })
+    const tile = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(tile)
+    await flushPromises()
+
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+
+    expect(await shownMenu()).not.toContain('cancel')
+  })
+
+  it('also stops a left start on Cancel, in case it finished starting before the cancel reached it', async () => {
+    const calls: string[] = []
+    const cancelOperation = vi.fn(async () => {
+      calls.push('cancel')
+    })
+    const stopComfyUI = vi.fn(async () => {
+      calls.push('stop')
+    })
+    Object.assign(window.api, { cancelOperation, stopComfyUI })
+    useSessionStore().launchingInstances.set(BUILD.id, { installationName: BUILD.name })
+    const tile = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'starting', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(tile)
+    await flushPromises()
+
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    await shownMenu()
+    document.querySelector<HTMLElement>('[data-testid="build-menu-cancel"]')!.click()
+    await flushPromises()
+
+    expect(cancelOperation).toHaveBeenCalledExactlyOnceWith(BUILD.id)
+    expect(stopComfyUI).toHaveBeenCalledExactlyOnceWith(BUILD.id)
+    expect(calls).toEqual(['cancel', 'stop'])
+  })
+
+  it('shows that a start left running did not start when it failed, not Ready', async () => {
+    useSessionStore().errorInstances.set(BUILD.id, {
+      installationName: BUILD.name,
+      message: 'Process exited with code 1',
+      startFailed: true
+    })
+    const tile = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(tile)
+    await flushPromises()
+
+    expect(tile.get('[data-testid="home-build"]').text()).toContain("Didn't start")
+    expect(tile.get('[data-testid="home-build"]').text()).not.toContain('Ready')
+  })
+
+  it('still shows Ready after a running build crashed', async () => {
+    useSessionStore().errorInstances.set(BUILD.id, { installationName: BUILD.name, exitCode: 1 })
+    const tile = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(tile)
+    await flushPromises()
+
+    expect(tile.get('[data-testid="home-build"]').text()).toContain('Ready')
   })
 
   it('keeps the build menu closed on a right-click on a page in the sidebar', async () => {

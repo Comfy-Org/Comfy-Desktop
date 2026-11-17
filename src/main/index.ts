@@ -91,6 +91,7 @@ import {
   _activeOperationStatus,
   _getLaunchingInstallationIds,
   _setActiveLaunchPickerWorkspace,
+  launchHadWindow,
   stopRunning,
   resolveTheme,
   MSG_CANCELLED,
@@ -473,6 +474,8 @@ function onLaunch({
       }
     }
   }
+
+  if (launchHadWindow(installationId)) return
 
   const initialSourceCategory = sourceMap[installation.sourceId]?.category ?? null
 
@@ -1638,9 +1641,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     void stopBuildsRunningForAppsOnly().finally(() => {
       if (BrowserWindow.getAllWindows().length > 0) return
-      if (quitsOnceEveryWindowClosed()) {
-        app.quit()
-      }
+      if (quitsOnceEveryWindowClosed()) app.quit()
     })
   })
 }
