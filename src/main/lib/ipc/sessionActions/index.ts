@@ -70,28 +70,30 @@ function dispatchToSessionHandler(
   }
 }
 
-const _activeActions = new Map<string, { actionId: string }>()
+interface ActiveOperation {
+  actionId: string
+  sessionId?: string
+}
 
-export function _getActiveOperations(): { installationId: string; actionId: string }[] {
-  return Array.from(_activeActions, ([installationId, { actionId }]) => ({
-    installationId,
-    actionId
-  }))
+const _activeActions = new Map<string, ActiveOperation>()
+
+export function _getActiveOperations(): ({ installationId: string } & ActiveOperation)[] {
+  return Array.from(_activeActions, ([installationId, entry]) => ({ installationId, ...entry }))
 }
 
 export async function dispatchSessionAction(
   ctx: ActionContext,
   actionId: string
 ): Promise<ActionResult> {
-  const { installationId } = ctx
+  const { installationId, sessionId } = ctx
   const running = _activeActions.get(installationId)
   const takesOverFromLookup =
     running !== undefined && occupiesInstall(actionId) && !occupiesInstall(running.actionId)
   const owned = running === undefined || takesOverFromLookup
-  const entry = { actionId }
+  const entry: ActiveOperation = sessionId ? { actionId, sessionId } : { actionId }
   if (owned) {
     _activeActions.set(installationId, entry)
-    _broadcastToRenderer('operation-changed', { installationId, actionId, active: true })
+    _broadcastToRenderer('operation-changed', { installationId, ...entry, active: true })
   }
   try {
     if (isSessionActionId(actionId)) {
@@ -101,7 +103,7 @@ export async function dispatchSessionAction(
   } finally {
     if (owned && _activeActions.get(installationId) === entry) {
       _activeActions.delete(installationId)
-      _broadcastToRenderer('operation-changed', { installationId, actionId, active: false })
+      _broadcastToRenderer('operation-changed', { installationId, ...entry, active: false })
     }
   }
 }

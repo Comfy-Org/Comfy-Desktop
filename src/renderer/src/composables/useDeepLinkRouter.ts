@@ -80,7 +80,11 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
           await opts.bootstrapReady
           const id = payload.installationId
           if (!id) return
-          const inst = installationStore.getById(id)
+          const inst =
+            installationStore.getById(id) ??
+            (await installationStore.fetchInstallations().catch(() => [])).find(
+              (installation) => installation.id === id
+            )
           if (!inst) return
           const pickerWorkspaceId = payload.actionData?.pickerWorkspaceId
           await opts.pickInstallFromPicker?.(inst, {

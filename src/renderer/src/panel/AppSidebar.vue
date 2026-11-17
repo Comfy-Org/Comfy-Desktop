@@ -26,6 +26,7 @@ import { TOOLTIP_GATE } from '../components/ui/tooltipGate'
 import { appPageShown, sidebarHovered } from './appPageCover'
 import SidebarAccount from './SidebarAccount.vue'
 import SidebarCredits from './SidebarCredits.vue'
+import SidebarDesktopUpdate from './SidebarDesktopUpdate.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
@@ -360,6 +361,7 @@ function openSettings(): void {
     </nav>
 
     <div class="mt-2 flex w-full shrink-0 flex-col gap-1">
+      <SidebarDesktopUpdate :collapsed="collapsed" />
       <Button
         variant="muted-textonly"
         size="unset"

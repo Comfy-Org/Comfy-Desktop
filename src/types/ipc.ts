@@ -1249,7 +1249,7 @@ export interface ElectronApi {
   getRunningInstances(): Promise<RunningInstance[]>
   getLaunchingInstances(): Promise<{ installationId: string; installationName: string }[]>
   getStoppingInstances(): Promise<string[]>
-  getActiveOperations(): Promise<{ installationId: string; actionId: string }[]>
+  getActiveOperations(): Promise<{ installationId: string; actionId: string; sessionId?: string }[]>
   getLastCrashError(installationId: string): Promise<ComfyExitedData | null>
   getCrashInstances(): Promise<ComfyExitedData[]>
   cancelLaunch(): Promise<void>
@@ -1395,7 +1395,12 @@ export interface ElectronApi {
   onInstanceStopping(callback: (data: { installationId: string }) => void): Unsubscribe
   onInstanceStopped(callback: (data: { installationId: string }) => void): Unsubscribe
   onOperationChanged(
-    callback: (data: { installationId: string; actionId: string; active: boolean }) => void
+    callback: (data: {
+      installationId: string
+      actionId: string
+      sessionId?: string
+      active: boolean
+    }) => void
   ): Unsubscribe
   onThemeChanged(callback: (theme: ResolvedTheme) => void): Unsubscribe
   onLocaleChanged(
