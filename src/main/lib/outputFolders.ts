@@ -19,7 +19,6 @@ export const OUTPUT_FILES_SCHEME = 'comfy-output'
 const LIST_LOCAL_CHANNEL = 'assets:list-local'
 export const MAX_LOCAL_ASSETS = 500
 export const MAX_FOLDER_DEPTH = 6
-export const MAX_SCANNED_FILES = 5000
 const THUMBNAIL_SIZE = 480
 const MAX_CACHED_THUMBNAILS = 400
 const THUMBNAILS_AT_ONCE = 2
@@ -141,7 +140,7 @@ async function collectMediaFiles(root: string): Promise<string[]> {
     const dirents: Dirent[] = await fsp.readdir(dir, { withFileTypes: true }).catch(() => [])
     const subfolders: string[] = []
     for (const dirent of dirents) {
-      if (dirent.name.startsWith('.') || files.length >= MAX_SCANNED_FILES) continue
+      if (dirent.name.startsWith('.')) continue
       const full = path.join(dir, dirent.name)
       if (dirent.isDirectory()) subfolders.push(full)
       else if (dirent.isFile() && assetKind(dirent.name) !== null) files.push(full)
@@ -193,7 +192,7 @@ export async function listLocalAssets(installationId?: string): Promise<LocalAss
   await runPool(newest, STATS_AT_ONCE, addMediaFacts)
   return {
     assets: newest,
-    truncated: files.length >= MAX_SCANNED_FILES || found.length > MAX_LOCAL_ASSETS
+    truncated: found.length > MAX_LOCAL_ASSETS
   }
 }
 

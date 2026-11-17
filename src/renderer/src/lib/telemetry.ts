@@ -1,5 +1,3 @@
-import type { ModelDownloadStatus } from '../../../types/ipc'
-
 export type TelemetryScalar = boolean | number | string | null | undefined
 export type TelemetryValue = TelemetryScalar | TelemetryScalar[]
 export type TelemetryContext = Record<string, TelemetryValue>
@@ -33,37 +31,4 @@ export function toCountBucket(count: number): string {
   if (count <= 4) return '3_4'
   if (count <= 9) return '5_9'
   return '10_plus'
-}
-
-export function toFileExtension(filename: string | undefined): string {
-  if (!filename) return 'unknown'
-  const idx = filename.lastIndexOf('.')
-  if (idx < 0 || idx === filename.length - 1) return 'none'
-  return filename.slice(idx + 1).toLowerCase()
-}
-
-export function toModelDirectoryBucket(directory: string | undefined): string {
-  if (!directory) return 'unknown'
-  const normalized = directory.replace(/\\/g, '/').toLowerCase()
-  const parts = normalized.split('/').filter(Boolean)
-  const leaf = parts[parts.length - 1] || 'unknown'
-  const known = new Set([
-    'checkpoints',
-    'loras',
-    'vae',
-    'controlnet',
-    'embeddings',
-    'upscale_models',
-    'diffusion_models',
-    'clip_vision',
-    'clip',
-    'text_encoders',
-    'unet',
-    'vae_approx'
-  ])
-  return known.has(leaf) ? leaf : 'other'
-}
-
-export function isTerminalModelDownloadStatus(status: ModelDownloadStatus): boolean {
-  return status === 'completed' || status === 'error' || status === 'cancelled'
 }

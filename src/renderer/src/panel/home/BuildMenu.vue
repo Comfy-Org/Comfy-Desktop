@@ -138,7 +138,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
           :class="item.danger && 'text-destructive focus:text-destructive'"
           :disabled="item.disabled"
           :text-value="item.label"
-          :title="item.disabled ? item.title : undefined"
+          :title="item.disabled ? item.title : item.hint"
           :data-testid="`build-menu-${item.id}`"
           @select="select($event, item.id)"
         >

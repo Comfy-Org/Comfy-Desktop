@@ -7,15 +7,19 @@ import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
+import Tooltip from '../../components/ui/Tooltip.vue'
 import {
   HOME_BUILD_TONES,
+  isBuildOpenBlocked,
   homeBuildDetail,
   buildDeviceKind,
+  isCloudBuild,
   isComfyCloud,
   type HomeBuildStatus,
   type HomeBuildTone
 } from './homeBuild'
 import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useProgressStore } from '../../stores/progressStore'
 import type { Installation } from '../../types/ipc'
 
@@ -39,6 +43,10 @@ const progressStore = useProgressStore()
 const busy = computed(() => install.progress.value !== null)
 const starting = computed(() => install.progress.value?.kind === 'launch')
 const uninstalling = computed(() => install.progress.value?.kind === 'uninstall')
+const promoting = computed(() => isPromotingToWorkspace(build))
+const canOpen = computed(
+  () => !uninstalling.value && !promoting.value && !isBuildOpenBlocked(status)
+)
 const busyTestId = computed(() => {
   if (uninstalling.value) return 'home-build-uninstalling'
   return starting.value ? 'home-build-starting' : 'home-build-installing'
@@ -57,17 +65,20 @@ const statusLabel = computed(() => {
     const percent = install.progress.value?.percent
     return percent == null ? phase : t('installProgress.detail', { phase, percent })
   }
+  if (promoting.value) return t('devPlatform.workspace.promoting')
+  if (status === 'stopping') return t('chooser.statusStopping')
+  if (status === 'updating') return t('instancePicker.progressUpdating')
   if (broken.value) return broken.value
   switch (status) {
     case 'running':
       return t('home.buildRunning')
     case 'starting':
       return t('home.buildStarting')
-    case 'update':
-      return build.statusTag?.label || t('chooser.updatePill')
     case 'always-on':
       return t('home.buildAlwaysOn')
+    case 'update':
     case 'ready':
+      if (isCloudBuild(build)) return t('home.buildAlwaysOn')
       return autoStart ? t('home.autoStartOn') : t('home.buildReady')
     default:
       return status satisfies never
@@ -76,13 +87,35 @@ const statusLabel = computed(() => {
 const detail = computed(() =>
   isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
 )
-const isLive = computed(() => !busy.value && (status === 'running' || status === 'always-on'))
+const isLive = computed(
+  () =>
+    status === 'running' || status === 'always-on' || (status === 'update' && isCloudBuild(build))
+)
+const resting = computed(() => status === 'ready' || status === 'update')
+const updateNote = computed(() =>
+  !uninstalling.value && status !== 'updating' && build.statusTag?.style === 'update'
+    ? t('chooser.updatePill')
+    : ''
+)
 const subtitle = computed(() => (uninstalling.value ? install.detail.value : detail.value))
+const openHint = computed(() => {
+  if (!canOpen.value) return ''
+  if (
+    busy.value ||
+    (build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id))
+  ) {
+    return t('home.buildClickToViewLogs')
+  }
+  if (broken.value || isLive.value || status === 'starting' || build.sourceCategory === 'remote')
+    return t('home.buildClickToOpen')
+  return t('home.buildClickToStart')
+})
 const testId = computed(() => (busy.value ? busyTestId.value : 'home-build'))
 
 function onClick(): void {
-  if (!busy.value) emit('open')
-  else if (!uninstalling.value) install.viewLogs()
+  if (!canOpen.value) return
+  if (busy.value) install.viewLogs()
+  else emit('open')
 }
 
 const openButton = useTemplateRef<HTMLButtonElement>('openButton')
@@ -103,6 +136,7 @@ function openMoreMenu(event: MouseEvent): void {
 }
 
 function openContextMenu(event: MouseEvent): void {
+  if (status === 'updating') return
   moreButton.value = null
   menuReturnFocus.value = openButton.value
   showMenuAtPointer(event)
@@ -112,24 +146,34 @@ function openContextMenu(event: MouseEvent): void {
 <template>
   <div
     class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
-    :class="!uninstalling && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
+    :class="canOpen && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
     :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
     :data-testid="testId"
     :data-build-id="build.id"
     @click="onClick"
     @contextmenu.prevent="openContextMenu"
   >
-    <button
-      v-if="!uninstalling"
-      ref="openButton"
-      type="button"
-      class="absolute inset-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-      :aria-label="`${build.name}, ${statusLabel}`"
-      data-testid="home-build-open"
-    />
+    <Tooltip
+      v-if="!uninstalling && !promoting"
+      class="absolute inset-0 flex"
+      :text="openHint"
+      :disabled="!canOpen"
+      side="top"
+      :delay-ms="500"
+      :should-open="() => !menuOpen"
+    >
+      <button
+        ref="openButton"
+        type="button"
+        class="absolute inset-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        :aria-label="`${build.name}, ${statusLabel}`"
+        :disabled="!canOpen"
+        data-testid="home-build-open"
+      />
+    </Tooltip>
     <span
       class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
-      :class="!busy && 'group-hover:scale-[2.6] group-has-[:focus-visible]:scale-[2.6]'"
+      :class="canOpen && !busy && 'group-hover:scale-[2.6] group-has-[:focus-visible]:scale-[2.6]'"
       :style="{
         background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
       }"
@@ -147,29 +191,34 @@ function openContextMenu(event: MouseEvent): void {
     >
       <span
         class="flex h-4 items-center gap-1.5 text-xs/4"
-        :class="!busy && broken ? 'text-destructive' : 'text-muted-foreground'"
+        :class="canOpen && !busy && broken ? 'text-destructive' : 'text-muted-foreground'"
         data-testid="home-build-status"
       >
         <LoaderCircle
-          v-if="busy"
+          v-if="busy || promoting || status === 'updating'"
           :size="12"
           class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
           aria-hidden="true"
         />
-        <OctagonAlert v-else-if="broken" :size="12" class="shrink-0" aria-hidden="true" />
+        <OctagonAlert
+          v-else-if="canOpen && broken"
+          :size="12"
+          class="shrink-0"
+          aria-hidden="true"
+        />
         <span
           v-else-if="isLive"
           class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
           aria-hidden="true"
         />
         <Power
-          v-else-if="status === 'ready' && autoStart"
+          v-else-if="resting && autoStart && !isCloudBuild(build)"
           :size="12"
           class="shrink-0"
           aria-hidden="true"
           data-testid="home-build-starts-with-desktop"
         />
-        <Check v-else-if="status === 'ready'" :size="12" aria-hidden="true" />
+        <Check v-else-if="resting" :size="12" aria-hidden="true" />
         <span class="truncate">{{ statusLabel }}</span>
       </span>
       <span
@@ -179,13 +228,17 @@ function openContextMenu(event: MouseEvent): void {
         {{ build.name }}
       </span>
       <span
-        class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground"
+        class="mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
         :data-testid="uninstalling ? 'home-build-install-detail' : 'home-build-detail'"
       >
-        {{ subtitle }}
+        <span v-if="subtitle" class="min-w-0 truncate">{{ subtitle }}</span>
+        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
+          >{{ subtitle ? ' · ' : '' }}{{ updateNote }}</span
+        >
       </span>
     </span>
     <Button
+      v-if="status !== 'updating'"
       type="button"
       variant="muted-textonly"
       size="unset"
@@ -206,7 +259,7 @@ function openContextMenu(event: MouseEvent): void {
       data-testid="home-build-progress"
     />
     <BuildMenu
-      v-if="menuAnchor"
+      v-if="status !== 'updating' && menuAnchor"
       v-model:open="menuOpen"
       :build="build"
       :anchor="menuAnchor"

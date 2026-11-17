@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
-import type { ExampleWorkflowDownload, RunPerformanceTestWorkflowResult } from '../types/ipc'
+import type {
+  ExampleWorkflowDownload,
+  ProgressData,
+  RunPerformanceTestWorkflowResult
+} from '../types/ipc'
 
 const installWizardOpen = vi.hoisted(() => vi.fn())
 const createFeedbackWidget = vi.hoisted(() =>
@@ -1300,13 +1304,18 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 
-  it('restores the build open at quit into this window, in place, on startup', async () => {
+  it('auto-starts a build in its own window and keeps Home available with launch errors', async () => {
     mockState.installations = [SAMPLE_INSTALL]
     const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
     api.getListActions.mockResolvedValue([
       { id: 'launch', label: 'Start', style: 'primary', showProgress: true }
     ])
-    api.runAction.mockReturnValueOnce(new Promise(() => {}))
+    let finishLaunch: (result: { ok: boolean; message?: string }) => void = () => {}
+    api.runAction.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishLaunch = resolve
+      })
+    )
     Object.assign(api, {
       onInstallProgress: vi.fn(() => () => {}),
       resolveStartupRestoreReveal: vi.fn()
@@ -1321,9 +1330,45 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(api.runAction).toHaveBeenCalledWith('test-id', 'launch')
-    expect(api.claimAttachHost).toHaveBeenCalledWith('test-id')
-    expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(true)
-    expect(api.resolveStartupRestoreReveal).toHaveBeenCalledWith('takeover-ready')
+    expect(api.claimAttachHost).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="home-build-starting"]').text()).toContain('Starting ComfyUI')
+    expect(api.resolveStartupRestoreReveal).toHaveBeenCalledWith('dashboard-fallback')
+
+    finishLaunch({ ok: false, message: 'ComfyUI exited with code 1' })
+    await flushPromises()
+    const card = wrapper.get('[data-testid="home-build"][data-build-id="test-id"]')
+    expect(card.text()).toContain("Didn't start")
+
+    await card.trigger('click')
+    await flushPromises()
+    const dialog = document.body.querySelector('[data-testid="build-progress-dialog"]')
+    expect(dialog?.textContent).toContain("ComfyUI didn't start")
+    expect(dialog?.textContent).toContain('ComfyUI exited with code 1')
+    document.body.querySelector<HTMLButtonElement>('[data-testid="build-progress-close"]')!.click()
+    await flushPromises()
+  })
+
+  it('keeps Home available when the auto-start build has no launch action', async () => {
+    mockState.installations = [SAMPLE_INSTALL]
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    api.getListActions.mockResolvedValue([])
+    api.resolveStartupRestoreReveal = vi.fn()
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
+      cb({ kind: 'picker-pick-install', installationId: 'test-id', startupRestore: true })
+    )
+    await flushPromises()
+
+    expect(api.runAction).not.toHaveBeenCalled()
+    expect(api.claimAttachHost).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(false)
+    expect(api.resolveStartupRestoreReveal).toHaveBeenCalledWith('dashboard-fallback')
   })
 
   it('Start on a Home build card starts it there and leaves this window on Home', async () => {
@@ -3131,6 +3176,7 @@ describe('PanelApp', () => {
       mockState.installationsChangedCallbacks.forEach((cb) => cb())
       return new Promise(() => {})
     })
+    let reportInstallProgress!: (data: ProgressData) => void
     Object.assign(api, {
       getDiskSpace: vi.fn(async () => ({ free: 400 * 1024 ** 3, total: 1000 * 1024 ** 3 })),
       buildInstallation: vi.fn(async () => ({ sourceId: 'standalone', sourceCategory: 'local' })),
@@ -3141,7 +3187,10 @@ describe('PanelApp', () => {
         return { ok: true, entry }
       }),
       installInstance,
-      onInstallProgress: vi.fn(() => () => {})
+      onInstallProgress: vi.fn((callback: (data: ProgressData) => void) => {
+        reportInstallProgress = callback
+        return () => {}
+      })
     })
     window.history.replaceState({}, '', '/?panel=chooser')
     const wrapper = mountPanel()
@@ -3157,13 +3206,31 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
     const card = wrapper.get('[data-testid="home-build-installing"]')
     expect(card.attributes('data-build-id')).toBe('inst-new')
-    expect(card.text()).toContain('Installing ComfyUI')
     expect(wrapper.find('[data-testid="home-open-build"]').exists()).toBe(false)
+
+    reportInstallProgress({
+      installationId: 'inst-new',
+      phase: 'steps',
+      steps: [
+        { phase: 'download', label: 'Download' },
+        { phase: 'extract', label: 'Extract' },
+        { phase: 'setup', label: 'Set up environment' },
+        { phase: 'update', label: 'Get the latest ComfyUI' }
+      ]
+    })
+    reportInstallProgress({ installationId: 'inst-new', phase: 'setup', percent: 100 })
+    await flushPromises()
+    expect(card.get('[data-testid="home-build-status"]').text()).toBe('Installing ComfyUI · 90%')
+    expect(card.text()).not.toContain('Set up environment')
+    expect(card.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('90')
 
     await card.trigger('click')
     await flushPromises()
     const dialog = () => document.body.querySelector('[data-testid="build-progress-dialog"]')
     expect(dialog()).not.toBeNull()
+    expect(dialog()?.querySelector('[data-state="active"]')?.textContent).toContain(
+      'Set up environment'
+    )
     expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(false)
 
     document.body.querySelector<HTMLButtonElement>('[data-testid="build-progress-close"]')!.click()

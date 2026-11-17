@@ -4,6 +4,7 @@ import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { getIpcInvocations } from './support/devHooks'
+import { pickFromSetupDropdown, SOURCE_DROPDOWN } from './support/chooserHelpers'
 import { FakeCloud } from './support/fakeCloud'
 
 const CLOUD_ENV = ['COMFY_CLOUD_ISSUER', 'COMFY_BUILDER_BASE_URL'] as const
@@ -48,12 +49,12 @@ test('a team sign-in that cannot reach the Personal workspace returns to Set up 
     true
   )
   await panel.waitForVisible('[data-testid="config-change-form"]', { timeout: 10_000 })
-  await panel.waitForVisible('[data-testid="workspace-install-source-managed"]', {
-    timeout: 10_000
-  })
-
   expect(
-    await panel.click('[data-testid="workspace-install-source-managed"]'),
+    await pickFromSetupDropdown(
+      panel,
+      SOURCE_DROPDOWN,
+      '[data-testid="workspace-install-source-managed"]'
+    ),
     "picked Your team's builds"
   ).toBe(true)
 

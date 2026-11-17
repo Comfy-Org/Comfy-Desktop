@@ -286,6 +286,7 @@ async function runTask(
 
       sendOutput(`[templates] Downloading ${f.name} (${i + 1}/${state.files.length})...\n`)
       let lastLoggedPct = 0
+      let attemptCount = 0
       try {
         await withRetry(
           async () => {
@@ -294,6 +295,8 @@ async function runTask(
               filename: safeName,
               directory: f.directory,
               installationId: installation.id,
+              source: 'template',
+              isRetry: attemptCount++ > 0,
               onProgress: (receivedBytes, totalBytes) => {
                 f.received = receivedBytes
                 if (totalBytes > 0) f.total = totalBytes
