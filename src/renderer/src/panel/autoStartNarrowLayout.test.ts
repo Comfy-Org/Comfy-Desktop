@@ -300,7 +300,7 @@ describe('Builds page grid', () => {
       tile.querySelector<HTMLElement>('.chooser-tile-name')!,
       tile.querySelector<HTMLElement>('.chooser-tile-icon')!
     ]) {
-      await userEvent.hover(element)
+      await userEvent.hover(element, { force: true })
       await vi.waitFor(
         () =>
           expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
@@ -308,7 +308,7 @@ describe('Builds page grid', () => {
           ),
         { timeout: 3000 }
       )
-      await userEvent.unhover(element)
+      await userEvent.unhover(element, { force: true })
       await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull(), {
         timeout: 3000
       })
@@ -318,7 +318,7 @@ describe('Builds page grid', () => {
     await vi.waitFor(() =>
       expect(document.querySelector('[data-testid="build-menu"]')).not.toBeNull()
     )
-    await userEvent.hover(tile.querySelector<HTMLElement>('.chooser-tile-name')!)
+    await userEvent.hover(tile.querySelector<HTMLElement>('.chooser-tile-name')!, { force: true })
     await new Promise((resolve) => setTimeout(resolve, 800))
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
   })
