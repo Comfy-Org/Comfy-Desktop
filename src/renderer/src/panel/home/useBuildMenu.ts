@@ -86,9 +86,10 @@ export function useBuildMenu(build: () => Installation) {
   }
 
   function isStarting(inst: Installation): boolean {
+    const operation = sessionStore.operationInstances.get(inst.id)
     return (
       sessionStore.isLaunching(inst.id) ||
-      sessionStore.operationInstances.get(inst.id)?.actionId === 'launch'
+      (operation?.actionId === 'launch' && operation.sessionId === undefined)
     )
   }
 

@@ -15,6 +15,7 @@ import { useInstallationStore } from '../../stores/installationStore'
 import { useProgressStore, type Operation } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
+import { performanceTestSessionKey } from '../../../../shared/performanceTestSession'
 
 const BUILD: Installation = {
   id: 'flux',
@@ -555,6 +556,27 @@ describe('Build menu', () => {
     await flushPromises()
 
     expect(cancelOperation).toHaveBeenCalledExactlyOnceWith(BUILD.id)
+  })
+
+  it('does not offer Cancel for a Performance Test that is starting, since that Cancel cannot reach it', async () => {
+    const cancelOperation = vi.fn(async () => {})
+    Object.assign(window.api, { cancelOperation, stopComfyUI: vi.fn(async () => {}) })
+    const performanceTest = performanceTestSessionKey(BUILD.id)
+    useSessionStore().operationInstances.set(BUILD.id, {
+      actionId: 'launch',
+      sessionId: performanceTest
+    })
+    useSessionStore().launchingInstances.set(performanceTest, { installationName: BUILD.name })
+    const tile = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(tile)
+    await flushPromises()
+
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+
+    expect(await shownMenu()).not.toContain('cancel')
   })
 
   it('also stops a left start on Cancel, in case it finished starting before the cancel reached it', async () => {
