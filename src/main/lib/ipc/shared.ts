@@ -1445,6 +1445,10 @@ export function keepsComfyRunningWhenWindowCloses(): boolean {
 export function noteWindowClosed(installationId: string): void {
   const session = _runningSessions.get(installationId)
   if (session) session.hadWindow = true
+  noteStartWindowClosed(installationId)
+}
+
+export function noteStartWindowClosed(installationId: string): void {
   const launch = _activeLaunches.get(installationId)
   if (launch) launch.hadWindow = true
 }

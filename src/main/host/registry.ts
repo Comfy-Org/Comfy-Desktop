@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events'
 import type { BrowserWindow, WebContents, WebContentsView } from 'electron'
-import { _runningSessions, _isStopping, noteWindowClosed } from '../lib/ipc/shared'
+import { _runningSessions, _isStopping, noteStartWindowClosed } from '../lib/ipc/shared'
 import type { FirstUseMode } from '../../shared/firstUseMode'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
 import type { ViewKind } from '../../shared/viewKind'
@@ -98,7 +98,7 @@ export function dropAttachClaimsForWindow(windowKey: number): void {
   for (const [installationId, claimedKey] of pendingAttachClaims) {
     if (claimedKey !== windowKey) continue
     pendingAttachClaims.delete(installationId)
-    noteWindowClosed(installationId)
+    noteStartWindowClosed(installationId)
   }
 }
 

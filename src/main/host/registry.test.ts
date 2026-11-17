@@ -19,7 +19,8 @@ import {
   _endLaunch,
   _runningSessions,
   _stoppingInstallationIds,
-  launchHadWindow
+  launchHadWindow,
+  type SessionInfo
 } from '../lib/ipc/shared'
 import {
   _resetAttachClaimsForTest,
@@ -336,6 +337,14 @@ describe('attach-claim helpers', () => {
       _endLaunch('inst-A', left)
       _endLaunch('inst-B', kept)
     }
+  })
+
+  it('leaves a console Build that finished starting without a window when Home lets go of its claim', () => {
+    const session = { mode: 'console' } as SessionInfo
+    _runningSessions.set('inst-A', session)
+    claimAttachHost('inst-A', 7)
+    dropAttachClaimsForWindow(7)
+    expect(session.hadWindow).toBeUndefined()
   })
 })
 
