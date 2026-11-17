@@ -164,7 +164,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.exists('.brand-progress__bar')).toBe(true)
 
     expect(body.exists('.brand-progress__footer')).toBe(true)
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Minimize')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Reboot')
     expect(body.classList('.brand-progress__footer-bar')).not.toContain('is-centered')
@@ -309,7 +309,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     )
 
     expect(body.exists('.brand-progress__footer')).toBe(true)
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
     expect(body.selectorText('.brand-progress__footer')).toContain('Use next available port')
     expect(body.selectorText('.brand-progress__footer')).toContain('Stop process and retry')
 
@@ -335,7 +335,7 @@ describe('ProgressModal — brand branch state transitions', () => {
 
     expect(body.selectorText('.brand-progress__footer')).toContain('Use next available port')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Stop process and retry')
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
   })
 
   it('renders only Return to Dashboard when a port conflict has no suggested fix', async () => {
@@ -353,7 +353,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     })
 
     expect(body.exists('.brand-progress__footer')).toBe(true)
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Use next available port')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Stop process and retry')
 
@@ -403,15 +403,15 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__banner')).toContain(
       'ComfyUI is still running a prompt'
     )
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
-    expect(body.selectorText('.brand-progress__footer')).toContain('Stop it and launch')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Stop it and start')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Use next available port')
 
     expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
     await flushPromises()
 
     expect(mockModal.confirm).toHaveBeenCalledWith(
-      expect.objectContaining({ confirmLabel: 'Stop it and launch', confirmStyle: 'danger' })
+      expect.objectContaining({ confirmLabel: 'Stop it and start', confirmStyle: 'danger' })
     )
     expect(api.killPortProcess).not.toHaveBeenCalled()
     expect(api.runAction).toHaveBeenCalledWith('inst-1', 'launch', { stopBusyPriorProcess: true })
@@ -465,14 +465,14 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__banner')).toContain(
       'Processes from an earlier ComfyUI are still running'
     )
-    expect(body.selectorText('.brand-progress__footer')).toContain('Stop them and launch')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Stop them and start')
     expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
     await flushPromises()
     expect(mockModal.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'Processes from an earlier ComfyUI are still running',
         message: 'This stops those processes and anything they are doing.',
-        confirmLabel: 'Stop them and launch'
+        confirmLabel: 'Stop them and start'
       })
     )
   })
@@ -485,7 +485,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     })
     expect(body.exists('.brand-progress__footer')).toBe(true)
     expect(body.selectorText('.brand-progress__footer')).toContain('Cancel')
-    expect(body.selectorText('.brand-progress__footer')).not.toContain('Return to Dashboard')
+    expect(body.selectorText('.brand-progress__footer')).not.toContain('Return to Home')
   })
 
   it('labels a failed launch\'s retry "Restart ComfyUI", not "Reboot"', async () => {
@@ -544,7 +544,7 @@ describe('ProgressModal — brand branch state transitions', () => {
       flatPercent: 42
     })
 
-    const returnBtn = body.buttonByText('Return to Dashboard')
+    const returnBtn = body.buttonByText('Return to Home')
     expect(returnBtn).not.toBeNull()
     returnBtn!.click()
     await flushPromises()

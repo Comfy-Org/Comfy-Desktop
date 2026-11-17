@@ -858,7 +858,7 @@ describe('ChooserView', () => {
       disabled?: boolean
     }[]
     expect(items.find(({ id }) => id === 'promote-to-workspace')).toMatchObject({
-      label: 'Upload Build',
+      label: 'Upload build',
       hint: 'Upload this build to Comfy Developer Platform.',
       hintUrl: 'https://platform.comfy.org/profile/deploy',
       hintLinkLabel: 'Read more',
@@ -1440,7 +1440,7 @@ describe('ChooserView - why-Cloud explainer', () => {
     expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(true)
     expect(mockModal.alert).toHaveBeenCalledWith({
       title: "Couldn't open Comfy Cloud",
-      message: 'Check your connection and try again from the dashboard.'
+      message: 'Check your connection and try again from Home.'
     })
   })
 
