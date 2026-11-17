@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
-import ToggleGroup from '@comfyorg/design-system/toggle-group/ToggleGroup'
-import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupItem'
-import { computed, provide, ref, toRef, watch } from 'vue'
+import { computed, provide, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Search, X } from '@lucide/vue'
 import BaseInput from '../components/ui/BaseInput.vue'
-import { FILTER_CHIPS, useInstallList } from '../composables/useInstallList'
+import { useInstallList } from '../composables/useInstallList'
 import { useDialogs } from '../composables/useDialogs'
 import { useInstanceActions } from '../composables/useInstanceActions'
 import type { NavDecision } from '../../../shared/navigation/navDecision'
@@ -15,6 +13,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import ComfyUISettingsContent from '../components/settings/ComfyUISettingsContent.vue'
 import { SETTINGS_REOPEN_EPOCH } from '../views/comfyUISettings/settingsReopenEpoch'
 import InfoTooltip from '../components/InfoTooltip.vue'
+import StatusChip from '../components/ui/StatusChip.vue'
 import InstanceRow from './instancePicker/InstanceRow.vue'
 import { resolvePickerTab, type PickerTab } from '../lib/pickerTabs'
 import { resolveProgressRouting } from '../lib/pickerProgressRouting'
@@ -171,21 +170,14 @@ const installations = computed<Installation[]>(
   () => props.snapshot.installs as unknown as Installation[]
 )
 const installationsRef = toRef(() => installations.value)
-const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, lastLaunchedShortLabel } =
-  useInstallList({ installations: installationsRef })
-
-const visibleChips = computed(() => {
-  return FILTER_CHIPS.filter((chip) => {
-    if (chip.key === 'all') return true
-    const count = installations.value.filter((i) => {
-      if (chip.key === 'local') {
-        return i.sourceCategory === 'local'
-      }
-      return i.sourceCategory === chip.key
-    }).length
-    return count > 0
-  })
+const { searchQuery, visibleInstalls, showEmptyHint, lastLaunchedShortLabel } = useInstallList({
+  installations: installationsRef
 })
+
+const headerTitle = useTemplateRef<HTMLElement>('headerTitle')
+const headerActions = useTemplateRef<HTMLElement>('headerActions')
+const SEARCH_MIN_BUILDS = 6
+const showSearch = computed(() => installations.value.length >= SEARCH_MIN_BUILDS)
 
 function mostRecentInstallId(installs: PickerInstall[]): string | null {
   let best: PickerInstall | undefined
@@ -436,131 +428,125 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
 </script>
 
 <template>
-  <div class="picker flex size-full box-border flex-col bg-[var(--modal-surface-bg)]">
+  <div class="picker flex size-full box-border bg-transparent">
     <div
-      class="picker-search flex items-center gap-1 border-b border-solid border-border px-3 py-2"
+      class="picker-panel flex min-w-0 flex-1 flex-col overflow-hidden rounded-[16px] bg-[var(--modal-surface-bg)] [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.06)]"
     >
-      <BaseInput
-        v-model="searchQuery"
-        class="picker-search-input min-w-0 flex-auto bg-transparent"
-        :placeholder="$t('instancePicker.searchPlaceholder')"
-        :aria-label="$t('instancePicker.searchPlaceholder')"
-      >
-        <template #leading><Search :size="16" class="picker-search-icon" /></template>
-      </BaseInput>
+      <div class="picker-body grid min-h-0 flex-[1_1_0] grid-cols-[280px_minmax(0,1fr)]">
+        <div
+          class="picker-left m-2 mr-0 flex min-h-0 min-w-0 flex-col gap-2 rounded-[14px] bg-[color-mix(in_oklch,var(--foreground)_6%,var(--modal-surface-bg))] p-2"
+        >
+          <div v-if="showSearch" class="picker-search">
+            <BaseInput
+              v-model="searchQuery"
+              class="picker-search-input h-8 [&_input]:text-[13px]"
+              :placeholder="$t('instancePicker.searchPlaceholder')"
+              :aria-label="$t('instancePicker.searchPlaceholder')"
+            >
+              <template #leading><Search :size="14" class="picker-search-icon" /></template>
+            </BaseInput>
+          </div>
+
+          <div class="picker-list-section -mx-2 flex min-h-0 flex-auto flex-col overflow-hidden">
+            <div
+              class="picker-list-section-title mb-1.5 flex flex-none items-center gap-1 px-4 pt-2 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+            >
+              {{ $t('instancePicker.instances')
+              }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" />
+            </div>
+
+            <TransitionGroup
+              tag="div"
+              name="picker-row"
+              enter-active-class="picker-row-enter-active [transition:opacity_200ms_ease,transform_200ms_cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:duration-[1ms]"
+              enter-from-class="picker-row-enter-from opacity-0 [transform:translateY(8px)_scale(0.98)] motion-reduce:transform-none"
+              leave-active-class="picker-row-leave-active absolute [transition:opacity_140ms_ease,transform_140ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
+              leave-to-class="picker-row-leave-to opacity-0 [transform:scale(0.98)] motion-reduce:transform-none"
+              move-class="picker-row-move [transition:transform_220ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
+              class="picker-list relative flex min-h-0 flex-auto flex-col gap-1 overflow-y-auto"
+              role="listbox"
+              @before-leave="lockLeavingRowSize"
+            >
+              <InstanceRow
+                v-for="inst in visibleInstalls"
+                :key="inst.id"
+                :installation="inst"
+                :active="selectedId === inst.id"
+                :running="isRowRunning(inst)"
+                :is-current="isRowCurrent(inst)"
+                :update-available="isRowUpdateAvailable(inst)"
+                :operating="effectiveOperatingSet.has(inst.id)"
+                :last-launched-short-label="lastLaunchedShortLabel(inst)"
+                @select="handleSelect"
+              />
+
+              <div
+                v-if="showEmptyHint"
+                key="__empty"
+                class="picker-list-empty px-[18px] py-2 text-[14px] text-neutral-100"
+              >
+                {{ $t('instancePicker.noMatches') }}
+              </div>
+            </TransitionGroup>
+          </div>
+        </div>
+
+        <div class="picker-detail-wrap is-expanded flex min-h-0 min-w-0 overflow-hidden p-0">
+          <div class="picker-detail relative flex min-h-0 min-w-0 flex-[1_1_0] flex-col gap-0">
+            <template v-if="selectedInstall">
+              <header class="picker-detail-header flex shrink-0 items-center gap-3 px-5 pt-5 pb-4">
+                <h2
+                  ref="headerTitle"
+                  class="m-0 flex min-w-0 text-[20px]/7 font-semibold text-foreground"
+                ></h2>
+                <StatusChip v-if="isRowRunning(selectedInstall)" tone="go">{{
+                  $t('chooser.statusRunning')
+                }}</StatusChip>
+                <div ref="headerActions" class="ml-auto flex shrink-0 items-center gap-2" />
+              </header>
+              <ComfyUISettingsContent
+                :actions-target="headerActions"
+                :page-title-target="headerTitle"
+                :installation="selectedInstall"
+                :initial-tab="initialExpandedTab"
+                :auto-action="snapshot.autoAction ?? null"
+                :auto-action-nonce="snapshot.autoActionNonce ?? 0"
+                :global-settings-snapshot="snapshot.storage"
+                :active-operation="activeOperation"
+                :active-installation-id="snapshot.activeInstallationId"
+                :current-view="snapshot.currentView ?? 'dashboard'"
+                :current-category="snapshot.currentCategory ?? null"
+                :starting-without-window="selectedStartsWithoutWindow"
+                class="picker-expanded-body min-h-0 flex-auto [--text-muted:var(--neutral-100)]"
+                @show-progress="handleSettingsShowProgress"
+                @navigate-list="handleSettingsNavigateList"
+                @request-close="handleSettingsNavigateList"
+                @request-dismiss="handleClose"
+                @primary-action="handleExpandedNav"
+                @op-cancel="handleInlineProgressCancel"
+                @op-retry="handleInlineProgressRetry"
+                @op-dismiss="handleInlineProgressDismiss"
+              />
+            </template>
+            <div v-else class="picker-detail-empty m-auto text-[14px] text-neutral-100 opacity-70">
+              {{ $t('instancePicker.empty') }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="picker-close-lane flex w-12 shrink-0 justify-end" @mousedown.self="handleClose">
       <Button
         type="button"
         variant="muted-textonly"
         size="icon"
-        class="picker-close shrink-0"
+        class="picker-close size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
         :aria-label="$t('common.close')"
         :title="$t('common.close')"
         @click="handleClose"
       >
-        <X :size="18" />
+        <X :size="18" aria-hidden="true" />
       </Button>
-    </div>
-
-    <div
-      class="picker-chips-row flex items-center gap-2 border-b border-solid border-[var(--brand-surface-border-hover,var(--chooser-surface-border))] px-4 pt-2 pb-2.5"
-    >
-      <ToggleGroup
-        v-model="activeFilter"
-        type="single"
-        :allow-empty="false"
-        roving-focus
-        class="picker-chips min-w-0 flex-wrap gap-1.5"
-        :aria-label="$t('chooser.filterLabel')"
-      >
-        <ToggleGroupItem
-          v-for="chip in visibleChips"
-          :key="chip.key"
-          :value="chip.key"
-          class="picker-chip text-xs"
-          :class="{ 'is-active': activeFilter === chip.key }"
-          >{{ $t(chip.labelKey) }}</ToggleGroupItem
-        >
-      </ToggleGroup>
-    </div>
-
-    <div class="picker-body grid min-h-0 flex-[1_1_0] grid-cols-[280px_minmax(0,1fr)]">
-      <div
-        class="picker-left flex min-h-0 min-w-0 flex-col border-r border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)]"
-      >
-        <div class="picker-list-section flex min-h-0 flex-auto flex-col overflow-hidden">
-          <div
-            class="picker-list-section-title mb-3.5 flex flex-none items-center pt-3 pr-[18px] pb-0 pl-4 text-[14px] leading-5 font-medium text-neutral-100 opacity-70"
-          >
-            {{ $t('instancePicker.instances')
-            }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" />
-          </div>
-
-          <TransitionGroup
-            tag="div"
-            name="picker-row"
-            enter-active-class="picker-row-enter-active [transition:opacity_200ms_ease,transform_200ms_cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:duration-[1ms]"
-            enter-from-class="picker-row-enter-from opacity-0 [transform:translateY(8px)_scale(0.98)] motion-reduce:transform-none"
-            leave-active-class="picker-row-leave-active absolute [transition:opacity_140ms_ease,transform_140ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
-            leave-to-class="picker-row-leave-to opacity-0 [transform:scale(0.98)] motion-reduce:transform-none"
-            move-class="picker-row-move [transition:transform_220ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
-            class="picker-list relative flex min-h-0 flex-auto flex-col gap-1 overflow-y-auto"
-            role="listbox"
-            @before-leave="lockLeavingRowSize"
-          >
-            <InstanceRow
-              v-for="inst in visibleInstalls"
-              :key="inst.id"
-              :installation="inst"
-              :active="selectedId === inst.id"
-              :running="isRowRunning(inst)"
-              :is-current="isRowCurrent(inst)"
-              :update-available="isRowUpdateAvailable(inst)"
-              :operating="effectiveOperatingSet.has(inst.id)"
-              :last-launched-short-label="lastLaunchedShortLabel(inst)"
-              @select="handleSelect"
-            />
-
-            <div
-              v-if="showEmptyHint"
-              key="__empty"
-              class="picker-list-empty px-[18px] py-2 text-[14px] text-neutral-100"
-            >
-              {{ $t('instancePicker.noMatches') }}
-            </div>
-          </TransitionGroup>
-        </div>
-      </div>
-
-      <div class="picker-detail-wrap is-expanded flex min-h-0 min-w-0 overflow-hidden p-0">
-        <div class="picker-detail relative flex min-h-0 min-w-0 flex-[1_1_0] flex-col gap-0">
-          <template v-if="selectedInstall">
-            <ComfyUISettingsContent
-              :installation="selectedInstall"
-              :initial-tab="initialExpandedTab"
-              :auto-action="snapshot.autoAction ?? null"
-              :auto-action-nonce="snapshot.autoActionNonce ?? 0"
-              :global-settings-snapshot="snapshot.storage"
-              :active-operation="activeOperation"
-              :active-installation-id="snapshot.activeInstallationId"
-              :current-view="snapshot.currentView ?? 'dashboard'"
-              :current-category="snapshot.currentCategory ?? null"
-              :starting-without-window="selectedStartsWithoutWindow"
-              class="picker-expanded-body min-h-0 flex-auto [--text-muted:var(--neutral-100)]"
-              @show-progress="handleSettingsShowProgress"
-              @navigate-list="handleSettingsNavigateList"
-              @request-close="handleSettingsNavigateList"
-              @request-dismiss="handleClose"
-              @primary-action="handleExpandedNav"
-              @op-cancel="handleInlineProgressCancel"
-              @op-retry="handleInlineProgressRetry"
-              @op-dismiss="handleInlineProgressDismiss"
-            />
-          </template>
-          <div v-else class="picker-detail-empty m-auto text-[14px] text-neutral-100 opacity-70">
-            {{ $t('instancePicker.empty') }}
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </template>

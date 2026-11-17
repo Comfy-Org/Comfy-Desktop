@@ -319,15 +319,17 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="popup box-border m-0 h-full w-full overflow-hidden border border-solid border-border text-text select-none"
+    class="popup box-border m-0 h-full w-full overflow-hidden text-text select-none"
     :class="{
+      'border border-solid border-border': kind !== 'instance-picker',
       'is-menu rounded-lg bg-popover text-xs': kind === 'menu',
-      'rounded-card bg-neutral-800 [box-shadow:var(--shadow-highlight)]': kind !== 'menu',
-      'is-picker': kind === 'instance-picker',
+      'rounded-card bg-neutral-800 [box-shadow:var(--shadow-highlight)]':
+        kind !== 'menu' && kind !== 'instance-picker',
+      'is-picker bg-transparent': kind === 'instance-picker',
       'is-global-settings': kind === 'global-settings',
       'is-downloads-full': kind === 'downloads-full',
       'rounded-panel border-[var(--modal-surface-border)] bg-[var(--modal-surface-bg)]':
-        kind === 'instance-picker' || kind === 'global-settings' || kind === 'downloads-full'
+        kind === 'global-settings' || kind === 'downloads-full'
     }"
   >
     <MenuView v-if="kind === 'menu'" :items="items" @activate="handleActivate" />
