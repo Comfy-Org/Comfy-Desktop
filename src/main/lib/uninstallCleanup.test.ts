@@ -474,6 +474,65 @@ describe('order and failures', () => {
       'kept in the install list because their folders were not removed: inst-1'
     )
   })
+
+  it('marks a failed install as partially deleted and leaves a refused one as it was', async () => {
+    const { install } = installWithModels()
+    const basePath = path.join(home, 'Documents', 'ComfyUI')
+    write(path.join(basePath, '.comfyui-desktop-2'), 'inst-2')
+    write(path.join(appData, 'ComfyUI', 'config.json'), JSON.stringify({ basePath }))
+    writeInstallRecords([
+      { id: 'inst-1', installPath: install, sourceId: 'standalone', status: 'installed' },
+      { id: 'inst-2', installPath: basePath, sourceId: 'standalone', status: 'installed' }
+    ])
+
+    const c = await loadAs('win32')
+    const inputs = c.collectUninstallCleanupInputs(bothBoxes)
+    const results = c.runCleanup(inputs, c.DEFAULT_CLEANUP_POLICY, diskOps([], install))
+
+    expect(results.find((r) => r.entry.path === install)?.outcome).toBe('failed')
+    expect(results.find((r) => r.entry.path === basePath)?.outcome).toBe('refused')
+    const text = fs.readFileSync(path.join(userData, 'installations.json'), 'utf-8')
+    const records = JSON.parse(text) as Record<string, unknown>[]
+    expect(records.map((r) => [r.id, r.status])).toEqual([
+      ['inst-1', 'partial-delete'],
+      ['inst-2', 'installed']
+    ])
+    expect(records[0]?.sourceId).toBe('standalone')
+  })
+})
+
+describe('links inside app data', () => {
+  const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+
+  it('leaves a link alone when a kept models folder lies behind it', async () => {
+    const external = path.join(caseRoot, 'external')
+    const linked = path.join(userData, 'linked')
+    write(path.join(external, 'models', 'model.safetensors'))
+    write(path.join(external, 'photos', 'family.png'), 'keep')
+    fs.symlinkSync(external, linked, linkType)
+    const settings = { modelsDirs: [path.join(linked, 'models')] }
+    write(path.join(userData, 'settings.json'), JSON.stringify(settings))
+    write(path.join(userData, 'logs', 'main.log'))
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
+    expect(fs.readFileSync(path.join(external, 'photos', 'family.png'), 'utf-8')).toBe('keep')
+    expect(fs.existsSync(path.join(linked, 'models', 'model.safetensors'))).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
+  })
+
+  it('removes a link without touching the folder it points to', async () => {
+    const external = path.join(caseRoot, 'external')
+    const linked = path.join(userData, 'linked')
+    write(path.join(external, 'photos', 'family.png'), 'keep')
+    fs.symlinkSync(external, linked, linkType)
+    write(path.join(userData, 'settings.json'), '{}')
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
+    expect(fs.existsSync(linked)).toBe(false)
+    expect(fs.readFileSync(path.join(external, 'photos', 'family.png'), 'utf-8')).toBe('keep')
+  })
 })
 
 describe('configured download cache', () => {

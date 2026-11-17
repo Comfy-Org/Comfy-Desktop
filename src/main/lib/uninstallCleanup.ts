@@ -12,7 +12,7 @@ import {
   homeDir,
   stateDir
 } from './paths'
-import { readFileSafe } from './safe-file'
+import { readFileSafe, writeFileSafe } from './safe-file'
 import { TEMP_DIR_NAME } from './models'
 import { defaults as settingsDefaults } from '../settings'
 
@@ -52,6 +52,7 @@ const INSTANCE_POINTER_FILES = [
 ]
 const MODEL_POINTER_FILES = ['settings.json', 'settings.json.bak', 'data-location.json']
 const INSTALL_LIST_FILES = ['installations.json', 'installations.json.bak']
+const PARTIAL_DELETE_STATUS = 'partial-delete'
 
 const MAC_LIBRARY_FOLDERS = ['Caches', 'Logs', 'Preferences', 'Application Support']
 
@@ -119,6 +120,7 @@ export interface CleanupInputs {
   options: CleanupOptions
   folders: CleanupFolders
   appDirEntries: Record<string, string[]>
+  appDirLinks: string[]
   tempEntries: string[]
   modelsDirs: string[]
   oemManagedModelDirs: string[]
@@ -378,11 +380,12 @@ export function planUninstallCleanup(
     add(folders.output, 'B', 'shared output folder')
   }
 
+  const isLink = (dir: string): boolean => inputs.appDirLinks.some((link) => samePath(link, dir))
   const addAppDataAround = (dir: string): void => {
     const inner = guard.protectedPaths.filter((p) => isSameOrInside(p, dir))
     if (inner.length === 0) {
       add(dir, 'A', 'app settings, logs and caches')
-    } else if (!inner.some((p) => samePath(p, dir))) {
+    } else if (!isLink(dir) && !inner.some((p) => samePath(p, dir))) {
       for (const name of listingOf(inputs.appDirEntries, dir)) {
         addAppDataAround(path.join(dir, name))
       }
@@ -496,6 +499,30 @@ export function keptInstallIds(results: CleanupResult[]): string[] {
   )
 }
 
+function failedInstallIds(results: CleanupResult[]): string[] {
+  return results.flatMap(({ entry, outcome }) =>
+    entry.installId && outcome === 'failed' ? [entry.installId] : []
+  )
+}
+
+function markPartiallyDeleted(dataDirPath: string, ids: readonly string[]): void {
+  if (ids.length === 0) return
+  const file = path.join(dataDirPath, 'installations.json')
+  try {
+    const read = readFileSafe(file, { restore: false })
+    if (read.kind !== 'data' || read.primaryUnreadable) return
+    const parsed: unknown = JSON.parse(read.data)
+    if (!Array.isArray(parsed)) return
+    const records = parsed.map((value: unknown) => {
+      const record = asRecord(value)
+      return typeof record.id === 'string' && ids.includes(record.id)
+        ? { ...record, status: PARTIAL_DELETE_STATUS }
+        : value
+    })
+    writeFileSafe(file, JSON.stringify(records, null, 2), { backup: true })
+  } catch {}
+}
+
 export function runCleanup(
   inputs: CleanupInputs,
   policy: CleanupPolicy = DEFAULT_CLEANUP_POLICY,
@@ -504,6 +531,7 @@ export function runCleanup(
   const first = planUninstallCleanup(inputs, policy)
   const dataEntries = first.entries.filter(removesInstanceOrModelData)
   const dataResults = executeUninstallCleanup({ entries: dataEntries, guard: first.guard }, ops)
+  markPartiallyDeleted(inputs.folders.dataDir, failedInstallIds(dataResults))
   const rest = planUninstallCleanup(inputs, policy, keptInstallIds(dataResults))
   const remaining = rest.entries.filter(
     (entry) => !dataEntries.some((done) => samePath(done.path, entry.path))
@@ -544,6 +572,37 @@ function listDir(dir: string): string[] {
   } catch {
     return []
   }
+}
+
+function listAppDir(dir: string): { names: string[]; links: string[] } {
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    const links = entries.filter((entry) => entry.isSymbolicLink())
+    return {
+      names: entries.map((entry) => entry.name),
+      links: links.map((entry) => path.join(dir, entry.name))
+    }
+  } catch {
+    return { names: [], links: [] }
+  }
+}
+
+function isSymbolicLink(p: string): boolean {
+  try {
+    return fs.lstatSync(p).isSymbolicLink()
+  } catch {
+    return false
+  }
+}
+
+function passesThroughLink(dir: string, appDirs: string[]): boolean {
+  const root = appDirs.find((appDir) => isSameOrInside(dir, appDir))
+  let current = path.resolve(dir)
+  while (root && isSameOrInside(current, root) && !samePath(current, root)) {
+    if (isSymbolicLink(current)) return true
+    current = path.dirname(current)
+  }
+  return false
 }
 
 function listSubdirs(dir: string): string[] {
@@ -746,13 +805,17 @@ export function collectUninstallCleanupInputs(
     outputDir,
     desktopOneBasePath
   ])
-  const listed = dirsToList(appOwnedDirs(folders), keptCandidates)
+  const appDirs = appOwnedDirs(folders)
+  const listings = dirsToList(appDirs, keptCandidates)
+    .filter((dir) => !passesThroughLink(dir, appDirs))
+    .map((dir) => ({ dir, ...listAppDir(dir) }))
 
   return {
     platform,
     options,
     folders,
-    appDirEntries: Object.fromEntries(listed.map((dir) => [dir, listDir(dir)])),
+    appDirEntries: Object.fromEntries(listings.map(({ dir, names }) => [dir, names])),
+    appDirLinks: listings.flatMap(({ links }) => links),
     tempEntries: listDir(temp),
     modelsDirs,
     oemManagedModelDirs,
