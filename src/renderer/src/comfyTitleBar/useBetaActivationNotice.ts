@@ -5,7 +5,7 @@ export const BETA_FEATURES_FIELD_ID = 'betaFeaturesEnabled'
 
 interface BetaNoticeBridge {
   showCoachmark: (payload: {
-    kind?: 'pill-hint' | 'beta-notice'
+    kind?: 'beta-notice'
     title: string
     body: string
     dismissLabel: string
@@ -24,7 +24,6 @@ interface UseBetaActivationNoticeOpts {
   isFirstUseLockdown: Ref<boolean>
   isLoadingLockdown?: Ref<boolean>
   anchorRef: Readonly<ShallowRef<HTMLElement | null>>
-  isSuppressed: () => boolean
   copyFor: (notice: BetaActivationNotice) => {
     title: string
     body: string
@@ -58,10 +57,7 @@ export function useBetaActivationNotice(
 
   function gatePasses(): boolean {
     return (
-      !opts.isInstallLess.value &&
-      !opts.isFirstUseLockdown.value &&
-      !opts.isLoadingLockdown?.value &&
-      !opts.isSuppressed()
+      !opts.isInstallLess.value && !opts.isFirstUseLockdown.value && !opts.isLoadingLockdown?.value
     )
   }
 

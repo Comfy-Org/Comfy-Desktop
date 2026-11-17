@@ -168,20 +168,20 @@ export async function openManageViaDashboard(
   return popup
 }
 
-export async function openPickerViaTitlePill(
+export async function openPickerInWindow(
   app: ElectronApplication,
   titleBar: WebContentsPage,
   tabKey?: string
 ): Promise<WebContentsPage> {
   if (await isPopupVisible(app, 'comfyTitlePopup.html')) {
     throw new Error(
-      'openPickerViaTitlePill: picker popup is already open - close it before re-entering via the pill'
+      'openPickerInWindow: picker popup is already open - close it before opening it again'
     )
   }
-  await titleBar.waitForVisible('.title-install-pill.is-interactive', { timeout: 15_000 })
+  await titleBar.waitForVisible('.title-trailing', { timeout: 15_000 })
   expect(
-    await titleBar.click('.title-install-pill.is-interactive'),
-    'title-bar install pill clicked'
+    await titleBar.evaluate<boolean>('(() => { window.api.openInstancePicker(); return true })()'),
+    'picker requested from the title bar'
   ).toBe(true)
   await waitForWebContents(app, 'comfyTitlePopup.html')
   await expect

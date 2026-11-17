@@ -84,17 +84,6 @@ test('clicking the ready desktop-update pill opens the embedded system-modal res
     .toBe(true)
 })
 
-test('install-update chip stays hidden on the install-less chooser host even with an override @windows @macos @linux', async () => {
-  await setInstallUpdate(ctx.app, { available: true, version: '99.0.0' })
-  await new Promise((r) => setTimeout(r, 250))
-  await expect
-    .poll(() => ctx.titleBar.exists('.title-install-update-chip'), {
-      timeout: 3_000,
-      intervals: [100, 200]
-    })
-    .toBe(false)
-})
-
 async function isSystemModalVisible(app: ElectronApplication): Promise<boolean> {
   try {
     return await evalWithRetry(() =>

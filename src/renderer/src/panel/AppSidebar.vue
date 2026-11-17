@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, toRef, watch } from 'vue'
+import { computed, onMounted, provide, ref, shallowRef, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
@@ -21,7 +21,11 @@ import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 import BuildMenu from './home/BuildMenu.vue'
 import SidebarPageMenu from './SidebarPageMenu.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
+import { TOOLTIP_GATE } from '../components/ui/tooltipGate'
+import { appPageShown, sidebarHovered } from './appPageCover'
 import SidebarAccount from './SidebarAccount.vue'
+import SidebarCredits from './SidebarCredits.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
@@ -58,6 +62,7 @@ interface SidebarRow {
 }
 
 const { t } = useI18n()
+provide(TOOLTIP_GATE, () => !appPageShown.value)
 
 const collapsedByChoice = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
 const reopenedWhileMakingRoom = ref(false)
@@ -182,6 +187,8 @@ function openSettings(): void {
     :aria-label="t('sidebar.navigation')"
     data-testid="app-sidebar"
     :data-collapsed="collapsed"
+    @pointerenter="sidebarHovered = true"
+    @pointerleave="sidebarHovered = false"
   >
     <div
       class="flex shrink-0 items-center"
@@ -194,11 +201,12 @@ function openSettings(): void {
         size="unset"
         class="h-auto rounded-[7px] p-0.5 text-foreground hover:bg-transparent"
         :aria-label="t('sidebar.home')"
-        :title="t('sidebar.home')"
         @click="navigate('home')"
       >
-        <ComfyCLogo v-if="collapsed" :size="20" />
-        <ComfyWordmark v-else class="h-[22px] w-auto" />
+        <Tooltip :text="t('sidebar.home')" side="right">
+          <ComfyCLogo v-if="collapsed" :size="20" />
+          <ComfyWordmark v-else class="h-[22px] w-auto" />
+        </Tooltip>
       </Button>
       <Button
         variant="muted-textonly"
@@ -207,10 +215,11 @@ function openSettings(): void {
         data-testid="app-sidebar-toggle"
         :aria-label="toggleLabel"
         :aria-expanded="!collapsed"
-        :title="toggleLabel"
         @click="toggleCollapsed"
       >
-        <SidebarToggleIcon />
+        <Tooltip :text="toggleLabel" side="right" class="size-full items-center justify-center">
+          <SidebarToggleIcon />
+        </Tooltip>
       </Button>
     </div>
 
@@ -239,12 +248,17 @@ function openSettings(): void {
           ]"
           :aria-current="row.page === activePage ? 'page' : undefined"
           :aria-label="row.label"
-          :title="collapsed ? row.label : undefined"
           :data-testid="`app-sidebar-${row.page}`"
           @click="navigate(row.page)"
           @contextmenu.prevent="openPageMenu($event, row.page)"
         >
-          <component :is="row.icon" :size="15" aria-hidden="true" />
+          <Tooltip
+            :text="collapsed ? row.label : undefined"
+            side="right"
+            :class="collapsed && 'size-full items-center justify-center'"
+          >
+            <component :is="row.icon" :size="15" aria-hidden="true" />
+          </Tooltip>
           <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{ row.label }}</span>
         </Button>
         <div
@@ -275,11 +289,16 @@ function openSettings(): void {
               size="unset"
               class="size-6 rounded-md p-0 hover:bg-secondary hover:text-foreground"
               :aria-label="t('sidebar.newBuild')"
-              :title="t('sidebar.newBuild')"
               data-testid="app-sidebar-new-build"
               @click="emit('new-build')"
             >
-              <Plus :size="13" aria-hidden="true" />
+              <Tooltip
+                :text="t('sidebar.newBuild')"
+                side="right"
+                class="size-full items-center justify-center"
+              >
+                <Plus :size="13" aria-hidden="true" />
+              </Tooltip>
             </Button>
           </div>
           <p
@@ -297,7 +316,6 @@ function openSettings(): void {
             class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
             :class="build.id === activeBuildId && 'bg-accent text-foreground hover:bg-accent'"
             :aria-current="build.id === activeBuildId ? 'page' : undefined"
-            :title="failure ? `${build.name} · ${failure}` : build.name"
             :data-testid="`app-sidebar-build-${build.id}`"
             @click="emit('open-build', build)"
             @contextmenu.prevent="openBuildMenu($event, build)"
@@ -322,7 +340,14 @@ function openSettings(): void {
                 aria-hidden="true"
               />
             </span>
-            <span class="min-w-0 flex-1 truncate text-left">{{ build.name }}</span>
+            <Tooltip
+              :text="failure ? `${build.name} · ${failure}` : build.name"
+              side="right"
+              class="min-w-0 flex-1 items-center self-stretch"
+            >
+              <span class="min-w-0 truncate text-left">{{ build.name }}</span>
+              <span v-if="failure" class="sr-only">· {{ failure }}</span>
+            </Tooltip>
             <span
               v-if="install && install.kind !== 'launch' && install.percent !== null"
               class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
@@ -342,15 +367,21 @@ function openSettings(): void {
         :class="collapsed ? 'justify-center px-0' : 'justify-start gap-2.5 px-3'"
         :aria-label="t('fileMenu.globalSettings')"
         aria-haspopup="dialog"
-        :title="collapsed ? t('fileMenu.globalSettings') : undefined"
         data-testid="app-sidebar-settings"
         @click="openSettings"
       >
-        <Settings :size="15" aria-hidden="true" />
+        <Tooltip
+          :text="collapsed ? t('fileMenu.globalSettings') : undefined"
+          side="right"
+          :class="collapsed && 'size-full items-center justify-center'"
+        >
+          <Settings :size="15" aria-hidden="true" />
+        </Tooltip>
         <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
           t('fileMenu.globalSettings')
         }}</span>
       </Button>
+      <SidebarCredits :collapsed="collapsed" />
       <SidebarAccount :collapsed="collapsed" />
     </div>
 
