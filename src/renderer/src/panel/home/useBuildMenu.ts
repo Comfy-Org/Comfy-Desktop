@@ -103,6 +103,11 @@ export function useBuildMenu(build: () => Installation) {
         { id: 'restart', label: t('actions.restart'), icon: RotateCw },
         { id: 'stop', label: t('actions.stop'), icon: CircleStop }
       )
+    } else if (isLocal(inst) && sessionStore.isLaunching(inst.id)) {
+      now.push(
+        { id: 'view-logs', label: t('installProgress.viewLogs'), icon: ScrollText },
+        { id: 'cancel', label: t('common.cancel'), icon: X }
+      )
     } else if (canLaunch.value) {
       now.push({ id: 'launch', label: t('actions.launch'), icon: Play })
     }
@@ -172,7 +177,7 @@ export function useBuildMenu(build: () => Installation) {
         else openInstallManager(inst, { initialTab: 'console' })
         return
       case 'cancel':
-        return install.cancel()
+        return install.progress.value ? install.cancel() : window.api.cancelOperation(inst.id)
       case 'restart':
         if (canLaunch.value) return restart(inst)
         return

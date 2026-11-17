@@ -35,6 +35,7 @@ import { extractNested as extract } from '../extract'
 import { deleteDir, formatDeleteStatus } from '../delete'
 import { deleteAction, untrackAction } from '../actions'
 import { _broadcastToRenderer } from './broadcast'
+import { recordCrash } from '../crashBuffer'
 import { appendLog } from '../logsBroadcast'
 import { flushOperationOutput } from '../appLog'
 import { stripAnsi } from '../stderrTail'
@@ -1439,6 +1440,18 @@ export function noteWindowClosed(installationId: string): void {
 
 export function launchHadWindow(installationId: string): boolean {
   return _activeLaunches.get(installationId)?.hadWindow === true
+}
+
+export function recordLeftStartFailure(
+  installationId: string,
+  launch: { abort: AbortController },
+  failure: { installationName: string; message: string }
+): void {
+  const current = _activeLaunches.get(installationId)
+  if (current?.abort !== launch.abort || !current.hadWindow) return
+  const startFailure = { installationId, ...failure, crashedAtMs: Date.now(), startFailed: true }
+  recordCrash(startFailure)
+  _broadcastToRenderer('instance-crashed', startFailure)
 }
 
 export function hasRunningSessions(): boolean {

@@ -397,8 +397,10 @@ import {
   _endLaunch,
   _setActiveLaunchPickerWorkspace,
   _stoppingInstallationIds,
+  noteWindowClosed,
   setCallbacks
 } from '../shared'
+import { clearCrash, getCrash } from '../../crashBuffer'
 import type { InstanceStartedCallbackInfo, SessionInfo } from '../shared'
 import type { ChildProcess, InstallationRecord } from '../shared'
 import type * as SharedModule from '../shared'
@@ -684,6 +686,50 @@ describe('handleLaunch model-download startup await (#1322)', () => {
     modelStartup.impl = async () => ({ safe: false, unsafePaths: [] })
     await handleLaunch(ctxFor('gate-slot-release'))
     expect(_operationAborts.has('gate-slot-release')).toBe(false)
+  })
+})
+
+describe('handleLaunch of a start whose window was left', () => {
+  const ctxFor = (installationId: string): ActionContext => ({
+    event: {
+      sender: { send: vi.fn(), isDestroyed: () => true }
+    } as unknown as Electron.IpcMainInvokeEvent,
+    installationId,
+    inst: { ...installOf('not-a-real-source'), name: 'Studio' },
+    actionData: {}
+  })
+
+  afterEach(() => {
+    modelStartup.impl = null
+  })
+
+  it('records its failure where a Home opened later reads it', async () => {
+    const id = 'left-start-fails'
+    onTestFinished(() => clearCrash(id))
+    modelStartup.impl = async () => {
+      noteWindowClosed(id)
+      return { safe: true, unsafePaths: [] }
+    }
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(false)
+    expect(getCrash(id)).toMatchObject({
+      installationId: id,
+      installationName: 'Studio',
+      message: res.message,
+      startFailed: true
+    })
+  })
+
+  it('records nothing when the window that started it is still there', async () => {
+    const id = 'kept-start-fails'
+    modelStartup.impl = async () => ({ safe: true, unsafePaths: [] })
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(false)
+    expect(getCrash(id)).toBeNull()
   })
 })
 

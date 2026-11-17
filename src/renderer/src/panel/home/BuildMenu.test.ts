@@ -519,6 +519,54 @@ describe('Build menu', () => {
     expect(hint()).toBe('Click to start')
   })
 
+  it('offers Cancel for a start left running by a window that went back to Home, and cancels it', async () => {
+    const cancelOperation = vi.fn(async () => {})
+    Object.assign(window.api, { cancelOperation })
+    useSessionStore().launchingInstances.set(BUILD.id, { installationName: BUILD.name })
+    const tile = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'starting', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(tile)
+    await flushPromises()
+
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    expect(await shownMenu()).toEqual(EXPECTED.starting)
+    document.querySelector<HTMLElement>('[data-testid="build-menu-cancel"]')!.click()
+    await flushPromises()
+
+    expect(cancelOperation).toHaveBeenCalledExactlyOnceWith(BUILD.id)
+  })
+
+  it('shows that a start left running did not start when it failed, not Ready', async () => {
+    useSessionStore().errorInstances.set(BUILD.id, {
+      installationName: BUILD.name,
+      message: 'Process exited with code 1',
+      startFailed: true
+    })
+    const tile = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(tile)
+    await flushPromises()
+
+    expect(tile.get('[data-testid="home-build"]').text()).toContain("Didn't start")
+    expect(tile.get('[data-testid="home-build"]').text()).not.toContain('Ready')
+  })
+
+  it('still shows Ready after a running build crashed', async () => {
+    useSessionStore().errorInstances.set(BUILD.id, { installationName: BUILD.name, exitCode: 1 })
+    const tile = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(tile)
+    await flushPromises()
+
+    expect(tile.get('[data-testid="home-build"]').text()).toContain('Ready')
+  })
+
   it('keeps the build menu closed on a right-click on a page in the sidebar', async () => {
     const sidebar = await mountSidebar('ready')
 

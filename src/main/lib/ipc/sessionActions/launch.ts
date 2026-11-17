@@ -39,6 +39,7 @@ import {
   _beginLaunch,
   _endLaunch,
   _getActiveLaunchIds,
+  recordLeftStartFailure,
   _getStoppingInstallationIds,
   installDirStateAsync,
   captureSnapshotIfChanged,
@@ -909,12 +910,19 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   const settleFirstStart = (started: boolean): void => {
     if (sessionId === installationId) settleAutoStartOnFirstStart(installationId, started)
   }
+  const recordFailureIfLeft = (message: string | undefined): void =>
+    recordLeftStartFailure(sessionId, launch, {
+      installationName: ctx.inst.name,
+      message: message || i18n.t('progress.unknownError')
+    })
   try {
     const result = await runLaunch(ctx, launch, prefetchHold)
     if (!result.cancelled) settleFirstStart(result.ok)
+    if (!result.ok && !result.cancelled) recordFailureIfLeft(result.message)
     return result
   } catch (err) {
     settleFirstStart(false)
+    recordFailureIfLeft(err instanceof Error ? err.message : String(err))
     throw err
   } finally {
     prefetchHold.release()
