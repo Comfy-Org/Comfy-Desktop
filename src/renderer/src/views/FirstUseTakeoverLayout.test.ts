@@ -61,34 +61,76 @@ function rectOf(testId: string): DOMRect {
   return element.getBoundingClientRect()
 }
 
+function finishAnimations(element: Element): void {
+  element.getAnimations().forEach((animation) => animation.finish())
+}
+
 describe('The first open', () => {
-  it('fills the wordmark in over a 16% ghost, then Set up rises block by block', async () => {
+  it('starts the wordmark twice its size in the middle of the window, at 82%', async () => {
     await showSetup()
 
-    const ghostMark = document.querySelector('[data-testid="setup-wordmark-ghost"]')!
-    const ghost = getComputedStyle(ghostMark)
-    ghostMark.getAnimations().forEach((animation) => animation.finish())
-    expect(ghost.opacity).toBe('0.16')
-    expect(ghost.animationName).toBe('first-use-ghost')
-    const fill = getComputedStyle(
-      document.querySelectorAll('[data-testid="setup-wordmark"] svg')[1]
+    const wrapper = document.querySelector('[data-testid="setup-wordmark"]')!
+    const mark = wrapper.querySelector('svg')!
+    finishAnimations(mark)
+    const box = wrapper.getBoundingClientRect()
+    expect(box.height).toBe(56)
+    expect(box.top + box.height / 2 - rectOf('setup-screen').top).toBeCloseTo(
+      SMALLEST_WINDOW.height / 2,
+      0
     )
-    expect(fill.animationName).toBe('first-use-fill')
-    expect(fill.animationDelay).toBe('0.25s')
-    expect(fill.animationDuration).toBe('1.05s')
+    expect(box.left + box.width / 2).toBeCloseTo(SMALLEST_WINDOW.width / 2, 0)
+    expect(getComputedStyle(mark).opacity).toBe('0.82')
+    expect(getComputedStyle(mark).animationName).toBe('first-use-arrive')
+    expect(getComputedStyle(wrapper).transitionDuration).toBe('0.6s')
+    expect(getComputedStyle(wrapper).transitionTimingFunction).toBe(
+      'cubic-bezier(0.32, 0.72, 0, 1)'
+    )
+
+    const glint = getComputedStyle(document.querySelector('[data-testid="setup-wordmark-glint"]')!)
+    expect(glint.animationName).toBe('first-use-glint')
+    expect(glint.animationDelay).toBe('0.3s')
+    expect(glint.animationDuration).toBe('0.8s')
+    expect(glint.maskImage).toContain('106deg')
+    expect(
+      getComputedStyle(document.querySelector('[data-testid="setup-light"]')!).animationName
+    ).toBe('first-use-light')
+  })
+
+  it('rises Set up block by block after the wordmark leaves, the action bar last', async () => {
+    await showSetup()
+
     const blocks = [...document.querySelector('[data-testid="setup-column"]')!.children]
     expect(blocks.map((block) => getComputedStyle(block).animationName)).toEqual(
       blocks.map(() => 'first-use-rise')
     )
-    expect(blocks.map((block) => getComputedStyle(block).animationDelay)).toEqual(
-      ['1.6s', '1.65s', '1.71s', '1.77s', '1.83s', '1.83s'].slice(0, blocks.length)
-    )
+    expect(blocks.map((block) => getComputedStyle(block).animationDelay)).toEqual([
+      '1.36s',
+      '1.41s',
+      '1.47s',
+      '1.53s',
+      '1.59s',
+      '1.66s'
+    ])
+  })
+
+  it('rises Set up straight away when coming back from Change', async () => {
+    await showSetup(BACK_FROM_CHANGE)
+
+    const blocks = [...document.querySelector('[data-testid="setup-column"]')!.children]
+    expect(blocks.map((block) => getComputedStyle(block).animationDelay)).toEqual([
+      '0s',
+      '0.05s',
+      '0.11s',
+      '0.17s',
+      '0.23s',
+      '0.3s'
+    ])
   })
 })
 
 describe('Set up at the smallest window', () => {
   it('centres the Comfy wordmark at the top', async () => {
-    await showSetup()
+    await showSetup(BACK_FROM_CHANGE)
 
     const mark = rectOf('setup-wordmark')
     const screen = rectOf('setup-screen')
@@ -98,14 +140,14 @@ describe('Set up at the smallest window', () => {
   })
 
   it.each([
-    ['during the first open', {}],
+    ['where the wordmark lands after the first open', {}],
     ['once Set up has settled', BACK_FROM_CHANGE]
   ])('keeps the wordmark clear of the Set up title %s', async (_state, props) => {
     await showSetup(props)
 
-    const mark = rectOf('setup-wordmark')
-    const heading = document.querySelector('[data-testid="setup-column"] h1')
+    const mark = document.querySelector<HTMLElement>('[data-testid="setup-wordmark"]')!
+    const heading = document.querySelector<HTMLElement>('[data-testid="setup-column"] h1')
     if (!heading) throw new Error('the Set up title is not on the screen')
-    expect(heading.getBoundingClientRect().top).toBeGreaterThanOrEqual(mark.bottom + 24)
+    expect(heading.offsetTop).toBeGreaterThanOrEqual(mark.offsetTop + mark.offsetHeight + 24)
   })
 })

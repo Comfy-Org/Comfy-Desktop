@@ -505,56 +505,65 @@ describe('The first open', () => {
     vi.useRealTimers()
   })
 
-  it('fills the Comfy wordmark in over its ghost, then Set up rises under it', async () => {
+  it('starts with the Comfy wordmark alone in the middle, with a glint and the light coming on', async () => {
     emulateReducedMotion(false)
     const w = await mountSetup()
 
     const mark = w.find('[data-testid="setup-wordmark"]')
-    expect(mark.attributes('data-opening')).toBe('true')
-    expect(mark.findAll('svg')).toHaveLength(2)
-    expect(mark.find('[data-testid="setup-wordmark-ghost"]').exists()).toBe(true)
-    expect(w.find('[data-testid="setup-column"]').attributes('data-opening')).toBe('true')
+    expect(mark.attributes('data-arriving')).toBe('true')
+    expect(mark.find('[data-testid="setup-wordmark-glint"]').exists()).toBe(true)
+    expect(w.find('[data-testid="setup-light"]').exists()).toBe(true)
+    expect(w.find('[data-testid="setup-column"]').attributes('data-rise-after-arrival')).toBe(
+      'true'
+    )
     w.unmount()
   })
 
-  it('settles to the plain wordmark once Set up has risen', async () => {
+  it('sends the wordmark up to its place at 1.1 s and lets later screens rise at once', async () => {
     emulateReducedMotion(false)
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const w = mount(FirstUseTakeover)
+    const mark = () => w.find('[data-testid="setup-wordmark"]')
+    const column = () => w.find('[data-testid="setup-column"]')
 
-    vi.advanceTimersByTime(2389)
+    vi.advanceTimersByTime(1099)
     await nextTick()
-    expect(w.find('[data-testid="setup-wordmark"]').attributes('data-opening')).toBe('true')
+    expect(mark().attributes('data-arriving')).toBe('true')
 
     vi.advanceTimersByTime(1)
     await nextTick()
-    const mark = w.find('[data-testid="setup-wordmark"]')
-    expect(mark.attributes('data-opening')).toBeUndefined()
-    expect(mark.findAll('svg')).toHaveLength(1)
-    expect(w.find('[data-testid="setup-column"]').attributes('data-opening')).toBeUndefined()
+    expect(mark().attributes('data-arriving')).toBeUndefined()
+    expect(mark().findAll('svg')).toHaveLength(1)
+    expect(w.find('[data-testid="setup-light"]').exists()).toBe(false)
+    expect(column().attributes('data-rise-after-arrival')).toBe('true')
+
+    vi.advanceTimersByTime(2219 - 1100)
+    await nextTick()
+    expect(column().attributes('data-rise-after-arrival')).toBe('true')
+
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(column().attributes('data-rise-after-arrival')).toBeUndefined()
     vi.useRealTimers()
     await flushPromises()
     w.unmount()
   })
 
-  it('opens straight onto Set up when coming back from Change', async () => {
-    emulateReducedMotion(false)
-    const w = mount(FirstUseTakeover, { props: { consent: CONSENT_FROM_CHANGE } })
+  it.each([
+    ['when coming back from Change', false, { consent: CONSENT_FROM_CHANGE }],
+    ['under reduced motion', true, {}]
+  ])('opens straight onto Set up %s', async (_case, reduce, props) => {
+    emulateReducedMotion(reduce)
+    const w = mount(FirstUseTakeover, { props })
     await flushPromises()
 
     const mark = w.find('[data-testid="setup-wordmark"]')
-    expect(mark.attributes('data-opening')).toBeUndefined()
+    expect(mark.attributes('data-arriving')).toBeUndefined()
     expect(mark.findAll('svg')).toHaveLength(1)
-    expect(w.find('[data-testid="setup-column"]').attributes('data-opening')).toBeUndefined()
-    w.unmount()
-  })
-
-  it('opens straight onto Set up under reduced motion', async () => {
-    emulateReducedMotion(true)
-    const w = await mountSetup()
-
-    expect(w.find('[data-testid="setup-wordmark"]').attributes('data-opening')).toBeUndefined()
-    expect(w.find('[data-testid="setup-column"]').attributes('data-opening')).toBeUndefined()
+    expect(w.find('[data-testid="setup-light"]').exists()).toBe(false)
+    expect(
+      w.find('[data-testid="setup-column"]').attributes('data-rise-after-arrival')
+    ).toBeUndefined()
     w.unmount()
   })
 })

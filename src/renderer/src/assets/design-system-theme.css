@@ -59,8 +59,9 @@
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
   --animate-brand-takeover: brand-takeover-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-gs-field-flash: gs-field-flash 2.2s ease-out;
-  --animate-first-use-ghost: first-use-ghost 320ms ease both;
-  --animate-first-use-fill: first-use-fill 1050ms 250ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  --animate-first-use-arrive: first-use-arrive 600ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  --animate-first-use-glint: first-use-glint 800ms 300ms cubic-bezier(0.65, 0, 0.35, 1) both;
+  --animate-first-use-light: first-use-light 1100ms cubic-bezier(0.23, 1, 0.32, 1) both;
   --animate-first-use-rise: first-use-rise 560ms cubic-bezier(0.19, 1, 0.22, 1) both;
 
   @keyframes pop-in {
@@ -107,17 +108,28 @@
       background: transparent;
     }
   }
-  @keyframes first-use-ghost {
+  @keyframes first-use-arrive {
     from {
       opacity: 0;
     }
+    to {
+      opacity: 0.82;
+    }
   }
-  @keyframes first-use-fill {
+  @keyframes first-use-glint {
     from {
-      clip-path: polygon(0 0, 4px 0, -4px 100%, 0 100%);
+      mask-position: 100% 0;
     }
     to {
-      clip-path: polygon(0 0, calc(100% + 4px) 0, calc(100% - 4px) 100%, 0 100%);
+      mask-position: 0% 0;
+    }
+  }
+  @keyframes first-use-light {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
     }
   }
   @keyframes first-use-rise {

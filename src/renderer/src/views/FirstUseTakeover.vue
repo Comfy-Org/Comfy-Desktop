@@ -76,21 +76,34 @@ const mirrorsPrompted = ref(false)
 let mirrorsPromptedRead: Promise<void> = Promise.resolve()
 const locale = ref('en')
 
-const OPENING_RISE_CLASS = [
-  '[&>*]:animate-first-use-rise [&>*]:[animation-delay:1600ms] motion-reduce:[&>*]:animate-none',
-  '[&>:nth-child(2)]:[animation-delay:1650ms] [&>:nth-child(3)]:[animation-delay:1710ms]',
-  '[&>:nth-child(4)]:[animation-delay:1770ms] [&>:nth-child(n+5)]:[animation-delay:1830ms]'
+const RISE_CLASS = [
+  '[&>*]:animate-first-use-rise motion-reduce:[&>*]:animate-none',
+  '[&>*]:[animation-delay:var(--rise-after)]',
+  '[&>:nth-child(2)]:[animation-delay:calc(var(--rise-after)+50ms)]',
+  '[&>:nth-child(3)]:[animation-delay:calc(var(--rise-after)+110ms)]',
+  '[&>:nth-child(4)]:[animation-delay:calc(var(--rise-after)+170ms)]',
+  '[&>:nth-child(n+5)]:[animation-delay:calc(var(--rise-after)+230ms)]',
+  '[&>*:last-child:not(:first-child)]:[animation-delay:calc(var(--rise-after)+300ms)]'
 ].join(' ')
-const OPENING_BEAT_MS = 1600
-const OPENING_LAST_RISE_MS = 230 + 560
+const ARRIVE_MS = 1100
+const LAND_MS = 260
+const RISE_AFTER_ARRIVAL_MS = ARRIVE_MS + LAND_MS
+const LAST_RISE_END_MS = RISE_AFTER_ARRIVAL_MS + 300 + 560
 const prefersReducedMotion =
   window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-const opening = ref(!props.consent && !props.savedPlan && !prefersReducedMotion)
-let openingTimer: ReturnType<typeof setTimeout> | undefined
-if (opening.value) {
-  openingTimer = setTimeout(() => {
-    opening.value = false
-  }, OPENING_BEAT_MS + OPENING_LAST_RISE_MS)
+const firstOpen = !props.consent && !props.savedPlan && !prefersReducedMotion
+const arriving = ref(firstOpen)
+const riseAfterArrival = ref(firstOpen)
+const openingTimers: ReturnType<typeof setTimeout>[] = []
+if (firstOpen) {
+  openingTimers.push(
+    setTimeout(() => {
+      arriving.value = false
+    }, ARRIVE_MS),
+    setTimeout(() => {
+      riseAfterArrival.value = false
+    }, LAST_RISE_END_MS)
+  )
 }
 
 let openGeneration = 0
@@ -398,7 +411,7 @@ watch(
 )
 
 onUnmounted(() => {
-  clearTimeout(openingTimer)
+  openingTimers.forEach(clearTimeout)
   if (!completedFired) {
     emitTelemetryAction('comfy.desktop.first_use.abandoned', {
       step: step.value,
@@ -424,26 +437,37 @@ defineExpose({ open, resetContinue })
     data-testid="setup-screen"
   >
     <div
-      class="absolute top-5 left-1/2 h-7 w-[100px] -translate-x-1/2 text-[#f0f0f0]"
-      :data-opening="opening || undefined"
+      v-if="arriving"
+      class="pointer-events-none absolute inset-0 animate-first-use-light bg-[#0d0d0f]"
+      data-testid="setup-light"
+    />
+    <div
+      class="absolute top-5 left-1/2 h-7 w-[100px] text-[#f0f0f0] [transition:transform_600ms_cubic-bezier(0.32,0.72,0,1)] will-change-transform"
+      :class="
+        arriving
+          ? '[transform:translate(-50%,calc(50vh_-_34px))_scale(2)]'
+          : '[transform:translate(-50%,0)_scale(1)]'
+      "
+      :data-arriving="arriving || undefined"
       aria-hidden="true"
       data-testid="setup-wordmark"
     >
       <ComfyWordmark
-        v-if="opening"
-        class="absolute inset-0 size-full animate-first-use-ghost opacity-16 motion-reduce:animate-none"
-        data-testid="setup-wordmark-ghost"
+        class="size-full [transition:opacity_300ms_ease]"
+        :class="arriving && 'animate-first-use-arrive opacity-82'"
       />
       <ComfyWordmark
-        class="relative size-full"
-        :class="opening && 'animate-first-use-fill motion-reduce:animate-none'"
+        v-if="arriving"
+        class="absolute inset-0 size-full animate-first-use-glint mask-no-repeat [mask-image:linear-gradient(106deg,transparent_30%,#000_50%,transparent_70%)] [mask-size:300%_100%]"
+        data-testid="setup-wordmark-glint"
       />
     </div>
 
     <div
       class="m-auto flex w-[638px] max-w-[calc(100%-48px)] flex-col py-24"
-      :class="opening && OPENING_RISE_CLASS"
-      :data-opening="opening || undefined"
+      :class="RISE_CLASS"
+      :style="{ '--rise-after': riseAfterArrival ? `${RISE_AFTER_ARRIVAL_MS}ms` : '0ms' }"
+      :data-rise-after-arrival="riseAfterArrival || undefined"
       data-testid="setup-column"
     >
       <template v-if="step === 'setup'">
