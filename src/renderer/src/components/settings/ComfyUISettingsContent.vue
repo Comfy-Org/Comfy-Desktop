@@ -261,6 +261,13 @@ const ALL_TABS: TabDef[] = [
     tooltip: t('tooltips.tabOverview')
   },
   {
+    key: 'storage',
+    sectionTab: 'storage',
+    label: t('comfyUISettings.tabStorage'),
+    icon: HardDrive,
+    tooltip: t('tooltips.tabStorage')
+  },
+  {
     key: 'config',
     sectionTab: 'settings',
     label: t('comfyUISettings.tabConfig'),
@@ -273,13 +280,6 @@ const ALL_TABS: TabDef[] = [
     label: t('comfyUISettings.tabSnapshots'),
     icon: History,
     tooltip: t('tooltips.snapshots')
-  },
-  {
-    key: 'storage',
-    sectionTab: 'storage',
-    label: t('comfyUISettings.tabStorage'),
-    icon: HardDrive,
-    tooltip: t('tooltips.tabStorage')
   },
   {
     key: 'console',

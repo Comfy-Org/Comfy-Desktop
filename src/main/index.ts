@@ -121,7 +121,12 @@ import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignF
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initAppsFlag } from './apps/appsFlag'
 import { runningPortOf } from './apps/localBuild'
-import { isRunningForAppsOnly, stopBuildsRunningForAppsOnly } from './apps/localComfy'
+import {
+  isRunningForAppsOnly,
+  runsWithItsWindowClosed,
+  startWithDesktop,
+  stopBuildsRunningForAppsOnly
+} from './apps/localComfy'
 import { initWorkspaceMintSwitchFlag } from './lib/workspaceMintSwitchFlag'
 import { getCloudSession } from './devplatform/session'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
@@ -139,7 +144,6 @@ import {
   findEntryByHostWindow,
   findEntryByTitleBarSender,
   findHostWindowByPanelSender,
-  forceRevealHostWindow,
   getEntryByInstallationId,
   isChooserHost,
   isInstallHost,
@@ -157,6 +161,7 @@ import {
   createHostWindow,
   expectedPartitionFor,
   openChooserHostWindow,
+  quitsOnceEveryWindowClosed,
   rebuildComfyViewIfNeeded,
   setHostWindowFactories
 } from './host/createHostWindow'
@@ -256,22 +261,7 @@ function quitApp(): void {
   app.quit()
 }
 
-const STARTUP_RESTORE_REVEAL_BACKSTOP_MS = 10_000
-const pendingStartupRestoreRevealTimers = new Map<number, ReturnType<typeof setTimeout>>()
-
 const STARTUP_INSTALL_QUIT_BACKSTOP_MS = 4_000
-
-function clearStartupRestoreRevealTimer(windowKey: number): void {
-  const timer = pendingStartupRestoreRevealTimers.get(windowKey)
-  if (timer) clearTimeout(timer)
-  pendingStartupRestoreRevealTimers.delete(windowKey)
-}
-
-function revealStartupRestoreDashboard(windowKey: number): void {
-  clearStartupRestoreRevealTimer(windowKey)
-  recordDashboardSurface()
-  forceRevealHostWindow(windowKey)
-}
 
 async function openStartupSurface(): Promise<void> {
   const autoStartBuild = await pinAutoStartToALocalBuild().catch((err: unknown) => {
@@ -280,41 +270,9 @@ async function openStartupSurface(): Promise<void> {
   })
   const explicitInst = settings.get('firstUseCompleted') === true ? autoStartBuild : null
 
-  const chooserWindow = openOrFocusHomeHostWindow()
+  openOrFocusHomeHostWindow()
 
-  if (!explicitInst) return
-  const installationId = explicitInst.id
-
-  void (async () => {
-    const entry = findEntryByHostWindow(chooserWindow)
-    if (!entry || entry.window.isDestroyed() || !isChooserHost(entry)) {
-      if (!chooserWindow.isDestroyed()) chooserWindow.show()
-      return
-    }
-
-    const timer = setTimeout(
-      () => revealStartupRestoreDashboard(entry.windowKey),
-      STARTUP_RESTORE_REVEAL_BACKSTOP_MS
-    )
-    pendingStartupRestoreRevealTimers.set(entry.windowKey, timer)
-
-    const inst = await getInstallation(installationId)
-    if (!inst) {
-      revealStartupRestoreDashboard(entry.windowKey)
-      return
-    }
-    const panelView =
-      entry.panelView ?? ensurePanelView(entry.windowKey, entry, computeBodyMode(entry))
-    if (panelView.webContents.isDestroyed()) {
-      revealStartupRestoreDashboard(entry.windowKey)
-      return
-    }
-    sendToPanelDeferred(panelView, 'panel-trigger-overlay', {
-      kind: 'picker-pick-install',
-      installationId,
-      startupRestore: true
-    })
-  })()
+  if (explicitInst) void startWithDesktop(explicitInst)
 }
 
 function onComfyExited({ installationId, crashed }: ExitCallbackInfo = {}): void {
@@ -570,17 +528,6 @@ ipcMain.handle('app:relaunch', () => {
 
 ipcMain.handle('reset-zoom', () => {})
 
-ipcMain.on('comfy-window:startup-restore-reveal', (event, payload: { result?: unknown }) => {
-  const result = payload?.result === 'dashboard-fallback' ? 'dashboard-fallback' : 'takeover-ready'
-  for (const [windowKey, entry] of comfyWindows) {
-    if (entry.panelView?.webContents !== event.sender) continue
-    clearStartupRestoreRevealTimer(windowKey)
-    if (result === 'dashboard-fallback') recordDashboardSurface()
-    forceRevealHostWindow(windowKey)
-    return
-  }
-})
-
 ipcMain.on('comfy-window:set-first-use-mode', (event, payload: { mode: unknown }) => {
   const mode = normaliseFirstUseMode(payload?.mode)
   recordIpcInvocation('comfy-window:set-first-use-mode', { mode })
@@ -815,7 +762,9 @@ ipcMain.handle(
     const workspaceId =
       requester && typeof pickerWorkspaceId === 'string' ? pickerWorkspaceId : undefined
     if (await focusOpenComfyWindow(installationId, requester, workspaceId)) return true
-    if (isRunningForAppsOnly(installationId)) return openWindowForAppsBuild(installationId)
+    if (isRunningForAppsOnly(installationId) || runsWithItsWindowClosed(installationId)) {
+      return openWindowForAppsBuild(installationId)
+    }
 
     const proc = ipc.getSessionProcess(installationId)
     if (proc?.pid) {
@@ -1685,7 +1634,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     void stopBuildsRunningForAppsOnly().finally(() => {
       if (BrowserWindow.getAllWindows().length > 0) return
-      if (!ipc.hasRunningSessions()) {
+      if (quitsOnceEveryWindowClosed()) {
         app.quit()
       }
     })

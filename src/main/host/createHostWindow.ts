@@ -29,7 +29,10 @@ import {
 } from '../lib/titleBarOverlay'
 import {
   _registerExtraBroadcastTarget,
+  _runningSessions,
   _unregisterExtraBroadcastTarget,
+  hasRunningSessions,
+  keepsComfyRunningWhenWindowCloses,
   resolveTheme
 } from '../lib/ipc/shared'
 import * as mainTelemetry from '../lib/telemetry'
@@ -108,10 +111,27 @@ export function shouldShowInstallCloseConfirm(
   )
 }
 
+function localComfyRunning(): boolean {
+  return [..._runningSessions.values()].some((session) => !session.url)
+}
+
+export function closeQuitsDesktop(isLastWindow: boolean): boolean {
+  if (!keepsComfyRunningWhenWindowCloses()) return isLastWindow
+  return isLastWindow && (process.platform !== 'darwin' || !localComfyRunning())
+}
+
+export function quitsOnceEveryWindowClosed(): boolean {
+  if (keepsComfyRunningWhenWindowCloses() && process.platform !== 'darwin') return true
+  return !hasRunningSessions()
+}
+
 export function closeStopsLocalComfy(
   entry: ComfyWindowEntry | null | undefined,
   isLastWindow: boolean
 ): boolean {
+  if (keepsComfyRunningWhenWindowCloses()) {
+    return closeQuitsDesktop(isLastWindow) && localComfyRunning()
+  }
   return shouldConfirmKillForEntry(entry) || (isLastWindow && hasBuildsRunningForAppsOnly())
 }
 
@@ -136,7 +156,7 @@ export interface HostWindowFactories {
   ) => Promise<'cleared' | 'aborted' | 'defer'>
   confirmCloseInstanceWindow: (
     window: BrowserWindow,
-    isLastWindow: boolean,
+    quitsDesktop: boolean,
     stopsLocalComfy: boolean,
     theme: { bg: string; text: string }
   ) => Promise<CloseWindowChoice>
@@ -292,8 +312,9 @@ export async function confirmHostWindowClose(
   const entryForClose = comfyWindows.get(windowKey)
   const isLastWindow =
     Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed()).length <= 1
+  const quitsDesktop = closeQuitsDesktop(isLastWindow)
   const isInstallHostWindow = !!entryForClose && isInstallHost(entryForClose)
-  const isLastInstallWindow = isLastWindow && isInstallHostWindow
+  const isLastInstallWindow = quitsDesktop && isInstallHostWindow
   const stopsLocalComfy = closeStopsLocalComfy(entryForClose, isLastWindow)
   let agreedToStopAppsBuilds = false
   if (
@@ -308,14 +329,15 @@ export async function confirmHostWindowClose(
   ) {
     const closeChoice = await fx.confirmCloseInstanceWindow(
       comfyWindow,
-      isLastWindow,
+      quitsDesktop,
       stopsLocalComfy,
       entryForClose.lastTheme
     )
     if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) {
       return false
     }
-    agreedToStopAppsBuilds = isLastWindow && closeChoice === 'close'
+    agreedToStopAppsBuilds =
+      isLastWindow && closeChoice === 'close' && !keepsComfyRunningWhenWindowCloses()
   }
   fx.preClearedClose.delete(comfyWindow)
   if (comfyWindow.isDestroyed()) return false
