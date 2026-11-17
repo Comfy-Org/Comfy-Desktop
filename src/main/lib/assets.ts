@@ -269,13 +269,13 @@ async function rowsOfKind(
   signal: AbortSignal
 ): Promise<AssetRowPage> {
   const key = [accessToken, request.order].join('\n')
-  const reusable =
-    request.offset > 0 && lastScan?.key === key && Date.now() - lastScan.savedAt < SCAN_REUSE_MS
-  const rows = reusable
-    ? lastScan!.rows
-    : await scanAllRows(request.order, { Authorization: `Bearer ${accessToken}` }, signal)
-  if (!reusable) lastScan = { key, savedAt: Date.now(), rows }
-  const matches = rows.filter((row) => assetKind(row.name, row.mime_type) === request.kind)
+  let scan = lastScan
+  if (request.offset === 0 || scan?.key !== key || Date.now() - scan.savedAt >= SCAN_REUSE_MS) {
+    const headers = { Authorization: `Bearer ${accessToken}` }
+    scan = { key, savedAt: Date.now(), rows: await scanAllRows(request.order, headers, signal) }
+    lastScan = scan
+  }
+  const matches = scan.rows.filter((row) => assetKind(row.name, row.mime_type) === request.kind)
   return {
     rows: matches.slice(request.offset, request.offset + request.limit),
     total: matches.length

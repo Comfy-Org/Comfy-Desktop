@@ -478,10 +478,6 @@ async function loadAssets(userAsked = false): Promise<void> {
       : await window.api.listLocalAssets(selected.computer ? undefined : selected.build.id)
     if (current !== requestId) return
     if ('total' in listed) cloudTotal.value = listed.total
-    if (cloud && listed.assets.length === 0 && currentPage.value > pageCount.value) {
-      currentPage.value = pageCount.value
-      return
-    }
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
     truncated.value = 'truncated' in listed && listed.truncated
     if (cloud) prefetchPage(cloud.id, currentPage.value + 1)
@@ -535,7 +531,10 @@ watch(
 
 function refresh(): void {
   pageCache.clear()
-  if (currentPage.value === 1) return void loadAssets(true)
+  if (currentPage.value === 1) {
+    void loadAssets(true)
+    return
+  }
   reloadAskedByUser = true
   currentPage.value = 1
 }

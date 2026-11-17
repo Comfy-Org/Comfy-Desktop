@@ -50,7 +50,6 @@ const pageSizeOptions = computed(() =>
             variant="muted-textonly"
             size="icon"
             :aria-label="t('assets.pagination.previous')"
-            data-testid="assets-page-previous"
           >
             <ChevronLeft :size="15" aria-hidden="true" />
           </Button>
@@ -82,7 +81,6 @@ const pageSizeOptions = computed(() =>
             variant="muted-textonly"
             size="icon"
             :aria-label="t('assets.pagination.next')"
-            data-testid="assets-page-next"
           >
             <ChevronRight :size="15" aria-hidden="true" />
           </Button>
