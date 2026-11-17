@@ -37,7 +37,7 @@ function rowsOf(kind: SearchRowKind, candidates: TemplateSearchCandidate[]): Sea
     .map((candidate) => ({ key: `${kind}:${candidate.templateId}`, kind, candidate, best: false }))
 }
 
-export interface CardBox {
+interface CardBox {
   left: number
   top: number
   width: number

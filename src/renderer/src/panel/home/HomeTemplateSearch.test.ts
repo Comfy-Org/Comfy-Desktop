@@ -403,13 +403,15 @@ describe('HomeTemplateSearch opening a template', () => {
     expect(opened()).toEqual(['mural_template'])
   })
 
-  it('moves the highlight up from the first row of cards to the last', async () => {
+  it('moves the highlight up from the first row of cards to the nearest card of the last', async () => {
+    const five = ['a', 'b', 'c', 'd', 'e'].map((letter) => candidate(`card_${letter}`))
+    searchTemplates.mockResolvedValue(answer({ run: five }))
     const wrapper = mountSearch()
-    await searchFor(wrapper, 'a poster')
+    await searchFor(wrapper, 'a birthday card')
     await input(wrapper).trigger('keydown', { key: 'ArrowUp' })
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    expect(opened()).toEqual(['mural_template'])
+    expect(opened()).toEqual(['card_d'])
   })
 
   it('searches again for the new build, and opens in the build the results are for', async () => {
@@ -487,7 +489,6 @@ describe('HomeTemplateSearch opening a template', () => {
   it('starts on the first row of a new answer that has no best match', async () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
-    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
     await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
     searchTemplates.mockResolvedValue(
       answer({ outcome: 'agent', reply: 'This needs the agent.', run: [BANNER], alsoTry: [POSTER] })
@@ -677,9 +678,133 @@ describe('HomeTemplateSearch cards', () => {
     const wrapper = mountSearch()
     await searchCards(wrapper)
     await press(wrapper, 'ArrowDown')
+    vi.useFakeTimers()
     await input(wrapper).setValue('a birthday card for my aunt')
     expect(await press(wrapper, 'ArrowRight')).toBe(false)
     expect(highlighted(wrapper)).toBe('card_d title')
+  })
+
+  it('gives Left and Right back to the text cursor when the results close or the text is clicked', async () => {
+    const wrapper = mountSearch()
+    await searchCards(wrapper)
+    await press(wrapper, 'ArrowDown')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    expect(await press(wrapper, 'ArrowRight')).toBe(false)
+    expect(panel(wrapper).exists()).toBe(false)
+
+    await input(wrapper).trigger('focus')
+    expect(await press(wrapper, 'ArrowRight')).toBe(false)
+    expect(highlighted(wrapper)).toBe('card_d title')
+
+    await press(wrapper, 'ArrowDown')
+    await input(wrapper).trigger('mousedown')
+    expect(await press(wrapper, 'ArrowRight')).toBe(false)
+  })
+
+  it('reopens closed results on Down or Up without moving the highlight', async () => {
+    const wrapper = mountSearch()
+    await searchCards(wrapper)
+    await press(wrapper, 'ArrowDown')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    await press(wrapper, 'ArrowDown')
+    expect(highlighted(wrapper)).toBe('card_d title')
+    expect(await press(wrapper, 'ArrowRight')).toBe(true)
+  })
+
+  it('leaves modified arrows and arrows during IME composition to the text box', async () => {
+    const wrapper = mountSearch()
+    await searchCards(wrapper)
+    await press(wrapper, 'ArrowDown')
+    for (const init of [
+      { shiftKey: true },
+      { altKey: true },
+      { ctrlKey: true },
+      { metaKey: true }
+    ]) {
+      const event = new KeyboardEvent('keydown', {
+        key: 'ArrowRight',
+        bubbles: true,
+        cancelable: true,
+        ...init
+      })
+      input(wrapper).element.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+    }
+    for (const key of ['ArrowRight', 'ArrowDown']) {
+      const event = new KeyboardEvent('keydown', {
+        key,
+        bubbles: true,
+        cancelable: true,
+        isComposing: true
+      })
+      input(wrapper).element.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+    }
+    await flushPromises()
+    expect(highlighted(wrapper)).toBe('card_d title')
+  })
+
+  it('highlights a card when the pointer moves over it, not when the panel scrolls under a resting pointer', async () => {
+    const wrapper = mountSearch()
+    await searchCards(wrapper)
+    const cardB = wrapper.findAll('[role="option"]')[1]!
+    await cardB.trigger('mouseenter')
+    expect(highlighted(wrapper)).toBe('card_a title')
+    await cardB.trigger('mousemove')
+    expect(highlighted(wrapper)).toBe('card_b title')
+  })
+
+  it('keeps focus in the bar for a press anywhere in the panel, and leaves the panel out of the Tab order', async () => {
+    const wrapper = mountSearch()
+    await searchCards(wrapper)
+    const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    wrapper.get('[role="listbox"]').element.dispatchEvent(press)
+    expect(press.defaultPrevented).toBe(true)
+    expect(panel(wrapper).attributes('tabindex')).toBe('-1')
+  })
+
+  it('shows the could-not-open message above the cards', async () => {
+    openTemplateInBuild.mockResolvedValue('refused')
+    const wrapper = mountSearch()
+    await searchCards(wrapper)
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const message = wrapper.get('[data-testid="home-template-search-open-failed"]').element
+    const list = wrapper.get('[role="listbox"]').element
+    expect(message.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows the best match of a new answer even when it is below the fold, and again after the panel reopens', async () => {
+    const many = Array.from({ length: 15 }, (_, i) => candidate(`card_${i}`))
+    searchTemplates.mockResolvedValue(answer({ outcome: 'download', run: many, download: [MURAL] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a mural')
+    const visible = (): boolean => {
+      const card = wrapper
+        .get('[role="option"][aria-selected="true"]')
+        .element.getBoundingClientRect()
+      const box = panel(wrapper).element.getBoundingClientRect()
+      return card.top >= box.top - 1 && card.bottom <= box.bottom + 1
+    }
+    expect(highlighted(wrapper)).toBe('mural_template title')
+    expect(visible()).toBe(true)
+
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    await input(wrapper).trigger('focus')
+    await flushPromises()
+    expect(visible()).toBe(true)
+  })
+
+  it('scrolls back to the top, heading included, when the highlight wraps to the first row', async () => {
+    const many = Array.from({ length: 15 }, (_, i) => candidate(`card_${i}`))
+    searchTemplates.mockResolvedValue(answer({ run: many }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a birthday card')
+    await press(wrapper, 'ArrowUp')
+    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    await press(wrapper, 'ArrowDown')
+    expect(highlighted(wrapper)).toBe('card_0 title')
+    expect(panel(wrapper).element.scrollTop).toBe(0)
   })
 
   it('scrolls the highlighted card into view when the answer is longer than the panel', async () => {

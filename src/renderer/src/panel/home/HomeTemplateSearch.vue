@@ -53,15 +53,19 @@ async function revealActive(): Promise<void> {
   results.value?.revealActive()
 }
 
-function moveVertically(step: 1 | -1): void {
-  const target = showPanel.value ? (results.value?.verticalTarget(step) ?? null) : null
-  if (target === null) search.move(step)
+function moveVertically(event: KeyboardEvent, step: 1 | -1): void {
+  if (event.isComposing) return
+  event.preventDefault()
+  const target = results.value?.verticalTarget(step) ?? null
+  if (!showPanel.value && search.rows.value.length) search.moveTo(search.activeIndex.value)
+  else if (target === null) search.move(step)
   else search.moveTo(target)
   void revealActive()
 }
 
 function moveAcross(event: KeyboardEvent, step: 1 | -1): void {
-  if (!showPanel.value || !search.inResults.value || !search.rows.value.length) return
+  if (event.isComposing || !showPanel.value || !search.inResults.value) return
+  if (!search.rows.value.length) return
   event.preventDefault()
   search.move(step)
   void revealActive()
@@ -101,11 +105,12 @@ function moveAcross(event: KeyboardEvent, step: 1 | -1): void {
         data-testid="home-template-search-input"
         @focus="onFocus"
         @input="openPanel"
+        @mousedown="search.leaveResults()"
         @keydown.enter="onEnter"
-        @keydown.down.prevent="moveVertically(1)"
-        @keydown.up.prevent="moveVertically(-1)"
-        @keydown.left="moveAcross($event, -1)"
-        @keydown.right="moveAcross($event, 1)"
+        @keydown.down="moveVertically($event, 1)"
+        @keydown.up="moveVertically($event, -1)"
+        @keydown.left.exact="moveAcross($event, -1)"
+        @keydown.right.exact="moveAcross($event, 1)"
       />
     </label>
 

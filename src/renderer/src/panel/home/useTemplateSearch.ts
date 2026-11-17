@@ -82,8 +82,16 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
 
   const unsubscribe = window.api.onTemplateSearchAvailability(onAvailability)
 
-  watch(query, (text) => {
+  function leaveResults(): void {
     inResults.value = false
+  }
+
+  watch(panelOpen, (open) => {
+    if (!open) leaveResults()
+  })
+
+  watch(query, (text) => {
+    leaveResults()
     cancelPendingSearch()
     if (!text.trim()) {
       forgetAnswer()
@@ -182,6 +190,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     onEnter,
     move,
     moveTo,
+    leaveResults,
     highlight
   }
 }
