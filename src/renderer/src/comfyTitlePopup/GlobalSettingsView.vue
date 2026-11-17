@@ -266,21 +266,21 @@ onMounted(() => {
 
 <template>
   <div class="global-settings flex size-full flex-col text-sm text-foreground">
-    <header
-      class="gs-header flex flex-none items-center justify-between border-b border-solid border-border py-2.5 pr-3 pl-5"
-    >
-      <h2 class="gs-title m-0 font-sans text-[length:var(--text-heading)] font-semibold text-text">
+    <header class="gs-header relative flex flex-none items-center pt-7 pr-16 pb-4 pl-8">
+      <h2
+        class="gs-title m-0 font-sans text-[18px] leading-7 font-semibold tracking-[-0.01em] text-neutral-100"
+      >
         {{ t('settingsModal.tabGlobal') }}
       </h2>
       <Button
         type="button"
-        variant="textonly"
+        variant="muted-textonly"
         size="icon"
-        class="gs-close shrink-0"
+        class="gs-close absolute top-6 right-6 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
         :aria-label="t('common.close')"
         @click="bridge?.close()"
       >
-        <X :size="16" aria-hidden="true" />
+        <X :size="18" aria-hidden="true" />
       </Button>
     </header>
 
@@ -291,7 +291,7 @@ onMounted(() => {
     >
       <TabsList
         :key="requestedTabCount"
-        class="gs-tabs w-40 flex-[0_0_160px] flex-col items-stretch gap-px overflow-y-auto border-r border-solid border-border p-2"
+        class="gs-tabs w-44 flex-[0_0_176px] flex-col items-stretch gap-0.5 overflow-y-auto pt-0 pr-2 pb-6 pl-6"
         :aria-label="t('settingsModal.tabGlobal')"
       >
         <TabsTrigger
@@ -309,7 +309,7 @@ onMounted(() => {
       <TabsContent
         :key="activeTab"
         :value="activeTab"
-        class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 overflow-y-auto px-3 py-2 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
+        class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 overflow-y-auto pt-0 pr-8 pb-6 pl-4 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
       >
         <template v-if="activeTab === 'general'">
           <SettingsSectionList
