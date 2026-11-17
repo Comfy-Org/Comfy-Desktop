@@ -116,7 +116,6 @@ interface PendingDownload {
   settleJob?: (outcome: ModelJobOutcome) => void
   completion?: Promise<ModelJobOutcome>
   telemetry?: ModelDownloadTelemetry
-  restoredTelemetryPending?: boolean
   lastProgress: DownloadProgress & { id: string }
   lastSpeedBytes: number
   lastSpeedTime: number
@@ -694,30 +693,23 @@ function joinModelJob(existing: PendingDownload, opts: ModelJobOptions): ModelJo
   }
 }
 
-async function resolveModelTransferContext(pending: PendingDownload): Promise<{
-  session: Electron.Session | undefined
-  installation?: installations.InstallationRecord | null
-}> {
-  if (pending.explicitSession) return { session: pending.explicitSession }
+async function resolveModelSession(
+  pending: PendingDownload
+): Promise<Electron.Session | undefined> {
+  if (pending.explicitSession) return pending.explicitSession
   if (pending.senderContents && !pending.senderContents.isDestroyed()) {
-    return { session: pending.senderContents.session }
+    return pending.senderContents.session
   }
-  let installation: installations.InstallationRecord | null = null
   if (pending.installationId) {
     try {
-      installation = await installations.get(pending.installationId)
-      if (installation) {
-        return {
-          session: electronSession.fromPartition(expectedPartitionFor(installation)),
-          installation
-        }
-      }
+      const inst = await installations.get(pending.installationId)
+      if (inst) return electronSession.fromPartition(expectedPartitionFor(inst))
     } catch {}
   }
   try {
-    return { session: electronSession.defaultSession, installation }
+    return electronSession.defaultSession
   } catch {
-    return { session: undefined, installation }
+    return undefined
   }
 }
 
@@ -775,7 +767,7 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
   }
   const closing = closingStreamsByDest.get(destKey)
   if (closing) await closing
-  const { session, installation } = await resolveModelTransferContext(pending)
+  const sess = await resolveModelSession(pending)
   if (gen !== pending.attemptGen || pending.suspended || !pendingDownloads.has(pending.id)) {
     return
   }
@@ -785,20 +777,6 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
     return
   }
 
-  if (pending.restoredTelemetryPending) {
-    pending.restoredTelemetryPending = false
-    if (installation?.installPath && !installation.firstRunAt) {
-      pending.telemetry = new ModelDownloadTelemetry({
-        url: pending.url,
-        filename: pending.filename,
-        directory: pending.directory,
-        installationId: installation.id,
-        source: 'restored'
-      })
-      pending.telemetry.report(pending.lastProgress)
-    }
-  }
-
   const transport = startModelTransfer({
     url: pending.url,
     jobId: pending.id,
@@ -806,7 +784,7 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
     directory: pending.directory,
     filename: pending.filename,
     installationId: pending.installationId,
-    session,
+    session: sess,
     expectedSize: pending.expectedSize,
     sha256: pending.sha256,
     onProgress: ({ receivedBytes, totalBytes }) => {
@@ -2240,7 +2218,6 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       sha256: meta.sha256,
       settleJob,
       completion,
-      restoredTelemetryPending: true,
       lastProgress: progress,
       lastSpeedBytes: stagedBytes,
       lastSpeedTime: Date.now()
@@ -2255,8 +2232,7 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       installationId: meta.installationId ?? null,
       savePath: finalPath,
       sha256: meta.sha256,
-      destinationBaseDir: deriveDestinationBaseDir(finalPath, meta.directory),
-      modelSource: 'restored'
+      destinationBaseDir: deriveDestinationBaseDir(finalPath, meta.directory)
     })
     reportProgress(progress)
   }

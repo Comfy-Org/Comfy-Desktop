@@ -3,7 +3,7 @@ import { bucketError } from '../../shared/errorBucket'
 import { ALLOWED_EXTENSIONS } from './downloadFilename'
 import { capture, type TelemetryContext } from './telemetry'
 
-export type ModelDownloadSource = 'comfyui' | 'template' | 'app' | 'restored' | 'unknown'
+export type ModelDownloadSource = 'comfyui' | 'template' | 'app' | 'unknown'
 
 type DownloadStatus = 'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
 
@@ -69,26 +69,21 @@ function providerOf(rawUrl: string): string {
   return 'other'
 }
 
-function failureProperties(error: string | undefined): TelemetryContext {
-  const status = /\bHTTP ([1-5]\d{2})\b/.exec(error ?? '')
-  if (status) {
-    const httpStatus = Number(status[1])
-    return {
-      error_bucket: httpStatus === 401 || httpStatus === 403 ? 'access_denied' : 'http',
-      http_status: httpStatus
-    }
+const SYSTEM_ERROR_CODE =
+  /\b(?:ENOSPC|EACCES|EPERM|EROFS|ENOENT|ENOTDIR|EISDIR|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ENETUNREACH|ETIMEDOUT)\b|net::ERR_[A-Z0-9_]+/
+
+function failureProperties(error = ''): TelemetryContext {
+  const httpStatus = Number(/\bHTTP ([1-5]\d{2})\b/.exec(error)?.[1])
+  if (httpStatus) {
+    const denied = httpStatus === 401 || httpStatus === 403
+    return { error_bucket: denied ? 'access_denied' : 'http', http_status: httpStatus }
   }
-  if (/checksum/i.test(error ?? '')) return { error_bucket: 'checksum' }
-  if (/\b(size mismatch|download incomplete|download corrupt)\b/i.test(error ?? '')) {
+  if (/checksum/i.test(error)) return { error_bucket: 'checksum' }
+  if (/\b(size mismatch|download incomplete|download corrupt)\b/i.test(error)) {
     return { error_bucket: 'size_mismatch' }
   }
-  if (/download stalled/i.test(error ?? '')) return { error_bucket: 'timeout' }
-  const systemCode =
-    /\b(?:ENOSPC|EACCES|EPERM|EROFS|ENOENT|ENOTDIR|EISDIR|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ENETUNREACH|ETIMEDOUT)\b|net::ERR_[A-Z0-9_]+/.exec(
-      error ?? ''
-    )?.[0]
-  if (systemCode) return { error_bucket: bucketError(systemCode) }
-  return { error_bucket: bucketError(error) }
+  if (/download stalled/i.test(error)) return { error_bucket: 'timeout' }
+  return { error_bucket: bucketError(SYSTEM_ERROR_CODE.exec(error)?.[0] ?? error) }
 }
 
 export class ModelDownloadTelemetry {

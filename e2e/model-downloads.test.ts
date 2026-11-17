@@ -11,14 +11,13 @@ import {
   TITLE_REOPEN_SUPPRESSION_MS,
   type WebContentsPage
 } from './support/cdpPages'
-import { getIpcInvocations, getTitlePopupBounds } from './support/devHooks'
+import { getTitlePopupBounds } from './support/devHooks'
 import { deterministicBytes, ModelDownloadServer } from './support/modelDownloadServer'
 
 test.describe.configure({ mode: 'serial' })
 
 const ETAG = '"lc-model-e2e-v1"'
 const LAST_MODIFIED = 'Wed, 01 Jan 2025 00:00:00 GMT'
-const BUILD_ID = 'model-download-activation-build'
 
 interface SeededJob {
   file: string
@@ -101,8 +100,7 @@ async function seedStagedPair(job: SeededJob): Promise<void> {
       etag: ETAG,
       lastModified: LAST_MODIFIED,
       directory: 'checkpoints',
-      filename: job.file,
-      installationId: BUILD_ID
+      filename: job.file
     })
   )
 }
@@ -110,14 +108,6 @@ async function seedStagedPair(job: SeededJob): Promise<void> {
 async function launch(): Promise<void> {
   ctx = await launchApp({
     profileDir,
-    installations: [
-      {
-        id: BUILD_ID,
-        installPath: path.join(profileDir, 'download-build'),
-        useSharedModels: true,
-        seen: true
-      }
-    ],
     settings: {
       firstUseCompleted: true,
       telemetryEnabled: false,
@@ -202,13 +192,6 @@ async function expectCompletedOnDisk(job: SeededJob): Promise<void> {
   expect(await fileSize(dest + '.part.dl-meta')).toBe(-1)
 }
 
-async function downloadEvents(event: string): Promise<Array<Record<string, unknown>>> {
-  return (await getIpcInvocations(
-    ctx.app,
-    `telemetry:comfy.desktop.model_download.${event}`
-  )) as Array<Record<string, unknown>>
-}
-
 test.beforeAll(async () => {
   server = new ModelDownloadServer()
   await server.start()
@@ -223,7 +206,6 @@ test.beforeAll(async () => {
   }
   modelRoot = await mkdtemp(path.join(os.tmpdir(), 'launcher-e2e-models-'))
   profileDir = await mkdtemp(path.join(os.tmpdir(), 'launcher-e2e-profile-'))
-  await mkdir(path.join(profileDir, 'download-build'))
   for (const job of Object.values(JOBS)) {
     await seedStagedPair(job)
   }
@@ -252,9 +234,7 @@ test('startup hydrates interrupted downloads as actionable paused rows @real-com
   }
 })
 
-test('resume completes atomically and records model download telemetry @real-comfy @windows @macos @linux', async () => {
-  await openFullDownloads()
-  const startsBefore = (await downloadEvents('started')).length
+test('resume continues from staged bytes with Range/If-Range and completes atomically @real-comfy', async () => {
   const job = JOBS.complete
   server.clearLog()
   expect(await clickRowButton(job.file, 'Resume')).toBe(true)
@@ -266,33 +246,6 @@ test('resume completes atomically and records model download telemetry @real-com
   expect(requests[0]!.range).toBe(`bytes=${job.stagedSize}-`)
   expect(requests[0]!.ifRange).toBe(ETAG)
   expect(requests[0]!.status).toBe(206)
-
-  const starts = (await downloadEvents('started')).slice(startsBefore)
-  expect(starts).toHaveLength(1)
-  const started = starts[0]!
-  expect(started).toMatchObject({
-    source: 'restored',
-    installation_id: BUILD_ID,
-    received_bytes: job.stagedSize,
-    total_bytes: job.totalSize,
-    is_retry: false
-  })
-  const completed = (await downloadEvents('result')).filter(
-    (event) => event.download_id === started.download_id
-  )
-  expect(completed).toHaveLength(1)
-  expect(completed[0]).toMatchObject({
-    result: 'completed',
-    installation_id: BUILD_ID,
-    file_ext: 'safetensors',
-    received_bytes: job.totalSize,
-    total_bytes: job.totalSize,
-    duration_ms: expect.any(Number)
-  })
-  const serialized = JSON.stringify([started, ...completed])
-  expect(serialized).not.toContain(job.file)
-  expect(serialized).not.toContain(modelRoot)
-  expect(serialized).not.toContain(server.urlFor(job.file))
 })
 
 test('pause stops network activity and preserves staged bytes @real-comfy', async () => {
@@ -318,9 +271,7 @@ test('pause stops network activity and preserves staged bytes @real-comfy', asyn
   pausedPartSize = sizeAtPause
 })
 
-test('network interruption and Retry record separate download attempts @real-comfy @windows @macos @linux', async () => {
-  await openFullDownloads()
-  const startsBefore = (await downloadEvents('started')).length
+test('network interruption preserves staged bytes and Retry resumes them @real-comfy', async () => {
   const job = JOBS.retry
   const part = finalPath(job) + '.part'
   server.configure(job.file, { failAfterBytes: 2 * job.chunkSize })
@@ -332,14 +283,6 @@ test('network interruption and Retry record separate download attempts @real-com
   expect(sizeAtError).toBeLessThan(job.totalSize)
   expect(await fileSize(finalPath(job))).toBe(-1)
   expect(await fileSize(finalPath(job) + '.part.dl-meta')).toBeGreaterThan(0)
-
-  const firstStarts = (await downloadEvents('started')).slice(startsBefore)
-  expect(firstStarts).toHaveLength(1)
-  const failed = (await downloadEvents('result')).filter(
-    (event) => event.download_id === firstStarts[0]!.download_id
-  )
-  expect(failed).toHaveLength(1)
-  expect(failed[0]).toMatchObject({ result: 'error', error_bucket: expect.any(String) })
 
   server.configure(job.file, { failAfterBytes: undefined })
   server.clearLog()
@@ -353,16 +296,6 @@ test('network interruption and Retry record separate download attempts @real-com
   expect(requests[0]!.range).toBe(`bytes=${sizeBeforeRetry}-`)
   expect(requests[0]!.ifRange).toBe(ETAG)
   expect(requests[0]!.status).toBe(206)
-
-  const starts = (await downloadEvents('started')).slice(startsBefore)
-  expect(starts).toHaveLength(2)
-  expect(starts[1]).toMatchObject({ source: 'restored', is_retry: true })
-  expect(starts[1]!.download_id).not.toBe(starts[0]!.download_id)
-  const completed = (await downloadEvents('result')).filter(
-    (event) => event.download_id === starts[1]!.download_id
-  )
-  expect(completed).toHaveLength(1)
-  expect(completed[0]).toMatchObject({ result: 'completed', received_bytes: job.totalSize })
 })
 
 test('cancel stops the transfer and removes staged bytes and metadata @real-comfy', async () => {
