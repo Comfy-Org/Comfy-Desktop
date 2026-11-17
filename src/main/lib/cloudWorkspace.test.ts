@@ -1,5 +1,5 @@
 import { runInNewContext } from 'node:vm'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthStatus, Workspace } from '../../types/ipc'
 import type { InstallationRecord } from '../installations'
 import type { ComfyWindowEntry } from '../host/registry'
@@ -22,11 +22,8 @@ vi.mock('../devplatform/session', () => ({
 vi.mock('../settings', () => ({ get: () => state.selected }))
 vi.mock('../installations', () => ({ get: state.getInstallation }))
 
-import {
-  cloudWorkspaceNavigationVersion,
-  cloudWorkspaceUrl,
-  syncCloudWindowWorkspace
-} from './cloudWorkspace'
+import { LOAD_RETRY_DELAY_MS, navigatorFor } from '../host/buildNavigator'
+import { cloudReloadUrl, cloudWorkspaceUrl, syncCloudWindowWorkspace } from './cloudWorkspace'
 
 const CLOUD: InstallationRecord = {
   id: 'cloud',
@@ -37,6 +34,10 @@ const CLOUD: InstallationRecord = {
   createdAt: '2026-01-01T00:00:00.000Z'
 }
 const CLOUD_URL = 'https://cloud.comfy.org/?utm_source=comfy.desktop&utm_medium=app_feature'
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -194,27 +195,50 @@ describe('reopening a Cloud window', () => {
     expect(loadURL).toHaveBeenCalledTimes(3)
   })
 
+  function retryPendingAfterFailedLoad(entry: ComfyWindowEntry) {
+    vi.useFakeTimers()
+    const navigator = navigatorFor(entry)
+    navigator.attach({ reloadUrl: () => entry.comfyUrl, mayReload: () => true })
+    navigator.retryAfterFailure()
+    return navigator
+  }
+
   it('focuses the same workspace without reloading the workflow', async () => {
     const { entry, loadURL } = openWindow()
-    const cancelLoadRetry = vi.fn()
-    const version = cloudWorkspaceNavigationVersion(entry)
+    const previousUrl = entry.comfyUrl
+    const navigator = retryPendingAfterFailedLoad(entry)
 
-    await syncCloudWindowWorkspace(entry, { cancelLoadRetry })
+    await syncCloudWindowWorkspace(entry)
 
     expect(loadURL).not.toHaveBeenCalled()
-    expect(cancelLoadRetry).not.toHaveBeenCalled()
-    expect(cloudWorkspaceNavigationVersion(entry)).toBe(version)
+    expect(navigator.retryPending).toBe(true)
+    vi.advanceTimersByTime(LOAD_RETRY_DELAY_MS)
+    expect(loadURL).toHaveBeenCalledExactlyOnceWith(previousUrl)
   })
 
   it('cancels a pending retry before loading the next workspace', async () => {
     const { entry, loadURL } = openWindow()
-    const cancelLoadRetry = vi.fn()
+    const navigator = retryPendingAfterFailedLoad(entry)
     state.selected = 'team-a'
 
-    await syncCloudWindowWorkspace(entry, { cancelLoadRetry })
+    await syncCloudWindowWorkspace(entry)
 
-    expect(cancelLoadRetry).toHaveBeenCalledExactlyOnceWith()
-    expect(cancelLoadRetry).toHaveBeenCalledBefore(loadURL)
+    expect(navigator.retryPending).toBe(false)
+    vi.advanceTimersByTime(LOAD_RETRY_DELAY_MS)
+    expect(loadURL).toHaveBeenCalledExactlyOnceWith(`${CLOUD_URL}&workspace=team-a`)
+  })
+
+  it('cancels a pending retry when the Cloud tab is already in the newly selected workspace', async () => {
+    const { entry, loadURL, setActiveWorkspace } = openWindow()
+    const navigator = retryPendingAfterFailedLoad(entry)
+    state.selected = 'team-b'
+    setActiveWorkspace('team-b')
+
+    await syncCloudWindowWorkspace(entry)
+
+    expect(navigator.retryPending).toBe(false)
+    vi.advanceTimersByTime(LOAD_RETRY_DELAY_MS)
+    expect(loadURL).not.toHaveBeenCalled()
   })
 
   it('returns to the requested workspace after the Cloud tab switched internally', async () => {
@@ -271,7 +295,6 @@ describe('reopening a Cloud window', () => {
     'settles both opens on the latest request for %s while the first navigation is pending',
     async (selected) => {
       const { entry, loadURL, setActiveWorkspace } = openWindow()
-      const versionBeforeNavigation = cloudWorkspaceNavigationVersion(entry)
       const started = Promise.withResolvers<void>()
       const firstNavigation = Promise.withResolvers<void>()
       loadURL.mockImplementationOnce(async () => {
@@ -283,7 +306,6 @@ describe('reopening a Cloud window', () => {
       state.selected = 'team-a'
       const firstOpen = syncCloudWindowWorkspace(entry)
       await started.promise
-      expect(cloudWorkspaceNavigationVersion(entry)).not.toBe(versionBeforeNavigation)
       state.selected = selected
       const latestOpen = syncCloudWindowWorkspace(entry)
       firstNavigation.resolve()
@@ -338,5 +360,38 @@ describe('reopening a Cloud window', () => {
 
     await expect(syncCloudWindowWorkspace(entry)).rejects.toThrow('offline')
     expect(entry.comfyUrl).toBe(previousUrl)
+  })
+})
+
+describe('refreshing a Cloud tab', () => {
+  const launchUrl = `${CLOUD_URL}&workspace=team-a`
+
+  it.each([
+    ['the editor', 'https://cloud.comfy.org/?utm_source=comfy.desktop'],
+    ['another Cloud route', 'https://cloud.comfy.org/cloud/login']
+  ])('keeps the workspace the tab is in when refreshing from %s', (_page, pageUrl) => {
+    const url = new URL(cloudReloadUrl(launchUrl, pageUrl))
+
+    expect(url.searchParams.has('workspace')).toBe(false)
+    expect(url.searchParams.get('utm_source')).toBe('comfy.desktop')
+    expect(url.origin + url.pathname).toBe('https://cloud.comfy.org/')
+  })
+
+  it.each([
+    ['has not applied the requested workspace yet', launchUrl],
+    ['failed to load', 'chrome-error://chromewebdata/'],
+    ['shows the launch splash', 'file:///app/splash.html'],
+    ['is on an external sign-in page', 'https://accounts.google.com/signin'],
+    ['is on another Cloud environment', 'https://stagingcloud.comfy.org/'],
+    ['is blank', '']
+  ])('reopens the requested workspace when the tab %s', (_state, pageUrl) => {
+    expect(cloudReloadUrl(launchUrl, pageUrl)).toBe(launchUrl)
+  })
+
+  it('reloads a local build at its own address', () => {
+    const localUrl = 'http://127.0.0.1:8188'
+
+    expect(cloudReloadUrl(localUrl, 'http://127.0.0.1:8188/?workspace=team-a')).toBe(localUrl)
+    expect(cloudReloadUrl(localUrl, localUrl)).toBe(localUrl)
   })
 })
