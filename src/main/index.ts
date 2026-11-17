@@ -9,8 +9,7 @@ import {
   powerMonitor,
   BrowserWindow
 } from 'electron'
-import type { WebContentsView } from 'electron'
-import type { Tray } from 'electron'
+import type { MessageBoxOptions, Tray, WebContentsView } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { normaliseFirstUseMode } from '../shared/firstUseMode'
@@ -136,8 +135,9 @@ import {
   computeBodyMode,
   consumeAttachClaim,
   dropAttachClaimsForWindow,
-  findEntryByTitleBarSender,
   findEntryByHostWindow,
+  findEntryByTitleBarSender,
+  findHostWindowByPanelSender,
   forceRevealHostWindow,
   getEntryByInstallationId,
   isChooserHost,
@@ -762,14 +762,40 @@ ipcMain.on('comfy-window:show-home', (event) => {
   openOrFocusHomeHostWindow()
 })
 
-async function focusOpenComfyWindow(installationId: string): Promise<boolean> {
+async function prepareBuildWindowFocus(
+  entry: ComfyWindowEntry,
+  requester?: BrowserWindow | null
+): Promise<boolean> {
+  try {
+    return (await syncCloudWindowWorkspace(entry)) && !entry.window.isDestroyed()
+  } catch (error) {
+    if (entry.window.isDestroyed()) return false
+    console.error('Could not switch Comfy Cloud workspace:', error)
+    const options: MessageBoxOptions = {
+      type: 'error',
+      message: i18n.t('installShowcase.cloudFailedTitle'),
+      detail: i18n.t('installShowcase.cloudFailedMessage')
+    }
+    const alert =
+      requester && !requester.isDestroyed()
+        ? dialog.showMessageBox(requester, options)
+        : dialog.showMessageBox(options)
+    void alert.catch((error) => console.error('Could not show Comfy Cloud error:', error))
+    return false
+  }
+}
+
+async function focusOpenComfyWindow(
+  installationId: string,
+  requester?: BrowserWindow | null
+): Promise<boolean> {
   const entry = getEntryByInstallationId(installationId)
   if (!entry || entry.window.isDestroyed()) return false
-  await syncCloudWindowWorkspace(entry)
-  if (entry.window.isDestroyed()) return false
-  entry.window.show()
-  entry.window.focus()
-  return true
+  if (await prepareBuildWindowFocus(entry, requester)) {
+    entry.window.show()
+    entry.window.focus()
+  }
+  return !entry.window.isDestroyed()
 }
 
 async function openWindowForAppsBuild(installationId: string): Promise<boolean> {
@@ -786,9 +812,11 @@ async function openWindowForAppsBuild(installationId: string): Promise<boolean> 
   return focusOpenComfyWindow(installationId)
 }
 
-ipcMain.handle('focus-comfy-window', async (_event, installationId: string) => {
+ipcMain.handle('focus-comfy-window', async (event, installationId: string) => {
   recordIpcInvocation('focus-comfy-window', { installationId })
-  if (await focusOpenComfyWindow(installationId)) return true
+  if (await focusOpenComfyWindow(installationId, findHostWindowByPanelSender(event.sender))) {
+    return true
+  }
   if (isRunningForAppsOnly(installationId)) return openWindowForAppsBuild(installationId)
 
   const proc = ipc.getSessionProcess(installationId)
@@ -1092,8 +1120,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         case 'ignore':
           return
         case 'focus':
-          await syncCloudWindowWorkspace(route.entry)
-          bringToFront(route.entry.window)
+          if (await prepareBuildWindowFocus(route.entry, requester?.window)) {
+            bringToFront(route.entry.window)
+          }
           return
         case 'show-starting':
           if (route.entry) bringToFront(route.entry.window)

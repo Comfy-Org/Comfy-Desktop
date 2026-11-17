@@ -235,10 +235,9 @@ test('Comfy Cloud stays available and reopens in the selected team or Personal w
   cloud.workspaces.push({ id: 'P', name: 'Personal Workspace', type: 'personal', role: 'owner' })
   await signInOnFreshProfile()
   await ctx!.app.evaluate(async ({ session, net }, baseUrl) => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const https = require('node:https') as typeof Https
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const http = require('node:http') as typeof Http
+    const mainProcess = globalThis.process
+    const https = mainProcess.getBuiltinModule('node:https') as typeof Https
+    const http = mainProcess.getBuiltinModule('node:http') as typeof Http
     const get = https.get
     https.get = ((...args: unknown[]) => {
       if (typeof args[0] !== 'string' && !(args[0] instanceof URL)) {
@@ -267,7 +266,9 @@ test('Comfy Cloud stays available and reopens in the selected team or Personal w
   for (const selected of ['B', 'personal', 'A']) {
     await select(selected)
     const workspaceId = selected === 'personal' ? 'P' : selected
-    await expectActive(workspaceId)
+    await expect
+      .poll(() => panel().evaluate<string>('window.api.getSetting("dashboardWorkspaceId")'))
+      .toBe(selected)
     await panel().waitForVisible('[data-testid="home-build"]')
     if (selected === 'personal') {
       await openPicker(ctx!.app, panel())

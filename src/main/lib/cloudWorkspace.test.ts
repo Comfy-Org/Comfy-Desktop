@@ -165,6 +165,55 @@ describe('reopening a Cloud window', () => {
     expect(loadURL).not.toHaveBeenCalled()
   })
 
+  it.each(['personal', 'team-a', 'team-b'])(
+    'settles both opens on the latest request for %s while the first navigation is pending',
+    async (selected) => {
+      const { entry, loadURL } = openWindow()
+      const started = Promise.withResolvers<void>()
+      const firstNavigation = Promise.withResolvers<void>()
+      loadURL.mockImplementationOnce(() => {
+        started.resolve()
+        return firstNavigation.promise
+      })
+
+      state.selected = 'team-a'
+      const firstOpen = syncCloudWindowWorkspace(entry)
+      await started.promise
+      state.selected = selected
+      const latestOpen = syncCloudWindowWorkspace(entry)
+      firstNavigation.resolve()
+
+      expect(await Promise.all([firstOpen, latestOpen])).toEqual([false, true])
+      const workspace = selected === 'personal' ? 'personal-id' : selected
+      expect(new URL(entry.comfyUrl).searchParams.get('workspace')).toBe(workspace)
+      expect(loadURL).toHaveBeenLastCalledWith(entry.comfyUrl)
+      expect(loadURL).toHaveBeenCalledTimes(selected === 'team-a' ? 1 : 2)
+    }
+  )
+
+  it('restores the previous workspace when a superseded navigation fails', async () => {
+    const { entry, loadURL } = openWindow()
+    const previousUrl = entry.comfyUrl
+    const started = Promise.withResolvers<void>()
+    const firstNavigation = Promise.withResolvers<void>()
+    loadURL.mockImplementationOnce(() => {
+      started.resolve()
+      return firstNavigation.promise
+    })
+
+    state.selected = 'team-a'
+    const firstOpen = syncCloudWindowWorkspace(entry)
+    await started.promise
+    state.selected = 'personal'
+    const latestOpen = syncCloudWindowWorkspace(entry)
+    firstNavigation.reject(new Error('offline'))
+
+    expect(await Promise.all([firstOpen, latestOpen])).toEqual([false, true])
+    expect(loadURL).toHaveBeenCalledTimes(2)
+    expect(loadURL).toHaveBeenLastCalledWith(previousUrl)
+    expect(entry.comfyUrl).toBe(previousUrl)
+  })
+
   it('does not navigate a local or remote window', async () => {
     const { entry, loadURL } = openWindow()
     entry.sourceCategory = 'local'

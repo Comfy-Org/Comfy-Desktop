@@ -1,3 +1,4 @@
+import type { WebContents } from 'electron'
 import { get as getInstallation, type InstallationRecord } from '../installations'
 import { getCloudSession } from '../devplatform/session'
 import type { ComfyWindowEntry } from '../host/registry'
@@ -10,6 +11,9 @@ import {
   workspaceContextId
 } from '../../shared/workspaces'
 import { isTrustedCloudUrl } from './trustedCloudUrl'
+
+const pendingWorkspaceSyncs = new WeakMap<ComfyWindowEntry, Promise<boolean>>()
+const failedWorkspaceLoads = new WeakSet<WebContents>()
 
 export async function cloudWorkspaceUrl(
   installation: InstallationRecord,
@@ -45,22 +49,57 @@ export async function cloudWorkspaceUrl(
   return url.href
 }
 
-export async function syncCloudWindowWorkspace(entry: ComfyWindowEntry): Promise<void> {
-  if (entry.sourceCategory !== 'cloud' || !entry.installationId) return
-  const installation = await getInstallation(entry.installationId)
-  if (!installation) return
-  const previousUrl = entry.comfyUrl
-  const nextUrl = await cloudWorkspaceUrl(installation, previousUrl)
-  const contents = entry.comfyView.webContents
-  if (
-    nextUrl === previousUrl ||
-    entry.comfyUrl !== previousUrl ||
-    entry.installationId !== installation.id ||
-    entry.window.isDestroyed() ||
-    contents.isDestroyed()
-  )
-    return
+async function navigateToSelectedWorkspace(
+  entry: ComfyWindowEntry,
+  installationId: string,
+  isLatest: () => boolean
+): Promise<boolean> {
+  const installation = await getInstallation(installationId)
+  if (!installation || !isLatest() || entry.window.isDestroyed()) return false
 
-  await contents.loadURL(nextUrl)
+  const previousUrl = entry.comfyUrl
+  const contents = entry.comfyView.webContents
+  const stillAttached = (): boolean =>
+    !entry.window.isDestroyed() &&
+    !contents.isDestroyed() &&
+    entry.comfyView.webContents === contents &&
+    entry.installationId === installationId &&
+    entry.comfyUrl === previousUrl
+
+  const nextUrl = await cloudWorkspaceUrl(installation, previousUrl)
+  if (!isLatest() || !stillAttached()) return false
+  if (nextUrl === previousUrl && !failedWorkspaceLoads.has(contents)) return true
+
+  try {
+    await contents.loadURL(nextUrl)
+  } catch (error) {
+    if (stillAttached()) failedWorkspaceLoads.add(contents)
+    throw error
+  }
+  if (!stillAttached()) return false
+
+  failedWorkspaceLoads.delete(contents)
   entry.comfyUrl = nextUrl
+  return true
+}
+
+export async function syncCloudWindowWorkspace(entry: ComfyWindowEntry): Promise<boolean> {
+  const { installationId } = entry
+  if (entry.sourceCategory !== 'cloud' || !installationId) return true
+
+  const previousSync = pendingWorkspaceSyncs.get(entry)
+  const isLatest = (): boolean => pendingWorkspaceSyncs.get(entry) === sync
+  const sync: Promise<boolean> = Promise.resolve(previousSync)
+    .catch(() => false)
+    .then(() => isLatest() && navigateToSelectedWorkspace(entry, installationId, isLatest))
+  pendingWorkspaceSyncs.set(entry, sync)
+
+  try {
+    return (await sync) && isLatest()
+  } catch (error) {
+    if (isLatest()) throw error
+    return false
+  } finally {
+    if (isLatest()) pendingWorkspaceSyncs.delete(entry)
+  }
 }
