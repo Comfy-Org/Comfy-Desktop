@@ -5,6 +5,8 @@ export type {
   AppPageStatus,
   AssetKind,
   AssetSummary,
+  AssetOrder,
+  CloudAssetPage,
   LocalAssetListing,
   CatalogWorkflow,
   Unsubscribe,

@@ -126,6 +126,16 @@
     "noCloudBuildTitle": "This workspace has no Comfy Cloud build yet",
     "noCloudBuildBody": "Add Comfy Cloud to this workspace to see its assets here.",
     "truncated": "Showing the newest file only. | Showing the newest {count} files only.",
+    "noMatchesOnPage": "No matching assets on this page",
+    "noMatchesOnPageHint": "Try another page, type or search.",
+    "pagination": {
+      "label": "Pages",
+      "previous": "Previous page",
+      "next": "Next page",
+      "page": "Page {page}",
+      "range": "{first}–{last} of {total}",
+      "pageSize": "Assets per page"
+    },
     "inspect": "Inspect {name}",
     "detail": {
       "tags": "Tags",

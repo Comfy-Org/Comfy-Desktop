@@ -33,6 +33,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import ContextMenu from '../components/ContextMenu.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import AssetsPagination from './AssetsPagination.vue'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useModal } from '../composables/useModal'
@@ -48,7 +49,7 @@ import { formatBytes } from '../lib/downloadFormatters'
 import { formatPlaybackTime, formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { LOCAL_ASSETS_SOURCE } from '../types/ipc'
-import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
+import type { AssetKind, AssetSummary, CloudAssetPage, Installation } from '../types/ipc'
 import type { ContextMenuItem } from '../types/context-menu'
 
 interface GalleryAsset extends AssetSummary {
@@ -79,6 +80,8 @@ interface Shape {
 }
 
 const SKELETON_COUNT = 8
+const CLOUD_PAGE_SIZES = [50, 100, 200] as const
+const PAGE_CACHE_TTL_MS = 30 * 60_000
 const NAME_TOOLTIP_DELAY_MS = 600
 const MIN_CARD_WIDTH = 240
 const CARD_GAP = 14
@@ -126,6 +129,9 @@ const SHARED = 'shared'
 const savedPlace = useLocalStorage('comfy.desktop.assets.place', '')
 const pickedPlace = ref('')
 const truncated = ref(false)
+const pageSize = useLocalStorage<number>('comfy.desktop.assets.pageSize', CLOUD_PAGE_SIZES[0])
+const currentPage = ref(1)
+const cloudTotal = ref(0)
 
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
@@ -255,14 +261,24 @@ const searchedAssets = computed(() => {
     : assets.value
 })
 
+const pageCount = computed(() => Math.max(1, Math.ceil(cloudTotal.value / pageSize.value)))
+const pagedCloud = computed(() => !!selectedBuild.value?.cloud && pageCount.value > 1)
+const showPagination = computed(
+  () => !!selectedBuild.value?.cloud && cloudTotal.value > CLOUD_PAGE_SIZES[0]
+)
+
+function kindCount(kind: KindFilter): number | undefined {
+  if (pagedCloud.value) return undefined
+  return kind === 'all'
+    ? searchedAssets.value.length
+    : searchedAssets.value.filter((asset) => asset.kind === kind).length
+}
+
 const kindOptions = computed(() =>
   kinds.map((kind) => ({
     value: kind,
     label: t(`assets.kind.${kind}`),
-    count:
-      kind === 'all'
-        ? searchedAssets.value.length
-        : searchedAssets.value.filter((asset) => asset.kind === kind).length,
+    count: kindCount(kind),
     testId: `assets-kind-${kind}`
   }))
 )
@@ -369,6 +385,9 @@ interface EmptyState {
 
 const emptyState = computed<EmptyState>(() => {
   if (failed.value) return { title: t('assets.loadFailed'), body: '' }
+  if (assets.value.length > 0 && pagedCloud.value) {
+    return { title: t('assets.noMatchesOnPage'), body: t('assets.noMatchesOnPageHint') }
+  }
   if (assets.value.length > 0) {
     return { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
   }
@@ -389,6 +408,39 @@ const emptyState = computed<EmptyState>(() => {
 })
 
 let requestId = 0
+let prefetchHandle = 0
+
+interface CachedPage {
+  savedAt: number
+  page: Promise<CloudAssetPage>
+}
+
+const pageCache = new Map<string, CachedPage>()
+
+function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage> {
+  const key = [loadKey.value, cloudId, sortOrder.value, pageSize.value, pageNumber].join('\n')
+  const cached = pageCache.get(key)
+  if (cached && Date.now() - cached.savedAt < PAGE_CACHE_TTL_MS) return cached.page
+  const page = window.api
+    .listAssets(cloudId, {
+      offset: (pageNumber - 1) * pageSize.value,
+      limit: pageSize.value,
+      order: sortOrder.value
+    })
+    .then((listed) => listed ?? Promise.reject(new Error('a newer page replaced this one')))
+  pageCache.set(key, { savedAt: Date.now(), page })
+  page.catch(() => {
+    if (pageCache.get(key)?.page === page) pageCache.delete(key)
+  })
+  return page
+}
+
+function prefetchPage(cloudId: string, pageNumber: number): void {
+  if (pageNumber > pageCount.value) return
+  prefetchHandle = requestIdleCallback(() => void cloudPage(cloudId, pageNumber).catch(() => {}))
+}
+
+onBeforeUnmount(() => cancelIdleCallback(prefetchHandle))
 
 async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean): Promise<void> {
   const dashboardWorkspaceId = installationWorkspaceId(build, dashboardScope.selectedWorkspaceId)
@@ -403,6 +455,7 @@ async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean)
 
 async function loadAssets(userAsked = false): Promise<void> {
   const current = ++requestId
+  cancelIdleCallback(prefetchHandle)
   const selected = selectedBuild.value
   const cloud = selected?.cloud ? cloudBuild.value : null
   failed.value = false
@@ -420,11 +473,17 @@ async function loadAssets(userAsked = false): Promise<void> {
       if (current !== requestId) return
     }
     const listed = cloud
-      ? { assets: await window.api.listAssets(cloud.id), truncated: false }
+      ? await cloudPage(cloud.id, currentPage.value)
       : await window.api.listLocalAssets(selected.computer ? undefined : selected.build.id)
     if (current !== requestId) return
+    if ('total' in listed) cloudTotal.value = listed.total
+    if (cloud && listed.assets.length === 0 && currentPage.value > pageCount.value) {
+      currentPage.value = pageCount.value
+      return
+    }
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
-    truncated.value = listed.truncated
+    truncated.value = 'truncated' in listed && listed.truncated
+    if (cloud) prefetchPage(cloud.id, currentPage.value + 1)
   } catch {
     if (current !== requestId) return
     assets.value = []
@@ -446,9 +505,23 @@ const loadKey = computed(() => {
     : selected.build.id
 })
 
+const listedCloudId = computed(() =>
+  selectedBuild.value?.cloud ? cloudBuild.value?.id : undefined
+)
+const cloudQuery = computed(() =>
+  selectedBuild.value?.cloud ? `${sortOrder.value}\n${pageSize.value}` : ''
+)
+
+watch([loadKey, listedCloudId], () => {
+  pageCache.clear()
+  cloudTotal.value = 0
+  currentPage.value = 1
+})
+watch(cloudQuery, () => (currentPage.value = 1))
 watch(
-  [loadKey, () => (selectedBuild.value?.cloud ? cloudBuild.value?.id : undefined)],
+  [loadKey, listedCloudId, cloudQuery, currentPage],
   () => {
+    scroller.value?.scrollTo({ top: 0 })
     assets.value = []
     void loadAssets()
   },
@@ -456,6 +529,7 @@ watch(
 )
 
 function refresh(): void {
+  pageCache.clear()
   void loadAssets(true)
 }
 
@@ -759,7 +833,11 @@ function extensionOf(name: string): string {
                 data-testid="assets-kind-menu"
               >
                 {{ currentKind.label }}
-                <span class="text-subtle-foreground tabular-nums">{{ currentKind.count }}</span>
+                <span
+                  v-if="currentKind.count !== undefined"
+                  class="text-subtle-foreground tabular-nums"
+                  >{{ currentKind.count }}</span
+                >
                 <ChevronDown :size="14" aria-hidden="true" />
               </Button>
             </template>
@@ -775,7 +853,11 @@ function extensionOf(name: string): string {
                 @select.prevent="kindFilter = option.value"
               >
                 <span class="flex-1 text-left">{{ option.label }}</span>
-                <span class="text-subtle-foreground tabular-nums">{{ option.count }}</span>
+                <span
+                  v-if="option.count !== undefined"
+                  class="text-subtle-foreground tabular-nums"
+                  >{{ option.count }}</span
+                >
                 <Check v-if="kindFilter === option.value" :size="15" aria-hidden="true" />
               </MenuRadioItem>
             </DropdownMenuRadioGroup>
@@ -1096,6 +1178,13 @@ function extensionOf(name: string): string {
       >
         {{ t('assets.truncated', assets.length) }}
       </p>
+      <AssetsPagination
+        v-if="showPagination"
+        v-model:page="currentPage"
+        v-model:page-size="pageSize"
+        :total="cloudTotal"
+        :page-sizes="CLOUD_PAGE_SIZES"
+      />
     </div>
 
     <OutputDetailDialog

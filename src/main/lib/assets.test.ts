@@ -113,6 +113,8 @@ function pngHeader(width: number, height: number): Uint8Array<ArrayBuffer> {
   return new Uint8Array(header)
 }
 
+const FIRST_PAGE = { offset: 0, limit: 100, order: 'newest' } as const
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -159,9 +161,9 @@ describe('signedStorageUrl', () => {
 describe('listAssets', () => {
   it('never asks a local or remote build over HTTP', async () => {
     getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    expect(await listAssets('local-1')).toEqual([])
+    expect((await listAssets('local-1', FIRST_PAGE)).assets).toEqual([])
     getInstallation.mockResolvedValue({ id: 'remote-1', sourceId: 'remote' })
-    expect(await listAssets('remote-1')).toEqual([])
+    expect((await listAssets('remote-1', FIRST_PAGE)).assets).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -169,7 +171,7 @@ describe('listAssets', () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue(null)
 
-    expect(await listAssets('cloud-1')).toEqual([])
+    expect((await listAssets('cloud-1', FIRST_PAGE)).assets).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -187,7 +189,7 @@ describe('listAssets', () => {
       )
       .mockResolvedValue(new Response(null, { status: 404 }))
 
-    const assets = await listAssets('cloud-1')
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
 
     expect(assets.map((a) => [a.id, a.sizeBytes])).toEqual([['good', 0]])
   })
@@ -203,10 +205,41 @@ describe('listAssets', () => {
       )
       .mockResolvedValue(new Response(null, { status: 404 }))
 
-    const assets = await listAssets('cloud-1')
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
 
     expect(assets).toHaveLength(100)
     expect(assets.at(-1)!.id).toBe('a99')
+  })
+
+  it('asks Cloud for one page of outputs at the offset, size and order the page asks for', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ assets: [{ id: 'a1', name: 'a1.bin' }], total: 1561, has_more: true })
+    )
+
+    const page = await listAssets('cloud-1', { offset: 150, limit: 50, order: 'oldest' })
+
+    const asked = new URL(fetchMock.mock.calls[0]![0])
+    expect(Object.fromEntries(asked.searchParams)).toEqual({
+      tags_any: 'output',
+      sort: 'created_at',
+      order: 'asc',
+      limit: '50',
+      offset: '150',
+      include_public: 'false'
+    })
+    expect(page.total).toBe(1561)
+  })
+
+  it('counts the outputs it has seen when Cloud leaves out the total', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(jsonResponse({ assets: [{ id: 'a1', name: 'a1.bin' }] }))
+
+    const page = await listAssets('cloud-1', { offset: 100, limit: 50, order: 'newest' })
+
+    expect(page.total).toBe(101)
   })
 
   it('lists the signed-in cloud workspace and resolves signed media links for playable kinds', async () => {
@@ -232,7 +265,7 @@ describe('listAssets', () => {
           })
       )
 
-    const assets = await listAssets('cloud-1')
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
 
     expect(fetchMock.mock.calls[0]![1].headers.Authorization).toBe('Bearer token')
     expect(assets.map((a) => [a.name, a.kind, a.previewUrl])).toEqual([
@@ -270,7 +303,7 @@ describe('listAssets', () => {
       return new Response(file, { status: 206 })
     })
 
-    const assets = await listAssets('cloud-1')
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
 
     expect(
       assets.map((a) => [
@@ -710,6 +743,70 @@ describe('the download handler', () => {
     await handlers.get('assets:download')!({ sender }, 'local', '/out/still.png', 'still.png')
 
     expect(showSaveDialog.mock.calls[0]![0]).toBe(owner)
+  })
+})
+
+describe('the list handler', () => {
+  function cloudListThatWaits(): AbortSignal[] {
+    const signals: AbortSignal[] = []
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((resolve, reject) => {
+          signals.push(init.signal)
+          init.signal.addEventListener('abort', () => reject(init.signal.reason))
+          setTimeout(() => resolve(jsonResponse({ assets: [], total: 0 })), 50)
+        })
+    )
+    return signals
+  }
+
+  it('stops the page a window asked for before when the window asks for another', async () => {
+    const signals = cloudListThatWaits()
+    registerAssetsHandlers()
+    const list = handlers.get('assets:list')!
+    const sender = {}
+
+    const first = list({ sender }, 'cloud-1', FIRST_PAGE)
+    await vi.waitFor(() => expect(signals).toHaveLength(1))
+    const second = list({ sender }, 'cloud-1', { ...FIRST_PAGE, offset: 100 })
+
+    expect(await first, 'the replaced page').toBeNull()
+    expect(signals[0]!.aborted).toBe(true)
+    expect(await second).toEqual({ assets: [], total: 0 })
+  })
+
+  it('lets two windows list pages at the same time', async () => {
+    const signals = cloudListThatWaits()
+    registerAssetsHandlers()
+    const list = handlers.get('assets:list')!
+
+    const pages = await Promise.all([
+      list({ sender: {} }, 'cloud-1', FIRST_PAGE),
+      list({ sender: {} }, 'cloud-1', FIRST_PAGE)
+    ])
+
+    expect(pages).toEqual([
+      { assets: [], total: 0 },
+      { assets: [], total: 0 }
+    ])
+    expect(signals.some((signal) => signal.aborted)).toBe(false)
+  })
+
+  it.each([
+    ['no page', undefined],
+    ['a negative offset', { ...FIRST_PAGE, offset: -1 }],
+    ['a page larger than Cloud allows here', { ...FIRST_PAGE, limit: 500 }],
+    ['an unknown order', { ...FIRST_PAGE, order: 'random' }]
+  ])('asks Cloud nothing for %s', async (_case, page) => {
+    registerAssetsHandlers()
+
+    expect(await handlers.get('assets:list')!({ sender: {} }, 'cloud-1', page)).toEqual({
+      assets: [],
+      total: 0
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 
