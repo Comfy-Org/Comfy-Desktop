@@ -14,7 +14,7 @@ import MarDownloadsMenu from '../mar/shell/MarDownloadsMenu.vue'
  * out like the real one at this milestone: today's layout (menu left, the
  * centre pill) until the breadcrumb arrives (Milestone 3) - then the
  * breadcrumb. From Builds on, the ☰ is Desktop's menu (mar/shell/MarTitleMenu.vue),
- * at the left in every milestone.
+ * last on the right, as in Comfy-Desktop#2027.
  */
 </script>
 
@@ -28,7 +28,6 @@ import MarDownloadsMenu from '../mar/shell/MarDownloadsMenu.vue'
       /><span class="size-3 rounded-full bg-[#28c840]" />
     </span>
     <span class="w-2" aria-hidden="true" />
-    <MarTitleMenu v-if="can.builds" />
     <TitleBarBreadcrumb
       v-if="can.breadcrumb"
       :state="titleBarState"
@@ -59,6 +58,7 @@ import MarDownloadsMenu from '../mar/shell/MarDownloadsMenu.vue'
       <MessageSquarePlus :size="15" />
       <MarDownloadsMenu v-if="can.builds" />
       <ArrowDownToLine v-else :size="15" />
+      <MarTitleMenu v-if="can.builds" />
       <!-- The prototype controls. -->
       <MarProtoMenu />
     </span>
