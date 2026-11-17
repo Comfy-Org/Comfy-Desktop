@@ -30,7 +30,11 @@
     "crashed": "Crashed",
     "crashedWithCode": "Crashed (exit code {code})",
     "crashedWithSignal": "Crashed ({signal})",
-    "failedToStartReason": "Failed to start: {reason}"
+    "failedToStartReason": "Failed to start: {reason}",
+    "credits": "Credits",
+    "creditsTooltip": "{credits} Credits",
+    "creditsError": "Unable to load balance",
+    "manageCredits": "Manage plan & credits"
   },
   "apps": {
     "search": "Search apps",

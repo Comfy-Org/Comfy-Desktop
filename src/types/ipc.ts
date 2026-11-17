@@ -108,6 +108,12 @@ export interface VersionStatsValue {
 
 export type CloudUserTier = 'free' | 'paid' | 'unknown'
 
+export type CreditBalanceState =
+  | { status: 'signed_out' }
+  | { status: 'loading' }
+  | { status: 'ready'; cents: number }
+  | { status: 'error' }
+
 export interface Installation {
   id: string
   name: string
@@ -1283,6 +1289,10 @@ export interface ElectronApi {
   getAppVersion(): Promise<string>
   getStableTags(): Promise<string[]>
   getCloudUserTier(): Promise<CloudUserTier>
+  getCreditBalance(): Promise<CreditBalanceState>
+  refreshCreditBalance(): Promise<void>
+  openManageCredits(): Promise<void>
+  onCreditBalanceChanged(callback: (state: CreditBalanceState) => void): Unsubscribe
   getCloudFreeRunsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>

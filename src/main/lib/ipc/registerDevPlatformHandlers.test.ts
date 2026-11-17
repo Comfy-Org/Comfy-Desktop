@@ -47,7 +47,12 @@ const mocks = vi.hoisted(() => ({
   operationAborts: new Map<string, AbortController>(),
   translate: vi.fn((key: string) => key),
   endViewGrants: vi.fn(),
-  allowDesktopWorkspace: vi.fn()
+  allowDesktopWorkspace: vi.fn(),
+  creditBalanceAuthChanged: vi.fn()
+}))
+
+vi.mock('./registerCreditBalanceHandlers', () => ({
+  creditBalanceAuthChanged: mocks.creditBalanceAuthChanged
 }))
 
 vi.mock('../viewWorkspaceGrants', () => ({
@@ -319,6 +324,15 @@ describe('registerDevPlatformHandlers', () => {
 
     expect(destroyed).not.toHaveBeenCalled()
     expect(live).toHaveBeenCalledOnce()
+  })
+
+  it('refetches the credit balance on sign-in and clears it on sign-out', async () => {
+    mocks.login.mockResolvedValue({ signedIn: true, workspaceId: 'ws-1' })
+
+    await handler('comfybuilder:signIn')({})
+    await handler('comfybuilder:signOut')({})
+
+    expect(mocks.creditBalanceAuthChanged.mock.calls).toEqual([[true], [false]])
   })
 
   it('signOut clears the session and broadcasts signed-out', async () => {

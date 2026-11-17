@@ -3,11 +3,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import AppSidebar from './AppSidebar.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
-import type { DashboardPage, Installation } from '../types/ipc'
+import type { CreditBalanceState, DashboardPage, Installation } from '../types/ipc'
 
 function build(over: Partial<Installation> & { id: string; name: string }): Installation {
   return { sourceLabel: 'Standalone', sourceCategory: 'local', ...over }
@@ -28,11 +29,13 @@ const TEAM = build({ id: 'team', name: 'Team Build', lastLaunchedAt: 400, worksp
 const navigatePanel = vi.fn()
 const openGlobalSettings = vi.fn()
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
+const getCreditBalance = vi.fn<() => Promise<CreditBalanceState>>()
 
 beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
   getAppsEnabled.mockResolvedValue(false)
+  getCreditBalance.mockResolvedValue({ status: 'signed_out' })
   ;(window as unknown as { api: unknown }).api = {
     navigatePanel,
     openGlobalSettings,
@@ -43,6 +46,11 @@ beforeEach(() => {
     getSetting: vi.fn().mockResolvedValue(undefined),
     setSetting: vi.fn().mockResolvedValue(undefined),
     onSettingsChanged: vi.fn(() => () => {}),
+    getCreditBalance,
+    refreshCreditBalance: vi.fn().mockResolvedValue(undefined),
+    openManageCredits: vi.fn().mockResolvedValue(undefined),
+    onCreditBalanceChanged: vi.fn(() => () => {}),
+    onAppPageClosed: vi.fn(() => () => {}),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       onAuthChanged: vi.fn(() => () => {})
@@ -62,6 +70,16 @@ async function mountSidebar(
   })
   await flushPromises()
   return wrapper
+}
+
+function tooltipOf(
+  wrapper: Awaited<ReturnType<typeof mountSidebar>>,
+  testId: string
+): string | undefined {
+  return wrapper
+    .findAllComponents(Tooltip)
+    .find((tip) => tip.find(`[data-testid="${testId}"]`).exists())
+    ?.props('text')
 }
 
 describe('AppSidebar', () => {
@@ -151,7 +169,8 @@ describe('AppSidebar', () => {
   it('returns Home from the Comfy mark', async () => {
     const wrapper = await mountSidebar('benchmarks')
 
-    await wrapper.get('button[title="Home"]').trigger('click')
+    expect(tooltipOf(wrapper, 'app-sidebar-logo')).toBe('Home')
+    await wrapper.get('[data-testid="app-sidebar-logo"]').trigger('click')
 
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('home')
   })
@@ -163,7 +182,9 @@ describe('AppSidebar', () => {
     expect(settings.text()).toBe('Desktop Settings')
     expect(settings.attributes('aria-haspopup')).toBe('dialog')
     expect(settings.element.closest('nav')).toBeNull()
-    expect(settings.element.nextElementSibling?.classList.contains('sidebar-account')).toBe(true)
+    expect(settings.element.parentElement?.nextElementSibling?.classList).toContain(
+      'sidebar-account'
+    )
 
     const events: TelemetryActionEventDetail[] = []
     const record: EventListener = (event) => {
@@ -191,7 +212,7 @@ describe('AppSidebar', () => {
     const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
     expect(settings.text()).toBe('')
     expect(settings.attributes('aria-label')).toBe('Desktop Settings')
-    expect(settings.attributes('title')).toBe('Desktop Settings')
+    expect(tooltipOf(wrapper, 'app-sidebar-settings')).toBe('Desktop Settings')
 
     await settings.trigger('click')
 
@@ -202,13 +223,15 @@ describe('AppSidebar', () => {
     const wrapper = await mountSidebar()
     const home = wrapper.get('[data-testid="app-sidebar-home"]')
     expect(home.text()).toBe('Home')
-    expect(home.attributes('title')).toBeUndefined()
+    expect(tooltipOf(wrapper, 'app-sidebar-home')).toBeUndefined()
+    expect(tooltipOf(wrapper, 'app-sidebar-settings')).toBeUndefined()
 
     await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
     await flushPromises()
 
     expect(home.text()).toBe('')
-    expect(home.attributes('title')).toBe('Home')
+    expect(tooltipOf(wrapper, 'app-sidebar-home')).toBe('Home')
+    expect(home.attributes('title')).toBeUndefined()
     expect(wrapper.get('[data-testid="app-sidebar-toggle"]').attributes('aria-expanded')).toBe(
       'false'
     )
@@ -216,6 +239,34 @@ describe('AppSidebar', () => {
     wrapper.unmount()
     const reopened = await mountSidebar()
     expect(reopened.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
+  })
+
+  it('keeps a tooltip on the icon-only buttons whether or not the sidebar is collapsed', async () => {
+    const wrapper = await mountSidebar()
+    expect(tooltipOf(wrapper, 'app-sidebar-toggle')).toBe('Collapse sidebar')
+    expect(tooltipOf(wrapper, 'app-sidebar-new-build')).toBe('New build')
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+
+    expect(tooltipOf(wrapper, 'app-sidebar-toggle')).toBe('Expand sidebar')
+    expect(wrapper.findAllComponents(Tooltip).every((tip) => tip.props('side') === 'right')).toBe(
+      true
+    )
+    expect(
+      wrapper.findAll('[title]').filter((el) => !el.element.closest('.sidebar-account'))
+    ).toHaveLength(0)
+  })
+
+  it('shows Credits between Desktop Settings and the account once signed in', async () => {
+    getCreditBalance.mockResolvedValue({ status: 'ready', cents: 100 })
+    const wrapper = await mountSidebar()
+
+    const credits = wrapper.get('[data-testid="app-sidebar-credits"]')
+    const settingsWrap = wrapper.get('[data-testid="app-sidebar-settings"]').element.parentElement
+    expect(settingsWrap?.nextElementSibling?.contains(credits.element)).toBe(true)
+    expect(credits.element.parentElement?.nextElementSibling?.classList).toContain(
+      'sidebar-account'
+    )
   })
 
   describe('Builds group', () => {
@@ -277,7 +328,9 @@ describe('AppSidebar', () => {
 
       const row = wrapper.get('[data-testid="app-sidebar-build-old"]')
       expect(row.find('[data-testid="app-sidebar-dot-failed"]').exists()).toBe(true)
-      expect(row.attributes('title')).toBe('Flux Sandbox · Failed to start: Port 8188 is in use')
+      expect(tooltipOf(wrapper, 'app-sidebar-build-old')).toBe(
+        'Flux Sandbox · Failed to start: Port 8188 is in use'
+      )
     })
 
     it('says a build crashed, with its exit code, rather than that it failed to start', async () => {
@@ -289,7 +342,9 @@ describe('AppSidebar', () => {
 
       const row = wrapper.get('[data-testid="app-sidebar-build-old"]')
       expect(row.find('[data-testid="app-sidebar-dot-failed"]').exists()).toBe(true)
-      expect(row.attributes('title')).toBe('Flux Sandbox · Crashed (exit code 3221225477)')
+      expect(tooltipOf(wrapper, 'app-sidebar-build-old')).toBe(
+        'Flux Sandbox · Crashed (exit code 3221225477)'
+      )
     })
 
     it('opens a build without launching or navigating', async () => {
@@ -323,7 +378,7 @@ describe('AppSidebar', () => {
 
       expect(wrapper.find('[data-testid="app-sidebar-builds"]').exists()).toBe(false)
       const builds = wrapper.get('[data-testid="app-sidebar-chooser"]')
-      expect(builds.attributes('title')).toBe('Builds')
+      expect(tooltipOf(wrapper, 'app-sidebar-chooser')).toBe('Builds')
       expect(builds.attributes('aria-current')).toBe('page')
     })
   })
