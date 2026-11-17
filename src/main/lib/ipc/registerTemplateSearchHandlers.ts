@@ -1,6 +1,7 @@
-import { ipcMain, type WebContents } from 'electron'
+import { ipcMain } from 'electron'
 import { get as getInstallation, type InstallationRecord } from '../../installations'
-import { getEntryByInstallationId } from '../../host/registry'
+import { getEntryByInstallationId, type ComfyWindowEntry } from '../../host/registry'
+import { navigatorFor } from '../../host/buildNavigator'
 import { isPersistableTemplateId } from '../../sources/standalone/curatedTemplates'
 import type { TerminalEnv } from '../../types/sources'
 import { TEMPLATE_SEARCH_MAX_QUERY } from '../../../shared/templateSearch'
@@ -49,11 +50,11 @@ function queryFrom(value: unknown): string | null {
   return query && query.length <= TEMPLATE_SEARCH_MAX_QUERY ? query : null
 }
 
-function comfyView(installationId: string): { url: string; contents: WebContents } | null {
+function buildWindow(installationId: string): ComfyWindowEntry | null {
   const entry = getEntryByInstallationId(installationId)
   const contents = entry?.comfyView.webContents
   if (!entry?.comfyUrl || !contents || contents.isDestroyed()) return null
-  return { url: entry.comfyUrl, contents }
+  return entry
 }
 
 function opensInAWindow(installation: InstallationRecord): boolean {
@@ -84,6 +85,7 @@ export function registerTemplateSearchHandlers({
     },
     after(installationId, actionId) {
       if (actionId === 'launch') dropTemplateOpen(installationId)
+      if (changesBuildEnv(actionId)) search.forget(installationId)
       process.onBuildActionEnd()
     }
   })
@@ -123,11 +125,11 @@ export function registerTemplateSearchHandlers({
         queueTemplateOpen(installationId, templateId)
         return 'launch'
       }
-      const view = session.mode === 'window' ? comfyView(installationId) : null
-      if (!view) return 'refused'
+      const entry = session.mode === 'window' ? buildWindow(installationId) : null
+      if (!entry) return 'refused'
       try {
-        await view.contents.loadURL(buildTemplateDeeplink(view.url, templateId))
-        return 'opened'
+        const deeplink = buildTemplateDeeplink(entry.comfyUrl, templateId)
+        return (await navigatorFor(entry).open(deeplink)) === 'loaded' ? 'opened' : 'refused'
       } catch {
         return 'refused'
       }
