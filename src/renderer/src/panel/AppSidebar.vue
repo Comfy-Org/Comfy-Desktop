@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, provide, ref, toRef, watch } from 'vue'
+import { computed, onMounted, provide, ref, shallowRef, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
@@ -16,7 +16,9 @@ import {
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
+import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
+import BuildMenu from './home/BuildMenu.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { TOOLTIP_GATE } from '../components/ui/tooltipGate'
@@ -140,6 +142,23 @@ const buildRows = computed(() =>
 function navigate(page: DashboardPage): void {
   emit('navigate', page)
   window.api.navigatePanel(page)
+}
+
+const { open: buildMenuOpen, menuProps: buildMenuProps, show: showBuildMenu } = usePointMenu()
+const buildMenuTarget = shallowRef<{ buildId: string; returnFocus: HTMLElement | null } | null>(
+  null
+)
+const buildMenuBuild = computed(() => {
+  const target = buildMenuTarget.value
+  return target ? installationStore.getById(target.buildId) : undefined
+})
+
+function openBuildMenu(event: MouseEvent, build: Installation): void {
+  buildMenuTarget.value = {
+    buildId: build.id,
+    returnFocus: event.currentTarget as HTMLElement | null
+  }
+  showBuildMenu(event)
 }
 
 function openSettings(): void {
@@ -284,6 +303,7 @@ function openSettings(): void {
             :aria-current="build.id === activeBuildId ? 'page' : undefined"
             :data-testid="`app-sidebar-build-${build.id}`"
             @click="emit('open-build', build)"
+            @contextmenu.prevent="openBuildMenu($event, build)"
           >
             <LoaderCircle
               v-if="install"
@@ -349,5 +369,13 @@ function openSettings(): void {
       <SidebarCredits :collapsed="collapsed" />
       <SidebarAccount :collapsed="collapsed" />
     </div>
+
+    <BuildMenu
+      v-if="buildMenuBuild && buildMenuProps.reference"
+      v-model:open="buildMenuOpen"
+      :build="buildMenuBuild"
+      :anchor="buildMenuProps.reference"
+      :return-focus="buildMenuTarget?.returnFocus"
+    />
   </aside>
 </template>
