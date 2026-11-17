@@ -460,9 +460,9 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
           class="picker-left m-2 mr-0 flex min-h-0 min-w-0 flex-col gap-2 rounded-[14px] bg-[var(--picker-side-bg)] p-2 [--picker-row-hover:color-mix(in_oklch,var(--foreground)_11%,var(--modal-surface-bg))] [--picker-row-active:color-mix(in_oklch,var(--foreground)_15%,var(--modal-surface-bg))] [--picker-side-bg:color-mix(in_oklch,var(--foreground)_6%,var(--modal-surface-bg))]"
         >
           <div class="picker-list-section -mx-2 flex min-h-0 flex-auto flex-col overflow-hidden">
-            <div class="picker-list-head relative mx-2 mb-1 h-9 flex-none">
+            <div class="picker-list-head relative mx-2 mb-px h-8 flex-none">
               <div
-                class="picker-list-section-title flex h-full items-center gap-1 pr-1 pl-[11px] text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase transition-opacity duration-150 ease-out"
+                class="picker-list-section-title flex h-full items-center gap-1 pr-0.5 pl-3 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase transition-opacity duration-150 ease-out"
                 :class="{ 'opacity-0': searchOpen }"
                 :inert="searchOpen"
               >
@@ -471,7 +471,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
                 <button
                   ref="searchButton"
                   type="button"
-                  class="picker-search-toggle ml-auto flex size-7 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted-foreground transition-[background-color,color] duration-[120ms] ease-[ease] hover:bg-[var(--picker-row-hover)] hover:text-foreground focus-visible:bg-[var(--picker-row-hover)] focus-visible:text-foreground focus-visible:outline-none"
+                  class="picker-search-toggle ml-auto flex size-6 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted-foreground transition-[background-color,color] duration-[120ms] ease-[ease] hover:bg-[var(--picker-row-hover)] hover:text-foreground focus-visible:bg-[var(--picker-row-hover)] focus-visible:text-foreground focus-visible:outline-none"
                   :aria-label="$t('instancePicker.searchPlaceholder')"
                   :aria-expanded="searchOpen"
                   @click="openSearch"
@@ -487,10 +487,10 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
               >
                 <label
                   v-if="searchOpen"
-                  class="picker-search absolute inset-0 grid cursor-text grid-cols-[24px_minmax(0,1fr)] items-center gap-2 rounded-lg bg-[var(--picker-row-hover)] pr-2 pl-[11px]"
+                  class="picker-search absolute inset-0 grid cursor-text grid-cols-[16px_minmax(0,1fr)] items-center gap-2.5 rounded-lg bg-[var(--picker-row-hover)] px-3"
                 >
                   <span
-                    class="picker-search-icon flex size-6 items-center justify-center text-muted-foreground"
+                    class="picker-search-icon flex size-4 items-center justify-center text-muted-foreground"
                     aria-hidden="true"
                     ><Search :size="16"
                   /></span>
@@ -498,7 +498,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
                     ref="searchInput"
                     v-model="searchQuery"
                     type="text"
-                    class="picker-search-input m-0 min-w-0 border-0 bg-transparent p-0 text-[14px] leading-5 text-foreground outline-none placeholder:text-muted-foreground"
+                    class="picker-search-input m-0 min-w-0 border-0 bg-transparent p-0 text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground"
                     :placeholder="$t('instancePicker.searchPlaceholder')"
                     :aria-label="$t('instancePicker.searchPlaceholder')"
                     @keydown.esc.stop.prevent="onSearchEscape"
@@ -516,7 +516,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
               leave-active-class="picker-row-leave-active absolute [transition:opacity_140ms_ease,transform_140ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
               leave-to-class="picker-row-leave-to opacity-0 [transform:scale(0.98)] motion-reduce:transform-none"
               move-class="picker-row-move [transition:transform_220ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
-              class="picker-list relative flex min-h-0 flex-auto flex-col gap-1 overflow-y-auto"
+              class="picker-list relative flex min-h-0 flex-auto flex-col gap-px overflow-y-auto"
               role="listbox"
               @before-leave="lockLeavingRowSize"
             >

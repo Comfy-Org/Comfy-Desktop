@@ -37,12 +37,12 @@ function handleClick(): void {
 </script>
 
 <template>
-  <div class="picker-row-wrap box-border w-full px-2 py-0.5">
+  <div class="picker-row-wrap box-border w-full px-2">
     <div
       role="option"
       :aria-selected="active"
       tabindex="0"
-      class="picker-row group/instance grid grid-cols-[24px_minmax(0,1fr)] items-center gap-2 rounded-lg border border-solid border-transparent py-2 pr-2 pl-2.5 text-left text-inherit cursor-pointer transition-[background-color] duration-[120ms] ease-[ease] focus-visible:outline-none"
+      class="picker-row group/instance box-border grid h-8 grid-cols-[16px_minmax(0,1fr)] items-center gap-2.5 rounded-lg px-3 text-left text-inherit cursor-pointer transition-[background-color] duration-[120ms] ease-[ease] focus-visible:outline-none"
       :class="[
         active
           ? 'is-active bg-[var(--picker-row-active,var(--color-accent))]'
@@ -55,29 +55,29 @@ function handleClick(): void {
       @keydown.space.prevent="handleClick"
     >
       <div
-        class="picker-row-icon relative flex size-6 flex-none items-center justify-center text-neutral-100 transition-[color] duration-[120ms] ease-[ease] group-aria-selected/instance:text-text"
+        class="picker-row-icon relative flex size-4 flex-none items-center justify-center text-neutral-100 transition-[color] duration-[120ms] ease-[ease] group-aria-selected/instance:text-text"
         :title="$t(typeMeta.labelKey)"
       >
-        <component :is="typeMeta.icon" :size="20" />
+        <component :is="typeMeta.icon" :size="16" />
         <span
           v-if="operating"
-          class="picker-row-op-dot absolute -right-px -bottom-px box-content size-1.5 rounded-[50%] border-2 border-solid border-[var(--picker-side-bg,var(--color-neutral-800))] group-hover/instance:border-[var(--picker-row-hover,var(--color-neutral-800))] group-aria-selected/instance:border-[var(--picker-row-active,var(--color-neutral-800))]! bg-[conic-gradient(var(--brand-accent,#f5c518)_270deg,transparent_270deg)] animate-spin [animation-duration:800ms]"
+          class="picker-row-op-dot absolute -right-0.5 -bottom-0.5 box-content size-1.5 rounded-[50%] border-2 border-solid border-[var(--picker-side-bg,var(--color-neutral-800))] group-hover/instance:border-[var(--picker-row-hover,var(--color-neutral-800))] group-aria-selected/instance:border-[var(--picker-row-active,var(--color-neutral-800))]! bg-[conic-gradient(var(--brand-accent,#f5c518)_270deg,transparent_270deg)] animate-spin [animation-duration:800ms]"
           aria-hidden="true"
         ></span>
         <span
           v-else-if="updateAvailable"
-          class="picker-row-update-dot absolute -right-px -bottom-px box-content size-1.5 rounded-[50%] border-2 border-solid border-[var(--picker-side-bg,var(--color-neutral-800))] group-hover/instance:border-[var(--picker-row-hover,var(--color-neutral-800))] group-aria-selected/instance:border-[var(--picker-row-active,var(--color-neutral-800))]! bg-[var(--status-update,#f59e0b)]"
+          class="picker-row-update-dot absolute -right-0.5 -bottom-0.5 box-content size-1.5 rounded-[50%] border-2 border-solid border-[var(--picker-side-bg,var(--color-neutral-800))] group-hover/instance:border-[var(--picker-row-hover,var(--color-neutral-800))] group-aria-selected/instance:border-[var(--picker-row-active,var(--color-neutral-800))]! bg-[var(--status-update,#f59e0b)]"
           aria-hidden="true"
         ></span>
         <span
           v-else-if="running"
-          class="picker-row-running-dot absolute -right-px -bottom-px box-content size-1.5 rounded-[50%] border-2 border-solid border-[var(--picker-side-bg,var(--color-neutral-800))] group-hover/instance:border-[var(--picker-row-hover,var(--color-neutral-800))] group-aria-selected/instance:border-[var(--picker-row-active,var(--color-neutral-800))]! bg-[#38c149]"
+          class="picker-row-running-dot absolute -right-0.5 -bottom-0.5 box-content size-1.5 rounded-[50%] border-2 border-solid border-[var(--picker-side-bg,var(--color-neutral-800))] group-hover/instance:border-[var(--picker-row-hover,var(--color-neutral-800))] group-aria-selected/instance:border-[var(--picker-row-active,var(--color-neutral-800))]! bg-[#38c149]"
           aria-hidden="true"
         ></span>
       </div>
       <div class="picker-row-body flex min-w-0 items-center gap-2 overflow-hidden">
         <span
-          class="picker-row-name min-w-0 flex-auto truncate text-[14px] leading-5 font-medium text-neutral-100 group-aria-selected/instance:text-text"
+          class="picker-row-name min-w-0 flex-auto truncate text-[13px] leading-5 font-medium text-neutral-100 group-aria-selected/instance:text-text"
           >{{ installation.name }}</span
         >
         <span
