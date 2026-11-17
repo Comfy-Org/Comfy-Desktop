@@ -183,3 +183,65 @@ export async function openNewBuildChangeSetup(panel: WebContentsPage): Promise<v
 export async function dismissOverlay(panel: WebContentsPage): Promise<void> {
   await panel.pressKey('Escape')
 }
+
+export const SOURCE_DROPDOWN = '[data-testid="install-source-tabs"]'
+export const HARDWARE_DROPDOWN = '[data-testid="config-select-variant"]'
+
+export async function openSetupDropdown(panel: WebContentsPage, trigger: string): Promise<void> {
+  await panel.waitForVisible(`${trigger}:not([disabled])`, { timeout: 15_000 })
+  expect(await panel.click(trigger), `${trigger} opened`).toBe(true)
+  await panel.waitForVisible('[role="listbox"] [role="option"]', { timeout: 5_000 })
+}
+
+export async function closeSetupDropdown(panel: WebContentsPage): Promise<void> {
+  await panel.pressKey('Escape')
+  await panel.waitFor(async () => !(await panel.isVisible('[role="listbox"]')), {
+    timeout: 5_000,
+    message: 'the dropdown did not close'
+  })
+}
+
+export async function setupDropdownOffers(
+  panel: WebContentsPage,
+  trigger: string,
+  option: string
+): Promise<boolean> {
+  await openSetupDropdown(panel, trigger)
+  const offered = await panel.exists(`[role="listbox"] ${option}`)
+  await closeSetupDropdown(panel)
+  return offered
+}
+
+export async function pickFromSetupDropdown(
+  panel: WebContentsPage,
+  trigger: string,
+  option: string
+): Promise<boolean> {
+  await openSetupDropdown(panel, trigger)
+  const picked = await panel.click(`[role="listbox"] ${option}`)
+  await panel.waitFor(async () => !(await panel.isVisible('[role="listbox"]')), {
+    timeout: 5_000,
+    message: 'the dropdown did not close after a pick'
+  })
+  return picked
+}
+
+export async function pickFromSetupDropdownByText(
+  panel: WebContentsPage,
+  trigger: string,
+  text: string
+): Promise<boolean> {
+  await openSetupDropdown(panel, trigger)
+  const picked = await panel.clickByText('[role="listbox"] [role="option"]', text)
+  await panel.waitFor(async () => !(await panel.isVisible('[role="listbox"]')), {
+    timeout: 5_000,
+    message: 'the dropdown did not close after a pick'
+  })
+  return picked
+}
+
+export function setupDropdownValue(panel: WebContentsPage, trigger: string): Promise<string> {
+  return panel.evaluate<string>(
+    `document.querySelector(${JSON.stringify(`${trigger} .ui-select-label`)})?.textContent?.trim() ?? ''`
+  )
+}

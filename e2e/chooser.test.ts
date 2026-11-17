@@ -7,6 +7,9 @@ import {
   expectNewBuildModalOpen,
   openNewBuildChangeSetup,
   pickFromTitleMenu,
+  setupDropdownOffers,
+  setupDropdownValue,
+  SOURCE_DROPDOWN,
   openDesktopSettings,
   showBuildsPage
 } from './support/chooserHelpers'
@@ -79,12 +82,16 @@ test('Desktop Settings opens from the sidebar footer when expanded and collapsed
 test('clicking New Install tile opens the new-install takeover @windows @macos @linux', async () => {
   await clickNewInstallTile(ctx.panel)
   await expectNewBuildModalOpen(ctx.panel)
-  const pickedSource = (): Promise<string | null> =>
-    ctx.panel.evaluate<string | null>(
-      `document.querySelector('[data-testid="install-source-tabs"] [aria-checked="true"]')?.getAttribute('data-testid') ?? null`
-    )
+  const pickedSource = (): Promise<string> => setupDropdownValue(ctx.panel, SOURCE_DROPDOWN)
   await openNewBuildChangeSetup(ctx.panel)
-  expect(await ctx.panel.exists('[data-testid="workspace-install-source-managed"]')).toBe(true)
+  expect(
+    await setupDropdownOffers(
+      ctx.panel,
+      SOURCE_DROPDOWN,
+      '[data-testid="workspace-install-source-managed"]'
+    ),
+    "the Source dropdown offers Your team's builds"
+  ).toBe(true)
   expect(await ctx.panel.exists('.setup-modal-close')).toBe(false)
   const sourceBeforeDiscard = await pickedSource()
   expect(await ctx.panel.click('[data-testid="config-discard-changes"]')).toBe(true)
@@ -102,15 +109,15 @@ test('Change setup asks first for a new install or a ComfyUI already there, and 
   await clickNewInstallTile(ctx.panel)
   await expectNewBuildModalOpen(ctx.panel)
   await openNewBuildChangeSetup(ctx.panel)
-  await ctx.panel.waitForVisible('[data-testid="install-source-tabs"]')
+  await ctx.panel.waitForVisible(SOURCE_DROPDOWN)
   expect(
-    await ctx.panel.exists('[data-testid="install-source-remote"]'),
+    await setupDropdownOffers(ctx.panel, SOURCE_DROPDOWN, '[data-testid="install-source-remote"]'),
     'a server is not offered as a place to get a new install from'
   ).toBe(false)
 
   expect(await ctx.panel.click('[data-testid="config-start-from-existing"]')).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="existing-comfy-folder-form"]')
-  expect(await ctx.panel.exists('[data-testid="install-source-tabs"]')).toBe(false)
+  expect(await ctx.panel.exists(SOURCE_DROPDOWN)).toBe(false)
   expect(await ctx.panel.exists('[data-testid="config-save-changes"]')).toBe(false)
   expect(await ctx.panel.textOf('[data-testid="config-use-existing"]')).toBe('Add build')
 
@@ -128,7 +135,7 @@ test('Change setup asks first for a new install or a ComfyUI already there, and 
   expect(await ctx.panel.textOf('[data-testid="config-use-existing"]')).toBe('Connect')
 
   expect(await ctx.panel.click('[data-testid="config-start-from-new"]')).toBe(true)
-  await ctx.panel.waitForVisible('[data-testid="install-source-tabs"]')
+  await ctx.panel.waitForVisible(SOURCE_DROPDOWN)
   await ctx.panel.waitForVisible('[data-testid="config-save-changes"]')
   expect(await ctx.panel.exists('#sf-url')).toBe(false)
 

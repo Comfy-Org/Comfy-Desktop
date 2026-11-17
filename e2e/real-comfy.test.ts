@@ -14,7 +14,10 @@ import {
   expectNewBuildModalOpen,
   openManageViaDashboard,
   openNewBuildChangeSetup,
-  openPickerViaTitlePill
+  openPickerViaTitlePill,
+  HARDWARE_DROPDOWN,
+  pickFromSetupDropdownByText,
+  setupDropdownValue
 } from './support/chooserHelpers'
 import {
   armLaunchReadyHold,
@@ -335,25 +338,19 @@ test('accept ToS + Change opens the name and every option in one sheet @sec-setu
     'failed to click the second-newest ComfyUI Version option in BaseSelect listbox'
   ).toBe(true)
 
-  await ctx.panel.waitForSelector('#source-fields .setup-option--selected', { timeout: 60_000 })
+  await ctx.panel.waitForSelector(`${HARDWARE_DROPDOWN}:not([aria-busy])`, { timeout: 60_000 })
 
   if (REAL_COMFY_VARIANT !== 'default') {
     const rowLabel =
       REAL_COMFY_VARIANT === 'nvidia' ? 'NVIDIA' : REAL_COMFY_VARIANT === 'amd' ? 'AMD' : 'CPU'
-    await ctx.panel.waitForSelector('.setup-option', { timeout: 5_000 })
     expect(
-      await ctx.panel.clickByText('.setup-option', rowLabel),
-      `${rowLabel} variant row clicked`
+      await pickFromSetupDropdownByText(ctx.panel, HARDWARE_DROPDOWN, rowLabel),
+      `${rowLabel} picked in the Hardware dropdown`
     ).toBe(true)
     await ctx.panel.waitFor(
       async () =>
-        ctx.panel.evaluate<boolean>(
-          `(() => {
-          const sel = document.querySelector('#source-fields .setup-option--selected .setup-option__label')
-          return !!sel && new RegExp(${JSON.stringify(rowLabel)}, 'i').test(sel.textContent || '')
-        })()`
-        ),
-      { timeout: 5_000, message: `${rowLabel} variant did not become the selected variant row` }
+        new RegExp(rowLabel, 'i').test(await setupDropdownValue(ctx.panel, HARDWARE_DROPDOWN)),
+      { timeout: 5_000, message: `${rowLabel} did not become the picked hardware` }
     )
   }
 })
