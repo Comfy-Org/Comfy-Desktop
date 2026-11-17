@@ -67,6 +67,7 @@
     "browseAssetsOf": "Browse the assets of",
     "thisComputer": "This computer",
     "outputFolder": "Output folder",
+    "provenanceHint": "Only outputs traced to this build are shown. Find older or untracked files under This computer.",
     "buildStatus": "{where} · {state}",
     "buildWhere": {
       "local": "Local",
@@ -123,6 +124,7 @@
     "signIn": "Log in to Comfy Cloud",
     "inspect": "Inspect {name}",
     "detail": {
+      "filePath": "File path",
       "tags": "Tags",
       "tagsHint": "Tags are edited in ComfyUI.",
       "createdAt": "Created {date}",

@@ -163,7 +163,7 @@ const assetBuilds = computed<AssetBuild[]>(() => {
     computer: false,
     state: buildState(build)
   }))
-  return builds.some((option) => !option.cloud) ? builds : [...builds, thisComputer.value]
+  return [...builds, thisComputer.value]
 })
 
 function lastLaunched({ build }: AssetBuild): number {
@@ -430,10 +430,11 @@ const detailItems = computed<OutputDetailItem[]>(() =>
   visibleAssets.value.map((asset) => ({
     key: cardKey(asset),
     name: asset.name,
+    filePath: asset.filePath,
     kind: asset.kind,
     sizeBytes: asset.sizeBytes,
     createdAt: asset.createdAt,
-    tags: asset.tags,
+    tags: [],
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl
   }))
@@ -797,6 +798,13 @@ function extensionOf(name: string): string {
     </div>
 
     <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
+      <p
+        v-if="selectedBuild && !selectedBuild.cloud && !selectedBuild.computer"
+        class="mt-0 mb-4 text-ui text-subtle-foreground"
+        data-testid="assets-provenance-hint"
+      >
+        {{ t('assets.provenanceHint') }}
+      </p>
       <div v-if="showSkeleton" role="status" :aria-label="t('common.loading')">
         <ul
           ref="gallery"
@@ -869,7 +877,7 @@ function extensionOf(name: string): string {
           @contextmenu.prevent="openAssetMenu(asset, $event)"
         >
           <Tooltip
-            :text="asset.name"
+            :text="asset.filePath || asset.name"
             side="bottom"
             :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
             class="w-full align-top"

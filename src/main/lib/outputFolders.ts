@@ -9,9 +9,11 @@ import * as settings from '../settings'
 import { assetKind } from './assets'
 import { copyImageToClipboard } from './clipboardImage'
 import { mediaFactsFromFile } from './mediaFacts'
+import { assetProvenanceStore, trackAssetProvenance } from './assetProvenance'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
-import { sourceMap } from './ipc/shared'
+import { _runningSessions, sessionLifecycleEvents, sourceMap } from './ipc/shared'
+import type { SessionInfo } from './ipc/shared'
 import type { AssetSummary } from '../../types/ipc'
 
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
@@ -34,6 +36,30 @@ const thumbnailQueue: (() => void)[] = []
 let thumbnailsRunning = 0
 let allowedRoots: string[] = []
 let allowedRootsAt = 0
+const provenanceTrackers = new Map<
+  string,
+  { session: SessionInfo; tracker: ReturnType<typeof trackAssetProvenance> }
+>()
+
+async function trackRunningOutputs(): Promise<void> {
+  const builds = await installations.list()
+  for (const [id, tracked] of provenanceTrackers) {
+    if (_runningSessions.get(id) === tracked.session) continue
+    tracked.tracker.stop()
+    provenanceTrackers.delete(id)
+  }
+  for (const [id, session] of _runningSessions) {
+    if (provenanceTrackers.has(id) || session.port <= 0 || session.url) continue
+    const installationId = session.sourceInstallationId ?? id
+    const build = builds.find((build) => build.id === installationId)
+    const root = build && outputDirFor(build, sharedOutputDir())
+    if (!root) continue
+    provenanceTrackers.set(id, {
+      session,
+      tracker: trackAssetProvenance(installationId, root, session.port)
+    })
+  }
+}
 
 export function sharedOutputDir(): string {
   return (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
@@ -162,7 +188,8 @@ function localSummary(file: string, sizeBytes: number, modifiedMs: number): Asse
     sizeBytes,
     createdAt: new Date(modifiedMs).toISOString(),
     mimeType: null,
-    tags: ['output'],
+    tags: [],
+    filePath: file,
     previewUrl: kind && SERVED_KINDS.has(kind) ? outputFileUrl(file) : null,
     thumbnailUrl: kind === 'image' ? outputFileUrl(file, modifiedMs) : null,
     width: null,
@@ -177,12 +204,19 @@ async function addMediaFacts(asset: AssetSummary): Promise<void> {
 
 export async function listLocalAssets(installationId?: string): Promise<AssetSummary[]> {
   const folders = await findOutputFolders()
-  const folder = installationId === undefined ? folders.shared : folders.ofBuild.get(installationId)
-  const files = folder ? await collectMediaFiles(folder) : []
+  await Promise.all([...provenanceTrackers.values()].map(({ tracker }) => tracker.sync()))
+  const provenance = assetProvenanceStore()
+  await provenance.ready()
+  const roots =
+    installationId === undefined
+      ? folders.all
+      : [folders.ofBuild.get(installationId)].filter((root): root is string => !!root)
+  const files = [...new Set((await Promise.all(roots.map(collectMediaFiles))).flat())]
   const found: AssetSummary[] = []
   await runPool(files, STATS_AT_ONCE, async (file) => {
     const stat = await fsp.stat(file).catch(() => null)
     if (!stat?.isFile()) return
+    if (installationId !== undefined && provenance.originFor(file, stat) !== installationId) return
     const modifiedMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0
     found.push(localSummary(file, stat.size, modifiedMs))
   })
@@ -318,6 +352,8 @@ export function registerOutputFilesScheme(): void {
 }
 
 export function registerOutputFolderHandlers(): void {
+  sessionLifecycleEvents.on('changed', () => void trackRunningOutputs().catch(() => {}))
+  void trackRunningOutputs().catch(() => {})
   protocol.handle(OUTPUT_FILES_SCHEME, serveOutputFile)
   ipcMain.handle(LIST_LOCAL_CHANNEL, (_event, installationId: unknown) =>
     listLocalAssets(typeof installationId === 'string' ? installationId : undefined)

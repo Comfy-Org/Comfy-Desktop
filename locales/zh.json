@@ -67,6 +67,7 @@
     "browseAssetsOf": "浏览以下构建的资产",
     "thisComputer": "这台电脑",
     "outputFolder": "输出文件夹",
+    "provenanceHint": "仅显示可确认由此构建生成的输出。较早或未追踪的文件可在“这台电脑”中查看。",
     "buildStatus": "{where} · {state}",
     "buildWhere": {
       "local": "本地",
@@ -123,6 +124,7 @@
     "signIn": "登录 Comfy Cloud",
     "inspect": "查看 {name}",
     "detail": {
+      "filePath": "文件路径",
       "tags": "标签",
       "tagsHint": "标签在 ComfyUI 中编辑。",
       "createdAt": "创建于 {date}",
