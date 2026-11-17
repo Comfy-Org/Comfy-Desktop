@@ -16,7 +16,7 @@ import {
   expectNewBuildModalOpen,
   openManageViaDashboard,
   openNewBuildChangeSetup,
-  openPickerViaTitlePill,
+  openPickerInWindow,
   HARDWARE_DROPDOWN,
   pickFromSetupDropdown,
   pickFromSetupDropdownByText,
@@ -45,7 +45,7 @@ import {
   isPopupVisible,
   titlePopupPage,
   waitForWebContents,
-  type WebContentsPage
+  WebContentsPage
 } from './support/cdpPages'
 import { evalWithRetry } from './support/evalRetry'
 import { ModelDownloadServer } from './support/modelDownloadServer'
@@ -54,6 +54,7 @@ import { byTestId, TID } from './support/testIds'
 let ctx: AppContext
 
 const SAVE_CHANGES = '[data-testid="config-save-changes"]'
+const HOME_VIEW = byTestId('home-view')
 
 async function waitForButtonEnabled(selector: string, message: string): Promise<void> {
   await ctx.panel.waitFor(
@@ -519,9 +520,7 @@ test('picker Dashboard opens a chooser without stopping the running install @sec
     })
   )
 
-  expect(await ctx.titleBar.click('.title-install-pill.is-interactive')).toBe(true)
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar)
   await popup.waitForVisible('.picker-home', { timeout: 10_000 })
   expect(await popup.click('.picker-home')).toBe(true)
 
@@ -744,35 +743,47 @@ async function untrackViaManageDrawer(installationId: string): Promise<void> {
   expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
 }
 
-async function stopAndReturnToDashboardViaUI(): Promise<void> {
-  if (!(await comfyFrontendIsLoaded())) {
-    const dashboardMounted = await ctx.panel.exists('.chooser-view').catch(() => false)
-    if (dashboardMounted) {
-      await expectChooserVisible(ctx.panel)
-      return
-    }
-  }
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
+async function openBuildStopMenu(tab?: string) {
+  await closeExtraWindowsKeepComfyHost()
+  const [buildWindowId] = await desktopWindowIds()
+  const buildTitleBar = new WebContentsPage(ctx.app, await ctx.titleBar.url())
+  const homeWindowId = await openDashboardWindowViaPickerHome({ stayOnHome: true })
+  const popup = await openPickerInWindow(ctx.app, buildTitleBar, tab)
   await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
   await popup.clickUntilVisible(
     byTestId(TID.pickerMoreTrigger),
     byTestId(TID.pinBottomAction('stop')),
     { timeout: 30_000 }
   )
+  return { popup, buildWindowId, homeWindowId }
+}
+
+async function confirmBuildStop(popup: WebContentsPage, homeWindowId: number): Promise<void> {
   expect(await popup.click(byTestId(TID.pinBottomAction('stop')))).toBe(true)
   await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
   expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
 
   await expect
-    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
-      timeout: 120_000,
-      intervals: [250, 500]
+    .poll(desktopWindowIds, {
+      timeout: 60_000,
+      message: 'Stop should close the build window and leave Home open'
     })
-    .toBe(false)
-  await waitForWebContents(ctx.app, 'panel.html')
-  await ctx.panel.waitForVisible(byTestId(TID.lifecycleReturnDashboard), { timeout: 120_000 })
-  expect(await ctx.panel.click(byTestId(TID.lifecycleReturnDashboard))).toBe(true)
+    .toEqual([homeWindowId])
+  await ctx.panel.waitForVisible(HOME_VIEW)
+}
 
+async function stopAndReturnToDashboardViaUI(): Promise<void> {
+  if (!(await comfyFrontendIsLoaded())) {
+    const dashboardMounted = await ctx.panel
+      .exists(`.chooser-view, ${HOME_VIEW}`)
+      .catch(() => false)
+    if (dashboardMounted) {
+      await expectChooserVisible(ctx.panel)
+      return
+    }
+  }
+  const { popup, homeWindowId } = await openBuildStopMenu()
+  await confirmBuildStop(popup, homeWindowId)
   await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(false)
   await expectChooserVisible(ctx.panel)
 }
@@ -964,7 +975,7 @@ async function selectPytorchOption(
 
 async function changePytorchStack(option: PytorchPickerOption): Promise<void> {
   const beforeSession = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'update')
   await selectPytorchOption(popup, option)
   const action = byTestId(TID.updateActionButton('change-pytorch'))
   await popup.waitForVisible(action, { timeout: 60_000 })
@@ -996,7 +1007,7 @@ async function changePytorchStack(option: PytorchPickerOption): Promise<void> {
     .toBe(true)
   await closeTitlePopupIfOpen(ctx.app)
 
-  const verifyPopup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
+  const verifyPopup = await openPickerInWindow(ctx.app, ctx.titleBar, 'update')
   const picker = await readPytorchPicker(verifyPopup)
   expect(picker.current.value).toBe(option.value)
   await expect
@@ -1012,7 +1023,7 @@ test('captures the baseline pytorch stack @sec-pytorch @real-comfy', async () =>
   await ctx.panel.evaluate(
     `window.api.runAction(${JSON.stringify(_updateInstallId)}, 'check-update', { silent: true })`
   )
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'update')
   const picker = await readPytorchPicker(popup)
   _baselinePytorchOption = picker.current
   _baselinePytorchSignature = queryTorchSignature()
@@ -1025,7 +1036,7 @@ test('captures the baseline pytorch stack @sec-pytorch @real-comfy', async () =>
 test('switches to a different compatible stack via the picker @sec-pytorch @real-comfy', async () => {
   test.setTimeout(GPU_VARIANT ? 2_700_000 : 1_200_000)
   expect(_baselinePytorchOption, 'baseline PyTorch picker option not captured').not.toBeNull()
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'update')
   const picker = await readPytorchPicker(popup)
   _targetPytorchOption =
     picker.options.find(
@@ -1214,7 +1225,7 @@ function findStackSnapshot(
 async function restoreSnapshotViaPicker(filename: string): Promise<void> {
   await waitForOperationDrain(_updateInstallId)
   const beforeSession = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'snapshots')
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'snapshots')
   await popup.waitForSelector(byTestId(TID.snapshotRow(filename)), { timeout: 30_000 })
   await popup.clickUntilVisible(
     byTestId(TID.snapshotRow(filename)),
@@ -1327,7 +1338,7 @@ test('captures a snapshot for the picker-driven restore test @sec-snapshot @real
     ).snapshots.map((s) => s.filename)
   )
 
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'snapshots')
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'snapshots')
   await popup.waitForVisible(byTestId(TID.snapshotsSaveCta), { timeout: 15_000 })
   expect(await popup.click(byTestId(TID.snapshotsSaveCta))).toBe(true)
   await popup.waitForVisible(byTestId(TID.basePromptInput), { timeout: 15_000 })
@@ -1484,7 +1495,7 @@ test('per-install Manager security level + network mode land in Manager config.i
     `window.api.getSetting('managerNetworkMode')`
   )
 
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'config')
 
   const trigger = 'button.ui-select-trigger[aria-label="Manager Security Level"]'
   await popup.waitForVisible(trigger, { timeout: 15_000 })
@@ -1626,7 +1637,7 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
   await resetIpcInvocations(ctx.app, 'stop-comfyui')
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'update')
 
   const channelMenu = byTestId(TID.buildOverviewChannel)
   await popup.waitForSelector(channelMenu, { timeout: 60_000 })
@@ -1706,7 +1717,7 @@ test('picker-driven snapshot-restore IN_PLACE_RELAUNCH while running @sec-snapsh
   await resetIpcInvocations(ctx.app, 'stop-comfyui')
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'snapshots')
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'snapshots')
   await popup.waitForSelector(byTestId(TID.snapshotRow(_restoreSnapshotFilename)), {
     timeout: 30_000
   })
@@ -1770,7 +1781,7 @@ test('picker primary CTA Restart drives in-drawer confirm + re-launch @sec-picke
     .not.toBeNull()
   expect(beforeSnapshot, 'expected a running session before Restart').not.toBeNull()
 
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar)
 
   await popup.waitForVisible(byTestId(TID.pickerPrimaryCta), { timeout: 15_000 })
   await expect
@@ -1819,7 +1830,7 @@ test('picker primary CTA Restart drives in-drawer confirm + re-launch @sec-picke
   ).toBeGreaterThanOrEqual(1)
 })
 
-test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores it @sec-picker @real-comfy', async () => {
+test('picker Stop closes the build window and Home launches a new one @sec-picker @real-comfy', async () => {
   test.setTimeout(300_000)
 
   await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(true)
@@ -1829,14 +1840,7 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
   await resetIpcInvocations(ctx.app, 'stop-comfyui')
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
-
-  await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
-  await popup.clickUntilVisible(
-    byTestId(TID.pickerMoreTrigger),
-    byTestId(TID.pinBottomAction('stop')),
-    { timeout: 30_000 }
-  )
+  const { popup, buildWindowId, homeWindowId } = await openBuildStopMenu('config')
   expect(
     await popup.exists(byTestId(TID.pinBottomAction('launch'))),
     'launch must not render in the More menu'
@@ -1845,10 +1849,7 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
     await popup.exists(byTestId(TID.pinBottomAction('restart'))),
     'restart must not render in the More menu'
   ).toBe(false)
-  expect(await popup.click(byTestId(TID.pinBottomAction('stop')))).toBe(true)
-
-  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
-  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+  await confirmBuildStop(popup, homeWindowId)
 
   await expect
     .poll(async () => (await getStopsFor(_updateInstallId)).length, {
@@ -1862,17 +1863,10 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
       intervals: [1_000, 2_000]
     })
     .toBeNull()
-  await ctx.panel.waitForVisible('.panel-comfy-lifecycle', { timeout: 30_000 })
-
-  await expect
-    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
-      timeout: 10_000,
-      intervals: [100, 200]
-    })
-    .toBe(false)
-
-  await ctx.panel.waitForVisible(byTestId(TID.lifecycleRelaunch), { timeout: 120_000 })
-  expect(await ctx.panel.click(byTestId(TID.lifecycleRelaunch))).toBe(true)
+  const card = `${byTestId('home-build')}[data-build-id=${JSON.stringify(_updateInstallId)}]`
+  const openBuild = `${card} ${byTestId('home-build-open')}:enabled`
+  await ctx.panel.waitForVisible(openBuild)
+  expect(await ctx.panel.click(openBuild), 'launch the stopped build from Home').toBe(true)
 
   await waitForRunAction(_updateInstallId, 'launch', {
     timeout: 180_000,
@@ -1889,7 +1883,11 @@ test('picker More-menu Stop fires stop-comfyui; stopped-card Relaunch restores i
     )
     .toBe(true)
   await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
-  await closeTitlePopupIfOpen(ctx.app)
+  const windowsAfter = await desktopWindowIds()
+  expect(windowsAfter).toHaveLength(2)
+  expect(windowsAfter).toContain(homeWindowId)
+  expect(windowsAfter).not.toContain(buildWindowId)
+  await closeExtraWindowsKeepComfyHost()
 })
 
 async function findFreeLoopbackPort(start: number): Promise<number> {
@@ -1946,7 +1944,7 @@ async function confirmPickerRestart(popup: WebContentsPage): Promise<void> {
 }
 
 async function openBootWindowViaPickerRestart(): Promise<void> {
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar)
   await confirmPickerRestart(popup)
   await expect
     .poll(
@@ -1990,7 +1988,7 @@ test('boot-window --port edit surfaces Restart-to-apply and the restart applies 
   let popup: WebContentsPage
   try {
     await restartAndHoldTheBootBeforeItCountsAsRunning()
-    popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+    popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'config')
     await setPortArgViaPicker(popup, targetPort)
     expect(
       await getRunningSessionSnapshot(ctx.app, _updateInstallId),
@@ -2067,7 +2065,7 @@ test('restart clicked during boot cancels the in-flight boot and applies the edi
 
   try {
     await restartAndHoldTheBootBeforeItCountsAsRunning()
-    const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+    const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'config')
     await setPortArgViaPicker(popup, targetPort)
 
     await popup.waitForVisible(byTestId(TID.pickerPrimaryCta), { timeout: 15_000 })
@@ -2450,15 +2448,19 @@ let _remoteOutputRoot = ''
 let _remoteExpectedFile = ''
 let _remoteRunId = ''
 
-async function openDashboardWindowViaPickerHome(): Promise<number> {
-  const beforeWinIds = await evalWithRetry(() =>
+function desktopWindowIds(): Promise<number[]> {
+  return evalWithRetry(() =>
     ctx.app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
         .filter((w) => !w.isDestroyed())
         .map((w) => w.id)
     )
   )
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
+}
+
+async function openDashboardWindowViaPickerHome({ stayOnHome = false } = {}): Promise<number> {
+  const beforeWinIds = await desktopWindowIds()
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar)
   await popup.waitForVisible('.picker-home', { timeout: 10_000 })
   expect(await popup.click('.picker-home')).toBe(true)
   await closeTitlePopupIfOpen(ctx.app)
@@ -2466,13 +2468,7 @@ async function openDashboardWindowViaPickerHome(): Promise<number> {
   await expect
     .poll(
       async () => {
-        const ids = await evalWithRetry(() =>
-          ctx.app.evaluate(({ BrowserWindow }) =>
-            BrowserWindow.getAllWindows()
-              .filter((w) => !w.isDestroyed())
-              .map((w) => w.id)
-          )
-        )
+        const ids = await desktopWindowIds()
         const fresh = ids.filter((id) => !beforeWinIds.includes(id))
         if (fresh.length > 0) newWindowId = fresh[0]!
         return fresh.length
@@ -2480,7 +2476,8 @@ async function openDashboardWindowViaPickerHome(): Promise<number> {
       { timeout: 30_000, intervals: [250, 500] }
     )
     .toBe(1)
-  await expectChooserVisible(ctx.panel)
+  if (stayOnHome) await ctx.panel.waitForVisible(HOME_VIEW)
+  else await expectChooserVisible(ctx.panel)
   return newWindowId
 }
 

@@ -31,7 +31,11 @@
     "crashed": "Crashed",
     "crashedWithCode": "Crashed (exit code {code})",
     "crashedWithSignal": "Crashed ({signal})",
-    "failedToStartReason": "Failed to start: {reason}"
+    "failedToStartReason": "Failed to start: {reason}",
+    "credits": "Credits",
+    "creditsTooltip": "{credits} Credits",
+    "creditsError": "Unable to load balance",
+    "creditsLabel": "{balance}. {action}"
   },
   "apps": {
     "search": "Search apps",
@@ -123,8 +127,8 @@
     "signedOutTitle": "Log in to see your assets",
     "signedOutBody": "Assets that you make in Comfy Cloud show here.",
     "signIn": "Log in to Comfy Cloud",
-    "noCloudBuildTitle": "This workspace has no Comfy Cloud build yet",
-    "noCloudBuildBody": "Add Comfy Cloud to this workspace to see its assets here.",
+    "noCloudBuildTitle": "This workspace has no Comfy Cloud build",
+    "noCloudBuildBody": "Restart Comfy Desktop to add Comfy Cloud back.",
     "truncated": "Showing the newest file only. | Showing the newest {count} files only.",
     "noMatchesOnPage": "No matching assets on this page",
     "noMatchesOnPageHint": "Try another page, type or search.",
@@ -144,6 +148,7 @@
       "fit": "Fit",
       "zoom": "Zoom",
       "zoomLevel": "Zoom: {level}",
+      "openWorkflow": "Open workflow",
       "savedIn": "Saved in"
     },
     "kindSingular": {
@@ -261,7 +266,6 @@
     "appUpdateAvailable": "Update {version}",
     "appUpdateReady": "Restart to update",
     "installUpdateAvailable": "Update available",
-    "installUpdateShort": "Update",
     "home": "Home",
     "menu": "Menu",
     "feedback": "Feedback",
@@ -279,9 +283,6 @@
     "installUpdateVersion": "ComfyUI {version}",
     "refreshInstanceTooltip": "Refresh",
     "resetZoomTooltip": "Reset zoom to 100%",
-    "pillHintTitle": "Switch and manage builds",
-    "pillHintBody": "Click here to switch builds, start a new local build, or return to Home.",
-    "pillHintDismiss": "Got it",
     "betaNoticeTitle": "A beta feature is on",
     "betaNoticeBody": "This build started with a beta feature enabled. You can turn beta features off in Settings.",
     "betaNoticeTitleNamed": "The {feature} beta is on",
@@ -1040,7 +1041,7 @@
     "restartProgressTitle": "Restarting ComfyUI",
     "stop": "Stop",
     "stopConfirmTitle": "Stop ComfyUI",
-    "stopConfirmMessage": "This will stop ComfyUI. Any unsaved work will be lost. The window stays open so you can relaunch anytime.",
+    "stopConfirmMessage": "This will stop ComfyUI. Any unsaved work will be lost.",
     "connect": "Connect",
     "connecting": "Connecting",
     "openDirectory": "Open Directory",

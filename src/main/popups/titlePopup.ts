@@ -1657,34 +1657,6 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   })
 
   ipcMain.on(
-    'comfy-window:click-install-pill',
-    (event, payload: { anchor?: { x?: number; y?: number } } | undefined) => {
-      const found = findEntryByTitleBarSender(event.sender)
-      if (!found) return
-      const { id: windowKey, entry } = found
-      if (entry.window.isDestroyed()) return
-
-      const existingPopup = titlePopupsByParent.get(entry.window.id)
-      if (
-        existingPopup &&
-        existingPopup.kind === 'instance-picker' &&
-        (existingPopup.view.isOpen || existingPopup.view.pendingShowTimer !== null)
-      ) {
-        hideTitlePopup(existingPopup, { releaseFocusToParent: true })
-        return
-      }
-
-      const x = Math.max(0, Math.round(payload?.anchor?.x ?? 0))
-      const y = Math.max(0, Math.round(payload?.anchor?.y ?? TITLEBAR_HEIGHT))
-
-      openInstancePickerForHost(entry, windowKey, bindings, entry.titleBarView.webContents, {
-        x,
-        y
-      })
-    }
-  )
-
-  ipcMain.on(
     'comfy-window:open-instance-picker-for-install',
     (
       event,

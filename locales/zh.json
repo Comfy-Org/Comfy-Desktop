@@ -31,7 +31,11 @@
     "crashed": "已崩溃",
     "crashedWithCode": "已崩溃（退出代码 {code}）",
     "crashedWithSignal": "已崩溃（{signal}）",
-    "failedToStartReason": "启动失败：{reason}"
+    "failedToStartReason": "启动失败：{reason}",
+    "credits": "积分",
+    "creditsTooltip": "{credits} 积分",
+    "creditsError": "无法加载余额",
+    "creditsLabel": "{balance}。{action}"
   },
   "apps": {
     "search": "搜索应用",
@@ -123,8 +127,8 @@
     "signedOutTitle": "登录以查看你的资产",
     "signedOutBody": "你在 Comfy Cloud 中生成的资产会显示在这里。",
     "signIn": "登录 Comfy Cloud",
-    "noCloudBuildTitle": "此工作区还没有 Comfy Cloud 构建",
-    "noCloudBuildBody": "将 Comfy Cloud 添加到此工作区后，这里会显示它的资产。",
+    "noCloudBuildTitle": "此工作区没有 Comfy Cloud 构建",
+    "noCloudBuildBody": "重启 Comfy Desktop 以重新添加 Comfy Cloud。",
     "truncated": "仅显示最新的 {count} 个文件。",
     "noMatchesOnPage": "此页没有匹配的资产",
     "noMatchesOnPageHint": "试试其他页面、类型或搜索词。",
@@ -144,6 +148,7 @@
       "fit": "适应",
       "zoom": "缩放",
       "zoomLevel": "缩放：{level}",
+      "openWorkflow": "打开工作流",
       "savedIn": "保存位置"
     },
     "kindSingular": {
@@ -261,7 +266,6 @@
     "appUpdateAvailable": "更新 {version}",
     "appUpdateReady": "重启以更新",
     "installUpdateAvailable": "有可用更新",
-    "installUpdateShort": "更新",
     "home": "主页",
     "menu": "菜单",
     "feedback": "反馈",
@@ -279,9 +283,6 @@
     "installUpdateVersion": "ComfyUI {version}",
     "refreshInstanceTooltip": "刷新",
     "resetZoomTooltip": "将缩放重置为 100%",
-    "pillHintTitle": "切换和管理实例",
-    "pillHintBody": "点击这里切换实例、启动新的本地实例，或返回仪表板。",
-    "pillHintDismiss": "知道了",
     "betaNoticeTitle": "已启用 Beta 功能",
     "betaNoticeBody": "此实例启动时启用了一项 Beta 功能。你可以在设置中关闭 Beta 功能。",
     "betaNoticeTitleNamed": "已启用 {feature} Beta 功能",
@@ -1040,7 +1041,7 @@
     "restartProgressTitle": "正在重启 ComfyUI",
     "stop": "停止",
     "stopConfirmTitle": "停止 ComfyUI",
-    "stopConfirmMessage": "这将停止 ComfyUI。任何未保存的工作都会丢失。窗口会保持打开，因此你可以随时重新启动。",
+    "stopConfirmMessage": "这将停止 ComfyUI。任何未保存的工作都会丢失。",
     "connect": "连接",
     "connecting": "正在连接",
     "openDirectory": "打开目录",

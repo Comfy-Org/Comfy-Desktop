@@ -627,7 +627,7 @@ describe('AssetsView', () => {
     expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('lab')
   })
 
-  it('says the workspace has no Comfy Cloud build yet', async () => {
+  it('says the workspace has no Comfy Cloud build', async () => {
     window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
     const wrapper = await mountAssets([], { builds: [localBuild('lab')] })
     useAuthStore().status = { signedIn: true, workspaceId: 'me', workspaceType: 'personal' }
@@ -636,7 +636,7 @@ describe('AssetsView', () => {
     expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
     expect(listAssets).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe(
-      'This workspace has no Comfy Cloud build yet'
+      'This workspace has no Comfy Cloud build'
     )
   })
 

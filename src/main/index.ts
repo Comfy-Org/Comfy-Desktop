@@ -91,6 +91,7 @@ import {
   _activeOperationStatus,
   _getLaunchingInstallationIds,
   _setActiveLaunchPickerWorkspace,
+  launchHadWindow,
   stopRunning,
   resolveTheme,
   MSG_CANCELLED,
@@ -169,6 +170,7 @@ import { attachInstall, setAttachFactories, type ZoomResetSource } from './host/
 import { navigatorFor } from './host/buildNavigator'
 import { resetCanvasRendered } from './lib/canvasEntry'
 import { IN_PLACE_RELAUNCH, REQUIRES_STOPPED } from '../types/ipc'
+import type { CloseComfyWindowOptions } from '../types/ipc'
 import { dispatchSessionAction, handleLaunch } from './lib/ipc/sessionActions'
 import { applyAttachHostPreview, clearAttachHostPreview } from './host/attachHostPreview'
 import { takePriorSessionUnclean } from './lib/comfyProcessRecord'
@@ -182,6 +184,7 @@ import {
   preClearedClose,
   returnToDashboard
 } from './host/detach'
+import { closeBuildWindow } from './host/closeBuildWindow'
 import {
   destroyPanelView,
   ensurePanelView,
@@ -473,6 +476,8 @@ function onLaunch({
       }
     }
   }
+
+  if (launchHadWindow(installationId)) return
 
   const initialSourceCategory = sourceMap[installation.sourceId]?.category ?? null
 
@@ -776,27 +781,10 @@ ipcMain.handle(
   }
 )
 
-ipcMain.handle('open-install-window', (_event, installationId: string) => {
-  recordIpcInvocation('open-install-window', { installationId })
-  const existing = getEntryByInstallationId(installationId)
-  if (existing && !existing.window.isDestroyed()) {
-    existing.window.show()
-    existing.window.focus()
-    return true
-  }
-  openChooserHostWindow()
-  return true
-})
-
 ipcMain.handle(
   'close-comfy-window',
-  (_event, installationId: string, opts?: { skipConfirm?: boolean }) => {
-    const entry = getEntryByInstallationId(installationId)
-    if (!entry || entry.window.isDestroyed()) return false
-    if (opts?.skipConfirm) preClearedClose.add(entry.window)
-    entry.window.close()
-    return true
-  }
+  (_event, installationId: string, opts?: CloseComfyWindowOptions) =>
+    closeBuildWindow(installationId, opts)
 )
 
 ipcMain.handle('close-host-window', (event) => {
@@ -1103,6 +1091,22 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         }
       }
     }
+
+    ipcMain.handle('open-install-window', async (event, installationId: unknown) => {
+      if (typeof installationId !== 'string' || installationId === '') return false
+      recordIpcInvocation('open-install-window', { installationId })
+      const requester = [...comfyWindows.values()].find(
+        (entry) => !entry.window.isDestroyed() && entry.panelView?.webContents === event.sender
+      )
+      if (!requester) return false
+      try {
+        await openBuild(installationId, requester.windowKey)
+        return true
+      } catch (error) {
+        console.error('open-install-window: could not open the build', { installationId, error })
+        return false
+      }
+    })
 
     registerTitlePopupIpc({
       openChooserHostWindow,
@@ -1634,9 +1638,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     void stopBuildsRunningForAppsOnly().finally(() => {
       if (BrowserWindow.getAllWindows().length > 0) return
-      if (quitsOnceEveryWindowClosed()) {
-        app.quit()
-      }
+      if (quitsOnceEveryWindowClosed()) app.quit()
     })
   })
 }

@@ -1,6 +1,12 @@
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { AppPageStatus, ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
+import type {
+  AppOutputs,
+  AppPageStatus,
+  ElectronApi,
+  ResolvedTheme,
+  AdoptPromptRequest
+} from '../types/ipc'
 
 export function buildElectronApi(): ElectronApi {
   return {
@@ -125,6 +131,13 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('apps:page-closed', handler)
       return () => ipcRenderer.removeListener('apps:page-closed', handler)
     },
+    onAppOutputs: (callback) => {
+      const handler = (_event: IpcRendererEvent, appId: string, outputs: AppOutputs | null): void =>
+        callback(appId, outputs)
+      ipcRenderer.on('apps:outputs', handler)
+      return () => ipcRenderer.removeListener('apps:outputs', handler)
+    },
+    sendAppOutputAction: (action) => ipcRenderer.send('apps:output-action', action),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     openGlobalSettings: (tab, opts) =>
       ipcRenderer.send(
@@ -242,6 +255,13 @@ export function buildElectronApi(): ElectronApi {
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     getStableTags: (): Promise<string[]> => ipcRenderer.invoke('get-stable-tags'),
     getCloudUserTier: () => ipcRenderer.invoke('get-cloud-user-tier'),
+    refreshCreditBalance: () => ipcRenderer.invoke('credit-balance:refresh'),
+    onCreditBalanceChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, state: unknown) =>
+        callback(state as Parameters<typeof callback>[0])
+      ipcRenderer.on('credit-balance:changed', handler)
+      return () => ipcRenderer.removeListener('credit-balance:changed', handler)
+    },
     getCloudFreeRunsEnabled: () => ipcRenderer.invoke('get-cloud-free-runs-enabled'),
     quitApp: () => ipcRenderer.invoke('quit-app'),
     relaunchApp: () => ipcRenderer.invoke('app:relaunch'),

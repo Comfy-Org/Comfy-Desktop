@@ -3,7 +3,17 @@ import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useEventListener, usePreferredReducedMotion } from '@vueuse/core'
 import { DropdownMenuRadioGroup } from 'reka-ui'
-import { AudioLines, Box, Check, ChevronDown, Download, File, FolderSearch, X } from '@lucide/vue'
+import {
+  AudioLines,
+  Box,
+  Check,
+  ChevronDown,
+  Download,
+  File,
+  FolderSearch,
+  Workflow,
+  X
+} from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Tag from '@comfyorg/design-system/chip/Tag'
 import AudioPreview from '@comfyorg/design-system/media/AudioPreview'
@@ -26,6 +36,7 @@ export interface OutputDetailItem {
   previewUrl: string | null
   thumbnailUrl: string | null
   savedIn?: string | null
+  workflow?: boolean
 }
 
 type Zoom = 'fit' | 0.5 | 1 | 2
@@ -42,6 +53,7 @@ const emit = defineEmits<{
   close: []
   download: [index: number]
   'show-in-folder': [index: number]
+  'open-workflow': [index: number]
 }>()
 
 const { t, locale } = useI18n()
@@ -302,6 +314,18 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         >
           <Download :size="15" aria-hidden="true" />
           {{ t('assets.download') }}
+        </Button>
+        <Button
+          v-if="item.workflow"
+          type="button"
+          variant="secondary"
+          size="md"
+          class="gap-1.5 text-[13px]/5"
+          data-testid="output-detail-workflow"
+          @click="emit('open-workflow', index)"
+        >
+          <Workflow :size="15" aria-hidden="true" />
+          {{ t('assets.detail.openWorkflow') }}
         </Button>
         <Button
           v-if="item.savedIn"
