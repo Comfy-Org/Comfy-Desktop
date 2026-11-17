@@ -35,6 +35,8 @@ const MAX_PAGE_SIZE = 200
 const SCAN_PAGE_SIZE = 500
 const MAX_SCAN_PAGES = 100
 const SCAN_CONCURRENCY = 4
+const SCAN_TIMEOUT_MS = 120_000
+const SCAN_REUSE_MS = 30 * 60_000
 const ASSET_KINDS: readonly AssetKind[] = ['image', 'video', 'audio', '3d']
 const EMPTY_PAGE: CloudAssetPage = { assets: [], total: 0 }
 const REQUEST_TIMEOUT_MS = 20_000
@@ -119,14 +121,20 @@ interface AssetRowPage {
   total: number
 }
 
-function cloudListUrl({ offset, limit, order }: CloudAssetPageRequest): string {
+type TotalCount = 'exact' | 'skipped'
+
+function cloudListUrl(
+  { offset, limit, order }: CloudAssetPageRequest,
+  totalCount: TotalCount
+): string {
   const query = new URLSearchParams({
     tags_any: 'output',
     sort: 'created_at',
     order: order === 'oldest' ? 'asc' : 'desc',
     limit: String(limit),
     offset: String(offset),
-    include_public: 'false'
+    include_public: 'false',
+    ...(totalCount === 'exact' ? { capped_total: 'false' } : { include_total: 'false' })
   })
   return `${CLOUD_CONFIG.apiBase}/assets?${query}`
 }
@@ -134,9 +142,10 @@ function cloudListUrl({ offset, limit, order }: CloudAssetPageRequest): string {
 async function fetchAssetRows(
   request: CloudAssetPageRequest,
   headers: Record<string, string>,
-  signal: AbortSignal
+  signal: AbortSignal,
+  totalCount: TotalCount = 'exact'
 ): Promise<AssetRowPage> {
-  const res = await fetch(cloudListUrl(request), {
+  const res = await fetch(cloudListUrl(request, totalCount), {
     headers: { Accept: 'application/json', ...headers },
     signal: AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), signal])
   })
@@ -228,6 +237,7 @@ async function cloudAccessToken(installationId: string): Promise<string | null> 
 
 interface OutputScan {
   key: string
+  savedAt: number
   rows: AssetRow[]
 }
 
@@ -240,24 +250,32 @@ async function scanAllRows(
   headers: Record<string, string>,
   signal: AbortSignal
 ): Promise<AssetRow[]> {
-  const scanPage = (index: number) =>
+  const failed = new AbortController()
+  const scanSignal = AbortSignal.any([signal, failed.signal, AbortSignal.timeout(SCAN_TIMEOUT_MS)])
+  const scanPage = (index: number, totalCount: TotalCount) =>
     fetchAssetRows(
       { offset: index * SCAN_PAGE_SIZE, limit: SCAN_PAGE_SIZE, order },
       headers,
-      signal
+      scanSignal,
+      totalCount
     )
-  const first = await scanPage(0)
+  const first = await scanPage(0, 'exact')
   const pageCount = Math.min(MAX_SCAN_PAGES, Math.ceil(first.total / SCAN_PAGE_SIZE))
   const pages: AssetRow[][] = [first.rows]
-  await runPool(
-    Array.from({ length: Math.max(0, pageCount - 1) }, (_, i) => i + 1),
-    SCAN_CONCURRENCY,
-    async (index) => {
-      pages[index] = (await scanPage(index)).rows
-    },
-    signal
-  )
-  signal.throwIfAborted()
+  try {
+    await runPool(
+      Array.from({ length: Math.max(0, pageCount - 1) }, (_, i) => i + 1),
+      SCAN_CONCURRENCY,
+      async (index) => {
+        pages[index] = (await scanPage(index, 'skipped')).rows
+      },
+      scanSignal
+    )
+  } catch (error) {
+    failed.abort()
+    throw error
+  }
+  scanSignal.throwIfAborted()
   return [...new Map(pages.flat().map((row) => [row.id, row])).values()]
 }
 
@@ -269,10 +287,11 @@ async function rowsOfKind(
 ): Promise<AssetRowPage> {
   const key = [accessToken, request.order].join('\n')
   let scan = slot.scan
-  if (request.offset === 0 || scan?.key !== key) {
+  if (request.offset === 0 || scan?.key !== key || Date.now() - scan.savedAt >= SCAN_REUSE_MS) {
     slot.scan = undefined
     const headers = { Authorization: `Bearer ${accessToken}` }
-    scan = { key, rows: await scanAllRows(request.order, headers, signal) }
+    const rows = await scanAllRows(request.order, headers, signal)
+    scan = { key, savedAt: Date.now(), rows }
     slot.scan = scan
   }
   const matches = scan.rows.filter((row) => assetKind(row.name, row.mime_type) === request.kind)
@@ -353,6 +372,7 @@ async function listLatestPage(
     if (listing.signal.aborted) return null
     throw error
   } finally {
+    listing.abort()
     if (pageListings.get(sender) === listing) pageListings.delete(sender)
   }
 }

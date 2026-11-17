@@ -416,12 +416,15 @@ interface CachedPage {
 }
 
 const pageCache = new Map<string, CachedPage>()
+const pagesInFlight = new Map<string, Promise<CloudAssetPage>>()
 
 function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage> {
   const kind = kindFilter.value === 'all' ? undefined : kindFilter.value
   const key = [loadKey.value, cloudId, sortOrder.value, kind, pageSize.value, pageNumber].join('\n')
   const cached = pageCache.get(key)
   if (cached && Date.now() - cached.savedAt < PAGE_CACHE_TTL_MS) return cached.page
+  for (const replacedKey of pagesInFlight.keys()) pageCache.delete(replacedKey)
+  pagesInFlight.clear()
   const page = window.api
     .listAssets(cloudId, {
       offset: (pageNumber - 1) * pageSize.value,
@@ -431,7 +434,12 @@ function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage>
     })
     .then((listed) => listed ?? Promise.reject(new Error('a newer page replaced this one')))
   pageCache.set(key, { savedAt: Date.now(), page })
-  page.catch(() => {
+  pagesInFlight.set(key, page)
+  const settle = (): void => {
+    if (pagesInFlight.get(key) === page) pagesInFlight.delete(key)
+  }
+  page.then(settle, () => {
+    settle()
     if (pageCache.get(key)?.page === page) pageCache.delete(key)
   })
   return page
@@ -442,7 +450,10 @@ function prefetchPage(cloudId: string, pageNumber: number): void {
   prefetchHandle = requestIdleCallback(() => void cloudPage(cloudId, pageNumber).catch(() => {}))
 }
 
-onBeforeUnmount(() => cancelIdleCallback(prefetchHandle))
+onBeforeUnmount(() => {
+  requestId++
+  cancelIdleCallback(prefetchHandle)
+})
 
 async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean): Promise<void> {
   const dashboardWorkspaceId = installationWorkspaceId(build, dashboardScope.selectedWorkspaceId)
@@ -479,6 +490,11 @@ async function loadAssets(userAsked = false): Promise<void> {
       : await window.api.listLocalAssets(selected.computer ? undefined : selected.build.id)
     if (current !== requestId) return
     if ('total' in listed) cloudTotal.value = listed.total
+    if (cloud && currentPage.value > pageCount.value) {
+      pageCache.clear()
+      currentPage.value = pageCount.value
+      return
+    }
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
     truncated.value = 'truncated' in listed && listed.truncated
     if (cloud) prefetchPage(cloud.id, currentPage.value + 1)

@@ -214,7 +214,7 @@ describe('listAssets', () => {
     expect(assets.at(-1)!.id).toBe('a99')
   })
 
-  it('asks Cloud for one page of outputs at the offset, size and order the page asks for', async () => {
+  it('asks Cloud for one page of outputs at the offset, size and order the page asks for, with an exact total', async () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue('token')
     fetchMock.mockResolvedValueOnce(
@@ -230,7 +230,8 @@ describe('listAssets', () => {
       order: 'asc',
       limit: '50',
       offset: '150',
-      include_public: 'false'
+      include_public: 'false',
+      capped_total: 'false'
     })
     expect(page.total).toBe(1561)
   })
@@ -283,6 +284,61 @@ describe('listAssets', () => {
         'mesh-403.glb'
       ])
       expect(fetchMock).toHaveBeenCalledTimes(3)
+    })
+
+    it('counts exactly once and skips the count for the other large pages', async () => {
+      cloudOfOutputs(1200)
+
+      await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
+
+      const counts = fetchMock.mock.calls.map(([url]) => {
+        const asked = new URL(url as string).searchParams
+        return [asked.get('offset'), asked.get('capped_total'), asked.get('include_total')]
+      })
+      expect(counts.toSorted()).toEqual([
+        ['0', 'false', null],
+        ['1000', null, 'false'],
+        ['500', null, 'false']
+      ])
+    })
+
+    it('stops the other large pages when one of them fails', async () => {
+      getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+      getAccessToken.mockResolvedValue('token')
+      const stillOpen: AbortSignal[] = []
+      fetchMock.mockImplementation(async (url: string, init: { signal: AbortSignal }) => {
+        const offset = Number(new URL(url).searchParams.get('offset'))
+        if (offset === 0) return jsonResponse({ assets: [], total: 2500 })
+        if (offset === 500) return new Response(null, { status: 500 })
+        stillOpen.push(init.signal)
+        return new Promise((_resolve, reject) =>
+          init.signal.addEventListener('abort', () => reject(init.signal.reason))
+        )
+      })
+
+      await expect(listAssets('cloud-1', { ...FIRST_PAGE, kind: '3d' })).rejects.toThrow('HTTP 500')
+
+      expect(stillOpen.length).toBeGreaterThan(0)
+      expect(stillOpen.every((signal) => signal.aborted)).toBe(true)
+    })
+
+    it('reads the list again for a later page once the read is 30 minutes old', async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+      const slot = {}
+      const signal = new AbortController().signal
+      const threeD = { ...FIRST_PAGE, limit: 5, kind: '3d' } as const
+      const now = vi.spyOn(Date, 'now')
+      try {
+        now.mockReturnValue(0)
+        await listAssets('cloud-1', threeD, signal, slot)
+        now.mockReturnValue(30 * 60_000)
+
+        await listAssets('cloud-1', { ...threeD, offset: 5 }, signal, slot)
+      } finally {
+        now.mockRestore()
+      }
+
+      expect(offsetsAsked).toHaveLength(6)
     })
 
     it('reuses that read for the later pages of the type, and reads again for the first page', async () => {
@@ -900,11 +956,11 @@ describe('the list handler', () => {
       list({ sender: {} }, 'cloud-1', FIRST_PAGE)
     ])
 
-    expect(pages).toEqual([
+    expect(pages, 'neither window replaced the other').toEqual([
       { assets: [], total: 0 },
       { assets: [], total: 0 }
     ])
-    expect(signals.some((signal) => signal.aborted)).toBe(false)
+    expect(signals).toHaveLength(2)
   })
 
   it.each([

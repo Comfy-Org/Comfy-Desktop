@@ -1272,6 +1272,61 @@ describe('AssetsView Comfy Cloud pages', () => {
     expect(timesAskedFor(100)).toBe(2)
   })
 
+  it('opens the last page that still exists when Cloud now has fewer outputs', async () => {
+    let total = 250
+    listAssets.mockImplementation(async (_id: string, request: PageRequest) =>
+      outputPage(total, request)
+    )
+    const wrapper = await mountCloud()
+    await nextPagePrefetched(100)
+    total = 150
+
+    await goToPage(wrapper, 3)
+
+    expect(timesAskedFor(100), 'page 2 is asked for again, not taken from the cache').toBe(2)
+    expect(assetNames(wrapper)[0]).toBe('out-100.png')
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '101–150 of 150'
+    )
+  })
+
+  it('asks again for a page that a newer page replaced while it loaded', async () => {
+    let finishFirstPageTwo: (page: CloudAssetPage | null) => void = () => {}
+    listAssets.mockImplementation((_id: string, request: PageRequest) =>
+      request.offset === 100 && timesAskedFor(100) === 1
+        ? new Promise((resolve) => (finishFirstPageTwo = resolve))
+        : Promise.resolve(outputPage(400, request))
+    )
+    const wrapper = await mountCloud()
+    await nextPagePrefetched(100)
+
+    await goToPage(wrapper, 3)
+    await goToPage(wrapper, 2)
+    finishFirstPageTwo(null)
+    await flushPromises()
+
+    expect(timesAskedFor(100)).toBe(2)
+    expect(assetNames(wrapper)[0]).toBe('out-100.png')
+    expect(wrapper.find('[data-testid="assets-empty"]').exists()).toBe(false)
+  })
+
+  it('asks Cloud for nothing more once the page is closed', async () => {
+    let finishFirstPage: (page: CloudAssetPage) => void = () => {}
+    listAssets.mockImplementation((_id: string, request: PageRequest) =>
+      request.offset === 0
+        ? new Promise((resolve) => (finishFirstPage = resolve))
+        : Promise.resolve(outputPage(250, request))
+    )
+    const wrapper = await mountCloud()
+
+    wrapper.unmount()
+    finishFirstPage(outputPage(250, FIRST_PAGE))
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    expect(timesAskedFor(100), 'no next page is fetched for a closed page').toBe(0)
+  })
+
   it('asks Cloud again from page 1 after Refresh', async () => {
     cloudOutputs(250)
     const wrapper = await mountCloud()
