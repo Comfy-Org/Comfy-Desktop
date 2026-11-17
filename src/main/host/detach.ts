@@ -6,10 +6,17 @@ import { _runningSessions } from '../lib/ipc/shared'
 import { COMFY_BG } from '../lib/theme'
 import { destroyPanelView, ensurePanelView } from './panelView'
 import { openSystemModalAsync } from '../popups/systemModal'
+import { hideTitlePopupForParent } from '../popups/titlePopup'
 import type { SystemModalDetailGroup } from '../popups/systemModal'
 import { recordDashboardSurface } from '../lib/lastSession'
 import * as settings from '../settings'
-import { comfyWindows, isChooserHost, isInstallHost, shouldConfirmKillForEntry } from './registry'
+import {
+  comfyWindows,
+  getEntryByInstallationId,
+  isChooserHost,
+  isInstallHost,
+  shouldConfirmKillForEntry
+} from './registry'
 import type { ComfyWindowEntry } from './registry'
 import {
   applyChooserHostTheme,
@@ -19,6 +26,7 @@ import {
   installCloseNeedsConfirm
 } from './createHostWindow'
 import type { CloseWindowChoice } from './createHostWindow'
+import type { CloseComfyWindowOptions } from '../../types/ipc'
 
 export const preClearedClose = new WeakSet<BrowserWindow>()
 
@@ -252,6 +260,25 @@ export async function confirmAndCloseHostWindow(parentWindow: BrowserWindow): Pr
   }
   preClearedClose.add(entry.window)
   entry.window.close()
+}
+
+function isOnlyOpenHostWindow(entry: ComfyWindowEntry): boolean {
+  return !Array.from(comfyWindows.values()).some(
+    (other) => other !== entry && !other.window.isDestroyed()
+  )
+}
+
+export function closeBuildWindow(installationId: string, opts?: CloseComfyWindowOptions): boolean {
+  const entry = getEntryByInstallationId(installationId)
+  if (!entry || entry.window.isDestroyed()) return false
+  if (opts?.keepDesktopOpen && isOnlyOpenHostWindow(entry)) {
+    hideTitlePopupForParent(entry.window)
+    entry.detachInstall()
+    return true
+  }
+  if (opts?.skipConfirm) preClearedClose.add(entry.window)
+  entry.window.close()
+  return true
 }
 
 export function _detachInstallImpl(entry: ComfyWindowEntry): void {

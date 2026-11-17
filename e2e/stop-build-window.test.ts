@@ -6,6 +6,7 @@ import { launchApp, type AppContext } from './launchApp'
 import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { evalWithRetry } from './support/evalRetry'
 import { titlePopupPage, waitForWebContents } from './support/cdpPages'
+import { openPickerViaTitlePill } from './support/chooserHelpers'
 import { byTestId, TID } from './support/testIds'
 
 const STOPPED_ID = 'inst-stop-window'
@@ -173,5 +174,66 @@ test('Home Stop closes only the confirmed build window after stopping ComfyUI @m
     await expect
       .poll(() => ctx.panel.textOf(`${card(RUNNING_ID)} [data-testid="home-build-status"]`))
       .toContain('Ready')
+  })
+})
+
+test('Stop in the only Desktop window shows the dashboard there and keeps Desktop open @macos @linux', async () => {
+  test.setTimeout(180_000)
+  await ctx.panel.waitForVisible(card(STOPPED_ID))
+  expect(await ctx.panel.click(card(STOPPED_ID))).toBe(true)
+  await expect
+    .poll(windowState, { timeout: 90_000 })
+    .toMatchObject({ total: 2, stoppedBuild: [expect.any(Number)], runningBuild: [] })
+  const [buildWindowId] = (await windowState()).stoppedBuild
+
+  await test.step('Closing Home leaves the build window as the only Desktop window', async () => {
+    await evalWithRetry(() =>
+      ctx.app.evaluate(({ BrowserWindow }, keepId) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed() && win.id !== keepId) win.close()
+        }
+      }, buildWindowId)
+    )
+    await expect
+      .poll(windowState, { timeout: 30_000 })
+      .toEqual({ total: 1, stoppedBuild: [buildWindowId], runningBuild: [] })
+  })
+
+  await test.step('Confirming Stop in the build settings stops ComfyUI and shows the dashboard in the same window', async () => {
+    const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
+    await popup.waitForVisible(byTestId(TID.pickerMoreTrigger))
+    await popup.clickUntilVisible(
+      byTestId(TID.pickerMoreTrigger),
+      byTestId(TID.pinBottomAction('stop'))
+    )
+    expect(await popup.click(byTestId(TID.pinBottomAction('stop')))).toBe(true)
+    await popup.waitForVisible(byTestId(TID.baseAlertAction))
+    expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+
+    await expect
+      .poll(windowState, { timeout: 30_000 })
+      .toEqual({ total: 1, stoppedBuild: [], runningBuild: [] })
+    await waitForWebContents(ctx.app, 'panel.html')
+    await ctx.panel.waitFor(
+      async () => (await ctx.panel.isVisible(HOME)) || (await ctx.panel.isVisible('.chooser-view'))
+    )
+    const openWindowIds = await evalWithRetry(() =>
+      ctx.app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .filter((win) => !win.isDestroyed())
+          .map((win) => win.id)
+      )
+    )
+    expect(openWindowIds, 'Desktop keeps the window the build was in').toEqual([buildWindowId])
+    await expect
+      .poll(async () => {
+        try {
+          await fetch(`http://127.0.0.1:${stoppedPort}/queue`)
+          return true
+        } catch {
+          return false
+        }
+      })
+      .toBe(false)
   })
 })

@@ -596,7 +596,8 @@ describe('useInstallContextMenu - stop and close the build window', () => {
     expect(apiMock.stopComfyUI).toHaveBeenCalledTimes(1)
     expect(apiMock.stopComfyUI).toHaveBeenCalledWith(inst.id)
     expect(apiMock.closeComfyWindow).toHaveBeenCalledExactlyOnceWith(inst.id, {
-      skipConfirm: true
+      skipConfirm: true,
+      keepDesktopOpen: true
     })
   })
 
@@ -614,7 +615,8 @@ describe('useInstallContextMenu - stop and close the build window', () => {
     stopped.resolve()
     await pending
     expect(apiMock.closeComfyWindow).toHaveBeenCalledExactlyOnceWith(inst.id, {
-      skipConfirm: true
+      skipConfirm: true,
+      keepDesktopOpen: true
     })
   })
 
@@ -651,7 +653,8 @@ describe('useInstallContextMenu - stop and close the build window', () => {
 
     expect(apiMock.stopComfyUI).toHaveBeenCalledExactlyOnceWith('inst-1')
     expect(apiMock.closeComfyWindow).toHaveBeenCalledExactlyOnceWith('inst-1', {
-      skipConfirm: true
+      skipConfirm: true,
+      keepDesktopOpen: true
     })
     expect(modalMock.alert).not.toHaveBeenCalled()
   })

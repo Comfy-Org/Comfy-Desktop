@@ -77,15 +77,14 @@ function deliver(payload: unknown): unknown[] {
   return received
 }
 
-it('forwards picker window-close requests with the build and confirmation choice', async () => {
+it('forwards picker window-close requests with the build and how to close it', async () => {
   mocks.invoke.mockResolvedValueOnce(true)
+  const opts = { skipConfirm: true, keepDesktopOpen: true }
 
-  expect(await popupBridge().pickerSettingsCloseComfyWindow('build-A', { skipConfirm: true })).toBe(
-    true
-  )
+  expect(await popupBridge().pickerSettingsCloseComfyWindow('build-A', opts)).toBe(true)
   expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(PICKER_SETTINGS_CHANNELS.closeComfyWindow, {
     installationId: 'build-A',
-    opts: { skipConfirm: true }
+    opts
   })
 })
 

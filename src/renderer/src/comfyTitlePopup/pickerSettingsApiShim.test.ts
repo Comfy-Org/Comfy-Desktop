@@ -62,7 +62,8 @@ it('stops and closes a build from picker settings after the stop finishes', asyn
   stopped.resolve()
   expect(await pending).toBe(true)
   expect(bridge.pickerSettingsCloseComfyWindow).toHaveBeenCalledExactlyOnceWith('build-A', {
-    skipConfirm: true
+    skipConfirm: true,
+    keepDesktopOpen: true
   })
   expect(dialogs.alert).not.toHaveBeenCalled()
 })

@@ -22,7 +22,10 @@ export function useStopAction(dialogs: StopActionDialogs) {
     if (!confirmed) return false
     try {
       await window.api.stopComfyUI(installationId)
-      await window.api.closeComfyWindow(installationId, { skipConfirm: true })
+      await window.api.closeComfyWindow(installationId, {
+        skipConfirm: true,
+        keepDesktopOpen: true
+      })
       return true
     } catch (err) {
       await dialogs.alert({ title: stopLabel, message: (err as Error)?.message || String(err) })

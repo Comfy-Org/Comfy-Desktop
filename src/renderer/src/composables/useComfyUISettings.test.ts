@@ -467,7 +467,10 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     expect(callArg.tone).toBe('danger')
     expect(api.stopComfyUI).toHaveBeenCalledTimes(1)
     expect(api.stopComfyUI).toHaveBeenCalledWith('a')
-    expect(api.closeComfyWindow).toHaveBeenCalledExactlyOnceWith('a', { skipConfirm: true })
+    expect(api.closeComfyWindow).toHaveBeenCalledExactlyOnceWith('a', {
+      skipConfirm: true,
+      keepDesktopOpen: true
+    })
     expect(onDismissPreview).toHaveBeenCalledTimes(1)
     scope.stop()
   })

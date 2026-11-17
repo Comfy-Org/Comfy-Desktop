@@ -25,7 +25,7 @@ it('routes the picker close request to the existing build-window handler', async
   const close = vi.fn().mockReturnValue(true)
   handlers.set('close-comfy-window', close)
   const event = { sender: {} } as IpcMainInvokeEvent
-  const opts = { skipConfirm: true }
+  const opts = { skipConfirm: true, keepDesktopOpen: true }
 
   expect(
     await handlers.get(PICKER_SETTINGS_CHANNELS.closeComfyWindow)!(event, {

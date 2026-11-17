@@ -2,7 +2,12 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { Category, ViewKind } from '../shared/viewKind'
 import { PICKER_SETTINGS_CHANNELS as CH, POPUP_KIND } from '../types/ipc'
-import type { PopupTheme, TerminalRestore, TitlePopupMenuItem } from '../types/ipc'
+import type {
+  CloseComfyWindowOptions,
+  PopupTheme,
+  TerminalRestore,
+  TitlePopupMenuItem
+} from '../types/ipc'
 
 export interface PopupInstancePickerInstall {
   id: string
@@ -206,7 +211,7 @@ export interface ComfyTitlePopupBridge {
   pickerSettingsStopComfyUI(installationId: string): Promise<void>
   pickerSettingsCloseComfyWindow(
     installationId: string,
-    opts?: { skipConfirm?: boolean }
+    opts?: CloseComfyWindowOptions
   ): Promise<boolean>
   pickerSettingsGetSnapshots(installationId: string): Promise<Record<string, unknown>>
   pickerSettingsGetSnapshotDetail(

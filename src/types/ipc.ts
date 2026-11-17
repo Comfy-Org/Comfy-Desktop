@@ -1049,6 +1049,11 @@ export interface AppUpdateDownloadProgress {
   bytesPerSecond: number | null
 }
 
+export interface CloseComfyWindowOptions {
+  skipConfirm?: boolean
+  keepDesktopOpen?: boolean
+}
+
 export interface ElectronApi {
   platform: NodeJS.Platform
 
@@ -1160,7 +1165,7 @@ export interface ElectronApi {
   terminalResize(installationId: string, cols: number, rows: number): Promise<void>
   terminalRestart(installationId: string): Promise<TerminalRestore>
   openInstallWindow(installationId: string): Promise<boolean>
-  closeComfyWindow(installationId: string, opts?: { skipConfirm?: boolean }): Promise<boolean>
+  closeComfyWindow(installationId: string, opts?: CloseComfyWindowOptions): Promise<boolean>
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
   closeCurrentPanel(): void
