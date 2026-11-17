@@ -8,13 +8,20 @@ import { test, expect } from '@playwright/test'
 import { keepOnlyComfyHostWindow } from './support/comfyHostWindow'
 import { launchApp, type AppContext } from './launchApp'
 import {
+  pickFromBuildsTileMenu,
+  uninstallFromBuildsTileMenu,
   clickInstallTile,
   clickNewInstallTile,
   expectChooserVisible,
   expectNewBuildModalOpen,
   openManageViaDashboard,
   openNewBuildChangeSetup,
-  openPickerViaTitlePill
+  openPickerViaTitlePill,
+  HARDWARE_DROPDOWN,
+  pickFromSetupDropdown,
+  pickFromSetupDropdownByText,
+  WHERE_IT_IS_DROPDOWN,
+  setupDropdownValue
 } from './support/chooserHelpers'
 import {
   armLaunchReadyHold,
@@ -335,25 +342,19 @@ test('accept ToS + Change opens the name and every option in one sheet @sec-setu
     'failed to click the second-newest ComfyUI Version option in BaseSelect listbox'
   ).toBe(true)
 
-  await ctx.panel.waitForSelector('#source-fields .setup-option--selected', { timeout: 60_000 })
+  await ctx.panel.waitForSelector(`${HARDWARE_DROPDOWN}:not([aria-busy])`, { timeout: 60_000 })
 
   if (REAL_COMFY_VARIANT !== 'default') {
     const rowLabel =
       REAL_COMFY_VARIANT === 'nvidia' ? 'NVIDIA' : REAL_COMFY_VARIANT === 'amd' ? 'AMD' : 'CPU'
-    await ctx.panel.waitForSelector('.setup-option', { timeout: 5_000 })
     expect(
-      await ctx.panel.clickByText('.setup-option', rowLabel),
-      `${rowLabel} variant row clicked`
+      await pickFromSetupDropdownByText(ctx.panel, HARDWARE_DROPDOWN, rowLabel),
+      `${rowLabel} picked in the Hardware dropdown`
     ).toBe(true)
     await ctx.panel.waitFor(
       async () =>
-        ctx.panel.evaluate<boolean>(
-          `(() => {
-          const sel = document.querySelector('#source-fields .setup-option--selected .setup-option__label')
-          return !!sel && new RegExp(${JSON.stringify(rowLabel)}, 'i').test(sel.textContent || '')
-        })()`
-        ),
-      { timeout: 5_000, message: `${rowLabel} variant did not become the selected variant row` }
+        new RegExp(rowLabel, 'i').test(await setupDropdownValue(ctx.panel, HARDWARE_DROPDOWN)),
+      { timeout: 5_000, message: `${rowLabel} did not become the picked hardware` }
     )
   }
 })
@@ -2297,14 +2298,7 @@ test('cleans up the copy install before the original delete test runs @sec-copy 
   expect(_copyInstallId, 'no copy install id captured to clean up').toBeTruthy()
 
   await expectChooserVisible(ctx.panel)
-  await ctx.panel.waitForVisible(byTestId(TID.dashboardTileKebab(_copyInstallId)), {
-    timeout: 15_000
-  })
-  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(_copyInstallId)))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('delete')), { timeout: 5_000 })
-  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('delete')))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 15_000 })
-  expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
+  await uninstallFromBuildsTileMenu(ctx.panel, _copyInstallId)
 
   await expect
     .poll(() => existsSync(_copyInstallPath), { timeout: 240_000, intervals: [1_000, 2_000] })
@@ -2334,15 +2328,13 @@ test('dashboard kebab "Copy Installation" creates a real ~500MB copy @sec-copy @
   test.setTimeout(600_000)
 
   await expectChooserVisible(ctx.panel)
-  await ctx.panel.waitForVisible(byTestId(TID.dashboardTileKebab(_updateInstallId)), {
+  await ctx.panel.waitForVisible(byTestId(TID.dashboardTile(_updateInstallId)), {
     timeout: 10_000
   })
 
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(_updateInstallId)))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('copy-install')), { timeout: 5_000 })
-  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('copy-install')))).toBe(true)
+  await pickFromBuildsTileMenu(ctx.panel, _updateInstallId, 'copy-install')
 
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
@@ -2395,7 +2387,7 @@ test('Manage drawer "Untrack" removes the install from the registry without touc
 
   await waitForWebContents(ctx.app, 'panel.html')
   await expectChooserVisible(ctx.panel)
-  await ctx.panel.waitForVisible(byTestId(TID.dashboardTileKebab(_kebabCopyInstallId)), {
+  await ctx.panel.waitForVisible(byTestId(TID.dashboardTile(_kebabCopyInstallId)), {
     timeout: 10_000
   })
 
@@ -2565,10 +2557,14 @@ test('creates a Remote Connection record pointed at the running local server thr
     await ctx.panel.click('[data-testid="config-start-from-existing"]'),
     'Start from switched to ComfyUI I already have'
   ).toBe(true)
-  await ctx.panel.waitForVisible('[data-testid="install-source-remote"]', { timeout: 5_000 })
-  expect(await ctx.panel.click('[data-testid="install-source-remote"]'), 'On a server picked').toBe(
-    true
-  )
+  expect(
+    await pickFromSetupDropdown(
+      ctx.panel,
+      WHERE_IT_IS_DROPDOWN,
+      '[data-testid="install-source-remote"]'
+    ),
+    'On a server picked'
+  ).toBe(true)
 
   await ctx.panel.waitForVisible('#sf-url', { timeout: 10_000 })
   await ctx.panel.fill('#sf-url', origin!)
@@ -2888,14 +2884,7 @@ test('real delete wipes the fully-installed ~500MB tree off disk @sec-delete @re
   test.setTimeout(300_000)
   expect(_deleteInstallPath, 'install path not captured').toBeTruthy()
 
-  await ctx.panel.waitForVisible(byTestId(TID.dashboardTileKebab(_deleteInstallId)), {
-    timeout: 10_000
-  })
-  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(_deleteInstallId)))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('delete')), { timeout: 5_000 })
-  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('delete')))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 15_000 })
-  expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
+  await uninstallFromBuildsTileMenu(ctx.panel, _deleteInstallId)
 
   await expect
     .poll(() => existsSync(_deleteInstallPath), { timeout: 240_000, intervals: [1_000, 2_000] })

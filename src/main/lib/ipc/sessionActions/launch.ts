@@ -61,6 +61,7 @@ import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
 import type { LaunchCommand } from '../../../types/sources'
 import { randomUUID } from 'node:crypto'
 import { displayLaunchUrl } from '../../cloudUrl'
+import { cloudWorkspaceUrl } from '../../cloudWorkspace'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
@@ -909,7 +910,7 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
     if (sessionId === installationId) settleAutoStartOnFirstStart(installationId, started)
   }
   try {
-    const result = await runLaunch(ctx, launch.abort, prefetchHold)
+    const result = await runLaunch(ctx, launch, prefetchHold)
     if (!result.cancelled) settleFirstStart(result.ok)
     return result
   } catch (err) {
@@ -924,9 +925,10 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
 
 async function runLaunch(
   { event, installationId, sessionId: runtimeSessionId, inst: instArg, actionData }: ActionContext,
-  abort: AbortController,
+  launch: ReturnType<typeof _beginLaunch>,
   prefetchHold: { release: () => void }
 ): Promise<ActionResult> {
+  const { abort } = launch
   let inst = instArg
   const sessionId = runtimeSessionId ?? installationId
   const sessionKind = sessionKindOf(sessionId)
@@ -1461,13 +1463,15 @@ async function runLaunch(
     applyStorageLaunchArgs(inst, installationId, launchCmd, storageSettings)
 
   if (launchCmd.remote) {
-    const displayUrl = displayLaunchUrl(launchCmd.url || '')
+    if (abort.signal.aborted) return { ok: false, cancelled: true }
+    const rawUrl = launchCmd.url!
+    const displayUrl = displayLaunchUrl(rawUrl)
     sendProgress('launch', {
       percent: -1,
       status: i18n.t('launch.connecting', { url: displayUrl })
     })
     try {
-      await waitForUrl(launchCmd.url!, {
+      await waitForUrl(rawUrl, {
         timeoutMs: 15000,
         signal: abort.signal,
         onPoll: ({ elapsedMs }) => {
@@ -1483,6 +1487,23 @@ async function runLaunch(
       if (abort.signal.aborted) return { ok: false, cancelled: true }
       return { ok: false, message: i18n.t('errors.cannotConnect', { url: displayUrl }) }
     }
+
+    const initialPickerWorkspaceId = actionData?.pickerWorkspaceId
+    const getPickerWorkspaceId = (): string | undefined =>
+      launch.pickerWorkspaceId ??
+      (typeof initialPickerWorkspaceId === 'string' ? initialPickerWorkspaceId : undefined)
+    let pickerWorkspaceId: string | undefined
+    do {
+      if (abort.signal.aborted) return { ok: false, cancelled: true }
+      pickerWorkspaceId = getPickerWorkspaceId()
+      try {
+        launchCmd.url = await cloudWorkspaceUrl(inst, rawUrl, pickerWorkspaceId)
+      } catch (error) {
+        if (abort.signal.aborted) return { ok: false, cancelled: true }
+        if (getPickerWorkspaceId() === pickerWorkspaceId) throw error
+      }
+    } while (getPickerWorkspaceId() !== pickerWorkspaceId)
+    if (abort.signal.aborted) return { ok: false, cancelled: true }
 
     if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
     const mode = _resolveLaunchMode(inst, actionData)

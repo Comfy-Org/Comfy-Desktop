@@ -2,17 +2,18 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import MenuView from './MenuView.vue'
+import type { TitlePopupMenuItem } from '../../../types/ipc'
 
-const items = [
+const items: TitlePopupMenuItem[] = [
   { id: 'performance-test', label: 'Performance Tests' },
   { id: 'benchmarks', label: 'Benchmarks' },
-  { kind: 'separator' as const },
+  { kind: 'separator' },
   { id: 'settings', label: 'Settings' }
 ]
 
 let wrapper: VueWrapper | undefined
 
-function mountMenu(menuItems: typeof items = items): VueWrapper {
+function mountMenu(menuItems: TitlePopupMenuItem[] = items): VueWrapper {
   const i18n = createI18n({ legacy: false, locale: 'en', messages: { en: {} } })
   wrapper = mount(MenuView, {
     props: { items: menuItems },
@@ -124,5 +125,47 @@ describe('MenuView keyboard', () => {
     press('ArrowDown')
     press('ArrowDown')
     expect(focusedLabel()).toBe('Settings')
+  })
+})
+
+describe('MenuView rows', () => {
+  it('draws an icon on each row and spaces the rows 2px apart when the items have icons', () => {
+    const view = mountMenu([
+      { id: 'performance-test', label: 'Performance tests', icon: 'performance-test' },
+      { id: 'benchmarks', label: 'Benchmarks', icon: 'benchmarks' }
+    ])
+    expect(view.find('ul').classes()).toEqual(expect.arrayContaining(['flex', 'gap-0.5']))
+    const rows = view.findAll('li.item')
+    expect(rows[0]?.find('.lucide-gauge').exists()).toBe(true)
+    expect(rows[1]?.find('.lucide-chart-column').exists()).toBe(true)
+  })
+
+  it('keeps rows without icons flush and icon-free', () => {
+    const view = mountMenu()
+    expect(view.find('ul').classes()).not.toContain('gap-0.5')
+    expect(view.find('li.item svg').exists()).toBe(false)
+  })
+
+  it('fills label parameters from the locale string', () => {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'en',
+      messages: { en: { fileMenu: { resetZoom: 'Reset Zoom ({percent}%)' } } }
+    })
+    wrapper = mount(MenuView, {
+      props: {
+        items: [
+          {
+            id: 'reset-zoom',
+            label: 'Fallback label',
+            labelKey: 'fileMenu.resetZoom',
+            labelParams: { percent: 144 }
+          }
+        ]
+      },
+      attachTo: document.body,
+      global: { plugins: [i18n] }
+    })
+    expect(wrapper.find('li.item').text()).toBe('Reset Zoom (144%)')
   })
 })
