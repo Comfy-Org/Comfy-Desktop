@@ -21,7 +21,6 @@ import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import SplitButton from '../components/ui/SplitButton.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
-import { provideBuildMenuHost, useBuildMenuHost } from '../panel/home/useBuildMenu'
 import { openInstallManager } from '../lib/openInstallManager'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { FilterKey } from '../composables/useInstallList'
@@ -196,18 +195,6 @@ async function refreshWorkspace(): Promise<void> {
   }
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
-
-function canPromoteToWorkspace(inst: Installation): boolean {
-  return (
-    authStore.isSignedIn &&
-    Boolean(authStore.status.workspaceId) &&
-    inst.status === 'installed' &&
-    inst.sourceCategory === 'local' &&
-    Boolean(inst.installPath)
-  )
-}
-
-provideBuildMenuHost({ ...useBuildMenuHost(), canPromoteToWorkspace })
 
 const { viewError, viewDanger, isPromotingToWorkspace } = useInstallContextMenu({
   onManage: (inst, options) =>

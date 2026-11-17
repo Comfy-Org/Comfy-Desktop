@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { until } from '@vueuse/core'
 import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
 import { buildProgressOf, useBuildProgress } from '../../composables/useBuildProgress'
+import { useCanPromoteToWorkspace } from '../../composables/useCanPromoteToWorkspace'
 import { useInstallContextMenu } from '../../composables/useInstallContextMenu'
 import { useModal } from '../../composables/useModal'
 import { useQuickUpdate } from '../../composables/useQuickUpdate'
@@ -16,7 +17,6 @@ export interface BuildMenuHost {
   launch: (build: Installation, opts?: { isRestart?: boolean }) => void | Promise<void>
   openDetails: (build: Installation) => void | Promise<void>
   showProgress: (opts: ShowProgressOpts) => void | Promise<void>
-  canPromoteToWorkspace?: (build: Installation) => boolean
 }
 
 export interface BuildMenuEntry {
@@ -27,6 +27,7 @@ export interface BuildMenuEntry {
   danger?: boolean
   disabled?: boolean
   title?: string
+  hint?: string
 }
 
 const BUILD_MENU_HOST: InjectionKey<BuildMenuHost> = Symbol('buildMenuHost')
@@ -41,10 +42,6 @@ export function provideBuildMenuHost(host: BuildMenuHost): void {
   provide(BUILD_MENU_HOST, host)
 }
 
-export function useBuildMenuHost(): BuildMenuHost {
-  return inject(BUILD_MENU_HOST, NO_HOST)
-}
-
 function startsGroup(entries: BuildMenuEntry[], items: BuildMenuEntry[]): void {
   const [head] = entries
   if (!head) return
@@ -54,7 +51,7 @@ function startsGroup(entries: BuildMenuEntry[], items: BuildMenuEntry[]): void {
 
 export function useBuildMenu(build: () => Installation) {
   const { t } = useI18n()
-  const host = useBuildMenuHost()
+  const host = inject(BUILD_MENU_HOST, NO_HOST)
   const modal = useModal()
   const sessionStore = useSessionStore()
   const progressStore = useProgressStore()
@@ -68,7 +65,7 @@ export function useBuildMenu(build: () => Installation) {
       options ? openInstallManager(inst, options) : void host.openDetails(inst),
     onShowProgress: (opts) => void host.showProgress(opts),
     onUpdate: runQuickUpdate,
-    canPromoteToWorkspace: (inst) => host.canPromoteToWorkspace?.(inst) ?? false,
+    canPromoteToWorkspace: useCanPromoteToWorkspace(),
     autoStart: useAutoStartBuild()
   })
 
@@ -101,12 +98,13 @@ export function useBuildMenu(build: () => Installation) {
 
     const existing = installMenu
       .getMenuItems(inst)
-      .map(({ id, label, icon, disabled, title, style, separator }): BuildMenuEntry => ({
+      .map(({ id, label, icon, disabled, title, hint, style, separator }): BuildMenuEntry => ({
         id,
         label,
         icon,
         disabled,
         title,
+        hint,
         separator,
         danger: style === 'danger'
       }))

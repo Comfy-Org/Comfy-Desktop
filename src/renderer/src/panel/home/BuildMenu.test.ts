@@ -10,6 +10,7 @@ import Tooltip from '../../components/ui/Tooltip.vue'
 import { provideBuildMenuHost, type BuildMenuHost } from './useBuildMenu'
 import { homeBuildStatus } from './homeBuild'
 import { provideBuildLogs } from '../../composables/useBuildProgress'
+import { useAuthStore } from '../../stores/authStore'
 import { useInstallationStore } from '../../stores/installationStore'
 import { useProgressStore, type Operation } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -259,6 +260,37 @@ describe('Build menu', () => {
       b.getAttribute('data-testid')
     )
     expect(buttons).toEqual(['home-build-open', 'home-build-more'])
+  })
+
+  it('offers Upload build after Restore snapshot when signed in to a workspace, from the ⋯ and a right-click', async () => {
+    const signedIn = { signedIn: true, workspaceId: 'ws-1' }
+    vi.mocked(window.api.comfybuilder.getAuthStatus).mockResolvedValue(signedIn)
+    useAuthStore().status = signedIn
+    const tile = await mountTile('ready')
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    const fromTile = await shownMenu()
+    await closeMenu()
+
+    await rightClick(tile.get(`[data-build-id="${BUILD.id}"]`).element)
+    const fromRightClick = await shownMenu()
+
+    expect(fromTile).toEqual([
+      'launch',
+      '|',
+      'auto-start',
+      ...REST,
+      'promote-to-workspace',
+      '|',
+      'delete'
+    ])
+    expect(fromRightClick).toEqual(fromTile)
+  })
+
+  it('leaves Upload build out when signed out', async () => {
+    const tile = await mountTile('ready')
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+
+    expect(await shownMenu()).not.toContain('promote-to-workspace')
   })
 
   it('asks inside the menu before it uninstalls, then uninstalls without another dialog', async () => {
