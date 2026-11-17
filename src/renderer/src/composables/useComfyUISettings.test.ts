@@ -82,6 +82,7 @@ interface MockApi {
   getDiskSpace: ReturnType<typeof vi.fn>
   getInstallationSize: ReturnType<typeof vi.fn>
   stopComfyUI: ReturnType<typeof vi.fn>
+  closeComfyWindow: ReturnType<typeof vi.fn>
   runAction: ReturnType<typeof vi.fn>
   updateInstallation: ReturnType<typeof vi.fn>
 }
@@ -92,6 +93,7 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
     getDiskSpace: vi.fn().mockResolvedValue(null),
     getInstallationSize: vi.fn().mockResolvedValue({ sizeBytes: 0 }),
     stopComfyUI: vi.fn().mockResolvedValue(undefined),
+    closeComfyWindow: vi.fn().mockResolvedValue(true),
     runAction: vi.fn().mockResolvedValue({ ok: true }),
     updateInstallation: vi.fn().mockResolvedValue(undefined),
     ...overrides
@@ -465,6 +467,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     expect(callArg.tone).toBe('danger')
     expect(api.stopComfyUI).toHaveBeenCalledTimes(1)
     expect(api.stopComfyUI).toHaveBeenCalledWith('a')
+    expect(api.closeComfyWindow).toHaveBeenCalledExactlyOnceWith('a', { skipConfirm: true })
     expect(onDismissPreview).toHaveBeenCalledTimes(1)
     scope.stop()
   })
@@ -478,6 +481,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     await composable.runAction({ id: 'stop', label: 'Stop' } as ActionDef)
 
     expect(api.stopComfyUI).not.toHaveBeenCalled()
+    expect(api.closeComfyWindow).not.toHaveBeenCalled()
     expect(onDismissPreview).not.toHaveBeenCalled()
     scope.stop()
   })
@@ -491,6 +495,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     await composable.runAction({ id: 'stop', label: 'Stop' } as ActionDef)
 
     expect(api.stopComfyUI).toHaveBeenCalledTimes(1)
+    expect(api.closeComfyWindow).not.toHaveBeenCalled()
     expect(onDismissPreview).not.toHaveBeenCalled()
     expect(dialogsSpies.alert).toHaveBeenCalledTimes(1)
     expect(dialogsSpies.alert.mock.calls[0]![0].message).toBe('kill failed')
@@ -528,6 +533,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     expect(api.runAction).toHaveBeenCalledTimes(2)
     expect(api.runAction).toHaveBeenNthCalledWith(1, 'a', 'update-comfyui', undefined)
     expect(api.runAction).toHaveBeenNthCalledWith(2, 'a', 'launch')
+    expect(api.closeComfyWindow).not.toHaveBeenCalled()
     expect(result).toEqual({ ok: true })
     scope.stop()
   })
