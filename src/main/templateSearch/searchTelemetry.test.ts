@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { capture } from '../lib/telemetry'
-import { reportBundleDownload, reportStartAttempt, reportTemplateSent } from './searchTelemetry'
+import { reportBundleDownload, reportStartAttempt } from './searchTelemetry'
 
 vi.mock('../lib/telemetry', () => ({ capture: vi.fn() }))
 
@@ -42,15 +42,7 @@ describe('search telemetry from the main process', () => {
     )
   })
 
-  it('sends a template given to a starting build as template_sent_to_build', () => {
-    reportTemplateSent({ searchId: null, templateId: 'poster_template', pickToSendMs: 9000 })
-    expect(capture).toHaveBeenCalledExactlyOnceWith(
-      'comfy.desktop.template_search.template_sent_to_build',
-      { search_id: null, template_id: 'poster_template', pick_to_send_ms: 9000 }
-    )
-  })
-
-  it('never lets a telemetry failure reach a start, a download or a launch', () => {
+  it('never lets a telemetry failure reach a start or a download', () => {
     vi.mocked(capture).mockImplementation(() => {
       throw new Error('telemetry is down')
     })
@@ -58,7 +50,13 @@ describe('search telemetry from the main process', () => {
       reportStartAttempt({ result: 'ready', startMs: 1, bundleVersion: '2.3.0', verified: false })
     ).not.toThrow()
     expect(() =>
-      reportTemplateSent({ searchId: null, templateId: 'poster_template', pickToSendMs: 1 })
+      reportBundleDownload({
+        result: 'completed',
+        bytes: 1,
+        durationMs: 1,
+        background: false,
+        version: '2.3.0'
+      })
     ).not.toThrow()
   })
 })

@@ -1,12 +1,9 @@
-import { reportTemplateSent } from './searchTelemetry'
-
 export const CLAIM_WINDOW_MS = 60_000
 
 interface PendingOpen {
   templateId: string
   queuedAt: number
   claimed: boolean
-  searchId: string | null
 }
 
 const pending = new Map<string, PendingOpen>()
@@ -25,10 +22,9 @@ export function buildTemplateDeeplink(comfyUrl: string, templateId: string): str
 export function queueTemplateOpen(
   installationId: string,
   templateId: string,
-  now = Date.now(),
-  searchId: string | null = null
+  now = Date.now()
 ): void {
-  pending.set(installationId, { templateId, queuedAt: now, claimed: false, searchId })
+  pending.set(installationId, { templateId, queuedAt: now, claimed: false })
 }
 
 export function claimTemplateOpen(installationId: string, now = Date.now()): void {
@@ -42,14 +38,9 @@ export function dropTemplateOpen(installationId: string): void {
   pending.delete(installationId)
 }
 
-export function takeLaunchUrl(installationId: string, comfyUrl: string, now = Date.now()): string {
+export function takeLaunchUrl(installationId: string, comfyUrl: string): string {
   const open = pending.get(installationId)
   if (!open?.claimed) return comfyUrl
   pending.delete(installationId)
-  reportTemplateSent({
-    searchId: open.searchId,
-    templateId: open.templateId,
-    pickToSendMs: now - open.queuedAt
-  })
   return buildTemplateDeeplink(comfyUrl, open.templateId)
 }

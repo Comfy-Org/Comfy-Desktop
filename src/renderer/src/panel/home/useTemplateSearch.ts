@@ -102,7 +102,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
 
   watch(panelOpen, (open) => {
     if (!open) leaveResults()
-    else if (state.value.kind === 'result') telemetry.reopened()
+    else if (state.value.kind !== 'idle' && state.value.kind !== 'searching') telemetry.reopened()
   })
 
   watch(query, (text) => {
@@ -124,6 +124,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   })
 
   onScopeDispose(() => {
+    latestRequest++
     telemetry.abandoned('left')
     cancelPendingSearch()
     unsubscribe()
@@ -148,9 +149,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     const templateId = row.candidate.templateId
     const searchId = telemetry.picked(rows.value, row, inputMethod)
     const outcome = buildId
-      ? await window.api
-          .openTemplateInBuild(buildId, templateId, searchId ?? undefined)
-          .catch(() => null)
+      ? await window.api.openTemplateInBuild(buildId, templateId).catch(() => null)
       : null
     telemetry.opened(searchId, templateId, outcome ?? 'failed')
     if (!buildId || (outcome !== 'opened' && outcome !== 'launch')) {
@@ -170,6 +169,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   function close(reason: AbandonReason | null): void {
     panelOpen.value = false
     if (reason) telemetry.abandoned(reason)
+    else telemetry.hidden()
   }
 
   function onEnter(): void {
@@ -191,7 +191,6 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     panelOpen.value = true
     inResults.value = true
     activeIndex.value = index
-    telemetry.moved()
   }
 
   function move(step: number): void {

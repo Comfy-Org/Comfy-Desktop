@@ -1100,11 +1100,7 @@ describe('Home template search', () => {
     await searchAndPick(wrapper)
 
     expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'running')
-    expect(openTemplateInBuild).toHaveBeenCalledWith(
-      'running',
-      'poster_template',
-      expect.any(String)
-    )
+    expect(openTemplateInBuild).toHaveBeenCalledWith('running', 'poster_template')
     expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'running' })]])
   })
 
@@ -1116,11 +1112,7 @@ describe('Home template search', () => {
     await searchAndPick(wrapper)
 
     expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'running')
-    expect(openTemplateInBuild).toHaveBeenCalledWith(
-      'running',
-      'poster_template',
-      expect.any(String)
-    )
+    expect(openTemplateInBuild).toHaveBeenCalledWith('running', 'poster_template')
   })
 
   it('does not open a build the template was refused by', async () => {
@@ -1167,11 +1159,7 @@ describe('Home template search', () => {
     finish('opened')
     await flushPromises()
 
-    expect(openTemplateInBuild).toHaveBeenCalledWith(
-      'running',
-      'poster_template',
-      expect.any(String)
-    )
+    expect(openTemplateInBuild).toHaveBeenCalledWith('running', 'poster_template')
     expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'running' })]])
   })
 

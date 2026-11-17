@@ -35,13 +35,13 @@ vi.mock('../../templateSearch/searchProcess', () => ({
   createSearchProcess: vi.fn()
 }))
 vi.mock('../../templateSearch/desktopSearch', () => ({ createDesktopSearch: vi.fn() }))
-vi.mock('../../templateSearch/searchTelemetry', () => ({ reportTemplateSent: vi.fn() }))
+vi.mock('../telemetry', () => ({ gateEventsByPrefix: vi.fn() }))
 
 import { registerTemplateSearchHandlers } from './registerTemplateSearchHandlers'
 import { sessionLifecycleEvents } from './shared'
 import { createDesktopSearch } from '../../templateSearch/desktopSearch'
 import { templateSearchOn } from '../../templateSearch/searchProcess'
-import { reportTemplateSent } from '../../templateSearch/searchTelemetry'
+import { gateEventsByPrefix } from '../telemetry'
 import {
   CLAIM_WINDOW_MS,
   dropTemplateOpen,
@@ -241,29 +241,17 @@ describe('build operations', () => {
   })
 })
 
+describe('search events', () => {
+  it('lets search events through only while search is switched on', () => {
+    register()
+    expect(gateEventsByPrefix).toHaveBeenCalledWith(
+      'comfy.desktop.template_search.',
+      templateSearchOn
+    )
+  })
+})
+
 describe('template-search:open', () => {
-  const SEARCH_ID = '2b1c7a3e-9f4d-4c8a-8e1b-5d6f7a8b9c0d'
-
-  it('accepts the search ids the renderer makes', async () => {
-    const searchId = crypto.randomUUID()
-    register()
-    await handler('template-search:open')({}, 'local-1', 'poster_template', searchId)
-    queuedUrl()
-    expect(vi.mocked(reportTemplateSent).mock.calls[0]![0].searchId).toBe(searchId)
-  })
-
-  it('keeps the search a queued template came from for its launch, and drops one that is not a search id', async () => {
-    register()
-    await handler('template-search:open')({}, 'local-1', 'poster_template', SEARCH_ID)
-    queuedUrl()
-    await handler('template-search:open')({}, 'local-1', 'poster_template', 'a poster for my aunt')
-    queuedUrl()
-    expect(vi.mocked(reportTemplateSent).mock.calls.map(([sent]) => sent.searchId)).toEqual([
-      SEARCH_ID,
-      null
-    ])
-  })
-
   it('queues the template for a local build that is not running, for its launch to open once', async () => {
     register()
     expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('launch')

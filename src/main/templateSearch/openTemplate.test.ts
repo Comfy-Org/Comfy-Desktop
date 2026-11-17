@@ -1,5 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { reportTemplateSent } from './searchTelemetry'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildTemplateDeeplink,
   claimTemplateOpen,
@@ -9,14 +8,11 @@ import {
   takeLaunchUrl
 } from './openTemplate'
 
-vi.mock('./searchTelemetry', () => ({ reportTemplateSent: vi.fn() }))
-
 const COMFY_URL = 'http://127.0.0.1:8390/'
 
 afterEach(() => {
   dropTemplateOpen('build-1')
   dropTemplateOpen('build-2')
-  vi.clearAllMocks()
 })
 
 describe('buildTemplateDeeplink', () => {
@@ -66,25 +62,5 @@ describe('the queued template', () => {
     claimTemplateOpen('build-1')
     dropTemplateOpen('build-1')
     expect(takeLaunchUrl('build-1', COMFY_URL)).toBe(COMFY_URL)
-  })
-})
-
-describe('reporting the queued template', () => {
-  it('reports the template handed to the starting build, the search it came from and the wait', () => {
-    queueTemplateOpen('build-1', 'poster_template', 1000, '2b1c7a3e-9f4d-4c8a-8e1b-5d6f7a8b9c0d')
-    claimTemplateOpen('build-1', 1500)
-    takeLaunchUrl('build-1', COMFY_URL, 4000)
-    expect(reportTemplateSent).toHaveBeenCalledExactlyOnceWith({
-      searchId: '2b1c7a3e-9f4d-4c8a-8e1b-5d6f7a8b9c0d',
-      templateId: 'poster_template',
-      pickToSendMs: 3000
-    })
-  })
-
-  it('reports nothing when the build starts without a claimed template', () => {
-    queueTemplateOpen('build-1', 'poster_template', 1000)
-    takeLaunchUrl('build-1', COMFY_URL, 4000)
-    takeLaunchUrl('build-2', COMFY_URL, 4000)
-    expect(reportTemplateSent).not.toHaveBeenCalled()
   })
 })

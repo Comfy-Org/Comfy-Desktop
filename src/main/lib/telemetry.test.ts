@@ -2735,3 +2735,20 @@ describe('the Home template search request text', () => {
     expect(captured).toEqual([])
   })
 })
+
+describe('telemetry.gateEventsByPrefix', () => {
+  it('drops the events of a feature that is switched off, and only those', () => {
+    setupTelemetry()
+    let on = false
+    telemetry.gateEventsByPrefix('comfy.desktop.gated_feature.', () => on)
+    captured.length = 0
+    telemetry.emit('comfy.desktop.gated_feature.used', { request_text: 'a poster' })
+    telemetry.capture('comfy.desktop.session.started', {})
+    on = true
+    telemetry.emit('comfy.desktop.gated_feature.used', { request_text: 'a poster' })
+    expect(captured.map((c) => c.event)).toEqual([
+      'comfy.desktop.session.started',
+      'comfy.desktop.gated_feature.used'
+    ])
+  })
+})

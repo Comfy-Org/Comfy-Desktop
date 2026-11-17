@@ -1250,11 +1250,7 @@ export interface ElectronApi {
   onTemplateSearchAvailability(
     callback: (availability: TemplateSearchAvailability) => void
   ): () => void
-  openTemplateInBuild(
-    installationId: string,
-    templateId: string,
-    searchId?: string
-  ): Promise<OpenTemplateOutcome>
+  openTemplateInBuild(installationId: string, templateId: string): Promise<OpenTemplateOutcome>
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   openGlobalSettings(
     tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',

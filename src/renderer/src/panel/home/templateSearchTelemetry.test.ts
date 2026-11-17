@@ -43,7 +43,7 @@ const RESULT: TemplateSearchResult = {
 const ANSWER: TemplateSearchResponse = {
   kind: 'result',
   result: RESULT,
-  metrics: { processMs: 38, bundleVersion: '2.3.0', protocol: 1, coldStart: true }
+  metrics: { processMs: 38, bundleVersion: '2.3.0', coldStart: true }
 }
 
 const ROWS = searchRows(RESULT)
@@ -90,7 +90,7 @@ describe('request properties', () => {
     expect(changedChars('a poster', 'a poster for a party')).toBe(12)
     expect(changedChars('a red poster', 'a blue poster')).toBe(7)
     expect(changedChars('aa', 'aaa')).toBe(1)
-    expect(changedChars('a 🎂 cake', 'a 🎈 cake')).toBe(2)
+    expect(changedChars('a cake', 'a 🎂 cake')).toBe(2)
   })
 })
 
@@ -171,8 +171,6 @@ describe('createSearchTelemetry', () => {
     const { telemetry, last, tick, at } = harness()
     tick(50)
     telemetry.answered('a mural', ANSWER, ANSWER_AT(at), true)
-    telemetry.moved()
-    telemetry.moved()
     tick(2500)
     expect(telemetry.picked(ROWS, ROWS[2]!, 'pointer')).toBe('search-1')
     expect(last()).toEqual({
@@ -190,8 +188,7 @@ describe('createSearchTelemetry', () => {
         action: 'download',
         results_to_pick_ms: 2500,
         session_ms: 2500,
-        session_search_count: 1,
-        highlight_moves_count: 2
+        session_search_count: 1
       }
     })
   })
@@ -270,6 +267,49 @@ describe('createSearchTelemetry', () => {
       session_ms: 30_500,
       session_search_count: 1
     })
+  })
+
+  it('forgets the answer on screen while a follow-up search runs', () => {
+    const { telemetry, last, tick, at } = harness()
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
+    tick(1000)
+    telemetry.requested()
+    tick(500)
+    expect(telemetry.picked(ROWS, ROWS[0]!, 'keyboard')).toBeNull()
+    telemetry.abandoned('closed')
+    expect(last().context).toMatchObject({
+      session_ms: 1500,
+      last_results_shown_ms: null,
+      last_outcome: 'searching'
+    })
+  })
+
+  it('stops counting the shown time while the window is away, and keeps the answer', () => {
+    const { telemetry, last, tick, at } = harness()
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
+    tick(1000)
+    telemetry.hidden()
+    tick(60_000)
+    telemetry.abandoned('left')
+    expect(last().context).toMatchObject({
+      session_ms: 61_000,
+      last_results_shown_ms: null,
+      last_outcome: 'template'
+    })
+  })
+
+  it('does not reopen anything after search answered that it is switched off', () => {
+    const { telemetry, sent, at } = harness()
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
+    telemetry.abandoned('closed')
+    const off = { kind: 'unavailable', availability: { kind: 'off' } } as const
+    telemetry.answered('a poster', off, ANSWER_AT(at), true)
+    telemetry.reopened()
+    telemetry.abandoned('closed')
+    expect(sent.map((s) => s.event.replace('comfy.desktop.template_search.', ''))).toEqual([
+      'searched',
+      'abandoned'
+    ])
   })
 
   it('sends how opening the picked template went', () => {

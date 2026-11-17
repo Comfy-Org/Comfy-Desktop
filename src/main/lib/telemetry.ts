@@ -831,8 +831,19 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
   return captureEvent(event, properties, false)
 }
 
+const eventGates: { prefix: string; isOn: () => boolean }[] = []
+
+export function gateEventsByPrefix(prefix: string, isOn: () => boolean): void {
+  eventGates.push({ prefix, isOn })
+}
+
+function gatedOff(event: string): boolean {
+  return eventGates.some((gate) => event.startsWith(gate.prefix) && !gate.isOn())
+}
+
 function captureEvent(event: string, properties: TelemetryContext, forward: boolean): boolean {
   recordIpcInvocation(`telemetry:${event}`, properties)
+  if (gatedOff(event)) return false
   if (!canEmit() || !distinctId) return false
   if (!isAllowedToFire(event)) return false
   if (!_checkRateLimit(event)) return false

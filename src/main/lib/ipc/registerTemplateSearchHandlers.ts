@@ -3,7 +3,12 @@ import { get as getInstallation, type InstallationRecord } from '../../installat
 import { getEntryByInstallationId } from '../../host/registry'
 import { isPersistableTemplateId } from '../../sources/standalone/curatedTemplates'
 import type { TerminalEnv } from '../../types/sources'
-import { opensInAWindow, TEMPLATE_SEARCH_MAX_QUERY } from '../../../shared/templateSearch'
+import {
+  opensInAWindow,
+  TEMPLATE_SEARCH_EVENT_PREFIX,
+  TEMPLATE_SEARCH_MAX_QUERY
+} from '../../../shared/templateSearch'
+import { gateEventsByPrefix } from '../telemetry'
 import {
   changesBuildEnv,
   createSearchProcess,
@@ -49,12 +54,6 @@ function queryFrom(value: unknown): string | null {
   return query && query.length <= TEMPLATE_SEARCH_MAX_QUERY ? query : null
 }
 
-const SEARCH_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-
-function searchIdFrom(value: unknown): string | null {
-  return typeof value === 'string' && SEARCH_ID.test(value) ? value : null
-}
-
 function comfyView(installationId: string): { url: string; contents: WebContents } | null {
   const entry = getEntryByInstallationId(installationId)
   const contents = entry?.comfyView.webContents
@@ -77,6 +76,7 @@ export function registerTemplateSearchHandlers({
     searchOn: templateSearchOn
   })
 }: TemplateSearchHandlerOptions): void {
+  gateEventsByPrefix(TEMPLATE_SEARCH_EVENT_PREFIX, templateSearchOn)
   setSessionActionObserver({
     async before(installationId, actionId) {
       if (actionId === 'launch') claimTemplateOpen(installationId)
@@ -113,22 +113,16 @@ export function registerTemplateSearchHandlers({
 
   ipcMain.handle(
     'template-search:open',
-    async (
-      _event,
-      installationId: unknown,
-      templateId: unknown,
-      searchIdValue: unknown
-    ): Promise<OpenTemplateOutcome> => {
+    async (_event, installationId: unknown, templateId: unknown): Promise<OpenTemplateOutcome> => {
       if (!templateSearchOn()) return 'refused'
       if (typeof installationId !== 'string' || !isPersistableTemplateId(templateId))
         return 'refused'
       const installation = await getInstallation(installationId)
       if (!installation || !isLocalInstallation(installation)) return 'refused'
       if (!opensInAWindow(installation.launchMode) || isBuildBusy(installationId)) return 'refused'
-      const searchId = searchIdFrom(searchIdValue)
       const session = _runningSessions.get(installationId)
       if (!session) {
-        queueTemplateOpen(installationId, templateId, Date.now(), searchId)
+        queueTemplateOpen(installationId, templateId)
         return 'launch'
       }
       const view = session.mode === 'window' ? comfyView(installationId) : null

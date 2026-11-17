@@ -162,6 +162,7 @@ describe('createSearchProcess', () => {
     expect(reportStartAttempt).toHaveBeenCalledWith(
       expect.objectContaining({ bundleVersion: '1.0.0', verified: false })
     )
+    await search.download()
   })
 
   it('asks the next build when one Python cannot run the search program', async () => {

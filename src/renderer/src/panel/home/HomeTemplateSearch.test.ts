@@ -426,11 +426,7 @@ describe('HomeTemplateSearch opening a template', () => {
 
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    expect(openTemplateInBuild).toHaveBeenCalledWith(
-      'build-2',
-      'poster_template',
-      expect.any(String)
-    )
+    expect(openTemplateInBuild).toHaveBeenCalledWith('build-2', 'poster_template')
   })
 
   it('searches again on ArrowDown after the build changed while the results were closed', async () => {
@@ -572,11 +568,7 @@ describe('HomeTemplateSearch opening a template', () => {
       await searchFor(wrapper, 'a poster')
       await wrapper.findAll('[role="option"]')[0]!.trigger('click')
       await flushPromises()
-      expect(openTemplateInBuild).toHaveBeenCalledWith(
-        'build-1',
-        'poster_template',
-        expect.any(String)
-      )
+      expect(openTemplateInBuild).toHaveBeenCalledWith('build-1', 'poster_template')
       expect(wrapper.emitted('opened')).toEqual([['build-1']])
     }
   )
@@ -884,7 +876,7 @@ describe('HomeTemplateSearch telemetry', () => {
       input_method: 'keyboard',
       is_best_match: true
     })
-    expect(openTemplateInBuild).toHaveBeenCalledWith('build-1', 'poster_template', searchId)
+    expect(openTemplateInBuild).toHaveBeenCalledWith('build-1', 'poster_template')
     expect(named('open_result')[0]!.context).toMatchObject({
       search_id: searchId,
       result: 'launch'
@@ -932,20 +924,6 @@ describe('HomeTemplateSearch telemetry', () => {
     await searchFor(wrapper, 'a poster')
     wrapper.unmount()
     expect(named('abandoned').map((event) => event.context!.reason)).toEqual(['left'])
-  })
-
-  it('counts the arrow-key moves made before the pick', async () => {
-    const wrapper = mountSearch()
-    await searchFor(wrapper, 'a poster')
-    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
-    await input(wrapper).trigger('keydown', { key: 'ArrowUp' })
-    await input(wrapper).trigger('keydown', { key: 'ArrowRight' })
-    await input(wrapper).trigger('keydown', { key: 'Enter' })
-    await flushPromises()
-    expect(named('picked')[0]!.context).toMatchObject({
-      template_id: 'banner_template',
-      highlight_moves_count: 3
-    })
   })
 
   it('sends an abandon when the request is cleared', async () => {
@@ -1035,7 +1013,68 @@ describe('HomeTemplateSearch telemetry', () => {
     expect(sent).toEqual([])
   })
 
-  it('sends the second pick after an open was refused, and an abandon when Home closes', async () => {
+  it('sends an abandon when Home closes after an open was refused', async () => {
+    openTemplateInBuild.mockResolvedValueOnce('refused')
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    wrapper.unmount()
+    expect(named('abandoned').map((event) => event.context!.reason)).toEqual(['left'])
+  })
+
+  it('sends a give-up during a follow-up search as searching, not against the results it replaced', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    searchTemplates.mockReturnValueOnce(new Promise(() => {}))
+    await searchFor(wrapper, 'a poster for a bake sale')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    expect(named('abandoned')[0]!.context).toMatchObject({
+      reason: 'closed',
+      last_outcome: 'searching',
+      last_results_shown_ms: null,
+      session_search_count: 1
+    })
+  })
+
+  it('resumes the session when a kept notice is shown again', async () => {
+    searchTemplates.mockResolvedValue(unavailable({ kind: 'needs_download', bytes: 1_000_000 }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    await input(wrapper).trigger('focus')
+    await flushPromises()
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    expect(named('abandoned').map((event) => event.context!.last_outcome)).toEqual([
+      'unavailable',
+      'unavailable'
+    ])
+  })
+
+  it('sends nothing for an answer that arrives after Home closed', async () => {
+    let answerLater!: (response: TemplateSearchResponse) => void
+    searchTemplates.mockReturnValueOnce(new Promise((resolve) => (answerLater = resolve)))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    wrapper.unmount()
+    answerLater(answer({ run: [POSTER] }))
+    await flushPromises()
+    expect(named('searched')).toEqual([])
+    expect(named('abandoned')).toHaveLength(1)
+  })
+
+  it('counts a search that answers while the results are closed only when they open again', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountSearch()
+    await input(wrapper).setValue('a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    await vi.advanceTimersByTimeAsync(SEARCH_DELAY_MS)
+    expect(named('searched')[0]!.context).toMatchObject({ session_search_count: 0 })
+    wrapper.unmount()
+    expect(named('abandoned')).toEqual([])
+  })
+
+  it('sends the second pick after an open was refused', async () => {
     openTemplateInBuild.mockResolvedValueOnce('refused')
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
@@ -1067,7 +1106,11 @@ describe('HomeTemplateSearch telemetry', () => {
       reason: 'closed',
       last_outcome: 'searching'
     })
-    expect(named('picked')[0]!.context).toMatchObject({ results_to_pick_ms: 700 })
+    expect(named('picked')[0]!.context).toMatchObject({
+      results_to_pick_ms: 700,
+      session_ms: 700,
+      session_search_count: 0
+    })
   })
 })
 
