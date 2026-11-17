@@ -204,10 +204,12 @@ const selectedBuild = computed<AssetBuild | null>(() => {
   if (!buildsKnown.value) return null
   const options = assetBuilds.value
   const withId = (id: string) => (id ? options.find(({ build }) => build.id === id) : undefined)
+  const restorablePlace =
+    savedPlace.value === CLOUD && !authStore.isSignedIn ? '' : savedPlace.value
   return (
     withId(pickedPlace.value) ??
     withId(windowPlace.value) ??
-    withId(savedPlace.value) ??
+    withId(restorablePlace) ??
     (hasLocalBuild.value || !cloudBuild.value || !authStore.isSignedIn
       ? options.find((option) => !option.cloud)
       : undefined) ??

@@ -584,6 +584,18 @@ describe('AssetsView', () => {
     expect(assetNames(wrapper)).toEqual(['forest.png'])
   })
 
+  it('opens the Shared folder when a signed-out user last picked Comfy Cloud', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: [cloudBuild('cloud'), sharedBuild('a', 'Shared A')]
+    })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Shared folder')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith(undefined)
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('cloud')
+  })
+
   it('turns an old This computer choice into Shared folder, or the first build without one', async () => {
     window.localStorage.setItem('comfy.desktop.assets.place', 'computer')
     const shared = await mountAssets([], { builds: [localBuild('lab'), sharedBuild('a')] })
