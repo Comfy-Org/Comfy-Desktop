@@ -222,6 +222,18 @@ describe('BuildOverview — ComfyUI card', () => {
     expect(w.get('[data-testid="build-overview-update"]').text()).toContain(
       'Select this channel and check for updates'
     )
+    await w.get('[data-testid="update-action-check-update"]').trigger('click')
+    expect(w.emitted('action')).toEqual([[checkUpdate]])
+  })
+
+  it('keeps the picked channel when the build info refreshes in the background', async () => {
+    const w = mountOverview()
+    await openMenu(w, 'build-overview-channel')
+    await select('build-overview-channel-latest')
+    await w.setProps({
+      model: model({ channels: [channel({ enriching: true }), model().channels[1]!] })
+    })
+    expect(w.get('[data-testid="build-overview-channel"]').text()).toBe('Latest')
   })
 })
 

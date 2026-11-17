@@ -39,12 +39,9 @@ const { t } = useI18n()
 const sessionStore = useSessionStore()
 
 const pickedChannel = ref(model.currentChannel)
-watch(
-  () => [installation.id, model.currentChannel] as const,
-  ([, current]) => {
-    pickedChannel.value = current
-  }
-)
+watch([() => installation.id, () => model.currentChannel], ([, current]) => {
+  pickedChannel.value = current
+})
 
 const channel = computed(
   () =>
@@ -258,6 +255,25 @@ function openLocation(): void {
               @click="run(switchAction)"
             >
               {{ switchAction.label }}
+            </Button>
+            <Button
+              v-else-if="model.checkAction"
+              type="button"
+              variant="secondary"
+              size="md"
+              class="ml-auto shrink-0 gap-1.5 px-3 text-[13px]/5"
+              :disabled="model.checkAction.enabled === false || checkRunning"
+              :title="model.checkAction.tooltip"
+              :data-testid="TID.updateActionButton(model.checkAction.id)"
+              @click="run(model.checkAction)"
+            >
+              <Loader2
+                v-if="checkRunning"
+                :size="13"
+                class="animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+              {{ model.checkAction.label }}
             </Button>
           </template>
           <template v-else>
