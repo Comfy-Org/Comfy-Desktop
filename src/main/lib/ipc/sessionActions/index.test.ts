@@ -258,6 +258,24 @@ describe('the session action observer', () => {
     expect(after.mock.calls).toEqual([['inst-1', 'launch']])
   })
 
+  it('holds a second action on the build until the first has finished getting ready', async () => {
+    let release!: () => void
+    before.mockReturnValueOnce(new Promise<void>((resolve) => (release = resolve)))
+    let finishFirst!: (value: { ok: boolean }) => void
+    delegate.mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+    const first = dispatchSessionAction(ctx(), 'update-comfyui')
+    const second = dispatchSessionAction(ctx(), 'update-comfyui')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(delegate).not.toHaveBeenCalled()
+
+    release()
+    await vi.waitFor(() => expect(delegate).toHaveBeenCalledTimes(2))
+    finishFirst({ ok: true })
+    await first
+    await second
+  })
+
   it('keeps an action going when the observer fails', async () => {
     before.mockRejectedValue(new Error('stuck'))
     await expect(dispatchSessionAction(ctx(), 'update-comfyui')).resolves.toEqual({ ok: true })

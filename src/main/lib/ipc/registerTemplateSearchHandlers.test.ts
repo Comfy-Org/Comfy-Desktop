@@ -15,10 +15,14 @@ vi.mock('./sessionActions', () => ({
   }
 }))
 vi.mock('./broadcast', () => ({ _broadcastToRenderer: vi.fn() }))
-vi.mock('../../templateSearch/searchProcess', () => ({
-  changesBuildEnv: (actionId: string) => actionId !== 'rename' && actionId !== 'open-folder',
-  createSearchProcess: vi.fn()
-}))
+vi.mock('../../templateSearch/searchProcess', async () => {
+  const { occupiesInstall } = await import('./sessionActions/occupiesInstall')
+  return {
+    changesBuildEnv: (actionId: string) =>
+      occupiesInstall(actionId) && actionId !== 'rename' && actionId !== 'open-folder',
+    createSearchProcess: vi.fn()
+  }
+})
 
 import { registerTemplateSearchHandlers } from './registerTemplateSearchHandlers'
 
@@ -52,27 +56,46 @@ beforeEach(() => {
 })
 
 describe('template-search:prepare and download', () => {
-  it('gets search ready ahead of the first request, and starts the model download', async () => {
+  it('gets search ready ahead of the first request', async () => {
     const process = register()
     await handler('template-search:prepare')({})
+    expect(process.prepare).toHaveBeenCalledTimes(1)
+    expect(process.download).not.toHaveBeenCalled()
+  })
+
+  it('starts the model download', async () => {
+    const process = register()
     await handler('template-search:download')({})
-    expect(process.prepare).toHaveBeenCalled()
-    expect(process.download).toHaveBeenCalled()
+    expect(process.download).toHaveBeenCalledTimes(1)
+    expect(process.prepare).not.toHaveBeenCalled()
   })
 })
 
 describe('build operations', () => {
-  it('stops search on a build before an operation that can change it', async () => {
+  it('holds an operation that can change a build until search there has stopped', async () => {
     const process = register()
-    await mocks.observer!.before('local-1', 'copy-update')
+    let stopped!: () => void
+    process.onBuildAction.mockReturnValue(
+      new Promise<undefined>((resolve) => (stopped = () => resolve(undefined)))
+    )
+    let ready = false
+    const before = mocks.observer!.before('local-1', 'copy-update').then(() => (ready = true))
+    await Promise.resolve()
     expect(process.onBuildAction).toHaveBeenCalledWith('local-1')
+    expect(ready).toBe(false)
+    stopped()
+    await before
+    expect(ready).toBe(true)
   })
 
-  it.each(['rename', 'open-folder'])('leaves search running for %s', async (actionId) => {
-    const process = register()
-    await mocks.observer!.before('local-1', actionId)
-    expect(process.onBuildAction).not.toHaveBeenCalled()
-  })
+  it.each(['rename', 'open-folder', 'check-update'])(
+    'leaves search running for %s',
+    async (actionId) => {
+      const process = register()
+      await mocks.observer!.before('local-1', actionId)
+      expect(process.onBuildAction).not.toHaveBeenCalled()
+    }
+  )
 
   it('tells search when an operation ends', () => {
     const process = register()

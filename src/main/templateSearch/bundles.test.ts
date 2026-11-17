@@ -211,6 +211,45 @@ describe('bundle store', () => {
     expect(await newer.newest()).toBeNull()
   })
 
+  it('replaces a stored file found damaged, even with a transfer that will not overwrite', async () => {
+    publish(server, '1.0.0', V1)
+    fs.mkdirSync(path.join(root, 'files'), { recursive: true })
+    fs.writeFileSync(path.join(root, 'files', sha('weights-v1')), 'weights-XX')
+    const { store: s, transfer } = store({ now: () => 0 })
+    const realTransfer = transfer.getMockImplementation()!
+    transfer.mockImplementation(async (file) =>
+      fs.existsSync(file.finalPath) ? { ok: false, error: 'exists' } : realTransfer(file)
+    )
+    await s.download()
+    expect((await s.newest())?.version).toBe('1.0.0')
+    expect(fs.readFileSync(path.join(root, 'files', sha('weights-v1')), 'utf8')).toBe('weights-v1')
+  })
+
+  it('clears a version left half-assembled by an earlier run', async () => {
+    publish(server, '1.0.0', V1)
+    fs.mkdirSync(path.join(root, 'bundles', '.0.9.0.partial'), { recursive: true })
+    const { store: s } = store({ now: () => 0 })
+    await s.download()
+    expect(fs.readdirSync(path.join(root, 'bundles'))).toEqual(['1.0.0'])
+  })
+
+  it('says it is downloading while the first download runs', async () => {
+    publish(server, '1.0.0', V1)
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const { store: s, transfer } = store({ now: () => 0 })
+    const realTransfer = transfer.getMockImplementation()!
+    transfer.mockImplementation(async (file) => {
+      await held
+      return realTransfer(file)
+    })
+    const downloading = s.download()
+    await vi.waitFor(() => expect(transfer).toHaveBeenCalled())
+    expect(await s.prepare()).toMatchObject({ kind: 'downloading' })
+    release()
+    await downloading
+  })
+
   it('keeps only the newest version and the files it uses', async () => {
     const { store: s } = store({ now: () => 0 })
     for (const [version, catalog] of [
@@ -220,6 +259,8 @@ describe('bundle store', () => {
       publish(server, version, { ...V1, 'router/catalog.json': catalog })
       await s.download()
     }
+    expect(fs.readdirSync(path.join(root, 'bundles')).sort()).toEqual(['1.0.0', '1.1.0'])
+    expect(await s.prepare()).toEqual({ kind: 'ready' })
     expect(fs.readdirSync(path.join(root, 'bundles'))).toEqual(['1.1.0'])
     expect(fs.readdirSync(path.join(root, 'files'))).not.toContain(sha('a'))
     expect(fs.readdirSync(path.join(root, 'files'))).toContain(sha('weights-v1'))
@@ -240,6 +281,9 @@ describe('bundle store', () => {
     })
     await s.download()
     indexReads.mockClear()
+    const announcedBefore = announced.filter(
+      (a) => a.kind === 'downloading' || a.kind === 'idle'
+    ).length
 
     clock = 24 * 60 * 60_000 + 1
     publish(server, '1.1.0', { ...V1, 'router/catalog.json': '{"v":2}' })
@@ -247,6 +291,9 @@ describe('bundle store', () => {
     await vi.waitFor(async () => expect((await s.newest())?.version).toBe('1.1.0'))
     expect(await s.prepare()).toEqual({ kind: 'ready' })
     expect(indexReads).toHaveBeenCalledTimes(1)
+    expect(announced.filter((a) => a.kind === 'downloading' || a.kind === 'idle')).toHaveLength(
+      announcedBefore
+    )
   })
 
   it('stays ready on the version it has while a newer one downloads', async () => {
@@ -338,6 +385,11 @@ describe('parseIndex', () => {
 describe('parseManifest and isBundlePath', () => {
   it.each(['../escape', '/etc/passwd', 'a\\b', 'a//b', 'a/./b', ''])('refuses the path %j', (p) => {
     expect(isBundlePath(p)).toBe(false)
+  })
+
+  it('refuses a manifest whose file path leaves the bundle', () => {
+    const file = { path: '../../outside', size: 1, sha256: 'c'.repeat(64) }
+    expect(parseManifest({ version: '1.0.0', files: [file] })).toBeNull()
   })
 
   it('refuses a manifest that lists itself or a bad hash', () => {

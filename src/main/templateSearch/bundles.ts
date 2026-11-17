@@ -150,7 +150,7 @@ async function place(source: string, target: string): Promise<void> {
 }
 
 export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
-  download(): Promise<void>
+  download(options?: { quietly?: boolean }): Promise<void>
 } {
   const now = deps.now ?? Date.now
   const bundlesDir = path.join(deps.root, BUNDLES_DIR)
@@ -159,6 +159,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
   let progress = { received: 0, total: 0 }
   let lastProgressAt = 0
   let lastUpdateCheck = 0
+  let quiet = false
 
   async function localVersions(): Promise<(LocalBundle & { minSidecar: string | null })[]> {
     const names = await fs.promises.readdir(bundlesDir).catch(() => [] as string[])
@@ -189,11 +190,15 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     await fs.promises.rm(path.join(bundlesDir, version), { recursive: true, force: true })
   }
 
+  function report(availability: TemplateSearchAvailability): void {
+    if (!quiet) deps.onAvailability(availability)
+  }
+
   function reportProgress(force = false): void {
     const at = now()
     if (!force && at - lastProgressAt < PROGRESS_EVERY_MS) return
     lastProgressAt = at
-    deps.onAvailability({ kind: 'downloading', ...progress })
+    report({ kind: 'downloading', ...progress })
   }
 
   function baseUrl(): string | null {
@@ -231,7 +236,11 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
 
   async function fetchFiles(base: string, files: BundleFile[]): Promise<void> {
     const missing: BundleFile[] = []
-    for (const file of files) if (!(await storedSound(file))) missing.push(file)
+    for (const file of files) {
+      if (await storedSound(file)) continue
+      await fs.promises.rm(path.join(filesDir, file.sha256), { force: true })
+      missing.push(file)
+    }
     progress = { received: 0, total: missing.reduce((sum, f) => sum + f.size, 0) }
     reportProgress(true)
     let done = 0
@@ -270,8 +279,8 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
   }
 
   async function prune(): Promise<void> {
-    const [kept, ...older] = await localVersions()
-    for (const old of older) {
+    const kept = await newest()
+    for (const old of (await localVersions()).filter((b) => b.dir !== kept?.dir)) {
       await fs.promises.rm(old.dir, { recursive: true, force: true }).catch(() => {})
     }
     const listed = new Set<string>()
@@ -285,7 +294,16 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     }
   }
 
+  async function clearPartials(): Promise<void> {
+    for (const name of await fs.promises.readdir(bundlesDir).catch(() => [] as string[])) {
+      if (name.startsWith('.') && name.endsWith('.partial')) {
+        await fs.promises.rm(path.join(bundlesDir, name), { recursive: true, force: true })
+      }
+    }
+  }
+
   async function fetchNewest(base: string): Promise<void> {
+    await clearPartials()
     const found = await wanted(base)
     if (!found) return
     const local = await localVersions()
@@ -300,18 +318,19 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     }
     await fetchFiles(base, manifest.files)
     await assemble(manifest.version, found.raw, manifest.files)
-    await prune()
   }
 
-  function download(): Promise<void> {
+  function download({ quietly = false } = {}): Promise<void> {
     const base = baseUrl()
     if (!base) return Promise.resolve()
     if (!downloading) {
+      quiet = quietly
       downloading = fetchNewest(base)
-        .then(() => deps.onAvailability({ kind: 'idle' }))
-        .catch(() => deps.onAvailability({ kind: 'unavailable', reason: 'download_failed' }))
+        .then(() => report({ kind: 'idle' }))
+        .catch(() => report({ kind: 'unavailable', reason: 'download_failed' }))
         .finally(() => {
           downloading = null
+          quiet = false
         })
     }
     return downloading
@@ -321,9 +340,10 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     const local = await newest()
     const base = baseUrl()
     if (local) {
+      if (!downloading) await prune()
       if (base && now() - lastUpdateCheck > UPDATE_CHECK_MS) {
         lastUpdateCheck = now()
-        void download()
+        void download({ quietly: true })
       }
       return { kind: 'ready' }
     }

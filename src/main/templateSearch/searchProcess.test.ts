@@ -84,7 +84,7 @@ describe('sidecarPythons', () => {
 })
 
 describe('isBuildBusy and changesBuildEnv', () => {
-  it.each(['launch', 'delete', 'copy-update', 'update-comfyui', 'check-update'])(
+  it.each(['launch', 'delete', 'copy-update', 'update-comfyui'])(
     'counts %s as changing the build environment',
     (actionId) => {
       expect(changesBuildEnv(actionId)).toBe(true)
@@ -94,7 +94,7 @@ describe('isBuildBusy and changesBuildEnv', () => {
     }
   )
 
-  it.each(['rename', 'open-folder'])('does not count %s', (actionId) => {
+  it.each(['rename', 'open-folder', 'check-update'])('does not count %s', (actionId) => {
     expect(changesBuildEnv(actionId)).toBe(false)
     mocks.activeOperations.mockReturnValue([{ installationId: 'a', actionId }])
     expect(isBuildBusy('a')).toBe(false)

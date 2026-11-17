@@ -78,6 +78,7 @@ export interface SessionActionObserver {
 }
 
 let observer: SessionActionObserver | null = null
+const gettingReady = new Map<string, Promise<void>>()
 
 export function setSessionActionObserver(next: SessionActionObserver | null): void {
   observer = next
@@ -105,7 +106,14 @@ export async function dispatchSessionAction(
     _broadcastToRenderer('operation-changed', { installationId, actionId, active: true })
   }
   try {
-    if (owned && observer) await observer.before(installationId, actionId).catch(() => {})
+    if (owned && observer) {
+      const ready = observer.before(installationId, actionId).catch(() => {})
+      gettingReady.set(installationId, ready)
+      await ready
+      if (gettingReady.get(installationId) === ready) gettingReady.delete(installationId)
+    } else if (!owned && gettingReady.has(installationId)) {
+      await gettingReady.get(installationId)
+    }
     if (isSessionActionId(actionId)) {
       return await dispatchToSessionHandler(ctx, actionId)
     }

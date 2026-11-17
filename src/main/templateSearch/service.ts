@@ -116,10 +116,9 @@ export function createSearchService(deps: SearchServiceDeps) {
     bundle: LocalBundle,
     candidates: SidecarPython[]
   ): Promise<Started> {
-    let tried = false
+    let unsupported = false
     for (const candidate of candidates) {
       if (deps.isBusy(candidate.installationId)) continue
-      tried = true
       const abort = new AbortController()
       const attempt = deps.start(
         {
@@ -151,9 +150,10 @@ export function createSearchService(deps: SearchServiceDeps) {
         }
       }
       if (started.problem !== 'runtime_unsupported') return started
+      unsupported = true
       markUnsupported(candidate.python)
     }
-    return { ok: false, problem: tried ? 'runtime_unsupported' : 'busy' }
+    return { ok: false, problem: unsupported ? 'runtime_unsupported' : 'busy' }
   }
 
   async function launch(pyz: string): Promise<Ensure> {
@@ -164,7 +164,10 @@ export function createSearchService(deps: SearchServiceDeps) {
     }
     if (supported.every((p) => deps.isBusy(p.installationId))) return waitForBuild()
     const prepared = await deps.bundles.prepare()
-    if (prepared.kind !== 'ready') return { ok: false, availability: prepared }
+    if (prepared.kind !== 'ready') {
+      const stillSupported = pythons.some((p) => !unsupportedPythons.has(p.python))
+      return { ok: false, availability: stillSupported ? prepared : UNSUPPORTED }
+    }
     const bundle = await deps.bundles.newest()
     if (!bundle) return { ok: false, availability: { kind: 'unavailable', reason: 'failed' } }
     announce({ kind: 'starting' })
@@ -181,10 +184,14 @@ export function createSearchService(deps: SearchServiceDeps) {
   async function ensureRunning(): Promise<Ensure> {
     const pyz = deps.pyz()
     if (!pyz) {
+      await stop()
       announce({ kind: 'off' })
       return { ok: false, availability: { kind: 'off' } }
     }
-    if (running) return { ok: true, running }
+    if (running) {
+      armIdleStop()
+      return { ok: true, running }
+    }
     if (!starting) {
       starting = launch(pyz).finally(() => {
         starting = null
@@ -198,14 +205,14 @@ export function createSearchService(deps: SearchServiceDeps) {
     if (running !== result.running) {
       if (deps.isBusy(result.running.installationId)) {
         await result.running.sidecar.stop()
-        const waiting = waitForBuild()
-        if (!waiting.ok) announce(waiting.availability)
-        return waiting
+        announce({ kind: 'waiting_for_build' })
+        return waitForBuild()
       }
       running = result.running
       watchExit(running)
       announce({ kind: 'ready' })
     }
+    armIdleStop()
     return { ok: true, running }
   }
 
@@ -244,8 +251,7 @@ export function createSearchService(deps: SearchServiceDeps) {
   }
 
   async function prepare(): Promise<void> {
-    const ensured = await ensureRunning()
-    if (ensured.ok) armIdleStop()
+    await ensureRunning()
   }
 
   return { decide, prepare, onBuildAction, onBuildActionEnd, freePythons, markUnsupported }

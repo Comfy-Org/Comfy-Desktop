@@ -103,10 +103,67 @@ describe('search service', () => {
     })
   })
 
-  it('starts search when asked to get ready, before any search', async () => {
-    const { service, start } = setup()
+  it('starts search when asked to get ready, and stops it after a quiet spell', async () => {
+    vi.useFakeTimers()
+    const { service, start, started } = setup()
     await service.prepare()
     expect(start).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(IDLE_STOP_MS)
+    expect(started[0]!.sidecar.stop).toHaveBeenCalled()
+  })
+
+  it('stops after a quiet spell even when the first search failed', async () => {
+    vi.useFakeTimers()
+    const post = vi.fn().mockRejectedValue(new SidecarRequestError('400', false))
+    const { service, started } = setup({ post })
+    await expect(service.decide({ text: 'x' })).rejects.toThrow('400')
+    await vi.advanceTimersByTimeAsync(IDLE_STOP_MS)
+    expect(started[0]!.sidecar.stop).toHaveBeenCalled()
+  })
+
+  it('stops a running sidecar once search is switched off', async () => {
+    let zipapp: string | null = '/search.pyz'
+    const { service, started } = setup({ pyz: () => zipapp })
+    await service.decide({ text: 'x' })
+    zipapp = null
+    expect(await service.decide({ text: 'x' })).toEqual({
+      kind: 'unavailable',
+      availability: { kind: 'off' }
+    })
+    expect(started[0]!.sidecar.stop).toHaveBeenCalled()
+  })
+
+  it('waits, rather than saying no build can run search, when its only start was called off', async () => {
+    const start = vi.fn<Start>(
+      (_launch, signal) =>
+        new Promise<SidecarStart>((resolve) =>
+          signal.addEventListener('abort', () => resolve({ ok: false, problem: 'failed' }))
+        )
+    )
+    let busy = false
+    const { service } = setup({ start, isBusy: () => busy, pythons: async () => [BUILD_A] })
+    const searching = service.decide({ text: 'x' })
+    await vi.waitFor(() => expect(start).toHaveBeenCalled())
+    busy = true
+    await service.onBuildAction('a')
+    expect(await searching).toEqual({
+      kind: 'unavailable',
+      availability: { kind: 'waiting_for_build' }
+    })
+  })
+
+  it('says no build can run search when the version probe found none could', async () => {
+    const probe: { service?: ReturnType<typeof createSearchService> } = {}
+    const prepare = vi.fn(async (): Promise<TemplateSearchAvailability> => {
+      probe.service!.markUnsupported('/a/python')
+      probe.service!.markUnsupported('/b/python')
+      return { kind: 'unavailable', reason: 'update_desktop' }
+    })
+    probe.service = setup({ bundles: bundles({ prepare }) }).service
+    expect(await probe.service.decide({ text: 'x' })).toEqual({
+      kind: 'unavailable',
+      availability: { kind: 'unavailable', reason: 'runtime_unsupported' }
+    })
   })
 
   it("uses another build's Python while the first build is busy", async () => {

@@ -1,4 +1,4 @@
-import { execFile, type ChildProcess } from 'child_process'
+import { spawn, type ChildProcess } from 'child_process'
 import { net } from 'electron'
 import path from 'path'
 import * as settings from '../settings'
@@ -8,6 +8,7 @@ import { killProcessTree } from '../lib/process'
 import { startModelTransfer } from '../lib/modelDownloadTransport'
 import { _operationAborts } from '../lib/ipc/shared'
 import { _getActiveOperations } from '../lib/ipc/sessionActions'
+import { occupiesInstall } from '../lib/ipc/sessionActions/occupiesInstall'
 import type { TerminalEnv } from '../types/sources'
 import type { TemplateSearchAvailability } from '../../types/ipc'
 import { createBundleStore, type Supported, type TransferResult } from './bundles'
@@ -24,7 +25,7 @@ const TOOL_TIMEOUT_MS = 120_000
 const ACTIONS_THAT_LEAVE_THE_ENV = new Set(['rename', 'open-folder'])
 
 export function changesBuildEnv(actionId: string): boolean {
-  return !ACTIONS_THAT_LEAVE_THE_ENV.has(actionId)
+  return occupiesInstall(actionId) && !ACTIONS_THAT_LEAVE_THE_ENV.has(actionId)
 }
 
 export function isBuildBusy(installationId: string): boolean {
@@ -48,12 +49,57 @@ export function parseSupports(stdout: string): Supported | null {
   }
 }
 
+export async function readCapped(response: Response, limit: number): Promise<Buffer> {
+  const reader = response.body?.getReader()
+  if (!reader) return Buffer.alloc(0)
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) return Buffer.concat(chunks)
+    size += value.byteLength
+    if (size > limit) {
+      await reader.cancel()
+      throw new Error(`more than ${limit} bytes`)
+    }
+    chunks.push(value)
+  }
+}
+
 async function getSmall(url: string): Promise<Buffer> {
   const response = await net.fetch(url, { signal: AbortSignal.timeout(30_000) })
   if (!response.ok) throw new Error(`${url} answered ${response.status}`)
-  const body = Buffer.from(await response.arrayBuffer())
-  if (body.length > SMALL_FILE_LIMIT) throw new Error(`${url} is too large`)
-  return body
+  return readCapped(response, SMALL_FILE_LIMIT)
+}
+
+export interface HelperResult {
+  code: number
+  stdout: string
+}
+
+export type SpawnHelper = (python: string, args: string[]) => ChildProcess
+
+export const spawnHelperProcess: SpawnHelper = (python, args) =>
+  spawn(python, args, {
+    stdio: ['ignore', 'pipe', 'ignore'],
+    windowsHide: true,
+    detached: process.platform !== 'win32'
+  })
+
+export function helperResult(child: ChildProcess, timeoutMs: number): Promise<HelperResult> {
+  return new Promise((resolve) => {
+    let stdout = ''
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (stdout.length < 1024 * 1024) stdout += chunk.toString('utf8')
+    })
+    const timer = setTimeout(() => void killProcessTree(child), timeoutMs)
+    const finish = (code: number | null): void => {
+      clearTimeout(timer)
+      resolve({ code: code ?? 1, stdout })
+    }
+    child.once('error', () => finish(1))
+    child.once('close', (code) => finish(code))
+  })
 }
 
 async function transfer(file: {
@@ -115,12 +161,18 @@ export interface SearchProcessOptions {
   isLocalInstallation: (installation: InstallationRecord) => boolean
   terminalEnvOf: (installation: InstallationRecord) => TerminalEnv | null
   broadcast: (availability: TemplateSearchAvailability) => void
+  spawnHelper?: SpawnHelper
+  storeRoot?: string
+  cacheRoot?: string
 }
 
 export function createSearchProcess({
   isLocalInstallation,
   terminalEnvOf,
-  broadcast
+  broadcast,
+  spawnHelper = spawnHelperProcess,
+  storeRoot = path.join(dataDir(), 'template-search'),
+  cacheRoot = path.join(cacheDir(), 'template-search-cache')
 }: SearchProcessOptions) {
   const helpers = new Map<string, Set<ChildProcess>>()
 
@@ -136,31 +188,19 @@ export function createSearchProcess({
     return out ? parseSupports(out.stdout) : null
   })
 
-  function runHelper(
-    candidate: SidecarPython,
-    args: string[]
-  ): Promise<{ code: number; stdout: string }> {
+  function runHelper(candidate: SidecarPython, args: string[]): Promise<HelperResult> {
     const active = helpers.get(candidate.installationId) ?? new Set<ChildProcess>()
     helpers.set(candidate.installationId, active)
-    return new Promise((resolve) => {
-      const child = execFile(
-        candidate.python,
-        args,
-        { windowsHide: true, timeout: TOOL_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
-        (err, stdout) => {
-          active.delete(child)
-          const code = err ? (typeof err.code === 'number' ? err.code : 1) : 0
-          resolve({ code, stdout: String(stdout) })
-        }
-      )
-      active.add(child)
-    })
+    const child = spawnHelper(candidate.python, args)
+    active.add(child)
+    return helperResult(child, TOOL_TIMEOUT_MS).finally(() => active.delete(child))
   }
 
-  async function withPyz(args: string[]): Promise<{ code: number; stdout: string } | null> {
-    const zipapp = pyz()
-    if (!zipapp) return null
+  async function withPyz(args: string[]): Promise<HelperResult | null> {
     for (const candidate of await service.freePythons()) {
+      const zipapp = pyz()
+      if (!zipapp) return null
+      if (isBuildBusy(candidate.installationId)) continue
       const out = await runHelper(candidate, ['-I', '-B', zipapp, ...args])
       if (out.code !== RUNTIME_UNSUPPORTED_EXIT) return out
       service.markUnsupported(candidate.python)
@@ -169,7 +209,7 @@ export function createSearchProcess({
   }
 
   const store = createBundleStore({
-    root: path.join(dataDir(), 'template-search'),
+    root: storeRoot,
     base: () => settings.get('templateSearchBundleBase') ?? null,
     getSmall,
     transfer,
@@ -180,7 +220,7 @@ export function createSearchProcess({
 
   const service = createSearchService({
     pyz,
-    cacheDir: path.join(cacheDir(), 'template-search'),
+    cacheDir: cacheRoot,
     pythons,
     isBusy: isBuildBusy,
     bundles: store,
@@ -190,7 +230,6 @@ export function createSearchProcess({
   })
 
   async function onBuildAction(installationId: string): Promise<void> {
-    if (!pyz()) return
     const active = [...(helpers.get(installationId) ?? [])]
     await Promise.all([
       service.onBuildAction(installationId),
@@ -201,7 +240,7 @@ export function createSearchProcess({
   return {
     decide: (body: unknown): Promise<SidecarDecision> => service.decide(body),
     prepare: (): Promise<void> => service.prepare(),
-    download: (): Promise<void> => store.download(),
+    download: (): Promise<void> => (pyz() ? store.download() : Promise.resolve()),
     onBuildAction,
     onBuildActionEnd: (): void => service.onBuildActionEnd()
   }
