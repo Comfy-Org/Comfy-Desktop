@@ -49,7 +49,13 @@ import { formatBytes } from '../lib/downloadFormatters'
 import { formatPlaybackTime, formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { LOCAL_ASSETS_SOURCE } from '../types/ipc'
-import type { AssetKind, AssetSummary, CloudAssetPage, Installation } from '../types/ipc'
+import type {
+  AssetKind,
+  AssetSummary,
+  CloudAssetLookup,
+  CloudAssetPage,
+  Installation
+} from '../types/ipc'
 import type { ContextMenuItem } from '../types/context-menu'
 
 interface GalleryAsset extends AssetSummary {
@@ -102,7 +108,12 @@ const PLACEHOLDER_TINT = {
   file: 'bg-[linear-gradient(168deg,rgb(200_211_222/0.09),rgb(255_255_255/0.02))] text-[rgb(160_166_175)]'
 } as const
 
-const { installationId = '' } = defineProps<{ installationId?: string }>()
+const { installationId = '', focusName = null } = defineProps<{
+  installationId?: string
+  focusName?: string | null
+}>()
+
+const emit = defineEmits<{ 'focus-used': [] }>()
 
 const { t } = useI18n()
 const modal = useModal()
@@ -128,7 +139,11 @@ const KINDS_AS_MENU = 2
 const CLOUD = 'cloud'
 const SHARED = 'shared'
 const savedPlace = useLocalStorage('comfy.desktop.assets.place', '')
-const pickedPlace = ref('')
+const pickedPlace = ref(focusName ? CLOUD : '')
+const pendingFocus = ref<string | null>(focusName)
+const focusMiss = ref<{ name: string; checked: boolean } | null>(null)
+const lookedUpDetail = ref<GalleryAsset | null>(null)
+const detailKey = ref<string | null>(null)
 const truncated = ref(false)
 const pageSize = ref(DEFAULT_PAGE_SIZE)
 const currentPage = ref(1)
@@ -174,6 +189,16 @@ const cloudBuild = computed(
   () =>
     installationStore.installations.find((build) => isCloudBuild(build) && inWorkspace(build)) ??
     null
+)
+
+const cloudListable = computed(
+  () => buildsKnown.value && authStore.isSignedIn && cloudBuild.value !== null
+)
+const cloudSettled = computed(
+  () =>
+    buildsKnown.value &&
+    authStore.statusLoaded &&
+    (!authStore.isSignedIn || authStore.workspacesLoaded)
 )
 
 const localBuilds = computed(() =>
@@ -226,6 +251,7 @@ const selectedBuild = computed<AssetBuild | null>(() => {
 
 function choosePlace(id: string): void {
   pickedPlace.value = id
+  focusMiss.value = null
   savedPlace.value = id
 }
 
@@ -466,9 +492,16 @@ async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean)
   if (authStore.status.workspaceId !== workspaceId) throw new Error('workspace switch failed')
 }
 
+function lookUpCloudAsset(cloudId: string, name: string): Promise<CloudAssetLookup> {
+  return window.api
+    .findCloudAsset(cloudId, name)
+    .catch((): CloudAssetLookup => ({ status: 'incomplete' }))
+}
+
 async function loadAssets(userAsked = false): Promise<void> {
   const current = ++requestId
   cancelIdleCallback(prefetchHandle)
+  const settled = cloudSettled.value
   const selected = selectedBuild.value
   const cloud = selected?.cloud ? cloudBuild.value : null
   failed.value = false
@@ -476,6 +509,7 @@ async function loadAssets(userAsked = false): Promise<void> {
   if (!selected || (selected.cloud && (!cloud || !authStore.isSignedIn))) {
     assets.value = []
     loading.value = false
+    openPendingFocus(settled)
     return
   }
   loading.value = true
@@ -485,9 +519,13 @@ async function loadAssets(userAsked = false): Promise<void> {
       await moveSessionToWorkspaceOf(cloud, userAsked || pickedPlace.value === CLOUD)
       if (current !== requestId) return
     }
-    const listed = cloud
-      ? await cloudPage(cloud.id, currentPage.value)
-      : await window.api.listLocalAssets(selected.computer ? undefined : selected.build.id)
+    const wanted = pendingFocus.value ?? focusMiss.value?.name
+    const [listed, lookup] = await Promise.all([
+      cloud
+        ? cloudPage(cloud.id, currentPage.value)
+        : window.api.listLocalAssets(selected.computer ? undefined : selected.build.id),
+      cloud && wanted ? lookUpCloudAsset(cloud.id, wanted) : null
+    ])
     if (current !== requestId) return
     if ('total' in listed) cloudTotal.value = listed.total
     if (cloud && currentPage.value > pageCount.value) {
@@ -497,11 +535,25 @@ async function loadAssets(userAsked = false): Promise<void> {
     }
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
     truncated.value = 'truncated' in listed && listed.truncated
+    if (cloud && pendingFocus.value && pendingFocus.value !== wanted) {
+      void loadAssets(userAsked)
+      return
+    }
     if (cloud) prefetchPage(cloud.id, currentPage.value + 1)
+    const miss = focusMiss.value
+    if (cloud && miss && miss.name === wanted) {
+      if (assets.value.some((asset) => asset.name === miss.name)) focusMiss.value = null
+      else if (lookup?.status === 'found') {
+        focusMiss.value = null
+        openLookedUpDetail(lookup.asset, source)
+      } else focusMiss.value = { name: miss.name, checked: lookup?.status === 'absent' }
+    }
+    openPendingFocus(settled, lookup)
   } catch {
     if (current !== requestId) return
     assets.value = []
     failed.value = true
+    openPendingFocus(settled)
   } finally {
     if (current === requestId) loading.value = false
   }
@@ -530,6 +582,9 @@ watch([loadKey, listedCloudId], () => {
   pageCache.clear()
   cloudTotal.value = 0
   currentPage.value = 1
+  focusMiss.value = null
+  lookedUpDetail.value = null
+  detailKey.value = null
 })
 watch(cloudQuery, () => (currentPage.value = 1))
 let reloadAskedByUser = false
@@ -556,22 +611,70 @@ function refresh(): void {
   currentPage.value = 1
 }
 
-const detailKey = ref<string | null>(null)
+function newestNamed(name: string): GalleryAsset | null {
+  return visibleAssets.value
+    .filter((asset) => asset.name === name)
+    .reduce<GalleryAsset | null>(
+      (newest, asset) => (newest && createdMs(newest) >= createdMs(asset) ? newest : asset),
+      null
+    )
+}
+
+function openPendingFocus(settled: boolean, lookup: CloudAssetLookup | null = null): void {
+  const name = pendingFocus.value
+  if (!name || (!cloudListable.value && !settled)) return
+  pendingFocus.value = null
+  const cloud = cloudBuild.value
+  if (!selectedBuild.value?.cloud || failed.value || !cloudListable.value || !cloud) return
+  const asset = newestNamed(name)
+  if (lookup?.status === 'found' && (!asset || createdMs(lookup.asset) > createdMs(asset))) {
+    openLookedUpDetail(lookup.asset, cloud.id)
+  } else if (asset) openDetail(asset)
+  else focusMiss.value = { name, checked: lookup?.status === 'absent' }
+}
+
+watch(
+  cloudSettled,
+  (settled) => {
+    if (settled && !loading.value) openPendingFocus(true)
+  },
+  { flush: 'post' }
+)
+
+watch(
+  () => focusName,
+  (name) => {
+    if (!name) return
+    emit('focus-used')
+    const cloudShown = selectedBuild.value?.cloud === true && !loading.value
+    pendingFocus.value = name
+    focusMiss.value = null
+    pickedPlace.value = CLOUD
+    if (!cloudShown) return
+    if (cloudListable.value && !failed.value) void loadAssets()
+    else openPendingFocus(cloudSettled.value)
+  },
+  { immediate: true }
+)
+
+const detailAssets = computed(() =>
+  lookedUpDetail.value ? [...visibleAssets.value, lookedUpDetail.value] : visibleAssets.value
+)
 
 const detailIndex = computed<number | null>({
   get: () => {
     if (detailKey.value === null) return null
-    const index = visibleAssets.value.findIndex((asset) => cardKey(asset) === detailKey.value)
+    const index = detailAssets.value.findIndex((asset) => cardKey(asset) === detailKey.value)
     return index >= 0 ? index : null
   },
   set: (index) => {
-    const asset = index === null ? undefined : visibleAssets.value[index]
+    const asset = index === null ? undefined : detailAssets.value[index]
     detailKey.value = asset ? cardKey(asset) : null
   }
 })
 
 const detailItems = computed<OutputDetailItem[]>(() =>
-  visibleAssets.value.map((asset) => ({
+  detailAssets.value.map((asset) => ({
     key: cardKey(asset),
     name: asset.name,
     kind: asset.kind,
@@ -585,12 +688,20 @@ const detailItems = computed<OutputDetailItem[]>(() =>
 )
 
 watch(detailIndex, (index) => {
-  if (index === null) detailKey.value = null
-  else scrollToIndex(index)
+  if (index === null) {
+    detailKey.value = null
+    lookedUpDetail.value = null
+  } else if (index < visibleAssets.value.length) scrollToIndex(index)
 })
 
 function openDetail(asset: GalleryAsset): void {
+  lookedUpDetail.value = null
   detailKey.value = cardKey(asset)
+}
+
+function openLookedUpDetail(asset: AssetSummary, source: string): void {
+  lookedUpDetail.value = { ...asset, source }
+  detailKey.value = cardKey(lookedUpDetail.value)
 }
 
 async function closeDetail(): Promise<void> {
@@ -1024,6 +1135,18 @@ function extensionOf(name: string): string {
     </div>
 
     <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
+      <p
+        v-if="focusMiss && selectedBuild?.cloud"
+        role="status"
+        class="m-0 mb-4 text-ui text-subtle-foreground"
+        data-testid="assets-not-found"
+      >
+        {{
+          t(focusMiss.checked ? 'assets.notFoundInCloud' : 'assets.notCheckedInCloud', {
+            name: focusMiss.name
+          })
+        }}
+      </p>
       <div v-if="showSkeleton" role="status" :aria-label="t('common.loading')">
         <ul
           ref="gallery"
@@ -1215,8 +1338,8 @@ function extensionOf(name: string): string {
       v-model:index="detailIndex"
       :items="detailItems"
       @close="closeDetail"
-      @download="download(visibleAssets[$event]!)"
-      @show-in-folder="reveal(visibleAssets[$event]!)"
+      @download="download(detailAssets[$event]!)"
+      @show-in-folder="reveal(detailAssets[$event]!)"
     />
 
     <ContextMenu

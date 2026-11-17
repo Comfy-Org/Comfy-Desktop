@@ -10,6 +10,7 @@ export type {
   CloudAssetPage,
   LocalAssetListing,
   CatalogWorkflow,
+  CloudAssetLookup,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,

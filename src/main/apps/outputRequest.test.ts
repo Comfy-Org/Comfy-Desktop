@@ -35,7 +35,7 @@ describe('readOutputRequest', () => {
 
   it('keeps what the Apps pages send today and drops the fields Desktop does not show', () => {
     const request = readOutputRequest({
-      items: [picture({ tags: [], workflow: false, savedOn: 'computer', folder: '/tmp' })],
+      items: [picture({ tags: [], workflow: false, savedOn: 'computer', folder: '/tmp', size: 3 })],
       index: 0
     })
 
@@ -44,8 +44,72 @@ describe('readOutputRequest', () => {
       mimeType: 'image/png',
       bytes: new Uint8Array([1, 2, 3]),
       tags: [],
-      workflow: false
+      workflow: false,
+      savedOn: 'computer',
+      folder: '/tmp'
     })
+  })
+
+  it('keeps where each output is saved, with a folder and a ComfyUI file only for this computer', () => {
+    const comfyFile = { filename: 'cutout_00001_.png', subfolder: 'apps/cutout', type: 'output' }
+    const request = readOutputRequest({
+      items: [
+        picture({ savedOn: 'cloud', folder: '/Users/me/out', comfyFile }),
+        picture({ savedOn: 'computer', folder: 'C:\\Users\\me\\out' }),
+        picture({ savedOn: 'computer', comfyFile }),
+        picture({ savedOn: 'computer' }),
+        picture({ savedOn: 'phone', folder: '/Users/me/out' })
+      ],
+      index: 0
+    })
+
+    expect(
+      request?.items.map(({ savedOn, folder, comfyFile }) => ({ savedOn, folder, comfyFile }))
+    ).toEqual([
+      { savedOn: 'cloud', folder: undefined, comfyFile: undefined },
+      { savedOn: 'computer', folder: 'C:\\Users\\me\\out', comfyFile: undefined },
+      {
+        savedOn: 'computer',
+        folder: undefined,
+        comfyFile: { filename: 'cutout_00001_.png', subfolder: 'apps/cutout' }
+      },
+      { savedOn: 'computer', folder: undefined, comfyFile: undefined },
+      { savedOn: undefined, folder: undefined, comfyFile: undefined }
+    ])
+  })
+
+  it('drops a folder that is not an absolute path or has hidden characters', () => {
+    const folders = ['out', './out', '~/out', '/Users/me/\u202eout', '/Users/me/\nout', 7]
+    const request = readOutputRequest({
+      items: folders.map((folder) => picture({ savedOn: 'computer', folder })),
+      index: 0
+    })
+
+    expect(request?.items.map((item) => item.folder)).toEqual(folders.map(() => undefined))
+  })
+
+  it('drops a ComfyUI file that is not a ComfyUI output, or has a very long path', () => {
+    const file = (extra: Record<string, unknown>) => ({
+      filename: 'cutout.png',
+      subfolder: '',
+      type: 'output',
+      ...extra
+    })
+    const refused = [
+      file({ type: 'temp' }),
+      file({ type: undefined }),
+      file({ filename: 7 }),
+      file({ subfolder: 7 }),
+      file({ filename: 'n'.repeat(1025) }),
+      file({ subfolder: 's'.repeat(1020) }),
+      'cutout.png'
+    ]
+    const request = readOutputRequest({
+      items: refused.map((comfyFile) => picture({ savedOn: 'computer', comfyFile })),
+      index: 0
+    })
+
+    expect(request?.items.map((item) => item.comfyFile)).toEqual(refused.map(() => undefined))
   })
 
   it('cuts long names and tags, and keeps at most eight tags', () => {
@@ -133,7 +197,11 @@ describe('readOutputRequest', () => {
 })
 
 describe('readOutputAction', () => {
-  it('passes on a download or an open-workflow for one output', () => {
+  it('passes on a download, an open-workflow or a show-in-folder for one output', () => {
+    expect(readOutputAction({ action: 'show-in-folder', index: 1 })).toEqual({
+      action: 'show-in-folder',
+      index: 1
+    })
     expect(readOutputAction({ action: 'download', index: 2 })).toEqual({
       action: 'download',
       index: 2

@@ -167,6 +167,8 @@ export interface AppOutput {
   bytes: Uint8Array<ArrayBuffer>
   tags: string[]
   workflow: boolean
+  savedOn?: 'cloud' | 'computer'
+  folder?: string
 }
 
 export interface AppOutputs {
@@ -175,7 +177,7 @@ export interface AppOutputs {
 }
 
 export interface AppOutputAction {
-  action: 'download' | 'open-workflow'
+  action: 'download' | 'open-workflow' | 'show-in-folder'
   index: number
 }
 
@@ -187,6 +189,9 @@ export interface CatalogWorkflow {
 }
 
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
+
+export type CloudAssetLookup =
+  { status: 'found'; asset: AssetSummary } | { status: 'absent' } | { status: 'incomplete' }
 
 export interface AssetSummary {
   id: string
@@ -1219,6 +1224,7 @@ export interface ElectronApi {
   listLocalAssets(installationId?: string): Promise<LocalAssetListing>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
+  findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>

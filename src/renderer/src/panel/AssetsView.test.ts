@@ -9,9 +9,16 @@ import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AssetSummary, CloudAssetPage, Installation, RunningInstance } from '../types/ipc'
+import type {
+  AssetSummary,
+  CloudAssetLookup,
+  CloudAssetPage,
+  Installation,
+  RunningInstance
+} from '../types/ipc'
 
 const listAssets = vi.fn()
+const findCloudAsset = vi.fn()
 const listLocalAssets = vi.fn()
 let localListCut = false
 const downloadAsset = vi.fn()
@@ -214,6 +221,7 @@ beforeEach(() => {
   getAuthStatus.mockResolvedValue({ signedIn: false })
   getSetting.mockResolvedValue(undefined)
   localListCut = false
+  findCloudAsset.mockResolvedValue({ status: 'absent' })
   ;(window as unknown as { api: unknown }).api = {
     listAssets: async (installationId: string, request: unknown) => {
       const listed: AssetSummary[] | CloudAssetPage | null = await listAssets(
@@ -222,6 +230,7 @@ beforeEach(() => {
       )
       return Array.isArray(listed) ? { assets: listed, total: listed.length } : listed
     },
+    findCloudAsset,
     listLocalAssets: async (installationId?: string) => ({
       assets: await listLocalAssets(installationId),
       truncated: localListCut
@@ -792,6 +801,218 @@ describe('AssetsView', () => {
 
     expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('My Local 1')
     expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith('mine')
+  })
+
+  describe('a file an app asks to see', () => {
+    async function mountWithFocus(files: AssetSummary[] | CloudAssetPage) {
+      window.localStorage.setItem('comfy.desktop.assets.place', 'lab')
+      getAuthStatus.mockResolvedValue({ signedIn: true })
+      listAssets.mockResolvedValue(files)
+      const installationStore = useInstallationStore()
+      installationStore.installations = [cloudBuild('cloud'), localBuild('lab')]
+      installationStore.loading = false
+      const wrapper = mount(AssetsView, { attachTo: page, props: { focusName: 'cutout.png' } })
+      await flushPromises()
+      return wrapper
+    }
+
+    async function choose(wrapper: Awaited<ReturnType<typeof mountWithFocus>>, id: string) {
+      await openBuildPicker(wrapper)
+      await pickBuild(id)
+    }
+
+    it('picks Comfy Cloud with the newest file of that name open, once, and keeps the saved choice', async () => {
+      const wrapper = await mountWithFocus([
+        asset('old', 'cutout.png', 'image', { createdAt: '2026-11-01T00:00:00Z' }),
+        asset('new', 'cutout.png', 'image', { createdAt: '2026-11-02T00:00:00Z' }),
+        asset('other', 'other.png', 'image', { createdAt: '2026-11-03T00:00:00Z' })
+      ])
+
+      expect(wrapper.emitted('focus-used')).toHaveLength(1)
+      expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
+      expect(listAssets).toHaveBeenCalledWith('cloud', FIRST_PAGE)
+      expect(findCloudAsset).toHaveBeenCalledWith('cloud', 'cutout.png')
+      expect(listLocalAssets).not.toHaveBeenCalled()
+      expect(viewerTitle()).toBe('cutout.png')
+      expect(
+        viewer()?.querySelector('[aria-current="true"]')?.getAttribute('data-testid'),
+        'the newer of the two cutouts, after the newest file overall'
+      ).toBe('output-detail-thumb-1')
+      expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('lab')
+    })
+
+    it('says so on Comfy Cloud when the file is not there, and drops the note once the user picks a place', async () => {
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+
+      expect(wrapper.emitted('focus-used')).toHaveLength(1)
+      expect(assetNames(wrapper)).toEqual(['other.png'])
+      expect(viewer()).toBeNull()
+      expect(wrapper.get('[data-testid="assets-not-found"]').text()).toBe(
+        "Couldn't find cutout.png in your Comfy Cloud assets. It may have a different name here."
+      )
+
+      await choose(wrapper, 'lab')
+      await choose(wrapper, 'cloud')
+
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+    })
+
+    it('asks Comfy Cloud again, by name, for a file the shown list does not have', async () => {
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+      findCloudAsset.mockResolvedValue({
+        status: 'found',
+        asset: asset('older', 'older.png', 'image')
+      })
+
+      await wrapper.setProps({ focusName: 'older.png' })
+      await flushPromises()
+
+      expect(findCloudAsset).toHaveBeenLastCalledWith('cloud', 'older.png')
+      expect(assetNames(wrapper)).toEqual(['other.png'])
+      expect(viewerTitle()).toBe('older.png')
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+    })
+
+    it('opens the latest requested result when a saved-result lookup is already in flight', async () => {
+      const previous = Promise.withResolvers<CloudAssetLookup>()
+      findCloudAsset.mockImplementation((_cloudId, name) =>
+        name === 'cutout.png'
+          ? previous.promise
+          : Promise.resolve({ status: 'found', asset: asset('new', 'new.png', 'image') })
+      )
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+
+      expect(findCloudAsset).toHaveBeenCalledWith('cloud', 'cutout.png')
+      await wrapper.setProps({ focusName: 'new.png' })
+      previous.resolve({ status: 'found', asset: asset('old', 'cutout.png', 'image') })
+      await flushPromises()
+
+      expect(findCloudAsset).toHaveBeenLastCalledWith('cloud', 'new.png')
+      expect(viewerTitle()).toBe('new.png')
+      expect(listAssets).toHaveBeenCalledTimes(1)
+    })
+
+    it('drops the note when Refresh finds the file', async () => {
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(true)
+      listAssets.mockResolvedValue([
+        asset('other', 'other.png', 'image'),
+        asset('new', 'cutout.png', 'image')
+      ])
+
+      await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+      await flushPromises()
+
+      expect(findCloudAsset).toHaveBeenLastCalledWith('cloud', 'cutout.png')
+      expect(assetNames(wrapper)).toContain('cutout.png')
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+    })
+
+    it('opens and downloads an older result without putting it on the first page', async () => {
+      findCloudAsset.mockResolvedValue({
+        status: 'found',
+        asset: asset('old', 'cutout.png', 'image')
+      })
+      const wrapper = await mountWithFocus({
+        assets: Array.from({ length: 100 }, (_, index) =>
+          asset(`new-${index}`, `new-${index}.png`, 'image')
+        ),
+        total: 101
+      })
+
+      expect(assetNames(wrapper)).toContain('new-0.png')
+      expect(assetNames(wrapper)).not.toContain('cutout.png')
+      expect(wrapper.get('[data-testid="assets-pagination"]').text()).toContain('1–100 of 101')
+      expect(viewerTitle()).toBe('cutout.png')
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+      viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-download"]')!.click()
+      expect(downloadAsset).toHaveBeenCalledWith('cloud', 'old', 'cutout.png')
+    })
+
+    it('says it could not check, not that the file is missing, when the search did not finish', async () => {
+      findCloudAsset.mockResolvedValue({ status: 'incomplete' })
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+
+      expect(assetNames(wrapper)).toEqual(['other.png'])
+      expect(viewer()).toBeNull()
+      expect(wrapper.get('[data-testid="assets-not-found"]').text()).toBe(
+        "Couldn't check Comfy Cloud for cutout.png. Refresh to try again."
+      )
+
+      findCloudAsset.mockRejectedValue(new Error('ipc gone'))
+      await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+      await flushPromises()
+
+      expect(assetNames(wrapper), 'the gallery stays').toEqual(['other.png'])
+      expect(wrapper.get('[data-testid="assets-not-found"]').text()).toBe(
+        "Couldn't check Comfy Cloud for cutout.png. Refresh to try again."
+      )
+
+      findCloudAsset.mockResolvedValue({ status: 'absent' })
+      await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="assets-not-found"]').text()).toBe(
+        "Couldn't find cutout.png in your Comfy Cloud assets. It may have a different name here."
+      )
+    })
+
+    it('shows no note when the file opened', async () => {
+      await mountWithFocus([asset('new', 'cutout.png', 'image')])
+      expect(viewerTitle()).toBe('cutout.png')
+      expect(document.querySelector('[data-testid="assets-not-found"]')).toBeNull()
+    })
+
+    it('shows the load error instead of a note when the Cloud list fails', async () => {
+      listAssets.mockRejectedValue(new Error('offline'))
+      getAuthStatus.mockResolvedValue({ signedIn: true })
+      const installationStore = useInstallationStore()
+      installationStore.installations = [cloudBuild('cloud')]
+      installationStore.loading = false
+      const wrapper = mount(AssetsView, { attachTo: page, props: { focusName: 'cutout.png' } })
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe("Couldn't load assets")
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+    })
+
+    it('lets go of the file when Comfy Cloud cannot list it, and says why', async () => {
+      getAuthStatus.mockResolvedValue({ signedIn: false })
+      listAssets.mockResolvedValue([asset('new', 'cutout.png', 'image')])
+      const installationStore = useInstallationStore()
+      installationStore.installations = [cloudBuild('cloud')]
+      installationStore.loading = false
+      const signedOut = mount(AssetsView, { attachTo: page, props: { focusName: 'cutout.png' } })
+      await flushPromises()
+
+      expect(signedOut.get('[data-testid="assets-empty"] h2').text()).toBe(
+        'Log in to see your assets'
+      )
+      await signInWith([asset('new', 'cutout.png', 'image')])
+      expect(assetNames(signedOut)).toEqual(['cutout.png'])
+      expect(viewer(), 'the file is not opened later').toBeNull()
+      signedOut.unmount()
+
+      installationStore.installations = [localBuild('lab')]
+      const noCloudBuild = mount(AssetsView, { attachTo: page, props: { focusName: 'cutout.png' } })
+      await flushPromises()
+      expect(noCloudBuild.get('[data-testid="assets-empty"] h2').text()).toBe(
+        'This workspace has no Comfy Cloud build'
+      )
+      installationStore.installations = [cloudBuild('cloud')]
+      await flushPromises()
+      expect(assetNames(noCloudBuild)).toEqual(['cutout.png'])
+      expect(viewer(), 'the file is not opened later').toBeNull()
+    })
+
+    it('remembers a place the user picks after that', async () => {
+      const wrapper = await mountWithFocus([])
+
+      await choose(wrapper, 'lab')
+      await choose(wrapper, 'cloud')
+
+      expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('cloud')
+    })
   })
 
   it('switches to the builds of the workspace the user moves to', async () => {
