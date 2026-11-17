@@ -6,7 +6,7 @@ import TabsTrigger from '@comfyorg/design-system/tabs/TabsTrigger'
 import TabsContent from '@comfyorg/design-system/tabs/TabsContent'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FileText, HardDrive, RefreshCcw, Settings2, SlidersHorizontal, X } from '@lucide/vue'
+import { FileText, Folder, RefreshCcw, Settings2, SlidersHorizontal, X } from '@lucide/vue'
 import UpdatesSection from './globalSettings/UpdatesSection.vue'
 import GlobalSettingsMicroSection from './globalSettings/GlobalSettingsMicroSection.vue'
 import GlobalStorageSections from './globalSettings/GlobalStorageSections.vue'
@@ -138,12 +138,13 @@ async function flashField(fieldId: string): Promise<void> {
 const tabs = computed(() => [
   { id: 'general' as const, label: props.snapshot.i18n.overview, icon: Settings2 },
   { id: 'updates' as const, label: props.snapshot.i18n.updates, icon: RefreshCcw },
-  { id: 'storage' as const, label: props.snapshot.i18n.storage, icon: HardDrive },
+  { id: 'storage' as const, label: props.snapshot.i18n.storage, icon: Folder },
   { id: 'advanced' as const, label: props.snapshot.i18n.advanced, icon: SlidersHorizontal },
   { id: 'logs' as const, label: props.snapshot.i18n.logs, icon: FileText }
 ])
 
 const storageSnapshot = computed(() => ({
+  installLocationFields: props.snapshot.installLocationFields,
   sharedDirectoriesFields: props.snapshot.sharedDirectoriesFields,
   modelsDirs: props.snapshot.modelsDirs,
   modelsSystemDefault: props.snapshot.modelsSystemDefault
@@ -195,23 +196,6 @@ function handleOpenCacheDir(): void {
 const advancedSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.advancedFields as unknown as DetailField[] }
 ])
-
-const installDirField = computed<DetailField | undefined>(() => {
-  const fields = props.snapshot.installLocationFields as unknown as DetailField[]
-  return fields.find((f) => f.id === 'installDir') ?? fields[0]
-})
-
-async function handleBrowseInstallDir(): Promise<void> {
-  const field = installDirField.value
-  if (!field) return
-  const picked = await bridge?.globalSettingsBrowseFolder(fieldPath(field) || undefined)
-  if (!picked || picked === field.value) return
-  await bridge?.globalSettingsUpdateField(field.id, picked)
-}
-
-function handleOpenInstallDir(): void {
-  handleOpenPath(fieldPath(installDirField.value))
-}
 
 function handleOpenPath(path: string): void {
   if (path) bridge?.globalSettingsOpenPath(path)
@@ -382,19 +366,6 @@ onMounted(() => {
         </template>
 
         <template v-else-if="activeTab === 'advanced'">
-          <GlobalSettingsMicroSection
-            :title="t('settings.installLocation')"
-            :tooltip="t('tooltips.installDir')"
-          >
-            <StorageDirRow
-              v-if="installDirField"
-              :label="installDirField.label"
-              :path="fieldPath(installDirField)"
-              @open="handleOpenInstallDir"
-              @browse="handleBrowseInstallDir"
-            />
-          </GlobalSettingsMicroSection>
-
           <GlobalSettingsMicroSection :title="snapshot.i18n.advanced">
             <SettingsSectionList
               :sections="advancedSections"
