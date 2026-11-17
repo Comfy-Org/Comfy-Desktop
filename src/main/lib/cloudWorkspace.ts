@@ -14,8 +14,13 @@ import { isTrustedCloudUrl } from './trustedCloudUrl'
 
 const pendingWorkspaceSyncs = new WeakMap<ComfyWindowEntry, Promise<boolean>>()
 const failedWorkspaceLoads = new WeakSet<WebContents>()
+const workspaceNavigationVersions = new WeakMap<ComfyWindowEntry, number>()
 const CLOUD_TAB_WORKSPACE_KEY = 'Comfy.Workspace.Current'
 const CLOUD_TAB_SWITCH_TARGET_KEY = 'Comfy.Workspace.SwitchTargetId'
+
+export function cloudWorkspaceNavigationVersion(entry: ComfyWindowEntry): number {
+  return workspaceNavigationVersions.get(entry) ?? 0
+}
 
 export async function cloudWorkspaceUrl(
   installation: InstallationRecord,
@@ -109,24 +114,23 @@ async function navigateToSelectedWorkspace(
   const nextUrl = await cloudWorkspaceUrl(installation, previousUrl, pickerWorkspaceId)
   if (!isLatest() || !stillAttached()) return false
   const sameLaunchUrl = nextUrl === previousUrl
-  if (!failedWorkspaceLoads.has(contents)) {
-    const keepPage = await canKeepCloudPage(contents, nextUrl, sameLaunchUrl)
-    if (!isLatest() || !stillAttached()) return false
-    if (keepPage) {
-      if (!sameLaunchUrl) cancelLoadRetry?.()
-      entry.comfyUrl = nextUrl
-      return true
-    }
-  }
+  const keepPage =
+    !failedWorkspaceLoads.has(contents) &&
+    (await canKeepCloudPage(contents, nextUrl, sameLaunchUrl))
+  if (!isLatest() || !stillAttached()) return false
+  if (keepPage && sameLaunchUrl) return true
 
   cancelLoadRetry?.()
-  try {
-    await contents.loadURL(nextUrl)
-  } catch (error) {
-    if (stillAttached()) failedWorkspaceLoads.add(contents)
-    throw error
+  workspaceNavigationVersions.set(entry, cloudWorkspaceNavigationVersion(entry) + 1)
+  if (!keepPage) {
+    try {
+      await contents.loadURL(nextUrl)
+    } catch (error) {
+      if (stillAttached()) failedWorkspaceLoads.add(contents)
+      throw error
+    }
+    if (!stillAttached()) return false
   }
-  if (!stillAttached()) return false
 
   failedWorkspaceLoads.delete(contents)
   entry.comfyUrl = nextUrl

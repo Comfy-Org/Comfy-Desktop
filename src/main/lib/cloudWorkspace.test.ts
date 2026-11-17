@@ -22,7 +22,11 @@ vi.mock('../devplatform/session', () => ({
 vi.mock('../settings', () => ({ get: () => state.selected }))
 vi.mock('../installations', () => ({ get: state.getInstallation }))
 
-import { cloudWorkspaceUrl, syncCloudWindowWorkspace } from './cloudWorkspace'
+import {
+  cloudWorkspaceNavigationVersion,
+  cloudWorkspaceUrl,
+  syncCloudWindowWorkspace
+} from './cloudWorkspace'
 
 const CLOUD: InstallationRecord = {
   id: 'cloud',
@@ -193,11 +197,13 @@ describe('reopening a Cloud window', () => {
   it('focuses the same workspace without reloading the workflow', async () => {
     const { entry, loadURL } = openWindow()
     const cancelLoadRetry = vi.fn()
+    const version = cloudWorkspaceNavigationVersion(entry)
 
     await syncCloudWindowWorkspace(entry, { cancelLoadRetry })
 
     expect(loadURL).not.toHaveBeenCalled()
     expect(cancelLoadRetry).not.toHaveBeenCalled()
+    expect(cloudWorkspaceNavigationVersion(entry)).toBe(version)
   })
 
   it('cancels a pending retry before loading the next workspace', async () => {
@@ -265,6 +271,7 @@ describe('reopening a Cloud window', () => {
     'settles both opens on the latest request for %s while the first navigation is pending',
     async (selected) => {
       const { entry, loadURL, setActiveWorkspace } = openWindow()
+      const versionBeforeNavigation = cloudWorkspaceNavigationVersion(entry)
       const started = Promise.withResolvers<void>()
       const firstNavigation = Promise.withResolvers<void>()
       loadURL.mockImplementationOnce(async () => {
@@ -276,6 +283,7 @@ describe('reopening a Cloud window', () => {
       state.selected = 'team-a'
       const firstOpen = syncCloudWindowWorkspace(entry)
       await started.promise
+      expect(cloudWorkspaceNavigationVersion(entry)).not.toBe(versionBeforeNavigation)
       state.selected = selected
       const latestOpen = syncCloudWindowWorkspace(entry)
       firstNavigation.resolve()

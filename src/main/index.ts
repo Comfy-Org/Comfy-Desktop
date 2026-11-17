@@ -54,7 +54,7 @@ import {
   trackWindowWebContents
 } from './lib/quitAfterWindowWebContents'
 import { showUpdateInstallSplash } from './lib/updateSplash'
-import { syncCloudWindowWorkspace } from './lib/cloudWorkspace'
+import { cloudWorkspaceNavigationVersion, syncCloudWindowWorkspace } from './lib/cloudWorkspace'
 import type { InstallationRecord } from './installations'
 import {
   cleanupTempDownloads,
@@ -482,6 +482,7 @@ function onLaunch({
       comfyFailRetryTimerCancels.get(installationId)?.()
       const revealToken = (comfyRevealTokens.get(installationId) ?? 0) + 1
       comfyRevealTokens.set(installationId, revealToken)
+      const workspaceNavigationVersion = cloudWorkspaceNavigationVersion(existing)
       void (async () => {
         existing.comfyView.setBackgroundColor(SPLASH_DARK.bg)
         await showSplashPage(comfyContents, SPLASH_DARK, {
@@ -501,7 +502,9 @@ function onLaunch({
           return
         }
         revealReusedComfy()
-        void comfyContents.loadURL(comfyUrl).catch(() => {})
+        if (cloudWorkspaceNavigationVersion(existing) === workspaceNavigationVersion) {
+          void comfyContents.loadURL(comfyUrl).catch(() => {})
+        }
       })()
     } else {
       revealReusedComfy()
