@@ -1,9 +1,5 @@
 import { emitTelemetryAction, type TelemetryContext } from '../../lib/telemetry'
-import type {
-  OpenTemplateOutcome,
-  TemplateSearchAvailability,
-  TemplateSearchResponse
-} from '../../types/ipc'
+import type { OpenTemplateOutcome, TemplateSearchResponse } from '../../types/ipc'
 import { matchLevel, searchRows, type SearchRow, type SearchRowKind } from './templateSearch'
 
 const EVENT_PREFIX = 'comfy.desktop.template_search.'
@@ -43,7 +39,9 @@ export function requestScript(text: string): string {
   return found
 }
 
-export function changedChars(before: string, after: string): number {
+export function changedChars(beforeText: string, afterText: string): number {
+  const before = [...beforeText]
+  const after = [...afterText]
   const shorter = Math.min(before.length, after.length)
   let prefix = 0
   while (prefix < shorter && before[prefix] === after[prefix]) prefix++
@@ -93,8 +91,7 @@ function answerProperties(response: TemplateSearchResponse): TelemetryContext {
     has_best_match: rows.some((row) => row.best),
     process_ms: metrics?.processMs ?? null,
     is_cold_start: metrics?.coldStart ?? null,
-    bundle_version: metrics?.bundleVersion ?? null,
-    protocol_version: metrics?.protocol ?? null
+    bundle_version: metrics?.bundleVersion ?? null
   }
 }
 
@@ -123,6 +120,10 @@ export interface SearchTelemetryOptions {
   newId?: () => string
 }
 
+function isOff(response: TemplateSearchResponse): boolean {
+  return response.kind === 'unavailable' && response.availability.kind === 'off'
+}
+
 export function createSearchTelemetry({
   emit = emitTelemetryAction,
   now = Date.now,
@@ -130,7 +131,6 @@ export function createSearchTelemetry({
 }: SearchTelemetryOptions = {}) {
   let session: Session | null = null
   let lastShown: ShownAnswer | null = null
-  let lastState: string | null = null
 
   function send(name: string, context: TelemetryContext): void {
     emit(EVENT_PREFIX + name, context)
@@ -141,36 +141,44 @@ export function createSearchTelemetry({
     return session
   }
 
+  function requested(): void {
+    startSession()
+  }
+
   function answered(
     request: string,
     response: TemplateSearchResponse,
-    timing: SearchTiming
-  ): string {
-    const current = startSession()
+    timing: SearchTiming,
+    visible: boolean
+  ): void {
+    if (isOff(response)) {
+      session = null
+      return
+    }
+    const current = visible ? startSession() : session
     const searchId = newId()
     const answeredAt = now()
-    current.searches++
     const properties = answerProperties(response)
+    if (current) current.searches++
+    const previous = current?.previousRequest ?? null
     send('searched', {
       search_id: searchId,
-      session_search_count: current.searches,
+      session_search_count: current?.searches ?? 0,
       ...requestProperties(request),
-      edit_chars_count:
-        current.previousRequest === null ? null : changedChars(current.previousRequest, request),
+      edit_chars_count: previous === null ? null : changedChars(previous, request),
       ...properties,
       input_to_answer_ms: answeredAt - timing.triggeredAt,
       request_ms: answeredAt - timing.requestedAt
     })
+    lastShown = { searchId, outcome: String(properties.outcome), shownAt: answeredAt }
+    if (!current) return
     current.previousRequest = request
-    current.shown = { searchId, outcome: String(properties.outcome), shownAt: answeredAt }
-    lastShown = current.shown
-    return searchId
+    if (visible) current.shown = lastShown
   }
 
   function reopened(): void {
-    if (session || !lastShown) return
-    lastShown = { ...lastShown, shownAt: now() }
-    session = { startedAt: now(), searches: 0, moves: 0, previousRequest: null, shown: lastShown }
+    if (!lastShown) return
+    startSession().shown = { ...lastShown, shownAt: now() }
   }
 
   function moved(): void {
@@ -180,7 +188,7 @@ export function createSearchTelemetry({
   function picked(rows: SearchRow[], row: SearchRow, inputMethod: InputMethod): string | null {
     const current = session
     const shown = current?.shown
-    if (!current || !shown) return lastShown?.searchId ?? null
+    if (!current || !shown) return null
     const pickedAt = now()
     const sameList = rows.filter((other) => other.kind === row.kind)
     send('picked', {
@@ -199,22 +207,7 @@ export function createSearchTelemetry({
       session_search_count: current.searches,
       highlight_moves_count: current.moves
     })
-    session = null
     return shown.searchId
-  }
-
-  function abandoned(reason: AbandonReason): void {
-    const current = session
-    session = null
-    if (!current?.shown) return
-    const endedAt = now()
-    send('abandoned', {
-      reason,
-      session_ms: endedAt - current.startedAt,
-      session_search_count: current.searches,
-      last_results_shown_ms: endedAt - current.shown.shownAt,
-      last_outcome: current.shown.outcome
-    })
   }
 
   function opened(
@@ -223,20 +216,24 @@ export function createSearchTelemetry({
     result: OpenTemplateOutcome | 'failed'
   ): void {
     send('open_result', { search_id: searchId, template_id: templateId, result })
+    if (result === 'opened' || result === 'launch') session = null
   }
 
-  function stateShown(availability: TemplateSearchAvailability | null): void {
-    const state = availability?.kind ?? null
-    if (state === lastState) return
-    lastState = state
-    if (!availability) return
-    send('availability_shown', {
-      state: availability.kind,
-      reason: availability.kind === 'unavailable' ? availability.reason : null
+  function abandoned(reason: AbandonReason): void {
+    const current = session
+    session = null
+    if (!current) return
+    const endedAt = now()
+    send('abandoned', {
+      reason,
+      session_ms: endedAt - current.startedAt,
+      session_search_count: current.searches,
+      last_results_shown_ms: current.shown ? endedAt - current.shown.shownAt : null,
+      last_outcome: current.shown?.outcome ?? 'searching'
     })
   }
 
-  return { answered, reopened, moved, picked, abandoned, opened, stateShown }
+  return { requested, answered, reopened, moved, picked, opened, abandoned }
 }
 
 export type SearchTelemetry = ReturnType<typeof createSearchTelemetry>

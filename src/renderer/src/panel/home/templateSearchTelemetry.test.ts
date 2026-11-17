@@ -90,19 +90,21 @@ describe('request properties', () => {
     expect(changedChars('a poster', 'a poster for a party')).toBe(12)
     expect(changedChars('a red poster', 'a blue poster')).toBe(7)
     expect(changedChars('aa', 'aaa')).toBe(1)
+    expect(changedChars('a 🎂 cake', 'a 🎈 cake')).toBe(2)
   })
 })
 
 describe('createSearchTelemetry', () => {
-  it('sends what a search found, how fast, and the shape of the request', () => {
+  const ANSWER_AT = (at: () => number) => ({ triggeredAt: at(), requestedAt: at() })
+
+  it('sends what a search found, how fast, and the request', () => {
     const { telemetry, sent, tick, at } = harness()
     const triggeredAt = at()
     tick(300)
     const requestedAt = at()
+    telemetry.requested()
     tick(120)
-    expect(
-      telemetry.answered('a poster for a bake sale', ANSWER, { triggeredAt, requestedAt })
-    ).toBe('search-1')
+    telemetry.answered('a poster for a bake sale', ANSWER, { triggeredAt, requestedAt }, true)
     expect(sent).toEqual([
       {
         event: 'comfy.desktop.template_search.searched',
@@ -124,7 +126,6 @@ describe('createSearchTelemetry', () => {
           process_ms: 38,
           is_cold_start: true,
           bundle_version: '2.3.0',
-          protocol_version: 1,
           input_to_answer_ms: 420,
           request_ms: 120
         }
@@ -134,37 +135,47 @@ describe('createSearchTelemetry', () => {
 
   it('counts searches in a session and the characters changed since the last one', () => {
     const { telemetry, last, at } = harness()
-    const timing = { triggeredAt: at(), requestedAt: at() }
-    telemetry.answered('a poster', ANSWER, timing)
-    telemetry.answered('a poster for a party', ANSWER, timing)
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
+    telemetry.answered('a poster for a party', ANSWER, ANSWER_AT(at), true)
     expect(last().context).toMatchObject({ session_search_count: 2, edit_chars_count: 12 })
   })
 
   it('names the state search was in when it could not answer', () => {
     const { telemetry, last, at } = harness()
+    const offline = { kind: 'unavailable', reason: 'offline' } as const
     telemetry.answered(
       'a poster',
-      { kind: 'unavailable', availability: { kind: 'unavailable', reason: 'offline' } },
-      { triggeredAt: at(), requestedAt: at() }
+      { kind: 'unavailable', availability: offline },
+      ANSWER_AT(at),
+      true
     )
     expect(last().context).toMatchObject({
       outcome: 'unavailable',
       availability: 'unavailable',
       reason: 'offline'
     })
-    telemetry.answered('a poster', { kind: 'failed' }, { triggeredAt: at(), requestedAt: at() })
+    telemetry.answered('a poster', { kind: 'failed' }, ANSWER_AT(at), true)
     expect(last().context).toMatchObject({ outcome: 'failed' })
   })
 
-  it('sends the pick with its list, place, match and the time it took, then starts afresh', () => {
-    const { telemetry, sent, tick, at } = harness()
+  it('sends nothing at all when search is switched off', () => {
+    const { telemetry, sent, at } = harness()
+    telemetry.requested()
+    const off = { kind: 'unavailable', availability: { kind: 'off' } } as const
+    telemetry.answered('a poster', off, ANSWER_AT(at), true)
+    telemetry.abandoned('closed')
+    expect(sent).toEqual([])
+  })
+
+  it('sends the pick with its list, place, match and the time it took', () => {
+    const { telemetry, last, tick, at } = harness()
     tick(50)
-    telemetry.answered('a mural', ANSWER, { triggeredAt: at(), requestedAt: at() })
+    telemetry.answered('a mural', ANSWER, ANSWER_AT(at), true)
     telemetry.moved()
     telemetry.moved()
     tick(2500)
     expect(telemetry.picked(ROWS, ROWS[2]!, 'pointer')).toBe('search-1')
-    expect(sent.at(-1)).toEqual({
+    expect(last()).toEqual({
       event: 'comfy.desktop.template_search.picked',
       context: {
         search_id: 'search-1',
@@ -183,37 +194,57 @@ describe('createSearchTelemetry', () => {
         highlight_moves_count: 2
       }
     })
-    telemetry.abandoned('closed')
-    expect(sent).toHaveLength(2)
   })
 
-  it('sends an abandon once, only for a session that showed an answer', () => {
+  it('keeps the session through a refused open, and ends it once a template opens', () => {
+    const { telemetry, sent, at } = harness()
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
+    telemetry.picked(ROWS, ROWS[0]!, 'keyboard')
+    telemetry.opened('search-1', 'poster_template', 'refused')
+    telemetry.picked(ROWS, ROWS[1]!, 'keyboard')
+    telemetry.opened('search-1', 'banner_template', 'launch')
+    telemetry.abandoned('left')
+    expect(sent.map((s) => s.event.replace('comfy.desktop.template_search.', ''))).toEqual([
+      'searched',
+      'picked',
+      'open_result',
+      'picked',
+      'open_result'
+    ])
+  })
+
+  it('sends an abandon once, and one made before any answer as searching', () => {
     const { telemetry, sent, tick, at } = harness()
     telemetry.abandoned('blurred')
-    expect(sent).toEqual([])
-
-    telemetry.answered('a poster', ANSWER, { triggeredAt: at(), requestedAt: at() })
+    telemetry.requested()
+    tick(1500)
+    telemetry.abandoned('closed')
+    telemetry.abandoned('left')
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
     tick(4000)
     telemetry.abandoned('cleared')
-    telemetry.abandoned('left')
-    expect(sent.slice(1)).toEqual([
+    expect(sent.filter((s) => s.event.endsWith('abandoned')).map((s) => s.context)).toEqual([
       {
-        event: 'comfy.desktop.template_search.abandoned',
-        context: {
-          reason: 'cleared',
-          session_ms: 4000,
-          session_search_count: 1,
-          last_results_shown_ms: 4000,
-          last_outcome: 'template'
-        }
+        reason: 'closed',
+        session_ms: 1500,
+        session_search_count: 0,
+        last_results_shown_ms: null,
+        last_outcome: 'searching'
+      },
+      {
+        reason: 'cleared',
+        session_ms: 4000,
+        session_search_count: 1,
+        last_results_shown_ms: 4000,
+        last_outcome: 'template'
       }
     ])
   })
 
-  it('starts a new session on the kept answer when the results open again', () => {
+  it('times a pick from when an answer that arrived hidden was first shown', () => {
     const { telemetry, last, tick, at } = harness()
-    telemetry.answered('a poster', ANSWER, { triggeredAt: at(), requestedAt: at() })
-    telemetry.abandoned('closed')
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), false)
+    expect(last().context).toMatchObject({ session_search_count: 0 })
     tick(60_000)
     telemetry.reopened()
     tick(800)
@@ -223,23 +254,22 @@ describe('createSearchTelemetry', () => {
       results_to_pick_ms: 800,
       session_ms: 800,
       session_search_count: 0,
-      is_best_match: true,
-      input_method: 'keyboard'
+      is_best_match: true
     })
   })
 
-  it('sends each state shown instead of results once, until something else is shown', () => {
-    const { telemetry, sent } = harness()
-    telemetry.stateShown({ kind: 'downloading', received: 1, total: 10 })
-    telemetry.stateShown({ kind: 'downloading', received: 5, total: 10 })
-    telemetry.stateShown({ kind: 'unavailable', reason: 'download_failed' })
-    telemetry.stateShown(null)
-    telemetry.stateShown({ kind: 'unavailable', reason: 'download_failed' })
-    expect(sent.map((s) => s.context)).toEqual([
-      { state: 'downloading', reason: null },
-      { state: 'unavailable', reason: 'download_failed' },
-      { state: 'unavailable', reason: 'download_failed' }
-    ])
+  it('restarts the shown time, but not the session, when results kept open come back into view', () => {
+    const { telemetry, last, tick, at } = harness()
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
+    tick(30_000)
+    telemetry.reopened()
+    tick(500)
+    telemetry.picked(ROWS, ROWS[0]!, 'keyboard')
+    expect(last().context).toMatchObject({
+      results_to_pick_ms: 500,
+      session_ms: 30_500,
+      session_search_count: 1
+    })
   })
 
   it('sends how opening the picked template went', () => {

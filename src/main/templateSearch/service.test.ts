@@ -427,6 +427,31 @@ describe('search service telemetry', () => {
     ])
   })
 
+  it('says a search waited for a start when a warm sidecar stopped answering and had to start again', async () => {
+    const post = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: 1 })
+      .mockRejectedValueOnce(new SidecarRequestError('ECONNREFUSED', true))
+      .mockResolvedValueOnce({ ok: 2 })
+    const { service } = setup({ post })
+    await service.decide({ text: 'warm' })
+    expect(await service.decide({ text: 'x' })).toEqual({
+      kind: 'answer',
+      body: { ok: 2 },
+      coldStart: true
+    })
+  })
+
+  it('reports the start after a crash as verified', async () => {
+    const attempts: StartAttempt[] = []
+    const { service, started, announced } = setup({ onStartAttempt: (a) => attempts.push(a) })
+    await service.decide({ text: 'x' })
+    started[0]!.crash()
+    await vi.waitFor(() => expect(announced.at(-1)).toEqual({ kind: 'idle' }))
+    await service.decide({ text: 'x' })
+    expect(attempts.map((a) => a.verified)).toEqual([false, true])
+  })
+
   it('starts nothing and reports no start while search is switched off', async () => {
     const attempts: StartAttempt[] = []
     const { service, start } = setup({ pyz: () => null, onStartAttempt: (a) => attempts.push(a) })

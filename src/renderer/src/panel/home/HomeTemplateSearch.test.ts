@@ -990,9 +990,84 @@ describe('HomeTemplateSearch telemetry', () => {
   it('times a typed search from the last key press, including the wait before it searches', async () => {
     vi.useFakeTimers()
     const wrapper = mountSearch()
+    await input(wrapper).setValue('a post')
+    await vi.advanceTimersByTimeAsync(SEARCH_DELAY_MS - 100)
     await input(wrapper).setValue('a poster')
     await vi.advanceTimersByTimeAsync(SEARCH_DELAY_MS)
-    expect(named('searched')[0]!.context!.input_to_answer_ms).toBe(SEARCH_DELAY_MS)
+    expect(named('searched').map((event) => event.context!.input_to_answer_ms)).toEqual([
+      SEARCH_DELAY_MS
+    ])
+  })
+
+  it('sends an abandon when focus leaves the bar for something else on Home', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    const here = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    await wrapper
+      .get('[data-testid="home-template-search"]')
+      .trigger('focusout', { relatedTarget: null })
+    here.mockRestore()
+    expect(named('abandoned').map((event) => event.context!.reason)).toEqual(['blurred'])
+  })
+
+  it('keeps the session when the window loses focus, and counts it on return', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    const away = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+    await wrapper
+      .get('[data-testid="home-template-search"]')
+      .trigger('focusout', { relatedTarget: null })
+    away.mockRestore()
+    expect(panel(wrapper).exists()).toBe(false)
+    await input(wrapper).trigger('focus')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(named('abandoned')).toEqual([])
+    expect(named('picked')[0]!.context).toMatchObject({ session_search_count: 1 })
+  })
+
+  it('sends nothing while search answers that it is switched off', async () => {
+    searchTemplates.mockResolvedValue(unavailable({ kind: 'off' }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster for my aunt')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    wrapper.unmount()
+    expect(sent).toEqual([])
+  })
+
+  it('sends the second pick after an open was refused, and an abandon when Home closes', async () => {
+    openTemplateInBuild.mockResolvedValueOnce('refused')
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.findAll('[role="option"]')[1]!.trigger('click')
+    await flushPromises()
+    expect(named('picked').map((event) => event.context!.template_id)).toEqual([
+      'poster_template',
+      'banner_template'
+    ])
+  })
+
+  it('times the pick from when a hidden answer is first shown', async () => {
+    vi.useFakeTimers()
+    let answerLater!: (response: TemplateSearchResponse) => void
+    searchTemplates.mockReturnValueOnce(new Promise((resolve) => (answerLater = resolve)))
+    const wrapper = mountSearch()
+    await input(wrapper).setValue('a poster')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    answerLater(answer({ run: [POSTER, BANNER], download: [MURAL] }))
+    await vi.advanceTimersByTimeAsync(60_000)
+    await input(wrapper).trigger('focus')
+    await vi.advanceTimersByTimeAsync(700)
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(named('abandoned')[0]!.context).toMatchObject({
+      reason: 'closed',
+      last_outcome: 'searching'
+    })
+    expect(named('picked')[0]!.context).toMatchObject({ results_to_pick_ms: 700 })
   })
 })
 

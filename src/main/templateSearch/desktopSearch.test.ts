@@ -96,7 +96,7 @@ describe('createDesktopSearch', () => {
     const { search } = setup({ kind: 'answer', body, coldStart: true })
     expect(await search.search('a poster', 'local-1')).toMatchObject({
       kind: 'result',
-      metrics: { processMs: 42, bundleVersion: '2.3.0', protocol: 1, coldStart: true }
+      metrics: { processMs: 42, bundleVersion: '2.3.0', coldStart: true }
     })
   })
 

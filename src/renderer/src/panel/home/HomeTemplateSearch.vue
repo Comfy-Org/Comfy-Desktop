@@ -33,7 +33,8 @@ function onFocus(): void {
 
 function onFocusOut(event: FocusEvent): void {
   const next = event.relatedTarget as Node | null
-  if (!(event.currentTarget as HTMLElement).contains(next)) search.close('blurred')
+  if ((event.currentTarget as HTMLElement).contains(next)) return
+  search.close(document.hasFocus() ? 'blurred' : null)
 }
 
 function onEnter(event: KeyboardEvent): void {

@@ -19,11 +19,17 @@ vi.mock('../installations', () => ({ list: async () => mocks.builds }))
 vi.mock('../lib/ipc/shared', () => ({ _operationAborts: new Map(), _hasActiveLaunch: () => false }))
 vi.mock('../lib/ipc/sessionActions', () => ({ _getActiveOperations: mocks.activeOperations }))
 vi.mock('../lib/modelDownloadTransport', () => ({ startModelTransfer: mocks.transfer }))
+vi.mock('./searchTelemetry', () => ({ reportBundleDownload: vi.fn(), reportStartAttempt: vi.fn() }))
+vi.mock(import('./sidecar'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  startSidecar: vi.fn(async () => ({ ok: false as const, problem: 'failed' as const }))
+}))
 vi.mock('./buildRuntime', () => ({
   buildRuntime: (build: { id: string }) => ({ python: `python-${build.id}`, sitePackages: null })
 }))
 
 import { killProcessTree } from '../lib/process'
+import { reportBundleDownload, reportStartAttempt } from './searchTelemetry'
 import {
   createSearchProcess,
   helperResult,
@@ -110,6 +116,8 @@ function setup() {
 }
 
 beforeEach(() => {
+  vi.mocked(reportBundleDownload).mockClear()
+  vi.mocked(reportStartAttempt).mockClear()
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'search-process-'))
   spawned = []
   mocks.settings = {
@@ -139,6 +147,21 @@ describe('createSearchProcess', () => {
     expect(spawned).toEqual([])
     expect(mocks.fetch).not.toHaveBeenCalled()
     expect(announced).toEqual([{ kind: 'off' }])
+  })
+
+  it('reports the model download and each start attempt of the search program', async () => {
+    mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
+    serveBundle({ 'catalog.json': '{}' })
+    const { search } = setup()
+    await search.download()
+    expect(reportBundleDownload).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ result: 'completed', version: '1.0.0', background: false })
+    )
+
+    await search.prepare()
+    expect(reportStartAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ bundleVersion: '1.0.0', verified: false })
+    )
   })
 
   it('asks the next build when one Python cannot run the search program', async () => {

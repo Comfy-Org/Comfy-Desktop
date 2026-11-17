@@ -229,7 +229,6 @@ export type TemplateSearchAvailability =
 export interface TemplateSearchMetrics {
   processMs: number | null
   bundleVersion: string | null
-  protocol: number | null
   coldStart: boolean
 }
 

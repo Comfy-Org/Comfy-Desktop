@@ -1,4 +1,4 @@
-import { reportTemplateLoaded } from './searchTelemetry'
+import { reportTemplateSent } from './searchTelemetry'
 
 export const CLAIM_WINDOW_MS = 60_000
 
@@ -46,11 +46,10 @@ export function takeLaunchUrl(installationId: string, comfyUrl: string, now = Da
   const open = pending.get(installationId)
   if (!open?.claimed) return comfyUrl
   pending.delete(installationId)
-  reportTemplateLoaded({
+  reportTemplateSent({
     searchId: open.searchId,
     templateId: open.templateId,
-    buildStarted: true,
-    pickToLoadMs: now - open.queuedAt
+    pickToSendMs: now - open.queuedAt
   })
   return buildTemplateDeeplink(comfyUrl, open.templateId)
 }

@@ -18,7 +18,6 @@ import {
   dropTemplateOpen,
   queueTemplateOpen
 } from '../../templateSearch/openTemplate'
-import { reportTemplateLoaded } from '../../templateSearch/searchTelemetry'
 import type {
   OpenTemplateOutcome,
   TemplateSearchAvailability,
@@ -136,7 +135,6 @@ export function registerTemplateSearchHandlers({
       if (!view) return 'refused'
       try {
         await view.contents.loadURL(buildTemplateDeeplink(view.url, templateId))
-        reportTemplateLoaded({ searchId, templateId, buildStarted: false, pickToLoadMs: null })
         return 'opened'
       } catch {
         return 'refused'

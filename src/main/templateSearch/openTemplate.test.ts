@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { reportTemplateLoaded } from './searchTelemetry'
+import { reportTemplateSent } from './searchTelemetry'
 import {
   buildTemplateDeeplink,
   claimTemplateOpen,
@@ -9,7 +9,7 @@ import {
   takeLaunchUrl
 } from './openTemplate'
 
-vi.mock('./searchTelemetry', () => ({ reportTemplateLoaded: vi.fn() }))
+vi.mock('./searchTelemetry', () => ({ reportTemplateSent: vi.fn() }))
 
 const COMFY_URL = 'http://127.0.0.1:8390/'
 
@@ -74,11 +74,10 @@ describe('reporting the queued template', () => {
     queueTemplateOpen('build-1', 'poster_template', 1000, '2b1c7a3e-9f4d-4c8a-8e1b-5d6f7a8b9c0d')
     claimTemplateOpen('build-1', 1500)
     takeLaunchUrl('build-1', COMFY_URL, 4000)
-    expect(reportTemplateLoaded).toHaveBeenCalledExactlyOnceWith({
+    expect(reportTemplateSent).toHaveBeenCalledExactlyOnceWith({
       searchId: '2b1c7a3e-9f4d-4c8a-8e1b-5d6f7a8b9c0d',
       templateId: 'poster_template',
-      buildStarted: true,
-      pickToLoadMs: 3000
+      pickToSendMs: 3000
     })
   })
 
@@ -86,6 +85,6 @@ describe('reporting the queued template', () => {
     queueTemplateOpen('build-1', 'poster_template', 1000)
     takeLaunchUrl('build-1', COMFY_URL, 4000)
     takeLaunchUrl('build-2', COMFY_URL, 4000)
-    expect(reportTemplateLoaded).not.toHaveBeenCalled()
+    expect(reportTemplateSent).not.toHaveBeenCalled()
   })
 })

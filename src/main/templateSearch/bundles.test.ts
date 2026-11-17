@@ -500,6 +500,20 @@ describe('bundle store download reports', () => {
     ])
   })
 
+  it('reports when the index offers no version this Desktop can read', async () => {
+    publish(server, '1.0.0', V1)
+    const downloads: BundleDownload[] = []
+    const { store: s } = store({
+      now: () => 0,
+      supports: async () => null,
+      onDownloaded: (d) => downloads.push(d)
+    })
+    await s.download({ quietly: true })
+    expect(downloads).toEqual([
+      { result: 'no_readable_version', bytes: 0, durationMs: 0, background: true, version: null }
+    ])
+  })
+
   it('reports a download that failed, with the bytes it had fetched', async () => {
     publish(server, '1.0.0', V1)
     server.blobs.set(sha('weights-v1'), Buffer.from('weights-XX'))
@@ -507,8 +521,15 @@ describe('bundle store download reports', () => {
     const { store: s } = store({ now: () => 0, onDownloaded: (d) => downloads.push(d) })
     await s.download()
     expect(downloads).toHaveLength(1)
-    expect(downloads[0]).toMatchObject({ result: 'failed', version: null, background: false })
-    expect(downloads[0]!.bytes).toBeLessThan(V1_BYTES)
+    expect(downloads).toEqual([
+      {
+        result: 'failed',
+        bytes: Buffer.byteLength(V1.NOTICE),
+        durationMs: 0,
+        background: false,
+        version: null
+      }
+    ])
   })
 })
 

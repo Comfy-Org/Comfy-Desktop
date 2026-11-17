@@ -148,7 +148,6 @@ export function parseDecision(
 export interface DecisionMetrics {
   processMs: number | null
   bundleVersion: string | null
-  protocol: number | null
 }
 
 export function decisionMetrics(body: unknown): DecisionMetrics {
@@ -157,8 +156,7 @@ export function decisionMetrics(body: unknown): DecisionMetrics {
   const total = asNumber(latency?.total)
   return {
     processMs: total === null ? null : Math.round(total),
-    bundleVersion: asText(asRecord(decision?.bundle)?.version),
-    protocol: asNumber(decision?.protocol)
+    bundleVersion: asText(asRecord(decision?.bundle)?.version)
   }
 }
 

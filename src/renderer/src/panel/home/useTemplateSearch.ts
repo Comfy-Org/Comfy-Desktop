@@ -4,8 +4,7 @@ import { searchRows, type SearchRow } from './templateSearch'
 import {
   createSearchTelemetry,
   type AbandonReason,
-  type InputMethod,
-  type SearchTelemetry
+  type InputMethod
 } from './templateSearchTelemetry'
 
 export const SEARCH_DELAY_MS = 300
@@ -22,13 +21,10 @@ const READY_AGAIN: ReadonlySet<TemplateSearchAvailability['kind']> = new Set(['i
 export interface TemplateSearchOptions {
   buildId: () => string | null
   onOpened: (buildId: string) => void
-  telemetry?: SearchTelemetry
-  now?: () => number
 }
 
 export function useTemplateSearch(options: TemplateSearchOptions) {
-  const now = options.now ?? Date.now
-  const telemetry = options.telemetry ?? createSearchTelemetry({ now })
+  const telemetry = createSearchTelemetry()
   const query = ref('')
   const state = ref<SearchState>({ kind: 'idle' })
   const panelOpen = ref(false)
@@ -56,7 +52,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     state.value = { kind: 'idle' }
   }
 
-  async function search(text: string, triggeredAt = now()): Promise<void> {
+  async function search(text: string, triggeredAt = Date.now()): Promise<void> {
     cancelPendingSearch()
     const trimmed = text.trim()
     if (!trimmed) {
@@ -66,12 +62,18 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     const request = ++latestRequest
     state.value = { kind: 'searching' }
     openFailed.value = false
-    const requestedAt = now()
+    if (panelOpen.value) telemetry.requested()
+    const requestedAt = Date.now()
     const response = await window.api
       .searchTemplates(trimmed, options.buildId() ?? '')
       .catch(() => null)
     if (request !== latestRequest) return
-    telemetry.answered(trimmed, response ?? { kind: 'failed' }, { triggeredAt, requestedAt })
+    telemetry.answered(
+      trimmed,
+      response ?? { kind: 'failed' },
+      { triggeredAt, requestedAt },
+      panelOpen.value
+    )
     if (response?.kind === 'result') {
       state.value = { kind: 'result', query: trimmed, result: response.result }
       activeIndex.value = Math.max(
@@ -104,7 +106,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   })
 
   watch(query, (text) => {
-    const typedAt = now()
+    const typedAt = Date.now()
     leaveResults()
     cancelPendingSearch()
     if (!text.trim()) {
@@ -113,10 +115,6 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
       return
     }
     pendingSearch = setTimeout(() => void search(text, typedAt), SEARCH_DELAY_MS)
-  })
-
-  watch(state, (current) => {
-    telemetry.stateShown(current.kind === 'unavailable' ? current.availability : null)
   })
 
   watch(options.buildId, () => {
@@ -169,9 +167,9 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     if (query.value.trim() && state.value.kind === 'idle') void search(query.value)
   }
 
-  function close(reason: AbandonReason): void {
+  function close(reason: AbandonReason | null): void {
     panelOpen.value = false
-    telemetry.abandoned(reason)
+    if (reason) telemetry.abandoned(reason)
   }
 
   function onEnter(): void {
