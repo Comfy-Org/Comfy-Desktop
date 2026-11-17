@@ -608,7 +608,7 @@ describe('AssetsView', () => {
     expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('lab')
   })
 
-  it('says the workspace has no Comfy Cloud build yet', async () => {
+  it('says the workspace has no Comfy Cloud build', async () => {
     window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
     const wrapper = await mountAssets([], { builds: [localBuild('lab')] })
     useAuthStore().status = { signedIn: true, workspaceId: 'me', workspaceType: 'personal' }
@@ -617,16 +617,16 @@ describe('AssetsView', () => {
     expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
     expect(listAssets).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe(
-      'This workspace has no Comfy Cloud build yet'
+      'This workspace has no Comfy Cloud build'
     )
   })
 
-  it('says when the list keeps only the newest files', async () => {
+  it('says when the list shows only part of the folder', async () => {
     localListCut = true
     const wrapper = await mountAssets([asset('/out/a.png', 'a.png', 'image')])
 
     expect(wrapper.get('[data-testid="assets-truncated"]').text()).toBe(
-      'Showing the newest file only.'
+      'Showing only 1 file from this folder.'
     )
   })
 
@@ -868,7 +868,7 @@ describe('AssetsView', () => {
       const noCloudBuild = mount(AssetsView, { attachTo: page, props: { focusName: 'cutout.png' } })
       await flushPromises()
       expect(noCloudBuild.get('[data-testid="assets-empty"] h2').text()).toBe(
-        'This workspace has no Comfy Cloud build yet'
+        'This workspace has no Comfy Cloud build'
       )
       installationStore.installations = [cloudBuild('cloud')]
       await flushPromises()

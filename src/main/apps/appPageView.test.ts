@@ -1119,6 +1119,25 @@ describe('outputs an app page shows', () => {
     ])
   })
 
+  it('tells the panel to close the outputs once the page that showed them is replaced', () => {
+    shownFromPage()
+
+    finishLoading()
+
+    expect(sentToPanel(APP_OUTPUTS_CHANNEL)).toEqual([
+      [APP_OUTPUTS_CHANNEL, CUTOUT, OUTPUTS],
+      [APP_OUTPUTS_CHANNEL, CUTOUT, null]
+    ])
+  })
+
+  it('keeps the outputs open while the page moves within the same document', () => {
+    shownFromPage()
+
+    hostedPage().webContents.emit('did-navigate-in-page', {}, `${CUTOUT_URL}#result`, true)
+
+    expect(sentToPanel(APP_OUTPUTS_CHANNEL)).toEqual([[APP_OUTPUTS_CHANNEL, CUTOUT, OUTPUTS]])
+  })
+
   it('takes actions only from the panel of the window the page is in', () => {
     shownFromPage()
 

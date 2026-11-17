@@ -124,9 +124,9 @@
     "signedOutTitle": "登录以查看你的资产",
     "signedOutBody": "你在 Comfy Cloud 中生成的资产会显示在这里。",
     "signIn": "登录 Comfy Cloud",
-    "noCloudBuildTitle": "此工作区还没有 Comfy Cloud 构建",
-    "noCloudBuildBody": "将 Comfy Cloud 添加到此工作区后，这里会显示它的资产。",
-    "truncated": "仅显示最新的 {count} 个文件。",
+    "noCloudBuildTitle": "此工作区没有 Comfy Cloud 构建",
+    "noCloudBuildBody": "切换到你的个人工作区以查看 Comfy Cloud 资产。如果那里也没有，请重启 Comfy Desktop。",
+    "truncated": "仅显示此文件夹中的 {count} 个文件。",
     "inspect": "查看 {name}",
     "detail": {
       "tags": "标签",

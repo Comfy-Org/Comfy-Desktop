@@ -124,9 +124,9 @@
     "signedOutTitle": "Log in to see your assets",
     "signedOutBody": "Assets that you make in Comfy Cloud show here.",
     "signIn": "Log in to Comfy Cloud",
-    "noCloudBuildTitle": "This workspace has no Comfy Cloud build yet",
-    "noCloudBuildBody": "Add Comfy Cloud to this workspace to see its assets here.",
-    "truncated": "Showing the newest file only. | Showing the newest {count} files only.",
+    "noCloudBuildTitle": "This workspace has no Comfy Cloud build",
+    "noCloudBuildBody": "Switch to your personal workspace to see Comfy Cloud assets. If it is not there, restart Comfy Desktop.",
+    "truncated": "Showing only 1 file from this folder. | Showing only {count} files from this folder.",
     "inspect": "Inspect {name}",
     "detail": {
       "tags": "Tags",
