@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue'
+import { computed, nextTick, useId, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LoaderCircle, Search } from '@lucide/vue'
 import TemplateSearchResults from './TemplateSearchResults.vue'
@@ -45,6 +45,27 @@ function onEnter(event: KeyboardEvent): void {
   event.preventDefault()
   search.onEnter()
 }
+
+const results = useTemplateRef<InstanceType<typeof TemplateSearchResults>>('results')
+
+async function revealActive(): Promise<void> {
+  await nextTick()
+  results.value?.revealActive()
+}
+
+function moveVertically(step: 1 | -1): void {
+  const target = showPanel.value ? (results.value?.verticalTarget(step) ?? null) : null
+  if (target === null) search.move(step)
+  else search.moveTo(target)
+  void revealActive()
+}
+
+function moveAcross(event: KeyboardEvent, step: 1 | -1): void {
+  if (!showPanel.value || !search.inResults.value || !search.rows.value.length) return
+  event.preventDefault()
+  search.move(step)
+  void revealActive()
+}
 </script>
 
 <template>
@@ -81,14 +102,17 @@ function onEnter(event: KeyboardEvent): void {
         @focus="onFocus"
         @input="openPanel"
         @keydown.enter="onEnter"
-        @keydown.down.prevent="search.move(1)"
-        @keydown.up.prevent="search.move(-1)"
+        @keydown.down.prevent="moveVertically(1)"
+        @keydown.up.prevent="moveVertically(-1)"
+        @keydown.left="moveAcross($event, -1)"
+        @keydown.right="moveAcross($event, 1)"
       />
     </label>
 
     <TemplateSearchResults
       v-if="showPanel"
-      class="absolute inset-x-0 top-full z-20 mt-2 overflow-hidden rounded-2xl border border-[rgb(137_137_137/0.16)] bg-content-background p-2 shadow-[0_32px_80px_-24px_rgb(0_0_0/0.75)]"
+      ref="results"
+      class="absolute inset-x-0 top-full z-20 mt-2 max-h-[70vh] overflow-y-auto rounded-2xl border border-[rgb(137_137_137/0.16)] bg-content-background p-2 shadow-[0_32px_80px_-24px_rgb(0_0_0/0.75)]"
       data-testid="home-template-search-results"
       :controller="search"
       :listbox-id="listboxId"

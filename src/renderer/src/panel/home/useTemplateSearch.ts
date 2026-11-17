@@ -23,6 +23,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   const state = ref<SearchState>({ kind: 'idle' })
   const panelOpen = ref(false)
   const activeIndex = ref(0)
+  const inResults = ref(false)
   const openFailed = ref(false)
   let latestRequest = 0
   let prepared = false
@@ -82,6 +83,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   const unsubscribe = window.api.onTemplateSearchAvailability(onAvailability)
 
   watch(query, (text) => {
+    inResults.value = false
     cancelPendingSearch()
     if (!text.trim()) {
       forgetAnswer()
@@ -149,13 +151,18 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     activeIndex.value = index
   }
 
+  function moveTo(index: number): void {
+    panelOpen.value = true
+    inResults.value = true
+    activeIndex.value = index
+  }
+
   function move(step: number): void {
     if (!rows.value.length) {
       if (state.value.kind === 'idle') open()
       return
     }
-    panelOpen.value = true
-    activeIndex.value = (activeIndex.value + step + rows.value.length) % rows.value.length
+    moveTo((activeIndex.value + step + rows.value.length) % rows.value.length)
   }
 
   return {
@@ -166,6 +173,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     panelOpen,
     activeIndex,
     activeRow,
+    inResults,
     openFailed,
     prepare,
     open,
@@ -173,6 +181,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     openRow,
     onEnter,
     move,
+    moveTo,
     highlight
   }
 }

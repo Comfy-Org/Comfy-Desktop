@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import '../../assets/main.css'
 
 import HomeTemplateSearch from './HomeTemplateSearch.vue'
 import { SEARCH_DELAY_MS } from './useTemplateSearch'
+import { verticalNeighbour } from './templateSearch'
 import { TEMPLATE_SEARCH_MAX_QUERY } from '../../../../shared/templateSearch'
 import type {
   OpenTemplateOutcome,
@@ -77,13 +79,19 @@ beforeEach(() => {
 
 afterEach(() => {
   while (mounted.length) mounted.pop()?.unmount()
+  while (hosts.length) hosts.pop()?.remove()
   vi.useRealTimers()
 })
 
 const mounted: ReturnType<typeof mountSearch>[] = []
+const hosts: HTMLElement[] = []
+const BAR_WIDTH_PX = 720
 
 function mountSearch(buildId: string | null = 'build-1') {
-  const wrapper = mount(HomeTemplateSearch, { props: { buildId }, attachTo: document.body })
+  const host = document.body.appendChild(document.createElement('div'))
+  host.style.width = `${BAR_WIDTH_PX}px`
+  hosts.push(host)
+  const wrapper = mount(HomeTemplateSearch, { props: { buildId }, attachTo: host })
   mounted.push(wrapper)
   return wrapper
 }
@@ -336,13 +344,13 @@ describe('HomeTemplateSearch opening a template', () => {
     expect(panel(wrapper).exists()).toBe(false)
   })
 
-  it('opens the template picked with the arrow keys', async () => {
+  it('opens the card picked with the arrow keys', async () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
     await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    expect(opened()).toEqual(['banner_template'])
+    expect(opened()).toEqual(['mural_template'])
   })
 
   it('keeps focus in the bar when a result is pressed, so the click can open it', async () => {
@@ -395,7 +403,7 @@ describe('HomeTemplateSearch opening a template', () => {
     expect(opened()).toEqual(['mural_template'])
   })
 
-  it('moves the highlight up from the first result to the last', async () => {
+  it('moves the highlight up from the first row of cards to the last', async () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
     await input(wrapper).trigger('keydown', { key: 'ArrowUp' })
@@ -473,7 +481,7 @@ describe('HomeTemplateSearch opening a template', () => {
     expect(searchTemplates).not.toHaveBeenCalled()
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    expect(opened()).toEqual(['banner_template'])
+    expect(opened()).toEqual(['mural_template'])
   })
 
   it('starts on the first row of a new answer that has no best match', async () => {
@@ -562,6 +570,146 @@ describe('HomeTemplateSearch opening a template', () => {
       expect(wrapper.emitted('opened')).toEqual([['build-1']])
     }
   )
+})
+
+describe('HomeTemplateSearch cards', () => {
+  const CARDS = ['a', 'b', 'c', 'd', 'e'].map((letter) => candidate(`card_${letter}`))
+
+  function cardBoxes(wrapper: Wrapper): DOMRect[] {
+    return wrapper.findAll('[role="option"]').map((card) => card.element.getBoundingClientRect())
+  }
+
+  function highlighted(wrapper: Wrapper): string {
+    return wrapper.get('[role="option"][aria-selected="true"]').find('.font-medium').text()
+  }
+
+  async function press(wrapper: Wrapper, key: string): Promise<boolean> {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    input(wrapper).element.dispatchEvent(event)
+    await flushPromises()
+    return event.defaultPrevented
+  }
+
+  async function searchCards(wrapper: Wrapper): Promise<void> {
+    searchTemplates.mockResolvedValue(answer({ run: CARDS, download: [MURAL] }))
+    await searchFor(wrapper, 'a birthday card')
+  }
+
+  it('lays the cards out three across at the bar width, and starts each group on a new row', async () => {
+    const wrapper = mountSearch()
+    await searchCards(wrapper)
+    const [a, b, c, d, e, mural] = cardBoxes(wrapper)
+    expect([b!.top, c!.top]).toEqual([a!.top, a!.top])
+    expect(d!.top).toBeGreaterThan(a!.top)
+    expect([d!.left, e!.top]).toEqual([a!.left, d!.top])
+    expect(mural!.top).toBeGreaterThan(d!.top)
+    expect(mural!.left).toBe(a!.left)
+    const rowWidth = c!.right - a!.left
+    for (const heading of wrapper.findAll('[role="presentation"]')) {
+      expect(heading.element.getBoundingClientRect().width).toBeCloseTo(rowWidth, 0)
+    }
+  })
+
+  it('moves Down and Up to the nearest card in the next row, across a group heading, and wraps', async () => {
+    const wrapper = mountSearch()
+    await searchCards(wrapper)
+    expect(highlighted(wrapper)).toBe('card_a title')
+
+    const downs: string[] = []
+    for (let i = 0; i < 3; i++) {
+      await press(wrapper, 'ArrowDown')
+      downs.push(highlighted(wrapper))
+    }
+    expect(downs).toEqual(['card_d title', 'mural_template title', 'card_a title'])
+
+    const ups: string[] = []
+    for (let i = 0; i < 2; i++) {
+      await press(wrapper, 'ArrowUp')
+      ups.push(highlighted(wrapper))
+    }
+    expect(ups).toEqual(['mural_template title', 'card_d title'])
+  })
+
+  it('moves Down from the last column to the nearest card of a shorter row', async () => {
+    const wrapper = mountSearch()
+    await searchCards(wrapper)
+    await press(wrapper, 'ArrowDown')
+    await press(wrapper, 'ArrowUp')
+    await press(wrapper, 'ArrowRight')
+    await press(wrapper, 'ArrowRight')
+    expect(highlighted(wrapper)).toBe('card_c title')
+
+    await press(wrapper, 'ArrowDown')
+    expect(highlighted(wrapper)).toBe('card_e title')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(opened()).toEqual(['card_e'])
+  })
+
+  it('leaves Left and Right to the text cursor until the user arrows into the cards', async () => {
+    const wrapper = mountSearch()
+    await searchCards(wrapper)
+    expect(await press(wrapper, 'ArrowRight')).toBe(false)
+    expect(highlighted(wrapper)).toBe('card_a title')
+
+    await press(wrapper, 'ArrowDown')
+    expect(await press(wrapper, 'ArrowRight')).toBe(true)
+    expect(highlighted(wrapper)).toBe('card_e title')
+    expect(await press(wrapper, 'ArrowLeft')).toBe(true)
+    expect(highlighted(wrapper)).toBe('card_d title')
+  })
+
+  it('moves Left and Right in reading order across rows and groups, wrapping at the ends', async () => {
+    const wrapper = mountSearch()
+    await searchCards(wrapper)
+    await press(wrapper, 'ArrowDown')
+    await press(wrapper, 'ArrowUp')
+    await press(wrapper, 'ArrowLeft')
+    expect(highlighted(wrapper)).toBe('mural_template title')
+    await press(wrapper, 'ArrowRight')
+    await press(wrapper, 'ArrowRight')
+    await press(wrapper, 'ArrowRight')
+    await press(wrapper, 'ArrowRight')
+    expect(highlighted(wrapper)).toBe('card_d title')
+  })
+
+  it('gives Left and Right back to the text cursor once the request is edited', async () => {
+    const wrapper = mountSearch()
+    await searchCards(wrapper)
+    await press(wrapper, 'ArrowDown')
+    await input(wrapper).setValue('a birthday card for my aunt')
+    expect(await press(wrapper, 'ArrowRight')).toBe(false)
+    expect(highlighted(wrapper)).toBe('card_d title')
+  })
+
+  it('scrolls the highlighted card into view when the answer is longer than the panel', async () => {
+    const many = Array.from({ length: 15 }, (_, i) => candidate(`card_${i}`))
+    searchTemplates.mockResolvedValue(answer({ run: many }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a birthday card')
+    const scroller = panel(wrapper).element
+    expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight)
+    expect(scroller.scrollTop).toBe(0)
+
+    await press(wrapper, 'ArrowUp')
+    const card = wrapper.get('[role="option"][aria-selected="true"]').element
+    expect(scroller.scrollTop).toBeGreaterThan(0)
+    expect(card.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      scroller.getBoundingClientRect().bottom + 1
+    )
+  })
+})
+
+describe('verticalNeighbour', () => {
+  const box = (left: number, top: number) => ({ left, top, width: 100 })
+
+  it('has no neighbour for a highlight outside the cards', () => {
+    expect(verticalNeighbour([box(0, 0)], 3, 1)).toBeNull()
+  })
+
+  it('stays put when every card is in one row', () => {
+    expect(verticalNeighbour([box(0, 0), box(110, 0), box(220, 0)], 1, 1)).toBe(1)
+  })
 })
 
 describe('HomeTemplateSearch typing', () => {

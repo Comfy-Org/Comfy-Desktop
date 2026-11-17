@@ -37,6 +37,33 @@ function rowsOf(kind: SearchRowKind, candidates: TemplateSearchCandidate[]): Sea
     .map((candidate) => ({ key: `${kind}:${candidate.templateId}`, kind, candidate, best: false }))
 }
 
+export interface CardBox {
+  left: number
+  top: number
+  width: number
+}
+
+function centre(box: CardBox): number {
+  return box.left + box.width / 2
+}
+
+export function verticalNeighbour(boxes: CardBox[], active: number, step: 1 | -1): number | null {
+  const from = boxes[active]
+  if (!from) return null
+  const tops = [...new Set(boxes.map((box) => Math.round(box.top)))].sort((a, b) => a - b)
+  const row = tops.indexOf(Math.round(from.top))
+  const target = tops[(row + step + tops.length) % tops.length]
+  let nearest: number | null = null
+  let nearestDistance = Infinity
+  for (const [index, box] of boxes.entries()) {
+    const distance = Math.abs(centre(box) - centre(from))
+    if (Math.round(box.top) !== target || distance >= nearestDistance) continue
+    nearest = index
+    nearestDistance = distance
+  }
+  return nearest
+}
+
 export function searchRows(result: TemplateSearchResult): SearchRow[] {
   if (result.outcome === 'bad_input') return []
   const run = rowsOf('run', result.run)
