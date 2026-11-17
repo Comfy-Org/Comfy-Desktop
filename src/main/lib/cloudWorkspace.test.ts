@@ -220,6 +220,17 @@ describe('reopening a Cloud window', () => {
     expect(loadURL).toHaveBeenCalledExactlyOnceWith(entry.comfyUrl)
   })
 
+  it('keeps the open editor when the Cloud tab already moved to the newly selected workspace', async () => {
+    const { entry, loadURL, setActiveWorkspace } = openWindow()
+    state.selected = 'team-b'
+    setActiveWorkspace('team-b')
+
+    await expect(syncCloudWindowWorkspace(entry)).resolves.toBe(true)
+
+    expect(loadURL).not.toHaveBeenCalled()
+    expect(new URL(entry.comfyUrl).searchParams.get('workspace')).toBe('team-b')
+  })
+
   it('reasserts the requested workspace while the Cloud tab is switching away', async () => {
     const { entry, loadURL, storage } = openWindow()
     storage.set('Comfy.Workspace.SwitchTargetId', 'team-b')

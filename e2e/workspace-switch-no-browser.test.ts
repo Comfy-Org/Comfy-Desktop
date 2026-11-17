@@ -343,20 +343,30 @@ test('Comfy Cloud stays available and reopens in the selected team or Personal w
     await expectCloudWorkspace(selected === 'personal' ? 'P' : selected)
   }
 
-  await cloudPage.evaluate(`(() => {
-    sessionStorage.removeItem('Comfy.Workspace.Current')
-    sessionStorage.setItem('Comfy.Workspace.SwitchTargetId', 'B')
-    setTimeout(() => location.reload(), 0)
-  })()`)
-  await expectCloudWorkspace('B')
-  await openCloudFromHome()
-  await expectCloudWorkspace('A')
+  const switchCloudTabToB = async (): Promise<void> => {
+    await cloudPage.evaluate(`(() => {
+      sessionStorage.removeItem('Comfy.Workspace.Current')
+      sessionStorage.setItem('Comfy.Workspace.SwitchTargetId', 'B')
+      setTimeout(() => location.reload(), 0)
+    })()`)
+    await expectCloudWorkspace('B')
+  }
 
+  await switchCloudTabToB()
+  await selectDashboard('B')
   const page = await cloudPage.evaluate<string>('document.body.dataset.page')
   await expect(
     panel().evaluate<boolean>(`window.api.focusComfyWindow(${JSON.stringify(cloudInstallId)})`)
   ).resolves.toBe(true)
   expect(await cloudPage.evaluate<string>('document.body.dataset.page')).toBe(page)
+
+  await selectDashboard('A')
+  await openCloudFromHome()
+  await expectCloudWorkspace('A')
+  await switchCloudTabToB()
+  await openCloudFromHome()
+  await expectCloudWorkspace('A')
+
   const views = await app.evaluate(({ webContents }) =>
     webContents
       .getAllWebContents()

@@ -54,14 +54,18 @@ export async function cloudWorkspaceUrl(
   return url.href
 }
 
-async function canKeepCloudPage(contents: WebContents, launchUrl: string): Promise<boolean> {
-  if (!isTrustedCloudUrl(launchUrl) || !getCloudSession().status().signedIn) return true
+async function canKeepCloudPage(
+  contents: WebContents,
+  launchUrl: string,
+  sameLaunchUrl: boolean
+): Promise<boolean> {
+  if (!isTrustedCloudUrl(launchUrl) || !getCloudSession().status().signedIn) return sameLaunchUrl
   const target = new URL(launchUrl)
   const workspaceId = target.searchParams.get('workspace')
-  if (!workspaceId) return true
+  if (!workspaceId) return sameLaunchUrl
 
   const pageUrl = contents.getURL()
-  if (!isTrustedCloudUrl(pageUrl) || new URL(pageUrl).origin !== target.origin) return true
+  if (!isTrustedCloudUrl(pageUrl) || new URL(pageUrl).origin !== target.origin) return sameLaunchUrl
 
   const currentWorkspaceId: unknown = await contents
     .executeJavaScript(
@@ -104,10 +108,15 @@ async function navigateToSelectedWorkspace(
 
   const nextUrl = await cloudWorkspaceUrl(installation, previousUrl, pickerWorkspaceId)
   if (!isLatest() || !stillAttached()) return false
-  if (nextUrl === previousUrl && !failedWorkspaceLoads.has(contents)) {
-    const keepPage = await canKeepCloudPage(contents, nextUrl)
+  const sameLaunchUrl = nextUrl === previousUrl
+  if (!failedWorkspaceLoads.has(contents)) {
+    const keepPage = await canKeepCloudPage(contents, nextUrl, sameLaunchUrl)
     if (!isLatest() || !stillAttached()) return false
-    if (keepPage) return true
+    if (keepPage) {
+      if (!sameLaunchUrl) cancelLoadRetry?.()
+      entry.comfyUrl = nextUrl
+      return true
+    }
   }
 
   cancelLoadRetry?.()
