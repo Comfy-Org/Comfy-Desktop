@@ -143,6 +143,11 @@ async function openCounted(): Promise<WebContentsPage> {
   return openStartupArgs()
 }
 
+async function betaArgsSlot(popup: WebContentsPage): Promise<'pill' | 'loading' | 'empty'> {
+  if (await popup.exists(`${ARGS_FIELD} .beta-args-loading`)) return 'loading'
+  return (await pillLabel(popup)) === null ? 'empty' : 'pill'
+}
+
 async function expectAnsweredWithNoPill(popup: WebContentsPage, message: string): Promise<void> {
   await expect
     .poll(async () => (await getIpcInvocations(ctx.app, 'get-core-beta-args')).length, {
@@ -150,21 +155,23 @@ async function expectAnsweredWithNoPill(popup: WebContentsPage, message: string)
       intervals: [100, 200]
     })
     .toBeGreaterThanOrEqual(2)
+  await expect
+    .poll(() => betaArgsSlot(popup), { message, timeout: 15_000, intervals: [100, 200] })
+    .toBe('empty')
   const deadline = Date.now() + 2_000
   while (Date.now() < deadline) {
-    expect(await pillLabel(popup), message).toBeNull()
-    expect(await popup.exists(`${ARGS_FIELD} .beta-args-loading`), message).toBe(false)
+    expect(await betaArgsSlot(popup), message).toBe('empty')
     await new Promise((resolve) => setTimeout(resolve, 200))
   }
 }
 
-test('a commit grant whose range contains HEAD shows before any launch @linux', async () => {
+test('a commit grant whose range contains HEAD shows before any launch @linux @macos', async () => {
   const popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 15_000 })
   expect(await pillLabel(popup)).toBe('1 beta argument eligible for the next launch, show details')
 })
 
-test('moving HEAD below the range hides it @linux', async () => {
+test('moving HEAD below the range hides it @linux @macos', async () => {
   git('reset', '-q', '--hard', sha.base!)
   const popup = await openCounted()
   await expectAnsweredWithNoPill(popup, 'the grant was still shown with HEAD below its range')
@@ -173,7 +180,7 @@ test('moving HEAD below the range hides it @linux', async () => {
   await back.waitForVisible(PILL, { timeout: 15_000 })
 })
 
-test('an object store git cannot read hides the grant, and the settings view still loads @linux', async () => {
+test('an object store git cannot read hides the grant, and the settings view still loads @linux @macos', async () => {
   sha.next = commit('next')
   const objects = path.join(repo, '.git', 'objects')
   for (const entry of await readdir(objects)) {

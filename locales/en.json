@@ -145,8 +145,9 @@
     "openComfyUIIn": "Open ComfyUI in {name}",
     "opensIn": "Opens in {name}",
     "allBuilds": "All builds",
-    "autoStart": "Auto start",
-    "autoStartHint": "Start this build when Comfy Desktop opens",
+    "turnOnAutoStart": "Auto start",
+    "turnOffAutoStart": "Turn off Auto start",
+    "autoStartOn": "Auto start",
     "buildRunning": "Running",
     "buildStarting": "Starting",
     "buildReady": "Ready",
@@ -754,10 +755,6 @@
     "autoUpdate": "Check for updates on startup",
     "autoInstallUpdates": "Automatically install Desktop updates",
     "appBehavior": "App Behavior",
-    "autoLaunchOnStartup": "Auto-launch on startup",
-    "autoLaunchOnStartupDescription": "Pick a build to launch automatically when Comfy Desktop opens. Defaults to None.",
-    "autoLaunchOnStartupNone": "None (show dashboard)",
-    "autoLaunchOnStartupLast": "Last used build",
     "confirmBeforeClosingWindow": "Confirm before closing a window",
     "confirmBeforeClosingWindowDescription": "Ask for confirmation before closing a window that's running a local install.",
     "warnBeforeRunningMultipleInstances": "Warn before running multiple builds",
@@ -1547,8 +1544,6 @@
       "cta": "Log in"
     },
     "account": {
-      "signOut": "Sign out",
-      "signedInAs": "Signed in as {email}",
       "installationInProgressTitle": "Installation in progress",
       "installationInProgressMessage": "Signing out will cancel the installation. Do you want to cancel the installation and sign out?",
       "cancelInstallationAndSignOut": "Cancel Installation & Sign Out"
@@ -1556,7 +1551,6 @@
     "workspace": {
       "personalLabel": "Personal",
       "switchLabel": "Workspace",
-      "currentFallback": "Current workspace",
       "switchUnavailable": "This workspace is unavailable.",
       "switchRetryable": "Couldn't switch workspace. Check your connection and try again.",
       "instanceCountLabel": "INSTANCES",
@@ -1568,6 +1562,21 @@
       "promoting": "Creating...",
       "promoteFailedTitle": "Could not upload build",
       "promoteFailedMessage": "Could not create a draft in Comfy Developer Platform."
+    },
+    "workspaceMenu": {
+      "switchWorkspace": "Switch workspace",
+      "workspaceSettings": "Workspace settings",
+      "managePlanAndCredits": "Manage plan & credits",
+      "logOut": "Log Out",
+      "account": "Account",
+      "search": "Search workspaces",
+      "clearSearch": "Clear search",
+      "loadFailed": "Couldn't load your workspaces. Please try again later.",
+      "noMatch": "No workspaces match your search.",
+      "role": {
+        "owner": "Owner",
+        "member": "Member"
+      }
     },
     "build": {
       "version": "Build v{version}",

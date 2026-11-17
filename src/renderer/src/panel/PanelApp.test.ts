@@ -3,6 +3,10 @@ import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSv
 import type { ExampleWorkflowDownload, RunPerformanceTestWorkflowResult } from '../types/ipc'
 
 const installWizardOpen = vi.hoisted(() => vi.fn())
+const createFeedbackWidget = vi.hoisted(() =>
+  vi.fn(() => ({ unmount: vi.fn(), refresh: vi.fn(), focus: vi.fn() }))
+)
+vi.mock('@typeform/embed', () => ({ createWidget: createFeedbackWidget }))
 const createResultsPngMock = vi.hoisted(() =>
   vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer)
 )
@@ -602,6 +606,7 @@ describe('PanelApp', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     installWizardOpen.mockClear()
+    createFeedbackWidget.mockClear()
     __resetLauncherPrefsForTest()
     useOverlay().current.value = null
     mockModal.alert.mockReset()
@@ -1379,6 +1384,38 @@ describe('PanelApp', () => {
     expect(dialog?.textContent).toContain('ComfyUI exited with code 1')
     document.body.querySelector<HTMLButtonElement>('[data-testid="build-progress-close"]')!.click()
     await flushPromises()
+  })
+
+  it('Launch in the build menu starts a build that crashed with its window still open', async () => {
+    mockState.installations = [SAMPLE_INSTALL]
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    api.getListActions.mockResolvedValue([
+      { id: 'launch', label: 'Start', style: 'primary', showProgress: true }
+    ])
+    api.runAction.mockReturnValueOnce(new Promise(() => {}))
+    api.focusComfyWindow.mockResolvedValue(true)
+    Object.assign(api, { onInstallProgress: vi.fn(() => () => {}) })
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    const crashed = api.onInstanceCrashed.mock.calls[0]![0] as (data: {
+      installationId: string
+      installationName: string
+      crashed: boolean
+      exitCode: number
+    }) => void
+    crashed({ installationId: 'test-id', installationName: 'Test', crashed: true, exitCode: 1 })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-build-more"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-testid="build-menu-launch"]')).not.toBeNull()
+    )
+    document.querySelector<HTMLElement>('[data-testid="build-menu-launch"]')!.click()
+    await flushPromises()
+
+    expect(api.runAction).toHaveBeenCalledWith('test-id', 'launch')
+    expect(api.focusComfyWindow).not.toHaveBeenCalled()
   })
 
   it('opens on Home, with the list of builds hidden until Builds is picked', async () => {
@@ -3143,7 +3180,7 @@ describe('PanelApp', () => {
     expect(card.text()).toContain('Installing ComfyUI')
     expect(wrapper.find('[data-testid="home-open-build"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="home-build-view-logs"]').trigger('click')
+    await card.trigger('click')
     await flushPromises()
     const dialog = () => document.body.querySelector('[data-testid="build-progress-dialog"]')
     expect(dialog()).not.toBeNull()
@@ -3329,7 +3366,7 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
   })
 
-  it('emits comfy.desktop.feedback.opened with the originating source and opens the support URL', async () => {
+  it('emits comfy.desktop.feedback.opened with the originating source and passes feedback metadata to Typeform', async () => {
     mountPanel()
     await flushPromises()
 
@@ -3355,12 +3392,13 @@ describe('PanelApp', () => {
       (e) => e.actionName === 'comfy.desktop.feedback.opened'
     )
     expect(feedbackTelemetry.map((e) => e.context?.source)).toEqual(['titlebar', 'menu'])
-    const frame = document.body.querySelector<HTMLIFrameElement>('iframe.feedback-modal-frame')
-    expect(frame).not.toBeNull()
-    const url = frame?.getAttribute('src') ?? ''
-    expect(url).toContain('form.typeform.com/to/VhOXmuaL')
-    expect(url).toContain('ver=0.5.0')
-    expect(url).toMatch(/[?&]platform=/)
+    expect(createFeedbackWidget).toHaveBeenCalledWith(
+      'VhOXmuaL',
+      expect.objectContaining({
+        container: document.querySelector('[data-testid="feedback-widget"]'),
+        hidden: { ver: '0.5.0', platform: expect.any(String) }
+      })
+    )
   })
 
   it('keeps the comfy-lifecycle body when a panel-switch IPC event re-confirms it', async () => {

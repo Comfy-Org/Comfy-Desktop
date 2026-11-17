@@ -145,8 +145,9 @@
     "openComfyUIIn": "在 {name} 中打开 ComfyUI",
     "opensIn": "在 {name} 中打开",
     "allBuilds": "全部构建",
-    "autoStart": "自动启动",
-    "autoStartHint": "Comfy Desktop 打开时启动此构建",
+    "turnOnAutoStart": "自动启动",
+    "turnOffAutoStart": "关闭自动启动",
+    "autoStartOn": "自动启动",
     "buildRunning": "运行中",
     "buildStarting": "启动中",
     "buildReady": "就绪",
@@ -754,10 +755,6 @@
     "autoUpdate": "启动时检查更新",
     "autoInstallUpdates": "自动安装桌面端更新",
     "appBehavior": "应用行为",
-    "autoLaunchOnStartup": "启动时自动打开",
-    "autoLaunchOnStartupDescription": "选择 Comfy Desktop 打开时自动启动的构建。默认为“无”。",
-    "autoLaunchOnStartupNone": "无（显示主面板）",
-    "autoLaunchOnStartupLast": "上次使用的构建",
     "confirmBeforeClosingWindow": "关闭窗口前确认",
     "confirmBeforeClosingWindowDescription": "关闭正在运行本地安装的窗口前请求确认。",
     "warnBeforeRunningMultipleInstances": "运行多个构建前发出警告",
@@ -1547,8 +1544,6 @@
       "cta": "登录"
     },
     "account": {
-      "signOut": "退出登录",
-      "signedInAs": "已登录为 {email}",
       "installationInProgressTitle": "安装正在进行中",
       "installationInProgressMessage": "退出登录将取消安装。是否取消安装并退出登录？",
       "cancelInstallationAndSignOut": "取消安装并退出登录"
@@ -1556,7 +1551,6 @@
     "workspace": {
       "personalLabel": "个人",
       "switchLabel": "工作区",
-      "currentFallback": "当前工作区",
       "switchUnavailable": "此工作区不可用。",
       "switchRetryable": "无法切换工作区。请检查网络连接后重试。",
       "instanceCountLabel": "实例",
@@ -1568,6 +1562,21 @@
       "promoting": "正在创建...",
       "promoteFailedTitle": "无法上传构建",
       "promoteFailedMessage": "无法在 Comfy Developer Platform 中创建草稿。"
+    },
+    "workspaceMenu": {
+      "switchWorkspace": "切换工作区",
+      "workspaceSettings": "工作区设置",
+      "managePlanAndCredits": "管理套餐和积分",
+      "logOut": "退出登录",
+      "account": "账户",
+      "search": "搜索工作区",
+      "clearSearch": "清除搜索",
+      "loadFailed": "无法加载你的工作区。请稍后再试。",
+      "noMatch": "没有匹配搜索的工作区。",
+      "role": {
+        "owner": "所有者",
+        "member": "成员"
+      }
     },
     "build": {
       "version": "构建 v{version}",
