@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page as browserPage } from 'vitest/browser'
+import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -83,35 +83,50 @@ describe('Home with no local build', () => {
     ['only Comfy Cloud', 'the minimum window width', MIN_WINDOW_PAGE_WIDTH, [CLOUD]],
     ['only Comfy Cloud', 'a normal window width', NORMAL_WINDOW_PAGE_WIDTH, [CLOUD]]
   ] as const)(
-    'with %s, at %s, shows the New build button whole inside the page',
+    'with %s, at %s, shows the New build tile whole inside the page',
     async (_builds, _width, width, installations) => {
       const wrapper = await homeAt(width, [...installations])
       const home = host.querySelector<HTMLElement>('[data-testid="home-view"]')!
-      const slot = host.querySelector<HTMLElement>('[data-testid="home-new-build"]')!
-      const button = host.querySelector<HTMLElement>('[data-testid="home-new-build-button"]')!
+      const tile = host.querySelector<HTMLElement>('[data-testid="home-new-build"]')!
+      const name = tile.querySelector<HTMLElement>('[data-testid="home-new-build-name"]')!
 
-      expect(button.textContent?.trim()).toBe('New build')
-      expect(getComputedStyle(button).visibility).toBe('visible')
-      expect(inside(button.getBoundingClientRect(), slot.getBoundingClientRect())).toBe(true)
-      expect(inside(slot.getBoundingClientRect(), home.getBoundingClientRect())).toBe(true)
+      expect(tile.tagName).toBe('BUTTON')
+      expect(tile.querySelector('button, a')).toBeNull()
+      expect(name.textContent?.trim()).toBe('New build')
+      expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth)
+      expect(getComputedStyle(tile).visibility).toBe('visible')
+      expect(inside(tile.getBoundingClientRect(), home.getBoundingClientRect())).toBe(true)
       expect(home.scrollWidth).toBeLessThanOrEqual(home.clientWidth)
-      expect(slot.getBoundingClientRect().height).toBe(100)
+      expect(tile.getBoundingClientRect().height).toBe(100)
 
       const cloudTile = host.querySelector<HTMLElement>('[data-build-id="cloud"]')
       if (cloudTile) {
+        expect(cloudTile.getBoundingClientRect().height).toBe(tile.getBoundingClientRect().height)
         expect(cloudTile.getBoundingClientRect().width).toBeCloseTo(
-          slot.getBoundingClientRect().width,
+          tile.getBoundingClientRect().width,
           0
         )
       }
 
-      button.click()
+      tile.click()
       expect(wrapper.emitted('new-build')).toHaveLength(1)
       wrapper.unmount()
     }
   )
 
-  it('hides the New build slot once a local build exists', async () => {
+  it('opens New build from the keyboard', async () => {
+    const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [])
+    const tile = host.querySelector<HTMLElement>('[data-testid="home-new-build"]')!
+
+    tile.focus()
+    expect(document.activeElement).toBe(tile)
+    await userEvent.keyboard('{Enter}')
+    await userEvent.keyboard(' ')
+    expect(wrapper.emitted('new-build')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('hides the New build tile once a local build exists', async () => {
     const wrapper = await homeAt(NORMAL_WINDOW_PAGE_WIDTH, [LOCAL, CLOUD])
 
     expect(host.querySelector('[data-testid="home-build"]')).not.toBeNull()

@@ -705,7 +705,7 @@ describe('Home builds', () => {
     expect(wrapper.find('[data-testid="home-build"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-open-comfyui"]').exists()).toBe(false)
 
-    await wrapper.find('[data-testid="home-new-build-button"]').trigger('click')
+    await wrapper.find('[data-testid="home-new-build"]').trigger('click')
     expect(wrapper.emitted('new-build')).toHaveLength(1)
   })
 })

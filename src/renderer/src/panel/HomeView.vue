@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowRight, ChevronRight, Plus } from '@lucide/vue'
+import { ArrowRight, ChevronRight } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
+import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
 import { homeBuildStatus, homeBuildTones, isCloudBuild } from './home/homeBuild'
@@ -291,25 +292,7 @@ onMounted(() => {
             />
           </li>
           <li v-if="showNewBuildSlot" class="min-w-0">
-            <div
-              class="flex h-25 w-full items-center gap-4 rounded-2xl bg-[rgb(137_137_137/0.05)] px-[18px]"
-              data-testid="home-new-build"
-            >
-              <p class="m-0 min-w-0 flex-1 text-[13px]/5 text-muted-foreground">
-                {{ t('home.noLocalBuilds') }}
-              </p>
-              <Button
-                type="button"
-                variant="inverted"
-                size="md"
-                class="shrink-0 gap-1.5 px-3 text-[13px]/5"
-                data-testid="home-new-build-button"
-                @click="emit('new-build')"
-              >
-                <Plus :size="15" aria-hidden="true" />
-                {{ t('sidebar.newBuild') }}
-              </Button>
-            </div>
+            <HomeNewBuildTile @open="emit('new-build')" />
           </li>
         </ul>
       </section>
