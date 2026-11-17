@@ -572,6 +572,7 @@ export interface ComfyExitedData {
   vcRuntimeMissing?: string[]
   crashedAtMs?: number
   message?: string
+  startFailed?: boolean
 }
 
 export interface ComfyBootLogData {

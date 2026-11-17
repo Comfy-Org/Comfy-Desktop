@@ -64,7 +64,7 @@ vi.mock('../lib/ipc/shared', async () => {
     _operationAborts: new Map(),
     _runningSessions: mocks.sessions,
     sessionLifecycleEvents: new Emitter(),
-    sourceMap: { standalone: { category: 'local' } },
+    sourceMap: { standalone: { category: 'local' }, remote: { category: 'remote' } },
     stopRunning: (id: string) => mocks.stopRunning(id)
   }
 })
@@ -1242,6 +1242,25 @@ describe('the Auto start build, started when Desktop opens', () => {
     expect(stopped).toEqual([STUDIO])
   })
 
+  it.each([
+    ['it has work queued', { running: 1, pending: 2 }],
+    ['its queue does not answer', null]
+  ])(
+    'keeps running when every Desktop window closes while %s, and is stopped once idle after that',
+    async (_case, queue) => {
+      startsWhenLaunched()
+      await startWithDesktop()
+      mocks.probeQueue = async () => queue
+      await local.stopBuildsRunningForAppsOnly()
+      expect(stopped).toEqual([])
+
+      mocks.probeQueue = async () => ({ running: 0, pending: 0 })
+      await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+      expect(stopped).toEqual([STUDIO])
+    }
+  )
+
   it("tells Home it didn't start, with the reason, when its start fails", async () => {
     mocks.handleLaunch = async () => ({ ok: false, message: 'ComfyUI exited with code 1' })
 
@@ -1250,7 +1269,8 @@ describe('the Auto start build, started when Desktop opens', () => {
     const failure = {
       installationId: STUDIO,
       installationName: 'Studio',
-      message: 'ComfyUI exited with code 1'
+      message: 'ComfyUI exited with code 1',
+      startFailed: true
     }
     expect(mocks.broadcasts).toEqual([['instance-crashed', failure]])
     expect(getAllCrashes()).toMatchObject([failure])
@@ -1266,10 +1286,23 @@ describe('the Auto start build, started when Desktop opens', () => {
         {
           installationId: STUDIO,
           installationName: 'Studio',
-          message: 'apps.local.couldNotStart Studio'
+          message: 'apps.local.couldNotStart Studio',
+          startFailed: true
         }
       ]
     ])
+  })
+
+  it('leaves a remote connection to connect when Open is pressed, with no background connection', async () => {
+    startsWhenLaunched()
+
+    await local.startWithDesktop(
+      build({ sourceId: 'remote', installPath: '' }) as unknown as InstallationRecord
+    )
+
+    expect(launches).toEqual([])
+    expect(mocks.broadcasts).toEqual([])
+    expect(getAllCrashes()).toEqual([])
   })
 
   it('says nothing when its start was cancelled', async () => {

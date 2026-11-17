@@ -21,6 +21,7 @@ import {
   _hasActiveLaunch,
   _runningSessions,
   sessionLifecycleEvents,
+  sourceMap,
   stopRunning
 } from '../lib/ipc/shared'
 import { COMFY_BOOT_TIMEOUT_MS } from '../lib/process'
@@ -304,6 +305,7 @@ async function stopIfIdle(installationId: string): Promise<void> {
 }
 
 export async function stopBuildsRunningForAppsOnly(): Promise<void> {
+  keptRunning.clear()
   await Promise.all([...startedHere].filter(isRunningForAppsOnly).map(stopIfIdle))
   noteUse()
 }
@@ -325,14 +327,20 @@ export function launchOnce(installationId: string, keepRunning = false): Promise
   return launch
 }
 
+function isLocalSource(inst: InstallationRecord): boolean {
+  return sourceMap[inst.sourceId]?.category === 'local'
+}
+
 export async function startWithDesktop(inst: InstallationRecord): Promise<void> {
+  if (!isLocalSource(inst)) return
   watchSessions()
   const result = await launchOnce(inst.id, true)
   if (result.ok || result.cancelled) return
   const failure = {
     installationId: inst.id,
     installationName: inst.name,
-    message: result.message || i18n.t('apps.local.couldNotStart', { name: inst.name })
+    message: result.message || i18n.t('apps.local.couldNotStart', { name: inst.name }),
+    startFailed: true
   }
   recordCrash(failure)
   _broadcastToRenderer('instance-crashed', failure)

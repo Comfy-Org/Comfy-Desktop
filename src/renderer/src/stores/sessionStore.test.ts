@@ -253,10 +253,14 @@ describe('useSessionStore', () => {
       handlers['instance-crashed']!({
         installationId: 'inst-1',
         installationName: 'My Install',
-        message: 'ComfyUI exited with code 1'
+        message: 'ComfyUI exited with code 1',
+        startFailed: true
       })
 
-      expect(store.errorInstances.get('inst-1')?.message).toBe('ComfyUI exited with code 1')
+      expect(store.errorInstances.get('inst-1')).toMatchObject({
+        message: 'ComfyUI exited with code 1',
+        startFailed: true
+      })
     })
 
     it('clears a prior error when the install is relaunched (instance-launching)', () => {
@@ -393,14 +397,18 @@ describe('useSessionStore', () => {
           {
             installationId: 'inst-1',
             installationName: 'My Install',
-            message: 'ComfyUI exited with code 1'
+            message: 'ComfyUI exited with code 1',
+            startFailed: true
           }
         ]
       })
 
       await store.init()
 
-      expect(store.errorInstances.get('inst-1')?.message).toBe('ComfyUI exited with code 1')
+      expect(store.errorInstances.get('inst-1')).toMatchObject({
+        message: 'ComfyUI exited with code 1',
+        startFailed: true
+      })
     })
 
     it('does not hydrate a crash for an install that is mid-launch', async () => {

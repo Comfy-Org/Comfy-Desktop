@@ -55,7 +55,7 @@ const busyTestId = computed(() => {
 })
 const broken = computed(() => {
   if (build.statusTag?.style === 'danger') return build.statusTag.label
-  const startFailed = sessionStore.errorInstances.get(build.id)?.message !== undefined
+  const startFailed = sessionStore.errorInstances.get(build.id)?.startFailed === true
   const failed = launchFailed(progressStore, build.id) || startFailed
   return failed ? t('home.buildDidntStart') : undefined
 })
