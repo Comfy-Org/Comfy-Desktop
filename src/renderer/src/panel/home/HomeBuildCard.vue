@@ -96,7 +96,13 @@ const subtitle = computed(() => {
 const openHint = computed(() => {
   if (uninstalling.value) return ''
   if (busy.value) return t('home.buildClickToViewLogs')
-  if (broken.value || isLive.value || status === 'starting' || isCloudBuild(build))
+  if (
+    broken.value ||
+    isLive.value ||
+    status === 'starting' ||
+    isCloudBuild(build) ||
+    build.sourceCategory === 'remote'
+  )
     return t('home.buildClickToOpen')
   return t('home.buildClickToStart')
 })

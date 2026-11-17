@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
-import { computed, shallowRef, useTemplateRef } from 'vue'
+import { computed, ref, shallowRef, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Ellipsis, Info, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -216,6 +216,17 @@ const openHint = computed(() => {
   return t('home.buildClickToStart')
 })
 
+const nameClipped = ref(false)
+
+function measureName(): void {
+  const label = tileEl.value?.querySelector<HTMLElement>('.chooser-tile-name .truncated-text')
+  nameClipped.value = !!label && label.scrollWidth > label.clientWidth
+}
+
+const tileHint = computed(() =>
+  nameClipped.value ? [inst.value.name, openHint.value].filter(Boolean).join(' · ') : openHint.value
+)
+
 const canOpenMenu = computed(() => props.showMenu && !isUpdating.value)
 
 function open(): void {
@@ -270,10 +281,12 @@ function openContextMenu(event: MouseEvent): void {
     @keydown.enter="open"
     @keydown.space.prevent="open"
     @contextmenu.prevent="openContextMenu"
+    @pointerenter="measureName"
+    @focus="measureName"
   >
     <Tooltip
       class="absolute inset-0 flex"
-      :text="openHint"
+      :text="tileHint"
       side="top"
       :delay-ms="500"
       :should-open="() => !menuOpen"

@@ -454,6 +454,39 @@ describe('Build menu', () => {
     }
   )
 
+  it('hints Click to open on an idle remote build, on Home and on the Builds page', async () => {
+    const remote: Installation = { ...BUILD, sourceCategory: 'remote' }
+    const home = mount(
+      withHost(() => h(HomeBuildCard, { build: remote, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(home)
+    const builds = mount(
+      withHost(() => h(ChooserInstallTile, { installation: remote })),
+      { attachTo: document.body }
+    )
+    mounted.push(builds)
+    await flushPromises()
+
+    expect(home.findAllComponents(Tooltip)[0]?.props('text')).toBe('Click to open')
+    expect(builds.findAllComponents(Tooltip)[0]?.props('text')).toBe('Click to open')
+  })
+
+  it('names a clipped build in full in the Builds page click hint, and only the action when it fits', async () => {
+    const builds = await mountBuildsTile('ready')
+    const label = builds.get('.chooser-tile-name .truncated-text').element
+    const hint = () => builds.findAllComponents(Tooltip)[0]!.props('text')
+
+    Object.defineProperty(label, 'clientWidth', { configurable: true, value: 120 })
+    Object.defineProperty(label, 'scrollWidth', { configurable: true, value: 120 })
+    await builds.get(BUILDS_TILE).trigger('pointerenter')
+    expect(hint()).toBe('Click to start')
+
+    Object.defineProperty(label, 'scrollWidth', { configurable: true, value: 300 })
+    await builds.get(BUILDS_TILE).trigger('pointerenter')
+    expect(hint()).toBe(`${BUILD.name} · Click to start`)
+  })
+
   it('opens no menu on a right-click on a page in the sidebar', async () => {
     const sidebar = await mountSidebar('ready')
 
