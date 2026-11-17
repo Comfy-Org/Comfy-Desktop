@@ -59,6 +59,14 @@ describe('what an app page may ask the ComfyUI on this computer', () => {
     })
   })
 
+  it('reads which run a result file came from, kept apart from the file', () => {
+    expect(readLocalCall({ path: `/view?filename=a.png&prompt_id=${RUN}` })).toEqual({
+      kind: 'view',
+      file: { filename: 'a.png', subfolder: '', type: 'output' },
+      promptId: RUN
+    })
+  })
+
   it('reads a run to start, with the tag that names the app in the queue', () => {
     const prompt = { load: { class_type: 'LoadImage', inputs: { image: 'a.png' } } }
     const extraData = { comfy_app: { name: 'Remove Background', seconds: 12 } }
@@ -167,6 +175,7 @@ describe('what an app page may not ask', () => {
     '/view?filename=a.png&subfolder=..%5C..%5Cuser',
     '/view?filename=a.png&subfolder=apps%5C..%2F..',
     '/view?filename=a.png&type=input',
+    '/view?filename=a.png&prompt_id=..%2Fx',
     '/view?filename=a.png&type=..'
   ])('refuses the file request %s', (path) => {
     expect(readLocalCall({ path })).toBeNull()
