@@ -39,7 +39,6 @@ import {
   buildInstallLocationFields
 } from '../lib/ipc/registerSettingsHandlers'
 import { globalSettingsEvents } from '../lib/globalSettingsEvents'
-import * as installations from '../installations'
 import { getCachedGithubStarCount, getGithubStarCount } from '../lib/githubStars'
 import {
   comfyWindows,
@@ -48,7 +47,6 @@ import {
   getEntryByInstallationId,
   hostInstallEvents,
   isChooserHost,
-  isPanelSender,
   unhostedLaunches
 } from '../host/registry'
 import type { ComfyPanelKey, ComfyWindowEntry } from '../host/registry'
@@ -981,15 +979,7 @@ export interface TitlePopupHostBindings {
   getRunningInstallationIds: () => string[]
   getRunningSessionStartedAt?: () => Record<string, number>
   getLaunchingInstallationIds: () => string[]
-  pickInstallFromPicker: (
-    installationId: string,
-    parentEntryId: number,
-    opts?: { confirmed?: boolean }
-  ) => Promise<void> | void
-  openInstallInNewWindow: (
-    installationId: string,
-    opts?: { allowDuplicate?: boolean }
-  ) => Promise<void> | void
+  pickInstallFromPicker: (installationId: string, parentEntryId: number) => Promise<void> | void
   restartInstallFromPicker: (
     installationId: string,
     parentEntryId: number,
@@ -1049,7 +1039,7 @@ function openGlobalSettingsForHost(
     parent: parentEntry.window,
     parentEntryId,
     kind: 'global-settings',
-    snapshot: buildGlobalSettingsSnapshot(undefined, initialTab, highlightFieldId),
+    snapshot: buildGlobalSettingsSnapshot(initialTab, highlightFieldId),
     anchor: { x: 0, y: TITLEBAR_HEIGHT },
     theme: parentEntry.lastTheme,
     titleBarSender
@@ -1058,7 +1048,7 @@ function openGlobalSettingsForHost(
     await getGithubStarCount('comfy-org/ComfyUI').catch(() => null)
     githubStarsFetchAttempted = true
     if (parentEntry.window.isDestroyed()) return
-    await broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+    broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
   })()
 }
 
@@ -1292,11 +1282,10 @@ function findSettingsFields(
 }
 
 function buildGlobalSettingsSnapshot(
-  installs?: Pick<{ id: string; name: string }, 'id' | 'name'>[],
   initialTab: GlobalSettingsTab | null = null,
   highlightFieldId: string | null = null
 ): GlobalSettingsSnapshot {
-  const settingsSections = buildSettingsSections(installs)
+  const settingsSections = buildSettingsSections()
   const mediaSections = buildMediaSections()
   const modelsPayload = buildModelsPayload()
   const generalRaw = findSettingsFields(settingsSections, 'settings.general', 0)
@@ -1361,19 +1350,12 @@ function buildGlobalSettingsSnapshot(
   }
 }
 
-async function broadcastGlobalSettingsSnapshotToTitlePopups(
-  _bindings: TitlePopupHostBindings
-): Promise<void> {
-  const hasOpen = Array.from(titlePopupsByParent.values()).some(
-    (e) => e.kind === 'global-settings' && (e.view.isOpen || e.view.pendingShowTimer !== null)
-  )
-  if (!hasOpen) return
-  const installs = (await installations.list()).map((i) => ({ id: i.id, name: i.name }))
+function broadcastGlobalSettingsSnapshotToTitlePopups(_bindings: TitlePopupHostBindings): void {
   for (const entry of titlePopupsByParent.values()) {
     if (entry.kind !== 'global-settings') continue
     if (!entry.view.isOpen && entry.view.pendingShowTimer === null) continue
     if (entry.view.popup.webContents.isDestroyed()) continue
-    const snapshot = buildGlobalSettingsSnapshot(installs)
+    const snapshot = buildGlobalSettingsSnapshot()
     const snapshotJson = JSON.stringify(snapshot)
     if (entry.lastGlobalSettingsBroadcastJson === snapshotJson) continue
     entry.lastGlobalSettingsBroadcastJson = snapshotJson
@@ -1762,42 +1744,14 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     }
   )
 
-  ipcMain.on(
-    'comfy-titlepopup:pick-install',
-    (event, payload: { installationId?: unknown; confirmed?: unknown }) => {
-      const entry = titlePopupsByWebContents.get(event.sender.id)
-      if (!entry || entry.kind !== POPUP_KIND.instancePicker) return
-      const installationId = payload?.installationId
-      if (typeof installationId !== 'string' || installationId.length === 0) return
-      const confirmed = payload?.confirmed === true
-      hideTitlePopup(entry, { releaseFocusToParent: false })
-      Promise.resolve(
-        bindings.pickInstallFromPicker(installationId, entry.parentEntryId, { confirmed })
-      ).catch((err) => console.error('pickInstallFromPicker failed:', err))
-    }
-  )
-
-  ipcMain.on(
-    'comfy-titlepopup:open-install-new-window',
-    (event, payload: { installationId?: unknown; allowDuplicate?: unknown }) => {
-      const entry = titlePopupsByWebContents.get(event.sender.id)
-      if (!entry || entry.kind !== POPUP_KIND.instancePicker) return
-      const installationId = payload?.installationId
-      if (typeof installationId !== 'string' || installationId.length === 0) return
-      hideTitlePopup(entry, { releaseFocusToParent: false })
-      Promise.resolve(
-        bindings.openInstallInNewWindow(installationId, {
-          allowDuplicate: payload?.allowDuplicate === true
-        })
-      ).catch((err) => console.error('openInstallInNewWindow failed:', err))
-    }
-  )
-
-  ipcMain.on('comfy-window:open-install-new-window', (event, installationId: unknown) => {
-    if (!isPanelSender(event.sender)) return
+  ipcMain.on('comfy-titlepopup:pick-install', (event, payload: { installationId?: unknown }) => {
+    const entry = titlePopupsByWebContents.get(event.sender.id)
+    if (!entry || entry.kind !== POPUP_KIND.instancePicker) return
+    const installationId = payload?.installationId
     if (typeof installationId !== 'string' || installationId.length === 0) return
-    Promise.resolve(bindings.openInstallInNewWindow(installationId)).catch((err) =>
-      console.error('openInstallInNewWindow failed:', err)
+    hideTitlePopup(entry, { releaseFocusToParent: false })
+    Promise.resolve(bindings.pickInstallFromPicker(installationId, entry.parentEntryId)).catch(
+      (err) => console.error('pickInstallFromPicker failed:', err)
     )
   })
 
@@ -2119,7 +2073,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       const value = payload?.value
       if (typeof value !== 'number' || !Number.isFinite(value)) return
       globalSettingsLastCheckedAt = value
-      void broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+      broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
     }
   )
 
@@ -2127,7 +2081,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   installationEvents.on('changed', () => {
     void refreshCachedInstallsForPicker()
     void broadcastInstancePickerSnapshotToTitlePopups(bindings)
-    void broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+    broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
   })
   hostInstallEvents.on('changed', () => {
     void broadcastInstancePickerSnapshotToTitlePopups(bindings)
@@ -2136,11 +2090,11 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     void broadcastInstancePickerSnapshotToTitlePopups(bindings)
   })
   globalSettingsEvents.on('changed', () => {
-    void broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+    broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
     void broadcastInstancePickerSnapshotToTitlePopups(bindings)
   })
   updater.onUpdateStateChanged(() => {
-    void broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+    broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
   })
   ipcMain.on('comfy-popup-internal:noop', () => {})
 }
@@ -2148,7 +2102,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 export function notifyGlobalSettingsDownloadProgress(progress: Record<string, unknown>): void {
   lastAppUpdateProgress = progress
   if (!activeBindings) return
-  void broadcastGlobalSettingsSnapshotToTitlePopups(activeBindings)
+  broadcastGlobalSettingsSnapshotToTitlePopups(activeBindings)
 }
 
 export function _test_setTitlePopupEntry(webContentsId: number, entry: TitlePopupEntry): void {

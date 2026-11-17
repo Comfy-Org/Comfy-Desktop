@@ -1,8 +1,11 @@
+import { progressOpKindForActionId } from '../../lib/progressOpKind'
+import type { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
 
 export type HomeBuildTone = 'ember' | 'iris' | 'tide'
 export type BuildDeviceKind = 'laptop' | 'pc-laptop' | 'monitor' | 'cloud'
-export type HomeBuildStatus = 'running' | 'starting' | 'update' | 'always-on' | 'ready'
+export type HomeBuildStatus =
+  'running' | 'starting' | 'stopping' | 'updating' | 'update' | 'always-on' | 'ready'
 
 export interface HomeBuildToneStyle {
   glow: string
@@ -58,10 +61,26 @@ export function homeBuildTones(
   )
 }
 
+export function isBuildUpdating(build: Installation, actionId: string | undefined): boolean {
+  return (
+    build.status === 'updating' ||
+    (actionId !== undefined && progressOpKindForActionId(actionId) === 'update')
+  )
+}
+
+export function isBuildOpenBlocked(status: HomeBuildStatus): boolean {
+  return status === 'stopping' || status === 'updating'
+}
+
 export function homeBuildStatus(
   build: Installation,
-  session: { isRunning: (id: string) => boolean; isLaunching: (id: string) => boolean }
+  session: Pick<
+    ReturnType<typeof useSessionStore>,
+    'isRunning' | 'isLaunching' | 'isStopping' | 'operationInstances'
+  >
 ): HomeBuildStatus {
+  if (isBuildUpdating(build, session.operationInstances.get(build.id)?.actionId)) return 'updating'
+  if (session.isStopping(build.id)) return 'stopping'
   if (session.isLaunching(build.id)) return 'starting'
   if (session.isRunning(build.id)) return 'running'
   if (build.statusTag?.style === 'update') return 'update'
@@ -80,6 +99,5 @@ export function homeBuildDetail(build: Installation): string {
   if (build.sourceCategory === 'cloud' || build.sourceCategory === 'remote') {
     return build.listPreview ? hostOf(build.listPreview) : build.sourceLabel
   }
-  const parts = [build.version ? `ComfyUI ${build.version}` : '', build.installPath ?? '']
-  return parts.filter(Boolean).join(' · ') || build.sourceLabel
+  return build.version ? `ComfyUI ${build.version}` : build.sourceLabel
 }

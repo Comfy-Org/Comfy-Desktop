@@ -84,8 +84,6 @@ export function buildElectronApi(): ElectronApi {
     terminalResize: (installationId, cols, rows) =>
       ipcRenderer.invoke('terminal-resize', installationId, cols, rows),
     terminalRestart: (installationId) => ipcRenderer.invoke('terminal-restart', installationId),
-    openInstallInNewWindow: (installationId) =>
-      ipcRenderer.send('comfy-window:open-install-new-window', installationId),
     openInstallWindow: (installationId) =>
       ipcRenderer.invoke('open-install-window', installationId),
     closeComfyWindow: (installationId, opts) =>
@@ -270,6 +268,8 @@ export function buildElectronApi(): ElectronApi {
       listBuilds: () => ipcRenderer.invoke('comfybuilder:listBuilds'),
       openBuildsPage: (workspaceId) =>
         ipcRenderer.invoke('comfybuilder:openBuildsPage', workspaceId),
+      openSettingsPage: (page, workspaceId) =>
+        ipcRenderer.invoke('comfybuilder:openSettingsPage', page, workspaceId),
       installBuild: (request) => ipcRenderer.invoke('comfybuilder:installBuild', request),
       promoteLocalInstance: (installationId) =>
         ipcRenderer.invoke('comfybuilder:promoteLocalInstance', installationId)

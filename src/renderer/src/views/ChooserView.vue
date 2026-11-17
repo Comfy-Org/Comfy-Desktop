@@ -6,8 +6,10 @@ import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useAuthStore } from '../stores/authStore'
+import { useCanPromoteToWorkspace } from '../composables/useCanPromoteToWorkspace'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
+import { useAutoStartBuild } from '../composables/useAutoStartBuild'
 import { useInstallList } from '../composables/useInstallList'
 import { useInstallingBuilds } from '../composables/useBuildProgress'
 import { useQuickUpdate } from '../composables/useQuickUpdate'
@@ -166,15 +168,7 @@ async function refreshWorkspace(): Promise<void> {
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
 
-function canPromoteToWorkspace(inst: Installation): boolean {
-  return (
-    authStore.isSignedIn &&
-    Boolean(authStore.status.workspaceId) &&
-    inst.status === 'installed' &&
-    inst.sourceCategory === 'local' &&
-    Boolean(inst.installPath)
-  )
-}
+const canPromoteToWorkspace = useCanPromoteToWorkspace()
 
 const { runQuickUpdate } = useQuickUpdate({
   onShowProgress: (showOpts) => emit('show-progress', showOpts),
@@ -198,7 +192,8 @@ const {
     options ? openInstallManager(inst, options) : emit('open-details', inst),
   onShowProgress: (showOpts) => emit('show-progress', showOpts),
   onUpdate: runQuickUpdate,
-  canPromoteToWorkspace
+  canPromoteToWorkspace,
+  autoStart: useAutoStartBuild()
 })
 
 async function pickInstall(inst: Installation): Promise<void> {

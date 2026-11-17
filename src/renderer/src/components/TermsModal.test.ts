@@ -35,6 +35,17 @@ describe('TermsModal', async () => {
     expect(wrapper.find('.terms-title').text()).toBe('Privacy Policy')
   })
 
+  it('sets the title in the body typeface, not the display one', async () => {
+    const wrapper = await mountModal('privacy')
+    expect(wrapper.find('.terms-title').classes()).not.toContain('font-display')
+  })
+
+  it('puts the round close button outside the window, like the setup sheets', async () => {
+    const wrapper = await mountModal('privacy')
+    const close = wrapper.find('[data-testid="base-modal-close"]')
+    expect(close.classes()).toEqual(expect.arrayContaining(['-right-12', 'rounded-full']))
+  })
+
   it('emits `close` when the ✕ button is clicked', async () => {
     const wrapper = await mountModal('eula')
     await wrapper.find('[data-testid="base-modal-close"]').trigger('click')

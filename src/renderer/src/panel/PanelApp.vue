@@ -50,6 +50,8 @@ import {
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
 import { provideBuildLogs } from '../composables/useBuildProgress'
+import { provideBuildMenuHost } from './home/useBuildMenu'
+import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
@@ -72,7 +74,7 @@ const { loaded: launcherPrefsLoaded, firstUseCompleted } = launcherPrefs
 const modal = useModal()
 useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
-const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback()
+const { feedbackOpen, feedbackHiddenFields, closeFeedback } = useSendFeedback()
 const { announcementOpen, closeAnnouncement } = useAnnouncement()
 
 const installation = computed<Installation | null>(() =>
@@ -266,14 +268,19 @@ chooserHandoff = useChooserHandoff({
 })
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
+provideAutoStartBuild()
+provideBuildMenuHost({
+  launch: (inst, launchOpts) => handleChooserPick(inst, launchOpts),
+  openDetails: openBuildFromSidebar,
+  showProgress: handleShowProgress
+})
+
 async function handleStartupRestorePick(inst: Installation): Promise<void> {
   try {
-    const outcome = await chooserHandoff.performChooserLaunch(inst, undefined, { inPlace: true })
-    await nextTick()
-    const takeoverReady = outcome === 'launched' && currentOverlay.value?.kind === 'takeover'
-    window.api.resolveStartupRestoreReveal(takeoverReady ? 'takeover-ready' : 'dashboard-fallback')
+    await chooserHandoff.performChooserLaunch(inst)
   } catch (err) {
     console.error('startup restore launch failed', err)
+  } finally {
     window.api.resolveStartupRestoreReveal('dashboard-fallback')
   }
 }
@@ -617,7 +624,11 @@ onUnmounted(() => {
       @close="buildProgressId = null"
       @retry="retryLaunch(buildProgressId)"
     />
-    <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
+    <FeedbackModal
+      :open="feedbackOpen"
+      :hidden-fields="feedbackHiddenFields"
+      @close="closeFeedback"
+    />
     <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
 
     <ModalDialog />

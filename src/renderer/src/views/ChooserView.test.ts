@@ -11,7 +11,6 @@ import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import { TID } from '../../../shared/testIds'
-import { setChecked } from './testHelpers'
 import type { DevPlatformBuild, Installation } from '../types/ipc'
 
 vi.mock('../components/ContextMenu.vue', () => ({
@@ -259,33 +258,63 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('open-details')).toBeUndefined()
   })
 
-  it('ticks auto start on a tile, moving it from the other build without opening either', async () => {
+  it('sets Auto start from a tile menu, moving it from the other build', async () => {
+    let saved: unknown = 'a'
     const api = installMockApi([
-      makeInstall({ id: 'a', name: 'Alpha' }),
-      makeInstall({ id: 'b', name: 'Beta' })
+      makeInstall({ id: 'a', name: 'Alpha', status: 'installed' }),
+      makeInstall({ id: 'b', name: 'Beta', status: 'installed' })
     ])
     api.getSetting.mockImplementation(async (key: string) =>
-      key === 'autoLaunchOnStartup' ? 'a' : undefined
+      key === 'autoLaunchOnStartup' ? saved : undefined
     )
+    api.setSetting.mockImplementation(async (key: string, value: unknown) => {
+      if (key === 'autoLaunchOnStartup') saved = value
+    })
     const wrapper = mountChooser()
     await flushPromises()
-    const autoStartBox = (id: string) =>
-      wrapper.get(`[data-testid="chooser-tile-auto-start-${id}"] [role="checkbox"]`)
-    expect(autoStartBox('a').attributes('aria-checked')).toBe('true')
+    const tile = (id: string) => wrapper.get(`[data-testid="${TID.dashboardTile(id)}"]`)
+    const autoStartWrites = () =>
+      api.setSetting.mock.calls.filter(([key]) => key === 'autoLaunchOnStartup').map(([, v]) => v)
+    const startsWithDesktop = (id: string) =>
+      tile(id).find(`[data-testid="chooser-tile-starts-with-desktop-${id}"]`).exists()
+    async function menuFor(id: string) {
+      await tile(id).trigger('contextmenu')
+      const menu = wrapper
+        .findAllComponents({ name: 'ContextMenu' })
+        .find((candidate) => candidate.props('open') === true)!
+      return menu
+    }
 
-    await setChecked(autoStartBox('b'), true)
+    expect(wrapper.find('[role="checkbox"]').exists()).toBe(false)
+    expect(startsWithDesktop('a')).toBe(true)
+    expect(tile('a').text()).toContain('Auto start')
+    expect(startsWithDesktop('b')).toBe(false)
+    expect(tile('b').text()).toContain('Ready')
+
+    const menuA = await menuFor('a')
+    const itemsA = menuA.props('items') as { id: string; label: string; separator?: boolean }[]
+    expect(itemsA[0]).toMatchObject({ id: 'auto-start', label: 'Turn off Auto start' })
+    expect(itemsA[1]).toMatchObject({ id: 'manage', separator: true })
+
+    const menuB = await menuFor('b')
+    const itemsB = menuB.props('items') as { id: string; label: string }[]
+    expect(itemsB[0]).toMatchObject({ id: 'auto-start', label: 'Auto start' })
+    menuB.vm.$emit('select', 'auto-start')
     await flushPromises()
 
-    expect(api.setSetting).toHaveBeenCalledWith('autoLaunchOnStartup', 'b')
-    expect(autoStartBox('a').attributes('aria-checked')).toBe('false')
+    expect(autoStartWrites()).toEqual(['b'])
+    expect(startsWithDesktop('a')).toBe(false)
+    expect(startsWithDesktop('b')).toBe(true)
     expect(wrapper.emitted('open-details')).toBeUndefined()
     expect(wrapper.emitted('pick')).toBeUndefined()
 
-    await setChecked(autoStartBox('b'), false)
+    const menuAgain = await menuFor('b')
+    expect((menuAgain.props('items') as { label: string }[])[0]!.label).toBe('Turn off Auto start')
+    menuAgain.vm.$emit('select', 'auto-start')
     await flushPromises()
 
-    expect(api.setSetting).toHaveBeenLastCalledWith('autoLaunchOnStartup', 'none')
-    expect(wrapper.emitted('open-details')).toBeUndefined()
+    expect(autoStartWrites()).toEqual(['b', 'none'])
+    expect(startsWithDesktop('b')).toBe(false)
   })
 
   it('shows Update beside Start and keeps Start as the action', async () => {

@@ -1,6 +1,8 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
+import type { PlatformSettingsPage } from '../main/devplatform/config'
+export type { PlatformSettingsPage }
 
 import type {
   AuthStatus,
@@ -1153,7 +1155,6 @@ export interface ElectronApi {
   terminalResize(installationId: string, cols: number, rows: number): Promise<void>
   terminalRestart(installationId: string): Promise<TerminalRestore>
   openInstallWindow(installationId: string): Promise<boolean>
-  openInstallInNewWindow(installationId: string): void
   closeComfyWindow(installationId: string, opts?: { skipConfirm?: boolean }): Promise<boolean>
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
@@ -1305,6 +1306,7 @@ export interface ElectronApi {
     ): Promise<WorkspaceSwitchStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
     openBuildsPage(workspaceId: string): Promise<void>
+    openSettingsPage(page: PlatformSettingsPage, workspaceId: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
     promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }

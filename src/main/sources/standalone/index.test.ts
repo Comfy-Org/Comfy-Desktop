@@ -15,6 +15,7 @@ vi.mock('../../lib/comfyui-releases', () => ({
   getLatestStableTag: vi.fn()
 }))
 
+import en from '../../../../locales/en.json'
 import { standalone, buildPinnedVariant } from './index'
 import { fetchJSON } from '../../lib/fetch'
 import { getLatestStableTag } from '../../lib/comfyui-releases'
@@ -136,6 +137,14 @@ describe('standalone.buildInstallation', () => {
       'comfyVersion',
       'variant'
     ])
+  })
+
+  it('labels the version row Version, the same as the first-use summary', () => {
+    expect(standalone.fields.find((field) => field.id === 'comfyVersion')?.label).toBe(
+      'standalone.comfyVersion'
+    )
+    expect(en.standalone.comfyVersion).toBe('Version')
+    expect(en.standalone.comfyVersion).toBe(en.setup.version)
   })
 
   it('writes no starter workflow onto a new install, even from a stale template selection', () => {

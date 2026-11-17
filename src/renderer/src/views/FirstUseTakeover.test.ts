@@ -63,7 +63,7 @@ function installApi(overrides: ApiOverrides = {}): void {
         label: 'Standalone',
         fields: [
           { id: 'release', label: 'Release', type: 'select' },
-          { id: 'comfyVersion', label: 'ComfyUI version', type: 'select' },
+          { id: 'comfyVersion', label: 'Version', type: 'select' },
           { id: 'variant', label: 'Variant', type: 'select' }
         ]
       }
@@ -129,7 +129,7 @@ describe('Set up, the first screen', () => {
 
     expect(w.find('[role="dialog"]').attributes('aria-label')).toBe('Install ComfyUI on this Mac')
     expect(text(w, 'setup-lead')).toBe(
-      'Checked for your Apple M3 Max. Change anything before you install.'
+      'The best settings for your Apple M3 Max are picked. Change any you like.'
     )
     expect(text(w, 'setup-machine-name')).toBe('Apple M3 Max')
     expect(text(w, 'setup-machine')).toContain('36 GB memory')
@@ -150,6 +150,20 @@ describe('Set up, the first screen', () => {
     expect(linux.find('[role="dialog"]').attributes('aria-label')).toBe(
       'Install ComfyUI on this computer'
     )
+  })
+
+  it('keeps the end of a long install path in view, with the full path on hover', async () => {
+    installApi({ platform: 'win32' })
+    const root = 'C:\\Users\\Alexis\\AppData\\Local\\Comfy-Desktop\\ComfyUI-Installs'
+    window.api.getDefaultInstallDir = vi.fn().mockResolvedValue(root)
+    const w = await mountSetup()
+    const path = w.get('[data-testid="setup-location"]')
+    expect(path.attributes('title')).toBe(`${root}\\ComfyUI`)
+    const [head, tail] = path.findAll('span')
+    expect(head?.text()).toBe(root)
+    expect(head?.classes()).toContain('truncate')
+    expect(tail?.text()).toBe('\\ComfyUI')
+    expect(tail?.classes()).toContain('shrink-0')
   })
 
   it('says a CPU install has no GPU acceleration', async () => {

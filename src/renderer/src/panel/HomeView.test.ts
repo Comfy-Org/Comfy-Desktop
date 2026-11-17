@@ -6,7 +6,6 @@ import HomeView from './HomeView.vue'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useSessionStore } from '../stores/sessionStore'
-import { setChecked } from '../views/testHelpers'
 import type { CatalogWorkflow, Installation } from '../types/ipc'
 
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
@@ -19,7 +18,7 @@ function workflow(id: string, title: string, thumbnailUrl: string | null = null)
 }
 
 function build(over: Partial<Installation> & { id: string; name: string }): Installation {
-  return { sourceLabel: 'Standalone', sourceCategory: 'local', ...over }
+  return { sourceLabel: 'Standalone', sourceCategory: 'local', status: 'installed', ...over }
 }
 
 const UPSCALE: CatalogWorkflow = {
@@ -460,12 +459,12 @@ describe('Home builds', () => {
     expect(kept).toEqual(['My Local 1', 'Video Lab'])
   })
 
-  it('shows a stopped local build as ready, with its ComfyUI version and folder', async () => {
+  it('shows a stopped local build as ready, with its ComfyUI version and no folder path', async () => {
     getInstallations.mockResolvedValue([OLDEST])
     const wrapper = await openHome()
 
     expect(wrapper.get('[data-testid="home-build"]').text()).toBe(
-      'ReadyFlux SandboxComfyUI v0.42.4 · /Users/pablo/ComfyUI-Installs/Flux'
+      'ReadyFlux SandboxComfyUI v0.42.4'
     )
   })
 
@@ -633,10 +632,13 @@ describe('Home builds', () => {
     ).toBe('danger')
     failed.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe(OLDEST.name)
+
+    await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
     expect(wrapper.emitted('pick')).toEqual([[OLDEST]])
   })
 
-  it('opens ComfyUI in the build picked in the menu, without changing the current one', async () => {
+  it('aims Open ComfyUI at the build picked in the menu without opening it', async () => {
     getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
     const wrapper = await openHome()
     await openBuildMenu(wrapper)
@@ -644,8 +646,33 @@ describe('Home builds', () => {
     buildOptions()[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
 
+    expect(wrapper.emitted('pick')).toBeUndefined()
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe(CLOUD.name)
+    expect(
+      (wrapper.get('[data-testid="home-open-comfyui-icon"]').element as SVGElement).dataset.kind
+    ).toBe('cloud')
+
+    await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
+
     expect(wrapper.emitted('pick')).toEqual([[CLOUD]])
-    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('My Local 1')
+  })
+
+  it('fills the picked build in the menu, with no check mark', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
+    const wrapper = await openHome()
+    await openBuildMenu(wrapper)
+    buildOptions()[2]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    await openBuildMenu(wrapper)
+
+    expect(buildOptions().map((option) => option.getAttribute('aria-checked'))).toEqual([
+      'false',
+      'false',
+      'true'
+    ])
+    expect(buildOptions()[2]!.className).toContain('data-[state=checked]:bg-muted')
+    expect(document.querySelector('[data-testid="menu-radio-item-check"]')).toBeNull()
   })
 
   it('leaves the build menu out with one build, keeping the icon and no arrow', async () => {
@@ -677,42 +704,47 @@ describe('Home builds', () => {
   })
 })
 
-describe('Home build card while a build starts', () => {
-  const CARD_PADDING_AND_BORDER = 38
-  let observers: { target?: Element; report: (width: number) => void }[]
-  const originalResizeObserver = globalThis.ResizeObserver
+describe('Home build cards during a stop or update', () => {
+  it.each([
+    ['Stopping…', 'stop'],
+    ['Updating…', 'update']
+  ] as const)('shows %s and blocks opening until the operation finishes', async (label, action) => {
+    getInstallations.mockResolvedValue([RUNNING])
+    const session = useSessionStore()
+    if (action === 'stop') {
+      session.runningInstances.set(RUNNING.id, {
+        installationId: RUNNING.id,
+        installationName: RUNNING.name,
+        mode: 'window'
+      })
+      session.stoppingInstances.add(RUNNING.id)
+    } else {
+      session.operationInstances.set(RUNNING.id, { actionId: 'update-comfyui' })
+    }
+    const wrapper = await openHome()
+    const card = wrapper.get('[data-testid="home-build"]')
+    const open = card.get<HTMLButtonElement>('[data-testid="home-build-open"]')
 
+    expect(card.get('[data-testid="home-build-status"]').text()).toBe(label)
+    expect(open.element.disabled).toBe(true)
+    expect(wrapper.find('[data-testid="home-open-comfyui"]').exists()).toBe(false)
+    await card.trigger('click')
+    expect(wrapper.emitted('pick')).toBeUndefined()
+
+    session.runningInstances.delete(RUNNING.id)
+    session.stoppingInstances.delete(RUNNING.id)
+    session.operationInstances.delete(RUNNING.id)
+    await flushPromises()
+
+    expect(open.element.disabled).toBe(false)
+    expect(wrapper.find('[data-testid="home-open-comfyui"]').exists()).toBe(true)
+    await open.trigger('click')
+    expect(wrapper.emitted('pick')).toEqual([[RUNNING]])
+  })
+})
+
+describe('Home build card while a build starts', () => {
   beforeEach(() => {
-    observers = []
-    globalThis.ResizeObserver = class {
-      private readonly entry: { target?: Element; report: (width: number) => void }
-      constructor(callback: ResizeObserverCallback) {
-        this.entry = {
-          report: (width) =>
-            callback(
-              [
-                {
-                  target: this.entry.target!,
-                  contentRect: {
-                    width: width - CARD_PADDING_AND_BORDER,
-                    height: 98
-                  } as DOMRectReadOnly,
-                  contentBoxSize: [{ inlineSize: width - CARD_PADDING_AND_BORDER, blockSize: 98 }],
-                  borderBoxSize: [{ inlineSize: width, blockSize: 100 }],
-                  devicePixelContentBoxSize: []
-                } as unknown as ResizeObserverEntry
-              ],
-              this as unknown as ResizeObserver
-            )
-        }
-        observers.push(this.entry)
-      }
-      observe(target: Element) {
-        this.entry.target = target
-      }
-      unobserve() {}
-      disconnect() {}
-    } as unknown as typeof ResizeObserver
     Object.assign(window.api, {
       onInstallProgress: vi.fn(() => () => {}),
       onComfyOutput: vi.fn(() => () => {}),
@@ -721,11 +753,7 @@ describe('Home build card while a build starts', () => {
     })
   })
 
-  afterEach(() => {
-    globalThis.ResizeObserver = originalResizeObserver
-  })
-
-  async function startBuildBesideTwoOthers(cardWidth: number) {
+  it('beside two other builds, keeps its status and name with no buttons inside, and Cancel lives in its ⋯ menu', async () => {
     getInstallations.mockResolvedValue([OLDEST, CLOUD, NEWEST])
     const wrapper = await openHome()
     useProgressStore().startOperation({
@@ -735,41 +763,20 @@ describe('Home build card while a build starts', () => {
       apiCall: () => new Promise(() => {})
     })
     await flushPromises()
-    const starting = wrapper.get('[data-testid="home-build-starting"]')
-    const card = starting.get('[data-testid="home-build-busy-card"]')
-    for (const observer of observers) {
-      if (observer.target === card.element) observer.report(cardWidth)
-    }
+
+    const starting = wrapper.get(
+      `[data-testid="home-build-starting"][data-build-id="${NEWEST.id}"]`
+    )
+    expect(starting.text()).toContain('Starting ComfyUI')
+    expect(starting.text()).toContain(NEWEST.name)
+    expect(starting.find('[data-testid="home-build-cancel"]').exists()).toBe(false)
+    expect(starting.find('[data-testid="home-build-view-logs"]').exists()).toBe(false)
+
+    await starting.get('[data-testid="home-build-more"]').trigger('click')
     await flushPromises()
-    return { wrapper, starting }
-  }
-
-  it('moves View logs and Cancel under a card in a row of three, so its name and status keep the room', async () => {
-    const { starting } = await startBuildBesideTwoOthers(300)
-
-    const card = starting.get('[data-testid="home-build-busy-card"]')
-    expect(card.find('[data-testid="home-build-cancel"]').exists()).toBe(false)
-    expect(card.find('[data-testid="home-build-view-logs"]').exists()).toBe(false)
-    expect(card.text()).toContain('Starting ComfyUI')
-    expect(card.text()).toContain(NEWEST.name)
-
-    await starting.get('[data-testid="home-build-cancel"]').trigger('click')
+    document.querySelector<HTMLElement>('[data-testid="build-menu-cancel"]')!.click()
+    await flushPromises()
     expect(window.api.cancelOperation).toHaveBeenCalledWith(NEWEST.id)
-  })
-
-  it('keeps View logs and Cancel inside a 460px card, counting its padding and border', async () => {
-    const { starting } = await startBuildBesideTwoOthers(460)
-
-    const card = starting.get('[data-testid="home-build-busy-card"]')
-    expect(card.find('[data-testid="home-build-cancel"]').exists()).toBe(true)
-  })
-
-  it('keeps View logs and Cancel inside a card that has room for them', async () => {
-    const { starting } = await startBuildBesideTwoOthers(560)
-
-    const card = starting.get('[data-testid="home-build-busy-card"]')
-    expect(card.find('[data-testid="home-build-view-logs"]').exists()).toBe(true)
-    expect(card.find('[data-testid="home-build-cancel"]').exists()).toBe(true)
   })
 })
 
@@ -793,84 +800,100 @@ describe('Home build auto start', () => {
     })
   })
 
-  function autoStartBox(wrapper: VueWrapper, id: string) {
-    return wrapper.get(
-      `[data-testid="home-build-auto-start"][data-build-id="${id}"] [role="checkbox"]`
-    )
+  function cardOf(wrapper: VueWrapper, id: string) {
+    return wrapper.get(`[data-build-id="${id}"][data-testid^="home-build"]`)
   }
 
-  function ticked(wrapper: VueWrapper): string[] {
+  function statusOf(wrapper: VueWrapper, id: string): string {
+    return cardOf(wrapper, id).get('[data-testid="home-build-status"]').text()
+  }
+
+  function startingWithDesktop(wrapper: VueWrapper): string[] {
     return wrapper
-      .findAll('[data-testid="home-build-auto-start"]')
-      .filter((box) => box.get('[role="checkbox"]').attributes('aria-checked') === 'true')
-      .map((box) => box.attributes('data-build-id')!)
+      .findAll('[data-testid="home-build-starts-with-desktop"]')
+      .map((icon) => icon.element.closest('[data-build-id]')!.getAttribute('data-build-id')!)
   }
 
-  it('ticks the card of the build that starts when Desktop opens', async () => {
+  it('says Auto start on the ready card of the build that starts when Desktop opens', async () => {
     saved = OLDEST.id
-    getInstallations.mockResolvedValue([OLDEST, CLOUD, NEWEST])
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
-    expect(wrapper.findAll('[data-testid="home-build-auto-start"]')).toHaveLength(3)
-    expect(ticked(wrapper)).toEqual([OLDEST.id])
+    expect(wrapper.find('[role="checkbox"]').exists()).toBe(false)
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Auto start')
+    expect(statusOf(wrapper, RUNNING.id)).toBe('Ready')
+    expect(startingWithDesktop(wrapper)).toEqual([OLDEST.id])
+    expect(
+      cardOf(wrapper, OLDEST.id).get('[data-testid="home-build-open"]').attributes('aria-label')
+    ).toBe(`${OLDEST.name}, Auto start`)
   })
 
-  it('moves the tick to Comfy Cloud when its box is ticked, without opening it', async () => {
+  it('moves Auto start to the card whose menu says Auto start', async () => {
     saved = OLDEST.id
-    getInstallations.mockResolvedValue([OLDEST, CLOUD])
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
-    await setChecked(autoStartBox(wrapper, CLOUD.id), true)
+    await cardOf(wrapper, RUNNING.id).get('[data-testid="home-build-more"]').trigger('click')
+    await flushPromises()
+    const line = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-testid="build-menu-auto-start"]')
+      expect(found).not.toBeNull()
+      return found!
+    })
+    expect(line.textContent?.trim()).toBe('Auto start')
+    line.click()
     await flushPromises()
 
-    expect(setSetting).toHaveBeenCalledWith('autoLaunchOnStartup', CLOUD.id)
-    expect(ticked(wrapper)).toEqual([CLOUD.id])
-    expect(wrapper.emitted('pick')).toBeUndefined()
+    expect(setSetting).toHaveBeenCalledWith('autoLaunchOnStartup', RUNNING.id)
+    expect(startingWithDesktop(wrapper)).toEqual([RUNNING.id])
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
     expect(wrapper.emitted('open-build')).toBeUndefined()
   })
 
-  it('sets None when the ticked card is unticked', async () => {
-    saved = NEWEST.id
-    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+  it('keeps Always on for Comfy Cloud when it is the one that starts with Desktop', async () => {
+    saved = CLOUD.id
+    getInstallations.mockResolvedValue([OLDEST, CLOUD])
     const wrapper = await openHome()
 
-    await setChecked(autoStartBox(wrapper, NEWEST.id), false)
-    await flushPromises()
-
-    expect(setSetting).toHaveBeenCalledWith('autoLaunchOnStartup', 'none')
-    expect(ticked(wrapper)).toEqual([])
+    expect(statusOf(wrapper, CLOUD.id)).toBe('Always on')
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
+    expect(startingWithDesktop(wrapper)).toEqual([])
   })
 
-  it('ticks no card when Settings says Last used build', async () => {
+  it('says Ready on every card when Settings says Last used build', async () => {
     saved = 'last'
-    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
-    expect(ticked(wrapper)).toEqual([])
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
+    expect(statusOf(wrapper, RUNNING.id)).toBe('Ready')
+    expect(startingWithDesktop(wrapper)).toEqual([])
   })
 
   it('follows a build picked in Settings without a restart', async () => {
     saved = OLDEST.id
-    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
-    saved = NEWEST.id
+    saved = RUNNING.id
     for (const listener of settingsListeners) listener({ key: 'autoLaunchOnStartup' })
     await flushPromises()
 
-    expect(ticked(wrapper)).toEqual([NEWEST.id])
+    expect(startingWithDesktop(wrapper)).toEqual([RUNNING.id])
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
   })
 
-  it('leaves the box off a card while its build installs', async () => {
+  it('shows the install status, not Auto start, while that build installs', async () => {
     Object.assign(window.api, {
       onInstallProgress: vi.fn(() => () => {}),
       onComfyOutput: vi.fn(() => () => {})
     })
-    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    saved = OLDEST.id
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
     useProgressStore().startOperation({
-      installationId: NEWEST.id,
+      installationId: OLDEST.id,
       title: 'Installing',
       opKind: 'install',
       apiCall: () => new Promise(() => {})
@@ -878,12 +901,10 @@ describe('Home build auto start', () => {
     await flushPromises()
 
     expect(
-      wrapper.find(`[data-testid="home-build-installing"][data-build-id="${NEWEST.id}"]`).exists()
+      wrapper.find(`[data-testid="home-build-installing"][data-build-id="${OLDEST.id}"]`).exists()
     ).toBe(true)
-    expect(
-      wrapper
-        .findAll('[data-testid="home-build-auto-start"]')
-        .map((box) => box.attributes('data-build-id'))
-    ).toEqual([OLDEST.id])
+    expect(statusOf(wrapper, OLDEST.id)).not.toContain('Auto start')
+    expect(startingWithDesktop(wrapper)).toEqual([])
+    expect(setSetting).not.toHaveBeenCalledWith('autoLaunchOnStartup', expect.anything())
   })
 })

@@ -397,18 +397,6 @@ export async function getRecentByCategory(
   return best && bestTs > -Infinity ? best : null
 }
 
-export async function resolveAutoLaunchInstall(
-  autoLaunchValue: string | undefined | null
-): Promise<InstallationRecord | null> {
-  if (autoLaunchValue == null || autoLaunchValue === '' || autoLaunchValue === 'none') {
-    return null
-  }
-  if (autoLaunchValue === 'last') {
-    return getRecent()
-  }
-  return get(autoLaunchValue)
-}
-
 export async function seedDefaults(defaults: Record<string, unknown>[]): Promise<void> {
   const seeded = await enqueue(async () => {
     const installations = await loadForWrite()
