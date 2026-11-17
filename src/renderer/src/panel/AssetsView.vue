@@ -442,12 +442,12 @@ const loadKey = computed(() => {
   const selected = selectedBuild.value
   if (!selected) return ''
   return selected.cloud
-    ? `${CLOUD}\n${cloudBuild.value?.id ?? ''}\n${accountContext.value}`
+    ? `${selected.build.id}\n${dashboardScope.selectedWorkspaceId}\n${accountContext.value}`
     : selected.build.id
 })
 
 watch(
-  loadKey,
+  [loadKey, () => (selectedBuild.value?.cloud ? cloudBuild.value?.id : undefined)],
   () => {
     assets.value = []
     void loadAssets()
