@@ -10,6 +10,7 @@ import * as mainTelemetry from '../lib/telemetry'
 import { refreshCloudUserTier } from '../lib/userTier'
 import { refreshStaffFlagTargeting } from '../lib/staffFlagTargeting'
 import { noteCloudEntered } from '../lib/cloudEntry'
+import { cloudReloadUrl } from '../lib/cloudWorkspace'
 import { noteCanvasRendered } from '../lib/canvasEntry'
 import { forwardDatadogError } from '../lib/processErrorHandlers'
 import { recordInstanceSurface } from '../lib/lastSession'
@@ -293,13 +294,15 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   comfyContents.on('dom-ready', onDomReady)
 
   const currentComfyUrl = (): string => entry.comfyUrl || comfyUrl
+  const reloadUrl = (): string => cloudReloadUrl(currentComfyUrl(), comfyContents.getURL())
   const reloadComfy = (): void => {
     if (comfyWindow.isDestroyed()) return
     const id = entry.installationId
     if (id === null) return
     if (fx.relaunchStates.has(id)) return
+    const url = reloadUrl()
     comfyContents.stop()
-    comfyContents.loadURL(currentComfyUrl())
+    comfyContents.loadURL(url)
   }
   const onBeforeInputEvent = (e: Electron.Event, input: Electron.Input): void => {
     if (input.type !== 'keyDown') return
@@ -390,7 +393,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       if (currentId === null) return
       if (fx.relaunchStates.has(currentId)) return
       if (!comfyWindow.isDestroyed()) {
-        comfyContents.loadURL(currentComfyUrl())
+        comfyContents.loadURL(reloadUrl())
       }
     }, 2000)
   }

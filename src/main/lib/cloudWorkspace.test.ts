@@ -23,6 +23,7 @@ vi.mock('../settings', () => ({ get: () => state.selected }))
 vi.mock('../installations', () => ({ get: state.getInstallation }))
 
 import {
+  cloudReloadUrl,
   cloudWorkspaceNavigationVersion,
   cloudWorkspaceUrl,
   syncCloudWindowWorkspace
@@ -338,5 +339,38 @@ describe('reopening a Cloud window', () => {
 
     await expect(syncCloudWindowWorkspace(entry)).rejects.toThrow('offline')
     expect(entry.comfyUrl).toBe(previousUrl)
+  })
+})
+
+describe('refreshing a Cloud tab', () => {
+  const launchUrl = `${CLOUD_URL}&workspace=team-a`
+
+  it.each([
+    ['the editor', 'https://cloud.comfy.org/?utm_source=comfy.desktop'],
+    ['another Cloud route', 'https://cloud.comfy.org/cloud/login']
+  ])('keeps the workspace the tab is in when refreshing from %s', (_page, pageUrl) => {
+    const url = new URL(cloudReloadUrl(launchUrl, pageUrl))
+
+    expect(url.searchParams.has('workspace')).toBe(false)
+    expect(url.searchParams.get('utm_source')).toBe('comfy.desktop')
+    expect(url.origin + url.pathname).toBe('https://cloud.comfy.org/')
+  })
+
+  it.each([
+    ['has not applied the requested workspace yet', launchUrl],
+    ['failed to load', 'chrome-error://chromewebdata/'],
+    ['shows the launch splash', 'file:///app/splash.html'],
+    ['is on an external sign-in page', 'https://accounts.google.com/signin'],
+    ['is on another Cloud environment', 'https://stagingcloud.comfy.org/'],
+    ['is blank', '']
+  ])('reopens the requested workspace when the tab %s', (_state, pageUrl) => {
+    expect(cloudReloadUrl(launchUrl, pageUrl)).toBe(launchUrl)
+  })
+
+  it('reloads a local build at its own address', () => {
+    const localUrl = 'http://127.0.0.1:8188'
+
+    expect(cloudReloadUrl(localUrl, 'http://127.0.0.1:8188/?workspace=team-a')).toBe(localUrl)
+    expect(cloudReloadUrl(localUrl, localUrl)).toBe(localUrl)
   })
 })

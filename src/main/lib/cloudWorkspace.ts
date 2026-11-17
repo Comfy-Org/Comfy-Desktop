@@ -59,6 +59,17 @@ export async function cloudWorkspaceUrl(
   return url.href
 }
 
+export function cloudReloadUrl(launchUrl: string, pageUrl: string): string {
+  if (!isTrustedCloudUrl(launchUrl) || !isTrustedCloudUrl(pageUrl)) return launchUrl
+  const launch = new URL(launchUrl)
+  const page = new URL(pageUrl)
+  const tabConsumedWorkspaceLink =
+    page.origin === launch.origin && !page.searchParams.has('workspace')
+  if (!tabConsumedWorkspaceLink) return launchUrl
+  launch.searchParams.delete('workspace')
+  return launch.href
+}
+
 async function canKeepCloudPage(
   contents: WebContents,
   launchUrl: string,
