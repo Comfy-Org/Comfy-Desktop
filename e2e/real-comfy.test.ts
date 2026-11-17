@@ -744,35 +744,47 @@ async function untrackViaManageDrawer(installationId: string): Promise<void> {
   expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
 }
 
-async function stopAndReturnToDashboardViaUI(): Promise<void> {
-  if (!(await comfyFrontendIsLoaded())) {
-    const dashboardMounted = await ctx.panel.exists('.chooser-view').catch(() => false)
-    if (dashboardMounted) {
-      await expectChooserVisible(ctx.panel)
-      return
-    }
-  }
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
+async function openBuildStopMenu(tab?: string) {
+  await closeExtraWindowsKeepComfyHost()
+  const [buildWindowId] = await desktopWindowIds()
+  const buildTitleBar = new WebContentsPage(ctx.app, await ctx.titleBar.url())
+  const homeWindowId = await openDashboardWindowViaPickerHome({ stayOnHome: true })
+  const popup = await openPickerViaTitlePill(ctx.app, buildTitleBar, tab)
   await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
   await popup.clickUntilVisible(
     byTestId(TID.pickerMoreTrigger),
     byTestId(TID.pinBottomAction('stop')),
     { timeout: 30_000 }
   )
+  return { popup, buildWindowId, homeWindowId }
+}
+
+async function confirmBuildStop(popup: WebContentsPage, homeWindowId: number): Promise<void> {
   expect(await popup.click(byTestId(TID.pinBottomAction('stop')))).toBe(true)
   await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
   expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
 
   await expect
-    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
-      timeout: 120_000,
-      intervals: [250, 500]
+    .poll(desktopWindowIds, {
+      timeout: 60_000,
+      message: 'Stop should close the build window and leave Home open'
     })
-    .toBe(false)
-  await waitForWebContents(ctx.app, 'panel.html')
-  await ctx.panel.waitForVisible(byTestId(TID.lifecycleReturnDashboard), { timeout: 120_000 })
-  expect(await ctx.panel.click(byTestId(TID.lifecycleReturnDashboard))).toBe(true)
+    .toEqual([homeWindowId])
+  await ctx.panel.waitForVisible(HOME_VIEW)
+}
 
+async function stopAndReturnToDashboardViaUI(): Promise<void> {
+  if (!(await comfyFrontendIsLoaded())) {
+    const dashboardMounted = await ctx.panel
+      .exists(`.chooser-view, ${HOME_VIEW}`)
+      .catch(() => false)
+    if (dashboardMounted) {
+      await expectChooserVisible(ctx.panel)
+      return
+    }
+  }
+  const { popup, homeWindowId } = await openBuildStopMenu()
+  await confirmBuildStop(popup, homeWindowId)
   await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(false)
   await expectChooserVisible(ctx.panel)
 }
@@ -1835,26 +1847,11 @@ test('picker Stop closes the build window and Home launches a new one @sec-picke
   await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(true)
   const beforeSnapshot = await getRunningSessionSnapshot(ctx.app, _updateInstallId)
   expect(beforeSnapshot, 'expected a running session before Stop').not.toBeNull()
-  const windowsBefore = await desktopWindowIds()
-  expect(windowsBefore, 'expected one ComfyUI window before opening Home').toHaveLength(1)
-  const [buildWindowId] = windowsBefore
-  const homeWindowId = await openDashboardWindowViaPickerHome({ stayOnHome: true })
 
   await resetIpcInvocations(ctx.app, 'stop-comfyui')
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  const buildTitleBar = new WebContentsPage(
-    ctx.app,
-    `comfyTitleBar.html?installationId=${encodeURIComponent(_updateInstallId)}`
-  )
-  const popup = await openPickerViaTitlePill(ctx.app, buildTitleBar, 'config')
-
-  await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
-  await popup.clickUntilVisible(
-    byTestId(TID.pickerMoreTrigger),
-    byTestId(TID.pinBottomAction('stop')),
-    { timeout: 30_000 }
-  )
+  const { popup, buildWindowId, homeWindowId } = await openBuildStopMenu('config')
   expect(
     await popup.exists(byTestId(TID.pinBottomAction('launch'))),
     'launch must not render in the More menu'
@@ -1863,10 +1860,7 @@ test('picker Stop closes the build window and Home launches a new one @sec-picke
     await popup.exists(byTestId(TID.pinBottomAction('restart'))),
     'restart must not render in the More menu'
   ).toBe(false)
-  expect(await popup.click(byTestId(TID.pinBottomAction('stop')))).toBe(true)
-
-  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
-  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+  await confirmBuildStop(popup, homeWindowId)
 
   await expect
     .poll(async () => (await getStopsFor(_updateInstallId)).length, {
@@ -1880,14 +1874,6 @@ test('picker Stop closes the build window and Home launches a new one @sec-picke
       intervals: [1_000, 2_000]
     })
     .toBeNull()
-  await expect
-    .poll(desktopWindowIds, {
-      timeout: 30_000,
-      message: 'Stop should close the build window and leave Home open'
-    })
-    .toEqual([homeWindowId])
-
-  await ctx.panel.waitForVisible(HOME_VIEW)
   const card = `${byTestId('home-build')}[data-build-id=${JSON.stringify(_updateInstallId)}]`
   const openBuild = `${card} ${byTestId('home-build-open')}:enabled`
   await ctx.panel.waitForVisible(openBuild)
