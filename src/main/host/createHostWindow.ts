@@ -4,8 +4,10 @@ import path from 'path'
 import { keepOnDesktopPage } from '../lib/desktopPageLock'
 import { createDesktopPageView, createWebContentsView } from '../lib/webContentsViewLifetime'
 import type { DatadogForwardedError } from '../../types/ipc'
+import type { NewWindowDashboardPage } from '../../shared/dashboardPages'
 import type { InstallationRecord } from '../installations'
 import { getAppVersion } from '../lib/ipc'
+import { hasBuildsRunningForAppsOnly, stopEveryBuildRunningForAppsOnly } from '../apps/localComfy'
 import { attachContextMenu } from '../lib/contextMenu'
 import { tryOpenExternalUrl } from '../lib/openExternal'
 import { guardPermissionRequests } from '../lib/sessionPermissions'
@@ -19,14 +21,8 @@ import {
   isFirebaseAuthHandlerUrl,
   type SignInFailureContext
 } from '../auth/firebaseBridge'
-import {
-  isCheckoutReturnUrl,
-  isCheckoutUrl,
-  isLikelyDownloadUrl,
-  shouldOpenInPopup
-} from '../lib/allowedPopups'
+import { isCheckoutUrl, isLikelyDownloadUrl, shouldOpenInPopup } from '../lib/allowedPopups'
 import { COMFY_BG, TITLEBAR_BG } from '../lib/theme'
-import { standaloneWindowStyles } from '../lib/standaloneStyles'
 import {
   TITLEBAR_HEIGHT,
   TRAFFIC_LIGHT_POSITION,
@@ -46,8 +42,6 @@ import * as settings from '../settings'
 import * as updater from '../lib/updater'
 import { getSavedBounds, getWindowOptions, saveWindowBounds } from '../lib/windowState'
 import { ensureSystemModal } from '../popups/systemModal'
-import { hideCheckoutBackdrop, showCheckoutBackdrop } from '../popups/checkoutBackdrop'
-import { createOverlayView, OVERLAY_PRESSED_SCRIPT } from '../popups/overlayView'
 import { hideTitlePopupForParent, prewarmTitlePopup } from '../popups/titlePopup'
 import { destroyPanelView, ensurePanelView } from './panelView'
 import { expectedPartitionFor } from './partition'
@@ -113,6 +107,13 @@ export function shouldShowInstallCloseConfirm(
     consult === 'defer' &&
     !forceClose
   )
+}
+
+export function closeStopsLocalComfy(
+  entry: ComfyWindowEntry | null | undefined,
+  isLastWindow: boolean
+): boolean {
+  return shouldConfirmKillForEntry(entry) || (isLastWindow && hasBuildsRunningForAppsOnly())
 }
 
 export function shouldBailAfterCloseChoice(
@@ -197,87 +198,6 @@ function injectMacPasskeyWarning(childWindow: BrowserWindow): void {
   childWindow.webContents.on('did-navigate-in-page', inject)
 }
 
-const CHECKOUT_RELOAD_TIMEOUT_MS = 4000
-
-function wireCheckoutPopup(
-  childWindow: BrowserWindow,
-  parent: BrowserWindow,
-  hostContents: Electron.WebContents,
-  openedAt: number
-): void {
-  const close = (): void => {
-    if (!childWindow.isDestroyed()) childWindow.close()
-  }
-  let returning = false
-
-  childWindow.once('ready-to-show', () => {
-    childWindow.show()
-    showCheckoutBackdrop(parent, close)
-    attachCheckoutCloseButton(childWindow, close)
-  })
-  childWindow.once('closed', () => hideCheckoutBackdrop(parent))
-
-  childWindow.webContents.on('before-input-event', (_e, input) => {
-    if (input.type === 'keyDown' && input.key === 'Escape') close()
-  })
-
-  const closeOnReturn = (_e: Electron.Event, targetUrl: string): void => {
-    if (returning || childWindow.isDestroyed() || !isCheckoutReturnUrl(targetUrl)) return
-    returning = true
-    mainTelemetry.capture('comfy.desktop.billing.checkout_returned', {
-      duration_ms: Date.now() - openedAt,
-      user_tier: getUserTier()
-    })
-    if (hostContents.isDestroyed()) {
-      close()
-      return
-    }
-    let done = false
-    const finish = (): void => {
-      if (done) return
-      done = true
-      close()
-    }
-    hostContents.once('did-stop-loading', finish)
-    setTimeout(finish, CHECKOUT_RELOAD_TIMEOUT_MS)
-    hostContents.reload()
-  }
-
-  childWindow.webContents.on('will-redirect', closeOnReturn)
-  childWindow.webContents.on('did-navigate', closeOnReturn)
-}
-
-const CHECKOUT_CLOSE_BUTTON_HTML = `<!doctype html>
-<html class="pointer-events-none m-0 h-full w-full overflow-hidden bg-transparent"><head><meta charset="utf-8"><style>${standaloneWindowStyles}</style></head>
-<body class="pointer-events-none m-0 h-full w-full overflow-hidden bg-transparent">
-<button id="x" class="pointer-events-auto fixed top-2.5 right-2.5 grid size-7 cursor-pointer place-items-center rounded-lg border-0 border-none border-current bg-[rgba(0,0,0,0.06)] text-[rgba(0,0,0,0.55)] [font:16px/1_system-ui] hover:bg-[rgba(0,0,0,0.12)] hover:text-[rgba(0,0,0,0.85)]" aria-label="Close">✕</button>
-<script>
-  document.getElementById('x').addEventListener('click', () => ${OVERLAY_PRESSED_SCRIPT});
-</script>
-</body></html>`
-
-const CHECKOUT_CLOSE_BUTTON_SIZE = 48
-
-function attachCheckoutCloseButton(childWindow: BrowserWindow, onClose: () => void): void {
-  const overlay = createOverlayView(CHECKOUT_CLOSE_BUTTON_HTML, onClose)
-  childWindow.contentView.addChildView(overlay)
-  const place = (): void => {
-    if (childWindow.isDestroyed()) return
-    const { width } = childWindow.getContentBounds()
-    overlay.setBounds({
-      x: Math.max(0, width - CHECKOUT_CLOSE_BUTTON_SIZE),
-      y: 0,
-      width: CHECKOUT_CLOSE_BUTTON_SIZE,
-      height: CHECKOUT_CLOSE_BUTTON_SIZE
-    })
-  }
-  place()
-  childWindow.on('resize', place)
-  childWindow.once('closed', () => {
-    if (!overlay.webContents.isDestroyed()) overlay.webContents.close()
-  })
-}
-
 export interface CreateHostWindowOpts {
   windowTitle: string
   boundsKey: string
@@ -353,6 +273,55 @@ export function isWindowLayoutable(
   win: Pick<BrowserWindow, 'isDestroyed' | 'isMinimized'>
 ): boolean {
   return !win.isDestroyed() && !win.isMinimized()
+}
+
+export async function confirmHostWindowClose(
+  comfyWindow: BrowserWindow,
+  windowKey: number,
+  fx: Pick<
+    HostWindowFactories,
+    'consultPanelRendererClose' | 'confirmCloseInstanceWindow' | 'preClearedClose'
+  >
+): Promise<boolean> {
+  const entry = comfyWindows.get(windowKey)
+  const skipConsult = fx.preClearedClose.has(comfyWindow)
+  if (!skipConsult) hideTitlePopupForParent(comfyWindow)
+  const consult: CloseConsultResult = skipConsult
+    ? 'cleared'
+    : await fx.consultPanelRendererClose(entry?.panelView)
+  if (shouldBailAfterConsult(consult, fx.preClearedClose.has(comfyWindow))) return false
+  const entryForClose = comfyWindows.get(windowKey)
+  const isLastWindow =
+    Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed()).length <= 1
+  const isInstallHostWindow = !!entryForClose && isInstallHost(entryForClose)
+  const isLastInstallWindow = isLastWindow && isInstallHostWindow
+  const stopsLocalComfy = closeStopsLocalComfy(entryForClose, isLastWindow)
+  let agreedToStopAppsBuilds = false
+  if (
+    shouldShowInstallCloseConfirm(
+      settings.get('confirmBeforeClosingWindow') === true,
+      consult,
+      stopsLocalComfy,
+      fx.preClearedClose.has(comfyWindow),
+      isLastInstallWindow
+    ) &&
+    entryForClose
+  ) {
+    const closeChoice = await fx.confirmCloseInstanceWindow(
+      comfyWindow,
+      isLastWindow,
+      stopsLocalComfy,
+      entryForClose.lastTheme
+    )
+    if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) {
+      return false
+    }
+    agreedToStopAppsBuilds = isLastWindow && closeChoice === 'close'
+  }
+  fx.preClearedClose.delete(comfyWindow)
+  if (comfyWindow.isDestroyed()) return false
+  if (agreedToStopAppsBuilds) void stopEveryBuildRunningForAppsOnly()
+  return true
 }
 
 export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowResult {
@@ -537,37 +506,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     void (async () => {
       try {
         const entry = comfyWindows.get(windowKey)
-        const skipConsult = fx.preClearedClose.has(comfyWindow)
-        const isLastWindow =
-          Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed()).length <= 1
-        if (!skipConsult) hideTitlePopupForParent(comfyWindow)
-        const consult: CloseConsultResult = skipConsult
-          ? 'cleared'
-          : await fx.consultPanelRendererClose(entry?.panelView)
-        if (shouldBailAfterConsult(consult, fx.preClearedClose.has(comfyWindow))) return
-        const entryForClose = comfyWindows.get(windowKey)
-        const isInstallHostWindow = !!entryForClose && isInstallHost(entryForClose)
-        const isLastInstallWindow = isLastWindow && isInstallHostWindow
-        if (
-          shouldShowInstallCloseConfirm(
-            settings.get('confirmBeforeClosingWindow') === true,
-            consult,
-            shouldConfirmKillForEntry(entryForClose),
-            fx.preClearedClose.has(comfyWindow),
-            isLastInstallWindow
-          ) &&
-          entryForClose
-        ) {
-          const closeChoice = await fx.confirmCloseInstanceWindow(
-            comfyWindow,
-            isLastWindow,
-            shouldConfirmKillForEntry(entryForClose),
-            entryForClose.lastTheme
-          )
-          if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) return
-        }
-        fx.preClearedClose.delete(comfyWindow)
-        if (comfyWindow.isDestroyed()) return
+        if (!(await confirmHostWindowClose(comfyWindow, windowKey, fx))) return
         const safeTeardown = (source: string, fn: () => void): void => {
           try {
             fn()
@@ -687,18 +626,10 @@ export function buildComfyView(
   attachSessionDownloadHandler(comfyContents.session)
   guardPermissionRequests(comfyContents.session)
 
-  let nextPopupIsCheckout = false
-  let nextCheckoutOpenedAt = 0
-
   comfyContents.on('did-create-window', (childWindow) => {
-    const isCheckout = nextPopupIsCheckout
-    const openedAt = nextCheckoutOpenedAt
-    nextPopupIsCheckout = false
-    nextCheckoutOpenedAt = 0
     childWindow.setIcon(APP_ICON)
     if (process.platform !== 'darwin') childWindow.removeMenu()
     injectMacPasskeyWarning(childWindow)
-    if (isCheckout) wireCheckoutPopup(childWindow, comfyWindow, comfyContents, openedAt)
   })
   comfyContents.setWindowOpenHandler(({ url: childUrl }) => {
     if (isFirebaseAuthHandlerUrl(childUrl)) {
@@ -798,6 +729,7 @@ export function applyChooserHostThemeToAll(): void {
 
 export interface OpenChooserHostWindowOptions {
   deferColdStartReveal?: boolean
+  dashboardPage?: NewWindowDashboardPage
 }
 
 export function openChooserHostWindow(
@@ -830,7 +762,7 @@ export function openChooserHostWindow(
   entry.coldStartPendingReveal = !opts.deferColdStartReveal
 
   entry.activePanel = initialPanel
-  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry))
+  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry), opts.dashboardPage)
 
   entry.layoutViews()
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef, watch } from 'vue'
+import { computed, onMounted, ref, shallowRef, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
@@ -11,11 +11,15 @@ import {
   Laptop,
   LoaderCircle,
   Plus,
-  Server
+  Server,
+  Settings
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
+import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
+import BuildMenu from './home/BuildMenu.vue'
+import SidebarPageMenu from './SidebarPageMenu.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import SidebarAccount from './SidebarAccount.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
@@ -26,7 +30,9 @@ import { useProgressStore } from '../stores/progressStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { emitTelemetryAction } from '../lib/telemetry'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import type { NewWindowDashboardPage } from '../../../shared/dashboardPages'
 import type { DashboardPage, Installation } from '../types/ipc'
 
 const {
@@ -46,7 +52,7 @@ const emit = defineEmits<{
 }>()
 
 interface SidebarRow {
-  page: DashboardPage
+  page: NewWindowDashboardPage
   label: string
   icon: Component
 }
@@ -134,6 +140,39 @@ function navigate(page: DashboardPage): void {
   emit('navigate', page)
   window.api.navigatePanel(page)
 }
+
+const { open: buildMenuOpen, menuProps: buildMenuProps, show: showBuildMenu } = usePointMenu()
+const buildMenuTarget = shallowRef<{ buildId: string; returnFocus: HTMLElement | null } | null>(
+  null
+)
+const buildMenuBuild = computed(() => {
+  const target = buildMenuTarget.value
+  return target ? installationStore.getById(target.buildId) : undefined
+})
+
+function openBuildMenu(event: MouseEvent, build: Installation): void {
+  buildMenuTarget.value = {
+    buildId: build.id,
+    returnFocus: event.currentTarget as HTMLElement | null
+  }
+  showBuildMenu(event)
+}
+
+const { open: pageMenuOpen, menuProps: pageMenuProps, show: showPageMenu } = usePointMenu()
+const pageMenuTarget = shallowRef<{
+  page: NewWindowDashboardPage
+  returnFocus: HTMLElement | null
+} | null>(null)
+
+function openPageMenu(event: MouseEvent, page: NewWindowDashboardPage): void {
+  pageMenuTarget.value = { page, returnFocus: event.currentTarget as HTMLElement | null }
+  showPageMenu(event)
+}
+
+function openSettings(): void {
+  emitTelemetryAction('comfy.desktop.sidebar.settings_opened', { from_page: activePage })
+  window.api.openGlobalSettings()
+}
 </script>
 
 <template>
@@ -203,6 +242,7 @@ function navigate(page: DashboardPage): void {
           :title="collapsed ? row.label : undefined"
           :data-testid="`app-sidebar-${row.page}`"
           @click="navigate(row.page)"
+          @contextmenu.prevent="openPageMenu($event, row.page)"
         >
           <component :is="row.icon" :size="15" aria-hidden="true" />
           <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{ row.label }}</span>
@@ -220,6 +260,7 @@ function navigate(page: DashboardPage): void {
               :aria-current="buildsPageActive ? 'page' : undefined"
               data-testid="app-sidebar-chooser"
               @click="navigate('chooser')"
+              @contextmenu.prevent="openPageMenu($event, 'chooser')"
             >
               {{ t('sidebar.builds') }}
               <ArrowRight
@@ -259,6 +300,7 @@ function navigate(page: DashboardPage): void {
             :title="failure ? `${build.name} · ${failure}` : build.name"
             :data-testid="`app-sidebar-build-${build.id}`"
             @click="emit('open-build', build)"
+            @contextmenu.prevent="openBuildMenu($event, build)"
           >
             <LoaderCircle
               v-if="install"
@@ -292,6 +334,39 @@ function navigate(page: DashboardPage): void {
       </template>
     </nav>
 
-    <SidebarAccount class="mt-2 w-full shrink-0" :collapsed="collapsed" />
+    <div class="mt-2 flex w-full shrink-0 flex-col gap-1">
+      <Button
+        variant="muted-textonly"
+        size="unset"
+        class="h-8 w-full shrink-0 rounded-lg text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+        :class="collapsed ? 'justify-center px-0' : 'justify-start gap-2.5 px-3'"
+        :aria-label="t('fileMenu.globalSettings')"
+        aria-haspopup="dialog"
+        :title="collapsed ? t('fileMenu.globalSettings') : undefined"
+        data-testid="app-sidebar-settings"
+        @click="openSettings"
+      >
+        <Settings :size="15" aria-hidden="true" />
+        <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
+          t('fileMenu.globalSettings')
+        }}</span>
+      </Button>
+      <SidebarAccount :collapsed="collapsed" />
+    </div>
+
+    <BuildMenu
+      v-if="buildMenuBuild && buildMenuProps.reference"
+      v-model:open="buildMenuOpen"
+      :build="buildMenuBuild"
+      :anchor="buildMenuProps.reference"
+      :return-focus="buildMenuTarget?.returnFocus"
+    />
+    <SidebarPageMenu
+      v-if="pageMenuTarget && pageMenuProps.reference"
+      v-model:open="pageMenuOpen"
+      :page="pageMenuTarget.page"
+      :anchor="pageMenuProps.reference"
+      :return-focus="pageMenuTarget.returnFocus"
+    />
   </aside>
 </template>

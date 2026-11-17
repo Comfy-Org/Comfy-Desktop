@@ -29,7 +29,8 @@ import {
   sanitizeEnvVars,
   getComfyArgsSchema,
   COMFYUI_REPO,
-  snapshotRestoreFailureResult
+  snapshotRestoreFailureResult,
+  makeSendOutput
 } from './shared'
 import type { ComfyVersion, ComfyArgDef, InstallationRecord } from './shared'
 import { allocateInstallIdentity } from './installIdentity'
@@ -37,17 +38,12 @@ import * as releaseCache from '../release-cache'
 import { runStartupReleaseChecks } from '../release-cache-startup'
 import { _broadcastToRenderer } from './shared'
 import { hasGitDir } from '../git'
+import { hasOutputFolder } from '../outputFolders'
 import { parseUrl } from '../util'
 import { restoreSnapshotIntoInstallation } from '../standaloneMigration'
 import * as mainTelemetry from '../telemetry'
 import { buildErrorFields } from '../../../shared/errorEvent'
-import { appendLog } from '../logsBroadcast'
 import { invalidateModelDownloadStartupPass } from '../comfyDownloadManager'
-import {
-  startTemplateDownload,
-  abortTemplateDownload,
-  requestSkipTemplateDownload
-} from '../../sources/standalone/templateDownloadTask'
 import { abortModelStaging } from '../../sources/comfybuilder/modelStagingTask'
 import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
@@ -57,6 +53,7 @@ import {
   markInstallSettled
 } from './installationVisibility'
 import { answerCoreBetaArgs } from '../coreBetaPreview'
+import { startFirstBuildWithDesktop } from '../firstBuildAutoStart'
 
 function _kickReleaseCachePrewarm(allInstalls: InstallationRecord[]): void {
   void runStartupReleaseChecks(allInstalls, {
@@ -134,6 +131,7 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
       sourceLabel: source.label,
       sourceCategory: source.category,
       hasConsole: source.hasConsole !== false,
+      hasOutputFolder: hasOutputFolder(inst),
       ...(buildVersion ? { distributionVersion: buildVersion } : {}),
       ...(listPreview != null ? { listPreview } : {}),
       ...(statusTag ? { statusTag } : {})
@@ -250,6 +248,7 @@ export function registerInstallationHandlers(): void {
         sender.send('install-progress', { installationId, phase, ...detail })
       }
     }
+    const sendOutput = makeSendOutput(sender, installationId)
 
     const priorComfyVersion = inst.comfyVersion as ComfyVersion | undefined
     const isComfyUpdate = priorComfyVersion != null
@@ -263,10 +262,7 @@ export function registerInstallationHandlers(): void {
       fs.mkdirSync(inst.installPath, { recursive: true })
       fs.writeFileSync(path.join(inst.installPath, MARKER_FILE), installationId)
       if (source.installSteps) {
-        let steps = [...source.installSteps]
-        if (!inst.autoUpdateComfyUI) {
-          steps = steps.filter((s) => s.phase !== 'update')
-        }
+        const steps = source.installSteps(inst)
         if (inst.pendingSnapshotRestore) {
           steps.push(
             { phase: 'restore-nodes', label: i18n.t('standalone.snapshotRestoreNodesPhase') },
@@ -282,38 +278,28 @@ export function registerInstallationHandlers(): void {
 
       let snapshotRestoreError: string | null = null
 
-      if (inst.bundledTemplateId && inst.downloadTemplateModels && inst.pendingTemplateOpen) {
-        const sendTemplateOutput = (text: string): void => {
-          try {
-            if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })
-          } catch {}
-          appendLog(installationId, text)
-        }
-        const sizeBytes = inst.bundledTemplateSizeBytes ?? 0
-        startTemplateDownload(inst, sizeBytes, { sendOutput: sendTemplateOutput })
-      }
-
       const cache = createCache(
         settings.get('cacheDir') as string,
         settings.get('maxCachedDownloads') as number
       )
       try {
-        await source.install(inst, { sendProgress, download, cache, extract, signal: abort.signal })
+        await source.install(inst, {
+          sendProgress,
+          sendOutput,
+          download,
+          cache,
+          extract,
+          signal: abort.signal
+        })
         if (source.postInstall) {
           const update = (data: Record<string, unknown>): Promise<void> =>
             installations.update(installationId, data).then(() => {})
-          await source.postInstall(inst, { sendProgress, update, signal: abort.signal })
+          await source.postInstall(inst, { sendProgress, sendOutput, update, signal: abort.signal })
         }
 
         const freshInst = await installations.get(installationId)
         const pendingFile = freshInst?.pendingSnapshotRestore as string | undefined
         if (freshInst && pendingFile) {
-          const sendOutput = (text: string): void => {
-            try {
-              if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })
-            } catch {}
-            appendLog(installationId, text)
-          }
           const update = (data: Record<string, unknown>): Promise<void> =>
             installations.update(installationId, data).then(() => {})
           try {
@@ -335,7 +321,6 @@ export function registerInstallationHandlers(): void {
         if (!snapshotRestoreError) sendProgress('done', { percent: 100, status: 'Complete' })
       } catch (err) {
         _operationAborts.delete(installationId)
-        abortTemplateDownload(installationId)
         abortModelStaging(installationId)
         if (abort.signal.aborted) {
           if (isComfyUpdate) {
@@ -423,6 +408,7 @@ export function registerInstallationHandlers(): void {
           method: express ? 'express' : 'manual',
           express: !!express
         })
+        if (!snapshotRestoreError) await startFirstBuildWithDesktop(installationId)
       }
       if (snapshotRestoreError) {
         return snapshotRestoreFailureResult(installationId, snapshotRestoreError)
@@ -440,12 +426,6 @@ export function registerInstallationHandlers(): void {
     const source = sourceMap[inst.sourceId]
     if (!source) return []
     return source.getListActions ? source.getListActions(inst) : []
-  })
-
-  ipcMain.handle('skip-template-download', (_event, installationId: string) => {
-    if (typeof installationId === 'string' && installationId) {
-      requestSkipTemplateDownload(installationId)
-    }
   })
 
   ipcMain.handle(

@@ -55,9 +55,14 @@ defineEmits<{
           {{ path }}
         </Button>
       </div>
-      <Button type="button" size="lg" variant="secondary" @click="$emit('browse')">{{
-        $t('common.browse')
-      }}</Button>
+      <Button
+        type="button"
+        size="lg"
+        variant="textonly"
+        class="rounded-lg px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
+        @click="$emit('browse')"
+        >{{ $t('common.browse') }}</Button
+      >
       <Button
         v-if="path !== defaultPath"
         type="button"

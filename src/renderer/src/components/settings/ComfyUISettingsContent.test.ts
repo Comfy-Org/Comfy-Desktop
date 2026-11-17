@@ -540,10 +540,10 @@ describe('ComfyUISettingsContent', () => {
 
     function emittedDecision(wrapper: VueWrapper) {
       const calls = wrapper.emitted('primary-action') as unknown[][] | undefined
-      return calls?.[0]?.[0] as { window: string; verb: string } | undefined
+      return calls?.[0]?.[0] as { verb: string } | undefined
     }
 
-    it('labels "Start" and emits a same-window switch decision when not running', async () => {
+    it('labels "Start" and emits a start decision when not running', async () => {
       const w = await mountContent({
         currentView: 'dashboard',
         currentCategory: null,
@@ -551,7 +551,7 @@ describe('ComfyUISettingsContent', () => {
       })
       expect(w.find('.settings-v2-relaunch').text()).toBe('Start')
       await w.find('.settings-v2-relaunch').trigger('click')
-      expect(emittedDecision(w)).toMatchObject({ window: 'same', verb: 'switch' })
+      expect(emittedDecision(w)).toMatchObject({ verb: 'start' })
     })
 
     it('labels "Restart" and emits a restart decision when running in THIS window', async () => {
@@ -563,7 +563,7 @@ describe('ComfyUISettingsContent', () => {
       })
       expect(w.find('.settings-v2-relaunch').text()).toBe('Restart')
       await w.find('.settings-v2-relaunch').trigger('click')
-      expect(emittedDecision(w)).toMatchObject({ window: 'same', verb: 'restart' })
+      expect(emittedDecision(w)).toMatchObject({ verb: 'restart' })
     })
 
     it('labels "Switch" and emits a focus decision when running in ANOTHER window', async () => {
@@ -602,7 +602,7 @@ describe('ComfyUISettingsContent', () => {
         })
         expect(w.find('.settings-v2-relaunch').text()).toBe('Restart to apply changes')
         await w.find('.settings-v2-relaunch').trigger('click')
-        expect(emittedDecision(w)).toMatchObject({ window: 'same', verb: 'restart' })
+        expect(emittedDecision(w)).toMatchObject({ verb: 'restart' })
       } finally {
         useComfyUISettingsState.pendingRestartFieldIds.value = new Set()
       }
@@ -622,7 +622,7 @@ describe('ComfyUISettingsContent', () => {
       const menu = wrapper
         .findAllComponents({ name: 'MoreMenu' })
         .map((m) => m.props('actions') as { id: string }[] | undefined)
-        .find((acts) => acts?.some((a) => a.id === 'stop' || a.id.startsWith('nav:')))
+        .find((acts) => acts?.some((a) => a.id === 'stop'))
       return menu
     }
 
@@ -653,7 +653,7 @@ describe('ComfyUISettingsContent', () => {
       expect(w.find('.settings-v2-cta-caret').exists()).toBe(false)
     })
 
-    it('stopped cloud target (dashboard host) → caret still offers "Open in new window"', async () => {
+    it('stopped cloud target (dashboard host) → Open Cloud with no "Open in new window" caret', async () => {
       useComfyUISettingsState.pinBottomActions.value = []
       const w = await mountContent({
         currentView: 'dashboard',
@@ -661,8 +661,8 @@ describe('ComfyUISettingsContent', () => {
         activeInstallationId: null,
         installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
       })
-      const actions = caretActions(w)
-      expect(actions?.some((a) => a.id.startsWith('nav:'))).toBe(true)
+      expect(w.find('.settings-v2-relaunch').text()).toBe('Open Cloud')
+      expect(w.find('.settings-v2-cta-caret').exists()).toBe(false)
     })
   })
 

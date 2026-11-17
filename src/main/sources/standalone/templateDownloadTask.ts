@@ -8,7 +8,7 @@ import {
 } from '../../lib/modelDownloadPaths'
 import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 import { getDiskSpace } from '../../lib/disk'
-import { resolveTemplateModels, resolveTemplateModelsFromJson } from './templateModels'
+import { resolveTemplateModelsFromJson } from './templateModels'
 import { downloadTemplateInputAssets } from './templateInputAssets'
 import {
   isTerminal,
@@ -39,80 +39,25 @@ export function hasActiveTemplateDownloads(): boolean {
   return false
 }
 
-export function getTemplateDownloadState(
-  installationId: string
-): TemplateDownloadState | undefined {
-  return _templateDownloads.get(installationId)
-}
-
-export function abortTemplateDownload(installationId: string): void {
-  const ctrl = _templateAborts.get(installationId)
+function abortTemplateDownload(taskId: string): void {
+  const ctrl = _templateAborts.get(taskId)
   if (ctrl) {
     ctrl.abort()
-    _templateAborts.delete(installationId)
+    _templateAborts.delete(taskId)
   }
-  const leases = _templateJobLeases.get(installationId)
+  const leases = _templateJobLeases.get(taskId)
   if (leases) {
     for (const release of [...leases]) release()
-    _templateJobLeases.delete(installationId)
+    _templateJobLeases.delete(taskId)
   }
-  const state = _templateDownloads.get(installationId)
+  const state = _templateDownloads.get(taskId)
   if (state && !isTerminal(state.status)) {
     state.status = 'cancelled'
   }
 }
 
-const _templateSkips = new Set<string>()
-
-export function requestSkipTemplateDownload(installationId: string): void {
-  _templateSkips.add(installationId)
-}
-
-const SETTLE_POLL_MS = 250
-
-export function awaitTemplateDownloadSettled(
-  installationId: string,
-  signal: AbortSignal
-): Promise<'done' | 'error' | 'cancelled' | 'skipped' | 'aborted' | 'absent'> {
-  return new Promise((resolve) => {
-    const settle = (
-      reason: 'done' | 'error' | 'cancelled' | 'skipped' | 'aborted' | 'absent'
-    ): void => {
-      clearInterval(timer)
-      signal.removeEventListener('abort', onAbort)
-      _templateSkips.delete(installationId)
-      resolve(reason)
-    }
-    const onAbort = (): void => settle('aborted')
-
-    const check = (): void => {
-      if (signal.aborted) return settle('aborted')
-      if (_templateSkips.has(installationId)) return settle('skipped')
-      const state = _templateDownloads.get(installationId)
-      if (!state) return settle('absent')
-      if (isTerminal(state.status)) {
-        settle(state.status === 'done' ? 'done' : state.status === 'error' ? 'error' : 'cancelled')
-      }
-    }
-
-    signal.addEventListener('abort', onAbort, { once: true })
-    const timer = setInterval(check, SETTLE_POLL_MS)
-    check()
-  })
-}
-
 interface StartOpts {
   sendOutput: (text: string) => void
-}
-
-export function startTemplateDownload(
-  installation: InstallationRecord,
-  estimatedSizeBytes: number,
-  opts: StartOpts
-): void {
-  const templateId = installation.bundledTemplateId
-  if (!templateId) return
-  startTemplateDownloadTask(installation.id, installation, templateId, estimatedSizeBytes, opts)
 }
 
 export function startTemplateDownloadTask(
@@ -121,7 +66,7 @@ export function startTemplateDownloadTask(
   templateId: string,
   estimatedSizeBytes: number,
   opts: StartOpts,
-  workflowJson?: unknown
+  workflowJson: unknown
 ): void {
   const existing = _templateDownloads.get(taskId)
   if (existing && !isTerminal(existing.status)) return
@@ -240,18 +185,16 @@ async function runTask(
   state: TemplateDownloadState,
   signal: AbortSignal,
   { sendOutput }: StartOpts,
-  workflowJson?: unknown
+  workflowJson: unknown
 ): Promise<void> {
-  await downloadTemplateInputAssets(installation, templateId, sendOutput, signal, workflowJson)
+  await downloadTemplateInputAssets(installation, workflowJson, sendOutput, signal)
   if (signal.aborted) {
     state.status = 'cancelled'
     return
   }
 
   sendOutput(`[templates] Resolving model list for "${templateId}"...\n`)
-  const models = workflowJson
-    ? resolveTemplateModelsFromJson(workflowJson)
-    : await resolveTemplateModels(installation, templateId)
+  const models = resolveTemplateModelsFromJson(workflowJson)
 
   if (signal.aborted) {
     state.status = 'cancelled'
@@ -343,6 +286,7 @@ async function runTask(
 
       sendOutput(`[templates] Downloading ${f.name} (${i + 1}/${state.files.length})...\n`)
       let lastLoggedPct = 0
+      let attemptCount = 0
       try {
         await withRetry(
           async () => {
@@ -351,6 +295,8 @@ async function runTask(
               filename: safeName,
               directory: f.directory,
               installationId: installation.id,
+              source: 'template',
+              isRetry: attemptCount++ > 0,
               onProgress: (receivedBytes, totalBytes) => {
                 f.received = receivedBytes
                 if (totalBytes > 0) f.total = totalBytes

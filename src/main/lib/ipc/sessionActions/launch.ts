@@ -19,6 +19,7 @@ import {
   writePortLock,
   readPortLock,
   COMFY_BOOT_TIMEOUT_MS,
+  COMFY_BOOT_QUIET_MS,
   SENSITIVE_ARG_RE,
   _onLaunch,
   _onComfyExited,
@@ -60,6 +61,7 @@ import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
 import type { LaunchCommand } from '../../../types/sources'
 import { randomUUID } from 'node:crypto'
 import { displayLaunchUrl } from '../../cloudUrl'
+import { cloudWorkspaceUrl } from '../../cloudWorkspace'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
@@ -76,20 +78,13 @@ import {
   AGENT_REQUIREMENTS_PHASE,
   FRONTEND_RESTORE_PHASE
 } from '../../launchPhases'
-import {
-  getTemplateDownloadState,
-  formatTemplateSubStatus,
-  awaitTemplateDownloadSettled,
-  subscribeTemplateDownload,
-  type TemplateDownloadSummary
-} from '../../../sources/standalone/templateDownloadTask'
-import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
 import { restageBuildModelsIfNeeded } from '../../../sources/comfybuilder/modelStagingTask'
 import { initializeModelDownloads } from '../../comfyDownloadManager'
 import type { PreLaunchPhase } from '../../launchPhases'
 import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import { clearCrash, recordCrash } from '../../crashBuffer'
+import { settleAutoStartOnFirstStart } from '../../firstBuildAutoStart'
 import type { ComfyExitedData } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
 import { buildErrorFields, errorTail } from '../../../../shared/errorEvent'
@@ -812,9 +807,11 @@ export function attachLaunchStreams(
   agentTap: ReturnType<typeof createAgentTap>,
   tracker: LaunchProgressTracker,
   agentStartWatch?: AgentStartWatch
-): { getStderr: () => string } {
+): { getStderr: () => string; lastOutputAt: () => number } {
   let stderrBuf = ''
+  let lastOutput = Date.now()
   proc.stdout?.on('data', (chunk: Buffer) => {
+    lastOutput = Date.now()
     const text = chunk.toString('utf-8')
     writeLog(logStream, text)
     sendOutput(text)
@@ -826,6 +823,7 @@ export function attachLaunchStreams(
     tracker.ingest(stripAnsi(text))
   })
   proc.stderr?.on('data', (chunk: Buffer) => {
+    lastOutput = Date.now()
     const text = chunk.toString('utf-8')
     const clean = stripAnsi(text)
     stderrBuf += clean
@@ -839,7 +837,7 @@ export function attachLaunchStreams(
     agentStartWatch?.ingest(text, 'stderr')
     tracker.ingest(clean)
   })
-  return { getStderr: () => stderrBuf }
+  return { getStderr: () => stderrBuf, lastOutputAt: () => lastOutput }
 }
 
 export function _cleanupFailedLaunchSetup(
@@ -908,8 +906,16 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   }
   const launch = _beginLaunch(sessionId)
   const prefetchHold = { release: (): void => {} }
+  const settleFirstStart = (started: boolean): void => {
+    if (sessionId === installationId) settleAutoStartOnFirstStart(installationId, started)
+  }
   try {
-    return await runLaunch(ctx, launch.abort, prefetchHold)
+    const result = await runLaunch(ctx, launch, prefetchHold)
+    if (!result.cancelled) settleFirstStart(result.ok)
+    return result
+  } catch (err) {
+    settleFirstStart(false)
+    throw err
   } finally {
     prefetchHold.release()
     if (_operationAborts.get(sessionId) === launch.abort) _operationAborts.delete(sessionId)
@@ -919,9 +925,10 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
 
 async function runLaunch(
   { event, installationId, sessionId: runtimeSessionId, inst: instArg, actionData }: ActionContext,
-  abort: AbortController,
+  launch: ReturnType<typeof _beginLaunch>,
   prefetchHold: { release: () => void }
 ): Promise<ActionResult> {
+  const { abort } = launch
   let inst = instArg
   const sessionId = runtimeSessionId ?? installationId
   const sessionKind = sessionKindOf(sessionId)
@@ -987,14 +994,6 @@ async function runLaunch(
     restageBuildModelsIfNeeded(inst)
   }
 
-  const showTemplatePhase =
-    inst.sourceId === 'standalone' &&
-    !!inst.bundledTemplateId &&
-    inst.downloadTemplateModels === true &&
-    (inst.bundledTemplateSizeBytes ?? 0) > 0 &&
-    !!inst.pendingTemplateOpen &&
-    getTemplateDownloadState(installationId) !== undefined
-
   let launchNodeCount = 0
   async function scanLaunchNodeCount(): Promise<void> {
     try {
@@ -1010,7 +1009,7 @@ async function runLaunch(
     if (launchTracker) return launchTracker
     await scanLaunchNodeCount()
     launchTracker = createLaunchProgressTracker({
-      phases: buildLaunchPhases(inst, { preLaunchPhases, templateModels: showTemplatePhase }),
+      phases: buildLaunchPhases(inst, { preLaunchPhases }),
       nodeCount: launchNodeCount,
       sendProgress,
       onPhaseEnter: (phase) => recordBootPhase(sessionId, phase)
@@ -1463,82 +1462,16 @@ async function runLaunch(
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
     applyStorageLaunchArgs(inst, installationId, launchCmd, storageSettings)
 
-  let serverUp = false
-  let latestTemplateSummary: TemplateDownloadSummary | null = null
-  let firstTemplatePaint = true
-  let templatePreCompleted = false
-  let templatePaintDone = false
-  const paintTemplateProgress = (summary: TemplateDownloadSummary): void => {
-    if (!serverUp || templatePaintDone) return
-    const terminal = isTemplateDownloadTerminal(summary.status)
-    if (firstTemplatePaint) {
-      firstTemplatePaint = false
-      templatePreCompleted = terminal
-    }
-    sendProgress('template-models', {
-      percent: templatePreCompleted || terminal ? -1 : Math.min(99, Math.max(0, summary.percent)),
-      status: formatTemplateSubStatus(summary),
-      error: summary.status === 'error'
-    })
-    templatePaintDone = terminal
-  }
-
-  if (showTemplatePhase) {
-    const unsubscribe = subscribeTemplateDownload(installationId, (summary) => {
-      latestTemplateSummary = summary
-      paintTemplateProgress(summary)
-    })
-    abort.signal.addEventListener('abort', unsubscribe, { once: true })
-  }
-
-  function delay(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        abort.signal.removeEventListener('abort', onAbort)
-        resolve()
-      }, ms)
-      const onAbort = (): void => {
-        clearTimeout(timer)
-        resolve()
-      }
-      abort.signal.addEventListener('abort', onAbort, { once: true })
-    })
-  }
-
-  async function waitForTemplateDownloadGate(): Promise<void> {
-    if (!showTemplatePhase) return
-    serverUp = true
-    if (latestTemplateSummary) paintTemplateProgress(latestTemplateSummary)
-
-    const state = getTemplateDownloadState(installationId)
-    if (!state) return
-    const failedAlready = state.status === 'error'
-    if (isTemplateDownloadTerminal(state.status) && !failedAlready) return
-
-    if (!failedAlready) {
-      const reason = await awaitTemplateDownloadSettled(installationId, abort.signal)
-      if (reason !== 'error' || abort.signal.aborted) return
-    }
-
-    for (let secs = 3; secs >= 1; secs--) {
-      if (abort.signal.aborted) return
-      sendProgress('template-models', {
-        percent: -1,
-        error: true,
-        status: i18n.t('standalone.templateModelsFailedCountdown', { secs })
-      })
-      await delay(1000)
-    }
-  }
-
   if (launchCmd.remote) {
-    const displayUrl = displayLaunchUrl(launchCmd.url || '')
+    if (abort.signal.aborted) return { ok: false, cancelled: true }
+    const rawUrl = launchCmd.url!
+    const displayUrl = displayLaunchUrl(rawUrl)
     sendProgress('launch', {
       percent: -1,
       status: i18n.t('launch.connecting', { url: displayUrl })
     })
     try {
-      await waitForUrl(launchCmd.url!, {
+      await waitForUrl(rawUrl, {
         timeoutMs: 15000,
         signal: abort.signal,
         onPoll: ({ elapsedMs }) => {
@@ -1554,6 +1487,23 @@ async function runLaunch(
       if (abort.signal.aborted) return { ok: false, cancelled: true }
       return { ok: false, message: i18n.t('errors.cannotConnect', { url: displayUrl }) }
     }
+
+    const initialPickerWorkspaceId = actionData?.pickerWorkspaceId
+    const getPickerWorkspaceId = (): string | undefined =>
+      launch.pickerWorkspaceId ??
+      (typeof initialPickerWorkspaceId === 'string' ? initialPickerWorkspaceId : undefined)
+    let pickerWorkspaceId: string | undefined
+    do {
+      if (abort.signal.aborted) return { ok: false, cancelled: true }
+      pickerWorkspaceId = getPickerWorkspaceId()
+      try {
+        launchCmd.url = await cloudWorkspaceUrl(inst, rawUrl, pickerWorkspaceId)
+      } catch (error) {
+        if (abort.signal.aborted) return { ok: false, cancelled: true }
+        if (getPickerWorkspaceId() === pickerWorkspaceId) throw error
+      }
+    } while (getPickerWorkspaceId() !== pickerWorkspaceId)
+    if (abort.signal.aborted) return { ok: false, cancelled: true }
 
     if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
     const mode = _resolveLaunchMode(inst, actionData)
@@ -1889,7 +1839,11 @@ async function runLaunch(
 
   const bootId = randomUUID()
 
-  async function spawnComfy(): Promise<{ proc: ChildProcess; getStderr: () => string }> {
+  async function spawnComfy(): Promise<{
+    proc: ChildProcess
+    getStderr: () => string
+    lastOutputAt: () => number
+  }> {
     hwTap.beginBoot()
     assetsTap.flushSummary()
     assetsTap.beginBoot()
@@ -2002,6 +1956,8 @@ async function runLaunch(
       await Promise.race([
         waitForPort(launchCmd.port!, '127.0.0.1', {
           timeoutMs: COMFY_BOOT_TIMEOUT_MS,
+          quietMs: COMFY_BOOT_QUIET_MS,
+          lastOutputAt: spawned.lastOutputAt,
           signal: abort.signal
         }),
         earlyExitPromise
@@ -2265,6 +2221,8 @@ async function runLaunch(
         await Promise.race([
           waitForPort(launchCmd.port!, '127.0.0.1', {
             timeoutMs: COMFY_BOOT_TIMEOUT_MS,
+            quietMs: COMFY_BOOT_QUIET_MS,
+            lastOutputAt: respawned.lastOutputAt,
             signal: abort.signal
           }),
           relaunchEarlyExit
@@ -2331,6 +2289,8 @@ async function runLaunch(
           const checkSignal = rebootModelCheckAbort.signal
           waitForPort(launchCmd.port!, '127.0.0.1', {
             timeoutMs: COMFY_BOOT_TIMEOUT_MS,
+            quietMs: COMFY_BOOT_QUIET_MS,
+            lastOutputAt: spawned.lastOutputAt,
             signal: checkSignal
           })
             .then(async () => {
@@ -2415,8 +2375,6 @@ async function runLaunch(
     })
   }
   attachExitHandler(proc)
-
-  await waitForTemplateDownloadGate()
 
   abort.abort()
 

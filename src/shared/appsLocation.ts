@@ -1,4 +1,5 @@
 export const DEFAULT_APPS_URL = 'https://comfy.org/apps/'
+export const APP_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,127}$/i
 
 export interface AppsLocation {
   url: string

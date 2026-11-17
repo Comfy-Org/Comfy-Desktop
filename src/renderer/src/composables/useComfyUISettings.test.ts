@@ -1022,7 +1022,7 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
       expect(timeoutField.value).toBe('window')
       expect(composable.pendingRestartFieldIds.value.size).toBe(0)
       expect(composable.fieldErrorMessages.value.get('launchMode')).toBe(
-        "Couldn't reach app — try again"
+        "Couldn't reach app. Try again"
       )
       scope.stop()
     } finally {

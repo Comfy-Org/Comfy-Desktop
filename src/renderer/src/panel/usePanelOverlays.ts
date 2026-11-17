@@ -5,6 +5,7 @@ import type TrackModal from '../views/TrackModal.vue'
 import type LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
 import type QuickInstallModal from '../views/QuickInstallModal.vue'
 import type FirstUseTakeover from '../views/FirstUseTakeover.vue'
+import type { ChangeSetupDraft } from '../lib/setupPlan'
 import { useOverlay, type FlowComponent, type Overlay } from '../composables/useOverlay'
 import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
@@ -67,12 +68,13 @@ export function isFlowPanel(panel: PanelKey): boolean {
 export interface FirstUseChainHooks {
   shouldForceTakeover: () => boolean
   onShowProgress: (opts: ShowProgressOpts) => void
-  onBackgroundInstall: () => void
+  onBackgroundInstall: (opts: ShowProgressOpts) => void
   consumeSetupHandoff: () => SetupHandoff | null
 }
 
 export interface SetupHandoff {
   needsConsent: boolean
+  restore?: ChangeSetupDraft
 }
 
 export interface UsePanelOverlaysOpts {
@@ -232,7 +234,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
         resolvePortConflictInTakeover(showOpts.installationId)
         return
       }
-      opts.firstUseChain?.onBackgroundInstall()
+      opts.firstUseChain?.onBackgroundInstall(showOpts)
       opts.onBackgroundInstall?.(showOpts.installationId)
       return
     }
@@ -271,7 +273,13 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       await newInstallRef.value?.open({
         entrypoint,
         workspaceId: dashboardScope.selectedWorkspaceId,
-        ...(setupHandoff ? { cameFromSetup: true, needsConsent: setupHandoff.needsConsent } : {})
+        ...(setupHandoff
+          ? {
+              cameFromSetup: true,
+              needsConsent: setupHandoff.needsConsent,
+              restore: setupHandoff.restore
+            }
+          : {})
       })
     } else if (component === 'track') trackRef.value?.open()
     else if (component === 'load-snapshot') loadSnapshotRef.value?.open()

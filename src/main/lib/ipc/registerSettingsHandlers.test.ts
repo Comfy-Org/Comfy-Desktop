@@ -11,7 +11,7 @@ vi.mock('./shared', async () => {
   const { lookupEnMessage } = await import('../localeTestHelper')
   return {
     ipcMain: { handle: vi.fn(), on: vi.fn() },
-    nativeTheme: {},
+    nativeTheme: { on: vi.fn() },
     sources: [],
     settings: {
       getAll: () => mockSettings,
@@ -43,9 +43,14 @@ vi.mock('../globalSettingsEvents', () => ({
   globalSettingsEvents: { on: vi.fn(), emit: vi.fn() }
 }))
 vi.mock('../e2eOverrides', () => ({ recordIpcInvocation: vi.fn() }))
-vi.mock('../../settings', () => ({ AUTO_LAUNCH_NONE: 'none', AUTO_LAUNCH_LAST: 'last' }))
+vi.mock('../../settings', () => ({}))
 
-import { applySettingSet, buildSettingsSections } from './registerSettingsHandlers'
+import { ipcMain } from './shared'
+import {
+  applySettingSet,
+  buildSettingsSections,
+  registerSettingsHandlers
+} from './registerSettingsHandlers'
 
 function resetMockSettings(): void {
   for (const key of Object.keys(mockSettings)) delete mockSettings[key]
@@ -69,7 +74,7 @@ describe('buildSettingsSections', () => {
     expect(fields).toContainEqual(
       expect.objectContaining({
         id: 'betaFeaturesEnabled',
-        label: 'Opt-in to beta features',
+        label: 'Opt in to beta features',
         type: 'boolean',
         value: true
       })
@@ -193,5 +198,21 @@ describe('applySettingSet beta enrolment consent', () => {
 
     expect(mockSettingsSet).toHaveBeenCalledWith('betaFeaturesEnabled', false)
     expect(mockSettings.betaFeaturesEnabled).toBe(false)
+  })
+})
+
+describe('picking the Auto start build by hand', () => {
+  it("ends the wait on a new build's first start, so a later failure keeps the pick", () => {
+    resetMockSettings()
+    registerSettingsHandlers()
+    const setSetting = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.find(([channel]) => channel === 'set-setting')![1]
+    mockSettings['autoStartAwaitingFirstStart'] = 'fresh-install'
+
+    void setSetting({} as Electron.IpcMainInvokeEvent, 'autoLaunchOnStartup', 'fresh-install')
+
+    expect(mockSettings['autoStartAwaitingFirstStart']).toBeUndefined()
+    expect(mockSettings['autoLaunchOnStartup']).toBe('fresh-install')
   })
 })

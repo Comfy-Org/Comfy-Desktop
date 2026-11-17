@@ -74,7 +74,6 @@ beforeEach(() => {
     showAppPage,
     captureAppPage: vi.fn().mockResolvedValue(null),
     hideAppPage,
-    reloadAppPage: vi.fn(),
     onAppPageStatusChanged: vi.fn(() => () => {}),
     onAppPageClosed: (listener: () => void) => {
       appPageClosed = listener

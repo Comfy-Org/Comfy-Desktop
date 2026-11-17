@@ -2,8 +2,15 @@ import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import type { FieldOption, Source } from '../types/ipc'
 import type { SystemInfo } from '../../../types/ipc'
 
-export const NO_TEMPLATE_VALUE = 'none'
 export const INSTALL_SPACE_FACTOR = 2.25
+
+export interface WorkspaceBuildChoice {
+  buildId: string
+  buildName: string
+  artifactId?: string
+  releaseVersion?: number
+  targetLabel?: string
+}
 
 export interface SetupPlan {
   sourceId: string
@@ -11,14 +18,37 @@ export interface SetupPlan {
   installRoot: string
   downloadBytes: number
   requiredBytes: number
+  name?: string
+  workspaceId?: string
+  workspaceBuild?: WorkspaceBuildChoice
+}
+
+export interface NewInstallSetup {
+  sourceKey: string | null
+  selections: Record<string, FieldOption>
+  fieldOptions: Map<string, FieldOption[]>
+  fieldLoading: Map<string, boolean>
+  fieldErrors: Map<string, string>
+  textFieldValues: Map<string, string>
+  saveDisabled: boolean
+  sourceError: string
+  instPath: string
+  selectedBuildId: string
+  selectedBuildTargetId: string
+}
+
+export interface ChangeSetupDraft extends NewInstallSetup {
+  instName: string
+}
+
+export interface SavedSetup {
+  plan: SetupPlan
+  draft: ChangeSetupDraft
 }
 
 export class SetupPlanUnavailable extends Error {}
 
-function pickOption(fieldId: string, options: FieldOption[]): FieldOption | undefined {
-  if (fieldId === 'bundledTemplate') {
-    return options.find((o) => o.value === NO_TEMPLATE_VALUE) ?? options[0]
-  }
+function pickOption(options: FieldOption[]): FieldOption | undefined {
   return options.find((o) => o.recommended) ?? options[0]
 }
 
@@ -50,7 +80,7 @@ export async function resolveSetupPlan(): Promise<SetupPlan> {
       field.id === 'release' ? { includeLatestStable: true } : undefined
     )
     if (field.id === 'comfyVersion' && options.length === 0) continue
-    const pick = pickOption(field.id, options ?? [])
+    const pick = pickOption(options ?? [])
     if (!pick) throw new SetupPlanUnavailable(`no options for ${field.id}`)
     selections[field.id] = pick
   }
@@ -95,6 +125,12 @@ export function installLocation(root: string, platform: string | undefined): str
   if (!root) return ''
   const sep = platform === 'win32' ? '\\' : '/'
   return `${root.replace(/[\\/]+$/, '')}${sep}${DEFAULT_INSTALL_NAME}`
+}
+
+export function splitPathTail(path: string): { head: string; tail: string } {
+  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  if (cut <= 0) return { head: '', tail: path }
+  return { head: path.slice(0, cut), tail: path.slice(cut) }
 }
 
 export function displayPath(fullPath: string, platform: string | undefined): string {

@@ -14,7 +14,8 @@ import {
   snapshotWindowsTree
 } from './processIdentity'
 
-export const COMFY_BOOT_TIMEOUT_MS = 300_000
+export const COMFY_BOOT_TIMEOUT_MS = 1_800_000
+export const COMFY_BOOT_QUIET_MS = 300_000
 
 export interface WaitOptions {
   timeoutMs?: number
@@ -22,6 +23,11 @@ export interface WaitOptions {
   onPoll?: (info: { attempt: number; elapsedMs: number }) => void
   signal?: AbortSignal
   requestTimeoutMs?: number
+}
+
+export interface WaitForPortOptions extends WaitOptions {
+  quietMs?: number
+  lastOutputAt?: () => number
 }
 
 export interface ProcessInfo {
@@ -311,7 +317,15 @@ function probeTimeout(requested: number, remainingMs: number): number {
 export function waitForPort(
   port: number,
   host: string = '127.0.0.1',
-  { timeoutMs = 60000, intervalMs = 500, onPoll, signal, requestTimeoutMs = 2000 }: WaitOptions = {}
+  {
+    timeoutMs = 60000,
+    intervalMs = 500,
+    onPoll,
+    signal,
+    requestTimeoutMs = 2000,
+    quietMs = Number.POSITIVE_INFINITY,
+    lastOutputAt
+  }: WaitForPortOptions = {}
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const start = Date.now()
@@ -340,11 +354,16 @@ export function waitForPort(
 
     const poll = (): void => {
       if (done) return
-      const elapsed = Date.now() - start
-      if (elapsed > timeoutMs) {
+      const now = Date.now()
+      const elapsed = now - start
+      const quietFor = lastOutputAt ? now - lastOutputAt() : 0
+      if (elapsed > timeoutMs || quietFor > quietMs) {
+        const quiet = elapsed > timeoutMs ? '' : ` (no output for ${Math.round(quietFor / 1000)}s)`
         settle(() =>
           reject(
-            new Error(`Timed out waiting for port ${port} after ${Math.round(elapsed / 1000)}s`)
+            new Error(
+              `Timed out waiting for port ${port} after ${Math.round(elapsed / 1000)}s${quiet}`
+            )
           )
         )
         return

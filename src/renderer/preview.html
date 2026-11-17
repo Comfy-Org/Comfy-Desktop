@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Comfy Desktop preview</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: comfy-output: https://*.posthog.com https://raw.githubusercontent.com https://comfy.org https://storage.googleapis.com; media-src 'self' comfy-output: https://media.comfy.org https://storage.googleapis.com; font-src 'self' data:; frame-src https://form.typeform.com; connect-src 'self' ws:"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+      }
+      #panel-boot-splash {
+        position: fixed;
+        inset: 0;
+        background: #050505;
+        z-index: 0;
+      }
+      #app {
+        position: relative;
+        z-index: 1;
+      }
+    </style>
+  </head>
+  <body class="[&.panel-overlay-mode]:bg-transparent">
+    <div id="panel-boot-splash" aria-hidden="true"></div>
+    <div id="app"></div>
+    <script type="module" src="/src/preview/main.ts"></script>
+  </body>
+</html>
