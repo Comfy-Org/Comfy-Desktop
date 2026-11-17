@@ -165,6 +165,13 @@ async function closeMenu(): Promise<void> {
   })
 }
 
+async function press(element: Element): Promise<void> {
+  element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+  await flushPromises()
+}
+
 async function rightClick(element: Element): Promise<void> {
   element.dispatchEvent(
     new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 })
@@ -254,6 +261,43 @@ describe('Build menu', () => {
       expect.objectContaining({ installationId: BUILD.id, actionId: 'delete' })
     )
     expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('puts focus on the Uninstall answer when it asks', async () => {
+    const tile = await mountTile('ready')
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    await shownMenu()
+
+    document.querySelector<HTMLElement>('[data-testid="build-menu-delete"]')!.click()
+    await flushPromises()
+
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(
+        document.querySelector('[data-testid="build-menu-confirm-uninstall"]')
+      )
+    )
+  })
+
+  it('closes the menu when the ⋯ button is pressed again', async () => {
+    const tile = await mountTile('ready')
+    const more = tile.get<HTMLElement>('[data-testid="home-build-more"]').element
+    await press(more)
+    await shownMenu()
+
+    await press(more)
+
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="build-menu"]')).toBeNull())
+  })
+
+  it('updates the sidebar menu when the build changes while it is open', async () => {
+    const sidebar = await mountSidebar('ready')
+    await rightClick(sidebar.get(`[data-testid="app-sidebar-build-${BUILD.id}"]`).element)
+    expect(await shownMenu()).toContain('auto-start')
+
+    useInstallationStore().installations = [{ ...BUILD, status: 'failed' }]
+    await flushPromises()
+
+    expect(await shownMenu()).not.toContain('auto-start')
   })
 
   it('drops the uninstall question when the build starts running, and never uninstalls it', async () => {

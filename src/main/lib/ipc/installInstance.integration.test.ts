@@ -526,12 +526,12 @@ describe.skipIf(!gitAvailable())('installing a standalone build', () => {
     })
 
     it('keeps a build the user already picked for Auto start', async () => {
-      h.settings.set('autoLaunchOnStartup', 'cloud')
-      h.records.set('cloud', otherBuild('cloud', 'cloud'))
+      h.settings.set('autoLaunchOnStartup', 'updating')
+      h.records.set('updating', { ...otherBuild('updating', 'standalone'), status: 'updating' })
 
       await install(picked({ release: 'stable', comfyVersion: NEWEST_STABLE_TAG }))
 
-      expect(autoStart()).toBe('cloud')
+      expect(autoStart()).toBe('updating')
     })
 
     it('still reports a finished install when the Auto start setting cannot be saved', async () => {
@@ -578,18 +578,18 @@ describe.skipIf(!gitAvailable())('installing a standalone build', () => {
     })
 
     it('keeps a build the user picks for Auto start while the build list is being read', async () => {
-      h.records.set('cloud', otherBuild('cloud', 'cloud'))
+      h.records.set('updating', { ...otherBuild('updating', 'standalone'), status: 'updating' })
       const list = vi.mocked(installations.list)
       const readList = list.getMockImplementation()!
       list.mockImplementationOnce(async () => {
         const builds = await readList()
-        h.settings.set('autoLaunchOnStartup', 'cloud')
+        h.settings.set('autoLaunchOnStartup', 'updating')
         return builds
       })
 
       await install(picked({ release: 'stable', comfyVersion: NEWEST_STABLE_TAG }))
 
-      expect(autoStart()).toBe('cloud')
+      expect(autoStart()).toBe('updating')
     })
   })
 

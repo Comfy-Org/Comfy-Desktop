@@ -43,6 +43,32 @@ describe('listWorkspaces', () => {
     ])
   })
 
+  it('keeps a null plan apart from a missing one, so the avatar can tell Free from unknown', async () => {
+    stub(200, {
+      workspaces: [
+        { id: 'w-1', name: 'Personal', type: 'personal', role: 'owner', subscription_tier: null },
+        { id: 'w-2', name: 'Team', type: 'team', role: 'member' }
+      ]
+    })
+    const ws = await listWorkspaces('tok', { apiBase: 'https://cloud/api' })
+    expect(ws).toEqual([
+      { id: 'w-1', name: 'Personal', type: 'personal', role: 'owner', subscriptionTier: null },
+      { id: 'w-2', name: 'Team', type: 'team', role: 'member' }
+    ])
+  })
+
+  it('drops a plan that is not text, so it reads as unknown', async () => {
+    stub(200, {
+      workspaces: [
+        { id: 'w-1', name: 'One', type: 'team', role: 'owner', subscription_tier: 7 },
+        { id: 'w-2', name: 'Two', type: 'team', role: 'owner', subscription_tier: { tier: 'PRO' } },
+        { id: 'w-3', name: 'Three', type: 'team', role: 'owner', subscription_tier: ['PRO'] }
+      ]
+    })
+    const ws = await listWorkspaces('tok', { apiBase: 'https://cloud/api' })
+    expect(ws.map((workspace) => 'subscriptionTier' in workspace)).toEqual([false, false, false])
+  })
+
   it.each([
     { status: 404, body: {}, error: /HTTP 404/ },
     { status: 401, body: {}, error: /authorized/i },

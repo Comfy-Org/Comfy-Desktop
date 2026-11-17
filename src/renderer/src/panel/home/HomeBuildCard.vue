@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef } from 'vue'
+import { computed, shallowRef, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Ellipsis, LoaderCircle, OctagonAlert, Power } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
+import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
@@ -106,35 +107,27 @@ function onClick(): void {
   else if (!uninstalling.value) install.viewLogs()
 }
 
-const menuOpen = ref(false)
-const menuAt = shallowRef<{
-  anchor: BuildMenuAnchor
-  align: 'start' | 'end'
-  returnFocus: HTMLElement | null
-} | null>(null)
-
-function showMenu(
-  anchor: BuildMenuAnchor,
-  align: 'start' | 'end',
-  returnFocus: HTMLElement | null
-): void {
-  menuAt.value = { anchor, align, returnFocus }
-  menuOpen.value = true
-}
+const openButton = useTemplateRef<HTMLButtonElement>('openButton')
+const { open: menuOpen, menuProps, show: showMenuAtPointer, toggle: toggleMenu } = usePointMenu()
+const moreButton = shallowRef<HTMLElement | null>(null)
+const menuReturnFocus = shallowRef<HTMLElement | null>(null)
+const menuAnchor = computed<BuildMenuAnchor | undefined>(() => {
+  const button = moreButton.value
+  if (!button) return menuProps.value.reference
+  return { getBoundingClientRect: () => button.getBoundingClientRect() }
+})
 
 function openMoreMenu(event: MouseEvent): void {
   const button = event.currentTarget as HTMLElement
-  showMenu({ getBoundingClientRect: () => button.getBoundingClientRect() }, 'end', button)
+  moreButton.value = button
+  menuReturnFocus.value = button
+  toggleMenu(event)
 }
 
 function openContextMenu(event: MouseEvent): void {
-  const { clientX: x, clientY: y } = event
-  const tile = event.currentTarget as HTMLElement
-  showMenu(
-    { getBoundingClientRect: () => new DOMRect(x, y, 0, 0) },
-    'start',
-    tile.querySelector<HTMLElement>('[data-testid="home-build-open"]')
-  )
+  moreButton.value = null
+  menuReturnFocus.value = openButton.value
+  showMenuAtPointer(event)
 }
 </script>
 
@@ -157,6 +150,7 @@ function openContextMenu(event: MouseEvent): void {
       :should-open="() => !menuOpen"
     >
       <button
+        ref="openButton"
         type="button"
         class="absolute inset-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         :aria-label="`${build.name}, ${statusLabel}`"
@@ -242,12 +236,12 @@ function openContextMenu(event: MouseEvent): void {
       data-testid="home-build-progress"
     />
     <BuildMenu
-      v-if="menuAt"
+      v-if="menuAnchor"
       v-model:open="menuOpen"
       :build="build"
-      :anchor="menuAt.anchor"
-      :align="menuAt.align"
-      :return-focus="menuAt.returnFocus"
+      :anchor="menuAnchor"
+      :align="moreButton ? 'end' : 'start'"
+      :return-focus="menuReturnFocus"
     />
   </div>
 </template>

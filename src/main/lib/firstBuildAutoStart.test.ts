@@ -68,6 +68,28 @@ describe('Auto start for a first build', () => {
     expect(settings.get('autoStartAwaitingFirstStart')).toBe(fresh)
   })
 
+  it('gives the new build Auto start while the old Auto start build is being uninstalled', async () => {
+    const leaving = await installedBuild('Old GPU build')
+    settings.set('autoLaunchOnStartup', leaving)
+    await installations.update(leaving, { status: 'partial-delete' })
+    const fresh = await installedBuild('New GPU build')
+
+    await startFirstBuildWithDesktop(fresh)
+
+    expect(settings.get('autoLaunchOnStartup')).toBe(fresh)
+  })
+
+  it('leaves a picked build alone while that build is updating', async () => {
+    const picked = await installedBuild('Picked')
+    settings.set('autoLaunchOnStartup', picked)
+    await installations.update(picked, { status: 'updating' })
+    const fresh = await installedBuild('Only installed build')
+
+    await startFirstBuildWithDesktop(fresh)
+
+    expect(settings.get('autoLaunchOnStartup')).toBe(picked)
+  })
+
   it('leaves a saved Last used build alone', async () => {
     settings.set('autoLaunchOnStartup', 'last')
     const fresh = await installedBuild('Only build')
@@ -84,9 +106,10 @@ describe('a saved Last used build, now that only a build can be picked', () => {
     const recent = await installedBuild('Used yesterday', 2_000)
     settings.set('autoLaunchOnStartup', 'last')
 
-    await pinAutoStartToALocalBuild()
+    const started = await pinAutoStartToALocalBuild()
 
     expect(settings.get('autoLaunchOnStartup')).toBe(recent)
+    expect(started?.id).toBe(recent)
   })
 
   it('becomes None when no build has ever started', async () => {
@@ -103,9 +126,10 @@ describe('a saved Last used build, now that only a build can be picked', () => {
     await installedBuild('Used more recently', 2_000)
     settings.set('autoLaunchOnStartup', picked)
 
-    await pinAutoStartToALocalBuild()
+    const started = await pinAutoStartToALocalBuild()
 
     expect(settings.get('autoLaunchOnStartup')).toBe(picked)
+    expect(started?.id).toBe(picked)
   })
 
   it('becomes None when the build used last was Comfy Cloud', async () => {
@@ -133,8 +157,24 @@ describe('Comfy Cloud picked in the old Settings dropdown', () => {
     })
     settings.set('autoLaunchOnStartup', cloud.id)
 
-    await pinAutoStartToALocalBuild()
+    const started = await pinAutoStartToALocalBuild()
 
     expect(settings.get('autoLaunchOnStartup')).toBe('none')
+    expect(started).toBeNull()
+  })
+})
+
+describe('the build Desktop starts when it opens', () => {
+  it('is none when Auto start is off', async () => {
+    await installedBuild('Idle', 1_000)
+
+    expect(await pinAutoStartToALocalBuild()).toBeNull()
+  })
+
+  it('is none when the Auto start build no longer exists, and the setting is left for the next first build', async () => {
+    settings.set('autoLaunchOnStartup', 'inst-gone')
+
+    expect(await pinAutoStartToALocalBuild()).toBeNull()
+    expect(settings.get('autoLaunchOnStartup')).toBe('inst-gone')
   })
 })

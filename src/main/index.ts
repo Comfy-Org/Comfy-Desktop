@@ -97,8 +97,7 @@ import {
 } from './lib/ipc/shared'
 import { enrichInstallationsForRenderer } from './lib/ipc/registerInstallationHandlers'
 import { getSnapshotListData } from './lib/snapshots'
-import { update as updateInstallation, resolveAutoLaunchInstall } from './installations'
-import { AUTO_LAUNCH_NONE } from './settings'
+import { update as updateInstallation } from './installations'
 import { pinAutoStartToALocalBuild } from './lib/firstBuildAutoStart'
 import { lookupInstallUpdateOverride, recordIpcInvocation } from './lib/e2eOverrides'
 import * as mainTelemetry from './lib/telemetry'
@@ -272,17 +271,11 @@ function revealStartupRestoreDashboard(windowKey: number): void {
 }
 
 async function openStartupSurface(): Promise<void> {
-  await pinAutoStartToALocalBuild().catch((err) =>
-    console.warn('[auto-start] could not pin the Auto start build:', err)
-  )
-  const firstUseDone = settings.get('firstUseCompleted') === true
-  const autoLaunchValue = firstUseDone
-    ? (settings.get('autoLaunchOnStartup') as string | undefined)
-    : undefined
-  const explicitInst =
-    autoLaunchValue && autoLaunchValue !== AUTO_LAUNCH_NONE
-      ? await resolveAutoLaunchInstall(autoLaunchValue)
-      : null
+  const autoStartBuild = await pinAutoStartToALocalBuild().catch((err: unknown) => {
+    console.warn('[auto-start] could not read the Auto start build:', err)
+    return null
+  })
+  const explicitInst = settings.get('firstUseCompleted') === true ? autoStartBuild : null
 
   const chooserWindow = explicitInst
     ? openChooserHostWindow('comfy', { deferColdStartReveal: true })
