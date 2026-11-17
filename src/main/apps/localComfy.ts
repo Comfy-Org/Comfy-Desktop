@@ -20,6 +20,7 @@ import {
   _broadcastToRenderer,
   _hasActiveLaunch,
   _runningSessions,
+  keepsComfyRunningWhenWindowCloses,
   sessionLifecycleEvents,
   sourceMap,
   stopRunning
@@ -289,6 +290,16 @@ async function launchWithoutWindow(
 export function isRunningForAppsOnly(installationId: string): boolean {
   return (
     startedHere.has(installationId) &&
+    runningPortOf(installationId) !== null &&
+    !getEntryByInstallationId(installationId)
+  )
+}
+
+export function runsWithItsWindowClosed(installationId: string): boolean {
+  if (!keepsComfyRunningWhenWindowCloses()) return false
+  const session = _runningSessions.get(installationId)
+  return (
+    (session?.mode === 'window' || session?.hadWindow === true) &&
     runningPortOf(installationId) !== null &&
     !getEntryByInstallationId(installationId)
   )

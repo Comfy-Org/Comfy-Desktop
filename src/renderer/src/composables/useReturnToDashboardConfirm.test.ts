@@ -1,4 +1,5 @@
 import { createTestingPinia } from '@pinia/testing'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,6 +13,9 @@ vi.mock('./useModal', () => ({
     confirm: mockConfirm
   })
 }))
+
+const getSetting = vi.fn()
+stubWindowApi({ getSetting })
 
 import { useReturnToDashboardConfirm } from './useReturnToDashboardConfirm'
 import type { Installation } from '../types/ipc'
@@ -30,9 +34,11 @@ describe('useReturnToDashboardConfirm', () => {
   beforeEach(() => {
     setActivePinia(createTestingPinia({ stubActions: false }))
     vi.clearAllMocks()
+    getSetting.mockResolvedValue(undefined)
   })
 
-  it('prompts confirmation for local installs', async () => {
+  it('prompts confirmation for local installs when the setting is off', async () => {
+    getSetting.mockResolvedValue(false)
     mockConfirm.mockResolvedValue(true)
     const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
@@ -45,6 +51,48 @@ describe('useReturnToDashboardConfirm', () => {
       confirmStyle: 'danger'
     })
     expect(result).toBe(true)
+    expect(getSetting).toHaveBeenCalledWith('keepComfyRunningWhenWindowCloses')
+  })
+
+  it('does not ask for a running local install when the setting is absent', async () => {
+    mockConfirm.mockResolvedValue(false)
+    const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
+
+    const result = await confirmReturnToDashboard(makeInstallation(), 'running')
+
+    expect(getSetting).toHaveBeenCalledWith('keepComfyRunningWhenWindowCloses')
+    expect(mockConfirm).not.toHaveBeenCalled()
+    expect(result).toBe(true)
+  })
+
+  it('does not ask for a running local install when the setting cannot be read', async () => {
+    getSetting.mockRejectedValue(new Error('settings unavailable'))
+    mockConfirm.mockResolvedValue(false)
+    const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
+
+    const result = await confirmReturnToDashboard(makeInstallation(), 'running')
+
+    expect(mockConfirm).not.toHaveBeenCalled()
+    expect(result).toBe(true)
+  })
+
+  it('does not ask for a running local install when the setting is on', async () => {
+    getSetting.mockResolvedValue(true)
+    mockConfirm.mockResolvedValue(false)
+    const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
+
+    const result = await confirmReturnToDashboard(makeInstallation(), 'running')
+
+    expect(mockConfirm).not.toHaveBeenCalled()
+    expect(result).toBe(true)
+  })
+
+  it('still asks before cancelling an in-flight op when ComfyUI keeps running with the window closed', async () => {
+    mockConfirm.mockResolvedValue(false)
+    const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
+
+    expect(await confirmReturnToDashboard(makeInstallation(), 'in_flight')).toBe(false)
+    expect(mockConfirm).toHaveBeenCalledTimes(1)
   })
 
   it('returns false when the user cancels for local installs', async () => {

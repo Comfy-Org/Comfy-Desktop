@@ -31,7 +31,11 @@
     "crashed": "已崩溃",
     "crashedWithCode": "已崩溃（退出代码 {code}）",
     "crashedWithSignal": "已崩溃（{signal}）",
-    "failedToStartReason": "启动失败：{reason}"
+    "failedToStartReason": "启动失败：{reason}",
+    "credits": "积分",
+    "creditsTooltip": "{credits} 积分",
+    "creditsError": "无法加载余额",
+    "creditsLabel": "{balance}。{action}"
   },
   "apps": {
     "search": "搜索应用",
@@ -780,7 +784,7 @@
     "autoInstallUpdates": "自动安装桌面端更新",
     "appBehavior": "应用行为",
     "confirmBeforeClosingWindow": "关闭窗口前确认",
-    "confirmBeforeClosingWindowDescription": "关闭正在运行本地安装的窗口前请求确认。",
+    "confirmBeforeClosingWindowDescription": "关闭窗口会停止 ComfyUI 或退出 Comfy Desktop 时，先请求确认。",
     "warnBeforeRunningMultipleInstances": "运行多个构建前发出警告",
     "warnBeforeRunningMultipleInstancesDescription": "当一个本地 ComfyUI 构建正在运行或启动时，在启动另一个构建前显示警告。",
     "hardwareAcceleration": "使用硬件加速",

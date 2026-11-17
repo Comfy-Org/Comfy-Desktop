@@ -67,6 +67,9 @@ beforeEach(() => {
       if (key === 'autoLaunchOnStartup') saved = value
     }),
     onSettingsChanged: vi.fn(() => () => {}),
+    refreshCreditBalance: vi.fn().mockResolvedValue({ status: 'signed_out' }),
+    onCreditBalanceChanged: vi.fn(() => () => {}),
+    onAppPageClosed: vi.fn(() => () => {}),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       onAuthChanged: vi.fn(() => () => {}),

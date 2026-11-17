@@ -4,7 +4,12 @@ import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
 import { getModelDownloadContentScript } from '../lib/comfyContentScript'
 import { getComfyTerminalContentScript } from '../lib/comfyTerminalContentScript'
 import { closeInstallPopouts } from '../lib/popoutWindows'
-import { _operationAborts, sourceMap } from '../lib/ipc/shared'
+import {
+  _operationAborts,
+  keepsComfyRunningWhenWindowCloses,
+  noteWindowClosed,
+  sourceMap
+} from '../lib/ipc/shared'
 import { readableSymbolColor } from '../lib/theme'
 import * as mainTelemetry from '../lib/telemetry'
 import { refreshCloudUserTier } from '../lib/userTier'
@@ -425,7 +430,8 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       if (relaunch && !comfyContents.isDestroyed()) {
         comfyContents.off('will-navigate', relaunch.navBlocker)
       }
-      ipc.stopRunning(id)
+      if (isLocal && keepsComfyRunningWhenWindowCloses()) noteWindowClosed(id)
+      else ipc.stopRunning(id)
       closeInstallPopouts(id)
       fx.comfyZoomResets.delete(id)
       fx.relaunchStates.delete(id)

@@ -31,7 +31,11 @@
     "crashed": "Crashed",
     "crashedWithCode": "Crashed (exit code {code})",
     "crashedWithSignal": "Crashed ({signal})",
-    "failedToStartReason": "Failed to start: {reason}"
+    "failedToStartReason": "Failed to start: {reason}",
+    "credits": "Credits",
+    "creditsTooltip": "{credits} Credits",
+    "creditsError": "Unable to load balance",
+    "creditsLabel": "{balance}. {action}"
   },
   "apps": {
     "search": "Search apps",
@@ -780,7 +784,7 @@
     "autoInstallUpdates": "Automatically install Desktop updates",
     "appBehavior": "App Behavior",
     "confirmBeforeClosingWindow": "Confirm before closing a window",
-    "confirmBeforeClosingWindowDescription": "Ask for confirmation before closing a window that's running a local install.",
+    "confirmBeforeClosingWindowDescription": "Ask before closing a window when that stops ComfyUI or quits Comfy Desktop.",
     "warnBeforeRunningMultipleInstances": "Warn before running multiple builds",
     "warnBeforeRunningMultipleInstancesDescription": "Show a warning before launching another local ComfyUI build while one is running or starting.",
     "hardwareAcceleration": "Use hardware acceleration",

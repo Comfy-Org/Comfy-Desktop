@@ -136,6 +136,7 @@ function openDesktop(installations: Installation[]): Desktop {
     getAppUpdateState: async () => ({ kind: null, version: null, autoUpdate: true }),
     getCloudFreeRunsEnabled: async () => false,
     getCloudUserTier: async () => 'unknown',
+    refreshCreditBalance: async () => ({ status: 'signed_out' }),
     getDetailSections: async () => UNINSTALL_ACTION_SECTIONS,
     getDiskSpace: async () => null,
     getInstallationSize: async () => ({ sizeBytes: 0 }),
