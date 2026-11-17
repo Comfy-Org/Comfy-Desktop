@@ -67,7 +67,8 @@ beforeEach(() => {
     onSettingsChanged: vi.fn(() => () => {}),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
-      onAuthChanged: vi.fn(() => () => {})
+      onAuthChanged: vi.fn(() => () => {}),
+      promoteLocalInstance: vi.fn()
     }
   }
   host = { launch: vi.fn(), openDetails: vi.fn(), showProgress: vi.fn() }
@@ -243,7 +244,7 @@ describe('Build menu', () => {
     expect(await shownMenu()).not.toContain('auto-start')
   })
 
-  it('names the update in grey text beside the version, with no button on the card but ⋯', async () => {
+  it('shows the update beside the version and keeps the whole tile as the primary button', async () => {
     const build: Installation = {
       ...BUILD,
       statusTag: { label: 'Update available', style: 'update' }
@@ -260,6 +261,33 @@ describe('Build menu', () => {
       b.getAttribute('data-testid')
     )
     expect(buttons).toEqual(['home-build-open', 'home-build-more'])
+  })
+
+  it('shows upload progress on Home and holds the tile and menu launch actions until it finishes', async () => {
+    const signedIn = { signedIn: true, workspaceId: 'ws-1' }
+    vi.mocked(window.api.comfybuilder.getAuthStatus).mockResolvedValue(signedIn)
+    useAuthStore().status = signedIn
+    const upload = Promise.withResolvers<{ ok: true }>()
+    vi.mocked(window.api.comfybuilder.promoteLocalInstance).mockReturnValue(upload.promise)
+    const tile = await mountTile('ready')
+    const more = tile.get('[data-testid="home-build-more"]')
+    await more.trigger('click')
+    expect(await shownMenu()).toContain('promote-to-workspace')
+    document.querySelector<HTMLElement>('[data-testid="build-menu-promote-to-workspace"]')!.click()
+
+    try {
+      await flushPromises()
+      expect(tile.get('[data-testid="home-build-status"]').text()).toBe('Creating...')
+      expect(tile.find('[data-testid="home-build-open"]').exists()).toBe(false)
+      await more.trigger('click')
+      expect(await shownMenu()).not.toContain('launch')
+    } finally {
+      upload.resolve({ ok: true })
+      await flushPromises()
+    }
+
+    expect(tile.get('[data-testid="home-build-status"]').text()).toBe('Ready')
+    expect(tile.find('[data-testid="home-build-open"]').exists()).toBe(true)
   })
 
   it('offers Upload build after Restore snapshot when signed in to a workspace, from the ⋯ and a right-click', async () => {
@@ -448,9 +476,9 @@ describe('Build menu', () => {
       else expect(home.find('[data-testid="home-build-open"]').exists()).toBe(false)
 
       const builds = await mountBuildsTile(state)
-      const overlay = builds.findAllComponents(Tooltip)[0]!
-      expect(overlay.find('[data-testid="chooser-tile-hint-area"]').exists()).toBe(true)
-      expect(overlay.props('text')).toBe(hint)
+      const open = builds.find('[data-testid="chooser-tile-open"]')
+      expect(open.exists()).toBe(Boolean(hint))
+      if (hint) expect(builds.findAllComponents(Tooltip)[0]?.props('text')).toBe(hint)
     }
   )
 
@@ -485,6 +513,10 @@ describe('Build menu', () => {
     Object.defineProperty(label, 'scrollWidth', { configurable: true, value: 300 })
     await builds.get(BUILDS_TILE).trigger('pointerenter')
     expect(hint()).toBe(`${BUILD.name} · Click to start`)
+
+    Object.defineProperty(label, 'scrollWidth', { configurable: true, value: 120 })
+    await builds.get('[data-testid="chooser-tile-open"]').trigger('focus')
+    expect(hint()).toBe('Click to start')
   })
 
   it('opens no menu on a right-click on a page in the sidebar', async () => {

@@ -17,6 +17,7 @@ import {
   useInstallingBuilds,
   useViewBuildLogs
 } from '../composables/useBuildProgress'
+import { isPromotingToWorkspace } from '../composables/useInstallContextMenu'
 import { useProgressStore } from '../stores/progressStore'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -73,7 +74,9 @@ const narrowBuildIds = computed(() => {
 const openableBuilds = computed(() =>
   workspaceBuilds.value.filter(
     (build) =>
-      buildProgressOf(progressStore, build.id) === null && !isBuildOpenBlocked(buildStatus(build))
+      buildProgressOf(progressStore, build.id) === null &&
+      !isBuildOpenBlocked(buildStatus(build)) &&
+      !isPromotingToWorkspace(build)
   )
 )
 const mostRecentBuild = computed(

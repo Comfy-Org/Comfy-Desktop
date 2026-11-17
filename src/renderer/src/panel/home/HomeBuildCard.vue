@@ -19,6 +19,7 @@ import {
   type HomeBuildTone
 } from './homeBuild'
 import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useProgressStore } from '../../stores/progressStore'
 import type { Installation } from '../../types/ipc'
 
@@ -42,7 +43,10 @@ const progressStore = useProgressStore()
 const busy = computed(() => install.progress.value !== null)
 const starting = computed(() => install.progress.value?.kind === 'launch')
 const uninstalling = computed(() => install.progress.value?.kind === 'uninstall')
-const canOpen = computed(() => !uninstalling.value && !isBuildOpenBlocked(status))
+const promoting = computed(() => isPromotingToWorkspace(build))
+const canOpen = computed(
+  () => !uninstalling.value && !promoting.value && !isBuildOpenBlocked(status)
+)
 const busyTestId = computed(() => {
   if (uninstalling.value) return 'home-build-uninstalling'
   return starting.value ? 'home-build-starting' : 'home-build-installing'
@@ -61,6 +65,7 @@ const statusLabel = computed(() => {
     const percent = install.progress.value?.percent
     return percent == null ? phase : t('installProgress.detail', { phase, percent })
   }
+  if (promoting.value) return t('devPlatform.workspace.promoting')
   if (status === 'stopping') return t('chooser.statusStopping')
   if (status === 'updating') return t('instancePicker.progressUpdating')
   if (broken.value) return broken.value
@@ -84,28 +89,24 @@ const detail = computed(() =>
 )
 const isLive = computed(
   () =>
-    !busy.value &&
-    (status === 'running' || status === 'always-on' || (status === 'update' && isCloudBuild(build)))
+    status === 'running' || status === 'always-on' || (status === 'update' && isCloudBuild(build))
 )
 const resting = computed(() => status === 'ready' || status === 'update')
 const updateNote = computed(() =>
-  build.statusTag?.style === 'update' ? t('chooser.updatePill') : ''
+  !uninstalling.value && status !== 'updating' && build.statusTag?.style === 'update'
+    ? t('chooser.updatePill')
+    : ''
 )
-const subtitle = computed(() => {
-  if (uninstalling.value) return install.detail.value
-  const lead =
-    updateNote.value && build.version && !isComfyCloud(build) ? build.version : detail.value
-  return [lead, updateNote.value].filter(Boolean).join(' · ')
-})
+const subtitle = computed(() => (uninstalling.value ? install.detail.value : detail.value))
 const openHint = computed(() => {
-  if (busy.value) return t('home.buildClickToViewLogs')
+  if (!canOpen.value) return ''
   if (
-    broken.value ||
-    isLive.value ||
-    status === 'starting' ||
-    isCloudBuild(build) ||
-    build.sourceCategory === 'remote'
-  )
+    busy.value ||
+    (build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id))
+  ) {
+    return t('home.buildClickToViewLogs')
+  }
+  if (broken.value || isLive.value || status === 'starting' || build.sourceCategory === 'remote')
     return t('home.buildClickToOpen')
   return t('home.buildClickToStart')
 })
@@ -153,7 +154,7 @@ function openContextMenu(event: MouseEvent): void {
     @contextmenu.prevent="openContextMenu"
   >
     <Tooltip
-      v-if="!uninstalling"
+      v-if="!uninstalling && !promoting"
       class="absolute inset-0 flex"
       :text="openHint"
       :disabled="!canOpen"
@@ -194,7 +195,7 @@ function openContextMenu(event: MouseEvent): void {
         data-testid="home-build-status"
       >
         <LoaderCircle
-          v-if="busy || status === 'updating'"
+          v-if="busy || promoting || status === 'updating'"
           :size="12"
           class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
           aria-hidden="true"
@@ -227,10 +228,13 @@ function openContextMenu(event: MouseEvent): void {
         {{ build.name }}
       </span>
       <span
-        class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground"
+        class="mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
         :data-testid="uninstalling ? 'home-build-install-detail' : 'home-build-detail'"
       >
-        {{ subtitle }}
+        <span v-if="subtitle" class="min-w-0 truncate">{{ subtitle }}</span>
+        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
+          >{{ subtitle ? ' · ' : '' }}{{ updateNote }}</span
+        >
       </span>
     </span>
     <Button

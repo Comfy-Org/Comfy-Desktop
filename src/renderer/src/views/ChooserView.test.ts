@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { defineComponent, h } from 'vue'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -239,7 +240,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('show-new-install')).toEqual([[]])
   })
 
-  it('filters by where a build runs, hiding empty tabs and showing no counts', async () => {
+  it('filters by where a build runs, counting each tab and hiding empty ones', async () => {
     installMockApi([
       makeInstall({ id: 'a', name: 'Alpha' }),
       makeInstall({ id: 'b', name: 'Beta' }),
@@ -248,7 +249,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     const tabs = (): string[] => tabButtons(wrapper).map((tab) => tab.text())
-    expect(tabs()).toEqual(['All', 'This computer', 'Cloud'])
+    expect(tabs()).toEqual(['All3', 'This computer2', 'Cloud1'])
 
     await tabButtons(wrapper)[2]!.trigger('click')
     await flushPromises()
@@ -308,13 +309,16 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('pick')).toBeUndefined()
   })
 
-  it('starts an idle build from its card without opening its details', async () => {
+  it.each(['{Enter}', ' '])('starts an idle build from its card with %j', async (key) => {
     installMockApi([makeInstall({ id: 'a', name: 'Alpha' })])
     const wrapper = mountChooser()
     await flushPromises()
 
     expect(wrapper.find('.chooser-tile-launch').exists()).toBe(false)
-    await wrapper.get('.chooser-tile--install').trigger('click')
+    const openButton = wrapper.get<HTMLButtonElement>('[data-testid="chooser-tile-open"]')
+    expect(openButton.attributes('aria-label')).toBe('Alpha, Start')
+    openButton.element.focus()
+    await userEvent.keyboard(key)
     await flushPromises()
 
     expect(wrapper.emitted('pick')).toHaveLength(1)
@@ -444,7 +448,7 @@ describe('ChooserView', () => {
     const tile = wrapper.get(`[data-testid="${TID.dashboardTile('managed-update')}"]`)
     expect(tile.text()).toContain('Managed Build')
     expect(tile.text()).toContain('Updating…')
-    expect(tile.attributes('aria-disabled')).toBe('true')
+    expect(tile.find('[data-testid="chooser-tile-open"]').exists()).toBe(false)
     expect(tile.find('.chooser-tile-status-spinner').exists()).toBe(true)
     expect(tile.find(`[data-testid="${TID.dashboardTileKebab('managed-update')}"]`).exists()).toBe(
       false
@@ -789,10 +793,10 @@ describe('ChooserView', () => {
     await flushPromises()
 
     expect(tabButtons(wrapper).map((tab) => tab.text())).toEqual([
-      'All',
-      'This computer',
-      'Cloud',
-      'Remote'
+      'All4',
+      'This computer2',
+      'Cloud1',
+      'Remote1'
     ])
     expect(tabButtons(wrapper)[0]!.attributes('data-state')).toBe('on')
 
@@ -924,7 +928,7 @@ describe('ChooserView', () => {
     expect(upload.hasAttribute('data-disabled')).toBe(false)
   })
 
-  it('shows promotion progress on the originating instance card', async () => {
+  it('shows upload progress on the originating build and prevents it from starting', async () => {
     const api = installMockApiSignedIn(
       [
         makeInstall({
@@ -953,15 +957,23 @@ describe('ChooserView', () => {
     await shownBuildMenu('local')
 
     buildMenuItem('local', 'promote-to-workspace')!.click()
-    await wrapper.vm.$nextTick()
+    try {
+      await wrapper.vm.$nextTick()
+      expect(tile.find('.chooser-tile-status--promoting').text()).toBe('Creating...')
+      expect(tile.find('.chooser-tile-status-spinner').exists()).toBe(true)
+      expect(api.comfybuilder.promoteLocalInstance).toHaveBeenCalledExactlyOnceWith('local')
+      expect(tile.find('[data-testid="chooser-tile-open"]').exists()).toBe(false)
 
-    expect(tile.find('.chooser-tile-status--promoting').text()).toBe('Creating...')
-    expect(tile.find('.chooser-tile-status-spinner').exists()).toBe(true)
-    expect(api.comfybuilder.promoteLocalInstance).toHaveBeenCalledExactlyOnceWith('local')
-
-    finishPromotion({ ok: true })
-    await flushPromises()
+      await tile.trigger('click')
+      await flushPromises()
+      expect(wrapper.emitted('pick')).toBeUndefined()
+      expect(await openBuildMenu(wrapper, 'local')).not.toContain('launch')
+    } finally {
+      finishPromotion({ ok: true })
+      await flushPromises()
+    }
     expect(tile.find('.chooser-tile-status--promoting').exists()).toBe(false)
+    expect(tile.find('[data-testid="chooser-tile-open"]').exists()).toBe(true)
   })
 
   it.each([

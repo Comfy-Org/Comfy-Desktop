@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
-import { computed, ref, shallowRef, useTemplateRef } from 'vue'
+import { computed, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Ellipsis, Info, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
 import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useProgressStore } from '../../stores/progressStore'
 import {
   buildDeviceKind,
@@ -27,7 +28,6 @@ interface Props {
   installation: Installation
   showWhyCloud?: boolean
   lifecycleStatus?: 'idle' | 'launching' | 'running' | 'stopping' | 'error'
-  isPromotingToWorkspace?: boolean
   showMenu?: boolean
   showFreeRunsPill?: boolean
   tone?: HomeBuildTone
@@ -61,6 +61,7 @@ function viewError(): void {
 }
 const isBusy = computed(() => install.progress.value !== null)
 const isUninstalling = computed(() => install.progress.value?.kind === 'uninstall')
+const isPromoting = computed(() => isPromotingToWorkspace(inst.value))
 const progressLabel = computed(() => {
   const current = install.progress.value
   if (!current) return ''
@@ -101,6 +102,10 @@ const hasError = computed(() =>
     : props.lifecycleStatus === 'error'
 )
 
+const canActivate = computed(
+  () => !isUninstalling.value && !isUpdating.value && !isStopping.value && !isPromoting.value
+)
+
 const dangerTag = computed(() =>
   inst.value.statusTag?.style === 'danger' ? inst.value.statusTag : null
 )
@@ -118,7 +123,7 @@ const statusPill = computed<{
   tone: 'go' | 'quiet'
   spinning?: boolean
 } | null>(() => {
-  if (props.isPromotingToWorkspace)
+  if (isPromoting.value)
     return {
       label: 'devPlatform.workspace.promoting',
       markerClass: 'chooser-tile-status--promoting',
@@ -158,8 +163,6 @@ const showWhyCloudTrigger = computed(
   () => props.showWhyCloud && !hasError.value && !statusPill.value && !dangerTag.value
 )
 
-const hasUpdate = computed(() => inst.value.statusTag?.style === 'update')
-
 const startsWithDesktop = computed(() => props.autoStart && !isCloudBuild(inst.value))
 const restingLabel = computed(() => {
   if (isCloudBuild(inst.value)) return t('home.buildAlwaysOn')
@@ -193,27 +196,36 @@ const leadingFact = computed(() =>
   isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
 
-const updateNote = computed(() => (hasUpdate.value ? t('chooser.updatePill') : ''))
-
-const metaLine = computed(() =>
-  [leadingFact.value, trailingFact.value, updateNote.value].filter(Boolean).join(' · ')
+const updateNote = computed(() =>
+  !isUninstalling.value && inst.value.statusTag?.style === 'update' && !isUpdating.value
+    ? t('chooser.updatePill')
+    : ''
 )
 
-const openHint = computed(() => {
-  if (isUninstalling.value || isUpdating.value || isStopping.value) return ''
-  if (isBusy.value) return t('home.buildClickToViewLogs')
-  if (
+const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
+
+const opensLogs = computed(
+  () => isBusy.value || (!dangerTag.value && launchFailed(progressStore, inst.value.id))
+)
+const opensExisting = computed(
+  () =>
     isRunning.value ||
     isLaunching.value ||
     hasError.value ||
     dangerTag.value ||
     inst.value.sourceCategory === 'cloud' ||
     inst.value.sourceCategory === 'remote'
-  )
-    return t('home.buildClickToOpen')
-  return t('home.buildClickToStart')
+)
+const openHint = computed(() => {
+  if (opensLogs.value) return t('home.buildClickToViewLogs')
+  return t(opensExisting.value ? 'home.buildClickToOpen' : 'home.buildClickToStart')
+})
+const openLabel = computed(() => {
+  if (opensLogs.value) return t('installProgress.viewLogs')
+  return t(opensExisting.value ? 'chooser.openInstall' : 'chooser.startInstall')
 })
 
+const tileEl = useTemplateRef<HTMLElement>('tile')
 const nameClipped = ref(false)
 
 function measureName(): void {
@@ -228,18 +240,17 @@ const tileHint = computed(() =>
 const canOpenMenu = computed(() => props.showMenu && !isUpdating.value)
 
 function open(): void {
-  if (isBusy.value && !isUninstalling.value) {
-    install.viewLogs()
-    return
-  }
-  if (isStopping.value || isUpdating.value || isUninstalling.value) return
-  if (dangerTag.value) emit('open-details', inst.value)
-  else if (launchFailed(progressStore, inst.value.id)) install.viewLogs()
+  if (!canActivate.value) return
+  if (opensLogs.value) install.viewLogs()
+  else if (dangerTag.value) emit('open-details', inst.value)
   else emit('pick', inst.value)
 }
 
-const tileEl = useTemplateRef<HTMLElement>('tile')
+const openButton = useTemplateRef<HTMLButtonElement>('openButton')
 const { open: menuOpen, menuProps, show: showMenuAtPointer, toggle: toggleMenu } = usePointMenu()
+watch(canOpenMenu, (enabled) => {
+  if (!enabled) menuOpen.value = false
+})
 const moreButton = shallowRef<HTMLElement | null>(null)
 const menuReturnFocus = shallowRef<HTMLElement | null>(null)
 const menuAnchor = computed<BuildMenuAnchor | undefined>(() => {
@@ -259,7 +270,7 @@ function openMoreMenu(event: MouseEvent): void {
 function openContextMenu(event: MouseEvent): void {
   if (!canOpenMenu.value) return
   moreButton.value = null
-  menuReturnFocus.value = tileEl.value
+  menuReturnFocus.value = openButton.value
   showMenuAtPointer(event)
 }
 </script>
@@ -267,33 +278,39 @@ function openContextMenu(event: MouseEvent): void {
 <template>
   <div
     ref="tile"
-    role="button"
-    :tabindex="isUpdating ? -1 : 0"
-    :aria-disabled="isUpdating || undefined"
-    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 cursor-pointer items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] outline-none transition-[background-color,box-shadow] duration-160 select-none hover:bg-[rgb(137_137_137/0.09)] focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
-    :class="statusClasses"
+    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] transition-colors select-none"
+    :class="[statusClasses, canActivate && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]']"
     :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"
     @click="open"
-    @keydown.enter="open"
-    @keydown.space.prevent="open"
     @contextmenu.prevent="openContextMenu"
     @pointerenter="measureName"
-    @focus="measureName"
   >
     <Tooltip
+      v-if="canActivate"
       class="absolute inset-0 flex"
       :text="tileHint"
       side="top"
       :delay-ms="500"
       :should-open="() => !menuOpen"
     >
-      <span class="absolute inset-0" aria-hidden="true" data-testid="chooser-tile-hint-area" />
+      <button
+        ref="openButton"
+        type="button"
+        class="absolute inset-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        :aria-label="`${inst.name}, ${openLabel}`"
+        data-testid="chooser-tile-open"
+        @focus="measureName"
+      />
     </Tooltip>
     <span
       class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
-      :class="!isBusy && 'group-hover/tile:scale-[2.6] group-focus-visible/tile:scale-[2.6]'"
+      :class="
+        canActivate &&
+        !isBusy &&
+        'group-hover/tile:scale-[2.6] group-has-[:focus-visible]/tile:scale-[2.6]'
+      "
       :style="{
         background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
       }"
@@ -336,29 +353,25 @@ function openContextMenu(event: MouseEvent): void {
           <span class="truncate">{{ progressLabel }}</span>
         </span>
         <Button
-          v-else-if="hasError"
+          v-else-if="hasError && canActivate"
           variant="destructive-textonly"
           size="unset"
           type="button"
           class="chooser-tile-error-badge pointer-events-auto h-4 gap-1 text-xs/4 font-medium"
           :title="t('chooser.viewErrorTooltip')"
           @click.stop="viewError"
-          @keydown.enter.stop
-          @keydown.space.stop
         >
           <OctagonAlert :size="12" />
           {{ t('chooser.statusError') }}
         </Button>
         <Button
-          v-else-if="dangerTag"
+          v-else-if="dangerTag && canActivate"
           variant="destructive-textonly"
           size="unset"
           type="button"
           class="chooser-tile-danger-tag pointer-events-auto h-4 min-w-0 gap-1 text-xs/4 font-medium"
           :title="t('chooser.viewErrorTooltip')"
           @click.stop="emit('view-danger', inst)"
-          @keydown.enter.stop
-          @keydown.space.stop
         >
           <OctagonAlert :size="12" />
           <span class="truncate">{{ dangerTag.label }}</span>
@@ -423,18 +436,20 @@ function openContextMenu(event: MouseEvent): void {
             :aria-label="t('firstUse.whyTryCloud')"
             :data-testid="TID.dashboardTileWhyCloud(inst.id)"
             @click.stop="emit('why-cloud')"
-            @keydown.enter.stop
-            @keydown.space.stop
           >
             <Info :size="13" />
           </Button>
         </Tooltip>
       </div>
-      <TruncatedText
-        v-if="metaLine"
-        class="chooser-tile-meta-line mt-0.5 max-w-full min-w-0 text-xs/[17px] text-subtle-foreground [&.tooltip-wrap]:block"
-        :text="metaLine"
-      />
+      <div
+        v-if="metaLine || updateNote"
+        class="chooser-tile-meta-line mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
+      >
+        <span v-if="metaLine" class="min-w-0 truncate">{{ metaLine }}</span>
+        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
+          >{{ metaLine ? ' · ' : '' }}{{ updateNote }}</span
+        >
+      </div>
     </div>
 
     <Button
@@ -449,8 +464,6 @@ function openContextMenu(event: MouseEvent): void {
       :data-testid="TID.dashboardTileKebab(inst.id)"
       @click.stop="openMoreMenu"
       @contextmenu.stop.prevent="openMoreMenu"
-      @keydown.enter.stop
-      @keydown.space.stop
     >
       <Ellipsis :size="15" aria-hidden="true" />
     </Button>
@@ -461,7 +474,7 @@ function openContextMenu(event: MouseEvent): void {
       :data-testid="`chooser-tile-progress-bar-${inst.id}`"
     />
     <BuildMenu
-      v-if="menuAnchor"
+      v-if="canOpenMenu && menuAnchor"
       v-model:open="menuOpen"
       :build="inst"
       :anchor="menuAnchor"

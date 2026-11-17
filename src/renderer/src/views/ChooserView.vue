@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
-import { useElementSize, useEventListener } from '@vueuse/core'
-import { computed, nextTick, onMounted, ref, toRef, useTemplateRef, watch } from 'vue'
+import { useEventListener } from '@vueuse/core'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useAuthStore } from '../stores/authStore'
@@ -126,12 +126,16 @@ const scopedInstalls = computed(() => effectiveInstalls.value.filter(installatio
 const whereOptions = computed(() => {
   const count = (category: string): number =>
     scopedInstalls.value.filter((inst) => inst.sourceCategory === category).length
-  const options: { value: FilterKey; label: string }[] = [
-    { value: 'all', label: t('chooser.filterAll') },
-    { value: 'local', label: t('chooser.filterThisComputer') }
+  const options: { value: FilterKey; label: string; count: number }[] = [
+    { value: 'all', label: t('chooser.filterAll'), count: scopedInstalls.value.length },
+    { value: 'local', label: t('chooser.filterThisComputer'), count: count('local') }
   ]
-  if (count('cloud') > 0) options.push({ value: 'cloud', label: t('chooser.filterCloud') })
-  if (count('remote') > 0) options.push({ value: 'remote', label: t('chooser.filterRemote') })
+  if (count('cloud') > 0) {
+    options.push({ value: 'cloud', label: t('chooser.filterCloud'), count: count('cloud') })
+  }
+  if (count('remote') > 0) {
+    options.push({ value: 'remote', label: t('chooser.filterRemote'), count: count('remote') })
+  }
   return options
 })
 watch(whereOptions, (options) => {
@@ -149,47 +153,6 @@ function clearFilters(): void {
   activeFilter.value = 'all'
 }
 
-const TOOLBAR_GAP = 8
-const SORT_WIDTH = 152
-const SEARCH_WIDTH = 220
-const ICON_WIDTH = 32
-const { width: toolbarWidth } = useElementSize(useTemplateRef<HTMLElement>('toolbar'))
-const { width: tabsWidth } = useElementSize(useTemplateRef<HTMLElement>('toolbarTabs'))
-const toolbarLayout = computed<'full' | 'icon' | 'stacked'>(() => {
-  const refresh = authStore.isSignedIn ? ICON_WIDTH + TOOLBAR_GAP : 0
-  const line = tabsWidth.value + TOOLBAR_GAP + refresh + SORT_WIDTH + TOOLBAR_GAP
-  if (toolbarWidth.value >= line + SEARCH_WIDTH) return 'full'
-  if (toolbarWidth.value >= line + ICON_WIDTH) return 'icon'
-  return 'stacked'
-})
-const searchOpen = ref(false)
-const searchFolded = computed(
-  () => toolbarLayout.value === 'icon' && !searchOpen.value && !searchQuery.value.trim()
-)
-const searchField = useTemplateRef<HTMLElement>('searchField')
-
-async function openSearch(): Promise<void> {
-  searchOpen.value = true
-  await nextTick()
-  searchField.value?.querySelector('input')?.focus()
-}
-
-function closeSearchIfEmpty(event: FocusEvent): void {
-  const next = event.relatedTarget as Node | null
-  if (next && searchField.value?.contains(next)) return
-  if (!searchQuery.value.trim()) searchOpen.value = false
-}
-
-const searchToggle = useTemplateRef<{ $el: HTMLElement }>('searchToggle')
-
-async function closeSearch(): Promise<void> {
-  searchQuery.value = ''
-  searchOpen.value = false
-  if (!searchFolded.value) return
-  await nextTick()
-  searchToggle.value?.$el.focus()
-}
-
 const refreshingWorkspace = computed(() => authStore.loadingWorkspaces || authStore.loadingBuilds)
 
 async function refreshWorkspace(): Promise<void> {
@@ -201,7 +164,7 @@ async function refreshWorkspace(): Promise<void> {
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
 
-const { viewError, viewDanger, isPromotingToWorkspace } = useInstallContextMenu({
+const { viewError, viewDanger } = useInstallContextMenu({
   onManage: (inst, options) =>
     options ? openInstallManager(inst, options) : emit('open-details', inst),
   onShowProgress: (showOpts) => emit('show-progress', showOpts)
@@ -316,28 +279,19 @@ const gridHandlers = {
         </SplitButton>
       </header>
 
-      <div
-        ref="toolbar"
-        class="chooser-toolbar mb-5 flex min-h-8 flex-wrap items-center gap-2"
-        :data-layout="toolbarLayout"
-      >
-        <div ref="toolbarTabs" class="shrink-0">
-          <SegmentedControl
-            v-model="activeFilter"
-            :options="whereOptions"
-            :label="t('chooser.whereLabel')"
-          />
-        </div>
-        <div
-          class="flex min-w-0 items-center gap-2"
-          :class="toolbarLayout === 'stacked' ? 'basis-full' : 'ml-auto'"
-        >
+      <div class="chooser-toolbar mb-5 flex min-h-8 flex-wrap items-center gap-2">
+        <SegmentedControl
+          v-model="activeFilter"
+          :options="whereOptions"
+          :label="t('chooser.whereLabel')"
+        />
+        <div class="ml-auto flex items-center gap-2">
           <Button
             v-if="authStore.isSignedIn"
             variant="muted-textonly"
             size="icon"
             type="button"
-            class="chooser-workspace-refresh shrink-0"
+            class="chooser-workspace-refresh"
             :disabled="refreshingWorkspace"
             :aria-label="t('devPlatform.workspace.refresh')"
             :title="t('devPlatform.workspace.refresh')"
@@ -352,7 +306,7 @@ const gridHandlers = {
               }"
             />
           </Button>
-          <div v-show="toolbarLayout !== 'icon' || searchFolded" class="w-38 shrink-0">
+          <div class="w-38">
             <BaseSelect
               v-model="sortOrder"
               :options="sortOptions"
@@ -360,35 +314,10 @@ const gridHandlers = {
               compact
             />
           </div>
-          <Button
-            v-if="searchFolded"
-            ref="searchToggle"
-            variant="muted-textonly"
-            size="icon"
-            type="button"
-            class="chooser-search-toggle shrink-0"
-            :aria-label="t('chooser.searchBuilds')"
-            :title="t('chooser.searchBuilds')"
-            data-testid="chooser-search-toggle"
-            @click="openSearch"
-          >
-            <Search :size="14" />
-          </Button>
-          <div
-            v-else
-            ref="searchField"
-            class="chooser-search"
-            :class="{
-              'w-[220px]': toolbarLayout === 'full',
-              'w-[192px]': toolbarLayout === 'icon',
-              'min-w-0 flex-1': toolbarLayout === 'stacked'
-            }"
-            @focusout="closeSearchIfEmpty"
-            @keydown.esc="closeSearch"
-          >
+          <div class="chooser-search w-[220px]">
             <BaseInput
               v-model="searchQuery"
-              class="h-8 [&_input]:text-xs"
+              class="h-8 [&_input]:text-[13px]"
               :placeholder="t('chooser.searchBuilds')"
               :aria-label="t('chooser.searchBuilds')"
             >
@@ -472,7 +401,6 @@ const gridHandlers = {
         :installations="scopedVisibleInstalls"
         :show-free-runs-pill="showCloudFreeRunsPill"
         :show-why-cloud="showWhyCloud"
-        :is-promoting-to-workspace="isPromotingToWorkspace"
         v-on="gridHandlers"
       />
     </div>
