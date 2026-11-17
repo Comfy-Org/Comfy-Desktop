@@ -100,7 +100,7 @@ function windowState(): Promise<WindowState> {
   )
 }
 
-test('Start on a Home card opens ComfyUI in its own window and the dashboard stays on Home @linux', async () => {
+test('Start on a Home card opens ComfyUI in its own window and the dashboard stays on Home @linux @macos', async () => {
   await ctx.panel.waitForVisible(CARD, { timeout: 15_000 })
   expect(await ctx.panel.click(CARD)).toBe(true)
 
@@ -171,8 +171,8 @@ test('Start on another build from a build window opens it in its own window and 
   expect(
     await ctx.panel.textOf(runAll),
     'the Desktop window asks before running a second build'
-  ).toContain('Run All')
-  expect(await ctx.panel.click(runAll), 'Run All keeps the first build running').toBe(true)
+  ).toContain('Run all')
+  expect(await ctx.panel.click(runAll), 'Run all keeps the first build running').toBe(true)
 
   await expect.poll(twoBuildWindows, { timeout: 90_000, intervals: [250, 500, 1_000] }).toEqual({
     windows: 3,

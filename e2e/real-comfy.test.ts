@@ -8,13 +8,20 @@ import { test, expect } from '@playwright/test'
 import { keepOnlyComfyHostWindow } from './support/comfyHostWindow'
 import { launchApp, type AppContext } from './launchApp'
 import {
+  pickFromBuildsTileMenu,
+  uninstallFromBuildsTileMenu,
   clickInstallTile,
   clickNewInstallTile,
   expectChooserVisible,
   expectNewBuildModalOpen,
   openManageViaDashboard,
   openNewBuildChangeSetup,
-  openPickerViaTitlePill
+  openPickerViaTitlePill,
+  HARDWARE_DROPDOWN,
+  pickFromSetupDropdown,
+  pickFromSetupDropdownByText,
+  WHERE_IT_IS_DROPDOWN,
+  setupDropdownValue
 } from './support/chooserHelpers'
 import {
   armLaunchReadyHold,
@@ -30,7 +37,8 @@ import {
   isLaunchSpawnHeld,
   releaseLaunchReadyHold,
   releaseLaunchSpawnHold,
-  resetIpcInvocations
+  resetIpcInvocations,
+  type DownloadProgressLike
 } from './support/devHooks'
 import {
   closeTitlePopupIfOpen,
@@ -40,6 +48,7 @@ import {
   type WebContentsPage
 } from './support/cdpPages'
 import { evalWithRetry } from './support/evalRetry'
+import { ModelDownloadServer } from './support/modelDownloadServer'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -333,30 +342,24 @@ test('accept ToS + Change opens the name and every option in one sheet @sec-setu
     'failed to click the second-newest ComfyUI Version option in BaseSelect listbox'
   ).toBe(true)
 
-  await ctx.panel.waitForSelector('#source-fields .setup-option--selected', { timeout: 60_000 })
+  await ctx.panel.waitForSelector(`${HARDWARE_DROPDOWN}:not([aria-busy])`, { timeout: 60_000 })
 
   if (REAL_COMFY_VARIANT !== 'default') {
     const rowLabel =
       REAL_COMFY_VARIANT === 'nvidia' ? 'NVIDIA' : REAL_COMFY_VARIANT === 'amd' ? 'AMD' : 'CPU'
-    await ctx.panel.waitForSelector('.setup-option', { timeout: 5_000 })
     expect(
-      await ctx.panel.clickByText('.setup-option', rowLabel),
-      `${rowLabel} variant row clicked`
+      await pickFromSetupDropdownByText(ctx.panel, HARDWARE_DROPDOWN, rowLabel),
+      `${rowLabel} picked in the Hardware dropdown`
     ).toBe(true)
     await ctx.panel.waitFor(
       async () =>
-        ctx.panel.evaluate<boolean>(
-          `(() => {
-          const sel = document.querySelector('#source-fields .setup-option--selected .setup-option__label')
-          return !!sel && new RegExp(${JSON.stringify(rowLabel)}, 'i').test(sel.textContent || '')
-        })()`
-        ),
-      { timeout: 5_000, message: `${rowLabel} variant did not become the selected variant row` }
+        new RegExp(rowLabel, 'i').test(await setupDropdownValue(ctx.panel, HARDWARE_DROPDOWN)),
+      { timeout: 5_000, message: `${rowLabel} did not become the picked hardware` }
     )
   }
 })
 
-test('installs on the Home build card, then Open ComfyUI launches it @sec-setup @real-comfy', async () => {
+test('installs on the Home build card, then starts it there and turns on Auto start @sec-setup @real-comfy', async () => {
   test.skip(HYDRATED, 'reuse mode: install already on disk on the persisted profile')
   const LINUX_AMD = REAL_COMFY_VARIANT === 'amd' && process.platform === 'linux'
   test.setTimeout(LINUX_AMD ? 1_020_000 : 600_000)
@@ -383,19 +386,26 @@ test('installs on the Home build card, then Open ComfyUI launches it @sec-setup 
     'Open ComfyUI stays hidden while the only local build installs'
   ).toBe(false)
   await expect
-    .poll(() => ctx.panel.exists('[data-testid="home-open-comfyui"]'), {
+    .poll(() => ctx.panel.exists('[data-testid="home-build-installing"]'), {
       timeout: LINUX_AMD ? 840_000 : 420_000,
       intervals: [1_000, 2_000]
     })
-    .toBe(true)
-  expect(await ctx.panel.exists('[data-testid="home-build-installing"]')).toBe(false)
-  expect(await ctx.panel.click('[data-testid="home-open-comfyui"]')).toBe(true)
+    .toBe(false)
   await expect
     .poll(comfyFrontendIsLoaded, {
       timeout: 180_000,
-      intervals: [1_000, 2_000]
+      intervals: [1_000, 2_000],
+      message: 'the build starts on its own once its install finishes'
     })
     .toBe(true)
+  const builds = await ctx.panel.evaluate<Array<{ id: string; sourceId: string }>>(
+    'window.api.getInstallations()'
+  )
+  const localBuilds = builds.filter((b) => b.sourceId !== 'cloud')
+  expect(localBuilds).toHaveLength(1)
+  await expect
+    .poll(() => ctx.panel.evaluate("window.api.getSetting('autoLaunchOnStartup')"))
+    .toBe(localBuilds[0]!.id)
 })
 
 test('first-use Change chain marks firstUseCompleted once and cycles firstUseMode @sec-setup @real-comfy', async () => {
@@ -539,6 +549,90 @@ test('picker Dashboard opens a chooser without stopping the running install @sec
   await closeExtraWindowsKeepComfyHost()
   expect(await ensureInstallPanelView(ctx.app, installs[0]!.id)).toBe(true)
   await waitForWebContents(ctx.app, 'panel.html')
+})
+
+function emptySafetensors(): Buffer {
+  const header = Buffer.from(JSON.stringify({ __metadata__: { format: 'pt' } }))
+  const headerLength = Buffer.alloc(8)
+  headerLength.writeBigUInt64LE(BigInt(header.length))
+  return Buffer.concat([headerLength, header])
+}
+
+async function comfyJson<T>(origin: string, route: string): Promise<T> {
+  const res = await fetch(`${origin}${route}`, { signal: AbortSignal.timeout(30_000) })
+  expect(res.ok, `GET ${route} answered ${res.status}`).toBe(true)
+  return (await res.json()) as T
+}
+
+test('a model downloaded through the app shows up in the ComfyUI it launched @sec-models @real-comfy', async () => {
+  test.setTimeout(180_000)
+
+  const comfy = await evalWithRetry(() =>
+    ctx.app.evaluate(({ webContents }) => {
+      const wc = webContents
+        .getAllWebContents()
+        .find((w) => /^http:\/\/(127\.0\.0\.1|localhost):/.test(w.getURL()) && !w.isLoading())
+      return wc ? { id: wc.id, origin: new URL(wc.getURL()).origin } : null
+    })
+  )
+  expect(comfy, 'no running local ComfyUI frontend').not.toBeNull()
+  const modelsDirs = await ctx.panel.evaluate<string[]>(`window.api.getSetting('modelsDirs')`)
+  expect(modelsDirs[0], 'shared modelsDirs setting is empty').toBeTruthy()
+
+  const filename = `real-comfy-${randomUUID().slice(0, 8)}.safetensors`
+  const expectedPath = path.resolve(modelsDirs[0]!, 'checkpoints', filename)
+  const bytes = emptySafetensors()
+  const server = new ModelDownloadServer()
+  await server.start()
+  try {
+    server.setModel(filename, {
+      bytes,
+      etag: '"real-comfy-model"',
+      lastModified: new Date().toUTCString()
+    })
+    const url = server.urlFor(filename)
+
+    await test.step('the ComfyUI page downloads the model into the shared models folder', async () => {
+      const started = await evalInWebContents<boolean>(
+        comfy!.id,
+        `window.__comfyDesktop2.downloadModel(${JSON.stringify(url)}, ${JSON.stringify(filename)}, 'checkpoints')`
+      )
+      expect(started, 'downloadModel refused the model').toBe(true)
+
+      let job: DownloadProgressLike | undefined
+      await expect
+        .poll(
+          async () => {
+            const tray = await getLiveDownloadsTrayState(ctx.app)
+            job = [...tray.active, ...tray.recent].find((d) => d.url === url)
+            return job?.status ?? 'missing'
+          },
+          { timeout: 60_000, intervals: [500, 1_000] }
+        )
+        .toMatch(/^(completed|error|cancelled)$/)
+      expect(job!.status, `download ended ${job!.status}: ${job!.error ?? ''}`).toBe('completed')
+      expect(
+        job!.savePath ? path.resolve(job!.savePath) : null,
+        'download saved outside the shared checkpoints folder'
+      ).toBe(expectedPath)
+      expect(
+        readFileSync(expectedPath).equals(bytes),
+        'saved model differs from the served bytes'
+      ).toBe(true)
+    })
+
+    await test.step('ComfyUI lists the model under checkpoints', async () => {
+      await expect
+        .poll(() => comfyJson<string[]>(comfy!.origin, '/models/checkpoints'), {
+          timeout: 60_000,
+          intervals: [1_000, 2_000]
+        })
+        .toContain(filename)
+    })
+  } finally {
+    await server.stop()
+    rmSync(expectedPath, { force: true })
+  }
 })
 
 interface InstallationLite {
@@ -2197,14 +2291,7 @@ test('cleans up the copy install before the original delete test runs @sec-copy 
   expect(_copyInstallId, 'no copy install id captured to clean up').toBeTruthy()
 
   await expectChooserVisible(ctx.panel)
-  await ctx.panel.waitForVisible(byTestId(TID.dashboardTileKebab(_copyInstallId)), {
-    timeout: 15_000
-  })
-  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(_copyInstallId)))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('delete')), { timeout: 5_000 })
-  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('delete')))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 15_000 })
-  expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
+  await uninstallFromBuildsTileMenu(ctx.panel, _copyInstallId)
 
   await expect
     .poll(() => existsSync(_copyInstallPath), { timeout: 240_000, intervals: [1_000, 2_000] })
@@ -2234,15 +2321,13 @@ test('dashboard kebab "Copy Installation" creates a real ~500MB copy @sec-copy @
   test.setTimeout(600_000)
 
   await expectChooserVisible(ctx.panel)
-  await ctx.panel.waitForVisible(byTestId(TID.dashboardTileKebab(_updateInstallId)), {
+  await ctx.panel.waitForVisible(byTestId(TID.dashboardTile(_updateInstallId)), {
     timeout: 10_000
   })
 
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(_updateInstallId)))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('copy-install')), { timeout: 5_000 })
-  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('copy-install')))).toBe(true)
+  await pickFromBuildsTileMenu(ctx.panel, _updateInstallId, 'copy-install')
 
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
@@ -2295,7 +2380,7 @@ test('Manage drawer "Untrack" removes the install from the registry without touc
 
   await waitForWebContents(ctx.app, 'panel.html')
   await expectChooserVisible(ctx.panel)
-  await ctx.panel.waitForVisible(byTestId(TID.dashboardTileKebab(_kebabCopyInstallId)), {
+  await ctx.panel.waitForVisible(byTestId(TID.dashboardTile(_kebabCopyInstallId)), {
     timeout: 10_000
   })
 
@@ -2467,10 +2552,14 @@ test('creates a Remote Connection record pointed at the running local server thr
     await ctx.panel.click('[data-testid="config-start-from-existing"]'),
     'Start from switched to ComfyUI I already have'
   ).toBe(true)
-  await ctx.panel.waitForVisible('[data-testid="install-source-remote"]', { timeout: 5_000 })
-  expect(await ctx.panel.click('[data-testid="install-source-remote"]'), 'On a server picked').toBe(
-    true
-  )
+  expect(
+    await pickFromSetupDropdown(
+      ctx.panel,
+      WHERE_IT_IS_DROPDOWN,
+      '[data-testid="install-source-remote"]'
+    ),
+    'On a server picked'
+  ).toBe(true)
 
   await ctx.panel.waitForVisible('#sf-url', { timeout: 10_000 })
   await ctx.panel.fill('#sf-url', origin!)
@@ -2790,14 +2879,7 @@ test('real delete wipes the fully-installed ~500MB tree off disk @sec-delete @re
   test.setTimeout(300_000)
   expect(_deleteInstallPath, 'install path not captured').toBeTruthy()
 
-  await ctx.panel.waitForVisible(byTestId(TID.dashboardTileKebab(_deleteInstallId)), {
-    timeout: 10_000
-  })
-  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(_deleteInstallId)))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('delete')), { timeout: 5_000 })
-  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('delete')))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 15_000 })
-  expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
+  await uninstallFromBuildsTileMenu(ctx.panel, _deleteInstallId)
 
   await expect
     .poll(() => existsSync(_deleteInstallPath), { timeout: 240_000, intervals: [1_000, 2_000] })

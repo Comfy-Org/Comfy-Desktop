@@ -708,6 +708,26 @@ describe('AssetsView', () => {
     ])
   })
 
+  it('lists the selected workspace assets through the same shared Cloud installation', async () => {
+    signedInToPersonalWithTeamDashboard()
+    const cloud = { ...cloudBuild('cloud', 'Comfy Cloud'), sourceId: 'cloud' }
+    listAssets.mockImplementation(async () => [
+      asset('current', `${useAuthStore().status.workspaceId}.png`, 'image')
+    ])
+    const wrapper = await mountAssets([], { builds: [cloud] })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
+    expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('team-b', 'restored')
+    expect(assetNames(wrapper)).toEqual(['team-b.png'])
+
+    useDashboardScopeStore().selectWorkspace('personal')
+    await flushPromises()
+
+    expect(switchWorkspace).toHaveBeenLastCalledWith('me', 'chosen')
+    expect(assetNames(wrapper)).toEqual(['me.png'])
+    expect(listAssets).toHaveBeenLastCalledWith('cloud')
+  })
+
   it("says the load failed instead of showing another workspace's files when the personal workspace is unknown", async () => {
     listAssets.mockResolvedValue([asset('t1', 'team.png', 'image')])
     listWorkspaces.mockResolvedValue([{ id: 'team-b', name: 'Team B', type: 'team' }])

@@ -1,9 +1,33 @@
-import { onScopeDispose, ref } from 'vue'
+import {
+  getCurrentInstance,
+  hasInjectionContext,
+  inject,
+  onScopeDispose,
+  provide,
+  ref,
+  type InjectionKey
+} from 'vue'
 
 const AUTO_START_SETTING = 'autoLaunchOnStartup'
 const AUTO_START_NONE = 'none'
 
-export function useAutoStartBuild() {
+export type AutoStartBuild = ReturnType<typeof createAutoStartBuild>
+
+const AUTO_START_BUILD: InjectionKey<AutoStartBuild> = Symbol('autoStartBuild')
+
+export function provideAutoStartBuild(): AutoStartBuild {
+  const autoStart = createAutoStartBuild()
+  provide(AUTO_START_BUILD, autoStart)
+  return autoStart
+}
+
+export function useAutoStartBuild(): AutoStartBuild {
+  const shared = hasInjectionContext() ? inject(AUTO_START_BUILD, null) : null
+  if (shared) return shared
+  return getCurrentInstance() ? provideAutoStartBuild() : createAutoStartBuild()
+}
+
+function createAutoStartBuild() {
   const autoStartValue = ref<unknown>(undefined)
   let confirmedValue: unknown = undefined
   let revision = 0

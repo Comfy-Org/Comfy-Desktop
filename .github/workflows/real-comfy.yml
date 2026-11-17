@@ -1,9 +1,8 @@
 name: Real ComfyUI
 
 on:
+  workflow_call:
   workflow_dispatch:
-  schedule:
-    - cron: '0 9 * * *'
   pull_request:
     types: [labeled]
 
@@ -11,8 +10,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: real-comfy-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: real-comfy-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.event.label.name != 'run-real-comfy' && github.run_id || 'suite' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   real-comfy:

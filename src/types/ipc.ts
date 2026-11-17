@@ -1,6 +1,8 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
+import type { PlatformSettingsPage } from '../main/devplatform/config'
+export type { PlatformSettingsPage }
 
 import type {
   AuthStatus,
@@ -1145,7 +1147,7 @@ export interface ElectronApi {
   ): Promise<ActionResult | void>
 
   stopComfyUI(installationId: string): Promise<void>
-  focusComfyWindow(installationId: string): Promise<boolean>
+  focusComfyWindow(installationId: string, pickerWorkspaceId?: string): Promise<boolean>
 
   terminalSubscribe(installationId: string): Promise<TerminalRestore>
   terminalUnsubscribe(installationId: string): Promise<void>
@@ -1304,6 +1306,7 @@ export interface ElectronApi {
     ): Promise<WorkspaceSwitchStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
     openBuildsPage(workspaceId: string): Promise<void>
+    openSettingsPage(page: PlatformSettingsPage, workspaceId: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
     promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }
@@ -1449,6 +1452,17 @@ export const POPUP_KIND = {
 } as const
 
 export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
+
+export type TitlePopupMenuIcon = 'performance-test' | 'benchmarks'
+
+export interface TitlePopupMenuItem {
+  id?: string
+  label?: string
+  labelKey?: string
+  labelParams?: Record<string, string | number>
+  icon?: TitlePopupMenuIcon
+  kind?: 'separator'
+}
 
 export interface PopupTheme {
   bg: string
