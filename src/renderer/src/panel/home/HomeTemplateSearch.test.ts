@@ -812,7 +812,14 @@ describe('HomeTemplateSearch cards', () => {
     expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    expect(inView(wrapper, '[data-testid="home-template-search-open-failed"]')).toBe(true)
+    const message = '[data-testid="home-template-search-open-failed"]'
+    expect(inView(wrapper, message)).toBe(true)
+
+    await press(wrapper, 'ArrowUp')
+    const card = wrapper.get(SELECTED).element.getBoundingClientRect()
+    expect(card.top).toBeGreaterThanOrEqual(
+      wrapper.get(message).element.getBoundingClientRect().bottom - 1
+    )
   })
 
   it('brings a first-row card into view past the page scrolling, not only the panel', async () => {

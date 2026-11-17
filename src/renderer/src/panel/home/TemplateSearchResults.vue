@@ -183,7 +183,12 @@ defineExpose({ verticalTarget, revealActive })
 </script>
 
 <template>
-  <div ref="panel" tabindex="-1" @mousedown.prevent>
+  <div
+    ref="panel"
+    tabindex="-1"
+    :class="{ 'scroll-pt-10': controller.openFailed.value }"
+    @mousedown.prevent
+  >
     <div
       v-if="notice"
       class="flex items-center justify-between gap-3 px-2.5 py-2"
