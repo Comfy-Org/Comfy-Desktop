@@ -91,6 +91,12 @@ const updateNote = computed(() =>
 const switchHeadline = computed(() =>
   t('channelCards.switchTo', { channel: channel.value?.label ?? '' })
 )
+const statusHeadline = computed(() => {
+  if (channel.value?.updateAvailable) {
+    return t('buildOverview.available', { version: channel.value.latestVersion ?? '' })
+  }
+  return channel.value?.latestVersion ? t('channelCards.upToDate') : t('buildOverview.notChecked')
+})
 const updateHeadline = computed(() =>
   switching.value
     ? switchHeadline.value
@@ -256,8 +262,8 @@ function openLocation(): void {
           </template>
           <template v-else>
             <span class="flex min-w-0 flex-1 flex-col">
-              <span class="truncate text-foreground">{{
-                channel?.latestVersion ? t('channelCards.upToDate') : t('buildOverview.notChecked')
+              <span class="truncate text-foreground" :title="statusHeadline">{{
+                statusHeadline
               }}</span>
               <span v-if="channel?.enriching" class="inline-flex items-center gap-1 truncate">
                 <Loader2

@@ -143,6 +143,18 @@ describe('BuildOverview — ComfyUI card', () => {
     expect(w.find('[data-testid="update-action-check-update"]').exists()).toBe(true)
   })
 
+  it('says an update is available, not up to date, when the build cannot run the update', () => {
+    const w = mountOverview({
+      model: model({
+        channels: [channel({ latestVersion: 'v0.45.3', updateAvailable: true, actions: [] })]
+      })
+    })
+    const update = w.get('[data-testid="build-overview-update"]').text()
+    expect(update).toContain('v0.45.3 available')
+    expect(update).not.toContain('Up to date')
+    expect(w.find('[data-testid="update-action-update-comfyui"]').exists()).toBe(false)
+  })
+
   it('checks for updates from the card and spins while it checks', async () => {
     const w = mountOverview()
     await w.get('[data-testid="update-action-check-update"]').trigger('click')
