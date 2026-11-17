@@ -230,7 +230,10 @@ export function scopeInstancePicker(
     allInstalls.find((install) => install.id === hostInstallationId) ??
     allInstalls.find((install) => install.id === anchorInstallationId)
   const workspaceId = scopeInstall
-    ? installationWorkspaceId(scopeInstall)
+    ? installationWorkspaceId(
+        scopeInstall,
+        settings.get(DASHBOARD_WORKSPACE_SETTING) || PERSONAL_WORKSPACE_ID
+      )
     : settings.get(DASHBOARD_WORKSPACE_SETTING) || PERSONAL_WORKSPACE_ID
   const hideCloud = settings.get('hideCloudFromPicker') === true
   const installs = allInstalls.filter(

@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import type * as Http from 'node:http'
+import type * as Https from 'node:https'
 import { expect, test } from '@playwright/test'
 import en from '../locales/en.json'
 import { launchApp, type AppContext } from './launchApp'
@@ -224,6 +226,66 @@ test('T-V2: a non-member 404 opens no browser, shows the unavailable caption and
   expect(browserOpens).toHaveLength(1)
   expect(cloud.authorizeUrls).toHaveLength(1)
   expect(cloud.mints).toEqual([{ workspaceId: 'B', bearerWorkspace: 'A' }])
+})
+
+test('Comfy Cloud stays available and reopens in the selected team or Personal workspace @macos @windows', async () => {
+  cloud.workspaces.push({ id: 'P', name: 'Personal Workspace', type: 'personal', role: 'owner' })
+  await signInOnFreshProfile()
+  await ctx!.app.evaluate(async ({ session, net }, baseUrl) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const https = require('node:https') as typeof Https
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const http = require('node:http') as typeof Http
+    const get = https.get
+    https.get = ((...args: unknown[]) => {
+      if (typeof args[0] !== 'string' && !(args[0] instanceof URL)) {
+        return Reflect.apply(get, https, args)
+      }
+      const url = new URL(String(args[0]))
+      if (url.hostname !== 'cloud.comfy.org') return Reflect.apply(get, https, args)
+      args[0] = `${baseUrl}/cloud-view${url.search}`
+      return Reflect.apply(http.get, http, args)
+    }) as typeof https.get
+    await session.fromPartition('persist:shared').protocol.handle('https', (request) => {
+      const url = new URL(request.url)
+      return url.hostname === 'cloud.comfy.org'
+        ? new Response('<html><body>Cloud launch destination</body></html>', {
+            headers: { 'content-type': 'text/html' }
+          })
+        : net.fetch(request, { bypassCustomProtocolHandlers: true })
+    })
+  }, cloud.url)
+
+  expect(await panel().click('[data-testid="app-sidebar-home"]')).toBe(true)
+  let cloudViewId: number | undefined
+  for (const selected of ['B', 'personal', 'A']) {
+    await select(selected)
+    const workspaceId = selected === 'personal' ? 'P' : selected
+    await expectActive(workspaceId)
+    await panel().waitForVisible('[data-testid="home-build"]')
+    expect(await panel().clickByText('[data-testid="home-build"]', 'Comfy Cloud')).toBe(true)
+
+    await expect
+      .poll(() =>
+        ctx!.app.evaluate(({ webContents }) => {
+          const contents = webContents
+            .getAllWebContents()
+            .find((view) => view.getURL().startsWith('https://cloud.comfy.org/'))
+          return contents ? new URL(contents.getURL()).searchParams.get('workspace') : null
+        })
+      )
+      .toBe(workspaceId)
+    const views = await ctx!.app.evaluate(({ webContents }) =>
+      webContents
+        .getAllWebContents()
+        .filter((view) => view.getURL().startsWith('https://cloud.comfy.org/'))
+        .map((view) => view.id)
+    )
+    expect(views).toHaveLength(1)
+    cloudViewId ??= views[0]
+    expect(views[0], 'the existing Cloud view is reused').toBe(cloudViewId)
+  }
+  expect(browserOpens, 'workspace navigation asks for no extra sign-in').toHaveLength(1)
 })
 
 test('T-V4: sso_required opens exactly one more browser carrying B, then B is active @macos @windows', async () => {

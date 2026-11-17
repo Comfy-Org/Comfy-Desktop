@@ -350,7 +350,7 @@ function listBuildAssets({ build, cloud, computer }: AssetBuild): Promise<AssetS
 }
 
 async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean): Promise<void> {
-  const dashboardWorkspaceId = installationWorkspaceId(build)
+  const dashboardWorkspaceId = installationWorkspaceId(build, dashboardScope.selectedWorkspaceId)
   if (!authStore.sessionWorkspaceFor(dashboardWorkspaceId)) await authStore.fetchWorkspaces()
   const workspaceId = authStore.sessionWorkspaceFor(dashboardWorkspaceId)
   if (!workspaceId) throw new Error("the build's workspace is unknown")
@@ -396,7 +396,9 @@ const accountContext = computed(
 const loadKey = computed(() => {
   const selected = selectedBuild.value
   if (!selected) return ''
-  return selected.cloud ? `${selected.build.id}\n${accountContext.value}` : selected.build.id
+  return selected.cloud
+    ? `${selected.build.id}\n${dashboardScope.selectedWorkspaceId}\n${accountContext.value}`
+    : selected.build.id
 })
 
 watch(

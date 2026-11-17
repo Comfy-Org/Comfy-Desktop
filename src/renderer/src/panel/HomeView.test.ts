@@ -518,6 +518,25 @@ describe('Home builds', () => {
     expect(wrapper.emitted('pick')).toEqual([[OLDEST]])
   })
 
+  it('keeps Comfy Cloud available when moving between Personal and team workspaces', async () => {
+    const teamBuild = build({ id: 'team', name: 'Team build', workspaceId: 'team-a' })
+    getInstallations.mockResolvedValue([CLOUD, OLDEST, teamBuild])
+    const wrapper = await openHome()
+    const names = () =>
+      wrapper.findAll('[data-testid="home-build"] .font-semibold').map((name) => name.text())
+
+    expect(names()).toEqual(['Comfy Cloud', 'Flux Sandbox'])
+    useDashboardScopeStore().selectedWorkspaceId = 'team-a'
+    await flushPromises()
+    expect(names()).toEqual(['Comfy Cloud', 'Team build'])
+    await wrapper.findAll('[data-testid="home-build"]')[0]!.trigger('click')
+    expect(wrapper.emitted('pick')).toEqual([[CLOUD]])
+
+    useDashboardScopeStore().selectedWorkspaceId = 'personal'
+    await flushPromises()
+    expect(names()).toEqual(['Comfy Cloud', 'Flux Sandbox'])
+  })
+
   it('opens the most recently used build from Open ComfyUI', async () => {
     getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
     const wrapper = await openHome()

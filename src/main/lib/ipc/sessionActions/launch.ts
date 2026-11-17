@@ -61,6 +61,7 @@ import type { ChildProcess, InstallationRecord, LaunchCmd } from '../shared'
 import type { LaunchCommand } from '../../../types/sources'
 import { randomUUID } from 'node:crypto'
 import { displayLaunchUrl } from '../../cloudUrl'
+import { cloudWorkspaceUrl } from '../../cloudWorkspace'
 import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
@@ -1461,6 +1462,8 @@ async function runLaunch(
     applyStorageLaunchArgs(inst, installationId, launchCmd, storageSettings)
 
   if (launchCmd.remote) {
+    launchCmd.url = await cloudWorkspaceUrl(inst, launchCmd.url!)
+    if (abort.signal.aborted) return { ok: false, cancelled: true }
     const displayUrl = displayLaunchUrl(launchCmd.url || '')
     sendProgress('launch', {
       percent: -1,

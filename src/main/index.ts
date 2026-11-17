@@ -55,6 +55,7 @@ import {
   trackWindowWebContents
 } from './lib/quitAfterWindowWebContents'
 import { showUpdateInstallSplash } from './lib/updateSplash'
+import { syncCloudWindowWorkspace } from './lib/cloudWorkspace'
 import type { InstallationRecord } from './installations'
 import {
   cleanupTempDownloads,
@@ -761,9 +762,11 @@ ipcMain.on('comfy-window:show-home', (event) => {
   openOrFocusHomeHostWindow()
 })
 
-function focusOpenComfyWindow(installationId: string): boolean {
+async function focusOpenComfyWindow(installationId: string): Promise<boolean> {
   const entry = getEntryByInstallationId(installationId)
   if (!entry || entry.window.isDestroyed()) return false
+  await syncCloudWindowWorkspace(entry)
+  if (entry.window.isDestroyed()) return false
   entry.window.show()
   entry.window.focus()
   return true
@@ -771,7 +774,7 @@ function focusOpenComfyWindow(installationId: string): boolean {
 
 async function openWindowForAppsBuild(installationId: string): Promise<boolean> {
   const installation = await getInstallation(installationId)
-  if (focusOpenComfyWindow(installationId)) return true
+  if (await focusOpenComfyWindow(installationId)) return true
   const port = runningPortOf(installationId)
   if (!installation || port === null) return false
   onLaunch({
@@ -785,7 +788,7 @@ async function openWindowForAppsBuild(installationId: string): Promise<boolean> 
 
 ipcMain.handle('focus-comfy-window', async (_event, installationId: string) => {
   recordIpcInvocation('focus-comfy-window', { installationId })
-  if (focusOpenComfyWindow(installationId)) return true
+  if (await focusOpenComfyWindow(installationId)) return true
   if (isRunningForAppsOnly(installationId)) return openWindowForAppsBuild(installationId)
 
   const proc = ipc.getSessionProcess(installationId)
