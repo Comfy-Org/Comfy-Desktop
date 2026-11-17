@@ -3,6 +3,7 @@ import type { WebContentsView } from 'electron'
 import path from 'path'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import type { DatadogForwardedError } from '../../types/ipc'
+import type { NewWindowDashboardPage } from '../../shared/dashboardPages'
 import type { InstallationRecord } from '../installations'
 import { getAppVersion } from '../lib/ipc'
 import { hasBuildsRunningForAppsOnly, stopEveryBuildRunningForAppsOnly } from '../apps/localComfy'
@@ -19,14 +20,8 @@ import {
   isFirebaseAuthHandlerUrl,
   type SignInFailureContext
 } from '../auth/firebaseBridge'
-import {
-  isCheckoutReturnUrl,
-  isCheckoutUrl,
-  isLikelyDownloadUrl,
-  shouldOpenInPopup
-} from '../lib/allowedPopups'
+import { isCheckoutUrl, isLikelyDownloadUrl, shouldOpenInPopup } from '../lib/allowedPopups'
 import { COMFY_BG, TITLEBAR_BG } from '../lib/theme'
-import { standaloneWindowStyles } from '../lib/standaloneStyles'
 import {
   TITLEBAR_HEIGHT,
   TRAFFIC_LIGHT_POSITION,
@@ -34,7 +29,10 @@ import {
 } from '../lib/titleBarOverlay'
 import {
   _registerExtraBroadcastTarget,
+  _runningSessions,
   _unregisterExtraBroadcastTarget,
+  hasRunningSessions,
+  keepsComfyRunningWhenWindowCloses,
   resolveTheme
 } from '../lib/ipc/shared'
 import * as mainTelemetry from '../lib/telemetry'
@@ -46,7 +44,6 @@ import * as settings from '../settings'
 import * as updater from '../lib/updater'
 import { getSavedBounds, getWindowOptions, saveWindowBounds } from '../lib/windowState'
 import { ensureSystemModal } from '../popups/systemModal'
-import { hideCheckoutBackdrop, showCheckoutBackdrop } from '../popups/checkoutBackdrop'
 import { hideTitlePopupForParent, prewarmTitlePopup } from '../popups/titlePopup'
 import { destroyPanelView, ensurePanelView } from './panelView'
 import { expectedPartitionFor } from './partition'
@@ -114,10 +111,27 @@ export function shouldShowInstallCloseConfirm(
   )
 }
 
+function localComfyRunning(): boolean {
+  return [..._runningSessions.values()].some((session) => !session.url)
+}
+
+export function closeQuitsDesktop(isLastWindow: boolean): boolean {
+  if (!keepsComfyRunningWhenWindowCloses()) return isLastWindow
+  return isLastWindow && (process.platform !== 'darwin' || !localComfyRunning())
+}
+
+export function quitsOnceEveryWindowClosed(): boolean {
+  if (keepsComfyRunningWhenWindowCloses() && process.platform !== 'darwin') return true
+  return !hasRunningSessions()
+}
+
 export function closeStopsLocalComfy(
   entry: ComfyWindowEntry | null | undefined,
   isLastWindow: boolean
 ): boolean {
+  if (keepsComfyRunningWhenWindowCloses()) {
+    return closeQuitsDesktop(isLastWindow) && localComfyRunning()
+  }
   return shouldConfirmKillForEntry(entry) || (isLastWindow && hasBuildsRunningForAppsOnly())
 }
 
@@ -142,7 +156,7 @@ export interface HostWindowFactories {
   ) => Promise<'cleared' | 'aborted' | 'defer'>
   confirmCloseInstanceWindow: (
     window: BrowserWindow,
-    isLastWindow: boolean,
+    quitsDesktop: boolean,
     stopsLocalComfy: boolean,
     theme: { bg: string; text: string }
   ) => Promise<CloseWindowChoice>
@@ -201,101 +215,6 @@ function injectMacPasskeyWarning(childWindow: BrowserWindow): void {
 
   childWindow.webContents.on('dom-ready', inject)
   childWindow.webContents.on('did-navigate-in-page', inject)
-}
-
-const CHECKOUT_RELOAD_TIMEOUT_MS = 4000
-
-function wireCheckoutPopup(
-  childWindow: BrowserWindow,
-  parent: BrowserWindow,
-  hostContents: Electron.WebContents,
-  openedAt: number
-): void {
-  const close = (): void => {
-    if (!childWindow.isDestroyed()) childWindow.close()
-  }
-  let returning = false
-
-  childWindow.once('ready-to-show', () => {
-    childWindow.show()
-    showCheckoutBackdrop(parent, close)
-    attachCheckoutCloseButton(childWindow, close)
-  })
-  childWindow.once('closed', () => hideCheckoutBackdrop(parent))
-
-  childWindow.webContents.on('before-input-event', (_e, input) => {
-    if (input.type === 'keyDown' && input.key === 'Escape') close()
-  })
-
-  const closeOnReturn = (_e: Electron.Event, targetUrl: string): void => {
-    if (returning || childWindow.isDestroyed() || !isCheckoutReturnUrl(targetUrl)) return
-    returning = true
-    mainTelemetry.capture('comfy.desktop.billing.checkout_returned', {
-      duration_ms: Date.now() - openedAt,
-      user_tier: getUserTier()
-    })
-    if (hostContents.isDestroyed()) {
-      close()
-      return
-    }
-    let done = false
-    const finish = (): void => {
-      if (done) return
-      done = true
-      close()
-    }
-    hostContents.once('did-stop-loading', finish)
-    setTimeout(finish, CHECKOUT_RELOAD_TIMEOUT_MS)
-    hostContents.reload()
-  }
-
-  childWindow.webContents.on('will-redirect', closeOnReturn)
-  childWindow.webContents.on('did-navigate', closeOnReturn)
-}
-
-const CHECKOUT_CLOSE_BUTTON_HTML = `<!doctype html>
-<html class="pointer-events-none m-0 h-full w-full overflow-hidden bg-transparent"><head><meta charset="utf-8"><style>${standaloneWindowStyles}</style></head>
-<body class="pointer-events-none m-0 h-full w-full overflow-hidden bg-transparent">
-<button id="x" class="pointer-events-auto fixed top-2.5 right-2.5 grid size-7 cursor-pointer place-items-center rounded-lg border-0 border-none border-current bg-[rgba(0,0,0,0.06)] text-[rgba(0,0,0,0.55)] [font:16px/1_system-ui] hover:bg-[rgba(0,0,0,0.12)] hover:text-[rgba(0,0,0,0.85)]" aria-label="Close">✕</button>
-<script>
-  const { ipcRenderer } = require('electron');
-  document.getElementById('x').addEventListener('click', () => ipcRenderer.send('comfy-checkout:close'));
-</script>
-</body></html>`
-
-const CHECKOUT_CLOSE_BUTTON_SIZE = 48
-
-function attachCheckoutCloseButton(childWindow: BrowserWindow, onClose: () => void): void {
-  const overlay = createWebContentsView({
-    webPreferences: { contextIsolation: false, nodeIntegration: true, sandbox: false }
-  })
-  overlay.setBackgroundColor('#00000000')
-  childWindow.contentView.addChildView(overlay)
-  const place = (): void => {
-    if (childWindow.isDestroyed()) return
-    const { width } = childWindow.getContentBounds()
-    overlay.setBounds({
-      x: Math.max(0, width - CHECKOUT_CLOSE_BUTTON_SIZE),
-      y: 0,
-      width: CHECKOUT_CLOSE_BUTTON_SIZE,
-      height: CHECKOUT_CLOSE_BUTTON_SIZE
-    })
-  }
-  place()
-  childWindow.on('resize', place)
-  void overlay.webContents
-    .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(CHECKOUT_CLOSE_BUTTON_HTML)}`)
-    .catch(() => {})
-
-  const closeId = overlay.webContents.id
-  const handler = (event: Electron.IpcMainEvent): void => {
-    if (event.sender.id === closeId) onClose()
-  }
-  ipcMain.on('comfy-checkout:close', handler)
-  childWindow.once('closed', () => {
-    ipcMain.removeListener('comfy-checkout:close', handler)
-    if (!overlay.webContents.isDestroyed()) overlay.webContents.close()
-  })
 }
 
 export interface CreateHostWindowOpts {
@@ -393,8 +312,9 @@ export async function confirmHostWindowClose(
   const entryForClose = comfyWindows.get(windowKey)
   const isLastWindow =
     Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed()).length <= 1
+  const quitsDesktop = closeQuitsDesktop(isLastWindow)
   const isInstallHostWindow = !!entryForClose && isInstallHost(entryForClose)
-  const isLastInstallWindow = isLastWindow && isInstallHostWindow
+  const isLastInstallWindow = quitsDesktop && isInstallHostWindow
   const stopsLocalComfy = closeStopsLocalComfy(entryForClose, isLastWindow)
   let agreedToStopAppsBuilds = false
   if (
@@ -409,14 +329,15 @@ export async function confirmHostWindowClose(
   ) {
     const closeChoice = await fx.confirmCloseInstanceWindow(
       comfyWindow,
-      isLastWindow,
+      quitsDesktop,
       stopsLocalComfy,
       entryForClose.lastTheme
     )
     if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) {
       return false
     }
-    agreedToStopAppsBuilds = isLastWindow && closeChoice === 'close'
+    agreedToStopAppsBuilds =
+      isLastWindow && closeChoice === 'close' && !keepsComfyRunningWhenWindowCloses()
   }
   fx.preClearedClose.delete(comfyWindow)
   if (comfyWindow.isDestroyed()) return false
@@ -725,18 +646,10 @@ export function buildComfyView(
   attachSessionDownloadHandler(comfyContents.session)
   guardPermissionRequests(comfyContents.session)
 
-  let nextPopupIsCheckout = false
-  let nextCheckoutOpenedAt = 0
-
   comfyContents.on('did-create-window', (childWindow) => {
-    const isCheckout = nextPopupIsCheckout
-    const openedAt = nextCheckoutOpenedAt
-    nextPopupIsCheckout = false
-    nextCheckoutOpenedAt = 0
     childWindow.setIcon(APP_ICON)
     if (process.platform !== 'darwin') childWindow.removeMenu()
     injectMacPasskeyWarning(childWindow)
-    if (isCheckout) wireCheckoutPopup(childWindow, comfyWindow, comfyContents, openedAt)
   })
   comfyContents.setWindowOpenHandler(({ url: childUrl }) => {
     if (isFirebaseAuthHandlerUrl(childUrl)) {
@@ -836,6 +749,7 @@ export function applyChooserHostThemeToAll(): void {
 
 export interface OpenChooserHostWindowOptions {
   deferColdStartReveal?: boolean
+  dashboardPage?: NewWindowDashboardPage
 }
 
 export function openChooserHostWindow(
@@ -868,7 +782,7 @@ export function openChooserHostWindow(
   entry.coldStartPendingReveal = !opts.deferColdStartReveal
 
   entry.activePanel = initialPanel
-  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry))
+  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry), opts.dashboardPage)
 
   entry.layoutViews()
 
