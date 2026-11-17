@@ -519,42 +519,24 @@ describe('The first open', () => {
     w.unmount()
   })
 
-  it('sends the wordmark up to its place at 1.1 s and lets later screens rise at once', async () => {
+  it('ends the opening once the last block of Set up has risen, so later screens rise at once', async () => {
     emulateReducedMotion(false)
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    const w = mount(FirstUseTakeover)
+    const w = await mountSetup()
     const mark = () => w.find('[data-testid="setup-wordmark"]')
     const column = () => w.find('[data-testid="setup-column"]')
+    const blocks = [...column().element.children]
 
-    vi.advanceTimersByTime(1099)
+    blocks[0].dispatchEvent(new Event('animationend', { bubbles: true }))
     await nextTick()
     expect(mark().attributes('data-arriving')).toBe('true')
+    expect(column().attributes('data-rise-after-arrival')).toBe('true')
 
-    vi.advanceTimersByTime(1)
+    blocks[blocks.length - 1].dispatchEvent(new Event('animationend', { bubbles: true }))
     await nextTick()
     expect(mark().attributes('data-arriving')).toBeUndefined()
     expect(mark().findAll('svg')).toHaveLength(1)
     expect(w.find('[data-testid="setup-light"]').exists()).toBe(false)
-    expect(column().attributes('data-rise-after-arrival')).toBe('true')
-    expect(column().element.inert).toBe(true)
-
-    vi.advanceTimersByTime(1359 - 1100)
-    await nextTick()
-    expect(column().element.inert).toBe(true)
-
-    vi.advanceTimersByTime(1)
-    await nextTick()
-    expect(column().element.inert).toBe(false)
-
-    vi.advanceTimersByTime(2219 - 1360)
-    await nextTick()
-    expect(column().attributes('data-rise-after-arrival')).toBe('true')
-
-    vi.advanceTimersByTime(1)
-    await nextTick()
     expect(column().attributes('data-rise-after-arrival')).toBeUndefined()
-    vi.useRealTimers()
-    await flushPromises()
     w.unmount()
   })
 
@@ -573,7 +555,6 @@ describe('The first open', () => {
     expect(
       w.find('[data-testid="setup-column"]').attributes('data-rise-after-arrival')
     ).toBeUndefined()
-    expect(w.find<HTMLElement>('[data-testid="setup-column"]').element.inert).toBe(false)
     w.unmount()
   })
 })

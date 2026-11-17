@@ -85,29 +85,20 @@ const RISE_CLASS = [
   '[&>:nth-child(n+5)]:[animation-delay:calc(var(--rise-after)+230ms)]',
   '[&>*:last-child:not(:first-child)]:[animation-delay:calc(var(--rise-after)+300ms)]'
 ].join(' ')
-const ARRIVE_MS = 1100
-const LAND_MS = 260
-const RISE_AFTER_ARRIVAL_MS = ARRIVE_MS + LAND_MS
-const LAST_RISE_END_MS = RISE_AFTER_ARRIVAL_MS + 300 + 560
+const RISE_STARTS_AFTER_OPENING = '1360ms'
 const prefersReducedMotion =
   window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-const firstOpen = !props.consent && !props.savedPlan && !prefersReducedMotion
-const arriving = ref(firstOpen)
-const riseAfterArrival = ref(firstOpen)
-const setUpHidden = ref(firstOpen)
-const openingTimers: ReturnType<typeof setTimeout>[] = []
-if (firstOpen) {
-  openingTimers.push(
-    setTimeout(() => {
-      arriving.value = false
-    }, ARRIVE_MS),
-    setTimeout(() => {
-      setUpHidden.value = false
-    }, RISE_AFTER_ARRIVAL_MS),
-    setTimeout(() => {
-      riseAfterArrival.value = false
-    }, LAST_RISE_END_MS)
-  )
+const opening = ref(!props.consent && !props.savedPlan && !prefersReducedMotion)
+
+watch(step, () => {
+  opening.value = false
+})
+
+function endOpeningAfterLastRise(event: AnimationEvent): void {
+  const column = event.currentTarget
+  if (column instanceof HTMLElement && event.target === column.lastElementChild) {
+    opening.value = false
+  }
 }
 
 let openGeneration = 0
@@ -415,7 +406,6 @@ watch(
 )
 
 onUnmounted(() => {
-  openingTimers.forEach(clearTimeout)
   if (!completedFired) {
     emitTelemetryAction('comfy.desktop.first_use.abandoned', {
       step: step.value,
@@ -437,31 +427,24 @@ defineExpose({ open, resetContinue })
     :dismiss-on-escape="false"
     :dismiss-on-outside="false"
     overlay-class="fixed inset-0 z-50 flex bg-window-background p-2"
-    content-class="relative flex size-full max-h-none max-w-none flex-col overflow-y-auto rounded-shell bg-[#0d0d0f] bg-[radial-gradient(70%_62%_at_50%_0%,rgb(241_241_241/0.07),rgb(241_241_241/0)_70%)] outline-none"
+    content-class="relative flex size-full max-h-none max-w-none flex-col overflow-y-auto rounded-shell bg-[#0d0d0f] [container-type:size] bg-[radial-gradient(70%_62%_at_50%_0%,rgb(241_241_241/0.07),rgb(241_241_241/0)_70%)] outline-none"
     data-testid="setup-screen"
   >
     <div
-      v-if="arriving"
+      v-if="opening"
       class="pointer-events-none absolute inset-0 animate-first-use-light bg-[#0d0d0f]"
       data-testid="setup-light"
     />
     <div
-      class="absolute top-5 left-1/2 h-7 w-[100px] text-[#f0f0f0] [transition:transform_600ms_cubic-bezier(0.32,0.72,0,1)] will-change-transform"
-      :class="
-        arriving
-          ? '[transform:translate(-50%,calc(50vh_-_34px))_scale(2)]'
-          : '[transform:translate(-50%,0)_scale(1)]'
-      "
-      :data-arriving="arriving || undefined"
+      class="absolute top-5 left-1/2 h-7 w-[100px] -translate-x-1/2 text-[#f0f0f0]"
+      :class="opening && 'animate-first-use-land [--first-use-drop:calc(50cqh_-_34px)]'"
+      :data-arriving="opening || undefined"
       aria-hidden="true"
       data-testid="setup-wordmark"
     >
+      <ComfyWordmark class="size-full" :class="opening && 'animate-first-use-arrive'" />
       <ComfyWordmark
-        class="size-full [transition:opacity_300ms_ease]"
-        :class="arriving && 'animate-first-use-arrive opacity-82'"
-      />
-      <ComfyWordmark
-        v-if="arriving"
+        v-if="opening"
         class="absolute inset-0 size-full animate-first-use-glint mask-no-repeat [mask-image:linear-gradient(106deg,transparent_30%,#000_50%,transparent_70%)] [mask-size:300%_100%]"
         data-testid="setup-wordmark-glint"
       />
@@ -470,10 +453,10 @@ defineExpose({ open, resetContinue })
     <div
       class="m-auto flex w-[638px] max-w-[calc(100%-48px)] flex-col py-24"
       :class="RISE_CLASS"
-      :style="{ '--rise-after': riseAfterArrival ? `${RISE_AFTER_ARRIVAL_MS}ms` : '0ms' }"
-      :data-rise-after-arrival="riseAfterArrival || undefined"
-      :inert="setUpHidden"
+      :style="{ '--rise-after': opening ? RISE_STARTS_AFTER_OPENING : '0ms' }"
+      :data-rise-after-arrival="opening || undefined"
       data-testid="setup-column"
+      @animationend="endOpeningAfterLastRise"
     >
       <template v-if="step === 'setup'">
         <h1 class="m-0 text-[22px]/[27px] font-semibold text-foreground">{{ title }}</h1>

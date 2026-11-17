@@ -61,30 +61,41 @@ function rectOf(testId: string): DOMRect {
   return element.getBoundingClientRect()
 }
 
-function finishAnimations(element: Element): void {
-  element.getAnimations().forEach((animation) => animation.finish())
+const WORDMARK_LEAVES_AT_MS = 1100
+
+function seekOpening(ms: number): void {
+  document.getAnimations().forEach((animation) => {
+    animation.pause()
+    animation.currentTime = ms
+  })
+}
+
+function wordmark(): { wrapper: HTMLElement; mark: SVGElement } {
+  const wrapper = document.querySelector<HTMLElement>('[data-testid="setup-wordmark"]')!
+  return { wrapper, mark: wrapper.querySelector('svg')! }
+}
+
+function centreOf(box: DOMRect): { x: number; y: number } {
+  return { x: box.left + box.width / 2, y: box.top + box.height / 2 }
 }
 
 describe('The first open', () => {
-  it('starts the wordmark twice its size in the middle of the window, at 82%', async () => {
+  it('holds the wordmark twice its size in the middle of the screen, at 82%', async () => {
     await showSetup()
+    const { wrapper, mark } = wordmark()
 
-    const wrapper = document.querySelector('[data-testid="setup-wordmark"]')!
-    const mark = wrapper.querySelector('svg')!
-    finishAnimations(mark)
+    seekOpening(WORDMARK_LEAVES_AT_MS - 1)
     const box = wrapper.getBoundingClientRect()
+    const middle = centreOf(rectOf('setup-screen'))
     expect(box.height).toBe(56)
-    expect(box.top + box.height / 2 - rectOf('setup-screen').top).toBeCloseTo(
-      SMALLEST_WINDOW.height / 2,
-      0
-    )
-    expect(box.left + box.width / 2).toBeCloseTo(SMALLEST_WINDOW.width / 2, 0)
-    expect(getComputedStyle(mark).opacity).toBe('0.82')
-    expect(getComputedStyle(mark).animationName).toBe('first-use-arrive')
-    expect(getComputedStyle(wrapper).transitionDuration).toBe('0.6s')
-    expect(getComputedStyle(wrapper).transitionTimingFunction).toBe(
-      'cubic-bezier(0.32, 0.72, 0, 1)'
-    )
+    expect(centreOf(box).y).toBeCloseTo(middle.y, 0)
+    expect(centreOf(box).x).toBeCloseTo(middle.x, 0)
+    expect(Number(getComputedStyle(mark).opacity)).toBeCloseTo(0.82, 2)
+    expect(getComputedStyle(mark).animationName).toBe('first-use-arrive, first-use-whiten')
+    expect(getComputedStyle(wrapper).animationName).toBe('first-use-land')
+    expect(getComputedStyle(wrapper).animationDelay).toBe('1.1s')
+    expect(getComputedStyle(wrapper).animationDuration).toBe('0.6s')
+    expect(getComputedStyle(wrapper).animationTimingFunction).toBe('cubic-bezier(0.32, 0.72, 0, 1)')
 
     const glint = getComputedStyle(document.querySelector('[data-testid="setup-wordmark-glint"]')!)
     expect(glint.animationName).toBe('first-use-glint')
@@ -94,6 +105,25 @@ describe('The first open', () => {
     expect(
       getComputedStyle(document.querySelector('[data-testid="setup-light"]')!).animationName
     ).toBe('first-use-light')
+  })
+
+  it('fades the wordmark to full white while it goes up to its place', async () => {
+    await showSetup()
+    const { wrapper, mark } = wordmark()
+    const screen = rectOf('setup-screen')
+
+    seekOpening(WORDMARK_LEAVES_AT_MS + 150)
+    const onTheWay = wrapper.getBoundingClientRect()
+    expect(onTheWay.top - screen.top).toBeGreaterThan(20)
+    expect(centreOf(onTheWay).y).toBeLessThan(centreOf(screen).y)
+    expect(Number(getComputedStyle(mark).opacity)).toBeGreaterThan(0.84)
+    expect(Number(getComputedStyle(mark).opacity)).toBeLessThan(0.98)
+
+    seekOpening(WORDMARK_LEAVES_AT_MS + 600)
+    const landed = wrapper.getBoundingClientRect()
+    expect(landed.height).toBe(28)
+    expect(landed.top - screen.top).toBe(20)
+    expect(getComputedStyle(mark).opacity).toBe('1')
   })
 
   it('rises Set up block by block after the wordmark leaves, the action bar last', async () => {
@@ -111,6 +141,21 @@ describe('The first open', () => {
       '1.59s',
       '1.66s'
     ])
+  })
+
+  it('keeps each block of Set up off the screen and out of reach until it starts to rise', async () => {
+    await showSetup()
+    const blocks = [...document.querySelector('[data-testid="setup-column"]')!.children]
+    const visibility = (): string[] => blocks.map((block) => getComputedStyle(block).visibility)
+
+    seekOpening(1359)
+    expect(visibility()).toEqual(blocks.map(() => 'hidden'))
+
+    seekOpening(1361)
+    expect(visibility()).toEqual(['visible', 'hidden', 'hidden', 'hidden', 'hidden', 'hidden'])
+
+    seekOpening(1661)
+    expect(visibility()).toEqual(blocks.map(() => 'visible'))
   })
 
   it('rises Set up straight away when coming back from Change', async () => {

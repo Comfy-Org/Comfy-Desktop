@@ -59,7 +59,10 @@
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
   --animate-brand-takeover: brand-takeover-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-gs-field-flash: gs-field-flash 2.2s ease-out;
-  --animate-first-use-arrive: first-use-arrive 600ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  --animate-first-use-arrive:
+    first-use-arrive 600ms cubic-bezier(0.23, 1, 0.32, 1) both,
+    first-use-whiten 300ms ease 1100ms forwards;
+  --animate-first-use-land: first-use-land 600ms cubic-bezier(0.32, 0.72, 0, 1) 1100ms both;
   --animate-first-use-glint: first-use-glint 800ms 300ms cubic-bezier(0.65, 0, 0.35, 1) both;
   --animate-first-use-light: first-use-light 1100ms cubic-bezier(0.23, 1, 0.32, 1) both;
   --animate-first-use-rise: first-use-rise 560ms cubic-bezier(0.19, 1, 0.22, 1) both;
@@ -116,6 +119,19 @@
       opacity: 0.82;
     }
   }
+  @keyframes first-use-whiten {
+    from {
+      opacity: 0.82;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes first-use-land {
+    from {
+      transform: translateY(var(--first-use-drop)) scale(2);
+    }
+  }
   @keyframes first-use-glint {
     from {
       mask-position: 100% 0;
@@ -134,6 +150,7 @@
   }
   @keyframes first-use-rise {
     from {
+      visibility: hidden;
       opacity: 0;
       transform: translateY(10px);
     }
