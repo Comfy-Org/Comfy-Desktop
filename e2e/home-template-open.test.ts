@@ -13,6 +13,7 @@ const CARD = `[data-testid="home-build"][data-build-id="${INSTALL_ID}"]`
 let ctx: AppContext
 let installPath: string
 let port = 0
+let sidecarPathBefore: string | undefined
 
 test.describe.configure({ mode: 'serial', timeout: 180_000 })
 
@@ -20,6 +21,7 @@ test.beforeAll(async () => {
   installPath = await mkdtemp(path.join(os.tmpdir(), 'comfyui-template-open-'))
   port = await reserveFreePort()
   await writeFakeComfyInstall({ installPath, port })
+  sidecarPathBefore = process.env[SIDECAR_PATH_ENV]
   process.env[SIDECAR_PATH_ENV] = path.join(installPath, 'search-process-not-included.pyz')
   ctx = await launchApp(
     {
@@ -46,7 +48,8 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await ctx?.cleanup()
-  delete process.env[SIDECAR_PATH_ENV]
+  if (sidecarPathBefore === undefined) delete process.env[SIDECAR_PATH_ENV]
+  else process.env[SIDECAR_PATH_ENV] = sidecarPathBefore
   if (installPath) await rm(installPath, { recursive: true, force: true })
 })
 

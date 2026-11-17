@@ -111,6 +111,7 @@ describe('createDesktopSearch', () => {
     await search.search('a poster', 'local-1')
     const hasModel = readTemplates.mock.calls[0]![1]
 
+    expect(await hasModel('vae', 'v.safetensors')).toBe(false)
     mocks.modelOnDisk.mockResolvedValueOnce(true)
     expect(await hasModel('vae', 'v.safetensors')).toBe(true)
     expect(mocks.modelOnDisk).toHaveBeenCalledWith(
@@ -137,6 +138,7 @@ describe('createDesktopSearch', () => {
     expect(await search.search('a poster', 'local-1')).toEqual(OFF)
     expect(readTemplates).not.toHaveBeenCalled()
     expect(mocks.list).not.toHaveBeenCalled()
+    expect(decide).toHaveBeenCalledTimes(1)
     expect(decide.mock.calls[0]![0]).not.toHaveProperty('installed')
   })
 

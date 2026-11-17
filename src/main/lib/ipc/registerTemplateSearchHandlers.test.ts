@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   runningSessions: new Map<string, { mode: string }>(),
   busy: new Set<string>(),
   settings: { templateSearchEnabled: true } as Record<string, unknown>,
+  searchOn: true,
   observer: null as {
     before(id: string, action: string): Promise<void>
     after(id: string, action: string): void
@@ -30,7 +31,7 @@ vi.mock('./shared', async () => {
 vi.mock('../../templateSearch/searchProcess', () => ({
   changesBuildEnv: (actionId: string) => actionId !== 'rename',
   isBuildBusy: (installationId: string) => mocks.busy.has(installationId),
-  templateSearchOn: () => mocks.settings.templateSearchEnabled === true,
+  templateSearchOn: () => mocks.searchOn,
   createSearchProcess: vi.fn()
 }))
 vi.mock('../../templateSearch/desktopSearch', () => ({ createDesktopSearch: vi.fn() }))
@@ -118,11 +119,22 @@ beforeEach(() => {
   mocks.runningSessions.clear()
   mocks.busy.clear()
   mocks.settings = { templateSearchEnabled: true }
+  mocks.searchOn = true
   dropTemplateOpen('local-1')
   dropTemplateOpen('console-1')
 })
 
 describe('template-search:search', () => {
+  it('gives search the same on switch that opening a template uses', () => {
+    const { process } = fakes()
+    registerTemplateSearchHandlers({
+      isLocalInstallation: () => true,
+      terminalEnvOf: () => null,
+      process
+    })
+    expect(vi.mocked(createDesktopSearch).mock.calls[0]![0].searchOn).toBe(templateSearchOn)
+  })
+
   it('passes the trimmed request and the build to search, and returns its answer', async () => {
     const { search } = register()
     expect(
@@ -241,24 +253,14 @@ describe('template-search:open', () => {
     expect(queuedUrl()).toBe(COMFY_URL)
   })
 
-  it('refuses to open a template while search is off', async () => {
-    mocks.settings = {}
+  it('refuses to open a template while search is off, even with the setting on', async () => {
+    mocks.searchOn = false
     register()
     expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('refused')
     expect(queuedUrl()).toBe(COMFY_URL)
   })
 
-  it('gives search the same on switch that opening a template uses', () => {
-    const { process } = fakes()
-    registerTemplateSearchHandlers({
-      isLocalInstallation: () => true,
-      terminalEnvOf: () => null,
-      process
-    })
-    expect(vi.mocked(createDesktopSearch).mock.calls[0]![0].searchOn).toBe(templateSearchOn)
-  })
-
-  it('refuses a build that is running without a window to open the template in', async () => {
+  it('refuses a running build whose window has closed', async () => {
     mocks.runningSessions.set('local-1', { mode: 'window' })
     register()
     expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('refused')
