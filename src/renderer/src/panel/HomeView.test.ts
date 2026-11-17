@@ -744,6 +744,45 @@ describe('Home builds', () => {
   })
 })
 
+describe('Home build cards during a stop or update', () => {
+  it.each([
+    ['Stopping…', 'stop'],
+    ['Updating…', 'update']
+  ] as const)('shows %s and blocks opening until the operation finishes', async (label, action) => {
+    getInstallations.mockResolvedValue([RUNNING])
+    const session = useSessionStore()
+    if (action === 'stop') {
+      session.runningInstances.set(RUNNING.id, {
+        installationId: RUNNING.id,
+        installationName: RUNNING.name,
+        mode: 'window'
+      })
+      session.stoppingInstances.add(RUNNING.id)
+    } else {
+      session.operationInstances.set(RUNNING.id, { actionId: 'update-comfyui' })
+    }
+    const wrapper = await openHome()
+    const card = wrapper.get('[data-testid="home-build"]')
+    const open = card.get<HTMLButtonElement>('[data-testid="home-build-open"]')
+
+    expect(card.get('[data-testid="home-build-status"]').text()).toBe(label)
+    expect(open.element.disabled).toBe(true)
+    expect(wrapper.find('[data-testid="home-open-comfyui"]').exists()).toBe(false)
+    await card.trigger('click')
+    expect(wrapper.emitted('pick')).toBeUndefined()
+
+    session.runningInstances.delete(RUNNING.id)
+    session.stoppingInstances.delete(RUNNING.id)
+    session.operationInstances.delete(RUNNING.id)
+    await flushPromises()
+
+    expect(open.element.disabled).toBe(false)
+    expect(wrapper.find('[data-testid="home-open-comfyui"]').exists()).toBe(true)
+    await open.trigger('click')
+    expect(wrapper.emitted('pick')).toEqual([[RUNNING]])
+  })
+})
+
 describe('Home build card while a build starts', () => {
   beforeEach(() => {
     Object.assign(window.api, {

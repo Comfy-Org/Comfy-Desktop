@@ -7,10 +7,10 @@ import { Check, Ellipsis, Info, LoaderCircle, OctagonAlert, Power, Server } from
 import { useSessionStore } from '../../stores/sessionStore'
 import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
 import { useProgressStore } from '../../stores/progressStore'
-import { progressOpKindForActionId } from '../../lib/progressOpKind'
 import {
   buildDeviceKind,
   HOME_BUILD_TONES,
+  isBuildUpdating,
   isCloudBuild,
   type HomeBuildTone
 } from '../../panel/home/homeBuild'
@@ -92,11 +92,9 @@ const isStopping = computed(() =>
     ? sessionStore.isStopping(inst.value.id)
     : props.lifecycleStatus === 'stopping'
 )
-const isUpdating = computed(() => {
-  if (inst.value.status === 'updating') return true
-  const op = sessionStore.operationInstances.get(inst.value.id)
-  return op != null && progressOpKindForActionId(op.actionId) === 'update'
-})
+const isUpdating = computed(() =>
+  isBuildUpdating(inst.value, sessionStore.operationInstances.get(inst.value.id)?.actionId)
+)
 const hasError = computed(() =>
   props.lifecycleStatus == null
     ? sessionStore.errorInstances.has(inst.value.id)

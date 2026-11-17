@@ -12,6 +12,7 @@ import { openInstallManager } from '../../lib/openInstallManager'
 import { useProgressStore } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation, ShowProgressOpts } from '../../types/ipc'
+import { homeBuildStatus, isBuildOpenBlocked } from './homeBuild'
 
 export interface BuildMenuHost {
   launch: (build: Installation, opts?: { isRestart?: boolean }) => void | Promise<void>
@@ -76,7 +77,8 @@ export function useBuildMenu(build: () => Installation) {
   const items = computed<BuildMenuEntry[]>(() => {
     const inst = build()
     const progress = buildProgressOf(progressStore, inst.id)
-    const running = !progress && isLocal(inst) && sessionStore.isRunning(inst.id)
+    const status = homeBuildStatus(inst, sessionStore)
+    const running = isLocal(inst) && status === 'running'
     const items: BuildMenuEntry[] = []
 
     const now: BuildMenuEntry[] = []
@@ -91,7 +93,7 @@ export function useBuildMenu(build: () => Installation) {
         { id: 'restart', label: t('actions.restart'), icon: RotateCw },
         { id: 'stop', label: t('actions.stop'), icon: CircleStop }
       )
-    } else if (!sessionStore.isStopping(inst.id) && !sessionStore.isLaunching(inst.id)) {
+    } else if (!isBuildOpenBlocked(status) && status !== 'starting') {
       now.push({ id: 'launch', label: t('actions.launch'), icon: Play })
     }
     startsGroup(now, items)

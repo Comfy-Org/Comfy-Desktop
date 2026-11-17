@@ -8,15 +8,15 @@ import { test, expect } from '@playwright/test'
 import { keepOnlyComfyHostWindow } from './support/comfyHostWindow'
 import { launchApp, type AppContext } from './launchApp'
 import {
+  pickFromBuildsTileMenu,
+  uninstallFromBuildsTileMenu,
   clickInstallTile,
   clickNewInstallTile,
   expectChooserVisible,
   expectNewBuildModalOpen,
   openManageViaDashboard,
   openNewBuildChangeSetup,
-  openPickerViaTitlePill,
-  pickFromBuildsTileMenu,
-  uninstallFromBuildsTileMenu
+  openPickerViaTitlePill
 } from './support/chooserHelpers'
 import {
   armLaunchReadyHold,
