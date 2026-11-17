@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowRight, ChevronRight } from '@lucide/vue'
+import { ArrowRight, ChevronRight, Plus } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
@@ -37,6 +37,7 @@ const emit = defineEmits<{
   'open-build': [installation: Installation]
   'show-builds': []
   'show-apps': []
+  'new-build': []
 }>()
 
 const { t } = useI18n()
@@ -62,6 +63,9 @@ const builds = computed(() =>
     ...workspaceBuilds.value.filter((build) => isInstalling(build.id)),
     ...workspaceBuilds.value.filter((build) => !isInstalling(build.id))
   ].slice(0, HOME_BUILD_LIMIT)
+)
+const showNewBuildSlot = computed(
+  () => !installationStore.loading && builds.value.every((build) => isCloudBuild(build))
 )
 const buildTones = computed(() => homeBuildTones(builds.value, installationStore.installations))
 const narrowBuildIds = computed(() => {
@@ -240,7 +244,7 @@ onMounted(() => {
       </section>
 
       <section
-        v-if="builds.length > 0"
+        v-if="builds.length > 0 || showNewBuildSlot"
         class="@container/home-builds mt-[50px]"
         aria-labelledby="home-builds"
         data-testid="home-builds"
@@ -285,6 +289,27 @@ onMounted(() => {
               :auto-start="autoStart.startsOnOpen(build.id)"
               @open="openBuild(build)"
             />
+          </li>
+          <li v-if="showNewBuildSlot" class="min-w-0">
+            <div
+              class="flex h-25 w-full items-center gap-4 rounded-2xl bg-[rgb(137_137_137/0.05)] px-[18px]"
+              data-testid="home-new-build"
+            >
+              <p class="m-0 min-w-0 flex-1 text-[13px]/5 text-muted-foreground">
+                {{ t('home.noLocalBuilds') }}
+              </p>
+              <Button
+                type="button"
+                variant="inverted"
+                size="md"
+                class="shrink-0 gap-1.5 px-3 text-[13px]/5"
+                data-testid="home-new-build-button"
+                @click="emit('new-build')"
+              >
+                <Plus :size="15" aria-hidden="true" />
+                {{ t('sidebar.newBuild') }}
+              </Button>
+            </div>
           </li>
         </ul>
       </section>

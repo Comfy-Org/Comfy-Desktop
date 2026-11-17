@@ -696,11 +696,17 @@ describe('Home builds', () => {
     expect(wrapper.emitted('show-builds')).toHaveLength(1)
   })
 
-  it('leaves the builds row and Open ComfyUI out when there is no build', async () => {
+  it('offers New build in the builds row and leaves Open ComfyUI out when there is no build', async () => {
     const wrapper = await openHome()
 
-    expect(wrapper.find('[data-testid="home-builds"]').exists()).toBe(false)
+    expect(
+      wrapper.find('[data-testid="home-builds"] [data-testid="home-new-build"]').exists()
+    ).toBe(true)
+    expect(wrapper.find('[data-testid="home-build"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-open-comfyui"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="home-new-build-button"]').trigger('click')
+    expect(wrapper.emitted('new-build')).toHaveLength(1)
   })
 })
 

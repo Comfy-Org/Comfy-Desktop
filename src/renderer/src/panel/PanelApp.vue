@@ -531,6 +531,7 @@ onUnmounted(() => {
               @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
               @show-apps="handleSidebarNavigate('apps')"
+              @new-build="handleChooserShowNewInstall"
             />
             <AppsView
               v-else-if="dashboardHomePage === 'apps'"

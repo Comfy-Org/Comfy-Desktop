@@ -145,6 +145,7 @@
     "openComfyUIIn": "Open ComfyUI in {name}",
     "opensIn": "Opens in {name}",
     "allBuilds": "All builds",
+    "noLocalBuilds": "Add a build to run ComfyUI on this computer.",
     "turnOnAutoStart": "Auto start",
     "turnOffAutoStart": "Turn off Auto start",
     "autoStartOn": "Auto start",
