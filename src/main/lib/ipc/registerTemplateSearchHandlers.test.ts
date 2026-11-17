@@ -48,6 +48,8 @@ import {
 } from '../../templateSearch/openTemplate'
 import { TEMPLATE_SEARCH_MAX_QUERY } from '../../../shared/templateSearch'
 import type { TemplateSearchResponse, TemplateSearchResult } from '../../../types/ipc'
+import { LOAD_RETRY_DELAY_MS, navigatorFor } from '../../host/buildNavigator'
+import type { ComfyWindowEntry } from '../../host/registry'
 
 type IpcHandler = (event: object, ...args: unknown[]) => Promise<unknown> | unknown
 
@@ -95,11 +97,16 @@ function register(parts = fakes()) {
 }
 
 function attachedView(loadURL = vi.fn(async () => undefined)): typeof loadURL {
-  mocks.getEntryByInstallationId.mockReturnValue({
-    comfyUrl: COMFY_URL,
-    comfyView: { webContents: { isDestroyed: () => false, loadURL } }
-  })
+  mocks.getEntryByInstallationId.mockReturnValue(windowEntry(loadURL))
   return loadURL
+}
+
+function windowEntry(loadURL: (url: string) => Promise<void>) {
+  return {
+    comfyUrl: COMFY_URL,
+    window: { isDestroyed: () => false },
+    comfyView: { webContents: { isDestroyed: () => false, loadURL, stop: vi.fn() } }
+  }
 }
 
 function queuedUrl(installationId = 'local-1'): string {
@@ -190,6 +197,18 @@ describe('template-search:prepare and download', () => {
 })
 
 describe('build operations', () => {
+  it('forgets the templates read during an operation that changed the build once it ends', async () => {
+    const { search } = register()
+    await mocks.observer!.before('local-1', 'copy-update')
+    search.forget.mockClear()
+    mocks.observer!.after('local-1', 'copy-update')
+    expect(search.forget).toHaveBeenCalledWith('local-1')
+
+    search.forget.mockClear()
+    mocks.observer!.after('local-1', 'rename')
+    expect(search.forget).not.toHaveBeenCalled()
+  })
+
   it('stops search on a build and forgets its templates before an operation that can change it', async () => {
     const { process, search } = register()
     await mocks.observer!.before('local-1', 'copy-update')
@@ -294,6 +313,41 @@ describe('template-search:open', () => {
     expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('launch')
     expect(loadURL).not.toHaveBeenCalled()
     expect(queuedUrl()).toBe(DEEPLINK)
+  })
+
+  it('opens through the build window navigator, so a pending load retry cannot replace the template', async () => {
+    vi.useFakeTimers()
+    const loadURL = vi.fn(async (_url: string) => undefined)
+    const entry = windowEntry(loadURL)
+    mocks.getEntryByInstallationId.mockReturnValue(entry)
+    mocks.runningSessions.set('local-1', { mode: 'window' })
+    const navigator = navigatorFor(entry as unknown as ComfyWindowEntry)
+    navigator.attach({ reloadUrl: () => COMFY_URL, mayReload: () => true })
+    navigator.retryAfterFailure()
+    register()
+
+    expect(await handler('template-search:open')({}, 'local-1', 'poster_template')).toBe('opened')
+    await vi.advanceTimersByTimeAsync(LOAD_RETRY_DELAY_MS)
+    expect(loadURL.mock.calls.map(([url]) => url)).toEqual([DEEPLINK])
+    vi.useRealTimers()
+  })
+
+  it('reports a template load overtaken by another load of the window as not opened', async () => {
+    let finishFirst!: () => void
+    const loadURL = vi
+      .fn<(url: string) => Promise<void>>()
+      .mockImplementationOnce(() => new Promise<void>((resolve) => (finishFirst = resolve)))
+      .mockResolvedValue(undefined)
+    const entry = windowEntry(loadURL)
+    mocks.getEntryByInstallationId.mockReturnValue(entry)
+    mocks.runningSessions.set('local-1', { mode: 'window' })
+    register()
+
+    const first = handler('template-search:open')({}, 'local-1', 'poster_template')
+    await vi.waitFor(() => expect(loadURL).toHaveBeenCalledWith(DEEPLINK))
+    await navigatorFor(entry as unknown as ComfyWindowEntry).open(COMFY_URL)
+    finishFirst()
+    expect(await first).toBe('refused')
   })
 
   it('reports a running build that fails to load the template as not opened', async () => {
