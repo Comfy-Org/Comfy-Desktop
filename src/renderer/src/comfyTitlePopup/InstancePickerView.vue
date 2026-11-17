@@ -460,7 +460,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
           class="picker-left m-2 mr-0 flex min-h-0 min-w-0 flex-col gap-2 rounded-[14px] bg-[var(--picker-side-bg)] p-2 [--picker-row-hover:color-mix(in_oklch,var(--foreground)_11%,var(--modal-surface-bg))] [--picker-row-active:color-mix(in_oklch,var(--foreground)_15%,var(--modal-surface-bg))] [--picker-side-bg:color-mix(in_oklch,var(--foreground)_6%,var(--modal-surface-bg))]"
         >
           <div class="picker-list-section -mx-2 flex min-h-0 flex-auto flex-col overflow-hidden">
-            <div class="picker-list-head relative mx-2 mb-px h-8 flex-none">
+            <div class="picker-list-head relative mx-2 mb-2 h-8 flex-none">
               <div
                 class="picker-list-section-title flex h-full items-center gap-1 pr-0.5 pl-3 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase transition-opacity duration-150 ease-out"
                 :class="{ 'opacity-0': searchOpen }"
