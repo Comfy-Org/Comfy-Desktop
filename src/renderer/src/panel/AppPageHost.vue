@@ -159,7 +159,9 @@ onMounted(() => {
     if (pageAppId === appId) status.value = next
   })
   stopOutputs = window.api.onAppOutputs((pageAppId, shown) => {
-    if (pageAppId === appId) showOutputs(shown)
+    if (pageAppId !== appId) return
+    if (shown) showOutputs(shown)
+    else releaseOutputs()
   })
   if (!covered.value) void reveal()
 })

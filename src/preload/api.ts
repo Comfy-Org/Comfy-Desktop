@@ -130,7 +130,7 @@ export function buildElectronApi(): ElectronApi {
       return () => ipcRenderer.removeListener('apps:page-closed', handler)
     },
     onAppOutputs: (callback) => {
-      const handler = (_event: IpcRendererEvent, appId: string, outputs: AppOutputs): void =>
+      const handler = (_event: IpcRendererEvent, appId: string, outputs: AppOutputs | null): void =>
         callback(appId, outputs)
       ipcRenderer.on('apps:outputs', handler)
       return () => ipcRenderer.removeListener('apps:outputs', handler)

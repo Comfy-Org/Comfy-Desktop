@@ -25,7 +25,7 @@ document.head.append(mountPointFillsThePage)
 let page: HTMLElement
 let tellStatusOf: (appId: string | null, status: AppPageStatus) => void = () => {}
 let stoppedListening = false
-let tellOutputsOf: (appId: string, outputs: AppOutputs) => void = () => {}
+let tellOutputsOf: (appId: string, outputs: AppOutputs | null) => void = () => {}
 let stoppedListeningForOutputs = false
 
 function tellStatus(status: AppPageStatus): void {
@@ -59,7 +59,10 @@ function inOutputDialog(testId: string): HTMLElement | null {
   return outputDialog()?.querySelector<HTMLElement>(`[data-testid="${testId}"]`) ?? null
 }
 
-async function showOutputs(appId = 'remove-background', outputs = TWO_CUTOUTS): Promise<void> {
+async function showOutputs(
+  appId = 'remove-background',
+  outputs: AppOutputs | null = TWO_CUTOUTS
+): Promise<void> {
   tellOutputsOf(appId, outputs)
   await flushPromises()
   await nextFrame()
@@ -103,7 +106,7 @@ beforeEach(() => {
         stoppedListening = true
       }
     },
-    onAppOutputs: (listener: (appId: string, outputs: AppOutputs) => void) => {
+    onAppOutputs: (listener: (appId: string, outputs: AppOutputs | null) => void) => {
       tellOutputsOf = listener
       return () => {
         stoppedListeningForOutputs = true
@@ -367,6 +370,21 @@ describe('AppPageHost outputs', () => {
       index: 0
     })
     expect(outputDialog()).toBeNull()
+  })
+
+  it('closes the dialog when the page that sent the outputs is replaced', async () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    await mountHost()
+    await showOutputs()
+
+    await showOutputs('upscale', null)
+    expect(outputDialog()).not.toBeNull()
+
+    await showOutputs('remove-background', null)
+
+    expect(outputDialog()).toBeNull()
+    expect(revoke).toHaveBeenCalledTimes(2)
+    revoke.mockRestore()
   })
 
   it('brings the app back with the keyboard once the dialog closes, and lets go of the files', async () => {

@@ -191,6 +191,13 @@ function moveWithinDocument(hosted: HostedPage, url: string): void {
     appId !== null && isInLoadedRoute(hosted, url) ? { appId, document: hosted.documents } : null
 }
 
+function dismissStaleOutputs(windowKey: number, hosted: HostedPage): void {
+  const shown = hosted.outputs
+  if (!shown || isStillLoaded(hosted, shown.page)) return
+  hosted.outputs = null
+  panelOf(windowKey)?.send(APP_OUTPUTS_CHANNEL, shown.page.appId, null)
+}
+
 function load(windowKey: number, hosted: HostedPage, url: string): void {
   hosted.loaded = null
   hosted.loadStarted = true
@@ -275,6 +282,7 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
   })
   contents.on('did-navigate', (_event, url, httpResponseCode) => {
     commitDocument(hosted, url)
+    dismissStaleOutputs(windowKey, hosted)
     if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
     else if (httpResponseCode >= FIRST_HTTP_ERROR_STATUS) fail(windowKey, hosted, 'http_status')
   })
@@ -282,6 +290,7 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     if (!isMainFrame) return
     if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
     else moveWithinDocument(hosted, url)
+    dismissStaleOutputs(windowKey, hosted)
   })
   contents.on('dom-ready', () => {
     if (hosted.status !== 'loading' || !isInAppsScope(location, contents.getURL())) return
