@@ -792,6 +792,16 @@ function computeCenteredCardBounds(
   return { x, y, width, height }
 }
 
+export const GLOBAL_SETTINGS_CLOSE_GUTTER = 48
+
+function withOutsideCloseGutter(
+  kind: CenteredCardKind,
+  bounds: { x: number; y: number; width: number; height: number }
+): { x: number; y: number; width: number; height: number } {
+  if (kind !== POPUP_KIND.globalSettings) return bounds
+  return { ...bounds, width: bounds.width + GLOBAL_SETTINGS_CLOSE_GUTTER }
+}
+
 const POPUP_EDGE_GUTTER = 8
 
 function clampPopupX(x: number, width: number, parent: BrowserWindow): number {
@@ -823,7 +833,7 @@ function refitPopupForParent(entry: TitlePopupEntry): void {
   }
 
   if (kindIsCentered(entry.kind)) {
-    const target = computeCenteredCardBounds(entry.kind, parent)
+    const target = withOutsideCloseGutter(entry.kind, computeCenteredCardBounds(entry.kind, parent))
     if (
       target.x === cur.x &&
       target.y === cur.y &&
@@ -934,7 +944,10 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     x = bounds.x
     y = bounds.y
   } else {
-    ;({ x, y, width, height } = computeCenteredCardBounds(opts.kind, opts.parent))
+    ;({ x, y, width, height } = withOutsideCloseGutter(
+      opts.kind,
+      computeCenteredCardBounds(opts.kind, opts.parent)
+    ))
   }
 
   entry.view.popup.setBounds({ x, y, width, height })

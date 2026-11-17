@@ -265,51 +265,51 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="global-settings flex size-full flex-col text-sm text-foreground">
-    <header class="gs-header relative flex flex-none items-center pt-7 pr-16 pb-4 pl-8">
-      <h2
-        class="gs-title m-0 font-sans text-[18px] leading-7 font-semibold tracking-[-0.01em] text-neutral-100"
-      >
-        {{ t('settingsModal.tabGlobal') }}
-      </h2>
-      <Button
-        type="button"
-        variant="muted-textonly"
-        size="icon"
-        class="gs-close absolute top-6 right-6 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
-        :aria-label="t('common.close')"
-        @click="bridge?.close()"
-      >
-        <X :size="18" aria-hidden="true" />
-      </Button>
-    </header>
+  <div class="global-settings relative flex size-full pr-12 text-sm text-foreground">
+    <Button
+      type="button"
+      variant="muted-textonly"
+      size="icon"
+      class="gs-close absolute top-0 right-0 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
+      :aria-label="t('common.close')"
+      @click="bridge?.close()"
+    >
+      <X :size="18" aria-hidden="true" />
+    </Button>
 
     <Tabs
       v-model="activeTab"
       orientation="vertical"
-      class="gs-body min-h-0 flex-auto flex-row gap-0"
+      class="gs-card min-w-0 flex-auto flex-row gap-0 overflow-hidden rounded-[16px] bg-neutral-900 [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.06)]"
     >
-      <TabsList
-        :key="requestedTabCount"
-        class="gs-tabs w-44 flex-[0_0_176px] flex-col items-stretch gap-0.5 overflow-y-auto pt-0 pr-2 pb-6 pl-6"
-        :aria-label="t('settingsModal.tabGlobal')"
-      >
-        <TabsTrigger
-          v-for="tab in tabs"
-          :key="tab.id"
-          :value="tab.id"
-          class="gs-tab justify-start text-left"
-          :class="{ active: activeTab === tab.id }"
+      <div class="gs-nav flex w-52 flex-[0_0_208px] flex-col gap-4 pt-7 pr-3 pb-6 pl-6">
+        <h2
+          class="gs-title m-0 px-2 font-sans text-[18px] leading-7 font-semibold tracking-[-0.01em] text-neutral-100"
         >
-          <component :is="tab.icon" :size="14" aria-hidden="true" />
-          <span>{{ tab.label }}</span>
-        </TabsTrigger>
-      </TabsList>
+          {{ t('settingsModal.tabGlobal') }}
+        </h2>
+        <TabsList
+          :key="requestedTabCount"
+          class="gs-tabs min-h-0 flex-col items-stretch gap-0.5 overflow-y-auto"
+          :aria-label="t('settingsModal.tabGlobal')"
+        >
+          <TabsTrigger
+            v-for="tab in tabs"
+            :key="tab.id"
+            :value="tab.id"
+            class="gs-tab justify-start text-left"
+            :class="{ active: activeTab === tab.id }"
+          >
+            <component :is="tab.icon" :size="14" aria-hidden="true" />
+            <span>{{ tab.label }}</span>
+          </TabsTrigger>
+        </TabsList>
+      </div>
 
       <TabsContent
         :key="activeTab"
         :value="activeTab"
-        class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 overflow-y-auto pt-0 pr-8 pb-6 pl-4 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
+        class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 m-2 ml-0 overflow-y-auto rounded-[14px] bg-[color-mix(in_oklch,white_5%,var(--color-neutral-900))] p-6 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
       >
         <template v-if="activeTab === 'general'">
           <SettingsSectionList

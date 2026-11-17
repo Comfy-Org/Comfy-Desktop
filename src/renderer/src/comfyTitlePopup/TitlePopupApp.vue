@@ -329,8 +329,7 @@ onUnmounted(() => {
       'is-downloads-full': kind === 'downloads-full',
       'rounded-panel border-[var(--modal-surface-border)] bg-[var(--modal-surface-bg)]':
         kind === 'instance-picker' || kind === 'downloads-full',
-      'rounded-[16px] border-transparent bg-neutral-900 [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.06)]':
-        kind === 'global-settings'
+      'border-0 bg-transparent': kind === 'global-settings'
     }"
   >
     <MenuView v-if="kind === 'menu'" :items="items" @activate="handleActivate" />
