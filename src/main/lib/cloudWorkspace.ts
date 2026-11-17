@@ -52,7 +52,8 @@ export async function cloudWorkspaceUrl(
 async function navigateToSelectedWorkspace(
   entry: ComfyWindowEntry,
   installationId: string,
-  isLatest: () => boolean
+  isLatest: () => boolean,
+  cancelLoadRetry?: () => void
 ): Promise<boolean> {
   const installation = await getInstallation(installationId)
   if (!installation || !isLatest() || entry.window.isDestroyed()) return false
@@ -70,6 +71,7 @@ async function navigateToSelectedWorkspace(
   if (!isLatest() || !stillAttached()) return false
   if (nextUrl === previousUrl && !failedWorkspaceLoads.has(contents)) return true
 
+  cancelLoadRetry?.()
   try {
     await contents.loadURL(nextUrl)
   } catch (error) {
@@ -83,7 +85,10 @@ async function navigateToSelectedWorkspace(
   return true
 }
 
-export async function syncCloudWindowWorkspace(entry: ComfyWindowEntry): Promise<boolean> {
+export async function syncCloudWindowWorkspace(
+  entry: ComfyWindowEntry,
+  cancelLoadRetry?: () => void
+): Promise<boolean> {
   const { installationId } = entry
   if (entry.sourceCategory !== 'cloud' || !installationId) return true
 
@@ -91,7 +96,10 @@ export async function syncCloudWindowWorkspace(entry: ComfyWindowEntry): Promise
   const isLatest = (): boolean => pendingWorkspaceSyncs.get(entry) === sync
   const sync: Promise<boolean> = Promise.resolve(previousSync)
     .catch(() => false)
-    .then(() => isLatest() && navigateToSelectedWorkspace(entry, installationId, isLatest))
+    .then(
+      () =>
+        isLatest() && navigateToSelectedWorkspace(entry, installationId, isLatest, cancelLoadRetry)
+    )
   pendingWorkspaceSyncs.set(entry, sync)
 
   try {

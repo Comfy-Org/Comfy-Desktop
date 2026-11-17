@@ -766,8 +766,11 @@ async function prepareBuildWindowFocus(
   entry: ComfyWindowEntry,
   requester?: BrowserWindow | null
 ): Promise<boolean> {
+  const cancelLoadRetry = entry.installationId
+    ? comfyFailRetryTimerCancels.get(entry.installationId)
+    : undefined
   try {
-    return (await syncCloudWindowWorkspace(entry)) && !entry.window.isDestroyed()
+    return (await syncCloudWindowWorkspace(entry, cancelLoadRetry)) && !entry.window.isDestroyed()
   } catch (error) {
     if (entry.window.isDestroyed()) return false
     console.error('Could not switch Comfy Cloud workspace:', error)

@@ -159,10 +159,23 @@ describe('reopening a Cloud window', () => {
 
   it('focuses the same workspace without reloading the workflow', async () => {
     const { entry, loadURL } = openWindow()
+    const cancelLoadRetry = vi.fn()
 
-    await syncCloudWindowWorkspace(entry)
+    await syncCloudWindowWorkspace(entry, cancelLoadRetry)
 
     expect(loadURL).not.toHaveBeenCalled()
+    expect(cancelLoadRetry).not.toHaveBeenCalled()
+  })
+
+  it('cancels a pending retry before loading the next workspace', async () => {
+    const { entry, loadURL } = openWindow()
+    const cancelLoadRetry = vi.fn()
+    state.selected = 'team-a'
+
+    await syncCloudWindowWorkspace(entry, cancelLoadRetry)
+
+    expect(cancelLoadRetry).toHaveBeenCalledExactlyOnceWith()
+    expect(cancelLoadRetry).toHaveBeenCalledBefore(loadURL)
   })
 
   it.each(['personal', 'team-a', 'team-b'])(
