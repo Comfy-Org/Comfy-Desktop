@@ -879,13 +879,13 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
 
   const id = randomUUID()
   const telemetry =
-    ctx && !ctx.hasSuccessfulRun
+    ctx && resolvedInstallId && opts.source && !ctx.hasSuccessfulRun
       ? new ModelDownloadTelemetry({
           url,
           filename,
           directory,
-          installationId: ctx.installationId,
-          source: opts.source ?? 'unknown',
+          installationId: resolvedInstallId,
+          source: opts.source,
           isRetry: opts.isRetry
         })
       : undefined
@@ -921,9 +921,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     ? canonicalDestKey(opts.bypassRootLockFor)
     : undefined
   const rejectJob = (error: string, code?: ModelJobErrorCode): ModelJobHandle => {
-    const progress = makeProgress({ status: 'error', error })
-    telemetry?.report(progress)
-    reportProgress(progress)
+    reportProgress(makeProgress({ status: 'error', error }))
     return settledJobHandle(id, url, savePath, {
       status: 'error',
       error,

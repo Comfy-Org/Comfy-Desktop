@@ -182,6 +182,30 @@ describe('model download events through the real manager and transfer', () => {
     })
     expect(JSON.stringify(events())).not.toMatch(/private|127\.0\.0\.1/)
     expect(JSON.stringify(events())).not.toContain(modelsDir)
+
+    const cached = await manager.startManagedModelJob(opts)
+    await expect(cached.completion).resolves.toMatchObject({ alreadyPresent: true })
+    expect(eventNames()).toEqual(['started', 'result'])
+  })
+
+  it('records a cancelled attempt with the bytes received so far', async () => {
+    const onProgress = vi.fn()
+    const job = await manager.startManagedModelJob({ ...options('slow'), onProgress })
+    await vi.waitFor(() => expect(onProgress).toHaveBeenCalledWith(3, content.length))
+    expect(manager.cancelModelDownload(job.id)).toBe(true)
+    await expect(job.completion).resolves.toEqual({ status: 'cancelled' })
+    expect(eventNames()).toEqual(['started', 'result'])
+    expect(events().at(-1)!.properties).toMatchObject({ result: 'cancelled', received_bytes: 3 })
+  })
+
+  it('does not count a rejected destination as a download attempt', async () => {
+    const job = await manager.startManagedModelJob({
+      ...options('success'),
+      directory: '../outside'
+    })
+    await expect(job.completion).resolves.toMatchObject({ status: 'error' })
+    expect(requestPaths).toHaveLength(0)
+    expect(events()).toEqual([])
   })
 
   it('records install, download and first successful run with the same build ID', async () => {

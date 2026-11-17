@@ -36,7 +36,6 @@ export async function collectModelScanRoots(): Promise<string[]> {
 }
 
 interface ModelDownloadContext extends InstallModelSearch {
-  installationId: string
   hasSuccessfulRun: boolean
 }
 
@@ -49,7 +48,6 @@ export async function resolveDownloadContextById(
     if (!inst || !inst.installPath) return null
     return {
       ...resolveDownloadContext(inst),
-      installationId: inst.id,
       hasSuccessfulRun: Boolean(inst.firstRunAt)
     }
   } catch {

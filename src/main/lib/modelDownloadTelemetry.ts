@@ -3,7 +3,7 @@ import { bucketError } from '../../shared/errorBucket'
 import { ALLOWED_EXTENSIONS } from './downloadFilename'
 import { capture, type TelemetryContext } from './telemetry'
 
-export type ModelDownloadSource = 'comfyui' | 'template' | 'app' | 'unknown'
+export type ModelDownloadSource = 'comfyui' | 'template' | 'app'
 
 type DownloadStatus = 'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
 
