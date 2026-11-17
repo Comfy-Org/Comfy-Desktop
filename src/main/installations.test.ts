@@ -312,51 +312,6 @@ describe('installations.getRecent', () => {
   })
 })
 
-describe('installations.resolveAutoLaunchInstall', () => {
-  it('returns null for null / undefined / empty / "none"', async () => {
-    const installations = await loadInstallations()
-    expect(await installations.resolveAutoLaunchInstall(null)).toBeNull()
-    expect(await installations.resolveAutoLaunchInstall(undefined)).toBeNull()
-    expect(await installations.resolveAutoLaunchInstall('')).toBeNull()
-    expect(await installations.resolveAutoLaunchInstall('none')).toBeNull()
-  })
-
-  it('"last" resolves via getRecent and returns null when nothing has launched', async () => {
-    const installations = await loadInstallations()
-    expect(await installations.resolveAutoLaunchInstall('last')).toBeNull()
-
-    await installations.add({
-      name: 'older',
-      installPath: path.join(tmpRoot, 'older'),
-      sourceId: 'standalone',
-      status: 'installed',
-      lastLaunchedAt: 100
-    })
-    const newer = await installations.add({
-      name: 'newer',
-      installPath: path.join(tmpRoot, 'newer'),
-      sourceId: 'standalone',
-      status: 'installed',
-      lastLaunchedAt: 500
-    })
-    const recent = await installations.resolveAutoLaunchInstall('last')
-    expect(recent!.id).toBe(newer.id)
-  })
-
-  it('an installation id resolves the matching install, or null when stale', async () => {
-    const installations = await loadInstallations()
-    const a = await installations.add({
-      name: 'a',
-      installPath: path.join(tmpRoot, 'a'),
-      sourceId: 'standalone',
-      status: 'installed'
-    })
-    const found = await installations.resolveAutoLaunchInstall(a.id)
-    expect(found!.id).toBe(a.id)
-    expect(await installations.resolveAutoLaunchInstall('inst-does-not-exist')).toBeNull()
-  })
-})
-
 describe('installations.load (legacy shared-storage flag migrations)', () => {
   function writeRawInstallations(records: Record<string, unknown>[]): string {
     fs.mkdirSync(userDataPath, { recursive: true })
@@ -782,40 +737,35 @@ describe('installations.enforceCloudName', () => {
   })
 })
 
-describe('installations.clearPendingTemplateOpen', () => {
-  it('clears the one-shot flag once, then is a no-op on the cleared record', async () => {
+describe('installations.load (a build made when first run offered a starter workflow)', () => {
+  it('lists, finds and updates a record that still carries the starter-template fields', async () => {
+    fs.writeFileSync(
+      path.join(userDataPath, 'installations.json'),
+      JSON.stringify([
+        {
+          id: 'starter-build',
+          name: 'Starter Build',
+          installPath: path.join(tmpRoot, 'starter'),
+          sourceId: 'standalone',
+          status: 'installed',
+          createdAt: new Date().toISOString(),
+          bundledTemplateId: 'image_z_image_turbo',
+          bundledTemplateSizeBytes: 5_000_000_000,
+          pendingTemplateOpen: 'image_z_image_turbo',
+          downloadTemplateModels: true
+        }
+      ])
+    )
     const installations = await loadInstallations()
-    const entry = await installations.add({
-      name: 'With Template',
-      installPath: path.join(tmpRoot, 't'),
-      sourceId: 'standalone',
-      status: 'installed',
-      bundledTemplateId: 'flux_schnell',
-      pendingTemplateOpen: 'flux_schnell',
-      downloadTemplateModels: true
-    })
 
-    expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(true)
-    expect((await installations.get(entry.id))!.pendingTemplateOpen).toBeNull()
-    expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(false)
-  })
-
-  it('is a no-op for a legacy record with no template fields (migration-safe)', async () => {
-    const installations = await loadInstallations()
-    const entry = await installations.add({
-      name: 'Legacy',
-      installPath: path.join(tmpRoot, 'legacy'),
-      sourceId: 'standalone',
+    expect((await installations.list()).map((record) => record.id)).toEqual(['starter-build'])
+    expect(await installations.get('starter-build')).toMatchObject({
+      name: 'Starter Build',
       status: 'installed'
     })
-    expect(entry.pendingTemplateOpen).toBeUndefined()
-    expect(entry.bundledTemplateId).toBeUndefined()
-    expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(false)
-  })
 
-  it('returns false when the install is gone', async () => {
-    const installations = await loadInstallations()
-    expect(await installations.clearPendingTemplateOpen('does-not-exist')).toBe(false)
+    await installations.update('starter-build', { name: 'Renamed' })
+    expect((await installations.get('starter-build'))!.name).toBe('Renamed')
   })
 })
 
@@ -914,5 +864,85 @@ describe('mutations fail closed when installations.json cannot be recovered (iss
       /cannot be recovered/
     )
     expect(fs.readFileSync(dataPath, 'utf-8')).toBe(corrupt)
+  })
+})
+
+function holdNextWriteAtItsRename(): { reached: Promise<void>; land: () => void } {
+  const realRename = fs.promises.rename.bind(fs.promises)
+  let markReached: () => void = () => {}
+  const reached = new Promise<void>((resolve) => {
+    markReached = resolve
+  })
+  let land: () => void = () => {}
+  const allowed = new Promise<void>((resolve) => {
+    land = resolve
+  })
+  vi.spyOn(fs.promises, 'rename').mockImplementationOnce(async (from, to) => {
+    markReached()
+    await allowed
+    return realRename(from, to)
+  })
+  return { reached, land }
+}
+
+describe('reading the list while a write requested earlier is still reaching the disk', () => {
+  it('lists a build that is still being added', async () => {
+    const installations = await loadInstallations()
+    const disk = holdNextWriteAtItsRename()
+    const adding = installations.ensureExists('desktop', {
+      name: 'ComfyUI Legacy Desktop',
+      sourceId: 'desktop',
+      installPath: path.join(tmpRoot, 'legacy'),
+      status: 'installed'
+    })
+    const listed = installations.list()
+
+    await disk.reached
+    disk.land()
+
+    expect((await listed).map((inst) => inst.sourceId)).toEqual(['desktop'])
+    await adding
+  })
+
+  it('returns a build with a change that is still being saved', async () => {
+    const installations = await loadInstallations()
+    const entry = await installations.add({
+      name: 'Local A',
+      installPath: path.join(tmpRoot, 'a'),
+      sourceId: 'standalone',
+      status: 'installed'
+    })
+    const disk = holdNextWriteAtItsRename()
+    const renaming = installations.update(entry.id, { name: 'Renamed' })
+    const fetched = installations.get(entry.id)
+
+    await disk.reached
+    disk.land()
+
+    expect((await fetched)!.name).toBe('Renamed')
+    await renaming
+  })
+
+  it('still answers after a write that failed', async () => {
+    const installations = await loadInstallations()
+    await installations.add({
+      name: 'Local A',
+      installPath: path.join(tmpRoot, 'a'),
+      sourceId: 'standalone',
+      status: 'installed'
+    })
+    const full = new Error('fake ENOSPC') as NodeJS.ErrnoException
+    full.code = 'ENOSPC'
+    vi.spyOn(fs.promises, 'rename').mockRejectedValueOnce(full)
+    const adding = installations.ensureExists('desktop', {
+      name: 'ComfyUI Legacy Desktop',
+      sourceId: 'desktop',
+      installPath: path.join(tmpRoot, 'legacy'),
+      status: 'installed'
+    })
+    const listed = installations.list()
+
+    await expect(adding).rejects.toThrow('fake ENOSPC')
+    expect((await listed).map((inst) => inst.name)).toEqual(['Local A'])
   })
 })

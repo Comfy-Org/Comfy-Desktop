@@ -22,6 +22,7 @@ import {
   planVersion,
   resolveSetupPlan,
   setupPlatform,
+  splitPathTail,
   type SetupPlan
 } from '../lib/setupPlan'
 import type { SystemInfo } from '../../../types/ipc'
@@ -30,7 +31,7 @@ type Step = 'setup' | 'mirrors'
 type SetupAction = 'install' | 'change' | 'skip'
 type ExitPath = 'local-new' | 'local-configure' | 'local-migrate' | 'skipped'
 
-const props = defineProps<{ consent?: SetupConsent | null }>()
+const props = defineProps<{ consent?: SetupConsent | null; savedPlan?: SetupPlan | null }>()
 
 const emit = defineEmits<{
   install: [plan: SetupPlan]
@@ -72,6 +73,8 @@ const hasLegacyDesktop = ref(false)
 const migrateExisting = ref(true)
 const busy = ref(false)
 const pendingAction = ref<SetupAction | null>(null)
+const mirrorsPrompted = ref(false)
+let mirrorsPromptedRead: Promise<void> = Promise.resolve()
 const locale = ref('en')
 
 let openGeneration = 0
@@ -80,7 +83,19 @@ let completedFired = false
 let chainHandoff = false
 
 const variant = computed(() => plan.value?.selections.variant)
-const cpuOnly = computed(() => isCpuVariant(variant.value))
+const workspaceBuild = computed(() => plan.value?.workspaceBuild)
+const cpuOnly = computed(() => !workspaceBuild.value && isCpuVariant(variant.value))
+const hardware = computed(() => {
+  const build = workspaceBuild.value
+  if (build) return build.targetLabel ?? build.buildName
+  return variant.value?.label ?? ''
+})
+const hardwareDetected = computed(
+  () =>
+    !!variant.value &&
+    !workspaceBuild.value &&
+    (!props.savedPlan || variant.value.recommended === true)
+)
 const machine = computed(() => machineName(systemInfo.value, cpuOnly.value))
 const memoryGb = computed(() =>
   systemInfo.value?.total_memory_gb ? Math.round(systemInfo.value.total_memory_gb) : null
@@ -92,6 +107,7 @@ const lead = computed(() =>
 const location = computed(() =>
   displayPath(installLocation(plan.value?.installRoot ?? '', platform), platform)
 )
+const locationParts = computed(() => splitPathTail(location.value))
 const lowDisk = computed(
   () =>
     diskFree.value !== null &&
@@ -109,6 +125,7 @@ const locationMeta = computed(() => {
 })
 const version = computed(() => {
   if (!plan.value) return ''
+  if (workspaceBuild.value) return workspaceBuild.value.buildName
   const tag = planVersion(plan.value)
   const channel = plan.value.selections.release?.label ?? ''
   return tag
@@ -174,7 +191,8 @@ function currentConsent(): SetupConsent {
     betaFeaturesEnabled: betaFeaturesEnabled.value,
     betaTouched: betaTouched.value,
     preservePersistedBetaOptIn: preservePersistedBetaOptIn.value,
-    locale: locale.value
+    locale: locale.value,
+    migrateExisting: migrateExisting.value
   }
 }
 
@@ -184,6 +202,7 @@ function restoreConsent(consent: SetupConsent): void {
   betaFeaturesEnabled.value = consent.betaFeaturesEnabled
   betaTouched.value = consent.betaTouched
   preservePersistedBetaOptIn.value = consent.preservePersistedBetaOptIn
+  migrateExisting.value = consent.migrateExisting !== false
 }
 
 async function request(action: SetupAction): Promise<void> {
@@ -199,7 +218,8 @@ async function request(action: SetupAction): Promise<void> {
     action: action === 'install' && migrating.value ? 'migrate' : action,
     plan_ready: planState.value === 'ready'
   })
-  if (isChinese.value) {
+  if (isChinese.value) await mirrorsPromptedRead
+  if (isChinese.value && !mirrorsPrompted.value) {
     pendingAction.value = action
     step.value = 'mirrors'
     busy.value = false
@@ -240,6 +260,7 @@ async function chooseMirrors(useMirrors: boolean): Promise<void> {
   emitTelemetryAction('comfy.desktop.first_use.mirrors_chosen', { use_mirrors: useMirrors })
   const action = pendingAction.value ?? 'install'
   pendingAction.value = null
+  mirrorsPrompted.value = true
   busy.value = true
   route(action)
 }
@@ -247,7 +268,7 @@ async function chooseMirrors(useMirrors: boolean): Promise<void> {
 async function loadPlan(gen: number): Promise<void> {
   planState.value = 'loading'
   try {
-    const next = await resolveSetupPlan()
+    const next = props.savedPlan ?? (await resolveSetupPlan())
     if (gen !== openGeneration) return
     plan.value = next
     planState.value = 'ready'
@@ -314,14 +335,20 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       locale.value = next
     })
     .catch(() => {})
+  mirrorsPromptedRead = window.api
+    .getSetting('chineseMirrorsPrompted')
+    .then((prompted) => {
+      if (gen === openGeneration) mirrorsPrompted.value = prompted === true
+    })
+    .catch(() => {})
   if (props.consent) {
     restoreConsent(props.consent)
     return
   }
-  const [existing, existingBeta] = (await Promise.all([
+  const [existing, existingBeta] = await Promise.all([
     window.api.getSetting('telemetryEnabled'),
     window.api.getSetting('betaFeaturesEnabled')
-  ])) as [boolean | undefined, boolean | undefined]
+  ])
   if (gen !== openGeneration) return
   telemetryEnabled.value = existing !== false
   betaTouched.value = typeof existingBeta === 'boolean'
@@ -402,11 +429,11 @@ defineExpose({ open, resetContinue })
             aria-hidden="true"
           />
           <BuildDeviceArt
-            class="relative h-[104px] w-[162px] shrink-0"
+            class="relative h-[80px] w-[124px] shrink-0"
             :kind="deviceKindForPlatform(platform)"
             glow="#46464A"
           />
-          <div class="relative ml-[33px] flex min-w-0 flex-1 flex-col">
+          <div class="relative ml-6 flex min-w-0 flex-1 flex-col">
             <span class="flex h-[15px] items-center gap-1.5 text-xs/[15px] text-muted-foreground">
               <Check :size="11" :stroke-width="2" aria-hidden="true" />
               {{ t('setup.detected') }}
@@ -443,8 +470,8 @@ defineExpose({ open, resetContinue })
               <span class="flex items-center gap-2.5 text-subtle-foreground">
                 <Zap :size="13" :stroke-width="1.75" aria-hidden="true" />{{ t('setup.hardware') }}
               </span>
-              <span class="truncate text-foreground">
-                {{ variant?.label ?? t('setup.checking') }}
+              <span class="truncate text-foreground" data-testid="setup-hardware">
+                {{ hardware || t('setup.checking') }}
               </span>
               <span
                 class="ml-4 text-right whitespace-nowrap"
@@ -458,7 +485,7 @@ defineExpose({ open, resetContinue })
                     ? t('setup.unsupported')
                     : cpuOnly
                       ? t('setup.noGpu')
-                      : variant
+                      : hardwareDetected
                         ? t('setup.detected')
                         : ''
                 }}
@@ -470,9 +497,16 @@ defineExpose({ open, resetContinue })
                   t('setup.location')
                 }}
               </span>
-              <span class="truncate text-foreground" :title="location || undefined">
-                {{ location || t('setup.checking') }}
+              <span
+                v-if="location"
+                class="flex min-w-0 text-foreground"
+                :title="location"
+                data-testid="setup-location"
+              >
+                <span class="min-w-0 truncate">{{ locationParts.head }}</span>
+                <span class="max-w-full shrink-0 truncate">{{ locationParts.tail }}</span>
               </span>
+              <span v-else class="truncate text-foreground">{{ t('setup.checking') }}</span>
               <span
                 class="ml-4 text-right whitespace-nowrap"
                 :class="lowDisk ? 'text-[#f0b135]' : 'text-subtle-foreground'"
@@ -487,7 +521,9 @@ defineExpose({ open, resetContinue })
                   t('setup.version')
                 }}
               </span>
-              <span class="truncate text-foreground">{{ version || t('setup.checking') }}</span>
+              <span class="truncate text-foreground" data-testid="setup-version">{{
+                version || t('setup.checking')
+              }}</span>
               <span class="ml-4 text-right whitespace-nowrap text-subtle-foreground">
                 {{ downloadSize ? t('setup.download', { size: downloadSize }) : '' }}
               </span>

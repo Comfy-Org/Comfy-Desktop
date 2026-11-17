@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
 import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
 import {
@@ -14,13 +13,15 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  ArrowLeft,
   Check,
-  CircleAlert,
   Download,
+  FileArchive,
   FolderArchive,
   Globe,
   HardDrive,
+  MapPin,
+  Split,
+  Monitor,
   Package,
   RefreshCw,
   SlidersHorizontal,
@@ -39,36 +40,39 @@ import type {
   SourceField,
   FieldOption,
   HardwareValidation,
-  ShowProgressOpts
+  ShowProgressOpts,
+  SystemInfo
 } from '../types/ipc'
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
-import { INSTALL_SPACE_FACTOR } from '../lib/setupPlan'
+import {
+  INSTALL_SPACE_FACTOR,
+  downloadBytesOf,
+  isCpuVariant,
+  machineName,
+  type ChangeSetupDraft,
+  type NewInstallSetup,
+  type SavedSetup,
+  type SetupPlan
+} from '../lib/setupPlan'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { PERSONAL_WORKSPACE_ID, workspaceContextId } from '../../../shared/workspaces'
-import { emitTelemetryAction, toSizeBucket, toVariantBucket, toErrorBucket } from '../lib/telemetry'
+import { emitTelemetryAction, toVariantBucket, toErrorBucket } from '../lib/telemetry'
 import {
   trackGuardrailBlocked,
   createDiskSpaceChecker,
   showPathIssueAlerts,
   checkNvidiaDriverOrWarn,
-  checkDiskSpaceOrWarn,
-  checkTemplateDiskOrBlock,
-  isTemplateDiskBlocked,
-  minTemplateModelBytes,
-  isApiNodeTemplate,
-  templateDownloadBytes,
-  templateSizeBytes
+  checkDiskSpaceOrWarn
 } from '../lib/installHelpers'
 import SetupModal from '../components/SetupModal.vue'
 import TermsModal from '../components/TermsModal.vue'
 import TermsConsentRow from '../components/TermsConsentRow.vue'
 import InstallNameInput from '../components/InstallNameInput.vue'
-import TrackModal from './TrackModal.vue'
-import LoadSnapshotModal from './LoadSnapshotModal.vue'
+import TrackBuildForm from '../components/TrackBuildForm.vue'
+import LoadSnapshotForm from '../components/LoadSnapshotForm.vue'
 import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
-import SetupOptionCards, { type SetupOptionCard } from '../components/SetupOptionCards.vue'
+import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
 import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
-import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
@@ -84,11 +88,9 @@ const emit = defineEmits<{
   'show-progress': [opts: ShowProgressOpts]
   'navigate-list': []
   'back-to-setup': []
+  'save-setup': [saved: SavedSetup]
   'consent-change': [accepted: boolean]
 }>()
-
-const inlineLinkClass =
-  'text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100'
 
 const spinnerClass =
   'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:content-[""] before:[animation-duration:600ms]'
@@ -113,6 +115,7 @@ const instPath = ref('')
 const defaultInstPath = ref('')
 const detectedGpu = ref('')
 const gpuName = ref('')
+const systemInfo = ref<SystemInfo | null>(null)
 const machineUnsupported = ref(false)
 const unsupportedReason = ref('')
 const view = ref<'summary' | 'change'>('summary')
@@ -167,6 +170,15 @@ const installSourceTabs = computed<InstallSourceTab[]>(() => {
 
   return tabs
 })
+
+function connectsToExistingComfy(tab: InstallSourceTab): boolean {
+  return tab.kind === 'source' && tab.source.skipInstall === true
+}
+
+const newInstallTabs = computed(() =>
+  installSourceTabs.value.filter((tab) => !connectsToExistingComfy(tab))
+)
+const existingComfyTabs = computed(() => installSourceTabs.value.filter(connectsToExistingComfy))
 
 const workspaceBuilds = computed(() => {
   if (!managedWorkspaceId.value || authStore.status.workspaceId !== managedWorkspaceId.value)
@@ -366,135 +378,18 @@ function installHandoffProps(): Record<string, string | boolean | null> {
   }
 }
 
-const NO_TEMPLATE_VALUE = 'none'
-
-const selectedTemplate = computed<FieldOption | null>(() => {
-  const sel = selections.value.bundledTemplate
-  return sel && sel.value !== NO_TEMPLATE_VALUE ? sel : null
-})
-
-const templateHasModels = computed(() => {
-  const size = selectedTemplate.value?.data?.sizeBytes as number | undefined
-  return typeof size === 'number' && size > 0
-})
-
-const templateIsApiNode = computed(() => isApiNodeTemplate(selectedTemplate.value))
-
-const templateInstallBlocked = computed(() => {
-  if (diskSpaceLoading.value) return false
-  return isTemplateDiskBlocked(diskSpace.value, templateDownloadBytes(selectedTemplate.value))
-})
-
-const pickerRef = ref<InstanceType<typeof TemplatePickerStep> | null>(null)
-
-const templateDiskError = computed(() => pickerRef.value?.shownDiskError ?? null)
-const hasTemplateAlerts = computed(() => !!templateDiskError.value)
-
-const templateAlertNudge = ref(false)
-let templateNudgeTimer: ReturnType<typeof setTimeout> | undefined
-function nudgeTemplateAlert(): void {
-  templateAlertNudge.value = true
-  clearTimeout(templateNudgeTimer)
-  templateNudgeTimer = setTimeout(() => {
-    templateAlertNudge.value = false
-  }, 600)
-}
-
-const step = ref<'configure' | 'template'>('configure')
-const dontShowTemplatePicker = ref(false)
-const pickerEnabled = ref(true)
-const hasLocalInstall = ref(false)
-
-const templateOptions = computed<FieldOption[]>(
-  () => fieldOptions.value.get('bundledTemplate') ?? []
-)
-
-const diskTooSmallForAnyTemplate = computed(() => {
-  if (diskSpaceLoading.value || !diskSpace.value) return false
-  if (templateOptions.value.some(isApiNodeTemplate)) return false
-  const cheapest = minTemplateModelBytes(templateOptions.value.map(templateSizeBytes))
-  return isTemplateDiskBlocked(diskSpace.value, cheapest)
-})
-
-const asksForTemplate = computed(() => props.hideBackToDashboard)
 const offersBuildImport = computed(() => !props.hideBackToDashboard)
-
-const shouldShowPickerStep = computed(
-  () =>
-    asksForTemplate.value &&
-    localInstallMode.value &&
-    currentSource.value?.id === 'standalone' &&
-    pickerEnabled.value &&
-    templateOptions.value.length > 0 &&
-    !diskTooSmallForAnyTemplate.value
-)
-
-function selectTemplate(option: FieldOption): void {
-  const prev = selections.value.bundledTemplate?.value
-  selections.value.bundledTemplate = option
-  if (option.value !== NO_TEMPLATE_VALUE && option.value !== prev) {
-    const sizeBytes = (option.data?.sizeBytes as number | undefined) ?? 0
-    emitTelemetryAction('comfy.desktop.template.selected', {
-      template_id: option.value,
-      size_bucket: toSizeBucket(sizeBytes),
-      is_api_node: isApiNodeTemplate(option)
-    })
-  }
-}
 
 async function handleConfigureContinue(): Promise<void> {
   if (needsConsent.value && !consentAccepted.value) {
     consentNudge.value = true
     return
   }
-  if (shouldShowPickerStep.value) {
-    if (instPath.value) fetchDiskSpace(instPath.value)
-    step.value = 'template'
-    emitTelemetryAction('comfy.desktop.template.picker_shown', {
-      template_count: templateOptions.value.length,
-      has_local_install: hasLocalInstall.value,
-      default_template_id: selections.value.bundledTemplate?.value ?? null
-    })
+  if (startFrom.value === 'existing') {
+    await useExistingComfy()
     return
   }
   await handleSave()
-}
-
-async function handleTemplateInstall(): Promise<void> {
-  if (templateInstallBlocked.value) {
-    nudgeTemplateAlert()
-    return
-  }
-  const tpl = selectedTemplate.value
-  emitTelemetryAction('comfy.desktop.template.install_confirmed', {
-    template_id: tpl?.value ?? NO_TEMPLATE_VALUE,
-    size_bucket: toSizeBucket((tpl?.data?.sizeBytes as number | undefined) ?? 0),
-    has_models: templateHasModels.value,
-    is_api_node: templateIsApiNode.value,
-    dont_show_again: dontShowTemplatePicker.value
-  })
-  await persistDontShowAgain()
-  await handleSave()
-}
-
-async function handleTemplateSkip(): Promise<void> {
-  emitTelemetryAction('comfy.desktop.template.skipped', {
-    had_template_selected: !!selectedTemplate.value,
-    candidate_template_id: selectedTemplate.value?.value ?? null,
-    dont_show_again: dontShowTemplatePicker.value
-  })
-  const none = templateOptions.value.find((o) => o.value === NO_TEMPLATE_VALUE)
-  if (none) selections.value.bundledTemplate = none
-  await persistDontShowAgain()
-  await handleSave()
-}
-
-async function persistDontShowAgain(): Promise<void> {
-  if (dontShowTemplatePicker.value) {
-    try {
-      await window.api.setSetting('skipTemplatePickerStep', true)
-    } catch {}
-  }
 }
 
 watch(instPath, (newPath) => {
@@ -567,7 +462,7 @@ onMounted(() => {
     .detectGPU()
     .then((gpu) => {
       if (gpu) {
-        gpuName.value = gpu.label
+        gpuName.value = gpu.model || gpu.label
         detectedGpu.value = t('newInstall.detectedGpu', { label: gpu.label })
       } else {
         detectedGpu.value = t('newInstall.noGpuDetected')
@@ -578,6 +473,15 @@ onMounted(() => {
     })
     .finally(() => {
       gpuDetectionDone = true
+    })
+
+  Promise.resolve()
+    .then(() => window.api.getSystemInfo())
+    .then((info) => {
+      systemInfo.value = info
+    })
+    .catch(() => {
+      systemInfo.value = null
     })
 
   installDirPromise = window.api.getDefaultInstallDir().catch(() => '')
@@ -591,7 +495,6 @@ onBeforeUnmount(() => {
       reason: 'wizard_cancelled'
     })
   }
-  clearTimeout(templateNudgeTimer)
 })
 
 function handleBackToSetup(): void {
@@ -608,6 +511,7 @@ interface OpenOpts {
   needsConsent?: boolean
   entrypoint?: string
   workspaceId?: string
+  restore?: ChangeSetupDraft
 }
 
 const cameFromSetup = ref(false)
@@ -635,6 +539,9 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   consentAccepted.value = false
   consentNudge.value = false
   termsDoc.value = null
+  buildImportChoice.value = null
+  setupBeforeServer = null
+  submittingExisting.value = false
   entrypoint.value = opts.entrypoint ?? 'unknown'
   resolved.value = false
   suggestedName.value = ''
@@ -659,10 +566,6 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   sourceError.value = ''
   authorizingWorkspace.value = false
   initializing.value = true
-  step.value = 'configure'
-  dontShowTemplatePicker.value = false
-  pickerEnabled.value = true
-  hasLocalInstall.value = false
 
   try {
     await authStore.fetchStatus().catch(() => authStore.status)
@@ -690,6 +593,10 @@ async function open(opts: OpenOpts = {}): Promise<void> {
     ) {
       workspaceInstallMode.value = 'public'
       await initializeInstallMode(gen)
+    }
+    if (opts.restore && gen === modeGeneration) {
+      instName.value = opts.restore.instName
+      await restoreNewInstallSetup(opts.restore)
     }
   } finally {
     if (gen === modeGeneration) initializing.value = false
@@ -751,21 +658,6 @@ async function initializeLocalInstall(gen: number, requestedSource?: Source): Pr
     .getUniqueName(DEFAULT_INSTALL_NAME)
     .then((name) => {
       if (gen === modeGeneration && localInstallMode.value) suggestedName.value = name
-    })
-    .catch(() => {})
-
-  void window.api
-    .getSetting('skipTemplatePickerStep')
-    .then((skip) => {
-      if (gen === modeGeneration && localInstallMode.value) pickerEnabled.value = skip !== true
-    })
-    .catch(() => {})
-  void window.api
-    .getInstallationsSummary()
-    .then((summary) => {
-      if (gen === modeGeneration && localInstallMode.value) {
-        hasLocalInstall.value = summary.localCount > 0
-      }
     })
     .catch(() => {})
 
@@ -887,7 +779,6 @@ async function selectSourceCard(source: Source): Promise<void> {
 function resetSourceState(source: Source | null): void {
   loadGeneration++
   currentSource.value = source
-  step.value = 'configure'
   selections.value = {}
   fieldOptions.value.clear()
   fieldLoading.value.clear()
@@ -969,13 +860,8 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
     fieldOptions.value.set(field.id, options)
     heldFields.value.delete(field.id)
 
-    if (field.id === 'bundledTemplate' && !asksForTemplate.value) {
-      const none = options.find((opt) => opt.value === NO_TEMPLATE_VALUE)
-      if (none) selections.value[field.id] = none
-      else delete selections.value[field.id]
-    } else if (options.length > 0) {
-      let defaultIndex =
-        field.id === 'bundledTemplate' ? 0 : options.findIndex((opt) => opt.recommended)
+    if (options.length > 0) {
+      let defaultIndex = options.findIndex((opt) => opt.recommended)
       if (defaultIndex < 0) defaultIndex = 0
       const defaultOption = options[defaultIndex]
       if (defaultOption) selections.value[field.id] = defaultOption
@@ -1099,11 +985,7 @@ async function validateSelectedInstallRoot(): Promise<boolean> {
   }
 }
 
-async function handOffInstall(
-  result: InstallBuildResult,
-  failureTitle: string,
-  templateSelected: boolean
-): Promise<void> {
+async function handOffInstall(result: InstallBuildResult, failureTitle: string): Promise<void> {
   if (!result.ok) {
     emitTelemetryAction('comfy.desktop.install.not_started', {
       ...installHandoffProps(),
@@ -1118,7 +1000,7 @@ async function handOffInstall(
     emitTelemetryAction('comfy.desktop.install.dispatched', {
       ...installHandoffProps(),
       installation_id: result.entry.id,
-      template_selected: templateSelected
+      template_selected: false
     })
     emit('show-progress', {
       installationId: result.entry.id,
@@ -1174,7 +1056,23 @@ async function handleWorkspaceBuildSave(): Promise<void> {
       ok: false,
       message: error instanceof Error ? error.message : String(error)
     }))
-  await handOffInstall(result, t('errors.installFailed'), false)
+  await handOffInstall(result, t('errors.installFailed'))
+}
+
+async function confirmNvidiaDriver(source: Source): Promise<boolean> {
+  if (source.id !== 'standalone') return true
+  const variantId = selections.value.variant?.data?.variantId as string | undefined
+  if (!variantId || !stripVariantPrefix(variantId).startsWith('nvidia')) return true
+  return checkNvidiaDriverOrWarn('wizard', 'save', modal.confirm, t)
+}
+
+function commitTextFields(source: Source): void {
+  for (const f of source.fields) {
+    if (f.type === 'text') {
+      const value = textFieldValues.value.get(f.id) ?? ''
+      selections.value[f.id] = { value, label: value }
+    }
+  }
 }
 
 async function handleSave(): Promise<void> {
@@ -1183,23 +1081,8 @@ async function handleSave(): Promise<void> {
     return
   }
   const source = currentSource.value
-  if (!source) return
-
-  if (source.id === 'standalone') {
-    const variantId = selections.value.variant?.data?.variantId as string | undefined
-    if (variantId && stripVariantPrefix(variantId).startsWith('nvidia')) {
-      if (!(await checkNvidiaDriverOrWarn('wizard', 'save', modal.confirm, t))) {
-        return
-      }
-    }
-  }
-
-  for (const f of source.fields) {
-    if (f.type === 'text') {
-      const value = textFieldValues.value.get(f.id) ?? ''
-      selections.value[f.id] = { value, label: value }
-    }
-  }
+  if (!source || !(await confirmNvidiaDriver(source))) return
+  commitTextFields(source)
 
   const instData = await window.api.buildInstallation(source.id, rawSelections())
   const baseName = instName.value.trim() || DEFAULT_INSTALL_NAME
@@ -1249,20 +1132,6 @@ async function handleSave(): Promise<void> {
     } catch {}
   }
 
-  if (instPath.value && templateHasModels.value) {
-    if (
-      !(await checkTemplateDiskOrBlock({
-        path: instPath.value,
-        estimatedModelBytes: templateDownloadBytes(selectedTemplate.value),
-        flow: 'wizard',
-        alert: modal.alert,
-        t
-      }))
-    ) {
-      return
-    }
-  }
-
   const result = await window.api.addInstallation({
     name,
     installPath: instPath.value,
@@ -1270,7 +1139,7 @@ async function handleSave(): Promise<void> {
     status: 'installing',
     ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
   })
-  await handOffInstall(result, t('errors.cannotAdd'), templateHasModels.value)
+  await handOffInstall(result, t('errors.cannotAdd'))
 }
 
 function toSelectOptions(options: FieldOption[] | undefined): BaseSelectOption[] {
@@ -1354,24 +1223,10 @@ const locationMeta = computed(() => {
   return `${diskFreeLabel.value} · ${t('diskSpace.estimatedRequired', { size: formatBytes(required) })}`
 })
 
-interface ChangeSetupDraft {
-  sourceKey: string | null
-  selections: Record<string, FieldOption>
-  fieldOptions: Map<string, FieldOption[]>
-  fieldLoading: Map<string, boolean>
-  fieldErrors: Map<string, string>
-  textFieldValues: Map<string, string>
-  saveDisabled: boolean
-  sourceError: string
-  instPath: string
-  selectedBuildId: string
-  selectedBuildTargetId: string
-}
-
 let changeSetupDraft: ChangeSetupDraft | null = null
 
-function openChangeSetup(): void {
-  changeSetupDraft = {
+function captureNewInstallSetup(): NewInstallSetup {
+  return {
     sourceKey: selectedSourceCard.value,
     selections: { ...selections.value },
     fieldOptions: new Map(fieldOptions.value),
@@ -1384,6 +1239,10 @@ function openChangeSetup(): void {
     selectedBuildId: selectedBuildId.value,
     selectedBuildTargetId: selectedBuildTargetId.value
   }
+}
+
+function openChangeSetup(): void {
+  changeSetupDraft = { ...captureNewInstallSetup(), instName: instName.value }
   view.value = 'change'
 }
 
@@ -1392,12 +1251,86 @@ function saveChangeSetup(): void {
   view.value = 'summary'
 }
 
+function workspaceBuildPlan(build: Build): SetupPlan {
+  const target = selectedBuildTarget.value
+  const targetLabel = selectedBuildTargetOptions.value.find(
+    (option) => option.value === selectedBuildTargetId.value
+  )?.label
+  return {
+    sourceId: '',
+    selections: {},
+    installRoot: instPath.value.trim(),
+    downloadBytes: build.sizeBytes ?? 0,
+    requiredBytes: estimatedInstallSize.value,
+    ...(instName.value.trim() ? { name: instName.value.trim() } : {}),
+    workspaceBuild: {
+      buildId: build.id,
+      buildName: build.name,
+      ...(target ? { artifactId: target.artifactId, releaseVersion: target.releaseVersion } : {}),
+      ...(targetLabel ? { targetLabel } : {})
+    }
+  }
+}
+
+function sourcePlan(source: Source): SetupPlan {
+  const picked = rawSelections()
+  return {
+    sourceId: source.id,
+    selections: picked,
+    installRoot: instPath.value,
+    downloadBytes: downloadBytesOf(picked.variant),
+    requiredBytes: estimatedInstallSize.value,
+    ...(instName.value.trim() ? { name: instName.value.trim() } : {}),
+    ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
+  }
+}
+
+const savingSetup = ref(false)
+
+function setupFingerprint(): string {
+  return JSON.stringify([
+    selectedSourceCard.value,
+    instPath.value,
+    selectedBuildId.value,
+    selectedBuildTargetId.value,
+    Object.entries(selections.value).map(([id, option]) => [id, option?.value]),
+    [...textFieldValues.value]
+  ])
+}
+
+async function checkedSetupPlan(): Promise<SetupPlan | null> {
+  if (!canProceed.value) return null
+  const checked = setupFingerprint()
+  const unchanged = () => canProceed.value && setupFingerprint() === checked
+  if (!(await validateSelectedInstallRoot()) || !unchanged()) return null
+  if (managedBuildMode.value) {
+    return selectedBuild.value ? workspaceBuildPlan(selectedBuild.value) : null
+  }
+  const source = currentSource.value
+  if (!source || !(await confirmNvidiaDriver(source)) || !unchanged()) return null
+  commitTextFields(source)
+  return sourcePlan(source)
+}
+
+async function saveSetupForInstall(): Promise<void> {
+  if (savingSetup.value) return
+  savingSetup.value = true
+  try {
+    const plan = await checkedSetupPlan()
+    if (!plan) return
+    resolved.value = true
+    emit('save-setup', { plan, draft: { ...captureNewInstallSetup(), instName: instName.value } })
+  } finally {
+    savingSetup.value = false
+  }
+}
+
 async function restoreSourceCard(key: string): Promise<void> {
   const tab = installSourceTabs.value.find((candidate) => candidate.key === key)
   if (!tab) return
   if (tab.kind === 'managed') await selectManagedInstallMode()
   else if (managedBuildMode.value) await selectSourceCard(tab.source)
-  else await selectSource(tab.source)
+  else resetSourceState(tab.source)
 }
 
 async function restoreManagedBuild(buildId: string, targetId: string): Promise<void> {
@@ -1409,47 +1342,57 @@ async function restoreManagedBuild(buildId: string, targetId: string): Promise<v
   }
 }
 
-async function discardChangeSetup(): Promise<void> {
-  changeSetupSession++
-  const draft = changeSetupDraft
-  changeSetupDraft = null
-  view.value = 'summary'
-  authorizingWorkspace.value = false
-  if (!draft) return
-  if (draft.sourceKey !== selectedSourceCard.value) {
-    if (draft.sourceKey) await restoreSourceCard(draft.sourceKey)
-    else {
-      modeGeneration++
-      initializing.value = false
-      workspaceInstallMode.value = 'public'
-      resetSourceState(null)
-    }
+async function restoreInstallChoice(key: string | null): Promise<void> {
+  if (key) {
+    await restoreSourceCard(key)
+    return
   }
-  if (draft.sourceKey !== selectedSourceCard.value) return
-  instPath.value = draft.instPath
+  modeGeneration++
+  initializing.value = false
+  workspaceInstallMode.value = 'public'
+  resetSourceState(null)
+}
+
+async function restoreNewInstallSetup(setup: NewInstallSetup): Promise<void> {
+  const session = changeSetupSession
+  if (setup.sourceKey !== selectedSourceCard.value) await restoreInstallChoice(setup.sourceKey)
+  if (session !== changeSetupSession || setup.sourceKey !== selectedSourceCard.value) return
+  instPath.value = setup.instPath
   if (managedBuildMode.value) {
-    await restoreManagedBuild(draft.selectedBuildId, draft.selectedBuildTargetId)
+    await restoreManagedBuild(setup.selectedBuildId, setup.selectedBuildTargetId)
     return
   }
   loadGeneration++
   heldFields.value.clear()
-  selections.value = draft.selections
-  fieldOptions.value = draft.fieldOptions
-  fieldLoading.value = draft.fieldLoading
-  fieldErrors.value = draft.fieldErrors
-  textFieldValues.value = draft.textFieldValues
-  saveDisabled.value = draft.saveDisabled
-  sourceError.value = draft.sourceError
+  selections.value = { ...setup.selections }
+  fieldOptions.value = new Map(setup.fieldOptions)
+  fieldLoading.value = new Map(setup.fieldLoading)
+  fieldErrors.value = new Map(setup.fieldErrors)
+  textFieldValues.value = new Map(setup.textFieldValues)
+  saveDisabled.value = setup.saveDisabled
+  sourceError.value = setup.sourceError
   const interruptedLoad =
-    currentSource.value?.fields.findIndex((field) => draft.fieldLoading.get(field.id)) ?? -1
+    currentSource.value?.fields.findIndex((field) => setup.fieldLoading.get(field.id)) ?? -1
   if (interruptedLoad >= 0) await loadFieldOptions(interruptedLoad)
+}
+
+async function discardChangeSetup(): Promise<void> {
+  if (submittingExisting.value) return
+  changeSetupSession++
+  const draft = changeSetupDraft
+  changeSetupDraft = null
+  view.value = 'summary'
+  buildImportChoice.value = null
+  setupBeforeServer = null
+  authorizingWorkspace.value = false
+  if (!draft) return
+  instName.value = draft.instName
+  await restoreNewInstallSetup(draft)
 }
 
 function isHiddenWhenEmpty(field: SourceField): boolean {
   const held = heldFields.value.get(field.id)
   if (held) return held.hidden
-  if (field.id === 'bundledTemplate' && (!asksForTemplate.value || shouldShowPickerStep.value))
-    return true
   if (field.type === 'text' || field.renderAs === 'cards') return false
   const options = fieldOptions.value.get(field.id)
   if (options === undefined) return false
@@ -1462,10 +1405,20 @@ const machineBlocked = computed(
     !managedBuildMode.value &&
     (!currentSource.value || currentSource.value.id === 'standalone')
 )
-const machineTitle = computed(() =>
-  machineBlocked.value ? unsupportedReason.value : gpuName.value || detectedGpu.value
+const systemMachineName = computed(() =>
+  machineName(systemInfo.value, isCpuVariant(selections.value.variant))
 )
-const machineDetected = computed(() => !machineBlocked.value && !!gpuName.value)
+const machineTitle = computed(() =>
+  machineBlocked.value
+    ? unsupportedReason.value
+    : systemMachineName.value || gpuName.value || detectedGpu.value
+)
+const machineDetected = computed(
+  () => !machineBlocked.value && !!(systemMachineName.value || gpuName.value)
+)
+const machineMemoryGb = computed(() =>
+  systemInfo.value?.total_memory_gb ? Math.round(systemInfo.value.total_memory_gb) : null
+)
 const buildCatalogFailed = computed(() => managedBuildMode.value && authStore.buildsError)
 const blockingFieldError = computed(
   () => urlFieldError.value || fieldErrors.value.values().next().value || ''
@@ -1479,36 +1432,40 @@ const SOURCE_ICONS: Record<string, Component> = {
 
 function sourceCardLabel(source: Source): string {
   if (source.id === 'standalone') return t('newInstall.publicBuilds')
-  if (source.id === 'remote') return t('newInstall.connectToServer')
+  if (source.id === 'remote') return t('newInstall.onServer')
   return source.label
 }
 
 function sourceCardDescription(source: Source): string | undefined {
   if (source.id === 'standalone') return t('newInstall.publicBuildsMeta')
-  if (source.id === 'remote') return t('newInstall.connectToServerMeta')
+  if (source.id === 'remote') return t('newInstall.onServerMeta')
   return source.description
 }
 
-const sourceCards = computed<SetupOptionCard[]>(() =>
-  installSourceTabs.value.map((tab) =>
-    tab.kind === 'managed'
-      ? {
-          value: tab.key,
-          label: t('newInstall.managedBuilds'),
-          description: t('newInstall.managedBuildsMeta'),
-          icon: Users,
-          testId: 'workspace-install-source-managed',
-          disabled: authorizingWorkspace.value
-        }
-      : {
-          value: tab.key,
-          label: sourceCardLabel(tab.source),
-          description: sourceCardDescription(tab.source),
-          icon: SOURCE_ICONS[tab.source.id] ?? Package,
-          testId: `install-source-${tab.source.id}`,
-          disabled: authorizingWorkspace.value
-        }
-  )
+function toSourceCard(tab: InstallSourceTab): SetupOptionCard {
+  if (tab.kind === 'managed') {
+    return {
+      value: tab.key,
+      label: t('newInstall.managedBuilds'),
+      description: t('newInstall.managedBuildsMeta'),
+      icon: Users,
+      testId: 'workspace-install-source-managed',
+      disabled: choiceLocked.value
+    }
+  }
+  return {
+    value: tab.key,
+    label: sourceCardLabel(tab.source),
+    description: sourceCardDescription(tab.source),
+    icon: SOURCE_ICONS[tab.source.id] ?? Package,
+    testId: `install-source-${tab.source.id}`,
+    disabled: choiceLocked.value
+  }
+}
+
+const sourceCards = computed<SetupOptionCard[]>(() => newInstallTabs.value.map(toSourceCard))
+const sourceSelectOptions = computed<BaseSelectOption[]>(() =>
+  sourceCards.value.map(toCardSelectOption)
 )
 
 const selectedSourceCard = computed(() => {
@@ -1523,9 +1480,101 @@ async function selectSourceCardByKey(key: string): Promise<void> {
   else await selectSourceCard(tab.source)
 }
 
-function backToConfigure(): void {
-  step.value = 'configure'
-  view.value = cameFromSetup.value ? 'change' : 'summary'
+type BuildImportFlow = 'track' | 'load-snapshot'
+type StartFrom = 'new' | 'existing'
+
+const BUILD_IMPORT_TELEMETRY: Record<BuildImportFlow, string> = {
+  track: 'track_existing',
+  'load-snapshot': 'load_snapshot'
+}
+
+const buildImportChoice = ref<BuildImportFlow | null>(null)
+const submittingExisting = ref(false)
+let setupBeforeServer: NewInstallSetup | null = null
+
+const usesExistingServer = computed(
+  () => localInstallMode.value && currentSource.value?.skipInstall === true
+)
+
+const startFrom = computed<StartFrom>(() =>
+  buildImportChoice.value || usesExistingServer.value ? 'existing' : 'new'
+)
+
+const choiceLocked = computed(() => authorizingWorkspace.value || submittingExisting.value)
+const startFromLocked = computed(() => choiceLocked.value || !setupPicked.value)
+const showsHardwareWarning = computed(() => !!hardwareWarning.value && startFrom.value === 'new')
+
+const startFromOptions = computed<{ value: StartFrom; label: string; testId: string }[]>(() => [
+  { value: 'new', label: t('newInstall.startFromNew'), testId: 'config-start-from-new' },
+  {
+    value: 'existing',
+    label: t(
+      offersBuildImport.value ? 'newInstall.startFromExisting' : 'newInstall.startFromServer'
+    ),
+    testId: 'config-start-from-existing'
+  }
+])
+
+const existingCards = computed<SetupOptionCard[]>(() => {
+  const serverCards = existingComfyTabs.value.map(toSourceCard)
+  if (!offersBuildImport.value) return serverCards
+  return [
+    {
+      value: 'track' satisfies BuildImportFlow,
+      label: t('newInstall.onThisComputer'),
+      description: t('newInstall.onThisComputerMeta'),
+      icon: Monitor,
+      testId: 'existing-comfy-folder',
+      disabled: choiceLocked.value
+    },
+    ...serverCards,
+    {
+      value: 'load-snapshot' satisfies BuildImportFlow,
+      label: t('newInstall.inSnapshotFile'),
+      description: t('newInstall.inSnapshotFileMeta'),
+      icon: FileArchive,
+      testId: 'existing-comfy-snapshot',
+      disabled: choiceLocked.value
+    }
+  ]
+})
+
+const selectedExistingCard = computed(() => buildImportChoice.value ?? selectedSourceCard.value)
+
+function chooseBuildImport(flow: BuildImportFlow): void {
+  if (buildImportChoice.value === flow) return
+  buildImportChoice.value = flow
+  emitTelemetryAction('comfy.desktop.install.flow.opened', {
+    flow: BUILD_IMPORT_TELEMETRY[flow],
+    entrypoint: 'new-install'
+  })
+}
+
+async function selectExistingCard(key: string): Promise<void> {
+  if (key === 'track' || key === 'load-snapshot') {
+    chooseBuildImport(key)
+    return
+  }
+  if (!usesExistingServer.value) setupBeforeServer = captureNewInstallSetup()
+  await selectSourceCardByKey(key)
+  if (usesExistingServer.value) buildImportChoice.value = null
+}
+
+async function selectStartFrom(next: StartFrom): Promise<void> {
+  if (startFromLocked.value || next === startFrom.value) return
+  if (next === 'existing') {
+    const first = existingCards.value[0]
+    if (first) await selectExistingCard(first.value)
+    return
+  }
+  buildImportChoice.value = null
+  if (!usesExistingServer.value) return
+  if (!setupBeforeServer) {
+    await restoreInstallChoice(null)
+    return
+  }
+  await restoreNewInstallSetup(setupBeforeServer)
+  if (!usesExistingServer.value) setupBeforeServer = null
 }
 
 function selectCardOptionByValue(field: SourceField, fieldIndex: number, value: string): void {
@@ -1533,7 +1582,29 @@ function selectCardOptionByValue(field: SourceField, fieldIndex: number, value: 
   if (option) selectCardOption(field, fieldIndex, option)
 }
 
-const buildTargetCards = computed(() => toHardwareCards(selectedBuildTargetOptions.value))
+function toCardSelectOption(card: SetupOptionCard): BaseSelectOption {
+  return {
+    value: card.value,
+    label: card.label,
+    description: card.description,
+    disabled: card.disabled,
+    icon: card.icon,
+    testId: card.testId,
+    badge: card.recommended ? t('newInstall.recommended') : undefined
+  }
+}
+
+const existingSelectOptions = computed(() => existingCards.value.map(toCardSelectOption))
+
+function hardwareSelectOptions(field: SourceField): BaseSelectOption[] {
+  const options = sortedCardOptions(shownOptions(field) ?? [])
+  const cards = field.id === HARDWARE_FIELD_ID ? toHardwareCards(options) : toOptionCards(options)
+  return cards.map(toCardSelectOption)
+}
+
+const buildTargetOptions = computed(() =>
+  toHardwareCards(selectedBuildTargetOptions.value).map(toCardSelectOption)
+)
 
 const FIELD_ICONS: Record<string, Component> = {
   variant: Zap,
@@ -1597,49 +1668,60 @@ const summaryRows = computed<SummaryRow[]>(() => {
 
 const showLocation = computed(() => !currentSource.value?.skipInstall)
 
+const trackFormRef = ref<InstanceType<typeof TrackBuildForm> | null>(null)
+const snapshotFormRef = ref<InstanceType<typeof LoadSnapshotForm> | null>(null)
+
 const primaryLabel = computed(() => {
-  if (shouldShowPickerStep.value) return t('common.continue')
-  if (!managedBuildMode.value && currentSource.value?.skipInstall) return t('newInstall.connect')
+  if (buildImportChoice.value === 'track') return t('track.trackInstallation')
+  if (buildImportChoice.value === 'load-snapshot') {
+    return snapshotFormRef.value?.creating
+      ? `${t('newInstall.installing')}…`
+      : t('list.snapshotCreateInstall')
+  }
+  if (usesExistingServer.value) return t('newInstall.connect')
   return t('newInstall.install')
 })
 
+const canProceed = computed(() => {
+  if (submittingExisting.value) return false
+  if (buildImportChoice.value === 'track') return trackFormRef.value?.canSave ?? false
+  if (buildImportChoice.value === 'load-snapshot') return snapshotFormRef.value?.canCreate ?? false
+  return canContinue.value
+})
+
+async function useExistingComfy(): Promise<void> {
+  if (submittingExisting.value) return
+  submittingExisting.value = true
+  try {
+    if (buildImportChoice.value === 'track') await trackFormRef.value?.save()
+    else if (buildImportChoice.value === 'load-snapshot') await snapshotFormRef.value?.create()
+    else await handleSave()
+  } finally {
+    submittingExisting.value = false
+  }
+}
+
 const useTakeoverHost = computed(() => props.hideBackToDashboard)
-const modalTitle = computed(() => {
-  if (step.value === 'template') return t('standalone.templatePickerTitle')
-  return t(view.value === 'change' ? 'newInstall.changeSetupTitle' : 'newInstall.newBuildTitle')
-})
-const modalLead = computed(() => {
-  if (step.value === 'template') return t('standalone.templatePickerLead')
-  return t(view.value === 'change' ? 'newInstall.changeSetupLead' : 'chooser.newInstallDesc')
-})
-const ariaLabel = computed(() =>
-  t(step.value === 'template' ? 'standalone.templatePickerTitle' : 'newInstall.newBuildTitle')
+const modalTitle = computed(() =>
+  t(view.value === 'change' ? 'newInstall.changeSetupTitle' : 'newInstall.newBuildTitle')
 )
+const modalLead = computed(() => {
+  if (view.value !== 'change') return t('chooser.newInstallDesc')
+  return t(
+    startFrom.value === 'existing' ? 'newInstall.existingComfyLead' : 'newInstall.changeSetupLead'
+  )
+})
+const ariaLabel = computed(() => t('newInstall.newBuildTitle'))
 
-type BuildImportFlow = 'track' | 'load-snapshot'
-
-const BUILD_IMPORT_TELEMETRY: Record<BuildImportFlow, string> = {
-  track: 'track_existing',
-  'load-snapshot': 'load_snapshot'
+function discardChanges(): void {
+  if (savingSetup.value) return
+  if (cameFromSetup.value) handleBackToSetup()
+  else void discardChangeSetup()
 }
 
-const buildImportFlow = ref<BuildImportFlow | null>(null)
-const trackModalRef = ref<InstanceType<typeof TrackModal> | null>(null)
-const loadSnapshotModalRef = ref<InstanceType<typeof LoadSnapshotModal> | null>(null)
-
-async function openBuildImport(flow: BuildImportFlow): Promise<void> {
-  buildImportFlow.value = flow
-  await nextTick()
-  if (flow === 'track') trackModalRef.value?.open()
-  else loadSnapshotModalRef.value?.open()
-  emitTelemetryAction('comfy.desktop.install.flow.opened', {
-    flow: BUILD_IMPORT_TELEMETRY[flow],
-    entrypoint: 'new-install'
-  })
-}
-
-function closeBuildImport(): void {
-  buildImportFlow.value = null
+function saveChanges(): void {
+  if (cameFromSetup.value) void saveSetupForInstall()
+  else saveChangeSetup()
 }
 
 function handOffImportedBuild(): void {
@@ -1660,212 +1742,285 @@ defineExpose({ open })
     :dialog-label="ariaLabel"
     :title="modalTitle"
     :lead="modalLead"
-    :wide="step === 'template'"
+    :anchor-top="view === 'change'"
     :brand-backdrop="useTakeoverHost"
-    :closable="step === 'configure' && view === 'summary' && !hideBackToDashboard"
+    :closable="view === 'summary' && !hideBackToDashboard"
     :close-title="$t('common.backToDashboard')"
-    :covered="buildImportFlow !== null"
     data-testid="new-build-modal"
     @close="emit('close')"
   >
-    <template v-if="step === 'configure'">
+    <div
+      v-if="authorizingWorkspace"
+      class="workspace-authorization-status mt-4 w-full text-[13px] leading-[1.4] text-neutral-200"
+      :class="spinnerClass"
+      role="status"
+      data-testid="workspace-authorization-status"
+    >
+      {{ $t('newInstall.waitingForWorkspaceAuthorization') }}
+    </div>
+    <div
+      v-if="sourceError && !buildImportChoice"
+      class="config-error mt-4 text-[13px] leading-[1.4] text-[var(--danger)]"
+      role="alert"
+    >
+      {{ sourceError }}
+    </div>
+
+    <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
       <div
-        v-if="authorizingWorkspace"
-        class="workspace-authorization-status mt-4 w-full text-[13px] leading-[1.4] text-neutral-200"
-        :class="spinnerClass"
-        role="status"
-        data-testid="workspace-authorization-status"
+        class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
       >
-        {{ $t('newInstall.waitingForWorkspaceAuthorization') }}
+        <label
+          class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
+          for="inst-name-standalone"
+          ><Tag :size="15" aria-hidden="true" />{{ $t('common.name') }}</label
+        >
+        <InstallNameInput
+          v-model="instName"
+          :placeholder="suggestedName || $t('common.namePlaceholder')"
+          :error="nameError"
+          :initial-focus="hideBackToDashboard"
+        />
+      </div>
+
+      <div
+        class="config-machine relative mt-3 flex items-center gap-5 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
+        :class="machineBlocked && 'config-machine--unsupported'"
+      >
+        <SetupMachineIllustration
+          class="h-[68px] w-[104px] flex-none max-[640px]:hidden"
+          :os="platform"
+          :bad="machineBlocked"
+        />
+        <span class="grid min-w-0">
+          <span
+            v-if="machineDetected"
+            class="config-machine-kicker mb-1 inline-flex items-center gap-1.5 text-[12px] leading-4 text-text-muted"
+            ><Check :size="11" :stroke-width="3" aria-hidden="true" />{{
+              $t('newInstall.detected')
+            }}</span
+          >
+          <span
+            class="config-gpu-value text-[22px] leading-7 font-semibold tracking-[-0.01em]"
+            :class="
+              machineBlocked
+                ? 'text-[16px] leading-6 break-words text-[var(--danger)]'
+                : 'truncate text-neutral-100'
+            "
+            data-testid="detected-gpu-field"
+            >{{ machineTitle }}</span
+          >
+          <span
+            v-if="machineMemoryGb && !machineBlocked"
+            class="config-machine-memory mt-[3px] text-[13px] leading-4 text-text-muted"
+            data-testid="detected-machine-memory"
+            >{{ $t('setup.memory', { gb: machineMemoryGb }) }}</span
+          >
+        </span>
+        <Button
+          size="md"
+          variant="secondary"
+          type="button"
+          class="config-change ml-auto flex-none px-3"
+          data-testid="config-change-setup"
+          :disabled="!setupPicked"
+          @click="openChangeSetup"
+        >
+          {{ $t('newInstall.change') }}
+        </Button>
       </div>
       <div
-        v-if="sourceError"
-        class="config-error mt-4 text-[13px] leading-[1.4] text-[var(--danger)]"
+        v-if="showsHardwareWarning"
+        class="config-hardware-warning mt-2 px-1 text-[12px] leading-[1.4] text-[var(--warning)]"
         role="alert"
+        data-testid="wizard-hardware-warning"
       >
-        {{ sourceError }}
+        {{ hardwareWarning }}
+      </div>
+      <div
+        v-if="blockingFieldError"
+        class="config-summary-field-error mt-2 px-1 text-[12px] leading-[1.4] text-[var(--danger)]"
+        role="alert"
+        data-testid="config-summary-field-error"
+      >
+        {{ blockingFieldError }}
+      </div>
+      <div v-if="buildCatalogFailed" class="mt-2 flex px-1" role="alert">
+        <Button
+          size="unset"
+          variant="destructive-textonly"
+          type="button"
+          class="wizard-build-retry text-left text-[12px] leading-[1.4] whitespace-normal"
+          data-testid="config-summary-build-retry"
+          :disabled="authStore.loadingBuilds || authorizingWorkspace"
+          @click="refreshManagedBuilds"
+        >
+          {{ $t('devPlatform.build.loadError') }}
+        </Button>
       </div>
 
-      <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
-        <div
-          class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
+      <dl
+        class="config-summary-list m-0 mt-3 flex flex-col"
+        :aria-label="$t('newInstall.installSummary')"
+      >
+        <SetupSummaryRow
+          v-for="row in summaryRows"
+          :key="row.key"
+          :icon="row.icon"
+          :label="row.label"
         >
-          <label
-            class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
-            for="inst-name-standalone"
-            ><Tag :size="15" aria-hidden="true" />{{ $t('common.name') }}</label
-          >
-          <InstallNameInput
-            v-model="instName"
-            :placeholder="suggestedName || $t('common.namePlaceholder')"
-            :error="nameError"
-            :initial-focus="hideBackToDashboard"
-          />
-        </div>
-
-        <div
-          class="config-machine relative mt-3 flex items-center gap-7 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
-          :class="machineBlocked && 'config-machine--unsupported'"
-        >
-          <SetupMachineIllustration
-            class="h-[88px] w-[136px] flex-none max-[640px]:hidden"
-            :os="platform"
-            :bad="machineBlocked"
-          />
-          <span class="grid min-w-0">
-            <span
-              v-if="machineDetected"
-              class="config-machine-kicker mb-1 inline-flex items-center gap-1.5 text-[12px] leading-4 text-text-muted"
-              ><Check :size="11" :stroke-width="3" aria-hidden="true" />{{
-                $t('newInstall.detected')
-              }}</span
-            >
-            <span
-              class="config-gpu-value text-[22px] leading-7 font-semibold tracking-[-0.01em]"
-              :class="
-                machineBlocked
-                  ? 'text-[16px] leading-6 break-words text-[var(--danger)]'
-                  : 'truncate text-neutral-100'
-              "
-              data-testid="detected-gpu-field"
-              >{{ machineTitle }}</span
-            >
+          <span class="grid min-w-0 flex-1 gap-1">
+            <span class="truncate text-[13px] leading-5 text-neutral-100">{{ row.value }}</span>
+            <span v-if="row.meta" class="truncate text-[12px] leading-4 text-text-muted">{{
+              row.meta
+            }}</span>
           </span>
-          <Button
-            size="md"
-            variant="secondary"
-            type="button"
-            class="config-change ml-auto flex-none px-3"
-            data-testid="config-change-setup"
-            :disabled="!setupPicked"
-            @click="openChangeSetup"
-          >
-            {{ $t('newInstall.change') }}
-          </Button>
-        </div>
-        <div
-          v-if="hardwareWarning && !currentSource?.skipInstall"
-          class="config-hardware-warning mt-2 px-1 text-[12px] leading-[1.4] text-[var(--warning)]"
-          role="alert"
-          data-testid="wizard-hardware-warning"
+        </SetupSummaryRow>
+        <SetupSummaryRow
+          v-if="showLocation"
+          class="config-summary-location"
+          :icon="HardDrive"
+          :label="$t('common.location')"
         >
-          {{ hardwareWarning }}
-        </div>
-        <div
-          v-if="blockingFieldError"
-          class="config-summary-field-error mt-2 px-1 text-[12px] leading-[1.4] text-[var(--danger)]"
-          role="alert"
-          data-testid="config-summary-field-error"
-        >
-          {{ blockingFieldError }}
-        </div>
-        <div v-if="buildCatalogFailed" class="mt-2 flex px-1" role="alert">
-          <Button
-            size="unset"
-            variant="destructive-textonly"
-            type="button"
-            class="wizard-build-retry text-left text-[12px] leading-[1.4] whitespace-normal"
-            data-testid="config-summary-build-retry"
-            :disabled="authStore.loadingBuilds || authorizingWorkspace"
-            @click="refreshManagedBuilds"
-          >
-            {{ $t('devPlatform.build.loadError') }}
-          </Button>
-        </div>
-
-        <dl
-          class="config-summary-list m-0 mt-3 flex flex-col"
-          :aria-label="$t('newInstall.installSummary')"
-        >
-          <SetupSummaryRow
-            v-for="row in summaryRows"
-            :key="row.key"
-            :icon="row.icon"
-            :label="row.label"
-          >
-            <span class="grid min-w-0 flex-1 gap-1">
-              <span class="truncate text-[13px] leading-5 text-neutral-100">{{ row.value }}</span>
-              <span v-if="row.meta" class="truncate text-[12px] leading-4 text-text-muted">{{
-                row.meta
-              }}</span>
-            </span>
-          </SetupSummaryRow>
-          <SetupSummaryRow
-            v-if="showLocation"
-            class="config-summary-location"
-            :icon="HardDrive"
-            :label="$t('common.location')"
-          >
-            <div class="grid min-w-0 flex-1 gap-1" data-testid="config-summary-path">
-              <PathOpenButton
-                v-if="instPath"
-                class="leading-5"
-                :path="instPath"
-                @open="handleOpenInstPath"
-              />
-              <span v-if="locationMeta" class="truncate text-[12px] leading-4 text-text-muted">{{
-                locationMeta
-              }}</span>
-              <span
-                v-if="diskShortLabel"
-                class="config-path-required text-[12px] leading-4 text-[var(--warning)]"
-                >{{ diskShortLabel }}</span
-              >
-              <PathDiskInfo
-                issues-only
-                :path-issues="pathIssues"
-                :disk-space-loading="diskSpaceLoading"
-                :disk-space="diskSpace"
-                :estimated-size="estimatedInstallSize"
-              />
-            </div>
-            <Button
-              variant="textonly"
-              type="button"
-              class="config-path-browse flex-none px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
-              data-testid="config-summary-browse"
-              @click="handleBrowse"
+          <div class="grid min-w-0 flex-1 gap-1" data-testid="config-summary-path">
+            <PathOpenButton
+              v-if="instPath"
+              class="leading-5"
+              :path="instPath"
+              @open="handleOpenInstPath"
+            />
+            <span v-if="locationMeta" class="truncate text-[12px] leading-4 text-text-muted">{{
+              locationMeta
+            }}</span>
+            <span
+              v-if="diskShortLabel"
+              class="config-path-required text-[12px] leading-4 text-[var(--warning)]"
+              >{{ diskShortLabel }}</span
             >
-              {{ $t('common.browse') }}
-            </Button>
-          </SetupSummaryRow>
-          <div
-            v-if="initializing && summaryRows.length === 0"
-            class="config-loading px-3.5 py-3 text-[13px] text-text-muted"
-            :class="spinnerClass"
-          >
-            {{ $t('newInstall.loading') }}
+            <PathDiskInfo
+              issues-only
+              :path-issues="pathIssues"
+              :disk-space-loading="diskSpaceLoading"
+              :disk-space="diskSpace"
+              :estimated-size="estimatedInstallSize"
+            />
           </div>
-        </dl>
+          <Button
+            size="sm"
+            variant="textonly"
+            type="button"
+            class="config-path-browse flex-none rounded-lg px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
+            data-testid="config-summary-browse"
+            @click="handleBrowse"
+          >
+            {{ $t('common.browse') }}
+          </Button>
+        </SetupSummaryRow>
+        <div
+          v-if="initializing && summaryRows.length === 0"
+          class="config-loading px-3.5 py-3 text-[13px] text-text-muted"
+          :class="spinnerClass"
+        >
+          {{ $t('newInstall.loading') }}
+        </div>
+      </dl>
+    </div>
+
+    <div
+      v-else
+      class="config-change-form mt-3 flex flex-col [&_.setup-form-row]:py-1.5"
+      data-testid="config-change-form"
+    >
+      <SetupFormRow
+        v-if="existingCards.length > 0"
+        class="config-start-from"
+        :label="$t('newInstall.startFrom')"
+        :icon="Split"
+        control-height="centered"
+      >
+        <SegmentedControl
+          class="self-start"
+          data-testid="config-start-from"
+          :model-value="startFrom"
+          :options="startFromOptions"
+          :label="$t('newInstall.startFrom')"
+          :disabled="startFromLocked"
+          @update:model-value="selectStartFrom"
+        />
+      </SetupFormRow>
+
+      <SetupFormRow
+        v-if="!buildImportChoice && (cameFromSetup || startFrom === 'existing')"
+        class="config-name-row"
+        :label="$t('common.name')"
+        label-for="inst-name-standalone"
+        :icon="Tag"
+      >
+        <InstallNameInput
+          v-model="instName"
+          :placeholder="suggestedName || $t('common.namePlaceholder')"
+          :error="nameError"
+        />
+      </SetupFormRow>
+
+      <div
+        v-if="showsHardwareWarning"
+        class="config-hardware-warning px-1 pb-2 text-[12px] leading-[1.4] text-[var(--warning)]"
+        role="alert"
+        data-testid="wizard-hardware-warning"
+      >
+        {{ hardwareWarning }}
       </div>
 
-      <div v-else class="config-change-form mt-4 flex flex-col" data-testid="config-change-form">
-        <div
-          v-if="hardwareWarning && !currentSource?.skipInstall"
-          class="config-hardware-warning px-1 pb-2 text-[12px] leading-[1.4] text-[var(--warning)]"
-          role="alert"
-          data-testid="wizard-hardware-warning"
-        >
-          {{ hardwareWarning }}
-        </div>
-        <SetupFormRow
-          v-if="sources.length > 0"
-          :label="$t('newInstall.getComfyFrom')"
-          :icon="Download"
-          control-height="cards"
-        >
-          <SetupOptionCards
-            class="config-method-row"
-            data-testid="install-source-tabs"
-            layout="grid"
-            activation="manual"
-            :aria-label="$t('newInstall.chooseMethod')"
-            :options="sourceCards"
-            :selected-value="selectedSourceCard"
-            @select="selectSourceCardByKey"
-          />
-        </SetupFormRow>
+      <SetupFormRow
+        v-if="startFrom === 'new' && sources.length > 0"
+        :label="$t('newInstall.getComfyFrom')"
+        :icon="Download"
+      >
+        <BaseSelect
+          class="config-method-row text-[13px]"
+          data-testid="install-source-tabs"
+          :model-value="selectedSourceCard ?? ''"
+          :options="sourceSelectOptions"
+          :disabled="choiceLocked"
+          :aria-label="$t('newInstall.chooseMethod')"
+          @update:model-value="selectSourceCardByKey"
+        />
+      </SetupFormRow>
 
+      <SetupFormRow
+        v-if="startFrom === 'existing' && existingCards.length > 1"
+        class="config-existing-comfy"
+        :label="$t('newInstall.whereItIs')"
+        :icon="MapPin"
+      >
+        <BaseSelect
+          class="config-existing-select text-[13px]"
+          data-testid="existing-comfy-tabs"
+          :model-value="selectedExistingCard ?? ''"
+          :options="existingSelectOptions"
+          :disabled="choiceLocked"
+          :aria-label="$t('newInstall.whereItIs')"
+          @update:model-value="selectExistingCard"
+        />
+      </SetupFormRow>
+
+      <KeepAlive>
+        <TrackBuildForm
+          v-if="buildImportChoice === 'track'"
+          ref="trackFormRef"
+          v-model:name="instName"
+          data-testid="existing-comfy-folder-form"
+          @saved="handOffImportedBuild"
+        />
+        <LoadSnapshotForm
+          v-else-if="buildImportChoice === 'load-snapshot'"
+          ref="snapshotFormRef"
+          data-testid="existing-comfy-snapshot-form"
+          @created="handOffSnapshotInstall"
+        />
+      </KeepAlive>
+      <template v-if="!buildImportChoice">
         <template v-if="managedBuildMode">
           <SetupFormRow
             :label="$t('newInstall.workspaceBuildLabel')"
@@ -1942,14 +2097,13 @@ defineExpose({ open })
             v-if="selectedBuildTargetOptions.length > 0"
             :label="$t('newInstall.buildTarget')"
             :icon="Zap"
-            control-height="cards"
             data-testid="workspace-build-targets"
           >
-            <SetupOptionCards
-              :options="buildTargetCards"
-              :selected-value="selectedBuildTargetId"
+            <BaseSelect
+              v-model="selectedBuildTargetId"
+              class="text-[13px]"
+              :options="buildTargetOptions"
               :aria-label="$t('newInstall.buildTarget')"
-              @select="selectedBuildTargetId = $event"
             />
           </SetupFormRow>
         </template>
@@ -1960,19 +2114,6 @@ defineExpose({ open })
           class="config-advanced config-advanced--direct is-open flex flex-col"
         >
           <template v-for="(field, fieldIndex) in currentSource.fields" :key="field.id">
-            <SetupFormRow
-              v-if="cameFromSetup && field.id === HARDWARE_FIELD_ID && locationBeforeHardware"
-              class="config-name-row"
-              :label="$t('common.name')"
-              label-for="inst-name-standalone"
-              :icon="Tag"
-            >
-              <InstallNameInput
-                v-model="instName"
-                :placeholder="suggestedName || $t('common.namePlaceholder')"
-                :error="nameError"
-              />
-            </SetupFormRow>
             <InstallLocationRow
               v-if="field.id === HARDWARE_FIELD_ID && locationBeforeHardware"
               :path="instPath"
@@ -1991,7 +2132,7 @@ defineExpose({ open })
               :label="field.label"
               :label-for="`sf-${field.id}`"
               :icon="FIELD_ICONS[field.id] ?? SlidersHorizontal"
-              :control-height="field.renderAs === 'cards' ? 'cards' : 'centered'"
+              :control-height="field.type === 'text' ? 'centered' : 'field'"
             >
               <div v-if="field.type === 'text'" class="flex min-w-0 flex-col">
                 <div class="config-text-action flex items-stretch gap-2">
@@ -2043,28 +2184,27 @@ defineExpose({ open })
               </div>
 
               <div v-else-if="field.renderAs === 'cards'" class="min-w-0">
-                <SetupOptionCards
+                <BaseSelect
                   v-if="shownOptions(field)?.length"
-                  :options="
-                    field.id === HARDWARE_FIELD_ID
-                      ? toHardwareCards(sortedCardOptions(shownOptions(field)!))
-                      : toOptionCards(sortedCardOptions(shownOptions(field)!))
-                  "
-                  :selected-value="shownSelections[field.id]?.value ?? null"
-                  :refreshing="isRefreshing(field)"
+                  class="config-card-select text-[13px]"
+                  :data-testid="`config-select-${field.id}`"
+                  :model-value="shownSelections[field.id]?.value ?? ''"
+                  :options="hardwareSelectOptions(field)"
+                  :loading="isRefreshing(field)"
+                  :disabled="isRefreshing(field)"
                   :aria-label="field.label"
-                  @select="(value) => selectCardOptionByValue(field, fieldIndex, value)"
+                  @update:model-value="(value) => selectCardOptionByValue(field, fieldIndex, value)"
                 />
                 <div
                   v-else-if="fieldLoading.get(field.id)"
-                  class="config-loading py-3 text-[13px] text-text-muted"
+                  class="config-loading py-2.5 text-[13px] text-text-muted"
                   :class="spinnerClass"
                 >
                   {{ $t('newInstall.loading') }}
                 </div>
                 <div
                   v-else-if="shownOptions(field)"
-                  class="config-loading py-3 text-[13px] text-text-muted"
+                  class="config-loading py-2.5 text-[13px] text-text-muted"
                 >
                   {{
                     fieldErrors.get(field.id)
@@ -2122,20 +2262,6 @@ defineExpose({ open })
           </template>
         </div>
 
-        <SetupFormRow
-          v-if="cameFromSetup && !locationBeforeHardware"
-          class="config-name-row"
-          :label="$t('common.name')"
-          label-for="inst-name-standalone"
-          :icon="Tag"
-        >
-          <InstallNameInput
-            v-model="instName"
-            :placeholder="suggestedName || $t('common.namePlaceholder')"
-            :error="nameError"
-          />
-        </SetupFormRow>
-
         <InstallLocationRow
           v-if="showLocation && !locationBeforeHardware"
           :path="instPath"
@@ -2148,127 +2274,13 @@ defineExpose({ open })
           @browse="handleBrowse"
           @open="handleOpenInstPath"
         />
-
-        <SetupFormRow
-          v-if="offersBuildImport"
-          class="config-other-ways"
-          data-testid="config-other-ways"
-          :label="$t('newInstall.alreadyHaveComfy')"
-          control-height="centered"
-        >
-          <p
-            class="m-0 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[18px] text-text-muted"
-          >
-            <Button
-              size="link"
-              variant="link"
-              type="button"
-              class="config-add-existing"
-              :class="inlineLinkClass"
-              data-testid="config-add-existing"
-              @click="openBuildImport('track')"
-            >
-              {{ $t('newInstall.addExistingBuild') }}
-            </Button>
-            <span aria-hidden="true">·</span>
-            <Button
-              size="link"
-              variant="link"
-              type="button"
-              class="config-load-snapshot"
-              :class="inlineLinkClass"
-              data-testid="config-load-snapshot"
-              @click="openBuildImport('load-snapshot')"
-            >
-              {{ $t('newInstall.loadSnapshot') }}
-            </Button>
-          </p>
-        </SetupFormRow>
-      </div>
-    </template>
-
-    <template v-else-if="step === 'template'">
-      <div class="template-shell mt-4 flex flex-col">
-        <div
-          v-if="hasTemplateAlerts"
-          id="tps-alerts"
-          class="template-alerts mb-3 flex w-full flex-col gap-2"
-          :class="{
-            'template-alerts--nudge animate-[install-template-alert-shake_400ms_cubic-bezier(0.36,0.07,0.19,0.97)_both] motion-reduce:animate-none':
-              templateAlertNudge
-          }"
-        >
-          <div
-            v-if="templateDiskError"
-            class="template-alert template-alert--error flex items-start gap-2 rounded-[10px] bg-[color-mix(in_oklab,var(--danger)_12%,transparent)] px-3 py-2.5 text-[13px] leading-[1.4] text-[var(--danger)] [&_svg]:mt-px [&_svg]:flex-none"
-            role="alert"
-          >
-            <CircleAlert :size="16" aria-hidden="true" />
-            <span>{{ templateDiskError }}</span>
-          </div>
-        </div>
-        <TemplatePickerStep
-          ref="pickerRef"
-          :options="templateOptions"
-          :none-value="NO_TEMPLATE_VALUE"
-          :selected-value="selections.bundledTemplate?.value ?? null"
-          :disk-space="diskSpace"
-          :disk-space-loading="diskSpaceLoading"
-          @select="selectTemplate"
-        />
-        <label
-          v-if="hasLocalInstall"
-          class="template-shell__opt-out mt-4 flex w-full cursor-pointer items-center gap-2.5 text-[13px] leading-[1.4] text-text-muted"
-        >
-          <Checkbox
-            :model-value="dontShowTemplatePicker"
-            @update:model-value="dontShowTemplatePicker = $event === true"
-          />
-          <span class="template-opt-out-label">{{ $t('standalone.templateDontShowAgain') }}</span>
-        </label>
-      </div>
-    </template>
+      </template>
+    </div>
 
     <template #footer>
-      <template v-if="step === 'configure' && view === 'change' && !cameFromSetup">
-        <span class="flex-1" />
-        <Button
-          size="lg"
-          variant="secondary"
-          type="button"
-          class="h-9 rounded-[10px] config-discard-changes"
-          data-testid="config-discard-changes"
-          @click="discardChangeSetup"
-        >
-          {{ $t('newInstall.discardChanges') }}
-        </Button>
-        <Button
-          type="button"
-          size="lg"
-          variant="inverted"
-          class="h-9 rounded-[10px] config-save-changes min-w-[104px]"
-          data-testid="config-save-changes"
-          @click="saveChangeSetup"
-        >
-          {{ $t('newInstall.saveChanges') }}
-        </Button>
-      </template>
-      <template v-else-if="step === 'configure'">
-        <Button
-          v-if="cameFromSetup"
-          size="lg"
-          variant="textonly"
-          type="button"
-          class="h-9 rounded-[10px] config-back -ml-3"
-          data-testid="config-back-to-setup"
-          @click="handleBackToSetup"
-        >
-          <ArrowLeft :size="16" aria-hidden="true" />
-          {{ $t('common.back') }}
-        </Button>
-        <span class="flex-1" />
+      <template v-if="view === 'change'">
         <TermsConsentRow
-          v-if="needsConsent"
+          v-if="needsConsent && startFrom === 'existing'"
           class="config-consent mr-2 min-w-0"
           id-prefix="config"
           :accepted="consentAccepted"
@@ -2277,89 +2289,57 @@ defineExpose({ open })
           @update:accepted="onConsentToggle"
           @open-terms="termsDoc = $event"
         />
+        <span class="flex-1" />
+        <Button
+          size="lg"
+          variant="secondary"
+          type="button"
+          class="h-9 rounded-[10px] config-discard-changes"
+          data-testid="config-discard-changes"
+          :disabled="submittingExisting || savingSetup"
+          @click="discardChanges"
+        >
+          {{ $t('newInstall.discardChanges') }}
+        </Button>
+        <Button
+          v-if="startFrom === 'existing'"
+          type="button"
+          size="lg"
+          variant="inverted"
+          class="h-9 rounded-[10px] config-use-existing min-w-[104px]"
+          data-testid="config-use-existing"
+          :disabled="!canProceed"
+          @click="handleConfigureContinue"
+        >
+          {{ primaryLabel }}
+        </Button>
+        <Button
+          v-else
+          type="button"
+          size="lg"
+          variant="inverted"
+          class="h-9 rounded-[10px] config-save-changes min-w-[104px]"
+          data-testid="config-save-changes"
+          :disabled="cameFromSetup && (!canProceed || savingSetup)"
+          @click="saveChanges"
+        >
+          {{ $t('newInstall.saveChanges') }}
+        </Button>
+      </template>
+      <template v-else>
+        <span class="flex-1" />
         <Button
           type="button"
           size="lg"
           variant="inverted"
           class="h-9 rounded-[10px] config-continue min-w-[104px]"
-          :disabled="!canContinue"
+          :disabled="!canProceed"
           @click="handleConfigureContinue"
         >
           {{ primaryLabel }}
         </Button>
       </template>
-      <template v-else>
-        <Button
-          size="lg"
-          variant="textonly"
-          type="button"
-          class="h-9 rounded-[10px] template-back -ml-3"
-          @click="backToConfigure"
-        >
-          <ArrowLeft :size="16" aria-hidden="true" />
-          {{ $t('common.back') }}
-        </Button>
-        <span class="flex-1" />
-        <Button
-          size="lg"
-          variant="textonly"
-          type="button"
-          class="h-9 rounded-[10px] template-skip"
-          :aria-label="$t('standalone.templateSkipAndInstallAria')"
-          @click="handleTemplateSkip"
-        >
-          {{ $t('standalone.templateSkipAndInstall') }}
-        </Button>
-        <Button
-          size="lg"
-          variant="inverted"
-          type="button"
-          class="h-9 rounded-[10px] template-install min-w-[104px]"
-          :class="{
-            'template-install--blocked cursor-not-allowed opacity-55': templateInstallBlocked
-          }"
-          :aria-disabled="templateInstallBlocked"
-          :aria-describedby="templateInstallBlocked ? 'tps-alerts' : undefined"
-          @click="handleTemplateInstall"
-        >
-          {{ $t('standalone.templateInstall') }}
-        </Button>
-      </template>
     </template>
   </SetupModal>
   <TermsModal v-if="termsDoc" :open="true" :doc="termsDoc" @close="termsDoc = null" />
-  <TrackModal
-    v-if="buildImportFlow === 'track'"
-    ref="trackModalRef"
-    @close="closeBuildImport"
-    @navigate-list="handOffImportedBuild"
-  />
-  <LoadSnapshotModal
-    v-if="buildImportFlow === 'load-snapshot'"
-    ref="loadSnapshotModalRef"
-    @close="closeBuildImport"
-    @show-progress="handOffSnapshotInstall"
-  />
 </template>
-
-<style>
-@keyframes install-template-alert-shake {
-  10%,
-  90% {
-    transform: translateX(-1px);
-  }
-  20%,
-  80% {
-    transform: translateX(2px);
-  }
-  30%,
-  50%,
-  70% {
-    transform: translateX(-3px);
-  }
-  40%,
-  60% {
-    transform: translateX(3px);
-  }
-}
-</style>

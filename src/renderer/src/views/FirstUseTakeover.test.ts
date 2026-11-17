@@ -22,6 +22,7 @@ vi.mock('../components/TermsModal.vue', () => ({
 import FirstUseTakeover from './FirstUseTakeover.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { SetupPlan } from '../lib/setupPlan'
+import type { SetupConsent } from '../lib/setupConsent'
 
 const GB = 1024 ** 3
 
@@ -62,9 +63,8 @@ function installApi(overrides: ApiOverrides = {}): void {
         label: 'Standalone',
         fields: [
           { id: 'release', label: 'Release', type: 'select' },
-          { id: 'comfyVersion', label: 'ComfyUI version', type: 'select' },
-          { id: 'variant', label: 'Variant', type: 'select' },
-          { id: 'bundledTemplate', label: 'Starter template', type: 'select' }
+          { id: 'comfyVersion', label: 'Version', type: 'select' },
+          { id: 'variant', label: 'Variant', type: 'select' }
         ]
       }
     ]),
@@ -93,10 +93,7 @@ function installApi(overrides: ApiOverrides = {}): void {
           }
         ]
       }
-      return [
-        { value: 'flux', label: 'Flux' },
-        { value: 'none', label: 'None' }
-      ]
+      return []
     }),
     setFirstUseMode: vi.fn()
   } as unknown as typeof window.api
@@ -132,7 +129,7 @@ describe('Set up, the first screen', () => {
 
     expect(w.find('[role="dialog"]').attributes('aria-label')).toBe('Install ComfyUI on this Mac')
     expect(text(w, 'setup-lead')).toBe(
-      'Checked for your Apple M3 Max. Change anything before you install.'
+      'The best settings for your Apple M3 Max are picked. Change any you like.'
     )
     expect(text(w, 'setup-machine-name')).toBe('Apple M3 Max')
     expect(text(w, 'setup-machine')).toContain('36 GB memory')
@@ -153,6 +150,20 @@ describe('Set up, the first screen', () => {
     expect(linux.find('[role="dialog"]').attributes('aria-label')).toBe(
       'Install ComfyUI on this computer'
     )
+  })
+
+  it('keeps the end of a long install path in view, with the full path on hover', async () => {
+    installApi({ platform: 'win32' })
+    const root = 'C:\\Users\\Alexis\\AppData\\Local\\Comfy-Desktop\\ComfyUI-Installs'
+    window.api.getDefaultInstallDir = vi.fn().mockResolvedValue(root)
+    const w = await mountSetup()
+    const path = w.get('[data-testid="setup-location"]')
+    expect(path.attributes('title')).toBe(`${root}\\ComfyUI`)
+    const [head, tail] = path.findAll('span')
+    expect(head?.text()).toBe(root)
+    expect(head?.classes()).toContain('truncate')
+    expect(tail?.text()).toBe('\\ComfyUI')
+    expect(tail?.classes()).toContain('shrink-0')
   })
 
   it('says a CPU install has no GPU acceleration', async () => {
@@ -186,11 +197,71 @@ describe('Set up, the first screen', () => {
     expect(plan.selections.release?.value).toBe('stable')
     expect(plan.selections.comfyVersion?.value).toBe('v0.42.4')
     expect(plan.selections.variant?.value).toBe('mac-mps')
-    expect(plan.selections.bundledTemplate?.value).toBe('none')
+    expect(Object.keys(plan.selections)).toEqual(['release', 'comfyVersion', 'variant'])
     expect(emitTelemetryAction).toHaveBeenCalledWith(
       'comfy.desktop.first_use.completed',
       expect.objectContaining({ exit_path: 'local-new' })
     )
+  })
+
+  it('shows and installs the setup saved in Change instead of working out a new one', async () => {
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        release: {
+          value: 'latest',
+          label: 'Latest on GitHub',
+          data: { latestStableTag: 'v0.43.0' }
+        },
+        variant: {
+          value: 'mac-cpu',
+          label: 'CPU',
+          data: { variantId: 'mac-cpu', downloadFiles: [] }
+        }
+      },
+      installRoot: '/Volumes/Studio SSD',
+      downloadBytes: 0,
+      requiredBytes: 0,
+      name: 'Studio'
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+
+    expect(window.api.getFieldOptions).not.toHaveBeenCalled()
+    expect(text(w, 'setup-hardware')).toBe('CPU')
+    expect(text(w, 'setup-row-location')).toContain('/Volumes/Studio SSD/ComfyUI')
+    expect(text(w, 'setup-version')).toContain('v0.43.0')
+    expect(text(w, 'setup-version')).toContain('Latest on GitHub')
+
+    await agree(w)
+    await install(w)
+    expect(w.emitted('install')).toEqual([[savedPlan]])
+  })
+
+  it('names a team build saved in Change by its build and hardware, not as detected', async () => {
+    const w = mount(FirstUseTakeover, {
+      props: {
+        savedPlan: {
+          sourceId: '',
+          selections: {},
+          installRoot: '/Users/ada/ComfyUI-Installs',
+          downloadBytes: 2 * GB,
+          requiredBytes: 4.5 * GB,
+          workspaceBuild: {
+            buildId: 'ready',
+            buildName: 'Ready Build',
+            artifactId: 'cuda',
+            releaseVersion: 3,
+            targetLabel: 'Windows - NVIDIA (CUDA 12.8)'
+          }
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(text(w, 'setup-hardware')).toBe('Windows - NVIDIA (CUDA 12.8)')
+    expect(text(w, 'setup-row-hardware')).not.toContain('Detected')
+    expect(text(w, 'setup-version')).toBe('Ready Build')
   })
 
   it('opens every option with Change before the EULA is ticked, and saves nothing yet', async () => {
@@ -311,6 +382,43 @@ describe('Set up, the first screen', () => {
     expect(fresh.emitted('chain-migrate')).toBeUndefined()
   })
 
+  it('keeps migration unticked through Change and installs the saved setup instead of migrating', async () => {
+    const before = await mountSetup({ hasLegacyDesktop: true })
+    await setChecked(before.find('[data-testid="setup-migrate-existing"] [role="checkbox"]'), false)
+    await before.find('[data-testid="setup-change"]').trigger('click')
+    await flushPromises()
+    const [consent] = before.emitted('change')![0] as [SetupConsent]
+    before.unmount()
+
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        release: { value: 'stable', label: 'Stable' },
+        variant: { value: 'mac-cpu', label: 'CPU', data: { variantId: 'mac-cpu' } }
+      },
+      installRoot: '/Users/ada/ComfyUI-Installs',
+      downloadBytes: 0,
+      requiredBytes: 0
+    }
+    const after = mount(FirstUseTakeover, {
+      props: { consent: { ...consent, acceptedTos: true }, savedPlan }
+    })
+    await (
+      after.vm as unknown as { open: (o: { hasLegacyDesktop: boolean }) => Promise<void> }
+    ).open({ hasLegacyDesktop: true })
+    await flushPromises()
+
+    expect(
+      after
+        .find('[data-testid="setup-migrate-existing"] [role="checkbox"]')
+        .attributes('aria-checked')
+    ).toBe('false')
+    expect(text(after, 'setup-install')).toBe('Install')
+    await install(after)
+    expect(after.emitted('install')).toEqual([[savedPlan]])
+    expect(after.emitted('chain-migrate')).toBeUndefined()
+  })
+
   it('lets someone who already has builds keep them instead of installing', async () => {
     const w = await mountSetup({ skipPick: true })
     await agree(w)
@@ -332,6 +440,35 @@ describe('Set up, the first screen', () => {
     expect(window.api.setSetting).toHaveBeenCalledWith('useChineseMirrors', true)
     expect(window.api.setSetting).toHaveBeenCalledWith('chineseMirrorsPrompted', true)
     expect(w.emitted('install')).toHaveLength(1)
+  })
+
+  it('does not ask about mirrors again once they were answered before Change', async () => {
+    installApi({ locale: 'zh-CN', settings: { chineseMirrorsPrompted: true } })
+    const w = await mountSetup()
+    await agree(w)
+    await install(w)
+
+    expect(w.find('[data-testid="setup-mirrors-accept"]').exists()).toBe(false)
+    expect(w.emitted('install')).toHaveLength(1)
+  })
+
+  it('waits for the mirrors answer saved earlier before deciding to ask again', async () => {
+    installApi({ locale: 'zh-CN' })
+    let finishRead: (prompted: boolean) => void = () => {}
+    const pendingRead = new Promise<boolean>((resolve) => {
+      finishRead = resolve
+    })
+    window.api.getSetting = vi.fn(async (key: string) =>
+      key === 'chineseMirrorsPrompted' ? pendingRead : undefined
+    ) as unknown as typeof window.api.getSetting
+    const w = await mountSetup()
+
+    await w.find('[data-testid="setup-change"]').trigger('click')
+    finishRead(true)
+    await flushPromises()
+
+    expect(w.find('[data-testid="setup-mirrors-accept"]').exists()).toBe(false)
+    expect(w.emitted('change')).toHaveLength(1)
   })
 
   it('opens the EULA, the Terms and the privacy policy from their links', async () => {

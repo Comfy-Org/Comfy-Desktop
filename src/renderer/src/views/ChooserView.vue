@@ -10,12 +10,10 @@ import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useInstallingBuilds } from '../composables/useBuildProgress'
-import { useQuickUpdate } from '../composables/useQuickUpdate'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { Plus, RefreshCw, Search } from '@lucide/vue'
-import ContextMenu from '../components/ContextMenu.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
@@ -27,7 +25,7 @@ import { openInstallManager } from '../lib/openInstallManager'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { FilterKey } from '../composables/useInstallList'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
-import { PERSONAL_WORKSPACE_ID, isInstallationInWorkspace } from '../../../shared/workspaces'
+import { isInstallationInWorkspace } from '../../../shared/workspaces'
 
 const props = withDefaults(
   defineProps<{
@@ -76,14 +74,9 @@ const { searchQuery, activeFilter, effectiveInstalls, visibleInstalls } = useIns
 
 defineExpose({ activeFilter })
 
-const selectedManagedWorkspaceId = computed(() => {
-  if (!authStore.isSignedIn) return null
-  if (dashboardScope.selectedWorkspaceId !== PERSONAL_WORKSPACE_ID) {
-    return dashboardScope.selectedWorkspaceId
-  }
-  if (authStore.status.workspaceType === 'personal') return authStore.status.workspaceId ?? null
-  return authStore.personalWorkspace?.id ?? null
-})
+const selectedManagedWorkspaceId = computed(() =>
+  authStore.sessionWorkspaceFor(dashboardScope.selectedWorkspaceId)
+)
 
 let buildPrefetchGeneration = 0
 watch(
@@ -171,39 +164,10 @@ async function refreshWorkspace(): Promise<void> {
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
 
-function canPromoteToWorkspace(inst: Installation): boolean {
-  return (
-    authStore.isSignedIn &&
-    Boolean(authStore.status.workspaceId) &&
-    inst.status === 'installed' &&
-    inst.sourceCategory === 'local' &&
-    Boolean(inst.installPath)
-  )
-}
-
-const { runQuickUpdate } = useQuickUpdate({
-  onShowProgress: (showOpts) => emit('show-progress', showOpts),
-  onUnavailable: (inst) => openInstallManager(inst, { initialTab: 'update' })
-})
-
-const {
-  ctxMenu,
-  ctxMenuItems,
-  openCardMenu,
-  openKebabMenu,
-  handleCtxMenuSelect,
-  closeMenu,
-  triggerAction,
-  viewError,
-  viewDanger,
-  isStoppedActionGated,
-  isPromotingToWorkspace
-} = useInstallContextMenu({
+const { viewError, viewDanger } = useInstallContextMenu({
   onManage: (inst, options) =>
     options ? openInstallManager(inst, options) : emit('open-details', inst),
-  onShowProgress: (showOpts) => emit('show-progress', showOpts),
-  onUpdate: runQuickUpdate,
-  canPromoteToWorkspace
+  onShowProgress: (showOpts) => emit('show-progress', showOpts)
 })
 
 async function pickInstall(inst: Installation): Promise<void> {
@@ -265,10 +229,6 @@ function handleNewInstallClick(): void {
 const gridHandlers = {
   pick: pickInstall,
   'open-details': (inst: Installation) => emit('open-details', inst),
-  'open-card-menu': openCardMenu,
-  'open-kebab-menu': openKebabMenu,
-  'trigger-action': (action: 'update' | 'migrate', inst: Installation) =>
-    triggerAction(action, inst),
   'view-error': viewError,
   'view-danger': viewDanger,
   'why-cloud': openWhyCloud
@@ -441,20 +401,9 @@ const gridHandlers = {
         :installations="scopedVisibleInstalls"
         :show-free-runs-pill="showCloudFreeRunsPill"
         :show-why-cloud="showWhyCloud"
-        :is-stopped-action-gated="isStoppedActionGated"
-        :is-promoting-to-workspace="isPromotingToWorkspace"
         v-on="gridHandlers"
       />
     </div>
-
-    <ContextMenu
-      :open="ctxMenu.open"
-      :x="ctxMenu.x"
-      :y="ctxMenu.y"
-      :items="ctxMenuItems"
-      @close="closeMenu"
-      @select="handleCtxMenuSelect"
-    />
 
     <WhyTryCloudModal
       v-if="whyCloudOpen"

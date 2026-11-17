@@ -65,11 +65,8 @@ vi.mock('../settings', () => ({
 }))
 vi.mock('./ipc/shared', () => ({
   sourceMap: {
-    standalone: { category: 'local', getLaunchCommand: () => ({ cmd: 'python' }) },
-    desktop: {
-      category: 'local',
-      getLaunchCommand: () => ({ cmd: 'open', skipSharedPaths: true })
-    },
+    standalone: { category: 'local' },
+    desktop: { category: 'local', managesOwnPaths: true },
     cloud: { category: 'cloud' }
   }
 }))
@@ -89,6 +86,7 @@ import {
   MAX_LOCAL_ASSETS,
   THUMBNAIL_WAIT_MS,
   copyOutputImage,
+  hasOutputFolder,
   revealOutputFile,
   trashOutputFile,
   listLocalAssets,
@@ -164,6 +162,22 @@ describe('outputDirOverride', () => {
   })
 })
 
+describe('hasOutputFolder', () => {
+  it('is true only for a local build that leaves its paths to Desktop', () => {
+    expect(hasOutputFolder(install('a')), 'a build on the shared folder').toBe(true)
+    expect(
+      hasOutputFolder(install('a', { useSharedOutput: false })),
+      'a build that saves inside its install'
+    ).toBe(true)
+    expect(hasOutputFolder(install('a', { sourceId: 'cloud' })), 'Cloud').toBe(false)
+    expect(
+      hasOutputFolder(install('a', { sourceId: 'desktop' })),
+      'a build that manages its own paths'
+    ).toBe(false)
+    expect(hasOutputFolder(install('a', { sourceId: 'gone' })), 'an unknown source').toBe(false)
+  })
+})
+
 describe('listOutputFolders', () => {
   it('lists each real output folder once, leaving out Cloud and builds that manage their own paths', async () => {
     expect(await listOutputFolders()).toEqual([
@@ -182,22 +196,19 @@ describe('listOutputFolders', () => {
 })
 
 describe('listLocalAssets', () => {
-  it('lists media from every output folder and its subfolders, newest first', async () => {
+  it("lists the media in the picked build's output folder and its subfolders, newest first", async () => {
     write(path.join(sharedDir, 'old.png'), 'x', new Date('2026-10-01T00:00:00Z'))
     write(path.join(sharedDir, 'video', 'new.mp4'), 'xx', new Date('2026-11-05T00:00:00Z'))
+    write(path.join(sharedDir, 'mesh.glb'), 'x', new Date('2026-11-02T00:00:00Z'))
     write(path.join(ownDir, 'voice.wav'), 'xxx', new Date('2026-11-03T00:00:00Z'))
-    write(
-      path.join(installDir, 'ComfyUI', 'output', 'mesh.glb'),
-      'x',
-      new Date('2026-11-02T00:00:00Z')
-    )
     write(path.join(sharedDir, 'notes.txt'))
     write(path.join(sharedDir, '.hidden.png'))
     write(path.join(sharedDir, '.cache', 'inside-hidden.png'))
 
-    const assets = await listLocalAssets()
+    const { assets, truncated } = await listLocalAssets('Test Instance')
 
-    expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'voice.wav', 'mesh.glb', 'old.png'])
+    expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'mesh.glb', 'old.png'])
+    expect(truncated).toBe(false)
     const newVideo = path.join(sharedDir, 'video', 'new.mp4')
     expect(assets[0]).toEqual({
       id: newVideo,
@@ -214,10 +225,10 @@ describe('listLocalAssets', () => {
       durationSeconds: null
     })
     const oldPicture = path.join(sharedDir, 'old.png')
-    expect(assets[3]!.thumbnailUrl, 'an image thumbnail link changes when the file does').toBe(
+    expect(assets[2]!.thumbnailUrl, 'an image thumbnail link changes when the file does').toBe(
       outputFileUrl(oldPicture, fs.statSync(oldPicture).mtimeMs)
     )
-    expect(assets[2]!.previewUrl, '3D files have no preview').toBeNull()
+    expect(assets[1]!.previewUrl, '3D files have no preview').toBeNull()
   })
 
   it('reports the size of each picture and video, and how long a video runs, before they load', async () => {
@@ -226,7 +237,7 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, 'broken.png'), 'not a picture')
 
     const facts = Object.fromEntries(
-      (await listLocalAssets()).map((a) => [
+      (await listLocalAssets('Test Instance')).assets.map((a) => [
         a.name,
         [a.width, a.height, a.durationSeconds && Math.round(a.durationSeconds)]
       ])
@@ -239,23 +250,70 @@ describe('listLocalAssets', () => {
     })
   })
 
-  it('finds a file once when two builds save to the same folder', async () => {
+  it('shows each build the files in its own output folder', async () => {
     write(path.join(sharedDir, 'shared.png'))
+    write(path.join(ownDir, 'own.png'))
+    write(path.join(installDir, 'ComfyUI', 'output', 'install.png'))
+    const namesFor = async (id: string) => (await listLocalAssets(id)).assets.map((a) => a.name)
 
-    expect((await listLocalAssets()).map((a) => a.name)).toEqual(['shared.png'])
+    expect(await namesFor('Test Instance'), 'a build on the shared folder').toEqual(['shared.png'])
+    expect(await namesFor('My Local 1'), 'another build on the shared folder').toEqual([
+      'shared.png'
+    ])
+    expect(await namesFor('Apps'), 'a build with its own folder').toEqual(['own.png'])
+    expect(await namesFor('Bare'), 'a build that saves inside its install').toEqual(['install.png'])
+    expect(await namesFor('Cloud'), 'Cloud has no folder on this computer').toEqual([])
+    expect(await namesFor('Old Desktop'), 'a build that manages its own paths').toEqual([])
+    expect(await namesFor('deleted'), 'a build that is gone').toEqual([])
+    expect(
+      (await listLocalAssets()).assets.map((a) => a.name),
+      'no build: the shared output folder'
+    ).toEqual(['shared.png'])
   })
 
-  it('keeps only the newest files when the folders are very large', async () => {
+  it('opens a file it listed for a build added a moment ago', async () => {
+    await listOutputFolders()
+    const newDir = path.join(root, 'new-output')
+    const file = path.join(newDir, 'first.png')
+    write(file)
+    installs.mockResolvedValue([install('New', { useSharedOutput: false, outputDir: newDir })])
+    try {
+      const [listed] = (await listLocalAssets('New')).assets
+
+      expect(listed!.id).toBe(file)
+      expect(await outputFilePath(listed!.id)).toBe(file)
+    } finally {
+      fs.rmSync(newDir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps only the newest files when the folders are very large, and says the list was cut', async () => {
     for (let i = 0; i <= MAX_LOCAL_ASSETS; i++)
       write(path.join(sharedDir, `f${i}.png`), '', new Date(Date.UTC(2026, 0, 1, 0, 0, i)))
 
-    const assets = await listLocalAssets()
+    const { assets, truncated } = await listLocalAssets('Test Instance')
 
     expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
     expect(assets.map((a) => a.name)).not.toContain('f0.png')
+    expect(truncated).toBe(true)
   })
 
-  it('does not follow links out of an output folder or walk without end', async () => {
+  it('keeps a new nested output when the shared folder has 5,000 older files', async () => {
+    for (let i = 0; i < 5_000; i++) write(path.join(sharedDir, `f${i}.glb`))
+    write(
+      path.join(sharedDir, 'later', 'newest.png'),
+      pngHeader(512, 512),
+      new Date('2026-11-02T00:00:00Z')
+    )
+
+    const { assets, truncated } = await listLocalAssets()
+
+    expect(assets[0]?.name).toBe('newest.png')
+    expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
+    expect(truncated).toBe(true)
+  })
+
+  it('does not follow links to folders or files outside, or walk without end', async () => {
     write(path.join(outsideDir, 'secret.png'))
     fs.symlinkSync(outsideDir, path.join(sharedDir, 'escape'))
     const deep = path.join(
@@ -263,8 +321,9 @@ describe('listLocalAssets', () => {
       ...Array.from({ length: MAX_FOLDER_DEPTH + 1 }, (_, i) => `d${i}`)
     )
     write(path.join(deep, 'too-deep.png'))
+    fs.symlinkSync(path.join(outsideDir, 'secret.png'), path.join(sharedDir, 'linked.png'))
 
-    expect(await listLocalAssets()).toEqual([])
+    expect(await listLocalAssets('Test Instance')).toEqual({ assets: [], truncated: false })
   })
 })
 

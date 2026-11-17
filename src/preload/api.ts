@@ -70,13 +70,12 @@ export function buildElectronApi(): ElectronApi {
     trackInstallation: (data) => ipcRenderer.invoke('track-installation', data),
     installInstance: (installationId, express) =>
       ipcRenderer.invoke('install-instance', installationId, express),
-    skipTemplateDownload: (installationId) =>
-      ipcRenderer.invoke('skip-template-download', installationId),
     updateInstallation: (installationId, data) =>
       ipcRenderer.invoke('update-installation', installationId, data),
 
     stopComfyUI: (installationId) => ipcRenderer.invoke('stop-comfyui', installationId),
-    focusComfyWindow: (installationId) => ipcRenderer.invoke('focus-comfy-window', installationId),
+    focusComfyWindow: (installationId, pickerWorkspaceId) =>
+      ipcRenderer.invoke('focus-comfy-window', installationId, pickerWorkspaceId),
 
     terminalSubscribe: (installationId) => ipcRenderer.invoke('terminal-subscribe', installationId),
     terminalUnsubscribe: (installationId) =>
@@ -86,8 +85,6 @@ export function buildElectronApi(): ElectronApi {
     terminalResize: (installationId, cols, rows) =>
       ipcRenderer.invoke('terminal-resize', installationId, cols, rows),
     terminalRestart: (installationId) => ipcRenderer.invoke('terminal-restart', installationId),
-    openInstallInNewWindow: (installationId) =>
-      ipcRenderer.send('comfy-window:open-install-new-window', installationId),
     openInstallWindow: (installationId) =>
       ipcRenderer.invoke('open-install-window', installationId),
     closeComfyWindow: (installationId, opts) =>
@@ -98,8 +95,10 @@ export function buildElectronApi(): ElectronApi {
     closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
+    openPageInNewWindow: (page) => ipcRenderer.send('comfy-window:open-page-in-new-window', page),
     listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
-    listLocalAssets: () => ipcRenderer.invoke('assets:list-local'),
+    listLocalAssets: (installationId?: string) =>
+      ipcRenderer.invoke('assets:list-local', installationId),
     downloadAsset: (source, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
     revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),
@@ -112,9 +111,12 @@ export function buildElectronApi(): ElectronApi {
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
     captureAppPage: () => ipcRenderer.invoke('apps:capture-page'),
     hideAppPage: () => ipcRenderer.send('apps:hide-page'),
-    reloadAppPage: () => ipcRenderer.send('apps:reload-page'),
     onAppPageStatusChanged: (callback) => {
-      const handler = (_event: IpcRendererEvent, status: AppPageStatus): void => callback(status)
+      const handler = (
+        _event: IpcRendererEvent,
+        appId: string | null,
+        status: AppPageStatus
+      ): void => callback(appId, status)
       ipcRenderer.on('apps:page-status-changed', handler)
       return () => ipcRenderer.removeListener('apps:page-status-changed', handler)
     },
@@ -268,6 +270,8 @@ export function buildElectronApi(): ElectronApi {
       listBuilds: () => ipcRenderer.invoke('comfybuilder:listBuilds'),
       openBuildsPage: (workspaceId) =>
         ipcRenderer.invoke('comfybuilder:openBuildsPage', workspaceId),
+      openSettingsPage: (page, workspaceId) =>
+        ipcRenderer.invoke('comfybuilder:openSettingsPage', page, workspaceId),
       installBuild: (request) => ipcRenderer.invoke('comfybuilder:installBuild', request),
       promoteLocalInstance: (installationId) =>
         ipcRenderer.invoke('comfybuilder:promoteLocalInstance', installationId)

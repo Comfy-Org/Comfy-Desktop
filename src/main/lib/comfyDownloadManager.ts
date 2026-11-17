@@ -3,6 +3,7 @@ import { app, BrowserWindow, dialog, nativeImage, net, session as electronSessio
 import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
+import { pathToFileURL } from 'url'
 import * as settings from '../settings'
 import * as installations from '../installations'
 import { sendBridgeEvent } from '../host/bridgeEvents'
@@ -29,6 +30,7 @@ import {
   type DiscoveredStagedDownload
 } from './modelDownloadStaging'
 import { startModelTransfer, type ModelTransferHandle } from './modelDownloadTransport'
+import { ModelDownloadTelemetry, type ModelDownloadSource } from './modelDownloadTelemetry'
 import { isQuitInProgress } from './quit-state'
 
 export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
@@ -74,6 +76,7 @@ export interface DownloadProgress {
   error?: string
   createdAt?: number
   isImage?: boolean
+  canPause?: boolean
   templateInputs?: ComfyTemplateInputReference[]
 }
 
@@ -94,6 +97,8 @@ interface PendingDownload {
   subscriberWindows: Set<BrowserWindow>
   subscriberContents: Set<Electron.WebContents>
   item?: Electron.DownloadItem
+  abort?: AbortController
+  canPause?: boolean
   transport?: ModelTransferHandle | null
   suspended?: boolean
   resumeOnWake?: boolean
@@ -111,6 +116,7 @@ interface PendingDownload {
   progressSubscribers?: Set<(receivedBytes: number, totalBytes: number) => void>
   settleJob?: (outcome: ModelJobOutcome) => void
   completion?: Promise<ModelJobOutcome>
+  telemetry?: ModelDownloadTelemetry
   lastProgress: DownloadProgress & { id: string }
   lastSpeedBytes: number
   lastSpeedTime: number
@@ -237,6 +243,7 @@ export function releaseParkedModelJobsUnder(modelsRoot: string): void {
     retryParamsById.delete(pending.id)
     _broadcastToRenderer('model-download-removed', { url: pending.url, id: pending.id })
     downloadEvents.emit('tray-state-changed')
+    pending.telemetry?.report({ status: 'cancelled' })
     pending.settleJob?.({ status: 'cancelled' })
   }
 }
@@ -278,7 +285,8 @@ function filesHaveEqualContent(a: string, b: string): boolean {
 let mainWindow: BrowserWindow | null = null
 
 interface RetryParams {
-  kind: 'model' | 'asset'
+  kind: 'model' | 'asset' | 'file'
+  restart?: () => void
   url: string
   filename: string
   window?: BrowserWindow
@@ -290,6 +298,7 @@ interface RetryParams {
   savePath?: string
   sha256?: string
   destinationBaseDir?: string
+  modelSource?: ModelDownloadSource
   existingFilePolicy?: 'deduplicate' | 'skip'
   templateInput?: ComfyTemplateInputReference
 }
@@ -551,6 +560,7 @@ function setTaskbarProgress(win: BrowserWindow, progress: DownloadProgress): voi
 const createdAtById = new Map<string, number>()
 
 function reportProgress(progress: DownloadProgress & { id: string }): void {
+  pendingDownloads.get(progress.id)?.telemetry?.report(progress)
   let createdAt = createdAtById.get(progress.id)
   if (createdAt === undefined) {
     createdAt = Date.now()
@@ -603,7 +613,7 @@ function resolveServerFilename(item: Electron.DownloadItem): string | null {
 function findPendingForItem(item: Electron.DownloadItem): PendingDownload | undefined {
   const candidates = [...item.getURLChain(), item.getURL()].filter(Boolean)
   for (const u of candidates) {
-    const pending = activeJobsForUrl(u).find((p) => p.kind !== 'model' && !p.item)
+    const pending = activeJobsForUrl(u).find((p) => p.kind === 'asset' && !p.item)
     if (pending) return pending
   }
   return undefined
@@ -621,6 +631,8 @@ export interface ModelJobOptions {
   sha256?: string
   destinationBaseDir?: string
   bypassRootLockFor?: string
+  source?: ModelDownloadSource
+  isRetry?: boolean
   onProgress?: (receivedBytes: number, totalBytes: number) => void
 }
 
@@ -776,6 +788,7 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
     sha256: pending.sha256,
     onProgress: ({ receivedBytes, totalBytes }) => {
       if (gen !== pending.attemptGen) return
+      pending.telemetry?.updateBytes(receivedBytes, totalBytes)
       if (pending.progressSubscribers) {
         for (const sub of pending.progressSubscribers) sub(receivedBytes, totalBytes)
       }
@@ -818,8 +831,8 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
         ...base,
         savePath: outcome.savePath,
         progress: 1,
-        receivedBytes: pending.expectedSize ?? pending.lastProgress.receivedBytes,
-        totalBytes: pending.expectedSize ?? pending.lastProgress.totalBytes,
+        receivedBytes: outcome.finalBytes,
+        totalBytes: outcome.finalBytes,
         status: 'completed'
       })
       unregisterModelJob(pending)
@@ -864,6 +877,18 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   const savePath = path.join(baseDir, directory, filename)
 
   const id = randomUUID()
+  const telemetry =
+    ctx && resolvedInstallId && opts.source && !ctx.hasSuccessfulRun
+      ? new ModelDownloadTelemetry({
+          url,
+          filename,
+          directory,
+          installationId: resolvedInstallId,
+          source: opts.source,
+          isRetry: opts.isRetry
+        })
+      : undefined
+  telemetry?.updateBytes(0, opts.expectedSize)
 
   retryParamsById.set(id, {
     kind: 'model',
@@ -875,7 +900,8 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     installationId: resolvedInstallId,
     savePath,
     sha256,
-    destinationBaseDir: opts.destinationBaseDir
+    destinationBaseDir: opts.destinationBaseDir,
+    modelSource: opts.source
   })
 
   const makeProgress = (
@@ -893,23 +919,28 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   const lockExemptKey = opts.bypassRootLockFor
     ? canonicalDestKey(opts.bypassRootLockFor)
     : undefined
+  const rejectJob = (error: string, code?: ModelJobErrorCode): ModelJobHandle => {
+    reportProgress(makeProgress({ status: 'error', error }))
+    return settledJobHandle(id, url, savePath, {
+      status: 'error',
+      error,
+      ...(code ? { code } : {})
+    })
+  }
   const rejectLockedRoot = (candidatePath = savePath): ModelJobHandle | null => {
     if (!isModelPathLocked(candidatePath, lockExemptKey)) return null
     const error = 'The model directory is busy while the installation is being updated'
-    reportProgress(makeProgress({ status: 'error', error }))
-    return settledJobHandle(id, url, savePath, { status: 'error', error })
+    return rejectJob(error)
   }
 
   if (!isPathContained(savePath, baseDir)) {
     const error = 'Save path is outside models directory'
-    reportProgress(makeProgress({ status: 'error', error }))
-    return settledJobHandle(id, url, savePath, { status: 'error', error })
+    return rejectJob(error)
   }
 
   if (!hasValidExtension(filename)) {
     const error = `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`
-    reportProgress(makeProgress({ status: 'error', error }))
-    return settledJobHandle(id, url, savePath, { status: 'error', error })
+    return rejectJob(error)
   }
 
   let startupSafety: ModelDownloadStartupSafety
@@ -925,8 +956,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     const error =
       'A previous incomplete download is stuck at this location, likely in ' +
       'use by another program. Close it, then press Retry.'
-    reportProgress(makeProgress({ status: 'error', error }))
-    return settledJobHandle(id, url, savePath, { status: 'error', error })
+    return rejectJob(error)
   }
 
   const existenceCandidates = opts.destinationBaseDir
@@ -943,17 +973,11 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
           actual = await sha256File(candidate)
         } catch (err) {
           const error = `Cannot verify existing file: ${(err as Error).message}`
-          reportProgress(makeProgress({ status: 'error', error }))
-          return settledJobHandle(id, url, savePath, { status: 'error', error })
+          return rejectJob(error)
         }
         if (actual !== sha256) {
           const error = `Existing file ${filename} does not match the expected checksum`
-          reportProgress(makeProgress({ status: 'error', error }))
-          return settledJobHandle(id, url, savePath, {
-            status: 'error',
-            error,
-            code: 'existing-file-mismatch'
-          })
+          return rejectJob(error, 'existing-file-mismatch')
         }
       }
       reportProgress(makeProgress({ progress: 1, status: 'completed', savePath: candidate }))
@@ -970,8 +994,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
 
   if (quittingModelDownloads || isQuitInProgress()) {
     const error = 'Application is shutting down'
-    reportProgress(makeProgress({ status: 'error', error }))
-    return settledJobHandle(id, url, savePath, { status: 'error', error })
+    return rejectJob(error)
   }
 
   const destKey = canonicalDestKey(savePath)
@@ -987,8 +1010,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
         (sha256 !== undefined && active.sha256 !== sha256)
       ) {
         const error = `Another download is already writing ${filename} from a different source`
-        reportProgress(makeProgress({ status: 'error', error }))
-        return settledJobHandle(id, url, savePath, { status: 'error', error })
+        return rejectJob(error)
       }
       retryParamsById.delete(id)
       createdAtById.delete(id)
@@ -1025,6 +1047,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     progressSubscribers: opts.onProgress ? new Set([opts.onProgress]) : undefined,
     settleJob,
     completion,
+    telemetry,
     lastProgress: initial,
     lastSpeedBytes: 0,
     lastSpeedTime: Date.now()
@@ -1093,7 +1116,8 @@ export async function startModelDownload(
     directory,
     window: win,
     senderContents,
-    installationId
+    installationId,
+    source: 'comfyui'
   })
   const active = pendingDownloads.get(handle.id)
   if (active) return true
@@ -1288,6 +1312,103 @@ export async function startAssetDownload(
   return admission.status !== 'not-started'
 }
 
+export interface FileSaveTransfer {
+  signal: AbortSignal
+  progress: (receivedBytes: number, totalBytes: number) => void
+}
+
+export interface FileSaveOptions {
+  window: BrowserWindow
+  savePath: string
+  transfer: (job: FileSaveTransfer) => Promise<void>
+}
+
+const FILE_SAVE_PROGRESS_INTERVAL_MS = 250
+
+function fileSaveFailure(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : 'The file could not be saved.'
+}
+
+async function runFileSave(
+  pending: PendingDownload,
+  signal: AbortSignal,
+  transfer: FileSaveOptions['transfer']
+): Promise<void> {
+  let lastReportAt = 0
+  const progress = (receivedBytes: number, totalBytes: number): void => {
+    if (!pendingDownloads.has(pending.id)) return
+    const now = Date.now()
+    if (now - lastReportAt < FILE_SAVE_PROGRESS_INTERVAL_MS) return
+    lastReportAt = now
+    reportTransferProgress(pending, receivedBytes, totalBytes, 'downloading')
+  }
+  const row = {
+    id: pending.id,
+    url: pending.url,
+    filename: pending.filename,
+    directory: pending.directory
+  }
+  try {
+    await transfer({ signal, progress })
+    if (!pendingDownloads.has(pending.id)) return
+    reportProgress({
+      ...row,
+      savePath: pending.savePath,
+      progress: 1,
+      status: 'completed',
+      isImage: hasImageExtension(pending.savePath)
+    })
+  } catch (error) {
+    if (!pendingDownloads.has(pending.id)) return
+    reportProgress({ ...row, progress: 0, status: 'error', error: fileSaveFailure(error) })
+  }
+  unregisterPending(pending)
+}
+
+export function startFileSave(options: FileSaveOptions): string {
+  const { window, savePath, transfer } = options
+  const id = randomUUID()
+  const abort = new AbortController()
+  const url = pathToFileURL(savePath).href
+  const filename = path.basename(savePath)
+  const pending: PendingDownload = {
+    id,
+    kind: 'general',
+    url,
+    filename,
+    directory: '',
+    savePath,
+    window,
+    subscriberWindows: new Set(),
+    subscriberContents: new Set(),
+    abort,
+    canPause: false,
+    lastProgress: {
+      id,
+      url,
+      filename,
+      directory: '',
+      progress: 0,
+      status: 'pending',
+      canPause: false
+    },
+    lastSpeedBytes: 0,
+    lastSpeedTime: Date.now()
+  }
+  registerPending(pending)
+  retryParamsById.set(id, {
+    kind: 'file',
+    url,
+    filename,
+    window,
+    savePath,
+    restart: () => startFileSave(options)
+  })
+  reportProgress(pending.lastProgress)
+  void runFileSave(pending, abort.signal, transfer)
+  return id
+}
+
 export function getActiveAssetDownload(
   url: string,
   filename: string,
@@ -1316,42 +1437,53 @@ async function deduplicatePath(filePath: string): Promise<string> {
   return candidate
 }
 
+function reportTransferProgress(
+  pending: PendingDownload,
+  received: number,
+  total: number,
+  status: 'downloading' | 'paused'
+): void {
+  const now = Date.now()
+  const elapsed = (now - pending.lastSpeedTime) / 1000
+  let speed: number | undefined
+  let eta: number | undefined
+  if (elapsed >= 0.5) {
+    const delta = received - pending.lastSpeedBytes
+    speed = delta / elapsed
+    pending.lastSpeedBytes = received
+    pending.lastSpeedTime = now
+    if (speed > 0 && total > 0) {
+      eta = (total - received) / speed
+    }
+  } else {
+    speed = pending.lastProgress.speedBytesPerSec
+    eta = pending.lastProgress.etaSeconds
+  }
+
+  reportProgress({
+    id: pending.id,
+    url: pending.url,
+    filename: pending.filename,
+    directory: pending.directory,
+    progress: total > 0 ? Math.min(1, received / total) : 0,
+    receivedBytes: received,
+    totalBytes: total,
+    speedBytesPerSec: speed,
+    etaSeconds: eta,
+    status,
+    canPause: pending.canPause
+  })
+}
+
 function attachDownloadListeners(item: Electron.DownloadItem, pending: PendingDownload): void {
   item.on('updated', (_ev, state) => {
     if (state !== 'progressing') return
-    const total = item.getTotalBytes()
-    const received = item.getReceivedBytes()
-    const progress = total > 0 ? received / total : 0
-
-    const now = Date.now()
-    const elapsed = (now - pending.lastSpeedTime) / 1000
-    let speed: number | undefined
-    let eta: number | undefined
-    if (elapsed >= 0.5) {
-      const delta = received - pending.lastSpeedBytes
-      speed = delta / elapsed
-      pending.lastSpeedBytes = received
-      pending.lastSpeedTime = now
-      if (speed > 0 && total > 0) {
-        eta = (total - received) / speed
-      }
-    } else {
-      speed = pending.lastProgress.speedBytesPerSec
-      eta = pending.lastProgress.etaSeconds
-    }
-
-    reportProgress({
-      id: pending.id,
-      url: pending.url,
-      filename: pending.filename,
-      directory: pending.directory,
-      progress,
-      receivedBytes: received,
-      totalBytes: total,
-      speedBytesPerSec: speed,
-      etaSeconds: eta,
-      status: item.isPaused() ? 'paused' : 'downloading'
-    })
+    reportTransferProgress(
+      pending,
+      item.getReceivedBytes(),
+      item.getTotalBytes(),
+      item.isPaused() ? 'paused' : 'downloading'
+    )
   })
 
   item.once('done', (_ev, state) => {
@@ -1594,6 +1726,7 @@ export function pauseModelDownload(ref: string): boolean {
     reportProgress({ ...pending.lastProgress, status: 'paused' })
     return true
   }
+  if (pending.canPause === false) return false
   if (pending.item && !pending.item.isPaused()) {
     pending.item.pause()
     reportProgress({
@@ -1669,7 +1802,7 @@ export function cancelModelDownload(ref: string): boolean {
   if (pending.item) {
     pending.item.cancel()
   } else {
-    unregisterPending(pending)
+    pending.abort?.abort()
     reportProgress({
       id: pending.id,
       url: pending.url,
@@ -1678,6 +1811,7 @@ export function cancelModelDownload(ref: string): boolean {
       progress: 0,
       status: 'cancelled'
     })
+    unregisterPending(pending)
   }
   return true
 }
@@ -1726,7 +1860,9 @@ export function retryDownload(ref: string): boolean {
   _broadcastToRenderer('model-download-removed', { url: row.url, id: row.id })
   downloadEvents.emit('tray-state-changed')
 
-  if (params.kind === 'asset') {
+  if (params.kind === 'file') {
+    params.restart?.()
+  } else if (params.kind === 'asset') {
     void startAssetDownload(
       win!,
       params.url,
@@ -1748,7 +1884,9 @@ export function retryDownload(ref: string): boolean {
       senderContents: sender,
       installationId: params.installationId,
       sha256: params.sha256,
-      destinationBaseDir: params.destinationBaseDir
+      destinationBaseDir: params.destinationBaseDir,
+      source: params.modelSource,
+      isRetry: true
     })
   }
   return true

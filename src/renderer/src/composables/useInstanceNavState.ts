@@ -15,7 +15,7 @@ export interface InstanceNavState {
   isTargetCurrentHost: ComputedRef<boolean>
   isTargetRunningElsewhere: ComputedRef<boolean>
   isTargetRunningHere: ComputedRef<boolean>
-  navInput: (intent: NavInput['intent']) => NavInput
+  navInput: () => NavInput
 }
 
 export interface InstanceNavStateSources {
@@ -62,11 +62,10 @@ export function useInstanceNavState(
     return 'stopped'
   })
 
-  const navInput = (intent: NavInput['intent']): NavInput => ({
+  const navInput = (): NavInput => ({
     currentView: toValue(sources.currentView),
     target: targetKind.value,
-    targetRun: targetRun.value,
-    intent
+    targetRun: targetRun.value
   })
 
   return {

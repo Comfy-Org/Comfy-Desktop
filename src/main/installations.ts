@@ -30,10 +30,6 @@ export interface InstallationRecord {
   modelDirsPrimary?: string | null
   inputDir?: string
   outputDir?: string
-  bundledTemplateId?: string
-  bundledTemplateSizeBytes?: number
-  pendingTemplateOpen?: string | null
-  downloadTemplateModels?: boolean
   [key: string]: unknown
 }
 
@@ -113,8 +109,8 @@ function maybeSeedFromEnv(): void {
   }
 }
 
-async function load(): Promise<InstallationRecord[]> {
-  return (await loadOutcome()).records
+function loadAfterRequestedWrites(): Promise<InstallationRecord[]> {
+  return _queue.then(async () => (await loadOutcome()).records)
 }
 
 async function loadOutcome(): Promise<{ records: InstallationRecord[]; unreadable: boolean }> {
@@ -152,11 +148,11 @@ async function save(installations: InstallationRecord[]): Promise<void> {
 }
 
 export async function list(): Promise<InstallationRecord[]> {
-  return load()
+  return loadAfterRequestedWrites()
 }
 
 export async function hasNameConflict(id: string, name: string): Promise<boolean> {
-  const all = await load()
+  const all = await loadAfterRequestedWrites()
   return all.some((i) => i.id !== id && i.name === name)
 }
 
@@ -281,7 +277,7 @@ export async function associateUnownedBuildInstalls(
 }
 
 export async function get(id: string): Promise<InstallationRecord | null> {
-  return (await load()).find((i) => i.id === id) ?? null
+  return (await loadAfterRequestedWrites()).find((i) => i.id === id) ?? null
 }
 
 export async function reorder(orderedIds: string[]): Promise<void> {
@@ -362,21 +358,8 @@ export async function markLaunched(
   return updated
 }
 
-export async function clearPendingTemplateOpen(installationId: string): Promise<boolean> {
-  return enqueue(async () => {
-    const list = await loadForWrite()
-    const index = list.findIndex((i) => i.id === installationId)
-    if (index === -1) return false
-    const existing = list[index]!
-    if (existing.pendingTemplateOpen == null) return false
-    list[index] = { ...existing, pendingTemplateOpen: null } as InstallationRecord
-    await save(list)
-    return true
-  })
-}
-
 export async function getRecent(): Promise<InstallationRecord | null> {
-  const list = await load()
+  const list = await loadAfterRequestedWrites()
   let best: InstallationRecord | null = null
   let bestTs = -Infinity
   for (const inst of list) {
@@ -393,7 +376,7 @@ export async function getRecentByCategory(
   category: string,
   resolveCategory: (inst: InstallationRecord) => string | undefined
 ): Promise<InstallationRecord | null> {
-  const list = await load()
+  const list = await loadAfterRequestedWrites()
   let best: InstallationRecord | null = null
   let bestTs = -Infinity
   for (const inst of list) {
@@ -412,18 +395,6 @@ export async function getRecentByCategory(
     }
   }
   return best && bestTs > -Infinity ? best : null
-}
-
-export async function resolveAutoLaunchInstall(
-  autoLaunchValue: string | undefined | null
-): Promise<InstallationRecord | null> {
-  if (autoLaunchValue == null || autoLaunchValue === '' || autoLaunchValue === 'none') {
-    return null
-  }
-  if (autoLaunchValue === 'last') {
-    return getRecent()
-  }
-  return get(autoLaunchValue)
 }
 
 export async function seedDefaults(defaults: Record<string, unknown>[]): Promise<void> {

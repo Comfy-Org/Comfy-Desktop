@@ -129,6 +129,12 @@ export default defineConfig([
           selector:
             "CallExpression[callee.object.name='ipcMain'][arguments.0.object.name='EMBEDDED_SESSION_CHANNELS']",
           message: useComfyBridge
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='loadURL']:matches([callee.object.name='comfyContents'], [callee.object.property.name='webContents'][callee.object.object.property.name='comfyView'])",
+          message:
+            'Navigate a build window through navigatorFor(entry) in src/main/host/buildNavigator.ts. It decides which request wins when a refresh, retry, restart or workspace switch overlap.'
         }
       ]
     }

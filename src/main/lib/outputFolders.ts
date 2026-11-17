@@ -12,7 +12,7 @@ import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
 import { sourceMap } from './ipc/shared'
-import type { AssetSummary } from '../../types/ipc'
+import type { AssetSummary, LocalAssetListing } from '../../types/ipc'
 
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
 
@@ -44,9 +44,13 @@ export function outputDirOverride(inst: InstallationRecord, sharedDir: string): 
   return (inst.outputDir as string | undefined) || null
 }
 
-function outputDirFor(inst: InstallationRecord, sharedDir: string): string | null {
+export function hasOutputFolder(inst: InstallationRecord): boolean {
   const source = sourceMap[inst.sourceId]
-  if (source?.category !== 'local' || source.getLaunchCommand(inst)?.skipSharedPaths) return null
+  return source?.category === 'local' && !source.managesOwnPaths
+}
+
+function outputDirFor(inst: InstallationRecord, sharedDir: string): string | null {
+  if (!hasOutputFolder(inst)) return null
   return outputDirOverride(inst, sharedDir) ?? installOutputDir(inst.installPath)
 }
 
@@ -57,19 +61,29 @@ async function realDir(dir: string): Promise<string | null> {
   return stat?.isDirectory() ? real : null
 }
 
-export async function listOutputFolders(): Promise<string[]> {
-  const shared = sharedOutputDir()
-  const folders = new Set<string>()
-  const sharedReal = await realDir(shared)
-  if (sharedReal) folders.add(sharedReal)
+interface OutputFolders {
+  all: string[]
+  shared: string | null
+  ofBuild: Map<string, string>
+}
+
+async function findOutputFolders(): Promise<OutputFolders> {
+  const sharedDir = sharedOutputDir()
+  const shared = await realDir(sharedDir)
+  const ofBuild = new Map<string, string>()
   for (const inst of await installations.list()) {
-    const dir = outputDirFor(inst, shared)
+    const dir = outputDirFor(inst, sharedDir)
     const real = dir ? await realDir(dir) : null
-    if (real) folders.add(real)
+    if (real) ofBuild.set(inst.id, real)
   }
-  allowedRoots = [...folders]
+  const all = [...new Set([...(shared ? [shared] : []), ...ofBuild.values()])]
+  allowedRoots = all
   allowedRootsAt = Date.now()
-  return allowedRoots
+  return { all, shared, ofBuild }
+}
+
+export async function listOutputFolders(): Promise<string[]> {
+  return (await findOutputFolders()).all
 }
 
 function isInsideRoot(target: string, root: string): boolean {
@@ -79,7 +93,7 @@ function isInsideRoot(target: string, root: string): boolean {
 
 async function allowedPath(target: string): Promise<string | null> {
   if (!path.isAbsolute(target)) return null
-  if (Date.now() - allowedRootsAt > ROOTS_FRESH_MS) await listOutputFolders()
+  if (Date.now() - allowedRootsAt > ROOTS_FRESH_MS) await findOutputFolders()
   const real = await fsp.realpath(target).catch(() => null)
   if (!real) return null
   return allowedRoots.some((root) => isInsideRoot(real, root)) ? real : null
@@ -161,12 +175,13 @@ async function addMediaFacts(asset: AssetSummary): Promise<void> {
   Object.assign(asset, await mediaFactsFromFile(asset.id, asset.kind))
 }
 
-export async function listLocalAssets(): Promise<AssetSummary[]> {
-  const folders = await listOutputFolders()
-  const files = [...new Set((await Promise.all(folders.map(collectMediaFiles))).flat())]
+export async function listLocalAssets(installationId?: string): Promise<LocalAssetListing> {
+  const folders = await findOutputFolders()
+  const folder = installationId === undefined ? folders.shared : folders.ofBuild.get(installationId)
+  const files = folder ? await collectMediaFiles(folder) : []
   const found: AssetSummary[] = []
   await runPool(files, STATS_AT_ONCE, async (file) => {
-    const stat = await fsp.stat(file).catch(() => null)
+    const stat = await fsp.lstat(file).catch(() => null)
     if (!stat?.isFile()) return
     const modifiedMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0
     found.push(localSummary(file, stat.size, modifiedMs))
@@ -175,7 +190,10 @@ export async function listLocalAssets(): Promise<AssetSummary[]> {
     .sort((a, b) => b.createdAt!.localeCompare(a.createdAt!))
     .slice(0, MAX_LOCAL_ASSETS)
   await runPool(newest, STATS_AT_ONCE, addMediaFacts)
-  return newest
+  return {
+    assets: newest,
+    truncated: found.length > MAX_LOCAL_ASSETS
+  }
 }
 
 function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeImage | null {
@@ -304,5 +322,7 @@ export function registerOutputFilesScheme(): void {
 
 export function registerOutputFolderHandlers(): void {
   protocol.handle(OUTPUT_FILES_SCHEME, serveOutputFile)
-  ipcMain.handle(LIST_LOCAL_CHANNEL, () => listLocalAssets())
+  ipcMain.handle(LIST_LOCAL_CHANNEL, (_event, installationId: unknown) =>
+    listLocalAssets(typeof installationId === 'string' ? installationId : undefined)
+  )
 }

@@ -27,6 +27,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import { isNewWindowDashboardPage } from '../../../shared/dashboardPages'
 import { seedLauncherPrefsFromUrl, useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useModal } from '../composables/useModal'
 import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
@@ -49,8 +50,9 @@ import {
   SUCCESS_ACTION_GO_DASHBOARD,
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
-import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import { provideBuildLogs } from '../composables/useBuildProgress'
+import { provideBuildMenuHost } from './home/useBuildMenu'
+import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
@@ -73,7 +75,7 @@ const { loaded: launcherPrefsLoaded, firstUseCompleted } = launcherPrefs
 const modal = useModal()
 useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
-const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback()
+const { feedbackOpen, feedbackHiddenFields, closeFeedback } = useSendFeedback()
 const { announcementOpen, closeAnnouncement } = useAnnouncement()
 
 const installation = computed<Installation | null>(() =>
@@ -107,13 +109,15 @@ const firstUseChain = useFirstUseChain({
 const {
   chainingFirstUseToNewInstall,
   setupConsent,
+  savedSetup,
   completeFirstUseAndDismiss,
   handleSetupInstall,
   handleSetupChange,
   handleNewInstallConsentChange,
   handleFirstUseChainMigrate,
   handleNewInstallTakeoverClose,
-  handleNewInstallBackToSetup
+  handleNewInstallBackToSetup,
+  handleNewInstallSaveSetup
 } = firstUseChain
 
 overlays = usePanelOverlays({
@@ -147,27 +151,6 @@ provideBuildLogs((id) => {
   buildProgressId.value = id
 })
 
-const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
-  isBusy: () => sessionStore.runningTabCount > 0
-})
-
-let warmTemplateThumbnailsOnce: Promise<void> | null = null
-function warmTemplateThumbnails(): Promise<void> {
-  if (firstUseCompleted.value) return Promise.resolve()
-  warmTemplateThumbnailsOnce ??= (async () => {
-    try {
-      const options = await window.api.getFieldOptions('standalone', 'bundledTemplate', {}, {})
-      prefetchThumbnails(
-        options.map((o) => {
-          const url = o.data?.thumbnailUrl
-          return typeof url === 'string' ? url : null
-        })
-      )
-    } catch {}
-  })()
-  return warmTemplateThumbnailsOnce
-}
-
 if (params.get('e2e') === '1') {
   bindE2EPanelHooks({
     showProgress: handleShowProgress,
@@ -177,7 +160,10 @@ if (params.get('e2e') === '1') {
 
 type DashboardHomePage = Extract<DashboardPage, 'home' | 'apps' | 'chooser' | 'assets'>
 
-const dashboardHomePage = ref<DashboardHomePage>('home')
+const urlDashboardPage = params.get('dashboardPage')
+const dashboardHomePage = ref<DashboardHomePage>(
+  isNewWindowDashboardPage(urlDashboardPage) ? urlDashboardPage : 'home'
+)
 
 const sidebarPage = computed<DashboardPage | null>(() => {
   const panel = activePanel.value
@@ -237,6 +223,16 @@ function openAppFromHome(app: AppCard): void {
   dashboardHomePage.value = 'apps'
 }
 
+const SIDEBAR_PAGE_OPENED_EVENT = 'comfy.desktop.sidebar.page_opened'
+
+function handleSidebarClick(page: DashboardPage): void {
+  const fromPage = sidebarPage.value
+  if (page !== fromPage) {
+    emitTelemetryAction(SIDEBAR_PAGE_OPENED_EVENT, { page, from_page: fromPage })
+  }
+  handleSidebarNavigate(page)
+}
+
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
   if (page === 'apps') appsVisits.value += 1
@@ -276,14 +272,19 @@ chooserHandoff = useChooserHandoff({
 })
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
+provideAutoStartBuild()
+provideBuildMenuHost({
+  launch: (inst, launchOpts) => handleChooserPick(inst, launchOpts),
+  openDetails: openBuildFromSidebar,
+  showProgress: handleShowProgress
+})
+
 async function handleStartupRestorePick(inst: Installation): Promise<void> {
   try {
-    const outcome = await chooserHandoff.performChooserLaunch(inst, undefined, { inPlace: true })
-    await nextTick()
-    const takeoverReady = outcome === 'launched' && currentOverlay.value?.kind === 'takeover'
-    window.api.resolveStartupRestoreReveal(takeoverReady ? 'takeover-ready' : 'dashboard-fallback')
+    await chooserHandoff.performChooserLaunch(inst)
   } catch (err) {
     console.error('startup restore launch failed', err)
+  } finally {
     window.api.resolveStartupRestoreReveal('dashboard-fallback')
   }
 }
@@ -327,16 +328,18 @@ useDeepLinkRouter({
   showAppUpdateRestartPrompt,
   showAppUpdateDownloadPrompt,
   pickInstallFromPicker: async (inst, pickOpts) => {
+    const launchOpts = {
+      isRestart: pickOpts?.isRestart === true,
+      pickerWorkspaceId: pickOpts?.pickerWorkspaceId
+    }
     if (!installationId) {
       if (pickOpts?.startupRestore) {
         await handleStartupRestorePick(inst)
       } else {
-        await chooserHandoff.handleChooserPick(inst, {
-          isRestart: pickOpts?.isRestart === true
-        })
+        await chooserHandoff.handleChooserPick(inst, launchOpts)
       }
     } else {
-      await chooserHandoff.performPickerLaunch(inst, { isRestart: pickOpts?.isRestart === true })
+      await chooserHandoff.performPickerLaunch(inst, launchOpts)
     }
   },
   runInstallActionFromPicker: async (inst, actionId) => {
@@ -448,7 +451,6 @@ onMounted(async () => {
       (!urlFirstUseCompleted && (!launcherPrefsLoaded.value || !firstUseCompleted.value))
 
     if (shouldOpenFirstUse && !isFlowPanel(initialPanel)) {
-      void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
 
@@ -466,7 +468,6 @@ onMounted(async () => {
     }
 
     if (!firstUseCompleted.value && !isFlowPanel(initialPanel)) {
-      void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
   } catch (err) {
@@ -503,7 +504,7 @@ onUnmounted(() => {
         :active-page="sidebarPage"
         :active-build-id="sidebarBuildId"
         :make-room="appIsOpen"
-        @navigate="handleSidebarNavigate"
+        @navigate="handleSidebarClick"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
       />
@@ -541,7 +542,10 @@ onUnmounted(() => {
               :revisit="appsVisits"
               @app-open-change="appIsOpen = $event"
             />
-            <AssetsView v-else-if="dashboardHomePage === 'assets'" />
+            <AssetsView
+              v-else-if="dashboardHomePage === 'assets'"
+              :installation-id="installationId"
+            />
             <BuildDetailsView
               v-else-if="buildDetailsInstall"
               :installation="buildDetailsInstall"
@@ -587,6 +591,7 @@ onUnmounted(() => {
         @navigate-list="handleNewInstallTakeoverClose"
         @show-progress="handleShowProgress"
         @back-to-setup="handleNewInstallBackToSetup"
+        @save-setup="handleNewInstallSaveSetup"
         @consent-change="handleNewInstallConsentChange"
       />
       <TrackModal
@@ -611,6 +616,7 @@ onUnmounted(() => {
         v-else-if="currentOverlay.component === 'first-use'"
         ref="firstUseRef"
         :consent="setupConsent"
+        :saved-plan="savedSetup?.plan ?? null"
         @install="handleSetupInstall"
         @change="handleSetupChange"
         @complete-skip="completeFirstUseAndDismiss"
@@ -624,7 +630,11 @@ onUnmounted(() => {
       @close="buildProgressId = null"
       @retry="retryLaunch(buildProgressId)"
     />
-    <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
+    <FeedbackModal
+      :open="feedbackOpen"
+      :hidden-fields="feedbackHiddenFields"
+      @close="closeFeedback"
+    />
     <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
 
     <ModalDialog />

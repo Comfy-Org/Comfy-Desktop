@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { openTitleMenu } from './support/chooserHelpers'
+import { openDesktopSettings } from './support/chooserHelpers'
 import {
   closeTitlePopupIfOpen,
   titlePopupPage,
@@ -10,7 +10,7 @@ import {
 
 test.describe.configure({ mode: 'serial' })
 
-const BETA_LABEL = 'Opt-in to beta features'
+const BETA_LABEL = 'Opt in to beta features'
 const BETA_SWITCH = `.global-settings button[role="switch"][aria-label="${BETA_LABEL}"]`
 const NEEDS_TELEMETRY_TOOLTIP =
   'Beta features require confirming data sharing in Settings, even if telemetry is currently on.'
@@ -37,13 +37,10 @@ async function readBetaRow(popup: WebContentsPage): Promise<BetaRowState | null>
   })()`)
 }
 
-async function openDesktopSettings(ctx: AppContext, popup: WebContentsPage): Promise<void> {
+async function openBetaSettings(ctx: AppContext, popup: WebContentsPage): Promise<void> {
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
-  await openTitleMenu(ctx.titleBar)
-  await popup.waitForVisible('[role="menuitem"]', { timeout: 10_000 })
-  expect(await popup.clickByText('[role="menuitem"]', 'Desktop Settings')).toBe(true)
-  await popup.waitForVisible('.global-settings', { timeout: 10_000 })
+  await openDesktopSettings(ctx.app, ctx.panel)
   await popup.waitForVisible(BETA_SWITCH, { timeout: 10_000 })
 }
 
@@ -57,7 +54,7 @@ function betaScenario(settings: Record<string, unknown>): () => WebContentsPage 
   })
 
   test.beforeEach(async () => {
-    await openDesktopSettings(ctx, popup)
+    await openBetaSettings(ctx, popup)
   })
 
   test.afterAll(async () => {

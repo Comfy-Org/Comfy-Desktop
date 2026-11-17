@@ -18,6 +18,7 @@ const { builds, target, statusOf } = defineProps<{
 
 const emit = defineEmits<{
   open: [build: Installation]
+  pick: [build: Installation]
 }>()
 
 const { t } = useI18n()
@@ -78,9 +79,10 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
             type="button"
             :value="build.id"
             :disabled="brokenReason(build) !== undefined"
+            :check="false"
             class="group ui-select-option w-full"
             data-testid="home-open-build-option"
-            @select="emit('open', build)"
+            @select="emit('pick', build)"
           >
             <span class="relative flex shrink-0">
               <component :is="isCloudBuild(build) ? Cloud : Laptop" :size="14" aria-hidden="true" />

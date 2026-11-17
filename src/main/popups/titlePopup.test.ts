@@ -121,6 +121,14 @@ describe('computePopupHeight', () => {
   it('handles a single separator', () => {
     expect(computePopupHeight([{ kind: 'separator' }])).toBe(19)
   })
+
+  it('adds a 2px gap between rows when the menu has icons', () => {
+    const h = computePopupHeight([
+      { id: 'performance-test', label: 'Performance tests', icon: 'performance-test' },
+      { id: 'benchmarks', label: 'Benchmarks', icon: 'benchmarks' }
+    ])
+    expect(h).toBe(68)
+  })
 })
 
 describe('buildTitlePopupMenuItems', () => {
@@ -131,23 +139,49 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items[0]).toMatchObject({ id: 'skip-onboarding' })
   })
 
-  it.each([null, 'inst-1'] as const)(
-    'lists the tools, settings and window actions on host %s',
-    (installationId) => {
-      const items = buildTitlePopupMenuItems(makeEntry({ installationId }))
-      expect(items.map((item) => item.id ?? 'separator')).toEqual([
-        'performance-test',
-        'benchmarks',
-        'separator',
-        'settings',
-        'separator',
-        'exit-window',
-        'close-all-windows'
-      ])
-    }
-  )
+  it('the Desktop window menu holds only Performance tests and Benchmarks, with icons', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+    expect(items).toEqual([
+      {
+        id: 'performance-test',
+        label: 'Performance tests',
+        labelKey: 'fileMenu.performanceTests',
+        icon: 'performance-test'
+      },
+      { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks', icon: 'benchmarks' }
+    ])
+  })
 
-  it('install host lists Reset Zoom after Settings when zoomed', () => {
+  it('the Desktop window menu leaves closing and quitting to the OS', () => {
+    const ids = buildTitlePopupMenuItems(makeEntry({ installationId: null })).map((i) => i.id)
+    expect(ids).not.toContain('exit-window')
+    expect(ids).not.toContain('close-all-windows')
+    expect(ids).not.toContain('settings')
+  })
+
+  it('build windows keep their menu without icons', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
+    expect(items.some((item) => item.icon)).toBe(false)
+    expect(items[0]).toMatchObject({
+      label: 'Performance Tests',
+      labelKey: 'fileMenu.performanceTest'
+    })
+  })
+
+  it('install host keeps Desktop Settings because it has no sidebar', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
+    expect(items.map((item) => item.id ?? 'separator')).toEqual([
+      'performance-test',
+      'benchmarks',
+      'separator',
+      'settings',
+      'separator',
+      'exit-window',
+      'close-all-windows'
+    ])
+  })
+
+  it('install host lists Reset Zoom after Desktop Settings when zoomed', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
     const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
     expect(ids).toEqual([
@@ -180,7 +214,11 @@ describe('buildTitlePopupMenuItems', () => {
     const zoomed = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
     const resetZoom = zoomed.find((i) => i.id === 'reset-zoom')
     expect(resetZoom).toBeDefined()
-    expect(resetZoom?.label).toBe('Reset Zoom (144%)')
+    expect(resetZoom).toMatchObject({
+      label: 'Reset Zoom (144%)',
+      labelKey: 'fileMenu.resetZoom',
+      labelParams: { percent: 144 }
+    })
   })
 
   it('omits Reset Zoom from the install host menu when the comfy webContents has been destroyed', () => {
@@ -190,8 +228,8 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items.find((i) => i.id === 'reset-zoom')).toBeUndefined()
   })
 
-  it('places Performance Tests first and Quit Desktop last on a chooser host', () => {
-    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+  it('places Performance Tests first and Quit Desktop last in a build window', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
     const ids = items.map((i) => i.id ?? null)
     expect(ids[0]).toBe('performance-test')
     expect(ids).not.toContain('new-window')
@@ -430,6 +468,23 @@ describe('scopeInstancePicker', () => {
     )
     expect(scope.installs.map((install) => install.id)).toEqual(['local'])
     expect(scope.selectedInstallationId).toBe('local')
+  })
+
+  it('keeps the shared Cloud host picker in the selected team workspace', () => {
+    mockSettings({ dashboardWorkspaceId: 'team-a' })
+    const cloud = makeInstall({ id: 'cloud', sourceId: 'cloud', sourceCategory: 'cloud' })
+    const scope = scopeInstancePicker([...workspaceInstalls, cloud], 'cloud', null, null)
+
+    expect(scope.installs.map((install) => install.id)).toEqual(['team-a', 'cloud'])
+    expect(scope.selectedInstallationId).toBe('cloud')
+  })
+
+  it('applies the hide Cloud preference to the shared tile in a team workspace', () => {
+    mockSettings({ dashboardWorkspaceId: 'team-a', hideCloudFromPicker: true })
+    const cloud = makeInstall({ id: 'cloud', sourceId: 'cloud', sourceCategory: 'cloud' })
+    const scope = scopeInstancePicker([...workspaceInstalls, cloud], null, null, null)
+
+    expect(scope.installs.map((install) => install.id)).toEqual(['team-a'])
   })
 
   it('keeps a hidden cloud host visible and selected', () => {
@@ -897,45 +952,5 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
 
   it('does not grant on an explicit opt-out', () => {
     expect(snapshotWithConsent(false).telemetryGranted).toBe(false)
-  })
-})
-
-describe('build page open-in-new-window IPC', () => {
-  type IpcListener = (event: Electron.IpcMainEvent, installationId: unknown) => void
-  const panelContents = {}
-  const openInstallInNewWindow = vi.fn(async () => {})
-  let open: IpcListener
-
-  beforeAll(async () => {
-    const { ipcMain } = await import('electron')
-    vi.mocked(ipcMain.on).mockClear()
-    registerTitlePopupIpc({ openInstallInNewWindow } as unknown as TitlePopupHostBindings)
-    const call = vi
-      .mocked(ipcMain.on)
-      .mock.calls.find(([channel]) => channel === 'comfy-window:open-install-new-window')
-    if (!call) throw new Error('IPC listener not registered')
-    open = call[1] as IpcListener
-  })
-
-  beforeEach(() => {
-    openInstallInNewWindow.mockClear()
-    comfyWindows.set(nextWindowKey(), {
-      panelView: { webContents: panelContents }
-    } as unknown as ComfyWindowEntry)
-  })
-
-  it('opens the build for a window panel', () => {
-    open({ sender: panelContents } as Electron.IpcMainEvent, 'inst-a')
-
-    expect(openInstallInNewWindow).toHaveBeenCalledExactlyOnceWith('inst-a')
-  })
-
-  it.each([
-    ['a sender that is not a panel', {}, 'inst-a'],
-    ['a missing installation id', panelContents, undefined]
-  ])('ignores %s', (_label, sender, installationId) => {
-    open({ sender } as Electron.IpcMainEvent, installationId)
-
-    expect(openInstallInNewWindow).not.toHaveBeenCalled()
   })
 })
