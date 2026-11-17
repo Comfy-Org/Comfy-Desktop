@@ -81,6 +81,7 @@ interface Shape {
 
 const SKELETON_COUNT = 8
 const CLOUD_PAGE_SIZES = [50, 100, 200] as const
+const DEFAULT_PAGE_SIZE = 100
 const PAGE_CACHE_TTL_MS = 30 * 60_000
 const NAME_TOOLTIP_DELAY_MS = 600
 const MIN_CARD_WIDTH = 240
@@ -129,7 +130,7 @@ const SHARED = 'shared'
 const savedPlace = useLocalStorage('comfy.desktop.assets.place', '')
 const pickedPlace = ref('')
 const truncated = ref(false)
-const pageSize = useLocalStorage<number>('comfy.desktop.assets.pageSize', CLOUD_PAGE_SIZES[0])
+const pageSize = useLocalStorage<number>('comfy.desktop.assets.pageSize', DEFAULT_PAGE_SIZE)
 const currentPage = ref(1)
 const cloudTotal = ref(0)
 
@@ -263,9 +264,7 @@ const searchedAssets = computed(() => {
 
 const pageCount = computed(() => Math.max(1, Math.ceil(cloudTotal.value / pageSize.value)))
 const pagedCloud = computed(() => !!selectedBuild.value?.cloud && pageCount.value > 1)
-const showPagination = computed(
-  () => !!selectedBuild.value?.cloud && cloudTotal.value > CLOUD_PAGE_SIZES[0]
-)
+const showPagination = computed(() => !!selectedBuild.value?.cloud && cloudTotal.value > 0)
 
 function kindCount(kind: KindFilter): number | undefined {
   if (pagedCloud.value) return undefined

@@ -28,7 +28,7 @@ const getSetting = vi.fn()
 const MASONRY_GAP = 14
 const FOUR_COLUMN_PAGE_WIDTH = 1100
 const TALL_PAGE_HEIGHT = 3000
-const FIRST_PAGE = { offset: 0, limit: 50, order: 'newest' }
+const FIRST_PAGE = { offset: 0, limit: 100, order: 'newest' }
 
 let page: HTMLElement
 
@@ -1178,51 +1178,54 @@ describe('AssetsView Comfy Cloud pages', () => {
     expect(asked()[0]).toEqual(FIRST_PAGE)
     expect(assetNames(wrapper)[0]).toBe('out-0.png')
     const pages = wrapper.get('[data-testid="assets-pagination"]')
-    expect(shownText(pages.element)).toContain('1–50 of 1561')
+    expect(shownText(pages.element)).toContain('1–100 of 1561')
     expect(pages.get('[data-testid="assets-page-1"]').attributes('aria-label')).toBe('Page 1')
-    expect(pages.find('[data-testid="assets-page-32"]').exists(), 'the last page').toBe(true)
+    expect(pages.find('[data-testid="assets-page-16"]').exists(), 'the last page').toBe(true)
   })
 
-  it('shows no pages when every Cloud output fits on one page', async () => {
+  it('keeps the page bar and the type counts when every Cloud output fits on one page', async () => {
     cloudOutputs(30)
     const wrapper = await mountCloud()
 
     expect(assetNames(wrapper)).toHaveLength(30)
-    expect(wrapper.find('[data-testid="assets-pagination"]').exists()).toBe(false)
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '1–30 of 30'
+    )
+    expect(wrapper.get('[data-testid="assets-kind-all"]').text()).toBe('All30')
   })
 
   it('opens the next page from Cloud and goes back to a seen page without asking again', async () => {
-    cloudOutputs(120)
+    cloudOutputs(250)
     const wrapper = await mountCloud()
-    await nextPagePrefetched(50)
+    await nextPagePrefetched(100)
 
     await goToPage(wrapper, 2)
-    expect(assetNames(wrapper)[0]).toBe('out-50.png')
+    expect(assetNames(wrapper)[0]).toBe('out-100.png')
     expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
-      '51–100 of 120'
+      '101–200 of 250'
     )
 
     await goToPage(wrapper, 1)
 
     expect(assetNames(wrapper)[0]).toBe('out-0.png')
     expect(timesAskedFor(0), 'page 1 comes from the cache').toBe(1)
-    expect(timesAskedFor(50), 'page 2 was asked for only once').toBe(1)
+    expect(timesAskedFor(100), 'page 2 was asked for only once').toBe(1)
   })
 
   it('gets the next page ready while the user looks at this one', async () => {
-    cloudOutputs(120)
+    cloudOutputs(250)
     const wrapper = await mountCloud()
 
-    await nextPagePrefetched(50)
-    expect(asked()).toEqual([FIRST_PAGE, { ...FIRST_PAGE, offset: 50 }])
+    await nextPagePrefetched(100)
+    expect(asked()).toEqual([FIRST_PAGE, { ...FIRST_PAGE, offset: 100 }])
 
     await goToPage(wrapper, 2)
-    expect(assetNames(wrapper)[0]).toBe('out-50.png')
-    expect(timesAskedFor(50), 'the ready page is used').toBe(1)
+    expect(assetNames(wrapper)[0]).toBe('out-100.png')
+    expect(timesAskedFor(100), 'the ready page is used').toBe(1)
   })
 
   it('scrolls to the top when another page opens', async () => {
-    cloudOutputs(120)
+    cloudOutputs(250)
     const wrapper = await mountCloud()
     const scroller = wrapper.get('[data-testid="assets-view"]').element
     scroller.scrollTop = 400
@@ -1235,36 +1238,36 @@ describe('AssetsView Comfy Cloud pages', () => {
   it('shows the last page clicked when an earlier page arrives late, and asks again for a page that a newer one replaced', async () => {
     let finishPageTwo: (page: CloudAssetPage | null) => void = () => {}
     listAssets.mockImplementation((_id: string, request: PageRequest) =>
-      request.offset === 50
+      request.offset === 100
         ? new Promise((resolve) => (finishPageTwo = resolve))
-        : Promise.resolve(outputPage(200, request))
+        : Promise.resolve(outputPage(400, request))
     )
     const wrapper = await mountCloud()
-    await nextPagePrefetched(50)
+    await nextPagePrefetched(100)
 
     await goToPage(wrapper, 2)
     await goToPage(wrapper, 3)
-    expect(assetNames(wrapper)[0]).toBe('out-100.png')
+    expect(assetNames(wrapper)[0]).toBe('out-200.png')
 
     finishPageTwo(null)
     await flushPromises()
 
-    expect(assetNames(wrapper)[0], 'the late page does not replace page 3').toBe('out-100.png')
+    expect(assetNames(wrapper)[0], 'the late page does not replace page 3').toBe('out-200.png')
     expect(wrapper.find('[data-testid="assets-empty"]').exists()).toBe(false)
 
     listAssets.mockImplementation(async (_id: string, request: PageRequest) =>
-      outputPage(200, request)
+      outputPage(400, request)
     )
     await goToPage(wrapper, 2)
 
-    expect(assetNames(wrapper)[0]).toBe('out-50.png')
-    expect(timesAskedFor(50)).toBe(2)
+    expect(assetNames(wrapper)[0]).toBe('out-100.png')
+    expect(timesAskedFor(100)).toBe(2)
   })
 
   it('asks Cloud again after Refresh', async () => {
-    cloudOutputs(120)
+    cloudOutputs(250)
     const wrapper = await mountCloud()
-    await nextPagePrefetched(50)
+    await nextPagePrefetched(100)
 
     await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
     await flushPromises()
@@ -1273,14 +1276,14 @@ describe('AssetsView Comfy Cloud pages', () => {
   })
 
   it('starts again from page 1 with fresh pages when the user leaves Comfy Cloud and comes back', async () => {
-    cloudOutputs(120)
+    cloudOutputs(250)
     const wrapper = await mountCloud([
       localBuild('lab', 'Video Lab'),
       cloudBuild('cloud', 'Comfy Cloud')
     ])
     await openBuildPicker(wrapper)
     await pickBuild('cloud')
-    await nextPagePrefetched(50)
+    await nextPagePrefetched(100)
     await goToPage(wrapper, 2)
 
     await openBuildPicker(wrapper)
@@ -1293,9 +1296,9 @@ describe('AssetsView Comfy Cloud pages', () => {
   })
 
   it('starts again from page 1 with fresh pages when the user moves to another workspace', async () => {
-    cloudOutputs(120)
+    cloudOutputs(250)
     const wrapper = await mountCloud([{ ...cloudBuild('cloud', 'Comfy Cloud'), sourceId: 'cloud' }])
-    await nextPagePrefetched(50)
+    await nextPagePrefetched(100)
     await goToPage(wrapper, 2)
 
     useDashboardScopeStore().selectWorkspace('team-b')
@@ -1305,12 +1308,12 @@ describe('AssetsView Comfy Cloud pages', () => {
     expect(timesAskedFor(0)).toBe(2)
     expect(assetNames(wrapper)[0]).toBe('out-0.png')
     expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
-      '1–50 of 120'
+      '1–100 of 250'
     )
   })
 
   it('hides the type counts while Cloud outputs are split into pages, because Cloud cannot count by type', async () => {
-    cloudOutputs(120)
+    cloudOutputs(250)
     const wrapper = await mountCloud()
 
     expect(wrapper.get('[data-testid="assets-kind-all"]').text()).toBe('All')
@@ -1325,23 +1328,23 @@ describe('AssetsView Comfy Cloud pages', () => {
   })
 
   it('asks Cloud for bigger pages from page 1 when the user picks another page size', async () => {
-    cloudOutputs(300)
+    cloudOutputs(500)
     const wrapper = await mountCloud()
-    await nextPagePrefetched(50)
+    await nextPagePrefetched(100)
     await goToPage(wrapper, 2)
 
     await wrapper.get('[data-testid="assets-page-size"]').trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
-    const hundred = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-      (option) => option.textContent?.trim() === '100'
+    const twoHundred = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (option) => option.textContent?.trim() === '200'
     )!
-    hundred.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    twoHundred.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
 
-    expect(asked()).toContainEqual({ offset: 0, limit: 100, order: 'newest' })
+    expect(asked()).toContainEqual({ offset: 0, limit: 200, order: 'newest' })
     expect(assetNames(wrapper)[0]).toBe('out-0.png')
     expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
-      '1–100 of 300'
+      '1–200 of 500'
     )
   })
 })
