@@ -123,6 +123,7 @@ import { initAppsFlag } from './apps/appsFlag'
 import { runningPortOf } from './apps/localBuild'
 import {
   isRunningForAppsOnly,
+  runsWithItsWindowClosed,
   startWithDesktop,
   stopBuildsRunningForAppsOnly
 } from './apps/localComfy'
@@ -160,6 +161,7 @@ import {
   createHostWindow,
   expectedPartitionFor,
   openChooserHostWindow,
+  quitsOnceEveryWindowClosed,
   rebuildComfyViewIfNeeded,
   setHostWindowFactories
 } from './host/createHostWindow'
@@ -760,7 +762,9 @@ ipcMain.handle(
     const workspaceId =
       requester && typeof pickerWorkspaceId === 'string' ? pickerWorkspaceId : undefined
     if (await focusOpenComfyWindow(installationId, requester, workspaceId)) return true
-    if (isRunningForAppsOnly(installationId)) return openWindowForAppsBuild(installationId)
+    if (isRunningForAppsOnly(installationId) || runsWithItsWindowClosed(installationId)) {
+      return openWindowForAppsBuild(installationId)
+    }
 
     const proc = ipc.getSessionProcess(installationId)
     if (proc?.pid) {
@@ -1630,7 +1634,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     void stopBuildsRunningForAppsOnly().finally(() => {
       if (BrowserWindow.getAllWindows().length > 0) return
-      if (!ipc.hasRunningSessions()) {
+      if (quitsOnceEveryWindowClosed()) {
         app.quit()
       }
     })

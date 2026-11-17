@@ -16,7 +16,8 @@ const mocks = vi.hoisted(() => ({
   startModelJob: (_options: Record<string, unknown>): Promise<unknown> => Promise.resolve(null),
   makeRelay: (): unknown => null,
   hearFromComfy: (_message: unknown): void => {},
-  broadcasts: [] as [string, unknown][]
+  broadcasts: [] as [string, unknown][],
+  keepComfyRunning: true
 }))
 
 vi.mock('fs', () => ({
@@ -63,6 +64,7 @@ vi.mock('../lib/ipc/shared', async () => {
     _hasActiveLaunch: (id: string) => mocks.launching.has(id),
     _operationAborts: new Map(),
     _runningSessions: mocks.sessions,
+    keepsComfyRunningWhenWindowCloses: () => mocks.keepComfyRunning,
     sessionLifecycleEvents: new Emitter(),
     sourceMap: { standalone: { category: 'local' }, remote: { category: 'remote' } },
     stopRunning: (id: string) => mocks.stopRunning(id)
@@ -1340,5 +1342,61 @@ describe('a ComfyUI the person started themselves', () => {
     await local.stopBuildsRunningForAppsOnly()
 
     expect(stopped).toEqual([])
+  })
+})
+
+describe('a ComfyUI whose window the person closed, with keepComfyRunningWhenWindowCloses off', () => {
+  beforeEach(() => {
+    mocks.keepComfyRunning = false
+  })
+
+  afterEach(() => {
+    mocks.keepComfyRunning = true
+  })
+
+  it('does not run with its window closed, since closing the window stops it', () => {
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'window', hadWindow: true })
+
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(false)
+  })
+})
+
+describe('a ComfyUI whose window the person closed', () => {
+  it('runs with its window closed, so opening it shows it in a new window', () => {
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'window' })
+
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(true)
+  })
+
+  it('does not while its window is open', () => {
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'window' })
+    mocks.windows.set(STUDIO, { window: {} })
+
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(false)
+  })
+
+  it.each(['console', 'external'])('does not when the person started it in %s mode', (mode) => {
+    mocks.sessions.set(STUDIO, { port: PORT, mode })
+
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(false)
+  })
+
+  it('does not once it stops', () => {
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(false)
+  })
+
+  it('runs with its window closed when apps started it and let it go while its window was open', async () => {
+    startsWhenLaunched()
+    await startLocal(WANT)
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'console' })
+    mocks.windows.set(STUDIO, { window: {} })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    mocks.windows.delete(STUDIO)
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'console', hadWindow: true })
+
+    expect(stopped).toEqual([])
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(true)
   })
 })
