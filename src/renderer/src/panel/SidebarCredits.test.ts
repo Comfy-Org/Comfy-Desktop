@@ -86,13 +86,13 @@ describe('SidebarCredits', () => {
     expect(refreshCreditBalance).toHaveBeenCalledOnce()
   })
 
-  it('lines the number up in fixed-width digits and draws the coin in the text color', async () => {
+  it('lines the number up in fixed-width digits and draws the coin in the row icon color', async () => {
     const wrapper = await mountCredits()
 
     const value = wrapper.get('[data-testid="app-sidebar-credits-value"]').element
     const coin = row(wrapper).get('svg').element
     expect(getComputedStyle(value).fontVariantNumeric).toContain('tabular-nums')
-    expect(getComputedStyle(coin).stroke).toBe(getComputedStyle(value).color)
+    expect(getComputedStyle(coin).stroke).toBe(getComputedStyle(row(wrapper).element).color)
     expect(getComputedStyle(coin).fill).toBe('none')
   })
 

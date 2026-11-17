@@ -84,7 +84,7 @@ onUnmounted(() => unsubscribes.forEach((unsubscribe) => unsubscribe()))
     >
       <svg
         viewBox="0 0 16 16"
-        class="size-[15px] shrink-0 fill-none stroke-current text-foreground [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.3]"
+        class="size-[15px] shrink-0 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.3]"
         aria-hidden="true"
       >
         <path
