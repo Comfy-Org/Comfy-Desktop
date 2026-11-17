@@ -22,6 +22,7 @@ import {
   planVersion,
   resolveSetupPlan,
   setupPlatform,
+  splitPathTail,
   type SetupPlan
 } from '../lib/setupPlan'
 import type { SystemInfo } from '../../../types/ipc'
@@ -106,6 +107,7 @@ const lead = computed(() =>
 const location = computed(() =>
   displayPath(installLocation(plan.value?.installRoot ?? '', platform), platform)
 )
+const locationParts = computed(() => splitPathTail(location.value))
 const lowDisk = computed(
   () =>
     diskFree.value !== null &&
@@ -495,9 +497,16 @@ defineExpose({ open, resetContinue })
                   t('setup.location')
                 }}
               </span>
-              <span class="truncate text-foreground" :title="location || undefined">
-                {{ location || t('setup.checking') }}
+              <span
+                v-if="location"
+                class="flex min-w-0 text-foreground"
+                :title="location"
+                data-testid="setup-location"
+              >
+                <span class="min-w-0 truncate">{{ locationParts.head }}</span>
+                <span class="max-w-full shrink-0 truncate">{{ locationParts.tail }}</span>
               </span>
+              <span v-else class="truncate text-foreground">{{ t('setup.checking') }}</span>
               <span
                 class="ml-4 text-right whitespace-nowrap"
                 :class="lowDisk ? 'text-[#f0b135]' : 'text-subtle-foreground'"

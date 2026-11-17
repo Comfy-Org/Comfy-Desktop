@@ -152,6 +152,20 @@ describe('Set up, the first screen', () => {
     )
   })
 
+  it('keeps the end of a long install path in view, with the full path on hover', async () => {
+    installApi({ platform: 'win32' })
+    const root = 'C:\\Users\\Alexis\\AppData\\Local\\Comfy-Desktop\\ComfyUI-Installs'
+    window.api.getDefaultInstallDir = vi.fn().mockResolvedValue(root)
+    const w = await mountSetup()
+    const path = w.get('[data-testid="setup-location"]')
+    expect(path.attributes('title')).toBe(`${root}\\ComfyUI`)
+    const [head, tail] = path.findAll('span')
+    expect(head?.text()).toBe(root)
+    expect(head?.classes()).toContain('truncate')
+    expect(tail?.text()).toBe('\\ComfyUI')
+    expect(tail?.classes()).toContain('shrink-0')
+  })
+
   it('says a CPU install has no GPU acceleration', async () => {
     installApi({ variant: { value: 'win-cpu', label: 'CPU', size: 0.9 * GB } })
     const w = await mountSetup()
