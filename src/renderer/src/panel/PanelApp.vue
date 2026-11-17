@@ -27,6 +27,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import { isNewWindowDashboardPage } from '../../../shared/dashboardPages'
 import { seedLauncherPrefsFromUrl, useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useModal } from '../composables/useModal'
 import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
@@ -159,7 +160,10 @@ if (params.get('e2e') === '1') {
 
 type DashboardHomePage = Extract<DashboardPage, 'home' | 'apps' | 'chooser' | 'assets'>
 
-const dashboardHomePage = ref<DashboardHomePage>('home')
+const urlDashboardPage = params.get('dashboardPage')
+const dashboardHomePage = ref<DashboardHomePage>(
+  isNewWindowDashboardPage(urlDashboardPage) ? urlDashboardPage : 'home'
+)
 
 const sidebarPage = computed<DashboardPage | null>(() => {
   const panel = activePanel.value

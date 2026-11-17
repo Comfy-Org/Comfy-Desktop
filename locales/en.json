@@ -16,6 +16,7 @@
     }
   },
   "sidebar": {
+    "openInNewWindow": "Open in new window",
     "builds": "Builds",
     "navigation": "Navigation",
     "home": "Home",
