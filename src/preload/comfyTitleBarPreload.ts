@@ -12,11 +12,7 @@ export type ComfyPanelKey =
   | 'load-snapshot'
   | 'quick-install'
 
-export type CoachmarkKind = 'pill-hint' | 'beta-notice'
-
-function coachmarkKindOf(payload?: { kind?: unknown }): CoachmarkKind {
-  return payload?.kind === 'beta-notice' ? 'beta-notice' : 'pill-hint'
-}
+export type CoachmarkKind = 'beta-notice'
 
 export interface TitleMenuAnchor {
   x: number
@@ -72,7 +68,6 @@ export interface ComfyTitleBarBridge {
   clickInstallUpdatePill(): void
   onDownloadsChanged(cb: (state: DownloadsTrayState) => void): () => void
   clickDownloadsTray(anchor: TitleMenuAnchor): void
-  clickInstallPill(anchor: TitleMenuAnchor): void
   clickFeedback(): void
   clickAnnouncement(): void
   clickRefreshInstance(): void
@@ -255,9 +250,6 @@ const bridge: ComfyTitleBarBridge = {
   clickDownloadsTray: (anchor) => {
     ipcRenderer.send('comfy-window:click-downloads-tray', { anchor })
   },
-  clickInstallPill: (anchor) => {
-    ipcRenderer.send('comfy-window:click-install-pill', { anchor })
-  },
   clickFeedback: () => {
     ipcRenderer.send('comfy-window:click-feedback')
   },
@@ -286,32 +278,27 @@ const bridge: ComfyTitleBarBridge = {
     ipcRenderer.send('comfy-window:hide-titlebar-coachmark')
   },
   onCoachmarkDismissed: (cb) => {
-    const handler = (_event: IpcRendererEvent, payload?: { kind?: unknown }): void =>
-      cb({ kind: coachmarkKindOf(payload) })
+    const handler = (): void => cb({ kind: 'beta-notice' })
     ipcRenderer.on('comfy-titlebar:coachmark-dismissed', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-dismissed', handler)
   },
   onCoachmarkAction: (cb) => {
-    const handler = (_event: IpcRendererEvent, payload?: { kind?: unknown }): void =>
-      cb({ kind: coachmarkKindOf(payload) })
+    const handler = (): void => cb({ kind: 'beta-notice' })
     ipcRenderer.on('comfy-titlebar:coachmark-action', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-action', handler)
   },
   onCoachmarkAutoHidden: (cb: (payload: { kind: CoachmarkKind }) => void) => {
-    const handler = (_e: unknown, payload?: { kind?: unknown }): void =>
-      cb({ kind: coachmarkKindOf(payload) })
+    const handler = (): void => cb({ kind: 'beta-notice' })
     ipcRenderer.on('comfy-titlebar:coachmark-auto-hidden', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-auto-hidden', handler)
   },
   onCoachmarkSettled: (cb: (payload: { kind: CoachmarkKind }) => void) => {
-    const handler = (_e: unknown, payload?: { kind?: unknown }): void =>
-      cb({ kind: coachmarkKindOf(payload) })
+    const handler = (): void => cb({ kind: 'beta-notice' })
     ipcRenderer.on('comfy-titlebar:coachmark-settled', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-settled', handler)
   },
   onCoachmarkDisplaced: (cb: (payload: { kind: CoachmarkKind }) => void) => {
-    const handler = (_e: unknown, payload?: { kind?: unknown }): void =>
-      cb({ kind: coachmarkKindOf(payload) })
+    const handler = (): void => cb({ kind: 'beta-notice' })
     ipcRenderer.on('comfy-titlebar:coachmark-displaced', handler)
     return () => ipcRenderer.removeListener('comfy-titlebar:coachmark-displaced', handler)
   },

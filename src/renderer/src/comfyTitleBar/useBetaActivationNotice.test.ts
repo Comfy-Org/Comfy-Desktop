@@ -17,7 +17,6 @@ describe('useBetaActivationNotice copy resolution', () => {
       isFirstUseLockdown: ref(false),
       isLoadingLockdown: ref(false),
       anchorRef: shallowRef(anchor),
-      isSuppressed: () => false,
       copyFor: () => ({
         title: copy(),
         body: copy(),
