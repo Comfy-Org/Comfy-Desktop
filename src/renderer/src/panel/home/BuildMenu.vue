@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  useTemplateRef,
+  watch,
+  type ComponentPublicInstance
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Trash2, X } from '@lucide/vue'
 import Menu from '@comfyorg/design-system/menu/Menu'
@@ -28,6 +37,7 @@ const open = defineModel<boolean>('open', { default: false })
 const { t } = useI18n()
 const { items, run } = useBuildMenu(() => build)
 const confirmingUninstall = ref(false)
+const confirmUninstallItem = useTemplateRef<ComponentPublicInstance>('confirmUninstallItem')
 
 const reference = computed(() => anchor)
 
@@ -47,9 +57,7 @@ function select(event: Event, id: string): void {
     event.preventDefault()
     confirmingUninstall.value = true
     void nextTick(() =>
-      document
-        .querySelector<HTMLElement>('[data-testid="build-menu-confirm-uninstall"]')
-        ?.focus({ preventScroll: true })
+      (confirmUninstallItem.value?.$el as HTMLElement | undefined)?.focus({ preventScroll: true })
     )
     return
   }
@@ -109,6 +117,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
         <span class="text-muted-foreground">{{ t('actions.deleteConfirmMessage') }}</span>
       </div>
       <MenuItem
+        ref="confirmUninstallItem"
         class="text-destructive focus:text-destructive"
         :text-value="t('actions.delete')"
         data-testid="build-menu-confirm-uninstall"

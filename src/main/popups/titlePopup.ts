@@ -1048,7 +1048,7 @@ function openGlobalSettingsForHost(
     await getGithubStarCount('comfy-org/ComfyUI').catch(() => null)
     githubStarsFetchAttempted = true
     if (parentEntry.window.isDestroyed()) return
-    await broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+    broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
   })()
 }
 
@@ -1350,9 +1350,7 @@ function buildGlobalSettingsSnapshot(
   }
 }
 
-async function broadcastGlobalSettingsSnapshotToTitlePopups(
-  _bindings: TitlePopupHostBindings
-): Promise<void> {
+function broadcastGlobalSettingsSnapshotToTitlePopups(_bindings: TitlePopupHostBindings): void {
   for (const entry of titlePopupsByParent.values()) {
     if (entry.kind !== 'global-settings') continue
     if (!entry.view.isOpen && entry.view.pendingShowTimer === null) continue
@@ -2075,7 +2073,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       const value = payload?.value
       if (typeof value !== 'number' || !Number.isFinite(value)) return
       globalSettingsLastCheckedAt = value
-      void broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+      broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
     }
   )
 
@@ -2083,7 +2081,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   installationEvents.on('changed', () => {
     void refreshCachedInstallsForPicker()
     void broadcastInstancePickerSnapshotToTitlePopups(bindings)
-    void broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+    broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
   })
   hostInstallEvents.on('changed', () => {
     void broadcastInstancePickerSnapshotToTitlePopups(bindings)
@@ -2092,11 +2090,11 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     void broadcastInstancePickerSnapshotToTitlePopups(bindings)
   })
   globalSettingsEvents.on('changed', () => {
-    void broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+    broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
     void broadcastInstancePickerSnapshotToTitlePopups(bindings)
   })
   updater.onUpdateStateChanged(() => {
-    void broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+    broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
   })
   ipcMain.on('comfy-popup-internal:noop', () => {})
 }
@@ -2104,7 +2102,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 export function notifyGlobalSettingsDownloadProgress(progress: Record<string, unknown>): void {
   lastAppUpdateProgress = progress
   if (!activeBindings) return
-  void broadcastGlobalSettingsSnapshotToTitlePopups(activeBindings)
+  broadcastGlobalSettingsSnapshotToTitlePopups(activeBindings)
 }
 
 export function _test_setTitlePopupEntry(webContentsId: number, entry: TitlePopupEntry): void {
