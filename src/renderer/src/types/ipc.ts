@@ -7,6 +7,7 @@ export type {
   AssetSummary,
   LocalAssetListing,
   CatalogWorkflow,
+  TemplateSearchAvailability,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,

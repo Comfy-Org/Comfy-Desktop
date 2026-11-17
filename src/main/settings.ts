@@ -59,6 +59,8 @@ export interface KnownSettings {
   pendingDesktopUpdateAttemptVersion?: string
   installUpdatesOnStartup?: boolean
   showInstallerUI?: boolean
+  templateSearchEnabled?: boolean
+  templateSearchBundleBase?: string
 }
 
 export type Settings = KnownSettings & Record<string, unknown>
@@ -179,6 +181,8 @@ const SETTINGS_SCHEMA = {
   oemWorkflowImportVersion: { nullable: false, telemetry: { policy: 'omit' } },
   lastSaveDialogDir: { nullable: true, telemetry: { policy: 'presence' } },
   dashboardWorkspaceId: { nullable: false, telemetry: { policy: 'omit' } },
+  templateSearchEnabled: { nullable: false, telemetry: { policy: 'omit' } },
+  templateSearchBundleBase: { nullable: true, telemetry: { policy: 'omit' } },
   pendingDownloadedUpdateVersion: { nullable: true, telemetry: { policy: 'omit' } },
   lastStartupUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
   startupInstallNotReadyVersion: { nullable: true, telemetry: { policy: 'omit' } },

@@ -257,6 +257,8 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     trashAsset: async () => true,
     listHomeWorkflows: async () => HOME_WORKFLOWS,
     openCatalogWorkflow: async () => true,
+    prepareTemplateSearch: async () => undefined,
+    downloadTemplateSearch: async () => undefined,
     getAppsEnabled: async () => true,
     listApps: async () => APP_CARDS,
     showAppPage: async () => 'ready',
@@ -436,6 +438,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
 
     onAppPageStatusChanged: listen('onAppPageStatusChanged'),
     onAppPageClosed: listen('onAppPageClosed'),
+    onTemplateSearchAvailability: listen('onTemplateSearchAvailability'),
     onFirstUseSkip: listen('onFirstUseSkip'),
     onOpenFeedback: listen('onOpenFeedback'),
     onOpenAnnouncement: listen('onOpenAnnouncement'),

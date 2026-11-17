@@ -72,6 +72,17 @@ function dispatchToSessionHandler(
 
 const _activeActions = new Map<string, { actionId: string }>()
 
+export interface SessionActionObserver {
+  before(installationId: string, actionId: string): Promise<void>
+  after(installationId: string, actionId: string): void
+}
+
+let observer: SessionActionObserver | null = null
+
+export function setSessionActionObserver(next: SessionActionObserver | null): void {
+  observer = next
+}
+
 export function _getActiveOperations(): { installationId: string; actionId: string }[] {
   return Array.from(_activeActions, ([installationId, { actionId }]) => ({
     installationId,
@@ -94,6 +105,7 @@ export async function dispatchSessionAction(
     _broadcastToRenderer('operation-changed', { installationId, actionId, active: true })
   }
   try {
+    if (owned && observer) await observer.before(installationId, actionId).catch(() => {})
     if (isSessionActionId(actionId)) {
       return await dispatchToSessionHandler(ctx, actionId)
     }
@@ -103,5 +115,6 @@ export async function dispatchSessionAction(
       _activeActions.delete(installationId)
       _broadcastToRenderer('operation-changed', { installationId, actionId, active: false })
     }
+    if (owned) observer?.after(installationId, actionId)
   }
 }

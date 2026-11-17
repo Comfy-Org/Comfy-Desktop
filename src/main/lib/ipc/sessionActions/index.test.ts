@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const broadcast = vi.fn<(channel: string, data: unknown) => void>()
 const delegate = vi.fn<() => Promise<{ ok: boolean }>>()
@@ -26,7 +26,7 @@ vi.mock('./delegate', () => ({
 }))
 vi.mock('./withAbortable', () => ({ withAbortableSessionAction: vi.fn() }))
 
-import { dispatchSessionAction, _getActiveOperations } from './index'
+import { dispatchSessionAction, _getActiveOperations, setSessionActionObserver } from './index'
 import type { ActionContext } from './types'
 
 function ctx(installationId = 'inst-1'): ActionContext {
@@ -203,5 +203,63 @@ describe('dispatchSessionAction operation tracking', () => {
     resolveB({ ok: true })
     await b
     expect(_getActiveOperations()).toEqual([])
+  })
+})
+
+describe('the session action observer', () => {
+  const before = vi.fn<(id: string, action: string) => Promise<void>>(async () => undefined)
+  const after = vi.fn<(id: string, action: string) => void>()
+
+  beforeEach(() => {
+    delegate.mockReset()
+    delegate.mockResolvedValue({ ok: true })
+    launch.mockReset()
+    launch.mockResolvedValue({ ok: true })
+    before.mockReset()
+    before.mockResolvedValue(undefined)
+    after.mockReset()
+    setSessionActionObserver({ before, after })
+  })
+
+  afterEach(() => {
+    setSessionActionObserver(null)
+  })
+
+  it('holds the action until the observer has finished getting ready for it', async () => {
+    let release!: () => void
+    before.mockReturnValue(new Promise<void>((resolve) => (release = resolve)))
+    const pending = dispatchSessionAction(ctx(), 'update-comfyui')
+    await Promise.resolve()
+    expect(delegate).not.toHaveBeenCalled()
+
+    release()
+    await pending
+    expect(delegate).toHaveBeenCalled()
+  })
+
+  it('tells the observer once the operation no longer counts as active', async () => {
+    const seen: unknown[] = []
+    after.mockImplementation(() => void seen.push(_getActiveOperations()))
+    await dispatchSessionAction(ctx(), 'update-comfyui')
+    expect(after).toHaveBeenCalledWith('inst-1', 'update-comfyui')
+    expect(seen).toEqual([[]])
+  })
+
+  it('tells the observer about a launch turned away while another runs only once', async () => {
+    let finishFirst!: (value: { ok: boolean }) => void
+    launch.mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+    const first = dispatchSessionAction(ctx(), 'launch')
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1))
+    await dispatchSessionAction(ctx(), 'launch')
+    finishFirst({ ok: true })
+    await first
+
+    expect(before.mock.calls).toEqual([['inst-1', 'launch']])
+    expect(after.mock.calls).toEqual([['inst-1', 'launch']])
+  })
+
+  it('keeps an action going when the observer fails', async () => {
+    before.mockRejectedValue(new Error('stuck'))
+    await expect(dispatchSessionAction(ctx(), 'update-comfyui')).resolves.toEqual({ ok: true })
   })
 })

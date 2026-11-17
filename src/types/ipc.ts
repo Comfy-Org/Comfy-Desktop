@@ -160,6 +160,20 @@ export interface CatalogWorkflow {
   thumbnailUrl: string | null
 }
 
+export type TemplateSearchUnavailableReason =
+  'runtime_unsupported' | 'update_desktop' | 'offline' | 'download_failed' | 'failed'
+
+export type TemplateSearchAvailability =
+  | { kind: 'off' }
+  | { kind: 'idle' }
+  | { kind: 'ready' }
+  | { kind: 'starting' }
+  | { kind: 'no_local_build' }
+  | { kind: 'waiting_for_build' }
+  | { kind: 'needs_download'; bytes: number }
+  | { kind: 'downloading'; received: number; total: number }
+  | { kind: 'unavailable'; reason: TemplateSearchUnavailableReason }
+
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 
 export interface AssetSummary {
@@ -1175,6 +1189,11 @@ export interface ElectronApi {
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
+  prepareTemplateSearch(): Promise<void>
+  downloadTemplateSearch(): Promise<void>
+  onTemplateSearchAvailability(
+    callback: (availability: TemplateSearchAvailability) => void
+  ): () => void
   getAppsEnabled(): Promise<boolean>
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>

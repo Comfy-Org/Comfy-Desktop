@@ -41,6 +41,7 @@ import { registerCatalogHandlers } from './registerCatalogHandlers'
 import { registerAppsHandlers } from './registerAppsHandlers'
 import { registerAppsLocalHandlers } from './registerAppsLocalHandlers'
 import { registerAppsTelemetryHandlers } from './registerAppsTelemetryHandlers'
+import { registerTemplateSearchHandlers } from './registerTemplateSearchHandlers'
 import { reconcileAdoptedSettings } from '../desktopAdopt'
 import {
   finalizeComfyBuilderRecovery,
@@ -289,5 +290,9 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerAppsHandlers()
   registerAppsLocalHandlers()
   registerAppsTelemetryHandlers()
+  registerTemplateSearchHandlers({
+    isLocalInstallation: (inst) => sourceMap[inst.sourceId]?.category === 'local',
+    terminalEnvOf: (inst) => sourceMap[inst.sourceId]?.getTerminalEnv?.(inst) ?? null
+  })
   return startupRecovery.then(() => undefined)
 }

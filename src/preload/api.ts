@@ -1,6 +1,12 @@
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { AppPageStatus, ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
+import type {
+  AppPageStatus,
+  ElectronApi,
+  ResolvedTheme,
+  AdoptPromptRequest,
+  TemplateSearchAvailability
+} from '../types/ipc'
 
 export function buildElectronApi(): ElectronApi {
   return {
@@ -105,6 +111,14 @@ export function buildElectronApi(): ElectronApi {
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
+    prepareTemplateSearch: () => ipcRenderer.invoke('template-search:prepare'),
+    downloadTemplateSearch: () => ipcRenderer.invoke('template-search:download'),
+    onTemplateSearchAvailability: (callback) => {
+      const handler = (_event: IpcRendererEvent, availability: TemplateSearchAvailability): void =>
+        callback(availability)
+      ipcRenderer.on('template-search:availability', handler)
+      return () => ipcRenderer.removeListener('template-search:availability', handler)
+    },
     getAppsEnabled: () => ipcRenderer.invoke('apps:get-enabled'),
     listApps: () => ipcRenderer.invoke('apps:list'),
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
