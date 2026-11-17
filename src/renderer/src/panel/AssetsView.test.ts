@@ -1633,6 +1633,32 @@ describe('AssetsView Comfy Cloud pages', () => {
     expect(timesAskedFor(0), 'All comes back from the cache').toBe(2)
   })
 
+  it("hides the old query's pages while the picked type loads", async () => {
+    let finishThreeD: (page: CloudAssetPage) => void = () => {}
+    listAssets.mockImplementation((_id: string, request: PageRequest) =>
+      request.kind === '3d'
+        ? new Promise((resolve) => (finishThreeD = resolve))
+        : Promise.resolve(outputPage(250, request))
+    )
+    const wrapper = await mountCloud()
+    expect(wrapper.find('[data-testid="assets-pagination"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="assets-kind-3d"]').trigger('click')
+    await flushPromises()
+
+    expect(
+      wrapper.find('[data-testid="assets-pagination"]').exists(),
+      'no page of the old query can be clicked'
+    ).toBe(false)
+
+    finishThreeD(outputPage(250, { ...FIRST_PAGE, kind: '3d' }))
+    await flushPromises()
+
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '1–5 of 5'
+    )
+  })
+
   it('says nothing matches when Comfy Cloud has no outputs of the picked type', async () => {
     cloudOutputs(250)
     const wrapper = await mountCloud()

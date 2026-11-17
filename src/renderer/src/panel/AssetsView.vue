@@ -586,7 +586,10 @@ watch([loadKey, listedCloudId], () => {
   lookedUpDetail.value = null
   detailKey.value = null
 })
-watch(cloudQuery, () => (currentPage.value = 1))
+watch(cloudQuery, () => {
+  cloudTotal.value = 0
+  currentPage.value = 1
+})
 let reloadAskedByUser = false
 
 watch(
