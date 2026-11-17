@@ -105,7 +105,7 @@ vi.mock('./modelDownloadStaging', () => ({
 
 const overrides = vi.hoisted(() => ({
   installationsGet: null as null | ((id: string) => Promise<unknown>),
-  collectModelScanContext: null as null | typeof ModelDownloadPathsModule.collectModelScanContext,
+  collectModelScanRoots: null as null | (() => Promise<string[]>),
   modelsBaseDir: null as null | string
 }))
 vi.mock('../installations', async (importOriginal) => {
@@ -120,10 +120,10 @@ vi.mock('./modelDownloadPaths', async (importOriginal) => {
   const actual = await importOriginal<typeof ModelDownloadPathsModule>()
   return {
     ...actual,
-    collectModelScanContext: () =>
-      overrides.collectModelScanContext
-        ? overrides.collectModelScanContext()
-        : actual.collectModelScanContext(),
+    collectModelScanRoots: () =>
+      overrides.collectModelScanRoots
+        ? overrides.collectModelScanRoots()
+        : actual.collectModelScanRoots(),
     getModelsBaseDir: () => overrides.modelsBaseDir ?? actual.getModelsBaseDir()
   }
 })
@@ -1288,7 +1288,7 @@ describe('model download startup safety (issue #1322)', () => {
   it('reports unsafe when collecting the model scan roots fails', async () => {
     mod._test_resetModelDownloadsInit()
     const migrationsBefore = migrateLegacyModelDownloadArtifacts.mock.calls.length
-    overrides.collectModelScanContext = async () => {
+    overrides.collectModelScanRoots = async () => {
       throw new Error('installations listing failed')
     }
     try {
@@ -1297,7 +1297,7 @@ describe('model download startup safety (issue #1322)', () => {
       expect(result.unsafePaths).toEqual([])
       expect(migrateLegacyModelDownloadArtifacts.mock.calls.length).toBe(migrationsBefore)
     } finally {
-      overrides.collectModelScanContext = null
+      overrides.collectModelScanRoots = null
     }
     const next = await mod.initializeModelDownloads()
     expect(next.safe).toBe(true)

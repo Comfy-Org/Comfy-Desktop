@@ -21,7 +21,7 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('model download telemetry', () => {
-  it('counts transitions once and retains unthrottled bytes in terminal events', () => {
+  it('emits one start and one result with the resume count and unthrottled bytes', () => {
     const telemetry = new ModelDownloadTelemetry(model)
     telemetry.report({ status: 'pending' })
     for (let bytes = 1; bytes <= 100; bytes++) {
@@ -41,8 +41,6 @@ describe('model download telemetry', () => {
 
     expect(capture.mock.calls.map(([event]) => event)).toEqual([
       'comfy.desktop.model_download.started',
-      'comfy.desktop.model_download.paused',
-      'comfy.desktop.model_download.resumed',
       'comfy.desktop.model_download.result'
     ])
     expect(capture.mock.calls[0]?.[1]).toMatchObject({
@@ -83,14 +81,12 @@ describe('model download telemetry', () => {
     new ModelDownloadTelemetry({
       ...model,
       filename: 'model.private-extension',
-      directory: 'models/private-directory',
-      installationId: null
+      directory: 'models/private-directory'
     }).report({ status: 'pending' })
 
     expect(capture.mock.lastCall?.[1]).toMatchObject({
       directory_bucket: 'other',
-      file_ext: 'other',
-      installation_id: null
+      file_ext: 'other'
     })
     expect(JSON.stringify(capture.mock.calls)).not.toContain('private')
   })

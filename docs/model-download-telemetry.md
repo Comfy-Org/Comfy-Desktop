@@ -1,20 +1,20 @@
 # Model download telemetry
 
 The shared model download manager records `comfy.desktop.model_download.*` events for
-downloads requested by hosted ComfyUI, Apps, and template tasks. These use the existing
-main-process PostHog client, consent gate, privacy scrubbing, and volume limits. They do not
-include general file downloads, generated assets, or installation archives.
+attempts that start before a local build's first successful run. This covers managed model
+downloads requested by hosted ComfyUI, Apps, and template tasks. The existing main-process
+PostHog client applies consent, privacy scrubbing, and volume limits.
 
 | Event suffix | Meaning                                                                               |
 | ------------ | ------------------------------------------------------------------------------------- |
 | `started`    | A new request needs a model download, including requests rejected during preparation. |
-| `paused`     | An active request pauses, including user pauses and sleep/quit suspension.            |
-| `resumed`    | A paused request resumes within the same process.                                     |
 | `result`     | The attempt ends with `completed`, `error`, or `cancelled` in the `result` property.  |
 
-Progress updates produce no events. Joining an existing job and finding an already-present
-model produce no new lifecycle. A paused download found on disk produces no events until it
-is resumed or cancelled. A process exit can leave a started request without a terminal event.
+Each eligible attempt emits up to two events. Its result is recorded even if the build completes
+its first run while the attempt is in progress. A retry or a restored transfer checks eligibility
+when it begins. Cached models, requests that join an active job, and parked jobs never resumed
+produce no additional events. Progress, pauses, and resumes are reflected in the attempt's result.
+A process exit can leave a started request without a terminal event.
 
 Each event includes:
 
@@ -23,7 +23,7 @@ Each event includes:
   new IDs. Use it to join events for one attempt.
 - `installation_id` identifies the local build that requested the managed download. It matches
   the build ID on install completion and first successful execution. Restored jobs use the
-  persisted ID when it still refers to a local build. Unattributed downloads use null.
+  persisted ID to look up the local build at resume time.
 - `source`: `comfyui`, `app`, `template`, `restored`, or `unknown`. Joined jobs retain the
   original request's source and build ID.
 - `provider`: `huggingface`, `civitai`, or `other`, based on the original URL's host. Redirect
@@ -37,7 +37,7 @@ Each event includes:
 - `directory_bucket`, `file_ext`, and `size_bucket` support the existing PostHog charts.
   They report a known directory category, supported file extension, and expected size range.
 - `duration_ms`: wall-clock time since `started` in this process, including preparation and
-  pauses. A restored job starts a new duration when resumed or cancelled.
+  pauses. A restored job starts a new duration when resumed.
 - `resume_count`: within-process resumes since `started`.
 
 Results with `error` additionally contain `error_bucket`, using the shared error buckets with download
@@ -51,6 +51,9 @@ Use download starts with a `download_id` and that build ID after installation an
 successful run or the end of the window. Join each start to its result by `download_id` and compare
 first-run conversion by observed download outcome, source, duration, and size. Use the same
 conversion window for builds with and without recorded downloads.
+
+The existing PostHog charts can read the same event names and dimensions. New download data
+from this release represents the pre-activation cohort.
 
 Keep starts with missing results in an unknown outcome bucket. An in-progress download, process exit,
 consent change, or telemetry limit can leave the start without a result. Consent changes can also leave

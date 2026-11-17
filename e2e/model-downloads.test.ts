@@ -18,6 +18,7 @@ test.describe.configure({ mode: 'serial' })
 
 const ETAG = '"lc-model-e2e-v1"'
 const LAST_MODIFIED = 'Wed, 01 Jan 2025 00:00:00 GMT'
+const BUILD_ID = 'model-download-activation-build'
 
 interface SeededJob {
   file: string
@@ -100,7 +101,8 @@ async function seedStagedPair(job: SeededJob): Promise<void> {
       etag: ETAG,
       lastModified: LAST_MODIFIED,
       directory: 'checkpoints',
-      filename: job.file
+      filename: job.file,
+      installationId: BUILD_ID
     })
   )
 }
@@ -108,6 +110,14 @@ async function seedStagedPair(job: SeededJob): Promise<void> {
 async function launch(): Promise<void> {
   ctx = await launchApp({
     profileDir,
+    installations: [
+      {
+        id: BUILD_ID,
+        installPath: path.join(profileDir, 'download-build'),
+        useSharedModels: true,
+        seen: true
+      }
+    ],
     settings: {
       firstUseCompleted: true,
       telemetryEnabled: false,
@@ -213,6 +223,7 @@ test.beforeAll(async () => {
   }
   modelRoot = await mkdtemp(path.join(os.tmpdir(), 'launcher-e2e-models-'))
   profileDir = await mkdtemp(path.join(os.tmpdir(), 'launcher-e2e-profile-'))
+  await mkdir(path.join(profileDir, 'download-build'))
   for (const job of Object.values(JOBS)) {
     await seedStagedPair(job)
   }
@@ -261,6 +272,7 @@ test('resume completes atomically and records model download telemetry @real-com
   const started = starts[0]!
   expect(started).toMatchObject({
     source: 'restored',
+    installation_id: BUILD_ID,
     received_bytes: job.stagedSize,
     total_bytes: job.totalSize,
     is_retry: false
@@ -271,6 +283,7 @@ test('resume completes atomically and records model download telemetry @real-com
   expect(completed).toHaveLength(1)
   expect(completed[0]).toMatchObject({
     result: 'completed',
+    installation_id: BUILD_ID,
     file_ext: 'safetensors',
     received_bytes: job.totalSize,
     total_bytes: job.totalSize,

@@ -19,7 +19,7 @@ interface ModelDownloadTelemetryOptions {
   source: ModelDownloadSource
   filename: string
   directory: string
-  installationId: string | null
+  installationId: string
   isRetry?: boolean
 }
 
@@ -140,14 +140,8 @@ export class ModelDownloadTelemetry {
     }
     if (state.status === 'downloading' && this.status === 'paused') {
       this.resumeCount++
-      this.send('resumed')
-    } else if (state.status === 'paused' && this.status !== 'paused') {
-      this.send('paused')
-    } else if (
-      state.status === 'completed' ||
-      state.status === 'cancelled' ||
-      state.status === 'error'
-    ) {
+    }
+    if (state.status === 'completed' || state.status === 'cancelled' || state.status === 'error') {
       this.settled = true
       this.send('result', {
         result: state.status,
@@ -157,10 +151,7 @@ export class ModelDownloadTelemetry {
     this.status = state.status
   }
 
-  private send(
-    event: 'started' | 'paused' | 'resumed' | 'result',
-    extra: TelemetryContext = {}
-  ): void {
+  private send(event: 'started' | 'result', extra: TelemetryContext = {}): void {
     try {
       capture(`comfy.desktop.model_download.${event}`, {
         ...this.properties,

@@ -36,7 +36,9 @@ vi.mock('../settings', () => ({
 vi.mock('../installations', () => ({
   get: async (id: string) => (id === buildId ? installation : null),
   list: async () => [installation],
-  update: async () => {}
+  update: async (_id: string, fields: Partial<InstallationRecord>) => {
+    installation = { ...installation, ...fields }
+  }
 }))
 vi.mock('../host/registry', () => ({ findInstallationIdByComfySender: () => buildId }))
 vi.mock('./ipc/shared', () => ({ _broadcastToRenderer: vi.fn() }))
@@ -77,6 +79,26 @@ function options(
     installationId: buildId,
     source: 'app'
   }
+}
+
+function seedRestoredModel(installationId?: string): string {
+  const opts = options('slow')
+  const finalPath = path.join(modelsDir, opts.directory, opts.filename)
+  fs.mkdirSync(path.dirname(stagingPathFor(finalPath)), { recursive: true })
+  fs.writeFileSync(stagingPathFor(finalPath), content.subarray(0, 3))
+  expect(
+    writeStagedMeta(stagingMetaPathFor(finalPath), {
+      version: 2,
+      jobId: 'private-persisted-id',
+      url: opts.url,
+      filename: opts.filename,
+      directory: opts.directory,
+      expectedSize: content.length,
+      installationId,
+      etag: '"model-v1"'
+    })
+  ).toBe(true)
+  return finalPath
 }
 
 beforeAll(async () => {
@@ -244,7 +266,22 @@ describe('model download events through the real manager and transfer', () => {
     expect(requestPaths).toEqual(['/success'])
   })
 
-  it('joins concurrent requests and records pause and resume once on the same download', async () => {
+  it.each([
+    { state: 'activated', installationId: buildId, firstRunAt: '2026-11-17T12:00:00.000Z' },
+    { state: 'unattributed', installationId: null, firstRunAt: undefined }
+  ])(
+    'downloads for an $state build without download telemetry',
+    async ({ installationId, firstRunAt }) => {
+      installation.firstRunAt = firstRunAt
+      const opts = options('success')
+      const job = await manager.startManagedModelJob({ ...opts, installationId })
+      await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+      expect(fs.readFileSync(path.join(modelsDir, opts.directory, opts.filename))).toEqual(content)
+      expect(events()).toEqual([])
+    }
+  )
+
+  it('joins requests and retains a resumed attempt result after the build activates', async () => {
     const onProgress = vi.fn()
     const opts = { ...options('slow'), onProgress }
     const first = await manager.startManagedModelJob(opts)
@@ -254,12 +291,20 @@ describe('model download events through the real manager and transfer', () => {
     expect(eventNames()).toEqual(['started'])
     expect(manager.pauseModelDownload(first.id)).toBe(true)
     expect(manager.pauseModelDownload(first.id)).toBe(true)
-    expect(eventNames()).toEqual(['started', 'paused'])
-    expect(events()[1]!.properties.received_bytes).toBe(3)
+    expect(eventNames()).toEqual(['started'])
+    createExecutionTap({ installationId: buildId }).ingest(
+      'got prompt\nPrompt executed in 0.5 seconds\n',
+      'stdout'
+    )
+    await vi.waitFor(() =>
+      expect(captured.map(({ event }) => event)).toContain(
+        'comfy.desktop.execution.first_completed'
+      )
+    )
     expect(manager.resumeModelDownload(first.id)).toBe(true)
     expect(manager.resumeModelDownload(first.id)).toBe(true)
     await expect(joined.completion).resolves.toMatchObject({ status: 'completed' })
-    expect(eventNames()).toEqual(['started', 'paused', 'resumed', 'result'])
+    expect(eventNames()).toEqual(['started', 'result'])
     expect(new Set(events().map(({ properties }) => properties.download_id)).size).toBe(1)
     expect(events().at(-1)!.properties).toMatchObject({
       received_bytes: content.length,
@@ -313,6 +358,21 @@ describe('model download events through the real manager and transfer', () => {
     expect(events()[2]!.properties.download_id).not.toBe(events()[0]!.properties.download_id)
   })
 
+  it('skips telemetry for retries that begin after activation', async () => {
+    const opts = options('retry')
+    const job = await manager.startManagedModelJob(opts)
+    await expect(job.completion).resolves.toMatchObject({ status: 'error' })
+    installation.firstRunAt = new Date().toISOString()
+    expect(manager.retryDownload(job.id)).toBe(true)
+
+    await vi.waitFor(() => {
+      expect(requestPaths).toEqual(['/retry', '/retry'])
+      expect(manager.getActiveDownloads()).toHaveLength(0)
+    })
+    expect(fs.readFileSync(path.join(modelsDir, opts.directory, opts.filename))).toEqual(content)
+    expect(eventNames()).toEqual(['started', 'result'])
+  })
+
   it('reports directory preparation failures before making a network request', async () => {
     fs.writeFileSync(path.join(modelsDir, 'checkpoints'), 'not a directory')
     const job = await manager.startManagedModelJob(options('success'))
@@ -335,45 +395,43 @@ describe('model download events through the real manager and transfer', () => {
     expect(requestPaths).toHaveLength(0)
   })
 
+  it('records a restored attempt when the build resumes before its first run', async () => {
+    const finalPath = seedRestoredModel(buildId)
+    await manager.initializeModelDownloads()
+    expect(events()).toEqual([])
+    const restored = manager.getActiveDownloads()[0]!
+    expect(manager.resumeModelDownload(restored.id!)).toBe(true)
+
+    await vi.waitFor(() => expect(eventNames()).toEqual(['started', 'result']))
+    expect(events()[0]!.properties).toMatchObject({
+      source: 'restored',
+      installation_id: buildId,
+      received_bytes: 3
+    })
+    expect(events()[1]!.properties).toMatchObject({
+      installation_id: buildId,
+      result: 'completed'
+    })
+    expect(JSON.stringify(events())).not.toContain('private-persisted-id')
+    expect(fs.readFileSync(finalPath)).toEqual(content)
+  })
+
   it.each([
-    { stagedBuildId: buildId, attributedBuildId: buildId },
-    { stagedBuildId: 'private-staged-build', attributedBuildId: null },
-    { stagedBuildId: undefined, attributedBuildId: null }
+    { state: 'activated', stagedBuildId: buildId },
+    { state: 'unknown', stagedBuildId: 'private-staged-build' },
+    { state: 'unattributed', stagedBuildId: undefined }
   ])(
-    'observes restored downloads with build ID $stagedBuildId on resume',
-    async ({ stagedBuildId, attributedBuildId }) => {
-      const opts = options('slow')
-      const finalPath = path.join(modelsDir, opts.directory, opts.filename)
-      fs.mkdirSync(path.dirname(stagingPathFor(finalPath)), { recursive: true })
-      fs.writeFileSync(stagingPathFor(finalPath), content.subarray(0, 3))
-      expect(
-        writeStagedMeta(stagingMetaPathFor(finalPath), {
-          version: 2,
-          jobId: 'private-persisted-id',
-          url: opts.url,
-          filename: opts.filename,
-          directory: opts.directory,
-          expectedSize: content.length,
-          installationId: stagedBuildId,
-          etag: '"model-v1"'
-        })
-      ).toBe(true)
+    'resumes a restored download for an $state build without telemetry',
+    async ({ state, stagedBuildId }) => {
+      const finalPath = seedRestoredModel(stagedBuildId)
       await manager.initializeModelDownloads()
-      expect(eventNames()).toEqual([])
+      if (state === 'activated') installation.firstRunAt = new Date().toISOString()
       const restored = manager.getActiveDownloads()[0]!
       expect(manager.resumeModelDownload(restored.id!)).toBe(true)
-      await vi.waitFor(() => expect(eventNames()).toEqual(['started', 'result']))
-      expect(events()[0]!.properties).toMatchObject({
-        source: 'restored',
-        installation_id: attributedBuildId,
-        received_bytes: 3
-      })
-      expect(events()[1]!.properties).toMatchObject({
-        installation_id: attributedBuildId,
-        result: 'completed'
-      })
-      expect(JSON.stringify(events())).not.toMatch(/private-(persisted-id|staged-build)/)
+
+      await vi.waitFor(() => expect(manager.getActiveDownloads()).toHaveLength(0))
       expect(fs.readFileSync(finalPath)).toEqual(content)
+      expect(events()).toEqual([])
     }
   )
 

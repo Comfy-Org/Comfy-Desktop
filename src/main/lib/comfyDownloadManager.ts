@@ -14,7 +14,7 @@ import { ALLOWED_EXTENSIONS, stripQueryParams } from './downloadFilename'
 import type { ComfyTemplateInputReference } from '../../types/comfyDesktopBridge'
 import {
   buildExistenceCandidates,
-  collectModelScanContext,
+  collectModelScanRoots,
   getModelsBaseDir,
   regularFileExists,
   resolveDownloadContextById
@@ -116,6 +116,7 @@ interface PendingDownload {
   settleJob?: (outcome: ModelJobOutcome) => void
   completion?: Promise<ModelJobOutcome>
   telemetry?: ModelDownloadTelemetry
+  restoredTelemetryPending?: boolean
   lastProgress: DownloadProgress & { id: string }
   lastSpeedBytes: number
   lastSpeedTime: number
@@ -693,23 +694,30 @@ function joinModelJob(existing: PendingDownload, opts: ModelJobOptions): ModelJo
   }
 }
 
-async function resolveModelSession(
-  pending: PendingDownload
-): Promise<Electron.Session | undefined> {
-  if (pending.explicitSession) return pending.explicitSession
+async function resolveModelTransferContext(pending: PendingDownload): Promise<{
+  session: Electron.Session | undefined
+  installation?: installations.InstallationRecord | null
+}> {
+  if (pending.explicitSession) return { session: pending.explicitSession }
   if (pending.senderContents && !pending.senderContents.isDestroyed()) {
-    return pending.senderContents.session
+    return { session: pending.senderContents.session }
   }
+  let installation: installations.InstallationRecord | null = null
   if (pending.installationId) {
     try {
-      const inst = await installations.get(pending.installationId)
-      if (inst) return electronSession.fromPartition(expectedPartitionFor(inst))
+      installation = await installations.get(pending.installationId)
+      if (installation) {
+        return {
+          session: electronSession.fromPartition(expectedPartitionFor(installation)),
+          installation
+        }
+      }
     } catch {}
   }
   try {
-    return electronSession.defaultSession
+    return { session: electronSession.defaultSession, installation }
   } catch {
-    return undefined
+    return { session: undefined, installation }
   }
 }
 
@@ -767,7 +775,7 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
   }
   const closing = closingStreamsByDest.get(destKey)
   if (closing) await closing
-  const sess = await resolveModelSession(pending)
+  const { session, installation } = await resolveModelTransferContext(pending)
   if (gen !== pending.attemptGen || pending.suspended || !pendingDownloads.has(pending.id)) {
     return
   }
@@ -777,6 +785,20 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
     return
   }
 
+  if (pending.restoredTelemetryPending) {
+    pending.restoredTelemetryPending = false
+    if (installation?.installPath && !installation.firstRunAt) {
+      pending.telemetry = new ModelDownloadTelemetry({
+        url: pending.url,
+        filename: pending.filename,
+        directory: pending.directory,
+        installationId: installation.id,
+        source: 'restored'
+      })
+      pending.telemetry.report(pending.lastProgress)
+    }
+  }
+
   const transport = startModelTransfer({
     url: pending.url,
     jobId: pending.id,
@@ -784,7 +806,7 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
     directory: pending.directory,
     filename: pending.filename,
     installationId: pending.installationId,
-    session: sess,
+    session,
     expectedSize: pending.expectedSize,
     sha256: pending.sha256,
     onProgress: ({ receivedBytes, totalBytes }) => {
@@ -878,15 +900,18 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   const savePath = path.join(baseDir, directory, filename)
 
   const id = randomUUID()
-  const telemetry = new ModelDownloadTelemetry({
-    url,
-    filename,
-    directory,
-    installationId: ctx ? resolvedInstallId : null,
-    source: opts.source ?? 'unknown',
-    isRetry: opts.isRetry
-  })
-  telemetry.updateBytes(0, opts.expectedSize)
+  const telemetry =
+    ctx && !ctx.hasSuccessfulRun
+      ? new ModelDownloadTelemetry({
+          url,
+          filename,
+          directory,
+          installationId: ctx.installationId,
+          source: opts.source ?? 'unknown',
+          isRetry: opts.isRetry
+        })
+      : undefined
+  telemetry?.updateBytes(0, opts.expectedSize)
 
   retryParamsById.set(id, {
     kind: 'model',
@@ -919,7 +944,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     : undefined
   const rejectJob = (error: string, code?: ModelJobErrorCode): ModelJobHandle => {
     const progress = makeProgress({ status: 'error', error })
-    telemetry.report(progress)
+    telemetry?.report(progress)
     reportProgress(progress)
     return settledJobHandle(id, url, savePath, {
       status: 'error',
@@ -2135,14 +2160,13 @@ function reconcileUnsafeModelWarnings(
 }
 
 async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety> {
-  let scanContext: Awaited<ReturnType<typeof collectModelScanContext>>
+  let roots: string[]
   try {
-    scanContext = await collectModelScanContext()
+    roots = await collectModelScanRoots()
   } catch (err) {
     console.error('Model download startup: collecting model roots failed:', err)
     return { safe: false, unsafePaths: [] }
   }
-  const { roots, installationIds } = scanContext
   let migrationUnsafe: string[] | null
   try {
     migrationUnsafe = (await migrateLegacyModelDownloadArtifacts(roots)).unsafe
@@ -2216,16 +2240,7 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       sha256: meta.sha256,
       settleJob,
       completion,
-      telemetry: new ModelDownloadTelemetry({
-        url: meta.url,
-        filename: meta.filename,
-        directory: meta.directory,
-        installationId:
-          meta.installationId && installationIds.has(meta.installationId)
-            ? meta.installationId
-            : null,
-        source: 'restored'
-      }),
+      restoredTelemetryPending: true,
       lastProgress: progress,
       lastSpeedBytes: stagedBytes,
       lastSpeedTime: Date.now()
