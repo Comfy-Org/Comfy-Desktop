@@ -117,7 +117,9 @@ describe('Builds toolbar', () => {
 
     await wrapper!.get('.chooser-search').trigger('keydown', { key: 'Escape' })
     await flushPromises()
-    expect(toolbar.querySelector('[data-testid="chooser-search-toggle"]')).not.toBeNull()
+    const toggle = toolbar.querySelector('[data-testid="chooser-search-toggle"]')
+    expect(toggle).not.toBeNull()
+    expect(document.activeElement).toBe(toggle)
   })
 
   it('keeps a typed search visible when the window narrows to the icon layout', async () => {

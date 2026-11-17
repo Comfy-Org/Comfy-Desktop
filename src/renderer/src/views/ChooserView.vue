@@ -180,9 +180,14 @@ function closeSearchIfEmpty(event: FocusEvent): void {
   if (!searchQuery.value.trim()) searchOpen.value = false
 }
 
-function closeSearch(): void {
+const searchToggle = useTemplateRef<{ $el: HTMLElement }>('searchToggle')
+
+async function closeSearch(): Promise<void> {
   searchQuery.value = ''
   searchOpen.value = false
+  if (!searchFolded.value) return
+  await nextTick()
+  searchToggle.value?.$el.focus()
 }
 
 const refreshingWorkspace = computed(() => authStore.loadingWorkspaces || authStore.loadingBuilds)
@@ -357,6 +362,7 @@ const gridHandlers = {
           </div>
           <Button
             v-if="searchFolded"
+            ref="searchToggle"
             variant="muted-textonly"
             size="icon"
             type="button"
