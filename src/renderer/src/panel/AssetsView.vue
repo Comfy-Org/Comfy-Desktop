@@ -186,14 +186,19 @@ const cloudSettled = computed(
     (!authStore.isSignedIn || authStore.workspacesLoaded)
 )
 
-const assetBuilds = computed<AssetBuild[]>(() => {
-  const local = installationStore.installations.filter(
+const localBuilds = computed(() =>
+  installationStore.installations.filter(
     (build) => build.hasOutputFolder === true && inWorkspace(build)
   )
+)
+const hasLocalBuild = computed(() => localBuilds.value.length > 0)
+
+const assetBuilds = computed<AssetBuild[]>(() => {
+  const local = localBuilds.value
   const dedicated = local.filter((build) => !savesToSharedFolder(build))
   return [
     placeOption(CLOUD, t('assets.cloud'), true),
-    ...(local.some(savesToSharedFolder)
+    ...(!hasLocalBuild.value || local.some(savesToSharedFolder)
       ? [placeOption(SHARED, t('assets.sharedFolder'), false)]
       : []),
     ...dedicated.map((build) => ({
@@ -220,7 +225,9 @@ const selectedBuild = computed<AssetBuild | null>(() => {
     withId(pickedPlace.value) ??
     withId(windowPlace.value) ??
     withId(savedPlace.value) ??
-    options.find((option) => !option.cloud) ??
+    (hasLocalBuild.value || !cloudBuild.value
+      ? options.find((option) => !option.cloud)
+      : undefined) ??
     options[0]!
   )
 })
