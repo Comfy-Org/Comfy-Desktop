@@ -3,7 +3,7 @@ import { get as getInstallation, type InstallationRecord } from '../../installat
 import { getEntryByInstallationId } from '../../host/registry'
 import { isPersistableTemplateId } from '../../sources/standalone/curatedTemplates'
 import type { TerminalEnv } from '../../types/sources'
-import { TEMPLATE_SEARCH_MAX_QUERY } from '../../../shared/templateSearch'
+import { opensInAWindow, TEMPLATE_SEARCH_MAX_QUERY } from '../../../shared/templateSearch'
 import {
   changesBuildEnv,
   createSearchProcess,
@@ -54,10 +54,6 @@ function comfyView(installationId: string): { url: string; contents: WebContents
   const contents = entry?.comfyView.webContents
   if (!entry?.comfyUrl || !contents || contents.isDestroyed()) return null
   return { url: entry.comfyUrl, contents }
-}
-
-function opensInAWindow(installation: InstallationRecord): boolean {
-  return (installation.launchMode ?? 'window') === 'window'
 }
 
 export function registerTemplateSearchHandlers({
@@ -117,7 +113,7 @@ export function registerTemplateSearchHandlers({
         return 'refused'
       const installation = await getInstallation(installationId)
       if (!installation || !isLocalInstallation(installation)) return 'refused'
-      if (!opensInAWindow(installation) || isBuildBusy(installationId)) return 'refused'
+      if (!opensInAWindow(installation.launchMode) || isBuildBusy(installationId)) return 'refused'
       const session = _runningSessions.get(installationId)
       if (!session) {
         queueTemplateOpen(installationId, templateId)

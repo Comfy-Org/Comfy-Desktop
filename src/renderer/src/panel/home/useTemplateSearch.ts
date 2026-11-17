@@ -6,10 +6,10 @@ export const SEARCH_DELAY_MS = 300
 
 type SearchState =
   | { kind: 'idle' }
-  | { kind: 'searching'; query: string }
+  | { kind: 'searching' }
   | { kind: 'result'; query: string; result: TemplateSearchResult }
-  | { kind: 'unavailable'; query: string; availability: TemplateSearchAvailability }
-  | { kind: 'failed'; query: string }
+  | { kind: 'unavailable'; availability: TemplateSearchAvailability }
+  | { kind: 'failed' }
 
 const READY_AGAIN: ReadonlySet<TemplateSearchAvailability['kind']> = new Set(['idle', 'ready'])
 
@@ -39,6 +39,12 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     pendingSearch = undefined
   }
 
+  function forgetAnswer(): void {
+    latestRequest++
+    cancelPendingSearch()
+    state.value = { kind: 'idle' }
+  }
+
   async function search(text: string): Promise<void> {
     cancelPendingSearch()
     const trimmed = text.trim()
@@ -47,13 +53,12 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
       return
     }
     const request = ++latestRequest
-    state.value = { kind: 'searching', query: trimmed }
+    state.value = { kind: 'searching' }
     openFailed.value = false
     const response = await window.api
       .searchTemplates(trimmed, options.buildId() ?? '')
       .catch(() => null)
     if (request !== latestRequest) return
-    activeIndex.value = 0
     if (response?.kind === 'result') {
       state.value = { kind: 'result', query: trimmed, result: response.result }
       activeIndex.value = Math.max(
@@ -61,9 +66,9 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
         rows.value.findIndex((row) => row.best)
       )
     } else if (response?.kind === 'unavailable') {
-      state.value = { kind: 'unavailable', query: trimmed, availability: response.availability }
+      state.value = { kind: 'unavailable', availability: response.availability }
     } else {
-      state.value = { kind: 'failed', query: trimmed }
+      state.value = { kind: 'failed' }
     }
   }
 
@@ -79,15 +84,16 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   watch(query, (text) => {
     cancelPendingSearch()
     if (!text.trim()) {
-      latestRequest++
-      state.value = { kind: 'idle' }
+      forgetAnswer()
       return
     }
     pendingSearch = setTimeout(() => void search(text), SEARCH_DELAY_MS)
   })
 
   watch(options.buildId, () => {
-    if (query.value.trim() && state.value.kind !== 'idle') void search(query.value)
+    if (!query.value.trim() || state.value.kind === 'idle') return
+    if (panelOpen.value) void search(query.value)
+    else forgetAnswer()
   })
 
   onScopeDispose(() => {
@@ -123,6 +129,11 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     options.onOpened(buildId)
   }
 
+  function open(): void {
+    panelOpen.value = true
+    if (query.value.trim() && state.value.kind === 'idle') void search(query.value)
+  }
+
   function onEnter(): void {
     const wasOpen = panelOpen.value
     panelOpen.value = true
@@ -154,6 +165,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     activeRow,
     openFailed,
     prepare,
+    open,
     download,
     openRow,
     onEnter,

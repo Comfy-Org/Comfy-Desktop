@@ -1087,15 +1087,36 @@ describe('Home template search', () => {
     expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'oldest' })]])
   })
 
-  it('passes over builds that are not local, or that start without a window', async () => {
-    const remote = { ...NEWEST, sourceCategory: 'remote', lastLaunchedAt: 900 }
-    const consoleOnly = { ...RUNNING, launchMode: 'console' }
-    getInstallations.mockResolvedValue([remote, consoleOnly, OLDEST])
-    openTemplateInBuild.mockResolvedValue('launch')
+  it('brings forward the build the template went to when another build is picked while it opens', async () => {
+    getInstallations.mockResolvedValue([RUNNING, OLDEST])
+    let finish!: (outcome: 'opened') => void
+    openTemplateInBuild.mockReturnValue(new Promise((resolve) => (finish = resolve)))
     const wrapper = await openHome()
     await searchAndPick(wrapper)
-    expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'oldest')
+
+    await openBuildMenu(wrapper)
+    const oldest = buildOptions().find((option) => option.textContent?.includes(OLDEST.name))!
+    oldest.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    finish('opened')
+    await flushPromises()
+
+    expect(openTemplateInBuild).toHaveBeenCalledWith('running', 'poster_template')
+    expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'running' })]])
   })
+
+  it.each(['console', 'external'])(
+    'passes over builds that are not local, or that start in %s mode',
+    async (launchMode) => {
+      const remote = { ...NEWEST, sourceCategory: 'remote', lastLaunchedAt: 900 }
+      const windowless = { ...RUNNING, launchMode }
+      getInstallations.mockResolvedValue([remote, windowless, OLDEST])
+      openTemplateInBuild.mockResolvedValue('launch')
+      const wrapper = await openHome()
+      await searchAndPick(wrapper)
+      expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'oldest')
+    }
+  )
 
   it('passes over a local build that is marked broken', async () => {
     const broken = { ...RUNNING, statusTag: { style: 'danger', label: 'Broken' } }

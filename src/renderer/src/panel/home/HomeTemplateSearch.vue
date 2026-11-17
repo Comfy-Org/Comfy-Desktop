@@ -28,7 +28,7 @@ function openPanel(): void {
 
 function onFocus(): void {
   search.prepare()
-  openPanel()
+  search.open()
 }
 
 function close(): void {

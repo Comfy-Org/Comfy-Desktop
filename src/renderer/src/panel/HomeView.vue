@@ -26,6 +26,7 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { AppCard, CatalogWorkflow, Installation } from '../types/ipc'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import { opensInAWindow } from '../../../shared/templateSearch'
 
 type LoadState = 'loading' | 'ready' | 'unavailable'
 
@@ -111,7 +112,7 @@ const templateSearchBuild = computed(() => {
   const usable = (build: Installation): boolean =>
     build.sourceCategory === 'local' &&
     build.statusTag?.style !== 'danger' &&
-    (build.launchMode ?? 'window') === 'window'
+    opensInAWindow(build.launchMode)
   const target = openTarget.value
   if (target && usable(target)) return target
   return openableBuilds.value.find(usable) ?? null

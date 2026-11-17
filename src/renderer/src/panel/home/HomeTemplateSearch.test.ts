@@ -68,7 +68,9 @@ beforeEach(() => {
       callback: (availability: TemplateSearchAvailability) => void
     ) => {
       announce = callback
-      return () => {}
+      return () => {
+        announce = () => {}
+      }
     }
   }
 })
@@ -213,7 +215,9 @@ describe('HomeTemplateSearch results', () => {
     )
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
-    expect(wrapper.get('[role="listbox"]').text()).toMatch(/Run.*Download and run.*Also try/s)
+    expect(
+      wrapper.findAll('[role="listbox"] [role="presentation"]').map((header) => header.text())
+    ).toEqual(['Run', 'Download and run', 'Also try'])
     const partnerRows = wrapper
       .findAll('[role="option"]')
       .filter((row) => row.find('[data-testid="home-template-search-partner"]').exists())
@@ -282,6 +286,10 @@ describe('HomeTemplateSearch results', () => {
     )
     expect(rowTitles(wrapper)).toEqual(['banner_template title', 'poster_template title'])
     expect(wrapper.find('[data-testid="home-template-search-best"]').exists()).toBe(false)
+
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(opened()).toEqual(['banner_template'])
   })
 
   it('shows only the reply for input the search cannot use', async () => {
@@ -408,6 +416,23 @@ describe('HomeTemplateSearch opening a template', () => {
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(openTemplateInBuild).toHaveBeenCalledWith('build-2', 'poster_template')
+  })
+
+  it('forgets the answer for the old build while the results are closed, and searches again on focus', async () => {
+    const wrapper = mountSearch('build-1')
+    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    searchTemplates.mockClear()
+
+    await wrapper.setProps({ buildId: 'build-2' })
+    await flushPromises()
+    expect(searchTemplates).not.toHaveBeenCalled()
+    expect(panel(wrapper).exists()).toBe(false)
+
+    await input(wrapper).trigger('focus')
+    await flushPromises()
+    expect(searchTemplates).toHaveBeenCalledWith('a poster', 'build-2')
+    expect(rowTitles(wrapper)).toContain('poster_template title')
   })
 
   it('searches the new text instead of opening an answer to older text', async () => {
@@ -611,6 +636,7 @@ describe('HomeTemplateSearch before search is ready', () => {
     ;(window.api as unknown as Record<string, unknown>).onTemplateSearchAvailability = () =>
       unsubscribe
     const wrapper = mountSearch()
+    expect(unsubscribe).not.toHaveBeenCalled()
     wrapper.unmount()
     mounted.splice(mounted.indexOf(wrapper), 1)
     expect(unsubscribe).toHaveBeenCalled()
