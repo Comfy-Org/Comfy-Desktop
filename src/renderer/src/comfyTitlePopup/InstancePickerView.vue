@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
-import { computed, provide, ref, toRef, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, provide, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Search, X } from '@lucide/vue'
 import { useInstallList } from '../composables/useInstallList'
@@ -172,6 +172,32 @@ const installationsRef = toRef(() => installations.value)
 const { searchQuery, visibleInstalls, showEmptyHint, lastLaunchedShortLabel } = useInstallList({
   installations: installationsRef
 })
+
+const searchOpen = ref(false)
+const searchInput = useTemplateRef<HTMLInputElement>('searchInput')
+const searchButton = useTemplateRef<HTMLButtonElement>('searchButton')
+
+async function openSearch(): Promise<void> {
+  searchOpen.value = true
+  await nextTick()
+  searchInput.value?.focus()
+}
+
+function closeSearchIfEmpty(): void {
+  if (searchQuery.value.trim()) return
+  searchQuery.value = ''
+  searchOpen.value = false
+}
+
+async function onSearchEscape(): Promise<void> {
+  if (searchQuery.value) {
+    searchQuery.value = ''
+    return
+  }
+  searchOpen.value = false
+  await nextTick()
+  searchButton.value?.focus()
+}
 
 const headerTitle = useTemplateRef<HTMLElement>('headerTitle')
 const headerActions = useTemplateRef<HTMLElement>('headerActions')
@@ -434,30 +460,52 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
           class="picker-left m-2 mr-0 flex min-h-0 min-w-0 flex-col gap-2 rounded-[14px] bg-[var(--picker-side-bg)] p-2 [--picker-row-hover:color-mix(in_oklch,var(--foreground)_11%,var(--modal-surface-bg))] [--picker-row-active:color-mix(in_oklch,var(--foreground)_15%,var(--modal-surface-bg))] [--picker-side-bg:color-mix(in_oklch,var(--foreground)_6%,var(--modal-surface-bg))]"
         >
           <div class="picker-list-section -mx-2 flex min-h-0 flex-auto flex-col overflow-hidden">
-            <div
-              class="picker-list-section-title mb-1.5 flex flex-none items-center gap-1 pt-2 pr-4 pl-[19px] text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
-            >
-              {{ $t('instancePicker.instances')
-              }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" />
-            </div>
-
-            <div class="picker-search mb-1 px-2">
-              <label
-                class="picker-search-field grid cursor-text grid-cols-[24px_minmax(0,1fr)] items-center gap-2 rounded-lg border border-solid border-transparent bg-[var(--picker-search-bg)] py-2 pr-2 pl-2.5 transition-[background-color] duration-[120ms] ease-[ease] [--picker-search-bg:color-mix(in_oklch,var(--foreground)_9%,var(--modal-surface-bg))] hover:bg-[var(--picker-row-hover)] focus-within:bg-[var(--picker-row-hover)]"
+            <div class="picker-list-head relative mx-2 mb-1 h-9 flex-none">
+              <div
+                class="picker-list-section-title flex h-full items-center gap-1 pr-1 pl-[11px] text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase transition-opacity duration-150 ease-out"
+                :class="{ 'opacity-0': searchOpen }"
+                :inert="searchOpen"
               >
-                <span
-                  class="picker-search-icon flex size-6 items-center justify-center text-muted-foreground"
-                  aria-hidden="true"
-                  ><Search :size="16"
-                /></span>
-                <input
-                  v-model="searchQuery"
-                  type="text"
-                  class="picker-search-input m-0 min-w-0 border-0 bg-transparent p-0 text-[14px] leading-5 text-foreground outline-none placeholder:text-muted-foreground"
-                  :placeholder="$t('instancePicker.searchPlaceholder')"
+                {{ $t('instancePicker.instances')
+                }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" />
+                <button
+                  ref="searchButton"
+                  type="button"
+                  class="picker-search-toggle ml-auto flex size-7 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted-foreground transition-[background-color,color] duration-[120ms] ease-[ease] hover:bg-[var(--picker-row-hover)] hover:text-foreground focus-visible:bg-[var(--picker-row-hover)] focus-visible:text-foreground focus-visible:outline-none"
                   :aria-label="$t('instancePicker.searchPlaceholder')"
-                />
-              </label>
+                  :aria-expanded="searchOpen"
+                  @click="openSearch"
+                >
+                  <Search :size="16" aria-hidden="true" />
+                </button>
+              </div>
+              <Transition
+                enter-active-class="transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none"
+                enter-from-class="translate-x-2 opacity-0"
+                leave-active-class="transition-[opacity,transform] duration-100 ease-in motion-reduce:transition-none"
+                leave-to-class="translate-x-2 opacity-0"
+              >
+                <label
+                  v-if="searchOpen"
+                  class="picker-search absolute inset-0 grid cursor-text grid-cols-[24px_minmax(0,1fr)] items-center gap-2 rounded-lg bg-[var(--picker-row-hover)] pr-2 pl-[11px]"
+                >
+                  <span
+                    class="picker-search-icon flex size-6 items-center justify-center text-muted-foreground"
+                    aria-hidden="true"
+                    ><Search :size="16"
+                  /></span>
+                  <input
+                    ref="searchInput"
+                    v-model="searchQuery"
+                    type="text"
+                    class="picker-search-input m-0 min-w-0 border-0 bg-transparent p-0 text-[14px] leading-5 text-foreground outline-none placeholder:text-muted-foreground"
+                    :placeholder="$t('instancePicker.searchPlaceholder')"
+                    :aria-label="$t('instancePicker.searchPlaceholder')"
+                    @keydown.esc.stop.prevent="onSearchEscape"
+                    @blur="closeSearchIfEmpty"
+                  />
+                </label>
+              </Transition>
             </div>
 
             <TransitionGroup

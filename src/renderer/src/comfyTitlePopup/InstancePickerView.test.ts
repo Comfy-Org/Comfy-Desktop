@@ -372,6 +372,36 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(bridge.selectedInstallSets.at(-1)).toBeNull()
     })
 
+    it('keeps the search closed behind an icon next to the Builds title', async () => {
+      const wrapper = await mountPicker({
+        installs: fewBuilds(3),
+        activeInstallationId: null,
+        runningInstallationIds: []
+      })
+      expect(wrapper.find('.picker-search input').exists()).toBe(false)
+      const toggle = wrapper.get('.picker-list-section-title .picker-search-toggle')
+      expect(toggle.attributes('aria-label')).toBe('Search builds')
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+    })
+
+    it('opens the search over the Builds title and closes it with Escape once empty', async () => {
+      const wrapper = await mountPicker({
+        installs: fewBuilds(3),
+        activeInstallationId: null,
+        runningInstallationIds: []
+      })
+      await wrapper.get('.picker-search-toggle').trigger('click')
+      await flushPromises()
+      const input = wrapper.get('.picker-search input')
+      await input.setValue('build')
+      await input.trigger('keydown', { key: 'Escape' })
+      expect((input.element as HTMLInputElement).value).toBe('')
+      expect(wrapper.find('.picker-search input').exists()).toBe(true)
+      await input.trigger('keydown', { key: 'Escape' })
+      await flushPromises()
+      expect(wrapper.find('.picker-search input').exists()).toBe(false)
+    })
+
     it('filters install rows by search query under the Builds title', async () => {
       const wrapper = await mountPicker({
         installs: [
@@ -382,6 +412,8 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         activeInstallationId: null,
         runningInstallationIds: []
       })
+      await wrapper.get('.picker-search-toggle').trigger('click')
+      await flushPromises()
       const input = wrapper.get('.picker-search input')
       expect(input.attributes('placeholder')).toBe('Search builds')
       expect(input.attributes('aria-label')).toBe('Search builds')
@@ -398,6 +430,8 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         activeInstallationId: null,
         runningInstallationIds: []
       })
+      await wrapper.get('.picker-search-toggle').trigger('click')
+      await flushPromises()
       const input = wrapper.get('.picker-search input')
       await input.setValue('zzzz-no-match')
       await flushPromises()
