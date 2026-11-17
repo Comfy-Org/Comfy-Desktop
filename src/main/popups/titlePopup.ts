@@ -2,7 +2,7 @@ import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import type { WebContentsView } from 'electron'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
-import type { PopupTheme, TitlePopupKind, TitlePopupMenuIcon } from '../../types/ipc'
+import type { PopupTheme, TitlePopupKind, TitlePopupMenuItem } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
 import {
   cancelModelDownload,
@@ -61,15 +61,6 @@ import type { Category, ViewKind } from '../../shared/viewKind'
 import { getTitleTooltipForParent, hideTitleTooltipPopup } from './titleTooltip'
 import { EmbeddedPopupView } from './embeddedPopupView'
 import { recordIpcInvocation } from '../lib/e2eOverrides'
-
-interface TitlePopupMenuItem {
-  id?: string
-  label?: string
-  labelKey?: string
-  labelParams?: Record<string, string | number>
-  icon?: TitlePopupMenuIcon
-  kind?: 'separator'
-}
 
 function kindUsesBackdrop(kind: TitlePopupKind): boolean {
   return (

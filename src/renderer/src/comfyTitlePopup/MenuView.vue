@@ -3,16 +3,7 @@ import { computed, onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
 import type { Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChartColumn, Gauge } from '@lucide/vue'
-import type { TitlePopupMenuIcon } from '../../../types/ipc'
-
-interface MenuItem {
-  id?: string
-  label?: string
-  labelKey?: string
-  labelParams?: Record<string, string | number>
-  icon?: TitlePopupMenuIcon
-  kind?: 'separator'
-}
+import type { TitlePopupMenuIcon, TitlePopupMenuItem as MenuItem } from '../../../types/ipc'
 
 const MENU_ICONS: Record<TitlePopupMenuIcon, Component> = {
   'performance-test': Gauge,

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import MenuView from './MenuView.vue'
-import type { TitlePopupMenuItem } from '../../../preload/comfyTitlePopupPreload'
+import type { TitlePopupMenuItem } from '../../../types/ipc'
 
 const items: TitlePopupMenuItem[] = [
   { id: 'performance-test', label: 'Performance Tests' },
@@ -157,7 +157,7 @@ describe('MenuView rows', () => {
         items: [
           {
             id: 'reset-zoom',
-            label: 'Reset Zoom (144%)',
+            label: 'Fallback label',
             labelKey: 'fileMenu.resetZoom',
             labelParams: { percent: 144 }
           }
