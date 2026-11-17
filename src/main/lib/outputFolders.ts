@@ -12,7 +12,7 @@ import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
 import { sourceMap } from './ipc/shared'
-import type { AssetSummary } from '../../types/ipc'
+import type { AssetSummary, LocalAssetListing } from '../../types/ipc'
 
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
 
@@ -175,13 +175,13 @@ async function addMediaFacts(asset: AssetSummary): Promise<void> {
   Object.assign(asset, await mediaFactsFromFile(asset.id, asset.kind))
 }
 
-export async function listLocalAssets(installationId?: string): Promise<AssetSummary[]> {
+export async function listLocalAssets(installationId?: string): Promise<LocalAssetListing> {
   const folders = await findOutputFolders()
   const folder = installationId === undefined ? folders.shared : folders.ofBuild.get(installationId)
   const files = folder ? await collectMediaFiles(folder) : []
   const found: AssetSummary[] = []
   await runPool(files, STATS_AT_ONCE, async (file) => {
-    const stat = await fsp.stat(file).catch(() => null)
+    const stat = await fsp.lstat(file).catch(() => null)
     if (!stat?.isFile()) return
     const modifiedMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0
     found.push(localSummary(file, stat.size, modifiedMs))
@@ -190,7 +190,10 @@ export async function listLocalAssets(installationId?: string): Promise<AssetSum
     .sort((a, b) => b.createdAt!.localeCompare(a.createdAt!))
     .slice(0, MAX_LOCAL_ASSETS)
   await runPool(newest, STATS_AT_ONCE, addMediaFacts)
-  return newest
+  return {
+    assets: newest,
+    truncated: found.length > MAX_LOCAL_ASSETS
+  }
 }
 
 function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeImage | null {

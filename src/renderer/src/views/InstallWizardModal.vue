@@ -20,11 +20,11 @@ import {
   Globe,
   HardDrive,
   MapPin,
+  Split,
   Monitor,
   Package,
   RefreshCw,
   SlidersHorizontal,
-  Split,
   Tag,
   Users,
   Zap
@@ -40,12 +40,15 @@ import type {
   SourceField,
   FieldOption,
   HardwareValidation,
-  ShowProgressOpts
+  ShowProgressOpts,
+  SystemInfo
 } from '../types/ipc'
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
 import {
   INSTALL_SPACE_FACTOR,
   downloadBytesOf,
+  isCpuVariant,
+  machineName,
   type ChangeSetupDraft,
   type NewInstallSetup,
   type SavedSetup,
@@ -68,7 +71,7 @@ import InstallNameInput from '../components/InstallNameInput.vue'
 import TrackBuildForm from '../components/TrackBuildForm.vue'
 import LoadSnapshotForm from '../components/LoadSnapshotForm.vue'
 import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
-import SetupOptionCards, { type SetupOptionCard } from '../components/SetupOptionCards.vue'
+import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
 import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
@@ -112,6 +115,7 @@ const instPath = ref('')
 const defaultInstPath = ref('')
 const detectedGpu = ref('')
 const gpuName = ref('')
+const systemInfo = ref<SystemInfo | null>(null)
 const machineUnsupported = ref(false)
 const unsupportedReason = ref('')
 const view = ref<'summary' | 'change'>('summary')
@@ -458,7 +462,7 @@ onMounted(() => {
     .detectGPU()
     .then((gpu) => {
       if (gpu) {
-        gpuName.value = gpu.label
+        gpuName.value = gpu.model || gpu.label
         detectedGpu.value = t('newInstall.detectedGpu', { label: gpu.label })
       } else {
         detectedGpu.value = t('newInstall.noGpuDetected')
@@ -469,6 +473,15 @@ onMounted(() => {
     })
     .finally(() => {
       gpuDetectionDone = true
+    })
+
+  Promise.resolve()
+    .then(() => window.api.getSystemInfo())
+    .then((info) => {
+      systemInfo.value = info
+    })
+    .catch(() => {
+      systemInfo.value = null
     })
 
   installDirPromise = window.api.getDefaultInstallDir().catch(() => '')
@@ -1392,10 +1405,20 @@ const machineBlocked = computed(
     !managedBuildMode.value &&
     (!currentSource.value || currentSource.value.id === 'standalone')
 )
-const machineTitle = computed(() =>
-  machineBlocked.value ? unsupportedReason.value : gpuName.value || detectedGpu.value
+const systemMachineName = computed(() =>
+  machineName(systemInfo.value, isCpuVariant(selections.value.variant))
 )
-const machineDetected = computed(() => !machineBlocked.value && !!gpuName.value)
+const machineTitle = computed(() =>
+  machineBlocked.value
+    ? unsupportedReason.value
+    : systemMachineName.value || gpuName.value || detectedGpu.value
+)
+const machineDetected = computed(
+  () => !machineBlocked.value && !!(systemMachineName.value || gpuName.value)
+)
+const machineMemoryGb = computed(() =>
+  systemInfo.value?.total_memory_gb ? Math.round(systemInfo.value.total_memory_gb) : null
+)
 const buildCatalogFailed = computed(() => managedBuildMode.value && authStore.buildsError)
 const blockingFieldError = computed(
   () => urlFieldError.value || fieldErrors.value.values().next().value || ''
@@ -1441,6 +1464,9 @@ function toSourceCard(tab: InstallSourceTab): SetupOptionCard {
 }
 
 const sourceCards = computed<SetupOptionCard[]>(() => newInstallTabs.value.map(toSourceCard))
+const sourceSelectOptions = computed<BaseSelectOption[]>(() =>
+  sourceCards.value.map(toCardSelectOption)
+)
 
 const selectedSourceCard = computed(() => {
   if (managedBuildMode.value) return 'managed'
@@ -1482,7 +1508,9 @@ const startFromOptions = computed<{ value: StartFrom; label: string; testId: str
   { value: 'new', label: t('newInstall.startFromNew'), testId: 'config-start-from-new' },
   {
     value: 'existing',
-    label: t('newInstall.startFromExisting'),
+    label: t(
+      offersBuildImport.value ? 'newInstall.startFromExisting' : 'newInstall.startFromServer'
+    ),
     testId: 'config-start-from-existing'
   }
 ])
@@ -1554,7 +1582,29 @@ function selectCardOptionByValue(field: SourceField, fieldIndex: number, value: 
   if (option) selectCardOption(field, fieldIndex, option)
 }
 
-const buildTargetCards = computed(() => toHardwareCards(selectedBuildTargetOptions.value))
+function toCardSelectOption(card: SetupOptionCard): BaseSelectOption {
+  return {
+    value: card.value,
+    label: card.label,
+    description: card.description,
+    disabled: card.disabled,
+    icon: card.icon,
+    testId: card.testId,
+    badge: card.recommended ? t('newInstall.recommended') : undefined
+  }
+}
+
+const existingSelectOptions = computed(() => existingCards.value.map(toCardSelectOption))
+
+function hardwareSelectOptions(field: SourceField): BaseSelectOption[] {
+  const options = sortedCardOptions(shownOptions(field) ?? [])
+  const cards = field.id === HARDWARE_FIELD_ID ? toHardwareCards(options) : toOptionCards(options)
+  return cards.map(toCardSelectOption)
+}
+
+const buildTargetOptions = computed(() =>
+  toHardwareCards(selectedBuildTargetOptions.value).map(toCardSelectOption)
+)
 
 const FIELD_ICONS: Record<string, Component> = {
   variant: Zap,
@@ -1692,7 +1742,7 @@ defineExpose({ open })
     :dialog-label="ariaLabel"
     :title="modalTitle"
     :lead="modalLead"
-    :fixed-height="view === 'change'"
+    :anchor-top="view === 'change'"
     :brand-backdrop="useTakeoverHost"
     :closable="view === 'summary' && !hideBackToDashboard"
     :close-title="$t('common.backToDashboard')"
@@ -1734,11 +1784,11 @@ defineExpose({ open })
       </div>
 
       <div
-        class="config-machine relative mt-3 flex items-center gap-7 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
+        class="config-machine relative mt-3 flex items-center gap-5 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
         :class="machineBlocked && 'config-machine--unsupported'"
       >
         <SetupMachineIllustration
-          class="h-[88px] w-[136px] flex-none max-[640px]:hidden"
+          class="h-[68px] w-[104px] flex-none max-[640px]:hidden"
           :os="platform"
           :bad="machineBlocked"
         />
@@ -1759,6 +1809,12 @@ defineExpose({ open })
             "
             data-testid="detected-gpu-field"
             >{{ machineTitle }}</span
+          >
+          <span
+            v-if="machineMemoryGb && !machineBlocked"
+            class="config-machine-memory mt-[3px] text-[13px] leading-4 text-text-muted"
+            data-testid="detected-machine-memory"
+            >{{ $t('setup.memory', { gb: machineMemoryGb }) }}</span
           >
         </span>
         <Button
@@ -1850,9 +1906,10 @@ defineExpose({ open })
             />
           </div>
           <Button
+            size="sm"
             variant="textonly"
             type="button"
-            class="config-path-browse flex-none px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
+            class="config-path-browse flex-none rounded-lg px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
             data-testid="config-summary-browse"
             @click="handleBrowse"
           >
@@ -1869,7 +1926,11 @@ defineExpose({ open })
       </dl>
     </div>
 
-    <div v-else class="config-change-form mt-4 flex flex-col" data-testid="config-change-form">
+    <div
+      v-else
+      class="config-change-form mt-3 flex flex-col [&_.setup-form-row]:py-1.5"
+      data-testid="config-change-form"
+    >
       <SetupFormRow
         v-if="existingCards.length > 0"
         class="config-start-from"
@@ -1888,6 +1949,20 @@ defineExpose({ open })
         />
       </SetupFormRow>
 
+      <SetupFormRow
+        v-if="!buildImportChoice && (cameFromSetup || startFrom === 'existing')"
+        class="config-name-row"
+        :label="$t('common.name')"
+        label-for="inst-name-standalone"
+        :icon="Tag"
+      >
+        <InstallNameInput
+          v-model="instName"
+          :placeholder="suggestedName || $t('common.namePlaceholder')"
+          :error="nameError"
+        />
+      </SetupFormRow>
+
       <div
         v-if="showsHardwareWarning"
         class="config-hardware-warning px-1 pb-2 text-[12px] leading-[1.4] text-[var(--warning)]"
@@ -1901,35 +1976,32 @@ defineExpose({ open })
         v-if="startFrom === 'new' && sources.length > 0"
         :label="$t('newInstall.getComfyFrom')"
         :icon="Download"
-        control-height="cards"
       >
-        <SetupOptionCards
-          class="config-method-row"
+        <BaseSelect
+          class="config-method-row text-[13px]"
           data-testid="install-source-tabs"
-          layout="grid"
-          activation="manual"
+          :model-value="selectedSourceCard ?? ''"
+          :options="sourceSelectOptions"
+          :disabled="choiceLocked"
           :aria-label="$t('newInstall.chooseMethod')"
-          :options="sourceCards"
-          :selected-value="selectedSourceCard"
-          @select="selectSourceCardByKey"
+          @update:model-value="selectSourceCardByKey"
         />
       </SetupFormRow>
 
       <SetupFormRow
-        v-if="startFrom === 'existing'"
+        v-if="startFrom === 'existing' && existingCards.length > 1"
         class="config-existing-comfy"
         :label="$t('newInstall.whereItIs')"
         :icon="MapPin"
-        control-height="cards"
       >
-        <SetupOptionCards
+        <BaseSelect
+          class="config-existing-select text-[13px]"
           data-testid="existing-comfy-tabs"
-          layout="grid"
-          activation="manual"
+          :model-value="selectedExistingCard ?? ''"
+          :options="existingSelectOptions"
+          :disabled="choiceLocked"
           :aria-label="$t('newInstall.whereItIs')"
-          :options="existingCards"
-          :selected-value="selectedExistingCard"
-          @select="selectExistingCard"
+          @update:model-value="selectExistingCard"
         />
       </SetupFormRow>
 
@@ -2025,14 +2097,13 @@ defineExpose({ open })
             v-if="selectedBuildTargetOptions.length > 0"
             :label="$t('newInstall.buildTarget')"
             :icon="Zap"
-            control-height="cards"
             data-testid="workspace-build-targets"
           >
-            <SetupOptionCards
-              :options="buildTargetCards"
-              :selected-value="selectedBuildTargetId"
+            <BaseSelect
+              v-model="selectedBuildTargetId"
+              class="text-[13px]"
+              :options="buildTargetOptions"
               :aria-label="$t('newInstall.buildTarget')"
-              @select="selectedBuildTargetId = $event"
             />
           </SetupFormRow>
         </template>
@@ -2043,19 +2114,6 @@ defineExpose({ open })
           class="config-advanced config-advanced--direct is-open flex flex-col"
         >
           <template v-for="(field, fieldIndex) in currentSource.fields" :key="field.id">
-            <SetupFormRow
-              v-if="cameFromSetup && field.id === HARDWARE_FIELD_ID && locationBeforeHardware"
-              class="config-name-row"
-              :label="$t('common.name')"
-              label-for="inst-name-standalone"
-              :icon="Tag"
-            >
-              <InstallNameInput
-                v-model="instName"
-                :placeholder="suggestedName || $t('common.namePlaceholder')"
-                :error="nameError"
-              />
-            </SetupFormRow>
             <InstallLocationRow
               v-if="field.id === HARDWARE_FIELD_ID && locationBeforeHardware"
               :path="instPath"
@@ -2074,7 +2132,7 @@ defineExpose({ open })
               :label="field.label"
               :label-for="`sf-${field.id}`"
               :icon="FIELD_ICONS[field.id] ?? SlidersHorizontal"
-              :control-height="field.renderAs === 'cards' ? 'cards' : 'centered'"
+              :control-height="field.type === 'text' ? 'centered' : 'field'"
             >
               <div v-if="field.type === 'text'" class="flex min-w-0 flex-col">
                 <div class="config-text-action flex items-stretch gap-2">
@@ -2126,28 +2184,27 @@ defineExpose({ open })
               </div>
 
               <div v-else-if="field.renderAs === 'cards'" class="min-w-0">
-                <SetupOptionCards
+                <BaseSelect
                   v-if="shownOptions(field)?.length"
-                  :options="
-                    field.id === HARDWARE_FIELD_ID
-                      ? toHardwareCards(sortedCardOptions(shownOptions(field)!))
-                      : toOptionCards(sortedCardOptions(shownOptions(field)!))
-                  "
-                  :selected-value="shownSelections[field.id]?.value ?? null"
-                  :refreshing="isRefreshing(field)"
+                  class="config-card-select text-[13px]"
+                  :data-testid="`config-select-${field.id}`"
+                  :model-value="shownSelections[field.id]?.value ?? ''"
+                  :options="hardwareSelectOptions(field)"
+                  :loading="isRefreshing(field)"
+                  :disabled="isRefreshing(field)"
                   :aria-label="field.label"
-                  @select="(value) => selectCardOptionByValue(field, fieldIndex, value)"
+                  @update:model-value="(value) => selectCardOptionByValue(field, fieldIndex, value)"
                 />
                 <div
                   v-else-if="fieldLoading.get(field.id)"
-                  class="config-loading py-3 text-[13px] text-text-muted"
+                  class="config-loading py-2.5 text-[13px] text-text-muted"
                   :class="spinnerClass"
                 >
                   {{ $t('newInstall.loading') }}
                 </div>
                 <div
                   v-else-if="shownOptions(field)"
-                  class="config-loading py-3 text-[13px] text-text-muted"
+                  class="config-loading py-2.5 text-[13px] text-text-muted"
                 >
                   {{
                     fieldErrors.get(field.id)
@@ -2204,20 +2261,6 @@ defineExpose({ open })
             </SetupFormRow>
           </template>
         </div>
-
-        <SetupFormRow
-          v-if="(cameFromSetup || startFrom === 'existing') && !locationBeforeHardware"
-          class="config-name-row"
-          :label="$t('common.name')"
-          label-for="inst-name-standalone"
-          :icon="Tag"
-        >
-          <InstallNameInput
-            v-model="instName"
-            :placeholder="suggestedName || $t('common.namePlaceholder')"
-            :error="nameError"
-          />
-        </SetupFormRow>
 
         <InstallLocationRow
           v-if="showLocation && !locationBeforeHardware"

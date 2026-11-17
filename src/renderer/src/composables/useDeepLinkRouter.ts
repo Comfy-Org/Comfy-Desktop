@@ -16,7 +16,7 @@ interface DeepLinkRouterOpts {
   showAppUpdateDownloadPrompt: (version: string | null) => Promise<void>
   pickInstallFromPicker?: (
     installation: Installation,
-    opts?: { startupRestore?: boolean; isRestart?: boolean }
+    opts?: { isRestart?: boolean; pickerWorkspaceId?: string }
   ) => Promise<void> | void
   runInstallActionFromPicker?: (
     installation: Installation,
@@ -85,15 +85,11 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
             (await installationStore.fetchInstallations().catch(() => [])).find(
               (installation) => installation.id === id
             )
-          if (!inst) {
-            if (payload.startupRestore) {
-              window.api.resolveStartupRestoreReveal('dashboard-fallback')
-            }
-            return
-          }
+          if (!inst) return
+          const pickerWorkspaceId = payload.actionData?.pickerWorkspaceId
           await opts.pickInstallFromPicker?.(inst, {
-            startupRestore: payload.startupRestore === true,
-            isRestart: payload.isRestart === true
+            isRestart: payload.isRestart === true,
+            pickerWorkspaceId: typeof pickerWorkspaceId === 'string' ? pickerWorkspaceId : undefined
           })
           return
         }

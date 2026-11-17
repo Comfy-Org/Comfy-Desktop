@@ -10,6 +10,7 @@ import * as mainTelemetry from '../lib/telemetry'
 import { refreshCloudUserTier } from '../lib/userTier'
 import { refreshStaffFlagTargeting } from '../lib/staffFlagTargeting'
 import { noteCloudEntered } from '../lib/cloudEntry'
+import { cloudReloadUrl } from '../lib/cloudWorkspace'
 import { noteCanvasRendered } from '../lib/canvasEntry'
 import { forwardDatadogError } from '../lib/processErrorHandlers'
 import { recordInstanceSurface } from '../lib/lastSession'
@@ -27,6 +28,7 @@ import {
   setLastFocusedInstallationId
 } from './registry'
 import type { ComfyWindowEntry } from './registry'
+import { navigatorFor } from './buildNavigator'
 
 const APP_VERSION = getAppVersion()
 
@@ -35,8 +37,6 @@ const TERMINAL_INJECTION_SOURCE_IDS = new Set(['standalone', 'portable', 'git'])
 export type ZoomResetSource = 'titlebar' | 'menu' | 'shortcut'
 
 export interface AttachFactories {
-  comfyFailRetryTimerCancels: Map<string, () => void>
-  comfyReloads: Map<string, () => void>
   comfyZoomResets: Map<string, (source: ZoomResetSource) => void>
   relaunchStates: Map<string, unknown>
   computeInstallUpdateAvailable: (
@@ -292,15 +292,11 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   }
   comfyContents.on('dom-ready', onDomReady)
 
-  const currentComfyUrl = (): string => entry.comfyUrl || comfyUrl
-  const reloadComfy = (): void => {
-    if (comfyWindow.isDestroyed()) return
-    const id = entry.installationId
-    if (id === null) return
-    if (fx.relaunchStates.has(id)) return
-    comfyContents.stop()
-    comfyContents.loadURL(currentComfyUrl())
-  }
+  const navigator = navigatorFor(entry)
+  navigator.attach({
+    reloadUrl: () => cloudReloadUrl(entry.comfyUrl || comfyUrl, comfyContents.getURL()),
+    mayReload: () => entry.installationId !== null && !fx.relaunchStates.has(entry.installationId)
+  })
   const onBeforeInputEvent = (e: Electron.Event, input: Electron.Input): void => {
     if (input.type !== 'keyDown') return
     const mod = input.control || input.meta
@@ -310,7 +306,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     }
     if (input.key === 'F5' || (input.key.toLowerCase() === 'r' && mod)) {
       e.preventDefault()
-      reloadComfy()
+      navigator.refresh()
       return
     }
     if (
@@ -353,15 +349,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     })
   }
 
-  let failRetryTimer: ReturnType<typeof setTimeout> | null = null
-  const cancelFailRetry = (): void => {
-    if (failRetryTimer) {
-      clearTimeout(failRetryTimer)
-      failRetryTimer = null
-    }
-  }
-  fx.comfyFailRetryTimerCancels.set(installationId, cancelFailRetry)
-  fx.comfyReloads.set(installationId, reloadComfy)
   fx.comfyZoomResets.set(installationId, (source) => {
     if (comfyContents.isDestroyed()) return
     const previousLevel = comfyContents.getZoomLevel()
@@ -377,22 +364,13 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     _failUrl: string,
     isMainFrame: boolean
   ): void => {
-    if (!isMainFrame || code === -3 || failRetryTimer) return
+    if (!isMainFrame || code === -3 || navigator.retryPending) return
     const id = entry.installationId
     if (id === null) return
     if (isLocal) {
       noteCanvasRendered(id, { loadFailed: true })
     }
-    if (fx.relaunchStates.has(id)) return
-    failRetryTimer = setTimeout(() => {
-      failRetryTimer = null
-      const currentId = entry.installationId
-      if (currentId === null) return
-      if (fx.relaunchStates.has(currentId)) return
-      if (!comfyWindow.isDestroyed()) {
-        comfyContents.loadURL(currentComfyUrl())
-      }
-    }, 2000)
+    navigator.retryAfterFailure()
   }
   comfyContents.on('did-fail-load', onDidFailLoad)
 
@@ -411,20 +389,20 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
         exitCode: details.exitCode
       }
     })
-    reloadComfy()
+    navigator.refresh()
   }
   comfyContents.on('render-process-gone', onRenderProcessGone)
 
   attachSessionDownloadHandler(comfyContents.session)
 
-  comfyContents.loadURL(comfyUrl)
+  navigator.startOpening(comfyUrl)
 
   entry._installCleanup = (): void => {
     if (entry._installCleanup === null) return
     entry._installCleanup = null
     deactivateFirebaseAuthReporter(comfyContents)
     installationEvents.off('updated', onInstallationUpdated)
-    cancelFailRetry()
+    navigator.detach()
     if (!comfyContents.isDestroyed()) {
       comfyContents.off('ipc-message', onIpcMessage)
       comfyContents.off('page-title-updated', onPageTitleUpdated)
@@ -449,8 +427,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       }
       ipc.stopRunning(id)
       closeInstallPopouts(id)
-      fx.comfyFailRetryTimerCancels.delete(id)
-      fx.comfyReloads.delete(id)
       fx.comfyZoomResets.delete(id)
       fx.relaunchStates.delete(id)
       dropInstallationIndex(id)

@@ -249,8 +249,9 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     closeAnnouncement: () => {},
     signalOverlayReady: () => {},
     navigatePanel: () => {},
+    openPageInNewWindow: () => {},
     listAssets: async () => [],
-    listLocalAssets: async () => [],
+    listLocalAssets: async () => ({ assets: [], truncated: false }),
     downloadAsset: async () => true,
     revealAsset: async () => true,
     copyAsset: async () => true,
@@ -267,7 +268,6 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
       modelsDirs: settings.modelsDirs.map((path, index) => ({ path, isPrimary: index === 0 })),
       modelsSystemDefault: settings.modelsDirs[0] ?? ''
     }),
-    resolveStartupRestoreReveal: () => {},
     openGlobalSettings: () => {},
     openInstancePicker: () => {},
     setFirstUseMode: () => {},

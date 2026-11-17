@@ -3,7 +3,7 @@ import path from 'node:path'
 import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { expectChooserVisible } from './support/chooserHelpers'
+import { expectChooserVisible, uninstallFromBuildsTileMenu } from './support/chooserHelpers'
 import { closeTitlePopupIfOpen, titlePopupPage, waitForWebContents } from './support/cdpPages'
 import { byTestId, TID } from './support/testIds'
 
@@ -38,14 +38,6 @@ async function errorShownOnDeletedBuild(): Promise<string | null> {
   expect(await ctx.panel.click(DELETE_ERROR_BADGE), 'error badge click dispatched').toBe(true)
   await ctx.panel.waitForVisible('.base-alert-message-text', { timeout: 5_000 })
   return ctx.panel.textOf('.base-alert-message-text')
-}
-
-async function openKebabAndClick(installationId: string, menuItemId: string): Promise<void> {
-  const kebabClicked = await ctx.panel.click(byTestId(TID.dashboardTileKebab(installationId)))
-  expect(kebabClicked, `kebab click on ${installationId}`).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem(menuItemId)), { timeout: 5_000 })
-  const itemClicked = await ctx.panel.click(byTestId(TID.contextMenuItem(menuItemId)))
-  expect(itemClicked, `menu item click ${menuItemId}`).toBe(true)
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -126,11 +118,7 @@ test('Manage drawer Untrack drops the record but preserves the install directory
 })
 
 test('kebab Delete drops the record AND removes the install directory @real-comfy', async () => {
-  await openKebabAndClick(DELETE_ID, 'delete')
-
-  await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
-  const confirmed = await ctx.panel.click(byTestId(TID.baseAlertAction))
-  expect(confirmed, 'delete confirm click dispatched').toBe(true)
+  await uninstallFromBuildsTileMenu(ctx.panel, DELETE_ID)
 
   await ctx.panel.waitFor(
     async () => !(await tileExists(DELETE_ID)) || (await ctx.panel.isVisible(DELETE_ERROR_BADGE)),
