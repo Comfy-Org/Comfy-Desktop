@@ -5,6 +5,7 @@ import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 import { evalWithRetry } from './support/evalRetry'
+import { titlePopupPage, waitForWebContents } from './support/cdpPages'
 import { byTestId, TID } from './support/testIds'
 
 const STOPPED_ID = 'inst-stop-window'
@@ -145,5 +146,31 @@ test('Home Stop closes only the confirmed build window after stopping ComfyUI @m
     expect(
       await ctx.panel.textOf(`${card(RUNNING_ID)} [data-testid="home-build-status"]`)
     ).toContain('Running')
+  })
+
+  await test.step('The build-settings popup also stops and closes its selected build', async () => {
+    await ctx.panel.evaluate(
+      `window.api.openInstancePicker({ installationId: '${RUNNING_ID}', initialTab: 'settings' })`
+    )
+    await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+    const popup = titlePopupPage(ctx.app)
+    await popup.waitForVisible(byTestId(TID.pickerMoreTrigger))
+    await popup.clickUntilVisible(
+      byTestId(TID.pickerMoreTrigger),
+      byTestId(TID.pinBottomAction('stop'))
+    )
+    expect(await popup.click(byTestId(TID.pinBottomAction('stop')))).toBe(true)
+    await popup.waitForVisible(byTestId(TID.baseAlertAction))
+    expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+
+    await expect.poll(windowState, { timeout: 30_000 }).toEqual({
+      total: 1,
+      stoppedBuild: [],
+      runningBuild: []
+    })
+    expect(await ctx.panel.isVisible(HOME)).toBe(true)
+    expect(
+      await ctx.panel.textOf(`${card(RUNNING_ID)} [data-testid="home-build-status"]`)
+    ).toContain('Ready')
   })
 })

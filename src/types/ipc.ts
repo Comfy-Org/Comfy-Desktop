@@ -1467,6 +1467,7 @@ export const PICKER_SETTINGS_CHANNELS = {
   getFieldOptions: 'comfy-titlepopup:picker-settings-get-field-options',
   getInstallations: 'comfy-titlepopup:picker-settings-get-installations',
   stopComfyUI: 'comfy-titlepopup:picker-settings-stop-comfyui',
+  closeComfyWindow: 'comfy-titlepopup:picker-settings-close-comfy-window',
   cancelOperation: 'comfy-titlepopup:picker-settings-cancel-operation',
   getSnapshots: 'comfy-titlepopup:picker-settings-get-snapshots',
   getSnapshotDetail: 'comfy-titlepopup:picker-settings-get-snapshot-detail',

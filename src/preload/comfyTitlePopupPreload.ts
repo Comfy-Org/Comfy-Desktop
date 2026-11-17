@@ -211,6 +211,10 @@ export interface ComfyTitlePopupBridge {
   pickerSettingsGetInstallations(): Promise<Record<string, unknown>[]>
   pickerSettingsGetInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   pickerSettingsStopComfyUI(installationId: string): Promise<void>
+  pickerSettingsCloseComfyWindow(
+    installationId: string,
+    opts?: { skipConfirm?: boolean }
+  ): Promise<boolean>
   pickerSettingsGetSnapshots(installationId: string): Promise<Record<string, unknown>>
   pickerSettingsGetSnapshotDetail(
     installationId: string,
@@ -554,6 +558,8 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.invoke(CH.getInstallationSize, { installationId }),
   pickerSettingsStopComfyUI: (installationId) =>
     ipcRenderer.invoke(CH.stopComfyUI, { installationId }),
+  pickerSettingsCloseComfyWindow: (installationId, opts) =>
+    ipcRenderer.invoke(CH.closeComfyWindow, { installationId, opts }),
   pickerSettingsGetSnapshots: (installationId) =>
     ipcRenderer.invoke(CH.getSnapshots, { installationId }),
   pickerSettingsGetSnapshotDetail: (installationId, filename) =>
