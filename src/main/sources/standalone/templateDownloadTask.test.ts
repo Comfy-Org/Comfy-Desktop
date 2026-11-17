@@ -186,10 +186,32 @@ describe('template model download task', () => {
         filename: 'm.safetensors',
         directory: 'checkpoints',
         installationId: 'install-job',
+        source: 'template',
+        isRetry: false,
         onProgress: expect.any(Function)
       })
     )
     forgetTemplateDownload('job-1')
+  })
+
+  it('marks automatic model retries for telemetry', async () => {
+    const successful = settlingJob('u')
+    successful.complete()
+    startManagedModelJob
+      .mockResolvedValueOnce({
+        ...successful.job,
+        completion: Promise.resolve({ status: 'error', error: 'Download failed: HTTP 503' })
+      })
+      .mockResolvedValueOnce(successful.job)
+    start('retry-telemetry')
+    await flush()
+
+    expect(startManagedModelJob.mock.calls.map(([options]) => options.isRetry)).toEqual([
+      false,
+      true
+    ])
+    expect(latest('retry-telemetry')?.status).toBe('done')
+    forgetTemplateDownload('retry-telemetry')
   })
 
   it("uses the installation's effective primary models dir for preflight, not a global dir (#1376)", async () => {

@@ -370,10 +370,11 @@ interface ActiveLaunch {
   abort: AbortController
   settled: Promise<void>
   _resolveSettled: () => void
+  pickerWorkspaceId?: string
 }
 const _activeLaunches = new Map<string, ActiveLaunch>()
 
-export function _beginLaunch(installationId: string): { abort: AbortController } {
+export function _beginLaunch(installationId: string): ActiveLaunch {
   let resolveSettled!: () => void
   const settled = new Promise<void>((resolve) => {
     resolveSettled = resolve
@@ -385,6 +386,11 @@ export function _beginLaunch(installationId: string): { abort: AbortController }
   }
   _activeLaunches.set(installationId, launch)
   return launch
+}
+
+export function _setActiveLaunchPickerWorkspace(installationId: string, workspaceId: string): void {
+  const launch = _activeLaunches.get(installationId)
+  if (launch) launch.pickerWorkspaceId = workspaceId
 }
 
 export function _endLaunch(installationId: string, launch: { abort: AbortController }): void {

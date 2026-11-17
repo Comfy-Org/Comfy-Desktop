@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { closeTitlePopupIfOpen, titlePopupPage, waitForWebContents } from './support/cdpPages'
-import { expectChooserVisible } from './support/chooserHelpers'
+import { expectChooserVisible, pickFromBuildsTileMenu } from './support/chooserHelpers'
 import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
 import { byTestId, TID } from './support/testIds'
 
@@ -97,12 +97,7 @@ test('chooser kebab Migrate opens the real adoption confirm; Cancel backs out cl
   expect(legacyInstallId, 'legacyInstallId not captured by the prior test').toBeTruthy()
   await resetIpcInvocations(ctx.app, 'run-action')
 
-  expect(
-    await ctx.panel.click(byTestId(TID.dashboardTileKebab(legacyInstallId))),
-    'kebab click on legacy desktop tile'
-  ).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('migrate')), { timeout: 5_000 })
-  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('migrate')))).toBe(true)
+  await pickFromBuildsTileMenu(ctx.panel, legacyInstallId, 'migrate')
 
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)

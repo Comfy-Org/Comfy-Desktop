@@ -5,9 +5,10 @@ import { ArrowRight, ChevronRight } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
+import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
-import { homeBuildStatus, homeBuildTones, isCloudBuild } from './home/homeBuild'
+import { homeBuildStatus, homeBuildTones, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
 import { useInstallList } from '../composables/useInstallList'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
@@ -17,6 +18,7 @@ import {
   useInstallingBuilds,
   useViewBuildLogs
 } from '../composables/useBuildProgress'
+import { isPromotingToWorkspace } from '../composables/useInstallContextMenu'
 import { useProgressStore } from '../stores/progressStore'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -37,6 +39,7 @@ const emit = defineEmits<{
   'open-build': [installation: Installation]
   'show-builds': []
   'show-apps': []
+  'new-build': []
 }>()
 
 const { t } = useI18n()
@@ -63,6 +66,9 @@ const builds = computed(() =>
     ...workspaceBuilds.value.filter((build) => !isInstalling(build.id))
   ].slice(0, HOME_BUILD_LIMIT)
 )
+const showNewBuildSlot = computed(
+  () => !installationStore.loading && builds.value.every((build) => isCloudBuild(build))
+)
 const buildTones = computed(() => homeBuildTones(builds.value, installationStore.installations))
 const narrowBuildIds = computed(() => {
   const [latest, ...rest] = builds.value
@@ -71,7 +77,12 @@ const narrowBuildIds = computed(() => {
   return new Set([latest.id, ...(second ? [second.id] : [])])
 })
 const openableBuilds = computed(() =>
-  workspaceBuilds.value.filter((build) => buildProgressOf(progressStore, build.id) === null)
+  workspaceBuilds.value.filter(
+    (build) =>
+      buildProgressOf(progressStore, build.id) === null &&
+      !isBuildOpenBlocked(buildStatus(build)) &&
+      !isPromotingToWorkspace(build)
+  )
 )
 const mostRecentBuild = computed(
   () =>
@@ -240,7 +251,7 @@ onMounted(() => {
       </section>
 
       <section
-        v-if="builds.length > 0"
+        v-if="builds.length > 0 || showNewBuildSlot"
         class="@container/home-builds mt-[50px]"
         aria-labelledby="home-builds"
         data-testid="home-builds"
@@ -285,6 +296,9 @@ onMounted(() => {
               :auto-start="autoStart.startsOnOpen(build.id)"
               @open="openBuild(build)"
             />
+          </li>
+          <li v-if="showNewBuildSlot" class="min-w-0">
+            <HomeNewBuildTile @open="emit('new-build')" />
           </li>
         </ul>
       </section>

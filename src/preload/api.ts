@@ -74,7 +74,8 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('update-installation', installationId, data),
 
     stopComfyUI: (installationId) => ipcRenderer.invoke('stop-comfyui', installationId),
-    focusComfyWindow: (installationId) => ipcRenderer.invoke('focus-comfy-window', installationId),
+    focusComfyWindow: (installationId, pickerWorkspaceId) =>
+      ipcRenderer.invoke('focus-comfy-window', installationId, pickerWorkspaceId),
 
     terminalSubscribe: (installationId) => ipcRenderer.invoke('terminal-subscribe', installationId),
     terminalUnsubscribe: (installationId) =>
@@ -94,6 +95,7 @@ export function buildElectronApi(): ElectronApi {
     closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
+    openPageInNewWindow: (page) => ipcRenderer.send('comfy-window:open-page-in-new-window', page),
     listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
     listLocalAssets: (installationId?: string) =>
       ipcRenderer.invoke('assets:list-local', installationId),
@@ -124,8 +126,6 @@ export function buildElectronApi(): ElectronApi {
       return () => ipcRenderer.removeListener('apps:page-closed', handler)
     },
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
-    resolveStartupRestoreReveal: (result) =>
-      ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
     openGlobalSettings: (tab, opts) =>
       ipcRenderer.send(
         'comfy-titlepopup:open-global-settings',
@@ -552,7 +552,6 @@ export function buildElectronApi(): ElectronApi {
             actionId?: string
             version?: string | null
             settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
-            startupRestore?: boolean
           }
         )
       ipcRenderer.on('panel-trigger-overlay', handler)
