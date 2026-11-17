@@ -53,7 +53,7 @@ afterEach(() => {
 })
 
 async function mountAt(pageWidth: number): Promise<HTMLElement> {
-  host.style.cssText = `position: absolute; left: 0; top: 0; width: ${pageWidth}px; height: 900px; display: flex`
+  host.style.cssText = `position: absolute; left: 0; top: 0; width: ${pageWidth}px; height: 900px`
   wrapper = mount(ChooserView, { attachTo: host, global: { plugins: [createPinia()] } })
   await flushPromises()
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
