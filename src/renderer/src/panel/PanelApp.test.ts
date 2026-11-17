@@ -1223,6 +1223,25 @@ describe('PanelApp', () => {
     await waitForBuildMenuFocusReturn()
   })
 
+  it.each([
+    ['chooser', 'chooser'],
+    ['assets', 'assets'],
+    ['benchmarks', 'home'],
+    ['', 'home']
+  ] as const)('opens a new window asked for %s on the %s page', async (requested, shown) => {
+    window.history.replaceState(
+      {},
+      '',
+      `/?panel=chooser&firstUseCompleted=true&dashboardPage=${requested}`
+    )
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.get(`[data-testid="app-sidebar-${shown}"]`).attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
   it('opens the new-install takeover above the chooser body when show-new-install fires', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()

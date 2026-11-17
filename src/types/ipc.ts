@@ -1,5 +1,6 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
+import type { NewWindowDashboardPage } from '../shared/dashboardPages'
 export type { FirstUseMode }
 import type { PlatformSettingsPage } from '../main/devplatform/config'
 export type { PlatformSettingsPage }
@@ -1162,6 +1163,7 @@ export interface ElectronApi {
   closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
+  openPageInNewWindow(page: NewWindowDashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
   listLocalAssets(installationId?: string): Promise<AssetSummary[]>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>

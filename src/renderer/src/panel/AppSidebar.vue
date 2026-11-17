@@ -19,6 +19,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 import BuildMenu from './home/BuildMenu.vue'
+import SidebarPageMenu from './SidebarPageMenu.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import SidebarAccount from './SidebarAccount.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
@@ -31,6 +32,7 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import type { NewWindowDashboardPage } from '../../../shared/dashboardPages'
 import type { DashboardPage, Installation } from '../types/ipc'
 
 const {
@@ -50,7 +52,7 @@ const emit = defineEmits<{
 }>()
 
 interface SidebarRow {
-  page: DashboardPage
+  page: NewWindowDashboardPage
   label: string
   icon: Component
 }
@@ -156,6 +158,17 @@ function openBuildMenu(event: MouseEvent, build: Installation): void {
   showBuildMenu(event)
 }
 
+const { open: pageMenuOpen, menuProps: pageMenuProps, show: showPageMenu } = usePointMenu()
+const pageMenuTarget = shallowRef<{
+  page: NewWindowDashboardPage
+  returnFocus: HTMLElement | null
+} | null>(null)
+
+function openPageMenu(event: MouseEvent, page: NewWindowDashboardPage): void {
+  pageMenuTarget.value = { page, returnFocus: event.currentTarget as HTMLElement | null }
+  showPageMenu(event)
+}
+
 function openSettings(): void {
   emitTelemetryAction('comfy.desktop.sidebar.settings_opened', { from_page: activePage })
   window.api.openGlobalSettings()
@@ -229,6 +242,7 @@ function openSettings(): void {
           :title="collapsed ? row.label : undefined"
           :data-testid="`app-sidebar-${row.page}`"
           @click="navigate(row.page)"
+          @contextmenu.prevent="openPageMenu($event, row.page)"
         >
           <component :is="row.icon" :size="15" aria-hidden="true" />
           <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{ row.label }}</span>
@@ -246,6 +260,7 @@ function openSettings(): void {
               :aria-current="buildsPageActive ? 'page' : undefined"
               data-testid="app-sidebar-chooser"
               @click="navigate('chooser')"
+              @contextmenu.prevent="openPageMenu($event, 'chooser')"
             >
               {{ t('sidebar.builds') }}
               <ArrowRight
@@ -345,6 +360,13 @@ function openSettings(): void {
       :build="buildMenuBuild"
       :anchor="buildMenuProps.reference"
       :return-focus="buildMenuTarget?.returnFocus"
+    />
+    <SidebarPageMenu
+      v-if="pageMenuTarget && pageMenuProps.reference"
+      v-model:open="pageMenuOpen"
+      :page="pageMenuTarget.page"
+      :anchor="pageMenuProps.reference"
+      :return-focus="pageMenuTarget.returnFocus"
     />
   </aside>
 </template>

@@ -3,6 +3,7 @@ import type { WebContentsView } from 'electron'
 import path from 'path'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import type { DatadogForwardedError } from '../../types/ipc'
+import type { NewWindowDashboardPage } from '../../shared/dashboardPages'
 import type { InstallationRecord } from '../installations'
 import { getAppVersion } from '../lib/ipc'
 import { hasBuildsRunningForAppsOnly, stopEveryBuildRunningForAppsOnly } from '../apps/localComfy'
@@ -836,6 +837,7 @@ export function applyChooserHostThemeToAll(): void {
 
 export interface OpenChooserHostWindowOptions {
   deferColdStartReveal?: boolean
+  dashboardPage?: NewWindowDashboardPage
 }
 
 export function openChooserHostWindow(
@@ -868,7 +870,7 @@ export function openChooserHostWindow(
   entry.coldStartPendingReveal = !opts.deferColdStartReveal
 
   entry.activePanel = initialPanel
-  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry))
+  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry), opts.dashboardPage)
 
   entry.layoutViews()
 
