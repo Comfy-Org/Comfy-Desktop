@@ -138,7 +138,13 @@ test('Change setup asks first for a new install or a ComfyUI already there, and 
     'the snapshot is asked for in the sheet, not in a second window'
   ).toBe(false)
 
-  expect(await ctx.panel.click('[data-testid="install-source-remote"]')).toBe(true)
+  expect(
+    await pickFromSetupDropdown(
+      ctx.panel,
+      WHERE_IT_IS_DROPDOWN,
+      '[data-testid="install-source-remote"]'
+    )
+  ).toBe(true)
   await ctx.panel.waitForVisible('#sf-url')
   expect(await ctx.panel.textOf('[data-testid="config-use-existing"]')).toBe('Connect')
 

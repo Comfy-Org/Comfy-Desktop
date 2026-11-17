@@ -16,7 +16,9 @@ import {
   openNewBuildChangeSetup,
   openPickerViaTitlePill,
   HARDWARE_DROPDOWN,
+  pickFromSetupDropdown,
   pickFromSetupDropdownByText,
+  WHERE_IT_IS_DROPDOWN,
   setupDropdownValue
 } from './support/chooserHelpers'
 import {
@@ -2567,10 +2569,14 @@ test('creates a Remote Connection record pointed at the running local server thr
     await ctx.panel.click('[data-testid="config-start-from-existing"]'),
     'Start from switched to ComfyUI I already have'
   ).toBe(true)
-  await ctx.panel.waitForVisible('[data-testid="install-source-remote"]', { timeout: 5_000 })
-  expect(await ctx.panel.click('[data-testid="install-source-remote"]'), 'On a server picked').toBe(
-    true
-  )
+  expect(
+    await pickFromSetupDropdown(
+      ctx.panel,
+      WHERE_IT_IS_DROPDOWN,
+      '[data-testid="install-source-remote"]'
+    ),
+    'On a server picked'
+  ).toBe(true)
 
   await ctx.panel.waitForVisible('#sf-url', { timeout: 10_000 })
   await ctx.panel.fill('#sf-url', origin!)
