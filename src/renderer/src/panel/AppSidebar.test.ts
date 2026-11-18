@@ -326,7 +326,7 @@ describe('AppSidebar', () => {
     await flushPromises()
 
     expect(rows.map(iconLeft)).toEqual(expanded)
-    await new Promise((resolve) => setTimeout(resolve, 320))
+    await new Promise((resolve) => setTimeout(resolve, 400))
     expect(rows.map(iconLeft), 'after the width settles').toEqual(expanded)
     expect(signInCardWidth(), 'log-in card width when folded').toBe(220)
     const rail = wrapper.get('[data-testid="app-sidebar"]').element.getBoundingClientRect().width
@@ -379,7 +379,7 @@ describe('AppSidebar', () => {
     const openSpots = ['app-sidebar-home', 'app-sidebar-assets'].map(iconSpot)
 
     await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
-    await new Promise((resolve) => setTimeout(resolve, 320))
+    await new Promise((resolve) => setTimeout(resolve, 400))
 
     expect(['app-sidebar-home', 'app-sidebar-assets'].map(iconSpot)).toEqual(openSpots)
     const rail = sidebar.getBoundingClientRect()
@@ -481,7 +481,7 @@ describe('AppSidebar', () => {
 
     await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
     await flushPromises()
-    await new Promise((resolve) => setTimeout(resolve, 320))
+    await new Promise((resolve) => setTimeout(resolve, 400))
 
     expect([leftOf(coin), leftOf(avatar)], 'coin and avatar folded').toEqual(open)
     expect(creditsHeight(), 'credits row folded').toBe(44)

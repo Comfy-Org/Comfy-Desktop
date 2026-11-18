@@ -39,9 +39,9 @@ async function onSignIn(): Promise<void> {
 
     <template v-else>
       <div
-        class="grid transition-[grid-template-rows,opacity] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-opacity"
+        class="grid transition-[grid-template-rows,opacity] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-opacity"
         :class="
-          collapsed ? 'grid-rows-[0fr] opacity-0 duration-200' : 'grid-rows-[1fr] duration-260'
+          collapsed ? 'grid-rows-[0fr] opacity-0 duration-300' : 'grid-rows-[1fr] duration-260'
         "
         :inert="collapsed"
         data-testid="sidebar-signin-card"
@@ -81,9 +81,9 @@ async function onSignIn(): Promise<void> {
         </div>
       </div>
       <div
-        class="grid transition-[grid-template-rows,opacity] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-opacity"
+        class="grid transition-[grid-template-rows,opacity] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-opacity"
         :class="
-          collapsed ? 'grid-rows-[1fr] duration-200' : 'grid-rows-[0fr] opacity-0 duration-260'
+          collapsed ? 'grid-rows-[1fr] duration-300' : 'grid-rows-[0fr] opacity-0 duration-260'
         "
         :inert="!collapsed"
         data-testid="sidebar-signin-icon"

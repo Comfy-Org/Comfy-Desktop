@@ -74,8 +74,8 @@ onUnmounted(() => unsubscribes.forEach((unsubscribe) => unsubscribe()))
     <Button
       variant="muted-textonly"
       size="unset"
-      class="relative w-full shrink-0 flex-col items-stretch justify-start overflow-hidden rounded-lg px-0 text-[13px]/5 font-normal transition-[height] ease-[cubic-bezier(0.25,1,0.5,1)] hover:bg-secondary hover:text-foreground motion-reduce:transition-none"
-      :class="collapsed ? 'h-11 duration-200' : 'h-8 duration-260'"
+      class="relative w-full shrink-0 flex-col items-stretch justify-start overflow-hidden rounded-lg px-0 text-[13px]/5 font-normal transition-[height] ease-[cubic-bezier(0.4,0,0.2,1)] hover:bg-secondary hover:text-foreground motion-reduce:transition-none"
+      :class="collapsed ? 'h-11 duration-300' : 'h-8 duration-260'"
       :aria-label="label"
       :disabled="!auth.status.workspaceId"
       data-testid="app-sidebar-credits"
@@ -95,7 +95,7 @@ onUnmounted(() => unsubscribes.forEach((unsubscribe) => unsubscribe()))
         <Transition
           enter-active-class="transition-opacity duration-180 delay-30 ease-out"
           enter-from-class="opacity-0"
-          leave-active-class="transition-opacity duration-100 ease-out"
+          leave-active-class="transition-opacity duration-150 ease-out"
           leave-to-class="opacity-0"
         >
           <span
@@ -125,7 +125,7 @@ onUnmounted(() => unsubscribes.forEach((unsubscribe) => unsubscribe()))
       <Transition
         enter-active-class="transition-opacity duration-180 delay-30 ease-out"
         enter-from-class="opacity-0"
-        leave-active-class="transition-opacity duration-100 ease-out"
+        leave-active-class="transition-opacity duration-150 ease-out"
         leave-to-class="opacity-0"
       >
         <span

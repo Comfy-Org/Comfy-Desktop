@@ -67,8 +67,8 @@ function onClick(): void {
     v-if="state.kind"
     variant="textonly"
     size="unset"
-    class="h-8 shrink-0 justify-start gap-2.5 rounded-lg text-[13px]/5 font-normal text-azure-600 hover:bg-secondary transition-[width,margin,padding,background-color,color] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
-    :class="collapsed ? 'ml-1 w-8 pr-0 pl-2 duration-200' : 'ml-0 w-full px-3 duration-260'"
+    class="h-8 shrink-0 justify-start gap-2.5 rounded-lg text-[13px]/5 font-normal text-azure-600 hover:bg-secondary transition-[width,margin,padding,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+    :class="collapsed ? 'ml-1 w-8 pr-0 pl-2 duration-300' : 'ml-0 w-full px-3 duration-260'"
     :aria-label="tooltip"
     :title="tooltip"
     :data-state="state.kind"
@@ -88,7 +88,7 @@ function onClick(): void {
     <Transition
       enter-active-class="transition-opacity duration-180 delay-30 ease-out"
       enter-from-class="opacity-0"
-      leave-active-class="transition-opacity duration-100 ease-out"
+      leave-active-class="transition-opacity duration-150 ease-out"
       leave-to-class="opacity-0"
     >
       <span v-if="!collapsed" class="min-w-0 flex-1 overflow-hidden text-left text-nowrap">{{

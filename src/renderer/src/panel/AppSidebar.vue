@@ -81,27 +81,27 @@ const faceTransition = {
     'transition-[opacity,scale] duration-180 ease-out motion-reduce:transition-opacity',
   enterFromClass: 'opacity-0 motion-safe:scale-90',
   leaveActiveClass:
-    'transition-[opacity,scale] duration-120 ease-out motion-reduce:transition-opacity',
+    'transition-[opacity,scale] duration-150 ease-out motion-reduce:transition-opacity',
   leaveToClass: 'opacity-0 motion-safe:scale-90'
 }
 const railRowSize = computed(() =>
-  collapsed.value ? 'ml-1 w-8 duration-200' : 'ml-0 w-full duration-260'
+  collapsed.value ? 'ml-1 w-8 duration-300' : 'ml-0 w-full duration-260'
 )
 const railRowInset = computed(() =>
-  collapsed.value ? 'pr-0 pl-2 duration-200' : 'px-3 duration-260'
+  collapsed.value ? 'pr-0 pl-2 duration-300' : 'px-3 duration-260'
 )
 const wordmarkTransition = {
   enterActiveClass:
-    'origin-left transition-[opacity,scale] duration-200 delay-90 ease-out motion-reduce:transition-opacity',
+    'origin-left transition-[opacity,scale] duration-200 delay-120 ease-out motion-reduce:transition-opacity',
   enterFromClass: 'opacity-0 motion-safe:scale-95',
   leaveActiveClass:
-    'origin-left transition-[opacity,scale] duration-100 ease-out motion-reduce:transition-opacity',
+    'origin-left transition-[opacity,scale] duration-150 ease-out motion-reduce:transition-opacity',
   leaveToClass: 'opacity-0 motion-safe:scale-95'
 }
 const labelTransition = {
   enterActiveClass: 'transition-opacity duration-180 delay-30 ease-out',
   enterFromClass: 'opacity-0',
-  leaveActiveClass: 'transition-opacity duration-100 ease-out',
+  leaveActiveClass: 'transition-opacity duration-150 ease-out',
   leaveToClass: 'opacity-0'
 }
 
@@ -126,9 +126,13 @@ const mainRows = computed<SidebarRow[]>(() => [
 const groups = computed<{ key: string; title?: string; rows: SidebarRow[] }[]>(() => [
   {
     key: 'main',
-    rows: collapsed.value ? mainRows.value : mainRows.value.filter((row) => row.page !== 'chooser')
+    rows: mainRows.value.filter((row) => row.page !== 'chooser')
   }
 ])
+
+const railBuildsRow = computed(
+  () => mainRows.value.find((row) => row.page === 'chooser') as SidebarRow
+)
 
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
@@ -210,8 +214,8 @@ function openSettings(): void {
 
 <template>
   <aside
-    class="app-sidebar flex shrink-0 flex-col overflow-hidden rounded-shell bg-sidebar-background px-3 py-2 transition-[width] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
-    :class="collapsed ? 'w-16 duration-200' : 'w-[244px] duration-260'"
+    class="app-sidebar flex shrink-0 flex-col overflow-hidden rounded-shell bg-sidebar-background px-3 py-2 transition-[width] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+    :class="collapsed ? 'w-16 duration-300' : 'w-[244px] duration-260'"
     :aria-label="t('sidebar.navigation')"
     data-testid="app-sidebar"
     :data-collapsed="collapsed"
@@ -292,7 +296,7 @@ function openSettings(): void {
           :key="row.page"
           variant="muted-textonly"
           size="unset"
-          class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
+          class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
           :class="[
             railRowSize,
             row.page === activePage && 'bg-accent text-foreground hover:bg-accent'
@@ -306,7 +310,7 @@ function openSettings(): void {
           <Tooltip
             :text="collapsed ? row.label : undefined"
             side="right"
-            class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
+            class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
             :class="railRowInset"
           >
             <component :is="row.icon" :size="15" class="shrink-0" aria-hidden="true" />
@@ -319,113 +323,145 @@ function openSettings(): void {
             </Transition>
           </Tooltip>
         </Button>
-        <div
-          v-if="group.key === 'main'"
-          class="grid shrink-0 transition-[grid-template-rows,opacity] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-opacity"
-          :class="
-            collapsed ? 'grid-rows-[0fr] opacity-0 duration-200' : 'grid-rows-[1fr] duration-260'
-          "
-          :inert="collapsed"
-        >
-          <div
-            class="flex min-h-0 w-[220px] flex-col gap-1 overflow-hidden text-nowrap"
-            :data-testid="collapsed ? undefined : 'app-sidebar-builds'"
-          >
-            <div class="mt-5.5 flex h-6.5 shrink-0 items-center justify-between pr-1 pl-3">
-              <Button
-                variant="textonly"
-                size="unset"
-                class="group/title -ml-1.5 h-[22px] gap-[5px] rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-transparent hover:text-foreground focus-visible:text-foreground aria-[current=page]:text-foreground"
-                :aria-current="buildsPageActive ? 'page' : undefined"
-                :data-testid="collapsed ? undefined : 'app-sidebar-chooser'"
-                @click="navigate('chooser')"
-                @contextmenu.prevent="openPageMenu($event, 'chooser')"
-              >
-                {{ t('sidebar.builds') }}
-                <ArrowRight
-                  :size="12"
-                  :stroke-width="2.25"
-                  class="-translate-x-0.5 opacity-35 transition-[opacity,translate] duration-200 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 group-focus-visible/title:translate-x-0 group-focus-visible/title:opacity-100 group-aria-[current=page]/title:translate-x-0 group-aria-[current=page]/title:opacity-100 motion-reduce:transition-none"
-                  aria-hidden="true"
-                />
-              </Button>
-              <Button
-                variant="muted-textonly"
-                size="unset"
-                class="size-6 rounded-md p-0 hover:bg-secondary hover:text-foreground"
-                :aria-label="t('sidebar.newBuild')"
-                :data-testid="collapsed ? undefined : 'app-sidebar-new-build'"
-                @click="emit('new-build')"
-              >
-                <Tooltip
-                  :text="t('sidebar.newBuild')"
-                  side="right"
-                  class="size-full items-center justify-center"
-                >
-                  <Plus :size="13" aria-hidden="true" />
-                </Tooltip>
-              </Button>
-            </div>
-            <p
-              v-if="!buildRows.length"
-              class="m-0 flex h-8 shrink-0 items-center gap-2.5 px-3 text-[13px]/5 text-subtle-foreground"
-              :data-testid="collapsed ? undefined : 'app-sidebar-no-builds'"
-            >
-              <Server :size="15" aria-hidden="true" />{{ t('sidebar.noBuilds') }}
-            </p>
+        <div v-if="group.key === 'main'" class="grid shrink-0">
+          <Transition v-bind="labelTransition">
             <Button
-              v-for="{ build, install, failure, live } in buildRows"
-              :key="build.id"
+              v-if="collapsed"
               variant="muted-textonly"
               size="unset"
-              class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-              :class="build.id === activeBuildId && 'bg-accent text-foreground hover:bg-accent'"
-              :aria-current="build.id === activeBuildId ? 'page' : undefined"
-              :data-testid="`app-sidebar-build-${build.id}`"
-              @click="emit('open-build', build)"
-              @contextmenu.prevent="openBuildMenu($event, build)"
+              class="col-start-1 row-start-1 h-8 shrink-0 justify-start self-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+              :class="[
+                railRowSize,
+                activePage === 'chooser' && 'bg-accent text-foreground hover:bg-accent'
+              ]"
+              :aria-current="activePage === 'chooser' ? 'page' : undefined"
+              :aria-label="railBuildsRow.label"
+              data-testid="app-sidebar-chooser"
+              @click="navigate('chooser')"
+              @contextmenu.prevent="openPageMenu($event, 'chooser')"
             >
-              <LoaderCircle
-                v-if="install"
-                :size="16"
-                class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-                aria-hidden="true"
-                data-testid="app-sidebar-build-installing"
-              />
-              <span v-else class="relative flex shrink-0">
-                <component
-                  :is="isCloudBuild(build) ? Cloud : Laptop"
-                  :size="16"
-                  aria-hidden="true"
-                />
-                <span
-                  v-if="failure || live"
-                  class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2"
-                  :class="[
-                    failure ? 'bg-destructive' : 'bg-success',
-                    build.id === activeBuildId
-                      ? 'ring-[oklch(0.27_0_0)]'
-                      : 'ring-sidebar-background'
-                  ]"
-                  :data-testid="failure ? 'app-sidebar-dot-failed' : 'app-sidebar-dot-live'"
-                  aria-hidden="true"
-                />
-              </span>
               <Tooltip
-                :text="failure ? `${build.name} · ${failure}` : build.name"
+                :text="collapsed ? railBuildsRow.label : undefined"
                 side="right"
-                class="min-w-0 flex-1 items-center self-stretch"
+                class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+                :class="railRowInset"
               >
-                <span class="min-w-0 truncate text-left">{{ build.name }}</span>
-                <span v-if="failure" class="sr-only">· {{ failure }}</span>
+                <component
+                  :is="railBuildsRow.icon"
+                  :size="15"
+                  class="shrink-0"
+                  aria-hidden="true"
+                />
               </Tooltip>
-              <span
-                v-if="install && install.kind !== 'launch' && install.percent !== null"
-                class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
-                data-testid="app-sidebar-build-percent"
-                >{{ t('installProgress.percent', { percent: install.percent }) }}</span
-              >
             </Button>
+          </Transition>
+          <div
+            class="col-start-1 row-start-1 grid shrink-0 transition-[grid-template-rows,opacity] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-opacity"
+            :class="
+              collapsed ? 'grid-rows-[0fr] opacity-0 duration-300' : 'grid-rows-[1fr] duration-260'
+            "
+            :inert="collapsed"
+          >
+            <div
+              class="flex min-h-0 w-[220px] flex-col gap-1 overflow-hidden text-nowrap"
+              :data-testid="collapsed ? undefined : 'app-sidebar-builds'"
+            >
+              <div class="mt-5.5 flex h-6.5 shrink-0 items-center justify-between pr-1 pl-3">
+                <Button
+                  variant="textonly"
+                  size="unset"
+                  class="group/title -ml-1.5 h-[22px] gap-[5px] rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-transparent hover:text-foreground focus-visible:text-foreground aria-[current=page]:text-foreground"
+                  :aria-current="buildsPageActive ? 'page' : undefined"
+                  :data-testid="collapsed ? undefined : 'app-sidebar-chooser'"
+                  @click="navigate('chooser')"
+                  @contextmenu.prevent="openPageMenu($event, 'chooser')"
+                >
+                  {{ t('sidebar.builds') }}
+                  <ArrowRight
+                    :size="12"
+                    :stroke-width="2.25"
+                    class="-translate-x-0.5 opacity-35 transition-[opacity,translate] duration-200 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 group-focus-visible/title:translate-x-0 group-focus-visible/title:opacity-100 group-aria-[current=page]/title:translate-x-0 group-aria-[current=page]/title:opacity-100 motion-reduce:transition-none"
+                    aria-hidden="true"
+                  />
+                </Button>
+                <Button
+                  variant="muted-textonly"
+                  size="unset"
+                  class="size-6 rounded-md p-0 hover:bg-secondary hover:text-foreground"
+                  :aria-label="t('sidebar.newBuild')"
+                  :data-testid="collapsed ? undefined : 'app-sidebar-new-build'"
+                  @click="emit('new-build')"
+                >
+                  <Tooltip
+                    :text="t('sidebar.newBuild')"
+                    side="right"
+                    class="size-full items-center justify-center"
+                  >
+                    <Plus :size="13" aria-hidden="true" />
+                  </Tooltip>
+                </Button>
+              </div>
+              <p
+                v-if="!buildRows.length"
+                class="m-0 flex h-8 shrink-0 items-center gap-2.5 px-3 text-[13px]/5 text-subtle-foreground"
+                :data-testid="collapsed ? undefined : 'app-sidebar-no-builds'"
+              >
+                <Server :size="15" aria-hidden="true" />{{ t('sidebar.noBuilds') }}
+              </p>
+              <Button
+                v-for="{ build, install, failure, live } in buildRows"
+                :key="build.id"
+                variant="muted-textonly"
+                size="unset"
+                class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+                :class="build.id === activeBuildId && 'bg-accent text-foreground hover:bg-accent'"
+                :aria-current="build.id === activeBuildId ? 'page' : undefined"
+                :data-testid="`app-sidebar-build-${build.id}`"
+                @click="emit('open-build', build)"
+                @contextmenu.prevent="openBuildMenu($event, build)"
+              >
+                <LoaderCircle
+                  v-if="install"
+                  :size="16"
+                  class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+                  aria-hidden="true"
+                  data-testid="app-sidebar-build-installing"
+                />
+                <span v-else class="relative flex shrink-0">
+                  <component
+                    :is="isCloudBuild(build) ? Cloud : Laptop"
+                    :size="16"
+                    aria-hidden="true"
+                  />
+                  <span
+                    v-if="failure || live"
+                    class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2"
+                    :class="[
+                      failure ? 'bg-destructive' : 'bg-success',
+                      build.id === activeBuildId
+                        ? 'ring-[oklch(0.27_0_0)]'
+                        : 'ring-sidebar-background'
+                    ]"
+                    :data-testid="failure ? 'app-sidebar-dot-failed' : 'app-sidebar-dot-live'"
+                    aria-hidden="true"
+                  />
+                </span>
+                <Tooltip
+                  :text="failure ? `${build.name} · ${failure}` : build.name"
+                  side="right"
+                  class="min-w-0 flex-1 items-center self-stretch"
+                >
+                  <span class="min-w-0 truncate text-left">{{ build.name }}</span>
+                  <span v-if="failure" class="sr-only">· {{ failure }}</span>
+                </Tooltip>
+                <span
+                  v-if="install && install.kind !== 'launch' && install.percent !== null"
+                  class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
+                  data-testid="app-sidebar-build-percent"
+                  >{{ t('installProgress.percent', { percent: install.percent }) }}</span
+                >
+              </Button>
+            </div>
           </div>
         </div>
       </template>
@@ -436,7 +472,7 @@ function openSettings(): void {
       <Button
         variant="muted-textonly"
         size="unset"
-        class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
+        class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
         :class="railRowSize"
         :aria-label="t('fileMenu.globalSettings')"
         aria-haspopup="dialog"
@@ -446,7 +482,7 @@ function openSettings(): void {
         <Tooltip
           :text="collapsed ? t('fileMenu.globalSettings') : undefined"
           side="right"
-          class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
+          class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
           :class="railRowInset"
         >
           <Settings :size="15" class="shrink-0" aria-hidden="true" />

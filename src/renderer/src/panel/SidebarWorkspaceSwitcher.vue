@@ -217,7 +217,7 @@ async function signOut(): Promise<void> {
         <Transition
           enter-active-class="transition-opacity duration-180 delay-30 ease-out"
           enter-from-class="opacity-0"
-          leave-active-class="transition-opacity duration-100 ease-out"
+          leave-active-class="transition-opacity duration-150 ease-out"
           leave-to-class="opacity-0"
         >
           <span v-if="!collapsed" class="flex min-w-0 flex-1 items-center gap-3 text-nowrap">
