@@ -549,6 +549,12 @@ export async function readSettled(signal?: AbortSignal): Promise<Settings | null
   return null
 }
 
+export function telemetryConsent(): boolean | undefined {
+  const { settings, unreadable } = loadOutcome()
+  if (unreadable) return undefined
+  return typeof settings.telemetryEnabled === 'boolean' ? settings.telemetryEnabled : undefined
+}
+
 export function resolveBetaFeaturesEnabled(): boolean {
   const { settings, unreadable } = loadOutcome()
   const enabled = betaFeaturesEnabledIn(settings, unreadable)

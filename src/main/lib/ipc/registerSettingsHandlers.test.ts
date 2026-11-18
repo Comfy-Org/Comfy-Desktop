@@ -16,6 +16,7 @@ vi.mock('./shared', async () => {
     settings: {
       getAll: () => mockSettings,
       get: (key: string) => mockSettings[key],
+      telemetryConsent: () => mockSettings.telemetryEnabled,
       set: (key: string, value: unknown) => mockSettingsSet(key, value),
       getTrackedSettingsTelemetryProperties: () => ({}),
       resolveBetaFeaturesEnabled: () => mockBeta.resolved

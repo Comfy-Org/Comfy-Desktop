@@ -32,6 +32,7 @@ let settings: {
   resolveBetaFeaturesEnabled: () => boolean
   readSettled: (signal?: AbortSignal) => Promise<Record<string, unknown> | null>
   peekBetaFeaturesEnabled: () => boolean
+  telemetryConsent: () => boolean | undefined
   getTrackedSettingsTelemetryProperties: (
     keys?: readonly string[]
   ) => Record<string, boolean | number | string | null>
@@ -990,5 +991,69 @@ describe('settings.json and its .bak both unreadable', () => {
     locked.add(settingsPath)
 
     expect(settings.get('firstUseCompleted')).toBe(false)
+  })
+})
+
+describe('telemetryConsent', () => {
+  function failReads(...failing: string[]): void {
+    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      p: fs.PathOrFileDescriptor,
+      opts?: unknown
+    ) => {
+      if (typeof p === 'string' && failing.includes(p)) {
+        const err = new Error('fake EPERM') as NodeJS.ErrnoException
+        err.code = 'EPERM'
+        throw err
+      }
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.readFileSync)
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it.each([
+    ['an opt-in', { telemetryEnabled: true }, true],
+    ['an opt-out', { telemetryEnabled: false }, false],
+    ['no choice', {}, undefined]
+  ])('returns %s from a readable settings.json', (_label, stored, expected) => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify(stored))
+
+    expect(settings.telemetryConsent()).toBe(expected)
+  })
+
+  it('does not take consent from a backup when settings.json is unreadable', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: false }))
+    fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ telemetryEnabled: true }))
+    failReads(settingsPath)
+
+    expect(settings.get('telemetryEnabled'), 'get serves the stale backup').toBe(true)
+    expect(settings.telemetryConsent()).toBeUndefined()
+  })
+
+  it('has no consent when neither file is readable', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: true }))
+    failReads(settingsPath, settingsPath + '.bak')
+
+    expect(settings.telemetryConsent()).toBeUndefined()
+  })
+
+  it('keeps consent restored from a backup when settings.json is missing', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ telemetryEnabled: true }))
+
+    expect(settings.telemetryConsent()).toBe(true)
+  })
+
+  it('ignores a non-boolean stored value', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: 'true' }))
+
+    expect(settings.telemetryConsent()).toBeUndefined()
   })
 })

@@ -948,10 +948,8 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
     vi.restoreAllMocks()
   })
 
-  function snapshotWithConsent(consent: unknown): { telemetryGranted: boolean } {
-    const actualGet = settings.get
-    vi.spyOn(settings, 'get').mockImplementation(((key: string) =>
-      key === 'telemetryEnabled' ? consent : actualGet(key)) as typeof settings.get)
+  function snapshotWithConsent(consent: boolean | undefined): { telemetryGranted: boolean } {
+    vi.spyOn(settings, 'telemetryConsent').mockReturnValue(consent)
     vi.spyOn(settings, 'resolveBetaFeaturesEnabled').mockReturnValue(false)
     return _test_buildGlobalSettingsSnapshot()
   }

@@ -229,7 +229,7 @@ export function applySettingSet(key: string, value: unknown): void {
     key === 'betaFeaturesEnabled' &&
     value === true &&
     settings.get('betaFeaturesEnabled') !== true &&
-    settings.get('telemetryEnabled') !== true
+    settings.telemetryConsent() !== true
   ) {
     return
   }
