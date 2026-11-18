@@ -80,7 +80,7 @@ describe('HomeCarousel premium apps', () => {
     ).toBe(undefined)
   })
 
-  it('shows the credit note when the premium card gets keyboard focus', async () => {
+  it('shows the credit note when the premium card gets keyboard focus, and Escape closes it with focus kept on the card', async () => {
     const wrapper = mountCarousel()
     expect(document.querySelector('.tooltip-bubble')).toBe(null)
 
@@ -93,5 +93,10 @@ describe('HomeCarousel premium apps', () => {
     const bubble = document.querySelector('.tooltip-bubble')!.getBoundingClientRect()
     expect(bubble.width).toBeGreaterThan(0)
     expect(bubble.height).toBeGreaterThan(0)
+
+    await userEvent.keyboard('{Escape}')
+
+    await expect.poll(() => document.querySelector('.tooltip-bubble')).toBe(null)
+    expect(document.activeElement).toBe(frontCard(wrapper).element)
   })
 })

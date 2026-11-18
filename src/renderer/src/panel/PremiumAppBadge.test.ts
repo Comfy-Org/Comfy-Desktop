@@ -89,7 +89,7 @@ describe('PremiumAppBadge', () => {
       .toContain('Premium app, runs with credits')
   })
 
-  it('closes on Escape while its card has keyboard focus', async () => {
+  it('closes on Escape while it is shown for keyboard focus', async () => {
     const wrapper = mount(PremiumAppBadge, {
       attachTo: document.body,
       props: { descriptionId: 'premium-note', revealed: true }
