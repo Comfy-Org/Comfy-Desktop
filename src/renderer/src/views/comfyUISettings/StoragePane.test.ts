@@ -273,14 +273,14 @@ describe('StoragePane', () => {
     expect(api.openGlobalSettingsCalls).toEqual(['storage'])
   })
 
-  it('puts Add Directory as a + in the Models header and keeps the box to folder rows', async () => {
+  it('puts a labelled Add models folder button right under the last models row', async () => {
     installMockApi()
     const wrapper = mountPane()
     await nextTick()
-    const add = wrapper.find('.gs-micro-title .storage-add-dir')
-    expect(add.attributes('aria-label')).toBe('Add Directory')
+    expect(wrapper.find('.gs-micro-title button').exists()).toBe(false)
     const list = wrapper.find('.models-dir-list')
-    expect(list.findAll(':scope > :not(.models-dir-row)')).toHaveLength(0)
+    const children = list.findAll(':scope > *')
+    expect(children[children.length - 1]!.find('.models-dir-add').text()).toBe('Add models folder')
     expect(list.text()).not.toContain('Manage Shared Directories')
   })
 
@@ -520,11 +520,11 @@ describe('StoragePane', () => {
       expect(items[0]!.text()).toContain('Use for Model Downloads')
     })
 
-    it('labels the add button "Add Directory", not the shared-directory wording', async () => {
+    it('labels the add button like Desktop Settings, not with the shared-directory wording', async () => {
       installMockApi()
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models']))
       await nextTick()
-      expect(wrapper.find('.storage-add-dir').attributes('aria-label')).toBe('Add Directory')
+      expect(wrapper.find('.models-dir-add').text()).toBe('Add models folder')
     })
 
     it('emits update-field with the appended dir when adding', async () => {
@@ -532,7 +532,7 @@ describe('StoragePane', () => {
       api.browseFolderReturn = '/c/models'
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models', '/b/models']))
       await nextTick()
-      await wrapper.find('.storage-add-dir').trigger('click')
+      await wrapper.find('.models-dir-add').trigger('click')
       await flushPromises()
       const emitted = wrapper.emitted('update-field')
       expect(emitted).toBeTruthy()
@@ -592,7 +592,7 @@ describe('StoragePane', () => {
       api.browseFolderReturn = '/own/models'
       const wrapper = mountPaneWithSections(makeStorageSections(['/a/models']))
       await nextTick()
-      await wrapper.find('.storage-add-dir').trigger('click')
+      await wrapper.find('.models-dir-add').trigger('click')
       await flushPromises()
       expect(wrapper.emitted('update-field')).toBeUndefined()
     })

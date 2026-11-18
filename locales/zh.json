@@ -428,8 +428,7 @@
     "removeInstanceDirConfirm": "这不会删除任何文件。你之后可以从此列表重新添加该目录。",
     "removeDirTitle": "要移除共享模型目录吗？",
     "removeDirConfirm": "这不会删除任何文件。你之后可以从此列表重新添加该目录。",
-    "moreActions": "更多操作",
-    "addInstanceDir": "添加目录"
+    "moreActions": "更多操作"
   },
   "common": {
     "back": "返回",

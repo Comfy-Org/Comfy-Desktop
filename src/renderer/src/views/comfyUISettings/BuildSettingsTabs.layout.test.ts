@@ -192,19 +192,28 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     }
   })
 
-  it('puts Add Directory as a + beside the Models title, not inside the box', async () => {
+  it('puts Add models folder right under the last models row, aligned with the folders', async () => {
     const root = await mountStorage(width)
-    const models = root.querySelector<HTMLElement>('.gs-micro-section')!
-    const title = models.querySelector('.gs-micro-title > span')!.getBoundingClientRect()
-    const add = models.querySelector('.gs-micro-title .storage-add-dir')!.getBoundingClientRect()
-    const box = models.querySelector('.models-dir-list')!.getBoundingClientRect()
-    expect(add.bottom, 'the + sits above the box').toBeLessThanOrEqual(box.top)
-    expect(add.left, 'the + follows the title').toBeGreaterThan(title.right)
-    expect(add.right, 'the + stays on the title side').toBeLessThan(box.left + box.width / 2)
+    const rows = rects(root, '.models-dir-row')
+    const lastRow = rows[rows.length - 1]!
+    const add = root.querySelector('.models-dir-add')!.getBoundingClientRect()
+    const addIcon = root.querySelector('.models-dir-add svg')!.getBoundingClientRect()
+    const addLabel = root.querySelector('.models-dir-add span')!.getBoundingClientRect()
+    const box = root.querySelector('.models-dir-list')!.getBoundingClientRect()
+    expect(add.top, 'the button follows the last row').toBeGreaterThanOrEqual(lastRow.bottom)
     expect(
-      Math.abs(add.top + add.height / 2 - (title.top + title.height / 2)),
-      'the + is centred on the title'
-    ).toBeLessThanOrEqual(1)
+      add.top - lastRow.bottom,
+      'the button sits right under the last row'
+    ).toBeLessThanOrEqual(4)
+    expect(add.bottom, 'the button stays inside the Models box').toBeLessThanOrEqual(box.bottom)
+    expectSame(
+      [...rects(root, '.models-dir-row .storage-item-icon').map((r) => r.left), addIcon.left],
+      'the + lines up with the folder icons'
+    )
+    expectSame(
+      [...rects(root, '.models-dir-name').map((r) => r.left), addLabel.left],
+      'the label lines up with the paths'
+    )
   })
 
   it('keeps icons and badges on the first line when a path wraps', async () => {

@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import Button from '@comfyorg/design-system/button/Button'
-import { AlertTriangle, Plus } from '@lucide/vue'
+import { AlertTriangle } from '@lucide/vue'
 import { useModal } from '../../composables/useModal'
 import ModelsDirList from '../../comfyTitlePopup/globalSettings/ModelsDirList.vue'
 import StorageDirRow from './StorageDirRow.vue'
@@ -350,19 +349,6 @@ function handleRevealPath(path: string): void {
       :title="t('settings.modelStorage')"
       :tooltip="t('tooltips.instanceModels')"
     >
-      <template #tool>
-        <Button
-          type="button"
-          variant="muted-textonly"
-          size="icon-sm"
-          class="storage-add-dir rounded-md"
-          :aria-label="t('models.addInstanceDir')"
-          :title="t('models.addInstanceDir')"
-          @click="handleAddModelDir"
-        >
-          <Plus :size="14" aria-hidden="true" />
-        </Button>
-      </template>
       <template v-if="useSharedModelsField" #actions>
         <label
           class="storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 [&>span]:truncate [&>.bt-switch]:ml-1.5"
@@ -384,6 +370,7 @@ function handleRevealPath(path: string): void {
         @open="handleOpenModelDir"
         @details="handleModelDetails"
         @manage="handleManageSharedDirs"
+        @add="handleAddModelDir"
       />
     </GlobalSettingsMicroSection>
 

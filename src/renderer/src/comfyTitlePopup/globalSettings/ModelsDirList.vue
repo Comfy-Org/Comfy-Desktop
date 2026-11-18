@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
-import { FileText, Folder, FolderLock, MoreHorizontal } from '@lucide/vue'
+import { FileText, Folder, FolderLock, MoreHorizontal, Plus } from '@lucide/vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 import StorageTag from '../../components/StorageTag.vue'
@@ -33,6 +33,7 @@ const emit = defineEmits<{
   open: [index: number]
   details: [index: number]
   manage: []
+  add: []
 }>()
 
 const { t } = useI18n()
@@ -222,6 +223,19 @@ const rows = computed(() =>
           </Menu>
         </div>
       </div>
+    </div>
+
+    <div class="models-dir-foot flex min-w-0 items-center px-1 pt-1">
+      <Button
+        type="button"
+        variant="muted-textonly"
+        size="md"
+        class="models-dir-add gap-2.5 rounded-[10px] px-2"
+        @click="emit('add')"
+      >
+        <Plus :size="14" aria-hidden="true" />
+        <span>{{ t('settings.addModelsFolder') }}</span>
+      </Button>
     </div>
   </div>
 </template>

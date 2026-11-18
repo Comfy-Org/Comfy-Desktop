@@ -428,8 +428,7 @@
     "removeInstanceDirConfirm": "This won't delete any files. You can re-add the directory later from this list.",
     "removeDirTitle": "Remove shared models directory?",
     "removeDirConfirm": "This won't delete any files. You can re-add the directory later from this list.",
-    "moreActions": "More actions",
-    "addInstanceDir": "Add Directory"
+    "moreActions": "More actions"
   },
   "common": {
     "back": "Back",
