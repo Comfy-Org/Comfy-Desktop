@@ -66,27 +66,32 @@ useResizeObserver(host, ([entry]) => {
   draw()
 })
 
+function showScene(frameHost: HTMLElement): void {
+  renderer = new WebGLRenderer({ antialias: true, alpha: true })
+  renderer.setPixelRatio(window.devicePixelRatio)
+  renderer.setSize(frameHost.clientWidth, frameHost.clientHeight, false)
+  renderer.toneMapping = NeutralToneMapping
+  camera.aspect = frameHost.clientWidth / Math.max(frameHost.clientHeight, 1)
+  const environment = new PMREMGenerator(renderer)
+  const room = new RoomEnvironment()
+  scene.environment = environment.fromScene(room).texture
+  room.dispose()
+  environment.dispose()
+  renderer.domElement.className =
+    'block size-full rounded-lg outline-none focus-visible:shadow-[0_0_0_2px_var(--color-ring)]'
+  renderer.domElement.tabIndex = 0
+  renderer.domElement.setAttribute('aria-label', t('assets.detail.modelView', { name }))
+  renderer.domElement.dataset.testid = 'output-detail-model'
+  frameHost.append(renderer.domElement)
+  controls = new OrbitControls(camera, renderer.domElement)
+  controls.addEventListener('change', draw)
+  controls.listenToKeyEvents(renderer.domElement)
+}
+
 onMounted(async () => {
   const frameHost = host.value
   if (!frameHost) return
   try {
-    renderer = new WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setPixelRatio(window.devicePixelRatio)
-    renderer.toneMapping = NeutralToneMapping
-    const environment = new PMREMGenerator(renderer)
-    const room = new RoomEnvironment()
-    scene.environment = environment.fromScene(room).texture
-    room.dispose()
-    environment.dispose()
-    renderer.domElement.className =
-      'block size-full rounded-lg outline-none focus-visible:shadow-[0_0_0_2px_var(--color-ring)]'
-    renderer.domElement.tabIndex = 0
-    renderer.domElement.setAttribute('aria-label', t('assets.detail.modelView', { name }))
-    renderer.domElement.dataset.testid = 'output-detail-model'
-    frameHost.append(renderer.domElement)
-    controls = new OrbitControls(camera, renderer.domElement)
-    controls.addEventListener('change', draw)
-    controls.listenToKeyEvents(renderer.domElement)
     const bytes = await load()
     const model = bytes && !closed ? await modelLoad.parse(bytes, name) : null
     if (closed) return
@@ -95,6 +100,7 @@ onMounted(async () => {
       state.value = 'failed'
       return
     }
+    showScene(frameHost)
     tintUntexturedWhite(model)
     scene.add(model)
     frameModel(model)
