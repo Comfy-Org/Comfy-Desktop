@@ -42,6 +42,7 @@ import MarPage from '../pages/MarPage.vue'
 import MarAppsPage from '../pages/MarAppsPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import ExampleTile from '../apps/ExampleTile.vue'
+import AppRhythmTile from '../apps/AppRhythmTile.vue'
 import StarsGlyph from '../apps/StarsGlyph.vue'
 import MarSearchField from '../pages/MarSearchField.vue'
 import AssetLayoutMenu, { type AssetView } from '../assets/AssetLayoutMenu.vue'
@@ -350,6 +351,24 @@ const picked = computed(() =>
 const cardView = ref<AssetView>('grid')
 const cardSize = ref(2)
 const COLS = [0, 5, 4, 3]
+// The Apps tab opens on Rhythm (Firefly's Quick actions): a row of big
+// squares, then a row of one more, smaller, and again. Size sets how many
+// fit (the big row is one fewer than the grid's columns). Grid is the same
+// square tile, every one the size of the small row.
+const appView = ref<AssetView>('rhythm')
+type Rhythm = { big: boolean; cols: number; apps: typeof apps.value }
+const rhythm = computed<Rhythm[]>(() => {
+  const small = COLS[cardSize.value] ?? 4
+  const rows: Rhythm[] = []
+  for (let i = 0, big = true; i < apps.value.length; big = !big) {
+    const cols = big ? small - 1 : small
+    rows.push({ big, cols, apps: apps.value.slice(i, i + cols) })
+    i += cols
+  }
+  return rows
+})
+// What each app made, shown on hover: its first example (a clip plays).
+const previewOf = (id: string): AppExample | undefined => APP_EXAMPLES.find((x) => x.app === id)
 // Inspiration's Layout: masonry or grid, at one size (no Size here).
 const view = ref<AssetView>('masonry')
 const size = ref(2)
@@ -520,11 +539,11 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         <span v-if="tab === 'apps' || tab === 'templates'" key="sort" class="inline-flex">
           <AssetLayoutMenu
             v-if="tab === 'apps'"
-            v-model:view="cardView"
+            v-model:view="appView"
             v-model:size="cardSize"
             v-model:sort="appSort"
             :sorts="APP_SORTS"
-            :views="['grid']"
+            :views="['rhythm', 'grid']"
           />
           <AssetLayoutMenu
             v-else
@@ -566,28 +585,47 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 
     <!-- Apps: one grid. -->
     <template v-else-if="tab === 'apps'">
-      <div class="mar-ex-grid is-apps" :style="{ '--cols': COLS[cardSize] }">
+      <div v-if="appView === 'rhythm'" class="mar-ex-rhythm">
         <div
+          v-for="(row, r) in rhythm"
+          :key="r"
+          class="mar-ex-rhythm-row"
+          :style="{ '--cols': row.cols }"
+        >
+          <AppRhythmTile
+            v-for="a in row.apps"
+            :key="a.id"
+            :name="a.name"
+            :blurb="a.blurb"
+            :thumb="thumb(a.thumbId)"
+            :preview="previewOf(a.id)?.after"
+            :video="previewOf(a.id)?.video"
+            :big="row.big"
+            role="button"
+            tabindex="0"
+            :aria-label="`Open ${a.name}`"
+            @click="openAppPage(a.id)"
+            @keydown.enter="openAppPage(a.id)"
+            @keydown.space.prevent="openAppPage(a.id)"
+          />
+        </div>
+      </div>
+      <div v-else class="mar-ex-rhythm-row is-grid" :style="{ '--cols': COLS[cardSize] }">
+        <AppRhythmTile
           v-for="a in apps"
           :key="a.id"
+          :name="a.name"
+          :blurb="a.blurb"
+          :thumb="thumb(a.thumbId)"
+          :preview="previewOf(a.id)?.after"
+          :video="previewOf(a.id)?.video"
           role="button"
           tabindex="0"
-          class="mar-ex-card group"
           :aria-label="`Open ${a.name}`"
           @click="openAppPage(a.id)"
           @keydown.enter="openAppPage(a.id)"
           @keydown.space.prevent="openAppPage(a.id)"
-        >
-          <span class="mar-ex-media"><img :src="thumb(a.thumbId)" alt="" loading="lazy" /></span>
-          <span class="flex min-w-0 items-start gap-1 px-1.5 pt-2.5 pb-1.5 text-left">
-            <span class="block min-w-0 flex-1">
-              <span class="block truncate text-ui font-medium text-base-foreground">{{
-                a.name
-              }}</span>
-              <span class="block truncate text-ui text-subtle-foreground">{{ a.blurb }}</span>
-            </span>
-          </span>
-        </div>
+        />
       </div>
     </template>
 
@@ -735,14 +773,13 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 10px;
 }
-.mar-ex-grid.is-apps,
 .mar-ex-grid.is-four {
   grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
 }
 /* Narrow windows: three across, so names and lines still read. */
 @media (max-width: 1100px) {
-  .mar-ex-grid.is-apps,
-  .mar-ex-grid.is-four {
+  .mar-ex-grid.is-four,
+  .mar-ex-rhythm-row.is-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
@@ -758,11 +795,17 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-.mar-ex-grid.is-apps .mar-ex-media {
-  aspect-ratio: 16 / 10;
+/* Rhythm: rows of squares, a big row then a small one, the same gap
+   both ways. A short last row keeps its squares at the row's size. */
+.mar-ex-rhythm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
-.mar-ex-grid.is-apps .mar-ex-media img {
-  border-radius: var(--radius-control);
+.mar-ex-rhythm-row {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  gap: 14px;
 }
 .mar-ex-mark {
   display: inline-flex;

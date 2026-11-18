@@ -1,6 +1,6 @@
 import { reactive, watch, type Component } from 'vue'
 import type { AssetGroup } from './assetGroups'
-import { LayoutDashboard, LayoutGrid, Rows3 } from 'lucide-vue-next'
+import { LayoutDashboard, LayoutGrid, LayoutPanelTop, Rows3 } from 'lucide-vue-next'
 
 /** How your own things are laid out (Assets, in Mar's proposal): the
  *  View menu next to Sort. Applied as data attributes on <html> so the
@@ -10,13 +10,14 @@ export type AssetSize = 's' | 'm' | 'l'
 /** The Assets page's wall (AssetLayoutMenu): masonry in columns, masonry
  *  in rows (each row one height, every picture in its shape), or an even
  *  grid. */
-export type AssetWall = 'masonry' | 'rows' | 'grid'
+export type AssetWall = 'masonry' | 'rows' | 'grid' | 'rhythm'
 /** The walls as the Layout menu and the toolbar's toggles show them:
  *  the short name on the tab, the full one in the tooltip. */
 export const WALLS: { value: AssetWall; label: string; title: string; icon: Component }[] = [
   { value: 'masonry', label: 'Masonry', title: 'Masonry columns', icon: LayoutDashboard },
   { value: 'rows', label: 'Rows', title: 'Masonry rows', icon: Rows3 },
-  { value: 'grid', label: 'Grid', title: 'Grid', icon: LayoutGrid }
+  { value: 'grid', label: 'Grid', title: 'Grid', icon: LayoutGrid },
+  { value: 'rhythm', label: 'Rhythm', title: 'Big and small rows', icon: LayoutPanelTop }
 ]
 
 // v3: everyone starts again on masonry, ungrouped (Group by None), the
