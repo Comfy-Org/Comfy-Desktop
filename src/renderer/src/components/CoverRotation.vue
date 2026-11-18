@@ -79,7 +79,7 @@ function stillIndex(): number | null {
 }
 
 function pick(): Array<[number | null, Role, Kind]> {
-  if (reduced.value) return [[stillIndex(), 'shown', 'still']]
+  if (reduced.value || allFailed.value) return [[stillIndex(), 'shown', 'still']]
   if (paused)
     return [
       [stillIndex(), 'shown', 'still'],
@@ -114,11 +114,13 @@ function opacityOf(layer: Layer): string {
 function onError(layer: Layer): void {
   if (layer.kind === 'cover') {
     markFailed(layer.index)
-    if (allFailed.value) emit('broken')
+    if (pictures[layer.index]?.stillUrl === layer.src)
+      failedStills.value = new Set(failedStills.value).add(layer.index)
+    if (allFailed.value && stillIndex() === null) emit('broken')
     return
   }
   failedStills.value = new Set(failedStills.value).add(layer.index)
-  if (reduced.value && stillIndex() === null) emit('broken')
+  if ((reduced.value || allFailed.value) && stillIndex() === null) emit('broken')
 }
 </script>
 

@@ -144,6 +144,28 @@ describe('CoverRotation', () => {
     expect(wrapper.emitted('broken')).toBeUndefined()
   })
 
+  it('keeps the still of a paused card when its moving cover fails, also once it plays', async () => {
+    const broken = 'data:image/png;base64,broken'
+    const wrapper = mountCovers([{ ...COVERS[0]!, url: broken }], { paused: true })
+
+    await expect.poll(() => wrapper.findAll('img')).toHaveLength(1)
+    await untilAllLoaded(wrapper)
+    expect(shownSrc(wrapper)).toBe(STILLS[0])
+    expect(wrapper.emitted('broken')).toBeUndefined()
+
+    await wrapper.setProps({ paused: false })
+    await untilAllLoaded(wrapper)
+    expect(shownSrc(wrapper)).toBe(STILLS[0])
+    expect(wrapper.emitted('broken')).toBeUndefined()
+  })
+
+  it('reports broken when a paused card has no still and its moving cover fails', async () => {
+    const broken = 'data:image/png;base64,broken'
+    const wrapper = mountCovers([{ url: broken, stillUrl: null }], { paused: true })
+
+    await expect.poll(() => wrapper.emitted('broken')).toHaveLength(1)
+  })
+
   it('stands still while it is off screen', async () => {
     const wrapper = mountCovers()
     const rotation = wrapper.get('[data-testid="cover-rotation"]')
