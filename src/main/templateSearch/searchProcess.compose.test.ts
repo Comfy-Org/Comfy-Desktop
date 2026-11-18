@@ -212,13 +212,13 @@ describe('createSearchProcess', () => {
     expect(bundlesOnDisk()).toEqual(['1.0.0'])
   })
 
-  it('downloads the model in the background, showing no progress, once a free local build can tell which version it reads', async () => {
+  it('downloads the model in the background, saying nothing, once a free local build can tell which version it reads', async () => {
     mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
     serveBundle({ 'catalog.json': '{}' })
     const { search, announced } = setup({ online: true })
     expect(await search.downloadInBackground()).toBe(true)
     expect(bundlesOnDisk()).toEqual(['1.0.0'])
-    expect(announced).toEqual([{ kind: 'idle' }])
+    expect(announced).toEqual([])
 
     const fetches = mocks.fetch.mock.calls.length
     expect(await search.downloadInBackground()).toBe(true)
@@ -237,6 +237,10 @@ describe('createSearchProcess', () => {
     [
       'no bundle address is set',
       { enabled: true, online: true, builds: [{ id: 'ok', lastLaunchedAt: 1 }], base: null }
+    ],
+    [
+      'the bundle address is not a web address',
+      { enabled: true, online: true, builds: [{ id: 'ok', lastLaunchedAt: 1 }], base: '   ' }
     ]
   ])('leaves the background download for later while %s', async (_case, given) => {
     mocks.settings.templateSearchEnabled = given.enabled
@@ -257,7 +261,7 @@ describe('createSearchProcess', () => {
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
 
-  it("keeps the service's reason when no build can run the search program, without starting a download", async () => {
+  it("keeps the service's reason when no build can run the search program", async () => {
     mocks.builds = [{ id: 'unsupported', lastLaunchedAt: 1 }]
     serveBundle({ 'catalog.json': '{}' })
     const { search, announced } = setup({ online: true })

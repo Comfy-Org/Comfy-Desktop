@@ -39,6 +39,8 @@ export interface IndexEntry {
 
 export type TransferResult = { ok: true } | { ok: false; error: string }
 
+export class Unreachable extends Error {}
+
 export interface BundleStoreDeps {
   root: string
   base: () => string | null
@@ -156,6 +158,7 @@ async function place(source: string, target: string): Promise<void> {
 
 export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
   download(options?: { quietly?: boolean }): Promise<void>
+  hasBase(): boolean
 } {
   const now = deps.now ?? Date.now
   const bundlesDir = path.join(deps.root, BUNDLES_DIR)
@@ -230,6 +233,8 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     const raw = await deps.getSmall(new URL(entry.manifest, base).toString())
     if (sha256Of(raw) !== entry.manifestSha256)
       throw new Error('the manifest is not the one the index lists')
+    const manifest = parseManifest(JSON.parse(raw.toString('utf8')))
+    if (manifest && !readsVersion(supported, entry.version, manifest.minSidecar)) return null
     return { entry, raw }
   }
 
@@ -335,7 +340,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
 
   function download({ quietly = false } = {}): Promise<void> {
     const base = baseUrl()
-    if (!base) return Promise.resolve()
+    if (!base || (quietly && waitingForRetry)) return Promise.resolve()
     if (downloading) {
       if (!quietly && quiet) {
         quiet = false
@@ -345,9 +350,9 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     }
     quiet = quietly
     downloading = fetchNewest(base)
-      .then(async () => {
+      .then(() => {
         waitingForRetry = false
-        deps.onAvailability((await newest()) ? { kind: 'idle' } : UPDATE_DESKTOP)
+        report({ kind: 'idle' })
       })
       .catch(() => {
         if (!quiet) waitingForRetry = true
@@ -379,12 +384,14 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     if (waitingForRetry) return DOWNLOAD_FAILED
     try {
       if (!(await wanted(base))) return UPDATE_DESKTOP
-    } catch {
-      return { kind: 'unavailable', reason: 'offline' }
+    } catch (err) {
+      return err instanceof Unreachable
+        ? { kind: 'unavailable', reason: 'offline' }
+        : DOWNLOAD_FAILED
     }
     void download()
     return { kind: 'downloading', ...progress }
   }
 
-  return { newest, discard, prepare, download }
+  return { newest, discard, prepare, download, hasBase: (): boolean => baseUrl() !== null }
 }
