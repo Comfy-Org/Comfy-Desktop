@@ -278,7 +278,7 @@ export function findPreferredInstallHostWindow(): BrowserWindow | null {
   return fallback?.window ?? null
 }
 
-function maximizeIfPendingReveal(win: BrowserWindow): void {
+export function maximizeIfPendingReveal(win: BrowserWindow): void {
   const entry = findEntryByHostWindow(win)
   if (!entry?.maximizeOnReveal) return
   entry.maximizeOnReveal = false

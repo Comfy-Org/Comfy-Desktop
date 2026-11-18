@@ -149,6 +149,7 @@ import {
   getEntryByInstallationId,
   isChooserHost,
   isInstallHost,
+  maximizeIfPendingReveal,
   openOrFocusAnyHostWindow,
   openOrFocusChooserHostWindow,
   openOrFocusHomeHostWindow,
@@ -745,6 +746,7 @@ async function focusOpenComfyWindow(
   const entry = getEntryByInstallationId(installationId)
   if (!entry || entry.window.isDestroyed()) return false
   if (await prepareBuildWindowFocus(entry, requester, pickerWorkspaceId)) {
+    maximizeIfPendingReveal(entry.window)
     entry.window.show()
     entry.window.focus()
   }

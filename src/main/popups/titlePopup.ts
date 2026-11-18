@@ -47,6 +47,7 @@ import {
   getEntryByInstallationId,
   hostInstallEvents,
   isChooserHost,
+  maximizeIfPendingReveal,
   unhostedLaunches
 } from '../host/registry'
 import type { ComfyPanelKey, ComfyWindowEntry } from '../host/registry'
@@ -1826,6 +1827,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       if (!targetEntry) return
 
       if (routing === 'target-host' && !targetEntry.window.isDestroyed()) {
+        maximizeIfPendingReveal(targetEntry.window)
         targetEntry.window.show()
         targetEntry.window.focus()
       }

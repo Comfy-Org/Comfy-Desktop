@@ -38,6 +38,7 @@ import {
   getEntryByInstallationId,
   hostInstallEvents,
   indexInstallationId,
+  maximizeIfPendingReveal,
   nextWindowKey,
   openOrFocusHomeHostWindow,
   routeBuildOpen,
@@ -647,6 +648,26 @@ describe('revealColdStartHostIfPending', () => {
     revealColdStartHostIfPending(chooser.windowKey)
     bringToFront(chooser.window)
     expect(fakeWin(chooser).raised).toEqual(['maximize', 'show', 'focus', 'show', 'focus'])
+  })
+
+  it('maximizes a window shown before its cold-start reveal once, on that first show', () => {
+    const chooser = makeEntry({ installationId: null })
+    chooser.coldStartPendingReveal = true
+    chooser.maximizeOnReveal = true
+    registerHostEntry(chooser)
+
+    maximizeIfPendingReveal(chooser.window)
+    chooser.window.show()
+    revealColdStartHostIfPending(chooser.windowKey)
+    expect(fakeWin(chooser).raised).toEqual(['maximize', 'show', 'show', 'focus'])
+  })
+
+  it('leaves a window that was already revealed at its own size', () => {
+    const chooser = makeEntry({ installationId: null })
+    registerHostEntry(chooser)
+
+    maximizeIfPendingReveal(chooser.window)
+    expect(fakeWin(chooser).raised).toEqual([])
   })
 })
 
