@@ -433,6 +433,7 @@ export async function installAgentRequirements(
   let deferred = false
   let kept: string | null = null
   let floor: PlaceholderFloor | null = null
+  let floorRejected = false
   const defer = async (coreMissing: boolean): Promise<void> => {
     if (deferred || !onDeferred) return
     deferred = true
@@ -444,7 +445,7 @@ export async function installAgentRequirements(
       ...(coreText === null
         ? []
         : [
-            floor?.coreText === coreText
+            floor?.coreText === coreText && !floorRejected
               ? { text: coreText, constraints: floor.constraints }
               : { text: coreText }
           ]),
@@ -486,9 +487,11 @@ export async function installAgentRequirements(
     floor = await installedPlaceholderFloor(plan, signal)
     if (signal?.aborted) return decision
   }
-  const { result: core, floorDeferred } = await runCore(plan, run, floor, sendOutput)
+  const ran = await runCore(plan, run, floor, sendOutput, signal)
+  const core = ran.result
+  floorRejected = ran.floor === 'rejected'
   if (signal?.aborted) return decision
-  if (core.ok && floorDeferred) await defer(true)
+  if (core.ok && ran.floor === 'deferred') await defer(true)
   if (!core.ok) {
     if (cannotDownload(core)) onCoreFailed?.(core.report)
     else await defer(true)
@@ -514,16 +517,19 @@ async function installedPlaceholderFloor(
   return listed === null ? null : placeholderAgentFloor(coreText, listed)
 }
 
+type FloorOutcome = 'none' | 'applied' | 'deferred' | 'rejected'
+
 async function runCore(
   plan: AgentRequirementsInstall,
   run: CachedRun,
   floor: PlaceholderFloor | null,
-  sendOutput: (text: string) => void
-): Promise<{ result: CachedResult; floorDeferred: boolean }> {
+  sendOutput: (text: string) => void,
+  signal?: AbortSignal
+): Promise<{ result: CachedResult; floor: FloorOutcome }> {
   const tag = attemptTag()
   const tempName = `.launch-agent-reqs-${tag}.txt`
   const asListed = async (): Promise<CachedResult> => run(plan.reqPath, tempName)
-  if (!floor) return { result: await asListed(), floorDeferred: false }
+  if (!floor) return { result: await asListed(), floor: 'none' }
   const name = `.launch-agent-reqs-floor-${tag}-constraints.txt`
   const at = path.join(plan.installPath, name)
   let floored: CachedResult
@@ -534,15 +540,27 @@ async function runCore(
     )
     floored = await run(plan.reqPath, tempName, { name, text: floor.constraints })
   } catch {
-    return { result: await asListed(), floorDeferred: false }
+    if (signal?.aborted) return { result: cancelledRun(), floor: 'none' }
+    return { result: await asListed(), floor: 'none' }
   } finally {
     void fs.promises.unlink(at).catch(() => {})
   }
-  if (floored.ok) return { result: floored, floorDeferred: false }
+  if (floored.ok) return { result: floored, floor: 'applied' }
+  if (signal?.aborted) return { result: floored, floor: 'none' }
   sendOutput(
     `Couldn't install a released agent over ${floor.placeholder}; installing ComfyUI's agent requirements as listed\n`
   )
-  return { result: await asListed(), floorDeferred: !cannotDownload(floored) }
+  const rejected = cannotDownload(floored)
+  return { result: await asListed(), floor: rejected ? 'rejected' : 'deferred' }
+}
+
+function cancelledRun(): CachedResult {
+  return {
+    ok: false,
+    online: false,
+    output: '',
+    report: { outcome: 'cancelled', exitCode: null, elapsedMs: 0, budgetMs: 0, errorTail: null }
+  }
 }
 
 export async function installedWorkingAgent(

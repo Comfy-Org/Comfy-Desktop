@@ -582,6 +582,8 @@ describe('coreLeavesAgentUnpinned', () => {
     ['comfy-agent\n', true],
     ['comfy_agent  # any release\n', true],
     ['comfy-agent[go-nonfree]\ncomfy-cli==1.21.0\n', true],
+    ['comfy-agent [ui]\n', true],
+    ['comfy-agent [ui]==0.0.0.dev0\n', false],
     ['comfy-agent==0.0.0.dev0\n', false],
     ['comfy-agent>=0.1.0rc5\n', false],
     ['comfy-agent; python_version >= "3.10"\n', false],

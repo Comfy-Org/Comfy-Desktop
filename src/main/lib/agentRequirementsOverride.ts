@@ -345,7 +345,7 @@ export function corePinsPlaceholderAgent(coreText: string): boolean {
   })
 }
 
-const UNPINNED_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*(?:#.*)?$/
+const UNPINNED_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)(?:\s*\[[^\]]*\])?\s*(?:#.*)?$/
 const BELOW_FLOOR = /^0\.0\.0(?:(?:a|b|rc)\d+)?(?:\.dev\d+)?$/
 
 export function coreLeavesAgentUnpinned(coreText: string): boolean {

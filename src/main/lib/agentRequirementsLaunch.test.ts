@@ -2663,6 +2663,35 @@ describe('installAgentRequirements with a version override', () => {
       expect(sendOutput.mock.calls.join('')).toContain("Couldn't install a released agent")
     })
 
+    it('hands the background download no floor that uv already rejected', async () => {
+      respond = ({ constraints }) =>
+        constraints === FLOOR
+          ? { code: 1, output: 'error: No solution found when resolving dependencies\n' }
+          : { code: 2, output: '' }
+      const onDeferred = vi.fn()
+
+      await installAgentRequirements(plan, vi.fn(), undefined, undefined, null, onDeferred)
+
+      expect(onDeferred).toHaveBeenCalledWith(
+        { plan, steps: [{ text: UNPINNED_FILE }], signature: 'core' },
+        'agent'
+      )
+    })
+
+    it('starts no fallback install for a launch cancelled during the floored install', async () => {
+      const abort = new AbortController()
+      respond = () => {
+        abort.abort()
+        return { code: 2, output: '' }
+      }
+      const sendOutput = vi.fn()
+
+      await installAgentRequirements(plan, sendOutput, abort.signal, undefined)
+
+      expect(calls.every((call) => call.constraints === FLOOR)).toBe(true)
+      expect(sendOutput.mock.calls.join('')).not.toContain("Couldn't install a released agent")
+    })
+
     it('installs core as listed now and downloads the released agent for the next launch when the network fails', async () => {
       cached = true
       respond = ({ constraints }) =>
