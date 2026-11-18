@@ -26,6 +26,7 @@ import {
   SIDECAR_PATH_ENV,
   sidecarPythons,
   templateSearchOn,
+  templateSearchPartnersOn,
   zipappPath
 } from './searchProcess'
 
@@ -64,6 +65,17 @@ describe('templateSearchOn', () => {
     } finally {
       delete process.env[SIDECAR_PATH_ENV]
     }
+  })
+})
+
+describe('templateSearchPartnersOn', () => {
+  it.each([
+    [undefined, true],
+    [true, true],
+    [false, false]
+  ])('with the partner setting %s shows partner templates: %s', (value, shown) => {
+    mocks.settings = { templateSearchPartners: value }
+    expect(templateSearchPartnersOn()).toBe(shown)
   })
 })
 
