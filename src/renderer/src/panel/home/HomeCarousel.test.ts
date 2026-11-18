@@ -4,6 +4,7 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 
 import '../../assets/main.css'
 import HomeCarousel from './HomeCarousel.vue'
+import CoverRotation from '../../components/CoverRotation.vue'
 import type { AppBadge } from '../../types/ipc'
 
 interface CarouselCard {
@@ -40,14 +41,16 @@ afterEach(() => {
   while (hosts.length) hosts.pop()?.remove()
 })
 
-function mountCarousel() {
+function mountCarousel(
+  picturesOf: (card: CarouselCard) => { url: string; stillUrl: string | null }[] = () => []
+) {
   const host = document.createElement('div')
   host.style.cssText = 'position: fixed; left: 0; top: 0; width: 1000px; height: 400px'
   document.body.append(host)
   hosts.push(host)
   const wrapper = mount(HomeCarousel<CarouselCard>, {
     attachTo: host,
-    props: { cards: [PRODUCT_SWAP, HDR, EXTEND], kind: 'apps', picturesOf: () => [] }
+    props: { cards: [PRODUCT_SWAP, HDR, EXTEND], kind: 'apps', picturesOf }
   })
   mounted.push(wrapper)
   return wrapper
@@ -109,5 +112,35 @@ describe('HomeCarousel app badges', () => {
 
     await expect.poll(() => document.querySelector('.tooltip-bubble')).toBe(null)
     expect(document.activeElement).toBe(frontCard(wrapper).element)
+  })
+})
+
+describe('HomeCarousel covers', () => {
+  const coverOf = (card: CarouselCard) => [{ url: `/covers/${card.id}.mp4`, stillUrl: null }]
+
+  function playingCards(wrapper: VueWrapper) {
+    return wrapper
+      .findAllComponents(CoverRotation)
+      .filter((cover) => !cover.props('paused'))
+      .map((cover) =>
+        cover.element.closest('[data-testid="home-carousel-card"]')?.getAttribute('data-arc-offset')
+      )
+  }
+
+  it('plays only the card in the centre and keeps the cards beside it still', () => {
+    const wrapper = mountCarousel(coverOf)
+
+    expect(wrapper.findAllComponents(CoverRotation).length).toBeGreaterThan(1)
+    expect(playingCards(wrapper)).toEqual(['0'])
+  })
+
+  it('plays the next card once it reaches the centre', async () => {
+    const wrapper = mountCarousel(coverOf)
+    const before = frontCard(wrapper).attributes('aria-label')
+
+    await wrapper.get('[data-testid="home-carousel-card"][data-arc-offset="1"]').trigger('click')
+
+    expect(frontCard(wrapper).attributes('aria-label')).not.toBe(before)
+    expect(playingCards(wrapper)).toEqual(['0'])
   })
 })
