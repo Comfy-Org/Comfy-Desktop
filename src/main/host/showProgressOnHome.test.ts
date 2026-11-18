@@ -144,6 +144,31 @@ describe('showProgressOnHome', () => {
     expect(contents.sent).toEqual([])
   })
 
+  it('falls back when the panel fails to load', async () => {
+    const contents = homeWith(new FakeContents())
+    contents.loading = true
+
+    const delivered = showProgressOnHome(REQUEST)
+    contents.emit('did-fail-load', {}, -2, 'main frame failed', 'app://panel', true)
+
+    await expect(delivered).resolves.toBe(false)
+    expect(contents.sent).toEqual([])
+    expect(contents.listenerCount('did-finish-load'), 'no listener is left behind').toBe(0)
+    expect(contents.listenerCount('destroyed'), 'no listener is left behind').toBe(0)
+  })
+
+  it('still delivers when only a subframe fails to load', async () => {
+    const contents = homeWith(new FakeContents())
+    contents.loading = true
+
+    const delivered = showProgressOnHome(REQUEST)
+    contents.emit('did-fail-load', {}, -2, 'subframe failed', 'about:blank', false)
+    contents.emit('did-finish-load')
+
+    await expect(delivered).resolves.toBe(true)
+    expect(contents.sent).toHaveLength(1)
+  })
+
   it('does nothing for a malformed request', async () => {
     await expect(showProgressOnHome({ installationId: 'studio' })).resolves.toBe(false)
     expect(host.openOrFocusHomeHostWindow).not.toHaveBeenCalled()

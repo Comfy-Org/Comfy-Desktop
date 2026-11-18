@@ -223,29 +223,28 @@ function landOnNewBuild(id: string): void {
   }
   if (open(installationStore.getById(id))) return
   let waiting = true
+  const land = (inst: Installation | undefined): boolean => {
+    if (!waiting || !open(inst)) return !waiting
+    waiting = false
+    stop()
+    return true
+  }
   const stop = watch(
     () => installationStore.getById(id),
     (inst) => {
-      if (!open(inst)) return
-      waiting = false
-      stop()
+      land(inst)
     }
   )
   void (async () => {
     for (const delay of NEW_BUILD_REFRESH_DELAYS_MS) {
-      if (!waiting) return
       if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
       if (!waiting) return
-      const refreshed = await installationStore.fetchInstallations().then(
-        () => true,
-        () => false
-      )
-      if (refreshed) break
+      await installationStore.fetchInstallations().catch(() => {})
+      if (land(installationStore.getById(id))) return
     }
     if (!waiting) return
     waiting = false
     stop()
-    if (open(installationStore.getById(id))) return
     console.warn('[builds] the copied build could not be listed, so its page was not opened', id)
   })()
 }

@@ -272,6 +272,8 @@ export function registerDevPlatformHandlers(): void {
         return { ok: false, message: i18n.t('chooser.busyActionGatedReason') }
       }
       promoting.add(installationId)
+      const captureSlot = new AbortController()
+      _operationAborts.set(installationId, captureSlot)
       try {
         const inst = await installations.get(installationId)
         if (!inst) return { ok: false, message: 'Instance not found.' }
@@ -347,6 +349,9 @@ export function registerDevPlatformHandlers(): void {
         return { ok: false, message: (err as Error)?.message || String(err) }
       } finally {
         promoting.delete(installationId)
+        if (_operationAborts.get(installationId) === captureSlot) {
+          _operationAborts.delete(installationId)
+        }
       }
     }
   )

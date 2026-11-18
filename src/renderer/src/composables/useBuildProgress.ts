@@ -173,6 +173,13 @@ export function useConfirmStopTask(): (installationId: string, name: string) => 
       progressStore.cancelOperation(installationId)
       return true
     }
+    if (!current.cancellable) {
+      await modal.alert({
+        title: t('workingProgress.cannotStopTitle'),
+        message: t('workingProgress.cannotStopMessage', { name, task: current.task })
+      })
+      return false
+    }
     const copy = CANCEL_COPY[current.kind]
     const confirmed = await modal.confirm({
       title: t(`${copy}.cancelTitle`),
@@ -181,9 +188,8 @@ export function useConfirmStopTask(): (installationId: string, name: string) => 
       confirmStyle: 'danger'
     })
     if (!confirmed) return false
-    if (progressStore.operations.get(installationId) === op && !op.finished) {
-      progressStore.cancelOperation(installationId)
-    }
+    if (progressStore.operations.get(installationId) !== op) return false
+    if (!op.finished) progressStore.cancelOperation(installationId)
     return true
   }
 }

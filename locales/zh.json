@@ -1053,7 +1053,11 @@
     "cancelTitle": "现在停止？",
     "cancelMessage": "{name} 的“{task}”将停止。你可以稍后再次开始。",
     "cancelConfirm": "停止",
-    "failedTitle": "“{task}”未完成"
+    "failedTitle": "“{task}”未完成",
+    "cannotStopTitle": "此任务无法停止",
+    "cannotStopMessage": "请等待 {name} 的“{task}”完成后再关闭窗口。",
+    "relaunchSkippedTitle": "{name} 未启动",
+    "relaunchSkippedMessage": "{name} 正在执行另一个任务，因此未启动。请在该任务完成后再次启动。"
   },
   "announcement": {
     "comfyApi": {

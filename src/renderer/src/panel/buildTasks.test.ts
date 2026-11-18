@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import PanelApp from './PanelApp.vue'
 import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
+import { useModal } from '../composables/useModal'
 import { useOverlay } from '../composables/useOverlay'
 import { en } from '../lib/i18nMessages'
 import { TID } from '../../../shared/testIds'
@@ -55,6 +56,7 @@ interface Desktop {
   runs: RunCall[]
   cancelled: string[]
   startFromPicker: (request: {
+    installationId?: string
     actionId: string
     title: string
     opKind?: ShowProgressOpts['opKind']
@@ -64,7 +66,7 @@ interface Desktop {
   }) => Promise<void>
   reportProgress: (data: ProgressData) => Promise<void>
   askToClose: () => Promise<{ cleared?: boolean; defer?: true }>
-  portKills: Array<(result: { ok: boolean }) => void>
+  portKills: Array<{ port: number; resolve: (result: { ok: boolean }) => void }>
 }
 
 function openDesktop(installations: Installation[]): Desktop {
@@ -141,9 +143,9 @@ function openDesktop(installations: Installation[]): Desktop {
     cancelOperation: async (id: string) => {
       desktop.cancelled.push(id)
     },
-    killPortProcess: () =>
+    killPortProcess: (port: number) =>
       new Promise<{ ok: boolean }>((resolve) => {
-        desktop.portKills.push(resolve)
+        desktop.portKills.push({ port, resolve })
       }),
     onCloseRequest: subscribe(closeListeners),
     ackCloseRequest: () => {},
@@ -215,6 +217,7 @@ async function lastRun(): Promise<RunCall> {
 let desktop: Desktop
 
 beforeEach(() => {
+  useModal().dismiss()
   setActivePinia(createPinia())
   __resetLauncherPrefsForTest()
   useOverlay().current.value = null
@@ -329,6 +332,10 @@ describe('a task on a build runs on its tile, never on the full-screen page', ()
 
     await press('build-operation-retry')
     await vi.waitFor(() => expect(desktop.runs).toHaveLength(2))
+    expect(desktop.runs[1], 'Try again replays the same copy').toMatchObject({
+      actionId: 'copy',
+      data: { name: COPY.name }
+    })
     desktop.installations = [BUILD, COPY]
     desktop.runs[1]!.finish({ ok: true, navigate: 'list', newInstallationId: COPY.id })
     await flushPromises()
@@ -438,12 +445,20 @@ describe('a port conflict when a build starts', () => {
       TID.baseAlertCancel,
       TID.progressPortConflictKill,
       TID.progressPortConflictUsePort
-    ].map((id) => onPage(id)!.getBoundingClientRect())
+    ].map((id) => {
+      const button = onPage(id)!
+      expect(button.checkVisibility({ visibilityProperty: true }), `${id} is visible`).toBe(true)
+      return button.getBoundingClientRect()
+    })
     for (const box of boxes) {
       expect(box.width, 'each footer button is rendered').toBeGreaterThan(0)
       expect(box.height, 'each footer button is rendered').toBeGreaterThan(0)
     }
     const tops = boxes.map((box) => Math.round(box.top))
+    const byLeft = [...boxes].sort((a, b) => a.left - b.left)
+    byLeft.slice(1).forEach((box, i) => {
+      expect(box.left, 'the buttons do not overlap').toBeGreaterThanOrEqual(byLeft[i]!.right)
+    })
     expect(new Set(tops).size, 'the three buttons sit on one row').toBe(1)
   })
 
@@ -468,6 +483,27 @@ describe('a port conflict when a build starts', () => {
     expect(desktop.portKills).toHaveLength(0)
   })
 
+  it('says the build did not start when another task took it during the stop', async () => {
+    await startIntoConflict()
+    await press(TID.progressPortConflictKill)
+    await vi.waitFor(() => expect(onPage(TID.baseAlertAction)).not.toBeNull())
+    await press(TID.baseAlertAction)
+    await vi.waitFor(() => expect(desktop.portKills).toHaveLength(1))
+    await desktop.startFromPicker({
+      actionId: 'update-comfyui',
+      title: 'Updating ComfyUI - Video Lab',
+      opKind: 'update',
+      cancellable: true
+    })
+    await vi.waitFor(() => expect(desktop.runs).toHaveLength(2))
+
+    desktop.portKills[0]!.resolve({ ok: true })
+    await flushPromises()
+
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Video Lab didn't start"))
+    expect(desktop.runs.map((run) => run.actionId)).toEqual(['launch', 'update-comfyui'])
+  })
+
   it('keeps the next port on offer when stopping the other process fails', async () => {
     await startIntoConflict()
 
@@ -475,7 +511,8 @@ describe('a port conflict when a build starts', () => {
     await vi.waitFor(() => expect(onPage(TID.baseAlertAction)).not.toBeNull())
     await press(TID.baseAlertAction)
     await vi.waitFor(() => expect(desktop.portKills).toHaveLength(1))
-    desktop.portKills[0]!({ ok: false })
+    expect(desktop.portKills[0]!.port, 'the stop targets the busy port').toBe(8188)
+    desktop.portKills[0]!.resolve({ ok: false })
     await flushPromises()
 
     await vi.waitFor(() => expect(onPage(TID.progressPortConflictUsePort)).not.toBeNull())
@@ -547,6 +584,82 @@ describe('closing the Desktop window while a task runs', () => {
     await expect(answer).resolves.toEqual({ cleared: false })
     expect(desktop.cancelled).toEqual([])
     expect(buildTile()!.textContent).toContain('Pulling changes')
+  })
+
+  it('waits for a task that cannot be stopped, and keeps the window', async () => {
+    await openBuildsList()
+    await desktop.startFromPicker({
+      actionId: 'git-pull',
+      title: 'Pulling changes - Video Lab',
+      opKind: 'generic',
+      cancellable: false
+    })
+    await lastRun()
+
+    const answer = desktop.askToClose()
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("This task can't be stopped")
+    )
+    expect(onPage(TID.baseAlertCancel), 'no Stop is offered').toBeNull()
+    await press(TID.baseAlertAction)
+
+    await expect(answer).resolves.toEqual({ cleared: false })
+    expect(desktop.cancelled).toEqual([])
+  })
+
+  it('does not stop a new task when the user agrees to stop one that already ended', async () => {
+    await startPull()
+    const answer = desktop.askToClose()
+    await vi.waitFor(() => expect(onPage(TID.baseAlertAction)).not.toBeNull())
+    ;(await lastRun()).finish({ ok: true })
+    await flushPromises()
+    await desktop.startFromPicker({
+      actionId: 'git-pull',
+      title: 'Pulling changes - Video Lab',
+      opKind: 'generic',
+      cancellable: true
+    })
+    await vi.waitFor(() => expect(desktop.runs).toHaveLength(2))
+
+    await press(TID.baseAlertAction)
+
+    await expect(answer).resolves.toEqual({ cleared: false })
+    expect(desktop.cancelled).toEqual([])
+    expect(buildTile()!.textContent).toContain('Pulling changes')
+  })
+
+  it('shows a port question only after the stop question is answered', async () => {
+    desktop.installations = [BUILD, COPY]
+    await openBuildsList()
+    await desktop.startFromPicker({
+      actionId: 'launch',
+      title: 'Starting ComfyUI - Video Lab',
+      opKind: 'launch',
+      cancellable: true
+    })
+    const launch = await lastRun()
+    await desktop.startFromPicker({
+      installationId: COPY.id,
+      actionId: 'git-pull',
+      title: 'Pulling changes - Video Lab copy',
+      opKind: 'generic',
+      cancellable: true
+    })
+    await vi.waitFor(() => expect(desktop.runs).toHaveLength(2))
+    const answer = desktop.askToClose()
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Stop now?'))
+
+    launch.finish({
+      ok: false,
+      message: 'Port 8188 is already in use by python.',
+      portConflict: { port: 8188, nextPort: 8189, isComfy: true }
+    })
+    await flushPromises()
+    expect(onPage(TID.progressPortConflictUsePort), 'the stop question stays up').toBeNull()
+    await press(TID.baseAlertCancel)
+
+    await expect(answer).resolves.toEqual({ cleared: false })
+    await vi.waitFor(() => expect(onPage(TID.progressPortConflictUsePort)).not.toBeNull())
   })
 
   it('stops the task and lets the window close once the user agrees', async () => {

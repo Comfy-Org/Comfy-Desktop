@@ -1,6 +1,8 @@
+import { watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useModal } from './useModal'
 import { useProgressStore } from '../stores/progressStore'
+import { useInstallationStore } from '../stores/installationStore'
 import { TID } from '../../../shared/testIds'
 import type { ActionResult, PortConflictInfo, ShowProgressOpts } from '../types/ipc'
 
@@ -26,17 +28,45 @@ export function usePortConflictPrompt(
   const { t } = useI18n()
   const modal = useModal()
   const progressStore = useProgressStore()
+  const installationStore = useInstallationStore()
 
-  function restart(
+  async function whenModalFree(): Promise<void> {
+    while (modal.state.visible) {
+      await new Promise<void>((resolve) => {
+        const stop = watch(
+          () => modal.state.visible,
+          (visible) => {
+            if (visible) return
+            stop()
+            resolve()
+          }
+        )
+      })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+  }
+
+  async function restart(
     installationId: string,
     title: string,
     returnTo: string | undefined,
     apiCall: () => Promise<ActionResult>
-  ): void {
+  ): Promise<void> {
+    const running = progressStore.operations.get(installationId)
+    if (running && !running.finished) {
+      const name = installationStore.getById(installationId)?.name ?? title
+      await whenModalFree()
+      await modal.alert({
+        title: t('workingProgress.relaunchSkippedTitle', { name }),
+        message: t('workingProgress.relaunchSkippedMessage', { name })
+      })
+      return
+    }
     relaunch({ installationId, title, apiCall, cancellable: true, returnTo, opKind: 'launch' })
   }
 
   async function stopBusyPrior(conflict: PortConflictInfo): Promise<boolean> {
+    await whenModalFree()
     const messageKey = conflict.priorSurvivors
       ? 'errors.priorSurvivorsConfirmMessage'
       : conflict.priorUnknown
@@ -57,6 +87,7 @@ export function usePortConflictPrompt(
     const title = t(portConflictTitleKey(conflict))
     const useNextLabel = t('errors.portConflictUsePort')
     const stopLabel = t(stopLabelKey(conflict))
+    await whenModalFree()
     if (conflict.nextPort && conflict.isComfy) {
       const picked = await modal.choose({
         title,
@@ -103,7 +134,7 @@ export function usePortConflictPrompt(
       const choice = await askPortChoice(current, shown)
       if (choice === 'use-next-port' && current.nextPort) {
         const port = current.nextPort
-        restart(installationId, title, returnTo, () =>
+        await restart(installationId, title, returnTo, () =>
           window.api.runAction(installationId, 'launch', { portOverride: port })
         )
         return
@@ -111,11 +142,12 @@ export function usePortConflictPrompt(
       if (choice !== 'stop-other') return
       if (current.priorBusy) {
         if (!(await stopBusyPrior(current))) continue
-        restart(installationId, title, returnTo, () =>
+        await restart(installationId, title, returnTo, () =>
           window.api.runAction(installationId, 'launch', { stopBusyPriorProcess: true })
         )
         return
       }
+      await whenModalFree()
       const confirmed = await modal.confirm({
         title: t('errors.portConflictKillConfirmTitle'),
         message: t('errors.portConflictKillConfirmMessage'),
@@ -125,12 +157,13 @@ export function usePortConflictPrompt(
       if (!confirmed) continue
       const killed = await window.api.killPortProcess(current.port).catch(() => ({ ok: false }))
       if (killed.ok) {
-        restart(installationId, title, returnTo, retry)
+        await restart(installationId, title, returnTo, retry)
         return
       }
       shown = t('errors.portConflictKillFailed', { port: current.port })
       current = { ...current, isComfy: false }
       if (!current.nextPort) {
+        await whenModalFree()
         await modal.alert({ title: t(portConflictTitleKey(current)), message: shown })
         return
       }

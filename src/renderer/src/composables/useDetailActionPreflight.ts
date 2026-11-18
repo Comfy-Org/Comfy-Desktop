@@ -1,10 +1,11 @@
-import { relaunchAfterAction } from '../lib/relaunchAfterAction'
+import { relaunchAfterAction, stopThenRun } from '../lib/relaunchAfterAction'
 import { useI18n } from 'vue-i18n'
 import { useModal } from './useModal'
 import { useDialogs } from './useDialogs'
 import { useActionGuard } from './useActionGuard'
 import { useMigrateAction } from './useMigrateAction'
 import { useSessionStore } from '../stores/sessionStore'
+import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/progressOpKind'
 import {
@@ -44,6 +45,7 @@ export function useDetailActionPreflight() {
   const actionGuard = useActionGuard()
   const { confirmMigration } = useMigrateAction()
   const sessionStore = useSessionStore()
+  const progressStore = useProgressStore()
 
   async function prepareDetailAction(
     inst: Installation,
@@ -116,8 +118,13 @@ export function useDetailActionPreflight() {
         }
       : needsSelfStop
         ? async (): Promise<ReturnType<typeof window.api.runAction>> => {
-            await stopAndWaitForExit(inst.id, isRunning)
-            const result = await window.api.runAction(inst.id, action.id, action.data)
+            const result = await stopThenRun(
+              inst.id,
+              isRunning,
+              () => progressStore.operations.get(inst.id)?.cancelRequested === true,
+              () => window.api.runAction(inst.id, action.id, action.data)
+            )
+            if (result.cancelled) return result
             return wantsRelaunch ? relaunchAfterAction(inst.id, result) : result
           }
         : (): ReturnType<typeof window.api.runAction> =>

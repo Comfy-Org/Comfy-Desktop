@@ -41,21 +41,27 @@ export function deliverWhenLoaded(
     return Promise.resolve(true)
   }
   return new Promise((resolve) => {
-    const delivered = (): void => {
+    const settle = (handedOff: boolean): void => {
+      contents.off('did-finish-load', loaded)
+      contents.off('did-fail-load', failed)
       contents.off('destroyed', lost)
-      if (contents.isDestroyed()) {
-        resolve(false)
-        return
-      }
-      contents.send(channel, payload)
-      resolve(true)
+      if (handedOff) contents.send(channel, payload)
+      resolve(handedOff)
     }
-    const lost = (): void => {
-      contents.off('did-finish-load', delivered)
-      resolve(false)
+    const loaded = (): void => settle(!contents.isDestroyed())
+    const failed = (
+      _event: unknown,
+      _errorCode: number,
+      _errorDescription: string,
+      _validatedUrl: string,
+      isMainFrame: boolean
+    ): void => {
+      if (isMainFrame) settle(false)
     }
-    contents.once('did-finish-load', delivered)
-    contents.once('destroyed', lost)
+    const lost = (): void => settle(false)
+    contents.on('did-finish-load', loaded)
+    contents.on('did-fail-load', failed)
+    contents.on('destroyed', lost)
   })
 }
 

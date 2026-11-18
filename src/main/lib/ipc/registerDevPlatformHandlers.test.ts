@@ -1032,6 +1032,23 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.saveSnapshot).not.toHaveBeenCalled()
   })
 
+  it('holds the build so no task can change it while the promotion captures it', async () => {
+    let finishCapture!: (filename: string) => void
+    mocks.saveSnapshot.mockReturnValue(
+      new Promise<string>((resolve) => {
+        finishCapture = resolve
+      })
+    )
+
+    const promotion = handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+    await vi.waitFor(() => expect(mocks.saveSnapshot).toHaveBeenCalledOnce())
+
+    expect(mocks.operationAborts.has('local-1'), 'the build is held during the capture').toBe(true)
+    finishCapture('snapshot-1.json')
+    await promotion
+    expect(mocks.operationAborts.has('local-1'), 'the build is released afterwards').toBe(false)
+  })
+
   it('does not start two promotions for the same instance', async () => {
     let finishCapture!: (filename: string) => void
     mocks.saveSnapshot.mockReturnValue(

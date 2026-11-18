@@ -295,7 +295,8 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       return { cleared: await confirmStopsTasks() }
     }
     if (await leavesLocalStartRunning(overlay)) return { defer: true }
-    return { cleared: await confirmAndCloseOverlay() }
+    if (!(await confirmAndCloseOverlay())) return { cleared: false }
+    return { cleared: await confirmStopsTasks() }
   }
 
   async function handleShowProgress(showOpts: ShowProgressOpts): Promise<void> {
