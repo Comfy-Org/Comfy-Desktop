@@ -147,12 +147,12 @@ async function goneWithin(pid: number, ms: number): Promise<boolean> {
 export async function reapOrphanedAgentUv(installPath: string): Promise<void> {
   if (process.platform === 'win32') return
   const names = await fs.promises.readdir(installPath).catch((): string[] => [])
-  const signalled = await Promise.all(
+  const reaped = await Promise.all(
     names
       .filter((entry) => entry.startsWith(UV_RECORD_PREFIX))
       .map((name) => reapRecord(path.join(installPath, name)))
   )
-  const killed = signalled.filter(Boolean).length
+  const killed = reaped.filter(Boolean).length
   if (killed === 0) return
   try {
     telemetry.emit('comfy.desktop.agent_requirements_orphan_reaped', { killed })
@@ -161,7 +161,7 @@ export async function reapOrphanedAgentUv(installPath: string): Promise<void> {
 
 async function reapRecord(record: string): Promise<boolean> {
   let keep = false
-  let signalled = false
+  let killed = false
   try {
     const { pid, startedAt } = JSON.parse(await fs.promises.readFile(record, 'utf-8'))
     const valid = Number.isInteger(pid) && pid > 1 && Number.isFinite(startedAt)
@@ -171,12 +171,12 @@ async function reapRecord(record: string): Promise<boolean> {
     keep = identity === 'unknown'
     if (identity === 'match') {
       killGroup(pid)
-      signalled = true
       keep = !(await goneWithin(pid, FORCE_STOP_TIMEOUT_MS))
+      killed = !keep
     }
   } catch {}
   if (!keep) await fs.promises.rm(record, { force: true }).catch(() => {})
-  return signalled
+  return killed
 }
 
 type InstallOutcome =
@@ -931,23 +931,20 @@ export async function holdAgentPrefetch(installPath: string): Promise<() => void
 
 const UV_DOWNLOADING_LINE = /^\s*Downloading\s/
 const UV_DOWNLOADED_LINE = /^\s*Downloaded\s/
-const UV_DOWNLOADED_NAME = /^\s*Downloaded\s+(\S+)/
-const UV_DOWNLOADING_SIZE = /^\s*Downloading\s+(\S+)\s+\(([\d.]+)\s*(B|KiB|MiB|GiB)\)/
+const UV_DOWNLOADING_SIZE = /^\s*Downloading\s+\S+\s+\(([\d.]+)\s*(B|KiB|MiB|GiB)\)/
 const BYTES_PER_UNIT: Record<string, number> = { B: 1, KiB: 1024, MiB: 1024 ** 2, GiB: 1024 ** 3 }
-
-function downloadedBytes(output: string): number {
-  const lines = output.split(/\r?\n/)
-  const finished = new Set(lines.flatMap((line) => line.match(UV_DOWNLOADED_NAME)?.[1] ?? []))
-  let bytes = 0
-  for (const line of lines) {
-    const match = line.match(UV_DOWNLOADING_SIZE)
-    if (match && finished.has(match[1]!)) bytes += Number(match[2]) * BYTES_PER_UNIT[match[3]!]!
-  }
-  return Math.round(bytes)
-}
 const DRY_RUN_ADDED = /^ \+ (\S+==\S+)$/
 const COMPILED_PIN = /^([A-Za-z0-9][\w.-]*)==(\S+)$/
 const WOULD_DOWNLOAD = /^Would download /m
+
+function downloadingBytes(output: string): number {
+  let bytes = 0
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(UV_DOWNLOADING_SIZE)
+    if (match) bytes += Number(match[1]) * BYTES_PER_UNIT[match[2]!]!
+  }
+  return Math.round(bytes)
+}
 
 async function runPrefetch(
   request: PrefetchRequest,
@@ -965,7 +962,7 @@ async function runPrefetch(
     elapsedMs: Date.now() - startedAt,
     downloadsStarted: lines(UV_DOWNLOADING_LINE),
     downloadsFinished: lines(UV_DOWNLOADED_LINE),
-    downloadedBytes: fetches.reduce((sum, run) => sum + downloadedBytes(run.output), 0),
+    downloadedBytes: fetches.reduce((sum, run) => sum + downloadingBytes(run.output), 0),
     fetchMs: fetches.reduce((sum, run) => sum + run.report.elapsedMs, 0),
     errorTail: run?.report.errorTail ?? null,
     uvVersion

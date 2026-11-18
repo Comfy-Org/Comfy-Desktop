@@ -139,7 +139,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
     expect(reapedEvents(), 'the stale record next to it killed nothing').toEqual([{ killed: 1 }])
   })
 
-  it('counts a uv it signalled even when it outlived the kill, and keeps its record', async () => {
+  it('does not count a uv that outlived the kill, and keeps its record for a later start', async () => {
     const { pid, startedAt } = await start(fakeUv, ['60'], 'uv')
     const file = record(pid, startedAt)
     const realKill = process.kill.bind(process)
@@ -154,7 +154,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
 
     expect(alive(pid)).toBe(true)
     expect(fs.existsSync(file)).toBe(true)
-    expect(reapedEvents()).toEqual([{ killed: 1 }])
+    expect(reapedEvents()).toEqual([])
   })
 
   it.each([

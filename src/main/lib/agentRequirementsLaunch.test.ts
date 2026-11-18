@@ -934,12 +934,23 @@ describe('installAgentRequirements with a version override', () => {
 
   it('installs from the cache alone when it holds everything', async () => {
     cached = true
+    const onCacheRescued = vi.fn()
 
-    const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+    const decision = await installAgentRequirements(
+      plan,
+      vi.fn(),
+      undefined,
+      OVERRIDE,
+      null,
+      undefined,
+      undefined,
+      onCacheRescued
+    )
 
     expect(decision).toMatchObject({ decision: 'applied' })
     expect(offlineTries, 'the override, and no core file after an applied one').toBe(1)
     expect(calls, 'nothing went to the network').toEqual([])
+    expect(onCacheRescued, 'a warm cache is not a rescue').not.toHaveBeenCalled()
   })
 
   afterEach(() => {
@@ -3091,7 +3102,7 @@ describe('prefetchAgentRequirements', () => {
     })
   })
 
-  it('counts the bytes of only the downloads that finished, in each unit uv prints', async () => {
+  it('adds up the size of every download, in each unit uv prints', async () => {
     fetchAnswer = {
       code: 0,
       output: [
@@ -3108,8 +3119,8 @@ describe('prefetchAgentRequirements', () => {
 
     const report = await finish(request())
 
-    expect(report?.downloadedBytes, 'comfy-agent-go never finished').toBe(
-      Math.round(1.5 * 1024 ** 3 + 512 * 1024 + 12)
+    expect(report?.downloadedBytes).toBe(
+      Math.round(1.5 * 1024 ** 3 + 49.3 * 1024 ** 2 + 512 * 1024 + 12)
     )
   })
 
@@ -3117,7 +3128,7 @@ describe('prefetchAgentRequirements', () => {
     const respond = mockInstall.getMockImplementation()!
     mockInstall.mockImplementation(async (...args) => {
       const extraArgs = args[8] as string[]
-      const wait = extraArgs.includes('--target') ? 200 : args[11] === 'compile' ? 300 : 0
+      const wait = extraArgs.includes('--target') ? 200 : extraArgs.includes('-o') ? 300 : 0
       await new Promise((resolve) => setTimeout(resolve, wait))
       return respond(...args)
     })
@@ -3470,7 +3481,7 @@ describe('prefetchAgentRequirements', () => {
       exitCode: 2,
       downloadsStarted: 2,
       downloadsFinished: 1,
-      downloadedBytes: Math.round(49.4 * 1024 ** 2),
+      downloadedBytes: Math.round(98.7 * 1024 ** 2),
       errorTail: 'error: Failed to download comfy-agent-go'
     })
   })
@@ -3505,7 +3516,8 @@ describe('prefetchAgentRequirements', () => {
     expect(report).toMatchObject({
       outcome: 'completed',
       downloadsStarted: 4,
-      downloadsFinished: 4
+      downloadsFinished: 4,
+      downloadedBytes: Math.round(2 * 98.7 * 1024 ** 2)
     })
   })
 
