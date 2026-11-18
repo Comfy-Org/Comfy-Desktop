@@ -197,6 +197,7 @@
       "noMatch": "暂时没有合适的模板。",
       "run": "运行",
       "downloadAndRun": "下载并运行",
+      "signInToUse": "登录后使用",
       "bestMatch": "最佳匹配",
       "template": "模板",
       "needsDownload": "需下载 {items}",

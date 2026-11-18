@@ -16,6 +16,8 @@ const READY_AGAIN: ReadonlySet<TemplateSearchAvailability['kind']> = new Set(['i
 export interface TemplateSearchOptions {
   buildId: () => string | null
   onOpened: (buildId: string) => void
+  signedOut: () => boolean
+  signIn: () => void
 }
 
 export function useTemplateSearch(options: TemplateSearchOptions) {
@@ -144,12 +146,21 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     if (query.value.trim() && state.value.kind === 'idle') void search(query.value)
   }
 
+  function needsSignIn(row: SearchRow): boolean {
+    return row.candidate.partner && options.signedOut()
+  }
+
+  function activate(row: SearchRow): void {
+    if (needsSignIn(row)) options.signIn()
+    else void openRow(row)
+  }
+
   function onEnter(): void {
     const wasOpen = panelOpen.value
     panelOpen.value = true
     if (isCurrent()) {
       const row = activeRow.value
-      if (wasOpen && row) void openRow(row)
+      if (wasOpen && row) activate(row)
       return
     }
     void search(query.value)
@@ -186,7 +197,8 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     prepare,
     open,
     download,
-    openRow,
+    needsSignIn,
+    activate,
     onEnter,
     move,
     moveTo,

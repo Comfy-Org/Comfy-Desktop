@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import '../../assets/main.css'
 
 import HomeTemplateSearch from './HomeTemplateSearch.vue'
@@ -20,6 +21,8 @@ const openTemplateInBuild =
   vi.fn<(buildId: string, templateId: string) => Promise<OpenTemplateOutcome>>()
 const prepare = vi.fn<() => Promise<void>>()
 const download = vi.fn<() => Promise<void>>()
+const getAuthStatus = vi.fn<() => Promise<{ signedIn: boolean }>>()
+const signIn = vi.fn<() => Promise<{ signedIn: boolean }>>()
 let announce: (availability: TemplateSearchAvailability) => void = () => {}
 
 function candidate(
@@ -44,6 +47,7 @@ function candidate(
 const POSTER = candidate('poster_template')
 const BANNER = candidate('banner_template')
 const MURAL = candidate('mural_template', { missing: ['mural.safetensors'], needsDownload: true })
+const PARTNER_POSTER = candidate('api_poster_template', { partner: true })
 
 function answer(result: Partial<TemplateSearchResult>): TemplateSearchResponse {
   return {
@@ -64,7 +68,11 @@ beforeEach(() => {
   openTemplateInBuild.mockResolvedValue('launch')
   prepare.mockResolvedValue()
   download.mockResolvedValue()
+  getAuthStatus.mockResolvedValue({ signedIn: true })
+  signIn.mockResolvedValue({ signedIn: true })
+  setActivePinia(createPinia())
   ;(window as unknown as { api: unknown }).api = {
+    comfybuilder: { getAuthStatus, signIn, onAuthChanged: () => () => {} },
     searchTemplates,
     openTemplateInBuild,
     prepareTemplateSearch: prepare,
@@ -884,6 +892,73 @@ describe('HomeTemplateSearch cards', () => {
   })
 })
 
+describe('HomeTemplateSearch partner templates', () => {
+  function cardAction(wrapper: Wrapper, index: number): string {
+    return wrapper.findAll('[role="option"]')[index]!.find('.mt-auto').text()
+  }
+
+  it('asks a signed-out user to sign in from a partner card, and opens nothing', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: false })
+    signIn.mockReturnValue(new Promise(() => {}))
+    searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER, POSTER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    expect(cardAction(wrapper, 0)).toBe('Sign in to use')
+    expect(cardAction(wrapper, 1), 'an open template runs as before').toBe('Run')
+    await wrapper.findAll('[role="option"]')[0]!.trigger('click')
+    await flushPromises()
+    expect(signIn).toHaveBeenCalledTimes(1)
+    expect(opened()).toEqual([])
+  })
+
+  it('signs in from the keyboard too, when Enter picks a partner card', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: false })
+    signIn.mockReturnValue(new Promise(() => {}))
+    searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(signIn).toHaveBeenCalledTimes(1)
+    expect(opened()).toEqual([])
+  })
+
+  it('turns the card back to Run once signed in, and leaves the pick to the user', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: false })
+    searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.findAll('[role="option"]')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(cardAction(wrapper, 0)).toBe('Run')
+    expect(opened()).toEqual([])
+    await wrapper.findAll('[role="option"]')[0]!.trigger('click')
+    await flushPromises()
+    expect(opened()).toEqual(['api_poster_template'])
+  })
+
+  it('keeps a partner card as Run while the sign-in state is still loading', async () => {
+    getAuthStatus.mockReturnValue(new Promise(() => {}))
+    searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    expect(cardAction(wrapper, 0)).toBe('Run')
+  })
+
+  it('opens a partner card for a signed-in user as before', async () => {
+    searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    expect(cardAction(wrapper, 0)).toBe('Run')
+    await wrapper.findAll('[role="option"]')[0]!.trigger('click')
+    await flushPromises()
+    expect(signIn).not.toHaveBeenCalled()
+    expect(opened()).toEqual(['api_poster_template'])
+  })
+})
+
 describe('verticalNeighbour', () => {
   const box = (left: number, top: number) => ({ left, top, width: 100 })
 
@@ -965,9 +1040,7 @@ describe('HomeTemplateSearch before search is ready', () => {
   })
 
   it('shows the download running without asking anything, and leaves starting it to Desktop', async () => {
-    searchTemplates.mockResolvedValue(
-      unavailable({ kind: 'downloading', received: 0, total: 1000 })
-    )
+    searchTemplates.mockResolvedValue(unavailable({ kind: 'downloading', received: 0, total: 0 }))
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
 

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { LoaderCircle, Search } from '@lucide/vue'
 import TemplateSearchResults from './TemplateSearchResults.vue'
 import { useTemplateSearch } from './useTemplateSearch'
+import { useAuthStore } from '../../stores/authStore'
 import { TEMPLATE_SEARCH_MAX_QUERY } from '../../../../shared/templateSearch'
 
 const props = defineProps<{ buildId: string | null }>()
@@ -11,9 +12,12 @@ const emit = defineEmits<{ opened: [buildId: string] }>()
 
 const { t } = useI18n()
 const listboxId = useId()
+const auth = useAuthStore()
 const search = useTemplateSearch({
   buildId: () => props.buildId,
-  onOpened: (buildId) => emit('opened', buildId)
+  onOpened: (buildId) => emit('opened', buildId),
+  signedOut: () => auth.statusLoaded && !auth.isSignedIn,
+  signIn: () => void auth.signIn().catch(() => null)
 })
 const { query, state, panelOpen, activeIndex, activeRow } = search
 
