@@ -19,6 +19,7 @@ const props = withDefaults(
     interactive?: boolean
     keepOpenOnClick?: boolean
     shouldOpen?: () => boolean
+    shownWhile?: boolean
   }>(),
   {
     text: undefined,
@@ -28,7 +29,8 @@ const props = withDefaults(
     disabled: false,
     interactive: false,
     keepOpenOnClick: false,
-    shouldOpen: undefined
+    shouldOpen: undefined,
+    shownWhile: false
   }
 )
 defineOptions({ inheritAttrs: false })
@@ -43,6 +45,10 @@ function setOpen(next: boolean): void {
   open.value = next && !unavailable.value && gateOpen() && (props.shouldOpen?.() ?? true)
 }
 watch(gateOpen, () => setOpen(wanted.value))
+watch(
+  () => props.shownWhile,
+  (shown) => setOpen(shown)
+)
 function onFocusOut(event: FocusEvent): void {
   setOpen(
     props.interactive &&

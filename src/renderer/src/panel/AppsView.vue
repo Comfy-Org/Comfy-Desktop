@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow, Search } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
@@ -31,6 +31,8 @@ const query = ref('')
 const openApp = ref<AppCard | null>(null)
 const coversThatFailed = reactive(new Set<string>())
 const cardButtons = new Map<string, HTMLElement>()
+const keyboardFocusedId = ref<string | null>(null)
+const premiumIdPrefix = useId()
 
 let lastOpenedId: string | null = null
 let stopClosedUpdates: (() => void) | null = null
@@ -57,6 +59,16 @@ async function loadApps(): Promise<void> {
 function rememberCard(id: string, element: unknown): void {
   if (element instanceof HTMLElement) cardButtons.set(id, element)
   else cardButtons.delete(id)
+}
+
+function premiumDescriptionId(app: AppCard): string {
+  return `${premiumIdPrefix}-premium-${app.id}`
+}
+
+function noteCardFocus(app: AppCard, event: FocusEvent): void {
+  const card = event.currentTarget
+  keyboardFocusedId.value =
+    card instanceof HTMLElement && card.matches(':focus-visible') ? app.id : null
 }
 
 function open(app: AppCard): void {
@@ -194,8 +206,11 @@ onBeforeUnmount(() => {
               :ref="(element) => rememberCard(app.id, element)"
               type="button"
               class="group flex size-full cursor-pointer flex-col rounded-card border-0 bg-[rgb(29_29_29/0.72)] p-1 text-left outline-none transition-colors duration-150 hover:bg-card-hover focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+              :aria-describedby="app.premium ? premiumDescriptionId(app) : undefined"
               :data-testid="`app-card-${app.id}`"
               @click="open(app)"
+              @focus="noteCardFocus(app, $event)"
+              @blur="keyboardFocusedId = null"
             >
               <span
                 class="relative block aspect-[505/316] w-full overflow-hidden rounded-control bg-[rgb(235_235_235/0.05)]"
@@ -215,7 +230,12 @@ onBeforeUnmount(() => {
                 >
                   <AppWindow :size="28" :stroke-width="1.5" aria-hidden="true" />
                 </span>
-                <PremiumAppBadge v-if="app.premium" class="absolute top-2 left-2" />
+                <PremiumAppBadge
+                  v-if="app.premium"
+                  :description-id="premiumDescriptionId(app)"
+                  :revealed="keyboardFocusedId === app.id"
+                  class="absolute top-2 left-2"
+                />
               </span>
               <span class="flex min-w-0 flex-col px-1.5 pt-2.5 pb-1.5">
                 <span class="truncate text-ui font-medium text-foreground">{{ app.title }}</span>

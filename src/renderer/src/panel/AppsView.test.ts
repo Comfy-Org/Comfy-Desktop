@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page as browserPage } from 'vitest/browser'
+import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import '../assets/main.css'
@@ -309,7 +309,13 @@ describe('AppsView', () => {
     expect(getComputedStyle(badge.get('[data-testid="premium-app-crown"]').element).color).toBe(
       'rgb(233, 196, 34)'
     )
-    expect(premiumCard.text()).toContain('Premium app')
+    const noteId = premiumCard.attributes('aria-describedby')
+    expect(noteId && document.getElementById(noteId)?.textContent).toBe(
+      'Premium app, runs with credits'
+    )
+    expect(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').attributes('aria-describedby')).toBe(
+      undefined
+    )
     expect(
       wrapper
         .get('[data-testid="app-card-genjutsu"]')
@@ -322,6 +328,25 @@ describe('AppsView', () => {
         .find('[data-testid="premium-app-badge"]')
         .exists()
     ).toBe(false)
+  })
+
+  it('shows the credit note when a premium card gets keyboard focus, and not for a free card', async () => {
+    const wrapper = await mountApps()
+
+    wrapper.get('input').element.focus()
+    await userEvent.tab()
+
+    expect(document.activeElement).toBe(
+      wrapper.get('[data-testid="app-card-remove-background"]').element
+    )
+    await expect
+      .poll(() => document.querySelector('.tooltip-bubble')?.textContent ?? '')
+      .toContain('Premium app, runs with credits')
+
+    await userEvent.tab()
+
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
+    await expect.poll(() => document.querySelector('.tooltip-bubble')).toBe(null)
   })
 
   it('lists the apps in the order the website gave them', async () => {

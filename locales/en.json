@@ -47,7 +47,6 @@
     "noMatches": "No apps match “{query}”",
     "allApps": "All apps",
     "premium": {
-      "title": "Premium app",
       "tooltip": "Premium app, runs with credits"
     },
     "pageLoading": "Loading {app}",

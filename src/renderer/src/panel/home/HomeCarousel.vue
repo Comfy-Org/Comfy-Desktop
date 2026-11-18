@@ -3,7 +3,7 @@
   lang="ts"
   generic="Card extends { id: string; title: string; description: string; premium?: boolean }"
 >
-import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from '@lucide/vue'
 import PremiumAppBadge from '../PremiumAppBadge.vue'
@@ -58,6 +58,18 @@ const frontPosition = ref(0)
 const jumpedAcross = ref(new Set<string>())
 const loadedPictures = ref(new Set<string>())
 const brokenPictures = ref(new Set<string>())
+const keyboardFocusedId = ref<string | null>(null)
+const premiumIdPrefix = useId()
+
+function premiumDescriptionId(card: Card): string {
+  return `${premiumIdPrefix}-premium-${card.id}`
+}
+
+function noteCardFocus(card: Card, event: FocusEvent): void {
+  const button = event.currentTarget
+  keyboardFocusedId.value =
+    button instanceof HTMLElement && button.matches(':focus-visible') ? card.id : null
+}
 
 const listsApps = computed(() => kind === 'apps')
 const wraps = computed(() => cards.length > ARC_REACH * 2)
@@ -230,12 +242,15 @@ function activate(placed: { card: Card; offset: number }): void {
           ]"
           :style="slotStyle(placed.offset)"
           :aria-label="labelFor(placed)"
+          :aria-describedby="placed.card.premium ? premiumDescriptionId(placed.card) : undefined"
           :aria-current="placed.offset === 0 ? 'true' : undefined"
           :aria-hidden="placed.onStage ? undefined : 'true'"
           :tabindex="placed.onStage ? undefined : -1"
           data-testid="home-carousel-card"
           :data-arc-offset="placed.offset"
           @click="activate(placed)"
+          @focus="noteCardFocus(placed.card, $event)"
+          @blur="keyboardFocusedId = null"
         >
           <img
             v-if="showsPicture(placed.card)"
@@ -262,7 +277,12 @@ function activate(placed: { card: Card; offset: number }): void {
             class="absolute inset-0 bg-linear-to-t from-black/75 via-black/40 via-30% to-transparent to-55%"
             aria-hidden="true"
           />
-          <PremiumAppBadge v-if="placed.card.premium" class="absolute top-3 left-3" />
+          <PremiumAppBadge
+            v-if="placed.card.premium"
+            :description-id="premiumDescriptionId(placed.card)"
+            :revealed="keyboardFocusedId === placed.card.id"
+            class="absolute top-3 left-3"
+          />
           <span
             class="absolute top-3 right-3 grid size-8 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
             :class="

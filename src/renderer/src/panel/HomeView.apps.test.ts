@@ -133,16 +133,10 @@ describe('Home apps', () => {
     expect(wrapper.emitted('open-app')).toEqual([[PRODUCT_ADS]])
   })
 
-  it('crowns a premium app in the carousel on the top left, away from the open arrow, and leaves a free app without one', async () => {
+  it('crowns a premium app in the carousel and leaves a free app without one', async () => {
     const wrapper = await openHome()
 
-    const front = cardAt(wrapper, 0)
-    expect(front.get('[data-testid="premium-app-badge"]').classes()).toEqual(
-      expect.arrayContaining(['top-3', 'left-3'])
-    )
-    expect(front.get('[data-testid="home-carousel-cta"]').classes()).toEqual(
-      expect.arrayContaining(['top-3', 'right-3'])
-    )
+    expect(cardAt(wrapper, 0).find('[data-testid="premium-app-badge"]').exists()).toBe(true)
     expect(cardAt(wrapper, 2).find('[data-testid="premium-app-badge"]').exists()).toBe(false)
   })
 

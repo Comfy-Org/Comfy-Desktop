@@ -47,7 +47,6 @@
     "noMatches": "没有与“{query}”匹配的应用",
     "allApps": "全部应用",
     "premium": {
-      "title": "高级应用",
       "tooltip": "高级应用，使用积分运行"
     },
     "pageLoading": "正在加载{app}",

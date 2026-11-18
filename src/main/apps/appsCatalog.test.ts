@@ -61,10 +61,15 @@ afterEach(() => {
 })
 
 describe('the apps Desktop lists', () => {
-  it("come from the website's own list, in its order, with each cover on the site", async () => {
+  it("come from the website's own list, in its order, with each cover on the site and premium marked", async () => {
     mockedFetchJSON.mockResolvedValue([
       websiteApp(),
-      websiteApp({ id: 'sdr-to-hdr', page: '/apps/sdr-to-hdr/desktop.html', title: 'SDR to HDR' })
+      websiteApp({ id: 'sdr-to-hdr', page: '/apps/sdr-to-hdr/desktop.html', title: 'SDR to HDR' }),
+      websiteApp({
+        id: 'product-swap',
+        page: '/apps/product-swap/desktop.html',
+        title: 'Product Swap'
+      })
     ])
 
     expect(await listApps()).toEqual([
@@ -81,6 +86,13 @@ describe('the apps Desktop lists', () => {
         description: 'Cut the subject out of a picture or video.',
         coverUrl: 'https://comfy.org/catalog-media/cover-1/v2',
         premium: false
+      },
+      {
+        id: 'product-swap',
+        title: 'Product Swap',
+        description: 'Cut the subject out of a picture or video.',
+        coverUrl: 'https://comfy.org/catalog-media/cover-1/v2',
+        premium: true
       }
     ])
     expect(mockedFetchJSON).toHaveBeenCalledWith('https://comfy.org/apps/apps.json', {
