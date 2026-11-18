@@ -502,6 +502,37 @@ describe('comfyTitlePopup/InstancePickerView', () => {
     })
   })
 
+  describe('header title editor', () => {
+    it('starts a fresh title editor when the selected build changes', async () => {
+      const alpha = makeInstall({ id: 'a', name: 'Alpha' })
+      const beta = makeInstall({ id: 'b', name: 'Beta' })
+      const wrapper = await mountPicker({
+        installs: [alpha, beta],
+        activeInstallationId: 'a',
+        runningInstallationIds: []
+      })
+      await flushPromises()
+      const alphaEditor = wrapper.findComponent({ name: 'InlineNameEdit' })
+      expect(alphaEditor.props('name')).toBe('Alpha')
+      const alphaEditorId = alphaEditor.vm.$.uid
+
+      await wrapper.setProps({
+        snapshot: {
+          ...wrapper.props('snapshot'),
+          installs: [beta],
+          activeInstallationId: 'b',
+          selectedInstallationId: 'b'
+        }
+      })
+      await flushPromises()
+
+      const betaEditor = wrapper.findComponent({ name: 'InlineNameEdit' })
+      expect(betaEditor.props('name')).toBe('Beta')
+      expect(betaEditor.vm.$.uid).not.toBe(alphaEditorId)
+      expect(wrapper.get('.picker-detail-header').text()).not.toContain('Alpha')
+    })
+  })
+
   describe('primary action dispatch', () => {
     it('dispatches pickInstall when the selected install is not running', async () => {
       const { default: ComfyUISettingsContent } =

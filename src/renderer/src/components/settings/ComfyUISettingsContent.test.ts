@@ -5,6 +5,7 @@ import { computed, ref, nextTick } from 'vue'
 
 import type { Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'
+import '../../assets/main.css'
 import { TID } from '../../../../shared/testIds'
 import ComfyUISettingsContent from './ComfyUISettingsContent.vue'
 
@@ -748,6 +749,47 @@ describe('ComfyUISettingsContent', () => {
 
       useComfyUISettingsState.sections.value = priorSections
       useComfyUISettingsState.sectionsFresh.value = true
+    })
+  })
+
+  describe('tab strip in a narrow pane', () => {
+    it('scrolls instead of clipping, fades the hidden edge, and brings the chosen tab into view', async () => {
+      const priorSections = useComfyUISettingsState.sections.value
+      useComfyUISettingsState.sectionsFresh.value = true
+      useComfyUISettingsState.sections.value = [
+        { tab: 'update', fields: [] },
+        { tab: 'storage', fields: [] },
+        { tab: 'settings', fields: [] },
+        { tab: 'snapshots', fields: [] }
+      ]
+      const pane = document.createElement('div')
+      pane.style.width = '260px'
+      document.body.append(pane)
+      const w = mount(ComfyUISettingsContent, {
+        props: { installation: SAMPLE_INSTALL, initialTab: 'update', activeOperation: null },
+        global: { plugins: [getActivePinia() ?? createPinia()] },
+        attachTo: pane
+      })
+      await flushPromises()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+
+      const strip = w.get<HTMLElement>('.settings-v2-tabs').element
+      expect(getComputedStyle(strip).overflowX).toBe('auto')
+      expect(strip.scrollWidth).toBeGreaterThan(strip.clientWidth)
+      expect(strip.className).toContain('mask-image')
+
+      await w.get('[data-testid="' + TID.settingsTab('snapshots') + '"]').trigger('click')
+      await flushPromises()
+      const last = w.get<HTMLElement>(
+        '[data-testid="' + TID.settingsTab('snapshots') + '"]'
+      ).element
+      expect(last.getBoundingClientRect().right).toBeLessThanOrEqual(
+        strip.getBoundingClientRect().right + 1
+      )
+
+      w.unmount()
+      pane.remove()
+      useComfyUISettingsState.sections.value = priorSections
     })
   })
 
