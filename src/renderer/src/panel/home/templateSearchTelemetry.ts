@@ -109,6 +109,7 @@ interface Session {
   previousRequest: string | null
   answer: Answer | null
   shownAt: number | null
+  shownMs: number
 }
 
 export interface SearchTiming {
@@ -144,13 +145,19 @@ export function createSearchTelemetry({
       searches: 0,
       previousRequest: null,
       answer: null,
-      shownAt: null
+      shownAt: null,
+      shownMs: 0
     }
     return session
   }
 
+  function shownFor(current: Session, at: number): number {
+    return current.shownMs + (current.shownAt === null ? 0 : at - current.shownAt)
+  }
+
   function show(current: Session, answer: Answer): void {
     current.answer = answer
+    current.shownMs = 0
     current.shownAt = now()
   }
 
@@ -192,11 +199,16 @@ export function createSearchTelemetry({
   }
 
   function reopened(): void {
-    if (lastAnswer) show(startSession(), lastAnswer)
+    if (!lastAnswer) return
+    const current = startSession()
+    if (current.answer === lastAnswer) current.shownAt ??= now()
+    else show(current, lastAnswer)
   }
 
   function hidden(): void {
-    if (session) session.shownAt = null
+    if (!session || session.shownAt === null) return
+    session.shownMs = shownFor(session, now())
+    session.shownAt = null
   }
 
   function picked(
@@ -216,12 +228,12 @@ export function createSearchTelemetry({
       list_position: sameList.indexOf(row),
       position: rows.indexOf(row),
       template_id: row.candidate.templateId,
-      match_pct: row.kind === 'more' ? null : matchPct(row),
-      match_level: (row.kind !== 'more' && matchLevel(row.candidate)) || 'none',
+      match_pct: row.familyPick ? matchPct(row) : null,
+      match_level: (row.familyPick && matchLevel(row.candidate)) || 'none',
       is_best_match: row.best,
       input_method: inputMethod,
       action,
-      results_to_pick_ms: pickedAt - current.shownAt,
+      results_to_pick_ms: shownFor(current, pickedAt),
       session_ms: pickedAt - current.startedAt,
       session_search_count: current.searches
     })
@@ -254,7 +266,7 @@ export function createSearchTelemetry({
       reason,
       session_ms: endedAt - current.startedAt,
       session_search_count: current.searches,
-      last_results_shown_ms: current.shownAt === null ? null : endedAt - current.shownAt,
+      last_results_shown_ms: current.answer === null ? null : shownFor(current, endedAt),
       last_outcome: current.answer?.outcome ?? 'searching'
     })
   }

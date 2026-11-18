@@ -27,7 +27,6 @@ function candidate(
     score: 0.9,
     calibrated: null,
     belowThreshold: false,
-    missing: [],
     downloadBytes: null,
     ...over
   }
@@ -37,8 +36,8 @@ const RESULT: TemplateSearchResult = {
   outcome: 'template',
   reply: null,
   run: [candidate('poster_template', { calibrated: 0.874 }), candidate('banner_template')],
-  download: [candidate('mural_template', { needsDownload: true })],
-  more: [candidate('zine_template', { calibrated: 0.5 })],
+  download: [candidate('mural_template', { family: 'mural', needsDownload: true })],
+  more: [candidate('zine_template', { family: 'mural', calibrated: 0.5 })],
   alsoTry: [candidate('sticker_template')],
   partnerSwitch: true,
   partnersShown: true
@@ -281,18 +280,46 @@ describe('createSearchTelemetry', () => {
     })
   })
 
-  it('restarts the shown time, but not the session, when results kept open come back into view', () => {
+  it('counts only the time on screen when the window goes away and comes back', () => {
     const { telemetry, last, tick, at } = harness()
     telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
-    tick(30_000)
+    tick(5000)
+    telemetry.hidden()
+    tick(60_000)
+    telemetry.reopened()
+    tick(700)
+    telemetry.picked(ROWS, ROWS[0]!, 'keyboard')
+    expect(last().context).toMatchObject({
+      results_to_pick_ms: 5700,
+      session_ms: 65_700,
+      session_search_count: 1
+    })
+  })
+
+  it('counts the shown time of a new answer from nothing', () => {
+    const { telemetry, last, tick, at } = harness()
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
+    tick(5000)
+    telemetry.hidden()
+    telemetry.reopened()
+    telemetry.requested()
+    tick(1000)
+    telemetry.answered('a poster for a bake sale', ANSWER, ANSWER_AT(at), true)
+    tick(300)
+    telemetry.picked(ROWS, ROWS[0]!, 'keyboard')
+    expect(last().context).toMatchObject({ results_to_pick_ms: 300, session_ms: 6300 })
+  })
+
+  it('starts the shown time from nothing when the results open again after a give-up', () => {
+    const { telemetry, last, tick, at } = harness()
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
+    tick(3000)
+    telemetry.abandoned('closed')
+    tick(1000)
     telemetry.reopened()
     tick(500)
     telemetry.picked(ROWS, ROWS[0]!, 'keyboard')
-    expect(last().context).toMatchObject({
-      results_to_pick_ms: 500,
-      session_ms: 30_500,
-      session_search_count: 1
-    })
+    expect(last().context).toMatchObject({ results_to_pick_ms: 500, session_ms: 500 })
   })
 
   it('forgets the answer on screen while a follow-up search runs', () => {
@@ -316,12 +343,51 @@ describe('createSearchTelemetry', () => {
     tick(1000)
     telemetry.hidden()
     tick(60_000)
+    telemetry.hidden()
     telemetry.abandoned('left')
     expect(last().context).toMatchObject({
       session_ms: 61_000,
-      last_results_shown_ms: null,
+      last_results_shown_ms: 1000,
       last_outcome: 'template'
     })
+  })
+
+  it('describes a download answer by the card shown first, and places each pick where it is shown', () => {
+    const result: TemplateSearchResult = {
+      ...RESULT,
+      outcome: 'download',
+      run: [
+        candidate('poster', { family: 'poster', calibrated: 0.6 }),
+        candidate('open_poster', { family: 'poster', calibrated: 0.6 })
+      ],
+      download: [candidate('mural', { family: 'mural', needsDownload: true, calibrated: 0.874 })],
+      more: [candidate('mural_b', { family: 'mural', calibrated: 0.874 })],
+      alsoTry: []
+    }
+    const rows = searchRows(result)
+    const { telemetry, sent, at } = harness()
+    telemetry.answered('a mural', { ...ANSWER, result }, ANSWER_AT(at), true)
+    expect(sent[0]!.context).toMatchObject({
+      top_match_pct: 87,
+      top_match_level: 'strong',
+      has_best_match: true
+    })
+    for (const id of ['mural_b', 'open_poster', 'poster'])
+      telemetry.picked(
+        rows,
+        rows.find((row) => row.candidate.templateId === id)!,
+        'pointer'
+      )
+    expect(sent.slice(1).map((event) => event.context)).toMatchObject([
+      { template_id: 'mural_b', list: 'more', list_position: 0, position: 1, match_pct: null },
+      { template_id: 'open_poster', list: 'run', list_position: 1, position: 3, match_pct: null },
+      { template_id: 'poster', list: 'run', list_position: 0, position: 2, match_pct: 60 }
+    ])
+    expect(sent.slice(1).map((event) => event.context!.match_level)).toEqual([
+      'none',
+      'none',
+      'good'
+    ])
   })
 
   it('does not reopen anything after search answered that it is switched off', () => {

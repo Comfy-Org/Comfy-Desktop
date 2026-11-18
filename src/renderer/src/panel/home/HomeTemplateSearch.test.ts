@@ -1326,7 +1326,6 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
     const krea = (downloadBytes: number) =>
       candidate('krea_template', {
         needsDownload: true,
-        missing: ['krea.safetensors'],
         downloadBytes
       })
     for (const [bytes, sized] of [
@@ -1345,7 +1344,6 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
   it('says only that a download is needed when the remainder is too small to show as a size', async () => {
     const open = candidate('krea_template', {
       needsDownload: true,
-      missing: ['krea.safetensors'],
       downloadBytes: 300_000
     })
     searchTemplates.mockResolvedValue(answer({ run: [POSTER], download: [open] }))
@@ -1600,22 +1598,82 @@ describe('HomeTemplateSearch telemetry', () => {
     window.dispatchEvent(new Event('blur'))
     expect(panel(wrapper).exists()).toBe(true)
     window.dispatchEvent(new Event('focus'))
+    await searchFor(wrapper, 'a poster for a bake sale')
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(named('abandoned')).toEqual([])
-    expect(named('picked')[0]!.context).toMatchObject({ session_search_count: 1 })
+    expect(named('picked')[0]!.context).toMatchObject({ session_search_count: 2 })
   })
 
-  it('does not count time with the window away as time looking at the results', async () => {
+  it('pauses the time looking at the results while the window is away, and goes on on return', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const later = (ms: number) => vi.setSystemTime(Date.now() + ms)
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
+    later(5000)
     window.dispatchEvent(new Event('blur'))
+    later(60_000)
+    window.dispatchEvent(new Event('focus'))
+    later(700)
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(named('picked')[0]!.context).toMatchObject({
+      results_to_pick_ms: 5700,
+      session_ms: 65_700
+    })
+  })
+
+  it('sends the time spent looking before the window went away when Home closes while away', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const later = (ms: number) => vi.setSystemTime(Date.now() + ms)
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    later(5000)
+    window.dispatchEvent(new Event('blur'))
+    later(60_000)
     wrapper.unmount()
     expect(named('abandoned')[0]!.context).toMatchObject({
       reason: 'left',
-      last_results_shown_ms: null,
+      session_ms: 65_000,
+      last_results_shown_ms: 5000,
       last_outcome: 'template'
     })
+  })
+
+  it('times an answer that arrived while the window was away from when the window comes back', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const later = (ms: number) => vi.setSystemTime(Date.now() + ms)
+    let answerLater!: (response: TemplateSearchResponse) => void
+    searchTemplates.mockReturnValueOnce(new Promise((resolve) => (answerLater = resolve)))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    window.dispatchEvent(new Event('blur'))
+    answerLater(answer({ run: [POSTER] }))
+    await flushPromises()
+    later(60_000)
+    window.dispatchEvent(new Event('focus'))
+    later(400)
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(named('picked')[0]!.context).toMatchObject({ results_to_pick_ms: 400 })
+  })
+
+  it('starts no session when the window comes back after the results closed or a template opened', async () => {
+    const closed = mountSearch()
+    await searchFor(closed, 'a poster')
+    await closed.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    window.dispatchEvent(new Event('blur'))
+    window.dispatchEvent(new Event('focus'))
+    closed.unmount()
+
+    const picked = mountSearch()
+    await searchFor(picked, 'a poster')
+    await input(picked).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    window.dispatchEvent(new Event('blur'))
+    window.dispatchEvent(new Event('focus'))
+    picked.unmount()
+    expect(named('abandoned').map((event) => event.context!.reason)).toEqual(['closed'])
   })
 
   it('sends nothing while search answers that it is switched off', async () => {
@@ -1637,19 +1695,31 @@ describe('HomeTemplateSearch telemetry', () => {
     expect(named('abandoned').map((event) => event.context!.reason)).toEqual(['left'])
   })
 
-  it('sends a give-up during a follow-up search as searching, not against the results it replaced', async () => {
-    const wrapper = mountSearch()
-    await searchFor(wrapper, 'a poster')
-    searchTemplates.mockReturnValueOnce(new Promise(() => {}))
-    await searchFor(wrapper, 'a poster for a bake sale')
-    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
-    expect(named('abandoned')[0]!.context).toMatchObject({
-      reason: 'closed',
-      last_outcome: 'searching',
-      last_results_shown_ms: null,
-      session_search_count: 1
-    })
-  })
+  it.each([
+    ['', false],
+    [', even after the window went away and came back', true]
+  ])(
+    'sends a give-up during a follow-up search as searching, not against the results it replaced%s',
+    async (_name, windowAway) => {
+      const wrapper = mountSearch()
+      await searchFor(wrapper, 'a poster')
+      searchTemplates.mockReturnValueOnce(new Promise(() => {}))
+      await searchFor(wrapper, 'a poster for a bake sale')
+      if (windowAway) {
+        window.dispatchEvent(new Event('blur'))
+        window.dispatchEvent(new Event('focus'))
+      }
+      await wrapper
+        .get('[data-testid="home-template-search"]')
+        .trigger('keydown', { key: 'Escape' })
+      expect(named('abandoned')[0]!.context).toMatchObject({
+        reason: 'closed',
+        last_outcome: 'searching',
+        last_results_shown_ms: null,
+        session_search_count: 1
+      })
+    }
+  )
 
   it('resumes the session when a kept notice is shown again', async () => {
     searchTemplates.mockResolvedValue(

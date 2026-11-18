@@ -36,6 +36,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   const openFailed = ref(false)
   let latestRequest = 0
   let prepared = false
+  let windowAway = false
   let pendingSearch: ReturnType<typeof setTimeout> | undefined
 
   const partnerSwitch = computed(
@@ -81,7 +82,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
       trimmed,
       response ?? { kind: 'failed' },
       { triggeredAt, requestedAt },
-      panelOpen.value
+      panelOpen.value && !windowAway
     )
     if (response?.kind === 'result') {
       state.value = { kind: 'result', query: trimmed, result: response.result }
@@ -108,7 +109,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
 
   watch(panelOpen, (open) => {
     if (!open) leaveResults()
-    else if (state.value.kind !== 'idle' && state.value.kind !== 'searching') telemetry.reopened()
+    else if (answerShowing()) telemetry.reopened()
   })
 
   watch(query, (text) => {
@@ -133,16 +134,18 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     searchAgainOrForget()
   })
 
-  function resultsShowing(): boolean {
-    return panelOpen.value && state.value.kind !== 'idle'
+  function answerShowing(): boolean {
+    return panelOpen.value && state.value.kind !== 'idle' && state.value.kind !== 'searching'
   }
 
   function onWindowAway(): void {
-    if (resultsShowing()) telemetry.hidden()
+    windowAway = true
+    telemetry.hidden()
   }
 
   function onWindowBack(): void {
-    if (resultsShowing()) telemetry.reopened()
+    windowAway = false
+    if (answerShowing()) telemetry.reopened()
   }
 
   window.addEventListener('blur', onWindowAway)
@@ -218,10 +221,9 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     options.signIn()
   }
 
-  function close(reason: AbandonReason | null): void {
+  function close(reason: AbandonReason): void {
     panelOpen.value = false
-    if (reason) telemetry.abandoned(reason)
-    else telemetry.hidden()
+    telemetry.abandoned(reason)
   }
 
   function onEnter(): void {
