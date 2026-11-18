@@ -1052,6 +1052,7 @@ function posterAnswer(): TemplateSearchResponse {
         }
       ],
       download: [],
+      more: [],
       alsoTry: [],
       partnerSwitch: false,
       partnersShown: true

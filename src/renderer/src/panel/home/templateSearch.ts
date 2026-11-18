@@ -1,6 +1,6 @@
 import type { TemplateSearchCandidate, TemplateSearchResult } from '../../types/ipc'
 
-export type SearchRowKind = 'run' | 'download' | 'also'
+export type SearchRowKind = 'run' | 'download' | 'more' | 'also'
 
 const WEAK_MATCH_FLOOR = 0.05
 const STRONG_MATCH = 0.85
@@ -64,17 +64,19 @@ export function verticalNeighbour(boxes: CardBox[], active: number, step: 1 | -1
   return nearest
 }
 
-function familiesTogether(run: SearchRow[], download: SearchRow[]): SearchRow[] {
-  const rest = [...download]
+function familiesTogether(groups: SearchRow[][]): SearchRow[] {
+  const pending = groups.flat()
   const rows: SearchRow[] = []
-  for (const row of run) {
-    rows.push(row)
-    const family = row.candidate.family
-    const sameFamily = rest.filter((other) => family !== null && other.candidate.family === family)
+  while (pending.length > 0) {
+    const anchor = pending.shift()!
+    rows.push(anchor)
+    const family = anchor.candidate.family
+    if (family === null) continue
+    const sameFamily = pending.filter((other) => other.candidate.family === family)
     rows.push(...sameFamily)
-    for (const other of sameFamily) rest.splice(rest.indexOf(other), 1)
+    for (const other of sameFamily) pending.splice(pending.indexOf(other), 1)
   }
-  return [...rows, ...rest]
+  return rows
 }
 
 export function searchRows(result: TemplateSearchResult): SearchRow[] {
@@ -84,7 +86,7 @@ export function searchRows(result: TemplateSearchResult): SearchRow[] {
   const lead =
     result.outcome === 'template' ? run[0] : result.outcome === 'download' ? download[0] : null
   if (lead) lead.best = true
-  const main = familiesTogether(run, download)
+  const main = familiesTogether([run, download, rowsOf('more', result.more)])
   const bestFirst = lead ? [lead, ...main.filter((row) => row !== lead)] : main
   return [...bestFirst, ...rowsOf('also', result.alsoTry)]
 }

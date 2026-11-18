@@ -65,6 +65,7 @@ function answer(result: Partial<TemplateSearchResult>): TemplateSearchResponse {
       run: [],
       download: [],
       alsoTry: [],
+      more: [],
       partnerSwitch: false,
       partnersShown: true,
       ...result
@@ -331,6 +332,32 @@ describe('HomeTemplateSearch results', () => {
     const [mural, banner] = wrapper.findAll('[role="option"]')
     expect(mural!.find('[data-testid="home-template-search-best"]').exists()).toBe(true)
     expect(banner!.find('[data-testid="home-template-search-best"]').exists()).toBe(false)
+  })
+
+  it("follows each family's cards with its further templates, marking the ones that need a download", async () => {
+    searchTemplates.mockResolvedValue(
+      answer({
+        run: [candidate('poster', { family: 'poster' }), candidate('banner', { family: 'banner' })],
+        download: [candidate('mural', { family: 'mural', needsDownload: true })],
+        more: [
+          candidate('poster_b', { family: 'poster' }),
+          candidate('banner_b', { family: 'banner', needsDownload: true }),
+          candidate('mural_b', { family: 'mural' })
+        ]
+      })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    expect(rowTitles(wrapper)).toEqual([
+      'poster title',
+      'poster_b title',
+      'banner title',
+      'banner_b title',
+      'mural title',
+      'mural_b title'
+    ])
+    const banner = wrapper.findAll('[role="option"]')[3]!
+    expect(banner.find('[data-testid="home-template-search-needs-download"]').exists()).toBe(true)
   })
 
   it("keeps a family's open template right after its pick, ahead of the next family", async () => {
