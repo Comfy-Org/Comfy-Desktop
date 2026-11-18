@@ -111,7 +111,7 @@ describe('AppsView', () => {
     expect(wrapper.findAll('[data-testid="apps-grid"] button')).toHaveLength(3)
   })
 
-  it("plays an app's covers on its card, one shown and the next loading behind it", async () => {
+  it("plays an app's covers on its card, the next loading behind the one shown once it has loaded", async () => {
     const covers = ['red', 'green', 'blue'].map((fill) => ({
       url: `data:image/svg+xml,${encodeURIComponent(
         `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5"><rect width="8" height="5" fill="${fill}"/></svg>`
@@ -123,6 +123,7 @@ describe('AppsView', () => {
     const urls = covers.map((cover) => cover.url)
 
     expect(urls).toContain(card.get('img[data-cover="shown"]').attributes('src'))
+    await expect.poll(() => card.find('img[data-cover="upcoming"]').exists()).toBe(true)
     expect(urls).toContain(card.get('img[data-cover="upcoming"]').attributes('src'))
     expect(card.get('img[data-cover="upcoming"]').attributes('src')).not.toBe(
       card.get('img[data-cover="shown"]').attributes('src')
