@@ -634,7 +634,7 @@ describe('AppSidebar', () => {
       await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
       await flushPromises()
       expect(buildNames(wrapper), 'kept during the fold').toEqual(['Flux Sandbox'])
-      await new Promise((resolve) => setTimeout(resolve, 450))
+      await new Promise((resolve) => setTimeout(resolve, 350))
       expect(buildNames(wrapper), 'gone once folded').toEqual([])
 
       await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')

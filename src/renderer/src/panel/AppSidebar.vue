@@ -1,5 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, provide, ref, shallowRef, toRef, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  provide,
+  ref,
+  shallowRef,
+  toRef,
+  watch
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
@@ -118,14 +128,15 @@ function focusToggle(): void {
   header.value?.querySelector<HTMLElement>('[data-testid="app-sidebar-toggle"]')?.focus()
 }
 
+const FOLD_MS = 300
 const buildRowsMounted = ref(!collapsed.value)
+let unmountBuildRows: ReturnType<typeof setTimeout> | undefined
 watch(collapsed, (folded) => {
+  clearTimeout(unmountBuildRows)
   if (!folded) buildRowsMounted.value = true
+  else unmountBuildRows = setTimeout(() => (buildRowsMounted.value = false), FOLD_MS)
 })
-
-function onBuildsFoldEnd(event: TransitionEvent): void {
-  if (event.target === event.currentTarget && collapsed.value) buildRowsMounted.value = false
-}
+onBeforeUnmount(() => clearTimeout(unmountBuildRows))
 
 const appsEnabled = ref(false)
 onMounted(async () => {
@@ -382,7 +393,6 @@ function openSettings(): void {
               collapsed ? 'grid-rows-[0fr] opacity-0 duration-300' : 'grid-rows-[1fr] duration-260'
             "
             :inert="collapsed"
-            @transitionend="onBuildsFoldEnd"
           >
             <div
               class="flex min-h-0 w-[220px] flex-col gap-1 overflow-hidden text-nowrap"
