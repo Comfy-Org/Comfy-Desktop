@@ -44,6 +44,7 @@ import { recordDashboardSurface, recordInstanceSurface } from '../lib/lastSessio
 import * as settings from '../settings'
 import * as updater from '../lib/updater'
 import { getSavedBounds, getWindowOptions, saveWindowBounds } from '../lib/windowState'
+import { defaultWindowBoundsNear, defaultWindowBoundsUnderCursor } from '../lib/defaultWindowSize'
 import { ensureSystemModal } from '../popups/systemModal'
 import { hideTitlePopupForParent, prewarmTitlePopup } from '../popups/titlePopup'
 import { destroyPanelView, ensurePanelView } from './panelView'
@@ -63,9 +64,6 @@ import {
   unregisterHostEntry
 } from './registry'
 import type { ComfyWindowEntry, ComfyPanelKey } from './registry'
-
-const DEFAULT_HOST_WIDTH = 1280
-const DEFAULT_HOST_HEIGHT = 900
 
 export type CloseConsultResult = 'cleared' | 'aborted' | 'defer'
 
@@ -356,11 +354,19 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
   const isChooserKey = opts.boundsKey === CHOOSER_HOST_BOUNDS_KEY
   const saved = isChooserKey ? undefined : getSavedBounds(opts.boundsKey)
   const sibling = findLiveSiblingOrigin(opts.boundsKey)
-  const initialOptions = sibling
-    ? { x: sibling.x, y: sibling.y, width: DEFAULT_HOST_WIDTH, height: DEFAULT_HOST_HEIGHT }
-    : isChooserKey
-      ? { width: DEFAULT_HOST_WIDTH, height: DEFAULT_HOST_HEIGHT }
-      : getWindowOptions(opts.boundsKey)
+  const fresh = sibling
+    ? defaultWindowBoundsNear(sibling)
+    : saved
+      ? null
+      : defaultWindowBoundsUnderCursor()
+  const initialOptions = fresh
+    ? {
+        x: sibling?.x ?? fresh.x,
+        y: sibling?.y ?? fresh.y,
+        width: fresh.width,
+        height: fresh.height
+      }
+    : getWindowOptions(opts.boundsKey)
   const windowOptions = cascadeOffsetForCollisions(initialOptions, liveHostOrigins())
   const comfyWindow = new BrowserWindow({
     ...windowOptions,
@@ -455,7 +461,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     if (delayedRelayoutTimer) clearTimeout(delayedRelayoutTimer)
   })
 
-  if (saved?.maximized) comfyWindow.maximize()
+  if (saved ? saved.maximized : fresh?.maximize) comfyWindow.maximize()
 
   if (process.platform === 'darwin') {
     const sendFullscreen = (fullscreen: boolean): void => {

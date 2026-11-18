@@ -3,6 +3,7 @@ import type { BrowserWindow } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { configDir } from './paths'
+import { defaultWindowBoundsUnderCursor } from './defaultWindowSize'
 
 export interface WindowBounds {
   x: number
@@ -56,7 +57,10 @@ export function getWindowOptions(
   installationId: string
 ): Partial<Electron.BrowserWindowConstructorOptions> {
   const saved = getSavedBounds(installationId)
-  if (!saved) return { width: 1280, height: 900 }
+  if (!saved) {
+    const { x, y, width, height } = defaultWindowBoundsUnderCursor()
+    return { x, y, width, height }
+  }
 
   const savedRect = { x: saved.x, y: saved.y, width: saved.width, height: saved.height }
   const display = screen.getDisplayMatching(savedRect)
