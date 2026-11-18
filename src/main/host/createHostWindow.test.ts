@@ -238,9 +238,7 @@ describe('placeHostWindow', () => {
     mocks.cursor = { x: 100, y: 100 }
     const dashboard = { x: 200, y: 100 }
     const requester = { x: 2100, y: 120 }
-    expect(
-      placeHostWindow('chooser', true, dashboard, [dashboard, requester], requester)
-    ).toEqual({
+    expect(placeHostWindow('chooser', true, dashboard, [dashboard, requester], requester)).toEqual({
       bounds: { x: 2130, y: 150, width: 2176, height: 1190, minWidth: 800, minHeight: 600 },
       maximizeNow: false,
       maximizeOnReveal: false
