@@ -808,6 +808,10 @@ function markerMatches(marker: OwnerMarker, ops: CleanupFs): boolean {
   return ops.readText(marker.file)?.trim() === marker.id
 }
 
+function realParentDevice(p: string, ops: CleanupFs): number {
+  return ops.entryInfo(ops.realPath(path.dirname(p))).device
+}
+
 function removeEntry(entry: CleanupEntry, guard: DeletionGuard, ops: CleanupFs): CleanupResult {
   const refused = (detail: string): CleanupResult => ({ entry, outcome: 'refused', detail })
   const info = ops.entryInfo(entry.path)
@@ -839,8 +843,7 @@ function removeEntry(entry: CleanupEntry, guard: DeletionGuard, ops: CleanupFs):
   const whole = held.find((p) => entry.installId !== undefined || samePath(p, entry.path))
   if (whole) return refused(`would remove kept data: ${whole}`)
   const walk: Walk = { held, ops, problems: [] }
-  // The parent's real folder, so a linked parent (allowed above) is not read as another drive.
-  const parentDevice = ops.entryInfo(ops.realPath(path.dirname(entry.path))).device
+  const parentDevice = realParentDevice(entry.path, ops)
   if (removeWalking(entry.path, parentDevice, walk)) return { entry, outcome: 'removed' }
   const [problem] = walk.problems
   if (problem) return { entry, outcome: 'failed', detail: problem }
