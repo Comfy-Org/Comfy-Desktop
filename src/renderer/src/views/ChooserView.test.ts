@@ -395,7 +395,7 @@ describe('ChooserView', () => {
 
     const itemsA = await menuFor('a', 'right-click')
     expect(itemsA.slice(0, 3)).toEqual(['launch', 'auto-start', 'manage'])
-    expect(buildMenuItem('a', 'auto-start')!.textContent?.trim()).toBe('Turn off Auto start')
+    expect(buildMenuItem('a', 'auto-start')!.textContent?.trim()).toBe('Turn off auto start')
     closeMenu('a')
     await vi.waitFor(() => expect(buildMenu('a')).toBeNull())
 
@@ -411,7 +411,7 @@ describe('ChooserView', () => {
 
     await vi.waitFor(() => expect(buildMenu('b')).toBeNull())
     await menuFor('b', 'kebab')
-    expect(buildMenuItem('b', 'auto-start')!.textContent?.trim()).toBe('Turn off Auto start')
+    expect(buildMenuItem('b', 'auto-start')!.textContent?.trim()).toBe('Turn off auto start')
     await chooseFromBuildMenu('b', 'auto-start')
 
     expect(autoStartWrites()).toEqual(['b', 'none'])
