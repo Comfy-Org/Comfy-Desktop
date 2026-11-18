@@ -5,6 +5,7 @@ import { AppWindow, Search } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
+import CoverRotation from '../components/CoverRotation.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { AppCard } from '../types/ipc'
@@ -198,14 +199,13 @@ onBeforeUnmount(() => {
             >
               <span
                 class="relative block aspect-[505/316] w-full overflow-hidden rounded-control bg-[rgb(235_235_235/0.05)]"
+                data-testid="app-card-picture"
               >
-                <img
-                  v-if="app.coverUrl && !coversThatFailed.has(app.id)"
-                  :src="app.coverUrl"
-                  alt=""
-                  loading="lazy"
-                  class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                  @error="coversThatFailed.add(app.id)"
+                <CoverRotation
+                  v-if="app.covers.length > 0 && !coversThatFailed.has(app.id)"
+                  :pictures="app.covers"
+                  class="transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  @broken="coversThatFailed.add(app.id)"
                 />
                 <span
                   v-else

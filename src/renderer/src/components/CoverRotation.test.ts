@@ -1,0 +1,171 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount, type VueWrapper } from '@vue/test-utils'
+import { nextTick } from 'vue'
+
+import '../assets/main.css'
+import CoverRotation from './CoverRotation.vue'
+import { COVER_FADE_MS, COVER_HOLD_MS } from '../composables/useCoverRotation'
+import type { AppCover } from '../types/ipc'
+
+function picture(fill: string): string {
+  return `data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5"><rect width="8" height="5" fill="${fill}"/></svg>`
+  )}`
+}
+
+const COVERS: AppCover[] = [
+  { url: picture('red'), stillUrl: picture('darkred') },
+  { url: picture('green'), stillUrl: picture('darkgreen') },
+  { url: picture('blue'), stillUrl: picture('darkblue') }
+]
+const URLS = COVERS.map((cover) => cover.url)
+const STILLS = COVERS.map((cover) => cover.stillUrl)
+
+const mounted: VueWrapper[] = []
+let card: HTMLElement
+
+function mountCovers(covers: readonly AppCover[] = COVERS, props: { paused?: boolean } = {}) {
+  const wrapper = mount(CoverRotation, { attachTo: card, props: { pictures: covers, ...props } })
+  mounted.push(wrapper)
+  return wrapper
+}
+
+function layer(wrapper: VueWrapper, role: string) {
+  return wrapper.find(`img[data-cover="${role}"]`)
+}
+
+const shownSrc = (wrapper: VueWrapper) => layer(wrapper, 'shown').attributes('src')
+
+async function untilAllLoaded(wrapper: VueWrapper): Promise<void> {
+  await expect
+    .poll(() => wrapper.findAll('img').every((img) => img.attributes('data-loaded') === 'true'))
+    .toBe(true)
+}
+
+async function untilTheCoverChanges(wrapper: VueWrapper, from: string | undefined) {
+  await expect
+    .poll(async () => {
+      vi.advanceTimersByTime(COVER_HOLD_MS)
+      await nextTick()
+      return shownSrc(wrapper)
+    })
+    .not.toBe(from)
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  vi.spyOn(Math, 'random').mockReturnValue(0.5)
+  card = document.createElement('div')
+  card.style.cssText = 'position: fixed; left: 0; top: 0; width: 505px; height: 316px'
+  document.body.append(card)
+})
+
+afterEach(() => {
+  mounted.forEach((wrapper) => wrapper.unmount())
+  mounted.length = 0
+  card.remove()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+  vi.useRealTimers()
+})
+
+describe('CoverRotation', () => {
+  it('shows one cover and loads the next one, hidden, behind it', async () => {
+    const wrapper = mountCovers()
+    await untilAllLoaded(wrapper)
+
+    expect(URLS).toContain(shownSrc(wrapper))
+    expect(URLS).toContain(layer(wrapper, 'upcoming').attributes('src'))
+    expect(layer(wrapper, 'upcoming').attributes('src')).not.toBe(shownSrc(wrapper))
+    expect(layer(wrapper, 'shown').classes()).toContain('opacity-100')
+    expect(layer(wrapper, 'upcoming').classes()).toContain('opacity-0')
+  })
+
+  it('fades to the next cover after one loop, over the one before, and keeps going', async () => {
+    const wrapper = mountCovers()
+    await untilAllLoaded(wrapper)
+    const first = shownSrc(wrapper)
+    const second = layer(wrapper, 'upcoming').attributes('src')
+
+    await untilTheCoverChanges(wrapper, first)
+
+    expect(shownSrc(wrapper)).toBe(second)
+    expect(layer(wrapper, 'leaving').attributes('src')).toBe(first)
+
+    vi.advanceTimersByTime(COVER_FADE_MS)
+    await wrapper.vm.$nextTick()
+
+    expect(layer(wrapper, 'leaving').exists()).toBe(false)
+    await untilAllLoaded(wrapper)
+    await untilTheCoverChanges(wrapper, second)
+    expect(shownSrc(wrapper)).not.toBe(second)
+  })
+
+  it('stands still while it is paused', async () => {
+    const wrapper = mountCovers(COVERS, { paused: true })
+    await untilAllLoaded(wrapper)
+    const first = shownSrc(wrapper)
+
+    vi.advanceTimersByTime(COVER_HOLD_MS * 6)
+    await wrapper.vm.$nextTick()
+    expect(shownSrc(wrapper)).toBe(first)
+
+    await wrapper.setProps({ paused: false })
+    await untilTheCoverChanges(wrapper, first)
+  })
+
+  it('stands still while it is off screen', async () => {
+    card.style.top = '-4000px'
+    const wrapper = mountCovers()
+    const first = shownSrc(wrapper)
+
+    vi.advanceTimersByTime(COVER_HOLD_MS * 6)
+    await wrapper.vm.$nextTick()
+    expect(shownSrc(wrapper)).toBe(first)
+
+    card.style.top = '0'
+    await untilAllLoaded(wrapper)
+    await untilTheCoverChanges(wrapper, first)
+  })
+
+  it('shows only a still, and never changes it, when reduced motion is preferred', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {}
+    }))
+    const wrapper = mountCovers()
+    await untilAllLoaded(wrapper)
+    const still = shownSrc(wrapper)
+
+    expect(wrapper.findAll('img')).toHaveLength(1)
+    expect(STILLS).toContain(still)
+
+    vi.advanceTimersByTime(COVER_HOLD_MS * 6)
+    await wrapper.vm.$nextTick()
+    expect(shownSrc(wrapper)).toBe(still)
+  })
+
+  it('keeps the one cover of an app that has only one', async () => {
+    const wrapper = mountCovers([COVERS[0]!])
+    await untilAllLoaded(wrapper)
+
+    vi.advanceTimersByTime(COVER_HOLD_MS * 6)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('img')).toHaveLength(1)
+    expect(shownSrc(wrapper)).toBe(URLS[0])
+  })
+
+  it('leaves out a cover that fails to load and says so once none is left', async () => {
+    const broken = 'data:image/png;base64,broken'
+    const wrapper = mountCovers([
+      { url: broken, stillUrl: null },
+      { url: `${broken}2`, stillUrl: null }
+    ])
+
+    await expect.poll(() => wrapper.emitted('broken')).toHaveLength(1)
+    expect(wrapper.findAll('img')).toHaveLength(0)
+  })
+})

@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from '@lucide/vue'
+import CoverRotation from '../../components/CoverRotation.vue'
+import type { AppCover } from '../../types/ipc'
 
 interface ArcSlot {
   transform: string
@@ -39,10 +41,10 @@ const ARC_SLOTS: Record<number, ArcSlot> = {
   }
 }
 
-const { cards, kind, pictureOf } = defineProps<{
+const { cards, kind, picturesOf } = defineProps<{
   cards: readonly Card[]
   kind: 'apps' | 'workflows'
-  pictureOf: (card: Card) => string | null
+  picturesOf: (card: Card) => readonly AppCover[]
 }>()
 
 const emit = defineEmits<{ open: [card: Card] }>()
@@ -51,7 +53,6 @@ const { t } = useI18n()
 
 const frontPosition = ref(0)
 const jumpedAcross = ref(new Set<string>())
-const loadedPictures = ref(new Set<string>())
 const brokenPictures = ref(new Set<string>())
 
 const listsApps = computed(() => kind === 'apps')
@@ -133,11 +134,7 @@ function slotStyle(offset: number): Record<string, string> {
 }
 
 function showsPicture(card: Card): boolean {
-  return pictureOf(card) !== null && !brokenPictures.value.has(card.id)
-}
-
-function markPictureLoaded(card: Card): void {
-  loadedPictures.value = new Set(loadedPictures.value).add(card.id)
+  return picturesOf(card).length > 0 && !brokenPictures.value.has(card.id)
 }
 
 function markPictureBroken(card: Card): void {
@@ -232,16 +229,11 @@ function activate(placed: { card: Card; offset: number }): void {
           :data-arc-offset="placed.offset"
           @click="activate(placed)"
         >
-          <img
+          <CoverRotation
             v-if="showsPicture(placed.card)"
-            :src="pictureOf(placed.card) ?? undefined"
-            alt=""
-            draggable="false"
-            class="absolute inset-0 size-full object-cover transition-opacity duration-300 motion-reduce:transition-none"
-            :class="loadedPictures.has(placed.card.id) ? 'opacity-100' : 'opacity-0'"
-            :data-loaded="loadedPictures.has(placed.card.id)"
-            @load="markPictureLoaded(placed.card)"
-            @error="markPictureBroken(placed.card)"
+            :pictures="picturesOf(placed.card)"
+            :paused="!placed.onStage"
+            @broken="markPictureBroken(placed.card)"
           />
           <span
             v-else

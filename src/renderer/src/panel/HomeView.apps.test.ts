@@ -3,22 +3,22 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import HomeView from './HomeView.vue'
-import type { AppCard, CatalogWorkflow } from '../types/ipc'
+import type { AppCard, AppCover, CatalogWorkflow } from '../types/ipc'
 
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const listApps = vi.fn<() => Promise<AppCard[]>>()
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
 const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
 
-function app(id: string, title: string, coverUrl: string | null = null): AppCard {
-  return { id, title, description: '', coverUrl }
+function app(id: string, title: string, covers: AppCover[] = []): AppCard {
+  return { id, title, description: '', covers }
 }
 
 const GENJUTSU: AppCard = {
   id: 'genjutsu',
   title: 'Genjutsu',
   description: 'Put someone else in a short clip.',
-  coverUrl: 'https://comfy.org/catalog-media/genjutsu/cover'
+  covers: [{ url: 'https://comfy.org/catalog-media/genjutsu/cover', stillUrl: null }]
 }
 const PRODUCT_ADS = app('product-ads', 'Product Ads')
 const HDR = app('sdr-to-hdr', 'SDR to HDR')
@@ -97,10 +97,24 @@ describe('Home apps', () => {
       '1:Product Ads',
       '2:SDR to HDR'
     ])
-    expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(GENJUTSU.coverUrl)
+    expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(GENJUTSU.covers[0]!.url)
     expect(wrapper.get('[data-testid="home-see-all-apps"]').text()).toBe('See all apps')
     expect(listHomeWorkflows).not.toHaveBeenCalled()
     expect(getAppsEnabled).toHaveBeenCalledOnce()
+  })
+
+  it('plays the covers of each app, the next one loading behind the one shown', async () => {
+    const covers = ['skate', 'dance', 'gown'].map((name) => ({
+      url: `https://comfy.org/catalog-media/genjutsu/${name}`,
+      stillUrl: null
+    }))
+    listApps.mockResolvedValue([{ ...GENJUTSU, covers }, PRODUCT_ADS])
+    const wrapper = await openHome()
+    const front = cardAt(wrapper, 0)
+    const urls = covers.map((cover) => cover.url)
+
+    expect(urls).toContain(front.get('img[data-cover="shown"]').attributes('src'))
+    expect(urls).toContain(front.get('img[data-cover="upcoming"]').attributes('src'))
   })
 
   it('follows the website when the list of apps changes', async () => {

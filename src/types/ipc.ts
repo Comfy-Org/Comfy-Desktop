@@ -141,11 +141,16 @@ export interface Installation {
 export type DashboardPage =
   'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
 
+export interface AppCover {
+  url: string
+  stillUrl: string | null
+}
+
 export interface AppCard {
   id: string
   title: string
   description: string
-  coverUrl: string | null
+  covers: AppCover[]
 }
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'
