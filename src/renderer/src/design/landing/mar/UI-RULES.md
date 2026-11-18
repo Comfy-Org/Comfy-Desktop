@@ -224,7 +224,8 @@ DS's Motion page (`ds/motion.ts`).
   default size). The name sits on the picture, bottom left; nothing in
   the corners at rest (no crown, no play mark). On hover the picture grows
   4% and turns into what the app made (a clip plays), the name rises and
-  its one line fades in, and Home's corner arrow fades in at the top right. Grid stays in Layout.
+  its one line fades in, and Home's corner arrow fades in at the top right. Grid, in Layout, is the same
+  square tile, every one the size of the small row.
 - **Video plays on hover**, muted; the bar along the bottom scrubs.
 - **Upload is always on** once a build is picked, running or not (a local
   build's inputs are a folder on disk). Off only with no build picked.

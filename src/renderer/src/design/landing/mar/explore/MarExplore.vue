@@ -353,7 +353,8 @@ const cardSize = ref(2)
 const COLS = [0, 5, 4, 3]
 // The Apps tab opens on Rhythm (Firefly's Quick actions): a row of big
 // squares, then a row of one more, smaller, and again. Size sets how many
-// fit (the big row is one fewer than the grid's columns); Grid stays a pick.
+// fit (the big row is one fewer than the grid's columns). Grid is the same
+// square tile, every one the size of the small row.
 const appView = ref<AssetView>('rhythm')
 type Rhythm = { big: boolean; cols: number; apps: typeof apps.value }
 const rhythm = computed<Rhythm[]>(() => {
@@ -609,28 +610,22 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           />
         </div>
       </div>
-      <div v-else class="mar-ex-grid is-apps" :style="{ '--cols': COLS[cardSize] }">
-        <div
+      <div v-else class="mar-ex-rhythm-row is-grid" :style="{ '--cols': COLS[cardSize] }">
+        <AppRhythmTile
           v-for="a in apps"
           :key="a.id"
+          :name="a.name"
+          :blurb="a.blurb"
+          :thumb="thumb(a.thumbId)"
+          :preview="previewOf(a.id)?.after"
+          :video="previewOf(a.id)?.video"
           role="button"
           tabindex="0"
-          class="mar-ex-card group"
           :aria-label="`Open ${a.name}`"
           @click="openAppPage(a.id)"
           @keydown.enter="openAppPage(a.id)"
           @keydown.space.prevent="openAppPage(a.id)"
-        >
-          <span class="mar-ex-media"><img :src="thumb(a.thumbId)" alt="" loading="lazy" /></span>
-          <span class="flex min-w-0 items-start gap-1 px-1.5 pt-2.5 pb-1.5 text-left">
-            <span class="block min-w-0 flex-1">
-              <span class="block truncate text-ui font-medium text-base-foreground">{{
-                a.name
-              }}</span>
-              <span class="block truncate text-ui text-subtle-foreground">{{ a.blurb }}</span>
-            </span>
-          </span>
-        </div>
+        />
       </div>
     </template>
 
@@ -778,14 +773,13 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 10px;
 }
-.mar-ex-grid.is-apps,
 .mar-ex-grid.is-four {
   grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
 }
 /* Narrow windows: three across, so names and lines still read. */
 @media (max-width: 1100px) {
-  .mar-ex-grid.is-apps,
-  .mar-ex-grid.is-four {
+  .mar-ex-grid.is-four,
+  .mar-ex-rhythm-row.is-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
@@ -812,12 +806,6 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   display: grid;
   grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
   gap: 14px;
-}
-.mar-ex-grid.is-apps .mar-ex-media {
-  aspect-ratio: 16 / 10;
-}
-.mar-ex-grid.is-apps .mar-ex-media img {
-  border-radius: var(--radius-control);
 }
 .mar-ex-mark {
   display: inline-flex;
