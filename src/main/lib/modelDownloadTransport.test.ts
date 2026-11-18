@@ -3,6 +3,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { getDiskSpace } from './disk'
+import { t } from './i18n'
 import { R2_BASE_URL, R2_MIRROR_BASE_URL } from './r2Mirror'
 import {
   readStagedMeta,
@@ -23,6 +25,9 @@ interface FakeRequest extends EventEmitter {
 
 const requests: FakeRequest[] = []
 const settingsState: Record<string, unknown> = {}
+
+vi.mock('./disk', () => ({ getDiskSpace: vi.fn() }))
+vi.mock('./i18n', () => ({ t: vi.fn((key: string) => key) }))
 
 vi.mock('../settings', () => ({
   get: (key: string) => settingsState[key],
@@ -69,6 +74,11 @@ function makeResponse(
   }) as FakeResponse
 }
 
+async function respond(request: FakeRequest, response: FakeResponse): Promise<void> {
+  request.emit('response', response)
+  await Promise.resolve()
+}
+
 async function flush(turns = 4): Promise<void> {
   for (let i = 0; i < turns; i++) {
     await new Promise((r) => setImmediate(r))
@@ -112,6 +122,8 @@ function headerCalls(req: FakeRequest): Record<string, string> {
 
 beforeEach(() => {
   requests.length = 0
+  vi.mocked(getDiskSpace).mockReset().mockResolvedValue({ free: 1024, total: 1024 })
+  vi.mocked(t).mockClear()
   for (const k of Object.keys(settingsState)) delete settingsState[k]
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'model-transport-test-'))
   finalPath = path.join(tmpDir, 'checkpoints', 'model.safetensors')
@@ -121,6 +133,84 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true })
 })
 
+describe('disk space', () => {
+  it('checks the destination drive and rejects a known size before writing model bytes', async () => {
+    vi.mocked(getDiskSpace).mockResolvedValueOnce({ free: 4, total: 1024 })
+    const onProgress = vi.fn()
+    const { done } = startModelTransfer(baseOpts({ onProgress }))
+    const req = requests[0]!
+    const res = makeResponse(200, { 'content-length': '10' })
+    await respond(req, res)
+
+    await expect(done).resolves.toEqual({
+      outcome: 'error',
+      error: 'diskSpace.modelDownloadBlockMessage'
+    })
+    expect(t).toHaveBeenCalledWith('diskSpace.modelDownloadBlockMessage', {
+      required: '10 B',
+      free: '4 B'
+    })
+    expect(getDiskSpace).toHaveBeenCalledWith(path.dirname(finalPath))
+    expect(req.abort).toHaveBeenCalledOnce()
+    expect(res.resume).not.toHaveBeenCalled()
+    expect(onProgress).not.toHaveBeenCalled()
+    expect(fs.existsSync(finalPath)).toBe(false)
+    expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
+    expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
+  })
+
+  it.each([
+    { when: 'during the response', end: false },
+    { when: 'after the response ends', end: true }
+  ])('clears partial bytes if the disk fills $when', async ({ end }) => {
+    const createWriteStream = fs.createWriteStream
+    const diskFull = Object.assign(new Error('disk full'), { code: 'ENOSPC' })
+    let firstWrite = true
+    const spy = vi.spyOn(fs, 'createWriteStream').mockImplementationOnce((file) =>
+      createWriteStream(file, {
+        fs: {
+          open: fs.open,
+          close: fs.close,
+          write(
+            fd: number,
+            buffer: Buffer,
+            offset: number,
+            length: number,
+            position: number | null,
+            callback: (err: NodeJS.ErrnoException | null, written: number, data: Buffer) => void
+          ) {
+            if (!firstWrite) {
+              callback(diskFull, 0, buffer)
+              return
+            }
+            firstWrite = false
+            fs.write(fd, buffer, offset, length, position, callback)
+          }
+        }
+      })
+    )
+    try {
+      const { done } = startModelTransfer(baseOpts())
+      const res = makeResponse(200)
+      await respond(requests[0]!, res)
+      res.emit('data', Buffer.from('123'))
+      await vi.waitFor(() => expect(fs.statSync(stagingPathFor(finalPath)).size).toBe(3))
+      res.emit('data', Buffer.from('456'))
+      if (end) res.emit('end')
+
+      await expect(done).resolves.toEqual({
+        outcome: 'error',
+        error: 'diskSpace.modelDownloadDiskFull'
+      })
+      expect(fs.existsSync(finalPath)).toBe(false)
+      expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
+      expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
+
 describe('completion', () => {
   it('stages bytes in .part, then atomically finalizes and removes the sidecar', async () => {
     const handle = startModelTransfer(baseOpts())
@@ -128,7 +218,7 @@ describe('completion', () => {
     expect(req.__url).toBe(URL_MAIN)
 
     const res = makeResponse(200, { 'content-length': '10' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('01234'))
     await flush()
 
@@ -150,7 +240,7 @@ describe('completion', () => {
     const handle = startModelTransfer(baseOpts({ onProgress: (p) => progress.push({ ...p }) }))
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '4' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('ab'))
     res.emit('data', Buffer.from('cd'))
     res.emit('end')
@@ -173,7 +263,7 @@ describe('completion', () => {
     const handle = startModelTransfer(baseOpts({ expectedSize: 999 }))
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10' })
-    req.emit('response', res)
+    await respond(req, res)
     const outcome = await handle.done
     expect(outcome).toEqual({
       outcome: 'error',
@@ -187,7 +277,7 @@ describe('completion', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(200, {})
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('0123456789'))
     res.emit('end')
     const outcome = await handle.done
@@ -205,7 +295,7 @@ describe('completion', () => {
       'content-length': '10',
       etag: '"v1"'
     })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('0123'))
     res.emit('end')
     const outcome = await handle.done
@@ -228,7 +318,7 @@ describe('pause / cancel', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10', etag: '"v1"' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('01234'))
 
     expect(handle.pause()).toBe(true)
@@ -246,7 +336,7 @@ describe('pause / cancel', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('01234'))
 
     expect(handle.cancel()).toBe(true)
@@ -264,7 +354,7 @@ describe('network failure', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10', etag: '"v1"' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('0123456'))
     res.emit('error', new Error('ECONNRESET'))
     const outcome = await handle.done
@@ -296,7 +386,7 @@ describe('network failure', () => {
       handle = startModelTransfer(baseOpts({ idleTimeoutMs: 25 }))
       req = requests[0]!
       const res = makeResponse(200, { 'content-length': '10', etag: '"v1"' })
-      req.emit('response', res)
+      await respond(req, res)
       res.emit('data', Buffer.from('012'))
       await vi.advanceTimersByTimeAsync(30)
     } finally {
@@ -319,6 +409,7 @@ describe('resume', () => {
 
   it('sends Range and If-Range for retained staged bytes and appends on a well-formed 206', async () => {
     preStage('AAAAA', stagedMeta({ expectedSize: 10, etag: '"v1"' }))
+    vi.mocked(getDiskSpace).mockResolvedValueOnce({ free: 5, total: 1024 })
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const headers = headerCalls(req)
@@ -326,7 +417,7 @@ describe('resume', () => {
     expect(headers['If-Range']).toBe('"v1"')
 
     const res = makeResponse(206, { 'content-length': '5', 'content-range': 'bytes 5-9/10' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('BBBBB'))
     res.emit('end')
     const outcome = await handle.done
@@ -334,12 +425,31 @@ describe('resume', () => {
     expect(fs.readFileSync(finalPath, 'utf-8')).toBe('AAAAABBBBB')
   })
 
+  it('keeps a valid partial when the destination cannot fit the bytes still needed', async () => {
+    preStage('AAAAA', stagedMeta())
+    vi.mocked(getDiskSpace).mockResolvedValueOnce({ free: 4, total: 1024 })
+    const { done } = startModelTransfer(baseOpts())
+    const res = makeResponse(206, { 'content-length': '5', 'content-range': 'bytes 5-9/10' })
+    await respond(requests[0]!, res)
+
+    await expect(done).resolves.toEqual({
+      outcome: 'error',
+      error: 'diskSpace.modelDownloadBlockMessage'
+    })
+    expect(t).toHaveBeenCalledWith('diskSpace.modelDownloadBlockMessage', {
+      required: '5 B',
+      free: '4 B'
+    })
+    expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('AAAAA')
+    expect(readStagedMeta(stagingMetaPathFor(finalPath))?.expectedSize).toBe(10)
+  })
+
   it('rejects a resumed 206 that omits Content-Range, keeping staged bytes for retry', async () => {
     preStage('AAAAA', stagedMeta({ expectedSize: 10, etag: '"v1"' }))
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(206, { 'content-length': '5' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('BBBBB'))
     res.emit('end')
     const outcome = await handle.done
@@ -355,7 +465,7 @@ describe('resume', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(206, { 'content-length': '4', 'content-range': 'bytes 5-9/10' })
-    req.emit('response', res)
+    await respond(req, res)
     const outcome = await handle.done
     expect(outcome.outcome).toBe('error')
     expect(req.abort).toHaveBeenCalled()
@@ -367,7 +477,7 @@ describe('resume', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(206, { 'content-length': '8', 'content-range': 'bytes 2-9/10' })
-    req.emit('response', res)
+    await respond(req, res)
     const outcome = await handle.done
     expect(outcome.outcome).toBe('error')
     expect(req.abort).toHaveBeenCalled()
@@ -390,7 +500,7 @@ describe('resume', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10', etag: '"v2"' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('CCCCCCCCCC'))
     res.emit('end')
     const outcome = await handle.done
@@ -497,7 +607,7 @@ describe('resume', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(206, { 'content-length': '15', 'content-range': 'bytes 5-19/20' })
-    req.emit('response', res)
+    await respond(req, res)
     const outcome = await handle.done
     expect(outcome.outcome).toBe('error')
     expect(req.abort).toHaveBeenCalled()
@@ -511,7 +621,7 @@ describe('resume', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(206, { 'content-length': '5', 'content-range': 'bytes 5-' })
-    req.emit('response', res)
+    await respond(req, res)
     const outcome = await handle.done
     expect(outcome.outcome).toBe('error')
     expect(req.abort).toHaveBeenCalled()
@@ -526,7 +636,7 @@ describe('resume', () => {
       'content-range': 'bytes 5-9/10',
       etag: '"v2"'
     })
-    req.emit('response', res)
+    await respond(req, res)
     const outcome = await handle.done
     expect(outcome.outcome).toBe('error')
     expect(req.abort).toHaveBeenCalled()
@@ -543,7 +653,7 @@ describe('resume', () => {
       'content-range': 'bytes 5-9/10',
       etag: '"v1"'
     })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('BBBBB'))
     res.emit('end')
     const outcome = await handle.done
@@ -556,7 +666,7 @@ describe('resume', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(206, { 'content-range': 'bytes 5-9/10' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('BBB'))
     res.emit('end')
     const outcome = await handle.done
@@ -615,7 +725,7 @@ describe('sha-256 integrity', () => {
     const handle = startModelTransfer(baseOpts({ sha256: SHA_0123456789 }))
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('01234'))
     await flush()
     expect(readStagedMeta(stagingMetaPathFor(finalPath))?.sha256).toBe(SHA_0123456789)
@@ -631,7 +741,7 @@ describe('sha-256 integrity', () => {
     const handle = startModelTransfer(baseOpts({ sha256: SHA_AAAAABBBBB }))
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('0123456789'))
     res.emit('end')
     const outcome = await handle.done
@@ -659,7 +769,7 @@ describe('sha-256 integrity', () => {
     expect(headers['If-Range']).toBe('"v1"')
 
     const res = makeResponse(206, { 'content-length': '5', 'content-range': 'bytes 5-9/10' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('BBBBB'))
     res.emit('end')
     const outcome = await handle.done
@@ -707,7 +817,7 @@ describe('redirects', () => {
     expect(req.followRedirect).toHaveBeenCalledTimes(1)
 
     const res = makeResponse(200, { 'content-length': '10', etag: '"cdn"' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('01234'))
     await flush()
     expect(readStagedMeta(stagingMetaPathFor(finalPath))?.url).toBe(URL_MAIN)
@@ -747,7 +857,7 @@ describe('R2 mirror fallback', () => {
     expect(requests[1]?.__url).toBe(MIRROR)
 
     const res = makeResponse(200, { 'content-length': '5' })
-    requests[1]!.emit('response', res)
+    await respond(requests[1]!, res)
     res.emit('data', Buffer.from('ABC'))
     await flush()
     expect(readStagedMeta(stagingMetaPathFor(finalPath))?.url).toBe(PRIMARY)
@@ -832,7 +942,7 @@ describe('staging durability failures', () => {
     const req = requests[0]!
     const spy = failWritesMatching((file) => file.endsWith('.dl-meta.tmp'))
     const res = makeResponse(200, { 'content-length': '10' })
-    req.emit('response', res)
+    await respond(req, res)
     const outcome = await handle.done
     spy.mockRestore()
     expect(outcome).toEqual({
@@ -857,7 +967,7 @@ describe('orphan staged bytes (no sidecar)', () => {
     const req = requests[0]!
     expect(headerCalls(req)['Range']).toBeUndefined()
     const res = makeResponse(200, { 'content-length': '10' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('0123456789'))
     res.emit('end')
     const outcome = await handle.done
@@ -946,7 +1056,7 @@ describe('terminal race safety', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '4' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('abcd'))
     res.emit('end')
     expect(handle.pause()).toBe(false)
@@ -960,7 +1070,7 @@ describe('terminal race safety', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('01234'))
     expect(handle.cancel()).toBe(true)
     const outcome = await handle.done
@@ -980,7 +1090,7 @@ describe('final destination conflicts', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('01234'))
     fs.writeFileSync(finalPath, 'XXX')
     res.emit('data', Buffer.from('56789'))
@@ -996,7 +1106,7 @@ describe('final destination conflicts', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('01234'))
     fs.writeFileSync(finalPath, '0123456789')
     res.emit('data', Buffer.from('56789'))
@@ -1012,7 +1122,7 @@ describe('final destination conflicts', () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(200, { 'content-length': '10' })
-    req.emit('response', res)
+    await respond(req, res)
     res.emit('data', Buffer.from('01234'))
     fs.writeFileSync(finalPath, 'ZZZZZZZZZZ')
     res.emit('data', Buffer.from('56789'))
@@ -1036,7 +1146,7 @@ describe('final destination conflicts', () => {
       const handle = startModelTransfer(baseOpts())
       const req = requests[0]!
       const res = makeResponse(200, { 'content-length': '10' })
-      req.emit('response', res)
+      await respond(req, res)
       res.emit('data', Buffer.from('0123456789'))
       res.emit('end')
       const outcome = await handle.done
@@ -1064,7 +1174,7 @@ describe('final destination conflicts', () => {
       const handle = startModelTransfer(baseOpts())
       const req = requests[0]!
       const res = makeResponse(200, { 'content-length': '10' })
-      req.emit('response', res)
+      await respond(req, res)
       res.emit('data', Buffer.from('0123456789'))
       res.emit('end')
       const outcome = await handle.done
@@ -1088,7 +1198,7 @@ describe('final destination conflicts', () => {
       const handle = startModelTransfer(baseOpts())
       const req = requests[0]!
       const res = makeResponse(200, { 'content-length': '10' })
-      req.emit('response', res)
+      await respond(req, res)
       res.emit('data', Buffer.from('01234'))
       fs.writeFileSync(finalPath, 'XXX')
       res.emit('data', Buffer.from('56789'))
@@ -1114,7 +1224,7 @@ describe('final destination conflicts', () => {
       const handle = startModelTransfer(baseOpts())
       const req = requests[0]!
       const res = makeResponse(200, { 'content-length': '10' })
-      req.emit('response', res)
+      await respond(req, res)
       res.emit('data', Buffer.from('0123456789'))
       res.emit('end')
       const outcome = await handle.done
