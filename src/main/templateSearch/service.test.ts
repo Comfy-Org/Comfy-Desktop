@@ -307,7 +307,7 @@ describe('search service', () => {
     const prepare = vi
       .fn<() => Promise<TemplateSearchAvailability>>()
       .mockResolvedValueOnce({ kind: 'ready' })
-      .mockResolvedValueOnce({ kind: 'downloading', received: 0, total: 1000 })
+      .mockResolvedValueOnce({ kind: 'unavailable', reason: 'download_failed' })
     const store = bundles({ prepare })
     const { service } = setup({
       bundles: store,
@@ -315,7 +315,7 @@ describe('search service', () => {
     })
     expect(await service.decide({ text: 'x' })).toEqual({
       kind: 'unavailable',
-      availability: { kind: 'downloading', received: 0, total: 1000 }
+      availability: { kind: 'unavailable', reason: 'download_failed' }
     })
     expect(store.discard).toHaveBeenCalledWith('1.0.0')
   })

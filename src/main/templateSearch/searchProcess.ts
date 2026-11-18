@@ -13,6 +13,7 @@ import type { TerminalEnv } from '../types/sources'
 import type { TemplateSearchAvailability } from '../../types/ipc'
 import {
   createBundleStore,
+  Unreachable,
   type BackgroundTrigger,
   type Supported,
   type TransferResult
@@ -74,7 +75,11 @@ export async function readCapped(response: Response, limit: number): Promise<Buf
 }
 
 async function getSmall(url: string): Promise<Buffer> {
-  const response = await net.fetch(url, { signal: AbortSignal.timeout(30_000) })
+  const response = await net
+    .fetch(url, { signal: AbortSignal.timeout(30_000) })
+    .catch((err: unknown) => {
+      throw new Unreachable(String(err))
+    })
   if (!response.ok) throw new Error(`${url} answered ${response.status}`)
   return readCapped(response, SMALL_FILE_LIMIT)
 }
@@ -195,7 +200,6 @@ export function createSearchProcess({
   const cancelled = new WeakSet<ChildProcess>()
 
   const pyz = configuredZipapp
-  const bundleBase = (): string | null => settings.get('templateSearchBundleBase') ?? null
 
   async function pythons(): Promise<SidecarPython[]> {
     return sidecarPythons(await listInstallations(), isLocalInstallation, terminalEnvOf)
@@ -231,7 +235,7 @@ export function createSearchProcess({
 
   const store = createBundleStore({
     root: storeRoot,
-    base: bundleBase,
+    base: () => settings.get('templateSearchBundleBase') ?? null,
     getSmall,
     transfer,
     supports,
@@ -265,7 +269,7 @@ export function createSearchProcess({
   }
 
   async function downloadInBackground(trigger: BackgroundTrigger): Promise<boolean> {
-    if (!pyz() || !bundleBase() || !isOnline()) return false
+    if (!pyz() || !store.hasBase() || !isOnline()) return false
     if ((await service.freePythons()).length === 0 || !(await supports())) return false
     if (!(await store.newest())) await store.download({ quietly: true, trigger })
     return true

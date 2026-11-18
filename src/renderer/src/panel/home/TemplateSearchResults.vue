@@ -278,7 +278,10 @@ defineExpose({ verticalTarget, revealActive })
                 {{ badge.label }}
               </TemplateSearchBadge>
             </span>
-            <span class="mt-auto text-xs/4 font-medium text-muted-foreground">
+            <span
+              class="mt-auto text-xs/4 font-medium text-muted-foreground"
+              data-testid="home-template-search-row-action"
+            >
               {{ rowAction(row) }}
             </span>
           </span>

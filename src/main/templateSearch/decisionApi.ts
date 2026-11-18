@@ -23,6 +23,7 @@ const KNOWN_OUTCOMES: ReadonlySet<string> = new Set(OUTCOMES)
 export interface TemplateLabel {
   title: string
   thumbnailUrl: string | null
+  partner: boolean
 }
 
 export type DescribeTemplate = (templateId: string) => TemplateLabel | null
@@ -89,7 +90,7 @@ function candidateFrom(
     title: label?.title ?? asText(variant.title) ?? templateId,
     thumbnailUrl: label?.thumbnailUrl ?? null,
     family: asText(candidate.family_id),
-    partner: isPartnerTemplate(templateId),
+    partner: label?.partner ?? isPartnerTemplate(templateId),
     needsDownload: fromDownloadList || maskCode(candidate) === NOT_INSTALLED,
     score: asNumber(candidate.score),
     calibrated: asNumber(candidate.calibrated),

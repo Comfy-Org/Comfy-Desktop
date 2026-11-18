@@ -10,6 +10,7 @@ import {
   isBundlePath,
   parseIndex,
   parseManifest,
+  Unreachable,
   type BundleDownload,
   type BundleStoreDeps,
   type IndexEntry,
@@ -135,8 +136,12 @@ describe('bundle store', () => {
     expect(await s.prepare()).toEqual({ kind: 'off' })
   })
 
-  it('says it is offline, and starts nothing, when the index cannot be read', async () => {
-    const { store: s, transfer } = store()
+  it('says it is offline, and starts nothing, when the bundle address cannot be reached', async () => {
+    const { store: s, transfer } = store({
+      getSmall: async () => {
+        throw new Unreachable('connection refused')
+      }
+    })
     expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'offline' })
     expect(await s.prepare(), 'nothing started on the first try').toEqual({
       kind: 'unavailable',
@@ -155,14 +160,31 @@ describe('bundle store', () => {
     expect(announced).toEqual([])
   })
 
-  it('asks for a newer Desktop when a bundle lands that its own manifest says is too new', async () => {
+  it('asks for a newer Desktop, without downloading, when the manifest itself says it is too new', async () => {
     publish(server, '1.0.0', V1, { min_sidecar: '9.0.0' })
     delete server.index.bundles[0]!.min_sidecar
     server.small.set(`${BASE}index.json`, Buffer.from(JSON.stringify(server.index)))
-    const { store: s } = store()
-    expect(await s.prepare()).toMatchObject({ kind: 'downloading' })
+    const { store: s, transfer } = store()
+    expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'update_desktop' })
     await s.download()
-    expect(announced.at(-1)).toEqual({ kind: 'unavailable', reason: 'update_desktop' })
+    expect(transfer).not.toHaveBeenCalled()
+    expect(await s.newest()).toBeNull()
+  })
+
+  it.each([
+    ['answers without an index', () => {}],
+    [
+      'lists a manifest that is not the one it serves',
+      () => {
+        publish(server, '1.0.0', V1)
+        server.small.set(`${BASE}manifests/1.0.0.json`, Buffer.from('{"version":"1.0.0"}'))
+      }
+    ]
+  ])('says the download did not finish, not offline, when the server %s', async (_case, given) => {
+    given()
+    const { store: s, transfer } = store()
+    expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+    expect(transfer).not.toHaveBeenCalled()
   })
 
   it('stays ready when an update check finds no version it reads', async () => {
@@ -176,11 +198,53 @@ describe('bundle store', () => {
     expect(await s.prepare()).toEqual({ kind: 'ready' })
   })
 
-  it('says when a quiet download has landed, without showing its progress', async () => {
+  it('says nothing about a quiet download, and lets the next search download after it failed', async () => {
     publish(server, '1.0.0', V1)
+    server.blobs.set(sha('weights-v1'), Buffer.from('weights-XX'))
     const { store: s } = store({ now: () => 0 })
     await s.download({ quietly: true })
-    expect(announced).toEqual([{ kind: 'idle' }])
+    expect(announced).toEqual([])
+    expect(await s.prepare()).toMatchObject({ kind: 'downloading' })
+    await s.download()
+  })
+
+  it('waits for Try again after a quiet download that a search was waiting on failed', async () => {
+    publish(server, '1.0.0', V1)
+    server.blobs.set(sha('weights-v1'), Buffer.from('weights-XX'))
+    const { store: s, transfer } = store({ now: () => 0 })
+    const release = holdTransfers(transfer)
+    const running = s.download({ quietly: true })
+    await vi.waitFor(() => expect(transfer).toHaveBeenCalled(), { timeout: 5000 })
+    expect(await s.prepare()).toMatchObject({ kind: 'downloading' })
+    release()
+    await running
+    expect(announced.at(-1)).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+    expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+  })
+
+  it('keeps a quiet download from retrying while a failure waits for Try again', async () => {
+    publish(server, '1.0.0', V1)
+    server.blobs.set(sha('weights-v1'), Buffer.from('weights-XX'))
+    const { store: s, transfer } = store({ now: () => 0 })
+    await s.prepare()
+    await s.download()
+    const tries = transfer.mock.calls.length
+    server.blobs.set(sha('weights-v1'), Buffer.from('weights-v1'))
+    await s.download({ quietly: true })
+    expect(transfer).toHaveBeenCalledTimes(tries)
+    expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+  })
+
+  it('gives the real reason after Try again, not the old failure', async () => {
+    publish(server, '1.0.0', V1)
+    server.blobs.set(sha('weights-v1'), Buffer.from('weights-XX'))
+    const { store: s } = store({ now: () => 0 })
+    await s.prepare()
+    await s.download()
+    server.index.bundles = []
+    publish(server, '2.0.0', V1, { min_sidecar: '9.0.0' })
+    await s.download()
+    expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'update_desktop' })
   })
 
   it('waits for Try again after a download the user saw failed, instead of downloading on every search', async () => {
@@ -372,10 +436,11 @@ describe('bundle store', () => {
     clock = A_DAY_LATER
     publish(server, '1.1.0', { ...V1, 'router/catalog.json': '{"v":2}' })
     expect(await s.prepare()).toEqual({ kind: 'ready' })
-    await vi.waitFor(async () => expect((await s.newest())?.version).toBe('1.1.0'))
+    await s.download({ quietly: true })
+    expect((await s.newest())?.version).toBe('1.1.0')
     expect(await s.prepare()).toEqual({ kind: 'ready' })
     expect(indexReads).toHaveBeenCalledTimes(1)
-    expect(announced, 'no progress, only that it landed').toEqual([{ kind: 'idle' }])
+    expect(announced).toEqual([])
   })
 
   it('stays ready on the version it has while a newer one downloads', async () => {
