@@ -149,6 +149,7 @@ import {
   getEntryByInstallationId,
   isChooserHost,
   isInstallHost,
+  maximizeIfPendingReveal,
   openOrFocusAnyHostWindow,
   openOrFocusChooserHostWindow,
   openOrFocusHomeHostWindow,
@@ -690,13 +691,18 @@ ipcMain.on('comfy-window:click-announcement', (event) => {
   openAnnouncement(found.entry.windowKey)
 })
 
-ipcMain.on('comfy-window:new-chooser-window', () => {
-  openChooserHostWindow()
+ipcMain.on('comfy-window:new-chooser-window', (event) => {
+  openChooserHostWindow('comfy', {
+    nearWindow: findEntryByTitleBarSender(event.sender)?.entry.window
+  })
 })
 
-ipcMain.on('comfy-window:open-page-in-new-window', (_event, page: unknown) => {
+ipcMain.on('comfy-window:open-page-in-new-window', (event, page: unknown) => {
   if (!isNewWindowDashboardPage(page)) return
-  openChooserHostWindow('comfy', { dashboardPage: page })
+  openChooserHostWindow('comfy', {
+    dashboardPage: page,
+    nearWindow: findHostWindowByPanelSender(event.sender) ?? undefined
+  })
 })
 
 ipcMain.on('comfy-window:show-home', (event) => {
@@ -740,6 +746,7 @@ async function focusOpenComfyWindow(
   const entry = getEntryByInstallationId(installationId)
   if (!entry || entry.window.isDestroyed()) return false
   if (await prepareBuildWindowFocus(entry, requester, pickerWorkspaceId)) {
+    maximizeIfPendingReveal(entry.window)
     entry.window.show()
     entry.window.focus()
   }

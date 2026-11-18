@@ -5,7 +5,7 @@ import type {
   ComfyDesktopOpenInComfy
 } from '../../types/comfyDesktopBridge'
 import { setActivePanel } from '../host/panelView'
-import { getEntryByInstallationId } from '../host/registry'
+import { getEntryByInstallationId, maximizeIfPendingReveal } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
@@ -186,6 +186,7 @@ async function windowFor(installationId: string): Promise<ComfyWindowEntry | nul
 
 function bringForward(entry: ComfyWindowEntry): void {
   if (entry.window.isMinimized()) entry.window.restore()
+  maximizeIfPendingReveal(entry.window)
   entry.window.show()
   entry.window.focus()
   if (entry.activePanel !== 'progress') setActivePanel(entry.windowKey, 'comfy')
