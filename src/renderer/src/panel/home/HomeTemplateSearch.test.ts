@@ -1162,7 +1162,7 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
     expect(wrapper.find('[data-testid="home-template-search-results"]').exists()).toBe(false)
   })
 
-  it('closes on Escape typed in the bar without starting the search still waiting for typing to pause', async () => {
+  it('closes on Escape typed in the bar, starting no search there and then, with the bar still focused', async () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
     const calls = searchTemplates.mock.calls.length
