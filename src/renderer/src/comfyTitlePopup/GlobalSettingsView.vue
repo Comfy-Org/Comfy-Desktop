@@ -10,6 +10,7 @@ import { FileText, Folder, RefreshCcw, Settings2, SlidersHorizontal, X } from '@
 import UpdatesSection from './globalSettings/UpdatesSection.vue'
 import GlobalSettingsMicroSection from './globalSettings/GlobalSettingsMicroSection.vue'
 import GlobalStorageSections from './globalSettings/GlobalStorageSections.vue'
+import RemoveAppDataSection from './globalSettings/RemoveAppDataSection.vue'
 import GitHubLinkCard from './globalSettings/GitHubLinkCard.vue'
 import SettingsSectionList from '../views/comfyUISettings/SettingsSectionList.vue'
 import StorageDirRow from '../views/comfyUISettings/StorageDirRow.vue'
@@ -149,6 +150,10 @@ const storageSnapshot = computed(() => ({
   modelsDirs: props.snapshot.modelsDirs,
   modelsSystemDefault: props.snapshot.modelsSystemDefault
 }))
+
+const showRemoveAppData = computed(() =>
+  ['darwin', 'linux'].includes(props.snapshot.appUpdate.platform)
+)
 
 const languageSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.languageFields as unknown as DetailField[] }
@@ -363,6 +368,7 @@ onMounted(() => {
 
         <template v-else-if="activeTab === 'storage'">
           <GlobalStorageSections :snapshot="storageSnapshot" />
+          <RemoveAppDataSection v-if="showRemoveAppData" :platform="snapshot.appUpdate.platform" />
         </template>
 
         <template v-else-if="activeTab === 'advanced'">
