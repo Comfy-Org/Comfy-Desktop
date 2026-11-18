@@ -302,6 +302,38 @@ describe('parseDecision', () => {
     ])
   })
 
+  it('reads the further templates of the shown families, in order, marking the ones that need files, and repeats no card', () => {
+    const body = decision({
+      split: {
+        run: [pick('api_poster', 'poster')],
+        download: [pick('mural', 'mural', ['mural', 'm.bin'])],
+        more: [
+          pick('poster_b', 'poster'),
+          pick('poster_c', 'poster', ['poster_c', 'c.bin']),
+          pick('api_poster', 'poster'),
+          pick('mural', 'mural'),
+          pick('mural_b', 'mural', ['mural_b'])
+        ]
+      },
+      options: [pick('poster_b', 'poster'), pick('card', 'card')]
+    })
+    const result = parseDecision(body)
+    expect(result?.more.map((c) => [c.templateId, c.needsDownload])).toEqual([
+      ['poster_b', false],
+      ['poster_c', true],
+      ['mural_b', true]
+    ])
+    expect(result?.alsoTry.map((c) => c.templateId)).toEqual(['card'])
+  })
+
+  it('keeps at most twelve further templates, and none from a search that sends none', () => {
+    const more = Array.from({ length: 14 }, (_, i) => pick(`more_${i}`, 'poster'))
+    expect(parseDecision(decision({ split: { run: [], download: [], more } }))?.more).toHaveLength(
+      12
+    )
+    expect(parseDecision(decision())?.more).toEqual([])
+  })
+
   it('shows an open pick once when the search already listed it', () => {
     const body = decision({
       split: {
@@ -333,6 +365,7 @@ describe('decideRequest', () => {
       text: 'a poster',
       run_n: 8,
       download_m: 8,
+      siblings_n: 6,
       outcomes: ['template', 'agent', 'bad_input', 'unsat', 'download'],
       installed: ['poster_template']
     })
