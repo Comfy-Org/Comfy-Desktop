@@ -256,6 +256,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     revealAsset: async () => true,
     findCloudAsset: async () => ({ status: 'absent' }),
     copyAsset: async () => true,
+    readAssetModel: async () => null,
     trashAsset: async () => true,
     listHomeWorkflows: async () => HOME_WORKFLOWS,
     openCatalogWorkflow: async () => true,

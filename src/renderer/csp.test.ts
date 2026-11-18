@@ -43,6 +43,10 @@ describe('Content-Security-Policy: panel.html', () => {
     expect(csp['connect-src']).toContain('https://*.posthog.com')
   })
 
+  it('lets the 3D view decode the pictures packed inside a model', () => {
+    expect(csp['connect-src']).toContain('blob:')
+  })
+
   it('restricts script-src to self only', () => {
     expect(csp['script-src']).toBe("'self'")
   })

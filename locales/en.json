@@ -155,7 +155,10 @@
       "zoomLevel": "Zoom: {level}",
       "openWorkflow": "Open workflow",
       "savedIn": "Saved in",
-      "cloudAssets": "Comfy Cloud assets"
+      "cloudAssets": "Comfy Cloud assets",
+      "modelView": "3D view of {name}. Drag to turn it, scroll to zoom.",
+      "modelLoading": "Loading the 3D model",
+      "modelFailed": "Can't show this 3D model. Download it to open it in a 3D app."
     },
     "kindSingular": {
       "image": "Image",

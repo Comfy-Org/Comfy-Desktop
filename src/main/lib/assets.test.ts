@@ -45,6 +45,7 @@ const renameFile = vi.fn(async (from: string, to: string) => {
 const copyOf = (filePath: string): string => `copy of ${filePath}`
 const createReadStream = vi.fn((filePath: string) => Readable.from([Buffer.from(copyOf(filePath))]))
 const statFile = vi.fn(async (filePath: string) => ({ size: copyOf(filePath).length }))
+const readFile = vi.fn(async (filePath: string) => Buffer.from(copyOf(filePath)))
 const savedSettings = new Map<string, string>()
 vi.mock('fs', () => ({
   default: {
@@ -54,6 +55,7 @@ vi.mock('fs', () => ({
       createWriteStream(filePath, options),
     promises: {
       stat: (filePath: string) => statFile(filePath),
+      readFile: (filePath: string) => readFile(filePath),
       rm: (path: string, options: { force: boolean }) => removeFile(path, options),
       rename: (from: string, to: string) => renameFile(from, to)
     }
@@ -93,6 +95,7 @@ const {
   downloadAsset,
   findCloudAsset,
   listAssets,
+  readAssetModel,
   registerAssetsHandlers,
   signedStorageUrl
 } = await import('./assets')
@@ -514,7 +517,43 @@ describe('listAssets', () => {
       ['voice.wav', 'audio', 'https://storage.googleapis.com/bucket/s1?sig=1'],
       ['mesh.glb', '3d', null]
     ])
-    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(
+      fetchMock,
+      'the list, two links, and the start of the video and the audio'
+    ).toHaveBeenCalledTimes(5)
+  })
+
+  it('shows the picture Cloud keeps for a 3D output, and opens no model file to list it', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assets: [
+            { id: 'm1', name: 'fox.glb', preview_id: 'p9' },
+            { id: 'm2', name: 'robot.glb', preview_id: null }
+          ],
+          total: 2,
+          has_more: false
+        })
+      )
+      .mockImplementation(
+        async (url: string) =>
+          new Response(null, {
+            status: 302,
+            headers: {
+              Location: `https://storage.googleapis.com/bucket/${/\/assets\/([^/]+)\/content/.exec(url)?.[1]}?sig=1`
+            }
+          })
+      )
+
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
+
+    expect(assets.map((a) => [a.name, a.thumbnailUrl, a.previewUrl])).toEqual([
+      ['fox.glb', 'https://storage.googleapis.com/bucket/p9?sig=1', null],
+      ['robot.glb', null, null]
+    ])
+    expect(fetchMock, 'the list and one picture link').toHaveBeenCalledTimes(2)
   })
 
   it('reads the size of each Cloud picture and video, and how long a video runs, from the start of the file', async () => {
@@ -1170,6 +1209,58 @@ describe('the list handler', () => {
       assets: [],
       total: 0
     })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('readAssetModel', () => {
+  const signedModel = 'https://storage.googleapis.com/bucket/m1?sig=1'
+
+  function cloudModel(model: Response): void {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockImplementation(async (url: string) =>
+      url === signedModel
+        ? model
+        : new Response(null, { status: 302, headers: { Location: signedModel } })
+    )
+  }
+
+  it('reads a Cloud model through its signed link', async () => {
+    cloudModel(new Response(new Uint8Array([1, 2, 3])))
+
+    const bytes = await readAssetModel('cloud-1', 'm1')
+
+    expect(Array.from(bytes ?? [])).toEqual([1, 2, 3])
+  })
+
+  it('does not read a Cloud model larger than 100 MB', async () => {
+    cloudModel(
+      new Response(new Uint8Array([1]), {
+        headers: { 'Content-Length': String(150 * 1024 * 1024) }
+      })
+    )
+
+    expect(await readAssetModel('cloud-1', 'm1')).toBeNull()
+  })
+
+  it('reads a model in an output folder on this computer, and nothing outside them', async () => {
+    outputFile.mockImplementation(async (target: string) =>
+      target === '/out/fox.glb' ? target : null
+    )
+
+    expect(Buffer.from((await readAssetModel('local', '/out/fox.glb'))!).toString()).toBe(
+      copyOf('/out/fox.glb')
+    )
+    expect(await readAssetModel('local', '/etc/passwd')).toBeNull()
+    expect(readFile).toHaveBeenCalledExactlyOnceWith('/out/fox.glb')
+  })
+
+  it('answers only the Assets page', async () => {
+    cloudModel(new Response(new Uint8Array([1])))
+    registerAssetsHandlers()
+
+    expect(await handlers.get('assets:read-model')!({ sender: {} }, 'cloud-1', 'm1')).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })

@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
 import { DropdownMenuRadioGroup, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import {
-  AudioLines,
   Box,
   Check,
   ChevronDown,
@@ -17,10 +16,11 @@ import {
   Laptop,
   LayoutGrid,
   LayoutDashboard,
+  Music,
   RefreshCw,
   Search,
-  Trash2,
-  Video
+  Play,
+  Trash2
 } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
@@ -730,7 +730,9 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     tags: asset.tags,
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
-    savedIn: isLocal(asset) ? folderOf(asset.id) : null
+    savedIn: isLocal(asset) ? folderOf(asset.id) : null,
+    loadModel:
+      asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
 )
 
@@ -886,6 +888,18 @@ function assetDetails(asset: AssetSummary): string {
   ]
     .filter(Boolean)
     .join(' · ')
+}
+
+function noteDuration(asset: AssetSummary, event: Event): void {
+  const seconds = (event.target as HTMLVideoElement).duration
+  if (!asset.durationSeconds && Number.isFinite(seconds) && seconds > 0) {
+    asset.durationSeconds = seconds
+  }
+}
+
+function cardImage(asset: AssetSummary): string | null {
+  if (asset.kind === 'image') return asset.thumbnailUrl ?? asset.previewUrl
+  return asset.kind === '3d' ? asset.thumbnailUrl : null
 }
 
 function extensionOf(name: string): string {
@@ -1284,11 +1298,12 @@ function extensionOf(name: string): string {
                 :style="aspectStyle(assetShape(asset))"
               >
                 <img
-                  v-if="asset.previewUrl && asset.kind === 'image'"
-                  :src="asset.thumbnailUrl ?? asset.previewUrl"
+                  v-if="cardImage(asset)"
+                  :src="cardImage(asset) ?? undefined"
                   :alt="asset.name"
                   loading="lazy"
-                  class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  class="block size-full transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  :class="asset.kind === '3d' ? 'object-contain' : 'object-cover'"
                 />
                 <video
                   v-else-if="asset.previewUrl && asset.kind === 'video'"
@@ -1296,23 +1311,31 @@ function extensionOf(name: string): string {
                   preload="metadata"
                   muted
                   class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  @loadedmetadata="noteDuration(asset, $event)"
                 />
                 <span
                   v-else
                   class="flex size-full flex-col items-center justify-center gap-2 text-[14px]/[14px] font-semibold transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                   :class="placeholderTint(asset)"
                 >
-                  <AudioLines v-if="asset.kind === 'audio'" :size="40" aria-hidden="true" />
+                  <Music v-if="asset.kind === 'audio'" :size="40" aria-hidden="true" />
                   <Box v-else-if="asset.kind === '3d'" :size="40" aria-hidden="true" />
                   <File v-else :size="40" aria-hidden="true" />
                   <span>{{ extensionOf(asset.name) }}</span>
                 </span>
                 <span
-                  v-if="asset.kind === 'video' && asset.durationSeconds"
-                  class="absolute bottom-2 left-2 flex h-[22px] items-center gap-[5px] rounded-full bg-[rgb(14_14_14/0.28)] pr-2 pl-[7px] text-[11.5px]/[16.1px] font-medium text-white"
+                  v-if="asset.kind === 'video' && asset.previewUrl"
+                  class="pointer-events-none absolute top-1/2 left-1/2 flex size-10 -translate-1/2 items-center justify-center rounded-full bg-media-overlay text-foreground backdrop-blur-sm"
+                  aria-hidden="true"
+                  data-testid="asset-play"
+                >
+                  <Play :size="18" class="translate-x-px" />
+                </span>
+                <span
+                  v-if="(asset.kind === 'video' || asset.kind === 'audio') && asset.durationSeconds"
+                  class="absolute right-2 bottom-2 rounded-md bg-media-overlay px-1.5 py-0.5 text-xs font-medium text-foreground tabular-nums backdrop-blur-sm"
                   data-testid="asset-duration"
                 >
-                  <Video :size="12" class="opacity-92" aria-hidden="true" />
                   {{ formatPlaybackTime(asset.durationSeconds) }}
                 </span>
               </span>

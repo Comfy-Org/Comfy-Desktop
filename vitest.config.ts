@@ -56,6 +56,18 @@ export default defineConfig({
         resolve: {
           alias: [{ find: /^vue$/, replacement: VUE_BUILD_THAT_COMPILES_TEMPLATE_STUBS }]
         },
+        optimizeDeps: {
+          include: [
+            'three',
+            'three/examples/jsm/controls/OrbitControls.js',
+            'three/examples/jsm/environments/RoomEnvironment.js',
+            'three/examples/jsm/exporters/GLTFExporter.js',
+            'three/examples/jsm/loaders/GLTFLoader.js',
+            'three/examples/jsm/loaders/OBJLoader.js',
+            'three/examples/jsm/loaders/PLYLoader.js',
+            'three/examples/jsm/loaders/STLLoader.js'
+          ]
+        },
         test: {
           name: 'browser',
           sequence: { groupOrder: 1 },

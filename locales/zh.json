@@ -155,7 +155,10 @@
       "zoomLevel": "缩放：{level}",
       "openWorkflow": "打开工作流",
       "savedIn": "保存位置",
-      "cloudAssets": "Comfy Cloud 资产"
+      "cloudAssets": "Comfy Cloud 资产",
+      "modelView": "{name} 的 3D 视图。拖动可旋转，滚动可缩放。",
+      "modelLoading": "正在加载 3D 模型",
+      "modelFailed": "无法显示此 3D 模型。下载后可在 3D 应用中打开。"
     },
     "kindSingular": {
       "image": "图片",

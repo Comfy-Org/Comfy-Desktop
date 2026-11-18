@@ -24,6 +24,7 @@ let localListCut = false
 const downloadAsset = vi.fn()
 const revealAsset = vi.fn()
 const copyAsset = vi.fn()
+const readAssetModel = vi.fn()
 const trashAsset = vi.fn()
 const alert = vi.fn()
 const confirm = vi.fn()
@@ -238,6 +239,7 @@ beforeEach(() => {
     downloadAsset,
     revealAsset,
     copyAsset,
+    readAssetModel,
     trashAsset,
     platform: 'darwin',
     getSetting,
@@ -264,6 +266,80 @@ describe('AssetsView', () => {
 
     expect(wrapper.get('[data-testid="asset-a"]').text()).toContain('forest.png')
     expect(wrapper.get('[data-testid="asset-a"]').text()).toContain('2 KB')
+  })
+
+  it('marks a video with a play button and leaves pictures plain', async () => {
+    const wrapper = await mountAssets([
+      asset('clip', 'clip.mp4', 'video', { previewUrl: 'data:video/mp4,' }),
+      asset('still', 'still.png', 'image', { previewUrl: picture('x', 300).previewUrl })
+    ])
+
+    expect(wrapper.find('[data-testid="asset-clip"] [data-testid="asset-play"]').exists()).toBe(
+      true
+    )
+    expect(wrapper.find('[data-testid="asset-still"] [data-testid="asset-play"]').exists()).toBe(
+      false
+    )
+  })
+
+  it('shows how long a video runs once its card has read the start of the video', async () => {
+    const wrapper = await mountAssets([
+      asset('clip', 'clip.mp4', 'video', { previewUrl: 'data:video/mp4,' })
+    ])
+    const video = wrapper.get('[data-testid="asset-clip"] video').element
+    expect(wrapper.find('[data-testid="asset-clip"] [data-testid="asset-duration"]').exists()).toBe(
+      false
+    )
+
+    Object.defineProperty(video, 'duration', { value: 61.2 })
+    video.dispatchEvent(new Event('loadedmetadata'))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="asset-clip"] [data-testid="asset-duration"]').text()).toBe(
+      '1:01'
+    )
+  })
+
+  it('shows how long a sound runs on its card', async () => {
+    const wrapper = await mountAssets([
+      asset('song', 'song.flac', 'audio', { durationSeconds: 69.4 }),
+      asset('blip', 'blip.wav', 'audio')
+    ])
+
+    expect(wrapper.get('[data-testid="asset-song"] [data-testid="asset-duration"]').text()).toBe(
+      '1:09'
+    )
+    expect(wrapper.find('[data-testid="asset-blip"] [data-testid="asset-duration"]').exists()).toBe(
+      false
+    )
+  })
+
+  it('shows the picture of a 3D file whole, and its box when it has none', async () => {
+    const thumb = picture('t', 200).previewUrl!
+    const wrapper = await mountAssets([
+      asset('fox', 'fox.glb', '3d', { thumbnailUrl: thumb }),
+      asset('robot', 'robot.glb', '3d')
+    ])
+
+    const shown = wrapper.get('[data-testid="asset-fox"] img')
+    expect(shown.attributes('src')).toBe(thumb)
+    expect(shown.classes()).toContain('object-contain')
+    expect(wrapper.find('[data-testid="asset-robot"] img').exists()).toBe(false)
+  })
+
+  it('opens a 3D file in a 3D view that reads the file through Desktop', async () => {
+    readAssetModel.mockResolvedValue(null)
+    const wrapper = await mountAssets([asset('/out/fox.glb', 'fox.glb', '3d')])
+
+    await wrapper.get('[data-testid="asset-open-/out/fox.glb"]').trigger('click')
+    await vi.waitFor(
+      () =>
+        expect(document.querySelector('[data-testid="output-detail-model-failed"]')).not.toBeNull(),
+      { timeout: 5000 }
+    )
+
+    expect(readAssetModel).toHaveBeenCalledExactlyOnceWith('local', '/out/fox.glb')
+    wrapper.unmount()
   })
 
   it('shows a video in its own shape with how long it runs, and a picture without a size as a square', async () => {

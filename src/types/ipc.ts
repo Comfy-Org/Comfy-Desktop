@@ -1230,6 +1230,7 @@ export interface ElectronApi {
   revealAsset(source: string, assetId: string): Promise<boolean>
   findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>
+  readAssetModel(source: string, assetId: string): Promise<Uint8Array | null>
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
