@@ -10,6 +10,7 @@ import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
 import { homeBuildStatus, homeBuildTones, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
+import HomeTemplateSearch from './home/HomeTemplateSearch.vue'
 import { useInstallList } from '../composables/useInstallList'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
 import {
@@ -26,6 +27,7 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { AppCard, CatalogWorkflow, Installation } from '../types/ipc'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import { opensInAWindow } from '../../../shared/templateSearch'
 
 type LoadState = 'loading' | 'ready' | 'unavailable'
 
@@ -111,6 +113,23 @@ function buildStatus(build: Installation) {
 const { state: appsState, apps, loadApps } = useHomeApps()
 const appsEnabled = computed(() => appsState.value !== 'checking' && appsState.value !== 'off')
 
+const templateSearchBuild = computed(() => {
+  const usable = (build: Installation): boolean =>
+    build.sourceCategory === 'local' &&
+    build.statusTag?.style !== 'danger' &&
+    opensInAWindow(build.launchMode)
+  const target = openTarget.value
+  if (target && usable(target)) return target
+  return openableBuilds.value.find(usable) ?? null
+})
+const templateSearchEnabled = ref(false)
+const searchResultsShown = ref(false)
+
+function openTemplateSearchBuild(buildId: string): void {
+  const build = workspaceBuilds.value.find((candidate) => candidate.id === buildId)
+  if (build) emit('pick', build)
+}
+
 const state = ref<LoadState>('loading')
 const workflows = ref<CatalogWorkflow[]>([])
 const carouselIsLoading = computed(() =>
@@ -148,6 +167,9 @@ watch(appsState, (now) => {
 
 onMounted(() => {
   if (installationStore.installations.length === 0) void installationStore.fetchInstallations()
+  void window.api.getSetting('templateSearchEnabled').then((enabled) => {
+    templateSearchEnabled.value = enabled === true
+  })
 })
 </script>
 
@@ -174,7 +196,16 @@ onMounted(() => {
         {{ t('home.title') }}
       </h1>
 
+      <HomeTemplateSearch
+        v-if="templateSearchEnabled"
+        class="mt-8"
+        :build-id="templateSearchBuild?.id ?? null"
+        @opened="openTemplateSearchBuild"
+        @results="searchResultsShown = $event"
+      />
+
       <section
+        v-show="!searchResultsShown"
         class="mt-[74px]"
         :aria-label="appsState === 'off' ? t('home.exampleWorkflows') : t('sidebar.apps')"
       >

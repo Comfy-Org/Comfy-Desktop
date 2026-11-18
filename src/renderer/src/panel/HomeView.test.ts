@@ -6,12 +6,14 @@ import HomeView from './HomeView.vue'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { CatalogWorkflow, Installation } from '../types/ipc'
+import type { CatalogWorkflow, Installation, TemplateSearchResponse } from '../types/ipc'
 
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
 const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const getInstallations = vi.fn<() => Promise<Installation[]>>()
+const searchTemplates = vi.fn()
+const openTemplateInBuild = vi.fn()
 
 function workflow(id: string, title: string, thumbnailUrl: string | null = null): CatalogWorkflow {
   return { id, title, description: '', thumbnailUrl }
@@ -64,6 +66,8 @@ beforeEach(() => {
   getInstallations.mockResolvedValue([])
   ;(window as unknown as { api: unknown }).api = {
     listHomeWorkflows,
+    searchTemplates,
+    openTemplateInBuild,
     openCatalogWorkflow,
     getAppsEnabled,
     getInstallations,
@@ -1023,5 +1027,196 @@ describe('Home build auto start', () => {
     expect(statusOf(wrapper, OLDEST.id)).not.toContain('Auto start')
     expect(startingWithDesktop(wrapper)).toEqual([])
     expect(setSetting).not.toHaveBeenCalledWith('autoLaunchOnStartup', expect.anything())
+  })
+})
+
+function posterAnswer(): TemplateSearchResponse {
+  return {
+    kind: 'result',
+    result: {
+      outcome: 'template',
+      reply: null,
+      run: [
+        {
+          templateId: 'poster_template',
+          title: 'Poster',
+          thumbnailUrl: null,
+          family: null,
+          partner: false,
+          needsDownload: false,
+          score: 0.9,
+          calibrated: null,
+          belowThreshold: false,
+          needs: [],
+          downloadBytes: null
+        }
+      ],
+      download: [],
+      more: [],
+      alsoTry: [],
+      partnerSwitch: false,
+      matched: null,
+      partnersShown: true
+    }
+  }
+}
+
+describe('Home template search', () => {
+  beforeEach(() => {
+    Object.assign(window.api, {
+      getSetting: vi.fn(async (key: string) =>
+        key === 'templateSearchEnabled' ? true : undefined
+      ),
+      prepareTemplateSearch: vi.fn().mockResolvedValue({ kind: 'ready' }),
+      downloadTemplateSearch: vi.fn().mockResolvedValue(undefined),
+      onTemplateSearchAvailability: vi.fn(() => () => {})
+    })
+    searchTemplates.mockResolvedValue(posterAnswer())
+  })
+
+  async function searchAndPick(wrapper: VueWrapper) {
+    const input = wrapper.get('[data-testid="home-template-search-input"]')
+    await input.setValue('a poster for a bake sale')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+  }
+
+  it('stays hidden unless template search is switched on', async () => {
+    Object.assign(window.api, { getSetting: vi.fn().mockResolvedValue(undefined) })
+    const wrapper = await openHome()
+    expect(wrapper.find('[data-testid="home-template-search"]').exists()).toBe(false)
+  })
+
+  it('shows the results in place of the apps while the bar has a request, and the apps again once it is cleared', async () => {
+    getInstallations.mockResolvedValue([RUNNING])
+    const wrapper = await openHome()
+    const apps = () => wrapper.get('section[aria-label]').element as HTMLElement
+    const input = wrapper.get('[data-testid="home-template-search-input"]')
+    expect(apps().style.display).not.toBe('none')
+
+    await input.setValue('a poster for a bake sale')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-template-search-results"]').exists()).toBe(true)
+    expect(apps().style.display).toBe('none')
+    expect(wrapper.get('[data-testid="home-builds"]').isVisible()).toBe(true)
+
+    await input.setValue('')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-template-search-results"]').exists()).toBe(false)
+    expect(apps().style.display).not.toBe('none')
+  })
+
+  it('shows the search bar under the title', async () => {
+    const wrapper = await openHome()
+    const search = wrapper.get('[data-testid="home-template-search"]')
+    const title = wrapper.get('h1')
+    expect(
+      title.element.compareDocumentPosition(search.element) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  it('searches for and runs a template in the local build Home opens, and opens that build', async () => {
+    getInstallations.mockResolvedValue([CLOUD, RUNNING, OLDEST])
+    openTemplateInBuild.mockResolvedValue('launch')
+    const wrapper = await openHome()
+    await searchAndPick(wrapper)
+
+    expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'running')
+    expect(openTemplateInBuild).toHaveBeenCalledWith('running', 'poster_template')
+    expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'running' })]])
+  })
+
+  it('uses the most recent local build when Home would open Comfy Cloud', async () => {
+    const recentCloud = { ...CLOUD, lastLaunchedAt: 900 }
+    getInstallations.mockResolvedValue([OLDEST, recentCloud, RUNNING])
+    openTemplateInBuild.mockResolvedValue('launch')
+    const wrapper = await openHome()
+    await searchAndPick(wrapper)
+
+    expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'running')
+    expect(openTemplateInBuild).toHaveBeenCalledWith('running', 'poster_template')
+  })
+
+  it('does not open a build the template was refused by', async () => {
+    getInstallations.mockResolvedValue([RUNNING])
+    openTemplateInBuild.mockResolvedValue('refused')
+    const wrapper = await openHome()
+    await searchAndPick(wrapper)
+    expect(wrapper.emitted('pick')).toBeUndefined()
+  })
+
+  it('brings the build forward when the template opened in it straight away', async () => {
+    getInstallations.mockResolvedValue([RUNNING])
+    openTemplateInBuild.mockResolvedValue('opened')
+    const wrapper = await openHome()
+    await searchAndPick(wrapper)
+    expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'running' })]])
+  })
+
+  it('searches for and opens in the build picked in the Open ComfyUI menu', async () => {
+    getInstallations.mockResolvedValue([RUNNING, OLDEST])
+    openTemplateInBuild.mockResolvedValue('launch')
+    const wrapper = await openHome()
+    await openBuildMenu(wrapper)
+    const oldest = buildOptions().find((option) => option.textContent?.includes(OLDEST.name))!
+    oldest.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    await searchAndPick(wrapper)
+    expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'oldest')
+    expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'oldest' })]])
+  })
+
+  it('brings forward the build the template went to when another build is picked while it opens', async () => {
+    getInstallations.mockResolvedValue([RUNNING, OLDEST])
+    let finish!: (outcome: 'opened') => void
+    openTemplateInBuild.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    const wrapper = await openHome()
+    await searchAndPick(wrapper)
+
+    await openBuildMenu(wrapper)
+    const oldest = buildOptions().find((option) => option.textContent?.includes(OLDEST.name))!
+    oldest.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    finish('opened')
+    await flushPromises()
+
+    expect(openTemplateInBuild).toHaveBeenCalledWith('running', 'poster_template')
+    expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'running' })]])
+  })
+
+  it.each(['console', 'external'])(
+    'passes over builds that are not local, or that start in %s mode',
+    async (launchMode) => {
+      const remote = { ...NEWEST, sourceCategory: 'remote', lastLaunchedAt: 900 }
+      const windowless = { ...RUNNING, launchMode }
+      getInstallations.mockResolvedValue([remote, windowless, OLDEST])
+      openTemplateInBuild.mockResolvedValue('launch')
+      const wrapper = await openHome()
+      await searchAndPick(wrapper)
+      expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'oldest')
+    }
+  )
+
+  it('passes over a local build that is marked broken', async () => {
+    const broken = { ...RUNNING, statusTag: { style: 'danger', label: 'Broken' } }
+    getInstallations.mockResolvedValue([{ ...CLOUD, lastLaunchedAt: 900 }, broken, OLDEST])
+    openTemplateInBuild.mockResolvedValue('launch')
+    const wrapper = await openHome()
+    await searchAndPick(wrapper)
+    expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', 'oldest')
+  })
+
+  it('says a template could not be opened when there is only Comfy Cloud', async () => {
+    getInstallations.mockResolvedValue([CLOUD])
+    const wrapper = await openHome()
+    await searchAndPick(wrapper)
+
+    expect(searchTemplates).toHaveBeenCalledWith('a poster for a bake sale', '')
+    expect(openTemplateInBuild).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="home-template-search-open-failed"]').exists()).toBe(true)
   })
 })
