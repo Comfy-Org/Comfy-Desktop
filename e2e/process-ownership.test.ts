@@ -298,7 +298,8 @@ test('a ComfyUI of the same install that Desktop did not start is never stopped 
 
   const app = await start()
   await clickInstallTile(app.panel, INSTALL_NAME)
-  await app.panel.waitForVisible(byTestId(TID.progressPortConflictBanner), { timeout: 60_000 })
+  const portDialog = `${byTestId(TID.progressPortConflictUsePort)}, ${byTestId(TID.progressPortConflictKill)}`
+  await app.panel.waitForVisible(portDialog, { timeout: 60_000 })
 
   expect(isAlive(manual.pid!), 'a process Desktop did not start was left running').toBe(true)
   expect(await portAnswers()).toBe(true)

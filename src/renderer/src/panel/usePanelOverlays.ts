@@ -209,12 +209,6 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     return opts.firstUseChain?.shouldForceTakeover() !== true
   }
 
-  function movesToHome(showOpts: ShowProgressOpts): showOpts is ShowProgressOpts & {
-    actionId: string
-  } {
-    return !!installationId && showOpts.opKind !== 'launch' && !!showOpts.actionId
-  }
-
   const resolvePortConflict = usePortConflictPrompt((relaunchOpts) =>
     handleShowProgress(relaunchOpts)
   )
@@ -301,23 +295,6 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
 
   async function handleShowProgress(showOpts: ShowProgressOpts): Promise<void> {
     const operationName = showOpts.title.split(' — ')[0] || showOpts.title
-    if (movesToHome(showOpts)) {
-      const handedOff = await window.api
-        .showProgressOnHome({
-          installationId: showOpts.installationId,
-          actionId: showOpts.actionId,
-          title: showOpts.title,
-          actionData: showOpts.actionData,
-          cancellable: showOpts.cancellable,
-          opKind: showOpts.opKind,
-          relaunch: showOpts.relaunchAfter === true
-        })
-        .catch(() => false)
-      if (handedOff) {
-        closeProgressPanel()
-        return
-      }
-    }
     if (runsInBackground(showOpts)) {
       const settled =
         showOpts.opKind === 'launch'

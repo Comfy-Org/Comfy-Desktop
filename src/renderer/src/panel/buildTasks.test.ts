@@ -53,6 +53,7 @@ interface RunCall {
 
 interface Desktop {
   installations: Installation[]
+  running: Set<string>
   runs: RunCall[]
   cancelled: string[]
   startFromPicker: (request: {
@@ -62,7 +63,6 @@ interface Desktop {
     opKind?: ShowProgressOpts['opKind']
     actionData?: Record<string, unknown>
     cancellable?: boolean
-    relaunch?: boolean
   }) => Promise<void>
   reportProgress: (data: ProgressData) => Promise<void>
   askToClose: () => Promise<{ cleared?: boolean; defer?: true }>
@@ -75,8 +75,10 @@ function openDesktop(installations: Installation[]): Desktop {
   const progressListeners = new Set<(data: ProgressData) => void>()
   const closeListeners = new Set<(request: { requestId: string }) => void>()
   const closeAnswers = new Map<string, (answer: { cleared?: boolean; defer?: true }) => void>()
+  const stoppedListeners = new Set<(data: { installationId: string }) => void>()
   const desktop: Desktop = {
     installations,
+    running: new Set(),
     runs: [],
     cancelled: [],
     portKills: [],
@@ -118,7 +120,17 @@ function openDesktop(installations: Installation[]): Desktop {
     getLocaleMessages: async () => en,
     getSetting: async (key: string) => (key === 'firstUseCompleted' ? true : undefined),
     getInstallations: async () => desktop.installations,
-    getRunningInstances: async () => [],
+    getRunningInstances: async () =>
+      [...desktop.running].map((installationId) => ({
+        installationId,
+        installationName: installationId,
+        mode: 'local'
+      })),
+    onInstanceStopped: subscribe(stoppedListeners),
+    stopComfyUI: async (id: string) => {
+      desktop.running.delete(id)
+      stoppedListeners.forEach((listener) => listener({ installationId: id }))
+    },
     getListActions: async () => [],
     getFieldOptions: async () => [],
     listHomeWorkflows: async () => [],
@@ -529,13 +541,13 @@ describe('a port conflict when a build starts', () => {
 
 describe('a port conflict when a build restarts after an update', () => {
   it('asks about the port, and only starts the build again', async () => {
+    desktop.running.add(BUILD.id)
     await openBuildsList()
     await desktop.startFromPicker({
       actionId: 'update-comfyui',
       title: 'Updating ComfyUI - Video Lab',
       opKind: 'update',
-      cancellable: true,
-      relaunch: true
+      cancellable: true
     })
     ;(await lastRun()).finish({ ok: true })
     await vi.waitFor(() => expect(desktop.runs).toHaveLength(2))

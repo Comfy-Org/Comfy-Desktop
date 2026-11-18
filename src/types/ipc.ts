@@ -458,21 +458,10 @@ export interface ShowProgressOpts {
   destroysInstance?: boolean
   actionId?: string
   actionData?: Record<string, unknown>
-  relaunchAfter?: boolean
   successTerminal?: {
     title?: string
     actions: Array<{ id: string; label: string; variant: 'primary' | 'ghost' }>
   }
-}
-
-export interface HomeProgressRequest {
-  installationId: string
-  actionId: string
-  title: string
-  actionData?: Record<string, unknown>
-  cancellable?: boolean
-  opKind?: ShowProgressOpts['opKind']
-  relaunch?: boolean
 }
 
 export interface ActionResult {
@@ -1230,7 +1219,6 @@ export interface ElectronApi {
   closeComfyWindow(installationId: string, opts?: CloseComfyWindowOptions): Promise<boolean>
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
-  showProgressOnHome(request: HomeProgressRequest): Promise<boolean>
   closeCurrentPanel(): void
   closeAnnouncement(): void
   signalOverlayReady(): void
@@ -1505,7 +1493,6 @@ export interface ElectronApi {
       opKind?: 'launch' | 'install' | 'update' | 'destructive' | 'snapshot' | 'generic'
       isRestart?: boolean
       successChoice?: boolean
-      relaunch?: boolean
     }) => void
   ): Unsubscribe
 }

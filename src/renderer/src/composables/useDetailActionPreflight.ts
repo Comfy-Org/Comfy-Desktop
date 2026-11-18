@@ -140,8 +140,7 @@ export function useDetailActionPreflight() {
       opKind: isRestart ? 'launch' : progressOpKindForActionId(action.id),
       destroysInstance: destroysInstanceForActionId(action.id),
       actionId: action.id,
-      actionData: action.data,
-      relaunchAfter: wantsRelaunch
+      actionData: action.data
     })
   }
 

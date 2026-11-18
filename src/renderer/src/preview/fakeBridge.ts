@@ -245,7 +245,6 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     closeComfyWindow: async () => true,
     closeHostWindow: async () => true,
     returnToDashboard: async () => true,
-    showProgressOnHome: async () => true,
     closeCurrentPanel: () => {},
     closeAnnouncement: () => {},
     signalOverlayReady: () => {},

@@ -97,7 +97,6 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('close-comfy-window', installationId, opts),
     closeHostWindow: () => ipcRenderer.invoke('close-host-window'),
     returnToDashboard: () => ipcRenderer.invoke('return-to-dashboard'),
-    showProgressOnHome: (request) => ipcRenderer.invoke('show-progress-on-home', request),
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
     closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),

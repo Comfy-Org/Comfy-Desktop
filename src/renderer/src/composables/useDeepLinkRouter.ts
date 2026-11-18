@@ -120,31 +120,27 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
           if (!installationStore.getById(id)) {
             await installationStore.fetchInstallations().catch(() => {})
           }
+          if (!installationStore.getById(id)) return
           const isRestart = !!payload.isRestart
           const actionData = (payload.actionData ?? undefined) as
             Record<string, unknown> | undefined
           const wasRunning = sessionStore.isRunning(id)
           const requiresStoppedGuard = !isRestart && REQUIRES_STOPPED.has(actionId)
           const needsSelfStop = wasRunning && requiresStoppedGuard
-          const wantsRelaunch =
-            !isRestart &&
-            IN_PLACE_RELAUNCH.has(actionId) &&
-            (payload.relaunch === true || needsSelfStop)
+          const wantsRelaunch = needsSelfStop && IN_PLACE_RELAUNCH.has(actionId)
           const isRunning = (): boolean => sessionStore.isRunning(id)
           const apiCall = isRestart
             ? async () => {
                 await stopAndWaitForExit(id, isRunning)
                 return window.api.runAction(id, 'launch')
               }
-            : needsSelfStop || wantsRelaunch
+            : needsSelfStop
               ? async () => {
                   const run = (): Promise<ActionResult> =>
                     window.api.runAction(id, actionId, actionData)
                   const cancelRequested = (): boolean =>
                     progressStore.operations.get(id)?.cancelRequested === true
-                  const result = needsSelfStop
-                    ? await stopThenRun(id, isRunning, cancelRequested, run)
-                    : await run()
+                  const result = await stopThenRun(id, isRunning, cancelRequested, run)
                   if (result.cancelled) return result
                   return wantsRelaunch ? relaunchAfterAction(id, result) : result
                 }
@@ -166,7 +162,6 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
             opKind: payload.opKind,
             actionId,
             actionData,
-            relaunchAfter: wantsRelaunch,
             successTerminal
           })
         }

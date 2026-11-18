@@ -17,7 +17,6 @@ describe('where a task on a build shows its progress', () => {
     onInstallProgress: vi.fn(() => () => {}),
     onComfyOutput: vi.fn(() => () => {}),
     closeCurrentPanel: vi.fn(),
-    showProgressOnHome: vi.fn(async () => true),
     getSetting: vi.fn().mockResolvedValue(undefined)
   }
 
@@ -58,67 +57,29 @@ describe('where a task on a build shows its progress', () => {
     for (const fn of Object.values(api)) fn.mockClear()
   })
 
-  it('a ComfyUI window hands an update to the Desktop window instead of covering itself', async () => {
-    const overlays = overlaysIn(BUILD)
-    const apiCall = vi.fn(async () => ({ ok: true }))
+  it.each([
+    { opKind: 'update' as const, actionId: 'update-comfyui', title: 'Updating - Studio' },
+    { opKind: 'generic' as const, actionId: 'git-pull', title: 'Pulling changes - Studio' }
+  ])(
+    'a ComfyUI window runs $actionId once itself and shows its progress there',
+    async ({ opKind, actionId, title }) => {
+      const overlays = overlaysIn(BUILD)
+      const apiCall = vi.fn(() => new Promise<never>(() => {}))
 
-    await overlays.handleShowProgress({
-      installationId: BUILD,
-      title: 'Updating - Studio',
-      apiCall,
-      cancellable: true,
-      opKind: 'update',
-      actionId: 'update-comfyui',
-      actionData: { channel: 'stable' }
-    })
+      await overlays.handleShowProgress({
+        installationId: BUILD,
+        title,
+        apiCall,
+        cancellable: true,
+        opKind,
+        actionId
+      })
 
-    expect(api.showProgressOnHome).toHaveBeenCalledWith({
-      installationId: BUILD,
-      actionId: 'update-comfyui',
-      title: 'Updating - Studio',
-      actionData: { channel: 'stable' },
-      cancellable: true,
-      opKind: 'update',
-      relaunch: false
-    })
-    expect(apiCall).not.toHaveBeenCalled()
-    expect(overlays.currentOverlay.value).toBeNull()
-    expect(useProgressStore().operations.has(BUILD)).toBe(false)
-  })
-
-  it('a ComfyUI window passes on that the build should start again after the update', async () => {
-    const overlays = overlaysIn(BUILD)
-
-    await overlays.handleShowProgress({
-      installationId: BUILD,
-      title: 'Updating - Studio',
-      apiCall: vi.fn(async () => ({ ok: true })),
-      opKind: 'update',
-      actionId: 'update-comfyui',
-      relaunchAfter: true
-    })
-
-    expect(api.showProgressOnHome).toHaveBeenCalledWith(
-      expect.objectContaining({ actionId: 'update-comfyui', relaunch: true })
-    )
-  })
-
-  it('a ComfyUI window runs the task itself when the Desktop window cannot take it', async () => {
-    api.showProgressOnHome.mockResolvedValueOnce(false)
-    const overlays = overlaysIn(BUILD)
-    const apiCall = vi.fn(() => new Promise<never>(() => {}))
-
-    await overlays.handleShowProgress({
-      installationId: BUILD,
-      title: 'Pulling changes - Studio',
-      apiCall,
-      opKind: 'generic',
-      actionId: 'git-pull'
-    })
-
-    expect(apiCall).toHaveBeenCalledOnce()
-    expect(overlays.currentOverlay.value).toMatchObject({ kind: 'takeover', component: 'update' })
-  })
+      expect(apiCall).toHaveBeenCalledOnce()
+      expect(overlays.currentOverlay.value).toMatchObject({ kind: 'takeover', component: 'update' })
+      expect(useProgressStore().operations.get(BUILD)?.finished).toBe(false)
+    }
+  )
 
   it('a ComfyUI window still shows its own start in place', async () => {
     const overlays = overlaysIn(BUILD)
@@ -131,7 +92,6 @@ describe('where a task on a build shows its progress', () => {
       actionId: 'launch'
     })
 
-    expect(api.showProgressOnHome).not.toHaveBeenCalled()
     expect(overlays.currentOverlay.value?.kind).toBe('takeover')
   })
 

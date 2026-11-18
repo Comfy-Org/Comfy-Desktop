@@ -168,8 +168,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
         triggersInstanceStart,
         opKind: progressOpKindForActionId(action.id),
         destroysInstance: destroysInstanceForActionId(action.id),
-        actionId: action.id,
-        relaunchAfter: wantsRelaunch
+        actionId: action.id
       })
       return
     }

@@ -200,7 +200,6 @@ import {
   sendToPanelDeferred,
   setActivePanel
 } from './host/panelView'
-import { showProgressOnHome } from './host/showProgressOnHome'
 
 export type { ComfyPanelKey } from './host/registry'
 
@@ -819,8 +818,6 @@ ipcMain.handle('return-to-dashboard', (event) => {
   }
   return false
 })
-
-ipcMain.handle('show-progress-on-home', (_event, request: unknown) => showProgressOnHome(request))
 
 ipcMain.handle('claim-attach-host', (event, installationId: string) => {
   for (const [, entry] of comfyWindows) {
