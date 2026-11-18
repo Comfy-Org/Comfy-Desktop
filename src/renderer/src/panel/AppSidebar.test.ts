@@ -248,6 +248,32 @@ describe('AppSidebar', () => {
     expect(reopened.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
   })
 
+  it('keeps the collapse toggle on the top row when the sidebar folds, with no Comfy mark above it', async () => {
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+    const sidebar = wrapper.get('[data-testid="app-sidebar"]').element
+    const toggle = () => wrapper.get('[data-testid="app-sidebar-toggle"]').element
+    const offsetFromTop = (el: Element) =>
+      el.getBoundingClientRect().top - sidebar.getBoundingClientRect().top
+    const homeRowTop = () => offsetFromTop(wrapper.get('[data-testid="app-sidebar-home"]').element)
+
+    const expandedToggleTop = offsetFromTop(toggle())
+    const expandedHomeRowTop = homeRowTop()
+    expect(
+      wrapper.find('[data-testid="app-sidebar-header"] button[aria-label="Home"]').exists()
+    ).toBe(true)
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(sidebar.getAttribute('data-collapsed')).toBe('true')
+    expect(offsetFromTop(toggle()), 'toggle top').toBe(expandedToggleTop)
+    expect(homeRowTop(), 'first row top').toBe(expandedHomeRowTop)
+    expect(wrapper.get('[data-testid="app-sidebar-header"]').findAll('button')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('keeps a tooltip on the icon-only buttons whether or not the sidebar is collapsed', async () => {
     const wrapper = await mountSidebar()
     expect(tooltipOf(wrapper, 'app-sidebar-toggle')).toBe('Collapse sidebar')

@@ -17,7 +17,6 @@ import {
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
-import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 import BuildMenu from './home/BuildMenu.vue'
 import SidebarPageMenu from './SidebarPageMenu.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
@@ -192,12 +191,12 @@ function openSettings(): void {
     @pointerleave="sidebarHovered = false"
   >
     <div
-      class="flex shrink-0 items-center"
-      :class="
-        collapsed ? 'mt-2.5 mb-3.5 flex-col gap-3' : 'mt-2 mb-3.5 h-9 w-full justify-between pl-1.5'
-      "
+      class="mt-2 mb-3.5 flex h-9 w-full shrink-0 items-center"
+      :class="collapsed ? 'justify-center' : 'justify-between pl-1.5'"
+      data-testid="app-sidebar-header"
     >
       <Button
+        v-if="!collapsed"
         variant="textonly"
         size="unset"
         class="h-auto rounded-[7px] p-0.5 text-foreground hover:bg-transparent"
@@ -205,8 +204,7 @@ function openSettings(): void {
         @click="navigate('home')"
       >
         <Tooltip :text="t('sidebar.home')" side="right">
-          <ComfyCLogo v-if="collapsed" :size="20" />
-          <ComfyWordmark v-else class="h-[22px] w-auto" />
+          <ComfyWordmark class="h-[22px] w-auto" />
         </Tooltip>
       </Button>
       <Button
