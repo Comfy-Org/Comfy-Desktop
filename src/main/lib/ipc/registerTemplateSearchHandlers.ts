@@ -10,6 +10,7 @@ import {
   createSearchProcess,
   isBuildBusy,
   templateSearchOn,
+  templateSearchPartnersOn,
   type SearchProcess
 } from '../../templateSearch/searchProcess'
 import { createDesktopSearch, type DesktopSearch } from '../../templateSearch/desktopSearch'
@@ -30,7 +31,13 @@ import { setSessionActionObserver } from './sessionActions'
 
 type SearchProcessApi = Pick<
   SearchProcess,
-  'decide' | 'prepare' | 'download' | 'downloadInBackground' | 'onBuildAction' | 'onBuildActionEnd'
+  | 'decide'
+  | 'prepare'
+  | 'partnerSwitch'
+  | 'download'
+  | 'downloadInBackground'
+  | 'onBuildAction'
+  | 'onBuildActionEnd'
 >
 type SearchApi = Pick<DesktopSearch, 'search' | 'forget'>
 
@@ -73,7 +80,8 @@ export function registerTemplateSearchHandlers({
     process,
     isLocalInstallation,
     terminalEnvOf,
-    searchOn: templateSearchOn
+    searchOn: templateSearchOn,
+    partnersOn: templateSearchPartnersOn
   })
 }: TemplateSearchHandlerOptions): void {
   let automaticDownload: 'after_startup' | 'pending' | 'done' = 'after_startup'

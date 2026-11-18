@@ -36,7 +36,15 @@ describe('sidecarArgs', () => {
 
 describe('parseReadyLine', () => {
   it('reads the port and token', () => {
-    expect(parseReadyLine(JSON.stringify(READY))).toEqual({ port: 41234, token: FAKE_TOKEN })
+    expect(parseReadyLine(JSON.stringify(READY))).toEqual({
+      port: 41234,
+      token: FAKE_TOKEN,
+      partner: false
+    })
+  })
+
+  it('reads whether its bundle lists the partner templates', () => {
+    expect(parseReadyLine(JSON.stringify({ ...READY, partner: true }))?.partner).toBe(true)
   })
 
   it.each([

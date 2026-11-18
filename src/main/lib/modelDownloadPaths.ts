@@ -99,6 +99,19 @@ export function buildExistenceCandidates(
   return [...out]
 }
 
+export async function modelBytesOnDisk(
+  ctx: InstallModelSearch | null,
+  baseDir: string,
+  directory: string,
+  filename: string
+): Promise<number | null> {
+  for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
+    const stat = await fs.promises.stat(candidate).catch(() => null)
+    if (stat?.isFile()) return stat.size
+  }
+  return null
+}
+
 export async function regularFileExists(filePath: string): Promise<boolean> {
   try {
     return (await fs.promises.stat(filePath)).isFile()

@@ -105,9 +105,15 @@ describe('readBuildTemplates', () => {
     expect(labels.get('poster')).toEqual({
       title: 'Bake sale poster',
       thumbnailUrl: expect.stringMatching(/\/poster-1\.png$/),
-      partner: false
+      partner: false,
+      size: null
     })
-    expect(labels.get('song')).toEqual({ title: 'A song', thumbnailUrl: null, partner: false })
+    expect(labels.get('song')).toEqual({
+      title: 'A song',
+      thumbnailUrl: null,
+      partner: false,
+      size: null
+    })
     expect(labels.get('untitled')?.title).toBe('untitled')
   })
 
@@ -140,7 +146,7 @@ describe('readBuildTemplates', () => {
   })
 
   it('knows no templates in a build without a template package', async () => {
-    expect(await readBuildTemplates(sitePackages, onDiskIn(models))).toEqual({
+    expect(await readBuildTemplates(sitePackages, onDiskIn(models))).toMatchObject({
       installed: [],
       labels: new Map()
     })

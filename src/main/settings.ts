@@ -62,6 +62,7 @@ export interface KnownSettings {
   showInstallerUI?: boolean
   templateSearchEnabled?: boolean
   templateSearchBundleBase?: string
+  templateSearchPartners?: boolean
 }
 
 export type Settings = KnownSettings & Record<string, unknown>
@@ -185,6 +186,7 @@ const SETTINGS_SCHEMA = {
   dashboardWorkspaceId: { nullable: false, telemetry: { policy: 'omit' } },
   templateSearchEnabled: { nullable: false, telemetry: { policy: 'omit' } },
   templateSearchBundleBase: { nullable: true, telemetry: { policy: 'omit' } },
+  templateSearchPartners: { nullable: false, telemetry: { policy: 'omit' } },
   pendingDownloadedUpdateVersion: { nullable: true, telemetry: { policy: 'omit' } },
   lastStartupUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
   startupInstallNotReadyVersion: { nullable: true, telemetry: { policy: 'omit' } },
