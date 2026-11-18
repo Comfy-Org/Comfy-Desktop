@@ -45,10 +45,6 @@ interface Notice {
   action?: { label: string; run: () => void; testId: string }
 }
 
-function megabytes(bytes: number): number {
-  return Math.max(1, Math.round(bytes / 1_000_000))
-}
-
 function availabilityNotice(availability: TemplateSearchAvailability): Notice {
   switch (availability.kind) {
     case 'off':
@@ -57,15 +53,6 @@ function availabilityNotice(availability: TemplateSearchAvailability): Notice {
       return { text: t('home.search.needsLocalBuildToSearch') }
     case 'waiting_for_build':
       return { text: t('home.search.waitingForBuild') }
-    case 'needs_download':
-      return {
-        text: t('home.search.needsModel', { size: megabytes(availability.bytes) }),
-        action: {
-          label: t('home.search.downloadModel'),
-          run: props.controller.download,
-          testId: 'home-template-search-download'
-        }
-      }
     case 'downloading':
       return {
         text: t('home.search.downloadingModel', {

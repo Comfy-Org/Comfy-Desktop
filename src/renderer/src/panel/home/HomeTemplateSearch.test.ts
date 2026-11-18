@@ -964,19 +964,22 @@ describe('HomeTemplateSearch before search is ready', () => {
     expect(prepare).toHaveBeenCalledTimes(1)
   })
 
-  it('asks before the one-time download, with its size, and starts it on the click', async () => {
-    searchTemplates.mockResolvedValue(unavailable({ kind: 'needs_download', bytes: 178_958_799 }))
+  it('shows the download running without asking anything, and leaves starting it to Desktop', async () => {
+    searchTemplates.mockResolvedValue(
+      unavailable({ kind: 'downloading', received: 0, total: 1000 })
+    )
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
 
-    expect(notice(wrapper)).toContain('one-time 179 MB download')
+    expect(notice(wrapper)).toContain('Downloading search… 0%')
+    expect(wrapper.find('[data-testid="home-template-search-download"]').exists()).toBe(false)
     expect(download).not.toHaveBeenCalled()
-    await wrapper.get('[data-testid="home-template-search-download"]').trigger('click')
-    expect(download).toHaveBeenCalledTimes(1)
   })
 
   it('shows download progress, then answers the waiting search when it is done', async () => {
-    searchTemplates.mockResolvedValueOnce(unavailable({ kind: 'needs_download', bytes: 1000 }))
+    searchTemplates.mockResolvedValueOnce(
+      unavailable({ kind: 'downloading', received: 0, total: 1000 })
+    )
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
 
