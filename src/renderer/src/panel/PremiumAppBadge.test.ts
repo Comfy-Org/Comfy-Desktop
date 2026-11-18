@@ -36,6 +36,6 @@ describe('PremiumAppBadge', () => {
 
     await expect
       .element(page.getByRole('tooltip'))
-      .toHaveTextContent('Premium appRuns with credits')
+      .toHaveTextContent('Premium app, runs with credits')
   })
 })

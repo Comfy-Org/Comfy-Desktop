@@ -6,7 +6,7 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <Tooltip side="bottom" data-testid="premium-app-badge">
+  <Tooltip :text="t('apps.premium.tooltip')" data-testid="premium-app-badge">
     <span
       class="grid size-7 place-items-center rounded-lg bg-[rgb(14_14_16/0.28)] backdrop-blur-[14px] backdrop-saturate-150"
       data-testid="premium-app-square"
@@ -24,11 +24,5 @@ const { t } = useI18n()
       </svg>
       <span class="sr-only">{{ t('apps.premium.title') }}</span>
     </span>
-    <template #content>
-      <span class="block text-left leading-normal">
-        <span class="block font-semibold">{{ t('apps.premium.title') }}</span>
-        <span class="block">{{ t('apps.premium.credits') }}</span>
-      </span>
-    </template>
   </Tooltip>
 </template>

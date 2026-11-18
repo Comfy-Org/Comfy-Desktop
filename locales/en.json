@@ -48,7 +48,7 @@
     "allApps": "All apps",
     "premium": {
       "title": "Premium app",
-      "credits": "Runs with credits"
+      "tooltip": "Premium app, runs with credits"
     },
     "pageLoading": "Loading {app}",
     "pageFailedTitle": "{app} didn't load",
