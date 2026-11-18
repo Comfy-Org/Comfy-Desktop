@@ -211,8 +211,6 @@
       "matchPercent": "匹配度 {percent}%",
       "notSetUp": "此电脑尚未设置模板搜索。",
       "waitingForBuild": "构建空闲后，搜索会立即给出结果。",
-      "needsModel": "搜索需要一次性下载 {size} MB。",
-      "downloadModel": "下载",
       "downloadingModel": "正在下载搜索组件… {percent}%",
       "runtimeUnsupported": "你的构建无法运行搜索，更新构建可能会解决此问题。",
       "updateDesktop": "请更新 Desktop 后使用搜索。",

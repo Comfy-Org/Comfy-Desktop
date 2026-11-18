@@ -174,6 +174,7 @@ export interface SearchProcessOptions {
   spawnHelper?: SpawnHelper
   storeRoot?: string
   cacheRoot?: string
+  isOnline?: () => boolean
 }
 
 export function createSearchProcess({
@@ -182,7 +183,8 @@ export function createSearchProcess({
   broadcast,
   spawnHelper = spawnHelperProcess,
   storeRoot = path.join(dataDir(), 'template-search'),
-  cacheRoot = path.join(cacheDir(), 'template-search-cache')
+  cacheRoot = path.join(cacheDir(), 'template-search-cache'),
+  isOnline = () => net.isOnline()
 }: SearchProcessOptions) {
   const helpers = new Map<string, Set<ChildProcess>>()
   const cancelled = new WeakSet<ChildProcess>()
@@ -231,6 +233,7 @@ export function createSearchProcess({
       const out = await withPyz(['check', dir])
       return out === null || out.code === 0
     },
+    isOnline,
     onAvailability: broadcast,
     onDownloaded: reportBundleDownload
   })
@@ -256,10 +259,17 @@ export function createSearchProcess({
     ])
   }
 
+  async function downloadInBackground(): Promise<boolean> {
+    if (!pyz() || !isOnline() || (await service.freePythons()).length === 0) return false
+    if (!(await store.newest())) await store.download({ quietly: true })
+    return true
+  }
+
   return {
     decide: (body: unknown): Promise<SidecarDecision> => service.decide(body),
     prepare: (): Promise<void> => service.prepare(),
     download: (): Promise<void> => (pyz() ? store.download() : Promise.resolve()),
+    downloadInBackground,
     onBuildAction,
     onBuildActionEnd: (): void => service.onBuildActionEnd()
   }

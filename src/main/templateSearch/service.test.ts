@@ -303,11 +303,11 @@ describe('search service', () => {
     })
   })
 
-  it('discards a bundle the sidecar finds damaged, and offers the download again', async () => {
+  it('discards a bundle the sidecar finds damaged, and downloads it again', async () => {
     const prepare = vi
       .fn<() => Promise<TemplateSearchAvailability>>()
       .mockResolvedValueOnce({ kind: 'ready' })
-      .mockResolvedValueOnce({ kind: 'needs_download', bytes: 1000 })
+      .mockResolvedValueOnce({ kind: 'downloading', received: 0, total: 1000 })
     const store = bundles({ prepare })
     const { service } = setup({
       bundles: store,
@@ -315,7 +315,7 @@ describe('search service', () => {
     })
     expect(await service.decide({ text: 'x' })).toEqual({
       kind: 'unavailable',
-      availability: { kind: 'needs_download', bytes: 1000 }
+      availability: { kind: 'downloading', received: 0, total: 1000 }
     })
     expect(store.discard).toHaveBeenCalledWith('1.0.0')
   })
@@ -330,13 +330,15 @@ describe('search service', () => {
     })
   })
 
-  it('passes on a bundle that still needs downloading, without starting', async () => {
+  it('passes on a bundle that is still downloading, without starting', async () => {
     const { service, start } = setup({
-      bundles: bundles({ prepare: async () => ({ kind: 'needs_download', bytes: 179_000_000 }) })
+      bundles: bundles({
+        prepare: async () => ({ kind: 'downloading', received: 0, total: 179_000_000 })
+      })
     })
     expect(await service.decide({ text: 'x' })).toEqual({
       kind: 'unavailable',
-      availability: { kind: 'needs_download', bytes: 179_000_000 }
+      availability: { kind: 'downloading', received: 0, total: 179_000_000 }
     })
     expect(start).not.toHaveBeenCalled()
   })

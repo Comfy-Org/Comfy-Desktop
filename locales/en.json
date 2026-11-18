@@ -211,8 +211,6 @@
       "matchPercent": "{percent}% match",
       "notSetUp": "Template search isn't set up on this computer.",
       "waitingForBuild": "Search will answer as soon as your build is free.",
-      "needsModel": "Search needs a one-time {size} MB download.",
-      "downloadModel": "Download",
       "downloadingModel": "Downloading search… {percent}%",
       "runtimeUnsupported": "Your builds can't run search. Updating a build may fix this.",
       "updateDesktop": "Update Desktop to use search.",

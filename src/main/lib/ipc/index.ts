@@ -300,7 +300,8 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerAppsTelemetryHandlers()
   registerTemplateSearchHandlers({
     isLocalInstallation: (inst) => sourceMap[inst.sourceId]?.category === 'local',
-    terminalEnvOf: (inst) => sourceMap[inst.sourceId]?.getTerminalEnv?.(inst) ?? null
+    terminalEnvOf: (inst) => sourceMap[inst.sourceId]?.getTerminalEnv?.(inst) ?? null,
+    settled: startupRecovery
   })
   return startupRecovery.then(() => undefined)
 }

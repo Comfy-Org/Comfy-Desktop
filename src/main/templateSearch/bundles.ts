@@ -12,6 +12,7 @@ const PROGRESS_EVERY_MS = 250
 const UPDATE_CHECK_MS = 24 * 60 * 60_000
 const SHA256 = /^[0-9a-f]{64}$/
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+const UPDATE_DESKTOP: TemplateSearchAvailability = { kind: 'unavailable', reason: 'update_desktop' }
 
 export interface Supported {
   sidecar: string
@@ -47,6 +48,7 @@ export interface BundleStoreDeps {
   }) => Promise<TransferResult>
   supports: () => Promise<Supported | null>
   check: (bundleDir: string) => Promise<boolean>
+  isOnline: () => boolean
   onAvailability: (availability: TemplateSearchAvailability) => void
   onDownloaded?: (download: BundleDownload) => void
   now?: () => number
@@ -364,9 +366,11 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     const reportDownload = (download: Pick<BundleDownload, 'result' | 'bytes' | 'version'>): void =>
       deps.onDownloaded?.({ ...download, durationMs: now() - startedAt, background: quietly })
     downloading = fetchNewest(base)
-      .then((fetched) => {
+      .then(async (fetched) => {
         reportDownload(downloadResult(fetched))
-        report({ kind: 'idle' })
+        report(
+          fetched.kind !== 'none_readable' || (await newest()) ? { kind: 'idle' } : UPDATE_DESKTOP
+        )
       })
       .catch(() => {
         reportDownload({ result: 'failed', bytes: progress.received, version: null })
@@ -395,15 +399,9 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       quiet = false
       return { kind: 'downloading', ...progress }
     }
-    try {
-      const found = await wanted(base)
-      if (!found) return { kind: 'unavailable', reason: 'update_desktop' }
-      const manifest = parseManifest(JSON.parse(found.raw.toString('utf8')))
-      const bytes = manifest?.files.reduce((sum, f) => sum + f.size, 0) ?? 0
-      return { kind: 'needs_download', bytes }
-    } catch {
-      return { kind: 'unavailable', reason: 'offline' }
-    }
+    if (!deps.isOnline()) return { kind: 'unavailable', reason: 'offline' }
+    void download()
+    return { kind: 'downloading', ...progress }
   }
 
   return { newest, discard, prepare, download }
