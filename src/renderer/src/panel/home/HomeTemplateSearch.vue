@@ -13,11 +13,17 @@ const emit = defineEmits<{ opened: [buildId: string] }>()
 const { t } = useI18n()
 const listboxId = useId()
 const auth = useAuthStore()
+let signingIn: Promise<unknown> | null = null
 const search = useTemplateSearch({
   buildId: () => props.buildId,
   onOpened: (buildId) => emit('opened', buildId),
   signedOut: () => auth.statusLoaded && !auth.isSignedIn,
-  signIn: () => void auth.signIn().catch(() => null)
+  signIn: () => {
+    signingIn ??= auth
+      .signIn()
+      .catch(() => null)
+      .finally(() => (signingIn = null))
+  }
 })
 const { query, state, panelOpen, activeIndex, activeRow } = search
 

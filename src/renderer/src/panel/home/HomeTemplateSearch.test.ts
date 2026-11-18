@@ -894,7 +894,10 @@ describe('HomeTemplateSearch cards', () => {
 
 describe('HomeTemplateSearch partner templates', () => {
   function cardAction(wrapper: Wrapper, index: number): string {
-    return wrapper.findAll('[role="option"]')[index]!.find('.mt-auto').text()
+    return wrapper
+      .findAll('[role="option"]')
+      [index]!.get('[data-testid="home-template-search-row-action"]')
+      .text()
   }
 
   it('asks a signed-out user to sign in from a partner card, and opens nothing', async () => {
@@ -937,6 +940,34 @@ describe('HomeTemplateSearch partner templates', () => {
     await wrapper.findAll('[role="option"]')[0]!.trigger('click')
     await flushPromises()
     expect(opened()).toEqual(['api_poster_template'])
+  })
+
+  it('starts one sign-in when a partner card is picked twice before it finishes', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: false })
+    signIn.mockReturnValue(new Promise(() => {}))
+    searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.findAll('[role="option"]')[0]!.trigger('click')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(signIn).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the card as Sign in to use when sign-in is cancelled, and lets the user try again', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: false })
+    signIn.mockRejectedValueOnce(new Error('closed the browser'))
+    searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.findAll('[role="option"]')[0]!.trigger('click')
+    await flushPromises()
+    expect(cardAction(wrapper, 0)).toBe('Sign in to use')
+    expect(opened()).toEqual([])
+
+    await wrapper.findAll('[role="option"]')[0]!.trigger('click')
+    await flushPromises()
+    expect(signIn).toHaveBeenCalledTimes(2)
   })
 
   it('keeps a partner card as Run while the sign-in state is still loading', async () => {
