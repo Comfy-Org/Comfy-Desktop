@@ -183,7 +183,7 @@ export function effectiveAgentRequirements(
   return { kind: 'text', text: lines.join('\n') }
 }
 
-export type ResolvedOverride =
+type ResolvedOverride =
   { kind: 'text'; text: string; pins: OverridePins } | { kind: 'refused'; reason: OverrideRefusal }
 
 export function resolveOverride(

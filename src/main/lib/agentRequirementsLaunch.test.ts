@@ -1047,6 +1047,24 @@ describe('installAgentRequirements with a version override', () => {
     expect(mockUvPip, 'the latch is read before listing what is installed').not.toHaveBeenCalled()
   })
 
+  it("names the agent-only pins ComfyUI can't take back when it gives up on them", async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
+    fs.writeFileSync(
+      path.join(installDir, 'ComfyUI', 'requirements.txt'),
+      'comfyui-frontend-package==1.55.18\n'
+    )
+    const payload = { 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.17' }
+    const state = { signature: 'comfy-agent==0.2.3', failures: 2 }
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, payload, state)
+
+    expect(decision).toMatchObject({
+      decision: 'reverted',
+      reason: 'previously_failed',
+      staysInstalled: new Map([['comfy-agent', '0.2.3']])
+    })
+  })
+
   it('counts a failed listing against the agent-only override, not the payload it came from', async () => {
     fs.writeFileSync(
       path.join(installDir, 'ComfyUI', 'requirements.txt'),
@@ -1646,6 +1664,28 @@ describe('installAgentRequirements with a version override', () => {
       await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, null, onDeferred)
 
       expect(onDeferred).toHaveBeenCalledTimes(1)
+      expect(onDeferred.mock.calls[0]![0]).toMatchObject({ signature: 'comfy-agent==0.2.3' })
+    })
+
+    it('hands over the agent-only override when its frontend pin was dropped', async () => {
+      fs.writeFileSync(
+        path.join(installDir, 'ComfyUI', 'requirements.txt'),
+        'comfyui-frontend-package==1.55.18\n'
+      )
+      respond = () => ({ code: 2, output: '' })
+      const onDeferred = vi.fn()
+      const payload = { 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.17' }
+
+      const decision = await installAgentRequirements(
+        plan,
+        vi.fn(),
+        undefined,
+        payload,
+        null,
+        onDeferred
+      )
+
+      expect(decision).toMatchObject({ pins: new Map([['comfy-agent', '0.2.3']]) })
       expect(onDeferred.mock.calls[0]![0]).toMatchObject({ signature: 'comfy-agent==0.2.3' })
     })
 

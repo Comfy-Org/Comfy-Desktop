@@ -619,11 +619,6 @@ async function tryOverride(
   if (ready.kind === 'reverted') return previouslyFailed(sendOutput, ready.coreText, ready.pins)
   const { coreText, text, constraints, listed, pins } = ready
   const frontendDropped = parsed.pins.has(FRONTEND_PACKAGE) && !pins.has(FRONTEND_PACKAGE)
-  if (frontendDropped) {
-    sendOutput(
-      `The override's ${FRONTEND_PACKAGE} is not newer than ComfyUI's; keeping ComfyUI's\n`
-    )
-  }
   prepare(text, constraints, pins)
   const tag = attemptTag()
   const constraintsName = `.launch-agent-reqs-override-${tag}-constraints.txt`
@@ -631,6 +626,11 @@ async function tryOverride(
   const constraintsPath = path.join(plan.installPath, constraintsName)
   try {
     if (!coreFileInstalled(coreText, listed)) return refuse(sendOutput, 'core_first', pins)
+    if (frontendDropped) {
+      sendOutput(
+        `The override's ${FRONTEND_PACKAGE} is not newer than ComfyUI's; keeping ComfyUI's\n`
+      )
+    }
     await fs.promises.writeFile(overridePath, text, 'utf-8')
     await fs.promises.writeFile(constraintsPath, constraints, 'utf-8')
     sendOutput(`Applying agent version override ${overrideSignature(pins)}\n`)

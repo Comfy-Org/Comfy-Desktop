@@ -710,10 +710,8 @@ describe('reportOverrideDecision', () => {
       reportOverrideDecision('i', { decision: 'refused', reason: 'bad_version' })
     ).not.toThrow()
   })
-})
 
-describe('reportOverrideDecision: an agent-only apply', () => {
-  it('reports it as applied with reason frontend_not_newer, and a plain apply with no reason', () => {
+  it('reports an agent-only apply as applied with reason frontend_not_newer, a plain one with none', () => {
     const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
     emit.mockClear()
     try {
