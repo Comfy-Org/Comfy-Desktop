@@ -277,38 +277,25 @@ describe('parseDecision', () => {
     expect(result?.download.map((c) => c.templateId)).toEqual(['open_flyer', 'mural'])
   })
 
-  it('brings an open template the search ranked lower up beside its partner pick', () => {
-    const body = decision({
-      split: {
-        run: [
-          pick('api_poster', 'poster'),
-          pick('api_logo', 'logo'),
-          pick('api_banner', 'banner'),
-          pick('open_logo', 'logo')
-        ],
-        download: []
-      }
-    })
-    expect(parseDecision(body)?.run.map((c) => c.templateId)).toEqual([
-      'api_poster',
-      'api_logo',
-      'open_logo'
-    ])
-  })
-
-  it('brings up only an open template of the same family, and only beside a partner pick', () => {
-    const order = (...run: object[]) =>
-      parseDecision(decision({ split: { run, download: [] } }))?.run.map((c) => c.templateId)
+  it("puts the search's open pick right after its family's pick, even when Desktop cannot tell that pick is a partner", () => {
+    const order = (run: object[], open: object[]) =>
+      parseDecision(decision({ split: { run, download: [], open } }))?.run.map((c) => c.templateId)
     const noFamily = (templateId: string) => ({ ...pick(templateId, ''), family_id: null })
 
-    expect(order(pick('api_a', 'x'), pick('b', 'y'), pick('api_c', 'x'), pick('d', 'x'))).toEqual([
-      'api_a',
-      'd',
-      'b'
-    ])
-    expect(order(pick('e', 'z'), pick('f', 'w'), pick('g', 'z'))).toEqual(['e', 'f', 'g'])
-    expect(order(noFamily('api_n'), pick('k', 'y'), noFamily('m'))).toEqual(['api_n', 'k', 'm'])
-    expect(order(pick('a', 'p'), pick('b', 'q'), pick('api_c', 'r'), pick('d', 'r'))).toEqual([
+    expect(
+      order(
+        [pick('flyer_partner', 'flyer'), pick('logo', 'logo'), pick('banner', 'banner')],
+        [pick('open_flyer', 'flyer')]
+      )
+    ).toEqual(['flyer_partner', 'open_flyer', 'logo'])
+    expect(
+      order(
+        [pick('logo', 'logo'), pick('api_poster', 'poster'), pick('banner', 'banner')],
+        [pick('open_poster', 'poster')]
+      )
+    ).toEqual(['logo', 'api_poster', 'open_poster'])
+    expect(order([noFamily('api_n'), pick('k', 'y')], [noFamily('m')])).toEqual(['api_n', 'k', 'm'])
+    expect(order([pick('a', 'p'), pick('b', 'q'), pick('api_c', 'r')], [pick('d', 'r')])).toEqual([
       'a',
       'b',
       'api_c'

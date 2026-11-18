@@ -80,7 +80,7 @@ describe('readBuildTemplates', () => {
     write(path.join(dir, 'video.json'), {
       models: [model('wan.safetensors', 'diffusion_models'), model('vae.safetensors', 'vae')]
     })
-    const modelBytes = vi.fn<ModelBytes>(async () => 1)
+    const modelBytes = vi.fn<ModelBytes>(async () => 0)
     expect((await readBuildTemplates(sitePackages, modelBytes)).installed).toEqual(['video'])
     expect(modelBytes.mock.calls).toEqual([
       ['diffusion_models', 'wan.safetensors'],
@@ -162,6 +162,7 @@ describe('readBuildTemplates', () => {
         { name: 'text', size: '3000000' },
         { name: 'gigabytes', size: 21.69 },
         { name: 'whole_gigabytes', size: 5 },
+        { name: 'fraction', size: 1_500_000.5 },
         { name: 'no_workflow', size: 5_000_000 }
       )
     )
@@ -169,14 +170,22 @@ describe('readBuildTemplates', () => {
       models: [model('wan.safetensors', 'diffusion_models'), model('vae.safetensors', 'vae')]
     })
     write(path.join(dir, 'small.json'), { models: [model('wan.safetensors', 'diffusion_models')] })
-    for (const name of ['unsized', 'zero', 'text', 'gigabytes', 'whole_gigabytes'])
+    for (const name of ['unsized', 'zero', 'text', 'gigabytes', 'whole_gigabytes', 'fraction'])
       write(path.join(dir, `${name}.json`), { nodes: [] })
     write(path.join(models, 'diffusion_models', 'wan.safetensors'), 'x'.repeat(1_200_000))
 
     const { downloadBytes } = await readBuildTemplates(sitePackages, bytesIn(models))
     expect(await downloadBytes('video')).toBe(1_800_000)
     expect(await downloadBytes('small')).toBe(0)
-    const unsized = ['unsized', 'zero', 'text', 'gigabytes', 'whole_gigabytes', 'no_workflow']
+    const unsized = [
+      'unsized',
+      'zero',
+      'text',
+      'gigabytes',
+      'whole_gigabytes',
+      'fraction',
+      'no_workflow'
+    ]
     for (const name of [...unsized, 'not_listed']) {
       expect(await downloadBytes(name), name).toBeNull()
     }
