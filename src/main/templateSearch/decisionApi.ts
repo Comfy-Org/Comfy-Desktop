@@ -121,22 +121,21 @@ function distinctCandidates(
   return candidates
 }
 
-function openBesidePartners(
-  candidates: TemplateSearchCandidate[],
+function openBesideItsPick(
+  picks: TemplateSearchCandidate[],
+  open: TemplateSearchCandidate[],
   limit: number
 ): TemplateSearchCandidate[] {
-  const rest = [...candidates]
+  const rest = [...open]
   const shown: TemplateSearchCandidate[] = []
-  while (shown.length < limit && rest.length > 0) {
-    const pick = rest.shift()!
+  for (const pick of picks) {
     shown.push(pick)
-    const open =
-      pick.partner && pick.family !== null
-        ? rest.findIndex((other) => !other.partner && other.family === pick.family)
-        : -1
-    if (open >= 0 && shown.length < limit) shown.push(...rest.splice(open, 1))
+    const alternative = rest.findIndex(
+      (other) => other.family !== null && other.family === pick.family
+    )
+    if (alternative >= 0) shown.push(...rest.splice(alternative, 1))
   }
-  return shown
+  return [...shown, ...rest].slice(0, limit)
 }
 
 export function parseDecision(
@@ -149,11 +148,14 @@ export function parseDecision(
   if (!outcome || !split) return null
   const open = Array.isArray(split.open) ? split.open : []
   const needsFiles = (item: unknown): boolean => asTexts(asRecord(item)?.download).length > 0
-  const run = openBesidePartners(
+  const picks = distinctCandidates(split.run, Infinity, describe)
+  const run = openBesideItsPick(
+    picks,
     distinctCandidates(
-      [...(Array.isArray(split.run) ? split.run : []), ...open.filter((item) => !needsFiles(item))],
+      open.filter((item) => !needsFiles(item)),
       Infinity,
-      describe
+      describe,
+      { taken: new Set(picks.map((candidate) => candidate.templateId)) }
     ),
     RUN_LIMIT
   )

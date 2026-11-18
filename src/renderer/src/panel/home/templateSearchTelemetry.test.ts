@@ -159,8 +159,13 @@ describe('createSearchTelemetry', () => {
       availability: 'unavailable',
       reason: 'offline'
     })
+    expect(last().context, 'no answer, so nothing about partner templates').not.toHaveProperty(
+      'partners_shown'
+    )
     telemetry.answered('a poster', { kind: 'failed' }, ANSWER_AT(at), true)
     expect(last().context).toMatchObject({ outcome: 'failed' })
+    expect(last().context).not.toHaveProperty('partners_shown')
+    expect(last().context).not.toHaveProperty('has_partner_switch')
   })
 
   it('sends nothing at all when search is switched off', () => {

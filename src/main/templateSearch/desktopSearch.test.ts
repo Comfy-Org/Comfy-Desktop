@@ -57,6 +57,12 @@ const ANSWER = {
   options: []
 }
 
+const SIZES = new Map([
+  ['mural_template', 18_000_000_000],
+  ['zine_template', 7_000_000_000],
+  ['banner_template', 5_000_000_000]
+])
+
 const OFF: SidecarDecision = { kind: 'unavailable', availability: { kind: 'off' } }
 
 function setup(
@@ -88,7 +94,7 @@ function setup(
           }
         ]
       ]),
-      downloadBytes: async () => 18_000_000_000
+      downloadBytes: async (id) => SIZES.get(id) ?? null
     })
   )
   const search = createDesktopSearch({
@@ -164,24 +170,40 @@ describe('createDesktopSearch', () => {
   })
 
   it('gives each Download and run card the download size the build reads for it', async () => {
-    const needsFiles = {
+    const needsFiles = (templateId: string) => ({
       ...ANSWER.split.run[0]!,
-      option_id: 'mural:as_given',
-      family_id: 'mural',
-      variant: { template_id: 'mural_template', title: null },
-      download: ['mural_template', 'mural.safetensors']
+      option_id: `${templateId}:as_given`,
+      family_id: templateId,
+      variant: { template_id: templateId, title: null },
+      download: [templateId, `${templateId}.safetensors`]
+    })
+    const body = {
+      ...ANSWER,
+      split: {
+        run: ANSWER.split.run,
+        download: [needsFiles('mural_template'), needsFiles('zine_template')]
+      }
     }
-    const body = { ...ANSWER, split: { run: ANSWER.split.run, download: [needsFiles] } }
     const { search } = setup({ kind: 'answer', body, coldStart: false, partnerSwitch: false })
 
     const local = await search.search('a mural', 'local-1')
     const unknown = await search.search('a mural', null)
 
     expect(local).toMatchObject({
-      result: { download: [{ templateId: 'mural_template', downloadBytes: 18_000_000_000 }] }
+      result: {
+        download: [
+          { templateId: 'mural_template', downloadBytes: 18_000_000_000 },
+          { templateId: 'zine_template', downloadBytes: 7_000_000_000 }
+        ]
+      }
     })
     expect(unknown).toMatchObject({
-      result: { download: [{ templateId: 'mural_template', downloadBytes: null }] }
+      result: {
+        download: [
+          { templateId: 'mural_template', downloadBytes: null },
+          { templateId: 'zine_template', downloadBytes: null }
+        ]
+      }
     })
   })
 
@@ -216,13 +238,18 @@ describe('createDesktopSearch', () => {
   })
 
   it('asks a search that can leave partner templates out to do so while the setting is off', async () => {
-    const { search, sent } = setup(undefined, true, { partnersOn: false, offersSwitch: true })
+    const { search, sent } = setup(
+      { kind: 'answer', body: ANSWER, coldStart: true, partnerSwitch: false },
+      true,
+      { partnersOn: false, offersSwitch: true }
+    )
     const response = await search.search('a poster', 'local-1')
 
     expect(sent[0]).toMatchObject({ partner_on: false })
     expect(response).toMatchObject({
       kind: 'result',
-      result: { partnerSwitch: true, partnersShown: false }
+      result: { partnerSwitch: true, partnersShown: false },
+      metrics: { coldStart: true }
     })
   })
 
@@ -231,16 +258,17 @@ describe('createDesktopSearch', () => {
     const response = await search.search('a poster', 'local-1')
 
     expect(sent[0]).not.toHaveProperty('partner_on')
-    expect(response).toMatchObject({ kind: 'result', result: { partnerSwitch: false } })
+    expect(response).toMatchObject({
+      kind: 'result',
+      result: { partnerSwitch: false, partnersShown: false }
+    })
   })
 
   it('asks for partner templates as usual while the setting is on, and still offers the switch', async () => {
     const { search, sent } = setup(undefined, true, { offersSwitch: true })
-    await search.search('a poster', 'local-1')
-    const response = await search.search('a banner', 'local-1')
+    const response = await search.search('a poster', 'local-1')
 
-    expect(sent).toHaveLength(2)
-    for (const body of sent) expect(body).not.toHaveProperty('partner_on')
+    expect(sent[0]).not.toHaveProperty('partner_on')
     expect(response).toMatchObject({
       kind: 'result',
       result: { partnerSwitch: true, partnersShown: true }

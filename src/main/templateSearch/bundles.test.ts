@@ -230,12 +230,15 @@ describe('bundle store', () => {
 
   it('says a quiet check that finds nothing new is done, without fetching any file', async () => {
     publish(server, '1.0.0', V1)
-    const { store: s, transfer } = store({ now: () => 0 })
+    const check = vi.fn(async () => true)
+    const { store: s, transfer } = store({ now: () => 0, check })
     await s.download()
     transfer.mockClear()
+    check.mockClear()
     announced = []
     await s.download({ quietly: true })
     expect(transfer).not.toHaveBeenCalled()
+    expect(check, 'the bundle on disk is not assembled again').not.toHaveBeenCalled()
     expect(announced).toEqual([{ kind: 'idle' }])
   })
 
@@ -476,6 +479,13 @@ describe('bundle store', () => {
     expect(await s.prepare()).toEqual({ kind: 'ready' })
     expect(indexReads()).toHaveLength(1)
     expect(announced, 'no progress, only that it landed').toEqual([{ kind: 'idle' }])
+
+    const asked = s.download()
+    expect(announced, 'a second look within the day started nothing to join').toEqual([
+      { kind: 'idle' }
+    ])
+    await asked
+    expect(indexReads()).toHaveLength(2)
   })
 
   it('stays ready on the version it has while a newer one downloads', async () => {

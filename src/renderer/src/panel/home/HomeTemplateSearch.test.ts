@@ -1155,11 +1155,49 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
     expect(wrapper.find('[data-testid="home-template-search-results"]').exists()).toBe(false)
   })
 
-  it('closes on Escape from the bar without starting the search still waiting for typing to pause', async () => {
+  it('closes on Escape typed in the bar without starting the search still waiting for typing to pause', async () => {
     const wrapper = mountSearch()
-    await input(wrapper).setValue('a poster')
-    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
-    expect(searchTemplates).not.toHaveBeenCalled()
+    await searchFor(wrapper, 'a poster')
+    const calls = searchTemplates.mock.calls.length
+    ;(input(wrapper).element as HTMLElement).focus()
+    await input(wrapper).setValue('a poster for a party')
+    await input(wrapper).trigger('keydown', { key: 'Escape' })
+    expect(searchTemplates).toHaveBeenCalledTimes(calls)
+    expect(wrapper.find('[data-testid="home-template-search-results"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(input(wrapper).element)
+  })
+
+  it('leaves the switch and the answer as they were when saving the setting fails', async () => {
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    const calls = searchTemplates.mock.calls.length
+    setSetting.mockRejectedValueOnce(new Error('the disk is full'))
+    await switchButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(searchTemplates).toHaveBeenCalledTimes(calls)
+    expect(switchButton(wrapper).attributes('aria-checked')).toBe('true')
+  })
+
+  it('shows a size from 1 MB, and the missing files below it', async () => {
+    const krea = (downloadBytes: number) =>
+      candidate('krea_template', {
+        needsDownload: true,
+        missing: ['krea.safetensors'],
+        downloadBytes
+      })
+    for (const [bytes, sized] of [
+      [999_999, false],
+      [1_000_000, true]
+    ] as const) {
+      searchTemplates.mockResolvedValue(answer({ run: [POSTER], download: [krea(bytes)] }))
+      const wrapper = mountSearch()
+      await searchFor(wrapper, `a poster ${bytes}`)
+      expect(
+        wrapper.findAll('[role="option"]')[1]!.text().includes('to download'),
+        String(bytes)
+      ).toBe(sized)
+    }
   })
 
   it('keeps the missing files for a remainder too small to show as a size', async () => {
@@ -1281,6 +1319,17 @@ describe('HomeTemplateSearch telemetry', () => {
       })
     ])
     expect(second!.context).toMatchObject({ partners_shown: false })
+  })
+
+  it('sends the switch change even when saving it fails, and no new search', async () => {
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    setSetting.mockRejectedValueOnce(new Error('the disk is full'))
+    await wrapper.get('[data-testid="home-template-search-partner-switch"] button').trigger('click')
+    await flushPromises()
+    expect(named('partner_switch_changed')).toHaveLength(1)
+    expect(named('searched')).toHaveLength(1)
   })
 
   it('sends no search for a setting change while the results are closed, until they open again', async () => {

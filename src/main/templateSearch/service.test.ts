@@ -88,11 +88,26 @@ describe('search service', () => {
       { partner_on: true },
       { partner_on: false }
     ])
+    expect(post.mock.calls.map(([sidecar]) => sidecar)).toEqual([older.sidecar, newer.sidecar])
   })
 
-  it('says a search that predates the partner option cannot leave partner templates out', async () => {
-    const { service } = setup()
-    expect(await service.decide(() => ({ text: 'x' }))).toMatchObject({ partnerSwitch: false })
+  it('says what the search that answered can do, even when its build stops it while it answers', async () => {
+    let posted!: () => void
+    const waitingForAnswer = new Promise<void>((resolve) => (posted = resolve))
+    let answer!: (body: unknown) => void
+    const post = vi.fn(() => {
+      posted()
+      return new Promise((resolve) => (answer = resolve))
+    })
+    const { service } = setup({
+      start: vi.fn<Start>(async () => ({ ok: true, sidecar: fakeSidecar(true).sidecar })),
+      post
+    })
+    const searching = service.decide(() => ({ text: 'x' }))
+    await waitingForAnswer
+    await service.onBuildAction(BUILD_A.installationId)
+    answer({ ok: 1 })
+    expect(await searching).toMatchObject({ kind: 'answer', partnerSwitch: true })
   })
 
   it('stays off without a sidecar to run, and starts nothing', async () => {
