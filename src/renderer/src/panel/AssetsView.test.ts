@@ -1415,6 +1415,7 @@ describe('AssetsView', () => {
     expect(trashAsset, 'nothing is deleted when the user cancels').not.toHaveBeenCalled()
 
     confirm.mockResolvedValueOnce(true)
+    listLocalAssets.mockResolvedValue([picture('keep', 300)])
     await rightClick(wrapper.get('[data-testid="asset-gone"]').element)
     await pickMenuItem('delete')
 
@@ -1424,6 +1425,12 @@ describe('AssetsView', () => {
     })
     expect(trashAsset).toHaveBeenCalledExactlyOnceWith('local', 'gone')
     expect(assetNames(wrapper)).toEqual(['keep.svg'])
+    await vi.waitFor(() =>
+      expect(
+        wrapper.get('[data-testid="assets-kind-all"]').text(),
+        'the folder is read again, so the counts drop'
+      ).toBe('All1')
+    )
   })
 
   it('tells the user when a picture could not be copied', async () => {
