@@ -360,30 +360,45 @@ describe('parseDecision', () => {
     expect(result.alsoTry[0]).toMatchObject({ templateId: 'flyer_template', needsDownload: true })
   })
 
-  it('lists every card a model-name lookup sends, none of them scored, and names what it matched', () => {
+  it('lists every card a model-name lookup sends, none of them scored, with no Also try, and names what it matched', () => {
     const weak = (item: object) => ({ ...item, score: 0.01, calibrated: 0.02, clears: false })
+    const further = Array.from({ length: 13 }, (_, i) => weak(pick(`far_${i}`, `far_${i}`)))
     const body = decision({
-      outcome: { kind: 'template', reply: null, matched: ['qwen 2.1'] },
+      outcome: { kind: 'template', reply: null, matched: ['qwen 2.1', 7, ' '] },
       split: {
         run: ['a', 'b', 'c', 'd'].map((id) => weak(pick(id, id))),
-        download: ['m', 'z', 'q'].map((id) => weak(pick(id, id, [`${id}.bin`]))),
-        more: [weak(pick('far', 'far')), weak(pick('a', 'a'))]
+        download: [
+          ...['m', 'z', 'q'].map((id) => weak(pick(id, id, [`${id}.bin`]))),
+          weak(pick('a', 'a', ['a.bin'])),
+          weak(pick('e', 'e'))
+        ],
+        more: [...further, weak(pick('a', 'a')), weak(pick('m', 'm'))]
       },
-      options: []
+      options: [pick('poster', 'poster'), pick('card', 'card')]
     })
-    const result = parseDecision(body)!
+    const result = parseDecision(body, (id) => ({
+      title: `${id} label`,
+      thumbnailUrl: `/thumbs/${id}.webp`,
+      partner: id === 'b'
+    }))!
     expect(result.matched).toEqual(['qwen 2.1'])
     expect(result.run.map((c) => c.templateId)).toEqual(['a', 'b', 'c', 'd'])
-    expect(result.download.map((c) => c.templateId)).toEqual(['m', 'z', 'q'])
-    expect(result.more.map((c) => c.templateId)).toEqual(['far'])
+    expect(result.download.map((c) => c.templateId)).toEqual(['m', 'z', 'q', 'e'])
+    expect(result.more.map((c) => c.templateId)).toEqual(further.map((_, i) => `far_${i}`))
+    expect(result.alsoTry).toEqual([])
     expect(
       [...result.run, ...result.download, ...result.more].map((c) => [
         c.score,
         c.calibrated,
         c.belowThreshold
       ])
-    ).toEqual(Array.from({ length: 8 }, () => [null, null, false]))
+    ).toEqual(Array.from({ length: 21 }, () => [null, null, false]))
     expect(result.download.every((c) => c.needsDownload)).toBe(true)
+    expect(result.run[1]).toMatchObject({
+      title: 'b label',
+      thumbnailUrl: '/thumbs/b.webp',
+      partner: true
+    })
   })
 
   it('reads what files a card needs from its template, keeping only the kinds Desktop knows', () => {
@@ -433,7 +448,8 @@ describe('parseDecision', () => {
       reply: "kling 9 isn't one of the templates here.",
       matched: ['kling 9'],
       run: [],
-      download: []
+      download: [],
+      alsoTry: []
     })
   })
 
