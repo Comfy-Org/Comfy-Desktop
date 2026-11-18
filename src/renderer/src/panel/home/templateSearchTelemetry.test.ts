@@ -27,6 +27,7 @@ function candidate(
     score: 0.9,
     calibrated: null,
     belowThreshold: false,
+    needs: [],
     downloadBytes: null,
     ...over
   }
