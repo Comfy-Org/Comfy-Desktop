@@ -90,6 +90,7 @@
     "smol-toml": "^1.9.1",
     "systeminformation": "^5.33.22",
     "tar": "^7.5.23",
+    "three": "^0.186.1",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
@@ -104,6 +105,7 @@
     "@tanstack/vue-virtual": "^3.13.52",
     "@types/node": "^24.19.2",
     "@types/semver": "^7.8.0",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-vue": "^6.0.11",
     "@vitest/browser-playwright": "^5.1.0",
     "@vue/devtools-api": "^8.2.1",

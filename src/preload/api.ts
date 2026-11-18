@@ -111,6 +111,7 @@ export function buildElectronApi(): ElectronApi {
     findCloudAsset: (installationId, name) =>
       ipcRenderer.invoke('assets:find', installationId, name),
     copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),
+    readAssetModel: (source, assetId) => ipcRenderer.invoke('assets:read-model', source, assetId),
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),

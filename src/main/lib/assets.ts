@@ -30,6 +30,9 @@ const ASSETS_LIST_CHANNEL = 'assets:list'
 const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
 const ASSETS_REVEAL_CHANNEL = 'assets:reveal'
 const ASSETS_COPY_CHANNEL = 'assets:copy'
+const ASSETS_READ_MODEL_CHANNEL = 'assets:read-model'
+const MAX_MODEL_BYTES = 256 * 1024 * 1024
+const MODEL_TIMEOUT_MS = 120_000
 const ASSETS_TRASH_CHANNEL = 'assets:trash'
 
 const MAX_PAGE_SIZE = 200
@@ -67,6 +70,7 @@ interface AssetRow {
   mime_type?: string | null
   created_at?: string | null
   preview_url?: string | null
+  preview_id?: string | null
   tags?: unknown
 }
 
@@ -85,7 +89,8 @@ function isAssetRow(value: unknown): value is AssetRow {
     isOptional(row.size, 'number') &&
     isOptional(row.mime_type, 'string') &&
     isOptional(row.created_at, 'string') &&
-    isOptional(row.preview_url, 'string')
+    isOptional(row.preview_url, 'string') &&
+    isOptional(row.preview_id, 'string')
   )
 }
 
@@ -290,12 +295,28 @@ async function fetchLookupPage(url: string, accessToken: string): Promise<Lookup
   return { rows: assets, hasMore, nextCursor: nextCursor ?? null }
 }
 
-async function withPreview(row: AssetRow, accessToken: string): Promise<AssetSummary> {
-  const summary = toSummary(row, null)
-  if (summary.kind === null || summary.kind === '3d') return summary
-  const deadline = AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS)
+async function addPreview(
+  summary: AssetSummary,
+  row: AssetRow,
+  accessToken: string,
+  deadline: AbortSignal
+): Promise<void> {
+  if (summary.kind === '3d' && row.preview_id) {
+    summary.thumbnailUrl = await resolveCloudContentUrl(
+      row.preview_id,
+      accessToken,
+      'inline',
+      deadline
+    )
+  }
+  if (summary.kind === null || summary.kind === '3d') return
   summary.previewUrl = await resolveCloudContentUrl(summary.id, accessToken, 'inline', deadline)
   await addMediaFacts(summary, deadline)
+}
+
+async function withPreview(row: AssetRow, accessToken: string): Promise<AssetSummary> {
+  const summary = toSummary(row, null)
+  await addPreview(summary, row, accessToken, AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS))
   return summary
 }
 
@@ -414,11 +435,7 @@ async function listCloudAssets(
   await runPool(
     summaries,
     SIGNED_URL_CONCURRENCY,
-    async (summary) => {
-      if (summary.kind === null || summary.kind === '3d') return
-      summary.previewUrl = await resolveCloudContentUrl(summary.id, accessToken, 'inline', deadline)
-      await addMediaFacts(summary, deadline)
-    },
+    (summary, index) => addPreview(summary, rows[index]!, accessToken, deadline),
     deadline
   )
   signal.throwIfAborted()
@@ -617,6 +634,31 @@ async function copyCloudImage(installationId: string, assetId: string): Promise<
   return true
 }
 
+async function readCloudModel(installationId: string, assetId: string): Promise<Uint8Array | null> {
+  const accessToken = await cloudAccessToken(installationId)
+  if (!accessToken) return null
+  const deadline = AbortSignal.timeout(MODEL_TIMEOUT_MS)
+  const url = await resolveCloudContentUrl(assetId, accessToken, 'inline', deadline)
+  if (!url) return null
+  const res = await fetch(url, { redirect: 'error', signal: deadline })
+  if (!res.ok || contentLength(res) > MAX_MODEL_BYTES) return null
+  const bytes = new Uint8Array(await res.arrayBuffer())
+  return bytes.byteLength > MAX_MODEL_BYTES ? null : bytes
+}
+
+async function readLocalModel(assetId: string): Promise<Uint8Array | null> {
+  const file = await outputFilePath(assetId)
+  if (!file) return null
+  const { size } = await fs.promises.stat(file)
+  return size > MAX_MODEL_BYTES ? null : fs.promises.readFile(file)
+}
+
+export function readAssetModel(source: string, assetId: string): Promise<Uint8Array | null> {
+  const read =
+    source === LOCAL_ASSETS_SOURCE ? readLocalModel(assetId) : readCloudModel(source, assetId)
+  return read.catch(() => null)
+}
+
 export function copyAsset(source: string, assetId: string): Promise<boolean> {
   return source === LOCAL_ASSETS_SOURCE ? copyOutputImage(assetId) : copyCloudImage(source, assetId)
 }
@@ -650,6 +692,11 @@ export function registerAssetsHandlers(): void {
   )
   ipcMain.handle(ASSETS_REVEAL_CHANNEL, localFileAction(revealOutputFile))
   ipcMain.handle(ASSETS_TRASH_CHANNEL, localFileAction(trashOutputFile))
+  ipcMain.handle(ASSETS_READ_MODEL_CHANNEL, (event, source: unknown, assetId: unknown) =>
+    isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'
+      ? readAssetModel(source, assetId)
+      : null
+  )
   ipcMain.handle(ASSETS_COPY_CHANNEL, (event, source: unknown, assetId: unknown) =>
     isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'
       ? copyAsset(source, assetId)

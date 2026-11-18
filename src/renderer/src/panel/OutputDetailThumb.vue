@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useTemplateRef } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 import { useElementVisibility } from '@vueuse/core'
 import { AudioLines, Box, File } from '@lucide/vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
@@ -8,17 +8,15 @@ const { entry } = defineProps<{ entry: OutputDetailItem }>()
 
 const frame = useTemplateRef<HTMLElement>('frame')
 const seen = useElementVisibility(frame, { once: true })
+const still = computed(() => {
+  if (entry.kind === 'image') return entry.thumbnailUrl ?? entry.previewUrl
+  return entry.kind === '3d' ? entry.thumbnailUrl : null
+})
 </script>
 
 <template>
   <span ref="frame" class="flex size-full items-center justify-center">
-    <img
-      v-if="entry.kind === 'image' && (entry.thumbnailUrl ?? entry.previewUrl)"
-      :src="entry.thumbnailUrl ?? entry.previewUrl ?? undefined"
-      alt=""
-      loading="lazy"
-      class="size-full object-cover"
-    />
+    <img v-if="still" :src="still" alt="" loading="lazy" class="size-full object-cover" />
     <template v-else-if="entry.kind === 'video' && entry.previewUrl">
       <video
         v-if="seen"

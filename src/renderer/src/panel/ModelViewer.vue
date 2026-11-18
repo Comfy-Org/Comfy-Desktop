@@ -1,0 +1,181 @@
+<script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useResizeObserver } from '@vueuse/core'
+import { Box } from '@lucide/vue'
+import {
+  Box3,
+  DirectionalLight,
+  HemisphereLight,
+  Mesh,
+  MeshStandardMaterial,
+  PerspectiveCamera,
+  Scene,
+  Vector3,
+  WebGLRenderer
+} from 'three'
+import type { BufferGeometry, Material, Object3D } from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
+import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js'
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
+import Spinner from '@comfyorg/design-system/spinner/Spinner'
+
+const { name, load } = defineProps<{
+  name: string
+  load: () => Promise<Uint8Array | null>
+}>()
+
+const MODEL_GRAY = 0xb8b8b8
+const SKY_LIGHT = 0xffffff
+const GROUND_LIGHT = 0x3a3a3a
+const FIELD_OF_VIEW = 40
+const CAMERA_DIRECTION = new Vector3(0.6, 0.45, 1).normalize()
+
+const { t } = useI18n()
+const host = useTemplateRef<HTMLDivElement>('host')
+const state = ref<'loading' | 'ready' | 'failed'>('loading')
+
+const scene = new Scene()
+const camera = new PerspectiveCamera(FIELD_OF_VIEW, 1, 0.01, 1000)
+const keyLight = new DirectionalLight(SKY_LIGHT, 1.6)
+keyLight.position.set(1, 2, 1.5)
+scene.add(new HemisphereLight(SKY_LIGHT, GROUND_LIGHT, 1.8), keyLight)
+
+let renderer: WebGLRenderer | null = null
+let controls: OrbitControls | null = null
+let frame = 0
+let closed = false
+
+function extensionOf(fileName: string): string {
+  return fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase()
+}
+
+function meshFrom(geometry: BufferGeometry): Mesh {
+  if (!geometry.hasAttribute('normal')) geometry.computeVertexNormals()
+  const material = new MeshStandardMaterial({
+    color: MODEL_GRAY,
+    vertexColors: geometry.hasAttribute('color')
+  })
+  return new Mesh(geometry, material)
+}
+
+async function parseModel(bytes: Uint8Array, extension: string): Promise<Object3D | null> {
+  const buffer = bytes.slice().buffer
+  switch (extension) {
+    case 'glb':
+    case 'gltf':
+      return (await new GLTFLoader().parseAsync(buffer, '')).scene
+    case 'obj':
+      return new OBJLoader().parse(new TextDecoder().decode(bytes))
+    case 'stl':
+      return meshFrom(new STLLoader().parse(buffer))
+    case 'ply':
+      return meshFrom(new PLYLoader().parse(buffer))
+    default:
+      return null
+  }
+}
+
+function frameModel(model: Object3D): void {
+  const bounds = new Box3().setFromObject(model)
+  const size = bounds.getSize(new Vector3()).length() || 1
+  model.position.sub(bounds.getCenter(new Vector3()))
+  const distance = size / (2 * Math.tan((FIELD_OF_VIEW * Math.PI) / 360))
+  camera.near = size / 100
+  camera.far = size * 100
+  camera.position.copy(CAMERA_DIRECTION).multiplyScalar(distance)
+  camera.updateProjectionMatrix()
+  controls?.target.set(0, 0, 0)
+  controls?.update()
+}
+
+function draw(): void {
+  if (closed || !renderer) return
+  controls?.update()
+  renderer.render(scene, camera)
+  frame = requestAnimationFrame(draw)
+}
+
+useResizeObserver(host, ([entry]) => {
+  const { width, height } = entry!.contentRect
+  if (!renderer || width === 0 || height === 0) return
+  renderer.setSize(width, height, false)
+  camera.aspect = width / height
+  camera.updateProjectionMatrix()
+})
+
+onMounted(async () => {
+  const frameHost = host.value
+  if (!frameHost) return
+  renderer = new WebGLRenderer({ antialias: true, alpha: true })
+  renderer.setPixelRatio(window.devicePixelRatio)
+  renderer.domElement.className = 'block size-full outline-none'
+  renderer.domElement.tabIndex = 0
+  renderer.domElement.setAttribute('aria-label', t('assets.detail.modelView', { name }))
+  renderer.domElement.dataset.testid = 'output-detail-model'
+  frameHost.append(renderer.domElement)
+  controls = new OrbitControls(camera, renderer.domElement)
+  controls.enableDamping = true
+  controls.listenToKeyEvents(renderer.domElement)
+  try {
+    const bytes = await load()
+    const model = bytes && !closed ? await parseModel(bytes, extensionOf(name)) : null
+    if (closed) return
+    if (!model) {
+      state.value = 'failed'
+      return
+    }
+    scene.add(model)
+    frameModel(model)
+    state.value = 'ready'
+    draw()
+  } catch {
+    if (!closed) state.value = 'failed'
+  }
+})
+
+function disposeMaterial(material: Material | Material[]): void {
+  for (const each of Array.isArray(material) ? material : [material]) each.dispose()
+}
+
+onBeforeUnmount(() => {
+  closed = true
+  cancelAnimationFrame(frame)
+  controls?.dispose()
+  scene.traverse((object) => {
+    if (!(object instanceof Mesh)) return
+    object.geometry.dispose()
+    disposeMaterial(object.material)
+  })
+  renderer?.dispose()
+})
+</script>
+
+<template>
+  <div class="relative size-full min-h-0">
+    <div
+      ref="host"
+      class="size-full"
+      :class="state !== 'ready' && 'invisible'"
+      :aria-busy="state === 'loading' || undefined"
+    />
+    <div
+      v-if="state === 'loading'"
+      class="absolute inset-0 flex items-center justify-center text-subtle-foreground"
+      role="status"
+      :aria-label="t('assets.detail.modelLoading')"
+    >
+      <Spinner class="size-6" />
+    </div>
+    <div
+      v-else-if="state === 'failed'"
+      class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-subtle-foreground"
+      data-testid="output-detail-model-failed"
+    >
+      <Box :size="40" aria-hidden="true" />
+      <span class="text-ui">{{ t('assets.detail.modelFailed') }}</span>
+    </div>
+  </div>
+</template>

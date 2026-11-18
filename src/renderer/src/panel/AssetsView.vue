@@ -19,6 +19,7 @@ import {
   LayoutDashboard,
   RefreshCw,
   Search,
+  Play,
   Trash2,
   Video
 } from '@lucide/vue'
@@ -730,7 +731,9 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     tags: asset.tags,
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
-    savedIn: isLocal(asset) ? folderOf(asset.id) : null
+    savedIn: isLocal(asset) ? folderOf(asset.id) : null,
+    loadModel:
+      asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
 )
 
@@ -886,6 +889,11 @@ function assetDetails(asset: AssetSummary): string {
   ]
     .filter(Boolean)
     .join(' · ')
+}
+
+function cardImage(asset: AssetSummary): string | null {
+  if (asset.kind === 'image') return asset.thumbnailUrl ?? asset.previewUrl
+  return asset.kind === '3d' ? asset.thumbnailUrl : null
 }
 
 function extensionOf(name: string): string {
@@ -1284,11 +1292,12 @@ function extensionOf(name: string): string {
                 :style="aspectStyle(assetShape(asset))"
               >
                 <img
-                  v-if="asset.previewUrl && asset.kind === 'image'"
-                  :src="asset.thumbnailUrl ?? asset.previewUrl"
+                  v-if="cardImage(asset)"
+                  :src="cardImage(asset) ?? undefined"
                   :alt="asset.name"
                   loading="lazy"
-                  class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  class="block size-full transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  :class="asset.kind === '3d' ? 'object-contain' : 'object-cover'"
                 />
                 <video
                   v-else-if="asset.previewUrl && asset.kind === 'video'"
@@ -1306,6 +1315,14 @@ function extensionOf(name: string): string {
                   <Box v-else-if="asset.kind === '3d'" :size="40" aria-hidden="true" />
                   <File v-else :size="40" aria-hidden="true" />
                   <span>{{ extensionOf(asset.name) }}</span>
+                </span>
+                <span
+                  v-if="asset.kind === 'video' && asset.previewUrl"
+                  class="pointer-events-none absolute top-1/2 left-1/2 flex size-10 -translate-1/2 items-center justify-center rounded-full bg-[rgb(14_14_14/0.48)] text-white backdrop-blur-[8px]"
+                  aria-hidden="true"
+                  data-testid="asset-play"
+                >
+                  <Play :size="18" class="translate-x-px" />
                 </span>
                 <span
                   v-if="asset.kind === 'video' && asset.durationSeconds"
