@@ -190,9 +190,6 @@ describe('embeddedSession', () => {
     await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
     await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBeNull()
-    await expect(
-      billingHandoffForSender(event, 'ws-1', 'billing_web', undefined, undefined, '1.2.3')
-    ).resolves.toEqual({ status: 'disabled' })
     expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
   })
 
@@ -678,7 +675,11 @@ describe('billingHandoffForSender', () => {
   it.each([
     ['a remote ComfyUI', 'http://192.168.1.20:8188', {}],
     ['a view that navigated away', 'http://127.0.0.1:8000', { frameUrl: 'https://evil.example' }],
-    ['a subframe', 'http://127.0.0.1:8000', { subframe: true }]
+    ['a subframe', 'http://127.0.0.1:8000', { subframe: true }],
+    ['a view with no installation', 'http://127.0.0.1:8000', { installationId: null }],
+    ['a Remote Connection on 127.0.0.1', 'http://127.0.0.1:8000', { sourceCategory: 'remote' }],
+    ['a Remote Connection on localhost', 'http://localhost:8188', { sourceCategory: 'remote' }],
+    ['an install of unknown source', 'http://127.0.0.1:8000', { sourceCategory: null }]
   ])('is disabled for %s', async (_name, comfyUrl, options: ViewOptions) => {
     respond(201, { entry_url: ENTRY_URL })
     const { event } = view(comfyUrl, options)
