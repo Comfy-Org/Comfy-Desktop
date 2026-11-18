@@ -289,6 +289,34 @@ describe('recent on Comfy Cloud', () => {
     expect(mocks.readCloud).toHaveBeenCalledTimes(1)
   })
 
+  it('makes each Cloud thumbnail once, and fetches nothing already seen on a relist', async () => {
+    mocks.listCloud.mockResolvedValue([
+      cloudOutput({ id: 'a', name: 'a.png' }),
+      cloudOutput({ id: 'b', name: 'b.png' })
+    ])
+    mocks.readCloud.mockResolvedValue({ bytes: new Uint8Array([1]) })
+
+    const first = await recentAssets(page, { kinds: ['image'], where: 'cloud' })
+    const again = await recentAssets(newPage(), { kinds: ['image'], where: 'cloud' })
+
+    expect(mocks.readCloud).toHaveBeenCalledTimes(2)
+    expect(again.map((asset) => asset.thumb)).toEqual(first.map((asset) => asset.thumb))
+    expect(again[0]?.thumb).toBe('data:image/jpeg;base64,Y2xvdWQ=')
+  })
+
+  it('tries a Cloud thumbnail again after a failed fetch', async () => {
+    mocks.listCloud.mockResolvedValue([cloudOutput({ id: 'a', name: 'a.png' })])
+    mocks.readCloud.mockResolvedValueOnce({ error: 'elsewhere' })
+    mocks.readCloud.mockResolvedValueOnce({ bytes: new Uint8Array([1]) })
+
+    const [failed] = await recentAssets(page, { kinds: ['image'], where: 'cloud' })
+    const [fetched] = await recentAssets(page, { kinds: ['image'], where: 'cloud' })
+
+    expect(failed?.thumb).toBeNull()
+    expect(fetched?.thumb).toBe('data:image/jpeg;base64,Y2xvdWQ=')
+    expect(mocks.readCloud).toHaveBeenCalledTimes(2)
+  })
+
   it('lists nothing when signed out', async () => {
     mocks.listCloud.mockResolvedValue(null)
 
@@ -352,8 +380,10 @@ describe('fromFile', () => {
       where: 'local',
       app: null,
       size: 5,
-      createdAt: 1_700_000_500_000
+      createdAt: 1_700_000_500_000,
+      thumb: null
     })
+    expect(mocks.thumbnail, 'the page already has the dropped file to show').not.toHaveBeenCalled()
     const bytes = await readAsset(page, asset.ref)
     expect(bytes).toEqual({ bytes: expect.any(ArrayBuffer), mime: 'image/jpeg' })
     expect(Buffer.from((bytes as { bytes: ArrayBuffer }).bytes).toString()).toBe('photo')
@@ -398,6 +428,16 @@ describe('read', () => {
     expect(await readAsset(page, asset!.ref)).toEqual({ error: 'too-large' })
     mocks.readCloud.mockResolvedValueOnce({ error: 'signed-out' })
     expect(await readAsset(page, asset!.ref)).toEqual({ error: 'signed-out' })
+    mocks.readCloud.mockResolvedValueOnce({ error: 'elsewhere' })
+    expect(await readAsset(page, asset!.ref)).toEqual({ error: 'elsewhere' })
+  })
+
+  it('answers elsewhere, not missing, when reading from Cloud fails', async () => {
+    mocks.listCloud.mockResolvedValue([cloudOutput({ size: 20 * 1024 ** 2 })])
+    const [asset] = await recentAssets(page, { kinds: ['image'], where: 'cloud' })
+    mocks.readCloud.mockRejectedValueOnce(new TypeError('fetch failed'))
+
+    expect(await readAsset(page, asset!.ref)).toEqual({ error: 'elsewhere' })
   })
 })
 
@@ -457,6 +497,22 @@ describe('valueFor on This computer', () => {
       value: `desktop/${name} [input]`
     })
     expect(copyFile, 'the second run reuses the copy').toHaveBeenCalledTimes(1)
+  })
+
+  it('hashes a dropped file once until it changes', async () => {
+    const photo = write(path.join(outside, 'photo.png'), 'first', 1_700_000_000)
+    const asset = await refOf(photo)
+    const reads = vi.spyOn(fs, 'createReadStream')
+
+    await assetRunValue(page, asset.ref, { where: 'local' })
+    await assetRunValue(page, asset.ref, { where: 'local' })
+    expect(reads, 'the second run reuses the hash').toHaveBeenCalledTimes(1)
+
+    write(photo, 'second', 1_700_000_100)
+    expect(await assetRunValue(page, asset.ref, { where: 'local' })).toEqual({
+      value: `desktop/${sha16('second')}.png [input]`
+    })
+    expect(reads, 'a changed file is hashed again').toHaveBeenCalledTimes(2)
   })
 
   it('reuses a copy of the same picture made before', async () => {

@@ -109,13 +109,21 @@ describe('the app page assets channels', () => {
     expect(mocks.assetRunValue).not.toHaveBeenCalled()
   })
 
-  it('answer an empty list or missing when Desktop fails, so the page uploads as before', async () => {
+  it('answer an empty list or elsewhere when Desktop fails, not missing, so the page uploads as before', async () => {
     mocks.recentAssets.mockRejectedValueOnce(new Error('Cloud is down'))
-    mocks.readAsset.mockRejectedValueOnce(new Error('disk gone'))
+    mocks.readAsset.mockRejectedValueOnce(new Error('network down'))
+    mocks.assetFromPath.mockRejectedValueOnce(new Error('disk gone'))
+    mocks.assetRunValue.mockRejectedValueOnce(new Error('disk gone'))
 
     expect(await call(APPS_ASSETS_CHANNELS.recent, { kinds: ['image'], where: 'cloud' })).toEqual(
       []
     )
-    expect(await call(APPS_ASSETS_CHANNELS.read, 'r1')).toEqual({ error: 'missing' })
+    expect(await call(APPS_ASSETS_CHANNELS.read, 'r1')).toEqual({ error: 'elsewhere' })
+    expect(await call(APPS_ASSETS_CHANNELS.fromPath, '/p/a.png', { kinds: ['image'] })).toEqual({
+      error: 'elsewhere'
+    })
+    expect(await call(APPS_ASSETS_CHANNELS.valueFor, 'r1', { where: 'local' })).toEqual({
+      error: 'elsewhere'
+    })
   })
 })

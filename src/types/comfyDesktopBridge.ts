@@ -440,8 +440,9 @@ export interface ComfyDesktopAssetRef {
 
 /**
  * Why Desktop could not answer: `missing` (the file or reference is gone),
- * `elsewhere` (the reference is for the other place, or has no run value
- * there), `too-large`, `wrong-kind`, `not-a-file` (a folder),
+ * `elsewhere` (the reference is for the other place, has no run value
+ * there, or Desktop could not reach it), `too-large`, `wrong-kind`,
+ * `not-a-file` (a folder),
  * `no-path` (a pasted or made-up file with no path on disk) or `signed-out`.
  */
 export type ComfyDesktopAssetError =
@@ -494,7 +495,8 @@ export interface ComfyDesktopHostedAssetsBridge {
    * A file the person dropped or chose. Only its path reaches Desktop, which
    * takes it when it is a regular file (after following links), of a kind in
    * `kinds` by its extension, and at most 2 GiB. A file with no path on disk
-   * answers `no-path`, and the page uploads it as before.
+   * answers `no-path`, and the page uploads it as before. The answer's
+   * `thumb` is null, since the page already has the file to show.
    */
   fromFile(
     file: File,

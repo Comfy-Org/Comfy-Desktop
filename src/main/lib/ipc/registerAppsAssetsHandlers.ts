@@ -15,6 +15,7 @@ export const APPS_ASSETS_CHANNELS = {
 } as const
 
 const MISSING: ComfyDesktopAssetFailure = { error: 'missing' }
+const FAILED: ComfyDesktopAssetFailure = { error: 'elsewhere' }
 
 async function isFromAppsPage(event: IpcMainInvokeEvent): Promise<boolean> {
   return isAppsPageSender(event.sender, event.senderFrame) && (await areAppsEnabled())
@@ -25,7 +26,7 @@ function forAppsPage<T>(
 ): (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<AssetResult<T>> {
   return async (event, ...args) => {
     if (!(await isFromAppsPage(event))) return MISSING
-    return answer(event, ...args).catch(() => MISSING)
+    return answer(event, ...args).catch(() => FAILED)
   }
 }
 

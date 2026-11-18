@@ -467,7 +467,9 @@ export interface CloudOutput {
 }
 
 export type CloudOutputBytes =
-  { bytes: Uint8Array } | { error: 'signed-out' | 'too-large' | 'missing' }
+  { bytes: Uint8Array } | { error: 'signed-out' | 'too-large' | 'missing' | 'elsewhere' }
+
+const NOT_FOUND = 404
 
 function cloudOutputOf(value: unknown): CloudOutput | null {
   if (!isAssetRow(value)) return null
@@ -513,17 +515,32 @@ export async function readCloudOutput(
 ): Promise<CloudOutputBytes> {
   const accessToken = await getCloudSession().getAccessToken()
   if (!accessToken) return { error: 'signed-out' }
-  const deadline = AbortSignal.timeout(timeoutMs)
-  const url = await resolveCloudContentUrl(assetId, accessToken, 'inline', deadline)
-  if (!url) return { error: 'missing' }
-  const res = await fetch(url, { redirect: 'error', signal: deadline })
-  if (!res.ok) {
-    await res.body?.cancel().catch(() => {})
-    return { error: 'missing' }
+  try {
+    return await fetchCloudOutput(assetId, accessToken, maxBytes, AbortSignal.timeout(timeoutMs))
+  } catch {
+    return { error: 'elsewhere' }
   }
-  if (contentLength(res) > maxBytes) {
+}
+
+async function fetchCloudOutput(
+  assetId: string,
+  accessToken: string,
+  maxBytes: number,
+  deadline: AbortSignal
+): Promise<CloudOutputBytes> {
+  const link = await fetch(`${CLOUD_CONFIG.issuer}${contentPath(assetId, 'inline')}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    redirect: 'manual',
+    signal: AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), deadline])
+  })
+  if (link.status === NOT_FOUND) return { error: 'missing' }
+  const url = signedStorageUrl(link.headers.get('location'))
+  if (!url) return { error: 'elsewhere' }
+  const res = await fetch(url, { redirect: 'error', signal: deadline })
+  if (!res.ok || contentLength(res) > maxBytes) {
     await res.body?.cancel().catch(() => {})
-    return { error: 'too-large' }
+    if (res.ok) return { error: 'too-large' }
+    return { error: res.status === NOT_FOUND ? 'missing' : 'elsewhere' }
   }
   const bytes = await firstBytes(res, maxBytes + 1)
   return bytes.byteLength > maxBytes ? { error: 'too-large' } : { bytes }

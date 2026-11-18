@@ -27,6 +27,7 @@ export const MAX_RECENT = 48
 export const MAX_FILE_BYTES = 2 * 1024 ** 3
 export const MAX_READ_BYTES = 512 * 1024 ** 2
 export const MAX_REFS_PER_PAGE = 500
+export const MAX_REMEMBERED = 500
 const APPS_FOLDER = 'apps'
 const COPIES_FOLDER = 'desktop'
 const THUMB_LONG_SIDE = 256
@@ -109,9 +110,20 @@ export type AssetResult<T> = T | ComfyDesktopAssetFailure
 const refsByPage = new WeakMap<WebContents, PageRefs>()
 const watchedPages = new WeakSet<WebContents>()
 const copiesUnderWay = new Map<string, Promise<AssetResult<ComfyDesktopAssetValue>>>()
+const cloudThumbs = new Map<string, string | null>()
+const contentHashes = new Map<string, string>()
 
 function failure(error: ComfyDesktopAssetError): ComfyDesktopAssetFailure {
   return { error }
+}
+
+function rememberBounded<T>(map: Map<string, T>, key: string, value: T): void {
+  map.delete(key)
+  map.set(key, value)
+  for (const oldest of map.keys()) {
+    if (map.size <= MAX_REMEMBERED) break
+    map.delete(oldest)
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -316,8 +328,12 @@ async function cloudThumb(output: CloudOutput, type: FileType): Promise<string |
   if (type.kind !== 'image' || output.size === null || output.size > CLOUD_THUMB_MAX_BYTES) {
     return null
   }
+  if (cloudThumbs.has(output.id)) return cloudThumbs.get(output.id) ?? null
   const read = await readCloudOutput(output.id, CLOUD_THUMB_MAX_BYTES, CLOUD_THUMB_TIMEOUT_MS)
-  return 'bytes' in read ? thumbnailDataUrlFromBytes(read.bytes, THUMB_LONG_SIDE) : null
+  if (!('bytes' in read)) return null
+  const thumb = thumbnailDataUrlFromBytes(read.bytes, THUMB_LONG_SIDE)
+  rememberBounded(cloudThumbs, output.id, thumb)
+  return thumb
 }
 
 function createdAtOf(output: CloudOutput): number {
@@ -409,8 +425,7 @@ export async function assetFromPath(
     modifiedMs: Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0,
     app: await appOfFile(page, real)
   }
-  const thumb = await thumbnailDataUrl(real, THUMB_LONG_SIDE).catch(() => null)
-  return localRef(page, found, thumb)
+  return localRef(page, found, null)
 }
 
 async function sameRegularFile(file: string): Promise<boolean> {
@@ -442,7 +457,9 @@ async function readLocal(entry: LocalEntry): Promise<AssetResult<ComfyDesktopAss
 }
 
 async function readCloud(entry: CloudEntry): Promise<AssetResult<ComfyDesktopAssetBytes>> {
-  const read = await readCloudOutput(entry.assetId, MAX_READ_BYTES, CLOUD_READ_TIMEOUT_MS)
+  const read = await readCloudOutput(entry.assetId, MAX_READ_BYTES, CLOUD_READ_TIMEOUT_MS).catch(
+    () => failure('elsewhere')
+  )
   return 'bytes' in read ? { bytes: asArrayBuffer(read.bytes), mime: entry.mime } : read
 }
 
@@ -455,10 +472,20 @@ export async function readAsset(
   return entry.where === 'local' ? readLocal(entry) : readCloud(entry)
 }
 
-async function contentHash(file: string): Promise<string> {
+async function hashFile(file: string): Promise<string> {
   const hash = createHash('sha256')
   for await (const chunk of fs.createReadStream(file)) hash.update(chunk as Buffer)
   return hash.digest('hex').slice(0, HASH_NAME_LENGTH)
+}
+
+async function contentHash(file: string): Promise<string> {
+  const stat = await fsp.stat(file)
+  const key = `${file}\n${stat.size}\n${stat.mtimeMs}`
+  const known = contentHashes.get(key)
+  if (known) return known
+  const hash = await hashFile(file)
+  rememberBounded(contentHashes, key, hash)
+  return hash
 }
 
 async function placeCopy(source: string, target: string): Promise<void> {
@@ -531,4 +558,6 @@ export async function assetRunValue(
 
 export function _resetForTest(): void {
   copiesUnderWay.clear()
+  cloudThumbs.clear()
+  contentHashes.clear()
 }

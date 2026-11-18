@@ -1375,7 +1375,27 @@ describe('Cloud outputs for an app input', () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 404 }))
     expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'missing' })
 
+    cloudContent(new Response(null, { status: 404 }))
+    expect(await readCloudOutput('a1', 3, 1_000), 'the signed file is gone').toEqual({
+      error: 'missing'
+    })
+  })
+
+  it('answers elsewhere, not missing, when Cloud cannot be reached or refuses', async () => {
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'))
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'elsewhere' })
+
+    fetchMock.mockResolvedValue(new Response(null, { status: 500 }))
+    expect(await readCloudOutput('a1', 3, 1_000), 'no signed link').toEqual({ error: 'elsewhere' })
+
     cloudContent(new Response(null, { status: 403 }))
-    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'missing' })
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'elsewhere' })
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === signed) throw new TypeError('connection reset')
+      return new Response(null, { status: 302, headers: { Location: signed } })
+    })
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'elsewhere' })
   })
 })
