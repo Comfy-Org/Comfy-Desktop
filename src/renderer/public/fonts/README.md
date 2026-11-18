@@ -1,8 +1,12 @@
 # Proprietary fonts (do not commit binaries here)
 
-This directory holds **PP Formula** (Pangram Pangram), the display face used for
-brand takeover headings. It is a paid, license-restricted font and **must never
-be committed to this public repository**.
+This directory holds **PP Formula** (Pangram Pangram), the brand display face.
+It is a paid, license-restricted font and **must never be committed to this
+public repository**.
+
+No heading uses it today: page, modal and takeover titles all render in Inter.
+The `--font-display` token and the fetch step stay in place so the face can come
+back without rebuilding the pipeline.
 
 The font files in this folder are gitignored (see the repo `.gitignore`). Only
 this README is tracked, so the directory and these instructions survive a clean
@@ -23,8 +27,9 @@ from the private bucket `gs://comfy-org-fonts`.
 
 ## Local development
 
-The font is optional for dev (the app falls back to Inter). To render the real
-display face locally, authenticate with a comfy.org Google account and run:
+The font is not needed for dev: no screen renders it, so a checkout without it
+looks the same as a release build. To fetch it anyway, authenticate with a
+comfy.org Google account and run:
 
 ```bash
 pnpm run font:fetch
