@@ -38,6 +38,26 @@ function websiteApp(over: Record<string, unknown> = {}): Record<string, unknown>
   }
 }
 
+const CROWN = {
+  id: 'uses-credits',
+  style: 'crown',
+  text: { en: 'Uses credits', 'zh-CN': '使用积分' },
+  description: {
+    en: 'Runs a paid partner model on Comfy Cloud',
+    'zh-CN': '在 Comfy Cloud 上运行付费合作模型'
+  }
+}
+const NEW_CHIP = { id: 'new', style: 'chip', text: { en: 'New' } }
+
+function badge(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return { ...NEW_CHIP, ...over }
+}
+
+async function badgesListed(badges: unknown) {
+  mockedFetchJSON.mockResolvedValue([websiteApp({ badges })])
+  return (await listApps())[0]?.badges
+}
+
 function savedOnDisk(listUrl: string, apps: unknown[]): void {
   mockedReadSaved.mockResolvedValue({ kind: 'data', data: JSON.stringify({ listUrl, apps }) })
 }
@@ -64,7 +84,13 @@ describe('the apps Desktop lists', () => {
   it("come from the website's own list, in its order, with each cover on the site", async () => {
     mockedFetchJSON.mockResolvedValue([
       websiteApp(),
-      websiteApp({ id: 'sdr-to-hdr', page: '/apps/sdr-to-hdr/desktop.html', title: 'SDR to HDR' })
+      websiteApp({ id: 'sdr-to-hdr', page: '/apps/sdr-to-hdr/desktop.html', title: 'SDR to HDR' }),
+      websiteApp({
+        id: 'product-swap',
+        page: '/apps/product-swap/desktop.html',
+        title: 'Product Swap',
+        badges: [CROWN]
+      })
     ])
 
     expect(await listApps()).toEqual([
@@ -79,11 +105,100 @@ describe('the apps Desktop lists', () => {
         title: 'SDR to HDR',
         description: 'Cut the subject out of a picture or video.',
         covers: [{ url: 'https://comfy.org/catalog-media/cover-1/v2', stillUrl: null }]
+      },
+      {
+        id: 'product-swap',
+        title: 'Product Swap',
+        description: 'Cut the subject out of a picture or video.',
+        covers: [{ url: 'https://comfy.org/catalog-media/cover-1/v2', stillUrl: null }],
+        badges: [CROWN]
       }
     ])
     expect(mockedFetchJSON).toHaveBeenCalledWith('https://comfy.org/apps/apps.json', {
       refresh: true
     })
+  })
+
+  it('carry the badges the website set, in its order, with only the English and Chinese words', async () => {
+    const badges = await badgesListed([
+      { ...CROWN, text: { ...CROWN.text, ja: 'クレジット' }, tone: 'gold' },
+      badge({ id: 'video', style: 'label', text: { en: ' Video ' } })
+    ])
+
+    expect(badges).toEqual([CROWN, { id: 'video', style: 'label', text: { en: 'Video' } }])
+  })
+
+  it('leave an app without badges when the website set none, and with an empty list when it set an empty one', async () => {
+    mockedFetchJSON.mockResolvedValue([
+      websiteApp(),
+      websiteApp({ id: 'sdr-to-hdr', badges: 'crown' }),
+      websiteApp({ id: 'extend-picture', badges: [] })
+    ])
+
+    const [unset, notAList, none] = await listApps()
+
+    expect(unset).not.toHaveProperty('badges')
+    expect(notAList).not.toHaveProperty('badges')
+    expect(none?.badges).toEqual([])
+  })
+
+  it.each([
+    ['no English text', badge({ text: { 'zh-CN': '新' } })],
+    ['English text that is blank', badge({ text: { en: '   ' } })],
+    ['English text over 24 characters', badge({ text: { en: 'x'.repeat(25) } })],
+    ['text that is not an object', badge({ text: 'New' })],
+    ['a style Desktop does not draw', badge({ style: 'ribbon' })],
+    ['no style', badge({ style: undefined })],
+    ['no id', badge({ id: undefined })],
+    ['an id with a space', badge({ id: 'new badge' })],
+    ['an entry that is not an object', 'new']
+  ])('drop a badge with %s', async (_case, dropped) => {
+    expect(await badgesListed([dropped, CROWN])).toEqual([CROWN])
+  })
+
+  it('keep the first of two badges with the same id', async () => {
+    const badges = await badgesListed([badge(), badge({ style: 'label', text: { en: 'Fresh' } })])
+
+    expect(badges).toEqual([NEW_CHIP])
+  })
+
+  it('keep at most four badges, counting only the ones they keep', async () => {
+    const badges = await badgesListed([
+      badge({ id: 'one' }),
+      badge({ id: 'bad', style: 'ribbon' }),
+      badge({ id: 'two' }),
+      badge({ id: 'three' }),
+      badge({ id: 'four' }),
+      badge({ id: 'five' })
+    ])
+
+    expect(badges?.map((kept) => kept.id)).toEqual(['one', 'two', 'three', 'four'])
+  })
+
+  it('keep the English words when the Chinese ones are missing, blank or too long', async () => {
+    const badges = await badgesListed([
+      badge({ id: 'one', text: { en: 'New', 'zh-CN': '' } }),
+      badge({ id: 'two', text: { en: 'New', 'zh-CN': '新'.repeat(25) } }),
+      badge({ id: 'three', text: { en: 'New', 'zh-CN': 7 } })
+    ])
+
+    expect(badges?.map((kept) => kept.text)).toEqual([{ en: 'New' }, { en: 'New' }, { en: 'New' }])
+  })
+
+  it('keep a badge without its description when the description has no English or runs over 160 characters', async () => {
+    const badges = await badgesListed([
+      badge({ id: 'one', description: { 'zh-CN': '新应用' } }),
+      badge({ id: 'two', description: { en: 'x'.repeat(161) } }),
+      badge({ id: 'three', description: 'Just added' }),
+      badge({ id: 'four', description: { en: 'x'.repeat(160) } })
+    ])
+
+    expect(badges).toEqual([
+      { ...NEW_CHIP, id: 'one' },
+      { ...NEW_CHIP, id: 'two' },
+      { ...NEW_CHIP, id: 'three' },
+      { ...NEW_CHIP, id: 'four', description: { en: 'x'.repeat(160) } }
+    ])
   })
 
   it("open at the page the website names, or at the list's own route for an app it draws itself", async () => {
@@ -336,12 +451,13 @@ describe('the apps Desktop lists', () => {
     expect((await listApps()).map((app) => app.id)).toEqual(['remove-background'])
   })
 
-  it('come from the saved list when the website cannot be reached on a fresh start', async () => {
+  it('come from the saved list, badges checked again, when the website cannot be reached on a fresh start', async () => {
     vi.useFakeTimers()
-    savedOnDisk(LIST_URL, [websiteApp()])
+    savedOnDisk(LIST_URL, [websiteApp({ badges: [CROWN, badge({ style: 'ribbon' })] })])
     mockedFetchJSON.mockRejectedValue(new Error('offline'))
 
-    expect((await afterAllTries(listApps())).map((app) => app.id)).toEqual(['remove-background'])
+    const saved = await afterAllTries(listApps())
+    expect(saved.map((app) => [app.id, app.badges])).toEqual([['remove-background', [CROWN]]])
     expect(pageUrlForListedApp('remove-background')).toBe(
       'https://comfy.org/apps/remove-background/desktop.html'
     )

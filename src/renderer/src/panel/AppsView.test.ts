@@ -1,11 +1,11 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page as browserPage } from 'vitest/browser'
+import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import '../assets/main.css'
 import AppsView from './AppsView.vue'
 import AppPageHost from './AppPageHost.vue'
-import type { AppCard, AppPagePlacement, AppPageStatus } from '../types/ipc'
+import type { AppBadge, AppCard, AppPagePlacement, AppPageStatus } from '../types/ipc'
 
 const FOUR_COLUMN_PAGE_WIDTH = 1172
 const MEDIUM_PAGE_WIDTH = 900
@@ -13,11 +13,20 @@ const NARROW_PAGE_WIDTH = 532
 const COVER =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
+const CROWN: AppBadge = {
+  id: 'uses-credits',
+  style: 'crown',
+  text: { en: 'Uses credits' },
+  description: { en: 'Runs a paid partner model' }
+}
+const NEW_CHIP: AppBadge = { id: 'new', style: 'chip', text: { en: 'New' } }
+
 const CUTOUT: AppCard = {
   id: 'remove-background',
   title: 'Remove Background',
   description: 'Cut the subject out of a picture or video.',
-  covers: [{ url: COVER, stillUrl: null }]
+  covers: [{ url: COVER, stillUrl: null }],
+  badges: [CROWN, NEW_CHIP]
 }
 const HDR: AppCard = {
   id: 'sdr-to-hdr',
@@ -29,7 +38,8 @@ const GENJUTSU: AppCard = {
   id: 'genjutsu',
   title: 'Genjutsu',
   description: 'Move a character with the motion from a clip.',
-  covers: []
+  covers: [],
+  badges: [NEW_CHIP]
 }
 
 const listApps = vi.fn<() => Promise<AppCard[]>>()
@@ -84,7 +94,10 @@ beforeEach(() => {
   }
 })
 
-afterEach(() => page.remove())
+afterEach(() => {
+  page.remove()
+  delete document.documentElement.dataset.theme
+})
 
 describe('AppsView', () => {
   it('lists every app as a card with its picture, name and one line on what it does', async () => {
@@ -157,7 +170,7 @@ describe('AppsView', () => {
     expect(pictureBox.width / pictureBox.height).toBeCloseTo(505 / 316, 2)
     expect(getComputedStyle(card.element).borderRadius).toBe('12px')
     expect(getComputedStyle(picture).borderRadius).toBe('8px')
-    expect(getComputedStyle(card.get('span.font-medium').element).fontSize).toBe('13px')
+    expect(getComputedStyle(card.get('span.text-ui.font-medium').element).fontSize).toBe('13px')
   })
 
   it('narrows the cards to the apps whose name or description matches the search', async () => {
@@ -309,6 +322,65 @@ describe('AppsView', () => {
         .map((card) => card.attributes('data-testid'))
     ).toEqual(['app-card-remove-background', 'app-card-sdr-to-hdr', 'app-card-genjutsu'])
     expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
+  })
+
+  it("draws an app's badges on the top left of its picture, the crown alone in the credits gold, and none on an app without badges", async () => {
+    const wrapper = await mountApps()
+
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+    const badges = card.get('[data-testid="app-badges"]')
+    const picture = card.get('[data-testid="app-card-picture"]').element.getBoundingClientRect()
+    const badgesBox = badges.element.getBoundingClientRect()
+    expect(Math.round(badgesBox.left - picture.left)).toBe(8)
+    expect(Math.round(badgesBox.top - picture.top)).toBe(8)
+    expect(
+      badges.findAll('[data-badge-style]').map((badge) => badge.attributes('data-badge-style'))
+    ).toEqual(['crown'])
+    expect(Math.round(badgesBox.width)).toBe(28)
+    document.documentElement.dataset.theme = 'dark'
+    expect(getComputedStyle(badges.get('[data-testid="app-badge-crown"]').element).color).toBe(
+      'rgb(233, 196, 34)'
+    )
+    expect(
+      wrapper
+        .get('[data-testid="app-card-genjutsu"]')
+        .find('[data-testid="app-badge-new"]')
+        .exists()
+    ).toBe(true)
+    expect(
+      wrapper.get('[data-testid="app-card-sdr-to-hdr"]').find('[data-testid="app-badges"]').exists()
+    ).toBe(false)
+  })
+
+  it('describes a card with each of its badges for screen readers, and a card without badges with none', async () => {
+    const wrapper = await mountApps()
+
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+    const ids = card.attributes('aria-describedby')?.split(' ') ?? []
+    const notes = ids.map((id) => document.getElementById(id)?.textContent)
+    expect(notes).toEqual(['Uses credits: Runs a paid partner model', 'New'])
+    expect(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').attributes('aria-describedby')).toBe(
+      undefined
+    )
+  })
+
+  it("shows the first badge's description when a card with badges gets keyboard focus, and not for a card without", async () => {
+    const wrapper = await mountApps()
+
+    wrapper.get('input').element.focus()
+    await userEvent.tab()
+
+    expect(document.activeElement).toBe(
+      wrapper.get('[data-testid="app-card-remove-background"]').element
+    )
+    await expect
+      .poll(() => document.querySelector('.tooltip-bubble')?.textContent ?? '')
+      .toContain('Runs a paid partner model')
+
+    await userEvent.tab()
+
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
+    await expect.poll(() => document.querySelector('.tooltip-bubble')).toBe(null)
   })
 
   it('lists the apps in the order the website gave them', async () => {

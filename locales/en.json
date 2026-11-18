@@ -46,6 +46,9 @@
     "emptyBody": "New apps will show up here.",
     "noMatches": "No apps match “{query}”",
     "allApps": "All apps",
+    "badge": {
+      "withDescription": "{text}: {description}"
+    },
     "pageLoading": "Loading {app}",
     "pageFailedTitle": "{app} didn't load",
     "local": {

@@ -1,5 +1,7 @@
 export type {
   DashboardPage,
+  AppBadge,
+  AppBadgeWords,
   AppCard,
   AppCover,
   AppOutputAction,
