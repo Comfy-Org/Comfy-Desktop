@@ -238,6 +238,7 @@
     "menuRevealInFolder": "Open Folder",
     "menuDelete": "Uninstall",
     "stoppedActionGatedReason": "Stop the running build first.",
+    "busyActionGatedReason": "Wait for the current task on this build to finish.",
     "statusRunning": "Running",
     "statusLaunching": "Starting…",
     "statusStopping": "Stopping…",

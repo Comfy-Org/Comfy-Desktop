@@ -60,18 +60,32 @@ interface Desktop {
     opKind?: ShowProgressOpts['opKind']
     actionData?: Record<string, unknown>
     cancellable?: boolean
+    relaunch?: boolean
   }) => Promise<void>
   reportProgress: (data: ProgressData) => Promise<void>
+  askToClose: () => Promise<{ cleared?: boolean; defer?: true }>
+  portKills: Array<(result: { ok: boolean }) => void>
 }
 
 function openDesktop(installations: Installation[]): Desktop {
   const panelListeners = new Set<Parameters<typeof window.api.onPanelSwitch>[0]>()
   const overlayListeners = new Set<Parameters<typeof window.api.onPanelTriggerOverlay>[0]>()
   const progressListeners = new Set<(data: ProgressData) => void>()
+  const closeListeners = new Set<(request: { requestId: string }) => void>()
+  const closeAnswers = new Map<string, (answer: { cleared?: boolean; defer?: true }) => void>()
   const desktop: Desktop = {
     installations,
     runs: [],
     cancelled: [],
+    portKills: [],
+    askToClose() {
+      const requestId = `close-${closeAnswers.size + 1}`
+      const answer = new Promise<{ cleared?: boolean; defer?: true }>((resolve) =>
+        closeAnswers.set(requestId, resolve)
+      )
+      closeListeners.forEach((listener) => listener({ requestId }))
+      return answer
+    },
     async startFromPicker(request) {
       panelListeners.forEach((listener) => listener({ panel: 'progress' }))
       overlayListeners.forEach((listener) =>
@@ -126,7 +140,21 @@ function openDesktop(installations: Installation[]): Desktop {
       }),
     cancelOperation: async (id: string) => {
       desktop.cancelled.push(id)
-    }
+    },
+    killPortProcess: () =>
+      new Promise<{ ok: boolean }>((resolve) => {
+        desktop.portKills.push(resolve)
+      }),
+    onCloseRequest: subscribe(closeListeners),
+    ackCloseRequest: () => {},
+    respondCloseRequest: ({
+      requestId,
+      ...answer
+    }: {
+      requestId: string
+      cleared?: boolean
+      defer?: true
+    }) => closeAnswers.get(requestId)?.(answer)
   }
   ;(window as unknown as { api: unknown }).api = new Proxy(answered, {
     get(known, key) {
@@ -286,6 +314,30 @@ describe('a task on a build runs on its tile, never on the full-screen page', ()
     expect(fullScreenProgress()).toBeNull()
   })
 
+  it('still lands on the new build when the copy works on Try again', async () => {
+    await openBuildsList()
+    await desktop.startFromPicker({
+      actionId: 'copy',
+      title: 'Copying installation - Video Lab',
+      opKind: 'generic',
+      actionData: { name: COPY.name }
+    })
+    ;(await lastRun()).finish({ ok: false, message: 'disk full' })
+    await flushPromises()
+    await chooseOnTileMenu('manage')
+    await vi.waitFor(() => expect(onPage('build-operation-retry')).not.toBeNull())
+
+    await press('build-operation-retry')
+    await vi.waitFor(() => expect(desktop.runs).toHaveLength(2))
+    desktop.installations = [BUILD, COPY]
+    desktop.runs[1]!.finish({ ok: true, navigate: 'list', newInstallationId: COPY.id })
+    await flushPromises()
+
+    await vi.waitFor(() =>
+      expect(buildPage()?.querySelector('h1')?.textContent).toContain(COPY.name)
+    )
+  })
+
   it('asks before stopping a task from the tile menu', async () => {
     await openBuildsList()
     await desktop.startFromPicker({
@@ -398,5 +450,108 @@ describe('a port conflict when a build starts', () => {
     await vi.waitFor(() => expect(desktop.runs).toHaveLength(2))
     expect(desktop.runs[1]).toMatchObject({ actionId: 'launch', data: { portOverride: 8189 } })
     expect(fullScreenProgress()).toBeNull()
+  })
+
+  it('goes back to the choices when the stop is not confirmed', async () => {
+    await startIntoConflict()
+
+    await press(TID.progressPortConflictKill)
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Stop Existing Process'))
+    await press(TID.baseAlertCancel)
+
+    await vi.waitFor(() => expect(onPage(TID.progressPortConflictUsePort)).not.toBeNull())
+    expect(desktop.portKills).toHaveLength(0)
+  })
+
+  it('keeps the next port on offer when stopping the other process fails', async () => {
+    await startIntoConflict()
+
+    await press(TID.progressPortConflictKill)
+    await vi.waitFor(() => expect(onPage(TID.baseAlertAction)).not.toBeNull())
+    await press(TID.baseAlertAction)
+    await vi.waitFor(() => expect(desktop.portKills).toHaveLength(1))
+    desktop.portKills[0]!({ ok: false })
+    await flushPromises()
+
+    await vi.waitFor(() => expect(onPage(TID.progressPortConflictUsePort)).not.toBeNull())
+    expect(
+      onPage(TID.progressPortConflictKill),
+      'no second stop of a listener that may have changed'
+    ).toBeNull()
+    expect(document.body.textContent).toContain('8188')
+    await press(TID.progressPortConflictUsePort)
+    await vi.waitFor(() => expect(desktop.runs).toHaveLength(2))
+    expect(desktop.runs[1]).toMatchObject({ actionId: 'launch', data: { portOverride: 8189 } })
+  })
+})
+
+describe('a port conflict when a build restarts after an update', () => {
+  it('asks about the port, and only starts the build again', async () => {
+    await openBuildsList()
+    await desktop.startFromPicker({
+      actionId: 'update-comfyui',
+      title: 'Updating ComfyUI - Video Lab',
+      opKind: 'update',
+      cancellable: true,
+      relaunch: true
+    })
+    ;(await lastRun()).finish({ ok: true })
+    await vi.waitFor(() => expect(desktop.runs).toHaveLength(2))
+    expect(desktop.runs[1]!.actionId).toBe('launch')
+    desktop.runs[1]!.finish({
+      ok: false,
+      message: 'Port 8188 is already in use by python.',
+      portConflict: { port: 8188, nextPort: 8189, isComfy: true }
+    })
+    await flushPromises()
+
+    await vi.waitFor(() => expect(onPage(TID.progressPortConflictUsePort)).not.toBeNull())
+    await press(TID.progressPortConflictUsePort)
+
+    await vi.waitFor(() => expect(desktop.runs).toHaveLength(3))
+    expect(desktop.runs[2]).toMatchObject({ actionId: 'launch', data: { portOverride: 8189 } })
+  })
+})
+
+describe('closing the Desktop window while a task runs', () => {
+  async function startPull(): Promise<void> {
+    await openBuildsList()
+    await desktop.startFromPicker({
+      actionId: 'git-pull',
+      title: 'Pulling changes - Video Lab',
+      opKind: 'generic',
+      cancellable: true
+    })
+    await lastRun()
+  }
+
+  it('lets the window close at once when nothing is running', async () => {
+    await openBuildsList()
+
+    await expect(desktop.askToClose()).resolves.toEqual({ defer: true })
+  })
+
+  it('keeps the window and the task when the user does not stop it', async () => {
+    await startPull()
+
+    const answer = desktop.askToClose()
+    await vi.waitFor(() => expect(onPage(TID.baseAlertCancel)).not.toBeNull())
+    expect(document.body.textContent).toContain('Stop now?')
+    await press(TID.baseAlertCancel)
+
+    await expect(answer).resolves.toEqual({ cleared: false })
+    expect(desktop.cancelled).toEqual([])
+    expect(buildTile()!.textContent).toContain('Pulling changes')
+  })
+
+  it('stops the task and lets the window close once the user agrees', async () => {
+    await startPull()
+
+    const answer = desktop.askToClose()
+    await vi.waitFor(() => expect(onPage(TID.baseAlertAction)).not.toBeNull())
+    await press(TID.baseAlertAction)
+
+    await expect(answer).resolves.toEqual({ cleared: true })
+    expect(desktop.cancelled).toEqual([BUILD.id])
   })
 })

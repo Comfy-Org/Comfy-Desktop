@@ -447,6 +447,7 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         enabled: installed,
         tooltip: t('tooltips.updateNow'),
         showProgress: true,
+        cancellable: true,
         progressTitle: isSwitching
           ? t('channelCards.switchingToTitle', { channel: card.label })
           : isDowngrade

@@ -1,3 +1,4 @@
+import { relaunchAfterAction } from '../lib/relaunchAfterAction'
 import { onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
@@ -117,21 +118,21 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
           const wasRunning = sessionStore.isRunning(id)
           const requiresStoppedGuard = !isRestart && REQUIRES_STOPPED.has(actionId)
           const needsSelfStop = wasRunning && requiresStoppedGuard
-          const wantsRelaunch = needsSelfStop && IN_PLACE_RELAUNCH.has(actionId)
+          const wantsRelaunch =
+            !isRestart &&
+            IN_PLACE_RELAUNCH.has(actionId) &&
+            (payload.relaunch === true || needsSelfStop)
           const isRunning = (): boolean => sessionStore.isRunning(id)
           const apiCall = isRestart
             ? async () => {
                 await stopAndWaitForExit(id, isRunning)
                 return window.api.runAction(id, 'launch')
               }
-            : needsSelfStop
+            : needsSelfStop || wantsRelaunch
               ? async () => {
-                  await stopAndWaitForExit(id, isRunning)
+                  if (needsSelfStop) await stopAndWaitForExit(id, isRunning)
                   const result = await window.api.runAction(id, actionId, actionData)
-                  if (wantsRelaunch && result?.ok !== false) {
-                    await window.api.runAction(id, 'launch')
-                  }
-                  return result
+                  return wantsRelaunch ? relaunchAfterAction(id, result) : result
                 }
               : () => window.api.runAction(id, actionId, actionData)
           const successTerminal = payload.successChoice
@@ -151,6 +152,7 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
             opKind: payload.opKind,
             actionId,
             actionData,
+            relaunchAfter: wantsRelaunch,
             successTerminal
           })
         }

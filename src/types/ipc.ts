@@ -458,6 +458,7 @@ export interface ShowProgressOpts {
   destroysInstance?: boolean
   actionId?: string
   actionData?: Record<string, unknown>
+  relaunchAfter?: boolean
   successTerminal?: {
     title?: string
     actions: Array<{ id: string; label: string; variant: 'primary' | 'ghost' }>
@@ -471,6 +472,7 @@ export interface HomeProgressRequest {
   actionData?: Record<string, unknown>
   cancellable?: boolean
   opKind?: ShowProgressOpts['opKind']
+  relaunch?: boolean
 }
 
 export interface ActionResult {
@@ -1503,6 +1505,7 @@ export interface ElectronApi {
       opKind?: 'launch' | 'install' | 'update' | 'destructive' | 'snapshot' | 'generic'
       isRestart?: boolean
       successChoice?: boolean
+      relaunch?: boolean
     }) => void
   ): Unsubscribe
 }

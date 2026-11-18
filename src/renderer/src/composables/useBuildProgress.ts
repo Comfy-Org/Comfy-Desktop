@@ -1,6 +1,6 @@
 import { computed, inject, provide, type ComputedRef, type InjectionKey } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useProgressStore } from '../stores/progressStore'
+import { useProgressStore, type Operation } from '../stores/progressStore'
 import { useModal } from './useModal'
 import { isUninstallOpKind, updatesBuildInPlace } from '../lib/progressOpKind'
 import { progressStepName } from '../lib/progressStatusLabel'
@@ -23,6 +23,26 @@ const CANCEL_COPY: Record<BuildProgressKind, string> = {
   uninstall: 'uninstallProgress',
   update: 'updateProgress',
   working: 'workingProgress'
+}
+
+export function inPlaceTaskLabel(
+  progress: BuildProgress,
+  t: (key: string, params?: Record<string, unknown>) => string
+): string | null {
+  const { kind, percent, task } = progress
+  if (kind === 'update') {
+    return percent === null
+      ? t('updateProgress.status')
+      : t('updateProgress.tileStatus', { percent })
+  }
+  if (kind === 'working') {
+    return percent === null ? task : t('installProgress.detail', { phase: task, percent })
+  }
+  return null
+}
+
+export function cancelConfirmKey(kind: BuildProgressKind): string {
+  return `${CANCEL_COPY[kind]}.cancelConfirm`
 }
 
 export function operationTask(title: string): string {
@@ -136,6 +156,38 @@ export function useInstallingBuilds(): (installationId: string) => boolean {
   return (installationId) => buildProgressOf(progressStore, installationId)?.kind === 'install'
 }
 
+export function stopsWithItsWindow(opKind: Operation['opKind']): boolean {
+  return opKind !== 'launch' && opKind !== 'install' && !isUninstallOpKind(opKind)
+}
+
+export function useConfirmStopTask(): (installationId: string, name: string) => Promise<boolean> {
+  const { t } = useI18n()
+  const progressStore = useProgressStore()
+  const modal = useModal()
+
+  return async (installationId, name) => {
+    const op = progressStore.operations.get(installationId)
+    const current = buildProgressOf(progressStore, installationId)
+    if (!op || op.finished || !current) return true
+    if (current.kind === 'launch') {
+      progressStore.cancelOperation(installationId)
+      return true
+    }
+    const copy = CANCEL_COPY[current.kind]
+    const confirmed = await modal.confirm({
+      title: t(`${copy}.cancelTitle`),
+      message: t(`${copy}.cancelMessage`, { name, task: current.task }),
+      confirmLabel: t(`${copy}.cancelConfirm`),
+      confirmStyle: 'danger'
+    })
+    if (!confirmed) return false
+    if (progressStore.operations.get(installationId) === op && !op.finished) {
+      progressStore.cancelOperation(installationId)
+    }
+    return true
+  }
+}
+
 export function useBuildProgress(build: () => Installation): {
   progress: ComputedRef<BuildProgress | null>
   detail: ComputedRef<string>
@@ -145,8 +197,8 @@ export function useBuildProgress(build: () => Installation): {
   const i18n = useI18n()
   const { t } = i18n
   const progressStore = useProgressStore()
-  const modal = useModal()
   const view = useViewBuildLogs()
+  const confirmStopTask = useConfirmStopTask()
 
   const progress = computed(() =>
     buildProgressOf(progressStore, build().id, (step) => progressStepName(step, i18n))
@@ -168,18 +220,7 @@ export function useBuildProgress(build: () => Installation): {
 
   async function cancel(): Promise<void> {
     const current = build()
-    if (progress.value?.kind === 'launch') {
-      progressStore.cancelOperation(current.id)
-      return
-    }
-    const copy = CANCEL_COPY[progress.value?.kind ?? 'install']
-    const confirmed = await modal.confirm({
-      title: t(`${copy}.cancelTitle`),
-      message: t(`${copy}.cancelMessage`, { name: current.name, task: progress.value?.task ?? '' }),
-      confirmLabel: t(`${copy}.cancelConfirm`),
-      confirmStyle: 'danger'
-    })
-    if (confirmed) progressStore.cancelOperation(current.id)
+    await confirmStopTask(current.id, current.name)
   }
 
   return { progress, detail, viewLogs, cancel }

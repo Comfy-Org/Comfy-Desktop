@@ -18,7 +18,11 @@ import {
   type HomeBuildStatus,
   type HomeBuildTone
 } from './homeBuild'
-import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import {
+  inPlaceTaskLabel,
+  launchFailed,
+  useBuildProgress
+} from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useProgressStore } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -71,17 +75,8 @@ const toneStyle = computed(() => HOME_BUILD_TONES[tone])
 const statusLabel = computed(() => {
   if (install.progress.value?.cancelling) return t('installProgress.cancelling')
   if (uninstalling.value) return t('uninstallProgress.status')
-  if (updating.value) {
-    const percent = install.progress.value?.percent
-    return percent == null
-      ? t('updateProgress.status')
-      : t('updateProgress.tileStatus', { percent })
-  }
-  if (working.value) {
-    const task = install.progress.value?.task ?? ''
-    const percent = install.progress.value?.percent
-    return percent == null ? task : t('installProgress.detail', { phase: task, percent })
-  }
+  const inPlace = install.progress.value ? inPlaceTaskLabel(install.progress.value, t) : null
+  if (inPlace !== null) return inPlace
   if (busy.value) {
     const phase = t(starting.value ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
     const percent = install.progress.value?.percent

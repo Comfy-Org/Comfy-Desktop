@@ -1,3 +1,4 @@
+import { relaunchAfterAction } from '../lib/relaunchAfterAction'
 import { useI18n } from 'vue-i18n'
 import { useModal } from './useModal'
 import { useActionGuard } from './useActionGuard'
@@ -149,10 +150,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
         ? async () => {
             await stopAndWaitForExit(inst.id, isRunning)
             const result = await runAction()
-            if (wantsRelaunch && result?.ok !== false) {
-              await window.api.runAction(inst.id, 'launch')
-            }
-            return result
+            return wantsRelaunch ? relaunchAfterAction(inst.id, result) : result
           }
         : runAction
       callbacks.showProgress({
@@ -163,7 +161,8 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
         triggersInstanceStart,
         opKind: progressOpKindForActionId(action.id),
         destroysInstance: destroysInstanceForActionId(action.id),
-        actionId: action.id
+        actionId: action.id,
+        relaunchAfter: wantsRelaunch
       })
       return
     }

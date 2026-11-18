@@ -1,25 +1,44 @@
+import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const host = vi.hoisted(() => {
-  const homeWindow = { id: 'home' }
-  const panelView = { webContents: { isDestroyed: () => false } }
-  return {
-    homeWindow,
-    panelView,
-    entries: new Map<number, unknown>(),
-    openOrFocusHomeHostWindow: vi.fn(() => homeWindow),
-    sendToPanelDeferred: vi.fn()
+class FakeContents extends EventEmitter {
+  loading = false
+  destroyed = false
+  sent: Array<{ channel: string; payload: unknown }> = []
+  isDestroyed(): boolean {
+    return this.destroyed
   }
-})
+  isLoadingMainFrame(): boolean {
+    return this.loading
+  }
+  send(channel: string, payload: unknown): void {
+    this.sent.push({ channel, payload })
+  }
+}
+
+const host = vi.hoisted(() => ({
+  home: null as null | { windowKey: number; panelView: unknown },
+  openOrFocusHomeHostWindow: vi.fn(() => ({ id: 'home' })),
+  ensurePanelView: vi.fn()
+}))
 
 vi.mock('./registry', () => ({
-  comfyWindows: host.entries,
-  isChooserHost: (entry: { installationId: string | null }) => entry.installationId === null,
+  computeBodyMode: () => 'chooser',
+  findEntryByHostWindow: () => host.home,
   openOrFocusHomeHostWindow: host.openOrFocusHomeHostWindow
 }))
-vi.mock('./panelView', () => ({ sendToPanelDeferred: host.sendToPanelDeferred }))
+vi.mock('./panelView', () => ({ ensurePanelView: host.ensurePanelView }))
 
 import { parseHomeProgressRequest, showProgressOnHome } from './showProgressOnHome'
+
+const REQUEST = { installationId: 'studio', actionId: 'git-pull', title: 'Pulling' }
+
+function homeWith(contents: FakeContents | null): FakeContents {
+  const made = contents ?? new FakeContents()
+  host.home = { windowKey: 2, panelView: contents ? { webContents: contents } : null }
+  host.ensurePanelView.mockReturnValue({ webContents: made })
+  return made
+}
 
 describe('parseHomeProgressRequest', () => {
   it('keeps a well-formed request', () => {
@@ -38,7 +57,8 @@ describe('parseHomeProgressRequest', () => {
       title: 'Updating - Studio',
       actionData: { channel: 'stable' },
       cancellable: true,
-      opKind: 'update'
+      opKind: 'update',
+      relaunch: false
     })
   })
 
@@ -64,46 +84,68 @@ describe('parseHomeProgressRequest', () => {
       title: 'Copy',
       actionData: undefined,
       cancellable: false,
-      opKind: undefined
+      opKind: undefined,
+      relaunch: false
     })
   })
 })
 
 describe('showProgressOnHome', () => {
   beforeEach(() => {
-    host.entries.clear()
     host.openOrFocusHomeHostWindow.mockClear()
-    host.sendToPanelDeferred.mockClear()
+    host.ensurePanelView.mockClear()
   })
 
-  it('opens or focuses the Desktop window and runs the task there', () => {
-    host.entries.set(1, { window: { id: 'build' }, installationId: 'studio', panelView: {} })
-    host.entries.set(2, {
-      window: host.homeWindow,
-      installationId: null,
-      panelView: host.panelView
-    })
+  it('opens or focuses the Desktop window and runs the task there', async () => {
+    const contents = homeWith(new FakeContents())
 
-    expect(
-      showProgressOnHome({ installationId: 'studio', actionId: 'git-pull', title: 'Pulling' })
-    ).toBe(true)
+    await expect(showProgressOnHome(REQUEST)).resolves.toBe(true)
 
     expect(host.openOrFocusHomeHostWindow).toHaveBeenCalledOnce()
-    expect(host.sendToPanelDeferred).toHaveBeenCalledWith(
-      host.panelView,
-      'panel-trigger-overlay',
-      expect.objectContaining({
-        kind: 'picker-show-progress',
-        installationId: 'studio',
-        actionId: 'git-pull',
-        title: 'Pulling'
-      })
-    )
+    expect(contents.sent).toEqual([
+      {
+        channel: 'panel-trigger-overlay',
+        payload: expect.objectContaining({ kind: 'picker-show-progress', ...REQUEST })
+      }
+    ])
   })
 
-  it('does nothing for a malformed request', () => {
-    expect(showProgressOnHome({ installationId: 'studio' })).toBe(false)
+  it('creates the Desktop panel when the window has none yet', async () => {
+    const contents = homeWith(null)
+
+    await expect(showProgressOnHome(REQUEST)).resolves.toBe(true)
+
+    expect(host.ensurePanelView).toHaveBeenCalledOnce()
+    expect(contents.sent).toHaveLength(1)
+  })
+
+  it('waits for a loading panel and reports delivery once it has loaded', async () => {
+    const contents = homeWith(new FakeContents())
+    contents.loading = true
+
+    const delivered = showProgressOnHome(REQUEST)
+    expect(contents.sent).toEqual([])
+    contents.loading = false
+    contents.emit('did-finish-load')
+
+    await expect(delivered).resolves.toBe(true)
+    expect(contents.sent).toHaveLength(1)
+  })
+
+  it('reports a lost hand-off when the panel closes before it loads', async () => {
+    const contents = homeWith(new FakeContents())
+    contents.loading = true
+
+    const delivered = showProgressOnHome(REQUEST)
+    contents.destroyed = true
+    contents.emit('destroyed')
+
+    await expect(delivered).resolves.toBe(false)
+    expect(contents.sent).toEqual([])
+  })
+
+  it('does nothing for a malformed request', async () => {
+    await expect(showProgressOnHome({ installationId: 'studio' })).resolves.toBe(false)
     expect(host.openOrFocusHomeHostWindow).not.toHaveBeenCalled()
-    expect(host.sendToPanelDeferred).not.toHaveBeenCalled()
   })
 })

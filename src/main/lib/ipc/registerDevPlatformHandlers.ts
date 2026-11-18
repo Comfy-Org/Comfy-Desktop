@@ -268,6 +268,9 @@ export function registerDevPlatformHandlers(): void {
       if (promoting.has(installationId)) {
         return { ok: false, message: 'Promotion is already in progress.' }
       }
+      if (_operationAborts.has(installationId)) {
+        return { ok: false, message: i18n.t('chooser.busyActionGatedReason') }
+      }
       promoting.add(installationId)
       try {
         const inst = await installations.get(installationId)

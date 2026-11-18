@@ -5,7 +5,11 @@ import { computed, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Ellipsis, Info, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
-import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import {
+  inPlaceTaskLabel,
+  launchFailed,
+  useBuildProgress
+} from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useProgressStore } from '../../stores/progressStore'
 import {
@@ -75,16 +79,8 @@ const progressLabel = computed(() => {
       ? t('uninstallProgress.status')
       : t('uninstallProgress.tileStatus', { percent: current.percent })
   }
-  if (current.kind === 'update') {
-    return current.percent === null
-      ? t('updateProgress.status')
-      : t('updateProgress.tileStatus', { percent: current.percent })
-  }
-  if (current.kind === 'working') {
-    return current.percent === null
-      ? current.task
-      : t('installProgress.detail', { phase: current.task, percent: current.percent })
-  }
+  const inPlace = inPlaceTaskLabel(current, t)
+  if (inPlace !== null) return inPlace
   const phase = t(current.kind === 'launch' ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
   return current.percent == null
     ? phase

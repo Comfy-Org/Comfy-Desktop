@@ -94,39 +94,46 @@ export function usePortConflictPrompt(
     const conflict = op?.result?.portConflict
     if (!op || !conflict) return
     const { title, returnTo } = op
-    const retry = op.apiCall ?? (() => window.api.runAction(installationId, 'launch'))
+    const launchAgain = (): Promise<ActionResult> => window.api.runAction(installationId, 'launch')
+    const retry = op.opKind === 'launch' && op.apiCall ? op.apiCall : launchAgain
     const message = op.result?.message ?? ''
-    const choice = await askPortChoice(conflict, message)
-    if (choice === 'use-next-port' && conflict.nextPort) {
-      const port = conflict.nextPort
-      restart(installationId, title, returnTo, () =>
-        window.api.runAction(installationId, 'launch', { portOverride: port })
-      )
-      return
+    let current: PortConflictInfo = conflict
+    let shown = message
+    for (;;) {
+      const choice = await askPortChoice(current, shown)
+      if (choice === 'use-next-port' && current.nextPort) {
+        const port = current.nextPort
+        restart(installationId, title, returnTo, () =>
+          window.api.runAction(installationId, 'launch', { portOverride: port })
+        )
+        return
+      }
+      if (choice !== 'stop-other') return
+      if (current.priorBusy) {
+        if (!(await stopBusyPrior(current))) continue
+        restart(installationId, title, returnTo, () =>
+          window.api.runAction(installationId, 'launch', { stopBusyPriorProcess: true })
+        )
+        return
+      }
+      const confirmed = await modal.confirm({
+        title: t('errors.portConflictKillConfirmTitle'),
+        message: t('errors.portConflictKillConfirmMessage'),
+        confirmLabel: t('errors.portConflictKill'),
+        confirmStyle: 'danger'
+      })
+      if (!confirmed) continue
+      const killed = await window.api.killPortProcess(current.port).catch(() => ({ ok: false }))
+      if (killed.ok) {
+        restart(installationId, title, returnTo, retry)
+        return
+      }
+      shown = t('errors.portConflictKillFailed', { port: current.port })
+      current = { ...current, isComfy: false }
+      if (!current.nextPort) {
+        await modal.alert({ title: t(portConflictTitleKey(current)), message: shown })
+        return
+      }
     }
-    if (choice !== 'stop-other') return
-    if (conflict.priorBusy) {
-      if (!(await stopBusyPrior(conflict))) return
-      restart(installationId, title, returnTo, () =>
-        window.api.runAction(installationId, 'launch', { stopBusyPriorProcess: true })
-      )
-      return
-    }
-    const confirmed = await modal.confirm({
-      title: t('errors.portConflictKillConfirmTitle'),
-      message: t('errors.portConflictKillConfirmMessage'),
-      confirmLabel: t('errors.portConflictKill'),
-      confirmStyle: 'danger'
-    })
-    if (!confirmed) return
-    const killed = await window.api.killPortProcess(conflict.port)
-    if (killed.ok) {
-      restart(installationId, title, returnTo, retry)
-      return
-    }
-    await modal.alert({
-      title: t(portConflictTitleKey(conflict)),
-      message: t('errors.portConflictKillFailed', { port: conflict.port })
-    })
   }
 }

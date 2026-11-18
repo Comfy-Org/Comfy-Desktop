@@ -1023,6 +1023,15 @@ describe('registerDevPlatformHandlers', () => {
     )
   })
 
+  it('does not capture a build while another task is changing it', async () => {
+    mocks.operationAborts.set('local-1', new AbortController())
+
+    const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+
+    expect(result).toEqual({ ok: false, message: 'chooser.busyActionGatedReason' })
+    expect(mocks.saveSnapshot).not.toHaveBeenCalled()
+  })
+
   it('does not start two promotions for the same instance', async () => {
     let finishCapture!: (filename: string) => void
     mocks.saveSnapshot.mockReturnValue(

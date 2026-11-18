@@ -1,3 +1,4 @@
+import { relaunchAfterAction } from '../lib/relaunchAfterAction'
 import { useI18n } from 'vue-i18n'
 import { useModal } from './useModal'
 import { useDialogs } from './useDialogs'
@@ -117,10 +118,7 @@ export function useDetailActionPreflight() {
         ? async (): Promise<ReturnType<typeof window.api.runAction>> => {
             await stopAndWaitForExit(inst.id, isRunning)
             const result = await window.api.runAction(inst.id, action.id, action.data)
-            if (wantsRelaunch && result?.ok !== false) {
-              await window.api.runAction(inst.id, 'launch')
-            }
-            return result
+            return wantsRelaunch ? relaunchAfterAction(inst.id, result) : result
           }
         : (): ReturnType<typeof window.api.runAction> =>
             window.api.runAction(inst.id, action.id, action.data)
@@ -135,7 +133,8 @@ export function useDetailActionPreflight() {
       opKind: isRestart ? 'launch' : progressOpKindForActionId(action.id),
       destroysInstance: destroysInstanceForActionId(action.id),
       actionId: action.id,
-      actionData: action.data
+      actionData: action.data,
+      relaunchAfter: wantsRelaunch
     })
   }
 

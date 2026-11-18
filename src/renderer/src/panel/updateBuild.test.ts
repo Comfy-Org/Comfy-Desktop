@@ -50,6 +50,7 @@ const UPDATE_ACTION_SECTIONS: DetailSection[] = [
 ]
 
 interface PendingUpdate {
+  installationId: string
   finish: (result: ActionResult) => void
 }
 
@@ -125,10 +126,10 @@ function openDesktop(installations: Installation[]): Desktop {
     onPanelSwitch: subscribe(panelListeners),
     onPanelTriggerOverlay: subscribe(overlayListeners),
     onInstallProgress: subscribe(progressListeners),
-    runAction: (_id: string, actionId: string) => {
+    runAction: (installationId: string, actionId: string) => {
       if (actionId !== 'update-comfyui') return Promise.resolve({ ok: true })
       return new Promise<ActionResult>((finish) => {
-        desktop.updates.push({ finish })
+        desktop.updates.push({ installationId, finish })
       })
     },
     cancelOperation: async (id: string) => {
@@ -229,6 +230,7 @@ describe('updating a build', () => {
 
     await chooseOnTileMenu('update')
     await vi.waitFor(() => expect(desktop.updates).toHaveLength(1))
+    expect(desktop.updates[0]!.installationId).toBe(BUILD.id)
 
     expect(fullScreenProgress()).toBeNull()
     expect(onPage('app-sidebar')).not.toBeNull()
@@ -285,6 +287,7 @@ describe('updating a build', () => {
     await desktop.startPickerUpdate(BUILD.id)
 
     expect(desktop.updates).toHaveLength(1)
+    expect(desktop.updates[0]!.installationId).toBe(BUILD.id)
     expect(fullScreenProgress()).toBeNull()
     expect(onPage('app-sidebar')).not.toBeNull()
     expect(buildTile()!.checkVisibility()).toBe(true)
@@ -326,6 +329,7 @@ describe('updating a build', () => {
     await chooseOnTileMenu('cancel')
     await vi.waitFor(() => expect(onPage(TID.baseAlertAction)).not.toBeNull())
     expect(document.body.textContent).toContain('Stop updating?')
+    expect(desktop.cancelled, 'nothing is cancelled before the user confirms').toEqual([])
     await press(TID.baseAlertAction)
 
     expect(desktop.cancelled).toEqual([BUILD.id])

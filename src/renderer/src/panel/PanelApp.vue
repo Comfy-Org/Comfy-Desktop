@@ -209,20 +209,45 @@ async function openBuildFromSidebar(inst: Installation): Promise<void> {
   openBuildDetails(inst)
 }
 
+const NEW_BUILD_REFRESH_DELAYS_MS = [0, 1000, 3000]
+
 function landOnNewBuild(id: string): void {
+  const startedIn = dashboardScope.selectedWorkspaceId
   const open = (inst: Installation | undefined): boolean => {
     if (!inst) return false
-    void openBuildFromSidebar(inst)
+    const stillWhereItStarted = dashboardScope.selectedWorkspaceId === startedIn
+    if (stillWhereItStarted && isInstallationInWorkspace(inst, startedIn)) {
+      void openBuildFromSidebar(inst)
+    }
     return true
   }
   if (open(installationStore.getById(id))) return
+  let waiting = true
   const stop = watch(
     () => installationStore.getById(id),
     (inst) => {
-      if (open(inst)) stop()
+      if (!open(inst)) return
+      waiting = false
+      stop()
     }
   )
-  void installationStore.fetchInstallations().catch(() => {})
+  void (async () => {
+    for (const delay of NEW_BUILD_REFRESH_DELAYS_MS) {
+      if (!waiting) return
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+      if (!waiting) return
+      const refreshed = await installationStore.fetchInstallations().then(
+        () => true,
+        () => false
+      )
+      if (refreshed) break
+    }
+    if (!waiting) return
+    waiting = false
+    stop()
+    if (open(installationStore.getById(id))) return
+    console.warn('[builds] the copied build could not be listed, so its page was not opened', id)
+  })()
 }
 
 async function showHome(): Promise<void> {

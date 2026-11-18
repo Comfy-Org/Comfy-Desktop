@@ -170,4 +170,10 @@ test('Cancel on the build tile stops the in-flight update and its ComfyUI @windo
   expect(await ctx.panel.exists('.brand-progress')).toBe(false)
 
   await settleInFlightOp({ ok: false, cancelled: true })
+  await expect
+    .poll(() => ctx.panel.exists(TILE_PROGRESS), {
+      timeout: 5_000,
+      message: 'the tile leaves the cancelling state once the task settles'
+    })
+    .toBe(false)
 })
