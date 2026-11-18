@@ -192,49 +192,79 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     }
   })
 
-  it('puts Add models folder outside the cards, 10px under the last Models card, on their left edge', async () => {
+  it('puts Add models folder outside the Models card, 10px under it, on its left edge', async () => {
     const root = await mountStorage(width)
-    const cards = rects(root, '.models-dir-row')
-    const lastCard = cards[cards.length - 1]!
+    const card = root.querySelector<HTMLElement>('.models-dir-card')!.getBoundingClientRect()
     const addButton = root.querySelector<HTMLElement>('.models-dir-add')!
     const add = addButton.getBoundingClientRect()
-    expect(addButton.closest('.models-dir-row'), 'the button is not inside a card').toBeNull()
-    expect(Math.round(add.top - lastCard.bottom), 'the button sits 10px under the last card').toBe(
-      10
-    )
+    expect(addButton.closest('.models-dir-card'), 'the button is not inside the card').toBeNull()
+    expect(Math.round(add.top - card.bottom), 'the button sits 10px under the card').toBe(10)
     expect(Math.round(add.height), 'the button is as tall as Add Variable').toBe(32)
-    expectSame([...cards.map((r) => r.left), add.left], 'the button lines up with the cards')
+    expect(Math.round(add.left), 'the button lines up with the card').toBe(Math.round(card.left))
   })
 
-  it('pads every folder card like the Overview cards and spaces them 10px apart', async () => {
+  it('pads every folder card like the Overview cards', async () => {
     const root = await mountStorage(width)
-    const cards = [...root.querySelectorAll<HTMLElement>('.models-dir-row, .storage-dir-row')]
-    expect(cards.length).toBeGreaterThanOrEqual(4)
+    const cards = [...root.querySelectorAll<HTMLElement>('.models-dir-card, .storage-dir-row')]
+    expect(cards.length).toBe(3)
     for (const card of cards) {
-      const style = getComputedStyle(card)
-      expect(style.borderRadius, 'card radius').toBe('14px')
-      expect(style.paddingTop, 'card top padding').toBe('16px')
-      expect(style.paddingBottom, 'card bottom padding').toBe('16px')
+      expect(getComputedStyle(card).borderRadius, 'card radius').toBe('14px')
       const box = card.getBoundingClientRect()
-      const icon = card.querySelector('.storage-item-icon')!.getBoundingClientRect()
-      expect(Math.round(icon.left - box.left), 'icon sits 18px from the left edge').toBe(18)
-      const dots = [
-        ...card.querySelectorAll('.models-dir-action svg circle, .storage-dir-action svg circle')
-      ]
-      if (dots.length === 0) continue
-      const dotsRight = Math.max(...dots.map((d) => d.getBoundingClientRect().right))
-      expect(
-        Math.round(box.right - dotsRight),
-        'the more glyph sits 18px from the right edge'
-      ).toBe(18)
+      const slots = [
+        ...card.querySelectorAll<HTMLElement>('.models-dir-icon-slot, .storage-dir-icon-slot')
+      ].map((el) => el.getBoundingClientRect())
+      expect(Math.round(slots[0]!.top - box.top), 'first row starts 16px from the top').toBe(16)
+      const rows = [...card.querySelectorAll<HTMLElement>('.models-dir-row')]
+      const lastRow = rows.length > 0 ? rows[rows.length - 1]! : card
+      const contentBottom = Math.max(
+        ...[...lastRow.querySelectorAll<HTMLElement>(':scope > *')].map(
+          (el) => el.getBoundingClientRect().bottom
+        )
+      )
+      expect(Math.round(box.bottom - contentBottom), 'last row ends 16px from the bottom').toBe(16)
+      for (const icon of card.querySelectorAll('.storage-item-icon')) {
+        expect(
+          Math.round(icon.getBoundingClientRect().left - box.left),
+          'icon sits 18px from the left edge'
+        ).toBe(18)
+      }
+      for (const button of card.querySelectorAll('.models-dir-action, .storage-dir-action')) {
+        const dots = [...button.querySelectorAll('svg circle')]
+        const dotsRight = Math.max(...dots.map((d) => d.getBoundingClientRect().right))
+        expect(
+          Math.round(box.right - dotsRight),
+          'the more glyph sits 18px from the right edge'
+        ).toBe(18)
+      }
     }
-    const modelCards = rects(root, '.models-dir-row')
-    for (let i = 1; i < modelCards.length; i++) {
-      expect(
-        Math.round(modelCards[i]!.top - modelCards[i - 1]!.bottom),
-        'models cards sit 10px apart'
-      ).toBe(10)
-    }
+  })
+
+  it('keeps every models folder in one card, split by inset 1px dividers', async () => {
+    const root = await mountStorage(width)
+    const cards = root.querySelectorAll<HTMLElement>('.models-dir-card')
+    expect(cards, 'one card holds every models folder').toHaveLength(1)
+    const card = cards[0]!
+    const box = card.getBoundingClientRect()
+    const rows = [...card.querySelectorAll<HTMLElement>('.models-dir-row')].map((el) =>
+      el.getBoundingClientRect()
+    )
+    expect(rows.length).toBeGreaterThanOrEqual(2)
+    expect(root.querySelectorAll('.models-dir-row').length, 'no models folder outside').toBe(
+      rows.length
+    )
+    const dividers = [...card.querySelectorAll<HTMLElement>('.models-dir-divider')].map((el) =>
+      el.getBoundingClientRect()
+    )
+    expect(dividers, 'one divider between each pair of rows').toHaveLength(rows.length - 1)
+    dividers.forEach((divider, i) => {
+      expect(Math.round(divider.height), 'divider is 1px').toBe(1)
+      expect(Math.round(divider.left - box.left), 'divider starts at the 18px padding').toBe(18)
+      expect(Math.round(box.right - divider.right), 'divider ends at the 18px padding').toBe(18)
+      expect(divider.top, 'divider sits below its row').toBeGreaterThanOrEqual(rows[i]!.bottom)
+      expect(divider.bottom, 'divider sits above the next row').toBeLessThanOrEqual(
+        rows[i + 1]!.top
+      )
+    })
   })
 
   it('keeps icons and badges on the first line when a path wraps', async () => {
@@ -257,8 +287,8 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
       }
     }
     const listRows = rects(root, '.models-dir-row')
-    const singleLine = listRows.filter((r) => Math.round(r.height) === 64)
-    expect(singleLine.length, 'a one-line card is 64px tall').toBeGreaterThan(0)
+    const singleLine = listRows.filter((r) => Math.round(r.height) === 44)
+    expect(singleLine.length, 'a one-line models row is 44px tall').toBeGreaterThan(0)
   })
 
   it('shows every folder path in full, wrapping instead of truncating', async () => {
@@ -347,15 +377,11 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     probe.className = CARD_FILL_PROBE
     document.body.appendChild(probe)
     const cardFill = getComputedStyle(probe).backgroundColor
-    const cards = [...root.querySelectorAll<HTMLElement>('.models-dir-row, .storage-dir-row')]
-    expect(cards.length).toBeGreaterThanOrEqual(4)
+    const cards = [...root.querySelectorAll<HTMLElement>('.models-dir-card, .storage-dir-row')]
+    expect(cards.length).toBe(3)
     for (const card of cards) {
       expect(getComputedStyle(card).backgroundColor, 'card fill').toBe(cardFill)
     }
-    expect(
-      getComputedStyle(root.querySelector('.models-dir-list')!).backgroundColor,
-      'no shared box around the Models cards'
-    ).toBe('rgba(0, 0, 0, 0)')
   })
 
   it('keeps the environment variables title and note clear of the field above', async () => {

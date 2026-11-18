@@ -128,106 +128,119 @@ const rows = computed(() =>
 
 <template>
   <div class="models-dir-list flex flex-col gap-2.5" @click="closeMenu()">
-    <div
-      v-for="row in rows"
-      :key="row.path"
-      class="models-dir-row flex min-w-0 items-start gap-2.5 rounded-[14px] bg-card py-4 pr-[9px] pl-[18px]"
-      :class="{
-        'is-just-promoted animate-[models-dir-promote_1200ms_ease-out]':
-          row.path === justPromotedPath
-      }"
-    >
-      <span class="models-dir-icon-slot flex h-8 shrink-0 items-center">
-        <StorageItemIcon
-          :icon="row.isExtra ? FileText : row.locked ? FolderLock : Folder"
-          :shared="row.shared"
-          :title="row.locked ? t('models.lockedDir') : undefined"
+    <div class="models-dir-card flex flex-col gap-3 rounded-[14px] bg-card px-1.5 py-[10px]">
+      <template v-for="row in rows" :key="row.path">
+        <div
+          v-if="row.index > 0"
+          class="models-dir-divider mx-3 h-px shrink-0 bg-[var(--chooser-surface-border)]"
+          aria-hidden="true"
         />
-      </span>
-      <div class="models-dir-main flex min-w-0 flex-auto items-start py-[7px]">
-        <Button
-          type="button"
-          variant="textonly"
-          size="unset"
-          :class="nameClass"
-          :title="row.isExtra ? t('comfyUISettings.viewCustomPathDetails') : t('models.openDir')"
-          @click.stop="row.isExtra ? emit('details', row.index) : emit('open', row.index)"
+        <div
+          class="models-dir-row flex min-w-0 items-start gap-2.5 rounded-[10px] py-1.5 pr-[3px] pl-3 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]"
+          :class="{
+            'is-just-promoted animate-[models-dir-promote_1200ms_ease-out]':
+              row.path === justPromotedPath
+          }"
         >
-          {{ row.path }}
-        </Button>
-      </div>
-      <span
-        v-if="row.isPrimary || (row.shared && !props.hideSharedTag) || row.locked || row.isExtra"
-        class="models-dir-tags flex h-8 shrink-0 items-center gap-2.5"
-      >
-        <StorageTag
-          v-if="row.isPrimary"
-          class="models-dir-tag tag-primary"
-          :tooltip="t('tooltips.modelsPrimary')"
-        >
-          {{ t('models.primary') }}
-        </StorageTag>
-        <StorageTag
-          v-if="row.shared && !props.hideSharedTag"
-          class="models-dir-tag tag-shared"
-          :tooltip="t('tooltips.modelsShared')"
-        >
-          {{ t('models.sharedTag') }}
-        </StorageTag>
-        <StorageTag
-          v-if="row.locked || row.isExtra"
-          class="models-dir-tag tag-local"
-          :tooltip="
-            row.isExtra ? t('tooltips.extraModelPathsInstance') : t('tooltips.instanceOwnModelsDir')
-          "
-        >
-          {{ row.isExtra ? t('comfyUISettings.yamlTag') : t('models.instanceOnly') }}
-        </StorageTag>
-      </span>
-      <div class="models-dir-actions inline-flex h-8 w-7 shrink-0 items-center justify-end">
-        <div v-if="row.showMenu" class="models-dir-menu-wrap">
-          <Menu
-            :open="openMenuIndex === row.index"
-            :modal="false"
-            align="end"
-            class="models-dir-menu"
-            @update:open="(isOpen) => (openMenuIndex = isOpen ? row.index : null)"
-            @keydown.capture="onMenuKeydown"
-          >
-            <template #trigger>
-              <Button
-                type="button"
-                variant="textonly"
-                size="unset"
-                :class="actionClass"
-                :aria-label="t('models.moreActions')"
-                @click.stop
-              >
-                <MoreHorizontal :size="14" aria-hidden="true" />
-              </Button>
-            </template>
-            <MenuItem v-if="row.isExtra" @select="handleDetails(row.index)">
-              {{ t('comfyUISettings.viewCustomPathDetails') }}
-            </MenuItem>
-            <MenuItem v-if="row.canPromote" @select="handleMakePrimary(row.index)">
-              {{ t('models.makePrimary') }}
-            </MenuItem>
-            <MenuItem v-if="row.canChange" @select="handleChange(row.index)">
-              {{ t('models.changeDir') }}
-            </MenuItem>
-            <MenuItem v-if="row.shared" @select="handleManage()">
-              {{ t('comfyUISettings.manageSharedDirs') }}
-            </MenuItem>
-            <MenuItem
-              v-if="row.canRemove"
-              class="text-destructive"
-              @select="handleRemove(row.index)"
+          <span class="models-dir-icon-slot flex h-8 shrink-0 items-center">
+            <StorageItemIcon
+              :icon="row.isExtra ? FileText : row.locked ? FolderLock : Folder"
+              :shared="row.shared"
+              :title="row.locked ? t('models.lockedDir') : undefined"
+            />
+          </span>
+          <div class="models-dir-main flex min-w-0 flex-auto items-start py-[7px]">
+            <Button
+              type="button"
+              variant="textonly"
+              size="unset"
+              :class="nameClass"
+              :title="
+                row.isExtra ? t('comfyUISettings.viewCustomPathDetails') : t('models.openDir')
+              "
+              @click.stop="row.isExtra ? emit('details', row.index) : emit('open', row.index)"
             >
-              {{ t('models.removeDir') }}
-            </MenuItem>
-          </Menu>
+              {{ row.path }}
+            </Button>
+          </div>
+          <span
+            v-if="
+              row.isPrimary || (row.shared && !props.hideSharedTag) || row.locked || row.isExtra
+            "
+            class="models-dir-tags flex h-8 shrink-0 items-center gap-2.5"
+          >
+            <StorageTag
+              v-if="row.isPrimary"
+              class="models-dir-tag tag-primary"
+              :tooltip="t('tooltips.modelsPrimary')"
+            >
+              {{ t('models.primary') }}
+            </StorageTag>
+            <StorageTag
+              v-if="row.shared && !props.hideSharedTag"
+              class="models-dir-tag tag-shared"
+              :tooltip="t('tooltips.modelsShared')"
+            >
+              {{ t('models.sharedTag') }}
+            </StorageTag>
+            <StorageTag
+              v-if="row.locked || row.isExtra"
+              class="models-dir-tag tag-local"
+              :tooltip="
+                row.isExtra
+                  ? t('tooltips.extraModelPathsInstance')
+                  : t('tooltips.instanceOwnModelsDir')
+              "
+            >
+              {{ row.isExtra ? t('comfyUISettings.yamlTag') : t('models.instanceOnly') }}
+            </StorageTag>
+          </span>
+          <div class="models-dir-actions inline-flex h-8 w-7 shrink-0 items-center justify-end">
+            <div v-if="row.showMenu" class="models-dir-menu-wrap">
+              <Menu
+                :open="openMenuIndex === row.index"
+                :modal="false"
+                align="end"
+                class="models-dir-menu"
+                @update:open="(isOpen) => (openMenuIndex = isOpen ? row.index : null)"
+                @keydown.capture="onMenuKeydown"
+              >
+                <template #trigger>
+                  <Button
+                    type="button"
+                    variant="textonly"
+                    size="unset"
+                    :class="actionClass"
+                    :aria-label="t('models.moreActions')"
+                    @click.stop
+                  >
+                    <MoreHorizontal :size="14" aria-hidden="true" />
+                  </Button>
+                </template>
+                <MenuItem v-if="row.isExtra" @select="handleDetails(row.index)">
+                  {{ t('comfyUISettings.viewCustomPathDetails') }}
+                </MenuItem>
+                <MenuItem v-if="row.canPromote" @select="handleMakePrimary(row.index)">
+                  {{ t('models.makePrimary') }}
+                </MenuItem>
+                <MenuItem v-if="row.canChange" @select="handleChange(row.index)">
+                  {{ t('models.changeDir') }}
+                </MenuItem>
+                <MenuItem v-if="row.shared" @select="handleManage()">
+                  {{ t('comfyUISettings.manageSharedDirs') }}
+                </MenuItem>
+                <MenuItem
+                  v-if="row.canRemove"
+                  class="text-destructive"
+                  @select="handleRemove(row.index)"
+                >
+                  {{ t('models.removeDir') }}
+                </MenuItem>
+              </Menu>
+            </div>
+          </div>
         </div>
-      </div>
+      </template>
     </div>
 
     <div class="models-dir-foot flex min-w-0 items-center">
