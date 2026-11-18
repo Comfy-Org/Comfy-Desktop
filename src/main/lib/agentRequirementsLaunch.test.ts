@@ -957,6 +957,7 @@ describe('installAgentRequirements with a version override', () => {
       decision: 'applied',
       pins: new Map([['comfy-agent', '0.2.3']])
     })
+    expect(decision).not.toHaveProperty('reason')
     expect(calls).toEqual([
       { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
     ])
@@ -985,6 +986,7 @@ describe('installAgentRequirements with a version override', () => {
       decision: 'applied',
       pins: new Map([['comfyui-frontend-package', '1.55.19']])
     })
+    expect(decision).not.toHaveProperty('reason')
     expect(calls).toEqual([
       {
         content: `${CORE_FILE}comfyui-frontend-package==1.55.19\n`,
@@ -1006,9 +1008,13 @@ describe('installAgentRequirements with a version override', () => {
       ])
     })
     const payload = { 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.17' }
+    const sendOutput = vi.fn()
 
-    const decision = await installAgentRequirements(plan, vi.fn(), undefined, payload)
+    const decision = await installAgentRequirements(plan, sendOutput, undefined, payload)
 
+    expect(sendOutput.mock.calls.join('')).toContain(
+      "comfyui-frontend-package is not newer than ComfyUI's; keeping ComfyUI's"
+    )
     expect(decision).toEqual({
       decision: 'applied',
       reason: 'frontend_not_newer',
@@ -1038,6 +1044,24 @@ describe('installAgentRequirements with a version override', () => {
       pins: new Map([['comfy-agent', '0.2.3']])
     })
     expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
+    expect(mockUvPip, 'the latch is read before listing what is installed').not.toHaveBeenCalled()
+  })
+
+  it('counts a failed listing against the agent-only override, not the payload it came from', async () => {
+    fs.writeFileSync(
+      path.join(installDir, 'ComfyUI', 'requirements.txt'),
+      'comfyui-frontend-package==1.55.18\n'
+    )
+    mockUvPip.mockResolvedValue({ code: 1, output: '' })
+    const payload = { 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.17' }
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, payload)
+
+    expect(decision).toEqual({
+      decision: 'refused',
+      reason: 'check_failed',
+      pins: new Map([['comfy-agent', '0.2.3']])
+    })
   })
 
   it('installs a comfy-agent-go pin on its own line, flooring everything else', async () => {
@@ -3877,7 +3901,7 @@ describe('prepareAgentPrefetch', () => {
         signature: 'comfy-agent==0.1.0rc3',
         failures: 2
       }),
-      'the start watcher records the agent-only signature, so the latch reads it'
+      'a latch on the agent-only signature retires the agent-only prefetch'
     ).toMatchObject({ signature: 'core' })
   })
 

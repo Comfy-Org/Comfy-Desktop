@@ -886,8 +886,7 @@ describe("resolveOverride: a frontend pin no newer than ComfyUI's", () => {
       expect(resolveOverride(AGENT, both, MAIN)).toEqual({
         kind: 'text',
         text: AGENT_ONLY,
-        pins: pins({ 'comfy-agent': '0.2.3' }),
-        frontendDropped: true
+        pins: pins({ 'comfy-agent': '0.2.3' })
       })
     }
   )
@@ -897,8 +896,7 @@ describe("resolveOverride: a frontend pin no newer than ComfyUI's", () => {
     expect(resolveOverride(AGENT, both, MAIN)).toEqual({
       kind: 'text',
       text: `${AGENT_ONLY}comfyui-frontend-package==1.55.19\n`,
-      pins: both,
-      frontendDropped: false
+      pins: both
     })
   })
 
@@ -924,6 +922,14 @@ describe("resolveOverride: a frontend pin no newer than ComfyUI's", () => {
 
   it("keeps every other refusal when the frontend isn't newer either", () => {
     const old = { 'comfyui-frontend-package': '1.55.17' }
+    expect(
+      resolveOverride(
+        AGENT,
+        pins({ 'comfy-agent': '0.2.3', ...old }),
+        'comfyui-frontend-package>=1.55\n'
+      ),
+      "a frontend line ComfyUI doesn't pin exactly is refused, not dropped"
+    ).toEqual({ kind: 'refused', reason: 'unsupported_line' })
     expect(
       resolveOverride('comfy-agent>=0.2\n', pins({ 'comfy-agent': '0.2.3', ...old }), MAIN)
     ).toEqual({ kind: 'refused', reason: 'unsupported_line' })
@@ -957,8 +963,7 @@ describe("resolveOverride: a frontend pin no newer than ComfyUI's", () => {
     )
     expect(result).toMatchObject({
       kind: 'text',
-      text: 'comfy-agent[go-nonfree]==0.1.1\ncomfy-agent-go==0.1.1\n',
-      frontendDropped: true
+      text: 'comfy-agent[go-nonfree]==0.1.1\ncomfy-agent-go==0.1.1\n'
     })
     expect(result.kind === 'text' && overrideSignature(result.pins)).toBe(
       'comfy-agent-go==0.1.1,comfy-agent[go-nonfree]==0.1.1'

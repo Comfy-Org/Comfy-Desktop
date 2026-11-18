@@ -184,8 +184,7 @@ export function effectiveAgentRequirements(
 }
 
 export type ResolvedOverride =
-  | { kind: 'text'; text: string; pins: OverridePins; frontendDropped: boolean }
-  | { kind: 'refused'; reason: OverrideRefusal }
+  { kind: 'text'; text: string; pins: OverridePins } | { kind: 'refused'; reason: OverrideRefusal }
 
 export function resolveOverride(
   coreText: string,
@@ -193,14 +192,12 @@ export function resolveOverride(
   mainText = ''
 ): ResolvedOverride {
   const effective = effectiveAgentRequirements(coreText, pins, mainText)
-  if (effective.kind === 'text') return { ...effective, pins, frontendDropped: false }
+  if (effective.kind === 'text') return { ...effective, pins }
   const agentPins = new Map(pins)
   agentPins.delete(FRONTEND_PACKAGE)
   if (effective.reason !== 'not_newer' || agentPins.size === 0) return effective
   const withoutFrontend = effectiveAgentRequirements(coreText, agentPins, mainText)
-  return withoutFrontend.kind === 'text'
-    ? { ...withoutFrontend, pins: agentPins, frontendDropped: true }
-    : effective
+  return withoutFrontend.kind === 'text' ? { ...withoutFrontend, pins: agentPins } : effective
 }
 
 export function parseInstalled(pipListOutput: string): { name: string; version: string }[] | null {
