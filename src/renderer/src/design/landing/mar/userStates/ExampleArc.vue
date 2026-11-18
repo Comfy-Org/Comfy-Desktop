@@ -421,8 +421,18 @@ function wheel(e: WheelEvent): void {
   transition: opacity 200ms ease-out;
 }
 /* Only the front card wears it: on the turned side cards it squeezes. */
-.mar-arc-card:not(.is-front) .mar-arc-app {
+.mar-arc-app {
   opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* The kind badge shows only on the front card you point at, with the
+   subtitle and the corner arrow. */
+.mar-arc-card.is-front:is(:hover, :focus-visible) .mar-arc-app {
+  opacity: 1;
+  transform: none;
 }
 /* The name and what it does, one row at the bottom of every card, as
    on the app cards; Open joins it on the front card when you point at it
@@ -525,6 +535,7 @@ function wheel(e: WheelEvent): void {
   .mar-arc-card .mar-arc-after,
   .mar-arc-go,
   .mar-arc-scrim,
+  .mar-arc-app,
   .mar-arc-bar > * {
     transition: none;
   }
