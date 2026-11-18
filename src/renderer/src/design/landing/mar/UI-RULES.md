@@ -8,8 +8,8 @@ DS's Motion page (`ds/motion.ts`).
 ## Surfaces
 
 - **No lines.** No borders, strokes or dividers to separate things. Space
-  and a fill do it. Exceptions: the title bar divider and the line above a
-  modal footer.
+  and a fill do it. Exceptions: the title bar divider, the line above a
+  modal footer, and the divider between rows of one list card.
 - **Panels a step lighter.** A panel beside content (a sidebar, the asset
   view's details) is a fill a step lighter than what's behind it:
   `color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-content-background))`,
@@ -21,8 +21,9 @@ DS's Motion page (`ds/motion.ts`).
   surface with padding and radius, never loose on a panel.
 - **One card size.** A card (`rounded-[14px] bg-card`) has 18px on the
   sides, 16px top and bottom, and sits 10px from the next card, like the
-  build Overview cards. A list of folders is one card per row; the ⋯ glyph
-  lands 18px from the right edge.
+  build Overview cards. Rows of the same kind (the models folders) share
+  one card, split by a 1px divider inset to the card's padding; the ⋯
+  glyph lands 18px from the right edge.
 - **Add sits outside the cards.** An Add button for a list (Add models
   folder, Add Variable) goes below the last card, on the page, aligned
   with the cards' left edge.
