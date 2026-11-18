@@ -89,6 +89,7 @@ const SKELETON_COUNT = 8
 const CLOUD_PAGE_SIZES = [50, 100, 200] as const
 const DEFAULT_PAGE_SIZE = 100
 const PAGE_CACHE_TTL_MS = 30 * 60_000
+const PREFETCH_DEADLINE_MS = 1000
 const NAME_TOOLTIP_DELAY_MS = 600
 const MIN_CARD_WIDTH = 240
 const CARD_GAP = 14
@@ -504,7 +505,9 @@ function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage>
 
 function prefetchPage(cloudId: string, pageNumber: number): void {
   if (pageNumber > pageCount.value) return
-  prefetchHandle = requestIdleCallback(() => void cloudPage(cloudId, pageNumber).catch(() => {}))
+  prefetchHandle = requestIdleCallback(() => void cloudPage(cloudId, pageNumber).catch(() => {}), {
+    timeout: PREFETCH_DEADLINE_MS
+  })
 }
 
 onBeforeUnmount(() => {

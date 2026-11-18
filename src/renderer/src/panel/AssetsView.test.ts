@@ -1406,7 +1406,7 @@ describe('AssetsView Comfy Cloud pages', () => {
   }
 
   async function nextPagePrefetched(offset: number): Promise<void> {
-    await vi.waitFor(() => expect(timesAskedFor(offset)).toBe(1))
+    await vi.waitFor(() => expect(timesAskedFor(offset)).toBe(1), { timeout: 3000 })
     await flushPromises()
   }
 
