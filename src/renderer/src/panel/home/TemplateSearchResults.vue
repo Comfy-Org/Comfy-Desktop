@@ -14,7 +14,11 @@ const props = defineProps<{
   listboxId: string
 }>()
 
+const emit = defineEmits<{ refocus: [] }>()
+
 const { t } = useI18n()
+
+const SMALLEST_SHOWN_SIZE = 1_000_000
 
 const GROUP_TITLE_KEYS: Record<SearchRow['kind'], string> = {
   run: 'home.search.run',
@@ -127,7 +131,7 @@ function isWeak(row: SearchRow): boolean {
 function rowMeta(row: SearchRow): string {
   const candidate = row.candidate
   if (!candidate.needsDownload) return candidate.family ?? t('home.search.template')
-  if (candidate.downloadBytes)
+  if (candidate.downloadBytes !== null && candidate.downloadBytes >= SMALLEST_SHOWN_SIZE)
     return t('home.search.downloadSize', { size: formatSize(candidate.downloadBytes) })
   return candidate.missing.length
     ? t('home.search.needsDownload', { items: candidate.missing.join(', ') })
@@ -137,6 +141,16 @@ function rowMeta(row: SearchRow): string {
 function rowAction(row: SearchRow): string {
   if (props.controller.needsSignIn(row)) return t('home.search.signInToUse')
   return row.candidate.needsDownload ? t('home.search.downloadAndRun') : t('home.search.run')
+}
+
+function changePartners(shown: boolean): void {
+  void props.controller.setPartnersShown(shown)
+  emit('refocus')
+}
+
+function pick(row: SearchRow, event: MouseEvent): void {
+  if (event.detail > 1) return
+  props.controller.activate(row, 'pointer')
 }
 
 function startsGroup(index: number): boolean {
@@ -208,7 +222,7 @@ defineExpose({ verticalTarget, revealActive })
         <Switch
           :model-value="controller.partnersShown.value"
           :aria-label="t('home.search.partnerSwitch')"
-          @update:model-value="(shown: boolean) => controller.setPartnersShown(shown)"
+          @update:model-value="(shown: boolean) => changePartners(shown)"
         />
       </label>
       <p
@@ -263,7 +277,7 @@ defineExpose({ verticalTarget, revealActive })
           "
           :data-testid="`home-template-search-row-${row.kind}`"
           @mousemove="controller.highlight(index)"
-          @click="controller.activate(row, 'pointer')"
+          @click="pick(row, $event)"
         >
           <span
             class="flex aspect-[4/3] items-center justify-center overflow-hidden bg-[rgb(137_137_137/0.12)]"

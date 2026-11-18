@@ -23,6 +23,10 @@ function candidate(kind: string, templateId: string | null, download: string[] =
   }
 }
 
+function pick(templateId: string, family: string, download: string[] = []) {
+  return { ...candidate('as_given', templateId, download), family_id: family }
+}
+
 function decision(over: Record<string, unknown> = {}) {
   return {
     outcome: { kind: 'template', reply: null },
@@ -155,7 +159,7 @@ describe('parseDecision', () => {
   })
 
   it('still marks an api_ template as partner when the build index does not say', () => {
-    const describe = (id: string) => ({ title: id, thumbnailUrl: null, partner: false, size: null })
+    const describe = (id: string) => ({ title: id, thumbnailUrl: null, partner: false })
     const body = decision({
       split: { run: [candidate('as_given', 'api_partner_template')], download: [] }
     })
@@ -174,8 +178,7 @@ describe('parseDecision', () => {
     const describe = (id: string) => ({
       title: id,
       thumbnailUrl: null,
-      partner: id === 'poster_template',
-      size: null
+      partner: id === 'poster_template'
     })
     const [poster, logo] = parseDecision(decision(), describe)!.run
     expect(poster).toMatchObject({ templateId: 'poster_template', partner: true })
@@ -188,8 +191,7 @@ describe('parseDecision', () => {
         ? {
             title: 'Bake sale poster',
             thumbnailUrl: 'https://thumbs.example.test/poster.webp',
-            partner: false,
-            size: null
+            partner: false
           }
         : null
     const [poster, logo] = parseDecision(decision(), describe)!.run
@@ -248,8 +250,68 @@ describe('parseDecision', () => {
     const result = parseDecision(body)
     expect(result?.run.map((c) => c.templateId)).toEqual(['api_poster_template', 'poster_template'])
     expect(result?.download).toEqual([
-      expect.objectContaining({ templateId: 'mural_template', missing: ['mural.safetensors'] }),
-      expect.objectContaining({ templateId: 'zine_template', missing: ['zine.safetensors'] })
+      expect.objectContaining({ templateId: 'zine_template', missing: ['zine.safetensors'] }),
+      expect.objectContaining({ templateId: 'mural_template', missing: ['mural.safetensors'] })
+    ])
+  })
+
+  it('keeps the open picks in view when the search sends more than fits', () => {
+    const body = decision({
+      split: {
+        run: [
+          pick('api_poster', 'poster'),
+          pick('logo', 'logo'),
+          pick('banner', 'banner'),
+          pick('sticker', 'sticker'),
+          pick('api_flyer', 'flyer')
+        ],
+        download: [
+          pick('mural', 'mural', ['mural.safetensors']),
+          pick('zine', 'zine', ['zine.safetensors'])
+        ],
+        open: [pick('open_poster', 'poster'), pick('open_flyer', 'flyer', ['open_flyer', 'f.bin'])]
+      }
+    })
+    const result = parseDecision(body)
+    expect(result?.run.map((c) => c.templateId)).toEqual(['api_poster', 'open_poster', 'logo'])
+    expect(result?.download.map((c) => c.templateId)).toEqual(['open_flyer', 'mural'])
+  })
+
+  it('brings an open template the search ranked lower up beside its partner pick', () => {
+    const body = decision({
+      split: {
+        run: [
+          pick('api_poster', 'poster'),
+          pick('api_logo', 'logo'),
+          pick('api_banner', 'banner'),
+          pick('open_logo', 'logo')
+        ],
+        download: []
+      }
+    })
+    expect(parseDecision(body)?.run.map((c) => c.templateId)).toEqual([
+      'api_poster',
+      'api_logo',
+      'open_logo'
+    ])
+  })
+
+  it('brings up only an open template of the same family, and only beside a partner pick', () => {
+    const order = (...run: object[]) =>
+      parseDecision(decision({ split: { run, download: [] } }))?.run.map((c) => c.templateId)
+    const noFamily = (templateId: string) => ({ ...pick(templateId, ''), family_id: null })
+
+    expect(order(pick('api_a', 'x'), pick('b', 'y'), pick('api_c', 'x'), pick('d', 'x'))).toEqual([
+      'api_a',
+      'd',
+      'b'
+    ])
+    expect(order(pick('e', 'z'), pick('f', 'w'), pick('g', 'z'))).toEqual(['e', 'f', 'g'])
+    expect(order(noFamily('api_n'), pick('k', 'y'), noFamily('m'))).toEqual(['api_n', 'k', 'm'])
+    expect(order(pick('a', 'p'), pick('b', 'q'), pick('api_c', 'r'), pick('d', 'r'))).toEqual([
+      'a',
+      'b',
+      'api_c'
     ])
   })
 

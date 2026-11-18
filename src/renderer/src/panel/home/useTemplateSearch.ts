@@ -34,13 +34,15 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   const activeIndex = ref(0)
   const inResults = ref(false)
   const openFailed = ref(false)
-  const partnersShown = ref(true)
   let latestRequest = 0
   let prepared = false
   let pendingSearch: ReturnType<typeof setTimeout> | undefined
 
   const partnerSwitch = computed(
     () => state.value.kind === 'result' && state.value.result.partnerSwitch
+  )
+  const partnersShown = computed(
+    () => state.value.kind !== 'result' || state.value.result.partnersShown
   )
   const rows = computed<SearchRow[]>(() =>
     state.value.kind === 'result' ? searchRows(state.value.result) : []
@@ -79,8 +81,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
       trimmed,
       response ?? { kind: 'failed' },
       { triggeredAt, requestedAt },
-      panelOpen.value,
-      { partnersShown: partnersShown.value }
+      panelOpen.value
     )
     if (response?.kind === 'result') {
       state.value = { kind: 'result', query: trimmed, result: response.result }
@@ -144,28 +145,17 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     void window.api.prepareTemplateSearch().catch(() => null)
   }
 
-  async function readPartnersShown(): Promise<boolean> {
-    const value = await window.api.getSetting(PARTNERS_SETTING).catch(() => undefined)
-    const changed = partnersShown.value !== (value !== false)
-    partnersShown.value = value !== false
-    return changed
-  }
-
-  void readPartnersShown()
   onScopeDispose(
     window.api.onSettingsChanged(({ key }) => {
-      if (key !== PARTNERS_SETTING) return
-      void readPartnersShown().then((changed) => {
-        if (changed && query.value.trim()) void search(query.value)
-      })
+      if (key !== PARTNERS_SETTING || !query.value.trim()) return
+      if (panelOpen.value) void search(query.value)
+      else forgetAnswer()
     })
   )
 
   async function setPartnersShown(shown: boolean): Promise<void> {
-    partnersShown.value = shown
     telemetry.partnerSwitchChanged(shown)
     await window.api.setSetting(PARTNERS_SETTING, shown).catch(() => null)
-    if (query.value.trim()) await search(query.value)
   }
 
   function download(): void {

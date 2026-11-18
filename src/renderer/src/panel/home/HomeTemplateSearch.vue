@@ -35,6 +35,17 @@ function onFocus(): void {
   search.open()
 }
 
+const input = useTemplateRef<HTMLInputElement>('input')
+
+function focusInput(): void {
+  input.value?.focus()
+}
+
+function onEscape(event: KeyboardEvent): void {
+  if ((results.value?.$el as HTMLElement | undefined)?.contains(event.target as Node)) focusInput()
+  search.close('closed')
+}
+
 function onFocusOut(event: FocusEvent): void {
   const next = event.relatedTarget as Node | null
   if ((event.currentTarget as HTMLElement).contains(next)) return
@@ -44,7 +55,7 @@ function onFocusOut(event: FocusEvent): void {
 function onEnter(event: KeyboardEvent): void {
   if (event.isComposing) return
   event.preventDefault()
-  search.onEnter()
+  if (!event.repeat) search.onEnter()
 }
 
 const results = useTemplateRef<InstanceType<typeof TemplateSearchResults>>('results')
@@ -76,7 +87,7 @@ function moveAcross(event: KeyboardEvent, step: 1 | -1): void {
     class="relative mx-auto w-full max-w-180"
     data-testid="home-template-search"
     @focusout="onFocusOut"
-    @keydown.esc="search.close('closed')"
+    @keydown.esc="onEscape"
   >
     <label
       class="flex h-12 items-center gap-2.5 rounded-2xl border border-[rgb(137_137_137/0.16)] bg-[rgb(137_137_137/0.06)] px-4 shadow-[0_8px_30px_-12px_rgb(0_0_0/0.5)] transition-colors focus-within:border-[rgb(137_137_137/0.32)] focus-within:bg-[rgb(137_137_137/0.09)]"
@@ -89,6 +100,7 @@ function moveAcross(event: KeyboardEvent, step: 1 | -1): void {
       />
       <Search v-else :size="16" class="shrink-0 text-muted-foreground" aria-hidden="true" />
       <input
+        ref="input"
         v-model="query"
         type="text"
         role="combobox"
@@ -120,6 +132,7 @@ function moveAcross(event: KeyboardEvent, step: 1 | -1): void {
       data-testid="home-template-search-results"
       :controller="search"
       :listbox-id="listboxId"
+      @refocus="focusInput"
     />
   </div>
 </template>

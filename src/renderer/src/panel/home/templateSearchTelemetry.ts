@@ -88,6 +88,7 @@ function answerProperties(response: TemplateSearchResponse): TelemetryContext {
     top_match_pct: matchPct(rows[0]),
     top_match_level: (rows[0] && matchLevel(rows[0].candidate)) ?? 'none',
     has_best_match: rows.some((row) => row.best),
+    partners_shown: response.result.partnersShown,
     has_partner_switch: response.result.partnerSwitch,
     process_ms: metrics?.processMs ?? null,
     is_cold_start: metrics?.coldStart ?? null,
@@ -111,10 +112,6 @@ interface Session {
 export interface SearchTiming {
   triggeredAt: number
   requestedAt: number
-}
-
-export interface SearchSettings {
-  partnersShown: boolean
 }
 
 export interface SearchTelemetryOptions {
@@ -165,8 +162,7 @@ export function createSearchTelemetry({
     request: string,
     response: TemplateSearchResponse,
     timing: SearchTiming,
-    visible: boolean,
-    { partnersShown }: SearchSettings
+    visible: boolean
   ): void {
     if (isOff(response)) {
       session = null
@@ -184,7 +180,6 @@ export function createSearchTelemetry({
       session_search_count: current?.searches ?? 0,
       ...requestProperties(request),
       edit_chars_count: previous === null ? null : changedChars(previous, request),
-      partners_shown: partnersShown,
       ...properties,
       input_to_answer_ms: answeredAt - timing.triggeredAt,
       request_ms: answeredAt - timing.requestedAt

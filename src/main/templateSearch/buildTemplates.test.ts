@@ -8,11 +8,7 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../lib/fetch', () => ({ fetchJSON: vi.fn() }))
 
-import { readBuildTemplates, type HasModel, type ModelBytes } from './buildTemplates'
-
-function onDiskIn(root: string): HasModel {
-  return async (directory, filename) => fs.existsSync(path.join(root, directory, filename))
-}
+import { readBuildTemplates, type ModelBytes } from './buildTemplates'
 
 function bytesIn(root: string): ModelBytes {
   return async (directory, filename) =>
@@ -62,7 +58,7 @@ describe('readBuildTemplates', () => {
     write(path.join(dir, 'video.json'), { models: [model('wan.safetensors', 'diffusion_models')] })
     write(path.join(models, 'checkpoints', 'sdxl.safetensors'), 'x')
 
-    expect((await readBuildTemplates(sitePackages, onDiskIn(models))).installed).toEqual(['poster'])
+    expect((await readBuildTemplates(sitePackages, bytesIn(models))).installed).toEqual(['poster'])
   })
 
   it('needs every model a template lists, not just one of them', async () => {
@@ -72,10 +68,10 @@ describe('readBuildTemplates', () => {
       models: [model('wan.safetensors', 'diffusion_models'), model('vae.safetensors', 'vae')]
     })
     write(path.join(models, 'diffusion_models', 'wan.safetensors'), 'x')
-    expect((await readBuildTemplates(sitePackages, onDiskIn(models))).installed).toEqual([])
+    expect((await readBuildTemplates(sitePackages, bytesIn(models))).installed).toEqual([])
 
     write(path.join(models, 'vae', 'vae.safetensors'), 'x')
-    expect((await readBuildTemplates(sitePackages, onDiskIn(models))).installed).toEqual(['video'])
+    expect((await readBuildTemplates(sitePackages, bytesIn(models))).installed).toEqual(['video'])
   })
 
   it('asks the model check about each model by its folder and file name', async () => {
@@ -84,9 +80,9 @@ describe('readBuildTemplates', () => {
     write(path.join(dir, 'video.json'), {
       models: [model('wan.safetensors', 'diffusion_models'), model('vae.safetensors', 'vae')]
     })
-    const hasModel = vi.fn<HasModel>(async () => true)
-    expect((await readBuildTemplates(sitePackages, hasModel)).installed).toEqual(['video'])
-    expect(hasModel.mock.calls).toEqual([
+    const modelBytes = vi.fn<ModelBytes>(async () => 1)
+    expect((await readBuildTemplates(sitePackages, modelBytes)).installed).toEqual(['video'])
+    expect(modelBytes.mock.calls).toEqual([
       ['diffusion_models', 'wan.safetensors'],
       ['vae', 'vae.safetensors']
     ])
@@ -97,7 +93,7 @@ describe('readBuildTemplates', () => {
     write(path.join(dir, 'index.json'), index({ name: 'api_partner' }, { name: 'missing' }))
     write(path.join(dir, 'api_partner.json'), { nodes: [] })
 
-    expect((await readBuildTemplates(sitePackages, onDiskIn(models))).installed).toEqual([
+    expect((await readBuildTemplates(sitePackages, bytesIn(models))).installed).toEqual([
       'api_partner'
     ])
   })
@@ -112,18 +108,16 @@ describe('readBuildTemplates', () => {
         { name: 'untitled' }
       )
     )
-    const { labels } = await readBuildTemplates(sitePackages, onDiskIn(models))
+    const { labels } = await readBuildTemplates(sitePackages, bytesIn(models))
     expect(labels.get('poster')).toEqual({
       title: 'Bake sale poster',
       thumbnailUrl: expect.stringMatching(/\/poster-1\.png$/),
-      partner: false,
-      size: null
+      partner: false
     })
     expect(labels.get('song')).toEqual({
       title: 'A song',
       thumbnailUrl: null,
-      partner: false,
-      size: null
+      partner: false
     })
     expect(labels.get('untitled')?.title).toBe('untitled')
   })
@@ -139,7 +133,7 @@ describe('readBuildTemplates', () => {
         { name: 'unmarked_poster' }
       )
     )
-    const { labels } = await readBuildTemplates(sitePackages, onDiskIn(models))
+    const { labels } = await readBuildTemplates(sitePackages, bytesIn(models))
     expect([...labels].map(([name, label]) => [name, label.partner])).toEqual([
       ['templates-character_sheet', true],
       ['api_poster', true],
@@ -153,44 +147,43 @@ describe('readBuildTemplates', () => {
     write(path.join(dir, 'index.json'), index({ name: 'poster' }))
     write(path.join(dir, 'poster.json'), { nodes: [] })
 
-    expect((await readBuildTemplates(sitePackages, onDiskIn(models))).installed).toEqual(['poster'])
+    expect((await readBuildTemplates(sitePackages, bytesIn(models))).installed).toEqual(['poster'])
   })
 
-  it("estimates a template's download as the size its index gives, less the model files already on disk", async () => {
+  it("estimates a template's download as the byte size its index gives, less the model files already on disk", async () => {
     const dir = path.join(sitePackages, 'comfyui_workflow_templates_json', 'templates')
     write(
       path.join(dir, 'index.json'),
       index(
-        { name: 'video', size: 1000 },
-        { name: 'small', size: 100 },
+        { name: 'video', size: 3_000_000 },
+        { name: 'small', size: 1_000_000 },
         { name: 'unsized' },
         { name: 'zero', size: 0 },
-        { name: 'text', size: '1000' },
-        { name: 'no_workflow', size: 500 }
+        { name: 'text', size: '3000000' },
+        { name: 'gigabytes', size: 21.69 },
+        { name: 'whole_gigabytes', size: 5 },
+        { name: 'no_workflow', size: 5_000_000 }
       )
     )
     write(path.join(dir, 'video.json'), {
       models: [model('wan.safetensors', 'diffusion_models'), model('vae.safetensors', 'vae')]
     })
     write(path.join(dir, 'small.json'), { models: [model('wan.safetensors', 'diffusion_models')] })
-    for (const name of ['unsized', 'zero', 'text'])
+    for (const name of ['unsized', 'zero', 'text', 'gigabytes', 'whole_gigabytes'])
       write(path.join(dir, `${name}.json`), { nodes: [] })
-    write(path.join(models, 'diffusion_models', 'wan.safetensors'), 'x'.repeat(300))
+    write(path.join(models, 'diffusion_models', 'wan.safetensors'), 'x'.repeat(1_200_000))
 
-    const { downloadBytes } = await readBuildTemplates(
-      sitePackages,
-      onDiskIn(models),
-      bytesIn(models)
-    )
-    expect(await downloadBytes('video')).toBe(700)
+    const { downloadBytes } = await readBuildTemplates(sitePackages, bytesIn(models))
+    expect(await downloadBytes('video')).toBe(1_800_000)
     expect(await downloadBytes('small')).toBe(0)
-    for (const name of ['unsized', 'zero', 'text', 'no_workflow', 'not_listed']) {
+    const unsized = ['unsized', 'zero', 'text', 'gigabytes', 'whole_gigabytes', 'no_workflow']
+    for (const name of [...unsized, 'not_listed']) {
       expect(await downloadBytes(name), name).toBeNull()
     }
   })
 
   it('knows no templates in a build without a template package', async () => {
-    expect(await readBuildTemplates(sitePackages, onDiskIn(models))).toMatchObject({
+    expect(await readBuildTemplates(sitePackages, bytesIn(models))).toMatchObject({
       installed: [],
       labels: new Map()
     })

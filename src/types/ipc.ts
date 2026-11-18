@@ -236,6 +236,7 @@ export interface TemplateSearchResult {
   download: TemplateSearchCandidate[]
   alsoTry: TemplateSearchCandidate[]
   partnerSwitch: boolean
+  partnersShown: boolean
 }
 
 export type TemplateSearchUnavailableReason =

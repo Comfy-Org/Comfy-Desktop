@@ -39,7 +39,8 @@ const RESULT: TemplateSearchResult = {
   run: [candidate('poster_template', { calibrated: 0.874 }), candidate('banner_template')],
   download: [candidate('mural_template', { needsDownload: true })],
   alsoTry: [candidate('sticker_template')],
-  partnerSwitch: true
+  partnerSwitch: true,
+  partnersShown: true
 }
 
 const ANSWER: TemplateSearchResponse = {
@@ -49,7 +50,6 @@ const ANSWER: TemplateSearchResponse = {
 }
 
 const ROWS = searchRows(RESULT)
-const SHOWN = { partnersShown: true }
 
 function harness() {
   const sent: { event: string; context: TelemetryContext }[] = []
@@ -107,13 +107,7 @@ describe('createSearchTelemetry', () => {
     const requestedAt = at()
     telemetry.requested()
     tick(120)
-    telemetry.answered(
-      'a poster for a bake sale',
-      ANSWER,
-      { triggeredAt, requestedAt },
-      true,
-      SHOWN
-    )
+    telemetry.answered('a poster for a bake sale', ANSWER, { triggeredAt, requestedAt }, true)
     expect(sent).toEqual([
       {
         event: 'comfy.desktop.template_search.searched',
@@ -146,8 +140,8 @@ describe('createSearchTelemetry', () => {
 
   it('counts searches in a session and the characters changed since the last one', () => {
     const { telemetry, last, at } = harness()
-    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true, SHOWN)
-    telemetry.answered('a poster for a party', ANSWER, ANSWER_AT(at), true, SHOWN)
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
+    telemetry.answered('a poster for a party', ANSWER, ANSWER_AT(at), true)
     expect(last().context).toMatchObject({ session_search_count: 2, edit_chars_count: 12 })
   })
 
@@ -158,15 +152,14 @@ describe('createSearchTelemetry', () => {
       'a poster',
       { kind: 'unavailable', availability: offline },
       ANSWER_AT(at),
-      true,
-      SHOWN
+      true
     )
     expect(last().context).toMatchObject({
       outcome: 'unavailable',
       availability: 'unavailable',
       reason: 'offline'
     })
-    telemetry.answered('a poster', { kind: 'failed' }, ANSWER_AT(at), true, SHOWN)
+    telemetry.answered('a poster', { kind: 'failed' }, ANSWER_AT(at), true)
     expect(last().context).toMatchObject({ outcome: 'failed' })
   })
 
@@ -174,7 +167,7 @@ describe('createSearchTelemetry', () => {
     const { telemetry, sent, at } = harness()
     telemetry.requested()
     const off = { kind: 'unavailable', availability: { kind: 'off' } } as const
-    telemetry.answered('a poster', off, ANSWER_AT(at), true, SHOWN)
+    telemetry.answered('a poster', off, ANSWER_AT(at), true)
     telemetry.abandoned('closed')
     expect(sent).toEqual([])
   })
@@ -182,7 +175,7 @@ describe('createSearchTelemetry', () => {
   it('sends the pick with its list, place, match and the time it took', () => {
     const { telemetry, last, tick, at } = harness()
     tick(50)
-    telemetry.answered('a mural', ANSWER, ANSWER_AT(at), true, SHOWN)
+    telemetry.answered('a mural', ANSWER, ANSWER_AT(at), true)
     tick(2500)
     expect(telemetry.picked(ROWS, ROWS[2]!, 'pointer')).toBe('search-1')
     expect(last()).toEqual({
@@ -207,7 +200,7 @@ describe('createSearchTelemetry', () => {
 
   it('keeps the session through a refused open, and ends it once a template opens', () => {
     const { telemetry, sent, at } = harness()
-    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true, SHOWN)
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
     telemetry.picked(ROWS, ROWS[0]!, 'keyboard')
     telemetry.opened('search-1', 'poster_template', 'refused')
     telemetry.picked(ROWS, ROWS[1]!, 'keyboard')
@@ -229,7 +222,7 @@ describe('createSearchTelemetry', () => {
     tick(1500)
     telemetry.abandoned('closed')
     telemetry.abandoned('left')
-    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true, SHOWN)
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
     tick(4000)
     telemetry.abandoned('cleared')
     expect(sent.filter((s) => s.event.endsWith('abandoned')).map((s) => s.context)).toEqual([
@@ -252,7 +245,7 @@ describe('createSearchTelemetry', () => {
 
   it('times a pick from when an answer that arrived hidden was first shown', () => {
     const { telemetry, last, tick, at } = harness()
-    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), false, SHOWN)
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), false)
     expect(last().context).toMatchObject({ session_search_count: 0 })
     tick(60_000)
     telemetry.reopened()
@@ -269,7 +262,7 @@ describe('createSearchTelemetry', () => {
 
   it('restarts the shown time, but not the session, when results kept open come back into view', () => {
     const { telemetry, last, tick, at } = harness()
-    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true, SHOWN)
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
     tick(30_000)
     telemetry.reopened()
     tick(500)
@@ -283,7 +276,7 @@ describe('createSearchTelemetry', () => {
 
   it('forgets the answer on screen while a follow-up search runs', () => {
     const { telemetry, last, tick, at } = harness()
-    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true, SHOWN)
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
     tick(1000)
     telemetry.requested()
     tick(500)
@@ -298,7 +291,7 @@ describe('createSearchTelemetry', () => {
 
   it('stops counting the shown time while the window is away, and keeps the answer', () => {
     const { telemetry, last, tick, at } = harness()
-    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true, SHOWN)
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
     tick(1000)
     telemetry.hidden()
     tick(60_000)
@@ -312,10 +305,10 @@ describe('createSearchTelemetry', () => {
 
   it('does not reopen anything after search answered that it is switched off', () => {
     const { telemetry, sent, at } = harness()
-    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true, SHOWN)
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
     telemetry.abandoned('closed')
     const off = { kind: 'unavailable', availability: { kind: 'off' } } as const
-    telemetry.answered('a poster', off, ANSWER_AT(at), true, SHOWN)
+    telemetry.answered('a poster', off, ANSWER_AT(at), true)
     telemetry.reopened()
     telemetry.abandoned('closed')
     expect(sent.map((s) => s.event.replace('comfy.desktop.template_search.', ''))).toEqual([
@@ -326,12 +319,18 @@ describe('createSearchTelemetry', () => {
 
   it('sends whether partner templates were shown, and whether the answer offered the switch', () => {
     const { telemetry, last, at } = harness()
-    const noSwitch: TemplateSearchResponse = {
+    const offSearch: TemplateSearchResponse = {
       kind: 'result',
-      result: { ...RESULT, partnerSwitch: false }
+      result: { ...RESULT, partnerSwitch: true, partnersShown: false }
     }
-    telemetry.answered('a poster', noSwitch, ANSWER_AT(at), true, { partnersShown: false })
-    expect(last().context).toMatchObject({ partners_shown: false, has_partner_switch: false })
+    telemetry.answered('a poster', offSearch, ANSWER_AT(at), true)
+    expect(last().context).toMatchObject({ partners_shown: false, has_partner_switch: true })
+    const olderSearch: TemplateSearchResponse = {
+      kind: 'result',
+      result: { ...RESULT, partnerSwitch: false, partnersShown: true }
+    }
+    telemetry.answered('a poster', olderSearch, ANSWER_AT(at), true)
+    expect(last().context).toMatchObject({ partners_shown: true, has_partner_switch: false })
   })
 
   it('sends a change of the partner switch with the answer on screen', () => {
@@ -343,7 +342,7 @@ describe('createSearchTelemetry', () => {
     })
 
     telemetry.requested()
-    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true, SHOWN)
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
     telemetry.partnerSwitchChanged(true)
     expect(last().context).toEqual({
       partners_shown: true,

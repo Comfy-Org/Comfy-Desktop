@@ -25,7 +25,10 @@ const download = vi.fn<() => Promise<void>>()
 const getAuthStatus = vi.fn<() => Promise<{ signedIn: boolean }>>()
 const signIn = vi.fn<() => Promise<{ signedIn: boolean }>>()
 const settingsStore = new Map<string, unknown>()
-const setSetting = vi.fn(async (key: string, value: unknown) => void settingsStore.set(key, value))
+const setSetting = vi.fn(async (key: string, value: unknown) => {
+  settingsStore.set(key, value)
+  settingChanged({ key })
+})
 let announce: (availability: TemplateSearchAvailability) => void = () => {}
 let settingChanged: (change: { key: string }) => void = () => {}
 
@@ -64,6 +67,7 @@ function answer(result: Partial<TemplateSearchResult>): TemplateSearchResponse {
       download: [],
       alsoTry: [],
       partnerSwitch: false,
+      partnersShown: true,
       ...result
     }
   }
@@ -949,6 +953,22 @@ describe('HomeTemplateSearch partner templates', () => {
     expect(opened()).toEqual([])
   })
 
+  it('asks to sign in once for a double-click or a held Enter', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: false })
+    signIn.mockReturnValue(new Promise(() => {}))
+    searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    const card = wrapper.findAll('[role="option"]')[0]!.element
+    card.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    card.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }))
+    input(wrapper).element.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true })
+    )
+    await flushPromises()
+    expect(signIn).toHaveBeenCalledTimes(1)
+  })
+
   it('turns the card back to Run once signed in, and leaves the pick to the user', async () => {
     getAuthStatus.mockResolvedValue({ signedIn: false })
     searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER] }))
@@ -1014,6 +1034,10 @@ describe('HomeTemplateSearch partner templates', () => {
 })
 
 describe('HomeTemplateSearch open templates and the partner switch', () => {
+  function switchButton(wrapper: Wrapper) {
+    return wrapper.get('[data-testid="home-template-search-partner-switch"] button')
+  }
+
   it('says roughly how much an open template still needs to download', async () => {
     const open = candidate('krea_template', {
       needsDownload: true,
@@ -1040,52 +1064,109 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
     expect(wrapper.find('[data-testid="home-template-search-partner-switch"]').exists()).toBe(true)
   })
 
-  it('remembers turning partner templates off, and searches again', async () => {
+  it('saves turning partner templates off from the switch, and shows the answer searched with it', async () => {
+    searchTemplates.mockImplementation(async () =>
+      answer({
+        run: [POSTER],
+        partnerSwitch: true,
+        partnersShown: settingsStore.get('templateSearchPartners') !== false
+      })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    const calls = searchTemplates.mock.calls.length
+    await switchButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(setSetting).toHaveBeenCalledWith('templateSearchPartners', false)
+    expect(searchTemplates).toHaveBeenCalledTimes(calls + 1)
+    expect(switchButton(wrapper).attributes('aria-checked')).toBe('false')
+  })
+
+  it('shows the switch as the search ran', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({ run: [POSTER], partnerSwitch: true, partnersShown: false })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    expect(switchButton(wrapper).attributes('aria-checked')).toBe('false')
+  })
+
+  it('searches again when the setting changes in Desktop Settings while the results are open', async () => {
     searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
     const calls = searchTemplates.mock.calls.length
-    await wrapper.get('[data-testid="home-template-search-partner-switch"] button').trigger('click')
+
+    settingChanged({ key: 'theme' })
     await flushPromises()
-    expect(setSetting).toHaveBeenCalledWith('templateSearchPartners', false)
+    expect(searchTemplates).toHaveBeenCalledTimes(calls)
+
+    settingChanged({ key: 'templateSearchPartners' })
+    await flushPromises()
     expect(searchTemplates).toHaveBeenCalledTimes(calls + 1)
   })
 
-  it('starts with partner templates off when the setting says so', async () => {
-    settingsStore.set('templateSearchPartners', false)
+  it('drops a closed answer when the setting changes, and searches again once the results open', async () => {
     searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
-    expect(
-      wrapper
-        .get('[data-testid="home-template-search-partner-switch"] button')
-        .attributes('aria-checked')
-    ).toBe('false')
-  })
-
-  it('follows a change made in Desktop Settings, and searches again only when it changes', async () => {
-    searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
-    const wrapper = mountSearch()
-    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
     const calls = searchTemplates.mock.calls.length
-    const switchState = () =>
-      wrapper
-        .get('[data-testid="home-template-search-partner-switch"] button')
-        .attributes('aria-checked')
 
     settingChanged({ key: 'templateSearchPartners' })
     await flushPromises()
     expect(searchTemplates).toHaveBeenCalledTimes(calls)
 
-    settingsStore.set('templateSearchPartners', false)
-    settingChanged({ key: 'theme' })
+    await input(wrapper).trigger('focus')
     await flushPromises()
-    expect(switchState()).toBe('true')
+    expect(searchTemplates).toHaveBeenCalledTimes(calls + 1)
+  })
 
+  it('stops following the setting once Home is gone', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    const calls = searchTemplates.mock.calls.length
+    wrapper.unmount()
+    mounted.splice(mounted.indexOf(wrapper), 1)
     settingChanged({ key: 'templateSearchPartners' })
     await flushPromises()
-    expect(switchState()).toBe('false')
-    expect(searchTemplates).toHaveBeenCalledTimes(calls + 1)
+    expect(searchTemplates).toHaveBeenCalledTimes(calls)
+  })
+
+  it('puts focus back in the bar after the switch is turned from the keyboard', async () => {
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    ;(switchButton(wrapper).element as HTMLElement).focus()
+    await switchButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(input(wrapper).element)
+  })
+
+  it('puts focus back in the bar when Escape on the switch closes the results', async () => {
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    ;(switchButton(wrapper).element as HTMLElement).focus()
+    await switchButton(wrapper).trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(document.activeElement).toBe(input(wrapper).element)
+    expect(wrapper.find('[data-testid="home-template-search-results"]').exists()).toBe(false)
+  })
+
+  it('keeps the missing files for a remainder too small to show as a size', async () => {
+    const open = candidate('krea_template', {
+      needsDownload: true,
+      missing: ['krea.safetensors'],
+      downloadBytes: 300_000
+    })
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER], download: [open] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    const card = wrapper.findAll('[role="option"]')[1]!
+    expect(card.text()).toContain('krea.safetensors')
+    expect(card.text()).not.toContain('to download')
   })
 })
 
@@ -1169,7 +1250,13 @@ describe('HomeTemplateSearch telemetry', () => {
   })
 
   it('sends the partner switch state with each search, and a change of the switch', async () => {
-    searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
+    searchTemplates.mockImplementation(async () =>
+      answer({
+        run: [POSTER],
+        partnerSwitch: true,
+        partnersShown: settingsStore.get('templateSearchPartners') !== false
+      })
+    )
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
     await wrapper.get('[data-testid="home-template-search-partner-switch"] button').trigger('click')
@@ -1187,6 +1274,21 @@ describe('HomeTemplateSearch telemetry', () => {
       })
     ])
     expect(second!.context).toMatchObject({ partners_shown: false })
+  })
+
+  it('sends no search for a setting change while the results are closed, until they open again', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    const searched = named('searched').length
+
+    settingChanged({ key: 'templateSearchPartners' })
+    await flushPromises()
+    expect(named('searched')).toHaveLength(searched)
+
+    await input(wrapper).trigger('focus')
+    await flushPromises()
+    expect(named('searched')).toHaveLength(searched + 1)
   })
 
   it('sends a pointer pick for a clicked card', async () => {

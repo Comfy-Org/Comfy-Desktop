@@ -1,5 +1,11 @@
 import type { TemplateSearchAvailability } from '../../types/ipc'
-import type { RunningSidecar, SidecarLaunch, SidecarProblem, SidecarStart } from './sidecar'
+import type {
+  RunningSidecar,
+  SidecarLaunch,
+  SidecarProblem,
+  SidecarReady,
+  SidecarStart
+} from './sidecar'
 import { SidecarRequestError } from './sidecarClient'
 
 export const IDLE_STOP_MS = 5 * 60_000
@@ -51,8 +57,10 @@ type Ensure =
 
 type Started = { ok: true; running: Running } | { ok: false; problem: SidecarProblem | 'busy' }
 
+export type SidecarRequest = (ready: SidecarReady) => unknown
+
 export type SidecarDecision =
-  | { kind: 'answer'; body: unknown; coldStart: boolean }
+  | { kind: 'answer'; body: unknown; coldStart: boolean; partnerSwitch: boolean }
   | { kind: 'unavailable'; availability: TemplateSearchAvailability }
 
 const UNSUPPORTED: TemplateSearchAvailability = {
@@ -239,15 +247,16 @@ export function createSearchService(deps: SearchServiceDeps) {
     return { ok: true, running }
   }
 
-  async function decide(body: unknown): Promise<SidecarDecision> {
+  async function decide(request: SidecarRequest): Promise<SidecarDecision> {
     let coldStart = running === null
     for (let attempt = 0; attempt < 2; attempt++) {
       const ensured = await ensureRunning()
       if (!ensured.ok) return { kind: 'unavailable', availability: ensured.availability }
+      const { sidecar } = ensured.running
       try {
-        const answer = await deps.post(ensured.running.sidecar, body)
+        const answer = await deps.post(sidecar, request(sidecar.ready))
         armIdleStop()
-        return { kind: 'answer', body: answer, coldStart }
+        return { kind: 'answer', body: answer, coldStart, partnerSwitch: sidecar.ready.partner }
       } catch (err) {
         if (!(err instanceof SidecarRequestError) || !err.unreachable) throw err
         coldStart = true
@@ -285,8 +294,7 @@ export function createSearchService(deps: SearchServiceDeps) {
     onBuildAction,
     onBuildActionEnd,
     freePythons,
-    markUnsupported,
-    partnerSwitch: (): boolean => running?.sidecar.ready.partner === true
+    markUnsupported
   }
 }
 

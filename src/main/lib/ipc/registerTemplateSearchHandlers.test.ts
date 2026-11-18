@@ -69,7 +69,8 @@ const RESULT: TemplateSearchResult = {
   run: [],
   download: [],
   alsoTry: [],
-  partnerSwitch: false
+  partnerSwitch: false,
+  partnersShown: true
 }
 const LOCAL = { id: 'local-1', sourceId: 'standalone' }
 const CONSOLE = { id: 'console-1', sourceId: 'standalone', launchMode: 'console' }
@@ -84,7 +85,6 @@ function fakes(
     process: {
       decide: vi.fn(),
       prepare: vi.fn(async () => undefined),
-      partnerSwitch: vi.fn(() => false),
       download: vi.fn(async () => undefined),
       downloadInBackground: vi.fn<(trigger: BackgroundTrigger) => Promise<boolean>>(
         async () => true
