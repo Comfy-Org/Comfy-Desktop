@@ -1520,8 +1520,10 @@ describe('core beta report placement', () => {
     })
 
     it('still launches, without the context, when reading consent throws', async () => {
-      vi.spyOn(settingsModule, 'get').mockImplementation(() => {
-        throw new Error('EPERM: settings.json write failed')
+      const readSetting = settingsModule.get
+      vi.spyOn(settingsModule, 'get').mockImplementation((key) => {
+        if (key === 'telemetryEnabled') throw new Error('EPERM: settings.json write failed')
+        return readSetting(key)
       })
       const res = await handleLaunch(ctxFor(`harness-client-context-throws-${pathName}`))
       expect(res.ok, 'a failed consent read must not fail the launch').toBe(true)

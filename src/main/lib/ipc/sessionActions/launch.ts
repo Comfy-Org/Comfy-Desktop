@@ -184,7 +184,6 @@ export function desktopFeatureFlags(
   return flags
 }
 
-/** Consent is read at spawn, like enable_telemetry: a change takes effect at the next launch. */
 async function launchClientContext(): ReturnType<typeof agentClientContext> {
   try {
     return await agentClientContext(settings.get('telemetryEnabled') === true, getAppVersion())
@@ -1550,7 +1549,6 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.executableNotFound', { cmd: launchCmd.cmd ?? '' }) }
   }
 
-  // Before any port check, so the wait never sits between the port re-check and the reservation.
   const clientContext = await launchClientContext()
 
   if (launchCmd.skipPortWait) {

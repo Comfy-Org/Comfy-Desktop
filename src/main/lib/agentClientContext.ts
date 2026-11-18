@@ -1,7 +1,6 @@
 import type { GpuTier } from '../../shared/gpuTier'
 import { deriveAppChannel } from './telemetry'
 
-/** Env names the cloud comfy-agent reads (services/agent/local/config). */
 export const AGENT_CLIENT_ENV_VARS = [
   'AGENT_CLIENT_CONTEXT',
   'AGENT_CLIENT_CHANNEL',

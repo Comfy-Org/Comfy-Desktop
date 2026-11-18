@@ -904,7 +904,6 @@ export function buildLaunchEnv(
       : {})
   }
   if (!desktopManaged) delete env.__COMFYUI_DESKTOP_VERSION__
-  // Consent-only and written last; scrubbed in any case, as Windows env names are case-insensitive.
   for (const key of Object.keys(env)) {
     if ((AGENT_CLIENT_ENV_VARS as readonly string[]).includes(key.toUpperCase())) delete env[key]
   }
