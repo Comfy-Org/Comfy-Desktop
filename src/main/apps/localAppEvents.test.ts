@@ -420,6 +420,48 @@ describe('runEndFromHistory', () => {
     ).toMatchObject({ outcome: 'cancelled', at: T0 + 1_000 })
   })
 
+  const blocked = [
+    'execution_error',
+    {
+      prompt_id: RUN,
+      exception_type: 'ExecutionBlocked',
+      exception_message: 'Execution Blocked: switch off',
+      timestamp: T0 + 1_000
+    }
+  ]
+
+  it('reads a run that succeeded after a blocked branch as a success', () => {
+    expect(
+      runEndFromHistory(
+        entry('success', [
+          ['execution_start', { prompt_id: RUN, timestamp: T0 }],
+          blocked,
+          ['execution_success', { prompt_id: RUN, timestamp: T0 + 3_000 }]
+        ])
+      )
+    ).toEqual({ outcome: 'success', startedAt: T0, at: T0 + 3_000 })
+  })
+
+  it('reads the error that failed a run, not a blocked branch before it', () => {
+    expect(
+      runEndFromHistory(
+        entry('error', [
+          ['execution_start', { prompt_id: RUN, timestamp: T0 }],
+          blocked,
+          [
+            'execution_error',
+            { prompt_id: RUN, exception_type: 'torch.OutOfMemoryError', timestamp: T0 + 2_000 }
+          ]
+        ])
+      )
+    ).toEqual({
+      outcome: 'failed',
+      errorClass: 'out_of_memory_error',
+      startedAt: T0,
+      at: T0 + 2_000
+    })
+  })
+
   it.each([
     ['no entry', undefined],
     ['an entry with no status', { outputs: {} }],

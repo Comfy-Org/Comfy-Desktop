@@ -135,8 +135,12 @@ function noteEarly(promptId: string, change: EarlyRun): void {
   keepNewest(earlyRuns, promptId, { ...earlyRuns.get(promptId), ...change }, MAX_EARLY_RUNS)
 }
 
-function isBlockedBranch(type: string, data: Record<string, unknown>): boolean {
+function isBlockedBranch(type: unknown, data: Record<string, unknown>): boolean {
   return type === 'execution_error' && data['exception_type'] === BLOCKED_BRANCH
+}
+
+function isBlockedNotice(message: unknown): boolean {
+  return Array.isArray(message) && isRecord(message[1]) && isBlockedBranch(message[0], message[1])
 }
 
 export function noteRunMessage(message: unknown, now = Date.now()): void {
@@ -178,7 +182,8 @@ function messageOf(messages: unknown[], type: string): Record<string, unknown> |
 export function runEndFromHistory(entry: unknown, now = Date.now()): RunEnd | null {
   if (!isRecord(entry) || !isRecord(entry['status'])) return null
   const status = entry['status']
-  const messages = Array.isArray(status['messages']) ? status['messages'] : []
+  const notices: unknown[] = Array.isArray(status['messages']) ? status['messages'] : []
+  const messages = notices.filter((message) => !isBlockedNotice(message))
   const startedAt = messageTime(messages, 'execution_start')
   const timed = (outcome: RunOutcome, type: string, errorClass?: string): RunEnd => ({
     outcome,
