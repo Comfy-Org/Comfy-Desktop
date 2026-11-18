@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { CircleDollarSign, Download, Gauge, Star } from '@lucide/vue'
+import { CircleDollarSign, Download, Gauge, Paperclip, Star } from '@lucide/vue'
 import type { BadgeTone } from './templateSearch'
 
 const props = defineProps<{ tone: BadgeTone }>()
@@ -11,13 +11,15 @@ const TONES: Record<BadgeTone, string> = {
   good: 'bg-[rgb(60_130_200/0.22)] text-[rgb(176_214_255)] ring-[rgb(100_160_230/0.45)]',
   weak: 'bg-[rgb(137_137_137/0.2)] text-[rgb(205_205_210)] ring-[rgb(160_160_170/0.4)]',
   best: 'bg-[rgb(255_255_255/0.14)] text-[rgb(245_245_245)] ring-[rgb(255_255_255/0.3)]',
-  download: 'bg-[rgb(60_170_190/0.18)] text-[rgb(170_230_240)] ring-[rgb(90_190_210/0.45)]'
+  download: 'bg-[rgb(60_170_190/0.18)] text-[rgb(170_230_240)] ring-[rgb(90_190_210/0.45)]',
+  input: 'bg-[rgb(170_120_220/0.18)] text-[rgb(222_204_250)] ring-[rgb(180_140_230/0.45)]'
 }
 
 const ICONS: Partial<Record<BadgeTone, typeof Gauge>> = {
   partner: CircleDollarSign,
   best: Star,
-  download: Download
+  download: Download,
+  input: Paperclip
 }
 
 const icon = computed(() => ICONS[props.tone] ?? Gauge)

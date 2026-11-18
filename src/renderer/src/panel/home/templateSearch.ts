@@ -7,7 +7,7 @@ const STRONG_MATCH = 0.85
 
 export type MatchLevel = 'strong' | 'good' | 'weak'
 
-export type BadgeTone = 'partner' | 'best' | 'download' | MatchLevel
+export type BadgeTone = 'partner' | 'best' | 'download' | 'input' | MatchLevel
 
 export interface SearchRow {
   key: string
