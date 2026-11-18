@@ -6,7 +6,7 @@ import { isUninstallOpKind, updatesBuildInPlace } from '../lib/progressOpKind'
 import { progressStepName } from '../lib/progressStatusLabel'
 import type { Installation, ProgressStep } from '../types/ipc'
 
-export type BuildProgressKind = 'install' | 'launch' | 'uninstall' | 'update'
+export type BuildProgressKind = 'install' | 'launch' | 'uninstall' | 'update' | 'working'
 
 export interface BuildProgress {
   kind: BuildProgressKind
@@ -14,13 +14,19 @@ export interface BuildProgress {
   phase: string
   cancelling: boolean
   cancellable: boolean
+  task: string
 }
 
 const CANCEL_COPY: Record<BuildProgressKind, string> = {
   install: 'installProgress',
   launch: 'installProgress',
   uninstall: 'uninstallProgress',
-  update: 'updateProgress'
+  update: 'updateProgress',
+  working: 'workingProgress'
+}
+
+export function operationTask(title: string): string {
+  return title.split(/ [\u2014-] /)[0]?.trim() || title
 }
 
 const VIEW_BUILD_LOGS: InjectionKey<(installationId: string) => void> = Symbol('viewBuildLogs')
@@ -50,7 +56,8 @@ export function buildProgressOf(
       percent: indeterminate ? null : Math.round(percent),
       phase: '',
       cancelling: op.cancelRequested,
-      cancellable: true
+      cancellable: true,
+      task: ''
     }
   }
   if (op.finished) return null
@@ -60,7 +67,8 @@ export function buildProgressOf(
       percent: op.flatPercent >= 0 ? Math.round(op.flatPercent) : null,
       phase: activeStep ? nameStep(activeStep) : op.flatStatus,
       cancelling: op.cancelRequested,
-      cancellable: true
+      cancellable: true,
+      task: ''
     }
   }
   if (updatesBuildInPlace(op.opKind, op.actionId)) {
@@ -70,18 +78,40 @@ export function buildProgressOf(
       percent: indeterminate && percent <= 0 ? null : Math.round(percent),
       phase: activeStep ? nameStep(activeStep) : op.flatStatus,
       cancelling: op.cancelRequested,
-      cancellable: op.cancellable
+      cancellable: op.cancellable,
+      task: ''
     }
   }
-  if (op.opKind !== 'install') return null
-  const { percent } = progressStore.globalProgressFor(op)
-  return {
-    kind: 'install',
-    percent: Math.round(percent),
-    phase: activeStep ? nameStep(activeStep) : '',
-    cancelling: op.cancelRequested,
-    cancellable: true
+  if (op.opKind === 'install') {
+    const { percent } = progressStore.globalProgressFor(op)
+    return {
+      kind: 'install',
+      percent: Math.round(percent),
+      phase: activeStep ? nameStep(activeStep) : '',
+      cancelling: op.cancelRequested,
+      cancellable: true,
+      task: ''
+    }
   }
+  const { percent, indeterminate } = progressStore.globalProgressFor(op)
+  return {
+    kind: 'working',
+    percent: indeterminate && percent <= 0 ? null : Math.round(percent),
+    phase: activeStep ? nameStep(activeStep) : op.flatStatus,
+    cancelling: op.cancelRequested,
+    cancellable: op.cancellable,
+    task: operationTask(op.title)
+  }
+}
+
+export function operationFailureOf(
+  progressStore: ReturnType<typeof useProgressStore>,
+  installationId: string
+): string | null {
+  const op = progressStore.operations.get(installationId)
+  if (!op?.finished || !op.error) return null
+  if (op.opKind === 'launch' || op.opKind === 'install' || isUninstallOpKind(op.opKind)) return null
+  return op.error
 }
 
 export function launchFailed(
@@ -145,7 +175,7 @@ export function useBuildProgress(build: () => Installation): {
     const copy = CANCEL_COPY[progress.value?.kind ?? 'install']
     const confirmed = await modal.confirm({
       title: t(`${copy}.cancelTitle`),
-      message: t(`${copy}.cancelMessage`, { name: current.name }),
+      message: t(`${copy}.cancelMessage`, { name: current.name, task: progress.value?.task ?? '' }),
       confirmLabel: t(`${copy}.cancelConfirm`),
       confirmStyle: 'danger'
     })

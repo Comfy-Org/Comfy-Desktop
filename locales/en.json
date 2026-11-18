@@ -1048,6 +1048,12 @@
     "cancelMessage": "{name} stops updating. You can update it again later.",
     "cancelConfirm": "Stop updating"
   },
+  "workingProgress": {
+    "cancelTitle": "Stop now?",
+    "cancelMessage": "{task} stops for {name}. You can start it again later.",
+    "cancelConfirm": "Stop",
+    "failedTitle": "{task} didn't finish"
+  },
   "announcement": {
     "comfyApi": {
       "title": "Introducing Comfy API",

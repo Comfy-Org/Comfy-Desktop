@@ -61,7 +61,10 @@ function viewError(): void {
 }
 const isBusy = computed(() => install.progress.value !== null)
 const isUninstalling = computed(() => install.progress.value?.kind === 'uninstall')
-const isUpdatingHere = computed(() => install.progress.value?.kind === 'update')
+const isUpdatingHere = computed(() => {
+  const kind = install.progress.value?.kind
+  return kind === 'update' || kind === 'working'
+})
 const isPromoting = computed(() => isPromotingToWorkspace(inst.value))
 const progressLabel = computed(() => {
   const current = install.progress.value
@@ -76,6 +79,11 @@ const progressLabel = computed(() => {
     return current.percent === null
       ? t('updateProgress.status')
       : t('updateProgress.tileStatus', { percent: current.percent })
+  }
+  if (current.kind === 'working') {
+    return current.percent === null
+      ? current.task
+      : t('installProgress.detail', { phase: current.task, percent: current.percent })
   }
   const phase = t(current.kind === 'launch' ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
   return current.percent == null

@@ -131,6 +131,7 @@ overlays = usePanelOverlays({
   prepareChooserHostHandoff: (id) => chooserHandoff.prepareChooserHostHandoff(id),
   firstUseChain: firstUseChain.hooks,
   onBackgroundInstall: () => void showHome(),
+  onBuildCreated: (id) => landOnNewBuild(id),
   launchesInPlace: (id) => chooserHandoff.launchesInPlace(id)
 })
 const {
@@ -206,6 +207,22 @@ async function openBuildFromSidebar(inst: Installation): Promise<void> {
     await nextTick()
   }
   openBuildDetails(inst)
+}
+
+function landOnNewBuild(id: string): void {
+  const open = (inst: Installation | undefined): boolean => {
+    if (!inst) return false
+    void openBuildFromSidebar(inst)
+    return true
+  }
+  if (open(installationStore.getById(id))) return
+  const stop = watch(
+    () => installationStore.getById(id),
+    (inst) => {
+      if (open(inst)) stop()
+    }
+  )
+  void installationStore.fetchInstallations().catch(() => {})
 }
 
 async function showHome(): Promise<void> {

@@ -8,7 +8,12 @@ import BuildUninstallFailed from './BuildUninstallFailed.vue'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
 import type { StorageSnapshot } from '../views/comfyUISettings/StoragePane.vue'
-import { uninstallFailureOf, useBuildProgress } from '../composables/useBuildProgress'
+import {
+  operationFailureOf,
+  operationTask,
+  uninstallFailureOf,
+  useBuildProgress
+} from '../composables/useBuildProgress'
 import { installTypeMetaForInstall } from '../lib/installTypeIcon'
 import { useInstallationStore } from '../stores/installationStore'
 import { useProgressStore } from '../stores/progressStore'
@@ -36,9 +41,18 @@ const installationStore = useInstallationStore()
 const { progress } = useBuildProgress(() => installation)
 const uninstalling = computed(() => progress.value?.kind === 'uninstall')
 const updating = computed(() => progress.value?.kind === 'update')
-const cardReplacesSettings = computed(() => uninstalling.value || updating.value)
+const working = computed(() => progress.value?.kind === 'working')
+const cardReplacesSettings = computed(() => uninstalling.value || updating.value || working.value)
 const uninstallFailure = computed(() => uninstallFailureOf(progressStore, installation.id))
-const settingsHidden = computed(() => cardReplacesSettings.value || uninstallFailure.value !== null)
+const operationFailure = computed(() => operationFailureOf(progressStore, installation.id))
+const failedTaskTitle = computed(() => {
+  const op = progressStore.operations.get(installation.id)
+  return t('workingProgress.failedTitle', { task: op ? operationTask(op.title) : '' })
+})
+const settingsHidden = computed(
+  () =>
+    cardReplacesSettings.value || uninstallFailure.value !== null || operationFailure.value !== null
+)
 const tone = computed(() => homeBuildTones([installation], installationStore.installations)[0]!)
 
 const typeMeta = computed(() => installTypeMetaForInstall(installation))
@@ -59,6 +73,9 @@ const status = computed(() => {
   }
   if (updating.value) {
     return { tone: 'quiet', label: 'updateProgress.status', spinning: true } as const
+  }
+  if (working.value) {
+    return { tone: 'quiet', text: progress.value?.task ?? '', spinning: true } as const
   }
   if (sessionStore.errorInstances.has(id))
     return { tone: 'bad', label: 'chooser.statusError' } as const
@@ -108,7 +125,7 @@ onUnmounted(() => unsubscribeSettings?.())
                   aria-hidden="true"
                 />
               </template>
-              {{ t(status.label) }}
+              {{ 'text' in status ? status.text : t(status.label) }}
             </StatusChip>
           </div>
           <p
@@ -131,6 +148,14 @@ onUnmounted(() => unsubscribeSettings?.())
       <BuildUninstallFailed
         v-else-if="uninstallFailure !== null"
         :reason="uninstallFailure"
+        @retry="progressStore.retryOperation(installation.id)"
+        @dismiss="progressStore.dismissOperation(installation.id)"
+      />
+      <BuildUninstallFailed
+        v-else-if="operationFailure !== null"
+        kind="operation"
+        :title="failedTaskTitle"
+        :reason="operationFailure"
         @retry="progressStore.retryOperation(installation.id)"
         @dismiss="progressStore.dismissOperation(installation.id)"
       />

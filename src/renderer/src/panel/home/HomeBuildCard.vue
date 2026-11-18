@@ -46,14 +46,18 @@ const busy = computed(() => install.progress.value !== null)
 const starting = computed(() => install.progress.value?.kind === 'launch')
 const uninstalling = computed(() => install.progress.value?.kind === 'uninstall')
 const updating = computed(() => install.progress.value?.kind === 'update')
-const showsUpdateLock = computed(() => status === 'updating' && !updating.value)
+const working = computed(() => install.progress.value?.kind === 'working')
+const changesInPlace = computed(() => updating.value || working.value)
+const showsUpdateLock = computed(() => status === 'updating' && !changesInPlace.value)
 const promoting = computed(() => isPromotingToWorkspace(build))
 const canOpen = computed(
-  () => !uninstalling.value && !promoting.value && (updating.value || !isBuildOpenBlocked(status))
+  () =>
+    !uninstalling.value && !promoting.value && (changesInPlace.value || !isBuildOpenBlocked(status))
 )
 const busyTestId = computed(() => {
   if (uninstalling.value) return 'home-build-uninstalling'
   if (updating.value) return 'home-build-updating'
+  if (working.value) return 'home-build-working'
   return starting.value ? 'home-build-starting' : 'home-build-installing'
 })
 const broken = computed(() => {
@@ -72,6 +76,11 @@ const statusLabel = computed(() => {
     return percent == null
       ? t('updateProgress.status')
       : t('updateProgress.tileStatus', { percent })
+  }
+  if (working.value) {
+    const task = install.progress.value?.task ?? ''
+    const percent = install.progress.value?.percent
+    return percent == null ? task : t('installProgress.detail', { phase: task, percent })
   }
   if (busy.value) {
     const phase = t(starting.value ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
@@ -107,7 +116,7 @@ const isLive = computed(
 const resting = computed(() => status === 'ready' || status === 'update')
 const updateNote = computed(() =>
   !uninstalling.value &&
-  !updating.value &&
+  !changesInPlace.value &&
   status !== 'updating' &&
   build.statusTag?.style === 'update'
     ? t('chooser.updatePill')

@@ -548,6 +548,7 @@ watch(
           variant="secondary"
           size="lg"
           class="dialog-select-item h-auto w-full justify-between py-2.5 text-left whitespace-normal"
+          :data-testid="item.testId"
           @click="close(item.value)"
         >
           <span

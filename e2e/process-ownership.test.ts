@@ -208,8 +208,8 @@ test('an orphan still running a prompt is left alone until the user stops it @li
     const app = await start()
     await clickInstallTile(app.panel, INSTALL_NAME)
 
-    await app.panel.waitForVisible(byTestId(TID.progressPortConflictBanner), { timeout: 60_000 })
-    expect(await app.panel.textOf(byTestId(TID.progressPortConflictBanner))).toContain(
+    await app.panel.waitForVisible(byTestId(TID.progressPortConflictKill), { timeout: 60_000 })
+    expect(await app.panel.textOf('.dialog-select-box .dialog-title')).toContain(
       'still running a prompt'
     )
     expect(isAlive(busy!.childPid), 'a busy ComfyUI is not stopped without asking').toBe(true)
@@ -270,7 +270,7 @@ test('cancelling from the busy check stops nothing and starts nothing @linux', a
     expect(await app.panel.click('[data-testid="build-progress-cancel"]')).toBe(true)
 
     await new Promise((r) => setTimeout(r, 12_000))
-    expect(await app.panel.exists(byTestId(TID.progressPortConflictBanner))).toBe(false)
+    expect(await app.panel.exists(byTestId(TID.progressPortConflictKill))).toBe(false)
     expect(isAlive(before!.childPid), 'the earlier ComfyUI was left running').toBe(true)
     expect((await readRecord())?.childPid).toBe(before!.childPid)
     expect(await priorEvents(app)).toEqual([])

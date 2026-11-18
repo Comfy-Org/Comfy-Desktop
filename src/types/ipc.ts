@@ -464,6 +464,15 @@ export interface ShowProgressOpts {
   }
 }
 
+export interface HomeProgressRequest {
+  installationId: string
+  actionId: string
+  title: string
+  actionData?: Record<string, unknown>
+  cancellable?: boolean
+  opKind?: ShowProgressOpts['opKind']
+}
+
 export interface ActionResult {
   ok?: boolean
   navigate?: 'list' | 'detail'
@@ -1219,6 +1228,7 @@ export interface ElectronApi {
   closeComfyWindow(installationId: string, opts?: CloseComfyWindowOptions): Promise<boolean>
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
+  showProgressOnHome(request: HomeProgressRequest): Promise<boolean>
   closeCurrentPanel(): void
   closeAnnouncement(): void
   signalOverlayReady(): void

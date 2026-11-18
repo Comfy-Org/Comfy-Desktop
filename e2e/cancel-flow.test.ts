@@ -18,6 +18,7 @@ let installPath: string
 const INSTALL_ID = 'inst-cancel-flow-test'
 const INSTALL_NAME = 'Cancel Me'
 const MARKER_FILENAME = '.comfyui-desktop-2'
+const TILE_PROGRESS = `[data-testid="chooser-tile-progress-${INSTALL_ID}"]`
 
 test.describe.configure({ mode: 'serial' })
 
@@ -61,11 +62,12 @@ async function startInFlightOp(opts: { destroysInstance?: boolean } = {}): Promi
         installationId: ${JSON.stringify(INSTALL_ID)},
         title: 'Updating ComfyUI — ' + ${JSON.stringify(INSTALL_NAME)},
         opKind: 'update',
+        cancellable: true,
         destroysInstance: ${opts.destroysInstance ? 'true' : 'false'},
       })
     })()`
   )
-  await ctx.panel.waitForVisible('.brand-progress', { timeout: 10_000 })
+  await ctx.panel.waitForVisible(TILE_PROGRESS, { timeout: 10_000 })
 }
 
 async function settleInFlightOp(result: { ok: boolean; cancelled?: boolean }): Promise<void> {
@@ -126,7 +128,7 @@ test('useActionGuard returns false without cancelling when the user dismisses th
   await settleInFlightOp({ ok: false, cancelled: true })
 })
 
-test('Return-to-Dashboard from in-flight op cancels and closes the takeover @windows @macos @linux', async () => {
+test('Cancel on the build tile stops the in-flight update and its ComfyUI @windows @macos @linux', async () => {
   await seedRunningSession(ctx.app, {
     installationId: INSTALL_ID,
     installationName: INSTALL_NAME
@@ -142,7 +144,9 @@ test('Return-to-Dashboard from in-flight op cancels and closes the takeover @win
     .toBe(true)
 
   await startInFlightOp()
-  expect(await ctx.panel.clickByText('button', 'Return to Home')).toBe(true)
+  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(INSTALL_ID)))).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="build-menu-cancel"]', { timeout: 5_000 })
+  expect(await ctx.panel.click('[data-testid="build-menu-cancel"]')).toBe(true)
 
   await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
   expect(await ctx.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
@@ -163,12 +167,7 @@ test('Return-to-Dashboard from in-flight op cancels and closes the takeover @win
   const cancelCalls = (await getIpcInvocations(ctx.app, 'cancel-operation')) as string[]
   expect(cancelCalls[0]).toBe(INSTALL_ID)
 
-  await expect
-    .poll(async () => ctx.panel.exists('.brand-progress'), {
-      timeout: 5_000,
-      intervals: [100, 200]
-    })
-    .toBe(false)
+  expect(await ctx.panel.exists('.brand-progress')).toBe(false)
 
   await settleInFlightOp({ ok: false, cancelled: true })
 })

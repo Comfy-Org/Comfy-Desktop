@@ -1048,6 +1048,12 @@
     "cancelMessage": "{name} 将停止更新。之后可以再次更新。",
     "cancelConfirm": "停止更新"
   },
+  "workingProgress": {
+    "cancelTitle": "现在停止？",
+    "cancelMessage": "{name} 的“{task}”将停止。你可以稍后再次开始。",
+    "cancelConfirm": "停止",
+    "failedTitle": "“{task}”未完成"
+  },
   "announcement": {
     "comfyApi": {
       "title": "Comfy API \u73b0\u5df2\u63a8\u51fa",

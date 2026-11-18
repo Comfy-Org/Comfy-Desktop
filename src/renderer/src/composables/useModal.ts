@@ -8,6 +8,7 @@ export interface ModalSelectItem {
   value: string
   label: string
   description?: string
+  testId?: string
 }
 
 export interface ModalOption {

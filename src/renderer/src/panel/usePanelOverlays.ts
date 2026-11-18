@@ -11,7 +11,7 @@ import { keepsComfyRunningWhenWindowCloses } from '../composables/useReturnToDas
 import { useProgressStore } from '../stores/progressStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { isUninstallOpKind, updatesBuildInPlace } from '../lib/progressOpKind'
+import { usePortConflictPrompt } from '../composables/usePortConflictPrompt'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -87,6 +87,7 @@ export interface UsePanelOverlaysOpts {
   ) => Promise<void>
   firstUseChain?: FirstUseChainHooks
   onBackgroundInstall?: (installationId: string) => void
+  onBuildCreated?: (installationId: string) => void
   launchesInPlace?: (installationId: string) => boolean
   progressRef: Ref<InstanceType<typeof ProgressModal> | null>
   newInstallRef: Ref<InstanceType<typeof InstallWizardModal> | null>
@@ -194,32 +195,38 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     })
   }
 
-  function showsOnBuildTile(showOpts: ShowProgressOpts): boolean {
-    return (
-      isUninstallOpKind(showOpts.opKind) || updatesBuildInPlace(showOpts.opKind, showOpts.actionId)
-    )
-  }
-
   function runsInBackground(showOpts: ShowProgressOpts): boolean {
     if (installationId) return false
-    if (showOpts.opKind === 'install' || showsOnBuildTile(showOpts)) return true
-    return showOpts.opKind === 'launch' && !opts.launchesInPlace?.(showOpts.installationId)
+    if (showOpts.opKind === 'install') return true
+    if (showOpts.opKind === 'launch') return !opts.launchesInPlace?.(showOpts.installationId)
+    return opts.firstUseChain?.shouldForceTakeover() !== true
   }
 
-  function resolvePortConflictInTakeover(id: string): void {
+  function movesToHome(showOpts: ShowProgressOpts): showOpts is ShowProgressOpts & {
+    actionId: string
+  } {
+    return !!installationId && showOpts.opKind !== 'launch' && !!showOpts.actionId
+  }
+
+  function whenFinished(id: string, then: (result: ActionResult | null) => void): void {
     const stop = watch(
       () => progressStore.operations.get(id)?.finished === true,
-      async (finished) => {
+      (finished) => {
         if (!finished) return
         stop()
-        const op = progressStore.operations.get(id)
-        if (!op?.result?.portConflict) return
-        const ok = await openProgressTakeover(id, op.title.split(' — ')[0] || op.title)
-        if (!ok) return
-        await nextTick()
-        progressRef.value?.showOperation(id)
+        then(progressStore.operations.get(id)?.result ?? null)
       }
     )
+  }
+
+  const resolvePortConflict = usePortConflictPrompt((relaunchOpts) =>
+    handleShowProgress(relaunchOpts)
+  )
+
+  function closeProgressPanel(): void {
+    if (activePanel.value !== 'progress') return
+    activePanel.value = defaultBodyPanel()
+    window.api.closeCurrentPanel()
   }
 
   function openProgressTakeover(id: string, operationName: string): Promise<boolean> {
@@ -262,22 +269,38 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
 
   async function handleShowProgress(showOpts: ShowProgressOpts): Promise<void> {
     const operationName = showOpts.title.split(' — ')[0] || showOpts.title
+    if (movesToHome(showOpts)) {
+      closeProgressPanel()
+      await window.api.showProgressOnHome({
+        installationId: showOpts.installationId,
+        actionId: showOpts.actionId,
+        title: showOpts.title,
+        actionData: showOpts.actionData,
+        cancellable: showOpts.cancellable,
+        opKind: showOpts.opKind
+      })
+      return
+    }
     if (runsInBackground(showOpts)) {
       startOperationOnce({ ...showOpts, chainSpan: undefined })
-      if (showsOnBuildTile(showOpts)) {
-        if (activePanel.value === 'progress') {
-          activePanel.value = defaultBodyPanel()
-          window.api.closeCurrentPanel()
-        }
-        return
-      }
-      if (currentOverlay.value?.kind === 'takeover') dismissTakeoverDirect()
+      const id = showOpts.installationId
+      closeProgressPanel()
+      const keepsTakeover = showOpts.opKind !== 'launch' && showOpts.opKind !== 'install'
+      if (!keepsTakeover && currentOverlay.value?.kind === 'takeover') dismissTakeoverDirect()
       if (showOpts.opKind === 'launch') {
-        resolvePortConflictInTakeover(showOpts.installationId)
+        whenFinished(id, (result) => {
+          if (result?.portConflict) void resolvePortConflict(id)
+        })
         return
       }
-      opts.firstUseChain?.onBackgroundInstall(showOpts)
-      opts.onBackgroundInstall?.(showOpts.installationId)
+      if (showOpts.opKind === 'install') {
+        opts.firstUseChain?.onBackgroundInstall(showOpts)
+        opts.onBackgroundInstall?.(id)
+        return
+      }
+      whenFinished(id, (result) => {
+        if (result?.ok && result.newInstallationId) opts.onBuildCreated?.(result.newInstallationId)
+      })
       return
     }
     opts.firstUseChain?.onShowProgress(showOpts)
