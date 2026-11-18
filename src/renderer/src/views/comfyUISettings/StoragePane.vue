@@ -333,7 +333,7 @@ function handleRevealPath(path: string): void {
   <div class="storage-pane flex max-w-3xl flex-col gap-2.5">
     <div
       v-if="showRestartWarning"
-      class="storage-note is-warning m-0 flex items-center gap-2.5 rounded-[14px] bg-white/5 px-4 py-3 text-neutral-100"
+      class="storage-note is-warning m-0 flex items-center gap-2.5 rounded-[14px] bg-card px-4 py-3 text-neutral-100"
       role="status"
     >
       <AlertTriangle

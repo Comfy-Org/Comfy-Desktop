@@ -135,6 +135,20 @@ describe('ComfyUISettingsContent', () => {
       target.remove()
     })
 
+    it('leaves room around the page body so focus rings at its edges are not clipped', async () => {
+      const target = document.createElement('div')
+      target.id = 'page-actions'
+      document.body.append(target)
+
+      const wrapper = await mountContent({ pageActionsTarget: '#page-actions' })
+      expect(wrapper.find('.settings-v2-body').classes()).toEqual(
+        expect.arrayContaining(['-mx-1', 'px-1'])
+      )
+
+      wrapper.unmount()
+      target.remove()
+    })
+
     it('renders "Updating…" when actionData.isDowngrade is false', async () => {
       const w = await mountContent({
         activeOperation: {

@@ -835,7 +835,7 @@ defineExpose({
       <TabsContent :value="activeTab" as-child force-mount>
         <section
           class="settings-v2-body scroll-visible relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto"
-          :class="isPage ? 'pt-5 pb-8' : 'p-4'"
+          :class="isPage ? '-mx-1 px-1 pt-5 pb-8' : 'p-4'"
         >
           <p
             v-if="!installation"

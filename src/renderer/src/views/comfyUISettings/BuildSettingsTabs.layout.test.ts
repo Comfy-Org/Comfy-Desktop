@@ -96,9 +96,15 @@ const LAUNCH_SECTION: DetailSection = {
     selectField('managerNetworkMode', 'Manager Network Mode', 'manager'),
     selectField('launchMode', 'Launch Mode', 'launch-window'),
     selectField('browserPartition', 'Browser Cache', 'launch-window'),
-    selectField('portConflict', 'If Port is Busy')
+    selectField('portConflict', 'If Port is Busy'),
+    field('envVars', 'Environment Variables', {
+      editType: 'env-vars',
+      value: { HF_HOME: 'D:\\hf' }
+    })
   ]
 }
+
+const CARD_FILL_PROBE = 'bg-card'
 
 async function mountStartupArgs(width: number): Promise<HTMLElement> {
   const wrapper = mount(SettingsSectionList, {
@@ -244,7 +250,7 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
 
   it('spaces startup settings like Desktop Settings fields', async () => {
     const root = await mountStartupArgs(width)
-    const fields = [...root.querySelectorAll<HTMLElement>('.settings-v2-field')]
+    const fields = [...root.querySelectorAll<HTMLElement>('.settings-v2-field:not(.is-env-vars)')]
     const labelGaps = fields.map((el) => {
       const label = el.querySelector('.settings-v2-field-label')!.getBoundingClientRect()
       const control = el.querySelector(CONTROL)!.getBoundingClientRect()
@@ -268,5 +274,33 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
       expect(Math.round(control.getBoundingClientRect().height), 'field height').toBe(40)
       expect(getComputedStyle(control).borderRadius, 'field radius').toBe('8px')
     }
+  })
+
+  it('fills every folder box with the card surface used on Overview', async () => {
+    const root = await mountStorage(width)
+    const probe = document.createElement('div')
+    probe.className = CARD_FILL_PROBE
+    document.body.appendChild(probe)
+    const cardFill = getComputedStyle(probe).backgroundColor
+    const boxes = [...root.querySelectorAll<HTMLElement>('.gs-micro-body > *')]
+    expect(boxes.length).toBeGreaterThanOrEqual(3)
+    for (const box of boxes) {
+      expect(getComputedStyle(box).backgroundColor, 'box fill').toBe(cardFill)
+    }
+  })
+
+  it('keeps the environment variables title and note clear of the field above', async () => {
+    const root = await mountStartupArgs(width)
+    const env = root.querySelector<HTMLElement>('.settings-v2-field.is-env-vars')!
+    const port = root.querySelector('[data-field-id="portConflict"]')!.getBoundingClientRect()
+    const note = env.querySelector('.settings-v2-env-notice')!.getBoundingClientRect()
+    const label = env.querySelector('.settings-v2-field-label')!.getBoundingClientRect()
+    expect(Math.round(env.getBoundingClientRect().top - port.bottom), 'env block gap').toBe(10)
+    expect(note.top, 'note stays below the field above').toBeGreaterThanOrEqual(
+      env.getBoundingClientRect().top
+    )
+    expect(Math.round(label.top + label.height / 2), 'title and note share one line').toBe(
+      Math.round(note.top + note.height / 2)
+    )
   })
 })

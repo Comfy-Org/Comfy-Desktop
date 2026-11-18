@@ -351,12 +351,16 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                   isNestedField(field),
                 'pl-3.5': isNestedField(field) && !readonly,
                 'is-env-vars': field.editType === 'env-vars',
+                'mt-1.5': field.editType === 'env-vars' && isStackedTitled(section),
                 'is-channel-picker': field.editType === 'channel-cards'
               }
             ]"
           >
             <template v-if="field.editType === 'env-vars'">
-              <div class="settings-v2-env-header flex items-start justify-between gap-3">
+              <div
+                class="settings-v2-env-header flex justify-between gap-3"
+                :class="isStackedTitled(section) ? 'items-center' : 'items-start'"
+              >
                 <label
                   class="settings-v2-field-label inline-flex w-fit max-w-full items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted flex-auto min-w-0"
                 >
@@ -381,7 +385,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                   </span>
                 </label>
                 <div
-                  class="settings-v2-env-notice -my-1.5 ml-auto inline-flex w-fit max-w-[min(100%,320px)] flex-none items-start gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] px-2 py-1.5 text-left text-[10.5px] leading-4 text-text-muted"
+                  :class="{ '-my-1.5': !isStackedTitled(section) }"
+                  class="settings-v2-env-notice ml-auto inline-flex w-fit max-w-[min(100%,320px)] flex-none items-start gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] px-2 py-1.5 text-left text-[10.5px] leading-4 text-text-muted"
                   role="note"
                 >
                   <ShieldAlert
