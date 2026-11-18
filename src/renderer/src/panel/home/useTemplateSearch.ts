@@ -33,10 +33,14 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   const activeIndex = ref(0)
   const inResults = ref(false)
   const openFailed = ref(false)
+  const partnersShown = ref(true)
   let latestRequest = 0
   let prepared = false
   let pendingSearch: ReturnType<typeof setTimeout> | undefined
 
+  const partnerSwitch = computed(
+    () => state.value.kind === 'result' && state.value.result.partnerSwitch
+  )
   const rows = computed<SearchRow[]>(() =>
     state.value.kind === 'result' ? searchRows(state.value.result) : []
   )
@@ -138,6 +142,17 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     void window.api.prepareTemplateSearch().catch(() => null)
   }
 
+  void window.api
+    .getSetting('templateSearchPartners')
+    .then((value) => (partnersShown.value = value !== false))
+    .catch(() => null)
+
+  async function setPartnersShown(shown: boolean): Promise<void> {
+    partnersShown.value = shown
+    await window.api.setSetting('templateSearchPartners', shown).catch(() => null)
+    if (query.value.trim()) await search(query.value)
+  }
+
   function download(): void {
     void window.api.downloadTemplateSearch().catch(() => null)
   }
@@ -226,6 +241,9 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     activeRow,
     inResults,
     openFailed,
+    partnerSwitch,
+    partnersShown,
+    setPartnersShown,
     prepare,
     open,
     close,

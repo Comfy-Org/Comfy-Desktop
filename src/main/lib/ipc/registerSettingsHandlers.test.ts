@@ -122,6 +122,27 @@ describe('buildSettingsSections', () => {
     ).toBe(false)
   })
 
+  it('offers a default-on partner templates switch only while template search is on', () => {
+    const fields = () =>
+      buildSettingsSections().flatMap(
+        (s) => (s.fields as { id?: string; value?: unknown }[] | undefined) ?? []
+      )
+    expect(fields().map((f) => f.id)).not.toContain('templateSearchPartners')
+
+    mockSettings.templateSearchEnabled = true
+    expect(fields()).toContainEqual(
+      expect.objectContaining({
+        id: 'templateSearchPartners',
+        label: 'Partner templates in Home search',
+        type: 'boolean',
+        value: true
+      })
+    )
+
+    mockSettings.templateSearchPartners = false
+    expect(fields().find((f) => f.id === 'templateSearchPartners')?.value).toBe(false)
+  })
+
   it('offers hardware acceleration under Advanced with a restart notice', () => {
     const sections = buildSettingsSections()
     const generalFields =

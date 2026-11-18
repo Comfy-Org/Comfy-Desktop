@@ -24,6 +24,7 @@ export interface TemplateLabel {
   title: string
   thumbnailUrl: string | null
   partner: boolean
+  size: number | null
 }
 
 export type DescribeTemplate = (templateId: string) => TemplateLabel | null
@@ -95,7 +96,8 @@ function candidateFrom(
     score: asNumber(candidate.score),
     calibrated: asNumber(candidate.calibrated),
     belowThreshold: isBelowThreshold(candidate),
-    missing: missingFor(candidate, templateId)
+    missing: missingFor(candidate, templateId),
+    downloadBytes: null
   }
 }
 
@@ -128,11 +130,23 @@ export function parseDecision(
   const outcome = asRecord(decision?.outcome)
   const split = asRecord(decision?.split)
   if (!outcome || !split) return null
-  const run = distinctCandidates(split.run, RUN_LIMIT, describe)
-  const download = distinctCandidates(split.download, DOWNLOAD_LIMIT, describe, {
-    taken: new Set(run.map((candidate) => candidate.templateId)),
-    fromDownloadList: true
-  })
+  const open = Array.isArray(split.open) ? split.open : []
+  const needsFiles = (item: unknown): boolean => asTexts(asRecord(item)?.download).length > 0
+  const run = distinctCandidates(
+    [...(Array.isArray(split.run) ? split.run : []), ...open.filter((item) => !needsFiles(item))],
+    RUN_LIMIT,
+    describe
+  )
+  const downloads = Array.isArray(split.download) ? split.download : []
+  const download = distinctCandidates(
+    [...downloads, ...open.filter(needsFiles)],
+    DOWNLOAD_LIMIT,
+    describe,
+    {
+      taken: new Set(run.map((candidate) => candidate.templateId)),
+      fromDownloadList: true
+    }
+  )
   const options = Array.isArray(decision?.options) ? decision.options : []
   const alsoTry = distinctCandidates(options.filter(isOfferableOption), ALSO_TRY_LIMIT, describe, {
     taken: new Set([...run, ...download].map((candidate) => candidate.templateId))
@@ -142,7 +156,8 @@ export function parseDecision(
     reply: asText(outcome.reply),
     run,
     download,
-    alsoTry
+    alsoTry,
+    partnerSwitch: false
   }
 }
 
@@ -161,12 +176,17 @@ export function decisionMetrics(body: unknown): DecisionMetrics {
   }
 }
 
-export function decideRequest(query: string, installed: readonly string[] | null): object {
+export function decideRequest(
+  query: string,
+  installed: readonly string[] | null,
+  { partnersOff = false }: { partnersOff?: boolean } = {}
+): object {
   return {
     text: query,
     run_n: REQUESTED_CANDIDATES,
     download_m: REQUESTED_CANDIDATES,
     outcomes: OUTCOMES,
-    ...(installed ? { installed } : {})
+    ...(installed ? { installed } : {}),
+    ...(partnersOff ? { partner_on: false } : {})
   }
 }

@@ -226,6 +226,7 @@ export interface TemplateSearchCandidate {
   calibrated: number | null
   belowThreshold: boolean
   missing: string[]
+  downloadBytes: number | null
 }
 
 export interface TemplateSearchResult {
@@ -234,6 +235,7 @@ export interface TemplateSearchResult {
   run: TemplateSearchCandidate[]
   download: TemplateSearchCandidate[]
   alsoTry: TemplateSearchCandidate[]
+  partnerSwitch: boolean
 }
 
 export type TemplateSearchUnavailableReason =

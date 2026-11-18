@@ -151,6 +151,10 @@ export function templateSearchOn(): boolean {
   return configuredZipapp() !== null
 }
 
+export function templateSearchPartnersOn(): boolean {
+  return settings.get('templateSearchPartners') !== false
+}
+
 export function sidecarPythons(
   builds: InstallationRecord[],
   isLocalInstallation: (installation: InstallationRecord) => boolean,
@@ -278,6 +282,7 @@ export function createSearchProcess({
   return {
     decide: (body: unknown): Promise<SidecarDecision> => service.decide(body),
     prepare: (): Promise<void> => service.prepare(),
+    partnerSwitch: (): boolean => service.partnerSwitch(),
     download: (): Promise<void> => (pyz() ? store.download() : Promise.resolve()),
     downloadInBackground,
     onBuildAction,

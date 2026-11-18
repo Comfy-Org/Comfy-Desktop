@@ -2,6 +2,8 @@
 import { computed, onMounted, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
+import Switch from '@comfyorg/design-system/switch/Switch'
+import { formatSize } from '../../lib/formatting'
 import TemplateSearchBadge from './TemplateSearchBadge.vue'
 import type { TemplateSearchAvailability, TemplateSearchCandidate } from '../../types/ipc'
 import { matchLevel, verticalNeighbour, type BadgeTone, type SearchRow } from './templateSearch'
@@ -125,6 +127,8 @@ function isWeak(row: SearchRow): boolean {
 function rowMeta(row: SearchRow): string {
   const candidate = row.candidate
   if (!candidate.needsDownload) return candidate.family ?? t('home.search.template')
+  if (candidate.downloadBytes)
+    return t('home.search.downloadSize', { size: formatSize(candidate.downloadBytes) })
   return candidate.missing.length
     ? t('home.search.needsDownload', { items: candidate.missing.join(', ') })
     : t('home.search.needsTemplateDownload')
@@ -195,6 +199,18 @@ defineExpose({ verticalTarget, revealActive })
       </Button>
     </div>
     <template v-else-if="controller.state.value.kind === 'result'">
+      <label
+        v-if="controller.partnerSwitch.value"
+        class="flex items-center justify-end gap-2 px-2.5 pt-1 text-xs/4 text-muted-foreground"
+        data-testid="home-template-search-partner-switch"
+      >
+        {{ t('home.search.partnerSwitch') }}
+        <Switch
+          :model-value="controller.partnersShown.value"
+          :aria-label="t('home.search.partnerSwitch')"
+          @update:model-value="(shown: boolean) => controller.setPartnersShown(shown)"
+        />
+      </label>
       <p
         v-if="controller.reply.value"
         class="m-0 px-2.5 py-2 text-[13px]/5 text-foreground"

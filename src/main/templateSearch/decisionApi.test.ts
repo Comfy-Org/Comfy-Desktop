@@ -155,7 +155,7 @@ describe('parseDecision', () => {
   })
 
   it('still marks an api_ template as partner when the build index does not say', () => {
-    const describe = (id: string) => ({ title: id, thumbnailUrl: null, partner: false })
+    const describe = (id: string) => ({ title: id, thumbnailUrl: null, partner: false, size: null })
     const body = decision({
       split: { run: [candidate('as_given', 'api_partner_template')], download: [] }
     })
@@ -174,7 +174,8 @@ describe('parseDecision', () => {
     const describe = (id: string) => ({
       title: id,
       thumbnailUrl: null,
-      partner: id === 'poster_template'
+      partner: id === 'poster_template',
+      size: null
     })
     const [poster, logo] = parseDecision(decision(), describe)!.run
     expect(poster).toMatchObject({ templateId: 'poster_template', partner: true })
@@ -187,7 +188,8 @@ describe('parseDecision', () => {
         ? {
             title: 'Bake sale poster',
             thumbnailUrl: 'https://thumbs.example.test/poster.webp',
-            partner: false
+            partner: false,
+            size: null
           }
         : null
     const [poster, logo] = parseDecision(decision(), describe)!.run
@@ -232,6 +234,36 @@ describe('parseDecision', () => {
     ).toMatchObject({ outcome: 'unsat', reply: 'Try the template browser.' })
   })
 
+  it('adds an open pick for a partner family to Run when the build has it, and to Download and run when it needs files', () => {
+    const body = decision({
+      split: {
+        run: [candidate('as_given', 'api_poster_template')],
+        download: [candidate('as_given', 'mural_template', ['mural.safetensors'])],
+        open: [
+          candidate('as_given', 'poster_template'),
+          candidate('as_given', 'zine_template', ['zine_template', 'zine.safetensors'])
+        ]
+      }
+    })
+    const result = parseDecision(body)
+    expect(result?.run.map((c) => c.templateId)).toEqual(['api_poster_template', 'poster_template'])
+    expect(result?.download).toEqual([
+      expect.objectContaining({ templateId: 'mural_template', missing: ['mural.safetensors'] }),
+      expect.objectContaining({ templateId: 'zine_template', missing: ['zine.safetensors'] })
+    ])
+  })
+
+  it('shows an open pick once when the search already listed it', () => {
+    const body = decision({
+      split: {
+        run: [candidate('as_given', 'poster_template')],
+        download: [],
+        open: [candidate('as_given', 'poster_template')]
+      }
+    })
+    expect(parseDecision(body)?.run.map((c) => c.templateId)).toEqual(['poster_template'])
+  })
+
   it('drops a candidate whose template id could be a path', () => {
     const body = decision({ split: { run: [candidate('as_given', '../escape')], download: [] } })
     expect(parseDecision(body)?.run).toEqual([])
@@ -259,6 +291,13 @@ describe('decideRequest', () => {
 
   it('leaves installed out when the build is not known, so every template counts as there', () => {
     expect(decideRequest('a poster', null)).not.toHaveProperty('installed')
+  })
+
+  it('asks the search to leave partner templates out only when told to', () => {
+    expect(decideRequest('a poster', null, { partnersOff: true })).toMatchObject({
+      partner_on: false
+    })
+    expect(decideRequest('a poster', null)).not.toHaveProperty('partner_on')
   })
 })
 
