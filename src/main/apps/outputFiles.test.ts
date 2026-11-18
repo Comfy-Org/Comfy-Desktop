@@ -27,7 +27,7 @@ function output(extra: Partial<RequestedOutput> = {}): RequestedOutput {
 const cutoutFile = { filename: 'cutout_00001_.png', subfolder: 'apps' }
 
 describe('locateOutputFiles', () => {
-  it('shows the folder of a ComfyUI file Desktop found, and never sends the reference on', async () => {
+  it('shows the folder and path of a ComfyUI file Desktop found, and never sends the reference on', async () => {
     const find = vi.fn<FindOutputFile>(async () => FOUND)
 
     const located = await locateOutputFiles(
@@ -37,7 +37,7 @@ describe('locateOutputFiles', () => {
 
     expect(find).toHaveBeenCalledExactlyOnceWith(cutoutFile, new Uint8Array([1]))
     expect(located.outputs.items[0]).toEqual(
-      output({ savedOn: 'computer', folder: path.dirname(FOUND) })
+      output({ savedOn: 'computer', folder: path.dirname(FOUND), filePath: FOUND })
     )
     expect(located.files).toEqual([FOUND])
   })

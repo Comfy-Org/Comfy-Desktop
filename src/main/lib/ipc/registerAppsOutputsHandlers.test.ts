@@ -126,7 +126,15 @@ describe('showOutput from the hosted Apps page', () => {
       new Uint8Array([1])
     )
     const [, , outputs, files] = mocks.showAppOutputs.mock.calls[0]!
-    expect(outputs).toMatchObject({ items: [{ savedOn: 'computer', folder: '/outputs/apps' }] })
+    expect(outputs).toMatchObject({
+      items: [
+        {
+          savedOn: 'computer',
+          folder: '/outputs/apps',
+          filePath: '/outputs/apps/cutout_00001_.png'
+        }
+      ]
+    })
     expect(files).toEqual(['/outputs/apps/cutout_00001_.png'])
   })
 

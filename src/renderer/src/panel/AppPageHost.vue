@@ -17,7 +17,9 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useCoveredByPage } from '../composables/useCoveredByPage'
+import { useModal } from '../composables/useModal'
 import { appPageShown, sidebarHovered } from './appPageCover'
+import { LOCAL_ASSETS_SOURCE } from '../types/ipc'
 import type {
   AppOutputAction,
   AppOutputs,
@@ -34,6 +36,7 @@ const { appId, title } = defineProps<{
 const emit = defineEmits<{ close: []; 'view-in-assets': [name: string] }>()
 
 const { t } = useI18n()
+const modal = useModal()
 
 const host = useTemplateRef<HTMLElement>('host')
 const coveredByPage = useCoveredByPage(host)
@@ -41,6 +44,7 @@ const covered = computed(() => coveredByPage.value || sidebarHovered.value)
 const status = ref<AppPageStatus | null>(null)
 const frozenFrame = ref<string | null>(null)
 const outputs = shallowRef<OutputDetailItem[] | null>(null)
+let outputFiles: (string | null)[] = []
 const outputIndex = ref(0)
 const outputsShown = ref(0)
 
@@ -107,10 +111,16 @@ function outputKind(mimeType: string): AssetKind | null {
   return kind === 'image' || kind === 'video' || kind === 'audio' ? kind : null
 }
 
+function mainAction(output: AppOutputs['items'][number]): OutputDetailItem['mainAction'] {
+  if (!output.filePath) return 'download'
+  return outputKind(output.mimeType) ? 'open' : null
+}
+
 function releaseOutputs(): void {
   const shown = outputs.value
   if (!shown) return
   outputs.value = null
+  outputFiles = []
   void nextTick(() => {
     for (const item of shown) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
   })
@@ -129,8 +139,10 @@ function showOutputs(shown: AppOutputs): void {
     thumbnailUrl: null,
     workflow: output.workflow,
     savedIn: output.savedOn === 'computer' ? (output.folder ?? null) : null,
-    inCloud: output.savedOn === 'cloud'
+    inCloud: output.savedOn === 'cloud',
+    mainAction: mainAction(output)
   }))
+  outputFiles = shown.items.map((output) => output.filePath ?? null)
   outputIndex.value = shown.index
   outputsShown.value += 1
 }
@@ -144,6 +156,15 @@ function closeOutputs(): void {
 function sendOutputAction(action: AppOutputAction['action'], index: number): void {
   window.api.sendAppOutputAction({ action, index })
   if (action === 'open-workflow') closeOutputs()
+}
+
+async function openOutput(index: number): Promise<void> {
+  const file = outputFiles[index]
+  const name = outputs.value?.[index]?.name ?? ''
+  const opened = file
+    ? await window.api.openAsset(LOCAL_ASSETS_SOURCE, file).catch(() => false)
+    : false
+  if (!opened) await modal.alert({ title: t('assets.openFailed'), message: name })
 }
 
 function viewInAssets(index: number): void {
@@ -277,6 +298,7 @@ onBeforeUnmount(() => {
       :items="outputs"
       @close="closeOutputs"
       @download="sendOutputAction('download', $event)"
+      @open="openOutput"
       @open-workflow="sendOutputAction('open-workflow', $event)"
       @show-in-folder="sendOutputAction('show-in-folder', $event)"
       @view-in-assets="viewInAssets"
