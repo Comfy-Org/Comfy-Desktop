@@ -16,6 +16,7 @@ const {
   shownInFolder,
   trashed,
   copiedImage,
+  openedFolder,
   runningSessions
 } = await vi.hoisted(async () => {
   const nodeFs = await import('node:fs')
@@ -38,6 +39,7 @@ const {
     shownInFolder: vi.fn(),
     trashed: vi.fn(async (file: string) => nodeFs.rmSync(file)),
     copiedImage: vi.fn(),
+    openedFolder: vi.fn(async (_folder: string) => ''),
     runningSessions: new Map<string, { launchFolders?: { output: string; input: string } }>()
   }
 })
@@ -46,7 +48,8 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
   shell: {
     showItemInFolder: (file: string) => shownInFolder(file),
-    trashItem: (file: string) => trashed(file)
+    trashItem: (file: string) => trashed(file),
+    openPath: (folder: string) => openedFolder(folder)
   },
   clipboard: { write: async (items: unknown[]) => copiedImage(items) },
   ClipboardItem: class {
@@ -106,6 +109,8 @@ import {
   listLocalAssets,
   localPageRequest,
   listOutputFolders,
+  outputFolderPaths,
+  openOutputFolder,
   outputDirOverride,
   outputFilePath,
   outputFileUrl,
@@ -298,6 +303,23 @@ describe('listOutputFolders', () => {
       install('Gone', { useSharedOutput: false, outputDir: path.join(root, 'missing') })
     ])
     expect(await listOutputFolders()).toEqual([sharedDir])
+  })
+})
+
+describe('outputFolderPaths and openOutputFolder', () => {
+  it('names the shared folder and each build folder, and opens only those', async () => {
+    installs.mockResolvedValue([
+      { id: 'Test Instance', sourceId: 'standalone', useSharedOutput: false, outputDir: ownDir }
+    ])
+
+    const folders = await outputFolderPaths()
+
+    expect(folders.shared).toBe(sharedDir)
+    expect(folders.ofBuild).toEqual({ 'Test Instance': ownDir })
+    expect(await openOutputFolder()).toBe(true)
+    expect(await openOutputFolder('Test Instance')).toBe(true)
+    expect(await openOutputFolder('unknown'), 'an unknown build opens nothing').toBe(false)
+    expect(openedFolder.mock.calls).toEqual([[sharedDir], [ownDir]])
   })
 })
 

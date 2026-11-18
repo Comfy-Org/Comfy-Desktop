@@ -1,6 +1,7 @@
 import fs from 'fs'
 import fsp from 'fs/promises'
 import type { Dirent } from 'fs'
+import os from 'os'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { ipcMain, nativeImage, net, protocol, shell } from 'electron'
@@ -18,12 +19,15 @@ import type {
   AssetKind,
   AssetSummary,
   LocalAssetListing,
-  LocalAssetPageRequest
+  LocalAssetPageRequest,
+  OutputFolderPaths
 } from '../../types/ipc'
 
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
 
 const LIST_LOCAL_CHANNEL = 'assets:list-local'
+const FOLDERS_CHANNEL = 'assets:output-folders'
+const OPEN_FOLDER_CHANNEL = 'assets:open-output-folder'
 export const MAX_LOCAL_ASSETS = 500
 export const MAX_FOLDER_DEPTH = 6
 const THUMBNAIL_SIZE = 480
@@ -133,6 +137,18 @@ async function findOutputFolders(): Promise<OutputFolders> {
   allowedRoots = all
   allowedRootsAt = Date.now()
   return { all, shared, ofBuild }
+}
+
+export async function outputFolderPaths(): Promise<OutputFolderPaths> {
+  const { shared, ofBuild } = await findOutputFolders()
+  return { home: os.homedir(), shared, ofBuild: Object.fromEntries(ofBuild) }
+}
+
+export async function openOutputFolder(installationId?: string): Promise<boolean> {
+  const { shared, ofBuild } = await findOutputFolders()
+  const folder = installationId === undefined ? shared : ofBuild.get(installationId)
+  if (!folder) return false
+  return (await shell.openPath(folder)) === ''
 }
 
 export async function listOutputFolders(): Promise<string[]> {
@@ -460,6 +476,10 @@ export function registerOutputFilesScheme(): void {
 
 export function registerOutputFolderHandlers(): void {
   protocol.handle(OUTPUT_FILES_SCHEME, serveOutputFile)
+  ipcMain.handle(FOLDERS_CHANNEL, () => outputFolderPaths())
+  ipcMain.handle(OPEN_FOLDER_CHANNEL, (_event, installationId: unknown) =>
+    openOutputFolder(typeof installationId === 'string' ? installationId : undefined)
+  )
   ipcMain.handle(LIST_LOCAL_CHANNEL, (_event, installationId: unknown, page: unknown) =>
     listLocalAssets(
       typeof installationId === 'string' ? installationId : undefined,

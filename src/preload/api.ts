@@ -105,6 +105,9 @@ export function buildElectronApi(): ElectronApi {
     listAssets: (installationId, page) => ipcRenderer.invoke('assets:list', installationId, page),
     listLocalAssets: (installationId, page) =>
       ipcRenderer.invoke('assets:list-local', installationId, page),
+    listOutputFolders: () => ipcRenderer.invoke('assets:output-folders'),
+    openOutputFolder: (installationId) =>
+      ipcRenderer.invoke('assets:open-output-folder', installationId),
     downloadAsset: (source, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
     revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),
