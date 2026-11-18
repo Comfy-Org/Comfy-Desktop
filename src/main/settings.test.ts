@@ -718,6 +718,10 @@ describe('peekBetaFeaturesEnabled', () => {
 })
 
 describe('resolveBetaFeaturesEnabled', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it.each([true, false])(
     'retains a stored %s from a backup when the primary is unreadable',
     (choice) => {
@@ -1041,6 +1045,15 @@ describe('telemetryConsent', () => {
     failReads(settingsPath, settingsPath + '.bak')
 
     expect(settings.telemetryConsent()).toBeUndefined()
+  })
+
+  it('keeps a decline from the backup when settings.json is unreadable', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: true }))
+    fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ telemetryEnabled: false }))
+    failReads(settingsPath)
+
+    expect(settings.telemetryConsent()).toBe(false)
   })
 
   it('keeps consent restored from a backup when settings.json is missing', () => {

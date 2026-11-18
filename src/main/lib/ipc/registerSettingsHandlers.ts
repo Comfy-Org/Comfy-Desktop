@@ -276,7 +276,7 @@ export function registerSettingsHandlers(): void {
   })
 
   ipcMain.handle('get-setting', (_event, key: string) => {
-    return settings.get(key)
+    return key === 'telemetryEnabled' ? settings.telemetryConsent() : settings.get(key)
   })
 
   ipcMain.handle('get-pending-beta-notice', (_event, installationId: unknown) => {

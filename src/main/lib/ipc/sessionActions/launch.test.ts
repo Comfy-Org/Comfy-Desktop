@@ -468,6 +468,7 @@ describe('desktopFeatureFlags', () => {
   it('omits enable_telemetry when settings serve a consent the accessor withholds', () => {
     settingsModule.set('telemetryEnabled', true)
     onTestFinished(() => settingsModule.set('telemetryEnabled', undefined))
+    expect(settingsModule.get('telemetryEnabled'), 'settings serve the opt-in').toBe(true)
     withConsent(undefined)
     expect(desktopFeatureFlags(installOf('standalone'))).not.toHaveProperty('enable_telemetry')
   })
