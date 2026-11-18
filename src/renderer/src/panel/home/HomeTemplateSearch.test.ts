@@ -381,20 +381,24 @@ describe('HomeTemplateSearch results', () => {
           candidate('api_nano', { partner: true, family: 'stylised' })
         ],
         download: [
+          candidate('mural', { needsDownload: true }),
           candidate('qwen', { family: 'graphic', needsDownload: true }),
           candidate('krea', { family: 'stylised', needsDownload: true }),
-          candidate('mural', { needsDownload: true })
+          candidate('flyer', { family: 'flyer', needsDownload: true }),
+          candidate('zine', { needsDownload: true })
         ]
       })
     )
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
-    expect(rowTitles(wrapper)).toEqual([
+    expect(rowTitles(wrapper), 'cards with no family keep their place').toEqual([
       'api_gpt title',
       'qwen title',
       'api_nano title',
       'krea title',
-      'mural title'
+      'mural title',
+      'flyer title',
+      'zine title'
     ])
   })
 
