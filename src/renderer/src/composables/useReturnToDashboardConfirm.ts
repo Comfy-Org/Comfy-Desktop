@@ -4,7 +4,7 @@ import type { Installation } from '../types/ipc'
 
 export type ReturnToDashboardReason = 'in_flight' | 'crashed' | 'stopped' | 'running'
 
-async function keepsComfyRunningWhenWindowCloses(): Promise<boolean> {
+export async function keepsComfyRunningWhenWindowCloses(): Promise<boolean> {
   try {
     return (await window.api.getSetting('keepComfyRunningWhenWindowCloses')) !== false
   } catch {

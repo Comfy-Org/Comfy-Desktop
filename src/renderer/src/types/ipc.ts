@@ -1,6 +1,8 @@
 export type {
   DashboardPage,
   AppCard,
+  AppOutputAction,
+  AppOutputs,
   AppPagePlacement,
   AppPageStatus,
   AssetKind,
@@ -12,6 +14,7 @@ export type {
   TemplateSearchAvailability,
   TemplateSearchResult,
   OpenTemplateOutcome,
+  CloudAssetLookup,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,

@@ -77,6 +77,12 @@ export function registerPickerSettingsIpc(options: PickerSettingsIpcOptions): vo
     dispatchInvoke('stop-comfyui', event, payload?.installationId)
   )
 
+  ipcMain.handle(
+    CH.closeComfyWindow,
+    (event, payload: { installationId?: unknown; opts?: unknown }) =>
+      dispatchInvoke('close-comfy-window', event, payload?.installationId, payload?.opts)
+  )
+
   ipcMain.handle(CH.cancelOperation, (event, payload: { installationId?: unknown }) =>
     dispatchInvoke('cancel-operation', event, payload?.installationId)
   )

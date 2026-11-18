@@ -88,6 +88,36 @@ describe('dispatchSessionAction operation tracking', () => {
     })
   })
 
+  it('names the Performance Test session on its launch operation, so Home can tell it from a start of the build', async () => {
+    let finishLaunch!: (value: { ok: boolean }) => void
+    launch.mockReturnValue(new Promise((resolve) => (finishLaunch = resolve)))
+
+    const pending = dispatchSessionAction(
+      { ...ctx(), sessionId: 'performance-test:inst-1' },
+      'launch'
+    )
+
+    expect(broadcast).toHaveBeenCalledWith('operation-changed', {
+      installationId: 'inst-1',
+      actionId: 'launch',
+      sessionId: 'performance-test:inst-1',
+      active: true
+    })
+    expect(_getActiveOperations()).toEqual([
+      { installationId: 'inst-1', actionId: 'launch', sessionId: 'performance-test:inst-1' }
+    ])
+
+    finishLaunch({ ok: true })
+    await pending
+
+    expect(broadcast).toHaveBeenLastCalledWith('operation-changed', {
+      installationId: 'inst-1',
+      actionId: 'launch',
+      sessionId: 'performance-test:inst-1',
+      active: false
+    })
+  })
+
   it('clears the entry and broadcasts the end even when the handler throws', async () => {
     delegate.mockRejectedValue(new Error('boom'))
 
@@ -235,6 +265,23 @@ describe('the session action observer', () => {
     release()
     await pending
     expect(delegate).toHaveBeenCalled()
+  })
+
+  it('keeps the wait for the observer out of the operation it reports to the renderer', async () => {
+    broadcast.mockReset()
+    let release!: () => void
+    before.mockReturnValue(new Promise<void>((resolve) => (release = resolve)))
+    const pending = dispatchSessionAction(ctx(), 'update-comfyui')
+    await Promise.resolve()
+    const whileWaiting = _getActiveOperations()
+    release()
+    await pending
+
+    expect(whileWaiting).toStrictEqual([{ installationId: 'inst-1', actionId: 'update-comfyui' }])
+    expect(broadcast.mock.calls).toStrictEqual([
+      ['operation-changed', { installationId: 'inst-1', actionId: 'update-comfyui', active: true }],
+      ['operation-changed', { installationId: 'inst-1', actionId: 'update-comfyui', active: false }]
+    ])
   })
 
   it('tells the observer once the operation no longer counts as active', async () => {

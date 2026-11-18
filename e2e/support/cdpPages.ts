@@ -394,13 +394,11 @@ export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<v
   if (id === null) return
   if (!(await isPopupVisible(app, 'comfyTitlePopup.html'))) return
   await evalWithRetry(() =>
-    app.evaluate(({ webContents }) => {
-      const wc = webContents
-        .getAllWebContents()
-        .find((w) => w.getURL().includes('comfyTitlePopup.html'))
-      if (!wc) return
+    app.evaluate(({ webContents }, popupId) => {
+      const wc = webContents.fromId(popupId)
+      if (!wc || wc.isDestroyed()) return
       return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
-    })
+    }, id)
   ).catch(() => {})
   await expect
     .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {

@@ -15,6 +15,7 @@ import type { FileSaveTransfer } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
 import { copyImageToClipboard } from './clipboardImage'
 import { copyOutputImage, outputFilePath, revealOutputFile, trashOutputFile } from './outputFolders'
+import type { CloudAssetLookup } from '../../types/ipc'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { mediaFactsFromBytes } from './mediaFacts'
 import { LOCAL_ASSETS_SOURCE } from '../../types/ipc'
@@ -86,10 +87,14 @@ export function assetKind(name: string, mimeType?: string | null): AssetKind | n
   return KIND_BY_EXTENSION.get(name.slice(dot + 1).toLowerCase()) ?? null
 }
 
+function fileNameOf(row: AssetRow): string {
+  return row.name.slice(row.name.lastIndexOf('/') + 1)
+}
+
 function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
   return {
     id: row.id,
-    name: row.name.slice(row.name.lastIndexOf('/') + 1),
+    name: fileNameOf(row),
     kind: assetKind(row.name, row.mime_type),
     sizeBytes: typeof row.size === 'number' ? row.size : null,
     createdAt: row.created_at ?? null,
@@ -186,6 +191,79 @@ async function addMediaFacts(summary: AssetSummary, deadline: AbortSignal): Prom
   } catch {
     return
   }
+}
+
+const ASSETS_FIND_CHANNEL = 'assets:find'
+const LOOKUP_PAGE_SIZE = 100
+const MAX_LOOKUP_PAGES = 10
+const LOOKUP_INCOMPLETE: CloudAssetLookup = { status: 'incomplete' }
+
+interface LookupPage {
+  rows: unknown[]
+  hasMore: boolean
+  nextCursor: string | null
+}
+
+function lookupUrl(name: string, after: string | null): string {
+  const query = new URLSearchParams({
+    tags_any: 'output',
+    name_contains: name,
+    sort: 'created_at',
+    order: 'desc',
+    limit: String(LOOKUP_PAGE_SIZE),
+    include_public: 'false'
+  })
+  if (after !== null) query.set('after', after)
+  return `${CLOUD_CONFIG.apiBase}/assets?${query}`
+}
+
+async function fetchLookupPage(url: string, accessToken: string): Promise<LookupPage | null> {
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  })
+  if (!res.ok) return null
+  const body: unknown = await res.json().catch(() => null)
+  if (!body || typeof body !== 'object') return null
+  const { assets, has_more: hasMore, next_cursor: nextCursor } = body as Record<string, unknown>
+  if (!Array.isArray(assets) || typeof hasMore !== 'boolean') return null
+  if (nextCursor !== undefined && nextCursor !== null && typeof nextCursor !== 'string') return null
+  return { rows: assets, hasMore, nextCursor: nextCursor ?? null }
+}
+
+async function withPreview(row: AssetRow, accessToken: string): Promise<AssetSummary> {
+  const summary = toSummary(row, null)
+  if (summary.kind === null || summary.kind === '3d') return summary
+  const deadline = AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS)
+  summary.previewUrl = await resolveCloudContentUrl(summary.id, accessToken, 'inline', deadline)
+  await addMediaFacts(summary, deadline)
+  return summary
+}
+
+async function lookUpCloudAsset(accessToken: string, name: string): Promise<CloudAssetLookup> {
+  let after: string | null = null
+  let unreadable = false
+  for (let page = 0; page < MAX_LOOKUP_PAGES; page++) {
+    const result = await fetchLookupPage(lookupUrl(name, after), accessToken)
+    if (!result) return LOOKUP_INCOMPLETE
+    const readable = result.rows.filter(isAssetRow)
+    unreadable ||= readable.length !== result.rows.length
+    const found = readable.find((row) => fileNameOf(row) === name)
+    if (found) return { status: 'found', asset: await withPreview(found, accessToken) }
+    if (!result.hasMore) return unreadable ? LOOKUP_INCOMPLETE : { status: 'absent' }
+    if (result.nextCursor === null || result.nextCursor === after) return LOOKUP_INCOMPLETE
+    after = result.nextCursor
+  }
+  return LOOKUP_INCOMPLETE
+}
+
+export async function findCloudAsset(
+  installationId: string,
+  name: string
+): Promise<CloudAssetLookup> {
+  const accessToken = name ? await cloudAccessToken(installationId) : null
+  if (!accessToken) return LOOKUP_INCOMPLETE
+  return lookUpCloudAsset(accessToken, name).catch(() => LOOKUP_INCOMPLETE)
 }
 
 async function cloudAccessToken(installationId: string): Promise<string | null> {
@@ -393,5 +471,10 @@ export function registerAssetsHandlers(): void {
     isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'
       ? copyAsset(source, assetId)
       : false
+  )
+  ipcMain.handle(ASSETS_FIND_CHANNEL, (_event, installationId: unknown, name: unknown) =>
+    typeof installationId === 'string' && typeof name === 'string'
+      ? findCloudAsset(installationId, name)
+      : LOOKUP_INCOMPLETE
   )
 }

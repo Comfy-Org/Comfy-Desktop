@@ -85,6 +85,7 @@ import {
   MAX_FOLDER_DEPTH,
   MAX_LOCAL_ASSETS,
   THUMBNAIL_WAIT_MS,
+  comfyOutputPath,
   copyOutputImage,
   hasOutputFolder,
   revealOutputFile,
@@ -339,6 +340,106 @@ describe('outputFilePath', () => {
     expect(await outputFilePath(outside)).toBeNull()
     expect(await outputFilePath(path.join(ownDir, '..', 'outside', 'secret.png'))).toBeNull()
     expect(await outputFilePath('still.png')).toBeNull()
+  })
+})
+
+describe('comfyOutputPath', () => {
+  const CUTOUT = Buffer.from('cutout bytes')
+  const appsBuild = (): InstallationRecord =>
+    install('Apps', { useSharedOutput: false, outputDir: ownDir })
+  const cutout = { filename: 'cutout_00001_.png', subfolder: 'apps/remove-background' }
+
+  it("finds the file ComfyUI named in the build's own output folder, or in the shared one", async () => {
+    const own = path.join(ownDir, 'apps', 'remove-background', 'cutout_00001_.png')
+    const shared = path.join(sharedDir, 'cutout_00001_.png')
+    write(own, CUTOUT)
+    write(shared, CUTOUT)
+
+    expect(await comfyOutputPath(appsBuild(), cutout, new Uint8Array(CUTOUT))).toBe(own)
+    expect(
+      await comfyOutputPath(
+        install('Test Instance'),
+        { filename: 'cutout_00001_.png', subfolder: '' },
+        new Uint8Array(CUTOUT)
+      )
+    ).toBe(shared)
+  })
+
+  it('finds nothing for a missing file, or a file without exactly the bytes the page shows', async () => {
+    write(path.join(ownDir, 'apps', 'remove-background', 'cutout_00001_.png'), CUTOUT)
+
+    expect(
+      await comfyOutputPath(
+        appsBuild(),
+        { ...cutout, filename: 'gone.png' },
+        new Uint8Array(CUTOUT)
+      )
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), cutout, new Uint8Array(Buffer.from('cutout bytez'))),
+      'same size, other bytes'
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), cutout, new Uint8Array(Buffer.from('cutout'))),
+      'other size'
+    ).toBeNull()
+  })
+
+  it("refuses links out of the build's output folder, even into another build's", async () => {
+    write(path.join(outsideDir, 'secret.png'), CUTOUT)
+    write(path.join(sharedDir, 'shared.png'), CUTOUT)
+    fs.symlinkSync(path.join(outsideDir, 'secret.png'), path.join(ownDir, 'secret.png'))
+    fs.symlinkSync(path.join(sharedDir, 'shared.png'), path.join(ownDir, 'shared.png'))
+    const bytes = new Uint8Array(CUTOUT)
+
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: 'secret.png', subfolder: '' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: 'shared.png', subfolder: '' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(
+        appsBuild(),
+        { filename: 'shared.png', subfolder: '../shared-output' },
+        bytes
+      )
+    ).toBeNull()
+  })
+
+  it("refuses a subfolder that climbs out of the build's output folder, and an absolute filename", async () => {
+    const secret = path.join(outsideDir, 'secret.png')
+    write(secret, CUTOUT)
+    const bytes = new Uint8Array(CUTOUT)
+
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: 'secret.png', subfolder: '../outside' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(
+        appsBuild(),
+        { filename: 'secret.png', subfolder: 'apps/../../outside' },
+        bytes
+      )
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: secret, subfolder: '' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: '/etc/passwd', subfolder: '' }, bytes)
+    ).toBeNull()
+  })
+
+  it('finds nothing for Cloud or a build that manages its own paths', async () => {
+    write(path.join(sharedDir, 'cutout_00001_.png'), CUTOUT)
+    const file = { filename: 'cutout_00001_.png', subfolder: '' }
+
+    expect(
+      await comfyOutputPath(install('Cloud', { sourceId: 'cloud' }), file, new Uint8Array(CUTOUT))
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(install('Old', { sourceId: 'desktop' }), file, new Uint8Array(CUTOUT))
+    ).toBeNull()
   })
 })
 

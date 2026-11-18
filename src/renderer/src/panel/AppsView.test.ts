@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import '../assets/main.css'
 import AppsView from './AppsView.vue'
+import AppPageHost from './AppPageHost.vue'
 import type { AppCard, AppPagePlacement, AppPageStatus } from '../types/ipc'
 
 const FOUR_COLUMN_PAGE_WIDTH = 1172
@@ -75,6 +76,7 @@ beforeEach(() => {
     captureAppPage: vi.fn().mockResolvedValue(null),
     hideAppPage,
     onAppPageStatusChanged: vi.fn(() => () => {}),
+    onAppOutputs: vi.fn(() => () => {}),
     onAppPageClosed: (listener: () => void) => {
       appPageClosed = listener
       return () => {}
@@ -230,6 +232,16 @@ describe('AppsView', () => {
     expect((wrapper.get('input').element as HTMLInputElement).value).toBe('hdr')
     expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
     expect(hideAppPage).toHaveBeenCalled()
+  })
+
+  it("passes on the Cloud file an app's output dialog asks to see in Assets", async () => {
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-remove-background"]').trigger('click')
+    await flushPromises()
+
+    wrapper.findComponent(AppPageHost).vm.$emit('view-in-assets', 'cutout.png')
+
+    expect(wrapper.emitted('view-in-assets')).toEqual([['cutout.png']])
   })
 
   it('returns to the cards when Apps is picked in the sidebar again', async () => {
