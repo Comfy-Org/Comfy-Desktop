@@ -356,6 +356,17 @@ describe('AppSidebar', () => {
     ).toHaveLength(0)
   })
 
+  it('leaves a 4px gap between rows so two filled rows never touch', async () => {
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+
+    const home = wrapper.get('[data-testid="app-sidebar-home"]').element.getBoundingClientRect()
+    const assets = wrapper.get('[data-testid="app-sidebar-assets"]').element.getBoundingClientRect()
+    expect(assets.top - home.bottom).toBe(4)
+    wrapper.unmount()
+  })
+
   it('turns every folded row into a square centred in the rail without moving its icon', async () => {
     useInstallationStore().installations = []
     const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })

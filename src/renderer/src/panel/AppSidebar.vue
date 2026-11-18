@@ -277,7 +277,7 @@ function openSettings(): void {
     </div>
 
     <nav
-      class="flex min-h-0 w-full flex-1 scrollbar-hide flex-col gap-px overflow-x-hidden overflow-y-auto"
+      class="flex min-h-0 w-full flex-1 scrollbar-hide flex-col gap-1 overflow-x-hidden overflow-y-auto"
     >
       <template v-for="group in groups" :key="group.key">
         <template v-if="group.title">
@@ -330,7 +330,7 @@ function openSettings(): void {
           :inert="collapsed"
         >
           <div
-            class="flex min-h-0 w-[220px] flex-col gap-px overflow-hidden text-nowrap"
+            class="flex min-h-0 w-[220px] flex-col gap-1 overflow-hidden text-nowrap"
             :data-testid="collapsed ? undefined : 'app-sidebar-builds'"
           >
             <div class="mt-5.5 flex h-6.5 shrink-0 items-center justify-between pr-1 pl-3">
