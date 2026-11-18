@@ -172,6 +172,9 @@ DS's Motion page (`ds/motion.ts`).
   picture (a corner no other control uses), in the credits gold
   (`--upgrade`, #e9c422). Hover is the usual one-line tooltip, "Premium app, runs with credits".
   Free ones get nothing.
+- **Badges explain on hover, no ? inside.** A badge (Downloads, Shared,
+  Build) is the tooltip trigger itself, on hover and keyboard focus. The ?
+  icon is only for section titles and field labels.
 - **Toasts only when you stay** on the page and something changes state.
   No toast after a redirect, on opening things, or for pickers.
 - **Media badges bottom left**, the glass pill, 8px in: a video's icon and
