@@ -29,6 +29,6 @@ const icon = computed(() => ICONS[props.tone] ?? Gauge)
     :class="TONES[tone]"
   >
     <component :is="icon" :size="12" :stroke-width="2.25" class="shrink-0" aria-hidden="true" />
-    <span class="truncate"><slot /></span>
+    <span class="truncate leading-4"><slot /></span>
   </span>
 </template>
