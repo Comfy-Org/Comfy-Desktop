@@ -25,6 +25,7 @@ const listLocalAssets = vi.fn()
 const downloadAsset = vi.fn()
 const revealAsset = vi.fn()
 const openAsset = vi.fn()
+const findDownloadedOutputs = vi.fn()
 const copyAsset = vi.fn()
 const readAssetModel = vi.fn()
 const trashAsset = vi.fn()
@@ -233,6 +234,7 @@ beforeEach(() => {
   window.localStorage.clear()
   listLocalAssets.mockResolvedValue([])
   openAsset.mockResolvedValue(true)
+  findDownloadedOutputs.mockResolvedValue({})
   listWorkspaces.mockResolvedValue([
     { id: 'me', name: 'Personal Workspace', type: 'personal' },
     { id: 'team-b', name: 'Team B', type: 'team' }
@@ -258,6 +260,7 @@ beforeEach(() => {
     downloadAsset,
     revealAsset,
     openAsset,
+    findDownloadedOutputs,
     copyAsset,
     readAssetModel,
     trashAsset,
@@ -844,6 +847,25 @@ describe('AssetsView', () => {
       title: "Couldn't open asset",
       message: 'forest.png'
     })
+  })
+
+  it('opens a Cloud output that Auto-Download already saved, and downloads one it did not', async () => {
+    findDownloadedOutputs.mockResolvedValue({ saved: '/out/saved.png' })
+    const wrapper = await mountAssets()
+    await signInWith([
+      asset('saved', 'saved.png', 'image', { sizeBytes: 2048 }),
+      asset('older', 'older.png', 'image')
+    ])
+    await flushPromises()
+
+    expect(findDownloadedOutputs).toHaveBeenLastCalledWith('cloud', [
+      { id: 'saved', name: 'saved.png', sizeBytes: 2048 },
+      { id: 'older', name: 'older.png', sizeBytes: 1024 }
+    ])
+    await wrapper.get('[data-testid="asset-open-file-saved"]').trigger('click')
+    expect(openAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/saved.png')
+    await wrapper.get('[data-testid="asset-download-older"]').trigger('click')
+    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('cloud', 'older', 'older.png')
   })
 
   it('downloads a Cloud file through the Cloud build', async () => {

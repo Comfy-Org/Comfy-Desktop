@@ -24,6 +24,7 @@ import type {
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
 
 const LIST_LOCAL_CHANNEL = 'assets:list-local'
+const FIND_DOWNLOADED_CHANNEL = 'assets:find-downloaded'
 export const MAX_LOCAL_ASSETS = 500
 export const MAX_FOLDER_DEPTH = 6
 const THUMBNAIL_SIZE = 480
@@ -56,6 +57,13 @@ export function outputDirOverride(inst: InstallationRecord, sharedDir: string): 
 export function hasOutputFolder(inst: InstallationRecord): boolean {
   const source = sourceMap[inst.sourceId]
   return source?.category === 'local' && !source.managesOwnPaths
+}
+
+export function autoDownloadDir(inst: InstallationRecord): string | null {
+  if ((inst.autoDownloadOutputs as boolean | undefined) === false) return null
+  if ((inst.useSharedOutputDir as boolean | undefined) !== false) return sharedOutputDir()
+  const custom = inst.outputDir as string | undefined
+  return custom && custom.trim() !== '' ? custom : sharedOutputDir()
 }
 
 function outputDirFor(inst: InstallationRecord, sharedDir: string): string | null {
@@ -124,12 +132,16 @@ async function findOutputFolders(): Promise<OutputFolders> {
   const sharedDir = sharedOutputDir()
   const shared = await realDir(sharedDir)
   const ofBuild = new Map<string, string>()
+  const downloadedTo: string[] = []
   for (const inst of await installations.list()) {
     const dir = outputDirFor(inst, sharedDir)
     const real = dir ? await realDir(dir) : null
     if (real) ofBuild.set(inst.id, real)
+    const downloads = hasOutputFolder(inst) ? null : autoDownloadDir(inst)
+    const realDownloads = downloads ? await realDir(downloads) : null
+    if (realDownloads) downloadedTo.push(realDownloads)
   }
-  const all = [...new Set([...(shared ? [shared] : []), ...ofBuild.values()])]
+  const all = [...new Set([...(shared ? [shared] : []), ...ofBuild.values(), ...downloadedTo])]
   allowedRoots = all
   allowedRootsAt = Date.now()
   return { all, shared, ofBuild }
@@ -292,6 +304,53 @@ function countKinds(assets: AssetSummary[]): LocalAssetListing['counts'] {
   const counts = { all: assets.length, image: 0, video: 0, audio: 0, '3d': 0 }
   for (const { kind } of assets) if (kind) counts[kind]++
   return counts
+}
+
+export interface OutputCopyQuery {
+  id: string
+  name: string
+  sizeBytes: number | null
+}
+
+const MAX_COPY_QUERIES = 500
+
+function copyQueries(value: unknown): OutputCopyQuery[] {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, MAX_COPY_QUERIES).flatMap((item: unknown) => {
+    if (!item || typeof item !== 'object') return []
+    const { id, name, sizeBytes } = item as Record<string, unknown>
+    return typeof id === 'string' &&
+      typeof name === 'string' &&
+      (sizeBytes === null || isCount(sizeBytes, 0, Number.MAX_SAFE_INTEGER))
+      ? [{ id, name, sizeBytes }]
+      : []
+  })
+}
+
+export async function findDownloadedOutputs(
+  installationId: string,
+  wanted: OutputCopyQuery[]
+): Promise<Record<string, string>> {
+  const inst = (await installations.list()).find((each) => each.id === installationId)
+  const dir = inst && !hasOutputFolder(inst) ? autoDownloadDir(inst) : null
+  const root = dir ? await realDir(dir) : null
+  const sized = wanted.filter((item) => item.sizeBytes !== null)
+  if (!root || sized.length === 0) return {}
+  const names = new Set(sized.map((item) => item.name))
+  const byName = new Map<string, { file: string; size: number }[]>()
+  for (const file of await collectMediaFiles(root)) {
+    const name = path.basename(file)
+    if (!names.has(name)) continue
+    const stat = await fsp.lstat(file).catch(() => null)
+    if (!stat?.isFile()) continue
+    byName.set(name, [...(byName.get(name) ?? []), { file, size: stat.size }])
+  }
+  const found: Record<string, string> = {}
+  for (const item of sized) {
+    const copy = byName.get(item.name)?.find((candidate) => candidate.size === item.sizeBytes)
+    if (copy) found[item.id] = copy.file
+  }
+  return found
 }
 
 export async function listLocalAssets(
@@ -467,6 +526,11 @@ export function registerOutputFilesScheme(): void {
 
 export function registerOutputFolderHandlers(): void {
   protocol.handle(OUTPUT_FILES_SCHEME, serveOutputFile)
+  ipcMain.handle(FIND_DOWNLOADED_CHANNEL, (_event, installationId: unknown, wanted: unknown) =>
+    typeof installationId === 'string'
+      ? findDownloadedOutputs(installationId, copyQueries(wanted))
+      : {}
+  )
   ipcMain.handle(LIST_LOCAL_CHANNEL, (_event, installationId: unknown, page: unknown) =>
     listLocalAssets(
       typeof installationId === 'string' ? installationId : undefined,

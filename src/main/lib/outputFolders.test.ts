@@ -109,6 +109,7 @@ import {
   trashOutputFile,
   listLocalAssets,
   localPageRequest,
+  findDownloadedOutputs,
   listOutputFolders,
   outputDirOverride,
   outputFilePath,
@@ -733,6 +734,47 @@ describe('small thumbnails as data URLs', () => {
 
     fullImage.mockReturnValueOnce({ isEmpty: () => true })
     expect(thumbnailDataUrlFromBytes(new Uint8Array([1]), 256)).toBeNull()
+  })
+})
+
+describe('findDownloadedOutputs', () => {
+  it('finds Cloud outputs that Auto-Download saved, by name and size', async () => {
+    installs.mockResolvedValue([{ id: 'cloud', sourceId: 'cloud' }])
+    write(path.join(sharedDir, 'cloud', 'cutout.png'), 'four')
+    write(path.join(sharedDir, 'same-name.png'), 'other bytes')
+
+    const found = await findDownloadedOutputs('cloud', [
+      { id: 'a', name: 'cutout.png', sizeBytes: 4 },
+      { id: 'b', name: 'same-name.png', sizeBytes: 3 },
+      { id: 'c', name: 'never-saved.png', sizeBytes: 4 },
+      { id: 'd', name: 'cutout.png', sizeBytes: null }
+    ])
+
+    expect(found).toEqual({ a: path.join(sharedDir, 'cloud', 'cutout.png') })
+  })
+
+  it('finds nothing when the Cloud build does not auto-download', async () => {
+    installs.mockResolvedValue([{ id: 'cloud', sourceId: 'cloud', autoDownloadOutputs: false }])
+    write(path.join(sharedDir, 'cutout.png'), 'four')
+
+    expect(
+      await findDownloadedOutputs('cloud', [{ id: 'a', name: 'cutout.png', sizeBytes: 4 }])
+    ).toEqual({})
+  })
+
+  it('reads a custom Auto-Download folder and lets its files open', async () => {
+    const custom = path.join(outsideDir, 'cloud-downloads')
+    installs.mockResolvedValue([
+      { id: 'cloud', sourceId: 'cloud', useSharedOutputDir: false, outputDir: custom }
+    ])
+    const file = path.join(custom, 'cutout.png')
+    write(file, 'four')
+
+    expect(
+      await findDownloadedOutputs('cloud', [{ id: 'a', name: 'cutout.png', sizeBytes: 4 }])
+    ).toEqual({ a: file })
+    await listOutputFolders()
+    expect(await openOutputFile(file)).toBe(true)
   })
 })
 

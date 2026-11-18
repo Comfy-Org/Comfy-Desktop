@@ -151,6 +151,7 @@ const pageSize = ref(DEFAULT_PAGE_SIZE)
 const currentPage = ref(1)
 const assetTotal = ref(0)
 const localCounts = ref<LocalAssetListing['counts'] | null>(null)
+const downloadedCopies = ref(new Map<string, string>())
 const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 
@@ -523,6 +524,24 @@ function localPage(selected: AssetBuild, pageNumber: number): Promise<LocalAsset
   })
 }
 
+async function findDownloadedCopies(
+  cloudId: string,
+  listed: GalleryAsset[],
+  request: number
+): Promise<void> {
+  const wanted = listed.map(({ id, name, sizeBytes }) => ({ id, name, sizeBytes }))
+  const found = await window.api
+    .findDownloadedOutputs(cloudId, wanted)
+    .catch((): Record<string, string> => ({}))
+  if (request !== requestId) return
+  downloadedCopies.value = new Map(
+    listed.flatMap((asset) => {
+      const file = found[asset.id]
+      return file ? [[cardKey(asset), file] as const] : []
+    })
+  )
+}
+
 function prefetchPage(cloudId: string, pageNumber: number): void {
   if (pageNumber > pageCount.value) return
   prefetchHandle = requestIdleCallback(() => void cloudPage(cloudId, pageNumber).catch(() => {}), {
@@ -603,6 +622,7 @@ async function loadAssets(userAsked = false): Promise<void> {
       cloudScanLimit.value = listed.scanLimit
     }
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
+    if (cloud) void findDownloadedCopies(cloud.id, assets.value, current)
     if (cloud && pendingFocus.value && pendingFocus.value !== wanted) {
       void loadAssets(userAsked)
       return
@@ -754,7 +774,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     tags: asset.tags,
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
-    savedIn: isLocal(asset) ? folderOf(asset.id) : null,
+    savedIn: savedFolderOf(asset),
     mainAction: mainAction(asset),
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
@@ -835,17 +855,30 @@ function folderOf(file: string): string {
   return file.slice(0, Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')))
 }
 
+function savedFolderOf(asset: GalleryAsset): string | null {
+  const file = fileOnDisk(asset)
+  return file ? folderOf(file) : null
+}
+
+function fileOnDisk(asset: GalleryAsset): string | null {
+  return isLocal(asset) ? asset.id : (downloadedCopies.value.get(cardKey(asset)) ?? null)
+}
+
 function reveal(asset: GalleryAsset): void {
-  void window.api.revealAsset(asset.source, asset.id)
+  const file = fileOnDisk(asset)
+  if (file) void window.api.revealAsset(LOCAL_ASSETS_SOURCE, file)
 }
 
 function mainAction(asset: GalleryAsset): 'download' | 'open' | null {
-  if (!isLocal(asset)) return 'download'
+  if (!fileOnDisk(asset)) return 'download'
   return asset.kind === '3d' ? null : 'open'
 }
 
 async function openLocally(asset: GalleryAsset): Promise<void> {
-  const opened = await window.api.openAsset(asset.source, asset.id).catch(() => false)
+  const file = fileOnDisk(asset)
+  const opened = file
+    ? await window.api.openAsset(LOCAL_ASSETS_SOURCE, file).catch(() => false)
+    : false
   if (!opened) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
 }
 
@@ -874,7 +907,7 @@ const assetMenuItems = computed<ContextMenuItem[]>(() => {
     ...(action === 'download'
       ? [{ id: 'download', label: t('assets.download'), icon: Download }]
       : []),
-    ...(isLocal(asset)
+    ...(fileOnDisk(asset)
       ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: FolderOpen }]
       : []),
     ...(asset.kind === 'image' && asset.previewUrl
@@ -932,7 +965,7 @@ async function runAssetAction(action: string): Promise<void> {
   if (!asset) return
   if (action === 'download') await download(asset)
   else if (action === 'open') await openLocally(asset)
-  else if (action === 'reveal') await window.api.revealAsset(asset.source, asset.id)
+  else if (action === 'reveal') reveal(asset)
   else if (action === 'copy') await copy(asset)
   else if (action === 'delete') await moveToTrash(asset)
 }
