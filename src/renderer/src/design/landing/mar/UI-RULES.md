@@ -222,9 +222,9 @@ DS's Motion page (`ds/motion.ts`).
 - **All apps opens on Rhythm** (Firefly's Quick actions): a row of big
   squares, then a row of one more, smaller, and again (3 then 4 at the
   default size). The name sits on the picture, bottom left; nothing in
-  the corners (no crown, no play mark). On hover the picture grows 4% and
-  turns into what the app made (a clip plays), the name rises and its one
-  line fades in. Grid stays in Layout.
+  the corners at rest (no crown, no play mark). On hover the picture grows
+  4% and turns into what the app made (a clip plays), the name rises and
+  its one line fades in, and Home's corner arrow fades in at the top right. Grid stays in Layout.
 - **Video plays on hover**, muted; the bar along the bottom scrubs.
 - **Upload is always on** once a build is picked, running or not (a local
   build's inputs are a folder on disk). Off only with no build picked.

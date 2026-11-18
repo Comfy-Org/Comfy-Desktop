@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { ArrowUpRight } from 'lucide-vue-next'
+
 /**
  * One app in the Apps gallery's Rhythm layout (Firefly's Quick actions):
  * a square picture with the app's name on it, bottom left. On hover the
  * picture grows a little inside its frame and turns into what the app
  * made (a video plays), the name rises and its one line fades in under
- * it. Nothing in the corners. Opacity and transform only.
+ * it, and Home's corner arrow fades in at the top right. Opacity and
+ * transform only.
  */
 const {
   name,
@@ -53,6 +56,9 @@ function play(e: MouseEvent, on: boolean): void {
         preload="none"
       />
     </span>
+    <span class="mar-rt-go" aria-hidden="true"
+      ><ArrowUpRight :size="16" :stroke-width="2.25"
+    /></span>
     <span class="mar-rt-text">
       <span class="mar-rt-name">{{ name }}</span>
       <span class="mar-rt-blurb">{{ blurb }}</span>
@@ -105,6 +111,31 @@ function play(e: MouseEvent, on: boolean): void {
 .mar-rt:is(:hover, :focus-visible) .mar-rt-after {
   opacity: 1;
 }
+/* Home's corner arrow (the workflow carousel's front card). */
+.mar-rt-go {
+  position: absolute;
+  z-index: 1;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 0.2);
+  backdrop-filter: blur(14px) saturate(1.5);
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.9);
+  transition:
+    opacity 300ms var(--ease),
+    transform 300ms var(--ease);
+}
+.mar-rt:is(:hover, :focus-visible) .mar-rt-go {
+  opacity: 1;
+  transform: none;
+  transition-delay: 100ms;
+}
 .mar-rt-text {
   position: absolute;
   z-index: 1;
@@ -152,6 +183,7 @@ function play(e: MouseEvent, on: boolean): void {
 }
 @media (prefers-reduced-motion: reduce) {
   .mar-rt-pic,
+  .mar-rt-go,
   .mar-rt-after,
   .mar-rt-name,
   .mar-rt-blurb {
