@@ -1,5 +1,6 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
+import type { NewWindowDashboardPage } from '../shared/dashboardPages'
 export type { FirstUseMode }
 import type { PlatformSettingsPage } from '../main/devplatform/config'
 export type { PlatformSettingsPage }
@@ -110,6 +111,12 @@ export interface VersionStatsValue {
 
 export type CloudUserTier = 'free' | 'paid' | 'unknown'
 
+export type CreditBalanceState =
+  | { status: 'signed_out' }
+  | { status: 'loading' }
+  | { status: 'ready'; cents: number }
+  | { status: 'error' }
+
 export interface Installation {
   id: string
   name: string
@@ -151,6 +158,27 @@ export interface AppPagePlacement {
   cornerRadius: number
   justOpened?: boolean
   retry?: boolean
+  focus?: boolean
+}
+
+export interface AppOutput {
+  name: string
+  mimeType: string
+  bytes: Uint8Array<ArrayBuffer>
+  tags: string[]
+  workflow: boolean
+  savedOn?: 'cloud' | 'computer'
+  folder?: string
+}
+
+export interface AppOutputs {
+  items: AppOutput[]
+  index: number
+}
+
+export interface AppOutputAction {
+  action: 'download' | 'open-workflow' | 'show-in-folder'
+  index: number
 }
 
 export interface CatalogWorkflow {
@@ -161,6 +189,9 @@ export interface CatalogWorkflow {
 }
 
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
+
+export type CloudAssetLookup =
+  { status: 'found'; asset: AssetSummary } | { status: 'absent' } | { status: 'incomplete' }
 
 export interface AssetSummary {
   id: string
@@ -175,6 +206,29 @@ export interface AssetSummary {
   width: number | null
   height: number | null
   durationSeconds: number | null
+}
+
+export type AssetOrder = 'newest' | 'oldest'
+
+export interface CloudAssetPageRequest {
+  offset: number
+  after?: string
+  limit: number
+  order: AssetOrder
+  kind?: AssetKind
+}
+
+export interface CloudAssetPage {
+  assets: AssetSummary[]
+  total: number | null
+  totalIsLowerBound?: true
+  nextCursor?: string
+  scanLimit?: number
+}
+
+export interface LocalAssetListing {
+  assets: AssetSummary[]
+  truncated: boolean
 }
 
 export interface BuildStorageSnapshot {
@@ -566,6 +620,8 @@ export interface ComfyExitedData {
   crashKind?: CrashKind
   vcRuntimeMissing?: string[]
   crashedAtMs?: number
+  message?: string
+  startFailed?: boolean
 }
 
 export interface ComfyBootLogData {
@@ -1044,6 +1100,11 @@ export interface AppUpdateDownloadProgress {
   bytesPerSecond: number | null
 }
 
+export interface CloseComfyWindowOptions {
+  skipConfirm?: boolean
+  keepDesktopOpen?: boolean
+}
+
 export interface ElectronApi {
   platform: NodeJS.Platform
 
@@ -1147,7 +1208,7 @@ export interface ElectronApi {
   ): Promise<ActionResult | void>
 
   stopComfyUI(installationId: string): Promise<void>
-  focusComfyWindow(installationId: string): Promise<boolean>
+  focusComfyWindow(installationId: string, pickerWorkspaceId?: string): Promise<boolean>
 
   terminalSubscribe(installationId: string): Promise<TerminalRestore>
   terminalUnsubscribe(installationId: string): Promise<void>
@@ -1155,17 +1216,19 @@ export interface ElectronApi {
   terminalResize(installationId: string, cols: number, rows: number): Promise<void>
   terminalRestart(installationId: string): Promise<TerminalRestore>
   openInstallWindow(installationId: string): Promise<boolean>
-  closeComfyWindow(installationId: string, opts?: { skipConfirm?: boolean }): Promise<boolean>
+  closeComfyWindow(installationId: string, opts?: CloseComfyWindowOptions): Promise<boolean>
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
   closeCurrentPanel(): void
   closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
-  listAssets(installationId: string): Promise<AssetSummary[]>
-  listLocalAssets(installationId?: string): Promise<AssetSummary[]>
+  openPageInNewWindow(page: NewWindowDashboardPage): void
+  listAssets(installationId: string, page: CloudAssetPageRequest): Promise<CloudAssetPage | null>
+  listLocalAssets(installationId?: string): Promise<LocalAssetListing>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
+  findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
@@ -1179,8 +1242,9 @@ export interface ElectronApi {
     callback: (appId: string | null, status: AppPageStatus) => void
   ): () => void
   onAppPageClosed(callback: () => void): () => void
+  onAppOutputs(callback: (appId: string, outputs: AppOutputs | null) => void): () => void
+  sendAppOutputAction(action: AppOutputAction): void
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
-  resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(
     tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
     opts?: {
@@ -1208,7 +1272,7 @@ export interface ElectronApi {
   getRunningInstances(): Promise<RunningInstance[]>
   getLaunchingInstances(): Promise<{ installationId: string; installationName: string }[]>
   getStoppingInstances(): Promise<string[]>
-  getActiveOperations(): Promise<{ installationId: string; actionId: string }[]>
+  getActiveOperations(): Promise<{ installationId: string; actionId: string; sessionId?: string }[]>
   getLastCrashError(installationId: string): Promise<ComfyExitedData | null>
   getCrashInstances(): Promise<ComfyExitedData[]>
   cancelLaunch(): Promise<void>
@@ -1285,6 +1349,8 @@ export interface ElectronApi {
   getAppVersion(): Promise<string>
   getStableTags(): Promise<string[]>
   getCloudUserTier(): Promise<CloudUserTier>
+  refreshCreditBalance(): Promise<CreditBalanceState>
+  onCreditBalanceChanged(callback: (state: CreditBalanceState) => void): Unsubscribe
   getCloudFreeRunsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
@@ -1352,7 +1418,12 @@ export interface ElectronApi {
   onInstanceStopping(callback: (data: { installationId: string }) => void): Unsubscribe
   onInstanceStopped(callback: (data: { installationId: string }) => void): Unsubscribe
   onOperationChanged(
-    callback: (data: { installationId: string; actionId: string; active: boolean }) => void
+    callback: (data: {
+      installationId: string
+      actionId: string
+      sessionId?: string
+      active: boolean
+    }) => void
   ): Unsubscribe
   onThemeChanged(callback: (theme: ResolvedTheme) => void): Unsubscribe
   onLocaleChanged(
@@ -1417,7 +1488,6 @@ export interface ElectronApi {
       settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
       title?: string
       cancellable?: boolean
-      startupRestore?: boolean
       triggersInstanceStart?: boolean
       opKind?: 'launch' | 'install' | 'update' | 'destructive' | 'snapshot' | 'generic'
       isRestart?: boolean
@@ -1453,6 +1523,17 @@ export const POPUP_KIND = {
 
 export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
 
+export type TitlePopupMenuIcon = 'performance-test' | 'benchmarks'
+
+export interface TitlePopupMenuItem {
+  id?: string
+  label?: string
+  labelKey?: string
+  labelParams?: Record<string, string | number>
+  icon?: TitlePopupMenuIcon
+  kind?: 'separator'
+}
+
 export interface PopupTheme {
   bg: string
   text: string
@@ -1467,6 +1548,7 @@ export const PICKER_SETTINGS_CHANNELS = {
   getFieldOptions: 'comfy-titlepopup:picker-settings-get-field-options',
   getInstallations: 'comfy-titlepopup:picker-settings-get-installations',
   stopComfyUI: 'comfy-titlepopup:picker-settings-stop-comfyui',
+  closeComfyWindow: 'comfy-titlepopup:picker-settings-close-comfy-window',
   cancelOperation: 'comfy-titlepopup:picker-settings-cancel-operation',
   getSnapshots: 'comfy-titlepopup:picker-settings-get-snapshots',
   getSnapshotDetail: 'comfy-titlepopup:picker-settings-get-snapshot-detail',

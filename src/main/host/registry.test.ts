@@ -14,7 +14,14 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
-import { _runningSessions, _stoppingInstallationIds } from '../lib/ipc/shared'
+import {
+  _beginLaunch,
+  _endLaunch,
+  _runningSessions,
+  _stoppingInstallationIds,
+  launchHadWindow,
+  type SessionInfo
+} from '../lib/ipc/shared'
 import {
   _resetAttachClaimsForTest,
   canRestartFromPicker,
@@ -31,7 +38,6 @@ import {
   hostInstallEvents,
   indexInstallationId,
   nextWindowKey,
-  forceRevealHostWindow,
   openOrFocusHomeHostWindow,
   routeBuildOpen,
   hasRunningSessionForEntry,
@@ -289,30 +295,6 @@ describe('hasRunningSessionForEntry', () => {
   })
 })
 
-describe('forceRevealHostWindow', () => {
-  it('reveals a deferred host regardless of the coldStartPendingReveal flag', () => {
-    const entry = makeEntry({ installationId: null })
-    entry.coldStartPendingReveal = false
-    registerHostEntry(entry)
-
-    forceRevealHostWindow(entry.windowKey)
-
-    expect(entry.coldStartPendingReveal).toBe(false)
-    expect((entry.window as unknown as FakeWindow).raised).toContain('show')
-  })
-
-  it('no-ops for a destroyed window', () => {
-    const entry = makeEntry({ installationId: null, destroyed: true })
-    registerHostEntry(entry)
-    forceRevealHostWindow(entry.windowKey)
-    expect((entry.window as unknown as FakeWindow).raised).not.toContain('show')
-  })
-
-  it('no-ops for an unknown window key', () => {
-    expect(() => forceRevealHostWindow(999_999)).not.toThrow()
-  })
-})
-
 describe('attach-claim helpers', () => {
   it('consumeAttachClaim returns the claimed key and clears the entry', () => {
     claimAttachHost('inst-A', 7)
@@ -340,6 +322,29 @@ describe('attach-claim helpers', () => {
     expect(consumeAttachClaim('inst-A')).toBeUndefined()
     expect(consumeAttachClaim('inst-C')).toBeUndefined()
     expect(consumeAttachClaim('inst-B')).toBe(9)
+  })
+
+  it('remembers that a start lost the window it was to open in, and only that start', () => {
+    const left = _beginLaunch('inst-A')
+    const kept = _beginLaunch('inst-B')
+    try {
+      claimAttachHost('inst-A', 7)
+      claimAttachHost('inst-B', 9)
+      dropAttachClaimsForWindow(7)
+      expect(launchHadWindow('inst-A')).toBe(true)
+      expect(launchHadWindow('inst-B')).toBe(false)
+    } finally {
+      _endLaunch('inst-A', left)
+      _endLaunch('inst-B', kept)
+    }
+  })
+
+  it('leaves a console Build that finished starting without a window when Home lets go of its claim', () => {
+    const session = { mode: 'console' } as SessionInfo
+    _runningSessions.set('inst-A', session)
+    claimAttachHost('inst-A', 7)
+    dropAttachClaimsForWindow(7)
+    expect(session.hadWindow).toBeUndefined()
   })
 })
 

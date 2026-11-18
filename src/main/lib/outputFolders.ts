@@ -1,3 +1,4 @@
+import fs from 'fs'
 import fsp from 'fs/promises'
 import type { Dirent } from 'fs'
 import path from 'path'
@@ -6,13 +7,14 @@ import { ipcMain, nativeImage, net, protocol, shell } from 'electron'
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
+import type { ComfyOutputFile } from '../apps/outputRequest'
 import { assetKind } from './assets'
 import { copyImageToClipboard } from './clipboardImage'
 import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
 import { sourceMap } from './ipc/shared'
-import type { AssetSummary } from '../../types/ipc'
+import type { AssetSummary, LocalAssetListing } from '../../types/ipc'
 
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
 
@@ -27,6 +29,8 @@ const STATS_AT_ONCE = 32
 const ROOTS_FRESH_MS = 5000
 const MAX_LINUX_THUMBNAIL_SOURCE_BYTES = 40 * 1024 * 1024
 const SERVED_KINDS = new Set(['image', 'video', 'audio'])
+const READ_WITHOUT_FOLLOWING =
+  fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0)
 
 const thumbnails = new Map<string, Buffer>()
 const thumbnailsInFlight = new Map<string, Promise<Buffer | null>>()
@@ -106,6 +110,36 @@ export async function outputFilePath(target: string): Promise<string | null> {
   return stat?.isFile() ? file : null
 }
 
+async function hasSameBytes(file: string, bytes: Uint8Array): Promise<boolean> {
+  const stat = await fsp.stat(file).catch(() => null)
+  if (!stat?.isFile() || stat.size !== bytes.byteLength) return false
+  const handle = await fsp.open(file, READ_WITHOUT_FOLLOWING).catch(() => null)
+  if (!handle) return false
+  try {
+    const content = Buffer.alloc(bytes.byteLength + 1)
+    const { bytesRead } = await handle.read(content, 0, content.length, 0)
+    const expected = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    return bytesRead === bytes.byteLength && expected.equals(content.subarray(0, bytesRead))
+  } catch {
+    return false
+  } finally {
+    await handle.close().catch(() => {})
+  }
+}
+
+export async function comfyOutputPath(
+  inst: InstallationRecord,
+  file: ComfyOutputFile,
+  bytes: Uint8Array
+): Promise<string | null> {
+  const dir = outputDirFor(inst, sharedOutputDir())
+  const root = dir ? await realDir(dir) : null
+  if (!root) return null
+  const real = await allowedPath(path.join(root, file.subfolder, file.filename))
+  if (!real || !isInsideRoot(real, root)) return null
+  return (await hasSameBytes(real, bytes)) ? real : null
+}
+
 export async function revealOutputFile(target: string): Promise<boolean> {
   const file = await outputFilePath(target)
   if (!file) return false
@@ -175,13 +209,13 @@ async function addMediaFacts(asset: AssetSummary): Promise<void> {
   Object.assign(asset, await mediaFactsFromFile(asset.id, asset.kind))
 }
 
-export async function listLocalAssets(installationId?: string): Promise<AssetSummary[]> {
+export async function listLocalAssets(installationId?: string): Promise<LocalAssetListing> {
   const folders = await findOutputFolders()
   const folder = installationId === undefined ? folders.shared : folders.ofBuild.get(installationId)
   const files = folder ? await collectMediaFiles(folder) : []
   const found: AssetSummary[] = []
   await runPool(files, STATS_AT_ONCE, async (file) => {
-    const stat = await fsp.stat(file).catch(() => null)
+    const stat = await fsp.lstat(file).catch(() => null)
     if (!stat?.isFile()) return
     const modifiedMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0
     found.push(localSummary(file, stat.size, modifiedMs))
@@ -190,7 +224,10 @@ export async function listLocalAssets(installationId?: string): Promise<AssetSum
     .sort((a, b) => b.createdAt!.localeCompare(a.createdAt!))
     .slice(0, MAX_LOCAL_ASSETS)
   await runPool(newest, STATS_AT_ONCE, addMediaFacts)
-  return newest
+  return {
+    assets: newest,
+    truncated: found.length > MAX_LOCAL_ASSETS
+  }
 }
 
 function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeImage | null {

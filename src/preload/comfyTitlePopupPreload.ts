@@ -2,14 +2,12 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { Category, ViewKind } from '../shared/viewKind'
 import { PICKER_SETTINGS_CHANNELS as CH, POPUP_KIND } from '../types/ipc'
-import type { PopupTheme, TerminalRestore } from '../types/ipc'
-
-export interface TitlePopupMenuItem {
-  id?: string
-  label?: string
-  labelKey?: string
-  kind?: 'separator'
-}
+import type {
+  CloseComfyWindowOptions,
+  PopupTheme,
+  TerminalRestore,
+  TitlePopupMenuItem
+} from '../types/ipc'
 
 export interface PopupInstancePickerInstall {
   id: string
@@ -211,6 +209,10 @@ export interface ComfyTitlePopupBridge {
   pickerSettingsGetInstallations(): Promise<Record<string, unknown>[]>
   pickerSettingsGetInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   pickerSettingsStopComfyUI(installationId: string): Promise<void>
+  pickerSettingsCloseComfyWindow(
+    installationId: string,
+    opts?: CloseComfyWindowOptions
+  ): Promise<boolean>
   pickerSettingsGetSnapshots(installationId: string): Promise<Record<string, unknown>>
   pickerSettingsGetSnapshotDetail(
     installationId: string,
@@ -554,6 +556,8 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.invoke(CH.getInstallationSize, { installationId }),
   pickerSettingsStopComfyUI: (installationId) =>
     ipcRenderer.invoke(CH.stopComfyUI, { installationId }),
+  pickerSettingsCloseComfyWindow: (installationId, opts) =>
+    ipcRenderer.invoke(CH.closeComfyWindow, { installationId, opts }),
   pickerSettingsGetSnapshots: (installationId) =>
     ipcRenderer.invoke(CH.getSnapshots, { installationId }),
   pickerSettingsGetSnapshotDetail: (installationId, filename) =>

@@ -249,6 +249,20 @@ describe('useSessionStore', () => {
       expect(err?.crashedAtMs).toBe(123)
     })
 
+    it('records why a build started in the background did not start', () => {
+      handlers['instance-crashed']!({
+        installationId: 'inst-1',
+        installationName: 'My Install',
+        message: 'ComfyUI exited with code 1',
+        startFailed: true
+      })
+
+      expect(store.errorInstances.get('inst-1')).toMatchObject({
+        message: 'ComfyUI exited with code 1',
+        startFailed: true
+      })
+    })
+
     it('clears a prior error when the install is relaunched (instance-launching)', () => {
       store.errorInstances.set('inst-1', { installationName: 'My Install', exitCode: 1 })
       handlers['instance-launching']!({ installationId: 'inst-1', installationName: 'My Install' })
@@ -284,6 +298,20 @@ describe('useSessionStore', () => {
       })
 
       expect(store.operationInstances.has('inst-1')).toBe(false)
+    })
+
+    it('keeps the session an operation runs for, so a Performance Test launch is told apart', () => {
+      handlers['operation-changed']!({
+        installationId: 'inst-1',
+        actionId: 'launch',
+        sessionId: 'performance-test:inst-1',
+        active: true
+      })
+
+      expect(store.operationInstances.get('inst-1')).toEqual({
+        actionId: 'launch',
+        sessionId: 'performance-test:inst-1'
+      })
     })
   })
 
@@ -354,6 +382,21 @@ describe('useSessionStore', () => {
       expect(store.operationInstances.get('inst-1')?.actionId).toBe('update-comfyui')
     })
 
+    it('hydrates the session an in-flight operation runs for', async () => {
+      installApi({
+        operations: [
+          { installationId: 'inst-1', actionId: 'launch', sessionId: 'performance-test:inst-1' }
+        ]
+      })
+
+      await store.init()
+
+      expect(store.operationInstances.get('inst-1')).toEqual({
+        actionId: 'launch',
+        sessionId: 'performance-test:inst-1'
+      })
+    })
+
     it('hydrates retained crashes so a freshly-opened window shows the error state', async () => {
       installApi({
         crashes: [
@@ -375,6 +418,26 @@ describe('useSessionStore', () => {
       expect(err?.installationName).toBe('My Install')
       expect(err?.exitCode).toBe(1)
       expect(err?.lastStderr).toBe('boom')
+    })
+
+    it('hydrates a build that did not start with the reason it gave', async () => {
+      installApi({
+        crashes: [
+          {
+            installationId: 'inst-1',
+            installationName: 'My Install',
+            message: 'ComfyUI exited with code 1',
+            startFailed: true
+          }
+        ]
+      })
+
+      await store.init()
+
+      expect(store.errorInstances.get('inst-1')).toMatchObject({
+        message: 'ComfyUI exited with code 1',
+        startFailed: true
+      })
     })
 
     it('does not hydrate a crash for an install that is mid-launch', async () => {

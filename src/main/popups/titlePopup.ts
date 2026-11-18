@@ -2,7 +2,7 @@ import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import type { WebContentsView } from 'electron'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
-import type { PopupTheme, TitlePopupKind } from '../../types/ipc'
+import type { PopupTheme, TitlePopupKind, TitlePopupMenuItem } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
 import {
   cancelModelDownload,
@@ -61,13 +61,6 @@ import type { Category, ViewKind } from '../../shared/viewKind'
 import { getTitleTooltipForParent, hideTitleTooltipPopup } from './titleTooltip'
 import { EmbeddedPopupView } from './embeddedPopupView'
 import { recordIpcInvocation } from '../lib/e2eOverrides'
-
-interface TitlePopupMenuItem {
-  id?: string
-  label?: string
-  labelKey?: string
-  kind?: 'separator'
-}
 
 function kindUsesBackdrop(kind: TitlePopupKind): boolean {
   return (
@@ -218,6 +211,7 @@ export function resolvePickerSelectedInstallId(
 export interface InstancePickerScope {
   installs: InstancePickerInstall[]
   selectedInstallationId: string | null
+  workspaceId: string
 }
 
 export function scopeInstancePicker(
@@ -230,7 +224,10 @@ export function scopeInstancePicker(
     allInstalls.find((install) => install.id === hostInstallationId) ??
     allInstalls.find((install) => install.id === anchorInstallationId)
   const workspaceId = scopeInstall
-    ? installationWorkspaceId(scopeInstall)
+    ? installationWorkspaceId(
+        scopeInstall,
+        settings.get(DASHBOARD_WORKSPACE_SETTING) || PERSONAL_WORKSPACE_ID
+      )
     : settings.get(DASHBOARD_WORKSPACE_SETTING) || PERSONAL_WORKSPACE_ID
   const hideCloud = settings.get('hideCloudFromPicker') === true
   const installs = allInstalls.filter(
@@ -240,6 +237,7 @@ export function scopeInstancePicker(
   )
   return {
     installs,
+    workspaceId,
     selectedInstallationId: resolvePickerSelectedInstallId(
       requestedInstallationId,
       hostInstallationId,
@@ -319,6 +317,7 @@ export interface TitlePopupEntry {
   lastConfigJson: string | null
   lastSyncedConfigJson: string | null
   pickerSelectedInstallationId: string | null
+  pickerWorkspaceId: string | null
   pickerScopeAnchor: { installationId: string; dashboardWorkspaceId: unknown } | null
   pickerSelectionEpoch: number
   pickerInitialTab: string | null
@@ -459,13 +458,28 @@ const POPUP_ITEM_HEIGHT = 28
 const POPUP_SEPARATOR_HEIGHT = 9
 const POPUP_VPADDING = 8
 const POPUP_VBORDER = 2
+const POPUP_ICON_ROW_GAP = 2
 
 export function computePopupHeight(items: readonly TitlePopupMenuItem[]): number {
   const content = items.reduce(
     (sum, item) => sum + (item.kind === 'separator' ? POPUP_SEPARATOR_HEIGHT : POPUP_ITEM_HEIGHT),
     0
   )
-  return content + POPUP_VPADDING + POPUP_VBORDER
+  const rowGap = items.some((item) => item.icon) ? POPUP_ICON_ROW_GAP : 0
+  const gaps = rowGap * Math.max(0, items.length - 1)
+  return content + gaps + POPUP_VPADDING + POPUP_VBORDER
+}
+
+function desktopWindowMenuItems(): TitlePopupMenuItem[] {
+  return [
+    {
+      id: 'performance-test',
+      label: 'Performance tests',
+      labelKey: 'fileMenu.performanceTests',
+      icon: 'performance-test'
+    },
+    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks', icon: 'benchmarks' }
+  ]
 }
 
 export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMenuItem[] {
@@ -478,6 +492,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
       }
     ]
   }
+  if (isChooserHost(entry)) return desktopWindowMenuItems()
   const items: TitlePopupMenuItem[] = [
     {
       id: 'performance-test',
@@ -496,7 +511,12 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     const level = entry.comfyView.webContents.getZoomLevel()
     if (level !== 0) {
       const percent = convertLevelToZoomPercent(level)
-      items.push({ id: 'reset-zoom', label: `Reset Zoom (${percent}%)` })
+      items.push({
+        id: 'reset-zoom',
+        label: `Reset Zoom (${percent}%)`,
+        labelKey: 'fileMenu.resetZoom',
+        labelParams: { percent }
+      })
     }
   }
   items.push(
@@ -546,7 +566,11 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
     const parentEntry = comfyWindows.get(entry.parentEntryId)
     const effectiveHostInstallationId =
       parentEntry?.installationId ?? parentEntry?.previewInstallationId ?? null
-    const { installs, selectedInstallationId: selectedId } = scopeInstancePicker(
+    const {
+      installs,
+      selectedInstallationId: selectedId,
+      workspaceId
+    } = scopeInstancePicker(
       allInstalls,
       effectiveHostInstallationId,
       entry.pickerSelectedInstallationId,
@@ -560,6 +584,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
         }))
       : { settings: null, snapshots: null }
     if (mySeq !== pickerSnapshotBroadcastSeq) return
+    entry.pickerWorkspaceId = workspaceId
     const snapshot = buildInstancePickerSnapshot({
       installs,
       hostInstallationId: parentEntry?.installationId ?? null,
@@ -644,6 +669,7 @@ function ensureTitlePopup(parent: BrowserWindow): TitlePopupEntry {
     lastConfigJson: null,
     lastSyncedConfigJson: null,
     pickerSelectedInstallationId: null,
+    pickerWorkspaceId: null,
     pickerScopeAnchor: null,
     pickerSelectionEpoch: 0,
     pickerInitialTab: null,
@@ -792,6 +818,16 @@ function computeCenteredCardBounds(
   return { x, y, width, height }
 }
 
+export const GLOBAL_SETTINGS_CLOSE_GUTTER = 48
+
+function withOutsideCloseGutter(
+  kind: CenteredCardKind,
+  bounds: { x: number; y: number; width: number; height: number }
+): { x: number; y: number; width: number; height: number } {
+  if (kind !== POPUP_KIND.globalSettings) return bounds
+  return { ...bounds, width: bounds.width + GLOBAL_SETTINGS_CLOSE_GUTTER }
+}
+
 const POPUP_EDGE_GUTTER = 8
 
 function clampPopupX(x: number, width: number, parent: BrowserWindow): number {
@@ -823,7 +859,7 @@ function refitPopupForParent(entry: TitlePopupEntry): void {
   }
 
   if (kindIsCentered(entry.kind)) {
-    const target = computeCenteredCardBounds(entry.kind, parent)
+    const target = withOutsideCloseGutter(entry.kind, computeCenteredCardBounds(entry.kind, parent))
     if (
       target.x === cur.x &&
       target.y === cur.y &&
@@ -934,7 +970,10 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     x = bounds.x
     y = bounds.y
   } else {
-    ;({ x, y, width, height } = computeCenteredCardBounds(opts.kind, opts.parent))
+    ;({ x, y, width, height } = withOutsideCloseGutter(
+      opts.kind,
+      computeCenteredCardBounds(opts.kind, opts.parent)
+    ))
   }
 
   entry.view.popup.setBounds({ x, y, width, height })
@@ -979,7 +1018,11 @@ export interface TitlePopupHostBindings {
   getRunningInstallationIds: () => string[]
   getRunningSessionStartedAt?: () => Record<string, number>
   getLaunchingInstallationIds: () => string[]
-  pickInstallFromPicker: (installationId: string, parentEntryId: number) => Promise<void> | void
+  pickInstallFromPicker: (
+    installationId: string,
+    parentEntryId: number,
+    pickerWorkspaceId?: string
+  ) => Promise<void> | void
   restartInstallFromPicker: (
     installationId: string,
     parentEntryId: number,
@@ -1116,7 +1159,11 @@ function showInstancePickerForHost(
   const launchingInstallationIds = bindings.getLaunchingInstallationIds()
   const effectiveHostInstallationId =
     parentEntry.installationId ?? parentEntry.previewInstallationId ?? null
-  const { installs, selectedInstallationId: initialSelectedId } = scopeInstancePicker(
+  const {
+    installs,
+    selectedInstallationId: initialSelectedId,
+    workspaceId
+  } = scopeInstancePicker(
     allInstalls,
     effectiveHostInstallationId,
     selectedInstallationId ?? null,
@@ -1127,6 +1174,7 @@ function showInstancePickerForHost(
   const popupEntry = ensureTitlePopup(parentEntry.window)
   const pickerSelectionEpoch = popupEntry.pickerSelectionEpoch + 1
   popupEntry.pickerSelectedInstallationId = initialSelectedId
+  popupEntry.pickerWorkspaceId = workspaceId
   popupEntry.pickerScopeAnchor = selectedInstallationId
     ? {
         installationId: selectedInstallationId,
@@ -1609,34 +1657,6 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   })
 
   ipcMain.on(
-    'comfy-window:click-install-pill',
-    (event, payload: { anchor?: { x?: number; y?: number } } | undefined) => {
-      const found = findEntryByTitleBarSender(event.sender)
-      if (!found) return
-      const { id: windowKey, entry } = found
-      if (entry.window.isDestroyed()) return
-
-      const existingPopup = titlePopupsByParent.get(entry.window.id)
-      if (
-        existingPopup &&
-        existingPopup.kind === 'instance-picker' &&
-        (existingPopup.view.isOpen || existingPopup.view.pendingShowTimer !== null)
-      ) {
-        hideTitlePopup(existingPopup, { releaseFocusToParent: true })
-        return
-      }
-
-      const x = Math.max(0, Math.round(payload?.anchor?.x ?? 0))
-      const y = Math.max(0, Math.round(payload?.anchor?.y ?? TITLEBAR_HEIGHT))
-
-      openInstancePickerForHost(entry, windowKey, bindings, entry.titleBarView.webContents, {
-        x,
-        y
-      })
-    }
-  )
-
-  ipcMain.on(
     'comfy-window:open-instance-picker-for-install',
     (
       event,
@@ -1750,9 +1770,13 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     const installationId = payload?.installationId
     if (typeof installationId !== 'string' || installationId.length === 0) return
     hideTitlePopup(entry, { releaseFocusToParent: false })
-    Promise.resolve(bindings.pickInstallFromPicker(installationId, entry.parentEntryId)).catch(
-      (err) => console.error('pickInstallFromPicker failed:', err)
-    )
+    Promise.resolve(
+      bindings.pickInstallFromPicker(
+        installationId,
+        entry.parentEntryId,
+        entry.pickerWorkspaceId ?? undefined
+      )
+    ).catch((err) => console.error('pickInstallFromPicker failed:', err))
   })
 
   ipcMain.on(

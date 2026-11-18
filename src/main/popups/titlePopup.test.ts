@@ -121,6 +121,14 @@ describe('computePopupHeight', () => {
   it('handles a single separator', () => {
     expect(computePopupHeight([{ kind: 'separator' }])).toBe(19)
   })
+
+  it('adds a 2px gap between rows when the menu has icons', () => {
+    const h = computePopupHeight([
+      { id: 'performance-test', label: 'Performance tests', icon: 'performance-test' },
+      { id: 'benchmarks', label: 'Benchmarks', icon: 'benchmarks' }
+    ])
+    expect(h).toBe(68)
+  })
 })
 
 describe('buildTitlePopupMenuItems', () => {
@@ -131,15 +139,33 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items[0]).toMatchObject({ id: 'skip-onboarding' })
   })
 
-  it('chooser host leaves Desktop Settings to the sidebar', () => {
+  it('the Desktop window menu holds only Performance tests and Benchmarks, with icons', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
-    expect(items.map((item) => item.id ?? 'separator')).toEqual([
-      'performance-test',
-      'benchmarks',
-      'separator',
-      'exit-window',
-      'close-all-windows'
+    expect(items).toEqual([
+      {
+        id: 'performance-test',
+        label: 'Performance tests',
+        labelKey: 'fileMenu.performanceTests',
+        icon: 'performance-test'
+      },
+      { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks', icon: 'benchmarks' }
     ])
+  })
+
+  it('the Desktop window menu leaves closing and quitting to the OS', () => {
+    const ids = buildTitlePopupMenuItems(makeEntry({ installationId: null })).map((i) => i.id)
+    expect(ids).not.toContain('exit-window')
+    expect(ids).not.toContain('close-all-windows')
+    expect(ids).not.toContain('settings')
+  })
+
+  it('build windows keep their menu without icons', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
+    expect(items.some((item) => item.icon)).toBe(false)
+    expect(items[0]).toMatchObject({
+      label: 'Performance Tests',
+      labelKey: 'fileMenu.performanceTest'
+    })
   })
 
   it('install host keeps Desktop Settings because it has no sidebar', () => {
@@ -188,7 +214,11 @@ describe('buildTitlePopupMenuItems', () => {
     const zoomed = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
     const resetZoom = zoomed.find((i) => i.id === 'reset-zoom')
     expect(resetZoom).toBeDefined()
-    expect(resetZoom?.label).toBe('Reset Zoom (144%)')
+    expect(resetZoom).toMatchObject({
+      label: 'Reset Zoom (144%)',
+      labelKey: 'fileMenu.resetZoom',
+      labelParams: { percent: 144 }
+    })
   })
 
   it('omits Reset Zoom from the install host menu when the comfy webContents has been destroyed', () => {
@@ -198,8 +228,8 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items.find((i) => i.id === 'reset-zoom')).toBeUndefined()
   })
 
-  it('places Performance Tests first and Quit Desktop last on a chooser host', () => {
-    const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
+  it('places Performance Tests first and Quit Desktop last in a build window', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
     const ids = items.map((i) => i.id ?? null)
     expect(ids[0]).toBe('performance-test')
     expect(ids).not.toContain('new-window')
@@ -438,6 +468,23 @@ describe('scopeInstancePicker', () => {
     )
     expect(scope.installs.map((install) => install.id)).toEqual(['local'])
     expect(scope.selectedInstallationId).toBe('local')
+  })
+
+  it('keeps the shared Cloud host picker in the selected team workspace', () => {
+    mockSettings({ dashboardWorkspaceId: 'team-a' })
+    const cloud = makeInstall({ id: 'cloud', sourceId: 'cloud', sourceCategory: 'cloud' })
+    const scope = scopeInstancePicker([...workspaceInstalls, cloud], 'cloud', null, null)
+
+    expect(scope.installs.map((install) => install.id)).toEqual(['team-a', 'cloud'])
+    expect(scope.selectedInstallationId).toBe('cloud')
+  })
+
+  it('applies the hide Cloud preference to the shared tile in a team workspace', () => {
+    mockSettings({ dashboardWorkspaceId: 'team-a', hideCloudFromPicker: true })
+    const cloud = makeInstall({ id: 'cloud', sourceId: 'cloud', sourceCategory: 'cloud' })
+    const scope = scopeInstancePicker([...workspaceInstalls, cloud], null, null, null)
+
+    expect(scope.installs.map((install) => install.id)).toEqual(['team-a'])
   })
 
   it('keeps a hidden cloud host visible and selected', () => {

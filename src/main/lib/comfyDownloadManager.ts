@@ -29,6 +29,7 @@ import {
   type DiscoveredStagedDownload
 } from './modelDownloadStaging'
 import { startModelTransfer, type ModelTransferHandle } from './modelDownloadTransport'
+import { ModelDownloadTelemetry, type ModelDownloadSource } from './modelDownloadTelemetry'
 import { isQuitInProgress } from './quit-state'
 
 export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
@@ -114,6 +115,7 @@ interface PendingDownload {
   progressSubscribers?: Set<(receivedBytes: number, totalBytes: number) => void>
   settleJob?: (outcome: ModelJobOutcome) => void
   completion?: Promise<ModelJobOutcome>
+  telemetry?: ModelDownloadTelemetry
   lastProgress: DownloadProgress & { id: string }
   lastSpeedBytes: number
   lastSpeedTime: number
@@ -240,6 +242,7 @@ export function releaseParkedModelJobsUnder(modelsRoot: string): void {
     retryParamsById.delete(pending.id)
     _broadcastToRenderer('model-download-removed', { url: pending.url, id: pending.id })
     downloadEvents.emit('tray-state-changed')
+    pending.telemetry?.report({ status: 'cancelled' })
     pending.settleJob?.({ status: 'cancelled' })
   }
 }
@@ -294,6 +297,8 @@ interface RetryParams {
   savePath?: string
   sha256?: string
   destinationBaseDir?: string
+  modelSource?: ModelDownloadSource
+  appId?: string | null
   existingFilePolicy?: 'deduplicate' | 'skip'
   templateInput?: ComfyTemplateInputReference
 }
@@ -557,6 +562,7 @@ function setTaskbarProgress(win: BrowserWindow, progress: DownloadProgress): voi
 const createdAtById = new Map<string, number>()
 
 function reportProgress(progress: DownloadProgress & { id: string }): void {
+  pendingDownloads.get(progress.id)?.telemetry?.report(progress)
   let createdAt = createdAtById.get(progress.id)
   if (createdAt === undefined) {
     createdAt = Date.now()
@@ -627,6 +633,9 @@ export interface ModelJobOptions {
   sha256?: string
   destinationBaseDir?: string
   bypassRootLockFor?: string
+  source?: ModelDownloadSource
+  appId?: string | null
+  isRetry?: boolean
   onProgress?: (receivedBytes: number, totalBytes: number) => void
 }
 
@@ -782,6 +791,7 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
     sha256: pending.sha256,
     onProgress: ({ receivedBytes, totalBytes }) => {
       if (gen !== pending.attemptGen) return
+      pending.telemetry?.updateBytes(receivedBytes, totalBytes)
       if (pending.progressSubscribers) {
         for (const sub of pending.progressSubscribers) sub(receivedBytes, totalBytes)
       }
@@ -824,8 +834,8 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
         ...base,
         savePath: outcome.savePath,
         progress: 1,
-        receivedBytes: pending.expectedSize ?? pending.lastProgress.receivedBytes,
-        totalBytes: pending.expectedSize ?? pending.lastProgress.totalBytes,
+        receivedBytes: outcome.finalBytes,
+        totalBytes: outcome.finalBytes,
         status: 'completed'
       })
       unregisterModelJob(pending)
@@ -870,6 +880,19 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   const savePath = path.join(baseDir, directory, filename)
 
   const id = randomUUID()
+  const telemetry =
+    ctx && resolvedInstallId && opts.source && !ctx.hasSuccessfulRun
+      ? new ModelDownloadTelemetry({
+          url,
+          filename,
+          directory,
+          installationId: resolvedInstallId,
+          source: opts.source,
+          isRetry: opts.isRetry,
+          appId: opts.appId
+        })
+      : undefined
+  telemetry?.updateBytes(0, opts.expectedSize)
 
   retryParamsById.set(id, {
     kind: 'model',
@@ -881,7 +904,9 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     installationId: resolvedInstallId,
     savePath,
     sha256,
-    destinationBaseDir: opts.destinationBaseDir
+    destinationBaseDir: opts.destinationBaseDir,
+    modelSource: opts.source,
+    appId: opts.appId
   })
 
   const makeProgress = (
@@ -899,23 +924,28 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
   const lockExemptKey = opts.bypassRootLockFor
     ? canonicalDestKey(opts.bypassRootLockFor)
     : undefined
+  const rejectJob = (error: string, code?: ModelJobErrorCode): ModelJobHandle => {
+    reportProgress(makeProgress({ status: 'error', error }))
+    return settledJobHandle(id, url, savePath, {
+      status: 'error',
+      error,
+      ...(code ? { code } : {})
+    })
+  }
   const rejectLockedRoot = (candidatePath = savePath): ModelJobHandle | null => {
     if (!isModelPathLocked(candidatePath, lockExemptKey)) return null
     const error = 'The model directory is busy while the installation is being updated'
-    reportProgress(makeProgress({ status: 'error', error }))
-    return settledJobHandle(id, url, savePath, { status: 'error', error })
+    return rejectJob(error)
   }
 
   if (!isPathContained(savePath, baseDir)) {
     const error = 'Save path is outside models directory'
-    reportProgress(makeProgress({ status: 'error', error }))
-    return settledJobHandle(id, url, savePath, { status: 'error', error })
+    return rejectJob(error)
   }
 
   if (!hasValidExtension(filename)) {
     const error = `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`
-    reportProgress(makeProgress({ status: 'error', error }))
-    return settledJobHandle(id, url, savePath, { status: 'error', error })
+    return rejectJob(error)
   }
 
   let startupSafety: ModelDownloadStartupSafety
@@ -931,8 +961,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     const error =
       'A previous incomplete download is stuck at this location, likely in ' +
       'use by another program. Close it, then press Retry.'
-    reportProgress(makeProgress({ status: 'error', error }))
-    return settledJobHandle(id, url, savePath, { status: 'error', error })
+    return rejectJob(error)
   }
 
   const existenceCandidates = opts.destinationBaseDir
@@ -949,17 +978,11 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
           actual = await sha256File(candidate)
         } catch (err) {
           const error = `Cannot verify existing file: ${(err as Error).message}`
-          reportProgress(makeProgress({ status: 'error', error }))
-          return settledJobHandle(id, url, savePath, { status: 'error', error })
+          return rejectJob(error)
         }
         if (actual !== sha256) {
           const error = `Existing file ${filename} does not match the expected checksum`
-          reportProgress(makeProgress({ status: 'error', error }))
-          return settledJobHandle(id, url, savePath, {
-            status: 'error',
-            error,
-            code: 'existing-file-mismatch'
-          })
+          return rejectJob(error, 'existing-file-mismatch')
         }
       }
       reportProgress(makeProgress({ progress: 1, status: 'completed', savePath: candidate }))
@@ -976,8 +999,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
 
   if (quittingModelDownloads || isQuitInProgress()) {
     const error = 'Application is shutting down'
-    reportProgress(makeProgress({ status: 'error', error }))
-    return settledJobHandle(id, url, savePath, { status: 'error', error })
+    return rejectJob(error)
   }
 
   const destKey = canonicalDestKey(savePath)
@@ -993,8 +1015,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
         (sha256 !== undefined && active.sha256 !== sha256)
       ) {
         const error = `Another download is already writing ${filename} from a different source`
-        reportProgress(makeProgress({ status: 'error', error }))
-        return settledJobHandle(id, url, savePath, { status: 'error', error })
+        return rejectJob(error)
       }
       retryParamsById.delete(id)
       createdAtById.delete(id)
@@ -1031,6 +1052,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     progressSubscribers: opts.onProgress ? new Set([opts.onProgress]) : undefined,
     settleJob,
     completion,
+    telemetry,
     lastProgress: initial,
     lastSpeedBytes: 0,
     lastSpeedTime: Date.now()
@@ -1099,7 +1121,8 @@ export async function startModelDownload(
     directory,
     window: win,
     senderContents,
-    installationId
+    installationId,
+    source: 'comfyui'
   })
   const active = pendingDownloads.get(handle.id)
   if (active) return true
@@ -1866,7 +1889,10 @@ export function retryDownload(ref: string): boolean {
       senderContents: sender,
       installationId: params.installationId,
       sha256: params.sha256,
-      destinationBaseDir: params.destinationBaseDir
+      destinationBaseDir: params.destinationBaseDir,
+      source: params.modelSource,
+      appId: params.appId,
+      isRetry: true
     })
   }
   return true

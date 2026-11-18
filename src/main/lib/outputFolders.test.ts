@@ -85,6 +85,7 @@ import {
   MAX_FOLDER_DEPTH,
   MAX_LOCAL_ASSETS,
   THUMBNAIL_WAIT_MS,
+  comfyOutputPath,
   copyOutputImage,
   hasOutputFolder,
   revealOutputFile,
@@ -205,9 +206,10 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, '.hidden.png'))
     write(path.join(sharedDir, '.cache', 'inside-hidden.png'))
 
-    const assets = await listLocalAssets('Test Instance')
+    const { assets, truncated } = await listLocalAssets('Test Instance')
 
     expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'mesh.glb', 'old.png'])
+    expect(truncated).toBe(false)
     const newVideo = path.join(sharedDir, 'video', 'new.mp4')
     expect(assets[0]).toEqual({
       id: newVideo,
@@ -236,7 +238,7 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, 'broken.png'), 'not a picture')
 
     const facts = Object.fromEntries(
-      (await listLocalAssets('Test Instance')).map((a) => [
+      (await listLocalAssets('Test Instance')).assets.map((a) => [
         a.name,
         [a.width, a.height, a.durationSeconds && Math.round(a.durationSeconds)]
       ])
@@ -253,7 +255,7 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, 'shared.png'))
     write(path.join(ownDir, 'own.png'))
     write(path.join(installDir, 'ComfyUI', 'output', 'install.png'))
-    const namesFor = async (id: string) => (await listLocalAssets(id)).map((a) => a.name)
+    const namesFor = async (id: string) => (await listLocalAssets(id)).assets.map((a) => a.name)
 
     expect(await namesFor('Test Instance'), 'a build on the shared folder').toEqual(['shared.png'])
     expect(await namesFor('My Local 1'), 'another build on the shared folder').toEqual([
@@ -265,7 +267,7 @@ describe('listLocalAssets', () => {
     expect(await namesFor('Old Desktop'), 'a build that manages its own paths').toEqual([])
     expect(await namesFor('deleted'), 'a build that is gone').toEqual([])
     expect(
-      (await listLocalAssets()).map((a) => a.name),
+      (await listLocalAssets()).assets.map((a) => a.name),
       'no build: the shared output folder'
     ).toEqual(['shared.png'])
   })
@@ -277,7 +279,7 @@ describe('listLocalAssets', () => {
     write(file)
     installs.mockResolvedValue([install('New', { useSharedOutput: false, outputDir: newDir })])
     try {
-      const [listed] = await listLocalAssets('New')
+      const [listed] = (await listLocalAssets('New')).assets
 
       expect(listed!.id).toBe(file)
       expect(await outputFilePath(listed!.id)).toBe(file)
@@ -286,17 +288,33 @@ describe('listLocalAssets', () => {
     }
   })
 
-  it('keeps only the newest files when the folders are very large', async () => {
+  it('keeps only the newest files when the folders are very large, and says the list was cut', async () => {
     for (let i = 0; i <= MAX_LOCAL_ASSETS; i++)
       write(path.join(sharedDir, `f${i}.png`), '', new Date(Date.UTC(2026, 0, 1, 0, 0, i)))
 
-    const assets = await listLocalAssets('Test Instance')
+    const { assets, truncated } = await listLocalAssets('Test Instance')
 
     expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
     expect(assets.map((a) => a.name)).not.toContain('f0.png')
+    expect(truncated).toBe(true)
   })
 
-  it('does not follow links out of an output folder or walk without end', async () => {
+  it('keeps a new nested output when the shared folder has 5,000 older files', async () => {
+    for (let i = 0; i < 5_000; i++) write(path.join(sharedDir, `f${i}.glb`))
+    write(
+      path.join(sharedDir, 'later', 'newest.png'),
+      pngHeader(512, 512),
+      new Date('2026-11-02T00:00:00Z')
+    )
+
+    const { assets, truncated } = await listLocalAssets()
+
+    expect(assets[0]?.name).toBe('newest.png')
+    expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
+    expect(truncated).toBe(true)
+  })
+
+  it('does not follow links to folders or files outside, or walk without end', async () => {
     write(path.join(outsideDir, 'secret.png'))
     fs.symlinkSync(outsideDir, path.join(sharedDir, 'escape'))
     const deep = path.join(
@@ -304,8 +322,9 @@ describe('listLocalAssets', () => {
       ...Array.from({ length: MAX_FOLDER_DEPTH + 1 }, (_, i) => `d${i}`)
     )
     write(path.join(deep, 'too-deep.png'))
+    fs.symlinkSync(path.join(outsideDir, 'secret.png'), path.join(sharedDir, 'linked.png'))
 
-    expect(await listLocalAssets('Test Instance')).toEqual([])
+    expect(await listLocalAssets('Test Instance')).toEqual({ assets: [], truncated: false })
   })
 })
 
@@ -321,6 +340,106 @@ describe('outputFilePath', () => {
     expect(await outputFilePath(outside)).toBeNull()
     expect(await outputFilePath(path.join(ownDir, '..', 'outside', 'secret.png'))).toBeNull()
     expect(await outputFilePath('still.png')).toBeNull()
+  })
+})
+
+describe('comfyOutputPath', () => {
+  const CUTOUT = Buffer.from('cutout bytes')
+  const appsBuild = (): InstallationRecord =>
+    install('Apps', { useSharedOutput: false, outputDir: ownDir })
+  const cutout = { filename: 'cutout_00001_.png', subfolder: 'apps/remove-background' }
+
+  it("finds the file ComfyUI named in the build's own output folder, or in the shared one", async () => {
+    const own = path.join(ownDir, 'apps', 'remove-background', 'cutout_00001_.png')
+    const shared = path.join(sharedDir, 'cutout_00001_.png')
+    write(own, CUTOUT)
+    write(shared, CUTOUT)
+
+    expect(await comfyOutputPath(appsBuild(), cutout, new Uint8Array(CUTOUT))).toBe(own)
+    expect(
+      await comfyOutputPath(
+        install('Test Instance'),
+        { filename: 'cutout_00001_.png', subfolder: '' },
+        new Uint8Array(CUTOUT)
+      )
+    ).toBe(shared)
+  })
+
+  it('finds nothing for a missing file, or a file without exactly the bytes the page shows', async () => {
+    write(path.join(ownDir, 'apps', 'remove-background', 'cutout_00001_.png'), CUTOUT)
+
+    expect(
+      await comfyOutputPath(
+        appsBuild(),
+        { ...cutout, filename: 'gone.png' },
+        new Uint8Array(CUTOUT)
+      )
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), cutout, new Uint8Array(Buffer.from('cutout bytez'))),
+      'same size, other bytes'
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), cutout, new Uint8Array(Buffer.from('cutout'))),
+      'other size'
+    ).toBeNull()
+  })
+
+  it("refuses links out of the build's output folder, even into another build's", async () => {
+    write(path.join(outsideDir, 'secret.png'), CUTOUT)
+    write(path.join(sharedDir, 'shared.png'), CUTOUT)
+    fs.symlinkSync(path.join(outsideDir, 'secret.png'), path.join(ownDir, 'secret.png'))
+    fs.symlinkSync(path.join(sharedDir, 'shared.png'), path.join(ownDir, 'shared.png'))
+    const bytes = new Uint8Array(CUTOUT)
+
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: 'secret.png', subfolder: '' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: 'shared.png', subfolder: '' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(
+        appsBuild(),
+        { filename: 'shared.png', subfolder: '../shared-output' },
+        bytes
+      )
+    ).toBeNull()
+  })
+
+  it("refuses a subfolder that climbs out of the build's output folder, and an absolute filename", async () => {
+    const secret = path.join(outsideDir, 'secret.png')
+    write(secret, CUTOUT)
+    const bytes = new Uint8Array(CUTOUT)
+
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: 'secret.png', subfolder: '../outside' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(
+        appsBuild(),
+        { filename: 'secret.png', subfolder: 'apps/../../outside' },
+        bytes
+      )
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: secret, subfolder: '' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: '/etc/passwd', subfolder: '' }, bytes)
+    ).toBeNull()
+  })
+
+  it('finds nothing for Cloud or a build that manages its own paths', async () => {
+    write(path.join(sharedDir, 'cutout_00001_.png'), CUTOUT)
+    const file = { filename: 'cutout_00001_.png', subfolder: '' }
+
+    expect(
+      await comfyOutputPath(install('Cloud', { sourceId: 'cloud' }), file, new Uint8Array(CUTOUT))
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(install('Old', { sourceId: 'desktop' }), file, new Uint8Array(CUTOUT))
+    ).toBeNull()
   })
 })
 

@@ -17,7 +17,8 @@ vi.mock('electron', () => ({
       return ''
     },
     getVersion: () => mockAppVersion,
-    releaseSingleInstanceLock: vi.fn()
+    releaseSingleInstanceLock: vi.fn(),
+    on: vi.fn()
   },
   ipcMain: {
     handle: vi.fn()
@@ -44,6 +45,7 @@ vi.mock('./quit-state', () => ({
   clearQuitReason: vi.fn(),
   setQuitReason: vi.fn(),
   getQuitReason: vi.fn(() => 'none'),
+  isUpdateInstallQuit: vi.fn(() => false),
   isSessionEnding: vi.fn(() => false)
 }))
 
@@ -459,9 +461,14 @@ describe('startup update install + session-end guard (issue #1065)', () => {
       deriveAppChannel: () => 'stable'
     }))
     vi.doMock('./quit-state', () => ({
-      clearQuitReason: vi.fn(),
-      setQuitReason: vi.fn(),
+      clearQuitReason: vi.fn(() => {
+        quitReason = 'none'
+      }),
+      setQuitReason: vi.fn((reason: typeof quitReason) => {
+        quitReason = reason
+      }),
       getQuitReason: vi.fn(() => quitReason),
+      isUpdateInstallQuit: vi.fn(() => quitReason === 'update-install'),
       isSessionEnding: vi.fn(() => sessionEnding)
     }))
     vi.doMock('../settings', () => ({
@@ -693,6 +700,76 @@ describe('startup update install + session-end guard (issue #1065)', () => {
     const updater = await bootUpdater()
     updater.installUpdate()
     expect(fakeUpdater.restartAndInstall).not.toHaveBeenCalled()
+  })
+
+  async function bootWithRunningComfy(keepComfyRunning?: boolean): Promise<{
+    updater: typeof UpdaterModule
+    hasRunningSessions: () => boolean
+    quitDesktop: () => void
+  }> {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+    if (keepComfyRunning !== undefined) {
+      settingsStore['keepComfyRunningWhenWindowCloses'] = keepComfyRunning
+    }
+    const updater = await bootUpdater()
+    const shared = await import('./ipc/shared')
+    const { app } = await import('electron')
+    shared._test_addRunningSession('studio', 'Studio')
+    const quitDesktop = (): void => {
+      type AnyAppEventRegistration = [event: string, listener: () => void]
+      const registrations = vi.mocked(app.on).mock.calls as unknown as AnyAppEventRegistration[]
+      for (const [event, listener] of registrations) {
+        if (event === 'before-quit') listener()
+      }
+    }
+    return { updater, hasRunningSessions: shared.hasRunningSessions, quitDesktop }
+  }
+
+  it('installUpdate() stops every running ComfyUI once Desktop quits for the update', async () => {
+    const { updater, hasRunningSessions, quitDesktop } = await bootWithRunningComfy()
+    let runningAtRestart: boolean | null = null
+    fakeUpdater.restartAndInstall.mockImplementation(() => {
+      runningAtRestart = hasRunningSessions()
+      quitDesktop()
+    })
+
+    updater.installUpdate()
+
+    expect(runningAtRestart).toBe(true)
+    expect(hasRunningSessions()).toBe(false)
+  })
+
+  it('installUpdate() leaves stopping ComfyUI to its windows closing when keepComfyRunningWhenWindowCloses is off', async () => {
+    const { updater, hasRunningSessions, quitDesktop } = await bootWithRunningComfy(false)
+    fakeUpdater.restartAndInstall.mockImplementation(() => quitDesktop())
+
+    updater.installUpdate()
+
+    expect(quitReason).toBe('update-install')
+    expect(hasRunningSessions()).toBe(true)
+  })
+
+  it('installUpdate() leaves ComfyUI running when the update fails to replace Desktop before quitting', async () => {
+    const { updater, hasRunningSessions } = await bootWithRunningComfy()
+    fakeUpdater.restartAndInstall.mockImplementation(() => {
+      for (const cb of listeners['error'] || []) cb(new Error('EACCES: unlink AppImage'))
+    })
+
+    updater.installUpdate()
+
+    expect(quitReason).toBe('none')
+    expect(hasRunningSessions()).toBe(true)
+  })
+
+  it('installUpdate() leaves ComfyUI running when the restart call throws before installing', async () => {
+    const { updater, hasRunningSessions } = await bootWithRunningComfy()
+    fakeUpdater.restartAndInstall.mockImplementation(() => {
+      throw new Error('Cannot restart and install. There is no update downloaded')
+    })
+
+    updater.installUpdate()
+
+    expect(hasRunningSessions()).toBe(true)
   })
 
   it('installUpdate() shows the NSIS installer UI by default on Windows', async () => {

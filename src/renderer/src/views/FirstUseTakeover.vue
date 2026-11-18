@@ -22,6 +22,7 @@ import {
   planVersion,
   resolveSetupPlan,
   setupPlatform,
+  splitPathTail,
   type SetupPlan
 } from '../lib/setupPlan'
 import type { SystemInfo } from '../../../types/ipc'
@@ -76,6 +77,31 @@ const mirrorsPrompted = ref(false)
 let mirrorsPromptedRead: Promise<void> = Promise.resolve()
 const locale = ref('en')
 
+const RISE_CLASS = [
+  '[&>*]:animate-first-use-rise motion-reduce:[&>*]:animate-none',
+  '[&>*]:[animation-delay:var(--rise-after)]',
+  '[&>:nth-child(2)]:[animation-delay:calc(var(--rise-after)+50ms)]',
+  '[&>:nth-child(3)]:[animation-delay:calc(var(--rise-after)+110ms)]',
+  '[&>:nth-child(4)]:[animation-delay:calc(var(--rise-after)+170ms)]',
+  '[&>:nth-child(n+5)]:[animation-delay:calc(var(--rise-after)+230ms)]',
+  '[&>*:last-child:not(:first-child)]:[animation-delay:calc(var(--rise-after)+300ms)]'
+].join(' ')
+const RISE_STARTS_AFTER_OPENING = '1360ms'
+const prefersReducedMotion =
+  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+const opening = ref(!props.consent && !props.savedPlan && !prefersReducedMotion)
+
+watch(step, () => {
+  opening.value = false
+})
+
+function endOpeningAfterLastRise(event: AnimationEvent): void {
+  const column = event.currentTarget
+  if (column instanceof HTMLElement && event.target === column.lastElementChild) {
+    opening.value = false
+  }
+}
+
 let openGeneration = 0
 let mountedAt = Date.now()
 let completedFired = false
@@ -106,6 +132,7 @@ const lead = computed(() =>
 const location = computed(() =>
   displayPath(installLocation(plan.value?.installRoot ?? '', platform), platform)
 )
+const locationParts = computed(() => splitPathTail(location.value))
 const lowDisk = computed(
   () =>
     diskFree.value !== null &&
@@ -402,15 +429,37 @@ defineExpose({ open, resetContinue })
     :dismiss-on-escape="false"
     :dismiss-on-outside="false"
     overlay-class="fixed inset-0 z-50 flex bg-window-background p-2"
-    content-class="relative flex size-full max-h-none max-w-none flex-col overflow-y-auto rounded-shell bg-[#0d0d0f] bg-[radial-gradient(70%_62%_at_50%_0%,rgb(241_241_241/0.07),rgb(241_241_241/0)_70%)] outline-none"
+    content-class="relative flex size-full max-h-none max-w-none flex-col overflow-y-auto rounded-shell bg-[#0d0d0f] [container-type:size] bg-[radial-gradient(70%_62%_at_50%_0%,rgb(241_241_241/0.07),rgb(241_241_241/0)_70%)] outline-none"
     data-testid="setup-screen"
   >
-    <ComfyWordmark
-      class="absolute top-5 left-1/2 h-7 w-[100px] -translate-x-1/2 text-[#f0f0f0]"
-      aria-hidden="true"
+    <div
+      v-if="opening"
+      class="pointer-events-none absolute inset-0 animate-first-use-light bg-[#0d0d0f]"
+      data-testid="setup-light"
     />
+    <div
+      class="absolute top-5 left-1/2 h-7 w-[100px] -translate-x-1/2 text-[#f0f0f0]"
+      :class="opening && 'animate-first-use-land [--first-use-drop:calc(50cqh_-_34px)]'"
+      :data-arriving="opening || undefined"
+      aria-hidden="true"
+      data-testid="setup-wordmark"
+    >
+      <ComfyWordmark class="size-full" :class="opening && 'animate-first-use-arrive'" />
+      <ComfyWordmark
+        v-if="opening"
+        class="absolute inset-0 size-full animate-first-use-glint mask-no-repeat [mask-image:linear-gradient(106deg,transparent_30%,#000_50%,transparent_70%)] [mask-size:300%_100%]"
+        data-testid="setup-wordmark-glint"
+      />
+    </div>
 
-    <div class="m-auto flex w-[638px] max-w-[calc(100%-48px)] flex-col py-24">
+    <div
+      class="m-auto flex w-[638px] max-w-[calc(100%-48px)] flex-col py-24"
+      :class="RISE_CLASS"
+      :style="{ '--rise-after': opening ? RISE_STARTS_AFTER_OPENING : '0ms' }"
+      :data-rise-after-arrival="opening || undefined"
+      data-testid="setup-column"
+      @animationend="endOpeningAfterLastRise"
+    >
       <template v-if="step === 'setup'">
         <h1 class="m-0 text-[22px]/[27px] font-semibold text-foreground">{{ title }}</h1>
         <p class="mt-1.5 mb-0 text-[13px]/4 text-muted-foreground" data-testid="setup-lead">
@@ -427,11 +476,11 @@ defineExpose({ open, resetContinue })
             aria-hidden="true"
           />
           <BuildDeviceArt
-            class="relative h-[104px] w-[162px] shrink-0"
+            class="relative h-[80px] w-[124px] shrink-0"
             :kind="deviceKindForPlatform(platform)"
             glow="#46464A"
           />
-          <div class="relative ml-[33px] flex min-w-0 flex-1 flex-col">
+          <div class="relative ml-6 flex min-w-0 flex-1 flex-col">
             <span class="flex h-[15px] items-center gap-1.5 text-xs/[15px] text-muted-foreground">
               <Check :size="11" :stroke-width="2" aria-hidden="true" />
               {{ t('setup.detected') }}
@@ -495,9 +544,16 @@ defineExpose({ open, resetContinue })
                   t('setup.location')
                 }}
               </span>
-              <span class="truncate text-foreground" :title="location || undefined">
-                {{ location || t('setup.checking') }}
+              <span
+                v-if="location"
+                class="flex min-w-0 text-foreground"
+                :title="location"
+                data-testid="setup-location"
+              >
+                <span class="min-w-0 truncate">{{ locationParts.head }}</span>
+                <span class="max-w-full shrink-0 truncate">{{ locationParts.tail }}</span>
               </span>
+              <span v-else class="truncate text-foreground">{{ t('setup.checking') }}</span>
               <span
                 class="ml-4 text-right whitespace-nowrap"
                 :class="lowDisk ? 'text-[#f0b135]' : 'text-subtle-foreground'"

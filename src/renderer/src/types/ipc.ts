@@ -1,11 +1,16 @@
 export type {
   DashboardPage,
   AppCard,
+  AppOutputAction,
+  AppOutputs,
   AppPagePlacement,
   AppPageStatus,
   AssetKind,
   AssetSummary,
+  CloudAssetPage,
+  LocalAssetListing,
   CatalogWorkflow,
+  CloudAssetLookup,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,
@@ -37,6 +42,7 @@ export type {
   ModalDetailGroup,
   ListAction,
   ShowProgressOpts,
+  SystemInfo,
   ActionResult,
   ComfyArgDef,
   PortConflictInfo,
@@ -80,6 +86,7 @@ export type {
   AppUpdateState,
   AppUpdateDownloadProgress,
   CloudUserTier,
+  CreditBalanceState,
   InstallBuildResult,
   ElectronApi
 } from '../../../types/ipc'

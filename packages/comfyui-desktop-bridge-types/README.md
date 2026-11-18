@@ -94,8 +94,8 @@ sends while the view loads another app is dropped.
 
 - A name starts with a lowercase letter, then lowercase letters, digits and
   `_`, up to 48 characters in all (`^[a-z][a-z0-9_]{0,47}$`), so `2_click` is
-  dropped. `app_opened` and `app_page_failed` are Desktop's own and are
-  refused, and so is `error`.
+  dropped. `app_opened`, `app_page_failed`, `run_finished` and `setup` are
+  Desktop's own and are refused, and so is `error`.
 - Desktop keeps up to 16 properties. A key starts with a lowercase letter,
   then lowercase letters, digits and `_`, up to 32 characters in all
   (`^[a-z][a-z0-9_]{0,31}$`), so `{ Run: true }` is dropped. A value is a

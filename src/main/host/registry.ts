@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events'
 import type { BrowserWindow, WebContents, WebContentsView } from 'electron'
-import { _runningSessions, _isStopping } from '../lib/ipc/shared'
+import { _runningSessions, _isStopping, noteStartWindowClosed } from '../lib/ipc/shared'
 import type { FirstUseMode } from '../../shared/firstUseMode'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
 import type { ViewKind } from '../../shared/viewKind'
@@ -96,7 +96,9 @@ export function consumeAttachClaim(installationId: string): number | undefined {
 
 export function dropAttachClaimsForWindow(windowKey: number): void {
   for (const [installationId, claimedKey] of pendingAttachClaims) {
-    if (claimedKey === windowKey) pendingAttachClaims.delete(installationId)
+    if (claimedKey !== windowKey) continue
+    pendingAttachClaims.delete(installationId)
+    noteStartWindowClosed(installationId)
   }
 }
 
@@ -291,14 +293,6 @@ export function bringToFront(win: BrowserWindow): void {
 export function revealColdStartHostIfPending(windowKey: number): void {
   const entry = comfyWindows.get(windowKey)
   if (!entry?.coldStartPendingReveal || entry.window.isDestroyed()) return
-  entry.coldStartPendingReveal = false
-  entry.layoutViews()
-  bringToFront(entry.window)
-}
-
-export function forceRevealHostWindow(windowKey: number): void {
-  const entry = comfyWindows.get(windowKey)
-  if (!entry || entry.window.isDestroyed()) return
   entry.coldStartPendingReveal = false
   entry.layoutViews()
   bringToFront(entry.window)

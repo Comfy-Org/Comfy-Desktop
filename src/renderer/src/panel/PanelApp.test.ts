@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
-import type { ExampleWorkflowDownload, RunPerformanceTestWorkflowResult } from '../types/ipc'
+import type {
+  ExampleWorkflowDownload,
+  ProgressData,
+  RunPerformanceTestWorkflowResult
+} from '../types/ipc'
 
 const installWizardOpen = vi.hoisted(() => vi.fn())
 const createFeedbackWidget = vi.hoisted(() =>
@@ -67,7 +71,12 @@ vi.mock('../views/ChooserView.vue', () => ({
   }
 }))
 vi.mock('./AssetsView.vue', () => ({
-  default: { name: 'AssetsView', template: '<div data-testid="assets-view" />' }
+  default: {
+    name: 'AssetsView',
+    props: ['focusName'],
+    emits: ['focus-used'],
+    template: '<div data-testid="assets-view" :data-focus-name="focusName ?? undefined" />'
+  }
 }))
 vi.mock('./BuildDetailsView.vue', () => ({
   default: {
@@ -153,6 +162,7 @@ vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
+import AppsView from './AppsView.vue'
 import { en } from '../lib/i18nMessages'
 import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
 import { useOverlay } from '../composables/useOverlay'
@@ -343,6 +353,8 @@ function installMockApi(initial?: {
       state.appUpdateUserActionFailedCallbacks.push(cb)
       return () => {}
     }),
+    getAppUpdateState: vi.fn().mockResolvedValue({ kind: null, version: null, autoUpdate: true }),
+    onAppUpdateStateChanged: vi.fn(() => () => {}),
     installUpdate: state.installUpdate,
     downloadUpdate: state.downloadUpdate,
     setFirstUseMode: vi.fn(),
@@ -410,6 +422,9 @@ function installMockApi(initial?: {
     hideAppPage: vi.fn(),
     onAppPageStatusChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
+    onAppOutputs: vi.fn(() => () => {}),
+    refreshCreditBalance: vi.fn(async () => ({ status: 'signed_out' })),
+    onCreditBalanceChanged: vi.fn(() => () => {}),
     getListActions: vi.fn(async () => []),
     runAction: vi.fn(async () => ({ ok: true })),
     getFieldOptions: vi.fn(async () => []),
@@ -1223,6 +1238,25 @@ describe('PanelApp', () => {
     await waitForBuildMenuFocusReturn()
   })
 
+  it.each([
+    ['chooser', 'chooser'],
+    ['assets', 'assets'],
+    ['benchmarks', 'home'],
+    ['', 'home']
+  ] as const)('opens a new window asked for %s on the %s page', async (requested, shown) => {
+    window.history.replaceState(
+      {},
+      '',
+      `/?panel=chooser&firstUseCompleted=true&dashboardPage=${requested}`
+    )
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.get(`[data-testid="app-sidebar-${shown}"]`).attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
   it('opens the new-install takeover above the chooser body when show-new-install fires', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
@@ -1299,30 +1333,25 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 
-  it('restores the build open at quit into this window, in place, on startup', async () => {
-    mockState.installations = [SAMPLE_INSTALL]
+  it('starts a picked build that this window has not loaded yet, such as a copy made a moment ago', async () => {
+    mockState.installations = []
     const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
     api.getListActions.mockResolvedValue([
       { id: 'launch', label: 'Start', style: 'primary', showProgress: true }
     ])
     api.runAction.mockReturnValueOnce(new Promise(() => {}))
-    Object.assign(api, {
-      onInstallProgress: vi.fn(() => () => {}),
-      resolveStartupRestoreReveal: vi.fn()
-    })
+    Object.assign(api, { onInstallProgress: vi.fn(() => () => {}) })
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
-    const wrapper = mountPanel()
+    mountPanel()
     await flushPromises()
 
+    mockState.installations = [SAMPLE_INSTALL]
     mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
-      cb({ kind: 'picker-pick-install', installationId: 'test-id', startupRestore: true })
+      cb({ kind: 'picker-pick-install', installationId: 'test-id' })
     )
     await flushPromises()
 
     expect(api.runAction).toHaveBeenCalledWith('test-id', 'launch')
-    expect(api.claimAttachHost).toHaveBeenCalledWith('test-id')
-    expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(true)
-    expect(api.resolveStartupRestoreReveal).toHaveBeenCalledWith('takeover-ready')
   })
 
   it('Start on a Home build card starts it there and leaves this window on Home', async () => {
@@ -1634,6 +1663,31 @@ describe('PanelApp', () => {
     ])
   })
 
+  it('opens Assets on the Cloud file an app asks to see, and passes the file on only once', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    wrapper.findComponent(AppsView).vm.$emit('view-in-assets', 'cutout.png')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-sidebar-assets"]').attributes('aria-current')).toBe(
+      'page'
+    )
+    expect(wrapper.get('[data-testid="assets-view"]').attributes('data-focus-name')).toBe(
+      'cutout.png'
+    )
+
+    wrapper.findComponent({ name: 'AssetsView' }).vm.$emit('focus-used')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-view"]').attributes('data-focus-name')).toBeUndefined()
+  })
+
   it('does not record a sidebar page open for See all apps on Home', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
@@ -1681,6 +1735,22 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+  })
+
+  it("returns from a build's details to the list when Builds is picked in the sidebar", async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await showBuilds(wrapper)
+    wrapper.findComponent({ name: 'ChooserView' }).vm.$emit('open-details', SAMPLE_INSTALL)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="build-details"]').text()).toBe(SAMPLE_INSTALL.name)
+
+    await wrapper.get('[data-testid="app-sidebar-chooser"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 
   it("leaves a build's details when the window switches screens", async () => {
@@ -3130,6 +3200,7 @@ describe('PanelApp', () => {
       mockState.installationsChangedCallbacks.forEach((cb) => cb())
       return new Promise(() => {})
     })
+    let reportInstallProgress!: (data: ProgressData) => void
     Object.assign(api, {
       getDiskSpace: vi.fn(async () => ({ free: 400 * 1024 ** 3, total: 1000 * 1024 ** 3 })),
       buildInstallation: vi.fn(async () => ({ sourceId: 'standalone', sourceCategory: 'local' })),
@@ -3140,7 +3211,10 @@ describe('PanelApp', () => {
         return { ok: true, entry }
       }),
       installInstance,
-      onInstallProgress: vi.fn(() => () => {})
+      onInstallProgress: vi.fn((callback: (data: ProgressData) => void) => {
+        reportInstallProgress = callback
+        return () => {}
+      })
     })
     window.history.replaceState({}, '', '/?panel=chooser')
     const wrapper = mountPanel()
@@ -3156,13 +3230,31 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
     const card = wrapper.get('[data-testid="home-build-installing"]')
     expect(card.attributes('data-build-id')).toBe('inst-new')
-    expect(card.text()).toContain('Installing ComfyUI')
     expect(wrapper.find('[data-testid="home-open-build"]').exists()).toBe(false)
+
+    reportInstallProgress({
+      installationId: 'inst-new',
+      phase: 'steps',
+      steps: [
+        { phase: 'download', label: 'Download' },
+        { phase: 'extract', label: 'Extract' },
+        { phase: 'setup', label: 'Set up environment' },
+        { phase: 'update', label: 'Get the latest ComfyUI' }
+      ]
+    })
+    reportInstallProgress({ installationId: 'inst-new', phase: 'setup', percent: 100 })
+    await flushPromises()
+    expect(card.get('[data-testid="home-build-status"]').text()).toBe('Installing ComfyUI · 90%')
+    expect(card.text()).not.toContain('Set up environment')
+    expect(card.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('90')
 
     await card.trigger('click')
     await flushPromises()
     const dialog = () => document.body.querySelector('[data-testid="build-progress-dialog"]')
     expect(dialog()).not.toBeNull()
+    expect(dialog()?.querySelector('[data-state="active"]')?.textContent).toContain(
+      'Set up environment'
+    )
     expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(false)
 
     document.body.querySelector<HTMLButtonElement>('[data-testid="build-progress-close"]')!.click()

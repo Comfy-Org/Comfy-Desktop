@@ -9,10 +9,18 @@ import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AssetSummary, Installation, RunningInstance } from '../types/ipc'
+import type {
+  AssetSummary,
+  CloudAssetLookup,
+  CloudAssetPage,
+  Installation,
+  RunningInstance
+} from '../types/ipc'
 
 const listAssets = vi.fn()
+const findCloudAsset = vi.fn()
 const listLocalAssets = vi.fn()
+let localListCut = false
 const downloadAsset = vi.fn()
 const revealAsset = vi.fn()
 const copyAsset = vi.fn()
@@ -27,6 +35,7 @@ const getSetting = vi.fn()
 const MASONRY_GAP = 14
 const FOUR_COLUMN_PAGE_WIDTH = 1100
 const TALL_PAGE_HEIGHT = 3000
+const FIRST_PAGE = { offset: 0, limit: 100, order: 'newest' }
 
 let page: HTMLElement
 
@@ -80,8 +89,17 @@ function localBuild(id: string, name = id, extra: Partial<Installation> = {}): I
     sourceLabel: 'Standalone',
     sourceCategory: 'local',
     hasOutputFolder: true,
+    useSharedOutput: false,
     ...extra
   }
+}
+
+function sharedBuild(id: string, name = id): Installation {
+  return localBuild(id, name, { useSharedOutput: true })
+}
+
+function shownText(element: Element | null): string {
+  return (element as HTMLElement | null)?.innerText.replace(/\s+/g, ' ').trim() ?? ''
 }
 
 function oldDesktopBuild(id: string, name = id): Installation {
@@ -202,9 +220,21 @@ beforeEach(() => {
   }))
   getAuthStatus.mockResolvedValue({ signedIn: false })
   getSetting.mockResolvedValue(undefined)
+  localListCut = false
+  findCloudAsset.mockResolvedValue({ status: 'absent' })
   ;(window as unknown as { api: unknown }).api = {
-    listAssets,
-    listLocalAssets,
+    listAssets: async (installationId: string, request: unknown) => {
+      const listed: AssetSummary[] | CloudAssetPage | null = await listAssets(
+        installationId,
+        request
+      )
+      return Array.isArray(listed) ? { assets: listed, total: listed.length } : listed
+    },
+    findCloudAsset,
+    listLocalAssets: async (installationId?: string) => ({
+      assets: await listLocalAssets(installationId),
+      truncated: localListCut
+    }),
     downloadAsset,
     revealAsset,
     copyAsset,
@@ -360,7 +390,7 @@ describe('AssetsView', () => {
     expect(wrapper.get('img').attributes('src')).toBe('comfy-output://file/full?thumbnail=1')
   })
 
-  it("opens on the window's build, lists every build with where it runs, and switches to the one picked", async () => {
+  it("opens on the window's build, lists Comfy Cloud then each build with its own folder, and switches to the one picked", async () => {
     useSessionStore().runningInstances.set('lab', { installationId: 'lab' } as RunningInstance)
     listAssets.mockResolvedValue([asset('c1', 'cloud.png', 'image')])
     const wrapper = await mountAssets([asset('/out/mine.png', 'mine.png', 'image')], {
@@ -388,15 +418,15 @@ describe('AssetsView', () => {
 
     await openBuildPicker(wrapper)
     expect(document.body.textContent).toContain('Browse the assets of')
-    expect(buildRows()).toEqual([
+    expect(buildRows(), 'no Shared folder when no build saves there').toEqual([
+      'Comfy Cloud Cloud · Running',
       'My Local 1 Local · Stopped',
-      'Video Lab Local · Running',
-      'Comfy Cloud Cloud · Running'
+      'Video Lab Local · Running'
     ])
 
     await pickBuild('cloud')
 
-    expect(listAssets).toHaveBeenCalledExactlyOnceWith('cloud')
+    expect(listAssets).toHaveBeenCalledExactlyOnceWith('cloud', FIRST_PAGE)
     expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
     expect(assetNames(wrapper), "only the picked build's files show").toEqual(['cloud.png'])
   })
@@ -427,7 +457,7 @@ describe('AssetsView', () => {
 
     await openBuildPicker(wrapper)
 
-    expect(buildRows()).toEqual(['My Local 1 Local · Stopped'])
+    expect(buildRows()).toEqual(['Comfy Cloud Cloud · Running', 'My Local 1 Local · Stopped'])
   })
 
   it('opens on a build it can list, not on a running build that keeps its files to itself', async () => {
@@ -468,6 +498,49 @@ describe('AssetsView', () => {
     expect(wrapper.find('[data-testid="assets-skeleton"]').exists()).toBe(false)
   })
 
+  it('keeps the toolbar on one row: search turns into a button, then the type tabs into a menu', async () => {
+    page.style.width = '1400px'
+    const wrapper = await mountAssets([asset('b', 'forest.png', 'image')])
+    const shown = (testId: string) => wrapper.find(`[data-testid="${testId}"]`).exists()
+    const toolbarRow = () => wrapper.get('[data-testid="assets-toolbar"] > div').element
+
+    await vi.waitFor(() => expect(shown('assets-kind-all')).toBe(true))
+    expect(shown('assets-search-toggle')).toBe(false)
+    expect(shown('assets-kind-menu')).toBe(false)
+
+    page.style.width = '520px'
+    await vi.waitFor(() => expect(shown('assets-kind-menu')).toBe(true))
+    expect(shown('assets-kind-all')).toBe(false)
+    expect(shown('assets-search-toggle')).toBe(true)
+    expect(toolbarRow().scrollWidth).toBeLessThanOrEqual(toolbarRow().clientWidth)
+
+    page.style.width = '1400px'
+    await vi.waitFor(() => expect(shown('assets-kind-all')).toBe(true))
+    expect(shown('assets-search-toggle')).toBe(false)
+  })
+
+  it('keeps the compact search open while a query changes the counts', async () => {
+    page.style.width = '640px'
+    const wrapper = await mountAssets([
+      asset('a', 'surfer.mp4', 'video'),
+      asset('b', 'forest.png', 'image')
+    ])
+    const toggle = () => wrapper.find('[data-testid="assets-search-toggle"]')
+    await vi.waitFor(() => expect(toggle().exists()).toBe(true))
+    await toggle().trigger('click')
+    const input = () =>
+      document.querySelector<HTMLInputElement>('[data-testid="assets-search-compact"] input')
+    await vi.waitFor(() => expect(input()).not.toBeNull())
+    const typedInto = input()!
+
+    typedInto.value = 'forest'
+    typedInto.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(input(), 'the same input stays on the page').toBe(typedInto)
+  })
+
   it('filters by asset type and by name', async () => {
     const wrapper = await mountAssets([
       asset('a', 'surfer.mp4', 'video'),
@@ -498,35 +571,91 @@ describe('AssetsView', () => {
     ])
   })
 
-  it('shows the output folder as This computer when there is no local build', async () => {
+  it('lists Shared folder after Comfy Cloud when a build saves there, and opens on it', async () => {
     const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
-      builds: [cloudBuild('cloud', 'Comfy Cloud')]
+      builds: [sharedBuild('a', 'Shared A'), localBuild('lab', 'Video Lab'), cloudBuild('cloud')]
     })
 
-    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('This computer')
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Shared folder')
     expect(
       listLocalAssets,
       'the shared output folder, not a build'
-    ).toHaveBeenCalledExactlyOnceWith()
+    ).toHaveBeenCalledExactlyOnceWith(undefined)
     expect(assetNames(wrapper)).toEqual(['forest.png'])
     await openBuildPicker(wrapper)
-    expect(buildRows()).toEqual(['Comfy Cloud Cloud · Running', 'This computer Output folder'])
+    expect(buildRows()).toEqual([
+      'Comfy Cloud Cloud · Running',
+      'Shared folder Output folder',
+      'Video Lab Local · Stopped'
+    ])
   })
 
-  it('reopens on This computer, not the saved Comfy Cloud pick, after signing out', async () => {
-    const builds = [cloudBuild('cloud', 'Comfy Cloud')]
-    const first = await mountAssets([], { builds })
-    useAuthStore().status = { signedIn: true }
+  it('opens a signed-out user with no local build on the Shared folder, so the default output folder still shows', async () => {
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: [cloudBuild('cloud')]
+    })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Shared folder')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith(undefined)
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+  })
+
+  it('opens the Shared folder when a signed-out user last picked Comfy Cloud', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: [cloudBuild('cloud'), sharedBuild('a', 'Shared A')]
+    })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Shared folder')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith(undefined)
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('cloud')
+  })
+
+  it('turns an old This computer choice into Shared folder, or the first build without one', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'computer')
+    const shared = await mountAssets([], { builds: [localBuild('lab'), sharedBuild('a')] })
+    expect(shared.get('[data-testid="assets-build-picker"]').text()).toBe('Shared folder')
+    shared.unmount()
+
+    const dedicated = await mountAssets([], {
+      builds: [localBuild('mine', 'My Local 1'), localBuild('lab')]
+    })
+    expect(dedicated.get('[data-testid="assets-build-picker"]').text()).toBe('My Local 1')
+  })
+
+  it("opens a shared build's window on Shared folder, and a Cloud build's window on Comfy Cloud, without changing the saved choice", async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'lab')
+    const builds = [sharedBuild('a'), localBuild('lab'), cloudBuild('cloud')]
+    const shared = await mountAssets([], { builds, installationId: 'a' })
+    expect(shared.get('[data-testid="assets-build-picker"]').text()).toBe('Shared folder')
+    shared.unmount()
+
+    const cloud = await mountAssets([], { builds, installationId: 'cloud' })
+    expect(cloud.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
+    expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('lab')
+  })
+
+  it('says the workspace has no Comfy Cloud build', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
+    const wrapper = await mountAssets([], { builds: [localBuild('lab')] })
+    useAuthStore().status = { signedIn: true, workspaceId: 'me', workspaceType: 'personal' }
     await flushPromises()
-    await openBuildPicker(first)
-    await pickBuild('cloud')
-    first.unmount()
 
-    useAuthStore().status = { signedIn: false }
-    const again = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], { builds })
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
+    expect(listAssets).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe(
+      'This workspace has no Comfy Cloud build'
+    )
+  })
 
-    expect(again.get('[data-testid="assets-build-picker"]').text()).toBe('This computer')
-    expect(assetNames(again)).toEqual(['forest.png'])
+  it('says when the list keeps only the newest files', async () => {
+    localListCut = true
+    const wrapper = await mountAssets([asset('/out/a.png', 'a.png', 'image')])
+
+    expect(wrapper.get('[data-testid="assets-truncated"]').text()).toBe(
+      'Showing the newest file only.'
+    )
   })
 
   it('asks a signed-out user who picked Comfy Cloud to log in', async () => {
@@ -661,7 +790,7 @@ describe('AssetsView', () => {
         localBuild('lab', 'Video Lab', { lastLaunchedAt: 2 })
       ]
     })
-    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Video Lab')
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('My Local 1')
 
     useSessionStore().runningInstances.set('mine', { installationId: 'mine' } as RunningInstance)
     useInstallationStore().installations = [
@@ -670,8 +799,220 @@ describe('AssetsView', () => {
     ]
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Video Lab')
-    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith('lab')
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('My Local 1')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith('mine')
+  })
+
+  describe('a file an app asks to see', () => {
+    async function mountWithFocus(files: AssetSummary[] | CloudAssetPage) {
+      window.localStorage.setItem('comfy.desktop.assets.place', 'lab')
+      getAuthStatus.mockResolvedValue({ signedIn: true })
+      listAssets.mockResolvedValue(files)
+      const installationStore = useInstallationStore()
+      installationStore.installations = [cloudBuild('cloud'), localBuild('lab')]
+      installationStore.loading = false
+      const wrapper = mount(AssetsView, { attachTo: page, props: { focusName: 'cutout.png' } })
+      await flushPromises()
+      return wrapper
+    }
+
+    async function choose(wrapper: Awaited<ReturnType<typeof mountWithFocus>>, id: string) {
+      await openBuildPicker(wrapper)
+      await pickBuild(id)
+    }
+
+    it('picks Comfy Cloud with the newest file of that name open, once, and keeps the saved choice', async () => {
+      const wrapper = await mountWithFocus([
+        asset('old', 'cutout.png', 'image', { createdAt: '2026-11-01T00:00:00Z' }),
+        asset('new', 'cutout.png', 'image', { createdAt: '2026-11-02T00:00:00Z' }),
+        asset('other', 'other.png', 'image', { createdAt: '2026-11-03T00:00:00Z' })
+      ])
+
+      expect(wrapper.emitted('focus-used')).toHaveLength(1)
+      expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
+      expect(listAssets).toHaveBeenCalledWith('cloud', FIRST_PAGE)
+      expect(findCloudAsset).toHaveBeenCalledWith('cloud', 'cutout.png')
+      expect(listLocalAssets).not.toHaveBeenCalled()
+      expect(viewerTitle()).toBe('cutout.png')
+      expect(
+        viewer()?.querySelector('[aria-current="true"]')?.getAttribute('data-testid'),
+        'the newer of the two cutouts, after the newest file overall'
+      ).toBe('output-detail-thumb-1')
+      expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('lab')
+    })
+
+    it('says so on Comfy Cloud when the file is not there, and drops the note once the user picks a place', async () => {
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+
+      expect(wrapper.emitted('focus-used')).toHaveLength(1)
+      expect(assetNames(wrapper)).toEqual(['other.png'])
+      expect(viewer()).toBeNull()
+      expect(wrapper.get('[data-testid="assets-not-found"]').text()).toBe(
+        "Couldn't find cutout.png in your Comfy Cloud assets. It may have a different name here."
+      )
+
+      await choose(wrapper, 'lab')
+      await choose(wrapper, 'cloud')
+
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+    })
+
+    it('asks Comfy Cloud again, by name, for a file the shown list does not have', async () => {
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+      findCloudAsset.mockResolvedValue({
+        status: 'found',
+        asset: asset('older', 'older.png', 'image')
+      })
+
+      await wrapper.setProps({ focusName: 'older.png' })
+      await flushPromises()
+
+      expect(findCloudAsset).toHaveBeenLastCalledWith('cloud', 'older.png')
+      expect(assetNames(wrapper)).toEqual(['other.png'])
+      expect(viewerTitle()).toBe('older.png')
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+    })
+
+    it('opens the latest requested result when a saved-result lookup is already in flight', async () => {
+      const previous = Promise.withResolvers<CloudAssetLookup>()
+      findCloudAsset.mockImplementation((_cloudId, name) =>
+        name === 'cutout.png'
+          ? previous.promise
+          : Promise.resolve({ status: 'found', asset: asset('new', 'new.png', 'image') })
+      )
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+
+      expect(findCloudAsset).toHaveBeenCalledWith('cloud', 'cutout.png')
+      await wrapper.setProps({ focusName: 'new.png' })
+      previous.resolve({ status: 'found', asset: asset('old', 'cutout.png', 'image') })
+      await flushPromises()
+
+      expect(findCloudAsset).toHaveBeenLastCalledWith('cloud', 'new.png')
+      expect(viewerTitle()).toBe('new.png')
+      expect(listAssets).toHaveBeenCalledTimes(1)
+    })
+
+    it('drops the note when Refresh finds the file', async () => {
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(true)
+      listAssets.mockResolvedValue([
+        asset('other', 'other.png', 'image'),
+        asset('new', 'cutout.png', 'image')
+      ])
+
+      await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+      await flushPromises()
+
+      expect(findCloudAsset).toHaveBeenLastCalledWith('cloud', 'cutout.png')
+      expect(assetNames(wrapper)).toContain('cutout.png')
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+    })
+
+    it('opens and downloads an older result without putting it on the first page', async () => {
+      findCloudAsset.mockResolvedValue({
+        status: 'found',
+        asset: asset('old', 'cutout.png', 'image')
+      })
+      const wrapper = await mountWithFocus({
+        assets: Array.from({ length: 100 }, (_, index) =>
+          asset(`new-${index}`, `new-${index}.png`, 'image')
+        ),
+        total: 101
+      })
+
+      expect(assetNames(wrapper)).toContain('new-0.png')
+      expect(assetNames(wrapper)).not.toContain('cutout.png')
+      expect(wrapper.get('[data-testid="assets-pagination"]').text()).toContain('1–100 of 101')
+      expect(viewerTitle()).toBe('cutout.png')
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+      viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-download"]')!.click()
+      expect(downloadAsset).toHaveBeenCalledWith('cloud', 'old', 'cutout.png')
+    })
+
+    it('says it could not check, not that the file is missing, when the search did not finish', async () => {
+      findCloudAsset.mockResolvedValue({ status: 'incomplete' })
+      const wrapper = await mountWithFocus([asset('other', 'other.png', 'image')])
+
+      expect(assetNames(wrapper)).toEqual(['other.png'])
+      expect(viewer()).toBeNull()
+      expect(wrapper.get('[data-testid="assets-not-found"]').text()).toBe(
+        "Couldn't check Comfy Cloud for cutout.png. Refresh to try again."
+      )
+
+      findCloudAsset.mockRejectedValue(new Error('ipc gone'))
+      await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+      await flushPromises()
+
+      expect(assetNames(wrapper), 'the gallery stays').toEqual(['other.png'])
+      expect(wrapper.get('[data-testid="assets-not-found"]').text()).toBe(
+        "Couldn't check Comfy Cloud for cutout.png. Refresh to try again."
+      )
+
+      findCloudAsset.mockResolvedValue({ status: 'absent' })
+      await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="assets-not-found"]').text()).toBe(
+        "Couldn't find cutout.png in your Comfy Cloud assets. It may have a different name here."
+      )
+    })
+
+    it('shows no note when the file opened', async () => {
+      await mountWithFocus([asset('new', 'cutout.png', 'image')])
+      expect(viewerTitle()).toBe('cutout.png')
+      expect(document.querySelector('[data-testid="assets-not-found"]')).toBeNull()
+    })
+
+    it('shows the load error instead of a note when the Cloud list fails', async () => {
+      listAssets.mockRejectedValue(new Error('offline'))
+      getAuthStatus.mockResolvedValue({ signedIn: true })
+      const installationStore = useInstallationStore()
+      installationStore.installations = [cloudBuild('cloud')]
+      installationStore.loading = false
+      const wrapper = mount(AssetsView, { attachTo: page, props: { focusName: 'cutout.png' } })
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe("Couldn't load assets")
+      expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
+    })
+
+    it('lets go of the file when Comfy Cloud cannot list it, and says why', async () => {
+      getAuthStatus.mockResolvedValue({ signedIn: false })
+      listAssets.mockResolvedValue([asset('new', 'cutout.png', 'image')])
+      const installationStore = useInstallationStore()
+      installationStore.installations = [cloudBuild('cloud')]
+      installationStore.loading = false
+      const signedOut = mount(AssetsView, { attachTo: page, props: { focusName: 'cutout.png' } })
+      await flushPromises()
+
+      expect(signedOut.get('[data-testid="assets-empty"] h2').text()).toBe(
+        'Log in to see your assets'
+      )
+      await signInWith([asset('new', 'cutout.png', 'image')])
+      expect(assetNames(signedOut)).toEqual(['cutout.png'])
+      expect(viewer(), 'the file is not opened later').toBeNull()
+      signedOut.unmount()
+
+      installationStore.installations = [localBuild('lab')]
+      const noCloudBuild = mount(AssetsView, { attachTo: page, props: { focusName: 'cutout.png' } })
+      await flushPromises()
+      expect(noCloudBuild.get('[data-testid="assets-empty"] h2').text()).toBe(
+        'This workspace has no Comfy Cloud build'
+      )
+      installationStore.installations = [cloudBuild('cloud')]
+      await flushPromises()
+      expect(assetNames(noCloudBuild)).toEqual(['cutout.png'])
+      expect(viewer(), 'the file is not opened later').toBeNull()
+    })
+
+    it('remembers a place the user picks after that', async () => {
+      const wrapper = await mountWithFocus([])
+
+      await choose(wrapper, 'lab')
+      await choose(wrapper, 'cloud')
+
+      expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('cloud')
+    })
   })
 
   it('switches to the builds of the workspace the user moves to', async () => {
@@ -683,8 +1024,8 @@ describe('AssetsView', () => {
     useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Team Cloud')
-    expect(listAssets).toHaveBeenCalledExactlyOnceWith('team-cloud')
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
+    expect(listAssets).toHaveBeenCalledExactlyOnceWith('team-cloud', FIRST_PAGE)
     expect(assetNames(wrapper)).toEqual(['team.png'])
   })
 
@@ -701,11 +1042,31 @@ describe('AssetsView', () => {
     useDashboardScopeStore().selectWorkspace('team-b')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Team Cloud')
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
     expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('team-b', 'chosen')
     expect(assetNames(wrapper), "the team's files, not the personal workspace's").toEqual([
       'team.png'
     ])
+  })
+
+  it('lists the selected workspace assets through the same shared Cloud installation', async () => {
+    signedInToPersonalWithTeamDashboard()
+    const cloud = { ...cloudBuild('cloud', 'Comfy Cloud'), sourceId: 'cloud' }
+    listAssets.mockImplementation(async () => [
+      asset('current', `${useAuthStore().status.workspaceId}.png`, 'image')
+    ])
+    const wrapper = await mountAssets([], { builds: [cloud] })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
+    expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('team-b', 'restored')
+    expect(assetNames(wrapper)).toEqual(['team-b.png'])
+
+    useDashboardScopeStore().selectWorkspace('personal')
+    await flushPromises()
+
+    expect(switchWorkspace).toHaveBeenLastCalledWith('me', 'chosen')
+    expect(assetNames(wrapper)).toEqual(['me.png'])
+    expect(listAssets).toHaveBeenLastCalledWith('cloud', FIRST_PAGE)
   })
 
   it("says the load failed instead of showing another workspace's files when the personal workspace is unknown", async () => {
@@ -741,7 +1102,7 @@ describe('AssetsView', () => {
       builds: [teamBuild(cloudBuild('team-cloud', 'Team Cloud'))]
     })
 
-    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Team Cloud')
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
     expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('team-b', 'restored')
     expect(assetNames(wrapper)).toEqual(['team.png'])
   })
@@ -785,7 +1146,7 @@ describe('AssetsView', () => {
     expect(switchWorkspace, 'a local build needs no workspace').not.toHaveBeenCalled()
 
     await openBuildPicker(wrapper)
-    await pickBuild('team-cloud')
+    await pickBuild('cloud')
 
     expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('team-b', 'chosen')
     expect(assetNames(wrapper)).toEqual(['team.png'])
@@ -937,6 +1298,36 @@ describe('AssetsView', () => {
     expect(video.controls).toBe(true)
   })
 
+  it('tells the real folder of a file on this computer in the viewer, and shows it in Finder', async () => {
+    const file = '/Users/me/output/2026-11/forest.png'
+    const wrapper = await mountAssets([asset(file, 'forest.png', 'image')])
+
+    await wrapper.get(`[data-testid="asset-open-${file}"]`).trigger('click')
+    await flushPromises()
+
+    expect(shownText(viewer()!.querySelector('[data-testid="output-detail-saved-in"]'))).toBe(
+      'SAVED IN 2026-11 /Users/me/output'
+    )
+    const show = viewer()!.querySelector<HTMLElement>(
+      '[data-testid="output-detail-show-in-folder"]'
+    )!
+    expect(show.textContent?.trim()).toBe('Show in Finder')
+    show.click()
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', file)
+  })
+
+  it('does not say where a Cloud file is saved in the viewer', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
+    await signInWith([asset('c', 'cloud.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-c"]').trigger('click')
+    await flushPromises()
+
+    expect(viewer()!.querySelector('[data-testid="output-detail-saved-in"]')).toBeNull()
+    expect(viewer()!.querySelector('[data-testid="output-detail-show-in-folder"]')).toBeNull()
+  })
+
   it('downloads the file the viewer is showing', async () => {
     const wrapper = await mountAssets([
       asset('a', 'surfer.mp4', 'video', { createdAt: '2026-11-02T00:00:00Z' }),
@@ -950,5 +1341,421 @@ describe('AssetsView', () => {
     await flushPromises()
 
     expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('local', 'b', 'forest.png')
+  })
+})
+
+describe('AssetsView Comfy Cloud pages', () => {
+  interface PageRequest {
+    offset: number
+    after?: string
+    limit: number
+    order: string
+    kind?: string
+  }
+
+  function output(index: number): AssetSummary {
+    return index % 50 === 7
+      ? asset(`c${index}`, `mesh-${index}.glb`, '3d')
+      : asset(`c${index}`, `out-${index}.png`, 'image')
+  }
+
+  function outputPage(total: number, { offset, limit, kind }: PageRequest): CloudAssetPage {
+    if (kind) {
+      const matches = Array.from({ length: total }, (_, i) => output(i)).filter(
+        (candidate) => candidate.kind === kind
+      )
+      return { assets: matches.slice(offset, offset + limit), total: matches.length }
+    }
+    const length = Math.max(0, Math.min(limit, total - offset))
+    const assets = Array.from({ length }, (_, i) => output(offset + i))
+    const end = offset + length
+    if (offset >= total && offset > 0) return { assets, total: null }
+    if (end >= total) return { assets, total: end }
+    return {
+      assets,
+      total: offset === 0 ? Math.min(total, 10_000) : null,
+      ...(offset === 0 && total >= 10_000 && { totalIsLowerBound: true }),
+      nextCursor: `cursor-${end}`
+    }
+  }
+
+  function cloudOutputs(total: number): void {
+    listAssets.mockImplementation(async (_id: string, request: PageRequest) =>
+      outputPage(total, request)
+    )
+  }
+
+  function asked(): PageRequest[] {
+    return listAssets.mock.calls.map(([, request]) => request as PageRequest)
+  }
+
+  function timesAskedFor(offset: number): number {
+    return asked().filter((request) => request.offset === offset).length
+  }
+
+  async function mountCloud(builds: Installation[] = [cloudBuild('cloud', 'Comfy Cloud')]) {
+    const wrapper = await mountAssets([], { builds })
+    useAuthStore().status = { signedIn: true, workspaceId: 'me', workspaceType: 'personal' }
+    await flushPromises()
+    return wrapper
+  }
+
+  async function goToPage(wrapper: Awaited<ReturnType<typeof mountAssets>>, page: number) {
+    await wrapper.get(`[data-testid="assets-page-${page}"]`).trigger('click')
+    await flushPromises()
+  }
+
+  async function nextPagePrefetched(offset: number): Promise<void> {
+    await vi.waitFor(() => expect(timesAskedFor(offset)).toBe(1), { timeout: 3000 })
+    await flushPromises()
+  }
+
+  it('asks Cloud for the first page and shows the pages under the gallery', async () => {
+    cloudOutputs(1561)
+    const wrapper = await mountCloud()
+
+    expect(asked()[0]).toEqual(FIRST_PAGE)
+    expect(assetNames(wrapper)[0]).toBe('out-0.png')
+    const pages = wrapper.get('[data-testid="assets-pagination"]')
+    expect(shownText(pages.element)).toContain('1–100 of 1561')
+    expect(pages.get('[data-testid="assets-page-1"]').attributes('aria-label')).toBe('Page 1')
+    expect(pages.find('[data-testid="assets-page-16"]').exists(), 'the last page').toBe(true)
+  })
+
+  it('keeps the page bar when every Cloud output fits on one page', async () => {
+    cloudOutputs(30)
+    const wrapper = await mountCloud()
+
+    expect(assetNames(wrapper)).toHaveLength(30)
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '1–30 of 30'
+    )
+  })
+
+  it('continues past a capped Cloud total using cursors and shows an exact count at the end', async () => {
+    cloudOutputs(10_137)
+    const wrapper = await mountCloud()
+    const pager = wrapper.get('[data-testid="assets-pagination"]')
+
+    expect(shownText(pager.element)).toContain('1–100 of 10000+')
+    expect(pager.find('[data-testid="assets-page-101"]').exists()).toBe(false)
+
+    await goToPage(wrapper, 100)
+    expect(asked()).toContainEqual({ ...FIRST_PAGE, offset: 9900 })
+    expect(shownText(pager.element)).toContain('9901–10000 of 10001+')
+    await nextPagePrefetched(10_000)
+    expect(asked()).toContainEqual({ ...FIRST_PAGE, offset: 10_000, after: 'cursor-10000' })
+
+    await goToPage(wrapper, 101)
+    expect(assetNames(wrapper)[0]).toBe('out-10000.png')
+    expect(shownText(pager.element)).toContain('10001–10100 of 10101+')
+    await goToPage(wrapper, 102)
+    expect(shownText(pager.element)).toContain('10101–10137 of 10137')
+
+    await goToPage(wrapper, 1)
+    expect(shownText(pager.element)).toContain('1–100 of 10137')
+    expect(pager.find('[data-testid="assets-page-102"]').exists()).toBe(true)
+  })
+
+  it('shows an exact count when the page at the cap really is the last page', async () => {
+    cloudOutputs(10_000)
+    const wrapper = await mountCloud()
+    const pager = wrapper.get('[data-testid="assets-pagination"]')
+
+    await goToPage(wrapper, 100)
+
+    expect(shownText(pager.element)).toContain('9901–10000 of 10000')
+    expect(pager.find('[data-testid="assets-page-101"]').exists()).toBe(false)
+    expect(timesAskedFor(10_000)).toBe(0)
+  })
+
+  it('opens the next page from Cloud and goes back to a seen page without asking again', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud()
+    await nextPagePrefetched(100)
+
+    await goToPage(wrapper, 2)
+    expect(assetNames(wrapper)[0]).toBe('out-100.png')
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '101–200 of 250'
+    )
+
+    await goToPage(wrapper, 1)
+
+    expect(assetNames(wrapper)[0]).toBe('out-0.png')
+    expect(timesAskedFor(0), 'page 1 comes from the cache').toBe(1)
+    expect(timesAskedFor(100), 'page 2 was asked for only once').toBe(1)
+  })
+
+  it('gets the next page ready while the user looks at this one', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud()
+
+    await nextPagePrefetched(100)
+    expect(asked()).toEqual([FIRST_PAGE, { ...FIRST_PAGE, offset: 100, after: 'cursor-100' }])
+
+    await goToPage(wrapper, 2)
+    expect(assetNames(wrapper)[0]).toBe('out-100.png')
+    expect(timesAskedFor(100), 'the ready page is used').toBe(1)
+  })
+
+  it('scrolls to the top when another page opens', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud()
+    await nextPagePrefetched(100)
+    const scroller = wrapper.get('[data-testid="assets-view"]').element
+    const scrolled = new Promise((resolve) =>
+      scroller.addEventListener('scroll', resolve, { once: true })
+    )
+    scroller.scrollTop = scroller.scrollHeight
+    await scrolled
+
+    await goToPage(wrapper, 2)
+    await new Promise(requestAnimationFrame)
+
+    expect(scroller.scrollTop).toBe(0)
+  })
+
+  it('shows the last page clicked when an earlier page arrives late, and asks again for a page that a newer one replaced', async () => {
+    let finishPageTwo: (page: CloudAssetPage | null) => void = () => {}
+    listAssets.mockImplementation((_id: string, request: PageRequest) =>
+      request.offset === 100
+        ? new Promise((resolve) => (finishPageTwo = resolve))
+        : Promise.resolve(outputPage(400, request))
+    )
+    const wrapper = await mountCloud()
+    await nextPagePrefetched(100)
+
+    await goToPage(wrapper, 2)
+    await goToPage(wrapper, 3)
+    expect(assetNames(wrapper)[0]).toBe('out-200.png')
+
+    finishPageTwo(null)
+    await flushPromises()
+
+    expect(assetNames(wrapper)[0], 'the late page does not replace page 3').toBe('out-200.png')
+    expect(wrapper.find('[data-testid="assets-empty"]').exists()).toBe(false)
+
+    listAssets.mockImplementation(async (_id: string, request: PageRequest) =>
+      outputPage(400, request)
+    )
+    await goToPage(wrapper, 2)
+
+    expect(assetNames(wrapper)[0]).toBe('out-100.png')
+    expect(timesAskedFor(100)).toBe(2)
+  })
+
+  it('recounts from the first page when a stale jump comes back empty', async () => {
+    let total = 250
+    listAssets.mockImplementation(async (_id: string, request: PageRequest) =>
+      outputPage(total, request)
+    )
+    const wrapper = await mountCloud()
+    await nextPagePrefetched(100)
+    total = 150
+
+    await goToPage(wrapper, 3)
+
+    expect(timesAskedFor(0)).toBe(2)
+    expect(assetNames(wrapper)[0]).toBe('out-0.png')
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '1–100 of 150'
+    )
+  })
+
+  it('asks again for a page that a newer page replaced while it loaded', async () => {
+    let finishFirstPageTwo: (page: CloudAssetPage | null) => void = () => {}
+    listAssets.mockImplementation((_id: string, request: PageRequest) =>
+      request.offset === 100 && timesAskedFor(100) === 1
+        ? new Promise((resolve) => (finishFirstPageTwo = resolve))
+        : Promise.resolve(outputPage(400, request))
+    )
+    const wrapper = await mountCloud()
+    await nextPagePrefetched(100)
+
+    await goToPage(wrapper, 3)
+    await goToPage(wrapper, 2)
+    finishFirstPageTwo(null)
+    await flushPromises()
+
+    expect(timesAskedFor(100)).toBe(2)
+    expect(assetNames(wrapper)[0]).toBe('out-100.png')
+    expect(wrapper.find('[data-testid="assets-empty"]').exists()).toBe(false)
+  })
+
+  it('asks Cloud for nothing more once the page is closed', async () => {
+    let finishFirstPage: (page: CloudAssetPage) => void = () => {}
+    listAssets.mockImplementation((_id: string, request: PageRequest) =>
+      request.offset === 0
+        ? new Promise((resolve) => (finishFirstPage = resolve))
+        : Promise.resolve(outputPage(250, request))
+    )
+    const wrapper = await mountCloud()
+
+    wrapper.unmount()
+    finishFirstPage(outputPage(250, FIRST_PAGE))
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    expect(timesAskedFor(100), 'no next page is fetched for a closed page').toBe(0)
+  })
+
+  it('asks Cloud again from page 1 after Refresh', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud()
+    await nextPagePrefetched(100)
+    await goToPage(wrapper, 2)
+
+    await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(timesAskedFor(0)).toBe(2)
+    expect(assetNames(wrapper)[0]).toBe('out-0.png')
+  })
+
+  it('starts again from page 1 with fresh pages when the user leaves Comfy Cloud and comes back', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud([
+      localBuild('lab', 'Video Lab'),
+      cloudBuild('cloud', 'Comfy Cloud')
+    ])
+    await openBuildPicker(wrapper)
+    await pickBuild('cloud')
+    await nextPagePrefetched(100)
+    await goToPage(wrapper, 2)
+
+    await openBuildPicker(wrapper)
+    await pickBuild('lab')
+    await openBuildPicker(wrapper)
+    await pickBuild('cloud')
+
+    expect(assetNames(wrapper)[0]).toBe('out-0.png')
+    expect(timesAskedFor(0)).toBe(2)
+  })
+
+  it('starts again from page 1 with fresh pages when the user moves to another workspace', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud([{ ...cloudBuild('cloud', 'Comfy Cloud'), sourceId: 'cloud' }])
+    await nextPagePrefetched(100)
+    await goToPage(wrapper, 2)
+
+    useDashboardScopeStore().selectWorkspace('team-b')
+    await flushPromises()
+
+    expect(switchWorkspace).toHaveBeenLastCalledWith('team-b', 'chosen')
+    expect(timesAskedFor(0)).toBe(2)
+    expect(assetNames(wrapper)[0]).toBe('out-0.png')
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '1–100 of 250'
+    )
+  })
+
+  it('shows no type counts for Comfy Cloud, because Cloud cannot count by type', async () => {
+    cloudOutputs(30)
+    const wrapper = await mountCloud()
+
+    expect(wrapper.get('[data-testid="assets-kind-all"]').text()).toBe('All')
+    expect(wrapper.get('[data-testid="assets-kind-3d"]').text()).toBe('3D')
+  })
+
+  it('asks Cloud for every output of the picked type, not only those on the open page', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud()
+    await nextPagePrefetched(100)
+
+    await wrapper.get('[data-testid="assets-kind-3d"]').trigger('click')
+    await flushPromises()
+
+    expect(asked()).toContainEqual({ ...FIRST_PAGE, kind: '3d' })
+    expect(assetNames(wrapper)).toEqual([
+      'mesh-7.glb',
+      'mesh-57.glb',
+      'mesh-107.glb',
+      'mesh-157.glb',
+      'mesh-207.glb'
+    ])
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '1–5 of 5'
+    )
+
+    await wrapper.get('[data-testid="assets-kind-all"]').trigger('click')
+    await flushPromises()
+
+    expect(assetNames(wrapper)[0]).toBe('out-0.png')
+    expect(timesAskedFor(0), 'All comes back from the cache').toBe(2)
+  })
+
+  it("hides the old query's pages while the picked type loads", async () => {
+    let finishThreeD: (page: CloudAssetPage) => void = () => {}
+    listAssets.mockImplementation((_id: string, request: PageRequest) =>
+      request.kind === '3d'
+        ? new Promise((resolve) => (finishThreeD = resolve))
+        : Promise.resolve(outputPage(250, request))
+    )
+    const wrapper = await mountCloud()
+    expect(wrapper.find('[data-testid="assets-pagination"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="assets-kind-3d"]').trigger('click')
+    await flushPromises()
+
+    expect(
+      wrapper.find('[data-testid="assets-pagination"]').exists(),
+      'no page of the old query can be clicked'
+    ).toBe(false)
+
+    finishThreeD(outputPage(250, { ...FIRST_PAGE, kind: '3d' }))
+    await flushPromises()
+
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '1–5 of 5'
+    )
+  })
+
+  it('says nothing matches when Comfy Cloud has no outputs of the picked type', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud()
+
+    await wrapper.get('[data-testid="assets-kind-audio"]').trigger('click')
+    await flushPromises()
+
+    expect(asked()).toContainEqual({ ...FIRST_PAGE, kind: 'audio' })
+    expect(shownText(wrapper.get('[data-testid="assets-empty"]').element)).toBe(
+      'No matching assets Try another type or search.'
+    )
+  })
+
+  it('explains the scan limit even when a type did not match any of the scanned Cloud outputs', async () => {
+    listAssets.mockImplementation(async (_id: string, request: PageRequest) =>
+      request.kind ? { assets: [], total: 0, scanLimit: 50_000 } : outputPage(65_000, request)
+    )
+    const wrapper = await mountCloud()
+
+    await wrapper.get('[data-testid="assets-kind-3d"]').trigger('click')
+    await flushPromises()
+
+    expect(shownText(wrapper.get('[data-testid="assets-scan-limit"]').element)).toBe(
+      'Type filters cover the first 50000 Cloud outputs in this sort order.'
+    )
+  })
+
+  it('asks Cloud for bigger pages from page 1 when the user picks another page size', async () => {
+    cloudOutputs(500)
+    const wrapper = await mountCloud()
+    await nextPagePrefetched(100)
+    await goToPage(wrapper, 2)
+
+    await wrapper.get('[data-testid="assets-page-size"]').trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    const twoHundred = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (option) => option.textContent?.trim() === '200'
+    )!
+    twoHundred.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    expect(asked()).toContainEqual({ offset: 0, limit: 200, order: 'newest' })
+    expect(assetNames(wrapper)[0]).toBe('out-0.png')
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '1–200 of 500'
+    )
   })
 })

@@ -7,7 +7,9 @@ import type QuickInstallModal from '../views/QuickInstallModal.vue'
 import type FirstUseTakeover from '../views/FirstUseTakeover.vue'
 import type { ChangeSetupDraft } from '../lib/setupPlan'
 import { useOverlay, type FlowComponent, type Overlay } from '../composables/useOverlay'
+import { keepsComfyRunningWhenWindowCloses } from '../composables/useReturnToDashboardConfirm'
 import { useProgressStore } from '../stores/progressStore'
+import { useInstallationStore } from '../stores/installationStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { isUninstallOpKind } from '../lib/progressOpKind'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
@@ -101,6 +103,7 @@ export interface UsePanelOverlaysApi {
   currentOverlay: ReturnType<typeof useOverlay>['current']
   openOverlay: ReturnType<typeof useOverlay>['openOverlay']
   closeOverlay: ReturnType<typeof useOverlay>['closeOverlay']
+  answerCloseRequest: () => Promise<{ cleared: boolean } | { defer: true }>
 
   handleShowProgress: (opts: ShowProgressOpts) => Promise<void>
   handleProgressClose: () => void
@@ -140,8 +143,13 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     firstUseRef
   } = opts
   const progressStore = useProgressStore()
+  const installationStore = useInstallationStore()
   const dashboardScope = useDashboardScopeStore()
-  const { current: currentOverlay, openOverlay, closeOverlay } = useOverlay()
+  const {
+    current: currentOverlay,
+    openOverlay,
+    closeOverlay: confirmAndCloseOverlay
+  } = useOverlay()
 
   watch(
     currentOverlay,
@@ -216,6 +224,34 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       operationName,
       onCancel: () => progressStore.cancelOperation(id)
     })
+  }
+
+  function showsLocalStartInFlight(overlay: Overlay | null): boolean {
+    if (overlay?.kind !== 'takeover' || !overlay.installationId) return false
+    const op = progressStore.operations.get(overlay.installationId)
+    const installation = installationStore.getById(overlay.installationId)
+    return op?.opKind === 'launch' && !op.finished && installation?.sourceCategory === 'local'
+  }
+
+  async function leavesLocalStartRunning(overlay: Overlay | null): Promise<boolean> {
+    return (
+      showsLocalStartInFlight(overlay) &&
+      (await keepsComfyRunningWhenWindowCloses()) &&
+      currentOverlay.value === overlay
+    )
+  }
+
+  async function closeOverlay(): Promise<boolean> {
+    if (!(await leavesLocalStartRunning(currentOverlay.value))) return confirmAndCloseOverlay()
+    currentOverlay.value = null
+    return true
+  }
+
+  async function answerCloseRequest(): Promise<{ cleared: boolean } | { defer: true }> {
+    const overlay = currentOverlay.value
+    if (overlay === null) return { defer: true }
+    if (await leavesLocalStartRunning(overlay)) return { defer: true }
+    return { cleared: await confirmAndCloseOverlay() }
   }
 
   async function handleShowProgress(showOpts: ShowProgressOpts): Promise<void> {
@@ -338,6 +374,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     currentOverlay,
     openOverlay,
     closeOverlay,
+    answerCloseRequest,
     handleShowProgress,
     handleProgressClose,
     openFlowTakeover,

@@ -4,7 +4,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import '../assets/main.css'
 import AppPageHost from './AppPageHost.vue'
-import type { AppPagePlacement, AppPageStatus } from '../types/ipc'
+import { appPageShown, sidebarHovered } from './appPageCover'
+import type { AppOutputAction, AppOutputs, AppPagePlacement, AppPageStatus } from '../types/ipc'
 
 const PAGE_LEFT = 260
 const PAGE_TOP = 12
@@ -16,6 +17,7 @@ const FRAME =
 const showAppPage = vi.fn<(appId: string, placement: AppPagePlacement) => Promise<AppPageStatus>>()
 const captureAppPage = vi.fn<() => Promise<string | null>>()
 const hideAppPage = vi.fn()
+const sendAppOutputAction = vi.fn<(action: AppOutputAction) => void>()
 
 const mountPointFillsThePage = document.createElement('style')
 mountPointFillsThePage.textContent = '[data-apps-page] > div { display: flex; flex: 1 1 auto; }'
@@ -24,6 +26,8 @@ document.head.append(mountPointFillsThePage)
 let page: HTMLElement
 let tellStatusOf: (appId: string | null, status: AppPageStatus) => void = () => {}
 let stoppedListening = false
+let tellOutputsOf: (appId: string, outputs: AppOutputs | null) => void = () => {}
+let stoppedListeningForOutputs = false
 
 function tellStatus(status: AppPageStatus): void {
   tellStatusOf('remove-background', status)
@@ -35,6 +39,36 @@ async function nextFrame(): Promise<void> {
 }
 
 const CUTOUT = { appId: 'remove-background', title: 'Remove Background' }
+
+function pngBytes(): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(atob(FRAME.split(',')[1]!), (char) => char.charCodeAt(0))
+}
+
+const TWO_CUTOUTS: AppOutputs = {
+  items: [
+    { name: 'cutout-1.png', mimeType: 'image/png', bytes: pngBytes(), tags: [], workflow: true },
+    { name: 'cutout-2.png', mimeType: 'image/png', bytes: pngBytes(), tags: [], workflow: false }
+  ],
+  index: 1
+}
+
+function outputDialog(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-testid="output-detail"]')
+}
+
+function inOutputDialog(testId: string): HTMLElement | null {
+  return outputDialog()?.querySelector<HTMLElement>(`[data-testid="${testId}"]`) ?? null
+}
+
+async function showOutputs(
+  appId = 'remove-background',
+  outputs: AppOutputs | null = TWO_CUTOUTS
+): Promise<void> {
+  tellOutputsOf(appId, outputs)
+  await flushPromises()
+  await nextFrame()
+  await nextFrame()
+}
 
 async function mountHost(status: AppPageStatus = 'ready') {
   showAppPage.mockResolvedValue(status)
@@ -56,7 +90,9 @@ beforeAll(() => browserPage.viewport(1280, 800))
 
 beforeEach(() => {
   vi.clearAllMocks()
+  sidebarHovered.value = false
   stoppedListening = false
+  stoppedListeningForOutputs = false
   page = document.createElement('div')
   page.dataset.appsPage = ''
   page.style.cssText = `position: fixed; display: flex; left: ${PAGE_LEFT}px; top: ${PAGE_TOP}px; width: ${PAGE_WIDTH}px; height: ${PAGE_HEIGHT}px`
@@ -71,7 +107,14 @@ beforeEach(() => {
       return () => {
         stoppedListening = true
       }
-    }
+    },
+    onAppOutputs: (listener: (appId: string, outputs: AppOutputs | null) => void) => {
+      tellOutputsOf = listener
+      return () => {
+        stoppedListeningForOutputs = true
+      }
+    },
+    sendAppOutputAction
   }
 })
 
@@ -91,7 +134,8 @@ describe('AppPageHost', () => {
       height: PAGE_HEIGHT,
       cornerRadius: 14,
       justOpened: true,
-      retry: false
+      retry: false,
+      focus: false
     })
   })
 
@@ -229,11 +273,9 @@ describe('AppPageHost', () => {
     showAppPage.mockClear()
 
     const menu = coverPartOfThePage()
-    await nextFrame()
-    await nextFrame()
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
 
     expect(captureAppPage).toHaveBeenCalledTimes(1)
-    expect(hideAppPage).toHaveBeenCalledTimes(1)
     expect(wrapper.get('[data-testid="app-page-frozen-frame"]').attributes('src')).toBe(FRAME)
     expect(showAppPage).not.toHaveBeenCalled()
 
@@ -242,6 +284,26 @@ describe('AppPageHost', () => {
     await nextFrame()
 
     expect(showAppPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('swaps the app for a still frame while the pointer is over the sidebar, then brings it back', async () => {
+    const wrapper = await mountHost()
+    expect(appPageShown.value).toBe(true)
+    showAppPage.mockClear()
+
+    sidebarHovered.value = true
+    await nextFrame()
+
+    expect(captureAppPage).toHaveBeenCalledTimes(1)
+    expect(hideAppPage).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="app-page-frozen-frame"]').exists()).toBe(true)
+    expect(appPageShown.value).toBe(false)
+
+    sidebarHovered.value = false
+    await nextFrame()
+
+    expect(showAppPage).toHaveBeenCalledTimes(1)
+    expect(appPageShown.value).toBe(true)
   })
 
   it('leaves the app up for a menu that opens beside the host', async () => {
@@ -273,5 +335,159 @@ describe('AppPageHost', () => {
 
     expect(hideAppPage).toHaveBeenCalledTimes(1)
     expect(stoppedListening).toBe(true)
+    expect(stoppedListeningForOutputs).toBe(true)
+  })
+})
+
+describe('AppPageHost outputs', () => {
+  afterEach(async () => {
+    inOutputDialog('output-detail-close')?.click()
+    await flushPromises()
+  })
+
+  it('opens the output dialog over the app with the outputs its page sent, and swaps the app for a still frame', async () => {
+    await mountHost()
+
+    await showOutputs()
+
+    expect(outputDialog()?.querySelector('h2')?.textContent?.trim()).toBe('cutout-2.png')
+    expect(inOutputDialog('output-detail-image')?.getAttribute('src')).toMatch(/^blob:/)
+    expect(inOutputDialog('output-detail-thumb-0')).not.toBeNull()
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
+  })
+
+  it("ignores outputs from another app's page", async () => {
+    await mountHost()
+
+    await showOutputs('upscale')
+
+    expect(outputDialog()).toBeNull()
+  })
+
+  it('sends Download back to the page for the output on show, and stays open', async () => {
+    await mountHost()
+    await showOutputs()
+
+    inOutputDialog('output-detail-download')!.click()
+    await flushPromises()
+
+    expect(sendAppOutputAction).toHaveBeenCalledExactlyOnceWith({ action: 'download', index: 1 })
+    expect(outputDialog()).not.toBeNull()
+  })
+
+  it('offers Open workflow only for an output with a saved workflow, sends it to the page and closes', async () => {
+    await mountHost()
+    await showOutputs()
+    expect(inOutputDialog('output-detail-workflow')).toBeNull()
+
+    inOutputDialog('output-detail-thumb-0')!.click()
+    await flushPromises()
+    inOutputDialog('output-detail-workflow')!.click()
+    await flushPromises()
+
+    expect(sendAppOutputAction).toHaveBeenCalledExactlyOnceWith({
+      action: 'open-workflow',
+      index: 0
+    })
+    expect(outputDialog()).toBeNull()
+  })
+
+  it('says where a result on this computer is saved, and sends Show in folder to the page', async () => {
+    await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [first!, { ...second!, savedOn: 'computer', folder: '/Users/me/ComfyUI/output/apps' }],
+      index: 1
+    })
+
+    expect(inOutputDialog('output-detail-saved-in')?.textContent).toContain('apps')
+    expect(inOutputDialog('output-detail-saved-in')?.textContent).toContain(
+      '/Users/me/ComfyUI/output'
+    )
+    expect(inOutputDialog('output-detail-view-in-assets')).toBeNull()
+
+    inOutputDialog('output-detail-show-in-folder')!.click()
+    await flushPromises()
+
+    expect(sendAppOutputAction).toHaveBeenCalledExactlyOnceWith({
+      action: 'show-in-folder',
+      index: 1
+    })
+    expect(outputDialog()).not.toBeNull()
+  })
+
+  it('shows no saved place for a result on this computer whose folder Desktop does not know', async () => {
+    await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [first!, { ...second!, savedOn: 'computer' }],
+      index: 1
+    })
+
+    expect(inOutputDialog('output-detail-saved-in')).toBeNull()
+    expect(inOutputDialog('output-detail-show-in-folder')).toBeNull()
+  })
+
+  it('says a Cloud result is saved in Comfy Cloud assets, and View in Assets asks for it by name', async () => {
+    const wrapper = await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [first!, { ...second!, savedOn: 'cloud' }],
+      index: 1
+    })
+
+    expect(inOutputDialog('output-detail-saved-in')?.textContent).toContain('Comfy Cloud assets')
+    expect(inOutputDialog('output-detail-show-in-folder')).toBeNull()
+
+    inOutputDialog('output-detail-view-in-assets')!.click()
+    await flushPromises()
+
+    expect(wrapper.emitted('view-in-assets')).toEqual([['cutout-2.png']])
+    expect(sendAppOutputAction).not.toHaveBeenCalled()
+    expect(outputDialog()).toBeNull()
+  })
+
+  it('closes the dialog when the page that sent the outputs is replaced', async () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    await mountHost()
+    await showOutputs()
+
+    await showOutputs('upscale', null)
+    expect(outputDialog()).not.toBeNull()
+
+    await showOutputs('remove-background', null)
+
+    expect(outputDialog()).toBeNull()
+    expect(revoke).toHaveBeenCalledTimes(2)
+    revoke.mockRestore()
+  })
+
+  it('brings the app back with the keyboard once the dialog closes, and lets go of the files', async () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    await mountHost()
+    await showOutputs()
+    showAppPage.mockClear()
+
+    inOutputDialog('output-detail-close')!.click()
+    await flushPromises()
+    await nextFrame()
+    await nextFrame()
+
+    expect(outputDialog()).toBeNull()
+    expect(showAppPage).toHaveBeenCalledExactlyOnceWith(
+      'remove-background',
+      expect.objectContaining({ focus: true, justOpened: false })
+    )
+    expect(revoke).toHaveBeenCalledTimes(2)
+
+    page.style.width = `${PAGE_WIDTH - 180}px`
+    await nextFrame()
+    await nextFrame()
+
+    expect(showAppPage).toHaveBeenLastCalledWith(
+      'remove-background',
+      expect.objectContaining({ focus: false })
+    )
+    revoke.mockRestore()
   })
 })

@@ -4,13 +4,18 @@ import { useI18n } from 'vue-i18n'
 import { until } from '@vueuse/core'
 import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
 import { buildProgressOf, useBuildProgress } from '../../composables/useBuildProgress'
-import { useInstallContextMenu } from '../../composables/useInstallContextMenu'
+import { useCanPromoteToWorkspace } from '../../composables/useCanPromoteToWorkspace'
+import {
+  isPromotingToWorkspace,
+  useInstallContextMenu
+} from '../../composables/useInstallContextMenu'
 import { useModal } from '../../composables/useModal'
 import { useQuickUpdate } from '../../composables/useQuickUpdate'
 import { openInstallManager } from '../../lib/openInstallManager'
 import { useProgressStore } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation, ShowProgressOpts } from '../../types/ipc'
+import { homeBuildStatus, isBuildOpenBlocked } from './homeBuild'
 
 export interface BuildMenuHost {
   launch: (build: Installation, opts?: { isRestart?: boolean }) => void | Promise<void>
@@ -26,6 +31,7 @@ export interface BuildMenuEntry {
   danger?: boolean
   disabled?: boolean
   title?: string
+  hint?: string
 }
 
 const BUILD_MENU_HOST: InjectionKey<BuildMenuHost> = Symbol('buildMenuHost')
@@ -63,17 +69,34 @@ export function useBuildMenu(build: () => Installation) {
       options ? openInstallManager(inst, options) : void host.openDetails(inst),
     onShowProgress: (opts) => void host.showProgress(opts),
     onUpdate: runQuickUpdate,
+    canPromoteToWorkspace: useCanPromoteToWorkspace(),
     autoStart: useAutoStartBuild()
   })
+  const status = computed(() => homeBuildStatus(build(), sessionStore))
+  const canLaunch = computed(
+    () =>
+      !install.progress.value &&
+      !isPromotingToWorkspace(build()) &&
+      !isBuildOpenBlocked(status.value) &&
+      status.value !== 'starting'
+  )
 
   function isLocal(inst: Installation): boolean {
     return inst.sourceCategory !== 'cloud'
   }
 
+  function isStarting(inst: Installation): boolean {
+    const operation = sessionStore.operationInstances.get(inst.id)
+    return (
+      sessionStore.isLaunching(inst.id) ||
+      (operation?.actionId === 'launch' && operation.sessionId === undefined)
+    )
+  }
+
   const items = computed<BuildMenuEntry[]>(() => {
     const inst = build()
     const progress = buildProgressOf(progressStore, inst.id)
-    const running = !progress && isLocal(inst) && sessionStore.isRunning(inst.id)
+    const running = canLaunch.value && isLocal(inst) && status.value === 'running'
     const items: BuildMenuEntry[] = []
 
     const now: BuildMenuEntry[] = []
@@ -88,19 +111,25 @@ export function useBuildMenu(build: () => Installation) {
         { id: 'restart', label: t('actions.restart'), icon: RotateCw },
         { id: 'stop', label: t('actions.stop'), icon: CircleStop }
       )
-    } else if (!sessionStore.isStopping(inst.id) && !sessionStore.isLaunching(inst.id)) {
+    } else if (isLocal(inst) && isStarting(inst)) {
+      now.push(
+        { id: 'view-logs', label: t('installProgress.viewLogs'), icon: ScrollText },
+        { id: 'cancel', label: t('common.cancel'), icon: X }
+      )
+    } else if (canLaunch.value) {
       now.push({ id: 'launch', label: t('actions.launch'), icon: Play })
     }
     startsGroup(now, items)
 
     const existing = installMenu
       .getMenuItems(inst)
-      .map(({ id, label, icon, disabled, title, style, separator }): BuildMenuEntry => ({
+      .map(({ id, label, icon, disabled, title, hint, style, separator }): BuildMenuEntry => ({
         id,
         label,
         icon,
         disabled,
         title,
+        hint,
         separator,
         danger: style === 'danger'
       }))
@@ -145,19 +174,26 @@ export function useBuildMenu(build: () => Installation) {
     await host.launch(inst, { isRestart: true })
   }
 
+  async function cancelLeftStart(inst: Installation): Promise<void> {
+    await window.api.cancelOperation(inst.id)
+    await window.api.stopComfyUI(inst.id)
+  }
+
   async function run(id: string, opts: { confirmed?: boolean } = {}): Promise<void> {
     const inst = build()
     switch (id) {
       case 'launch':
-        return host.launch(inst)
+        if (canLaunch.value) return host.launch(inst)
+        return
       case 'view-logs':
         if (install.progress.value) install.viewLogs()
         else openInstallManager(inst, { initialTab: 'console' })
         return
       case 'cancel':
-        return install.cancel()
+        return install.progress.value ? install.cancel() : cancelLeftStart(inst)
       case 'restart':
-        return restart(inst)
+        if (canLaunch.value) return restart(inst)
+        return
       default:
         return installMenu.triggerAction(id, inst, opts)
     }

@@ -1,6 +1,12 @@
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { AppPageStatus, ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
+import type {
+  AppOutputs,
+  AppPageStatus,
+  ElectronApi,
+  ResolvedTheme,
+  AdoptPromptRequest
+} from '../types/ipc'
 
 export function buildElectronApi(): ElectronApi {
   return {
@@ -74,7 +80,8 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('update-installation', installationId, data),
 
     stopComfyUI: (installationId) => ipcRenderer.invoke('stop-comfyui', installationId),
-    focusComfyWindow: (installationId) => ipcRenderer.invoke('focus-comfy-window', installationId),
+    focusComfyWindow: (installationId, pickerWorkspaceId) =>
+      ipcRenderer.invoke('focus-comfy-window', installationId, pickerWorkspaceId),
 
     terminalSubscribe: (installationId) => ipcRenderer.invoke('terminal-subscribe', installationId),
     terminalUnsubscribe: (installationId) =>
@@ -94,12 +101,15 @@ export function buildElectronApi(): ElectronApi {
     closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
-    listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
+    openPageInNewWindow: (page) => ipcRenderer.send('comfy-window:open-page-in-new-window', page),
+    listAssets: (installationId, page) => ipcRenderer.invoke('assets:list', installationId, page),
     listLocalAssets: (installationId?: string) =>
       ipcRenderer.invoke('assets:list-local', installationId),
     downloadAsset: (source, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
     revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),
+    findCloudAsset: (installationId, name) =>
+      ipcRenderer.invoke('assets:find', installationId, name),
     copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
@@ -123,9 +133,14 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('apps:page-closed', handler)
       return () => ipcRenderer.removeListener('apps:page-closed', handler)
     },
+    onAppOutputs: (callback) => {
+      const handler = (_event: IpcRendererEvent, appId: string, outputs: AppOutputs | null): void =>
+        callback(appId, outputs)
+      ipcRenderer.on('apps:outputs', handler)
+      return () => ipcRenderer.removeListener('apps:outputs', handler)
+    },
+    sendAppOutputAction: (action) => ipcRenderer.send('apps:output-action', action),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
-    resolveStartupRestoreReveal: (result) =>
-      ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
     openGlobalSettings: (tab, opts) =>
       ipcRenderer.send(
         'comfy-titlepopup:open-global-settings',
@@ -242,6 +257,13 @@ export function buildElectronApi(): ElectronApi {
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     getStableTags: (): Promise<string[]> => ipcRenderer.invoke('get-stable-tags'),
     getCloudUserTier: () => ipcRenderer.invoke('get-cloud-user-tier'),
+    refreshCreditBalance: () => ipcRenderer.invoke('credit-balance:refresh'),
+    onCreditBalanceChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, state: unknown) =>
+        callback(state as Parameters<typeof callback>[0])
+      ipcRenderer.on('credit-balance:changed', handler)
+      return () => ipcRenderer.removeListener('credit-balance:changed', handler)
+    },
     getCloudFreeRunsEnabled: () => ipcRenderer.invoke('get-cloud-free-runs-enabled'),
     quitApp: () => ipcRenderer.invoke('quit-app'),
     relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
@@ -552,7 +574,6 @@ export function buildElectronApi(): ElectronApi {
             actionId?: string
             version?: string | null
             settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
-            startupRestore?: boolean
           }
         )
       ipcRenderer.on('panel-trigger-overlay', handler)

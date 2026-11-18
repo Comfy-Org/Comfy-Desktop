@@ -379,9 +379,9 @@ export function isPopupVisible(app: ElectronApplication, marker: string): Promis
         for (const child of win.contentView.children) {
           if (!(child instanceof WebContentsView)) continue
           if (!child.webContents.getURL().includes(m)) continue
-          if (!child.getVisible()) return false
+          if (!child.getVisible()) continue
           const b = child.getBounds()
-          return b.width > 0 && b.height > 0
+          if (b.width > 0 && b.height > 0) return true
         }
       }
       return false
@@ -394,13 +394,11 @@ export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<v
   if (id === null) return
   if (!(await isPopupVisible(app, 'comfyTitlePopup.html'))) return
   await evalWithRetry(() =>
-    app.evaluate(({ webContents }) => {
-      const wc = webContents
-        .getAllWebContents()
-        .find((w) => w.getURL().includes('comfyTitlePopup.html'))
-      if (!wc) return
+    app.evaluate(({ webContents }, popupId) => {
+      const wc = webContents.fromId(popupId)
+      if (!wc || wc.isDestroyed()) return
       return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
-    })
+    }, id)
   ).catch(() => {})
   await expect
     .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {

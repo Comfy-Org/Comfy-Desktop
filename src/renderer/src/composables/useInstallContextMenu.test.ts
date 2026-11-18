@@ -29,6 +29,7 @@ const apiMock = {
   getSnapshots: vi.fn().mockResolvedValue({ snapshots: [] }),
   exportSnapshot: vi.fn().mockResolvedValue({ ok: true }),
   stopComfyUI: vi.fn().mockResolvedValue(undefined),
+  closeComfyWindow: vi.fn().mockResolvedValue(true),
   comfybuilder: {
     promoteLocalInstance: vi.fn().mockResolvedValue({ ok: true })
   }
@@ -419,7 +420,7 @@ describe('useInstallContextMenu - export latest snapshot', () => {
 
   it('shows Export Snapshot for an installed local install', () => {
     const { menu } = mountHarness(makeInstall({ sourceCategory: 'local' }))
-    expect(findItem(menu.ctxMenuItems.value, 'share')?.label).toBe('Export Snapshot')
+    expect(findItem(menu.ctxMenuItems.value, 'share')?.label).toBe('Export snapshot')
   })
 
   it('hides Export Snapshot for cloud installs (snapshots are local-only)', () => {
@@ -484,7 +485,7 @@ describe('useInstallContextMenu - promote to workspace', () => {
   it('shows the item only when the dashboard eligibility gate accepts the install', () => {
     const eligible = mountHarness(makeInstall(), undefined, () => true)
     expect(findItem(eligible.menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
-      label: 'Upload Build',
+      label: 'Upload build',
       hint: 'Upload this build to Comfy Developer Platform.',
       hintUrl: 'https://platform.comfy.org/profile/deploy',
       hintLinkLabel: 'Read more'
@@ -547,7 +548,7 @@ describe('useInstallContextMenu - promote to workspace', () => {
   })
 })
 
-describe('useInstallContextMenu - stop (shut down backend, keep window)', () => {
+describe('useInstallContextMenu - stop and close the build window', () => {
   beforeEach(() => {
     apiMock.stopComfyUI.mockClear()
     modalMock.confirm.mockReset()
@@ -579,7 +580,7 @@ describe('useInstallContextMenu - stop (shut down backend, keep window)', () => 
     expect(findItem(menu.ctxMenuItems.value, 'stop')).toBeUndefined()
   })
 
-  it('shows a danger confirm and stops the backend on confirm', async () => {
+  it('shows a danger confirm, stops the backend, and closes its window on confirm', async () => {
     modalMock.confirm.mockResolvedValue(true)
     const inst = makeInstall()
     const { menu } = mountHarnessWithManage(() => {})
@@ -589,13 +590,37 @@ describe('useInstallContextMenu - stop (shut down backend, keep window)', () => 
     expect(modalMock.confirm).toHaveBeenCalledTimes(1)
     const args = modalMock.confirm.mock.calls[0]![0]
     expect(args.title).toBe('Stop ComfyUI')
+    expect(args.message).toBe('This will stop ComfyUI. Any unsaved work will be lost.')
     expect(args.confirmLabel).toBe('Stop')
     expect(args.confirmStyle).toBe('danger')
     expect(apiMock.stopComfyUI).toHaveBeenCalledTimes(1)
     expect(apiMock.stopComfyUI).toHaveBeenCalledWith(inst.id)
+    expect(apiMock.closeComfyWindow).toHaveBeenCalledExactlyOnceWith(inst.id, {
+      skipConfirm: true,
+      keepDesktopOpen: true
+    })
   })
 
-  it('does not stop the backend when the confirm is cancelled', async () => {
+  it('waits for the backend to stop before closing its window', async () => {
+    modalMock.confirm.mockResolvedValue(true)
+    const stopped = Promise.withResolvers<void>()
+    apiMock.stopComfyUI.mockReturnValueOnce(stopped.promise)
+    const inst = makeInstall()
+    const { menu } = mountHarnessWithManage(() => {})
+
+    const pending = menu.triggerAction('stop', inst)
+    await vi.waitFor(() => expect(apiMock.stopComfyUI).toHaveBeenCalledWith(inst.id))
+    expect(apiMock.closeComfyWindow).not.toHaveBeenCalled()
+
+    stopped.resolve()
+    await pending
+    expect(apiMock.closeComfyWindow).toHaveBeenCalledExactlyOnceWith(inst.id, {
+      skipConfirm: true,
+      keepDesktopOpen: true
+    })
+  })
+
+  it('does not stop the backend or close its window when the confirm is cancelled', async () => {
     modalMock.confirm.mockResolvedValue(false)
     const inst = makeInstall()
     const { menu } = mountHarnessWithManage(() => {})
@@ -603,6 +628,7 @@ describe('useInstallContextMenu - stop (shut down backend, keep window)', () => 
     await menu.triggerAction('stop', inst)
 
     expect(apiMock.stopComfyUI).not.toHaveBeenCalled()
+    expect(apiMock.closeComfyWindow).not.toHaveBeenCalled()
   })
 
   it('surfaces a stop failure via an alert', async () => {
@@ -615,5 +641,35 @@ describe('useInstallContextMenu - stop (shut down backend, keep window)', () => 
 
     expect(modalMock.alert).toHaveBeenCalledTimes(1)
     expect(modalMock.alert.mock.calls[0]![0].message).toBe('kill failed')
+    expect(apiMock.closeComfyWindow).not.toHaveBeenCalled()
+  })
+
+  it('accepts a stopped build with no open window', async () => {
+    modalMock.confirm.mockResolvedValue(true)
+    apiMock.closeComfyWindow.mockResolvedValueOnce(false)
+    const { menu } = mountHarnessWithManage(() => {})
+
+    await menu.triggerAction('stop', makeInstall())
+
+    expect(apiMock.stopComfyUI).toHaveBeenCalledExactlyOnceWith('inst-1')
+    expect(apiMock.closeComfyWindow).toHaveBeenCalledExactlyOnceWith('inst-1', {
+      skipConfirm: true,
+      keepDesktopOpen: true
+    })
+    expect(modalMock.alert).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a window-close failure via an alert', async () => {
+    modalMock.confirm.mockResolvedValue(true)
+    apiMock.closeComfyWindow.mockRejectedValueOnce(new Error('close failed'))
+    const { menu } = mountHarnessWithManage(() => {})
+
+    await menu.triggerAction('stop', makeInstall())
+
+    expect(apiMock.stopComfyUI).toHaveBeenCalledExactlyOnceWith('inst-1')
+    expect(modalMock.alert).toHaveBeenCalledExactlyOnceWith({
+      title: 'Stop',
+      message: 'close failed'
+    })
   })
 })

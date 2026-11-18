@@ -1,31 +1,55 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  useTemplateRef,
+  watch
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useResizeObserver } from '@vueuse/core'
 import { ChevronLeft } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
+import OutputDetailDialog from './OutputDetailDialog.vue'
+import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useCoveredByPage } from '../composables/useCoveredByPage'
-import type { AppPagePlacement, AppPageStatus } from '../types/ipc'
+import { appPageShown, sidebarHovered } from './appPageCover'
+import type {
+  AppOutputAction,
+  AppOutputs,
+  AppPagePlacement,
+  AppPageStatus,
+  AssetKind
+} from '../types/ipc'
 
 const { appId, title } = defineProps<{
   appId: string
   title: string
 }>()
 
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; 'view-in-assets': [name: string] }>()
 
 const { t } = useI18n()
 
 const host = useTemplateRef<HTMLElement>('host')
-const covered = useCoveredByPage(host)
+const coveredByPage = useCoveredByPage(host)
+const covered = computed(() => coveredByPage.value || sidebarHovered.value)
 const status = ref<AppPageStatus | null>(null)
 const frozenFrame = ref<string | null>(null)
+const outputs = shallowRef<OutputDetailItem[] | null>(null)
+const outputIndex = ref(0)
+const outputsShown = ref(0)
 
 let justOpened = true
 let retrying = false
+let focusPage = false
 let latestTurn = 0
 let stopStatusUpdates: (() => void) | null = null
+let stopOutputs: (() => void) | null = null
 
 function takePlacement(): AppPagePlacement | null {
   const element = host.value
@@ -40,10 +64,12 @@ function takePlacement(): AppPagePlacement | null {
     height: rect.height,
     cornerRadius,
     justOpened,
-    retry: retrying
+    retry: retrying,
+    focus: focusPage
   }
   justOpened = false
   retrying = false
+  focusPage = false
   return placement
 }
 
@@ -57,6 +83,7 @@ async function reveal(): Promise<void> {
   const turn = ++latestTurn
   const placement = takePlacement()
   if (!placement) return
+  appPageShown.value = true
   const shown = await window.api.showAppPage(appId, placement)
   if (turn !== latestTurn) return
   status.value = shown
@@ -72,6 +99,57 @@ async function conceal(): Promise<void> {
   await nextTick()
   if (turn !== latestTurn) return
   window.api.hideAppPage()
+  appPageShown.value = false
+}
+
+function outputKind(mimeType: string): AssetKind | null {
+  const kind = mimeType.split('/')[0]
+  return kind === 'image' || kind === 'video' || kind === 'audio' ? kind : null
+}
+
+function releaseOutputs(): void {
+  const shown = outputs.value
+  if (!shown) return
+  outputs.value = null
+  void nextTick(() => {
+    for (const item of shown) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+  })
+}
+
+function showOutputs(shown: AppOutputs): void {
+  releaseOutputs()
+  outputs.value = shown.items.map((output, i) => ({
+    key: `${i}:${output.name}`,
+    name: output.name,
+    kind: outputKind(output.mimeType),
+    sizeBytes: output.bytes.byteLength,
+    createdAt: null,
+    tags: output.tags,
+    previewUrl: URL.createObjectURL(new Blob([output.bytes], { type: output.mimeType })),
+    thumbnailUrl: null,
+    workflow: output.workflow,
+    savedIn: output.savedOn === 'computer' ? (output.folder ?? null) : null,
+    inCloud: output.savedOn === 'cloud'
+  }))
+  outputIndex.value = shown.index
+  outputsShown.value += 1
+}
+
+function closeOutputs(): void {
+  if (!outputs.value) return
+  focusPage = true
+  releaseOutputs()
+}
+
+function sendOutputAction(action: AppOutputAction['action'], index: number): void {
+  window.api.sendAppOutputAction({ action, index })
+  if (action === 'open-workflow') closeOutputs()
+}
+
+function viewInAssets(index: number): void {
+  const name = outputs.value?.[index]?.name
+  releaseOutputs()
+  if (name) emit('view-in-assets', name)
 }
 
 function retry(): void {
@@ -88,6 +166,7 @@ watch(
     justOpened = true
     status.value = null
     frozenFrame.value = null
+    releaseOutputs()
     if (!covered.value) void reveal()
   }
 )
@@ -100,13 +179,21 @@ onMounted(() => {
   stopStatusUpdates = window.api.onAppPageStatusChanged((pageAppId, next) => {
     if (pageAppId === appId) status.value = next
   })
+  stopOutputs = window.api.onAppOutputs((pageAppId, shown) => {
+    if (pageAppId !== appId) return
+    if (shown) showOutputs(shown)
+    else releaseOutputs()
+  })
   if (!covered.value) void reveal()
 })
 
 onBeforeUnmount(() => {
   latestTurn += 1
   stopStatusUpdates?.()
+  stopOutputs?.()
+  releaseOutputs()
   window.api.hideAppPage()
+  appPageShown.value = false
 })
 </script>
 
@@ -183,5 +270,16 @@ onBeforeUnmount(() => {
         </Button>
       </div>
     </div>
+    <OutputDetailDialog
+      v-if="outputs"
+      :key="outputsShown"
+      v-model:index="outputIndex"
+      :items="outputs"
+      @close="closeOutputs"
+      @download="sendOutputAction('download', $event)"
+      @open-workflow="sendOutputAction('open-workflow', $event)"
+      @show-in-folder="sendOutputAction('show-in-folder', $event)"
+      @view-in-assets="viewInAssets"
+    />
   </section>
 </template>

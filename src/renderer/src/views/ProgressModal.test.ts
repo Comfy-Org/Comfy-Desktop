@@ -5,7 +5,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import ProgressModal from './ProgressModal.vue'
 import { useProgressStore } from '../stores/progressStore'
 import type { Operation } from '../stores/progressStore'
-import type { ActionResult, PortConflictInfo } from '../types/ipc'
+import { useInstallationStore } from '../stores/installationStore'
+import type { ActionResult, Installation, PortConflictInfo } from '../types/ipc'
 
 const mockModal = {
   alert: vi.fn().mockResolvedValue(undefined),
@@ -25,6 +26,7 @@ interface MockApi {
   runAction: ReturnType<typeof vi.fn>
   killPortProcess: ReturnType<typeof vi.fn>
   returnToDashboard: ReturnType<typeof vi.fn>
+  getSetting?: ReturnType<typeof vi.fn>
   getInstallations: ReturnType<typeof vi.fn>
   onInstallationsChanged: ReturnType<typeof vi.fn>
   onInstallationsVersionsUpdated: ReturnType<typeof vi.fn>
@@ -164,7 +166,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.exists('.brand-progress__bar')).toBe(true)
 
     expect(body.exists('.brand-progress__footer')).toBe(true)
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Minimize')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Reboot')
     expect(body.classList('.brand-progress__footer-bar')).not.toContain('is-centered')
@@ -309,7 +311,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     )
 
     expect(body.exists('.brand-progress__footer')).toBe(true)
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
     expect(body.selectorText('.brand-progress__footer')).toContain('Use next available port')
     expect(body.selectorText('.brand-progress__footer')).toContain('Stop process and retry')
 
@@ -335,7 +337,7 @@ describe('ProgressModal — brand branch state transitions', () => {
 
     expect(body.selectorText('.brand-progress__footer')).toContain('Use next available port')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Stop process and retry')
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
   })
 
   it('renders only Return to Dashboard when a port conflict has no suggested fix', async () => {
@@ -353,7 +355,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     })
 
     expect(body.exists('.brand-progress__footer')).toBe(true)
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Use next available port')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Stop process and retry')
 
@@ -403,18 +405,53 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__banner')).toContain(
       'ComfyUI is still running a prompt'
     )
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Dashboard')
-    expect(body.selectorText('.brand-progress__footer')).toContain('Stop it and launch')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Stop it and start this build')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Use next available port')
 
     expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
     await flushPromises()
 
     expect(mockModal.confirm).toHaveBeenCalledWith(
-      expect.objectContaining({ confirmLabel: 'Stop it and launch', confirmStyle: 'danger' })
+      expect.objectContaining({
+        confirmLabel: 'Stop it and start this build',
+        confirmStyle: 'danger'
+      })
     )
     expect(api.killPortProcess).not.toHaveBeenCalled()
     expect(api.runAction).toHaveBeenCalledWith('inst-1', 'launch', { stopBusyPriorProcess: true })
+  })
+
+  it.each([
+    {
+      fix: 'Use next available port',
+      portConflict: { port: 8188, nextPort: 8189, isComfy: false } as PortConflictInfo
+    },
+    {
+      fix: 'Stop it and start this build',
+      portConflict: { port: 8188, pids: [777], isComfy: true, priorBusy: true } as PortConflictInfo
+    },
+    {
+      fix: 'Stop process and retry',
+      portConflict: { port: 8188, pids: [777], isComfy: true } as PortConflictInfo
+    }
+  ])('keeps a start retried with "$fix" a launch', async ({ fix, portConflict }) => {
+    installMockApi()
+    const { body } = await mountWithOp('inst-1', {
+      title: 'Launching',
+      opKind: 'launch',
+      finished: true,
+      apiCall: () => Promise.resolve({ ok: true }),
+      result: { ok: false, message: 'Port 8188 is already in use', portConflict } as ActionResult
+    })
+
+    const before = useProgressStore().operations.get('inst-1')
+    body.buttonByText(fix)!.click()
+    await flushPromises()
+
+    const retried = useProgressStore().operations.get('inst-1')
+    expect(retried).not.toBe(before)
+    expect(retried?.opKind).toBe('launch')
   })
 
   it('never claims a prompt is running when the earlier ComfyUI did not answer', async () => {
@@ -465,14 +502,14 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__banner')).toContain(
       'Processes from an earlier ComfyUI are still running'
     )
-    expect(body.selectorText('.brand-progress__footer')).toContain('Stop them and launch')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Stop them and start this build')
     expect(await body.click('.brand-progress__footer-btn--danger')).toBe(true)
     await flushPromises()
     expect(mockModal.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'Processes from an earlier ComfyUI are still running',
         message: 'This stops those processes and anything they are doing.',
-        confirmLabel: 'Stop them and launch'
+        confirmLabel: 'Stop them and start this build'
       })
     )
   })
@@ -485,7 +522,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     })
     expect(body.exists('.brand-progress__footer')).toBe(true)
     expect(body.selectorText('.brand-progress__footer')).toContain('Cancel')
-    expect(body.selectorText('.brand-progress__footer')).not.toContain('Return to Dashboard')
+    expect(body.selectorText('.brand-progress__footer')).not.toContain('Return to Home')
   })
 
   it('labels a failed launch\'s retry "Restart ComfyUI", not "Reboot"', async () => {
@@ -544,7 +581,7 @@ describe('ProgressModal — brand branch state transitions', () => {
       flatPercent: 42
     })
 
-    const returnBtn = body.buttonByText('Return to Dashboard')
+    const returnBtn = body.buttonByText('Return to Home')
     expect(returnBtn).not.toBeNull()
     returnBtn!.click()
     await flushPromises()
@@ -558,6 +595,59 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(op?.cancelRequested).toBe(true)
     const api = (window as unknown as { api: MockApi }).api
     expect(api.returnToDashboard).toHaveBeenCalled()
+  })
+
+  it('leaves a start of a build on this computer running when Return to Home is clicked', async () => {
+    mockModal.confirm.mockClear()
+    useInstallationStore().installations = [
+      { id: 'inst-1', name: 'Studio', sourceCategory: 'local' } as Installation
+    ]
+    const { wrapper, body } = await mountWithOp('inst-1', { opKind: 'launch' })
+
+    body.buttonByText('Return to Home')!.click()
+    await flushPromises()
+
+    expect(mockModal.confirm).not.toHaveBeenCalled()
+    expect(useProgressStore().operations.get('inst-1')?.cancelRequested).toBe(false)
+    const api = (window as unknown as { api: MockApi }).api
+    expect(api.cancelOperation).not.toHaveBeenCalled()
+    expect(wrapper.emitted('close')?.length).toBeGreaterThan(0)
+    expect(api.returnToDashboard).toHaveBeenCalled()
+  })
+
+  it('asks, then cancels a start when Return to Home is clicked with keepComfyRunningWhenWindowCloses off', async () => {
+    mockModal.confirm.mockClear()
+    useInstallationStore().installations = [
+      { id: 'inst-1', name: 'Studio', sourceCategory: 'local' } as Installation
+    ]
+    const { body } = await mountWithOp('inst-1', { opKind: 'launch' })
+    const api = (window as unknown as { api: MockApi }).api
+    api.getSetting = vi.fn().mockResolvedValue(false)
+
+    body.buttonByText('Return to Home')!.click()
+    await flushPromises()
+
+    expect(api.getSetting).toHaveBeenCalledWith('keepComfyRunningWhenWindowCloses')
+    expect(mockModal.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Cancel current operation?' })
+    )
+    expect(useProgressStore().operations.get('inst-1')?.cancelRequested).toBe(true)
+  })
+
+  it('still asks, then cancels an install in flight when Return to Home is clicked', async () => {
+    mockModal.confirm.mockClear()
+    useInstallationStore().installations = [
+      { id: 'inst-1', name: 'Studio', sourceCategory: 'local' } as Installation
+    ]
+    const { body } = await mountWithOp('inst-1', { opKind: 'install' })
+
+    body.buttonByText('Return to Home')!.click()
+    await flushPromises()
+
+    expect(mockModal.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Cancel current operation?' })
+    )
+    expect(useProgressStore().operations.get('inst-1')?.cancelRequested).toBe(true)
   })
 
   it('uses friendlyCaption (not launchCaption) for non-launch ops', async () => {

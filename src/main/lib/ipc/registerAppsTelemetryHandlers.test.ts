@@ -12,7 +12,12 @@ const mocks = vi.hoisted(() => ({
   appsEnabled: true,
   page: { appId: 'remove-background', document: 1 } as LoadedPage | null,
   whileAuthorizing: () => {},
-  capture: vi.fn<(event: string, properties: unknown) => boolean>(() => true)
+  capture: vi.fn<(event: string, properties: unknown) => boolean>(() => true),
+  refreshCreditBalanceAfterRun: vi.fn()
+}))
+
+vi.mock('./registerCreditBalanceHandlers', () => ({
+  refreshCreditBalanceAfterRun: mocks.refreshCreditBalanceAfterRun
 }))
 
 vi.mock('electron', () => ({
@@ -138,6 +143,11 @@ describe('usage events from the hosted Apps page', () => {
   it.each([
     ['app_opened, which Desktop sends itself', { name: 'app_opened', props: {} }],
     ['app_page_failed, which Desktop sends itself', { name: 'app_page_failed', props: {} }],
+    [
+      'run_finished, which Desktop sends itself',
+      { name: 'run_finished', props: { where: 'local', outcome: 'success' } }
+    ],
+    ['setup, which Desktop sends itself', { name: 'setup', props: { stage: 'start' } }],
     ['a name outside the pattern', { name: 'Run Started', props: {} }],
     ['a payload with no name', { props: { where: 'cloud' } }],
     ['a payload that is not an object', 'run_started'],
@@ -164,6 +174,32 @@ describe('usage events from the hosted Apps page', () => {
       where: 'cloud',
       app_id: 'remove-background'
     })
+  })
+})
+
+describe('the credit balance after a run', () => {
+  it('asks for a later balance refetch when a run starts, not for other events', async () => {
+    await trackFromAppsPage(EVENT, { name: 'click', props: {} })
+    expect(mocks.refreshCreditBalanceAfterRun).not.toHaveBeenCalled()
+
+    await trackFromAppsPage(EVENT, RUN)
+    expect(mocks.refreshCreditBalanceAfterRun).toHaveBeenCalledOnce()
+  })
+
+  it('asks for the refetch even when telemetry does not send the event', async () => {
+    mocks.capture.mockReturnValue(false)
+
+    expect(await trackFromAppsPage(EVENT, RUN)).toBe(false)
+
+    expect(mocks.refreshCreditBalanceAfterRun).toHaveBeenCalledOnce()
+  })
+
+  it('asks for no refetch for a run event Desktop refused', async () => {
+    mocks.isAppsPage = false
+
+    await trackFromAppsPage(EVENT, RUN)
+
+    expect(mocks.refreshCreditBalanceAfterRun).not.toHaveBeenCalled()
   })
 })
 

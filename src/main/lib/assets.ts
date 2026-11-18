@@ -15,10 +15,16 @@ import type { FileSaveTransfer } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
 import { copyImageToClipboard } from './clipboardImage'
 import { copyOutputImage, outputFilePath, revealOutputFile, trashOutputFile } from './outputFolders'
+import type { CloudAssetLookup } from '../../types/ipc'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { mediaFactsFromBytes } from './mediaFacts'
 import { LOCAL_ASSETS_SOURCE } from '../../types/ipc'
-import type { AssetKind, AssetSummary } from '../../types/ipc'
+import type {
+  AssetKind,
+  AssetSummary,
+  CloudAssetPage,
+  CloudAssetPageRequest
+} from '../../types/ipc'
 
 const ASSETS_LIST_CHANNEL = 'assets:list'
 const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
@@ -26,8 +32,14 @@ const ASSETS_REVEAL_CHANNEL = 'assets:reveal'
 const ASSETS_COPY_CHANNEL = 'assets:copy'
 const ASSETS_TRASH_CHANNEL = 'assets:trash'
 
-const PAGE_SIZE = 100
-const LIST_QUERY = `tags_any=output&sort=created_at&order=desc&limit=${PAGE_SIZE}`
+const MAX_PAGE_SIZE = 200
+const CLOUD_COUNT_CAP = 10_000
+const SCAN_PAGE_SIZE = 500
+const MAX_SCAN_PAGES = 100
+const SCAN_TIMEOUT_MS = 120_000
+const SCAN_REUSE_MS = 30 * 60_000
+const ASSET_KINDS: readonly AssetKind[] = ['image', 'video', 'audio', '3d']
+const EMPTY_PAGE: CloudAssetPage = { assets: [], total: 0 }
 const REQUEST_TIMEOUT_MS = 20_000
 const PREVIEW_BATCH_TIMEOUT_MS = 30_000
 const SIGNED_URL_CONCURRENCY = 6
@@ -86,10 +98,14 @@ export function assetKind(name: string, mimeType?: string | null): AssetKind | n
   return KIND_BY_EXTENSION.get(name.slice(dot + 1).toLowerCase()) ?? null
 }
 
+function fileNameOf(row: AssetRow): string {
+  return row.name.slice(row.name.lastIndexOf('/') + 1)
+}
+
 function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
   return {
     id: row.id,
-    name: row.name.slice(row.name.lastIndexOf('/') + 1),
+    name: fileNameOf(row),
     kind: assetKind(row.name, row.mime_type),
     sizeBytes: typeof row.size === 'number' ? row.size : null,
     createdAt: row.created_at ?? null,
@@ -105,16 +121,63 @@ function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
   }
 }
 
-async function fetchAssetRows(url: string, headers: Record<string, string>): Promise<AssetRow[]> {
-  const res = await fetch(url, {
+interface AssetRowPage extends Omit<CloudAssetPage, 'assets'> {
+  rows: AssetRow[]
+}
+
+function cloudListUrl(
+  { offset, after, limit, order }: CloudAssetPageRequest,
+  count: boolean
+): string {
+  const query = new URLSearchParams({
+    tags_any: 'output',
+    sort: 'created_at',
+    order: order === 'oldest' ? 'asc' : 'desc',
+    limit: String(limit),
+    include_public: 'false',
+    ...(count ? { capped_total: 'true' } : { include_total: 'false' })
+  })
+  if (after !== undefined) query.set('after', after)
+  else if (offset > 0) query.set('offset', String(offset))
+  return `${CLOUD_CONFIG.apiBase}/assets?${query}`
+}
+
+async function fetchAssetRows(
+  request: CloudAssetPageRequest,
+  headers: Record<string, string>,
+  signal: AbortSignal,
+  count: boolean
+): Promise<AssetRowPage> {
+  const res = await fetch(cloudListUrl(request, count), {
     headers: { Accept: 'application/json', ...headers },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    signal: AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), signal])
   })
   if (!res.ok) throw new Error(`List assets failed: HTTP ${res.status}`)
   const body: unknown = await res.json().catch(() => null)
-  const rows = body && typeof body === 'object' ? (body as { assets?: unknown }).assets : undefined
-  if (!Array.isArray(rows)) throw new Error('List assets returned an invalid page')
-  return rows.filter(isAssetRow).slice(0, PAGE_SIZE)
+  const page = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+  const { assets, has_more: hasMore, next_cursor: cursor } = page
+  if (!Array.isArray(assets) || typeof hasMore !== 'boolean') {
+    throw new Error('List assets returned an invalid page')
+  }
+  const slice = assets.slice(0, request.limit)
+  const rows = slice.filter(isAssetRow)
+  if (!hasMore) {
+    const total = request.offset === 0 || slice.length ? request.offset + slice.length : null
+    return { rows, total }
+  }
+  if (!slice.length || typeof cursor !== 'string' || !cursor || cursor === request.after) {
+    throw new Error('List assets returned an invalid cursor')
+  }
+  if (!count) return { rows, total: null, nextCursor: cursor }
+  if (!isCount(page.total, 0, Number.MAX_SAFE_INTEGER)) {
+    throw new Error('List assets returned an invalid count')
+  }
+  return {
+    rows,
+    total: Math.min(page.total, CLOUD_COUNT_CAP),
+    nextCursor: cursor,
+    ...(page.total >= CLOUD_COUNT_CAP && { totalIsLowerBound: true })
+  }
 }
 
 export function signedStorageUrl(location: string | null): string | null {
@@ -188,19 +251,166 @@ async function addMediaFacts(summary: AssetSummary, deadline: AbortSignal): Prom
   }
 }
 
+const ASSETS_FIND_CHANNEL = 'assets:find'
+const LOOKUP_PAGE_SIZE = 100
+const MAX_LOOKUP_PAGES = 10
+const LOOKUP_INCOMPLETE: CloudAssetLookup = { status: 'incomplete' }
+
+interface LookupPage {
+  rows: unknown[]
+  hasMore: boolean
+  nextCursor: string | null
+}
+
+function lookupUrl(name: string, after: string | null): string {
+  const query = new URLSearchParams({
+    tags_any: 'output',
+    name_contains: name,
+    sort: 'created_at',
+    order: 'desc',
+    limit: String(LOOKUP_PAGE_SIZE),
+    include_public: 'false',
+    include_total: 'false'
+  })
+  if (after !== null) query.set('after', after)
+  return `${CLOUD_CONFIG.apiBase}/assets?${query}`
+}
+
+async function fetchLookupPage(url: string, accessToken: string): Promise<LookupPage | null> {
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  })
+  if (!res.ok) return null
+  const body: unknown = await res.json().catch(() => null)
+  if (!body || typeof body !== 'object') return null
+  const { assets, has_more: hasMore, next_cursor: nextCursor } = body as Record<string, unknown>
+  if (!Array.isArray(assets) || typeof hasMore !== 'boolean') return null
+  if (nextCursor !== undefined && nextCursor !== null && typeof nextCursor !== 'string') return null
+  return { rows: assets, hasMore, nextCursor: nextCursor ?? null }
+}
+
+async function withPreview(row: AssetRow, accessToken: string): Promise<AssetSummary> {
+  const summary = toSummary(row, null)
+  if (summary.kind === null || summary.kind === '3d') return summary
+  const deadline = AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS)
+  summary.previewUrl = await resolveCloudContentUrl(summary.id, accessToken, 'inline', deadline)
+  await addMediaFacts(summary, deadline)
+  return summary
+}
+
+async function lookUpCloudAsset(accessToken: string, name: string): Promise<CloudAssetLookup> {
+  let after: string | null = null
+  let unreadable = false
+  for (let page = 0; page < MAX_LOOKUP_PAGES; page++) {
+    const result = await fetchLookupPage(lookupUrl(name, after), accessToken)
+    if (!result) return LOOKUP_INCOMPLETE
+    const readable = result.rows.filter(isAssetRow)
+    unreadable ||= readable.length !== result.rows.length
+    const found = readable.find((row) => fileNameOf(row) === name)
+    if (found) return { status: 'found', asset: await withPreview(found, accessToken) }
+    if (!result.hasMore) return unreadable ? LOOKUP_INCOMPLETE : { status: 'absent' }
+    if (result.nextCursor === null || result.nextCursor === after) return LOOKUP_INCOMPLETE
+    after = result.nextCursor
+  }
+  return LOOKUP_INCOMPLETE
+}
+
+export async function findCloudAsset(
+  installationId: string,
+  name: string
+): Promise<CloudAssetLookup> {
+  const accessToken = name ? await cloudAccessToken(installationId) : null
+  if (!accessToken) return LOOKUP_INCOMPLETE
+  return lookUpCloudAsset(accessToken, name).catch(() => LOOKUP_INCOMPLETE)
+}
+
 async function cloudAccessToken(installationId: string): Promise<string | null> {
   const inst = await installations.get(installationId)
   if (!inst || sourceMap[inst.sourceId]?.category !== 'cloud') return null
   return getCloudSession().getAccessToken()
 }
 
-async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
-  const rows = await fetchAssetRows(
-    `${CLOUD_CONFIG.apiBase}/assets?${LIST_QUERY}&include_public=false`,
-    { Authorization: `Bearer ${accessToken}` }
-  )
+interface ScannedRows {
+  rows: AssetRow[]
+  scanLimit?: number
+}
+
+interface OutputScan extends ScannedRows {
+  key: string
+  savedAt: number
+}
+
+interface ScanSlot {
+  scan?: OutputScan
+}
+
+async function scanAllRows(
+  order: CloudAssetPageRequest['order'],
+  headers: Record<string, string>,
+  signal: AbortSignal
+): Promise<ScannedRows> {
+  const scanSignal = AbortSignal.any([signal, AbortSignal.timeout(SCAN_TIMEOUT_MS)])
+  const rows = new Map<string, AssetRow>()
+  const visited = new Set<string>()
+  let after: string | undefined
+  for (let page = 0; page < MAX_SCAN_PAGES; page++) {
+    const listed = await fetchAssetRows(
+      { offset: 0, limit: SCAN_PAGE_SIZE, order, after },
+      headers,
+      scanSignal,
+      false
+    )
+    scanSignal.throwIfAborted()
+    for (const row of listed.rows) rows.set(row.id, row)
+    after = listed.nextCursor
+    if (!after) return { rows: [...rows.values()] }
+    if (visited.has(after)) throw new Error('List assets returned a repeated cursor')
+    visited.add(after)
+  }
+  return { rows: [...rows.values()], scanLimit: MAX_SCAN_PAGES * SCAN_PAGE_SIZE }
+}
+
+async function rowsOfKind(
+  accessToken: string,
+  request: CloudAssetPageRequest & { kind: AssetKind },
+  signal: AbortSignal,
+  slot: ScanSlot
+): Promise<AssetRowPage> {
+  const key = [accessToken, request.order].join('\n')
+  let scan = slot.scan
+  if (request.offset === 0 || scan?.key !== key || Date.now() - scan.savedAt >= SCAN_REUSE_MS) {
+    slot.scan = undefined
+    const headers = { Authorization: `Bearer ${accessToken}` }
+    const scanned = await scanAllRows(request.order, headers, signal)
+    scan = { key, savedAt: Date.now(), ...scanned }
+    slot.scan = scan
+  }
+  const matches = scan.rows.filter((row) => assetKind(row.name, row.mime_type) === request.kind)
+  return {
+    rows: matches.slice(request.offset, request.offset + request.limit),
+    total: matches.length,
+    ...(scan.scanLimit && { scanLimit: scan.scanLimit })
+  }
+}
+
+async function listCloudAssets(
+  accessToken: string,
+  request: CloudAssetPageRequest,
+  signal: AbortSignal,
+  slot: ScanSlot
+): Promise<CloudAssetPage> {
+  const { kind } = request
+  const { rows, ...paging } = kind
+    ? await rowsOfKind(accessToken, { ...request, kind }, signal, slot)
+    : await fetchAssetRows(
+        request,
+        { Authorization: `Bearer ${accessToken}` },
+        signal,
+        request.offset === 0 && request.after === undefined
+      )
   const summaries = rows.map((row) => toSummary(row, null))
-  const deadline = AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS)
+  const deadline = AbortSignal.any([AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS), signal])
   await runPool(
     summaries,
     SIGNED_URL_CONCURRENCY,
@@ -211,12 +421,60 @@ async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
     },
     deadline
   )
-  return summaries
+  signal.throwIfAborted()
+  return { assets: summaries, ...paging }
 }
 
-export async function listAssets(installationId: string): Promise<AssetSummary[]> {
+export async function listAssets(
+  installationId: string,
+  request: CloudAssetPageRequest,
+  signal: AbortSignal = new AbortController().signal,
+  slot: ScanSlot = {}
+): Promise<CloudAssetPage> {
   const accessToken = await cloudAccessToken(installationId)
-  return accessToken ? listCloudAssets(accessToken) : []
+  return accessToken ? listCloudAssets(accessToken, request, signal, slot) : EMPTY_PAGE
+}
+
+function isCount(value: unknown, min: number, max: number): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max
+}
+
+function pageRequest(value: unknown): CloudAssetPageRequest | null {
+  if (!value || typeof value !== 'object') return null
+  const { offset, after, limit, order, kind } = value as Record<string, unknown>
+  const knownKind = ASSET_KINDS.find((known) => known === kind)
+  return isCount(offset, 0, Number.MAX_SAFE_INTEGER) &&
+    isCount(limit, 1, MAX_PAGE_SIZE) &&
+    (order === 'newest' || order === 'oldest') &&
+    (kind === undefined || knownKind) &&
+    (after === undefined || (typeof after === 'string' && after.length > 0 && offset > 0)) &&
+    (offset < CLOUD_COUNT_CAP || after !== undefined || knownKind)
+    ? { offset, limit, order, ...(after && { after }), ...(knownKind && { kind: knownKind }) }
+    : null
+}
+
+const pageListings = new WeakMap<object, AbortController>()
+const scanSlots = new WeakMap<object, ScanSlot>()
+
+async function listLatestPage(
+  sender: object,
+  installationId: string,
+  request: CloudAssetPageRequest
+): Promise<CloudAssetPage | null> {
+  pageListings.get(sender)?.abort()
+  const listing = new AbortController()
+  pageListings.set(sender, listing)
+  const slot = scanSlots.get(sender) ?? {}
+  scanSlots.set(sender, slot)
+  try {
+    return await listAssets(installationId, request, listing.signal, slot)
+  } catch (error) {
+    if (listing.signal.aborted) return null
+    throw error
+  } finally {
+    listing.abort()
+    if (pageListings.get(sender) === listing) pageListings.delete(sender)
+  }
 }
 
 type SaveTo = (filePath: string, job: FileSaveTransfer) => Promise<void>
@@ -373,9 +631,12 @@ function localFileAction(
 }
 
 export function registerAssetsHandlers(): void {
-  ipcMain.handle(ASSETS_LIST_CHANNEL, (_event, installationId: unknown) =>
-    typeof installationId === 'string' ? listAssets(installationId) : []
-  )
+  ipcMain.handle(ASSETS_LIST_CHANNEL, (event, installationId: unknown, page: unknown) => {
+    const request = pageRequest(page)
+    return typeof installationId === 'string' && request
+      ? listLatestPage(event.sender, installationId, request)
+      : EMPTY_PAGE
+  })
   ipcMain.handle(
     ASSETS_DOWNLOAD_CHANNEL,
     (event, source: unknown, assetId: unknown, fileName: unknown) => {
@@ -393,5 +654,10 @@ export function registerAssetsHandlers(): void {
     isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'
       ? copyAsset(source, assetId)
       : false
+  )
+  ipcMain.handle(ASSETS_FIND_CHANNEL, (_event, installationId: unknown, name: unknown) =>
+    typeof installationId === 'string' && typeof name === 'string'
+      ? findCloudAsset(installationId, name)
+      : LOOKUP_INCOMPLETE
   )
 }

@@ -28,6 +28,11 @@ export const TID = {
   updateChannelCard: (channel: string) => `update-channel-card-${channel}`,
   updateActionButton: (actionId: string) => `update-action-${actionId}`,
   channelGroupSelect: (level: number) => `channel-group-select-${level}`,
+  buildOverviewChannel: 'build-overview-channel',
+  buildOverviewChannelOption: (channel: string) => `build-overview-channel-${channel}`,
+  buildOverviewUpdateMenu: 'build-overview-update-menu',
+  buildOverviewPytorchChange: 'build-overview-pytorch-change',
+  buildOverviewPytorchOption: (stackId: string) => `build-overview-pytorch-${stackId}`,
 
   settingsTab: (key: string) => `settings-tab-${key}`,
 

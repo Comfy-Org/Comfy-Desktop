@@ -14,6 +14,7 @@ const API_MAP = {
   getUniqueName: 'pickerSettingsGetUniqueName',
   getInstallationSize: 'pickerSettingsGetInstallationSize',
   stopComfyUI: 'pickerSettingsStopComfyUI',
+  closeComfyWindow: 'pickerSettingsCloseComfyWindow',
   cancelOperation: 'pickerSettingsCancelOperation',
   getSnapshots: 'pickerSettingsGetSnapshots',
   getSnapshotDetail: 'pickerSettingsGetSnapshotDetail',

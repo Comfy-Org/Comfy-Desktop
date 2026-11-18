@@ -92,5 +92,9 @@ export function useVirtualMasonry(options: VirtualMasonryOptions) {
     virtualizer.value.scrollToIndex(index, { align: 'auto' })
   }
 
-  return { cards, galleryStyle, cardStyle, measureCard, scrollToIndex }
+  function scrollToTop(): void {
+    virtualizer.value.scrollToOffset(0)
+  }
+
+  return { cards, galleryStyle, cardStyle, measureCard, scrollToIndex, scrollToTop }
 }

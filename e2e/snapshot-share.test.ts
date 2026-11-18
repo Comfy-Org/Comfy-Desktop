@@ -3,7 +3,7 @@ import path from 'node:path'
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { expectChooserVisible } from './support/chooserHelpers'
+import { expectChooserVisible, pickFromBuildsTileMenu } from './support/chooserHelpers'
 import { titlePopupPage, waitForWebContents } from './support/cdpPages'
 import { evalWithRetry } from './support/evalRetry'
 import { byTestId, TID } from './support/testIds'
@@ -129,9 +129,7 @@ test('dashboard kebab → Share exports the latest snapshot @windows @macos @lin
   await clearExportDir()
   await ctx.panel.waitForSelector(byTestId(TID.dashboardTile(INSTALL_ID)), { timeout: 10_000 })
 
-  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(INSTALL_ID)))).toBe(true)
-  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('share')), { timeout: 5_000 })
-  expect(await ctx.panel.click(byTestId(TID.contextMenuItem('share')))).toBe(true)
+  await pickFromBuildsTileMenu(ctx.panel, INSTALL_ID, 'share')
 
   expectLatestEnvelope(await readSharedEnvelope())
 })
