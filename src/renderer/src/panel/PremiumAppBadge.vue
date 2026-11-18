@@ -13,7 +13,7 @@ const { t } = useI18n()
     >
       <svg
         viewBox="0 0 24 24"
-        class="size-4 text-brand-yellow"
+        class="size-4 text-[var(--upgrade)]"
         aria-hidden="true"
         data-testid="premium-app-crown"
       >

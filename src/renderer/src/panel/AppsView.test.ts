@@ -86,7 +86,10 @@ beforeEach(() => {
   }
 })
 
-afterEach(() => page.remove())
+afterEach(() => {
+  page.remove()
+  delete document.documentElement.dataset.theme
+})
 
 describe('AppsView', () => {
   it('lists every app as a card with its picture, name and one line on what it does', async () => {
@@ -293,7 +296,7 @@ describe('AppsView', () => {
     expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
   })
 
-  it('crowns a premium app on the top left of its picture and leaves a free app without one', async () => {
+  it('crowns a premium app on the top left of its picture, in the credits gold, and leaves a free app without one', async () => {
     const wrapper = await mountApps()
 
     const premiumCard = wrapper.get('[data-testid="app-card-remove-background"]')
@@ -302,8 +305,9 @@ describe('AppsView', () => {
     const badgeBox = badge.element.getBoundingClientRect()
     expect(Math.round(badgeBox.left - picture.left)).toBe(8)
     expect(Math.round(badgeBox.top - picture.top)).toBe(8)
+    document.documentElement.dataset.theme = 'dark'
     expect(getComputedStyle(badge.get('[data-testid="premium-app-crown"]').element).color).toBe(
-      'rgb(240, 255, 65)'
+      'rgb(233, 196, 34)'
     )
     expect(premiumCard.text()).toContain('Premium app')
     expect(
