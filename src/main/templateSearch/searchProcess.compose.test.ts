@@ -150,6 +150,28 @@ describe('createSearchProcess', () => {
     expect(announced).toEqual([{ kind: 'off' }])
   })
 
+  it('labels a background download started at the end of an operation as build_ready', async () => {
+    mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
+    serveBundle({ 'catalog.json': '{}' })
+    const { search } = setup({ online: true })
+    expect(await search.downloadInBackground('build_ready')).toBe(true)
+    expect(reportBundleDownload).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ result: 'completed', trigger: 'build_ready' })
+    )
+  })
+
+  it('counts a background download that failed as the attempt, and reports it with its trigger', async () => {
+    mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
+    serveBundle({ 'catalog.json': '{}' })
+    mocks.transfer.mockReturnValue({ done: Promise.resolve({ outcome: 'error', error: 'reset' }) })
+    const { search, announced } = setup({ online: true })
+    expect(await search.downloadInBackground('launch')).toBe(true)
+    expect(reportBundleDownload).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ result: 'failed', trigger: 'launch' })
+    )
+    expect(announced, 'a quiet failure says nothing').toEqual([])
+  })
+
   it('reports the model download and each start attempt of the search program', async () => {
     mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
     serveBundle({ 'catalog.json': '{}' })

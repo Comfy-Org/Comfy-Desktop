@@ -601,6 +601,18 @@ describe('bundle store download reports', () => {
     expect(downloads.map((d) => d.trigger)).toEqual(['bar', 'update_check'])
   })
 
+  it('reports a failed download the user saw once, not again on every search', async () => {
+    publish(server, '1.0.0', V1)
+    server.blobs.set(sha('weights-v1'), Buffer.from('weights-XX'))
+    const downloads: BundleDownload[] = []
+    const { store: s } = store({ now: () => 0, onDownloaded: (d) => downloads.push(d) })
+    await s.prepare()
+    await s.download()
+    await s.prepare()
+    await s.prepare()
+    expect(downloads.map((d) => [d.result, d.trigger])).toEqual([['failed', 'bar']])
+  })
+
   it('reports a download that failed, with the bytes it had fetched', async () => {
     publish(server, '1.0.0', V1)
     server.blobs.set(sha('weights-v1'), Buffer.from('weights-XX'))

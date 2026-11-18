@@ -452,7 +452,7 @@ describe('the background download', () => {
     expect(process.downloadInBackground).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(STARTUP_SETTLE_MS)
-    expect(process.downloadInBackground).toHaveBeenCalledTimes(1)
+    expect(process.downloadInBackground).toHaveBeenCalledExactlyOnceWith('launch')
   })
 
   it('tries again later when checking for the background download fails', async () => {
