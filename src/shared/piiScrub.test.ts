@@ -97,7 +97,6 @@ describe('piiScrub', () => {
     })
 
     it('drops same-line text after a path that ends at the username', () => {
-      // A space is legal in a username, so the name runs to the next separator.
       expect(scrubPII('open /home/bob failed')).toBe('open /home/[REDACTED]')
     })
 
