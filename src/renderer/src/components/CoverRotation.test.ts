@@ -42,6 +42,10 @@ async function untilAllLoaded(wrapper: VueWrapper): Promise<void> {
     .toBe(true)
 }
 
+async function untilTheNextIsLoaded(wrapper: VueWrapper): Promise<void> {
+  await expect.poll(() => layer(wrapper, 'upcoming').attributes('data-loaded')).toBe('true')
+}
+
 async function untilTheCoverChanges(wrapper: VueWrapper, from: string | undefined) {
   await expect
     .poll(async () => {
@@ -73,6 +77,7 @@ describe('CoverRotation', () => {
   it('shows one cover and loads the next one, hidden, behind it', async () => {
     const wrapper = mountCovers()
     await untilAllLoaded(wrapper)
+    await untilTheNextIsLoaded(wrapper)
 
     expect(URLS).toContain(shownSrc(wrapper))
     expect(URLS).toContain(layer(wrapper, 'upcoming').attributes('src'))
@@ -84,6 +89,7 @@ describe('CoverRotation', () => {
   it('fades to the next cover after one loop, over the one before, and keeps going', async () => {
     const wrapper = mountCovers()
     await untilAllLoaded(wrapper)
+    await untilTheNextIsLoaded(wrapper)
     const first = shownSrc(wrapper)
     const second = layer(wrapper, 'upcoming').attributes('src')
 
@@ -99,6 +105,47 @@ describe('CoverRotation', () => {
     await untilAllLoaded(wrapper)
     await untilTheCoverChanges(wrapper, second)
     expect(shownSrc(wrapper)).not.toBe(second)
+  })
+
+  it('shows the still of the first cover until its moving picture loads, and loads no other yet', async () => {
+    const wrapper = mountCovers()
+    await nextTick()
+
+    const shown = URLS.indexOf(shownSrc(wrapper)!)
+    expect(layer(wrapper, 'shown').attributes('data-loaded')).toBe('false')
+    expect(layer(wrapper, 'poster').attributes('src')).toBe(STILLS[shown])
+    expect(layer(wrapper, 'upcoming').exists()).toBe(false)
+
+    await untilTheNextIsLoaded(wrapper)
+    expect(layer(wrapper, 'shown').attributes('data-loaded')).toBe('true')
+  })
+
+  it('takes the still away once the moving cover has faded in over it', async () => {
+    const wrapper = mountCovers()
+    await expect.poll(() => layer(wrapper, 'shown').attributes('data-loaded')).toBe('true')
+    expect(layer(wrapper, 'poster').exists()).toBe(true)
+
+    vi.advanceTimersByTime(COVER_FADE_MS)
+    await nextTick()
+
+    expect(layer(wrapper, 'poster').exists()).toBe(false)
+  })
+
+  it('adds no still under a cover whose still is the same picture', async () => {
+    const wrapper = mountCovers([{ url: URLS[0]!, stillUrl: URLS[0]! }])
+    await nextTick()
+
+    expect(wrapper.findAll('img')).toHaveLength(1)
+    expect(layer(wrapper, 'poster').exists()).toBe(false)
+  })
+
+  it('keeps the moving cover when its still fails to load', async () => {
+    const broken = 'data:image/png;base64,broken'
+    const wrapper = mountCovers([{ url: URLS[0]!, stillUrl: broken }])
+
+    await expect.poll(() => layer(wrapper, 'poster').exists()).toBe(false)
+    await expect.poll(() => layer(wrapper, 'shown').attributes('data-loaded')).toBe('true')
+    expect(wrapper.emitted('broken')).toBeUndefined()
   })
 
   it('stands still while it is paused', async () => {
