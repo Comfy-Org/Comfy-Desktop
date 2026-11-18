@@ -23,6 +23,10 @@ function candidate(kind: string, templateId: string | null, download: string[] =
   }
 }
 
+function pick(templateId: string, family: string, download: string[] = []) {
+  return { ...candidate('as_given', templateId, download), family_id: family }
+}
+
 function decision(over: Record<string, unknown> = {}) {
   return {
     outcome: { kind: 'template', reply: null },
@@ -248,8 +252,49 @@ describe('parseDecision', () => {
     const result = parseDecision(body)
     expect(result?.run.map((c) => c.templateId)).toEqual(['api_poster_template', 'poster_template'])
     expect(result?.download).toEqual([
-      expect.objectContaining({ templateId: 'mural_template', missing: ['mural.safetensors'] }),
-      expect.objectContaining({ templateId: 'zine_template', missing: ['zine.safetensors'] })
+      expect.objectContaining({ templateId: 'zine_template', missing: ['zine.safetensors'] }),
+      expect.objectContaining({ templateId: 'mural_template', missing: ['mural.safetensors'] })
+    ])
+  })
+
+  it('keeps the open picks in view when the search sends more than fits', () => {
+    const body = decision({
+      split: {
+        run: [
+          pick('api_poster', 'poster'),
+          pick('logo', 'logo'),
+          pick('banner', 'banner'),
+          pick('sticker', 'sticker'),
+          pick('api_flyer', 'flyer')
+        ],
+        download: [
+          pick('mural', 'mural', ['mural.safetensors']),
+          pick('zine', 'zine', ['zine.safetensors'])
+        ],
+        open: [pick('open_poster', 'poster'), pick('open_flyer', 'flyer', ['open_flyer', 'f.bin'])]
+      }
+    })
+    const result = parseDecision(body)
+    expect(result?.run.map((c) => c.templateId)).toEqual(['api_poster', 'open_poster', 'logo'])
+    expect(result?.download.map((c) => c.templateId)).toEqual(['open_flyer', 'mural'])
+  })
+
+  it('brings an open template the search ranked lower up beside its partner pick', () => {
+    const body = decision({
+      split: {
+        run: [
+          pick('api_poster', 'poster'),
+          pick('api_logo', 'logo'),
+          pick('api_banner', 'banner'),
+          pick('open_logo', 'logo')
+        ],
+        download: []
+      }
+    })
+    expect(parseDecision(body)?.run.map((c) => c.templateId)).toEqual([
+      'api_poster',
+      'api_logo',
+      'open_logo'
     ])
   })
 

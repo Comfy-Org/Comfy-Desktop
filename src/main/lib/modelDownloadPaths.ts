@@ -139,10 +139,7 @@ export async function modelOnDisk(
   directory: string,
   filename: string
 ): Promise<boolean> {
-  for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
-    if (await regularFileExists(candidate)) return true
-  }
-  return false
+  return (await modelBytesOnDisk(ctx, baseDir, directory, filename)) !== null
 }
 
 export async function resolveModelsPresence(

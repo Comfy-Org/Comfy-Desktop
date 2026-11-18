@@ -81,7 +81,6 @@ function fakes(
     process: {
       decide: vi.fn(),
       prepare: vi.fn(async () => undefined),
-      partnerSwitch: vi.fn(() => false),
       download: vi.fn(async () => undefined),
       downloadInBackground: vi.fn(async () => true),
       onBuildAction: vi.fn(async () => undefined),

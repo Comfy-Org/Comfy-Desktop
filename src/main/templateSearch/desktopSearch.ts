@@ -1,5 +1,5 @@
 import { list as listInstallations, type InstallationRecord } from '../installations'
-import { modelBytesOnDisk, modelOnDisk, resolveDownloadContext } from '../lib/modelDownloadPaths'
+import { modelBytesOnDisk, resolveDownloadContext } from '../lib/modelDownloadPaths'
 import type { TerminalEnv } from '../types/sources'
 import type { TemplateSearchResponse, TemplateSearchResult } from '../../types/ipc'
 import { readBuildTemplates, type BuildTemplates } from './buildTemplates'
@@ -15,7 +15,7 @@ const NOTHING_KNOWN: BuildTemplates = {
 }
 
 export interface DesktopSearchOptions {
-  process: Pick<SearchProcess, 'decide' | 'prepare' | 'partnerSwitch'>
+  process: Pick<SearchProcess, 'decide'>
   isLocalInstallation: (installation: InstallationRecord) => boolean
   terminalEnvOf: (installation: InstallationRecord) => TerminalEnv | null
   searchOn: () => boolean
@@ -26,12 +26,8 @@ export interface DesktopSearchOptions {
 
 function modelLookup(installation: InstallationRecord) {
   const context = resolveDownloadContext(installation)
-  return {
-    has: (directory: string, filename: string): Promise<boolean> =>
-      modelOnDisk(context, context.downloadBaseDir, directory, filename),
-    bytes: (directory: string, filename: string): Promise<number | null> =>
-      modelBytesOnDisk(context, context.downloadBaseDir, directory, filename)
-  }
+  return (directory: string, filename: string): Promise<number | null> =>
+    modelBytesOnDisk(context, context.downloadBaseDir, directory, filename)
 }
 
 async function withDownloadSizes(
@@ -62,9 +58,8 @@ export function createDesktopSearch({
     const cached = templates.get(installation.id)
     if (cached && now() - cached.at < TEMPLATES_TTL_MS) return cached.value
     const sitePackages = buildRuntime(installation, terminalEnvOf(installation))?.sitePackages
-    const lookup = modelLookup(installation)
     const value = sitePackages
-      ? readTemplates(sitePackages, lookup.has, lookup.bytes).catch(() => NOTHING_KNOWN)
+      ? readTemplates(sitePackages, modelLookup(installation)).catch(() => NOTHING_KNOWN)
       : Promise.resolve(NOTHING_KNOWN)
     templates.set(installation.id, { at: now(), value })
     return value
@@ -80,11 +75,8 @@ export function createDesktopSearch({
         : undefined
     const known = build ? await templatesFor(build) : null
     const partnersOff = !partnersOn()
-    if (partnersOff) await process.prepare()
-    const decision = await process.decide(
-      decideRequest(query, known?.installed ?? null, {
-        partnersOff: partnersOff && process.partnerSwitch()
-      })
+    const decision = await process.decide((ready) =>
+      decideRequest(query, known?.installed ?? null, { partnersOff: partnersOff && ready.partner })
     )
     if (decision.kind === 'unavailable') {
       return { kind: 'unavailable', availability: decision.availability }
@@ -92,7 +84,7 @@ export function createDesktopSearch({
     const result = parseDecision(decision.body, (id) => known?.labels.get(id) ?? null)
     if (!result) return { kind: 'failed' }
     const sized = await withDownloadSizes(result, known ?? NOTHING_KNOWN)
-    return { kind: 'result', result: { ...sized, partnerSwitch: process.partnerSwitch() } }
+    return { kind: 'result', result: { ...sized, partnerSwitch: decision.partnerSwitch } }
   }
 
   return {

@@ -13,8 +13,9 @@ export interface BuildTemplates {
   downloadBytes: (templateId: string) => Promise<number | null>
 }
 
-export type HasModel = (directory: string, filename: string) => Promise<boolean>
 export type ModelBytes = (directory: string, filename: string) => Promise<number | null>
+
+const SMALLEST_BYTE_SIZE = 1_000_000
 
 interface IndexedTemplate {
   name: string
@@ -22,6 +23,12 @@ interface IndexedTemplate {
   mediaSubtype: string
   partner: boolean
   size: number | null
+}
+
+function sizeInBytes(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= SMALLEST_BYTE_SIZE
+    ? value
+    : null
 }
 
 export function indexedTemplates(index: unknown): IndexedTemplate[] {
@@ -37,7 +44,7 @@ export function indexedTemplates(index: unknown): IndexedTemplate[] {
           typeof template.title === 'string' && template.title ? template.title : template.name,
         mediaSubtype: typeof template.mediaSubtype === 'string' ? template.mediaSubtype : 'webp',
         partner: template.openSource === false,
-        size: typeof template.size === 'number' && template.size > 0 ? template.size : null
+        size: sizeInBytes(template.size)
       })
     }
   }
@@ -60,9 +67,9 @@ async function templateJson(templateDirs: string[], name: string): Promise<unkno
   return null
 }
 
-async function hasEveryModel(json: unknown, hasModel: HasModel): Promise<boolean> {
+async function hasEveryModel(json: unknown, modelBytes: ModelBytes): Promise<boolean> {
   for (const model of resolveTemplateModelsFromJson(json)) {
-    if (!(await hasModel(model.directory, model.filename))) return false
+    if ((await modelBytes(model.directory, model.filename)) === null) return false
   }
   return true
 }
@@ -77,8 +84,7 @@ async function bytesOnDisk(json: unknown, modelBytes: ModelBytes): Promise<numbe
 
 export async function readBuildTemplates(
   sitePackages: string,
-  hasModel: HasModel,
-  modelBytes: ModelBytes = async () => null
+  modelBytes: ModelBytes
 ): Promise<BuildTemplates> {
   const templateDirs = TEMPLATE_PACKAGE_DIRS.map((pkg) => path.join(sitePackages, pkg, 'templates'))
   const labels = new Map<string, TemplateLabel>()
@@ -91,7 +97,7 @@ export async function readBuildTemplates(
       size: template.size
     })
     const json = await templateJson(templateDirs, template.name)
-    if (json && (await hasEveryModel(json, hasModel))) installed.push(template.name)
+    if (json && (await hasEveryModel(json, modelBytes))) installed.push(template.name)
   }
   async function downloadBytes(templateId: string): Promise<number | null> {
     const size = labels.get(templateId)?.size ?? null
