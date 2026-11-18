@@ -14,10 +14,11 @@ checkout.
 
 ## How it is loaded
 
-`src/renderer/src/assets/main.css` declares `@font-face { font-family: 'PP Formula';
-src: url('/fonts/PPFormula-Extrabold.otf') ... }`. It is served from this public
-dir. When the file is absent (OSS clones, most dev and CI builds) the
-`--font-display` stack falls back to Inter, so the app still renders correctly.
+`src/renderer/src/assets/proprietaryFonts.ts` registers the face at runtime with
+`FontFace`, from `./fonts/PPFormula-Extrabold.otf` in this public dir. Each
+renderer entry calls `loadProprietaryFonts()` on start. When the file is absent
+(OSS clones, most dev and CI builds) the load fails silently and the
+`--font-display` token in `design-system-theme.css` falls back to Inter.
 
 ## Release builds
 
