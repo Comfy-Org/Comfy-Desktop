@@ -47,21 +47,35 @@ function tooltipText(): string {
 }
 
 describe('AppBadges', () => {
-  it('draws each badge in the order given: the crown alone in a square of glass, a chip and a label with their words', () => {
-    const wrapper = mountBadges({ badges: [CROWN, NEW_CHIP, VIDEO_LABEL] })
+  it('draws the crown alone in a square of glass, with no words beside it, when a card has a crown', () => {
+    const wrapper = mountBadges({ badges: [NEW_CHIP, CROWN, VIDEO_LABEL] })
 
-    const drawn = wrapper.findAll('[data-badge-style]')
-    expect(drawn.map((badge) => badge.attributes('data-badge-style'))).toEqual([
-      'crown',
-      'chip',
-      'label'
-    ])
+    expect(
+      wrapper.findAll('[data-badge-style]').map((badge) => badge.attributes('data-badge-style'))
+    ).toEqual(['crown'])
     const square = wrapper.get('[data-testid="app-badge-square"]')
     const box = square.element.getBoundingClientRect()
     expect(box.width).toBe(28)
     expect(box.height).toBe(28)
     expect(getComputedStyle(square.element).backdropFilter).toContain('blur(14px)')
-    expect(square.text()).toBe('')
+    expect(
+      (wrapper.get('[data-testid="app-badges"]').element as HTMLElement).innerText.trim()
+    ).toBe('')
+  })
+
+  it("puts the other badges' words in the crown's one-line tooltip", async () => {
+    const wrapper = mountBadges({ badges: [CROWN, NEW_CHIP, VIDEO_LABEL] })
+
+    await userEvent.hover(wrapper.get('[data-testid="app-badge-uses-credits"]').element)
+
+    await expect.poll(tooltipText).toContain('Runs a paid partner model · Added this week · Video')
+  })
+
+  it('draws chips and labels in the order given, with their words, on a card with no crown', () => {
+    const wrapper = mountBadges({ badges: [NEW_CHIP, VIDEO_LABEL] })
+
+    const drawn = wrapper.findAll('[data-badge-style]')
+    expect(drawn.map((badge) => badge.attributes('data-badge-style'))).toEqual(['chip', 'label'])
     expect(wrapper.get('[data-testid="app-badge-new"]').text()).toContain('New')
     expect(wrapper.get('[data-testid="app-badge-video"]').text()).toContain('Video')
     const lefts = drawn.map((badge) => badge.element.getBoundingClientRect().left)
@@ -71,6 +85,7 @@ describe('AppBadges', () => {
   it("carries each badge's words and description for its card to point at", () => {
     mountBadges({ badges: [CROWN, VIDEO_LABEL] })
 
+    expect(document.getElementById('card-video')?.hidden).toBe(true)
     const crownNote = document.getElementById('card-uses-credits')
     expect(crownNote?.textContent).toBe('Uses credits: Runs a paid partner model')
     expect(crownNote?.hidden).toBe(true)
@@ -78,7 +93,7 @@ describe('AppBadges', () => {
   })
 
   it('shows the description on hover', async () => {
-    const wrapper = mountBadges({ badges: [CROWN, NEW_CHIP] })
+    const wrapper = mountBadges({ badges: [NEW_CHIP, VIDEO_LABEL] })
 
     await userEvent.hover(wrapper.get('[data-testid="app-badge-new"]').element)
 
@@ -95,15 +110,19 @@ describe('AppBadges', () => {
 
   it('uses the Chinese words in Chinese, and the English ones where a badge has none', async () => {
     const chinese = createI18n({ ...appI18nOptions, locale: 'zh' })
-    const wrapper = mountBadges({ badges: [CROWN, NEW_CHIP, VIDEO_LABEL] }, [chinese])
+    const wrapper = mountBadges({ badges: [NEW_CHIP, VIDEO_LABEL] }, [chinese])
 
     expect(wrapper.get('[data-testid="app-badge-new"]').text()).toContain('新')
     expect(wrapper.get('[data-testid="app-badge-video"]').text()).toContain('Video')
-    expect(document.getElementById('card-uses-credits')?.textContent).toContain('运行付费合作模型')
 
     await userEvent.hover(wrapper.get('[data-testid="app-badge-new"]').element)
 
     await expect.poll(tooltipText).toContain('Added this week')
+    wrapper.unmount()
+    mounted.pop()
+
+    mountBadges({ badges: [CROWN] }, [chinese])
+    expect(document.getElementById('card-uses-credits')?.textContent).toContain('运行付费合作模型')
   })
 
   it("shows the first badge's description while its card has keyboard focus, and hides it after", async () => {
@@ -111,7 +130,7 @@ describe('AppBadges', () => {
 
     await wrapper.setProps({ revealed: true })
 
-    await expect.poll(tooltipText).toContain('Runs a paid partner model')
+    await expect.poll(tooltipText).toContain('Runs a paid partner model · Added this week')
     expect(document.querySelectorAll('.tooltip-bubble')).toHaveLength(1)
 
     await wrapper.setProps({ revealed: false })
