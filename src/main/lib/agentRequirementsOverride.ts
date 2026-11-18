@@ -183,6 +183,26 @@ export function effectiveAgentRequirements(
   return { kind: 'text', text: lines.join('\n') }
 }
 
+export type ResolvedOverride =
+  | { kind: 'text'; text: string; pins: OverridePins; frontendDropped: boolean }
+  | { kind: 'refused'; reason: OverrideRefusal }
+
+export function resolveOverride(
+  coreText: string,
+  pins: OverridePins,
+  mainText = ''
+): ResolvedOverride {
+  const effective = effectiveAgentRequirements(coreText, pins, mainText)
+  if (effective.kind === 'text') return { ...effective, pins, frontendDropped: false }
+  const agentPins = new Map(pins)
+  agentPins.delete(FRONTEND_PACKAGE)
+  if (effective.reason !== 'not_newer' || agentPins.size === 0) return effective
+  const withoutFrontend = effectiveAgentRequirements(coreText, agentPins, mainText)
+  return withoutFrontend.kind === 'text'
+    ? { ...withoutFrontend, pins: agentPins, frontendDropped: true }
+    : effective
+}
+
 export function parseInstalled(pipListOutput: string): { name: string; version: string }[] | null {
   const json = pipListOutput
     .split(/\r?\n/)
@@ -302,7 +322,7 @@ interface Kept {
 }
 
 export type OverrideDecision =
-  | { decision: 'applied'; pins: OverridePins }
+  | { decision: 'applied'; pins: OverridePins; reason?: 'frontend_not_newer' }
   | ({ decision: 'refused'; reason: OverrideRefusal; pins?: OverridePins } & Kept)
   | ({
       decision: 'deferred'
@@ -428,7 +448,7 @@ export function reportOverrideDecision(
     telemetry.emit('comfy.desktop.agent_requirements_override', {
       installation_id: installationId,
       decision: d.decision,
-      reason: 'reason' in d ? d.reason : null,
+      reason: 'reason' in d ? (d.reason ?? null) : null,
       pins,
       failures: 'failures' in d ? (d.failures ?? null) : null,
       stays_installed:
