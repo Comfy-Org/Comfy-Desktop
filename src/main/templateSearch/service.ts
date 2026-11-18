@@ -259,7 +259,15 @@ export function createSearchService(deps: SearchServiceDeps) {
     await ensureRunning()
   }
 
-  return { decide, prepare, onBuildAction, onBuildActionEnd, freePythons, markUnsupported }
+  return {
+    decide,
+    prepare,
+    onBuildAction,
+    onBuildActionEnd,
+    freePythons,
+    markUnsupported,
+    partnerSwitch: (): boolean => running?.sidecar.ready.partner === true
+  }
 }
 
 export type SearchService = ReturnType<typeof createSearchService>

@@ -21,6 +21,7 @@ const PROBLEM_BY_EXIT_CODE: Record<number, SidecarProblem> = {
 export interface SidecarReady {
   port: number
   token: string
+  partner: boolean
 }
 
 export interface RunningSidecar {
@@ -74,7 +75,7 @@ export function parseReadyLine(line: string): SidecarReady | null {
   const { port, token } = event
   if (typeof port !== 'number' || !Number.isInteger(port) || port <= 0 || port > 65535) return null
   if (typeof token !== 'string' || token.length < 32) return null
-  return { port, token }
+  return { port, token, partner: event.partner === true }
 }
 
 function firstLine(proc: ChildProcess, timeoutMs: number): Promise<string | null> {

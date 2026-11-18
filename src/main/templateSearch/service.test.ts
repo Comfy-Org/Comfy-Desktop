@@ -13,11 +13,11 @@ import { SidecarRequestError } from './sidecarClient'
 const BUILD_A: SidecarPython = { installationId: 'a', python: '/a/python' }
 const BUILD_B: SidecarPython = { installationId: 'b', python: '/b/python' }
 
-function fakeSidecar() {
+function fakeSidecar(partner = false) {
   let exit!: () => void
   const exited = new Promise<void>((resolve) => (exit = resolve))
   const sidecar: RunningSidecar = {
-    ready: { port: 4100, token: 't'.repeat(64) },
+    ready: { port: 4100, token: 't'.repeat(64), partner },
     exited,
     stop: vi.fn(async () => exit())
   }
@@ -62,6 +62,15 @@ afterEach(() => {
 })
 
 describe('search service', () => {
+  it('says whether the running search can leave partner templates out', async () => {
+    const { service } = setup({
+      start: vi.fn<Start>(async () => ({ ok: true, sidecar: fakeSidecar(true).sidecar }))
+    })
+    expect(service.partnerSwitch(), 'nothing running yet').toBe(false)
+    await service.prepare()
+    expect(service.partnerSwitch()).toBe(true)
+  })
+
   it('stays off without a sidecar to run, and starts nothing', async () => {
     const { service, start } = setup({ pyz: () => null })
     expect(await service.decide({ text: 'x' })).toEqual({
