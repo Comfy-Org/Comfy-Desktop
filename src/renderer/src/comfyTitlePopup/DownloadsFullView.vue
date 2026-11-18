@@ -8,6 +8,7 @@ import {
   Ban,
   CheckCircle2,
   CircleAlert,
+  Download,
   FolderOpen,
   LoaderCircle,
   PauseCircle,
@@ -18,6 +19,7 @@ import {
   XCircle
 } from '@lucide/vue'
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import { fileLabel, modalSubtitle, statusKindClass } from '../lib/downloadFormatters'
 import { revealInFolderLabel } from '../composables/usePlatform'
 import type {
@@ -201,17 +203,13 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
             >{{ f.label }}</ToggleGroupItem
           >
         </ToggleGroup>
-        <div
+        <EmptyState
           v-if="filtered.length === 0"
-          class="dlm-empty flex flex-auto flex-col items-center justify-center gap-1.5 p-6 text-center"
-        >
-          <h2 class="dlm-empty-title m-0 text-heading font-semibold text-foreground">
-            {{ t('downloadsTab.empty') }}
-          </h2>
-          <p class="dlm-empty-hint m-0 text-ui text-muted-foreground">
-            {{ t('downloadsTab.emptyHint') }}
-          </p>
-        </div>
+          class="dlm-empty flex-auto justify-center p-6"
+          :icon="Download"
+          :title="t('downloadsTab.empty')"
+          :text="t('downloadsTab.emptyHint')"
+        />
 
         <ul v-else :key="filter" class="dlm-list m-0 flex list-none flex-col gap-0.5 p-0">
           <li

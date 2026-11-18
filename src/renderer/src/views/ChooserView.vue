@@ -13,10 +13,11 @@ import { useInstallingBuilds } from '../composables/useBuildProgress'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { Plus, RefreshCw, Search } from '@lucide/vue'
+import { Plus, RefreshCw, Search, Server } from '@lucide/vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import SplitButton from '../components/ui/SplitButton.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
@@ -345,18 +346,13 @@ const gridHandlers = {
         {{ t('common.loading') }}
       </div>
 
-      <section
+      <EmptyState
         v-else-if="showNoMatches"
-        class="chooser-empty flex flex-col items-center gap-3 px-6 py-16 text-center"
+        class="chooser-empty px-6 py-16"
+        :icon="Server"
+        :title="t('chooser.nothingMatches')"
+        :text="t('chooser.nothingMatchesHint')"
       >
-        <div class="flex flex-col gap-1.5">
-          <h2 class="m-0 text-heading font-semibold text-foreground">
-            {{ t('chooser.nothingMatches') }}
-          </h2>
-          <p class="m-0 text-ui text-muted-foreground">
-            {{ t('chooser.nothingMatchesHint') }}
-          </p>
-        </div>
         <Button
           type="button"
           variant="secondary"
@@ -366,20 +362,15 @@ const gridHandlers = {
         >
           {{ t('chooser.clearFilters') }}
         </Button>
-      </section>
+      </EmptyState>
 
-      <section
+      <EmptyState
         v-else-if="showNoBuilds"
-        class="chooser-no-builds flex flex-col items-center gap-3 px-6 py-16 text-center"
+        class="chooser-no-builds px-6 py-16"
+        :icon="Server"
+        :title="t('chooser.noBuildsTitle')"
+        :text="t('chooser.noBuildsBody')"
       >
-        <div class="flex max-w-[420px] flex-col gap-1.5">
-          <h2 class="m-0 text-[16px]/6 font-semibold text-foreground">
-            {{ t('chooser.noBuildsTitle') }}
-          </h2>
-          <p class="m-0 text-[13px]/5 text-muted-foreground">
-            {{ t('chooser.noBuildsBody') }}
-          </p>
-        </div>
         <Button
           type="button"
           variant="inverted"
@@ -390,7 +381,7 @@ const gridHandlers = {
           <Plus :size="15" aria-hidden="true" />
           {{ t('chooser.newBuild') }}
         </Button>
-      </section>
+      </EmptyState>
 
       <ChooserFamilyGrid
         v-else

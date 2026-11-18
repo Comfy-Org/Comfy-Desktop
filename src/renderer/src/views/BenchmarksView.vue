@@ -5,6 +5,7 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import {
   Check,
+  ChartColumn,
   ChevronDown,
   FolderOpen,
   ImageDown,
@@ -24,6 +25,7 @@ import type { PerformanceTestBenchmark, PerformanceTestResultValue } from '../ty
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import BaseMenuRadioItem from '../components/ui/BaseMenuRadioItem.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import {
@@ -854,24 +856,23 @@ onActivated(() => {
             {{ t('benchmarks.refreshButton') }}
           </Button>
         </div>
-        <div
+        <EmptyState
           v-else-if="benchmarks.length === 0"
-          class="benchmarks__state benchmarks__state--empty flex flex-col items-center gap-1.5 px-6 py-16 text-center"
+          class="benchmarks__state benchmarks__state--empty px-6 py-16"
+          :icon="ChartColumn"
+          :title="t('benchmarks.emptyTitle')"
+          :text="t('benchmarks.emptyHint')"
         >
-          <h2 class="m-0 text-heading font-semibold text-foreground">
-            {{ t('benchmarks.emptyTitle') }}
-          </h2>
-          <p class="m-0 text-ui text-muted-foreground">{{ t('benchmarks.emptyHint') }}</p>
           <Button
             variant="inverted"
             size="md"
-            class="benchmarks__open-performance-test mt-6 px-4 text-[13px]/5"
+            class="benchmarks__open-performance-test px-4 text-[13px]/5"
             type="button"
             @click="openPerformanceTest"
           >
             {{ t('benchmarks.openPerformanceTest') }}
           </Button>
-        </div>
+        </EmptyState>
         <div
           v-else-if="groups.length === 0"
           class="benchmarks__no-results flex flex-col items-center gap-1.5 px-6 py-16 text-center"

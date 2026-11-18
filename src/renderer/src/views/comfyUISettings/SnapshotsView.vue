@@ -8,6 +8,7 @@ import {
   Camera,
   ChevronRight,
   Download,
+  History,
   MoreHorizontal,
   RotateCcw,
   Trash2,
@@ -36,6 +37,7 @@ import type {
 import SnapshotRow from './SnapshotRow.vue'
 import SnapshotDiffView from '../../components/SnapshotDiffView.vue'
 import BaseAccordion from '../../components/ui/BaseAccordion.vue'
+import EmptyState from '../../components/ui/EmptyState.vue'
 import OperationErrorDetail from '../../components/ui/OperationErrorDetail.vue'
 import { humanizeOpStatus } from '../../lib/progressStatusLabel'
 
@@ -797,15 +799,13 @@ async function handleImport(): Promise<void> {
           {{ t('common.retry') }}
         </Button>
       </div>
-      <div
+      <EmptyState
         v-else-if="isEmpty"
-        class="snapshots-view-empty flex flex-col items-center gap-1.5 px-6 py-16 text-center"
-      >
-        <h2 class="m-0 text-heading font-semibold text-foreground">
-          {{ t('snapshots.noneYet') }}
-        </h2>
-        <p class="m-0 text-ui text-muted-foreground">{{ t('snapshots.emptyBody') }}</p>
-      </div>
+        class="snapshots-view-empty px-6 py-16"
+        :icon="History"
+        :title="t('snapshots.noneYet')"
+        :text="t('snapshots.emptyBody')"
+      />
 
       <ul
         v-if="timeline.length > 0"
