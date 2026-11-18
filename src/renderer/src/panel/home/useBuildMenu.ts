@@ -104,7 +104,14 @@ export function useBuildMenu(build: () => Installation) {
       if (progress.kind !== 'uninstall') {
         now.push({ id: 'view-logs', label: t('installProgress.viewLogs'), icon: ScrollText })
       }
-      now.push({ id: 'cancel', label: t('common.cancel'), icon: X, disabled: progress.cancelling })
+      if (progress.cancellable) {
+        now.push({
+          id: 'cancel',
+          label: t('common.cancel'),
+          icon: X,
+          disabled: progress.cancelling
+        })
+      }
     } else if (running) {
       now.push(
         { id: 'view-logs', label: t('installProgress.viewLogs'), icon: ScrollText },

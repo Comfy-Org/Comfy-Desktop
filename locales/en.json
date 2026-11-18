@@ -1027,6 +1027,13 @@
     "tryAgain": "Try again",
     "dismiss": "Dismiss"
   },
+  "updateProgress": {
+    "status": "Updating",
+    "tileStatus": "Updating · {percent}%",
+    "cancelTitle": "Stop updating?",
+    "cancelMessage": "{name} stops updating. You can update it again later.",
+    "cancelConfirm": "Stop updating"
+  },
   "announcement": {
     "comfyApi": {
       "title": "Introducing Comfy API",

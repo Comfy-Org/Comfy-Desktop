@@ -19,6 +19,7 @@ export interface Operation {
   returnTo?: string
   opKind: NonNullable<ShowProgressOpts['opKind']>
   destroysInstance: boolean
+  cancellable: boolean
   chainSpan: 'install' | 'launch' | null
   successTerminal: NonNullable<ShowProgressOpts['successTerminal']> | null
   steps: ProgressStep[] | null
@@ -117,6 +118,7 @@ export const useProgressStore = defineStore('progress', () => {
       installationId,
       title,
       apiCall,
+      cancellable,
       returnTo,
       opKind,
       destroysInstance,
@@ -142,6 +144,7 @@ export const useProgressStore = defineStore('progress', () => {
       returnTo,
       opKind: opKind ?? 'generic',
       destroysInstance: !!destroysInstance,
+      cancellable: !!cancellable,
       chainSpan: chainSpan ?? null,
       successTerminal: successTerminal ?? null,
       steps: null,
@@ -297,6 +300,7 @@ export const useProgressStore = defineStore('progress', () => {
       installationId,
       title: op.title,
       apiCall: op.apiCall,
+      cancellable: op.cancellable,
       returnTo: op.returnTo,
       opKind: op.opKind,
       destroysInstance: op.destroysInstance,

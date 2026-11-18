@@ -35,10 +35,10 @@ const installationStore = useInstallationStore()
 
 const { progress } = useBuildProgress(() => installation)
 const uninstalling = computed(() => progress.value?.kind === 'uninstall')
+const updating = computed(() => progress.value?.kind === 'update')
+const cardReplacesSettings = computed(() => uninstalling.value || updating.value)
 const uninstallFailure = computed(() => uninstallFailureOf(progressStore, installation.id))
-const uninstallReplacesSettings = computed(
-  () => uninstalling.value || uninstallFailure.value !== null
-)
+const settingsHidden = computed(() => cardReplacesSettings.value || uninstallFailure.value !== null)
 const tone = computed(() => homeBuildTones([installation], installationStore.installations)[0]!)
 
 const typeMeta = computed(() => installTypeMetaForInstall(installation))
@@ -56,6 +56,9 @@ const status = computed(() => {
   const id = installation.id
   if (uninstalling.value) {
     return { tone: 'quiet', label: 'uninstallProgress.status', spinning: true } as const
+  }
+  if (updating.value) {
+    return { tone: 'quiet', label: 'updateProgress.status', spinning: true } as const
   }
   if (sessionStore.errorInstances.has(id))
     return { tone: 'bad', label: 'chooser.statusError' } as const
@@ -92,7 +95,7 @@ onUnmounted(() => unsubscribeSettings?.())
               :id="TITLE_ID"
               class="m-0 flex min-w-0 font-display text-display font-semibold text-foreground"
             >
-              <span v-if="uninstallReplacesSettings" class="truncate">{{ installation.name }}</span>
+              <span v-if="settingsHidden" class="truncate">{{ installation.name }}</span>
             </h1>
             <StatusChip v-if="status" class="build-details-status" :tone="status.tone">
               <template v-if="status.tone === 'bad'" #icon>
@@ -119,7 +122,7 @@ onUnmounted(() => unsubscribeSettings?.())
       </header>
 
       <HomeBuildCard
-        v-if="uninstalling"
+        v-if="cardReplacesSettings"
         class="shrink-0"
         :build="installation"
         :status="homeBuildStatus(installation, sessionStore)"

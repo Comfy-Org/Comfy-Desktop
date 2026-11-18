@@ -1027,6 +1027,13 @@
     "tryAgain": "重试",
     "dismiss": "忽略"
   },
+  "updateProgress": {
+    "status": "正在更新",
+    "tileStatus": "正在更新 · {percent}%",
+    "cancelTitle": "停止更新？",
+    "cancelMessage": "{name} 将停止更新。之后可以再次更新。",
+    "cancelConfirm": "停止更新"
+  },
   "announcement": {
     "comfyApi": {
       "title": "Comfy API \u73b0\u5df2\u63a8\u51fa",

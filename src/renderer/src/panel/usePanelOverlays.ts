@@ -11,7 +11,7 @@ import { keepsComfyRunningWhenWindowCloses } from '../composables/useReturnToDas
 import { useProgressStore } from '../stores/progressStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { isUninstallOpKind } from '../lib/progressOpKind'
+import { isUninstallOpKind, updatesBuildInPlace } from '../lib/progressOpKind'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -194,9 +194,15 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     })
   }
 
+  function showsOnBuildTile(showOpts: ShowProgressOpts): boolean {
+    return (
+      isUninstallOpKind(showOpts.opKind) || updatesBuildInPlace(showOpts.opKind, showOpts.actionId)
+    )
+  }
+
   function runsInBackground(showOpts: ShowProgressOpts): boolean {
     if (installationId) return false
-    if (showOpts.opKind === 'install' || isUninstallOpKind(showOpts.opKind)) return true
+    if (showOpts.opKind === 'install' || showsOnBuildTile(showOpts)) return true
     return showOpts.opKind === 'launch' && !opts.launchesInPlace?.(showOpts.installationId)
   }
 
@@ -258,7 +264,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     const operationName = showOpts.title.split(' — ')[0] || showOpts.title
     if (runsInBackground(showOpts)) {
       startOperationOnce({ ...showOpts, chainSpan: undefined })
-      if (isUninstallOpKind(showOpts.opKind)) {
+      if (showsOnBuildTile(showOpts)) {
         if (activePanel.value === 'progress') {
           activePanel.value = defaultBodyPanel()
           window.api.closeCurrentPanel()
