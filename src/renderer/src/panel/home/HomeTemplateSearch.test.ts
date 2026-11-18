@@ -1747,6 +1747,7 @@ describe('HomeTemplateSearch telemetry', () => {
   })
 
   it('sends a give-up with the answer that arrived while the window was away, seen for no time', async () => {
+    const later = frozenClock()
     let answerLater!: (response: TemplateSearchResponse) => void
     searchTemplates.mockReturnValueOnce(new Promise((resolve) => (answerLater = resolve)))
     const wrapper = mountSearch()
@@ -1754,6 +1755,7 @@ describe('HomeTemplateSearch telemetry', () => {
     window.dispatchEvent(new Event('blur'))
     answerLater(answer({ run: [POSTER] }))
     await flushPromises()
+    later(2000)
     wrapper.unmount()
     expect(named('abandoned')[0]!.context).toMatchObject({
       reason: 'left',
