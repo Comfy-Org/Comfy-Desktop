@@ -5,22 +5,46 @@ import type * as SettingsModule from '../settings'
 const mocks = vi.hoisted(() => ({
   appsBuildRunning: false,
   stopAppsBuilds: vi.fn(async () => {}),
-  keepComfyRunning: undefined as boolean | undefined
+  keepComfyRunning: undefined as boolean | undefined,
+  cursor: { x: 0, y: 0 },
+  displays: [] as Electron.Rectangle[]
 }))
 
-vi.mock('electron', () => ({
-  app: {
-    isPackaged: false,
-    getPath: () => '/tmp',
-    getVersion: () => '0.0.0-test',
-    getLocale: () => 'en'
-  },
-  ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
-  dialog: {},
-  shell: {},
-  WebContentsView: class {},
-  BrowserWindow: { getAllWindows: () => [] },
-  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
+vi.mock('electron', () => {
+  const span = (a0: number, a1: number, b0: number, b1: number): number =>
+    Math.max(0, Math.min(a1, b1) - Math.max(a0, b0))
+  const overlap = (a: Electron.Rectangle, b: Electron.Rectangle): number =>
+    span(a.x, a.x + a.width, b.x, b.x + b.width) * span(a.y, a.y + a.height, b.y, b.y + b.height)
+  const displayAt = (point: Electron.Point) =>
+    mocks.displays.find((d) => overlap(d, { ...point, width: 1, height: 1 }) > 0) ??
+    mocks.displays[0]
+  const largestOverlap = (rect: Electron.Rectangle): Electron.Rectangle =>
+    mocks.displays.reduce((best, d) => (overlap(d, rect) > overlap(best, rect) ? d : best))
+  return {
+    app: {
+      isPackaged: false,
+      getPath: () => '/tmp',
+      getVersion: () => '0.0.0-test',
+      getLocale: () => 'en'
+    },
+    ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
+    dialog: {},
+    shell: {},
+    WebContentsView: class {},
+    BrowserWindow: { getAllWindows: () => [] },
+    nativeTheme: { on: vi.fn(), shouldUseDarkColors: false },
+    screen: {
+      getCursorScreenPoint: () => mocks.cursor,
+      getDisplayNearestPoint: (point: Electron.Point) => ({ workArea: displayAt(point) }),
+      getDisplayMatching: (rect: Electron.Rectangle) => ({ workArea: largestOverlap(rect) })
+    }
+  }
+})
+
+vi.mock('../lib/windowState', () => ({
+  getSavedBounds: () => undefined,
+  getWindowOptions: vi.fn(),
+  saveWindowBounds: vi.fn()
 }))
 
 vi.mock('../apps/localComfy', () => ({
@@ -55,6 +79,7 @@ import {
   expectedPartitionFor,
   installCloseNeedsConfirm,
   isWindowLayoutable,
+  placeHostWindow,
   shouldBailAfterCloseChoice,
   shouldBailAfterConsult,
   quitsOnceEveryWindowClosed,
@@ -165,6 +190,28 @@ describe('cascadeOffsetForCollisions', () => {
   it('skips destroyed/empty origin lists cleanly', () => {
     const opts = { x: 50, y: 50, width: 800, height: 600 }
     expect(cascadeOffsetForCollisions(opts, [])).toEqual(opts)
+  })
+})
+
+describe('placeHostWindow', () => {
+  const laptop = { x: 0, y: 33, width: 1512, height: 889 }
+
+  it('waits to maximize a hidden window on a small screen until the window is revealed', () => {
+    mocks.displays = [laptop]
+    mocks.cursor = { x: 100, y: 100 }
+    expect(placeHostWindow('inst-new', true, null, [])).toMatchObject({
+      maximizeNow: false,
+      maximizeOnReveal: true
+    })
+  })
+
+  it('maximizes a window that is shown as it is built on a small screen right away', () => {
+    mocks.displays = [laptop]
+    mocks.cursor = { x: 100, y: 100 }
+    expect(placeHostWindow('inst-new', false, null, [])).toMatchObject({
+      maximizeNow: true,
+      maximizeOnReveal: false
+    })
   })
 })
 

@@ -47,7 +47,8 @@ import { getSavedBounds, getWindowOptions, saveWindowBounds } from '../lib/windo
 import {
   defaultWindowBoundsNear,
   defaultWindowBoundsUnderCursor,
-  fitWindowToDisplay
+  fitWindowToDisplay,
+  type FittedWindow
 } from '../lib/defaultWindowSize'
 import { ensureSystemModal } from '../popups/systemModal'
 import { hideTitlePopupForParent, prewarmTitlePopup } from '../popups/titlePopup'
@@ -294,6 +295,40 @@ function findLiveSiblingOrigin(boundsKey: string): { x: number; y: number } | nu
   return null
 }
 
+export interface HostWindowPlacement {
+  bounds: FittedWindow
+  maximizeNow: boolean
+  maximizeOnReveal: boolean
+}
+
+export function placeHostWindow(
+  boundsKey: string,
+  initiallyHidden: boolean,
+  sibling: { x: number; y: number } | null,
+  existingOrigins: ReadonlyArray<{ x: number; y: number }>
+): HostWindowPlacement {
+  const saved = boundsKey === CHOOSER_HOST_BOUNDS_KEY ? undefined : getSavedBounds(boundsKey)
+  const fresh = sibling
+    ? defaultWindowBoundsNear(sibling)
+    : saved
+      ? null
+      : defaultWindowBoundsUnderCursor()
+  const initialOptions = fresh
+    ? {
+        x: sibling?.x ?? fresh.x,
+        y: sibling?.y ?? fresh.y,
+        width: fresh.width,
+        height: fresh.height
+      }
+    : getWindowOptions(boundsKey)
+  const maximize = saved ? saved.maximized : fresh?.maximize === true
+  return {
+    bounds: fitWindowToDisplay(cascadeOffsetForCollisions(initialOptions, existingOrigins)),
+    maximizeNow: maximize && !initiallyHidden,
+    maximizeOnReveal: maximize && initiallyHidden
+  }
+}
+
 export function isWindowLayoutable(
   win: Pick<BrowserWindow, 'isDestroyed' | 'isMinimized'>
 ): boolean {
@@ -354,27 +389,14 @@ export async function confirmHostWindowClose(
 export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowResult {
   const fx = getFactories()
   const windowKey = nextWindowKey()
-  const isChooserKey = opts.boundsKey === CHOOSER_HOST_BOUNDS_KEY
-  const saved = isChooserKey ? undefined : getSavedBounds(opts.boundsKey)
-  const sibling = findLiveSiblingOrigin(opts.boundsKey)
-  const fresh = sibling
-    ? defaultWindowBoundsNear(sibling)
-    : saved
-      ? null
-      : defaultWindowBoundsUnderCursor()
-  const initialOptions = fresh
-    ? {
-        x: sibling?.x ?? fresh.x,
-        y: sibling?.y ?? fresh.y,
-        width: fresh.width,
-        height: fresh.height
-      }
-    : getWindowOptions(opts.boundsKey)
-  const windowOptions = fitWindowToDisplay(
-    cascadeOffsetForCollisions(initialOptions, liveHostOrigins())
+  const placement = placeHostWindow(
+    opts.boundsKey,
+    opts.initiallyHidden === true,
+    findLiveSiblingOrigin(opts.boundsKey),
+    liveHostOrigins()
   )
   const comfyWindow = new BrowserWindow({
-    ...windowOptions,
+    ...placement.bounds,
     show: !opts.initiallyHidden,
     icon: APP_ICON,
     title: opts.windowTitle,
@@ -464,7 +486,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     if (delayedRelayoutTimer) clearTimeout(delayedRelayoutTimer)
   })
 
-  if (saved ? saved.maximized : fresh?.maximize) comfyWindow.maximize()
+  if (placement.maximizeNow) comfyWindow.maximize()
 
   if (process.platform === 'darwin') {
     const sendFullscreen = (fullscreen: boolean): void => {
@@ -613,6 +635,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     sourceCategory: opts.initialSourceCategory,
     previewInstallationId: null,
     coldStartPendingReveal: false,
+    maximizeOnReveal: placement.maximizeOnReveal,
     _installCleanup: null,
     detachInstall: () => {}
   }

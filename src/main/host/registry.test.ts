@@ -24,6 +24,7 @@ import {
 } from '../lib/ipc/shared'
 import {
   _resetAttachClaimsForTest,
+  bringToFront,
   canRestartFromPicker,
   claimAttachHost,
   comfyWindows,
@@ -43,6 +44,7 @@ import {
   hasRunningSessionForEntry,
   raiseAllHostWindows,
   registerHostEntry,
+  revealColdStartHostIfPending,
   setHostFactories,
   setLastFocusedInstallationId,
   shouldConfirmKillForEntry,
@@ -59,6 +61,7 @@ interface FakeWindow {
   raised: string[]
   show: () => void
   focus: () => void
+  maximize: () => void
   restore: () => void
   setAlwaysOnTop: () => void
 }
@@ -72,6 +75,7 @@ function makeWindow(opts: { destroyed?: boolean; minimized?: boolean } = {}): Fa
     raised: [],
     show: () => win.raised.push('show'),
     focus: () => win.raised.push('focus'),
+    maximize: () => win.raised.push('maximize'),
     restore: () => {
       win.minimized = false
       win.raised.push('restore')
@@ -606,6 +610,43 @@ describe('raiseAllHostWindows', () => {
     raiseAllHostWindows()
     expect(fakeWin(min).raised).toContain('restore')
     expect(fakeWin(min).raised).toContain('focus')
+  })
+})
+
+describe('revealColdStartHostIfPending', () => {
+  function fakeWin(entry: ComfyWindowEntry): FakeWindow {
+    return entry.window as unknown as FakeWindow
+  }
+
+  it('maximizes a hidden window that opens maximized when it is revealed', () => {
+    const chooser = makeEntry({ installationId: null })
+    chooser.coldStartPendingReveal = true
+    chooser.maximizeOnReveal = true
+    registerHostEntry(chooser)
+
+    revealColdStartHostIfPending(chooser.windowKey)
+    expect(fakeWin(chooser).raised).toEqual(['maximize', 'show', 'focus'])
+    expect(chooser.maximizeOnReveal).toBe(false)
+  })
+
+  it('reveals a window that does not open maximized at its own size', () => {
+    const chooser = makeEntry({ installationId: null })
+    chooser.coldStartPendingReveal = true
+    registerHostEntry(chooser)
+
+    revealColdStartHostIfPending(chooser.windowKey)
+    expect(fakeWin(chooser).raised).toEqual(['show', 'focus'])
+  })
+
+  it('maximizes only on the first reveal, so a window the user unmaximized stays that size', () => {
+    const chooser = makeEntry({ installationId: null })
+    chooser.coldStartPendingReveal = true
+    chooser.maximizeOnReveal = true
+    registerHostEntry(chooser)
+
+    revealColdStartHostIfPending(chooser.windowKey)
+    bringToFront(chooser.window)
+    expect(fakeWin(chooser).raised).toEqual(['maximize', 'show', 'focus', 'show', 'focus'])
   })
 })
 
