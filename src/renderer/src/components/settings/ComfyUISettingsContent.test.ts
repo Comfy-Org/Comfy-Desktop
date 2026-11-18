@@ -753,8 +753,14 @@ describe('ComfyUISettingsContent', () => {
   })
 
   describe('tab strip in a narrow pane', () => {
-    it('scrolls instead of clipping, fades the hidden edge, and brings the chosen tab into view', async () => {
-      const priorSections = useComfyUISettingsState.sections.value
+    let priorSections: unknown[]
+    let priorFresh: boolean
+    let pane: HTMLElement
+    let w: VueWrapper | undefined
+
+    beforeEach(() => {
+      priorSections = useComfyUISettingsState.sections.value
+      priorFresh = useComfyUISettingsState.sectionsFresh.value
       useComfyUISettingsState.sectionsFresh.value = true
       useComfyUISettingsState.sections.value = [
         { tab: 'update', fields: [] },
@@ -762,34 +768,53 @@ describe('ComfyUISettingsContent', () => {
         { tab: 'settings', fields: [] },
         { tab: 'snapshots', fields: [] }
       ]
-      const pane = document.createElement('div')
+      pane = document.createElement('div')
       pane.style.width = '260px'
       document.body.append(pane)
-      const w = mount(ComfyUISettingsContent, {
-        props: { installation: SAMPLE_INSTALL, initialTab: 'update', activeOperation: null },
-        global: { plugins: [getActivePinia() ?? createPinia()] },
-        attachTo: pane
-      })
-      await flushPromises()
-      await new Promise((resolve) => requestAnimationFrame(resolve))
+    })
 
-      const strip = w.get<HTMLElement>('.settings-v2-tabs').element
-      expect(getComputedStyle(strip).overflowX).toBe('auto')
-      expect(strip.scrollWidth).toBeGreaterThan(strip.clientWidth)
-      expect(strip.className).toContain('mask-image')
-
-      await w.get('[data-testid="' + TID.settingsTab('snapshots') + '"]').trigger('click')
-      await flushPromises()
-      const last = w.get<HTMLElement>(
-        '[data-testid="' + TID.settingsTab('snapshots') + '"]'
-      ).element
-      expect(last.getBoundingClientRect().right).toBeLessThanOrEqual(
-        strip.getBoundingClientRect().right + 1
-      )
-
-      w.unmount()
+    afterEach(() => {
+      w?.unmount()
+      w = undefined
       pane.remove()
       useComfyUISettingsState.sections.value = priorSections
+      useComfyUISettingsState.sectionsFresh.value = priorFresh
+    })
+
+    async function mountNarrow(initialTab: string): Promise<VueWrapper> {
+      w = mount(ComfyUISettingsContent, {
+        props: { installation: SAMPLE_INSTALL, initialTab, activeOperation: null },
+        global: { plugins: [getActivePinia() ?? createPinia()] },
+        attachTo: pane
+      }) as VueWrapper
+      await flushPromises()
+      return w
+    }
+
+    function tabTrigger(wrapper: VueWrapper, key: string): HTMLElement {
+      return wrapper.get<HTMLElement>(`[data-testid="${TID.settingsTab(key)}"]`).element
+    }
+
+    function isInsideStrip(strip: HTMLElement, tab: HTMLElement): boolean {
+      return tab.getBoundingClientRect().right <= strip.getBoundingClientRect().right + 1
+    }
+
+    it('scrolls instead of clipping, fades the hidden edge, and brings the chosen tab into view', async () => {
+      const wrapper = await mountNarrow('update')
+      const strip = wrapper.get<HTMLElement>('.settings-v2-tabs').element
+      expect(getComputedStyle(strip).overflowX).toBe('auto')
+      expect(strip.scrollWidth).toBeGreaterThan(strip.clientWidth)
+      await expect.poll(() => getComputedStyle(strip).maskImage).not.toBe('none')
+
+      await wrapper.get(`[data-testid="${TID.settingsTab('snapshots')}"]`).trigger('click')
+      await flushPromises()
+      expect(isInsideStrip(strip, tabTrigger(wrapper, 'snapshots'))).toBe(true)
+    })
+
+    it('shows the chosen tab when the pane opens straight onto a later tab', async () => {
+      const wrapper = await mountNarrow('snapshots')
+      const strip = wrapper.get<HTMLElement>('.settings-v2-tabs').element
+      await expect.poll(() => isInsideStrip(strip, tabTrigger(wrapper, 'snapshots'))).toBe(true)
     })
   })
 
@@ -1046,6 +1071,19 @@ describe('ComfyUISettingsContent', () => {
       expect(target.querySelector('.build-details-title-name')!.textContent).toBe('Other Build')
       expect(await renameForFirstBuild('Draft for My Install')).toBe(false)
       expect(useComfyUISettingsState.renameStub).not.toHaveBeenCalled()
+    })
+
+    it('offers no rename until the settings of the selected build have loaded', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'rename', label: 'Rename' }]
+      useComfyUISettingsState.sectionsFresh.value = false
+      try {
+        mountTitleTarget()
+        const w = await mountOnPage()
+        await flushPromises()
+        expect(w.findComponent({ name: 'InlineNameEdit' }).props('onRename')).toBeUndefined()
+      } finally {
+        useComfyUISettingsState.sectionsFresh.value = true
+      }
     })
 
     it('shows a read-only title when the build offers no Rename action', async () => {

@@ -361,12 +361,17 @@ watch(tabStrip, (strip) => {
   tabStripObserver.observe(strip)
 })
 onUnmounted(() => tabStripObserver?.disconnect())
+function revealActiveTab(): void {
+  tabStrip.value
+    ?.querySelector<HTMLElement>(`[data-testid="${TID.settingsTab(activeTab.value)}"]`)
+    ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+}
+watch([activeTab, tabStrip], revealActiveTab, { flush: 'post' })
 watch(
-  activeTab,
-  (key) => {
-    tabStrip.value
-      ?.querySelector<HTMLElement>(`[data-testid="${TID.settingsTab(key)}"]`)
-      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  [() => tabs.value.map((tab) => tab.key).join(), () => showUpdateBadge.value],
+  () => {
+    measureTabStrip()
+    revealActiveTab()
   },
   { flush: 'post' }
 )
@@ -392,7 +397,7 @@ function renameOnlyWhileSelected(installationId: string) {
 }
 const renameHandler = computed(() => {
   const id = installation.value?.id
-  return canRename.value && id ? renameOnlyWhileSelected(id) : undefined
+  return canRename.value && sectionsFresh.value && id ? renameOnlyWhileSelected(id) : undefined
 })
 const titleEdit = useTemplateRef<InstanceType<typeof InlineNameEdit>>('titleEdit')
 function handleMorePick(action: ActionDef): void {

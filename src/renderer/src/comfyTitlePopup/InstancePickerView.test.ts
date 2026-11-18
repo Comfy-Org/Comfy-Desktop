@@ -402,6 +402,23 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(wrapper.find('.picker-search input').exists()).toBe(false)
     })
 
+    it('keeps the search text when Escape only ends an input method composition', async () => {
+      const wrapper = await mountPicker({
+        installs: fewBuilds(3),
+        activeInstallationId: null,
+        runningInstallationIds: []
+      })
+      await wrapper.get('.picker-search-toggle').trigger('click')
+      await flushPromises()
+      const input = wrapper.get('.picker-search input')
+      await input.setValue('build')
+      input.element.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true })
+      )
+      await flushPromises()
+      expect((input.element as HTMLInputElement).value).toBe('build')
+    })
+
     it('filters install rows by search query under the Builds title', async () => {
       const wrapper = await mountPicker({
         installs: [

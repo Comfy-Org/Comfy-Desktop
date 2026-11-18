@@ -189,7 +189,10 @@ function closeSearchIfEmpty(): void {
   searchOpen.value = false
 }
 
-async function onSearchEscape(): Promise<void> {
+async function onSearchEscape(event: KeyboardEvent): Promise<void> {
+  if (event.isComposing) return
+  event.preventDefault()
+  event.stopPropagation()
   if (searchQuery.value) {
     searchQuery.value = ''
     return
@@ -503,7 +506,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
                     class="picker-search-input m-0 min-w-0 border-0 bg-transparent p-0 text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground"
                     :placeholder="$t('instancePicker.searchPlaceholder')"
                     :aria-label="$t('instancePicker.searchPlaceholder')"
-                    @keydown.esc.stop.prevent="onSearchEscape"
+                    @keydown.esc="onSearchEscape"
                     @blur="closeSearchIfEmpty"
                   />
                 </label>
