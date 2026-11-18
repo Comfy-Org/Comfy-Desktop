@@ -8,7 +8,8 @@ DS's Motion page (`ds/motion.ts`).
 ## Surfaces
 
 - **No lines.** No borders, strokes or dividers to separate things. Space
-  and a fill do it.
+  and a fill do it. Exceptions: the title bar divider and the line above a
+  modal footer.
 - **Panels a step lighter.** A panel beside content (a sidebar, the asset
   view's details) is a fill a step lighter than what's behind it:
   `color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-content-background))`,
@@ -57,6 +58,12 @@ DS's Motion page (`ds/motion.ts`).
   where you edit something that is saved on another screen (Change setup
   over the New Build summary); there the × hides, so Discard or Save changes
   are the only ways back. Never two buttons with the same effect.
+- **The × sits outside the modal.** The round × is at the card's top
+  right, outside it, like New Build. Never inside the card, also when the
+  modal is its own window (Desktop Settings widens the window instead).
+- **Modal footers keep their line.** The thin line above a modal's footer
+  stays: it is one of the lines allowed by No lines. Never remove it in an
+  audit or a polish pass.
 
 ## Menus
 
@@ -78,18 +85,19 @@ DS's Motion page (`ds/motion.ts`).
   `pages/MarItemMenu.vue`); never a box in the page. Nothing to lose
   (a tag on 0 files), no question.
 - **One choice marks its row.** A single-choice dropdown fills the picked
-  row; no check and no column kept for one. A check is only for a
-  multi-select (`ui/Select.vue`).
+  row and puts a check at its end (`BaseMenuRadioItem`, `BaseSelect`), so
+  the saved choice reads apart from the keyboard highlight. The highlight
+  wins over the picked fill.
 - **Every menu is the DS `Menu`.** Pickers, ⋯ menus and the ☰ popup use
   `@comfyorg/design-system/menu/Menu` with `MenuItem` / `MenuRadioItem`,
   like the filter menus. Never the `Select` listbox for a menu: its
   spacing drifts from the filters. A single choice fills the picked row
-  with the DS selected color (`bg-muted`, `selectedMenuButtonClass`), no check.
+  with the DS selected color (`bg-muted`, `selectedMenuButtonClass`) and a check.
   Rows sit 2px apart (`gap-0.5`) so two highlighted rows never touch.
 - **Every dropdown looks the same in Desktop.** Menus and select lists
   (`BaseSelect`) share one look: the popover background (a step lighter
   than the page), 4px padding, 28px rows with 12px text, the picked row
-  filled, no check. For launch that is this solid look everywhere; the
+  filled with a check. For launch that is this solid look everywhere; the
   proto's smoked glass comes later, to all menus at once, never to one
   menu alone.
 - **Menu dividers run edge to edge.** A divider inside a menu cancels the
@@ -121,9 +129,17 @@ DS's Motion page (`ds/motion.ts`).
   empty or not, so the bar never shifts. An empty one says what lands there
   ("No 3D files yet"), never "Nothing matches", which is only for a search
   or a filter.
-- **Counts go in the tabs**, not beside the title ("Images 4", not "17
-  assets" after the heading). They follow the open folder, filter and
-  search (the type aside). Assets' type tabs only; other tab rows keep counts off.
+- **Tools come with content.** Search, sort, filters, view tabs and actions
+  that need content (Export All) show as soon as the page has one item
+  anywhere, in any tab, and stay while it does:
+  - Nothing at all on the page: hide them; keep only what creates content
+    (New build, Import, Create) next to the empty state.
+  - Content exists but this tab or filter is empty: keep every tool and
+    tab; the empty state names the tab ("No cloud builds").
+  - A search or filter with no results: keep every tool; "Nothing matches"
+    with Clear filters.
+- **No counts on tabs.** No tab row shows a number ("Images", not
+  "Images 4"), Assets included, and no count beside the title either.
 
 ## Tiles
 
@@ -137,9 +153,18 @@ DS's Motion page (`ds/motion.ts`).
   squeeze two side by side. A tile in progress looks like every other
   tile: no buttons inside, status line plus the bar along the bottom, a
   click opens its logs, actions live in ⋯.
+- **Build cards have no buttons or links, only ⋯.** The whole card is the
+  action: ready starts, starting or installing opens logs, running opens.
+  Status on top; the version and a grey "Update" note on the
+  bottom line, plain text. Update, and everything else, lives in ⋯.
 
 ## Feedback
 
+- **Premium is a gold crown.** An app or template that costs credits gets
+  ComfyUI's crown, icon only, in a 28px glass square at the top left of its
+  picture (a corner no other control uses), in the credits gold
+  (`--upgrade`, #e9c422). Hover is the usual one-line tooltip, "Premium app, runs with credits".
+  Free ones get nothing.
 - **Toasts only when you stay** on the page and something changes state.
   No toast after a redirect, on opening things, or for pickers.
 - **Media badges bottom left**, the glass pill, 8px in: a video's icon and
