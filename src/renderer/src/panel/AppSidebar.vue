@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, provide, ref, shallowRef, toRef, watch } from 'vue'
+import { computed, provide, ref, shallowRef, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
-  AppWindow,
   ArrowRight,
   Cloud,
+  Compass,
   House,
   Images,
   Laptop,
@@ -83,16 +83,9 @@ function toggleCollapsed(): void {
   else collapsedByChoice.value = !collapsedByChoice.value
 }
 
-const appsEnabled = ref(false)
-onMounted(async () => {
-  appsEnabled.value = await window.api.getAppsEnabled().catch(() => false)
-})
-
 const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
-  ...(appsEnabled.value
-    ? [{ page: 'apps' as const, label: t('sidebar.apps'), icon: AppWindow }]
-    : []),
+  { page: 'apps', label: t('sidebar.explore'), icon: Compass },
   { page: 'assets', label: t('sidebar.assets'), icon: Images },
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])

@@ -12,7 +12,7 @@ import { claimsOf, FakeCloud, reply, type BearerClaims } from './support/fakeClo
 const SIDEBAR_APPS = '[data-testid="app-sidebar-apps"]'
 const SIDEBAR_HOME = '[data-testid="app-sidebar-home"]'
 const HOME_VIEW = '[data-testid="home-view"]'
-const HOME_APP_TITLES = '[data-testid="home-carousel-name"] > span:first-child'
+const HOME_CAROUSEL_TITLES = '[data-testid="home-carousel-name"] > span:first-child'
 const HOME_APP_IN_FRONT = '[data-testid="home-carousel-card"][aria-current="true"]'
 const APPS_GRID = '[data-testid="apps-grid"]'
 const CUTOUT_CARD = '[data-testid="app-card-remove-background"]'
@@ -25,6 +25,24 @@ const CUTOUT_PAGE = '/apps/remove-background/desktop.html'
 const DOWN_PAGE = '/apps/down-for-now/desktop.html'
 const OUTSIDE_LINK = 'https://docs.example.test/pricing'
 const LONG_WAIT = { timeout: 20_000 }
+const FEATURED_WORKFLOW_TITLE = 'Featured workflow'
+const EXPLORE_WORKFLOW_TITLE = 'Catalog workflow'
+const CLOUD_EDITOR_PATH = '/fake-cloud-editor'
+const CATALOG_EDITOR_GRAPH = { nodes: [{ id: 1, type: 'SaveImage' }], links: [] }
+const CATALOG_WORKFLOW_FILE = '$.workflow_files[0].file'
+
+const CLOUD_EDITOR_HTML = `<!doctype html>
+<p id="loaded-workflow"></p>
+<script>
+  window.app = {
+    graph: {},
+    canvas: {},
+    loadApiJson() {},
+    loadGraphData(graph, _clean, _restore, name) {
+      document.getElementById('loaded-workflow').textContent = JSON.stringify({ graph, name })
+    }
+  }
+</script>`
 
 function appPageHtml(title: string, cloudUrl: string): string {
   return `<!doctype html>
@@ -208,6 +226,39 @@ test.beforeAll(async () => {
   }
   promptBearers = []
   cloud = new FakeCloud((req, res, url) => {
+    if (url.pathname === CLOUD_EDITOR_PATH) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      res.end(CLOUD_EDITOR_HTML)
+      return true
+    }
+    if (url.pathname === '/api/v1/catalog/media/catalog-only/v1') {
+      reply(res, 200, CATALOG_EDITOR_GRAPH)
+      return true
+    }
+    if (url.pathname === '/api/v1/catalog/items' && url.searchParams.get('type') === 'workflow') {
+      const featured = {
+        uid: 'featured',
+        slug: '/hub/workflows/featured',
+        data: { title: FEATURED_WORKFLOW_TITLE }
+      }
+      const catalogOnly = {
+        uid: 'catalog-only',
+        slug: '/hub/workflows/catalog-only',
+        data: {
+          title: EXPLORE_WORKFLOW_TITLE,
+          compatibility: { website: { type: 'CLOUD' } },
+          website_media: { [CATALOG_WORKFLOW_FILE]: '/catalog-media/catalog-only/v1' },
+          website_media_types: { [CATALOG_WORKFLOW_FILE]: 'application/json' }
+        }
+      }
+      reply(res, 200, {
+        items:
+          url.searchParams.get('surface') === 'desktop_starters'
+            ? [featured]
+            : [featured, catalogOnly]
+      })
+      return true
+    }
     if (url.pathname !== '/api/prompt') return false
     allowPageToCallCloud(res)
     if (req.method === 'OPTIONS') {
@@ -227,7 +278,19 @@ test.beforeAll(async () => {
   process.env['COMFY_BUILDER_BASE_URL'] = cloud.url
   userDataDir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'comfy-apps-e2e-')))
   ctx = await launchApp(
-    { userDataDir, settings: { firstUseCompleted: true, telemetryEnabled: false } },
+    {
+      userDataDir,
+      settings: { firstUseCompleted: true, telemetryEnabled: false },
+      installations: [
+        {
+          sourceId: 'cloud',
+          name: 'Comfy Cloud',
+          remoteUrl: `${cloud.url}${CLOUD_EDITOR_PATH}`,
+          launchMode: 'window',
+          browserPartition: 'shared'
+        }
+      ]
+    },
     { stayOnHome: true }
   )
   stopBrowser = cloud.completeSignInsLikeABrowser(ctx.app)
@@ -346,7 +409,7 @@ test("Home shows the website's apps, and the one in front opens inside Desktop, 
   expect(await ctx.panel.click(SIDEBAR_HOME)).toBe(true)
   await ctx.panel.waitForVisible(HOME_VIEW)
   await expect
-    .poll(() => ctx.panel.allText(HOME_APP_TITLES), LONG_WAIT)
+    .poll(() => ctx.panel.allText(HOME_CAROUSEL_TITLES), LONG_WAIT)
     .toEqual(['Remove Background', 'Down For Now'])
   await expect.poll(sidebarIsOpenAndStill, LONG_WAIT).toBe(true)
   const openedInBrowserBefore = await getShellOpenExternalCalls(ctx.app)
@@ -370,4 +433,33 @@ test("Home shows the website's apps, and the one in front opens inside Desktop, 
     const area = await appPageAreaInWindow()
     expect((await viewShowing(ctx.app, CUTOUT_PAGE))?.bounds).toEqual(area)
   }).toPass(LONG_WAIT)
+})
+
+test('See all workflows on Home opens the full catalog and a workflow loads into Comfy Cloud @macos @windows @linux', async () => {
+  expect(await ctx.panel.click(SIDEBAR_HOME)).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="home-workflows-tab"]')
+  expect(await ctx.panel.click('[data-testid="home-workflows-tab"]')).toBe(true)
+  await expect
+    .poll(() => ctx.panel.allText(HOME_CAROUSEL_TITLES), LONG_WAIT)
+    .toEqual([FEATURED_WORKFLOW_TITLE])
+
+  expect(await ctx.panel.click('[data-testid="home-see-all-workflows"]')).toBe(true)
+  const catalogCard = '[data-testid="workflow-card-catalog-only"]'
+  await ctx.panel.waitForVisible(catalogCard)
+  expect(await ctx.panel.click(catalogCard)).toBe(true)
+  const dialogTitle = '[role="dialog"] h2'
+  await ctx.panel.waitForVisible(dialogTitle)
+  expect(await ctx.panel.textOf(dialogTitle)).toBe(EXPLORE_WORKFLOW_TITLE)
+  expect(
+    await ctx.panel.evaluate<string>(
+      'document.querySelector("[data-testid=catalog-workflow-target]")?.value'
+    )
+  ).toBe('cloud')
+  expect(await ctx.panel.click('[role="dialog"] button[type="submit"]')).toBe(true)
+
+  const editor = new WebContentsPage(ctx.app, CLOUD_EDITOR_PATH)
+  await editor.waitForSelector('#loaded-workflow', LONG_WAIT)
+  await expect
+    .poll(() => editor.textOf('#loaded-workflow'), LONG_WAIT)
+    .toBe(JSON.stringify({ graph: CATALOG_EDITOR_GRAPH, name: EXPLORE_WORKFLOW_TITLE }))
 })

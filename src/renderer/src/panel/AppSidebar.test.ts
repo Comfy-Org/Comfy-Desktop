@@ -31,19 +31,16 @@ const TEAM = build({ id: 'team', name: 'Team Build', lastLaunchedAt: 400, worksp
 const navigatePanel = vi.fn()
 const openGlobalSettings = vi.fn()
 const openPageInNewWindow = vi.fn()
-const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const refreshCreditBalance = vi.fn<() => Promise<CreditBalanceState>>()
 
 beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
-  getAppsEnabled.mockResolvedValue(false)
   refreshCreditBalance.mockResolvedValue({ status: 'signed_out' })
   ;(window as unknown as { api: unknown }).api = {
     navigatePanel,
     openGlobalSettings,
     openPageInNewWindow,
-    getAppsEnabled,
     getAppUpdateState: vi.fn().mockResolvedValue({ kind: null, version: null, autoUpdate: true }),
     onAppUpdateStateChanged: vi.fn(() => () => {}),
     getInstallations: vi.fn().mockResolvedValue([]),
@@ -90,11 +87,12 @@ function tooltipOf(
 }
 
 describe('AppSidebar', () => {
-  it('lists Home, Assets, then the Builds group, with the tools left to the menu', async () => {
+  it('lists Home, Explore, Assets, then the Builds group, with the tools left to the menu', async () => {
     const wrapper = await mountSidebar()
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
+      'Explore',
       'Assets',
       'Builds',
       ''
@@ -104,18 +102,10 @@ describe('AppSidebar', () => {
     )
   })
 
-  it('adds Apps between Home and Assets once Apps is switched on', async () => {
-    getAppsEnabled.mockResolvedValue(true)
+  it('marks Explore current and keeps the existing Apps route', async () => {
     const wrapper = await mountSidebar('apps')
 
-    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
-      'Home',
-      'Apps',
-      'Assets',
-      'Builds',
-      ''
-    ])
-    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Apps'])
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Explore'])
 
     await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
 
@@ -140,13 +130,6 @@ describe('AppSidebar', () => {
 
     await wrapper.setProps({ makeRoom: true })
     expect(sidebar.attributes('data-collapsed')).toBe('true')
-  })
-
-  it('leaves Apps out when the switch cannot be read', async () => {
-    getAppsEnabled.mockRejectedValue(new Error('main is busy'))
-    const wrapper = await mountSidebar()
-
-    expect(wrapper.find('[data-testid="app-sidebar-apps"]').exists()).toBe(false)
   })
 
   it('marks only the current page', async () => {
@@ -458,7 +441,6 @@ describe('AppSidebar', () => {
     })
 
     async function mountAttached(builds: Installation[] = []) {
-      getAppsEnabled.mockResolvedValue(true)
       useInstallationStore().installations = builds
       const wrapper = mount(AppSidebar, {
         props: { activePage: 'home' },

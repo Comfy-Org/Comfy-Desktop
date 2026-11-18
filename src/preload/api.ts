@@ -113,7 +113,10 @@ export function buildElectronApi(): ElectronApi {
     copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
+    listCatalogWorkflows: () => ipcRenderer.invoke('catalog:list-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
+    launchCatalogWorkflow: (id, target, workspaceId) =>
+      ipcRenderer.invoke('catalog:launch-workflow', id, target, workspaceId),
     getAppsEnabled: () => ipcRenderer.invoke('apps:get-enabled'),
     listApps: () => ipcRenderer.invoke('apps:list'),
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),

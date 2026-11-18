@@ -8,6 +8,7 @@ import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { homeBuildStatus, homeBuildTones, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
 import { useInstallList } from '../composables/useInstallList'
@@ -27,7 +28,8 @@ import { useSessionStore } from '../stores/sessionStore'
 import type { AppCard, CatalogWorkflow, Installation } from '../types/ipc'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 
-type LoadState = 'loading' | 'ready' | 'unavailable'
+type WorkflowState = 'idle' | 'loading' | 'ready' | 'unavailable'
+type HomeTab = 'apps' | 'workflows'
 
 const HOME_BUILD_LIMIT = 3
 const TEXT_LINK_CLASS =
@@ -35,10 +37,12 @@ const TEXT_LINK_CLASS =
 
 const emit = defineEmits<{
   'open-app': [app: AppCard]
+  'open-workflow': [workflow: CatalogWorkflow]
   pick: [installation: Installation]
   'open-build': [installation: Installation]
   'show-builds': []
   'show-apps': []
+  'show-workflows': []
   'new-build': []
 }>()
 
@@ -110,12 +114,17 @@ function buildStatus(build: Installation) {
 
 const { state: appsState, apps, loadApps } = useHomeApps()
 const appsEnabled = computed(() => appsState.value !== 'checking' && appsState.value !== 'off')
-
-const state = ref<LoadState>('loading')
+const tab = ref<HomeTab>('apps')
+const tabs = computed(() => [
+  { value: 'apps' as const, label: t('sidebar.apps'), testId: 'home-apps-tab' },
+  { value: 'workflows' as const, label: t('sidebar.workflows'), testId: 'home-workflows-tab' }
+])
+const showWorkflows = computed(() => appsState.value === 'off' || tab.value === 'workflows')
+const workflowState = ref<WorkflowState>('idle')
 const workflows = ref<CatalogWorkflow[]>([])
 const carouselIsLoading = computed(() =>
-  appsState.value === 'off'
-    ? state.value === 'loading'
+  showWorkflows.value
+    ? workflowState.value === 'idle' || workflowState.value === 'loading'
     : appsState.value === 'checking' || appsState.value === 'loading'
 )
 
@@ -128,22 +137,18 @@ function thumbnailOf(workflow: CatalogWorkflow): string | null {
 }
 
 async function loadWorkflows(): Promise<void> {
-  state.value = 'loading'
+  workflowState.value = 'loading'
   try {
     workflows.value = await window.api.listHomeWorkflows()
-    state.value = workflows.value.length > 0 ? 'ready' : 'unavailable'
+    workflowState.value = workflows.value.length > 0 ? 'ready' : 'unavailable'
   } catch {
     workflows.value = []
-    state.value = 'unavailable'
+    workflowState.value = 'unavailable'
   }
 }
 
-function openWorkflow(workflow: CatalogWorkflow): void {
-  void window.api.openCatalogWorkflow(workflow.id)
-}
-
-watch(appsState, (now) => {
-  if (now === 'off') void loadWorkflows()
+watch(showWorkflows, (show) => {
+  if (show && workflowState.value === 'idle') void loadWorkflows()
 })
 
 onMounted(() => {
@@ -176,8 +181,11 @@ onMounted(() => {
 
       <section
         class="mt-[74px]"
-        :aria-label="appsState === 'off' ? t('home.exampleWorkflows') : t('sidebar.apps')"
+        :aria-label="showWorkflows ? t('home.exampleWorkflows') : t('sidebar.apps')"
       >
+        <div v-if="appsEnabled" class="mb-5 flex justify-center">
+          <SegmentedControl v-model="tab" :options="tabs" :label="t('home.carouselTabs')" />
+        </div>
         <div
           v-if="carouselIsLoading"
           class="flex h-75 items-center justify-center gap-2.5"
@@ -188,6 +196,27 @@ onMounted(() => {
           <Skeleton class="h-75 w-64 rounded-[18px]" />
           <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
         </div>
+        <template v-else-if="showWorkflows">
+          <HomeCarousel
+            v-if="workflowState === 'ready'"
+            kind="workflows"
+            :cards="workflows"
+            :picture-of="thumbnailOf"
+            @open="emit('open-workflow', $event)"
+          />
+          <div
+            v-else
+            class="flex h-75 flex-col items-center justify-center gap-3"
+            data-testid="home-workflows-unavailable"
+          >
+            <p class="m-0 text-[13px]/5 text-muted-foreground">
+              {{ t('home.workflowsUnavailable') }}
+            </p>
+            <Button type="button" variant="secondary" size="md" @click="loadWorkflows">
+              {{ t('home.retry') }}
+            </Button>
+          </div>
+        </template>
         <HomeCarousel
           v-else-if="appsState === 'ready'"
           kind="apps"
@@ -215,36 +244,16 @@ onMounted(() => {
           <p class="m-0 text-[13px]/5 font-medium text-foreground">{{ t('apps.emptyTitle') }}</p>
           <p class="m-0 text-[13px]/5 text-muted-foreground">{{ t('apps.emptyBody') }}</p>
         </div>
-        <HomeCarousel
-          v-else-if="state === 'ready'"
-          kind="workflows"
-          :cards="workflows"
-          :picture-of="thumbnailOf"
-          @open="openWorkflow"
-        />
-        <div
-          v-else
-          class="flex h-75 flex-col items-center justify-center gap-3"
-          data-testid="home-workflows-unavailable"
-        >
-          <p class="m-0 text-[13px]/5 text-muted-foreground">
-            {{ t('home.workflowsUnavailable') }}
-          </p>
-          <Button type="button" variant="secondary" size="md" @click="loadWorkflows">
-            {{ t('home.retry') }}
-          </Button>
-        </div>
-
-        <div v-if="appsEnabled" class="mt-[30px] flex justify-center">
+        <div v-if="appsState !== 'checking'" class="mt-[30px] flex justify-center">
           <Button
             type="button"
             variant="muted-textonly"
             size="unset"
             :class="TEXT_LINK_CLASS"
-            data-testid="home-see-all-apps"
-            @click="emit('show-apps')"
+            :data-testid="showWorkflows ? 'home-see-all-workflows' : 'home-see-all-apps'"
+            @click="showWorkflows ? emit('show-workflows') : emit('show-apps')"
           >
-            {{ t('home.seeAllApps') }}
+            {{ showWorkflows ? t('home.seeAllWorkflows') : t('home.seeAllApps') }}
             <ArrowRight :size="14" aria-hidden="true" />
           </Button>
         </div>

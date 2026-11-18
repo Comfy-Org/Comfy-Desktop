@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
 import type {
+  CatalogWorkflow,
   ExampleWorkflowDownload,
   ProgressData,
   RunPerformanceTestWorkflowResult
@@ -76,6 +77,14 @@ vi.mock('./AssetsView.vue', () => ({
     props: ['focusName'],
     emits: ['focus-used'],
     template: '<div data-testid="assets-view" :data-focus-name="focusName ?? undefined" />'
+  }
+}))
+vi.mock('./CatalogWorkflowDialog.vue', () => ({
+  default: {
+    name: 'CatalogWorkflowDialog',
+    props: ['workflow', 'installations', 'workspaceId'],
+    emits: ['close'],
+    template: '<div data-testid="workflow-dialog">{{ workflow.title }}</div>'
   }
 }))
 vi.mock('./BuildDetailsView.vue', () => ({
@@ -414,6 +423,7 @@ function installMockApi(initial?: {
     focusComfyWindow: vi.fn(async () => {}),
     navigatePanel: vi.fn(),
     listHomeWorkflows: vi.fn(async () => []),
+    listCatalogWorkflows: vi.fn(async () => []),
     openCatalogWorkflow: vi.fn(async () => true),
     getAppsEnabled: vi.fn(async () => false),
     listApps: vi.fn(async () => []),
@@ -1702,6 +1712,49 @@ describe('PanelApp', () => {
     expect(
       events.filter(({ actionName }) => actionName === 'comfy.desktop.sidebar.page_opened')
     ).toEqual([])
+  })
+
+  it('opens a catalog workflow from Home and from the dedicated Explore tab', async () => {
+    const workflow: CatalogWorkflow = {
+      id: 'upscale-detail',
+      title: 'Upscale detail',
+      description: 'Restore picture detail.',
+      thumbnailUrl: null,
+      canOpenLocal: true,
+      canOpenCloud: true,
+      minComfyUIVersion: null
+    }
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listHomeWorkflows).mockResolvedValue([workflow])
+    vi.mocked(window.api.listCatalogWorkflows).mockResolvedValue([workflow])
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-workflows-tab"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
+    expect(wrapper.get('[data-testid="workflow-dialog"]').text()).toBe(workflow.title)
+    wrapper.findComponent({ name: 'CatalogWorkflowDialog' }).vm.$emit('close')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-see-all-workflows"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="explore-workflows-tab"]').attributes('aria-pressed')).toBe(
+      'true'
+    )
+    expect(window.api.listCatalogWorkflows).toHaveBeenCalledOnce()
+
+    await wrapper.get('[data-testid="workflow-card-upscale-detail"]').trigger('click')
+    expect(wrapper.get('[data-testid="workflow-dialog"]').text()).toBe(workflow.title)
+    const dialog = wrapper.findComponent({ name: 'CatalogWorkflowDialog' })
+    expect(dialog.props('installations')).toEqual([SAMPLE_INSTALL])
+    expect(dialog.props('workspaceId')).toBe('personal')
+
+    useDashboardScopeStore().selectedWorkspaceId = 'another-workspace'
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="workflow-dialog"]').exists()).toBe(false)
   })
 
   it('returns to the list of builds from All builds on Home', async () => {

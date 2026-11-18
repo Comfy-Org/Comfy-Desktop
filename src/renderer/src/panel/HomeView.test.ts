@@ -9,12 +9,19 @@ import { useSessionStore } from '../stores/sessionStore'
 import type { CatalogWorkflow, Installation } from '../types/ipc'
 
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
-const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const getInstallations = vi.fn<() => Promise<Installation[]>>()
 
 function workflow(id: string, title: string, thumbnailUrl: string | null = null): CatalogWorkflow {
-  return { id, title, description: '', thumbnailUrl }
+  return {
+    id,
+    title,
+    description: '',
+    thumbnailUrl,
+    canOpenLocal: false,
+    canOpenCloud: false,
+    minComfyUIVersion: null
+  }
 }
 
 function build(over: Partial<Installation> & { id: string; name: string }): Installation {
@@ -22,10 +29,12 @@ function build(over: Partial<Installation> & { id: string; name: string }): Inst
 }
 
 const UPSCALE: CatalogWorkflow = {
-  id: 'upscale',
-  title: 'Upscale and restore detail',
-  description: 'Enlarge an image and restore fine detail.',
-  thumbnailUrl: 'https://comfy.org/catalog-media/upscale/v1'
+  ...workflow(
+    'upscale',
+    'Upscale and restore detail',
+    'https://comfy.org/catalog-media/upscale/v1'
+  ),
+  description: 'Enlarge an image and restore fine detail.'
 }
 const TALK = workflow('talk', 'Make your character talk')
 const SEVEN_WORKFLOWS = Array.from({ length: 7 }, (_, index) =>
@@ -59,12 +68,10 @@ const NEWEST = build({
 beforeEach(() => {
   vi.clearAllMocks()
   listHomeWorkflows.mockResolvedValue([])
-  openCatalogWorkflow.mockResolvedValue(true)
   getAppsEnabled.mockResolvedValue(false)
   getInstallations.mockResolvedValue([])
   ;(window as unknown as { api: unknown }).api = {
     listHomeWorkflows,
-    openCatalogWorkflow,
     getAppsEnabled,
     getInstallations,
     onInstallationsChanged: vi.fn(() => () => {}),
@@ -144,7 +151,7 @@ describe('Home example workflows', () => {
     await cardAt(wrapper, 1).trigger('click')
 
     expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
-    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+    expect(wrapper.emitted('open-workflow')).toBeUndefined()
   })
 
   it('slides a card two places away to the front as the same card, with the next ones already waiting off stage', async () => {
@@ -166,7 +173,7 @@ describe('Home example workflows', () => {
       '1:Workflow 3',
       '2:Workflow 4'
     ])
-    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+    expect(wrapper.emitted('open-workflow')).toBeUndefined()
   })
 
   it('keeps cards that are off stage out of reach of the keyboard and screen readers', async () => {
@@ -205,7 +212,7 @@ describe('Home example workflows', () => {
 
     await cardAt(wrapper, 0).trigger('click')
 
-    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-6')
+    expect(wrapper.emitted('open-workflow')).toEqual([[SEVEN_WORKFLOWS[6]]])
   })
 
   it('turns the carousel with the arrow keys', async () => {
@@ -238,7 +245,7 @@ describe('Home example workflows', () => {
     await previous.trigger('click')
     await previous.trigger('click')
     expect(cardAt(wrapper, 0).text()).toContain('Workflow 6')
-    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+    expect(wrapper.emitted('open-workflow')).toBeUndefined()
   })
 
   it('stops the arrows at the ends of a short list and leaves them out for a single card', async () => {
@@ -304,7 +311,7 @@ describe('Home example workflows', () => {
 
     await front.trigger('click')
 
-    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-0')
+    expect(wrapper.emitted('open-workflow')).toEqual([[SEVEN_WORKFLOWS[0]]])
   })
 
   it('turns the carousel when it is dragged, and does not open the card the drag ends on', async () => {
@@ -320,12 +327,12 @@ describe('Home example workflows', () => {
     window.dispatchEvent(new PointerEvent('pointerup', { clientX: 290 }))
     await cardAt(wrapper, 0).trigger('click')
 
-    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+    expect(wrapper.emitted('open-workflow')).toBeUndefined()
 
     await new Promise((resolve) => setTimeout(resolve, 0))
     await cardAt(wrapper, 0).trigger('click')
 
-    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-2')
+    expect(wrapper.emitted('open-workflow')).toEqual([[SEVEN_WORKFLOWS[2]]])
   })
 
   it('drags back the other way to earlier cards', async () => {
@@ -348,7 +355,7 @@ describe('Home example workflows', () => {
     window.dispatchEvent(new PointerEvent('pointerup', { clientX: 601 }))
     await cardAt(wrapper, 0).trigger('click')
 
-    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-0')
+    expect(wrapper.emitted('open-workflow')).toEqual([[SEVEN_WORKFLOWS[0]]])
   })
 
   it('shows a short list once, without repeating cards around the arc', async () => {
@@ -382,9 +389,7 @@ describe('Home example workflows', () => {
     listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
     const wrapper = await openHome()
 
-    expect(cardAt(wrapper, 0).attributes('aria-label')).toBe(
-      'Open Upscale and restore detail on Comfy Hub'
-    )
+    expect(cardAt(wrapper, 0).attributes('aria-label')).toBe('Open Upscale and restore detail')
     expect(cardAt(wrapper, 1).attributes('aria-label')).toBe('Show Make your character talk')
   })
 

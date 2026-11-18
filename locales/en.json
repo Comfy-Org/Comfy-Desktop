@@ -21,6 +21,8 @@
     "navigation": "Navigation",
     "home": "Home",
     "apps": "Apps",
+    "explore": "Explore",
+    "workflows": "Workflows",
     "assets": "Assets",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
@@ -65,6 +67,14 @@
       "openNoWindow": "Comfy Desktop could not show the ComfyUI window.",
       "openNotTaken": "ComfyUI did not open the workflow."
     }
+  },
+  "workflows": {
+    "search": "Search workflows",
+    "failedTitle": "Workflows didn't load",
+    "failedBody": "Check your internet connection, then try again.",
+    "emptyTitle": "No workflows yet",
+    "emptyBody": "New catalog workflows will show up here.",
+    "noMatches": "No workflows match “{query}”"
   },
   "assets": {
     "kindLabel": "Asset type",
@@ -165,6 +175,17 @@
       "file": "File"
     }
   },
+  "workflowLaunch": {
+    "target": "Open in",
+    "updateBuild": "This workflow needs ComfyUI {version} or newer. Update a local build in Comfy Desktop.",
+    "noLocalBuild": "Add a compatible local build to open this workflow on your computer.",
+    "unavailable": "You can view this workflow on Comfy Hub.",
+    "openHub": "View on Comfy Hub",
+    "openComfyUI": "Open in ComfyUI",
+    "opening": "Opening…",
+    "openFailed": "Couldn't open the workflow. Try again.",
+    "hubFailed": "Couldn't open this workflow on Comfy Hub. Try again."
+  },
   "home": {
     "title": "Welcome. Let's create!",
     "openComfyUI": "Open ComfyUI",
@@ -183,9 +204,11 @@
     "buildDidntStart": "Didn't start",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "Example workflows",
+    "carouselTabs": "Browse featured content",
     "seeAllApps": "See all apps",
+    "seeAllWorkflows": "See all workflows",
     "showWorkflow": "Show {title}",
-    "openWorkflow": "Open {title} on Comfy Hub",
+    "openWorkflow": "Open {title}",
     "previousWorkflow": "Previous workflow",
     "nextWorkflow": "Next workflow",
     "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",

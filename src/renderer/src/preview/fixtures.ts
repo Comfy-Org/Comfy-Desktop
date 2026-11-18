@@ -301,13 +301,19 @@ export const HOME_WORKFLOWS: CatalogWorkflow[] = [
     id: 'text-to-image',
     title: 'Text to image',
     description: 'Describe a picture and generate it.',
-    thumbnailUrl: null
+    thumbnailUrl: null,
+    canOpenLocal: true,
+    canOpenCloud: true,
+    minComfyUIVersion: null
   },
   {
     id: 'image-to-video',
     title: 'Image to video',
     description: 'Bring a still picture to life.',
-    thumbnailUrl: null
+    thumbnailUrl: null,
+    canOpenLocal: false,
+    canOpenCloud: true,
+    minComfyUIVersion: null
   }
 ]
 

@@ -5,7 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import '../assets/main.css'
 import AppsView from './AppsView.vue'
 import AppPageHost from './AppPageHost.vue'
-import type { AppCard, AppPagePlacement, AppPageStatus } from '../types/ipc'
+import type { AppCard, AppPagePlacement, AppPageStatus, CatalogWorkflow } from '../types/ipc'
 
 const FOUR_COLUMN_PAGE_WIDTH = 1172
 const MEDIUM_PAGE_WIDTH = 900
@@ -32,7 +32,19 @@ const GENJUTSU: AppCard = {
   coverUrl: null
 }
 
+const UPSCALE_WORKFLOW: CatalogWorkflow = {
+  id: 'upscale-workflow',
+  title: 'Upscale detail',
+  description: 'Restore a low-resolution picture.',
+  thumbnailUrl: COVER,
+  canOpenLocal: true,
+  canOpenCloud: true,
+  minComfyUIVersion: null
+}
+
+const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const listApps = vi.fn<() => Promise<AppCard[]>>()
+const listCatalogWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
 const showAppPage = vi.fn<(appId: string, placement: AppPagePlacement) => Promise<AppPageStatus>>()
 const hideAppPage = vi.fn()
 
@@ -69,9 +81,13 @@ beforeEach(() => {
   page.dataset.appsPage = ''
   page.style.cssText = `position: fixed; display: flex; left: 0; top: 0; width: ${FOUR_COLUMN_PAGE_WIDTH}px; height: 840px`
   document.body.append(page)
+  getAppsEnabled.mockResolvedValue(true)
+  listCatalogWorkflows.mockResolvedValue([UPSCALE_WORKFLOW])
   showAppPage.mockResolvedValue('loading')
   ;(window as unknown as { api: unknown }).api = {
+    getAppsEnabled,
     listApps,
+    listCatalogWorkflows,
     showAppPage,
     captureAppPage: vi.fn().mockResolvedValue(null),
     hideAppPage,
@@ -90,7 +106,7 @@ describe('AppsView', () => {
   it('lists every app as a card with its picture, name and one line on what it does', async () => {
     const wrapper = await mountApps()
 
-    expect(wrapper.get('h1').text()).toBe('Apps')
+    expect(wrapper.get('h1').text()).toBe('Explore')
     const card = wrapper.get('[data-testid="app-card-remove-background"]')
     expect(card.text()).toContain('Remove Background')
     expect(card.text()).toContain('Cut the subject out of a picture or video.')
@@ -299,5 +315,46 @@ describe('AppsView', () => {
         .findAll('[data-testid="apps-grid"] button')
         .map((card) => card.attributes('data-testid'))
     ).toEqual(['app-card-genjutsu', 'app-card-remove-background', 'app-card-sdr-to-hdr'])
+  })
+})
+
+describe('Explore Workflows', () => {
+  it('loads catalog workflows on demand with independent searches for Apps and Workflows', async () => {
+    const wrapper = await mountApps()
+
+    await wrapper.get('input').setValue('hdr')
+    expect(listCatalogWorkflows).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-testid="explore-workflows-tab"]').trigger('click')
+    await flushPromises()
+
+    expect(listCatalogWorkflows).toHaveBeenCalledOnce()
+    const workflow = wrapper.get('[data-testid="workflow-card-upscale-workflow"]')
+    expect(workflow.get('img').attributes('src')).toBe(COVER)
+    expect(workflow.text()).toContain(UPSCALE_WORKFLOW.description)
+    await workflow.trigger('click')
+    expect(wrapper.emitted('open-workflow')).toEqual([[UPSCALE_WORKFLOW]])
+    expect(showAppPage).not.toHaveBeenCalled()
+
+    await wrapper.get('input').setValue('video')
+    expect(wrapper.get('[data-testid="workflows-no-matches"]').text()).toContain('video')
+    await wrapper.get('[data-testid="explore-apps-tab"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="apps-grid"] button')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').exists()).toBe(true)
+  })
+
+  it('opens Workflows with a retry when Apps is disabled and the catalog fails', async () => {
+    getAppsEnabled.mockResolvedValue(false)
+    listCatalogWorkflows.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = await mountApps()
+
+    expect(wrapper.find('[data-testid="explore-apps-tab"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="workflows-failed"]').isVisible()).toBe(true)
+    expect(listApps).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-testid="workflows-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="workflow-card-upscale-workflow"]').isVisible()).toBe(true)
   })
 })
