@@ -174,12 +174,12 @@ describe('AppSidebar', () => {
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith(page)
   })
 
-  it('returns Home from the Comfy mark', async () => {
+  it('returns Home from the Comfy wordmark, which shows no tooltip', async () => {
     const wrapper = await mountSidebar('benchmarks')
 
     const logo = wrapper.get('button[aria-label="Home"]')
     expect(logo.element.closest('nav')).toBeNull()
-    expect(logo.findComponent(Tooltip).props('text')).toBe('Home')
+    expect(logo.findComponent(Tooltip).exists()).toBe(false)
     await logo.trigger('click')
 
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('home')

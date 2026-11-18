@@ -229,9 +229,7 @@ function openSettings(): void {
           data-testid="app-sidebar-wordmark"
           @click="navigate('home')"
         >
-          <Tooltip :text="t('sidebar.home')" side="right">
-            <ComfyWordmark class="h-[22px] w-auto" />
-          </Tooltip>
+          <ComfyWordmark class="h-[22px] w-auto" />
         </Button>
       </Transition>
       <Transition v-bind="faceTransition">
