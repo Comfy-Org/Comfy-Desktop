@@ -32,6 +32,7 @@ import {
   buildsWithRuns,
   COMFYUI_EXITED,
   failRunsOn,
+  finishHeardRun,
   isFollowing,
   noteRunMessage,
   runAccepted,
@@ -575,14 +576,20 @@ async function settleUnheardRuns(
 ): Promise<void> {
   const following = promptIds.filter(isFollowing)
   if (following.length === 0) return
-  const queue = parsed(await forward(port, '/queue'))
-  if (!isRecord(queue)) return
+  const queue = await forward(port, '/queue').then(parsed, () => null)
+  if (!isRecord(queue)) {
+    for (const promptId of following) finishHeardRun(promptId)
+    return
+  }
   const { running, pending } = queueViewOf(queue, () => true)
   const queued = new Set([...running, ...pending].map((run) => run.id))
   for (const promptId of following) {
     if (queued.has(promptId) || !isFollowing(promptId)) continue
-    const history = parsed(await forward(port, `/history/${promptId}`))
-    if (!isRecord(history)) continue
+    const history = await forward(port, `/history/${promptId}`).then(parsed, () => null)
+    if (!isRecord(history)) {
+      finishHeardRun(promptId)
+      continue
+    }
     settleRun(promptId, runEndFromHistory(history[promptId]), { ...missing, at: Date.now() })
   }
 }

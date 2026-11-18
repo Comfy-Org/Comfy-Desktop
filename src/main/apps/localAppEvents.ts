@@ -108,6 +108,11 @@ export function finishRun(promptId: string, end: RunEnd): void {
   sendRunFinished(run, end)
 }
 
+export function finishHeardRun(promptId: string): void {
+  const heardEnd = runs.get(promptId)?.heardEnd
+  if (heardEnd) finishRun(promptId, heardEnd)
+}
+
 export function settleRun(promptId: string, fromHistory: RunEnd | null, missing: RunEnd): void {
   finishRun(promptId, fromHistory ?? runs.get(promptId)?.heardEnd ?? missing)
 }

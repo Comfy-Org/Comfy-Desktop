@@ -139,6 +139,7 @@ class FakeComfy {
     status: { completed: true },
     outputs: { save: { images: [CUTOUT] } }
   }
+  brokenHistory: 'body' | 'status' | null = null
 
   answer = async (input: string | URL | Request, init: RequestInit = {}): Promise<Response> => {
     const url = new URL(String(input))
@@ -154,6 +155,15 @@ class FakeComfy {
     if (![PORT, LAB_PORT].includes(Number(url.port))) throw new TypeError('fetch failed')
     if (url.pathname === '/queue' && init.method !== 'POST') return json(this.queue)
     if (url.pathname === '/prompt') return json(this.promptAnswer.body, this.promptAnswer.status)
+    if (url.pathname.startsWith('/history/') && this.brokenHistory === 'status') {
+      return json({ error: 'busy' }, 500)
+    }
+    if (url.pathname.startsWith('/history/') && this.brokenHistory === 'body') {
+      const body = new ReadableStream({
+        start: (stream) => stream.error(new TypeError('terminated'))
+      })
+      return new Response(body, { headers: { 'content-type': 'application/json' } })
+    }
     if (url.pathname.startsWith('/history/')) {
       const promptId = url.pathname.slice('/history/'.length)
       return json(this.historyEntry ? { [promptId]: this.historyEntry } : {})
@@ -1672,6 +1682,25 @@ describe('run_finished, for an app run on this computer', () => {
         ])
       )
     })
+
+    it.each(['body', 'status'] as const)(
+      'sends a heard end with no run time, once, when the history read fails (%s)',
+      async (broken) => {
+        comfy.brokenHistory = broken
+        await runFromApp()
+
+        hear('execution_success', { timestamp: t0 + 6_000 })
+        queueChanged()
+
+        await vi.waitFor(() =>
+          expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ outcome: 'success' })])
+        )
+        await vi.advanceTimersByTimeAsync(0)
+        expect(captured(RUN_FINISHED)).toHaveLength(1)
+        expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('run_seconds')
+        expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('queue_seconds')
+      }
+    )
 
     it('sends a run whose start the socket missed with no run time when its history is gone', async () => {
       comfy.historyEntry = null
