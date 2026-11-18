@@ -141,7 +141,7 @@ function fieldRows(section: DetailSection): DetailField[][] {
   const rows: DetailField[][] = []
   for (const field of section.fields ?? []) {
     const prev = rows[rows.length - 1]
-    if (!props.stacked && field.rowGroup && prev && prev[0]?.rowGroup === field.rowGroup) {
+    if (field.rowGroup && prev && prev[0]?.rowGroup === field.rowGroup) {
       prev.push(field)
     } else {
       rows.push([field])
@@ -325,7 +325,11 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
           :key="rowKey(row)"
           class="settings-v2-field-row"
           :class="[
-            row.length > 1 ? 'is-paired flex flex-wrap gap-4' : 'contents',
+            row.length > 1
+              ? props.stacked
+                ? 'is-paired flex flex-wrap gap-x-4 gap-y-1'
+                : 'is-paired flex flex-wrap gap-4'
+              : 'contents',
             { '[&:last-child>.settings-v2-field]:border-b-0': readonly }
           ]"
         >

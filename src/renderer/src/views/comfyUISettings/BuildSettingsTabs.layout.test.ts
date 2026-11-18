@@ -202,22 +202,44 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     expect(root.scrollWidth, 'pane never scrolls sideways').toBeLessThanOrEqual(width)
   })
 
-  it('gives each startup setting its own full-width row under the section title', async () => {
+  it('pairs startup settings in two even columns under the full-width arguments field', async () => {
     const root = await mountStartupArgs(width)
     const head = root.querySelector('.settings-v2-section-head')!.getBoundingClientRect()
-    const fields = [...root.querySelectorAll<HTMLElement>('.settings-v2-field')].map((el) =>
-      el.getBoundingClientRect()
-    )
-    expect(fields).toHaveLength(LAUNCH_SECTION.fields!.length)
-    expect(head.bottom, 'title sits above the settings').toBeLessThanOrEqual(fields[0]!.top)
-    for (const [i, rect] of fields.entries()) {
-      expect(Math.round(rect.left), `row ${i} starts at the same edge`).toBe(Math.round(head.left))
-      expect(Math.round(rect.width), `row ${i} has the same width`).toBe(
-        Math.round(fields[0]!.width)
+    const byId = (id: string) =>
+      root.querySelector(`[data-field-id="${id}"]`)!.getBoundingClientRect()
+    const args = byId('launchArgs')
+    expect(head.bottom, 'title sits above the settings').toBeLessThanOrEqual(args.top)
+    expect(Math.round(args.left), 'arguments start under the title').toBe(Math.round(head.left))
+    const pairs = [
+      ['managerSecurityLevel', 'managerNetworkMode'],
+      ['launchMode', 'browserPartition']
+    ].map(([a, b]) => [byId(a!), byId(b!)] as const)
+    const twoColumns = width >= 768
+    for (const [first, second] of pairs) {
+      expect(Math.round(first.left), 'pair starts on the arguments edge').toBe(
+        Math.round(args.left)
       )
-      if (i > 0)
-        expect(rect.top, `row ${i} sits below the one before`).toBeGreaterThan(fields[i - 1]!.top)
+      expect(Math.round(second.right), 'pair ends on the arguments edge').toBe(
+        Math.round(args.right)
+      )
+      if (twoColumns) {
+        expect(Math.round(second.top), 'pair shares one row').toBe(Math.round(first.top))
+        expect(Math.round(second.width), 'pair columns are even').toBe(Math.round(first.width))
+        expect(Math.round(second.left - first.right), 'pair gap').toBe(16)
+      } else {
+        expect(Math.round(first.width), 'narrow pairs stack full width').toBe(
+          Math.round(args.width)
+        )
+        expect(second.top, 'narrow pair stacks').toBeGreaterThan(first.top)
+      }
     }
+    const port = byId('portConflict')
+    expect(Math.round(port.left), 'last row starts on the arguments edge').toBe(
+      Math.round(args.left)
+    )
+    expect(Math.round(port.width), 'last row spans the arguments width').toBe(
+      Math.round(args.width)
+    )
   })
 
   it('spaces startup settings like Desktop Settings fields', async () => {
@@ -228,9 +250,16 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
       const control = el.querySelector(CONTROL)!.getBoundingClientRect()
       return control.top - label.bottom
     })
-    const rowGaps = fields
-      .slice(1)
-      .map((el, i) => el.getBoundingClientRect().top - fields[i]!.getBoundingClientRect().bottom)
+    const rowTops = [...new Set(fields.map((el) => Math.round(el.getBoundingClientRect().top)))]
+    const rowBottoms = rowTops.map((top) =>
+      Math.max(
+        ...fields
+          .map((el) => el.getBoundingClientRect())
+          .filter((r) => Math.round(r.top) === top)
+          .map((r) => r.bottom)
+      )
+    )
+    const rowGaps = rowTops.slice(1).map((top, i) => top - rowBottoms[i]!)
     expectSame(labelGaps, 'label to field gap is even')
     expectSame(rowGaps, 'field to next label gap is even')
     expect(Math.round(labelGaps[0]!), 'label sits 4px above its field').toBe(4)

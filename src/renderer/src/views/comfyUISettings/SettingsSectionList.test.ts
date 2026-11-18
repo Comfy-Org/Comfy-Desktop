@@ -342,14 +342,14 @@ describe('SettingsSectionList', () => {
       expect(descriptions[0]!.element.closest('header')).not.toBeNull()
     })
 
-    it('gives every field its own row, so paired fields never split into columns', () => {
+    it('pairs grouped fields in two columns with a 4px gap when they wrap', () => {
       const wrapper = mountSections([{ title: 'Launch Settings', fields: pairedFields }], true)
-      const rows = wrapper.findAll('.settings-v2-field-row')
-      expect(rows).toHaveLength(2)
-      expect(wrapper.find('.settings-v2-field-row.is-paired').exists()).toBe(false)
+      const paired = wrapper.findAll('.settings-v2-field-row.is-paired')
+      expect(paired).toHaveLength(1)
+      expect(paired[0]!.classes()).toEqual(expect.arrayContaining(['gap-x-4', 'gap-y-1']))
     })
 
-    it('still pairs grouped fields when the layout is not stacked', () => {
+    it('pairs grouped fields when the layout is not stacked', () => {
       const wrapper = mountSections([{ title: 'Launch Settings', fields: pairedFields }], false)
       expect(wrapper.findAll('.settings-v2-field-row.is-paired')).toHaveLength(1)
     })
