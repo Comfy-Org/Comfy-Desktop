@@ -559,26 +559,26 @@ describe('ComfyUISettingsContent', () => {
       expect(emittedDecision(w)).toMatchObject({ verb: 'restart' })
     })
 
-    it('labels "Switch" and emits a focus decision when running in ANOTHER window', async () => {
+    it('labels "Open" and emits a focus decision when running in ANOTHER window', async () => {
       markRunning('inst-1')
       const w = await mountContent({
         currentView: 'instance',
         currentCategory: 'local',
         activeInstallationId: 'other'
       })
-      expect(w.find('.settings-v2-relaunch').text()).toBe('Switch')
+      expect(w.find('.settings-v2-relaunch').text()).toBe('Open')
       await w.find('.settings-v2-relaunch').trigger('click')
       expect(emittedDecision(w)).toMatchObject({ verb: 'focus' })
     })
 
-    it('treats a running install as "Switch" on an install-less (dashboard) host', async () => {
+    it('treats a running install as "Open" on an install-less (dashboard) host', async () => {
       markRunning('inst-1')
       const w = await mountContent({
         currentView: 'dashboard',
         currentCategory: null,
         activeInstallationId: null
       })
-      expect(w.find('.settings-v2-relaunch').text()).toBe('Switch')
+      expect(w.find('.settings-v2-relaunch').text()).toBe('Open')
       await w.find('.settings-v2-relaunch').trigger('click')
       expect(emittedDecision(w)).toMatchObject({ verb: 'focus' })
     })
@@ -602,7 +602,7 @@ describe('ComfyUISettingsContent', () => {
     })
   })
 
-  describe('caret for a running-elsewhere target', () => {
+  describe('Stop for a running target', () => {
     function markRunning(installId: string): void {
       useSessionStore().runningInstances.set(installId, {
         installationId: installId,
@@ -610,16 +610,14 @@ describe('ComfyUISettingsContent', () => {
         mode: ''
       })
     }
-    function caretActions(wrapper: VueWrapper): { id: string }[] | undefined {
-      if (!wrapper.find('.settings-v2-cta-caret').exists()) return undefined
-      const menu = wrapper
+    function menusOfferingStop(wrapper: VueWrapper): number {
+      return wrapper
         .findAllComponents({ name: 'MoreMenu' })
         .map((m) => m.props('actions') as { id: string }[] | undefined)
-        .find((acts) => acts?.some((a) => a.id === 'stop'))
-      return menu
+        .filter((acts) => acts?.some((a) => a.id === 'stop')).length
     }
 
-    it('remote running elsewhere → caret offers Stop, not "Open in new window"', async () => {
+    it('running elsewhere → Open with no caret, and Stop only in the more menu', async () => {
       useComfyUISettingsState.pinBottomActions.value = [{ id: 'stop', label: 'Stop' }]
       markRunning('inst-1')
       const w = await mountContent({
@@ -628,25 +626,26 @@ describe('ComfyUISettingsContent', () => {
         activeInstallationId: 'other',
         installation: { ...SAMPLE_INSTALL, sourceCategory: 'remote' }
       })
-      expect(w.find('.settings-v2-relaunch').text()).toBe('Switch')
-      const actions = caretActions(w)
-      expect(actions?.map((a) => a.id)).toEqual(['stop'])
+      expect(w.find('.settings-v2-relaunch').text()).toBe('Open')
+      expect(w.find('.settings-v2-cta-caret').exists()).toBe(false)
+      expect(menusOfferingStop(w)).toBe(1)
     })
 
-    it('cloud running elsewhere → no caret (cloud has no stop action)', async () => {
-      useComfyUISettingsState.pinBottomActions.value = []
+    it('running in this window → Restart with no caret, and Stop only in the more menu', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'stop', label: 'Stop' }]
       markRunning('inst-1')
       const w = await mountContent({
         currentView: 'instance',
         currentCategory: 'local',
-        activeInstallationId: 'other',
-        installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
+        activeInstallationId: 'inst-1',
+        installation: SAMPLE_INSTALL
       })
-      expect(w.find('.settings-v2-relaunch').text()).toBe('Switch')
+      expect(w.find('.settings-v2-relaunch').text()).toBe('Restart')
       expect(w.find('.settings-v2-cta-caret').exists()).toBe(false)
+      expect(menusOfferingStop(w)).toBe(1)
     })
 
-    it('stopped cloud target (dashboard host) → Open Cloud with no "Open in new window" caret', async () => {
+    it('stopped cloud target (dashboard host) → Open Cloud with no caret', async () => {
       useComfyUISettingsState.pinBottomActions.value = []
       const w = await mountContent({
         currentView: 'dashboard',
