@@ -706,6 +706,34 @@ describe('ComfyUISettingsContent', () => {
       }
     })
 
+    it('closes the more menu when its last action goes away', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'stop', label: 'Stop' }] as never
+      useComfyUISettingsState.sectionsFresh.value = false
+      markRunning('inst-1')
+      try {
+        const w = await mountContent({
+          currentView: 'instance',
+          currentCategory: 'local',
+          activeInstallationId: 'inst-1',
+          installation: SAMPLE_INSTALL
+        })
+        const trigger = w.find('[data-testid="picker-more-trigger"]')
+        await trigger.trigger('click')
+        expect(trigger.attributes('aria-expanded')).toBe('true')
+
+        useComfyUISettingsState.pinBottomActions.value = []
+        await nextTick()
+        expect(trigger.attributes('aria-expanded')).toBe('false')
+        expect(w.findComponent({ name: 'MoreMenu' }).props('open')).toBe(false)
+
+        useComfyUISettingsState.pinBottomActions.value = [{ id: 'stop', label: 'Stop' }] as never
+        await nextTick()
+        expect(w.findComponent({ name: 'MoreMenu' }).props('open')).toBe(false)
+      } finally {
+        useComfyUISettingsState.sectionsFresh.value = true
+      }
+    })
+
     it('disables the more menu while details are stale and the build is not running', async () => {
       useComfyUISettingsState.pinBottomActions.value = [
         { id: 'rename', label: 'Rename' },

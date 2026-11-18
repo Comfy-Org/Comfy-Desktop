@@ -600,6 +600,13 @@ const pinBottomMenuActions = computed<MenuAction[]>(() => {
     )
 })
 
+watch(
+  () => pinBottomMenuActions.value.length,
+  (count) => {
+    if (count === 0) closeMoreMenu()
+  }
+)
+
 function handlePrimaryAction(): void {
   const selectedInstall = installation.value
   if (!selectedInstall) return
