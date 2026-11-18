@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
   HardDrive,
+  Folder,
   SlidersHorizontal,
   RefreshCw,
   History,
@@ -263,9 +264,9 @@ const ALL_TABS: TabDef[] = [
   {
     key: 'storage',
     sectionTab: 'storage',
-    label: t('comfyUISettings.tabStorage'),
-    icon: HardDrive,
-    tooltip: t('tooltips.tabStorage')
+    label: t('comfyUISettings.tabFolders'),
+    icon: Folder,
+    tooltip: t('tooltips.tabFolders')
   },
   {
     key: 'config',
@@ -307,7 +308,7 @@ function tabHasContent(tab: TabDef): boolean {
 const tabs = computed<TabDef[]>(() =>
   ALL_TABS.filter(tabHasContent).map((tab) =>
     isCloud.value && tab.key === 'config'
-      ? { ...tab, label: t('comfyUISettings.tabStorage'), icon: HardDrive }
+      ? { ...tab, label: t('comfyUISettings.tabCloudStorage'), icon: HardDrive }
       : tab
   )
 )
@@ -1105,7 +1106,7 @@ defineExpose({
                       <template v-else>
                         <SettingsSectionList
                           :sections="visibleSections"
-                          :columns="isStartupArgsPage"
+                          :stacked="isStartupArgsPage"
                           :installation-id="installation?.id"
                           :running-action-ids="runningActionIds"
                           :pending-restart-field-ids="pendingRestartFieldIds"

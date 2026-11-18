@@ -27,7 +27,7 @@ import type {
 interface Props {
   sections: DetailSection[]
   readonly?: boolean
-  columns?: boolean
+  stacked?: boolean
   installationId?: string
   runningActionIds?: Set<string>
   pendingRestartFieldIds?: Set<string>
@@ -36,7 +36,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   readonly: false,
-  columns: false,
+  stacked: false,
   installationId: undefined,
   runningActionIds: () => new Set<string>(),
   pendingRestartFieldIds: () => new Set<string>(),
@@ -121,8 +121,8 @@ function toggleCollapsed(section: { title?: string }): void {
   }
 }
 
-function isTwoColumn(section: { title?: string; collapsed?: boolean }): boolean {
-  return props.columns && Boolean(section.title) && !isCollapsible(section)
+function isStackedTitled(section: { title?: string; collapsed?: boolean }): boolean {
+  return props.stacked && Boolean(section.title) && !isCollapsible(section)
 }
 
 const visibleSections = computed(() => props.sections)
@@ -141,7 +141,7 @@ function fieldRows(section: DetailSection): DetailField[][] {
   const rows: DetailField[][] = []
   for (const field of section.fields ?? []) {
     const prev = rows[rows.length - 1]
-    if (field.rowGroup && prev && prev[0]?.rowGroup === field.rowGroup) {
+    if (!props.stacked && field.rowGroup && prev && prev[0]?.rowGroup === field.rowGroup) {
       prev.push(field)
     } else {
       rows.push([field])
@@ -208,10 +208,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 </script>
 
 <template>
-  <div
-    class="settings-v2-sections flex flex-col gap-8"
-    :class="{ '@container/build-settings': columns }"
-  >
+  <div class="settings-v2-sections flex flex-col gap-8">
     <article
       v-for="(section, si) in visibleSections"
       :key="`s-${si}`"
@@ -220,8 +217,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         readonly
           ? 'is-readonly-list gap-0 rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--secondary-background)] px-3 py-1'
           : 'gap-4',
-        isTwoColumn(section) &&
-          '@2xl/build-settings:grid @2xl/build-settings:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] @2xl/build-settings:gap-x-12 @2xl/build-settings:gap-y-3',
+        isStackedTitled(section) && 'max-w-3xl',
         {
           'is-collapsible': isCollapsible(section),
           'is-collapsed [&>*:not(.settings-v2-section-title)]:hidden':
@@ -230,11 +226,11 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
       ]"
     >
       <header
-        v-if="isTwoColumn(section)"
-        class="settings-v2-section-head flex min-w-0 flex-col gap-1.5 @2xl/build-settings:pt-1"
+        v-if="isStackedTitled(section)"
+        class="settings-v2-section-head -mb-1 flex min-w-0 flex-col gap-1.5"
       >
         <h3
-          class="settings-v2-section-title m-0 text-[13px] leading-[18px] font-semibold text-neutral-100"
+          class="settings-v2-section-title m-0 text-[11px] leading-[16px] font-semibold tracking-[0.06em] text-text-muted uppercase"
         >
           {{ section.title }}
         </h3>
@@ -273,7 +269,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
       </p>
 
       <p
-        v-if="section.description && !isCollapsed(section) && !isTwoColumn(section)"
+        v-if="section.description && !isCollapsed(section) && !isStackedTitled(section)"
         class="settings-v2-section-desc -mt-1 mb-1 text-[length:var(--takeover-fs-caption)] leading-[1.4] text-text-muted"
       >
         {{ section.description }}
@@ -281,7 +277,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 
       <div
         class="settings-v2-section-body"
-        :class="isTwoColumn(section) ? 'flex min-w-0 max-w-xl flex-col gap-4' : 'contents'"
+        :class="isStackedTitled(section) ? 'flex min-w-0 flex-col gap-4' : 'contents'"
       >
         <div
           v-for="(item, i) in section.items"

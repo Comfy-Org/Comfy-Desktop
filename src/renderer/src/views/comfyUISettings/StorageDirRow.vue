@@ -15,6 +15,7 @@ interface Props {
   manageable?: boolean
   shared?: boolean
   hideSharedTag?: boolean
+  wrapPath?: boolean
   variant?: StorageDirRowVariant
 }
 
@@ -25,6 +26,7 @@ withDefaults(defineProps<Props>(), {
   manageable: false,
   shared: false,
   hideSharedTag: false,
+  wrapPath: false,
   variant: 'panel'
 })
 
@@ -58,7 +60,12 @@ const actionClass =
         type="button"
         variant="textonly"
         size="unset"
-        class="storage-dir-name static inline-block overflow-hidden text-ellipsis whitespace-nowrap min-w-0 max-w-full gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono font-normal text-[12.5px] leading-[18px] text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+        class="storage-dir-name static inline-block min-w-0 max-w-full gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono font-normal text-[12.5px] leading-[18px] text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+        :class="
+          wrapPath
+            ? 'whitespace-normal [overflow-wrap:anywhere]'
+            : 'overflow-hidden text-ellipsis whitespace-nowrap'
+        "
         :title="t('models.openDir')"
         @click="emit('open')"
       >

@@ -524,7 +524,7 @@ describe('GlobalSettingsView', () => {
       .findAll('.gs-micro-title .info-tooltip-trigger')
       .map((el) => el.attributes('aria-label') ?? '')
     expect(tooltips.some((text) => text.includes('Use for downloads'))).toBe(true)
-    expect(tooltips.some((text) => text.includes('in its own Storage tab'))).toBe(true)
+    expect(tooltips.some((text) => text.includes('in its own Folders tab'))).toBe(true)
   })
 
   it('Advanced tab renders the cache dir as a readonly path row that browses + opens', async () => {

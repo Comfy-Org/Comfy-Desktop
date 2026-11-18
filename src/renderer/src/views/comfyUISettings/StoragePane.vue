@@ -330,7 +330,7 @@ function handleRevealPath(path: string): void {
 </script>
 
 <template>
-  <div class="storage-pane @container/build-settings flex flex-col gap-8">
+  <div class="storage-pane flex flex-col gap-8">
     <div
       v-if="showRestartWarning"
       class="storage-note is-warning m-0 flex items-center gap-2.5 rounded-[14px] bg-white/5 px-4 py-3 text-neutral-100"
@@ -349,7 +349,7 @@ function handleRevealPath(path: string): void {
     <BuildSettingsSection :title="t('settings.modelStorage')" :hint="t('tooltips.instanceModels')">
       <template v-if="useSharedModelsField" #actions>
         <label
-          class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
+          class="storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-1.5"
         >
           <span>{{ t('comfyUISettings.includeSharedDirs') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedModels')" />
@@ -387,7 +387,7 @@ function handleRevealPath(path: string): void {
     <BuildSettingsSection :title="t('settings.inputStorage')">
       <template v-if="useSharedInputField" #actions>
         <label
-          class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
+          class="storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-1.5"
         >
           <span>{{ t('comfyUISettings.useSharedInput') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedInput')" />
@@ -400,6 +400,7 @@ function handleRevealPath(path: string): void {
       <template v-if="useSharedInputEnabled">
         <StorageDirRow
           v-if="sharedInputField"
+          wrap-path
           :path="sharedFieldPath(sharedInputField)"
           shared
           :browsable="false"
@@ -410,6 +411,7 @@ function handleRevealPath(path: string): void {
       </template>
       <StorageDirRow
         v-else
+        wrap-path
         :path="effectiveInputDir"
         :tag="!inputOverridden ? t('models.default') : ''"
         :resettable="inputOverridden"
@@ -422,7 +424,7 @@ function handleRevealPath(path: string): void {
     <BuildSettingsSection :title="t('settings.outputStorage')">
       <template v-if="useSharedOutputField" #actions>
         <label
-          class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
+          class="storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-1.5"
         >
           <span>{{ t('comfyUISettings.useSharedOutput') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedOutput')" />
@@ -435,6 +437,7 @@ function handleRevealPath(path: string): void {
       <template v-if="useSharedOutputEnabled">
         <StorageDirRow
           v-if="sharedOutputField"
+          wrap-path
           :path="sharedFieldPath(sharedOutputField)"
           shared
           :browsable="false"
@@ -445,6 +448,7 @@ function handleRevealPath(path: string): void {
       </template>
       <StorageDirRow
         v-else
+        wrap-path
         :path="effectiveOutputDir"
         :tag="!outputOverridden ? t('models.default') : ''"
         :resettable="outputOverridden"

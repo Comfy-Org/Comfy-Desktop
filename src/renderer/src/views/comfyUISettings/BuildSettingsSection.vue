@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import InfoTooltip from '../../components/InfoTooltip.vue'
+
 defineProps<{
   title: string
   hint?: string
@@ -6,28 +8,22 @@ defineProps<{
 </script>
 
 <template>
-  <section
-    class="build-settings-section grid grid-cols-1 gap-3 @2xl/build-settings:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] @2xl/build-settings:gap-x-12"
-  >
-    <header class="build-settings-head flex min-w-0 flex-col gap-3 @2xl/build-settings:pt-3">
-      <div class="flex min-w-0 flex-col gap-1.5">
-        <h3
-          class="build-settings-title m-0 text-[11px] leading-[16px] font-semibold tracking-[0.06em] text-text-muted uppercase"
-        >
-          {{ title }}
-        </h3>
-        <p v-if="hint" class="build-settings-hint m-0 text-[13px] leading-[1.5] text-text-muted">
-          {{ hint }}
-        </p>
-      </div>
+  <section class="build-settings-section flex min-w-0 max-w-3xl flex-col gap-2">
+    <header class="build-settings-head flex min-h-7 min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+      <h3
+        class="build-settings-title m-0 inline-flex min-w-0 items-center text-[11px] leading-[16px] font-semibold tracking-[0.06em] text-text-muted uppercase"
+      >
+        <span>{{ title }}</span>
+        <InfoTooltip v-if="hint" :text="hint" />
+      </h3>
       <div
         v-if="$slots.actions"
-        class="build-settings-actions flex min-w-0 flex-col gap-2 text-[13px] text-text-muted"
+        class="build-settings-actions ml-auto flex min-w-0 items-center gap-2 text-[13px] text-text-muted"
       >
         <slot name="actions" />
       </div>
     </header>
-    <div class="build-settings-body flex min-w-0 max-w-xl flex-col gap-2">
+    <div class="build-settings-body flex min-w-0 flex-col gap-2">
       <slot />
     </div>
   </section>
