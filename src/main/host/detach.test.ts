@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import type * as SystemModalModule from '../popups/systemModal'
 import type * as SettingsModule from '../settings'
@@ -51,7 +51,7 @@ vi.mock('../settings', async (importOriginal) => {
   }
 })
 
-import { _runningSessions, type SessionInfo } from '../lib/ipc/shared'
+import { _beginLaunch, _endLaunch, _runningSessions, type SessionInfo } from '../lib/ipc/shared'
 import {
   comfyWindows,
   dropInstallationIndex,
@@ -399,6 +399,19 @@ describe('closing a window while ComfyUI runs on this computer', () => {
       await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
 
       expect(mocks.stopAppsBuilds).not.toHaveBeenCalled()
+      expect(win.closed).toBe(true)
+    })
+
+    it('closes the last window on macOS without saying it quits while its build starts, since Desktop stays', async () => {
+      onPlatform('darwin')
+      _runningSessions.clear()
+      const launch = _beginLaunch('studio')
+      onTestFinished(() => _endLaunch('studio', launch))
+      const win = openWindow('studio')
+
+      await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
+
+      expect(mocks.asked).toEqual([])
       expect(win.closed).toBe(true)
     })
   })

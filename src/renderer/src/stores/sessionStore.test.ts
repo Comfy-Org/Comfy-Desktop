@@ -299,6 +299,20 @@ describe('useSessionStore', () => {
 
       expect(store.operationInstances.has('inst-1')).toBe(false)
     })
+
+    it('keeps the session an operation runs for, so a Performance Test launch is told apart', () => {
+      handlers['operation-changed']!({
+        installationId: 'inst-1',
+        actionId: 'launch',
+        sessionId: 'performance-test:inst-1',
+        active: true
+      })
+
+      expect(store.operationInstances.get('inst-1')).toEqual({
+        actionId: 'launch',
+        sessionId: 'performance-test:inst-1'
+      })
+    })
   })
 
   describe('init hydration', () => {
@@ -366,6 +380,21 @@ describe('useSessionStore', () => {
       await store.init()
 
       expect(store.operationInstances.get('inst-1')?.actionId).toBe('update-comfyui')
+    })
+
+    it('hydrates the session an in-flight operation runs for', async () => {
+      installApi({
+        operations: [
+          { installationId: 'inst-1', actionId: 'launch', sessionId: 'performance-test:inst-1' }
+        ]
+      })
+
+      await store.init()
+
+      expect(store.operationInstances.get('inst-1')).toEqual({
+        actionId: 'launch',
+        sessionId: 'performance-test:inst-1'
+      })
     })
 
     it('hydrates retained crashes so a freshly-opened window shows the error state', async () => {

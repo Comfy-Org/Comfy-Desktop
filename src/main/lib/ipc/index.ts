@@ -44,6 +44,7 @@ import { registerEmbeddedSessionHandlers } from './registerEmbeddedSessionHandle
 import { registerCatalogHandlers } from './registerCatalogHandlers'
 import { registerAppsHandlers } from './registerAppsHandlers'
 import { registerAppsLocalHandlers } from './registerAppsLocalHandlers'
+import { registerAppsOutputsHandlers } from './registerAppsOutputsHandlers'
 import { registerAppsTelemetryHandlers } from './registerAppsTelemetryHandlers'
 import { registerTemplateSearchHandlers } from './registerTemplateSearchHandlers'
 import { reconcileAdoptedSettings } from '../desktopAdopt'
@@ -295,6 +296,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerCatalogHandlers()
   registerAppsHandlers()
   registerAppsLocalHandlers()
+  registerAppsOutputsHandlers()
   registerAppsTelemetryHandlers()
   registerTemplateSearchHandlers({
     isLocalInstallation: (inst) => sourceMap[inst.sourceId]?.category === 'local',

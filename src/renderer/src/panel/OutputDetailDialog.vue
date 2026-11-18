@@ -3,7 +3,18 @@ import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useEventListener, usePreferredReducedMotion } from '@vueuse/core'
 import { DropdownMenuRadioGroup } from 'reka-ui'
-import { AudioLines, Box, Check, ChevronDown, Download, File, FolderSearch, X } from '@lucide/vue'
+import {
+  AudioLines,
+  Box,
+  Check,
+  ChevronDown,
+  Download,
+  File,
+  FolderSearch,
+  Images,
+  Workflow,
+  X
+} from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Tag from '@comfyorg/design-system/chip/Tag'
 import AudioPreview from '@comfyorg/design-system/media/AudioPreview'
@@ -26,6 +37,8 @@ export interface OutputDetailItem {
   previewUrl: string | null
   thumbnailUrl: string | null
   savedIn?: string | null
+  inCloud?: boolean
+  workflow?: boolean
 }
 
 type Zoom = 'fit' | 0.5 | 1 | 2
@@ -42,6 +55,8 @@ const emit = defineEmits<{
   close: []
   download: [index: number]
   'show-in-folder': [index: number]
+  'open-workflow': [index: number]
+  'view-in-assets': [index: number]
 }>()
 
 const { t, locale } = useI18n()
@@ -279,11 +294,22 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </div>
       </div>
 
-      <div v-if="savedFolder" class="flex flex-col gap-2.5" data-testid="output-detail-saved-in">
+      <div
+        v-if="savedFolder || item.inCloud"
+        class="flex flex-col gap-2.5"
+        data-testid="output-detail-saved-in"
+      >
         <div class="text-xs font-medium tracking-wide text-subtle-foreground uppercase">
           {{ t('assets.detail.savedIn') }}
         </div>
-        <div class="flex min-w-0 flex-col gap-0.5 text-ui" :title="item.savedIn ?? undefined">
+        <span v-if="item.inCloud" class="text-ui text-foreground">
+          {{ t('assets.detail.cloudAssets') }}
+        </span>
+        <div
+          v-if="savedFolder"
+          class="flex min-w-0 flex-col gap-0.5 text-ui"
+          :title="item.savedIn ?? undefined"
+        >
           <span class="truncate text-foreground">{{ savedFolder.name }}</span>
           <span v-if="savedFolder.parent" class="truncate text-subtle-foreground">{{
             savedFolder.parent
@@ -304,6 +330,18 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           {{ t('assets.download') }}
         </Button>
         <Button
+          v-if="item.workflow"
+          type="button"
+          variant="secondary"
+          size="md"
+          class="gap-1.5 text-[13px]/5"
+          data-testid="output-detail-workflow"
+          @click="emit('open-workflow', index)"
+        >
+          <Workflow :size="15" aria-hidden="true" />
+          {{ t('assets.detail.openWorkflow') }}
+        </Button>
+        <Button
           v-if="item.savedIn"
           type="button"
           variant="secondary"
@@ -314,6 +352,18 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         >
           <FolderSearch :size="15" aria-hidden="true" />
           {{ t(revealKey) }}
+        </Button>
+        <Button
+          v-if="item.inCloud"
+          type="button"
+          variant="secondary"
+          size="md"
+          class="gap-1.5 text-[13px]/5"
+          data-testid="output-detail-view-in-assets"
+          @click="emit('view-in-assets', index)"
+        >
+          <Images :size="15" aria-hidden="true" />
+          {{ t('assets.viewInAssets') }}
         </Button>
       </div>
     </aside>
