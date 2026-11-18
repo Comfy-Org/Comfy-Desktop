@@ -192,13 +192,11 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     }
   })
 
-  it('puts Add models folder right under the last models row, aligned with the folders', async () => {
+  it('puts Add models folder right under the last models row, aligned with the rows', async () => {
     const root = await mountStorage(width)
     const rows = rects(root, '.models-dir-row')
     const lastRow = rows[rows.length - 1]!
     const add = root.querySelector('.models-dir-add')!.getBoundingClientRect()
-    const addIcon = root.querySelector('.models-dir-add svg')!.getBoundingClientRect()
-    const addLabel = root.querySelector('.models-dir-add span')!.getBoundingClientRect()
     const box = root.querySelector('.models-dir-list')!.getBoundingClientRect()
     expect(add.top, 'the button follows the last row').toBeGreaterThanOrEqual(lastRow.bottom)
     expect(
@@ -206,14 +204,8 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
       'the button sits right under the last row'
     ).toBeLessThanOrEqual(4)
     expect(add.bottom, 'the button stays inside the Models box').toBeLessThanOrEqual(box.bottom)
-    expectSame(
-      [...rects(root, '.models-dir-row .storage-item-icon').map((r) => r.left), addIcon.left],
-      'the + lines up with the folder icons'
-    )
-    expectSame(
-      [...rects(root, '.models-dir-name').map((r) => r.left), addLabel.left],
-      'the label lines up with the paths'
-    )
+    expect(Math.round(add.height), 'the button is as tall as Add Variable').toBe(32)
+    expectSame([...rows.map((r) => r.left), add.left], 'the button lines up with the rows')
   })
 
   it('keeps icons and badges on the first line when a path wraps', async () => {

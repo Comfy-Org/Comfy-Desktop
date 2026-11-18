@@ -167,6 +167,7 @@ const rows = computed(() =>
         </StorageTag>
         <StorageTag v-if="row.shared && !props.hideSharedTag" class="models-dir-tag tag-shared">
           {{ t('models.sharedTag') }}
+          <InfoTooltip :text="t('tooltips.modelsShared')" />
         </StorageTag>
         <StorageTag v-if="row.locked || row.isExtra" class="models-dir-tag tag-local">
           {{ row.isExtra ? t('comfyUISettings.yamlTag') : t('models.instanceOnly') }}
@@ -225,15 +226,14 @@ const rows = computed(() =>
       </div>
     </div>
 
-    <div class="models-dir-foot flex min-w-0 items-center px-1 pt-1">
+    <div class="models-dir-foot flex min-w-0 items-center pt-1">
       <Button
         type="button"
-        variant="muted-textonly"
-        size="md"
-        class="models-dir-add gap-2.5 rounded-[10px] px-2"
+        variant="textonly"
+        class="models-dir-add static inline-flex h-8 items-center justify-center gap-1 self-start rounded-lg border-none bg-[var(--chooser-surface-border-hover)] px-3.5 py-2 text-[12px] leading-4 font-medium text-neutral-100 appearance-auto transition-[background-color,color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-border-hover)] hover:text-text focus-visible:bg-[var(--brand-surface-border-hover)] focus-visible:text-text focus-visible:outline-none focus-visible:ring-0"
         @click="emit('add')"
       >
-        <Plus :size="14" aria-hidden="true" />
+        <Plus :size="16" aria-hidden="true" />
         <span>{{ t('settings.addModelsFolder') }}</span>
       </Button>
     </div>

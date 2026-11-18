@@ -215,7 +215,7 @@ describe('StoragePane', () => {
     expect(rows[0]!.find('.storage-item-icon.is-shared').exists()).toBe(true)
     for (const row of rows) expect(row.findAll('.models-dir-action')).toHaveLength(1)
     expect(await menuLabels(rows[0]!.find('.models-dir-menu-wrap > button'))).toEqual([
-      'Manage Shared Directories in Desktop Settings'
+      'Manage shared directories in Desktop Settings'
     ])
   })
 
@@ -268,7 +268,7 @@ describe('StoragePane', () => {
     await nextTick()
     await chooseFromMenu(
       wrapper.findAll('.models-dir-menu-wrap > button')[0]!,
-      'Manage Shared Directories in Desktop Settings'
+      'Manage shared directories in Desktop Settings'
     )
     expect(api.openGlobalSettingsCalls).toEqual(['storage'])
   })
@@ -281,7 +281,7 @@ describe('StoragePane', () => {
     const list = wrapper.find('.models-dir-list')
     const children = list.findAll(':scope > *')
     expect(children[children.length - 1]!.find('.models-dir-add').text()).toBe('Add models folder')
-    expect(list.text()).not.toContain('Manage Shared Directories')
+    expect(list.text()).not.toContain('Manage shared directories')
   })
 
   it('tags shared model dirs as Shared and leaves build-only dirs untagged', async () => {
@@ -303,7 +303,7 @@ describe('StoragePane', () => {
     await nextTick()
     for (const trigger of wrapper.findAll('.models-dir-menu-wrap > button')) {
       expect(await menuLabels(trigger)).not.toContain(
-        'Manage Shared Directories in Desktop Settings'
+        'Manage shared directories in Desktop Settings'
       )
     }
   })
@@ -568,7 +568,7 @@ describe('StoragePane', () => {
       expect(await menuLabels(ownRow.find('.models-dir-menu-wrap > button'))).not.toContain(
         'Change Folder'
       )
-      expect(wrapper.text()).toContain('Include Shared Directories')
+      expect(wrapper.text()).toContain('Include shared directories')
       expect(rows[0]!.find('.storage-item-icon.is-shared').exists()).toBe(true)
       expect(extraRow.find('.storage-item-icon.is-shared').exists()).toBe(false)
       expect(ownRow.find('.storage-item-icon.is-shared').exists()).toBe(false)
@@ -875,7 +875,7 @@ describe('StoragePane', () => {
       await nextTick()
       const row = wrapper.findAll('.storage-dir-row')[0]!
       expect(await menuLabels(row.find('.storage-dir-action'), '.storage-dir-menu')).toEqual([
-        'Manage Shared Directories in Desktop Settings'
+        'Manage shared directories in Desktop Settings'
       ])
       await menuItems('.storage-dir-menu')[0]!.trigger('click')
       await flushPromises()
