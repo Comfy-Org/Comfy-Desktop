@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   startModelJob: (_options: Record<string, unknown>): Promise<unknown> => Promise.resolve(null),
   makeRelay: (): unknown => null,
   hearFromComfy: (_message: unknown): void => {},
-  socketReopened: (): void => {},
+  socketOpened: (): void => {},
   captured: [] as { event: string; properties: Record<string, unknown> }[],
   broadcasts: [] as [string, unknown][],
   keepComfyRunning: true
@@ -81,10 +81,10 @@ vi.mock('./localRelay', () => ({
   createLocalRelay: (
     onMessage: (message: unknown) => void,
     _openSocket: unknown,
-    onReopen: () => void
+    onOpen: () => void
   ) => {
     mocks.hearFromComfy = onMessage
-    mocks.socketReopened = onReopen
+    mocks.socketOpened = onOpen
     return mocks.makeRelay()
   }
 }))
@@ -1520,7 +1520,7 @@ describe('run_finished, for an app run on this computer', () => {
       }
     }
 
-    mocks.socketReopened()
+    mocks.socketOpened()
 
     await vi.waitFor(() =>
       expect(captured(RUN_FINISHED)).toEqual([
@@ -1533,7 +1533,7 @@ describe('run_finished, for an app run on this computer', () => {
     comfy.queue = { queue_running: [[5, RUN, {}, {}]], queue_pending: [] }
     await runFromApp()
 
-    mocks.socketReopened()
+    mocks.socketOpened()
     await vi.waitFor(() => expect(comfy.calls('/queue')).toHaveLength(1))
     await vi.advanceTimersByTimeAsync(0)
     hear('execution_success')
@@ -1546,7 +1546,7 @@ describe('run_finished, for an app run on this computer', () => {
     comfy.historyEntry = null
     await runFromApp()
 
-    mocks.socketReopened()
+    mocks.socketOpened()
 
     await vi.waitFor(() =>
       expect(captured(RUN_FINISHED)).toEqual([

@@ -145,7 +145,7 @@ function relayRunUpdate(message: unknown): void {
 function relayFor(installationId: string, port: number): LocalRelay {
   const relay =
     relayByBuild.get(installationId) ??
-    createLocalRelay(relayRunUpdate, undefined, () => checkRunsAfterDrop(installationId))
+    createLocalRelay(relayRunUpdate, undefined, () => checkUnheardRuns(installationId))
   relayByBuild.set(installationId, relay)
   relay.follow(port)
   return relay
@@ -573,7 +573,7 @@ async function settleUnheardRuns(
   }
 }
 
-function checkRunsAfterDrop(buildId: string): void {
+function checkUnheardRuns(buildId: string): void {
   const promptIds = runsOn(buildId)
   if (promptIds.length === 0) return
   const port = runningPortOf(buildId)
