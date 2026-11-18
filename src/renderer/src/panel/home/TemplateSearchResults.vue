@@ -5,7 +5,11 @@ import Button from '@comfyorg/design-system/button/Button'
 import Switch from '@comfyorg/design-system/switch/Switch'
 import { formatSize } from '../../lib/formatting'
 import TemplateSearchBadge from './TemplateSearchBadge.vue'
-import type { TemplateSearchAvailability, TemplateSearchCandidate } from '../../types/ipc'
+import type {
+  TemplateSearchAvailability,
+  TemplateSearchCandidate,
+  TemplateSearchInput
+} from '../../types/ipc'
 import { matchLevel, verticalNeighbour, type BadgeTone, type SearchRow } from './templateSearch'
 import type { TemplateSearchController } from './useTemplateSearch'
 
@@ -25,6 +29,18 @@ const MATCH_LEVEL_KEYS = {
   good: 'home.search.matchGood',
   weak: 'home.search.matchWeak'
 } as const
+
+const INPUT_KEYS: Record<TemplateSearchInput, string> = {
+  image: 'home.search.needsImage',
+  video: 'home.search.needsVideo',
+  audio: 'home.search.needsAudio'
+}
+
+function inputCounts(needs: TemplateSearchInput[]): [TemplateSearchInput, number][] {
+  const counts = new Map<TemplateSearchInput, number>()
+  for (const kind of needs) counts.set(kind, (counts.get(kind) ?? 0) + 1)
+  return [...counts]
+}
 
 const UNAVAILABLE_KEYS = {
   runtime_unsupported: 'home.search.runtimeUnsupported',
@@ -122,6 +138,12 @@ function badges(row: SearchRow): Badge[] {
       tone: 'download',
       label: downloadLabel(candidate),
       testId: 'home-template-search-needs-download'
+    })
+  for (const [kind, count] of inputCounts(candidate.needs))
+    list.push({
+      tone: 'input',
+      label: t(INPUT_KEYS[kind], count),
+      testId: 'home-template-search-needs-input'
     })
   if (candidate.partner)
     list.push({
@@ -306,7 +328,7 @@ defineExpose({ verticalTarget, revealActive })
             <span class="flex flex-wrap gap-1.5">
               <TemplateSearchBadge
                 v-for="badge in badges(row)"
-                :key="badge.testId"
+                :key="badge.label"
                 :tone="badge.tone"
                 :title="badge.label"
                 :data-testid="badge.testId"

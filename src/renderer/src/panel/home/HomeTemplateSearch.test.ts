@@ -46,6 +46,7 @@ function candidate(
     score: 0.92,
     calibrated: null,
     belowThreshold: false,
+    needs: [],
     downloadBytes: null,
     ...over
   }
@@ -353,6 +354,30 @@ describe('HomeTemplateSearch results', () => {
     expect(wrapper.find('[data-testid="home-template-search-match"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-template-search-best"]').exists()).toBe(false)
     expect(wrapper.get('[role="option"][aria-selected="true"]').text()).toContain('qwen_a title')
+  })
+
+  it('says which files a template needs, one chip per kind', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({
+        matched: ['wan 2.2'],
+        run: [
+          candidate('flf', { score: null, needs: ['image', 'image'] }),
+          candidate('v2v', { score: null, needs: ['video', 'audio'] }),
+          candidate('t2v', { score: null })
+        ]
+      })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'wan 2.2')
+    expect(
+      wrapper
+        .findAll('[role="option"]')
+        .map((card) =>
+          card
+            .findAll('[data-testid="home-template-search-needs-input"]')
+            .map((chip) => chip.text())
+        )
+    ).toEqual([['Needs 2 images'], ['Needs a video', 'Needs audio'], []])
   })
 
   it("puts the best match's whole family first when the answer is to download it", async () => {

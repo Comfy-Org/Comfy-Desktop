@@ -10,6 +10,7 @@ export type {
   LocalAssetListing,
   CatalogWorkflow,
   TemplateSearchCandidate,
+  TemplateSearchInput,
   TemplateSearchResponse,
   TemplateSearchAvailability,
   TemplateSearchResult,
