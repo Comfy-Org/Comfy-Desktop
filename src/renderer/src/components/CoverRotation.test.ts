@@ -191,6 +191,32 @@ describe('CoverRotation', () => {
     expect(wrapper.findAll('img')).toHaveLength(0)
   })
 
+  it('skips a still that fails to load in reduced motion, and says so once none is left', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {}
+    }))
+    const broken = 'data:image/png;base64,broken'
+    const wrapper = mountCovers([
+      { ...COVERS[0]!, stillUrl: null },
+      { ...COVERS[1]!, stillUrl: broken },
+      COVERS[2]!
+    ])
+
+    await expect.poll(() => shownSrc(wrapper)).toBe(STILLS[2])
+    expect(wrapper.emitted('broken')).toBeUndefined()
+
+    await wrapper.setProps({
+      pictures: [
+        { ...COVERS[0]!, stillUrl: broken },
+        { ...COVERS[1]!, stillUrl: `${broken}2` }
+      ]
+    })
+    await expect.poll(() => wrapper.emitted('broken')).toHaveLength(1)
+  })
+
   it('keeps the one cover of an app that has only one', async () => {
     const wrapper = mountCovers([COVERS[0]!])
     await untilAllLoaded(wrapper)

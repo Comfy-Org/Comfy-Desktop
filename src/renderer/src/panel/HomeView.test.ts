@@ -84,6 +84,7 @@ const mounted: VueWrapper[] = []
 
 afterEach(() => {
   while (mounted.length) mounted.pop()?.unmount()
+  vi.unstubAllGlobals()
 })
 
 async function openHome() {
@@ -363,6 +364,19 @@ describe('Home example workflows', () => {
     await wrapper.get('[data-testid="home-carousel"]').trigger('keydown', { key: 'ArrowLeft' })
 
     expect(cardAt(wrapper, 0).text()).toContain('Upscale and restore detail')
+  })
+
+  it('shows the catalog picture when reduced motion is preferred', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {}
+    }))
+    listHomeWorkflows.mockResolvedValue([UPSCALE])
+    const wrapper = await openHome()
+
+    expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(UPSCALE.thumbnailUrl)
   })
 
   it('shows the catalog picture on a card and a plain card when there is none', async () => {

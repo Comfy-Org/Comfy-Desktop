@@ -39,18 +39,23 @@ const listKey = () => pictures.map((picture) => picture.url).join('\n')
 const playing = computed(() => !paused && !still.value && onScreen.value && page.value !== 'hidden')
 const generation = ref(0)
 
-const { shown, leaving, upcoming, loaded, allFailed, markLoaded, markFailed } = useCoverRotation({
-  count: () => pictures.length,
-  key: listKey,
-  playing: () => playing.value
-})
+const { shown, leaving, upcoming, loaded, failed, allFailed, markLoaded, markFailed } =
+  useCoverRotation({
+    count: () => pictures.length,
+    key: listKey,
+    playing: () => playing.value
+  })
 
 watch(listKey, () => generation.value++)
 
+function hasStill(index: number): boolean {
+  return Boolean(pictures[index]?.stillUrl) && !failed.value.has(index)
+}
+
 function stillIndex(): number | null {
   const first = shown.value
-  if (first !== null && pictures[first]?.stillUrl) return first
-  const other = pictures.findIndex((picture) => picture.stillUrl)
+  if (first !== null && hasStill(first)) return first
+  const other = pictures.findIndex((_picture, index) => hasStill(index))
   return other >= 0 ? other : null
 }
 
@@ -85,7 +90,7 @@ function opacityOf(layer: Layer): string {
 
 function onError(index: number): void {
   markFailed(index)
-  if (allFailed.value) emit('broken')
+  if (allFailed.value || (still.value && stillIndex() === null)) emit('broken')
 }
 </script>
 

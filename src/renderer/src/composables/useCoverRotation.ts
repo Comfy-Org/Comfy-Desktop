@@ -8,6 +8,7 @@ export interface CoverRotation {
   leaving: Ref<number | null>
   upcoming: Ref<number | null>
   loaded: Ref<ReadonlySet<number>>
+  failed: Ref<ReadonlySet<number>>
   allFailed: ComputedRef<boolean>
   markLoaded: (index: number) => void
   markFailed: (index: number) => void
@@ -150,5 +151,15 @@ export function useCoverRotation({
     clearTimeout(fadeTimer)
   })
 
-  return { shown, leaving, upcoming, loaded, allFailed, markLoaded, markFailed, restart: start }
+  return {
+    shown,
+    leaving,
+    upcoming,
+    loaded,
+    failed,
+    allFailed,
+    markLoaded,
+    markFailed,
+    restart: start
+  }
 }
