@@ -415,6 +415,41 @@ describe('AppSidebar', () => {
     )
   })
 
+  it('keeps the credits coin and the workspace avatar in place when the signed-in sidebar folds', async () => {
+    refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: 100 })
+    ;(
+      window.api as unknown as { comfybuilder: { getAuthStatus: ReturnType<typeof vi.fn> } }
+    ).comfybuilder.getAuthStatus = vi.fn().mockResolvedValue({
+      signedIn: true,
+      email: 'someone@comfy.org',
+      workspaceId: 'w1',
+      workspaceName: 'Silverside',
+      workspaceType: 'team'
+    })
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+    const sidebar = wrapper.get('[data-testid="app-sidebar"]').element
+    const leftOf = (selector: string) =>
+      wrapper.get(selector).element.getBoundingClientRect().left -
+      sidebar.getBoundingClientRect().left
+    const coin = '[data-testid="app-sidebar-credits"] svg'
+    const avatar = '[data-testid="workspace-switcher-trigger"] > :first-child'
+    const creditsHeight = () =>
+      wrapper.get('[data-testid="app-sidebar-credits"]').element.getBoundingClientRect().height
+    const open = [leftOf(coin), leftOf(avatar)]
+    expect(creditsHeight(), 'credits row open').toBe(32)
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 320))
+
+    expect([leftOf(coin), leftOf(avatar)], 'coin and avatar folded').toEqual(open)
+    expect(creditsHeight(), 'credits row folded').toBe(44)
+    expect(wrapper.find('[data-testid="app-sidebar-credits-short"]').text()).toBe('211')
+    wrapper.unmount()
+  })
+
   describe('Builds group', () => {
     function buildNames(wrapper: Awaited<ReturnType<typeof mountSidebar>>): string[] {
       return wrapper.findAll('[data-testid^="app-sidebar-build-"]').map((row) => row.text())
