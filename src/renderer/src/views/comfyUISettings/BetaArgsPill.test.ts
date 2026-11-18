@@ -1,15 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 import { ref } from 'vue'
 import { SETTINGS_REOPEN_EPOCH } from './settingsReopenEpoch'
 import BetaArgsPill from './BetaArgsPill.vue'
 import { useSessionStore } from '../../stores/sessionStore'
-import { en } from '../../lib/i18nMessages'
 import type { CoreBetaArgs } from '../../types/ipc'
-
-const i18n = createI18n({ legacy: false, locale: 'en', messages: { en } })
 
 const SESSION: CoreBetaArgs = {
   timing: 'session',
@@ -34,7 +30,6 @@ const wrappers: VueWrapper[] = []
 function mountPill(props: Partial<InstanceType<typeof BetaArgsPill>['$props']> = {}): VueWrapper {
   const wrapper = mount(BetaArgsPill, {
     props: { installationId: 'inst-1', argsValue: '', schemaVersion: 0, ...props },
-    global: { plugins: [i18n] },
     attachTo: document.body
   })
   wrappers.push(wrapper)
@@ -250,7 +245,7 @@ describe('BetaArgsPill', () => {
       const epoch = ref(1)
       const wrapper = mount(BetaArgsPill, {
         props: { installationId: 'inst-1', argsValue: '', schemaVersion: 0 },
-        global: { plugins: [i18n], provide: { [SETTINGS_REOPEN_EPOCH as symbol]: epoch } }
+        global: { provide: { [SETTINGS_REOPEN_EPOCH as symbol]: epoch } }
       })
       wrappers.push(wrapper)
       await flushPromises()

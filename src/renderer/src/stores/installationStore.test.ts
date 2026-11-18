@@ -1,4 +1,5 @@
 import { createTestingPinia } from '@pinia/testing'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -20,13 +21,10 @@ const mockInstallations: Installation[] = [
   } as Installation
 ]
 
-vi.stubGlobal('window', {
-  ...window,
-  api: {
-    getInstallations: vi.fn(),
-    onInstallationsChanged: vi.fn(),
-    onInstallationsVersionsUpdated: vi.fn()
-  }
+stubWindowApi({
+  getInstallations: vi.fn(),
+  onInstallationsChanged: vi.fn(),
+  onInstallationsVersionsUpdated: vi.fn()
 })
 
 describe('useInstallationStore', () => {
@@ -67,20 +65,17 @@ describe('useInstallationStore', () => {
         store.fetchInstallations(),
         store.fetchInstallations()
       ]
-      // The follow-up must not overlap the in-flight request.
       expect(window.api.getInstallations).toHaveBeenCalledTimes(1)
 
       resolvers[0]!([mockInstallations[0]!])
       await expect(first).resolves.toEqual([mockInstallations[0]])
       await vi.waitFor(() => expect(window.api.getInstallations).toHaveBeenCalledTimes(2))
 
-      // Burst callers get the follow-up's result, which started after they asked.
       resolvers[1]!(mockInstallations)
       for (const result of await Promise.all(burst)) expect(result).toEqual(mockInstallations)
       expect(window.api.getInstallations).toHaveBeenCalledTimes(2)
       expect(store.installations).toEqual(mockInstallations)
 
-      // The drained queue resets: a call during the next fetch queues a new one.
       const next = store.fetchInstallations()
       const nextQueued = store.fetchInstallations()
       resolvers[2]!(mockInstallations)

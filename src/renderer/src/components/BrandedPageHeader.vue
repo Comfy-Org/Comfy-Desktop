@@ -1,67 +1,32 @@
 <script setup lang="ts">
-import ComfyWordmark from './icons/ComfyWordmark.vue'
-
 defineProps<{
   title: string
-  description: string
-  logoTestId?: string
+  description?: string
+  actionsInline?: boolean
 }>()
 </script>
 
 <template>
-  <header class="branded-page-header">
-    <ComfyWordmark
-      class="branded-page-header__wordmark"
-      :data-testid="logoTestId"
-      aria-hidden="true"
-    />
-    <div>
-      <h1>{{ title }}</h1>
-      <p class="branded-page-header__description">{{ description }}</p>
+  <header
+    class="branded-page-header box-border flex w-full items-end justify-between gap-6"
+    :class="{ '@max-[700px]:flex-col @max-[700px]:items-start @max-[700px]:gap-3': !actionsInline }"
+  >
+    <div class="min-w-0">
+      <h1 class="m-0 text-[22px]/[1.4] font-semibold tracking-[-0.01em] text-foreground">
+        {{ title }}
+      </h1>
+      <p
+        v-if="description"
+        class="branded-page-header__description m-0 mt-1 text-[14px] text-text-muted"
+      >
+        {{ description }}
+      </p>
+    </div>
+    <div
+      v-if="$slots.actions"
+      class="branded-page-header__actions flex flex-none items-center gap-2"
+    >
+      <slot name="actions" />
     </div>
   </header>
 </template>
-
-<style scoped>
-.branded-page-header {
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  width: 100%;
-  padding-right: 280px;
-}
-
-.branded-page-header h1 {
-  margin: 0 0 4px;
-  color: var(--neutral-100);
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.branded-page-header__wordmark {
-  display: block;
-  width: clamp(120px, 8vw, 180px);
-  height: auto;
-  aspect-ratio: 173 / 48;
-  color: var(--comfy-yellow);
-  flex-shrink: 0;
-  anchor-name: --brand-beam-target;
-}
-
-.branded-page-header__description {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 14px;
-}
-
-@media (max-width: 800px) {
-  .branded-page-header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 8px;
-    padding-right: 0;
-  }
-}
-</style>

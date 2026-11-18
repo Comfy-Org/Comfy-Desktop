@@ -30,8 +30,6 @@ win:
   target: nsis
   icon: assets/Comfy_Logo_x256.png
   extraResources:
-    # ${arch} expands per target (x64 / arm64), so a native Windows on Arm
-    # build ships the win-arm64 bootstrap instead of the x64 one.
     - from: bootstrap-python/win-${arch}
       to: bootstrap-python
       filter:
@@ -40,10 +38,6 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  # Disable the built-in unconditional desktop-shortcut creation. The
-  # installer surfaces an "Add a desktop shortcut" checkbox on the
-  # Finish page (default checked) instead — same default outcome, but
-  # the user can opt out. See scripts/installer.nsh → customFinishPage.
   createDesktopShortcut: false
   include: scripts/installer.nsh
 mac:
@@ -59,15 +53,12 @@ mac:
         - '**/*'
 dmg:
   title: Comfy Desktop
-  # background + background@2x live under resources/ (directories.buildResources).
   background: dmg/background.png
   iconSize: 84
   iconTextSize: 11
   window:
     width: 540
     height: 400
-  # x/y are icon centers in the 540x400 content area, aligned to the
-  # arrow and title drawn into background.png.
   contents:
     - x: 135
       y: 195
@@ -85,8 +76,6 @@ linux:
   extraResources:
     - from: resources/apparmor-profile
       to: apparmor-profile
-    # Resolve against the target architecture. No linux-arm64 bootstrap exists
-    # yet, so ARM64 packages omit it instead of shipping an unusable x64 binary.
     - from: bootstrap-python/linux-${arch}
       to: bootstrap-python
       filter:

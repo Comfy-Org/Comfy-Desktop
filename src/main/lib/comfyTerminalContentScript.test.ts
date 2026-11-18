@@ -10,8 +10,7 @@ describe('getComfyTerminalContentScript', () => {
 
   afterEach(() => {
     const state = Reflect.get(window, '__comfyDesktopTerminalStopgap') as
-      | { tabBarObserver?: MutationObserver }
-      | undefined
+      { tabBarObserver?: MutationObserver } | undefined
     state?.tabBarObserver?.disconnect()
     vi.clearAllTimers()
     vi.useRealTimers()
@@ -23,7 +22,6 @@ describe('getComfyTerminalContentScript', () => {
 
   it('returns a syntactically valid, self-contained IIFE', () => {
     expect(script.startsWith('(function () {')).toBe(true)
-    // Throws on a syntax error in the assembled string (escaping bugs, etc.).
     expect(() => new Function(script)).not.toThrow()
   })
 
@@ -49,9 +47,6 @@ describe('getComfyTerminalContentScript', () => {
   })
 
   it('dedupes the native Terminal tab via the bottom-panel store', () => {
-    // The frontend registers 'command-terminal' directly into the
-    // bottom-panel store, so the guard must inspect that shape (not just
-    // app.extensions) or it would register a duplicate tab.
     expect(script).toContain('bottomPanelHasTab')
     expect(script).toContain(`bottomPanelHasTab(app, 'command-terminal')`)
   })

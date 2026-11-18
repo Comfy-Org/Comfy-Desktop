@@ -18,13 +18,10 @@ export interface ListActionCallbacks {
   onNavigate?: (result: ActionResult, action: ListAction) => void | Promise<void>
 }
 
-// `onGuardsPassed` fires once after all cancel-paths pass but before the
-// action dispatches, so the chooser stakes its attach claim only when the
-// launch will really proceed (staking earlier would clobber a sibling's claim).
 export interface ListActionInvocationHooks {
   onGuardsPassed?: () => Promise<void> | void
-  /** This launch resumes the same installation after a restart stop. */
   isRestart?: boolean
+  actionData?: Record<string, unknown>
 }
 
 export function useListAction(uiSurface: string, callbacks: ListActionCallbacks) {
@@ -53,7 +50,6 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       REQUIRES_STOPPED.has(action.id) && action.id !== 'migrate-to-standalone'
     const wasRunning = sessionStore.isRunning(inst.id)
 
-    // Busy guard runs for every action so none can race an in-flight op.
     if (!(await actionGuard.checkBeforeAction(inst.id, action.label))) return
 
     if (action.confirm || (requiresStoppedGuard && wasRunning)) {
@@ -95,9 +91,6 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       }
     }
 
-    // Launching a not-yet-adopted Legacy Desktop install runs a
-    // migrate-then-launch chain (adoption is the prerequisite). Skips
-    // onGuardsPassed since the launch targets the freshly-adopted install.
     if (action.id === 'launch' && inst.sourceId === 'desktop' && !inst.adopted) {
       const confirmed = await modal.confirm({
         title: t('desktop.migrateBeforeLaunchTitle'),
@@ -124,7 +117,6 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
         apiCall: async () => {
           const migrateResult = await window.api.runAction(inst.id, 'migrate-to-standalone')
           if (!migrateResult.ok || !migrateResult.newInstallationId) return migrateResult
-          // Launch the adopted install in the same overlay (continuous flow).
           return window.api.runAction(migrateResult.newInstallationId, 'launch')
         },
         cancellable: true,
@@ -134,7 +126,6 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       return
     }
 
-    // Past all cancel-paths; cancel-sensitive side effects go in this hook.
     if (hooks?.onGuardsPassed) await hooks.onGuardsPassed()
 
     sessionStore.clearErrorInstance(inst.id)
@@ -146,22 +137,24 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
     const needsSelfStop = wasRunning && requiresStoppedGuard
     const wantsRelaunch = needsSelfStop && IN_PLACE_RELAUNCH.has(action.id)
     const isRunning = (): boolean => sessionStore.isRunning(inst.id)
+    const runAction = (): Promise<ActionResult> =>
+      hooks?.actionData
+        ? window.api.runAction(inst.id, action.id, hooks.actionData)
+        : window.api.runAction(inst.id, action.id)
 
     if (action.showProgress) {
-      // Tag launch/restart so the host installs the close-on-instance-started
-      // subscription and routes through the brand-chrome takeover.
       const triggersInstanceStart =
         action.id === 'launch' || action.id === 'restart' || wantsRelaunch
       const apiCall = needsSelfStop
         ? async () => {
             await stopAndWaitForExit(inst.id, isRunning)
-            const result = await window.api.runAction(inst.id, action.id)
+            const result = await runAction()
             if (wantsRelaunch && result?.ok !== false) {
               await window.api.runAction(inst.id, 'launch')
             }
             return result
           }
-        : () => window.api.runAction(inst.id, action.id)
+        : runAction
       callbacks.showProgress({
         installationId: inst.id,
         title: `${action.progressTitle || action.label} — ${inst.name}`,
@@ -179,7 +172,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       if (needsSelfStop) {
         await stopAndWaitForExit(inst.id, isRunning)
       }
-      const result = await window.api.runAction(inst.id, action.id)
+      const result = await runAction()
       if (result.running) {
         await actionGuard.checkBeforeAction(inst.id, action.label)
         return

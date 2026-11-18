@@ -1,5 +1,19 @@
-// Re-export IPC types from the canonical shared location for renderer convenience.
 export type {
+  DashboardPage,
+  AppBadge,
+  AppBadgeWords,
+  AppCard,
+  AppCover,
+  AppOutputAction,
+  AppOutputs,
+  AppPagePlacement,
+  AppPageStatus,
+  AssetKind,
+  AssetSummary,
+  CloudAssetPage,
+  LocalAssetListing,
+  CatalogWorkflow,
+  CloudAssetLookup,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,
@@ -7,6 +21,7 @@ export type {
   Installation,
   RunningInstance,
   PerformanceTestBenchmark,
+  PerformanceTestMachine,
   ExampleWorkflowDownload,
   PerformanceTestResultValue,
   PerformanceTestResultsSummary,
@@ -30,6 +45,7 @@ export type {
   ModalDetailGroup,
   ListAction,
   ShowProgressOpts,
+  SystemInfo,
   ActionResult,
   ComfyArgDef,
   PortConflictInfo,
@@ -73,7 +89,8 @@ export type {
   AppUpdateState,
   AppUpdateDownloadProgress,
   CloudUserTier,
+  CreditBalanceState,
   InstallBuildResult,
   ElectronApi
 } from '../../../types/ipc'
-export { REQUIRES_STOPPED } from '../../../types/ipc'
+export { LOCAL_ASSETS_SOURCE, REQUIRES_STOPPED } from '../../../types/ipc'

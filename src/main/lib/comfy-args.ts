@@ -1,25 +1,15 @@
-/**
- * Parses ComfyUI's `python main.py --help` output into a structured schema
- * for the args-builder UI. Supports caching per installation source revision.
- */
-
 import { execFile } from 'child_process'
 import * as path from 'path'
 import { readGitHead } from './git'
 
 export interface ComfyArgDef {
-  /** CLI flag without leading dashes, e.g. "port" */
   name: string
-  /** The full flag string, e.g. "--port" */
   flag: string
   help: string
   type: 'boolean' | 'value' | 'optional-value' | 'multi-value'
-  /** Metavar from argparse (e.g. "PORT", "IP") */
   metavar?: string
   choices?: string[]
-  /** Mutually exclusive group id (args sharing a group cannot coexist) */
   exclusiveGroup?: string
-  /** Stable category key (slug), translated in the renderer for display. */
   category: string
 }
 
@@ -28,11 +18,6 @@ export interface ComfyArgsSchema {
   knownFlags: Set<string>
 }
 
-/**
- * Maps each flag to a stable category key (a slug, not a display string).
- * The renderer translates these keys via i18n (`comfyUISettings.argsCategory.*`),
- * so category headers can be localized without changing this file.
- */
 const CATEGORY_MAP: Record<string, string> = {
   listen: 'network',
   port: 'network',
@@ -168,26 +153,18 @@ const CATEGORY_ORDER = [
   'other'
 ]
 
-/**
- * Flags present in --help but hidden from the suggestion panel (internal launcher use).
- * Still kept in `knownFlags` so user-typed values survive `filterUnsupportedArgs`.
- */
 const HIDDEN_ARGS = new Set(['feature-flag', 'list-feature-flags'])
 
 function getCategory(flagName: string): string {
   return CATEGORY_MAP[flagName] || 'other'
 }
 
-/** Parse the usage line's mutually exclusive groups: `[--flag1 | --flag2 | --flag3]`.
- *  Walks brackets depth-first so nested optional metavars (e.g. `--cache-ram [GB ...]`)
- *  don't prematurely close the surrounding group and drop later members. */
 function parseExclusiveGroups(usageLine: string): Map<string, string> {
   const flagToGroup = new Map<string, string>()
   let groupId = 0
   for (let i = 0; i < usageLine.length; i++) {
     const open = usageLine[i]
     if (open !== '[' && open !== '(') continue
-    // Find the matching close bracket, tracking nesting of both [] and ().
     let depth = 0
     let j = i
     for (; j < usageLine.length; j++) {
@@ -196,7 +173,6 @@ function parseExclusiveGroups(usageLine: string): Map<string, string> {
       else if ((c === ']' || c === ')') && --depth === 0) break
     }
     const content = usageLine.slice(i + 1, j)
-    // A mutually exclusive group is a bracket containing `|`-separated alternatives.
     if (content.includes('|')) {
       const flags = content.match(/--[\w_-]+/g)
       if (flags && flags.length > 1) {
@@ -206,7 +182,7 @@ function parseExclusiveGroups(usageLine: string): Map<string, string> {
         }
       }
     }
-    i = j // skip the whole group; nested brackets are part of it
+    i = j
   }
   return flagToGroup
 }
@@ -223,31 +199,21 @@ interface ParsedOption {
 function parseOptionsSection(optionsText: string): ParsedOption[] {
   const results: ParsedOption[] = []
 
-  // argparse formats options as:
-  //   --flag-name METAVAR    Help text starts here
-  //                          continuation of help
-  //   --another-flag         Help text on same line
-  //
-  // Flag definitions start at column 2. Help text is aligned ~column 24+.
-  // We split on the large whitespace gap between flag and help.
   const lines = optionsText.split('\n')
   let current: { flagLine: string; helpLines: string[] } | null = null
 
   for (const line of lines) {
-    // New option starts with 2-space indent + --
     const optMatch = line.match(/^ {2}(--\S+(?:\s+(?:\[?\S+\]?(?:\s+\.\.\.)?))*)\s{2,}(.*)$/)
     if (optMatch) {
       if (current) results.push(parseOptionBlock(current.flagLine, current.helpLines.join(' ')))
       current = { flagLine: optMatch[1]!, helpLines: [] }
       if (optMatch[2]!.trim()) current.helpLines.push(optMatch[2]!.trim())
     } else {
-      // Flag-only line (no help on this line, e.g. long flag names)
       const flagOnly = line.match(/^ {2}(--\S+(?:\s+\S+)*)\s*$/)
       if (flagOnly) {
         if (current) results.push(parseOptionBlock(current.flagLine, current.helpLines.join(' ')))
         current = { flagLine: flagOnly[1]!, helpLines: [] }
       } else if (current) {
-        // Continuation (help text), usually indented more
         const trimmed = line.trim()
         if (trimmed) current.helpLines.push(trimmed)
       }
@@ -259,19 +225,6 @@ function parseOptionsSection(optionsText: string): ParsedOption[] {
 }
 
 function parseOptionBlock(flagLine: string, helpText: string): ParsedOption {
-  // Examples of flagLine patterns:
-  //   --listen [IP]
-  //   --port PORT
-  //   --force-fp32
-  //   --preview-method [none,auto,latent2rgb,taesd]
-  //   --verbose [{DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-  //   --cache-lru CACHE_LRU
-  //   --async-offload [NUM_STREAMS]
-  //   --default-hashing-function {md5,sha1,sha256,sha512}
-  //   --fast [FAST ...]
-  //   --whitelist-custom-nodes WHITELIST_CUSTOM_NODES [WHITELIST_CUSTOM_NODES ...]
-
-  // Extract the primary flag (first --xxx token)
   const flagMatch = flagLine.match(/--([\w_][\w_-]*)/)
   if (!flagMatch) {
     return { name: 'unknown', flag: '--unknown', type: 'boolean', help: helpText }
@@ -281,15 +234,11 @@ function parseOptionBlock(flagLine: string, helpText: string): ParsedOption {
   const flag = `--${name}`
   const afterFlag = flagLine.slice(flagLine.indexOf(flag) + flag.length).trim()
 
-  // A `...` marks a variadic flag (argparse nargs `*`/`+`), e.g. `--cache-ram [GB ...]`
-  // or `--whitelist-custom-nodes WL [WL ...]`, which accept several space-separated values.
   const isMulti = afterFlag.includes('...')
 
-  // Choices: {a,b,c} or [a,b,c] or [{a,b,c}]
   const choicesMatch = afterFlag.match(/\[?\{([^}]+)\}\]?/) || afterFlag.match(/\[([\w,]+)\]/)
   if (choicesMatch) {
     const choices = choicesMatch[1]!.split(',').map((s) => s.trim())
-    // Brackets [] mean optional (usable without a value)
     const isOptional = afterFlag.startsWith('[')
     return {
       name,
@@ -301,7 +250,6 @@ function parseOptionBlock(flagLine: string, helpText: string): ParsedOption {
     }
   }
 
-  // Metavar: UPPER_CASE or [UPPER_CASE] or [UPPER_CASE ...]
   const metaMatch = afterFlag.match(/\[?([A-Z][A-Z0-9_]*(?:\s+\.\.\.)?)(?:\s+\[.*\])?\]?/)
   if (metaMatch) {
     const isOptional = afterFlag.startsWith('[')
@@ -314,7 +262,6 @@ function parseOptionBlock(flagLine: string, helpText: string): ParsedOption {
     }
   }
 
-  // No metavar, no choices = boolean flag
   if (!afterFlag || afterFlag.startsWith('  ')) {
     return { name, flag, type: 'boolean', help: helpText }
   }
@@ -351,7 +298,6 @@ export function parseHelpOutput(helpText: string): ComfyArgsSchema {
     })
   }
 
-  // Sort by category order, then by original order within category
   args.sort((a, b) => {
     const ai = CATEGORY_ORDER.indexOf(a.category)
     const bi = CATEGORY_ORDER.indexOf(b.category)
@@ -363,7 +309,6 @@ export function parseHelpOutput(helpText: string): ComfyArgsSchema {
 
 const schemaCache = new Map<string, { schema: ComfyArgsSchema; revision: string }>()
 
-/** Run `python main.py --help` and parse the output, cached per installation and source revision. */
 export async function getComfyArgsSchema(
   pythonPath: string,
   mainPyPath: string,
@@ -387,7 +332,6 @@ export async function getComfyArgsSchema(
   return schema
 }
 
-/** The schema {@link getComfyArgsSchema} has cached for this revision, or `null`. Never spawns. */
 export function peekComfyArgsSchema(
   mainPyPath: string,
   installationId: string,
@@ -409,7 +353,6 @@ function runHelp(pythonPath: string, mainPyPath: string, cwd: string): Promise<s
         if (stdout && stdout.includes('usage:')) {
           resolve(stdout)
         } else if (stderr && stderr.includes('usage:')) {
-          // Some configurations print help to stderr
           resolve(stderr)
         } else if (err) {
           const detail = stderr ? `\nstderr: ${stderr.slice(0, 500)}` : ''
@@ -422,7 +365,6 @@ function runHelp(pythonPath: string, mainPyPath: string, cwd: string): Promise<s
   })
 }
 
-/** Return the flag names in `userArgs` not recognized by the schema. */
 export function validateArgs(userArgs: string[], schema: ComfyArgsSchema): string[] {
   const unsupported: string[] = []
   for (const arg of userArgs) {
@@ -436,7 +378,6 @@ export function validateArgs(userArgs: string[], schema: ComfyArgsSchema): strin
   return unsupported
 }
 
-/** Return only the args known to ComfyUI, dropping unsupported flags and their values. */
 export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchema): string[] {
   const argTypes = new Map(schema.args.map((a) => [a.name, a.type]))
   const result: string[] = []
@@ -456,7 +397,6 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
         result.push(arg)
         if (hasTrailingValue) result.push(userArgs[i + 1]!)
       }
-      // Advance past trailing value if present (whether known or skipped)
       if (hasTrailingValue) {
         i += 2
         continue
@@ -469,7 +409,6 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
   return result
 }
 
-/** Clear the schema cache for an installation. */
 export function clearSchemaCache(installationId: string): void {
   schemaCache.delete(installationId)
 }

@@ -1,32 +1,3 @@
-/**
- * Returns a self-contained JavaScript string to be injected into ComfyUI
- * webview pages via webContents.executeJavaScript().
- *
- * The script intercepts model downloads triggered by the "Missing Models"
- * dialog or the right side panel Errors tab and routes them through the
- * Launcher's download manager (exposed as window.__comfyDesktop2 by
- * comfyPreload.ts) so that model files land in the correct shared-models
- * subdirectory.
- *
- * It supports the legacy dialog (PrimeVue Listbox with class
- * "comfy-missing-models"), the newer redesigned dialog, and the right side
- * panel's Missing Models error section.
- *
- * Download progress is surfaced via the title-bar downloads tray (see
- * `comfyTitleBarPreload.ts` / `TitleBarApp.vue` /
- * `comfyTitlePopup/DownloadsView.vue`) so the affordance lives in
- * Launcher chrome rather than inside ComfyUI's page surface. What
- * stays here is exactly what must run inside the ComfyUI page:
- *   - Missing-models dialog / errors-tab scraping (we need to read
- *     the dialog DOM to know which model directory each download
- *     should land in).
- *   - The `<a>.click()` interception that re-routes the download
- *     through `window.__comfyDesktop2.downloadModel` (the
- *     `directory` hint comes from the scraped cache).
- *   - The remote/cloud WebSocket auto-download intercept (workflow
- *     outputs from a remote ComfyUI server are downloaded to the
- *     local output dir without user action).
- */
 export function getModelDownloadContentScript(): string {
   return `(function() {
   'use strict';

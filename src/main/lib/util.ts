@@ -24,8 +24,6 @@ export function formatTime(secs: number): string {
   return `${Math.floor(s / 60)}m ${s % 60}s`
 }
 
-/** The one bytes/speed/ETA line every download progress surface shows,
- *  e.g. `120.0 / 800.0 MB  ·  22.1 MB/s  ·  5s elapsed  ·  31s remaining`. */
 export function formatDownloadDetail(p: DownloadProgress): string {
   const speed = `${p.speedMBs.toFixed(1)} MB/s`
   const elapsed = formatTime(p.elapsedSecs)

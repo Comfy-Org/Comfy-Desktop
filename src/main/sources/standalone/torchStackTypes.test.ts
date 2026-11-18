@@ -104,9 +104,6 @@ describe('torchIndexUrlFor / torchTupleReacquirable', () => {
   })
 
   it('maps untagged nightly versions to the nightly cpu index only on mac', () => {
-    // pytorch.org leaves the local tag off nightly/cpu wheels only for
-    // macOS; untagged dev builds elsewhere have no trusted provenance and
-    // must not fall back to PyPI (it carries no dev builds).
     setPlatform('darwin')
     expect(torchIndexUrlFor({ torch: '2.13.0.dev20260720' })).toBe(
       'https://download.pytorch.org/whl/nightly/cpu'
@@ -128,14 +125,12 @@ describe('torchIndexUrlFor / torchTupleReacquirable', () => {
   })
 
   it('recognises all PEP 440 dev spellings but not rc/post releases', () => {
-    // implicit-zero and compact dev forms are still nightlies
     expect(torchIndexUrlFor({ torch: '2.13.0.dev+cu132' })).toBe(
       'https://download.pytorch.org/whl/nightly/cu132'
     )
     expect(torchIndexUrlFor({ torch: '2.13.0dev1+cu132' })).toBe(
       'https://download.pytorch.org/whl/nightly/cu132'
     )
-    // rc and post releases are stable-index builds, not nightlies
     expect(torchIndexUrlFor({ torch: '2.13.0rc1+cu130' })).toBe(
       'https://download.pytorch.org/whl/cu130'
     )
@@ -173,31 +168,21 @@ describe('torchIndexUrlForSource / torchTupleReacquirableFrom', () => {
         { torch: '2.10.0+cu130' }
       )
     ).toBe(true)
-    // Without the AMD source kind, a Windows ROCm tuple has no trusted index.
     expect(torchIndexUrlForSource(null, amdTuple)).toBeNull()
     expect(torchTupleReacquirableFrom(null, amdTuple)).toBe(false)
   })
 
   it('fails closed when the AMD source does not coherently name the tuple', () => {
-    // AMD's index serves many ROCm versions: a ref whose tag disagrees with
-    // the build must not re-acquire a different build under this identity.
-    for (const torch of [
-      '2.10.0+rocm7.13.0', // tag mismatch
-      '2.10.0+cu130', // wrong vendor entirely
-      '2.12.0.dev20260720+rocm7.14.0' // dev build - the manifest mints none
-    ]) {
+    for (const torch of ['2.10.0+rocm7.13.0', '2.10.0+cu130', '2.12.0.dev20260720+rocm7.14.0']) {
       expect(torchIndexUrlForSource(amdSource, { torch })).toBeNull()
       expect(torchTupleReacquirableFrom(amdSource, { torch })).toBe(false)
     }
-    // A non-rocm source tag is never an AMD multi-arch identity.
     expect(
       torchIndexUrlForSource(
         { kind: 'amd-multi-arch-index', indexTag: 'cu130' },
         { torch: '2.10.0+cu130' }
       )
     ).toBeNull()
-    // Companion packages must carry the same tag: an untagged or mismatched
-    // companion pin would resolve to an arbitrary build from AMD's index.
     for (const packages of [
       { ...amdTuple, torchvision: '0.25.0+rocm7.13.0' },
       { ...amdTuple, torchvision: '0.25.0' },
@@ -206,7 +191,6 @@ describe('torchIndexUrlForSource / torchTupleReacquirableFrom', () => {
       expect(torchIndexUrlForSource(amdSource, packages)).toBeNull()
       expect(torchTupleReacquirableFrom(amdSource, packages)).toBe(false)
     }
-    // A fully tagged tuple - the shape the manifest actually mints - passes.
     expect(
       torchIndexUrlForSource(amdSource, {
         ...amdTuple,
@@ -242,7 +226,6 @@ describe('parseIndexStackId / makeIndexStackId', () => {
     })
     expect(parseAmdIndexStackId('pytorch-index:rocm7.14.0:2.10.0')).toBeNull()
     expect(parseIndexStackId('amd-index:rocm7.14.0:2.10.0')).toBeNull()
-    // The same tag + version mints DIFFERENT ids per source kind.
     expect(makeAmdIndexStackId('rocm7.14.0', '2.10.0')).not.toBe(
       makeIndexStackId('rocm7.14.0', '2.10.0')
     )

@@ -7,7 +7,7 @@
 **Install, run, and manage [ComfyUI](https://github.com/Comfy-Org/ComfyUI) from one app — no dependency hell.**
 
 [![Release](https://img.shields.io/github/v/release/Comfy-Org/Comfy-Desktop?display_name=tag&style=flat&label=release&color=4f46e5)](https://github.com/Comfy-Org/Comfy-Desktop/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/Comfy-Org/Comfy-Desktop/ci.yml?branch=main&style=flat&label=CI)](https://github.com/Comfy-Org/Comfy-Desktop/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/Comfy-Org/Comfy-Desktop/ci.yml?event=merge_group&style=flat&label=CI)](https://github.com/Comfy-Org/Comfy-Desktop/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/Comfy-Org/Comfy-Desktop?style=flat&color=blue)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Comfy-Org/Comfy-Desktop?style=flat&logo=github&color=f5c518)](https://github.com/Comfy-Org/Comfy-Desktop/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-comfy.org-5865F2?style=flat&logo=discord&logoColor=white)](https://www.comfy.org/discord)
@@ -89,19 +89,19 @@ Contributions are welcome. The app is an [Electron](https://www.electronjs.org/)
 
 ### Prerequisites
 
-- [**Node.js**](https://nodejs.org/) v22 LTS or later
+- [**Node.js**](https://nodejs.org/) 24 LTS (the version in `.nvmrc`)
 - [**pnpm**](https://pnpm.io/) v10 or later (via Corepack)
 
-```bash
-nvm install 22 && nvm use 22   # recommended — https://github.com/nvm-sh/nvm
-corepack enable                # enables pnpm (bundled with Node)
-```
+Development, CI and ToDesktop builds all use the Node version in `.nvmrc`, which is the same major as the Node runtime bundled with Electron.
 
 ### Setup
 
 ```bash
 git clone https://github.com/Comfy-Org/Comfy-Desktop.git
 cd Comfy-Desktop
+nvm install                # installs the Node version in .nvmrc — https://github.com/nvm-sh/nvm
+nvm use
+corepack enable            # enables pnpm (bundled with Node)
 pnpm run init
 ```
 
@@ -116,51 +116,49 @@ pnpm run dev               # Windows / macOS
 
 On Windows/macOS, set up a fresh clone and start the app in one command with `pnpm run init:dev`.
 
-### Common tasks
-
-| Command                          | Description                                                           |
-| -------------------------------- | --------------------------------------------------------------------- |
-| `pnpm run init:dev`              | Install dependencies, build bootstrap Python, then run `pnpm run dev` |
-| `pnpm run dev`                   | Start the app in dev mode                                             |
-| `pnpm test`                      | Unit tests ([Vitest](https://vitest.dev/))                            |
-| `pnpm run test:integration`      | Integration suite                                                     |
-| `pnpm run test:e2e`              | End-to-end tests ([Playwright](https://playwright.dev/))              |
-| `pnpm run test:e2e:lifecycle`    | Lifecycle Playwright project (real installs/downloads; see `e2e/README.md`) |
-| `pnpm run typecheck`             | Type-check (node + web + e2e + integration)                           |
-| `pnpm run lint` / `lint:fix`     | Lint (ESLint)                                                         |
-| `pnpm run format`                | Format (Prettier)                                                     |
-| `pnpm run build:{win,mac,linux}` | Build local distributables → `dist/`                                  |
-
-For the test categories, how to run each, and which one a new test belongs in, see [`TESTING.md`](TESTING.md).
-
-### Project structure
-
-```
-src/
-  main/          # Electron main process (TypeScript)
-    sources/     # Install-method plugins (standalone, portable, git, …)
-    lib/         # Shared main-process logic + IPC
-  preload/       # Context-bridge preload scripts
-  renderer/src/  # Vue 3 renderer (components, composables, stores, views)
-  types/         # Shared IPC types (single source of truth)
-locales/         # i18n translations
-```
-
 <details>
 <summary><b>Bootstrap Python</b> (the bundled Git backend)</summary>
 
 The app ships a minimal (~15–20 MB) standalone Python with `pygit2` baked in, under `bootstrap-python/<platform>/`. It provides git operations (clone, fetch, ls-remote) before any standalone ComfyUI environment is provisioned, so the app works on machines without system `git`.
 
-| Command                    | What it does                                                                                                                                                                                              |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm run bootstrap`       | Build locally via `scripts/build-bootstrap-python.mjs` (no system Python needed). Auto-detects the host platform and architecture; pass `--platform win-x64\|win-arm64\|mac-arm64\|linux-x64` for another. |
-| `pnpm run bootstrap:fetch` | Download a prebuilt archive from the [`bootstrap-v3`](https://github.com/Comfy-Org/Comfy-Desktop/releases/tag/bootstrap-v3) release (faster). Set `GITHUB_TOKEN` to authenticate.                          |
-
-Both write to `bootstrap-python/{win-x64,win-arm64,mac-arm64,linux-x64}/` (gitignored). The directory must exist before `pnpm run dev` or `pnpm run build:*`. `win-arm64` is the native Windows on Arm build (NVIDIA RTX Spark, Snapdragon X); the app picks `win-<process.arch>` in dev and ToDesktop's `targetOverrides` select it for the arm64 installer.
+Build it with `pnpm run bootstrap`, or download a prebuilt archive with `pnpm run bootstrap:fetch` (set `GITHUB_TOKEN`). Both write to `bootstrap-python/{win-x64,win-arm64,mac-arm64,linux-x64}/` (gitignored). The directory must exist before `pnpm run dev` or `pnpm run build:*`. `win-arm64` is the native Windows on Arm build (NVIDIA RTX Spark, Snapdragon X); the app picks `win-<process.arch>` in dev and ToDesktop's `targetOverrides` select it for the arm64 installer.
 
 At runtime the main process picks a git backend in priority order ([`src/main/lib/ipc/index.ts`](src/main/lib/ipc/index.ts)): bootstrap pygit2 → standalone-install pygit2 → system `git`. Set `COMFY_FORCE_BOOTSTRAP_GIT=1` (or `pnpm run dev:bootstrap`) to verify the bundled path that ships to users without git.
 
 </details>
+
+### Preview a screen without Electron
+
+```bash
+pnpm run preview                 # opens http://127.0.0.1:5199/preview.html, a list of screens
+pnpm run preview:shots           # writes one PNG per screen to preview-shots/
+pnpm run preview:shots --scenario first-use --platform win32 --size 800x563
+```
+
+The preview mounts the real `PanelApp` in a browser against a fake of the preload bridge, so a screen can be opened by URL (`?scenario=home&platform=win32`) and edits hot-reload. `--platform` takes `darwin`, `win32` or `linux` and can be repeated, as can `--scenario`.
+
+- [`src/renderer/src/preview/fakeBridge.ts`](src/renderer/src/preview/fakeBridge.ts) is the fake. It is typed as `ElectronApi`, so a bridge method added in `src/types/ipc.ts` fails the type-check until the fake answers it.
+- [`src/renderer/src/preview/scenarios.ts`](src/renderer/src/preview/scenarios.ts) lists the screens. A scenario seeds the bridge (builds, settings, replies), optionally clicks its way to a state, and names the element that shows the screen is drawn.
+- [`src/renderer/src/preview/fixtures.ts`](src/renderer/src/preview/fixtures.ts) holds the builds, machines and install steps the scenarios share.
+
+`pnpm test` loads every scenario on all three platforms and fails on a screen that does not draw or logs an error.
+
+### Run tests
+
+```bash
+pnpm run test:browser:install   # once per Playwright version: downloads headless Chromium
+pnpm test
+```
+
+Main, preload, and shared code is tested in Node. Renderer tests run in headless Chromium through [Vitest browser mode](https://vitest.dev/guide/browser/). To watch them in a visible browser, run `pnpm exec vitest --project browser --browser.headless=false`.
+
+To record a video of an e2e test for a reviewer, set `E2E_VIDEO` to any value other than empty or `0`:
+
+```bash
+E2E_VIDEO=1 pnpm exec playwright test e2e/home.test.ts --project=macos -g "Auto start"
+```
+
+The videos land in `test-results/videos/` at 1280x800. Playwright writes one `.webm` per view; the page view is the largest file. While recording, each `click`, `clickNth`, `clickByText` and `fill` in `e2e/support/cdpPages.ts` pauses about 1 s before and after, so each change shows on screen. Dropdown helpers (`clickUntilVisible`, `selectOption`) and clicks made in the page's own script are not slowed down.
 
 ## Releasing
 
@@ -178,13 +176,7 @@ At runtime the main process picks a git backend in priority order ([`src/main/li
 <details>
 <summary><b>Pipeline &amp; config</b></summary>
 
-Three workflows in [`.github/workflows/`](.github/workflows/):
-
-| Workflow                    | Trigger                       | Role                                                                                                                                                  |
-| --------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version-bump.yml`          | manual (**Run workflow**)     | Opens the version-bump PR (bot-authored) and labels it `Release`.                                                                                     |
-| `release-from-pr-label.yml` | `pull_request_target: closed` | On merge of a `Release`-labeled PR, tags `vX.Y.Z` and dispatches the build.                                                                           |
-| `build-release.yml`         | push of a `v*` tag            | Runs `pnpm run build`, uploads Datadog sourcemaps, runs `todesktop build`, and publishes the GitHub Release (`stable` → Latest, `-rc` → pre-release). |
+The flow runs through `version-bump.yml`, `release-from-pr-label.yml` and `build-release.yml` in [`.github/workflows/`](.github/workflows/).
 
 CLI equivalent of step 1:
 
@@ -241,7 +233,7 @@ Pass `--yes` (or `-Yes` on Windows) to skip the prompt. After cleanup, reinstall
 
 ## Contributing
 
-Issues and pull requests are welcome. Before opening a PR, please run `pnpm run typecheck`, `pnpm run lint`, and `pnpm test` locally — see [Development](#development). For coding conventions, see [`AGENTS.md`](AGENTS.md).
+Issues and pull requests are welcome. Before opening a PR, please run `pnpm run typecheck`, `pnpm run lint`, and `pnpm test` locally — see [Development](#development).
 
 ## Community
 

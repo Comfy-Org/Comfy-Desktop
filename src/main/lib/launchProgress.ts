@@ -1,41 +1,7 @@
-/**
- * Launch progress tracker.
- *
- * Replaces the renderer's fake timer-driven launch bar with REAL progress
- * derived from ComfyUI's stdout. It tails the same stream already piped
- * through `sessionActions/launch.ts` (line-buffered exactly like
- * `executionTap`, so CRLF and chunk-split milestones are handled) and emits
- * the data-driven "stepped" progress the install/adopt flows already use:
- *
- *   - once, up front:  sendProgress('steps', { steps })  — phase metadata
- *   - per milestone:   sendProgress(phase, { status, percent }) — phase entry
- *   - within a phase:  sendProgress(phase, { status, percent }) — live detail
- *
- * Two-level model:
- *   Level 1 (the bar)  — phase index, paced by `launchPhases` weights.
- *   Level 2 (sub-row)  — `status` carries the live detail: an "X of Y" node
- *                        count when a denominator is known, otherwise the
- *                        latest meaningful log line for streaming phases.
- *
- * The phase index is MONOTONIC: a later milestone can skip-advance past
- * intermediate phases (logs batch), but we never walk backward.
- */
 import type { LaunchPhaseDef } from './launchPhases'
 
-/** Per-node import line: `   0.0 seconds: /path/to/custom_nodes/<name>`. */
 const NODE_IMPORT_LINE = /^\s*[\d.]+\s*seconds?:\s*.*[/\\]custom_nodes[/\\](.+?)[/\\]?$/i
 
-/**
- * Translate raw startup log lines into HUMAN-readable sub-status messages.
- * We deliberately do NOT surface raw log lines (a non-technical user can't
- * parse `Using sub quadratic optimization for attention`). Only recognized
- * signals produce a message; everything else produces nothing, so the active
- * step keeps just its phase caption. First match wins — order matters.
- *
- * These keys are i18n keys under `launch.activity.*`; the renderer resolves
- * them, so the tracker stays locale-agnostic. The full raw log remains
- * available behind the existing "View Logs" control.
- */
 const ACTIVITY_MESSAGES: ReadonlyArray<{ match: RegExp; key: string }> = [
   { match: /\[(?:PRE|START)\] ComfyUI-Manager|ComfyUI-Manager/i, key: 'launch.activity.manager' },
   {
@@ -58,7 +24,6 @@ const ACTIVITY_MESSAGES: ReadonlyArray<{ match: RegExp; key: string }> = [
   }
 ]
 
-/** Map a raw log line to a human i18n key, or null if it's not meaningful. */
 function activityKeyFor(line: string): string | null {
   for (const entry of ACTIVITY_MESSAGES) {
     if (entry.match.test(line)) return entry.key
@@ -67,51 +32,23 @@ function activityKeyFor(line: string): string | null {
 }
 
 export interface LaunchProgressTracker {
-  /** Emit the steps payload and enter the synthetic first phase, BEFORE any
-   *  stdout. Makes the launch op stepped from frame zero (no flat window /
-   *  separate "Starting ComfyUI" bar). Idempotent. */
   start: () => void
-  /** Feed a stdout/stderr chunk. Safe to call with partial lines. */
   ingest: (chunk: string) => void
-  /** Add a phase for work that only became known after the tracker was armed,
-   *  and enter it. The steps payload is re-emitted, without which the renderer
-   *  drops the phase's progress entirely (it ignores a phase absent from the
-   *  payload). Inserted directly after the active phase, so the bar advances
-   *  into a new slot rather than regressing. */
   addLatePhase: (def: LaunchPhaseDef) => void
-  /** Restart per-attempt `onPhaseEnter` observation for a boot retry. The UI
-   *  phase index stays monotonic (progress never regresses), but the retried
-   *  process re-logs its boot from the top - without this reset those re-hit
-   *  milestones would be invisible to the boot-phase telemetry buffer, and a
-   *  failing retry would flush an empty buffer (`failed_phase: null`). */
   resetPhaseObservation: () => void
 }
 
 export function createLaunchProgressTracker(opts: {
   phases: readonly LaunchPhaseDef[]
-  /** Total custom-node count from a pre-launch scan, for "X of Y" detail.
-   *  Omit/0 when unknown — `customNodes` then degrades to a streaming line. */
   nodeCount?: number
-  /** Bound `makeSendProgress(sender, installationId)`. */
   sendProgress: (phase: string, detail: Record<string, unknown>) => void
-  /** Fires once per phase, the first time the tracker advances INTO it (after
-   *  any skip-advance). Used by the boot-phase telemetry buffer to record
-   *  per-phase entry timings; those are emitted only if the boot later fails
-   *  (see `bootPhaseBuffer`). Pure side-channel — a throwing callback must not
-   *  break progress, so it is swallowed. */
   onPhaseEnter?: (phase: string) => void
 }): LaunchProgressTracker {
   const { sendProgress, onPhaseEnter } = opts
-  // Copied, not aliased: `addLatePhase` splices into this list, and the caller's
-  // array must not change under it.
   const phases = [...opts.phases]
   const nodeCount = opts.nodeCount && opts.nodeCount > 0 ? opts.nodeCount : 0
 
-  // Index of the currently-active phase; -1 until the first milestone.
   let activeIdx = -1
-  // Per-boot-attempt phase observation for the telemetry side-channel.
-  // Separate from `activeIdx` because the UI index is monotonic across
-  // reboot/port retries while telemetry buffers per attempt.
   let observedPhases = new Set<string>()
 
   function observePhase(phase: string): void {
@@ -120,12 +57,9 @@ export function createLaunchProgressTracker(opts: {
     if (onPhaseEnter) {
       try {
         onPhaseEnter(phase)
-      } catch {
-        // side-channel telemetry must never break progress reporting
-      }
+      } catch {}
     }
   }
-  // Nodes seen so far in the customNodes phase, for the X-of-Y detail.
   let nodesSeen = 0
   let stepsSent = false
   let vramGb: number | null = null
@@ -133,16 +67,11 @@ export function createLaunchProgressTracker(opts: {
   function emitSteps(): void {
     if (stepsSent) return
     stepsSent = true
-    // Labels are resolved renderer-side from `progress.phaseLabel.<phase>`, so
-    // the tracker stays locale-agnostic and sends the phase id as the label.
-    // Weights ride along so the renderer paces the bar from the phase defs (the
-    // single source of truth) — no mirrored table to keep in sync.
     sendProgress('steps', {
       steps: phases.map((p) => ({ phase: p.phase, label: p.phase, weight: p.weight }))
     })
   }
 
-  /** Advance to `idx` (if it's ahead of the current phase) and emit entry. */
   function enterPhase(idx: number): void {
     if (idx <= activeIdx) return
     activeIdx = idx
@@ -154,22 +83,12 @@ export function createLaunchProgressTracker(opts: {
     })
   }
 
-  /** Percent to report on phase entry, before any in-phase detail arrives:
-   *   - streaming phases → -1 (indeterminate; the bar rides the slide)
-   *   - countable customNodes → 0 (we'll fill as nodes import)
-   *   - other determinate phases → 100 (fast; no finer signal) */
   function entryPercent(def: LaunchPhaseDef): number {
     if (def.streaming) return -1
     if (def.phase === 'customNodes' && nodeCount > 0) return 0
     return 100
   }
 
-  /**
-   * Sub-status for a phase on ENTRY (before any in-phase log detail). Returns
-   * a literal for the countable node phase, the VRAM literal for gpu, else an
-   * empty string so the step shows just its caption until real activity lands.
-   * The renderer resolves `launch.activity.*` keys but passes literals through.
-   */
   function entryStatus(def: LaunchPhaseDef): string {
     if (def.phase === 'gpu' && vramGb !== null) return `${vramGb} GB VRAM`
     if (def.phase === 'customNodes' && nodeCount > 0) return nodeCountLabel()
@@ -184,13 +103,8 @@ export function createLaunchProgressTracker(opts: {
     const line = rawLine.trimEnd()
     if (line.trim().length === 0) return
 
-    // Steps + the synthetic first phase are emitted up front by `start()`;
-    // a late call here is a safety net if `start()` was never invoked.
     emitSteps()
 
-    // Skip-advance through any phase whose entry matcher hits on this line,
-    // scanning from the furthest unmatched phase backward so a late milestone
-    // (e.g. "Starting server") jumps straight there.
     for (let i = phases.length - 1; i > activeIdx; i--) {
       const def = phases[i]!
       const m = line.match(def.match)
@@ -203,10 +117,6 @@ export function createLaunchProgressTracker(opts: {
       break
     }
 
-    // Telemetry-only re-observation: after a reboot/port retry the respawned
-    // process re-logs milestones the monotonic UI index already passed. The
-    // loop above ignores those (i <= activeIdx), so scan them here purely for
-    // the per-attempt phase buffer; no progress is (re)sent.
     for (let i = Math.min(activeIdx, phases.length - 1); i >= 0; i--) {
       const def = phases[i]!
       if (observedPhases.has(def.phase)) continue
@@ -218,9 +128,6 @@ export function createLaunchProgressTracker(opts: {
     if (activeIdx < 0) return
     const def = phases[activeIdx]!
 
-    // Level-2 live detail: countable node imports take priority (already a
-    // human "N / M" + node name), otherwise translate a recognized log signal
-    // into a human message. Raw log lines are NEVER surfaced.
     if (def.phase === 'customNodes' && nodeCount > 0) {
       const nodeMatch = line.match(NODE_IMPORT_LINE)
       if (nodeMatch) {
@@ -245,15 +152,10 @@ export function createLaunchProgressTracker(opts: {
   return {
     start(): void {
       emitSteps()
-      // Enter the synthetic first phase so `activePhase` is never null — the
-      // stepper has a forward anchor from frame zero and never falls back to
-      // the last step. Only when phase 0 is the never-matching `launchStart`.
       if (activeIdx < 0 && phases.length > 0) enterPhase(0)
     },
     resetPhaseObservation(): void {
       observedPhases = new Set()
-      // Mirror what `start()` records for a fresh boot: the retried attempt
-      // begins at the synthetic first phase.
       if (activeIdx >= 0 && phases.length > 0) observePhase(phases[0]!.phase)
     },
     ingest(chunk: string): void {

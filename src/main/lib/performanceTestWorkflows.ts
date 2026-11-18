@@ -3,6 +3,7 @@ import path from 'path'
 import type {
   AcceleratorSnapshot,
   PerformanceTestBenchmark,
+  PerformanceTestMachine,
   PerformanceTestResultValue,
   PerformanceTestResultsSummary,
   PerformanceTestStatistics,
@@ -29,6 +30,24 @@ export interface PerformanceTestJobsResponse {
 
 function isDuration(value: unknown): value is number | null {
   return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0)
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+function parsePerformanceTestMachine(
+  summary: Partial<PerformanceTestResultsSummary>
+): PerformanceTestMachine {
+  const hardware = summary.hardware
+  const systemInfo = summary.systemInfo as Partial<SystemInfo> | undefined
+  const memoryGb = systemInfo?.total_memory_gb
+  return {
+    gpu: stringOrNull(hardware?.deviceName) ?? stringOrNull(hardware?.deviceType),
+    cpu: stringOrNull(systemInfo?.cpu_model),
+    memoryGb: typeof memoryGb === 'number' && Number.isFinite(memoryGb) ? memoryGb : null,
+    platform: stringOrNull(systemInfo?.platform)
+  }
 }
 
 function parsePerformanceTestBenchmark(
@@ -58,13 +77,6 @@ function parsePerformanceTestBenchmark(
   ) {
     return null
   }
-  const hardware = summary.hardware
-  const hardwareName =
-    hardware && typeof hardware.deviceName === 'string'
-      ? hardware.deviceName
-      : hardware && typeof hardware.deviceType === 'string'
-        ? hardware.deviceType
-        : null
   return {
     id,
     createdAt: summary.createdAt ?? null,
@@ -76,7 +88,7 @@ function parsePerformanceTestBenchmark(
     averageJobDurationSeconds: summary.averageJobDurationSeconds,
     medianJobDurationSeconds: summary.medianJobDurationSeconds,
     measuredJobCount: summary.measuredJobCount!,
-    hardwareName,
+    machine: parsePerformanceTestMachine(summary),
     result: value as Record<string, PerformanceTestResultValue>
   }
 }
@@ -103,7 +115,6 @@ async function readPerformanceTestBenchmark(
   return parsePerformanceTestBenchmark(JSON.parse(contents) as unknown, sessionId)
 }
 
-/** List valid completed performance test summaries, newest first. */
 export async function listPerformanceTestBenchmarks(
   performanceTestsDir: string
 ): Promise<PerformanceTestBenchmark[]> {
@@ -122,9 +133,7 @@ export async function listPerformanceTestBenchmarks(
     try {
       const benchmark = await readPerformanceTestBenchmark(performanceTestsDir, session)
       if (benchmark) benchmarks.push(benchmark)
-    } catch {
-      // Missing or malformed sessions are ignored without hiding valid results.
-    }
+    } catch {}
   }
   return benchmarks.sort((a, b) => {
     if (a.createdAt && b.createdAt) return b.createdAt.localeCompare(a.createdAt)
@@ -134,7 +143,6 @@ export async function listPerformanceTestBenchmarks(
   })
 }
 
-/** Delete a completed benchmark session and all files stored with it. */
 export async function deletePerformanceTestBenchmark(
   performanceTestsDir: string,
   sessionId: string
@@ -146,7 +154,6 @@ export async function deletePerformanceTestBenchmark(
   await fs.promises.rm(sessionDir, { recursive: true })
 }
 
-/** Rename a completed benchmark session folder. */
 export async function renamePerformanceTestBenchmark(
   performanceTestsDir: string,
   sessionId: string,
@@ -167,7 +174,6 @@ export async function renamePerformanceTestBenchmark(
   await fs.promises.rename(sessionDir, renamedSessionDir)
 }
 
-/** Calculate duration statistics for measured jobs with valid start and end timestamps. */
 export function calculatePerformanceTestStatistics(
   response: PerformanceTestJobsResponse,
   measuredPromptIds: string[]
@@ -223,7 +229,6 @@ function isApiWorkflow(value: unknown): value is object {
   )
 }
 
-/** Return a workflow copy with every numeric seed input advanced by one. */
 export function incrementWorkflowSeeds(workflow: object): object {
   const nextWorkflow = structuredClone(workflow) as Record<string, unknown>
   for (const node of Object.values(nextWorkflow)) {
@@ -310,7 +315,6 @@ async function readPerformanceTestWorkflow(
   return parsed
 }
 
-/** Read and validate the persisted data used by the results UI and image export. */
 export async function readPerformanceTestResultsSummary(
   filePath: string,
   benchmarksDir: string
@@ -353,7 +357,6 @@ export async function readPerformanceTestResultsSummary(
   return summary as PerformanceTestResultsSummary
 }
 
-/** Validate and persist a user-selected API workflow outside any installation. */
 export async function storePerformanceTestWorkflow(
   sourcePath: string,
   benchmarksDir: string
@@ -390,7 +393,6 @@ export async function storePerformanceTestWorkflow(
   }
 }
 
-/** Persist an example workflow's API prompt as a new session's runnable workflow. */
 export async function storePerformanceTestExampleWorkflow(
   templateId: string,
   apiWorkflow: unknown,
@@ -414,7 +416,6 @@ export async function storePerformanceTestExampleWorkflow(
   }
 }
 
-/** Delete a workflow copy managed by the performance test page. */
 export async function deletePerformanceTestWorkflow(
   filePath: string,
   benchmarksDir: string
@@ -435,7 +436,6 @@ export async function deletePerformanceTestWorkflow(
   return 'deleted'
 }
 
-/** Queue warm-up requests followed by each measured run. */
 export async function submitPerformanceTestWorkflow(
   filePath: string,
   benchmarksDir: string,
@@ -505,7 +505,6 @@ function abortableDelay(delayMs: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
-/** Poll the jobs collection until every submitted prompt reaches a terminal state. */
 export async function waitForPerformanceTestJobs(
   sessionUrl: string,
   promptIds: string[],
@@ -576,7 +575,6 @@ export async function waitForPerformanceTestJobs(
   }
 }
 
-/** Persist the final jobs API response and return its absolute path. */
 export async function savePerformanceTestJobsResponse(
   response: PerformanceTestJobsResponse,
   workflowFilePath: string,
@@ -588,7 +586,6 @@ export async function savePerformanceTestJobsResponse(
   return resultPath
 }
 
-/** Persist the instance output displayed by the performance test page. */
 export async function savePerformanceTestLogs(
   logs: string,
   workflowFilePath: string,
@@ -600,7 +597,6 @@ export async function savePerformanceTestLogs(
   return logsPath
 }
 
-/** Persist the displayed performance test summary beside the workflow and raw jobs response. */
 export async function savePerformanceTestResultsSummary(
   statistics: PerformanceTestStatistics | null,
   instance: PerformanceTestResultsSummary['instance'],

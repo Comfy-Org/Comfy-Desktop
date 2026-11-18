@@ -20,6 +20,7 @@ vi.mock('electron', () => ({
 
 import './comfyTitlePopupPreload'
 import type { ComfyTitlePopupBridge, PopupGlobalSettingsSnapshot } from './comfyTitlePopupPreload'
+import { PICKER_SETTINGS_CHANNELS } from '../types/ipc'
 
 const GLOBAL_SETTINGS_CHANNEL = 'comfy-titlepopup:global-settings-changed'
 
@@ -29,8 +30,6 @@ function popupBridge(): ComfyTitlePopupBridge {
     (globalThis as Record<string, unknown>)['__comfyTitlePopup']) as ComfyTitlePopupBridge
 }
 
-/** Minimal snapshot the runtime guard accepts, used as the base every case
- *  mutates one property of. */
 function validSnapshot(): PopupGlobalSettingsSnapshot {
   return {
     initialTab: null,
@@ -69,8 +68,6 @@ function validSnapshot(): PopupGlobalSettingsSnapshot {
   }
 }
 
-/** Subscribe through the bridge and push `payload` down the real IPC handler
- *  the bridge registered, so the runtime guard is the thing under test. */
 function deliver(payload: unknown): unknown[] {
   const received: unknown[] = []
   popupBridge().onGlobalSettingsSnapshot((snapshot) => received.push(snapshot))
@@ -79,6 +76,17 @@ function deliver(payload: unknown): unknown[] {
   ;(handler as (event: unknown, data: unknown) => void)(undefined, payload)
   return received
 }
+
+it('forwards picker window-close requests with the build and how to close it', async () => {
+  mocks.invoke.mockResolvedValueOnce(true)
+  const opts = { skipConfirm: true, keepDesktopOpen: true }
+
+  expect(await popupBridge().pickerSettingsCloseComfyWindow('build-A', opts)).toBe(true)
+  expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(PICKER_SETTINGS_CHANNELS.closeComfyWindow, {
+    installationId: 'build-A',
+    opts
+  })
+})
 
 describe('global-settings snapshot guard', () => {
   beforeEach(() => {
@@ -92,8 +100,6 @@ describe('global-settings snapshot guard', () => {
     expect(deliver(snapshot)).toEqual([snapshot])
   })
 
-  // Without a guard entry the property crosses the bridge untyped and reaches
-  // the view as `undefined`, which todo 16's entry rule would read as "granted".
   it('rejects a snapshot with telemetryGranted missing', () => {
     const { telemetryGranted: _dropped, ...withoutGrant } = validSnapshot()
 

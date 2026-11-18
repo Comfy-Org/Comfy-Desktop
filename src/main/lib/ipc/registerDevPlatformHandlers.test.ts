@@ -5,8 +5,8 @@ const mocks = vi.hoisted(() => ({
   getAllWindows: vi.fn(() => [] as unknown[]),
   openExternal: vi.fn(async () => {}),
   openSystemModalAsync: vi.fn(async () => false),
-  // session
   login: vi.fn(),
+  currentAuthGeneration: vi.fn(() => 1),
   logout: vi.fn(),
   status: vi.fn(),
   isSignedIn: vi.fn(),
@@ -14,9 +14,10 @@ const mocks = vi.hoisted(() => ({
   listWorkspaceMembers: vi.fn(),
   switchWorkspace: vi.fn(),
   setUnauthorizedHandler: vi.fn(),
+  setReturnedToAnchorHandler: vi.fn(),
+  currentSubject: vi.fn(() => 'user-1' as string | null),
   clearVersionCache: vi.fn(),
   getVersionCacheGeneration: vi.fn(() => 3),
-  // client + policy
   getBuilderClient: vi.fn(() => ({
     listBuilds: mocks.listBuilds,
     createBuildDraft: mocks.createBuildDraft
@@ -27,7 +28,6 @@ const mocks = vi.hoisted(() => ({
   resolveBuildRows: vi.fn(),
   resolveHostArtifact: vi.fn(),
   resolveSelectedHostArtifact: vi.fn(),
-  // installations + shared helpers
   add: vi.fn(),
   get: vi.fn(),
   update: vi.fn(),
@@ -45,8 +45,24 @@ const mocks = vi.hoisted(() => ({
   buildExportEnvelope: vi.fn(),
   broadcastToRenderer: vi.fn(),
   operationAborts: new Map<string, AbortController>(),
-  translate: vi.fn((key: string) => key)
+  translate: vi.fn((key: string) => key),
+  endViewGrants: vi.fn(),
+  allowDesktopWorkspace: vi.fn(),
+  creditBalanceAuthChanged: vi.fn()
 }))
+
+vi.mock('./registerCreditBalanceHandlers', () => ({
+  creditBalanceAuthChanged: mocks.creditBalanceAuthChanged
+}))
+
+vi.mock('../viewWorkspaceGrants', () => ({
+  getViewWorkspaceGrants: () => ({
+    endAll: mocks.endViewGrants,
+    allowDesktop: mocks.allowDesktopWorkspace
+  })
+}))
+
+vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: async () => false }))
 
 vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: mocks.getAllWindows },
@@ -61,6 +77,9 @@ vi.mock('../../popups/systemModal', () => ({
 vi.mock('../../devplatform/session', () => ({
   getCloudSession: () => ({
     login: mocks.login,
+    currentAuthGeneration: mocks.currentAuthGeneration,
+    currentSubject: mocks.currentSubject,
+    setReturnedToAnchorHandler: mocks.setReturnedToAnchorHandler,
     logout: mocks.logout,
     status: mocks.status,
     isSignedIn: mocks.isSignedIn,
@@ -113,7 +132,16 @@ vi.mock('./shared', () => ({
   i18n: { t: mocks.translate }
 }))
 
-import { registerDevPlatformHandlers, signInToCloud } from './registerDevPlatformHandlers'
+import type { WebContents } from 'electron'
+
+import { CLOUD_CONFIG } from '../../cloud/config'
+import type * as ViewGrantsModule from '../viewWorkspaceGrants'
+import {
+  registerDevPlatformHandlers,
+  signInToCloud,
+  signOutOfCloud,
+  switchCloudWorkspace
+} from './registerDevPlatformHandlers'
 import { comfyWindows, type ComfyWindowEntry } from '../../host/registry'
 
 type IpcHandler = (event: unknown, ...args: unknown[]) => unknown
@@ -124,8 +152,6 @@ function handler(channel: string): IpcHandler {
   return call![1] as IpcHandler
 }
 
-/** A host entry carrying only the panelView the broadcast targets. Host windows
- *  load no page of their own, so the panelView IS the dashboard renderer. */
 function registerHostWithPanel(key: number, opts: { destroyed?: boolean; none?: boolean } = {}) {
   const send = vi.fn()
   const panelView = opts.none
@@ -180,9 +206,28 @@ describe('registerDevPlatformHandlers', () => {
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
   })
 
-  // The regression that made a file-menu sign-in look like nothing happened:
-  // the host window loads no page, so broadcasting only to `getAllWindows()`
-  // reaches an empty webContents and the account chip never repaints.
+  it('signIn ends earlier view grants and lets views hold the consented workspace', async () => {
+    mocks.login.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
+
+    await handler('comfybuilder:signIn')({})
+
+    expect(mocks.endViewGrants).toHaveBeenCalledOnce()
+    expect(mocks.allowDesktopWorkspace).toHaveBeenCalledExactlyOnceWith('w1')
+    expect(mocks.endViewGrants.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.allowDesktopWorkspace.mock.invocationCallOrder[0]!
+    )
+  })
+
+  it('signIn leaves view grants alone when a newer switch superseded it', async () => {
+    mocks.currentAuthGeneration.mockReturnValueOnce(1).mockReturnValueOnce(2)
+    mocks.login.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })
+
+    await handler('comfybuilder:signIn')({})
+
+    expect(mocks.endViewGrants).not.toHaveBeenCalled()
+    expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
+  })
+
   it('signIn reaches the dashboard renderer in each host panelView', async () => {
     mocks.getAllWindows.mockReturnValue([])
     const panelA = registerHostWithPanel(1)
@@ -249,6 +294,32 @@ describe('registerDevPlatformHandlers', () => {
     )
   })
 
+  it.each([
+    ['general', 'https://platform.comfy.org/settings/general?workspace=w1'],
+    ['people', 'https://platform.comfy.org/settings/people?workspace=w1'],
+    ['billing', 'https://platform.comfy.org/settings/billing?workspace=w1']
+  ])('opens the Platform %s settings page for the workspace', async (page, url) => {
+    await handler('comfybuilder:openSettingsPage')({}, page, 'w1')
+
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url)
+  })
+
+  it('rejects a missing workspace instead of opening an unscoped settings page', async () => {
+    await expect(handler('comfybuilder:openSettingsPage')({}, 'billing', '')).rejects.toThrow(
+      'A workspace is required to open Developer Platform settings.'
+    )
+
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('refuses a settings page Platform does not have', async () => {
+    await expect(handler('comfybuilder:openSettingsPage')({}, 'constructor', 'w1')).rejects.toThrow(
+      'Unknown Developer Platform settings page.'
+    )
+
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
   it('rejects a missing workspace instead of opening an unscoped Builds page', async () => {
     await expect(handler('comfybuilder:openBuildsPage')({}, '')).rejects.toThrow(
       'A workspace is required to open Builds.'
@@ -265,6 +336,7 @@ describe('registerDevPlatformHandlers', () => {
     onUnauthorized()
 
     expect(panel).toHaveBeenCalledWith('comfybuilder:authChanged', { signedIn: false })
+    expect(mocks.endViewGrants).toHaveBeenCalledOnce()
   })
 
   it('skips hosts whose panelView is torn down or absent', async () => {
@@ -280,6 +352,15 @@ describe('registerDevPlatformHandlers', () => {
     expect(live).toHaveBeenCalledOnce()
   })
 
+  it('resets the credit balance on sign-in and on sign-out', async () => {
+    mocks.login.mockResolvedValue({ signedIn: true, workspaceId: 'ws-1' })
+
+    await handler('comfybuilder:signIn')({})
+    await handler('comfybuilder:signOut')({})
+
+    expect(mocks.creditBalanceAuthChanged).toHaveBeenCalledTimes(2)
+  })
+
   it('signOut clears the session and broadcasts signed-out', async () => {
     const win = { webContents: { isDestroyed: () => false, send: vi.fn() } }
     mocks.getAllWindows.mockReturnValue([win])
@@ -287,6 +368,7 @@ describe('registerDevPlatformHandlers', () => {
     const status = await handler('comfybuilder:signOut')({})
     expect(status).toEqual({ signedIn: false })
     expect(mocks.logout).toHaveBeenCalledOnce()
+    expect(mocks.endViewGrants).toHaveBeenCalledOnce()
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', {
       signedIn: false
     })
@@ -454,14 +536,464 @@ describe('registerDevPlatformHandlers', () => {
     mocks.switchWorkspace.mockResolvedValue({
       signedIn: true,
       workspaceId: 'w2',
-      workspaceType: 'team'
+      workspaceType: 'team',
+      reached: true
     })
 
     const status = await handler('comfybuilder:switchWorkspace')({}, 'w2')
-    expect(mocks.switchWorkspace).toHaveBeenCalledWith('w2')
+    expect(mocks.allowDesktopWorkspace).toHaveBeenCalledWith('w2')
+    expect(mocks.switchWorkspace).toHaveBeenCalledWith('w2', 'chosen')
     expect(status).toMatchObject({ workspaceId: 'w2' })
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
   })
+
+  it('forces a fresh credit balance read when the workspace switches', async () => {
+    mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })
+
+    await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+    expect(mocks.creditBalanceAuthChanged).toHaveBeenCalledOnce()
+  })
+
+  it('lets no view hold the target when a newer auth operation superseded the dashboard switch', async () => {
+    mocks.currentAuthGeneration.mockReturnValueOnce(1).mockReturnValueOnce(2)
+    mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })
+    mocks.allowDesktopWorkspace.mockClear()
+
+    await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+    expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('forgets view allowlists when a switch signs in as a different account', async () => {
+    mocks.currentSubject.mockReturnValueOnce('user-1').mockReturnValueOnce('user-2')
+    mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w9' })
+    mocks.endViewGrants.mockClear()
+    mocks.allowDesktopWorkspace.mockClear()
+
+    await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+    expect(mocks.endViewGrants).toHaveBeenCalledOnce()
+    expect(mocks.allowDesktopWorkspace).toHaveBeenLastCalledWith('w9')
+  })
+
+  it('keeps view allowlists when a switch stays on the same account', async () => {
+    mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })
+    mocks.endViewGrants.mockClear()
+
+    await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+    expect(mocks.endViewGrants).not.toHaveBeenCalled()
+  })
+
+  it('announces a token read returning to the anchor and lets views hold it', () => {
+    const win = { webContents: { isDestroyed: () => false, send: vi.fn() } }
+    mocks.getAllWindows.mockReturnValue([win])
+    const status = { signedIn: true, workspaceId: 'w1', workspaceType: 'team' }
+    mocks.status.mockReturnValue(status)
+    const onReturned = mocks.setReturnedToAnchorHandler.mock.calls.at(-1)![0] as () => void
+    mocks.clearVersionCache.mockClear()
+
+    onReturned()
+
+    expect(mocks.allowDesktopWorkspace).toHaveBeenLastCalledWith('w1')
+    expect(mocks.clearVersionCache).toHaveBeenCalledOnce()
+    expect(win.webContents.send).toHaveBeenCalledExactlyOnceWith('comfybuilder:authChanged', status)
+  })
+
+  describe('promotion that moves to another workspace', () => {
+    const inW2 = {
+      id: 'local-1',
+      name: 'Local One',
+      sourceId: 'standalone',
+      workspaceId: 'w2',
+      status: 'installed',
+      installPath: '/installs/local-1'
+    }
+
+    function jwt(claims: Record<string, unknown>): string {
+      const b64 = (value: unknown): string =>
+        Buffer.from(JSON.stringify(value)).toString('base64url')
+      return `${b64({ alg: 'ES256' })}.${b64(claims)}.sig`
+    }
+
+    async function realViewGrants(active: () => string) {
+      const { ViewWorkspaceGrants } =
+        await vi.importActual<typeof ViewGrantsModule>('../viewWorkspaceGrants')
+      const grants = new ViewWorkspaceGrants(
+        {
+          currentWorkspaceId: active,
+          currentSubject: () => 'user-1',
+          currentGrantFamily: () => null,
+          currentAuthGeneration: () => 1,
+          getGrantAccessToken: async () =>
+            jwt({ sub: 'user-1', workspace_id: 'w1', scope: CLOUD_CONFIG.scope }),
+          isWorkspaceMintAllowed: async () => true,
+          heldWorkspaceToken: () => null,
+          endGrantFamily: () => {}
+        },
+        async (_grant, workspaceId) => ({
+          kind: 'minted',
+          token: jwt({ sub: 'user-1', workspace_id: workspaceId }),
+          expiresAt: Date.now() + 900_000
+        })
+      )
+      grants.allowDesktop(active())
+      mocks.allowDesktopWorkspace.mockImplementation((workspaceId) =>
+        grants.allowDesktop(workspaceId)
+      )
+      return grants
+    }
+
+    afterEach(() => {
+      mocks.allowDesktopWorkspace.mockReset()
+    })
+
+    it('lets a view hold the workspace it moved to', async () => {
+      let active = 'w1'
+      const grants = await realViewGrants(() => active)
+      const view = { id: 'view' } as unknown as WebContents
+      mocks.get.mockResolvedValue(inW2)
+      mocks.switchWorkspace.mockImplementation(async (workspaceId: string) => {
+        active = workspaceId
+        const status = { signedIn: true, workspaceId, workspaceType: 'team' }
+        mocks.status.mockReturnValue(status)
+        return { ...status, reached: true }
+      })
+      mocks.createBuildDraft.mockResolvedValue({
+        buildId: 'build-2',
+        workspaceId: 'w2',
+        editUrl: '/profile/builds/new?workspace=w2&edit=build-2'
+      })
+
+      await expect(handler('comfybuilder:promoteLocalInstance')({}, 'local-1')).resolves.toEqual({
+        ok: true
+      })
+
+      await expect(grants.tokenFor(view, 'w2')).resolves.toBe(
+        jwt({ sub: 'user-1', workspace_id: 'w2' })
+      )
+    })
+
+    it('adds nothing to the allowlist when the switch stayed on the current workspace', async () => {
+      mocks.get.mockResolvedValue(inW2)
+      mocks.switchWorkspace.mockResolvedValue({
+        signedIn: true,
+        workspaceId: 'w1',
+        workspaceSwitchFailure: 'unavailable'
+      })
+
+      await expect(handler('comfybuilder:promoteLocalInstance')({}, 'local-1')).resolves.toEqual({
+        ok: false,
+        message: 'Could not activate the instance workspace.'
+      })
+
+      expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalledWith('w2')
+    })
+  })
+
+  describe('promotion and a change of account', () => {
+    const jwt = (claims: Record<string, unknown>): string => {
+      const b64 = (value: unknown): string =>
+        Buffer.from(JSON.stringify(value)).toString('base64url')
+      return `${b64({ alg: 'ES256' })}.${b64(claims)}.sig`
+    }
+    const inB = {
+      id: 'local-1',
+      name: 'Local One',
+      sourceId: 'standalone',
+      workspaceId: 'B',
+      status: 'installed',
+      installPath: '/installs/local-1'
+    }
+    const auth = { active: 'A' as string | null, subject: 'user-1' as string | null, generation: 1 }
+
+    function statusNow(): Record<string, unknown> {
+      return auth.subject
+        ? { signedIn: true, workspaceId: auth.active, workspaceType: 'team' }
+        : { signedIn: false }
+    }
+
+    async function realViewGrants() {
+      const { ViewWorkspaceGrants } =
+        await vi.importActual<typeof ViewGrantsModule>('../viewWorkspaceGrants')
+      const grants = new ViewWorkspaceGrants(
+        {
+          currentWorkspaceId: () => auth.active,
+          currentSubject: () => auth.subject,
+          currentGrantFamily: () => null,
+          currentAuthGeneration: () => auth.generation,
+          getGrantAccessToken: async () =>
+            auth.subject
+              ? jwt({ sub: auth.subject, workspace_id: 'home', scope: CLOUD_CONFIG.scope })
+              : null,
+          isWorkspaceMintAllowed: async () => true,
+          heldWorkspaceToken: () => null,
+          endGrantFamily: () => {}
+        },
+        async (_grant, workspaceId) => ({
+          kind: 'minted',
+          token: jwt({ sub: auth.subject, workspace_id: workspaceId }),
+          expiresAt: Date.now() + 900_000
+        })
+      )
+      grants.allowDesktop('A')
+      mocks.endViewGrants.mockImplementation(() => grants.endAll())
+      mocks.allowDesktopWorkspace.mockImplementation((workspaceId) =>
+        grants.allowDesktop(workspaceId)
+      )
+      return grants
+    }
+
+    beforeEach(() => {
+      auth.active = 'A'
+      auth.subject = 'user-1'
+      auth.generation = 1
+      mocks.get.mockResolvedValue(inB)
+      mocks.status.mockImplementation(statusNow)
+      mocks.currentAuthGeneration.mockImplementation(() => auth.generation)
+      mocks.currentSubject.mockImplementation(() => auth.subject)
+      mocks.logout.mockImplementation(() => {
+        auth.generation += 1
+        auth.subject = null
+        auth.active = null
+      })
+      mocks.login.mockImplementation(async () => {
+        auth.generation += 1
+        auth.subject = 'user-2'
+        auth.active = 'C'
+        return statusNow()
+      })
+    })
+
+    afterEach(() => {
+      mocks.endViewGrants.mockReset()
+      mocks.allowDesktopWorkspace.mockReset()
+      mocks.currentAuthGeneration.mockReset().mockReturnValue(1)
+      mocks.currentSubject.mockReset().mockReturnValue('user-1')
+      mocks.status.mockReset()
+      mocks.logout.mockReset()
+      mocks.login.mockReset()
+      mocks.switchWorkspace.mockReset()
+    })
+
+    function pendingFirstSwitch(): (status: Record<string, unknown>) => void {
+      let finish: (status: Record<string, unknown>) => void = () => {}
+      mocks.switchWorkspace.mockImplementationOnce(() => {
+        auth.generation += 1
+        return new Promise((resolve) => {
+          finish = resolve
+        })
+      })
+      return (status) => finish(status)
+    }
+
+    function viewSwitchSucceeds(): void {
+      mocks.switchWorkspace.mockImplementationOnce(async (workspaceId: string) => {
+        auth.generation += 1
+        auth.active = workspaceId
+        return statusNow()
+      })
+    }
+
+    it('a superseded switch completes nothing: no permission, no snapshot, no draft for the new account', async () => {
+      const grants = await realViewGrants()
+      const viewV = { id: 'view-v' } as unknown as WebContents
+      const otherView = { id: 'other-view' } as unknown as WebContents
+      const finishMint = pendingFirstSwitch()
+
+      const promotion = handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
+      await vi.waitFor(() => expect(mocks.switchWorkspace).toHaveBeenCalledOnce())
+
+      await signOutOfCloud(undefined)
+      await signInToCloud()
+      grants.allowView(viewV, 'B')
+      viewSwitchSucceeds()
+      await switchCloudWorkspace('B')
+      finishMint(statusNow())
+
+      await expect(promotion).resolves.toEqual({
+        ok: false,
+        message: 'Could not activate the instance workspace.'
+      })
+      await expect(grants.tokenFor(otherView, 'B')).resolves.toBeNull()
+      await expect(grants.tokenFor(viewV, 'B')).resolves.toBe(
+        jwt({ sub: 'user-2', workspace_id: 'B' })
+      )
+      expect(mocks.saveSnapshot).not.toHaveBeenCalled()
+      expect(mocks.createBuildDraft).not.toHaveBeenCalled()
+      expect(mocks.openExternal).not.toHaveBeenCalled()
+    })
+
+    it('does not start a switch for the old account after signing out while resolving the workspace', async () => {
+      mocks.get.mockResolvedValue({ ...inB, workspaceId: undefined })
+      mocks.listWorkspaces.mockImplementation(async () => {
+        mocks.logout()
+        auth.subject = 'user-2'
+        auth.active = 'C'
+        return [{ id: 'personal-1', name: 'Personal', type: 'personal', role: 'owner' }]
+      })
+
+      await expect(handler('comfybuilder:promoteLocalInstance')({}, 'local-1')).resolves.toEqual({
+        ok: false,
+        message: 'Could not activate the instance workspace.'
+      })
+
+      expect(mocks.switchWorkspace).not.toHaveBeenCalled()
+    })
+
+    it.each<[string, 'saveSnapshot' | 'createBuildDraft']>([
+      ['capturing the snapshot', 'saveSnapshot'],
+      ['creating the draft', 'createBuildDraft']
+    ])(
+      'does not act for the old account when another signs in to the same workspace while %s',
+      async (_step, step) => {
+        auth.active = 'B'
+        mocks[step].mockImplementationOnce(async () => {
+          auth.subject = 'user-2'
+          auth.generation += 2
+          return step === 'saveSnapshot'
+            ? 'fresh.json'
+            : {
+                buildId: 'build-2',
+                workspaceId: 'B',
+                editUrl: '/profile/builds/new?workspace=B&edit=build-2'
+              }
+        })
+
+        await expect(handler('comfybuilder:promoteLocalInstance')({}, 'local-1')).resolves.toEqual({
+          ok: false,
+          message: 'The active workspace changed. Try again.'
+        })
+
+        expect(mocks.openExternal).not.toHaveBeenCalled()
+        if (step === 'saveSnapshot') expect(mocks.createBuildDraft).not.toHaveBeenCalled()
+      }
+    )
+
+    it('a joined switch to the same workspace still completes the promotion', async () => {
+      await realViewGrants()
+      mocks.switchWorkspace.mockImplementationOnce(async (workspaceId: string) => {
+        auth.active = workspaceId
+        return { ...statusNow(), reached: true }
+      })
+      mocks.createBuildDraft.mockResolvedValue({
+        buildId: 'build-2',
+        workspaceId: 'B',
+        editUrl: '/profile/builds/new?workspace=B&edit=build-2'
+      })
+
+      await expect(handler('comfybuilder:promoteLocalInstance')({}, 'local-1')).resolves.toEqual({
+        ok: true
+      })
+    })
+  })
+
+  it('T-V27: an old switch finishing after another account took over changes no view permission', async () => {
+    const jwt = (claims: Record<string, unknown>): string => {
+      const b64 = (value: unknown): string =>
+        Buffer.from(JSON.stringify(value)).toString('base64url')
+      return `${b64({ alg: 'ES256' })}.${b64(claims)}.sig`
+    }
+    let active = 'w1'
+    let subject = 'user-1'
+    let generation = 1
+    const { ViewWorkspaceGrants } =
+      await vi.importActual<typeof ViewGrantsModule>('../viewWorkspaceGrants')
+    const grants = new ViewWorkspaceGrants(
+      {
+        currentWorkspaceId: () => active,
+        currentSubject: () => subject,
+        currentGrantFamily: () => null,
+        currentAuthGeneration: () => generation,
+        getGrantAccessToken: async () =>
+          jwt({ sub: subject, workspace_id: 'home', scope: CLOUD_CONFIG.scope }),
+        isWorkspaceMintAllowed: async () => true,
+        heldWorkspaceToken: () => null,
+        endGrantFamily: () => {}
+      },
+      async (_grant, workspaceId) => ({
+        kind: 'minted',
+        token: jwt({ sub: subject, workspace_id: workspaceId }),
+        expiresAt: Date.now() + 900_000
+      })
+    )
+    grants.allowDesktop('w1')
+    mocks.endViewGrants.mockImplementation(() => grants.endAll())
+    mocks.allowDesktopWorkspace.mockImplementation((workspaceId) =>
+      grants.allowDesktop(workspaceId)
+    )
+    mocks.currentAuthGeneration.mockImplementation(() => generation)
+    mocks.currentSubject.mockImplementation(() => subject)
+    const viewV = { id: 'view-v' } as unknown as WebContents
+    const otherView = { id: 'other-view' } as unknown as WebContents
+    let finishOldSwitch: (status: Record<string, unknown>) => void = () => {}
+    mocks.switchWorkspace.mockImplementationOnce(() => {
+      generation += 1
+      return new Promise((resolve) => {
+        finishOldSwitch = resolve
+      })
+    })
+
+    const oldSwitch = switchCloudWorkspace('w2')
+
+    mocks.login.mockImplementationOnce(async () => {
+      generation += 1
+      subject = 'user-2'
+      active = 'u2-home'
+      return { signedIn: true, workspaceId: 'u2-home' }
+    })
+    await signInToCloud()
+
+    grants.allowView(viewV, 'X')
+    mocks.switchWorkspace.mockImplementationOnce(async () => {
+      generation += 1
+      active = 'X'
+      return { signedIn: true, workspaceId: 'X' }
+    })
+    await switchCloudWorkspace('X')
+
+    finishOldSwitch({ signedIn: true, workspaceId: 'X' })
+    await oldSwitch
+
+    await expect(grants.tokenFor(otherView, 'X')).resolves.toBeNull()
+    await expect(grants.tokenFor(viewV, 'X')).resolves.toBe(
+      jwt({ sub: 'user-2', workspace_id: 'X' })
+    )
+    mocks.endViewGrants.mockReset()
+    mocks.allowDesktopWorkspace.mockReset()
+    mocks.currentAuthGeneration.mockReset().mockReturnValue(1)
+    mocks.currentSubject.mockReset().mockReturnValue('user-1')
+  })
+
+  it('keeps a switch failure on the reply and off the broadcast', async () => {
+    const win = { webContents: { isDestroyed: () => false, send: vi.fn() } }
+    mocks.getAllWindows.mockReturnValue([win])
+    const status = { signedIn: true, workspaceId: 'w1', workspaceType: 'team' }
+    mocks.switchWorkspace.mockResolvedValue({ ...status, workspaceSwitchFailure: 'unavailable' })
+
+    await expect(handler('comfybuilder:switchWorkspace')({}, 'w2')).resolves.toEqual({
+      ...status,
+      workspaceSwitchFailure: 'unavailable'
+    })
+
+    expect(win.webContents.send).toHaveBeenCalledExactlyOnceWith('comfybuilder:authChanged', status)
+  })
+
+  it.for([
+    ['signed out', { signedIn: false }],
+    ['still on another workspace', { signedIn: true, workspaceId: 'w1', workspaceType: 'team' }],
+    ['unreached on a session that names the target', { signedIn: true, workspaceId: 'w2' }]
+  ] as const)(
+    'a dashboard switch that ends %s lets no view hold the target',
+    async ([, status]) => {
+      mocks.switchWorkspace.mockResolvedValue({ ...status, reached: false })
+
+      await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+      expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
+    }
+  )
 
   it('captures fresh state, creates a draft, and opens the validated Platform URL', async () => {
     const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
@@ -559,7 +1091,7 @@ describe('registerDevPlatformHandlers', () => {
     mocks.switchWorkspace.mockImplementationOnce(async () => {
       const status = { signedIn: true, workspaceId: 'w2', workspaceType: 'team' }
       mocks.status.mockReturnValue(status)
-      return status
+      return { ...status, reached: true }
     })
     mocks.createBuildDraft.mockResolvedValue({
       buildId: 'build-2',
@@ -571,11 +1103,35 @@ describe('registerDevPlatformHandlers', () => {
       ok: true
     })
 
-    expect(mocks.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+    expect(mocks.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'chosen')
+    expect(mocks.allowDesktopWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
     expect(mocks.createBuildDraft).toHaveBeenCalledOnce()
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
       'https://platform.comfy.org/profile/builds/build-2/draft?workspace=w2'
     )
+  })
+
+  it('does not let views hold a workspace the promotion failed to activate', async () => {
+    mocks.get.mockResolvedValue({
+      id: 'local-1',
+      name: 'Workspace Instance',
+      sourceId: 'comfybuilder',
+      workspaceId: 'w2',
+      status: 'installed',
+      installPath: '/installs/local-1'
+    })
+    mocks.switchWorkspace.mockResolvedValueOnce({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceType: 'team',
+      reached: false
+    })
+
+    await expect(handler('comfybuilder:promoteLocalInstance')({}, 'local-1')).resolves.toEqual({
+      ok: false,
+      message: 'Could not activate the instance workspace.'
+    })
+    expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
   })
 
   it('does not upload if the active workspace changes during capture', async () => {

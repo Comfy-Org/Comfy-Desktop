@@ -1,6 +1,5 @@
 import type { RumErrorEvent } from '@datadog/browser-rum'
 
-// Synthetic bundle URLs used only for Datadog path matching.
 export const DATADOG_BUNDLE_BASE_URL = 'app://app'
 
 const DATADOG_BUNDLE_PATH_PATTERNS = [
@@ -28,12 +27,17 @@ const PII_PATH_PATTERNS = [
   /(\/home\/)[^\\/]+?(?=\/|$)/g
 ]
 
+const URL_QUERY_PATTERN = /(https?:\/\/[^\s?#"')]+)\?[^\s"')]*/gi
+const DATA_URI_PATTERN = /data:[^\s"')]+/gi
+
 export function scrubPII(value: string): string {
   let scrubbed = value
   for (const pattern of PII_PATH_PATTERNS) {
     scrubbed = scrubbed.replace(pattern, (_match, prefix: string) => `${prefix}[REDACTED]`)
   }
   return scrubbed
+    .replace(URL_QUERY_PATTERN, (_match, address: string) => `${address}?[REDACTED]`)
+    .replace(DATA_URI_PATTERN, 'data:[REDACTED]')
 }
 
 export function normalizeRumErrorEvent(event: RumErrorEvent): void {

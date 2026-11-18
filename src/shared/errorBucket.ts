@@ -1,8 +1,3 @@
-/**
- * Coarse error categorisation for telemetry, shared by main + renderer so both classify identically. Small vocabulary keeps the Errors dashboard low-cardinality; raw message is sent alongside for drill-down.
- * Order matters in `bucketError`: more-specific patterns are checked first.
- */
-
 export type ErrorBucket =
   | 'cancelled'
   | 'timeout'
@@ -47,7 +42,6 @@ export function bucketError(input: unknown): ErrorBucket {
   const raw = [code, name, detail].filter(Boolean).join(' ')
   if (!raw) return 'unknown'
   const message = raw.toLowerCase()
-  // Cancellation wins even if the message also mentions cancel-triggered failures.
   if (message.includes('cancel')) return 'cancelled'
   if (message.includes('timeout')) return 'timeout'
   if (
@@ -74,7 +68,6 @@ export function bucketError(input: unknown): ErrorBucket {
   ) {
     return 'node_missing'
   }
-  // Tensor / shape mismatch (torch "size mismatch", "shape '[...]' is invalid", "expected ... got ...").
   if (
     message.includes('size mismatch') ||
     message.includes('shape mismatch') ||
@@ -84,7 +77,6 @@ export function bucketError(input: unknown): ErrorBucket {
   ) {
     return 'shape_mismatch'
   }
-  // Model load: corrupt / wrong-format / missing-key checkpoints & safetensors.
   if (
     message.includes('safetensors') ||
     message.includes('error while deserializing') ||
@@ -93,19 +85,12 @@ export function bucketError(input: unknown): ErrorBucket {
   ) {
     return 'model_load'
   }
-  // Rejected by ComfyUI's prompt validator (`error_class: 'validation_failed'`).
   if (
     message.includes('validation_failed') ||
     message.includes('prompt outputs failed validation')
   ) {
     return 'validation'
   }
-  // Migration `source` phase — adoption couldn't obtain the ComfyUI
-  // source: the legacy tree is gone and the replacement clone from a git
-  // mirror also failed ("source-missing: Downloading ComfyUI source
-  // from …"). Bucketed before `network` because the mirror-clone
-  // failures also reach a fetch site and would otherwise bucket as
-  // network.
   if (
     message.includes('source-missing') ||
     message.includes('source_missing') ||
@@ -129,7 +114,6 @@ export function bucketError(input: unknown): ErrorBucket {
   )
     return 'permissions'
   if (message.includes('path') || /\b(?:enoent|enotdir|eisdir)\b/.test(message)) return 'path'
-  // Python exception class shape ("FooError"/"FooException"). Matched case-sensitively on `raw` (uppercase first letter) so lowercase noise like "module.error" doesn't false-positive.
   if (/\b[A-Z][A-Za-z0-9_.]*(?:Error|Exception)\b/.test(detail)) return 'python'
   return 'other'
 }

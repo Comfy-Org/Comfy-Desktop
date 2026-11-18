@@ -14,7 +14,6 @@ interface CnrInstallInfo {
 
 const TRACKING_FILE = '.tracking'
 
-/** Validate that a name is a safe single path component (no traversal). */
 export function isSafePathComponent(name: string): boolean {
   if (!name || name !== path.basename(name)) return false
   if (name === '.' || name === '..') return false
@@ -61,15 +60,7 @@ export async function installCnrNode(
   sendOutput: (text: string) => void
 ): Promise<string[]> {
   const startedAt = Date.now()
-  // Resolved version is unknown until the registry call returns; fall
-  // back to the caller-requested string for failure paths so the event
-  // still names a version.
   let resolvedVersion = version
-  // Capture telemetry around the entire install — including pre-flight
-  // validation and the registry lookup — so failures that happen before
-  // the tmp-zip allocation still fire `node.installed` with the right
-  // bucket. The actual zip download / extraction still wraps its own
-  // try/finally below for tmpZip cleanup.
   try {
     if (!isSafePathComponent(nodeId)) {
       throw new Error(`Invalid node ID: ${nodeId}`)
@@ -156,8 +147,6 @@ export async function switchCnrVersion(
       sendOutput(`Downloading ${nodeId}@${info.version}...\n`)
       await download(info.downloadUrl, tmpZip, null)
 
-      // Extract to a temp dir first to get the true new file list; in-place
-      // extraction would union old+new files and break garbage detection.
       sendOutput(`Extracting ${nodeId}@${info.version}...\n`)
       await fs.promises.mkdir(tmpExtract, { recursive: true })
       await extract(tmpZip, tmpExtract)
@@ -165,7 +154,6 @@ export async function switchCnrVersion(
       const newFiles = walkDir(tmpExtract)
       const newFileSet = new Set(newFiles)
 
-      // Copy extracted files into nodePath (overwriting existing)
       await fs.promises.mkdir(nodePath, { recursive: true })
       await fs.promises.cp(tmpExtract, nodePath, { recursive: true, force: true })
 

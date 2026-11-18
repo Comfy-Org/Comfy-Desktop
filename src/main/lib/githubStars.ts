@@ -1,5 +1,3 @@
-// Stargazer count via the unauthenticated GitHub REST API, cached in-memory
-// (24h TTL) to stay under the 60 req/hr limit. null on any failure.
 interface CacheEntry {
   count: number
   fetchedAt: number
@@ -10,9 +8,6 @@ const FETCH_TIMEOUT_MS = 6000
 
 const cache = new Map<string, CacheEntry>()
 
-// Synchronous, network-free read of the cached count. Returns null when the
-// entry is missing or stale, so callers can open instantly off the cache and
-// warm it in the background via getGithubStarCount().
 export function getCachedGithubStarCount(repo: string): number | null {
   const cached = cache.get(repo)
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {

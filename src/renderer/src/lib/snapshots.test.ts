@@ -13,8 +13,6 @@ describe('isDisplayableLabel', () => {
     expect(isDisplayableLabel('')).toBe(false)
   })
 
-  // Older builds wrote these into `label` as internal sentinels. Rendering one
-  // as a snapshot's name would replace the useful version pill with jargon.
   it.each(['before-update', 'after-update', 'after-restore'])(
     'suppresses the legacy sentinel %s',
     (label) => {

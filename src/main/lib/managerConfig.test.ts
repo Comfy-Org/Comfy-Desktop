@@ -113,7 +113,7 @@ describe('ensureManagerConfig', () => {
     it('ignores an invalid security level', async () => {
       const original = '[default]\nsecurity_level = normal\n'
       seed(original)
-      // @ts-expect-error -- exercising runtime guard against a bad persisted value
+      // @ts-expect-error
       await ensureManagerConfig(tmpRoot, { useChineseMirrors: false, securityLevel: 'bogus' })
       expect(readModern()).toBe(original)
     })
@@ -121,7 +121,7 @@ describe('ensureManagerConfig', () => {
     it('ignores an invalid network mode', async () => {
       const original = '[default]\nnetwork_mode = public\n'
       seed(original)
-      // @ts-expect-error -- exercising runtime guard against a bad persisted value
+      // @ts-expect-error
       await ensureManagerConfig(tmpRoot, { useChineseMirrors: false, networkMode: 'bogus' })
       expect(readModern()).toBe(original)
     })
@@ -260,8 +260,6 @@ describe('ensureManagerConfig', () => {
       )
     })
 
-    // configparser lowercases option keys, so Manager reads `Security_Level`
-    // as security_level - replace it instead of adding a duplicate.
     it('replaces a mixed-case key (configparser keys are case-insensitive)', () => {
       expect(
         _internals.withDefaultOption(
@@ -280,9 +278,6 @@ describe('ensureManagerConfig', () => {
       )
     })
 
-    // configparser section names are case-sensitive: Manager indexes
-    // config['default'], so a hand-written `[Default]` is a section Manager
-    // never reads - write a real [default] instead of editing it.
     it('does not treat [Default] as the default section (configparser sections are case-sensitive)', () => {
       const content = '[Default]\nsecurity_level = normal\n'
       expect(_internals.withDefaultOption(content, 'security_level', 'weak')).toBe(
@@ -307,9 +302,6 @@ describe('ensureManagerConfig', () => {
       )
     })
 
-    // configparser also accepts `key: value` - a hand-written colon line must
-    // be replaced, not shadowed (Manager parses with strict=False, where the
-    // later duplicate wins).
     it('replaces a colon-delimited key (configparser accepts both = and :)', () => {
       expect(
         _internals.withDefaultOption(
@@ -338,9 +330,6 @@ describe('ensureManagerConfig', () => {
       ).toBe('[default]\nsecurity_level = weak\n')
     })
 
-    // strict=False merges repeated [default] sections and the LAST duplicate
-    // wins - editing only the first section would leave the later value in
-    // control. All duplicates must collapse to one canonical line.
     it('collapses duplicates across repeated [default] sections', () => {
       const content = '[default]\nnetwork_mode = public\n\n[default]\nnetwork_mode = offline\n'
       expect(_internals.withDefaultOption(content, 'network_mode', 'personal_cloud')).toBe(
@@ -348,9 +337,6 @@ describe('ensureManagerConfig', () => {
       )
     })
 
-    // configparser's section regex stops at the first `]` and ignores
-    // trailing text, so `[other] junk` IS a section boundary and
-    // `[default] ; note` IS the default section.
     it('treats a header with trailing text as a section boundary', () => {
       const content =
         '[default] ; note\nsecurity_level = normal\n[other] junk\nsecurity_level = weak\n'
@@ -359,8 +345,6 @@ describe('ensureManagerConfig', () => {
       )
     })
 
-    // Indented lines are value continuations in configparser - they must be
-    // removed with the value they extend, not left to corrupt the new one.
     it('drops continuation lines of a replaced option', () => {
       const content = '[default]\nnetwork_mode = public\n    stale-suffix\nchannel_url = x\n'
       expect(_internals.withDefaultOption(content, 'network_mode', 'offline')).toBe(

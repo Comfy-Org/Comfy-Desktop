@@ -1,9 +1,7 @@
-// Core's output is untrusted: this catches accidental leakage, not deliberately encoded text.
 import * as telemetry from './telemetry'
 import type { TelemetryValue } from './telemetry'
 import { createStreamLineBuffer, stripAnsi } from './stderrTail'
 
-// Contract with core's emitter: the grammar and vocabulary change on both sides or not at all.
 export const AGENT_EVENT_LINE = /^\[agent-event\] ([a-z][a-z0-9_]*)((?: [a-z_]+=[^ =]+)*)$/
 
 const EVENT_PREFIX = 'comfy.desktop.comfyui.agent.'
@@ -22,8 +20,6 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'health_check_failed',
   'agent_exited',
   'agent_error',
-  // The agent's startup, built by its v1 host from the agent's own log
-  // (cloud services/agent/packaging/comfy_agent/host.py AgentRecords).
   'startup_step',
   'startup_stalled',
   'startup_failed',
@@ -31,7 +27,6 @@ export const ALLOWED_EVENTS: ReadonlySet<string> = new Set([
   'agent_orphans_stopped'
 ])
 
-// Absent from ALLOWED_EVENTS, so no line can forge it.
 const UNKNOWN_EVENTS_DROPPED = 'unknown_events_dropped'
 
 export const REASONS: ReadonlySet<string> = new Set([
@@ -53,17 +48,10 @@ export const REASONS: ReadonlySet<string> = new Set([
   'address_in_use',
   'not_set_up',
   'config_invalid',
-  // ComfyUI core's agent_error when the installed comfy-agent lacks this
-  // Core's host protocol (app/agent_host.py load()).
   'outdated',
-  // The agent's startup_failed when a credential deny path is a link it
-  // cannot open (cloud services/agent/packaging/testdata/startup_reasons.txt).
   'unreadable_link'
 ])
 
-// The agent's startup step ids: byte-identical to cloud's
-// services/agent/packaging/testdata/startup_step_ids.txt, plus "init" (a
-// failure before the first step) and "other" (a step this list does not know).
 export const STARTUP_STEPS: ReadonlySet<string> = new Set([
   'init',
   'open_data_dir',
@@ -84,11 +72,6 @@ export const STARTUP_STEPS: ReadonlySet<string> = new Set([
   'other'
 ])
 
-// What a failed startup step was refused on and which of the agent's own
-// files it named: byte-identical to cloud's
-// services/agent/packaging/testdata/startup_operations.txt and
-// startup_files.txt, as of Comfy-Org/cloud#16572 at d595cd23054. The host
-// already drops a value outside them.
 export const STARTUP_OPERATIONS: ReadonlySet<string> = new Set([
   'open',
   'stat',
@@ -144,14 +127,12 @@ export const STARTUP_FILES: ReadonlySet<string> = new Set([
   'sandbox-grants.json'
 ])
 
-// A Set, not an object literal, so untrusted keys like `constructor` can't hit the prototype.
 export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'code',
   'duration_ms',
   'agent_version',
   'node_version',
   'reason',
-  // Typed in LIFECYCLE_ENUMS / LIFECYCLE_COUNTS / fieldValue.
   'step',
   'outcome',
   'attempt',
@@ -171,14 +152,11 @@ export const ALLOWED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'shell',
   'sandbox',
   'assets',
-  // A failed startup step's diagnostics (startup_step, startup_failed).
   'op',
   'file',
   'win_error'
 ])
 
-// Closed sets for the lifecycle fields that name a state. A value outside its
-// set still reports the event, as "unknown", like `reason`.
 const LIFECYCLE_ENUMS: ReadonlyMap<string, ReadonlySet<string>> = new Map(
   Object.entries({
     step: STARTUP_STEPS,
@@ -199,14 +177,12 @@ const LIFECYCLE_ENUMS: ReadonlyMap<string, ReadonlySet<string>> = new Map(
   }).map(([name, values]): [string, ReadonlySet<string>] => [name, new Set(values)])
 )
 
-// Lifecycle fields that are non-negative counts (unlike `code`, an exit code).
 const LIFECYCLE_COUNTS: ReadonlySet<string> = new Set([
   'duration_ms',
   'attempt',
   'count',
   'uptime_ms',
   'startup_ms',
-  // A Win32 error number: unsigned.
   'win_error'
 ])
 
@@ -224,7 +200,6 @@ const matching =
   (pattern: RegExp): FieldValue =>
   (raw) =>
     pattern.test(raw) ? raw : undefined
-// Like `reason`: a newer agent's value still reports the event, without the raw text.
 const oneOf = (values: string): FieldValue => {
   const allowed = new Set(values.split(' '))
   return (raw) => (allowed.has(raw) ? raw : 'unknown')
@@ -239,12 +214,8 @@ const timestamp = matching(UTC_TIMESTAMP)
 const fieldsOfType = (names: string, type: FieldValue): Array<[string, FieldValue]> =>
   names.split(' ').map((name) => [name, type])
 
-// The local agent's product events: ComfyUI logs them as its own records from
-// the agent's output. They keep the names Cloud uses for the same events.
 export const PRODUCT_FIELDS: ReadonlyMap<string, FieldValue> = new Map([
   ...fieldsOfType('thread_id session_id turn_id workflow_id job_id', matching(UUID)),
-  // The panel's send id: joins app:agent_message_sent to its turn on a new
-  // chat, whose first send has no thread_id yet.
   ['client_message_id', matching(UUID)],
   ['mutation_id', matching(HEX64)],
   ...fieldsOfType('occurred_at timestamp accepted_at', timestamp),
@@ -283,14 +254,10 @@ export const PRODUCT_FIELDS: ReadonlyMap<string, FieldValue> = new Map([
 
 type ProductEvent = { required: readonly string[]; optional: readonly string[]; hourlyCap: number }
 
-// The default cap: 120 turns an hour, for an event the agent writes once a turn.
 const TURNS_PER_HOUR = 120
 
-// The agent's per-turn run limit: AGENT_MAX_RUNS_PER_TURN, default 10 (cloud
-// services/agent config). A turn submits at most that many jobs.
 const AGENT_MAX_RUNS_PER_TURN = 10
 
-// occurred_at and agent_version are allowed on every product event.
 const productEvent = (
   required: string,
   optional: string,
@@ -317,7 +284,6 @@ export const PRODUCT_EVENTS: ReadonlyMap<string, ProductEvent> = new Map([
     'agent_first_response',
     productEvent('thread_id turn_id', 'response_kind time_to_first_response_ms')
   ],
-  // Up to 100 per turn: one per mutating tool call.
   [
     'agent_mutation_applied',
     productEvent(
@@ -337,10 +303,6 @@ export const PRODUCT_EVENTS: ReadonlyMap<string, ProductEvent> = new Map([
     'agent_turn_failed',
     productEvent('thread_id turn_id workflow_id', 'error_class failure_stage retryable duration_ms')
   ],
-  // Up to AGENT_MAX_RUNS_PER_TURN per turn: one per submitted job and at most
-  // one completion each, so the once-a-turn cap scaled by the run limit. Like
-  // agent_mutation_applied, a run-heavy process spends the shared
-  // PRODUCT_EVENTS_PER_PROCESS budget sooner, and later turn events go unsent.
   [
     'agent_run_submitted',
     productEvent(
@@ -359,9 +321,6 @@ export const PRODUCT_EVENTS: ReadonlyMap<string, ProductEvent> = new Map([
   ]
 ])
 
-// Product events share telemetry's 5000-per-process cap with every other
-// Desktop event, so they get a smaller one of their own, kept across ComfyUI
-// launches in one Desktop process. Only events telemetry accepts count.
 const PRODUCT_EVENTS_PER_PROCESS = 1500
 let productEventsThisProcess = 0
 
@@ -386,7 +345,6 @@ function fieldValue(key: string, rawValue: string): TelemetryValue | undefined {
   }
   const value = /^-?\d+$/.test(rawValue) ? Number(rawValue) : NaN
   if (!Number.isSafeInteger(value) || (LIFECYCLE_COUNTS.has(key) && value < 0)) return undefined
-  // A Win32 error number is a DWORD; the host caps it at 32 bits too.
   if (key === 'win_error' && value > 0xffffffff) return undefined
   return value
 }
@@ -401,7 +359,6 @@ function parseFields(
     const separatorIndex = pair.indexOf('=')
     const key = pair.slice(0, separatorIndex)
     const value = valueOf(key, pair.slice(separatorIndex + 1))
-    // A newer core's field: omit it rather than lose the whole event.
     if (value === null) continue
     if (Object.hasOwn(fields, key)) return null
     if (value === undefined) return null
@@ -422,8 +379,6 @@ function parseProductFields(
     const value = names.has(key) ? PRODUCT_FIELDS.get(key) : undefined
     if (!value) return null
     const parsed = value(rawValue)
-    // workflow_id is optional on the run events: an invalid value omits the
-    // field instead of dropping the line. Everywhere else it stays required.
     if (parsed === undefined && key === 'workflow_id' && !event.required.includes(key)) return null
     return parsed
   })
@@ -440,12 +395,10 @@ type ParsedLine = AgentEvent & { product?: ProductEvent }
 const UNKNOWN_EVENT = Symbol('unknown event')
 
 const RECORD_TAG = '[agent-event] '
-// Core relays the agent's own output behind this tag so it can never pass as a record.
 const AGENT_OUTPUT_TAG = '[comfy-agent] '
 
 function parseLine(line: string): ParsedLine | typeof UNKNOWN_EVENT | null {
   const text = stripAnsi(line)
-  // Not anchored: a tqdm bar redraws as `\r<bar>` with no newline, so a record can land behind it.
   const at = text.lastIndexOf(RECORD_TAG)
   if (at === -1 || text.lastIndexOf(AGENT_OUTPUT_TAG, at) !== -1) return null
   const match = text.slice(at).trim().match(AGENT_EVENT_LINE)
@@ -462,20 +415,12 @@ function parseLine(line: string): ParsedLine | typeof UNKNOWN_EVENT | null {
   return fields ? { event, fields } : null
 }
 
-/**
- * The tap's validation of one complete line, with no telemetry, consent check
- * or rate cap, for callers that act on agent events whatever the user's
- * telemetry choice. `null` for anything the tap would not forward.
- */
 export function parseAgentEventLine(line: string): AgentEvent | null {
   const parsed = parseLine(line)
   return parsed === UNKNOWN_EVENT || !parsed || parsed.product ? null : parsed
 }
 
-// Per-event budget on top of telemetry's own per-minute limit.
 const PER_EVENT_HOURLY_CAP = 60
-// One start writes a startup_step per step (15) on each of up to 4 attempts,
-// so the default cap would hold one launch an hour.
 const LIFECYCLE_HOURLY_CAPS: Readonly<Record<string, number>> = { startup_step: 240 }
 const RATE_WINDOW_MS = 60 * 60_000
 
@@ -490,12 +435,10 @@ export function createAgentTap(opts: AgentTapOptions): {
     core_beta_flags: [...(opts.coreBetaFlags ?? [])]
   }
 
-  // Not reset by beginBoot, so the port-conflict relaunch loop shares one cap.
   const rateBuckets = new Map<string, { windowStart: number; count: number }>()
 
   const productContext = { ...baseContext, distribution: 'local', deployment: 'local' }
 
-  // The event's bucket for the current hour.
   function rateBucket(event: string): { windowStart: number; count: number } {
     const now = Date.now()
     let bucket = rateBuckets.get(event)
@@ -514,42 +457,30 @@ export function createAgentTap(opts: AgentTapOptions): {
       const bucket = rateBucket(parsed.event)
       if (bucket.count >= parsed.product.hourlyCap) return
       try {
-        // Not mirrored to Datadog, unlike the lifecycle events' emit. Only an
-        // event telemetry accepts counts, so lines seen before consent use no budget.
         if (telemetry.capture(parsed.event, { ...parsed.fields, ...productContext })) {
           bucket.count++
           productEventsThisProcess++
         }
-      } catch {
-        // ignore - telemetry side effect, and the next line must still parse
-      }
+      } catch {}
       return
     }
-    // Counted, never named: an unknown event's name is untrusted input.
     const { event, fields } =
       parsed === UNKNOWN_EVENT ? { event: UNKNOWN_EVENTS_DROPPED, fields: { count: 1 } } : parsed
     const bucket = rateBucket(event)
     if (bucket.count >= (LIFECYCLE_HOURLY_CAPS[event] ?? PER_EVENT_HOURLY_CAP)) return
     bucket.count++
     try {
-      // Base context merged last so parsed fields can never override it.
       telemetry.emit(`${EVENT_PREFIX}${event}`, { ...fields, ...baseContext })
-    } catch {
-      // ignore - telemetry side effect, and the next line must still parse
-    }
+    } catch {}
   }
 
-  // Never asked for its unterminated tail: a line without a newline may be a write cut short.
   const lineBuffer = createStreamLineBuffer()
 
   return {
     ingest(chunk: string, source: 'stdout' | 'stderr'): void {
-      // Runs in the launch stream handler with no enclosing catch: never throw.
       try {
         for (const line of lineBuffer.append(source, chunk)) handleLine(line)
-      } catch {
-        // ignore - telemetry side effect, not user-visible
-      }
+      } catch {}
     },
     beginBoot(): void {
       lineBuffer.reset()

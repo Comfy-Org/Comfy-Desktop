@@ -1,12 +1,6 @@
 import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 import type { BrandScene, Keyframe, Scene } from '../lib/brandScene/types'
 
-/**
- * Drives the install-wait scene: masked <video> layers positioned by keyframed
- * CSS transforms on one rAF loop. The caller owns the DOM; we drive geometry
- * and playback off the stage ref.
- */
-
 interface SceneRuntime {
   el: HTMLElement
   videos: HTMLVideoElement[]
@@ -14,7 +8,6 @@ interface SceneRuntime {
   scene: Scene
 }
 
-/** Cubic-bezier easing y(x) for x in [0,1]; identity when degenerate. */
 export function makeBezier(
   p1x: number,
   p1y: number,
@@ -44,14 +37,12 @@ export function makeBezier(
   }
 }
 
-/** Cache the per-segment easer on the keyframe so it's built once. */
 type CachedKf = Keyframe & { _easer?: (x: number) => number }
 
 type Vec2 = [number, number]
 
 const vec2 = (v: readonly number[]): Vec2 => [v[0] ?? 0, v[1] ?? 0]
 
-/** Interpolate a keyframe track to its first two components at frame `t`. */
 export function lerpKf(kfs: CachedKf[], t: number): Vec2 {
   if (kfs.length === 0) return [0, 0]
   const first = kfs[0]
@@ -84,8 +75,6 @@ const prefersReducedMotion = (): boolean =>
   typeof window.matchMedia === 'function' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-/** Per-clip activation state, stashed on the element so re-activations across a
- *  loop share it without composable-level bookkeeping. */
 type WatchedVideo = HTMLVideoElement & {
   __sceneToken?: number
   __sceneCleanup?: () => void
@@ -94,13 +83,6 @@ type RvfcVideo = HTMLVideoElement & {
   requestVideoFrameCallback?: (cb: () => void) => number
 }
 
-/** Fade a just-activated clip in only once its seeked frame has decoded — a clip
- *  pinned off frame 0 seeks away from the preloaded frame, so revealing sooner
- *  shows the mask ground. rVFC is authoritative (fires on a composited frame);
- *  the fallback gates on `readyState >= HAVE_CURRENT_DATA`, never a bare timer.
- *  Re-armed per activation: the gate is cleared and a fresh token minted, so a
- *  loop re-seek waits for its own frame and a late callback from the prior
- *  activation is ignored. */
 export function markPaintedWhenReady(ve: HTMLVideoElement): void {
   const v = ve as WatchedVideo
   v.__sceneCleanup?.()
@@ -128,7 +110,7 @@ export function markPaintedWhenReady(ve: HTMLVideoElement): void {
   }
 
   const tryPaint = (): void => {
-    if (ve.readyState >= 2 /* HAVE_CURRENT_DATA */) paint()
+    if (ve.readyState >= 2) paint()
   }
   for (const ev of ['seeked', 'loadeddata', 'canplay', 'timeupdate']) {
     ve.addEventListener(ev, tryPaint)
@@ -139,7 +121,6 @@ export function markPaintedWhenReady(ve: HTMLVideoElement): void {
 
 interface BrandSceneOptions {
   fit?: 'contain' | 'cover'
-  /** Timeline rate; below 1 slows the loop. */
   speed?: number
 }
 
@@ -163,7 +144,6 @@ export function useBrandScene(
   let playing = false
   const reduced = ref(prefersReducedMotion())
 
-  /** Scale the comp-sized stage to its wrapper (contain fits, cover crops). */
   function fitStage(): void {
     const stage = stageRef.value
     const wrap = stage?.parentElement
@@ -174,7 +154,6 @@ export function useBrandScene(
     stage.style.transform = `scale(${s})`
   }
 
-  /** Collect the .brand-scene / <video> DOM the template rendered. */
   function collectRuntimes(): void {
     runtimes.length = 0
     const stage = stageRef.value
@@ -188,7 +167,6 @@ export function useBrandScene(
     })
   }
 
-  /** Position every scene and its active video for the current master frame. */
   function render(): void {
     for (const s of runtimes) {
       const scene = s.scene
@@ -229,9 +207,7 @@ export function useBrandScene(
           const safe = Math.max(0, Math.min(sourceTime, (ve.duration || 60) - 0.001))
           try {
             ve.currentTime = safe
-          } catch {
-            /* seek before metadata; corrected on the next active switch */
-          }
+          } catch {}
           ve.classList.add('is-active')
           markPaintedWhenReady(ve)
           if (playing) void ve.play().catch(() => {})
@@ -293,14 +269,11 @@ export function useBrandScene(
     for (const s of runtimes) for (const v of s.videos) v.pause()
   }
 
-  // Pause while the surface is off-screen so a hidden loop costs nothing.
   function onVisibility(): void {
     if (document.hidden) pause()
     else play()
   }
 
-  // Re-fit whenever the box resolves or changes size; onMounted can fire before
-  // the aspect-ratio box has a size, which would scale against a stale box.
   let resizeObserver: ResizeObserver | null = null
 
   onMounted(() => {
@@ -313,9 +286,8 @@ export function useBrandScene(
       resizeObserver = new ResizeObserver(() => fitStage())
       resizeObserver.observe(wrap)
     }
-    if (reduced.value) return // paint frame 0 as a still, never advance
+    if (reduced.value) return
     document.addEventListener('visibilitychange', onVisibility)
-    // Don't start on a hidden tab; onVisibility begins playback when it shows.
     if (!document.hidden) play()
   })
 

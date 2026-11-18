@@ -6,6 +6,7 @@ import { handleCopy, handleCopyUpdate, handleCopyChangePytorch, handleReleaseUpd
 import { handleMigrateToStandalone } from './migrate'
 import { handleLaunch } from './launch'
 import { handleDelegateToSource } from './delegate'
+import { occupiesInstall } from './occupiesInstall'
 
 export type { ActionContext, ActionResult } from './types'
 export { handleRemove, handleOpenFolder, handleRename } from './basic'
@@ -16,7 +17,6 @@ export { handleLaunch } from './launch'
 export { handleDelegateToSource } from './delegate'
 export { withAbortableSessionAction } from './withAbortable'
 
-// Action ids handled directly here; anything else delegates to the source plugin.
 const SESSION_ACTION_IDS = [
   'remove',
   'rename',
@@ -38,7 +38,6 @@ function isSessionActionId(id: string): id is SessionActionId {
   return SESSION_ACTION_ID_SET.has(id)
 }
 
-// Exhaustive over SessionActionId so a new union member fails to compile here.
 function dispatchToSessionHandler(
   ctx: ActionContext,
   actionId: SessionActionId
@@ -71,36 +70,30 @@ function dispatchToSessionHandler(
   }
 }
 
-// Live registry of the action currently running per install, mirrored to every
-// window through the `operation-changed` broadcast and the
-// `get-active-operations` snapshot. This is how a window that did NOT start an
-// operation (e.g. the dashboard, while an update runs from the picker popup)
-// still knows one is in flight. In-memory only: an app restart clears it, so a
-// crash mid-operation can never leave a stale "busy" state behind.
-const _activeActions = new Map<string, { actionId: string }>()
-
-/** Snapshot of installs with an action currently in flight (id + action id). */
-export function _getActiveOperations(): { installationId: string; actionId: string }[] {
-  return Array.from(_activeActions, ([installationId, { actionId }]) => ({
-    installationId,
-    actionId
-  }))
+interface ActiveOperation {
+  actionId: string
+  sessionId?: string
 }
 
-// Single dispatch point for run-action and the picker's background-op path:
-// session ids route to the switch above, everything else to the source.
+const _activeActions = new Map<string, ActiveOperation>()
+
+export function _getActiveOperations(): ({ installationId: string } & ActiveOperation)[] {
+  return Array.from(_activeActions, ([installationId, entry]) => ({ installationId, ...entry }))
+}
+
 export async function dispatchSessionAction(
   ctx: ActionContext,
   actionId: string
 ): Promise<ActionResult> {
-  const { installationId } = ctx
-  // Only the outermost action per install owns the registry entry - a handler
-  // that dispatches a nested action must not clear its parent's entry (or
-  // re-announce over it) when the inner one finishes.
-  const owned = !_activeActions.has(installationId)
+  const { installationId, sessionId } = ctx
+  const running = _activeActions.get(installationId)
+  const takesOverFromLookup =
+    running !== undefined && occupiesInstall(actionId) && !occupiesInstall(running.actionId)
+  const owned = running === undefined || takesOverFromLookup
+  const entry: ActiveOperation = sessionId ? { actionId, sessionId } : { actionId }
   if (owned) {
-    _activeActions.set(installationId, { actionId })
-    _broadcastToRenderer('operation-changed', { installationId, actionId, active: true })
+    _activeActions.set(installationId, entry)
+    _broadcastToRenderer('operation-changed', { installationId, ...entry, active: true })
   }
   try {
     if (isSessionActionId(actionId)) {
@@ -108,9 +101,9 @@ export async function dispatchSessionAction(
     }
     return await handleDelegateToSource(ctx, actionId)
   } finally {
-    if (owned) {
+    if (owned && _activeActions.get(installationId) === entry) {
       _activeActions.delete(installationId)
-      _broadcastToRenderer('operation-changed', { installationId, actionId, active: false })
+      _broadcastToRenderer('operation-changed', { installationId, ...entry, active: false })
     }
   }
 }

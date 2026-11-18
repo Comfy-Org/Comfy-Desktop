@@ -3,10 +3,6 @@ import os from 'os'
 import path from 'path'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Drive-aware default helpers in paths.ts. The drive-redirect and
-// system-drive branches only activate on Windows; on other platforms the
-// helpers fall back to the home dir.
-
 const HOME = path.join('/mock', 'home')
 
 let exePath = ''
@@ -18,7 +14,7 @@ beforeEach(() => {
       getPath: (name: string) => {
         if (name === 'home') return HOME
         if (name === 'exe') return exePath
-        return HOME // userData fallback (unused by these helpers on win)
+        return HOME
       }
     }
   }))
@@ -50,9 +46,6 @@ describe('drive-aware defaults', () => {
   })
 
   it('anchors on the system drive, not the profile drive (win32)', async () => {
-    // App on the system drive (C:) but the user profile redirected to another
-    // drive must NOT be treated as a redirected install — it uses the
-    // system-drive branch (grouped under %LOCALAPPDATA%), not D:\Comfy-Desktop.
     const prevSystemDrive = process.env.SystemDrive
     const prevLocalAppData = process.env.LOCALAPPDATA
     process.env.SystemDrive = 'C:'
@@ -62,8 +55,6 @@ describe('drive-aware defaults', () => {
       exePath = 'C:\\Program Files\\Comfy Desktop\\Comfy Desktop.exe'
       const p = await loadPaths()
 
-      // HOME (/mock/home) parses to a non-C: drive; the old home-anchored logic
-      // would have wrongly redirected to C:\Comfy-Desktop.
       const dataRoot = path.join('C:\\Users\\me\\AppData\\Local', 'Comfy-Desktop')
       expect(p.defaultDataRoot()).toBe(dataRoot)
       expect(p.defaultBenchmarksDir()).toBe(path.join(dataRoot, 'ComfyUI-Shared', 'benchmarks'))
@@ -91,11 +82,8 @@ describe('drive-aware defaults', () => {
 })
 
 describe('windows system-drive defaults', () => {
-  // Real temp dirs (the repo convention) for the home footprint and the marker
-  // location, so selectedInstallDrive() sees a same-drive install and the
-  // classifier reads genuine on-disk state.
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'comfyui-desktop-2-paths-'))
-  const driveRoot = path.win32.parse(tmpRoot).root // same drive as home → system-drive case
+  const driveRoot = path.win32.parse(tmpRoot).root
   const LOCAL = path.join(tmpRoot, 'AppData', 'Local')
   let homeDir = ''
   let userDataDir = ''
@@ -115,7 +103,7 @@ describe('windows system-drive defaults', () => {
         getPath: (name: string) => {
           if (name === 'home') return homeDir
           if (name === 'exe') return exePath
-          return userDataDir // userData → marker location
+          return userDataDir
         }
       }
     }))
@@ -157,7 +145,6 @@ describe('windows system-drive defaults', () => {
       path.join(LOCAL, 'Comfy-Desktop', 'ComfyUI-Shared', 'benchmarks')
     )
     expect(p.builtinDefaultInstallDir()).toBe(path.join(homeDir, 'ComfyUI-Installs'))
-    // Roaming userData/download-cache, not the grouped Comfy-Desktop cache.
     expect(p.defaultDownloadCacheDir()).toBe(path.join(userDataDir, 'download-cache'))
   })
 
@@ -184,7 +171,6 @@ describe('windows system-drive defaults', () => {
     p.persistWinDataRootChoice()
     expect(JSON.parse(fs.readFileSync(markerPath, 'utf-8'))).toEqual({ mode: 'local-appdata' })
 
-    // A second call must not overwrite the first decision.
     fs.mkdirSync(path.join(homeDir, 'ComfyUI-Installs'), { recursive: true })
     p.persistWinDataRootChoice()
     expect(JSON.parse(fs.readFileSync(markerPath, 'utf-8'))).toEqual({ mode: 'local-appdata' })

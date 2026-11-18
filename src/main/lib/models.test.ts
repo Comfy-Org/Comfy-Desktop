@@ -3,17 +3,11 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
-// `models.ts` reads `dataDir()` at module-load time to derive YAML_PATH, and
-// `instanceModelPathsYaml()` reads it per call. The real `dataDir()` calls
-// `electron.app.getPath('userData')`, which crashes outside Electron. A hoisted
-// holder lets the mock resolve to a disposable temp dir we control per suite.
 const holder = vi.hoisted(() => ({ dataDir: '' }))
 vi.mock('./paths', () => ({
   dataDir: () => holder.dataDir
 }))
 
-// Module-load dataDir for the YAML_PATH-dependent (shared) tests below. Set
-// before the dynamic import so the module-level YAML_PATH lands inside it.
 const sharedTmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'models-yaml-'))
 holder.dataDir = sharedTmpRoot
 
@@ -30,21 +24,12 @@ const {
 
 import type { InstallationRecord } from '../installations'
 
-/** Give an install a governed archive's policy file (contents unread here). */
 function writePolicy(installPath: string): void {
   const dir = path.join(installPath, 'ComfyUI', 'governance')
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'policy.signed.json'), '{}')
 }
 
-/**
- * Locks the YAML shape that `ensureModelPathsConfig` emits, with focus on the
- * legacy alias directories (`clip/`, `unet/`, `t2i_adapter/`) that ComfyUI
- * registers under canonical folder types via `folder_paths.map_legacy`.
- * Without these in the YAML, shared-dir users who keep encoders in
- * `<shared>/clip/` (the historical ComfyUI layout) see their files invisible
- * to `DualCLIPLoader` / `UNETLoader` even though Storage shows the dir.
- */
 describe('ensureModelPathsConfig — YAML emission', () => {
   beforeEach(() => {
     holder.dataDir = sharedTmpRoot
@@ -59,26 +44,19 @@ describe('ensureModelPathsConfig — YAML emission', () => {
     expect(result).not.toBeNull()
     const yaml = fs.readFileSync(result!.yamlPath, 'utf-8')
 
-    // Canonical entries still present.
     expect(yaml).toMatch(/'loras': 'loras\/'/)
     expect(yaml).toMatch(/'text_encoders': 'text_encoders\/'/)
     expect(yaml).toMatch(/'diffusion_models': 'diffusion_models\/'/)
 
-    // Legacy alias entries — the actual bug fix.
     expect(yaml).toMatch(/'clip': 'clip\/'/)
     expect(yaml).toMatch(/'unet': 'unet\/'/)
 
-    // `t2i_adapter` is NOT legacy-mapped, so it must ride under the `controlnet`
-    // key as a block scalar — a standalone `t2i_adapter:` key would create its
-    // own folder type that ControlNet loaders never read. Parse to verify both
-    // dirs resolve under `controlnet`.
     const resolved = resolveExtraModelPaths(result!.yamlPath)
     const controlnetDirs = resolved
       .filter((r) => r.type === 'controlnet')
       .map((r) => path.basename(r.dir))
     expect(controlnetDirs).toContain('controlnet')
     expect(controlnetDirs).toContain('t2i_adapter')
-    // No standalone t2i_adapter folder type.
     expect(resolved.some((r) => r.type === 't2i_adapter')).toBe(false)
   })
 
@@ -141,8 +119,6 @@ describe('models per-install YAML', () => {
     const yaml = fs.readFileSync(yamlPath, 'utf-8')
     expect(yaml).toContain(`base_path: '${dirA}'`)
     expect(yaml).toContain(`base_path: '${dirB}'`)
-    // Only the first (primary) directory is marked as the default save location.
-    // (The header comment also mentions is_default, so match the real entry.)
     expect(yaml.match(/^ {2}is_default: true$/gm)).toHaveLength(1)
     const firstIdx = yaml.indexOf(`base_path: '${dirA}'`)
     const defaultIdx = yaml.search(/^ {2}is_default: true$/m)
@@ -162,7 +138,6 @@ describe('models per-install YAML', () => {
 
     const yaml = fs.readFileSync(yamlPath, 'utf-8')
     expect(yaml.match(/^ {2}is_default: true$/gm)).toHaveLength(1)
-    // The default marker sits with dirB (the second entry), not dirA.
     const aIdx = yaml.indexOf(`base_path: '${dirA}'`)
     const bIdx = yaml.indexOf(`base_path: '${dirB}'`)
     const defaultIdx = yaml.search(/^ {2}is_default: true$/m)
@@ -364,8 +339,6 @@ describe('resolveLauncherModelDirs', () => {
     const shared = [path.join(tmp, 'shared')]
     const own = path.join(tmp, 'install', 'ComfyUI', 'models')
     const res = resolveLauncherModelDirs(makeInstall({ modelDirsPrimary: own }), shared)
-    // Explicit own-dir promotion beats the first-shared-dir fallback: null
-    // keeps ComfyUI's built-in models dir the download target.
     expect(res.primaryDir).toBeNull()
     expect(res.dirs).toEqual([path.resolve(shared[0]!)])
   })
@@ -398,8 +371,6 @@ describe('resolveLauncherModelDirs', () => {
   it('excludes the install-own models dir from launcher dirs wherever it appears', () => {
     const own = path.join(tmp, 'install', 'ComfyUI', 'models')
     const ext = path.join(tmp, 'ext')
-    // Own dir listed both as a shared dir and a per-install dir: neither copy
-    // may leak into the YAML dirs (ComfyUI already searches it built-in).
     const res = resolveLauncherModelDirs(makeInstall({ modelDirs: [own, ext] }), [own])
     expect(res.dirs).toEqual([path.resolve(ext)])
   })
@@ -442,9 +413,6 @@ describe('rehomeOwnModelsPrimary', () => {
   })
 
   it('follows the discovered ComfyUI layout, not just the default fallback', () => {
-    // Desktop basePath layout: models/, user/, custom_nodes/ live directly in
-    // the install path, so the own models dir is <install>/models rather than
-    // the <install>/ComfyUI/models fallback.
     const src = path.join(tmp, 'src')
     const dest = path.join(tmp, 'dest')
     for (const root of [src, dest]) {
@@ -488,7 +456,6 @@ describe('resolveInstallModelSearchPaths', () => {
     )
     expect(res.modelRoots).toContain(path.resolve(shared[0]!))
     expect(res.modelRoots).toContain(path.resolve(ext))
-    // Shared dirs stay the download target unless a primary is promoted.
     expect(res.downloadBaseDir).toBe(path.resolve(shared[0]!))
   })
 
@@ -504,7 +471,6 @@ describe('resolveInstallModelSearchPaths', () => {
     const inst = makeInstall({ useSharedModels: false, modelDirs: [path.join(tmp, 'ext')] })
     const res = resolveInstallModelSearchPaths(inst, [path.join(tmp, 'shared')])
     expect(res.downloadBaseDir).toBe(path.resolve(path.join(inst.installPath, 'ComfyUI', 'models')))
-    // The global shared dir must NOT appear in a shared-off install's roots.
     expect(res.modelRoots).not.toContain(path.resolve(path.join(tmp, 'shared')))
   })
 
