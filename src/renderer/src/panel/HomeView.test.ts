@@ -453,6 +453,21 @@ describe('Home builds', () => {
     ])
   })
 
+  it('shows an opened Comfy Cloud as Ready with no green dot, since it runs nothing here', async () => {
+    getInstallations.mockResolvedValue([CLOUD])
+    const wrapper = await openHome()
+    useSessionStore().runningInstances.set(CLOUD.id, {
+      installationId: CLOUD.id,
+      installationName: CLOUD.name,
+      mode: 'window'
+    })
+    await flushPromises()
+
+    const status = wrapper.get('[data-testid="home-build-status"]')
+    expect(status.text()).toBe('Ready')
+    expect(status.find('.rounded-full').exists()).toBe(false)
+  })
+
   it('keeps Running on top of a running build with an update, and names the update at the bottom', async () => {
     getInstallations.mockResolvedValue([NEWEST])
     const wrapper = await openHome()

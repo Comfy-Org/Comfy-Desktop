@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildDeviceKind, homeBuildStatus, homeBuildTones } from './homeBuild'
+import { buildDeviceKind, homeBuildStatus, homeBuildTones, runsOnThisComputer } from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
 const build = (sourceCategory: string): Installation =>
@@ -63,5 +63,19 @@ describe('homeBuildStatus', () => {
 
   it('gives Comfy Cloud no Always on, since it has no process on this computer', () => {
     expect(homeBuildStatus(build('cloud'), session())).toBe('ready')
+  })
+})
+
+describe('runsOnThisComputer', () => {
+  it('is true for a running local build', () => {
+    expect(runsOnThisComputer(build('local'), 'running')).toBe(true)
+  })
+
+  it('is false for an opened Comfy Cloud, which runs no process here', () => {
+    expect(runsOnThisComputer(build('cloud'), 'running')).toBe(false)
+  })
+
+  it('is false for a local build at rest', () => {
+    expect(runsOnThisComputer(build('local'), 'ready')).toBe(false)
   })
 })

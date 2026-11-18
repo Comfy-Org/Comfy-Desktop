@@ -15,6 +15,7 @@ import {
   buildDeviceKind,
   isCloudBuild,
   isComfyCloud,
+  runsOnThisComputer,
   type HomeBuildStatus,
   type HomeBuildTone
 } from './homeBuild'
@@ -75,7 +76,7 @@ const statusLabel = computed(() => {
   if (broken.value) return broken.value
   switch (status) {
     case 'running':
-      return t('home.buildRunning')
+      return isLive.value ? t('home.buildRunning') : t('home.buildReady')
     case 'starting':
       return t('home.buildStarting')
     case 'update':
@@ -88,8 +89,10 @@ const statusLabel = computed(() => {
 const detail = computed(() =>
   isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
 )
-const isLive = computed(() => status === 'running')
-const resting = computed(() => status === 'ready' || status === 'update')
+const isLive = computed(() => runsOnThisComputer(build, status))
+const resting = computed(
+  () => status === 'ready' || status === 'update' || (status === 'running' && !isLive.value)
+)
 const updateNote = computed(() =>
   !uninstalling.value && status !== 'updating' && build.statusTag?.style === 'update'
     ? t('chooser.updatePill')

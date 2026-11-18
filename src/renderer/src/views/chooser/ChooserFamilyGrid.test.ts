@@ -133,4 +133,18 @@ describe('Builds tile status', () => {
     expect(tile(CLOUD).textContent).toContain('Ready')
     expect(tile(CLOUD).querySelector('.rounded-full.bg-\\[\\#59d38c\\]')).toBeNull()
   })
+
+  it('shows an opened Comfy Cloud as Ready with no green dot, since it runs nothing here', async () => {
+    useSessionStore().runningInstances.set(CLOUD.id, {
+      installationId: CLOUD.id,
+      installationName: CLOUD.name,
+      mode: 'window'
+    })
+    await mountGrid(ALL)
+
+    expect(tile(CLOUD).querySelector('.chooser-tile-status--running')).toBeNull()
+    expect(tile(CLOUD).textContent).not.toContain('Running')
+    expect(tile(CLOUD).textContent).toContain('Ready')
+    expect(tile(CLOUD).querySelector('.rounded-full.bg-\\[\\#59d38c\\]')).toBeNull()
+  })
 })

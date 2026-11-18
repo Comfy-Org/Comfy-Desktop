@@ -150,7 +150,7 @@ const statusPill = computed<{
       tone: 'quiet',
       spinning: true
     }
-  if (isRunning.value)
+  if (isRunning.value && !isCloudBuild(inst.value))
     return {
       label: 'chooser.statusRunning',
       markerClass: 'chooser-tile-status--running',

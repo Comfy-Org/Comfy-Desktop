@@ -67,6 +67,10 @@ export function isBuildUpdating(build: Installation, actionId: string | undefine
   )
 }
 
+export function runsOnThisComputer(build: Installation, status: HomeBuildStatus): boolean {
+  return status === 'running' && !isCloudBuild(build)
+}
+
 export function isBuildOpenBlocked(status: HomeBuildStatus): boolean {
   return status === 'stopping' || status === 'updating'
 }

@@ -375,6 +375,11 @@ describe('AppSidebar', () => {
         installationName: NEW.name,
         mode: 'window'
       })
+      useSessionStore().runningInstances.set(CLOUD.id, {
+        installationId: CLOUD.id,
+        installationName: CLOUD.name,
+        mode: 'window'
+      })
       const wrapper = await mountSidebar('home', [OLD, CLOUD, NEW])
 
       const live = (id: string) =>

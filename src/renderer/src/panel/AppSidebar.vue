@@ -28,7 +28,7 @@ import SidebarAccount from './SidebarAccount.vue'
 import SidebarCredits from './SidebarCredits.vue'
 import SidebarDesktopUpdate from './SidebarDesktopUpdate.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
-import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
+import { homeBuildStatus, isCloudBuild, runsOnThisComputer } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
 import { buildProgressOf } from '../composables/useBuildProgress'
 import { useProgressStore } from '../stores/progressStore'
@@ -115,7 +115,7 @@ const { visibleInstalls } = useInstallList({
 const buildsPageActive = computed(() => activePage === 'chooser' && !activeBuildId)
 
 function isLive(build: Installation): boolean {
-  return homeBuildStatus(build, sessionStore) === 'running'
+  return runsOnThisComputer(build, homeBuildStatus(build, sessionStore))
 }
 
 function failureText(build: Installation): string | null {
