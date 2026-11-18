@@ -76,7 +76,20 @@ watch(
 const collapsed = computed(() =>
   makeRoom ? !reopenedWhileMakingRoom.value : collapsedByChoice.value
 )
-const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('sidebar.collapse')))
+const faceTransition = {
+  enterActiveClass:
+    'transition-[opacity,scale] duration-180 ease-out motion-reduce:transition-opacity',
+  enterFromClass: 'opacity-0 motion-safe:scale-90',
+  leaveActiveClass:
+    'transition-[opacity,scale] duration-120 ease-out motion-reduce:transition-opacity',
+  leaveToClass: 'opacity-0 motion-safe:scale-90'
+}
+const labelTransition = {
+  enterActiveClass: 'transition-opacity duration-180 delay-30 ease-out',
+  enterFromClass: 'opacity-0',
+  leaveActiveClass: 'transition-opacity duration-100 ease-out',
+  leaveToClass: 'opacity-0'
+}
 
 function toggleCollapsed(): void {
   if (makeRoom) reopenedWhileMakingRoom.value = !reopenedWhileMakingRoom.value
@@ -183,57 +196,82 @@ function openSettings(): void {
 
 <template>
   <aside
-    class="app-sidebar flex shrink-0 flex-col overflow-hidden rounded-shell bg-sidebar-background transition-[width] duration-240 ease-in-out motion-reduce:transition-none"
-    :class="collapsed ? 'w-[72px] items-center px-3 py-2' : 'w-[244px] px-3 py-2'"
+    class="app-sidebar flex shrink-0 flex-col overflow-hidden rounded-shell bg-sidebar-background px-3 py-2 transition-[width] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
+    :class="collapsed ? 'w-16 duration-200' : 'w-[244px] duration-260'"
     :aria-label="t('sidebar.navigation')"
     data-testid="app-sidebar"
     :data-collapsed="collapsed"
     @pointerenter="sidebarHovered = true"
     @pointerleave="sidebarHovered = false"
   >
-    <div
-      class="mt-2 mb-3.5 flex h-9 w-full shrink-0 items-center"
-      :class="collapsed ? 'justify-center' : 'justify-between pl-1.5'"
-      data-testid="app-sidebar-header"
-    >
-      <Button
-        v-if="!collapsed"
-        variant="textonly"
-        size="unset"
-        class="h-auto rounded-[7px] p-0.5 text-foreground hover:bg-transparent"
-        :aria-label="t('sidebar.home')"
-        @click="navigate('home')"
-      >
-        <Tooltip :text="t('sidebar.home')" side="right">
-          <ComfyWordmark class="h-[22px] w-auto" />
-        </Tooltip>
-      </Button>
-      <Button
-        variant="muted-textonly"
-        size="unset"
-        class="group size-[30px] rounded-[7px] p-0 hover:bg-secondary hover:text-foreground"
-        data-testid="app-sidebar-toggle"
-        :aria-label="toggleLabel"
-        :aria-expanded="!collapsed"
-        @click="toggleCollapsed"
-      >
-        <Tooltip :text="toggleLabel" side="right" class="size-full items-center justify-center">
-          <span v-if="collapsed" class="relative grid size-full place-items-center">
-            <ComfyCLogo
-              :size="20"
-              class="transition-[opacity,transform] duration-180 ease-out motion-reduce:transition-none text-foreground group-hover:scale-90 group-hover:opacity-0 group-focus-visible:scale-90 group-focus-visible:opacity-0"
-              data-testid="app-sidebar-logo-face"
-            />
-            <span
-              class="transition-[opacity,transform] duration-180 ease-out motion-reduce:transition-none absolute inset-0 grid scale-90 place-items-center opacity-0 group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100"
-              data-testid="app-sidebar-expand-face"
-            >
-              <SidebarToggleIcon />
+    <div class="relative mt-2 mb-3.5 h-9 w-full shrink-0" data-testid="app-sidebar-header">
+      <Transition v-bind="faceTransition">
+        <Button
+          v-show="!collapsed"
+          variant="textonly"
+          size="unset"
+          class="absolute inset-y-0 left-1.5 my-auto h-[26px] rounded-[7px] p-0.5 text-foreground hover:bg-transparent"
+          :aria-label="t('sidebar.home')"
+          data-testid="app-sidebar-wordmark"
+          @click="navigate('home')"
+        >
+          <Tooltip :text="t('sidebar.home')" side="right">
+            <ComfyWordmark class="h-[22px] w-auto" />
+          </Tooltip>
+        </Button>
+      </Transition>
+      <Transition v-bind="faceTransition">
+        <Button
+          v-show="collapsed"
+          variant="muted-textonly"
+          size="unset"
+          class="group absolute inset-y-0 left-[5px] my-auto size-[30px] rounded-[7px] p-0 hover:bg-secondary hover:text-foreground"
+          :data-testid="collapsed ? 'app-sidebar-toggle' : undefined"
+          :aria-label="t('sidebar.expand')"
+          aria-expanded="false"
+          @click="toggleCollapsed"
+        >
+          <Tooltip
+            :text="t('sidebar.expand')"
+            side="right"
+            class="size-full items-center justify-center"
+          >
+            <span class="relative grid size-full place-items-center">
+              <ComfyCLogo
+                :size="20"
+                class="text-foreground transition-[opacity,scale] duration-180 ease-out group-hover:opacity-0 group-focus-visible:opacity-0 motion-safe:group-hover:scale-90 motion-safe:group-focus-visible:scale-90 motion-reduce:transition-opacity"
+                data-testid="app-sidebar-logo-face"
+              />
+              <span
+                class="absolute inset-0 grid place-items-center opacity-0 transition-[opacity,scale] duration-180 ease-out group-hover:opacity-100 group-focus-visible:opacity-100 motion-safe:scale-90 motion-safe:group-hover:scale-100 motion-safe:group-focus-visible:scale-100 motion-reduce:transition-opacity"
+                data-testid="app-sidebar-expand-face"
+              >
+                <SidebarToggleIcon />
+              </span>
             </span>
-          </span>
-          <SidebarToggleIcon v-else />
-        </Tooltip>
-      </Button>
+          </Tooltip>
+        </Button>
+      </Transition>
+      <Transition v-bind="faceTransition">
+        <Button
+          v-show="!collapsed"
+          variant="muted-textonly"
+          size="unset"
+          class="group absolute inset-y-0 right-0 my-auto size-[30px] rounded-[7px] p-0 hover:bg-secondary hover:text-foreground"
+          :data-testid="collapsed ? undefined : 'app-sidebar-toggle'"
+          :aria-label="t('sidebar.collapse')"
+          aria-expanded="true"
+          @click="toggleCollapsed"
+        >
+          <Tooltip
+            :text="t('sidebar.collapse')"
+            side="right"
+            class="size-full items-center justify-center"
+          >
+            <SidebarToggleIcon />
+          </Tooltip>
+        </Button>
+      </Transition>
     </div>
 
     <nav
@@ -254,11 +292,8 @@ function openSettings(): void {
           :key="row.page"
           variant="muted-textonly"
           size="unset"
-          class="h-8 w-full shrink-0 rounded-lg text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-          :class="[
-            collapsed ? 'justify-center px-0' : 'justify-start gap-2.5 px-3',
-            row.page === activePage && 'bg-accent text-foreground hover:bg-accent'
-          ]"
+          class="h-8 w-full shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+          :class="row.page === activePage && 'bg-accent text-foreground hover:bg-accent'"
           :aria-current="row.page === activePage ? 'page' : undefined"
           :aria-label="row.label"
           :data-testid="`app-sidebar-${row.page}`"
@@ -268,107 +303,121 @@ function openSettings(): void {
           <Tooltip
             :text="collapsed ? row.label : undefined"
             side="right"
-            :class="collapsed && 'size-full items-center justify-center'"
+            class="size-full items-center gap-2.5 px-3"
           >
-            <component :is="row.icon" :size="15" aria-hidden="true" />
+            <component :is="row.icon" :size="15" class="shrink-0" aria-hidden="true" />
+            <Transition v-bind="labelTransition">
+              <span
+                v-if="!collapsed"
+                class="min-w-0 flex-1 overflow-hidden text-left text-nowrap"
+                >{{ row.label }}</span
+              >
+            </Transition>
           </Tooltip>
-          <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{ row.label }}</span>
         </Button>
-        <div
-          v-if="group.key === 'main' && !collapsed"
-          class="flex flex-col gap-px"
-          data-testid="app-sidebar-builds"
-        >
-          <div class="mt-5.5 flex h-6.5 shrink-0 items-center justify-between pr-1 pl-3">
-            <Button
-              variant="textonly"
-              size="unset"
-              class="group/title -ml-1.5 h-[22px] gap-[5px] rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-transparent hover:text-foreground focus-visible:text-foreground aria-[current=page]:text-foreground"
-              :aria-current="buildsPageActive ? 'page' : undefined"
-              data-testid="app-sidebar-chooser"
-              @click="navigate('chooser')"
-              @contextmenu.prevent="openPageMenu($event, 'chooser')"
+        <Transition v-bind="labelTransition">
+          <div
+            v-if="group.key === 'main' && !collapsed"
+            class="flex flex-col gap-px overflow-hidden text-nowrap"
+            data-testid="app-sidebar-builds"
+          >
+            <div class="mt-5.5 flex h-6.5 shrink-0 items-center justify-between pr-1 pl-3">
+              <Button
+                variant="textonly"
+                size="unset"
+                class="group/title -ml-1.5 h-[22px] gap-[5px] rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-transparent hover:text-foreground focus-visible:text-foreground aria-[current=page]:text-foreground"
+                :aria-current="buildsPageActive ? 'page' : undefined"
+                data-testid="app-sidebar-chooser"
+                @click="navigate('chooser')"
+                @contextmenu.prevent="openPageMenu($event, 'chooser')"
+              >
+                {{ t('sidebar.builds') }}
+                <ArrowRight
+                  :size="12"
+                  :stroke-width="2.25"
+                  class="-translate-x-0.5 opacity-35 transition-[opacity,translate] duration-200 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 group-focus-visible/title:translate-x-0 group-focus-visible/title:opacity-100 group-aria-[current=page]/title:translate-x-0 group-aria-[current=page]/title:opacity-100 motion-reduce:transition-none"
+                  aria-hidden="true"
+                />
+              </Button>
+              <Button
+                variant="muted-textonly"
+                size="unset"
+                class="size-6 rounded-md p-0 hover:bg-secondary hover:text-foreground"
+                :aria-label="t('sidebar.newBuild')"
+                data-testid="app-sidebar-new-build"
+                @click="emit('new-build')"
+              >
+                <Tooltip
+                  :text="t('sidebar.newBuild')"
+                  side="right"
+                  class="size-full items-center justify-center"
+                >
+                  <Plus :size="13" aria-hidden="true" />
+                </Tooltip>
+              </Button>
+            </div>
+            <p
+              v-if="!buildRows.length"
+              class="m-0 flex h-8 shrink-0 items-center gap-2.5 px-3 text-[13px]/5 text-subtle-foreground"
+              data-testid="app-sidebar-no-builds"
             >
-              {{ t('sidebar.builds') }}
-              <ArrowRight
-                :size="12"
-                :stroke-width="2.25"
-                class="-translate-x-0.5 opacity-35 transition-[opacity,translate] duration-200 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 group-focus-visible/title:translate-x-0 group-focus-visible/title:opacity-100 group-aria-[current=page]/title:translate-x-0 group-aria-[current=page]/title:opacity-100 motion-reduce:transition-none"
-                aria-hidden="true"
-              />
-            </Button>
+              <Server :size="15" aria-hidden="true" />{{ t('sidebar.noBuilds') }}
+            </p>
             <Button
+              v-for="{ build, install, failure, live } in buildRows"
+              :key="build.id"
               variant="muted-textonly"
               size="unset"
-              class="size-6 rounded-md p-0 hover:bg-secondary hover:text-foreground"
-              :aria-label="t('sidebar.newBuild')"
-              data-testid="app-sidebar-new-build"
-              @click="emit('new-build')"
+              class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+              :class="build.id === activeBuildId && 'bg-accent text-foreground hover:bg-accent'"
+              :aria-current="build.id === activeBuildId ? 'page' : undefined"
+              :data-testid="`app-sidebar-build-${build.id}`"
+              @click="emit('open-build', build)"
+              @contextmenu.prevent="openBuildMenu($event, build)"
             >
+              <LoaderCircle
+                v-if="install"
+                :size="16"
+                class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+                aria-hidden="true"
+                data-testid="app-sidebar-build-installing"
+              />
+              <span v-else class="relative flex shrink-0">
+                <component
+                  :is="isCloudBuild(build) ? Cloud : Laptop"
+                  :size="16"
+                  aria-hidden="true"
+                />
+                <span
+                  v-if="failure || live"
+                  class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2"
+                  :class="[
+                    failure ? 'bg-destructive' : 'bg-success',
+                    build.id === activeBuildId
+                      ? 'ring-[oklch(0.27_0_0)]'
+                      : 'ring-sidebar-background'
+                  ]"
+                  :data-testid="failure ? 'app-sidebar-dot-failed' : 'app-sidebar-dot-live'"
+                  aria-hidden="true"
+                />
+              </span>
               <Tooltip
-                :text="t('sidebar.newBuild')"
+                :text="failure ? `${build.name} · ${failure}` : build.name"
                 side="right"
-                class="size-full items-center justify-center"
+                class="min-w-0 flex-1 items-center self-stretch"
               >
-                <Plus :size="13" aria-hidden="true" />
+                <span class="min-w-0 truncate text-left">{{ build.name }}</span>
+                <span v-if="failure" class="sr-only">· {{ failure }}</span>
               </Tooltip>
+              <span
+                v-if="install && install.kind !== 'launch' && install.percent !== null"
+                class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
+                data-testid="app-sidebar-build-percent"
+                >{{ t('installProgress.percent', { percent: install.percent }) }}</span
+              >
             </Button>
           </div>
-          <p
-            v-if="!buildRows.length"
-            class="m-0 flex h-8 shrink-0 items-center gap-2.5 px-3 text-[13px]/5 text-subtle-foreground"
-            data-testid="app-sidebar-no-builds"
-          >
-            <Server :size="15" aria-hidden="true" />{{ t('sidebar.noBuilds') }}
-          </p>
-          <Button
-            v-for="{ build, install, failure, live } in buildRows"
-            :key="build.id"
-            variant="muted-textonly"
-            size="unset"
-            class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-            :class="build.id === activeBuildId && 'bg-accent text-foreground hover:bg-accent'"
-            :aria-current="build.id === activeBuildId ? 'page' : undefined"
-            :data-testid="`app-sidebar-build-${build.id}`"
-            @click="emit('open-build', build)"
-            @contextmenu.prevent="openBuildMenu($event, build)"
-          >
-            <LoaderCircle
-              v-if="install"
-              :size="16"
-              class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-              aria-hidden="true"
-              data-testid="app-sidebar-build-installing"
-            />
-            <span v-else class="relative flex shrink-0">
-              <component :is="isCloudBuild(build) ? Cloud : Laptop" :size="16" aria-hidden="true" />
-              <span
-                v-if="failure || live"
-                class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2"
-                :class="[
-                  failure ? 'bg-destructive' : 'bg-success',
-                  build.id === activeBuildId ? 'ring-[oklch(0.27_0_0)]' : 'ring-sidebar-background'
-                ]"
-                :data-testid="failure ? 'app-sidebar-dot-failed' : 'app-sidebar-dot-live'"
-                aria-hidden="true"
-              />
-            </span>
-            <Tooltip
-              :text="failure ? `${build.name} · ${failure}` : build.name"
-              side="right"
-              class="min-w-0 flex-1 items-center self-stretch"
-            >
-              <span class="min-w-0 truncate text-left">{{ build.name }}</span>
-              <span v-if="failure" class="sr-only">· {{ failure }}</span>
-            </Tooltip>
-            <span
-              v-if="install && install.kind !== 'launch' && install.percent !== null"
-              class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
-              data-testid="app-sidebar-build-percent"
-              >{{ t('installProgress.percent', { percent: install.percent }) }}</span
-            >
-          </Button>
-        </div>
+        </Transition>
       </template>
     </nav>
 
@@ -377,8 +426,7 @@ function openSettings(): void {
       <Button
         variant="muted-textonly"
         size="unset"
-        class="h-8 w-full shrink-0 rounded-lg text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-        :class="collapsed ? 'justify-center px-0' : 'justify-start gap-2.5 px-3'"
+        class="h-8 w-full shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
         :aria-label="t('fileMenu.globalSettings')"
         aria-haspopup="dialog"
         data-testid="app-sidebar-settings"
@@ -387,13 +435,15 @@ function openSettings(): void {
         <Tooltip
           :text="collapsed ? t('fileMenu.globalSettings') : undefined"
           side="right"
-          :class="collapsed && 'size-full items-center justify-center'"
+          class="size-full items-center gap-2.5 px-3"
         >
-          <Settings :size="15" aria-hidden="true" />
+          <Settings :size="15" class="shrink-0" aria-hidden="true" />
+          <Transition v-bind="labelTransition">
+            <span v-if="!collapsed" class="min-w-0 flex-1 overflow-hidden text-left text-nowrap">{{
+              t('fileMenu.globalSettings')
+            }}</span>
+          </Transition>
         </Tooltip>
-        <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
-          t('fileMenu.globalSettings')
-        }}</span>
       </Button>
       <SidebarCredits :collapsed="collapsed" />
       <SidebarAccount :collapsed="collapsed" />

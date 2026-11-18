@@ -271,7 +271,12 @@ describe('AppSidebar', () => {
     expect(sidebar.getAttribute('data-collapsed')).toBe('true')
     expect(offsetFromTop(toggle()), 'toggle top').toBe(expandedToggleTop)
     expect(homeRowTop(), 'first row top').toBe(expandedHomeRowTop)
-    expect(wrapper.get('[data-testid="app-sidebar-header"]').findAll('button')).toHaveLength(1)
+    expect(
+      wrapper
+        .get('[data-testid="app-sidebar-header"]')
+        .findAll('button')
+        .filter((button) => button.isVisible())
+    ).toHaveLength(1)
     expect(toggle().getAttribute('aria-label')).toBe('Expand sidebar')
 
     const faceOpacity = (face: 'logo' | 'expand') =>
@@ -297,6 +302,37 @@ describe('AppSidebar', () => {
     await flushPromises()
     expect(sidebar.getAttribute('data-collapsed')).toBe('false')
     await userEvent.unhover(sidebar)
+    wrapper.unmount()
+  })
+
+  it('keeps every row icon at the same left edge when the sidebar folds, so only the labels go', async () => {
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+    const sidebarLeft = () =>
+      wrapper.get('[data-testid="app-sidebar"]').element.getBoundingClientRect().left
+    const iconLeft = (testId: string) =>
+      wrapper.get(`[data-testid="${testId}"] svg`).element.getBoundingClientRect().left -
+      sidebarLeft()
+    const rows = ['app-sidebar-home', 'app-sidebar-assets', 'app-sidebar-settings']
+    const expanded = rows.map(iconLeft)
+    const signInCardWidth = () =>
+      wrapper
+        .get('[data-testid="sidebar-signin-card"] .group\\/signin')
+        .element.getBoundingClientRect().width
+    expect(signInCardWidth(), 'log-in card width when open').toBe(220)
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(rows.map(iconLeft)).toEqual(expanded)
+    await new Promise((resolve) => setTimeout(resolve, 320))
+    expect(rows.map(iconLeft), 'after the width settles').toEqual(expanded)
+    expect(signInCardWidth(), 'log-in card width when folded').toBe(220)
+    const rail = wrapper.get('[data-testid="app-sidebar"]').element.getBoundingClientRect().width
+    const homeIcon = wrapper.get('[data-testid="app-sidebar-home"] svg').element
+    const iconCentre = iconLeft('app-sidebar-home') + homeIcon.getBoundingClientRect().width / 2
+    expect(Math.abs(iconCentre - rail / 2), 'icon centred in the rail').toBeLessThanOrEqual(1)
     wrapper.unmount()
   })
 
