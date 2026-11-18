@@ -7,7 +7,7 @@ import AppsView from './AppsView.vue'
 import AppPageHost from './AppPageHost.vue'
 import type { AppCard, AppPagePlacement, AppPageStatus } from '../types/ipc'
 
-const FOUR_COLUMN_PAGE_WIDTH = 1172
+const WIDE_PAGE_WIDTH = 1172
 const MEDIUM_PAGE_WIDTH = 900
 const NARROW_PAGE_WIDTH = 532
 const COVER =
@@ -54,11 +54,17 @@ async function mountApps(
   return wrapper
 }
 
-function columnCount(wrapper: Awaited<ReturnType<typeof mountApps>>): number {
-  const lefts = wrapper
-    .findAll('[data-testid="apps-grid"] > li')
-    .map((item) => Math.round(item.element.getBoundingClientRect().left))
-  return new Set(lefts).size
+function rowSizes(wrapper: Awaited<ReturnType<typeof mountApps>>): number[] {
+  const rows = new Map<number, number>()
+  for (const item of wrapper.findAll('[data-testid="apps-grid"] > li')) {
+    const top = Math.round(item.element.getBoundingClientRect().top)
+    rows.set(top, (rows.get(top) ?? 0) + 1)
+  }
+  return [...rows.keys()].sort((a, b) => a - b).map((top) => rows.get(top) ?? 0)
+}
+
+function manyApps(count: number): AppCard[] {
+  return Array.from({ length: count }, (_, index) => ({ ...HDR, id: `app-${index}` }))
 }
 
 beforeAll(() => browserPage.viewport(1440, 900))
@@ -67,7 +73,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   page = document.createElement('div')
   page.dataset.appsPage = ''
-  page.style.cssText = `position: fixed; display: flex; left: 0; top: 0; width: ${FOUR_COLUMN_PAGE_WIDTH}px; height: 840px`
+  page.style.cssText = `position: fixed; display: flex; left: 0; top: 0; width: ${WIDE_PAGE_WIDTH}px; height: 840px`
   document.body.append(page)
   showAppPage.mockResolvedValue('loading')
   ;(window as unknown as { api: unknown }).api = {
@@ -135,29 +141,44 @@ describe('AppsView', () => {
   })
 
   it.each([
-    ['four across at the width of the design', FOUR_COLUMN_PAGE_WIDTH, 4],
-    ['three across on a medium page', MEDIUM_PAGE_WIDTH, 3],
-    ['two across in the smallest window', NARROW_PAGE_WIDTH, 2]
-  ])('lays the cards out %s', async (_name, width, columns) => {
+    ['three big then four small at the width of the design', WIDE_PAGE_WIDTH, [3, 4, 3]],
+    ['two big then three small on a medium page', MEDIUM_PAGE_WIDTH, [2, 3, 2, 3]],
+    ['two across in the smallest window', NARROW_PAGE_WIDTH, [2, 2, 2, 2, 2]]
+  ])('lays the cards out in rows, %s', async (_name, width, rows) => {
     page.style.width = `${width}px`
-    const wrapper = await mountApps([CUTOUT, HDR, GENJUTSU, { ...HDR, id: 'four' }])
+    const wrapper = await mountApps(manyApps(rows.reduce((sum, size) => sum + size, 0)))
 
-    expect(columnCount(wrapper)).toBe(columns)
+    expect(rowSizes(wrapper)).toEqual(rows)
+    for (const card of wrapper.findAll('[data-testid="apps-grid"] button')) {
+      const box = card.element.getBoundingClientRect()
+      expect(box.width / box.height).toBeCloseTo(1, 2)
+    }
   })
 
-  it('sizes a card as the design does: 4px around a 505 by 316 picture, 13px text', async () => {
+  it('makes a card in a big row larger than a card in a small row', async () => {
+    const wrapper = await mountApps(manyApps(7))
+    const cards = wrapper.findAll('[data-testid="apps-grid"] button')
+    const big = cards[0]!.element.getBoundingClientRect().width
+    const small = cards[3]!.element.getBoundingClientRect().width
+
+    expect(big).toBeGreaterThan(small)
+  })
+
+  it('puts the picture under the whole card, the name on it and the rest for hover', async () => {
     const wrapper = await mountApps()
     const card = wrapper.get('[data-testid="app-card-remove-background"]')
-    const picture = card.get('[data-testid="app-card-picture"]').element as HTMLElement
     const cardBox = card.element.getBoundingClientRect()
-    const pictureBox = picture.getBoundingClientRect()
+    const pictureBox = card.get('[data-testid="app-card-picture"]').element.getBoundingClientRect()
+    const name = card.get('span.font-semibold').element
+    const line = card.get('span.self-end').element
 
-    expect(Math.round(pictureBox.left - cardBox.left)).toBe(4)
-    expect(Math.round(pictureBox.top - cardBox.top)).toBe(4)
-    expect(pictureBox.width / pictureBox.height).toBeCloseTo(505 / 316, 2)
+    expect(Math.round(pictureBox.width)).toBe(Math.round(cardBox.width))
+    expect(Math.round(pictureBox.height)).toBe(Math.round(cardBox.height))
     expect(getComputedStyle(card.element).borderRadius).toBe('12px')
-    expect(getComputedStyle(picture).borderRadius).toBe('8px')
-    expect(getComputedStyle(card.get('span.font-medium').element).fontSize).toBe('13px')
+    expect(getComputedStyle(name).fontSize).toBe('14px')
+    expect(name.getBoundingClientRect().bottom).toBeLessThanOrEqual(cardBox.bottom)
+    expect(getComputedStyle(line).opacity).toBe('0')
+    expect(getComputedStyle(card.get('[data-testid="app-card-go"]').element).opacity).toBe('0')
   })
 
   it('narrows the cards to the apps whose name or description matches the search', async () => {
@@ -180,7 +201,7 @@ describe('AppsView', () => {
     let finish: (apps: AppCard[]) => void = () => {}
     const wrapper = await mountApps(new Promise((resolve) => (finish = resolve)))
 
-    expect(wrapper.findAll('[data-testid="apps-loading"] > li')).toHaveLength(8)
+    expect(wrapper.findAll('[data-testid="apps-loading"] > li')).toHaveLength(7)
 
     finish([CUTOUT])
     await flushPromises()
