@@ -5,8 +5,6 @@ import { useResizeObserver } from '@vueuse/core'
 import { Box } from '@lucide/vue'
 import {
   Box3,
-  Mesh,
-  MeshStandardMaterial,
   NeutralToneMapping,
   PMREMGenerator,
   PerspectiveCamera,
@@ -14,22 +12,17 @@ import {
   Vector3,
   WebGLRenderer
 } from 'three'
-import type { BufferGeometry, Material, Object3D } from 'three'
+import type { Object3D } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
-import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js'
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import Spinner from '@comfyorg/design-system/spinner/Spinner'
+import { disposeModel, parseModel, tintUntexturedWhite } from '../lib/modelFile'
 
 const { name, load } = defineProps<{
   name: string
   load: () => Promise<Uint8Array | null>
 }>()
 
-const UNTEXTURED_BASE = 0xa9a49b
-const DEFAULT_WHITE = 0xffffff
 const ENVIRONMENT_INTENSITY = 0.8
 const FIELD_OF_VIEW = 40
 const CAMERA_DIRECTION = new Vector3(0.6, 0.45, 1).normalize()
@@ -46,47 +39,6 @@ let renderer: WebGLRenderer | null = null
 let controls: OrbitControls | null = null
 let frame = 0
 let closed = false
-
-function extensionOf(fileName: string): string {
-  return fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase()
-}
-
-function meshFrom(geometry: BufferGeometry): Mesh {
-  if (!geometry.hasAttribute('normal')) geometry.computeVertexNormals()
-  const material = new MeshStandardMaterial({
-    color: UNTEXTURED_BASE,
-    vertexColors: geometry.hasAttribute('color')
-  })
-  return new Mesh(geometry, material)
-}
-
-async function parseModel(bytes: Uint8Array, extension: string): Promise<Object3D | null> {
-  const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
-  const buffer = (whole ? bytes.buffer : bytes.slice().buffer) as ArrayBuffer
-  switch (extension) {
-    case 'glb':
-    case 'gltf':
-      return (await new GLTFLoader().parseAsync(buffer, '')).scene
-    case 'obj':
-      return new OBJLoader().parse(new TextDecoder().decode(bytes))
-    case 'stl':
-      return meshFrom(new STLLoader().parse(buffer))
-    case 'ply':
-      return meshFrom(new PLYLoader().parse(buffer))
-    default:
-      return null
-  }
-}
-
-function tintUntexturedWhite(model: Object3D): void {
-  model.traverse((object) => {
-    if (!(object instanceof Mesh)) return
-    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
-      const plain = material as Partial<MeshStandardMaterial>
-      if (!plain.map && plain.color?.getHex() === DEFAULT_WHITE) plain.color.setHex(UNTEXTURED_BASE)
-    }
-  })
-}
 
 function frameModel(model: Object3D): void {
   const bounds = new Box3().setFromObject(model)
@@ -138,8 +90,11 @@ onMounted(async () => {
     controls.enableDamping = true
     controls.listenToKeyEvents(renderer.domElement)
     const bytes = await load()
-    const model = bytes && !closed ? await parseModel(bytes, extensionOf(name)) : null
-    if (closed) return
+    const model = bytes && !closed ? await parseModel(bytes, name) : null
+    if (closed) {
+      if (model) disposeModel(model)
+      return
+    }
     if (!model) {
       state.value = 'failed'
       return
@@ -154,19 +109,11 @@ onMounted(async () => {
   }
 })
 
-function disposeMaterial(material: Material | Material[]): void {
-  for (const each of Array.isArray(material) ? material : [material]) each.dispose()
-}
-
 onBeforeUnmount(() => {
   closed = true
   cancelAnimationFrame(frame)
   controls?.dispose()
-  scene.traverse((object) => {
-    if (!(object instanceof Mesh)) return
-    object.geometry.dispose()
-    disposeMaterial(object.material)
-  })
+  disposeModel(scene)
   scene.environment?.dispose()
   renderer?.dispose()
   renderer?.forceContextLoss()

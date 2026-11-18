@@ -27,12 +27,17 @@ const PII_PATH_PATTERNS = [
   /(\/home\/)[^\\/]+?(?=\/|$)/g
 ]
 
+const URL_QUERY_PATTERN = /(https?:\/\/[^\s?#"')]+)\?[^\s"')]*/g
+const DATA_URI_PATTERN = /data:[^\s"')]+/g
+
 export function scrubPII(value: string): string {
   let scrubbed = value
   for (const pattern of PII_PATH_PATTERNS) {
     scrubbed = scrubbed.replace(pattern, (_match, prefix: string) => `${prefix}[REDACTED]`)
   }
   return scrubbed
+    .replace(URL_QUERY_PATTERN, (_match, address: string) => `${address}?[REDACTED]`)
+    .replace(DATA_URI_PATTERN, 'data:[REDACTED]')
 }
 
 export function normalizeRumErrorEvent(event: RumErrorEvent): void {

@@ -28,6 +28,12 @@ describe('mediaFactsFromBytes', () => {
     expect(facts).toEqual({ width: null, height: null, durationSeconds: 60 })
   })
 
+  it('does not cut a sound short when the size of its file is unknown', async () => {
+    const facts = await mediaFactsFromBytes(wavHeader(60), 'audio', 'audio/wav')
+
+    expect(facts.durationSeconds).toBe(60)
+  })
+
   it('reads nothing for a 3D file', async () => {
     const facts = await mediaFactsFromBytes(wavHeader(60), '3d', null)
 

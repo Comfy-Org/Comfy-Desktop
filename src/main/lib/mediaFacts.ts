@@ -75,6 +75,6 @@ export async function mediaFactsFromBytes(
       controller.close()
     }
   })
-  const fileInfo = { mimeType: mimeType ?? undefined, size: fileSize ?? bytes.byteLength }
+  const fileInfo = { mimeType: mimeType ?? undefined, size: fileSize ?? undefined }
   return playableFacts(await parseWebStream(start, fileInfo, HEADERS_ONLY).catch(() => null))
 }
