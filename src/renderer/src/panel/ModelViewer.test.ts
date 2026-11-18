@@ -49,7 +49,7 @@ describe('ModelViewer', () => {
     const wrapper = await mountViewer('fox.glb', vi.fn().mockResolvedValue(null))
 
     expect(wrapper.get('[data-testid="output-detail-model-failed"]').text()).toBe(
-      "Can't show this 3D model"
+      "Can't show this 3D model. Download it to open it in a 3D app."
     )
   })
 

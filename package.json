@@ -90,7 +90,6 @@
     "smol-toml": "^1.9.1",
     "systeminformation": "^5.33.22",
     "tar": "^7.5.23",
-    "three": "^0.186.1",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
@@ -126,6 +125,7 @@
     "prettier": "^3.10.1",
     "reka-ui": "^2.11.0",
     "tailwindcss": "^4.3.5",
+    "three": "^0.186.1",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.2",
     "vite": "^8.3.8",

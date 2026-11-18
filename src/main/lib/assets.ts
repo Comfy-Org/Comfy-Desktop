@@ -31,7 +31,7 @@ const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
 const ASSETS_REVEAL_CHANNEL = 'assets:reveal'
 const ASSETS_COPY_CHANNEL = 'assets:copy'
 const ASSETS_READ_MODEL_CHANNEL = 'assets:read-model'
-const MAX_MODEL_BYTES = 256 * 1024 * 1024
+const MAX_MODEL_BYTES = 100 * 1024 * 1024
 const MODEL_TIMEOUT_MS = 120_000
 const ASSETS_TRASH_CHANNEL = 'assets:trash'
 
@@ -646,7 +646,7 @@ async function readCloudModel(installationId: string, assetId: string): Promise<
   if (!url) return null
   const res = await fetch(url, { redirect: 'error', signal: deadline })
   if (!res.ok || contentLength(res) > MAX_MODEL_BYTES) return null
-  const bytes = new Uint8Array(await res.arrayBuffer())
+  const bytes = await firstBytes(res, MAX_MODEL_BYTES + 1)
   return bytes.byteLength > MAX_MODEL_BYTES ? null : bytes
 }
 

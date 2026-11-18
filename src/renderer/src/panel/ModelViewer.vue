@@ -61,7 +61,8 @@ function meshFrom(geometry: BufferGeometry): Mesh {
 }
 
 async function parseModel(bytes: Uint8Array, extension: string): Promise<Object3D | null> {
-  const buffer = bytes.slice().buffer
+  const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+  const buffer = (whole ? bytes.buffer : bytes.slice().buffer) as ArrayBuffer
   switch (extension) {
     case 'glb':
     case 'gltf':
@@ -118,21 +119,24 @@ useResizeObserver(host, ([entry]) => {
 onMounted(async () => {
   const frameHost = host.value
   if (!frameHost) return
-  renderer = new WebGLRenderer({ antialias: true, alpha: true })
-  renderer.setPixelRatio(window.devicePixelRatio)
-  renderer.toneMapping = NeutralToneMapping
-  const environment = new PMREMGenerator(renderer)
-  scene.environment = environment.fromScene(new RoomEnvironment()).texture
-  environment.dispose()
-  renderer.domElement.className = 'block size-full outline-none'
-  renderer.domElement.tabIndex = 0
-  renderer.domElement.setAttribute('aria-label', t('assets.detail.modelView', { name }))
-  renderer.domElement.dataset.testid = 'output-detail-model'
-  frameHost.append(renderer.domElement)
-  controls = new OrbitControls(camera, renderer.domElement)
-  controls.enableDamping = true
-  controls.listenToKeyEvents(renderer.domElement)
   try {
+    renderer = new WebGLRenderer({ antialias: true, alpha: true })
+    renderer.setPixelRatio(window.devicePixelRatio)
+    renderer.toneMapping = NeutralToneMapping
+    const environment = new PMREMGenerator(renderer)
+    const room = new RoomEnvironment()
+    scene.environment = environment.fromScene(room).texture
+    room.dispose()
+    environment.dispose()
+    renderer.domElement.className =
+      'block size-full rounded-lg outline-none focus-visible:shadow-[0_0_0_2px_var(--color-ring)]'
+    renderer.domElement.tabIndex = 0
+    renderer.domElement.setAttribute('aria-label', t('assets.detail.modelView', { name }))
+    renderer.domElement.dataset.testid = 'output-detail-model'
+    frameHost.append(renderer.domElement)
+    controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+    controls.listenToKeyEvents(renderer.domElement)
     const bytes = await load()
     const model = bytes && !closed ? await parseModel(bytes, extensionOf(name)) : null
     if (closed) return
@@ -165,6 +169,7 @@ onBeforeUnmount(() => {
   })
   scene.environment?.dispose()
   renderer?.dispose()
+  renderer?.forceContextLoss()
 })
 </script>
 

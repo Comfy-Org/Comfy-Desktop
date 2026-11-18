@@ -16,7 +16,14 @@ const still = computed(() => {
 
 <template>
   <span ref="frame" class="flex size-full items-center justify-center">
-    <img v-if="still" :src="still" alt="" loading="lazy" class="size-full object-cover" />
+    <img
+      v-if="still"
+      :src="still"
+      alt=""
+      loading="lazy"
+      class="size-full"
+      :class="entry.kind === '3d' ? 'object-contain' : 'object-cover'"
+    />
     <template v-else-if="entry.kind === 'video' && entry.previewUrl">
       <video
         v-if="seen"

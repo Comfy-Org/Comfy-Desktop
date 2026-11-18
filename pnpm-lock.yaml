@@ -56,9 +56,6 @@ importers:
       tar:
         specifier: ^7.5.23
         version: 7.5.23
-      three:
-        specifier: ^0.186.1
-        version: 0.186.1
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -159,6 +156,9 @@ importers:
       tailwindcss:
         specifier: ^4.3.5
         version: 4.3.5
+      three:
+        specifier: ^0.186.1
+        version: 0.186.1
       typescript:
         specifier: ~6.0.3
         version: 6.0.3

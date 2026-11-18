@@ -1325,7 +1325,7 @@ function extensionOf(name: string): string {
                 </span>
                 <span
                   v-if="asset.kind === 'video' && asset.previewUrl"
-                  class="pointer-events-none absolute top-1/2 left-1/2 flex size-10 -translate-1/2 items-center justify-center rounded-full bg-[rgb(14_14_14/0.48)] text-white backdrop-blur-[8px]"
+                  class="pointer-events-none absolute top-1/2 left-1/2 flex size-10 -translate-1/2 items-center justify-center rounded-full bg-media-overlay text-foreground backdrop-blur-sm"
                   aria-hidden="true"
                   data-testid="asset-play"
                 >
@@ -1333,7 +1333,7 @@ function extensionOf(name: string): string {
                 </span>
                 <span
                   v-if="(asset.kind === 'video' || asset.kind === 'audio') && asset.durationSeconds"
-                  class="absolute right-2 bottom-2 rounded-md bg-[rgb(14_14_14/0.72)] px-1.5 py-0.5 text-[11.5px]/[16px] font-medium text-white tabular-nums"
+                  class="absolute right-2 bottom-2 rounded-md bg-media-overlay px-1.5 py-0.5 text-xs font-medium text-foreground tabular-nums backdrop-blur-sm"
                   data-testid="asset-duration"
                 >
                   {{ formatPlaybackTime(asset.durationSeconds) }}

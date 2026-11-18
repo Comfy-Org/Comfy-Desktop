@@ -1234,10 +1234,10 @@ describe('readAssetModel', () => {
     expect(Array.from(bytes ?? [])).toEqual([1, 2, 3])
   })
 
-  it('does not read a Cloud model larger than 256 MB', async () => {
+  it('does not read a Cloud model larger than 100 MB', async () => {
     cloudModel(
       new Response(new Uint8Array([1]), {
-        headers: { 'Content-Length': String(300 * 1024 * 1024) }
+        headers: { 'Content-Length': String(150 * 1024 * 1024) }
       })
     )
 
