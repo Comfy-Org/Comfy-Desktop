@@ -863,15 +863,28 @@ onActivated(() => {
           :title="t('benchmarks.emptyTitle')"
           :text="t('benchmarks.emptyHint')"
         >
-          <Button
-            variant="inverted"
-            size="md"
-            class="benchmarks__open-performance-test px-4 text-[13px]/5"
-            type="button"
-            @click="openPerformanceTest"
-          >
-            {{ t('benchmarks.openPerformanceTest') }}
-          </Button>
+          <div class="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="md"
+              class="benchmarks__empty-refresh gap-1.5 px-4 text-[13px]/5"
+              type="button"
+              data-testid="benchmarks-empty-refresh"
+              @click="refreshBenchmarks"
+            >
+              <RefreshCw :size="14" aria-hidden="true" />
+              {{ t('benchmarks.refresh') }}
+            </Button>
+            <Button
+              variant="inverted"
+              size="md"
+              class="benchmarks__open-performance-test px-4 text-[13px]/5"
+              type="button"
+              @click="openPerformanceTest"
+            >
+              {{ t('benchmarks.openPerformanceTest') }}
+            </Button>
+          </div>
         </EmptyState>
         <div
           v-else-if="groups.length === 0"
