@@ -142,12 +142,15 @@ function badges(row: SearchRow): Badge[] {
     })
   const match = row.familyPick ? matchBadge(candidate) : null
   if (match) list.push(match)
-  if (candidate.needsDownload)
+  if (candidate.needsDownload) {
     list.push({
       tone: 'download',
-      label: downloadLabel(candidate),
+      label: t('home.search.needsDownload'),
       testId: 'home-template-search-needs-download'
     })
+    const size = sizeLabel(candidate)
+    if (size) list.push({ tone: 'size', label: size, testId: 'home-template-search-download-size' })
+  }
   for (const [kind, count] of inputCounts(candidate.needs))
     list.push({
       tone: 'input',
@@ -167,10 +170,10 @@ function isWeak(row: SearchRow): boolean {
   return row.candidate.belowThreshold
 }
 
-function downloadLabel(candidate: TemplateSearchCandidate): string {
+function sizeLabel(candidate: TemplateSearchCandidate): string | null {
   return candidate.downloadBytes !== null && candidate.downloadBytes >= SMALLEST_SHOWN_SIZE
-    ? t('home.search.needsDownloadSize', { size: formatSize(candidate.downloadBytes) })
-    : t('home.search.needsDownload')
+    ? t('home.search.aboutSize', { size: formatSize(candidate.downloadBytes) })
+    : null
 }
 
 function changePartners(shown: boolean): void {
@@ -339,7 +342,6 @@ defineExpose({ verticalTarget, revealActive })
                 v-for="badge in badges(row)"
                 :key="badge.label"
                 :tone="badge.tone"
-                :title="badge.label"
                 :data-testid="badge.testId"
               >
                 {{ badge.label }}

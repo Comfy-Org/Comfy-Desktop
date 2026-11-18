@@ -202,7 +202,7 @@
       "bestMatch": "Best match",
       "template": "Template",
       "needsDownload": "Needs download",
-      "needsDownloadSize": "Needs download · about {size}",
+      "aboutSize": "about {size}",
       "needsImage": "Needs an image | Needs {n} images",
       "needsVideo": "Needs a video | Needs {n} videos",
       "needsAudio": "Needs audio | Needs {n} audio files",

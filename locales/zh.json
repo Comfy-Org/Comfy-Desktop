@@ -202,7 +202,7 @@
       "bestMatch": "最佳匹配",
       "template": "模板",
       "needsDownload": "需要下载",
-      "needsDownloadSize": "需要下载 · 约 {size}",
+      "aboutSize": "约 {size}",
       "needsImage": "需要 {n} 张图片",
       "needsVideo": "需要 {n} 段视频",
       "needsAudio": "需要 {n} 段音频",
