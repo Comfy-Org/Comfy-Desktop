@@ -1325,7 +1325,6 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
     const krea = (downloadBytes: number) =>
       candidate('krea_template', {
         needsDownload: true,
-        missing: ['krea.safetensors'],
         downloadBytes
       })
     for (const [bytes, sized] of [
@@ -1344,7 +1343,6 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
   it('says only that a download is needed when the remainder is too small to show as a size', async () => {
     const open = candidate('krea_template', {
       needsDownload: true,
-      missing: ['krea.safetensors'],
       downloadBytes: 300_000
     })
     searchTemplates.mockResolvedValue(answer({ run: [POSTER], download: [open] }))
