@@ -222,7 +222,7 @@ describe('createSearchTelemetry', () => {
 
   it('sends an abandon once, and one made before any answer as searching', () => {
     const { telemetry, sent, tick, at } = harness()
-    telemetry.abandoned('blurred')
+    telemetry.abandoned('cleared')
     telemetry.requested()
     tick(1500)
     telemetry.abandoned('closed')

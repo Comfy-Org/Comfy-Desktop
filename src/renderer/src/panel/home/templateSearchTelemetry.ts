@@ -4,7 +4,7 @@ import { matchLevel, searchRows, type SearchRow, type SearchRowKind } from './te
 import { TEMPLATE_SEARCH_EVENT_PREFIX } from '../../../../shared/templateSearch'
 
 export type InputMethod = 'keyboard' | 'pointer'
-export type AbandonReason = 'closed' | 'blurred' | 'cleared' | 'left'
+export type AbandonReason = 'closed' | 'cleared' | 'left'
 
 const LIST_NAMES: Record<SearchRowKind, string> = {
   run: 'run',

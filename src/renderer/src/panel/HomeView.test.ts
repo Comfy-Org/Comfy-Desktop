@@ -1087,6 +1087,26 @@ describe('Home template search', () => {
     expect(wrapper.find('[data-testid="home-template-search"]').exists()).toBe(false)
   })
 
+  it('shows the results in place of the apps while the bar has a request, and the apps again once it is cleared', async () => {
+    getInstallations.mockResolvedValue([RUNNING])
+    const wrapper = await openHome()
+    const apps = () => wrapper.get('section[aria-label]').element as HTMLElement
+    const input = wrapper.get('[data-testid="home-template-search-input"]')
+    expect(apps().style.display).not.toBe('none')
+
+    await input.setValue('a poster for a bake sale')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-template-search-results"]').exists()).toBe(true)
+    expect(apps().style.display).toBe('none')
+    expect(wrapper.find('[data-testid="home-builds"]').exists()).toBe(true)
+
+    await input.setValue('')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-template-search-results"]').exists()).toBe(false)
+    expect(apps().style.display).not.toBe('none')
+  })
+
   it('shows the search bar under the title', async () => {
     const wrapper = await openHome()
     const search = wrapper.get('[data-testid="home-template-search"]')

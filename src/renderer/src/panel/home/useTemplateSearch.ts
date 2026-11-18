@@ -136,11 +136,28 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     searchAgainOrForget()
   })
 
+  function resultsShowing(): boolean {
+    return panelOpen.value && state.value.kind !== 'idle'
+  }
+
+  function onWindowAway(): void {
+    if (resultsShowing()) telemetry.hidden()
+  }
+
+  function onWindowBack(): void {
+    if (resultsShowing()) telemetry.reopened()
+  }
+
+  window.addEventListener('blur', onWindowAway)
+  window.addEventListener('focus', onWindowBack)
+
   onScopeDispose(() => {
     latestRequest++
     telemetry.abandoned('left')
     cancelPendingSearch()
     unsubscribe()
+    window.removeEventListener('blur', onWindowAway)
+    window.removeEventListener('focus', onWindowBack)
   })
 
   function prepare(): void {

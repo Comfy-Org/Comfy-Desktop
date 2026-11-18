@@ -144,6 +144,7 @@ describe('buildSettingsSections', () => {
   })
 
   it('tells every window when the partner templates setting is saved, so Home searches again', () => {
+    vi.mocked(_broadcastToRenderer).mockClear()
     applySettingSet('templateSearchPartners', false)
     expect(mockSettings.templateSearchPartners).toBe(false)
     expect(_broadcastToRenderer).toHaveBeenCalledWith('settings-changed', {

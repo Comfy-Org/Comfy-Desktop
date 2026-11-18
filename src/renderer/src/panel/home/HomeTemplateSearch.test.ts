@@ -123,10 +123,14 @@ afterEach(() => {
 const mounted: ReturnType<typeof mountSearch>[] = []
 const hosts: HTMLElement[] = []
 const BAR_WIDTH_PX = 720
+const PAGE_HEIGHT_PX = 600
 
 function mountSearch(buildId: string | null = 'build-1') {
   const host = document.body.appendChild(document.createElement('div'))
   host.style.width = `${BAR_WIDTH_PX}px`
+  host.style.height = `${PAGE_HEIGHT_PX}px`
+  host.style.overflowY = 'auto'
+  host.dataset.testPage = ''
   hosts.push(host)
   const wrapper = mount(HomeTemplateSearch, { props: { buildId }, attachTo: host })
   mounted.push(wrapper)
@@ -161,6 +165,10 @@ function panel(wrapper: Wrapper) {
   return wrapper.find('[data-testid="home-template-search-results"]')
 }
 
+function page(wrapper: Wrapper): HTMLElement {
+  return wrapper.element.closest<HTMLElement>('[data-test-page]')!
+}
+
 describe('HomeTemplateSearch results', () => {
   it('lists the templates to run, then the ones to download, then Also try', async () => {
     searchTemplates.mockResolvedValue(
@@ -181,7 +189,7 @@ describe('HomeTemplateSearch results', () => {
     ])
   })
 
-  it('labels partner templates, and says what a template downloads', async () => {
+  it('labels partner templates, and marks a template that needs a download', async () => {
     searchTemplates.mockResolvedValue(
       answer({ run: [candidate('api_poster', { partner: true })], download: [MURAL] })
     )
@@ -190,7 +198,12 @@ describe('HomeTemplateSearch results', () => {
 
     const [partner, mural] = wrapper.findAll('[role="option"]')
     expect(partner!.find('[data-testid="home-template-search-partner"]').exists()).toBe(true)
-    expect(mural!.text()).toContain('Downloads mural.safetensors')
+    expect(partner!.find('[data-testid="home-template-search-needs-download"]').exists()).toBe(
+      false
+    )
+    expect(mural!.get('[data-testid="home-template-search-needs-download"]').text()).toBe(
+      'Needs download'
+    )
   })
 
   it('shows the calibrated match as a percentage, and the level word alone without one', async () => {
@@ -250,7 +263,7 @@ describe('HomeTemplateSearch results', () => {
     ])
   })
 
-  it('names each group, and marks only partner templates as partner', async () => {
+  it('shows run and download cards in one grid, with only Also try set apart, and marks only partner templates as partner', async () => {
     searchTemplates.mockResolvedValue(
       answer({
         run: [POSTER, candidate('api_poster', { partner: true })],
@@ -262,7 +275,8 @@ describe('HomeTemplateSearch results', () => {
     await searchFor(wrapper, 'a poster')
     expect(
       wrapper.findAll('[role="listbox"] [role="presentation"]').map((header) => header.text())
-    ).toEqual(['Run', 'Download and run', 'Also try'])
+    ).toEqual(['Also try'])
+    expect(wrapper.find('[data-testid="home-template-search-row-action"]').exists()).toBe(false)
     const partnerRows = wrapper
       .findAll('[role="option"]')
       .filter((row) => row.find('[data-testid="home-template-search-partner"]').exists())
@@ -315,9 +329,34 @@ describe('HomeTemplateSearch results', () => {
     )
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a mural')
-    const [banner, mural] = wrapper.findAll('[role="option"]')
-    expect(banner!.find('[data-testid="home-template-search-best"]').exists()).toBe(false)
+    const [mural, banner] = wrapper.findAll('[role="option"]')
     expect(mural!.find('[data-testid="home-template-search-best"]').exists()).toBe(true)
+    expect(banner!.find('[data-testid="home-template-search-best"]').exists()).toBe(false)
+  })
+
+  it("keeps a family's open template right after its pick, ahead of the next family", async () => {
+    searchTemplates.mockResolvedValue(
+      answer({
+        run: [
+          candidate('api_gpt', { partner: true, family: 'graphic' }),
+          candidate('api_nano', { partner: true, family: 'stylised' })
+        ],
+        download: [
+          candidate('qwen', { family: 'graphic', needsDownload: true }),
+          candidate('krea', { family: 'stylised', needsDownload: true }),
+          candidate('mural', { needsDownload: true })
+        ]
+      })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    expect(rowTitles(wrapper)).toEqual([
+      'api_gpt title',
+      'qwen title',
+      'api_nano title',
+      'krea title',
+      'mural title'
+    ])
   })
 
   it('shows the reply and suggestions, with nothing marked best, when the request needs the agent', async () => {
@@ -387,7 +426,7 @@ describe('HomeTemplateSearch opening a template', () => {
     await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    expect(opened()).toEqual(['mural_template'])
+    expect(opened()).toEqual(['banner_template'])
   })
 
   it('keeps focus in the bar when a result is pressed, so the click can open it', async () => {
@@ -520,7 +559,7 @@ describe('HomeTemplateSearch opening a template', () => {
     expect(searchTemplates).not.toHaveBeenCalled()
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    expect(opened()).toEqual(['mural_template'])
+    expect(opened()).toEqual(['banner_template'])
   })
 
   it('starts on the first row of a new answer that has no best match', async () => {
@@ -615,7 +654,7 @@ describe('HomeTemplateSearch cards', () => {
 
   function inView(wrapper: Wrapper, selector: string): boolean {
     const box = wrapper.get(selector).element.getBoundingClientRect()
-    const scroller = panel(wrapper).element.getBoundingClientRect()
+    const scroller = page(wrapper).getBoundingClientRect()
     return (
       box.top >= Math.max(scroller.top, 0) - 1 &&
       box.bottom <= Math.min(scroller.bottom, window.innerHeight) + 1
@@ -644,22 +683,17 @@ describe('HomeTemplateSearch cards', () => {
     await searchFor(wrapper, 'a birthday card')
   }
 
-  it('lays the cards out three across at the bar width, and starts each group on a new row', async () => {
+  it('lays the cards out three across at the bar width, the download card in the same grid', async () => {
     const wrapper = mountSearch()
     await searchCards(wrapper)
     const [a, b, c, d, e, mural] = cardBoxes(wrapper)
     expect([b!.top, c!.top]).toEqual([a!.top, a!.top])
     expect(d!.top).toBeGreaterThan(a!.top)
     expect([d!.left, e!.top]).toEqual([a!.left, d!.top])
-    expect(mural!.top).toBeGreaterThan(d!.top)
-    expect(mural!.left).toBe(a!.left)
-    const rowWidth = c!.right - a!.left
-    for (const heading of wrapper.findAll('[role="presentation"]')) {
-      expect(heading.element.getBoundingClientRect().width).toBeCloseTo(rowWidth, 0)
-    }
+    expect([mural!.top, mural!.left]).toEqual([d!.top, c!.left])
   })
 
-  it('moves Down and Up to the nearest card in the next row, across a group heading, and wraps', async () => {
+  it('moves Down and Up to the nearest card in the next row, and wraps', async () => {
     const wrapper = mountSearch()
     await searchCards(wrapper)
     expect(highlighted(wrapper)).toBe('card_a title')
@@ -669,19 +703,20 @@ describe('HomeTemplateSearch cards', () => {
       await press(wrapper, 'ArrowDown')
       downs.push(highlighted(wrapper))
     }
-    expect(downs).toEqual(['card_d title', 'mural_template title', 'card_a title'])
+    expect(downs).toEqual(['card_d title', 'card_a title', 'card_d title'])
 
     const ups: string[] = []
     for (let i = 0; i < 2; i++) {
       await press(wrapper, 'ArrowUp')
       ups.push(highlighted(wrapper))
     }
-    expect(ups).toEqual(['mural_template title', 'card_d title'])
+    expect(ups).toEqual(['card_a title', 'card_d title'])
   })
 
   it('moves Down from the last column to the nearest card of a shorter row', async () => {
     const wrapper = mountSearch()
-    await searchCards(wrapper)
+    searchTemplates.mockResolvedValue(answer({ run: CARDS }))
+    await searchFor(wrapper, 'a birthday card')
     await press(wrapper, 'ArrowDown')
     await press(wrapper, 'ArrowUp')
     await press(wrapper, 'ArrowRight')
@@ -715,7 +750,7 @@ describe('HomeTemplateSearch cards', () => {
     await press(wrapper, 'ArrowUp')
     await press(wrapper, 'ArrowLeft')
     expect(highlighted(wrapper)).toBe('mural_template title')
-    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    expect(page(wrapper).scrollTop).toBeGreaterThan(0)
     expect(inView(wrapper, SELECTED)).toBe(true)
     await press(wrapper, 'ArrowRight')
     await press(wrapper, 'ArrowRight')
@@ -833,7 +868,7 @@ describe('HomeTemplateSearch cards', () => {
     expect(panel(wrapper).attributes('tabindex')).toBe('-1')
 
     input(wrapper).element.focus()
-    await userEvent.click(wrapper.findAll('[role="presentation"]')[0]!.element)
+    await userEvent.click(wrapper.get('h2').element)
     expect(document.activeElement).toBe(input(wrapper).element)
   })
 
@@ -842,7 +877,7 @@ describe('HomeTemplateSearch cards', () => {
     const wrapper = mountSearch()
     await searchCards(wrapper)
     await press(wrapper, 'ArrowUp')
-    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    expect(page(wrapper).scrollTop).toBeGreaterThan(0)
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
     const message = '[data-testid="home-template-search-open-failed"]'
@@ -872,19 +907,19 @@ describe('HomeTemplateSearch cards', () => {
     }
   })
 
-  it('shows the best match of a new answer even when it is below the fold, and again after the panel reopens', async () => {
+  it('puts the best match first, highlighted, even when the search lists it after other cards, and again after the results reopen', async () => {
     const many = Array.from({ length: 15 }, (_, i) => candidate(`card_${i}`))
     searchTemplates.mockResolvedValue(answer({ outcome: 'download', run: many, download: [MURAL] }))
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a mural')
+    expect(rowTitles(wrapper)[0]).toBe('mural_template title')
     expect(highlighted(wrapper)).toBe('mural_template title')
-    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
     expect(inView(wrapper, SELECTED)).toBe(true)
 
     await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
     await input(wrapper).trigger('focus')
     await flushPromises()
-    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    expect(highlighted(wrapper)).toBe('mural_template title')
     expect(inView(wrapper, SELECTED)).toBe(true)
   })
 
@@ -894,10 +929,10 @@ describe('HomeTemplateSearch cards', () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a birthday card')
     await press(wrapper, 'ArrowUp')
-    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    expect(page(wrapper).scrollTop).toBeGreaterThan(0)
     await press(wrapper, 'ArrowDown')
     expect(highlighted(wrapper)).toBe('card_0 title')
-    expect(panel(wrapper).element.scrollTop).toBe(0)
+    expect(inView(wrapper, 'h2')).toBe(true)
   })
 
   it('scrolls the highlighted card into view when the answer is longer than the panel', async () => {
@@ -905,7 +940,7 @@ describe('HomeTemplateSearch cards', () => {
     searchTemplates.mockResolvedValue(answer({ run: many }))
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a birthday card')
-    const scroller = panel(wrapper).element
+    const scroller = page(wrapper)
     expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight)
     expect(scroller.scrollTop).toBe(0)
 
@@ -920,10 +955,10 @@ describe('HomeTemplateSearch cards', () => {
 
 describe('HomeTemplateSearch partner templates', () => {
   function cardAction(wrapper: Wrapper, index: number): string {
-    return wrapper
+    const action = wrapper
       .findAll('[role="option"]')
-      [index]!.get('[data-testid="home-template-search-row-action"]')
-      .text()
+      [index]!.find('[data-testid="home-template-search-row-action"]')
+    return action.exists() ? action.text() : ''
   }
 
   it('asks a signed-out user to sign in from a partner card, and opens nothing', async () => {
@@ -934,7 +969,7 @@ describe('HomeTemplateSearch partner templates', () => {
     await searchFor(wrapper, 'a poster')
 
     expect(cardAction(wrapper, 0)).toBe('Sign in to use')
-    expect(cardAction(wrapper, 1), 'an open template runs as before').toBe('Run')
+    expect(cardAction(wrapper, 1), 'an open template has no action line').toBe('')
     await wrapper.findAll('[role="option"]')[0]!.trigger('click')
     await flushPromises()
     expect(signIn).toHaveBeenCalledTimes(1)
@@ -969,7 +1004,7 @@ describe('HomeTemplateSearch partner templates', () => {
     expect(signIn).toHaveBeenCalledTimes(1)
   })
 
-  it('turns the card back to Run once signed in, and leaves the pick to the user', async () => {
+  it('drops Sign in to use once signed in, and leaves the pick to the user', async () => {
     getAuthStatus.mockResolvedValue({ signedIn: false })
     searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER] }))
     const wrapper = mountSearch()
@@ -977,7 +1012,7 @@ describe('HomeTemplateSearch partner templates', () => {
     await wrapper.findAll('[role="option"]')[0]!.trigger('click')
     await flushPromises()
 
-    expect(cardAction(wrapper, 0)).toBe('Run')
+    expect(cardAction(wrapper, 0)).toBe('')
     expect(opened()).toEqual([])
     await wrapper.findAll('[role="option"]')[0]!.trigger('click')
     await flushPromises()
@@ -1013,19 +1048,19 @@ describe('HomeTemplateSearch partner templates', () => {
     expect(signIn).toHaveBeenCalledTimes(2)
   })
 
-  it('keeps a partner card as Run while the sign-in state is still loading', async () => {
+  it('shows no Sign in to use on a partner card while the sign-in state is still loading', async () => {
     getAuthStatus.mockReturnValue(new Promise(() => {}))
     searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER] }))
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
-    expect(cardAction(wrapper, 0)).toBe('Run')
+    expect(cardAction(wrapper, 0)).toBe('')
   })
 
   it('opens a partner card for a signed-in user as before', async () => {
     searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER] }))
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
-    expect(cardAction(wrapper, 0)).toBe('Run')
+    expect(cardAction(wrapper, 0)).toBe('')
     await wrapper.findAll('[role="option"]')[0]!.trigger('click')
     await flushPromises()
     expect(signIn).not.toHaveBeenCalled()
@@ -1048,9 +1083,8 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
     const card = wrapper.findAll('[role="option"]')[1]!
-    expect(card.text()).toContain('About 18 GB to download')
-    expect(card.get('[data-testid="home-template-search-row-action"]').text()).toBe(
-      'Download and run'
+    expect(card.get('[data-testid="home-template-search-needs-download"]').text()).toBe(
+      'Needs download · about 18 GB'
     )
   })
 
@@ -1155,7 +1189,7 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
     expect(wrapper.find('[data-testid="home-template-search-results"]').exists()).toBe(false)
   })
 
-  it('closes on Escape typed in the bar without starting the search still waiting for typing to pause', async () => {
+  it('closes on Escape typed in the bar, starting no search there and then, with the bar still focused', async () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
     const calls = searchTemplates.mock.calls.length
@@ -1179,7 +1213,7 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
     expect(switchButton(wrapper).attributes('aria-checked')).toBe('true')
   })
 
-  it('shows a size from 1 MB, and the missing files below it', async () => {
+  it('shows a size from 1 MB, and none below it', async () => {
     const krea = (downloadBytes: number) =>
       candidate('krea_template', {
         needsDownload: true,
@@ -1193,14 +1227,13 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
       searchTemplates.mockResolvedValue(answer({ run: [POSTER], download: [krea(bytes)] }))
       const wrapper = mountSearch()
       await searchFor(wrapper, `a poster ${bytes}`)
-      expect(
-        wrapper.findAll('[role="option"]')[1]!.text().includes('to download'),
-        String(bytes)
-      ).toBe(sized)
+      expect(wrapper.findAll('[role="option"]')[1]!.text().includes('about'), String(bytes)).toBe(
+        sized
+      )
     }
   })
 
-  it('keeps the missing files for a remainder too small to show as a size', async () => {
+  it('says only that a download is needed when the remainder is too small to show as a size', async () => {
     const open = candidate('krea_template', {
       needsDownload: true,
       missing: ['krea.safetensors'],
@@ -1210,8 +1243,9 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
     const card = wrapper.findAll('[role="option"]')[1]!
-    expect(card.text()).toContain('krea.safetensors')
-    expect(card.text()).not.toContain('to download')
+    expect(card.get('[data-testid="home-template-search-needs-download"]').text()).toBe(
+      'Needs download'
+    )
   })
 })
 
@@ -1441,27 +1475,22 @@ describe('HomeTemplateSearch telemetry', () => {
     ])
   })
 
-  it('sends an abandon when focus leaves the bar for something else on Home', async () => {
+  it('keeps the results and the session when focus leaves the bar for something else on Home', async () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
-    const here = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
     await wrapper
       .get('[data-testid="home-template-search"]')
       .trigger('focusout', { relatedTarget: null })
-    here.mockRestore()
-    expect(named('abandoned').map((event) => event.context!.reason)).toEqual(['blurred'])
+    expect(panel(wrapper).exists()).toBe(true)
+    expect(named('abandoned')).toEqual([])
   })
 
   it('keeps the session when the window loses focus, and counts it on return', async () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
-    const away = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
-    await wrapper
-      .get('[data-testid="home-template-search"]')
-      .trigger('focusout', { relatedTarget: null })
-    away.mockRestore()
-    expect(panel(wrapper).exists()).toBe(false)
-    await input(wrapper).trigger('focus')
+    window.dispatchEvent(new Event('blur'))
+    expect(panel(wrapper).exists()).toBe(true)
+    window.dispatchEvent(new Event('focus'))
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(named('abandoned')).toEqual([])
@@ -1471,11 +1500,7 @@ describe('HomeTemplateSearch telemetry', () => {
   it('does not count time with the window away as time looking at the results', async () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
-    const away = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
-    await wrapper
-      .get('[data-testid="home-template-search"]')
-      .trigger('focusout', { relatedTarget: null })
-    away.mockRestore()
+    window.dispatchEvent(new Event('blur'))
     wrapper.unmount()
     expect(named('abandoned')[0]!.context).toMatchObject({
       reason: 'left',
@@ -1637,7 +1662,7 @@ describe('HomeTemplateSearch typing', () => {
     expect(panel(wrapper).exists()).toBe(false)
   })
 
-  it('keeps the results closed after focus leaves, when a typed search answers later', async () => {
+  it('keeps the results in the page after focus leaves, when a typed search answers later', async () => {
     vi.useFakeTimers()
     const wrapper = mountSearch()
     await input(wrapper).trigger('focus')
@@ -1651,7 +1676,7 @@ describe('HomeTemplateSearch typing', () => {
     await flushPromises()
 
     expect(searchTemplates).toHaveBeenCalledWith('a poster', 'build-1')
-    expect(panel(wrapper).exists()).toBe(false)
+    expect(panel(wrapper).exists()).toBe(true)
   })
 })
 

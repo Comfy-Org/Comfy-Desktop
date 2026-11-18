@@ -20,12 +20,6 @@ const { t } = useI18n()
 
 const SMALLEST_SHOWN_SIZE = 1_000_000
 
-const GROUP_TITLE_KEYS: Record<SearchRow['kind'], string> = {
-  run: 'home.search.run',
-  download: 'home.search.downloadAndRun',
-  also: 'home.search.alsoTry'
-}
-
 const MATCH_LEVEL_KEYS = {
   strong: 'home.search.matchStrong',
   good: 'home.search.matchGood',
@@ -115,6 +109,12 @@ function badges(row: SearchRow): Badge[] {
     })
   const match = matchBadge(candidate)
   if (match) list.push(match)
+  if (candidate.needsDownload)
+    list.push({
+      tone: 'download',
+      label: downloadLabel(candidate),
+      testId: 'home-template-search-needs-download'
+    })
   if (candidate.partner)
     list.push({
       tone: 'partner',
@@ -128,19 +128,10 @@ function isWeak(row: SearchRow): boolean {
   return row.candidate.belowThreshold
 }
 
-function rowMeta(row: SearchRow): string {
-  const candidate = row.candidate
-  if (!candidate.needsDownload) return candidate.family ?? t('home.search.template')
-  if (candidate.downloadBytes !== null && candidate.downloadBytes >= SMALLEST_SHOWN_SIZE)
-    return t('home.search.downloadSize', { size: formatSize(candidate.downloadBytes) })
-  return candidate.missing.length
-    ? t('home.search.needsDownload', { items: candidate.missing.join(', ') })
-    : t('home.search.needsTemplateDownload')
-}
-
-function rowAction(row: SearchRow): string {
-  if (props.controller.needsSignIn(row)) return t('home.search.signInToUse')
-  return row.candidate.needsDownload ? t('home.search.downloadAndRun') : t('home.search.run')
+function downloadLabel(candidate: TemplateSearchCandidate): string {
+  return candidate.downloadBytes !== null && candidate.downloadBytes >= SMALLEST_SHOWN_SIZE
+    ? t('home.search.needsDownloadSize', { size: formatSize(candidate.downloadBytes) })
+    : t('home.search.needsDownload')
 }
 
 function changePartners(shown: boolean): void {
@@ -153,16 +144,16 @@ function pick(row: SearchRow, event: MouseEvent): void {
   props.controller.activate(row, 'pointer')
 }
 
-function startsGroup(index: number): boolean {
+function startsAlsoTry(index: number): boolean {
   const rows = props.controller.rows.value
-  return index === 0 || rows[index - 1]!.kind !== rows[index]!.kind
+  return rows[index]!.kind === 'also' && rows[index - 1]?.kind !== 'also'
 }
 
 function optionId(index: number): string {
   return `${props.listboxId}-${index}`
 }
 
-const panel = useTemplateRef<HTMLElement>('panel')
+const heading = useTemplateRef<HTMLElement>('heading')
 const cardList = useTemplateRef<HTMLElement>('cardList')
 
 function cards(): HTMLElement[] {
@@ -178,7 +169,7 @@ function revealActive(): void {
   const all = cards()
   const active = all[props.controller.activeIndex.value]
   if (!active) return
-  if (active.offsetTop === all[0]!.offsetTop) panel.value?.scrollTo({ top: 0 })
+  if (active.offsetTop === all[0]!.offsetTop) heading.value?.scrollIntoView({ block: 'nearest' })
   active.scrollIntoView({ block: 'nearest' })
 }
 
@@ -190,12 +181,28 @@ defineExpose({ verticalTarget, revealActive })
 
 <template>
   <div
-    ref="panel"
     tabindex="-1"
-    :class="{ 'scroll-pt-10': controller.openFailed.value }"
+    :class="{ '[&_[role=option]]:scroll-mt-10': controller.openFailed.value }"
     @mousedown.prevent
     @keydown.esc="emit('refocus')"
   >
+    <div ref="heading" class="mb-2.5 flex h-6 items-center justify-between gap-3">
+      <h2 class="m-0 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase">
+        {{ t('home.search.resultsTitle') }}
+      </h2>
+      <label
+        v-if="!notice && controller.partnerSwitch.value"
+        class="flex items-center gap-2 text-xs/4 text-muted-foreground"
+        data-testid="home-template-search-partner-switch"
+      >
+        {{ t('home.search.partnerSwitch') }}
+        <Switch
+          :model-value="controller.partnersShown.value"
+          :aria-label="t('home.search.partnerSwitch')"
+          @update:model-value="(shown: boolean) => changePartners(shown)"
+        />
+      </label>
+    </div>
     <div
       v-if="notice"
       class="flex items-center justify-between gap-3 px-2.5 py-2"
@@ -214,18 +221,6 @@ defineExpose({ verticalTarget, revealActive })
       </Button>
     </div>
     <template v-else-if="controller.state.value.kind === 'result'">
-      <label
-        v-if="controller.partnerSwitch.value"
-        class="flex items-center justify-end gap-2 px-2.5 pt-1 text-xs/4 text-muted-foreground"
-        data-testid="home-template-search-partner-switch"
-      >
-        {{ t('home.search.partnerSwitch') }}
-        <Switch
-          :model-value="controller.partnersShown.value"
-          :aria-label="t('home.search.partnerSwitch')"
-          @update:model-value="(shown: boolean) => changePartners(shown)"
-        />
-      </label>
       <p
         v-if="controller.reply.value"
         class="m-0 px-2.5 py-2 text-[13px]/5 text-foreground"
@@ -259,11 +254,11 @@ defineExpose({ verticalTarget, revealActive })
     >
       <template v-for="(row, index) in controller.rows.value" :key="row.key">
         <li
-          v-if="startsGroup(index)"
+          v-if="startsAlsoTry(index)"
           role="presentation"
           class="col-span-full px-1 pt-2 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
         >
-          {{ t(GROUP_TITLE_KEYS[row.kind]) }}
+          {{ t('home.search.alsoTry') }}
         </li>
         <li
           :id="optionId(index)"
@@ -297,7 +292,9 @@ defineExpose({ verticalTarget, revealActive })
               <span class="line-clamp-2 text-[13px]/5 font-medium text-foreground">
                 {{ row.candidate.title }}
               </span>
-              <span class="truncate text-xs/4 text-subtle-foreground">{{ rowMeta(row) }}</span>
+              <span class="truncate text-xs/4 text-subtle-foreground">{{
+                row.candidate.family ?? t('home.search.template')
+              }}</span>
             </span>
             <span class="flex flex-wrap gap-1.5">
               <TemplateSearchBadge
@@ -310,10 +307,11 @@ defineExpose({ verticalTarget, revealActive })
               </TemplateSearchBadge>
             </span>
             <span
+              v-if="controller.needsSignIn(row)"
               class="mt-auto text-xs/4 font-medium text-muted-foreground"
               data-testid="home-template-search-row-action"
             >
-              {{ rowAction(row) }}
+              {{ t('home.search.signInToUse') }}
             </span>
           </span>
         </li>
