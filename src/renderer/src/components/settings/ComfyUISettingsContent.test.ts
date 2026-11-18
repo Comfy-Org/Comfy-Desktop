@@ -77,7 +77,8 @@ vi.mock('../../views/comfyUISettings/MoreMenu.vue', () => ({
     name: 'MoreMenu',
     props: ['open', 'actions'],
     emits: ['pick', 'close'],
-    template: '<div v-if="open" data-testid="more-menu">menu</div>'
+    template:
+      '<div v-if="open" class="more-menu" data-testid="more-menu"><button v-for="action in actions" :key="action.id" type="button">{{ action.label }}</button></div>'
   }
 }))
 
@@ -747,7 +748,13 @@ describe('ComfyUISettingsContent', () => {
         })
         document.body.appendChild(w.element)
         await w.find('[data-testid="picker-more-trigger"]').trigger('click')
-        ;(document.activeElement as HTMLElement | null)?.blur()
+        await flushPromises()
+        const stopRow = [...document.querySelectorAll<HTMLElement>('.more-menu button')].find(
+          (row) => row.textContent?.trim() === 'Stop'
+        )
+        expect(stopRow, 'the open more menu shows a Stop row').toBeDefined()
+        stopRow!.focus()
+        expect(document.activeElement).toBe(stopRow)
 
         useComfyUISettingsState.pinBottomActions.value = []
         await flushPromises()
