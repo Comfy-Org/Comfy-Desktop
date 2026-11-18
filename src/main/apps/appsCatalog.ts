@@ -3,7 +3,7 @@ import path from 'path'
 
 import { APP_ID_PATTERN, isAppsListUrl, isInAppsScope } from '../../shared/appsLocation'
 import type { AppsLocation } from '../../shared/appsLocation'
-import type { AppCard, AppCover } from '../../types/ipc'
+import type { AppBadge, AppBadgeStyle, AppBadgeWords, AppCard, AppCover } from '../../types/ipc'
 import { fetchJSON } from '../lib/fetch'
 import { readFileSafeAsync, writeFileSafeAsync } from '../lib/safe-file'
 import { currentAppsLocation } from './appsConfig'
@@ -16,6 +16,10 @@ const RETRY_DELAYS_MS = [1000, 3000]
 const SAVED_LIST_FILE = 'apps-catalog.json'
 const MAX_APPS = 200
 const MAX_TEXT_LENGTH = 4096
+const BADGE_STYLES: readonly AppBadgeStyle[] = ['crown', 'chip', 'label']
+const MAX_BADGES = 4
+const MAX_BADGE_TEXT_LENGTH = 24
+const MAX_BADGE_DESCRIPTION_LENGTH = 160
 const MAX_COVERS = 24
 const MAX_LISTED_COVERS = 200
 
@@ -79,6 +83,47 @@ function pageUrlFor(id: string, page: unknown, location: AppsLocation): string |
   return url.href
 }
 
+function textWithin(value: unknown, maxLength: number): string | null {
+  const words = text(value)
+  return words && words.length <= maxLength ? words : null
+}
+
+function badgeWords(value: unknown, maxLength: number): AppBadgeWords | null {
+  const record = asRecord(value)
+  const en = textWithin(record?.en, maxLength)
+  if (!en) return null
+  const zh = textWithin(record?.['zh-CN'], maxLength)
+  return zh ? { en, 'zh-CN': zh } : { en }
+}
+
+function isBadgeStyle(value: unknown): value is AppBadgeStyle {
+  return BADGE_STYLES.some((style) => style === value)
+}
+
+function toBadge(entry: unknown): AppBadge | null {
+  const record = asRecord(entry)
+  const id = text(record?.id)
+  const style = record?.style
+  const words = badgeWords(record?.text, MAX_BADGE_TEXT_LENGTH)
+  if (!id || !APP_ID_PATTERN.test(id) || !isBadgeStyle(style) || !words) return null
+  const description = badgeWords(record?.description, MAX_BADGE_DESCRIPTION_LENGTH)
+  return description ? { id, style, text: words, description } : { id, style, text: words }
+}
+
+function badgesFrom(value: unknown): AppBadge[] | null {
+  if (!Array.isArray(value)) return null
+  const seen = new Set<string>()
+  const badges: AppBadge[] = []
+  for (const entry of value) {
+    const badge = toBadge(entry)
+    if (!badge || seen.has(badge.id)) continue
+    seen.add(badge.id)
+    badges.push(badge)
+    if (badges.length === MAX_BADGES) break
+  }
+  return badges
+}
+
 export function toListedApp(entry: unknown, location: AppsLocation): ListedApp | null {
   const record = asRecord(entry)
   const id = text(record?.id)
@@ -86,13 +131,15 @@ export function toListedApp(entry: unknown, location: AppsLocation): ListedApp |
   if (!record || !id || !title || !APP_ID_PATTERN.test(id)) return null
   const pageUrl = pageUrlFor(id, record.page, location)
   if (!pageUrl) return null
+  const badges = badgesFrom(record.badges)
   return {
     pageUrl,
     card: {
       id,
       title,
       description: text(record.blurb) ?? '',
-      covers: coversFor(record, location)
+      covers: coversFor(record, location),
+      ...(badges && { badges })
     }
   }
 }

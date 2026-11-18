@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow, ArrowUpRight, Search } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
+import AppBadges from './AppBadges.vue'
 import CoverRotation from '../components/CoverRotation.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
+import { badgeDescriptionIds } from './appCardBadges'
 import type { AppCard } from '../types/ipc'
 
 type LoadState = 'loading' | 'ready' | 'failed'
@@ -31,6 +33,8 @@ const query = ref('')
 const openApp = ref<AppCard | null>(null)
 const coversThatFailed = reactive(new Set<string>())
 const cardButtons = new Map<string, HTMLElement>()
+const keyboardFocusedId = ref<string | null>(null)
+const badgeIdPrefix = useId()
 
 let lastOpenedId: string | null = null
 let stopClosedUpdates: (() => void) | null = null
@@ -66,6 +70,20 @@ function rhythmSpanClass(index: number): string {
 function rememberCard(id: string, element: unknown): void {
   if (element instanceof HTMLElement) cardButtons.set(id, element)
   else cardButtons.delete(id)
+}
+
+function badgeIdPrefixFor(app: AppCard): string {
+  return `${badgeIdPrefix}-${app.id}`
+}
+
+function badgesDescribing(app: AppCard): string | undefined {
+  return badgeDescriptionIds(badgeIdPrefixFor(app), app.badges)
+}
+
+function noteCardFocus(app: AppCard, event: FocusEvent): void {
+  const card = event.currentTarget
+  keyboardFocusedId.value =
+    card instanceof HTMLElement && card.matches(':focus-visible') ? app.id : null
 }
 
 function open(app: AppCard): void {
@@ -201,8 +219,11 @@ onBeforeUnmount(() => {
               :ref="(element) => rememberCard(app.id, element)"
               type="button"
               class="group relative block aspect-square w-full cursor-pointer overflow-hidden rounded-card border-0 bg-[rgb(235_235_235/0.05)] p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              :aria-describedby="badgesDescribing(app)"
               :data-testid="`app-card-${app.id}`"
               @click="open(app)"
+              @focus="noteCardFocus(app, $event)"
+              @blur="keyboardFocusedId = null"
             >
               <span
                 class="absolute inset-0 block overflow-hidden transition-transform duration-600 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04] group-focus-visible:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100 motion-reduce:group-focus-visible:scale-100"
@@ -220,6 +241,13 @@ onBeforeUnmount(() => {
                 >
                   <AppWindow :size="28" :stroke-width="1.5" aria-hidden="true" />
                 </span>
+                <AppBadges
+                  v-if="app.badges?.length"
+                  :badges="app.badges"
+                  :description-id-prefix="badgeIdPrefixFor(app)"
+                  :revealed="keyboardFocusedId === app.id"
+                  class="absolute top-2 left-2 max-w-[calc(100%-1rem)]"
+                />
               </span>
               <span
                 class="pointer-events-none absolute inset-0 bg-linear-to-t from-black/66 to-transparent to-46%"
@@ -234,6 +262,7 @@ onBeforeUnmount(() => {
               </span>
               <span class="absolute inset-x-3.5 bottom-3 grid">
                 <span
+                  data-testid="app-card-name"
                   class="truncate text-sm/[17px] font-semibold text-white transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] group-hover:-translate-y-4.5 group-focus-visible:-translate-y-4.5 motion-reduce:transition-none"
                 >
                   {{ app.title }}

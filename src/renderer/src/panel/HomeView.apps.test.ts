@@ -24,7 +24,15 @@ const GENJUTSU: AppCard = {
   id: 'genjutsu',
   title: 'Genjutsu',
   description: 'Put someone else in a short clip.',
-  covers: [{ url: picture('purple'), stillUrl: null }]
+  covers: [{ url: picture('purple'), stillUrl: null }],
+  badges: [
+    {
+      id: 'uses-credits',
+      style: 'crown',
+      text: { en: 'Uses credits' },
+      description: { en: 'Runs a paid partner model' }
+    }
+  ]
 }
 const PRODUCT_ADS = app('product-ads', 'Product Ads')
 const HDR = app('sdr-to-hdr', 'SDR to HDR')
@@ -147,6 +155,13 @@ describe('Home apps', () => {
     await cardAt(wrapper, 0).trigger('click')
 
     expect(wrapper.emitted('open-app')).toEqual([[PRODUCT_ADS]])
+  })
+
+  it("draws an app's badges in the carousel and none on an app without badges", async () => {
+    const wrapper = await openHome()
+
+    expect(cardAt(wrapper, 0).find('[data-testid="app-badge-uses-credits"]').exists()).toBe(true)
+    expect(cardAt(wrapper, 2).find('[data-testid="app-badges"]').exists()).toBe(false)
   })
 
   it('names the cards and arrows as apps for screen readers', async () => {
