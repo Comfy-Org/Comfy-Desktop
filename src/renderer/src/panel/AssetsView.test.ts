@@ -282,6 +282,24 @@ describe('AssetsView', () => {
     )
   })
 
+  it('shows how long a video runs once its card has read the start of the video', async () => {
+    const wrapper = await mountAssets([
+      asset('clip', 'clip.mp4', 'video', { previewUrl: 'data:video/mp4,' })
+    ])
+    const video = wrapper.get('[data-testid="asset-clip"] video').element
+    expect(wrapper.find('[data-testid="asset-clip"] [data-testid="asset-duration"]').exists()).toBe(
+      false
+    )
+
+    Object.defineProperty(video, 'duration', { value: 61.2 })
+    video.dispatchEvent(new Event('loadedmetadata'))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="asset-clip"] [data-testid="asset-duration"]').text()).toBe(
+      '1:01'
+    )
+  })
+
   it('shows how long a sound runs on its card', async () => {
     const wrapper = await mountAssets([
       asset('song', 'song.flac', 'audio', { durationSeconds: 69.4 }),

@@ -890,6 +890,13 @@ function assetDetails(asset: AssetSummary): string {
     .join(' · ')
 }
 
+function noteDuration(asset: AssetSummary, event: Event): void {
+  const seconds = (event.target as HTMLVideoElement).duration
+  if (!asset.durationSeconds && Number.isFinite(seconds) && seconds > 0) {
+    asset.durationSeconds = seconds
+  }
+}
+
 function cardImage(asset: AssetSummary): string | null {
   if (asset.kind === 'image') return asset.thumbnailUrl ?? asset.previewUrl
   return asset.kind === '3d' ? asset.thumbnailUrl : null
@@ -1304,6 +1311,7 @@ function extensionOf(name: string): string {
                   preload="metadata"
                   muted
                   class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  @loadedmetadata="noteDuration(asset, $event)"
                 />
                 <span
                   v-else
