@@ -49,8 +49,6 @@ const { shown, leaving, upcoming, loaded, allFailed, markLoaded, markFailed } = 
 
 const loadedStills = ref<ReadonlySet<number>>(new Set())
 const failedStills = ref<ReadonlySet<number>>(new Set())
-// A moving cover is megabytes and a still is kilobytes: the first cover's still stands in until
-// the moving one has loaded and faded in over it, then goes. Later covers load hidden first.
 const posterDone = ref(false)
 let posterTimer: ReturnType<typeof setTimeout> | undefined
 
