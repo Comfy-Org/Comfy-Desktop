@@ -356,16 +356,26 @@ describe('AppSidebar', () => {
     ).toHaveLength(0)
   })
 
-  it('turns every row into a square when the sidebar is folded', async () => {
-    window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+  it('turns every folded row into a square centred in the rail without moving its icon', async () => {
     useInstallationStore().installations = []
     const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
     await flushPromises()
+    const sidebar = wrapper.get('[data-testid="app-sidebar"]').element
+    const iconSpot = (testId: string) => {
+      const icon = wrapper.get(`[data-testid="${testId}"] svg`).element.getBoundingClientRect()
+      return [icon.left - sidebar.getBoundingClientRect().left, icon.top]
+    }
+    const openSpots = ['app-sidebar-home', 'app-sidebar-assets'].map(iconSpot)
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
     await new Promise((resolve) => setTimeout(resolve, 320))
 
+    expect(['app-sidebar-home', 'app-sidebar-assets'].map(iconSpot)).toEqual(openSpots)
+    const rail = sidebar.getBoundingClientRect()
     for (const testId of ['app-sidebar-home', 'app-sidebar-assets', 'app-sidebar-settings']) {
       const row = wrapper.get(`[data-testid="${testId}"]`).element.getBoundingClientRect()
-      expect([row.width, row.height], testId).toEqual([40, 40])
+      expect([row.width, row.height], testId).toEqual([32, 32])
+      expect(row.left + row.width / 2 - rail.left, testId).toBe(rail.width / 2)
     }
     wrapper.unmount()
   })

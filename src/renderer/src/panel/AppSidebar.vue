@@ -84,7 +84,12 @@ const faceTransition = {
     'transition-[opacity,scale] duration-120 ease-out motion-reduce:transition-opacity',
   leaveToClass: 'opacity-0 motion-safe:scale-90'
 }
-const railRowSize = computed(() => (collapsed.value ? 'h-10 duration-200' : 'h-8 duration-260'))
+const railRowSize = computed(() =>
+  collapsed.value ? 'ml-1 w-8 duration-200' : 'ml-0 w-full duration-260'
+)
+const railRowInset = computed(() =>
+  collapsed.value ? 'pr-0 pl-2 duration-200' : 'px-3 duration-260'
+)
 const wordmarkTransition = {
   enterActiveClass:
     'origin-left transition-[opacity,scale] duration-200 delay-90 ease-out motion-reduce:transition-opacity',
@@ -289,7 +294,7 @@ function openSettings(): void {
           :key="row.page"
           variant="muted-textonly"
           size="unset"
-          class="w-full shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[height,background-color,color] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
+          class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
           :class="[
             railRowSize,
             row.page === activePage && 'bg-accent text-foreground hover:bg-accent'
@@ -303,7 +308,8 @@ function openSettings(): void {
           <Tooltip
             :text="collapsed ? row.label : undefined"
             side="right"
-            class="size-full items-center gap-2.5 px-3"
+            class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
+            :class="railRowInset"
           >
             <component :is="row.icon" :size="15" class="shrink-0" aria-hidden="true" />
             <Transition v-bind="labelTransition">
@@ -432,7 +438,7 @@ function openSettings(): void {
       <Button
         variant="muted-textonly"
         size="unset"
-        class="w-full shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[height,background-color,color] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
+        class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
         :class="railRowSize"
         :aria-label="t('fileMenu.globalSettings')"
         aria-haspopup="dialog"
@@ -442,7 +448,8 @@ function openSettings(): void {
         <Tooltip
           :text="collapsed ? t('fileMenu.globalSettings') : undefined"
           side="right"
-          class="size-full items-center gap-2.5 px-3"
+          class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
+          :class="railRowInset"
         >
           <Settings :size="15" class="shrink-0" aria-hidden="true" />
           <Transition v-bind="labelTransition">
