@@ -547,3 +547,30 @@ describe('ChannelPicker - status card sized for every option', () => {
     expect(wrapper.find('.channel-picker-enriching').exists()).toBe(false)
   })
 })
+
+describe('ChannelPicker — footer toggle', () => {
+  const restartWhenIdle: DetailField = {
+    id: 'restartWhenIdle',
+    label: 'Restart when idle to install the latest',
+    value: false,
+    editable: true,
+    editType: 'boolean'
+  }
+
+  it('shows the toggle beside the footer actions and reports a change as a field update', async () => {
+    const wrapper = mountPicker({
+      ...field([{ value: 'stable', label: 'Stable', data: { updateAvailable: false } }]),
+      footerToggle: restartWhenIdle
+    })
+    const toggle = wrapper.find('[data-testid="channel-picker-footer-toggle"]')
+    expect(toggle.exists(), 'expected the toggle in the footer').toBe(true)
+    expect(toggle.text()).toBe('Restart when idle to install the latest')
+    await toggle.find('button, input, [role="checkbox"]').trigger('click')
+    expect(wrapper.emitted('update-field')).toEqual([[restartWhenIdle, true]])
+  })
+
+  it('shows no toggle when the field carries none', () => {
+    const wrapper = mountPicker(field([{ value: 'stable', label: 'Stable' }]))
+    expect(wrapper.find('[data-testid="channel-picker-footer-toggle"]').exists()).toBe(false)
+  })
+})

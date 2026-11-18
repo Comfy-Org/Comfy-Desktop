@@ -497,6 +497,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                 :section-actions="section.actions ?? []"
                 :running-action-ids="runningIdsSet"
                 @action="(a) => emit('run-action', a)"
+                @update-field="(f, v) => emit('update-field', f, v)"
               />
 
               <VersionStatPanel

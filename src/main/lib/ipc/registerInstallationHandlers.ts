@@ -54,6 +54,7 @@ import {
 } from './installationVisibility'
 import { answerCoreBetaArgs } from '../coreBetaPreview'
 import { startFirstBuildWithDesktop } from '../firstBuildAutoStart'
+import { editableFieldIds } from '../editableFields'
 
 function _kickReleaseCachePrewarm(allInstalls: InstallationRecord[]): void {
   void runStartupReleaseChecks(allInstalls, {
@@ -436,17 +437,7 @@ export function registerInstallationHandlers(): void {
       const source = sourceMap[inst.sourceId]
       if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
       const sections = source.getDetailSections(inst)
-      const allowedIds = new Set(['name', 'seen'])
-      for (const section of sections) {
-        const fields = (section as Record<string, unknown>).fields as
-          Record<string, unknown>[] | undefined
-        if (!fields) continue
-        for (const f of fields) {
-          if ((f as Record<string, unknown>).editable && (f as Record<string, unknown>).id) {
-            allowedIds.add((f as Record<string, unknown>).id as string)
-          }
-        }
-      }
+      const allowedIds = editableFieldIds(sections)
       if (inst.sourceId === installations.CLOUD_SOURCE_ID) {
         allowedIds.delete('name')
       }

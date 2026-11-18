@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
+import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
 import { ArrowUpCircle, CircleCheck, Loader2 } from '@lucide/vue'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
@@ -28,7 +29,10 @@ function isActionRunning(actionId: string): boolean {
 
 const emit = defineEmits<{
   action: [action: ActionDef]
+  'update-field': [field: DetailField, value: boolean]
 }>()
+
+const footerToggle = computed(() => props.field.footerToggle ?? null)
 
 const { t, d } = useI18n()
 
@@ -340,7 +344,8 @@ const showFooterActions = computed(
   () =>
     promotedPrimaryActions.value.length > 0 ||
     otherSecondaryActions.value.length > 0 ||
-    showCheckUpdateInFooter.value
+    showCheckUpdateInFooter.value ||
+    footerToggle.value != null
 )
 
 const footerActions = computed<
@@ -624,6 +629,19 @@ function actionClass(
         v-if="showFooterActions"
         class="channel-picker-actions mt-1 flex flex-wrap items-center justify-end gap-2"
       >
+        <label
+          v-if="footerToggle"
+          class="channel-picker-footer-toggle mr-auto inline-flex cursor-pointer select-none items-center gap-2 text-[12px] leading-4 text-text-muted"
+          :title="footerToggle.tooltip"
+          :data-testid="TID.channelPickerFooterToggle"
+        >
+          <Checkbox
+            :model-value="footerToggle.value === true"
+            class="shrink-0"
+            @update:model-value="emit('update-field', footerToggle, $event === true)"
+          />
+          <span>{{ footerToggle.label }}</span>
+        </label>
         <Button
           v-for="{ action, variant } in footerActions"
           :key="action.id"

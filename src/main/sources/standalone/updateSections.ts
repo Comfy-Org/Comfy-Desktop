@@ -80,6 +80,13 @@ export function getStatusTag(installation: InstallationRecord): StatusTag | unde
   return undefined
 }
 
+export function idleUpdateChannel(installation: InstallationRecord): string | null {
+  if (installation.restartWhenIdle !== true || installation.status !== 'installed') return null
+  const channel = getEffectiveChannel(installation)
+  const info = releaseCache.getEffectiveInfo(COMFYUI_REPO, channel, installation)
+  return info && releaseCache.isUpdateAvailable(installation, channel, info) ? channel : null
+}
+
 function torchSeriesGroup(torch: string | null | undefined): {
   id: string
   label: string
@@ -510,7 +517,19 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       refreshSection: true,
       editType: 'channel-cards',
       options: channelOptions,
-      tooltip: t('tooltips.updateChannel')
+      tooltip: t('tooltips.updateChannel'),
+      ...(hasGit
+        ? {
+            footerToggle: {
+              id: 'restartWhenIdle',
+              label: t('standalone.restartWhenIdle'),
+              value: installation.restartWhenIdle === true,
+              editable: true,
+              editType: 'boolean',
+              tooltip: t('tooltips.restartWhenIdle')
+            }
+          }
+        : {})
     }
   ]
   const updateActions: Record<string, unknown>[] = [

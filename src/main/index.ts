@@ -40,7 +40,8 @@ import { openSystemModal, openSystemModalAsync, registerSystemModalIpc } from '.
 import {
   registerTitlePopupIpc,
   triggerPickerSnapshotBroadcast,
-  type InstancePickerInstall
+  type InstancePickerInstall,
+  type TitlePopupHostBindings
 } from './popups/titlePopup'
 import { registerPickerSettingsIpc } from './popups/pickerSettingsHandlers'
 import { waitForPort, COMFY_BOOT_TIMEOUT_MS } from './lib/process'
@@ -186,6 +187,8 @@ import {
   returnToDashboard
 } from './host/detach'
 import { closeBuildWindow } from './host/closeBuildWindow'
+import { editableFieldIds } from './lib/editableFields'
+import { startIdleUpdates } from './lib/idleUpdateHost'
 import {
   destroyPanelView,
   ensurePanelView,
@@ -1113,6 +1116,222 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       }
     })
 
+    const runBackgroundOp: TitlePopupHostBindings['pickerRunBackgroundOp'] = ({
+      installationId,
+      actionId,
+      actionData,
+      title,
+      cancellable
+    }) => {
+      void (async () => {
+        const inst = await getInstallation(installationId)
+        if (!inst) {
+          _activeOperationStatus.set(installationId, {
+            status: '',
+            percent: -1,
+            done: true,
+            ok: false,
+            error: 'Installation not found.',
+            cancellable,
+            title,
+            actionId,
+            actionData
+          })
+          triggerPickerSnapshotBroadcast()
+          return
+        }
+
+        if (_operationAborts.has(installationId)) {
+          const activeOperation = _activeOperationStatus.get(installationId)
+          if (activeOperation && !activeOperation.done) return
+
+          _activeOperationStatus.set(installationId, {
+            status: '',
+            percent: -1,
+            done: true,
+            ok: false,
+            error: 'Another operation is already running.',
+            cancellable,
+            title,
+            actionId,
+            actionData
+          })
+          triggerPickerSnapshotBroadcast()
+          return
+        }
+
+        const opStartMs = Date.now()
+        mainTelemetry.capture('comfy.desktop.action.invoked', {
+          action_id: actionId,
+          installation_id: installationId,
+          source: 'picker'
+        })
+        const emitPickerOpResult = (
+          opResult: 'success' | 'failed' | 'cancelled_user',
+          errorMessage?: string | null
+        ): void => {
+          mainTelemetry.emit('comfy.desktop.op.result', {
+            installation_id: installationId,
+            action_id: actionId,
+            source: 'picker',
+            result: opResult,
+            duration_ms: Date.now() - opStartMs,
+            ...(opResult === 'failed' && errorMessage
+              ? { error_bucket: mainTelemetry.bucketError(errorMessage) }
+              : {})
+          })
+        }
+
+        const wasRunning = _runningSessions.has(installationId)
+        if (REQUIRES_STOPPED.has(actionId) && wasRunning) {
+          _activeOperationStatus.set(installationId, {
+            status: 'Stopping…',
+            percent: -1,
+            done: false,
+            ok: null,
+            error: null,
+            cancellable,
+            title,
+            actionId,
+            actionData
+          })
+          triggerPickerSnapshotBroadcast()
+          try {
+            await stopRunning(installationId)
+          } catch (err) {
+            _activeOperationStatus.set(installationId, {
+              status: '',
+              percent: -1,
+              done: true,
+              ok: false,
+              error: (err as Error).message ?? 'Stop failed.',
+              cancellable,
+              title,
+              actionId,
+              actionData
+            })
+            triggerPickerSnapshotBroadcast()
+            emitPickerOpResult('failed', (err as Error).message ?? 'Stop failed.')
+            return
+          }
+        }
+
+        _activeOperationStatus.set(installationId, {
+          status: '',
+          percent: -1,
+          done: false,
+          ok: null,
+          error: null,
+          cancellable,
+          title,
+          actionId,
+          actionData
+        })
+        triggerPickerSnapshotBroadcast()
+
+        const feedStatus = (channel: string, payload: Record<string, unknown>): void => {
+          if (channel !== 'install-progress') return
+          const cur = _activeOperationStatus.get(installationId)
+          if (!cur || cur.done) return
+          const status =
+            typeof payload.status === 'string'
+              ? payload.status
+              : typeof payload.phase === 'string'
+                ? payload.phase
+                : cur.status
+          const percent = typeof payload.percent === 'number' ? payload.percent : cur.percent
+          const speedBytesPerSec =
+            typeof payload.speedBytesPerSec === 'number'
+              ? payload.speedBytesPerSec
+              : cur.speedBytesPerSec
+          _activeOperationStatus.set(installationId, {
+            ...cur,
+            status,
+            percent,
+            speedBytesPerSec
+          })
+          triggerPickerSnapshotBroadcast()
+        }
+        const stubSender = {
+          isDestroyed: () => false,
+          send: feedStatus as unknown as Electron.WebContents['send']
+        } as unknown as Electron.WebContents
+        const stubEvent = { sender: stubSender } as unknown as Electron.IpcMainInvokeEvent
+
+        let result: PickerOperationStatus
+        try {
+          const actionResult = await dispatchSessionAction(
+            { event: stubEvent, installationId, inst, actionData },
+            actionId
+          )
+          const wantsRelaunch = wasRunning && IN_PLACE_RELAUNCH.has(actionId)
+          let relaunchFailure: string | null = null
+          if (actionResult.ok && wantsRelaunch) {
+            const freshInst = (await getInstallation(installationId)) ?? inst
+            const relaunch = await handleLaunch({
+              event: stubEvent,
+              installationId,
+              inst: freshInst,
+              actionData: undefined
+            })
+            if (!relaunch.ok && !relaunch.cancelled) {
+              relaunchFailure = relaunch.message ?? i18n.t('progress.unknownError')
+            }
+          }
+          const wasCancelled = actionResult.cancelled === true
+          result = {
+            status: '',
+            percent: wasCancelled ? -1 : 100,
+            done: true,
+            ok: !wasCancelled && actionResult.ok !== false && relaunchFailure === null,
+            error: wasCancelled
+              ? MSG_CANCELLED
+              : actionResult.ok === false
+                ? (actionResult.message ?? 'Failed.')
+                : relaunchFailure,
+            cancellable,
+            title,
+            actionId,
+            actionData
+          }
+          if (wasCancelled) {
+            emitPickerOpResult('cancelled_user')
+          } else if (actionResult.ok !== false) {
+            emitPickerOpResult('success')
+          } else {
+            emitPickerOpResult('failed', actionResult.message ?? 'Failed.')
+          }
+        } catch (err) {
+          const abort = _operationAborts.get(installationId)
+          result = {
+            status: '',
+            percent: -1,
+            done: true,
+            ok: false,
+            error: abort?.signal.aborted ? MSG_CANCELLED : ((err as Error).message ?? 'Failed.'),
+            cancellable,
+            title,
+            actionId,
+            actionData
+          }
+          if (abort?.signal.aborted) {
+            emitPickerOpResult('cancelled_user')
+          } else {
+            emitPickerOpResult('failed', (err as Error).message ?? 'Failed.')
+          }
+        }
+        _activeOperationStatus.set(installationId, result)
+        triggerPickerSnapshotBroadcast()
+        setTimeout(() => {
+          const cur = _activeOperationStatus.get(installationId)
+          if (cur?.done && cur.ok) {
+            _activeOperationStatus.delete(installationId)
+            triggerPickerSnapshotBroadcast()
+          }
+        }, 15_000)
+      })()
+    }
+
     registerTitlePopupIpc({
       openChooserHostWindow,
       returnToDashboard,
@@ -1125,215 +1344,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       sendToPanelDeferred,
       ensurePanelViewForEntry: (entry) =>
         entry.panelView ?? ensurePanelView(entry.windowKey, entry, computeBodyMode(entry)),
-      pickerRunBackgroundOp: ({ installationId, actionId, actionData, title, cancellable }) => {
-        void (async () => {
-          const inst = await getInstallation(installationId)
-          if (!inst) {
-            _activeOperationStatus.set(installationId, {
-              status: '',
-              percent: -1,
-              done: true,
-              ok: false,
-              error: 'Installation not found.',
-              cancellable,
-              title,
-              actionId,
-              actionData
-            })
-            triggerPickerSnapshotBroadcast()
-            return
-          }
-
-          if (_operationAborts.has(installationId)) {
-            const activeOperation = _activeOperationStatus.get(installationId)
-            if (activeOperation && !activeOperation.done) return
-
-            _activeOperationStatus.set(installationId, {
-              status: '',
-              percent: -1,
-              done: true,
-              ok: false,
-              error: 'Another operation is already running.',
-              cancellable,
-              title,
-              actionId,
-              actionData
-            })
-            triggerPickerSnapshotBroadcast()
-            return
-          }
-
-          const opStartMs = Date.now()
-          mainTelemetry.capture('comfy.desktop.action.invoked', {
-            action_id: actionId,
-            installation_id: installationId,
-            source: 'picker'
-          })
-          const emitPickerOpResult = (
-            opResult: 'success' | 'failed' | 'cancelled_user',
-            errorMessage?: string | null
-          ): void => {
-            mainTelemetry.emit('comfy.desktop.op.result', {
-              installation_id: installationId,
-              action_id: actionId,
-              source: 'picker',
-              result: opResult,
-              duration_ms: Date.now() - opStartMs,
-              ...(opResult === 'failed' && errorMessage
-                ? { error_bucket: mainTelemetry.bucketError(errorMessage) }
-                : {})
-            })
-          }
-
-          const wasRunning = _runningSessions.has(installationId)
-          if (REQUIRES_STOPPED.has(actionId) && wasRunning) {
-            _activeOperationStatus.set(installationId, {
-              status: 'Stopping…',
-              percent: -1,
-              done: false,
-              ok: null,
-              error: null,
-              cancellable,
-              title,
-              actionId,
-              actionData
-            })
-            triggerPickerSnapshotBroadcast()
-            try {
-              await stopRunning(installationId)
-            } catch (err) {
-              _activeOperationStatus.set(installationId, {
-                status: '',
-                percent: -1,
-                done: true,
-                ok: false,
-                error: (err as Error).message ?? 'Stop failed.',
-                cancellable,
-                title,
-                actionId,
-                actionData
-              })
-              triggerPickerSnapshotBroadcast()
-              emitPickerOpResult('failed', (err as Error).message ?? 'Stop failed.')
-              return
-            }
-          }
-
-          _activeOperationStatus.set(installationId, {
-            status: '',
-            percent: -1,
-            done: false,
-            ok: null,
-            error: null,
-            cancellable,
-            title,
-            actionId,
-            actionData
-          })
-          triggerPickerSnapshotBroadcast()
-
-          const feedStatus = (channel: string, payload: Record<string, unknown>): void => {
-            if (channel !== 'install-progress') return
-            const cur = _activeOperationStatus.get(installationId)
-            if (!cur || cur.done) return
-            const status =
-              typeof payload.status === 'string'
-                ? payload.status
-                : typeof payload.phase === 'string'
-                  ? payload.phase
-                  : cur.status
-            const percent = typeof payload.percent === 'number' ? payload.percent : cur.percent
-            const speedBytesPerSec =
-              typeof payload.speedBytesPerSec === 'number'
-                ? payload.speedBytesPerSec
-                : cur.speedBytesPerSec
-            _activeOperationStatus.set(installationId, {
-              ...cur,
-              status,
-              percent,
-              speedBytesPerSec
-            })
-            triggerPickerSnapshotBroadcast()
-          }
-          const stubSender = {
-            isDestroyed: () => false,
-            send: feedStatus as unknown as Electron.WebContents['send']
-          } as unknown as Electron.WebContents
-          const stubEvent = { sender: stubSender } as unknown as Electron.IpcMainInvokeEvent
-
-          let result: PickerOperationStatus
-          try {
-            const actionResult = await dispatchSessionAction(
-              { event: stubEvent, installationId, inst, actionData },
-              actionId
-            )
-            const wantsRelaunch = wasRunning && IN_PLACE_RELAUNCH.has(actionId)
-            let relaunchFailure: string | null = null
-            if (actionResult.ok && wantsRelaunch) {
-              const freshInst = (await getInstallation(installationId)) ?? inst
-              const relaunch = await handleLaunch({
-                event: stubEvent,
-                installationId,
-                inst: freshInst,
-                actionData: undefined
-              })
-              if (!relaunch.ok && !relaunch.cancelled) {
-                relaunchFailure = relaunch.message ?? i18n.t('progress.unknownError')
-              }
-            }
-            const wasCancelled = actionResult.cancelled === true
-            result = {
-              status: '',
-              percent: wasCancelled ? -1 : 100,
-              done: true,
-              ok: !wasCancelled && actionResult.ok !== false && relaunchFailure === null,
-              error: wasCancelled
-                ? MSG_CANCELLED
-                : actionResult.ok === false
-                  ? (actionResult.message ?? 'Failed.')
-                  : relaunchFailure,
-              cancellable,
-              title,
-              actionId,
-              actionData
-            }
-            if (wasCancelled) {
-              emitPickerOpResult('cancelled_user')
-            } else if (actionResult.ok !== false) {
-              emitPickerOpResult('success')
-            } else {
-              emitPickerOpResult('failed', actionResult.message ?? 'Failed.')
-            }
-          } catch (err) {
-            const abort = _operationAborts.get(installationId)
-            result = {
-              status: '',
-              percent: -1,
-              done: true,
-              ok: false,
-              error: abort?.signal.aborted ? MSG_CANCELLED : ((err as Error).message ?? 'Failed.'),
-              cancellable,
-              title,
-              actionId,
-              actionData
-            }
-            if (abort?.signal.aborted) {
-              emitPickerOpResult('cancelled_user')
-            } else {
-              emitPickerOpResult('failed', (err as Error).message ?? 'Failed.')
-            }
-          }
-          _activeOperationStatus.set(installationId, result)
-          triggerPickerSnapshotBroadcast()
-          setTimeout(() => {
-            const cur = _activeOperationStatus.get(installationId)
-            if (cur?.done && cur.ok) {
-              _activeOperationStatus.delete(installationId)
-              triggerPickerSnapshotBroadcast()
-            }
-          }, 15_000)
-        })()
-      },
+      pickerRunBackgroundOp: runBackgroundOp,
       broadcastPickerSnapshot: () => triggerPickerSnapshotBroadcast(),
       getInstancePickerInstalls: async () => {
         const all = await listInstallations()
@@ -1368,16 +1379,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         if (!inst) return { ok: false, message: 'Installation not found.' }
         const source = sourceMap[inst.sourceId]
         if (!source) return { ok: false, message: 'Unknown source.' }
-        const sections = source.getDetailSections(inst) as Record<string, unknown>[]
-        const allowed = new Set<string>(['name', 'seen'])
-        for (const section of sections) {
-          const fields = section.fields as Record<string, unknown>[] | undefined
-          if (!fields) continue
-          for (const f of fields) {
-            if (f.editable && typeof f.id === 'string') allowed.add(f.id)
-          }
-        }
-        if (!allowed.has(fieldId)) {
+        if (!editableFieldIds(source.getDetailSections(inst)).has(fieldId)) {
           return { ok: false, message: `Field '${fieldId}' is not editable.` }
         }
         try {
@@ -1477,6 +1479,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         })
       }
     })
+    startIdleUpdates(runBackgroundOp)
     registerPickerSettingsIpc({ quitForRelaunch: quitApp })
     registerDownloadHandlers()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
