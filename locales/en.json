@@ -78,12 +78,6 @@
     },
     "cloud": "Comfy Cloud",
     "sharedFolder": "Shared folder",
-    "sharedFolderHint": "Shared by your builds",
-    "buildStatus": "{where} · {state}",
-    "buildWhere": {
-      "local": "Own folder",
-      "cloud": "Cloud"
-    },
     "buildState": {
       "running": "Running",
       "starting": "Starting",
@@ -117,6 +111,7 @@
     "loadFailed": "Couldn't load assets",
     "download": "Download",
     "downloadFailed": "Couldn't download asset",
+    "openFolderFailed": "Couldn't open folder",
     "moreActions": "More actions",
     "showInFinder": "Show in Finder",
     "showInExplorer": "Show in File Explorer",

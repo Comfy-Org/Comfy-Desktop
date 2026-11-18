@@ -13,11 +13,11 @@ import {
   Ellipsis,
   File,
   Folder,
-  FolderOpen,
   LayoutGrid,
   LayoutDashboard,
   Music,
   RefreshCw,
+  ScanSearch,
   Search,
   Play,
   Trash2
@@ -286,7 +286,9 @@ function folderPathOf({ build, computer }: AssetBuild): string | null {
   return (computer ? folders.shared : folders.ofBuild[build.id]) ?? null
 }
 
-function shortPath(folder: string): string {
+const SHORT_PATH_LENGTH = 34
+
+function homePath(folder: string): string {
   const home = outputFolders.value?.home
   if (!home) return folder
   const rest = folder.slice(home.length)
@@ -295,20 +297,34 @@ function shortPath(folder: string): string {
     : folder
 }
 
-function placeSubtitle(option: AssetBuild): string {
+function shortPath(folder: string): string {
+  const shown = homePath(folder)
+  if (shown.length <= SHORT_PATH_LENGTH) return shown
+  const separator = shown.includes('\\') && !shown.includes('/') ? '\\' : '/'
+  const parts = shown.split(separator)
+  return parts.length > 3
+    ? [parts[0], '…', ...parts.slice(-2)].join(separator)
+    : `…${shown.slice(-SHORT_PATH_LENGTH)}`
+}
+
+function placeSubtitle(option: AssetBuild): string | null {
+  if (option.cloud) return t(`assets.buildState.${option.state}`)
   const folder = folderPathOf(option)
-  if (folder) return shortPath(folder)
-  if (option.computer) return t('assets.sharedFolderHint')
-  return t('assets.buildStatus', {
-    where: t(option.cloud ? 'assets.buildWhere.cloud' : 'assets.buildWhere.local'),
-    state: t(`assets.buildState.${option.state}`)
-  })
+  return folder ? shortPath(folder) : null
 }
 
 const revealFolderLabel = computed(() => t(revealInFolderKey(window.api.platform)))
 
-function openPlaceFolder(option: AssetBuild): void {
-  void window.api.openOutputFolder(option.computer ? undefined : option.build.id)
+async function openPlaceFolder(option: AssetBuild): Promise<void> {
+  const opened = await window.api
+    .openOutputFolder(option.computer ? undefined : option.build.id)
+    .catch(() => false)
+  if (!opened) {
+    await modal.alert({
+      title: t('assets.openFolderFailed'),
+      message: folderPathOf(option) ?? option.build.name
+    })
+  }
 }
 
 const kinds: KindFilter[] = ['all', 'image', 'video', '3d', 'audio']
@@ -877,7 +893,7 @@ const assetMenuItems = computed<ContextMenuItem[]>(() => {
   return [
     { id: 'download', label: t('assets.download'), icon: Download },
     ...(isLocal(asset)
-      ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: FolderOpen }]
+      ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: ScanSearch }]
       : []),
     ...(asset.kind === 'image' && asset.previewUrl
       ? [{ id: 'copy', label: t('assets.copy'), icon: Copy }]
@@ -1026,13 +1042,17 @@ function extensionOf(name: string): string {
               <div
                 v-for="option in group.options"
                 :key="option.build.id"
-                class="flex items-center gap-1"
+                class="group/place relative"
               >
                 <MenuRadioItem
                   as="button"
                   type="button"
                   :value="option.build.id"
-                  class="min-h-0 min-w-0 flex-1 gap-2.5 rounded-lg px-2.5 py-2 data-highlighted:bg-[rgb(255_255_255/0.06)] data-[state=checked]:bg-[rgb(255_255_255/0.06)]"
+                  class="min-h-0 w-full gap-2.5 rounded-lg px-2.5 py-2 data-highlighted:bg-accent data-[state=checked]:bg-muted"
+                  :class="
+                    !option.cloud &&
+                    'pr-15 group-hover/place:bg-accent [&>svg:last-child]:absolute [&>svg:last-child]:right-2.5'
+                  "
                   :data-testid="`assets-build-${option.build.id}`"
                   @select="choosePlace(option.build.id)"
                 >
@@ -1047,7 +1067,6 @@ function extensionOf(name: string): string {
                     }}</span>
                     <span
                       class="flex h-4 min-w-0 items-center gap-1.5 text-[12px]/[16.2px] text-subtle-foreground"
-                      :title="folderPathOf(option) ?? undefined"
                       :data-testid="`assets-place-subtitle-${option.build.id}`"
                     >
                       <span
@@ -1056,7 +1075,19 @@ function extensionOf(name: string): string {
                         :class="option.state === 'running' ? 'bg-success' : 'bg-subtle-foreground'"
                         aria-hidden="true"
                       />
-                      <span class="truncate">{{ placeSubtitle(option) }}</span>
+                      <Skeleton
+                        v-if="placeSubtitle(option) === null"
+                        class="h-3 w-36 rounded-sm"
+                        :data-testid="`assets-place-subtitle-loading-${option.build.id}`"
+                      />
+                      <Tooltip
+                        v-else-if="!option.cloud"
+                        :text="folderPathOf(option) ?? ''"
+                        class="min-w-0"
+                      >
+                        <span class="truncate">{{ placeSubtitle(option) }}</span>
+                      </Tooltip>
+                      <span v-else class="truncate">{{ placeSubtitle(option) }}</span>
                     </span>
                   </span>
                   <Check
@@ -1066,15 +1097,19 @@ function extensionOf(name: string): string {
                     aria-hidden="true"
                   />
                 </MenuRadioItem>
-                <Tooltip v-if="folderPathOf(option)" :text="revealFolderLabel">
+                <Tooltip
+                  v-if="!option.cloud"
+                  :text="revealFolderLabel"
+                  class="absolute top-1/2 right-7.5 -translate-y-1/2"
+                >
                   <button
                     type="button"
-                    class="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-[rgb(255_255_255/0.06)] hover:text-foreground focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
+                    class="flex size-6.5 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
                     :aria-label="`${revealFolderLabel}: ${option.build.name}`"
                     :data-testid="`assets-place-reveal-${option.build.id}`"
                     @click="openPlaceFolder(option)"
                   >
-                    <FolderOpen :size="15" aria-hidden="true" />
+                    <ScanSearch :size="15" aria-hidden="true" />
                   </button>
                 </Tooltip>
               </div>

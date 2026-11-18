@@ -236,6 +236,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
   listLocalAssets.mockResolvedValue([])
+  openOutputFolder.mockResolvedValue(true)
   listWorkspaces.mockResolvedValue([
     { id: 'me', name: 'Personal Workspace', type: 'personal' },
     { id: 'team-b', name: 'Team B', type: 'team' }
@@ -264,7 +265,7 @@ beforeEach(() => {
     listOutputFolders: async () => ({
       home: '/Users/me',
       shared: '/Users/me/ComfyUI/output',
-      ofBuild: { lab: '/Volumes/Work/Video Lab/output' }
+      ofBuild: { lab: '/Volumes/Work/Video Lab/output', mine: '/Users/me/My Local 1/output' }
     }),
     copyAsset,
     readAssetModel,
@@ -528,8 +529,8 @@ describe('AssetsView', () => {
       'Cloud and this computer are grouped apart'
     ).toEqual(['Comfy Cloud', 'This computer'])
     expect(buildRows(), 'no Shared folder when no build saves there').toEqual([
-      'Comfy Cloud Cloud · Running',
-      'My Local 1 Own folder · Stopped',
+      'Comfy Cloud Running',
+      'My Local 1 ~/My Local 1/output',
       'Video Lab /Volumes/Work/Video Lab/output'
     ])
 
@@ -566,7 +567,7 @@ describe('AssetsView', () => {
 
     await openBuildPicker(wrapper)
 
-    expect(buildRows()).toEqual(['Comfy Cloud Cloud · Running', 'My Local 1 Own folder · Stopped'])
+    expect(buildRows()).toEqual(['Comfy Cloud Running', 'My Local 1 ~/My Local 1/output'])
   })
 
   it('opens on a build it can list, not on a running build that keeps its files to itself', async () => {
@@ -692,9 +693,25 @@ describe('AssetsView', () => {
 
     expect(openOutputFolder.mock.calls).toEqual([[undefined], ['lab']])
     expect(
-      document.querySelector('[data-testid="assets-place-subtitle-lab"]')?.getAttribute('title'),
-      'the full path shows on hover'
-    ).toBe('/Volumes/Work/Video Lab/output')
+      wrapper
+        .findAllComponents(Tooltip)
+        .some((tip) => tip.props('text') === '/Volumes/Work/Video Lab/output'),
+      'the full path shows in a tooltip'
+    ).toBe(true)
+  })
+
+  it('says when a folder does not open', async () => {
+    openOutputFolder.mockResolvedValue(false)
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    await openBuildPicker(wrapper)
+
+    document.querySelector<HTMLElement>('[data-testid="assets-place-reveal-lab"]')!.click()
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't open folder",
+      message: '/Volumes/Work/Video Lab/output'
+    })
   })
 
   it('lists Shared folder after Comfy Cloud when a build saves there, and opens on it', async () => {
@@ -710,7 +727,7 @@ describe('AssetsView', () => {
     expect(assetNames(wrapper)).toEqual(['forest.png'])
     await openBuildPicker(wrapper)
     expect(buildRows()).toEqual([
-      'Comfy Cloud Cloud · Running',
+      'Comfy Cloud Running',
       'Shared folder ~/ComfyUI/output',
       'Video Lab /Volumes/Work/Video Lab/output'
     ])
