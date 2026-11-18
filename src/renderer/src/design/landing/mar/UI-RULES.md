@@ -19,6 +19,13 @@ DS's Motion page (`ds/motion.ts`).
   area, never flush to the window.
 - **Text blocks go in a box.** Free text (a prompt, a note) sits in a
   surface with padding and radius, never loose on a panel.
+- **One card size.** A card (`rounded-[14px] bg-card`) has 18px on the
+  sides, 16px top and bottom, and sits 10px from the next card, like the
+  build Overview cards. A list of folders is one card per row; the ⋯ glyph
+  lands 18px from the right edge.
+- **Add sits outside the cards.** An Add button for a list (Add models
+  folder, Add Variable) goes below the last card, on the page, aligned
+  with the cards' left edge.
 - **Glass only over pictures.** Badges, chips and scrims over imagery use
   the light dark glass (`rgb(14 14 16 / 0.28)`, `blur(14px) saturate(1.5)`).
 
