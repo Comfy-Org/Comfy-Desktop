@@ -7,7 +7,7 @@ const STRONG_MATCH = 0.85
 
 export type MatchLevel = 'strong' | 'good' | 'weak'
 
-export type BadgeTone = 'partner' | 'best' | MatchLevel
+export type BadgeTone = 'partner' | 'best' | 'download' | MatchLevel
 
 export interface SearchRow {
   key: string
@@ -64,6 +64,19 @@ export function verticalNeighbour(boxes: CardBox[], active: number, step: 1 | -1
   return nearest
 }
 
+function familiesTogether(run: SearchRow[], download: SearchRow[]): SearchRow[] {
+  const rest = [...download]
+  const rows: SearchRow[] = []
+  for (const row of run) {
+    rows.push(row)
+    const family = row.candidate.family
+    const sameFamily = rest.filter((other) => family !== null && other.candidate.family === family)
+    rows.push(...sameFamily)
+    for (const other of sameFamily) rest.splice(rest.indexOf(other), 1)
+  }
+  return [...rows, ...rest]
+}
+
 export function searchRows(result: TemplateSearchResult): SearchRow[] {
   if (result.outcome === 'bad_input') return []
   const run = rowsOf('run', result.run)
@@ -71,5 +84,7 @@ export function searchRows(result: TemplateSearchResult): SearchRow[] {
   const lead =
     result.outcome === 'template' ? run[0] : result.outcome === 'download' ? download[0] : null
   if (lead) lead.best = true
-  return [...run, ...download, ...rowsOf('also', result.alsoTry)]
+  const main = familiesTogether(run, download)
+  const bestFirst = lead ? [lead, ...main.filter((row) => row !== lead)] : main
+  return [...bestFirst, ...rowsOf('also', result.alsoTry)]
 }
