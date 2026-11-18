@@ -215,7 +215,7 @@ defineExpose({ verticalTarget, revealActive })
     @mousedown.prevent
     @keydown.esc="emit('refocus')"
   >
-    <div ref="heading" class="mb-2.5 flex h-6 items-center justify-between gap-3">
+    <div ref="heading" class="mb-2.5 flex min-h-6 items-center justify-between gap-3">
       <h2 class="m-0 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase">
         {{ resultsTitle }}
       </h2>
