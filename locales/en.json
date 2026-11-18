@@ -1418,7 +1418,7 @@
     "snapshotNoFile": "No snapshot file specified."
   },
   "snapshots": {
-    "empty": "No snapshots yet. Snapshots are captured automatically when ComfyUI starts.",
+    "emptyBody": "Snapshots are captured automatically when ComfyUI starts.",
     "createSnapshot": "Create Snapshot",
     "changesInSnapshot": "What changed in this snapshot",
     "ifYouRestore": "What restoring this would change",

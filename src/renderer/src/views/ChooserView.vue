@@ -354,10 +354,10 @@ const gridHandlers = {
         class="chooser-empty flex flex-col items-center gap-3 px-6 py-16 text-center"
       >
         <div class="flex flex-col gap-1.5">
-          <h2 class="m-0 text-[16px]/6 font-semibold text-foreground">
+          <h2 class="m-0 text-heading font-semibold text-foreground">
             {{ t('chooser.nothingMatches') }}
           </h2>
-          <p class="m-0 text-[13px]/5 text-muted-foreground">
+          <p class="m-0 text-ui text-muted-foreground">
             {{ t('chooser.nothingMatchesHint') }}
           </p>
         </div>

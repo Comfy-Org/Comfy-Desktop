@@ -5,7 +5,6 @@ import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupIte
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  ArrowDownToLine,
   Ban,
   CheckCircle2,
   CircleAlert,
@@ -204,19 +203,14 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
         </ToggleGroup>
         <div
           v-if="filtered.length === 0"
-          class="dlm-empty flex flex-auto flex-col items-center justify-center gap-2 p-6 text-center"
+          class="dlm-empty flex flex-auto flex-col items-center justify-center gap-1.5 p-6 text-center"
         >
-          <div
-            class="dlm-empty-icon mb-1 flex size-14 items-center justify-center rounded-2xl bg-[color-mix(in_oklab,var(--neutral-100)_5%,transparent)] text-text-muted"
-          >
-            <ArrowDownToLine :size="28" />
-          </div>
-          <span class="dlm-empty-title text-[14px] font-semibold text-neutral-100">{{
-            t('downloadsTab.empty')
-          }}</span>
-          <span class="dlm-empty-hint text-[13px] text-text-muted">{{
-            t('downloadsTab.emptyHint')
-          }}</span>
+          <h2 class="dlm-empty-title m-0 text-heading font-semibold text-foreground">
+            {{ t('downloadsTab.empty') }}
+          </h2>
+          <p class="dlm-empty-hint m-0 text-ui text-muted-foreground">
+            {{ t('downloadsTab.emptyHint') }}
+          </p>
         </div>
 
         <ul v-else :key="filter" class="dlm-list m-0 flex list-none flex-col gap-0.5 p-0">

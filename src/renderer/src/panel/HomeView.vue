@@ -209,11 +209,11 @@ onMounted(() => {
         </div>
         <div
           v-else-if="appsState === 'empty'"
-          class="flex h-75 flex-col items-center justify-center gap-1 text-center"
+          class="flex h-75 flex-col items-center justify-center gap-1.5 text-center"
           data-testid="home-apps-empty"
         >
-          <p class="m-0 text-[13px]/5 font-medium text-foreground">{{ t('apps.emptyTitle') }}</p>
-          <p class="m-0 text-[13px]/5 text-muted-foreground">{{ t('apps.emptyBody') }}</p>
+          <h2 class="m-0 text-heading font-semibold text-foreground">{{ t('apps.emptyTitle') }}</h2>
+          <p class="m-0 text-ui text-muted-foreground">{{ t('apps.emptyBody') }}</p>
         </div>
         <HomeCarousel
           v-else-if="state === 'ready'"

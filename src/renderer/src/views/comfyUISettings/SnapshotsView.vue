@@ -186,6 +186,10 @@ type TimelineItem =
   | { kind: 'snapshot'; snapshot: SnapshotSummary; snapshotIndex: number }
   | { kind: 'copy'; event: CopyEvent }
 
+const isEmpty = computed<boolean>(
+  () => !loading.value && !loadError.value && timeline.value.length === 0 && !showRestoreCard.value
+)
+
 const timeline = computed<TimelineItem[]>(() => {
   const out: TimelineItem[] = []
   let si = 0
@@ -563,9 +567,6 @@ async function handleImport(): Promise<void> {
           {{ t('snapshots.latestLabel') }}
           {{ latestRelative }}
         </template>
-        <template v-else>
-          {{ t('snapshots.noneYet') }}
-        </template>
       </span>
       <div class="snapshots-view-toolbar inline-flex flex-wrap items-center gap-2">
         <Button
@@ -609,7 +610,10 @@ async function handleImport(): Promise<void> {
       </div>
     </header>
 
-    <div class="snapshots-panel flex flex-col rounded-[14px] bg-card p-1.5">
+    <div
+      class="snapshots-panel flex flex-col"
+      :class="{ 'rounded-[14px] bg-card p-1.5': !isEmpty }"
+    >
       <div
         v-if="showRestoreCard"
         ref="topCardRef"
@@ -794,26 +798,13 @@ async function handleImport(): Promise<void> {
         </Button>
       </div>
       <div
-        v-else-if="timeline.length === 0 && !showRestoreCard"
-        class="snapshots-view-empty flex flex-col items-center gap-3 px-6 py-10 text-center"
+        v-else-if="isEmpty"
+        class="snapshots-view-empty flex flex-col items-center gap-1.5 px-6 py-16 text-center"
       >
-        <span
-          class="inline-flex size-10 items-center justify-center rounded-[10px] bg-[color-mix(in_oklch,var(--color-foreground)_6%,transparent)] text-text-muted"
-          aria-hidden="true"
-        >
-          <Camera :size="18" />
-        </span>
-        <p class="m-0 max-w-[340px] text-[13px] text-text-muted">{{ t('snapshots.empty') }}</p>
-        <Button
-          type="button"
-          variant="secondary"
-          size="md"
-          class="gap-1.5 px-3"
-          @click="handleSave"
-        >
-          <Camera :size="14" aria-hidden="true" />
-          <span>{{ t('snapshots.createSnapshot') }}</span>
-        </Button>
+        <h2 class="m-0 text-heading font-semibold text-foreground">
+          {{ t('snapshots.noneYet') }}
+        </h2>
+        <p class="m-0 text-ui text-muted-foreground">{{ t('snapshots.emptyBody') }}</p>
       </div>
 
       <ul

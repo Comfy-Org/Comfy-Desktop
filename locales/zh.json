@@ -1418,7 +1418,7 @@
     "snapshotNoFile": "未指定快照文件。"
   },
   "snapshots": {
-    "empty": "还没有快照。ComfyUI 启动时会自动捕获快照。",
+    "emptyBody": "ComfyUI 启动时会自动捕获快照。",
     "createSnapshot": "创建快照",
     "changesInSnapshot": "此快照中发生的更改",
     "ifYouRestore": "恢复此快照将改变的内容",
