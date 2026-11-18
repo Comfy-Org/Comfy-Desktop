@@ -33,6 +33,7 @@ import {
   dropAttachClaimsForWindow,
   dropInstallationIndex,
   findHostWindowByPanelSender,
+  findInstallationIdByHostSender,
   findPreferredHostByVisibility,
   getEntryByInstallationId,
   hostInstallEvents,
@@ -547,6 +548,28 @@ describe('findHostWindowByPanelSender', () => {
 
     expect(findHostWindowByPanelSender(panelSender as never)).toBe(owner.window)
     expect(findHostWindowByPanelSender({} as never)).toBeNull()
+  })
+})
+
+describe('findInstallationIdByHostSender', () => {
+  it('finds the build from its ComfyUI view, its title bar and its panel', () => {
+    const comfy = {}
+    const titleBar = {}
+    const panel = {}
+    const entry = makeEntry({ installationId: 'inst-A', titleBarWebContents: titleBar })
+    entry.comfyView = { webContents: comfy } as unknown as ComfyWindowEntry['comfyView']
+    entry.panelView = { webContents: panel } as unknown as ComfyWindowEntry['panelView']
+    registerHostEntry(entry)
+    for (const wc of [comfy, titleBar, panel]) {
+      expect(findInstallationIdByHostSender(wc as Electron.WebContents)).toBe('inst-A')
+    }
+  })
+
+  it('finds no build for a Desktop window that hosts none, or for an unknown sender', () => {
+    const chooserTitleBar = {}
+    registerHostEntry(makeEntry({ installationId: null, titleBarWebContents: chooserTitleBar }))
+    expect(findInstallationIdByHostSender(chooserTitleBar as Electron.WebContents)).toBeNull()
+    expect(findInstallationIdByHostSender({} as Electron.WebContents)).toBeNull()
   })
 })
 
