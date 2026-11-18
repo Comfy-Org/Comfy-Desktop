@@ -362,7 +362,7 @@ describe('parseDecision', () => {
 
   it('lists every card a model-name lookup sends, none of them scored, with no Also try, and names what it matched', () => {
     const weak = (item: object) => ({ ...item, score: 0.01, calibrated: 0.02, clears: false })
-    const further = Array.from({ length: 13 }, (_, i) => weak(pick(`far_${i}`, `far_${i}`)))
+    const further = Array.from({ length: 13 }, (_, i) => weak(pick(`far_${i}`, `fam_${i % 3}`)))
     const body = decision({
       outcome: { kind: 'template', reply: null, matched: ['qwen 2.1', 7, ' '] },
       split: {
@@ -433,6 +433,11 @@ describe('parseDecision', () => {
     )
     expect(noNames?.matched).toBeNull()
     expect(noNames?.run).toHaveLength(3)
+    expect(noNames?.alsoTry.map((c) => c.templateId)).toEqual([
+      'quilt_template',
+      'card_template',
+      'badge_template'
+    ])
     const none = parseDecision(
       decision({
         outcome: {

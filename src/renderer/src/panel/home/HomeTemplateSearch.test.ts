@@ -378,6 +378,7 @@ describe('HomeTemplateSearch results', () => {
       answer({
         outcome: 'download',
         matched: ['wan 2.2'],
+        reply: 'This needs Wan 2.2, which is not installed here.',
         run: [candidate('wan_installed', { score: null })],
         download: [candidate('wan_lead', { score: null, needsDownload: true })]
       })
@@ -386,6 +387,7 @@ describe('HomeTemplateSearch results', () => {
     await searchFor(wrapper, 'wan 2.2')
     expect(rowTitles(wrapper)).toEqual(['wan_lead title', 'wan_installed title'])
     expect(wrapper.find('[data-testid="home-template-search-best"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-template-search-reply"]').exists()).toBe(false)
   })
 
   it('lets the heading row grow with a long list of names instead of running into the cards', async () => {
@@ -400,7 +402,10 @@ describe('HomeTemplateSearch results', () => {
     page(wrapper).style.width = '400px'
     await searchFor(wrapper, 'qwen 2.1 kling')
     const heading = wrapper.get('h2').element.getBoundingClientRect()
+    const row = wrapper.get('h2').element.parentElement!.getBoundingClientRect()
     expect(heading.height, 'the names wrap').toBeGreaterThan(24)
+    expect(heading.top, 'the heading starts inside its row').toBeGreaterThanOrEqual(row.top - 0.5)
+    expect(heading.bottom, 'the heading ends inside its row').toBeLessThanOrEqual(row.bottom + 0.5)
     expect(
       wrapper.get('[role="option"]').element.getBoundingClientRect().top
     ).toBeGreaterThanOrEqual(heading.bottom)
