@@ -14,11 +14,17 @@ function app(id: string, title: string, covers: AppCover[] = []): AppCard {
   return { id, title, description: '', covers }
 }
 
+function picture(fill: string): string {
+  return `data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5"><rect width="8" height="5" fill="${fill}"/></svg>`
+  )}`
+}
+
 const GENJUTSU: AppCard = {
   id: 'genjutsu',
   title: 'Genjutsu',
   description: 'Put someone else in a short clip.',
-  covers: [{ url: 'https://comfy.org/catalog-media/genjutsu/cover', stillUrl: null }]
+  covers: [{ url: picture('purple'), stillUrl: null }]
 }
 const PRODUCT_ADS = app('product-ads', 'Product Ads')
 const HDR = app('sdr-to-hdr', 'SDR to HDR')
@@ -104,10 +110,7 @@ describe('Home apps', () => {
   })
 
   it('plays the covers of each app, the next one loading behind the one shown', async () => {
-    const covers = ['skate', 'dance', 'gown'].map((name) => ({
-      url: `https://comfy.org/catalog-media/genjutsu/${name}`,
-      stillUrl: null
-    }))
+    const covers = ['red', 'green', 'blue'].map((fill) => ({ url: picture(fill), stillUrl: null }))
     listApps.mockResolvedValue([{ ...GENJUTSU, covers }, PRODUCT_ADS])
     const wrapper = await openHome()
     const front = cardAt(wrapper, 0)

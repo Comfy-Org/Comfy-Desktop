@@ -163,6 +163,33 @@ describe('the apps Desktop lists', () => {
     ])
   })
 
+  it('leave out blank covers and stills instead of reading them as the apps page', async () => {
+    mockedFetchJSON.mockResolvedValue([
+      websiteApp({
+        covers: [{ cover: '' }, { cover: '  ', still: '/catalog-media/s/v1' }],
+        still: ' '
+      }),
+      websiteApp({ id: 'blank-still', covers: [{ cover: '/catalog-media/a/v1', still: '' }] })
+    ])
+
+    expect((await listApps()).map((app) => app.covers)).toEqual([
+      [{ url: 'https://comfy.org/catalog-media/cover-1/v2', stillUrl: null }],
+      [{ url: 'https://comfy.org/catalog-media/a/v1', stillUrl: null }]
+    ])
+  })
+
+  it('count the 24 covers after leaving out repeats', async () => {
+    const repeats = Array.from({ length: 24 }, () => ({ cover: '/catalog-media/a/v1' }))
+    mockedFetchJSON.mockResolvedValue([
+      websiteApp({ covers: [...repeats, { cover: '/catalog-media/b/v1' }] })
+    ])
+
+    expect((await listApps())[0]?.covers.map((cover) => cover.url)).toEqual([
+      'https://comfy.org/catalog-media/a/v1',
+      'https://comfy.org/catalog-media/b/v1'
+    ])
+  })
+
   it('leave out covers on another site and repeats, and stop at 24 covers', async () => {
     const many = Array.from({ length: 30 }, (_none, at) => ({ cover: `/catalog-media/c${at}/v1` }))
     mockedFetchJSON.mockResolvedValue([

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useTemplateRef } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 import {
   useDocumentVisibility,
   useElementVisibility,
@@ -35,27 +35,44 @@ const page = useDocumentVisibility()
 const motion = usePreferredReducedMotion()
 const still = computed(() => motion.value === 'reduce')
 
+const listKey = () => pictures.map((picture) => picture.url).join('\n')
+const playing = computed(() => !paused && !still.value && onScreen.value && page.value !== 'hidden')
+const generation = ref(0)
+
 const { shown, leaving, upcoming, loaded, allFailed, markLoaded, markFailed } = useCoverRotation({
   count: () => pictures.length,
-  key: () => pictures.map((picture) => picture.url).join('\n'),
-  playing: () => !paused && !still.value && onScreen.value && page.value !== 'hidden'
+  key: listKey,
+  playing: () => playing.value
 })
+
+watch(listKey, () => generation.value++)
+
+function stillIndex(): number | null {
+  const first = shown.value
+  if (first !== null && pictures[first]?.stillUrl) return first
+  const other = pictures.findIndex((picture) => picture.stillUrl)
+  return other >= 0 ? other : null
+}
 
 const layers = computed<Layer[]>(() => {
   const picked: Array<[number | null, Role]> = still.value
-    ? [[shown.value, 'shown']]
+    ? [[stillIndex(), 'shown']]
     : [
         [leaving.value, 'leaving'],
         [shown.value, 'shown'],
         [upcoming.value, 'upcoming']
       ]
+  const seen = new Set<number>()
   return picked
-    .filter(
-      (entry): entry is [number, Role] => entry[0] !== null && pictures[entry[0]] !== undefined
-    )
+    .filter((entry): entry is [number, Role] => {
+      const [index] = entry
+      if (index === null || pictures[index] === undefined || seen.has(index)) return false
+      seen.add(index)
+      return true
+    })
     .map(([index, role]) => {
       const picture = pictures[index]!
-      const src = still.value ? (picture.stillUrl ?? picture.url) : picture.url
+      const src = still.value ? picture.stillUrl! : picture.url
       return { index, src, role }
     })
     .sort((a, b) => a.index - b.index)
@@ -73,10 +90,15 @@ function onError(index: number): void {
 </script>
 
 <template>
-  <span ref="root" class="absolute inset-0 isolate block" data-testid="cover-rotation">
+  <span
+    ref="root"
+    class="absolute inset-0 isolate block"
+    data-testid="cover-rotation"
+    :data-playing="playing"
+  >
     <img
       v-for="layer in layers"
-      :key="`${still ? 'still' : 'cover'}:${layer.src}`"
+      :key="`${generation}:${still ? 'still' : 'cover'}:${layer.src}`"
       :src="layer.src"
       alt=""
       draggable="false"

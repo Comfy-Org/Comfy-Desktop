@@ -17,6 +17,7 @@ const SAVED_LIST_FILE = 'apps-catalog.json'
 const MAX_APPS = 200
 const MAX_TEXT_LENGTH = 4096
 const MAX_COVERS = 24
+const MAX_LISTED_COVERS = 200
 
 interface ListedApp {
   card: AppCard
@@ -48,6 +49,7 @@ export function appsListUrl(location: AppsLocation): string {
 }
 
 function coverUrlFor(cover: unknown, location: AppsLocation): string | null {
+  if (typeof cover !== 'string' || !cover.trim()) return null
   const url = resolved(cover, location.url)
   return url && url.origin === location.origin ? url.href : null
 }
@@ -59,9 +61,10 @@ function coverFor(entry: unknown, location: AppsLocation): AppCover | null {
 }
 
 function coversFor(record: JsonRecord, location: AppsLocation): AppCover[] {
-  const listed = Array.isArray(record.covers) ? record.covers.slice(0, MAX_COVERS) : []
+  const listed = Array.isArray(record.covers) ? record.covers.slice(0, MAX_LISTED_COVERS) : []
   const covers: AppCover[] = []
   for (const entry of listed) {
+    if (covers.length >= MAX_COVERS) break
     const cover = coverFor(entry, location)
     if (cover && !covers.some((kept) => kept.url === cover.url)) covers.push(cover)
   }
