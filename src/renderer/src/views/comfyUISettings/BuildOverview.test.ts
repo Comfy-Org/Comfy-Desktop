@@ -215,6 +215,24 @@ describe('BuildOverview — ComfyUI card', () => {
     expect(byTestId('build-overview-restart-when-idle')).toBeNull()
   })
 
+  it('says why Restart when idle did not save, beside the channel', () => {
+    const toggle: DetailField = {
+      id: 'restartWhenIdle',
+      label: 'Restart when idle to install the latest',
+      value: false,
+      editType: 'boolean'
+    }
+    const w = mountOverview({ model: model({ restartWhenIdle: toggle }) })
+    expect(w.find('[data-testid="build-overview-restart-when-idle-error"]').exists()).toBe(false)
+    const failed = mountOverview({
+      model: model({ restartWhenIdle: toggle }),
+      fieldErrorMessages: new Map([['restartWhenIdle', 'Saving timed out']])
+    })
+    const tag = failed.get('[data-testid="build-overview-restart-when-idle-error"]')
+    expect(tag.text()).toBe('Saving timed out')
+    expect(tag.attributes('role')).toBe('alert')
+  })
+
   it('lists each channel with what it means and switches to the picked one', async () => {
     const w = mountOverview({
       model: model({

@@ -35,43 +35,60 @@ export function createIdleUpdateWatcher(
 ): IdleUpdateWatcher {
   const quietMs = options.quietMs ?? IDLE_UPDATE_QUIET_MS
   const lastActivity = new Map<string, number>()
+  const updateRequested = new Set<string>()
   let lastInputAnywhere = deps.now()
   let ticking = false
   let appInstallRequested = false
 
+  function noteActivity(installationId: string, at: number): void {
+    lastActivity.set(installationId, at)
+    updateRequested.delete(installationId)
+    appInstallRequested = false
+  }
+
   function noteInput(installationId: string | null): void {
     const now = deps.now()
     lastInputAnywhere = now
-    if (installationId) lastActivity.set(installationId, now)
+    appInstallRequested = false
+    if (installationId) noteActivity(installationId, now)
   }
 
   async function sessionIsQuiet(session: IdleSession, now: number): Promise<boolean> {
     if (!queueIsEmpty(await deps.probeQueue(session.port))) {
-      lastActivity.set(session.installationId, now)
+      noteActivity(session.installationId, now)
     }
     const quietSince = Math.max(session.startedAt, lastActivity.get(session.installationId) ?? 0)
     return now - quietSince >= quietMs
   }
 
+  async function requestInstanceUpdate(session: IdleSession): Promise<boolean> {
+    const id = session.installationId
+    if (updateRequested.has(id)) return false
+    const activityBefore = lastActivity.get(id)
+    const channel = await deps.instanceUpdateChannel(id)
+    if (!channel || lastActivity.get(id) !== activityBefore) return false
+    updateRequested.add(id)
+    deps.updateInstance(id, channel)
+    return true
+  }
+
   async function tick(): Promise<void> {
-    if (ticking || appInstallRequested) return
+    if (ticking) return
     ticking = true
     try {
       const now = deps.now()
-      let everythingQuiet = now - lastInputAnywhere >= quietMs
+      let everythingQuiet = true
       for (const session of deps.runningSessions()) {
-        if (!(await sessionIsQuiet(session, now))) {
+        if (!(await sessionIsQuiet(session, now)) || (await requestInstanceUpdate(session))) {
           everythingQuiet = false
-          continue
-        }
-        const channel = await deps.instanceUpdateChannel(session.installationId)
-        if (channel) {
-          lastActivity.set(session.installationId, now)
-          everythingQuiet = false
-          deps.updateInstance(session.installationId, channel)
         }
       }
-      if (everythingQuiet && deps.appUpdateWaiting()) {
+      if (
+        everythingQuiet &&
+        !appInstallRequested &&
+        deps.now() - lastInputAnywhere >= quietMs &&
+        deps.appUpdateWaiting()
+      ) {
         appInstallRequested = true
         deps.installAppUpdate()
       }

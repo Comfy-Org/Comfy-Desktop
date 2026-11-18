@@ -6,7 +6,7 @@ import { idleUpdateChannel } from '../sources/standalone/updateSections'
 import type { TitlePopupHostBindings } from '../popups/titlePopup'
 import { probeQueue } from './comfyProcessRecord'
 import { createIdleUpdateWatcher, type IdleSession, type IdleUpdateWatcher } from './idleUpdate'
-import { _operationAborts, _runningSessions } from './ipc/shared'
+import { _operationAborts, _runningSessions, _stoppingInstallationIds } from './ipc/shared'
 import { t } from './i18n'
 import * as updater from './updater'
 
@@ -54,7 +54,8 @@ export function startIdleUpdates(
       appUpdateWaiting: () =>
         settings.get('installUpdatesWhenIdle') === true &&
         updater.getCurrentUpdateState().kind === 'ready' &&
-        _operationAborts.size === 0,
+        _operationAborts.size === 0 &&
+        _stoppingInstallationIds.size === 0,
       installAppUpdate: () => updater.installUpdate(false)
     },
     { tickMs: envMs('E2E_IDLE_UPDATE_TICK_MS'), quietMs: envMs('E2E_IDLE_UPDATE_QUIET_MS') }

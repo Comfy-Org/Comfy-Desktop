@@ -175,4 +175,77 @@ describe('idle update watcher', () => {
       'quitting now would kill the instance update'
     ).not.toHaveBeenCalled()
   })
+  it('does not ask again for an update that failed while the build stays idle', async () => {
+    const h = harness()
+    withInstance(h)
+    h.clock.now = IDLE_UPDATE_QUIET_MS
+    await h.watcher.tick()
+    h.clock.now += 2 * IDLE_UPDATE_QUIET_MS
+    await h.watcher.tick()
+    expect(
+      h.deps.updateInstance,
+      'a failed update must not loop stop and relaunch every 30 minutes'
+    ).toHaveBeenCalledOnce()
+  })
+
+  it('asks again after input ends the idle period and a new one passes', async () => {
+    const h = harness()
+    withInstance(h)
+    h.clock.now = IDLE_UPDATE_QUIET_MS
+    await h.watcher.tick()
+    h.watcher.noteInput('inst-1')
+    h.clock.now += IDLE_UPDATE_QUIET_MS
+    await h.watcher.tick()
+    expect(h.deps.updateInstance).toHaveBeenCalledTimes(2)
+  })
+
+  it('skips the update when input arrives while the update channel is looked up', async () => {
+    const h = harness()
+    withInstance(h)
+    h.deps.instanceUpdateChannel = async () => {
+      h.watcher.noteInput('inst-1')
+      return 'latest'
+    }
+    h.clock.now = IDLE_UPDATE_QUIET_MS
+    await h.watcher.tick()
+    expect(h.deps.updateInstance).not.toHaveBeenCalled()
+  })
+
+  it('holds a Desktop update when input arrives while the queues are probed', async () => {
+    const h = harness()
+    withInstance(h, null)
+    h.app.waiting = true
+    h.deps.probeQueue = async () => {
+      h.watcher.noteInput(null)
+      return { running: 0, pending: 0 }
+    }
+    h.clock.now = IDLE_UPDATE_QUIET_MS
+    await h.watcher.tick()
+    expect(h.deps.installAppUpdate).not.toHaveBeenCalled()
+  })
+
+  it('keeps updating builds after a Desktop install that did not restart', async () => {
+    const h = harness()
+    h.app.waiting = true
+    h.clock.now = IDLE_UPDATE_QUIET_MS
+    await h.watcher.tick()
+    expect(h.deps.installAppUpdate).toHaveBeenCalledOnce()
+    h.app.waiting = false
+    withInstance(h)
+    h.sessions[0]!.startedAt = h.clock.now
+    h.clock.now += IDLE_UPDATE_QUIET_MS
+    await h.watcher.tick()
+    expect(h.deps.updateInstance).toHaveBeenCalledWith('inst-1', 'latest')
+  })
+
+  it('tries a Desktop install again in the next idle period', async () => {
+    const h = harness()
+    h.app.waiting = true
+    h.clock.now = IDLE_UPDATE_QUIET_MS
+    await h.watcher.tick()
+    h.watcher.noteInput(null)
+    h.clock.now += IDLE_UPDATE_QUIET_MS
+    await h.watcher.tick()
+    expect(h.deps.installAppUpdate).toHaveBeenCalledTimes(2)
+  })
 })
