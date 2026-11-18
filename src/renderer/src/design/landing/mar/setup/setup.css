@@ -1830,6 +1830,10 @@
   font-size: 12px;
   line-height: 16px;
 }
+/* A problem (Error, Folder not found) says so in red, as Desktop's tile. */
+:root .proto-ui.proto-ui.proto-ui .mss-machine-kicker.is-bad {
+  color: var(--color-status-danger);
+}
 .mss-machine.is-hero + .mss-summary {
   margin-top: 12px;
 }
