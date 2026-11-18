@@ -93,7 +93,7 @@ describe('CoverRotation', () => {
     expect(layer(wrapper, 'leaving').attributes('src')).toBe(first)
 
     vi.advanceTimersByTime(COVER_FADE_MS)
-    await wrapper.vm.$nextTick()
+    await nextTick()
 
     expect(layer(wrapper, 'leaving').exists()).toBe(false)
     await untilAllLoaded(wrapper)
@@ -115,17 +115,48 @@ describe('CoverRotation', () => {
   })
 
   it('stands still while it is off screen', async () => {
-    card.style.top = '-4000px'
     const wrapper = mountCovers()
+    const rotation = wrapper.get('[data-testid="cover-rotation"]')
+    await untilAllLoaded(wrapper)
+    await expect.poll(() => rotation.attributes('data-playing')).toBe('true')
+    card.style.top = '-4000px'
+    await expect.poll(() => rotation.attributes('data-playing')).toBe('false')
     const first = shownSrc(wrapper)
 
     vi.advanceTimersByTime(COVER_HOLD_MS * 6)
-    await wrapper.vm.$nextTick()
+    await nextTick()
     expect(shownSrc(wrapper)).toBe(first)
 
     card.style.top = '0'
-    await untilAllLoaded(wrapper)
+    await expect.poll(() => rotation.attributes('data-playing')).toBe('true')
     await untilTheCoverChanges(wrapper, first)
+  })
+
+  it('draws each of two covers once while one fades over the other', async () => {
+    const wrapper = mountCovers(COVERS.slice(0, 2))
+    await untilAllLoaded(wrapper)
+    const first = shownSrc(wrapper)
+
+    await untilTheCoverChanges(wrapper, first)
+
+    const sources = wrapper.findAll('img').map((img) => img.attributes('src'))
+    expect(sources).toHaveLength(2)
+    expect(new Set(sources).size).toBe(2)
+    expect(layer(wrapper, 'leaving').attributes('src')).toBe(first)
+
+    vi.advanceTimersByTime(COVER_FADE_MS)
+    await nextTick()
+    expect(layer(wrapper, 'upcoming').attributes('src')).toBe(first)
+  })
+
+  it('shows the covers again when the list changes but keeps a cover it had', async () => {
+    const wrapper = mountCovers(COVERS.slice(0, 2))
+    await untilAllLoaded(wrapper)
+
+    await wrapper.setProps({ pictures: [COVERS[0]!, COVERS[2]!] })
+
+    await untilAllLoaded(wrapper)
+    expect(layer(wrapper, 'shown').classes()).toContain('opacity-100')
   })
 
   it('shows only a still, and never changes it, when reduced motion is preferred', async () => {
@@ -145,6 +176,71 @@ describe('CoverRotation', () => {
     vi.advanceTimersByTime(COVER_HOLD_MS * 6)
     await wrapper.vm.$nextTick()
     expect(shownSrc(wrapper)).toBe(still)
+  })
+
+  it('shows no moving cover when reduced motion is preferred and no cover has a still', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {}
+    }))
+    const wrapper = mountCovers(COVERS.map((cover) => ({ ...cover, stillUrl: null })))
+    await nextTick()
+
+    expect(wrapper.findAll('img')).toHaveLength(0)
+  })
+
+  it('skips a still that fails to load in reduced motion, and says so once none is left', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {}
+    }))
+    const broken = 'data:image/png;base64,broken'
+    const wrapper = mountCovers([
+      { ...COVERS[0]!, stillUrl: null },
+      { ...COVERS[1]!, stillUrl: broken },
+      COVERS[2]!
+    ])
+
+    await expect.poll(() => shownSrc(wrapper)).toBe(STILLS[2])
+    expect(wrapper.emitted('broken')).toBeUndefined()
+
+    await wrapper.setProps({
+      pictures: [
+        { ...COVERS[0]!, stillUrl: broken },
+        { ...COVERS[1]!, stillUrl: `${broken}2` }
+      ]
+    })
+    await expect.poll(() => wrapper.emitted('broken')).toHaveLength(1)
+  })
+
+  it('shows the still of a cover whose moving picture failed, when reduced motion is turned on', async () => {
+    let reduce = false
+    const listeners: Array<(event: { matches: boolean }) => void> = []
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      get matches() {
+        return reduce && query === '(prefers-reduced-motion: reduce)'
+      },
+      media: query,
+      addEventListener: (_type: string, listener: (event: { matches: boolean }) => void) =>
+        listeners.push(listener),
+      removeEventListener: () => {}
+    }))
+    const broken = 'data:image/png;base64,broken'
+    const wrapper = mountCovers([
+      { url: broken, stillUrl: STILLS[0]! },
+      { url: URLS[1]!, stillUrl: null }
+    ])
+    await expect.poll(() => shownSrc(wrapper)).toBe(URLS[1])
+
+    reduce = true
+    listeners.forEach((listener) => listener({ matches: true }))
+
+    await expect.poll(() => shownSrc(wrapper)).toBe(STILLS[0])
+    expect(wrapper.emitted('broken')).toBeUndefined()
   })
 
   it('keeps the one cover of an app that has only one', async () => {

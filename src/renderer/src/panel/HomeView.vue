@@ -124,7 +124,9 @@ function coversOf(app: AppCard): readonly AppCover[] {
 }
 
 function thumbnailOf(workflow: CatalogWorkflow): readonly AppCover[] {
-  return workflow.thumbnailUrl ? [{ url: workflow.thumbnailUrl, stillUrl: null }] : []
+  return workflow.thumbnailUrl
+    ? [{ url: workflow.thumbnailUrl, stillUrl: workflow.thumbnailUrl }]
+    : []
 }
 
 async function loadWorkflows(): Promise<void> {

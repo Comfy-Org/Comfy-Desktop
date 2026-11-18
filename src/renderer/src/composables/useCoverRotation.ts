@@ -150,5 +150,14 @@ export function useCoverRotation({
     clearTimeout(fadeTimer)
   })
 
-  return { shown, leaving, upcoming, loaded, allFailed, markLoaded, markFailed, restart: start }
+  return {
+    shown,
+    leaving,
+    upcoming,
+    loaded,
+    allFailed,
+    markLoaded,
+    markFailed,
+    restart: start
+  }
 }

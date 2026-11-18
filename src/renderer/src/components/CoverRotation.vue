@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useTemplateRef } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 import {
   useDocumentVisibility,
   useElementVisibility,
@@ -35,27 +35,64 @@ const page = useDocumentVisibility()
 const motion = usePreferredReducedMotion()
 const still = computed(() => motion.value === 'reduce')
 
+const listKey = () => pictures.map((picture) => picture.url).join('\n')
+const playing = computed(() => !paused && !still.value && onScreen.value && page.value !== 'hidden')
+const generation = ref(0)
+
 const { shown, leaving, upcoming, loaded, allFailed, markLoaded, markFailed } = useCoverRotation({
   count: () => pictures.length,
-  key: () => pictures.map((picture) => picture.url).join('\n'),
-  playing: () => !paused && !still.value && onScreen.value && page.value !== 'hidden'
+  key: listKey,
+  playing: () => playing.value
 })
+
+const loadedStills = ref<ReadonlySet<number>>(new Set())
+const failedStills = ref<ReadonlySet<number>>(new Set())
+
+watch(listKey, () => {
+  generation.value++
+  loadedStills.value = new Set()
+  failedStills.value = new Set()
+})
+
+function hasStill(index: number): boolean {
+  return Boolean(pictures[index]?.stillUrl) && !failedStills.value.has(index)
+}
+
+function isLoaded(index: number): boolean {
+  return (still.value ? loadedStills : loaded).value.has(index)
+}
+
+function onLoad(index: number): void {
+  if (still.value) loadedStills.value = new Set(loadedStills.value).add(index)
+  else markLoaded(index)
+}
+
+function stillIndex(): number | null {
+  const first = shown.value
+  if (first !== null && hasStill(first)) return first
+  const other = pictures.findIndex((_picture, index) => hasStill(index))
+  return other >= 0 ? other : null
+}
 
 const layers = computed<Layer[]>(() => {
   const picked: Array<[number | null, Role]> = still.value
-    ? [[shown.value, 'shown']]
+    ? [[stillIndex(), 'shown']]
     : [
         [leaving.value, 'leaving'],
         [shown.value, 'shown'],
         [upcoming.value, 'upcoming']
       ]
+  const seen = new Set<number>()
   return picked
-    .filter(
-      (entry): entry is [number, Role] => entry[0] !== null && pictures[entry[0]] !== undefined
-    )
+    .filter((entry): entry is [number, Role] => {
+      const [index] = entry
+      if (index === null || pictures[index] === undefined || seen.has(index)) return false
+      seen.add(index)
+      return true
+    })
     .map(([index, role]) => {
       const picture = pictures[index]!
-      const src = still.value ? (picture.stillUrl ?? picture.url) : picture.url
+      const src = still.value ? picture.stillUrl! : picture.url
       return { index, src, role }
     })
     .sort((a, b) => a.index - b.index)
@@ -63,20 +100,30 @@ const layers = computed<Layer[]>(() => {
 
 function opacityOf(layer: Layer): string {
   if (layer.role !== 'shown') return ''
-  return loaded.value.has(layer.index) ? 'opacity-100' : 'opacity-0'
+  return isLoaded(layer.index) ? 'opacity-100' : 'opacity-0'
 }
 
 function onError(index: number): void {
-  markFailed(index)
-  if (allFailed.value) emit('broken')
+  if (!still.value) {
+    markFailed(index)
+    if (allFailed.value) emit('broken')
+    return
+  }
+  failedStills.value = new Set(failedStills.value).add(index)
+  if (stillIndex() === null) emit('broken')
 }
 </script>
 
 <template>
-  <span ref="root" class="absolute inset-0 isolate block" data-testid="cover-rotation">
+  <span
+    ref="root"
+    class="absolute inset-0 isolate block"
+    data-testid="cover-rotation"
+    :data-playing="playing"
+  >
     <img
       v-for="layer in layers"
-      :key="`${still ? 'still' : 'cover'}:${layer.src}`"
+      :key="`${generation}:${still ? 'still' : 'cover'}:${layer.src}`"
       :src="layer.src"
       alt=""
       draggable="false"
@@ -85,8 +132,8 @@ function onError(index: number): void {
       :class="[LAYER_CLASS[layer.role], opacityOf(layer)]"
       :aria-hidden="layer.role === 'shown' ? undefined : 'true'"
       :data-cover="layer.role"
-      :data-loaded="loaded.has(layer.index)"
-      @load="markLoaded(layer.index)"
+      :data-loaded="isLoaded(layer.index)"
+      @load="onLoad(layer.index)"
       @error="onError(layer.index)"
     />
   </span>
