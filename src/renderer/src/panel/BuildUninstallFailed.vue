@@ -20,21 +20,25 @@ const { t } = useI18n()
 
 <template>
   <section
-    class="flex min-h-25 shrink-0 items-center gap-[18px] rounded-2xl border border-destructive/25 bg-[rgb(137_137_137/0.05)] px-[18px] py-4"
+    class="flex shrink-0 items-center gap-4 rounded-2xl border border-destructive/25 bg-[rgb(137_137_137/0.05)] px-5 py-4"
     role="alert"
     :data-testid="`build-${kind}-failed`"
   >
-    <OctagonAlert :size="18" class="shrink-0 self-start text-destructive" aria-hidden="true" />
-    <div class="flex min-w-0 flex-1 flex-col">
-      <h2 class="m-0 text-[15px]/[21px] font-semibold text-foreground">
-        {{ title || t('uninstallProgress.failedTitle') }}
-      </h2>
-      <p
-        class="m-0 mt-1 max-h-60 overflow-y-auto text-[13px]/5 break-words whitespace-pre-line text-muted-foreground select-text"
-        :data-testid="`build-${kind}-failed-reason`"
-      >
-        {{ reason }}
-      </p>
+    <div class="flex min-w-0 flex-1 items-start gap-3">
+      <span class="flex h-[21px] shrink-0 items-center" aria-hidden="true">
+        <OctagonAlert :size="18" class="text-destructive" />
+      </span>
+      <div class="flex min-w-0 flex-1 flex-col">
+        <h2 class="m-0 text-[15px]/[21px] font-semibold text-foreground">
+          {{ title || t('uninstallProgress.failedTitle') }}
+        </h2>
+        <p
+          class="m-0 mt-1 max-h-60 overflow-y-auto text-[13px]/5 break-words whitespace-pre-line text-muted-foreground select-text"
+          :data-testid="`build-${kind}-failed-reason`"
+        >
+          {{ reason }}
+        </p>
+      </div>
     </div>
     <div class="flex shrink-0 items-center gap-2">
       <Button

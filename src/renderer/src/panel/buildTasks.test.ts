@@ -374,6 +374,22 @@ describe('a port conflict when a build starts', () => {
     expect(onPage(TID.progressPortConflictKill)).not.toBeNull()
   })
 
+  it('puts its choices in the dialog footer, next to Cancel', async () => {
+    await startIntoConflict()
+
+    const footer = document.querySelector('.base-alert-footer')
+    expect(footer).not.toBeNull()
+    expect(footer!.contains(onPage(TID.progressPortConflictUsePort))).toBe(true)
+    expect(footer!.contains(onPage(TID.progressPortConflictKill))).toBe(true)
+    expect(footer!.contains(onPage(TID.baseAlertCancel))).toBe(true)
+    const tops = [
+      TID.baseAlertCancel,
+      TID.progressPortConflictKill,
+      TID.progressPortConflictUsePort
+    ].map((id) => Math.round(onPage(id)!.getBoundingClientRect().top))
+    expect(new Set(tops).size, 'the three buttons sit on one row').toBe(1)
+  })
+
   it('starts again on the next free port', async () => {
     await startIntoConflict()
 

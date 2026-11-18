@@ -2,13 +2,14 @@ import { reactive, readonly } from 'vue'
 import { i18n } from '../i18n'
 import type { SnapshotDetailData, FieldOption, ModalDetailGroup } from '../types/ipc'
 
-export type ModalType = 'alert' | 'confirm' | 'confirmWithOptions' | 'prompt' | 'select'
+export type ModalType = 'alert' | 'confirm' | 'confirmWithOptions' | 'prompt' | 'select' | 'choice'
+
+export type ModalChoice = 'primary' | 'secondary'
 
 export interface ModalSelectItem {
   value: string
   label: string
   description?: string
-  testId?: string
 }
 
 export interface ModalOption {
@@ -29,6 +30,7 @@ export interface ModalTestIds {
   root?: string
   action?: string
   cancel?: string
+  secondary?: string
 }
 
 export interface ModalState {
@@ -46,6 +48,7 @@ export interface ModalState {
   buttonLabel: string
   confirmLabel: string
   confirmStyle: string
+  secondaryLabel: string
   placeholder: string
   defaultValue: string
   required: boolean | string
@@ -70,6 +73,7 @@ const state = reactive<ModalState>({
   buttonLabel: 'OK',
   confirmLabel: 'Confirm',
   confirmStyle: 'danger',
+  secondaryLabel: '',
   placeholder: '',
   defaultValue: '',
   required: false,
@@ -94,6 +98,7 @@ function reset(): void {
   state.buttonLabel = 'OK'
   state.confirmLabel = 'Confirm'
   state.confirmStyle = 'danger'
+  state.secondaryLabel = ''
   state.placeholder = ''
   state.defaultValue = ''
   state.required = false
@@ -124,6 +129,7 @@ function cancelValueForType(type: ModalType): unknown {
       return undefined
     case 'prompt':
     case 'select':
+    case 'choice':
     case 'confirmWithOptions':
       return null
     default:
@@ -172,6 +178,28 @@ export function useModal() {
       state.checkboxes = (opts.checkboxes ?? []).map((c) => ({ ...c }))
       state.confirmLabel = opts.confirmLabel ?? i18n.global.t('modal.confirm')
       state.confirmStyle = opts.confirmStyle ?? 'danger'
+      state.testIds = opts.testIds ? { ...opts.testIds } : {}
+      state.resolve = resolve as (value: unknown) => void
+    })
+  }
+
+  function choose(opts: {
+    title: string
+    message: string
+    primaryLabel: string
+    secondaryLabel: string
+    secondaryStyle?: 'danger' | 'default'
+    testIds?: ModalTestIds
+  }): Promise<ModalChoice | null> {
+    return new Promise((resolve) => {
+      reset()
+      state.visible = true
+      state.type = 'choice'
+      state.title = opts.title
+      state.message = opts.message
+      state.confirmLabel = opts.primaryLabel
+      state.secondaryLabel = opts.secondaryLabel
+      state.confirmStyle = opts.secondaryStyle ?? 'default'
       state.testIds = opts.testIds ? { ...opts.testIds } : {}
       state.resolve = resolve as (value: unknown) => void
     })
@@ -271,6 +299,7 @@ export function useModal() {
     state: readonly(state) as ModalState,
     alert,
     confirm,
+    choose,
     updateConfirm,
     setCheckboxValue,
     confirmWithOptions,

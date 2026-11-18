@@ -209,9 +209,7 @@ test('an orphan still running a prompt is left alone until the user stops it @li
     await clickInstallTile(app.panel, INSTALL_NAME)
 
     await app.panel.waitForVisible(byTestId(TID.progressPortConflictKill), { timeout: 60_000 })
-    expect(await app.panel.textOf('.dialog-select-box .dialog-title')).toContain(
-      'still running a prompt'
-    )
+    expect(await app.panel.textOf('.base-alert-title')).toContain('still running a prompt')
     expect(isAlive(busy!.childPid), 'a busy ComfyUI is not stopped without asking').toBe(true)
     expect(await app.panel.exists(byTestId(TID.progressPortConflictUsePort))).toBe(false)
     expect(await priorEvents(app)).toEqual([
