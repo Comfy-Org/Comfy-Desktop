@@ -31,12 +31,30 @@ const drawn = computed(() =>
     }
   })
 )
+
+const crown = computed(() => drawn.value.find((item) => item.badge.style === 'crown'))
+
+const shown = computed(() => {
+  const theCrown = crown.value
+  if (!theCrown) return drawn.value
+  const folded = drawn.value.filter((item) => item !== theCrown)
+  if (!folded.length) return [{ ...theCrown, shownForKeyboard: revealed }]
+  const crownDescription = theCrown.badge.description && theCrown.hoverText
+  const hoverText = [crownDescription, ...folded.map((item) => item.hoverText ?? item.text)]
+    .filter(Boolean)
+    .join(' · ')
+  return [{ ...theCrown, hoverText, shownForKeyboard: revealed }]
+})
+
+const foldedIntoCrown = computed(() =>
+  crown.value ? drawn.value.filter((item) => item !== crown.value) : []
+)
 </script>
 
 <template>
   <span class="flex items-start gap-1.5" data-testid="app-badges">
     <Tooltip
-      v-for="item in drawn"
+      v-for="item in shown"
       :key="item.badge.id"
       :text="item.hoverText"
       :shown-while="item.shownForKeyboard"
@@ -72,5 +90,8 @@ const drawn = computed(() =>
       </span>
       <span :id="item.descriptionId" hidden>{{ item.spokenText }}</span>
     </Tooltip>
+    <span v-for="item in foldedIntoCrown" :id="item.descriptionId" :key="item.badge.id" hidden>{{
+      item.spokenText
+    }}</span>
   </span>
 </template>

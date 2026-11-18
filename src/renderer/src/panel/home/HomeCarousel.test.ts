@@ -71,6 +71,7 @@ describe('HomeCarousel app badges', () => {
     expect([card.offsetWidth - arrow.offsetLeft - arrow.offsetWidth, arrow.offsetTop]).toEqual([
       12, 12
     ])
+    expect(badges.offsetWidth).toBe(28)
     expect(badges.offsetLeft + badges.offsetWidth).toBeLessThan(arrow.offsetLeft)
   })
 
