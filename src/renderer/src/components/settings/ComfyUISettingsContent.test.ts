@@ -166,6 +166,9 @@ describe('ComfyUISettingsContent', () => {
       const placed = filler.getBoundingClientRect()
       expect(placed.right).toBeLessThanOrEqual(row.right + 0.5)
       expect(placed.left).toBeGreaterThanOrEqual(row.left - 0.5)
+      const tabs = host.querySelector<HTMLElement>('.settings-v2-tabs')!.getBoundingClientRect()
+      expect(tabs.width + 200, 'the fixture is too narrow for one line').toBeGreaterThan(row.width)
+      expect(placed.top, 'the tools wrap below the tabs').toBeGreaterThanOrEqual(tabs.bottom - 0.5)
 
       wrapper.unmount()
       host.remove()
