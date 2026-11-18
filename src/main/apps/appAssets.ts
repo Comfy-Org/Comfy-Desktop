@@ -381,6 +381,18 @@ function usableCloudOutput(
   return { output, type }
 }
 
+async function laterCloudPage(
+  limit: number,
+  after: string
+): ReturnType<typeof listNewestCloudOutputs> {
+  try {
+    return await listNewestCloudOutputs(limit, after)
+  } catch (err) {
+    console.warn('[apps] could not read more Cloud results:', err)
+    return null
+  }
+}
+
 async function newestUsableCloudOutputs(
   kinds: readonly ComfyDesktopAssetKind[],
   limit: number
@@ -389,7 +401,11 @@ async function newestUsableCloudOutputs(
   const cursorsSeen = new Set<string>()
   let after: string | undefined
   for (let listed = 0; listed < MAX_CLOUD_PAGES; listed++) {
-    const page = await listNewestCloudOutputs(limit * CLOUD_LIST_FACTOR, after)
+    const pageSize = limit * CLOUD_LIST_FACTOR
+    const page =
+      after === undefined
+        ? await listNewestCloudOutputs(pageSize)
+        : await laterCloudPage(pageSize, after)
     if (!page) return usable
     for (const output of page.outputs) {
       const found = usableCloudOutput(output, kinds)

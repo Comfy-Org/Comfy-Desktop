@@ -342,6 +342,30 @@ describe('recent on Comfy Cloud', () => {
     ])
   })
 
+  it('keeps what earlier pages found when a later page fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mocks.listCloud
+      .mockResolvedValueOnce(cloudPage([cloudOutput({ id: 'first', name: 'first.png' })], 'page-2'))
+      .mockRejectedValueOnce(new Error('List assets failed: HTTP 500'))
+
+    const recent = await recentAssets(page, { kinds: ['image'], where: 'cloud' })
+
+    expect(recent.map((asset) => asset.name)).toEqual(['first.png'])
+    expect(mocks.listCloud.mock.calls).toEqual([
+      [48, undefined],
+      [48, 'page-2']
+    ])
+    expect(warn).toHaveBeenCalledOnce()
+  })
+
+  it('still fails when the first page fails', async () => {
+    mocks.listCloud.mockRejectedValueOnce(new Error('List assets failed: HTTP 500'))
+
+    await expect(recentAssets(page, { kinds: ['image'], where: 'cloud' })).rejects.toThrow(
+      'HTTP 500'
+    )
+  })
+
   it('stops reading once it has as many as asked for', async () => {
     const both = [cloudOutput({ id: 'a', name: 'a.png' }), cloudOutput({ id: 'b', name: 'b.jpg' })]
     mocks.listCloud.mockResolvedValue(cloudPage(both, 'more'))

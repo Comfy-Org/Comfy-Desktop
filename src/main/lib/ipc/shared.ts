@@ -1512,7 +1512,8 @@ export function _test_addRunningSession(
   installationId: string,
   installationName: string,
   flushTelemetry?: () => void,
-  coreBetaArgs?: readonly BetaArgView[]
+  coreBetaArgs?: readonly BetaArgView[],
+  launchFolders?: ComfyFolders
 ): void {
   _runningSessions.set(installationId, {
     proc: null,
