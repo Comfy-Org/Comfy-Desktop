@@ -13,7 +13,12 @@ import type { TerminalEnv } from '../types/sources'
 import type { TemplateSearchAvailability } from '../../types/ipc'
 import { createBundleStore, Unreachable, type Supported, type TransferResult } from './bundles'
 import { buildRuntime } from './buildRuntime'
-import { createSearchService, type SidecarDecision, type SidecarPython } from './service'
+import {
+  createSearchService,
+  type SidecarDecision,
+  type SidecarPython,
+  type SidecarRequest
+} from './service'
 import { RUNTIME_UNSUPPORTED_EXIT, startSidecar } from './sidecar'
 import { postToSidecar } from './sidecarClient'
 import { asRecord } from './json'
@@ -260,9 +265,8 @@ export function createSearchProcess({
   }
 
   return {
-    decide: (body: unknown): Promise<SidecarDecision> => service.decide(body),
+    decide: (request: SidecarRequest): Promise<SidecarDecision> => service.decide(request),
     prepare: (): Promise<void> => service.prepare(),
-    partnerSwitch: (): boolean => service.partnerSwitch(),
     download: (): Promise<void> => (pyz() ? store.download() : Promise.resolve()),
     downloadInBackground,
     onBuildAction,
