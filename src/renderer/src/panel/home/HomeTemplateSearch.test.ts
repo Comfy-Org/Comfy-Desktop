@@ -755,6 +755,13 @@ describe('HomeTemplateSearch cards', () => {
     await searchFor(wrapper, 'a birthday card')
   }
 
+  const MANY = Array.from({ length: 15 }, (_, i) => candidate(`card_${i}`))
+
+  async function searchMany(wrapper: Wrapper): Promise<void> {
+    searchTemplates.mockResolvedValue(answer({ run: MANY }))
+    await searchFor(wrapper, 'a birthday card')
+  }
+
   it('lays the cards out three across in a page as wide as the bar, the download card in the same grid', async () => {
     const wrapper = mountSearch()
     await searchCards(wrapper)
@@ -945,10 +952,8 @@ describe('HomeTemplateSearch cards', () => {
 
   it('keeps the could-not-open message in view when a card lower down could not be opened', async () => {
     openTemplateInBuild.mockResolvedValue('refused')
-    const many = Array.from({ length: 15 }, (_, i) => candidate(`card_${i}`))
-    searchTemplates.mockResolvedValue(answer({ run: many }))
     const wrapper = mountSearch()
-    await searchFor(wrapper, 'a birthday card')
+    await searchMany(wrapper)
     await press(wrapper, 'ArrowUp')
     expect(page(wrapper).scrollTop).toBeGreaterThan(0)
     await input(wrapper).trigger('keydown', { key: 'Enter' })
@@ -983,8 +988,7 @@ describe('HomeTemplateSearch cards', () => {
   })
 
   it('puts the best match first, highlighted, even when the search lists it after other cards', async () => {
-    const many = Array.from({ length: 15 }, (_, i) => candidate(`card_${i}`))
-    searchTemplates.mockResolvedValue(answer({ outcome: 'download', run: many, download: [MURAL] }))
+    searchTemplates.mockResolvedValue(answer({ outcome: 'download', run: MANY, download: [MURAL] }))
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a mural')
     expect(rowTitles(wrapper)[0]).toBe('mural_template title')
@@ -993,10 +997,8 @@ describe('HomeTemplateSearch cards', () => {
   })
 
   it('brings the highlighted card back into view when the results reopen', async () => {
-    const many = Array.from({ length: 15 }, (_, i) => candidate(`card_${i}`))
-    searchTemplates.mockResolvedValue(answer({ run: many }))
     const wrapper = mountSearch()
-    await searchFor(wrapper, 'a birthday card')
+    await searchMany(wrapper)
     await press(wrapper, 'ArrowUp')
     expect(highlighted(wrapper)).toBe('card_12 title')
 
@@ -1026,6 +1028,10 @@ describe('HomeTemplateSearch cards', () => {
     const chip = mural.get('[data-testid="home-template-search-needs-download"]')
     expect(chip.text()).toContain('about')
     expect(chip.attributes('title')).toBe(chip.text())
+    const label = chip.get('.truncate').element
+    expect(label.scrollWidth, 'the label is longer than the card has room for').toBeGreaterThan(
+      label.clientWidth
+    )
     expect(chip.element.scrollWidth).toBeLessThanOrEqual(chip.element.clientWidth)
     expect(chip.element.getBoundingClientRect().right).toBeLessThanOrEqual(
       mural.element.getBoundingClientRect().right
@@ -1033,10 +1039,8 @@ describe('HomeTemplateSearch cards', () => {
   })
 
   it('scrolls back to the top, heading included, when the highlight wraps to the first row', async () => {
-    const many = Array.from({ length: 15 }, (_, i) => candidate(`card_${i}`))
-    searchTemplates.mockResolvedValue(answer({ run: many }))
     const wrapper = mountSearch()
-    await searchFor(wrapper, 'a birthday card')
+    await searchMany(wrapper)
     await press(wrapper, 'ArrowUp')
     expect(page(wrapper).scrollTop).toBeGreaterThan(0)
     await press(wrapper, 'ArrowDown')
@@ -1045,10 +1049,8 @@ describe('HomeTemplateSearch cards', () => {
   })
 
   it('scrolls the highlighted card into view when the answer is longer than the page', async () => {
-    const many = Array.from({ length: 15 }, (_, i) => candidate(`card_${i}`))
-    searchTemplates.mockResolvedValue(answer({ run: many }))
     const wrapper = mountSearch()
-    await searchFor(wrapper, 'a birthday card')
+    await searchMany(wrapper)
     const scroller = page(wrapper)
     expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight)
     expect(scroller.scrollTop).toBe(0)

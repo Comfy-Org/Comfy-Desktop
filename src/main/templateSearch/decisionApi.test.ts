@@ -325,6 +325,41 @@ describe('parseDecision', () => {
     expect(result?.alsoTry.map((c) => c.templateId)).toEqual(['card'])
   })
 
+  it('reads further templates only of the families whose cards it keeps, before it counts twelve', () => {
+    const body = decision({
+      split: {
+        run: [pick('a', 'a'), pick('b', 'b'), pick('c', 'c'), pick('cut', 'cut')],
+        download: [
+          pick('m', 'm', ['m.bin']),
+          pick('z', 'z', ['z.bin']),
+          pick('cut_dl', 'cut_dl', ['x.bin'])
+        ],
+        more: [
+          ...Array.from({ length: 12 }, (_, i) => pick(`cut_${i}`, 'cut')),
+          pick('cut_dl_b', 'cut_dl'),
+          pick('a_b', 'a'),
+          pick('z_b', 'z', ['z_b'])
+        ]
+      },
+      options: [pick('cut', 'cut')]
+    })
+    const result = parseDecision(body)
+    expect(result?.run.map((c) => c.templateId)).toEqual(['a', 'b', 'c'])
+    expect(result?.download.map((c) => c.templateId)).toEqual(['m', 'z'])
+    expect(result?.more.map((c) => c.templateId)).toEqual(['a_b', 'z_b'])
+    expect(result?.alsoTry.map((c) => c.templateId)).toEqual(['cut'])
+  })
+
+  it('marks a Run or Also try card as needing a download when the search lists files for it', () => {
+    const body = decision({
+      split: { run: [candidate('as_given', 'poster_template', ['p.bin'])], download: [] },
+      options: [candidate('as_given', 'flyer_template', ['flyer.safetensors'])]
+    })
+    const result = parseDecision(body)!
+    expect(result.run[0]).toMatchObject({ templateId: 'poster_template', needsDownload: true })
+    expect(result.alsoTry[0]).toMatchObject({ templateId: 'flyer_template', needsDownload: true })
+  })
+
   it("keeps the search's first twelve further templates, and none from a search that sends none", () => {
     const more = Array.from({ length: 14 }, (_, i) => pick(`more_${i}`, 'poster'))
     const result = parseDecision(
