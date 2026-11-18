@@ -62,7 +62,7 @@ describe('standalone postInstall ComfyUI update', () => {
       id: 'inst-1',
       installPath: root,
       autoUpdateComfyUI: true,
-      comfyVersion: { baseTag: 'v0.42.1', commitsAhead: 0 }
+      comfyVersion: { commit: 'abcdef1234567', baseTag: 'v0.42.1', commitsAhead: 0 }
     } as unknown as InstallationRecord
   })
 
@@ -121,9 +121,7 @@ describe('standalone postInstall ComfyUI update', () => {
 
     const { progress, output } = await run()
 
-    expect(output).toContain(
-      '[update] Could not get the latest stable ComfyUI release (v0.44.0)\n'
-    )
+    expect(output).toContain('[update] Could not get the latest stable ComfyUI release (v0.44.0)\n')
     expect(progress.at(-1)).toEqual([
       'update',
       { percent: 100, status: 'standalone.getComfyKeptVersion' }
