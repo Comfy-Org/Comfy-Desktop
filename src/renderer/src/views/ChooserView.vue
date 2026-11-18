@@ -380,18 +380,7 @@ const gridHandlers = {
         :icon="Server"
         :title="t('chooser.noBuildsTitle')"
         :text="t('chooser.noBuildsBody')"
-      >
-        <Button
-          type="button"
-          variant="inverted"
-          size="md"
-          class="gap-1.5 px-3 text-[13px]/5"
-          @click="handleNewInstallClick"
-        >
-          <Plus :size="15" aria-hidden="true" />
-          {{ t('chooser.newBuild') }}
-        </Button>
-      </EmptyState>
+      />
 
       <ChooserFamilyGrid
         v-else

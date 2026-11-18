@@ -266,15 +266,16 @@ describe('ChooserView', () => {
     expect(wrapper.text()).not.toContain('Team local')
   })
 
-  it('invites a first build when the user has zero installs', async () => {
+  it('points a first build at the header New build, with no second button', async () => {
     installMockApi([])
     const wrapper = mountChooser()
     await flushPromises()
 
     const invitation = wrapper.get('.chooser-no-builds')
     expect(invitation.text()).toContain('No builds yet')
+    expect(invitation.find('button').exists()).toBe(false)
 
-    await invitation.get('button').trigger('click')
+    await wrapper.get('.chooser-header .chooser-tile-new').trigger('click')
     expect(wrapper.emitted('show-new-install')).toEqual([[]])
   })
 
