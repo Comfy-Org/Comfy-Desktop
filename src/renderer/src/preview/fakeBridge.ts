@@ -251,6 +251,12 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     navigatePanel: () => {},
     openPageInNewWindow: () => {},
     listAssets: async () => ({ assets: [], total: 0 }),
+    listOutputFolders: async () => ({
+      home: '/Users/you',
+      shared: '/Users/you/Documents/ComfyUI/output',
+      ofBuild: {}
+    }),
+    openOutputFolder: async () => true,
     listLocalAssets: async () => ({
       assets: [],
       total: 0,

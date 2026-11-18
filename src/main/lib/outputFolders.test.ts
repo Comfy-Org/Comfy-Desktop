@@ -111,6 +111,8 @@ import {
   localPageRequest,
   findDownloadedOutputs,
   listOutputFolders,
+  outputFolderPaths,
+  openOutputFolder,
   outputDirOverride,
   outputFilePath,
   outputFileUrl,
@@ -303,6 +305,23 @@ describe('listOutputFolders', () => {
       install('Gone', { useSharedOutput: false, outputDir: path.join(root, 'missing') })
     ])
     expect(await listOutputFolders()).toEqual([sharedDir])
+  })
+})
+
+describe('outputFolderPaths and openOutputFolder', () => {
+  it('names the shared folder and each build folder, and opens only those', async () => {
+    installs.mockResolvedValue([
+      { id: 'Test Instance', sourceId: 'standalone', useSharedOutput: false, outputDir: ownDir }
+    ])
+
+    const folders = await outputFolderPaths()
+
+    expect(folders.shared).toBe(sharedDir)
+    expect(folders.ofBuild).toEqual({ 'Test Instance': ownDir })
+    expect(await openOutputFolder()).toBe(true)
+    expect(await openOutputFolder('Test Instance')).toBe(true)
+    expect(await openOutputFolder('unknown'), 'an unknown build opens nothing').toBe(false)
+    expect(openedPath.mock.calls).toEqual([[sharedDir], [ownDir]])
   })
 })
 

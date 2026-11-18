@@ -13,6 +13,7 @@ export type {
   CloudAssetPage,
   LocalAssetListing,
   LocalAssetPageRequest,
+  OutputFolderPaths,
   CatalogWorkflow,
   CloudAssetLookup,
   Unsubscribe,

@@ -253,6 +253,12 @@ export interface LocalAssetPageRequest {
   kind?: AssetKind
 }
 
+export interface OutputFolderPaths {
+  home: string
+  shared: string | null
+  ofBuild: Record<string, string>
+}
+
 export interface LocalAssetListing {
   assets: AssetSummary[]
   total: number
@@ -1254,6 +1260,8 @@ export interface ElectronApi {
   openPageInNewWindow(page: NewWindowDashboardPage): void
   listAssets(installationId: string, page: CloudAssetPageRequest): Promise<CloudAssetPage | null>
   listLocalAssets(installationId?: string, page?: LocalAssetPageRequest): Promise<LocalAssetListing>
+  listOutputFolders(): Promise<OutputFolderPaths>
+  openOutputFolder(installationId?: string): Promise<boolean>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
   openAsset(source: string, assetId: string): Promise<boolean>

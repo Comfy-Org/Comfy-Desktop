@@ -26,6 +26,7 @@ const downloadAsset = vi.fn()
 const revealAsset = vi.fn()
 const openAsset = vi.fn()
 const findDownloadedOutputs = vi.fn()
+const openOutputFolder = vi.fn()
 const copyAsset = vi.fn()
 const readAssetModel = vi.fn()
 const trashAsset = vi.fn()
@@ -166,7 +167,11 @@ function buildRows(): string[] {
     ...document.querySelectorAll(
       '[data-testid^="assets-build-"]:not([data-testid="assets-build-picker"])'
     )
-  ].map((row) => row.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+  ].map((row) =>
+    [...row.querySelectorAll('.truncate')]
+      .map((part) => part.textContent?.replace(/\s+/g, ' ').trim())
+      .join(' ')
+  )
 }
 
 async function pickBuild(id: string): Promise<void> {
@@ -261,6 +266,12 @@ beforeEach(() => {
     revealAsset,
     openAsset,
     findDownloadedOutputs,
+    openOutputFolder,
+    listOutputFolders: async () => ({
+      home: '/Users/me',
+      shared: '/Users/me/ComfyUI/output',
+      ofBuild: { lab: '/Volumes/Work/Video Lab/output' }
+    }),
     copyAsset,
     readAssetModel,
     trashAsset,
@@ -525,7 +536,7 @@ describe('AssetsView', () => {
     expect(buildRows(), 'no Shared folder when no build saves there').toEqual([
       'Comfy Cloud Cloud · Running',
       'My Local 1 Own folder · Stopped',
-      'Video Lab Own folder · Running'
+      'Video Lab /Volumes/Work/Video Lab/output'
     ])
 
     await pickBuild('cloud')
@@ -676,6 +687,22 @@ describe('AssetsView', () => {
     ])
   })
 
+  it('shows each folder in its file manager from the picker', async () => {
+    const wrapper = await mountAssets([], {
+      builds: [sharedBuild('a', 'Shared A'), localBuild('lab', 'Video Lab')]
+    })
+    await openBuildPicker(wrapper)
+
+    document.querySelector<HTMLElement>('[data-testid="assets-place-reveal-shared"]')!.click()
+    document.querySelector<HTMLElement>('[data-testid="assets-place-reveal-lab"]')!.click()
+
+    expect(openOutputFolder.mock.calls).toEqual([[undefined], ['lab']])
+    expect(
+      document.querySelector('[data-testid="assets-place-subtitle-lab"]')?.getAttribute('title'),
+      'the full path shows on hover'
+    ).toBe('/Volumes/Work/Video Lab/output')
+  })
+
   it('lists Shared folder after Comfy Cloud when a build saves there, and opens on it', async () => {
     const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
       builds: [sharedBuild('a', 'Shared A'), localBuild('lab', 'Video Lab'), cloudBuild('cloud')]
@@ -690,8 +717,8 @@ describe('AssetsView', () => {
     await openBuildPicker(wrapper)
     expect(buildRows()).toEqual([
       'Comfy Cloud Cloud · Running',
-      'Shared folder Shared by your builds',
-      'Video Lab Own folder · Stopped'
+      'Shared folder ~/ComfyUI/output',
+      'Video Lab /Volumes/Work/Video Lab/output'
     ])
   })
 
