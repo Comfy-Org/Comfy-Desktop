@@ -34,12 +34,12 @@ type SearchProcessApi = Pick<
 >
 type SearchApi = Pick<DesktopSearch, 'search' | 'forget'>
 
-export const LAUNCH_SETTLE_MS = 15_000
+export const STARTUP_SETTLE_MS = 15_000
 
 interface TemplateSearchHandlerOptions {
   isLocalInstallation: (installation: InstallationRecord) => boolean
   terminalEnvOf: (installation: InstallationRecord) => TerminalEnv | null
-  settled?: Promise<unknown>
+  settled: Promise<unknown>
   process?: SearchProcessApi
   search?: SearchApi
 }
@@ -76,12 +76,14 @@ export function registerTemplateSearchHandlers({
     searchOn: templateSearchOn
   })
 }: TemplateSearchHandlerOptions): void {
-  let downloadedAutomatically = false
+  let automaticDownload: 'after_startup' | 'pending' | 'done' = 'after_startup'
 
   function downloadAutomatically(): void {
-    if (downloadedAutomatically) return
+    if (automaticDownload !== 'pending') return
     void process.downloadInBackground().then(
-      (done) => (downloadedAutomatically ||= done),
+      (done) => {
+        if (done) automaticDownload = 'done'
+      },
       () => false
     )
   }
@@ -105,7 +107,12 @@ export function registerTemplateSearchHandlers({
     }
   })
   sessionLifecycleEvents.on('launch-ended', onBuildActionEnd)
-  void settled?.then(() => setTimeout(downloadAutomatically, LAUNCH_SETTLE_MS))
+  void settled.then(() =>
+    setTimeout(() => {
+      automaticDownload = 'pending'
+      downloadAutomatically()
+    }, STARTUP_SETTLE_MS)
+  )
 
   ipcMain.handle(
     'template-search:search',
