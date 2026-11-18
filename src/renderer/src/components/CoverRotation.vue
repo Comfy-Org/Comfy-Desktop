@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, useTemplateRef, watch } from 'vue'
+import { computed, onScopeDispose, ref, useTemplateRef, watch } from 'vue'
 import {
   useDocumentVisibility,
   useElementVisibility,
   usePreferredReducedMotion
 } from '@vueuse/core'
-import { useCoverRotation } from '../composables/useCoverRotation'
+import { COVER_FADE_MS, useCoverRotation } from '../composables/useCoverRotation'
 import type { AppCover } from '../types/ipc'
 
-type Role = 'shown' | 'leaving' | 'upcoming'
+type Role = 'shown' | 'leaving' | 'upcoming' | 'poster'
 type Kind = 'still' | 'cover'
 
 interface Layer {
@@ -21,7 +21,8 @@ interface Layer {
 const LAYER_CLASS: Record<Role, string> = {
   shown: 'z-2',
   leaving: 'z-1 opacity-100',
-  upcoming: 'z-0 opacity-0'
+  upcoming: 'z-0 opacity-0',
+  poster: 'z-0'
 }
 
 const { pictures, paused = false } = defineProps<{
@@ -35,12 +36,10 @@ const root = useTemplateRef<HTMLElement>('root')
 const onScreen = useElementVisibility(root)
 const page = useDocumentVisibility()
 const motion = usePreferredReducedMotion()
-const reduced = computed(() => motion.value === 'reduce')
+const still = computed(() => motion.value === 'reduce')
 
 const listKey = () => pictures.map((picture) => picture.url).join('\n')
-const playing = computed(
-  () => !paused && !reduced.value && onScreen.value && page.value !== 'hidden'
-)
+const playing = computed(() => !paused && !still.value && onScreen.value && page.value !== 'hidden')
 const generation = ref(0)
 
 const { shown, leaving, upcoming, loaded, allFailed, markLoaded, markFailed } = useCoverRotation({
@@ -51,15 +50,40 @@ const { shown, leaving, upcoming, loaded, allFailed, markLoaded, markFailed } = 
 
 const loadedStills = ref<ReadonlySet<number>>(new Set())
 const failedStills = ref<ReadonlySet<number>>(new Set())
+const failedPosters = ref<ReadonlySet<number>>(new Set())
+const posterDone = ref(false)
+let posterTimer: ReturnType<typeof setTimeout> | undefined
 
 watch(listKey, () => {
   generation.value++
   loadedStills.value = new Set()
   failedStills.value = new Set()
+  failedPosters.value = new Set()
+  clearTimeout(posterTimer)
+  posterDone.value = false
 })
+
+const shownLoaded = computed(() => shown.value !== null && loaded.value.has(shown.value))
+
+watch(shownLoaded, (now) => {
+  if (!now || posterDone.value) return
+  clearTimeout(posterTimer)
+  posterTimer = setTimeout(() => {
+    posterDone.value = true
+  }, COVER_FADE_MS)
+})
+
+onScopeDispose(() => clearTimeout(posterTimer))
 
 function hasStill(index: number): boolean {
   return Boolean(pictures[index]?.stillUrl) && !failedStills.value.has(index)
+}
+
+function posterIndex(): number | null {
+  const index = shown.value
+  if (still.value || posterDone.value || index === null || !hasStill(index)) return null
+  if (failedPosters.value.has(index)) return null
+  return pictures[index]!.stillUrl === pictures[index]!.url ? null : index
 }
 
 function isLoaded(layer: Layer): boolean {
@@ -79,17 +103,20 @@ function stillIndex(): number | null {
 }
 
 function pick(): Array<[number | null, Role, Kind]> {
-  if (reduced.value || allFailed.value) return [[stillIndex(), 'shown', 'still']]
+  if (still.value || allFailed.value) return [[stillIndex(), 'shown', 'still']]
   if (paused)
     return [
       [stillIndex(), 'shown', 'still'],
       [shown.value, 'upcoming', 'cover']
     ]
-  return [
+  const picked: Array<[number | null, Role, Kind]> = [
     [leaving.value, 'leaving', 'cover'],
     [shown.value, 'shown', 'cover'],
-    [upcoming.value, 'upcoming', 'cover']
+    [shownLoaded.value ? upcoming.value : null, 'upcoming', 'cover']
   ]
+  const poster = posterIndex()
+  if (poster !== null) picked.push([poster, 'poster', 'still'])
+  return picked
 }
 
 const layers = computed<Layer[]>(() => {
@@ -107,7 +134,7 @@ const layers = computed<Layer[]>(() => {
 })
 
 function opacityOf(layer: Layer): string {
-  if (layer.role !== 'shown') return ''
+  if (layer.role !== 'shown' && layer.role !== 'poster') return ''
   return isLoaded(layer) ? 'opacity-100' : 'opacity-0'
 }
 
@@ -119,8 +146,12 @@ function onError(layer: Layer): void {
     if (allFailed.value && stillIndex() === null) emit('broken')
     return
   }
+  if (layer.role === 'poster') {
+    failedPosters.value = new Set(failedPosters.value).add(layer.index)
+    return
+  }
   failedStills.value = new Set(failedStills.value).add(layer.index)
-  if ((reduced.value || allFailed.value) && stillIndex() === null) emit('broken')
+  if ((still.value || allFailed.value) && stillIndex() === null) emit('broken')
 }
 </script>
 
@@ -142,8 +173,8 @@ function onError(layer: Layer): void {
       :class="[LAYER_CLASS[layer.role], opacityOf(layer)]"
       :aria-hidden="layer.role === 'shown' ? undefined : 'true'"
       :data-cover="layer.role"
-      :data-loaded="isLoaded(layer)"
       :data-kind="layer.kind"
+      :data-loaded="isLoaded(layer)"
       @load="onLoad(layer)"
       @error="onError(layer)"
     />
