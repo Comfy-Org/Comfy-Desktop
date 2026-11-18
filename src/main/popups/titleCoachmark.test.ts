@@ -306,7 +306,7 @@ describe('coachmark render-ack guard (first-use lockdown re-race)', () => {
     })
     const view = viewInstances[viewInstances.length - 1]!
     ipcHandlers.get('comfy-titletooltip:ready')?.({ sender: { id: view.popupWebContentsId } })
-    const setConfig = view.sends.find((s) => s.channel === 'comfy-titletooltip:set-config')
+    const setConfig = view.sends.filter((s) => s.channel === 'comfy-titletooltip:set-config').at(-1)
     const token = (setConfig?.payload as { configToken: string }).configToken
     return { view, token }
   }
@@ -344,5 +344,31 @@ describe('coachmark render-ack guard (first-use lockdown re-race)', () => {
 
     expect(view.showCount).toBe(0)
     expect(view.isOpen).toBe(false)
+  })
+
+  it('keeps a visible-then-hidden card hidden on a repeat ack, and only the new token reopens it', () => {
+    const parent = makeParent(9103)
+    const { view, token } = openCard(parent)
+    fireRendered(view, token)
+    expect(view.showCount).toBe(1)
+
+    reassertLockdownHide()
+    expect(view.isOpen).toBe(false)
+
+    fireRendered(view, token)
+    expect(view.showCount).toBe(1)
+    expect(view.isOpen).toBe(false)
+
+    const reopened = openCard(parent)
+    expect(reopened.view).toBe(view)
+    expect(reopened.token).not.toBe(token)
+
+    fireRendered(view, token)
+    expect(view.showCount).toBe(1)
+    expect(view.isOpen).toBe(false)
+
+    fireRendered(view, reopened.token)
+    expect(view.showCount).toBe(2)
+    expect(view.isOpen).toBe(true)
   })
 })
