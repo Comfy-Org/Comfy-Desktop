@@ -295,18 +295,10 @@ const pageCount = computed(() => Math.max(1, Math.ceil(cloudTotal.value / pageSi
 const pagedCloud = computed(() => !!selectedBuild.value?.cloud && pageCount.value > 1)
 const showPagination = computed(() => !!selectedBuild.value?.cloud && cloudTotal.value > 0)
 
-function kindCount(kind: KindFilter): number | undefined {
-  if (selectedBuild.value?.cloud) return undefined
-  return kind === 'all'
-    ? searchedAssets.value.length
-    : searchedAssets.value.filter((asset) => asset.kind === kind).length
-}
-
 const kindOptions = computed(() =>
   kinds.map((kind) => ({
     value: kind,
     label: t(`assets.kind.${kind}`),
-    count: kindCount(kind),
     testId: `assets-kind-${kind}`
   }))
 )
@@ -328,11 +320,7 @@ async function fitToolbar(): Promise<void> {
 }
 
 useResizeObserver(toolbarRow, () => void fitToolbar())
-watch(
-  [selectedBuild, searchOpen, () => kindOptions.value.map((option) => option.count).join()],
-  () => void fitToolbar(),
-  { flush: 'post' }
-)
+watch([selectedBuild, searchOpen], () => void fitToolbar(), { flush: 'post' })
 
 const visibleAssets = computed(() => {
   const filtered = searchedAssets.value.filter(
@@ -1028,11 +1016,6 @@ function extensionOf(name: string): string {
                 data-testid="assets-kind-menu"
               >
                 {{ currentKind.label }}
-                <span
-                  v-if="currentKind.count !== undefined"
-                  class="text-subtle-foreground tabular-nums"
-                  >{{ currentKind.count }}</span
-                >
                 <ChevronDown :size="14" aria-hidden="true" />
               </Button>
             </template>
@@ -1048,11 +1031,6 @@ function extensionOf(name: string): string {
                 @select.prevent="kindFilter = option.value"
               >
                 <span class="flex-1 text-left">{{ option.label }}</span>
-                <span
-                  v-if="option.count !== undefined"
-                  class="text-subtle-foreground tabular-nums"
-                  >{{ option.count }}</span
-                >
                 <Check v-if="kindFilter === option.value" :size="15" aria-hidden="true" />
               </MenuRadioItem>
             </DropdownMenuRadioGroup>

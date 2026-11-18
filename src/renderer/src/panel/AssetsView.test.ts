@@ -584,10 +584,14 @@ describe('AssetsView', () => {
     expect(shown('assets-search-toggle')).toBe(false)
     expect(shown('assets-kind-menu')).toBe(false)
 
-    page.style.width = '520px'
+    page.style.width = '420px'
     await vi.waitFor(() => expect(shown('assets-kind-menu')).toBe(true))
     expect(shown('assets-kind-all')).toBe(false)
     expect(shown('assets-search-toggle')).toBe(true)
+    expect(
+      wrapper.get('[data-testid="assets-kind-menu"]').text(),
+      'the type menu shows the name with no count'
+    ).toBe('All')
     expect(toolbarRow().scrollWidth).toBeLessThanOrEqual(toolbarRow().clientWidth)
 
     page.style.width = '1400px'
@@ -595,8 +599,8 @@ describe('AssetsView', () => {
     expect(shown('assets-search-toggle')).toBe(false)
   })
 
-  it('keeps the compact search open while a query changes the counts', async () => {
-    page.style.width = '640px'
+  it('keeps the compact search open while a query filters the assets', async () => {
+    page.style.width = '520px'
     const wrapper = await mountAssets([
       asset('a', 'surfer.mp4', 'video'),
       asset('b', 'forest.png', 'image')
@@ -625,12 +629,12 @@ describe('AssetsView', () => {
     ])
 
     const tabs = () => wrapper.findAll('[data-testid^="assets-kind-"]').map((tab) => tab.text())
-    expect(tabs(), 'each type tab counts its files').toEqual([
-      'All3',
-      'Images2',
-      'Videos1',
-      '3D0',
-      'Audio0'
+    expect(tabs(), 'the type tabs show their names with no counts').toEqual([
+      'All',
+      'Images',
+      'Videos',
+      '3D',
+      'Audio'
     ])
 
     await wrapper.get('[data-testid="assets-kind-image"]').trigger('click')
@@ -638,12 +642,12 @@ describe('AssetsView', () => {
 
     await wrapper.get('input').setValue('terr')
     expect(assetNames(wrapper)).toEqual(['terraces.png'])
-    expect(tabs(), 'the counts follow the search').toEqual([
-      'All1',
-      'Images1',
-      'Videos0',
-      '3D0',
-      'Audio0'
+    expect(tabs(), 'a search adds no counts to the tabs').toEqual([
+      'All',
+      'Images',
+      'Videos',
+      '3D',
+      'Audio'
     ])
   })
 
