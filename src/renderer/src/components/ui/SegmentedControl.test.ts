@@ -46,10 +46,16 @@ function expectPillCovers(pill: HTMLElement, tab: HTMLElement) {
   expect(pill.style.transform).toBe(`translate(${tab.offsetLeft}px, ${tab.offsetTop}px)`)
 }
 
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
+}
+
 async function settle() {
   await flushPromises()
   await nextTick()
-  await new Promise<void>((resolve) => queueMicrotask(resolve))
+  await document.fonts.ready
+  await nextFrame()
+  await nextFrame()
 }
 
 afterEach(() => {
