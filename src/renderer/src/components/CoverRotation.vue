@@ -9,11 +9,13 @@ import { useCoverRotation } from '../composables/useCoverRotation'
 import type { AppCover } from '../types/ipc'
 
 type Role = 'shown' | 'leaving' | 'upcoming'
+type Kind = 'still' | 'cover'
 
 interface Layer {
   index: number
   src: string
   role: Role
+  kind: Kind
 }
 
 const LAYER_CLASS: Record<Role, string> = {
@@ -33,10 +35,12 @@ const root = useTemplateRef<HTMLElement>('root')
 const onScreen = useElementVisibility(root)
 const page = useDocumentVisibility()
 const motion = usePreferredReducedMotion()
-const still = computed(() => motion.value === 'reduce')
+const reduced = computed(() => motion.value === 'reduce')
 
 const listKey = () => pictures.map((picture) => picture.url).join('\n')
-const playing = computed(() => !paused && !still.value && onScreen.value && page.value !== 'hidden')
+const playing = computed(
+  () => !paused && !reduced.value && onScreen.value && page.value !== 'hidden'
+)
 const generation = ref(0)
 
 const { shown, leaving, upcoming, loaded, allFailed, markLoaded, markFailed } = useCoverRotation({
@@ -58,13 +62,13 @@ function hasStill(index: number): boolean {
   return Boolean(pictures[index]?.stillUrl) && !failedStills.value.has(index)
 }
 
-function isLoaded(index: number): boolean {
-  return (still.value ? loadedStills : loaded).value.has(index)
+function isLoaded(layer: Layer): boolean {
+  return (layer.kind === 'still' ? loadedStills : loaded).value.has(layer.index)
 }
 
-function onLoad(index: number): void {
-  if (still.value) loadedStills.value = new Set(loadedStills.value).add(index)
-  else markLoaded(index)
+function onLoad(layer: Layer): void {
+  if (layer.kind === 'still') loadedStills.value = new Set(loadedStills.value).add(layer.index)
+  else markLoaded(layer.index)
 }
 
 function stillIndex(): number | null {
@@ -74,43 +78,47 @@ function stillIndex(): number | null {
   return other >= 0 ? other : null
 }
 
+function pick(): Array<[number | null, Role, Kind]> {
+  if (reduced.value) return [[stillIndex(), 'shown', 'still']]
+  if (paused)
+    return [
+      [stillIndex(), 'shown', 'still'],
+      [shown.value, 'upcoming', 'cover']
+    ]
+  return [
+    [leaving.value, 'leaving', 'cover'],
+    [shown.value, 'shown', 'cover'],
+    [upcoming.value, 'upcoming', 'cover']
+  ]
+}
+
 const layers = computed<Layer[]>(() => {
-  const picked: Array<[number | null, Role]> = still.value
-    ? [[stillIndex(), 'shown']]
-    : [
-        [leaving.value, 'leaving'],
-        [shown.value, 'shown'],
-        [upcoming.value, 'upcoming']
-      ]
-  const seen = new Set<number>()
-  return picked
-    .filter((entry): entry is [number, Role] => {
-      const [index] = entry
-      if (index === null || pictures[index] === undefined || seen.has(index)) return false
-      seen.add(index)
-      return true
-    })
-    .map(([index, role]) => {
-      const picture = pictures[index]!
-      const src = still.value ? picture.stillUrl! : picture.url
-      return { index, src, role }
+  const seen = new Set<string>()
+  return pick()
+    .flatMap(([index, role, kind]): Layer[] => {
+      const picture = index === null ? undefined : pictures[index]
+      if (index === null || picture === undefined) return []
+      const src = kind === 'still' ? picture.stillUrl! : picture.url
+      if (seen.has(src)) return []
+      seen.add(src)
+      return [{ index, src, role, kind }]
     })
     .sort((a, b) => a.index - b.index)
 })
 
 function opacityOf(layer: Layer): string {
   if (layer.role !== 'shown') return ''
-  return isLoaded(layer.index) ? 'opacity-100' : 'opacity-0'
+  return isLoaded(layer) ? 'opacity-100' : 'opacity-0'
 }
 
-function onError(index: number): void {
-  if (!still.value) {
-    markFailed(index)
+function onError(layer: Layer): void {
+  if (layer.kind === 'cover') {
+    markFailed(layer.index)
     if (allFailed.value) emit('broken')
     return
   }
-  failedStills.value = new Set(failedStills.value).add(index)
-  if (stillIndex() === null) emit('broken')
+  failedStills.value = new Set(failedStills.value).add(layer.index)
+  if (reduced.value && stillIndex() === null) emit('broken')
 }
 </script>
 
@@ -123,7 +131,7 @@ function onError(index: number): void {
   >
     <img
       v-for="layer in layers"
-      :key="`${generation}:${still ? 'still' : 'cover'}:${layer.src}`"
+      :key="`${generation}:${layer.kind}:${layer.src}`"
       :src="layer.src"
       alt=""
       draggable="false"
@@ -132,9 +140,10 @@ function onError(index: number): void {
       :class="[LAYER_CLASS[layer.role], opacityOf(layer)]"
       :aria-hidden="layer.role === 'shown' ? undefined : 'true'"
       :data-cover="layer.role"
-      :data-loaded="isLoaded(layer.index)"
-      @load="onLoad(layer.index)"
-      @error="onError(layer.index)"
+      :data-loaded="isLoaded(layer)"
+      :data-kind="layer.kind"
+      @load="onLoad(layer)"
+      @error="onError(layer)"
     />
   </span>
 </template>

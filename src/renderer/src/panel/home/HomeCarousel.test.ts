@@ -116,7 +116,9 @@ describe('HomeCarousel app badges', () => {
 })
 
 describe('HomeCarousel covers', () => {
-  const coverOf = (card: CarouselCard) => [{ url: `/covers/${card.id}.mp4`, stillUrl: null }]
+  const coverOf = (card: CarouselCard) => [
+    { url: `/covers/${card.id}.webp`, stillUrl: `/covers/${card.id}-still.webp` }
+  ]
 
   function playingCards(wrapper: VueWrapper) {
     return wrapper
@@ -132,6 +134,21 @@ describe('HomeCarousel covers', () => {
 
     expect(wrapper.findAllComponents(CoverRotation).length).toBeGreaterThan(1)
     expect(playingCards(wrapper)).toEqual(['0'])
+  })
+
+  it('shows the still picture on the cards beside the centre and the moving cover in the centre', () => {
+    const wrapper = mountCarousel(coverOf)
+
+    const shown = wrapper
+      .findAll('[data-testid="home-carousel-card"]')
+      .filter((card) => card.find('img[data-cover="shown"]').exists())
+      .map((card) => [
+        card.attributes('data-arc-offset'),
+        card.get('img[data-cover="shown"]').attributes('src')?.endsWith('-still.webp')
+      ])
+
+    expect(shown.length).toBeGreaterThan(1)
+    expect(shown.filter(([, isStill]) => !isStill).map(([offset]) => offset)).toEqual(['0'])
   })
 
   it('plays the next card once it reaches the centre', async () => {

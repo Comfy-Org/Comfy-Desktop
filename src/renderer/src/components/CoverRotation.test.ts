@@ -101,17 +101,47 @@ describe('CoverRotation', () => {
     expect(shownSrc(wrapper)).not.toBe(second)
   })
 
-  it('stands still while it is paused', async () => {
+  it('shows a still while it is paused, with its moving cover loading hidden behind it', async () => {
     const wrapper = mountCovers(COVERS, { paused: true })
     await untilAllLoaded(wrapper)
-    const first = shownSrc(wrapper)
+    const still = shownSrc(wrapper)
+
+    expect(STILLS).toContain(still)
+    expect(layer(wrapper, 'shown').attributes('data-kind')).toBe('still')
+    const behind = layer(wrapper, 'upcoming')
+    expect(behind.attributes('data-kind')).toBe('cover')
+    expect(URLS).toContain(behind.attributes('src'))
+    expect(behind.classes()).toContain('opacity-0')
 
     vi.advanceTimersByTime(COVER_HOLD_MS * 6)
     await wrapper.vm.$nextTick()
-    expect(shownSrc(wrapper)).toBe(first)
+    expect(shownSrc(wrapper)).toBe(still)
+  })
+
+  it('plays the moving cover once it is no longer paused', async () => {
+    const wrapper = mountCovers(COVERS, { paused: true })
+    await untilAllLoaded(wrapper)
 
     await wrapper.setProps({ paused: false })
+    await untilAllLoaded(wrapper)
+    const first = shownSrc(wrapper)
+
+    expect(URLS).toContain(first)
+    expect(layer(wrapper, 'shown').attributes('data-kind')).toBe('cover')
     await untilTheCoverChanges(wrapper, first)
+  })
+
+  it('shows nothing moving while it is paused and the cover has no still', async () => {
+    const wrapper = mountCovers(
+      COVERS.map((cover) => ({ ...cover, stillUrl: null })),
+      { paused: true }
+    )
+    await untilAllLoaded(wrapper)
+
+    expect(layer(wrapper, 'shown').exists()).toBe(false)
+    expect(wrapper.findAll('img')).toHaveLength(1)
+    expect(layer(wrapper, 'upcoming').classes()).toContain('opacity-0')
+    expect(wrapper.emitted('broken')).toBeUndefined()
   })
 
   it('stands still while it is off screen', async () => {
