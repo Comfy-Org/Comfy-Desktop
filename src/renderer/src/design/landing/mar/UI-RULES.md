@@ -22,7 +22,7 @@ DS's Motion page (`ds/motion.ts`).
 - **One card size.** A card (`rounded-[14px] bg-card`) has 18px on the
   sides, 16px top and bottom, and sits 10px from the next card, like the
   build Overview cards. Rows of the same kind (the models folders) share
-  one card, split by a 1px divider inset to the card's padding; the ⋯
+  one card, split by a 1px divider that runs edge to edge; the ⋯
   glyph lands 18px from the right edge.
 - **Add sits outside the cards.** An Add button for a list (Add models
   folder, Add Variable) goes below the last card, on the page, aligned
