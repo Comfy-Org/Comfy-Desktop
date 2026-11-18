@@ -1048,6 +1048,28 @@ describe('HomeTemplateSearch telemetry', () => {
     })
   })
 
+  it('sends a sign_in pick, and no open result, when a signed-out user picks a partner card', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: false })
+    signIn.mockReturnValue(new Promise(() => {}))
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER, PARTNER_POSTER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.findAll('[role="option"]')[1]!.trigger('click')
+    await flushPromises()
+
+    expect(named('picked')[0]!.context).toMatchObject({
+      search_id: named('searched')[0]!.context!.search_id,
+      template_id: 'api_poster_template',
+      list: 'run',
+      list_position: 1,
+      position: 1,
+      input_method: 'pointer',
+      action: 'sign_in'
+    })
+    expect(named('open_result')).toEqual([])
+    expect(opened()).toEqual([])
+  })
+
   it('sends a pointer pick for a clicked card', async () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')

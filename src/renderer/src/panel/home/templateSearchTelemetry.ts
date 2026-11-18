@@ -195,7 +195,12 @@ export function createSearchTelemetry({
     if (session) session.shownAt = null
   }
 
-  function picked(rows: SearchRow[], row: SearchRow, inputMethod: InputMethod): string | null {
+  function picked(
+    rows: SearchRow[],
+    row: SearchRow,
+    inputMethod: InputMethod,
+    action: 'run' | 'download' | 'sign_in' = row.candidate.needsDownload ? 'download' : 'run'
+  ): string | null {
     const current = session
     const answer = current?.answer
     if (!current || !answer || current.shownAt === null) return null
@@ -211,7 +216,7 @@ export function createSearchTelemetry({
       match_level: matchLevel(row.candidate) ?? 'none',
       is_best_match: row.best,
       input_method: inputMethod,
-      action: row.candidate.needsDownload ? 'download' : 'run',
+      action,
       results_to_pick_ms: pickedAt - current.shownAt,
       session_ms: pickedAt - current.startedAt,
       session_search_count: current.searches

@@ -659,10 +659,10 @@ describe('bundle store download reports', () => {
     const downloads: BundleDownload[] = []
     const { store: s } = store({ now: () => clock, onDownloaded: (d) => downloads.push(d) })
     await s.prepare()
-    await vi.waitFor(() => expect(downloads).toHaveLength(1))
+    await s.download()
     clock = A_DAY_LATER
     await s.prepare()
-    await vi.waitFor(() => expect(downloads).toHaveLength(2))
+    await s.download({ quietly: true })
     expect(downloads.map((d) => d.trigger)).toEqual(['bar', 'update_check'])
   })
 

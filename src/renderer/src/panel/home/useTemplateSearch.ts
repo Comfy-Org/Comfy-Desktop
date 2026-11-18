@@ -173,8 +173,12 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   }
 
   function activate(row: SearchRow, inputMethod: InputMethod): void {
-    if (needsSignIn(row)) options.signIn()
-    else void openRow(row, inputMethod)
+    if (!needsSignIn(row)) {
+      void openRow(row, inputMethod)
+      return
+    }
+    telemetry.picked(rows.value, row, inputMethod, 'sign_in')
+    options.signIn()
   }
 
   function close(reason: AbandonReason | null): void {
