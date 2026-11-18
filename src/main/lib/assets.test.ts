@@ -1313,26 +1313,29 @@ describe('Cloud outputs for an app input', () => {
       })
     )
 
-    expect(await listNewestCloudOutputs(12)).toEqual([
-      {
-        id: 'a1',
-        name: 'cutout_00001_.png',
-        size: 10,
-        mimeType: 'image/png',
-        createdAt: '2026-11-10T12:00:00Z',
-        loaderPath: '0f3a.png',
-        tags: ['output']
-      },
-      {
-        id: 'a2',
-        name: 'clip.mp4',
-        size: null,
-        mimeType: null,
-        createdAt: null,
-        loaderPath: null,
-        tags: []
-      }
-    ])
+    expect(await listNewestCloudOutputs(12)).toEqual({
+      outputs: [
+        {
+          id: 'a1',
+          name: 'cutout_00001_.png',
+          size: 10,
+          mimeType: 'image/png',
+          createdAt: '2026-11-10T12:00:00Z',
+          loaderPath: '0f3a.png',
+          tags: ['output']
+        },
+        {
+          id: 'a2',
+          name: 'clip.mp4',
+          size: null,
+          mimeType: null,
+          createdAt: null,
+          loaderPath: null,
+          tags: []
+        }
+      ],
+      nextCursor: null
+    })
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     const query = new URL(url).searchParams
     expect(Object.fromEntries(query)).toMatchObject({
@@ -1342,7 +1345,28 @@ describe('Cloud outputs for an app input', () => {
       order: 'desc',
       limit: '12'
     })
+    expect(query.has('after')).toBe(false)
     expect(init.headers).toMatchObject({ Authorization: 'Bearer token' })
+  })
+
+  it('reads the page after a cursor, and gives the next cursor while there is more', async () => {
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ assets: [{ id: 'a3', name: 'older.png' }], has_more: true, next_cursor: 'c2' })
+    )
+
+    const page = await listNewestCloudOutputs(12, 'c1')
+
+    expect(page?.outputs.map((output) => output.id)).toEqual(['a3'])
+    expect(page?.nextCursor).toBe('c2')
+    const [url] = fetchMock.mock.calls[0] as [string]
+    expect(new URL(url).searchParams.get('after')).toBe('c1')
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ assets: [], has_more: false, next_cursor: 'x' }))
+    expect((await listNewestCloudOutputs(12, 'c2'))?.nextCursor, 'the last page').toBeNull()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ assets: [], has_more: true, next_cursor: 'c3' }))
+    expect((await listNewestCloudOutputs(12, 'c3'))?.nextCursor, 'a repeated cursor').toBeNull()
   })
 
   it('lists nothing when signed out, and fails on a bad answer', async () => {

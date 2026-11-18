@@ -486,7 +486,23 @@ function cloudOutputOf(value: unknown): CloudOutput | null {
   }
 }
 
-export async function listNewestCloudOutputs(limit: number): Promise<CloudOutput[] | null> {
+export interface CloudOutputPage {
+  outputs: CloudOutput[]
+  nextCursor: string | null
+}
+
+function nextCursorOf(page: Record<string, unknown>, after: string | undefined): string | null {
+  const { has_more: hasMore, next_cursor: cursor } = page
+  if (hasMore !== true || typeof cursor !== 'string' || cursor === '' || cursor === after) {
+    return null
+  }
+  return cursor
+}
+
+export async function listNewestCloudOutputs(
+  limit: number,
+  after?: string
+): Promise<CloudOutputPage | null> {
   const accessToken = await getCloudSession().getAccessToken()
   if (!accessToken) return null
   const query = new URLSearchParams({
@@ -497,15 +513,21 @@ export async function listNewestCloudOutputs(limit: number): Promise<CloudOutput
     include_public: 'false',
     include_total: 'false'
   })
+  if (after !== undefined) query.set('after', after)
   const res = await fetch(`${CLOUD_CONFIG.apiBase}/assets?${query}`, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
   })
   if (!res.ok) throw new Error(`List assets failed: HTTP ${res.status}`)
   const body: unknown = await res.json().catch(() => null)
-  const assets = body && typeof body === 'object' ? (body as Record<string, unknown>).assets : null
-  if (!Array.isArray(assets)) throw new Error('List assets returned an invalid page')
-  return assets.map(cloudOutputOf).filter((output): output is CloudOutput => output !== null)
+  const page = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+  if (!Array.isArray(page.assets)) throw new Error('List assets returned an invalid page')
+  return {
+    outputs: page.assets
+      .map(cloudOutputOf)
+      .filter((output): output is CloudOutput => output !== null),
+    nextCursor: nextCursorOf(page, after)
+  }
 }
 
 export async function readCloudOutput(

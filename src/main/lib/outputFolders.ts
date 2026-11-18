@@ -13,7 +13,7 @@ import { copyImageToClipboard } from './clipboardImage'
 import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installInputDir, installOutputDir } from './models'
-import { sourceMap } from './ipc/shared'
+import { _runningSessions, sourceMap } from './ipc/shared'
 import type { AssetSummary, LocalAssetListing } from '../../types/ipc'
 
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
@@ -73,8 +73,32 @@ export interface ComfyFolders {
   input: string | null
 }
 
+const NO_FOLDERS: ComfyFolders = { output: null, input: null }
+
+function lastArgValue(args: readonly string[], flag: string): string | null {
+  let value: string | undefined
+  for (const [i, arg] of args.entries()) {
+    if (arg === flag) value = args[i + 1]
+    else if (arg.startsWith(`${flag}=`)) value = arg.slice(flag.length + 1)
+  }
+  return value || null
+}
+
+export function launchFoldersOf(
+  inst: InstallationRecord,
+  launch: { args?: readonly string[]; skipSharedPaths?: boolean }
+): ComfyFolders {
+  if (launch.skipSharedPaths || !launch.args || !hasOutputFolder(inst)) return NO_FOLDERS
+  return {
+    output: lastArgValue(launch.args, '--output-directory') ?? installOutputDir(inst.installPath),
+    input: lastArgValue(launch.args, '--input-directory') ?? installInputDir(inst.installPath)
+  }
+}
+
 export function comfyFoldersOf(inst: InstallationRecord | null): ComfyFolders {
   if (!inst) return { output: sharedOutputDir(), input: sharedInputDir() }
+  const running = _runningSessions.get(inst.id)
+  if (running) return running.launchFolders ?? NO_FOLDERS
   return { output: outputDirFor(inst, sharedOutputDir()), input: inputDirFor(inst) }
 }
 

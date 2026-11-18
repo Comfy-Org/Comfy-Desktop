@@ -15,7 +15,8 @@ const {
   fullImage,
   shownInFolder,
   trashed,
-  copiedImage
+  copiedImage,
+  runningSessions
 } = await vi.hoisted(async () => {
   const nodeFs = await import('node:fs')
   const nodeOs = await import('node:os')
@@ -36,7 +37,8 @@ const {
     fullImage: vi.fn(),
     shownInFolder: vi.fn(),
     trashed: vi.fn(async (file: string) => nodeFs.rmSync(file)),
-    copiedImage: vi.fn()
+    copiedImage: vi.fn(),
+    runningSessions: new Map<string, { launchFolders?: { output: string; input: string } }>()
   }
 })
 
@@ -71,6 +73,7 @@ vi.mock('../settings', () => ({
   }
 }))
 vi.mock('./ipc/shared', () => ({
+  _runningSessions: runningSessions,
   sourceMap: {
     standalone: { category: 'local' },
     desktop: { category: 'local', managesOwnPaths: true },
@@ -97,6 +100,7 @@ import {
   comfyOutputPath,
   copyOutputImage,
   hasOutputFolder,
+  launchFoldersOf,
   revealOutputFile,
   trashOutputFile,
   listLocalAssets,
@@ -146,6 +150,7 @@ function write(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  runningSessions.clear()
   thumbnailImage.mockReset()
   fullImage.mockReset()
   for (const dir of [sharedDir, ownDir, outsideDir, installDir])
@@ -222,6 +227,59 @@ describe('comfyFoldersOf', () => {
       output: null,
       input: null
     })
+  })
+})
+
+describe('comfyFoldersOf a running build', () => {
+  it('gives the folders it was launched with, not the ones the settings name now', () => {
+    const launchedOutput = path.join(root, 'output-at-launch')
+    const launchedInput = path.join(root, 'input-at-launch')
+    runningSessions.set('a', { launchFolders: { output: launchedOutput, input: launchedInput } })
+
+    expect(comfyFoldersOf(install('a'))).toEqual({ output: launchedOutput, input: launchedInput })
+    expect(comfyFoldersOf(install('b')), 'a build that is not running').toEqual({
+      output: sharedDir,
+      input: sharedInputDir
+    })
+  })
+
+  it('gives no folders when the launch folders are not known', () => {
+    runningSessions.set('a', {})
+
+    expect(comfyFoldersOf(install('a'))).toEqual({ output: null, input: null })
+  })
+})
+
+describe('launchFoldersOf', () => {
+  it('reads the folders from the arguments ComfyUI was started with', () => {
+    const args = ['main.py', '--input-directory', '/old-input', '--output-directory', '/old-output']
+
+    expect(launchFoldersOf(install('a'), { args })).toEqual({
+      output: '/old-output',
+      input: '/old-input'
+    })
+  })
+
+  it('takes the last of a repeated flag, written either way, as ComfyUI does', () => {
+    const args = ['--input-directory', '/first', '--input-directory=/second']
+
+    expect(launchFoldersOf(install('a'), { args }).input).toBe('/second')
+  })
+
+  it("falls back to ComfyUI's own folders when no folder was passed", () => {
+    expect(launchFoldersOf(install('a'), { args: ['main.py'] })).toEqual({
+      output: path.join(installDir, 'ComfyUI', 'output'),
+      input: path.join(installDir, 'ComfyUI', 'input')
+    })
+  })
+
+  it('gives no folders when Desktop could not pass them', () => {
+    const none = { output: null, input: null }
+    const args = ['--input-directory', '/in']
+
+    expect(launchFoldersOf(install('a'), { args, skipSharedPaths: true })).toEqual(none)
+    expect(launchFoldersOf(install('a'), {})).toEqual(none)
+    expect(launchFoldersOf(install('a', { sourceId: 'desktop' }), { args })).toEqual(none)
   })
 })
 

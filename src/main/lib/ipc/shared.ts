@@ -40,6 +40,7 @@ import { appendLog } from '../logsBroadcast'
 import { flushOperationOutput } from '../appLog'
 import { stripAnsi } from '../stderrTail'
 import type { AcceleratorSnapshot } from '../hardwareTap'
+import type { ComfyFolders } from '../outputFolders'
 import {
   spawnProcess,
   waitForPort,
@@ -295,6 +296,7 @@ export interface SessionInfo {
   flushTelemetry?: () => void
   getAcceleratorInfo?: () => AcceleratorSnapshot | null
   coreBetaArgs?: readonly BetaArgView[]
+  launchFolders?: ComfyFolders
 }
 
 export interface LaunchCallbackInfo {
@@ -952,7 +954,8 @@ export function _addSession(
     installationName,
     flushTelemetry,
     getAcceleratorInfo,
-    coreBetaArgs
+    coreBetaArgs,
+    launchFolders
   }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
   retries?: { portRetries: number; rebootRetries: number },
@@ -968,6 +971,7 @@ export function _addSession(
     flushTelemetry,
     getAcceleratorInfo,
     coreBetaArgs,
+    launchFolders,
     startedAt: Date.now()
   })
   _launchingInstances.delete(installationId)
@@ -1518,6 +1522,7 @@ export function _test_addRunningSession(
     installationName,
     flushTelemetry,
     coreBetaArgs,
+    launchFolders,
     startedAt: Date.now()
   })
   _broadcastToRenderer('instance-started', {

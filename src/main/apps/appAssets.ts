@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto'
 import fs from 'fs'
 import fsp from 'fs/promises'
-import type { Dirent } from 'fs'
+import type { Dirent, Stats } from 'fs'
 import path from 'path'
 import type { WebContents } from 'electron'
 
@@ -28,6 +28,7 @@ export const MAX_FILE_BYTES = 2 * 1024 ** 3
 export const MAX_READ_BYTES = 512 * 1024 ** 2
 export const MAX_REFS_PER_PAGE = 500
 export const MAX_REMEMBERED = 500
+export const MAX_CLOUD_PAGES = 10
 const APPS_FOLDER = 'apps'
 const COPIES_FOLDER = 'desktop'
 const THUMB_LONG_SIDE = 256
@@ -366,20 +367,48 @@ function cloudRef(
   }
 }
 
+interface UsableCloudOutput {
+  output: CloudOutput
+  type: FileType
+}
+
+function usableCloudOutput(
+  output: CloudOutput,
+  kinds: readonly ComfyDesktopAssetKind[]
+): UsableCloudOutput | null {
+  const type = cloudTypeOf(output)
+  if (!type || !kinds.includes(type.kind) || output.tags.includes(MISSING_TAG)) return null
+  return { output, type }
+}
+
+async function newestUsableCloudOutputs(
+  kinds: readonly ComfyDesktopAssetKind[],
+  limit: number
+): Promise<UsableCloudOutput[]> {
+  const usable: UsableCloudOutput[] = []
+  const cursorsSeen = new Set<string>()
+  let after: string | undefined
+  for (let listed = 0; listed < MAX_CLOUD_PAGES; listed++) {
+    const page = await listNewestCloudOutputs(limit * CLOUD_LIST_FACTOR, after)
+    if (!page) return usable
+    for (const output of page.outputs) {
+      const found = usableCloudOutput(output, kinds)
+      if (found) usable.push(found)
+      if (usable.length === limit) return usable
+    }
+    if (!page.nextCursor || cursorsSeen.has(page.nextCursor)) return usable
+    cursorsSeen.add(page.nextCursor)
+    after = page.nextCursor
+  }
+  return usable
+}
+
 async function recentCloud(
   page: WebContents,
   kinds: readonly ComfyDesktopAssetKind[],
   limit: number
 ): Promise<ComfyDesktopAssetRef[]> {
-  const outputs = await listNewestCloudOutputs(limit * CLOUD_LIST_FACTOR)
-  if (!outputs) return []
-  const usable: { output: CloudOutput; type: FileType }[] = []
-  for (const output of outputs) {
-    const type = cloudTypeOf(output)
-    if (!type || !kinds.includes(type.kind) || output.tags.includes(MISSING_TAG)) continue
-    usable.push({ output, type })
-    if (usable.length === limit) break
-  }
+  const usable = await newestUsableCloudOutputs(kinds, limit)
   return withThumbs(
     usable,
     ({ output, type }) => cloudThumb(output, type),
@@ -478,25 +507,53 @@ async function hashFile(file: string): Promise<string> {
   return hash.digest('hex').slice(0, HASH_NAME_LENGTH)
 }
 
-async function contentHash(file: string): Promise<string> {
-  const stat = await fsp.stat(file)
-  const key = `${file}\n${stat.size}\n${stat.mtimeMs}`
-  const known = contentHashes.get(key)
-  if (known) return known
-  const hash = await hashFile(file)
-  rememberBounded(contentHashes, key, hash)
-  return hash
+function versionKey(file: string, stat: Stats): string {
+  return `${file}\n${stat.size}\n${stat.mtimeMs}`
 }
 
-async function placeCopy(source: string, target: string): Promise<void> {
-  const temp = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID()}.part`)
+function sameVersion(before: Stats, after: Stats): boolean {
+  return before.size === after.size && before.mtimeMs === after.mtimeMs
+}
+
+async function existingCopy(target: string): Promise<'file' | 'other' | null> {
+  const existing = await fsp.lstat(target).catch(() => null)
+  if (!existing) return null
+  return existing.isFile() ? 'file' : 'other'
+}
+
+async function publishCopy(
+  file: string,
+  copiesDir: string,
+  extension: string
+): Promise<string | null> {
+  const before = await fsp.stat(file)
+  const temp = path.join(copiesDir, `.${randomUUID()}${extension}.part`)
   try {
-    await fsp.copyFile(source, temp, fs.constants.COPYFILE_FICLONE)
-    await fsp.rename(temp, target)
-  } catch (error) {
+    await fsp.copyFile(file, temp, fs.constants.COPYFILE_FICLONE)
+    const hash = await hashFile(temp)
+    const after = await fsp.stat(file).catch(() => null)
+    if (after && sameVersion(before, after)) {
+      rememberBounded(contentHashes, versionKey(file, before), hash)
+    }
+    const target = path.join(copiesDir, `${hash}${extension}`)
+    const existing = await existingCopy(target)
+    if (existing === 'other') return null
+    if (!existing) await fsp.rename(temp, target)
+    return target
+  } finally {
     await fsp.rm(temp, { force: true }).catch(() => {})
-    throw error
   }
+}
+
+async function knownCopy(
+  file: string,
+  copiesDir: string,
+  extension: string
+): Promise<string | null> {
+  const hash = contentHashes.get(versionKey(file, await fsp.stat(file)))
+  if (!hash) return null
+  const target = path.join(copiesDir, `${hash}${extension}`)
+  return (await existingCopy(target)) === 'file' ? target : null
 }
 
 async function copyIntoInput(
@@ -504,17 +561,15 @@ async function copyIntoInput(
   inputRoot: string
 ): Promise<AssetResult<ComfyDesktopAssetValue>> {
   const extension = path.extname(file).toLowerCase()
-  const name = `${await contentHash(file)}${extension}`
   const copiesDir = path.join(inputRoot, COPIES_FOLDER)
   await fsp.mkdir(copiesDir, { recursive: true })
   const realCopies = await realFolder(copiesDir)
-  const target = realCopies ? path.join(realCopies, name) : null
+  if (!realCopies || relativeInside(inputRoot, realCopies) === null) return failure('elsewhere')
+  const target =
+    (await knownCopy(file, realCopies, extension)) ??
+    (await publishCopy(file, realCopies, extension))
   const value = target ? annotatedName(inputRoot, target, 'input') : null
-  if (!target || !value) return failure('elsewhere')
-  const existing = await fsp.lstat(target).catch(() => null)
-  if (existing && !existing.isFile()) return failure('elsewhere')
-  if (!existing) await placeCopy(file, target)
-  return { value }
+  return value ? { value } : failure('elsewhere')
 }
 
 function copyOnce(file: string, inputRoot: string): Promise<AssetResult<ComfyDesktopAssetValue>> {

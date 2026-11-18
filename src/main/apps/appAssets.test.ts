@@ -42,13 +42,13 @@ vi.mock('../lib/outputFolders', () => ({
   thumbnailDataUrlFromBytes: (bytes: Uint8Array) => mocks.cloudThumbnail(bytes)
 }))
 vi.mock('../lib/assets', () => ({
-  listNewestCloudOutputs: (limit: number) => mocks.listCloud(limit),
+  listNewestCloudOutputs: (limit: number, after?: string) => mocks.listCloud(limit, after),
   readCloudOutput: (id: string, max: number, timeout: number) => mocks.readCloud(id, max, timeout)
 }))
 
 import type { WebContents } from 'electron'
 import type { ComfyDesktopAssetRef } from '../../types/comfyDesktopBridge'
-import type { CloudOutput } from '../lib/assets'
+import type { CloudOutput, CloudOutputPage } from '../lib/assets'
 import {
   _heldRefsForTest,
   _resetForTest,
@@ -57,6 +57,7 @@ import {
   assetFromPath,
   assetRunValue,
   DEFAULT_RECENT,
+  MAX_CLOUD_PAGES,
   MAX_FILE_BYTES,
   MAX_READ_BYTES,
   MAX_RECENT,
@@ -97,6 +98,10 @@ function cloudOutput(extra: Partial<CloudOutput> = {}): CloudOutput {
   }
 }
 
+function cloudPage(outputs: CloudOutput[], nextCursor: string | null = null): CloudOutputPage {
+  return { outputs, nextCursor }
+}
+
 async function refOf(file: string, kinds = ['image', 'video']): Promise<ComfyDesktopAssetRef> {
   const answer = await assetFromPath(page, file, { kinds })
   if ('error' in answer) throw new Error(`No reference for ${file}: ${answer.error}`)
@@ -110,7 +115,7 @@ beforeEach(() => {
   vi.restoreAllMocks()
   _resetForTest()
   mocks.buildId = null
-  mocks.listCloud.mockResolvedValue([])
+  mocks.listCloud.mockResolvedValue(cloudPage([]))
   mocks.readCloud.mockResolvedValue({ error: 'missing' })
   for (const entry of fs.readdirSync(root)) fs.rmSync(path.join(root, entry), { recursive: true })
   for (const dir of [sharedOutput, sharedInput, ownOutput, ownInput, outside]) {
@@ -264,18 +269,20 @@ describe('recent on This computer', () => {
 
 describe('recent on Comfy Cloud', () => {
   it('lists the newest Cloud outputs of the kinds asked for, without missing ones', async () => {
-    mocks.listCloud.mockResolvedValue([
-      cloudOutput({ id: 'a', name: 'a.png' }),
-      cloudOutput({ id: 'b', name: 'b.mp4', mimeType: 'video/mp4', size: 50_000_000 }),
-      cloudOutput({ id: 'c', name: 'c.png', tags: ['output', 'missing'] }),
-      cloudOutput({ id: 'd', name: 'd.glb', mimeType: 'model/gltf-binary' }),
-      cloudOutput({ id: 'e', name: 'e.png', size: 20 * 1024 ** 2 })
-    ])
+    mocks.listCloud.mockResolvedValue(
+      cloudPage([
+        cloudOutput({ id: 'a', name: 'a.png' }),
+        cloudOutput({ id: 'b', name: 'b.mp4', mimeType: 'video/mp4', size: 50_000_000 }),
+        cloudOutput({ id: 'c', name: 'c.png', tags: ['output', 'missing'] }),
+        cloudOutput({ id: 'd', name: 'd.glb', mimeType: 'model/gltf-binary' }),
+        cloudOutput({ id: 'e', name: 'e.png', size: 20 * 1024 ** 2 })
+      ])
+    )
     mocks.readCloud.mockResolvedValue({ bytes: new Uint8Array([1, 2, 3]) })
 
     const recent = await recentAssets(page, { kinds: ['image', 'video'], where: 'cloud', limit: 3 })
 
-    expect(mocks.listCloud).toHaveBeenCalledWith(12)
+    expect(mocks.listCloud).toHaveBeenCalledExactlyOnceWith(12, undefined)
     expect(recent.map(({ name, kind, where, thumb }) => ({ name, kind, where, thumb }))).toEqual([
       { name: 'a.png', kind: 'image', where: 'cloud', thumb: 'data:image/jpeg;base64,Y2xvdWQ=' },
       { name: 'b.mp4', kind: 'video', where: 'cloud', thumb: null },
@@ -290,10 +297,9 @@ describe('recent on Comfy Cloud', () => {
   })
 
   it('makes each Cloud thumbnail once, and fetches nothing already seen on a relist', async () => {
-    mocks.listCloud.mockResolvedValue([
-      cloudOutput({ id: 'a', name: 'a.png' }),
-      cloudOutput({ id: 'b', name: 'b.png' })
-    ])
+    mocks.listCloud.mockResolvedValue(
+      cloudPage([cloudOutput({ id: 'a', name: 'a.png' }), cloudOutput({ id: 'b', name: 'b.png' })])
+    )
     mocks.readCloud.mockResolvedValue({ bytes: new Uint8Array([1]) })
 
     const first = await recentAssets(page, { kinds: ['image'], where: 'cloud' })
@@ -305,7 +311,7 @@ describe('recent on Comfy Cloud', () => {
   })
 
   it('tries a Cloud thumbnail again after a failed fetch', async () => {
-    mocks.listCloud.mockResolvedValue([cloudOutput({ id: 'a', name: 'a.png' })])
+    mocks.listCloud.mockResolvedValue(cloudPage([cloudOutput({ id: 'a', name: 'a.png' })]))
     mocks.readCloud.mockResolvedValueOnce({ error: 'elsewhere' })
     mocks.readCloud.mockResolvedValueOnce({ bytes: new Uint8Array([1]) })
 
@@ -315,6 +321,51 @@ describe('recent on Comfy Cloud', () => {
     expect(failed?.thumb).toBeNull()
     expect(fetched?.thumb).toBe('data:image/jpeg;base64,Y2xvdWQ=')
     expect(mocks.readCloud).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads on past a page with none of the kind asked for', async () => {
+    const videos = Array.from({ length: DEFAULT_RECENT * 4 }, (_, i) =>
+      cloudOutput({ id: `v${i}`, name: `v${i}.mp4`, mimeType: 'video/mp4' })
+    )
+    mocks.listCloud
+      .mockResolvedValueOnce(cloudPage(videos, 'page-2'))
+      .mockResolvedValueOnce(cloudPage([cloudOutput({ id: 'old', name: 'old.png' })], 'page-3'))
+      .mockResolvedValueOnce(cloudPage([cloudOutput({ id: 'older', name: 'older.png' })]))
+
+    const recent = await recentAssets(page, { kinds: ['image'], where: 'cloud' })
+
+    expect(recent.map((asset) => asset.name)).toEqual(['old.png', 'older.png'])
+    expect(mocks.listCloud.mock.calls).toEqual([
+      [48, undefined],
+      [48, 'page-2'],
+      [48, 'page-3']
+    ])
+  })
+
+  it('stops reading once it has as many as asked for', async () => {
+    const both = [cloudOutput({ id: 'a', name: 'a.png' }), cloudOutput({ id: 'b', name: 'b.jpg' })]
+    mocks.listCloud.mockResolvedValue(cloudPage(both, 'more'))
+
+    const recent = await recentAssets(page, { kinds: ['image'], where: 'cloud', limit: 2 })
+
+    expect(recent.map((asset) => asset.name)).toEqual(['a.png', 'b.jpg'])
+    expect(mocks.listCloud).toHaveBeenCalledTimes(1)
+  })
+
+  it(`reads at most ${MAX_CLOUD_PAGES} pages, and stops on a cursor it has seen`, async () => {
+    let pages = 0
+    mocks.listCloud.mockImplementation(async () =>
+      cloudPage([cloudOutput({ name: 'clip.mp4', mimeType: 'video/mp4' })], `page-${++pages}`)
+    )
+
+    expect(await recentAssets(page, { kinds: ['image'], where: 'cloud' })).toEqual([])
+    expect(mocks.listCloud).toHaveBeenCalledTimes(MAX_CLOUD_PAGES)
+
+    mocks.listCloud.mockClear()
+    mocks.listCloud.mockResolvedValue(cloudPage([], 'same'))
+
+    expect(await recentAssets(page, { kinds: ['image'], where: 'cloud' })).toEqual([])
+    expect(mocks.listCloud).toHaveBeenCalledTimes(2)
   })
 
   it('lists nothing when signed out', async () => {
@@ -415,7 +466,7 @@ describe('read', () => {
   })
 
   it('reads a Cloud output with the cap, and passes on why it could not', async () => {
-    mocks.listCloud.mockResolvedValue([cloudOutput({ size: 20 * 1024 ** 2 })])
+    mocks.listCloud.mockResolvedValue(cloudPage([cloudOutput({ size: 20 * 1024 ** 2 })]))
     const [asset] = await recentAssets(page, { kinds: ['image'], where: 'cloud' })
 
     mocks.readCloud.mockResolvedValueOnce({ bytes: new Uint8Array([7, 8]) })
@@ -433,7 +484,7 @@ describe('read', () => {
   })
 
   it('answers elsewhere, not missing, when reading from Cloud fails', async () => {
-    mocks.listCloud.mockResolvedValue([cloudOutput({ size: 20 * 1024 ** 2 })])
+    mocks.listCloud.mockResolvedValue(cloudPage([cloudOutput({ size: 20 * 1024 ** 2 })]))
     const [asset] = await recentAssets(page, { kinds: ['image'], where: 'cloud' })
     mocks.readCloud.mockRejectedValueOnce(new TypeError('fetch failed'))
 
@@ -517,14 +568,38 @@ describe('valueFor on This computer', () => {
 
   it('reuses a copy of the same picture made before', async () => {
     const name = `${sha16('same')}.png`
-    write(path.join(sharedInput, 'desktop', name), 'same')
+    const earlier = write(path.join(sharedInput, 'desktop', name), 'same')
+    const earlierFile = fs.statSync(earlier).ino
     const asset = await refOf(write(path.join(outside, 'again.png'), 'same'))
-    const copyFile = vi.spyOn(fsp, 'copyFile')
 
     expect(await assetRunValue(page, asset.ref, { where: 'local' })).toEqual({
       value: `desktop/${name} [input]`
     })
-    expect(copyFile).not.toHaveBeenCalled()
+    expect(fs.readdirSync(path.join(sharedInput, 'desktop'))).toEqual([name])
+    expect(fs.statSync(earlier).ino, 'the earlier copy stays in place').toBe(earlierFile)
+  })
+
+  it('names the copy by the bytes it copied when the file is replaced while copying', async () => {
+    const photo = write(path.join(outside, 'photo.png'), 'original', 1_700_000_000)
+    const asset = await refOf(photo)
+    const realCopyFile = fsp.copyFile
+    vi.spyOn(fsp, 'copyFile').mockImplementationOnce(async (from, to, mode) => {
+      write(photo, 'replaced', 1_700_000_100)
+      return realCopyFile(from, to, mode)
+    })
+    const desktop = path.join(sharedInput, 'desktop')
+
+    expect(await assetRunValue(page, asset.ref, { where: 'local' })).toEqual({
+      value: `desktop/${sha16('replaced')}.png [input]`
+    })
+    expect(fs.readdirSync(desktop)).toEqual([`${sha16('replaced')}.png`])
+    expect(fs.readFileSync(path.join(desktop, `${sha16('replaced')}.png`), 'utf8')).toBe('replaced')
+
+    const original = await refOf(write(path.join(outside, 'original.png'), 'original'))
+    expect(await assetRunValue(page, original.ref, { where: 'local' })).toEqual({
+      value: `desktop/${sha16('original')}.png [input]`
+    })
+    expect(fs.readFileSync(path.join(desktop, `${sha16('original')}.png`), 'utf8')).toBe('original')
   })
 
   it('makes one copy when two runs ask at once', async () => {
@@ -585,10 +660,9 @@ describe('valueFor on This computer', () => {
 
 describe('valueFor on Comfy Cloud', () => {
   it("answers the Cloud output's loader path, and elsewhere for a run on This computer", async () => {
-    mocks.listCloud.mockResolvedValue([
-      cloudOutput(),
-      cloudOutput({ id: 'asset-2', name: 'b.png', loaderPath: null })
-    ])
+    mocks.listCloud.mockResolvedValue(
+      cloudPage([cloudOutput(), cloudOutput({ id: 'asset-2', name: 'b.png', loaderPath: null })])
+    )
     const [asset, noLoader] = await recentAssets(page, { kinds: ['image'], where: 'cloud' })
 
     expect(await assetRunValue(page, asset!.ref, { where: 'cloud' })).toEqual({
