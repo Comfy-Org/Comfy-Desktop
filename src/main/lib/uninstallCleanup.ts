@@ -12,7 +12,7 @@ import {
   homeDir,
   stateDir
 } from './paths'
-import { readFileSafe, readFileWithRetrySync, writeFileSafe } from './safe-file'
+import { readFileWithRetrySync, writeFileSafe } from './safe-file'
 import { TEMP_DIR_NAME } from './models'
 import { defaults as settingsDefaults } from '../settings'
 
@@ -52,6 +52,7 @@ const INSTANCE_POINTER_FILES = [
 ]
 const MODEL_POINTER_FILES = ['settings.json', 'settings.json.bak', 'data-location.json']
 const INSTALL_LIST_FILES = ['installations.json', 'installations.json.bak']
+const KEPT_PATHS_FILE = 'uninstall-kept-paths.json'
 const PARTIAL_DELETE_STATUS = 'partial-delete'
 
 const PATH_ROLES_BY_KEY = new Map<string, PathRole>([
@@ -146,7 +147,7 @@ export interface InstallationOnDisk {
   recordedPaths: NamedPath[]
 }
 
-export interface CleanupInputs {
+export interface CleanupSources {
   platform: NodeJS.Platform
   options: CleanupOptions
   folders: CleanupFolders
@@ -163,14 +164,34 @@ export interface CleanupInputs {
   unidentifiedInstallRecords: number
 }
 
+export interface TargetKind {
+  path: string
+  kind: EntryKind
+}
+
+export interface CleanupInputs extends CleanupSources {
+  targetKinds: TargetKind[]
+}
+
+export interface OwnerMarker {
+  file: string
+  id: string
+}
+
 export interface CleanupEntry {
   path: string
   bucket: CleanupBucket
   reason: string
+  seen: EntryKind
   onlyIfEmpty?: true
   onlyFile?: true
   installId?: string
+  marker?: OwnerMarker
 }
+
+type PlannedTarget = Omit<CleanupEntry, 'seen'>
+
+type TargetOptions = Pick<CleanupEntry, 'onlyIfEmpty' | 'onlyFile' | 'installId' | 'marker'>
 
 export interface DeletionGuard {
   protectedPaths: string[]
@@ -274,7 +295,7 @@ function windowsAppDataDirs(platform: NodeJS.Platform, folders: CleanupFolders):
   return dirs.filter((dir) => !isSameOrInside(folders.userData, dir))
 }
 
-function windowsLocalDataRoot(inputs: Pick<CleanupInputs, 'platform' | 'folders'>): string | null {
+function windowsLocalDataRoot(inputs: Pick<CleanupSources, 'platform' | 'folders'>): string | null {
   const { localAppData } = inputs.folders
   return inputs.platform === 'win32' && localAppData
     ? path.join(localAppData, DATA_ROOT_DIR_NAME)
@@ -282,7 +303,7 @@ function windowsLocalDataRoot(inputs: Pick<CleanupInputs, 'platform' | 'folders'
 }
 
 function partialDownloadDirs(
-  inputs: Pick<CleanupInputs, 'folders' | 'modelsDirs' | 'outputDir'>
+  inputs: Pick<CleanupSources, 'folders' | 'modelsDirs' | 'outputDir'>
 ): string[] {
   const { folders } = inputs
   return [
@@ -315,7 +336,7 @@ function tempEntriesToRemove(temp: string, names: string[]): string[] {
 }
 
 type WalkedRootSources = Pick<
-  CleanupInputs,
+  CleanupSources,
   'platform' | 'folders' | 'modelsDirs' | 'outputDir' | 'configuredCacheEntries' | 'tempEntries'
 >
 
@@ -345,7 +366,7 @@ interface KeptCandidate extends NamedPath {
 }
 
 type KeptSources = Pick<
-  CleanupInputs,
+  CleanupSources,
   'folders' | 'storedPaths' | 'installations' | 'unreadableFiles'
 >
 
@@ -380,7 +401,7 @@ interface KeptPaths {
 }
 
 function keptPaths(
-  inputs: CleanupInputs,
+  inputs: CleanupSources,
   installs: InstallationOnDisk[],
   removedOnPurpose: NamedPath[],
   pointerNames: string[]
@@ -408,7 +429,7 @@ function keptPaths(
 }
 
 function buildGuard(
-  inputs: CleanupInputs,
+  inputs: CleanupSources,
   kept: string[],
   installs: InstallationOnDisk[]
 ): DeletionGuard {
@@ -450,19 +471,29 @@ function buildGuard(
   return { protectedPaths, keptPaths: kept, allowedRoots, linksAllowedAtOrAbove }
 }
 
-export function planUninstallCleanup(
-  inputs: CleanupInputs,
-  policy: CleanupPolicy = DEFAULT_CLEANUP_POLICY,
-  keptIds: readonly string[] = []
-): CleanupPlan {
+interface PlannedTargets {
+  entries: PlannedTarget[]
+  guard: DeletionGuard
+  namedKeptPaths: string[]
+}
+
+function installMarker(inst: InstallationOnDisk): OwnerMarker {
+  return { file: path.join(inst.installPath, INSTALL_MARKER_FILE), id: inst.id }
+}
+
+function planTargets(
+  inputs: CleanupSources,
+  policy: CleanupPolicy,
+  keptIds: readonly string[]
+): PlannedTargets {
   const { folders, options } = inputs
   const ownershipKnown = inputs.unreadableFiles.length === 0
-  const entries: CleanupEntry[] = []
+  const entries: PlannedTarget[] = []
   const add = (
     p: string,
     bucket: CleanupBucket,
     reason: string,
-    extra: { onlyIfEmpty?: true; onlyFile?: true; installId?: string } = {}
+    extra: TargetOptions = {}
   ): void => {
     if (entries.some((e) => samePath(e.path, p))) return
     entries.push({ path: p, bucket, reason, ...extra })
@@ -494,12 +525,14 @@ export function planUninstallCleanup(
   const guard = buildGuard(inputs, kept.paths, installs)
 
   for (const inst of installs) {
-    add(inst.installPath, 'B', `ComfyUI install ${inst.id}`, { installId: inst.id })
+    const marker = installMarker(inst)
+    add(inst.installPath, 'B', `ComfyUI install ${inst.id}`, { installId: inst.id, marker })
   }
   if (deletingModels) add(folders.models, 'C', 'shared models folder')
   for (const inst of installs) {
-    const marker = adoptionMarkerToRetire(inst)
-    if (marker) add(marker, 'B', `adoption marker of ComfyUI install ${inst.id}`)
+    const file = adoptionMarkerToRetire(inst)
+    const reason = `adoption marker of ComfyUI install ${inst.id}`
+    if (file) add(file, 'B', reason, { marker: { file, id: inst.id } })
   }
   if (deletingSharedInputOutput) {
     add(folders.input, 'B', 'shared input folder')
@@ -551,6 +584,29 @@ export function planUninstallCleanup(
   return { entries, guard, namedKeptPaths: kept.named }
 }
 
+export function planUninstallCleanup(
+  inputs: CleanupInputs,
+  policy: CleanupPolicy = DEFAULT_CLEANUP_POLICY,
+  keptIds: readonly string[] = []
+): CleanupPlan {
+  const planned = planTargets(inputs, policy, keptIds)
+  const entries = planned.entries.flatMap((target): CleanupEntry[] => {
+    const collected = inputs.targetKinds.find((t) => samePath(t.path, target.path))
+    return collected ? [{ ...target, seen: collected.kind }] : []
+  })
+  return { ...planned, entries }
+}
+
+const EVERY_TARGET_POLICY: CleanupPolicy = {
+  keepPointerFiles: false,
+  deleteSharedInputOutput: true
+}
+
+function everyTarget(sources: CleanupSources): string[] {
+  const everything = { ...sources, options: { deleteInstances: true, deleteModels: true } }
+  return planTargets(everything, EVERY_TARGET_POLICY, []).entries.map((target) => target.path)
+}
+
 function removesKept(kept: string, target: string, scope: DeletionScope): boolean {
   if (scope === 'whole') return isSameOrInside(kept, target)
   return scope === 'around-kept' && samePath(kept, target)
@@ -590,6 +646,7 @@ export interface CleanupFs {
   entryInfo(p: string): EntryInfo
   realPath(p: string): string
   list(dir: string): string[]
+  readText(p: string): string | null
   removeFile(p: string): void
   removeLink(p: string): void
   removeEmptyDir(p: string): void
@@ -634,6 +691,13 @@ export const nodeCleanupFs: CleanupFs = {
   },
   realPath: realPathOf,
   list: (dir) => fs.readdirSync(dir),
+  readText: (p) => {
+    try {
+      return fs.readFileSync(p, 'utf-8')
+    } catch {
+      return null
+    }
+  },
   removeFile: (p) => withRetries(() => fs.unlinkSync(p)),
   removeLink: (p) => withRetries(() => fs.unlinkSync(p)),
   removeEmptyDir: (p) => withRetries(() => fs.rmdirSync(p)),
@@ -705,13 +769,32 @@ function removeWalking(p: string, parentDevice: number | null, walk: Walk): bool
   }
 }
 
+const KIND_WORDS: Record<EntryKind, string> = {
+  absent: 'missing',
+  link: 'a link',
+  dir: 'a folder',
+  file: 'a file'
+}
+
+function markerMatches(marker: OwnerMarker, ops: CleanupFs): boolean {
+  return ops.readText(marker.file)?.trim() === marker.id
+}
+
 function removeEntry(entry: CleanupEntry, guard: DeletionGuard, ops: CleanupFs): CleanupResult {
   const refused = (detail: string): CleanupResult => ({ entry, outcome: 'refused', detail })
   const info = ops.entryInfo(entry.path)
   if (info.kind === 'absent') return { entry, outcome: 'absent' }
+  if (info.kind !== entry.seen) {
+    return refused(
+      `was ${KIND_WORDS[entry.seen]} when cleanup started, now ${KIND_WORDS[info.kind]}`
+    )
+  }
   const linked = linkedAncestor(entry.path, guard, ops)
   if (linked) return refused(`inside a linked folder: ${linked}`)
   if (entry.onlyFile && info.kind !== 'file') return refused('not a file')
+  if (entry.marker && !markerMatches(entry.marker, ops)) {
+    return refused(`its Desktop marker no longer reads ${entry.marker.id}`)
+  }
   const held = heldInside(entry.path, guard, ops)
   if (info.kind === 'link') {
     if (entry.installId) return refused('a link, not followed')
@@ -750,17 +833,20 @@ export function executeUninstallCleanup(
     const refusal = deletionRefusal(entry.path, plan.guard, scopeOf(entry))
     if (refusal) return { entry, outcome: 'refused', detail: refusal }
     const result = removeOrFail(entry, plan.guard, ops)
-    if (entry.installId && result.outcome === 'failed') {
-      restoreInstallMarker(entry.path, entry.installId, ops)
-    }
-    return result
+    if (!entry.installId || result.outcome !== 'failed') return result
+    const notRestored = restoreInstallMarker(entry.path, entry.installId, ops)
+    if (!notRestored) return result
+    return { ...result, detail: `${result.detail ?? 'error'}; marker not restored: ${notRestored}` }
   })
 }
 
-function restoreInstallMarker(installPath: string, id: string, ops: CleanupFs): void {
+function restoreInstallMarker(installPath: string, id: string, ops: CleanupFs): string | null {
   try {
     ops.writeFile(path.join(installPath, INSTALL_MARKER_FILE), id)
-  } catch {}
+    return null
+  } catch (err) {
+    return errorCode(err)
+  }
 }
 
 function removesInstanceOrModelData(entry: CleanupEntry): boolean {
@@ -791,14 +877,51 @@ function namesPath(value: unknown, p: string): boolean {
   return absolutePathsIn(value).some((named) => samePath(named, p))
 }
 
+interface ListUpdate {
+  results: CleanupResult[]
+  namedByCleanup: string[]
+}
+
+function storedList(stored: StoredJson): unknown[][] {
+  return stored.kind === 'value' && Array.isArray(stored.value) ? [stored.value] : []
+}
+
+function listText(records: unknown[]): string {
+  return JSON.stringify(records, null, 2)
+}
+
+function cleanupNamedPaths(paths: string[], source: string): NamedPath[] {
+  return paths.map((p): NamedPath => ({ path: p, role: 'other', source }))
+}
+
+function recordKeptPaths(dataDirPath: string, paths: string[]): string[] | null {
+  const file = path.join(dataDirPath, KEPT_PATHS_FILE)
+  const earlier = readStoredJsonFile(file, Array.isArray)
+  if (earlier.kind === 'unreadable') return null
+  const listed = earlier.kind === 'value' ? stringList(earlier.value) : []
+  const all = distinct([...listed, ...paths])
+  writeFileSafe(file, JSON.stringify(all, null, 2))
+  return all
+}
+
+function installListEntry(file: string): CleanupEntry {
+  return { path: file, bucket: 'B', reason: 'install list update', seen: 'file' }
+}
+
 function updateInstallList(
   dataDirPath: string,
   removed: readonly InstallIdentity[],
   failedIds: readonly string[],
   namedKept: readonly string[]
-): void {
-  if (removed.length === 0 && failedIds.length === 0) return
+): ListUpdate {
   const file = path.join(dataDirPath, 'installations.json')
+  const backupFile = `${file}.bak`
+  let namedByCleanup: string[] = []
+  const failed = (detail: string): ListUpdate => ({
+    results: [{ entry: installListEntry(file), outcome: 'failed', detail }],
+    namedByCleanup
+  })
+  if (removed.length === 0 && failedIds.length === 0) return { results: [], namedByCleanup }
   const wasRemoved = (value: unknown): boolean => {
     const identity = installIdentity(asRecord(value))
     if (!identity) return false
@@ -806,25 +929,39 @@ function updateInstallList(
       (inst) => inst.id === identity.id && samePath(inst.installPath, identity.installPath)
     )
   }
+  const isFailed = (value: unknown): boolean => {
+    const id = asRecord(value).id
+    return typeof id === 'string' && failedIds.includes(id)
+  }
+  const changes = (list: unknown[]): boolean => list.some((v) => wasRemoved(v) || isFailed(v))
+  const markFailed = (value: unknown): unknown =>
+    isFailed(value) ? { ...asRecord(value), status: PARTIAL_DELETE_STATUS } : value
+  const updated = (list: unknown[]): unknown[] =>
+    list.filter((value) => !wasRemoved(value)).map(markFailed)
   try {
-    const read = readFileSafe(file, { restore: false })
-    if (read.kind !== 'data' || read.primaryUnreadable) return
-    const parsed: unknown = JSON.parse(read.data)
-    if (!Array.isArray(parsed)) return
-    const kept = parsed.filter((value: unknown) => !wasRemoved(value))
-    const records = kept.map((value: unknown) => {
-      const record = asRecord(value)
-      return typeof record.id === 'string' && failedIds.includes(record.id)
-        ? { ...record, status: PARTIAL_DELETE_STATUS }
-        : value
-    })
-    const backup = backupValue(file, Array.isArray)
-    const stillNamed = (newBackup: unknown): boolean =>
-      namedKept.every((p) => !namesPath([parsed, backup], p) || namesPath([records, newBackup], p))
-    const text = JSON.stringify(records, null, 2)
-    if (stillNamed(parsed)) writeFileSafe(file, text, { backup: true })
-    else if (stillNamed(backup)) writeFileSafe(file, text, { backup: false })
-  } catch {}
+    const [primary] = storedList(readStoredJsonFile(file, Array.isArray))
+    const [backup] = storedList(readStoredJsonFile(backupFile, Array.isArray))
+    const lists = [primary, backup].filter((list): list is unknown[] => list !== undefined)
+    const [base] = lists
+    if (!base) return failed('neither copy of the install list could be read')
+    const stillNamed = (p: string): boolean => namesPath(lists.map(updated), p)
+    const orphaned = namedKept.filter((p) => namesPath(lists, p) && !stillNamed(p))
+    if (orphaned.length > 0) {
+      const recorded = recordKeptPaths(dataDirPath, orphaned)
+      if (!recorded) return failed(`${KEPT_PATHS_FILE} could not be read`)
+      namedByCleanup = recorded
+    }
+    writeFileSafe(file, listText(updated(base)))
+    if (backup && changes(backup)) writeFileSafe(backupFile, listText(updated(backup)))
+    return { results: [], namedByCleanup }
+  } catch (err) {
+    return failed(errorCode(err))
+  }
+}
+
+function withCleanupNames(inputs: CleanupInputs, paths: string[]): CleanupInputs {
+  const source = path.join(inputs.folders.dataDir, KEPT_PATHS_FILE)
+  return { ...inputs, storedPaths: [...inputs.storedPaths, ...cleanupNamedPaths(paths, source)] }
 }
 
 export function runCleanup(
@@ -835,18 +972,19 @@ export function runCleanup(
   const first = planUninstallCleanup(inputs, policy)
   const dataEntries = first.entries.filter(removesInstanceOrModelData)
   const dataResults = executeUninstallCleanup({ entries: dataEntries, guard: first.guard }, ops)
-  updateInstallList(
+  const listUpdate = updateInstallList(
     inputs.folders.dataDir,
     removedInstalls(dataResults),
     failedInstallIds(dataResults),
     first.namedKeptPaths
   )
-  const rest = planUninstallCleanup(inputs, policy, keptInstallIds(dataResults))
+  const named = withCleanupNames(inputs, listUpdate.namedByCleanup)
+  const rest = planUninstallCleanup(named, policy, keptInstallIds(dataResults))
   const remaining = rest.entries.filter(
     (entry) => !dataEntries.some((done) => samePath(done.path, entry.path))
   )
   const restResults = executeUninstallCleanup({ entries: remaining, guard: rest.guard }, ops)
-  return [...dataResults, ...restResults]
+  return [...dataResults, ...listUpdate.results, ...restResults]
 }
 
 type StoredJson =
@@ -1099,6 +1237,20 @@ function systemFoldersFor(platform: NodeJS.Platform, home: string): string[] {
   return []
 }
 
+function pathsNamedByCleanup(stored: StoredJson): NamedPath[] {
+  if (stored.kind !== 'value') return []
+  const paths = stringList(stored.value).filter((p) => path.isAbsolute(p))
+  return cleanupNamedPaths(paths, stored.file)
+}
+
+function targetKind(p: string): TargetKind[] {
+  try {
+    return [{ path: p, kind: nodeCleanupFs.entryInfo(p).kind }]
+  } catch {
+    return []
+  }
+}
+
 export function collectUninstallCleanupInputs(
   options: CleanupOptions,
   platform: NodeJS.Platform = process.platform
@@ -1113,9 +1265,11 @@ export function collectUninstallCleanupInputs(
   const listPath = path.join(dataDir(), 'installations.json')
   const settingsFile = readStoredJson(settingsPath, isObject)
   const listFile = readStoredJson(listPath, Array.isArray)
+  const keptPathsFile = readStoredJson(path.join(dataDir(), KEPT_PATHS_FILE), Array.isArray)
   const unreadableFiles = [
     ...(settingsFile.kind === 'unreadable' ? ['settings.json'] : []),
-    ...(listFile.kind === 'unreadable' ? ['installations.json'] : [])
+    ...(listFile.kind === 'unreadable' ? ['installations.json'] : []),
+    ...(keptPathsFile.kind === 'unreadable' ? [KEPT_PATHS_FILE] : [])
   ]
   const settings = asRecord(settingsFile.kind === 'value' ? settingsFile.value : null)
   const records =
@@ -1173,10 +1327,11 @@ export function collectUninstallCleanupInputs(
     ...namedBy(`${settingsPath}.bak`, namedPathsIn(settingsBackup), inWalkedRoot),
     ...namedBy(listSource, unidentifiedRecords.flatMap(namedPathsIn), inWalkedRoot),
     ...namedBy(`${listPath}.bak`, earlierRecords, inWalkedRoot),
-    ...earlierAppDataPaths(windowsAppDataDirs(platform, folders))
+    ...earlierAppDataPaths(windowsAppDataDirs(platform, folders)),
+    ...pathsNamedByCleanup(keptPathsFile)
   ]
 
-  return {
+  const sources: CleanupSources = {
     platform,
     options,
     folders,
@@ -1192,6 +1347,7 @@ export function collectUninstallCleanupInputs(
     unreadableFiles,
     unidentifiedInstallRecords: unidentifiedRecords.length
   }
+  return { ...sources, targetKinds: everyTarget(sources).flatMap(targetKind) }
 }
 
 export function formatCleanupLog(
