@@ -38,7 +38,11 @@ const shown = computed(() => {
   const theCrown = crown.value
   if (!theCrown) return drawn.value
   const folded = drawn.value.filter((item) => item !== theCrown)
-  const hoverText = [theCrown, ...folded].map((item) => item.hoverText ?? item.text).join(' · ')
+  if (!folded.length) return [{ ...theCrown, shownForKeyboard: revealed }]
+  const crownDescription = theCrown.badge.description && theCrown.hoverText
+  const hoverText = [crownDescription, ...folded.map((item) => item.hoverText ?? item.text)]
+    .filter(Boolean)
+    .join(' · ')
   return [{ ...theCrown, hoverText, shownForKeyboard: revealed }]
 })
 

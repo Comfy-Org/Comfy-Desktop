@@ -71,6 +71,20 @@ describe('AppBadges', () => {
     await expect.poll(tooltipText).toContain('Runs a paid partner model · Added this week · Video')
   })
 
+  it("leaves the crown's own words out of its tooltip when other badges join it", async () => {
+    const wrapper = mountBadges({
+      badges: [
+        { id: 'cloud-credits', style: 'chip', text: { en: 'Uses credits on Cloud' } },
+        PLAIN_CROWN
+      ]
+    })
+
+    await userEvent.hover(wrapper.get('[data-testid="app-badge-pro"]').element)
+
+    await expect.poll(tooltipText).toContain('Uses credits on Cloud')
+    expect(tooltipText()).not.toContain('Pro')
+  })
+
   it('draws chips and labels in the order given, with their words, on a card with no crown', () => {
     const wrapper = mountBadges({ badges: [NEW_CHIP, VIDEO_LABEL] })
 
