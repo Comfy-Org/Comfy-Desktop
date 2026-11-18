@@ -600,10 +600,21 @@ const pinBottomMenuActions = computed<MenuAction[]>(() => {
     )
 })
 
+const ctaWrap = useTemplateRef<HTMLElement>('ctaWrap')
+
+function focusLostToMenu(): boolean {
+  const active = document.activeElement
+  return !active || active === document.body || !!active.closest('.more-menu')
+}
+
 watch(
   () => pinBottomMenuActions.value.length,
-  (count) => {
-    if (count === 0) closeMoreMenu()
+  async (count) => {
+    if (count > 0 || !moreMenuOpen.value) return
+    closeMoreMenu()
+    await nextTick()
+    if (!focusLostToMenu()) return
+    ctaWrap.value?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus()
   }
 )
 
@@ -1158,7 +1169,7 @@ defineExpose({
             </span>
           </Transition>
 
-          <div class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto]">
+          <div ref="ctaWrap" class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto]">
             <Button
               variant="inverted"
               size="md"

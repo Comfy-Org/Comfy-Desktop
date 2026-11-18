@@ -734,6 +734,31 @@ describe('ComfyUISettingsContent', () => {
       }
     })
 
+    it('moves focus to the main button when the last more menu action goes away', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'stop', label: 'Stop' }] as never
+      useComfyUISettingsState.sectionsFresh.value = false
+      markRunning('inst-1')
+      try {
+        const w = await mountContent({
+          currentView: 'instance',
+          currentCategory: 'local',
+          activeInstallationId: 'inst-1',
+          installation: SAMPLE_INSTALL
+        })
+        document.body.appendChild(w.element)
+        await w.find('[data-testid="picker-more-trigger"]').trigger('click')
+        ;(document.activeElement as HTMLElement | null)?.blur()
+
+        useComfyUISettingsState.pinBottomActions.value = []
+        await flushPromises()
+
+        expect(document.activeElement).toBe(w.find('.settings-v2-relaunch').element)
+        w.unmount()
+      } finally {
+        useComfyUISettingsState.sectionsFresh.value = true
+      }
+    })
+
     it('disables the more menu while details are stale and the build is not running', async () => {
       useComfyUISettingsState.pinBottomActions.value = [
         { id: 'rename', label: 'Rename' },
