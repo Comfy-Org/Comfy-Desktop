@@ -27,8 +27,8 @@ const PII_PATH_PATTERNS = [
   /(\/home\/)[^\\/]+?(?=\/|$)/g
 ]
 
-const URL_QUERY_PATTERN = /(https?:\/\/[^\s?#"')]+)\?[^\s"')]*/g
-const DATA_URI_PATTERN = /data:[^\s"')]+/g
+const URL_QUERY_PATTERN = /(https?:\/\/[^\s?#"')]+)\?[^\s"')]*/gi
+const DATA_URI_PATTERN = /data:[^\s"')]+/gi
 
 export function scrubPII(value: string): string {
   let scrubbed = value

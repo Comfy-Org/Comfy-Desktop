@@ -339,6 +339,7 @@ describe('AssetsView', () => {
     )
 
     expect(readAssetModel).toHaveBeenCalledExactlyOnceWith('local', '/out/fox.glb')
+    wrapper.unmount()
   })
 
   it('shows a video in its own shape with how long it runs, and a picture without a size as a square', async () => {

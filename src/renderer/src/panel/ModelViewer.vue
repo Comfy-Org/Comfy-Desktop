@@ -16,7 +16,7 @@ import type { Object3D } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import Spinner from '@comfyorg/design-system/spinner/Spinner'
-import { disposeModel, parseModel, tintUntexturedWhite } from '../lib/modelFile'
+import { startModelLoad, tintUntexturedWhite } from '../lib/modelFile'
 
 const { name, load } = defineProps<{
   name: string
@@ -34,10 +34,10 @@ const state = ref<'loading' | 'ready' | 'failed'>('loading')
 const scene = new Scene()
 scene.environmentIntensity = ENVIRONMENT_INTENSITY
 const camera = new PerspectiveCamera(FIELD_OF_VIEW, 1, 0.01, 1000)
+const modelLoad = startModelLoad()
 
 let renderer: WebGLRenderer | null = null
 let controls: OrbitControls | null = null
-let frame = 0
 let closed = false
 
 function frameModel(model: Object3D): void {
@@ -54,10 +54,7 @@ function frameModel(model: Object3D): void {
 }
 
 function draw(): void {
-  if (closed || !renderer) return
-  controls?.update()
-  renderer.render(scene, camera)
-  frame = requestAnimationFrame(draw)
+  if (!closed && state.value === 'ready') renderer?.render(scene, camera)
 }
 
 useResizeObserver(host, ([entry]) => {
@@ -66,6 +63,7 @@ useResizeObserver(host, ([entry]) => {
   renderer.setSize(width, height, false)
   camera.aspect = width / height
   camera.updateProjectionMatrix()
+  draw()
 })
 
 onMounted(async () => {
@@ -87,15 +85,13 @@ onMounted(async () => {
     renderer.domElement.dataset.testid = 'output-detail-model'
     frameHost.append(renderer.domElement)
     controls = new OrbitControls(camera, renderer.domElement)
-    controls.enableDamping = true
+    controls.addEventListener('change', draw)
     controls.listenToKeyEvents(renderer.domElement)
     const bytes = await load()
-    const model = bytes && !closed ? await parseModel(bytes, name) : null
-    if (closed) {
-      if (model) disposeModel(model)
-      return
-    }
+    const model = bytes && !closed ? await modelLoad.parse(bytes, name) : null
+    if (closed) return
     if (!model) {
+      modelLoad.release()
       state.value = 'failed'
       return
     }
@@ -105,15 +101,15 @@ onMounted(async () => {
     state.value = 'ready'
     draw()
   } catch {
+    modelLoad.release()
     if (!closed) state.value = 'failed'
   }
 })
 
 onBeforeUnmount(() => {
   closed = true
-  cancelAnimationFrame(frame)
   controls?.dispose()
-  disposeModel(scene)
+  modelLoad.release()
   scene.environment?.dispose()
   renderer?.dispose()
   renderer?.forceContextLoss()
