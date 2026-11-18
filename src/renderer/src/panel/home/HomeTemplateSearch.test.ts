@@ -342,6 +342,7 @@ describe('HomeTemplateSearch results', () => {
     searchTemplates.mockResolvedValue(
       answer({
         matched: ['qwen 2.1', 'kling'],
+        reply: 'This needs Qwen 2.1, which is not installed here.',
         run: [unscored('qwen_a'), unscored('qwen_b')],
         download: [unscored('kling_a', { needsDownload: true })]
       })
@@ -353,6 +354,22 @@ describe('HomeTemplateSearch results', () => {
     expect(wrapper.find('[data-testid="home-template-search-match"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-template-search-best"]').exists()).toBe(false)
     expect(wrapper.get('[role="option"][aria-selected="true"]').text()).toContain('qwen_a title')
+    expect(wrapper.find('[data-testid="home-template-search-reply"]').exists()).toBe(false)
+  })
+
+  it('shows the reply of a model-name lookup that lists nothing', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({
+        outcome: 'unsat',
+        matched: ['kling 9'],
+        reply: "kling 9 isn't one of the templates here."
+      })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'kling 9')
+    expect(wrapper.get('[data-testid="home-template-search-reply"]').text()).toBe(
+      "kling 9 isn't one of the templates here."
+    )
   })
 
   it('leads a model-name lookup with the card the search puts first, even a download, with no best match', async () => {
