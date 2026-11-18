@@ -179,7 +179,7 @@ describe('createSearchTelemetry', () => {
     expect(sent).toEqual([])
   })
 
-  it("names a family's further template's list as more", () => {
+  it("names a family's further template's list as more, with no match figure of its own", () => {
     const { telemetry, last, at } = harness()
     telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
     telemetry.picked(ROWS, ROWS[3]!, 'pointer')
@@ -187,7 +187,9 @@ describe('createSearchTelemetry', () => {
       list: 'more',
       list_position: 0,
       position: 3,
-      template_id: 'zine_template'
+      template_id: 'zine_template',
+      match_pct: null,
+      match_level: 'none'
     })
   })
 
