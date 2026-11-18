@@ -18,6 +18,7 @@ interface IndexedTemplate {
   name: string
   title: string
   mediaSubtype: string
+  partner: boolean
 }
 
 export function indexedTemplates(index: unknown): IndexedTemplate[] {
@@ -31,7 +32,8 @@ export function indexedTemplates(index: unknown): IndexedTemplate[] {
         name: template.name,
         title:
           typeof template.title === 'string' && template.title ? template.title : template.name,
-        mediaSubtype: typeof template.mediaSubtype === 'string' ? template.mediaSubtype : 'webp'
+        mediaSubtype: typeof template.mediaSubtype === 'string' ? template.mediaSubtype : 'webp',
+        partner: template.openSource === false
       })
     }
   }
@@ -71,7 +73,8 @@ export async function readBuildTemplates(
   for (const template of indexedTemplates(await firstIndex(templateDirs))) {
     labels.set(template.name, {
       title: template.title,
-      thumbnailUrl: thumbnailUrlFor(template.name, template.mediaSubtype)
+      thumbnailUrl: thumbnailUrlFor(template.name, template.mediaSubtype),
+      partner: template.partner
     })
     const json = await templateJson(templateDirs, template.name)
     if (json && (await hasEveryModel(json, hasModel))) installed.push(template.name)

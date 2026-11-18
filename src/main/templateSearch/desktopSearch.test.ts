@@ -61,7 +61,10 @@ function setup(answer: SidecarDecision = { kind: 'answer', body: ANSWER }, on = 
     async (_sitePackages: string, _hasModel: HasModel): Promise<BuildTemplates> => ({
       installed: ['poster_template'],
       labels: new Map([
-        ['poster_template', { title: 'Bake sale poster', thumbnailUrl: 'https://t/p.webp' }]
+        [
+          'poster_template',
+          { title: 'Bake sale poster', thumbnailUrl: 'https://t/p.webp', partner: false }
+        ]
       ])
     })
   )
