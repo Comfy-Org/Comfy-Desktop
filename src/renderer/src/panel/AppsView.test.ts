@@ -77,6 +77,33 @@ function manyApps(count: number): AppCard[] {
   return Array.from({ length: count }, (_, index) => ({ ...HDR, id: `app-${index}` }))
 }
 
+function scrimAlphaAt(gradient: string, shareFromBottom: number): number {
+  const stops = [...gradient.matchAll(/rgba?\(0, 0, 0(?:, ([\d.]+))?\)(?: ([\d.]+)%)?/g)].map(
+    (match, index, all) => ({
+      alpha: Number(match[1] ?? 1),
+      at:
+        match[2] === undefined
+          ? index === 0
+            ? 0
+            : index / (all.length - 1)
+          : Number(match[2]) / 100
+    })
+  )
+  const above = stops.findIndex((stop) => stop.at >= shareFromBottom)
+  if (above <= 0) return stops[Math.max(above, 0)]!.alpha
+  const below = stops[above - 1]!
+  const next = stops[above]!
+  return (
+    below.alpha + ((next.alpha - below.alpha) * (shareFromBottom - below.at)) / (next.at - below.at)
+  )
+}
+
+function contrastOfWhiteOverDimmedWhite(blackAlpha: number): number {
+  const channel = 1 - blackAlpha
+  const linear = channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  return 1.05 / (linear + 0.05)
+}
+
 beforeAll(() => browserPage.viewport(1440, 900))
 
 beforeEach(() => {
@@ -192,6 +219,29 @@ describe('AppsView', () => {
     expect(name.getBoundingClientRect().bottom).toBeLessThanOrEqual(cardBox.bottom)
     expect(getComputedStyle(line).opacity).toBe('0')
     expect(getComputedStyle(card.get('[data-testid="app-card-go"]').element).opacity).toBe('0')
+  })
+
+  it('keeps the raised name readable over a white picture in the smallest window', async () => {
+    page.style.width = `${NARROW_PAGE_WIDTH}px`
+    const wrapper = await mountApps()
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+    const name = card.get('[data-testid="app-card-name"]').element as HTMLElement
+    const cardBox = card.element.getBoundingClientRect()
+    const restingNameTop = name.getBoundingClientRect().top
+
+    wrapper.get('input').element.focus()
+    await userEvent.tab()
+    expect(document.activeElement).toBe(card.element)
+    await expect.poll(() => getComputedStyle(name).translate).toBe('0px -18px')
+
+    const raisedNameShare = (cardBox.bottom - (restingNameTop - 18)) / cardBox.height
+    const scrim = getComputedStyle(
+      card.get('[data-testid="app-card-scrim"]').element
+    ).backgroundImage
+
+    expect(
+      contrastOfWhiteOverDimmedWhite(scrimAlphaAt(scrim, raisedNameShare))
+    ).toBeGreaterThanOrEqual(4.5)
   })
 
   it('narrows the cards to the apps whose name or description matches the search', async () => {
