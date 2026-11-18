@@ -3,9 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   sitePackages: '/sp' as string | null,
-  modelOnDisk: vi.fn(
-    async (_ctx: unknown, _base: string, _directory: string, _filename: string) => false
-  ),
   modelBytesOnDisk: vi.fn(
     async (
       _ctx: unknown,
@@ -24,7 +21,6 @@ vi.mock('../lib/modelDownloadPaths', () => ({
     extraPaths: [],
     downloadBaseDir: '/build-models'
   }),
-  modelOnDisk: mocks.modelOnDisk,
   modelBytesOnDisk: mocks.modelBytesOnDisk
 }))
 vi.mock('./buildRuntime', () => ({
@@ -35,8 +31,8 @@ vi.mock('./buildRuntime', () => ({
 }))
 
 import { createDesktopSearch } from './desktopSearch'
-import type { BuildTemplates, HasModel, ModelBytes } from './buildTemplates'
-import type { SidecarDecision } from './service'
+import type { BuildTemplates, ModelBytes } from './buildTemplates'
+import type { SidecarDecision, SidecarRequest } from './service'
 
 const LOCAL = { id: 'local-1', sourceId: 'standalone' }
 const CLOUD = { id: 'cloud-1', sourceId: 'cloud' }
@@ -64,25 +60,18 @@ const ANSWER = {
 const OFF: SidecarDecision = { kind: 'unavailable', availability: { kind: 'off' } }
 
 function setup(
-  answer: SidecarDecision = { kind: 'answer', body: ANSWER },
+  answer: SidecarDecision = { kind: 'answer', body: ANSWER, partnerSwitch: false },
   on = true,
   { partnersOn = true, offersSwitch = false } = {}
 ) {
   let clock = 0
-  let running = false
-  const decide = vi.fn(async (_body: unknown) => {
-    running = true
-    return answer
-  })
-  const prepare = vi.fn(async () => {
-    running = true
+  const sent: unknown[] = []
+  const decide = vi.fn(async (request: SidecarRequest): Promise<SidecarDecision> => {
+    sent.push(request({ port: 4100, token: 't', partner: offersSwitch }))
+    return answer.kind === 'answer' ? { ...answer, partnerSwitch: offersSwitch } : answer
   })
   const readTemplates = vi.fn(
-    async (
-      _sitePackages: string,
-      _hasModel: HasModel,
-      _modelBytes?: ModelBytes
-    ): Promise<BuildTemplates> => ({
+    async (_sitePackages: string, _modelBytes: ModelBytes): Promise<BuildTemplates> => ({
       installed: ['poster_template'],
       labels: new Map([
         [
@@ -90,16 +79,15 @@ function setup(
           {
             title: 'Bake sale poster',
             thumbnailUrl: 'https://t/p.webp',
-            partner: false,
-            size: null
+            partner: false
           }
         ]
       ]),
-      downloadBytes: async (id) => (id === 'mural_template' ? 18_000_000_000 : null)
+      downloadBytes: async () => 18_000_000_000
     })
   )
   const search = createDesktopSearch({
-    process: { decide, prepare, partnerSwitch: () => running && offersSwitch },
+    process: { decide },
     isLocalInstallation: (b) => b.sourceId === 'standalone',
     terminalEnvOf: () => null,
     searchOn: () => on,
@@ -107,7 +95,7 @@ function setup(
     readTemplates,
     now: () => clock
   })
-  return { search, decide, prepare, readTemplates, tick: (ms: number) => (clock += ms) }
+  return { search, decide, sent, readTemplates, tick: (ms: number) => (clock += ms) }
 }
 
 beforeEach(() => {
@@ -118,11 +106,11 @@ beforeEach(() => {
 
 describe('createDesktopSearch', () => {
   it("sends what the build has installed, and labels results from the build's own index", async () => {
-    const { search, decide, readTemplates } = setup()
+    const { search, sent, readTemplates } = setup()
     const response = await search.search('a poster', 'local-1')
 
     expect(readTemplates.mock.calls[0]![0]).toBe('/sp/local-1')
-    expect(decide.mock.calls[0]![0]).toMatchObject({
+    expect(sent[0]).toMatchObject({
       text: 'a poster',
       installed: ['poster_template']
     })
@@ -143,19 +131,9 @@ describe('createDesktopSearch', () => {
   it("looks for a template's models in the build's own model folder", async () => {
     const { search, readTemplates } = setup()
     await search.search('a poster', 'local-1')
-    const hasModel = readTemplates.mock.calls[0]![1]
+    const modelBytes = readTemplates.mock.calls[0]![1]
 
-    expect(await hasModel('vae', 'v.safetensors')).toBe(false)
-    mocks.modelOnDisk.mockResolvedValueOnce(true)
-    expect(await hasModel('vae', 'v.safetensors')).toBe(true)
-    expect(mocks.modelOnDisk).toHaveBeenCalledWith(
-      expect.anything(),
-      '/build-models',
-      'vae',
-      'v.safetensors'
-    )
-
-    const modelBytes = readTemplates.mock.calls[0]![2]!
+    expect(await modelBytes('vae', 'v.safetensors')).toBeNull()
     mocks.modelBytesOnDisk.mockResolvedValueOnce(42)
     expect(await modelBytes('vae', 'v.safetensors')).toBe(42)
     expect(mocks.modelBytesOnDisk).toHaveBeenCalledWith(
@@ -175,7 +153,7 @@ describe('createDesktopSearch', () => {
       download: ['mural_template', 'mural.safetensors']
     }
     const body = { ...ANSWER, split: { run: ANSWER.split.run, download: [needsFiles] } }
-    const { search } = setup({ kind: 'answer', body })
+    const { search } = setup({ kind: 'answer', body, partnerSwitch: false })
 
     const local = await search.search('a mural', 'local-1')
     const unknown = await search.search('a mural', null)
@@ -188,33 +166,66 @@ describe('createDesktopSearch', () => {
     })
   })
 
-  it('starts the search and asks it to leave partner templates out while the setting is off', async () => {
-    const { search, decide, prepare } = setup(undefined, true, {
-      partnersOn: false,
-      offersSwitch: true
+  it('gives an Also try card that needs a download its size too, and none to one that does not', async () => {
+    const offer = (templateId: string, masked?: { code: string; detail: string }) => ({
+      ...ANSWER.split.run[0]!,
+      option_id: `${templateId}:as_given`,
+      family_id: templateId,
+      variant: { template_id: templateId, title: null },
+      ...(masked ? { masked } : {})
     })
+    const body = {
+      ...ANSWER,
+      options: [
+        offer('mural_template', {
+          code: 'not_installed',
+          detail: 'mural_template,mural.safetensors'
+        }),
+        offer('banner_template')
+      ]
+    }
+    const { search } = setup({ kind: 'answer', body, partnerSwitch: false })
+
+    expect(await search.search('a mural', 'local-1')).toMatchObject({
+      result: {
+        alsoTry: [
+          { templateId: 'mural_template', needsDownload: true, downloadBytes: 18_000_000_000 },
+          { templateId: 'banner_template', needsDownload: false, downloadBytes: null }
+        ]
+      }
+    })
+  })
+
+  it('asks a search that can leave partner templates out to do so while the setting is off', async () => {
+    const { search, sent } = setup(undefined, true, { partnersOn: false, offersSwitch: true })
     const response = await search.search('a poster', 'local-1')
 
-    expect(prepare).toHaveBeenCalled()
-    expect(decide.mock.calls[0]![0]).toMatchObject({ partner_on: false })
-    expect(response).toMatchObject({ kind: 'result', result: { partnerSwitch: true } })
+    expect(sent[0]).toMatchObject({ partner_on: false })
+    expect(response).toMatchObject({
+      kind: 'result',
+      result: { partnerSwitch: true, partnersShown: false }
+    })
   })
 
   it('never asks a search that cannot leave partner templates out to do so', async () => {
-    const { search, decide } = setup(undefined, true, { partnersOn: false, offersSwitch: false })
+    const { search, sent } = setup(undefined, true, { partnersOn: false, offersSwitch: false })
     const response = await search.search('a poster', 'local-1')
 
-    expect(decide.mock.calls[0]![0]).not.toHaveProperty('partner_on')
+    expect(sent[0]).not.toHaveProperty('partner_on')
     expect(response).toMatchObject({ kind: 'result', result: { partnerSwitch: false } })
   })
 
   it('asks for partner templates as usual while the setting is on, and still offers the switch', async () => {
-    const { search, decide, prepare } = setup(undefined, true, { offersSwitch: true })
-    const response = await search.search('a poster', 'local-1')
+    const { search, sent } = setup(undefined, true, { offersSwitch: true })
+    await search.search('a poster', 'local-1')
+    const response = await search.search('a banner', 'local-1')
 
-    expect(prepare).not.toHaveBeenCalled()
-    expect(decide.mock.calls[0]![0]).not.toHaveProperty('partner_on')
-    expect(response).toMatchObject({ kind: 'result', result: { partnerSwitch: true } })
+    expect(sent).toHaveLength(2)
+    for (const body of sent) expect(body).not.toHaveProperty('partner_on')
+    expect(response).toMatchObject({
+      kind: 'result',
+      result: { partnerSwitch: true, partnersShown: true }
+    })
   })
 
   it.each([
@@ -222,34 +233,34 @@ describe('createDesktopSearch', () => {
     ['a build that is not local', 'cloud-1'],
     ['a build Desktop does not know', 'missing-1']
   ])('treats every template as installed for %s', async (_name, installationId) => {
-    const { search, decide, readTemplates } = setup()
+    const { search, sent, readTemplates } = setup()
     await search.search('a poster', installationId)
     expect(readTemplates).not.toHaveBeenCalled()
-    expect(decide.mock.calls[0]![0]).not.toHaveProperty('installed')
+    expect(sent[0]).not.toHaveProperty('installed')
   })
 
   it('reads nothing about the build while search is off, and lets search stop itself', async () => {
-    const { search, decide, readTemplates } = setup(OFF, false)
+    const { search, decide, sent, readTemplates } = setup(OFF, false)
     expect(await search.search('a poster', 'local-1')).toEqual(OFF)
     expect(readTemplates).not.toHaveBeenCalled()
     expect(mocks.list).not.toHaveBeenCalled()
     expect(decide).toHaveBeenCalledTimes(1)
-    expect(decide.mock.calls[0]![0]).not.toHaveProperty('installed')
+    expect(sent[0]).not.toHaveProperty('installed')
   })
 
   it("treats nothing as installed for a build whose template index can't be read", async () => {
-    const { search, decide, readTemplates } = setup()
+    const { search, sent, readTemplates } = setup()
     readTemplates.mockRejectedValueOnce(new Error('bad index'))
     expect((await search.search('a poster', 'local-1')).kind).toBe('result')
-    expect(decide.mock.calls[0]![0]).toMatchObject({ installed: [] })
+    expect(sent[0]).toMatchObject({ installed: [] })
   })
 
   it('treats nothing as installed for a build whose runtime cannot be found', async () => {
     mocks.sitePackages = null
-    const { search, decide, readTemplates } = setup()
+    const { search, sent, readTemplates } = setup()
     await search.search('a poster', 'local-1')
     expect(readTemplates).not.toHaveBeenCalled()
-    expect(decide.mock.calls[0]![0]).toMatchObject({ installed: [] })
+    expect(sent[0]).toMatchObject({ installed: [] })
   })
 
   it('reads a build once a minute at most, and again after it changes', async () => {
@@ -276,7 +287,7 @@ describe('createDesktopSearch', () => {
   })
 
   it('reports an answer it cannot read as failed', async () => {
-    const { search } = setup({ kind: 'answer', body: { nothing: true } })
+    const { search } = setup({ kind: 'answer', body: { nothing: true }, partnerSwitch: false })
     expect(await search.search('a poster', 'local-1')).toEqual({ kind: 'failed' })
   })
 })

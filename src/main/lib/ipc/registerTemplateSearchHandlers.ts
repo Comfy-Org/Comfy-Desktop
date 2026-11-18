@@ -31,13 +31,7 @@ import { setSessionActionObserver } from './sessionActions'
 
 type SearchProcessApi = Pick<
   SearchProcess,
-  | 'decide'
-  | 'prepare'
-  | 'partnerSwitch'
-  | 'download'
-  | 'downloadInBackground'
-  | 'onBuildAction'
-  | 'onBuildActionEnd'
+  'decide' | 'prepare' | 'download' | 'downloadInBackground' | 'onBuildAction' | 'onBuildActionEnd'
 >
 type SearchApi = Pick<DesktopSearch, 'search' | 'forget'>
 
