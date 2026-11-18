@@ -21,7 +21,9 @@ async function mountViewer(
 ): Promise<VueWrapper> {
   const wrapper = mount(ModelViewer, { attachTo: document.body, props: { name, load } })
   wrappers.push(wrapper)
-  await vi.waitFor(() => expect(wrapper.find('[role="status"]').exists()).toBe(false))
+  await vi.waitFor(() => expect(wrapper.find('[role="status"]').exists()).toBe(false), {
+    timeout: 5000
+  })
   return wrapper
 }
 

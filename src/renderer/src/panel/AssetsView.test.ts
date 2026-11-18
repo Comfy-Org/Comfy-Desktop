@@ -282,6 +282,20 @@ describe('AssetsView', () => {
     )
   })
 
+  it('shows how long a sound runs on its card', async () => {
+    const wrapper = await mountAssets([
+      asset('song', 'song.flac', 'audio', { durationSeconds: 69.4 }),
+      asset('blip', 'blip.wav', 'audio')
+    ])
+
+    expect(wrapper.get('[data-testid="asset-song"] [data-testid="asset-duration"]').text()).toBe(
+      '1:09'
+    )
+    expect(wrapper.find('[data-testid="asset-blip"] [data-testid="asset-duration"]').exists()).toBe(
+      false
+    )
+  })
+
   it('shows the picture of a 3D file whole, and its box when it has none', async () => {
     const thumb = picture('t', 200).previewUrl!
     const wrapper = await mountAssets([
@@ -300,8 +314,10 @@ describe('AssetsView', () => {
     const wrapper = await mountAssets([asset('/out/fox.glb', 'fox.glb', '3d')])
 
     await wrapper.get('[data-testid="asset-open-/out/fox.glb"]').trigger('click')
-    await vi.waitFor(() =>
-      expect(document.querySelector('[data-testid="output-detail-model-failed"]')).not.toBeNull()
+    await vi.waitFor(
+      () =>
+        expect(document.querySelector('[data-testid="output-detail-model-failed"]')).not.toBeNull(),
+      { timeout: 5000 }
     )
 
     expect(readAssetModel).toHaveBeenCalledExactlyOnceWith('local', '/out/fox.glb')

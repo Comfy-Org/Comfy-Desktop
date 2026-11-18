@@ -5,10 +5,10 @@ import { useResizeObserver } from '@vueuse/core'
 import { Box } from '@lucide/vue'
 import {
   Box3,
-  DirectionalLight,
-  HemisphereLight,
   Mesh,
   MeshStandardMaterial,
+  NeutralToneMapping,
+  PMREMGenerator,
   PerspectiveCamera,
   Scene,
   Vector3,
@@ -16,6 +16,7 @@ import {
 } from 'three'
 import type { BufferGeometry, Material, Object3D } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js'
@@ -27,9 +28,9 @@ const { name, load } = defineProps<{
   load: () => Promise<Uint8Array | null>
 }>()
 
-const MODEL_GRAY = 0xb8b8b8
-const SKY_LIGHT = 0xffffff
-const GROUND_LIGHT = 0x3a3a3a
+const UNTEXTURED_BASE = 0xa9a49b
+const DEFAULT_WHITE = 0xffffff
+const ENVIRONMENT_INTENSITY = 0.8
 const FIELD_OF_VIEW = 40
 const CAMERA_DIRECTION = new Vector3(0.6, 0.45, 1).normalize()
 
@@ -38,10 +39,8 @@ const host = useTemplateRef<HTMLDivElement>('host')
 const state = ref<'loading' | 'ready' | 'failed'>('loading')
 
 const scene = new Scene()
+scene.environmentIntensity = ENVIRONMENT_INTENSITY
 const camera = new PerspectiveCamera(FIELD_OF_VIEW, 1, 0.01, 1000)
-const keyLight = new DirectionalLight(SKY_LIGHT, 1.6)
-keyLight.position.set(1, 2, 1.5)
-scene.add(new HemisphereLight(SKY_LIGHT, GROUND_LIGHT, 1.8), keyLight)
 
 let renderer: WebGLRenderer | null = null
 let controls: OrbitControls | null = null
@@ -55,7 +54,7 @@ function extensionOf(fileName: string): string {
 function meshFrom(geometry: BufferGeometry): Mesh {
   if (!geometry.hasAttribute('normal')) geometry.computeVertexNormals()
   const material = new MeshStandardMaterial({
-    color: MODEL_GRAY,
+    color: UNTEXTURED_BASE,
     vertexColors: geometry.hasAttribute('color')
   })
   return new Mesh(geometry, material)
@@ -76,6 +75,16 @@ async function parseModel(bytes: Uint8Array, extension: string): Promise<Object3
     default:
       return null
   }
+}
+
+function tintUntexturedWhite(model: Object3D): void {
+  model.traverse((object) => {
+    if (!(object instanceof Mesh)) return
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      const plain = material as Partial<MeshStandardMaterial>
+      if (!plain.map && plain.color?.getHex() === DEFAULT_WHITE) plain.color.setHex(UNTEXTURED_BASE)
+    }
+  })
 }
 
 function frameModel(model: Object3D): void {
@@ -111,6 +120,10 @@ onMounted(async () => {
   if (!frameHost) return
   renderer = new WebGLRenderer({ antialias: true, alpha: true })
   renderer.setPixelRatio(window.devicePixelRatio)
+  renderer.toneMapping = NeutralToneMapping
+  const environment = new PMREMGenerator(renderer)
+  scene.environment = environment.fromScene(new RoomEnvironment()).texture
+  environment.dispose()
   renderer.domElement.className = 'block size-full outline-none'
   renderer.domElement.tabIndex = 0
   renderer.domElement.setAttribute('aria-label', t('assets.detail.modelView', { name }))
@@ -127,6 +140,7 @@ onMounted(async () => {
       state.value = 'failed'
       return
     }
+    tintUntexturedWhite(model)
     scene.add(model)
     frameModel(model)
     state.value = 'ready'
@@ -149,6 +163,7 @@ onBeforeUnmount(() => {
     object.geometry.dispose()
     disposeMaterial(object.material)
   })
+  scene.environment?.dispose()
   renderer?.dispose()
 })
 </script>

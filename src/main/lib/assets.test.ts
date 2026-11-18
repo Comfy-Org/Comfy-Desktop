@@ -517,7 +517,10 @@ describe('listAssets', () => {
       ['voice.wav', 'audio', 'https://storage.googleapis.com/bucket/s1?sig=1'],
       ['mesh.glb', '3d', null]
     ])
-    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(
+      fetchMock,
+      'the list, two links, and the start of the video and the audio'
+    ).toHaveBeenCalledTimes(5)
   })
 
   it('shows the picture Cloud keeps for a 3D output, and opens no model file to list it', async () => {

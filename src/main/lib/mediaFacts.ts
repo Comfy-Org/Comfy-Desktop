@@ -29,7 +29,7 @@ function pictureFacts(size: PictureSize | null): MediaFacts {
   }
 }
 
-function videoFacts(parsed: IAudioMetadata | null): MediaFacts {
+function playableFacts(parsed: IAudioMetadata | null): MediaFacts {
   if (!parsed) return NO_FACTS
   const video = parsed.format.trackInfo.find(
     (track) => track.video?.pixelWidth && track.video.pixelHeight
@@ -55,18 +55,26 @@ export async function mediaFactsFromFile(
   kind: AssetKind | null
 ): Promise<MediaFacts> {
   if (kind === 'image') return pictureFacts(await imageSizeFromFile(file).catch(() => null))
-  if (kind !== 'video') return NO_FACTS
+  if (kind !== 'video' && kind !== 'audio') return NO_FACTS
   const { parseFile } = await import('music-metadata')
-  return videoFacts(await parseFile(file, HEADERS_ONLY).catch(() => null))
+  return playableFacts(await parseFile(file, HEADERS_ONLY).catch(() => null))
 }
 
 export async function mediaFactsFromBytes(
   bytes: Uint8Array,
   kind: AssetKind | null,
-  mimeType: string | null
+  mimeType: string | null,
+  fileSize: number | null = null
 ): Promise<MediaFacts> {
   if (kind === 'image') return pictureFacts(pictureSizeOf(bytes))
-  if (kind !== 'video') return NO_FACTS
-  const { parseBuffer } = await import('music-metadata')
-  return videoFacts(await parseBuffer(bytes, mimeType ?? undefined, HEADERS_ONLY).catch(() => null))
+  if (kind !== 'video' && kind !== 'audio') return NO_FACTS
+  const { parseWebStream } = await import('music-metadata')
+  const start = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes)
+      controller.close()
+    }
+  })
+  const fileInfo = { mimeType: mimeType ?? undefined, size: fileSize ?? bytes.byteLength }
+  return playableFacts(await parseWebStream(start, fileInfo, HEADERS_ONLY).catch(() => null))
 }

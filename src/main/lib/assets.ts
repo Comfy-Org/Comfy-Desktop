@@ -49,7 +49,8 @@ const SIGNED_URL_CONCURRENCY = 6
 const SIGNED_STORAGE_HOST = 'storage.googleapis.com'
 const HEADER_BYTES: Partial<Record<AssetKind, number>> = {
   image: 64 * 1024,
-  video: 512 * 1024
+  video: 512 * 1024,
+  audio: 512 * 1024
 }
 
 const KIND_BY_EXTENSION = new Map<string, AssetKind>([
@@ -250,7 +251,10 @@ async function addMediaFacts(summary: AssetSummary, deadline: AbortSignal): Prom
     })
     if (!res.ok) return
     const bytes = await firstBytes(res, limit)
-    Object.assign(summary, await mediaFactsFromBytes(bytes, summary.kind, summary.mimeType))
+    Object.assign(
+      summary,
+      await mediaFactsFromBytes(bytes, summary.kind, summary.mimeType, summary.sizeBytes)
+    )
   } catch {
     return
   }

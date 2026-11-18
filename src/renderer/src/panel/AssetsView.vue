@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
 import { DropdownMenuRadioGroup, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import {
-  AudioLines,
   Box,
   Check,
   ChevronDown,
@@ -17,11 +16,11 @@ import {
   Laptop,
   LayoutGrid,
   LayoutDashboard,
+  Music,
   RefreshCw,
   Search,
   Play,
-  Trash2,
-  Video
+  Trash2
 } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
@@ -1311,7 +1310,7 @@ function extensionOf(name: string): string {
                   class="flex size-full flex-col items-center justify-center gap-2 text-[14px]/[14px] font-semibold transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                   :class="placeholderTint(asset)"
                 >
-                  <AudioLines v-if="asset.kind === 'audio'" :size="40" aria-hidden="true" />
+                  <Music v-if="asset.kind === 'audio'" :size="40" aria-hidden="true" />
                   <Box v-else-if="asset.kind === '3d'" :size="40" aria-hidden="true" />
                   <File v-else :size="40" aria-hidden="true" />
                   <span>{{ extensionOf(asset.name) }}</span>
@@ -1325,11 +1324,10 @@ function extensionOf(name: string): string {
                   <Play :size="18" class="translate-x-px" />
                 </span>
                 <span
-                  v-if="asset.kind === 'video' && asset.durationSeconds"
-                  class="absolute bottom-2 left-2 flex h-[22px] items-center gap-[5px] rounded-full bg-[rgb(14_14_14/0.28)] pr-2 pl-[7px] text-[11.5px]/[16.1px] font-medium text-white"
+                  v-if="(asset.kind === 'video' || asset.kind === 'audio') && asset.durationSeconds"
+                  class="absolute right-2 bottom-2 rounded-md bg-[rgb(14_14_14/0.72)] px-1.5 py-0.5 text-[11.5px]/[16px] font-medium text-white tabular-nums"
                   data-testid="asset-duration"
                 >
-                  <Video :size="12" class="opacity-92" aria-hidden="true" />
                   {{ formatPlaybackTime(asset.durationSeconds) }}
                 </span>
               </span>
