@@ -16,6 +16,7 @@ import ComfyUISettingsContent from '../components/settings/ComfyUISettingsConten
 import { SETTINGS_REOPEN_EPOCH } from '../views/comfyUISettings/settingsReopenEpoch'
 import InfoTooltip from '../components/InfoTooltip.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import { vSlidingPill } from '../components/ui/vSlidingPill'
 import InstanceRow from './instancePicker/InstanceRow.vue'
 import { resolvePickerTab, type PickerTab } from '../lib/pickerTabs'
 import { resolveProgressRouting } from '../lib/pickerProgressRouting'
@@ -494,6 +495,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
       </template>
       <ToggleGroup
         v-model="activeFilter"
+        v-sliding-pill="'bg-secondary'"
         type="single"
         :allow-empty="false"
         roving-focus
