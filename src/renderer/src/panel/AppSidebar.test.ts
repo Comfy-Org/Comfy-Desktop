@@ -356,6 +356,25 @@ describe('AppSidebar', () => {
     ).toHaveLength(0)
   })
 
+  it('keeps keyboard focus on the toggle when Enter folds and unfolds the sidebar', async () => {
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+    const toggle = () => wrapper.get('[data-testid="app-sidebar-toggle"]').element as HTMLElement
+
+    toggle().focus()
+    await userEvent.keyboard('{Enter}')
+    await flushPromises()
+    expect(document.activeElement, 'focus after folding').toBe(toggle())
+    expect(toggle().getAttribute('aria-label')).toBe('Expand sidebar')
+
+    await userEvent.keyboard('{Enter}')
+    await flushPromises()
+    expect(document.activeElement, 'focus after unfolding').toBe(toggle())
+    expect(toggle().getAttribute('aria-label')).toBe('Collapse sidebar')
+    wrapper.unmount()
+  })
+
   it('leaves a 4px gap between rows so two filled rows never touch', async () => {
     useInstallationStore().installations = []
     const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
@@ -485,7 +504,20 @@ describe('AppSidebar', () => {
 
     expect([leftOf(coin), leftOf(avatar)], 'coin and avatar folded').toEqual(open)
     expect(creditsHeight(), 'credits row folded').toBe(44)
-    expect(wrapper.find('[data-testid="app-sidebar-credits-short"]').text()).toBe('211')
+    const short = wrapper.get('[data-testid="app-sidebar-credits-short"]').element
+    expect(short.textContent?.trim()).toBe('211')
+    expect(getComputedStyle(short).opacity, 'short count visible').toBe('1')
+    const shortBox = short.getBoundingClientRect()
+    const creditsBox = wrapper
+      .get('[data-testid="app-sidebar-credits"]')
+      .element.getBoundingClientRect()
+    expect(
+      shortBox.left >= creditsBox.left &&
+        shortBox.right <= creditsBox.right &&
+        shortBox.top >= creditsBox.top &&
+        shortBox.bottom <= creditsBox.bottom,
+      'short count fits inside the folded credits button'
+    ).toBe(true)
     wrapper.unmount()
   })
 
@@ -591,6 +623,45 @@ describe('AppSidebar', () => {
 
       expect(wrapper.emitted('new-build')).toHaveLength(1)
       expect(navigatePanel).not.toHaveBeenCalled()
+    })
+
+    it('unmounts the build rows once the rail has folded, and brings them back on unfold', async () => {
+      useInstallationStore().installations = [OLD]
+      const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+      await flushPromises()
+      expect(buildNames(wrapper)).toEqual(['Flux Sandbox'])
+
+      await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+      await flushPromises()
+      expect(buildNames(wrapper), 'kept during the fold').toEqual(['Flux Sandbox'])
+      await new Promise((resolve) => setTimeout(resolve, 450))
+      expect(buildNames(wrapper), 'gone once folded').toEqual([])
+
+      await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+      await flushPromises()
+      expect(buildNames(wrapper), 'back on unfold').toEqual(['Flux Sandbox'])
+      wrapper.unmount()
+    })
+
+    it('keeps the build rows when the sidebar reopens before the fold ends', async () => {
+      useInstallationStore().installations = [OLD]
+      const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+      await flushPromises()
+
+      await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+      await new Promise((resolve) => setTimeout(resolve, 450))
+
+      expect(buildNames(wrapper)).toEqual(['Flux Sandbox'])
+      wrapper.unmount()
+    })
+
+    it('does not mount the build rows when the sidebar starts folded', async () => {
+      window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+      const wrapper = await mountSidebar('home', [OLD])
+
+      expect(buildNames(wrapper)).toEqual([])
     })
 
     it('says there are no builds yet when the workspace has none', async () => {
