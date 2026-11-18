@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
   localDownload: vi.fn(),
   openInComfy: vi.fn(),
   localBuilds: vi.fn(),
-  loadedApp: 'product-ads' as string | null
+  loadedApp: 'product-ads' as string | null,
+  document: 1,
+  whileChecking: () => {}
 }))
 
 vi.mock('electron', () => ({
@@ -20,9 +22,15 @@ vi.mock('electron', () => ({
     handle: (channel: string, handler: Handler) => mocks.handlers.set(channel, handler)
   }
 }))
-vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: async () => mocks.appsEnabled }))
+vi.mock('../../apps/appsConfig', () => ({
+  areAppsEnabled: async () => {
+    mocks.whileChecking()
+    return mocks.appsEnabled
+  }
+}))
 vi.mock('../../apps/appPageView', () => ({
-  loadedAppPage: () => (mocks.loadedApp ? { appId: mocks.loadedApp, document: 1 } : null)
+  loadedAppPage: () =>
+    mocks.loadedApp ? { appId: mocks.loadedApp, document: mocks.document } : null
 }))
 vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
 vi.mock('../../apps/localComfy', () => ({
@@ -61,6 +69,8 @@ beforeEach(() => {
   mocks.isAppsPage = true
   mocks.appsEnabled = true
   mocks.loadedApp = 'product-ads'
+  mocks.document = 1
+  mocks.whileChecking = () => {}
   mocks.localState.mockResolvedValue({ state: 'stopped', own: true, name: 'Studio' })
   mocks.startLocal.mockResolvedValue(RUNNING)
   mocks.localFetch.mockResolvedValue({ status: 200, contentType: 'application/json', body: null })
@@ -95,6 +105,30 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
 
     expect(mocks.startLocal).toHaveBeenCalledWith(EVENT.sender, WANT, null)
     expect(mocks.localFetch).toHaveBeenCalledWith(EVENT.sender, request, null)
+  })
+
+  describe('when the view loads another app while Desktop checks the call', () => {
+    beforeEach(() => {
+      mocks.whileChecking = () => {
+        mocks.loadedApp = 'upscale'
+        mocks.document = 2
+      }
+    })
+
+    it('refuses to start ComfyUI for either app', async () => {
+      expect(await call(APPS_LOCAL_CHANNELS.start, WANT)).toMatchObject({ state: 'unsupported' })
+      expect(mocks.startLocal).not.toHaveBeenCalled()
+    })
+
+    it('refuses to call ComfyUI for either app', async () => {
+      await expect(call(APPS_LOCAL_CHANNELS.fetch, { path: '/queue' })).rejects.toThrow()
+      expect(mocks.localFetch).not.toHaveBeenCalled()
+    })
+
+    it('refuses to download a model for either app', async () => {
+      expect(await call(APPS_LOCAL_CHANNELS.download, {})).toMatchObject({ state: 'failed' })
+      expect(mocks.localDownload).not.toHaveBeenCalled()
+    })
   })
 
   it('opens a workflow in ComfyUI and lists this computer builds for the page', async () => {
