@@ -52,6 +52,11 @@ export function defaultWindowBoundsNear(point: Electron.Point): FreshWindowBound
   return { ...defaultWindowBounds(workArea), workArea }
 }
 
+export function defaultWindowBoundsMatching(bounds: Electron.Rectangle): FreshWindowBounds {
+  const { workArea } = screen.getDisplayMatching(bounds)
+  return { ...defaultWindowBounds(workArea), workArea }
+}
+
 export function defaultWindowBoundsUnderCursor(): FreshWindowBounds {
   return defaultWindowBoundsNear(screen.getCursorScreenPoint())
 }

@@ -219,7 +219,7 @@ describe('placeHostWindow', () => {
       { x: 0, y: 0, width: 1920, height: 1032 },
       { x: 1920, y: 0, width: 1920, height: 1032 }
     ]
-    const sibling = { x: 1100, y: 300 }
+    const sibling = { x: 1100, y: 300, width: 800, height: 600 }
     expect(placeHostWindow('inst-new', false, sibling, [sibling]).bounds).toEqual({
       x: 288,
       y: 155,
@@ -236,12 +236,29 @@ describe('placeHostWindow', () => {
       { x: 1920, y: 0, width: 2560, height: 1400 }
     ]
     mocks.cursor = { x: 100, y: 100 }
-    const dashboard = { x: 200, y: 100 }
-    const requester = { x: 2100, y: 120 }
+    const dashboard = { x: 200, y: 100, width: 1000, height: 700 }
+    const requester = { x: 2100, y: 120, width: 1000, height: 700 }
     expect(placeHostWindow('chooser', true, dashboard, [dashboard, requester], requester)).toEqual({
       bounds: { x: 2130, y: 150, width: 2176, height: 1190, minWidth: 800, minHeight: 600 },
       maximizeNow: false,
       maximizeOnReveal: false
+    })
+  })
+
+  it('opens a new window on the screen that holds most of the window it was chosen from', () => {
+    mocks.displays = [
+      { x: 0, y: 0, width: 1920, height: 1032 },
+      { x: 1920, y: 0, width: 1920, height: 1032 }
+    ]
+    mocks.cursor = { x: 100, y: 100 }
+    const requester = { x: 1900, y: 100, width: 1000, height: 700 }
+    expect(placeHostWindow('chooser', false, null, [requester], requester).bounds).toEqual({
+      x: 1930,
+      y: 130,
+      width: 1632,
+      height: 877,
+      minWidth: 800,
+      minHeight: 600
     })
   })
 })

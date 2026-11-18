@@ -45,7 +45,7 @@ import * as settings from '../settings'
 import * as updater from '../lib/updater'
 import { getSavedBounds, getWindowOptions, saveWindowBounds } from '../lib/windowState'
 import {
-  defaultWindowBoundsNear,
+  defaultWindowBoundsMatching,
   defaultWindowBoundsUnderCursor,
   fitWindowToDisplay,
   fitWindowToWorkArea,
@@ -287,18 +287,16 @@ function liveBoundsKeyFor(entry: ComfyWindowEntry): string {
   return entry.installationId ?? CHOOSER_HOST_BOUNDS_KEY
 }
 
-function liveOriginOf(win: BrowserWindow | undefined): { x: number; y: number } | null {
+function liveBoundsOf(win: BrowserWindow | undefined): Electron.Rectangle | null {
   if (!win || win.isDestroyed()) return null
-  const { x, y } = win.getBounds()
-  return { x, y }
+  return win.getBounds()
 }
 
-function findLiveSiblingOrigin(boundsKey: string): { x: number; y: number } | null {
+function findLiveSiblingBounds(boundsKey: string): Electron.Rectangle | null {
   for (const [, entry] of comfyWindows) {
     if (entry.window.isDestroyed()) continue
     if (liveBoundsKeyFor(entry) !== boundsKey) continue
-    const { x, y } = entry.window.getBounds()
-    return { x, y }
+    return entry.window.getBounds()
   }
   return null
 }
@@ -312,14 +310,14 @@ export interface HostWindowPlacement {
 export function placeHostWindow(
   boundsKey: string,
   initiallyHidden: boolean,
-  sibling: { x: number; y: number } | null,
+  sibling: Electron.Rectangle | null,
   existingOrigins: ReadonlyArray<{ x: number; y: number }>,
-  requester: { x: number; y: number } | null = null
+  requester: Electron.Rectangle | null = null
 ): HostWindowPlacement {
   const saved = boundsKey === CHOOSER_HOST_BOUNDS_KEY ? undefined : getSavedBounds(boundsKey)
   const anchor = requester ?? sibling
   const fresh = anchor
-    ? defaultWindowBoundsNear(anchor)
+    ? defaultWindowBoundsMatching(anchor)
     : saved
       ? null
       : defaultWindowBoundsUnderCursor()
@@ -403,9 +401,9 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
   const placement = placeHostWindow(
     opts.boundsKey,
     opts.initiallyHidden === true,
-    findLiveSiblingOrigin(opts.boundsKey),
+    findLiveSiblingBounds(opts.boundsKey),
     liveHostOrigins(),
-    liveOriginOf(opts.nearWindow)
+    liveBoundsOf(opts.nearWindow)
   )
   const comfyWindow = new BrowserWindow({
     ...placement.bounds,
