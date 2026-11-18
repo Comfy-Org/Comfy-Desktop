@@ -107,7 +107,7 @@ function badges(row: SearchRow): Badge[] {
       label: t('home.search.bestMatch'),
       testId: 'home-template-search-best'
     })
-  const match = row.kind === 'more' ? null : matchBadge(candidate)
+  const match = row.familyPick ? matchBadge(candidate) : null
   if (match) list.push(match)
   if (candidate.needsDownload)
     list.push({
@@ -181,7 +181,6 @@ defineExpose({ verticalTarget, revealActive })
 
 <template>
   <div
-    tabindex="-1"
     :class="{ '[&_[role=option]]:scroll-mt-10': controller.openFailed.value }"
     @mousedown.prevent
     @keydown.esc="emit('refocus')"
@@ -191,7 +190,7 @@ defineExpose({ verticalTarget, revealActive })
         {{ t('home.search.resultsTitle') }}
       </h2>
       <label
-        v-if="!notice && controller.partnerSwitch.value"
+        v-if="controller.partnerSwitch.value"
         class="flex items-center gap-2 text-xs/4 text-muted-foreground"
         data-testid="home-template-search-partner-switch"
       >
@@ -301,6 +300,7 @@ defineExpose({ verticalTarget, revealActive })
                 v-for="badge in badges(row)"
                 :key="badge.testId"
                 :tone="badge.tone"
+                :title="badge.label"
                 :data-testid="badge.testId"
               >
                 {{ badge.label }}

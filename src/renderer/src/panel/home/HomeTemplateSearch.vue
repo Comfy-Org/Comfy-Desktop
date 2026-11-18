@@ -22,7 +22,7 @@ const search = useTemplateSearch({
 const { query, state, panelOpen, activeIndex, activeRow } = search
 
 const showPanel = computed(() => panelOpen.value && state.value.kind !== 'idle')
-watch(showPanel, (shown) => emit('results', shown), { immediate: true })
+watch(showPanel, (shown) => emit('results', shown))
 const activeDescendant = computed(() =>
   activeRow.value && showPanel.value ? `${listboxId}-${activeIndex.value}` : undefined
 )

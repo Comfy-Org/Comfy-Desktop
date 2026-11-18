@@ -14,6 +14,7 @@ export interface SearchRow {
   kind: SearchRowKind
   candidate: TemplateSearchCandidate
   best: boolean
+  familyPick: boolean
 }
 
 function matchValue(candidate: TemplateSearchCandidate): number | null {
@@ -32,9 +33,13 @@ function shown(candidate: TemplateSearchCandidate): boolean {
 }
 
 function rowsOf(kind: SearchRowKind, candidates: TemplateSearchCandidate[]): SearchRow[] {
-  return candidates
-    .filter(shown)
-    .map((candidate) => ({ key: `${kind}:${candidate.templateId}`, kind, candidate, best: false }))
+  return candidates.filter(shown).map((candidate) => ({
+    key: `${kind}:${candidate.templateId}`,
+    kind,
+    candidate,
+    best: false,
+    familyPick: true
+  }))
 }
 
 interface CardBox {
@@ -64,16 +69,16 @@ export function verticalNeighbour(boxes: CardBox[], active: number, step: 1 | -1
   return nearest
 }
 
-function familiesTogether(groups: SearchRow[][]): SearchRow[] {
-  const pending = groups.flat()
+function familiesTogether(cards: SearchRow[]): SearchRow[] {
+  const pending = [...cards]
   const rows: SearchRow[] = []
   while (pending.length > 0) {
-    const anchor = pending.shift()!
-    rows.push(anchor)
-    const family = anchor.candidate.family
+    const pick = pending.shift()!
+    rows.push(pick)
+    const family = pick.candidate.family
     if (family === null) continue
     const sameFamily = pending.filter((other) => other.candidate.family === family)
-    rows.push(...sameFamily)
+    rows.push(...sameFamily.map((row) => ({ ...row, familyPick: false })))
     for (const other of sameFamily) pending.splice(pending.indexOf(other), 1)
   }
   return rows
@@ -86,7 +91,7 @@ export function searchRows(result: TemplateSearchResult): SearchRow[] {
   const lead =
     result.outcome === 'template' ? run[0] : result.outcome === 'download' ? download[0] : null
   if (lead) lead.best = true
-  const main = familiesTogether([run, download, rowsOf('more', result.more)])
-  const bestFirst = lead ? [lead, ...main.filter((row) => row !== lead)] : main
-  return [...bestFirst, ...rowsOf('also', result.alsoTry)]
+  const cards = [...run, ...download, ...rowsOf('more', result.more)]
+  const leadFirst = lead ? [lead, ...cards.filter((row) => row !== lead)] : cards
+  return [...familiesTogether(leadFirst), ...rowsOf('also', result.alsoTry)]
 }

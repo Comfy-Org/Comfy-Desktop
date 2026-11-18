@@ -57,6 +57,16 @@ const ANSWER = {
   options: []
 }
 
+function option(templateId: string, family: string, extra: Record<string, unknown> = {}) {
+  return {
+    ...ANSWER.split.run[0]!,
+    option_id: `${templateId}:as_given`,
+    family_id: family,
+    variant: { template_id: templateId, title: null },
+    ...extra
+  }
+}
+
 const SIZES = new Map([
   ['mural_template', 18_000_000_000],
   ['zine_template', 7_000_000_000],
@@ -170,13 +180,8 @@ describe('createDesktopSearch', () => {
   })
 
   it('gives each Download and run card the download size the build reads for it', async () => {
-    const needsFiles = (templateId: string) => ({
-      ...ANSWER.split.run[0]!,
-      option_id: `${templateId}:as_given`,
-      family_id: templateId,
-      variant: { template_id: templateId, title: null },
-      download: [templateId, `${templateId}.safetensors`]
-    })
+    const needsFiles = (templateId: string) =>
+      option(templateId, templateId, { download: [templateId, `${templateId}.safetensors`] })
     const body = {
       ...ANSWER,
       split: {
@@ -208,13 +213,8 @@ describe('createDesktopSearch', () => {
   })
 
   it('gives an Also try card that needs a download its size too, and none to one that does not', async () => {
-    const offer = (templateId: string, masked?: { code: string; detail: string }) => ({
-      ...ANSWER.split.run[0]!,
-      option_id: `${templateId}:as_given`,
-      family_id: templateId,
-      variant: { template_id: templateId, title: null },
-      ...(masked ? { masked } : {})
-    })
+    const offer = (templateId: string, masked?: { code: string; detail: string }) =>
+      option(templateId, templateId, masked ? { masked } : {})
     const body = {
       ...ANSWER,
       options: [
@@ -238,13 +238,8 @@ describe('createDesktopSearch', () => {
   })
 
   it('gives a further template of a family its size when it needs a download, and none when it does not', async () => {
-    const further = (templateId: string, download: string[]) => ({
-      ...ANSWER.split.run[0]!,
-      option_id: `${templateId}:as_given`,
-      family_id: 'poster',
-      variant: { template_id: templateId, title: null },
-      download
-    })
+    const further = (templateId: string, download: string[]) =>
+      option(templateId, 'poster', { download })
     const body = {
       ...ANSWER,
       split: {

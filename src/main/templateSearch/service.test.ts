@@ -99,13 +99,15 @@ describe('search service', () => {
       posted()
       return new Promise((resolve) => (answer = resolve))
     })
+    const answering = fakeSidecar(true)
     const { service } = setup({
-      start: vi.fn<Start>(async () => ({ ok: true, sidecar: fakeSidecar(true).sidecar })),
+      start: vi.fn<Start>(async () => ({ ok: true, sidecar: answering.sidecar })),
       post
     })
     const searching = service.decide(() => ({ text: 'x' }))
     await waitingForAnswer
     await service.onBuildAction(BUILD_A.installationId)
+    expect(answering.sidecar.stop).toHaveBeenCalled()
     answer({ ok: 1 })
     expect(await searching).toMatchObject({ kind: 'answer', partnerSwitch: true })
   })

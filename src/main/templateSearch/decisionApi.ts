@@ -49,11 +49,8 @@ function isOfferableOption(value: unknown): boolean {
   return option !== null && (option.masked == null || maskCode(option) === NOT_INSTALLED)
 }
 
-function missingFor(candidate: JsonRecord, templateId: string): string[] {
-  const listed = asTexts(candidate.download)
-  const masked = asText(asRecord(candidate.masked)?.detail)
-  const items = listed.length ? listed : masked ? masked.split(',').map((item) => item.trim()) : []
-  return items.filter((item) => item && item !== templateId)
+function listsFiles(value: unknown): boolean {
+  return asTexts(asRecord(value)?.download).length > 0
 }
 
 function asNumber(value: unknown): number | null {
@@ -93,11 +90,11 @@ function candidateFrom(
     thumbnailUrl: label?.thumbnailUrl ?? null,
     family: asText(candidate.family_id),
     partner: label?.partner === true || isPartnerTemplate(templateId),
-    needsDownload: fromDownloadList || maskCode(candidate) === NOT_INSTALLED,
+    needsDownload:
+      fromDownloadList || listsFiles(candidate) || maskCode(candidate) === NOT_INSTALLED,
     score: asNumber(candidate.score),
     calibrated: asNumber(candidate.calibrated),
     belowThreshold: isBelowThreshold(candidate),
-    missing: missingFor(candidate, templateId),
     downloadBytes: null
   }
 }
@@ -111,16 +108,14 @@ function distinctCandidates(
     fromDownloadList = false
   }: {
     taken?: ReadonlySet<string>
-    fromDownloadList?: boolean | ((item: unknown) => boolean)
+    fromDownloadList?: boolean
   } = {}
 ): TemplateSearchCandidate[] {
   const seen = new Set(taken)
   const candidates: TemplateSearchCandidate[] = []
   for (const item of Array.isArray(value) ? value : []) {
     if (candidates.length === limit) break
-    const listed =
-      typeof fromDownloadList === 'function' ? fromDownloadList(item) : fromDownloadList
-    const candidate = candidateFrom(item, listed, describe)
+    const candidate = candidateFrom(item, fromDownloadList, describe)
     if (!candidate || seen.has(candidate.templateId)) continue
     seen.add(candidate.templateId)
     candidates.push(candidate)
@@ -154,12 +149,11 @@ export function parseDecision(
   const split = asRecord(decision?.split)
   if (!outcome || !split) return null
   const open = Array.isArray(split.open) ? split.open : []
-  const needsFiles = (item: unknown): boolean => asTexts(asRecord(item)?.download).length > 0
   const picks = distinctCandidates(split.run, Infinity, describe)
   const run = openBesideItsPick(
     picks,
     distinctCandidates(
-      open.filter((item) => !needsFiles(item)),
+      open.filter((item) => !listsFiles(item)),
       Infinity,
       describe,
       { taken: new Set(picks.map((candidate) => candidate.templateId)) }
@@ -168,7 +162,7 @@ export function parseDecision(
   )
   const downloads = Array.isArray(split.download) ? split.download : []
   const download = distinctCandidates(
-    [...open.filter(needsFiles), ...downloads],
+    [...open.filter(listsFiles), ...downloads],
     DOWNLOAD_LIMIT,
     describe,
     {
@@ -176,9 +170,13 @@ export function parseDecision(
       fromDownloadList: true
     }
   )
-  const more = distinctCandidates(split.more, MORE_LIMIT, describe, {
-    taken: new Set([...run, ...download].map((candidate) => candidate.templateId)),
-    fromDownloadList: needsFiles
+  const shownFamilies = new Set([...run, ...download].map((candidate) => candidate.family))
+  const siblings = (Array.isArray(split.more) ? split.more : []).filter((item) => {
+    const family = asText(asRecord(item)?.family_id)
+    return family !== null && shownFamilies.has(family)
+  })
+  const more = distinctCandidates(siblings, MORE_LIMIT, describe, {
+    taken: new Set([...run, ...download].map((candidate) => candidate.templateId))
   })
   const options = Array.isArray(decision?.options) ? decision.options : []
   const alsoTry = distinctCandidates(options.filter(isOfferableOption), ALSO_TRY_LIMIT, describe, {

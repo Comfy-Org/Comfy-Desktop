@@ -225,7 +225,6 @@ export interface TemplateSearchCandidate {
   score: number | null
   calibrated: number | null
   belowThreshold: boolean
-  missing: string[]
   downloadBytes: number | null
 }
 

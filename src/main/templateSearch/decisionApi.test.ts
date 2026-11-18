@@ -76,11 +76,11 @@ describe('parseDecision', () => {
     ])
   })
 
-  it('keeps two download candidates not already runnable, listing only what is missing besides the template', () => {
+  it('keeps two download candidates not already runnable', () => {
     const result = parseDecision(decision())
-    expect(result?.download).toEqual([
-      expect.objectContaining({ templateId: 'mural_template', missing: ['mural.safetensors'] }),
-      expect.objectContaining({ templateId: 'zine_template', missing: ['zine.safetensors'] })
+    expect(result?.download.map((c) => [c.templateId, c.needsDownload])).toEqual([
+      ['mural_template', true],
+      ['zine_template', true]
     ])
   })
 
@@ -142,15 +142,11 @@ describe('parseDecision', () => {
     ])
   })
 
-  it('marks what needs a download, and what it would download', () => {
+  it('marks what needs a download', () => {
     const result = parseDecision(decision())!
     expect(result.run.every((c) => !c.needsDownload)).toBe(true)
     expect(result.download.every((c) => c.needsDownload)).toBe(true)
-    expect(result.alsoTry[0]).toMatchObject({
-      templateId: 'quilt_template',
-      needsDownload: true,
-      missing: ['quilt.safetensors']
-    })
+    expect(result.alsoTry[0]).toMatchObject({ templateId: 'quilt_template', needsDownload: true })
     expect(result.alsoTry[1]).toMatchObject({ templateId: 'card_template', needsDownload: false })
   })
 
@@ -249,10 +245,7 @@ describe('parseDecision', () => {
     })
     const result = parseDecision(body)
     expect(result?.run.map((c) => c.templateId)).toEqual(['api_poster_template', 'poster_template'])
-    expect(result?.download).toEqual([
-      expect.objectContaining({ templateId: 'zine_template', missing: ['zine.safetensors'] }),
-      expect.objectContaining({ templateId: 'mural_template', missing: ['mural.safetensors'] })
-    ])
+    expect(result?.download.map((c) => c.templateId)).toEqual(['zine_template', 'mural_template'])
   })
 
   it('keeps the open picks in view when the search sends more than fits', () => {
@@ -302,17 +295,23 @@ describe('parseDecision', () => {
     ])
   })
 
-  it('reads the further templates of the shown families, in order, marking the ones that need files, and repeats no card', () => {
+  it('reads the further templates of the families it shows, in order, marking the ones that need files, and repeats no card', () => {
+    const scored = (item: object, score: number) => ({ ...item, score })
     const body = decision({
       split: {
-        run: [pick('api_poster', 'poster')],
-        download: [pick('mural', 'mural', ['mural', 'm.bin'])],
+        run: [
+          scored(pick('api_poster', 'poster'), 0.6),
+          { ...pick('solo', 'solo'), family_id: null }
+        ],
+        download: [scored(pick('mural', 'mural', ['mural', 'm.bin']), 0.9)],
         more: [
-          pick('poster_b', 'poster'),
-          pick('poster_c', 'poster', ['poster_c', 'c.bin']),
-          pick('api_poster', 'poster'),
-          pick('mural', 'mural'),
-          pick('mural_b', 'mural', ['mural_b'])
+          scored(pick('poster_b', 'poster'), 0.6),
+          scored(pick('sticker_b', 'sticker'), 0.8),
+          scored(pick('poster_c', 'poster', ['poster_c', 'c.bin']), 0.6),
+          scored(pick('api_poster', 'poster'), 0.6),
+          { ...pick('loose', 'poster'), family_id: null },
+          scored(pick('mural', 'mural'), 0.9),
+          scored(pick('mural_b', 'mural', ['mural_b']), 0.9)
         ]
       },
       options: [pick('poster_b', 'poster'), pick('card', 'card')]
@@ -326,10 +325,13 @@ describe('parseDecision', () => {
     expect(result?.alsoTry.map((c) => c.templateId)).toEqual(['card'])
   })
 
-  it('keeps at most twelve further templates, and none from a search that sends none', () => {
+  it("keeps the search's first twelve further templates, and none from a search that sends none", () => {
     const more = Array.from({ length: 14 }, (_, i) => pick(`more_${i}`, 'poster'))
-    expect(parseDecision(decision({ split: { run: [], download: [], more } }))?.more).toHaveLength(
-      12
+    const result = parseDecision(
+      decision({ split: { run: [pick('poster', 'poster')], download: [], more } })
+    )
+    expect(result?.more.map((c) => c.templateId)).toEqual(
+      Array.from({ length: 12 }, (_, i) => `more_${i}`)
     )
     expect(parseDecision(decision())?.more).toEqual([])
   })
