@@ -155,10 +155,10 @@ export function createSearchTelemetry({
     return current.shownMs + (current.shownAt === null ? 0 : at - current.shownAt)
   }
 
-  function show(current: Session, answer: Answer): void {
+  function show(current: Session, answer: Answer, shownAt: number | null = now()): void {
     current.answer = answer
     current.shownMs = 0
-    current.shownAt = now()
+    current.shownAt = shownAt
   }
 
   function requested(): void {
@@ -195,7 +195,7 @@ export function createSearchTelemetry({
     })
     if (!current) return
     current.previousRequest = request
-    if (visible) show(current, lastAnswer)
+    show(current, lastAnswer, visible ? now() : null)
   }
 
   function reopened(): void {

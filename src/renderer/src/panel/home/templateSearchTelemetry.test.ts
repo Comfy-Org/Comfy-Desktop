@@ -310,6 +310,43 @@ describe('createSearchTelemetry', () => {
     expect(last().context).toMatchObject({ results_to_pick_ms: 300, session_ms: 6300 })
   })
 
+  it('times an answer that arrived hidden from when it is shown, not from the answer before it', () => {
+    const { telemetry, last, tick, at } = harness()
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
+    tick(5000)
+    telemetry.hidden()
+    telemetry.requested()
+    telemetry.answered('a poster for a bake sale', ANSWER, ANSWER_AT(at), false)
+    tick(60_000)
+    telemetry.reopened()
+    tick(400)
+    telemetry.picked(ROWS, ROWS[0]!, 'keyboard')
+    expect(last().context).toMatchObject({ results_to_pick_ms: 400, session_search_count: 2 })
+  })
+
+  it('sends a give-up after an answer that arrived hidden with that answer, seen for no time', () => {
+    const { telemetry, last, tick, at } = harness()
+    telemetry.requested()
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), false)
+    tick(2000)
+    telemetry.abandoned('left')
+    expect(last().context).toMatchObject({
+      session_search_count: 1,
+      last_results_shown_ms: 0,
+      last_outcome: 'template'
+    })
+  })
+
+  it('keeps counting when results already on screen are reported shown again', () => {
+    const { telemetry, last, tick, at } = harness()
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
+    tick(1000)
+    telemetry.reopened()
+    tick(500)
+    telemetry.picked(ROWS, ROWS[0]!, 'keyboard')
+    expect(last().context).toMatchObject({ results_to_pick_ms: 1500 })
+  })
+
   it('starts the shown time from nothing when the results open again after a give-up', () => {
     const { telemetry, last, tick, at } = harness()
     telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)

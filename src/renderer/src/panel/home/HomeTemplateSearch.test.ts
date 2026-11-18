@@ -1607,9 +1607,13 @@ describe('HomeTemplateSearch telemetry', () => {
     expect(named('picked')[0]!.context).toMatchObject({ session_search_count: 2 })
   })
 
-  it('pauses the time looking at the results while the window is away, and goes on on return', async () => {
+  function frozenClock(): (ms: number) => void {
     vi.useFakeTimers({ toFake: ['Date'] })
-    const later = (ms: number) => vi.setSystemTime(Date.now() + ms)
+    return (ms) => vi.setSystemTime(Date.now() + ms)
+  }
+
+  it('pauses the time looking at the results while the window is away, and goes on on return', async () => {
+    const later = frozenClock()
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
     later(5000)
@@ -1626,8 +1630,7 @@ describe('HomeTemplateSearch telemetry', () => {
   })
 
   it('sends the time spent looking before the window went away when Home closes while away', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    const later = (ms: number) => vi.setSystemTime(Date.now() + ms)
+    const later = frozenClock()
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
     later(5000)
@@ -1643,8 +1646,7 @@ describe('HomeTemplateSearch telemetry', () => {
   })
 
   it('times an answer that arrived while the window was away from when the window comes back', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    const later = (ms: number) => vi.setSystemTime(Date.now() + ms)
+    const later = frozenClock()
     let answerLater!: (response: TemplateSearchResponse) => void
     searchTemplates.mockReturnValueOnce(new Promise((resolve) => (answerLater = resolve)))
     const wrapper = mountSearch()
@@ -1658,6 +1660,22 @@ describe('HomeTemplateSearch telemetry', () => {
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(named('picked')[0]!.context).toMatchObject({ results_to_pick_ms: 400 })
+  })
+
+  it('sends a give-up with the answer that arrived while the window was away, seen for no time', async () => {
+    let answerLater!: (response: TemplateSearchResponse) => void
+    searchTemplates.mockReturnValueOnce(new Promise((resolve) => (answerLater = resolve)))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    window.dispatchEvent(new Event('blur'))
+    answerLater(answer({ run: [POSTER] }))
+    await flushPromises()
+    wrapper.unmount()
+    expect(named('abandoned')[0]!.context).toMatchObject({
+      reason: 'left',
+      last_results_shown_ms: 0,
+      last_outcome: 'template'
+    })
   })
 
   it('starts no session when the window comes back after the results closed or a template opened', async () => {
