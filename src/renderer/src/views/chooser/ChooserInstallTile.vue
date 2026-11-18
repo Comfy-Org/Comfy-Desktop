@@ -160,7 +160,12 @@ const statusPill = computed<{
 })
 
 const showWhyCloudTrigger = computed(
-  () => props.showWhyCloud && !hasError.value && !statusPill.value && !dangerTag.value
+  () =>
+    props.showWhyCloud &&
+    !hasError.value &&
+    !isRunning.value &&
+    !statusPill.value &&
+    !dangerTag.value
 )
 
 const startsWithDesktop = computed(() => props.autoStart && !isCloudBuild(inst.value))
@@ -405,7 +410,7 @@ function openContextMenu(event: MouseEvent): void {
           <span class="truncate">{{ restingLabel }}</span>
         </span>
         <span
-          v-if="props.showFreeRunsPill && !hasError && !statusPill && !dangerTag"
+          v-if="props.showFreeRunsPill && !hasError && !isRunning && !statusPill && !dangerTag"
           class="chooser-cloud-runs-pill ml-1 inline-flex h-4 shrink-0 items-center rounded-[5px] bg-foreground/10 px-1.5 text-[11px] font-medium whitespace-nowrap text-foreground"
           data-testid="chooser-cloud-runs-pill"
           ><span class="block lowercase first-letter:uppercase">{{
