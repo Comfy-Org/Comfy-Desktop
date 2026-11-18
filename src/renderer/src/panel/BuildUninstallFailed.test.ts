@@ -4,16 +4,19 @@ import '../assets/main.css'
 import BuildUninstallFailed from './BuildUninstallFailed.vue'
 
 let wrapper: VueWrapper | null = null
+let host: HTMLElement | null = null
 
 afterEach(() => {
   wrapper?.unmount()
   wrapper = null
+  host?.remove()
+  host = null
 })
 
 function mountCard(reason: string, width = 900): HTMLElement {
-  const host = document.createElement('div')
+  host = document.createElement('div')
   host.style.width = `${width}px`
-  document.body.replaceChildren(host)
+  document.body.append(host)
   wrapper = mount(BuildUninstallFailed, {
     props: { reason, title: "Pulling changes didn't finish", kind: 'operation' },
     attachTo: host
@@ -21,14 +24,21 @@ function mountCard(reason: string, width = 900): HTMLElement {
   return wrapper.element as HTMLElement
 }
 
-function centerY(el: Element): number {
+function renderedBox(el: Element): DOMRect {
   const box = el.getBoundingClientRect()
+  expect(box.width, 'the element is rendered').toBeGreaterThan(0)
+  expect(box.height, 'the element is rendered').toBeGreaterThan(0)
+  return box
+}
+
+function centerY(el: Element): number {
+  const box = renderedBox(el)
   return box.top + box.height / 2
 }
 
 function firstLineCenterY(el: Element): number {
   const lineHeight = parseFloat(getComputedStyle(el).lineHeight)
-  return el.getBoundingClientRect().top + lineHeight / 2
+  return renderedBox(el).top + lineHeight / 2
 }
 
 describe('the failed task card', () => {

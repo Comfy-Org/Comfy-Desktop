@@ -434,11 +434,16 @@ describe('a port conflict when a build starts', () => {
     expect(footer!.contains(onPage(TID.progressPortConflictUsePort))).toBe(true)
     expect(footer!.contains(onPage(TID.progressPortConflictKill))).toBe(true)
     expect(footer!.contains(onPage(TID.baseAlertCancel))).toBe(true)
-    const tops = [
+    const boxes = [
       TID.baseAlertCancel,
       TID.progressPortConflictKill,
       TID.progressPortConflictUsePort
-    ].map((id) => Math.round(onPage(id)!.getBoundingClientRect().top))
+    ].map((id) => onPage(id)!.getBoundingClientRect())
+    for (const box of boxes) {
+      expect(box.width, 'each footer button is rendered').toBeGreaterThan(0)
+      expect(box.height, 'each footer button is rendered').toBeGreaterThan(0)
+    }
+    const tops = boxes.map((box) => Math.round(box.top))
     expect(new Set(tops).size, 'the three buttons sit on one row').toBe(1)
   })
 
