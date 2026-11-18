@@ -13,6 +13,10 @@ const UPDATE_CHECK_MS = 24 * 60 * 60_000
 const SHA256 = /^[0-9a-f]{64}$/
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const UPDATE_DESKTOP: TemplateSearchAvailability = { kind: 'unavailable', reason: 'update_desktop' }
+const DOWNLOAD_FAILED: TemplateSearchAvailability = {
+  kind: 'unavailable',
+  reason: 'download_failed'
+}
 
 export interface Supported {
   sidecar: string
@@ -48,7 +52,6 @@ export interface BundleStoreDeps {
   }) => Promise<TransferResult>
   supports: () => Promise<Supported | null>
   check: (bundleDir: string) => Promise<boolean>
-  isOnline: () => boolean
   onAvailability: (availability: TemplateSearchAvailability) => void
   onDownloaded?: (download: BundleDownload) => void
   now?: () => number
@@ -186,6 +189,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
   let lastProgressAt = 0
   let lastUpdateCheck = 0
   let quiet = false
+  let waitingForRetry = false
 
   async function localVersions(): Promise<(LocalBundle & { minSidecar: string | null })[]> {
     const names = await fs.promises.readdir(bundlesDir).catch(() => [] as string[])
@@ -214,6 +218,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
 
   async function discard(version: string): Promise<void> {
     await fs.promises.rm(path.join(bundlesDir, version), { recursive: true, force: true })
+    waitingForRetry = true
   }
 
   function report(availability: TemplateSearchAvailability): void {
@@ -374,13 +379,13 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     downloading = fetchNewest(base)
       .then(async (fetched) => {
         reportDownload(downloadResult(fetched))
-        report(
-          fetched.kind !== 'none_readable' || (await newest()) ? { kind: 'idle' } : UPDATE_DESKTOP
-        )
+        waitingForRetry = false
+        deps.onAvailability((await newest()) ? { kind: 'idle' } : UPDATE_DESKTOP)
       })
       .catch(() => {
         reportDownload({ result: 'failed', bytes: progress.received, version: null })
-        report({ kind: 'unavailable', reason: 'download_failed' })
+        if (!quiet) waitingForRetry = true
+        report(DOWNLOAD_FAILED)
       })
       .finally(() => {
         downloading = null
@@ -405,7 +410,12 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       quiet = false
       return { kind: 'downloading', ...progress }
     }
-    if (!deps.isOnline()) return { kind: 'unavailable', reason: 'offline' }
+    if (waitingForRetry) return DOWNLOAD_FAILED
+    try {
+      if (!(await wanted(base))) return UPDATE_DESKTOP
+    } catch {
+      return { kind: 'unavailable', reason: 'offline' }
+    }
     void download({ trigger: 'bar' })
     return { kind: 'downloading', ...progress }
   }

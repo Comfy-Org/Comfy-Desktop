@@ -303,7 +303,7 @@ describe('search service', () => {
     })
   })
 
-  it('discards a bundle the sidecar finds damaged, and downloads it again', async () => {
+  it('discards a bundle the sidecar finds damaged, and passes on what the store says next', async () => {
     const prepare = vi
       .fn<() => Promise<TemplateSearchAvailability>>()
       .mockResolvedValueOnce({ kind: 'ready' })

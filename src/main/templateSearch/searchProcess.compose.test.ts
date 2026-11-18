@@ -236,7 +236,7 @@ describe('createSearchProcess', () => {
     expect(bundlesOnDisk()).toEqual(['1.0.0'])
   })
 
-  it('downloads the model in the background, saying nothing, once a free local build can tell which version it reads', async () => {
+  it('downloads the model in the background, showing no progress, once a free local build can tell which version it reads', async () => {
     mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
     serveBundle({ 'catalog.json': '{}' })
     const { search, announced } = setup({ online: true })
@@ -245,7 +245,7 @@ describe('createSearchProcess', () => {
     expect(reportBundleDownload).toHaveBeenCalledWith(
       expect.objectContaining({ result: 'completed', trigger: 'launch' })
     )
-    expect(announced).toEqual([])
+    expect(announced).toEqual([{ kind: 'idle' }])
 
     const fetches = mocks.fetch.mock.calls.length
     expect(await search.downloadInBackground('build_ready')).toBe(true)
@@ -260,15 +260,50 @@ describe('createSearchProcess', () => {
       'Desktop is offline',
       { enabled: true, online: false, builds: [{ id: 'ok', lastLaunchedAt: 1 }] }
     ],
-    ['there is no local build', { enabled: true, online: true, builds: [] }]
+    ['there is no local build', { enabled: true, online: true, builds: [] }],
+    [
+      'no bundle address is set',
+      { enabled: true, online: true, builds: [{ id: 'ok', lastLaunchedAt: 1 }], base: null }
+    ]
   ])('leaves the background download for later while %s', async (_case, given) => {
     mocks.settings.templateSearchEnabled = given.enabled
+    if ('base' in given) mocks.settings.templateSearchBundleBase = given.base
     mocks.builds = given.builds
     serveBundle({ 'catalog.json': '{}' })
     const { search } = setup({ online: given.online })
     expect(await search.downloadInBackground('launch')).toBe(false)
     expect(mocks.fetch).not.toHaveBeenCalled()
     expect(spawned).toEqual([])
+  })
+
+  it('leaves the background download for later when no build can say which version it reads', async () => {
+    mocks.builds = [{ id: 'unsupported', lastLaunchedAt: 1 }]
+    serveBundle({ 'catalog.json': '{}' })
+    const { search } = setup({ online: true })
+    expect(await search.downloadInBackground('launch')).toBe(false)
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it("keeps the service's reason when no build can run the search program, without starting a download", async () => {
+    mocks.builds = [{ id: 'unsupported', lastLaunchedAt: 1 }]
+    serveBundle({ 'catalog.json': '{}' })
+    const { search, announced } = setup({ online: true })
+    await search.prepare()
+    expect(announced.at(-1)).toEqual({ kind: 'unavailable', reason: 'runtime_unsupported' })
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(mocks.transfer).not.toHaveBeenCalled()
+  })
+
+  it('leaves the background download for later while every build is busy, even after one said which version it reads', async () => {
+    mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
+    const { search } = setup({ online: true })
+    await search.prepare()
+    expect(spawned.some(({ args }) => args.includes('--supports'))).toBe(true)
+
+    serveBundle({ 'catalog.json': '{}' })
+    mocks.activeOperations.mockReturnValue([{ installationId: 'ok', actionId: 'copy-update' }])
+    expect(await search.downloadInBackground('launch')).toBe(false)
+    expect(mocks.transfer).not.toHaveBeenCalled()
   })
 
   it('leaves the background download for later while the only build is busy', async () => {

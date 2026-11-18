@@ -197,6 +197,7 @@
       "noMatch": "No template fits this yet.",
       "run": "Run",
       "downloadAndRun": "Download and run",
+      "signInToUse": "Sign in to use",
       "bestMatch": "Best match",
       "template": "Template",
       "needsDownload": "Downloads {items}",

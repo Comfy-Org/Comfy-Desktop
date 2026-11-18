@@ -86,7 +86,6 @@ function store(over: Partial<BundleStoreDeps> = {}) {
     transfer,
     supports: async () => SUPPORTED,
     check: async () => true,
-    isOnline: () => true,
     onAvailability: (a) => announced.push(a),
     ...over
   }
@@ -120,9 +119,13 @@ function entriesIn(dir: string): string[] {
 describe('bundle store', () => {
   it('starts the download by itself when no bundle is on disk, and is ready once it lands', async () => {
     publish(server, '1.0.0', V1)
-    const { store: s, transfer } = store()
+    const { store: s, transfer } = store({ now: () => 0 })
+    const release = holdTransfers(transfer)
     expect(await s.prepare()).toEqual({ kind: 'downloading', received: 0, total: 0 })
-    await vi.waitFor(() => expect(announced.at(-1)).toEqual({ kind: 'idle' }))
+    await vi.waitFor(() => expect(transfer).toHaveBeenCalled(), { timeout: 5000 })
+    release()
+    await s.download()
+    expect(announced.at(-1)).toEqual({ kind: 'idle' })
     expect(transfer).toHaveBeenCalledTimes(3)
     expect(await s.prepare()).toEqual({ kind: 'ready' })
   })
@@ -132,40 +135,79 @@ describe('bundle store', () => {
     expect(await s.prepare()).toEqual({ kind: 'off' })
   })
 
-  it('says it is offline, and starts nothing, when Desktop knows it is offline', async () => {
-    publish(server, '1.0.0', V1)
-    const { store: s, transfer } = store({ isOnline: () => false })
+  it('says it is offline, and starts nothing, when the index cannot be read', async () => {
+    const { store: s, transfer } = store()
     expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'offline' })
+    expect(await s.prepare(), 'nothing started on the first try').toEqual({
+      kind: 'unavailable',
+      reason: 'offline'
+    })
     expect(transfer).not.toHaveBeenCalled()
     expect(announced).toEqual([])
   })
 
-  it('says the download did not finish when the index cannot be read', async () => {
-    const { store: s } = store()
-    await s.prepare()
-    await vi.waitFor(() =>
-      expect(announced.at(-1)).toEqual({ kind: 'unavailable', reason: 'download_failed' })
-    )
-  })
-
-  it('asks for a newer Desktop, instead of downloading again, when no listed version is readable', async () => {
+  it('asks for a newer Desktop, without downloading, when no listed version is readable', async () => {
     publish(server, '1.0.0', V1, { min_sidecar: '9.0.0' })
     const { store: s, transfer } = store()
-    await s.prepare()
-    await vi.waitFor(() =>
-      expect(announced.at(-1)).toEqual({ kind: 'unavailable', reason: 'update_desktop' })
-    )
+    expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'update_desktop' })
+    expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'update_desktop' })
     expect(transfer).not.toHaveBeenCalled()
+    expect(announced).toEqual([])
+  })
+
+  it('asks for a newer Desktop when a bundle lands that its own manifest says is too new', async () => {
+    publish(server, '1.0.0', V1, { min_sidecar: '9.0.0' })
+    delete server.index.bundles[0]!.min_sidecar
+    server.small.set(`${BASE}index.json`, Buffer.from(JSON.stringify(server.index)))
+    const { store: s } = store()
+    expect(await s.prepare()).toMatchObject({ kind: 'downloading' })
+    await s.download()
+    expect(announced.at(-1)).toEqual({ kind: 'unavailable', reason: 'update_desktop' })
   })
 
   it('stays ready when an update check finds no version it reads', async () => {
     publish(server, '1.0.0', V1)
-    const { store: s } = store()
+    const { store: s } = store({ now: () => 0 })
     await s.download()
     server.index.bundles = []
     publish(server, '2.0.0', V1, { min_sidecar: '9.0.0' })
     await s.download()
     expect(announced.at(-1)).toEqual({ kind: 'idle' })
+    expect(await s.prepare()).toEqual({ kind: 'ready' })
+  })
+
+  it('says when a quiet download has landed, without showing its progress', async () => {
+    publish(server, '1.0.0', V1)
+    const { store: s } = store({ now: () => 0 })
+    await s.download({ quietly: true })
+    expect(announced).toEqual([{ kind: 'idle' }])
+  })
+
+  it('waits for Try again after a download the user saw failed, instead of downloading on every search', async () => {
+    publish(server, '1.0.0', V1)
+    server.blobs.set(sha('weights-v1'), Buffer.from('weights-XX'))
+    const { store: s, transfer } = store({ now: () => 0 })
+    await s.prepare()
+    await s.download()
+    expect(announced.at(-1)).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+    const tries = transfer.mock.calls.length
+    expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+    expect(transfer).toHaveBeenCalledTimes(tries)
+
+    server.blobs.set(sha('weights-v1'), Buffer.from('weights-v1'))
+    await s.download()
+    expect(await s.prepare()).toEqual({ kind: 'ready' })
+  })
+
+  it('waits for Try again after the search program rejected the bundle on disk', async () => {
+    publish(server, '1.0.0', V1)
+    const { store: s, transfer } = store({ now: () => 0 })
+    await s.download()
+    await s.discard('1.0.0')
+    expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+    expect(transfer).toHaveBeenCalledTimes(3)
+
+    await s.download()
     expect(await s.prepare()).toEqual({ kind: 'ready' })
   })
 
@@ -255,7 +297,6 @@ describe('bundle store', () => {
       transfer: async () => ({ ok: true }),
       supports: async () => ({ ...SUPPORTED, sidecar: '0.0.9' }),
       check: async () => true,
-      isOnline: () => true,
       onAvailability: () => {}
     })
     expect((await s.newest())?.version).toBe('1.0.0')
@@ -326,9 +367,7 @@ describe('bundle store', () => {
     })
     await s.download()
     indexReads.mockClear()
-    const announcedBefore = announced.filter(
-      (a) => a.kind === 'downloading' || a.kind === 'idle'
-    ).length
+    announced = []
 
     clock = A_DAY_LATER
     publish(server, '1.1.0', { ...V1, 'router/catalog.json': '{"v":2}' })
@@ -336,9 +375,7 @@ describe('bundle store', () => {
     await vi.waitFor(async () => expect((await s.newest())?.version).toBe('1.1.0'))
     expect(await s.prepare()).toEqual({ kind: 'ready' })
     expect(indexReads).toHaveBeenCalledTimes(1)
-    expect(announced.filter((a) => a.kind === 'downloading' || a.kind === 'idle')).toHaveLength(
-      announcedBefore
-    )
+    expect(announced, 'no progress, only that it landed').toEqual([{ kind: 'idle' }])
   })
 
   it('stays ready on the version it has while a newer one downloads', async () => {

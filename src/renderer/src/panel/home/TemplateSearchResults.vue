@@ -131,6 +131,7 @@ function rowMeta(row: SearchRow): string {
 }
 
 function rowAction(row: SearchRow): string {
+  if (props.controller.needsSignIn(row)) return t('home.search.signInToUse')
   return row.candidate.needsDownload ? t('home.search.downloadAndRun') : t('home.search.run')
 }
 
@@ -246,7 +247,7 @@ defineExpose({ verticalTarget, revealActive })
           "
           :data-testid="`home-template-search-row-${row.kind}`"
           @mousemove="controller.highlight(index)"
-          @click="controller.openRow(row, 'pointer')"
+          @click="controller.activate(row, 'pointer')"
         >
           <span
             class="flex aspect-[4/3] items-center justify-center overflow-hidden bg-[rgb(137_137_137/0.12)]"

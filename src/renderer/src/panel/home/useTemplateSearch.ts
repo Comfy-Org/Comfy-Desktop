@@ -21,6 +21,8 @@ const READY_AGAIN: ReadonlySet<TemplateSearchAvailability['kind']> = new Set(['i
 export interface TemplateSearchOptions {
   buildId: () => string | null
   onOpened: (buildId: string) => void
+  signedOut: () => boolean
+  signIn: () => void
 }
 
 export function useTemplateSearch(options: TemplateSearchOptions) {
@@ -166,6 +168,15 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     if (query.value.trim() && state.value.kind === 'idle') void search(query.value)
   }
 
+  function needsSignIn(row: SearchRow): boolean {
+    return row.candidate.partner && options.signedOut()
+  }
+
+  function activate(row: SearchRow, inputMethod: InputMethod): void {
+    if (needsSignIn(row)) options.signIn()
+    else void openRow(row, inputMethod)
+  }
+
   function close(reason: AbandonReason | null): void {
     panelOpen.value = false
     if (reason) telemetry.abandoned(reason)
@@ -177,7 +188,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     panelOpen.value = true
     if (isCurrent()) {
       const row = activeRow.value
-      if (wasOpen && row) void openRow(row, 'keyboard')
+      if (wasOpen && row) activate(row, 'keyboard')
       return
     }
     void search(query.value)
@@ -215,7 +226,8 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     open,
     close,
     download,
-    openRow,
+    needsSignIn,
+    activate,
     onEnter,
     move,
     moveTo,

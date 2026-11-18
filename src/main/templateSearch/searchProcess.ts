@@ -195,6 +195,7 @@ export function createSearchProcess({
   const cancelled = new WeakSet<ChildProcess>()
 
   const pyz = configuredZipapp
+  const bundleBase = (): string | null => settings.get('templateSearchBundleBase') ?? null
 
   async function pythons(): Promise<SidecarPython[]> {
     return sidecarPythons(await listInstallations(), isLocalInstallation, terminalEnvOf)
@@ -230,7 +231,7 @@ export function createSearchProcess({
 
   const store = createBundleStore({
     root: storeRoot,
-    base: () => settings.get('templateSearchBundleBase') ?? null,
+    base: bundleBase,
     getSmall,
     transfer,
     supports,
@@ -238,7 +239,6 @@ export function createSearchProcess({
       const out = await withPyz(['check', dir])
       return out === null || out.code === 0
     },
-    isOnline,
     onAvailability: broadcast,
     onDownloaded: reportBundleDownload
   })
@@ -265,7 +265,8 @@ export function createSearchProcess({
   }
 
   async function downloadInBackground(trigger: BackgroundTrigger): Promise<boolean> {
-    if (!pyz() || !isOnline() || (await service.freePythons()).length === 0) return false
+    if (!pyz() || !bundleBase() || !isOnline()) return false
+    if ((await service.freePythons()).length === 0 || !(await supports())) return false
     if (!(await store.newest())) await store.download({ quietly: true, trigger })
     return true
   }
