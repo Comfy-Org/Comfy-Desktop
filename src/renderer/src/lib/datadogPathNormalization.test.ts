@@ -57,6 +57,22 @@ describe('scrubPII', () => {
     expect(scrubPII('C:/Users/JohnDoe/foo')).toBe('C:/Users/[REDACTED]/foo')
   })
 
+  it('redacts the query of a link, where signed links keep their credentials', () => {
+    expect(
+      scrubPII(
+        "THREE.GLTFLoader: Couldn't load texture https://storage.googleapis.com/b/t.png?X-Goog-Signature=abc&X-Goog-Credential=def"
+      )
+    ).toBe(
+      "THREE.GLTFLoader: Couldn't load texture https://storage.googleapis.com/b/t.png?[REDACTED]"
+    )
+  })
+
+  it('redacts embedded file content', () => {
+    expect(scrubPII('bad texture data:image/png;base64,iVBORw0KGgo= here')).toBe(
+      'bad texture data:[REDACTED] here'
+    )
+  })
+
   it('handles usernames with spaces', () => {
     expect(scrubPII('C:\\Users\\John Doe\\AppData\\Local\\foo')).toBe(
       'C:\\Users\\[REDACTED]\\AppData\\Local\\foo'

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useId, useSlots } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, useId, useSlots, watch } from 'vue'
 import SharedTooltip from '@comfyorg/design-system/tooltip/Tooltip'
 import TooltipContent from '@comfyorg/design-system/tooltip/TooltipContent'
 import TooltipProvider from '@comfyorg/design-system/tooltip/TooltipProvider'
 import TooltipTrigger from '@comfyorg/design-system/tooltip/TooltipTrigger'
+import { TOOLTIP_GATE } from './tooltipGate'
 
 export type TooltipSide = 'top' | 'bottom' | 'left' | 'right'
 export type TooltipAlign = 'start' | 'center' | 'end'
@@ -33,11 +34,15 @@ const props = withDefaults(
 defineOptions({ inheritAttrs: false })
 const slots = useSlots()
 const open = ref(false)
+const wanted = ref(false)
+const gateOpen = inject(TOOLTIP_GATE, () => true)
 const labelId = useId()
 const unavailable = computed(() => props.disabled || (!props.text && !slots.content))
 function setOpen(next: boolean): void {
-  open.value = next && !unavailable.value && (props.shouldOpen?.() ?? true)
+  wanted.value = next
+  open.value = next && !unavailable.value && gateOpen() && (props.shouldOpen?.() ?? true)
 }
+watch(gateOpen, () => setOpen(wanted.value))
 function onFocusOut(event: FocusEvent): void {
   setOpen(
     props.interactive &&
@@ -46,7 +51,7 @@ function onFocusOut(event: FocusEvent): void {
   )
 }
 function close(): void {
-  open.value = false
+  setOpen(false)
 }
 function onKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape' || !open.value) return

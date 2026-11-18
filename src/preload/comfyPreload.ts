@@ -101,8 +101,7 @@ const terminalTemplateInputDownloadsById = new Map<string, ComfyTemplateInputAss
 const templateInputProgressCallbacks = new Set<TemplateInputProgressCallback>()
 const MAX_BUFFERED_TERMINAL_DOWNLOADS = 50
 let templateInputProgressHandler:
-  | ((event: IpcRendererEvent, data: ComfyDownloadProgress) => void)
-  | undefined
+  ((event: IpcRendererEvent, data: ComfyDownloadProgress) => void) | undefined
 
 function templateInputReferenceKey({ templateId, assetId }: ComfyTemplateInputReference): string {
   return `${templateId}\u0000${assetId}`
@@ -273,10 +272,20 @@ const Auth: ComfyDesktop2AuthBridge = {
   getState: () => ipcRenderer.invoke('desktop2-auth:get-state'),
   getWorkspaceToken: (workspaceId) =>
     ipcRenderer.invoke('desktop2-auth:get-workspace-token', workspaceId),
+  getPartnerNodeToken: (workspaceId) =>
+    ipcRenderer.invoke('desktop2-auth:get-partner-node-token', workspaceId),
   requestSignIn: () => ipcRenderer.invoke('desktop2-auth:request-sign-in'),
   signOut: () => ipcRenderer.invoke('desktop2-auth:sign-out'),
   switchWorkspace: (workspaceId) =>
     ipcRenderer.invoke('desktop2-auth:switch-workspace', workspaceId),
+  issueBillingHandoff: (workspaceId, receiver, intent, amountCents) =>
+    ipcRenderer.invoke(
+      'desktop2-auth:issue-billing-handoff',
+      workspaceId,
+      receiver,
+      intent,
+      amountCents
+    ),
   onChanged: (callback) => {
     const handler = (_event: IpcRendererEvent, state: ComfyDesktop2AuthState) => callback(state)
     ipcRenderer.on('desktop2-auth:changed', handler)

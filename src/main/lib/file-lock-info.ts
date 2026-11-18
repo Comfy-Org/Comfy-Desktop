@@ -8,8 +8,7 @@ export interface LockingProcess {
 export type LockProbeFailure = 'timeout' | 'unavailable'
 
 export type LockProbeResult =
-  | { ok: true; processes: LockingProcess[] }
-  | { ok: false; reason: LockProbeFailure }
+  { ok: true; processes: LockingProcess[] } | { ok: false; reason: LockProbeFailure }
 
 const TIMEOUT_MS = 10000
 

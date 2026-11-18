@@ -7,6 +7,7 @@ import { _electron as electron, type ElectronApplication } from 'playwright'
 
 import { evalWithRetry } from './evalRetry'
 import { FOREGROUND_PROJECTS, isBackgroundRun } from './focusMode'
+import { recordVideoOptions } from './videoRecording'
 
 export interface LauncherAppHandle {
   application: ElectronApplication
@@ -20,6 +21,7 @@ export interface SeedOptions {
   onSetup?: (paths: { homeDir: string; appDataDir: string }) => Promise<void>
   opsFlags?: Record<string, unknown>
   profileDir?: string
+  userDataDir?: string
 }
 
 export interface SeedInstallation {
@@ -101,16 +103,16 @@ function buildIsolatedEnv(
 }
 
 export async function launchLauncherApp(options?: SeedOptions): Promise<LauncherAppHandle> {
-  const reuseDir = options?.profileDir ?? process.env['LIFECYCLE_REUSE_DIR']
+  const reuseDir = options?.profileDir ?? process.env['REAL_COMFY_REUSE_DIR']
   const homeDir = reuseDir
     ? path.resolve(reuseDir)
     : await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-e2e-'))
   if (reuseDir) {
-    console.log(`[lifecycle-harness] reusing profile dir: ${homeDir}`)
+    console.log(`[e2e-harness] reusing profile dir: ${homeDir}`)
   } else {
-    console.log(`[lifecycle-harness] fresh profile dir: ${homeDir}`)
+    console.log(`[e2e-harness] fresh profile dir: ${homeDir}`)
     console.log(
-      `[lifecycle-harness] re-export as LIFECYCLE_REUSE_DIR=${homeDir} to rerun individual tests against this profile`
+      `[e2e-harness] re-export as REAL_COMFY_REUSE_DIR=${homeDir} to rerun individual tests against this profile`
     )
   }
 
@@ -188,6 +190,10 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
       '--disable-backgrounding-occluded-windows'
     )
   }
+  if (options?.userDataDir) {
+    args.push(`--user-data-dir=${options.userDataDir}`)
+    if (process.platform === 'darwin') args.push('--use-mock-keychain')
+  }
   if (process.platform === 'linux') {
     args.push('--no-sandbox')
     const ozone = process.env['E2E_OZONE_PLATFORM']
@@ -215,9 +221,11 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     env['E2E_INSTALLATIONS_SEED'] = JSON.stringify(seedRecords)
   }
 
+  const recordVideo = recordVideoOptions()
   const application = await electron.launch({
     args,
-    env
+    env,
+    ...(recordVideo ? { recordVideo } : {})
   })
 
   const page = await application.firstWindow()

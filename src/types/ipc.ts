@@ -1,12 +1,29 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
+import type { NewWindowDashboardPage } from '../shared/dashboardPages'
 export type { FirstUseMode }
+import type { PlatformSettingsPage } from '../main/devplatform/config'
+export type { PlatformSettingsPage }
 
-import type { AuthStatus, Workspace } from '../main/cloud/types'
-export type { AuthStatus, Workspace }
+import type {
+  AuthStatus,
+  Workspace,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent,
+  WorkspaceSwitchStatus
+} from '../main/cloud/types'
+export type {
+  AuthStatus,
+  Workspace,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent,
+  WorkspaceSwitchStatus
+}
 
 import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
+
+import type { KnownSettingKey, KnownSettings } from '../main/settings'
 
 export interface CoachmarkBeakPayload {
   beakFraction: number
@@ -94,6 +111,12 @@ export interface VersionStatsValue {
 
 export type CloudUserTier = 'free' | 'paid' | 'unknown'
 
+export type CreditBalanceState =
+  | { status: 'signed_out' }
+  | { status: 'loading' }
+  | { status: 'ready'; cents: number }
+  | { status: 'error' }
+
 export interface Installation {
   id: string
   name: string
@@ -107,6 +130,7 @@ export interface Installation {
   launchMode?: string
   launchArgs?: string
   hasConsole?: boolean
+  hasOutputFolder?: boolean
   installPath?: string
   status?: string
   lastLaunchedAt?: number
@@ -114,7 +138,103 @@ export interface Installation {
   [key: string]: unknown
 }
 
-export type DashboardPage = 'chooser' | 'benchmarks' | 'performance-test'
+export type DashboardPage =
+  'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
+
+export interface AppCover {
+  url: string
+  stillUrl: string | null
+}
+
+export interface AppCard {
+  id: string
+  title: string
+  description: string
+  covers: AppCover[]
+}
+
+export type AppPageStatus = 'loading' | 'ready' | 'failed'
+
+export interface AppPagePlacement {
+  x: number
+  y: number
+  width: number
+  height: number
+  cornerRadius: number
+  justOpened?: boolean
+  retry?: boolean
+  focus?: boolean
+}
+
+export interface AppOutput {
+  name: string
+  mimeType: string
+  bytes: Uint8Array<ArrayBuffer>
+  tags: string[]
+  workflow: boolean
+  savedOn?: 'cloud' | 'computer'
+  folder?: string
+}
+
+export interface AppOutputs {
+  items: AppOutput[]
+  index: number
+}
+
+export interface AppOutputAction {
+  action: 'download' | 'open-workflow' | 'show-in-folder'
+  index: number
+}
+
+export interface CatalogWorkflow {
+  id: string
+  title: string
+  description: string
+  thumbnailUrl: string | null
+}
+
+export type AssetKind = 'image' | 'video' | 'audio' | '3d'
+
+export type CloudAssetLookup =
+  { status: 'found'; asset: AssetSummary } | { status: 'absent' } | { status: 'incomplete' }
+
+export interface AssetSummary {
+  id: string
+  name: string
+  kind: AssetKind | null
+  sizeBytes: number | null
+  createdAt: string | null
+  mimeType: string | null
+  tags: string[]
+  previewUrl: string | null
+  thumbnailUrl: string | null
+  width: number | null
+  height: number | null
+  durationSeconds: number | null
+}
+
+export type AssetOrder = 'newest' | 'oldest'
+
+export interface CloudAssetPageRequest {
+  offset: number
+  after?: string
+  limit: number
+  order: AssetOrder
+  kind?: AssetKind
+}
+
+export interface CloudAssetPage {
+  assets: AssetSummary[]
+  total: number | null
+  totalIsLowerBound?: true
+  nextCursor?: string
+  scanLimit?: number
+}
+
+export interface LocalAssetListing {
+  assets: AssetSummary[]
+  truncated: boolean
+}
 
 export interface BuildStorageSnapshot {
   sharedDirectoriesFields: Record<string, unknown>[]
@@ -505,6 +625,8 @@ export interface ComfyExitedData {
   crashKind?: CrashKind
   vcRuntimeMissing?: string[]
   crashedAtMs?: number
+  message?: string
+  startFailed?: boolean
 }
 
 export interface ComfyBootLogData {
@@ -547,12 +669,7 @@ export interface DiskSpaceInfo {
 export type PathIssue = 'insideAppBundle' | 'oneDrive' | 'insideSharedDir' | 'insideExistingInstall'
 
 export type ModelDownloadStatus =
-  | 'pending'
-  | 'downloading'
-  | 'paused'
-  | 'completed'
-  | 'error'
-  | 'cancelled'
+  'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
 
 export interface ModelDownloadProgress {
   id?: string
@@ -729,8 +846,15 @@ export interface PerformanceTestBenchmark {
   averageJobDurationSeconds: number | null
   medianJobDurationSeconds: number | null
   measuredJobCount: number
-  hardwareName: string | null
+  machine: PerformanceTestMachine
   result: Record<string, PerformanceTestResultValue>
+}
+
+export interface PerformanceTestMachine {
+  gpu: string | null
+  cpu: string | null
+  memoryGb: number | null
+  platform: string | null
 }
 
 export interface SnapshotDiffEntry {
@@ -981,6 +1105,11 @@ export interface AppUpdateDownloadProgress {
   bytesPerSecond: number | null
 }
 
+export interface CloseComfyWindowOptions {
+  skipConfirm?: boolean
+  keepDesktopOpen?: boolean
+}
+
 export interface ElectronApi {
   platform: NodeJS.Platform
 
@@ -1078,14 +1207,13 @@ export interface ElectronApi {
   probeInstallation(dirPath: string): Promise<ProbeResult[]>
   trackInstallation(data: Record<string, unknown>): Promise<TrackResult>
   installInstance(installationId: string, express?: boolean): Promise<void>
-  skipTemplateDownload(installationId: string): Promise<void>
   updateInstallation(
     installationId: string,
     data: Record<string, unknown>
   ): Promise<ActionResult | void>
 
   stopComfyUI(installationId: string): Promise<void>
-  focusComfyWindow(installationId: string): Promise<boolean>
+  focusComfyWindow(installationId: string, pickerWorkspaceId?: string): Promise<boolean>
 
   terminalSubscribe(installationId: string): Promise<TerminalRestore>
   terminalUnsubscribe(installationId: string): Promise<void>
@@ -1093,16 +1221,36 @@ export interface ElectronApi {
   terminalResize(installationId: string, cols: number, rows: number): Promise<void>
   terminalRestart(installationId: string): Promise<TerminalRestore>
   openInstallWindow(installationId: string): Promise<boolean>
-  openInstallInNewWindow(installationId: string): void
-  closeComfyWindow(installationId: string, opts?: { skipConfirm?: boolean }): Promise<boolean>
+  closeComfyWindow(installationId: string, opts?: CloseComfyWindowOptions): Promise<boolean>
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
   closeCurrentPanel(): void
   closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
+  openPageInNewWindow(page: NewWindowDashboardPage): void
+  listAssets(installationId: string, page: CloudAssetPageRequest): Promise<CloudAssetPage | null>
+  listLocalAssets(installationId?: string): Promise<LocalAssetListing>
+  downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
+  revealAsset(source: string, assetId: string): Promise<boolean>
+  findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
+  copyAsset(source: string, assetId: string): Promise<boolean>
+  readAssetModel(source: string, assetId: string): Promise<Uint8Array | null>
+  trashAsset(source: string, assetId: string): Promise<boolean>
+  listHomeWorkflows(): Promise<CatalogWorkflow[]>
+  openCatalogWorkflow(id: string): Promise<boolean>
+  getAppsEnabled(): Promise<boolean>
+  listApps(): Promise<AppCard[]>
+  showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
+  captureAppPage(): Promise<string | null>
+  hideAppPage(): void
+  onAppPageStatusChanged(
+    callback: (appId: string | null, status: AppPageStatus) => void
+  ): () => void
+  onAppPageClosed(callback: () => void): () => void
+  onAppOutputs(callback: (appId: string, outputs: AppOutputs | null) => void): () => void
+  sendAppOutputAction(action: AppOutputAction): void
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
-  resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(
     tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
     opts?: {
@@ -1130,7 +1278,7 @@ export interface ElectronApi {
   getRunningInstances(): Promise<RunningInstance[]>
   getLaunchingInstances(): Promise<{ installationId: string; installationName: string }[]>
   getStoppingInstances(): Promise<string[]>
-  getActiveOperations(): Promise<{ installationId: string; actionId: string }[]>
+  getActiveOperations(): Promise<{ installationId: string; actionId: string; sessionId?: string }[]>
   getLastCrashError(installationId: string): Promise<ComfyExitedData | null>
   getCrashInstances(): Promise<ComfyExitedData[]>
   cancelLaunch(): Promise<void>
@@ -1196,8 +1344,8 @@ export interface ElectronApi {
   getModelsSections(): Promise<ModelsResult>
   getMediaSections(): Promise<SettingsSection[]>
   getUniqueName(baseName: string): Promise<string>
-  setSetting(key: string, value: unknown): Promise<void>
-  getSetting(key: string): Promise<unknown>
+  setSetting<K extends KnownSettingKey>(key: K, value: KnownSettings[K]): Promise<void>
+  getSetting<K extends KnownSettingKey>(key: K): Promise<KnownSettings[K]>
 
   getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
   acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>
@@ -1207,6 +1355,8 @@ export interface ElectronApi {
   getAppVersion(): Promise<string>
   getStableTags(): Promise<string[]>
   getCloudUserTier(): Promise<CloudUserTier>
+  refreshCreditBalance(): Promise<CreditBalanceState>
+  onCreditBalanceChanged(callback: (state: CreditBalanceState) => void): Unsubscribe
   getCloudFreeRunsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
@@ -1222,9 +1372,13 @@ export interface ElectronApi {
     getAuthStatus(): Promise<AuthStatus>
     onAuthChanged(callback: (status: AuthStatus) => void): Unsubscribe
     listWorkspaces(): Promise<Workspace[]>
-    switchWorkspace(workspaceId: string): Promise<AuthStatus>
+    switchWorkspace(
+      workspaceId: string,
+      intent?: WorkspaceSwitchIntent
+    ): Promise<WorkspaceSwitchStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
     openBuildsPage(workspaceId: string): Promise<void>
+    openSettingsPage(page: PlatformSettingsPage, workspaceId: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
     promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }
@@ -1270,7 +1424,12 @@ export interface ElectronApi {
   onInstanceStopping(callback: (data: { installationId: string }) => void): Unsubscribe
   onInstanceStopped(callback: (data: { installationId: string }) => void): Unsubscribe
   onOperationChanged(
-    callback: (data: { installationId: string; actionId: string; active: boolean }) => void
+    callback: (data: {
+      installationId: string
+      actionId: string
+      sessionId?: string
+      active: boolean
+    }) => void
   ): Unsubscribe
   onThemeChanged(callback: (theme: ResolvedTheme) => void): Unsubscribe
   onLocaleChanged(
@@ -1335,7 +1494,6 @@ export interface ElectronApi {
       settingsTab?: 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
       title?: string
       cancellable?: boolean
-      startupRestore?: boolean
       triggersInstanceStart?: boolean
       opKind?: 'launch' | 'install' | 'update' | 'destructive' | 'snapshot' | 'generic'
       isRestart?: boolean
@@ -1343,6 +1501,8 @@ export interface ElectronApi {
     }) => void
   ): Unsubscribe
 }
+
+export const LOCAL_ASSETS_SOURCE = 'local'
 
 export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore', 'change-pytorch'])
 
@@ -1369,6 +1529,17 @@ export const POPUP_KIND = {
 
 export type TitlePopupKind = (typeof POPUP_KIND)[keyof typeof POPUP_KIND]
 
+export type TitlePopupMenuIcon = 'performance-test' | 'benchmarks'
+
+export interface TitlePopupMenuItem {
+  id?: string
+  label?: string
+  labelKey?: string
+  labelParams?: Record<string, string | number>
+  icon?: TitlePopupMenuIcon
+  kind?: 'separator'
+}
+
 export interface PopupTheme {
   bg: string
   text: string
@@ -1383,6 +1554,7 @@ export const PICKER_SETTINGS_CHANNELS = {
   getFieldOptions: 'comfy-titlepopup:picker-settings-get-field-options',
   getInstallations: 'comfy-titlepopup:picker-settings-get-installations',
   stopComfyUI: 'comfy-titlepopup:picker-settings-stop-comfyui',
+  closeComfyWindow: 'comfy-titlepopup:picker-settings-close-comfy-window',
   cancelOperation: 'comfy-titlepopup:picker-settings-cancel-operation',
   getSnapshots: 'comfy-titlepopup:picker-settings-get-snapshots',
   getSnapshotDetail: 'comfy-titlepopup:picker-settings-get-snapshot-detail',

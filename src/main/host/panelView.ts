@@ -1,5 +1,7 @@
-import { WebContentsView, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
+import type { WebContentsView } from 'electron'
 import path from 'path'
+import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { attachContextMenu } from '../lib/contextMenu'
 import { resolveTheme } from '../lib/ipc/shared'
 import { get as getSetting } from '../settings'
@@ -19,8 +21,12 @@ import {
   VALID_PANELS
 } from './registry'
 import type { BodyMode, ComfyPanelKey, ComfyWindowEntry } from './registry'
+import type { NewWindowDashboardPage } from '../../shared/dashboardPages'
 
 const DASHBOARD_PAGE_PANELS: ReadonlyMap<unknown, ComfyPanelKey> = new Map([
+  ['home', 'comfy'],
+  ['apps', 'comfy'],
+  ['assets', 'comfy'],
   ['chooser', 'comfy'],
   ['benchmarks', 'benchmarks'],
   ['performance-test', 'performance-test']
@@ -44,11 +50,12 @@ function isOpaqueBodyMode(mode: BodyMode): boolean {
 export function ensurePanelView(
   windowKey: number,
   entry: ComfyWindowEntry,
-  initialPanel: BodyMode
+  initialPanel: BodyMode,
+  dashboardPage?: NewWindowDashboardPage
 ): WebContentsView {
   if (entry.panelView) return entry.panelView
 
-  const panelView = new WebContentsView({
+  const panelView = createWebContentsView({
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -83,6 +90,7 @@ export function ensurePanelView(
     panel: initialPanel,
     firstUseCompleted: String(firstUseCompleted)
   }
+  if (dashboardPage) panelQuery['dashboardPage'] = dashboardPage
   if (process.env['E2E'] === '1') {
     panelQuery['e2e'] = '1'
   }

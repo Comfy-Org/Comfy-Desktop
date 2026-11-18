@@ -2,7 +2,6 @@ const CHECKOUT_PREFIX = 'https://checkout.comfy.org/'
 
 export const POPUP_ALLOWED_PREFIXES = [
   'https://dreamboothy.firebaseapp.com/',
-  CHECKOUT_PREFIX,
   'https://accounts.google.com/',
   'https://github.com/login/oauth/'
 ]
@@ -13,17 +12,6 @@ export function shouldOpenInPopup(url: string): boolean {
 
 export function isCheckoutUrl(url: string): boolean {
   return url.startsWith(CHECKOUT_PREFIX)
-}
-
-export function isCheckoutReturnUrl(url: string): boolean {
-  let host: string
-  try {
-    host = new URL(url).hostname.toLowerCase()
-  } catch {
-    return false
-  }
-  if (host === 'checkout.comfy.org') return false
-  return host === 'comfy.org' || host.endsWith('.comfy.org')
 }
 
 const DOWNLOAD_FILE_EXTENSIONS = [
@@ -53,11 +41,13 @@ const DOWNLOAD_FILE_EXTENSIONS = [
 ]
 
 export function isLikelyDownloadUrl(url: string): boolean {
-  let pathname: string
+  let parsed: URL
   try {
-    pathname = new URL(url).pathname.toLowerCase()
+    parsed = new URL(url)
   } catch {
     return false
   }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
+  const pathname = parsed.pathname.toLowerCase()
   return DOWNLOAD_FILE_EXTENSIONS.some((ext) => pathname.endsWith(ext))
 }

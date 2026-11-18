@@ -1,22 +1,22 @@
 import { onMounted, onUnmounted, ref, type Ref } from 'vue'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { buildSupportUrl } from '../lib/supportUrl'
+import { buildFeedbackHiddenFields } from '../lib/feedback'
 
 interface UseSendFeedbackApi {
   feedbackOpen: Ref<boolean>
-  feedbackUrl: Ref<string>
+  feedbackHiddenFields: Ref<Record<string, string>>
   closeFeedback: () => void
 }
 
 export function useSendFeedback(): UseSendFeedbackApi {
   const appVersion = ref('')
   const feedbackOpen = ref(false)
-  const feedbackUrl = ref('')
+  const feedbackHiddenFields = ref<Record<string, string>>({})
   let unsubOpenFeedback: (() => void) | null = null
 
   function handleOpenFeedback(source: 'titlebar' | 'menu'): void {
     emitTelemetryAction('comfy.desktop.feedback.opened', { source })
-    feedbackUrl.value = buildSupportUrl(appVersion.value || undefined)
+    feedbackHiddenFields.value = buildFeedbackHiddenFields(appVersion.value || undefined)
     feedbackOpen.value = true
   }
 
@@ -42,5 +42,5 @@ export function useSendFeedback(): UseSendFeedbackApi {
     unsubOpenFeedback?.()
   })
 
-  return { feedbackOpen, feedbackUrl, closeFeedback }
+  return { feedbackOpen, feedbackHiddenFields, closeFeedback }
 }

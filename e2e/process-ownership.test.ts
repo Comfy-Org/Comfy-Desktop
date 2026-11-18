@@ -256,19 +256,18 @@ test('cancelling from the busy check stops nothing and starts nothing @linux', a
     await crashDesktop(ctx!)
     const app = await start()
     await clickInstallTile(app.panel, INSTALL_NAME)
+    const startingTile = '.chooser-tile:has([data-testid^="chooser-tile-progress-"])'
+    await app.panel.waitForVisible(startingTile, { timeout: 15_000 })
+    expect(await app.panel.click(startingTile), 'the starting tile opens its logs').toBe(true)
     await app.panel.waitFor(
       async () =>
-        (await app.panel.allText('.brand-progress__status'))
+        (await app.panel.allText('[data-testid="build-progress-steps"]'))
           .join(' ')
           .includes('Checking an earlier ComfyUI'),
       { timeout: 30_000, message: 'the busy check never started' }
     )
 
-    expect(await app.panel.clickByText('.brand-progress__footer-btn', 'Return to Dashboard')).toBe(
-      true
-    )
-    await app.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
-    expect(await app.panel.click(byTestId(TID.baseAlertAction))).toBe(true)
+    expect(await app.panel.click('[data-testid="build-progress-cancel"]')).toBe(true)
 
     await new Promise((r) => setTimeout(r, 12_000))
     expect(await app.panel.exists(byTestId(TID.progressPortConflictBanner))).toBe(false)

@@ -80,8 +80,7 @@ const posthogClientMock = vi.hoisted(() => ({
   failNextFlushes: 0,
   autoFailNextIdentifies: 0,
   featureFlagResult: undefined as
-    | { enabled: boolean; variant?: string; payload?: unknown }
-    | undefined,
+    { enabled: boolean; variant?: string; payload?: unknown } | undefined,
   featureFlagBehavior: 'resolve' as 'resolve' | 'throw' | 'hang' | 'defer',
   evaluateCondition: undefined as
     | ((options?: {
@@ -388,6 +387,26 @@ describe('telemetry default event properties', () => {
 
     const started = captured.find((c) => c.event === 'comfy.desktop.session.started')
     expect(started?.properties).toMatchObject({ sac_state: 'on' })
+  })
+
+  it('carries apps_enabled on session.started when boot passes it in', () => {
+    setupTelemetry({ consent: null, bind: null })
+    telemetry._resetForTest()
+    telemetry.initTelemetry({
+      appVersion: '0.0.0',
+      appEnv: 'test',
+      isPackaged: true,
+      sessionStartProps: { prior_session_unclean: false, apps_enabled: true }
+    })
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('boot-id')
+
+    const started = captured.filter((c) => c.event === 'comfy.desktop.session.started')
+    expect(started).toHaveLength(1)
+    expect(started[0]?.properties).toMatchObject({
+      apps_enabled: true,
+      prior_session_unclean: false
+    })
   })
 
   it('adds sac_state to every capture once read, keeping installation_id', () => {

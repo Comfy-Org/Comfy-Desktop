@@ -13,8 +13,14 @@ import {
   recordStartupAttemptOutcome,
   type StartupAttemptMarkerRead
 } from './startup-attempt-marker'
-import { clearQuitReason, getQuitReason, isSessionEnding, setQuitReason } from './quit-state'
-import { _broadcastToRenderer } from './ipc/shared'
+import {
+  clearQuitReason,
+  getQuitReason,
+  isSessionEnding,
+  isUpdateInstallQuit,
+  setQuitReason
+} from './quit-state'
+import { _broadcastToRenderer, cancelAll, keepsComfyRunningWhenWindowCloses } from './ipc/shared'
 import { deriveAppChannel, emit as emitTelemetry } from './telemetry'
 import { buildErrorFields, errorTail } from '../../shared/errorEvent'
 
@@ -815,8 +821,13 @@ export async function applyPendingUpdateOnStartup(hooks?: StartupInstallHooks): 
   return true
 }
 
+function stopRunningComfyWhenQuittingForUpdate(): void {
+  if (isUpdateInstallQuit() && keepsComfyRunningWhenWindowCloses()) cancelAll()
+}
+
 export function register(): void {
   bindUpdaterEvents()
+  app.on('before-quit', stopRunningComfyWhenQuittingForUpdate)
 
   syncInstallOnQuitPolicy()
 

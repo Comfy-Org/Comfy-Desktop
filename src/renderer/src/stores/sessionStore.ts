@@ -11,6 +11,17 @@ interface ActiveSession {
   label: string
 }
 
+interface OperationInstance {
+  actionId: string
+  sessionId?: string
+}
+
+function operationInstanceOf(op: OperationInstance): OperationInstance {
+  return op.sessionId
+    ? { actionId: op.actionId, sessionId: op.sessionId }
+    : { actionId: op.actionId }
+}
+
 interface ErrorInstance {
   installationName: string
   exitCode?: number | string
@@ -21,6 +32,7 @@ interface ErrorInstance {
   crashKind?: CrashKind
   vcRuntimeMissing?: string[]
   crashedAtMs?: number
+  startFailed?: boolean
 }
 
 export const useSessionStore = defineStore('session', () => {
@@ -29,7 +41,7 @@ export const useSessionStore = defineStore('session', () => {
   const activeSessions = reactive(new Map<string, ActiveSession>())
   const errorInstances = reactive(new Map<string, ErrorInstance>())
   const stoppingInstances = reactive(new Set<string>())
-  const operationInstances = reactive(new Map<string, { actionId: string }>())
+  const operationInstances = reactive(new Map<string, OperationInstance>())
   const stoppingTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
   const sessions = reactive(new Map<string, SessionBuffer>())
 
@@ -126,42 +138,6 @@ export const useSessionStore = defineStore('session', () => {
 
   async function init(): Promise<void> {
     dispose()
-    const instances = await window.api.getRunningInstances()
-    for (const inst of instances) {
-      runningInstances.set(inst.installationId, inst)
-    }
-
-    const launching = (await window.api.getLaunchingInstances?.()) ?? []
-    for (const inst of launching) {
-      if (!runningInstances.has(inst.installationId)) {
-        launchingInstances.set(inst.installationId, { installationName: inst.installationName })
-      }
-    }
-
-    const stopping = (await window.api.getStoppingInstances?.()) ?? []
-    for (const id of stopping) markStopping(id)
-
-    const activeOps = (await window.api.getActiveOperations?.()) ?? []
-    for (const op of activeOps) {
-      operationInstances.set(op.installationId, { actionId: op.actionId })
-    }
-
-    const crashes = (await window.api.getCrashInstances?.()) ?? []
-    for (const c of crashes) {
-      if (!runningInstances.has(c.installationId) && !launchingInstances.has(c.installationId)) {
-        errorInstances.set(c.installationId, {
-          installationName: c.installationName,
-          exitCode: c.exitCode,
-          signal: c.signal,
-          lastStderr: c.lastStderr,
-          exitCodeHex: c.exitCodeHex,
-          crashKind: c.crashKind,
-          vcRuntimeMissing: c.vcRuntimeMissing,
-          crashedAtMs: c.crashedAtMs
-        })
-      }
-    }
-
     cleanups.push(
       window.api.onInstanceLaunching(
         (data: { installationId: string; installationName: string }) => {
@@ -185,9 +161,14 @@ export const useSessionStore = defineStore('session', () => {
         markStopping(data.installationId)
       }),
       window.api.onOperationChanged?.(
-        (data: { installationId: string; actionId: string; active: boolean }) => {
+        (data: {
+          installationId: string
+          actionId: string
+          sessionId?: string
+          active: boolean
+        }) => {
           if (data.active) {
-            operationInstances.set(data.installationId, { actionId: data.actionId })
+            operationInstances.set(data.installationId, operationInstanceOf(data))
           } else {
             operationInstances.delete(data.installationId)
           }
@@ -217,10 +198,50 @@ export const useSessionStore = defineStore('session', () => {
           exitCodeHex: data.exitCodeHex,
           crashKind: data.crashKind,
           vcRuntimeMissing: data.vcRuntimeMissing,
-          crashedAtMs: data.crashedAtMs ?? Date.now()
+          crashedAtMs: data.crashedAtMs ?? Date.now(),
+          message: data.message,
+          startFailed: data.startFailed
         })
       })
     )
+
+    const instances = await window.api.getRunningInstances()
+    for (const inst of instances) {
+      runningInstances.set(inst.installationId, inst)
+    }
+
+    const launching = (await window.api.getLaunchingInstances?.()) ?? []
+    for (const inst of launching) {
+      if (!runningInstances.has(inst.installationId)) {
+        launchingInstances.set(inst.installationId, { installationName: inst.installationName })
+      }
+    }
+
+    const stopping = (await window.api.getStoppingInstances?.()) ?? []
+    for (const id of stopping) markStopping(id)
+
+    const activeOps = (await window.api.getActiveOperations?.()) ?? []
+    for (const op of activeOps) {
+      operationInstances.set(op.installationId, operationInstanceOf(op))
+    }
+
+    const crashes = (await window.api.getCrashInstances?.()) ?? []
+    for (const c of crashes) {
+      if (!runningInstances.has(c.installationId) && !launchingInstances.has(c.installationId)) {
+        errorInstances.set(c.installationId, {
+          installationName: c.installationName,
+          exitCode: c.exitCode,
+          signal: c.signal,
+          lastStderr: c.lastStderr,
+          exitCodeHex: c.exitCodeHex,
+          crashKind: c.crashKind,
+          vcRuntimeMissing: c.vcRuntimeMissing,
+          crashedAtMs: c.crashedAtMs,
+          message: c.message,
+          startFailed: c.startFailed
+        })
+      }
+    }
 
     ready.value = true
   }

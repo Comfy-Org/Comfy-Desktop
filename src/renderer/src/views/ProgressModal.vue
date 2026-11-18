@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, X, TriangleAlert, ChevronDown, ArrowLeft, RefreshCcw } from 'lucide-vue-next'
+import { Check, X, TriangleAlert, ChevronDown, ArrowLeft, RefreshCcw } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { useModal } from '../composables/useModal'
 import {
+  keepsComfyRunningWhenWindowCloses,
   useReturnToDashboardConfirm,
   type ReturnToDashboardReason
 } from '../composables/useReturnToDashboardConfirm'
@@ -64,24 +65,6 @@ const currentOp = computed(() => {
 })
 
 const displayId = computed(() => currentId.value ?? props.installationId)
-
-const templateSkipped = ref(false)
-const canSkipTemplateDownload = computed<boolean>(() => {
-  if (templateSkipped.value) return false
-  const op = currentOp.value
-  if (!op || op.finished || op.activePhase !== 'template-models') return false
-  return !op.phaseErrors?.['template-models'] && globalProgress.value.percent < 100
-})
-
-async function handleSkipTemplateDownload(): Promise<void> {
-  const id = displayId.value
-  if (!id) return
-  emitTelemetryAction('comfy.desktop.template.download.skipped', { flow: 'launch' })
-  try {
-    await window.api.skipTemplateDownload(id)
-    templateSkipped.value = true
-  } catch {}
-}
 
 const isChainHandoff = computed<boolean>(() => {
   const op = currentOp.value
@@ -290,7 +273,6 @@ function toggleBrandLogs(): void {
 watch(displayId, () => {
   brandLogsExpanded.value = false
   brandIsAtBottom.value = true
-  templateSkipped.value = false
 })
 
 watch(
@@ -400,9 +382,14 @@ async function returnToDashboard(reason: ReturnToDashboardReason): Promise<void>
   const id = displayId.value
   const op = id ? progressStore.operations.get(id) : null
   const installation = id ? (installationStore.getById(id) ?? null) : null
-  const ok = await confirmReturnToDashboard(installation, reason)
+  const leavesStartRunning =
+    reason === 'in_flight' &&
+    op?.opKind === 'launch' &&
+    installation?.sourceCategory === 'local' &&
+    (await keepsComfyRunningWhenWindowCloses())
+  const ok = leavesStartRunning || (await confirmReturnToDashboard(installation, reason))
   if (!ok) return
-  if (reason === 'in_flight' && op && !op.finished && id) {
+  if (reason === 'in_flight' && !leavesStartRunning && op && !op.finished && id) {
     progressStore.cancelOperation(id)
   }
   emitTelemetryAction('comfy.desktop.instance.return_to_dashboard', { from: 'progress', reason })
@@ -480,7 +467,8 @@ function handleUseNextPort(nextPort: number): void {
     installationId: id,
     title: op.title,
     apiCall: () => window.api.runAction(id, 'launch', { portOverride: nextPort }),
-    returnTo: op.returnTo
+    returnTo: op.returnTo,
+    opKind: 'launch'
   })
 }
 
@@ -516,7 +504,8 @@ async function handleStopBusyPrior(): Promise<void> {
     installationId: id,
     title: op.title,
     apiCall: () => window.api.runAction(id, 'launch', { stopBusyPriorProcess: true }),
-    returnTo: op.returnTo
+    returnTo: op.returnTo,
+    opKind: 'launch'
   })
 }
 
@@ -543,7 +532,8 @@ async function handleKillProcess(port: number): Promise<void> {
       installationId: id,
       title: op.title,
       apiCall: op.apiCall || (() => window.api.runAction(id, 'launch')),
-      returnTo: op.returnTo
+      returnTo: op.returnTo,
+      opKind: op.opKind
     })
   } else {
     killFailedPort.value = port
@@ -895,17 +885,6 @@ defineExpose({ startOperation, showOperation })
               </Button>
             </template>
           </div>
-          <Button
-            v-if="canSkipTemplateDownload"
-            size="unset"
-            variant="textonly"
-            type="button"
-            class="brand-progress__footer-skip mx-auto"
-            :class="[footerButtonClass, secondaryClass]"
-            @click="handleSkipTemplateDownload"
-          >
-            {{ $t('standalone.skipTemplateDownloadOpen') }}
-          </Button>
           <Button
             v-if="currentOp.terminalOutput"
             size="unset"

@@ -1,25 +1,75 @@
+import { createHash } from 'crypto'
 import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 
+import * as mainTelemetry from '../lib/telemetry'
 import { statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
+import { CLOUD_CONFIG, CLOUD_REFRESH_TOKEN_LIFETIME_MS } from './config'
 import type { AuthStatus, AuthTokens, Workspace } from './types'
 
 const AUTH_FILENAME = 'comfy-cloud-auth.bin'
-const VAULT_VERSION = 1
-const DEFAULT_WORKSPACE_KEY = 'default'
+const REVOCATIONS_DIRNAME = 'comfy-cloud-revocations'
+const VAULT_VERSION = 2
+
+export const STORED_SESSION_RESTORED_EVENT = 'comfy.desktop.auth.stored_session_restored'
+export const STORED_SESSION_FAILED_EVENT = 'comfy.desktop.auth.stored_session_failed'
+
+type StoredSessionFormat = 'current' | 'legacy'
+
+type StoredSessionFailure =
+  | { operation: 'load'; reason: 'unreadable' | 'undecryptable' | 'invalid' }
+  | { operation: 'save'; reason: 'write_failed' | 'secure_storage_unavailable' }
+
+export interface GrantOrigin {
+  issuer: string
+  clientId: string
+}
 
 interface TokenVault {
   version: typeof VAULT_VERSION
+  issuer?: string
+  clientId?: string
+  subject?: string
+  grant: AuthTokens
+  activeWorkspaceId: string | null
+  workspaceTokens: Record<string, AuthTokens>
+  workspaceNames?: Record<string, string>
+}
+
+interface LegacyVault {
+  version: 1
   activeKey: string
   subject?: string
   bundles: Record<string, AuthTokens>
   workspaceNames?: Record<string, string>
 }
 
+export interface PendingRevocation extends GrantOrigin {
+  refreshToken: string
+  queuedAt: number
+}
+
 let cachedVault: TokenVault | null = null
+const unsavedRevocations = new Map<string, PendingRevocation>()
 let authFilePath: string | null = null
 let secureStorageUnavailable = false
+const reportedStoredSessions = new Set<string>()
+
+function reportOncePerProcess(event: string, context: mainTelemetry.TelemetryContext): void {
+  const report = JSON.stringify([event, context])
+  if (reportedStoredSessions.has(report)) return
+  reportedStoredSessions.add(report)
+  mainTelemetry.emit(event, context)
+}
+
+function reportRestored(format: StoredSessionFormat): void {
+  reportOncePerProcess(STORED_SESSION_RESTORED_EVENT, { format })
+}
+
+function reportStorageFailure(failure: StoredSessionFailure): void {
+  reportOncePerProcess(STORED_SESSION_FAILED_EVENT, failure)
+}
 
 export function isSecureStorageUnavailable(): boolean {
   return secureStorageUnavailable
@@ -50,99 +100,202 @@ function isTokens(v: unknown): v is AuthTokens {
   )
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v)
+}
+
+function isWorkspaceNames(v: unknown): boolean {
+  return (
+    v === undefined || (isRecord(v) && Object.values(v).every((name) => typeof name === 'string'))
+  )
+}
+
 function isVault(v: unknown): v is TokenVault {
-  const vault = v as TokenVault
-  if (
-    !v ||
-    typeof v !== 'object' ||
-    vault.version !== VAULT_VERSION ||
-    typeof vault.activeKey !== 'string' ||
-    (vault.subject !== undefined && typeof vault.subject !== 'string') ||
-    !vault.bundles ||
-    typeof vault.bundles !== 'object' ||
-    Array.isArray(vault.bundles) ||
-    (vault.workspaceNames !== undefined &&
-      (!vault.workspaceNames ||
-        typeof vault.workspaceNames !== 'object' ||
-        Array.isArray(vault.workspaceNames) ||
-        !Object.values(vault.workspaceNames).every((name) => typeof name === 'string')))
-  ) {
-    return false
-  }
-  return isTokens(vault.bundles[vault.activeKey]) && Object.values(vault.bundles).every(isTokens)
+  if (!isRecord(v) || v.version !== VAULT_VERSION) return false
+  return (
+    isTokens(v.grant) &&
+    (v.activeWorkspaceId === null || typeof v.activeWorkspaceId === 'string') &&
+    (v.subject === undefined || typeof v.subject === 'string') &&
+    (v.issuer === undefined || typeof v.issuer === 'string') &&
+    (v.clientId === undefined || typeof v.clientId === 'string') &&
+    isRecord(v.workspaceTokens) &&
+    Object.values(v.workspaceTokens).every(isTokens) &&
+    isWorkspaceNames(v.workspaceNames)
+  )
 }
 
-function workspaceKey(workspaceId: string | null): string {
-  return workspaceId === null ? DEFAULT_WORKSPACE_KEY : `workspace:${workspaceId}`
+function isLegacyVault(v: unknown): v is LegacyVault {
+  if (!isRecord(v) || v.version !== 1 || typeof v.activeKey !== 'string') return false
+  return (
+    (v.subject === undefined || typeof v.subject === 'string') &&
+    isRecord(v.bundles) &&
+    Object.values(v.bundles).every(isTokens) &&
+    isWorkspaceNames(v.workspaceNames)
+  )
 }
 
-function tokensKey(tokens: AuthTokens): string {
-  return workspaceKey(workspaceIdOf(tokens.accessToken))
-}
-
-function vaultFor(tokens: AuthTokens): TokenVault {
-  const key = tokensKey(tokens)
-  const subject = subjectOf(tokens.accessToken)
+function vaultFor(grant: AuthTokens): TokenVault {
+  const subject = subjectOf(grant.accessToken)
   return {
     version: VAULT_VERSION,
-    activeKey: key,
     ...(subject ? { subject } : {}),
-    bundles: { [key]: tokens }
+    grant,
+    activeWorkspaceId: workspaceIdOf(grant.accessToken),
+    workspaceTokens: {}
   }
 }
 
-function persistVault(vault: TokenVault): void {
+function migratedVault(legacy: LegacyVault): TokenVault | null {
+  const active = legacy.bundles[legacy.activeKey]
+  if (!active) return null
+  return {
+    ...vaultFor(active),
+    ...(legacy.subject ? { subject: legacy.subject } : {}),
+    ...(legacy.workspaceNames ? { workspaceNames: legacy.workspaceNames } : {})
+  }
+}
+
+function persistVault(vault: TokenVault): boolean {
   cachedVault = vault
   if (!encryptionAvailable()) {
+    reportStorageFailure({ operation: 'save', reason: 'secure_storage_unavailable' })
     try {
       fs.rmSync(filePath(), { force: true })
-    } catch {}
-    return
+      return true
+    } catch {
+      return false
+    }
   }
   try {
     fs.writeFileSync(filePath(), safeStorage.encryptString(JSON.stringify(vault)))
-  } catch {}
+    return true
+  } catch {
+    reportStorageFailure({ operation: 'save', reason: 'write_failed' })
+    return false
+  }
+}
+
+type StoredVault =
+  | { kind: 'none' }
+  | { kind: 'failed'; reason: Extract<StoredSessionFailure, { operation: 'load' }>['reason'] }
+  | { kind: 'current'; vault: TokenVault }
+  | { kind: 'legacy'; vault: TokenVault }
+
+function readStoredVault(): StoredVault {
+  let sealed: Buffer
+  try {
+    sealed = fs.readFileSync(filePath())
+  } catch (error) {
+    const missing = (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
+    return missing ? { kind: 'none' } : { kind: 'failed', reason: 'unreadable' }
+  }
+  let opened: string
+  try {
+    opened = safeStorage.decryptString(sealed)
+  } catch {
+    return { kind: 'failed', reason: 'undecryptable' }
+  }
+  try {
+    const parsed: unknown = JSON.parse(opened)
+    if (isVault(parsed)) return { kind: 'current', vault: parsed }
+    const migrated = isLegacyVault(parsed)
+      ? migratedVault(parsed)
+      : isTokens(parsed)
+        ? vaultFor(parsed)
+        : null
+    return migrated ? { kind: 'legacy', vault: migrated } : { kind: 'failed', reason: 'invalid' }
+  } catch {
+    return { kind: 'failed', reason: 'invalid' }
+  }
 }
 
 function loadVault(): TokenVault | null {
   if (cachedVault) return cachedVault
   if (!encryptionAvailable()) return null
-  try {
-    const parsed: unknown = JSON.parse(safeStorage.decryptString(fs.readFileSync(filePath())))
-    if (isVault(parsed)) {
-      cachedVault = parsed
-      return cachedVault
-    }
-    if (isTokens(parsed)) {
-      const migrated = vaultFor(parsed)
-      persistVault(migrated)
-      return migrated
-    }
-    return null
-  } catch {
+  const stored = readStoredVault()
+  if (stored.kind === 'none') return null
+  if (stored.kind === 'failed') {
+    reportStorageFailure({ operation: 'load', reason: stored.reason })
     return null
   }
+  if (stored.kind === 'current') cachedVault = stored.vault
+  else persistVault(stored.vault)
+  reportRestored(stored.kind)
+  return stored.vault
 }
 
-export function saveTokens(tokens: AuthTokens): void {
+function holdsToken(vault: TokenVault, workspaceId: string | null): boolean {
+  return (
+    workspaceId === workspaceIdOf(vault.grant.accessToken) ||
+    (workspaceId !== null && workspaceId in vault.workspaceTokens)
+  )
+}
+
+export function saveGrant(grant: AuthTokens): boolean {
   const current = loadVault()
-  const nextSubject = subjectOf(tokens.accessToken)
-  const accountChanged = current !== null && (!nextSubject || current.subject !== nextSubject)
-  const vault = accountChanged || !current ? vaultFor(tokens) : current
-  const key = tokensKey(tokens)
-  vault.activeKey = key
-  vault.bundles[key] = tokens
-  if (nextSubject) vault.subject = nextSubject
+  const subject = subjectOf(grant.accessToken)
+  if (!current || !subject || current.subject !== subject) {
+    return persistVault({ ...vaultFor(grant), ...configuredOrigin() })
+  }
+  const previous = current.grant
+  const previousAnchor = workspaceIdOf(previous.accessToken)
+  if (
+    previousAnchor &&
+    previousAnchor !== workspaceIdOf(grant.accessToken) &&
+    previous.expiresAt > Date.now()
+  ) {
+    current.workspaceTokens[previousAnchor] = {
+      accessToken: previous.accessToken,
+      expiresAt: previous.expiresAt
+    }
+  }
+  current.grant = grant
+  Object.assign(current, configuredOrigin())
+  if (!holdsToken(current, current.activeWorkspaceId))
+    current.activeWorkspaceId = workspaceIdOf(grant.accessToken)
+  return persistVault(current)
+}
+
+export function loadGrant(): AuthTokens | null {
+  return loadVault()?.grant ?? null
+}
+
+function configuredOrigin(): GrantOrigin {
+  return { issuer: CLOUD_CONFIG.issuer, clientId: CLOUD_CONFIG.clientId }
+}
+
+export function loadGrantOrigin(): GrantOrigin | null {
+  const vault = loadVault()
+  if (!vault) return null
+  if (!vault.issuer || !vault.clientId) return configuredOrigin()
+  return { issuer: vault.issuer, clientId: vault.clientId }
+}
+
+export function loadActiveWorkspaceId(): string | null {
+  return loadVault()?.activeWorkspaceId ?? null
+}
+
+export function loadWorkspaceToken(workspaceId: string): AuthTokens | null {
+  return loadVault()?.workspaceTokens[workspaceId] ?? null
+}
+
+export function saveWorkspaceToken(workspaceId: string, tokens: AuthTokens): void {
+  const vault = loadVault()
+  if (!vault) return
+  vault.workspaceTokens[workspaceId] = tokens
   persistVault(vault)
 }
 
-export function loadTokens(): AuthTokens | null {
+export function dropWorkspaceToken(accessToken: string): boolean {
   const vault = loadVault()
-  return vault?.bundles[vault.activeKey] ?? null
-}
-
-export function loadWorkspaceTokens(workspaceId: string | null): AuthTokens | null {
-  return loadVault()?.bundles[workspaceKey(workspaceId)] ?? null
+  if (!vault) return false
+  const entry = Object.entries(vault.workspaceTokens).find(
+    ([, tokens]) => tokens.accessToken === accessToken
+  )
+  if (!entry) return false
+  delete vault.workspaceTokens[entry[0]]
+  persistVault(vault)
+  return true
 }
 
 export function saveWorkspaceNames(accessToken: string, workspaces: Workspace[]): void {
@@ -156,63 +309,191 @@ export function saveWorkspaceNames(accessToken: string, workspaces: Workspace[])
 }
 
 export function getCachedWorkspaceName(workspaceId: string): string | null {
-  return loadVault()?.workspaceNames?.[workspaceId] ?? null
+  const names = loadVault()?.workspaceNames
+  return names && Object.hasOwn(names, workspaceId) ? (names[workspaceId] ?? null) : null
 }
 
-export function activateWorkspace(workspaceId: string): AuthTokens | null {
+export function activateWorkspace(workspaceId: string): boolean {
   const vault = loadVault()
-  if (!vault) return null
-  const key = workspaceKey(workspaceId)
-  const tokens = vault.bundles[key]
-  if (!tokens) return null
-  vault.activeKey = key
-  persistVault(vault)
-  return tokens
-}
-
-export function replaceWorkspaceTokens(
-  workspaceId: string | null,
-  expectedAccessToken: string,
-  expectedRefreshToken: string,
-  tokens: AuthTokens
-): boolean {
-  const vault = loadVault()
-  if (!vault) return false
-  const key = workspaceKey(workspaceId)
-  const current = vault.bundles[key]
-  if (
-    !current ||
-    current.accessToken !== expectedAccessToken ||
-    current.refreshToken !== expectedRefreshToken ||
-    workspaceIdOf(tokens.accessToken) !== workspaceId ||
-    subjectOf(tokens.accessToken) !== subjectOf(current.accessToken)
-  ) {
-    return false
-  }
-  vault.bundles[key] = tokens
+  if (!vault || !holdsToken(vault, workspaceId)) return false
+  vault.activeWorkspaceId = workspaceId
   persistVault(vault)
   return true
 }
 
-export function clearTokens(): void {
+export function replaceGrant(
+  expectedAccessToken: string,
+  expectedRefreshToken: string,
+  grant: AuthTokens
+): boolean {
+  const vault = loadVault()
+  if (
+    !vault ||
+    vault.grant.accessToken !== expectedAccessToken ||
+    vault.grant.refreshToken !== expectedRefreshToken ||
+    workspaceIdOf(grant.accessToken) !== workspaceIdOf(expectedAccessToken) ||
+    subjectOf(grant.accessToken) !== subjectOf(expectedAccessToken)
+  ) {
+    return false
+  }
+  vault.grant = grant
+  Object.assign(vault, configuredOrigin())
+  persistVault(vault)
+  return true
+}
+
+export function endGrant(expectedAccessToken: string): void {
+  const vault = loadVault()
+  if (!vault || vault.grant.accessToken !== expectedAccessToken) return
+  const { refreshToken: _ended, ...grant } = vault.grant
+  vault.grant = grant
+  persistVault(vault)
+}
+
+export function clearTokens(): boolean {
   cachedVault = null
   try {
     fs.rmSync(filePath(), { force: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function revocationsDir(): string {
+  return path.join(app.getPath('userData'), REVOCATIONS_DIRNAME)
+}
+
+function revocationPath(refreshToken: string): string {
+  const name = createHash('sha256').update(refreshToken).digest('hex')
+  return path.join(revocationsDir(), `${name}.bin`)
+}
+
+function isSavedRevocation(
+  v: unknown
+): v is Omit<PendingRevocation, 'queuedAt'> & { queuedAt?: number } {
+  return (
+    isRecord(v) &&
+    typeof v.issuer === 'string' &&
+    typeof v.clientId === 'string' &&
+    typeof v.refreshToken === 'string' &&
+    (v.queuedAt === undefined || typeof v.queuedAt === 'number')
+  )
+}
+
+function writeRevocation(revocation: PendingRevocation): boolean {
+  if (!encryptionAvailable()) return false
+  const target = revocationPath(revocation.refreshToken)
+  try {
+    fs.mkdirSync(revocationsDir(), { recursive: true })
+    fs.writeFileSync(`${target}.tmp`, safeStorage.encryptString(JSON.stringify(revocation)))
+    fs.renameSync(`${target}.tmp`, target)
+    return true
+  } catch {
+    removeQuietly(`${target}.tmp`)
+    return false
+  }
+}
+
+export interface PendingRevocations {
+  pending: PendingRevocation[]
+  complete: boolean
+}
+
+function dropIfOutlived(file: string): boolean {
+  try {
+    if (fs.statSync(file).mtimeMs + CLOUD_REFRESH_TOKEN_LIFETIME_MS > Date.now()) return false
+    fs.rmSync(file, { force: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function readSavedRevocations(): PendingRevocations {
+  let names: string[]
+  try {
+    names = fs.readdirSync(revocationsDir()).filter((name) => name.endsWith('.bin'))
+  } catch (error) {
+    return { pending: [], complete: (error as NodeJS.ErrnoException).code === 'ENOENT' }
+  }
+  if (names.length > 0 && !encryptionAvailable()) return { pending: [], complete: false }
+  let unreadable = 0
+  const pending = names.flatMap((name) => {
+    const file = path.join(revocationsDir(), name)
+    try {
+      const parsed: unknown = JSON.parse(safeStorage.decryptString(fs.readFileSync(file)))
+      if (isSavedRevocation(parsed)) {
+        const writtenAt = fs.statSync(file).mtimeMs
+        return [{ ...parsed, queuedAt: Math.min(parsed.queuedAt ?? writtenAt, writtenAt) }]
+      }
+    } catch {}
+    if (!dropIfOutlived(file)) unreadable += 1
+    return []
+  })
+  return { pending, complete: unreadable === 0 }
+}
+
+export function loadPendingRevocations(): PendingRevocations {
+  for (const [refreshToken, revocation] of unsavedRevocations) {
+    if (writeRevocation(revocation)) unsavedRevocations.delete(refreshToken)
+  }
+  const saved = readSavedRevocations()
+  const savedTokens = new Set(saved.pending.map((entry) => entry.refreshToken))
+  const unsaved = [...unsavedRevocations.values()].filter(
+    (entry) => !savedTokens.has(entry.refreshToken)
+  )
+  return { pending: [...saved.pending, ...unsaved], complete: saved.complete }
+}
+
+export function addPendingRevocation(revocation: PendingRevocation): boolean {
+  const saved = writeRevocation(revocation)
+  if (!saved) unsavedRevocations.set(revocation.refreshToken, revocation)
+  return saved
+}
+
+export function removePendingRevocation(refreshToken: string): boolean {
+  unsavedRevocations.delete(refreshToken)
+  removeQuietly(`${revocationPath(refreshToken)}.tmp`)
+  try {
+    fs.rmSync(revocationPath(refreshToken), { force: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function removeQuietly(file: string): void {
+  try {
+    fs.rmSync(file, { force: true })
   } catch {}
 }
 
+function activeToken(vault: TokenVault): string | null {
+  const active = vault.activeWorkspaceId
+  if (active === workspaceIdOf(vault.grant.accessToken)) return vault.grant.accessToken
+  return (active && vault.workspaceTokens[active]?.accessToken) || null
+}
+
 export function getAuthStatus(): AuthStatus {
-  const t = loadTokens()
-  if (!t) return { signedIn: false }
-  const status = statusFromAccessToken(t.accessToken)
-  const workspaceName = status.workspaceId
-    ? loadVault()?.workspaceNames?.[status.workspaceId]
-    : undefined
+  const vault = loadVault()
+  if (!vault) return { signedIn: false }
+  const token = activeToken(vault)
+  const status: AuthStatus = token
+    ? statusFromAccessToken(token)
+    : {
+        signedIn: true,
+        email: statusFromAccessToken(vault.grant.accessToken).email,
+        workspaceId: vault.activeWorkspaceId ?? undefined
+      }
+  const workspaceName = status.workspaceId ? vault.workspaceNames?.[status.workspaceId] : undefined
   return workspaceName ? { ...status, workspaceName } : status
 }
 
 export function _resetForTest(): void {
   cachedVault = null
+  unsavedRevocations.clear()
   authFilePath = null
   secureStorageUnavailable = false
+  reportedStoredSessions.clear()
 }

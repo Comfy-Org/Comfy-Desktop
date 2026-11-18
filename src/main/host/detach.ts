@@ -1,19 +1,29 @@
 import { ipcMain } from 'electron'
 import type { BrowserWindow, WebContentsView } from 'electron'
+import { stopEveryBuildRunningForAppsOnly } from '../apps/localComfy'
 import * as ipc from '../lib/ipc'
-import { _runningSessions } from '../lib/ipc/shared'
+import { _runningSessions, keepsComfyRunningWhenWindowCloses } from '../lib/ipc/shared'
 import { COMFY_BG } from '../lib/theme'
 import { destroyPanelView, ensurePanelView } from './panelView'
 import { openSystemModalAsync } from '../popups/systemModal'
 import type { SystemModalDetailGroup } from '../popups/systemModal'
 import { recordDashboardSurface } from '../lib/lastSession'
 import * as settings from '../settings'
-import { comfyWindows, isChooserHost, isInstallHost, shouldConfirmKillForEntry } from './registry'
+import {
+  comfyWindows,
+  getEntryByInstallationId,
+  isChooserHost,
+  isInstallHost,
+  shouldConfirmKillForEntry
+} from './registry'
 import type { ComfyWindowEntry } from './registry'
+import { navigatorFor } from './buildNavigator'
 import {
   applyChooserHostTheme,
   CHOOSER_HOST_TITLE_TEXT,
   CHOOSER_HOST_WINDOW_TITLE,
+  closeQuitsDesktop,
+  closeStopsLocalComfy,
   installCloseNeedsConfirm
 } from './createHostWindow'
 import type { CloseWindowChoice } from './createHostWindow'
@@ -127,15 +137,16 @@ export async function returnToDashboard(parentEntryId: number): Promise<void> {
 }
 
 async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): Promise<boolean> {
+  if (keepsComfyRunningWhenWindowCloses()) return true
   if (!shouldConfirmKillForEntry(entry)) return true
   if (!_runningSessions.has(entry.installationId)) return true
   if (entry.window.isDestroyed()) return true
   return openSystemModalAsync({
     parent: entry.window,
     spec: {
-      title: 'Return to Dashboard?',
+      title: 'Return to Home?',
       message: 'This will stop the current ComfyUI.',
-      confirmLabel: 'Return to Dashboard',
+      confirmLabel: 'Return to Home',
       cancelLabel: 'Cancel',
       confirmStyle: 'danger',
       theme: entry.lastTheme
@@ -143,17 +154,28 @@ async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): 
   })
 }
 
+function windowlessComfyNames(): string[] {
+  if (!keepsComfyRunningWhenWindowCloses()) return []
+  return [..._runningSessions]
+    .filter(([id, session]) => !session.url && !getEntryByInstallationId(id))
+    .map(([, session]) => session.installationName)
+}
+
 export async function confirmAndCloseAllHostWindows(
   parentWindow: BrowserWindow | null,
   performQuit: () => void
 ): Promise<void> {
   const entries = Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed())
-  const instanceWindows = entries.filter((e) => shouldConfirmKillForEntry(e))
-  if (instanceWindows.length === 0) {
+  const titles = [
+    ...entries
+      .filter((e) => shouldConfirmKillForEntry(e))
+      .map((e) => e.titleBarText || 'Untitled instance'),
+    ...windowlessComfyNames()
+  ]
+  if (titles.length === 0) {
     performQuit()
     return
   }
-  const titles = instanceWindows.map((e) => e.titleBarText || 'Untitled instance')
   const details: SystemModalDetailGroup[] = [{ label: 'Open instances', items: titles }]
   if (ipc.hasActiveOperations()) {
     try {
@@ -173,7 +195,7 @@ export async function confirmAndCloseAllHostWindows(
     performQuit()
     return
   }
-  const count = instanceWindows.length
+  const count = titles.length
   const confirmed = await openSystemModalAsync({
     parent: overlayParentEntry.window,
     spec: {
@@ -194,11 +216,11 @@ export async function confirmAndCloseAllHostWindows(
 
 export async function confirmCloseInstanceWindow(
   window: BrowserWindow,
-  isLastWindow: boolean,
+  quitsDesktop: boolean,
   stopsLocalComfy: boolean,
   theme: { bg: string; text: string }
 ): Promise<CloseWindowChoice> {
-  const message = isLastWindow
+  const message = quitsDesktop
     ? stopsLocalComfy
       ? 'Close this window? This stops ComfyUI and quits Comfy Desktop.'
       : 'Close this window? This quits Comfy Desktop.'
@@ -230,20 +252,25 @@ export async function confirmAndCloseHostWindow(parentWindow: BrowserWindow): Pr
     (e) => !e.window.isDestroyed()
   ).length
   const isLastWindow = liveWindowCount <= 1
+  const quitsDesktop = closeQuitsDesktop(isLastWindow)
+  const stopsLocalComfy = closeStopsLocalComfy(entry, isLastWindow)
   if (
     installCloseNeedsConfirm(
       settings.get('confirmBeforeClosingWindow') === true,
-      shouldConfirmKillForEntry(entry),
-      isLastWindow && isInstallHost(entry)
+      stopsLocalComfy,
+      quitsDesktop && isInstallHost(entry)
     )
   ) {
     const choice = await confirmCloseInstanceWindow(
       entry.window,
-      isLastWindow,
-      shouldConfirmKillForEntry(entry),
+      quitsDesktop,
+      stopsLocalComfy,
       entry.lastTheme
     )
     if (choice === 'cancel') return
+    if (isLastWindow && !keepsComfyRunningWhenWindowCloses()) {
+      void stopEveryBuildRunningForAppsOnly()
+    }
   }
   preClearedClose.add(entry.window)
   entry.window.close()
@@ -258,7 +285,7 @@ export function _detachInstallImpl(entry: ComfyWindowEntry): void {
   entry._installCleanup?.()
 
   if (!entry.comfyView.webContents.isDestroyed()) {
-    void entry.comfyView.webContents.loadURL('about:blank').catch(() => {})
+    navigatorFor(entry).blank()
     entry.comfyView.setBackgroundColor(COMFY_BG)
   }
 

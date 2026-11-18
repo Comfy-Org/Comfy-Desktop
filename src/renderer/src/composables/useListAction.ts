@@ -21,6 +21,7 @@ export interface ListActionCallbacks {
 export interface ListActionInvocationHooks {
   onGuardsPassed?: () => Promise<void> | void
   isRestart?: boolean
+  actionData?: Record<string, unknown>
 }
 
 export function useListAction(uiSurface: string, callbacks: ListActionCallbacks) {
@@ -136,6 +137,10 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
     const needsSelfStop = wasRunning && requiresStoppedGuard
     const wantsRelaunch = needsSelfStop && IN_PLACE_RELAUNCH.has(action.id)
     const isRunning = (): boolean => sessionStore.isRunning(inst.id)
+    const runAction = (): Promise<ActionResult> =>
+      hooks?.actionData
+        ? window.api.runAction(inst.id, action.id, hooks.actionData)
+        : window.api.runAction(inst.id, action.id)
 
     if (action.showProgress) {
       const triggersInstanceStart =
@@ -143,13 +148,13 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       const apiCall = needsSelfStop
         ? async () => {
             await stopAndWaitForExit(inst.id, isRunning)
-            const result = await window.api.runAction(inst.id, action.id)
+            const result = await runAction()
             if (wantsRelaunch && result?.ok !== false) {
               await window.api.runAction(inst.id, 'launch')
             }
             return result
           }
-        : () => window.api.runAction(inst.id, action.id)
+        : runAction
       callbacks.showProgress({
         installationId: inst.id,
         title: `${action.progressTitle || action.label} — ${inst.name}`,
@@ -167,7 +172,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       if (needsSelfStop) {
         await stopAndWaitForExit(inst.id, isRunning)
       }
-      const result = await window.api.runAction(inst.id, action.id)
+      const result = await runAction()
       if (result.running) {
         await actionGuard.checkBeforeAction(inst.id, action.label)
         return

@@ -88,6 +88,36 @@ describe('dispatchSessionAction operation tracking', () => {
     })
   })
 
+  it('names the Performance Test session on its launch operation, so Home can tell it from a start of the build', async () => {
+    let finishLaunch!: (value: { ok: boolean }) => void
+    launch.mockReturnValue(new Promise((resolve) => (finishLaunch = resolve)))
+
+    const pending = dispatchSessionAction(
+      { ...ctx(), sessionId: 'performance-test:inst-1' },
+      'launch'
+    )
+
+    expect(broadcast).toHaveBeenCalledWith('operation-changed', {
+      installationId: 'inst-1',
+      actionId: 'launch',
+      sessionId: 'performance-test:inst-1',
+      active: true
+    })
+    expect(_getActiveOperations()).toEqual([
+      { installationId: 'inst-1', actionId: 'launch', sessionId: 'performance-test:inst-1' }
+    ])
+
+    finishLaunch({ ok: true })
+    await pending
+
+    expect(broadcast).toHaveBeenLastCalledWith('operation-changed', {
+      installationId: 'inst-1',
+      actionId: 'launch',
+      sessionId: 'performance-test:inst-1',
+      active: false
+    })
+  })
+
   it('clears the entry and broadcasts the end even when the handler throws', async () => {
     delegate.mockRejectedValue(new Error('boom'))
 
@@ -123,6 +153,61 @@ describe('dispatchSessionAction operation tracking', () => {
 
     finishOuter({ ok: true })
     await pending
+    expect(_getActiveOperations()).toEqual([])
+  })
+
+  it('shows an update that starts during an update check as the operation, and keeps showing it after the check ends', async () => {
+    let finishCheck!: (value: { ok: boolean }) => void
+    let finishUpdate!: (value: { ok: boolean }) => void
+    delegate
+      .mockReturnValueOnce(new Promise((resolve) => (finishCheck = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (finishUpdate = resolve)))
+
+    const check = dispatchSessionAction(ctx(), 'check-update')
+    const update = dispatchSessionAction(ctx(), 'update-comfyui')
+
+    expect(_getActiveOperations()).toEqual([
+      { installationId: 'inst-1', actionId: 'update-comfyui' }
+    ])
+
+    finishCheck({ ok: true })
+    await check
+
+    expect(_getActiveOperations(), 'the check ending does not end the update').toEqual([
+      { installationId: 'inst-1', actionId: 'update-comfyui' }
+    ])
+    expect(broadcast).not.toHaveBeenCalledWith('operation-changed', {
+      installationId: 'inst-1',
+      actionId: 'check-update',
+      active: false
+    })
+
+    finishUpdate({ ok: true })
+    await update
+
+    expect(_getActiveOperations()).toEqual([])
+    expect(broadcast).toHaveBeenLastCalledWith('operation-changed', {
+      installationId: 'inst-1',
+      actionId: 'update-comfyui',
+      active: false
+    })
+  })
+
+  it('keeps showing an update while an update check starts and ends during it', async () => {
+    let finishUpdate!: (value: { ok: boolean }) => void
+    delegate
+      .mockReturnValueOnce(new Promise((resolve) => (finishUpdate = resolve)))
+      .mockResolvedValueOnce({ ok: true })
+
+    const update = dispatchSessionAction(ctx(), 'update-comfyui')
+    await dispatchSessionAction(ctx(), 'check-update')
+
+    expect(_getActiveOperations()).toEqual([
+      { installationId: 'inst-1', actionId: 'update-comfyui' }
+    ])
+
+    finishUpdate({ ok: true })
+    await update
     expect(_getActiveOperations()).toEqual([])
   })
 

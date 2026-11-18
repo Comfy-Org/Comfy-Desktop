@@ -2,6 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { expect, test, type ElectronApplication } from '@playwright/test'
+import { keepOnlyComfyHostWindow } from './support/comfyHostWindow'
 import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
 import { WebContentsPage } from './support/cdpPages'
@@ -75,7 +76,7 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-test('first run: the hint takes the popup, and dismissing it releases the beta card @linux', async () => {
+test('first run: the beta card shows on its own, with no title bar hint before it @linux @macos', async () => {
   await clickInstallTile(ctx.panel, INSTALL_NAME)
   await ctx.panel.waitFor(
     async () =>
@@ -86,27 +87,9 @@ test('first run: the hint takes the popup, and dismissing it releases the beta c
       )) === true,
     { timeout: 90_000, message: 'ComfyUI stub never came up / the host never attached' }
   )
+  await keepOnlyComfyHostWindow(ctx.app)
 
   const popup = coachmarkPopup(ctx.app)
-  await popup.waitFor(
-    async () => {
-      try {
-        return await popup.exists('.coachmark')
-      } catch {
-        return false
-      }
-    },
-    { timeout: 30_000, message: 'no coachmark appeared at all on a first run' }
-  )
-
-  expect(await popup.textOf('.coachmark-title')).toBe('Switch & manage instances')
-
-  expect(
-    await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`)
-  ).not.toBeNull()
-
-  expect(await popup.click('.coachmark-dismiss')).toBe(true)
-
   await popup.waitFor(
     async () => {
       try {
@@ -115,7 +98,7 @@ test('first run: the hint takes the popup, and dismissing it releases the beta c
         return false
       }
     },
-    { timeout: 30_000, message: 'beta notice never drew after the hint was dismissed' }
+    { timeout: 30_000, message: 'the beta notice never drew on a first run' }
   )
 
   expect(await popup.textOf('.coachmark-text')).not.toContain(GRANT_ARG)

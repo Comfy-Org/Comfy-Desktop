@@ -4,7 +4,7 @@ import ToggleGroup from '@comfyorg/design-system/toggle-group/ToggleGroup'
 import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupItem'
 import { computed, provide, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { LayoutDashboard, Search, X } from 'lucide-vue-next'
+import { LayoutDashboard, Search, X } from '@lucide/vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import { FILTER_CHIPS, useInstallList } from '../composables/useInstallList'
 import { useDialogs } from '../composables/useDialogs'
@@ -71,6 +71,7 @@ interface PickerSnapshot {
   runningInstallationIds: string[]
   runningSessionStartedAt?: Record<string, number>
   launchingInstallationIds: string[]
+  unhostedLaunchingInstallationIds?: string[]
   selectedInstallationId: string | null
   pickerSelectionEpoch?: number
   selectedSettings: DetailSection[] | null
@@ -129,7 +130,6 @@ interface PickerBridge {
   activate?: (id: string) => void
   close?: () => void
   pickInstall: (installationId: string) => void
-  openInstallNewWindow: (installationId: string, opts?: { allowDuplicate?: boolean }) => void
   restartInstall: (installationId: string, opts?: { confirmed?: boolean }) => void
   setPickerSelectedInstall: (installationId: string | null) => void
   pickerUpdateField: (
@@ -230,6 +230,11 @@ const selectedInstall = computed<Installation | null>(() => {
     if (found) return found
   }
   return null
+})
+
+const selectedStartsWithoutWindow = computed(() => {
+  const id = selectedInstall.value?.id
+  return id != null && (props.snapshot.unhostedLaunchingInstallationIds ?? []).includes(id)
 })
 
 const runningSet = computed(() => new Set(props.snapshot.runningInstallationIds))
@@ -427,26 +432,6 @@ const instanceActions = useInstanceActions({
       ]
     })
     return result === 'primary'
-  },
-  confirmSwitch: async (inst) => {
-    const hostIsLocalInstall =
-      props.snapshot.currentView === 'instance' && props.snapshot.currentCategory === 'local'
-    if (!hostIsLocalInstall) return 'switch'
-    const result = await dialogs.confirm({
-      title: t('instancePicker.switchConfirmTitle'),
-      message: t('instancePicker.switchConfirmMessage', { name: inst.name }),
-      confirmLabel: t('instancePicker.switchConfirmAction'),
-      secondaryLabel: t('instancePicker.switchConfirmSecondary'),
-      cancelLabel: t('common.cancel'),
-      showCancel: true,
-      messageDetails: [
-        {
-          label: t('instancePicker.confirmHeadsUp'),
-          items: [t('instancePicker.switchConfirmItem1'), t('instancePicker.switchConfirmItem2')]
-        }
-      ]
-    })
-    return result === 'primary' ? 'switch' : result === 'secondary' ? 'new-window' : 'cancel'
   }
 })
 
@@ -587,13 +572,13 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
               :active-installation-id="snapshot.activeInstallationId"
               :current-view="snapshot.currentView ?? 'dashboard'"
               :current-category="snapshot.currentCategory ?? null"
+              :starting-without-window="selectedStartsWithoutWindow"
               class="picker-expanded-body min-h-0 flex-auto [--text-muted:var(--neutral-100)]"
               @show-progress="handleSettingsShowProgress"
               @navigate-list="handleSettingsNavigateList"
               @request-close="handleSettingsNavigateList"
               @request-dismiss="handleClose"
               @primary-action="handleExpandedNav"
-              @open-new-window="handleExpandedNav"
               @op-cancel="handleInlineProgressCancel"
               @op-retry="handleInlineProgressRetry"
               @op-dismiss="handleInlineProgressDismiss"

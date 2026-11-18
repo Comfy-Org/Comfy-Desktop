@@ -17,7 +17,7 @@ import {
   Trash2,
   X,
   XCircle
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
 import { fileLabel, modalSubtitle, statusKindClass } from '../lib/downloadFormatters'
 import { revealInFolderLabel } from '../composables/usePlatform'
@@ -326,7 +326,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                 {{ progressPercent(d) }}%
               </span>
               <Button
-                v-if="d.status === 'downloading'"
+                v-if="d.status === 'downloading' && d.canPause !== false"
                 type="button"
                 variant="secondary"
                 size="md"

@@ -18,7 +18,6 @@ interface MenuItem {
   id?: string
   label?: string
   labelKey?: string
-  checked?: boolean
   kind?: 'separator'
 }
 
@@ -320,14 +319,17 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="popup box-border m-0 h-full w-full overflow-hidden rounded-card border border-solid border-border bg-neutral-800 text-text select-none [box-shadow:var(--shadow-highlight)]"
+    class="popup box-border m-0 h-full w-full overflow-hidden border border-solid border-border text-text select-none"
     :class="{
-      'is-menu text-[13px]': kind === 'menu',
+      'is-menu rounded-lg bg-popover text-xs': kind === 'menu',
+      'rounded-card bg-neutral-800 [box-shadow:var(--shadow-highlight)]':
+        kind !== 'menu' && kind !== 'global-settings',
       'is-picker': kind === 'instance-picker',
       'is-global-settings': kind === 'global-settings',
       'is-downloads-full': kind === 'downloads-full',
       'rounded-panel border-[var(--modal-surface-border)] bg-[var(--modal-surface-bg)]':
-        kind === 'instance-picker' || kind === 'global-settings' || kind === 'downloads-full'
+        kind === 'instance-picker' || kind === 'downloads-full',
+      'border-0 bg-transparent': kind === 'global-settings'
     }"
   >
     <MenuView v-if="kind === 'menu'" :items="items" @activate="handleActivate" />

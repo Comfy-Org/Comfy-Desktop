@@ -301,4 +301,75 @@ describe('SettingsSectionList', () => {
       expect(wrapper.emitted('update-field')![0]![1]).toBe(true)
     })
   })
+
+  describe('two-column layout', () => {
+    const TWO_COLUMN_GRID = '@2xl/build-settings:grid'
+    const launchField: DetailField = {
+      id: 'launchArgs',
+      label: 'Startup arguments',
+      value: '--listen',
+      editable: true,
+      editType: 'text'
+    }
+
+    function mountSections(sections: DetailSection[], columns: boolean) {
+      return mount(SettingsSectionList, { props: { sections, columns } })
+    }
+
+    it('shows a titled section as a heading beside its fields', () => {
+      const wrapper = mountSections(
+        [{ title: 'Launch Settings', description: 'How the build starts.', fields: [launchField] }],
+        true
+      )
+      expect(wrapper.find('h3').text()).toBe('Launch Settings')
+      expect(wrapper.find('.settings-v2-section').classes()).toContain(TWO_COLUMN_GRID)
+      expect(wrapper.find('.settings-v2-section-body').classes()).toContain('max-w-xl')
+      expect(wrapper.find('.settings-v2-section-body').text()).toContain('Startup arguments')
+    })
+
+    it('shows the section description once, under the heading', () => {
+      const wrapper = mountSections(
+        [{ title: 'Launch Settings', description: 'How the build starts.', fields: [launchField] }],
+        true
+      )
+      const descriptions = wrapper.findAll('.settings-v2-section-desc')
+      expect(descriptions).toHaveLength(1)
+      expect(descriptions[0]!.element.closest('header')).not.toBeNull()
+    })
+
+    it('leaves the layout unchanged when columns is off', () => {
+      const wrapper = mountSections(
+        [{ title: 'Launch Settings', description: 'How the build starts.', fields: [launchField] }],
+        false
+      )
+      expect(wrapper.find('h3').exists()).toBe(false)
+      expect(wrapper.find('.settings-v2-section').classes()).not.toContain(TWO_COLUMN_GRID)
+      expect(wrapper.find('.settings-v2-section-body').classes()).toContain('contents')
+      expect(wrapper.find('.settings-v2-section-desc').text()).toBe('How the build starts.')
+    })
+
+    it('keeps an untitled section stacked so its rows do not split across columns', () => {
+      const wrapper = mountSections([{ fields: [launchField, { ...launchField, id: 'b' }] }], true)
+      expect(wrapper.find('.settings-v2-section').classes()).not.toContain(TWO_COLUMN_GRID)
+      expect(wrapper.find('.settings-v2-section-body').classes()).toContain('contents')
+    })
+
+    it('keeps a collapsible section stacked with its toggle and description', () => {
+      const wrapper = mountSections(
+        [
+          {
+            title: 'Advanced',
+            description: 'Rarely needed flags.',
+            collapsed: false,
+            fields: [launchField]
+          }
+        ],
+        true
+      )
+      expect(wrapper.find('h3').exists()).toBe(false)
+      expect(wrapper.find('.settings-v2-section').classes()).not.toContain(TWO_COLUMN_GRID)
+      expect(wrapper.find('button[aria-expanded]').text()).toContain('Advanced')
+      expect(wrapper.find('.settings-v2-section-desc').text()).toBe('Rarely needed flags.')
+    })
+  })
 })

@@ -2,6 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { expect, test, type ElectronApplication } from '@playwright/test'
+import { keepOnlyComfyHostWindow } from './support/comfyHostWindow'
 import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
 import { WebContentsPage } from './support/cdpPages'
@@ -56,8 +57,8 @@ async function popupVisible(app: ElectronApplication): Promise<boolean | 'detach
 
 async function lockdownEngaged(titleBar: WebContentsPage): Promise<boolean> {
   const bell = await titleBar.exists('.title-announcement-button')
-  const pill = await titleBar.exists('.title-install-pill.is-interactive')
-  return !bell && !pill
+  const firstUseLabel = await titleBar.exists('.title-install-pill')
+  return !bell && firstUseLabel
 }
 
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
@@ -110,7 +111,7 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-test('first-use lockdown never costs the user the beta notice @linux', async () => {
+test('first-use lockdown never costs the user the beta notice @linux @macos', async () => {
   const popup = coachmarkPopup(ctx.app)
 
   await ctx.panel.evaluate(`window.api.setFirstUseMode('post-consent')`)
@@ -129,6 +130,7 @@ test('first-use lockdown never costs the user the beta notice @linux', async () 
       )) === true,
     { timeout: 90_000, message: 'ComfyUI stub never came up / the host never attached' }
   )
+  await keepOnlyComfyHostWindow(ctx.app)
 
   expect(
     await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`)
@@ -138,7 +140,12 @@ test('first-use lockdown never costs the user the beta notice @linux', async () 
     timeout: 30_000,
     message: 'beta notice never drew after the launch that armed it'
   })
-  expect(await popupVisible(ctx.app)).toBe(true)
+  await expect
+    .poll(async () => popupVisible(ctx.app), {
+      timeout: 5_000,
+      message: 'the drawn beta notice was never shown on screen'
+    })
+    .toBe(true)
   expect(await lockdownEngaged(ctx.titleBar)).toBe(false)
 
   await ctx.panel.evaluate(`window.api.setFirstUseMode('post-consent')`)

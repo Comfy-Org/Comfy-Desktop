@@ -30,7 +30,9 @@ export interface KnownSettings {
   autoUpdate?: boolean
   autoInstallUpdates?: boolean
   autoLaunchOnStartup?: string
+  autoStartAwaitingFirstStart?: string
   confirmBeforeClosingWindow?: boolean
+  keepComfyRunningWhenWindowCloses?: boolean
   warnBeforeRunningMultipleInstances?: boolean
   hardwareAcceleration?: boolean
   pypiMirror?: string
@@ -43,12 +45,12 @@ export interface KnownSettings {
   cloudNodesAnnouncementSeen?: boolean
   comfyRouterAnnouncementSeen?: boolean
   comfyApiAnnouncementSeen?: boolean
+  hasSeenCentralPillHint?: boolean
   betaNoticeAnnouncedArgs?: string[]
   hideCloudFromPicker?: boolean
   oemManagedModelDirs?: string[]
   oemWorkflowImportVersion?: number
   lastSaveDialogDir?: string
-  skipTemplatePickerStep?: boolean
   dashboardWorkspaceId?: string
   pendingDownloadedUpdateVersion?: string
   lastStartupUpdateAttemptVersion?: string
@@ -142,10 +144,12 @@ const SETTINGS_SCHEMA = {
     }
   },
   autoLaunchOnStartup: { nullable: false, telemetry: { policy: 'presence' } },
+  autoStartAwaitingFirstStart: { nullable: false, telemetry: { policy: 'omit' } },
   confirmBeforeClosingWindow: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
   },
+  keepComfyRunningWhenWindowCloses: { nullable: false, telemetry: { policy: 'omit' } },
   warnBeforeRunningMultipleInstances: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw !== false }
@@ -167,6 +171,7 @@ const SETTINGS_SCHEMA = {
   cloudNodesAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   comfyRouterAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   comfyApiAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
+  hasSeenCentralPillHint: { nullable: false, telemetry: { policy: 'omit' } },
   betaNoticeAnnouncedArgs: { nullable: false, telemetry: { policy: 'omit' } },
   hideCloudFromPicker: {
     nullable: false,
@@ -175,10 +180,6 @@ const SETTINGS_SCHEMA = {
   oemManagedModelDirs: { nullable: false, telemetry: { policy: 'presence' } },
   oemWorkflowImportVersion: { nullable: false, telemetry: { policy: 'omit' } },
   lastSaveDialogDir: { nullable: true, telemetry: { policy: 'presence' } },
-  skipTemplatePickerStep: {
-    nullable: false,
-    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
-  },
   dashboardWorkspaceId: { nullable: false, telemetry: { policy: 'omit' } },
   pendingDownloadedUpdateVersion: { nullable: true, telemetry: { policy: 'omit' } },
   lastStartupUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
@@ -357,7 +358,8 @@ function loadOutcome(preRead?: SafeReadOutcome): {
     'primaryInstallId',
     'pinnedInstallIds',
     'maxCachedFiles',
-    'closeDirectlyOnLastWindow'
+    'closeDirectlyOnLastWindow',
+    'skipTemplatePickerStep'
   ]) {
     if (Object.prototype.hasOwnProperty.call(result, key)) {
       delete result[key]

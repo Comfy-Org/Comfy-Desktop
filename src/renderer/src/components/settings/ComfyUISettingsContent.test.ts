@@ -22,20 +22,22 @@ const useComfyUISettingsState = {
   pendingRestartFieldIds: ref<Set<string>>(new Set()),
   fieldErrorMessages: ref<Record<string, string>>({}),
   diskUsageItem: ref(null),
+  diskSpace: ref(null),
   runActionStub: vi.fn()
 }
 vi.mock('../../composables/useComfyUISettings', () => ({
   useComfyUISettings: () => ({
     ...useComfyUISettingsState,
     updateField: vi.fn(),
+    renameInstallation: vi.fn().mockResolvedValue(true),
+    clearPendingRestart: vi.fn(),
     runAction: useComfyUISettingsState.runActionStub,
     sectionsForTab: (tab: string) =>
-      computed(() => {
-        const hasTab = useComfyUISettingsState.sections.value.some(
-          (s) => (s as { tab?: string }).tab === tab
-        )
-        return hasTab ? [{ tab, fields: [] }] : []
-      }),
+      computed(() =>
+        (useComfyUISettingsState.sections.value as { tab?: string; fields?: unknown[] }[])
+          .filter((s) => s.tab === tab)
+          .map((s) => ({ ...s, fields: s.fields ?? [] }))
+      ),
     reload: vi.fn()
   })
 }))
@@ -48,10 +50,14 @@ vi.mock('../../views/comfyUISettings/SnapshotsView.vue', () => ({
   }
 }))
 vi.mock('../../views/comfyUISettings/SettingsSectionList.vue', () => ({
-  default: { template: '<div data-testid="settings-section-list-stub"></div>' }
+  default: {
+    name: 'SettingsSectionList',
+    props: ['columns'],
+    template: '<div data-testid="settings-section-list-stub"></div>'
+  }
 }))
 vi.mock('../../views/comfyUISettings/StatusFactPanel.vue', () => ({
-  default: { template: '<div />' }
+  default: { name: 'StatusFactPanel', props: ['hideHero', 'onRename'], template: '<div />' }
 }))
 vi.mock('../../views/comfyUISettings/StoragePane.vue', () => ({
   default: { template: '<div />' }
@@ -70,6 +76,7 @@ vi.mock('../../views/comfyUISettings/MoreMenu.vue', () => ({
   default: {
     name: 'MoreMenu',
     props: ['open', 'actions'],
+    emits: ['pick', 'close'],
     template: '<div v-if="open" data-testid="more-menu">menu</div>'
   }
 }))
@@ -468,14 +475,7 @@ describe('ComfyUISettingsContent', () => {
     const CONSOLE_TOOLTIP =
       "An interactive shell running in this build's folder. Works whether ComfyUI is running or stopped."
 
-    const TAB_LABELS = new Set([
-      'Update',
-      'Startup Args',
-      'Snapshots',
-      'Storage',
-      'Terminal',
-      'About'
-    ])
+    const TAB_LABELS = new Set(['Overview', 'Startup Args', 'Snapshots', 'Storage', 'Terminal'])
 
     function tabTooltips(w: VueWrapper) {
       return w
@@ -533,10 +533,10 @@ describe('ComfyUISettingsContent', () => {
 
     function emittedDecision(wrapper: VueWrapper) {
       const calls = wrapper.emitted('primary-action') as unknown[][] | undefined
-      return calls?.[0]?.[0] as { window: string; verb: string } | undefined
+      return calls?.[0]?.[0] as { verb: string } | undefined
     }
 
-    it('labels "Start" and emits a same-window switch decision when not running', async () => {
+    it('labels "Start" and emits a start decision when not running', async () => {
       const w = await mountContent({
         currentView: 'dashboard',
         currentCategory: null,
@@ -544,7 +544,7 @@ describe('ComfyUISettingsContent', () => {
       })
       expect(w.find('.settings-v2-relaunch').text()).toBe('Start')
       await w.find('.settings-v2-relaunch').trigger('click')
-      expect(emittedDecision(w)).toMatchObject({ window: 'same', verb: 'switch' })
+      expect(emittedDecision(w)).toMatchObject({ verb: 'start' })
     })
 
     it('labels "Restart" and emits a restart decision when running in THIS window', async () => {
@@ -556,7 +556,7 @@ describe('ComfyUISettingsContent', () => {
       })
       expect(w.find('.settings-v2-relaunch').text()).toBe('Restart')
       await w.find('.settings-v2-relaunch').trigger('click')
-      expect(emittedDecision(w)).toMatchObject({ window: 'same', verb: 'restart' })
+      expect(emittedDecision(w)).toMatchObject({ verb: 'restart' })
     })
 
     it('labels "Switch" and emits a focus decision when running in ANOTHER window', async () => {
@@ -582,6 +582,24 @@ describe('ComfyUISettingsContent', () => {
       await w.find('.settings-v2-relaunch').trigger('click')
       expect(emittedDecision(w)).toMatchObject({ verb: 'focus' })
     })
+
+    it('labels "Restart to apply changes" on the dashboard when a build starting with no window has edited args', async () => {
+      useSessionStore().launchingInstances.set('inst-1', { installationName: 'X' })
+      useComfyUISettingsState.pendingRestartFieldIds.value = new Set(['launchArgs'])
+      try {
+        const w = await mountContent({
+          currentView: 'dashboard',
+          currentCategory: null,
+          activeInstallationId: null,
+          startingWithoutWindow: true
+        })
+        expect(w.find('.settings-v2-relaunch').text()).toBe('Restart to apply changes')
+        await w.find('.settings-v2-relaunch').trigger('click')
+        expect(emittedDecision(w)).toMatchObject({ verb: 'restart' })
+      } finally {
+        useComfyUISettingsState.pendingRestartFieldIds.value = new Set()
+      }
+    })
   })
 
   describe('caret for a running-elsewhere target', () => {
@@ -597,7 +615,7 @@ describe('ComfyUISettingsContent', () => {
       const menu = wrapper
         .findAllComponents({ name: 'MoreMenu' })
         .map((m) => m.props('actions') as { id: string }[] | undefined)
-        .find((acts) => acts?.some((a) => a.id === 'stop' || a.id.startsWith('nav:')))
+        .find((acts) => acts?.some((a) => a.id === 'stop'))
       return menu
     }
 
@@ -628,7 +646,7 @@ describe('ComfyUISettingsContent', () => {
       expect(w.find('.settings-v2-cta-caret').exists()).toBe(false)
     })
 
-    it('stopped cloud target (dashboard host) → caret still offers "Open in new window"', async () => {
+    it('stopped cloud target (dashboard host) → Open Cloud with no "Open in new window" caret', async () => {
       useComfyUISettingsState.pinBottomActions.value = []
       const w = await mountContent({
         currentView: 'dashboard',
@@ -636,8 +654,8 @@ describe('ComfyUISettingsContent', () => {
         activeInstallationId: null,
         installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
       })
-      const actions = caretActions(w)
-      expect(actions?.some((a) => a.id.startsWith('nav:'))).toBe(true)
+      expect(w.find('.settings-v2-relaunch').text()).toBe('Open Cloud')
+      expect(w.find('.settings-v2-cta-caret').exists()).toBe(false)
     })
   })
 
@@ -732,6 +750,58 @@ describe('ComfyUISettingsContent', () => {
     })
   })
 
+  describe('Startup Args two-column layout', () => {
+    let priorSections: unknown[]
+    let target: HTMLElement
+
+    beforeEach(() => {
+      priorSections = useComfyUISettingsState.sections.value
+      useComfyUISettingsState.sections.value = [
+        { tab: 'update', fields: [] },
+        { tab: 'settings', fields: [] },
+        { tab: 'status', fields: [] }
+      ]
+      target = document.createElement('div')
+      target.id = 'page-actions'
+      document.body.append(target)
+    })
+
+    afterEach(() => {
+      useComfyUISettingsState.sections.value = priorSections
+      target.remove()
+    })
+
+    async function columnsFor(props: Record<string, unknown>): Promise<unknown> {
+      const w = await mountContent({ initialTab: 'config', ...props })
+      const columns = w.findComponent({ name: 'SettingsSectionList' }).props('columns')
+      w.unmount()
+      return columns
+    }
+
+    it('lays out the Startup Args tab in two columns on the build page', async () => {
+      expect(await columnsFor({ pageActionsTarget: '#page-actions' })).toBe(true)
+    })
+
+    it('keeps the settings modal single-column', async () => {
+      expect(await columnsFor({})).toBe(false)
+    })
+
+    it('keeps a cloud build single-column, where that tab is labelled Storage', async () => {
+      expect(
+        await columnsFor({
+          pageActionsTarget: '#page-actions',
+          installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
+        })
+      ).toBe(false)
+    })
+
+    it('keeps the Update tab single-column on the build page', async () => {
+      expect(await columnsFor({ pageActionsTarget: '#page-actions', initialTab: 'update' })).toBe(
+        false
+      )
+    })
+  })
+
   describe('Update-tab auto-refresh staleness gate', () => {
     async function checkUpdateFireCount(lastCheckedAt?: number): Promise<number> {
       const priorSections = useComfyUISettingsState.sections.value
@@ -774,6 +844,52 @@ describe('ComfyUISettingsContent', () => {
     })
   })
 
+  describe('Overview cards', () => {
+    let priorSections: unknown[] = []
+    beforeEach(() => {
+      priorSections = useComfyUISettingsState.sections.value
+    })
+    afterEach(() => {
+      useComfyUISettingsState.sections.value = priorSections
+    })
+
+    async function mountWithChannelCards(installation: Installation): Promise<VueWrapper> {
+      useComfyUISettingsState.sections.value = [
+        {
+          tab: 'update',
+          fields: [
+            {
+              id: 'updateChannel',
+              label: 'Update Channel',
+              editType: 'channel-cards',
+              value: 'stable',
+              options: [{ value: 'stable', label: 'Stable', data: { lastCheckedAt: Date.now() } }]
+            }
+          ]
+        },
+        { tab: 'status', fields: [{ label: 'Install Method', value: 'Portable' }] }
+      ]
+      useComfyUISettingsState.sectionsFresh.value = true
+      return mountContent({ installation, initialTab: 'update' })
+    }
+
+    it('shows the cards for a Standalone build', async () => {
+      const wrapper = await mountWithChannelCards(SAMPLE_INSTALL)
+      expect(wrapper.find('[data-testid="build-overview"]').exists()).toBe(true)
+    })
+
+    it('keeps the Update sections for a Portable build', async () => {
+      const wrapper = await mountWithChannelCards({
+        ...SAMPLE_INSTALL,
+        sourceId: 'portable',
+        sourceLabel: 'Portable'
+      } as Installation)
+      expect(wrapper.find('[data-testid="build-overview"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="settings-section-list-stub"]').exists()).toBe(true)
+      expect(wrapper.findComponent({ name: 'StatusFactPanel' }).exists()).toBe(true)
+    })
+  })
+
   describe('install-switch transition cue', () => {
     it('remounts the inner tab pane when the installation changes (same tab)', async () => {
       const w = await mountContent({ initialTab: 'status' })
@@ -808,6 +924,93 @@ describe('ComfyUISettingsContent', () => {
       expect(w.emitted('op-cancel')).toHaveLength(1)
       expect(w.emitted('op-retry')).toHaveLength(1)
       expect(w.emitted('op-dismiss')).toHaveLength(1)
+    })
+  })
+
+  describe('rename from the page title', () => {
+    let titleTarget: HTMLElement | null = null
+
+    function mountTitleTarget(): HTMLElement {
+      titleTarget = document.createElement('div')
+      titleTarget.innerHTML = '<h1 id="page-title"></h1><div id="page-actions-slot"></div>'
+      document.body.append(titleTarget)
+      return titleTarget
+    }
+
+    afterEach(() => {
+      titleTarget?.remove()
+      titleTarget = null
+    })
+
+    function moreMenu(w: VueWrapper) {
+      return w
+        .findAllComponents({ name: 'MoreMenu' })
+        .find((m) => (m.props('actions') as { id: string }[]).some((a) => a.id === 'rename'))!
+    }
+
+    function mountOnPage() {
+      return mountContent({
+        pageActionsTarget: '#page-actions-slot',
+        pageTitleTarget: '#page-title',
+        initialTab: 'status'
+      })
+    }
+
+    it('edits the name in the page title and points the Rename item at it', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'rename', label: 'Rename' },
+        { id: 'untrack', label: 'Forget' }
+      ]
+      useComfyUISettingsState.runActionStub.mockClear()
+      const target = mountTitleTarget()
+      const w = await mountOnPage()
+      await flushPromises()
+
+      const name = target.querySelector<HTMLElement>('.build-details-title-name')!
+      expect(name.textContent).toBe('My Install')
+      expect(name.getAttribute('contenteditable')).toBe('plaintext-only')
+      expect(w.findComponent({ name: 'StatusFactPanel' }).props('hideHero')).toBe(true)
+
+      moreMenu(w).vm.$emit('pick', { id: 'rename', label: 'Rename' })
+      await flushPromises()
+      expect(document.activeElement).toBe(name)
+      expect(useComfyUISettingsState.runActionStub).not.toHaveBeenCalled()
+
+      moreMenu(w).vm.$emit('pick', { id: 'untrack', label: 'Forget' })
+      expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith({
+        id: 'untrack',
+        label: 'Forget'
+      })
+    })
+
+    it('shows a read-only title when the build offers no Rename action', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'untrack', label: 'Forget' }]
+      const target = mountTitleTarget()
+      const w = await mountOnPage()
+      await flushPromises()
+
+      const name = target.querySelector<HTMLElement>('.build-details-title-name')!
+      expect(name.textContent).toBe('My Install')
+      expect(name.getAttribute('contenteditable')).toBeNull()
+      expect(target.querySelector('.build-details-title-edit-btn')).toBeNull()
+      expect(w.findComponent({ name: 'StatusFactPanel' }).props('onRename')).toBeUndefined()
+    })
+
+    it('keeps the About name and the Rename prompt outside the page', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'rename', label: 'Rename' }]
+      useComfyUISettingsState.runActionStub.mockClear()
+      const w = await mountContent({ initialTab: 'status' })
+
+      const panel = w.findComponent({ name: 'StatusFactPanel' })
+      expect(panel.props('hideHero')).toBe(false)
+      expect(panel.props('onRename')).toBeTypeOf('function')
+      expect(document.querySelector('.build-details-title-name')).toBeNull()
+
+      moreMenu(w).vm.$emit('pick', { id: 'rename', label: 'Rename' })
+      expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith({
+        id: 'rename',
+        label: 'Rename'
+      })
     })
   })
 })

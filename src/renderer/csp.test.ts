@@ -43,8 +43,19 @@ describe('Content-Security-Policy: panel.html', () => {
     expect(csp['connect-src']).toContain('https://*.posthog.com')
   })
 
+  it('lets the 3D view decode the pictures packed inside a model', () => {
+    expect(csp['connect-src']).toContain('blob:')
+  })
+
   it('restricts script-src to self only', () => {
     expect(csp['script-src']).toBe("'self'")
+  })
+
+  it('shows output files from this computer only through the output-folder protocol', () => {
+    expect(csp['img-src']).toContain('comfy-output:')
+    expect(csp['media-src']).toContain('comfy-output:')
+    expect(csp['img-src']).not.toContain('127.0.0.1')
+    expect(csp['media-src']).not.toContain('127.0.0.1')
   })
 
   it('restricts default-src to self only', () => {
@@ -57,6 +68,11 @@ describe('Content-Security-Policy: panel.html', () => {
 
   it('allows GitHub-hosted starter-template thumbnails in img-src', () => {
     expect(csp['img-src']).toContain('https://raw.githubusercontent.com')
+  })
+
+  it('shows the outputs an app page sends, which the panel holds as blob URLs', () => {
+    expect(csp['img-src']).toContain('blob:')
+    expect(csp['media-src']).toContain('blob:')
   })
 })
 

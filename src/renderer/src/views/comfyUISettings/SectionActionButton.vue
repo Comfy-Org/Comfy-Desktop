@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
-import { Loader2 } from 'lucide-vue-next'
+import { Loader2 } from '@lucide/vue'
 import TooltipWrap from '../../components/ui/Tooltip.vue'
 import type { ActionDef } from '../../types/ipc'
 

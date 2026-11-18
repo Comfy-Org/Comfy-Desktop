@@ -1,9 +1,15 @@
-import { BrowserWindow, WebContentsView, ipcMain, shell } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
+import type { WebContentsView } from 'electron'
 import path from 'path'
+import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import type { DatadogForwardedError } from '../../types/ipc'
+import type { NewWindowDashboardPage } from '../../shared/dashboardPages'
 import type { InstallationRecord } from '../installations'
 import { getAppVersion } from '../lib/ipc'
+import { hasBuildsRunningForAppsOnly, stopEveryBuildRunningForAppsOnly } from '../apps/localComfy'
 import { attachContextMenu } from '../lib/contextMenu'
+import { tryOpenExternalUrl } from '../lib/openExternal'
+import { guardPermissionRequests } from '../lib/sessionPermissions'
 import {
   attachSessionDownloadHandler,
   detachWindowDownloads,
@@ -14,22 +20,20 @@ import {
   isFirebaseAuthHandlerUrl,
   type SignInFailureContext
 } from '../auth/firebaseBridge'
-import {
-  isCheckoutReturnUrl,
-  isCheckoutUrl,
-  isLikelyDownloadUrl,
-  shouldOpenInPopup
-} from '../lib/allowedPopups'
+import { isCheckoutUrl, isLikelyDownloadUrl, shouldOpenInPopup } from '../lib/allowedPopups'
 import { COMFY_BG, TITLEBAR_BG } from '../lib/theme'
-import { standaloneWindowStyles } from '../lib/standaloneStyles'
 import {
   TITLEBAR_HEIGHT,
   TRAFFIC_LIGHT_POSITION,
   titleBarOverlayForTheme
 } from '../lib/titleBarOverlay'
 import {
+  _hasActiveLocalLaunch,
   _registerExtraBroadcastTarget,
+  _runningSessions,
   _unregisterExtraBroadcastTarget,
+  hasRunningSessions,
+  keepsComfyRunningWhenWindowCloses,
   resolveTheme
 } from '../lib/ipc/shared'
 import * as mainTelemetry from '../lib/telemetry'
@@ -40,8 +44,14 @@ import { recordDashboardSurface, recordInstanceSurface } from '../lib/lastSessio
 import * as settings from '../settings'
 import * as updater from '../lib/updater'
 import { getSavedBounds, getWindowOptions, saveWindowBounds } from '../lib/windowState'
+import {
+  defaultWindowBoundsMatching,
+  defaultWindowBoundsUnderCursor,
+  fitWindowToDisplay,
+  fitWindowToWorkArea,
+  type FittedWindow
+} from '../lib/defaultWindowSize'
 import { ensureSystemModal } from '../popups/systemModal'
-import { hideCheckoutBackdrop, showCheckoutBackdrop } from '../popups/checkoutBackdrop'
 import { hideTitlePopupForParent, prewarmTitlePopup } from '../popups/titlePopup'
 import { destroyPanelView, ensurePanelView } from './panelView'
 import { expectedPartitionFor } from './partition'
@@ -60,9 +70,6 @@ import {
   unregisterHostEntry
 } from './registry'
 import type { ComfyWindowEntry, ComfyPanelKey } from './registry'
-
-const DEFAULT_HOST_WIDTH = 1280
-const DEFAULT_HOST_HEIGHT = 900
 
 export type CloseConsultResult = 'cleared' | 'aborted' | 'defer'
 
@@ -109,6 +116,34 @@ export function shouldShowInstallCloseConfirm(
   )
 }
 
+function localComfyRunningOrStarting(): boolean {
+  return [..._runningSessions.values()].some((session) => !session.url) || _hasActiveLocalLaunch()
+}
+
+export function desktopStaysWithoutWindows(): boolean {
+  return process.platform === 'darwin' && localComfyRunningOrStarting()
+}
+
+export function closeQuitsDesktop(isLastWindow: boolean): boolean {
+  if (!keepsComfyRunningWhenWindowCloses()) return isLastWindow
+  return isLastWindow && !desktopStaysWithoutWindows()
+}
+
+export function quitsOnceEveryWindowClosed(): boolean {
+  if (!keepsComfyRunningWhenWindowCloses()) return !hasRunningSessions()
+  return !desktopStaysWithoutWindows()
+}
+
+export function closeStopsLocalComfy(
+  entry: ComfyWindowEntry | null | undefined,
+  isLastWindow: boolean
+): boolean {
+  if (keepsComfyRunningWhenWindowCloses()) {
+    return closeQuitsDesktop(isLastWindow) && localComfyRunningOrStarting()
+  }
+  return shouldConfirmKillForEntry(entry) || (isLastWindow && hasBuildsRunningForAppsOnly())
+}
+
 export function shouldBailAfterCloseChoice(
   choice: CloseWindowChoice,
   forceClose: boolean
@@ -130,7 +165,7 @@ export interface HostWindowFactories {
   ) => Promise<'cleared' | 'aborted' | 'defer'>
   confirmCloseInstanceWindow: (
     window: BrowserWindow,
-    isLastWindow: boolean,
+    quitsDesktop: boolean,
     stopsLocalComfy: boolean,
     theme: { bg: string; text: string }
   ) => Promise<CloseWindowChoice>
@@ -191,98 +226,6 @@ function injectMacPasskeyWarning(childWindow: BrowserWindow): void {
   childWindow.webContents.on('did-navigate-in-page', inject)
 }
 
-const CHECKOUT_RELOAD_TIMEOUT_MS = 4000
-
-function wireCheckoutPopup(
-  childWindow: BrowserWindow,
-  parent: BrowserWindow,
-  hostContents: Electron.WebContents,
-  openedAt: number
-): void {
-  const close = (): void => {
-    if (!childWindow.isDestroyed()) childWindow.close()
-  }
-  let returning = false
-
-  childWindow.once('ready-to-show', () => {
-    childWindow.show()
-    showCheckoutBackdrop(parent, close)
-    attachCheckoutCloseButton(childWindow, close)
-  })
-  childWindow.once('closed', () => hideCheckoutBackdrop(parent))
-
-  childWindow.webContents.on('before-input-event', (_e, input) => {
-    if (input.type === 'keyDown' && input.key === 'Escape') close()
-  })
-
-  const closeOnReturn = (_e: Electron.Event, targetUrl: string): void => {
-    if (returning || childWindow.isDestroyed() || !isCheckoutReturnUrl(targetUrl)) return
-    returning = true
-    mainTelemetry.capture('comfy.desktop.billing.checkout_returned', {
-      duration_ms: Date.now() - openedAt,
-      user_tier: getUserTier()
-    })
-    if (hostContents.isDestroyed()) {
-      close()
-      return
-    }
-    let done = false
-    const finish = (): void => {
-      if (done) return
-      done = true
-      close()
-    }
-    hostContents.once('did-stop-loading', finish)
-    setTimeout(finish, CHECKOUT_RELOAD_TIMEOUT_MS)
-    hostContents.reload()
-  }
-
-  childWindow.webContents.on('will-redirect', closeOnReturn)
-  childWindow.webContents.on('did-navigate', closeOnReturn)
-}
-
-const CHECKOUT_CLOSE_BUTTON_HTML = `<!doctype html>
-<html class="pointer-events-none m-0 h-full w-full overflow-hidden bg-transparent"><head><meta charset="utf-8"><style>${standaloneWindowStyles}</style></head>
-<body class="pointer-events-none m-0 h-full w-full overflow-hidden bg-transparent">
-<button id="x" class="pointer-events-auto fixed top-2.5 right-2.5 grid size-7 cursor-pointer place-items-center rounded-lg border-0 border-none border-current bg-[rgba(0,0,0,0.06)] text-[rgba(0,0,0,0.55)] [font:16px/1_system-ui] hover:bg-[rgba(0,0,0,0.12)] hover:text-[rgba(0,0,0,0.85)]" aria-label="Close">✕</button>
-<script>
-  const { ipcRenderer } = require('electron');
-  document.getElementById('x').addEventListener('click', () => ipcRenderer.send('comfy-checkout:close'));
-</script>
-</body></html>`
-
-const CHECKOUT_CLOSE_BUTTON_SIZE = 48
-
-function attachCheckoutCloseButton(childWindow: BrowserWindow, onClose: () => void): void {
-  const overlay = new WebContentsView({
-    webPreferences: { contextIsolation: false, nodeIntegration: true, sandbox: false }
-  })
-  overlay.setBackgroundColor('#00000000')
-  childWindow.contentView.addChildView(overlay)
-  const place = (): void => {
-    if (childWindow.isDestroyed()) return
-    const { width } = childWindow.getContentBounds()
-    overlay.setBounds({
-      x: Math.max(0, width - CHECKOUT_CLOSE_BUTTON_SIZE),
-      y: 0,
-      width: CHECKOUT_CLOSE_BUTTON_SIZE,
-      height: CHECKOUT_CLOSE_BUTTON_SIZE
-    })
-  }
-  place()
-  childWindow.on('resize', place)
-  void overlay.webContents
-    .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(CHECKOUT_CLOSE_BUTTON_HTML)}`)
-    .catch(() => {})
-
-  const closeId = overlay.webContents.id
-  const handler = (event: Electron.IpcMainEvent): void => {
-    if (event.sender.id === closeId) onClose()
-  }
-  ipcMain.on('comfy-checkout:close', handler)
-  childWindow.once('closed', () => ipcMain.removeListener('comfy-checkout:close', handler))
-}
-
 export interface CreateHostWindowOpts {
   windowTitle: string
   boundsKey: string
@@ -294,6 +237,7 @@ export interface CreateHostWindowOpts {
   initialTitleBarText: string
   initialSourceCategory: string | null
   initiallyHidden?: boolean
+  nearWindow?: BrowserWindow
 }
 
 export interface CreateHostWindowResult {
@@ -307,10 +251,9 @@ export interface CreateHostWindowResult {
 
 const CASCADE_STEP_PX = 30
 
-export function cascadeOffsetForCollisions(
-  windowOptions: Partial<Electron.BrowserWindowConstructorOptions>,
-  existingOrigins: ReadonlyArray<{ x: number; y: number }>
-): Partial<Electron.BrowserWindowConstructorOptions> {
+export function cascadeOffsetForCollisions<
+  T extends Partial<Electron.BrowserWindowConstructorOptions>
+>(windowOptions: T, existingOrigins: ReadonlyArray<{ x: number; y: number }>): T {
   if (typeof windowOptions.x !== 'number' || typeof windowOptions.y !== 'number') {
     return windowOptions
   }
@@ -344,14 +287,55 @@ function liveBoundsKeyFor(entry: ComfyWindowEntry): string {
   return entry.installationId ?? CHOOSER_HOST_BOUNDS_KEY
 }
 
-function findLiveSiblingOrigin(boundsKey: string): { x: number; y: number } | null {
+function liveBoundsOf(win: BrowserWindow | undefined): Electron.Rectangle | null {
+  if (!win || win.isDestroyed()) return null
+  return win.getBounds()
+}
+
+function findLiveSiblingBounds(boundsKey: string): Electron.Rectangle | null {
   for (const [, entry] of comfyWindows) {
     if (entry.window.isDestroyed()) continue
     if (liveBoundsKeyFor(entry) !== boundsKey) continue
-    const { x, y } = entry.window.getBounds()
-    return { x, y }
+    return entry.window.getBounds()
   }
   return null
+}
+
+export interface HostWindowPlacement {
+  bounds: FittedWindow
+  maximizeNow: boolean
+  maximizeOnReveal: boolean
+}
+
+export function placeHostWindow(
+  boundsKey: string,
+  initiallyHidden: boolean,
+  sibling: Electron.Rectangle | null,
+  existingOrigins: ReadonlyArray<{ x: number; y: number }>,
+  requester: Electron.Rectangle | null = null
+): HostWindowPlacement {
+  const saved = boundsKey === CHOOSER_HOST_BOUNDS_KEY ? undefined : getSavedBounds(boundsKey)
+  const anchor = requester ?? sibling
+  const fresh = anchor
+    ? defaultWindowBoundsMatching(anchor)
+    : saved
+      ? null
+      : defaultWindowBoundsUnderCursor()
+  const initialOptions = fresh
+    ? {
+        x: anchor?.x ?? fresh.x,
+        y: anchor?.y ?? fresh.y,
+        width: fresh.width,
+        height: fresh.height
+      }
+    : getWindowOptions(boundsKey)
+  const cascaded = cascadeOffsetForCollisions(initialOptions, existingOrigins)
+  const maximize = saved ? saved.maximized : fresh?.maximize === true
+  return {
+    bounds: fresh ? fitWindowToWorkArea(cascaded, fresh.workArea) : fitWindowToDisplay(cascaded),
+    maximizeNow: maximize && !initiallyHidden,
+    maximizeOnReveal: maximize && initiallyHidden
+  }
 }
 
 export function isWindowLayoutable(
@@ -360,23 +344,70 @@ export function isWindowLayoutable(
   return !win.isDestroyed() && !win.isMinimized()
 }
 
+export async function confirmHostWindowClose(
+  comfyWindow: BrowserWindow,
+  windowKey: number,
+  fx: Pick<
+    HostWindowFactories,
+    'consultPanelRendererClose' | 'confirmCloseInstanceWindow' | 'preClearedClose'
+  >
+): Promise<boolean> {
+  const entry = comfyWindows.get(windowKey)
+  const skipConsult = fx.preClearedClose.has(comfyWindow)
+  if (!skipConsult) hideTitlePopupForParent(comfyWindow)
+  const consult: CloseConsultResult = skipConsult
+    ? 'cleared'
+    : await fx.consultPanelRendererClose(entry?.panelView)
+  if (shouldBailAfterConsult(consult, fx.preClearedClose.has(comfyWindow))) return false
+  const entryForClose = comfyWindows.get(windowKey)
+  const isLastWindow =
+    Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed()).length <= 1
+  const quitsDesktop = closeQuitsDesktop(isLastWindow)
+  const isInstallHostWindow = !!entryForClose && isInstallHost(entryForClose)
+  const isLastInstallWindow = quitsDesktop && isInstallHostWindow
+  const stopsLocalComfy = closeStopsLocalComfy(entryForClose, isLastWindow)
+  let agreedToStopAppsBuilds = false
+  if (
+    shouldShowInstallCloseConfirm(
+      settings.get('confirmBeforeClosingWindow') === true,
+      consult,
+      stopsLocalComfy,
+      fx.preClearedClose.has(comfyWindow),
+      isLastInstallWindow
+    ) &&
+    entryForClose
+  ) {
+    const closeChoice = await fx.confirmCloseInstanceWindow(
+      comfyWindow,
+      quitsDesktop,
+      stopsLocalComfy,
+      entryForClose.lastTheme
+    )
+    if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) {
+      return false
+    }
+    agreedToStopAppsBuilds =
+      isLastWindow && closeChoice === 'close' && !keepsComfyRunningWhenWindowCloses()
+  }
+  fx.preClearedClose.delete(comfyWindow)
+  if (comfyWindow.isDestroyed()) return false
+  if (agreedToStopAppsBuilds) void stopEveryBuildRunningForAppsOnly()
+  return true
+}
+
 export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowResult {
   const fx = getFactories()
   const windowKey = nextWindowKey()
-  const isChooserKey = opts.boundsKey === CHOOSER_HOST_BOUNDS_KEY
-  const saved = isChooserKey ? undefined : getSavedBounds(opts.boundsKey)
-  const sibling = findLiveSiblingOrigin(opts.boundsKey)
-  const initialOptions = sibling
-    ? { x: sibling.x, y: sibling.y, width: DEFAULT_HOST_WIDTH, height: DEFAULT_HOST_HEIGHT }
-    : isChooserKey
-      ? { width: DEFAULT_HOST_WIDTH, height: DEFAULT_HOST_HEIGHT }
-      : getWindowOptions(opts.boundsKey)
-  const windowOptions = cascadeOffsetForCollisions(initialOptions, liveHostOrigins())
+  const placement = placeHostWindow(
+    opts.boundsKey,
+    opts.initiallyHidden === true,
+    findLiveSiblingBounds(opts.boundsKey),
+    liveHostOrigins(),
+    liveBoundsOf(opts.nearWindow)
+  )
   const comfyWindow = new BrowserWindow({
-    ...windowOptions,
+    ...placement.bounds,
     show: !opts.initiallyHidden,
-    minWidth: 800,
-    minHeight: 600,
     icon: APP_ICON,
     title: opts.windowTitle,
     backgroundColor: COMFY_BG,
@@ -393,7 +424,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
 
   prewarmTitlePopup(comfyWindow)
 
-  const titleBarView = new WebContentsView({
+  const titleBarView = createWebContentsView({
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -465,7 +496,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     if (delayedRelayoutTimer) clearTimeout(delayedRelayoutTimer)
   })
 
-  if (saved?.maximized) comfyWindow.maximize()
+  if (placement.maximizeNow) comfyWindow.maximize()
 
   if (process.platform === 'darwin') {
     const sendFullscreen = (fullscreen: boolean): void => {
@@ -541,37 +572,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     void (async () => {
       try {
         const entry = comfyWindows.get(windowKey)
-        const skipConsult = fx.preClearedClose.has(comfyWindow)
-        const isLastWindow =
-          Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed()).length <= 1
-        if (!skipConsult) hideTitlePopupForParent(comfyWindow)
-        const consult: CloseConsultResult = skipConsult
-          ? 'cleared'
-          : await fx.consultPanelRendererClose(entry?.panelView)
-        if (shouldBailAfterConsult(consult, fx.preClearedClose.has(comfyWindow))) return
-        const entryForClose = comfyWindows.get(windowKey)
-        const isInstallHostWindow = !!entryForClose && isInstallHost(entryForClose)
-        const isLastInstallWindow = isLastWindow && isInstallHostWindow
-        if (
-          shouldShowInstallCloseConfirm(
-            settings.get('confirmBeforeClosingWindow') === true,
-            consult,
-            shouldConfirmKillForEntry(entryForClose),
-            fx.preClearedClose.has(comfyWindow),
-            isLastInstallWindow
-          ) &&
-          entryForClose
-        ) {
-          const closeChoice = await fx.confirmCloseInstanceWindow(
-            comfyWindow,
-            isLastWindow,
-            shouldConfirmKillForEntry(entryForClose),
-            entryForClose.lastTheme
-          )
-          if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) return
-        }
-        fx.preClearedClose.delete(comfyWindow)
-        if (comfyWindow.isDestroyed()) return
+        if (!(await confirmHostWindowClose(comfyWindow, windowKey, fx))) return
         const safeTeardown = (source: string, fn: () => void): void => {
           try {
             fn()
@@ -644,6 +645,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     sourceCategory: opts.initialSourceCategory,
     previewInstallationId: null,
     coldStartPendingReveal: false,
+    maximizeOnReveal: placement.maximizeOnReveal,
     _installCleanup: null,
     detachInstall: () => {}
   }
@@ -681,7 +683,7 @@ export function buildComfyView(
           ? 'Consolas'
           : 'monospace'
   }
-  const comfyView = new WebContentsView({
+  const comfyView = createWebContentsView({
     webPreferences: { ...webPreferences, defaultFontFamily }
   })
   comfyView.setBackgroundColor(COMFY_BG)
@@ -689,19 +691,12 @@ export function buildComfyView(
   const comfyContents = comfyView.webContents
   trackFirebaseAuthReporter(comfyContents)
   attachSessionDownloadHandler(comfyContents.session)
-
-  let nextPopupIsCheckout = false
-  let nextCheckoutOpenedAt = 0
+  guardPermissionRequests(comfyContents.session)
 
   comfyContents.on('did-create-window', (childWindow) => {
-    const isCheckout = nextPopupIsCheckout
-    const openedAt = nextCheckoutOpenedAt
-    nextPopupIsCheckout = false
-    nextCheckoutOpenedAt = 0
     childWindow.setIcon(APP_ICON)
     if (process.platform !== 'darwin') childWindow.removeMenu()
     injectMacPasskeyWarning(childWindow)
-    if (isCheckout) wireCheckoutPopup(childWindow, comfyWindow, comfyContents, openedAt)
   })
   comfyContents.setWindowOpenHandler(({ url: childUrl }) => {
     if (isFirebaseAuthHandlerUrl(childUrl)) {
@@ -718,7 +713,7 @@ export function buildComfyView(
         source: 'system_browser',
         user_tier: getUserTier()
       })
-      void shell.openExternal(childUrl)
+      void tryOpenExternalUrl(childUrl)
       return { action: 'deny' }
     }
 
@@ -732,7 +727,7 @@ export function buildComfyView(
       comfyContents.session.downloadURL(childUrl)
       return { action: 'deny' }
     }
-    shell.openExternal(childUrl)
+    void tryOpenExternalUrl(childUrl)
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {
@@ -800,6 +795,8 @@ export function applyChooserHostThemeToAll(): void {
 
 export interface OpenChooserHostWindowOptions {
   deferColdStartReveal?: boolean
+  dashboardPage?: NewWindowDashboardPage
+  nearWindow?: BrowserWindow
 }
 
 export function openChooserHostWindow(
@@ -826,13 +823,14 @@ export function openChooserHostWindow(
     titleBarInstallationIdParam: '',
     initialTitleBarText: CHOOSER_HOST_TITLE_TEXT,
     initialSourceCategory: null,
-    initiallyHidden: true
+    initiallyHidden: true,
+    nearWindow: opts.nearWindow
   })
 
   entry.coldStartPendingReveal = !opts.deferColdStartReveal
 
   entry.activePanel = initialPanel
-  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry))
+  ensurePanelView(entry.windowKey, entry, computeBodyMode(entry), opts.dashboardPage)
 
   entry.layoutViews()
 

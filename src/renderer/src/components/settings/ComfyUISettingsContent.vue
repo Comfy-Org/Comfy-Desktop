@@ -13,7 +13,6 @@ import {
   ChevronUp,
   HardDrive,
   SlidersHorizontal,
-  Info,
   RefreshCw,
   History,
   SquareTerminal,
@@ -21,7 +20,6 @@ import {
   Play,
   RotateCcw,
   LayoutDashboard,
-  SquareArrowOutUpRight,
   Copy,
   CopyPlus,
   FolderOpen,
@@ -33,8 +31,9 @@ import {
   EyeOff,
   Settings2,
   Repeat2,
-  Server
-} from 'lucide-vue-next'
+  Server,
+  Ellipsis
+} from '@lucide/vue'
 import type { Component } from 'vue'
 import { useComfyUISettings } from '../../composables/useComfyUISettings'
 import { useInstanceNavState } from '../../composables/useInstanceNavState'
@@ -45,6 +44,10 @@ import MoreMenu, { type MenuAction } from '../../views/comfyUISettings/MoreMenu.
 import ArgsBuilderPage from '../../views/comfyUISettings/ArgsBuilderPage.vue'
 import SnapshotsView from '../../views/comfyUISettings/SnapshotsView.vue'
 import StatusFactPanel from '../../views/comfyUISettings/StatusFactPanel.vue'
+import BuildOverview from '../../views/comfyUISettings/BuildOverview.vue'
+import { buildOverviewModel } from '../../views/comfyUISettings/overviewModel'
+import { formatBytes } from '../../lib/downloadFormatters'
+import InlineNameEdit from '../InlineNameEdit.vue'
 import SettingsSectionList from '../../views/comfyUISettings/SettingsSectionList.vue'
 import StoragePane, { type StorageSnapshot } from '../../views/comfyUISettings/StoragePane.vue'
 import ConsoleTerminalPane from '../../views/comfyUISettings/ConsoleTerminalPane.vue'
@@ -85,7 +88,9 @@ interface Props {
   activeInstallationId?: string | null
   currentView?: ViewKind
   currentCategory?: Category | null
+  startingWithoutWindow?: boolean
   pageActionsTarget?: string
+  pageTitleTarget?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -97,7 +102,9 @@ const props = withDefaults(defineProps<Props>(), {
   activeInstallationId: null,
   currentView: 'dashboard',
   currentCategory: null,
+  startingWithoutWindow: false,
   pageActionsTarget: undefined,
+  pageTitleTarget: undefined,
   globalSettingsSnapshot: () => ({
     sharedDirectoriesFields: [],
     modelsDirs: [],
@@ -111,7 +118,6 @@ const emit = defineEmits<{
   'request-close': []
   'request-dismiss': []
   'primary-action': [decision: NavDecision]
-  'open-new-window': [decision: NavDecision]
   'op-cancel': []
   'op-retry': []
   'op-dismiss': []
@@ -122,19 +128,23 @@ const { t } = useI18n()
 const isPage = computed(() => props.pageActionsTarget !== undefined)
 const menuChevron = computed(() => (isPage.value ? ChevronDown : ChevronUp))
 
-const activeTab = ref<ComfyUISettingsTab>(props.initialTab)
+function overviewTab(tab: ComfyUISettingsTab): ComfyUISettingsTab {
+  return tab === 'status' ? 'update' : tab
+}
+
+const activeTab = ref<ComfyUISettingsTab>(overviewTab(props.initialTab))
 
 watch(
   () => props.initialTab,
   (next) => {
-    activeTab.value = next
+    activeTab.value = overviewTab(next)
   }
 )
 
 watch(
   () => props.installation?.id ?? null,
   (next, prev) => {
-    if (next !== prev) activeTab.value = props.initialTab
+    if (next !== prev) activeTab.value = overviewTab(props.initialTab)
   }
 )
 
@@ -142,7 +152,8 @@ const installation = toRef(props, 'installation')
 const navState = useInstanceNavState(installation, {
   currentView: () => props.currentView,
   currentCategory: () => props.currentCategory,
-  activeInstallationId: () => props.activeInstallationId
+  activeInstallationId: () => props.activeInstallationId,
+  startingWithoutWindow: () => props.startingWithoutWindow
 })
 const installCta = navState.cta
 const {
@@ -160,6 +171,7 @@ const {
   runningActionIds,
   sectionsForTab,
   diskUsageItem,
+  diskSpace,
   pinBottomActions,
   reload
 } = useComfyUISettings({
@@ -244,9 +256,16 @@ const ALL_TABS: TabDef[] = [
   {
     key: 'update',
     sectionTab: 'update',
-    label: t('comfyUISettings.tabUpdate'),
-    icon: RefreshCw,
-    tooltip: t('tooltips.tabUpdate')
+    label: t('comfyUISettings.tabOverview'),
+    icon: LayoutDashboard,
+    tooltip: t('tooltips.tabOverview')
+  },
+  {
+    key: 'storage',
+    sectionTab: 'storage',
+    label: t('comfyUISettings.tabStorage'),
+    icon: HardDrive,
+    tooltip: t('tooltips.tabStorage')
   },
   {
     key: 'config',
@@ -263,25 +282,11 @@ const ALL_TABS: TabDef[] = [
     tooltip: t('tooltips.snapshots')
   },
   {
-    key: 'storage',
-    sectionTab: 'storage',
-    label: t('comfyUISettings.tabStorage'),
-    icon: HardDrive,
-    tooltip: t('tooltips.tabStorage')
-  },
-  {
     key: 'console',
     sectionTab: 'console',
     label: t('comfyUISettings.tabTerminal'),
     icon: SquareTerminal,
     tooltip: t('tooltips.console')
-  },
-  {
-    key: 'status',
-    sectionTab: 'status',
-    label: t('comfyUISettings.tabStatus'),
-    icon: Info,
-    tooltip: t('tooltips.tabStatus')
   }
 ]
 
@@ -291,16 +296,39 @@ const showConsoleTab = computed(
     isTabAllowedForCategory('console', installation.value.sourceCategory)
 )
 
-const tabs = computed<TabDef[]>(() => {
-  const isCloud = installation.value?.sourceCategory === 'cloud'
-  return ALL_TABS.filter((tab) =>
-    tab.key === 'console' ? showConsoleTab.value : sectionsForTab(tab.sectionTab).value.length > 0
-  ).map((tab) =>
-    isCloud && tab.key === 'config'
+const isCloud = computed(() => installation.value?.sourceCategory === 'cloud')
+
+function tabHasContent(tab: TabDef): boolean {
+  if (tab.key === 'console') return showConsoleTab.value
+  if (tab.key === 'update' && statusSections.value.length > 0) return true
+  return sectionsForTab(tab.sectionTab).value.length > 0
+}
+
+const tabs = computed<TabDef[]>(() =>
+  ALL_TABS.filter(tabHasContent).map((tab) =>
+    isCloud.value && tab.key === 'config'
       ? { ...tab, label: t('comfyUISettings.tabStorage'), icon: HardDrive }
       : tab
   )
-})
+)
+
+const statusSections = computed(() => sectionsForTab('status').value)
+
+const overviewModel = computed(() =>
+  activeTab.value === 'update' && props.installation?.sourceId === 'standalone'
+    ? buildOverviewModel(visibleSections.value, statusSections.value)
+    : null
+)
+
+const diskFree = computed(() =>
+  diskSpace.value && Number.isFinite(diskSpace.value.free)
+    ? formatBytes(diskSpace.value.free)
+    : null
+)
+
+const isStartupArgsPage = computed(
+  () => isPage.value && activeTab.value === 'config' && !isCloud.value
+)
 
 const showUpdateBadge = computed(() => {
   const inst = installation.value
@@ -319,8 +347,6 @@ const visibleSections = computed(() => {
   const tab = tabs.value.find((tt) => tt.key === activeTab.value)?.sectionTab ?? 'settings'
   return sectionsForTab(tab).value
 })
-
-const statusSections = computed(() => sectionsForTab('status').value)
 
 const storageSections = computed(() => sectionsForTab('storage').value)
 
@@ -363,6 +389,19 @@ function toggleMoreMenu(): void {
 }
 function closeMoreMenu(): void {
   moreMenuOpen.value = false
+}
+
+const canRename = computed(() =>
+  pinBottomActions.value.some((action) => action.id === 'rename' && action.enabled !== false)
+)
+const renameHandler = computed(() => (canRename.value ? renameInstallation : undefined))
+const titleEdit = useTemplateRef<InstanceType<typeof InlineNameEdit>>('titleEdit')
+function handleMorePick(action: ActionDef): void {
+  if (action.id === 'rename' && titleEdit.value) {
+    titleEdit.value.focus()
+    return
+  }
+  void runAction(action)
 }
 
 type SubPage = 'args' | null
@@ -453,11 +492,15 @@ function handleSnapshotsRefresh(): void {
 
 const isRunningInThisWindow = installCta.runningInThisWindow
 
-const hasPendingRestart = computed(
-  () => isRunningInThisWindow.value && pendingRestartFieldIds.value.size > 0
+const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput()))
+
+const primaryRestartsTarget = computed(
+  () => isRunningInThisWindow.value || primaryDecision.value.verb === 'restart'
 )
 
-const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput('primary')))
+const hasPendingRestart = computed(
+  () => primaryRestartsTarget.value && pendingRestartFieldIds.value.size > 0
+)
 
 function resolveNavLabel(key: string): string {
   if (key === 'instancePicker.openCloud' && installation.value?.sourceCategory === 'remote') {
@@ -484,8 +527,6 @@ function navIcon(labelKey: string): Component {
       return RotateCcw
     case 'instancePicker.switch':
       return Repeat2
-    case 'instancePicker.openInNewWindow':
-      return SquareArrowOutUpRight
     case 'instancePicker.open':
       return Play
     default:
@@ -507,20 +548,10 @@ const primaryActionIcon = computed<Component>(() =>
 const stopAction = computed<ActionDef | undefined>(() =>
   pinBottomActions.value.find((a) => a.id === 'stop')
 )
-const NAV_ITEM_PREFIX = 'nav:'
 const caretActions = computed<MenuAction[]>(() => {
-  if (primaryDecision.value.verb === 'focus') {
-    return stopAction.value ? [{ ...stopAction.value, icon: actionIcon('stop') }] : []
-  }
-  const navItems: MenuAction[] = primaryDecision.value.secondary.map((alt, i) => ({
-    id: `${NAV_ITEM_PREFIX}${i}`,
-    label: resolveNavLabel(alt.primaryLabel),
-    icon: navIconFor(alt.primaryLabel)
-  }))
-  if (primaryDecision.value.verb === 'restart' && stopAction.value) {
-    navItems.push({ ...stopAction.value, icon: actionIcon('stop') })
-  }
-  return navItems
+  const verb = primaryDecision.value.verb
+  if (!stopAction.value || (verb !== 'focus' && verb !== 'restart')) return []
+  return [{ ...stopAction.value, icon: actionIcon('stop') }]
 })
 
 function actionIcon(id: string): Component {
@@ -557,9 +588,15 @@ function actionIcon(id: string): Component {
   }
 }
 
-const pinBottomMenuActions = computed<MenuAction[]>(() =>
-  pinBottomActions.value.map((action) => ({ ...action, icon: actionIcon(action.id) }))
-)
+const pinBottomMenuActions = computed<MenuAction[]>(() => {
+  const firstDanger = pinBottomActions.value.findIndex((action) => action.style === 'danger')
+  return pinBottomActions.value.map((action, index) => ({
+    ...action,
+    icon: actionIcon(action.id),
+    style: action.id === 'untrack' || action.id === 'remove' ? undefined : action.style,
+    separator: index === firstDanger
+  }))
+})
 
 function handlePrimaryAction(): void {
   const selectedInstall = installation.value
@@ -579,12 +616,6 @@ function closeCaretMenu(): void {
 }
 function handleCaretPick(action: ActionDef): void {
   if (!installation.value) return
-  if (action.id.startsWith(NAV_ITEM_PREFIX)) {
-    const index = Number(action.id.slice(NAV_ITEM_PREFIX.length))
-    const picked = primaryDecision.value.secondary[index]
-    if (picked) emit('open-new-window', picked)
-    return
-  }
   void runAction(action)
 }
 
@@ -771,7 +802,10 @@ defineExpose({
               :data-testid="TID.settingsTab(tab.key)"
               @click="selectTab(tab.key)"
             >
-              <span class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center">
+              <span
+                v-if="!isPage || (tab.key === 'update' && showUpdateBadge)"
+                class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center"
+              >
                 <component
                   :is="tab.icon"
                   v-if="!isPage"
@@ -870,20 +904,6 @@ defineExpose({
                     @op-cancel="emit('op-cancel')"
                     @op-retry="emit('op-retry')"
                     @op-dismiss="emit('op-dismiss')"
-                  />
-                </div>
-                <div
-                  v-else-if="activeTab === 'status' && installation"
-                  :key="`tab-status-${paneInstallKey}`"
-                  class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
-                >
-                  <StatusFactPanel
-                    :installation="installation"
-                    :sections="statusSections"
-                    :disk-usage="diskUsageItem"
-                    :on-rename="renameInstallation"
-                    :on-update-url="handleUrlUpdate"
-                    :url-restart-pending="pendingRestartFieldIds.has('remoteUrl')"
                   />
                 </div>
                 <div
@@ -1073,17 +1093,39 @@ defineExpose({
                       key="sections"
                       class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
                     >
-                      <SettingsSectionList
-                        :sections="visibleSections"
-                        :installation-id="installation?.id"
+                      <BuildOverview
+                        v-if="overviewModel && installation"
+                        :installation="installation"
+                        :model="overviewModel"
+                        :disk-usage="diskUsageItem?.value ?? null"
+                        :disk-free="diskFree"
                         :running-action-ids="runningActionIds"
-                        :pending-restart-field-ids="pendingRestartFieldIds"
-                        :field-error-messages="fieldErrorMessages"
-                        @update-field="updateField"
-                        @run-action="runAction"
-                        @open-args-page="openArgsPage"
-                        @open-path="handleOpenPath"
+                        @action="runAction"
                       />
+                      <template v-else>
+                        <SettingsSectionList
+                          :sections="visibleSections"
+                          :columns="isStartupArgsPage"
+                          :installation-id="installation?.id"
+                          :running-action-ids="runningActionIds"
+                          :pending-restart-field-ids="pendingRestartFieldIds"
+                          :field-error-messages="fieldErrorMessages"
+                          @update-field="updateField"
+                          @run-action="runAction"
+                          @open-args-page="openArgsPage"
+                          @open-path="handleOpenPath"
+                        />
+                        <StatusFactPanel
+                          v-if="activeTab === 'update' && installation && statusSections.length > 0"
+                          :installation="installation"
+                          :sections="statusSections"
+                          :disk-usage="diskUsageItem"
+                          :on-rename="renameHandler"
+                          :on-update-url="handleUrlUpdate"
+                          :url-restart-pending="pendingRestartFieldIds.has('remoteUrl')"
+                          :hide-hero="!!pageTitleTarget"
+                        />
+                      </template>
                     </div>
                   </Transition>
                 </div>
@@ -1176,7 +1218,7 @@ defineExpose({
           <div class="settings-v2-more-wrap relative inline-flex">
             <Button
               variant="secondary"
-              size="md"
+              :size="isPage ? 'icon' : 'md'"
               type="button"
               class="settings-v2-more"
               data-more-trigger
@@ -1190,18 +1232,33 @@ defineExpose({
               :data-testid="TID.pickerMoreTrigger"
               @click="toggleMoreMenu"
             >
-              {{ t('comfyUISettings.more') }}
-              <component :is="menuChevron" :size="14" />
+              <Ellipsis v-if="isPage" :size="16" aria-hidden="true" />
+              <template v-else>
+                {{ t('comfyUISettings.more') }}
+                <component :is="menuChevron" :size="14" />
+              </template>
             </Button>
             <MoreMenu
               :open="moreMenuOpen"
               :anchor="footerRef?.querySelector<HTMLElement>('.settings-v2-more')"
               :actions="pinBottomMenuActions"
               @close="closeMoreMenu"
-              @pick="runAction"
+              @pick="handleMorePick"
             />
           </div>
         </footer>
+      </Teleport>
+
+      <Teleport v-if="pageTitleTarget && installation" defer :to="pageTitleTarget">
+        <InlineNameEdit
+          ref="titleEdit"
+          prefix="build-details-title"
+          :name="installation.name"
+          :on-rename="renameHandler"
+          text-class=""
+          :icon-size="18"
+          pencil-width="24px"
+        />
       </Teleport>
     </div>
   </Tabs>

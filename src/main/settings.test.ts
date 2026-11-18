@@ -157,6 +157,19 @@ describe('settings unset/default semantics', () => {
     expect(persisted['maxCachedDownloads']).toBe(1)
   })
 
+  it('discards the retired skipTemplatePickerStep key from the starter workflow step', () => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({ skipTemplatePickerStep: true, theme: 'dark' }, null, 2),
+      'utf-8'
+    )
+
+    expect(settings.get('skipTemplatePickerStep')).toBeUndefined()
+    expect(settings.get('theme')).toBe('dark')
+    expect(readPersistedSettings()).not.toHaveProperty('skipTemplatePickerStep')
+  })
+
   it('preserves a manual maxCachedDownloads edit', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify({ maxCachedDownloads: 9 }, null, 2), 'utf-8')
@@ -612,10 +625,12 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
     settings.set('firstUseCompleted', true)
     settings.set('telemetryEnabled', true)
     settings.set('chineseMirrorsPrompted', true)
+    settings.set('keepComfyRunningWhenWindowCloses', false)
     const props = settings.getTrackedSettingsTelemetryProperties()
     expect(props).not.toHaveProperty('setting_first_use_completed')
     expect(props).not.toHaveProperty('setting_telemetry_enabled')
     expect(props).not.toHaveProperty('setting_chinese_mirrors_prompted')
+    expect(props).not.toHaveProperty('setting_keep_comfy_running_when_window_closes')
   })
 
   it('full snapshot includes both #1220 exact names and never emits arrays/objects', () => {

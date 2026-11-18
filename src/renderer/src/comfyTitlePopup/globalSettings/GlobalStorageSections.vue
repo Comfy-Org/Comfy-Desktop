@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useModal } from '../../composables/useModal'
 import GlobalSettingsMicroSection from './GlobalSettingsMicroSection.vue'
-import ModelsDirList from './ModelsDirList.vue'
+import SharedFoldersList, { type SharedFolderRow } from './SharedFoldersList.vue'
 import StorageDirRow from '../../views/comfyUISettings/StorageDirRow.vue'
 import { samePath } from '../../lib/pathCompare'
 import type { DetailField } from '../../types/ipc'
@@ -14,6 +14,7 @@ interface ModelsDir {
 }
 
 export interface GlobalStorageSnapshot {
+  installLocationFields: Record<string, unknown>[]
   sharedDirectoriesFields: Record<string, unknown>[]
   modelsDirs: ModelsDir[]
   modelsSystemDefault: string
@@ -55,9 +56,31 @@ const sharedDirFields = computed<Record<string, DetailField>>(() => {
 const sharedInputField = computed(() => sharedDirFields.value.inputDir)
 const sharedOutputField = computed(() => sharedDirFields.value.outputDir)
 
-const sharedModelDirs = computed(() =>
-  props.snapshot.modelsDirs.map((d) => ({ ...d, shared: true }))
-)
+const installDirField = computed<DetailField | undefined>(() => {
+  const fields = props.snapshot.installLocationFields as unknown as DetailField[]
+  return fields.find((f) => f.id === 'installDir') ?? fields[0]
+})
+
+const sharedFolderRows = computed<SharedFolderRow[]>(() => {
+  const rows: SharedFolderRow[] = props.snapshot.modelsDirs.map((dir, index) => ({
+    key: `models:${index}:${dir.path}`,
+    kind: 'models',
+    path: dir.path,
+    isDownloads: dir.isPrimary,
+    removable: !dir.isPrimary
+  }))
+  if (sharedInputField.value) {
+    rows.push({ key: 'input', kind: 'input', path: sharedFieldPath(sharedInputField.value) })
+  }
+  if (sharedOutputField.value) {
+    rows.push({ key: 'output', kind: 'output', path: sharedFieldPath(sharedOutputField.value) })
+  }
+  return rows
+})
+
+function modelsDirIndex(row: SharedFolderRow): number {
+  return props.snapshot.modelsDirs.findIndex((d) => d.path === row.path)
+}
 
 function sharedFieldPath(field: DetailField | undefined): string {
   return typeof field?.value === 'string' ? field.value : ''
@@ -75,16 +98,30 @@ async function browseSharedDir(field: DetailField | undefined): Promise<void> {
   await bridge?.globalSettingsUpdateField(field.id, picked)
 }
 
-function handleBrowseSharedInput(): void {
-  void browseSharedDir(sharedInputField.value)
-}
-function handleBrowseSharedOutput(): void {
-  void browseSharedDir(sharedOutputField.value)
+async function handleBrowseInstallDir(): Promise<void> {
+  const field = installDirField.value
+  if (!field) return
+  const picked = await bridge?.globalSettingsBrowseFolder(sharedFieldPath(field) || undefined)
+  if (!picked || picked === field.value) return
+  await bridge?.globalSettingsUpdateField(field.id, picked)
 }
 
-function handleOpenModelsDir(index: number): void {
-  const dir = props.snapshot.modelsDirs[index]
-  if (dir) bridge?.globalSettingsOpenPath(dir.path)
+function handleOpenRow(row: SharedFolderRow): void {
+  handleOpenPath(row.path)
+}
+
+function handleBrowseRow(row: SharedFolderRow): void {
+  if (row.kind === 'input') void browseSharedDir(sharedInputField.value)
+  else if (row.kind === 'output') void browseSharedDir(sharedOutputField.value)
+  else void handleChangeModelsDir(modelsDirIndex(row))
+}
+
+function handleUseForDownloads(row: SharedFolderRow): void {
+  void handleMakePrimary(modelsDirIndex(row))
+}
+
+function handleRemoveRow(row: SharedFolderRow): void {
+  void handleRemoveModelsDir(modelsDirIndex(row))
 }
 
 function isListedModelsDir(path: string): boolean {
@@ -118,6 +155,7 @@ async function handleRemoveModelsDir(index: number): Promise<void> {
 }
 
 async function handleMakePrimary(index: number): Promise<void> {
+  if (index <= 0) return
   emit('touched')
   const dirs = props.snapshot.modelsDirs.map((d) => d.path)
   const moved = dirs.splice(index, 1)[0]
@@ -127,6 +165,7 @@ async function handleMakePrimary(index: number): Promise<void> {
 }
 
 async function handleChangeModelsDir(index: number): Promise<void> {
+  if (index < 0) return
   const current = props.snapshot.modelsDirs[index]?.path
   const picked = await bridge?.globalSettingsBrowseFolder(current)
   if (!picked || isListedModelsDir(picked)) return
@@ -138,36 +177,32 @@ async function handleChangeModelsDir(index: number): Promise<void> {
 </script>
 
 <template>
-  <GlobalSettingsMicroSection :title="t('settings.models')" :tooltip="t('tooltips.sharedModels')">
-    <ModelsDirList
-      :dirs="sharedModelDirs"
-      @change="handleChangeModelsDir"
-      @remove="handleRemoveModelsDir"
-      @make-primary="handleMakePrimary"
-      @open="handleOpenModelsDir"
-      @add="handleAddModelsDir"
+  <GlobalSettingsMicroSection
+    :title="t('settings.installLocation')"
+    :tooltip="t('tooltips.installDir')"
+  >
+    <StorageDirRow
+      v-if="installDirField"
+      :path="sharedFieldPath(installDirField)"
+      @open="handleOpenPath(sharedFieldPath(installDirField))"
+      @browse="handleBrowseInstallDir"
     />
   </GlobalSettingsMicroSection>
 
   <GlobalSettingsMicroSection
-    :title="t('settings.sharedDirectories')"
-    :tooltip="t('tooltips.sharedDirectories')"
+    :title="t('settings.sharedFolders')"
+    :tooltip="t('tooltips.sharedFolders')"
   >
-    <StorageDirRow
-      v-if="sharedInputField"
-      :label="sharedInputField.label || t('media.inputDir')"
-      :path="sharedFieldPath(sharedInputField)"
-      shared
-      @open="handleOpenPath(sharedFieldPath(sharedInputField))"
-      @browse="handleBrowseSharedInput"
-    />
-    <StorageDirRow
-      v-if="sharedOutputField"
-      :label="sharedOutputField.label || t('media.outputDir')"
-      :path="sharedFieldPath(sharedOutputField)"
-      shared
-      @open="handleOpenPath(sharedFieldPath(sharedOutputField))"
-      @browse="handleBrowseSharedOutput"
+    <p class="gs-storage-hint m-0 text-[12.5px] text-text-muted">
+      {{ t('settings.storageSharedHint') }}
+    </p>
+    <SharedFoldersList
+      :rows="sharedFolderRows"
+      @open="handleOpenRow"
+      @browse="handleBrowseRow"
+      @use-for-downloads="handleUseForDownloads"
+      @remove="handleRemoveRow"
+      @add="handleAddModelsDir"
     />
   </GlobalSettingsMicroSection>
 </template>
