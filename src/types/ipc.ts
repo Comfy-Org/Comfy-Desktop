@@ -215,6 +215,8 @@ export interface LocalAssetListing {
 
 export type TemplateSearchOutcome = 'template' | 'agent' | 'bad_input' | 'unsat' | 'download'
 
+export type TemplateSearchInput = 'image' | 'video' | 'audio'
+
 export interface TemplateSearchCandidate {
   templateId: string
   title: string
@@ -225,6 +227,7 @@ export interface TemplateSearchCandidate {
   score: number | null
   calibrated: number | null
   belowThreshold: boolean
+  needs: TemplateSearchInput[]
   downloadBytes: number | null
 }
 

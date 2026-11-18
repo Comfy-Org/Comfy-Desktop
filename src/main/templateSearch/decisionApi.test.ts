@@ -386,6 +386,31 @@ describe('parseDecision', () => {
     expect(result.download.every((c) => c.needsDownload)).toBe(true)
   })
 
+  it('reads what files a card needs from its template, keeping only the kinds Desktop knows', () => {
+    const needing = (id: string, needs: unknown) => {
+      const item = pick(id, id)
+      return { ...item, variant: { ...item.variant, needs } }
+    }
+    const body = decision({
+      outcome: { kind: 'template', reply: null, matched: ['wan 2.2'] },
+      split: {
+        run: [
+          needing('i2v', ['image']),
+          needing('flf', ['image', 'image']),
+          needing('mix', ['video', 'audio', 'mesh']),
+          needing('plain', undefined)
+        ],
+        download: []
+      }
+    })
+    expect(parseDecision(body)!.run.map((c) => [c.templateId, c.needs])).toEqual([
+      ['i2v', ['image']],
+      ['flf', ['image', 'image']],
+      ['mix', ['video', 'audio']],
+      ['plain', []]
+    ])
+  })
+
   it('names nothing matched for an answer to a request, and keeps its reply when a lookup finds nothing', () => {
     expect(parseDecision(decision())?.matched).toBeNull()
     const noNames = parseDecision(
