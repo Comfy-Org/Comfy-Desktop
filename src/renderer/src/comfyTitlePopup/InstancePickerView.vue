@@ -455,7 +455,9 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
     <div
       class="picker-panel flex min-w-0 flex-1 flex-col overflow-hidden rounded-[16px] bg-[var(--modal-surface-bg)] [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.06)]"
     >
-      <div class="picker-body grid min-h-0 flex-[1_1_0] grid-cols-[280px_minmax(0,1fr)]">
+      <div
+        class="picker-body grid min-h-0 flex-[1_1_0] grid-cols-[clamp(200px,30%,280px)_minmax(0,1fr)]"
+      >
         <div
           class="picker-left m-2 mr-0 flex min-h-0 min-w-0 flex-col gap-2 rounded-[14px] bg-[var(--picker-side-bg)] p-2 [--picker-row-hover:color-mix(in_oklch,var(--foreground)_11%,var(--modal-surface-bg))] [--picker-row-active:color-mix(in_oklch,var(--foreground)_15%,var(--modal-surface-bg))] [--picker-side-bg:color-mix(in_oklch,var(--foreground)_6%,var(--modal-surface-bg))]"
         >

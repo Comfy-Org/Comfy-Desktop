@@ -23,13 +23,14 @@ const useComfyUISettingsState = {
   fieldErrorMessages: ref<Record<string, string>>({}),
   diskUsageItem: ref(null),
   diskSpace: ref(null),
-  runActionStub: vi.fn()
+  runActionStub: vi.fn(),
+  renameStub: vi.fn().mockResolvedValue(true)
 }
 vi.mock('../../composables/useComfyUISettings', () => ({
   useComfyUISettings: () => ({
     ...useComfyUISettingsState,
     updateField: vi.fn(),
-    renameInstallation: vi.fn().mockResolvedValue(true),
+    renameInstallation: useComfyUISettingsState.renameStub,
     clearPendingRestart: vi.fn(),
     runAction: useComfyUISettingsState.runActionStub,
     sectionsForTab: (tab: string) =>
@@ -981,6 +982,28 @@ describe('ComfyUISettingsContent', () => {
         id: 'untrack',
         label: 'Forget'
       })
+    })
+
+    it('drops a rename draft when the selected build changes under it', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'rename', label: 'Rename' }]
+      useComfyUISettingsState.renameStub.mockClear()
+      const target = mountTitleTarget()
+      const w = await mountOnPage()
+      await flushPromises()
+
+      const draftName = target.querySelector<HTMLElement>('.build-details-title-name')!
+      draftName.focus()
+      draftName.textContent = 'Draft for My Install'
+      const renameForFirstBuild = w.findComponent({ name: 'InlineNameEdit' }).props('onRename') as (
+        next: string
+      ) => Promise<boolean>
+
+      await w.setProps({ installation: { ...SAMPLE_INSTALL, id: 'inst-2', name: 'Other Build' } })
+      await flushPromises()
+
+      expect(target.querySelector('.build-details-title-name')!.textContent).toBe('Other Build')
+      expect(await renameForFirstBuild('Draft for My Install')).toBe(false)
+      expect(useComfyUISettingsState.renameStub).not.toHaveBeenCalled()
     })
 
     it('shows a read-only title when the build offers no Rename action', async () => {

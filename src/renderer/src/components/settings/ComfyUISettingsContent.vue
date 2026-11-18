@@ -344,6 +344,32 @@ const storageSections = computed(() => sectionsForTab('storage').value)
 
 const rootRef = useTemplateRef<HTMLElement>('root')
 const footerRef = useTemplateRef<HTMLElement>('footer')
+const tabStrip = useTemplateRef<HTMLElement>('tabStrip')
+const tabsHiddenStart = ref(false)
+const tabsHiddenEnd = ref(false)
+function measureTabStrip(): void {
+  const strip = tabStrip.value
+  if (!strip) return
+  tabsHiddenStart.value = strip.scrollLeft > 1
+  tabsHiddenEnd.value = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1
+}
+let tabStripObserver: ResizeObserver | undefined
+watch(tabStrip, (strip) => {
+  tabStripObserver?.disconnect()
+  if (!strip || typeof ResizeObserver === 'undefined') return
+  tabStripObserver = new ResizeObserver(measureTabStrip)
+  tabStripObserver.observe(strip)
+})
+onUnmounted(() => tabStripObserver?.disconnect())
+watch(
+  activeTab,
+  (key) => {
+    tabStrip.value
+      ?.querySelector<HTMLElement>(`[data-testid="${TID.settingsTab(key)}"]`)
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  },
+  { flush: 'post' }
+)
 function onTabValueChange(value: string | number): void {
   const tab = tabs.value.find((item) => item.key === value)
   if (tab) selectTab(tab.key)
@@ -360,7 +386,14 @@ function closeMoreMenu(): void {
 const canRename = computed(() =>
   pinBottomActions.value.some((action) => action.id === 'rename' && action.enabled !== false)
 )
-const renameHandler = computed(() => (canRename.value ? renameInstallation : undefined))
+function renameOnlyWhileSelected(installationId: string) {
+  return (next: string): Promise<boolean> =>
+    installation.value?.id === installationId ? renameInstallation(next) : Promise.resolve(false)
+}
+const renameHandler = computed(() => {
+  const id = installation.value?.id
+  return canRename.value && id ? renameOnlyWhileSelected(id) : undefined
+})
 const titleEdit = useTemplateRef<InstanceType<typeof InlineNameEdit>>('titleEdit')
 function handleMorePick(action: ActionDef): void {
   if (action.id === 'rename' && titleEdit.value) {
@@ -735,13 +768,23 @@ defineExpose({
     <div ref="root" class="settings-v2-content flex min-h-0 flex-1 flex-col">
       <TabsList as-child>
         <nav
-          class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-hidden"
+          ref="tabStrip"
+          class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-x-auto overscroll-x-contain [scrollbar-width:none]"
           :class="[
             'w-fit gap-0.5 rounded-[10px] bg-secondary p-[3px]',
-            !isPage && 'mx-5',
-            { 'is-subpage-active opacity-60': subPage !== null }
+            isPage ? 'max-w-full' : 'mx-5 max-w-[calc(100%-2.5rem)]',
+            {
+              'is-subpage-active opacity-60': subPage !== null,
+              '[mask-image:linear-gradient(to_right,black_calc(100%-40px),transparent)]':
+                tabsHiddenEnd && !tabsHiddenStart,
+              '[mask-image:linear-gradient(to_left,black_calc(100%-40px),transparent)]':
+                tabsHiddenStart && !tabsHiddenEnd,
+              '[mask-image:linear-gradient(to_right,transparent,black_40px,black_calc(100%-40px),transparent)]':
+                tabsHiddenStart && tabsHiddenEnd
+            }
           ]"
           :aria-label="t('comfyUISettings.title')"
+          @scroll.passive="measureTabStrip"
         >
           <Tooltip
             v-for="tab in tabs"
@@ -754,7 +797,7 @@ defineExpose({
               :value="tab.key"
               variant="panel"
               :disabled="opInflight && activeTab !== tab.key"
-              class="settings-v2-tab group/settings-tab min-w-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate"
+              class="settings-v2-tab group/settings-tab shrink-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate"
               :class="[
                 {
                   'is-active': activeTab === tab.key,
