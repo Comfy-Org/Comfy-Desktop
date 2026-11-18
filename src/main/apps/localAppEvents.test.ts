@@ -163,6 +163,39 @@ describe('run_finished', () => {
     expect(isFollowing(RUN)).toBe(false)
   })
 
+  it('keeps following a run past the ExecutionBlocked notice ComfyUI sends for a blocked branch', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_start', { timestamp: T0 }))
+    noteRunMessage(
+      message('execution_error', {
+        node_id: '7',
+        node_type: 'TestExecutionBlocker',
+        executed: [],
+        exception_message: 'Execution Blocked: not this branch',
+        exception_type: 'ExecutionBlocked',
+        traceback: [],
+        current_inputs: [],
+        current_outputs: []
+      })
+    )
+    expect(isFollowing(RUN)).toBe(true)
+
+    noteRunMessage(message('execution_success', { timestamp: T0 + 3_000 }))
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ outcome: 'success', run_seconds: 3 })
+    ])
+  })
+
+  it('does not hold an ExecutionBlocked notice as the end of a run Desktop has not read yet', () => {
+    noteRunMessage(message('execution_start', { timestamp: T0 + 1_000 }))
+    noteRunMessage(message('execution_error', { exception_type: 'ExecutionBlocked' }))
+    runAccepted(RUN, BUILD, APP, T0)
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([])
+    expect(isFollowing(RUN)).toBe(true)
+  })
+
   it('sends nothing for a run Desktop did not send', () => {
     noteRunMessage(message('execution_start', {}, OTHER_RUN))
     noteRunMessage(message('execution_success', {}, OTHER_RUN))

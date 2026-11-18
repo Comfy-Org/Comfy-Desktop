@@ -4,6 +4,7 @@ import type { TelemetryContext } from '../lib/telemetry'
 export const RUN_FINISHED_EVENT = 'comfy.desktop.apps.run_finished'
 export const SETUP_EVENT = 'comfy.desktop.apps.setup'
 export const COMFYUI_EXITED = 'comfyui_exited'
+const BLOCKED_BRANCH = 'ExecutionBlocked'
 
 const MAX_RUNS = 200
 const MAX_EARLY_RUNS = 50
@@ -118,6 +119,10 @@ function noteEarly(promptId: string, change: EarlyRun): void {
   keepNewest(earlyRuns, promptId, { ...earlyRuns.get(promptId), ...change }, MAX_EARLY_RUNS)
 }
 
+function isBlockedBranch(type: string, data: Record<string, unknown>): boolean {
+  return type === 'execution_error' && data['exception_type'] === BLOCKED_BRANCH
+}
+
 export function noteRunMessage(message: unknown, now = Date.now()): void {
   if (!isRecord(message) || typeof message['type'] !== 'string') return
   const data = message['data']
@@ -132,7 +137,7 @@ export function noteRunMessage(message: unknown, now = Date.now()): void {
     return
   }
   const outcome = RUN_ENDS[type]
-  if (!outcome) return
+  if (!outcome || isBlockedBranch(type, data)) return
   const errorClass = outcome === 'failed' ? errorClassOf(data['exception_type']) : undefined
   const end: RunEnd = { outcome, at, ...(errorClass ? { errorClass } : {}) }
   if (run) finishRun(promptId, end)
