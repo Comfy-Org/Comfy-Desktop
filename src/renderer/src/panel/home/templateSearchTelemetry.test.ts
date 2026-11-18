@@ -38,6 +38,7 @@ const RESULT: TemplateSearchResult = {
   reply: null,
   run: [candidate('poster_template', { calibrated: 0.874 }), candidate('banner_template')],
   download: [candidate('mural_template', { needsDownload: true })],
+  more: [candidate('zine_template')],
   alsoTry: [candidate('sticker_template')],
   partnerSwitch: true,
   partnersShown: true
@@ -123,6 +124,7 @@ describe('createSearchTelemetry', () => {
           outcome: 'template',
           run_count: 2,
           download_count: 1,
+          more_count: 1,
           also_try_count: 1,
           top_match_pct: 87,
           top_match_level: 'strong',
@@ -175,6 +177,18 @@ describe('createSearchTelemetry', () => {
     telemetry.answered('a poster', off, ANSWER_AT(at), true)
     telemetry.abandoned('closed')
     expect(sent).toEqual([])
+  })
+
+  it("names a family's further template's list as more", () => {
+    const { telemetry, last, at } = harness()
+    telemetry.answered('a poster', ANSWER, ANSWER_AT(at), true)
+    telemetry.picked(ROWS, ROWS[3]!, 'pointer')
+    expect(last().context).toMatchObject({
+      list: 'more',
+      list_position: 0,
+      position: 3,
+      template_id: 'zine_template'
+    })
   })
 
   it('sends the pick with its list, place, match and the time it took', () => {

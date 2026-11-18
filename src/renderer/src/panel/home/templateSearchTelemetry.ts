@@ -9,6 +9,7 @@ export type AbandonReason = 'closed' | 'cleared' | 'left'
 const LIST_NAMES: Record<SearchRowKind, string> = {
   run: 'run',
   download: 'download',
+  more: 'more',
   also: 'also_try'
 }
 
@@ -84,6 +85,7 @@ function answerProperties(response: TemplateSearchResponse): TelemetryContext {
     outcome: response.result.outcome,
     run_count: count('run'),
     download_count: count('download'),
+    more_count: count('more'),
     also_try_count: count('also'),
     top_match_pct: matchPct(rows[0]),
     top_match_level: (rows[0] && matchLevel(rows[0].candidate)) ?? 'none',

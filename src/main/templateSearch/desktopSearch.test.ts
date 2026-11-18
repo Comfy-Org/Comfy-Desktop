@@ -252,7 +252,7 @@ describe('createDesktopSearch', () => {
         more: [further('zine_template', ['zine_template']), further('banner_template', [])]
       }
     }
-    const { search } = setup({ kind: 'answer', body, partnerSwitch: false })
+    const { search } = setup({ kind: 'answer', body, coldStart: false, partnerSwitch: false })
 
     expect(await search.search('a poster', 'local-1')).toMatchObject({
       result: {
