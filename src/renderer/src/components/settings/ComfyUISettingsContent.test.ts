@@ -645,6 +645,30 @@ describe('ComfyUISettingsContent', () => {
       expect(menusOfferingStop(w)).toBe(1)
     })
 
+    it('orders the more menu like Home: Stop first in neutral, Uninstall last and the only red row', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'stop', label: 'Stop' },
+        { id: 'rename', label: 'Rename' },
+        { id: 'share', label: 'Export snapshot' },
+        { id: 'remove', label: 'Forget', style: 'danger' },
+        { id: 'delete', label: 'Uninstall', style: 'danger' }
+      ] as never
+      markRunning('inst-1')
+      const w = await mountContent({
+        currentView: 'instance',
+        currentCategory: 'local',
+        activeInstallationId: 'inst-1',
+        installation: SAMPLE_INSTALL
+      })
+      const actions = w
+        .findAllComponents({ name: 'MoreMenu' })
+        .map((m) => m.props('actions') as { id: string; style?: string; separator?: boolean }[])
+        .find((acts) => acts.some((a) => a.id === 'stop'))!
+      expect(actions.map((a) => a.id)).toEqual(['stop', 'rename', 'share', 'remove', 'delete'])
+      expect(actions.filter((a) => a.style === 'danger').map((a) => a.id)).toEqual(['delete'])
+      expect(actions.filter((a) => a.separator).map((a) => a.id)).toEqual(['rename', 'delete'])
+    })
+
     it('stopped cloud target (dashboard host) → Open Cloud with no caret', async () => {
       useComfyUISettingsState.pinBottomActions.value = []
       const w = await mountContent({

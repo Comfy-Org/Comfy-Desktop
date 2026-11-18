@@ -579,14 +579,23 @@ function actionIcon(id: string): Component {
   }
 }
 
+const NOW_ACTION_IDS = new Set(['stop'])
+
 const pinBottomMenuActions = computed<MenuAction[]>(() => {
-  const firstDanger = pinBottomActions.value.findIndex((action) => action.style === 'danger')
-  return pinBottomActions.value.map((action, index) => ({
-    ...action,
-    icon: actionIcon(action.id),
-    style: action.id === 'untrack' || action.id === 'remove' ? undefined : action.style,
-    separator: index === firstDanger
-  }))
+  const actions = pinBottomActions.value
+  const now = actions.filter((action) => NOW_ACTION_IDS.has(action.id))
+  const rest = actions.filter((action) => !NOW_ACTION_IDS.has(action.id) && action.id !== 'delete')
+  const last = actions.filter((action) => action.id === 'delete')
+  return [now, rest, last]
+    .filter((group) => group.length > 0)
+    .flatMap((group, groupIndex) =>
+      group.map((action, index) => ({
+        ...action,
+        icon: actionIcon(action.id),
+        style: action.id === 'delete' ? ('danger' as const) : undefined,
+        separator: groupIndex > 0 && index === 0
+      }))
+    )
 })
 
 function handlePrimaryAction(): void {
