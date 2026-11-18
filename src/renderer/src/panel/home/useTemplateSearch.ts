@@ -8,6 +8,7 @@ import {
 } from './templateSearchTelemetry'
 
 export const SEARCH_DELAY_MS = 300
+const PARTNERS_SETTING = 'templateSearchPartners'
 
 type SearchState =
   | { kind: 'idle' }
@@ -142,14 +143,26 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     void window.api.prepareTemplateSearch().catch(() => null)
   }
 
-  void window.api
-    .getSetting('templateSearchPartners')
-    .then((value) => (partnersShown.value = value !== false))
-    .catch(() => null)
+  async function readPartnersShown(): Promise<boolean> {
+    const value = await window.api.getSetting(PARTNERS_SETTING).catch(() => undefined)
+    const changed = partnersShown.value !== (value !== false)
+    partnersShown.value = value !== false
+    return changed
+  }
+
+  void readPartnersShown()
+  onScopeDispose(
+    window.api.onSettingsChanged(({ key }) => {
+      if (key !== PARTNERS_SETTING) return
+      void readPartnersShown().then((changed) => {
+        if (changed && query.value.trim()) void search(query.value)
+      })
+    })
+  )
 
   async function setPartnersShown(shown: boolean): Promise<void> {
     partnersShown.value = shown
-    await window.api.setSetting('templateSearchPartners', shown).catch(() => null)
+    await window.api.setSetting(PARTNERS_SETTING, shown).catch(() => null)
     if (query.value.trim()) await search(query.value)
   }
 

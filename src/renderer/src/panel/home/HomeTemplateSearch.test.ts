@@ -27,6 +27,7 @@ const signIn = vi.fn<() => Promise<{ signedIn: boolean }>>()
 const settingsStore = new Map<string, unknown>()
 const setSetting = vi.fn(async (key: string, value: unknown) => void settingsStore.set(key, value))
 let announce: (availability: TemplateSearchAvailability) => void = () => {}
+let settingChanged: (change: { key: string }) => void = () => {}
 
 function candidate(
   templateId: string,
@@ -88,6 +89,12 @@ beforeEach(() => {
     comfybuilder: { getAuthStatus, signIn, onAuthChanged: () => () => {} },
     getSetting: async (key: string) => settingsStore.get(key),
     setSetting,
+    onSettingsChanged: (callback: (change: { key: string }) => void) => {
+      settingChanged = callback
+      return () => {
+        settingChanged = () => {}
+      }
+    },
     searchTemplates,
     openTemplateInBuild,
     prepareTemplateSearch: prepare,
@@ -1054,6 +1061,31 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
         .get('[data-testid="home-template-search-partner-switch"] button')
         .attributes('aria-checked')
     ).toBe('false')
+  })
+
+  it('follows a change made in Desktop Settings, and searches again only when it changes', async () => {
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    const calls = searchTemplates.mock.calls.length
+    const switchState = () =>
+      wrapper
+        .get('[data-testid="home-template-search-partner-switch"] button')
+        .attributes('aria-checked')
+
+    settingChanged({ key: 'templateSearchPartners' })
+    await flushPromises()
+    expect(searchTemplates).toHaveBeenCalledTimes(calls)
+
+    settingsStore.set('templateSearchPartners', false)
+    settingChanged({ key: 'theme' })
+    await flushPromises()
+    expect(switchState()).toBe('true')
+
+    settingChanged({ key: 'templateSearchPartners' })
+    await flushPromises()
+    expect(switchState()).toBe('false')
+    expect(searchTemplates).toHaveBeenCalledTimes(calls + 1)
   })
 })
 
