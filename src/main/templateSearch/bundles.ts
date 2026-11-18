@@ -222,7 +222,9 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     }
   }
 
-  async function wanted(base: string): Promise<{ entry: IndexEntry; raw: Buffer } | null> {
+  async function wanted(
+    base: string
+  ): Promise<{ entry: IndexEntry; raw: Buffer; manifest: ParsedManifest } | null> {
     const supported = await deps.supports()
     if (!supported) return null
     const index = parseIndex(
@@ -234,8 +236,11 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     if (sha256Of(raw) !== entry.manifestSha256)
       throw new Error('the manifest is not the one the index lists')
     const manifest = parseManifest(JSON.parse(raw.toString('utf8')))
-    if (manifest && !readsVersion(supported, entry.version, manifest.minSidecar)) return null
-    return { entry, raw }
+    if (!manifest || manifest.version !== entry.version) {
+      throw new Error('the manifest does not match the index')
+    }
+    if (!readsVersion(supported, entry.version, manifest.minSidecar)) return null
+    return { entry, raw, manifest }
   }
 
   async function storedSound(file: BundleFile): Promise<boolean> {
@@ -329,12 +334,8 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       const onDisk = await fs.promises.readFile(path.join(current.dir, MANIFEST)).catch(() => null)
       if (onDisk && sha256Of(onDisk) === found.entry.manifestSha256) return
     }
-    const manifest = parseManifest(JSON.parse(found.raw.toString('utf8')))
-    if (!manifest || manifest.version !== found.entry.version) {
-      throw new Error('the manifest does not match the index')
-    }
-    await fetchFiles(base, manifest.files)
-    await assemble(manifest.version, found.raw, manifest.files)
+    await fetchFiles(base, found.manifest.files)
+    await assemble(found.manifest.version, found.raw, found.manifest.files)
     await removeUnlistedFiles()
   }
 
@@ -352,7 +353,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     downloading = fetchNewest(base)
       .then(() => {
         waitingForRetry = false
-        report({ kind: 'idle' })
+        deps.onAvailability({ kind: 'idle' })
       })
       .catch(() => {
         if (!quiet) waitingForRetry = true
@@ -385,9 +386,9 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     try {
       if (!(await wanted(base))) return UPDATE_DESKTOP
     } catch (err) {
-      return err instanceof Unreachable
-        ? { kind: 'unavailable', reason: 'offline' }
-        : DOWNLOAD_FAILED
+      if (err instanceof Unreachable) return { kind: 'unavailable', reason: 'offline' }
+      waitingForRetry = true
+      return DOWNLOAD_FAILED
     }
     void download()
     return { kind: 'downloading', ...progress }

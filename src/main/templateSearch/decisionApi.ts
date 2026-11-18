@@ -90,7 +90,7 @@ function candidateFrom(
     title: label?.title ?? asText(variant.title) ?? templateId,
     thumbnailUrl: label?.thumbnailUrl ?? null,
     family: asText(candidate.family_id),
-    partner: label?.partner ?? isPartnerTemplate(templateId),
+    partner: label?.partner === true || isPartnerTemplate(templateId),
     needsDownload: fromDownloadList || maskCode(candidate) === NOT_INSTALLED,
     score: asNumber(candidate.score),
     calibrated: asNumber(candidate.calibrated),
