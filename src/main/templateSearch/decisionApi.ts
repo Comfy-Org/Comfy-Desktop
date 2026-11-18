@@ -194,7 +194,7 @@ function lookupCards(split: JsonRecord, describe: DescribeTemplate): CardLists {
     taken: templateIds(run),
     fromDownloadList: true
   })
-  const more = distinctCandidates(split.more, MORE_LIMIT, describe, {
+  const more = distinctCandidates(split.more, Infinity, describe, {
     taken: templateIds(run, download)
   })
   return { run: run.map(unscored), download: download.map(unscored), more: more.map(unscored) }
@@ -212,9 +212,11 @@ export function parseDecision(
   const matched = names.length ? names : null
   const cards = matched ? lookupCards(split, describe) : answerCards(split, describe)
   const options = Array.isArray(decision?.options) ? decision.options : []
-  const alsoTry = distinctCandidates(options.filter(isOfferableOption), ALSO_TRY_LIMIT, describe, {
-    taken: templateIds(cards.run, cards.download, cards.more)
-  })
+  const alsoTry = matched
+    ? []
+    : distinctCandidates(options.filter(isOfferableOption), ALSO_TRY_LIMIT, describe, {
+        taken: templateIds(cards.run, cards.download, cards.more)
+      })
   return {
     outcome: outcomeOf(outcome.kind),
     reply: asText(outcome.reply),
