@@ -4,8 +4,10 @@ import type {
   ComfyDesktop2AuthState,
   ComfyDesktopHostedAuthBridge,
   ComfyDesktopHostedLocalBridge,
+  ComfyDesktopHostedOutputsBridge,
   ComfyDesktopHostedTelemetryBridge,
-  ComfyDesktopLocalEvent
+  ComfyDesktopLocalEvent,
+  ComfyDesktopOutputAction
 } from '../types/comfyDesktopBridge'
 
 const auth: ComfyDesktopHostedAuthBridge = {
@@ -42,6 +44,17 @@ const telemetry: ComfyDesktopHostedTelemetryBridge = {
   track: (name, props) => ipcRenderer.send('apps-telemetry:track', { name, props })
 }
 
+const outputs: ComfyDesktopHostedOutputsBridge = {
+  showOutput: (request) => ipcRenderer.invoke('apps-outputs:show', request),
+  onOutputAction: (callback) => {
+    const handler = (_event: IpcRendererEvent, action: ComfyDesktopOutputAction): void =>
+      callback(action)
+    ipcRenderer.on('apps-outputs:action', handler)
+    return () => ipcRenderer.removeListener('apps-outputs:action', handler)
+  }
+}
+
 contextBridge.exposeInMainWorld('comfyDesktopAuth', auth)
 contextBridge.exposeInMainWorld('comfyDesktopLocal', local)
 contextBridge.exposeInMainWorld('comfyDesktopTelemetry', telemetry)
+contextBridge.exposeInMainWorld('comfyDesktopOutputs', outputs)

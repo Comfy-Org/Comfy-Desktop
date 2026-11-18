@@ -4,25 +4,21 @@ import { useI18n } from 'vue-i18n'
 import {
   ArrowDownToLine,
   Bell,
-  CloudDownload,
   House,
-  Loader2,
   Menu as MenuIcon,
   MessageSquarePlus,
-  RefreshCw,
   RotateCw,
   ZoomIn
 } from '@lucide/vue'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
 import { useTitleBarMenus } from './useTitleBarMenus'
 import { useTitleBarIdentity } from './useTitleBarIdentity'
-import { useUpdatePills } from './useUpdatePills'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
 import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
 
 type ComfyPanelKey =
@@ -172,14 +168,6 @@ const showZoomReset = computed(
   () => zoomLevel.value !== 0 && !isInstallLess.value && !isFirstUseLockdown.value
 )
 
-const {
-  appUpdateState,
-  appUpdatePillLabel,
-  appUpdatePillTooltip,
-  showAppUpdatePill,
-  handleAppUpdatePill
-} = useUpdatePills({ bridge, isInstallLess })
-
 function handleFeedback(): void {
   bridge?.clickFeedback()
 }
@@ -224,105 +212,11 @@ onUnmounted(() => {
   unsubAnnouncementSettings?.()
 })
 
-const titleBarRef = useTemplateRef<HTMLElement>('titleBar')
 const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
 const downloadsBtnRef = useTemplateRef<HTMLButtonElement>('downloadsBtn')
 const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
-const titleClusterRef = useTemplateRef<HTMLElement>('titleCluster')
-const titleTrailingRef = useTemplateRef<HTMLElement>('titleTrailing')
 
-type CollapseMode = 'full' | 'no-feedback' | 'icons-only'
-const collapseMode = ref<CollapseMode>('full')
-const collapsedFeedback = computed(
-  () => collapseMode.value === 'no-feedback' || collapseMode.value === 'icons-only'
-)
-const collapsedUpdate = computed(() => collapseMode.value === 'icons-only')
-
-const MIN_GAP_PX = 16
-const RESTORE_BUFFER_PX = 24
-let feedbackRestoreCostPx = 0
-let updateRestoreCostPx = 0
-let fitObserver: ResizeObserver | undefined
-let fitRaf: number | null = null
-let transitionRaf: number | null = null
 let unmounted = false
-
-interface FitMeasurement {
-  gap: number
-  trailingWidth: number
-}
-
-function measureFit(): FitMeasurement {
-  const bar = titleBarRef.value
-  const trailing = titleTrailingRef.value
-  const cluster = titleClusterRef.value
-  if (!bar || !trailing || !cluster) return { gap: Infinity, trailingWidth: NaN }
-  const barRect = bar.getBoundingClientRect()
-  if (barRect.width === 0) return { gap: Infinity, trailingWidth: NaN }
-  const trailingRect = trailing.getBoundingClientRect()
-  const leadingRight = Math.max(
-    cluster.getBoundingClientRect().left,
-    ...Array.from(cluster.children).map((child) => child.getBoundingClientRect().right)
-  )
-  const guttersAroundMiddle = 2 * (Number.parseFloat(getComputedStyle(bar).columnGap) || 0)
-  return {
-    gap: trailingRect.left - leadingRight - guttersAroundMiddle,
-    trailingWidth: trailingRect.width
-  }
-}
-
-function scheduleFit(): void {
-  if (unmounted || fitRaf !== null) return
-  fitRaf = requestAnimationFrame(() => {
-    fitRaf = null
-    if (unmounted) return
-    evaluateFit()
-  })
-}
-
-function evaluateFit(): void {
-  const { gap } = measureFit()
-  if (!Number.isFinite(gap)) return
-  const mode = collapseMode.value
-  if (mode === 'full') {
-    if (gap < MIN_GAP_PX) transitionTo('no-feedback')
-  } else if (mode === 'no-feedback') {
-    if (gap < MIN_GAP_PX) transitionTo('icons-only')
-    else if (gap > feedbackRestoreCostPx + RESTORE_BUFFER_PX) transitionTo('full')
-  } else {
-    if (gap > updateRestoreCostPx + RESTORE_BUFFER_PX) transitionTo('no-feedback')
-  }
-}
-
-function transitionTo(next: CollapseMode): void {
-  const prev = collapseMode.value
-  if (prev === next) return
-  const before = measureFit()
-  collapseMode.value = next
-  void nextTick().then(() => {
-    if (unmounted) return
-    transitionRaf = requestAnimationFrame(() => {
-      transitionRaf = null
-      if (unmounted) return
-      const after = measureFit()
-      if (Number.isFinite(before.trailingWidth) && Number.isFinite(after.trailingWidth)) {
-        const delta = before.trailingWidth - after.trailingWidth
-        if (prev === 'full' && next === 'no-feedback') {
-          feedbackRestoreCostPx = Math.max(feedbackRestoreCostPx, delta)
-        } else if (prev === 'no-feedback' && next === 'icons-only') {
-          updateRestoreCostPx = Math.max(updateRestoreCostPx, delta)
-        }
-      }
-      scheduleFit()
-    })
-  })
-}
-
-function invalidateRestoreCosts(): void {
-  feedbackRestoreCostPx = 0
-  updateRestoreCostPx = 0
-  scheduleFit()
-}
 
 const { tooltipAttrs, handleTooltipPointer, hideTip } = useTitleBarTooltip({
   bridge,
@@ -402,12 +296,6 @@ let unsubCoachmarkSettled: (() => void) | undefined
 let unsubCoachmarkDisplaced: (() => void) | undefined
 
 onMounted(() => {
-  if (titleBarRef.value && typeof ResizeObserver !== 'undefined') {
-    fitObserver = new ResizeObserver(() => scheduleFit())
-    fitObserver.observe(titleBarRef.value)
-  }
-  evaluateFit()
-
   syncLocale().catch((err) => {
     console.error('TitleBar: syncLocale failed', err)
   })
@@ -465,10 +353,6 @@ watch(
   { immediate: true }
 )
 
-watch([locale, installLabel, appUpdatePillLabel, showAppUpdatePill, isFirstUseLockdown], () =>
-  invalidateRestoreCosts()
-)
-
 onUnmounted(() => {
   unmounted = true
   unsubPanel?.()
@@ -481,16 +365,6 @@ onUnmounted(() => {
   unsubCoachmarkDisplaced?.()
   bridge?.hideCoachmark()
   hideTip()
-  fitObserver?.disconnect()
-  fitObserver = undefined
-  if (fitRaf !== null) {
-    cancelAnimationFrame(fitRaf)
-    fitRaf = null
-  }
-  if (transitionRaf !== null) {
-    cancelAnimationFrame(transitionRaf)
-    transitionRaf = null
-  }
   if (flashTimer) {
     clearTimeout(flashTimer)
     flashTimer = null
@@ -500,7 +374,6 @@ onUnmounted(() => {
 
 <template>
   <header
-    ref="titleBar"
     class="title-bar relative box-border grid h-screen w-screen grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] px-3 py-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&.is-mac]:pl-[78px] [&.is-mac.is-fullscreen]:pl-3 [&:not(.is-mac,.is-linux)]:pr-[140px] [&.is-linux]:[--title-controls-left:env(titlebar-area-x,0px)] [&.is-linux]:[--title-controls-right:calc(100vw_-_env(titlebar-area-x,0px)_-_env(titlebar-area-width,100vw))] [&.is-linux]:pl-[calc(var(--title-controls-left)_+_12px)] [&.is-linux]:pr-[calc(var(--title-controls-right)_+_12px)] [&:not(.is-light)]:border-b-border"
     :class="{
       'is-mac': isMac,
@@ -508,18 +381,15 @@ onUnmounted(() => {
       'is-light': isLight,
       'is-fullscreen': isFullscreen,
       'is-hover-active': isHoverActive,
-      'is-consent-lockdown': isConsentLockdown,
-      'is-collapsed-feedback': collapsedFeedback,
-      'is-collapsed-update': collapsedUpdate
+      'is-consent-lockdown': isConsentLockdown
     }"
-    :data-collapse-mode="collapseMode"
     :style="{
       color: themeText ?? undefined,
       '--titlebar-bg-active': themeBg ?? undefined,
       '--titlebar-icon': themeText ?? undefined
     }"
   >
-    <div ref="titleCluster" class="title-cluster flex items-center gap-1">
+    <div class="title-cluster flex items-center gap-1">
       <button
         v-if="showHomeButton"
         type="button"
@@ -560,30 +430,7 @@ onUnmounted(() => {
 
     <div class="title-center"></div>
 
-    <div ref="titleTrailing" class="title-trailing flex items-center gap-2 [justify-self:end]">
-      <button
-        v-if="!isFirstUseLockdown && showAppUpdatePill"
-        type="button"
-        class="title-update-pill is-app-update [-webkit-app-region:no-drag] inline-flex items-center gap-1 rounded-[999px] border border-solid border-[color-mix(in_srgb,var(--comfy-yellow)_55%,transparent)] bg-[color-mix(in_srgb,var(--comfy-yellow)_8%,transparent)] px-2.5 py-0.5 [font-family:inherit] text-[12px] leading-4 font-normal text-comfy-yellow cursor-pointer transition-[background-color,border-color,opacity] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&]:hover:enabled:bg-[color-mix(in_srgb,var(--comfy-yellow)_14%,transparent)] [.title-bar.is-hover-active_&]:hover:enabled:border-comfy-yellow [.title-bar.is-light_&]:bg-[color-mix(in_srgb,var(--comfy-yellow)_18%,transparent)] [.title-bar.is-light_&]:border-[color-mix(in_srgb,var(--comfy-yellow)_65%,var(--neutral-700))] [.title-bar.is-light_&]:text-neutral-700 [.title-bar.is-light.is-hover-active_&]:hover:enabled:bg-[color-mix(in_srgb,var(--comfy-yellow)_26%,transparent)] [.title-bar.is-light.is-hover-active_&]:hover:enabled:border-[color-mix(in_srgb,var(--comfy-yellow)_85%,var(--neutral-700))] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 [.title-bar.is-collapsed-update_&]:size-6 [.title-bar.is-collapsed-update_&]:justify-center [.title-bar.is-collapsed-update_&]:gap-0 [.title-bar.is-collapsed-update_&]:p-0"
-        :class="{
-          'is-ready': appUpdateState.kind === 'ready',
-          'is-downloading': appUpdateState.kind === 'downloading'
-        }"
-        v-bind="tooltipAttrs(appUpdatePillTooltip)"
-        @click="handleAppUpdatePill"
-      >
-        <CloudDownload v-if="appUpdateState.kind === 'available'" :size="14" />
-        <Loader2
-          v-else-if="appUpdateState.kind === 'downloading'"
-          :size="14"
-          class="title-update-pill-spinner animate-spin"
-        />
-        <RefreshCw v-else-if="appUpdateState.kind === 'ready'" :size="14" />
-        <span
-          class="title-update-pill-label max-w-[clamp(80px,14cqi,200px)] truncate [.title-bar.is-collapsed-update_&]:hidden"
-          >{{ appUpdatePillLabel ?? 'Desktop Update' }}</span
-        >
-      </button>
+    <div class="title-trailing flex items-center gap-2 [justify-self:end]">
       <Transition name="title-zoom-fade">
         <button
           v-if="showZoomReset"

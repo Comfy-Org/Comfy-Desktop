@@ -1,6 +1,8 @@
 export type {
   DashboardPage,
   AppCard,
+  AppOutputAction,
+  AppOutputs,
   AppPagePlacement,
   AppPageStatus,
   AssetKind,
@@ -8,6 +10,7 @@ export type {
   LocalAssetListing,
   CatalogWorkflow,
   TemplateSearchAvailability,
+  CloudAssetLookup,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,

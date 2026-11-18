@@ -20,6 +20,7 @@ vi.mock('electron', () => ({
 
 import './comfyTitlePopupPreload'
 import type { ComfyTitlePopupBridge, PopupGlobalSettingsSnapshot } from './comfyTitlePopupPreload'
+import { PICKER_SETTINGS_CHANNELS } from '../types/ipc'
 
 const GLOBAL_SETTINGS_CHANNEL = 'comfy-titlepopup:global-settings-changed'
 
@@ -75,6 +76,17 @@ function deliver(payload: unknown): unknown[] {
   ;(handler as (event: unknown, data: unknown) => void)(undefined, payload)
   return received
 }
+
+it('forwards picker window-close requests with the build and how to close it', async () => {
+  mocks.invoke.mockResolvedValueOnce(true)
+  const opts = { skipConfirm: true, keepDesktopOpen: true }
+
+  expect(await popupBridge().pickerSettingsCloseComfyWindow('build-A', opts)).toBe(true)
+  expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(PICKER_SETTINGS_CHANNELS.closeComfyWindow, {
+    installationId: 'build-A',
+    opts
+  })
+})
 
 describe('global-settings snapshot guard', () => {
   beforeEach(() => {

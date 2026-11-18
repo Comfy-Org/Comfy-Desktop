@@ -24,6 +24,19 @@ afterEach(async () => {
 })
 
 describe('BrandTakeoverLayout shared dialog behavior', () => {
+  it('keeps the Comfy C mark at the top left for the takeovers after onboarding', async () => {
+    const wrapper = mount(BrandTakeoverLayout, {
+      props: { ariaLabel: 'Installing ComfyUI' },
+      attachTo: document.body
+    })
+    wrappers.push(wrapper)
+    await settle()
+    const row = document.querySelector('.brand-logo-row')!
+    expect(row.querySelector('.brand-logo')).not.toBeNull()
+    expect(row.classList).toContain('left-0')
+    expect(document.querySelector('[data-testid="setup-wordmark"]')).toBeNull()
+  })
+
   it('focuses an opted-in first-use field and keeps binding flows open on Escape', async () => {
     const wrapper = mount(BrandTakeoverLayout, {
       props: { ariaLabel: 'Set up ComfyUI' },

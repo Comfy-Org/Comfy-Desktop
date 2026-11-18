@@ -43,7 +43,14 @@ vi.mock('../lib/comfyDownloadManager', () => ({
 }))
 
 import type { InstallationRecord } from '../installations'
-import { _runningSessions, type SessionInfo } from '../lib/ipc/shared'
+import {
+  _beginLaunch,
+  _endLaunch,
+  _operationAborts,
+  _runningSessions,
+  launchHadWindow,
+  type SessionInfo
+} from '../lib/ipc/shared'
 import { attachInstall, setAttachFactories } from './attach'
 import { comfyWindows, getEntryByInstallationId, nextWindowKey } from './registry'
 import type { ComfyWindowEntry } from './registry'
@@ -84,6 +91,7 @@ function showBuild(entry: ComfyWindowEntry, isLocal: boolean): void {
 beforeEach(() => {
   comfyWindows.clear()
   _runningSessions.clear()
+  _operationAborts.clear()
   mocks.stopRunning.mockClear()
   mocks.keepComfyRunning = undefined
   setAttachFactories({
@@ -158,5 +166,49 @@ describe('closing the window of a build', () => {
     entry._installCleanup?.()
 
     expect(mocks.stopRunning).toHaveBeenCalledWith(STUDIO)
+  })
+})
+
+describe('closing the window of a build while its ComfyUI starts again', () => {
+  it('leaves the start running and remembers its window closed, so the start opens none', () => {
+    const entry = openWindow()
+    showBuild(entry, true)
+    const launch = _beginLaunch(STUDIO)
+    _operationAborts.set(STUDIO, launch.abort)
+    try {
+      entry._installCleanup?.()
+
+      expect(launch.abort.signal.aborted).toBe(false)
+      expect(launchHadWindow(STUDIO)).toBe(true)
+    } finally {
+      _endLaunch(STUDIO, launch)
+    }
+  })
+
+  it('cancels the start when keepComfyRunningWhenWindowCloses is off, as closing stops ComfyUI', () => {
+    mocks.keepComfyRunning = false
+    const entry = openWindow()
+    showBuild(entry, true)
+    const launch = _beginLaunch(STUDIO)
+    _operationAborts.set(STUDIO, launch.abort)
+    try {
+      entry._installCleanup?.()
+
+      expect(launch.abort.signal.aborted).toBe(true)
+      expect(launchHadWindow(STUDIO)).toBe(false)
+    } finally {
+      _endLaunch(STUDIO, launch)
+    }
+  })
+
+  it('still cancels an update running for that build', () => {
+    const entry = openWindow()
+    showBuild(entry, true)
+    const update = new AbortController()
+    _operationAborts.set(STUDIO, update)
+
+    entry._installCleanup?.()
+
+    expect(update.signal.aborted).toBe(true)
   })
 })

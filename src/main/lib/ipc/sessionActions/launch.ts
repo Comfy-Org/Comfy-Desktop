@@ -39,6 +39,7 @@ import {
   _beginLaunch,
   _endLaunch,
   _getActiveLaunchIds,
+  recordLeftStartFailure,
   _getStoppingInstallationIds,
   installDirStateAsync,
   captureSnapshotIfChanged,
@@ -904,17 +905,24 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   if (_operationAborts.has(sessionId)) {
     return { ok: false, message: 'Another operation is already running for this installation.' }
   }
-  const launch = _beginLaunch(sessionId)
+  const launch = _beginLaunch(sessionId, { local: isLocalSource(ctx.inst.sourceId) })
   const prefetchHold = { release: (): void => {} }
   const settleFirstStart = (started: boolean): void => {
     if (sessionId === installationId) settleAutoStartOnFirstStart(installationId, started)
   }
+  const recordFailureIfLeft = (message: string | undefined): void =>
+    recordLeftStartFailure(sessionId, launch, {
+      installationName: ctx.inst.name,
+      message: message || i18n.t('progress.unknownError')
+    })
   try {
     const result = await runLaunch(ctx, launch, prefetchHold)
     if (!result.cancelled) settleFirstStart(result.ok)
+    if (!result.ok && !result.cancelled) recordFailureIfLeft(result.message)
     return result
   } catch (err) {
     settleFirstStart(false)
+    recordFailureIfLeft(err instanceof Error ? err.message : String(err))
     throw err
   } finally {
     prefetchHold.release()
@@ -2204,6 +2212,10 @@ async function runLaunch(
       if (!stopped.exited) {
         abandonRelaunch()
         return { ok: false, message: i18n.t('errors.priorProcessStuck', { pid: proc.pid ?? 0 }) }
+      }
+      if (abort.signal.aborted) {
+        abandonRelaunch()
+        return { ok: false, cancelled: true }
       }
       const respawned = await spawnComfy()
       proc = respawned.proc

@@ -254,6 +254,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     listLocalAssets: async () => ({ assets: [], truncated: false }),
     downloadAsset: async () => true,
     revealAsset: async () => true,
+    findCloudAsset: async () => ({ status: 'absent' }),
     copyAsset: async () => true,
     trashAsset: async () => true,
     listHomeWorkflows: async () => HOME_WORKFLOWS,
@@ -265,6 +266,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     showAppPage: async () => 'ready',
     captureAppPage: async () => null,
     hideAppPage: () => {},
+    sendAppOutputAction: () => {},
     getBuildStorageSnapshot: async () => ({
       sharedDirectoriesFields: [],
       modelsDirs: settings.modelsDirs.map((path, index) => ({ path, isPrimary: index === 0 })),
@@ -441,6 +443,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     onAppPageStatusChanged: listen('onAppPageStatusChanged'),
     onAppPageClosed: listen('onAppPageClosed'),
     onTemplateSearchAvailability: listen('onTemplateSearchAvailability'),
+    onAppOutputs: listen('onAppOutputs'),
     onCreditBalanceChanged: listen('onCreditBalanceChanged'),
     onFirstUseSkip: listen('onFirstUseSkip'),
     onOpenFeedback: listen('onOpenFeedback'),
