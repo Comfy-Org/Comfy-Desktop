@@ -31,6 +31,7 @@ interface Run {
   appId: string | null
   submittedAt: number
   startedAt?: number
+  heardEnd?: RunEnd
 }
 
 interface EarlyRun {
@@ -79,16 +80,22 @@ function timeOf(data: Record<string, unknown>, now: number): number {
   return typeof at === 'number' && Number.isFinite(at) && at > 0 ? at : now
 }
 
-function sendRunFinished(run: Run, end: RunEnd): void {
+function timesOf(run: Run, end: RunEnd): TelemetryContext {
   const startedAt = run.startedAt ?? end.startedAt
-  const queuedMs = startedAt === undefined ? null : startedAt - run.submittedAt
+  if (startedAt === undefined) return {}
+  return {
+    run_seconds: wholeSeconds(end.at - startedAt),
+    queue_seconds: wholeSeconds(startedAt - run.submittedAt)
+  }
+}
+
+function sendRunFinished(run: Run, end: RunEnd): void {
   try {
     mainTelemetry.capture(RUN_FINISHED_EVENT, {
       ...appIdOf(run.appId),
       where: 'local',
       outcome: end.outcome,
-      run_seconds: wholeSeconds(end.at - (startedAt ?? end.at)),
-      ...(queuedMs === null ? {} : { queue_seconds: wholeSeconds(queuedMs) }),
+      ...timesOf(run, end),
       ...(end.errorClass ? { error_class: end.errorClass } : {})
     })
   } catch {}
@@ -99,6 +106,10 @@ export function finishRun(promptId: string, end: RunEnd): void {
   if (!run) return
   runs.delete(promptId)
   sendRunFinished(run, end)
+}
+
+export function settleRun(promptId: string, fromHistory: RunEnd | null, missing: RunEnd): void {
+  finishRun(promptId, fromHistory ?? runs.get(promptId)?.heardEnd ?? missing)
 }
 
 export function runAccepted(
@@ -140,8 +151,9 @@ export function noteRunMessage(message: unknown, now = Date.now()): void {
   if (!outcome || isBlockedBranch(type, data)) return
   const errorClass = outcome === 'failed' ? errorClassOf(data['exception_type']) : undefined
   const end: RunEnd = { outcome, at, ...(errorClass ? { errorClass } : {}) }
-  if (run) finishRun(promptId, end)
-  else noteEarly(promptId, { end })
+  if (!run) noteEarly(promptId, { end })
+  else if (run.startedAt === undefined) run.heardEnd ??= end
+  else finishRun(promptId, end)
 }
 
 function messageTime(messages: unknown[], type: string): number | undefined {
@@ -196,7 +208,7 @@ export function buildsWithRuns(): string[] {
 
 export function failRunsOn(buildId: string, errorClass: string, now = Date.now()): void {
   for (const promptId of runsOn(buildId)) {
-    finishRun(promptId, { outcome: 'failed', errorClass, at: now })
+    settleRun(promptId, null, { outcome: 'failed', errorClass, at: now })
   }
 }
 

@@ -1532,6 +1532,7 @@ describe('run_finished, for an app run on this computer', () => {
   it('keeps following a run that is still queued when the socket opens again', async () => {
     comfy.queue = { queue_running: [[5, RUN, {}, {}]], queue_pending: [] }
     await runFromApp()
+    hear('execution_start', { timestamp: t0 })
 
     mocks.socketOpened()
     await vi.waitFor(() => expect(comfy.calls('/queue')).toHaveLength(1))
@@ -1563,9 +1564,10 @@ describe('run_finished, for an app run on this computer', () => {
 
     await vi.waitFor(() =>
       expect(captured(RUN_FINISHED)).toEqual([
-        expect.objectContaining({ app_id: APP, outcome: 'cancelled', run_seconds: 0 })
+        expect.objectContaining({ app_id: APP, outcome: 'cancelled' })
       ])
     )
+    expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('run_seconds')
   })
 
   describe('when the queue changes, as when another ComfyUI client clears pending work', () => {
@@ -1641,6 +1643,49 @@ describe('run_finished, for an app run on this computer', () => {
       expect(queueReads()).toHaveLength(2)
     })
 
+    it('takes the start of a run from its history when the socket missed it', async () => {
+      comfy.queue = { queue_running: [[5, RUN, {}, {}]], queue_pending: [] }
+      await runFromApp()
+      mocks.socketOpened()
+      await vi.waitFor(() => expect(queueReads()).toHaveLength(1))
+      await vi.advanceTimersByTimeAsync(0)
+      comfy.queue = { queue_running: [], queue_pending: [] }
+      comfy.historyEntry = {
+        outputs: {},
+        status: {
+          status_str: 'success',
+          completed: true,
+          messages: [
+            ['execution_start', { prompt_id: RUN, timestamp: t0 + 1_000 }],
+            ['execution_success', { prompt_id: RUN, timestamp: t0 + 6_000 }]
+          ]
+        }
+      }
+
+      hear('execution_success', { timestamp: t0 + 6_000 })
+      expect(captured(RUN_FINISHED)).toEqual([])
+      queueChanged()
+
+      await vi.waitFor(() =>
+        expect(captured(RUN_FINISHED)).toEqual([
+          expect.objectContaining({ outcome: 'success', run_seconds: 5, queue_seconds: 1 })
+        ])
+      )
+    })
+
+    it('sends a run whose start the socket missed with no run time when its history is gone', async () => {
+      comfy.historyEntry = null
+      await runFromApp()
+
+      hear('execution_success', { timestamp: t0 + 6_000 })
+      queueChanged()
+
+      await vi.waitFor(() =>
+        expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ outcome: 'success' })])
+      )
+      expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('run_seconds')
+    })
+
     it('reads nothing once every run Desktop follows has started', async () => {
       await runFromApp()
       hear('execution_start', { timestamp: t0 })
@@ -1667,6 +1712,7 @@ describe('run_finished, for an app run on this computer', () => {
   it('leaves a run that already started when the page asks to take it out of the queue', async () => {
     comfy.queue = { queue_running: [[5, RUN, {}, {}]], queue_pending: [] }
     await runFromApp()
+    hear('execution_start', { timestamp: t0 })
 
     await post('/queue', { delete: [RUN] })
     await vi.waitFor(() =>

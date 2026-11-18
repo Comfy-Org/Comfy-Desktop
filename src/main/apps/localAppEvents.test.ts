@@ -48,6 +48,7 @@ import {
   runEndFromHistory,
   runsOn,
   SETUP_EVENT,
+  settleRun,
   setupStarted,
   unstartedRunsOn
 } from './localAppEvents'
@@ -257,6 +258,7 @@ describe('run_finished', () => {
 
   it('leaves out app_id when Desktop does not know the app', () => {
     runAccepted(RUN, BUILD, null, T0)
+    noteRunMessage(message('execution_start', { timestamp: T0 }))
     noteRunMessage(message('execution_success', { timestamp: T0 }))
 
     expect(sent(RUN_FINISHED_EVENT)[0]).not.toHaveProperty('app_id')
@@ -273,10 +275,10 @@ describe('run_finished', () => {
       expect.objectContaining({
         app_id: APP,
         outcome: 'failed',
-        error_class: 'comfyui_exited',
-        run_seconds: 0
+        error_class: 'comfyui_exited'
       })
     ])
+    expect(sent(RUN_FINISHED_EVENT)[0]).not.toHaveProperty('run_seconds')
     expect(sent(RUN_FINISHED_EVENT)[0]).not.toHaveProperty('queue_seconds')
     expect(runsOn(BUILD)).toEqual([])
     expect(runsOn('lab')).toEqual([OTHER_RUN])
@@ -296,7 +298,8 @@ describe('run_finished', () => {
     finishRun(RUN, { outcome: 'cancelled', at: T0 + 5_000 })
 
     const [event] = sent(RUN_FINISHED_EVENT)
-    expect(event).toMatchObject({ outcome: 'cancelled', run_seconds: 0 })
+    expect(event).toMatchObject({ outcome: 'cancelled' })
+    expect(event).not.toHaveProperty('run_seconds')
     expect(event).not.toHaveProperty('queue_seconds')
   })
 
@@ -306,6 +309,63 @@ describe('run_finished', () => {
     noteRunMessage(message('execution_success', { timestamp: T0 }))
 
     expect(sent(RUN_FINISHED_EVENT)).toEqual([])
+  })
+})
+
+describe('run_finished for a run whose start Desktop did not hear', () => {
+  beforeEach(allowTelemetry)
+
+  const fromHistory = { outcome: 'success' as const, startedAt: T0 + 2_000, at: T0 + 9_000 }
+
+  it('waits for its history instead of sending a run time of zero', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_success', { timestamp: T0 + 9_000 }))
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([])
+    expect(unstartedRunsOn(BUILD)).toEqual([RUN])
+  })
+
+  it('takes the start from its history', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_success', { timestamp: T0 + 9_000 }))
+
+    settleRun(RUN, fromHistory, { outcome: 'cancelled', at: T0 + 10_000 })
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ outcome: 'success', run_seconds: 7, queue_seconds: 2 })
+    ])
+  })
+
+  it('sends how it ended with no run time when its history is gone', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_error', { exception_type: 'RuntimeError' }))
+
+    settleRun(RUN, null, { outcome: 'cancelled', at: T0 + 10_000 })
+
+    const [event] = sent(RUN_FINISHED_EVENT)
+    expect(event).toMatchObject({ outcome: 'failed', error_class: 'runtime_error' })
+    expect(event).not.toHaveProperty('run_seconds')
+  })
+
+  it('sends how it ended with no run time when its ComfyUI exits first', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_success', { timestamp: T0 + 9_000 }))
+
+    failRunsOn(BUILD, COMFYUI_EXITED)
+
+    const [event] = sent(RUN_FINISHED_EVENT)
+    expect(event).toMatchObject({ outcome: 'success' })
+    expect(event).not.toHaveProperty('run_seconds')
+    expect(event).not.toHaveProperty('error_class')
+  })
+
+  it('sends a run that ended before Desktop read its prompt id with no run time', () => {
+    noteRunMessage(message('execution_success', { timestamp: T0 + 4_000 }))
+    runAccepted(RUN, BUILD, APP, T0)
+
+    const [event] = sent(RUN_FINISHED_EVENT)
+    expect(event).toMatchObject({ outcome: 'success' })
+    expect(event).not.toHaveProperty('run_seconds')
   })
 })
 

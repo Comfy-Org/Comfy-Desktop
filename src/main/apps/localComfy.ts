@@ -32,12 +32,12 @@ import {
   buildsWithRuns,
   COMFYUI_EXITED,
   failRunsOn,
-  finishRun,
   isFollowing,
   noteRunMessage,
   runAccepted,
   runEndFromHistory,
   runsOn,
+  settleRun,
   setupStarted,
   unstartedRunsOn
 } from './localAppEvents'
@@ -583,7 +583,7 @@ async function settleUnheardRuns(
     if (queued.has(promptId) || !isFollowing(promptId)) continue
     const history = parsed(await forward(port, `/history/${promptId}`))
     if (!isRecord(history)) continue
-    finishRun(promptId, runEndFromHistory(history[promptId]) ?? { ...missing, at: Date.now() })
+    settleRun(promptId, runEndFromHistory(history[promptId]), { ...missing, at: Date.now() })
   }
 }
 
