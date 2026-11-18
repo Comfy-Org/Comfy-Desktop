@@ -13,6 +13,10 @@ const UPDATE_CHECK_MS = 24 * 60 * 60_000
 const SHA256 = /^[0-9a-f]{64}$/
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const UPDATE_DESKTOP: TemplateSearchAvailability = { kind: 'unavailable', reason: 'update_desktop' }
+const DOWNLOAD_FAILED: TemplateSearchAvailability = {
+  kind: 'unavailable',
+  reason: 'download_failed'
+}
 
 export interface Supported {
   sidecar: string
@@ -48,7 +52,6 @@ export interface BundleStoreDeps {
   }) => Promise<TransferResult>
   supports: () => Promise<Supported | null>
   check: (bundleDir: string) => Promise<boolean>
-  isOnline: () => boolean
   onAvailability: (availability: TemplateSearchAvailability) => void
   now?: () => number
 }
@@ -162,6 +165,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
   let lastProgressAt = 0
   let lastUpdateCheck = 0
   let quiet = false
+  let waitingForRetry = false
 
   async function localVersions(): Promise<(LocalBundle & { minSidecar: string | null })[]> {
     const names = await fs.promises.readdir(bundlesDir).catch(() => [] as string[])
@@ -190,6 +194,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
 
   async function discard(version: string): Promise<void> {
     await fs.promises.rm(path.join(bundlesDir, version), { recursive: true, force: true })
+    waitingForRetry = true
   }
 
   function report(availability: TemplateSearchAvailability): void {
@@ -308,16 +313,16 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     }
   }
 
-  async function fetchNewest(base: string): Promise<boolean> {
+  async function fetchNewest(base: string): Promise<void> {
     progress = { received: 0, total: 0 }
     await clearPartials()
     const found = await wanted(base)
-    if (!found) return false
+    if (!found) return
     const local = await localVersions()
     const current = local.find((b) => b.version === found.entry.version)
     if (current) {
       const onDisk = await fs.promises.readFile(path.join(current.dir, MANIFEST)).catch(() => null)
-      if (onDisk && sha256Of(onDisk) === found.entry.manifestSha256) return true
+      if (onDisk && sha256Of(onDisk) === found.entry.manifestSha256) return
     }
     const manifest = parseManifest(JSON.parse(found.raw.toString('utf8')))
     if (!manifest || manifest.version !== found.entry.version) {
@@ -326,7 +331,6 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     await fetchFiles(base, manifest.files)
     await assemble(manifest.version, found.raw, manifest.files)
     await removeUnlistedFiles()
-    return true
   }
 
   function download({ quietly = false } = {}): Promise<void> {
@@ -341,10 +345,14 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     }
     quiet = quietly
     downloading = fetchNewest(base)
-      .then(async (readable) =>
-        report(readable || (await newest()) ? { kind: 'idle' } : UPDATE_DESKTOP)
-      )
-      .catch(() => report({ kind: 'unavailable', reason: 'download_failed' }))
+      .then(async () => {
+        waitingForRetry = false
+        deps.onAvailability((await newest()) ? { kind: 'idle' } : UPDATE_DESKTOP)
+      })
+      .catch(() => {
+        if (!quiet) waitingForRetry = true
+        report(DOWNLOAD_FAILED)
+      })
       .finally(() => {
         downloading = null
         quiet = false
@@ -368,7 +376,12 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       quiet = false
       return { kind: 'downloading', ...progress }
     }
-    if (!deps.isOnline()) return { kind: 'unavailable', reason: 'offline' }
+    if (waitingForRetry) return DOWNLOAD_FAILED
+    try {
+      if (!(await wanted(base))) return UPDATE_DESKTOP
+    } catch {
+      return { kind: 'unavailable', reason: 'offline' }
+    }
     void download()
     return { kind: 'downloading', ...progress }
   }
