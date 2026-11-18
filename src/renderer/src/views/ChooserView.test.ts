@@ -211,13 +211,25 @@ describe('ChooserView', () => {
   })
 
   it('names the search after builds', async () => {
-    installMockApi([])
+    installMockApi([makeInstall({ name: 'One' })])
     const wrapper = mountChooser()
     await flushPromises()
 
     const input = wrapper.get('.chooser-search input')
     expect(input.attributes('placeholder')).toBe('Search builds')
     expect(input.attributes('aria-label')).toBe('Search builds')
+  })
+
+  it('drops the tabs, sort and search when there are no builds at all', async () => {
+    installMockApi([])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const toolbar = wrapper.get('.chooser-toolbar')
+    expect(toolbar.find('.chooser-search').exists()).toBe(false)
+    expect(toolbar.find('[role="radiogroup"], [role="tablist"]').exists()).toBe(false)
+    expect(toolbar.findComponent({ name: 'BaseSelect' }).exists()).toBe(false)
+    expect(wrapper.find('.chooser-no-builds').exists()).toBe(true)
   })
 
   it('offers the shared Comfy Cloud in team workspaces while filtering local builds', async () => {
@@ -927,7 +939,10 @@ describe('ChooserView', () => {
   })
 
   it('offers a workspace refresh in the toolbar only when signed in', async () => {
-    installMockApiSignedIn([], [], { id: 'w1', name: 'Comfy Design Team' })
+    installMockApiSignedIn([makeInstall({ name: 'One', workspaceId: 'w1' })], [], {
+      id: 'w1',
+      name: 'Comfy Design Team'
+    })
     const wrapper = mountChooser()
     await flushPromises()
 

@@ -146,8 +146,13 @@ watch(whereOptions, (options) => {
 const hasFilters = computed(
   () => searchQuery.value.trim().length > 0 || activeFilter.value !== 'all'
 )
-const showNoMatches = computed(() => scopedVisibleInstalls.value.length === 0 && hasFilters.value)
-const showNoBuilds = computed(() => scopedVisibleInstalls.value.length === 0 && !hasFilters.value)
+const hasNoBuilds = computed(() => scopedInstalls.value.length === 0)
+const showNoMatches = computed(
+  () => !hasNoBuilds.value && scopedVisibleInstalls.value.length === 0 && hasFilters.value
+)
+const showNoBuilds = computed(
+  () => hasNoBuilds.value || (scopedVisibleInstalls.value.length === 0 && !hasFilters.value)
+)
 
 function clearFilters(): void {
   searchQuery.value = ''
@@ -282,6 +287,7 @@ const gridHandlers = {
 
       <div class="chooser-toolbar mb-5 flex min-h-8 flex-wrap items-center gap-2">
         <SegmentedControl
+          v-if="!hasNoBuilds"
           v-model="activeFilter"
           :options="whereOptions"
           :label="t('chooser.whereLabel')"
@@ -307,7 +313,7 @@ const gridHandlers = {
               }"
             />
           </Button>
-          <div class="w-38">
+          <div v-if="!hasNoBuilds" class="w-38">
             <BaseSelect
               v-model="sortOrder"
               :options="sortOptions"
@@ -315,7 +321,7 @@ const gridHandlers = {
               compact
             />
           </div>
-          <div class="chooser-search w-[220px]">
+          <div v-if="!hasNoBuilds" class="chooser-search w-[220px]">
             <BaseInput
               v-model="searchQuery"
               class="h-8 [&_input]:text-[13px]"

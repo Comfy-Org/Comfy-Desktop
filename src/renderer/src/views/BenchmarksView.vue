@@ -706,7 +706,7 @@ onActivated(() => {
           </template>
         </BrandedPageHeader>
 
-        <div class="benchmarks__toolbar @container/toolbar">
+        <div v-if="loading || benchmarks.length > 0" class="benchmarks__toolbar @container/toolbar">
           <div class="flex items-center gap-2 @max-[68rem]/toolbar:flex-wrap">
             <div
               v-for="group in toolbarMenuGroups"

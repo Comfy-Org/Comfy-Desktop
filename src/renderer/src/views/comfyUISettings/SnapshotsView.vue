@@ -592,11 +592,11 @@ async function handleImport(): Promise<void> {
             <span>{{ t('snapshots.importSnapshots') }}</span>
           </Button>
           <Button
+            v-if="snapshots.length > 0"
             type="button"
             variant="textonly"
             size="md"
             class="snapshots-view-toolbtn gap-1.5 px-2.5"
-            :disabled="snapshots.length === 0"
             :aria-label="t('snapshots.exportAllSnapshots')"
             :data-testid="TID.snapshotsExportAll"
             @click="handleExportAll"

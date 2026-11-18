@@ -113,7 +113,10 @@ onBeforeUnmount(() => {
         </h1>
       </header>
 
-      <div class="mx-auto flex min-h-8 w-full max-w-300 items-center gap-2 px-10 py-3">
+      <div
+        v-if="state === 'loading' || (state === 'ready' && apps.length > 0)"
+        class="mx-auto flex min-h-8 w-full max-w-300 items-center gap-2 px-10 py-3"
+      >
         <div class="ml-auto w-[220px]">
           <BaseInput
             v-model="query"
