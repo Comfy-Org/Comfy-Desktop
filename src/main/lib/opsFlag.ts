@@ -125,6 +125,7 @@ export function writePersistedEntry(
 export interface OpsFlag<T> {
   init(opts: { distinctId: string; timeoutMs?: number }): Promise<void>
   get(): Promise<T>
+  saved(): T | undefined
   refresh(): Promise<void>
   _resetForTest(): void
 }
@@ -232,6 +233,7 @@ export function makeOpsFlag<T>(opts: {
       refreshPromise = fetchAndApply(initOpts, false, 'refresh')
       return refreshPromise
     },
+    saved: readPersisted,
     async get() {
       if (initPromise) {
         try {

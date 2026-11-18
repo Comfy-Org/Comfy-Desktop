@@ -143,6 +143,11 @@ describe('usage events from the hosted Apps page', () => {
   it.each([
     ['app_opened, which Desktop sends itself', { name: 'app_opened', props: {} }],
     ['app_page_failed, which Desktop sends itself', { name: 'app_page_failed', props: {} }],
+    [
+      'run_finished, which Desktop sends itself',
+      { name: 'run_finished', props: { where: 'local', outcome: 'success' } }
+    ],
+    ['setup, which Desktop sends itself', { name: 'setup', props: { stage: 'start' } }],
     ['a name outside the pattern', { name: 'Run Started', props: {} }],
     ['a payload with no name', { props: { where: 'cloud' } }],
     ['a payload that is not an object', 'run_started'],

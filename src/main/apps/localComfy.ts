@@ -28,6 +28,22 @@ import {
 import { COMFY_BOOT_TIMEOUT_MS } from '../lib/process'
 import { liveAppsPages } from './appsPages'
 import {
+  _resetForTest as _resetLocalAppEventsForTest,
+  buildsWithRuns,
+  COMFYUI_EXITED,
+  failRunsOn,
+  finishHeardRun,
+  isFollowing,
+  noteRunMessage,
+  runAccepted,
+  runEndFromHistory,
+  runsOn,
+  settleRun,
+  setupStarted,
+  unstartedRunsOn
+} from './localAppEvents'
+import type { RunEnd, SetupStep } from './localAppEvents'
+import {
   chooseInstallingBuild,
   chooseLocalBuild,
   installingLocalBuilds,
@@ -65,6 +81,8 @@ const OTHER_LAUNCH_POLL_MS = 500
 const INSTALL_POLL_MS = 1_000
 const INSTALL_WAIT_MS = 60 * 60_000
 const DOWNLOAD_EVENT_GAP_MS = 250
+const SETTLE_RETRY_MS = 2_000
+const SETTLE_RETRIES = 3
 const REFUSED = 403
 const JSON_TYPE = 'application/json'
 const RUN_UPDATES: ReadonlySet<string> = new Set([
@@ -86,6 +104,10 @@ interface ChosenBuild extends LocalBuild {
   installing: boolean
 }
 
+interface ForApp {
+  appId: string | null
+}
+
 let idleTimer: ReturnType<typeof setTimeout> | null = null
 let watchingSessions = false
 let downloadsUnderWay = 0
@@ -94,8 +116,11 @@ const relayByBuild = new Map<string, LocalRelay>()
 const startedHere = new Set<string>()
 const keptRunning = new Set<string>()
 const launches = new Map<string, Promise<ActionResult>>()
+const installWaits = new Map<string, Promise<void>>()
 const ownRuns = new Map<string, string>()
 const ownFiles = new Map<string, Set<string>>()
+const queueChecks = new Map<string, { again: boolean }>()
+const settleRetries = new Set<ReturnType<typeof setTimeout>>()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -115,6 +140,7 @@ function sendToPages(event: ComfyDesktopLocalEvent): void {
 }
 
 function relayRunUpdate(message: unknown): void {
+  noteRunMessage(message)
   if (!isRecord(message) || typeof message['type'] !== 'string') return
   if (!RUN_UPDATES.has(message['type']) || !isRecord(message['data'])) return
   const promptId = message['data']['prompt_id']
@@ -122,8 +148,22 @@ function relayRunUpdate(message: unknown): void {
   sendToPages({ type: message['type'], data: message['data'] })
 }
 
+function isQueueChange(message: unknown): boolean {
+  if (!isRecord(message) || message['type'] !== 'status') return false
+  return isRecord(message['data']) && !('sid' in message['data'])
+}
+
+function hearFrom(buildId: string): (message: unknown) => void {
+  return (message) => {
+    relayRunUpdate(message)
+    if (isQueueChange(message)) checkClearedRuns(buildId)
+  }
+}
+
 function relayFor(installationId: string, port: number): LocalRelay {
-  const relay = relayByBuild.get(installationId) ?? createLocalRelay(relayRunUpdate)
+  const relay =
+    relayByBuild.get(installationId) ??
+    createLocalRelay(hearFrom(installationId), undefined, () => checkUnheardRuns(installationId))
   relayByBuild.set(installationId, relay)
   relay.follow(port)
   return relay
@@ -139,6 +179,9 @@ function stopFollowingStoppedBuilds(): void {
     if (runningPortOf(id) !== null) continue
     relay.stop()
     relayByBuild.delete(id)
+  }
+  for (const id of buildsWithRuns()) {
+    if (runningPortOf(id) === null) failRunsOn(id, COMFYUI_EXITED)
   }
 }
 
@@ -253,6 +296,25 @@ async function installSettled(installationId: string): Promise<void> {
   }
 }
 
+async function endInstallStep(installationId: string, step: SetupStep): Promise<void> {
+  if (await isStillInstalling(installationId)) return step.failed('install_timed_out')
+  const status = (await installations.get(installationId))?.status
+  if (status === 'installed') return step.finished()
+  if (status === 'failed') return step.failed('install_failed')
+  step.cancelled()
+}
+
+function waitForInstall(installationId: string, appId: string | null): Promise<void> {
+  const waiting = installWaits.get(installationId)
+  if (waiting) return waiting
+  const step = setupStarted('install', appId)
+  const wait = installSettled(installationId)
+    .then(() => endInstallStep(installationId, step).catch(() => {}))
+    .finally(() => installWaits.delete(installationId))
+  installWaits.set(installationId, wait)
+  return wait
+}
+
 async function waitForOtherLaunch(installationId: string): Promise<ActionResult> {
   await otherLaunchSettled(installationId)
   return { ok: runningPortOf(installationId) !== null }
@@ -268,17 +330,32 @@ export function launchQuietly(
   return handleLaunch({ event: QUIET_EVENT, installationId: inst.id, inst, actionData })
 }
 
+function endStartStep(step: SetupStep | null, result: ActionResult): void {
+  if (result.ok) step?.finished()
+  else if (result.cancelled) step?.cancelled()
+  else step?.failed(result.portConflict ? 'port_conflict' : 'start_failed')
+}
+
 async function launchWithoutWindow(
   installationId: string,
-  keepRunning: boolean
+  keepRunning: boolean,
+  forApp?: ForApp
 ): Promise<ActionResult> {
   if (_hasActiveLaunch(installationId)) return waitForOtherLaunch(installationId)
   const inst = await installations.get(installationId)
   if (!inst) return { ok: false }
-  const result = await launchQuietly(inst, {
-    launchModeOverride: 'console',
-    autoPortOnConflict: true
-  })
+  const step = forApp ? setupStarted('start', forApp.appId) : null
+  let result: ActionResult
+  try {
+    result = await launchQuietly(inst, {
+      launchModeOverride: 'console',
+      autoPortOnConflict: true
+    })
+  } catch (err) {
+    step?.failed('start_failed')
+    throw err
+  }
+  endStartStep(step, result)
   if (result.ok) {
     startedHere.add(installationId)
     if (keepRunning) keptRunning.add(installationId)
@@ -328,10 +405,14 @@ export async function stopEveryBuildRunningForAppsOnly(): Promise<void> {
   await Promise.all(ids.map((id) => stopRunning(id)))
 }
 
-export function launchOnce(installationId: string, keepRunning = false): Promise<ActionResult> {
+export function launchOnce(
+  installationId: string,
+  keepRunning = false,
+  forApp?: ForApp
+): Promise<ActionResult> {
   const pending = launches.get(installationId)
   if (pending) return pending
-  const launch = launchWithoutWindow(installationId, keepRunning)
+  const launch = launchWithoutWindow(installationId, keepRunning, forApp)
     .catch((err: unknown): ActionResult => ({ ok: false, message: (err as Error)?.message }))
     .finally(() => launches.delete(installationId))
   launches.set(installationId, launch)
@@ -359,11 +440,12 @@ export async function startWithDesktop(inst: InstallationRecord): Promise<void> 
 
 async function chooseInstalledTarget(
   page: WebContents,
-  want: unknown
+  want: unknown,
+  appId: string | null
 ): Promise<ChosenBuild | string> {
   const build = await chooseTarget(page, want)
   if (typeof build === 'string' || !build.installing) return build
-  await installSettled(build.id)
+  await waitForInstall(build.id, appId)
   const installed = await chooseTarget(page, want)
   if (typeof installed !== 'string' && !installed.installing) {
     page.send(LOCAL_EVENT_CHANNEL, { type: 'setup', data: { state: 'done' } })
@@ -373,15 +455,16 @@ async function chooseInstalledTarget(
 
 export async function startLocal(
   page: WebContents,
-  want: unknown
+  want: unknown,
+  appId: string | null = null
 ): Promise<ComfyDesktopLocalComfy> {
-  const build = await chooseInstalledTarget(page, want)
+  const build = await chooseInstalledTarget(page, want, appId)
   if (typeof build === 'string') return { state: 'unsupported', error: build }
   if (build.installing) {
     return { ...describe(build), error: i18n.t('apps.local.stillInstalling', { name: build.name }) }
   }
   watchSessions()
-  const launched = build.port === null ? await launchOnce(build.id) : null
+  const launched = build.port === null ? await launchOnce(build.id, false, { appId }) : null
   const port = runningPortOf(build.id)
   if (port === null) {
     return {
@@ -472,9 +555,11 @@ async function sendRun(
   buildId: string,
   port: number,
   relay: LocalRelay,
-  call: Extract<LocalCall, { kind: 'prompt' }>
+  call: Extract<LocalCall, { kind: 'prompt' }>,
+  appId: string | null
 ): Promise<ComfyDesktopLocalAnswer> {
   await relay.whenOpen(RELAY_READY_MS)
+  const submittedAt = Date.now()
   const answer = await forward(port, '/prompt', {
     method: 'POST',
     json: { prompt: call.prompt, client_id: relay.clientId, extra_data: call.extraData }
@@ -482,6 +567,91 @@ async function sendRun(
   const started = parsed(answer)
   if (isRecord(started) && typeof started['prompt_id'] === 'string') {
     rememberBounded(ownRuns, started['prompt_id'], buildId, MAX_RUNS_REMEMBERED)
+    runAccepted(started['prompt_id'], buildId, appId, submittedAt)
+  }
+  return answer
+}
+
+function settleLater(
+  port: number,
+  promptIds: readonly string[],
+  missing: Omit<RunEnd, 'at'>,
+  tries: number
+): void {
+  const unheard = promptIds.filter(isFollowing)
+  if (unheard.length === 0 || tries >= SETTLE_RETRIES) return
+  const retry = setTimeout(() => {
+    settleRetries.delete(retry)
+    settleUnheardRuns(port, unheard, missing, tries + 1).catch(() => {})
+  }, SETTLE_RETRY_MS)
+  settleRetries.add(retry)
+}
+
+async function settleUnheardRuns(
+  port: number,
+  promptIds: readonly string[],
+  missing: Omit<RunEnd, 'at'>,
+  tries = 0
+): Promise<void> {
+  const following = promptIds.filter(isFollowing)
+  if (following.length === 0) return
+  const queue = await forward(port, '/queue').then(parsed, () => null)
+  if (!isRecord(queue)) {
+    for (const promptId of following) finishHeardRun(promptId)
+    return settleLater(port, following, missing, tries)
+  }
+  const { running, pending } = queueViewOf(queue, () => true)
+  const queued = new Set([...running, ...pending].map((run) => run.id))
+  const unread: string[] = []
+  for (const promptId of following) {
+    if (queued.has(promptId) || !isFollowing(promptId)) continue
+    const history = await forward(port, `/history/${promptId}`).then(parsed, () => null)
+    if (!isRecord(history)) {
+      finishHeardRun(promptId)
+      unread.push(promptId)
+      continue
+    }
+    settleRun(promptId, runEndFromHistory(history[promptId]), { ...missing, at: Date.now() })
+  }
+  settleLater(port, unread, missing, tries)
+}
+
+function checkUnheardRuns(buildId: string): void {
+  const promptIds = runsOn(buildId)
+  if (promptIds.length === 0) return
+  const port = runningPortOf(buildId)
+  if (port === null) return failRunsOn(buildId, COMFYUI_EXITED)
+  settleUnheardRuns(port, promptIds, { outcome: 'failed', errorClass: COMFYUI_EXITED }).catch(
+    () => {}
+  )
+}
+
+function checkClearedRuns(buildId: string): void {
+  const underWay = queueChecks.get(buildId)
+  if (underWay) {
+    underWay.again = true
+    return
+  }
+  const promptIds = unstartedRunsOn(buildId)
+  const port = runningPortOf(buildId)
+  if (promptIds.length === 0 || port === null) return
+  const check = { again: false }
+  queueChecks.set(buildId, check)
+  settleUnheardRuns(port, promptIds, { outcome: 'cancelled' })
+    .catch(() => {})
+    .then(() => {
+      queueChecks.delete(buildId)
+      if (check.again) checkClearedRuns(buildId)
+    })
+}
+
+async function leaveQueue(
+  port: number,
+  call: Extract<LocalCall, { kind: 'leave-queue' }>
+): Promise<ComfyDesktopLocalAnswer> {
+  const answer = await forward(port, '/queue', { method: 'POST', json: { delete: call.promptIds } })
+  if (answer.status === 200) {
+    settleUnheardRuns(port, call.promptIds, { outcome: 'cancelled' }).catch(() => {})
   }
   return answer
 }
@@ -510,7 +680,8 @@ async function answerCall(
   buildId: string,
   port: number,
   relay: LocalRelay,
-  call: LocalCall
+  call: LocalCall,
+  appId: string | null
 ): Promise<ComfyDesktopLocalAnswer> {
   switch (call.kind) {
     case 'queue':
@@ -523,7 +694,7 @@ async function answerCall(
     case 'upload':
       return forward(port, '/upload/image', { method: 'POST', form: uploadForm(call) })
     case 'prompt':
-      return sendRun(buildId, port, relay, call)
+      return sendRun(buildId, port, relay, call, appId)
     case 'history':
       return ownRuns.has(call.promptId) ? readRun(buildId, port, call.promptId) : refusal()
     case 'view':
@@ -534,7 +705,7 @@ async function answerCall(
         : refusal()
     case 'leave-queue':
       return call.promptIds.every((id) => ownRuns.get(id) === buildId)
-        ? forward(port, '/queue', { method: 'POST', json: { delete: call.promptIds } })
+        ? leaveQueue(port, call)
         : refusal()
     case 'interrupt':
       return ownRuns.has(call.promptId)
@@ -569,7 +740,8 @@ function runBuildOf(call: LocalCall, targetId: string | undefined): string | und
 
 export async function localFetch(
   page: WebContents,
-  raw: unknown
+  raw: unknown,
+  appId: string | null = null
 ): Promise<ComfyDesktopLocalAnswer> {
   const call = readLocalCall(raw)
   if (!call) return refusal()
@@ -578,7 +750,7 @@ export async function localFetch(
   const port = buildId ? runningPortOf(buildId) : null
   if (!buildId || port === null) throw new Error(i18n.t('apps.local.notRunning'))
   noteUse()
-  return answerCall(buildId, port, relayFor(buildId, port), call)
+  return answerCall(buildId, port, relayFor(buildId, port), call, appId)
 }
 
 function downloadProgress(name: string): (done: number, total: number) => void {
@@ -593,7 +765,8 @@ function downloadProgress(name: string): (done: number, total: number) => void {
 
 async function downloadInto(
   installationId: string,
-  model: ModelRequest
+  model: ModelRequest,
+  appId: string | null
 ): Promise<ComfyDesktopLocalDownload> {
   const job = await startManagedModelJob({
     url: model.url,
@@ -601,6 +774,7 @@ async function downloadInto(
     directory: model.folder,
     installationId,
     source: 'app',
+    appId,
     onProgress: downloadProgress(model.name)
   })
   try {
@@ -613,27 +787,28 @@ async function downloadInto(
   }
 }
 
-async function readyForModels(installationId: string): Promise<boolean> {
+async function readyForModels(installationId: string, appId: string | null): Promise<boolean> {
   const target = await modelTargetOf(installationId)
   if (!target?.installing || !target.modelsInsideBuild) return target !== null
-  await installSettled(installationId)
+  await waitForInstall(installationId, appId)
   const after = await modelTargetOf(installationId)
   return after !== null && !after.installing
 }
 
 export async function localDownload(
   page: WebContents,
-  raw: unknown
+  raw: unknown,
+  appId: string | null = null
 ): Promise<ComfyDesktopLocalDownload> {
   const model = readModelRequest(raw)
   if (!model) return { state: 'failed', error: i18n.t('apps.local.modelRefused') }
   const target = targetByPage.get(page)
-  if (!target || !(await readyForModels(target.id))) {
+  if (!target || !(await readyForModels(target.id, appId))) {
     return { state: 'failed', error: i18n.t('apps.local.noBuilds') }
   }
   downloadsUnderWay += 1
   try {
-    return await downloadInto(target.id, model)
+    return await downloadInto(target.id, model, appId)
   } finally {
     downloadsUnderWay -= 1
     noteUse()
@@ -651,6 +826,11 @@ export function _resetForTest(): void {
   startedHere.clear()
   keptRunning.clear()
   launches.clear()
+  installWaits.clear()
+  queueChecks.clear()
+  for (const retry of settleRetries) clearTimeout(retry)
+  settleRetries.clear()
+  _resetLocalAppEventsForTest()
   ownRuns.clear()
   ownFiles.clear()
 }

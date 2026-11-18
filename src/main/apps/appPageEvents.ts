@@ -12,7 +12,12 @@ const EVENT_NAME = /^[a-z][a-z0-9_]{0,47}$/
 const PROPERTY_NAME = /^[a-z][a-z0-9_]{0,31}$/
 const SLUG = /^[a-z0-9][a-z0-9._-]{0,63}$/
 
-export const DESKTOP_APP_EVENTS: ReadonlySet<string> = new Set(['app_opened', 'app_page_failed'])
+export const DESKTOP_APP_EVENTS: ReadonlySet<string> = new Set([
+  'app_opened',
+  'app_page_failed',
+  'run_finished',
+  'setup'
+])
 export const UNLIMITED_EVENT_NAMES: ReadonlySet<string> = new Set(['error'])
 const DESKTOP_PROPERTIES: ReadonlySet<string> = new Set(['app', 'app_id'])
 

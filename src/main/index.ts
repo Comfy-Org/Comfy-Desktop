@@ -121,6 +121,7 @@ import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initAppsFlag } from './apps/appsFlag'
+import { appsEnabledAtStart } from './apps/appsConfig'
 import { runningPortOf } from './apps/localBuild'
 import {
   isRunningForAppsOnly,
@@ -937,11 +938,15 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     } catch (err) {
       console.warn('[comfy-procs] startup scan failed:', err)
     }
+    const appsEnabled = appsEnabledAtStart()
     mainTelemetry.initTelemetry({
       appVersion: APP_VERSION,
       appEnv: app.isPackaged ? 'prod-v2' : 'dev',
       isPackaged: app.isPackaged,
-      sessionStartProps: { prior_session_unclean: priorSessionUnclean }
+      sessionStartProps: {
+        prior_session_unclean: priorSessionUnclean,
+        ...(appsEnabled === undefined ? {} : { apps_enabled: appsEnabled })
+      }
     })
     mainTelemetry.setConsentState(initialConsent)
     mainTelemetry.installAppHooks()
