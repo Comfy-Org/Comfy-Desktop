@@ -46,7 +46,7 @@ function close(): void {
 }
 
 function onEscape(event: KeyboardEvent): void {
-  if (event.target !== input.value) focusInput()
+  if ((results.value?.$el as HTMLElement | undefined)?.contains(event.target as Node)) focusInput()
   close()
 }
 
