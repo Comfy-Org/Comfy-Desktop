@@ -61,4 +61,44 @@ describe('PremiumAppBadge', () => {
 
     await expect.poll(() => document.querySelector('.tooltip-bubble')).toBe(null)
   })
+
+  it('opens at once when its card already has keyboard focus as it appears', async () => {
+    const wrapper = mount(PremiumAppBadge, {
+      attachTo: document.body,
+      props: { descriptionId: 'premium-note', revealed: true }
+    })
+    mounted.push(wrapper)
+
+    await expect
+      .poll(() => document.querySelector('.tooltip-bubble')?.textContent ?? '')
+      .toContain('Premium app, runs with credits')
+  })
+
+  it('stays open under the pointer when keyboard focus moves on to another card', async () => {
+    const wrapper = mount(PremiumAppBadge, {
+      attachTo: document.body,
+      props: { descriptionId: 'premium-note', revealed: true }
+    })
+    mounted.push(wrapper)
+    await userEvent.hover(wrapper.get('[data-testid="premium-app-badge"]').element)
+
+    await wrapper.setProps({ revealed: false })
+
+    await expect
+      .poll(() => document.querySelector('.tooltip-bubble')?.textContent ?? '')
+      .toContain('Premium app, runs with credits')
+  })
+
+  it('closes on Escape while its card has keyboard focus', async () => {
+    const wrapper = mount(PremiumAppBadge, {
+      attachTo: document.body,
+      props: { descriptionId: 'premium-note', revealed: true }
+    })
+    mounted.push(wrapper)
+    await expect.poll(() => document.querySelector('.tooltip-bubble')).not.toBe(null)
+
+    await userEvent.keyboard('{Escape}')
+
+    await expect.poll(() => document.querySelector('.tooltip-bubble')).toBe(null)
+  })
 })

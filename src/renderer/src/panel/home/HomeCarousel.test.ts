@@ -22,17 +22,20 @@ const HDR: CarouselCard = { id: 'sdr-to-hdr', title: 'SDR to HDR', description: 
 const EXTEND: CarouselCard = { id: 'extend-picture', title: 'Extend Picture', description: '' }
 
 const mounted: VueWrapper[] = []
+const hosts: HTMLElement[] = []
 
 beforeAll(() => page.viewport(1200, 800))
 
 afterEach(() => {
   while (mounted.length) mounted.pop()?.unmount()
+  while (hosts.length) hosts.pop()?.remove()
 })
 
 function mountCarousel() {
   const host = document.createElement('div')
   host.style.cssText = 'position: fixed; left: 0; top: 0; width: 1000px; height: 400px'
   document.body.append(host)
+  hosts.push(host)
   const wrapper = mount(HomeCarousel<CarouselCard>, {
     attachTo: host,
     props: { cards: [PRODUCT_SWAP, HDR, EXTEND], kind: 'apps', pictureOf: () => null }
@@ -79,6 +82,7 @@ describe('HomeCarousel premium apps', () => {
 
   it('shows the credit note when the premium card gets keyboard focus', async () => {
     const wrapper = mountCarousel()
+    expect(document.querySelector('.tooltip-bubble')).toBe(null)
 
     await userEvent.tab()
 
@@ -86,5 +90,8 @@ describe('HomeCarousel premium apps', () => {
     await expect
       .poll(() => document.querySelector('.tooltip-bubble')?.textContent ?? '')
       .toContain('Premium app, runs with credits')
+    const bubble = document.querySelector('.tooltip-bubble')!.getBoundingClientRect()
+    expect(bubble.width).toBeGreaterThan(0)
+    expect(bubble.height).toBeGreaterThan(0)
   })
 })
