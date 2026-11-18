@@ -1,18 +1,9 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, ref } from 'vue'
-import { createI18n } from 'vue-i18n'
 
 import { useInstallList } from './useInstallList'
+import { createAppI18n } from '../lib/i18nFactory'
 import type { Installation } from '../types/ipc'
-
-const messages = {
-  en: {
-    dashboard: {
-      launchedAgo: 'Launched {time}',
-      neverLaunched: 'Not launched yet'
-    }
-  }
-}
 
 function makeInstall(overrides: Partial<Installation>): Installation {
   return {
@@ -25,10 +16,10 @@ function makeInstall(overrides: Partial<Installation>): Installation {
 }
 
 describe('useInstallList', () => {
-  let i18n: ReturnType<typeof createI18n>
+  let i18n: ReturnType<typeof createAppI18n>
 
   beforeEach(() => {
-    i18n = createI18n({ legacy: false, locale: 'en', messages })
+    i18n = createAppI18n()
   })
 
   afterEach(() => {
@@ -48,10 +39,6 @@ describe('useInstallList', () => {
       expect(list.visibleInstalls.value.map((i) => i.id)).toEqual(['new', 'mid', 'old', 'never'])
     })
 
-    // Regression: cloud must not jump above an older local install — recency
-    // is the only thing that decides order. Before the unpin refactor, cloud
-    // lived in its own surface (dashboard) or was tie-break-pinned (picker),
-    // both of which broke straight recency ordering.
     it('places a cloud install below a more-recent local install (no cloud pinning)', () => {
       const installations = ref<Installation[]>([
         makeInstall({
@@ -72,10 +59,6 @@ describe('useInstallList', () => {
       expect(list.visibleInstalls.value.map((i) => i.id)).toEqual(['recent-local', 'old-cloud'])
     })
 
-    // Tie-break sanity: with equal recency, cloud is no longer pinned ahead
-    // of local — order falls back to whatever sort() lands on, which for a
-    // stable timsort is input order. The contract is "cloud isn't special",
-    // so we just assert both are present and neither got dropped.
     it('does not pin cloud ahead of a same-recency local install', () => {
       const installations = ref<Installation[]>([
         makeInstall({
@@ -94,8 +77,6 @@ describe('useInstallList', () => {
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
       const ids = list.visibleInstalls.value.map((i) => i.id)
-      // Stable sort on a tie keeps the input order; the test guards against
-      // a regression that explicitly re-orders cloud to the top.
       expect(ids).toEqual(['local-tie', 'cloud-tie'])
     })
   })
@@ -104,7 +85,6 @@ describe('useInstallList', () => {
     it('local filter includes standalone and Legacy Desktop installs (both report category local)', () => {
       const installations = ref<Installation[]>([
         makeInstall({ id: 'l', sourceCategory: 'local' }),
-        // Legacy Desktop reports category `local`; sourceId is the marker.
         makeInstall({
           id: 'd',
           sourceCategory: 'local',
@@ -144,13 +124,11 @@ describe('useInstallList', () => {
       const installations = ref<Installation[]>([
         makeInstall({ id: 'l', sourceCategory: 'local' }),
         makeInstall({ id: 'r', sourceCategory: 'remote' }),
-        // Legacy Desktop reports category `local`; sourceId is the marker.
         makeInstall({ id: 'd', sourceCategory: 'local', sourceId: 'desktop' }),
         makeInstall({ id: 'c', sourceCategory: 'cloud' })
       ])
       const list = withI18nScope(i18n, () => useInstallList({ installations }))
 
-      // 'all' is the default; cloud is no longer split out of the list.
       expect(list.visibleInstalls.value.map((i) => i.id).sort()).toEqual(['c', 'd', 'l', 'r'])
     })
   })
@@ -278,9 +256,7 @@ describe('useInstallList', () => {
   })
 })
 
-/** Runs `fn` inside a stub Vue app with i18n installed, so `useI18n()`
- *  resolves; captures and returns the composable's value. */
-function withI18nScope<T>(i18n: ReturnType<typeof createI18n>, fn: () => T): T {
+function withI18nScope<T>(i18n: ReturnType<typeof createAppI18n>, fn: () => T): T {
   let captured!: T
   const App = defineComponent({
     setup() {
@@ -290,7 +266,6 @@ function withI18nScope<T>(i18n: ReturnType<typeof createI18n>, fn: () => T): T {
   })
   const app = createApp(App)
   app.use(i18n)
-  // jsdom provides a document.body; mount + immediately unmount.
   const host = document.createElement('div')
   app.mount(host)
   app.unmount()

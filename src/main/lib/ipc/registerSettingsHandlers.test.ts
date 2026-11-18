@@ -1,23 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Configurable settings store returned by the mocked `./shared` module.
 const mockSettings: Record<string, unknown> = {}
 const mockSettingsSet = vi.fn((key: string, value: unknown) => {
   mockSettings[key] = value
 })
 
-// Stubbed seeding resolver. Held in an object so the vi.mock factory (hoisted
-// above this file's statements) reads the value at call time, not at import.
 const mockBeta = { resolved: false }
 
-// Real English strings so label assertions catch missing locale keys (see
-// lookupEnMessage). Dynamic import: vi.mock factories are hoisted, so they
-// can't reference top-level static imports.
 vi.mock('./shared', async () => {
   const { lookupEnMessage } = await import('../localeTestHelper')
   return {
     ipcMain: { handle: vi.fn(), on: vi.fn() },
-    nativeTheme: {},
+    nativeTheme: { on: vi.fn() },
     sources: [],
     settings: {
       getAll: () => mockSettings,
@@ -49,10 +43,14 @@ vi.mock('../globalSettingsEvents', () => ({
   globalSettingsEvents: { on: vi.fn(), emit: vi.fn() }
 }))
 vi.mock('../e2eOverrides', () => ({ recordIpcInvocation: vi.fn() }))
-// Values mirror src/main/settings.ts; mocked because the real module imports electron.
-vi.mock('../../settings', () => ({ AUTO_LAUNCH_NONE: 'none', AUTO_LAUNCH_LAST: 'last' }))
+vi.mock('../../settings', () => ({}))
 
-import { applySettingSet, buildSettingsSections } from './registerSettingsHandlers'
+import { ipcMain } from './shared'
+import {
+  applySettingSet,
+  buildSettingsSections,
+  registerSettingsHandlers
+} from './registerSettingsHandlers'
 
 function resetMockSettings(): void {
   for (const key of Object.keys(mockSettings)) delete mockSettings[key]
@@ -65,9 +63,6 @@ describe('buildSettingsSections', () => {
     mockBeta.resolved = false
   })
 
-  // Sourcing this from the raw setting would either re-seed on every read or
-  // coerce an undefined store to ON; the resolver owns the one-time seed, so
-  // the field must mirror the resolver even when the two disagree.
   it('sources the beta-features field from the seeding resolver', () => {
     mockSettings.betaFeaturesEnabled = false
     mockBeta.resolved = true
@@ -79,7 +74,7 @@ describe('buildSettingsSections', () => {
     expect(fields).toContainEqual(
       expect.objectContaining({
         id: 'betaFeaturesEnabled',
-        label: 'Opt-in to beta features',
+        label: 'Opt in to beta features',
         type: 'boolean',
         value: true
       })
@@ -98,16 +93,13 @@ describe('buildSettingsSections', () => {
   })
 
   it('does not offer the Manager security level globally (it is per-install)', () => {
-    // The level is per-install, on each install's Startup Args tab
-    // (buildLaunchSettingsFields); a global field silently overriding every
-    // install's config.ini is the regression this pins against.
     const fields = buildSettingsSections().flatMap(
       (s) => (s.fields as { id?: string }[] | undefined) ?? []
     )
     expect(fields.map((f) => f.id)).not.toContain('managerSecurityLevel')
   })
 
-  it('offers a default-on preference for the multiple-instance warning', () => {
+  it('offers a default-on preference for the multiple-build warning', () => {
     const fields = buildSettingsSections().flatMap(
       (s) => (s.fields as { id?: string; value?: unknown }[] | undefined) ?? []
     )
@@ -115,7 +107,7 @@ describe('buildSettingsSections', () => {
     expect(fields).toContainEqual(
       expect.objectContaining({
         id: 'warnBeforeRunningMultipleInstances',
-        label: 'Warn before running multiple instances',
+        label: 'Warn before running multiple builds',
         type: 'boolean',
         value: true
       })
@@ -134,12 +126,10 @@ describe('buildSettingsSections', () => {
     const sections = buildSettingsSections()
     const generalFields =
       (sections.find((section) => section.title === 'General')?.fields as
-        | { id?: string }[]
-        | undefined) ?? []
+        { id?: string }[] | undefined) ?? []
     const advancedFields =
       (sections.find((section) => section.title === 'Advanced')?.fields as
-        | { id?: string; value?: unknown; description?: string }[]
-        | undefined) ?? []
+        { id?: string; value?: unknown; description?: string }[] | undefined) ?? []
 
     expect(generalFields.map((field) => field.id)).not.toContain('hardwareAcceleration')
     expect(advancedFields).toContainEqual(
@@ -208,5 +198,21 @@ describe('applySettingSet beta enrolment consent', () => {
 
     expect(mockSettingsSet).toHaveBeenCalledWith('betaFeaturesEnabled', false)
     expect(mockSettings.betaFeaturesEnabled).toBe(false)
+  })
+})
+
+describe('picking the Auto start build by hand', () => {
+  it("ends the wait on a new build's first start, so a later failure keeps the pick", () => {
+    resetMockSettings()
+    registerSettingsHandlers()
+    const setSetting = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.find(([channel]) => channel === 'set-setting')![1]
+    mockSettings['autoStartAwaitingFirstStart'] = 'fresh-install'
+
+    void setSetting({} as Electron.IpcMainInvokeEvent, 'autoLaunchOnStartup', 'fresh-install')
+
+    expect(mockSettings['autoStartAwaitingFirstStart']).toBeUndefined()
+    expect(mockSettings['autoLaunchOnStartup']).toBe('fresh-install')
   })
 })

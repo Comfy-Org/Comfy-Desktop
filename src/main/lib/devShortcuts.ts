@@ -1,6 +1,3 @@
-// Dev-only (!app.isPackaged) keyboard shortcuts for driving title-bar pill
-// state by eye: Cmd+Alt+U cycles the app-update pill, Cmd+Alt+I toggles the
-// install-update override. globalShortcut fires regardless of focused window.
 import { globalShortcut, type WebContentsView } from 'electron'
 import { _test_setUpdateState, getCurrentUpdateState, type AppUpdateState } from './updater'
 import { installUpdateOverrides, INSTALL_UPDATE_GLOBAL_KEY } from './e2eOverrides'
@@ -11,7 +8,6 @@ const INSTALL_UPDATE_ACCELERATOR = 'CommandOrControl+Alt+I'
 
 const DEV_FAKE_VERSION = '99.0.0-dev'
 
-// Pure cycle for the app-update pill, exported so unit tests pin the sequence.
 export function cycleAppUpdateState(current: AppUpdateState): AppUpdateState {
   switch (current.kind) {
     case null:
@@ -26,7 +22,6 @@ export function cycleAppUpdateState(current: AppUpdateState): AppUpdateState {
 }
 
 interface DevShortcutsDeps {
-  // Injected to avoid pulling this module into the main/index.ts import graph.
   computeInstallUpdateAvailable: (
     installationId: string
   ) => Promise<{ available: boolean; version?: string }>

@@ -1,27 +1,17 @@
-/**
- * E2E: a ComfyUI that turns the assets system on by default refuses to start when its asset
- * database cannot open, printing `ASSETS_STARTUP_FAILED: <kind>` and a message for the user, then
- * exiting 1. Desktop shows that message instead of "Process exited with code 1", and when the
- * kind is `in_use` (another ComfyUI holds the database) it shows its own lock copy, even though
- * Desktop did not pass --enable-assets.
- *
- * Linux only: the ComfyUI stand-in is `fakeComfyInstall`, which is Linux-only (see its header).
- */
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import en from '../locales/en.json'
 import { launchApp, type AppContext } from './launchApp'
-import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
+import { expectChooserVisible, pickFromBuildsTileMenu } from './support/chooserHelpers'
 import { hasActiveLaunch } from './support/devHooks'
-import { byTestId, TID } from './support/testIds'
 import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 
 const INSTALL_ID = 'inst-assets-startup-failure'
 const INSTALL_NAME = 'Assets Startup Failure Install'
 const DISABLE_HINT = 'Or start ComfyUI without the assets system: --disable-assets'
+const NEW_ERROR_BADGE = '.chooser-tile-error-badge:not([data-earlier-failure])'
 
 let rootDir = ''
 let installPath = ''
@@ -30,7 +20,6 @@ let ctx: AppContext | null = null
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(180_000)
 
-/** What ComfyUI's logger prints: alembic noise first, then the marker behind a coloured tag. */
 function coreRefusal(kind: string, ...message: string[]): string {
   return (
     'INFO  [alembic.runtime.migration] Context impl SQLiteImpl.\n' +
@@ -41,12 +30,19 @@ function coreRefusal(kind: string, ...message: string[]): string {
 
 async function launchAndReadError(stderr: string): Promise<string | null> {
   await writeFile(path.join(installPath, 'startup-failure'), stderr)
-  await clickInstallTile(ctx!.panel, INSTALL_NAME)
-  await ctx!.panel.waitForVisible(byTestId(TID.progressErrorMessage), { timeout: 60_000 })
-  await expect.poll(() => hasActiveLaunch(ctx!.app, INSTALL_ID), { timeout: 30_000 }).toBe(false)
-  const text = await ctx!.panel.textOf(byTestId(TID.progressErrorMessage))
-  // Back to the chooser for the next case.
-  expect(await ctx!.panel.click('.brand-progress__error-actions .brand-ghost')).toBe(true)
+  await ctx!.panel.evaluate<boolean>(`(() => {
+    document.querySelector('.chooser-tile-error-badge')?.setAttribute('data-earlier-failure', '')
+    return true
+  })()`)
+  await pickFromBuildsTileMenu(ctx!.panel, INSTALL_ID, 'launch')
+  await expect.poll(() => hasActiveLaunch(ctx!.app, INSTALL_ID), { timeout: 60_000 }).toBe(false)
+  await ctx!.panel.waitForVisible(NEW_ERROR_BADGE, { timeout: 30_000 })
+  expect(await ctx!.panel.click(NEW_ERROR_BADGE)).toBe(true)
+  await ctx!.panel.waitForVisible('[data-testid="build-progress-step-detail"]', {
+    timeout: 10_000
+  })
+  const text = await ctx!.panel.textOf('[data-testid="build-progress-step-detail"]')
+  expect(await ctx!.panel.click('[data-testid="build-progress-close-failed"]')).toBe(true)
   await expectChooserVisible(ctx!.panel)
   return text
 }
@@ -58,12 +54,9 @@ test.beforeAll(async () => {
   const { port } = await writeFakeComfyInstall({ installPath, port: await reserveFreePort() })
   ctx = await launchApp({
     profileDir: path.join(rootDir, 'profile'),
-    cdpPort: await reserveFreePort(),
     settings: {
       firstUseCompleted: true,
       telemetryEnabled: false,
-      // No --enable-assets: the v0.3.99 record below sits under Desktop's 0.38.0 assets floor,
-      // and the lock case must hold without it.
       betaFeaturesEnabled: false,
       hasSeenCentralPillHint: true
     },
@@ -75,7 +68,6 @@ test.beforeAll(async () => {
         sourceLabel: 'ComfyBuilder',
         installPath,
         status: 'installed',
-        // No --enable-assets: the core under test has assets on by default.
         launchArgs: `--port ${port}`,
         launchMode: 'window',
         seen: true,
@@ -96,7 +88,7 @@ test.afterAll(async () => {
   if (rootDir) await rm(rootDir, { recursive: true, force: true })
 })
 
-test("shows the core's message for an asset database it cannot open @linux", async () => {
+test("shows the core's message for an asset database it cannot open @linux @macos", async () => {
   const what = "The asset database '/x/user/comfyui.db' is corrupt (file is not a database)."
   const fix = 'Move that file aside, or delete it, and start again.'
 
@@ -105,7 +97,7 @@ test("shows the core's message for an asset database it cannot open @linux", asy
   expect(text).toBe(`${what}\n${fix}\n${DISABLE_HINT}`)
 })
 
-test('shows the lock message when another ComfyUI holds the database, without --enable-assets @linux', async () => {
+test('shows the lock message when another ComfyUI holds the database, without --enable-assets @linux @macos', async () => {
   const text = await launchAndReadError(
     coreRefusal(
       'in_use',

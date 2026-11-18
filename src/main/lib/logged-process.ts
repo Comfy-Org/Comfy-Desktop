@@ -7,7 +7,6 @@ export interface LoggedProcessResult {
   signal: string | null
 }
 
-/** Spawn a process, streaming stdout/stderr to a callback while capturing full output. */
 export function runLoggedProcess(
   cmd: string,
   args: string[],
@@ -46,18 +45,15 @@ export function runLoggedProcess(
   })
 }
 
-/** Last `lines` non-empty-trailing lines of captured output, trimmed. */
 export function tailOutput(output: string, lines = 20): string {
   return output.trim().split('\n').slice(-lines).join('\n')
 }
 
-/** Append a bounded output tail to a failure prefix, or return the prefix alone when there's no output. */
 export function withOutputTail(prefix: string, output: string, lines = 20): string {
   const detail = tailOutput(output, lines)
   return detail ? `${prefix}\n\n${detail}` : prefix
 }
 
-/** Format a process failure into a user-facing error message (last 20 lines of stderr/stdout). */
 export function formatProcessError(
   prefix: string,
   result: LoggedProcessResult,

@@ -1,14 +1,7 @@
-/** Single source of truth for `data-testid` values, imported by both
- *  components and e2e tests (`e2e/support/testIds.ts`) so a rename is a
- *  typecheck failure rather than a silent selector miss. */
-
 export const TID = {
   pickerRow: (installId: string) => `picker-row-${installId}`,
   pickerNewWindow: 'picker-new-window',
-  /** Pin-bottom primary CTA (Start / Restart / Switch per `decideNavigation`). */
   pickerPrimaryCta: 'picker-primary-cta',
-  /** Footer "More" overflow-menu trigger (distinct from the CTA caret,
-   *  which shares the `data-more-trigger` attribute). */
   pickerMoreTrigger: 'picker-more-trigger',
   pickerSettingsLoading: 'picker-settings-loading',
   pickerSettingsSections: 'picker-settings-sections',
@@ -19,7 +12,6 @@ export const TID = {
   dashboardTileKebab: (installId: string) => `dashboard-tile-kebab-${installId}`,
   dashboardTileWhyCloud: (installId: string) => `dashboard-tile-why-cloud-${installId}`,
 
-  /** A single item in the shared `ContextMenu`. `id` matches `ContextMenuItem.id`. */
   contextMenuItem: (id: string) => `context-menu-item-${id}`,
 
   modalConfirm: 'modal-confirm-button',
@@ -27,8 +19,6 @@ export const TID = {
   modalPromptInput: 'modal-prompt-input',
   baseAlertAction: 'base-alert-action',
   baseAlertCancel: 'base-alert-cancel',
-  /** `BasePrompt` input (`useDialogs().prompt()`); distinct from the
-   *  legacy `modalPromptInput` (`useModal().prompt()`). */
   basePromptInput: 'base-prompt-input',
   basePromptAction: 'base-prompt-action',
   basePromptCancel: 'base-prompt-cancel',
@@ -37,20 +27,23 @@ export const TID = {
 
   updateChannelCard: (channel: string) => `update-channel-card-${channel}`,
   updateActionButton: (actionId: string) => `update-action-${actionId}`,
-  /** A group dropdown of a cascading channel picker (level 0 = outermost). */
   channelGroupSelect: (level: number) => `channel-group-select-${level}`,
+  buildOverviewChannel: 'build-overview-channel',
+  buildOverviewChannelOption: (channel: string) => `build-overview-channel-${channel}`,
+  buildOverviewUpdateMenu: 'build-overview-update-menu',
+  buildOverviewPytorchChange: 'build-overview-pytorch-change',
+  buildOverviewPytorchOption: (stackId: string) => `build-overview-pytorch-${stackId}`,
 
-  /** A tab button in the picker settings tab bar. `key` matches `TabDef.key`. */
   settingsTab: (key: string) => `settings-tab-${key}`,
 
-  /** An action item in the Settings footer "More" menu. `actionId`
-   *  matches the source's `ActionDef.id` (with Launch→Restart as `restart`). */
   pinBottomAction: (actionId: string) => `pin-bottom-action-${actionId}`,
 
   snapshotsSaveCta: 'snapshots-save-cta',
   snapshotRow: (filename: string) => `snapshot-row-${filename}`,
   snapshotRowRestore: (filename: string) => `snapshot-row-restore-${filename}`,
   snapshotRowExport: (filename: string) => `snapshot-row-export-${filename}`,
+  snapshotRowMore: (filename: string) => `snapshot-row-more-${filename}`,
+  snapshotRowDelete: (filename: string) => `snapshot-row-delete-${filename}`,
   snapshotsImport: 'snapshots-import',
   snapshotsExportAll: 'snapshots-export-all',
   snapshotsOpCard: 'snapshots-op-card',
@@ -58,11 +51,7 @@ export const TID = {
   snapshotsOpCardRetry: 'snapshots-op-card-retry',
   snapshotsOpCardDismiss: 'snapshots-op-card-dismiss',
 
-  /** Primary action on the lifecycle stopped/crashed card (teleported to
-   *  body via `BrandTakeoverLayout`, so it is NOT under `.lifecycle-view`). */
   lifecycleRelaunch: 'lifecycle-relaunch',
-  /** Back / "Return to Dashboard" ghost action on the lifecycle
-   *  stopped/crashed card (calls `window.api.returnToDashboard()`). */
   lifecycleReturnDashboard: 'lifecycle-return-dashboard',
 
   consoleTerminal: 'console-terminal',
@@ -72,16 +61,12 @@ export const TID = {
   progressErrorMessage: 'progress-error-message',
   progressLogs: 'progress-logs',
   progressReboot: 'progress-reboot',
-  /** Rendered in place of the generic error banner when the op returned
-   *  `result.portConflict`. */
+  progressBack: 'progress-back',
+  trackBrowse: 'track-browse',
   progressPortConflictBanner: 'progress-port-conflict-banner',
-  /** Visible only when `portConflict.nextPort` is set. */
   progressPortConflictUsePort: 'progress-port-conflict-use-port',
-  /** Visible only when `portConflict.isComfy` is true. */
   progressPortConflictKill: 'progress-port-conflict-kill',
 
-  /** Feature carousel in the install takeover, above the wordmark. Passive:
-   *  rotation has no dots, arrows or pause button - see InstallShowcase.vue. */
   installShowcase: 'install-showcase',
   installShowcaseTitle: 'install-showcase-title',
   installShowcaseCloud: 'install-showcase-cloud'

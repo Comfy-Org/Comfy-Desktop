@@ -21,13 +21,11 @@ vi.mock('child_process', async (importOriginal) => {
   return { ...actual, spawn, default: { ...actual, spawn } }
 })
 
-/** Extract --index-url value from args. */
 function getIndexUrl(args: string[]): string | undefined {
   const i = args.indexOf('--index-url')
   return i >= 0 ? args[i + 1] : undefined
 }
 
-/** Extract all --extra-index-url values from args. */
 function getExtras(args: string[]): string[] {
   const extras: string[] = []
   for (let i = 0; i < args.length; i++) {
@@ -162,10 +160,6 @@ describe('parsePipFreeze', () => {
     })
   })
 
-  // #1514: uv honours FORCE_COLOR/CLICOLOR_FORCE even into a pipe, so the
-  // freeze can arrive as `ESC[1mname ESC[0m==version`. A name carrying those
-  // bytes matches nothing in the snapshot and is rejected by `uv pip
-  // uninstall` — which is what tipped a no-op restore into a destructive one.
   it('parses a colourised freeze to the same result as a plain one', () => {
     const colourised =
       '\u001B[1maiohttp\u001B[0m==3.9.5\n' +
@@ -204,9 +198,6 @@ describe('uvEnv', () => {
     expect(env.PATH).toBe('/usr/bin')
   })
 
-  // Windows environment names are case-insensitive, so `Force_Color` reaches
-  // the child exactly as `FORCE_COLOR` would — and Windows is the platform
-  // this guard most needs to cover.
   it.each([
     ['Force_Color', 'clicolor_force'],
     ['force_color', 'CliColor_Force']
@@ -227,8 +218,6 @@ describe('uvEnv', () => {
 })
 
 describe('parsePipFreeze hardening', () => {
-  // These keys become argv for `uv pip uninstall`, so an option-shaped token
-  // must never survive parsing.
   it('drops names that are not valid distribution names', () => {
     const parsed = parsePipFreeze(
       ['-e git+https://x/y@abc#egg=--python=/other/env', '--upgrade==1.0', 'good-pkg==1.0'].join(
@@ -254,7 +243,6 @@ describe('parsePipFreeze hardening', () => {
 })
 
 describe('runUvPipDetailed onSpawn', () => {
-  /** Minimal stand-in for uv: the streams the runner attaches to and a pid. */
   function fakeUv(pid = 4242): EventEmitter & { stdout: EventEmitter; stderr: EventEmitter } {
     const proc = new EventEmitter() as EventEmitter & {
       stdout: EventEmitter
@@ -402,8 +390,6 @@ describe('runUvPipDetailed onSpawn', () => {
   })
 
   it('behaves exactly as before for a caller that passes no callback', async () => {
-    // The seam is additive: every existing call site omits it and must be
-    // indistinguishable from the code before it existed.
     const proc = fakeUv()
     spawnMock.mockReturnValueOnce(proc as never)
 

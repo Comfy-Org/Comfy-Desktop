@@ -28,8 +28,6 @@ function pickGPU(hasNvidia: boolean, hasAmd: boolean, hasIntel: boolean): GpuId 
   return null
 }
 
-// Force UTF-8 stdout so adapter names with non-ASCII chars survive, and emit
-// compact JSON. Returns stdout, or null on spawn/timeout/non-zero exit.
 const PS_UTF8_PREFIX = '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); '
 
 function runPowershellJson(command: string): Promise<string | null> {
@@ -45,12 +43,6 @@ function runPowershellJson(command: string): Promise<string | null> {
   })
 }
 
-/**
- * Detect GPU type, or null if no supported GPU is found.
- *   Windows: WMI vendor IDs, then nvidia-smi.
- *   Linux/WSL: lspci, then /sys/class/drm, then nvidia-smi.
- *   macOS: "mps" for Apple Silicon, null for Intel.
- */
 async function detectGPU(): Promise<GpuInfo | null> {
   let id: GpuId | null = null
   if (process.platform === 'win32') {
@@ -66,11 +58,6 @@ async function detectGPU(): Promise<GpuInfo | null> {
 
 let cachedGpuPromise: Promise<GpuInfo | null> | null = null
 
-/** Memoized `detectGPU()`. The GPU vendor cannot change mid-session, so the
- *  first successful detection is shared by every caller (wizard field options,
- *  system info, install-time artifact resolution). A null result is not
- *  cached: a transient probe failure (e.g. WMI hiccup) retries on the next
- *  call instead of pinning the host to the CPU fallback for the whole session. */
 async function detectGPUCached(): Promise<GpuInfo | null> {
   if (!cachedGpuPromise) {
     cachedGpuPromise = detectGPU().catch(() => null)
@@ -113,11 +100,6 @@ async function queryWmiVendorIds(): Promise<GpuId | null> {
   }
 }
 
-/**
- * Parse `Win32_VideoController` Name/DriverVersion JSON into a name->version
- * map (keys lowercased). `ConvertTo-Json` emits a bare object for a single
- * controller and an array for several, so both shapes are handled.
- */
 export function parseWmiDriverVersions(stdout: string): Map<string, string> {
   const map = new Map<string, string>()
   let parsed: unknown
@@ -139,14 +121,6 @@ export function parseWmiDriverVersions(stdout: string): Map<string, string> {
   return map
 }
 
-/**
- * Map adapter name -> driver version from `Win32_VideoController`.
- *
- * `systeminformation` only fills `driverVersion` for NVIDIA on Windows (it
- * enriches from nvidia-smi) and leaves AMD/Intel blank, even though WMI
- * carries `DriverVersion` for every adapter. We read it directly so AMD/Intel
- * driver telemetry is populated. Returns an empty map off-Windows or on error.
- */
 export function getWindowsGpuDriverVersions(): Promise<Map<string, string>> {
   if (process.platform !== 'win32') return Promise.resolve(new Map())
   return runPowershellJson(
@@ -229,10 +203,8 @@ async function detectMacGPU(): Promise<GpuId | null> {
   })
 }
 
-/** Minimum NVIDIA driver for PyTorch 2.10 / CUDA 13.0 (cu130); matches desktop's value. */
 const NVIDIA_DRIVER_MIN_VERSION = '580'
 
-/** Compare dotted version strings numerically: negative if a<b, positive if a>b, 0 if equal. */
 export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map(Number)
   const pb = b.split('.').map(Number)
@@ -245,13 +217,11 @@ export function compareVersions(a: string, b: string): number {
   return 0
 }
 
-/** Parse "Driver Version: XXX.XX" from nvidia-smi standard output. */
 export function parseNvidiaDriverVersion(output: string): string | undefined {
   const match = output.match(/driver version\s*:\s*([\d.]+)/i)
   return match?.[1]
 }
 
-/** Query nvidia-smi for the driver version using the structured CSV flag. */
 function getNvidiaDriverVersionQuery(): Promise<string | undefined> {
   return new Promise((resolve) => {
     execFile(
@@ -270,7 +240,6 @@ function getNvidiaDriverVersionQuery(): Promise<string | undefined> {
   })
 }
 
-/** Fallback: parse driver version from plain nvidia-smi output. */
 function getNvidiaDriverVersionFallback(): Promise<string | undefined> {
   return new Promise((resolve) => {
     execFile(
@@ -284,27 +253,18 @@ function getNvidiaDriverVersionFallback(): Promise<string | undefined> {
   })
 }
 
-/** Dotted numeric driver version (`580.88`). nvidia-smi output that is not
- *  shaped like this (warnings, headers) must not reach compareVersions,
- *  where its NaN components would read as an arbitrary comparison result. */
 const NVIDIA_DRIVER_VERSION_SHAPE = /^\d+(\.\d+)*$/
 
-/** Accept a detected driver string only when it is a dotted numeric
- *  version; anything else nvidia-smi printed reads as "not detected". */
 export function sanitizeNvidiaDriverVersion(version: string | undefined): string | undefined {
   return version && NVIDIA_DRIVER_VERSION_SHAPE.test(version) ? version : undefined
 }
 
-/** Detect the installed NVIDIA driver version via nvidia-smi (structured
- *  query first, plain-output parse as fallback); undefined when there is no
- *  nvidia-smi / no NVIDIA GPU, or when the output is not a version. */
 export async function detectNvidiaDriverVersion(): Promise<string | undefined> {
   return sanitizeNvidiaDriverVersion(
     (await getNvidiaDriverVersionQuery()) ?? (await getNvidiaDriverVersionFallback())
   )
 }
 
-/** Check whether the installed NVIDIA driver meets the minimum version; null if none detected. */
 async function checkNvidiaDriver(): Promise<NvidiaDriverCheck | null> {
   if (process.platform === 'darwin') return null
 
@@ -318,7 +278,6 @@ async function checkNvidiaDriver(): Promise<NvidiaDriverCheck | null> {
   }
 }
 
-/** GPU controller entry as collected from `systeminformation`'s `controllers[]`. */
 export interface SystemGpuEntry {
   vendor: string
   model: string
@@ -326,14 +285,6 @@ export interface SystemGpuEntry {
   driver_version: string | null
 }
 
-/**
- * Display adapters that are not real compute GPUs: virtual monitors,
- * remote-display drivers, hypervisor framebuffers. On Windows
- * `Win32_VideoController` enumerates these alongside the real GPU and the
- * ordering is not guaranteed, so `controllers[0]` is frequently one of these.
- * Virtual display adapters are excluded from primary selection. Matched
- * case-insensitively against the controller model name.
- */
 const VIRTUAL_GPU_PATTERNS: RegExp[] = [
   /microsoft basic render/i,
   /microsoft basic display/i,
@@ -356,17 +307,11 @@ const VIRTUAL_GPU_PATTERNS: RegExp[] = [
   /\bidd\b/i
 ]
 
-/** True if the controller model looks like a virtual / remote display adapter. */
 export function isVirtualGpu(model: string | null | undefined): boolean {
   if (!model) return false
   return VIRTUAL_GPU_PATTERNS.some((re) => re.test(model))
 }
 
-/**
- * Map a detected `GpuId` to a matcher against systeminformation's free-form
- * vendor/model strings. Both are checked because some controllers report an
- * empty vendor but carry the brand in the model name (e.g. `NVIDIA GeForce …`).
- */
 export function vendorMatches(id: GpuId, ...parts: (string | null | undefined)[]): boolean {
   const v = parts.filter(Boolean).join(' ').toLowerCase()
   switch (id) {
@@ -386,17 +331,6 @@ export function vendorMatches(id: GpuId, ...parts: (string | null | undefined)[]
   }
 }
 
-/**
- * Choose the real compute GPU from the systeminformation controller list.
- *
- * `controllers[0]` is unreliable: on Windows the list includes virtual
- * display adapters in no guaranteed order. We instead drop virtual adapters,
- * prefer the controller whose vendor matches the PCI-derived `detectGPU()`
- * result, and break ties on VRAM. Falls back to the highest-VRAM non-virtual
- * controller, then to the first entry, so we always return something when any
- * controller exists. The caller keeps the full unfiltered array for
- * retroactive analysis; this only picks the promoted "primary".
- */
 export function selectPrimaryGpu(
   gpus: SystemGpuEntry[],
   detectedVendor: GpuId | null
@@ -413,15 +347,7 @@ export function selectPrimaryGpu(
   return [...pool].sort(byVramDesc)[0]!
 }
 
-/**
- * Parse the AMDGPU/ROCm driver version from `amd-smi static --driver --json`.
- *
- * Output is an array of per-GPU objects, each with a `driver` field carrying
- * `{ name, version }` (key casing varies across releases). Returns the first
- * non-empty version, or undefined.
- */
 export function parseAmdSmiDriverVersion(stdout: string): string | undefined {
-  /** Case-insensitively read the first object value whose key matches `re`. */
   const findValue = (obj: Record<string, unknown>, re: RegExp): unknown => {
     for (const [key, value] of Object.entries(obj)) {
       if (re.test(key)) return value
@@ -434,28 +360,18 @@ export function parseAmdSmiDriverVersion(stdout: string): string | undefined {
     for (const entry of entries) {
       if (!entry || typeof entry !== 'object') continue
       const rec = entry as Record<string, unknown>
-      // Preferred shape: { driver: { name, version } } (key casing varies).
       const driver = findValue(rec, /^driver$/i)
       if (driver && typeof driver === 'object') {
         const version = findValue(driver as Record<string, unknown>, /version/i)
         if (typeof version === 'string' && version.trim()) return version.trim()
       }
-      // Flat fallback: { driver_version / DRIVER_VERSION: "..." }.
       const flat = findValue(rec, /driver.?version/i)
       if (typeof flat === 'string' && flat.trim()) return flat.trim()
     }
-  } catch {
-    // not JSON / unexpected shape
-  }
+  } catch {}
   return undefined
 }
 
-/**
- * Parse the kernel-module/ROCm version from `rocm-smi --showdriverversion --json`.
- *
- * Output is keyed by scope, e.g. `{ "system": { "Driver version": "6.8.5" } }`
- * (older builds key per-card). Returns the first `Driver version` value found.
- */
 export function parseRocmSmiDriverVersion(stdout: string): string | undefined {
   try {
     const parsed: unknown = JSON.parse(stdout)
@@ -468,13 +384,10 @@ export function parseRocmSmiDriverVersion(stdout: string): string | undefined {
         }
       }
     }
-  } catch {
-    // not JSON / unexpected shape
-  }
+  } catch {}
   return undefined
 }
 
-/** Run a candidate command, resolving its stdout or undefined on any failure. */
 function tryExecFile(file: string, args: string[]): Promise<string | undefined> {
   return new Promise((resolve) => {
     execFile(
@@ -488,16 +401,6 @@ function tryExecFile(file: string, args: string[]): Promise<string | undefined> 
   })
 }
 
-/**
- * AMD GPU driver/runtime version on Linux via ROCm tooling.
- *
- * Tries `amd-smi` (current tool) then `rocm-smi` (legacy). Both exist only
- * when ROCm is installed and may live under `/opt/rocm/bin` rather than on
- * PATH, so each is probed at its bare name and the rocm path. Returns the
- * AMDGPU module / ROCm version, or undefined. Windows AMD driver comes from
- * the systeminformation controller `driver_version` instead (no rocm-smi
- * there).
- */
 async function getAmdDriverVersionLinux(): Promise<string | undefined> {
   if (process.platform !== 'linux') return undefined
   const amdSmi = ['amd-smi', '/opt/rocm/bin/amd-smi']
@@ -515,29 +418,12 @@ async function getAmdDriverVersionLinux(): Promise<string | undefined> {
   return undefined
 }
 
-/**
- * Resolve the AMD driver version. Prefers the Linux ROCm tooling (which
- * reports the compute-relevant AMDGPU/ROCm version); on Windows there is no
- * such tool, so callers fall back to the selected controller's
- * `driver_version`. Returns undefined when nothing is detected.
- */
 async function checkAmdDriver(): Promise<string | undefined> {
   return getAmdDriverVersionLinux()
 }
 
-/** Device node Linux ROCm opens for GPU compute (AMDKFD). */
 const KFD_PATH = '/dev/kfd'
 
-/**
- * Linux AMD compute-access preflight. torch's ROCm runtime needs to open
- * /dev/kfd; when the node is missing or the user cannot open it, torch still
- * imports but sees no GPUs and ComfyUI fails at startup with "No HIP GPUs
- * are available". Returns a user-actionable warning, or null when access is
- * fine. Distro policy usually gates /dev/kfd behind the `render` group, but
- * that is not the only possible cause, so the message suggests it without
- * claiming certainty. This affects the shipped baseline stacks too, not just
- * stack switches.
- */
 export async function checkLinuxAmdKfdAccess(kfdPath = KFD_PATH): Promise<string | null> {
   if (process.platform !== 'linux') return null
   if (!fs.existsSync(kfdPath)) {
@@ -558,9 +444,6 @@ export async function checkLinuxAmdKfdAccess(kfdPath = KFD_PATH): Promise<string
   }
 }
 
-/** Validate hardware for standalone install. Rejects Intel Macs (MPS needs
- *  Apple Silicon); surfaces a non-blocking warning when a Linux AMD GPU is
- *  present but its compute device node is missing or inaccessible. */
 async function validateHardware(): Promise<HardwareValidation> {
   if (process.platform === 'darwin') {
     const gpu = await detectMacGPU()

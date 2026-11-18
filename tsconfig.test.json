@@ -15,12 +15,11 @@
     "noUnusedParameters": true,
     "noUncheckedIndexedAccess": true,
     "jsx": "preserve",
-    "baseUrl": ".",
     "paths": {
-      "@renderer/*": ["src/renderer/src/*"],
-      "@locales/*": ["locales/*"]
+      "@renderer/*": ["./src/renderer/src/*"],
+      "@locales/*": ["./locales/*"]
     },
     "types": ["vitest/globals"]
   },
-  "include": ["src/**/*.test.ts", "locales/*.json"]
+  "include": ["src/**/*.test.ts", "locales/*.json", "src/types/css.d.ts"]
 }

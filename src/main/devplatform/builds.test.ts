@@ -1,13 +1,17 @@
-// @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  listCompleteVersions,
+  listUpdateVersions,
   listBuildRows,
   resolveHostArtifact,
   resolveHostArtifactForVersion,
   resolveSelectedHostArtifact
 } from './builds'
-import { clearVersionCache, getCachedVersions } from './versionCache'
+import {
+  clearVersionCache,
+  getAvailableUpdate,
+  getCachedVersions,
+  setCachedVersions
+} from './versionCache'
 import type { Artifact, Build, BuildVersion, Host } from '../comfybuilder'
 
 const HOST: Host = { os: 'linux', gpu: 'nvidia' }
@@ -30,7 +34,6 @@ function version(v: number, status: string): BuildVersion {
   return { id: `v${v}`, version: v, status, createdAt: '2026-07-20T00:00:00Z' }
 }
 
-/** A stub client whose wire catalog and per-version data are table-driven. */
 function stubClient(opts: {
   builds?: Build[]
   versionsByBuild?: Record<string, BuildVersion[]>
@@ -107,20 +110,77 @@ describe('listBuildRows', () => {
       ],
       state: 'installable'
     })
-    // The latest complete version (2) is the one resolved, not version 1.
     expect(client.getVersion).toHaveBeenCalledWith('v2')
   })
 
-  it('marks no-build when no version has a completed status', async () => {
+  it('offers the ready CPU sibling of a stopped release and caches its version', async () => {
     const client = stubClient({
-      builds: [{ id: 'd1', name: 'Pending' }],
-      versionsByBuild: { d1: [version(1, 'building'), version(2, 'queued')] }
+      builds: [{ id: 'd1', name: 'Mixed targets' }],
+      versionsByBuild: {
+        d1: [version(6, 'stopping'), version(5, 'stopped'), version(4, 'complete')]
+      },
+      artifactsByVersion: {
+        v5: [
+          artifact({ id: 'cpu', gpu: 'cpu', accelVariant: 'cpu' }),
+          artifact({ id: 'stopped-cuda', status: 'stopped', archiveRef: 'retained' })
+        ],
+        v4: [artifact({ id: 'old-cuda' })]
+      }
     })
-    const rows = await listBuildRows(client as never, HOST)
-    const row = rows[0]!
-    expect(row).toMatchObject({ state: 'no-build', blockedReason: 'buildInProgress' })
-    expect(row.version).toBeUndefined()
+    const rows = await listBuildRows(client as never, HOST, new Map([['d1', 4]]))
+    expect(rows[0]).toMatchObject({ version: '5', state: 'update-available' })
+    expect(rows[0]!.releaseTargets).toEqual([
+      {
+        artifactId: 'cpu',
+        releaseVersion: 5,
+        os: 'linux',
+        gpu: 'cpu',
+        accelVariant: 'cpu',
+        recommended: true
+      }
+    ])
+    expect(getCachedVersions('d1')?.versions).toEqual([5, 4])
+    expect(await listUpdateVersions(client, 'd1', HOST)).toEqual([5, 4])
+    expect(await resolveHostArtifact(client, HOST, 'd1')).toMatchObject({
+      version: 5,
+      artifact: { id: 'cpu' }
+    })
   })
+
+  it('keeps a resolved row and prior cache when an older stopped release read fails', async () => {
+    const client = stubClient({
+      builds: [{ id: 'd1', name: 'Available latest release' }],
+      versionsByBuild: { d1: [version(6, 'complete'), version(5, 'stopped')] },
+      artifactsByVersion: { v6: [artifact()] }
+    })
+    const getVersion = client.getVersion.getMockImplementation()!
+    client.getVersion.mockImplementation(async (id) => {
+      if (id === 'v5') throw new Error('older release unavailable')
+      return getVersion(id)
+    })
+    setCachedVersions('d1', [4])
+    const cached = getCachedVersions('d1')
+    const rows = await listBuildRows(client as never, HOST)
+    expect(rows[0]).toMatchObject({ id: 'd1', version: '6', state: 'installable' })
+    expect(getCachedVersions('d1')).toEqual(cached)
+    await expect(listUpdateVersions(client, 'd1', HOST)).rejects.toThrow(
+      'older release unavailable'
+    )
+  })
+
+  it.each(['queued', 'building', 'stopping'])(
+    'shows a %s release as in progress',
+    async (status) => {
+      const client = stubClient({
+        builds: [{ id: 'd1', name: 'Pending' }],
+        versionsByBuild: { d1: [version(3, status)] }
+      })
+      const rows = await listBuildRows(client as never, HOST)
+      const row = rows[0]!
+      expect(row).toMatchObject({ state: 'no-build', blockedReason: 'buildInProgress' })
+      expect(row.version).toBeUndefined()
+    }
+  )
 
   it('marks an empty version list as build failed', async () => {
     const client = stubClient({ builds: [{ id: 'd1', name: 'Empty' }] })
@@ -170,8 +230,6 @@ describe('listBuildRows', () => {
         v3: [
           artifact({ os: 'windows', gpu: 'nvidia' }),
           artifact({ os: 'mac' }),
-          // Same OS twice must not double up, and a half-built target isn't
-          // somewhere you could actually run it.
           artifact({ os: 'windows', gpu: 'cpu' }),
           artifact({ os: 'linux', status: 'building' })
         ]
@@ -205,7 +263,7 @@ describe('listBuildRows', () => {
     const client = stubClient({
       builds: [{ id: 'd1', name: 'WinOnly' }],
       versionsByBuild: { d1: [version(2, 'complete')] },
-      artifactsByVersion: { v2: [artifact({ os: 'windows' })] } // no linux/nvidia build
+      artifactsByVersion: { v2: [artifact({ os: 'windows' })] }
     })
     const rows = await listBuildRows(client as never, HOST, new Map([['d1', 1]]))
     expect(rows[0]).toMatchObject({ state: 'platform-mismatch' })
@@ -242,7 +300,7 @@ describe('listBuildRows', () => {
   })
 })
 
-describe('listCompleteVersions', () => {
+describe('listUpdateVersions', () => {
   it('returns complete versions newest first, dropping unbuilt ones', async () => {
     const client = stubClient({
       versionsByBuild: {
@@ -254,14 +312,43 @@ describe('listCompleteVersions', () => {
         ]
       }
     })
-    expect(await listCompleteVersions(client as never, 'd1')).toEqual([5, 2])
+    expect(await listUpdateVersions(client as never, 'd1', HOST)).toEqual([5, 2])
+  })
+})
+
+describe('stopped update eligibility', () => {
+  const cases: [string, Artifact[]][] = [
+    ['no artifacts', []],
+    ['only a ready Windows artifact', [artifact({ os: 'windows' })]],
+    [
+      'only a stopped Linux artifact with a retained archive',
+      [artifact({ status: 'stopped', archiveRef: 'retained' })]
+    ]
+  ]
+
+  it.each(cases)('catalog does not advertise an update with %s', async (_name, artifacts) => {
+    const client = stubClient({
+      builds: [{ id: 'd1', name: 'Partial release' }],
+      versionsByBuild: { d1: [version(5, 'stopped'), version(4, 'complete')] },
+      artifactsByVersion: { v5: artifacts }
+    })
+    const rows = await listBuildRows(client as never, HOST, new Map([['d1', 4]]))
+    expect(rows[0]).toMatchObject({ version: '5', state: 'platform-mismatch' })
+    expect(getCachedVersions('d1')?.versions).toEqual([4])
+    expect(getAvailableUpdate('d1', '4')).toBeUndefined()
+  })
+
+  it.each(cases)('update check does not advertise an update with %s', async (_name, artifacts) => {
+    const client = stubClient({
+      versionsByBuild: { d1: [version(5, 'stopped'), version(4, 'complete')] },
+      artifactsByVersion: { v5: artifacts }
+    })
+    expect(await listUpdateVersions(client, 'd1', HOST)).toEqual([4])
   })
 })
 
 describe('version cache warming', () => {
   it("caches a build's complete versions as a side effect of listing rows", async () => {
-    // The manage view builds its Update tab synchronously and cannot fetch, so
-    // the catalog read the chooser already does is what fills it.
     const client = stubClient({
       builds: [{ id: 'd1', name: 'Image' }],
       versionsByBuild: {
@@ -314,23 +401,55 @@ describe('resolveSelectedHostArtifact', () => {
     expect(client.getVersion).toHaveBeenCalledWith('v5')
   })
 
+  it('revalidates the exact stopped version and rejects its unfinished targets', async () => {
+    const client = stubClient({
+      versionsByBuild: { d1: [version(6, 'complete'), version(5, 'stopped')] },
+      artifactsByVersion: {
+        v5: [
+          artifact({ id: 'cpu', gpu: 'cpu' }),
+          ...['queued', 'building', 'stopping', 'stopped', 'failed'].map((status) =>
+            artifact({ id: status, status, archiveRef: 'retained' })
+          )
+        ],
+        v6: [artifact({ id: 'newer-cuda' })]
+      }
+    })
+    await expect(resolveSelectedHostArtifact(client, HOST, 'd1', 5, 'cpu')).resolves.toMatchObject({
+      version: 5,
+      artifact: { id: 'cpu' }
+    })
+    await expect(resolveHostArtifactForVersion(client, HOST, 'd1', 5)).resolves.toMatchObject({
+      version: 5,
+      artifact: { id: 'cpu' }
+    })
+    for (const status of ['queued', 'building', 'stopping', 'stopped', 'failed']) {
+      await expect(resolveSelectedHostArtifact(client, HOST, 'd1', 5, status)).resolves.toBeNull()
+    }
+    expect(client.getVersion.mock.calls.every(([id]) => id === 'v5')).toBe(true)
+  })
+
   it.each([
     ['unknown release', 4, 'ready'],
     ['unfinished release', 7, 'ready'],
+    ['stopping release', 8, 'ready'],
     ['unknown artifact', 5, 'missing'],
     ['wrong OS', 5, 'windows'],
     ['wrong GPU', 5, 'amd'],
     ['unfinished artifact', 5, 'pending']
   ])('rejects %s', async (_name, releaseVersion, artifactId) => {
     const client = stubClient({
-      versionsByBuild: { d1: [version(5, 'complete'), version(7, 'building')] },
+      versionsByBuild: {
+        d1: [version(5, 'complete'), version(7, 'building'), version(8, 'stopping')]
+      },
       artifactsByVersion: {
         v5: [
           artifact({ id: 'ready' }),
           artifact({ id: 'windows', os: 'windows' }),
           artifact({ id: 'amd', gpu: 'amd' }),
           artifact({ id: 'pending', status: 'building' })
-        ]
+        ],
+        v7: [artifact({ id: 'ready' })],
+        v8: [artifact({ id: 'ready' })]
       }
     })
 

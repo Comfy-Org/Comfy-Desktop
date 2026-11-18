@@ -1,0 +1,92 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        patterns:
+          - '*'
+        exclude-patterns:
+          - electron
+          - electron-updater
+          - '@todesktop/*'
+          - '@comfyorg/*'
+        update-types:
+          - minor
+          - patch
+      electron:
+        patterns:
+          - electron
+      release-path:
+        patterns:
+          - electron-updater
+          - '@todesktop/*'
+      vite-and-vitest:
+        patterns:
+          - vite
+          - electron-vite
+          - '@vitejs/*'
+          - vitest
+          - '@vitest/*'
+        update-types:
+          - major
+      playwright:
+        patterns:
+          - playwright
+          - '@playwright/*'
+        update-types:
+          - major
+      pinia:
+        patterns:
+          - pinia
+          - '@pinia/*'
+        update-types:
+          - major
+      tailwind:
+        patterns:
+          - tailwindcss
+          - '@tailwindcss/*'
+        update-types:
+          - major
+      lint:
+        patterns:
+          - eslint
+          - '@eslint/*'
+          - 'eslint-plugin-*'
+          - typescript-eslint
+          - vue-eslint-parser
+        update-types:
+          - major
+    ignore:
+      - dependency-name: '@types/node'
+        update-types:
+          - version-update:semver-major
+      - dependency-name: '@vueuse/core'
+        versions:
+          - '>=15.0.0'
+      - dependency-name: '@xterm/addon-fit'
+        versions:
+          - '>=0.11.0'
+      - dependency-name: '@xterm/xterm'
+        versions:
+          - '>=6.0.0'
+      - dependency-name: typescript
+        versions:
+          - '>=6.1.0'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns:
+          - '*'
+    ignore:
+      - dependency-name: 'Comfy-Org/github-workflows*'

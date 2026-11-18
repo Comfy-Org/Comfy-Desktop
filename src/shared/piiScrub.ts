@@ -1,41 +1,5 @@
-/**
- * Best-effort PII and secret scrubbing for telemetry payloads.
- *
- * Strips usernames out of Windows / macOS / Linux home directory paths and
- * redacts well-known credential shapes (Bearer tokens, OpenAI / Hugging Face
- * keys, basic-auth in URLs, `*KEY=…` / `*SECRET=…` env-style assignments) so
- * tracebacks and error messages can be safely forwarded to Datadog and
- * PostHog.
- *
- * Centralized so that every telemetry / off-box forwarder — the
- * main-process `forwardDatadogError`, the `executionTap` traceback emitter,
- * and the renderer-side `scrubTelemetryContext` safety net — applies
- * identical rules. Adding a pattern here updates every call site at once.
- *
- * Not applied to logs displayed locally to the user (e.g. the crashed-state
- * lifecycle view or the console modal) — those need to be readable for
- * debugging and never leave the user's machine.
- *
- * Lives in `src/shared/` because both main and renderer import it; the
- * file has no runtime dependencies on Electron, Node, or the DOM so it
- * is safe to bundle into either side.
- */
-
-// Separators are `[\\/]+` so the same path matches whether it is written
-// plainly (`C:\Users\x`), with forward or mixed slashes (`C:/Users/x`), or
-// escaped by JSON / a Python repr (`C:\\Users\\x`, `\/Users\/x`). A name
-// stops at `"` or a line break so a JSON string's closing quote, or the next
-// stderr line, survives; not at `'` or a space, which are legal in a Windows
-// username.
-//
-// The separator before the name decides whether `\uXXXX` belongs to it: after
-// `/` or an escaped `\\` it is a JSON escape (non-ASCII name), so it is part of
-// the name; after a single raw `\` it is a folder (`C:\Users\x\u1234`). Escaped
-// separators are matched in pairs so a leading escape keeps its backslash.
 const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)(?:\\u[0-9a-fA-F]{4}|[^\\/"\r\n])+`
 const RAW_SEP_NAME = String.raw`(\\)[^\\/"\r\n]+`
-// A `\\` share root must not follow a path character: escaped, a nested
-// `x\\Users` folder would otherwise read as share `x`.
 const NOT_IN_COMPONENT = String.raw`(?<![\w.~$-])`
 const PII_PATH_PATTERNS: RegExp[] = [
   String.raw`([A-Za-z]:[\\/]+Users)`,
@@ -44,9 +8,7 @@ const PII_PATH_PATTERNS: RegExp[] = [
   String.raw`${NOT_IN_COMPONENT}(\\\\[^\\/]+[\\/]+[A-Za-z]\$[\\/]+Users)`,
   String.raw`${NOT_IN_COMPONENT}(\\\\[?.][\\/]+UNC[\\/]+[^\\/]+(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
   String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users)`,
-  // A backslash `\Users\` only at a path root (`\Users\x`): nested, it is usually a project folder.
   String.raw`((?<![\w.~$\\/-])\\+Users)`,
-  // Forward-slash roots for the rest: a backslash `\home\` is usually a nested project folder.
   String.raw`(\/Users)`,
   String.raw`(\/home)`
 ].map((root) => new RegExp(`${root}(?:${ESCAPED_SEP_NAME}|${RAW_SEP_NAME})`, 'gi'))
@@ -90,20 +52,12 @@ export function scrubSecrets(value: string): string {
   return scrubbed
 }
 
-/**
- * Apply every scrubber in one pass. Use this for any text leaving the
- * process boundary (telemetry, error reports, log forwarding) — it is the
- * single source of truth for "what gets redacted before going off-box".
- */
 export function scrubAll(value: string): string {
-  // Credentials embedded in URLs can resemble email addresses, so redact
-  // secrets before the broader email/path PII pass.
   return scrubPII(scrubSecrets(value))
 }
 
 export type SafeTelemetryValue = boolean | number | string | null
 
-/** Normalize untrusted exception metadata before it reaches a telemetry SDK. */
 export function normalizeExceptionContext(
   context: Record<string, unknown>,
   limits: { maxKeys?: number; maxArrayItems?: number; maxStringLength?: number } = {}

@@ -126,8 +126,6 @@ const LOCAL_INST = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // clearAllMocks does not clear implementations: without these resets, a test
-  // that sets mockRejectedValue/mockImplementation would leak into later tests.
   classifyPaths.mockReset()
   writeAppLog.mockReset()
   getInstallation.mockResolvedValue(LOCAL_INST)
@@ -155,8 +153,6 @@ describe('emitStorageTelemetry', () => {
     const [event, props] = capture.mock.calls[0]!
     expect(event).toBe('comfy.desktop.session.storage_detected')
 
-    // `install_id`, NOT `installation_id` - the latter is a machine-scoped
-    // default property owned by telemetry.ts that must not be overridden.
     expect(props.install_id).toBe('inst-1')
     expect(props.installation_id).toBeUndefined()
     expect(props.install_storage_class).toBe('nvme_ssd')
@@ -247,7 +243,7 @@ describe('emitStorageTelemetry', () => {
   it('null same-drive verdicts when a drive is unresolved, without faking a match', async () => {
     stubClassification({
       [INSTALL_PATH]: NVME,
-      [BUILTIN_MODELS]: drive({}), // unresolved: driveKey null
+      [BUILTIN_MODELS]: drive({}),
       [SHARED_MODELS]: HDD
     })
 
@@ -299,20 +295,17 @@ describe('emitStorageTelemetry', () => {
     stubClassification({
       [INSTALL_PATH]: NVME,
       [BUILTIN_MODELS]: NVME,
-      [SHARED_MODELS]: drive({}) // unresolved: class unknown, external null
+      [SHARED_MODELS]: drive({})
     })
 
     await emitStorageTelemetry('inst-1')
 
     const props = capture.mock.calls[0]![1]
-    // The unresolved dir could be on an HDD or external drive - no false "no".
     expect(props.any_models_on_hdd).toBeNull()
     expect(props.any_models_external).toBeNull()
   })
 
   it('caps model dirs at 16 and nulls negative aggregates when truncated', async () => {
-    // 20 model roots, all on the NVMe drive; the 4 dropped dirs could be on
-    // anything, so "all same drive" / "none on HDD" must not be claimed.
     const manyRoots = Array.from({ length: 20 }, (_, i) => `E:\\models\\root${i}`)
     resolveInstallModelSearchPaths.mockReturnValue({
       downloadBaseDir: manyRoots[0],
@@ -348,7 +341,7 @@ describe('emitStorageTelemetry', () => {
     stubClassification(
       Object.fromEntries([
         [INSTALL_PATH, NVME] as [string, DriveInfo],
-        [manyRoots[0]!, HDD] as [string, DriveInfo], // an HDD inside the visible window
+        [manyRoots[0]!, HDD] as [string, DriveInfo],
         ...manyRoots.slice(1).map((r): [string, DriveInfo] => [r, NVME])
       ])
     )
@@ -356,8 +349,8 @@ describe('emitStorageTelemetry', () => {
     await emitStorageTelemetry('inst-1')
 
     const props = capture.mock.calls[0]![1]
-    expect(props.any_models_on_hdd).toBe(true) // observed, holds regardless
-    expect(props.models_all_same_drive_as_install).toBe(false) // ditto
-    expect(props.any_models_external).toBeNull() // negative claim -> null
+    expect(props.any_models_on_hdd).toBe(true)
+    expect(props.models_all_same_drive_as_install).toBe(false)
+    expect(props.any_models_external).toBeNull()
   })
 })

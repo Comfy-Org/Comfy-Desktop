@@ -63,18 +63,16 @@ describe('fetchJSON — happy path preserved by refactor', () => {
     expect(requests.length).toBe(1)
   })
 
-  it('rejects with HTTP error on non-200, no mirror retry, no cached fallback', async () => {
+  it('rejects with the primary HTTP error when the mirror retry also fails, no cached fallback', async () => {
     const p = fetchJSON(PRIMARY)
     requests[0]!.emit('response', makeResponse(500, ''))
-    // Mirror IS tried on HTTP error — verify the mirror is the second request,
-    // then make it also error so the call rejects.
     await new Promise((r) => setImmediate(r))
     expect(requests[1]?.__url).toBe(MIRROR)
     requests[1]!.emit('error', new Error('mirror down'))
     await expect(p).rejects.toThrow(/HTTP 500/)
   })
 
-  it('rejects with parse error on malformed JSON, no cached fallback', async () => {
+  it('rejects with the primary parse error when the mirror retry also fails, no cached fallback', async () => {
     const p = fetchJSON(PRIMARY)
     requests[0]!.emit('response', makeResponse(200, '{not valid'))
     await new Promise((r) => setImmediate(r))
@@ -100,7 +98,6 @@ describe('fetchJSON — mirror fallback semantics', () => {
   })
 
   it('does NOT send the primary If-None-Match to the mirror', async () => {
-    // No prior cache entry; just verify the mirror leg gets fresh headers.
     const p = fetchJSON(PRIMARY)
     requests[0]!.emit('response', makeResponse(500, ''))
     await new Promise((r) => setImmediate(r))
@@ -134,9 +131,6 @@ describe('fetchJSON — mirror is not allowed to poison the cache', () => {
   })
 
   it('does NOT write a cache entry when the response came from the mirror', async () => {
-    // Drive a mirror-served success, then make a second call and assert the
-    // second call still goes to the primary without If-None-Match (i.e. the
-    // first call wrote nothing to the cache).
     const p1 = fetchJSON(PRIMARY)
     requests[0]!.emit('error', new Error('PRIMARY_DOWN'))
     await new Promise((r) => setImmediate(r))
@@ -145,8 +139,6 @@ describe('fetchJSON — mirror is not allowed to poison the cache', () => {
 
     requests.length = 0
     const p2 = fetchJSON(PRIMARY)
-    // No prior cache entry persisted from the mirror-served call, so no
-    // conditional header.
     expect(requests[0]!.__headers['If-None-Match']).toBeUndefined()
     requests[0]!.emit('response', makeResponse(200, '{"v":2}', { etag: '"primary-etag"' }))
     await expect(p2).resolves.toEqual({ v: 2 })
@@ -159,8 +151,6 @@ describe('fetchJSON — mirror is not allowed to poison the cache', () => {
 
     requests.length = 0
     const p2 = fetchJSON(PRIMARY)
-    // The primary-served call DID populate the cache, so the second call
-    // sends the primary's ETag.
     expect(requests[0]!.__headers['If-None-Match']).toBe('"primary-etag-1"')
     requests[0]!.emit('response', makeResponse(304, ''))
     await expect(p2).resolves.toEqual({ v: 1 })

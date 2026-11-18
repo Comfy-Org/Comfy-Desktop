@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { RumErrorEvent } from '@datadog/browser-rum'
-import { normalizeDatadogBundlePaths, normalizeRumErrorEvent } from './datadogPathNormalization'
+import {
+  normalizeDatadogBundlePaths,
+  normalizeRumErrorEvent,
+  scrubRumText
+} from './datadogPathNormalization'
 
 describe('normalizeDatadogBundlePaths', () => {
   it('rewrites renderer file URLs to the synthetic Datadog bundle prefix', () => {
@@ -22,6 +26,30 @@ describe('normalizeDatadogBundlePaths', () => {
     const url = 'https://example.com/app.js'
 
     expect(normalizeDatadogBundlePaths(url)).toBe(url)
+  })
+})
+
+describe('scrubRumText', () => {
+  it('scrubs a user path with the shared scrubber', () => {
+    expect(scrubRumText('C:\\Users\\JohnDoe\\AppData\\Local\\foo')).toBe(
+      'C:\\Users\\[REDACTED]\\AppData\\Local\\foo'
+    )
+  })
+
+  it('redacts the query of a link, where signed links keep their credentials', () => {
+    expect(
+      scrubRumText(
+        "THREE.GLTFLoader: Couldn't load texture https://storage.googleapis.com/b/t.png?X-Goog-Signature=abc&X-Goog-Credential=def"
+      )
+    ).toBe(
+      "THREE.GLTFLoader: Couldn't load texture https://storage.googleapis.com/b/t.png?[REDACTED]"
+    )
+  })
+
+  it('redacts embedded file content', () => {
+    expect(scrubRumText('bad texture data:image/png;base64,iVBORw0KGgo= here')).toBe(
+      'bad texture data:[REDACTED] here'
+    )
   })
 })
 

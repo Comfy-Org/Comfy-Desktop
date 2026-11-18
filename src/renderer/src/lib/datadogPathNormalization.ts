@@ -1,8 +1,6 @@
 import type { RumErrorEvent } from '@datadog/browser-rum'
-// The shared scrubber, so RUM errors get every spelling the other off-box paths do.
 import { scrubPII } from '../../../shared/piiScrub'
 
-// Synthetic bundle URLs used only for Datadog path matching.
 export const DATADOG_BUNDLE_BASE_URL = 'app://app'
 
 const DATADOG_BUNDLE_PATH_PATTERNS = [
@@ -24,21 +22,30 @@ export function normalizeDatadogBundlePaths(value: string | undefined): string |
   return normalized
 }
 
+const URL_QUERY_PATTERN = /(https?:\/\/[^\s?#"')]+)\?[^\s"')]*/gi
+const DATA_URI_PATTERN = /data:[^\s"')]+/gi
+
+export function scrubRumText(value: string): string {
+  return scrubPII(value)
+    .replace(URL_QUERY_PATTERN, (_match, address: string) => `${address}?[REDACTED]`)
+    .replace(DATA_URI_PATTERN, 'data:[REDACTED]')
+}
+
 export function normalizeRumErrorEvent(event: RumErrorEvent): void {
-  event.error.message = scrubPII(event.error.message)
+  event.error.message = scrubRumText(event.error.message)
   event.error.stack = normalizeDatadogBundlePaths(event.error.stack)
   if (event.error.stack) {
-    event.error.stack = scrubPII(event.error.stack)
+    event.error.stack = scrubRumText(event.error.stack)
   }
   for (const cause of event.error.causes || []) {
     cause.stack = normalizeDatadogBundlePaths(cause.stack)
     if (cause.stack) {
-      cause.stack = scrubPII(cause.stack)
+      cause.stack = scrubRumText(cause.stack)
     }
   }
   if (event.error.resource?.url) {
     event.error.resource.url =
       normalizeDatadogBundlePaths(event.error.resource.url) || event.error.resource.url
-    event.error.resource.url = scrubPII(event.error.resource.url)
+    event.error.resource.url = scrubRumText(event.error.resource.url)
   }
 }

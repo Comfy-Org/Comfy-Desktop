@@ -1,3 +1,5 @@
-npm run typecheck
-npm run lint
-npm run format:check
+git diff --cached --name-only --diff-filter=ACMR -z \
+  | xargs -0 -r pnpm exec prettier --check --ignore-unknown || exit 1
+
+git diff --cached --name-only --diff-filter=ACMR -z -- '*.ts' '*.mts' '*.cts' '*.tsx' '*.js' '*.mjs' '*.cjs' '*.vue' \
+  | xargs -0 -r pnpm exec eslint --no-warn-ignored

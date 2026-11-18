@@ -2,12 +2,6 @@ import { stripLogLevelPrefix } from './stderrTail'
 
 const MARKER_RE = /ASSETS_STARTUP_FAILED: (\w+)/
 
-/**
- * ComfyUI's refusal to start when its asset database cannot open: a line
- * `ASSETS_STARTUP_FAILED: <kind>` (after any log-level tag), then a message for the user that
- * ends with the `--disable-assets` hint. Null when stderr carries no marker (older cores).
- * Matched anywhere in the line, so a coloured tag in front does not hide it.
- */
 export function parseAssetsStartupFailure(
   stderr: string | undefined
 ): { kind: string; message: string } | null {
@@ -20,7 +14,6 @@ export function parseAssetsStartupFailure(
   return { kind: MARKER_RE.exec(lines[at]!)![1]!, message: message.join('\n') }
 }
 
-/** Alembic's refusal when the asset database was migrated by a newer ComfyUI than this one. */
 export function isNewerAssetDbFailure(stderr: string | undefined): boolean {
   return (stderr ?? '').includes("Can't locate revision identified by")
 }

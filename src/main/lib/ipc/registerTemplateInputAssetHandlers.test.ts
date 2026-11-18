@@ -204,8 +204,6 @@ describe('registerTemplateInputAssetHandlers', () => {
     mocks.resolveSnapshot.mockResolvedValue([declaredAsset])
     mocks.resolveAvailability.mockResolvedValue([{ filename: 'sample.png', status: 'present' }])
 
-    // The filename travels with it so the host can report the one completion
-    // no job will ever emit for this file.
     await expect(downloadAsset()).resolves.toEqual({
       status: 'already-present',
       filename: 'sample.png'
@@ -243,9 +241,6 @@ describe('registerTemplateInputAssetHandlers', () => {
       '/comfy/input',
       undefined,
       sender,
-      // The job is told which template input it serves, so its progress names
-      // it without the renderer having to map a job id - including after a
-      // retry, which mints a new one.
       {
         existingFilePolicy: 'skip',
         templateInput: { templateId: 'template-1', assetId: declaredAsset.assetId }

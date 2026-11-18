@@ -30,9 +30,6 @@ describe('getPhaseWeights', () => {
   })
 
   it('normalizes inline weights so an injected step keeps the sum at 1.0', () => {
-    // Base sums to 1.0; the repair injection adds 0.1 on top (total 1.1). The
-    // bar must still span 0→1, with gpu staying the heaviest (B2 guard: it must
-    // NOT collapse toward the 1/7 it would get from an equal split).
     const w = getPhaseWeights(
       weighted([
         ['repair', 0.1],
@@ -66,10 +63,38 @@ describe('getPhaseWeights', () => {
     expect(w.extract).toBe(0.3)
   })
 
+  it('weights a standalone install by how long each of its four steps takes', () => {
+    const w = getPhaseWeights(steps('download', 'extract', 'setup', 'update'))
+    expect(w).toEqual({ download: 0.4, extract: 0.2, setup: 0.3, update: 0.1 })
+    expect(sum(w)).toBeCloseTo(1.0, 5)
+  })
+
+  it('gives the whole bar to the other steps when a standalone install has no version step', () => {
+    const w = getPhaseWeights(steps('download', 'extract', 'setup'))
+    expect(w).toEqual({ download: 0.45, extract: 0.2, setup: 0.35 })
+    expect(sum(w)).toBeCloseTo(1.0, 5)
+  })
+
+  it('leaves room for the two restore steps when a snapshot is restored after the install', () => {
+    const restored = getPhaseWeights(
+      steps('download', 'extract', 'setup', 'restore-nodes', 'restore-pip')
+    )
+    expect(sum(restored)).toBeCloseTo(1.0, 5)
+    expect(restored['restore-nodes']).toBe(0.18)
+    expect(restored['restore-pip']).toBe(0.12)
+    expect(restored.download).toBeGreaterThan(restored.setup!)
+
+    const restoredAndUpdated = getPhaseWeights(
+      steps('download', 'extract', 'setup', 'update', 'restore-nodes', 'restore-pip')
+    )
+    expect(sum(restoredAndUpdated)).toBeCloseTo(1.0, 5)
+    expect(restoredAndUpdated.update).toBe(0.1)
+    expect(restoredAndUpdated['restore-nodes']).toBe(0.15)
+  })
+
   it('uses the curated table for a comfybuilder build install', () => {
     const w = getPhaseWeights(steps('download', 'extract', 'models'))
     expect(sum(w)).toBeCloseTo(1.0, 5)
-    // Archive download dominates; models must not steal its share via equal split.
     expect(w.download).toBeGreaterThan(w.extract)
     expect(w.download).toBeGreaterThan(w.models)
   })

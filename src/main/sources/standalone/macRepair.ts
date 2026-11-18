@@ -14,12 +14,6 @@ export async function removeQuarantine(dir: string, log?: (text: string) => void
   })
 }
 
-/**
- * Strip macOS quarantine flags and re-codesign Mach-O binaries in the install's
- * Python env(s). Pass `installation` so adopted installs get their legacy venv
- * (`<adoptedBaseDir>/.venv`, resolved by `getActiveVenvDir`) repaired instead of a
- * non-existent path under `installPath`.
- */
 export async function repairMacBinaries(
   installPath: string,
   sendProgress: (
@@ -108,7 +102,6 @@ async function isMachO(filePath: string): Promise<boolean> {
     fh = await fs.promises.open(filePath, 'r')
     const buf = Buffer.alloc(4)
     await fh.read(buf, 0, 4, 0)
-    // Mach-O magic numbers: MH_MAGIC, MH_CIGAM, MH_MAGIC_64, MH_CIGAM_64, FAT_MAGIC, FAT_CIGAM
     const magic = buf.readUInt32BE(0)
     return (
       magic === 0xfeedface ||

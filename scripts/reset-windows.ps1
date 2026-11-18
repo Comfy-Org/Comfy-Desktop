@@ -1,18 +1,23 @@
-# ComfyUI Desktop 2.0 -- Windows reset script
-#
-# Wipes app settings, caches, and the Chromium profile for the current build
-# AND for the older beta names (ComfyUI Launcher / comfyui-launcher), in case
-# leftovers from a previous version are breaking the UI (no styles, no i18n,
-# dropdowns not working, etc.) after a manual update.
-#
-# Does NOT touch your actual ComfyUI installs at %USERPROFILE%\ComfyUI-Installs.
-# The script DOES remove installations.json (the registry), so you may need to
-# re-add existing installs via "Add existing installation" on first launch.
-#
-# Usage (from PowerShell):
-#   powershell -ExecutionPolicy Bypass -File .\reset-windows.ps1
-#   powershell -ExecutionPolicy Bypass -File .\reset-windows.ps1 -Yes
+<#
+.SYNOPSIS
+  ComfyUI Desktop 2.0 -- Windows reset script
 
+.DESCRIPTION
+  Wipes app settings, caches, and the Chromium profile for the current build
+  AND for the older beta names (ComfyUI Launcher / comfyui-launcher), in case
+  leftovers from a previous version are breaking the UI (no styles, no i18n,
+  dropdowns not working, etc.) after a manual update.
+
+  Does NOT touch your actual ComfyUI installs at %USERPROFILE%\ComfyUI-Installs.
+  The script DOES remove installations.json (the registry), so you may need to
+  re-add existing installs via "Add existing installation" on first launch.
+
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File .\reset-windows.ps1
+
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File .\reset-windows.ps1 -Yes
+#>
 [CmdletBinding()]
 param(
   [switch]$Yes
@@ -20,8 +25,6 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Refuse to run while the app is open. "Comfy Desktop" covers the
-# upcoming post-rename productName (the "2.0" suffix is being dropped).
 $runningNames = @(
   'Comfy Desktop',
   'ComfyUI Desktop 2.0',
@@ -36,12 +39,6 @@ if ($running) {
   exit 1
 }
 
-# Every historical app/package name. The userData folder on Windows is named
-# after the productName (or package.json "name") field. "Comfy Desktop"
-# is included for the upcoming post-rename productName. "ComfyUI" covers
-# the legacy v1.x desktop app (productName "ComfyUI") whose state can
-# survive an upgrade to the 2.0 beta and break a clean install (mirrors
-# #679's macOS findings).
 $appNames = @(
   'ComfyUI',
   'Comfy Desktop',
@@ -52,8 +49,8 @@ $appNames = @(
 )
 
 $roots = @(
-  $env:APPDATA,        # Roaming -- main userData + Chromium profile
-  $env:LOCALAPPDATA    # Local   -- caches, electron-updater, Crashpad
+  $env:APPDATA,
+  $env:LOCALAPPDATA
 )
 
 $targets = New-Object System.Collections.Generic.List[string]
@@ -61,10 +58,6 @@ foreach ($root in $roots) {
   if (-not $root) { continue }
   foreach ($name in $appNames) {
     $targets.Add((Join-Path $root $name))
-    # electron-updater pending-update cache (LOCALAPPDATA\<name>-updater).
-    # If left in place, the updater can re-apply a stale update.exe / nupkg
-    # over the freshly-installed app on next launch — a common cause of
-    # "I reinstalled but the bug is still there".
     $targets.Add((Join-Path $root ($name + '-updater')))
   }
 }

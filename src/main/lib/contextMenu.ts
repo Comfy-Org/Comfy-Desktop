@@ -1,16 +1,13 @@
-import { Menu, clipboard, shell } from 'electron'
+import { Menu, clipboard } from 'electron'
 import type { BrowserWindow } from 'electron'
 import * as i18n from './i18n'
+import { isOpenableExternalUrl, tryOpenExternalUrl } from './openExternal'
 
 export interface ContextMenuHooks {
-  /** Fired right before the native menu is shown. Used by auto-dismissing
-   *  popups to suspend blur-dismiss so the menu doesn't close its own host. */
   onMenuOpen?: () => void
-  /** Fired once the native menu closes (selection made or dismissed). */
   onMenuClose?: () => void
 }
 
-/** Actions wired to the menu items; injected so the builder stays pure/testable. */
 export interface ContextMenuActions {
   saveImage: (srcURL: string) => void
   copyImage: () => void
@@ -20,7 +17,6 @@ export interface ContextMenuActions {
   addWordToDictionary: (word: string) => void
 }
 
-/** Subset of Electron's context-menu params the builder reads. */
 export type ContextMenuParams = Pick<
   Electron.ContextMenuParams,
   | 'editFlags'
@@ -34,15 +30,6 @@ export type ContextMenuParams = Pick<
   | 'dictionarySuggestions'
 >
 
-/**
- * Build the context-menu template for a right-click. Returns an empty array
- * when nothing is actionable so callers can skip popping an empty menu.
- *
- * Images get Save/Copy entries so right-clicking an output image (including
- * the fullscreen viewer) matches the browser's native "Save image" - the
- * launcher overrides Chromium's default menu, so without this there is no
- * way to save an image in-app.
- */
 export function buildContextMenuItems(
   params: ContextMenuParams,
   actions: ContextMenuActions
@@ -60,6 +47,7 @@ export function buildContextMenuItems(
   } = params
   const hasSelection = selectionText.trim().length > 0
   const hasLink = linkURL.length > 0
+  const canOpenLink = isOpenableExternalUrl(linkURL)
   const hasImage = mediaType === 'image' && hasImageContents && srcURL.length > 0
   const hasMisspelling = misspelledWord.length > 0
 
@@ -81,18 +69,18 @@ export function buildContextMenuItems(
 
   if (hasLink) {
     if (menuItems.length > 0) menuItems.push({ type: 'separator' })
-    menuItems.push(
-      {
+    if (canOpenLink) {
+      menuItems.push({
         id: 'openLink',
         label: i18n.t('contextMenu.openLinkInBrowser'),
         click: () => actions.openLink(linkURL)
-      },
-      {
-        id: 'copyLink',
-        label: i18n.t('contextMenu.copyLinkAddress'),
-        click: () => actions.copyLink(linkURL)
-      }
-    )
+      })
+    }
+    menuItems.push({
+      id: 'copyLink',
+      label: i18n.t('contextMenu.copyLinkAddress'),
+      click: () => actions.copyLink(linkURL)
+    })
   }
 
   if (hasImage) {
@@ -137,12 +125,10 @@ export function attachContextMenu(
   const wc = webContents || comfyWindow.webContents
   wc.on('context-menu', (_event, params) => {
     const menuItems = buildContextMenuItems(params, {
-      // Route through the comfy view's session so the save flows through the
-      // launcher's downloads tray (see attachSessionDownloadHandler).
       saveImage: (srcURL) => wc.session.downloadURL(srcURL),
       copyImage: () => wc.copyImageAt(params.x, params.y),
-      openLink: (linkURL) => shell.openExternal(linkURL),
-      copyLink: (linkURL) => clipboard.writeText(linkURL),
+      openLink: (linkURL) => void tryOpenExternalUrl(linkURL),
+      copyLink: (linkURL) => void clipboard.writeText(linkURL),
       replaceMisspelling: (suggestion) => wc.replaceMisspelling(suggestion),
       addWordToDictionary: (word) => wc.session.addWordToSpellCheckerDictionary(word)
     })

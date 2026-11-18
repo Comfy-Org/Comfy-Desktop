@@ -1,34 +1,47 @@
 <script setup lang="ts">
 import type { PathIssue, DiskSpaceInfo } from '../types/ipc'
-import { formatBytes } from '../lib/formatting'
+import { formatBytes, formatFreeSpace } from '../lib/formatting'
 
 defineProps<{
   pathIssues: PathIssue[]
   diskSpaceLoading: boolean
   diskSpace: DiskSpaceInfo | null
   estimatedSize: number
+  issuesOnly?: boolean
 }>()
 </script>
 
 <template>
-  <div v-if="pathIssues.includes('insideAppBundle')" class="field-error">
+  <div
+    v-if="pathIssues.includes('insideAppBundle')"
+    class="path-disk-error mt-1 min-h-0 text-[13px] text-[var(--danger)]"
+  >
     {{ $t('pathValidation.insideAppBundleMessage') }}
   </div>
-  <div v-else-if="pathIssues.includes('oneDrive')" class="field-error">
+  <div
+    v-else-if="pathIssues.includes('oneDrive')"
+    class="path-disk-error mt-1 min-h-0 text-[13px] text-[var(--danger)]"
+  >
     {{ $t('pathValidation.oneDriveMessage') }}
   </div>
-  <div v-else-if="pathIssues.includes('insideSharedDir')" class="field-error">
+  <div
+    v-else-if="pathIssues.includes('insideSharedDir')"
+    class="path-disk-error mt-1 min-h-0 text-[13px] text-[var(--danger)]"
+  >
     {{ $t('pathValidation.insideSharedDirMessage') }}
   </div>
-  <div v-else-if="pathIssues.includes('insideExistingInstall')" class="field-error">
+  <div
+    v-else-if="pathIssues.includes('insideExistingInstall')"
+    class="path-disk-error mt-1 min-h-0 text-[13px] text-[var(--danger)]"
+  >
     {{ $t('pathValidation.insideExistingInstallMessage') }}
   </div>
-  <div class="disk-space-info">
+  <div v-if="!issuesOnly" class="path-disk-info mt-1 min-h-[18px] text-[13px] text-text-muted">
     <template v-if="diskSpaceLoading">
       {{ $t('diskSpace.checking') }}
     </template>
     <template v-else-if="diskSpace">
-      {{ $t('diskSpace.free', { size: formatBytes(diskSpace.free) }) }}
+      {{ $t('diskSpace.free', { size: formatFreeSpace(diskSpace.free) }) }}
       <template v-if="estimatedSize > 0">
         · {{ $t('diskSpace.estimatedRequired', { size: formatBytes(estimatedSize) }) }}
       </template>

@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-// Stub the electron surface ./shared touches so the test needs no runtime.
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -23,15 +22,17 @@ import {
   _operationAborts,
   cancelAll,
   cancelLaunching,
+  launchHadWindow,
+  noteWindowClosed,
   _test_addRunningSession,
   _test_clearRunningSessions
 } from './shared'
+import { comfyFoldersOf } from '../outputFolders'
+import type { InstallationRecord } from '../../installations'
 
 const INSTALL = 'install-under-test'
 
 afterEach(() => {
-  // Drain shared state so cases stay independent. Each test ends the
-  // launches it begins (ownership-guarded), so only these two can leak.
   _operationAborts.delete(INSTALL)
   _test_clearRunningSessions()
   expect(_hasActiveLaunch(INSTALL)).toBe(false)
@@ -45,6 +46,33 @@ describe('cancelAll', () => {
     cancelAll()
 
     expect(flushTelemetry).toHaveBeenCalledOnce()
+  })
+
+  it('stops a start whose window was closed, as quitting Desktop does', () => {
+    const launch = _beginLaunch(INSTALL)
+    _operationAborts.set(INSTALL, launch.abort)
+    noteWindowClosed(INSTALL)
+    try {
+      cancelAll()
+
+      expect(launch.abort.signal.aborted).toBe(true)
+    } finally {
+      _endLaunch(INSTALL, launch)
+    }
+  })
+})
+
+describe('a start whose window closed', () => {
+  it('is remembered until the start ends', () => {
+    const launch = _beginLaunch(INSTALL)
+    try {
+      expect(launchHadWindow(INSTALL)).toBe(false)
+      noteWindowClosed(INSTALL)
+      expect(launchHadWindow(INSTALL)).toBe(true)
+    } finally {
+      _endLaunch(INSTALL, launch)
+    }
+    expect(launchHadWindow(INSTALL)).toBe(false)
   })
 })
 
@@ -68,11 +96,27 @@ describe('launch tracking (_beginLaunch/_endLaunch/_hasActiveLaunch)', () => {
     const stale = _beginLaunch(INSTALL)
     _endLaunch(INSTALL, stale)
     const fresh = _beginLaunch(INSTALL)
-    // A leftover cleanup path from the stale generation fires late:
     _endLaunch(INSTALL, stale)
     expect(_hasActiveLaunch(INSTALL)).toBe(true)
     _endLaunch(INSTALL, fresh)
     expect(_hasActiveLaunch(INSTALL)).toBe(false)
+  })
+})
+
+describe('_test_addRunningSession', () => {
+  const runningInstall = { id: INSTALL } as InstallationRecord
+
+  it('gives the running session the folders it was launched with', () => {
+    const launchFolders = { output: '/launched/output', input: '/launched/input' }
+    _test_addRunningSession(INSTALL, 'install-under-test-name', undefined, undefined, launchFolders)
+
+    expect(comfyFoldersOf(runningInstall)).toEqual(launchFolders)
+  })
+
+  it('leaves a running session seeded without folders with none', () => {
+    _test_addRunningSession(INSTALL, 'install-under-test-name')
+
+    expect(comfyFoldersOf(runningInstall)).toEqual({ output: null, input: null })
   })
 })
 
@@ -106,7 +150,6 @@ describe('cancelLaunching', () => {
 
   it('aborts an in-flight launch and resolves true once it settles', async () => {
     const launch = _beginLaunch(INSTALL)
-    // Simulate the handler: unwind (endLaunch) only after the abort fires.
     launch.abort.signal.addEventListener(
       'abort',
       () => {
@@ -121,8 +164,6 @@ describe('cancelLaunching', () => {
   })
 
   it('cancels a pre-marker launch: no launching marker, no _operationAborts entry needed', async () => {
-    // The regression: before the launch claims _operationAborts or sets the
-    // launching marker, cancelLaunching must still find and abort it.
     const launch = _beginLaunch(INSTALL)
     expect(_operationAborts.has(INSTALL)).toBe(false)
     launch.abort.signal.addEventListener('abort', () => _endLaunch(INSTALL, launch), { once: true })

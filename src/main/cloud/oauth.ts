@@ -1,10 +1,4 @@
-/**
- * PKCE authorization-code flow (RFC 8252): bind a loopback redirect, open the
- * system browser at the authorize URL, wait for the callback code, exchange it
- * for tokens. `signIn` optionally pre-selects a workspace (the switch path).
- */
-import { shell } from 'electron'
-
+import { openExternalUrl } from '../lib/openExternal'
 import { statusFromAccessToken } from './claims'
 import { CLOUD_CONFIG } from './config'
 import { startLoopbackListener } from './loopback'
@@ -17,9 +11,15 @@ import {
 import { SignInFailure } from './signInFailure'
 import type { AuthStatus, AuthTokens } from './types'
 
-/** Matches ingest's OAuth request TTL; a first SSO sign-in runs well past 2 min. */
 const DEFAULT_SIGN_IN_TIMEOUT_MS = 600_000
 const TOKEN_REQUEST_TIMEOUT_MS = 15_000
+
+const PERMANENT_REVOKE_ERRORS: ReadonlySet<string> = new Set([
+  'invalid_request',
+  'invalid_client',
+  'unauthorized_client',
+  'unsupported_token_type'
+])
 
 export interface OAuthOptions {
   authorizeUrl?: string
@@ -28,9 +28,7 @@ export interface OAuthOptions {
   scope?: string
   resource?: string
   timeoutMs?: number
-  /** Pre-select this workspace at consent time. */
   workspaceId?: string
-  /** Receives the authorize URL, so a retry can reopen the same pending flow. */
   onAuthorizeUrl?: (url: string) => void
 }
 
@@ -53,8 +51,6 @@ function resolveConfig(
   }
 }
 
-/** Build tokens, keeping the prior refresh token when the server omits one
- *  (RFC 6749 §6: refresh_token is optional on a refresh grant). */
 function toTokens(r: TokenResponse, fallbackRefresh?: string): AuthTokens {
   return {
     accessToken: r.access_token,
@@ -63,10 +59,19 @@ function toTokens(r: TokenResponse, fallbackRefresh?: string): AuthTokens {
   }
 }
 
+function oauthErrorOf(body: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(body)
+    const error =
+      parsed && typeof parsed === 'object' ? (parsed as { error?: unknown }).error : null
+    return typeof error === 'string' ? error : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<TokenResponse> {
   const controller = new AbortController()
-  // Keep the abort armed until the body is fully read, so a slow/unbounded body
-  // can't hang the flow after the response headers arrive.
   const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS)
   try {
     const resp = await fetch(tokenUrl, {
@@ -86,7 +91,7 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
       throw new SignInFailure(
         `OAuth token request failed: ${resp.status} ${detail || resp.statusText}`,
         'server_error',
-        { httpStatus: resp.status }
+        { httpStatus: resp.status, oauthError: oauthErrorOf(detail) }
       )
     }
     const data = (await resp.json().catch((cause: unknown) => {
@@ -111,9 +116,8 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
   }
 }
 
-/** System browser only (RFC 8252): never an embedded window/webview. */
 export function openAuthorizePage(authorizeUrl: string): Promise<void> {
-  return shell.openExternal(authorizeUrl)
+  return openExternalUrl(authorizeUrl)
 }
 
 export async function signIn(
@@ -137,11 +141,6 @@ export async function signIn(
       ...(options.workspaceId ? { workspaceId: options.workspaceId } : {})
     })
     options.onAuthorizeUrl?.(authorizeUrl)
-    // Never gate the flow on openExternal settling: a wedged shell handler
-    // (seen on Windows) can leave that promise pending forever, which would
-    // strand the single-flight login and disable sign-in in every window.
-    // The loopback callback timeout is the flow's deadline; a fast
-    // openExternal rejection (no browser handler) still fails immediately.
     const { code } = await Promise.race([
       listener.waitForCode(),
       openAuthorizePage(authorizeUrl).then(
@@ -169,8 +168,6 @@ export async function signIn(
     )
     return { tokens: toTokens(r), status: statusFromAccessToken(r.access_token) }
   } finally {
-    // Always tear the listener down, even if openExternal or waitForCode threw,
-    // so a failed sign-in never leaks a listening socket until the timeout.
     listener.close()
   }
 }
@@ -190,4 +187,32 @@ export async function refresh(
     })
   )
   return toTokens(r, refreshToken)
+}
+
+export type RevokeResult = 'revoked' | 'refused' | 'retry'
+
+export async function revoke(
+  refreshToken: string,
+  clientId: string,
+  revokeUrl: string = CLOUD_CONFIG.revokeUrl
+): Promise<RevokeResult> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS)
+  try {
+    const resp = await fetch(revokeUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: refreshToken, client_id: clientId }).toString(),
+      redirect: 'manual',
+      signal: controller.signal
+    })
+    if (resp.ok) return 'revoked'
+    if (resp.status !== 400 && resp.status !== 401) return 'retry'
+    const detail = await resp.text().catch(() => '')
+    return PERMANENT_REVOKE_ERRORS.has(oauthErrorOf(detail) ?? '') ? 'refused' : 'retry'
+  } catch {
+    return 'retry'
+  } finally {
+    clearTimeout(timer)
+  }
 }

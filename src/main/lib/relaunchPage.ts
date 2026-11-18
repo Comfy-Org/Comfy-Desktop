@@ -13,17 +13,6 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
-/**
- * Render the animated brand splash into the given WebContents. Used both for
- * the model-folder restart and to mask a stale/dead page while ComfyUI
- * reloads (e.g. relaunching into an existing window after a crash). Must
- * target the ComfyUI WebContentsView's webContents, NOT the parent
- * BrowserWindow's (empty and covered by child views, so the splash is invisible there).
- *
- * `copy` overrides the default model-folder relaunch wording; pass it when
- * the splash is shown for a plain launch so the user doesn't see the
- * "new model folders" message.
- */
 export async function showSplashPage(
   webContents: WebContents,
   theme: SplashTheme = SPLASH_DARK,
@@ -33,10 +22,6 @@ export async function showSplashPage(
   const desc = escapeHtml(copy?.desc ?? i18n.t('launch.modelFolderRelaunchDesc'))
   const { bg, fg } = theme
   const mutedFg = theme.isDark ? '#888' : '#666'
-  // Optional countdown (used by the update splash so the user can read what's
-  // about to happen before the app quits to install). The template is fetched
-  // with the `{seconds}` placeholder UNresolved so the inline script can tick it
-  // down in the renderer; the "starting now" line shows when it reaches zero.
   const countdown = copy?.countdownSeconds
   const countdownBlock =
     countdown && countdown > 0
@@ -79,9 +64,7 @@ p{margin-top:10px;font-size:14px;color:${mutedFg};line-height:1.5;text-align:cen
 <p>${desc}</p>
 ${countdownBlock}
 </body></html>`
-  // Caller attaches a will-navigate blocker beforehand, so we just stop + load the data URL.
   webContents.stop()
   await webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-  // Give the renderer a frame to paint before the caller kills ComfyUI.
   await new Promise((r) => setTimeout(r, 100))
 }

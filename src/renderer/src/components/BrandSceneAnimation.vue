@@ -19,18 +19,25 @@ useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
 </script>
 
 <template>
-  <div class="brand-scene-wrap" aria-hidden="true">
-    <div ref="stageRef" class="brand-scene-stage">
+  <div
+    class="brand-scene-wrap pointer-events-none absolute inset-0 overflow-hidden"
+    aria-hidden="true"
+  >
+    <div
+      ref="stageRef"
+      class="brand-scene-stage absolute top-0 left-0 h-[784px] w-[1056px] origin-top-left"
+    >
       <div
         v-for="(scene, si) in data.scenes"
         :key="scene.id"
-        class="brand-scene"
+        class="brand-scene absolute top-0 left-0 size-0 overflow-hidden bg-[var(--neutral-900,#19131d)] will-change-[transform,width,height]"
         :style="{ zIndex: data.scenes.length - si, borderRadius: `${scene.maskRadius}px` }"
       >
         <video
           v-for="(v, vi) in scene.videos"
           :key="vi"
           :src="v.src"
+          class="absolute top-0 left-0 hidden max-h-none max-w-none object-fill will-change-[transform,width,height] [&.is-active]:block [&.is-active]:opacity-0 [&.is-active]:transition-opacity [&.is-active]:duration-280 [&.is-active]:ease-[ease] [&.is-active.is-painted]:opacity-100 motion-reduce:[&.is-active]:transition-none"
           muted
           playsinline
           preload="auto"
@@ -40,53 +47,3 @@ useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
     </div>
   </div>
 </template>
-
-<style scoped>
-.brand-scene-wrap {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-.brand-scene-stage {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform-origin: top left;
-  width: 1056px;
-  height: 784px;
-}
-.brand-scene {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  background: var(--neutral-900, #19131d);
-  will-change: transform, width, height;
-}
-.brand-scene video {
-  position: absolute;
-  left: 0;
-  top: 0;
-  display: none;
-  object-fit: fill;
-  will-change: transform, width, height;
-  max-width: none;
-  max-height: none;
-}
-.brand-scene video.is-active {
-  display: block;
-  opacity: 0;
-  transition: opacity 280ms ease;
-}
-.brand-scene video.is-active.is-painted {
-  opacity: 1;
-}
-@media (prefers-reduced-motion: reduce) {
-  .brand-scene video.is-active {
-    transition: none;
-  }
-}
-</style>

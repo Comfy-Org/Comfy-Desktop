@@ -1,4 +1,3 @@
-// Fail-closed semantics for the free-tier availability lookup.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const getOpsFlagResult = vi.fn()
@@ -10,9 +9,6 @@ function flagResult(value: unknown): unknown {
   return { kind: 'value', value, payload: undefined }
 }
 
-/** The classification `getOpsFlagResult` returns for a timeout, a network error, or a key the
- *  server is not serving. Distinct from a value: `parse` never runs, so the fail direction is
- *  what decides. */
 function unreachable(): unknown {
   return { kind: 'unreachable' }
 }
@@ -41,12 +37,8 @@ beforeEach(() => {
 
 describe('cloudFreeRuns', () => {
   it('reads cloud’s own free-tier flag, not a desktop mirror', async () => {
-    // Tracking the real rollout means there's nothing to keep in sync: the
-    // pill appears when free-tier submission actually becomes available.
     expect(CLOUD_FREE_RUNS_FLAG_KEY).toBe('free_tier_workflow_submission_enabled')
     await resolveWith('on')
-    // The trailing `undefined` is the late-result callback. This flag does not persist, so it
-    // must not receive one: nothing is attached to an abandoned fetch and it stays write-free.
     expect(getOpsFlagResult).toHaveBeenCalledWith(
       CLOUD_FREE_RUNS_FLAG_KEY,
       'anon',
@@ -60,14 +52,10 @@ describe('cloudFreeRuns', () => {
   })
 
   it.each([['off'], [false], ['garbage']])('keeps the pill hidden for %s', async (value) => {
-    // The pill asserts a live entitlement. Anything short of an explicit
-    // yes means we can't confirm the offer, so we don't make it.
     expect(await resolveWith(value)).toBe(false)
   })
 
   it('keeps the pill hidden when the flag is unreachable', async () => {
-    // Its own case rather than a value alongside the ones above: a miss never reaches `parse`,
-    // so this is the only one of them that exercises the fail direction itself.
     expect(await resolveWithResult(unreachable())).toBe(false)
   })
 
@@ -87,8 +75,6 @@ describe('cloudFreeRuns', () => {
     void initCloudFreeRuns({ distinctId: 'anon' })
     const pending = getCloudFreeRunsEnabledAsync()
     release(flagResult('on'))
-    // A renderer query landing before the fetch settles must see the
-    // resolved value, not the fail-closed default.
     expect(await pending).toBe(true)
   })
 

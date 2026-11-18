@@ -6,7 +6,6 @@ export interface OpenInstallManagerOptions {
   autoAction?: string | null
 }
 
-/** Open the shared instance manager, optionally targeting and firing an action. */
 export function openInstallManager(
   installation: Installation,
   opts: OpenInstallManagerOptions = {}

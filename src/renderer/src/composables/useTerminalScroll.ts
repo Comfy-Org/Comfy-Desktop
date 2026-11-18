@@ -1,13 +1,7 @@
 import { type Ref, ref, watch, nextTick } from 'vue'
 
-/**
- * Shared terminal scroll behavior: auto-scroll to bottom, expand/collapse toggle.
- *
- * @param terminalRef - Template ref for the terminal scroll container.
- * @param getOutput - Getter returning the current terminal output string.
- */
 export function useTerminalScroll(
-  terminalRef: Ref<HTMLDivElement | null>,
+  terminalRef: Readonly<Ref<HTMLElement | null>>,
   getOutput: () => string | undefined
 ) {
   const isAtBottom = ref(true)
@@ -24,6 +18,14 @@ export function useTerminalScroll(
       terminalRef.value.scrollTop = terminalRef.value.scrollHeight
     }
   }
+
+  watch(
+    terminalRef,
+    (el) => {
+      if (el && isAtBottom.value) scrollToBottom()
+    },
+    { flush: 'post' }
+  )
 
   watch(getOutput, async () => {
     if (!isAtBottom.value) return

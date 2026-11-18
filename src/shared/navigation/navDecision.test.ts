@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   decideNavigation,
   NAV_LABEL,
-  type Intent,
   type NavInput,
   type TargetKind,
   type TargetRun
@@ -12,44 +11,42 @@ import en from '../../../locales/en.json'
 
 const VIEWS: ViewKind[] = ['dashboard', 'instance', 'cloud']
 const TARGETS: TargetKind[] = ['dashboard', 'instance', 'cloud', 'new-instance']
-const RUNS: TargetRun[] = ['stopped', 'running-elsewhere', 'self']
-const INTENTS: Intent[] = ['primary', 'new-window']
+const RUNS: TargetRun[] = ['stopped', 'running-elsewhere', 'self', 'starting-unhosted']
 
 function input(over: Partial<NavInput>): NavInput {
   return {
     currentView: 'dashboard',
     target: 'instance',
     targetRun: 'stopped',
-    intent: 'primary',
     ...over
   }
 }
 
 describe('decideNavigation — totality', () => {
-  // The function must be total: every tuple in the full cross-product resolves
-  // to a structurally valid decision, never throws, never returns undefined.
   it('returns a valid decision for the entire input cross-product', () => {
     for (const currentView of VIEWS)
       for (const target of TARGETS)
-        for (const targetRun of RUNS)
-          for (const intent of INTENTS) {
-            const d = decideNavigation(input({ currentView, target, targetRun, intent }))
-            expect(d).toBeDefined()
-            expect(['same', 'new']).toContain(d.window)
-            expect(d.verb).toBeTruthy()
-            expect(Object.values(NAV_LABEL)).toContain(d.primaryLabel)
-            expect(Array.isArray(d.secondary)).toBe(true)
-          }
+        for (const targetRun of RUNS) {
+          const d = decideNavigation(input({ currentView, target, targetRun }))
+          expect(d).toBeDefined()
+          expect(d.verb).toBeTruthy()
+          expect(Object.values(NAV_LABEL)).toContain(d.primaryLabel)
+        }
   })
 
-  // Guards against the "dead Start button" class of bug: a picked install target
-  // (instance OR cloud/remote) in a REACHABLE run-state must always produce a
-  // live action, never a silent no-op. `self` is only reachable when the target
-  // is the host's own running install (cloud→cloud).
+  it('asks main to start a stopped build the same way from every window, since main picks the window', () => {
+    for (const currentView of VIEWS)
+      for (const target of ['instance', 'cloud'] as const) {
+        const d = decideNavigation(input({ currentView, target, targetRun: 'stopped' }))
+        expect(d.verb, `${currentView} → ${target} (stopped)`).toBe('start')
+      }
+  })
+
   it('never produces a dead no-op CTA for a reachable (host, install-target, run) combo', () => {
     const reachable: Array<[ViewKind, TargetKind, TargetRun]> = [
       ['dashboard', 'instance', 'stopped'],
       ['dashboard', 'instance', 'running-elsewhere'],
+      ['dashboard', 'instance', 'starting-unhosted'],
       ['dashboard', 'cloud', 'stopped'],
       ['dashboard', 'cloud', 'running-elsewhere'],
       ['instance', 'instance', 'stopped'],
@@ -71,209 +68,117 @@ describe('decideNavigation — totality', () => {
   })
 })
 
-describe('decideNavigation — the CURRENT-behavior matrix (baseline before #926 deltas)', () => {
+describe('decideNavigation — every build opens in its own window', () => {
   const decisionFor = (currentView: ViewKind, target: TargetKind, targetRun: TargetRun) =>
     decideNavigation(input({ currentView, target, targetRun }))
 
-  // ── Dashboard → X ──
   it('Dashboard → Dashboard: no-op', () => {
     expect(decisionFor('dashboard', 'dashboard', 'self').verb).toBe('no-op')
   })
-  it('Dashboard → Instance (stopped): Start in same window, no caret', () => {
-    const decision = decisionFor('dashboard', 'instance', 'stopped')
-    expect(decision).toMatchObject({
-      window: 'same',
-      verb: 'switch',
+  it('Dashboard → stopped build: Start from this Desktop window', () => {
+    expect(decisionFor('dashboard', 'instance', 'stopped')).toEqual({
+      verb: 'start',
       primaryLabel: NAV_LABEL.start
     })
-    expect(decision.secondary).toHaveLength(0)
   })
-  it('Dashboard → Instance (running elsewhere): focus, label Switch, no caret', () => {
-    const decision = decisionFor('dashboard', 'instance', 'running-elsewhere')
-    expect(decision).toMatchObject({
-      window: 'same',
+  it('Dashboard → closed Cloud: Open Cloud from this Desktop window', () => {
+    expect(decisionFor('dashboard', 'cloud', 'stopped')).toEqual({
+      verb: 'start',
+      primaryLabel: NAV_LABEL.openCloud
+    })
+  })
+  it('Dashboard → build running elsewhere: focus its window, label Switch', () => {
+    expect(decisionFor('dashboard', 'instance', 'running-elsewhere')).toEqual({
       verb: 'focus',
       primaryLabel: NAV_LABEL.switch
     })
-    expect(decision.secondary).toHaveLength(0)
+    expect(decisionFor('dashboard', 'cloud', 'running-elsewhere').verb).toBe('focus')
   })
-  it('Dashboard → Cloud (closed): Open Cloud same window + new-window caret', () => {
-    const decision = decisionFor('dashboard', 'cloud', 'stopped')
-    expect(decision).toMatchObject({
-      window: 'same',
-      verb: 'switch',
-      primaryLabel: NAV_LABEL.openCloud
+  it('Dashboard → build starting with no window: Restart', () => {
+    expect(decisionFor('dashboard', 'instance', 'starting-unhosted')).toEqual({
+      verb: 'restart',
+      primaryLabel: NAV_LABEL.restart
     })
-    expect(decision.secondary.some((alt) => alt.window === 'new' && alt.verb === 'open-new')).toBe(
-      true
-    )
+  })
+  it('a build starting with no window reads as running elsewhere outside Dashboard → Instance', () => {
+    const elsewhere: Array<[ViewKind, TargetKind]> = [
+      ['dashboard', 'cloud'],
+      ['instance', 'instance'],
+      ['instance', 'cloud'],
+      ['cloud', 'instance'],
+      ['cloud', 'cloud']
+    ]
+    for (const [view, target] of elsewhere) {
+      expect(decisionFor(view, target, 'starting-unhosted')).toBe(
+        decisionFor(view, target, 'running-elsewhere')
+      )
+    }
   })
   it('Dashboard → New Instance: install wizard', () => {
     expect(decisionFor('dashboard', 'new-instance', 'stopped').verb).toBe('install-wizard')
   })
 
-  // ── Instance → X ──
-  it('Instance → Dashboard: NEW window (instance keeps running)', () => {
-    const decision = decisionFor('instance', 'dashboard', 'self')
-    expect(decision).toMatchObject({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openDashboard
+  it('build window → stopped build B: Start opens B in its own window', () => {
+    expect(decisionFor('instance', 'instance', 'stopped')).toEqual({
+      verb: 'start',
+      primaryLabel: NAV_LABEL.start
     })
   })
-  it('Instance → self: Restart in place', () => {
-    const decision = decisionFor('instance', 'instance', 'self')
-    expect(decision).toMatchObject({
-      window: 'same',
-      verb: 'restart',
-      primaryLabel: NAV_LABEL.restart
-    })
-  })
-  it('Instance → Instance B (stopped): switch in place + new-window caret (matrix row 9)', () => {
-    const decision = decisionFor('instance', 'instance', 'stopped')
-    expect(decision).toMatchObject({ window: 'same', verb: 'switch' })
-    // The caret offers "Open in new window" so the user can keep A running; the
-    // main-side 3-way modal also surfaces this on the primary Switch click.
-    expect(decision.secondary.some((alt) => alt.window === 'new' && alt.verb === 'open-new')).toBe(
-      true
-    )
-  })
-  it('Instance → Instance B (running elsewhere): focus, no caret', () => {
-    const decision = decisionFor('instance', 'instance', 'running-elsewhere')
-    expect(decision.verb).toBe('focus')
-    expect(decision.secondary).toHaveLength(0)
-  })
-  it('Instance → Cloud (closed): NEW window, keeps the instance running', () => {
-    const decision = decisionFor('instance', 'cloud', 'stopped')
-    expect(decision).toMatchObject({
-      window: 'new',
-      verb: 'open-new',
+  it('build window → closed Cloud: Open Cloud in its own window', () => {
+    expect(decisionFor('instance', 'cloud', 'stopped')).toEqual({
+      verb: 'start',
       primaryLabel: NAV_LABEL.openCloud
     })
   })
-
-  // ── Cloud → X ──
-  // NOTE: documentation cell — the dashboard chip routes through the hardcoded
-  // `activate('new-window')` path, so the app opens a new window for all hosts.
-  // The matrix asks for same-window; tracked as a known deviation.
-  it('Cloud → Dashboard: new window today (chip is not table-driven)', () => {
-    const decision = decisionFor('cloud', 'dashboard', 'self')
-    expect(decision).toMatchObject({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openDashboard
-    })
-  })
-  it('Cloud → Instance (stopped): NEW window, keeps the cloud session running', () => {
-    const decision = decisionFor('cloud', 'instance', 'stopped')
-    expect(decision).toMatchObject({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openInNewWindow
-    })
-  })
-  it('Cloud/Remote → self: Restart in place (second view of one session unsupported)', () => {
-    const decision = decisionFor('cloud', 'cloud', 'self')
-    expect(decision).toMatchObject({
-      window: 'same',
+  it('build window → itself: Restart in place', () => {
+    expect(decisionFor('instance', 'instance', 'self')).toEqual({
       verb: 'restart',
       primaryLabel: NAV_LABEL.restart
     })
   })
-  it('Cloud → a DIFFERENT cloud/remote running elsewhere: focus (not a dead Start)', () => {
-    const decision = decisionFor('cloud', 'cloud', 'running-elsewhere')
-    expect(decision).toMatchObject({
-      window: 'same',
+  it('build window → build running elsewhere: focus its window', () => {
+    expect(decisionFor('instance', 'instance', 'running-elsewhere').verb).toBe('focus')
+    expect(decisionFor('instance', 'cloud', 'running-elsewhere').verb).toBe('focus')
+  })
+  it('build window → Dashboard: open-new', () => {
+    expect(decisionFor('instance', 'dashboard', 'self')).toEqual({
+      verb: 'open-new',
+      primaryLabel: NAV_LABEL.openDashboard
+    })
+  })
+
+  it('Cloud window → stopped build: Start opens it in its own window', () => {
+    expect(decisionFor('cloud', 'instance', 'stopped')).toEqual({
+      verb: 'start',
+      primaryLabel: NAV_LABEL.start
+    })
+  })
+  it('Cloud window → another closed Cloud or remote build: Open Cloud in its own window', () => {
+    expect(decisionFor('cloud', 'cloud', 'stopped')).toEqual({
+      verb: 'start',
+      primaryLabel: NAV_LABEL.openCloud
+    })
+  })
+  it('Cloud window → itself: Restart in place', () => {
+    expect(decisionFor('cloud', 'cloud', 'self')).toEqual({
+      verb: 'restart',
+      primaryLabel: NAV_LABEL.restart
+    })
+  })
+  it('Cloud window → build running elsewhere: focus its window', () => {
+    expect(decisionFor('cloud', 'cloud', 'running-elsewhere')).toEqual({
       verb: 'focus',
       primaryLabel: NAV_LABEL.switch
     })
+    expect(decisionFor('cloud', 'instance', 'running-elsewhere').verb).toBe('focus')
   })
-  it('Cloud → a stopped cloud/remote target: opens in a new window (not a dead Start)', () => {
-    const decision = decisionFor('cloud', 'cloud', 'stopped')
-    expect(decision).toMatchObject({
-      window: 'new',
+  it('Cloud window → New Instance: install wizard', () => {
+    expect(decisionFor('cloud', 'new-instance', 'stopped').verb).toBe('install-wizard')
+  })
+  it('Cloud window → Dashboard: open-new', () => {
+    expect(decisionFor('cloud', 'dashboard', 'self')).toEqual({
       verb: 'open-new',
-      primaryLabel: NAV_LABEL.openInNewWindow
-    })
-  })
-  it('Cloud → New Instance: install wizard in a new window', () => {
-    const decision = decisionFor('cloud', 'new-instance', 'stopped')
-    expect(decision).toMatchObject({ window: 'new', verb: 'install-wizard' })
-  })
-})
-
-describe('decideNavigation — boundary rules', () => {
-  it('new-window intent selects the new-window secondary when offered', () => {
-    const d = decideNavigation(
-      input({
-        currentView: 'dashboard',
-        target: 'cloud',
-        targetRun: 'stopped',
-        intent: 'new-window'
-      })
-    )
-    expect(d).toMatchObject({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openInNewWindow
-    })
-  })
-
-  it('new-window intent falls back to the primary when no secondary exists', () => {
-    const primary = decideNavigation(
-      input({ currentView: 'instance', target: 'instance', targetRun: 'self', intent: 'primary' })
-    )
-    const viaCaret = decideNavigation(
-      input({
-        currentView: 'instance',
-        target: 'instance',
-        targetRun: 'self',
-        intent: 'new-window'
-      })
-    )
-    expect(viaCaret).toEqual(primary)
-  })
-})
-
-describe('decideNavigation — caret (new-window intent)', () => {
-  it('instance host → stopped instance B: caret selects the new-window alternative', () => {
-    const primary = decideNavigation(
-      input({
-        currentView: 'instance',
-        target: 'instance',
-        targetRun: 'stopped',
-        intent: 'primary'
-      })
-    )
-    expect(primary).toMatchObject({ window: 'same', verb: 'switch' })
-    const caret = decideNavigation(
-      input({
-        currentView: 'instance',
-        target: 'instance',
-        targetRun: 'stopped',
-        intent: 'new-window'
-      })
-    )
-    expect(caret).toMatchObject({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openInNewWindow
-    })
-  })
-
-  it('dashboard host → open cloud: caret selects the new-window alternative', () => {
-    const caret = decideNavigation(
-      input({
-        currentView: 'dashboard',
-        target: 'cloud',
-        targetRun: 'stopped',
-        intent: 'new-window'
-      })
-    )
-    expect(caret).toMatchObject({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openInNewWindow
+      primaryLabel: NAV_LABEL.openDashboard
     })
   })
 })
@@ -296,9 +201,6 @@ describe('nav/caret i18n keys', () => {
     }
   })
 
-  // The CTA/caret also resolve keys NOT in NAV_LABEL (remote relabel + the caret
-  // split-button chrome). Without this they'd survive only on inline
-  // `t(key, 'fallback')` defaults and render English in every other locale.
   it('component nav/caret keys resolve in locales/en.json', () => {
     const componentKeys = [
       'instancePicker.openRemote',
