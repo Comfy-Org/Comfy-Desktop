@@ -433,7 +433,7 @@ export async function installAgentRequirements(
   let deferred = false
   let kept: string | null = null
   let floor: PlaceholderFloor | null = null
-  let floorRejected = false
+  let floorQueued = false
   const defer = async (coreMissing: boolean): Promise<void> => {
     if (deferred || !onDeferred) return
     deferred = true
@@ -445,8 +445,8 @@ export async function installAgentRequirements(
       ...(coreText === null
         ? []
         : [
-            floor?.coreText === coreText && !floorRejected
-              ? { text: coreText, constraints: floor.constraints }
+            floor && floorQueued && floor.coreText === coreText
+              ? { text: coreText, constraints: floor.agentFloor }
               : { text: coreText }
           ]),
       ...(overrideStep ? [overrideStep] : [])
@@ -489,7 +489,7 @@ export async function installAgentRequirements(
   }
   const ran = await runCore(plan, run, floor, sendOutput, signal)
   const core = ran.result
-  floorRejected = ran.floor === 'rejected'
+  floorQueued = ran.floor === 'deferred'
   if (signal?.aborted) return decision
   if (core.ok && ran.floor === 'deferred') await defer(true)
   if (!core.ok) {

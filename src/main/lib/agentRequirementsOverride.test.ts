@@ -601,7 +601,8 @@ describe('placeholderAgentFloor', () => {
     expect(placeholderAgentFloor('comfy-agent\n', listed('0.0.0.dev0'))).toEqual({
       coreText: 'comfy-agent\n',
       placeholder: 'comfy-agent==0.0.0.dev0',
-      constraints: 'comfy-agent>0.0.0\n'
+      constraints: 'comfy-agent>0.0.0\n',
+      agentFloor: 'comfy-agent>0.0.0\n'
     })
   })
 

@@ -362,6 +362,7 @@ export interface PlaceholderFloor {
   coreText: string
   placeholder: string
   constraints: string
+  agentFloor: string
 }
 
 export function placeholderAgentFloor(
@@ -378,7 +379,8 @@ export function placeholderAgentFloor(
   return {
     coreText,
     placeholder: `${name}==${version}`,
-    constraints: `${held.trim() ? held : ''}${name}>0.0.0\n`
+    constraints: `${held.trim() ? held : ''}${name}>0.0.0\n`,
+    agentFloor: `${name}>0.0.0\n`
   }
 }
 

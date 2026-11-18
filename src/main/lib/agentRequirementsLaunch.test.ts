@@ -2672,6 +2672,7 @@ describe('installAgentRequirements with a version override', () => {
 
       await installAgentRequirements(plan, vi.fn(), undefined, undefined, null, onDeferred)
 
+      expect(calls.map((call) => call.constraints)).toEqual([FLOOR, null])
       expect(onDeferred).toHaveBeenCalledWith(
         { plan, steps: [{ text: UNPINNED_FILE }], signature: 'core' },
         'agent'
@@ -2688,7 +2689,8 @@ describe('installAgentRequirements with a version override', () => {
 
       await installAgentRequirements(plan, sendOutput, abort.signal, undefined)
 
-      expect(calls.every((call) => call.constraints === FLOOR)).toBe(true)
+      expect(abort.signal.aborted).toBe(true)
+      expect(calls).toEqual([{ content: UNPINNED_FILE, constraints: FLOOR }])
       expect(sendOutput.mock.calls.join('')).not.toContain("Couldn't install a released agent")
     })
 
