@@ -27,6 +27,7 @@ import {
 import { convertLevelToZoomPercent } from '../lib/zoom'
 import { installationEvents, type InstallationRecord } from '../installations'
 import { abortModelStaging } from '../sources/comfybuilder/modelStagingTask'
+import { takeLaunchUrl } from '../templateSearch/openTemplate'
 import {
   dropInstallationIndex,
   indexInstallationId,
@@ -401,7 +402,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
 
   attachSessionDownloadHandler(comfyContents.session)
 
-  navigator.startOpening(comfyUrl)
+  navigator.startOpening(isLocal ? takeLaunchUrl(installationId, comfyUrl) : comfyUrl)
 
   entry._installCleanup = (): void => {
     if (entry._installCleanup === null) return

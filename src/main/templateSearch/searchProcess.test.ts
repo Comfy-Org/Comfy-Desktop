@@ -4,7 +4,8 @@ const mocks = vi.hoisted(() => ({
   operationAborts: new Map<string, AbortController>(),
   activeLaunches: new Set<string>(),
   activeOperations: vi.fn((): { installationId: string; actionId: string }[] => []),
-  buildRuntime: vi.fn()
+  buildRuntime: vi.fn(),
+  settings: {} as Record<string, unknown>
 }))
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp/userdata' }, net: {} }))
@@ -14,6 +15,7 @@ vi.mock('../lib/ipc/shared', () => ({
 }))
 vi.mock('../lib/ipc/sessionActions', () => ({ _getActiveOperations: mocks.activeOperations }))
 vi.mock('./buildRuntime', () => ({ buildRuntime: mocks.buildRuntime }))
+vi.mock('../settings', () => ({ get: (key: string) => mocks.settings[key] }))
 
 import type { InstallationRecord } from '../installations'
 import {
@@ -21,7 +23,10 @@ import {
   isBuildBusy,
   parseSupports,
   rememberOnceFound,
+  SIDECAR_PATH_ENV,
   sidecarPythons,
+  templateSearchOn,
+  templateSearchPartnersOn,
   zipappPath
 } from './searchProcess'
 
@@ -44,6 +49,35 @@ function build(id: string, over: Partial<InstallationRecord> = {}): Installation
     ...over
   } as InstallationRecord
 }
+
+describe('templateSearchOn', () => {
+  it.each([
+    [true, '/opt/search.pyz', true],
+    [true, undefined, false],
+    [true, '  ', false],
+    [false, '/opt/search.pyz', false]
+  ])('with the setting %s and the search program at %j is %s', (enabled, configured, on) => {
+    mocks.settings = { templateSearchEnabled: enabled }
+    if (configured === undefined) delete process.env[SIDECAR_PATH_ENV]
+    else process.env[SIDECAR_PATH_ENV] = configured
+    try {
+      expect(templateSearchOn()).toBe(on)
+    } finally {
+      delete process.env[SIDECAR_PATH_ENV]
+    }
+  })
+})
+
+describe('templateSearchPartnersOn', () => {
+  it.each([
+    [undefined, true],
+    [true, true],
+    [false, false]
+  ])('with the partner setting %s shows partner templates: %s', (value, shown) => {
+    mocks.settings = { templateSearchPartners: value }
+    expect(templateSearchPartnersOn()).toBe(shown)
+  })
+})
 
 describe('zipappPath', () => {
   it('runs search only when the setting is exactly on and a zipapp is configured', () => {

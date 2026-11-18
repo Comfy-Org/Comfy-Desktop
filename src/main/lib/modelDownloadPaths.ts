@@ -99,6 +99,19 @@ export function buildExistenceCandidates(
   return [...out]
 }
 
+export async function modelBytesOnDisk(
+  ctx: InstallModelSearch | null,
+  baseDir: string,
+  directory: string,
+  filename: string
+): Promise<number | null> {
+  for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
+    const stat = await fs.promises.stat(candidate).catch(() => null)
+    if (stat?.isFile()) return stat.size
+  }
+  return null
+}
+
 export async function regularFileExists(filePath: string): Promise<boolean> {
   try {
     return (await fs.promises.stat(filePath)).isFile()
@@ -115,14 +128,18 @@ export async function areModelsPresent(
   const ctx = await resolveDownloadContextById(installationId)
   const baseDir = ctx ? ctx.downloadBaseDir : getModelsBaseDir()
   const checks = await Promise.all(
-    models.map(async ({ directory, filename }) => {
-      for (const candidate of buildExistenceCandidates(ctx, baseDir, directory, filename)) {
-        if (await regularFileExists(candidate)) return true
-      }
-      return false
-    })
+    models.map(({ directory, filename }) => modelOnDisk(ctx, baseDir, directory, filename))
   )
   return checks.every(Boolean)
+}
+
+export async function modelOnDisk(
+  ctx: InstallModelSearch | null,
+  baseDir: string,
+  directory: string,
+  filename: string
+): Promise<boolean> {
+  return (await modelBytesOnDisk(ctx, baseDir, directory, filename)) !== null
 }
 
 export async function resolveModelsPresence(

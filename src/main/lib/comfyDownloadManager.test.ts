@@ -4,7 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import * as settings from '../settings'
 import { ALLOWED_EXTENSIONS } from './downloadFilename'
-import { areModelsPresent, buildExistenceCandidates } from './modelDownloadPaths'
+import { areModelsPresent, buildExistenceCandidates, modelOnDisk } from './modelDownloadPaths'
 import type * as ComfyDownloadManager from './comfyDownloadManager'
 
 vi.mock('electron', () => ({
@@ -1281,6 +1281,28 @@ describe('buildSaveDialogFilters (#989 save-image extension filters)', () => {
 
   it('returns only All Files when there is no extension at all', () => {
     expect(buildSaveDialogFilters('justname')).toEqual([{ name: 'All Files', extensions: ['*'] }])
+  })
+})
+
+describe('modelOnDisk', () => {
+  it("finds a model in a build's extra model folder, and nothing that is in no folder", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'model-on-disk-'))
+    const extra = path.join(dir, 'extra-vae')
+    await fs.promises.mkdir(extra, { recursive: true })
+    await fs.promises.writeFile(path.join(extra, 'v.safetensors'), 'x')
+    const ctx = {
+      downloadBaseDir: path.join(dir, 'models'),
+      modelRoots: [],
+      extraPaths: [
+        { section: 'x', basePath: null, type: 'vae', rawType: 'vae', dir: extra, isDefault: false }
+      ]
+    }
+    try {
+      expect(await modelOnDisk(ctx, ctx.downloadBaseDir, 'vae', 'v.safetensors')).toBe(true)
+      expect(await modelOnDisk(ctx, ctx.downloadBaseDir, 'vae', 'other.safetensors')).toBe(false)
+    } finally {
+      await fs.promises.rm(dir, { recursive: true, force: true })
+    }
   })
 })
 

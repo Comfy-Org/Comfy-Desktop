@@ -20,6 +20,7 @@ import todesktop from '@todesktop/runtime'
 import * as ipc from './lib/ipc'
 import { getAppVersion } from './lib/ipc'
 import type { ExitCallbackInfo } from './lib/ipc'
+import { takeLaunchUrl } from './templateSearch/openTemplate'
 import { closeAllPopouts } from './lib/popoutWindows'
 import { disposeAllTerminals } from './lib/terminal'
 import * as updater from './lib/updater'
@@ -434,7 +435,7 @@ function onLaunch({
     if (!existing.comfyView.webContents.isDestroyed()) {
       existing.comfyView.setBackgroundColor(SPLASH_DARK.bg)
       void navigatorFor(existing).reopenBehindSplash({
-        url: comfyUrl,
+        url: url ? comfyUrl : takeLaunchUrl(installationId, comfyUrl),
         theme: SPLASH_DARK,
         copy: {
           title: i18n.t('launch.launchSplashTitle'),

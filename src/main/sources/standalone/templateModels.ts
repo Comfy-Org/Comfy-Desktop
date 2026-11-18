@@ -23,7 +23,8 @@ interface RawModel {
 
 const RAW_TEMPLATES_REMOTE_BASE = RAW_TEMPLATES_BASE
 
-const TEMPLATE_PACKAGE_DIRS = [
+export const TEMPLATE_PACKAGE_DIRS = [
+  'comfyui_workflow_templates_json',
   'comfyui_workflow_templates',
   'comfyui_workflow_templates_media_image',
   'comfyui_workflow_templates_media_video',

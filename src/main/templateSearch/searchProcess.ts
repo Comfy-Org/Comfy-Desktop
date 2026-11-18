@@ -141,6 +141,18 @@ export function zipappPath(enabled: unknown, configured: string | undefined): st
   return enabled === true ? configured?.trim() || null : null
 }
 
+function configuredZipapp(): string | null {
+  return zipappPath(settings.get('templateSearchEnabled'), process.env[SIDECAR_PATH_ENV])
+}
+
+export function templateSearchOn(): boolean {
+  return configuredZipapp() !== null
+}
+
+export function templateSearchPartnersOn(): boolean {
+  return settings.get('templateSearchPartners') !== false
+}
+
 export function sidecarPythons(
   builds: InstallationRecord[],
   isLocalInstallation: (installation: InstallationRecord) => boolean,
@@ -189,8 +201,7 @@ export function createSearchProcess({
   const helpers = new Map<string, Set<ChildProcess>>()
   const cancelled = new WeakSet<ChildProcess>()
 
-  const pyz = (): string | null =>
-    zipappPath(settings.get('templateSearchEnabled'), process.env[SIDECAR_PATH_ENV])
+  const pyz = configuredZipapp
 
   async function pythons(): Promise<SidecarPython[]> {
     return sidecarPythons(await listInstallations(), isLocalInstallation, terminalEnvOf)
