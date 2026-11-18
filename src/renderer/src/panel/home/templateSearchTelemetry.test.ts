@@ -38,7 +38,7 @@ const RESULT: TemplateSearchResult = {
   reply: null,
   run: [candidate('poster_template', { calibrated: 0.874 }), candidate('banner_template')],
   download: [candidate('mural_template', { needsDownload: true })],
-  more: [candidate('zine_template')],
+  more: [candidate('zine_template', { calibrated: 0.5 })],
   alsoTry: [candidate('sticker_template')],
   partnerSwitch: true,
   partnersShown: true
