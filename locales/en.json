@@ -787,10 +787,11 @@
     "cloudBuilds": {
       "kicker": "New in Comfy Cloud",
       "title": "Your custom ComfyUI setup is now on Comfy Cloud",
-      "lead": "Now you can run your custom setup in Comfy Cloud, on powerful cloud GPUs, without changing how you work.",
-      "body": [
-        "Package your supported custom nodes, models, LoRAs, and Python dependencies into a Build. Choose a GPU and open it in the same ComfyUI canvas you use today. No local installs, and no machines to manage.",
-        "Working with a team? On the Team plan, everyone in your workspace can open the same Build."
+      "lead": "Run your custom setup on powerful cloud GPUs, without changing how you work.",
+      "highlights": [
+        "Package your supported custom nodes, models, LoRAs, and Python dependencies into a Build.",
+        "Pick a GPU and open it in the same ComfyUI canvas you use today.",
+        "No local installs, no machines to manage."
       ],
       "primaryCta": "Learn more",
       "secondaryCta": "Try it in Cloud",

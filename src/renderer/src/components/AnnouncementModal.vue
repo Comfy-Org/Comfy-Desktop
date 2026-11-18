@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Volume2, VolumeX, X } from 'lucide-vue-next'
+import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
 
 /**
@@ -39,8 +39,8 @@ const HERO_POSTER_URL = `${HERO_BASE}-poster.jpg`
 const emit = defineEmits<{ close: [] }>()
 const { tm } = useI18n()
 
-const body = computed<string[]>(() => {
-  const raw = tm('announcement.cloudBuilds.body')
+const highlights = computed<string[]>(() => {
+  const raw = tm('announcement.cloudBuilds.highlights')
   return Array.isArray(raw) ? (raw as unknown as string[]) : []
 })
 
@@ -158,7 +158,12 @@ onUnmounted(() => {
                   <h2 class="announce-title">{{ $t('announcement.cloudBuilds.title') }}</h2>
                 </header>
                 <p class="announce-lead">{{ $t('announcement.cloudBuilds.lead') }}</p>
-                <p v-for="para in body" :key="para" class="announce-copy">{{ para }}</p>
+                <ul v-if="highlights.length" class="announce-list">
+                  <li v-for="h in highlights" :key="h">
+                    <Check :size="16" class="announce-check" />
+                    <span>{{ h }}</span>
+                  </li>
+                </ul>
               </div>
               <footer class="announce-footer">
                 <button
@@ -359,13 +364,26 @@ onUnmounted(() => {
   text-transform: uppercase;
   color: var(--comfy-yellow);
 }
-.announce-copy {
-  margin: 0;
+.announce-list {
+  list-style: none;
+  margin: 4px 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.announce-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 12px;
   font-size: var(--takeover-fs-lead);
   color: var(--neutral-100);
-  font-weight: 400;
-  font-family: var(--font-sans);
-  line-height: 1.45;
+  line-height: normal;
+}
+.announce-check {
+  color: var(--comfy-yellow);
+  margin-top: 3px;
 }
 
 .announce-footer {
