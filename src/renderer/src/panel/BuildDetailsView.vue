@@ -88,7 +88,10 @@ onUnmounted(() => unsubscribeSettings?.())
       <header class="flex shrink-0 flex-wrap items-center gap-x-[18px] gap-y-3 pt-6 pb-6">
         <div class="min-w-0 flex-1 basis-60">
           <div class="flex min-w-0 items-center gap-2">
-            <h1 :id="TITLE_ID" class="m-0 flex min-w-0 text-display font-semibold text-foreground">
+            <h1
+              :id="TITLE_ID"
+              class="m-0 flex min-w-0 text-display font-semibold tracking-[-0.055em] text-foreground"
+            >
               <span v-if="uninstallReplacesSettings" class="truncate">{{ installation.name }}</span>
             </h1>
             <StatusChip v-if="status" class="build-details-status" :tone="status.tone">

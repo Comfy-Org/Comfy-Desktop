@@ -12,7 +12,7 @@ defineProps<{
     :class="{ '@max-[700px]:flex-col @max-[700px]:items-start @max-[700px]:gap-3': !actionsInline }"
   >
     <div class="min-w-0">
-      <h1 class="m-0 text-display font-semibold text-foreground">
+      <h1 class="m-0 text-display font-semibold tracking-[-0.055em] text-foreground">
         {{ title }}
       </h1>
       <p
