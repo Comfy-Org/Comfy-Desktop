@@ -262,6 +262,28 @@ describe('StoragePane', () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(toggle.element))
   })
 
+  it('closes an input folder menu on Escape without reaching the window', async () => {
+    installMockApi()
+    const wrapper = mountPaneWithSections(makeIoSections())
+    await nextTick()
+    const onWindowKeydown = vi.fn()
+    window.addEventListener('keydown', onWindowKeydown)
+    try {
+      await wrapper.findAll('.storage-dir-row')[0]!.find('.storage-dir-action').trigger('click')
+      await nextTick()
+      await flushPromises()
+      expect(document.querySelector('.storage-dir-menu')).not.toBeNull()
+      document
+        .querySelector('.storage-dir-menu')!
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await flushPromises()
+      expect(document.querySelector('.storage-dir-menu')).toBeNull()
+      expect(onWindowKeydown).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('keydown', onWindowKeydown)
+    }
+  })
+
   it("routes to Desktop Settings from a shared row's more menu", async () => {
     const api = installMockApi()
     const wrapper = mountPane()

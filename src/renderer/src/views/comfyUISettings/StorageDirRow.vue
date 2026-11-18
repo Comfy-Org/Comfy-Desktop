@@ -68,6 +68,12 @@ function selectFromMenu(action: 'browse' | 'reset' | 'manage'): void {
 
 const actionClass =
   'storage-dir-action static inline-flex size-7 items-center justify-center gap-0 rounded-md border border-solid border-transparent bg-transparent p-0 font-normal leading-[1.5] text-text-muted appearance-auto transition-[background-color,color] duration-100 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] hover:text-neutral-100 focus-visible:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0'
+
+function onMenuKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape') return
+  event.stopPropagation()
+  menuOpen.value = false
+}
 </script>
 
 <template>
@@ -119,6 +125,7 @@ const actionClass =
         align="end"
         class="storage-dir-menu"
         @update:open="(isOpen) => (menuOpen = isOpen)"
+        @keydown.capture="onMenuKeydown"
       >
         <template #trigger>
           <Button
