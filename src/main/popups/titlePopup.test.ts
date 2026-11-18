@@ -285,10 +285,24 @@ describe('activateTitlePopupMenuItem', () => {
 
       activateTitlePopupMenuItem(makePopupEntry(host.windowKey), tool, bindings)
 
-      expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith(tool)
+      expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith(tool, {
+        nearWindow: host.window
+      })
       expect(bindings.setActivePanel).not.toHaveBeenCalled()
     }
   )
+
+  it('opens New Window on the screen of the window it was chosen from', () => {
+    const host = makeEntry({ installationId: 'inst-1' })
+    comfyWindows.set(host.windowKey, host)
+    const bindings = { openChooserHostWindow: vi.fn() } as unknown as TitlePopupHostBindings
+
+    activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'new-window', bindings)
+
+    expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith('comfy', {
+      nearWindow: host.window
+    })
+  })
 
   it('routes Reset Zoom through resetComfyZoom with the host installation id', () => {
     const host = makeEntry({ installationId: 'inst-1', zoomLevel: 3 })

@@ -229,6 +229,23 @@ describe('placeHostWindow', () => {
       minHeight: 600
     })
   })
+
+  it('opens a new window on the screen of the window it was chosen from, not of another dashboard', () => {
+    mocks.displays = [
+      { x: 0, y: 0, width: 1920, height: 1032 },
+      { x: 1920, y: 0, width: 2560, height: 1400 }
+    ]
+    mocks.cursor = { x: 100, y: 100 }
+    const dashboard = { x: 200, y: 100 }
+    const requester = { x: 2100, y: 120 }
+    expect(
+      placeHostWindow('chooser', true, dashboard, [dashboard, requester], requester)
+    ).toEqual({
+      bounds: { x: 2130, y: 150, width: 2176, height: 1190, minWidth: 800, minHeight: 600 },
+      maximizeNow: false,
+      maximizeOnReveal: false
+    })
+  })
 })
 
 describe('shouldBailAfterConsult', () => {

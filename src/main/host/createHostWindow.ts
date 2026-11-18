@@ -237,6 +237,7 @@ export interface CreateHostWindowOpts {
   initialTitleBarText: string
   initialSourceCategory: string | null
   initiallyHidden?: boolean
+  nearWindow?: BrowserWindow
 }
 
 export interface CreateHostWindowResult {
@@ -286,6 +287,12 @@ function liveBoundsKeyFor(entry: ComfyWindowEntry): string {
   return entry.installationId ?? CHOOSER_HOST_BOUNDS_KEY
 }
 
+function liveOriginOf(win: BrowserWindow | undefined): { x: number; y: number } | null {
+  if (!win || win.isDestroyed()) return null
+  const { x, y } = win.getBounds()
+  return { x, y }
+}
+
 function findLiveSiblingOrigin(boundsKey: string): { x: number; y: number } | null {
   for (const [, entry] of comfyWindows) {
     if (entry.window.isDestroyed()) continue
@@ -306,18 +313,20 @@ export function placeHostWindow(
   boundsKey: string,
   initiallyHidden: boolean,
   sibling: { x: number; y: number } | null,
-  existingOrigins: ReadonlyArray<{ x: number; y: number }>
+  existingOrigins: ReadonlyArray<{ x: number; y: number }>,
+  requester: { x: number; y: number } | null = null
 ): HostWindowPlacement {
   const saved = boundsKey === CHOOSER_HOST_BOUNDS_KEY ? undefined : getSavedBounds(boundsKey)
-  const fresh = sibling
-    ? defaultWindowBoundsNear(sibling)
+  const anchor = requester ?? sibling
+  const fresh = anchor
+    ? defaultWindowBoundsNear(anchor)
     : saved
       ? null
       : defaultWindowBoundsUnderCursor()
   const initialOptions = fresh
     ? {
-        x: sibling?.x ?? fresh.x,
-        y: sibling?.y ?? fresh.y,
+        x: anchor?.x ?? fresh.x,
+        y: anchor?.y ?? fresh.y,
         width: fresh.width,
         height: fresh.height
       }
@@ -395,7 +404,8 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     opts.boundsKey,
     opts.initiallyHidden === true,
     findLiveSiblingOrigin(opts.boundsKey),
-    liveHostOrigins()
+    liveHostOrigins(),
+    liveOriginOf(opts.nearWindow)
   )
   const comfyWindow = new BrowserWindow({
     ...placement.bounds,
@@ -789,6 +799,7 @@ export function applyChooserHostThemeToAll(): void {
 export interface OpenChooserHostWindowOptions {
   deferColdStartReveal?: boolean
   dashboardPage?: NewWindowDashboardPage
+  nearWindow?: BrowserWindow
 }
 
 export function openChooserHostWindow(
@@ -815,7 +826,8 @@ export function openChooserHostWindow(
     titleBarInstallationIdParam: '',
     initialTitleBarText: CHOOSER_HOST_TITLE_TEXT,
     initialSourceCategory: null,
-    initiallyHidden: true
+    initiallyHidden: true,
+    nearWindow: opts.nearWindow
   })
 
   entry.coldStartPendingReveal = !opts.deferColdStartReveal
