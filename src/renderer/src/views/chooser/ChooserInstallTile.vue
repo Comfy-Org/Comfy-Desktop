@@ -12,6 +12,7 @@ import {
   buildDeviceKind,
   HOME_BUILD_TONES,
   isBuildUpdating,
+  connectsElsewhere,
   isCloudBuild,
   type HomeBuildTone
 } from '../../panel/home/homeBuild'
@@ -150,7 +151,7 @@ const statusPill = computed<{
       tone: 'quiet',
       spinning: true
     }
-  if (isRunning.value && !isCloudBuild(inst.value))
+  if (isRunning.value && !connectsElsewhere(inst.value))
     return {
       label: 'chooser.statusRunning',
       markerClass: 'chooser-tile-status--running',

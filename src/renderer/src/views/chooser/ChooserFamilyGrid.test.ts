@@ -12,7 +12,7 @@ import type { Installation } from '../../types/ipc'
 
 const GRID_WIDTH = 900
 
-function build(id: string, sourceCategory: 'local' | 'cloud', lastLaunchedAt: number) {
+function build(id: string, sourceCategory: 'local' | 'cloud' | 'remote', lastLaunchedAt: number) {
   return {
     id,
     name: id,
@@ -146,5 +146,19 @@ describe('Builds tile status', () => {
     expect(tile(CLOUD).textContent).not.toContain('Running')
     expect(tile(CLOUD).textContent).toContain('Ready')
     expect(tile(CLOUD).querySelector('.rounded-full.bg-\\[\\#59d38c\\]')).toBeNull()
+  })
+
+  it('shows no Running or green dot on an opened remote server, since it runs nothing here', async () => {
+    const remote = build('remote', 'remote', 100)
+    useSessionStore().runningInstances.set(remote.id, {
+      installationId: remote.id,
+      installationName: remote.name,
+      mode: 'window'
+    })
+    await mountGrid([...ALL, remote])
+
+    expect(tile(remote).querySelector('.chooser-tile-status--running')).toBeNull()
+    expect(tile(remote).textContent).not.toContain('Running')
+    expect(tile(remote).querySelector('.rounded-full.bg-\\[\\#59d38c\\]')).toBeNull()
   })
 })

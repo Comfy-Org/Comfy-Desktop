@@ -67,8 +67,12 @@ export function isBuildUpdating(build: Installation, actionId: string | undefine
   )
 }
 
+export function connectsElsewhere(build: Installation): boolean {
+  return build.sourceCategory === 'cloud' || build.sourceCategory === 'remote'
+}
+
 export function runsOnThisComputer(build: Installation, status: HomeBuildStatus): boolean {
-  return status === 'running' && !isCloudBuild(build)
+  return status === 'running' && !connectsElsewhere(build)
 }
 
 export function isBuildOpenBlocked(status: HomeBuildStatus): boolean {

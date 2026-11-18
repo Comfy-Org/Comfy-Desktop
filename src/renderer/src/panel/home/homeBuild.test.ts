@@ -75,6 +75,10 @@ describe('runsOnThisComputer', () => {
     expect(runsOnThisComputer(build('cloud'), 'running')).toBe(false)
   })
 
+  it('is false for an opened remote server, which runs no process here', () => {
+    expect(runsOnThisComputer(build('remote'), 'running')).toBe(false)
+  })
+
   it('is false for a local build at rest', () => {
     expect(runsOnThisComputer(build('local'), 'ready')).toBe(false)
   })
