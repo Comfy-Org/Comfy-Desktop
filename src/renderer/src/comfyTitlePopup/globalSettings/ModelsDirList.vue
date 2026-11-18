@@ -128,11 +128,11 @@ const rows = computed(() =>
 </script>
 
 <template>
-  <div class="models-dir-list flex flex-col rounded-[14px] bg-card p-1.5" @click="closeMenu()">
+  <div class="models-dir-list flex flex-col gap-2.5" @click="closeMenu()">
     <div
       v-for="row in rows"
       :key="row.path"
-      class="models-dir-row flex min-h-11 min-w-0 items-start gap-2.5 rounded-[10px] py-1.5 pr-1.5 pl-3 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]"
+      class="models-dir-row flex min-w-0 items-start gap-2.5 rounded-[14px] bg-card py-4 pr-[9px] pl-[18px]"
       :class="{
         'is-just-promoted animate-[models-dir-promote_1200ms_ease-out]':
           row.path === justPromotedPath
@@ -226,7 +226,7 @@ const rows = computed(() =>
       </div>
     </div>
 
-    <div class="models-dir-foot flex min-w-0 items-center pt-1">
+    <div class="models-dir-foot flex min-w-0 items-center">
       <Button
         type="button"
         variant="textonly"

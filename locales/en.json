@@ -375,8 +375,8 @@
     "argsMissingValue": "Missing value for:",
     "argsUnexpected": "Unexpected:",
     "updateFieldTimeout": "Couldn't reach app. Try again",
-    "useSharedInput": "Use Shared Input",
-    "useSharedOutput": "Use Shared Output"
+    "useSharedInput": "Use shared input",
+    "useSharedOutput": "Use shared output"
   },
   "comfyLifecycle": {
     "preparingTitle": "Preparing…",

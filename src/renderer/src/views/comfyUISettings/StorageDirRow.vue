@@ -50,7 +50,7 @@ const variantClass: Record<StorageDirRowVariant, string> = {
 }
 const rowClass = computed(() =>
   props.listAligned && props.variant === 'panel'
-    ? 'items-start min-h-14 rounded-[14px] bg-card py-3 pr-3 pl-[18px]'
+    ? 'items-start rounded-[14px] bg-card py-4 pr-[9px] pl-[18px]'
     : ['items-center', variantClass[props.variant]]
 )
 const slotClass = computed(() =>

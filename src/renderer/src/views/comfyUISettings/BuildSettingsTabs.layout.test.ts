@@ -129,12 +129,12 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     }
   })
 
-  it('ends every toggle on the right edge of its folder box', async () => {
+  it('ends every toggle on the right edge of its folder cards', async () => {
     const root = await mountStorage(width)
     for (const section of root.querySelectorAll<HTMLElement>('.gs-micro-section')) {
       const toggle = section.querySelector('.bt-switch')!.getBoundingClientRect()
       const box = section.querySelector('.gs-micro-body > *')!.getBoundingClientRect()
-      expect(Math.round(toggle.right), 'toggle ends on the box edge').toBe(Math.round(box.right))
+      expect(Math.round(toggle.right), 'toggle ends on the card edge').toBe(Math.round(box.right))
     }
   })
 
@@ -192,20 +192,49 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     }
   })
 
-  it('puts Add models folder right under the last models row, aligned with the rows', async () => {
+  it('puts Add models folder outside the cards, 10px under the last Models card, on their left edge', async () => {
     const root = await mountStorage(width)
-    const rows = rects(root, '.models-dir-row')
-    const lastRow = rows[rows.length - 1]!
-    const add = root.querySelector('.models-dir-add')!.getBoundingClientRect()
-    const box = root.querySelector('.models-dir-list')!.getBoundingClientRect()
-    expect(add.top, 'the button follows the last row').toBeGreaterThanOrEqual(lastRow.bottom)
-    expect(
-      add.top - lastRow.bottom,
-      'the button sits right under the last row'
-    ).toBeLessThanOrEqual(4)
-    expect(add.bottom, 'the button stays inside the Models box').toBeLessThanOrEqual(box.bottom)
+    const cards = rects(root, '.models-dir-row')
+    const lastCard = cards[cards.length - 1]!
+    const addButton = root.querySelector<HTMLElement>('.models-dir-add')!
+    const add = addButton.getBoundingClientRect()
+    expect(addButton.closest('.models-dir-row'), 'the button is not inside a card').toBeNull()
+    expect(Math.round(add.top - lastCard.bottom), 'the button sits 10px under the last card').toBe(
+      10
+    )
     expect(Math.round(add.height), 'the button is as tall as Add Variable').toBe(32)
-    expectSame([...rows.map((r) => r.left), add.left], 'the button lines up with the rows')
+    expectSame([...cards.map((r) => r.left), add.left], 'the button lines up with the cards')
+  })
+
+  it('pads every folder card like the Overview cards and spaces them 10px apart', async () => {
+    const root = await mountStorage(width)
+    const cards = [...root.querySelectorAll<HTMLElement>('.models-dir-row, .storage-dir-row')]
+    expect(cards.length).toBeGreaterThanOrEqual(4)
+    for (const card of cards) {
+      const style = getComputedStyle(card)
+      expect(style.borderRadius, 'card radius').toBe('14px')
+      expect(style.paddingTop, 'card top padding').toBe('16px')
+      expect(style.paddingBottom, 'card bottom padding').toBe('16px')
+      const box = card.getBoundingClientRect()
+      const icon = card.querySelector('.storage-item-icon')!.getBoundingClientRect()
+      expect(Math.round(icon.left - box.left), 'icon sits 18px from the left edge').toBe(18)
+      const dots = [
+        ...card.querySelectorAll('.models-dir-action svg circle, .storage-dir-action svg circle')
+      ]
+      if (dots.length === 0) continue
+      const dotsRight = Math.max(...dots.map((d) => d.getBoundingClientRect().right))
+      expect(
+        Math.round(box.right - dotsRight),
+        'the more glyph sits 18px from the right edge'
+      ).toBe(18)
+    }
+    const modelCards = rects(root, '.models-dir-row')
+    for (let i = 1; i < modelCards.length; i++) {
+      expect(
+        Math.round(modelCards[i]!.top - modelCards[i - 1]!.bottom),
+        'models cards sit 10px apart'
+      ).toBe(10)
+    }
   })
 
   it('keeps icons and badges on the first line when a path wraps', async () => {
@@ -228,8 +257,8 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
       }
     }
     const listRows = rects(root, '.models-dir-row')
-    const singleLine = listRows.filter((r) => Math.round(r.height) === 44)
-    expect(singleLine.length, 'a one-line row keeps the 44px height').toBeGreaterThan(0)
+    const singleLine = listRows.filter((r) => Math.round(r.height) === 64)
+    expect(singleLine.length, 'a one-line card is 64px tall').toBeGreaterThan(0)
   })
 
   it('shows every folder path in full, wrapping instead of truncating', async () => {
@@ -312,17 +341,21 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     }
   })
 
-  it('fills every folder box with the card surface used on Overview', async () => {
+  it('fills every folder card with the card surface used on Overview', async () => {
     const root = await mountStorage(width)
     const probe = document.createElement('div')
     probe.className = CARD_FILL_PROBE
     document.body.appendChild(probe)
     const cardFill = getComputedStyle(probe).backgroundColor
-    const boxes = [...root.querySelectorAll<HTMLElement>('.gs-micro-body > *')]
-    expect(boxes.length).toBeGreaterThanOrEqual(3)
-    for (const box of boxes) {
-      expect(getComputedStyle(box).backgroundColor, 'box fill').toBe(cardFill)
+    const cards = [...root.querySelectorAll<HTMLElement>('.models-dir-row, .storage-dir-row')]
+    expect(cards.length).toBeGreaterThanOrEqual(4)
+    for (const card of cards) {
+      expect(getComputedStyle(card).backgroundColor, 'card fill').toBe(cardFill)
     }
+    expect(
+      getComputedStyle(root.querySelector('.models-dir-list')!).backgroundColor,
+      'no shared box around the Models cards'
+    ).toBe('rgba(0, 0, 0, 0)')
   })
 
   it('keeps the environment variables title and note clear of the field above', async () => {
