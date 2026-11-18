@@ -28,7 +28,7 @@ import {
   _test_clearRunningSessions
 } from './shared'
 import { comfyFoldersOf } from '../outputFolders'
-import type { InstallationRecord } from '../installations'
+import type { InstallationRecord } from '../../installations'
 
 const INSTALL = 'install-under-test'
 
