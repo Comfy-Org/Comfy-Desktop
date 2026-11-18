@@ -38,7 +38,8 @@ import {
   runAccepted,
   runEndFromHistory,
   runsOn,
-  setupStarted
+  setupStarted,
+  unstartedRunsOn
 } from './localAppEvents'
 import type { RunEnd, SetupStep } from './localAppEvents'
 import {
@@ -115,6 +116,7 @@ const launches = new Map<string, Promise<ActionResult>>()
 const installWaits = new Map<string, Promise<void>>()
 const ownRuns = new Map<string, string>()
 const ownFiles = new Map<string, Set<string>>()
+const queueChecks = new Map<string, { again: boolean }>()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -142,10 +144,22 @@ function relayRunUpdate(message: unknown): void {
   sendToPages({ type: message['type'], data: message['data'] })
 }
 
+function isQueueChange(message: unknown): boolean {
+  if (!isRecord(message) || message['type'] !== 'status') return false
+  return isRecord(message['data']) && !('sid' in message['data'])
+}
+
+function hearFrom(buildId: string): (message: unknown) => void {
+  return (message) => {
+    relayRunUpdate(message)
+    if (isQueueChange(message)) checkClearedRuns(buildId)
+  }
+}
+
 function relayFor(installationId: string, port: number): LocalRelay {
   const relay =
     relayByBuild.get(installationId) ??
-    createLocalRelay(relayRunUpdate, undefined, () => checkUnheardRuns(installationId))
+    createLocalRelay(hearFrom(installationId), undefined, () => checkUnheardRuns(installationId))
   relayByBuild.set(installationId, relay)
   relay.follow(port)
   return relay
@@ -583,6 +597,25 @@ function checkUnheardRuns(buildId: string): void {
   )
 }
 
+function checkClearedRuns(buildId: string): void {
+  const underWay = queueChecks.get(buildId)
+  if (underWay) {
+    underWay.again = true
+    return
+  }
+  const promptIds = unstartedRunsOn(buildId)
+  const port = runningPortOf(buildId)
+  if (promptIds.length === 0 || port === null) return
+  const check = { again: false }
+  queueChecks.set(buildId, check)
+  settleUnheardRuns(port, promptIds, { outcome: 'cancelled' })
+    .catch(() => {})
+    .then(() => {
+      queueChecks.delete(buildId)
+      if (check.again) checkClearedRuns(buildId)
+    })
+}
+
 async function leaveQueue(
   port: number,
   call: Extract<LocalCall, { kind: 'leave-queue' }>
@@ -765,6 +798,7 @@ export function _resetForTest(): void {
   keptRunning.clear()
   launches.clear()
   installWaits.clear()
+  queueChecks.clear()
   _resetLocalAppEventsForTest()
   ownRuns.clear()
   ownFiles.clear()

@@ -48,7 +48,8 @@ import {
   runEndFromHistory,
   runsOn,
   SETUP_EVENT,
-  setupStarted
+  setupStarted,
+  unstartedRunsOn
 } from './localAppEvents'
 
 const APP = 'product-ads'
@@ -279,6 +280,15 @@ describe('run_finished', () => {
     expect(sent(RUN_FINISHED_EVENT)[0]).not.toHaveProperty('queue_seconds')
     expect(runsOn(BUILD)).toEqual([])
     expect(runsOn('lab')).toEqual([OTHER_RUN])
+  })
+
+  it('lists the runs on a build that have not started, for checking a queue that changed', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    runAccepted(OTHER_RUN, BUILD, APP, T0)
+    runAccepted('third-run', 'lab', APP, T0)
+    noteRunMessage(message('execution_start', { timestamp: T0 }, OTHER_RUN))
+
+    expect(unstartedRunsOn(BUILD)).toEqual([RUN])
   })
 
   it('counts a run that never started as no run time and no queue time', () => {

@@ -182,6 +182,10 @@ export function runsOn(buildId: string): string[] {
   return [...runs].filter(([, run]) => run.buildId === buildId).map(([promptId]) => promptId)
 }
 
+export function unstartedRunsOn(buildId: string): string[] {
+  return runsOn(buildId).filter((promptId) => runs.get(promptId)?.startedAt === undefined)
+}
+
 export function isFollowing(promptId: string): boolean {
   return runs.has(promptId)
 }

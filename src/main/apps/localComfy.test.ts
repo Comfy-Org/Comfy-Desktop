@@ -1568,6 +1568,102 @@ describe('run_finished, for an app run on this computer', () => {
     )
   })
 
+  describe('when the queue changes, as when another ComfyUI client clears pending work', () => {
+    const queueChanged = (remaining = 0): void =>
+      mocks.hearFromComfy({
+        type: 'status',
+        data: { status: { exec_info: { queue_remaining: remaining } } }
+      })
+    const queueReads = (): Asked[] =>
+      comfy.calls('/queue').filter((asked) => asked.method === 'GET')
+
+    it('reports a run that is gone from the queue before it started as cancelled, once', async () => {
+      comfy.historyEntry = null
+      await runFromApp()
+
+      queueChanged()
+      queueChanged()
+
+      await vi.waitFor(() =>
+        expect(captured(RUN_FINISHED)).toEqual([
+          expect.objectContaining({ app_id: APP, outcome: 'cancelled' })
+        ])
+      )
+      await vi.advanceTimersByTimeAsync(0)
+      expect(captured(RUN_FINISHED)).toHaveLength(1)
+    })
+
+    it('reports a run that ended meanwhile from its history', async () => {
+      await runFromApp()
+      comfy.historyEntry = {
+        outputs: {},
+        status: {
+          status_str: 'success',
+          completed: true,
+          messages: [
+            ['execution_start', { prompt_id: RUN, timestamp: t0 + 1_000 }],
+            ['execution_success', { prompt_id: RUN, timestamp: t0 + 4_000 }]
+          ]
+        }
+      }
+
+      queueChanged()
+
+      await vi.waitFor(() =>
+        expect(captured(RUN_FINISHED)).toEqual([
+          expect.objectContaining({ outcome: 'success', run_seconds: 3 })
+        ])
+      )
+    })
+
+    it('keeps following a run that is still queued', async () => {
+      comfy.queue = { queue_running: [], queue_pending: [[5, RUN, {}, {}]] }
+      await runFromApp()
+
+      queueChanged(1)
+      await vi.waitFor(() => expect(queueReads()).toHaveLength(1))
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(captured(RUN_FINISHED)).toEqual([])
+      expect(comfy.calls(`/history/${RUN}`)).toEqual([])
+    })
+
+    it('reads the queue at most once more for changes heard while it reads it', async () => {
+      comfy.queue = { queue_running: [], queue_pending: [[5, RUN, {}, {}]] }
+      await runFromApp()
+
+      queueChanged(1)
+      queueChanged(1)
+      queueChanged(1)
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(queueReads()).toHaveLength(2)
+    })
+
+    it('reads nothing once every run Desktop follows has started', async () => {
+      await runFromApp()
+      hear('execution_start', { timestamp: t0 })
+
+      queueChanged()
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(queueReads()).toEqual([])
+    })
+
+    it('reads nothing for the status ComfyUI sends each socket as it connects', async () => {
+      await runFromApp()
+
+      mocks.hearFromComfy({
+        type: 'status',
+        data: { status: { exec_info: { queue_remaining: 0 } }, sid: 'desktop-client' }
+      })
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(queueReads()).toEqual([])
+    })
+  })
+
   it('leaves a run that already started when the page asks to take it out of the queue', async () => {
     comfy.queue = { queue_running: [[5, RUN, {}, {}]], queue_pending: [] }
     await runFromApp()
