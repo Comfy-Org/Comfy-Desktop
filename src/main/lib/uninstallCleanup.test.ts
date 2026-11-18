@@ -3,11 +3,10 @@ import os from 'os'
 import path from 'path'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-type CleanupModule = typeof import('./uninstallCleanup')
-type CleanupFs = import('./uninstallCleanup').CleanupFs
-type DeletionGuard = import('./uninstallCleanup').DeletionGuard
-type CleanupEntry = import('./uninstallCleanup').CleanupEntry
-type EntryKind = import('./uninstallCleanup').EntryKind
+import type * as UninstallCleanup from './uninstallCleanup'
+import type { CleanupEntry, CleanupFs, DeletionGuard, EntryKind } from './uninstallCleanup'
+
+type CleanupModule = typeof UninstallCleanup
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'comfyui-desktop-2-uninstall-'))
 const ENV_KEYS = [
@@ -982,7 +981,10 @@ describe('links inside app data', () => {
     const mounted = path.join(userData, 'mounted')
     const onDrive = path.join(mounted, 'a.bin')
     const appLog = path.join(userData, 'app.log')
-    const listings = new Map([[userData, ['mounted', 'app.log']], [mounted, ['a.bin']]])
+    const listings = new Map([
+      [userData, ['mounted', 'app.log']],
+      [mounted, ['a.bin']]
+    ])
     const removed: string[] = []
     const results = c.executeUninstallCleanup(
       { entries: [testEntry(userData)], guard: bareGuard([userData]) },
