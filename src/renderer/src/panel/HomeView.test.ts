@@ -1047,11 +1047,14 @@ function posterAnswer(): TemplateSearchResponse {
           score: 0.9,
           calibrated: null,
           belowThreshold: false,
-          missing: []
+          missing: [],
+          downloadBytes: null
         }
       ],
       download: [],
-      alsoTry: []
+      alsoTry: [],
+      partnerSwitch: false,
+      partnersShown: true
     }
   }
 }
