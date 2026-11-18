@@ -1113,7 +1113,9 @@ describe('HomeTemplateSearch telemetry', () => {
   })
 
   it('resumes the session when a kept notice is shown again', async () => {
-    searchTemplates.mockResolvedValue(unavailable({ kind: 'needs_download', bytes: 1_000_000 }))
+    searchTemplates.mockResolvedValue(
+      unavailable({ kind: 'downloading', received: 0, total: 1_000_000 })
+    )
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
     await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
