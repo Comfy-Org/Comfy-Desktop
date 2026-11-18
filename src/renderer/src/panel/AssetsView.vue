@@ -586,7 +586,12 @@ async function findDownloadedCopies(
   listed: GalleryAsset[],
   request: number
 ): Promise<void> {
-  const wanted = listed.map(({ id, name, sizeBytes }) => ({ id, name, sizeBytes }))
+  const wanted = listed.map(({ id, name, sizeBytes, createdAt }) => ({
+    id,
+    name,
+    sizeBytes,
+    createdAt
+  }))
   const found = await window.api
     .findDownloadedOutputs(cloudId, wanted)
     .catch((): Record<string, string> => ({}))
@@ -726,6 +731,7 @@ const listQuery = computed(() =>
 watch([loadKey, listedCloudId], () => {
   resetCloudPaging()
   localCounts.value = null
+  downloadedCopies.value = new Map()
   currentPage.value = 1
   focusMiss.value = null
   lookedUpDetail.value = null

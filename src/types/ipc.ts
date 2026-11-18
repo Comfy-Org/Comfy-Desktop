@@ -1267,7 +1267,7 @@ export interface ElectronApi {
   openAsset(source: string, assetId: string): Promise<boolean>
   findDownloadedOutputs(
     installationId: string,
-    wanted: { id: string; name: string; sizeBytes: number | null }[]
+    wanted: { id: string; name: string; sizeBytes: number | null; createdAt: string | null }[]
   ): Promise<Record<string, string>>
   findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>

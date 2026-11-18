@@ -15,6 +15,7 @@ import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installInputDir, installOutputDir } from './models'
 import { _runningSessions, sourceMap } from './ipc/shared'
+import { isPanelSender } from '../host/registry'
 import type {
   AssetKind,
   AssetSummary,
@@ -47,6 +48,7 @@ const thumbnailsInFlight = new Map<string, Promise<Buffer | null>>()
 const thumbnailQueue: (() => void)[] = []
 let thumbnailsRunning = 0
 let allowedRoots: string[] = []
+let downloadRoots: string[] = []
 let allowedRootsAt = 0
 
 export function sharedOutputDir(): string {
@@ -145,7 +147,9 @@ async function findOutputFolders(): Promise<OutputFolders> {
     const realDownloads = downloads ? await realDir(downloads) : null
     if (realDownloads) downloadedTo.push(realDownloads)
   }
-  const all = [...new Set([...(shared ? [shared] : []), ...ofBuild.values(), ...downloadedTo])]
+  const all = [...new Set([...(shared ? [shared] : []), ...ofBuild.values()])]
+  const home = os.homedir()
+  downloadRoots = downloadedTo.filter((dir) => !isInsideRoot(home, dir))
   allowedRoots = all
   allowedRootsAt = Date.now()
   return { all, shared, ofBuild }
@@ -222,17 +226,31 @@ export async function comfyOutputPath(
   return (await hasSameBytes(real, bytes)) ? real : null
 }
 
+async function openableFilePath(target: string): Promise<string | null> {
+  if (!path.isAbsolute(target)) return null
+  const real = await fsp.realpath(target).catch(() => null)
+  if (!real) return null
+  const inside = (): boolean =>
+    [...allowedRoots, ...downloadRoots].some((root) => isInsideRoot(real, root))
+  if (Date.now() - allowedRootsAt > ROOTS_FRESH_MS || !inside()) await findOutputFolders()
+  if (!inside()) return null
+  const stat = await fsp.stat(real).catch(() => null)
+  return stat?.isFile() ? real : null
+}
+
 export async function revealOutputFile(target: string): Promise<boolean> {
-  const file = await outputFilePath(target)
+  const file = await openableFilePath(target)
   if (!file) return false
   shell.showItemInFolder(file)
   return true
 }
 
 export async function openOutputFile(target: string): Promise<boolean> {
-  const file = await outputFilePath(target)
+  const file = await openableFilePath(target)
   if (!file) return false
-  if (assetKind(file) === '3d' || (await shell.openPath(file)) !== '') shell.showItemInFolder(file)
+  const kind = assetKind(file)
+  const opened = kind !== null && SERVED_KINDS.has(kind) && (await shell.openPath(file)) === ''
+  if (!opened) shell.showItemInFolder(file)
   return true
 }
 
@@ -331,7 +349,10 @@ export interface OutputCopyQuery {
   id: string
   name: string
   sizeBytes: number | null
+  createdAt: string | null
 }
+
+const SAVED_BEFORE_MADE_SLACK_MS = 60_000
 
 const MAX_COPY_QUERIES = 500
 
@@ -339,13 +360,18 @@ function copyQueries(value: unknown): OutputCopyQuery[] {
   if (!Array.isArray(value)) return []
   return value.slice(0, MAX_COPY_QUERIES).flatMap((item: unknown) => {
     if (!item || typeof item !== 'object') return []
-    const { id, name, sizeBytes } = item as Record<string, unknown>
+    const { id, name, sizeBytes, createdAt } = item as Record<string, unknown>
     return typeof id === 'string' &&
       typeof name === 'string' &&
-      (sizeBytes === null || isCount(sizeBytes, 0, Number.MAX_SAFE_INTEGER))
-      ? [{ id, name, sizeBytes }]
+      (sizeBytes === null || isCount(sizeBytes, 0, Number.MAX_SAFE_INTEGER)) &&
+      (createdAt === null || typeof createdAt === 'string')
+      ? [{ id, name, sizeBytes, createdAt }]
       : []
   })
+}
+
+function withoutCopyNumber(name: string): string {
+  return name.replace(/ \(\d+\)(?=\.[^.]+$)/, '')
 }
 
 export async function findDownloadedOutputs(
@@ -358,17 +384,25 @@ export async function findDownloadedOutputs(
   const sized = wanted.filter((item) => item.sizeBytes !== null)
   if (!root || sized.length === 0) return {}
   const names = new Set(sized.map((item) => item.name))
-  const byName = new Map<string, { file: string; size: number }[]>()
+  const byName = new Map<string, { file: string; size: number; savedMs: number }[]>()
   for (const file of await collectMediaFiles(root)) {
-    const name = path.basename(file)
+    const name = withoutCopyNumber(path.basename(file))
     if (!names.has(name)) continue
     const stat = await fsp.lstat(file).catch(() => null)
     if (!stat?.isFile()) continue
-    byName.set(name, [...(byName.get(name) ?? []), { file, size: stat.size }])
+    const candidate = { file, size: stat.size, savedMs: stat.mtimeMs }
+    byName.set(name, [...(byName.get(name) ?? []), candidate])
   }
   const found: Record<string, string> = {}
   for (const item of sized) {
-    const copy = byName.get(item.name)?.find((candidate) => candidate.size === item.sizeBytes)
+    const madeMs = item.createdAt ? Date.parse(item.createdAt) : Number.NaN
+    const copy = byName
+      .get(item.name)
+      ?.find(
+        (candidate) =>
+          candidate.size === item.sizeBytes &&
+          (Number.isNaN(madeMs) || candidate.savedMs >= madeMs - SAVED_BEFORE_MADE_SLACK_MS)
+      )
     if (copy) found[item.id] = copy.file
   }
   return found
@@ -549,8 +583,8 @@ export function registerOutputFilesScheme(): void {
 
 export function registerOutputFolderHandlers(): void {
   protocol.handle(OUTPUT_FILES_SCHEME, serveOutputFile)
-  ipcMain.handle(FIND_DOWNLOADED_CHANNEL, (_event, installationId: unknown, wanted: unknown) =>
-    typeof installationId === 'string'
+  ipcMain.handle(FIND_DOWNLOADED_CHANNEL, (event, installationId: unknown, wanted: unknown) =>
+    isPanelSender(event.sender) && typeof installationId === 'string'
       ? findDownloadedOutputs(installationId, copyQueries(wanted))
       : {}
   )

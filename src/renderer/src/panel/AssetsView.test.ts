@@ -903,8 +903,8 @@ describe('AssetsView', () => {
     await flushPromises()
 
     expect(findDownloadedOutputs).toHaveBeenLastCalledWith('cloud', [
-      { id: 'saved', name: 'saved.png', sizeBytes: 2048 },
-      { id: 'older', name: 'older.png', sizeBytes: 1024 }
+      { id: 'saved', name: 'saved.png', sizeBytes: 2048, createdAt: null },
+      { id: 'older', name: 'older.png', sizeBytes: 1024, createdAt: null }
     ])
     await wrapper.get('[data-testid="asset-open-file-saved"]').trigger('click')
     expect(openAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/saved.png')
