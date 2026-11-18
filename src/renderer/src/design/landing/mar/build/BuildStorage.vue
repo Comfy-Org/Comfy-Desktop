@@ -3,18 +3,21 @@ import { computed, reactive } from 'vue'
 import { Download, Folder, FolderOpen, Plus, RotateCcw, Trash2 } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Card from '../../ui/Card.vue'
-import SettingsSection from '../../ui/SettingsSection.vue'
 import Switch from '../../ui/Switch.vue'
 import { toast } from '../../useProto'
 import type { ProtoInstance } from '../../mock'
 import MarItemMenu from '../pages/MarItemMenu.vue'
 import type { MenuLine } from '../pages/menu'
 import { notify } from '../pages/undo'
+import BuildBlock from './BuildBlock.vue'
 import { settingsOf, stateOf } from './buildFacts'
 import './buildTabs.css'
 
 /**
- * Desktop's Storage tab (views/comfyUISettings/StoragePane.vue): Models,
+ * Desktop's Folders tab (views/comfyUISettings/StoragePane.vue, named
+ * Folders in Comfy-Desktop#2217; a Cloud build keeps Storage). It reads
+ * top-down: each title (Models, Input, Output) above its folders, its
+ * toggle on the same line at the right, full paths that wrap. Models,
  * every folder this build reads from (its own always, the shared ones
  * when included, one marked for downloads), then Input and Output, each
  * one folder you can open, browse for or reset. Shared folders are
@@ -80,7 +83,9 @@ function setFolder(k: 'input' | 'output', path: string): void {
   changed()
   notify(`${k === 'input' ? 'Input' : 'Output'} folder: ${path}`, () => (io[k] = was))
 }
-const manage = (): void => toast('Opening Desktop Settings › Shared Directories')
+const manage = (): void => toast('Opening Desktop Settings › Folders')
+const MODELS_INFO =
+  'ComfyUI looks for models in every folder here: this build’s own, always, and the shared folders when included. New models download to the folder marked Downloads; pick another from a folder’s ⋯. Shared folders are managed in Desktop Settings › Folders.'
 </script>
 
 <template>
@@ -93,11 +98,11 @@ const manage = (): void => toast('Opening Desktop Settings › Shared Directorie
       </p>
     </div>
   </Card>
-  <div v-else class="mar-bt-settings">
+  <div v-else class="mar-bt-folders">
     <p v-if="state.restart" class="mar-bt-note">
       Restart {{ env.name }} for these changes to take effect.
     </p>
-    <SettingsSection title="Models" description="ComfyUI looks for models in every folder here.">
+    <BuildBlock title="Models" :info="MODELS_INFO">
       <template #actions>
         <label class="mar-st-toggle"
           >Include Shared Directories<Switch
@@ -108,20 +113,20 @@ const manage = (): void => toast('Opening Desktop Settings › Shared Directorie
       </template>
       <div v-for="d in dirs" :key="d.path" class="mar-bt-folder">
         <Folder :size="14" class="shrink-0 text-subtle-foreground" />
-        <span class="min-w-0 flex-1 truncate font-mono">{{ d.path }}</span>
+        <span class="mar-bt-folder-path">{{ d.path }}</span>
         <span v-if="downloads.path === d.path" class="mar-tag">Downloads</span>
         <span v-if="d.tag" class="mar-tag">{{ d.tag }}</span>
         <MarItemMenu :lines="lines(d)" label="More actions" />
       </div>
-      <div class="flex items-center gap-4 px-5 py-3">
+      <div class="flex flex-wrap items-center gap-4 px-3 py-2">
         <Button variant="ghost" size="sm" @click="add"><Plus :size="13" />Add Directory</Button>
         <button v-if="set.sharedModels" type="button" class="mar-st-link" @click="manage">
           Manage Shared Directories in Desktop Settings
         </button>
       </div>
-    </SettingsSection>
+    </BuildBlock>
 
-    <SettingsSection
+    <BuildBlock
       v-for="k in ['input', 'output'] as const"
       :key="k"
       :title="k === 'input' ? 'Input' : 'Output'"
@@ -143,7 +148,7 @@ const manage = (): void => toast('Opening Desktop Settings › Shared Directorie
       <div class="mar-bt-folder">
         <Folder :size="14" class="shrink-0 text-subtle-foreground" />
         <template v-if="k === 'input' ? set.sharedInput : set.sharedOutput">
-          <span class="min-w-0 flex-1 truncate font-mono">~/Documents/ComfyUI/{{ k }}</span>
+          <span class="mar-bt-folder-path">~/Documents/ComfyUI/{{ k }}</span>
           <span class="mar-tag">Shared</span>
           <Button variant="ghost" size="sm" @click="toast(`Opened the shared ${k} folder`)"
             >Open folder</Button
@@ -151,7 +156,7 @@ const manage = (): void => toast('Opening Desktop Settings › Shared Directorie
           <Button variant="ghost" size="sm" @click="manage">Manage</Button>
         </template>
         <template v-else>
-          <span class="min-w-0 flex-1 truncate font-mono">{{ io[k] }}</span>
+          <span class="mar-bt-folder-path">{{ io[k] }}</span>
           <span v-if="io[k] === `${home}/${k}`" class="mar-tag">default</span>
           <Button variant="ghost" size="sm" @click="toast(`Opened ${io[k]}`)">Open folder</Button>
           <Button variant="ghost" size="sm" @click="setFolder(k, `/Volumes/Studio/${k}`)"
@@ -166,6 +171,6 @@ const manage = (): void => toast('Opening Desktop Settings › Shared Directorie
           >
         </template>
       </div>
-    </SettingsSection>
+    </BuildBlock>
   </div>
 </template>

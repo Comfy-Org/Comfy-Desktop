@@ -34,7 +34,7 @@ type Fact = { label: string; value: string; path?: boolean }
 const GROUPS = computed(() =>
   [
     {
-      title: 'Instance details',
+      title: 'Build details',
       facts: [
         { label: 'Source', value: source },
         { label: 'Current Version', value: cloud ? 'Managed by Comfy' : state.version },
@@ -97,7 +97,7 @@ function save(): void {
         ref="field"
         v-model="draft"
         class="mar-ab-input is-name"
-        aria-label="Instance name"
+        aria-label="Build name"
         @keydown.enter="save"
         @keydown.esc="editing = ''"
         @blur="save"
@@ -108,8 +108,8 @@ function save(): void {
           v-if="!cloud"
           variant="ghost"
           size="icon-xs"
-          aria-label="Edit instance name"
-          title="Edit instance name"
+          aria-label="Edit build name"
+          title="Edit build name"
           @click="edit('name')"
           ><Pencil :size="13"
         /></Button>

@@ -13,10 +13,12 @@ import BuildOp from './BuildOp.vue'
 import BuildSnapshots from './BuildSnapshots.vue'
 import BuildStorage from './BuildStorage.vue'
 import BuildTerminal from './BuildTerminal.vue'
-import BuildUpdate from './BuildUpdate.vue'
+import BuildOverviewCards from './BuildOverviewCards.vue'
+import BuildUpdating from './BuildUpdating.vue'
 import { stateOf } from './buildFacts'
 import { opOf } from './buildOps'
-import { desktopTabs, nextBuildTab, type BuildTab } from './buildTab'
+import { runs } from './homeRun'
+import { desktopTabs, nextBuildTab, tabOf, type BuildTab } from './buildTab'
 import { isRemote } from './m1Builds'
 
 /**
@@ -32,9 +34,10 @@ const state = stateOf(env)
 const remote = isRemote(env)
 const own = env.kind === 'local'
 const op = computed(() => opOf(env.id))
+const updating = computed(() => runs.get(env.id)?.kind === 'update')
 const TABS = computed(() => desktopTabs(own, remote))
 
-const asked = nextBuildTab.value
+const asked = tabOf(nextBuildTab.value)
 nextBuildTab.value = ''
 const tab = ref<BuildTab>(
   TABS.value.some((t) => t.value === asked) ? (asked as BuildTab) : TABS.value[0]!.value
@@ -68,12 +71,13 @@ watch(TABS, (list) => {
     </div>
 
     <!-- A long operation takes the tab's place until it settles. -->
-    <BuildOp v-if="op" :id="env.id" :op :name="env.name" />
-    <BuildUpdate v-else-if="tab === 'update'" :env />
+    <BuildUpdating v-if="updating" :env />
+    <BuildOp v-else-if="op" :id="env.id" :op :name="env.name" />
+    <BuildOverviewCards v-else-if="tab === 'overview' && own" :env />
+    <BuildAbout v-else-if="tab === 'overview'" :env />
     <BuildArgs v-else-if="tab === 'args'" :env />
     <BuildSnapshots v-else-if="tab === 'snapshots'" :env />
     <BuildStorage v-else-if="tab === 'storage'" :env />
     <BuildTerminal v-else-if="tab === 'terminal'" :env />
-    <BuildAbout v-else-if="tab === 'about'" :env />
   </div>
 </template>

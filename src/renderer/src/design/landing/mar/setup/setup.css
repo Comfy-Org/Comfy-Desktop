@@ -374,9 +374,6 @@
     font-size: var(--text-ui);
     line-height: var(--text-ui--line-height);
   }
-  .mss-row + .mss-row {
-    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.06);
-  }
   .mss-row dt {
     display: flex;
     align-items: center;
@@ -1137,6 +1134,10 @@
 .mss-first.is-backdrop {
   z-index: 70;
 }
+/* The wordmark's middle is the frame's: a size container. */
+.mss-first.is-backdrop .mss-first-frame {
+  container-type: size;
+}
 /* The very first open: the wordmark alone, centred on the frame. The
  * light comes on: the mark fades in as the ambient light above brightens
  * with it. Then it travels up to its place,
@@ -1151,7 +1152,8 @@
   will-change: transform;
 }
 .mss-first.is-backdrop.is-arriving .mss-first-mark {
-  transform: translate(-50%, calc(50vh - 34px)) scale(2);
+  /* The frame's middle, not the window's: the frame sits 8px inside it. */
+  transform: translate(-50%, calc(50cqh - 34px)) scale(2);
   /* Not quite white yet: the glint completes it. */
   opacity: 0.82;
   animation: mss-arrive 600ms cubic-bezier(0.23, 1, 0.32, 1) both;
@@ -1166,6 +1168,19 @@
 }
 .mss-first.is-backdrop.is-arriving .mss-ambient {
   animation: mss-light 1100ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+/* Leaving the middle it turns fully white: its own animation, since
+ * Chromium won't start a transition on opacity an animation just held. */
+.mss-first.is-backdrop.is-landing .mss-first-mark {
+  animation: mss-whiten 300ms ease both;
+}
+@keyframes mss-whiten {
+  from {
+    opacity: 0.82;
+  }
+  to {
+    opacity: 1;
+  }
 }
 @keyframes mss-arrive {
   from {
@@ -1474,18 +1489,10 @@
   grid-template-columns: 148px minmax(0, 1fr);
   align-items: center;
   gap: 16px;
-  /* One line is 40px tall whatever the control (an input, a segmented
-     control, a note), so a row that swaps its control doesn't move the rest. */
-  min-height: 64px;
-  padding-block: 12px;
-  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-}
-/* The last row of the sheet: the action bar draws the line under it. */
-.mss-form-row:last-child {
-  box-shadow: none;
-}
-.mss-form-row:has(+ .mss-form-aside) {
-  box-shadow: none;
+  /* Compact, as Desktop's Change setup (Comfy-Desktop#2176): one line is
+     36px tall whatever the control, 6px apart, no lines between rows. */
+  min-height: 48px;
+  padding-block: 6px;
 }
 .mss-form-aside-sep {
   margin: 0 4px;
@@ -1493,6 +1500,40 @@
 }
 .mss-form-row:first-child {
   padding-top: 0;
+}
+/* Change setup grows from a fixed top: the title and How to start never
+ * move, only the footer does when a choice adds or removes rows. */
+:root[data-mar-ui='on'] .proto-ui.proto-ui.mar-wizard.mss-sheet {
+  top: clamp(24px, calc(50vh - 280px), 200px);
+  translate: -50% 0;
+}
+/* In the first install it is a card over the takeover, like New build's. */
+:root[data-mar-ui='on'] .proto-ui.proto-ui.mar-wizard.mss-in-takeover.mss-sheet {
+  /* Sized to its content, not to the takeover's column. */
+  min-height: 0;
+  border-radius: 18px;
+  background: var(--color-card-background);
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover.mss-sheet .mar-wizard-body > h3 {
+  font-size: 20px;
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover.mss-sheet .mar-wizard-foot {
+  padding: 12px 32px 20px;
+}
+/* One Browse style everywhere: an outline button. */
+:root .proto-ui.proto-ui.proto-ui .mss-browse {
+  color: var(--color-base-foreground);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 16%, transparent);
+}
+.mss-row:has(> .mss-browse) {
+  grid-template-columns: 132px minmax(0, 1fr) auto;
+}
+.mss-name-box .mss-name-row dd > * {
+  flex: 1;
+}
+/* New build's name sits in its own box above the computer. */
+.mss-name-box {
+  margin-bottom: 12px;
 }
 .mss-form-row:has(.mss-opts) {
   align-items: start;
@@ -1795,11 +1836,12 @@
 /* ── Set up: the machine as the screen's subject ─────────────────── */
 .mss-machine.is-hero {
   position: relative;
-  gap: 28px;
+  /* A smaller computer, so a long GPU name has room (Comfy-Desktop#2176). */
+  gap: 20px;
   margin-top: 0;
-  padding: 28px 32px;
+  padding: 24px 28px;
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: 14px;
   background:
     radial-gradient(
       ellipse 70% 120% at 12% 0%,
@@ -1809,8 +1851,13 @@
     oklch(0.6 0 0 / 0.05);
 }
 .mss-machine.is-hero .mss-laptop {
-  width: 168px;
-  height: 109px;
+  width: 104px;
+  height: 68px;
+}
+@media (max-width: 640px) {
+  .mss-machine.is-hero .mss-laptop {
+    display: none;
+  }
 }
 .mss-machine.is-hero .mss-machine-title {
   font-size: 22px;

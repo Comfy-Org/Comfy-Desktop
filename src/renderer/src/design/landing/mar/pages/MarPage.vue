@@ -3,6 +3,7 @@ import { computed, type Component } from 'vue'
 import { CloudOff, RotateCw, SearchX } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import { can } from '../../milestones'
+import { proto } from '../../useProto'
 import { retry, shownState, type PageState } from './pageState'
 import MarEmpty from './MarEmpty.vue'
 import '../table/table.css'
@@ -65,6 +66,7 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
     class="mar-page"
     :class="embedded ? 'is-embedded' : 'mx-auto w-full max-w-440 px-11 pb-24'"
     :data-state="shown"
+    :data-page="proto.page"
   >
     <!-- A page about one thing (a project, a space) brings its own header. -->
     <slot v-if="!embedded" name="header" :state="shown">

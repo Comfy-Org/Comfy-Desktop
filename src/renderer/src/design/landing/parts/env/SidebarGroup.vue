@@ -16,7 +16,8 @@ import MarGroupTitle from '../../mar/shell/MarGroupTitle.vue'
 import { BUILD_NAME, flow, installingBehind, installPending } from '../../mar/setup/setupFlow'
 // A build's row right-clicks to its menu, the same as its Home tile's ⋯.
 import { installingMenu, instanceMenu, openMenuAt } from '../../mar/build/buildMenu'
-import { uninstalled } from '../../mar/build/homeRun'
+import { openPageMenu } from '../../mar/shell/pageMenu'
+import { runs, uninstalled } from '../../mar/build/homeRun'
 
 /**
  * The organising list under Create.
@@ -75,7 +76,12 @@ const itemClass = (page: Page): string =>
 <template>
   <div v-if="show" class="mt-5.5 flex shrink-0 flex-col">
     <div class="flex h-6.5 items-center justify-between pr-1 pl-3">
-      <MarGroupTitle :title="title" :active="overviewActive" @click="go(overviewPage)" />
+      <MarGroupTitle
+        :title="title"
+        :active="overviewActive"
+        @click="go(overviewPage)"
+        @contextmenu="!proto.projects && openPageMenu($event, title)"
+      />
       <Tooltip :content="proto.projects ? 'New project' : 'New build'">
         <Button
           variant="ghost"
@@ -144,6 +150,12 @@ const itemClass = (page: Page): string =>
           ><InstanceGlyph :inst="envById(r.envId!)!" size="xs"
         /></span>
       </Tooltip>
+      <!-- Starting, updating or uninstalling on its tile: how far. -->
+      <span
+        v-else-if="r.envId && runs.get(r.envId)"
+        class="text-ui text-subtle-foreground tabular-nums"
+        >{{ runs.get(r.envId)!.percent }}%</span
+      >
       <span v-else-if="r.count" class="text-ui text-subtle-foreground tabular-nums">{{
         r.count
       }}</span>

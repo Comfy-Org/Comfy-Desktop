@@ -13,7 +13,10 @@ import {
   Globe,
   Gpu,
   HardDrive,
+  MapPin,
+  Monitor,
   Package,
+  Split,
   Tag,
   TriangleAlert,
   Users,
@@ -24,9 +27,7 @@ import {
   DialogRoot,
   DialogTitle,
   DropdownMenuRoot,
-  DropdownMenuTrigger,
-  RadioGroupItem,
-  RadioGroupRoot
+  DropdownMenuTrigger
 } from 'reka-ui'
 import ChoiceCard from '../../../../components/ChoiceCard.vue'
 import RunOnCards from './RunOnCards.vue'
@@ -84,6 +85,7 @@ import {
   ONBOARDINGS
 } from './setupFlow'
 import SetupLaptop from './SetupLaptop.vue'
+import SetupPick from './SetupPick.vue'
 import './setup.css'
 
 /**
@@ -233,15 +235,19 @@ watch(
 const channel = ref<'stable' | 'latest'>('stable')
 const hardware = ref<'mps' | 'cpu'>('mps')
 // Today's install methods on a Mac (Portable is Windows only). Managed
-// builds need a sign-in; a remote server needs only its address.
-const method = ref<'public' | 'managed' | 'portable' | 'remote'>('public')
-// Remote Connection isn't a source of ComfyUI, so it's a link under the form.
+// builds need a sign-in.
+const method = ref<'public' | 'managed' | 'portable'>('public')
 const SOURCES = computed(() => [
-  { value: 'public' as const, label: 'Official release', meta: 'Public builds', icon: Package },
+  {
+    value: 'public' as const,
+    label: 'Official release',
+    description: 'Public builds',
+    icon: Package
+  },
   {
     value: 'managed' as const,
     label: "Your team's builds",
-    meta: 'Managed builds',
+    description: 'Managed builds',
     icon: Users
   },
   // Today's Portable, in its own words; Windows only.
@@ -250,12 +256,42 @@ const SOURCES = computed(() => [
         {
           value: 'portable' as const,
           label: say('portable.label'),
-          meta: say('portable.desc'),
+          description: say('portable.desc'),
           icon: FolderArchive
         }
       ]
     : [])
 ])
+// Change setup's first choice (Comfy-Desktop#2176): install a new build, or
+// start from one you have. The first install can only connect to a server;
+// a new build can also add a folder or load a snapshot ("Where it is").
+const startFrom = ref<'new' | 'existing'>('new')
+const START_FROM = computed(() => [
+  { value: 'new' as const, label: 'Install a new build' },
+  {
+    value: 'existing' as const,
+    label: flow.takeover ? 'Connect to a server' : 'Use an existing build'
+  }
+])
+const whereIs = ref<'track' | 'server' | 'snapshot'>('track')
+const WHERE_IS = [
+  {
+    value: 'track' as const,
+    label: 'On this computer',
+    description: 'Add an existing build',
+    icon: Monitor
+  },
+  { value: 'server' as const, label: 'On a server', description: 'Connect by URL', icon: Globe },
+  {
+    value: 'snapshot' as const,
+    label: 'In a snapshot file',
+    description: 'Load a snapshot',
+    icon: FolderArchive
+  }
+]
+// What "existing" points at: onboarding only offers a server.
+const existing = computed(() => (flow.takeover ? 'server' : whereIs.value))
+const existingPath = ref('')
 const serverUrl = ref('')
 const version = ref(DETECTED.version)
 const CPU_MB = 480
@@ -268,6 +304,8 @@ const VERSIONS = [
 // Discard leaves Change setup as it found it; Save keeps the edits.
 const draft = () => ({
   method: method.value,
+  startFrom: startFrom.value,
+  whereIs: whereIs.value,
   serverUrl: serverUrl.value,
   name: name.value,
   channel: channel.value,
@@ -296,6 +334,8 @@ function saveChanges(): void {
 }
 function discardChanges(): void {
   method.value = saved.method
+  startFrom.value = saved.startFrom
+  whereIs.value = saved.whereIs
   serverUrl.value = saved.serverUrl
   name.value = saved.name
   channel.value = saved.channel
@@ -342,6 +382,15 @@ const HARDWARE = computed(() =>
           icon: Cpu
         }
       ]
+)
+const HARDWARE_PICK = computed(() =>
+  HARDWARE.value.map((h) => ({
+    value: h.value,
+    label: h.label,
+    description: h.meta,
+    icon: h.icon,
+    badge: h.recommended ? say('newInstall.recommended') : undefined
+  }))
 )
 const pickedHardware = computed(
   () => HARDWARE.value.find((h) => h.value === hardware.value) ?? HARDWARE.value[0]!
@@ -540,7 +589,7 @@ const installLog = computed(() => [
                 </label>
                 <label class="mss-check">
                   <Checkbox v-model="beta" :disabled="!usage" />
-                  <span>Opt-in to beta features and help test what ships next</span>
+                  <span>Opt in to beta features and help test what ships next</span>
                 </label>
               </div>
               <Button variant="primary" size="lg" @click="continueFirst">Continue</Button>
@@ -558,7 +607,11 @@ const installLog = computed(() => [
     <div
       v-if="(open || flow.arriving || flow.landing) && flow.takeover"
       class="proto-ui mss-first is-backdrop"
-      :class="[homeOneClick && 'is-alone', flow.arriving && 'is-arriving']"
+      :class="[
+        homeOneClick && 'is-alone',
+        flow.arriving && 'is-arriving',
+        flow.landing && 'is-landing'
+      ]"
       aria-hidden="true"
     >
       <div class="mss-first-frame">
@@ -580,8 +633,8 @@ const installLog = computed(() => [
     <DialogContent
       size="lg"
       class="mar-wizard mss w-[min(760px,calc(100vw-48px))] p-0"
-      :class="flow.takeover && 'mss-in-takeover z-[72]'"
-      :closable="!flow.takeover"
+      :class="[flow.takeover && 'mss-in-takeover z-[72]', flow.step === 'change' && 'mss-sheet']"
+      :closable="!flow.takeover && flow.step !== 'change'"
     >
       <!-- Set up: the checks already ran, one Install. -->
       <template v-if="flow.step === 'setup'">
@@ -592,9 +645,19 @@ const installLog = computed(() => [
             }}</DialogTitle>
             <DialogDescription>{{
               newBuild
-                ? `Another ComfyUI on ${DETECTED.noun}, with its own version and nodes. It installs in Builds while you keep working.`
-                : `Checked for your ${DETECTED.chip}. Change anything before you install.`
+                ? 'Set up a fresh ComfyUI install.'
+                : `The best settings for your ${DETECTED.chip} are picked. Change any you like.`
             }}</DialogDescription>
+            <!-- New build: the name, the one thing the first install never
+                 asked, in its own box above the computer. -->
+            <dl v-if="newBuild" class="mss-summary mss-name-box" aria-label="Name">
+              <div class="mss-row mss-name-row">
+                <dt><Tag :size="15" /><label for="mss-build-name">Name</label></dt>
+                <dd>
+                  <Input id="mss-build-name" v-model="buildName" />
+                </dd>
+              </div>
+            </dl>
             <!-- The machine it checked, drawn large: the subject of the
                  screen. What it gets is the list below. -->
             <div class="mss-machine is-hero">
@@ -616,14 +679,6 @@ const installLog = computed(() => [
                  a line each: what it is, its value, its detail. Only a problem
                  gets a mark. -->
             <dl class="mss-summary" aria-label="Install summary">
-              <!-- New build: the name, the one thing the first install never
-                   asked, first in the list; its field shows only on hover. -->
-              <div v-if="newBuild" class="mss-row mss-name-row">
-                <dt><Tag :size="15" /><label for="mss-build-name">Name</label></dt>
-                <dd>
-                  <Input id="mss-build-name" v-model="buildName" class="mss-quiet-input" />
-                </dd>
-              </div>
               <div class="mss-row">
                 <dt><Zap :size="15" />Hardware</dt>
                 <dd>
@@ -642,6 +697,15 @@ const installLog = computed(() => [
                     free · ~{{ REQUIRED_GB }} GB required</span
                   >
                 </dd>
+                <!-- One Browse style: the outline button, as in Change setup. -->
+                <Button
+                  v-if="newBuild"
+                  size="sm"
+                  variant="ghost"
+                  class="mss-browse"
+                  @click="flow.movedDisk = true"
+                  >Browse</Button
+                >
               </div>
               <div class="mss-row">
                 <dt><Package :size="15" />Version</dt>
@@ -686,7 +750,7 @@ const installLog = computed(() => [
               </label>
               <label class="mss-check">
                 <Checkbox v-model="beta" :disabled="!usage" />
-                <span>Opt-in to beta features and help test what ships next</span>
+                <span>Opt in to beta features and help test what ships next</span>
               </label>
             </div>
           </template>
@@ -743,177 +807,173 @@ const installLog = computed(() => [
         </footer>
       </template>
 
-      <!-- Change: every field filled in with what fits this computer. -->
+      <!-- Change: every field filled in with what fits this computer, in
+           Desktop's compact sheet (Comfy-Desktop#2176): How to start first,
+           then one field per row, the pickers as dropdowns. It grows from a
+           fixed top, so only the footer moves when a choice adds rows. -->
       <template v-else-if="flow.step === 'change'">
         <div :key="flow.step" class="mar-wizard-body mss-body">
           <DialogTitle as="h3" class="text-title font-semibold">Change setup</DialogTitle>
-          <DialogDescription
-            >Everything here is already set to what fits this computer. Back keeps it as it
-            was.</DialogDescription
-          >
-          <!-- A settings sheet: label on the left, control on the right,
-               a hairline between rows. Picks are radio cards. -->
-          <div v-if="method !== 'remote'" class="mss-form">
+          <DialogDescription>{{
+            startFrom === 'existing'
+              ? 'Point Desktop at the ComfyUI you already have.'
+              : 'Everything here is already set to what fits this computer.'
+          }}</DialogDescription>
+          <div class="mss-form">
             <div v-if="!simple" class="mss-form-row">
-              <span id="mss-from" class="mss-form-label"
-                ><Download :size="15" />Get ComfyUI from</span
-              >
-              <!-- Cards, not tabs: no sliding pill (tabSlide). -->
-              <RadioGroupRoot
-                v-model="method"
-                class="mss-opts"
-                aria-labelledby="mss-from"
-                data-no-pill
-              >
-                <RadioGroupItem
-                  v-for="m in SOURCES"
-                  :key="m.value"
-                  :value="m.value"
-                  class="mss-opt"
-                  :class="m.value === 'portable' && 'is-wide'"
-                >
-                  <span class="mss-opt-icon"><component :is="m.icon" :size="16" /></span>
-                  <span class="mss-opt-text">
-                    <span class="mss-opt-name">{{ m.label }}</span>
-                    <span class="mss-opt-meta">{{ m.meta }}</span>
-                  </span>
-                  <span class="mss-opt-check" aria-hidden="true"
-                    ><Check :size="15" :stroke-width="2.5"
-                  /></span>
-                </RadioGroupItem>
-              </RadioGroupRoot>
-            </div>
-            <template v-if="simple"></template>
-            <div v-else-if="method === 'managed'" class="mss-form-row">
-              <span class="mss-form-label"><Package :size="15" />Release</span>
-              <div class="mss-form-note">
-                <span>Sign in to see your workspace's builds.</span>
-                <Button size="sm" variant="secondary" @click="hostActions.signIn()">Sign in</Button>
-              </div>
-            </div>
-            <div v-else class="mss-form-row">
-              <span class="mss-form-label"><Package :size="15" />Release</span>
-              <div class="flex flex-wrap items-center gap-2">
-                <MarSeg v-model="channel" label="Release" :options="CHANNELS" />
-                <Select
-                  v-if="channel === 'stable'"
-                  v-model="version"
-                  label="ComfyUI"
-                  :options="VERSIONS"
-                />
-              </div>
-            </div>
-            <div v-if="!simple" class="mss-form-row">
-              <span class="mss-form-label"><Tag :size="15" />Name</span>
-              <Input v-model="name" aria-label="Name" />
-            </div>
-            <div class="mss-form-row">
-              <span class="mss-form-label"><HardDrive :size="15" />Location</span>
-              <Input :model-value="where" readonly aria-label="Location">
-                <template #trailing>
-                  <span class="text-ui whitespace-nowrap text-subtle-foreground"
-                    >{{ freeLabel(free) }} free</span
-                  >
-                  <Button
-                    size="sm"
-                    variant="subtle"
-                    class="mr-1.5"
-                    @click.prevent="flow.movedDisk = true"
-                    >Browse</Button
-                  >
-                </template>
-              </Input>
-            </div>
-            <div class="mss-form-row">
-              <span id="mss-hw" class="mss-form-label"><Zap :size="15" />Hardware</span>
-              <RadioGroupRoot
-                v-model="hardware"
-                class="mss-opts is-list"
-                aria-labelledby="mss-hw"
-                data-no-pill
-              >
-                <RadioGroupItem
-                  v-for="h in HARDWARE"
-                  :key="h.value"
-                  :value="h.value"
-                  class="mss-opt"
-                >
-                  <span class="mss-opt-icon"><component :is="h.icon" :size="16" /></span>
-                  <span class="mss-opt-text">
-                    <span class="mss-opt-name"
-                      >{{ h.label
-                      }}<span v-if="h.recommended" class="mss-opt-tag">{{
-                        say('newInstall.recommended')
-                      }}</span></span
-                    >
-                    <span class="mss-opt-meta">{{ h.meta }}</span>
-                  </span>
-                  <span class="mss-opt-check" aria-hidden="true"
-                    ><Check :size="15" :stroke-width="2.5"
-                  /></span>
-                </RadioGroupItem>
-              </RadioGroupRoot>
-            </div>
-            <!-- The other ways in, one quiet line under the sheet: a remote
-                 server, and today's two from the File menu. -->
-            <p v-if="!simple" class="mss-form-aside">
-              Already have ComfyUI?
-              <button type="button" class="mss-link" @click="method = 'remote'">
-                Connect to a server
-              </button>
-              <span class="mss-form-aside-sep">·</span>
-              <button
-                type="button"
-                class="mss-link"
-                @click="toast(`Opening ${say('fileMenu.addExistingInstall')}`)"
-              >
-                {{ say('fileMenu.addExistingInstall') }}
-              </button>
-              <span class="mss-form-aside-sep">·</span>
-              <button
-                type="button"
-                class="mss-link"
-                @click="toast(`Opening ${say('fileMenu.loadSnapshot')}`)"
-              >
-                {{ say('fileMenu.loadSnapshot') }}
-              </button>
-            </p>
-          </div>
-
-          <!-- Remote Connection: today's third method, behind the link. -->
-          <div v-else class="mss-form">
-            <div class="mss-form-row">
-              <span class="mss-form-label"><Globe :size="15" />Server URL</span>
-              <Input
-                v-model="serverUrl"
-                placeholder="http://192.168.1.20:8188"
-                aria-label="Server URL"
+              <span class="mss-form-label"><Split :size="15" />How to start</span>
+              <MarSeg
+                v-model="startFrom"
+                label="How to start"
+                :options="START_FROM"
+                class="justify-self-start"
               />
             </div>
-            <div class="mss-form-row">
+            <!-- The first install names its build here, at the top; a new build
+                 names it on the summary, and an existing one after where it is. -->
+            <div v-if="!simple && flow.takeover" class="mss-form-row">
               <span class="mss-form-label"><Tag :size="15" />Name</span>
               <Input v-model="name" aria-label="Name" />
             </div>
-            <p class="mss-form-aside">
-              <button type="button" class="mss-link" @click="method = 'public'">
-                Install on {{ DETECTED.noun }} instead
-              </button>
-            </p>
+
+            <template v-if="startFrom === 'new'">
+              <div v-if="!simple" class="mss-form-row">
+                <span class="mss-form-label"><Download :size="15" />Source</span>
+                <SetupPick v-model="method" label="Source" :options="SOURCES" />
+              </div>
+              <template v-if="simple"></template>
+              <div v-else-if="method === 'managed'" class="mss-form-row">
+                <span class="mss-form-label"><Package :size="15" />Release</span>
+                <div class="mss-form-note">
+                  <span>Sign in to see your workspace's builds.</span>
+                  <Button size="sm" variant="secondary" @click="hostActions.signIn()"
+                    >Sign in</Button
+                  >
+                </div>
+              </div>
+              <div v-else class="mss-form-row">
+                <span class="mss-form-label"><Package :size="15" />Release</span>
+                <div class="flex flex-wrap items-center gap-2">
+                  <MarSeg v-model="channel" label="Release" :options="CHANNELS" />
+                  <Select
+                    v-if="channel === 'stable'"
+                    v-model="version"
+                    label="ComfyUI"
+                    :options="VERSIONS"
+                  />
+                </div>
+              </div>
+              <div class="mss-form-row">
+                <span class="mss-form-label"><HardDrive :size="15" />Location</span>
+                <Input :model-value="where" readonly aria-label="Location">
+                  <template #trailing>
+                    <span class="text-ui whitespace-nowrap text-subtle-foreground"
+                      >{{ freeLabel(free) }} free</span
+                    >
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      class="mss-browse mr-1.5"
+                      @click.prevent="flow.movedDisk = true"
+                      >Browse</Button
+                    >
+                  </template>
+                </Input>
+              </div>
+              <div class="mss-form-row">
+                <span class="mss-form-label"><Zap :size="15" />Hardware</span>
+                <SetupPick v-model="hardware" label="Hardware" :options="HARDWARE_PICK" />
+              </div>
+            </template>
+
+            <!-- Use an existing build: where it is, then what that needs.
+                 The first install only connects to a server, so it goes
+                 straight to the address. -->
+            <template v-else>
+              <div v-if="!flow.takeover" class="mss-form-row">
+                <span class="mss-form-label"><MapPin :size="15" />Where it is</span>
+                <SetupPick v-model="whereIs" label="Where it is" :options="WHERE_IS" />
+              </div>
+              <div v-if="existing === 'server'" class="mss-form-row">
+                <span class="mss-form-label"><Globe :size="15" />Address</span>
+                <Input
+                  v-model="serverUrl"
+                  placeholder="http://127.0.0.1:8188"
+                  aria-label="Address"
+                />
+              </div>
+              <div v-else class="mss-form-row">
+                <span class="mss-form-label"
+                  ><component :is="existing === 'track' ? HardDrive : FolderArchive" :size="15" />{{
+                    existing === 'track' ? 'Install location' : 'Snapshot file'
+                  }}</span
+                >
+                <Input
+                  :model-value="existingPath"
+                  readonly
+                  :placeholder="existing === 'track' ? 'Select a directory…' : 'Select a file…'"
+                  :aria-label="existing === 'track' ? 'Install location' : 'Snapshot file'"
+                >
+                  <template #trailing>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      class="mss-browse mr-1.5"
+                      @click.prevent="
+                        existingPath =
+                          existing === 'track' ? '~/ComfyUI' : '~/Downloads/comfy-snapshot.json'
+                      "
+                      >Browse</Button
+                    >
+                  </template>
+                </Input>
+              </div>
+              <div v-if="!flow.takeover" class="mss-form-row">
+                <span class="mss-form-label"><Tag :size="15" />Name</span>
+                <Input v-model="name" aria-label="Name" />
+              </div>
+            </template>
           </div>
         </div>
+        <!-- Discard keeps things as they were; the × hides here, so Discard
+             and the primary are the only ways back (UI-RULES). -->
         <footer class="mar-wizard-foot mss-foot">
-          <!-- Back is the way out: it leaves things as they were. -->
-          <Button variant="ghost" size="lg" @click="discardChanges"
-            ><ArrowLeft :size="16" />Back</Button
+          <label
+            v-if="flow.takeover && startFrom === 'existing'"
+            class="mss-check mss-terms mr-auto"
+            :class="termsAsk && !terms && 'is-ask'"
           >
-          <span class="mr-auto"></span>
+            <Checkbox v-model="terms" />
+            <span
+              >I agree to the <a href="#" class="mss-link" @click.prevent>EULA</a> and
+              <a href="#" class="mss-link" @click.prevent>Terms of Service</a>.</span
+            >
+          </label>
+          <span v-else class="mr-auto"></span>
+          <Button size="lg" @click="discardChanges">Discard</Button>
           <Button
-            v-if="method === 'remote'"
+            v-if="startFrom === 'existing'"
             variant="primary"
             size="lg"
-            :disabled="!serverUrl"
-            @click="toast(`Connecting to ${serverUrl}`)"
-            >Connect</Button
+            :disabled="existing === 'server' ? !serverUrl : !existingPath"
+            @click="
+              flow.takeover && !terms
+                ? (termsAsk = true)
+                : toast(
+                    existing === 'server'
+                      ? `Connecting to ${serverUrl}`
+                      : existing === 'track'
+                        ? `Adding ${name}`
+                        : `Creating ${name}`
+                  )
+            "
+            >{{
+              existing === 'server'
+                ? 'Connect'
+                : existing === 'track'
+                  ? 'Add build'
+                  : 'Create build'
+            }}</Button
           >
           <Button v-else variant="primary" size="lg" @click="saveChanges">Save changes</Button>
         </footer>

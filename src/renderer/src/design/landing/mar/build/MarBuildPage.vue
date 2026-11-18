@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   Camera,
   Ellipsis,
@@ -14,7 +14,6 @@ import {
   Laptop,
   Pencil,
   Play,
-  Repeat2,
   Rocket,
   RotateCcw,
   RotateCw,
@@ -22,7 +21,6 @@ import {
   ScrollText,
   Server,
   Settings2,
-  Share2,
   Square,
   SquareArrowOutUpRight,
   Trash2,
@@ -54,7 +52,7 @@ import {
   versionsOf
 } from '../../parts/env/env'
 import { allWorkflows } from '../../gallery'
-import { deployEnv, go, goIn, proto, toast, type Page } from '../../useProto'
+import { deployEnv, go, goIn, hostActions, proto, toast, type Page } from '../../useProto'
 import { can } from '../../milestones'
 import { buildsAsM1 } from './buildsAsM1'
 import { PROJECTS, type ProtoInstance } from '../../mock'
@@ -62,7 +60,6 @@ import MarEntityHeader from '../pages/MarEntityHeader.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
 import MarItemMenu from '../pages/MarItemMenu.vue'
 import MarSeg from '../pages/MarSeg.vue'
-import MarSplitButton from '../pages/MarSplitButton.vue'
 import MarStatus, { type ItemStatus } from '../pages/MarStatus.vue'
 import { notify } from '../pages/undo'
 import type { MenuLine } from '../pages/menu'
@@ -71,9 +68,12 @@ import EnvModels from './EnvModelsEntry.vue'
 import BuildAbout from './BuildAbout.vue'
 import BuildArgs from './BuildArgs.vue'
 import BuildOp from './BuildOp.vue'
+import BuildOverviewCards from './BuildOverviewCards.vue'
+import BuildUpdating from './BuildUpdating.vue'
 import BuildStorage from './BuildStorage.vue'
 import BuildTerminal from './BuildTerminal.vue'
 import { opOf } from './buildOps'
+import { runs } from './homeRun'
 import { extraOf, isRemote } from './m1Builds'
 import BuildSettings from './BuildSettings.vue'
 import BuildSnapshots from './BuildSnapshots.vue'
@@ -81,7 +81,7 @@ import BuildUpdate from './BuildUpdate.vue'
 import BuildUpdateSummary from './BuildUpdateSummary.vue'
 import { createSnapshot, leaving, pendingOf, snapshotsOf, stateOf } from './buildFacts'
 import { buildPage } from './buildPage'
-import { desktopTabs, nextBuildTab, openBuildSettings } from './buildTab'
+import { desktopTabs, nextBuildTab, openBuildSettings, tabOf } from './buildTab'
 import { syncing } from './syncPrevious'
 import { clearError, errorOf } from './buildErrors'
 import '../table/table.css'
@@ -199,7 +199,7 @@ const TABS = computed(() => (mvp.value ? MVP_TABS.value : LATER_TABS.value))
 const asked =
   nextBuildTab.value === 'settings' && !TABS.value.some((t) => t.value === 'settings')
     ? 'args'
-    : nextBuildTab.value
+    : tabOf(nextBuildTab.value)
 nextBuildTab.value = ''
 const tab = ref<Tab>(
   asked && TABS.value.some((t) => t.value === asked)
@@ -270,6 +270,10 @@ function restartHere(): void {
   state.restart = false
   toast(`Restarting ${env.name}…`)
 }
+// Comfy-Desktop#2215: a running build reads Open (its window comes to
+// the front), the same word as Home's cards; one button, no caret.
+// Stop lives in More only, in its danger group beside Forget and
+// Uninstall, as in Home's build menu.
 const main = computed<{ label: string; icon: unknown; run: () => void }>(() => {
   if (remote) return { label: 'Open Remote', icon: Server, run: () => toast(`Opening ${env.name}`) }
   if (k.value !== 'local')
@@ -277,54 +281,48 @@ const main = computed<{ label: string; icon: unknown; run: () => void }>(() => {
   if (running.value)
     return state.restart
       ? { label: 'Restart to apply changes', icon: RotateCcw, run: restartHere }
-      : { label: 'Restart', icon: RotateCcw, run: restartHere }
+      : { label: 'Open', icon: SquareArrowOutUpRight, run: () => hostActions.launch(env) }
   return { label: 'Start', icon: Play, run: startHere }
 })
-const newWindow: MenuLine = {
-  label: 'Open in new window',
-  icon: SquareArrowOutUpRight,
-  run: () => toast(`Opening ${env.name} in a new window`)
+// An update running on the build (homeRun.ts) takes the tabs' place.
+const updating = computed(() => runs.get(env.id)?.kind === 'update')
+// Rename in the title, as Desktop does (the About tab is gone).
+const renaming = ref(false)
+const draft = ref('')
+const nameField = ref<HTMLInputElement>()
+async function rename(): Promise<void> {
+  draft.value = state.name
+  renaming.value = true
+  await nextTick()
+  nameField.value?.select()
 }
-const windowLines = computed<MenuLine[]>(() =>
-  running.value && own.value
-    ? [
-        { label: 'Switch', icon: Repeat2, run: () => toast(`Switched this window to ${env.name}`) },
-        newWindow,
-        'sep',
-        { label: 'Stop', icon: CircleStop, danger: true, run: stopHere }
-      ]
-    : [newWindow]
-)
-// More: the install's own actions, Desktop's order; Forget and Uninstall
-// last. Stop lives on the caret, beside Restart, and only there.
+function saveName(): void {
+  const v = draft.value.trim()
+  if (renaming.value && v) state.name = v
+  renaming.value = false
+}
+// More: Desktop's order (updateSections.ts and pinBottomActions): the
+// build's own actions, then Stop while it runs, Forget, Uninstall.
+const gate = computed(() => ({
+  disabled: running.value,
+  title: running.value ? 'Stop the running build first.' : undefined
+}))
 const moreLines = computed<MenuLine[]>(() => [
-  { label: 'Rename', icon: Pencil, run: () => (tab.value = 'about') },
+  { label: 'Rename', icon: Pencil, run: rename },
   ...(own.value
     ? [
-        {
-          label: 'Duplicate Instance',
-          icon: CopyPlus,
-          disabled: running.value,
-          title: running.value ? 'Stop the running instance first.' : undefined,
-          run: duplicateHere
-        },
+        { label: 'Duplicate', icon: CopyPlus, ...gate.value, run: duplicateHere },
         { label: 'Open Directory', icon: FolderOpen, run: () => toast(`Opened ${env.name}`) },
-        { label: 'Share', icon: Share2, run: () => toast('Snapshot ready to share') }
+        { label: 'Export snapshot', icon: Download, run: () => toast('Snapshot exported') }
       ]
     : []),
   'sep',
+  ...(own.value && running.value
+    ? [{ label: 'Stop', icon: CircleStop, danger: true, run: stopHere }]
+    : []),
   { label: 'Forget', icon: EyeOff, run: leaveHere },
   ...(own.value
-    ? [
-        {
-          label: 'Uninstall',
-          icon: Trash2,
-          danger: true,
-          disabled: running.value,
-          title: running.value ? 'Stop the running instance first.' : undefined,
-          run: leaveHere
-        }
-      ]
+    ? [{ label: 'Uninstall', icon: Trash2, danger: true, ...gate.value, run: leaveHere }]
     : [])
 ])
 
@@ -363,14 +361,25 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
 <template>
   <div class="mar-bp mx-auto w-full max-w-440 px-11 pb-24">
     <MarEntityHeader
-      :back="marTabsOn || mvp ? 'Builds' : undefined"
+      :back="marTabsOn && !mvp ? 'Builds' : undefined"
       :title="mvp ? state.name : env.name"
       :status="status.id"
       :status-label="status.label"
-      :status-link="syncing && status.id === 'update' && !remote ? 'Open Update' : undefined"
+      :status-link="syncing && status.id === 'update' && !remote ? 'Open Overview' : undefined"
       @back="go('environments' as Page)"
       @status="openBuildSettings(env.id, 'update')"
     >
+      <template v-if="renaming" #title>
+        <input
+          ref="nameField"
+          v-model="draft"
+          class="mar-bp-rename"
+          aria-label="Build name"
+          @keydown.enter="saveName"
+          @keydown.esc="renaming = false"
+          @blur="saveName"
+        />
+      </template>
       <template #cover>
         <span class="mar-bp-glyph"
           ><Server v-if="remote" :size="26" class="text-muted-foreground" /><InstanceGlyph
@@ -411,14 +420,14 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         </template>
       </template>
       <template v-if="mvp && buildPage.id === 'production'" #actions>
-        <MarSplitButton
-          :label="state.run === 'launching' ? 'Starting…' : main.label"
-          :icon="main.icon as never"
-          :disabled="state.run === 'launching' || op?.status === 'running'"
-          :lines="windowLines"
-          menu-label="Window options"
-          @run="main.run()"
-        />
+        <Button
+          variant="primary"
+          :disabled="state.run === 'launching' || op?.status === 'running' || updating"
+          @click="main.run()"
+          ><component :is="main.icon" :size="15" />{{
+            state.run === 'launching' ? 'Starting…' : main.label
+          }}</Button
+        >
         <MarItemMenu v-if="k !== 'managed' || remote" :lines="moreLines" label="More">
           <template #trigger>
             <Button variant="secondary" size="icon" aria-label="More"
@@ -472,7 +481,12 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
     <!-- The Builds milestone: production's tabs, or Overview first. -->
     <template v-if="mvp">
       <!-- A long operation takes the tab's place until it settles. -->
-      <BuildOp v-if="op" :id="env.id" :op :name="env.name" />
+      <BuildUpdating v-if="updating" :env />
+      <BuildOp v-else-if="op" :id="env.id" :op :name="env.name" />
+      <BuildOverviewCards
+        v-else-if="tab === 'overview' && buildPage.id === 'production' && own"
+        :env
+      />
       <template v-else-if="tab === 'overview'">
         <BuildUpdateSummary v-if="own" :env />
         <BuildAbout :env />
@@ -687,6 +701,20 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
   margin: 2px 0 0;
   color: var(--color-muted-foreground);
   font-size: 13px;
+}
+.mar-bp-rename {
+  min-width: 0;
+  width: min(100%, 28rem);
+  padding: 0 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: var(--radius-control);
+  outline: none;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-base-foreground);
+  font: inherit;
+  font-size: var(--text-display, 28px);
+  font-weight: 600;
 }
 .mar-bp-row {
   display: flex;

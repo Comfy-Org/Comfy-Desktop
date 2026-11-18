@@ -110,10 +110,11 @@ const emit = defineEmits<{ back: []; status: [] }>()
   overflow: hidden;
   margin: 0;
   color: var(--color-base-foreground);
-  font-size: 30px;
+  /* The display size, like Home's title and every page's (Comfy-Desktop#2210). */
+  font-size: var(--text-display);
   font-weight: 600;
   letter-spacing: -0.02em;
-  line-height: 1.15;
+  line-height: var(--text-display--line-height);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

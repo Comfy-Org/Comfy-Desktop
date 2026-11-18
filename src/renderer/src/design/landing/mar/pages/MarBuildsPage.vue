@@ -314,8 +314,6 @@ function launch(b: Build): { label: string; icon: Component; run: () => void } {
     }
   return { label: 'Start', icon: Play, run: () => start(b) }
 }
-const launchWhere = (b: Build): string =>
-  isRemote(b) ? 'on Remote' : b.kind === 'cloud' ? 'on Cloud' : 'on this computer'
 // The state, one word: the chip after the name says what else is going on.
 function m1State(b: Build): {
   label: string
@@ -369,9 +367,24 @@ function m1Lines(b: Build): MenuLine[] {
   const running = b.state === 'running' || busy(b)
   const gated = {
     disabled: running,
-    title: running ? 'Stop the running instance first.' : undefined
+    title: running ? 'Stop the running build first.' : undefined
   }
   const problem = problemOf(b)
+  // What it can do now first, as Home's build menu (Comfy-Desktop#2163):
+  // the same menu from the ⋯, a right-click, Home and the sidebar.
+  const now: MenuLine[] = problem
+    ? []
+    : b.state === 'launching'
+      ? [{ label: 'View logs', icon: ScrollText, run: () => toast(`Logs of ${b.name}`) }]
+      : b.state === 'running' && local
+        ? [
+            { label: 'View logs', icon: ScrollText, run: () => toast(`Logs of ${b.name}`) },
+            { label: 'Restart', icon: RotateCw, run: () => toast(`Restarting ${b.name}…`) },
+            { label: 'Stop', icon: CircleStop, run: () => stop(b) }
+          ]
+        : b.state !== 'running' && !busy(b)
+          ? [{ label: launch(b).label, icon: launch(b).icon, run: () => launch(b).run() }]
+          : []
   const top: MenuLine[] = [
     { label: 'Manage', icon: Settings2, run: () => open(b) },
     ...(b.state === 'update'
@@ -382,7 +395,7 @@ function m1Lines(b: Build): MenuLine[] {
       : []),
     ...(local && !problem
       ? [
-          { label: 'Duplicate Instance', icon: Copy, run: () => builds.duplicate(b.id), ...gated },
+          { label: 'Duplicate', icon: Copy, run: () => builds.duplicate(b.id), ...gated },
           { label: 'Show in Finder', icon: FolderOpen, run: () => toast(`Revealed ${b.name}`) }
         ]
       : [])
@@ -390,12 +403,12 @@ function m1Lines(b: Build): MenuLine[] {
   const snaps: MenuLine[] =
     local && !problem
       ? [
-          { label: 'Export Snapshot', icon: Download, run: () => toast('Snapshot exported.') },
+          { label: 'Export snapshot', icon: Download, run: () => toast('Snapshot exported.') },
           // Snapshots live on the build's page in Builds, on Settings after it.
           ...(buildsAsM1.value || syncing.value
             ? [
                 {
-                  label: 'Restore Snapshot',
+                  label: 'Restore snapshot',
                   icon: History,
                   run: () =>
                     syncing.value
@@ -406,33 +419,51 @@ function m1Lines(b: Build): MenuLine[] {
               ]
             : []),
           ...(proto.signedIn
-            ? [{ label: 'Create Build', icon: CloudUpload, run: () => createBuild(b) }]
+            ? [
+                {
+                  label: 'Upload build',
+                  icon: CloudUpload,
+                  title: 'Upload this build to Comfy Developer Platform.',
+                  run: () => createBuild(b)
+                }
+              ]
             : [])
         ]
       : []
-  const end: MenuLine[] = [
-    ...(local && b.state === 'running'
-      ? [{ label: 'Stop', icon: CircleStop, danger: true, run: () => stop(b) }]
-      : []),
-    ...(local
-      ? [
-          {
-            label: 'Uninstall',
-            icon: Trash2,
-            danger: true,
-            run: () => builds.remove([b.id]),
-            ...gated
-          }
-        ]
-      : isRemote(b)
-        ? [{ label: 'Forget', icon: EyeOff, run: () => builds.remove([b.id]) }]
-        : [])
-  ]
+  const end: MenuLine[] = local
+    ? [
+        {
+          label: 'Uninstall',
+          icon: Trash2,
+          danger: true,
+          run: () => builds.remove([b.id]),
+          ...gated
+        }
+      ]
+    : isRemote(b)
+      ? [{ label: 'Forget', icon: EyeOff, run: () => builds.remove([b.id]) }]
+      : []
   return [
+    ...now,
+    ...(now.length ? ['sep' as const] : []),
     ...top,
     ...(snaps.length ? ['sep' as const, ...snaps] : []),
     ...(end.length ? ['sep' as const, ...end] : [])
   ]
+}
+/** The whole row is the action (Comfy-Desktop#2163): a click starts a
+ *  ready build, opens a running one, shows the logs while it is busy and
+ *  opens the build's page when it is broken. The hover hint names it. */
+function rowClick(b: Build): void {
+  if (stopping.has(b.id) || creating.has(b.id)) return
+  if (problemOf(b) || b.state === 'error') return open(b)
+  if (busy(b)) return toast(`Logs of ${b.name}`)
+  launch(b).run()
+}
+function rowHint(b: Build): string {
+  if (problemOf(b) || b.state === 'error') return 'Click to open'
+  if (busy(b)) return 'Click to view logs'
+  return b.state === 'running' || b.kind === 'cloud' ? 'Click to open' : 'Click to start'
 }
 const refreshing = ref(false)
 function refresh(): void {
@@ -569,7 +600,7 @@ const newLabel = computed(() =>
         v-if="state === 'live' || state === 'loading'"
         variant="primary"
         @click="hostActions.newInstance()"
-        ><Plus :size="15" />New Build</Button
+        ><Plus :size="15" />New build</Button
       >
     </template>
 
@@ -646,7 +677,8 @@ const newLabel = computed(() =>
         context-menu
         class="mar-bc-row"
         :class="stopping.has(b.id) && 'is-stopping'"
-        @open="!stopping.has(b.id) && open(b)"
+        :title="rowHint(b)"
+        @open="rowClick(b)"
       >
         <template #media>
           <Server v-if="whereOf(b) === 'remote'" :size="16" />
@@ -678,24 +710,16 @@ const newLabel = computed(() =>
             class="mar-bc-update"
             :disabled="busy(b) || b.state === 'running'"
             :title="
-              b.state === 'running' ? 'Stop the running instance first.' : 'Migrate to Standalone'
+              b.state === 'running' ? 'Stop the running build first.' : 'Migrate to Standalone'
             "
             @click.stop="migrate(b)"
           >
             <ArrowRightLeft :size="12" aria-hidden="true" />Migrate
           </button>
-          <button
-            v-else-if="b.state === 'update' && !updating.has(b.id)"
-            type="button"
-            class="mar-bc-update"
-            :disabled="busy(b)"
-            title="Update to v0.37.6"
-            @click.stop="update(b)"
+          <!-- An update waiting is a grey note; updating is in the ⋯ menu. -->
+          <span v-else-if="b.state === 'update' && !updating.has(b.id)" class="mar-bc-note"
+            >Update</span
           >
-            <ArrowUpCircle :size="12" aria-hidden="true" />Update<span class="mar-bc-long"
-              >&nbsp;available</span
-            >
-          </button>
           <template v-else-if="b.id === 'cloud' && !proto.signedIn">
             <span class="mar-bc-free">Try free</span>
             <Tooltip
@@ -718,30 +742,6 @@ const newLabel = computed(() =>
               />{{ m1State(b).label }}</span
             ></span
           >
-        </template>
-        <template #actions>
-          <Button
-            v-if="problemOf(b)"
-            variant="secondary"
-            size="md"
-            class="mar-bc-main"
-            @click.stop="fixProblem(b)"
-            >{{ PROBLEM_ACTION[problemOf(b)!] }}</Button
-          >
-          <MarSplitButton
-            v-else-if="!creating.has(b.id) && !stopping.has(b.id)"
-            tone="secondary"
-            :label="busy(b) ? m1State(b).label : launch(b).label"
-            :suffix="busy(b) ? undefined : launchWhere(b)"
-            :disabled="busy(b)"
-            :lines="
-              b.state === 'running' && b.kind === 'local' && !busy(b)
-                ? [{ label: 'Stop', icon: CircleStop, run: () => stop(b) }]
-                : []
-            "
-            menu-label="Window options"
-            @run="launch(b).run()"
-          />
         </template>
       </MarItem>
       <BuildCrashDialog
@@ -1219,6 +1219,15 @@ const newLabel = computed(() =>
   }
 }
 /* An update is about the version, not the state: a small badge after it. */
+:root .proto-ui.proto-ui.proto-ui .mar-bc-note {
+  flex-shrink: 0;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  white-space: pre;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-note::before {
+  content: ' · ';
+}
 :root .proto-ui.proto-ui.proto-ui .mar-bc-update {
   display: inline-flex;
   border: 0;

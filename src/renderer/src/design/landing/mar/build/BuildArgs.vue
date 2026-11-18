@@ -4,14 +4,16 @@ import { Search, X } from 'lucide-vue-next'
 import Input from '../../ui/Input.vue'
 import Select from '../../ui/Select.vue'
 import SettingsRow from '../../ui/SettingsRow.vue'
-import SettingsSection from '../../ui/SettingsSection.vue'
 import Switch from '../../ui/Switch.vue'
 import type { ProtoInstance } from '../../mock'
+import BuildBlock from './BuildBlock.vue'
 import { LAUNCH_MODES, NETWORK, PORT_CONFLICT, SECURITY, settingsOf, stateOf } from './buildFacts'
 import './buildTabs.css'
 
 /**
- * Desktop's Startup Args (views/comfyUISettings/ArgsBuilderPage.vue): the
+ * Desktop's Startup arguments (views/comfyUISettings/ArgsBuilderPage.vue),
+ * read top-down (Comfy-Desktop#2217): each uppercase title on top, every
+ * setting its own full-width row, no side column, no paired fields. The
  * raw arguments on top, editable, then every flag ComfyUI takes, grouped
  * and searchable, set ones pinned under Active. A flag that takes a value
  * shows its field when on; flags that exclude each other are one choice.
@@ -51,7 +53,7 @@ const ARGS: Arg[] = [
   {
     flag: '--cuda-device',
     group: 'GPU & VRAM',
-    help: 'Set the CUDA device this instance uses.',
+    help: 'Set the CUDA device this build uses.',
     value: 'value'
   },
   {
@@ -176,15 +178,15 @@ watch(
 </script>
 
 <template>
-  <div class="mar-bt-settings">
-    <SettingsSection title="Startup Arguments" description="Passed to ComfyUI as it starts.">
+  <div class="mar-bt-folders">
+    <BuildBlock title="Startup arguments" info="Passed to ComfyUI as it starts.">
       <div class="mar-args-raw">
         <span class="mar-bt-label">Raw arguments</span>
         <Input v-model="set.args" mono placeholder="No arguments set" aria-label="Raw arguments" />
         <span class="mar-bt-hint">Edit directly, or toggle individual flags below.</span>
       </div>
       <div class="mar-args-search">
-        <Input v-model="query" placeholder="Search arguments…" aria-label="Search arguments">
+        <Input v-model="query" placeholder="Search arguments" aria-label="Search arguments">
           <template #leading><Search :size="14" class="text-subtle-foreground" /></template>
           <template v-if="query" #trailing>
             <button type="button" aria-label="Clear search" @click.prevent="query = ''">
@@ -228,21 +230,18 @@ watch(
           />
         </div>
       </div>
-    </SettingsSection>
+    </BuildBlock>
 
-    <SettingsSection title="Launch Settings" description="How ComfyUI starts and where it opens.">
+    <BuildBlock title="Launch Settings" info="How ComfyUI starts and where it opens.">
       <SettingsRow label="Launch Mode" layout="inline">
         <Select v-model="set.mode" :options="LAUNCH_MODES" class="w-44" />
       </SettingsRow>
       <SettingsRow label="If Port is Busy" layout="inline">
         <Select v-model="set.portConflict" :options="PORT_CONFLICT" class="w-52" />
       </SettingsRow>
-    </SettingsSection>
+    </BuildBlock>
 
-    <SettingsSection
-      title="ComfyUI-Manager"
-      description="Installs and updates node packs from inside ComfyUI."
-    >
+    <BuildBlock title="ComfyUI-Manager" info="Installs and updates node packs from inside ComfyUI.">
       <SettingsRow
         label="Manager Security Level"
         layout="inline"
@@ -257,6 +256,6 @@ watch(
       >
         <Select v-model="set.network" :options="NETWORK" class="w-52" />
       </SettingsRow>
-    </SettingsSection>
+    </BuildBlock>
   </div>
 </template>
