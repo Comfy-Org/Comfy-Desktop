@@ -55,6 +55,10 @@ function listsFiles(value: unknown): boolean {
   return asTexts(asRecord(value)?.download).length > 0
 }
 
+function familyOf(value: unknown): string | null {
+  return asText(asRecord(value)?.family_id)
+}
+
 function inputsOf(value: unknown): TemplateSearchInput[] {
   return asTexts(value).filter((kind): kind is TemplateSearchInput => INPUTS.has(kind))
 }
@@ -167,15 +171,20 @@ function answerCards(split: JsonRecord, describe: DescribeTemplate): CardLists {
     RUN_LIMIT
   )
   const downloads = Array.isArray(split.download) ? split.download : []
+  const runFamilies = new Set(run.map((candidate) => candidate.family))
+  const openBesideShownPick = (item: unknown): boolean => {
+    const family = familyOf(item)
+    return listsFiles(item) && family !== null && runFamilies.has(family)
+  }
   const download = distinctCandidates(
-    [...open.filter(listsFiles), ...downloads],
+    [...open.filter(openBesideShownPick), ...downloads],
     DOWNLOAD_LIMIT,
     describe,
     { taken: templateIds(run), fromDownloadList: true }
   )
   const shownFamilies = new Set([...run, ...download].map((candidate) => candidate.family))
   const siblings = (Array.isArray(split.more) ? split.more : []).filter((item) => {
-    const family = asText(asRecord(item)?.family_id)
+    const family = familyOf(item)
     return family !== null && shownFamilies.has(family)
   })
   const more = distinctCandidates(siblings, MORE_LIMIT, describe, {
