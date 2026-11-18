@@ -81,6 +81,8 @@ const OTHER_LAUNCH_POLL_MS = 500
 const INSTALL_POLL_MS = 1_000
 const INSTALL_WAIT_MS = 60 * 60_000
 const DOWNLOAD_EVENT_GAP_MS = 250
+const SETTLE_RETRY_MS = 2_000
+const SETTLE_RETRIES = 3
 const REFUSED = 403
 const JSON_TYPE = 'application/json'
 const RUN_UPDATES: ReadonlySet<string> = new Set([
@@ -118,6 +120,7 @@ const installWaits = new Map<string, Promise<void>>()
 const ownRuns = new Map<string, string>()
 const ownFiles = new Map<string, Set<string>>()
 const queueChecks = new Map<string, { again: boolean }>()
+const settleRetries = new Set<ReturnType<typeof setTimeout>>()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -569,29 +572,48 @@ async function sendRun(
   return answer
 }
 
+function settleLater(
+  port: number,
+  promptIds: readonly string[],
+  missing: Omit<RunEnd, 'at'>,
+  tries: number
+): void {
+  const unheard = promptIds.filter(isFollowing)
+  if (unheard.length === 0 || tries >= SETTLE_RETRIES) return
+  const retry = setTimeout(() => {
+    settleRetries.delete(retry)
+    settleUnheardRuns(port, unheard, missing, tries + 1).catch(() => {})
+  }, SETTLE_RETRY_MS)
+  settleRetries.add(retry)
+}
+
 async function settleUnheardRuns(
   port: number,
   promptIds: readonly string[],
-  missing: Omit<RunEnd, 'at'>
+  missing: Omit<RunEnd, 'at'>,
+  tries = 0
 ): Promise<void> {
   const following = promptIds.filter(isFollowing)
   if (following.length === 0) return
   const queue = await forward(port, '/queue').then(parsed, () => null)
   if (!isRecord(queue)) {
     for (const promptId of following) finishHeardRun(promptId)
-    return
+    return settleLater(port, following, missing, tries)
   }
   const { running, pending } = queueViewOf(queue, () => true)
   const queued = new Set([...running, ...pending].map((run) => run.id))
+  const unread: string[] = []
   for (const promptId of following) {
     if (queued.has(promptId) || !isFollowing(promptId)) continue
     const history = await forward(port, `/history/${promptId}`).then(parsed, () => null)
     if (!isRecord(history)) {
       finishHeardRun(promptId)
+      unread.push(promptId)
       continue
     }
     settleRun(promptId, runEndFromHistory(history[promptId]), { ...missing, at: Date.now() })
   }
+  settleLater(port, unread, missing, tries)
 }
 
 function checkUnheardRuns(buildId: string): void {
@@ -806,6 +828,8 @@ export function _resetForTest(): void {
   launches.clear()
   installWaits.clear()
   queueChecks.clear()
+  for (const retry of settleRetries) clearTimeout(retry)
+  settleRetries.clear()
   _resetLocalAppEventsForTest()
   ownRuns.clear()
   ownFiles.clear()

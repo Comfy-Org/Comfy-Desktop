@@ -140,6 +140,7 @@ class FakeComfy {
     outputs: { save: { images: [CUTOUT] } }
   }
   brokenHistory: 'body' | 'status' | null = null
+  brokenQueueReads = 0
 
   answer = async (input: string | URL | Request, init: RequestInit = {}): Promise<Response> => {
     const url = new URL(String(input))
@@ -153,6 +154,10 @@ class FakeComfy {
         headers: { 'content-type': 'application/json' }
       })
     if (![PORT, LAB_PORT].includes(Number(url.port))) throw new TypeError('fetch failed')
+    if (url.pathname === '/queue' && init.method !== 'POST' && this.brokenQueueReads > 0) {
+      this.brokenQueueReads -= 1
+      return json({ error: 'busy' }, 500)
+    }
     if (url.pathname === '/queue' && init.method !== 'POST') return json(this.queue)
     if (url.pathname === '/prompt') return json(this.promptAnswer.body, this.promptAnswer.status)
     if (url.pathname.startsWith('/history/') && this.brokenHistory === 'status') {
@@ -1578,6 +1583,81 @@ describe('run_finished, for an app run on this computer', () => {
       ])
     )
     expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('run_seconds')
+  })
+
+  describe('when a read fails after the page takes a run out of the queue', () => {
+    const queueReads = (): Asked[] =>
+      comfy.calls('/queue').filter((asked) => asked.method === 'GET')
+
+    async function takeOutOfQueue(): Promise<void> {
+      comfy.historyEntry = null
+      await runFromApp()
+      expect((await post('/queue', { delete: [RUN] })).status).toBe(200)
+      await vi.advanceTimersByTimeAsync(0)
+    }
+
+    it.each([
+      [
+        'queue',
+        (): void => {
+          comfy.brokenQueueReads = 1
+        }
+      ],
+      [
+        'history',
+        (): void => {
+          comfy.brokenHistory = 'status'
+        }
+      ]
+    ] as const)(
+      'reports the run as cancelled when the %s read works on a later try',
+      async (_read, breakRead) => {
+        breakRead()
+        await takeOutOfQueue()
+        expect(captured(RUN_FINISHED)).toEqual([])
+        comfy.brokenHistory = null
+
+        await vi.advanceTimersByTimeAsync(2_000)
+
+        expect(captured(RUN_FINISHED)).toEqual([
+          expect.objectContaining({ app_id: APP, outcome: 'cancelled' })
+        ])
+      }
+    )
+
+    it('tries a few more times, then stops without guessing an outcome', async () => {
+      comfy.brokenQueueReads = Number.POSITIVE_INFINITY
+      await takeOutOfQueue()
+
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(queueReads()).toHaveLength(4)
+      expect(captured(RUN_FINISHED)).toEqual([])
+    })
+
+    it('stops trying once Desktop no longer follows the run', async () => {
+      comfy.brokenQueueReads = Number.POSITIVE_INFINITY
+      await takeOutOfQueue()
+      mocks.sessions.delete(STUDIO)
+      sessionLifecycleEvents.emit('changed')
+
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(queueReads()).toHaveLength(1)
+      expect(captured(RUN_FINISHED)).toEqual([
+        expect.objectContaining({ outcome: 'failed', error_class: 'comfyui_exited' })
+      ])
+    })
+
+    it('stops trying once local apps are reset', async () => {
+      comfy.brokenQueueReads = Number.POSITIVE_INFINITY
+      await takeOutOfQueue()
+      _resetForTest()
+
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(queueReads()).toHaveLength(1)
+    })
   })
 
   describe('when the queue changes, as when another ComfyUI client clears pending work', () => {
