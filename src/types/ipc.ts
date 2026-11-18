@@ -246,7 +246,6 @@ export type TemplateSearchAvailability =
   | { kind: 'starting' }
   | { kind: 'no_local_build' }
   | { kind: 'waiting_for_build' }
-  | { kind: 'needs_download'; bytes: number }
   | { kind: 'downloading'; received: number; total: number }
   | { kind: 'unavailable'; reason: TemplateSearchUnavailableReason }
 
