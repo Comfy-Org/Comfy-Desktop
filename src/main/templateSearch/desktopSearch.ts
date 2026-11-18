@@ -1,7 +1,11 @@
 import { list as listInstallations, type InstallationRecord } from '../installations'
 import { modelBytesOnDisk, resolveDownloadContext } from '../lib/modelDownloadPaths'
 import type { TerminalEnv } from '../types/sources'
-import type { TemplateSearchResponse, TemplateSearchResult } from '../../types/ipc'
+import type {
+  TemplateSearchCandidate,
+  TemplateSearchResponse,
+  TemplateSearchResult
+} from '../../types/ipc'
 import { readBuildTemplates, type BuildTemplates } from './buildTemplates'
 import { buildRuntime } from './buildRuntime'
 import { decideRequest, parseDecision } from './decisionApi'
@@ -34,13 +38,15 @@ async function withDownloadSizes(
   result: TemplateSearchResult,
   known: BuildTemplates
 ): Promise<TemplateSearchResult> {
-  const download = await Promise.all(
-    result.download.map(async (candidate) => ({
-      ...candidate,
-      downloadBytes: await known.downloadBytes(candidate.templateId)
-    }))
-  )
-  return { ...result, download }
+  const sized = (candidates: TemplateSearchCandidate[]) =>
+    Promise.all(
+      candidates.map(async (candidate) =>
+        candidate.needsDownload
+          ? { ...candidate, downloadBytes: await known.downloadBytes(candidate.templateId) }
+          : candidate
+      )
+    )
+  return { ...result, download: await sized(result.download), alsoTry: await sized(result.alsoTry) }
 }
 
 export function createDesktopSearch({
@@ -84,7 +90,10 @@ export function createDesktopSearch({
     const result = parseDecision(decision.body, (id) => known?.labels.get(id) ?? null)
     if (!result) return { kind: 'failed' }
     const sized = await withDownloadSizes(result, known ?? NOTHING_KNOWN)
-    return { kind: 'result', result: { ...sized, partnerSwitch: decision.partnerSwitch } }
+    return {
+      kind: 'result',
+      result: { ...sized, partnerSwitch: decision.partnerSwitch, partnersShown: !partnersOff }
+    }
   }
 
   return {

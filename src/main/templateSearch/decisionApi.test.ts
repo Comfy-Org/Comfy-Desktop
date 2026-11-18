@@ -159,7 +159,7 @@ describe('parseDecision', () => {
   })
 
   it('still marks an api_ template as partner when the build index does not say', () => {
-    const describe = (id: string) => ({ title: id, thumbnailUrl: null, partner: false, size: null })
+    const describe = (id: string) => ({ title: id, thumbnailUrl: null, partner: false })
     const body = decision({
       split: { run: [candidate('as_given', 'api_partner_template')], download: [] }
     })
@@ -178,8 +178,7 @@ describe('parseDecision', () => {
     const describe = (id: string) => ({
       title: id,
       thumbnailUrl: null,
-      partner: id === 'poster_template',
-      size: null
+      partner: id === 'poster_template'
     })
     const [poster, logo] = parseDecision(decision(), describe)!.run
     expect(poster).toMatchObject({ templateId: 'poster_template', partner: true })
@@ -192,8 +191,7 @@ describe('parseDecision', () => {
         ? {
             title: 'Bake sale poster',
             thumbnailUrl: 'https://thumbs.example.test/poster.webp',
-            partner: false,
-            size: null
+            partner: false
           }
         : null
     const [poster, logo] = parseDecision(decision(), describe)!.run
@@ -295,6 +293,25 @@ describe('parseDecision', () => {
       'api_poster',
       'api_logo',
       'open_logo'
+    ])
+  })
+
+  it('brings up only an open template of the same family, and only beside a partner pick', () => {
+    const order = (...run: object[]) =>
+      parseDecision(decision({ split: { run, download: [] } }))?.run.map((c) => c.templateId)
+    const noFamily = (templateId: string) => ({ ...pick(templateId, ''), family_id: null })
+
+    expect(order(pick('api_a', 'x'), pick('b', 'y'), pick('api_c', 'x'), pick('d', 'x'))).toEqual([
+      'api_a',
+      'd',
+      'b'
+    ])
+    expect(order(pick('e', 'z'), pick('f', 'w'), pick('g', 'z'))).toEqual(['e', 'f', 'g'])
+    expect(order(noFamily('api_n'), pick('k', 'y'), noFamily('m'))).toEqual(['api_n', 'k', 'm'])
+    expect(order(pick('a', 'p'), pick('b', 'q'), pick('api_c', 'r'), pick('d', 'r'))).toEqual([
+      'a',
+      'b',
+      'api_c'
     ])
   })
 

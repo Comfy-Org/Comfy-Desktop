@@ -112,14 +112,12 @@ describe('readBuildTemplates', () => {
     expect(labels.get('poster')).toEqual({
       title: 'Bake sale poster',
       thumbnailUrl: expect.stringMatching(/\/poster-1\.png$/),
-      partner: false,
-      size: null
+      partner: false
     })
     expect(labels.get('song')).toEqual({
       title: 'A song',
       thumbnailUrl: null,
-      partner: false,
-      size: null
+      partner: false
     })
     expect(labels.get('untitled')?.title).toBe('untitled')
   })

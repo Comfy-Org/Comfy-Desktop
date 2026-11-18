@@ -88,19 +88,20 @@ export async function readBuildTemplates(
 ): Promise<BuildTemplates> {
   const templateDirs = TEMPLATE_PACKAGE_DIRS.map((pkg) => path.join(sitePackages, pkg, 'templates'))
   const labels = new Map<string, TemplateLabel>()
+  const sizes = new Map<string, number>()
   const installed: string[] = []
   for (const template of indexedTemplates(await firstIndex(templateDirs))) {
     labels.set(template.name, {
       title: template.title,
       thumbnailUrl: thumbnailUrlFor(template.name, template.mediaSubtype),
-      partner: template.partner,
-      size: template.size
+      partner: template.partner
     })
+    if (template.size !== null) sizes.set(template.name, template.size)
     const json = await templateJson(templateDirs, template.name)
     if (json && (await hasEveryModel(json, modelBytes))) installed.push(template.name)
   }
   async function downloadBytes(templateId: string): Promise<number | null> {
-    const size = labels.get(templateId)?.size ?? null
+    const size = sizes.get(templateId) ?? null
     const json = size === null ? null : await templateJson(templateDirs, templateId)
     if (size === null || !json) return null
     return Math.max(0, size - (await bytesOnDisk(json, modelBytes)))

@@ -79,12 +79,11 @@ function setup(
           {
             title: 'Bake sale poster',
             thumbnailUrl: 'https://t/p.webp',
-            partner: false,
-            size: null
+            partner: false
           }
         ]
       ]),
-      downloadBytes: async (id) => (id === 'mural_template' ? 18_000_000_000 : null)
+      downloadBytes: async () => 18_000_000_000
     })
   )
   const search = createDesktopSearch({
@@ -167,12 +166,45 @@ describe('createDesktopSearch', () => {
     })
   })
 
+  it('gives an Also try card that needs a download its size too, and none to one that does not', async () => {
+    const offer = (templateId: string, masked?: { code: string; detail: string }) => ({
+      ...ANSWER.split.run[0]!,
+      option_id: `${templateId}:as_given`,
+      family_id: templateId,
+      variant: { template_id: templateId, title: null },
+      ...(masked ? { masked } : {})
+    })
+    const body = {
+      ...ANSWER,
+      options: [
+        offer('mural_template', {
+          code: 'not_installed',
+          detail: 'mural_template,mural.safetensors'
+        }),
+        offer('banner_template')
+      ]
+    }
+    const { search } = setup({ kind: 'answer', body, partnerSwitch: false })
+
+    expect(await search.search('a mural', 'local-1')).toMatchObject({
+      result: {
+        alsoTry: [
+          { templateId: 'mural_template', needsDownload: true, downloadBytes: 18_000_000_000 },
+          { templateId: 'banner_template', needsDownload: false, downloadBytes: null }
+        ]
+      }
+    })
+  })
+
   it('asks a search that can leave partner templates out to do so while the setting is off', async () => {
     const { search, sent } = setup(undefined, true, { partnersOn: false, offersSwitch: true })
     const response = await search.search('a poster', 'local-1')
 
     expect(sent[0]).toMatchObject({ partner_on: false })
-    expect(response).toMatchObject({ kind: 'result', result: { partnerSwitch: true } })
+    expect(response).toMatchObject({
+      kind: 'result',
+      result: { partnerSwitch: true, partnersShown: false }
+    })
   })
 
   it('never asks a search that cannot leave partner templates out to do so', async () => {
@@ -190,7 +222,10 @@ describe('createDesktopSearch', () => {
 
     expect(sent).toHaveLength(2)
     for (const body of sent) expect(body).not.toHaveProperty('partner_on')
-    expect(response).toMatchObject({ kind: 'result', result: { partnerSwitch: true } })
+    expect(response).toMatchObject({
+      kind: 'result',
+      result: { partnerSwitch: true, partnersShown: true }
+    })
   })
 
   it.each([

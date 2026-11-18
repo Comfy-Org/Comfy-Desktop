@@ -66,7 +66,8 @@ const RESULT: TemplateSearchResult = {
   run: [],
   download: [],
   alsoTry: [],
-  partnerSwitch: false
+  partnerSwitch: false,
+  partnersShown: true
 }
 const LOCAL = { id: 'local-1', sourceId: 'standalone' }
 const CONSOLE = { id: 'console-1', sourceId: 'standalone', launchMode: 'console' }

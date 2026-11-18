@@ -24,7 +24,6 @@ export interface TemplateLabel {
   title: string
   thumbnailUrl: string | null
   partner: boolean
-  size: number | null
 }
 
 export type DescribeTemplate = (templateId: string) => TemplateLabel | null
@@ -178,7 +177,8 @@ export function parseDecision(
     run,
     download,
     alsoTry,
-    partnerSwitch: false
+    partnerSwitch: false,
+    partnersShown: true
   }
 }
 
