@@ -234,6 +234,7 @@ export interface TemplateSearchResult {
   reply: string | null
   run: TemplateSearchCandidate[]
   download: TemplateSearchCandidate[]
+  more: TemplateSearchCandidate[]
   alsoTry: TemplateSearchCandidate[]
   partnerSwitch: boolean
   partnersShown: boolean

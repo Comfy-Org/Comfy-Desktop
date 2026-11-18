@@ -9,7 +9,9 @@ import { asRecord, type JsonRecord } from './json'
 export const RUN_LIMIT = 3
 export const DOWNLOAD_LIMIT = 2
 export const ALSO_TRY_LIMIT = 3
+export const MORE_LIMIT = 12
 const REQUESTED_CANDIDATES = 8
+const REQUESTED_SIBLINGS = 6
 const PARTNER_PREFIX = 'api_'
 const OUTCOMES: readonly TemplateSearchOutcome[] = [
   'template',
@@ -107,13 +109,18 @@ function distinctCandidates(
   {
     taken = new Set<string>(),
     fromDownloadList = false
-  }: { taken?: ReadonlySet<string>; fromDownloadList?: boolean } = {}
+  }: {
+    taken?: ReadonlySet<string>
+    fromDownloadList?: boolean | ((item: unknown) => boolean)
+  } = {}
 ): TemplateSearchCandidate[] {
   const seen = new Set(taken)
   const candidates: TemplateSearchCandidate[] = []
   for (const item of Array.isArray(value) ? value : []) {
     if (candidates.length === limit) break
-    const candidate = candidateFrom(item, fromDownloadList, describe)
+    const listed =
+      typeof fromDownloadList === 'function' ? fromDownloadList(item) : fromDownloadList
+    const candidate = candidateFrom(item, listed, describe)
     if (!candidate || seen.has(candidate.templateId)) continue
     seen.add(candidate.templateId)
     candidates.push(candidate)
@@ -169,15 +176,20 @@ export function parseDecision(
       fromDownloadList: true
     }
   )
+  const more = distinctCandidates(split.more, MORE_LIMIT, describe, {
+    taken: new Set([...run, ...download].map((candidate) => candidate.templateId)),
+    fromDownloadList: needsFiles
+  })
   const options = Array.isArray(decision?.options) ? decision.options : []
   const alsoTry = distinctCandidates(options.filter(isOfferableOption), ALSO_TRY_LIMIT, describe, {
-    taken: new Set([...run, ...download].map((candidate) => candidate.templateId))
+    taken: new Set([...run, ...download, ...more].map((candidate) => candidate.templateId))
   })
   return {
     outcome: outcomeOf(outcome.kind),
     reply: asText(outcome.reply),
     run,
     download,
+    more,
     alsoTry,
     partnerSwitch: false,
     partnersShown: true
@@ -208,6 +220,7 @@ export function decideRequest(
     text: query,
     run_n: REQUESTED_CANDIDATES,
     download_m: REQUESTED_CANDIDATES,
+    siblings_n: REQUESTED_SIBLINGS,
     outcomes: OUTCOMES,
     ...(installed ? { installed } : {}),
     ...(partnersOff ? { partner_on: false } : {})

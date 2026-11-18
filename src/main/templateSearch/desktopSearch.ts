@@ -46,7 +46,12 @@ async function withDownloadSizes(
           : candidate
       )
     )
-  return { ...result, download: await sized(result.download), alsoTry: await sized(result.alsoTry) }
+  return {
+    ...result,
+    download: await sized(result.download),
+    more: await sized(result.more),
+    alsoTry: await sized(result.alsoTry)
+  }
 }
 
 export function createDesktopSearch({
