@@ -159,17 +159,52 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     )
   })
 
-  it('shares one left edge for folder icons, paths and Add Directory', async () => {
+  it('shares one left edge for folder icons and one for paths', async () => {
     const root = await mountStorage(width)
-    const icons = rects(root, '.storage-item-icon')
-    const paths = rects(root, '.models-dir-name, .storage-dir-name')
-    const addIcon = root.querySelector('.models-dir-add svg')!.getBoundingClientRect()
-    const addLabel = root.querySelector('.models-dir-add span')!.getBoundingClientRect()
-    expectSame([...icons.map((r) => r.left), addIcon.left], 'icons share a left edge')
     expectSame(
-      [...paths.map((r) => r.left), addLabel.left],
-      'paths and Add Directory share a left edge'
+      rects(root, '.storage-item-icon').map((r) => r.left),
+      'icons share a left edge'
     )
+    expectSame(
+      rects(root, '.models-dir-name, .storage-dir-name').map((r) => r.left),
+      'paths share a left edge'
+    )
+  })
+
+  it('gives every row the same trailing shape: badges, then one 28px more slot', async () => {
+    const root = await mountStorage(width)
+    const rows = [...root.querySelectorAll<HTMLElement>('.models-dir-row, .storage-dir-row')]
+    expect(rows.length).toBeGreaterThanOrEqual(4)
+    for (const row of rows) {
+      const slot = row.querySelector('.models-dir-actions, .storage-dir-actions')!
+      expect(Math.round(slot.getBoundingClientRect().width), 'one fixed action slot').toBe(28)
+      const buttons = slot.querySelectorAll('button')
+      expect(buttons.length, 'at most the more button').toBeLessThanOrEqual(1)
+      for (const button of buttons) {
+        expect(button.getAttribute('aria-label'), 'the slot holds only more').toBe('More actions')
+      }
+      const tags = row.querySelector('.models-dir-tags, .storage-dir-tags')
+      if (!tags) continue
+      expect(
+        Math.round(slot.getBoundingClientRect().left - tags.getBoundingClientRect().right),
+        'badges sit right before the slot'
+      ).toBe(10)
+    }
+  })
+
+  it('puts Add Directory as a + beside the Models title, not inside the box', async () => {
+    const root = await mountStorage(width)
+    const models = root.querySelector<HTMLElement>('.gs-micro-section')!
+    const title = models.querySelector('.gs-micro-title > span')!.getBoundingClientRect()
+    const add = models.querySelector('.gs-micro-title .storage-add-dir')!.getBoundingClientRect()
+    const box = models.querySelector('.models-dir-list')!.getBoundingClientRect()
+    expect(add.bottom, 'the + sits above the box').toBeLessThanOrEqual(box.top)
+    expect(add.left, 'the + follows the title').toBeGreaterThan(title.right)
+    expect(add.right, 'the + stays on the title side').toBeLessThan(box.left + box.width / 2)
+    expect(
+      Math.abs(add.top + add.height / 2 - (title.top + title.height / 2)),
+      'the + is centred on the title'
+    ).toBeLessThanOrEqual(1)
   })
 
   it('keeps icons and badges on the first line when a path wraps', async () => {
@@ -248,7 +283,7 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     )
   })
 
-  it('spaces startup settings like Desktop Settings fields', async () => {
+  it('keeps each label close to its own field and clear of the field above', async () => {
     const root = await mountStartupArgs(width)
     const fields = [...root.querySelectorAll<HTMLElement>('.settings-v2-field:not(.is-env-vars)')]
     const labelGaps = fields.map((el) => {
@@ -269,7 +304,7 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     expectSame(labelGaps, 'label to field gap is even')
     expectSame(rowGaps, 'field to next label gap is even')
     expect(Math.round(labelGaps[0]!), 'label sits 4px above its field').toBe(4)
-    expect(Math.round(rowGaps[0]!), 'fields sit 4px apart').toBe(4)
+    expect(Math.round(rowGaps[0]!), 'fields sit 16px apart').toBe(16)
     for (const control of root.querySelectorAll<HTMLElement>(CONTROL)) {
       expect(Math.round(control.getBoundingClientRect().height), 'field height').toBe(40)
       expect(getComputedStyle(control).borderRadius, 'field radius').toBe('8px')
@@ -295,7 +330,7 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     const port = root.querySelector('[data-field-id="portConflict"]')!.getBoundingClientRect()
     const note = env.querySelector('.settings-v2-env-notice')!.getBoundingClientRect()
     const label = env.querySelector('.settings-v2-field-label')!.getBoundingClientRect()
-    expect(Math.round(env.getBoundingClientRect().top - port.bottom), 'env block gap').toBe(10)
+    expect(Math.round(env.getBoundingClientRect().top - port.bottom), 'env block gap').toBe(16)
     expect(note.top, 'note stays below the field above').toBeGreaterThanOrEqual(
       env.getBoundingClientRect().top
     )

@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { AlertTriangle } from '@lucide/vue'
+import { AlertTriangle, Plus } from '@lucide/vue'
 import { useModal } from '../../composables/useModal'
 import ModelsDirList from '../../comfyTitlePopup/globalSettings/ModelsDirList.vue'
 import StorageDirRow from './StorageDirRow.vue'
@@ -350,6 +350,19 @@ function handleRevealPath(path: string): void {
       :title="t('settings.modelStorage')"
       :tooltip="t('tooltips.instanceModels')"
     >
+      <template #tool>
+        <Button
+          type="button"
+          variant="muted-textonly"
+          size="icon-sm"
+          class="storage-add-dir rounded-md"
+          :aria-label="t('models.addInstanceDir')"
+          :title="t('models.addInstanceDir')"
+          @click="handleAddModelDir"
+        >
+          <Plus :size="14" aria-hidden="true" />
+        </Button>
+      </template>
       <template v-if="useSharedModelsField" #actions>
         <label
           class="storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 [&>span]:truncate [&>.bt-switch]:ml-1.5"
@@ -365,26 +378,13 @@ function handleRevealPath(path: string): void {
 
       <ModelsDirList
         :dirs="modelDirRows"
-        :add-label="t('models.addInstanceDir')"
         @change="handleChangeModelDir"
         @remove="handleRemoveModelDir"
         @make-primary="handleMakeModelPrimary"
         @open="handleOpenModelDir"
         @details="handleModelDetails"
-        @add="handleAddModelDir"
-      >
-        <template v-if="useSharedModelsEnabled" #footer>
-          <Button
-            type="button"
-            variant="textonly"
-            size="unset"
-            class="storage-manage-link static inline-block min-w-0 gap-0 rounded-none border-none bg-transparent p-0 text-left text-[12px] leading-[1.5] font-normal whitespace-normal text-text-muted underline underline-offset-2 appearance-auto hover:bg-transparent hover:text-neutral-100 focus-visible:bg-transparent focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0"
-            @click="handleManageSharedDirs"
-          >
-            {{ t('comfyUISettings.manageSharedDirs') }}
-          </Button>
-        </template>
-      </ModelsDirList>
+        @manage="handleManageSharedDirs"
+      />
     </GlobalSettingsMicroSection>
 
     <GlobalSettingsMicroSection :title="t('settings.inputStorage')">

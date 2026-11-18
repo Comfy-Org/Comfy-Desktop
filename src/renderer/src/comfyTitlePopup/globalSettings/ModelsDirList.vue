@@ -4,15 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
-import {
-  ChevronRight,
-  FileText,
-  Folder,
-  FolderLock,
-  FolderOpen,
-  MoreHorizontal,
-  Plus
-} from '@lucide/vue'
+import { FileText, Folder, FolderLock, MoreHorizontal } from '@lucide/vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 import StorageTag from '../../components/StorageTag.vue'
@@ -29,7 +21,6 @@ interface ModelsDir {
 
 interface Props {
   dirs: ModelsDir[]
-  addLabel?: string
   hideSharedTag?: boolean
 }
 
@@ -41,11 +32,11 @@ const emit = defineEmits<{
   'make-primary': [index: number]
   open: [index: number]
   details: [index: number]
-  add: []
+  manage: []
 }>()
 
 const { t } = useI18n()
-const actionClass = 'models-dir-action shrink-0'
+const actionClass = 'models-dir-action size-7 shrink-0 rounded-md'
 const nameClass =
   'models-dir-name static block min-w-0 max-w-full whitespace-normal [overflow-wrap:anywhere] gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono text-[12.5px] leading-[18px] font-normal text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0'
 const openMenuIndex = ref<number | null>(null)
@@ -58,8 +49,12 @@ function canRemove(dir: ModelsDir): boolean {
   return dir.kind !== 'extra' && !dir.isPrimary && !dir.locked && !dir.readonly
 }
 
+function canChange(dir: ModelsDir): boolean {
+  return dir.kind !== 'extra' && !dir.locked && !dir.readonly
+}
+
 function hasMenuActions(dir: ModelsDir): boolean {
-  return canPromote(dir) || canRemove(dir)
+  return dir.kind === 'extra' || dir.shared === true || canChange(dir) || canPromote(dir)
 }
 
 function closeMenu(): void {
@@ -76,6 +71,16 @@ onBeforeUnmount(() => window.removeEventListener('blur', closeMenu))
 function handleChange(index: number): void {
   closeMenu()
   emit('change', index)
+}
+
+function handleDetails(index: number): void {
+  closeMenu()
+  emit('details', index)
+}
+
+function handleManage(): void {
+  closeMenu()
+  emit('manage')
 }
 
 function handleRemove(index: number): void {
@@ -114,6 +119,7 @@ const rows = computed(() =>
     locked: dir.locked === true,
     isExtra: dir.kind === 'extra',
     showMenu: hasMenuActions(dir),
+    canChange: canChange(dir),
     canPromote: canPromote(dir),
     canRemove: canRemove(dir)
   }))
@@ -172,33 +178,7 @@ const rows = computed(() =>
           />
         </StorageTag>
       </span>
-      <div
-        class="models-dir-actions inline-flex h-8 min-w-18 shrink-0 items-center justify-end gap-0.5"
-      >
-        <Button
-          v-if="row.isExtra"
-          type="button"
-          variant="textonly"
-          size="icon"
-          :class="actionClass"
-          :aria-label="t('comfyUISettings.viewCustomPathDetails')"
-          :title="t('comfyUISettings.viewCustomPathDetails')"
-          @click.stop="emit('details', row.index)"
-        >
-          <ChevronRight :size="14" aria-hidden="true" />
-        </Button>
-        <Button
-          v-if="!row.locked && !row.isExtra && !row.readonly"
-          type="button"
-          variant="textonly"
-          size="icon"
-          :class="actionClass"
-          :aria-label="t('common.browse')"
-          :title="t('common.browse')"
-          @click.stop="handleChange(row.index)"
-        >
-          <FolderOpen :size="14" aria-hidden="true" />
-        </Button>
+      <div class="models-dir-actions inline-flex h-8 w-7 shrink-0 items-center justify-end">
         <div v-if="row.showMenu" class="models-dir-menu-wrap">
           <Menu
             :open="openMenuIndex === row.index"
@@ -212,7 +192,7 @@ const rows = computed(() =>
               <Button
                 type="button"
                 variant="textonly"
-                size="icon"
+                size="unset"
                 :class="actionClass"
                 :aria-label="t('models.moreActions')"
                 @click.stop
@@ -220,8 +200,17 @@ const rows = computed(() =>
                 <MoreHorizontal :size="14" aria-hidden="true" />
               </Button>
             </template>
+            <MenuItem v-if="row.isExtra" @select="handleDetails(row.index)">
+              {{ t('comfyUISettings.viewCustomPathDetails') }}
+            </MenuItem>
             <MenuItem v-if="row.canPromote" @select="handleMakePrimary(row.index)">
               {{ t('models.makePrimary') }}
+            </MenuItem>
+            <MenuItem v-if="row.canChange" @select="handleChange(row.index)">
+              {{ t('models.changeDir') }}
+            </MenuItem>
+            <MenuItem v-if="row.shared" @select="handleManage()">
+              {{ t('comfyUISettings.manageSharedDirs') }}
             </MenuItem>
             <MenuItem
               v-if="row.canRemove"
@@ -233,20 +222,6 @@ const rows = computed(() =>
           </Menu>
         </div>
       </div>
-    </div>
-
-    <div class="models-dir-foot flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 px-1 pt-1">
-      <Button
-        type="button"
-        variant="muted-textonly"
-        size="md"
-        class="models-dir-add gap-2.5 rounded-[10px] px-2"
-        @click="emit('add')"
-      >
-        <Plus :size="14" aria-hidden="true" />
-        <span>{{ props.addLabel ?? t('models.addDir') }}</span>
-      </Button>
-      <slot name="footer" />
     </div>
   </div>
 </template>

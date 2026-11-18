@@ -278,7 +278,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 
       <div
         class="settings-v2-section-body"
-        :class="isStackedTitled(section) ? 'flex min-w-0 flex-col gap-1' : 'contents'"
+        :class="isStackedTitled(section) ? 'flex min-w-0 flex-col gap-4' : 'contents'"
       >
         <div
           v-for="(item, i) in section.items"
@@ -327,7 +327,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
           :class="[
             row.length > 1
               ? props.stacked
-                ? 'is-paired flex flex-wrap gap-x-4 gap-y-1'
+                ? 'is-paired flex flex-wrap gap-4'
                 : 'is-paired flex flex-wrap gap-4'
               : 'contents',
             { '[&:last-child>.settings-v2-field]:border-b-0': readonly }
@@ -351,7 +351,6 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                   isNestedField(field),
                 'pl-3.5': isNestedField(field) && !readonly,
                 'is-env-vars': field.editType === 'env-vars',
-                'mt-1.5': field.editType === 'env-vars' && isStackedTitled(section),
                 'is-channel-picker': field.editType === 'channel-cards'
               }
             ]"

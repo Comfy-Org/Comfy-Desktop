@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { Folder, FolderOpen, RotateCcw } from '@lucide/vue'
+import Menu from '@comfyorg/design-system/menu/Menu'
+import MenuItem from '@comfyorg/design-system/menu/MenuItem'
+import { Folder, FolderOpen, MoreHorizontal, RotateCcw } from '@lucide/vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 import StorageTag from '../../components/StorageTag.vue'
 
@@ -54,6 +56,16 @@ const rowClass = computed(() =>
 const slotClass = computed(() =>
   props.listAligned ? 'flex h-8 shrink-0 items-center' : 'contents'
 )
+const menuOpen = ref(false)
+const hasMenuActions = computed(() => props.browsable || props.manageable || props.resettable)
+
+function selectFromMenu(action: 'browse' | 'reset' | 'manage'): void {
+  menuOpen.value = false
+  if (action === 'browse') emit('browse')
+  else if (action === 'reset') emit('reset')
+  else emit('manage')
+}
+
 const actionClass =
   'storage-dir-action static inline-flex size-7 items-center justify-center gap-0 rounded-md border border-solid border-transparent bg-transparent p-0 font-normal leading-[1.5] text-text-muted appearance-auto transition-[background-color,color] duration-100 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] hover:text-neutral-100 focus-visible:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0'
 </script>
@@ -97,9 +109,40 @@ const actionClass =
       <StorageTag v-if="tag" class="storage-dir-tag">{{ tag }}</StorageTag>
     </span>
     <div
-      class="storage-dir-actions inline-flex shrink-0 items-center gap-0.5"
-      :class="{ 'h-8 min-w-18 justify-end': listAligned }"
+      v-if="listAligned"
+      class="storage-dir-actions inline-flex h-8 w-7 shrink-0 items-center justify-end"
     >
+      <Menu
+        v-if="hasMenuActions"
+        :open="menuOpen"
+        :modal="false"
+        align="end"
+        class="storage-dir-menu"
+        @update:open="(isOpen) => (menuOpen = isOpen)"
+      >
+        <template #trigger>
+          <Button
+            type="button"
+            variant="textonly"
+            size="unset"
+            :class="actionClass"
+            :aria-label="t('models.moreActions')"
+          >
+            <MoreHorizontal :size="14" aria-hidden="true" />
+          </Button>
+        </template>
+        <MenuItem v-if="browsable" @select="selectFromMenu('browse')">
+          {{ t('models.changeDir') }}
+        </MenuItem>
+        <MenuItem v-if="resettable" @select="selectFromMenu('reset')">
+          {{ t('common.resetDefault') }}
+        </MenuItem>
+        <MenuItem v-if="manageable" @select="selectFromMenu('manage')">
+          {{ t('comfyUISettings.manageSharedDirs') }}
+        </MenuItem>
+      </Menu>
+    </div>
+    <div v-else class="storage-dir-actions inline-flex shrink-0 items-center gap-0.5">
       <Button
         v-if="browsable"
         type="button"
@@ -111,18 +154,6 @@ const actionClass =
         @click="emit('browse')"
       >
         <FolderOpen :size="14" aria-hidden="true" />
-      </Button>
-      <Button
-        v-if="manageable"
-        type="button"
-        variant="textonly"
-        size="unset"
-        :class="[actionClass, 'w-auto px-2.5 text-[13px]']"
-        :aria-label="t('comfyUISettings.manageSharedDirs')"
-        :title="t('comfyUISettings.manageSharedDirs')"
-        @click="emit('manage')"
-      >
-        {{ t('comfyUISettings.manageShort') }}
       </Button>
       <Button
         v-if="resettable"

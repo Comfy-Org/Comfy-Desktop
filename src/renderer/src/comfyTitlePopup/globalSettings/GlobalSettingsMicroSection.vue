@@ -14,6 +14,9 @@ defineProps<{
     >
       <span>{{ title }}</span>
       <InfoTooltip v-if="tooltip" :text="tooltip" />
+      <div v-if="$slots.tool" class="gs-micro-tool ml-1 inline-flex items-center">
+        <slot name="tool" />
+      </div>
       <div
         v-if="$slots.actions"
         class="gs-micro-actions ml-auto inline-flex items-center gap-2 text-[12px] font-normal tracking-normal text-text-muted normal-case"
