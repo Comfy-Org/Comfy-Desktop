@@ -323,7 +323,7 @@ describe('embeddedSession', () => {
 
   it('does not switch for a Remote Connection on a loopback URL', async () => {
     const { event } = view('http://localhost:8188', { sourceCategory: 'remote' })
-    const switchWorkspace = vi.fn(async () => undefined)
+    const switchWorkspace = vi.fn(async () => ({ status: { signedIn: true }, reached: true }))
 
     await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual({
       status: 'disabled'
