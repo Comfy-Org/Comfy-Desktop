@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   Download,
+  ExternalLink,
   File,
   FolderSearch,
   Images,
@@ -41,6 +42,7 @@ export interface OutputDetailItem {
   savedIn?: string | null
   inCloud?: boolean
   workflow?: boolean
+  mainAction?: 'download' | 'open' | null
   loadModel?: () => Promise<Uint8Array | null>
 }
 
@@ -57,6 +59,7 @@ const index = defineModel<number>('index', { required: true })
 const emit = defineEmits<{
   close: []
   download: [index: number]
+  open: [index: number]
   'show-in-folder': [index: number]
   'open-workflow': [index: number]
   'view-in-assets': [index: number]
@@ -328,6 +331,19 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
       <div class="mt-auto flex flex-col gap-2">
         <Button
+          v-if="item.mainAction === 'open'"
+          type="button"
+          variant="inverted"
+          size="md"
+          class="gap-1.5 text-[13px]/5"
+          data-testid="output-detail-open"
+          @click="emit('open', index)"
+        >
+          <ExternalLink :size="15" aria-hidden="true" />
+          {{ t('assets.open') }}
+        </Button>
+        <Button
+          v-else-if="item.mainAction !== null"
           type="button"
           variant="inverted"
           size="md"
@@ -353,7 +369,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         <Button
           v-if="item.savedIn"
           type="button"
-          variant="secondary"
+          :variant="item.mainAction === null ? 'inverted' : 'secondary'"
           size="md"
           class="gap-1.5 text-[13px]/5"
           data-testid="output-detail-show-in-folder"

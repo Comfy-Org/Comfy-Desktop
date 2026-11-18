@@ -108,6 +108,7 @@ export function buildElectronApi(): ElectronApi {
     downloadAsset: (source, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
     revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),
+    openAsset: (source, assetId) => ipcRenderer.invoke('assets:open', source, assetId),
     findCloudAsset: (installationId, name) =>
       ipcRenderer.invoke('assets:find', installationId, name),
     copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),

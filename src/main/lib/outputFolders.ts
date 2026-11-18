@@ -196,6 +196,13 @@ export async function revealOutputFile(target: string): Promise<boolean> {
   return true
 }
 
+export async function openOutputFile(target: string): Promise<boolean> {
+  const file = await outputFilePath(target)
+  if (!file) return false
+  if (assetKind(file) === '3d' || (await shell.openPath(file)) !== '') shell.showItemInFolder(file)
+  return true
+}
+
 export async function trashOutputFile(target: string): Promise<boolean> {
   const file = await outputFilePath(target)
   if (!file) return false

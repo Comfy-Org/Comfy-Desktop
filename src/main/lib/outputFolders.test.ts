@@ -16,6 +16,7 @@ const {
   shownInFolder,
   trashed,
   copiedImage,
+  openedPath,
   runningSessions
 } = await vi.hoisted(async () => {
   const nodeFs = await import('node:fs')
@@ -38,6 +39,7 @@ const {
     shownInFolder: vi.fn(),
     trashed: vi.fn(async (file: string) => nodeFs.rmSync(file)),
     copiedImage: vi.fn(),
+    openedPath: vi.fn(async (_file: string) => ''),
     runningSessions: new Map<string, { launchFolders?: { output: string; input: string } }>()
   }
 })
@@ -46,6 +48,7 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
   shell: {
     showItemInFolder: (file: string) => shownInFolder(file),
+    openPath: (file: string) => openedPath(file),
     trashItem: (file: string) => trashed(file)
   },
   clipboard: { write: async (items: unknown[]) => copiedImage(items) },
@@ -102,6 +105,7 @@ import {
   hasOutputFolder,
   launchFoldersOf,
   revealOutputFile,
+  openOutputFile,
   trashOutputFile,
   listLocalAssets,
   localPageRequest,
@@ -759,5 +763,29 @@ describe('acting on a file from its card', () => {
     expect(await copiedItem?.items['image/png']?.text()).toBe('png bytes')
     expect(await trashOutputFile(inside)).toBe(true)
     expect(fs.existsSync(inside), 'the picture left the output folder').toBe(false)
+  })
+
+  it('opens a file in its default app, and shows a 3D file or a file no app opens in its folder', async () => {
+    const picture = path.join(sharedDir, 'portrait.png')
+    const mesh = path.join(sharedDir, 'mesh.glb')
+    const outside = path.join(outsideDir, 'secret.png')
+    write(picture)
+    write(mesh)
+    write(outside)
+
+    expect(await openOutputFile(outside), 'a file outside is not opened').toBe(false)
+    expect(openedPath).not.toHaveBeenCalled()
+
+    expect(await openOutputFile(picture)).toBe(true)
+    expect(openedPath).toHaveBeenCalledExactlyOnceWith(picture)
+    expect(shownInFolder).not.toHaveBeenCalled()
+
+    expect(await openOutputFile(mesh)).toBe(true)
+    expect(openedPath, 'a 3D file is not handed to an app').toHaveBeenCalledOnce()
+    expect(shownInFolder).toHaveBeenCalledExactlyOnceWith(mesh)
+
+    openedPath.mockResolvedValueOnce('No application knows how to open this file')
+    expect(await openOutputFile(picture)).toBe(true)
+    expect(shownInFolder).toHaveBeenLastCalledWith(picture)
   })
 })

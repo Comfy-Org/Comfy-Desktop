@@ -258,6 +258,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     }),
     downloadAsset: async () => true,
     revealAsset: async () => true,
+    openAsset: async () => true,
     findCloudAsset: async () => ({ status: 'absent' }),
     copyAsset: async () => true,
     readAssetModel: async () => null,

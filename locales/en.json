@@ -117,6 +117,8 @@
     "loadFailed": "Couldn't load assets",
     "download": "Download",
     "downloadFailed": "Couldn't download asset",
+    "open": "Open",
+    "openFailed": "Couldn't open asset",
     "moreActions": "More actions",
     "showInFinder": "Show in Finder",
     "showInExplorer": "Show in File Explorer",
