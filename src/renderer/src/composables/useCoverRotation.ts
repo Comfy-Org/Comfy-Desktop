@@ -133,7 +133,8 @@ export function useCoverRotation({
       hold()
     } else if (index === upcoming.value) {
       upcoming.value = draw()
-      if (!holdTimer && !due) hold()
+      if (due) advance()
+      else if (!holdTimer) hold()
     }
   }
 

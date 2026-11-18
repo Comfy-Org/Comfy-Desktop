@@ -177,6 +177,25 @@ describe('the covers of one card', () => {
     expect(rotation.allFailed.value).toBe(false)
   })
 
+  it('keep going when the next cover fails after the card already waited for it', () => {
+    const rotation = setup(3)
+    const first = rotation.shown.value!
+    const second = rotation.upcoming.value!
+    const third = [0, 1, 2].find((index) => index !== first && index !== second)!
+    rotation.markLoaded(first)
+    rotation.markLoaded(second)
+    vi.advanceTimersByTime(FIRST_HOLD_AT_HALF_MS)
+    expect(rotation.shown.value).toBe(second)
+    expect(rotation.upcoming.value).toBe(third)
+
+    vi.advanceTimersByTime(COVER_HOLD_MS)
+    rotation.markFailed(third)
+
+    expect(rotation.shown.value).toBe(first)
+    vi.advanceTimersByTime(COVER_HOLD_MS)
+    expect(rotation.shown.value).toBe(second)
+  })
+
   it('move on from a shown cover that fails, and say so once none can be shown', () => {
     const rotation = setup(2)
     const first = rotation.shown.value!
