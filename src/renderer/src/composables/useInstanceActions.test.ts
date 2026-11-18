@@ -7,7 +7,6 @@ function makeBridge() {
   return {
     pickInstall: vi.fn(),
     restartInstall: vi.fn(),
-    openInstallNewWindow: vi.fn(),
     openNewInstall: vi.fn()
   } satisfies InstanceActionsBridge
 }
@@ -18,11 +17,8 @@ function installation(over: Partial<Installation> = {}): Installation {
 
 function decision(over: Partial<NavDecision>): NavDecision {
   return {
-    window: 'same',
-    verb: 'switch',
-    primaryLabel: 'instancePicker.switch',
-    secondary: [],
-    telemetry: null,
+    verb: 'start',
+    primaryLabel: 'instancePicker.open',
     ...over
   }
 }
@@ -34,34 +30,17 @@ function makeDeps(
   return {
     bridge,
     confirmLocalKill: vi.fn().mockResolvedValue(true),
-    confirmSwitch: vi.fn().mockResolvedValue('switch'),
     ...over
   }
 }
 
 describe('useInstanceActions.dispatch', () => {
-  it('switch → confirm in-drawer then pickInstall(confirmed:true)', async () => {
+  it('start → pickInstall, with no confirm because nothing is replaced', async () => {
     const bridge = makeBridge()
     const deps = makeDeps(bridge)
-    await useInstanceActions(deps).dispatch(decision({ verb: 'switch' }), installation())
-    expect(deps.confirmSwitch).toHaveBeenCalled()
-    expect(bridge.pickInstall).toHaveBeenCalledWith('a', { confirmed: true })
-  })
-
-  it('switch → "new-window" choice routes to openInstallNewWindow, not pickInstall', async () => {
-    const bridge = makeBridge()
-    const deps = makeDeps(bridge, { confirmSwitch: vi.fn().mockResolvedValue('new-window') })
-    await useInstanceActions(deps).dispatch(decision({ verb: 'switch' }), installation())
-    expect(bridge.openInstallNewWindow).toHaveBeenCalledWith('a')
-    expect(bridge.pickInstall).not.toHaveBeenCalled()
-  })
-
-  it('switch → cancel fires nothing', async () => {
-    const bridge = makeBridge()
-    const deps = makeDeps(bridge, { confirmSwitch: vi.fn().mockResolvedValue('cancel') })
-    await useInstanceActions(deps).dispatch(decision({ verb: 'switch' }), installation())
-    expect(bridge.pickInstall).not.toHaveBeenCalled()
-    expect(bridge.openInstallNewWindow).not.toHaveBeenCalled()
+    await useInstanceActions(deps).dispatch(decision({ verb: 'start' }), installation())
+    expect(bridge.pickInstall).toHaveBeenCalledExactlyOnceWith('a')
+    expect(deps.confirmLocalKill).not.toHaveBeenCalled()
   })
 
   it('routes restart → restartInstall(confirmed:true) after a confirm', async () => {
@@ -79,24 +58,13 @@ describe('useInstanceActions.dispatch', () => {
     expect(bridge.restartInstall).not.toHaveBeenCalled()
   })
 
-  it('routes open-new → openInstallNewWindow', async () => {
+  it('routes open-new → pickInstall, the one channel main routes every build pick through', async () => {
     const bridge = makeBridge()
     await useInstanceActions(makeDeps(bridge)).dispatch(
-      decision({ verb: 'open-new', window: 'new' }),
+      decision({ verb: 'open-new' }),
       installation()
     )
-    expect(bridge.openInstallNewWindow).toHaveBeenCalledWith('a', expect.objectContaining({}))
-  })
-
-  // `allowDuplicate` is currently dormant (no cell sets it); this pins that the
-  // plumbing still passes it through if a future cell does.
-  it('passes allowDuplicate through to openInstallNewWindow when a decision sets it', async () => {
-    const bridge = makeBridge()
-    await useInstanceActions(makeDeps(bridge)).dispatch(
-      decision({ verb: 'open-new', window: 'new', allowDuplicate: true }),
-      installation({ sourceCategory: 'cloud' })
-    )
-    expect(bridge.openInstallNewWindow).toHaveBeenCalledWith('a', { allowDuplicate: true })
+    expect(bridge.pickInstall).toHaveBeenCalledExactlyOnceWith('a')
   })
 
   it('routes focus → pickInstall (main short-circuits to focus when already up)', async () => {
@@ -119,13 +87,12 @@ describe('useInstanceActions.dispatch', () => {
     await useInstanceActions(makeDeps(bridge)).dispatch(decision({ verb: 'no-op' }), installation())
     expect(bridge.pickInstall).not.toHaveBeenCalled()
     expect(bridge.restartInstall).not.toHaveBeenCalled()
-    expect(bridge.openInstallNewWindow).not.toHaveBeenCalled()
   })
 
   it('no-ops when the bridge is undefined', async () => {
     const deps = { ...makeDeps(makeBridge()), bridge: undefined }
     await expect(
-      useInstanceActions(deps).dispatch(decision({ verb: 'switch' }), installation())
+      useInstanceActions(deps).dispatch(decision({ verb: 'start' }), installation())
     ).resolves.toBeUndefined()
   })
 

@@ -2,15 +2,14 @@ import { describe, it, expect, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 
-// At runtime __dirname is <projectRoot>/out/main, so the dev-mode formula must
-// resolve from there to <projectRoot>/lib/<script>.
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..')
 
-/** Simulate the dev-mode path resolution as it runs inside the bundle. */
 function devScriptPath(scriptName: string): string {
   const bundledDir = path.join(PROJECT_ROOT, 'out', 'main')
   return path.join(bundledDir, '..', '..', 'lib', scriptName)
 }
+
+vi.mock('electron', () => ({ app: { isPackaged: false } }))
 
 describe('bundled script paths', () => {
   it('dev-mode path resolves to lib/update_comfyui.py which exists', () => {
@@ -26,7 +25,6 @@ describe('bundled script paths', () => {
   })
 
   it('getBundledScriptPath uses the same formula in dev mode', async () => {
-    vi.mock('electron', () => ({ app: { isPackaged: false } }))
     const { getBundledScriptPath } = await import('./bundledScript')
     const result = getBundledScriptPath('update_comfyui.py')
     expect(result).toContain('update_comfyui.py')

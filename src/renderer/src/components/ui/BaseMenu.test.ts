@@ -11,7 +11,7 @@ async function openMenu(props: {
 }): Promise<VueWrapper> {
   const wrapper = mount(BaseMenu, { props, slots: { default: 'Open' }, attachTo: document.body })
   wrappers.push(wrapper)
-  await wrapper.get('button').trigger('click')
+  await wrapper.get('button').trigger('keydown', { key: 'ArrowDown' })
   await flushPromises()
   return wrapper
 }
@@ -47,9 +47,9 @@ describe('BaseMenu', () => {
     const onWindow = (): void => {
       reachedWindow = true
     }
+    await openMenu({ items: [{ id: 'a', label: 'A' }] })
     window.addEventListener('keydown', onWindow)
     try {
-      await openMenu({ items: [{ id: 'a', label: 'A' }] })
       list().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       await flushPromises()
       expect(document.body.querySelector('.ui-menu-list')).toBeNull()
@@ -57,6 +57,23 @@ describe('BaseMenu', () => {
     } finally {
       window.removeEventListener('keydown', onWindow)
     }
+  })
+
+  it('returns focus to the trigger on Escape, even after the window lost focus while closed', async () => {
+    const wrapper = mount(BaseMenu, {
+      props: { items: [{ id: 'a', label: 'A' }] },
+      slots: { default: 'Open' },
+      attachTo: document.body
+    })
+    wrappers.push(wrapper)
+    window.dispatchEvent(new Event('blur'))
+    const trigger = wrapper.get('button')
+    await trigger.trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    list().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve))
+    expect(document.activeElement).toBe(trigger.element)
   })
 
   it('skips disabled items when moving with the keyboard', async () => {
@@ -67,6 +84,6 @@ describe('BaseMenu', () => {
         { id: 'manage', label: 'Manage' }
       ]
     })
-    expect(list().querySelector('[data-active]')?.textContent).toBe('Manage')
+    expect(document.activeElement?.textContent).toBe('Manage')
   })
 })

@@ -1,29 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-// `resolveTemplateModels` loads the template JSON from site-packages (fs) then
-// falls back to a remote fetch. Stub both so the loader returns our crafted doc,
-// letting us assert the URL whitelist + path-traversal guards end-to-end.
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/userdata' },
   ipcMain: { handle: vi.fn() }
 }))
+vi.mock('../../lib/fetch', () => ({ fetchJSON: vi.fn() }))
 
-const fetchJSON = vi.fn()
-vi.mock('../../lib/fetch', () => ({ fetchJSON: (...a: unknown[]) => fetchJSON(...a) }))
-vi.mock('fs', () => ({
-  default: { promises: { readFile: vi.fn().mockRejectedValue(new Error('ENOENT')) } }
-}))
-vi.mock('../../lib/pythonEnv', () => ({ getActiveVenvDir: () => null }))
-vi.mock('./envPaths', async (importOriginal) => ({
-  ...(await importOriginal<typeof EnvPaths>()),
-  findSitePackages: () => null
-}))
-
-import { sanitizeModelPath, resolveTemplateModels } from './templateModels'
-import type * as EnvPaths from './envPaths'
-import type { InstallationRecord } from '../../installations'
-
-const inst = { id: 'i1', bundledTemplateId: 't' } as unknown as InstallationRecord
+import { sanitizeModelPath, resolveTemplateModelsFromJson } from './templateModels'
 
 const model = (over: Record<string, unknown>) => ({
   name: 'm.safetensors',
@@ -77,48 +60,38 @@ describe('sanitizeModelPath', () => {
   })
 })
 
-describe('resolveTemplateModels — URL + path guards', () => {
-  beforeEach(() => {
-    fetchJSON.mockReset()
-  })
-  afterEach(() => vi.clearAllMocks())
+describe('resolveTemplateModelsFromJson — URL + path guards', () => {
+  const resolveWith = (models: unknown[]) => resolveTemplateModelsFromJson({ models })
 
-  async function resolveWith(
-    models: unknown[]
-  ): Promise<Awaited<ReturnType<typeof resolveTemplateModels>>> {
-    fetchJSON.mockResolvedValue({ models })
-    return resolveTemplateModels(inst, 't')
-  }
-
-  it('accepts a whitelisted HTTPS model', async () => {
-    const out = await resolveWith([model({})])
+  it('accepts a whitelisted HTTPS model', () => {
+    const out = resolveWith([model({})])
     expect(out).toEqual([
       { filename: 'm.safetensors', url: model({}).url, directory: 'checkpoints' }
     ])
   })
 
-  it('rejects plain http:// (insecure transport)', async () => {
-    const out = await resolveWith([model({ url: 'http://huggingface.co/x/m.safetensors' })])
+  it('rejects plain http:// (insecure transport)', () => {
+    const out = resolveWith([model({ url: 'http://huggingface.co/x/m.safetensors' })])
     expect(out).toEqual([])
   })
 
-  it('rejects a non-whitelisted host', async () => {
-    const out = await resolveWith([model({ url: 'https://evil.example.com/m.safetensors' })])
+  it('rejects a non-whitelisted host', () => {
+    const out = resolveWith([model({ url: 'https://evil.example.com/m.safetensors' })])
     expect(out).toEqual([])
   })
 
-  it('rejects a non-model extension', async () => {
-    const out = await resolveWith([model({ url: 'https://huggingface.co/x/m.zip' })])
+  it('rejects a non-model extension', () => {
+    const out = resolveWith([model({ url: 'https://huggingface.co/x/m.zip' })])
     expect(out).toEqual([])
   })
 
-  it('drops an entry whose directory traverses out of the models dir', async () => {
-    const out = await resolveWith([model({ directory: '../../etc' })])
+  it('drops an entry whose directory traverses out of the models dir', () => {
+    const out = resolveWith([model({ directory: '../../etc' })])
     expect(out).toEqual([])
   })
 
-  it('drops an entry whose filename carries a path separator', async () => {
-    const out = await resolveWith([model({ name: 'sub/m.safetensors' })])
+  it('drops an entry whose filename carries a path separator', () => {
+    const out = resolveWith([model({ name: 'sub/m.safetensors' })])
     expect(out).toEqual([])
   })
 })

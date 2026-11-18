@@ -92,8 +92,6 @@ describe.runIf(
     fs.mkdirSync(path.join(install, 'ComfyUI', 'user'), { recursive: true })
     fs.mkdirSync(other, { recursive: true })
     const lockFile = path.join(install, 'ComfyUI', 'user', 'comfyui.db.lock')
-    // A stand-in for a ComfyUI Desktop did not start: a script called main.py outside the
-    // install, holding the same flock ComfyUI takes.
     fs.writeFileSync(
       path.join(other, 'main.py'),
       `import fcntl, os, sys, time\nfd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT)\nfcntl.flock(fd, fcntl.LOCK_EX)\nprint('locked', flush=True)\ntime.sleep(60)\n`
@@ -109,8 +107,6 @@ describe.runIf(
         installPath: install,
         cwd: install,
         args: ['-s', path.join('ComfyUI', 'main.py')],
-        // lsof walks the whole process table: on a loaded machine it can exceed the product's
-        // 10 s cap, which this test is not about.
         probeTimeoutMs: 25_000
       })
       expect(found).toMatchObject({
@@ -119,14 +115,10 @@ describe.runIf(
         sameInstall: false,
         runsMainPy: true
       })
-      // Started just now, but how long the lookup took on a loaded machine is not this test's
-      // business: no upper bound.
       expect(found!.ageS).toBeGreaterThanOrEqual(0)
     } finally {
       holder.kill('SIGKILL')
       fs.rmSync(root, { recursive: true, force: true })
     }
-    // Real lsof and ps against the whole process table: seconds on a loaded machine, so the
-    // probe gets its own cap and the test more than the default 5 s.
   }, 60_000)
 })

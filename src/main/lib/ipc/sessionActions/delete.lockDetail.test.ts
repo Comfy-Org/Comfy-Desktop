@@ -1,10 +1,3 @@
-// @vitest-environment node
-// The EBUSY/EPERM branch of handleDelete: after a locked delete it probes for
-// the holding processes and upgrades the generic "in use by another program"
-// message in place. What it must NOT do is treat a probe that never finished
-// as proof that nothing holds the file - the contract change in
-// `file-lock-info` exists so this caller can tell the two apart, and it only
-// pays for itself here.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
@@ -18,7 +11,16 @@ const installationsStore = new Map<string, InstallationRecord>()
 const h = vi.hoisted(() => ({
   userDataDir: { value: '' },
   lockedPath: { value: '' },
-  probeResult: { value: null as LockProbeResult | null }
+  probeResult: { value: null as LockProbeResult | null },
+  order: [] as string[]
+}))
+
+vi.mock('../../agentRequirementsLaunch', () => ({
+  holdAgentPrefetch: vi.fn(async (installPath: string) => {
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    h.order.push(`held ${installPath}`)
+    return () => h.order.push(`released ${installPath}`)
+  })
 }))
 
 vi.mock('electron', () => ({
@@ -79,11 +81,9 @@ vi.mock('../../../lib/pip', () => ({
   installFilteredRequirements: vi.fn(async () => 0)
 }))
 
-// A real recursive delete cannot be made to fail with EBUSY on demand across
-// platforms, so stand in for it. `shared` re-exports from here, which is what
-// `delete.ts` imports.
 vi.mock('../../delete', () => ({
-  deleteDir: vi.fn(async () => {
+  deleteDir: vi.fn(async (dir: string) => {
+    h.order.push(`deleting ${dir}`)
     throw Object.assign(new Error('EBUSY: resource busy or locked'), {
       code: 'EBUSY',
       path: h.lockedPath.value
@@ -156,15 +156,21 @@ describe('handleDelete lock detail', () => {
       inst
     })
     expect(result.ok).toBe(false)
-    // `handleDelete` fires the probe without awaiting it. Not a race: the
-    // mock resolves synchronously, so its `.then` is queued the moment it is
-    // attached and runs ahead of the awaits that carry `handleDelete` back
-    // out. These ticks are insurance, not timing - there is no timer or I/O
-    // in the chain to lose to.
     await Promise.resolve()
     await Promise.resolve()
     return errorDetails(sent)
   }
+
+  it("stops the install's background download, waits for it, and holds new ones off while deleting", async () => {
+    h.order.length = 0
+    await runDelete({ ok: true, processes: [] })
+
+    expect(h.order).toEqual([
+      `held ${installPath}`,
+      `deleting ${installPath}`,
+      `released ${installPath}`
+    ])
+  })
 
   it('names the holding processes when the probe determined them', async () => {
     const details = await runDelete({
@@ -177,7 +183,6 @@ describe('handleDelete lock detail', () => {
     })
     expect(details).toHaveLength(1)
     expect(details[0]).toContain('errors.deleteLockedBy')
-    // Deduplicated by name, not by pid.
     expect(details[0]).toContain('ComfyUI, python')
   })
 
@@ -195,8 +200,6 @@ describe('handleDelete lock detail', () => {
   })
 
   it('stays quiet when the probe determined that nothing holds the file', async () => {
-    // Here the generic `errors.deleteLocked` thrown by handleDelete is the
-    // whole truth, so there is nothing to upgrade it to.
     expect(await runDelete({ ok: true, processes: [] })).toEqual([])
   })
 })

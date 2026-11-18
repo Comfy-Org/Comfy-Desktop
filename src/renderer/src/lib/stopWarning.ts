@@ -1,8 +1,5 @@
 export { IN_PLACE_RELAUNCH } from '../../../types/ipc'
 
-/** Prepend the `errors.willStopRunning` sentence to a message body. This
- *  is the only warning the user gets before a REQUIRES_STOPPED apiCall
- *  stops a running session. */
 export function augmentMessageWithStopWarning(
   existing: string | undefined,
   willStopRunning: string
@@ -17,9 +14,6 @@ interface ActionLike {
   prompt?: { message?: string }
 }
 
-/** Apply the willStopRunning warning to an action's confirm + prompt copy.
- *  Synthesizes a bare confirm when the action has neither so the warning
- *  is never silent. Preserves the caller's full ActionDef shape. */
 export function augmentActionWithStopWarning<T extends ActionLike>(
   action: T,
   willStopRunning: string
@@ -52,8 +46,6 @@ export function augmentActionWithStopWarning<T extends ActionLike>(
   return mut
 }
 
-/** Stop the install's ComfyUI and poll until the session store reports it
- *  stopped, with a 10s deadline. */
 export async function stopAndWaitForExit(
   installationId: string,
   isRunning: () => boolean

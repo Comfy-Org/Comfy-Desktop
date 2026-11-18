@@ -142,7 +142,6 @@ describe('websiteAnonymousIdentity', () => {
     expect(fs.existsSync(pendingWebsiteAnonymousIdPath())).toBe(false)
     expect(fs.existsSync(pendingWebsiteAnonymousIdRetryPath())).toBe(true)
 
-    // The first boot consumes its first-launch marker before this restart.
     expect(getInitialAnonymousDistinctId(true)).toBe(websiteAnonymousId)
     expect(readPersistedAnonymousDistinctId()).toBe(websiteAnonymousId)
     expect(fs.existsSync(pendingWebsiteAnonymousIdRetryPath())).toBe(false)

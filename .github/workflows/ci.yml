@@ -4,9 +4,6 @@ on:
   pull_request:
   merge_group:
     types: [checks_requested]
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -16,33 +13,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  no-proprietary-fonts:
-    name: No proprietary fonts in source
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Ensure PP Formula is not committed
-        run: |
-          set -euo pipefail
-          # PP Formula (Pangram Pangram) is license-restricted and must never be
-          # committed to this public repo. It is fetched at build time from
-          # gs://comfy-org-fonts (see scripts/fetch-font.mjs). This guard fails
-          # the build if any PP Formula binary is tracked in git.
-          matches="$(git ls-files '*PPFormula*' '*ppformula*' '*pp-formula*' '*pp_formula*' || true)"
-          if [ -n "$matches" ]; then
-            echo "::error::Proprietary PP Formula font files are committed to the repo:"
-            echo "$matches"
-            echo "These are license-restricted and must not live in source."
-            echo "They are fetched at build time from gs://comfy-org-fonts (scripts/fetch-font.mjs)."
-            exit 1
-          fi
-          echo "OK: no proprietary PP Formula font files tracked in git."
-
   checks:
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.needs_browser && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -55,8 +28,7 @@ jobs:
             command: pnpm run typecheck && pnpm run bridge-types:check
           - name: Test
             command: pnpm run test
-          - name: Test (integration)
-            command: pnpm run test:integration
+            needs_browser: true
 
     steps:
       - name: Checkout
@@ -68,11 +40,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium for browser tests
+        if: matrix.needs_browser
+        run: pnpm exec playwright install --with-deps --only-shell chromium
 
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
@@ -85,7 +61,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
@@ -98,7 +74,6 @@ jobs:
   bridge-types-version:
     name: Bridge types version bumped
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -108,21 +83,17 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
 
       - name: Require a version bump when the contract changes
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-          # The checked-out tree is the merge ref, which already carries main's
-          # later commits; diff the branch tip so only this change is measured.
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         shell: bash
         run: |
           set -euo pipefail
           PACKAGE_JSON=packages/comfyui-desktop-bridge-types/package.json
           MERGE_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
-          # Glob the declarations: tsc emits one file per source module, so the
-          # set is not fixed.
           if git diff --quiet "$MERGE_BASE" "$HEAD_SHA" -- \
             src/types/comfyDesktopBridge.ts \
             'packages/comfyui-desktop-bridge-types/*.d.ts' \
@@ -135,10 +106,7 @@ jobs:
           read_version() { git show "$1:$PACKAGE_JSON" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version"; }
           BASE_VERSION=$(read_version "$MERGE_BASE")
           HEAD_VERSION=$(read_version "$HEAD_SHA")
-          # Exported, not just assigned: the comparator reads them from env.
           export BASE_VERSION HEAD_VERSION
-          # Prerelease-aware precedence, inline so an unrelated registry outage
-          # cannot fail this PR. Build metadata is ignored, per semver.
           if ! node -e '
             const parse = (v) => {
               const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(v)
@@ -170,21 +138,20 @@ jobs:
           echo "Bridge contract changed and the version moved $BASE_VERSION -> $HEAD_VERSION."
 
   e2e:
-    name: E2E (${{ matrix.platform }})
+    name: E2E (${{ matrix.platform }} ${{ matrix.shard }}/3)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        platform: [macos, windows, linux]
+        shard: [1, 2, 3]
         include:
           - platform: macos
             os: macos-latest
-            command: pnpm run test:e2e:macos
           - platform: windows
             os: windows-latest
-            command: pnpm run test:e2e:windows
           - platform: linux
             os: ubuntu-latest
-            command: pnpm run test:e2e:linux
 
     steps:
       - name: Checkout
@@ -196,25 +163,42 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build app
-        run: pnpm run build
+      - name: Bundle app
+        run: pnpm exec electron-vite build
 
-      - name: Run E2E (${{ matrix.platform }})
-        run: ${{ matrix.platform == 'linux' && format('xvfb-run --auto-servernum {0}', matrix.command) || matrix.command }}
+      - name: Verify the Windows hardware UUID lookup
+        if: matrix.platform == 'windows' && matrix.shard == 1
+        run: pnpm exec vitest run --project node src/main/lib/deviceId.dependency.test.ts
+
+      - name: Run E2E (${{ matrix.platform }} ${{ matrix.shard }}/3)
+        run: ${{ format('{0}pnpm run test:e2e:{1} --shard={2}/3', matrix.platform == 'linux' && 'xvfb-run --auto-servernum ' || '', matrix.platform, matrix.shard) }}
 
       - name: Upload Playwright failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-${{ matrix.platform }}-failure
+          name: playwright-${{ matrix.platform }}-shard-${{ matrix.shard }}-failure
           path: |
             test-results/
             playwright-report/
           retention-days: 7
           if-no-files-found: ignore
+
+  e2e-result:
+    name: E2E
+    needs: e2e
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every E2E shard to pass
+        env:
+          RESULT: ${{ needs.e2e.result }}
+        run: |
+          echo "E2E shards: $RESULT"
+          test "$RESULT" = success

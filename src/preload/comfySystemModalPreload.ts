@@ -1,12 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 
-/**
- * System-modal popup bridge. Hosts shell-level confirm modals in a transparent
- * full-window WebContentsView per host (reused across opens, fed `set-modal` pushes).
- * Full-window sizing dims the whole window, distinguishing it from in-canvas modals.
- */
-
 export type SystemModalConfirmStyle = 'primary' | 'danger'
 export type SystemModalSecondaryStyle = 'primary' | 'danger' | 'default'
 
@@ -16,7 +10,6 @@ export interface SystemModalDetailGroup {
 }
 
 export interface SystemModalSpec {
-  /** Echoed back on action ack so main routes the result to the right callback. */
   id: string
   title: string
   message: string
@@ -24,7 +17,6 @@ export interface SystemModalSpec {
   confirmLabel: string
   cancelLabel: string
   confirmStyle?: SystemModalConfirmStyle
-  /** Optional middle action; when present the modal renders a third button. */
   secondaryLabel?: string
   secondaryStyle?: SystemModalSecondaryStyle
   theme: { bg: string; text: string }
@@ -38,11 +30,8 @@ export interface SystemModalActionPayload {
 }
 
 export interface ComfySystemModalBridge {
-  /** A confirm/cancel button was clicked; main resolves the callback and hides the view. */
   action(payload: SystemModalActionPayload): void
-  /** Renderer is mounted; main flushes any spec queued before ready. */
   ready(): void
-  /** Renderer painted the latest push. Main waits for this before showing. */
   notifyRendered(): void
   onModal(cb: (spec: SystemModalSpec) => void): () => void
 }

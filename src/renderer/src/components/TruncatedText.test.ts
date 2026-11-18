@@ -1,27 +1,54 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TruncatedText from './TruncatedText.vue'
-import Tooltip from './ui/Tooltip.vue'
+
+const wrappers: VueWrapper[] = []
+function mountText(): VueWrapper {
+  const wrapper = mount(TruncatedText, {
+    props: { text: 'A very long model name' },
+    attachTo: document.body
+  })
+  wrappers.push(wrapper)
+  return wrapper
+}
+function setWidths(wrapper: VueWrapper, scrollWidth: number, clientWidth: number): void {
+  const label = wrapper.get('.truncated-text').element
+  Object.defineProperty(label, 'scrollWidth', { value: scrollWidth, configurable: true })
+  Object.defineProperty(label, 'clientWidth', { value: clientWidth, configurable: true })
+}
+async function pointerArrives(wrapper: VueWrapper): Promise<void> {
+  wrapper
+    .get('.tooltip-wrap')
+    .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+  await vi.advanceTimersByTimeAsync(100)
+  await flushPromises()
+}
 
 describe('TruncatedText', () => {
-  it('renders the text', () => {
-    const wrapper = mount(TruncatedText, { props: { text: 'Z-Image-Turbo' } })
-    expect(wrapper.text()).toContain('Z-Image-Turbo')
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    while (wrappers.length) wrappers.pop()?.unmount()
+    vi.useRealTimers()
   })
 
-  it('disables the tooltip until the text is detected as clipped on hover', async () => {
-    const wrapper = mount(TruncatedText, { props: { text: 'A very long model name' } })
-    const span = wrapper.find('.truncated-text')
+  it('renders the text', () => {
+    expect(mountText().text()).toContain('A very long model name')
+  })
 
-    // jsdom reports scrollWidth === clientWidth (0) → not truncated → disabled.
-    await span.trigger('mouseenter')
-    expect(wrapper.findComponent(Tooltip).props('disabled')).toBe(true)
+  it('shows no tooltip when the text fits', async () => {
+    const wrapper = mountText()
+    setWidths(wrapper, 100, 100)
+    await pointerArrives(wrapper)
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+  })
 
-    // Simulate an overflowing element; re-check on hover flips it enabled.
-    Object.defineProperty(span.element, 'scrollWidth', { value: 200, configurable: true })
-    Object.defineProperty(span.element, 'clientWidth', { value: 100, configurable: true })
-    await span.trigger('mouseenter')
-    expect(wrapper.findComponent(Tooltip).props('disabled')).toBe(false)
+  it('shows the full text the first time the pointer arrives on clipped text', async () => {
+    const wrapper = mountText()
+    setWidths(wrapper, 200, 100)
+    await pointerArrives(wrapper)
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
+      'A very long model name'
+    )
   })
 })

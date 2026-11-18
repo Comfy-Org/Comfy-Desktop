@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import {
-  isCheckoutReturnUrl,
   isCheckoutUrl,
   isExternalBrowserUrl,
   isLikelyDownloadUrl,
@@ -11,10 +10,6 @@ import {
 describe('POPUP_ALLOWED_PREFIXES', () => {
   it('includes the Firebase auth domain', () => {
     expect(POPUP_ALLOWED_PREFIXES).toContain('https://dreamboothy.firebaseapp.com/')
-  })
-
-  it('includes the checkout domain', () => {
-    expect(POPUP_ALLOWED_PREFIXES).toContain('https://checkout.comfy.org/')
   })
 
   it('includes the Google accounts domain', () => {
@@ -31,8 +26,8 @@ describe('shouldOpenInPopup', () => {
     expect(shouldOpenInPopup('https://dreamboothy.firebaseapp.com/__/auth/handler')).toBe(true)
   })
 
-  it('returns true for checkout URLs', () => {
-    expect(shouldOpenInPopup('https://checkout.comfy.org/session/abc123')).toBe(true)
+  it('excludes checkout URLs from in-app popups', () => {
+    expect(shouldOpenInPopup('https://checkout.comfy.org/session/abc123')).toBe(false)
   })
 
   it('returns true for Google accounts URLs', () => {
@@ -60,32 +55,6 @@ describe('isCheckoutUrl', () => {
   it('returns false for other comfy.org hosts', () => {
     expect(isCheckoutUrl('https://cloud.comfy.org/')).toBe(false)
     expect(isCheckoutUrl('https://checkout.comfy.org.evil.com/')).toBe(false)
-  })
-})
-
-describe('isCheckoutReturnUrl', () => {
-  it('returns true for first-party comfy.org return pages', () => {
-    expect(isCheckoutReturnUrl('https://cloud.comfy.org/?checkout=success')).toBe(true)
-    expect(isCheckoutReturnUrl('https://app.comfy.org/credits')).toBe(true)
-    expect(isCheckoutReturnUrl('https://comfy.org/')).toBe(true)
-  })
-
-  it('returns false while still on the checkout host (mid-flow)', () => {
-    expect(isCheckoutReturnUrl('https://checkout.comfy.org/session/abc123')).toBe(false)
-  })
-
-  it('returns false for intermediate Stripe / bank redirect hosts', () => {
-    expect(isCheckoutReturnUrl('https://hooks.stripe.com/3d_secure/authenticate')).toBe(false)
-    expect(isCheckoutReturnUrl('https://acs.bank.example/challenge')).toBe(false)
-  })
-
-  it('returns false for the comfy.org spoof host', () => {
-    expect(isCheckoutReturnUrl('https://comfy.org.evil.com/')).toBe(false)
-  })
-
-  it('returns false for unparseable URLs', () => {
-    expect(isCheckoutReturnUrl('not a url')).toBe(false)
-    expect(isCheckoutReturnUrl('')).toBe(false)
   })
 })
 
@@ -129,6 +98,17 @@ describe('isLikelyDownloadUrl (regression for #582 cloud zip handoff)', () => {
   it('returns false for unparseable URLs', () => {
     expect(isLikelyDownloadUrl('not a url')).toBe(false)
     expect(isLikelyDownloadUrl('')).toBe(false)
+  })
+
+  it('returns false for a file, share or app link that ends in a download extension', () => {
+    for (const url of [
+      'file:///C:/Users/me/Documents/taxes.zip',
+      'file://attacker.example/share/model.safetensors',
+      'smb://attacker.example/share/model.safetensors',
+      'search-ms:query=model.ckpt'
+    ]) {
+      expect(isLikelyDownloadUrl(url)).toBe(false)
+    }
   })
 
   it('matching is case-insensitive (.ZIP works too)', () => {

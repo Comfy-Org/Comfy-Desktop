@@ -2,14 +2,6 @@
 import { computed, onMounted, onUnmounted, ref, nextTick } from 'vue'
 import BaseAlert from '../components/ui/BaseAlert.vue'
 
-/**
- * System-modal popup shell. Renders a confirm dialog via the shared `BaseAlert` so
- * chrome matches the rest of the app's confirms. The spec arrives via
- * `comfy-systemmodal:set-modal` on each open; the webContents persists between opens,
- * so the bridge listener is registered once at mount. `spec.theme` is kept for IPC
- * contract stability but ignored here.
- */
-
 type SystemModalConfirmStyle = 'primary' | 'danger'
 type SystemModalSecondaryStyle = 'primary' | 'danger' | 'default'
 type SystemModalAction = 'confirm' | 'cancel' | 'secondary'
@@ -55,7 +47,6 @@ function ack(action: SystemModalAction): void {
 
 let unsubModal: (() => void) | undefined
 
-/** Only the most recent modal's tick fires `notifyRendered`, suppressing stale acks. */
 let renderSeq = 0
 
 onMounted(() => {
@@ -90,59 +81,24 @@ onUnmounted(() => {
     @cancel="ack('cancel')"
     @secondary="ack('secondary')"
   >
-    <!-- When the spec carries `details`, render `message` then each group as a bulleted list. -->
     <template v-if="spec?.details && spec.details.length > 0" #default>
-      <p v-if="spec.message" class="system-modal-message">{{ spec.message }}</p>
+      <p v-if="spec.message" class="system-modal-message mt-0 mr-0 mb-3 ml-0">{{ spec.message }}</p>
       <div
         v-for="(group, gi) in spec.details"
         :key="`detail-${gi}`"
-        class="system-modal-detail-group"
+        class="system-modal-detail-group [&+.system-modal-detail-group]:mt-2.5"
       >
-        <p class="system-modal-detail-label">{{ group.label }}</p>
-        <ul class="system-modal-detail-items">
+        <p
+          class="system-modal-detail-label mt-0 mr-0 mb-1 ml-0 text-[12px] font-semibold tracking-[0.04em] text-text-muted uppercase"
+        >
+          {{ group.label }}
+        </p>
+        <ul
+          class="system-modal-detail-items m-0 pl-[18px] text-[13px] text-neutral-100 [&>li]:leading-[1.5]"
+        >
           <li v-for="(item, ii) in group.items" :key="`item-${ii}`">{{ item }}</li>
         </ul>
       </div>
     </template>
   </BaseAlert>
 </template>
-
-<style>
-/* Keep the document transparent so only the BaseAlert backdrop + panel paint. */
-html,
-body,
-#app {
-  margin: 0;
-  width: 100%;
-  height: 100%;
-  background: transparent !important;
-}
-
-.system-modal-message {
-  margin: 0 0 12px;
-}
-
-.system-modal-detail-group + .system-modal-detail-group {
-  margin-top: 10px;
-}
-
-.system-modal-detail-label {
-  margin: 0 0 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.system-modal-detail-items {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 13px;
-  color: var(--neutral-100);
-}
-
-.system-modal-detail-items li {
-  line-height: 1.5;
-}
-</style>

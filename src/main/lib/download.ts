@@ -14,7 +14,6 @@ export interface DownloadProgress {
   etaSecs: number
 }
 
-/** Sidecar file stored alongside incomplete downloads for resume support. */
 export interface DownloadMeta {
   url: string
   expectedSize: number
@@ -25,25 +24,14 @@ export interface DownloadMeta {
 export interface DownloadOptions {
   signal?: AbortSignal
   expectedSize?: number
-  /** Abort the request when no bytes arrive for this long (ms), turning a
-   *  silently stalled connection into a fast, retryable error instead of a hang.
-   *  Defaults to `DEFAULT_IDLE_TIMEOUT_MS`. */
   idleTimeoutMs?: number
-  /** Reject the initial URL and every redirect when the caller has stricter
-   * transport requirements than the generic downloader. */
   validateUrl?: (url: string) => boolean
-  // Internal: suppresses the auto-derived R2 mirror retry. Set by the
-  // mirror-retry branch itself to avoid bouncing back to primary indefinitely.
   _skipMirror?: boolean
   _maxRedirects?: number
 }
 
 export const META_SUFFIX = '.dl-meta'
 
-/** No-progress watchdog: a download with no `data` for this long is treated as a
- *  dead connection and aborted (the caller's retry budget then takes over). Sized
- *  to tolerate a slow-but-alive link while escaping a true mid-stream stall (the
- *  `ERR_HTTP2_PROTOCOL_ERROR` class that otherwise hangs with no retry/log). */
 const DEFAULT_IDLE_TIMEOUT_MS = 60_000
 
 export function downloadMetaPath(filePath: string): string {
@@ -94,10 +82,6 @@ export function download(
     return Promise.reject(new Error(`Download URL is not allowed: ${url}`))
   }
 
-  // Mirror retry is gated on useChineseMirrors to avoid a thundering-herd
-  // tens-of-TB GCS egress event if R2 ever hiccups for the global user base.
-  // Opted-in users are who actually need the fallback; everyone else keeps
-  // the existing single-origin behaviour.
   const mirrorEnabled = !_skipMirror && settings.get('useChineseMirrors') === true
   const mirror = mirrorEnabled ? r2MirrorUrl(url) : undefined
   const tryMirror = async (primaryErr: Error): Promise<string> => {
@@ -143,7 +127,6 @@ export function download(
         }
       }
       if (resumeFrom === 0) {
-        // URL mismatch or can't stat — start fresh
         try {
           fs.unlinkSync(destPath)
         } catch {}
@@ -151,7 +134,6 @@ export function download(
           fs.unlinkSync(metaPath)
         } catch {}
       } else if (existingMeta.expectedSize > 0 && resumeFrom >= existingMeta.expectedSize) {
-        // Fully downloaded but meta wasn't cleaned up (crash after write, before meta delete)
         try {
           fs.unlinkSync(metaPath)
         } catch {}
@@ -159,7 +141,6 @@ export function download(
         return
       }
     } else if (fs.existsSync(metaPath)) {
-      // Stale meta without data file
       try {
         fs.unlinkSync(metaPath)
       } catch {}
@@ -189,8 +170,6 @@ export function download(
       }
     }
 
-    // No-progress watchdog: rearmed on every byte; if it fires the connection is
-    // dead-but-not-erroring, so abort and reject with a retryable stall error.
     let idleTimer: ReturnType<typeof setTimeout> | null = null
     const onStall = (): void => {
       stalled = true
@@ -274,7 +253,6 @@ export function download(
         return
       }
 
-      // If we requested a range but got 200, server doesn't support resume — start fresh
       let baseBytes = 0
       if (isResumed) {
         baseBytes = resumeFrom
@@ -289,11 +267,9 @@ export function download(
       const chunkTotalBytes = parseInt(contentLength ?? '0', 10)
       const totalBytes = isResumed ? baseBytes + chunkTotalBytes : chunkTotalBytes
 
-      // Only trust totalBytes when Content-Length was present.
       const sizeFromHeaders = chunkTotalBytes > 0 ? totalBytes : 0
       const effectiveSize = expectedSize || sizeFromHeaders
 
-      // Fail fast if caller's expectedSize conflicts with server's Content-Length
       if (expectedSize && sizeFromHeaders > 0 && expectedSize !== sizeFromHeaders) {
         cleanup()
         safeReject(
@@ -304,7 +280,6 @@ export function download(
         return
       }
 
-      // Mark this download in-progress to enable resume if interrupted.
       const etag = headerString(response.headers['etag'])
       const lastModified = headerString(response.headers['last-modified'])
       writeMeta(metaPath, { url, expectedSize: effectiveSize, etag, lastModified })
@@ -353,7 +328,6 @@ export function download(
       response.on('end', () => {
         cleanup()
         if (aborted) {
-          // onAbort already closed the stream and rejected
           return
         }
         fileStream!.end()
@@ -362,7 +336,6 @@ export function download(
             try {
               const actualSize = fs.statSync(destPath).size
               if (actualSize !== effectiveSize) {
-                // Size mismatch — delete everything, no resume possible
                 try {
                   fs.unlinkSync(destPath)
                 } catch {}
@@ -388,7 +361,6 @@ export function download(
             }
           }
 
-          // Removing meta marks the download complete (the data file is already at destPath).
           try {
             fs.unlinkSync(metaPath)
           } catch {}
@@ -398,24 +370,21 @@ export function download(
 
       response.on('error', (err: Error) => {
         cleanup()
-        if (aborted || stalled) return // onAbort / onStall already rejected
+        if (aborted || stalled) return
         fileStream!.close(() => safeReject(err))
       })
     })
 
     request.on('error', (err: Error) => {
       cleanup()
-      if (aborted || stalled) return // onAbort / onStall already rejected
-      // Network failure before any response arrived — try the mirror exactly
-      // once. If a partial body had already started landing we skip the mirror
-      // to avoid stitching together two origins' bytes.
+      if (aborted || stalled) return
       if (resumeFrom === 0 && !_skipMirror) {
         tryMirror(err).then(safeResolve, safeReject)
       } else {
         safeReject(err)
       }
     })
-    armIdleTimer() // covers a connect that never responds, not just a mid-stream stall
+    armIdleTimer()
     request.end()
   })
 }

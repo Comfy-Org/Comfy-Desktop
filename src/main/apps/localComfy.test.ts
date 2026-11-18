@@ -1,0 +1,2034 @@
+import type { WebContents } from 'electron'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({
+  records: [] as Record<string, unknown>[],
+  onList: (): void => {},
+  sessions: new Map<string, Record<string, unknown>>(),
+  launching: new Set<string>(),
+  installing: new Set<string>(),
+  ownModels: new Set<string>(),
+  windows: new Map<string, unknown>(),
+  pages: [] as { send: (channel: string, event: unknown) => void }[],
+  handleLaunch: (_ctx: unknown): Promise<Record<string, unknown>> => Promise.resolve({ ok: false }),
+  stopRunning: (_id: string): Promise<void> => Promise.resolve(),
+  probeQueue: (_port: number): Promise<unknown> => Promise.resolve({ running: 0, pending: 0 }),
+  startModelJob: (_options: Record<string, unknown>): Promise<unknown> => Promise.resolve(null),
+  makeRelay: (): unknown => null,
+  hearFromComfy: (_message: unknown): void => {},
+  socketOpened: (): void => {},
+  captured: [] as { event: string; properties: Record<string, unknown> }[],
+  broadcasts: [] as [string, unknown][],
+  keepComfyRunning: true
+}))
+
+vi.mock('fs', () => ({
+  promises: { readFile: async () => Promise.reject(new Error('ENOENT')) }
+}))
+vi.mock('../host/registry', () => ({
+  getEntryByInstallationId: (id: string) => mocks.windows.get(id)
+}))
+vi.mock('../installations', () => ({
+  list: async () => {
+    mocks.onList()
+    return mocks.records
+  },
+  get: async (id: string) => mocks.records.find((record) => record['id'] === id) ?? null
+}))
+vi.mock('../lib/comfyDownloadManager', () => ({
+  startManagedModelJob: (options: Record<string, unknown>) => mocks.startModelJob(options)
+}))
+vi.mock('../lib/comfyProcessRecord', () => ({
+  probeQueue: (port: number) => mocks.probeQueue(port)
+}))
+vi.mock('../lib/i18n', () => ({
+  t: (key: string, params?: Record<string, unknown>) =>
+    params ? `${key} ${Object.values(params).join(' ')}` : key
+}))
+vi.mock('../lib/modelDownloadPaths', () => ({
+  resolveDownloadContextById: async (id: string) => ({
+    downloadBaseDir: mocks.ownModels.has(id) ? `/builds/${id}/ComfyUI/models` : '/shared/models',
+    modelRoots: [],
+    extraPaths: []
+  })
+}))
+vi.mock('../lib/ipc/installationVisibility', () => ({
+  isInstallRunning: (id: string) => mocks.installing.has(id)
+}))
+vi.mock('../lib/ipc/sessionActions/launch', () => ({
+  handleLaunch: (ctx: unknown) => mocks.handleLaunch(ctx)
+}))
+vi.mock('../lib/ipc/shared', async () => {
+  const { EventEmitter: Emitter } = await import('node:events')
+  return {
+    _broadcastToRenderer: (channel: string, data: unknown) =>
+      mocks.broadcasts.push([channel, data]),
+    _hasActiveLaunch: (id: string) => mocks.launching.has(id),
+    _operationAborts: new Map(),
+    _runningSessions: mocks.sessions,
+    keepsComfyRunningWhenWindowCloses: () => mocks.keepComfyRunning,
+    sessionLifecycleEvents: new Emitter(),
+    sourceMap: { standalone: { category: 'local' }, remote: { category: 'remote' } },
+    stopRunning: (id: string) => mocks.stopRunning(id)
+  }
+})
+vi.mock('../lib/models', () => ({
+  resolveComfyDir: (installPath: string) => `${installPath}/ComfyUI`
+}))
+vi.mock('../lib/process', () => ({ COMFY_BOOT_TIMEOUT_MS: 300_000 }))
+vi.mock('./appsPages', () => ({ liveAppsPages: () => mocks.pages }))
+vi.mock('./localRelay', () => ({
+  createLocalRelay: (
+    onMessage: (message: unknown) => void,
+    _openSocket: unknown,
+    onOpen: () => void
+  ) => {
+    mocks.hearFromComfy = onMessage
+    mocks.socketOpened = onOpen
+    return mocks.makeRelay()
+  }
+}))
+vi.mock('../lib/telemetry', () => ({
+  capture: (event: string, properties: Record<string, unknown>) => {
+    mocks.captured.push({ event, properties })
+    return true
+  }
+}))
+
+import { _resetCrashBuffer, getAllCrashes } from '../lib/crashBuffer'
+import type { InstallationRecord } from '../installations'
+import { sessionLifecycleEvents } from '../lib/ipc/shared'
+import * as local from './localComfy'
+
+const { LOCAL_EVENT_CHANNEL, LOCAL_IDLE_STOP_MS, _resetForTest } = local
+
+const STUDIO = 'studio'
+const PORT = 8190
+const LAB = 'lab'
+const LAB_PORT = 8191
+const RUN = '0b1c2d3e-aaaa-bbbb-cccc-0123456789ab'
+const OTHER_RUN = 'ffffffff-aaaa-bbbb-cccc-0123456789ab'
+const WANT = { minVersion: '0.41.0' }
+const CUTOUT = { filename: 'cutout_00001_.png', subfolder: 'apps', type: 'output' }
+const STUDIO_CUTOUT_BYTES = [137, 80, 78, 71]
+const LAB_CUTOUT_BYTES = [137, 80, 78, 72]
+const BIREFNET = {
+  url: 'https://huggingface.co/Comfy-Org/BiRefNet/resolve/main/background_removal/birefnet.safetensors',
+  folder: 'background_removal',
+  name: 'birefnet.safetensors'
+}
+
+interface Asked {
+  port: number
+  method: string
+  path: string
+  body: unknown
+}
+
+class FakeComfy {
+  asked: Asked[] = []
+  queue: { queue_running: unknown[][]; queue_pending: unknown[][] } = {
+    queue_running: [[4, OTHER_RUN, { 3: { class_type: 'KSampler' } }, { client_id: 'theirs' }]],
+    queue_pending: [[5, RUN, { 1: {} }, { comfy_app: { name: 'Remove Background' } }]]
+  }
+  promptAnswer: { status: number; body: unknown } = {
+    status: 200,
+    body: { prompt_id: RUN, number: 5, node_errors: {} }
+  }
+  historyEntry: Record<string, unknown> | null = {
+    status: { completed: true },
+    outputs: { save: { images: [CUTOUT] } }
+  }
+  brokenHistory: 'body' | 'status' | null = null
+  brokenQueueReads = 0
+
+  answer = async (input: string | URL | Request, init: RequestInit = {}): Promise<Response> => {
+    const url = new URL(String(input))
+    const path = url.pathname + url.search
+    const body =
+      typeof init.body === 'string' ? (JSON.parse(init.body) as unknown) : (init.body ?? null)
+    this.asked.push({ port: Number(url.port), method: init.method ?? 'GET', path, body })
+    const json = (value: unknown, status = 200) =>
+      new Response(JSON.stringify(value), {
+        status,
+        headers: { 'content-type': 'application/json' }
+      })
+    if (![PORT, LAB_PORT].includes(Number(url.port))) throw new TypeError('fetch failed')
+    if (url.pathname === '/queue' && init.method !== 'POST' && this.brokenQueueReads > 0) {
+      this.brokenQueueReads -= 1
+      return json({ error: 'busy' }, 500)
+    }
+    if (url.pathname === '/queue' && init.method !== 'POST') return json(this.queue)
+    if (url.pathname === '/prompt') return json(this.promptAnswer.body, this.promptAnswer.status)
+    if (url.pathname.startsWith('/history/') && this.brokenHistory === 'status') {
+      return json({ error: 'busy' }, 500)
+    }
+    if (url.pathname.startsWith('/history/') && this.brokenHistory === 'body') {
+      const body = new ReadableStream({
+        start: (stream) => stream.error(new TypeError('terminated'))
+      })
+      return new Response(body, { headers: { 'content-type': 'application/json' } })
+    }
+    if (url.pathname.startsWith('/history/')) {
+      const promptId = url.pathname.slice('/history/'.length)
+      return json(this.historyEntry ? { [promptId]: this.historyEntry } : {})
+    }
+    if (url.pathname === '/view') {
+      const bytes = Number(url.port) === LAB_PORT ? LAB_CUTOUT_BYTES : STUDIO_CUTOUT_BYTES
+      return new Response(new Uint8Array(bytes), { headers: { 'content-type': 'image/png' } })
+    }
+    if (url.pathname === '/upload/image') {
+      return json({ name: 'photo.png', subfolder: 'comfy-apps', type: 'input' })
+    }
+    return json({})
+  }
+
+  calls(path: string): Asked[] {
+    return this.asked.filter((asked) => asked.path === path)
+  }
+}
+
+interface FakeRelay {
+  clientId: string
+  follow: ReturnType<typeof vi.fn>
+  whenOpen: ReturnType<typeof vi.fn>
+  stop: ReturnType<typeof vi.fn>
+}
+
+type FakePage = { send: ReturnType<typeof vi.fn<(channel: string, event: unknown) => void>> }
+
+let comfy: FakeComfy
+let relay: FakeRelay
+let page: FakePage
+
+const asContents = (from: FakePage): WebContents => from as unknown as WebContents
+const localState = (want: unknown, from: FakePage = page) =>
+  local.localState(asContents(from), want)
+const startLocal = (want: unknown, from: FakePage = page) =>
+  local.startLocal(asContents(from), want)
+const localFetch = (raw: unknown, from: FakePage = page) => local.localFetch(asContents(from), raw)
+const localDownload = (raw: unknown, from: FakePage = page) =>
+  local.localDownload(asContents(from), raw)
+
+function fakeRelay(clientId: string): FakeRelay {
+  return { clientId, follow: vi.fn(), whenOpen: vi.fn(async () => true), stop: vi.fn() }
+}
+let launches: Record<string, unknown>[]
+let stopped: string[]
+
+function build(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: STUDIO,
+    name: 'Studio',
+    sourceId: 'standalone',
+    installPath: '/builds/studio',
+    status: 'installed',
+    version: 'v0.42.1',
+    ...over
+  }
+}
+
+function running(id = STUDIO, port = PORT): void {
+  mocks.sessions.set(id, { port })
+}
+
+function startsWhenLaunched(port = PORT): void {
+  mocks.handleLaunch = async (ctx) => {
+    const launch = ctx as { installationId: string }
+    launches.push(ctx as Record<string, unknown>)
+    running(launch.installationId, port)
+    return { ok: true, mode: 'console', port }
+  }
+}
+
+function textOf(answer: { body: Uint8Array }): unknown {
+  return JSON.parse(new TextDecoder().decode(answer.body))
+}
+
+function post(path: string, body: unknown): Promise<{ status: number; body: Uint8Array }> {
+  return localFetch({ method: 'POST', path, body: JSON.stringify(body) })
+}
+
+async function startARun(): Promise<void> {
+  await post('/prompt', { prompt: { 1: { class_type: 'LoadImage', inputs: {} } } })
+}
+
+function sentToPage(): unknown[] {
+  return page.send.mock.calls
+    .filter(([channel]) => channel === LOCAL_EVENT_CHANNEL)
+    .map(([, event]) => event)
+}
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  _resetForTest()
+  comfy = new FakeComfy()
+  vi.stubGlobal('fetch', vi.fn(comfy.answer))
+  relay = fakeRelay('desktop-client')
+  page = { send: vi.fn<(channel: string, event: unknown) => void>() }
+  launches = []
+  stopped = []
+  mocks.makeRelay = () => relay
+  mocks.captured = []
+  mocks.pages = [page]
+  mocks.records = [build()]
+  mocks.onList = () => {}
+  mocks.sessions.clear()
+  mocks.launching.clear()
+  mocks.installing.clear()
+  mocks.ownModels.clear()
+  mocks.windows.clear()
+  mocks.broadcasts = []
+  _resetCrashBuffer()
+  mocks.handleLaunch = async () => ({ ok: false })
+  mocks.stopRunning = async (id) => {
+    stopped.push(id)
+    mocks.sessions.delete(id)
+  }
+  mocks.probeQueue = async () => ({ running: 0, pending: 0 })
+  mocks.startModelJob = async () => null
+})
+
+afterEach(() => {
+  _resetForTest()
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
+
+describe('finding a ComfyUI on this computer for an app', () => {
+  it('says to add a build when there is none', async () => {
+    mocks.records = []
+
+    expect(await localState(WANT)).toEqual({
+      state: 'unsupported',
+      error: 'apps.local.noBuilds'
+    })
+  })
+
+  it('says which ComfyUI the app needs when every build is older', async () => {
+    mocks.records = [build({ version: 'v0.37.0' })]
+
+    expect(await localState(WANT)).toEqual({
+      state: 'unsupported',
+      error: 'apps.local.tooOld 0.41.0'
+    })
+  })
+
+  it('offers a stopped build that fits, by its name and version', async () => {
+    expect(await localState(WANT)).toEqual({
+      state: 'stopped',
+      own: true,
+      name: 'Studio',
+      version: '0.42.1'
+    })
+    expect(relay.follow).not.toHaveBeenCalled()
+  })
+
+  it('says a build is running and follows it, without starting anything', async () => {
+    running()
+
+    expect(await localState(WANT)).toEqual({
+      state: 'running',
+      own: true,
+      name: 'Studio',
+      version: '0.42.1',
+      clientId: 'desktop-client'
+    })
+    expect(relay.follow).toHaveBeenCalledWith(PORT)
+    expect(launches).toEqual([])
+  })
+})
+
+describe('a build the person picked on the app page', () => {
+  const LAB = 'inst-lab'
+
+  beforeEach(() => {
+    mocks.records = [
+      build(),
+      build({ id: LAB, name: 'Lab', installPath: '/builds/lab', version: 'v0.43.0' })
+    ]
+  })
+
+  it('is the one the app runs on, even when another build is running', async () => {
+    running()
+
+    expect(await localState({ ...WANT, build: LAB })).toMatchObject({
+      state: 'stopped',
+      name: 'Lab'
+    })
+  })
+
+  it('is started for the run, and the running build is left alone', async () => {
+    running(STUDIO, PORT)
+    startsWhenLaunched(PORT + 1)
+
+    const started = await startLocal({ ...WANT, build: LAB })
+
+    expect(started).toMatchObject({ state: 'running', name: 'Lab' })
+    expect(launches.map((launch) => launch['installationId'])).toEqual([LAB])
+    expect(stopped).toEqual([])
+  })
+
+  it('gives way to the usual choice when it is too old for the app', async () => {
+    mocks.records = [build(), build({ id: LAB, name: 'Lab', version: 'v0.30.0' })]
+
+    expect(await localState({ ...WANT, build: LAB })).toMatchObject({ name: 'Studio' })
+  })
+})
+
+describe('starting it', () => {
+  it('starts the build without a window and answers once Desktop is listening to it', async () => {
+    startsWhenLaunched()
+
+    expect(await startLocal(WANT)).toEqual({
+      state: 'running',
+      own: true,
+      name: 'Studio',
+      version: '0.42.1',
+      clientId: 'desktop-client'
+    })
+    expect(launches).toHaveLength(1)
+    expect(launches[0]).toMatchObject({
+      installationId: STUDIO,
+      inst: { id: STUDIO },
+      actionData: { launchModeOverride: 'console', autoPortOnConflict: true }
+    })
+    expect(relay.follow).toHaveBeenCalledWith(PORT)
+    expect(relay.whenOpen).toHaveBeenCalled()
+  })
+
+  it('starts it once when two pages ask together', async () => {
+    startsWhenLaunched()
+
+    const [one, other] = await Promise.all([startLocal(WANT), startLocal(WANT)])
+
+    expect(one.state).toBe('running')
+    expect(other.state).toBe('running')
+    expect(launches).toHaveLength(1)
+  })
+
+  it('leaves a running build as it is', async () => {
+    running()
+    startsWhenLaunched()
+
+    expect((await startLocal(WANT)).state).toBe('running')
+    expect(launches).toEqual([])
+  })
+
+  it('waits for a start the person already began instead of starting it again', async () => {
+    mocks.launching.add(STUDIO)
+    startsWhenLaunched()
+
+    const starting = startLocal(WANT)
+    await vi.advanceTimersByTimeAsync(1_200)
+    running()
+    mocks.launching.delete(STUDIO)
+    await vi.advanceTimersByTimeAsync(600)
+
+    expect((await starting).state).toBe('running')
+    expect(launches).toEqual([])
+  })
+
+  it('says why when the build does not start', async () => {
+    mocks.handleLaunch = async () => ({ ok: false, message: 'Port 8188 is in use.' })
+
+    expect(await startLocal(WANT)).toEqual({
+      state: 'stopped',
+      own: true,
+      name: 'Studio',
+      version: '0.42.1',
+      error: 'Port 8188 is in use.'
+    })
+  })
+
+  it('names the build when the launch gives no reason, or throws', async () => {
+    mocks.handleLaunch = async () => ({ ok: false })
+    expect((await startLocal(WANT)).error).toBe('apps.local.couldNotStart Studio')
+
+    mocks.handleLaunch = async () => {
+      throw new Error('spawn failed')
+    }
+    expect((await startLocal(WANT)).error).toBe('spawn failed')
+  })
+
+  it('starts nothing when no build fits', async () => {
+    mocks.records = []
+    startsWhenLaunched()
+
+    expect((await startLocal(WANT)).state).toBe('unsupported')
+    expect(launches).toEqual([])
+  })
+})
+
+describe('a run from an app page', () => {
+  beforeEach(async () => {
+    running()
+    await localState(WANT)
+  })
+
+  it("is sent as Desktop's client, whatever client the page named", async () => {
+    const prompt = { 1: { class_type: 'LoadImage', inputs: { image: 'a.png' } } }
+    const extraData = { comfy_app: { name: 'Remove Background', seconds: 12 } }
+
+    const answer = await post('/prompt', {
+      prompt,
+      client_id: 'the-page',
+      extra_data: extraData
+    })
+
+    expect(answer.status).toBe(200)
+    expect(textOf(answer)).toMatchObject({ prompt_id: RUN })
+    expect(comfy.calls('/prompt')).toEqual([
+      {
+        port: PORT,
+        method: 'POST',
+        path: '/prompt',
+        body: { prompt, client_id: 'desktop-client', extra_data: extraData }
+      }
+    ])
+    expect(relay.whenOpen).toHaveBeenCalled()
+  })
+
+  it('can then be read, and its result files fetched', async () => {
+    await startARun()
+
+    const history = await localFetch({ path: `/history/${RUN}` })
+    const file = await localFetch({ path: `/view?${new URLSearchParams(CUTOUT)}` })
+
+    expect(textOf(history)).toMatchObject({ [RUN]: { status: { completed: true } } })
+    expect(file).toMatchObject({ status: 200, contentType: 'image/png' })
+    expect([...file.body]).toEqual([137, 80, 78, 71])
+    expect(comfy.calls(`/view?${new URLSearchParams(CUTOUT)}`)).toHaveLength(1)
+  })
+
+  it('can be taken out of the queue and stopped', async () => {
+    await startARun()
+
+    expect((await post('/queue', { delete: [RUN] })).status).toBe(200)
+    expect((await post('/interrupt', { prompt_id: RUN })).status).toBe(200)
+    expect(comfy.asked.filter((asked) => asked.method === 'POST').slice(-2)).toEqual([
+      { port: PORT, method: 'POST', path: '/queue', body: { delete: [RUN] } },
+      { port: PORT, method: 'POST', path: '/interrupt', body: { prompt_id: RUN } }
+    ])
+  })
+
+  it("passes ComfyUI's own refusal of a graph back to the page", async () => {
+    comfy.promptAnswer = { status: 400, body: { error: { type: 'prompt_no_outputs' } } }
+
+    const answer = await post('/prompt', { prompt: {} })
+
+    expect(answer.status).toBe(400)
+    expect(textOf(answer)).toEqual({ error: { type: 'prompt_no_outputs' } })
+  })
+})
+
+describe("what is not the page's own", () => {
+  beforeEach(async () => {
+    running()
+    await localState(WANT)
+  })
+
+  it('cannot be read, fetched, removed or stopped', async () => {
+    await startARun()
+    const before = comfy.asked.length
+
+    const refused = [
+      await localFetch({ path: `/history/${OTHER_RUN}` }),
+      await localFetch({ path: '/view?filename=someone-elses.png&type=output' }),
+      await post('/queue', { delete: [RUN, OTHER_RUN] }),
+      await post('/interrupt', { prompt_id: OTHER_RUN })
+    ]
+
+    expect(refused.map((answer) => answer.status)).toEqual([403, 403, 403, 403])
+    expect(textOf(refused[0]!)).toEqual({ error: 'apps.local.notForwarded' })
+    expect(comfy.asked).toHaveLength(before)
+  })
+
+  it('cannot be fetched before the run that made it was read', async () => {
+    await startARun()
+
+    const early = await localFetch({ path: `/view?${new URLSearchParams(CUTOUT)}` })
+
+    expect(early.status).toBe(403)
+  })
+
+  it('shows in the queue only as something ahead, with no id or graph', async () => {
+    await startARun()
+
+    const queue = await localFetch({ path: '/queue' })
+
+    expect(textOf(queue)).toEqual({
+      running: [{ n: 4, id: null, app: null, seconds: null }],
+      pending: [{ n: 5, id: RUN, app: 'Remove Background', seconds: null }]
+    })
+    expect(new TextDecoder().decode(queue.body)).not.toContain('KSampler')
+  })
+
+  it('is out of reach through any other request, which never gets to ComfyUI', async () => {
+    const refused = [
+      await localFetch({ path: '/system_stats' }),
+      await localFetch({ path: '/history' }),
+      await localFetch({ path: '/userdata/workflows' }),
+      await post('/free', { unload_models: true }),
+      await post('/queue', { clear: true }),
+      await localFetch({ method: 'DELETE', path: '/queue' }),
+      await localFetch(null)
+    ]
+
+    expect(refused.map((answer) => answer.status)).toEqual([403, 403, 403, 403, 403, 403, 403])
+    expect(comfy.asked).toEqual([])
+  })
+})
+
+describe('two app pages open in two windows', () => {
+  it('each reach the ComfyUI their own app was given, as its own client', async () => {
+    const other: FakePage = { send: vi.fn<(channel: string, event: unknown) => void>() }
+    const relays = [fakeRelay('client-for-studio'), fakeRelay('client-for-lab')]
+    mocks.makeRelay = () => relays.shift()
+    mocks.records = [
+      build({ version: 'v0.30.0', lastLaunchedAt: 900 }),
+      build({ id: LAB, name: 'Lab', installPath: '/builds/lab', lastLaunchedAt: 100 })
+    ]
+    running(STUDIO, PORT)
+    running(LAB, LAB_PORT)
+
+    const forOlderApp = await localState({ minVersion: '0.21.0' })
+    const forNewerApp = await localState({ minVersion: '0.41.0' }, other)
+    await post('/prompt', { prompt: { 1: {} } })
+    await localFetch(
+      { method: 'POST', path: '/prompt', body: JSON.stringify({ prompt: { 2: {} } }) },
+      other
+    )
+
+    expect(forOlderApp).toMatchObject({ name: 'Studio', clientId: 'client-for-studio' })
+    expect(forNewerApp).toMatchObject({ name: 'Lab', clientId: 'client-for-lab' })
+    expect(comfy.calls('/prompt').map(({ port, body }) => [port, body])).toEqual([
+      [PORT, { prompt: { 1: {} }, client_id: 'client-for-studio', extra_data: {} }],
+      [LAB_PORT, { prompt: { 2: {} }, client_id: 'client-for-lab', extra_data: {} }]
+    ])
+  })
+})
+
+describe('two runs from one page on two builds', () => {
+  it('each read their result from the build they ran on', async () => {
+    mocks.records = [build(), build({ id: LAB, name: 'Lab', installPath: '/builds/lab' })]
+    running(STUDIO, PORT)
+    running(LAB, LAB_PORT)
+    const portsOf = (path: string) => comfy.calls(path).map(({ port }) => port)
+    const cutout = `/view?${new URLSearchParams(CUTOUT)}`
+
+    await localState({ ...WANT, build: STUDIO })
+    await startARun()
+    await localState({ ...WANT, build: LAB })
+    comfy.promptAnswer = { status: 200, body: { prompt_id: OTHER_RUN, number: 6, node_errors: {} } }
+    await startARun()
+    await localFetch({ path: `/history/${RUN}` })
+    const file = await localFetch({ path: cutout })
+    await post('/interrupt', { prompt_id: RUN })
+    await localFetch({ path: `/history/${OTHER_RUN}` })
+
+    expect(file.status).toBe(200)
+    expect(portsOf('/prompt')).toEqual([PORT, LAB_PORT])
+    expect(portsOf(`/history/${RUN}`)).toEqual([PORT])
+    expect(portsOf(cutout)).toEqual([PORT])
+    expect(portsOf('/interrupt')).toEqual([PORT])
+    expect(portsOf(`/history/${OTHER_RUN}`)).toEqual([LAB_PORT])
+  })
+
+  it('fetches a file both builds made from the build of the run the page names', async () => {
+    mocks.records = [build(), build({ id: LAB, name: 'Lab', installPath: '/builds/lab' })]
+    running(STUDIO, PORT)
+    running(LAB, LAB_PORT)
+    const cutout = `/view?${new URLSearchParams(CUTOUT)}`
+
+    await localState({ ...WANT, build: STUDIO })
+    await startARun()
+    await localState({ ...WANT, build: LAB })
+    comfy.promptAnswer = { status: 200, body: { prompt_id: OTHER_RUN, number: 6, node_errors: {} } }
+    await startARun()
+    await localFetch({ path: `/history/${RUN}` })
+    await localFetch({ path: `/history/${OTHER_RUN}` })
+    const firstRun = await localFetch({
+      path: `/view?${new URLSearchParams({ ...CUTOUT, prompt_id: RUN })}`
+    })
+    const unnamed = await localFetch({ path: cutout })
+
+    expect([...firstRun.body]).toEqual(STUDIO_CUTOUT_BYTES)
+    expect([...unnamed.body]).toEqual(LAB_CUTOUT_BYTES)
+    expect(comfy.calls(cutout).map(({ port }) => port)).toEqual([PORT, LAB_PORT])
+  })
+
+  it("refuses a file from another build's run when the page names its own run", async () => {
+    mocks.records = [build(), build({ id: LAB, name: 'Lab', installPath: '/builds/lab' })]
+    running(STUDIO, PORT)
+    running(LAB, LAB_PORT)
+
+    await localState({ ...WANT, build: STUDIO })
+    await startARun()
+    await localFetch({ path: `/history/${RUN}` })
+    await localState({ ...WANT, build: LAB })
+    comfy.promptAnswer = { status: 200, body: { prompt_id: OTHER_RUN, number: 6, node_errors: {} } }
+    await startARun()
+    const named = { ...CUTOUT, prompt_id: OTHER_RUN }
+
+    expect((await localFetch({ path: `/view?${new URLSearchParams(named)}` })).status).toBe(403)
+    expect(comfy.calls(`/view?${new URLSearchParams(CUTOUT)}`)).toEqual([])
+  })
+
+  it('refuses a file when the page names a run Desktop does not know', async () => {
+    running()
+    await localState(WANT)
+    await startARun()
+    await localFetch({ path: `/history/${RUN}` })
+    const named = { ...CUTOUT, prompt_id: OTHER_RUN }
+
+    expect((await localFetch({ path: `/view?${new URLSearchParams(named)}` })).status).toBe(403)
+    expect(comfy.calls(`/view?${new URLSearchParams(CUTOUT)}`)).toEqual([])
+  })
+})
+
+describe('two app pages on two builds that each made a file of the same name', () => {
+  it('each get the file from their own build', async () => {
+    const studioPage: FakePage = { send: vi.fn<(channel: string, event: unknown) => void>() }
+    mocks.records = [build(), build({ id: LAB, name: 'Lab', installPath: '/builds/lab' })]
+    running(STUDIO, PORT)
+    running(LAB, LAB_PORT)
+    const cutout = `/view?${new URLSearchParams(CUTOUT)}`
+
+    await localState({ ...WANT, build: LAB })
+    await localState({ ...WANT, build: STUDIO }, studioPage)
+    await startARun()
+    comfy.promptAnswer = { status: 200, body: { prompt_id: OTHER_RUN, number: 6, node_errors: {} } }
+    await localFetch({ method: 'POST', path: '/prompt', body: '{"prompt":{"1":{}}}' }, studioPage)
+    await localFetch({ path: `/history/${RUN}` })
+    await localFetch({ path: `/history/${OTHER_RUN}` }, studioPage)
+    const labFile = await localFetch({ path: cutout })
+    const studioFile = await localFetch({ path: cutout }, studioPage)
+
+    expect([...labFile.body]).toEqual(LAB_CUTOUT_BYTES)
+    expect([...studioFile.body]).toEqual(STUDIO_CUTOUT_BYTES)
+  })
+})
+
+describe('sending a picture', () => {
+  it("puts it in the apps folder of ComfyUI's input, without replacing a file of that name", async () => {
+    running()
+    await localState(WANT)
+
+    const answer = await localFetch({
+      method: 'POST',
+      path: '/upload/image',
+      body: new Uint8Array([1, 2, 3]),
+      fileName: 'photo.png'
+    })
+
+    const [sent] = comfy.calls('/upload/image')
+    const form = sent?.body as FormData
+    const file = form.get('image') as File
+    expect(textOf(answer)).toEqual({ name: 'photo.png', subfolder: 'comfy-apps', type: 'input' })
+    expect(file.name).toBe('photo.png')
+    expect([...new Uint8Array(await file.arrayBuffer())]).toEqual([1, 2, 3])
+    expect(form.get('subfolder')).toBe('comfy-apps')
+    expect(form.get('type')).toBe('input')
+    expect(form.has('overwrite')).toBe(false)
+  })
+})
+
+describe('when ComfyUI is not there', () => {
+  it('rejects, so the page can say Desktop could not reach it', async () => {
+    await localState(WANT)
+
+    await expect(localFetch({ path: '/queue' })).rejects.toThrow('apps.local.notRunning')
+    expect(comfy.asked).toEqual([])
+  })
+
+  it('rejects before any build was chosen', async () => {
+    await expect(localFetch({ path: '/queue' })).rejects.toThrow('apps.local.notRunning')
+  })
+
+  it('rejects when the build stopped answering', async () => {
+    running(STUDIO, 9_999)
+    await localState(WANT)
+
+    await expect(localFetch({ path: '/queue' })).rejects.toThrow()
+  })
+
+  it('stops following a build that has stopped', async () => {
+    running()
+    await localState(WANT)
+
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed')
+
+    expect(relay.stop).toHaveBeenCalled()
+  })
+})
+
+describe('what ComfyUI says about a run', () => {
+  beforeEach(async () => {
+    running()
+    await localState(WANT)
+    await startARun()
+  })
+
+  it("reaches the app page for the page's own run", () => {
+    mocks.hearFromComfy({ type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } })
+    mocks.hearFromComfy({
+      type: 'progress',
+      data: { prompt_id: RUN, node: 'cut', value: 2, max: 8 }
+    })
+
+    expect(sentToPage()).toEqual([
+      { type: 'execution_start', data: { prompt_id: RUN, timestamp: 1 } },
+      { type: 'progress', data: { prompt_id: RUN, node: 'cut', value: 2, max: 8 } }
+    ])
+  })
+
+  it('does not reach it for another run, or for anything that is not a run update', () => {
+    mocks.hearFromComfy({ type: 'executing', data: { prompt_id: OTHER_RUN, node: '3' } })
+    mocks.hearFromComfy({ type: 'status', data: { status: { exec_info: { queue_remaining: 2 } } } })
+    mocks.hearFromComfy({ type: 'logs', data: { prompt_id: RUN, entries: ['secret path'] } })
+    mocks.hearFromComfy({ type: 'executing' })
+    mocks.hearFromComfy('junk')
+    mocks.hearFromComfy(null)
+
+    expect(sentToPage()).toEqual([])
+  })
+})
+
+describe('downloading a model for an app', () => {
+  function modelJob(outcome: unknown) {
+    const release = vi.fn()
+    const started: Record<string, unknown>[] = []
+    mocks.startModelJob = async (options) => {
+      started.push(options)
+      return { id: 'job', url: BIREFNET.url, savePath: '/models/x', release, completion: outcome }
+    }
+    return { release, started }
+  }
+
+  beforeEach(async () => {
+    running()
+    await localState(WANT)
+  })
+
+  it('saves it into the build the app runs on, and says when it is there', async () => {
+    const job = modelJob(Promise.resolve({ status: 'completed', savePath: '/models/x' }))
+
+    expect(await localDownload(BIREFNET)).toEqual({ state: 'done' })
+    expect(job.started).toEqual([
+      expect.objectContaining({
+        url: BIREFNET.url,
+        filename: 'birefnet.safetensors',
+        directory: 'background_removal',
+        installationId: STUDIO,
+        source: 'app'
+      })
+    ])
+    expect(job.release).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells the app page how far along it is, without flooding it', async () => {
+    const job = modelJob(new Promise(() => {}))
+    void localDownload(BIREFNET)
+    await vi.advanceTimersByTimeAsync(0)
+    const progress = job.started[0]?.['onProgress'] as (done: number, total: number) => void
+
+    progress(10, 400)
+    progress(20, 400)
+    await vi.advanceTimersByTimeAsync(300)
+    progress(200, 400)
+    progress(400, 400)
+
+    expect(sentToPage()).toEqual([
+      { type: 'download', data: { name: 'birefnet.safetensors', done: 10, total: 400 } },
+      { type: 'download', data: { name: 'birefnet.safetensors', done: 200, total: 400 } },
+      { type: 'download', data: { name: 'birefnet.safetensors', done: 400, total: 400 } }
+    ])
+  })
+
+  it('says why a download failed, and when the person cancelled it', async () => {
+    const failed = modelJob(Promise.resolve({ status: 'error', error: 'Disk is full.' }))
+    expect(await localDownload(BIREFNET)).toEqual({ state: 'failed', error: 'Disk is full.' })
+    expect(failed.release).toHaveBeenCalledTimes(1)
+
+    modelJob(Promise.resolve({ status: 'cancelled' }))
+    expect(await localDownload(BIREFNET)).toEqual({ state: 'cancelled' })
+  })
+
+  it('downloads nothing that is not a safetensors file on Hugging Face', async () => {
+    const job = modelJob(Promise.resolve({ status: 'completed', savePath: '/x' }))
+
+    expect(
+      await localDownload({ ...BIREFNET, url: 'https://evil.example/birefnet.safetensors' })
+    ).toEqual({ state: 'failed', error: 'apps.local.modelRefused' })
+    expect(await localDownload({ ...BIREFNET, folder: '../custom_nodes' })).toMatchObject({
+      state: 'failed'
+    })
+    expect(job.started).toEqual([])
+  })
+
+  it('saves it into a build that is stopped, without starting that build', async () => {
+    const job = modelJob(Promise.resolve({ status: 'completed', savePath: '/models/x' }))
+    mocks.sessions.clear()
+
+    expect(await localDownload(BIREFNET)).toEqual({ state: 'done' })
+    expect(job.started).toEqual([expect.objectContaining({ installationId: STUDIO })])
+    expect(launches).toEqual([])
+  })
+
+  it('downloads nothing into a build the person removed after the page picked it', async () => {
+    const job = modelJob(Promise.resolve({ status: 'completed', savePath: '/x' }))
+    mocks.records = []
+
+    expect(await localDownload(BIREFNET)).toEqual({
+      state: 'failed',
+      error: 'apps.local.noBuilds'
+    })
+    expect(job.started).toEqual([])
+  })
+
+  it('downloads nothing for a page that has not asked which build it runs on', async () => {
+    const job = modelJob(Promise.resolve({ status: 'completed', savePath: '/x' }))
+    const otherPage: FakePage = { send: vi.fn<(channel: string, event: unknown) => void>() }
+
+    expect(await localDownload(BIREFNET, otherPage)).toEqual({
+      state: 'failed',
+      error: 'apps.local.noBuilds'
+    })
+    expect(job.started).toEqual([])
+  })
+})
+
+describe('an app opened while the first build is still installing', () => {
+  const NEW_BUILD = 'first-build'
+
+  function installingBuild(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return build({
+      id: NEW_BUILD,
+      name: 'ComfyUI',
+      installPath: '/builds/first-build',
+      status: 'installing',
+      version: undefined,
+      ...over
+    })
+  }
+
+  function finishInstall(status = 'installed'): void {
+    const record = mocks.records.find((one) => one['id'] === NEW_BUILD)
+    if (record) Object.assign(record, { status, version: 'v0.42.1' })
+    mocks.installing.delete(NEW_BUILD)
+  }
+
+  beforeEach(() => {
+    mocks.records = [installingBuild()]
+    mocks.installing.add(NEW_BUILD)
+  })
+
+  it('hears that the build is installing, by its name', async () => {
+    expect(await localState(WANT)).toEqual({ state: 'installing', own: true, name: 'ComfyUI' })
+  })
+
+  it('finds the build when its install finishes between looking for installed and installing builds', async () => {
+    let lists = 0
+    mocks.onList = () => {
+      lists += 1
+      if (lists === 2) finishInstall()
+    }
+
+    expect(await localState(WANT)).toMatchObject({ state: 'stopped', name: 'ComfyUI' })
+  })
+
+  it('runs on an installed build instead, when the person has one', async () => {
+    mocks.records = [build(), installingBuild()]
+
+    expect(await localState(WANT)).toMatchObject({ state: 'stopped', name: 'Studio' })
+  })
+
+  it('never counts an install that stopped part way, or one too old for the app', async () => {
+    mocks.installing.clear()
+    expect(await localState(WANT)).toEqual({ state: 'unsupported', error: 'apps.local.noBuilds' })
+
+    mocks.installing.add(NEW_BUILD)
+    mocks.records = [installingBuild({ version: 'v0.37.0' })]
+    expect(await localState(WANT)).toEqual({
+      state: 'unsupported',
+      error: 'apps.local.noBuilds'
+    })
+  })
+
+  it('downloads its models into that build while it installs', async () => {
+    const started: Record<string, unknown>[] = []
+    mocks.startModelJob = async (options) => {
+      started.push(options)
+      return {
+        id: 'job',
+        release: vi.fn(),
+        completion: Promise.resolve({ status: 'completed', savePath: '/models/x' })
+      }
+    }
+    await localState(WANT)
+
+    expect(await localDownload(BIREFNET)).toEqual({ state: 'done' })
+    expect(started).toEqual([expect.objectContaining({ installationId: NEW_BUILD })])
+  })
+
+  it('waits for the install before downloading into a build that keeps its models inside it', async () => {
+    const started: Record<string, unknown>[] = []
+    mocks.startModelJob = async (options) => {
+      started.push(options)
+      return {
+        id: 'job',
+        release: vi.fn(),
+        completion: Promise.resolve({ status: 'completed', savePath: '/models/x' })
+      }
+    }
+    mocks.ownModels.add(NEW_BUILD)
+    await localState(WANT)
+    const downloading = localDownload(BIREFNET)
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(started).toEqual([])
+
+    finishInstall()
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await downloading).toEqual({ state: 'done' })
+    expect(started).toEqual([expect.objectContaining({ installationId: NEW_BUILD })])
+  })
+
+  it('downloads nothing into a build that keeps its models inside it when its install fails', async () => {
+    const job: Record<string, unknown>[] = []
+    mocks.startModelJob = async (options) => {
+      job.push(options)
+      return { id: 'job', release: vi.fn(), completion: new Promise(() => {}) }
+    }
+    mocks.ownModels.add(NEW_BUILD)
+    await localState(WANT)
+    const downloading = localDownload(BIREFNET)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(job).toEqual([])
+
+    finishInstall('failed')
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await downloading).toEqual({ state: 'failed', error: 'apps.local.noBuilds' })
+    expect(job).toEqual([])
+  })
+
+  it('tells the page the install is done, so it can say ComfyUI is starting', async () => {
+    startsWhenLaunched()
+    const starting = startLocal(WANT)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(sentToPage()).toEqual([])
+
+    finishInstall()
+    await vi.advanceTimersByTimeAsync(1_000)
+    await starting
+
+    expect(sentToPage()).toEqual([{ type: 'setup', data: { state: 'done' } }])
+  })
+
+  it('starts the build once its install finishes, and not before', async () => {
+    startsWhenLaunched()
+    let settled = false
+    const starting = startLocal(WANT)
+    void starting.then(() => (settled = true))
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(settled).toBe(false)
+    expect(launches).toEqual([])
+
+    finishInstall()
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await starting).toMatchObject({ state: 'running', name: 'ComfyUI' })
+    expect(launches).toEqual([expect.objectContaining({ installationId: NEW_BUILD })])
+  })
+
+  it('says there is no build when the install fails', async () => {
+    const starting = startLocal(WANT)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    finishInstall('failed')
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await starting).toEqual({ state: 'unsupported', error: 'apps.local.noBuilds' })
+    expect(launches).toEqual([])
+  })
+
+  it('stops waiting after an hour and says the build is still installing', async () => {
+    const starting = startLocal(WANT)
+
+    await vi.advanceTimersByTimeAsync(60 * 60_000 + 1_000)
+
+    expect(await starting).toEqual({
+      state: 'installing',
+      own: true,
+      name: 'ComfyUI',
+      error: 'apps.local.stillInstalling ComfyUI'
+    })
+    expect(launches).toEqual([])
+  })
+})
+
+describe('a ComfyUI that Desktop started for apps', () => {
+  beforeEach(async () => {
+    startsWhenLaunched()
+    await startLocal(WANT)
+  })
+
+  it('is stopped once it has sat unused for ten minutes with nothing queued', async () => {
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS - 1)
+    expect(stopped).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it('keeps running while an app page keeps using it', async () => {
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS - 1_000)
+    await localFetch({ path: '/queue' })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS - 1_000)
+
+    expect(stopped).toEqual([])
+  })
+
+  it('keeps running while it has work queued, and is stopped after that', async () => {
+    mocks.probeQueue = async () => ({ running: 1, pending: 0 })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+    expect(stopped).toEqual([])
+
+    mocks.probeQueue = async () => ({ running: 0, pending: 0 })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it('keeps running when its queue cannot be read', async () => {
+    mocks.probeQueue = async () => null
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    expect(stopped).toEqual([])
+  })
+
+  it('keeps running while a model is still downloading for an app, however long that takes', async () => {
+    let finish: (outcome: unknown) => void = () => {}
+    mocks.startModelJob = async () => ({
+      id: 'job',
+      release: vi.fn(),
+      completion: new Promise((resolve) => (finish = resolve))
+    })
+    const downloading = localDownload(BIREFNET)
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+    expect(stopped).toEqual([])
+
+    finish({ status: 'completed', savePath: '/models/x' })
+    await downloading
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it('is left alone for good once the person opens its window', async () => {
+    mocks.windows.set(STUDIO, { window: {} })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    expect(stopped).toEqual([])
+  })
+
+  it('keeps running when its window opens while the idle stop is still reading its queue', async () => {
+    let answer: (queue: unknown) => void = () => {}
+    mocks.probeQueue = () => new Promise((resolve) => (answer = resolve))
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    mocks.windows.set(STUDIO, { window: {} })
+    answer({ running: 0, pending: 0 })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    expect(stopped).toEqual([])
+  })
+
+  it.each([
+    ['an empty queue', { running: 0, pending: 0 }],
+    ['a busy queue', { running: 1, pending: 0 }],
+    ['no queue', null]
+  ])(
+    'keeps running for apps only when it was started again while the idle stop read %s, and is stopped once idle after that',
+    async (_case, queue) => {
+      let answer: (value: unknown) => void = () => {}
+      mocks.probeQueue = () => new Promise((resolve) => (answer = resolve))
+      await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+      running()
+      mocks.probeQueue = async () => ({ running: 0, pending: 0 })
+      answer(queue)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(stopped).toEqual([])
+      expect(local.isRunningForAppsOnly(STUDIO)).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+      expect(stopped).toEqual([STUDIO])
+    }
+  )
+
+  it('is known as running for apps only, so opening it shows a new ComfyUI window', () => {
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(true)
+  })
+
+  it('is no longer running for apps only once it stops', () => {
+    mocks.sessions.delete(STUDIO)
+
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+  })
+
+  it('is no longer running for apps only once a window is open for it', () => {
+    mocks.windows.set(STUDIO, { window: {} })
+
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+  })
+
+  it('is stopped when every Desktop window closes', async () => {
+    await local.stopBuildsRunningForAppsOnly()
+
+    expect(stopped).toEqual([STUDIO])
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+  })
+
+  it('keeps running when every Desktop window closes while it has work queued, and is stopped after that', async () => {
+    mocks.probeQueue = async () => ({ running: 1, pending: 2 })
+    await local.stopBuildsRunningForAppsOnly()
+    expect(stopped).toEqual([])
+
+    mocks.probeQueue = async () => ({ running: 0, pending: 0 })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it('is not stopped twice once the idle stop comes round after that', async () => {
+    await local.stopBuildsRunningForAppsOnly()
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it('keeps running when every Desktop window closes once the person opened its window', async () => {
+    mocks.windows.set(STUDIO, { window: {} })
+
+    await local.stopBuildsRunningForAppsOnly()
+
+    expect(stopped).toEqual([])
+  })
+})
+
+describe('the Auto start build, started when Desktop opens', () => {
+  const startWithDesktop = () => local.startWithDesktop(build() as unknown as InstallationRecord)
+
+  it('starts in the background with no ComfyUI window, the way apps start one', async () => {
+    startsWhenLaunched()
+
+    await startWithDesktop()
+
+    expect(launches).toHaveLength(1)
+    expect(launches[0]).toMatchObject({
+      installationId: STUDIO,
+      actionData: { launchModeOverride: 'console', autoPortOnConflict: true }
+    })
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(true)
+    expect(mocks.broadcasts).toEqual([])
+  })
+
+  it('keeps running however long it sits unused, also after an app ran on it', async () => {
+    startsWhenLaunched()
+    await startWithDesktop()
+    await startLocal(WANT)
+    await localFetch({ path: '/queue' })
+
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    expect(launches).toHaveLength(1)
+    expect(stopped).toEqual([])
+  })
+
+  it('is stopped by the idle stop once it stopped and an app started it again', async () => {
+    startsWhenLaunched()
+    await startWithDesktop()
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed')
+    await startLocal(WANT)
+
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    expect(launches).toHaveLength(2)
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it('is stopped like the apps builds when every Desktop window closes', async () => {
+    startsWhenLaunched()
+    await startWithDesktop()
+
+    await local.stopBuildsRunningForAppsOnly()
+
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it.each([
+    ['it has work queued', { running: 1, pending: 2 }],
+    ['its queue does not answer', null]
+  ])(
+    'keeps running when every Desktop window closes while %s, and is stopped once idle after that',
+    async (_case, queue) => {
+      startsWhenLaunched()
+      await startWithDesktop()
+      mocks.probeQueue = async () => queue
+      await local.stopBuildsRunningForAppsOnly()
+      expect(stopped).toEqual([])
+
+      mocks.probeQueue = async () => ({ running: 0, pending: 0 })
+      await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+      expect(stopped).toEqual([STUDIO])
+    }
+  )
+
+  it("tells Home it didn't start, with the reason, when its start fails", async () => {
+    mocks.handleLaunch = async () => ({ ok: false, message: 'ComfyUI exited with code 1' })
+
+    await startWithDesktop()
+
+    const failure = {
+      installationId: STUDIO,
+      installationName: 'Studio',
+      message: 'ComfyUI exited with code 1',
+      startFailed: true
+    }
+    expect(mocks.broadcasts).toEqual([['instance-crashed', failure]])
+    expect(getAllCrashes()).toMatchObject([failure])
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+  })
+
+  it('names the build when its start fails without a reason', async () => {
+    await startWithDesktop()
+
+    expect(mocks.broadcasts).toEqual([
+      [
+        'instance-crashed',
+        {
+          installationId: STUDIO,
+          installationName: 'Studio',
+          message: 'apps.local.couldNotStart Studio',
+          startFailed: true
+        }
+      ]
+    ])
+  })
+
+  it('leaves a remote connection to connect when Open is pressed, with no background connection', async () => {
+    startsWhenLaunched()
+
+    await local.startWithDesktop(
+      build({ sourceId: 'remote', installPath: '' }) as unknown as InstallationRecord
+    )
+
+    expect(launches).toEqual([])
+    expect(mocks.broadcasts).toEqual([])
+    expect(getAllCrashes()).toEqual([])
+  })
+
+  it('says nothing when its start was cancelled', async () => {
+    mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
+
+    await startWithDesktop()
+
+    expect(mocks.broadcasts).toEqual([])
+    expect(getAllCrashes()).toEqual([])
+  })
+})
+
+describe('a ComfyUI the person started themselves', () => {
+  it('is never stopped by apps, however long it sits unused', async () => {
+    running()
+    await startLocal(WANT)
+    await localFetch({ path: '/queue' })
+
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    expect(stopped).toEqual([])
+  })
+
+  it('is not running for apps only, so opening it keeps its own window', async () => {
+    running()
+    await startLocal(WANT)
+
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+  })
+
+  it('is not stopped by apps when every Desktop window closes', async () => {
+    running()
+    await startLocal(WANT)
+
+    await local.stopBuildsRunningForAppsOnly()
+
+    expect(stopped).toEqual([])
+  })
+})
+
+describe('a ComfyUI whose window the person closed, with keepComfyRunningWhenWindowCloses off', () => {
+  beforeEach(() => {
+    mocks.keepComfyRunning = false
+  })
+
+  afterEach(() => {
+    mocks.keepComfyRunning = true
+  })
+
+  it('does not run with its window closed, since closing the window stops it', () => {
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'window', hadWindow: true })
+
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(false)
+  })
+})
+
+describe('a ComfyUI whose window the person closed', () => {
+  it('runs with its window closed, so opening it shows it in a new window', () => {
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'window' })
+
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(true)
+  })
+
+  it('does not while its window is open', () => {
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'window' })
+    mocks.windows.set(STUDIO, { window: {} })
+
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(false)
+  })
+
+  it.each(['console', 'external'])('does not when the person started it in %s mode', (mode) => {
+    mocks.sessions.set(STUDIO, { port: PORT, mode })
+
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(false)
+  })
+
+  it('does not once it stops', () => {
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(false)
+  })
+
+  it('runs with its window closed when apps started it and let it go while its window was open', async () => {
+    startsWhenLaunched()
+    await startLocal(WANT)
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'console' })
+    mocks.windows.set(STUDIO, { window: {} })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    mocks.windows.delete(STUDIO)
+    mocks.sessions.set(STUDIO, { port: PORT, mode: 'console', hadWindow: true })
+
+    expect(stopped).toEqual([])
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+    expect(local.runsWithItsWindowClosed(STUDIO)).toBe(true)
+  })
+})
+
+const APP = 'product-ads'
+const RUN_FINISHED = 'comfy.desktop.apps.run_finished'
+const SETUP = 'comfy.desktop.apps.setup'
+
+function captured(event: string): Record<string, unknown>[] {
+  return mocks.captured.filter((one) => one.event === event).map((one) => one.properties)
+}
+
+function setupSteps(): string[] {
+  return captured(SETUP).map((one) => `${one['stage']} ${one['outcome']}`)
+}
+
+describe('run_finished, for an app run on this computer', () => {
+  let t0 = 0
+
+  function runFromApp(extraData: Record<string, unknown> = {}) {
+    return local.localFetch(
+      asContents(page),
+      {
+        method: 'POST',
+        path: '/prompt',
+        body: JSON.stringify({ prompt: { 1: { class_type: 'LoadImage' } }, extra_data: extraData })
+      },
+      APP
+    )
+  }
+
+  function hear(type: string, data: Record<string, unknown> = {}): void {
+    mocks.hearFromComfy({ type, data: { prompt_id: RUN, ...data } })
+  }
+
+  beforeEach(async () => {
+    running()
+    await localState(WANT)
+    comfy.queue = { queue_running: [], queue_pending: [] }
+    t0 = Date.now()
+  })
+
+  it('names the app whose page sent the run, not the name the page tagged it with', async () => {
+    await runFromApp({ comfy_app: { name: 'Remove Background' } })
+    hear('execution_start', { timestamp: t0 + 2_000 })
+    hear('execution_success', { timestamp: t0 + 9_000 })
+
+    expect(captured(RUN_FINISHED)).toEqual([
+      {
+        app_id: APP,
+        where: 'local',
+        outcome: 'success',
+        run_seconds: 7,
+        queue_seconds: 2
+      }
+    ])
+  })
+
+  it.each([
+    ['execution_error', { exception_type: 'torch.OutOfMemoryError' }, 'failed'],
+    ['execution_interrupted', {}, 'cancelled']
+  ])('reports %s as %s', async (type, data, outcome) => {
+    await runFromApp()
+    hear('execution_start', { timestamp: t0 })
+    hear(type, { ...data, exception_message: 'at /home/someone', timestamp: t0 + 1_000 })
+
+    expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ app_id: APP, outcome })])
+    expect(JSON.stringify(mocks.captured)).not.toContain('/home/someone')
+  })
+
+  it('sends nothing for a graph ComfyUI refused, which never got a prompt id', async () => {
+    comfy.promptAnswer = { status: 400, body: { error: { type: 'prompt_no_outputs' } } }
+
+    await runFromApp()
+    hear('execution_success')
+
+    expect(captured(RUN_FINISHED)).toEqual([])
+  })
+
+  it('reports a run as failed once, when its ComfyUI exits before it ends', async () => {
+    await runFromApp()
+    hear('execution_start', { timestamp: t0 })
+
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed')
+    sessionLifecycleEvents.emit('changed')
+    hear('execution_success')
+
+    expect(captured(RUN_FINISHED)).toEqual([
+      expect.objectContaining({ app_id: APP, outcome: 'failed', error_class: 'comfyui_exited' })
+    ])
+  })
+
+  it('reads how a run ended from ComfyUI history when the socket was down as it ended', async () => {
+    await runFromApp()
+    comfy.historyEntry = {
+      outputs: {},
+      status: {
+        status_str: 'success',
+        completed: true,
+        messages: [
+          ['execution_start', { prompt_id: RUN, timestamp: t0 + 1_000 }],
+          ['execution_success', { prompt_id: RUN, timestamp: t0 + 5_000 }]
+        ]
+      }
+    }
+
+    mocks.socketOpened()
+
+    await vi.waitFor(() =>
+      expect(captured(RUN_FINISHED)).toEqual([
+        expect.objectContaining({ outcome: 'success', run_seconds: 4, queue_seconds: 1 })
+      ])
+    )
+  })
+
+  it('keeps following a run that is still queued when the socket opens again', async () => {
+    comfy.queue = { queue_running: [[5, RUN, {}, {}]], queue_pending: [] }
+    await runFromApp()
+    hear('execution_start', { timestamp: t0 })
+
+    mocks.socketOpened()
+    await vi.waitFor(() => expect(comfy.calls('/queue')).toHaveLength(1))
+    await vi.advanceTimersByTimeAsync(0)
+    hear('execution_success')
+
+    expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ outcome: 'success' })])
+    expect(comfy.calls(`/history/${RUN}`)).toEqual([])
+  })
+
+  it('reports a run ComfyUI no longer knows after the socket opens again as failed', async () => {
+    comfy.historyEntry = null
+    await runFromApp()
+
+    mocks.socketOpened()
+
+    await vi.waitFor(() =>
+      expect(captured(RUN_FINISHED)).toEqual([
+        expect.objectContaining({ outcome: 'failed', error_class: 'comfyui_exited' })
+      ])
+    )
+  })
+
+  it('reports a run the page took out of the queue before it started as cancelled', async () => {
+    comfy.historyEntry = null
+    await runFromApp()
+
+    expect((await post('/queue', { delete: [RUN] })).status).toBe(200)
+
+    await vi.waitFor(() =>
+      expect(captured(RUN_FINISHED)).toEqual([
+        expect.objectContaining({ app_id: APP, outcome: 'cancelled' })
+      ])
+    )
+    expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('run_seconds')
+  })
+
+  describe('when a read fails after the page takes a run out of the queue', () => {
+    const queueReads = (): Asked[] =>
+      comfy.calls('/queue').filter((asked) => asked.method === 'GET')
+
+    async function takeOutOfQueue(): Promise<void> {
+      comfy.historyEntry = null
+      await runFromApp()
+      expect((await post('/queue', { delete: [RUN] })).status).toBe(200)
+      await vi.advanceTimersByTimeAsync(0)
+    }
+
+    it.each([
+      [
+        'queue',
+        (): void => {
+          comfy.brokenQueueReads = 1
+        }
+      ],
+      [
+        'history',
+        (): void => {
+          comfy.brokenHistory = 'status'
+        }
+      ]
+    ] as const)(
+      'reports the run as cancelled when the %s read works on a later try',
+      async (_read, breakRead) => {
+        breakRead()
+        await takeOutOfQueue()
+        expect(captured(RUN_FINISHED)).toEqual([])
+        comfy.brokenHistory = null
+
+        await vi.advanceTimersByTimeAsync(2_000)
+
+        expect(captured(RUN_FINISHED)).toEqual([
+          expect.objectContaining({ app_id: APP, outcome: 'cancelled' })
+        ])
+      }
+    )
+
+    it('tries a few more times, then stops without guessing an outcome', async () => {
+      comfy.brokenQueueReads = Number.POSITIVE_INFINITY
+      await takeOutOfQueue()
+
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(queueReads()).toHaveLength(4)
+      expect(captured(RUN_FINISHED)).toEqual([])
+    })
+
+    it('stops trying once Desktop no longer follows the run', async () => {
+      comfy.brokenQueueReads = Number.POSITIVE_INFINITY
+      await takeOutOfQueue()
+      mocks.sessions.delete(STUDIO)
+      sessionLifecycleEvents.emit('changed')
+
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(queueReads()).toHaveLength(1)
+      expect(captured(RUN_FINISHED)).toEqual([
+        expect.objectContaining({ outcome: 'failed', error_class: 'comfyui_exited' })
+      ])
+    })
+
+    it('stops trying once local apps are reset', async () => {
+      comfy.brokenQueueReads = Number.POSITIVE_INFINITY
+      await takeOutOfQueue()
+      _resetForTest()
+
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(queueReads()).toHaveLength(1)
+    })
+  })
+
+  describe('when the queue changes, as when another ComfyUI client clears pending work', () => {
+    const queueChanged = (remaining = 0): void =>
+      mocks.hearFromComfy({
+        type: 'status',
+        data: { status: { exec_info: { queue_remaining: remaining } } }
+      })
+    const queueReads = (): Asked[] =>
+      comfy.calls('/queue').filter((asked) => asked.method === 'GET')
+
+    it('reports a run that is gone from the queue before it started as cancelled, once', async () => {
+      comfy.historyEntry = null
+      await runFromApp()
+
+      queueChanged()
+      queueChanged()
+
+      await vi.waitFor(() =>
+        expect(captured(RUN_FINISHED)).toEqual([
+          expect.objectContaining({ app_id: APP, outcome: 'cancelled' })
+        ])
+      )
+      await vi.advanceTimersByTimeAsync(0)
+      expect(captured(RUN_FINISHED)).toHaveLength(1)
+    })
+
+    it('reports a run that ended meanwhile from its history', async () => {
+      await runFromApp()
+      comfy.historyEntry = {
+        outputs: {},
+        status: {
+          status_str: 'success',
+          completed: true,
+          messages: [
+            ['execution_start', { prompt_id: RUN, timestamp: t0 + 1_000 }],
+            ['execution_success', { prompt_id: RUN, timestamp: t0 + 4_000 }]
+          ]
+        }
+      }
+
+      queueChanged()
+
+      await vi.waitFor(() =>
+        expect(captured(RUN_FINISHED)).toEqual([
+          expect.objectContaining({ outcome: 'success', run_seconds: 3 })
+        ])
+      )
+    })
+
+    it('keeps following a run that is still queued', async () => {
+      comfy.queue = { queue_running: [], queue_pending: [[5, RUN, {}, {}]] }
+      await runFromApp()
+
+      queueChanged(1)
+      await vi.waitFor(() => expect(queueReads()).toHaveLength(1))
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(captured(RUN_FINISHED)).toEqual([])
+      expect(comfy.calls(`/history/${RUN}`)).toEqual([])
+    })
+
+    it('reads the queue at most once more for changes heard while it reads it', async () => {
+      comfy.queue = { queue_running: [], queue_pending: [[5, RUN, {}, {}]] }
+      await runFromApp()
+
+      queueChanged(1)
+      queueChanged(1)
+      queueChanged(1)
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(queueReads()).toHaveLength(2)
+    })
+
+    it('takes the start of a run from its history when the socket missed it', async () => {
+      comfy.queue = { queue_running: [[5, RUN, {}, {}]], queue_pending: [] }
+      await runFromApp()
+      mocks.socketOpened()
+      await vi.waitFor(() => expect(queueReads()).toHaveLength(1))
+      await vi.advanceTimersByTimeAsync(0)
+      comfy.queue = { queue_running: [], queue_pending: [] }
+      comfy.historyEntry = {
+        outputs: {},
+        status: {
+          status_str: 'success',
+          completed: true,
+          messages: [
+            ['execution_start', { prompt_id: RUN, timestamp: t0 + 1_000 }],
+            ['execution_success', { prompt_id: RUN, timestamp: t0 + 6_000 }]
+          ]
+        }
+      }
+
+      hear('execution_success', { timestamp: t0 + 6_000 })
+      expect(captured(RUN_FINISHED)).toEqual([])
+      queueChanged()
+
+      await vi.waitFor(() =>
+        expect(captured(RUN_FINISHED)).toEqual([
+          expect.objectContaining({ outcome: 'success', run_seconds: 5, queue_seconds: 1 })
+        ])
+      )
+    })
+
+    it.each(['body', 'status'] as const)(
+      'sends a heard end with no run time, once, when the history read fails (%s)',
+      async (broken) => {
+        comfy.brokenHistory = broken
+        await runFromApp()
+
+        hear('execution_success', { timestamp: t0 + 6_000 })
+        queueChanged()
+
+        await vi.waitFor(() =>
+          expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ outcome: 'success' })])
+        )
+        await vi.advanceTimersByTimeAsync(0)
+        expect(captured(RUN_FINISHED)).toHaveLength(1)
+        expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('run_seconds')
+        expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('queue_seconds')
+      }
+    )
+
+    it('sends a run whose start the socket missed with no run time when its history is gone', async () => {
+      comfy.historyEntry = null
+      await runFromApp()
+
+      hear('execution_success', { timestamp: t0 + 6_000 })
+      queueChanged()
+
+      await vi.waitFor(() =>
+        expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ outcome: 'success' })])
+      )
+      expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('run_seconds')
+    })
+
+    it('reads nothing once every run Desktop follows has started', async () => {
+      await runFromApp()
+      hear('execution_start', { timestamp: t0 })
+
+      queueChanged()
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(queueReads()).toEqual([])
+    })
+
+    it('reads nothing for the status ComfyUI sends each socket as it connects', async () => {
+      await runFromApp()
+
+      mocks.hearFromComfy({
+        type: 'status',
+        data: { status: { exec_info: { queue_remaining: 0 } }, sid: 'desktop-client' }
+      })
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(queueReads()).toEqual([])
+    })
+  })
+
+  it('leaves a run that already started when the page asks to take it out of the queue', async () => {
+    comfy.queue = { queue_running: [[5, RUN, {}, {}]], queue_pending: [] }
+    await runFromApp()
+    hear('execution_start', { timestamp: t0 })
+
+    await post('/queue', { delete: [RUN] })
+    await vi.waitFor(() =>
+      expect(comfy.calls('/queue').filter((asked) => asked.method === 'GET')).toHaveLength(1)
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    hear('execution_success')
+
+    expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ outcome: 'success' })])
+  })
+})
+
+describe('setup, when Desktop starts the ComfyUI an app runs on', () => {
+  const startFor = (app: string | null) => local.startLocal(asContents(page), WANT, app)
+
+  it('says it started and finished, for the app that asked', async () => {
+    startsWhenLaunched()
+
+    expect((await startFor(APP)).state).toBe('running')
+
+    expect(captured(SETUP)).toEqual([
+      { app_id: APP, stage: 'start', outcome: 'started' },
+      { app_id: APP, stage: 'start', outcome: 'finished', seconds: 0 }
+    ])
+  })
+
+  it('says so once when two pages ask together', async () => {
+    startsWhenLaunched()
+
+    await Promise.all([startFor(APP), startFor('remove-background')])
+
+    expect(setupSteps()).toEqual(['start started', 'start finished'])
+  })
+
+  it.each([
+    ['gives no reason', async () => ({ ok: false }), 'start_failed'],
+    ['says the port is taken', async () => ({ ok: false, portConflict: {} }), 'port_conflict'],
+    [
+      'throws',
+      async () => {
+        throw new Error('spawn /Users/someone/ComfyUI failed')
+      },
+      'start_failed'
+    ]
+  ])('says it failed when the launch %s', async (_how, launch, errorClass) => {
+    mocks.handleLaunch = launch
+
+    await startFor(APP)
+
+    expect(captured(SETUP).at(-1)).toEqual(
+      expect.objectContaining({ stage: 'start', outcome: 'failed', error_class: errorClass })
+    )
+    expect(JSON.stringify(mocks.captured)).not.toContain('someone')
+  })
+
+  it('says nothing more when the start was cancelled', async () => {
+    mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
+
+    await startFor(APP)
+
+    expect(setupSteps()).toEqual(['start started'])
+  })
+
+  it('says nothing when the build is already running, or the person is starting it', async () => {
+    running()
+    await startFor(APP)
+    mocks.sessions.clear()
+    mocks.launching.add(STUDIO)
+    const waiting = startFor(APP)
+    await vi.advanceTimersByTimeAsync(1_200)
+    running()
+    mocks.launching.delete(STUDIO)
+    await vi.advanceTimersByTimeAsync(600)
+    await waiting
+
+    expect(captured(SETUP)).toEqual([])
+  })
+
+  it('says nothing for the Auto start build Desktop starts as it opens', async () => {
+    startsWhenLaunched()
+
+    await local.startWithDesktop(build() as unknown as InstallationRecord)
+
+    expect(captured(SETUP)).toEqual([])
+  })
+})
+
+describe('setup, when an app waits for the first build to install', () => {
+  const NEW_BUILD = 'first-build'
+
+  function finishInstall(status: string): void {
+    const record = mocks.records.find((one) => one['id'] === NEW_BUILD)
+    if (record) Object.assign(record, { status, version: 'v0.42.1' })
+    mocks.installing.delete(NEW_BUILD)
+  }
+
+  beforeEach(() => {
+    mocks.records = [
+      build({
+        id: NEW_BUILD,
+        name: 'ComfyUI',
+        installPath: '/builds/first-build',
+        status: 'installing',
+        version: undefined
+      })
+    ]
+    mocks.installing.add(NEW_BUILD)
+  })
+
+  it('says the install started and finished, then the start', async () => {
+    startsWhenLaunched()
+    const starting = local.startLocal(asContents(page), WANT, APP)
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(captured(SETUP)).toEqual([{ app_id: APP, stage: 'install', outcome: 'started' }])
+
+    finishInstall('installed')
+    await vi.advanceTimersByTimeAsync(1_000)
+    await starting
+
+    expect(setupSteps()).toEqual([
+      'install started',
+      'install finished',
+      'start started',
+      'start finished'
+    ])
+    expect(captured(SETUP)[1]).toMatchObject({ app_id: APP, seconds: 4 })
+  })
+
+  it('says the install failed when it fails', async () => {
+    const starting = local.startLocal(asContents(page), WANT, APP)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    finishInstall('failed')
+    await vi.advanceTimersByTimeAsync(1_000)
+    await starting
+
+    expect(captured(SETUP).at(-1)).toEqual(
+      expect.objectContaining({
+        stage: 'install',
+        outcome: 'failed',
+        error_class: 'install_failed'
+      })
+    )
+  })
+
+  it('says the install failed when the app stops waiting after an hour', async () => {
+    const starting = local.startLocal(asContents(page), WANT, APP)
+
+    await vi.advanceTimersByTimeAsync(60 * 60_000 + 1_000)
+    await starting
+
+    expect(captured(SETUP).at(-1)).toEqual(
+      expect.objectContaining({ outcome: 'failed', error_class: 'install_timed_out' })
+    )
+  })
+
+  it('says nothing more when the person cancels the install', async () => {
+    const starting = local.startLocal(asContents(page), WANT, APP)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    mocks.records = []
+    mocks.installing.clear()
+    await vi.advanceTimersByTimeAsync(1_000)
+    await starting
+
+    expect(setupSteps()).toEqual(['install started'])
+  })
+
+  it('says it once when a model download and a start wait on the same install', async () => {
+    mocks.ownModels.add(NEW_BUILD)
+    mocks.startModelJob = async () => ({
+      id: 'job',
+      release: vi.fn(),
+      completion: Promise.resolve({ status: 'completed', savePath: '/models/x' })
+    })
+    await localState(WANT)
+    const downloading = local.localDownload(asContents(page), BIREFNET, APP)
+    const starting = local.startLocal(asContents(page), WANT, APP)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    finishInstall('installed')
+    await vi.advanceTimersByTimeAsync(1_000)
+    await Promise.all([downloading, starting])
+
+    expect(setupSteps().filter((step) => step.startsWith('install'))).toEqual([
+      'install started',
+      'install finished'
+    ])
+  })
+})
+
+describe('a model download an app asked for', () => {
+  it('names that app to the download, for its telemetry', async () => {
+    const started: Record<string, unknown>[] = []
+    mocks.startModelJob = async (options) => {
+      started.push(options)
+      return {
+        id: 'job',
+        release: vi.fn(),
+        completion: Promise.resolve({ status: 'completed', savePath: '/models/x' })
+      }
+    }
+    running()
+    await localState(WANT)
+
+    expect(await local.localDownload(asContents(page), BIREFNET, APP)).toEqual({ state: 'done' })
+
+    expect(started).toEqual([expect.objectContaining({ source: 'app', appId: APP })])
+  })
+})

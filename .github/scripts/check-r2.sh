@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Reports what the R2 token can do against the bucket the workflow publishes to.
-# Separates "token invalid" from "cannot see the bucket" from "read but not
-# write", so a failure names the permission to ask for.
 set -uo pipefail
 
 API=https://api.cloudflare.com/client/v4
@@ -17,8 +14,6 @@ say() {
 
 say "### R2"
 
-# Without this, `set -u` aborts with a bare "unbound variable" and the script
-# reports nothing, which is the opposite of its job.
 for v in CF_ACCOUNT CF_TOKEN; do
   if [ -z "${!v:-}" ]; then
     say "- **\`$v\` is not set on this run.** Add it to the starter-templates environment."
@@ -29,8 +24,6 @@ done
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-# Account-owned tokens are rejected by /user/tokens/verify with code 1000 even
-# when perfectly valid, so try the account endpoint too before calling it bad.
 verify=$(curl -sS --connect-timeout 10 --max-time 30 "$API/accounts/$CF_ACCOUNT/tokens/verify" -H "Authorization: Bearer $CF_TOKEN")
 kind="account-owned"
 if ! jq -e '.success == true' <<<"$verify" >/dev/null 2>&1; then

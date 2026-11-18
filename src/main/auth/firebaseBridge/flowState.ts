@@ -1,4 +1,4 @@
-import { shell, type WebContents } from 'electron'
+import type { WebContents } from 'electron'
 
 import {
   buildCopyLinkBannerScript,
@@ -8,6 +8,7 @@ import {
 } from './copyLinkBanner'
 import type { BridgeHandle } from './server'
 import * as i18n from '../../lib/i18n'
+import { tryOpenExternalUrl } from '../../lib/openExternal'
 
 export interface ActiveBridgeFlow {
   controller: AbortController
@@ -17,12 +18,6 @@ export interface ActiveBridgeFlow {
 let activeBridgeFlow: ActiveBridgeFlow | null = null
 let activeBannerCleanup: (() => void) | null = null
 
-/** Open a trusted auth URL without leaking a rejected Electron promise. */
-export function openExternalSafely(url: string): void {
-  void shell.openExternal(url).catch(() => {})
-}
-
-/** Replace any in-flight loopback flow with a new singleton owner. */
 export function beginActiveBridgeFlow(): ActiveBridgeFlow {
   closeActiveBridge()
   const flow: ActiveBridgeFlow = { controller: new AbortController(), handle: null }
@@ -34,14 +29,12 @@ export function isActiveBridgeFlow(flow: ActiveBridgeFlow): boolean {
   return activeBridgeFlow === flow
 }
 
-/** Release ownership without cancelling a flow that already completed. */
 export function releaseActiveBridgeFlow(flow: ActiveBridgeFlow): boolean {
   if (activeBridgeFlow !== flow) return false
   activeBridgeFlow = null
   return true
 }
 
-/** Cancel + clear the in-flight loopback flow, if any. */
 export function closeActiveBridge(): void {
   const flow = activeBridgeFlow
   if (!flow) return
@@ -49,19 +42,15 @@ export function closeActiveBridge(): void {
   flow.controller.abort()
   try {
     flow.handle?.close()
-  } catch {
-    // Best-effort cleanup.
-  }
+  } catch {}
 }
 
-/** Run + clear the in-flight card teardown, if any. Safe to call twice. */
 export function runBannerCleanup(): void {
   const cleanup = activeBannerCleanup
   activeBannerCleanup = null
   cleanup?.()
 }
 
-/** Inject the browser-opened card and own its singleton teardown. */
 export function showCopyLinkBanner(comfyContents: WebContents, loginUrl: string): void {
   if (comfyContents.isDestroyed()) return
 
@@ -82,7 +71,7 @@ export function showCopyLinkBanner(comfyContents: WebContents, loginUrl: string)
     details: Electron.Event<Electron.WebContentsConsoleMessageEventParams>
   ): void => {
     if (details.frame?.parent != null || details.message !== OPEN_LINK_SENTINEL) return
-    openExternalSafely(loginUrl)
+    void tryOpenExternalUrl(loginUrl)
   }
   comfyContents.on('console-message', onConsoleMessage)
 

@@ -14,8 +14,18 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
+const { uuids } = vi.hoisted(() => ({ uuids: [] as string[] }))
+vi.mock('crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof nodeCrypto>()
+  const randomUUID = (): string => uuids.shift() ?? actual.randomUUID()
+  return { ...actual, default: { ...actual, randomUUID }, randomUUID }
+})
+
 import type { InstallationRecord } from '../../installations'
-import { buildLaunchEnv } from './shared'
+import type * as nodeCrypto from 'crypto'
+import os from 'os'
+import path from 'path'
+import { buildLaunchEnv, createSessionPath, sanitizeEnvVars } from './shared'
 
 function inst(sourceId: string, envVars?: Record<string, string>): InstallationRecord {
   return {
@@ -60,5 +70,82 @@ describe('buildLaunchEnv __COMFYUI_DESKTOP_VERSION__', () => {
   it('ignores a user env var override', () => {
     const env = buildLaunchEnv(inst('git', { __COMFYUI_DESKTOP_VERSION__: '9.9.9' }))
     expect(env).not.toHaveProperty('__COMFYUI_DESKTOP_VERSION__')
+  })
+})
+
+describe('createSessionPath', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('gives two launches in the same millisecond different session paths', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_792_800_000_000)
+    uuids.push('00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002')
+    const first = createSessionPath()
+    const second = createSessionPath()
+    expect(
+      first,
+      "one shared session path would let one launch consume the other launch's .reboot marker"
+    ).not.toBe(second)
+    for (const sessionPath of [first, second]) {
+      expect(path.dirname(sessionPath)).toBe(os.tmpdir())
+      expect(path.basename(sessionPath)).toMatch(
+        /^comfyui-desktop-2-1792800000000-0{8}-0{4}-4000-8000-00000000000[12]$/
+      )
+    }
+  })
+})
+
+describe('buildLaunchEnv agent client context', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('sets the three vars when the launch has a client context', () => {
+    const env = buildLaunchEnv(inst('portable'), undefined, { channel: 'beta', gpuTier: 'mid' })
+    expect(env.AGENT_CLIENT_CONTEXT).toBe('desktop')
+    expect(env.AGENT_CLIENT_CHANNEL).toBe('beta')
+    expect(env.AGENT_CLIENT_GPU_TIER).toBe('mid')
+  })
+
+  it('leaves the tier out when the probe had not answered', () => {
+    const env = buildLaunchEnv(inst('standalone'), undefined, { channel: 'stable' })
+    expect(env.AGENT_CLIENT_CHANNEL).toBe('stable')
+    expect(env).not.toHaveProperty('AGENT_CLIENT_GPU_TIER')
+  })
+
+  it('drops values from process.env and per-install vars without consent', () => {
+    vi.stubEnv('AGENT_CLIENT_CONTEXT', 'desktop')
+    vi.stubEnv('AGENT_CLIENT_CHANNEL', 'beta')
+    vi.stubEnv('AGENT_CLIENT_GPU_TIER', 'high')
+    const env = buildLaunchEnv(
+      inst('standalone', { AGENT_CLIENT_CONTEXT: 'desktop', agent_client_channel: 'canary' })
+    )
+    for (const name of ['AGENT_CLIENT_CONTEXT', 'AGENT_CLIENT_CHANNEL', 'AGENT_CLIENT_GPU_TIER']) {
+      expect(env).not.toHaveProperty(name)
+    }
+    expect(env).not.toHaveProperty('agent_client_channel')
+  })
+
+  it('strips the names from per-install vars when they are saved', () => {
+    expect(
+      sanitizeEnvVars({ AGENT_CLIENT_CONTEXT: 'desktop', agent_client_gpu_tier: 'high', KEEP: '1' })
+    ).toEqual({
+      KEEP: '1'
+    })
+  })
+
+  it('drops an inherited name in any case, as Windows env names are case-insensitive', () => {
+    vi.stubEnv('agent_client_channel', 'beta')
+    vi.stubEnv('Agent_Client_Context', 'desktop')
+    const env = buildLaunchEnv(inst('standalone'))
+    expect(env).not.toHaveProperty('agent_client_channel')
+    expect(env).not.toHaveProperty('Agent_Client_Context')
+  })
+
+  it('does not let an inherited tier ride along with a context that has none', () => {
+    vi.stubEnv('AGENT_CLIENT_GPU_TIER', 'high')
+    const env = buildLaunchEnv(inst('standalone'), undefined, { channel: 'stable' })
+    expect(env).not.toHaveProperty('AGENT_CLIENT_GPU_TIER')
   })
 })

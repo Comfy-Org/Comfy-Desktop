@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { runPromptChain } from './actionShoppingList'
 import type { ActionDef } from '../types/ipc'
 
-// Minimal driver stub: runPromptChain only ever touches `.prompt`.
 function makeDriver(returnValue: string | null) {
   const prompt = vi.fn().mockResolvedValue(returnValue)
   return { driver: { prompt } as unknown as Parameters<typeof runPromptChain>[1], prompt }
@@ -33,7 +32,6 @@ describe('runPromptChain — uniquifyDefault', () => {
     const result = await runPromptChain(copyAction({ uniquifyDefault: true }), driver)
 
     expect(window.api.getUniqueName).toHaveBeenCalledWith('ComfyUI (2)')
-    // The prompt is pre-filled with the resolved unique name, not the raw source name.
     expect(prompt).toHaveBeenCalledWith(expect.objectContaining({ defaultValue: 'ComfyUI (8)' }))
     expect(result?.data?.name).toBe('ComfyUI (8)')
   })

@@ -1,6 +1,12 @@
 import { BrowserWindow } from 'electron'
 import type { Event, Session, WebContents } from 'electron'
 import { findEntryByComfySender } from '../host/registry'
+import {
+  guardPermissionRequests,
+  hasPermissionsWithheld,
+  restorePermissionsTo,
+  withholdPermissionsFrom
+} from './sessionPermissions'
 
 const HUGGING_FACE_HOST = 'huggingface.co'
 const HUGGING_FACE_RESERVED_ROUTES = new Set([
@@ -27,7 +33,6 @@ const HUGGING_FACE_RESERVED_ROUTES = new Set([
 ])
 const accessWindowsBySender = new WeakMap<WebContents, Map<string, BrowserWindow>>()
 const securedSessions = new WeakSet<Session>()
-const accessPageContents = new WeakSet<WebContents>()
 
 function parseHuggingFaceUrl(url: string): URL | null {
   try {
@@ -78,18 +83,16 @@ function isAllowedNavigation(url: string): boolean {
 }
 
 function secureSession(session: Session, contents: WebContents): void {
-  accessPageContents.add(contents)
+  withholdPermissionsFrom(contents)
+  guardPermissionRequests(session)
   if (securedSessions.has(session)) return
 
   session.setPermissionCheckHandler(
     (requestingContents, _permission, requestingOrigin, details) => {
-      if (requestingContents && accessPageContents.has(requestingContents)) return false
+      if (requestingContents && hasPermissionsWithheld(requestingContents)) return false
       return !isHuggingFaceOrigin(requestingOrigin) && !isHuggingFaceOrigin(details.embeddingOrigin)
     }
   )
-  session.setPermissionRequestHandler((requestingContents, _permission, callback) => {
-    callback(requestingContents !== null && !accessPageContents.has(requestingContents))
-  })
   securedSessions.add(session)
 }
 
@@ -147,7 +150,6 @@ export async function openModelAccessPageWindow(
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
-      // Keep provider login and access grants available to subsequent downloads.
       session: sender.session,
       preload: undefined,
       nodeIntegration: false,
@@ -165,7 +167,7 @@ export async function openModelAccessPageWindow(
   }
   parent.once('closed', destroyWithParent)
   accessWindow.once('closed', () => {
-    accessPageContents.delete(accessContents)
+    restorePermissionsTo(accessContents)
     if (accessWindows.get(repositoryPath) === accessWindow) {
       accessWindows.delete(repositoryPath)
       if (accessWindows.size === 0) accessWindowsBySender.delete(sender)

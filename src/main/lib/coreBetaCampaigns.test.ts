@@ -3,10 +3,12 @@ import {
   ENROL_MAX_AGE_MS,
   HOLD_MAX_AGE_MS,
   appliedPassThrough,
+  enrolledAgentOverride,
   campaignCandidateGrants,
   parseCampaignAnswer,
   parseCampaignRecords,
   parseCampaignRegistry,
+  heldArgUnanswered,
   planCampaignArgs
 } from './coreBetaCampaigns'
 import type { CampaignAnswer, CampaignFacts } from './coreBetaCampaigns'
@@ -524,6 +526,50 @@ describe('planCampaignArgs: members with no answer', () => {
   })
 })
 
+describe('heldArgUnanswered', () => {
+  const unanswered = (overrides: Partial<CampaignFacts>): boolean => {
+    const f = facts({ records: member, ...overrides })
+    return heldArgUnanswered(planCampaignArgs(f).misses, f, '--enable-agent')
+  }
+
+  it("is true for a member whose listed campaign's flag gave no answer", () => {
+    expect(unanswered({ answers: new Map() })).toBe(true)
+  })
+
+  it.each([
+    ['unlisted from the registry', { registry: [], answers: new Map() }],
+    ['killed: the campaign serves false', { answers: new Map([[KEY, answer(false)]]) }],
+    [
+      'the grant was removed from the payload',
+      { answers: new Map([[KEY, answer('hold', { grants: [] })]]) }
+    ],
+    [
+      'the registry no longer lists its arg',
+      { registry: [{ key: KEY, args: ['--enable-assets'] }], answers: new Map() }
+    ],
+    ['held by a live answer', { answers: new Map([[KEY, answer('hold')]]) }]
+  ])('is false when %s, which is a decision, not a missing answer', (_label, overrides) => {
+    expect(unanswered(overrides)).toBe(false)
+  })
+
+  it("is false when the unanswered member's arg is another one", () => {
+    const misses = [
+      { key: KEY, arg: '--enable-assets', member: true, reason: 'no_answer' as const }
+    ]
+    const campaigns = {
+      registry: [{ key: KEY, args: ['--enable-agent', '--enable-assets'] }],
+      answers: new Map()
+    }
+    expect(heldArgUnanswered(misses, campaigns, '--enable-agent')).toBe(false)
+    expect(heldArgUnanswered(misses, campaigns, '--enable-assets')).toBe(true)
+  })
+
+  it('is false for a machine that never enrolled', () => {
+    const f = facts({ answers: new Map() })
+    expect(heldArgUnanswered(planCampaignArgs(f).misses, f, '--enable-agent')).toBe(false)
+  })
+})
+
 describe('planCampaignArgs: isolation', () => {
   it('refuses a grant its registry entry does not list', () => {
     const plan = planCampaignArgs(facts({ registry: [{ key: KEY, args: ['--enable-assets'] }] }))
@@ -625,5 +671,56 @@ describe('appliedPassThrough', () => {
     const payload: CampaignAnswer = { ...answer('enrol'), payload: { grants: [] } }
     const plan = planCampaignArgs(facts({ answers: new Map([[KEY, payload]]) }))
     expect(appliedPassThrough(plan.applied, '--enable-agent')).toBeUndefined()
+  })
+})
+
+describe('enrolledAgentOverride', () => {
+  const NOW = Date.now()
+  const listed = [{ key: KEY, args: ['--enable-agent'] }]
+  const fresh = (a: CampaignAnswer): CampaignAnswer => ({ ...a, fetchedAt: NOW })
+  const of = (a: CampaignAnswer, registry = listed) => ({ registry, answers: new Map([[KEY, a]]) })
+
+  it('returns the override an enrolling answer for the agent carries', () => {
+    expect(enrolledAgentOverride(of(fresh(answer('enrol'))), NOW, 'machine_derived')).toEqual({
+      override: { 'comfy-agent': '0.2.3' }
+    })
+  })
+
+  it('names no override for an enrolling answer that carries none', () => {
+    const payload: CampaignAnswer = { ...fresh(answer('enrol')), payload: { grants: [] } }
+    expect(enrolledAgentOverride(of(payload), NOW, 'machine_derived')).toEqual({
+      override: undefined
+    })
+  })
+
+  it('is null for an answer a launch could not enrol on', () => {
+    const enrol = fresh(answer('enrol'))
+    expect(enrolledAgentOverride(of(fresh(answer('hold'))), NOW, 'machine_derived')).toBeNull()
+    expect(enrolledAgentOverride(of(enrol), NOW, 'random_fallback'), 'id class').toBeNull()
+    expect(
+      enrolledAgentOverride(of(enrol), NOW + ENROL_MAX_AGE_MS + 1, 'machine_derived'),
+      'too old to enrol'
+    ).toBeNull()
+    expect(
+      enrolledAgentOverride(
+        of(enrol, [{ key: KEY, args: ['--enable-assets'] }]),
+        NOW,
+        'machine_derived'
+      ),
+      'the campaign does not list the agent'
+    ).toBeNull()
+    expect(
+      enrolledAgentOverride(
+        { registry: [], answers: new Map([[KEY, enrol]]) },
+        NOW,
+        'machine_derived'
+      ),
+      'an answer for a campaign that is not listed'
+    ).toBeNull()
+    const assets: CampaignAnswer = {
+      ...enrol,
+      grants: enrol.grants.map((g) => ({ ...g, grant: { ...g.grant, arg: '--enable-assets' } }))
+    }
+    expect(enrolledAgentOverride(of(assets), NOW, 'machine_derived'), 'grants no agent').toBeNull()
   })
 })

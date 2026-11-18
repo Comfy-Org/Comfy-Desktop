@@ -103,9 +103,7 @@ describe('createHardwareTap', () => {
     tap.ingest('pytorch version: 2.10.0+cu130\n', 'stdout')
     tap.ingest('xformers version: 0.0.31\n', 'stdout')
     tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
-    // A second Device line (other GPU) is part of the SAME event, not a new one.
     tap.ingest('Device: cuda:1 NVIDIA GeForce RTX 5090 : native\n', 'stdout')
-    // A non-Device line closes the run and triggers the single emit.
     tap.ingest('Using xformers attention\n', 'stdout')
 
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
@@ -124,7 +122,6 @@ describe('createHardwareTap', () => {
       xformers_version: '0.0.31',
       cuda_device_set: 0
     })
-    // All devices reported as parallel arrays aligned by index.
     expect(accel[0]!.ctx['device_types']).toEqual(['cuda', 'cuda'])
     expect(accel[0]!.ctx['device_indices']).toEqual([0, 1])
     expect(accel[0]!.ctx['gpu_models']).toEqual([
@@ -135,9 +132,6 @@ describe('createHardwareTap', () => {
   })
 
   it('parses current ComfyUI log lines carrying a colored [LEVEL] prefix', () => {
-    // ComfyUI's ColoredFormatter emits `\x1b[32m[INFO]\x1b[0m <message>`, not
-    // the bare `%(message)s` the parsers are anchored against. The tap must
-    // strip ANSI then the level tag for the accelerator event to fire.
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('\u001b[32m[INFO]\u001b[0m Total VRAM 32607 MB, total RAM 97430 MB\n', 'stdout')
     tap.ingest('\u001b[32m[INFO]\u001b[0m pytorch version: 2.10.0+cu130\n', 'stdout')
@@ -369,11 +363,8 @@ describe('createHardwareTap', () => {
   })
 
   it('detects a complete Device line even in an oversized chunk', () => {
-    // A single large stdout chunk: complete metadata + Device lines, then a
-    // huge unterminated tail. The buffer cap must only trim the tail, never
-    // drop the complete lines that precede it.
     const tap = createHardwareTap({ installationId: 'inst-1' })
-    const hugeTail = 'x'.repeat(64 * 1024) // > MAX_PENDING_CHARS, no newline
+    const hugeTail = 'x'.repeat(64 * 1024)
     tap.ingest(
       'Total VRAM 24576 MB, total RAM 65461 MB\n' +
         'Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n' +
@@ -482,12 +473,11 @@ describe('createHardwareTap', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
     tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
-    tap.ingest('startup continues\n', 'stdout') // closes the run -> emit
+    tap.ingest('startup continues\n', 'stdout')
     expect(
       captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     ).toHaveLength(1)
 
-    // A stale Device line after the run already emitted must NOT re-emit.
     tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native\n', 'stdout')
     tap.ingest('more logs\n', 'stdout')
     expect(
@@ -497,7 +487,7 @@ describe('createHardwareTap', () => {
     tap.beginBoot()
     tap.ingest('Total VRAM 16384 MB, total RAM 32768 MB\n', 'stdout')
     tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4080 : native\n', 'stdout')
-    tap.flushSummary() // closes the second boot's run
+    tap.flushSummary()
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     expect(accel).toHaveLength(2)
     expect(accel[1]!.ctx).toMatchObject({ gpu_model: 'NVIDIA GeForce RTX 4080', vram_mb: 16384 })
@@ -507,7 +497,7 @@ describe('createHardwareTap', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Device: cuda:0 NVIDIA GeForce ', 'stdout')
     tap.ingest('RTX 4090 : native\n', 'stdout')
-    tap.flushSummary() // closes the run -> emit
+    tap.flushSummary()
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     expect(accel).toHaveLength(1)
     expect(accel[0]!.ctx).toMatchObject({ gpu_model: 'NVIDIA GeForce RTX 4090' })
@@ -515,8 +505,6 @@ describe('createHardwareTap', () => {
 
   it('keeps stdout and stderr partial lines from splicing together', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
-    // Interleaved partial lines from two streams must not be concatenated into
-    // a bogus combined line; each stream's buffer completes independently.
     tap.ingest('Device: cuda:0 NVIDIA GeForce ', 'stdout')
     tap.ingest('some unrelated stderr noise\n', 'stderr')
     tap.ingest('RTX 4090 : native\n', 'stdout')
@@ -529,7 +517,7 @@ describe('createHardwareTap', () => {
   it('flushes a trailing unterminated Device line on session end', () => {
     const tap = createHardwareTap({ installationId: 'inst-1' })
     tap.ingest('Total VRAM 24576 MB, total RAM 65461 MB\n', 'stdout')
-    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native', 'stdout') // no newline
+    tap.ingest('Device: cuda:0 NVIDIA GeForce RTX 4090 : native', 'stdout')
     tap.flushSummary()
     const accel = captured.filter((c) => c.event === 'comfy.desktop.comfyui.accelerator_detected')
     expect(accel).toHaveLength(1)

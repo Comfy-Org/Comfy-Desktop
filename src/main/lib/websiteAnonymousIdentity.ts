@@ -15,8 +15,6 @@ const LEGACY_DOWNLOAD_ATTRIBUTION_FILES = [
   'download-token-attributed'
 ] as const
 
-// Version/variant nibbles deliberately unpinned: posthog-js has switched UUID
-// versions before (v4 -> v7); a pinned pattern would silently drop attribution.
 const WEBSITE_ANONYMOUS_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
@@ -28,11 +26,6 @@ export function pendingWebsiteAnonymousIdRetryPath(): string {
   return path.join(configDir(), PENDING_WEBSITE_ANONYMOUS_ID_RETRY_FILE)
 }
 
-/**
- * The payload IS the identity — no decoding — so a hand-crafted installer can
- * only inject a well-formed UUID, never an arbitrary distinct ID (this also
- * rules out PostHog's unmergeable illegal IDs by shape).
- */
 export function parseWebsiteAnonymousIdPayload(payload: unknown): string | null {
   if (typeof payload !== 'string') return null
   return WEBSITE_ANONYMOUS_ID_PATTERN.test(payload) ? payload : null
@@ -42,17 +35,13 @@ function clearPendingWebsiteAnonymousId(): void {
   for (const filePath of [pendingWebsiteAnonymousIdPath(), pendingWebsiteAnonymousIdRetryPath()]) {
     try {
       fs.rmSync(filePath, { force: true })
-    } catch {
-      // A persisted Desktop ID always wins, so stale carriers are harmless.
-    }
+    } catch {}
   }
 }
 
 function readWebsiteAnonymousId(filePath: string): string | null {
   try {
     const raw = fs.readFileSync(filePath, 'utf-8')
-    // NSIS writes exactly CRLF; don't trim() — the on-disk grammar must stay
-    // as strict as the Router's filename grammar.
     const payload = raw.endsWith('\r\n') ? raw.slice(0, -2) : raw
     return parseWebsiteAnonymousIdPayload(payload)
   } catch {
@@ -73,17 +62,10 @@ function clearLegacyDownloadAttribution(): void {
   for (const filename of LEGACY_DOWNLOAD_ATTRIBUTION_FILES) {
     try {
       fs.rmSync(path.join(configDir(), filename), { force: true })
-    } catch {
-      // Best-effort privacy cleanup.
-    }
+    } catch {}
   }
 }
 
-/**
- * Resolve the pre-login PostHog distinct ID before the first capture. An
- * existing persisted ID always wins; a website carrier only seeds a fresh
- * install.
- */
 export function getInitialAnonymousDistinctId(existingInstallation = false): string {
   clearLegacyDownloadAttribution()
   const persisted = readPersistedAnonymousDistinctId()
@@ -92,15 +74,11 @@ export function getInitialAnonymousDistinctId(existingInstallation = false): str
     return persisted
   }
 
-  // A present-but-undecodable identity file still proves a prior install:
-  // fail closed, drop the carrier, regenerate.
   if (fs.existsSync(anonymousDistinctIdPath())) {
     clearPendingWebsiteAnonymousId()
     return getOrCreateAnonymousDistinctId()
   }
 
-  // An app-owned retry proves this process already adopted W before its
-  // anonymous-ID write failed, so preserve that identity across restarts.
   const retryWebsiteAnonymousId = readWebsiteAnonymousId(pendingWebsiteAnonymousIdRetryPath())
   if (retryWebsiteAnonymousId) {
     if (persistAnonymousDistinctId(retryWebsiteAnonymousId)) {
@@ -109,8 +87,6 @@ export function getInitialAnonymousDistinctId(existingInstallation = false): str
     return retryWebsiteAnonymousId
   }
 
-  // Existing local app state makes a carrier installer an upgrade, not a
-  // fresh acquisition.
   if (existingInstallation) {
     clearPendingWebsiteAnonymousId()
     return getOrCreateAnonymousDistinctId()
@@ -122,8 +98,6 @@ export function getInitialAnonymousDistinctId(existingInstallation = false): str
       clearPendingWebsiteAnonymousId()
       return websiteAnonymousId
     }
-    // Return W only after recording that the app adopted it. A raw installer
-    // carrier is insufficient because the next boot may correctly be an upgrade.
     if (preserveWebsiteAnonymousIdRetry()) return websiteAnonymousId
   }
 

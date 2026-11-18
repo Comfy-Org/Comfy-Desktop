@@ -90,27 +90,21 @@ describe('useArgsAutocomplete — searchQuery', () => {
   })
 
   it('suppresses while filling a required value', () => {
-    // After `--port `, the next token is the PORT value — not a flag name.
     const { ac } = setup('--port 81')
     expect(ac.searchQuery.value).toBe('')
   })
 
   it('does NOT suppress after an optional-value flag', () => {
-    // `--listen` is optional-value, so the next token is plausibly
-    // either a host OR a new flag — keep the dropdown alive.
     const { ac } = setup('--listen lo')
     expect(ac.searchQuery.value).toBe('lo')
   })
 
   it('suppresses while filling a multi-value flag (first value)', () => {
-    // `--cache-ram 0`: `0` is a threshold value, not the start of a flag, so it
-    // must not surface flags whose name contains "0" (e.g. fp8_e8m0fnu-unet).
     const { ac } = setup('--cache-ram 0')
     expect(ac.searchQuery.value).toBe('')
   })
 
   it('suppresses on later values of a multi-value flag', () => {
-    // The flag owns every following value, so the 2nd value is suppressed too.
     const { ac } = setup('--cache-ram 4 8')
     expect(ac.searchQuery.value).toBe('')
   })
@@ -121,7 +115,6 @@ describe('useArgsAutocomplete — searchQuery', () => {
   })
 
   it('suppresses when the trailing token is an exact known flag with --', () => {
-    // User just finished typing `--cpu` — no point suggesting `cpu` itself.
     const { ac } = setup('--cpu')
     expect(ac.searchQuery.value).toBe('')
   })
@@ -137,7 +130,6 @@ describe('useArgsAutocomplete — matches', () => {
   })
 
   it('excludes flags already present in the args string', () => {
-    // `--lowvram` is already there; typing another `--vra` shouldn't re-suggest it.
     const { ac } = setup('--lowvram --vra')
     const names = ac.matches.value.map((m) => m.name)
     expect(names).not.toContain('lowvram')
@@ -226,8 +218,6 @@ describe('useArgsAutocomplete — keymap', () => {
     expect(ac.visible.value).toBe(true)
     ac.handleKeydown('Escape')
     expect(ac.visible.value).toBe(false)
-    // Typing another character mutates `value`, which retriggers the
-    // matches watch and clears `acDismissed`.
     value.value = '--vram'
     await Promise.resolve()
     await Promise.resolve()

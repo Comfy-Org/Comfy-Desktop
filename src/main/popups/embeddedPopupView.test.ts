@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock electron before import: vitest can't load the native WebContentsView binding.
 type FakeListener = (...args: unknown[]) => void
 
 interface FakeWebContents {
@@ -99,7 +98,6 @@ function makeBrowserWindow(): FakeBrowserWindow {
   return win
 }
 
-// Constructor defined inside the factory because vi.mock is hoisted above all imports.
 vi.mock('electron', () => {
   let nextId = 1
   class Ctor {
@@ -163,7 +161,6 @@ vi.mock('electron', () => {
       return this.bounds
     }
   }
-  // BrowserWindow stub so the transitively-imported broadcast helper's module eval doesn't fault.
   return {
     WebContentsView: Ctor,
     BrowserWindow: { getAllWindows: () => [] }
@@ -244,7 +241,6 @@ describe('EmbeddedPopupView', () => {
     it('re-stacks the popup as the most recent child and flips it visible', () => {
       const { view, parent } = makePopup()
       const child = view.popup as unknown as FakeWebContentsView
-      // Insert a later sibling so showOnTop must re-add the popup to paint above it.
       const sibling = { tag: 'sibling' } as unknown as FakeWebContentsView
       parent.contentView.addChildView(sibling)
       expect(parent.childViews[parent.childViews.length - 1]).toBe(sibling)
@@ -328,14 +324,11 @@ describe('EmbeddedPopupView', () => {
           hideCount++
         }
       })
-      // No-op hide doesn't fire the callback.
       view.hide()
       expect(hideCount).toBe(0)
-      // Manual hide after show fires once.
       view.showOnTop()
       view.hide()
       expect(hideCount).toBe(1)
-      // Auto-dismiss via the parent blur listener fires once.
       view.showOnTop()
       parent.emit('blur')
       expect(hideCount).toBe(2)

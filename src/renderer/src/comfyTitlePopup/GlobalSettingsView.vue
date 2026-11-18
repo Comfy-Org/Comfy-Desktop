@@ -1,10 +1,16 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
+import Tabs from '@comfyorg/design-system/tabs/Tabs'
+import TabsList from '@comfyorg/design-system/tabs/TabsList'
+import TabsTrigger from '@comfyorg/design-system/tabs/TabsTrigger'
+import TabsContent from '@comfyorg/design-system/tabs/TabsContent'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FileText, HardDrive, RefreshCcw, Settings2, SlidersHorizontal, X } from 'lucide-vue-next'
+import { FileText, Folder, RefreshCcw, Settings2, SlidersHorizontal, X } from '@lucide/vue'
 import UpdatesSection from './globalSettings/UpdatesSection.vue'
 import GlobalSettingsMicroSection from './globalSettings/GlobalSettingsMicroSection.vue'
 import GlobalStorageSections from './globalSettings/GlobalStorageSections.vue'
+import RemoveAppDataSection from './globalSettings/RemoveAppDataSection.vue'
 import GitHubLinkCard from './globalSettings/GitHubLinkCard.vue'
 import SettingsSectionList from '../views/comfyUISettings/SettingsSectionList.vue'
 import StorageDirRow from '../views/comfyUISettings/StorageDirRow.vue'
@@ -16,25 +22,13 @@ import type {
   DetailSection
 } from '../types/ipc'
 
-/**
- * Global Settings popup view — two-pane tabbed card (desktop-only).
- *
- * Receives a `snapshot` prop built main-side by `buildGlobalSettingsSnapshot`
- * in `src/main/popups/titlePopup.ts` and dispatches mutations through
- * `window.__comfyTitlePopup`.
- */
-
 interface ModelsDir {
   path: string
   isPrimary: boolean
 }
 
 interface Snapshot {
-  /** Tab to land on; non-null only on the open push (rebroadcasts carry
-   *  null so live data refreshes never retarget the user's tab). */
   initialTab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
-  /** Field id to scroll to and flash; same per-open semantics as
-   *  `initialTab`, so rebroadcasts (which carry null) never re-flash. */
   highlightFieldId?: string | null
   languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
@@ -46,7 +40,6 @@ interface Snapshot {
   installLocationFields: Record<string, unknown>[]
   modelsDirs: ModelsDir[]
   modelsSystemDefault: string
-  /** Explicit telemetry consent. Gates opting into beta features. */
   telemetryGranted: boolean
   appUpdate: {
     state: Record<string, unknown>
@@ -96,27 +89,22 @@ const LAST_CHECKED_KEY = 'globalSettings.lastCheckedAt'
 
 type TabId = 'general' | 'updates' | 'storage' | 'advanced' | 'logs'
 const activeTab = ref<TabId>('general')
+const requestedTabCount = ref(0)
 
-// Each open pushes a fresh snapshot object, so watching by identity lets a
-// reopen re-apply its requested tab. Rebroadcasts carry initialTab null and
-// are ignored, so a live refresh never yanks the user off their tab.
 watch(
   () => props.snapshot,
   (snap) => {
-    if (snap.initialTab) activeTab.value = snap.initialTab
+    if (snap.initialTab) {
+      activeTab.value = snap.initialTab
+      requestedTabCount.value++
+    }
     if (snap.highlightFieldId) void flashField(snap.highlightFieldId)
   },
   { immediate: true }
 )
 
-/** How long the flashed row keeps its ring. Long enough to catch the eye after
- *  the scroll settles, short enough that the row is back to normal before the
- *  user reaches for it. */
 const HIGHLIGHT_MS = 2200
 let highlightTimer: ReturnType<typeof setTimeout> | null = null
-/** The element the live timer belongs to, so a second flash can strip the class off the first
- *  rather than leaving it ringed — which matters under `prefers-reduced-motion`, where the
- *  class holds a static ring instead of a finishing animation. */
 let highlightEl: HTMLElement | null = null
 
 function clearHighlight(): void {
@@ -128,18 +116,7 @@ function clearHighlight(): void {
 
 onUnmounted(clearHighlight)
 
-/**
- * Scroll a settings row into view and flash it.
- *
- * Deep links land on a tab, not a control, and the Privacy rows sit well below
- * the fold on the General tab — so "we opened Settings for you" can still leave
- * the user hunting. Queried from the document rather than a template ref
- * because the rows are rendered by `SettingsSectionList` several components down,
- * which exposes them only as `data-field-id`.
- */
 async function flashField(fieldId: string): Promise<void> {
-  // Two ticks: the first flushes the tab switch this same watch may have just
-  // requested, the second the field list that tab renders.
   await nextTick()
   await nextTick()
   const el = document.querySelector(`[data-field-id="${CSS.escape(fieldId)}"]`)
@@ -147,13 +124,9 @@ async function flashField(fieldId: string): Promise<void> {
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
   el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' })
   clearHighlight()
-  // Re-added rather than toggled so a second flash of the same row restarts the
-  // animation instead of being swallowed as "class already present".
   el.classList.remove('gs-field-flash')
   void el.offsetWidth
   el.classList.add('gs-field-flash')
-  // Keyboard focus follows the link to the control it points at, instead of dropping to <body>
-  // when the popup swaps to this view.
   el.querySelector<HTMLElement>('button, input, select, textarea')?.focus({ preventScroll: true })
   highlightEl = el
   highlightTimer = setTimeout(() => {
@@ -166,16 +139,21 @@ async function flashField(fieldId: string): Promise<void> {
 const tabs = computed(() => [
   { id: 'general' as const, label: props.snapshot.i18n.overview, icon: Settings2 },
   { id: 'updates' as const, label: props.snapshot.i18n.updates, icon: RefreshCcw },
-  { id: 'storage' as const, label: props.snapshot.i18n.storage, icon: HardDrive },
+  { id: 'storage' as const, label: props.snapshot.i18n.storage, icon: Folder },
   { id: 'advanced' as const, label: props.snapshot.i18n.advanced, icon: SlidersHorizontal },
   { id: 'logs' as const, label: props.snapshot.i18n.logs, icon: FileText }
 ])
 
 const storageSnapshot = computed(() => ({
+  installLocationFields: props.snapshot.installLocationFields,
   sharedDirectoriesFields: props.snapshot.sharedDirectoriesFields,
   modelsDirs: props.snapshot.modelsDirs,
   modelsSystemDefault: props.snapshot.modelsSystemDefault
 }))
+
+const showRemoveAppData = computed(() =>
+  ['darwin', 'linux'].includes(props.snapshot.appUpdate.platform)
+)
 
 const languageSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.languageFields as unknown as DetailField[] }
@@ -183,10 +161,6 @@ const languageSections = computed<DetailSection[]>(() => [
 const generalSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.generalFields as unknown as DetailField[] }
 ])
-/** Opting in is gated on telemetry consent (opting *out* never is), and consent
- *  is live snapshot state rather than a property of the settings field — so the
- *  gate is derived here instead of main-side, where `toDetailField` would have
- *  to learn about it. */
 const BETA_FEATURES_FIELD_ID = 'betaFeaturesEnabled'
 const telemetrySections = computed<DetailSection[]>(() => [
   {
@@ -204,8 +178,6 @@ const telemetrySections = computed<DetailSection[]>(() => [
 const desktopUpdatePreferenceFields = computed<DetailField[]>(
   () => props.snapshot.desktopUpdateFields as unknown as DetailField[]
 )
-/** The cache directory path field, rendered as a readonly path row (same UI as
- *  the shared input/output dirs) instead of a generic textbox. */
 const cacheDirField = computed<DetailField | undefined>(() => {
   const fields = props.snapshot.cacheFields as unknown as DetailField[]
   return fields.find((f) => f.id === 'cacheDir') ?? fields[0]
@@ -229,25 +201,6 @@ function handleOpenCacheDir(): void {
 const advancedSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.advancedFields as unknown as DetailField[] }
 ])
-
-/** The default install-location path field, rendered as a readonly path row
- *  (same UI as the cache + shared input/output dirs) instead of a textbox. */
-const installDirField = computed<DetailField | undefined>(() => {
-  const fields = props.snapshot.installLocationFields as unknown as DetailField[]
-  return fields.find((f) => f.id === 'installDir') ?? fields[0]
-})
-
-async function handleBrowseInstallDir(): Promise<void> {
-  const field = installDirField.value
-  if (!field) return
-  const picked = await bridge?.globalSettingsBrowseFolder(fieldPath(field) || undefined)
-  if (!picked || picked === field.value) return
-  await bridge?.globalSettingsUpdateField(field.id, picked)
-}
-
-function handleOpenInstallDir(): void {
-  handleOpenPath(fieldPath(installDirField.value))
-}
 
 function handleOpenPath(path: string): void {
   if (path) bridge?.globalSettingsOpenPath(path)
@@ -290,7 +243,6 @@ const isChecking = ref(false)
 async function handleCheckForUpdate(): Promise<void> {
   isChecking.value = true
   try {
-    // Floor the busy state so a sub-frame response still flashes "Checking…".
     await withMinDuration(async () => {
       await bridge?.globalSettingsCheckForUpdate()
     })
@@ -298,23 +250,10 @@ async function handleCheckForUpdate(): Promise<void> {
     const now = Date.now()
     try {
       window.localStorage.setItem(LAST_CHECKED_KEY, String(now))
-    } catch {
-      /* noop */
-    }
+    } catch {}
     bridge?.globalSettingsSetLastCheckedAt(now)
     isChecking.value = false
   }
-}
-
-function handleTabKey(event: KeyboardEvent): void {
-  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
-  event.preventDefault()
-  const ids = tabs.value.map((tab) => tab.id)
-  const idx = ids.indexOf(activeTab.value)
-  const next =
-    event.key === 'ArrowDown' ? (idx + 1) % ids.length : (idx - 1 + ids.length) % ids.length
-  activeTab.value = ids[next] as TabId
-  void nextTick(() => document.getElementById(`gs-tab-${activeTab.value}`)?.focus())
 }
 
 onMounted(() => {
@@ -325,63 +264,66 @@ onMounted(() => {
         const n = Number(raw)
         if (Number.isFinite(n)) bridge?.globalSettingsSetLastCheckedAt(n)
       }
-    } catch {
-      /* noop */
-    }
+    } catch {}
   }
 })
 </script>
 
 <template>
-  <div class="global-settings">
-    <header class="gs-header">
-      <h2 class="gs-title">{{ t('settingsModal.tabGlobal', 'Desktop Settings') }}</h2>
-      <button
-        type="button"
-        class="gs-close"
-        :aria-label="t('common.close', 'Close')"
-        @click="bridge?.close()"
-      >
-        <X :size="16" aria-hidden="true" />
-      </button>
-    </header>
+  <div class="global-settings relative flex size-full pr-12 text-sm text-foreground">
+    <Button
+      type="button"
+      variant="muted-textonly"
+      size="icon"
+      class="gs-close absolute top-0 right-0 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
+      :aria-label="t('common.close')"
+      @click="bridge?.close()"
+    >
+      <X :size="18" aria-hidden="true" />
+    </Button>
 
-    <div class="gs-body">
-      <nav class="gs-tabs" role="tablist" aria-orientation="vertical" @keydown="handleTabKey">
-        <button
-          v-for="tab in tabs"
-          :id="`gs-tab-${tab.id}`"
-          :key="tab.id"
-          type="button"
-          class="gs-tab"
-          :class="{ active: activeTab === tab.id }"
-          role="tab"
-          :aria-selected="activeTab === tab.id"
-          :aria-controls="`gs-panel-${tab.id}`"
-          :tabindex="activeTab === tab.id ? 0 : -1"
-          @click="activeTab = tab.id"
+    <Tabs
+      v-model="activeTab"
+      orientation="vertical"
+      class="gs-card min-w-0 flex-auto flex-row gap-0 overflow-hidden rounded-[16px] bg-neutral-900 [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.06)]"
+    >
+      <div class="gs-nav flex w-52 flex-[0_0_208px] flex-col gap-4 pt-7 pr-3 pb-6 pl-6">
+        <h2
+          class="gs-title m-0 px-2 font-sans text-[18px] leading-7 font-semibold tracking-[-0.01em] text-neutral-100"
         >
-          <component :is="tab.icon" :size="14" aria-hidden="true" />
-          <span>{{ tab.label }}</span>
-        </button>
-      </nav>
+          {{ t('settingsModal.tabGlobal') }}
+        </h2>
+        <TabsList
+          :key="requestedTabCount"
+          class="gs-tabs min-h-0 flex-col items-stretch gap-0.5 overflow-y-auto"
+          :aria-label="t('settingsModal.tabGlobal')"
+        >
+          <TabsTrigger
+            v-for="tab in tabs"
+            :key="tab.id"
+            :value="tab.id"
+            class="gs-tab justify-start text-left"
+            :class="{ active: activeTab === tab.id }"
+          >
+            <component :is="tab.icon" :size="14" aria-hidden="true" />
+            <span>{{ tab.label }}</span>
+          </TabsTrigger>
+        </TabsList>
+      </div>
 
-      <section
-        :id="`gs-panel-${activeTab}`"
-        class="gs-pane"
-        role="tabpanel"
-        :aria-labelledby="`gs-tab-${activeTab}`"
+      <TabsContent
+        :key="activeTab"
+        :value="activeTab"
+        class="gs-pane flex min-w-0 flex-auto flex-col gap-2.5 m-2 ml-0 overflow-y-auto rounded-[14px] bg-[color-mix(in_oklch,white_5%,var(--color-neutral-900))] p-6 [&_.settings-v2-sections]:gap-2 [&_.settings-v2-section]:gap-1 [&_.settings-v2-boolean-row]:min-h-7 [&_.settings-v2-boolean-row]:p-0 [&_.settings-v2-field]:gap-1 [&_.gs-field-flash]:rounded-md [&_.gs-field-flash]:animate-gs-field-flash motion-reduce:[&_.gs-field-flash]:animate-none motion-reduce:[&_.gs-field-flash]:shadow-[0_0_0_2px_var(--action)]"
       >
         <template v-if="activeTab === 'general'">
-          <!-- Locale picker first, no microsection header — it's a single
-               control and the lone "Language" label on it is enough. -->
           <SettingsSectionList
             :sections="languageSections"
             @update-field="handleUpdateField"
             @open-path="handleOpenPath"
           />
 
-          <GlobalSettingsMicroSection :title="t('settings.appBehavior', 'App Behavior')">
+          <GlobalSettingsMicroSection :title="t('settings.appBehavior')">
             <SettingsSectionList
               :sections="generalSections"
               @update-field="handleUpdateField"
@@ -389,7 +331,7 @@ onMounted(() => {
             />
           </GlobalSettingsMicroSection>
 
-          <GlobalSettingsMicroSection :title="t('settings.privacy', 'Privacy')">
+          <GlobalSettingsMicroSection :title="t('settings.privacy')">
             <SettingsSectionList
               :sections="telemetrySections"
               @update-field="handleUpdateField"
@@ -397,7 +339,7 @@ onMounted(() => {
             />
           </GlobalSettingsMicroSection>
 
-          <GlobalSettingsMicroSection :title="t('settings.community', 'Community')">
+          <GlobalSettingsMicroSection :title="t('settings.community')">
             <GitHubLinkCard
               :url="snapshot.githubUrl"
               :stars="snapshot.githubStars"
@@ -426,22 +368,10 @@ onMounted(() => {
 
         <template v-else-if="activeTab === 'storage'">
           <GlobalStorageSections :snapshot="storageSnapshot" />
+          <RemoveAppDataSection v-if="showRemoveAppData" :platform="snapshot.appUpdate.platform" />
         </template>
 
         <template v-else-if="activeTab === 'advanced'">
-          <GlobalSettingsMicroSection
-            :title="t('settings.installLocation', 'Default Install Location')"
-            :tooltip="t('tooltips.installDir')"
-          >
-            <StorageDirRow
-              v-if="installDirField"
-              :label="installDirField.label"
-              :path="fieldPath(installDirField)"
-              @open="handleOpenInstallDir"
-              @browse="handleBrowseInstallDir"
-            />
-          </GlobalSettingsMicroSection>
-
           <GlobalSettingsMicroSection :title="snapshot.i18n.advanced">
             <SettingsSectionList
               :sections="advancedSections"
@@ -450,10 +380,10 @@ onMounted(() => {
             />
           </GlobalSettingsMicroSection>
 
-          <GlobalSettingsMicroSection :title="t('settings.cache', 'Cache')">
+          <GlobalSettingsMicroSection :title="t('settings.cache')">
             <StorageDirRow
               v-if="cacheDirField"
-              :label="cacheDirField.label || t('settings.cacheDir', 'Cache Directory')"
+              :label="cacheDirField.label || t('settings.cacheDir')"
               :path="fieldPath(cacheDirField)"
               @open="handleOpenCacheDir"
               @browse="handleBrowseCacheDir"
@@ -462,212 +392,20 @@ onMounted(() => {
         </template>
 
         <template v-else-if="activeTab === 'logs'">
-          <GlobalSettingsMicroSection :title="t('settings.diagnostics', 'Diagnostics')">
-            <button type="button" class="gs-logs-btn" @click="handleOpenLogsFolder">
+          <GlobalSettingsMicroSection :title="t('settings.diagnostics')">
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              class="gs-logs-btn"
+              @click="handleOpenLogsFolder"
+            >
               <FileText :size="14" aria-hidden="true" />
-              <span>{{ t('settings.openLogsFolder', 'Open logs folder') }}</span>
-            </button>
+              <span>{{ t('settings.openLogsFolder') }}</span>
+            </Button>
           </GlobalSettingsMicroSection>
         </template>
-      </section>
-    </div>
+      </TabsContent>
+    </Tabs>
   </div>
 </template>
-
-<style scoped>
-.global-settings {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  color: var(--neutral-100);
-  font-size: 14px;
-}
-
-.gs-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
-  border-bottom: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-  flex: 0 0 auto;
-}
-
-.gs-title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 16px;
-  font-weight: 700;
-  color: color-mix(in oklab, var(--text) 90%, transparent);
-}
-
-.gs-logs-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid color-mix(in oklab, var(--text) 12%, transparent);
-  background: color-mix(in oklab, var(--text) 4%, transparent);
-  border-radius: 8px;
-  color: var(--neutral-100);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.gs-logs-btn:hover {
-  background: color-mix(in oklab, var(--text) 8%, transparent);
-}
-
-.gs-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid transparent;
-  background: color-mix(in oklab, var(--text) 4%, transparent);
-  border-radius: 8px;
-  color: var(--neutral-100);
-  opacity: 0.7;
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    opacity 120ms ease;
-}
-
-.gs-close:hover,
-.gs-close:focus-visible {
-  opacity: 1;
-  background: color-mix(in oklab, var(--neutral-950) 85%, transparent);
-  border-color: color-mix(in oklab, var(--neutral-100) 44%, transparent);
-  outline: none;
-}
-
-.gs-body {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.gs-tabs {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 0 0 160px;
-  width: 160px;
-  padding: 6px 4px;
-  background: var(--neutral-800);
-  border-right: 1px solid var(--chooser-surface-border);
-  overflow-y: auto;
-}
-
-.gs-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  height: 32px;
-  padding: 0 10px;
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  color: var(--neutral-100);
-  opacity: 0.72;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background-color 100ms ease,
-    opacity 100ms ease;
-}
-
-.gs-tab:hover {
-  opacity: 1;
-  background: var(--brand-surface-bg-hover);
-}
-
-.gs-tab:focus-visible {
-  outline: 2px solid var(--focus-ring, var(--neutral-50));
-  outline-offset: -2px;
-}
-
-.gs-tab.active {
-  opacity: 1;
-  background: var(--brand-surface-bg-hover);
-  color: var(--neutral-100);
-}
-
-.gs-pane {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 8px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-/* Compress the SettingsSectionList stack inside the Global Settings
- * panel. The component's scoped defaults (gap: 32px between sections,
- * 16px within, 44px min-height per boolean row) are tuned for the
- * full-width install Settings surface; the dense popup needs less air.
- * Targeting via :deep so we don't have to fork the component. */
-.gs-pane :deep(.settings-v2-sections) {
-  gap: 8px;
-}
-.gs-pane :deep(.settings-v2-section) {
-  gap: 4px;
-}
-.gs-pane :deep(.settings-v2-boolean-row) {
-  min-height: 28px;
-  padding: 0;
-}
-.gs-pane :deep(.settings-v2-field) {
-  gap: 4px;
-}
-
-.global-settings :deep(.ui-input),
-.global-settings :deep(.ui-select-trigger) {
-  min-height: 28px;
-  border-radius: 6px;
-}
-
-.global-settings :deep(.ui-input-control),
-.global-settings :deep(.ui-select-trigger) {
-  font-size: 13px;
-}
-
-.global-settings :deep(.ui-input-trailing button) {
-  width: 26px;
-  height: 26px;
-}
-
-/* Deep-link flash — a settings link (e.g. the beta activation notice) scrolls
-   its target row into view and adds this class for a couple of seconds. Ring +
-   tint only, no layout change, so nothing under the row shifts while it pulses.
-   `:deep` because the row is rendered by DetailSection, not this component. */
-.gs-pane :deep(.gs-field-flash) {
-  border-radius: 6px;
-  animation: gs-field-flash 2.2s ease-out;
-}
-@keyframes gs-field-flash {
-  0%,
-  55% {
-    box-shadow: 0 0 0 2px var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-  }
-  100% {
-    box-shadow: 0 0 0 2px transparent;
-    background: transparent;
-  }
-}
-/* Reduced motion still needs the row found — hold a static ring instead of
-   pulsing, and let the scroll jump rather than smooth-scroll. */
-@media (prefers-reduced-motion: reduce) {
-  .gs-pane :deep(.gs-field-flash) {
-    animation: none;
-    box-shadow: 0 0 0 2px var(--accent);
-  }
-}
-</style>

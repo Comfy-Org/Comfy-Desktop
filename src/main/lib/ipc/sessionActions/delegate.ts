@@ -1,13 +1,19 @@
 import { installations, i18n, sourceMap, _operationAborts, MSG_CANCELLED } from '../shared'
 import type { ActionContext, ActionResult } from './types'
 import { appendLog } from '../../logsBroadcast'
+import { holdAgentPrefetch } from '../../agentRequirementsLaunch'
+import { occupiesInstall } from './occupiesInstall'
 
 export async function handleDelegateToSource(
   { event, installationId, inst, actionData }: ActionContext,
   actionId: string
 ): Promise<ActionResult> {
   const abort = new AbortController()
-  _operationAborts.set(installationId, abort)
+  const occupies = occupiesInstall(actionId)
+  if (occupies) _operationAborts.set(installationId, abort)
+  const vacate = (): void => {
+    if (occupies) _operationAborts.delete(installationId)
+  }
   const sender = event.sender
   const sendProgress = (phase: string, detail: Record<string, unknown>): void => {
     try {
@@ -25,20 +31,20 @@ export async function handleDelegateToSource(
     installations.update(installationId, data).then(() => {})
   const source = sourceMap[inst.sourceId]
   if (!source) {
-    _operationAborts.delete(installationId)
+    vacate()
     return { ok: false, message: i18n.t('errors.unknownSource') }
   }
-  // Failures surfaced to the UI must also land in the app log (#1250) —
-  // sendOutput covers per-step output, but the final failure summary is
-  // otherwise only returned to the renderer.
   const logFailure = (message: string): void => {
-    // Best-effort: a diagnostic write must never mask the original failure.
     try {
       appendLog(installationId, `\n⚠ ${actionId} failed: ${message}\n`)
     } catch (logErr) {
       console.warn('Failed to append action failure to app log:', logErr)
     }
   }
+  const releasePrefetch =
+    occupies && typeof inst.installPath === 'string'
+      ? await holdAgentPrefetch(inst.installPath)
+      : () => {}
   try {
     const result = await source.handleAction(actionId, inst, actionData, {
       update,
@@ -55,6 +61,7 @@ export async function handleDelegateToSource(
     logFailure((err as Error).message)
     return { ok: false, message: (err as Error).message }
   } finally {
-    _operationAborts.delete(installationId)
+    releasePrefetch()
+    vacate()
   }
 }
