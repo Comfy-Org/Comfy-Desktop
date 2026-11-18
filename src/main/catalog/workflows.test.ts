@@ -7,6 +7,8 @@ import {
   HOME_WORKFLOW_LIMIT,
   _resetCatalogWorkflowsForTest,
   hubUrlForListedWorkflow,
+  listCatalogWorkflows,
+  listedWorkflow,
   listHomeWorkflows
 } from './workflows'
 
@@ -58,7 +60,10 @@ describe('Home example workflows from the Comfy content catalog', () => {
         id: 'picked-for-desktop',
         title: 'Upscale and restore detail',
         description: 'Enlarge an image and restore fine detail.',
-        thumbnailUrl: 'https://comfy.org/catalog-media/picked-for-desktop/v1'
+        thumbnailUrl: 'https://comfy.org/catalog-media/picked-for-desktop/v1',
+        canOpenLocal: false,
+        canOpenCloud: false,
+        minComfyUIVersion: null
       }
     ])
   })
@@ -207,4 +212,91 @@ describe('opening an example workflow', () => {
   it('opens nothing before Home has loaded the list', () => {
     expect(hubUrlForListedWorkflow('shown')).toBeNull()
   })
+})
+
+describe('the dedicated workflow catalog', () => {
+  it('fetches following pages, even after an empty page, and makes their cards available to open', async () => {
+    mockedFetchJSON
+      .mockResolvedValueOnce({
+        items: [catalogItem({ uid: 'first' })],
+        has_more: true,
+        next_cursor: 'page-2'
+      })
+      .mockResolvedValueOnce({ items: [], has_more: true, next_cursor: 'page-3' })
+      .mockResolvedValueOnce({
+        items: [catalogItem({ uid: 'first' }), catalogItem({ uid: 'last' })]
+      })
+
+    expect((await listCatalogWorkflows('en')).map(({ id }) => id)).toEqual(['first', 'last'])
+    expect(
+      mockedFetchJSON.mock.calls.map(([url]) => new URL(url).searchParams.get('cursor'))
+    ).toEqual([null, 'page-2', 'page-3'])
+    expect(hubUrlForListedWorkflow('last')).toBe('https://comfy.org/hub/workflows/last')
+  })
+
+  it('retains the minimum version and exposes only supported launch routes', async () => {
+    const prompt = { '1': { class_type: 'SaveImage', inputs: {} } }
+    mockedFetchJSON.mockResolvedValue({
+      items: [
+        catalogItem({
+          uid: 'launchable',
+          data: {
+            min_comfyui_version: 'v0.3.66',
+            website_media: { '$.workflow_files[0].file': '/catalog-media/graph/version' },
+            website_media_types: { '$.workflow_files[0].file': 'application/json' },
+            compatibility: { website: { type: 'CLOUD', workflow: { cloud: { workflow: prompt } } } }
+          }
+        }),
+        catalogItem({
+          uid: 'unsafe',
+          data: {
+            website_media: { '$.workflow_files[0].file': '/catalog-media/../graph' },
+            website_media_types: { '$.workflow_files[0].file': 'application/json' },
+            compatibility: {
+              website: {
+                workflow: {
+                  cloud: {
+                    workflow: { '1': { class_type: 'Example', inputs: { api_key_comfy_org: 'x' } } }
+                  }
+                }
+              }
+            }
+          }
+        })
+      ]
+    })
+
+    expect(await listCatalogWorkflows('en')).toMatchObject([
+      { id: 'launchable', canOpenLocal: true, canOpenCloud: true, minComfyUIVersion: '0.3.66' },
+      { id: 'unsafe', canOpenLocal: false, canOpenCloud: false, minComfyUIVersion: null }
+    ])
+    expect(listedWorkflow('launchable')).toMatchObject({
+      editorGraphUrl: 'https://cloud.comfy.org/api/v1/catalog/media/graph/version',
+      cloudPrompt: prompt
+    })
+  })
+})
+
+it('uses a legacy workflow-version graph and its Cloud share as launch metadata', async () => {
+  mockedFetchJSON.mockResolvedValue({
+    items: [
+      catalogItem({
+        uid: 'shared-workflow',
+        data: {
+          website_media: {
+            '$.workflow_versions[0].download': '/catalog-media/shared-graph/version'
+          },
+          website_media_types: { '$.workflow_versions[0].download': 'application/json' },
+          cloud_share_url: 'https://cloud.comfy.org/?share=1785e38f230a'
+        }
+      })
+    ]
+  })
+
+  expect(await listCatalogWorkflows('en')).toMatchObject([
+    { id: 'shared-workflow', canOpenLocal: true, canOpenCloud: true }
+  ])
+  expect(listedWorkflow('shared-workflow')?.editorGraphUrl).toBe(
+    'https://cloud.comfy.org/api/v1/catalog/media/shared-graph/version'
+  )
 })

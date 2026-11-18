@@ -21,6 +21,8 @@
     "navigation": "导航",
     "home": "主页",
     "apps": "应用",
+    "explore": "探索",
+    "workflows": "工作流",
     "assets": "资产",
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
@@ -65,6 +67,14 @@
       "openNoWindow": "Comfy Desktop 无法显示 ComfyUI 窗口。",
       "openNotTaken": "ComfyUI 没有打开这个工作流。"
     }
+  },
+  "workflows": {
+    "search": "搜索工作流",
+    "failedTitle": "工作流未能加载",
+    "failedBody": "请检查网络连接，然后重试。",
+    "emptyTitle": "暂无工作流",
+    "emptyBody": "目录中的新工作流会显示在这里。",
+    "noMatches": "没有与“{query}”匹配的工作流"
   },
   "assets": {
     "kindLabel": "资产类型",
@@ -165,6 +175,17 @@
       "file": "文件"
     }
   },
+  "workflowLaunch": {
+    "target": "打开位置",
+    "updateBuild": "此工作流需要 ComfyUI {version} 或更高版本。请在 Comfy Desktop 中更新一个本地构建。",
+    "noLocalBuild": "添加兼容的本地构建，即可在此电脑上打开此工作流。",
+    "unavailable": "你可以在 Comfy Hub 查看此工作流。",
+    "openHub": "在 Comfy Hub 查看",
+    "openComfyUI": "在 ComfyUI 中打开",
+    "opening": "正在打开…",
+    "openFailed": "无法打开工作流，请重试。",
+    "hubFailed": "无法在 Comfy Hub 打开此工作流，请重试。"
+  },
   "home": {
     "title": "欢迎。开始创作吧！",
     "openComfyUI": "打开 ComfyUI",
@@ -188,9 +209,11 @@
     "buildClickToViewLogs": "点击查看日志",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "示例工作流",
+    "carouselTabs": "浏览精选内容",
     "seeAllApps": "查看全部应用",
+    "seeAllWorkflows": "查看全部工作流",
     "showWorkflow": "显示 {title}",
-    "openWorkflow": "在 Comfy Hub 打开 {title}",
+    "openWorkflow": "打开 {title}",
     "previousWorkflow": "上一个工作流",
     "nextWorkflow": "下一个工作流",
     "workflowsUnavailable": "无法加载示例工作流。请检查网络连接后重试。",

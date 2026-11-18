@@ -24,6 +24,7 @@ import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
 
 import type { KnownSettingKey, KnownSettings } from '../main/settings'
+import type { ComfyDesktopOpenInComfy } from './comfyDesktopBridge'
 
 export interface CoachmarkBeakPayload {
   beakFraction: number
@@ -186,7 +187,12 @@ export interface CatalogWorkflow {
   title: string
   description: string
   thumbnailUrl: string | null
+  canOpenLocal: boolean
+  canOpenCloud: boolean
+  minComfyUIVersion: string | null
 }
+
+export type CatalogWorkflowTarget = { where: 'cloud' } | { where: 'local'; build: string }
 
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 
@@ -1232,7 +1238,13 @@ export interface ElectronApi {
   copyAsset(source: string, assetId: string): Promise<boolean>
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
+  listCatalogWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
+  launchCatalogWorkflow(
+    id: string,
+    target: CatalogWorkflowTarget,
+    workspaceId: string
+  ): Promise<ComfyDesktopOpenInComfy>
   getAppsEnabled(): Promise<boolean>
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>

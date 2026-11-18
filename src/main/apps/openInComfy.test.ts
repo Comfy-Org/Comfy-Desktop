@@ -21,9 +21,13 @@ const mocks = vi.hoisted(() => ({
   launchQuietly: vi.fn(),
   otherLaunchSettled: vi.fn(),
   onLaunch: vi.fn(),
-  setActivePanel: vi.fn()
+  setActivePanel: vi.fn(),
+  syncCloudWindowWorkspace: vi.fn()
 }))
 
+vi.mock('../lib/cloudWorkspace', () => ({
+  syncCloudWindowWorkspace: mocks.syncCloudWindowWorkspace
+}))
 vi.mock('../host/panelView', () => ({ setActivePanel: mocks.setActivePanel }))
 vi.mock('../host/registry', () => ({
   getEntryByInstallationId: (id: string) => mocks.windows.get(id)
@@ -62,6 +66,7 @@ import {
   LOAD_TIMEOUT_MS,
   localBuilds,
   NO_WORKFLOW_GRACE_MS,
+  openCatalogInComfy,
   openInComfy,
   WINDOW_TIMEOUT_MS
 } from './openInComfy'
@@ -540,5 +545,68 @@ describe('the builds a page can pick from', () => {
       STUDIO.id,
       'inst-never'
     ])
+  })
+})
+
+describe('opening a catalog graph in a workspace build', () => {
+  const graph = { nodes: [{ id: 1, type: 'SaveImage' }], links: [] }
+  const scope = {
+    workspaceId: 'team',
+    minComfyUIVersion: '0.3.66',
+    isCurrent: () => true
+  }
+
+  it('opens the editable graph in the selected local build', async () => {
+    const build = { ...STUDIO, version: '0.3.66', workspaceId: 'team' }
+    mocks.builds = [build]
+    mocks.records = [build]
+    const entry = new FakeWindow('http://127.0.0.1:8188')
+    mocks.windows.set(build.id, entry)
+    runLocal(build.id, 8188, 'window')
+
+    expect(
+      await openCatalogInComfy(
+        PAGE,
+        { graph, where: 'local', build: build.id, name: 'Example' },
+        scope
+      )
+    ).toEqual({ opened: true })
+    expect(entry.scripts.some((script) => script.includes('loadGraphData(JSON.parse'))).toBe(true)
+  })
+
+  it('refuses to open a build in a different workspace or below the catalog minimum', async () => {
+    const other = { ...STUDIO, version: '0.3.67' }
+    const old = { ...LAB, version: '0.3.65', workspaceId: 'team' }
+    mocks.builds = [other, old]
+    mocks.records = [other, old]
+    const request = { graph, where: 'local', name: 'Example' } as const
+
+    expect(await openCatalogInComfy(PAGE, { ...request, build: other.id }, scope)).toEqual({
+      opened: false,
+      error: 'apps.local.openUnknownBuild'
+    })
+    expect(await openCatalogInComfy(PAGE, { ...request, build: old.id }, scope)).toEqual({
+      opened: false,
+      error: 'workflowLaunch.updateBuild 0.3.66'
+    })
+    expect(mocks.launchOnce).not.toHaveBeenCalled()
+  })
+
+  it('synchronizes an already-open Cloud window with the selected workspace before import', async () => {
+    const entry = new FakeWindow(CLOUD_URL)
+    mocks.records.push(CLOUD)
+    mocks.windows.set(CLOUD.id, entry)
+    runCloud(CLOUD.id)
+    mocks.syncCloudWindowWorkspace.mockResolvedValue(true)
+
+    expect(
+      await openCatalogInComfy(PAGE, { graph, where: 'cloud', name: 'Example' }, scope)
+    ).toEqual({
+      opened: true
+    })
+    expect(mocks.syncCloudWindowWorkspace).toHaveBeenCalledWith(entry, {
+      pickerWorkspaceId: 'team'
+    })
+    expect(entry.scripts.some((script) => script.includes('loadGraphData(JSON.parse'))).toBe(true)
   })
 })

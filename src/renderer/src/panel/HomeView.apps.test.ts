@@ -8,7 +8,6 @@ import type { AppCard, CatalogWorkflow } from '../types/ipc'
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const listApps = vi.fn<() => Promise<AppCard[]>>()
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
-const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
 
 function app(id: string, title: string, coverUrl: string | null = null): AppCard {
   return { id, title, description: '', coverUrl }
@@ -30,7 +29,10 @@ const UPSCALE_WORKFLOW: CatalogWorkflow = {
   id: 'upscale',
   title: 'Upscale and restore detail',
   description: '',
-  thumbnailUrl: null
+  thumbnailUrl: null,
+  canOpenLocal: false,
+  canOpenCloud: true,
+  minComfyUIVersion: null
 }
 
 beforeEach(() => {
@@ -38,12 +40,10 @@ beforeEach(() => {
   getAppsEnabled.mockResolvedValue(true)
   listApps.mockResolvedValue(PUBLISHED_APPS)
   listHomeWorkflows.mockResolvedValue([UPSCALE_WORKFLOW])
-  openCatalogWorkflow.mockResolvedValue(true)
   ;(window as unknown as { api: unknown }).api = {
     getAppsEnabled,
     listApps,
     listHomeWorkflows,
-    openCatalogWorkflow,
     getInstallations: vi.fn().mockResolvedValue([]),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
@@ -116,7 +116,7 @@ describe('Home apps', () => {
     await cardAt(wrapper, 0).trigger('click')
 
     expect(wrapper.emitted('open-app')).toEqual([[GENJUTSU]])
-    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+    expect(wrapper.emitted('open-workflow')).toBeUndefined()
   })
 
   it('brings an app at the side to the front first, and opens it on the next click', async () => {
@@ -188,20 +188,46 @@ describe('Home apps', () => {
     expect(wrapper.find('[data-testid="home-carousel-card"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-apps-failed"]').exists()).toBe(false)
   })
+
+  it('lets people switch between Apps and Workflows and browse the full workflow list', async () => {
+    const wrapper = await openHome()
+    const appsTab = wrapper.get('[data-testid="home-apps-tab"]')
+    const workflowsTab = wrapper.get('[data-testid="home-workflows-tab"]')
+    expect(appsTab.attributes('aria-pressed')).toBe('true')
+    expect(listHomeWorkflows).not.toHaveBeenCalled()
+
+    await workflowsTab.trigger('click')
+    await flushPromises()
+
+    expect(workflowsTab.attributes('aria-pressed')).toBe('true')
+    expect(arc(wrapper)).toEqual(['0:Upscale and restore detail'])
+    await wrapper.get('[data-testid="home-see-all-workflows"]').trigger('click')
+    expect(wrapper.emitted('show-workflows')).toEqual([[]])
+    await cardAt(wrapper, 0).trigger('click')
+    expect(wrapper.emitted('open-workflow')).toEqual([[UPSCALE_WORKFLOW]])
+
+    await appsTab.trigger('click')
+    expect(cardAt(wrapper, 0).text()).toContain('Genjutsu')
+    await workflowsTab.trigger('click')
+    expect(arc(wrapper)).toEqual(['0:Upscale and restore detail'])
+    expect(listHomeWorkflows).toHaveBeenCalledOnce()
+  })
 })
 
 describe('Home while Apps is turned off', () => {
-  it('shows example workflows that open on Comfy Hub, as it did before Apps', async () => {
+  it('shows example workflows without Apps and opens the selected workflow', async () => {
     getAppsEnabled.mockResolvedValue(false)
     const wrapper = await openHome()
 
     expect(arc(wrapper)).toEqual(['0:Upscale and restore detail'])
     expect(wrapper.get('section').attributes('aria-label')).toBe('Example workflows')
+    expect(wrapper.find('[data-testid="home-apps-tab"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-see-all-workflows"]').text()).toBe('See all workflows')
     expect(listApps).not.toHaveBeenCalled()
 
     await cardAt(wrapper, 0).trigger('click')
 
-    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('upscale')
+    expect(wrapper.emitted('open-workflow')).toEqual([[UPSCALE_WORKFLOW]])
     expect(wrapper.emitted('open-app')).toBeUndefined()
   })
 

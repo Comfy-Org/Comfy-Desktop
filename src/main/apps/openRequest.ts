@@ -1,4 +1,4 @@
-const MAX_WORKFLOW_BYTES = 1_000_000
+export const MAX_WORKFLOW_BYTES = 1_000_000
 const MAX_NODES = 500
 const BUILD_ID = /^[A-Za-z0-9_-]{1,64}$/
 const WORKFLOW_NAME = /^[\p{L}\p{N} .,()'&_-]{1,80}$/u
@@ -11,6 +11,15 @@ export interface OpenRequest {
   name: string
   build?: string
 }
+
+export interface EditorWorkflowRequest {
+  graph: Record<string, unknown>
+  where: 'local' | 'cloud'
+  name: string
+  build?: string
+}
+
+export type WorkflowRequest = OpenRequest | EditorWorkflowRequest
 
 export type OpenRefusal = 'not-a-workflow' | 'unknown-place' | 'unknown-build' | 'carries-keys'
 
@@ -42,13 +51,25 @@ export function isApiWorkflow(value: unknown): value is Record<string, unknown> 
   return nodes.every(isNode) && serializedBytes(value) <= MAX_WORKFLOW_BYTES
 }
 
+export function isEditorWorkflow(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value) || !Array.isArray(value.nodes)) return false
+  const { nodes } = value
+  return (
+    nodes.length > 0 &&
+    nodes.length <= MAX_NODES &&
+    nodes.every(
+      (node: unknown) => isRecord(node) && typeof node.type === 'string' && node.type !== ''
+    )
+  )
+}
+
 export function isBuildId(value: unknown): value is string {
   return typeof value === 'string' && BUILD_ID.test(value)
 }
 
-export function workflowName(value: unknown): string {
+export function workflowName(value: unknown, fallback = DEFAULT_WORKFLOW_NAME): string {
   const name = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : ''
-  return WORKFLOW_NAME.test(name) ? name : DEFAULT_WORKFLOW_NAME
+  return WORKFLOW_NAME.test(name) ? name : fallback
 }
 
 function carriesCredentials(prompt: Record<string, unknown>): boolean {
@@ -98,6 +119,17 @@ export function openWorkflowScript(request: OpenRequest): string {
     `return Promise.resolve(app.loadApiJson(JSON.parse(promptText),name))` +
     `.then(function(r){return r!==false},function(){return false});` +
     `})(${JSON.stringify(JSON.stringify(request.prompt))},${JSON.stringify(request.name)})`
+  )
+}
+
+export function openEditorWorkflowScript(request: EditorWorkflowRequest): string {
+  return (
+    `(function(graphText,name){` +
+    FIND_COMFY_APP +
+    `if(!usable||typeof app.loadGraphData!=='function')return false;` +
+    `return Promise.resolve(app.loadGraphData(JSON.parse(graphText),true,true,name))` +
+    `.then(function(r){return r!==false},function(){return false});` +
+    `})(${JSON.stringify(JSON.stringify(request.graph))},${JSON.stringify(request.name)})`
   )
 }
 
