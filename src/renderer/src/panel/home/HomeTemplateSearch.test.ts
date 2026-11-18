@@ -23,6 +23,8 @@ const prepare = vi.fn<() => Promise<void>>()
 const download = vi.fn<() => Promise<void>>()
 const getAuthStatus = vi.fn<() => Promise<{ signedIn: boolean }>>()
 const signIn = vi.fn<() => Promise<{ signedIn: boolean }>>()
+const settingsStore = new Map<string, unknown>()
+const setSetting = vi.fn(async (key: string, value: unknown) => void settingsStore.set(key, value))
 let announce: (availability: TemplateSearchAvailability) => void = () => {}
 
 function candidate(
@@ -40,6 +42,7 @@ function candidate(
     calibrated: null,
     belowThreshold: false,
     missing: [],
+    downloadBytes: null,
     ...over
   }
 }
@@ -52,7 +55,15 @@ const PARTNER_POSTER = candidate('api_poster_template', { partner: true })
 function answer(result: Partial<TemplateSearchResult>): TemplateSearchResponse {
   return {
     kind: 'result',
-    result: { outcome: 'template', reply: null, run: [], download: [], alsoTry: [], ...result }
+    result: {
+      outcome: 'template',
+      reply: null,
+      run: [],
+      download: [],
+      alsoTry: [],
+      partnerSwitch: false,
+      ...result
+    }
   }
 }
 
@@ -71,8 +82,11 @@ beforeEach(() => {
   getAuthStatus.mockResolvedValue({ signedIn: true })
   signIn.mockResolvedValue({ signedIn: true })
   setActivePinia(createPinia())
+  settingsStore.clear()
   ;(window as unknown as { api: unknown }).api = {
     comfybuilder: { getAuthStatus, signIn, onAuthChanged: () => () => {} },
+    getSetting: async (key: string) => settingsStore.get(key),
+    setSetting,
     searchTemplates,
     openTemplateInBuild,
     prepareTemplateSearch: prepare,
@@ -988,6 +1002,57 @@ describe('HomeTemplateSearch partner templates', () => {
     await flushPromises()
     expect(signIn).not.toHaveBeenCalled()
     expect(opened()).toEqual(['api_poster_template'])
+  })
+})
+
+describe('HomeTemplateSearch open templates and the partner switch', () => {
+  it('says roughly how much an open template still needs to download', async () => {
+    const open = candidate('krea_template', {
+      needsDownload: true,
+      missing: ['krea.safetensors'],
+      downloadBytes: 19_460_000_000
+    })
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER], download: [open] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    const card = wrapper.findAll('[role="option"]')[1]!
+    expect(card.text()).toContain('About 18 GB to download')
+    expect(card.get('[data-testid="home-template-search-row-action"]').text()).toBe(
+      'Download and run'
+    )
+  })
+
+  it('shows the partner switch only when the search offers it', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    expect(wrapper.find('[data-testid="home-template-search-partner-switch"]').exists()).toBe(false)
+
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
+    await searchFor(wrapper, 'a poster again')
+    expect(wrapper.find('[data-testid="home-template-search-partner-switch"]').exists()).toBe(true)
+  })
+
+  it('remembers turning partner templates off, and searches again', async () => {
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    const calls = searchTemplates.mock.calls.length
+    await wrapper.get('[data-testid="home-template-search-partner-switch"] button').trigger('click')
+    await flushPromises()
+    expect(setSetting).toHaveBeenCalledWith('templateSearchPartners', false)
+    expect(searchTemplates).toHaveBeenCalledTimes(calls + 1)
+  })
+
+  it('starts with partner templates off when the setting says so', async () => {
+    settingsStore.set('templateSearchPartners', false)
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    expect(
+      wrapper
+        .get('[data-testid="home-template-search-partner-switch"] button')
+        .attributes('aria-checked')
+    ).toBe('false')
   })
 })
 

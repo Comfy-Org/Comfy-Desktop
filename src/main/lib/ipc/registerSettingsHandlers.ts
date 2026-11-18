@@ -66,6 +66,17 @@ export function buildSettingsSections(): SettingsSection[] {
           value: s.hideCloudFromPicker === true,
           tooltip: i18n.t('settings.hideCloudFromPickerDescription')
         },
+        ...(s.templateSearchEnabled === true
+          ? [
+              {
+                id: 'templateSearchPartners',
+                label: i18n.t('settings.templateSearchPartners'),
+                type: 'boolean' as const,
+                value: s.templateSearchPartners !== false,
+                tooltip: i18n.t('settings.templateSearchPartnersDescription')
+              }
+            ]
+          : []),
 
         {
           id: 'autoInstallUpdates',
