@@ -218,6 +218,33 @@ describe('createDesktopSearch', () => {
     })
   })
 
+  it('gives a further template of a family its size when it needs a download, and none when it does not', async () => {
+    const further = (templateId: string, download: string[]) => ({
+      ...ANSWER.split.run[0]!,
+      option_id: `${templateId}:as_given`,
+      family_id: 'poster',
+      variant: { template_id: templateId, title: null },
+      download
+    })
+    const body = {
+      ...ANSWER,
+      split: {
+        ...ANSWER.split,
+        more: [further('zine_template', ['zine_template']), further('banner_template', [])]
+      }
+    }
+    const { search } = setup({ kind: 'answer', body, partnerSwitch: false })
+
+    expect(await search.search('a poster', 'local-1')).toMatchObject({
+      result: {
+        more: [
+          { templateId: 'zine_template', needsDownload: true, downloadBytes: 7_000_000_000 },
+          { templateId: 'banner_template', needsDownload: false, downloadBytes: null }
+        ]
+      }
+    })
+  })
+
   it('asks a search that can leave partner templates out to do so while the setting is off', async () => {
     const { search, sent } = setup(undefined, true, { partnersOn: false, offersSwitch: true })
     const response = await search.search('a poster', 'local-1')
