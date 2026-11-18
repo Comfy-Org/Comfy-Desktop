@@ -107,7 +107,7 @@ function badges(row: SearchRow): Badge[] {
       label: t('home.search.bestMatch'),
       testId: 'home-template-search-best'
     })
-  const match = matchBadge(candidate)
+  const match = row.kind === 'more' ? null : matchBadge(candidate)
   if (match) list.push(match)
   if (candidate.needsDownload)
     list.push({
