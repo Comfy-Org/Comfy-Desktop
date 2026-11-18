@@ -98,19 +98,19 @@ describe('the apps Desktop lists', () => {
         id: 'remove-background',
         title: 'Remove Background',
         description: 'Cut the subject out of a picture or video.',
-        coverUrl: 'https://comfy.org/catalog-media/cover-1/v2'
+        covers: [{ url: 'https://comfy.org/catalog-media/cover-1/v2', stillUrl: null }]
       },
       {
         id: 'sdr-to-hdr',
         title: 'SDR to HDR',
         description: 'Cut the subject out of a picture or video.',
-        coverUrl: 'https://comfy.org/catalog-media/cover-1/v2'
+        covers: [{ url: 'https://comfy.org/catalog-media/cover-1/v2', stillUrl: null }]
       },
       {
         id: 'product-swap',
         title: 'Product Swap',
         description: 'Cut the subject out of a picture or video.',
-        coverUrl: 'https://comfy.org/catalog-media/cover-1/v2',
+        covers: [{ url: 'https://comfy.org/catalog-media/cover-1/v2', stillUrl: null }],
         badges: [CROWN]
       }
     ])
@@ -223,10 +223,109 @@ describe('the apps Desktop lists', () => {
     ])
 
     expect(await listApps()).toEqual([
-      expect.objectContaining({ id: 'no-cover', coverUrl: null }),
-      expect.objectContaining({ id: 'foreign-cover', coverUrl: null }),
+      expect.objectContaining({ id: 'no-cover', covers: [] }),
+      expect.objectContaining({ id: 'foreign-cover', covers: [] }),
       expect.objectContaining({ id: 'no-blurb', description: '' })
     ])
+  })
+
+  it("carry every cover the website rotates through, each with its still, in the website's order", async () => {
+    mockedFetchJSON.mockResolvedValue([
+      websiteApp({
+        cover: '/catalog-media/skate/v1',
+        still: '/catalog-media/skate-still/v1',
+        covers: [
+          { cover: '/catalog-media/hero/v1', still: '/catalog-media/hero-still/v1' },
+          {
+            cover: '/catalog-media/skate/v1',
+            still: '/catalog-media/skate-still/v1',
+            example: 'skate'
+          },
+          { cover: '/catalog-media/dance/v1' }
+        ]
+      })
+    ])
+
+    expect((await listApps())[0]?.covers).toEqual([
+      {
+        url: 'https://comfy.org/catalog-media/hero/v1',
+        stillUrl: 'https://comfy.org/catalog-media/hero-still/v1'
+      },
+      {
+        url: 'https://comfy.org/catalog-media/skate/v1',
+        stillUrl: 'https://comfy.org/catalog-media/skate-still/v1'
+      },
+      { url: 'https://comfy.org/catalog-media/dance/v1', stillUrl: null }
+    ])
+  })
+
+  it('fall back to the one cover and still when the website lists no covers it can show', async () => {
+    mockedFetchJSON.mockResolvedValue([
+      websiteApp({ id: 'older-site', still: '/catalog-media/still-1/v2' }),
+      websiteApp({
+        id: 'nothing-usable',
+        covers: [null, 'cover', { cover: 'https://tracker.example/pixel.png' }, { cover: 7 }]
+      })
+    ])
+    const own = {
+      url: 'https://comfy.org/catalog-media/cover-1/v2',
+      stillUrl: 'https://comfy.org/catalog-media/still-1/v2'
+    }
+
+    expect((await listApps()).map((app) => app.covers)).toEqual([
+      [own],
+      [{ url: own.url, stillUrl: null }]
+    ])
+  })
+
+  it('leave out blank covers and stills instead of reading them as the apps page', async () => {
+    mockedFetchJSON.mockResolvedValue([
+      websiteApp({
+        covers: [{ cover: '' }, { cover: '  ', still: '/catalog-media/s/v1' }],
+        still: ' '
+      }),
+      websiteApp({ id: 'blank-still', covers: [{ cover: '/catalog-media/a/v1', still: '' }] })
+    ])
+
+    expect((await listApps()).map((app) => app.covers)).toEqual([
+      [{ url: 'https://comfy.org/catalog-media/cover-1/v2', stillUrl: null }],
+      [{ url: 'https://comfy.org/catalog-media/a/v1', stillUrl: null }]
+    ])
+  })
+
+  it('count the 24 covers after leaving out repeats', async () => {
+    const repeats = Array.from({ length: 24 }, () => ({ cover: '/catalog-media/a/v1' }))
+    mockedFetchJSON.mockResolvedValue([
+      websiteApp({ covers: [...repeats, { cover: '/catalog-media/b/v1' }] })
+    ])
+
+    expect((await listApps())[0]?.covers.map((cover) => cover.url)).toEqual([
+      'https://comfy.org/catalog-media/a/v1',
+      'https://comfy.org/catalog-media/b/v1'
+    ])
+  })
+
+  it('leave out covers on another site and repeats, and stop at 24 covers', async () => {
+    const many = Array.from({ length: 30 }, (_none, at) => ({ cover: `/catalog-media/c${at}/v1` }))
+    mockedFetchJSON.mockResolvedValue([
+      websiteApp({
+        covers: [
+          { cover: '/catalog-media/a/v1', still: 'https://tracker.example/still.png' },
+          { cover: 'https://tracker.example/pixel.png' },
+          { cover: '/catalog-media/a/v1' },
+          { cover: '/catalog-media/b/v1' }
+        ]
+      }),
+      websiteApp({ id: 'many', covers: many })
+    ])
+
+    const [app, crowded] = await listApps()
+    expect(app?.covers).toEqual([
+      { url: 'https://comfy.org/catalog-media/a/v1', stillUrl: null },
+      { url: 'https://comfy.org/catalog-media/b/v1', stillUrl: null }
+    ])
+    expect(crowded?.covers).toHaveLength(24)
+    expect(crowded?.covers[23]?.url).toBe('https://comfy.org/catalog-media/c23/v1')
   })
 
   it.each([

@@ -3,7 +3,7 @@ import path from 'path'
 
 import { APP_ID_PATTERN, isAppsListUrl, isInAppsScope } from '../../shared/appsLocation'
 import type { AppsLocation } from '../../shared/appsLocation'
-import type { AppBadge, AppBadgeStyle, AppBadgeWords, AppCard } from '../../types/ipc'
+import type { AppBadge, AppBadgeStyle, AppBadgeWords, AppCard, AppCover } from '../../types/ipc'
 import { fetchJSON } from '../lib/fetch'
 import { readFileSafeAsync, writeFileSafeAsync } from '../lib/safe-file'
 import { currentAppsLocation } from './appsConfig'
@@ -20,6 +20,8 @@ const BADGE_STYLES: readonly AppBadgeStyle[] = ['crown', 'chip', 'label']
 const MAX_BADGES = 4
 const MAX_BADGE_TEXT_LENGTH = 24
 const MAX_BADGE_DESCRIPTION_LENGTH = 160
+const MAX_COVERS = 24
+const MAX_LISTED_COVERS = 200
 
 interface ListedApp {
   card: AppCard
@@ -51,8 +53,28 @@ export function appsListUrl(location: AppsLocation): string {
 }
 
 function coverUrlFor(cover: unknown, location: AppsLocation): string | null {
+  if (typeof cover !== 'string' || !cover.trim()) return null
   const url = resolved(cover, location.url)
   return url && url.origin === location.origin ? url.href : null
+}
+
+function coverFor(entry: unknown, location: AppsLocation): AppCover | null {
+  const record = asRecord(entry)
+  const url = coverUrlFor(record?.cover, location)
+  return url ? { url, stillUrl: coverUrlFor(record?.still, location) } : null
+}
+
+function coversFor(record: JsonRecord, location: AppsLocation): AppCover[] {
+  const listed = Array.isArray(record.covers) ? record.covers.slice(0, MAX_LISTED_COVERS) : []
+  const covers: AppCover[] = []
+  for (const entry of listed) {
+    if (covers.length >= MAX_COVERS) break
+    const cover = coverFor(entry, location)
+    if (cover && !covers.some((kept) => kept.url === cover.url)) covers.push(cover)
+  }
+  if (covers.length > 0) return covers
+  const own = coverFor(record, location)
+  return own ? [own] : []
 }
 
 function pageUrlFor(id: string, page: unknown, location: AppsLocation): string | null {
@@ -116,7 +138,7 @@ export function toListedApp(entry: unknown, location: AppsLocation): ListedApp |
       id,
       title,
       description: text(record.blurb) ?? '',
-      coverUrl: coverUrlFor(record.cover, location),
+      covers: coversFor(record, location),
       ...(badges && { badges })
     }
   }

@@ -855,7 +855,21 @@
     "folderKindInput": "Input",
     "folderKindOutput": "Output",
     "useForDownloads": "Use for downloads",
-    "addModelsFolder": "Add models folder"
+    "addModelsFolder": "Add models folder",
+    "removeAppDataTitle": "Remove Comfy Desktop data",
+    "removeAppDataHint": "Before you delete the app, remove the logs, caches and temporary files Comfy Desktop keeps on this computer. You choose whether your ComfyUI instances and models go too.",
+    "removeAppDataButton": "Remove Comfy Desktop data",
+    "removeAppDataConfirmTitle": "Remove Comfy Desktop data?",
+    "removeAppDataConfirmMessage": "Comfy Desktop will quit and remove its logs, caches and temporary files. Leave both boxes unchecked to keep your ComfyUI instances and models; installing Comfy Desktop again will find them.",
+    "removeAppDataKeptLabel": "Always kept",
+    "removeAppDataKeptFolders": "Your shared input and output folders",
+    "removeAppDataKeptAdded": "Model folders you added yourself",
+    "removeAppDataAfterLabel": "Then delete the app",
+    "removeAppDataAfterMac": "Drag Comfy Desktop from Applications to the Trash.",
+    "removeAppDataAfterLinux": "Delete the AppImage file, or run sudo apt remove comfyui-desktop-2 if you installed the .deb package.",
+    "removeAppDataInstances": "Delete all ComfyUI instances",
+    "removeAppDataModels": "Delete all model files",
+    "removeAppDataConfirm": "Remove and quit"
   },
   "zoom": {
     "changed": "Zoom level has been changed",

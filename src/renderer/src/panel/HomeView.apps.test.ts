@@ -3,22 +3,28 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import HomeView from './HomeView.vue'
-import type { AppCard, CatalogWorkflow } from '../types/ipc'
+import type { AppCard, AppCover, CatalogWorkflow } from '../types/ipc'
 
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const listApps = vi.fn<() => Promise<AppCard[]>>()
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
 const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
 
-function app(id: string, title: string, coverUrl: string | null = null): AppCard {
-  return { id, title, description: '', coverUrl }
+function app(id: string, title: string, covers: AppCover[] = []): AppCard {
+  return { id, title, description: '', covers }
+}
+
+function picture(fill: string): string {
+  return `data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5"><rect width="8" height="5" fill="${fill}"/></svg>`
+  )}`
 }
 
 const GENJUTSU: AppCard = {
   id: 'genjutsu',
   title: 'Genjutsu',
   description: 'Put someone else in a short clip.',
-  coverUrl: 'https://comfy.org/catalog-media/genjutsu/cover',
+  covers: [{ url: picture('purple'), stillUrl: null }],
   badges: [
     {
       id: 'uses-credits',
@@ -105,10 +111,21 @@ describe('Home apps', () => {
       '1:Product Ads',
       '2:SDR to HDR'
     ])
-    expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(GENJUTSU.coverUrl)
+    expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(GENJUTSU.covers[0]!.url)
     expect(wrapper.get('[data-testid="home-see-all-apps"]').text()).toBe('See all apps')
     expect(listHomeWorkflows).not.toHaveBeenCalled()
     expect(getAppsEnabled).toHaveBeenCalledOnce()
+  })
+
+  it('plays the covers of each app, the next one loading behind the one shown', async () => {
+    const covers = ['red', 'green', 'blue'].map((fill) => ({ url: picture(fill), stillUrl: null }))
+    listApps.mockResolvedValue([{ ...GENJUTSU, covers }, PRODUCT_ADS])
+    const wrapper = await openHome()
+    const front = cardAt(wrapper, 0)
+    const urls = covers.map((cover) => cover.url)
+
+    expect(urls).toContain(front.get('img[data-cover="shown"]').attributes('src'))
+    expect(urls).toContain(front.get('img[data-cover="upcoming"]').attributes('src'))
   })
 
   it('follows the website when the list of apps changes', async () => {

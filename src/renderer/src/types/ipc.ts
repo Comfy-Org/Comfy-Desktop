@@ -3,6 +3,7 @@ export type {
   AppBadge,
   AppBadgeWords,
   AppCard,
+  AppCover,
   AppOutputAction,
   AppOutputs,
   AppPagePlacement,

@@ -41,15 +41,19 @@ while omitting part of it.
 
 ## Comfy pages hosted in Desktop's Apps view
 
-A Comfy page that Desktop shows in its Apps view gets three objects instead,
+A Comfy page that Desktop shows in its Apps view gets these objects instead,
 and nothing else of the bridge above: `window.comfyDesktopAuth`, Desktop's
-account session, `window.comfyDesktopLocal`, a ComfyUI on this computer, and
-`window.comfyDesktopTelemetry`, the page's usage events.
+account session, `window.comfyDesktopLocal`, a ComfyUI on this computer,
+`window.comfyDesktopTelemetry`, the page's usage events,
+`window.comfyDesktopOutputs`, Desktop's output dialog, and
+`window.comfyDesktopAssets`, the person's pictures for the page's inputs.
 
 ```ts
 import type {
+  ComfyDesktopHostedAssetsBridge,
   ComfyDesktopHostedAuthBridge,
   ComfyDesktopHostedLocalBridge,
+  ComfyDesktopHostedOutputsBridge,
   ComfyDesktopHostedTelemetryBridge
 } from '@comfyorg/comfyui-desktop-bridge-types'
 
@@ -58,6 +62,8 @@ declare global {
     comfyDesktopAuth?: ComfyDesktopHostedAuthBridge
     comfyDesktopLocal?: ComfyDesktopHostedLocalBridge
     comfyDesktopTelemetry?: ComfyDesktopHostedTelemetryBridge
+    comfyDesktopOutputs?: ComfyDesktopHostedOutputsBridge
+    comfyDesktopAssets?: ComfyDesktopHostedAssetsBridge
   }
 }
 ```
@@ -114,7 +120,21 @@ sends while the view loads another app is dropped.
 
 The page is not told when Desktop drops an event.
 
-All three objects are absent in a browser, so a page keeps its own sign-in and
+`comfyDesktopAssets` gives the page references to pictures and videos, never
+paths. `recent({ kinds, where })` lists the newest app results: for
+`where: 'local'`, the files under `output/apps/` of the build the page's local
+runs go to (the shared output folder by default) and no other output files;
+for `where: 'cloud'`, the signed-in workspace's Comfy Cloud outputs.
+`fromFile(file, { kinds })` takes a file the person dropped or chose; only its
+path reaches Desktop, which checks it is a regular file of an allowed kind and
+at most 2 GiB. `read(ref)` gives the bytes for a preview, up to 512 MiB. When a
+run starts, `valueFor(ref, { where })` gives the value for `LoadImage.image` or
+`LoadVideo.file`, such as `apps/remove-background/cutout_00001_.png [output]`;
+a file outside the build's folders is copied once into `input/desktop/`. A
+reference works only in the page document that received it. On any error the
+page uploads the picture as before.
+
+All these objects are absent in a browser, so a page keeps its own sign-in and
 its own way to reach a local ComfyUI as the fallback, and sends no events.
 
 ## Provenance

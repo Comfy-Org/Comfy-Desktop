@@ -155,11 +155,16 @@ export interface AppBadge {
   description?: AppBadgeWords
 }
 
+export interface AppCover {
+  url: string
+  stillUrl: string | null
+}
+
 export interface AppCard {
   id: string
   title: string
   description: string
-  coverUrl: string | null
+  covers: AppCover[]
   badges?: AppBadge[]
 }
 

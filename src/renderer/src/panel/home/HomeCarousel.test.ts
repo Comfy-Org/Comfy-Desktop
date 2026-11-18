@@ -47,7 +47,7 @@ function mountCarousel() {
   hosts.push(host)
   const wrapper = mount(HomeCarousel<CarouselCard>, {
     attachTo: host,
-    props: { cards: [PRODUCT_SWAP, HDR, EXTEND], kind: 'apps', pictureOf: () => null }
+    props: { cards: [PRODUCT_SWAP, HDR, EXTEND], kind: 'apps', picturesOf: () => [] }
   })
   mounted.push(wrapper)
   return wrapper
