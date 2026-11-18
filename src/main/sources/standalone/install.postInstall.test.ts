@@ -77,24 +77,37 @@ describe('standalone postInstall ComfyUI update', () => {
       .filter((p) => p.phase === 'torch_deps_sync')
       .map((p) => p.status)
 
+  const run = async (
+    signal?: AbortSignal
+  ): Promise<{ progress: Array<[string, Record<string, unknown>]>; output: string }> => {
+    const progress: Array<[string, Record<string, unknown>]> = []
+    let output = ''
+    await postInstall(installation, {
+      sendProgress: (step, data) => progress.push([step, data]),
+      sendOutput: (text) => {
+        output += text
+      },
+      update: async () => {},
+      ...(signal ? { signal } : {})
+    })
+    return { progress, output }
+  }
+
   it('finishes the install, says why the update failed, and counts it', async () => {
     vi.mocked(runComfyUIUpdate).mockResolvedValue({
       ok: false,
       message: 'requirements install exited with code 1\n\nerror: No solution found',
       installation
     })
-    const progress: Array<[string, Record<string, unknown>]> = []
 
-    await expect(
-      postInstall(installation, {
-        sendProgress: (step, data) => progress.push([step, data]),
-        update: async () => {}
-      })
-    ).resolves.toBeUndefined()
+    const { progress, output } = await run()
 
+    expect(output).toContain(
+      '[update] Could not get the latest stable ComfyUI release (v0.44.0): requirements install exited with code 1\n'
+    )
     expect(progress.at(-1)).toEqual([
       'update',
-      { percent: 100, status: 'Update failed: requirements install exited with code 1' }
+      { percent: 100, status: 'standalone.getComfyKeptVersion' }
     ])
     expect(depsSyncRows(), 'counted, without failing the phase').toEqual([
       'start',
@@ -103,19 +116,19 @@ describe('standalone postInstall ComfyUI update', () => {
     ])
   })
 
-  it('points at the app log when the failed update carries no message', async () => {
+  it('keeps the downloaded version when the failed update carries no message', async () => {
     vi.mocked(runComfyUIUpdate).mockResolvedValue({ ok: false, installation })
-    const progress: Array<[string, Record<string, unknown>]> = []
 
-    await postInstall(installation, {
-      sendProgress: (step, data) => progress.push([step, data]),
-      update: async () => {}
-    })
+    const { progress, output } = await run()
 
+    expect(output).toContain(
+      '[update] Could not get the latest stable ComfyUI release (v0.44.0)\n'
+    )
     expect(progress.at(-1)).toEqual([
       'update',
-      { percent: 100, status: 'Update failed: see the app log' }
+      { percent: 100, status: 'standalone.getComfyKeptVersion' }
     ])
+    expect(depsSyncRows()).toEqual(['start', 'end', 'update_aborted'])
   })
 
   it('counts no failed update when the user cancels it', async () => {
@@ -124,28 +137,18 @@ describe('standalone postInstall ComfyUI update', () => {
       abort.abort()
       return { ok: false, message: 'Cancelled', installation }
     })
-    const progress: Array<[string, Record<string, unknown>]> = []
 
-    await postInstall(installation, {
-      sendProgress: (step, data) => progress.push([step, data]),
-      update: async () => {},
-      signal: abort.signal
-    })
+    await run(abort.signal)
 
-    expect(progress.at(-1)).toEqual(['update', { percent: 100, status: 'Cancelled' }])
     expect(depsSyncRows()).toEqual(['start', 'end'])
   })
 
   it('counts nothing when the update applies', async () => {
     vi.mocked(runComfyUIUpdate).mockResolvedValue({ ok: true, installation })
-    const progress: Array<[string, Record<string, unknown>]> = []
 
-    await postInstall(installation, {
-      sendProgress: (step, data) => progress.push([step, data]),
-      update: async () => {}
-    })
+    const { progress } = await run()
 
-    expect(progress.at(-1)).toEqual(['update', { percent: 100, status: 'Up to date' }])
+    expect(progress.at(-1)).toEqual(['update', { percent: 100, status: 'common.done' }])
     expect(depsSyncRows()).toEqual(['start', 'end'])
   })
 })
