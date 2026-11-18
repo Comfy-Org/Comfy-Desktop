@@ -1155,6 +1155,13 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
     expect(wrapper.find('[data-testid="home-template-search-results"]').exists()).toBe(false)
   })
 
+  it('closes on Escape from the bar without starting the search still waiting for typing to pause', async () => {
+    const wrapper = mountSearch()
+    await input(wrapper).setValue('a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    expect(searchTemplates).not.toHaveBeenCalled()
+  })
+
   it('keeps the missing files for a remainder too small to show as a size', async () => {
     const open = candidate('krea_template', {
       needsDownload: true,
