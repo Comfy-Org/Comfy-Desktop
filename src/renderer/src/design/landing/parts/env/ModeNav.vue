@@ -22,6 +22,7 @@ import { cn } from '../../ui/cn'
 import { go, isNewUser, proto, toast, type Mode, type Page } from '../../useProto'
 import { can } from '../../milestones'
 import { search } from '../../mar/search/search'
+import { openPageMenu } from '../../mar/shell/pageMenu'
 
 /**
  * Navigation for one lens. Create: make things. Build: ship them as an API.
@@ -185,6 +186,7 @@ function open(i: Item): void {
           )
         "
         @click="open(i)"
+        @contextmenu="i.page && can.builds && openPageMenu($event, i.label)"
       >
         <component :is="i.icon" :size="15" />
         <span class="sidebar-label text-left">{{ i.label }}</span>

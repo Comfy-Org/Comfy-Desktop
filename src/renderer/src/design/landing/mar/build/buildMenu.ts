@@ -1,27 +1,31 @@
 import { shallowReactive } from 'vue'
 import {
-  AppWindow,
   ArrowUpCircle,
+  CloudUpload,
   CircleStop,
   Copy,
   Download,
   FolderOpen,
   History,
   Play,
+  Power,
+  PowerOff,
   RotateCw,
   ScrollText,
   Settings2,
   Trash2,
   X
 } from 'lucide-vue-next'
-import { toast } from '../../useProto'
+import { proto, toast } from '../../useProto'
 import type { ProtoInstance } from '../../mock'
 import { envKind } from '../../parts/env/env'
 import type { MenuAction, MenuLine } from '../pages/menu'
 import { openBuild } from './buildTab'
 import { BUILD_NAME, flow, showInstall } from '../setup/setupFlow'
 import {
+  autoStart,
   cancelRun,
+  hasUpdate,
   nowOf,
   restartBuild,
   startBuild,
@@ -34,8 +38,10 @@ import {
 /**
  * A build's one menu: its ⋯ on a Home tile, a right-click on the tile and a
  * right-click on its sidebar row (Desktop's BuildMenu / useBuildMenu). What
- * you can do now first, then Open in new window, then the rest, Uninstall
- * last, asking inside the menu. A line that can't run now stays, greyed.
+ * you can do now first, then Auto start, then the rest (Upload build after
+ * Restore snapshot, when signed in), Uninstall last, asking inside the
+ * menu. A line that can't run now stays, greyed. No Open in new window:
+ * every build opens in its own window (Comfy-Desktop#2147).
  */
 export interface BuildMenuTarget {
   name: string
@@ -43,6 +49,8 @@ export interface BuildMenuTarget {
   now: BuildNow
   update?: boolean
   launch: () => void
+  autoStart?: boolean
+  toggleAutoStart?: () => void
   viewLogs: () => void
   cancel: () => void
   restart?: () => void
@@ -57,11 +65,11 @@ const sep = 'sep' as const
 export function buildMenuLines(t: BuildMenuTarget): MenuLine[] {
   const busy = t.now === 'starting' || t.now === 'installing' || t.now === 'uninstalling'
   const running = t.now === 'running'
-  const why = busy ? 'Wait until it finishes.' : running ? 'Stop the running instance first.' : ''
+  const why = busy ? 'Wait until it finishes.' : running ? 'Stop the running build first.' : ''
   const gated = { disabled: busy || running, title: why || undefined }
   const now: MenuAction[] =
     t.now === 'ready'
-      ? [{ label: 'Launch', icon: Play, run: t.launch }]
+      ? [{ label: 'Start', icon: Play, run: t.launch }]
       : t.now === 'running'
         ? [
             { label: 'View logs', icon: ScrollText, run: t.viewLogs },
@@ -109,9 +117,32 @@ export function buildMenuLines(t: BuildMenuTarget): MenuLine[] {
           disabled: busy,
           title: busy ? why : undefined
         },
-        { label: 'Restore snapshot', icon: History, run: t.restore, ...gated }
+        { label: 'Restore snapshot', icon: History, run: t.restore, ...gated },
+        // Signed in to a workspace, a finished build can go to the
+        // Developer Platform (Comfy-Desktop#2174).
+        ...(proto.signedIn && t.now !== 'installing'
+          ? [
+              {
+                label: 'Upload build',
+                icon: CloudUpload,
+                title: 'Upload this build to Comfy Developer Platform.',
+                run: () => toast(`Uploading ${t.name}`),
+                disabled: busy
+              }
+            ]
+          : [])
       ]
     : []
+  const auto: MenuAction[] =
+    t.local && t.toggleAutoStart && t.now !== 'installing'
+      ? [
+          {
+            label: t.autoStart ? 'Turn off Auto start' : 'Auto start',
+            icon: t.autoStart ? PowerOff : Power,
+            run: t.toggleAutoStart
+          }
+        ]
+      : []
   const end: MenuAction[] = t.local
     ? [
         {
@@ -129,16 +160,7 @@ export function buildMenuLines(t: BuildMenuTarget): MenuLine[] {
     : []
   return [
     ...now,
-    ...(busy
-      ? []
-      : [
-          sep,
-          {
-            label: 'Open in new window',
-            icon: AppWindow,
-            run: () => toast(`Opening ${t.name} in a new window`)
-          }
-        ]),
+    ...(auto.length ? [sep, ...auto] : []),
     sep,
     ...rest,
     ...(snaps.length ? [sep, ...snaps] : []),
@@ -152,8 +174,10 @@ export function instanceTarget(i: ProtoInstance): BuildMenuTarget {
     name: i.name,
     local: envKind(i) === 'local',
     now: nowOf(i),
-    update: i.state === 'update',
+    update: hasUpdate(i),
     launch: () => startBuild(i),
+    autoStart: autoStart.id === i.id,
+    toggleAutoStart: () => (autoStart.id = autoStart.id === i.id ? '' : i.id),
     // Starting: the start's own logs; running: the build's Terminal.
     viewLogs: () => (nowOf(i) === 'running' ? openBuild(i.id, 'terminal') : viewLogs(i)),
     cancel: () => cancelRun(i),

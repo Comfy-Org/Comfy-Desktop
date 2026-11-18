@@ -187,7 +187,7 @@ const folders = computed(() => {
   max-width: calc(100% - 40px);
   height: 4px;
   border-radius: 999px;
-  background: #0b8ce9;
+  background: var(--color-base-foreground);
 }
 .mp-bar b {
   margin-left: auto;

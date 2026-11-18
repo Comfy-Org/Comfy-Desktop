@@ -61,6 +61,11 @@ DS's Motion page (`ds/motion.ts`).
 
 ## Buttons and actions
 
+- **No blue in the prototype.** Run, Resume and every primary action are
+  white with dark text (the toolbar Run, `--mg-run`); value fills (a
+  stepper's fill) and status chips (Paused) are grey widget tokens; running
+  outlines, progress bars and busy dots are the foreground white. Only data
+  types keep their colour (the IMAGE wires and slots).
 - **Primary is white, never blue.** One per screen. To make something
   stand out, use the white primary, order and size, not colour.
 - **Labels are centred** in every full-width button, primary or not
@@ -90,12 +95,15 @@ DS's Motion page (`ds/motion.ts`).
 ## Menus
 
 - **⋯ and right-click open the same menu.** A build's ⋯ (on hover, at the
-  right of its tile) and a right-click on the tile or its sidebar row show
-  one shared menu. A page in the sidebar right-clicks to Open in new tab /
-  Open in new window only.
-- **Build menu order:** what you can do now first (Ready: Launch; Starting:
-  View logs, Cancel; Running: View logs, Restart, Stop), then Open in new
-  tab / window, then the rest, Uninstall last.
+  right of its tile) and a right-click on the tile, its Builds row or its
+  sidebar row show one shared menu. A page in the sidebar (Home, Apps,
+  Assets, the Builds title) right-clicks to Open in new window only; Open
+  in new tab joins it once builds share one window.
+- **Build menu order:** what you can do now first (Ready: Start; Starting:
+  View logs, Cancel; Running: View logs, Restart, Stop), then
+  Auto start, then the rest (Manage, Update, Duplicate, Show in Finder,
+  Export snapshot, Restore snapshot, Upload build), Uninstall last. No Open
+  in new window: every build opens in its own window.
 - **Unavailable rows stay, greyed.** A menu row that can't run in this state
   (Update while running) shows disabled, never hidden, so the menu keeps one
   shape in every state.
@@ -181,6 +189,11 @@ DS's Motion page (`ds/motion.ts`).
 
 ## Tiles
 
+- **The whole tile is the action.** A build tile or row on Home and Builds
+  has no Start or Update button: a click starts it, opens it when it runs,
+  shows its logs while starting and opens its page when broken; the hover hint
+  says which (Click to start / open / view logs). An update waiting is a
+  grey "Update" note after the version; Update is in ⋯.
 - **Tiles stack when they don't fit.** Below the width where a tile can't
   hold its name and status, Home's build tiles go one per row; never
   squeeze two side by side. A tile in progress looks like every other

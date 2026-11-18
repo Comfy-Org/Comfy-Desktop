@@ -165,7 +165,7 @@ function nudge(e: KeyboardEvent): void {
   bottom: 12px;
   width: 2px;
   border-radius: 1px;
-  background: var(--color-primary-background, #0b8ce9);
+  background: var(--color-base-foreground);
   content: '';
   opacity: 0;
   transition: opacity 0.15s;
@@ -309,7 +309,7 @@ function nudge(e: KeyboardEvent): void {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: var(--color-primary-background, #0b8ce9);
+  background: var(--color-base-foreground);
   box-shadow: 0 0 0 2px var(--rp-surface);
 }
 .rp-body {

@@ -2773,7 +2773,7 @@ function addFromPanel(kind: NodeKind): void {
   fill: color-mix(in oklch, var(--color-base-foreground) 45%, var(--mg-canvas));
 }
 .mg-map-node.is-running {
-  fill: #0b8ce9;
+  fill: var(--color-base-foreground);
 }
 .mg-map .mg-map-view {
   fill: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);

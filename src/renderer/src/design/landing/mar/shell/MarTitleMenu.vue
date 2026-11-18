@@ -1,37 +1,39 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Menu } from 'lucide-vue-next'
-import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
-import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
-import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
-import DropdownMenuSeparator from '../../ui/DropdownMenuSeparator.vue'
-import { go, toast, type Page } from '../../useProto'
+import { computed, ref } from 'vue'
+import { ChartColumn, Gauge, Menu } from 'lucide-vue-next'
+import { go, proto, toast, type Page } from '../../useProto'
+import MarItemMenu from '../pages/MarItemMenu.vue'
+import type { MenuLine } from '../pages/menu'
 
 /**
- * The title bar's ☰ menu, as Desktop ships it (Comfy-Desktop#2016,
- * titlePopup.ts buildTitlePopupMenuItems): at the left of the title bar,
- * like every desktop app. The tools first (they left the sidebar), then
- * Desktop Settings, then the window. No Open Dashboard: Home is in the
- * sidebar. Built from the same menu parts as the filter menus on Apps and
- * Benchmarks; labels start at the left edge, no icon column, as in #2016.
+ * The title bar's ☰ menu, as Desktop ships it (titlePopup.ts
+ * buildTitlePopupMenuItems), last on the right (Comfy-Desktop#2027).
+ * The Desktop window holds only the tools, each with its icon, in the
+ * same menu as every other (Comfy-Desktop#2178): closing and quitting are
+ * the OS's (⌘W, ⌘Q). A build window (a ComfyUI tab in front) keeps its
+ * longer menu with no icons (Comfy-Desktop#2146).
  */
-const GROUPS: { label: string; run: () => void }[][] = [
-  [
-    { label: 'Performance Tests', run: () => go('tool:performance') },
-    { label: 'Benchmarks', run: () => go('tool:benchmarks') }
-  ],
-  [{ label: 'Desktop Settings', run: () => go('settings' as Page) }],
-  [
-    { label: 'Close Window', run: () => toast('Close Window') },
-    { label: 'Quit Desktop', run: () => toast('Quit Desktop') }
-  ]
+const desktop: MenuLine[] = [
+  { label: 'Performance tests', icon: Gauge, run: () => go('tool:performance') },
+  { label: 'Benchmarks', icon: ChartColumn, run: () => go('tool:benchmarks') }
 ]
+const buildWindow: MenuLine[] = [
+  { label: 'Performance Tests', run: () => go('tool:performance') },
+  { label: 'Benchmarks', run: () => go('tool:benchmarks') },
+  'sep',
+  { label: 'Desktop Settings', run: () => go('settings' as Page) },
+  { label: 'Reset Zoom', run: () => toast('Zoom reset') },
+  'sep',
+  { label: 'Close Window', run: () => toast('Close Window') },
+  { label: 'Quit Desktop', run: () => toast('Quit Desktop') }
+]
+const lines = computed(() => (proto.activeTab === 'home' ? desktop : buildWindow))
 const open = ref(false)
 </script>
 
 <template>
-  <DropdownMenuRoot v-model:open="open" :modal="false">
-    <DropdownMenuTrigger as-child>
+  <MarItemMenu v-model:open="open" :lines label="Menu">
+    <template #trigger>
       <button
         type="button"
         aria-label="Menu"
@@ -45,14 +47,6 @@ const open = ref(false)
       >
         <Menu :size="16" />
       </button>
-    </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" :side-offset="6" loop class="min-w-52">
-      <template v-for="(g, gi) in GROUPS" :key="gi">
-        <DropdownMenuSeparator v-if="gi" />
-        <DropdownMenuItem v-for="i in g" :key="i.label" @select="i.run()">{{
-          i.label
-        }}</DropdownMenuItem>
-      </template>
-    </DropdownMenuContent>
-  </DropdownMenuRoot>
+    </template>
+  </MarItemMenu>
 </template>

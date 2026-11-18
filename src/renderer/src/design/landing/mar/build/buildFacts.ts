@@ -248,7 +248,7 @@ export const LAUNCH_MODES = [
 ]
 export const PARTITIONS = [
   { value: 'shared' as const, label: 'Shared' },
-  { value: 'unique' as const, label: 'Unique to this instance' }
+  { value: 'unique' as const, label: 'Unique to this build' }
 ]
 export const PORT_CONFLICT = [
   { value: 'ask' as const, label: 'Ask what to do' },

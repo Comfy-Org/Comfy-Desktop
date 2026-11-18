@@ -14,49 +14,34 @@ export type BuildTab =
   | 'settings'
   | 'deployments'
 
-/** Desktop's tabs: all of them for a build on this computer, Storage and
- *  About for Cloud, About for Remote. From Milestone 3 (`combined`), About
- *  and Update are one Overview tab, first, and Storage, named Assets &
- *  Models, comes second. */
+/** Desktop's tabs (ComfyUISettingsContent.vue): Overview (the facts as
+ *  cards, Comfy-Desktop#2062, in place of Update and About), Storage
+ *  (#2198 moved it second), Startup arguments (#2179),
+ *  Snapshots, Terminal. Cloud: Overview and Storage (its browser cache,
+ *  not folders). Remote: Overview. The update dot sits on Overview. */
 export function desktopTabs(
   own: boolean,
   remote: boolean,
-  dot = false,
-  combined = false
+  dot = false
 ): { value: BuildTab; label: string; dot?: boolean }[] {
-  if (combined) {
-    const overview = { value: 'about' as BuildTab, label: 'Overview', dot: own && dot }
-    if (remote) return [overview]
-    const storage = { value: 'storage' as BuildTab, label: 'Assets & Models' }
-    if (!own) return [overview, storage]
-    return [
-      overview,
-      storage,
-      { value: 'args', label: 'Startup Args' },
-      { value: 'snapshots', label: 'Snapshots' },
-      { value: 'terminal', label: 'Terminal' }
-    ]
-  }
-  if (remote) return [{ value: 'about', label: 'About' }]
+  if (remote) return [{ value: 'overview', label: 'Overview' }]
   if (!own)
     return [
-      { value: 'storage', label: 'Storage' },
-      { value: 'about', label: 'About' }
+      { value: 'overview', label: 'Overview' },
+      { value: 'storage', label: 'Storage' }
     ]
   return [
-    { value: 'update', label: 'Update', dot },
-    { value: 'args', label: 'Startup Args' },
-    { value: 'snapshots', label: 'Snapshots' },
+    { value: 'overview', label: 'Overview', dot },
     { value: 'storage', label: 'Storage' },
-    { value: 'terminal', label: 'Terminal' },
-    { value: 'about', label: 'About' }
+    { value: 'args', label: 'Startup arguments' },
+    { value: 'snapshots', label: 'Snapshots' },
+    { value: 'terminal', label: 'Terminal' }
   ]
 }
 
-/** Update lives in Overview once the two are one tab. */
-export function tabAsked(asked: BuildTab | '', combined: boolean): BuildTab | '' {
-  return combined && asked === 'update' ? 'about' : asked
-}
+/** Update and About are Overview now: a link to either lands there. */
+export const tabOf = (t: BuildTab | ''): BuildTab | '' =>
+  t === 'update' || t === 'about' ? 'overview' : t
 
 /** The tab the next build page opens on; it reads it once and clears it. */
 export const nextBuildTab = ref<BuildTab | ''>('')

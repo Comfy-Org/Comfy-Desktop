@@ -1,19 +1,28 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Plus } from 'lucide-vue-next'
 import Card from '../ui/Card.vue'
 import SectionHeader from '../ui/SectionHeader.vue'
 import StatusDot from '../ui/StatusDot.vue'
 import LocationIcon from '../ui/LocationIcon.vue'
 import { envStatus } from '../parts/env/env'
-import { go, hostActions, recentInstances } from '../useProto'
+import { go, hostActions, instances, recentInstances } from '../useProto'
 import { can } from '../milestones'
 import SetupLaptop from './setup/SetupLaptop.vue'
 import SetupCloud from './setup/SetupCloud.vue'
 import HomeInstall from './setup/HomeInstall.vue'
-import { cardInBuilds, flow, localSetup } from './setup/setupFlow'
+import { cardInBuilds, flow, installPending, localSetup } from './setup/setupFlow'
 import BuildTile from './build/BuildTile.vue'
 import { instanceMenu } from './build/buildMenu'
-import { nowOf, runs, startBuild, uninstalled, viewLogs } from './build/homeRun'
+import {
+  autoStart,
+  hasUpdate,
+  nowOf,
+  runs,
+  startBuild,
+  uninstalled,
+  viewLogs
+} from './build/homeRun'
 import type { ProtoInstance } from '../mock'
 import './setup/setup.css'
 
@@ -35,30 +44,52 @@ const shown = computed(() =>
 const machine = computed(() => can.value.exploreApps)
 // The drawing says where it runs; the line says on what.
 const detail = (i: ProtoInstance): string => [i.gpu, i.version].filter(Boolean).join(' · ')
+const RUN_LABEL = { start: 'Starting ComfyUI', uninstall: 'Uninstalling' }
 // In progress, a tile says what and how far, and the version under the name.
 function status(i: ProtoInstance): { label: string; live?: boolean; busy?: boolean } {
   const run = runs.get(i.id)
   if (run)
     return {
-      label: `${run.kind === 'start' ? 'Starting ComfyUI' : 'Uninstalling'} · ${run.percent}%`,
+      label: `${RUN_LABEL[run.kind]} · ${run.percent}%`,
       busy: true
     }
   if (nowOf(i) === 'running') return { label: 'Running', live: true }
-  // A build that isn't running is ready to: the Home launches, it doesn't
-  // manage, so no "Stopped" here.
-  if (i.kind === 'local') return { label: i.state === 'update' ? 'Update available' : 'Ready' }
+  // A build that isn't running is ready to: the Home starts, it doesn't
+  // manage, so no "Stopped" here. The status always says what it does;
+  // an update waiting is a grey note on the bottom line (Comfy-Desktop#2163).
+  if (i.kind === 'local') return { label: autoStart.id === i.id ? 'Auto start' : 'Ready' }
   const s = envStatus(i)
   return { label: s.label, live: s.live }
 }
 const meta = (i: ProtoInstance): string =>
   runs.has(i.id) ? `ComfyUI ${i.version ?? ''}`.trim() : detail(i)
-// A click launches; in progress it opens the start's logs.
+const note = (i: ProtoInstance): string | undefined =>
+  !runs.has(i.id) && i.kind === 'local' && hasUpdate(i) ? 'Update' : undefined
+// The whole tile is the action: a click starts it, opens it when it runs,
+// shows the logs while it is busy. The hover hint names it.
+function hint(i: ProtoInstance): string {
+  const run = runs.get(i.id)
+  if (run) return run.kind === 'uninstall' ? '' : 'Click to view logs'
+  return nowOf(i) === 'running' || i.kind !== 'local' ? 'Click to open' : 'Click to start'
+}
 function open(i: ProtoInstance): void {
   const run = runs.get(i.id)
   if (run?.kind === 'start') viewLogs(i)
   else if (!run) startBuild(i)
 }
-const count = computed(() => Math.min(3, shown.value.length + (cardInBuilds.value ? 1 : 0)))
+// No build on this computer (all uninstalled, or Cloud only): the row ends
+// in a New build tile, the same size as the others, the whole tile the
+// action (Comfy-Desktop#2180). It goes once a local build exists.
+const offerNew = computed(
+  () =>
+    machine.value &&
+    !cardInBuilds.value &&
+    !installPending.value &&
+    !instances.value.some((i) => i.kind === 'local' && !uninstalled.has(i.id))
+)
+const count = computed(() =>
+  Math.min(3, shown.value.length + (cardInBuilds.value || offerNew.value ? 1 : 0))
+)
 </script>
 
 <template>
@@ -82,6 +113,8 @@ const count = computed(() => Math.min(3, shown.value.length + (cardInBuilds.valu
             :hue="i.hue"
             :name="i.name"
             :meta="meta(i)"
+            :note="note(i)"
+            :hint="hint(i)"
             :status="status(i)"
             :percent="runs.get(i.id)?.percent ?? null"
             :openable="runs.get(i.id)?.kind !== 'uninstall'"
@@ -97,6 +130,21 @@ const count = computed(() => Math.min(3, shown.value.length + (cardInBuilds.valu
               </template>
             </template>
           </BuildTile>
+          <button
+            v-if="offerNew"
+            type="button"
+            class="mbr-card mbr-tile mbr-new"
+            style="--h: 220"
+            @click="hostActions.newInstance()"
+          >
+            <span class="mbr-device"
+              ><span class="mbr-new-plus"><Plus :size="18" /></span
+            ></span>
+            <span class="mbr-text grid min-w-0 flex-1">
+              <span class="mbr-name">New build</span>
+              <span class="mbr-meta">Run ComfyUI on this computer</span>
+            </span>
+          </button>
         </template>
         <template v-else>
           <Card
@@ -125,3 +173,28 @@ const count = computed(() => Math.min(3, shown.value.length + (cardInBuilds.valu
     </div>
   </section>
 </template>
+
+<style>
+/* The New build tile: a grey round plus where the machine goes. */
+.mbr-new {
+  text-align: left;
+}
+.mbr-new .mbr-device {
+  display: grid;
+  place-items: center;
+}
+.mbr-new-plus {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-muted-foreground);
+  transition: background-color 150ms ease;
+}
+.mbr-new:hover .mbr-new-plus {
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+  color: var(--color-base-foreground);
+}
+</style>

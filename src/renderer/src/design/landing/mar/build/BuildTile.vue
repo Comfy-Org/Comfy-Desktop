@@ -17,6 +17,8 @@ const {
   hue,
   name,
   meta,
+  note,
+  hint,
   status,
   lines = [],
   percent = null,
@@ -25,6 +27,10 @@ const {
   hue: number
   name: string
   meta: string
+  /** A grey note after the line that stays when it truncates (Update). */
+  note?: string
+  /** What a click does, on hover (Click to start / open / view logs). */
+  hint?: string
   status: { label: string; live?: boolean; busy?: boolean; bad?: boolean; icon?: Component }
   lines?: MenuLine[]
   percent?: number | null
@@ -51,6 +57,7 @@ function context(e: MouseEvent): void {
       type="button"
       class="mbr-open"
       :aria-label="`${name}, ${status.label}`"
+      :title="hint || undefined"
       @click="emit('open')"
     ></button>
     <span class="mbr-device"><slot name="device" /></span>
@@ -65,7 +72,12 @@ function context(e: MouseEvent): void {
         }}</span></span
       >
       <span class="mbr-name">{{ name }}</span>
-      <span class="mbr-meta tabular-nums">{{ meta }}</span>
+      <span class="mbr-meta flex min-w-0 tabular-nums"
+        ><span class="min-w-0 truncate">{{ meta }}</span
+        ><span v-if="note" class="shrink-0 whitespace-pre"
+          >{{ meta ? ' · ' : '' }}{{ note }}</span
+        ></span
+      >
     </span>
     <span v-if="$slots.actions" class="mbr-actions"><slot name="actions" /></span>
     <span v-if="lines.length" class="mbr-more">

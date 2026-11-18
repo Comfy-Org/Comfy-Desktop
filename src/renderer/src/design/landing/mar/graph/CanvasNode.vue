@@ -653,7 +653,8 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
   --n-slot-text: var(--mg-muted);
   --n-icon: var(--mg-muted);
   --n-outline: var(--color-base-foreground);
-  --n-exec: #0b8ce9;
+  /* What runs, its progress and focus: the ink, never blue (UI-RULES). */
+  --n-exec: var(--color-base-foreground);
   --n-error: #c03a3a;
   --n-bypass: #6a246a;
   --n-dot-line: rgb(0 0 0 / 0.25);
@@ -721,7 +722,7 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
   pointer-events: none;
 }
 .sg-node.is-running:not(.is-selected) .sg-outline {
-  border-color: var(--n-exec);
+  border-color: color-mix(in oklch, var(--n-exec) 55%, transparent);
 }
 .sg-inner {
   position: relative;
@@ -810,7 +811,7 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
   white-space: nowrap;
 }
 .sg-badge.is-live {
-  background: color-mix(in srgb, var(--n-exec) 22%, transparent);
+  background: var(--n-widget-on);
   color: var(--n-text);
 }
 .sg-badge.is-stale {
@@ -1008,7 +1009,7 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
 .sg-fill {
   position: absolute;
   inset: 0 auto 0 0;
-  background: color-mix(in srgb, var(--n-exec) 16%, transparent);
+  background: var(--n-widget-hover);
   pointer-events: none;
 }
 :root .proto-ui.proto-ui.proto-ui .sg-step {
@@ -1047,8 +1048,9 @@ function socketFit(side: 'in' | 'out', type: SocketType): string {
 :root .proto-ui.proto-ui.proto-ui .sg-w.is-button.is-primary {
   height: 24px;
   flex: none;
-  background: var(--n-exec);
-  color: #fff;
+  /* White like the toolbar's Run: every run is white. */
+  background: var(--mg-run);
+  color: var(--mg-run-text);
 }
 .sg-menu {
   position: absolute;

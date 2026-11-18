@@ -6,7 +6,7 @@ import {
   CircleStop,
   Cloud,
   CloudUpload,
-  Copy,
+  CopyPlus,
   Download,
   EyeOff,
   Folder,
@@ -24,27 +24,32 @@ import {
   Settings2,
   Share2,
   Square,
-  SquareArrowOutUpRight,
   Trash2,
   Upload,
   Workflow
 } from 'lucide-vue-next'
 import Badge from '../../ui/Badge.vue'
 import Button from '../../ui/Button.vue'
+import Card from '../../ui/Card.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
+import Sparkline from '../../ui/Sparkline.vue'
 import StatusDot from '../../ui/StatusDot.vue'
 import AssetsPage from '../../pages/AssetsPage.vue'
 import ProjectWorkflows from '../../pages/project/ProjectWorkflows.vue'
 import InstanceGlyph from '../../parts/InstanceGlyph.vue'
 import WorkflowCard from '../../parts/WorkflowCard.vue'
 import EnvLaunchButton from '../../parts/env/EnvLaunchButton.vue'
+import StatTile from '../../parts/env/StatTile.vue'
 import {
   deploymentsOf,
   envKind,
   envStatus,
+  fmt,
   fmtCompact,
+  fmtGpu,
   isPublished,
   runsOn,
+  statsOf,
   versionsOf
 } from '../../parts/env/env'
 import { allWorkflows } from '../../gallery'
@@ -65,6 +70,7 @@ import EnvModels from './EnvModelsEntry.vue'
 import BuildAbout from './BuildAbout.vue'
 import BuildArgs from './BuildArgs.vue'
 import BuildOp from './BuildOp.vue'
+import BuildOverviewCards from './BuildOverviewCards.vue'
 import BuildStorage from './BuildStorage.vue'
 import BuildTerminal from './BuildTerminal.vue'
 import { opOf } from './buildOps'
@@ -75,8 +81,7 @@ import BuildUpdate from './BuildUpdate.vue'
 import BuildUpdateSummary from './BuildUpdateSummary.vue'
 import { createSnapshot, leaving, pendingOf, snapshotsOf, stateOf } from './buildFacts'
 import { buildPage } from './buildPage'
-import BuildOverview from './BuildOverview.vue'
-import { desktopTabs, nextBuildTab, openBuildSettings, tabAsked } from './buildTab'
+import { desktopTabs, nextBuildTab, openBuildSettings, tabOf } from './buildTab'
 import { syncing } from './syncPrevious'
 import { clearError, errorOf } from './buildErrors'
 import '../table/table.css'
@@ -125,15 +130,13 @@ type Tab =
 
 // The Builds milestone: production's tabs (or Overview first).
 const mvp = computed(() => buildsAsM1.value)
-// Desktop's build page: the name is the page title, renamed in place; the
-// kind sits small at the start of the subtitle (Comfy-Desktop#2002).
-const desktopPage = computed(() => mvp.value && buildPage.id === 'production')
 const state = stateOf(env)
 const snaps = snapshotsOf(env)
 const pending = computed(() => pendingOf(env))
 
 const k = computed(() => envKind(env))
 const st = computed(() => envStatus(env))
+const s = computed(() => statsOf(env))
 const versions = computed(() => versionsOf(env))
 // Deployments come with the Builder (Milestone 6).
 const deps = computed(() => (can.value.builder ? deploymentsOf(env.id) : []))
@@ -151,7 +154,7 @@ const own = computed(() => k.value === 'local')
 const remote = isRemote(env)
 const remoteUrl = computed(() => extraOf(env.id).remote?.replace(/^https?:\/\//, ''))
 const DESKTOP_TABS = computed<{ value: Tab; label: string; dot?: boolean }[]>(() =>
-  desktopTabs(own.value, remote, Boolean(pending.value), can.value.buildOverview)
+  desktopTabs(own.value, remote, Boolean(pending.value))
 )
 const MVP_TABS = computed<{ value: Tab; label: string; count?: number; dot?: boolean }[]>(() =>
   buildPage.id === 'production'
@@ -196,7 +199,7 @@ const TABS = computed(() => (mvp.value ? MVP_TABS.value : LATER_TABS.value))
 const asked =
   nextBuildTab.value === 'settings' && !TABS.value.some((t) => t.value === 'settings')
     ? 'args'
-    : tabAsked(nextBuildTab.value, can.value.buildOverview && buildPage.id === 'production')
+    : tabOf(nextBuildTab.value)
 nextBuildTab.value = ''
 const tab = ref<Tab>(
   asked && TABS.value.some((t) => t.value === asked)
@@ -267,6 +270,9 @@ function restartHere(): void {
   state.restart = false
   toast(`Restarting ${env.name}…`)
 }
+// A running build reads Switch (its window comes to the front); the caret
+// holds Window options, only Stop now that every build opens in its own
+// window (Comfy-Desktop#2147).
 const main = computed<{ label: string; icon: unknown; run: () => void }>(() => {
   if (remote) return { label: 'Open Remote', icon: Server, run: () => toast(`Opening ${env.name}`) }
   if (k.value !== 'local')
@@ -274,58 +280,51 @@ const main = computed<{ label: string; icon: unknown; run: () => void }>(() => {
   if (running.value)
     return state.restart
       ? { label: 'Restart to apply changes', icon: RotateCcw, run: restartHere }
-      : { label: 'Restart', icon: RotateCcw, run: restartHere }
+      : { label: 'Switch', icon: Repeat2, run: () => toast(`Switched to ${env.name}`) }
   return { label: 'Start', icon: Play, run: startHere }
 })
-const newWindow: MenuLine = {
-  label: 'Open in new window',
-  icon: SquareArrowOutUpRight,
-  run: () => toast(`Opening ${env.name} in a new window`)
-}
 const windowLines = computed<MenuLine[]>(() =>
   running.value && own.value
-    ? [
-        { label: 'Switch', icon: Repeat2, run: () => toast(`Switched this window to ${env.name}`) },
-        newWindow,
-        'sep',
-        { label: 'Stop', icon: CircleStop, danger: true, run: stopHere }
-      ]
-    : [newWindow]
+    ? [{ label: 'Stop', icon: CircleStop, danger: true, run: stopHere }]
+    : []
 )
-// More: the install's own actions, Desktop's order; Forget and Uninstall
-// last. Stop lives on the caret, beside Restart, and only there.
+// Rename in the title, as Desktop does (the About tab is gone).
+const renaming = ref(false)
+const draft = ref('')
+const nameField = ref<HTMLInputElement>()
+async function rename(): Promise<void> {
+  draft.value = state.name
+  renaming.value = true
+  await nextTick()
+  nameField.value?.select()
+}
+function saveName(): void {
+  const v = draft.value.trim()
+  if (renaming.value && v) state.name = v
+  renaming.value = false
+}
+// More: Desktop's order (updateSections.ts and pinBottomActions): the
+// build's own actions, then Stop while it runs, Forget, Uninstall.
+const gate = computed(() => ({
+  disabled: running.value,
+  title: running.value ? 'Stop the running build first.' : undefined
+}))
 const moreLines = computed<MenuLine[]>(() => [
-  {
-    label: 'Rename',
-    icon: Pencil,
-    run: () => (desktopPage.value ? renameTitle() : (tab.value = 'about'))
-  },
+  { label: 'Rename', icon: Pencil, run: rename },
   ...(own.value
     ? [
-        {
-          label: 'Duplicate',
-          icon: Copy,
-          disabled: running.value,
-          title: running.value ? 'Stop the running instance first.' : undefined,
-          run: duplicateHere
-        },
+        { label: 'Duplicate', icon: CopyPlus, ...gate.value, run: duplicateHere },
         { label: 'Open Directory', icon: FolderOpen, run: () => toast(`Opened ${env.name}`) },
         { label: 'Share', icon: Share2, run: () => toast('Snapshot ready to share') }
       ]
     : []),
   'sep',
+  ...(own.value && running.value
+    ? [{ label: 'Stop', icon: CircleStop, danger: true, run: stopHere }]
+    : []),
   { label: 'Forget', icon: EyeOff, run: leaveHere },
   ...(own.value
-    ? [
-        {
-          label: 'Uninstall',
-          icon: Trash2,
-          danger: true,
-          disabled: running.value,
-          title: running.value ? 'Stop the running instance first.' : undefined,
-          run: leaveHere
-        }
-      ]
+    ? [{ label: 'Uninstall', icon: Trash2, danger: true, ...gate.value, run: leaveHere }]
     : [])
 ])
 
@@ -358,63 +357,32 @@ const lines = computed<MenuLine[]>(() => [
   }
 ])
 
-// Rename from the title: Enter or leaving keeps it, Esc puts it back.
-const sourceLabel = env.channel === 'Legacy Desktop' ? 'Desktop (legacy)' : 'Standalone'
-const canRename = computed(() => own.value || remote)
-const naming = ref(false)
-const nameDraft = ref('')
-const nameField = ref<HTMLInputElement>()
-async function renameTitle(): Promise<void> {
-  if (!canRename.value) return
-  nameDraft.value = state.name
-  naming.value = true
-  await nextTick()
-  nameField.value?.select()
-}
-function keepName(): void {
-  const v = nameDraft.value.trim()
-  if (naming.value && v) state.name = v
-  naming.value = false
-}
-
 const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.length + 1}`)
 </script>
 
 <template>
   <div class="mar-bp mx-auto w-full max-w-440 px-11 pb-24">
     <MarEntityHeader
-      :back="(marTabsOn || mvp) && !can.buildOverview ? 'Builds' : undefined"
+      :back="marTabsOn && !mvp ? 'Builds' : undefined"
       :title="mvp ? state.name : env.name"
       :status="status.id"
       :status-label="status.label"
-      :status-link="syncing && status.id === 'update' && !remote ? 'Open Update' : undefined"
+      :status-link="syncing && status.id === 'update' && !remote ? 'Open Overview' : undefined"
       @back="go('environments' as Page)"
       @status="openBuildSettings(env.id, 'update')"
     >
-      <template v-if="desktopPage" #title>
+      <template v-if="renaming" #title>
         <input
-          v-if="naming"
           ref="nameField"
-          v-model="nameDraft"
-          class="mar-bp-title mar-bp-name-input"
+          v-model="draft"
+          class="mar-bp-rename"
           aria-label="Build name"
-          @keydown.enter="keepName"
-          @keydown.esc="naming = false"
-          @blur="keepName"
+          @keydown.enter="saveName"
+          @keydown.esc="renaming = false"
+          @blur="saveName"
         />
-        <button
-          v-else-if="canRename"
-          type="button"
-          class="mar-bp-name"
-          title="Rename"
-          @click="renameTitle"
-        >
-          <h1 class="mar-bp-title">{{ state.name }}</h1>
-          <Pencil :size="16" class="mar-bp-name-pen" />
-        </button>
-        <h1 v-else class="mar-bp-title">{{ state.name }}</h1>
       </template>
-      <template v-if="!desktopPage" #cover>
+      <template #cover>
         <span class="mar-bp-glyph"
           ><Server v-if="remote" :size="26" class="text-muted-foreground" /><InstanceGlyph
             v-else
@@ -423,13 +391,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         /></span>
       </template>
       <template #meta>
-        <template v-if="desktopPage">
-          <component :is="remote ? Server : own ? Laptop : Cloud" :size="14" />
-          <span v-if="remote" class="font-mono">{{ remoteUrl }}</span>
-          <span v-else-if="own">This computer · {{ sourceLabel }}</span>
-          <span v-else>Comfy Cloud</span>
-        </template>
-        <template v-else-if="remote">
+        <template v-if="remote">
           <Server :size="13" /><span class="font-mono">{{ remoteUrl }}</span>
         </template>
         <template v-else-if="k === 'managed'">
@@ -437,7 +399,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         </template>
         <Badge v-else-if="mvp" size="sm">{{ state.version }}</Badge>
         <Badge v-else-if="versions[0]" size="sm">{{ versions[0].label }}</Badge>
-        <template v-for="r in desktopPage ? [] : where" :key="r.where">
+        <template v-for="r in where" :key="r.where">
           <span class="mar-eh-dot" />
           <button
             v-if="r.where === 'deployments'"
@@ -452,7 +414,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
             }}<StatusDot v-if="r.live" status="running" />
           </span>
         </template>
-        <template v-for="p in desktopPage ? [] : usedBy" :key="p.id">
+        <template v-for="p in usedBy" :key="p.id">
           <span class="mar-eh-dot" />
           <button type="button" class="mar-eh-link" @click="go(`project:${p.id}` as Page)">
             <Folder :size="13" />Used by {{ p.name }}
@@ -461,13 +423,23 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
       </template>
       <template v-if="mvp && buildPage.id === 'production'" #actions>
         <MarSplitButton
-          :label="state.run === 'launching' ? 'Starting…' : main.label"
+          v-if="windowLines.length"
+          :label="main.label"
           :icon="main.icon as never"
-          :disabled="state.run === 'launching' || op?.status === 'running'"
+          :disabled="op?.status === 'running'"
           :lines="windowLines"
           menu-label="Window options"
           @run="main.run()"
         />
+        <Button
+          v-else
+          variant="primary"
+          :disabled="state.run === 'launching' || op?.status === 'running'"
+          @click="main.run()"
+          ><component :is="main.icon" :size="15" />{{
+            state.run === 'launching' ? 'Starting…' : main.label
+          }}</Button
+        >
         <MarItemMenu v-if="k !== 'managed' || remote" :lines="moreLines" label="More">
           <template #trigger>
             <Button variant="secondary" size="icon" aria-label="More"
@@ -522,17 +494,15 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
     <template v-if="mvp">
       <!-- A long operation takes the tab's place until it settles. -->
       <BuildOp v-if="op" :id="env.id" :op :name="env.name" />
+      <BuildOverviewCards
+        v-else-if="tab === 'overview' && buildPage.id === 'production' && own"
+        :env
+      />
       <template v-else-if="tab === 'overview'">
         <BuildUpdateSummary v-if="own" :env />
         <BuildAbout :env />
       </template>
-      <BuildOverview
-        v-else-if="tab === 'about' && can.buildOverview && buildPage.id === 'production'"
-        :env
-        :own
-        on-page
-      />
-      <BuildAbout v-else-if="tab === 'about'" :env :on-page="desktopPage" />
+      <BuildAbout v-else-if="tab === 'about'" :env />
       <BuildUpdate v-else-if="tab === 'update'" :env />
       <BuildSnapshots v-else-if="tab === 'snapshots'" :env />
       <BuildSettings v-else-if="tab === 'settings'" :env />
@@ -541,10 +511,36 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
       <BuildTerminal v-else-if="tab === 'terminal'" :env />
     </template>
 
-    <!-- Overview: the build's facts as cards (Comfy-Desktop#2062), then
-         the workflows made on it. -->
     <template v-else-if="tab === 'overview'">
-      <BuildOverview :env :own on-page />
+      <Card
+        class="grid divide-x divide-border-default"
+        :class="can.builder ? 'grid-cols-4' : 'grid-cols-3'"
+      >
+        <StatTile label="Runs · 7 days" :value="fmt(s.runs7d)"
+          ><Sparkline :values="s.trend"
+        /></StatTile>
+        <StatTile label="GPU time · 7 days" :value="fmtGpu(s.gpuMin7d)" :hint="env.gpu" />
+        <StatTile
+          v-if="k === 'local'"
+          label="On disk"
+          :value="`${s.storageGb} GB`"
+          hint="412 GB free"
+        />
+        <StatTile
+          v-else
+          label="Credits · 7 days"
+          :value="fmt(s.spend7d)"
+          hint="Sessions on Comfy Cloud"
+        />
+        <StatTile
+          v-if="can.builder"
+          label="API requests · 7 days"
+          :value="deps.length ? fmtCompact(deps.reduce((n, d) => n + d.requests7d, 0)) : '—'"
+          :hint="
+            deps.length ? `${deps.length} deployment${deps.length > 1 ? 's' : ''}` : 'Not deployed'
+          "
+        />
+      </Card>
       <SectionHeader
         title="Recent workflows"
         class="mar-sec mt-7"
@@ -686,54 +682,6 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
 </template>
 
 <style>
-/* The name is the title and the rename control: the pencil on hover. */
-:root .proto-ui.proto-ui.proto-ui .mar-bp-title {
-  margin: 0;
-  /* The same title as the Builds page (marShell.css). */
-  font-size: clamp(32px, min(3.6vw, 6vh), 52px);
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  line-height: 1.05;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-bp-name {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-  margin: 0 -8px;
-  padding: 0 8px;
-  border-radius: var(--radius-control);
-  color: var(--color-base-foreground);
-  text-align: left;
-}
-.mar-bp-name .mar-bp-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mar-bp-name-pen {
-  flex-shrink: 0;
-  color: var(--color-muted-foreground);
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-.mar-bp-name:hover .mar-bp-name-pen,
-.mar-bp-name:focus-visible .mar-bp-name-pen {
-  opacity: 1;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-bp-name-input {
-  min-width: 0;
-  max-width: 100%;
-  margin: 0 -8px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  color: var(--color-base-foreground);
-  field-sizing: content;
-  outline: 2px solid var(--color-border-focus);
-}
 .mar-bp-glyph {
   display: inline-flex;
   align-items: center;
@@ -764,6 +712,20 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
   margin: 2px 0 0;
   color: var(--color-muted-foreground);
   font-size: 13px;
+}
+.mar-bp-rename {
+  min-width: 0;
+  width: min(100%, 28rem);
+  padding: 0 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: var(--radius-control);
+  outline: none;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-base-foreground);
+  font: inherit;
+  font-size: var(--text-display, 28px);
+  font-weight: 600;
 }
 .mar-bp-row {
   display: flex;

@@ -79,3 +79,35 @@ As shipped in Desktop:
 - **A tile in progress is a tile.** Starting or installing: "Starting ComfyUI · 5%" / "Installing ComfyUI · 40%", the name, `ComfyUI <version>`, a bar along the bottom; no buttons, a click opens its logs.
 - **One build menu.** ⋯ on hover or focus, a right-click on the tile and on its sidebar row open the same lines (`build/buildMenu.ts`): what you can do now, Open in new window, the rest greyed when it can't run, Uninstall last, asking inside the menu.
 - **The logs window.** Steps in words (Start ComfyUI … Start server; Download, Extract, Set up environment, Get ComfyUI vX), the log across the window under the steps, on its newest line and following it, no Cloud pitch (`setup/BuildProgress.vue`). The full-window install keeps its pitch.
+
+## Catch-up with Desktop's main (2026-11-18)
+
+What merged on Comfy-Org/Comfy-Desktop `main` from 2026-11-14 to 2026-11-18,
+by anyone, and what the prototype does now. Open drafts are not followed
+until they merge.
+
+- **#2062 Build Overview.** Overview opens the build page, the facts as cards in place of Update and About (`build/BuildOverviewCards.vue`). Added.
+- **#2198 Storage second.** Build tabs: Overview, Storage, Startup arguments, Snapshots, Terminal. Updated.
+- **#2163 The whole card starts the build.** Home tiles and Builds rows have no Start or Update button: a click starts, opens or shows logs, the hint says which; Update is a grey note. Supersedes asks B2, B3 and B4 above. Updated.
+- **#2128 One build menu.** Start, Auto start, the rest, Uninstall last; running: View logs (the build's Terminal), Restart, Stop. Matched.
+- **#2147 Every build in its own window.** No Open in new window in the build menu; on the build page a running build is Switch, its caret holds only Stop. Updated.
+- **#2174 Upload build.** Signed in, the build menu has Upload build after Restore snapshot. Added.
+- **#2179 Copy pass.** Start, build (not instance), sentence case, no em dashes, "Stop the running build first.", Startup arguments. Updated.
+- **#2180 New build tile.** With no local build, Home's builds row ends in a New build tile. Added.
+- **#2177 Page right-click.** A page in the sidebar right-clicks to Open in new window (`shell/pageMenu.ts`). Added.
+- **#2178 Title bar ☰.** Desktop window: Performance tests and Benchmarks only. Build window keeps its longer menu. Updated.
+- **#2138 Desktop Settings in the sidebar.** Not added yet: M2's sidebar foot is Pablo's `parts/WorkspaceMenu.vue`; needs a small hook there, to ask.
+- **#2175 Desktop Settings › Folders.** Default install location, one Shared folders list, Add models folder. Added.
+- **#2176 Set up copy.** "The best settings for your <GPU> are picked. Change any you like.", compact Change setup (`setup/SetupPick.vue`). Updated.
+- **#2133 No starter workflow step.** Set up installs what it shows; the Workflow step is gone from every scope. Updated.
+- **#2182 Wordmark opening.** Already matched.
+- **AppSidebar build percent.** The sidebar row shows the percent of an install or uninstall, not of a start. Updated.
+- **#2159, #2146 Title bar.** Middle left empty, Home button, ☰ on the right. Already matched.
+- **Apps (Vinh): #2157, #2156, #2202, #2135.** Not changed here; gaps noted for Vinh.
+- **Assets (Jaeone): #2204, #2197, #2155, #2143, #2140.** Not changed.
+- **#2164 Desktop update in the sidebar.** Not added: main shows it in blue, and the prototype has no blue; to decide with Mar.
+- **#2166 Credit balance, #2160 workspace menu.** The prototype already has credits and the workspace at the sidebar's foot.
+
+Pending, not in main (open drafts, not in the prototype): #2181 build picker, #2210 page titles at display size, #2213 live logs window, #2214 sidebar fold (already matched), #2215 Open and Export snapshot on the build page, #2216 update progress on the build, #2217 Folders tab top-down, and the downloads popup proposal.
+
+The prototype has no blue: Run and Resume are white, value fills and status chips grey (see UI-RULES › Buttons and actions).

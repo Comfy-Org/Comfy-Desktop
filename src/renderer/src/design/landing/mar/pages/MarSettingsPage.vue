@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { computed, reactive, ref, type Component } from 'vue'
 import {
+  CircleHelp,
+  Ellipsis,
+  Folder,
+  FolderInput,
+  FolderOpen,
   Info,
   Keyboard,
+  Plus,
   Monitor,
   Palette,
   RotateCcw,
@@ -20,6 +26,8 @@ import { surface } from '../shell/surface'
 import MarPage from './MarPage.vue'
 import MarSearchField from './MarSearchField.vue'
 import { notify } from './undo'
+import MarItemMenu from './MarItemMenu.vue'
+import type { MenuLine } from './menu'
 
 /**
  * Settings (Mar's proposal): the settings ComfyUI and Comfy Desktop
@@ -45,6 +53,7 @@ const GROUPS: { id: string; label: string; icon: Component; desktop?: boolean }[
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'canvas', label: 'Workflow & canvas', icon: Workflow },
   { id: 'desktop', label: 'Desktop', icon: Monitor, desktop: true },
+  { id: 'folders', label: 'Folders', icon: Folder, desktop: true },
   { id: 'keys', label: 'Keybindings', icon: Keyboard },
   { id: 'account', label: 'Account', icon: User },
   { id: 'about', label: 'About', icon: Info }
@@ -225,21 +234,21 @@ const SETTINGS: Setting[] = [
       { value: 'tuna', label: 'Tsinghua mirror' }
     ]
   },
+  // Folders: the install location and the shared folders (FOLDERS below).
   {
-    id: 'models',
-    group: 'desktop',
-    name: 'Models folder',
-    hint: '~/Documents/ComfyUI/models',
-    kind: 'button',
-    action: 'Show in Finder'
+    id: 'installLocation',
+    group: 'folders',
+    name: 'Default install location',
+    kind: 'value',
+    def: '~/ComfyUI-Installs'
   },
   {
-    id: 'outputs',
-    group: 'desktop',
-    name: 'Outputs folder',
-    hint: '~/Documents/ComfyUI/output',
-    kind: 'button',
-    action: 'Show in Finder'
+    id: 'sharedFolders',
+    group: 'folders',
+    name: 'Shared folders',
+    hint: 'Models, input and output folders every build can use',
+    kind: 'value',
+    def: '4 folders'
   },
   {
     id: 'logs',
@@ -301,6 +310,60 @@ const SETTINGS: Setting[] = [
     action: 'Check now'
   }
 ]
+
+/**
+ * Folders (Comfy-Desktop#2175): where new builds go, then one list of the
+ * folders every build can share, each naming its kind. Downloads is always
+ * in view: the folder that gets downloaded models wears the tag, every
+ * other models folder offers Use for downloads. A row's ⋯ only removes.
+ * Long paths keep their end, the full path on hover.
+ */
+const installLocation = ref('~/ComfyUI-Installs')
+interface SharedFolder {
+  id: string
+  path: string
+  kind: 'Models' | 'Input' | 'Output'
+}
+const FOLDERS = ref<SharedFolder[]>([
+  { id: 'm1', path: '~/Documents/comfyui-data/models', kind: 'Models' },
+  {
+    id: 'm2',
+    path: '~/Library/Application Support/Comfy-Desktop/ComfyUI-Shared/models',
+    kind: 'Models'
+  },
+  {
+    id: 'in',
+    path: '~/Library/Application Support/Comfy-Desktop/ComfyUI-Shared/input',
+    kind: 'Input'
+  },
+  {
+    id: 'out',
+    path: '~/Library/Application Support/Comfy-Desktop/ComfyUI-Shared/output',
+    kind: 'Output'
+  }
+])
+const downloadsTo = ref('m1')
+const folderLines = (f: SharedFolder): MenuLine[] => [
+  {
+    label: 'Remove',
+    danger: true,
+    run: () => {
+      const before = [...FOLDERS.value]
+      FOLDERS.value = FOLDERS.value.filter((x) => x.id !== f.id)
+      notify('Folder removed', () => (FOLDERS.value = before))
+    }
+  }
+]
+let added = 0
+function addModelsFolder(): void {
+  added++
+  FOLDERS.value = [
+    ...FOLDERS.value.filter((f) => f.kind === 'Models'),
+    { id: `new${added}`, path: `~/Models ${added}`, kind: 'Models' },
+    ...FOLDERS.value.filter((f) => f.kind !== 'Models')
+  ]
+}
+const showFolders = computed(() => !query.value && group.value === 'folders')
 
 const values = reactive<Record<string, string | boolean>>(
   Object.fromEntries(SETTINGS.filter((s) => s.def !== undefined).map((s) => [s.id, s.def!]))
@@ -386,8 +449,102 @@ function act(s: Setting): void {
       </nav>
 
       <section class="mar-set-list">
-        <h2 class="mar-set-title">{{ query ? `Results for “${query}”` : label(group) }}</h2>
-        <div v-for="s in hits" :key="s.id" class="mar-set-row" :class="changed(s) && 'is-changed'">
+        <template v-if="showFolders">
+          <h2 class="mar-set-title mar-set-label">
+            Default install location<CircleHelp
+              :size="13"
+              aria-label="Where new builds are installed"
+              title="Where new builds are installed"
+            />
+          </h2>
+          <div class="mar-set-box">
+            <div class="mar-set-folder">
+              <Folder :size="15" class="shrink-0 text-muted-foreground" />
+              <span class="mar-set-path" :title="installLocation"
+                ><bdi>{{ installLocation }}</bdi></span
+              >
+              <button
+                type="button"
+                class="mar-set-icon"
+                title="Choose a folder"
+                aria-label="Choose a folder"
+                @click="installLocation = '/Volumes/Studio/ComfyUI-Installs'"
+              >
+                <FolderOpen :size="15" />
+              </button>
+            </div>
+          </div>
+          <h2 class="mar-set-title mar-set-label">
+            Shared folders<CircleHelp
+              :size="13"
+              aria-label="Folders every build can use"
+              title="Folders every build can use"
+            />
+          </h2>
+          <p class="mar-set-hint mar-set-lead">
+            These folders are shared by every build. Each build chooses in its own Folders tab
+            whether to use them.
+          </p>
+          <div class="mar-set-box">
+            <div v-for="f in FOLDERS" :key="f.id" class="mar-set-folder is-shared">
+              <FolderInput :size="15" class="shrink-0 text-muted-foreground" />
+              <span class="mar-set-path" :title="f.path"
+                ><bdi>{{ f.path }}</bdi></span
+              >
+              <span class="mar-set-kind">{{ f.kind }}</span>
+              <span class="mar-set-dl">
+                <span v-if="downloadsTo === f.id" class="mar-set-tag"
+                  >Downloads<CircleHelp
+                    :size="12"
+                    title="Models you download from ComfyUI land here"
+                    aria-label="Models you download from ComfyUI land here"
+                /></span>
+                <button
+                  v-else-if="f.kind === 'Models'"
+                  type="button"
+                  class="mar-set-use"
+                  @click="downloadsTo = f.id"
+                >
+                  Use for downloads
+                </button>
+              </span>
+              <button
+                type="button"
+                class="mar-set-icon"
+                title="Open folder"
+                aria-label="Open folder"
+                @click="toast(`Opened ${f.path}`)"
+              >
+                <FolderOpen :size="15" />
+              </button>
+              <span class="mar-set-more">
+                <MarItemMenu
+                  v-if="f.kind === 'Models' && downloadsTo !== f.id"
+                  :lines="folderLines(f)"
+                  label="Folder actions"
+                >
+                  <template #trigger>
+                    <button type="button" class="mar-set-icon" aria-label="Folder actions">
+                      <Ellipsis :size="15" />
+                    </button>
+                  </template>
+                </MarItemMenu>
+              </span>
+            </div>
+            <button type="button" class="mar-set-add" @click="addModelsFolder">
+              <Plus :size="15" />Add models folder
+            </button>
+          </div>
+        </template>
+        <h2 v-else class="mar-set-title">
+          {{ query ? `Results for “${query}”` : label(group) }}
+        </h2>
+        <div
+          v-for="s in showFolders ? [] : hits"
+          :key="s.id"
+          class="mar-set-row"
+          :class="changed(s) && 'is-changed'"
+        >
           <div class="min-w-0 flex-1">
             <p class="mar-set-name">
               {{ s.name }}<span v-if="query" class="mar-set-where">{{ label(s.group) }}</span>
@@ -482,10 +639,6 @@ function act(s: Setting): void {
   min-height: 64px;
   align-items: center;
   gap: 12px;
-  border-bottom: 1px solid var(--color-border-default);
-}
-.mar-set-row:last-child {
-  border-bottom: 0;
 }
 .mar-set-name {
   margin: 0;
@@ -538,5 +691,99 @@ function act(s: Setting): void {
   color: var(--color-muted-foreground);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+}
+/* Folders (Comfy-Desktop#2175): uppercase section titles, each list in a
+ * lighter box, no lines. */
+.mar-set-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 20px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mar-set-label:first-child {
+  margin-top: 12px;
+}
+.mar-set-lead {
+  margin: 4px 0 10px;
+}
+.mar-set-box {
+  display: grid;
+  gap: 2px;
+  margin-top: 8px;
+  padding: 6px;
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+}
+.mar-set-folder {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  min-height: 40px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px 0 10px;
+}
+.mar-set-folder.is-shared {
+  grid-template-columns: 16px minmax(0, 1fr) 64px 140px 28px 28px;
+}
+/* A long path keeps its end: the ellipsis goes at the start. */
+.mar-set-path {
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  direction: rtl;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-set-kind {
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+.mar-set-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-set-use {
+  padding: 3px 8px;
+  border-radius: 8px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-set-use:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-set-icon:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-set-add:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-set-icon {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 8px;
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-set-add {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 9px;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  text-align: left;
 }
 </style>

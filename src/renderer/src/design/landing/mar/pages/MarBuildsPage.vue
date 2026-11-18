@@ -4,7 +4,6 @@ import {
   ArrowRightLeft,
   ArrowUpCircle,
   Camera,
-  Check,
   CircleStop,
   CloudUpload,
   Copy,
@@ -33,17 +32,7 @@ import Select from '../../ui/Select.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { hostActions, instances, proto, toast } from '../../useProto'
 import SetupCancelConfirm from '../setup/SetupCancelConfirm.vue'
-import SetupLaptop from '../setup/SetupLaptop.vue'
-import SetupCloud from '../setup/SetupCloud.vue'
-import '../setup/setup.css'
-import {
-  BUILD_NAME,
-  DETECTED,
-  flow,
-  installingBehind,
-  localSetup,
-  showInstall
-} from '../setup/setupFlow'
+import { BUILD_NAME, DETECTED, flow, installingBehind, showInstall } from '../setup/setupFlow'
 import { can } from '../../milestones'
 import { buildsAsM1 } from '../build/buildsAsM1'
 import { deploymentsOf, versionsOf } from '../../parts/env/env'
@@ -148,21 +137,6 @@ const view = ref<'grid' | 'list'>(building.value ? 'list' : 'grid')
 // One-line rows: all Milestone 1 has, and the default after it
 // (UI Playground › Builds view).
 const rowsOnly = computed(() => (buildsAsM1.value || buildCard.id === 'rows') && !building.value)
-// From Milestone 2 on the rows are tiles, the same cards as Home's builds
-// (Comfy-Desktop#2025): the machine drawn in the build's hue, the state on
-// top, the name, the version; Start or Open and ⋯ on the right.
-const tiles = computed(() => rowsOnly.value && can.value.exploreApps)
-// A tile's state line: Ready (a check) for a build that isn't running,
-// Always on for Cloud, a dot for a live one, a spinner while it changes,
-// Update available (an arrow) when there's one.
-function tileState(b: Build): { label: string; mark: 'dot' | 'spin' | 'check' | 'update' } {
-  const s = m1State(b)
-  if (s.spin) return { label: s.label, mark: 'spin' }
-  if (s.tone === 'ok') return { label: s.label, mark: 'dot' }
-  if (b.state === 'update') return { label: 'Update available', mark: 'update' }
-  if (b.kind === 'cloud' && !isRemote(b)) return { label: 'Always on', mark: 'dot' }
-  return { label: 'Ready', mark: 'check' }
-}
 
 // Cloud and Remote show only when there are builds there (ChooserView).
 const countWhere = (w: BuildWhere): number => builds.items.filter((b) => whereOf(b) === w).length
@@ -340,27 +314,6 @@ function launch(b: Build): { label: string; icon: Component; run: () => void } {
     }
   return { label: 'Start', icon: Play, run: () => start(b) }
 }
-const launchWhere = (b: Build): string =>
-  isRemote(b) ? 'on Remote' : b.kind === 'cloud' ? 'on Cloud' : 'on this computer'
-// A tile's button, as Desktop's (ChooserInstallTile): Open where there is
-// something to open (running, starting, errored, Cloud, Remote), else Start.
-// None while it updates or stops.
-const tileLaunchShown = (b: Build): boolean =>
-  !updating.has(b.id) && !stopping.has(b.id) && !creating.has(b.id)
-function tileLaunch(b: Build): { label: string; icon: Component; run: () => void } {
-  const open =
-    b.state === 'running' || b.state === 'launching' || b.state === 'error' || b.kind === 'cloud'
-  const run = (): void => {
-    if (b.state === 'launching') return
-    if (b.state === 'running') return hostActions.launch(original(b))
-    if (b.state === 'error') return void (crashOf.value = b)
-    if (problemOf(b)) return fixProblem(b)
-    start(b)
-  }
-  return open ? { label: 'Open', icon: ExternalLink, run } : { label: 'Start', icon: Play, run }
-}
-// A tile's meta line: Comfy Cloud says just Cloud; the rest as the rows.
-const tileSpecs = (b: Build): string => (b.id === 'cloud' ? 'Cloud' : specs(b))
 // The state, one word: the chip after the name says what else is going on.
 function m1State(b: Build): {
   label: string
@@ -409,19 +362,29 @@ function createBuild(b: Build): void {
 // Manage, then the state's change, then the install's own; snapshots;
 // Create Build; Stop and Uninstall last. While it runs, what would change
 // it is greyed, and its tooltip says why.
-// New Build's chevron, as Desktop's Builds header (#2040).
-const NEW_BUILD_LINES: MenuLine[] = [
-  { label: 'Add Existing Build', run: () => toast('Add Existing Build') },
-  { label: 'Load Snapshot', run: () => toast('Load Snapshot') }
-]
 function m1Lines(b: Build): MenuLine[] {
   const local = b.kind === 'local'
   const running = b.state === 'running' || busy(b)
   const gated = {
     disabled: running,
-    title: running ? 'Stop the running instance first.' : undefined
+    title: running ? 'Stop the running build first.' : undefined
   }
   const problem = problemOf(b)
+  // What it can do now first, as Home's build menu (Comfy-Desktop#2163):
+  // the same menu from the ⋯, a right-click, Home and the sidebar.
+  const now: MenuLine[] = problem
+    ? []
+    : b.state === 'launching'
+      ? [{ label: 'View logs', icon: ScrollText, run: () => toast(`Logs of ${b.name}`) }]
+      : b.state === 'running' && local
+        ? [
+            { label: 'View logs', icon: ScrollText, run: () => toast(`Logs of ${b.name}`) },
+            { label: 'Restart', icon: RotateCw, run: () => toast(`Restarting ${b.name}…`) },
+            { label: 'Stop', icon: CircleStop, run: () => stop(b) }
+          ]
+        : b.state !== 'running' && !busy(b)
+          ? [{ label: launch(b).label, icon: launch(b).icon, run: () => launch(b).run() }]
+          : []
   const top: MenuLine[] = [
     { label: 'Manage', icon: Settings2, run: () => open(b) },
     ...(b.state === 'update'
@@ -440,12 +403,12 @@ function m1Lines(b: Build): MenuLine[] {
   const snaps: MenuLine[] =
     local && !problem
       ? [
-          { label: 'Export Snapshot', icon: Download, run: () => toast('Snapshot exported.') },
+          { label: 'Export snapshot', icon: Download, run: () => toast('Snapshot exported.') },
           // Snapshots live on the build's page in Builds, on Settings after it.
           ...(buildsAsM1.value || syncing.value
             ? [
                 {
-                  label: 'Restore Snapshot',
+                  label: 'Restore snapshot',
                   icon: History,
                   run: () =>
                     syncing.value
@@ -456,33 +419,51 @@ function m1Lines(b: Build): MenuLine[] {
               ]
             : []),
           ...(proto.signedIn
-            ? [{ label: 'Create Build', icon: CloudUpload, run: () => createBuild(b) }]
+            ? [
+                {
+                  label: 'Upload build',
+                  icon: CloudUpload,
+                  title: 'Upload this build to Comfy Developer Platform.',
+                  run: () => createBuild(b)
+                }
+              ]
             : [])
         ]
       : []
-  const end: MenuLine[] = [
-    ...(local && b.state === 'running'
-      ? [{ label: 'Stop', icon: CircleStop, danger: true, run: () => stop(b) }]
-      : []),
-    ...(local
-      ? [
-          {
-            label: 'Uninstall',
-            icon: Trash2,
-            danger: true,
-            run: () => builds.remove([b.id]),
-            ...gated
-          }
-        ]
-      : isRemote(b)
-        ? [{ label: 'Forget', icon: EyeOff, run: () => builds.remove([b.id]) }]
-        : [])
-  ]
+  const end: MenuLine[] = local
+    ? [
+        {
+          label: 'Uninstall',
+          icon: Trash2,
+          danger: true,
+          run: () => builds.remove([b.id]),
+          ...gated
+        }
+      ]
+    : isRemote(b)
+      ? [{ label: 'Forget', icon: EyeOff, run: () => builds.remove([b.id]) }]
+      : []
   return [
+    ...now,
+    ...(now.length ? ['sep' as const] : []),
     ...top,
     ...(snaps.length ? ['sep' as const, ...snaps] : []),
     ...(end.length ? ['sep' as const, ...end] : [])
   ]
+}
+/** The whole row is the action (Comfy-Desktop#2163): a click starts a
+ *  ready build, opens a running one, shows the logs while it is busy and
+ *  opens the build's page when it is broken. The hover hint names it. */
+function rowClick(b: Build): void {
+  if (stopping.has(b.id) || creating.has(b.id)) return
+  if (problemOf(b) || b.state === 'error') return open(b)
+  if (busy(b)) return toast(`Logs of ${b.name}`)
+  launch(b).run()
+}
+function rowHint(b: Build): string {
+  if (problemOf(b) || b.state === 'error') return 'Click to open'
+  if (busy(b)) return 'Click to view logs'
+  return b.state === 'running' || b.kind === 'cloud' ? 'Click to open' : 'Click to start'
 }
 const refreshing = ref(false)
 function refresh(): void {
@@ -615,14 +596,12 @@ const newLabel = computed(() =>
     @clear="clear"
   >
     <template #actions="{ state }">
-      <MarSplitButton
+      <Button
         v-if="state === 'live' || state === 'loading'"
-        label="New Build"
-        :icon="Plus"
-        :lines="NEW_BUILD_LINES"
-        menu-label="More build options"
-        @run="hostActions.newInstance()"
-      />
+        variant="primary"
+        @click="hostActions.newInstance()"
+        ><Plus :size="15" />New build</Button
+      >
     </template>
 
     <template #toolbar>
@@ -646,7 +625,7 @@ const newLabel = computed(() =>
 
     <!-- One build to a line: where as a small mark, the name and its specs,
          the state as a badge, then one action that says where it runs. -->
-    <div v-if="rowsOnly" class="mar-bc-rows" :class="tiles && 'is-tiles'">
+    <div v-if="rowsOnly" class="mar-bc-rows">
       <!-- The build installing, first, in the install's state: the badge
            spins with the percent, View logs opens the install, Cancel asks. -->
       <MarItem
@@ -657,14 +636,9 @@ const newLabel = computed(() =>
         :lines="[]"
         :selectable="false"
         class="mar-bc-row"
-        :class="tiles && 'is-tile mbr-card'"
-        :style="tiles ? { '--h': 48 } : undefined"
         @open="showInstall"
       >
-        <template #media
-          ><span v-if="tiles" class="mbr-device"><SetupLaptop :os="localSetup.os" /></span
-          ><LocationIcon v-else kind="local" :size="16"
-        /></template>
+        <template #media><LocationIcon kind="local" :size="16" /></template>
         <template #meta
           ><span class="mar-bc-specs-text"
             >This computer · {{ DETECTED.chip }} · ComfyUI {{ DETECTED.version }}</span
@@ -702,62 +676,19 @@ const newLabel = computed(() =>
         :selectable="false"
         context-menu
         class="mar-bc-row"
-        :class="[stopping.has(b.id) && 'is-stopping', tiles && 'is-tile mbr-card']"
-        :style="tiles ? { '--h': b.hue } : undefined"
-        @open="!stopping.has(b.id) && open(b)"
+        :class="stopping.has(b.id) && 'is-stopping'"
+        :title="rowHint(b)"
+        @open="rowClick(b)"
       >
         <template #media>
-          <Server v-if="whereOf(b) === 'remote'" :size="tiles ? 22 : 16" />
-          <span v-else-if="tiles" class="mbr-device">
-            <SetupCloud v-if="b.kind === 'cloud'" :hue="b.hue" />
-            <template v-else>
-              <SetupLaptop :os="localSetup.os" />
-              <span class="mbr-screen" aria-hidden="true"></span>
-            </template>
-          </span>
+          <Server v-if="whereOf(b) === 'remote'" :size="16" />
           <LocationIcon v-else :kind="b.kind === 'cloud' ? 'cloud' : 'local'" :size="16" />
         </template>
-        <template v-if="tiles" #eyebrow>
-          <!-- What needs a look takes the state's place (Desktop's tile). -->
-          <span v-if="b.state === 'error' || problemOf(b)" class="mar-bc-tile-state"
-            ><button
-              v-if="b.state === 'error'"
-              type="button"
-              class="mar-bc-tile-alert"
-              title="View error details"
-              @click.stop="crashOf = b"
-            >
-              <OctagonAlert :size="12" aria-hidden="true" />Error</button
-            ><button
-              v-else
-              type="button"
-              class="mar-bc-tile-alert"
-              title="View error details"
-              @click.stop="fixProblem(b)"
-            >
-              <OctagonAlert :size="12" aria-hidden="true" />{{ PROBLEM_LABEL[problemOf(b)!] }}
-            </button></span
-          >
-          <span v-else class="mss-machine-kicker mar-bc-tile-state"
-            ><Loader2 v-if="tileState(b).mark === 'spin'" :size="12" class="animate-spin" /><i
-              v-else-if="tileState(b).mark === 'dot'"
-              class="mar-bc-tile-dot"
-              aria-hidden="true"
-            /><ArrowUpCircle
-              v-else-if="tileState(b).mark === 'update'"
-              :size="12"
-              aria-hidden="true"
-            /><Check v-else :size="12" aria-hidden="true" />{{ tileState(b).label
-            }}<span v-if="b.id === 'cloud' && !proto.signedIn" class="mar-bc-tile-free"
-              >Try free</span
-            ></span
-          >
-        </template>
         <template #meta
-          ><span class="mar-bc-specs-text">{{ tiles ? tileSpecs(b) : specs(b) }}</span
+          ><span class="mar-bc-specs-text">{{ specs(b) }}</span
           ><!-- One chip after the specs: what needs a look (Desktop's order). -->
           <button
-            v-if="b.state === 'error' && !tiles"
+            v-if="b.state === 'error'"
             type="button"
             class="mar-bc-chip is-bad"
             title="View error details"
@@ -766,7 +697,7 @@ const newLabel = computed(() =>
             <OctagonAlert :size="12" aria-hidden="true" />Error
           </button>
           <button
-            v-else-if="problemOf(b) && !tiles"
+            v-else-if="problemOf(b)"
             type="button"
             class="mar-bc-chip is-bad"
             @click.stop="fixProblem(b)"
@@ -774,31 +705,23 @@ const newLabel = computed(() =>
             <OctagonAlert :size="12" aria-hidden="true" />{{ PROBLEM_LABEL[problemOf(b)!] }}
           </button>
           <button
-            v-else-if="extraOf(b.id).migrate && !updating.has(b.id) && !tiles"
+            v-else-if="extraOf(b.id).migrate && !updating.has(b.id)"
             type="button"
             class="mar-bc-update"
             :disabled="busy(b) || b.state === 'running'"
             :title="
-              b.state === 'running' ? 'Stop the running instance first.' : 'Migrate to Standalone'
+              b.state === 'running' ? 'Stop the running build first.' : 'Migrate to Standalone'
             "
             @click.stop="migrate(b)"
           >
             <ArrowRightLeft :size="12" aria-hidden="true" />Migrate
           </button>
-          <button
-            v-else-if="b.state === 'update' && !updating.has(b.id) && !tiles"
-            type="button"
-            class="mar-bc-update"
-            :disabled="busy(b)"
-            title="Update to v0.37.6"
-            @click.stop="update(b)"
+          <!-- An update waiting is a grey note; updating is in the ⋯ menu. -->
+          <span v-else-if="b.state === 'update' && !updating.has(b.id)" class="mar-bc-note"
+            >Update</span
           >
-            <ArrowUpCircle :size="12" aria-hidden="true" />Update<span class="mar-bc-long"
-              >&nbsp;available</span
-            >
-          </button>
           <template v-else-if="b.id === 'cloud' && !proto.signedIn">
-            <span v-if="!tiles" class="mar-bc-free">Try free</span>
+            <span class="mar-bc-free">Try free</span>
             <Tooltip
               content="Run on fast cloud GPUs with nothing to install. Your first runs are free."
             >
@@ -807,7 +730,7 @@ const newLabel = computed(() =>
               </button>
             </Tooltip> </template
         ></template>
-        <template v-if="!tiles" #cols>
+        <template #cols>
           <span class="mar-item-col mar-bc-row-state"
             ><span
               v-if="!problemOf(b)"
@@ -819,66 +742,6 @@ const newLabel = computed(() =>
               />{{ m1State(b).label }}</span
             ></span
           >
-        </template>
-        <!-- Tiles, as Desktop's: Update or Migrate before it, then Start or
-             Open; Stop and the rest live in ⋯. -->
-        <template v-if="tiles" #actions>
-          <Button
-            v-if="b.state === 'update' && !updating.has(b.id) && !problemOf(b)"
-            variant="secondary"
-            size="md"
-            class="mar-bc-tile-btn"
-            :disabled="busy(b)"
-            title="Update to v0.37.6"
-            @click.stop="update(b)"
-            ><ArrowUpCircle :size="13" />Update</Button
-          >
-          <Button
-            v-else-if="extraOf(b.id).migrate && !updating.has(b.id)"
-            variant="secondary"
-            size="md"
-            class="mar-bc-tile-btn"
-            :disabled="busy(b) || b.state === 'running'"
-            :title="
-              b.state === 'running' ? 'Stop the running instance first.' : 'Migrate to Standalone'
-            "
-            @click.stop="migrate(b)"
-            ><ArrowRightLeft :size="13" />Migrate</Button
-          >
-          <Button
-            v-if="tileLaunchShown(b)"
-            variant="secondary"
-            size="md"
-            class="mar-bc-tile-btn"
-            @click.stop="tileLaunch(b).run()"
-            ><component :is="tileLaunch(b).icon" :size="13" aria-hidden="true" />{{
-              tileLaunch(b).label
-            }}</Button
-          >
-        </template>
-        <template v-else #actions>
-          <Button
-            v-if="problemOf(b)"
-            variant="secondary"
-            size="md"
-            class="mar-bc-main"
-            @click.stop="fixProblem(b)"
-            >{{ PROBLEM_ACTION[problemOf(b)!] }}</Button
-          >
-          <MarSplitButton
-            v-else-if="!creating.has(b.id) && !stopping.has(b.id)"
-            tone="secondary"
-            :label="busy(b) ? m1State(b).label : launch(b).label"
-            :suffix="busy(b) ? undefined : launchWhere(b)"
-            :disabled="busy(b)"
-            :lines="
-              b.state === 'running' && b.kind === 'local' && !busy(b)
-                ? [{ label: 'Stop', icon: CircleStop, run: () => stop(b) }]
-                : []
-            "
-            menu-label="Window options"
-            @run="launch(b).run()"
-          />
         </template>
       </MarItem>
       <BuildCrashDialog
@@ -1356,6 +1219,15 @@ const newLabel = computed(() =>
   }
 }
 /* An update is about the version, not the state: a small badge after it. */
+:root .proto-ui.proto-ui.proto-ui .mar-bc-note {
+  flex-shrink: 0;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  white-space: pre;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-note::before {
+  content: ' · ';
+}
 :root .proto-ui.proto-ui.proto-ui .mar-bc-update {
   display: inline-flex;
   border: 0;
@@ -1383,119 +1255,6 @@ const newLabel = computed(() =>
 }
 :root .proto-ui.proto-ui.proto-ui .mar-bc-update:disabled {
   opacity: 0.8;
-}
-/* From Milestone 2: tiles, two to a row, the same card as Home's builds
-   (setup.css .mbr-card: the hue lit from the corner, grown on hover). */
-.mar-bc-rows.is-tiles {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 15px;
-}
-@media (max-width: 860px) {
-  .mar-bc-rows.is-tiles {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-:root .proto-ui.proto-ui.proto-ui .mar-item.is-list.mar-bc-row.is-tile {
-  height: 100px;
-  gap: 18px;
-  padding: 0 12px 0 18px;
-  border-radius: 16px;
-  background: oklch(0.6 0 0 / 0.05);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-item.is-list.mar-bc-row.is-tile:is(:hover, .is-menu) {
-  background: oklch(0.6 0 0 / 0.09);
-}
-:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-item.is-list.mar-bc-row.is-tile {
-  background: var(--color-card-background, #fff);
-}
-.mar-bc-row.is-tile.is-menu::before {
-  transform: scale(2.6);
-}
-.mar-bc-row.is-tile > .mar-item-media {
-  width: auto;
-  height: auto;
-  color: var(--color-muted-foreground);
-}
-.mar-bc-row.is-tile > .mar-item-media > svg {
-  width: 64px;
-}
-/* State on top, then the name, then the version: one column. */
-.mar-bc-row.is-tile > .mar-item-text {
-  flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-bc-row.is-tile .mar-item-name {
-  max-width: 100%;
-  overflow: hidden;
-  font-size: 15px;
-  line-height: 21px;
-  text-overflow: ellipsis;
-}
-.mar-bc-row.is-tile .mar-item-meta {
-  max-width: 100%;
-  font-size: 12px;
-  color: var(--color-subtle-foreground);
-}
-.mar-bc-tile-state {
-  height: 16px;
-  margin-bottom: 4px;
-}
-.mar-bc-tile-dot {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: 50%;
-  background: #59d38c;
-  box-shadow: 0 0 0 3px rgb(89 211 140 / 0.36);
-}
-/* What needs a look takes the state's place: red text, no fill. */
-:root .proto-ui.proto-ui.proto-ui .mar-bc-tile-alert {
-  display: inline-flex;
-  height: 16px;
-  min-width: 0;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-status-danger);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 16px;
-  cursor: pointer;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-bc-tile-alert:hover {
-  text-decoration: underline;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-bc-tile-alert:focus-visible {
-  outline: 2px solid var(--color-border-focus);
-  outline-offset: 1px;
-}
-/* A tile's buttons: small secondaries, 32px tall, 13px text. */
-:root .proto-ui.proto-ui.proto-ui .mar-bc-tile-btn {
-  height: 32px;
-  gap: 6px;
-  padding: 0 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 20px;
-}
-/* Try free: a small grey chip by the state. */
-.mar-bc-tile-free {
-  display: inline-flex;
-  height: 16px;
-  align-items: center;
-  margin-left: 4px;
-  padding: 0 6px;
-  border-radius: 5px;
-  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
-  color: var(--color-base-foreground);
-  font-size: 11px;
-  font-weight: 500;
 }
 /* Stopping: the row waits, dimmed, with nothing to click. */
 .mar-bc-row.is-stopping {

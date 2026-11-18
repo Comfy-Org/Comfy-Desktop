@@ -20,6 +20,8 @@ export const runs = reactive(new Map<string, Run>())
 const settled = reactive(new Map<string, 'running' | 'stopped'>())
 /** Uninstalled from the Home: gone from its row and the sidebar. */
 export const uninstalled = reactive(new Set<string>())
+/** The build that starts when Desktop opens (Auto start), one at most. */
+export const autoStart = reactive({ id: '' })
 /** The build whose start logs are open (BuildLogs.vue). */
 export const logs = reactive({ id: '' })
 
@@ -117,6 +119,9 @@ export function uninstallBuild(i: ProtoInstance): void {
   runs.set(i.id, { kind: 'uninstall', percent: 0 })
   tick(i.id, 30, () => uninstalled.add(i.id))
 }
+
+/** Whether an update is waiting on this build. */
+export const hasUpdate = (i: ProtoInstance): boolean => i.state === 'update'
 
 export function viewLogs(i: ProtoInstance): void {
   logs.id = i.id

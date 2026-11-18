@@ -11,7 +11,7 @@ import { LAUNCH_MODES, NETWORK, PORT_CONFLICT, SECURITY, settingsOf, stateOf } f
 import './buildTabs.css'
 
 /**
- * Desktop's Startup Args (views/comfyUISettings/ArgsBuilderPage.vue): the
+ * Desktop's Startup arguments (views/comfyUISettings/ArgsBuilderPage.vue): the
  * raw arguments on top, editable, then every flag ComfyUI takes, grouped
  * and searchable, set ones pinned under Active. A flag that takes a value
  * shows its field when on; flags that exclude each other are one choice.
@@ -51,7 +51,7 @@ const ARGS: Arg[] = [
   {
     flag: '--cuda-device',
     group: 'GPU & VRAM',
-    help: 'Set the CUDA device this instance uses.',
+    help: 'Set the CUDA device this build uses.',
     value: 'value'
   },
   {
@@ -177,14 +177,14 @@ watch(
 
 <template>
   <div class="mar-bt-settings">
-    <SettingsSection title="Startup Arguments" description="Passed to ComfyUI as it starts.">
+    <SettingsSection title="Startup arguments" description="Passed to ComfyUI as it starts.">
       <div class="mar-args-raw">
         <span class="mar-bt-label">Raw arguments</span>
         <Input v-model="set.args" mono placeholder="No arguments set" aria-label="Raw arguments" />
         <span class="mar-bt-hint">Edit directly, or toggle individual flags below.</span>
       </div>
       <div class="mar-args-search">
-        <Input v-model="query" placeholder="Search arguments…" aria-label="Search arguments">
+        <Input v-model="query" placeholder="Search arguments" aria-label="Search arguments">
           <template #leading><Search :size="14" class="text-subtle-foreground" /></template>
           <template v-if="query" #trailing>
             <button type="button" aria-label="Clear search" @click.prevent="query = ''">
