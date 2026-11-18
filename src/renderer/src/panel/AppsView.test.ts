@@ -90,7 +90,8 @@ function scrimAlphaAt(gradient: string, shareFromBottom: number): number {
     })
   )
   const above = stops.findIndex((stop) => stop.at >= shareFromBottom)
-  if (above <= 0) return stops[Math.max(above, 0)]!.alpha
+  if (above === -1) return stops.at(-1)!.alpha
+  if (above === 0) return stops[0]!.alpha
   const below = stops[above - 1]!
   const next = stops[above]!
   return (
