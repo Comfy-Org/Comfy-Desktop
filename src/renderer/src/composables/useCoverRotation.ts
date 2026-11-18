@@ -8,7 +8,6 @@ export interface CoverRotation {
   leaving: Ref<number | null>
   upcoming: Ref<number | null>
   loaded: Ref<ReadonlySet<number>>
-  failed: Ref<ReadonlySet<number>>
   allFailed: ComputedRef<boolean>
   markLoaded: (index: number) => void
   markFailed: (index: number) => void
@@ -156,7 +155,6 @@ export function useCoverRotation({
     leaving,
     upcoming,
     loaded,
-    failed,
     allFailed,
     markLoaded,
     markFailed,

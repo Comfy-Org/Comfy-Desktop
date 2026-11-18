@@ -217,6 +217,32 @@ describe('CoverRotation', () => {
     await expect.poll(() => wrapper.emitted('broken')).toHaveLength(1)
   })
 
+  it('shows the still of a cover whose moving picture failed, when reduced motion is turned on', async () => {
+    let reduce = false
+    const listeners: Array<(event: { matches: boolean }) => void> = []
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      get matches() {
+        return reduce && query === '(prefers-reduced-motion: reduce)'
+      },
+      media: query,
+      addEventListener: (_type: string, listener: (event: { matches: boolean }) => void) =>
+        listeners.push(listener),
+      removeEventListener: () => {}
+    }))
+    const broken = 'data:image/png;base64,broken'
+    const wrapper = mountCovers([
+      { url: broken, stillUrl: STILLS[0]! },
+      { url: URLS[1]!, stillUrl: null }
+    ])
+    await expect.poll(() => shownSrc(wrapper)).toBe(URLS[1])
+
+    reduce = true
+    listeners.forEach((listener) => listener({ matches: true }))
+
+    await expect.poll(() => shownSrc(wrapper)).toBe(STILLS[0])
+    expect(wrapper.emitted('broken')).toBeUndefined()
+  })
+
   it('keeps the one cover of an app that has only one', async () => {
     const wrapper = mountCovers([COVERS[0]!])
     await untilAllLoaded(wrapper)

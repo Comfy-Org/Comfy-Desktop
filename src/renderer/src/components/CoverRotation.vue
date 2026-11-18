@@ -39,17 +39,32 @@ const listKey = () => pictures.map((picture) => picture.url).join('\n')
 const playing = computed(() => !paused && !still.value && onScreen.value && page.value !== 'hidden')
 const generation = ref(0)
 
-const { shown, leaving, upcoming, loaded, failed, allFailed, markLoaded, markFailed } =
-  useCoverRotation({
-    count: () => pictures.length,
-    key: listKey,
-    playing: () => playing.value
-  })
+const { shown, leaving, upcoming, loaded, allFailed, markLoaded, markFailed } = useCoverRotation({
+  count: () => pictures.length,
+  key: listKey,
+  playing: () => playing.value
+})
 
-watch(listKey, () => generation.value++)
+const loadedStills = ref<ReadonlySet<number>>(new Set())
+const failedStills = ref<ReadonlySet<number>>(new Set())
+
+watch(listKey, () => {
+  generation.value++
+  loadedStills.value = new Set()
+  failedStills.value = new Set()
+})
 
 function hasStill(index: number): boolean {
-  return Boolean(pictures[index]?.stillUrl) && !failed.value.has(index)
+  return Boolean(pictures[index]?.stillUrl) && !failedStills.value.has(index)
+}
+
+function isLoaded(index: number): boolean {
+  return (still.value ? loadedStills : loaded).value.has(index)
+}
+
+function onLoad(index: number): void {
+  if (still.value) loadedStills.value = new Set(loadedStills.value).add(index)
+  else markLoaded(index)
 }
 
 function stillIndex(): number | null {
@@ -85,12 +100,17 @@ const layers = computed<Layer[]>(() => {
 
 function opacityOf(layer: Layer): string {
   if (layer.role !== 'shown') return ''
-  return loaded.value.has(layer.index) ? 'opacity-100' : 'opacity-0'
+  return isLoaded(layer.index) ? 'opacity-100' : 'opacity-0'
 }
 
 function onError(index: number): void {
-  markFailed(index)
-  if (allFailed.value || (still.value && stillIndex() === null)) emit('broken')
+  if (!still.value) {
+    markFailed(index)
+    if (allFailed.value) emit('broken')
+    return
+  }
+  failedStills.value = new Set(failedStills.value).add(index)
+  if (stillIndex() === null) emit('broken')
 }
 </script>
 
@@ -112,8 +132,8 @@ function onError(index: number): void {
       :class="[LAYER_CLASS[layer.role], opacityOf(layer)]"
       :aria-hidden="layer.role === 'shown' ? undefined : 'true'"
       :data-cover="layer.role"
-      :data-loaded="loaded.has(layer.index)"
-      @load="markLoaded(layer.index)"
+      :data-loaded="isLoaded(layer.index)"
+      @load="onLoad(layer.index)"
       @error="onError(layer.index)"
     />
   </span>
