@@ -1011,6 +1011,65 @@ describe('links inside app data', () => {
     expect(removed).toEqual([appLog])
   })
 
+  it('stops at another drive mounted at the folder itself', async () => {
+    const c = await loadAs('win32')
+    const cache = path.join(userData, 'download-cache')
+    const onDrive = path.join(cache, 'a.bin')
+    const removed: string[] = []
+    const results = c.executeUninstallCleanup(
+      { entries: [testEntry(cache)], guard: bareGuard([cache]) },
+      {
+        entryInfo: (p) => ({
+          kind: p === onDrive ? 'file' : 'dir',
+          device: p === cache || p === onDrive ? 2 : 1
+        }),
+        realPath: (p) => p,
+        list: (dir) => (dir === cache ? ['a.bin'] : []),
+        readText: () => null,
+        removeFile: (p) => {
+          removed.push(p)
+        },
+        removeLink: () => undefined,
+        removeEmptyDir: (p) => {
+          removed.push(p)
+        },
+        writeFile: () => undefined
+      }
+    )
+    expect(results[0]?.outcome).toBe('failed')
+    expect(results[0]?.detail).toBe(`another drive is mounted at ${cache}`)
+    expect(removed).toEqual([])
+  })
+
+  it('reads the drive of a linked parent from the folder it points to', async () => {
+    const c = await loadAs('win32')
+    const realRoaming = path.join(caseRoot, 'D', 'Roaming')
+    const appLog = path.join(userData, 'app.log')
+    const removed: string[] = []
+    const results = c.executeUninstallCleanup(
+      { entries: [testEntry(userData)], guard: bareGuard([userData]) },
+      {
+        entryInfo: (p) => ({
+          kind: p === appLog ? 'file' : 'dir',
+          device: p === appData ? 1 : 2
+        }),
+        realPath: (p) => (p === appData ? realRoaming : p),
+        list: (dir) => (dir === userData ? ['app.log'] : []),
+        readText: () => null,
+        removeFile: (p) => {
+          removed.push(p)
+        },
+        removeLink: () => undefined,
+        removeEmptyDir: (p) => {
+          removed.push(p)
+        },
+        writeFile: () => undefined
+      }
+    )
+    expect(results[0]?.outcome).toBe('removed')
+    expect(removed).toEqual([appLog, userData])
+  })
+
   it('allows links at or above the home folder and refuses other links', async () => {
     const c = await loadAs('darwin')
     const system = path.join(caseRoot, 'system')

@@ -839,7 +839,9 @@ function removeEntry(entry: CleanupEntry, guard: DeletionGuard, ops: CleanupFs):
   const whole = held.find((p) => entry.installId !== undefined || samePath(p, entry.path))
   if (whole) return refused(`would remove kept data: ${whole}`)
   const walk: Walk = { held, ops, problems: [] }
-  if (removeWalking(entry.path, null, walk)) return { entry, outcome: 'removed' }
+  // The parent's real folder, so a linked parent (allowed above) is not read as another drive.
+  const parentDevice = ops.entryInfo(ops.realPath(path.dirname(entry.path))).device
+  if (removeWalking(entry.path, parentDevice, walk)) return { entry, outcome: 'removed' }
   const [problem] = walk.problems
   if (problem) return { entry, outcome: 'failed', detail: problem }
   return { entry, outcome: 'emptied', detail: `kept ${held.join(', ')}` }
