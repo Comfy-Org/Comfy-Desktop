@@ -706,6 +706,23 @@ describe('AssetsView', () => {
     ).toBe(true)
   })
 
+  it('reaches Show in Finder with the arrow keys and opens the folder with Enter', async () => {
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    await openBuildPicker(wrapper)
+    const row = document.querySelector<HTMLElement>('[data-testid="assets-build-lab"]')!
+    const press = (key: string) =>
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+
+    row.focus()
+    press('ArrowDown')
+    await flushPromises()
+
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('assets-place-reveal-lab')
+    press('Enter')
+    await flushPromises()
+    expect(openOutputFolder).toHaveBeenCalledExactlyOnceWith('lab')
+  })
+
   it('says when a folder does not open', async () => {
     openOutputFolder.mockResolvedValue(false)
     const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
