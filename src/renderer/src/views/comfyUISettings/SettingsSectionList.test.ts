@@ -302,8 +302,7 @@ describe('SettingsSectionList', () => {
     })
   })
 
-  describe('two-column layout', () => {
-    const TWO_COLUMN_GRID = '@2xl/build-settings:grid'
+  describe('stacked layout', () => {
     const launchField: DetailField = {
       id: 'launchArgs',
       label: 'Startup arguments',
@@ -311,19 +310,25 @@ describe('SettingsSectionList', () => {
       editable: true,
       editType: 'text'
     }
+    const pairedFields: DetailField[] = [
+      { ...launchField, id: 'launchMode', label: 'Launch Mode', rowGroup: 'launch-window' },
+      { ...launchField, id: 'browserPartition', label: 'Browser Cache', rowGroup: 'launch-window' }
+    ]
 
-    function mountSections(sections: DetailSection[], columns: boolean) {
-      return mount(SettingsSectionList, { props: { sections, columns } })
+    function mountSections(sections: DetailSection[], stacked: boolean) {
+      return mount(SettingsSectionList, { props: { sections, stacked } })
     }
 
-    it('shows a titled section as a heading beside its fields', () => {
+    it('puts a titled section heading above its fields as an uppercase label', () => {
       const wrapper = mountSections(
         [{ title: 'Launch Settings', description: 'How the build starts.', fields: [launchField] }],
         true
       )
-      expect(wrapper.find('h3').text()).toBe('Launch Settings')
-      expect(wrapper.find('.settings-v2-section').classes()).toContain(TWO_COLUMN_GRID)
-      expect(wrapper.find('.settings-v2-section-body').classes()).toContain('max-w-xl')
+      const heading = wrapper.find('h3')
+      expect(heading.text()).toBe('Launch Settings')
+      expect(heading.classes()).toContain('uppercase')
+      expect(wrapper.find('.settings-v2-section').classes()).not.toContain('grid')
+      expect(wrapper.find('.settings-v2-section-body').classes()).toContain('flex-col')
       expect(wrapper.find('.settings-v2-section-body').text()).toContain('Startup arguments')
     })
 
@@ -337,24 +342,35 @@ describe('SettingsSectionList', () => {
       expect(descriptions[0]!.element.closest('header')).not.toBeNull()
     })
 
-    it('leaves the layout unchanged when columns is off', () => {
+    it('pairs grouped fields in two columns with a 16px gap when they wrap', () => {
+      const wrapper = mountSections([{ title: 'Launch Settings', fields: pairedFields }], true)
+      const paired = wrapper.findAll('.settings-v2-field-row.is-paired')
+      expect(paired).toHaveLength(1)
+      expect(paired[0]!.classes()).toEqual(expect.arrayContaining(['gap-4']))
+    })
+
+    it('pairs grouped fields when the layout is not stacked', () => {
+      const wrapper = mountSections([{ title: 'Launch Settings', fields: pairedFields }], false)
+      expect(wrapper.findAll('.settings-v2-field-row.is-paired')).toHaveLength(1)
+    })
+
+    it('leaves the layout unchanged when stacked is off', () => {
       const wrapper = mountSections(
         [{ title: 'Launch Settings', description: 'How the build starts.', fields: [launchField] }],
         false
       )
       expect(wrapper.find('h3').exists()).toBe(false)
-      expect(wrapper.find('.settings-v2-section').classes()).not.toContain(TWO_COLUMN_GRID)
       expect(wrapper.find('.settings-v2-section-body').classes()).toContain('contents')
       expect(wrapper.find('.settings-v2-section-desc').text()).toBe('How the build starts.')
     })
 
-    it('keeps an untitled section stacked so its rows do not split across columns', () => {
+    it('keeps an untitled section without a heading', () => {
       const wrapper = mountSections([{ fields: [launchField, { ...launchField, id: 'b' }] }], true)
-      expect(wrapper.find('.settings-v2-section').classes()).not.toContain(TWO_COLUMN_GRID)
+      expect(wrapper.find('h3').exists()).toBe(false)
       expect(wrapper.find('.settings-v2-section-body').classes()).toContain('contents')
     })
 
-    it('keeps a collapsible section stacked with its toggle and description', () => {
+    it('keeps a collapsible section with its toggle and description', () => {
       const wrapper = mountSections(
         [
           {
@@ -367,7 +383,6 @@ describe('SettingsSectionList', () => {
         true
       )
       expect(wrapper.find('h3').exists()).toBe(false)
-      expect(wrapper.find('.settings-v2-section').classes()).not.toContain(TWO_COLUMN_GRID)
       expect(wrapper.find('button[aria-expanded]').text()).toContain('Advanced')
       expect(wrapper.find('.settings-v2-section-desc').text()).toBe('Rarely needed flags.')
     })

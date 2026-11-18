@@ -27,7 +27,7 @@ import type {
 interface Props {
   sections: DetailSection[]
   readonly?: boolean
-  columns?: boolean
+  stacked?: boolean
   installationId?: string
   runningActionIds?: Set<string>
   pendingRestartFieldIds?: Set<string>
@@ -36,7 +36,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   readonly: false,
-  columns: false,
+  stacked: false,
   installationId: undefined,
   runningActionIds: () => new Set<string>(),
   pendingRestartFieldIds: () => new Set<string>(),
@@ -121,8 +121,8 @@ function toggleCollapsed(section: { title?: string }): void {
   }
 }
 
-function isTwoColumn(section: { title?: string; collapsed?: boolean }): boolean {
-  return props.columns && Boolean(section.title) && !isCollapsible(section)
+function isStackedTitled(section: { title?: string; collapsed?: boolean }): boolean {
+  return props.stacked && Boolean(section.title) && !isCollapsible(section)
 }
 
 const visibleSections = computed(() => props.sections)
@@ -208,10 +208,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 </script>
 
 <template>
-  <div
-    class="settings-v2-sections flex flex-col gap-8"
-    :class="{ '@container/build-settings': columns }"
-  >
+  <div class="settings-v2-sections flex flex-col gap-8">
     <article
       v-for="(section, si) in visibleSections"
       :key="`s-${si}`"
@@ -219,9 +216,9 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
       :class="[
         readonly
           ? 'is-readonly-list gap-0 rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--secondary-background)] px-3 py-1'
-          : 'gap-4',
-        isTwoColumn(section) &&
-          '@2xl/build-settings:grid @2xl/build-settings:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] @2xl/build-settings:gap-x-12 @2xl/build-settings:gap-y-3',
+          : isStackedTitled(section)
+            ? 'max-w-3xl gap-2'
+            : 'gap-4',
         {
           'is-collapsible': isCollapsible(section),
           'is-collapsed [&>*:not(.settings-v2-section-title)]:hidden':
@@ -230,13 +227,13 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
       ]"
     >
       <header
-        v-if="isTwoColumn(section)"
-        class="settings-v2-section-head flex min-w-0 flex-col gap-1.5 @2xl/build-settings:pt-1"
+        v-if="isStackedTitled(section)"
+        class="settings-v2-section-head flex min-w-0 flex-col gap-1.5"
       >
         <h3
-          class="settings-v2-section-title m-0 text-[13px] leading-[18px] font-semibold text-neutral-100"
+          class="settings-v2-section-title m-0 flex items-center px-0 pt-0 pb-1 text-[11px] leading-4 font-semibold tracking-[0.04em] text-text-muted uppercase [&>span]:opacity-55"
         >
-          {{ section.title }}
+          <span>{{ section.title }}</span>
         </h3>
         <p
           v-if="section.description"
@@ -273,7 +270,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
       </p>
 
       <p
-        v-if="section.description && !isCollapsed(section) && !isTwoColumn(section)"
+        v-if="section.description && !isCollapsed(section) && !isStackedTitled(section)"
         class="settings-v2-section-desc -mt-1 mb-1 text-[length:var(--takeover-fs-caption)] leading-[1.4] text-text-muted"
       >
         {{ section.description }}
@@ -281,7 +278,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 
       <div
         class="settings-v2-section-body"
-        :class="isTwoColumn(section) ? 'flex min-w-0 max-w-xl flex-col gap-4' : 'contents'"
+        :class="isStackedTitled(section) ? 'flex min-w-0 flex-col gap-4' : 'contents'"
       >
         <div
           v-for="(item, i) in section.items"
@@ -328,7 +325,11 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
           :key="rowKey(row)"
           class="settings-v2-field-row"
           :class="[
-            row.length > 1 ? 'is-paired flex flex-wrap gap-4' : 'contents',
+            row.length > 1
+              ? props.stacked
+                ? 'is-paired flex flex-wrap gap-4'
+                : 'is-paired flex flex-wrap gap-4'
+              : 'contents',
             { '[&:last-child>.settings-v2-field]:border-b-0': readonly }
           ]"
         >
@@ -340,7 +341,9 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
             :class="[
               readonly
                 ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-start gap-x-4 gap-y-2 border-b border-solid border-[var(--chooser-surface-border)] px-0 py-2.5'
-                : 'flex flex-col gap-2.5',
+                : isStackedTitled(section)
+                  ? 'flex flex-col gap-1'
+                  : 'flex flex-col gap-2.5',
               {
                 'min-w-0 flex-[1_1_240px]': row.length > 1,
                 'is-boolean-row': field.editType === 'boolean',
@@ -353,7 +356,10 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
             ]"
           >
             <template v-if="field.editType === 'env-vars'">
-              <div class="settings-v2-env-header flex items-start justify-between gap-3">
+              <div
+                class="settings-v2-env-header flex justify-between gap-3"
+                :class="isStackedTitled(section) ? 'items-center' : 'items-start'"
+              >
                 <label
                   class="settings-v2-field-label inline-flex w-fit max-w-full items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted flex-auto min-w-0"
                 >
@@ -378,7 +384,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                   </span>
                 </label>
                 <div
-                  class="settings-v2-env-notice -my-1.5 ml-auto inline-flex w-fit max-w-[min(100%,320px)] flex-none items-start gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] px-2 py-1.5 text-left text-[10.5px] leading-4 text-text-muted"
+                  :class="{ '-my-1.5': !isStackedTitled(section) }"
+                  class="settings-v2-env-notice ml-auto inline-flex w-fit max-w-[min(100%,320px)] flex-none items-start gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] px-2 py-1.5 text-left text-[10.5px] leading-4 text-text-muted"
                   role="note"
                 >
                   <ShieldAlert

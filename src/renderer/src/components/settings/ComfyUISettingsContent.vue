@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
   HardDrive,
+  Folder,
   SlidersHorizontal,
   RefreshCw,
   History,
@@ -263,9 +264,9 @@ const ALL_TABS: TabDef[] = [
   {
     key: 'storage',
     sectionTab: 'storage',
-    label: t('comfyUISettings.tabStorage'),
-    icon: HardDrive,
-    tooltip: t('tooltips.tabStorage')
+    label: t('comfyUISettings.tabFolders'),
+    icon: Folder,
+    tooltip: t('tooltips.tabFolders')
   },
   {
     key: 'config',
@@ -307,7 +308,7 @@ function tabHasContent(tab: TabDef): boolean {
 const tabs = computed<TabDef[]>(() =>
   ALL_TABS.filter(tabHasContent).map((tab) =>
     isCloud.value && tab.key === 'config'
-      ? { ...tab, label: t('comfyUISettings.tabStorage'), icon: HardDrive }
+      ? { ...tab, label: t('comfyUISettings.tabCloudStorage'), icon: HardDrive }
       : tab
   )
 )
@@ -834,7 +835,7 @@ defineExpose({
       <TabsContent :value="activeTab" as-child force-mount>
         <section
           class="settings-v2-body scroll-visible relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto"
-          :class="isPage ? 'pt-5 pb-8' : 'p-4'"
+          :class="isPage ? '-mx-1 px-1 pt-5 pb-8' : 'p-4'"
         >
           <p
             v-if="!installation"
@@ -1105,7 +1106,7 @@ defineExpose({
                       <template v-else>
                         <SettingsSectionList
                           :sections="visibleSections"
-                          :columns="isStartupArgsPage"
+                          :stacked="isStartupArgsPage"
                           :installation-id="installation?.id"
                           :running-action-ids="runningActionIds"
                           :pending-restart-field-ids="pendingRestartFieldIds"
