@@ -67,6 +67,7 @@ function answer(result: Partial<TemplateSearchResult>): TemplateSearchResponse {
       alsoTry: [],
       more: [],
       partnerSwitch: false,
+      matched: null,
       partnersShown: true,
       ...result
     }
@@ -333,6 +334,25 @@ describe('HomeTemplateSearch results', () => {
     const [mural, banner] = wrapper.findAll('[role="option"]')
     expect(mural!.find('[data-testid="home-template-search-best"]').exists()).toBe(true)
     expect(banner!.find('[data-testid="home-template-search-best"]').exists()).toBe(false)
+  })
+
+  it('shows every card of a model-name lookup under the names it matched, with no match figure or best match', async () => {
+    const unscored = (id: string, over: Partial<TemplateSearchCandidate> = {}) =>
+      candidate(id, { score: null, ...over })
+    searchTemplates.mockResolvedValue(
+      answer({
+        matched: ['qwen 2.1', 'kling'],
+        run: [unscored('qwen_a'), unscored('qwen_b')],
+        download: [unscored('kling_a', { needsDownload: true })]
+      })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'qwen 2.1 kling')
+    expect(wrapper.get('h2').text()).toBe('Templates for qwen 2.1 and kling')
+    expect(rowTitles(wrapper)).toEqual(['qwen_a title', 'qwen_b title', 'kling_a title'])
+    expect(wrapper.find('[data-testid="home-template-search-match"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-template-search-best"]').exists()).toBe(false)
+    expect(wrapper.get('[role="option"][aria-selected="true"]').text()).toContain('qwen_a title')
   })
 
   it("puts the best match's whole family first when the answer is to download it", async () => {

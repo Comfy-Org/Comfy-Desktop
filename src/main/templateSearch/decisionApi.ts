@@ -140,14 +140,13 @@ function openBesideItsPick(
   return [...shown, ...rest].slice(0, limit)
 }
 
-export function parseDecision(
-  body: unknown,
-  describe: DescribeTemplate = () => null
-): TemplateSearchResult | null {
-  const decision = asRecord(body)
-  const outcome = asRecord(decision?.outcome)
-  const split = asRecord(decision?.split)
-  if (!outcome || !split) return null
+type CardLists = Pick<TemplateSearchResult, 'run' | 'download' | 'more'>
+
+function templateIds(...lists: TemplateSearchCandidate[][]): Set<string> {
+  return new Set(lists.flat().map((candidate) => candidate.templateId))
+}
+
+function answerCards(split: JsonRecord, describe: DescribeTemplate): CardLists {
   const open = Array.isArray(split.open) ? split.open : []
   const picks = distinctCandidates(split.run, Infinity, describe)
   const run = openBesideItsPick(
@@ -156,7 +155,7 @@ export function parseDecision(
       open.filter((item) => !listsFiles(item)),
       Infinity,
       describe,
-      { taken: new Set(picks.map((candidate) => candidate.templateId)) }
+      { taken: templateIds(picks) }
     ),
     RUN_LIMIT
   )
@@ -165,10 +164,7 @@ export function parseDecision(
     [...open.filter(listsFiles), ...downloads],
     DOWNLOAD_LIMIT,
     describe,
-    {
-      taken: new Set(run.map((candidate) => candidate.templateId)),
-      fromDownloadList: true
-    }
+    { taken: templateIds(run), fromDownloadList: true }
   )
   const shownFamilies = new Set([...run, ...download].map((candidate) => candidate.family))
   const siblings = (Array.isArray(split.more) ? split.more : []).filter((item) => {
@@ -176,19 +172,48 @@ export function parseDecision(
     return family !== null && shownFamilies.has(family)
   })
   const more = distinctCandidates(siblings, MORE_LIMIT, describe, {
-    taken: new Set([...run, ...download].map((candidate) => candidate.templateId))
+    taken: templateIds(run, download)
   })
+  return { run, download, more }
+}
+
+function unscored(candidate: TemplateSearchCandidate): TemplateSearchCandidate {
+  return { ...candidate, score: null, calibrated: null, belowThreshold: false }
+}
+
+function lookupCards(split: JsonRecord, describe: DescribeTemplate): CardLists {
+  const run = distinctCandidates(split.run, Infinity, describe)
+  const download = distinctCandidates(split.download, Infinity, describe, {
+    taken: templateIds(run),
+    fromDownloadList: true
+  })
+  const more = distinctCandidates(split.more, MORE_LIMIT, describe, {
+    taken: templateIds(run, download)
+  })
+  return { run: run.map(unscored), download: download.map(unscored), more: more.map(unscored) }
+}
+
+export function parseDecision(
+  body: unknown,
+  describe: DescribeTemplate = () => null
+): TemplateSearchResult | null {
+  const decision = asRecord(body)
+  const outcome = asRecord(decision?.outcome)
+  const split = asRecord(decision?.split)
+  if (!outcome || !split) return null
+  const names = asTexts(outcome.matched)
+  const matched = names.length ? names : null
+  const cards = matched ? lookupCards(split, describe) : answerCards(split, describe)
   const options = Array.isArray(decision?.options) ? decision.options : []
   const alsoTry = distinctCandidates(options.filter(isOfferableOption), ALSO_TRY_LIMIT, describe, {
-    taken: new Set([...run, ...download, ...more].map((candidate) => candidate.templateId))
+    taken: templateIds(cards.run, cards.download, cards.more)
   })
   return {
     outcome: outcomeOf(outcome.kind),
     reply: asText(outcome.reply),
-    run,
-    download,
-    more,
+    ...cards,
     alsoTry,
+    matched,
     partnerSwitch: false,
     partnersShown: true
   }

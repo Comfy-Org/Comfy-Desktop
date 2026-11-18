@@ -16,7 +16,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ refocus: [] }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const SMALLEST_SHOWN_SIZE = 1_000_000
 
@@ -76,6 +76,14 @@ function availabilityNotice(availability: TemplateSearchAvailability): Notice {
       return { text: t('home.search.starting') }
   }
 }
+
+const resultsTitle = computed(() => {
+  const state = props.controller.state.value
+  const names = state.kind === 'result' ? state.result.matched : null
+  return names
+    ? t('home.search.resultsFor', { names: new Intl.ListFormat(locale.value).format(names) })
+    : t('home.search.resultsTitle')
+})
 
 const notice = computed<Notice | null>(() => {
   const state = props.controller.state.value
@@ -187,7 +195,7 @@ defineExpose({ verticalTarget, revealActive })
   >
     <div ref="heading" class="mb-2.5 flex h-6 items-center justify-between gap-3">
       <h2 class="m-0 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase">
-        {{ t('home.search.resultsTitle') }}
+        {{ resultsTitle }}
       </h2>
       <label
         v-if="controller.partnerSwitch.value"
