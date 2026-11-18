@@ -258,7 +258,7 @@ describe('createSearchProcess', () => {
     expect(bundlesOnDisk()).toEqual(['1.0.0'])
   })
 
-  it('downloads the model in the background, saying nothing, once a free local build can tell which version it reads', async () => {
+  it('downloads the model in the background, showing no progress, once a free local build can tell which version it reads', async () => {
     mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
     serveBundle({ 'catalog.json': '{}' })
     const { search, announced } = setup({ online: true })
@@ -267,7 +267,7 @@ describe('createSearchProcess', () => {
     expect(reportBundleDownload).toHaveBeenCalledWith(
       expect.objectContaining({ result: 'completed', trigger: 'launch' })
     )
-    expect(announced).toEqual([])
+    expect(announced).toEqual([{ kind: 'idle' }])
 
     const fetches = mocks.fetch.mock.calls.length
     expect(await search.downloadInBackground('build_ready')).toBe(true)

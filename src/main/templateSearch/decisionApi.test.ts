@@ -154,6 +154,14 @@ describe('parseDecision', () => {
     expect(parseDecision(decision({ options: undefined }))?.alsoTry).toEqual([])
   })
 
+  it('still marks an api_ template as partner when the build index does not say', () => {
+    const describe = (id: string) => ({ title: id, thumbnailUrl: null, partner: false })
+    const body = decision({
+      split: { run: [candidate('as_given', 'api_partner_template')], download: [] }
+    })
+    expect(parseDecision(body, describe)?.run[0]).toMatchObject({ partner: true })
+  })
+
   it('marks partner templates by their name when the build index is not known', () => {
     const body = decision({
       split: { run: [candidate('as_given', 'api_partner_template')], download: [] }

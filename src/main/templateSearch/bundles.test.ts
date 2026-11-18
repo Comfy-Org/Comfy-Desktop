@@ -179,13 +179,40 @@ describe('bundle store', () => {
         publish(server, '1.0.0', V1)
         server.small.set(`${BASE}manifests/1.0.0.json`, Buffer.from('{"version":"1.0.0"}'))
       }
+    ],
+    [
+      'lists a version whose manifest names another one',
+      () => {
+        publish(server, '1.0.0', V1)
+        const other = Buffer.from(
+          JSON.stringify({ version: '1.1.0', min_sidecar: '9.0.0', files: [] })
+        )
+        server.small.set(`${BASE}manifests/1.0.0.json`, other)
+        server.index.bundles[0]!.manifest_sha256 = sha(other)
+        server.small.set(`${BASE}index.json`, Buffer.from(JSON.stringify(server.index)))
+      }
     ]
-  ])('says the download did not finish, not offline, when the server %s', async (_case, given) => {
-    given()
-    const { store: s, transfer } = store()
-    expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'download_failed' })
-    expect(transfer).not.toHaveBeenCalled()
-  })
+  ])(
+    'says the download did not finish, and waits for Try again, when the server %s',
+    async (_case, given) => {
+      given()
+      const reads = vi.fn()
+      const { store: s, transfer } = store({
+        getSmall: async (url) => {
+          reads(url)
+          const body = server.small.get(url)
+          if (!body) throw new Error(`${url} answered 404`)
+          return body
+        }
+      })
+      expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+      const fetched = reads.mock.calls.length
+      expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+      await s.download({ quietly: true })
+      expect(reads, 'nothing is fetched again until Try again').toHaveBeenCalledTimes(fetched)
+      expect(transfer).not.toHaveBeenCalled()
+    }
+  )
 
   it('stays ready when an update check finds no version it reads', async () => {
     publish(server, '1.0.0', V1)
@@ -198,7 +225,7 @@ describe('bundle store', () => {
     expect(await s.prepare()).toEqual({ kind: 'ready' })
   })
 
-  it('says nothing about a quiet download, and lets the next search download after it failed', async () => {
+  it('keeps a quiet download that fails quiet, and lets the next search download', async () => {
     publish(server, '1.0.0', V1)
     server.blobs.set(sha('weights-v1'), Buffer.from('weights-XX'))
     const { store: s } = store({ now: () => 0 })
@@ -206,6 +233,13 @@ describe('bundle store', () => {
     expect(announced).toEqual([])
     expect(await s.prepare()).toMatchObject({ kind: 'downloading' })
     await s.download()
+  })
+
+  it('says when a quiet download lands, without showing its progress', async () => {
+    publish(server, '1.0.0', V1)
+    const { store: s } = store({ now: () => 0 })
+    await s.download({ quietly: true })
+    expect(announced).toEqual([{ kind: 'idle' }])
   })
 
   it('waits for Try again after a quiet download that a search was waiting on failed', async () => {
@@ -420,7 +454,7 @@ describe('bundle store', () => {
     publish(server, '1.0.0', V1)
     let clock = 0
     const indexReads = vi.fn()
-    const { store: s } = store({
+    const { store: s, transfer } = store({
       now: () => clock,
       getSmall: async (url) => {
         if (url.endsWith('index.json')) indexReads()
@@ -435,12 +469,16 @@ describe('bundle store', () => {
 
     clock = A_DAY_LATER
     publish(server, '1.1.0', { ...V1, 'router/catalog.json': '{"v":2}' })
+    const release = holdTransfers(transfer)
     expect(await s.prepare()).toEqual({ kind: 'ready' })
-    await s.download({ quietly: true })
+    await vi.waitFor(() => expect(transfer).toHaveBeenCalled(), { timeout: 5000 })
+    const landing = s.download({ quietly: true })
+    release()
+    await landing
     expect((await s.newest())?.version).toBe('1.1.0')
     expect(await s.prepare()).toEqual({ kind: 'ready' })
     expect(indexReads).toHaveBeenCalledTimes(1)
-    expect(announced).toEqual([])
+    expect(announced, 'no progress, only that it landed').toEqual([{ kind: 'idle' }])
   })
 
   it('stays ready on the version it has while a newer one downloads', async () => {

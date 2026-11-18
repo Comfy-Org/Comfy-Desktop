@@ -943,7 +943,7 @@ describe('HomeTemplateSearch partner templates', () => {
     expect(opened()).toEqual(['api_poster_template'])
   })
 
-  it('starts one sign-in when a partner card is picked twice before it finishes', async () => {
+  it('asks for the sign-in again when a partner card is picked again before it finishes, so a closed browser page comes back', async () => {
     getAuthStatus.mockResolvedValue({ signedIn: false })
     signIn.mockReturnValue(new Promise(() => {}))
     searchTemplates.mockResolvedValue(answer({ run: [PARTNER_POSTER] }))
@@ -952,7 +952,8 @@ describe('HomeTemplateSearch partner templates', () => {
     await wrapper.findAll('[role="option"]')[0]!.trigger('click')
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    expect(signIn).toHaveBeenCalledTimes(1)
+    expect(signIn).toHaveBeenCalledTimes(2)
+    expect(opened()).toEqual([])
   })
 
   it('keeps the card as Sign in to use when sign-in is cancelled, and lets the user try again', async () => {
