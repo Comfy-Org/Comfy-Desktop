@@ -10,16 +10,17 @@ const tagClass =
 </script>
 
 <template>
-  <Tooltip v-if="tooltip" :text="tooltip" keep-open-on-click>
-    <span
-      :class="[
-        tagClass,
-        'has-tooltip cursor-help transition-[color] duration-150 ease-[ease] hover:text-text focus-visible:text-text focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:[outline-style:auto]'
-      ]"
-      tabindex="0"
-    >
-      <slot />
-    </span>
+  <Tooltip
+    v-if="tooltip"
+    :text="tooltip"
+    keep-open-on-click
+    :class="[
+      tagClass,
+      'has-tooltip cursor-help transition-[color] duration-150 ease-[ease] hover:text-text focus-visible:text-text focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:[outline-style:auto]'
+    ]"
+    tabindex="0"
+  >
+    <slot />
   </Tooltip>
   <span v-else :class="tagClass">
     <slot />

@@ -366,6 +366,24 @@ describe('StoragePane', () => {
       ;(badge.element as HTMLElement).focus()
       await vi.waitFor(() => expect(tooltipText()).toContain(text), { timeout: 3000 })
     })
+
+    it.each(BADGES)(
+      'describes the focused %s badge with its tooltip text',
+      async (selector, text) => {
+        const wrapper = await mountWithEveryBadge()
+        const badge = wrapper.find(`${selector} .storage-tag, ${selector}.storage-tag`)
+        const element = badge.element as HTMLElement
+        element.focus()
+        await vi.waitFor(
+          () => {
+            const describedBy = element.getAttribute('aria-describedby')
+            expect(describedBy, 'the focused badge names its description').toBeTruthy()
+            expect(document.getElementById(describedBy!)?.textContent).toContain(text)
+          },
+          { timeout: 3000 }
+        )
+      }
+    )
   })
 
   it('tags shared model dirs as Shared and leaves build-only dirs untagged', async () => {
