@@ -27,7 +27,7 @@ describe('search telemetry from the main process', () => {
       result: 'completed',
       bytes: 312_000_000,
       durationMs: 41_000,
-      background: true,
+      trigger: 'launch',
       version: '2.3.0'
     })
     expect(capture).toHaveBeenCalledExactlyOnceWith(
@@ -36,7 +36,7 @@ describe('search telemetry from the main process', () => {
         result: 'completed',
         size_bytes: 312_000_000,
         duration_ms: 41_000,
-        is_background_update: true,
+        trigger: 'launch',
         bundle_version: '2.3.0'
       }
     )
@@ -54,7 +54,7 @@ describe('search telemetry from the main process', () => {
         result: 'completed',
         bytes: 1,
         durationMs: 1,
-        background: false,
+        trigger: 'retry',
         version: '2.3.0'
       })
     ).not.toThrow()

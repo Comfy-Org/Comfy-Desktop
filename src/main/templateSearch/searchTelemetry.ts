@@ -25,7 +25,7 @@ export function reportBundleDownload(download: BundleDownload): void {
     result: download.result,
     size_bytes: download.bytes,
     duration_ms: download.durationMs,
-    is_background_update: download.background,
+    trigger: download.trigger,
     bundle_version: download.version
   })
 }

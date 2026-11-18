@@ -4,6 +4,7 @@ import { getEntryByInstallationId, type ComfyWindowEntry } from '../../host/regi
 import { navigatorFor } from '../../host/buildNavigator'
 import { isPersistableTemplateId } from '../../sources/standalone/curatedTemplates'
 import type { TerminalEnv } from '../../types/sources'
+import type { BackgroundTrigger } from '../../templateSearch/bundles'
 import {
   opensInAWindow,
   TEMPLATE_SEARCH_EVENT_PREFIX,
@@ -85,9 +86,9 @@ export function registerTemplateSearchHandlers({
 
   let downloadedAutomatically = false
 
-  function downloadAutomatically(): void {
+  function downloadAutomatically(trigger: BackgroundTrigger): void {
     if (downloadedAutomatically) return
-    void process.downloadInBackground().then(
+    void process.downloadInBackground(trigger).then(
       (done) => (downloadedAutomatically ||= done),
       () => false
     )
@@ -95,7 +96,7 @@ export function registerTemplateSearchHandlers({
 
   function onBuildActionEnd(): void {
     process.onBuildActionEnd()
-    downloadAutomatically()
+    downloadAutomatically('build_ready')
   }
 
   setSessionActionObserver({
@@ -112,7 +113,7 @@ export function registerTemplateSearchHandlers({
     }
   })
   sessionLifecycleEvents.on('launch-ended', onBuildActionEnd)
-  void settled?.then(() => setTimeout(downloadAutomatically, LAUNCH_SETTLE_MS))
+  void settled?.then(() => setTimeout(() => downloadAutomatically('launch'), LAUNCH_SETTLE_MS))
 
   ipcMain.handle(
     'template-search:search',

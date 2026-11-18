@@ -54,11 +54,14 @@ export interface BundleStoreDeps {
   now?: () => number
 }
 
+export type DownloadTrigger = 'launch' | 'build_ready' | 'bar' | 'retry' | 'update_check'
+export type BackgroundTrigger = Extract<DownloadTrigger, 'launch' | 'build_ready'>
+
 export interface BundleDownload {
   result: 'completed' | 'up_to_date' | 'no_readable_version' | 'failed'
   bytes: number
   durationMs: number
-  background: boolean
+  trigger: DownloadTrigger
   version: string | null
 }
 
@@ -173,7 +176,7 @@ async function place(source: string, target: string): Promise<void> {
 }
 
 export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
-  download(options?: { quietly?: boolean }): Promise<void>
+  download(options?: { quietly?: boolean; trigger?: DownloadTrigger }): Promise<void>
 } {
   const now = deps.now ?? Date.now
   const bundlesDir = path.join(deps.root, BUNDLES_DIR)
@@ -351,7 +354,10 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     return { kind: 'fetched', version: manifest.version, bytes }
   }
 
-  function download({ quietly = false } = {}): Promise<void> {
+  function download({
+    quietly = false,
+    trigger = 'retry'
+  }: { quietly?: boolean; trigger?: DownloadTrigger } = {}): Promise<void> {
     const base = baseUrl()
     if (!base) return Promise.resolve()
     if (downloading) {
@@ -364,7 +370,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     quiet = quietly
     const startedAt = now()
     const reportDownload = (download: Pick<BundleDownload, 'result' | 'bytes' | 'version'>): void =>
-      deps.onDownloaded?.({ ...download, durationMs: now() - startedAt, background: quietly })
+      deps.onDownloaded?.({ ...download, durationMs: now() - startedAt, trigger })
     downloading = fetchNewest(base)
       .then(async (fetched) => {
         reportDownload(downloadResult(fetched))
@@ -390,7 +396,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       if (!downloading) await removeOlderVersions()
       if (base && now() - lastUpdateCheck > UPDATE_CHECK_MS) {
         lastUpdateCheck = now()
-        void download({ quietly: true })
+        void download({ quietly: true, trigger: 'update_check' })
       }
       return { kind: 'ready' }
     }
@@ -400,7 +406,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       return { kind: 'downloading', ...progress }
     }
     if (!deps.isOnline()) return { kind: 'unavailable', reason: 'offline' }
-    void download()
+    void download({ trigger: 'bar' })
     return { kind: 'downloading', ...progress }
   }
 

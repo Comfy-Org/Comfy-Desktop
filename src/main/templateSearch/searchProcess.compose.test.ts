@@ -156,7 +156,7 @@ describe('createSearchProcess', () => {
     const { search } = setup()
     await search.download()
     expect(reportBundleDownload).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ result: 'completed', version: '1.0.0', background: false })
+      expect.objectContaining({ result: 'completed', version: '1.0.0', trigger: 'retry' })
     )
 
     await search.prepare()
@@ -240,12 +240,15 @@ describe('createSearchProcess', () => {
     mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
     serveBundle({ 'catalog.json': '{}' })
     const { search, announced } = setup({ online: true })
-    expect(await search.downloadInBackground()).toBe(true)
+    expect(await search.downloadInBackground('launch')).toBe(true)
     expect(bundlesOnDisk()).toEqual(['1.0.0'])
+    expect(reportBundleDownload).toHaveBeenCalledWith(
+      expect.objectContaining({ result: 'completed', trigger: 'launch' })
+    )
     expect(announced).toEqual([])
 
     const fetches = mocks.fetch.mock.calls.length
-    expect(await search.downloadInBackground()).toBe(true)
+    expect(await search.downloadInBackground('build_ready')).toBe(true)
     expect(mocks.fetch.mock.calls.length, 'nothing is fetched once the bundle is on disk').toBe(
       fetches
     )
@@ -263,7 +266,7 @@ describe('createSearchProcess', () => {
     mocks.builds = given.builds
     serveBundle({ 'catalog.json': '{}' })
     const { search } = setup({ online: given.online })
-    expect(await search.downloadInBackground()).toBe(false)
+    expect(await search.downloadInBackground('launch')).toBe(false)
     expect(mocks.fetch).not.toHaveBeenCalled()
     expect(spawned).toEqual([])
   })
@@ -273,7 +276,7 @@ describe('createSearchProcess', () => {
     mocks.activeOperations.mockReturnValue([{ installationId: 'ok', actionId: 'copy-update' }])
     serveBundle({ 'catalog.json': '{}' })
     const { search } = setup({ online: true })
-    expect(await search.downloadInBackground()).toBe(false)
+    expect(await search.downloadInBackground('launch')).toBe(false)
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
 

@@ -11,7 +11,12 @@ import { _getActiveOperations } from '../lib/ipc/sessionActions'
 import { occupiesInstall } from '../lib/ipc/sessionActions/occupiesInstall'
 import type { TerminalEnv } from '../types/sources'
 import type { TemplateSearchAvailability } from '../../types/ipc'
-import { createBundleStore, type Supported, type TransferResult } from './bundles'
+import {
+  createBundleStore,
+  type BackgroundTrigger,
+  type Supported,
+  type TransferResult
+} from './bundles'
 import { buildRuntime } from './buildRuntime'
 import { createSearchService, type SidecarDecision, type SidecarPython } from './service'
 import { RUNTIME_UNSUPPORTED_EXIT, startSidecar } from './sidecar'
@@ -259,9 +264,9 @@ export function createSearchProcess({
     ])
   }
 
-  async function downloadInBackground(): Promise<boolean> {
+  async function downloadInBackground(trigger: BackgroundTrigger): Promise<boolean> {
     if (!pyz() || !isOnline() || (await service.freePythons()).length === 0) return false
-    if (!(await store.newest())) await store.download({ quietly: true })
+    if (!(await store.newest())) await store.download({ quietly: true, trigger })
     return true
   }
 

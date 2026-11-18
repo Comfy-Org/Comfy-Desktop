@@ -513,7 +513,7 @@ describe('bundle store download reports', () => {
     })
     await s.download()
     expect(downloads).toEqual([
-      { result: 'completed', bytes: V1_BYTES, durationMs: 300, background: false, version: '1.0.0' }
+      { result: 'completed', bytes: V1_BYTES, durationMs: 300, trigger: 'retry', version: '1.0.0' }
     ])
   })
 
@@ -522,16 +522,16 @@ describe('bundle store download reports', () => {
     const downloads: BundleDownload[] = []
     const { store: s } = store({ now: () => 0, onDownloaded: (d) => downloads.push(d) })
     await s.download()
-    await s.download({ quietly: true })
+    await s.download({ quietly: true, trigger: 'update_check' })
     publish(server, '1.1.0', { ...V1, 'router/catalog.json': '{"v":2}' })
-    await s.download({ quietly: true })
+    await s.download({ quietly: true, trigger: 'update_check' })
     expect(downloads.slice(1)).toEqual([
-      { result: 'up_to_date', bytes: 0, durationMs: 0, background: true, version: null },
+      { result: 'up_to_date', bytes: 0, durationMs: 0, trigger: 'update_check', version: null },
       {
         result: 'completed',
         bytes: Buffer.byteLength('{"v":2}'),
         durationMs: 0,
-        background: true,
+        trigger: 'update_check',
         version: '1.1.0'
       }
     ])
@@ -545,10 +545,23 @@ describe('bundle store download reports', () => {
       supports: async () => null,
       onDownloaded: (d) => downloads.push(d)
     })
-    await s.download({ quietly: true })
+    await s.download({ quietly: true, trigger: 'launch' })
     expect(downloads).toEqual([
-      { result: 'no_readable_version', bytes: 0, durationMs: 0, background: true, version: null }
+      { result: 'no_readable_version', bytes: 0, durationMs: 0, trigger: 'launch', version: null }
     ])
+  })
+
+  it('reports a download that opening search started, and the daily check after it', async () => {
+    publish(server, '1.0.0', V1)
+    let clock = 0
+    const downloads: BundleDownload[] = []
+    const { store: s } = store({ now: () => clock, onDownloaded: (d) => downloads.push(d) })
+    await s.prepare()
+    await vi.waitFor(() => expect(downloads).toHaveLength(1))
+    clock = A_DAY_LATER
+    await s.prepare()
+    await vi.waitFor(() => expect(downloads).toHaveLength(2))
+    expect(downloads.map((d) => d.trigger)).toEqual(['bar', 'update_check'])
   })
 
   it('reports a download that failed, with the bytes it had fetched', async () => {
@@ -563,7 +576,7 @@ describe('bundle store download reports', () => {
         result: 'failed',
         bytes: Buffer.byteLength(V1.NOTICE),
         durationMs: 0,
-        background: false,
+        trigger: 'retry',
         version: null
       }
     ])

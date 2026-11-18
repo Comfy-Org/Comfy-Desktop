@@ -39,6 +39,7 @@ vi.mock('../telemetry', () => ({ gateEventsByPrefix: vi.fn() }))
 
 import { LAUNCH_SETTLE_MS, registerTemplateSearchHandlers } from './registerTemplateSearchHandlers'
 import { sessionLifecycleEvents } from './shared'
+import type { BackgroundTrigger } from '../../templateSearch/bundles'
 import { createDesktopSearch } from '../../templateSearch/desktopSearch'
 import { templateSearchOn } from '../../templateSearch/searchProcess'
 import { gateEventsByPrefix } from '../telemetry'
@@ -82,7 +83,9 @@ function fakes(
       decide: vi.fn(),
       prepare: vi.fn(async () => undefined),
       download: vi.fn(async () => undefined),
-      downloadInBackground: vi.fn(async () => true),
+      downloadInBackground: vi.fn<(trigger: BackgroundTrigger) => Promise<boolean>>(
+        async () => true
+      ),
       onBuildAction: vi.fn(async () => undefined),
       onBuildActionEnd: vi.fn()
     },
@@ -419,7 +422,7 @@ describe('the background download', () => {
     await vi.advanceTimersByTimeAsync(LAUNCH_SETTLE_MS - 1)
     expect(process.downloadInBackground).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1)
-    expect(process.downloadInBackground).toHaveBeenCalledTimes(1)
+    expect(process.downloadInBackground).toHaveBeenCalledExactlyOnceWith('launch')
   })
 
   it('tries again when an operation or a launch ends, until one attempt has been made', async () => {
@@ -431,6 +434,7 @@ describe('the background download', () => {
     mocks.observer!.after('local-1', 'update-comfyui')
     await vi.advanceTimersByTimeAsync(0)
     expect(process.downloadInBackground).toHaveBeenCalledTimes(2)
+    expect(process.downloadInBackground).toHaveBeenLastCalledWith('build_ready')
 
     sessionLifecycleEvents.emit('launch-ended', 'local-1')
     mocks.observer!.after('local-1', 'update-comfyui')
