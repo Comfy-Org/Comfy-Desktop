@@ -123,6 +123,7 @@ const templateSearchBuild = computed(() => {
   return openableBuilds.value.find(usable) ?? null
 })
 const templateSearchEnabled = ref(false)
+const searchResultsShown = ref(false)
 
 function openTemplateSearchBuild(buildId: string): void {
   const build = workspaceBuilds.value.find((candidate) => candidate.id === buildId)
@@ -200,9 +201,11 @@ onMounted(() => {
         class="mt-8"
         :build-id="templateSearchBuild?.id ?? null"
         @opened="openTemplateSearchBuild"
+        @results="searchResultsShown = $event"
       />
 
       <section
+        v-show="!searchResultsShown"
         class="mt-[74px]"
         :aria-label="appsState === 'off' ? t('home.exampleWorkflows') : t('sidebar.apps')"
       >

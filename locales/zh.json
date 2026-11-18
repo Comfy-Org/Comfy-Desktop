@@ -197,6 +197,7 @@
       "noMatch": "暂时没有合适的模板。",
       "run": "运行",
       "downloadAndRun": "下载并运行",
+      "resultsTitle": "模板",
       "partnerSwitch": "合作伙伴模板",
       "downloadSize": "约需下载 {size}",
       "signInToUse": "登录后使用",

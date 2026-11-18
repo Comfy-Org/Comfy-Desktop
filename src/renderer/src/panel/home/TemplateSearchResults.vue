@@ -162,7 +162,7 @@ function optionId(index: number): string {
   return `${props.listboxId}-${index}`
 }
 
-const panel = useTemplateRef<HTMLElement>('panel')
+const heading = useTemplateRef<HTMLElement>('heading')
 const cardList = useTemplateRef<HTMLElement>('cardList')
 
 function cards(): HTMLElement[] {
@@ -178,7 +178,7 @@ function revealActive(): void {
   const all = cards()
   const active = all[props.controller.activeIndex.value]
   if (!active) return
-  if (active.offsetTop === all[0]!.offsetTop) panel.value?.scrollTo({ top: 0 })
+  if (active.offsetTop === all[0]!.offsetTop) heading.value?.scrollIntoView({ block: 'nearest' })
   active.scrollIntoView({ block: 'nearest' })
 }
 
@@ -190,12 +190,28 @@ defineExpose({ verticalTarget, revealActive })
 
 <template>
   <div
-    ref="panel"
     tabindex="-1"
-    :class="{ 'scroll-pt-10': controller.openFailed.value }"
+    :class="{ '[&_[role=option]]:scroll-mt-10': controller.openFailed.value }"
     @mousedown.prevent
     @keydown.esc="emit('refocus')"
   >
+    <div ref="heading" class="mb-2.5 flex h-6 items-center justify-between gap-3">
+      <h2 class="m-0 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase">
+        {{ t('home.search.resultsTitle') }}
+      </h2>
+      <label
+        v-if="!notice && controller.partnerSwitch.value"
+        class="flex items-center gap-2 text-xs/4 text-muted-foreground"
+        data-testid="home-template-search-partner-switch"
+      >
+        {{ t('home.search.partnerSwitch') }}
+        <Switch
+          :model-value="controller.partnersShown.value"
+          :aria-label="t('home.search.partnerSwitch')"
+          @update:model-value="(shown: boolean) => changePartners(shown)"
+        />
+      </label>
+    </div>
     <div
       v-if="notice"
       class="flex items-center justify-between gap-3 px-2.5 py-2"
@@ -214,18 +230,6 @@ defineExpose({ verticalTarget, revealActive })
       </Button>
     </div>
     <template v-else-if="controller.state.value.kind === 'result'">
-      <label
-        v-if="controller.partnerSwitch.value"
-        class="flex items-center justify-end gap-2 px-2.5 pt-1 text-xs/4 text-muted-foreground"
-        data-testid="home-template-search-partner-switch"
-      >
-        {{ t('home.search.partnerSwitch') }}
-        <Switch
-          :model-value="controller.partnersShown.value"
-          :aria-label="t('home.search.partnerSwitch')"
-          @update:model-value="(shown: boolean) => changePartners(shown)"
-        />
-      </label>
       <p
         v-if="controller.reply.value"
         class="m-0 px-2.5 py-2 text-[13px]/5 text-foreground"

@@ -197,6 +197,7 @@
       "noMatch": "No template fits this yet.",
       "run": "Run",
       "downloadAndRun": "Download and run",
+      "resultsTitle": "Templates",
       "partnerSwitch": "Partner templates",
       "downloadSize": "About {size} to download",
       "signInToUse": "Sign in to use",

@@ -122,10 +122,14 @@ afterEach(() => {
 const mounted: ReturnType<typeof mountSearch>[] = []
 const hosts: HTMLElement[] = []
 const BAR_WIDTH_PX = 720
+const PAGE_HEIGHT_PX = 600
 
 function mountSearch(buildId: string | null = 'build-1') {
   const host = document.body.appendChild(document.createElement('div'))
   host.style.width = `${BAR_WIDTH_PX}px`
+  host.style.height = `${PAGE_HEIGHT_PX}px`
+  host.style.overflowY = 'auto'
+  host.dataset.testPage = ''
   hosts.push(host)
   const wrapper = mount(HomeTemplateSearch, { props: { buildId }, attachTo: host })
   mounted.push(wrapper)
@@ -158,6 +162,10 @@ function notice(wrapper: Wrapper): string {
 
 function panel(wrapper: Wrapper) {
   return wrapper.find('[data-testid="home-template-search-results"]')
+}
+
+function page(wrapper: Wrapper): HTMLElement {
+  return wrapper.element.closest<HTMLElement>('[data-test-page]')!
 }
 
 describe('HomeTemplateSearch results', () => {
@@ -614,7 +622,7 @@ describe('HomeTemplateSearch cards', () => {
 
   function inView(wrapper: Wrapper, selector: string): boolean {
     const box = wrapper.get(selector).element.getBoundingClientRect()
-    const scroller = panel(wrapper).element.getBoundingClientRect()
+    const scroller = page(wrapper).getBoundingClientRect()
     return (
       box.top >= Math.max(scroller.top, 0) - 1 &&
       box.bottom <= Math.min(scroller.bottom, window.innerHeight) + 1
@@ -714,7 +722,7 @@ describe('HomeTemplateSearch cards', () => {
     await press(wrapper, 'ArrowUp')
     await press(wrapper, 'ArrowLeft')
     expect(highlighted(wrapper)).toBe('mural_template title')
-    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    expect(page(wrapper).scrollTop).toBeGreaterThan(0)
     expect(inView(wrapper, SELECTED)).toBe(true)
     await press(wrapper, 'ArrowRight')
     await press(wrapper, 'ArrowRight')
@@ -841,7 +849,7 @@ describe('HomeTemplateSearch cards', () => {
     const wrapper = mountSearch()
     await searchCards(wrapper)
     await press(wrapper, 'ArrowUp')
-    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    expect(page(wrapper).scrollTop).toBeGreaterThan(0)
     await input(wrapper).trigger('keydown', { key: 'Enter' })
     await flushPromises()
     const message = '[data-testid="home-template-search-open-failed"]'
@@ -877,13 +885,13 @@ describe('HomeTemplateSearch cards', () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a mural')
     expect(highlighted(wrapper)).toBe('mural_template title')
-    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    expect(page(wrapper).scrollTop).toBeGreaterThan(0)
     expect(inView(wrapper, SELECTED)).toBe(true)
 
     await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
     await input(wrapper).trigger('focus')
     await flushPromises()
-    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    expect(page(wrapper).scrollTop).toBeGreaterThan(0)
     expect(inView(wrapper, SELECTED)).toBe(true)
   })
 
@@ -893,10 +901,10 @@ describe('HomeTemplateSearch cards', () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a birthday card')
     await press(wrapper, 'ArrowUp')
-    expect(panel(wrapper).element.scrollTop).toBeGreaterThan(0)
+    expect(page(wrapper).scrollTop).toBeGreaterThan(0)
     await press(wrapper, 'ArrowDown')
     expect(highlighted(wrapper)).toBe('card_0 title')
-    expect(panel(wrapper).element.scrollTop).toBe(0)
+    expect(inView(wrapper, 'h2')).toBe(true)
   })
 
   it('scrolls the highlighted card into view when the answer is longer than the panel', async () => {
@@ -904,7 +912,7 @@ describe('HomeTemplateSearch cards', () => {
     searchTemplates.mockResolvedValue(answer({ run: many }))
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a birthday card')
-    const scroller = panel(wrapper).element
+    const scroller = page(wrapper)
     expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight)
     expect(scroller.scrollTop).toBe(0)
 
@@ -1267,7 +1275,7 @@ describe('HomeTemplateSearch typing', () => {
     expect(panel(wrapper).exists()).toBe(false)
   })
 
-  it('keeps the results closed after focus leaves, when a typed search answers later', async () => {
+  it('keeps the results in the page after focus leaves, when a typed search answers later', async () => {
     vi.useFakeTimers()
     const wrapper = mountSearch()
     await input(wrapper).trigger('focus')
@@ -1281,7 +1289,7 @@ describe('HomeTemplateSearch typing', () => {
     await flushPromises()
 
     expect(searchTemplates).toHaveBeenCalledWith('a poster', 'build-1')
-    expect(panel(wrapper).exists()).toBe(false)
+    expect(panel(wrapper).exists()).toBe(true)
   })
 })
 
