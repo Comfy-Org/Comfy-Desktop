@@ -248,7 +248,7 @@ describe('parseDecision', () => {
     expect(result?.download.map((c) => c.templateId)).toEqual(['zine_template', 'mural_template'])
   })
 
-  it('keeps the open picks in view when the search sends more than fits', () => {
+  it('leads Download with an open pick that needs files only when its partner pick is shown', () => {
     const body = decision({
       split: {
         run: [
@@ -262,12 +262,30 @@ describe('parseDecision', () => {
           pick('mural', 'mural', ['mural.safetensors']),
           pick('zine', 'zine', ['zine.safetensors'])
         ],
-        open: [pick('open_poster', 'poster'), pick('open_flyer', 'flyer', ['open_flyer', 'f.bin'])]
+        open: [
+          pick('open_poster', 'poster'),
+          pick('open_flyer', 'flyer', ['open_flyer', 'f.bin']),
+          pick('open_logo', 'logo', ['open_logo', 'l.bin'])
+        ]
       }
     })
     const result = parseDecision(body)
     expect(result?.run.map((c) => c.templateId)).toEqual(['api_poster', 'open_poster', 'logo'])
-    expect(result?.download.map((c) => c.templateId)).toEqual(['open_flyer', 'mural'])
+    expect(result?.download.map((c) => c.templateId)).toEqual(['open_logo', 'mural'])
+    const familyless = (id: string, files: string[] = []) => ({
+      ...pick(id, id, files),
+      family_id: null
+    })
+    const loose = parseDecision(
+      decision({
+        split: {
+          run: [familyless('solo')],
+          download: [],
+          open: [familyless('solo_open', ['s.bin'])]
+        }
+      })
+    )
+    expect(loose?.download).toEqual([])
   })
 
   it("puts the search's open pick right after its family's pick, even when Desktop cannot tell that pick is a partner", () => {
