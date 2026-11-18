@@ -8,7 +8,8 @@ DS's Motion page (`ds/motion.ts`).
 ## Surfaces
 
 - **No lines.** No borders, strokes or dividers to separate things. Space
-  and a fill do it.
+  and a fill do it. Exceptions: the title bar divider, the line above a
+  modal footer, and the divider between rows of one list card.
 - **Panels a step lighter.** A panel beside content (a sidebar, the asset
   view's details) is a fill a step lighter than what's behind it:
   `color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-content-background))`,
@@ -18,6 +19,14 @@ DS's Motion page (`ds/motion.ts`).
   area, never flush to the window.
 - **Text blocks go in a box.** Free text (a prompt, a note) sits in a
   surface with padding and radius, never loose on a panel.
+- **One card size.** A card (`rounded-[14px] bg-card`) has 18px on the
+  sides, 16px top and bottom, and sits 10px from the next card, like the
+  build Overview cards. Rows of the same kind (the models folders) share
+  one card, split by a 1px divider that runs edge to edge; the ⋯
+  glyph lands 18px from the right edge.
+- **Add sits outside the cards.** An Add button for a list (Add models
+  folder, Add Variable) goes below the last card, on the page, aligned
+  with the cards' left edge.
 - **Glass only over pictures.** Badges, chips and scrims over imagery use
   the light dark glass (`rgb(14 14 16 / 0.28)`, `blur(14px) saturate(1.5)`).
 - **Zoom runs to the edges.** A zoomed picture fills the whole stage up to
@@ -91,6 +100,12 @@ DS's Motion page (`ds/motion.ts`).
   where you edit something that is saved on another screen (Change setup
   over the New Build summary); there the × hides, so Discard or Save changes
   are the only ways back. Never two buttons with the same effect.
+- **The × sits outside the modal.** The round × is at the card's top
+  right, outside it, like New Build. Never inside the card, also when the
+  modal is its own window (Desktop Settings widens the window instead).
+- **Modal footers keep their line.** The thin line above a modal's footer
+  stays: it is one of the lines allowed by No lines. Never remove it in an
+  audit or a polish pass.
 
 ## Menus
 
@@ -117,18 +132,19 @@ DS's Motion page (`ds/motion.ts`).
 - **Icon buttons hover square** (radius 8), never a circle, in panels and
   headers.
 - **One choice marks its row.** A single-choice dropdown fills the picked
-  row; no check and no column kept for one. A check is only for a
-  multi-select (`ui/Select.vue`).
+  row and puts a check at its end (`BaseMenuRadioItem`, `BaseSelect`), so
+  the saved choice reads apart from the keyboard highlight. The highlight
+  wins over the picked fill.
 - **Every menu is the DS `Menu`.** Pickers, ⋯ menus and the ☰ popup use
   `@comfyorg/design-system/menu/Menu` with `MenuItem` / `MenuRadioItem`,
   like the filter menus. Never the `Select` listbox for a menu: its
   spacing drifts from the filters. A single choice fills the picked row
-  with the DS selected color (`bg-muted`, `selectedMenuButtonClass`), no check.
+  with the DS selected color (`bg-muted`, `selectedMenuButtonClass`) and a check.
   Rows sit 2px apart (`gap-0.5`) so two highlighted rows never touch.
 - **Every dropdown looks the same in Desktop.** Menus and select lists
   (`BaseSelect`) share one look: the popover background (a step lighter
   than the page), 4px padding, 28px rows with 12px text, the picked row
-  filled, no check. For launch that is this solid look everywhere; the
+  filled with a check. For launch that is this solid look everywhere; the
   proto's smoked glass comes later, to all menus at once, never to one
   menu alone.
 - **Menu dividers run edge to edge.** A divider inside a menu cancels the
@@ -184,8 +200,17 @@ DS's Motion page (`ds/motion.ts`).
 - **Templates, not Workflows,** for the Hub's catalog in Explore. Home's
   tab says Workflows (Apps | Workflows). Workflows are otherwise the
   person's own (Recent workflows, the Workflows library).
-- **No counts in tabs.** Tabs carry only their label, Assets' type tabs
-  included ("Images", not "Images 11").
+- **Tools come with content.** Search, sort, filters, view tabs and actions
+  that need content (Export All) show as soon as the page has one item
+  anywhere, in any tab, and stay while it does:
+  - Nothing at all on the page: hide them; keep only what creates content
+    (New build, Import, Create) next to the empty state.
+  - Content exists but this tab or filter is empty: keep every tool and
+    tab; the empty state names the tab ("No cloud builds").
+  - A search or filter with no results: keep every tool; "Nothing matches"
+    with Clear filters.
+- **No counts on tabs.** No tab row shows a number ("Images", not
+  "Images 4"), Assets included, and no count beside the title either.
 
 ## Tiles
 
@@ -199,12 +224,24 @@ DS's Motion page (`ds/motion.ts`).
   squeeze two side by side. A tile in progress looks like every other
   tile: no buttons inside, status line plus the bar along the bottom, a
   click opens its logs, actions live in ⋯.
+- **Build cards have no buttons or links, only ⋯.** The whole card is the
+  action: ready starts, starting or installing opens logs, running opens.
+  Status on top; the version and a grey "Update" note on the
+  bottom line, plain text. Update, and everything else, lives in ⋯.
 
 ## Feedback
 
 - **Say only what the screen doesn't.** A note under a choice or over a
   button appears only when something non-obvious happens (a download, a
   wait, a risk); never to repeat a price, a state or the button's label.
+- **Premium is a gold crown.** An app or template that costs credits gets
+  ComfyUI's crown, icon only, in a 28px glass square at the top left of its
+  picture (a corner no other control uses), in the credits gold
+  (`--upgrade`, #e9c422). Hover is the usual one-line tooltip, "Premium app, runs with credits".
+  Free ones get nothing.
+- **Badges explain on hover, no ? inside.** A badge (Downloads, Shared,
+  Build) is the tooltip trigger itself, on hover and keyboard focus. The ?
+  icon is only for section titles and field labels.
 - **Toasts only when you stay** on the page and something changes state.
   No toast after a redirect, on opening things, or for pickers.
 - **Media badges bottom left**, the glass pill, 8px in: a video's icon and
