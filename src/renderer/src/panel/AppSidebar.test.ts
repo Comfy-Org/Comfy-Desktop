@@ -356,6 +356,20 @@ describe('AppSidebar', () => {
     ).toHaveLength(0)
   })
 
+  it('turns every row into a square when the sidebar is folded', async () => {
+    window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 320))
+
+    for (const testId of ['app-sidebar-home', 'app-sidebar-assets', 'app-sidebar-settings']) {
+      const row = wrapper.get(`[data-testid="${testId}"]`).element.getBoundingClientRect()
+      expect([row.width, row.height], testId).toEqual([40, 40])
+    }
+    wrapper.unmount()
+  })
+
   it('gives a folded row its tooltip over the whole row, not only the icon', async () => {
     window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
     useInstallationStore().installations = []

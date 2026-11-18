@@ -84,6 +84,7 @@ const faceTransition = {
     'transition-[opacity,scale] duration-120 ease-out motion-reduce:transition-opacity',
   leaveToClass: 'opacity-0 motion-safe:scale-90'
 }
+const railRowSize = computed(() => (collapsed.value ? 'h-10 duration-200' : 'h-8 duration-260'))
 const wordmarkTransition = {
   enterActiveClass:
     'origin-left transition-[opacity,scale] duration-200 delay-90 ease-out motion-reduce:transition-opacity',
@@ -288,8 +289,11 @@ function openSettings(): void {
           :key="row.page"
           variant="muted-textonly"
           size="unset"
-          class="h-8 w-full shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-          :class="row.page === activePage && 'bg-accent text-foreground hover:bg-accent'"
+          class="w-full shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[height,background-color,color] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
+          :class="[
+            railRowSize,
+            row.page === activePage && 'bg-accent text-foreground hover:bg-accent'
+          ]"
           :aria-current="row.page === activePage ? 'page' : undefined"
           :aria-label="row.label"
           :data-testid="`app-sidebar-${row.page}`"
@@ -428,7 +432,8 @@ function openSettings(): void {
       <Button
         variant="muted-textonly"
         size="unset"
-        class="h-8 w-full shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+        class="w-full shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[height,background-color,color] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none"
+        :class="railRowSize"
         :aria-label="t('fileMenu.globalSettings')"
         aria-haspopup="dialog"
         data-testid="app-sidebar-settings"
