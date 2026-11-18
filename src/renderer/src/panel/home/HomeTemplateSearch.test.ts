@@ -357,8 +357,21 @@ describe('HomeTemplateSearch results', () => {
       'mural title',
       'mural_b title'
     ])
-    const banner = wrapper.findAll('[role="option"]')[3]!
-    expect(banner.find('[data-testid="home-template-search-needs-download"]').exists()).toBe(true)
+    const cards = wrapper.findAll('[role="option"]')
+    expect(cards[3]!.find('[data-testid="home-template-search-needs-download"]').exists()).toBe(
+      true
+    )
+    const matchShown = cards.map((card) =>
+      card.find('[data-testid="home-template-search-match"]').exists()
+    )
+    expect(matchShown, 'the search scores families, so only the family pick shows it').toEqual([
+      true,
+      false,
+      true,
+      false,
+      true,
+      false
+    ])
   })
 
   it("keeps a family's open template right after its pick, ahead of the next family", async () => {
