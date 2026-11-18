@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { DOMWrapper, mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { userEvent } from 'vitest/browser'
 
 import { useModal } from '../../composables/useModal'
 import StoragePane, { type StorageSnapshot } from './StoragePane.vue'
@@ -304,6 +305,67 @@ describe('StoragePane', () => {
     const children = list.findAll(':scope > *')
     expect(children[children.length - 1]!.find('.models-dir-add').text()).toBe('Add models folder')
     expect(list.text()).not.toContain('Manage shared directories')
+  })
+
+  describe('badges explain themselves without a ? icon', () => {
+    const BADGES = [
+      ['.tag-primary', 'Newly downloaded models are saved here.'],
+      ['.tag-shared', 'Shared with every build. Change it in Desktop Settings.'],
+      [
+        '.tag-local',
+        "This build's own models folder. It's always used and is never shared with other builds."
+      ],
+      ['.storage-dir-shared-tag', 'Shared with every build. Change it in Desktop Settings.']
+    ] as const
+
+    async function mountWithEveryBadge() {
+      installMockApi()
+      const wrapper = mountPaneWithSections(
+        [
+          ...makeStorageSections([], { sharedOn: true }),
+          ...makeIoSections({ sharedInput: true, sharedOutput: true })
+        ],
+        {
+          ...makeSnapshot(),
+          sharedDirectoriesFields: [
+            { id: 'inputDir', label: 'Shared Input', value: '/shared/in', type: 'path' }
+          ] as never
+        }
+      )
+      await flushPromises()
+      return wrapper
+    }
+
+    function tooltipText(): string | null | undefined {
+      return document.querySelector('.tooltip-bubble')?.textContent
+    }
+
+    it('shows no ? icon inside any badge', async () => {
+      const wrapper = await mountWithEveryBadge()
+      const tags = wrapper.findAll('.storage-tag')
+      expect(tags.length).toBeGreaterThanOrEqual(4)
+      for (const tag of tags) expect(tag.find('.info-tooltip-trigger').exists()).toBe(false)
+    })
+
+    it.each(BADGES)('opens the %s tooltip on hover', async (selector, text) => {
+      const wrapper = await mountWithEveryBadge()
+      const badge = wrapper.find(`${selector} .storage-tag, ${selector}.storage-tag`)
+      expect(badge.attributes('tabindex')).toBe('0')
+      expect(badge.classes()).toContain('cursor-help')
+      await userEvent.hover(badge.element as HTMLElement)
+      await vi.waitFor(() => expect(tooltipText()).toContain(text), { timeout: 3000 })
+      await userEvent.unhover(badge.element as HTMLElement)
+      await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull(), {
+        timeout: 3000
+      })
+    })
+
+    it.each(BADGES)('opens the %s tooltip on keyboard focus', async (selector, text) => {
+      const wrapper = await mountWithEveryBadge()
+      const badge = wrapper.find(`${selector} .storage-tag, ${selector}.storage-tag`)
+      ;(badge.element as HTMLElement).focus()
+      await vi.waitFor(() => expect(tooltipText()).toContain(text), { timeout: 3000 })
+    })
   })
 
   it('tags shared model dirs as Shared and leaves build-only dirs untagged', async () => {

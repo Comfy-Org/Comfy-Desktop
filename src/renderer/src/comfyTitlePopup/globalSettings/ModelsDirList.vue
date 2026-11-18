@@ -5,7 +5,6 @@ import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import { FileText, Folder, FolderLock, MoreHorizontal, Plus } from '@lucide/vue'
-import InfoTooltip from '../../components/InfoTooltip.vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 import StorageTag from '../../components/StorageTag.vue'
 
@@ -161,23 +160,28 @@ const rows = computed(() =>
         v-if="row.isPrimary || (row.shared && !props.hideSharedTag) || row.locked || row.isExtra"
         class="models-dir-tags flex h-8 shrink-0 items-center gap-2.5"
       >
-        <StorageTag v-if="row.isPrimary" class="models-dir-tag tag-primary">
+        <StorageTag
+          v-if="row.isPrimary"
+          class="models-dir-tag tag-primary"
+          :tooltip="t('tooltips.modelsPrimary')"
+        >
           {{ t('models.primary') }}
-          <InfoTooltip :text="t('tooltips.modelsPrimary')" />
         </StorageTag>
-        <StorageTag v-if="row.shared && !props.hideSharedTag" class="models-dir-tag tag-shared">
+        <StorageTag
+          v-if="row.shared && !props.hideSharedTag"
+          class="models-dir-tag tag-shared"
+          :tooltip="t('tooltips.modelsShared')"
+        >
           {{ t('models.sharedTag') }}
-          <InfoTooltip :text="t('tooltips.modelsShared')" />
         </StorageTag>
-        <StorageTag v-if="row.locked || row.isExtra" class="models-dir-tag tag-local">
+        <StorageTag
+          v-if="row.locked || row.isExtra"
+          class="models-dir-tag tag-local"
+          :tooltip="
+            row.isExtra ? t('tooltips.extraModelPathsInstance') : t('tooltips.instanceOwnModelsDir')
+          "
+        >
           {{ row.isExtra ? t('comfyUISettings.yamlTag') : t('models.instanceOnly') }}
-          <InfoTooltip
-            :text="
-              row.isExtra
-                ? t('tooltips.extraModelPathsInstance')
-                : t('tooltips.instanceOwnModelsDir')
-            "
-          />
         </StorageTag>
       </span>
       <div class="models-dir-actions inline-flex h-8 w-7 shrink-0 items-center justify-end">

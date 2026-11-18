@@ -109,7 +109,11 @@ function onMenuKeydown(event: KeyboardEvent): void {
       class="storage-dir-tags gap-2.5"
       :class="listAligned ? 'flex h-8 shrink-0 items-center' : 'contents'"
     >
-      <StorageTag v-if="shared && !hideSharedTag" class="storage-dir-shared-tag">
+      <StorageTag
+        v-if="shared && !hideSharedTag"
+        class="storage-dir-shared-tag"
+        :tooltip="t('tooltips.modelsShared')"
+      >
         {{ t('models.sharedTag') }}
       </StorageTag>
       <StorageTag v-if="tag" class="storage-dir-tag">{{ tag }}</StorageTag>
