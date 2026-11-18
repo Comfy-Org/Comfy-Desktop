@@ -313,11 +313,7 @@ export type OverrideDecision =
   | ({
       decision: 'reverted'
       reason:
-        | 'install_failed'
-        | 'resolve_failed'
-        | 'start_failed'
-        | 'check_failed'
-        | 'previously_failed'
+        'install_failed' | 'resolve_failed' | 'start_failed' | 'check_failed' | 'previously_failed'
       pins: OverridePins
       install?: InstallReport
       failures?: number
