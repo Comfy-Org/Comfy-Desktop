@@ -57,6 +57,8 @@ export function buildElectronApi(): ElectronApi {
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),
     logsSnapshot: (installationId: string): Promise<string> =>
       ipcRenderer.invoke('logs-snapshot', installationId),
+    openLogsWindow: (installationId: string): Promise<void> =>
+      ipcRenderer.invoke('logs-popout-open', installationId),
     validateInstallPath: (targetPath) => ipcRenderer.invoke('validate-install-path', targetPath),
     getInstallationSize: (installationId) =>
       ipcRenderer.invoke('get-installation-size', installationId),
