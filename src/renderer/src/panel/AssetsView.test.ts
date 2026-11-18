@@ -14,13 +14,14 @@ import type {
   CloudAssetLookup,
   CloudAssetPage,
   Installation,
+  LocalAssetListing,
+  LocalAssetPageRequest,
   RunningInstance
 } from '../types/ipc'
 
 const listAssets = vi.fn()
 const findCloudAsset = vi.fn()
 const listLocalAssets = vi.fn()
-let localListCut = false
 const downloadAsset = vi.fn()
 const revealAsset = vi.fn()
 const copyAsset = vi.fn()
@@ -56,6 +57,25 @@ function picture(id: string, height: number): AssetSummary {
 vi.mock('../composables/useModal', () => ({
   useModal: () => ({ alert, confirm })
 }))
+
+function localListing(
+  all: AssetSummary[],
+  page: LocalAssetPageRequest = { offset: 0, limit: 500, order: 'newest' }
+): LocalAssetListing {
+  const count = (kind: AssetSummary['kind']) => all.filter((item) => item.kind === kind).length
+  const matching = page.kind ? all.filter((item) => item.kind === page.kind) : all
+  return {
+    assets: matching.slice(page.offset, page.offset + page.limit),
+    total: matching.length,
+    counts: {
+      all: all.length,
+      image: count('image'),
+      video: count('video'),
+      audio: count('audio'),
+      '3d': count('3d')
+    }
+  }
+}
 
 function asset(
   id: string,
@@ -221,7 +241,6 @@ beforeEach(() => {
   }))
   getAuthStatus.mockResolvedValue({ signedIn: false })
   getSetting.mockResolvedValue(undefined)
-  localListCut = false
   findCloudAsset.mockResolvedValue({ status: 'absent' })
   ;(window as unknown as { api: unknown }).api = {
     listAssets: async (installationId: string, request: unknown) => {
@@ -232,10 +251,8 @@ beforeEach(() => {
       return Array.isArray(listed) ? { assets: listed, total: listed.length } : listed
     },
     findCloudAsset,
-    listLocalAssets: async (installationId?: string) => ({
-      assets: await listLocalAssets(installationId),
-      truncated: localListCut
-    }),
+    listLocalAssets: async (installationId?: string, page?: LocalAssetPageRequest) =>
+      localListing(await listLocalAssets(installationId), page),
     downloadAsset,
     revealAsset,
     copyAsset,
@@ -413,7 +430,7 @@ describe('AssetsView', () => {
   it('puts only the cards on screen on the page, and the rest as the user scrolls', async () => {
     page.style.height = '600px'
     const wrapper = await mountAssets(
-      Array.from({ length: 300 }, (_, i) => picture(`card-${i}`, 300))
+      Array.from({ length: 100 }, (_, i) => picture(`card-${i}`, 300))
     )
     const cardCount = () => wrapper.findAll('[data-testid="assets-grid"] > li').length
 
@@ -424,7 +441,7 @@ describe('AssetsView', () => {
     view.scrollTop = view.scrollHeight
     await vi.waitFor(() =>
       expect(
-        wrapper.find('[data-testid="asset-card-299"]').exists(),
+        wrapper.find('[data-testid="asset-card-99"]').exists(),
         'the oldest card shows at the end'
       ).toBe(true)
     )
@@ -493,11 +510,16 @@ describe('AssetsView', () => {
     expect(assetNames(wrapper)).toEqual(['mine.png'])
 
     await openBuildPicker(wrapper)
-    expect(document.body.textContent).toContain('Browse the assets of')
+    expect(
+      [...document.querySelectorAll('[data-testid^="assets-place-group-"]')].map((header) =>
+        header.textContent?.trim()
+      ),
+      'Cloud and this computer are grouped apart'
+    ).toEqual(['Comfy Cloud', 'This computer'])
     expect(buildRows(), 'no Shared folder when no build saves there').toEqual([
       'Comfy Cloud Cloud · Running',
-      'My Local 1 Local · Stopped',
-      'Video Lab Local · Running'
+      'My Local 1 Own folder · Stopped',
+      'Video Lab Own folder · Running'
     ])
 
     await pickBuild('cloud')
@@ -533,7 +555,7 @@ describe('AssetsView', () => {
 
     await openBuildPicker(wrapper)
 
-    expect(buildRows()).toEqual(['Comfy Cloud Cloud · Running', 'My Local 1 Local · Stopped'])
+    expect(buildRows()).toEqual(['Comfy Cloud Cloud · Running', 'My Local 1 Own folder · Stopped'])
   })
 
   it('opens on a build it can list, not on a running build that keeps its files to itself', async () => {
@@ -634,16 +656,17 @@ describe('AssetsView', () => {
     ])
 
     await wrapper.get('[data-testid="assets-kind-image"]').trigger('click')
-    expect(assetNames(wrapper)).toEqual(['forest.png', 'terraces.png'])
+    await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['forest.png', 'terraces.png']))
+    expect(listLocalAssets, 'the type is read from the folder').toHaveBeenCalledTimes(2)
 
     await wrapper.get('input').setValue('terr')
     expect(assetNames(wrapper)).toEqual(['terraces.png'])
-    expect(tabs(), 'the counts follow the search').toEqual([
-      'All1',
-      'Images1',
-      'Videos0',
-      '3D0',
-      'Audio0'
+    expect(tabs(), 'folder-wide counts hide while a search narrows the page').toEqual([
+      'All',
+      'Images',
+      'Videos',
+      '3D',
+      'Audio'
     ])
   })
 
@@ -661,8 +684,8 @@ describe('AssetsView', () => {
     await openBuildPicker(wrapper)
     expect(buildRows()).toEqual([
       'Comfy Cloud Cloud · Running',
-      'Shared folder Output folder',
-      'Video Lab Local · Stopped'
+      'Shared folder Shared by your builds',
+      'Video Lab Own folder · Stopped'
     ])
   })
 
@@ -725,13 +748,18 @@ describe('AssetsView', () => {
     )
   })
 
-  it('says when the list keeps only the newest files', async () => {
-    localListCut = true
-    const wrapper = await mountAssets([asset('/out/a.png', 'a.png', 'image')])
-
-    expect(wrapper.get('[data-testid="assets-truncated"]').text()).toBe(
-      'Showing the newest file only.'
+  it('pages a large local folder with the same page bar as Comfy Cloud', async () => {
+    const files = Array.from({ length: 130 }, (_, i) =>
+      asset(`/out/f${i}.png`, `f${i}.png`, 'image')
     )
+    const wrapper = await mountAssets(files)
+
+    await vi.waitFor(() => expect(assetNames(wrapper)[0]).toBe('f0.png'))
+    expect(wrapper.get('[data-testid="assets-pagination"]').text()).toContain('130')
+
+    await wrapper.get('[data-testid="assets-page-2"]').trigger('click')
+    await vi.waitFor(() => expect(assetNames(wrapper)[0]).toBe('f100.png'))
+    expect(assetNames(wrapper)).not.toContain('f0.png')
   })
 
   it('asks a signed-out user who picked Comfy Cloud to log in', async () => {

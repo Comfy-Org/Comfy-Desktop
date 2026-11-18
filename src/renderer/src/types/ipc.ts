@@ -12,6 +12,7 @@ export type {
   AssetSummary,
   CloudAssetPage,
   LocalAssetListing,
+  LocalAssetPageRequest,
   CatalogWorkflow,
   CloudAssetLookup,
   Unsubscribe,

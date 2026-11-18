@@ -54,7 +54,8 @@ import type {
   AssetSummary,
   CloudAssetLookup,
   CloudAssetPage,
-  Installation
+  Installation,
+  LocalAssetListing
 } from '../types/ipc'
 import type { ContextMenuItem } from '../types/context-menu'
 
@@ -145,10 +146,10 @@ const pendingFocus = ref<string | null>(focusName)
 const focusMiss = ref<{ name: string; checked: boolean } | null>(null)
 const lookedUpDetail = ref<GalleryAsset | null>(null)
 const detailKey = ref<string | null>(null)
-const truncated = ref(false)
 const pageSize = ref(DEFAULT_PAGE_SIZE)
 const currentPage = ref(1)
-const cloudTotal = ref(0)
+const assetTotal = ref(0)
+const localCounts = ref<LocalAssetListing['counts'] | null>(null)
 const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 
@@ -258,8 +259,18 @@ function choosePlace(id: string): void {
   savedPlace.value = id
 }
 
+const placeGroups = computed(() =>
+  (['cloud', 'computer'] as const)
+    .map((id) => ({
+      id,
+      label: t(`assets.placeGroup.${id}`),
+      options: assetBuilds.value.filter((option) => option.cloud === (id === 'cloud'))
+    }))
+    .filter((group) => group.options.length > 0)
+)
+
 function buildStatusLabel({ cloud, computer, state }: AssetBuild): string {
-  if (computer) return t('assets.outputFolder')
+  if (computer) return t('assets.sharedFolderHint')
   return t('assets.buildStatus', {
     where: t(cloud ? 'assets.buildWhere.cloud' : 'assets.buildWhere.local'),
     state: t(`assets.buildState.${state}`)
@@ -291,15 +302,13 @@ const searchedAssets = computed(() => {
     : assets.value
 })
 
-const pageCount = computed(() => Math.max(1, Math.ceil(cloudTotal.value / pageSize.value)))
-const pagedCloud = computed(() => !!selectedBuild.value?.cloud && pageCount.value > 1)
-const showPagination = computed(() => !!selectedBuild.value?.cloud && cloudTotal.value > 0)
+const pageCount = computed(() => Math.max(1, Math.ceil(assetTotal.value / pageSize.value)))
+const pagedList = computed(() => pageCount.value > 1)
+const showPagination = computed(() => !!selectedBuild.value && assetTotal.value > 0)
 
 function kindCount(kind: KindFilter): number | undefined {
-  if (selectedBuild.value?.cloud) return undefined
-  return kind === 'all'
-    ? searchedAssets.value.length
-    : searchedAssets.value.filter((asset) => asset.kind === kind).length
+  if (selectedBuild.value?.cloud || searchQuery.value.trim()) return undefined
+  return localCounts.value?.[kind]
 }
 
 const kindOptions = computed(() =>
@@ -414,7 +423,7 @@ interface EmptyState {
 
 const emptyState = computed<EmptyState>(() => {
   if (failed.value) return { title: t('assets.loadFailed'), body: '' }
-  if (assets.value.length > 0 && pagedCloud.value) {
+  if (assets.value.length > 0 && pagedList.value) {
     return { title: t('assets.noMatchesOnPage'), body: t('assets.noMatchesOnPageHint') }
   }
   const noMatches = { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
@@ -429,7 +438,7 @@ const emptyState = computed<EmptyState>(() => {
   if (selectedBuild.value?.cloud && !cloudBuild.value) {
     return { title: t('assets.noCloudBuildTitle'), body: t('assets.noCloudBuildBody') }
   }
-  if (selectedBuild.value?.cloud && kindFilter.value !== 'all') return noMatches
+  if (kindFilter.value !== 'all') return noMatches
   return {
     title: t('assets.emptyTitle'),
     body: t('assets.emptyBody')
@@ -450,7 +459,7 @@ const pageCursors = new Map<number, string>()
 
 function resetCloudPageNumbers(): void {
   pageCursors.clear()
-  cloudTotal.value = 0
+  assetTotal.value = 0
   cloudTotalIsLowerBound.value = false
 }
 
@@ -461,15 +470,15 @@ function resetCloudPaging(): void {
 }
 
 function recordCloudPage(page: CloudAssetPage, pageNumber: number): void {
-  if (page.total !== null && (!page.nextCursor || cloudTotal.value === 0)) {
-    cloudTotal.value = page.total
+  if (page.total !== null && (!page.nextCursor || assetTotal.value === 0)) {
+    assetTotal.value = page.total
     cloudTotalIsLowerBound.value = page.totalIsLowerBound === true
   }
   if (!page.nextCursor) return
   pageCursors.set(pageNumber + 1, page.nextCursor)
   const minimum = pageNumber * pageSize.value + 1
-  if (minimum > cloudTotal.value) {
-    cloudTotal.value = minimum
+  if (minimum > assetTotal.value) {
+    assetTotal.value = minimum
     cloudTotalIsLowerBound.value = true
   }
 }
@@ -501,6 +510,16 @@ function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage>
     if (pageCache.get(key)?.page === page) pageCache.delete(key)
   })
   return page
+}
+
+function localPage(selected: AssetBuild, pageNumber: number): Promise<LocalAssetListing> {
+  const kind = kindFilter.value === 'all' ? undefined : kindFilter.value
+  return window.api.listLocalAssets(selected.computer ? undefined : selected.build.id, {
+    offset: (pageNumber - 1) * pageSize.value,
+    limit: pageSize.value,
+    order: sortOrder.value,
+    kind
+  })
 }
 
 function prefetchPage(cloudId: string, pageNumber: number): void {
@@ -539,7 +558,6 @@ async function loadAssets(userAsked = false): Promise<void> {
   const selected = selectedBuild.value
   const cloud = selected?.cloud ? cloudBuild.value : null
   failed.value = false
-  truncated.value = false
   cloudScanLimit.value = undefined
   if (!selected || (selected.cloud && (!cloud || !authStore.isSignedIn))) {
     assets.value = []
@@ -557,13 +575,18 @@ async function loadAssets(userAsked = false): Promise<void> {
     const pageNumber = currentPage.value
     const wanted = pendingFocus.value ?? focusMiss.value?.name
     const [listed, lookup] = await Promise.all([
-      cloud
-        ? cloudPage(cloud.id, pageNumber)
-        : window.api.listLocalAssets(selected.computer ? undefined : selected.build.id),
+      cloud ? cloudPage(cloud.id, pageNumber) : localPage(selected, pageNumber),
       cloud && wanted ? lookUpCloudAsset(cloud.id, wanted) : null
     ])
-    if (current !== requestId || (cloud && pageNumber !== currentPage.value)) return
-    if ('total' in listed) {
+    if (current !== requestId || pageNumber !== currentPage.value) return
+    if ('counts' in listed) {
+      localCounts.value = listed.counts
+      assetTotal.value = listed.total
+      if (pageNumber > pageCount.value) {
+        currentPage.value = pageCount.value
+        return
+      }
+    } else {
       if (pageNumber > 1 && listed.total === null && !listed.nextCursor) {
         resetCloudPaging()
         currentPage.value = 1
@@ -579,7 +602,6 @@ async function loadAssets(userAsked = false): Promise<void> {
       cloudScanLimit.value = listed.scanLimit
     }
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
-    truncated.value = 'truncated' in listed && listed.truncated
     if (cloud && pendingFocus.value && pendingFocus.value !== wanted) {
       void loadAssets(userAsked)
       return
@@ -619,25 +641,26 @@ const loadKey = computed(() => {
 const listedCloudId = computed(() =>
   selectedBuild.value?.cloud ? cloudBuild.value?.id : undefined
 )
-const cloudQuery = computed(() =>
-  selectedBuild.value?.cloud ? [sortOrder.value, kindFilter.value, pageSize.value].join('\n') : ''
+const listQuery = computed(() =>
+  selectedBuild.value ? [sortOrder.value, kindFilter.value, pageSize.value].join('\n') : ''
 )
 
 watch([loadKey, listedCloudId], () => {
   resetCloudPaging()
+  localCounts.value = null
   currentPage.value = 1
   focusMiss.value = null
   lookedUpDetail.value = null
   detailKey.value = null
 })
-watch(cloudQuery, () => {
+watch(listQuery, () => {
   resetCloudPageNumbers()
   currentPage.value = 1
 })
 let reloadAskedByUser = false
 
 watch(
-  [loadKey, listedCloudId, cloudQuery, currentPage],
+  [loadKey, listedCloudId, listQuery, currentPage],
   () => {
     scrollToTop()
     assets.value = []
@@ -955,50 +978,56 @@ function extensionOf(name: string): string {
               <ChevronDown :size="13" class="shrink-0 text-muted-foreground" aria-hidden="true" />
             </button>
           </template>
-          <div
-            class="px-[9px] pt-[12.5px] pb-[8.6px] text-[11px]/[15.4px] font-medium tracking-[0.88px] text-subtle-foreground uppercase"
-          >
-            {{ t('assets.browseAssetsOf') }}
-          </div>
           <DropdownMenuRadioGroup
             :model-value="selectedBuild.build.id"
             class="flex flex-col gap-0.5"
           >
-            <MenuRadioItem
-              v-for="option in assetBuilds"
-              :key="option.build.id"
-              as="button"
-              type="button"
-              :value="option.build.id"
-              class="min-h-0 gap-2.5 rounded-lg px-2.5 py-2 data-highlighted:bg-[rgb(255_255_255/0.06)] data-[state=checked]:bg-[rgb(255_255_255/0.06)]"
-              :data-testid="`assets-build-${option.build.id}`"
-              @select="choosePlace(option.build.id)"
-            >
-              <span
-                class="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-[rgb(240_240_240/0.07)] text-muted-foreground"
+            <template v-for="group in placeGroups" :key="group.id">
+              <div
+                class="px-[9px] pt-[12.5px] pb-[8.6px] text-[11px]/[15.4px] font-medium tracking-[0.88px] text-subtle-foreground uppercase"
+                :data-testid="`assets-place-group-${group.id}`"
               >
-                <component :is="option.cloud ? Cloud : Laptop" :size="15" aria-hidden="true" />
-              </span>
-              <span class="flex min-w-0 flex-1 flex-col text-left">
-                <span class="truncate text-[13px]/5 text-foreground">{{ option.build.name }}</span>
+                {{ group.label }}
+              </div>
+              <MenuRadioItem
+                v-for="option in group.options"
+                :key="option.build.id"
+                as="button"
+                type="button"
+                :value="option.build.id"
+                class="min-h-0 gap-2.5 rounded-lg px-2.5 py-2 data-highlighted:bg-[rgb(255_255_255/0.06)] data-[state=checked]:bg-[rgb(255_255_255/0.06)]"
+                :data-testid="`assets-build-${option.build.id}`"
+                @select="choosePlace(option.build.id)"
+              >
                 <span
-                  class="flex h-4 items-center gap-1.5 text-[12px]/[16.2px] text-subtle-foreground"
+                  class="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-[rgb(240_240_240/0.07)] text-muted-foreground"
                 >
-                  <span
-                    class="size-1.5 shrink-0 rounded-[3px]"
-                    :class="option.state === 'running' ? 'bg-success' : 'bg-subtle-foreground'"
-                    aria-hidden="true"
-                  />
-                  {{ buildStatusLabel(option) }}
+                  <component :is="option.cloud ? Cloud : Laptop" :size="15" aria-hidden="true" />
                 </span>
-              </span>
-              <Check
-                v-if="option.build.id === selectedBuild.build.id"
-                :size="14"
-                class="shrink-0 text-foreground"
-                aria-hidden="true"
-              />
-            </MenuRadioItem>
+                <span class="flex min-w-0 flex-1 flex-col text-left">
+                  <span class="truncate text-[13px]/5 text-foreground">{{
+                    option.build.name
+                  }}</span>
+                  <span
+                    class="flex h-4 items-center gap-1.5 text-[12px]/[16.2px] text-subtle-foreground"
+                  >
+                    <span
+                      v-if="!option.computer"
+                      class="size-1.5 shrink-0 rounded-[3px]"
+                      :class="option.state === 'running' ? 'bg-success' : 'bg-subtle-foreground'"
+                      aria-hidden="true"
+                    />
+                    {{ buildStatusLabel(option) }}
+                  </span>
+                </span>
+                <Check
+                  v-if="option.build.id === selectedBuild.build.id"
+                  :size="14"
+                  class="shrink-0 text-foreground"
+                  aria-hidden="true"
+                />
+              </MenuRadioItem>
+            </template>
           </DropdownMenuRadioGroup>
         </Menu>
         <Skeleton
@@ -1388,13 +1417,6 @@ function extensionOf(name: string): string {
         </li>
       </ul>
       <p
-        v-if="truncated && !showSkeleton"
-        class="m-0 mt-6 text-center text-ui text-subtle-foreground"
-        data-testid="assets-truncated"
-      >
-        {{ t('assets.truncated', assets.length) }}
-      </p>
-      <p
         v-if="cloudScanLimit !== undefined && !showSkeleton"
         class="m-0 mt-6 text-center text-ui text-subtle-foreground"
         data-testid="assets-scan-limit"
@@ -1405,7 +1427,7 @@ function extensionOf(name: string): string {
         v-if="showPagination"
         v-model:page="currentPage"
         v-model:page-size="pageSize"
-        :total="cloudTotal"
+        :total="assetTotal"
         :total-is-lower-bound="cloudTotalIsLowerBound"
         :page-sizes="CLOUD_PAGE_SIZES"
       />

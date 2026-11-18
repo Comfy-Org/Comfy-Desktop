@@ -14,7 +14,12 @@ import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installInputDir, installOutputDir } from './models'
 import { _runningSessions, sourceMap } from './ipc/shared'
-import type { AssetSummary, LocalAssetListing } from '../../types/ipc'
+import type {
+  AssetKind,
+  AssetSummary,
+  LocalAssetListing,
+  LocalAssetPageRequest
+} from '../../types/ipc'
 
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
 
@@ -253,7 +258,39 @@ async function addMediaFacts(asset: AssetSummary): Promise<void> {
   Object.assign(asset, await mediaFactsFromFile(asset.id, asset.kind))
 }
 
-export async function listLocalAssets(installationId?: string): Promise<LocalAssetListing> {
+const LOCAL_KINDS: readonly AssetKind[] = ['image', 'video', 'audio', '3d']
+const FIRST_LOCAL_PAGE: LocalAssetPageRequest = {
+  offset: 0,
+  limit: MAX_LOCAL_ASSETS,
+  order: 'newest'
+}
+
+function isCount(value: unknown, min: number, max: number): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max
+}
+
+export function localPageRequest(value: unknown): LocalAssetPageRequest {
+  if (!value || typeof value !== 'object') return FIRST_LOCAL_PAGE
+  const { offset, limit, order, kind } = value as Record<string, unknown>
+  const knownKind = LOCAL_KINDS.find((known) => known === kind)
+  return isCount(offset, 0, Number.MAX_SAFE_INTEGER) &&
+    isCount(limit, 1, MAX_LOCAL_ASSETS) &&
+    (order === 'newest' || order === 'oldest') &&
+    (kind === undefined || knownKind)
+    ? { offset, limit, order, ...(knownKind && { kind: knownKind }) }
+    : FIRST_LOCAL_PAGE
+}
+
+function countKinds(assets: AssetSummary[]): LocalAssetListing['counts'] {
+  const counts = { all: assets.length, image: 0, video: 0, audio: 0, '3d': 0 }
+  for (const { kind } of assets) if (kind) counts[kind]++
+  return counts
+}
+
+export async function listLocalAssets(
+  installationId?: string,
+  page: LocalAssetPageRequest = FIRST_LOCAL_PAGE
+): Promise<LocalAssetListing> {
   const folders = await findOutputFolders()
   const folder = installationId === undefined ? folders.shared : folders.ofBuild.get(installationId)
   const files = folder ? await collectMediaFiles(folder) : []
@@ -264,14 +301,13 @@ export async function listLocalAssets(installationId?: string): Promise<LocalAss
     const modifiedMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0
     found.push(localSummary(file, stat.size, modifiedMs))
   })
-  const newest = found
-    .sort((a, b) => b.createdAt!.localeCompare(a.createdAt!))
-    .slice(0, MAX_LOCAL_ASSETS)
-  await runPool(newest, STATS_AT_ONCE, addMediaFacts)
-  return {
-    assets: newest,
-    truncated: found.length > MAX_LOCAL_ASSETS
-  }
+  const direction = page.order === 'oldest' ? 1 : -1
+  const matching = page.kind ? found.filter((asset) => asset.kind === page.kind) : found
+  const shown = matching
+    .sort((a, b) => direction * a.createdAt!.localeCompare(b.createdAt!))
+    .slice(page.offset, page.offset + page.limit)
+  await runPool(shown, STATS_AT_ONCE, addMediaFacts)
+  return { assets: shown, total: matching.length, counts: countKinds(found) }
 }
 
 function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeImage | null {
@@ -424,7 +460,10 @@ export function registerOutputFilesScheme(): void {
 
 export function registerOutputFolderHandlers(): void {
   protocol.handle(OUTPUT_FILES_SCHEME, serveOutputFile)
-  ipcMain.handle(LIST_LOCAL_CHANNEL, (_event, installationId: unknown) =>
-    listLocalAssets(typeof installationId === 'string' ? installationId : undefined)
+  ipcMain.handle(LIST_LOCAL_CHANNEL, (_event, installationId: unknown, page: unknown) =>
+    listLocalAssets(
+      typeof installationId === 'string' ? installationId : undefined,
+      localPageRequest(page)
+    )
   )
 }

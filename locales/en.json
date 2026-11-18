@@ -72,13 +72,16 @@
   "assets": {
     "kindLabel": "Asset type",
     "buildPickerLabel": "Build",
-    "browseAssetsOf": "Browse the assets of",
+    "placeGroup": {
+      "cloud": "Comfy Cloud",
+      "computer": "This computer"
+    },
     "cloud": "Comfy Cloud",
     "sharedFolder": "Shared folder",
-    "outputFolder": "Output folder",
+    "sharedFolderHint": "Shared by your builds",
     "buildStatus": "{where} · {state}",
     "buildWhere": {
-      "local": "Local",
+      "local": "Own folder",
       "cloud": "Cloud"
     },
     "buildState": {
@@ -135,7 +138,6 @@
     "signIn": "Log in to Comfy Cloud",
     "noCloudBuildTitle": "This workspace has no Comfy Cloud build",
     "noCloudBuildBody": "Restart Comfy Desktop to add Comfy Cloud back.",
-    "truncated": "Showing the newest file only. | Showing the newest {count} files only.",
     "noMatchesOnPage": "No matching assets on this page",
     "noMatchesOnPageHint": "Try another page, type or search.",
     "cloudScanLimit": "Type filters cover the first {limit} Cloud outputs in this sort order.",

@@ -104,6 +104,7 @@ import {
   revealOutputFile,
   trashOutputFile,
   listLocalAssets,
+  localPageRequest,
   listOutputFolders,
   outputDirOverride,
   outputFilePath,
@@ -310,10 +311,11 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, '.hidden.png'))
     write(path.join(sharedDir, '.cache', 'inside-hidden.png'))
 
-    const { assets, truncated } = await listLocalAssets('Test Instance')
+    const { assets, total, counts } = await listLocalAssets('Test Instance')
 
     expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'mesh.glb', 'old.png'])
-    expect(truncated).toBe(false)
+    expect(total).toBe(3)
+    expect(counts).toEqual({ all: 3, image: 1, video: 1, audio: 0, '3d': 1 })
     const newVideo = path.join(sharedDir, 'video', 'new.mp4')
     expect(assets[0]).toEqual({
       id: newVideo,
@@ -392,15 +394,55 @@ describe('listLocalAssets', () => {
     }
   })
 
-  it('keeps only the newest files when the folders are very large, and says the list was cut', async () => {
+  it('reads a very large folder one page at a time and counts every file', async () => {
     for (let i = 0; i <= MAX_LOCAL_ASSETS; i++)
       write(path.join(sharedDir, `f${i}.png`), '', new Date(Date.UTC(2026, 0, 1, 0, 0, i)))
 
-    const { assets, truncated } = await listLocalAssets('Test Instance')
+    const first = await listLocalAssets('Test Instance')
+    const last = await listLocalAssets('Test Instance', {
+      offset: MAX_LOCAL_ASSETS,
+      limit: MAX_LOCAL_ASSETS,
+      order: 'newest'
+    })
 
-    expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
-    expect(assets.map((a) => a.name)).not.toContain('f0.png')
-    expect(truncated).toBe(true)
+    expect(first.assets).toHaveLength(MAX_LOCAL_ASSETS)
+    expect(first.assets.map((a) => a.name)).not.toContain('f0.png')
+    expect(first.total).toBe(MAX_LOCAL_ASSETS + 1)
+    expect(last.assets.map((a) => a.name)).toEqual(['f0.png'])
+  })
+
+  it('pages oldest first and keeps only the asked kind, still counting every kind', async () => {
+    write(path.join(sharedDir, 'a.png'), 'x', new Date('2026-10-01T00:00:00Z'))
+    write(path.join(sharedDir, 'b.mp4'), 'x', new Date('2026-10-02T00:00:00Z'))
+    write(path.join(sharedDir, 'c.png'), 'x', new Date('2026-10-03T00:00:00Z'))
+    write(path.join(sharedDir, 'd.png'), 'x', new Date('2026-10-04T00:00:00Z'))
+
+    const page = await listLocalAssets(undefined, {
+      offset: 1,
+      limit: 1,
+      order: 'oldest',
+      kind: 'image'
+    })
+
+    expect(page.assets.map((a) => a.name)).toEqual(['c.png'])
+    expect(page.total).toBe(3)
+    expect(page.counts).toEqual({ all: 4, image: 3, video: 1, audio: 0, '3d': 0 })
+  })
+
+  it('reads the first page for a page request it does not understand', () => {
+    const first = { offset: 0, limit: MAX_LOCAL_ASSETS, order: 'newest' }
+    expect(localPageRequest(undefined)).toEqual(first)
+    expect(localPageRequest({ offset: -1, limit: 10, order: 'newest' })).toEqual(first)
+    expect(localPageRequest({ offset: 0, limit: MAX_LOCAL_ASSETS + 1, order: 'newest' })).toEqual(
+      first
+    )
+    expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', kind: 'pdf' })).toEqual(first)
+    expect(localPageRequest({ offset: 20, limit: 10, order: 'oldest', kind: '3d' })).toEqual({
+      offset: 20,
+      limit: 10,
+      order: 'oldest',
+      kind: '3d'
+    })
   })
 
   it('keeps a new nested output when the shared folder has 5,000 older files', async () => {
@@ -411,11 +453,11 @@ describe('listLocalAssets', () => {
       new Date('2026-11-02T00:00:00Z')
     )
 
-    const { assets, truncated } = await listLocalAssets()
+    const { assets, total } = await listLocalAssets()
 
     expect(assets[0]?.name).toBe('newest.png')
     expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
-    expect(truncated).toBe(true)
+    expect(total).toBe(5_001)
   })
 
   it('does not follow links to folders or files outside, or walk without end', async () => {
@@ -428,7 +470,7 @@ describe('listLocalAssets', () => {
     write(path.join(deep, 'too-deep.png'))
     fs.symlinkSync(path.join(outsideDir, 'secret.png'), path.join(sharedDir, 'linked.png'))
 
-    expect(await listLocalAssets('Test Instance')).toEqual({ assets: [], truncated: false })
+    expect(await listLocalAssets('Test Instance')).toMatchObject({ assets: [], total: 0 })
   })
 })
 
