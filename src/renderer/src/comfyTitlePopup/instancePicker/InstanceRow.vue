@@ -82,7 +82,7 @@ function handleClick(): void {
         >
         <span
           v-if="isCurrent"
-          class="picker-row-current-pill flex-none rounded-[999px] bg-[color-mix(in_srgb,var(--text)_10%,transparent)] px-2 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-text-muted group-aria-selected/instance:bg-[color-mix(in_srgb,var(--text)_14%,transparent)] group-aria-selected/instance:text-text"
+          class="picker-row-current-pill flex-none rounded-[999px] px-2 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-text-muted shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text)_22%,transparent)] group-aria-selected/instance:text-text group-aria-selected/instance:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text)_30%,transparent)]"
         >
           {{ t('snapshots.current') }}
         </span>
