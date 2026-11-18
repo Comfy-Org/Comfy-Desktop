@@ -196,6 +196,7 @@
       "failed": "Template search isn't answering right now. Try again in a moment.",
       "noMatch": "No template fits this yet.",
       "resultsTitle": "Templates",
+      "resultsFor": "Templates for {names}",
       "partnerSwitch": "Partner templates",
       "signInToUse": "Sign in to use",
       "bestMatch": "Best match",

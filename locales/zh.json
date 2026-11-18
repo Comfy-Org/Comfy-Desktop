@@ -196,6 +196,7 @@
       "failed": "模板搜索暂时没有响应，请稍后再试。",
       "noMatch": "暂时没有合适的模板。",
       "resultsTitle": "模板",
+      "resultsFor": "{names} 的模板",
       "partnerSwitch": "合作伙伴模板",
       "signInToUse": "登录后使用",
       "bestMatch": "最佳匹配",

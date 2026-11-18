@@ -1054,6 +1054,7 @@ function posterAnswer(): TemplateSearchResponse {
       more: [],
       alsoTry: [],
       partnerSwitch: false,
+      matched: null,
       partnersShown: true
     }
   }

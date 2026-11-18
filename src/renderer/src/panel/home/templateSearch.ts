@@ -90,7 +90,7 @@ export function searchRows(result: TemplateSearchResult): SearchRow[] {
   const download = rowsOf('download', result.download)
   const lead =
     result.outcome === 'template' ? run[0] : result.outcome === 'download' ? download[0] : null
-  if (lead) lead.best = true
+  if (lead && !result.matched) lead.best = true
   const cards = [...run, ...download, ...rowsOf('more', result.more)]
   const leadFirst = lead ? [lead, ...cards.filter((row) => row !== lead)] : cards
   return [...familiesTogether(leadFirst), ...rowsOf('also', result.alsoTry)]
