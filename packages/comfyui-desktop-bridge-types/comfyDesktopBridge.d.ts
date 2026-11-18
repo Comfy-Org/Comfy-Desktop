@@ -411,6 +411,103 @@ export interface ComfyDesktopHostedOutputsBridge {
   showOutput(request: ComfyDesktopShowOutputRequest): Promise<boolean>
   onOutputAction(callback: (action: ComfyDesktopOutputAction) => void): () => void
 }
+/** A kind of picture an app input takes. Desktop tells it by the file's extension. */
+export type ComfyDesktopAssetKind = 'image' | 'video'
+/** Where a run goes: `local` is This computer, `cloud` is Comfy Cloud. */
+export type ComfyDesktopAssetWhere = 'local' | 'cloud'
+/**
+ * A picture Desktop holds for a page, named by an opaque `ref` that works
+ * only in the page document that received it. The page never learns a path.
+ */
+export interface ComfyDesktopAssetRef {
+  ref: string
+  /** The file name to show, such as `cutout_00001_.png`. */
+  name: string
+  kind: ComfyDesktopAssetKind
+  where: ComfyDesktopAssetWhere
+  /** The app that made it, the `<app>` in `output/apps/<app>/...`, or null. */
+  app: string | null
+  /** Milliseconds since the epoch: the file's modified time, or the Cloud asset's creation time. */
+  createdAt: number
+  /** Its size in bytes. */
+  size: number
+  /** A small `data:` URL whose long side is at most 256 px, or null when none is cheap to make. */
+  thumb: string | null
+}
+/**
+ * Why Desktop could not answer: `missing` (the file or reference is gone),
+ * `elsewhere` (the reference is for the other place, has no run value
+ * there, or Desktop could not reach it), `too-large`, `wrong-kind`,
+ * `not-a-file` (a folder),
+ * `no-path` (a pasted or made-up file with no path on disk) or `signed-out`.
+ */
+export type ComfyDesktopAssetError =
+  'missing' | 'elsewhere' | 'too-large' | 'wrong-kind' | 'not-a-file' | 'no-path' | 'signed-out'
+export interface ComfyDesktopAssetFailure {
+  error: ComfyDesktopAssetError
+}
+/** `limit` is 12 when absent, and at most 48. */
+export interface ComfyDesktopAssetRecentRequest {
+  kinds: ComfyDesktopAssetKind[]
+  where: ComfyDesktopAssetWhere
+  limit?: number
+}
+export interface ComfyDesktopAssetFileRequest {
+  kinds: ComfyDesktopAssetKind[]
+}
+export interface ComfyDesktopAssetValueRequest {
+  where: ComfyDesktopAssetWhere
+}
+export interface ComfyDesktopAssetBytes {
+  bytes: ArrayBuffer
+  mime: string
+}
+/** What to put in `LoadImage.image` or `LoadVideo.file`. */
+export interface ComfyDesktopAssetValue {
+  value: string
+}
+/**
+ * The person's pictures for the inputs of a Comfy page hosted in Desktop's
+ * Apps view. Desktop exposes it to that page as `window.comfyDesktopAssets`.
+ * The page gets references, never paths, and asks Desktop for the run value
+ * of a reference when a run starts. Absent on Desktop builds that predate it.
+ */
+export interface ComfyDesktopHostedAssetsBridge {
+  /**
+   * Newest first. `local`: the files under `output/apps/` of the build the
+   * page's local runs go to, which is the shared output folder by default, and
+   * no other output files. `cloud`: the signed-in workspace's Comfy Cloud
+   * outputs, as Desktop's Assets page lists them; empty when signed out.
+   */
+  recent(request: ComfyDesktopAssetRecentRequest): Promise<ComfyDesktopAssetRef[]>
+  /**
+   * A file the person dropped or chose. Only its path reaches Desktop, which
+   * takes it when it is a regular file (after following links), of a kind in
+   * `kinds` by its extension, and at most 2 GiB. A file with no path on disk
+   * answers `no-path`, and the page uploads it as before. The answer's
+   * `thumb` is null, since the page already has the file to show.
+   */
+  fromFile(
+    file: File,
+    request: ComfyDesktopAssetFileRequest
+  ): Promise<ComfyDesktopAssetRef | ComfyDesktopAssetFailure>
+  /** The bytes, for the page's preview and its saved run. Above 512 MiB answers `too-large`. Desktop fetches a Cloud reference with its own sign-in. */
+  read(ref: string): Promise<ComfyDesktopAssetBytes | ComfyDesktopAssetFailure>
+  /**
+   * The value for a run going to `where`. A file on this computer, for a run
+   * on This computer: inside the build's output folder
+   * `<path/with/forward/slashes> [output]`, inside its input folder
+   * `<path> [input]`, and anywhere else `desktop/<hash>.<ext> [input]` after
+   * Desktop copies it once into `input/desktop/`, reusing an earlier copy. A
+   * Cloud output, for a run on Comfy Cloud: `<loader path> [output]`. A
+   * reference for the other place answers `elsewhere`, and the page uploads
+   * the bytes from `read` as before. A file that is gone answers `missing`.
+   */
+  valueFor(
+    ref: string,
+    request: ComfyDesktopAssetValueRequest
+  ): Promise<ComfyDesktopAssetValue | ComfyDesktopAssetFailure>
+}
 export interface ComfyDesktop2TerminalBridge {
   subscribe(installationId?: string): Promise<TerminalRestore>
   unsubscribe(installationId?: string): Promise<void>

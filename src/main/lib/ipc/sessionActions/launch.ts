@@ -165,7 +165,7 @@ import {
   writeCampaignRecord
 } from '../../coreBetaCampaignFlags'
 import { getIdClass } from '../../deviceId'
-import { outputDirOverride } from '../../outputFolders'
+import { launchFoldersOf, outputDirOverride } from '../../outputFolders'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
 export function desktopFeatureFlags(
@@ -1598,6 +1598,7 @@ async function runLaunch(
         mode,
         installationName: inst.name,
         coreBetaArgs: coreBeta.applied.map(toBetaArgView),
+        launchFolders: launchFoldersOf(inst, launchCmd),
         getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
         flushTelemetry: () => {
           execTap.flushSummary()
@@ -2147,6 +2148,7 @@ async function runLaunch(
       mode,
       installationName: inst.name,
       coreBetaArgs: coreBeta.applied.map(toBetaArgView),
+      launchFolders: launchFoldersOf(inst, launchCmd),
       getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
       flushTelemetry: () => {
         execTap.flushSummary()

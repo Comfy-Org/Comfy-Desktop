@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   root,
   sharedDir,
+  sharedInputDir,
   ownDir,
   installDir,
   outsideDir,
@@ -14,7 +15,8 @@ const {
   fullImage,
   shownInFolder,
   trashed,
-  copiedImage
+  copiedImage,
+  runningSessions
 } = await vi.hoisted(async () => {
   const nodeFs = await import('node:fs')
   const nodeOs = await import('node:os')
@@ -25,6 +27,7 @@ const {
   return {
     root: base,
     sharedDir: nodePath.join(base, 'shared-output'),
+    sharedInputDir: nodePath.join(base, 'shared-input'),
     ownDir: nodePath.join(base, 'own-output'),
     installDir: nodePath.join(base, 'install'),
     outsideDir: nodePath.join(base, 'outside'),
@@ -34,7 +37,8 @@ const {
     fullImage: vi.fn(),
     shownInFolder: vi.fn(),
     trashed: vi.fn(async (file: string) => nodeFs.rmSync(file)),
-    copiedImage: vi.fn()
+    copiedImage: vi.fn(),
+    runningSessions: new Map<string, { launchFolders?: { output: string; input: string } }>()
   }
 })
 
@@ -55,15 +59,21 @@ vi.mock('electron', () => ({
   net: { fetch: (url: string) => fetchFile(url) },
   nativeImage: {
     createThumbnailFromPath: (file: string) => thumbnailImage(file),
-    createFromPath: (file: string) => fullImage(file)
+    createFromPath: (file: string) => fullImage(file),
+    createFromBuffer: (bytes: Buffer) => fullImage(bytes)
   }
 }))
 vi.mock('../installations', () => ({ list: () => installs() }))
 vi.mock('../settings', () => ({
-  get: (key: string) => (key === 'outputDir' ? sharedDir : undefined),
-  defaults: { outputDir: path.join(root, 'default-output') }
+  get: (key: string) =>
+    ({ outputDir: sharedDir, inputDir: sharedInputDir })[key as 'outputDir' | 'inputDir'],
+  defaults: {
+    outputDir: path.join(root, 'default-output'),
+    inputDir: path.join(root, 'default-input')
+  }
 }))
 vi.mock('./ipc/shared', () => ({
+  _runningSessions: runningSessions,
   sourceMap: {
     standalone: { category: 'local' },
     desktop: { category: 'local', managesOwnPaths: true },
@@ -71,7 +81,8 @@ vi.mock('./ipc/shared', () => ({
   }
 }))
 vi.mock('./models', () => ({
-  installOutputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'output')
+  installOutputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'output'),
+  installInputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'input')
 }))
 vi.mock('./assets', () => ({
   assetKind: (name: string) =>
@@ -85,9 +96,11 @@ import {
   MAX_FOLDER_DEPTH,
   MAX_LOCAL_ASSETS,
   THUMBNAIL_WAIT_MS,
+  comfyFoldersOf,
   comfyOutputPath,
   copyOutputImage,
   hasOutputFolder,
+  launchFoldersOf,
   revealOutputFile,
   trashOutputFile,
   listLocalAssets,
@@ -95,7 +108,9 @@ import {
   outputDirOverride,
   outputFilePath,
   outputFileUrl,
-  serveOutputFile
+  serveOutputFile,
+  thumbnailDataUrl,
+  thumbnailDataUrlFromBytes
 } from './outputFolders'
 
 function install(name: string, extra: Record<string, unknown> = {}): InstallationRecord {
@@ -135,6 +150,7 @@ function write(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  runningSessions.clear()
   thumbnailImage.mockReset()
   fullImage.mockReset()
   for (const dir of [sharedDir, ownDir, outsideDir, installDir])
@@ -176,6 +192,94 @@ describe('hasOutputFolder', () => {
       'a build that manages its own paths'
     ).toBe(false)
     expect(hasOutputFolder(install('a', { sourceId: 'gone' })), 'an unknown source').toBe(false)
+  })
+})
+
+describe('comfyFoldersOf', () => {
+  it("gives a build's output and input folders, the shared ones by default", () => {
+    expect(comfyFoldersOf(install('a'))).toEqual({ output: sharedDir, input: sharedInputDir })
+    expect(
+      comfyFoldersOf(
+        install('a', {
+          useSharedOutput: false,
+          outputDir: ownDir,
+          useSharedInput: false,
+          inputDir: path.join(root, 'own-input')
+        })
+      )
+    ).toEqual({ output: ownDir, input: path.join(root, 'own-input') })
+    expect(
+      comfyFoldersOf(install('a', { useSharedOutput: false, useSharedInput: false })),
+      'a build that keeps both inside its install'
+    ).toEqual({
+      output: path.join(installDir, 'ComfyUI', 'output'),
+      input: path.join(installDir, 'ComfyUI', 'input')
+    })
+  })
+
+  it('gives the shared folders when no build is known, and none for Cloud', () => {
+    expect(comfyFoldersOf(null)).toEqual({ output: sharedDir, input: sharedInputDir })
+    expect(comfyFoldersOf(install('a', { sourceId: 'cloud' }))).toEqual({
+      output: null,
+      input: null
+    })
+    expect(comfyFoldersOf(install('a', { sourceId: 'desktop' }))).toEqual({
+      output: null,
+      input: null
+    })
+  })
+})
+
+describe('comfyFoldersOf a running build', () => {
+  it('gives the folders it was launched with, not the ones the settings name now', () => {
+    const launchedOutput = path.join(root, 'output-at-launch')
+    const launchedInput = path.join(root, 'input-at-launch')
+    runningSessions.set('a', { launchFolders: { output: launchedOutput, input: launchedInput } })
+
+    expect(comfyFoldersOf(install('a'))).toEqual({ output: launchedOutput, input: launchedInput })
+    expect(comfyFoldersOf(install('b')), 'a build that is not running').toEqual({
+      output: sharedDir,
+      input: sharedInputDir
+    })
+  })
+
+  it('gives no folders when the launch folders are not known', () => {
+    runningSessions.set('a', {})
+
+    expect(comfyFoldersOf(install('a'))).toEqual({ output: null, input: null })
+  })
+})
+
+describe('launchFoldersOf', () => {
+  it('reads the folders from the arguments ComfyUI was started with', () => {
+    const args = ['main.py', '--input-directory', '/old-input', '--output-directory', '/old-output']
+
+    expect(launchFoldersOf(install('a'), { args })).toEqual({
+      output: '/old-output',
+      input: '/old-input'
+    })
+  })
+
+  it('takes the last of a repeated flag, written either way, as ComfyUI does', () => {
+    const args = ['--input-directory', '/first', '--input-directory=/second']
+
+    expect(launchFoldersOf(install('a'), { args }).input).toBe('/second')
+  })
+
+  it("falls back to ComfyUI's own folders when no folder was passed", () => {
+    expect(launchFoldersOf(install('a'), { args: ['main.py'] })).toEqual({
+      output: path.join(installDir, 'ComfyUI', 'output'),
+      input: path.join(installDir, 'ComfyUI', 'input')
+    })
+  })
+
+  it('gives no folders when Desktop could not pass them', () => {
+    const none = { output: null, input: null }
+    const args = ['--input-directory', '/in']
+
+    expect(launchFoldersOf(install('a'), { args, skipSharedPaths: true })).toEqual(none)
+    expect(launchFoldersOf(install('a'), {})).toEqual(none)
+    expect(launchFoldersOf(install('a', { sourceId: 'desktop' }), { args })).toEqual(none)
   })
 })
 
@@ -552,6 +656,37 @@ describe('serveOutputFile', () => {
       new Request(outputFileUrl(path.join(sharedDir, 'broken.png'), 1))
     )
     expect(await none.text()).toMatch(/^file file:\/\/.*broken\.png$/)
+  })
+})
+
+describe('small thumbnails as data URLs', () => {
+  it('scales the long side to the size asked for', async () => {
+    write(path.join(sharedDir, 'small.png'))
+    const resize = vi.fn(() => ({ toJPEG: () => Buffer.from('tiny') }))
+    const big = { isEmpty: () => false, getSize: () => ({ width: 1000, height: 2000 }), resize }
+    thumbnailImage.mockResolvedValueOnce(big)
+    fullImage.mockReturnValueOnce(big)
+
+    expect(await thumbnailDataUrl(path.join(sharedDir, 'small.png'), 256)).toBe(
+      `data:image/jpeg;base64,${Buffer.from('tiny').toString('base64')}`
+    )
+    expect(resize).toHaveBeenCalledWith({ width: 128, height: 256 })
+  })
+
+  it('makes one from bytes, or none when they are not a picture', () => {
+    const resize = vi.fn(() => ({ toJPEG: () => Buffer.from('cloud') }))
+    fullImage.mockReturnValueOnce({
+      isEmpty: () => false,
+      getSize: () => ({ width: 512, height: 512 }),
+      resize
+    })
+    expect(thumbnailDataUrlFromBytes(new Uint8Array([1, 2]), 256)).toBe(
+      `data:image/jpeg;base64,${Buffer.from('cloud').toString('base64')}`
+    )
+    expect(resize).toHaveBeenCalledWith({ width: 256, height: 256 })
+
+    fullImage.mockReturnValueOnce({ isEmpty: () => true })
+    expect(thumbnailDataUrlFromBytes(new Uint8Array([1]), 256)).toBeNull()
   })
 })
 
