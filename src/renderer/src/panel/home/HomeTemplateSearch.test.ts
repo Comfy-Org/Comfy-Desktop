@@ -1111,7 +1111,7 @@ describe('HomeTemplateSearch cards', () => {
     expect(inView(wrapper, SELECTED)).toBe(true)
   })
 
-  it('fills a page wider than the bar, and keeps a download chip inside its card', async () => {
+  it('fills a page wider than the bar, and keeps the download chips inside their card', async () => {
     const wrapper = mountSearch()
     page(wrapper).style.width = '1120px'
     searchTemplates.mockResolvedValue(
@@ -1125,23 +1125,15 @@ describe('HomeTemplateSearch cards', () => {
     expect(list.width).toBeGreaterThan(wrapper.get('label').element.getBoundingClientRect().width)
     expect(list.width).toBeCloseTo(page(wrapper).clientWidth, 0)
     const mural = wrapper.findAll('[role="option"]').at(-1)!
-    const chip = mural.get('[data-testid="home-template-search-needs-download"]')
-    expect(chip.text()).toContain('about')
-    expect(chip.attributes('title')).toBe(chip.text())
-    const label = chip.get('.truncate').element
-    expect(label.scrollWidth, 'the label is longer than the card has room for').toBeGreaterThan(
-      label.clientWidth
-    )
-    const text = document.createRange()
-    text.selectNodeContents(label)
-    const glyphs = text.getBoundingClientRect()
-    const box = label.getBoundingClientRect()
-    expect(glyphs.top, 'nothing above the label is cut').toBeGreaterThanOrEqual(box.top - 0.5)
-    expect(glyphs.bottom, 'no descender is cut').toBeLessThanOrEqual(box.bottom + 0.5)
-    expect(chip.element.scrollWidth).toBeLessThanOrEqual(chip.element.clientWidth)
-    expect(chip.element.getBoundingClientRect().right).toBeLessThanOrEqual(
-      mural.element.getBoundingClientRect().right
-    )
+    const card = mural.element.getBoundingClientRect()
+    expect(card.width, 'five cards to a row').toBeLessThan(220)
+    for (const testId of [
+      'home-template-search-needs-download',
+      'home-template-search-download-size'
+    ]) {
+      const chip = mural.get(`[data-testid="${testId}"]`).element.getBoundingClientRect()
+      expect(chip.right, testId).toBeLessThanOrEqual(card.right)
+    }
   })
 
   it('scrolls back to the top, heading included, when the highlight wraps to the first row', async () => {
@@ -1300,7 +1292,10 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
     await searchFor(wrapper, 'a poster')
     const card = wrapper.findAll('[role="option"]')[1]!
     expect(card.get('[data-testid="home-template-search-needs-download"]').text()).toBe(
-      'Needs download · about 18 GB'
+      'Needs download'
+    )
+    expect(card.get('[data-testid="home-template-search-download-size"]').text()).toBe(
+      'about 18 GB'
     )
   })
 
@@ -1461,6 +1456,7 @@ describe('HomeTemplateSearch open templates and the partner switch', () => {
     expect(card.get('[data-testid="home-template-search-needs-download"]').text()).toBe(
       'Needs download'
     )
+    expect(card.find('[data-testid="home-template-search-download-size"]').exists()).toBe(false)
   })
 })
 
