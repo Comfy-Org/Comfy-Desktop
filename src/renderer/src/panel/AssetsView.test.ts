@@ -717,6 +717,26 @@ describe('AssetsView', () => {
     expect(openOutputFolder).toHaveBeenCalledExactlyOnceWith('lab')
   })
 
+  it('closes the picker with one Escape when Show in Finder has focus', async () => {
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    await openBuildPicker(wrapper)
+    const press = (key: string) =>
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+
+    document.querySelector<HTMLElement>('[data-testid="assets-build-lab"]')!.focus()
+    press('ArrowDown')
+    await flushPromises()
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('assets-place-reveal-lab')
+
+    press('Escape')
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="assets-place-reveal-lab"]')).toBeNull()
+    expect(wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded')).toBe(
+      'false'
+    )
+  })
+
   it('says when a folder does not open', async () => {
     openOutputFolder.mockResolvedValue(false)
     const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
