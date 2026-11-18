@@ -32,6 +32,7 @@ vi.mock('../../templateSearch/searchProcess', () => ({
   changesBuildEnv: (actionId: string) => actionId !== 'rename',
   isBuildBusy: (installationId: string) => mocks.busy.has(installationId),
   templateSearchOn: () => mocks.searchOn,
+  templateSearchPartnersOn: () => true,
   createSearchProcess: vi.fn()
 }))
 vi.mock('../../templateSearch/desktopSearch', () => ({ createDesktopSearch: vi.fn() }))
@@ -39,7 +40,7 @@ vi.mock('../../templateSearch/desktopSearch', () => ({ createDesktopSearch: vi.f
 import { registerTemplateSearchHandlers, STARTUP_SETTLE_MS } from './registerTemplateSearchHandlers'
 import { sessionLifecycleEvents } from './shared'
 import { createDesktopSearch } from '../../templateSearch/desktopSearch'
-import { templateSearchOn } from '../../templateSearch/searchProcess'
+import { templateSearchOn, templateSearchPartnersOn } from '../../templateSearch/searchProcess'
 import {
   CLAIM_WINDOW_MS,
   dropTemplateOpen,
@@ -64,7 +65,8 @@ const RESULT: TemplateSearchResult = {
   reply: null,
   run: [],
   download: [],
-  alsoTry: []
+  alsoTry: [],
+  partnerSwitch: false
 }
 const LOCAL = { id: 'local-1', sourceId: 'standalone' }
 const CONSOLE = { id: 'console-1', sourceId: 'standalone', launchMode: 'console' }
@@ -79,6 +81,7 @@ function fakes(
     process: {
       decide: vi.fn(),
       prepare: vi.fn(async () => undefined),
+      partnerSwitch: vi.fn(() => false),
       download: vi.fn(async () => undefined),
       downloadInBackground: vi.fn(async () => true),
       onBuildAction: vi.fn(async () => undefined),
@@ -134,7 +137,7 @@ beforeEach(() => {
 })
 
 describe('template-search:search', () => {
-  it('gives search the same on switch that opening a template uses', () => {
+  it('gives search the same on switch that opening a template uses, and the partner setting', () => {
     const { process } = fakes()
     registerTemplateSearchHandlers({
       isLocalInstallation: () => true,
@@ -142,7 +145,9 @@ describe('template-search:search', () => {
       settled: new Promise(() => {}),
       process
     })
-    expect(vi.mocked(createDesktopSearch).mock.calls[0]![0].searchOn).toBe(templateSearchOn)
+    const options = vi.mocked(createDesktopSearch).mock.calls[0]![0]
+    expect(options.searchOn).toBe(templateSearchOn)
+    expect(options.partnersOn).toBe(templateSearchPartnersOn)
   })
 
   it('passes the trimmed request and the build to search, and returns its answer', async () => {

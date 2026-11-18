@@ -144,6 +144,10 @@ export function templateSearchOn(): boolean {
   return configuredZipapp() !== null
 }
 
+export function templateSearchPartnersOn(): boolean {
+  return settings.get('templateSearchPartners') !== false
+}
+
 export function sidecarPythons(
   builds: InstallationRecord[],
   isLocalInstallation: (installation: InstallationRecord) => boolean,

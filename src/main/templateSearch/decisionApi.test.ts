@@ -155,7 +155,7 @@ describe('parseDecision', () => {
   })
 
   it('still marks an api_ template as partner when the build index does not say', () => {
-    const describe = (id: string) => ({ title: id, thumbnailUrl: null, partner: false })
+    const describe = (id: string) => ({ title: id, thumbnailUrl: null, partner: false, size: null })
     const body = decision({
       split: { run: [candidate('as_given', 'api_partner_template')], download: [] }
     })
@@ -174,7 +174,8 @@ describe('parseDecision', () => {
     const describe = (id: string) => ({
       title: id,
       thumbnailUrl: null,
-      partner: id === 'poster_template'
+      partner: id === 'poster_template',
+      size: null
     })
     const [poster, logo] = parseDecision(decision(), describe)!.run
     expect(poster).toMatchObject({ templateId: 'poster_template', partner: true })
@@ -187,7 +188,8 @@ describe('parseDecision', () => {
         ? {
             title: 'Bake sale poster',
             thumbnailUrl: 'https://thumbs.example.test/poster.webp',
-            partner: false
+            partner: false,
+            size: null
           }
         : null
     const [poster, logo] = parseDecision(decision(), describe)!.run

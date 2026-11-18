@@ -16,7 +16,8 @@ vi.mock('../lib/modelDownloadPaths', () => ({
     extraPaths: [],
     downloadBaseDir: '/build-models'
   }),
-  modelOnDisk: mocks.modelOnDisk
+  modelOnDisk: mocks.modelOnDisk,
+  modelBytesOnDisk: async () => null
 }))
 vi.mock('./buildRuntime', () => ({
   buildRuntime: (build: { id: string }) => ({
@@ -54,29 +55,41 @@ const ANSWER = {
 
 const OFF: SidecarDecision = { kind: 'unavailable', availability: { kind: 'off' } }
 
-function setup(answer: SidecarDecision = { kind: 'answer', body: ANSWER }, on = true) {
+function setup(
+  answer: SidecarDecision = { kind: 'answer', body: ANSWER },
+  on = true,
+  { partnersOn = true, partnerSwitch = false } = {}
+) {
   let clock = 0
   const decide = vi.fn(async (_body: unknown) => answer)
+  const prepare = vi.fn(async () => undefined)
   const readTemplates = vi.fn(
     async (_sitePackages: string, _hasModel: HasModel): Promise<BuildTemplates> => ({
       installed: ['poster_template'],
       labels: new Map([
         [
           'poster_template',
-          { title: 'Bake sale poster', thumbnailUrl: 'https://t/p.webp', partner: false }
+          {
+            title: 'Bake sale poster',
+            thumbnailUrl: 'https://t/p.webp',
+            partner: false,
+            size: null
+          }
         ]
-      ])
+      ]),
+      downloadBytes: async (id) => (id === 'mural_template' ? 18_000_000_000 : null)
     })
   )
   const search = createDesktopSearch({
-    process: { decide },
+    process: { decide, prepare, partnerSwitch: () => partnerSwitch },
     isLocalInstallation: (b) => b.sourceId === 'standalone',
     terminalEnvOf: () => null,
     searchOn: () => on,
+    partnersOn: () => partnersOn,
     readTemplates,
     now: () => clock
   })
-  return { search, decide, readTemplates, tick: (ms: number) => (clock += ms) }
+  return { search, decide, prepare, readTemplates, tick: (ms: number) => (clock += ms) }
 }
 
 beforeEach(() => {
