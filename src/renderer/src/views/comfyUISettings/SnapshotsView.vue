@@ -5,7 +5,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import {
-  Camera,
+  Plus,
   ChevronRight,
   Download,
   History,
@@ -606,7 +606,7 @@ async function handleImport(): Promise<void> {
           :data-testid="TID.snapshotsSaveCta"
           @click="handleSave"
         >
-          <Camera :size="14" aria-hidden="true" />
+          <Plus :size="14" aria-hidden="true" />
           <span>{{ t('snapshots.createSnapshot') }}</span>
         </Button>
       </div>
