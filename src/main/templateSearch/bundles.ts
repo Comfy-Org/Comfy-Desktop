@@ -12,6 +12,7 @@ const PROGRESS_EVERY_MS = 250
 const UPDATE_CHECK_MS = 24 * 60 * 60_000
 const SHA256 = /^[0-9a-f]{64}$/
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+const UPDATE_DESKTOP: TemplateSearchAvailability = { kind: 'unavailable', reason: 'update_desktop' }
 
 export interface Supported {
   sidecar: string
@@ -47,6 +48,7 @@ export interface BundleStoreDeps {
   }) => Promise<TransferResult>
   supports: () => Promise<Supported | null>
   check: (bundleDir: string) => Promise<boolean>
+  isOnline: () => boolean
   onAvailability: (availability: TemplateSearchAvailability) => void
   now?: () => number
 }
@@ -306,16 +308,16 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     }
   }
 
-  async function fetchNewest(base: string): Promise<void> {
+  async function fetchNewest(base: string): Promise<boolean> {
     progress = { received: 0, total: 0 }
     await clearPartials()
     const found = await wanted(base)
-    if (!found) return
+    if (!found) return false
     const local = await localVersions()
     const current = local.find((b) => b.version === found.entry.version)
     if (current) {
       const onDisk = await fs.promises.readFile(path.join(current.dir, MANIFEST)).catch(() => null)
-      if (onDisk && sha256Of(onDisk) === found.entry.manifestSha256) return
+      if (onDisk && sha256Of(onDisk) === found.entry.manifestSha256) return true
     }
     const manifest = parseManifest(JSON.parse(found.raw.toString('utf8')))
     if (!manifest || manifest.version !== found.entry.version) {
@@ -324,6 +326,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     await fetchFiles(base, manifest.files)
     await assemble(manifest.version, found.raw, manifest.files)
     await removeUnlistedFiles()
+    return true
   }
 
   function download({ quietly = false } = {}): Promise<void> {
@@ -338,7 +341,9 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     }
     quiet = quietly
     downloading = fetchNewest(base)
-      .then(() => report({ kind: 'idle' }))
+      .then(async (readable) =>
+        report(readable || (await newest()) ? { kind: 'idle' } : UPDATE_DESKTOP)
+      )
       .catch(() => report({ kind: 'unavailable', reason: 'download_failed' }))
       .finally(() => {
         downloading = null
@@ -363,15 +368,9 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       quiet = false
       return { kind: 'downloading', ...progress }
     }
-    try {
-      const found = await wanted(base)
-      if (!found) return { kind: 'unavailable', reason: 'update_desktop' }
-      const manifest = parseManifest(JSON.parse(found.raw.toString('utf8')))
-      const bytes = manifest?.files.reduce((sum, f) => sum + f.size, 0) ?? 0
-      return { kind: 'needs_download', bytes }
-    } catch {
-      return { kind: 'unavailable', reason: 'offline' }
-    }
+    if (!deps.isOnline()) return { kind: 'unavailable', reason: 'offline' }
+    void download()
+    return { kind: 'downloading', ...progress }
   }
 
   return { newest, discard, prepare, download }

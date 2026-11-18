@@ -96,7 +96,7 @@ function exited(child: ChildProcess): boolean {
   return (child.exitCode ?? child.signalCode) !== null
 }
 
-function setup() {
+function setup({ online = false } = {}) {
   const announced: unknown[] = []
   const search = createSearchProcess({
     isLocalInstallation: () => true,
@@ -104,7 +104,8 @@ function setup() {
     broadcast: (a) => announced.push(a),
     spawnHelper,
     storeRoot: path.join(root, 'store'),
-    cacheRoot: path.join(root, 'cache')
+    cacheRoot: path.join(root, 'cache'),
+    isOnline: () => online
   })
   return { search, announced }
 }
@@ -209,6 +210,47 @@ describe('createSearchProcess', () => {
 
     expect(announced.at(-1)).toEqual({ kind: 'idle' })
     expect(bundlesOnDisk()).toEqual(['1.0.0'])
+  })
+
+  it('downloads the model in the background, saying nothing, once a free local build can tell which version it reads', async () => {
+    mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
+    serveBundle({ 'catalog.json': '{}' })
+    const { search, announced } = setup({ online: true })
+    expect(await search.downloadInBackground()).toBe(true)
+    expect(bundlesOnDisk()).toEqual(['1.0.0'])
+    expect(announced).toEqual([])
+
+    const fetches = mocks.fetch.mock.calls.length
+    expect(await search.downloadInBackground()).toBe(true)
+    expect(mocks.fetch.mock.calls.length, 'nothing is fetched once the bundle is on disk').toBe(
+      fetches
+    )
+  })
+
+  it.each([
+    ['search is off', { enabled: false, online: true, builds: [{ id: 'ok', lastLaunchedAt: 1 }] }],
+    [
+      'Desktop is offline',
+      { enabled: true, online: false, builds: [{ id: 'ok', lastLaunchedAt: 1 }] }
+    ],
+    ['there is no local build', { enabled: true, online: true, builds: [] }]
+  ])('leaves the background download for later while %s', async (_case, given) => {
+    mocks.settings.templateSearchEnabled = given.enabled
+    mocks.builds = given.builds
+    serveBundle({ 'catalog.json': '{}' })
+    const { search } = setup({ online: given.online })
+    expect(await search.downloadInBackground()).toBe(false)
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(spawned).toEqual([])
+  })
+
+  it('leaves the background download for later while the only build is busy', async () => {
+    mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
+    mocks.activeOperations.mockReturnValue([{ installationId: 'ok', actionId: 'copy-update' }])
+    serveBundle({ 'catalog.json': '{}' })
+    const { search } = setup({ online: true })
+    expect(await search.downloadInBackground()).toBe(false)
+    expect(mocks.fetch).not.toHaveBeenCalled()
   })
 
   it('gives up on an index that keeps coming past the size limit', async () => {
