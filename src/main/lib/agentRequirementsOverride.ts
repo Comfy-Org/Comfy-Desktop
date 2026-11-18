@@ -345,6 +345,34 @@ export function corePinsPlaceholderAgent(coreText: string): boolean {
   })
 }
 
+const UNPINNED_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(?:#.*)?$/
+
+export function coreLeavesAgentUnpinned(coreText: string): boolean {
+  const name = agentPackage(coreText)
+  return coreText.split(/\r?\n/).some((line) => {
+    const match = line.match(UNPINNED_LINE)
+    return !!match && normalizePackageName(match[1]!) === name
+  })
+}
+
+export interface PlaceholderFloor {
+  placeholder: string
+  constraints: string
+}
+
+export function placeholderAgentFloor(
+  coreText: string,
+  pipListOutput: string
+): PlaceholderFloor | null {
+  if (!coreLeavesAgentUnpinned(coreText)) return null
+  const name = agentPackage(coreText)!
+  const version = parseInstalled(pipListOutput)?.find(
+    (p) => normalizePackageName(p.name) === name
+  )?.version
+  if (version === undefined || !PLACEHOLDER_VERSION.test(version)) return null
+  return { placeholder: `${name}==${version}`, constraints: `${name}>0.0.0\n` }
+}
+
 export function keepableAgent(
   coreText: string,
   pipListOutput: string,

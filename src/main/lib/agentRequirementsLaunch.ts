@@ -18,12 +18,14 @@ import {
   installedConstraints,
   isRevertedFor,
   corePinsPlaceholderAgent,
+  coreLeavesAgentUnpinned,
   keepableAgent,
   normalizePackageName,
   overrideSignature,
   parseInstalled,
   parseAgentRequirementsOverride,
-  pinsOverBareLines
+  pinsOverBareLines,
+  placeholderAgentFloor
 } from './agentRequirementsOverride'
 import type {
   AgentOverrideState,
@@ -31,6 +33,7 @@ import type {
   OverrideDecision,
   OverridePins,
   OverrideRefusal,
+  PlaceholderFloor,
   PrefetchReport
 } from './agentRequirementsOverride'
 
@@ -429,6 +432,7 @@ export async function installAgentRequirements(
   }
   let deferred = false
   let kept: string | null = null
+  let floor: PlaceholderFloor | null = null
   const defer = async (coreMissing: boolean): Promise<void> => {
     if (deferred || !onDeferred) return
     deferred = true
@@ -437,7 +441,9 @@ export async function installAgentRequirements(
       : null
     if (signal?.aborted || (coreMissing && coreText === null)) return
     const steps = [
-      ...(coreText === null ? [] : [{ text: coreText }]),
+      ...(coreText === null
+        ? []
+        : [floor ? { text: coreText, constraints: floor.constraints } : { text: coreText }]),
       ...(overrideStep ? [overrideStep] : [])
     ]
     const placeholder = corePinsPlaceholderAgent(
@@ -472,7 +478,15 @@ export async function installAgentRequirements(
     )
     return { ...decision, kept }
   }
-  const core = await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`)
+  if (decision === undefined) {
+    floor = await installedPlaceholderFloor(plan, signal)
+    if (signal?.aborted) return decision
+  }
+  if (floor)
+    sendOutput(
+      `Replacing the placeholder ${floor.placeholder} with a released agent: ComfyUI's agent requirements name the agent without a version\n`
+    )
+  const core = await runCore(plan, run, floor)
   if (signal?.aborted) return decision
   if (!core.ok) {
     if (cannotDownload(core)) onCoreFailed?.(core.report)
@@ -487,6 +501,38 @@ export async function installAgentRequirements(
     await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`, undefined, false)
   }
   return retried
+}
+
+async function installedPlaceholderFloor(
+  plan: AgentRequirementsInstall,
+  signal?: AbortSignal
+): Promise<PlaceholderFloor | null> {
+  const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => null)
+  if (coreText === null || !coreLeavesAgentUnpinned(coreText)) return null
+  const listed = await listInstalled(plan, signal)
+  return listed === null ? null : placeholderAgentFloor(coreText, listed)
+}
+
+async function runCore(
+  plan: AgentRequirementsInstall,
+  run: CachedRun,
+  floor: PlaceholderFloor | null
+): Promise<CachedResult> {
+  const tag = attemptTag()
+  const tempName = `.launch-agent-reqs-${tag}.txt`
+  if (!floor) return run(plan.reqPath, tempName)
+  const name = `.launch-agent-reqs-floor-${tag}-constraints.txt`
+  const at = path.join(plan.installPath, name)
+  try {
+    await fs.promises.writeFile(at, floor.constraints, 'utf-8')
+  } catch {
+    return run(plan.reqPath, tempName)
+  }
+  try {
+    return await run(plan.reqPath, tempName, { name, text: floor.constraints })
+  } finally {
+    void fs.promises.unlink(at).catch(() => {})
+  }
 }
 
 export async function installedWorkingAgent(
