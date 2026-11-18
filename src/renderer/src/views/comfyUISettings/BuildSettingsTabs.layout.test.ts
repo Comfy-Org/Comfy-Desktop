@@ -239,7 +239,7 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     }
   })
 
-  it('keeps every models folder in one card, split by inset 1px dividers', async () => {
+  it('keeps every models folder in one card, split by 1px dividers that run edge to edge', async () => {
     const root = await mountStorage(width)
     const cards = root.querySelectorAll<HTMLElement>('.models-dir-card')
     expect(cards, 'one card holds every models folder').toHaveLength(1)
@@ -258,8 +258,10 @@ describe.each(Object.entries(WIDTHS))('build settings tabs at %s width', (_name,
     expect(dividers, 'one divider between each pair of rows').toHaveLength(rows.length - 1)
     dividers.forEach((divider, i) => {
       expect(Math.round(divider.height), 'divider is 1px').toBe(1)
-      expect(Math.round(divider.left - box.left), 'divider starts at the 18px padding').toBe(18)
-      expect(Math.round(box.right - divider.right), 'divider ends at the 18px padding').toBe(18)
+      expect(Math.round(divider.left - box.left), 'divider starts on the card edge').toBe(0)
+      expect(Math.round(divider.width), 'divider is as wide as the card').toBe(
+        Math.round(box.width)
+      )
       expect(divider.top, 'divider sits below its row').toBeGreaterThanOrEqual(rows[i]!.bottom)
       expect(divider.bottom, 'divider sits above the next row').toBeLessThanOrEqual(
         rows[i + 1]!.top

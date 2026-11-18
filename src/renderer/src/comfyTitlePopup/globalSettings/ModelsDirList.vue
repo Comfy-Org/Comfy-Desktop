@@ -132,7 +132,7 @@ const rows = computed(() =>
       <template v-for="row in rows" :key="row.path">
         <div
           v-if="row.index > 0"
-          class="models-dir-divider mx-3 h-px shrink-0 bg-[var(--chooser-surface-border)]"
+          class="models-dir-divider -mx-1.5 h-px shrink-0 bg-[var(--chooser-surface-border)]"
           aria-hidden="true"
         />
         <div
