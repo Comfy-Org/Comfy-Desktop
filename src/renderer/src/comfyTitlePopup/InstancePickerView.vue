@@ -190,9 +190,9 @@ function closeSearchIfEmpty(): void {
 }
 
 async function onSearchEscape(event: KeyboardEvent): Promise<void> {
+  event.stopPropagation()
   if (event.isComposing) return
   event.preventDefault()
-  event.stopPropagation()
   if (searchQuery.value) {
     searchQuery.value = ''
     return

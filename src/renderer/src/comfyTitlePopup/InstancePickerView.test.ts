@@ -412,11 +412,19 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       await flushPromises()
       const input = wrapper.get('.picker-search input')
       await input.setValue('build')
-      input.element.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true })
-      )
+      const reachedPopup = vi.fn()
+      wrapper.element.addEventListener('keydown', reachedPopup)
+      const composingEscape = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        isComposing: true,
+        bubbles: true,
+        cancelable: true
+      })
+      input.element.dispatchEvent(composingEscape)
       await flushPromises()
       expect((input.element as HTMLInputElement).value).toBe('build')
+      expect(composingEscape.defaultPrevented).toBe(false)
+      expect(reachedPopup).not.toHaveBeenCalled()
     })
 
     it('filters install rows by search query under the Builds title', async () => {

@@ -373,7 +373,7 @@ function revealActiveTab(): void {
 }
 watch([activeTab, tabStrip], revealActiveTab, { flush: 'post' })
 watch(
-  [() => tabs.value.map((tab) => tab.key).join(), () => showUpdateBadge.value],
+  () => tabs.value.map((tab) => tab.key).join(),
   () => {
     observeTabStrip()
     measureTabStrip()
@@ -381,6 +381,7 @@ watch(
   },
   { flush: 'post' }
 )
+watch(() => showUpdateBadge.value, measureTabStrip, { flush: 'post' })
 function onTabValueChange(value: string | number): void {
   const tab = tabs.value.find((item) => item.key === value)
   if (tab) selectTab(tab.key)
