@@ -1157,6 +1157,23 @@ describe('indexKind', () => {
   })
 })
 
+describe('reportOverrideDecision: a launch the cache retry rescued', () => {
+  it('flags it only when the launch says so', () => {
+    const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
+    try {
+      const applied = { decision: 'applied', pins: pins({ 'comfy-agent': '0.2.3' }) } as const
+      reportOverrideDecision('i', applied, 'pypi', true)
+      reportOverrideDecision('i', applied, 'pypi')
+
+      expect(
+        emit.mock.calls.map(([, props]) => (props as Record<string, unknown>).cache_retry_rescued)
+      ).toEqual([true, false])
+    } finally {
+      emit.mockRestore()
+    }
+  })
+})
+
 describe('reportOverrideDecision: a kept agent', () => {
   it('reports one event per decision, the kept agent on the original one', () => {
     const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})

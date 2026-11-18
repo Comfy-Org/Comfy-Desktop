@@ -419,7 +419,8 @@ export function indexKind(mirrors: {
 export function reportOverrideDecision(
   installationId: string,
   d: OverrideDecision,
-  index: IndexKind | null = null
+  index: IndexKind | null = null,
+  cacheRetryRescued = false
 ): void {
   try {
     const pins = d.pins ? overrideSignature(d.pins) : null
@@ -439,7 +440,8 @@ export function reportOverrideDecision(
       budget_ms: install?.budgetMs ?? null,
       error_tail: install?.errorTail ?? null,
       kept_agent: kept,
-      index
+      index,
+      cache_retry_rescued: cacheRetryRescued
     })
   } catch {}
 }
@@ -565,6 +567,8 @@ export interface PrefetchReport {
   elapsedMs: number
   downloadsStarted: number
   downloadsFinished: number
+  downloadedBytes: number
+  fetchMs: number
   errorTail: string | null
   uvVersion: string | null
 }
@@ -585,6 +589,8 @@ export function reportAgentPrefetch(
       elapsed_ms: r.elapsedMs,
       downloads_started: r.downloadsStarted,
       downloads_finished: r.downloadsFinished,
+      downloaded_bytes: r.downloadedBytes,
+      fetch_ms: r.fetchMs,
       error_tail: r.errorTail,
       index,
       uv_version: r.uvVersion

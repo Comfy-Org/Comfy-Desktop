@@ -2265,8 +2265,22 @@ describe('installAgentRequirements with a version override', () => {
         return { code: 0, output: '' }
       })
 
-      const decision = await settle(installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE))
+      const onCacheRescued = vi.fn()
 
+      const decision = await settle(
+        installAgentRequirements(
+          plan,
+          vi.fn(),
+          undefined,
+          OVERRIDE,
+          null,
+          undefined,
+          undefined,
+          onCacheRescued
+        )
+      )
+
+      expect(onCacheRescued, 'the download finished in time, no rescue').not.toHaveBeenCalled()
       expect(
         tries,
         'no install waits on a wheel another download is fetching: check, download, then install'
@@ -2311,8 +2325,20 @@ describe('installAgentRequirements with a version override', () => {
           ? { code: 0, output: ' + comfy-agent==0.2.3\n' }
           : lasting(signal, 60_000, { code: 0, output: '' })
       )
+      const onCacheRescued = vi.fn()
 
-      const decision = await settle(installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE))
+      const decision = await settle(
+        installAgentRequirements(
+          plan,
+          vi.fn(),
+          undefined,
+          OVERRIDE,
+          null,
+          undefined,
+          undefined,
+          onCacheRescued
+        )
+      )
 
       expect(late, 'a check that writes nothing, then the install').toEqual([
         ['--offline', '--dry-run'],
@@ -2322,6 +2348,7 @@ describe('installAgentRequirements with a version override', () => {
         decision,
         'a 60 s install from the cache is never cut short at the 30 s a check gets'
       ).toMatchObject({ decision: 'applied' })
+      expect(onCacheRescued, 'the cache retry saved this launch').toHaveBeenCalledTimes(1)
     })
 
     it("stops a cache check held up behind another install's download at 30 s, and installs nothing", async () => {
@@ -2358,14 +2385,25 @@ describe('installAgentRequirements with a version override', () => {
           extraArgs.includes('--dry-run') ? check : { code: 0, output: '' }
         )
         const onDeferred = vi.fn()
+        const onCacheRescued = vi.fn()
 
         const decision = await settle(
-          installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, null, onDeferred)
+          installAgentRequirements(
+            plan,
+            vi.fn(),
+            undefined,
+            OVERRIDE,
+            null,
+            onDeferred,
+            undefined,
+            onCacheRescued
+          )
         )
 
         expect(late).toEqual([['--offline', '--dry-run']])
         expect(decision).toMatchObject({ decision: 'deferred', install: { outcome: 'timed_out' } })
         expect(onDeferred).toHaveBeenCalledTimes(1)
+        expect(onCacheRescued).not.toHaveBeenCalled()
       }
     )
 
@@ -2987,9 +3025,50 @@ describe('prefetchAgentRequirements', () => {
       exitCode: 0,
       downloadsStarted: 2,
       downloadsFinished: 2,
+      downloadedBytes: Math.round(98.7 * 1024 ** 2),
       errorTail: null,
       uvVersion: '0.13.4'
     })
+  })
+
+  it('counts the bytes of only the downloads that finished, in each unit uv prints', async () => {
+    fetchAnswer = {
+      code: 0,
+      output: [
+        '\u001b[1mDownloading\u001b[0m comfy-agent (1.5GiB)',
+        'Downloading comfy-agent-go (49.3MiB)',
+        'Downloading tiny (512.0KiB)',
+        'Downloading odd (12B)',
+        ' Downloaded comfy-agent',
+        ' Downloaded tiny',
+        ' Downloaded odd',
+        ''
+      ].join('\n')
+    }
+
+    const report = await finish(request())
+
+    expect(report?.downloadedBytes, 'comfy-agent-go never finished').toBe(
+      Math.round(1.5 * 1024 ** 3 + 512 * 1024 + 12)
+    )
+  })
+
+  it('times only the downloads, not the resolve before them, so bytes over time is the link speed', async () => {
+    const respond = mockInstall.getMockImplementation()!
+    mockInstall.mockImplementation(async (...args) => {
+      const extraArgs = args[8] as string[]
+      const wait = extraArgs.includes('--target') ? 200 : args[11] === 'compile' ? 300 : 0
+      await new Promise((resolve) => setTimeout(resolve, wait))
+      return respond(...args)
+    })
+
+    const report = await finish(request())
+
+    expect(report!.fetchMs).toBeGreaterThanOrEqual(190)
+    expect(
+      report!.elapsedMs - report!.fetchMs,
+      'the 300 ms resolve is left out'
+    ).toBeGreaterThanOrEqual(290)
   })
 
   it('leaves installed entries uv could misread out of the seed', async () => {
@@ -3331,6 +3410,7 @@ describe('prefetchAgentRequirements', () => {
       exitCode: 2,
       downloadsStarted: 2,
       downloadsFinished: 1,
+      downloadedBytes: Math.round(49.4 * 1024 ** 2),
       errorTail: 'error: Failed to download comfy-agent-go'
     })
   })

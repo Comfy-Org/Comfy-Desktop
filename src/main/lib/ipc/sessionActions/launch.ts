@@ -1396,6 +1396,7 @@ async function runLaunch(
     if (handedBack.request) void startAgentPrefetch(installationId, handedBack.request)
   }
   if (agentRequirements) {
+    let cacheRetryRescued = false
     const tracker = await armLaunchTracker()
     tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
     const overrideDecision = await installAgentRequirements(
@@ -1421,6 +1422,9 @@ async function runLaunch(
           status: i18n.t('launch.agentRequirements.failed')
         })
         reportAgentCoreFailure(installationId, report, indexKind(settings.getMirrorConfig()))
+      },
+      () => {
+        cacheRetryRescued = true
       }
     )
     if (abort.signal.aborted) {
@@ -1431,7 +1435,8 @@ async function runLaunch(
       reportOverrideDecision(
         installationId,
         overrideDecision,
-        indexKind(settings.getMirrorConfig())
+        indexKind(settings.getMirrorConfig()),
+        cacheRetryRescued
       )
       if (overrideDecision.decision === 'applied') overridePins = overrideDecision.pins
       if ('kept' in overrideDecision && overrideDecision.kept) kept = overrideDecision.kept

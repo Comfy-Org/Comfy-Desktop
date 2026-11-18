@@ -79,6 +79,8 @@ const REPORT = {
   elapsedMs: 5,
   downloadsStarted: 2,
   downloadsFinished: 1,
+  downloadedBytes: 51_800_474,
+  fetchMs: 3,
   errorTail: 'error: Failed to download',
   uvVersion: '0.13.4'
 }
@@ -141,6 +143,8 @@ describe('startAgentPrefetch', () => {
         elapsed_ms: 5,
         downloads_started: 2,
         downloads_finished: 1,
+        downloaded_bytes: 51_800_474,
+        fetch_ms: 3,
         error_tail: 'error: Failed to download',
         index: 'pypi',
         uv_version: '0.13.4'
