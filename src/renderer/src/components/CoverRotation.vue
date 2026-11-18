@@ -49,6 +49,7 @@ const { shown, leaving, upcoming, loaded, allFailed, markLoaded, markFailed } = 
 
 const loadedStills = ref<ReadonlySet<number>>(new Set())
 const failedStills = ref<ReadonlySet<number>>(new Set())
+const failedPosters = ref<ReadonlySet<number>>(new Set())
 const posterDone = ref(false)
 let posterTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -56,6 +57,7 @@ watch(listKey, () => {
   generation.value++
   loadedStills.value = new Set()
   failedStills.value = new Set()
+  failedPosters.value = new Set()
   clearTimeout(posterTimer)
   posterDone.value = false
 })
@@ -79,6 +81,7 @@ function hasStill(index: number): boolean {
 function posterIndex(): number | null {
   const index = shown.value
   if (still.value || posterDone.value || index === null || !hasStill(index)) return null
+  if (failedPosters.value.has(index)) return null
   return pictures[index]!.stillUrl === pictures[index]!.url ? null : index
 }
 
@@ -138,8 +141,12 @@ function onError(layer: Layer): void {
     if (allFailed.value) emit('broken')
     return
   }
+  if (layer.role === 'poster') {
+    failedPosters.value = new Set(failedPosters.value).add(layer.index)
+    return
+  }
   failedStills.value = new Set(failedStills.value).add(layer.index)
-  if (still.value && stillIndex() === null) emit('broken')
+  if (stillIndex() === null) emit('broken')
 }
 </script>
 

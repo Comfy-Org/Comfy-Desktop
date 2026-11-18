@@ -148,6 +148,29 @@ describe('CoverRotation', () => {
     expect(wrapper.emitted('broken')).toBeUndefined()
   })
 
+  it('says so when reduced motion is turned on after the only still failed under the moving cover', async () => {
+    let reduce = false
+    const listeners: Array<(event: { matches: boolean }) => void> = []
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      get matches() {
+        return reduce && query === '(prefers-reduced-motion: reduce)'
+      },
+      media: query,
+      addEventListener: (_type: string, listener: (event: { matches: boolean }) => void) =>
+        listeners.push(listener),
+      removeEventListener: () => {}
+    }))
+    const broken = 'data:image/png;base64,broken'
+    const wrapper = mountCovers([{ url: URLS[0]!, stillUrl: broken }])
+    await expect.poll(() => layer(wrapper, 'poster').exists()).toBe(false)
+    await expect.poll(() => layer(wrapper, 'shown').attributes('data-loaded')).toBe('true')
+
+    reduce = true
+    listeners.forEach((listener) => listener({ matches: true }))
+
+    await expect.poll(() => wrapper.emitted('broken')).toHaveLength(1)
+  })
+
   it('stands still while it is paused', async () => {
     const wrapper = mountCovers(COVERS, { paused: true })
     await untilAllLoaded(wrapper)
