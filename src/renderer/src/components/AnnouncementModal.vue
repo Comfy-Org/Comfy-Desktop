@@ -5,38 +5,42 @@ import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
 
 /**
- * One-off announcement modal (currently the Comfy API launch).
+ * One-off announcement modal (currently custom Builds on Comfy Cloud).
  * Deliberately mirrors `WhyTryCloudModal.vue`'s layout and styling so it feels
  * native. Swapping to the next announcement means changing ANNOUNCEMENT_ID, the
  * URLs, the hero media and the i18n namespace below, plus a new seen-flag in
  * settings so previously-dismissed users still get the bell.
  *
- * Strings live in `announcement.comfyApi.*` (locales/en.json).
+ * Strings live in `announcement.cloudBuilds.*` (locales/en.json).
  */
 
 // Announcement id, carried in telemetry so this component can be reused for a
 // future announcement by swapping the id + copy.
-const ANNOUNCEMENT_ID = 'comfy_api'
+const ANNOUNCEMENT_ID = 'cloud_builds'
 
-// CTA destination. The UTM tags clicks as Desktop-origin so they're
-// attributable in analytics.
-const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=comfy_api'
-const PRIMARY_CTA_URL = `https://comfy.org/platform/comfy-api${UTM}`
+// CTA destinations. The UTM tags clicks as Desktop-origin so they're
+// attributable in analytics. Desktop users are new to custom Builds, so the
+// primary CTA is the landing page for context; the secondary goes straight
+// into the Cloud app.
+const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=cloud_builds'
+const PRIMARY_CTA_URL = `https://comfy.org/cloud${UTM}`
+const SECONDARY_CTA_URL = `https://cloud.comfy.org/${UTM}`
 
-// Comfy API launch hero on media.comfy.org. media.comfy.org caches for an
-// hour, so bump the version in the filename rather than re-uploading a key.
-// Poster paints immediately; the video muted-autoplays + loops.
-// TODO: no hero asset has been provided for Comfy API yet (tracked the same
-// way #1560 tracked the Router hero) - this path 404s until it's uploaded, so
-// the modal falls back to the `.announce-media` gradient in the meantime.
-const HERO_VIDEO_URL = 'https://media.comfy.org/website/comfy-api/hero_v1.mp4'
-const HERO_POSTER_URL = 'https://media.comfy.org/website/comfy-api/hero-poster_v1.webp'
+// Launch film on media.comfy.org, encoded with the website's process-videos.sh
+// (1280w VP9/WebM + H.264/MP4 + poster). media.comfy.org caches for an hour,
+// so bump the version in the filename rather than re-uploading a key.
+// Poster paints immediately; the video muted-autoplays + loops. WebM is listed
+// first since it is smaller; MP4 is the fallback.
+const HERO_BASE = 'https://media.comfy.org/website/cloud-builds/cloud-builds-hero_v1'
+const HERO_WEBM_URL = `${HERO_BASE}-1280.webm`
+const HERO_MP4_URL = `${HERO_BASE}-1280.mp4`
+const HERO_POSTER_URL = `${HERO_BASE}-poster.jpg`
 
 const emit = defineEmits<{ close: [] }>()
 const { tm } = useI18n()
 
 const highlights = computed<string[]>(() => {
-  const raw = tm('announcement.comfyApi.highlights')
+  const raw = tm('announcement.cloudBuilds.highlights')
   return Array.isArray(raw) ? (raw as unknown as string[]) : []
 })
 
@@ -101,7 +105,7 @@ onUnmounted(() => {
         class="announce-overlay"
         role="dialog"
         aria-modal="true"
-        :aria-label="$t('announcement.comfyApi.title')"
+        :aria-label="$t('announcement.cloudBuilds.title')"
         tabindex="-1"
         @mousedown="onOverlayMouseDown"
         @click="onOverlayClick"
@@ -126,15 +130,18 @@ onUnmounted(() => {
                 muted
                 loop
                 playsinline
-                :aria-label="$t('announcement.comfyApi.imageAlt')"
+                :aria-label="$t('announcement.cloudBuilds.imageAlt')"
               >
-                <source :src="HERO_VIDEO_URL" type="video/mp4" />
+                <source :src="HERO_WEBM_URL" type="video/webm" />
+                <source :src="HERO_MP4_URL" type="video/mp4" />
               </video>
               <button
                 class="announce-sound"
                 type="button"
                 :aria-label="
-                  isMuted ? $t('announcement.comfyApi.unmute') : $t('announcement.comfyApi.mute')
+                  isMuted
+                    ? $t('announcement.cloudBuilds.unmute')
+                    : $t('announcement.cloudBuilds.mute')
                 "
                 :aria-pressed="!isMuted"
                 data-testid="announcement-sound-toggle"
@@ -147,9 +154,10 @@ onUnmounted(() => {
             <div class="announce-body">
               <div class="announce-body-main">
                 <header class="announce-header">
-                  <h2 class="announce-title">{{ $t('announcement.comfyApi.title') }}</h2>
+                  <p class="announce-kicker">{{ $t('announcement.cloudBuilds.kicker') }}</p>
+                  <h2 class="announce-title">{{ $t('announcement.cloudBuilds.title') }}</h2>
                 </header>
-                <p class="announce-lead">{{ $t('announcement.comfyApi.lead') }}</p>
+                <p class="announce-lead">{{ $t('announcement.cloudBuilds.lead') }}</p>
                 <ul v-if="highlights.length" class="announce-list">
                   <li v-for="h in highlights" :key="h">
                     <Check :size="16" class="announce-check" />
@@ -159,12 +167,20 @@ onUnmounted(() => {
               </div>
               <footer class="announce-footer">
                 <button
+                  class="brand-ghost"
+                  type="button"
+                  data-testid="announcement-secondary-cta"
+                  @click="openCta('try_in_cloud', SECONDARY_CTA_URL)"
+                >
+                  {{ $t('announcement.cloudBuilds.secondaryCta') }}
+                </button>
+                <button
                   class="brand-primary"
                   type="button"
                   data-testid="announcement-primary-cta"
                   @click="openCta('learn_more', PRIMARY_CTA_URL)"
                 >
-                  {{ $t('announcement.comfyApi.primaryCta') }}
+                  {{ $t('announcement.cloudBuilds.primaryCta') }}
                 </button>
               </footer>
             </div>
@@ -338,6 +354,16 @@ onUnmounted(() => {
   line-height: normal;
 }
 
+.announce-kicker {
+  flex-basis: 100%;
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--comfy-yellow);
+}
 .announce-list {
   list-style: none;
   margin: 4px 0 0 0;

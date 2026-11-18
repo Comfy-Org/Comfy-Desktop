@@ -79,6 +79,10 @@ export interface KnownSettings {
    *  again, same reasoning as comfyRouterAnnouncementSeen: everyone who
    *  dismissed the previous announcement must still get the bell for this one. */
   comfyApiAnnouncementSeen?: boolean
+  /** Seen-flag for the custom Builds on Comfy Cloud announcement. New key again,
+   *  same reasoning as comfyApiAnnouncementSeen: everyone who dismissed the
+   *  previous announcement must still get the bell for this one. */
+  cloudBuildsAnnouncementSeen?: boolean
   /** Core beta grants the activation notice has already announced, as the arg
    *  tokens themselves (`['--enable-assets']`). A list rather than a boolean so
    *  a beta feature granted later still gets its own heads-up; append-only, so
@@ -295,6 +299,7 @@ const SETTINGS_SCHEMA = {
   cloudNodesAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   comfyRouterAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   comfyApiAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
+  cloudBuildsAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   betaNoticeAnnouncedArgs: { nullable: false, telemetry: { policy: 'omit' } },
   hideCloudFromPicker: {
     nullable: false,
