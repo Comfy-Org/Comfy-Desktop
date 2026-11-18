@@ -7,7 +7,7 @@ import {
   type SearchServiceDeps,
   type SidecarPython
 } from './service'
-import type { RunningSidecar, SidecarLaunch, SidecarStart } from './sidecar'
+import type { RunningSidecar, SidecarLaunch, SidecarReady, SidecarStart } from './sidecar'
 import { SidecarRequestError } from './sidecarClient'
 
 const BUILD_A: SidecarPython = { installationId: 'a', python: '/a/python' }
@@ -62,18 +62,40 @@ afterEach(() => {
 })
 
 describe('search service', () => {
-  it('says whether the running search can leave partner templates out', async () => {
-    const { service } = setup({
-      start: vi.fn<Start>(async () => ({ ok: true, sidecar: fakeSidecar(true).sidecar }))
+  it('builds each request for the search that answers it, and says whether that search can leave partner templates out', async () => {
+    const older = fakeSidecar(false)
+    const newer = fakeSidecar(true)
+    const start = vi
+      .fn<Start>()
+      .mockResolvedValueOnce({ ok: true, sidecar: older.sidecar })
+      .mockResolvedValueOnce({ ok: true, sidecar: newer.sidecar })
+    const post = vi
+      .fn()
+      .mockRejectedValueOnce(new SidecarRequestError('connect ECONNREFUSED', true))
+      .mockResolvedValue({ ok: 1 })
+    const { service } = setup({ start, post })
+    const request = vi.fn((ready: SidecarReady) => ({ partner_on: !ready.partner }))
+
+    expect(await service.decide(request)).toEqual({
+      kind: 'answer',
+      body: { ok: 1 },
+      partnerSwitch: true
     })
-    expect(service.partnerSwitch(), 'nothing running yet').toBe(false)
-    await service.prepare()
-    expect(service.partnerSwitch()).toBe(true)
+    expect(request.mock.calls.map(([ready]) => ready.partner)).toEqual([false, true])
+    expect(post.mock.calls.map(([, body]) => body)).toEqual([
+      { partner_on: true },
+      { partner_on: false }
+    ])
+  })
+
+  it('says a search that predates the partner option cannot leave partner templates out', async () => {
+    const { service } = setup()
+    expect(await service.decide(() => ({ text: 'x' }))).toMatchObject({ partnerSwitch: false })
   })
 
   it('stays off without a sidecar to run, and starts nothing', async () => {
     const { service, start } = setup({ pyz: () => null })
-    expect(await service.decide({ text: 'x' })).toEqual({
+    expect(await service.decide(() => ({ text: 'x' }))).toEqual({
       kind: 'unavailable',
       availability: { kind: 'off' }
     })
@@ -82,7 +104,7 @@ describe('search service', () => {
 
   it('says a local build is needed when there is none', async () => {
     const { service } = setup({ pythons: async () => [] })
-    expect(await service.decide({ text: 'x' })).toEqual({
+    expect(await service.decide(() => ({ text: 'x' }))).toEqual({
       kind: 'unavailable',
       availability: { kind: 'no_local_build' }
     })
@@ -91,18 +113,22 @@ describe('search service', () => {
   it('starts one sidecar for searches that arrive together, and answers both', async () => {
     const { service, start, announced } = setup()
     const [first, second] = await Promise.all([
-      service.decide({ text: 'one' }),
-      service.decide({ text: 'two' })
+      service.decide(() => ({ text: 'one' })),
+      service.decide(() => ({ text: 'two' }))
     ])
     expect(start).toHaveBeenCalledTimes(1)
-    expect(first).toEqual({ kind: 'answer', body: { echo: { text: 'one' } } })
-    expect(second).toEqual({ kind: 'answer', body: { echo: { text: 'two' } } })
+    expect(first).toEqual({ kind: 'answer', body: { echo: { text: 'one' } }, partnerSwitch: false })
+    expect(second).toEqual({
+      kind: 'answer',
+      body: { echo: { text: 'two' } },
+      partnerSwitch: false
+    })
     expect(announced).toEqual([{ kind: 'starting' }, { kind: 'ready' }])
   })
 
   it('starts with the first Python it is given, the bundle, the cache and no verify', async () => {
     const { service, start } = setup()
-    await service.decide({ text: 'x' })
+    await service.decide(() => ({ text: 'x' }))
     expect(start.mock.calls[0]![0]).toEqual({
       python: '/a/python',
       pyz: '/search.pyz',
@@ -125,7 +151,7 @@ describe('search service', () => {
     vi.useFakeTimers()
     const post = vi.fn().mockRejectedValue(new SidecarRequestError('400', false))
     const { service, started } = setup({ post })
-    await expect(service.decide({ text: 'x' })).rejects.toThrow('400')
+    await expect(service.decide(() => ({ text: 'x' }))).rejects.toThrow('400')
     await vi.advanceTimersByTimeAsync(IDLE_STOP_MS)
     expect(started[0]!.sidecar.stop).toHaveBeenCalled()
   })
@@ -133,9 +159,9 @@ describe('search service', () => {
   it('stops a running sidecar once search is switched off', async () => {
     let zipapp: string | null = '/search.pyz'
     const { service, started } = setup({ pyz: () => zipapp })
-    await service.decide({ text: 'x' })
+    await service.decide(() => ({ text: 'x' }))
     zipapp = null
-    expect(await service.decide({ text: 'x' })).toEqual({
+    expect(await service.decide(() => ({ text: 'x' }))).toEqual({
       kind: 'unavailable',
       availability: { kind: 'off' }
     })
@@ -151,7 +177,7 @@ describe('search service', () => {
     )
     let busy = false
     const { service } = setup({ start, isBusy: () => busy, pythons: async () => [BUILD_A] })
-    const searching = service.decide({ text: 'x' })
+    const searching = service.decide(() => ({ text: 'x' }))
     await vi.waitFor(() => expect(start).toHaveBeenCalled())
     busy = true
     await service.onBuildAction('a')
@@ -169,7 +195,7 @@ describe('search service', () => {
       return { kind: 'unavailable', reason: 'update_desktop' }
     })
     probe.service = setup({ bundles: bundles({ prepare }) }).service
-    expect(await probe.service.decide({ text: 'x' })).toEqual({
+    expect(await probe.service.decide(() => ({ text: 'x' }))).toEqual({
       kind: 'unavailable',
       availability: { kind: 'unavailable', reason: 'runtime_unsupported' }
     })
@@ -183,7 +209,7 @@ describe('search service', () => {
       return { kind: 'ready' }
     })
     probe.service = setup({ bundles: bundles({ prepare }) }).service
-    expect(await probe.service.decide({ text: 'x' })).toEqual({
+    expect(await probe.service.decide(() => ({ text: 'x' }))).toEqual({
       kind: 'unavailable',
       availability: { kind: 'unavailable', reason: 'runtime_unsupported' }
     })
@@ -191,14 +217,14 @@ describe('search service', () => {
 
   it("uses another build's Python while the first build is busy", async () => {
     const { service, start } = setup({ isBusy: (id) => id === 'a' })
-    await service.decide({ text: 'x' })
+    await service.decide(() => ({ text: 'x' }))
     expect(start.mock.calls[0]![0].python).toBe('/b/python')
   })
 
   it('waits while every build is busy, and says so again when an operation ends', async () => {
     let busy = true
     const { service, start, announced } = setup({ isBusy: () => busy })
-    expect(await service.decide({ text: 'x' })).toEqual({
+    expect(await service.decide(() => ({ text: 'x' }))).toEqual({
       kind: 'unavailable',
       availability: { kind: 'waiting_for_build' }
     })
@@ -207,12 +233,12 @@ describe('search service', () => {
     busy = false
     service.onBuildActionEnd()
     expect(announced.at(-1)).toEqual({ kind: 'idle' })
-    expect((await service.decide({ text: 'x' })).kind).toBe('answer')
+    expect((await service.decide(() => ({ text: 'x' }))).kind).toBe('answer')
   })
 
   it("stops the sidecar before an operation on its build, and not for another build's", async () => {
     const { service, started } = setup()
-    await service.decide({ text: 'x' })
+    await service.decide(() => ({ text: 'x' }))
     await service.onBuildAction('b')
     expect(started[0]!.sidecar.stop).not.toHaveBeenCalled()
     await service.onBuildAction('a')
@@ -222,7 +248,7 @@ describe('search service', () => {
   it('does not hold up an operation on another build while search is starting', async () => {
     const start = vi.fn<Start>(() => new Promise<SidecarStart>(() => {}))
     const { service } = setup({ start })
-    void service.decide({ text: 'x' })
+    void service.decide(() => ({ text: 'x' }))
     await vi.waitFor(() => expect(start).toHaveBeenCalled())
     await expect(service.onBuildAction('b')).resolves.toBeUndefined()
   })
@@ -239,7 +265,7 @@ describe('search service', () => {
         })
     )
     const { service } = setup({ start, isBusy: (id) => busy.has(id) })
-    const searching = service.decide({ text: 'x' })
+    const searching = service.decide(() => ({ text: 'x' }))
     await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1))
 
     busy = new Set(['a'])
@@ -258,7 +284,7 @@ describe('search service', () => {
       start: () => new Promise((resolve) => (finishStart = resolve)),
       isBusy: () => busy
     })
-    const searching = service.decide({ text: 'x' })
+    const searching = service.decide(() => ({ text: 'x' }))
     await vi.waitFor(() => expect(finishStart).toBeDefined())
     busy = true
     finishStart({ ok: true, sidecar: pending.sidecar })
@@ -278,7 +304,7 @@ describe('search service', () => {
       return { kind: 'unavailable', reason: 'update_desktop' }
     })
     const { service, announced } = setup({ isBusy: () => busy, bundles: bundles({ prepare }) })
-    expect(await service.decide({ text: 'x' })).toEqual({
+    expect(await service.decide(() => ({ text: 'x' }))).toEqual({
       kind: 'unavailable',
       availability: { kind: 'waiting_for_build' }
     })
@@ -294,9 +320,9 @@ describe('search service', () => {
         : { ok: true, sidecar: fakeSidecar().sidecar }
     )
     const { service } = setup({ start })
-    await service.decide({ text: 'x' })
+    await service.decide(() => ({ text: 'x' }))
     await service.onBuildAction('b')
-    await service.decide({ text: 'x' })
+    await service.decide(() => ({ text: 'x' }))
     expect(start.mock.calls.map(([l]) => l.python)).toEqual(['/a/python', '/b/python', '/b/python'])
     expect((await service.freePythons()).map((p) => p.python)).toEqual(['/b/python'])
   })
@@ -305,7 +331,7 @@ describe('search service', () => {
     const { service } = setup({
       start: async () => ({ ok: false, problem: 'runtime_unsupported' })
     })
-    expect(await service.decide({ text: 'x' })).toEqual({
+    expect(await service.decide(() => ({ text: 'x' }))).toEqual({
       kind: 'unavailable',
       availability: { kind: 'unavailable', reason: 'runtime_unsupported' }
     })
@@ -321,7 +347,7 @@ describe('search service', () => {
       bundles: store,
       start: async () => ({ ok: false, problem: 'bundle_invalid' })
     })
-    expect(await service.decide({ text: 'x' })).toEqual({
+    expect(await service.decide(() => ({ text: 'x' }))).toEqual({
       kind: 'unavailable',
       availability: { kind: 'unavailable', reason: 'download_failed' }
     })
@@ -332,7 +358,7 @@ describe('search service', () => {
     const { service } = setup({
       start: async () => ({ ok: false, problem: 'bundle_incompatible' })
     })
-    expect(await service.decide({ text: 'x' })).toEqual({
+    expect(await service.decide(() => ({ text: 'x' }))).toEqual({
       kind: 'unavailable',
       availability: { kind: 'unavailable', reason: 'update_desktop' }
     })
@@ -344,7 +370,7 @@ describe('search service', () => {
         prepare: async () => ({ kind: 'downloading', received: 0, total: 179_000_000 })
       })
     })
-    expect(await service.decide({ text: 'x' })).toEqual({
+    expect(await service.decide(() => ({ text: 'x' }))).toEqual({
       kind: 'unavailable',
       availability: { kind: 'downloading', received: 0, total: 179_000_000 }
     })
@@ -354,21 +380,21 @@ describe('search service', () => {
   it('stops after a quiet spell counted from the last search, and starts again on the next', async () => {
     vi.useFakeTimers()
     const { service, start, started } = setup()
-    await service.decide({ text: 'x' })
+    await service.decide(() => ({ text: 'x' }))
     await vi.advanceTimersByTimeAsync(IDLE_STOP_MS - 1000)
-    await service.decide({ text: 'x' })
+    await service.decide(() => ({ text: 'x' }))
     await vi.advanceTimersByTimeAsync(IDLE_STOP_MS - 1000)
     expect(started[0]!.sidecar.stop).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1000)
     expect(started[0]!.sidecar.stop).toHaveBeenCalled()
-    await service.decide({ text: 'x' })
+    await service.decide(() => ({ text: 'x' }))
     expect(start).toHaveBeenCalledTimes(2)
   })
 
   it('counts getting ready as use of a sidecar that is already running', async () => {
     vi.useFakeTimers()
     const { service, started } = setup()
-    await service.decide({ text: 'x' })
+    await service.decide(() => ({ text: 'x' }))
     await vi.advanceTimersByTimeAsync(IDLE_STOP_MS - 1000)
     await service.prepare()
     await vi.advanceTimersByTimeAsync(IDLE_STOP_MS - 1000)
@@ -377,10 +403,10 @@ describe('search service', () => {
 
   it('verifies the bundle on the next start after the sidecar dies', async () => {
     const { service, start, started, announced } = setup()
-    await service.decide({ text: 'x' })
+    await service.decide(() => ({ text: 'x' }))
     started[0]!.crash()
     await vi.waitFor(() => expect(announced.at(-1)).toEqual({ kind: 'idle' }))
-    await service.decide({ text: 'x' })
+    await service.decide(() => ({ text: 'x' }))
     expect(start.mock.calls[1]![0].verify).toBe(true)
   })
 
@@ -390,7 +416,11 @@ describe('search service', () => {
       .mockRejectedValueOnce(new SidecarRequestError('ECONNREFUSED', true))
       .mockResolvedValueOnce({ ok: 1 })
     const { service, start } = setup({ post })
-    expect(await service.decide({ text: 'x' })).toEqual({ kind: 'answer', body: { ok: 1 } })
+    expect(await service.decide(() => ({ text: 'x' }))).toEqual({
+      kind: 'answer',
+      body: { ok: 1 },
+      partnerSwitch: false
+    })
     expect(start).toHaveBeenCalledTimes(2)
     expect(start.mock.calls[1]![0].verify).toBe(true)
   })
@@ -398,7 +428,7 @@ describe('search service', () => {
   it('reports a search the sidecar refused without restarting it', async () => {
     const post = vi.fn().mockRejectedValue(new SidecarRequestError('400', false))
     const { service, start } = setup({ post })
-    await expect(service.decide({ text: 'x' })).rejects.toThrow('400')
+    await expect(service.decide(() => ({ text: 'x' }))).rejects.toThrow('400')
     expect(start).toHaveBeenCalledTimes(1)
   })
 })

@@ -75,21 +75,22 @@ function store(over: Partial<BundleStoreDeps> = {}) {
     file.onProgress(blob.length)
     return { ok: true }
   })
+  const getSmall = vi.fn<BundleStoreDeps['getSmall']>(async (url) => {
+    const body = server.small.get(url)
+    if (!body) throw new Error(`${url} answered 404`)
+    return body
+  })
   const deps: BundleStoreDeps = {
     root,
     base: () => BASE,
-    getSmall: async (url) => {
-      const body = server.small.get(url)
-      if (!body) throw new Error(`${url} answered 404`)
-      return body
-    },
+    getSmall,
     transfer,
     supports: async () => SUPPORTED,
     check: async () => true,
     onAvailability: (a) => announced.push(a),
     ...over
   }
-  return { store: createBundleStore(deps), transfer }
+  return { store: createBundleStore(deps), transfer, getSmall }
 }
 
 const V1 = {
@@ -195,20 +196,12 @@ describe('bundle store', () => {
     'says the download did not finish, and waits for Try again, when the server %s',
     async (_case, given) => {
       given()
-      const reads = vi.fn()
-      const { store: s, transfer } = store({
-        getSmall: async (url) => {
-          reads(url)
-          const body = server.small.get(url)
-          if (!body) throw new Error(`${url} answered 404`)
-          return body
-        }
-      })
+      const { store: s, transfer, getSmall } = store()
       expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'download_failed' })
-      const fetched = reads.mock.calls.length
+      const fetched = getSmall.mock.calls.length
       expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'download_failed' })
       await s.download({ quietly: true })
-      expect(reads, 'nothing is fetched again until Try again').toHaveBeenCalledTimes(fetched)
+      expect(getSmall, 'nothing is fetched again until Try again').toHaveBeenCalledTimes(fetched)
       expect(transfer).not.toHaveBeenCalled()
     }
   )
@@ -232,6 +225,17 @@ describe('bundle store', () => {
     expect(announced).toEqual([])
     expect(await s.prepare()).toMatchObject({ kind: 'downloading' })
     await s.download()
+  })
+
+  it('says a quiet check that finds nothing new is done, without fetching any file', async () => {
+    publish(server, '1.0.0', V1)
+    const { store: s, transfer } = store({ now: () => 0 })
+    await s.download()
+    transfer.mockClear()
+    announced = []
+    await s.download({ quietly: true })
+    expect(transfer).not.toHaveBeenCalled()
+    expect(announced).toEqual([{ kind: 'idle' }])
   })
 
   it('says when a quiet download lands, without showing its progress', async () => {
@@ -452,18 +456,11 @@ describe('bundle store', () => {
   it('looks for a newer version at most once a day, in the background', async () => {
     publish(server, '1.0.0', V1)
     let clock = 0
-    const indexReads = vi.fn()
-    const { store: s, transfer } = store({
-      now: () => clock,
-      getSmall: async (url) => {
-        if (url.endsWith('index.json')) indexReads()
-        const body = server.small.get(url)
-        if (!body) throw new Error(`${url} answered 404`)
-        return body
-      }
-    })
+    const { store: s, transfer, getSmall } = store({ now: () => clock })
+    const indexReads = () => getSmall.mock.calls.filter(([url]) => url.endsWith('index.json'))
     await s.download()
-    indexReads.mockClear()
+    getSmall.mockClear()
+    transfer.mockClear()
     announced = []
 
     clock = A_DAY_LATER
@@ -476,7 +473,7 @@ describe('bundle store', () => {
     await landing
     expect((await s.newest())?.version).toBe('1.1.0')
     expect(await s.prepare()).toEqual({ kind: 'ready' })
-    expect(indexReads).toHaveBeenCalledTimes(1)
+    expect(indexReads()).toHaveLength(1)
     expect(announced, 'no progress, only that it landed').toEqual([{ kind: 'idle' }])
   })
 
