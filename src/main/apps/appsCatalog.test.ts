@@ -61,14 +61,15 @@ afterEach(() => {
 })
 
 describe('the apps Desktop lists', () => {
-  it("come from the website's own list, in its order, with each cover on the site and premium marked", async () => {
+  it("come from the website's own list, in its order, with each cover on the site", async () => {
     mockedFetchJSON.mockResolvedValue([
       websiteApp(),
       websiteApp({ id: 'sdr-to-hdr', page: '/apps/sdr-to-hdr/desktop.html', title: 'SDR to HDR' }),
       websiteApp({
         id: 'product-swap',
         page: '/apps/product-swap/desktop.html',
-        title: 'Product Swap'
+        title: 'Product Swap',
+        uses_partner_nodes: { local: true, cloud: true }
       })
     ])
 
@@ -99,6 +100,23 @@ describe('the apps Desktop lists', () => {
       refresh: true
     })
   })
+
+  it.each([
+    ['partner nodes on this computer', { local: true, cloud: true }, true],
+    ['partner nodes on This computer only', { local: true, cloud: false }, true],
+    ['partner nodes only on Comfy Cloud', { local: false, cloud: true }, false],
+    ['no partner nodes', { local: false, cloud: false }, false],
+    ['no partner nodes field', undefined, false],
+    ['a partner nodes field that is not an object', 'yes', false],
+    ['a local value that is not true', { local: 'true', cloud: true }, false]
+  ] as const)(
+    'are premium only with partner nodes on This computer: %s',
+    async (_case, usesPartnerNodes, premium) => {
+      mockedFetchJSON.mockResolvedValue([websiteApp({ uses_partner_nodes: usesPartnerNodes })])
+
+      expect((await listApps())[0]?.premium).toBe(premium)
+    }
+  )
 
   it("open at the page the website names, or at the list's own route for an app it draws itself", async () => {
     mockedFetchJSON.mockResolvedValue([
@@ -251,12 +269,13 @@ describe('the apps Desktop lists', () => {
     expect((await listApps()).map((app) => app.id)).toEqual(['remove-background'])
   })
 
-  it('come from the saved list when the website cannot be reached on a fresh start', async () => {
+  it('come from the saved list, premium mark included, when the website cannot be reached on a fresh start', async () => {
     vi.useFakeTimers()
-    savedOnDisk(LIST_URL, [websiteApp()])
+    savedOnDisk(LIST_URL, [websiteApp({ uses_partner_nodes: { local: true, cloud: true } })])
     mockedFetchJSON.mockRejectedValue(new Error('offline'))
 
-    expect((await afterAllTries(listApps())).map((app) => app.id)).toEqual(['remove-background'])
+    const saved = await afterAllTries(listApps())
+    expect(saved.map((app) => [app.id, app.premium])).toEqual([['remove-background', true]])
     expect(pageUrlForListedApp('remove-background')).toBe(
       'https://comfy.org/apps/remove-background/desktop.html'
     )

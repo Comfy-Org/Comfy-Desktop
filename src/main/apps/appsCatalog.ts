@@ -7,7 +7,6 @@ import type { AppCard } from '../../types/ipc'
 import { fetchJSON } from '../lib/fetch'
 import { readFileSafeAsync, writeFileSafeAsync } from '../lib/safe-file'
 import { currentAppsLocation } from './appsConfig'
-import { isSimulatedPremiumApp } from './simulatedPremiumApps'
 
 const LIST_FILE = 'apps.json'
 const FETCH_TIMEOUT_MS = 8000
@@ -58,6 +57,10 @@ function pageUrlFor(id: string, page: unknown, location: AppsLocation): string |
   return url.href
 }
 
+function needsPartnerNodesLocally(value: unknown): boolean {
+  return asRecord(value)?.local === true
+}
+
 export function toListedApp(entry: unknown, location: AppsLocation): ListedApp | null {
   const record = asRecord(entry)
   const id = text(record?.id)
@@ -72,7 +75,7 @@ export function toListedApp(entry: unknown, location: AppsLocation): ListedApp |
       title,
       description: text(record.blurb) ?? '',
       coverUrl: coverUrlFor(record.cover, location),
-      premium: isSimulatedPremiumApp(id)
+      premium: needsPartnerNodesLocally(record.uses_partner_nodes)
     }
   }
 }
