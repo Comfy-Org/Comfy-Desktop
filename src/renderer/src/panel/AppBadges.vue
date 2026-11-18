@@ -52,7 +52,7 @@ const foldedIntoCrown = computed(() =>
 </script>
 
 <template>
-  <span class="flex items-start gap-1.5" data-testid="app-badges">
+  <span class="flex flex-wrap items-start gap-1.5" data-testid="app-badges">
     <Tooltip
       v-for="item in shown"
       :key="item.badge.id"

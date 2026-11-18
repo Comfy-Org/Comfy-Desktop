@@ -240,7 +240,7 @@ onBeforeUnmount(() => {
                   :badges="app.badges"
                   :description-id-prefix="badgeIdPrefixFor(app)"
                   :revealed="keyboardFocusedId === app.id"
-                  class="absolute top-2 left-2"
+                  class="absolute top-2 right-2 left-2"
                 />
               </span>
               <span class="flex min-w-0 flex-col px-1.5 pt-2.5 pb-1.5">

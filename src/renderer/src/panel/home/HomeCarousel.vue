@@ -279,7 +279,7 @@ function activate(placed: { card: Card; offset: number }): void {
             :badges="placed.card.badges"
             :description-id-prefix="badgeIdPrefixFor(placed.card)"
             :revealed="keyboardFocusedId === placed.card.id"
-            class="absolute top-3 left-3"
+            class="absolute top-3 right-14 left-3"
           />
           <span
             class="absolute top-3 right-3 grid size-8 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"

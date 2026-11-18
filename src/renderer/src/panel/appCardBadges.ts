@@ -5,7 +5,7 @@ export function badgeWords(words: AppBadgeWords, locale: string): string {
 }
 
 export function badgeDescriptionId(prefix: string, badge: AppBadge): string {
-  return `${prefix}-${badge.id}`
+  return `${prefix}:${badge.id}`
 }
 
 export function badgeDescriptionIds(

@@ -5,6 +5,7 @@ import { createI18n } from 'vue-i18n'
 
 import '../assets/main.css'
 import AppBadges from './AppBadges.vue'
+import { badgeDescriptionId } from './appCardBadges'
 import { appI18nOptions } from '../lib/i18nOptions'
 import type { AppBadge } from '../types/ipc'
 
@@ -99,11 +100,11 @@ describe('AppBadges', () => {
   it("carries each badge's words and description for its card to point at", () => {
     mountBadges({ badges: [CROWN, VIDEO_LABEL] })
 
-    expect(document.getElementById('card-video')?.hidden).toBe(true)
-    const crownNote = document.getElementById('card-uses-credits')
+    expect(document.getElementById('card:video')?.hidden).toBe(true)
+    const crownNote = document.getElementById('card:uses-credits')
     expect(crownNote?.textContent).toBe('Uses credits: Runs a paid partner model')
     expect(crownNote?.hidden).toBe(true)
-    expect(document.getElementById('card-video')?.textContent).toBe('Video')
+    expect(document.getElementById('card:video')?.textContent).toBe('Video')
   })
 
   it('shows the description on hover', async () => {
@@ -136,7 +137,7 @@ describe('AppBadges', () => {
     mounted.pop()
 
     mountBadges({ badges: [CROWN] }, [chinese])
-    expect(document.getElementById('card-uses-credits')?.textContent).toContain('运行付费合作模型')
+    expect(document.getElementById('card:uses-credits')?.textContent).toContain('运行付费合作模型')
   })
 
   it("shows the first badge's description while its card has keyboard focus, and hides it after", async () => {
@@ -174,5 +175,32 @@ describe('AppBadges', () => {
     await userEvent.keyboard('{Escape}')
 
     await expect.poll(() => document.querySelector('.tooltip-bubble')).toBe(null)
+  })
+
+  it('wraps four long chips onto more lines instead of running past the card', () => {
+    const chips: AppBadge[] = ['one', 'two', 'three', 'four'].map((id) => ({
+      id,
+      style: 'chip',
+      text: { en: 'Twenty-four letters here' }
+    }))
+    const wrapper = mount(AppBadges, {
+      attachTo: document.body,
+      attrs: { style: 'width: 200px' },
+      props: { badges: chips, descriptionIdPrefix: 'card' }
+    })
+    mounted.push(wrapper)
+
+    const row = wrapper.element.getBoundingClientRect()
+    const drawn = wrapper.findAll('[data-badge-style]')
+    expect(drawn).toHaveLength(4)
+    for (const badge of drawn) {
+      expect(badge.element.getBoundingClientRect().right).toBeLessThanOrEqual(row.right)
+    }
+  })
+
+  it('gives each badge a description id no other app and badge can share', () => {
+    expect(badgeDescriptionId('apps-product-swap', NEW_CHIP)).not.toBe(
+      badgeDescriptionId('apps-product', { ...NEW_CHIP, id: 'swap-new' })
+    )
   })
 })
