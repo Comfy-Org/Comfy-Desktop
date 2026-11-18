@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock('../../templateSearch/searchProcess', () => ({
   createSearchProcess: vi.fn()
 }))
 
-import { registerTemplateSearchHandlers } from './registerTemplateSearchHandlers'
+import { LAUNCH_SETTLE_MS, registerTemplateSearchHandlers } from './registerTemplateSearchHandlers'
 import { sessionLifecycleEvents } from './shared'
 
 type IpcHandler = (event: object, ...args: unknown[]) => Promise<unknown> | unknown
@@ -35,17 +35,19 @@ function handler(channel: string): IpcHandler {
   return call![1] as IpcHandler
 }
 
-function register() {
+function register(settled?: Promise<unknown>) {
   const process = {
     decide: vi.fn(),
     prepare: vi.fn(async () => undefined),
     download: vi.fn(async () => undefined),
+    downloadInBackground: vi.fn(async () => true),
     onBuildAction: vi.fn(async () => undefined),
     onBuildActionEnd: vi.fn()
   }
   registerTemplateSearchHandlers({
     isLocalInstallation: () => true,
     terminalEnvOf: () => null,
+    settled,
     process
   })
   return process
@@ -106,5 +108,54 @@ describe('build operations', () => {
     const process = register()
     mocks.observer!.after('local-1', 'update-comfyui')
     expect(process.onBuildActionEnd).toHaveBeenCalled()
+  })
+})
+
+describe('the background download', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('starts once Desktop has finished starting up and a short wait has passed', async () => {
+    let finishStartup!: () => void
+    const process = register(new Promise<void>((resolve) => (finishStartup = resolve)))
+    await vi.advanceTimersByTimeAsync(LAUNCH_SETTLE_MS)
+    expect(process.downloadInBackground).not.toHaveBeenCalled()
+
+    finishStartup()
+    await vi.advanceTimersByTimeAsync(LAUNCH_SETTLE_MS - 1)
+    expect(process.downloadInBackground).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(process.downloadInBackground).toHaveBeenCalledTimes(1)
+  })
+
+  it('tries again when an operation or a launch ends, until one attempt has been made', async () => {
+    const process = register(Promise.resolve())
+    process.downloadInBackground.mockResolvedValueOnce(false)
+    await vi.advanceTimersByTimeAsync(LAUNCH_SETTLE_MS)
+    expect(process.downloadInBackground).toHaveBeenCalledTimes(1)
+
+    mocks.observer!.after('local-1', 'update-comfyui')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(process.downloadInBackground).toHaveBeenCalledTimes(2)
+
+    sessionLifecycleEvents.emit('launch-ended', 'local-1')
+    mocks.observer!.after('local-1', 'update-comfyui')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(process.downloadInBackground).toHaveBeenCalledTimes(2)
+  })
+
+  it('tries again later when checking for the background download fails', async () => {
+    const process = register(Promise.resolve())
+    process.downloadInBackground.mockRejectedValueOnce(new Error('installations unreadable'))
+    await vi.advanceTimersByTimeAsync(LAUNCH_SETTLE_MS)
+
+    sessionLifecycleEvents.emit('launch-ended', 'local-1')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(process.downloadInBackground).toHaveBeenCalledTimes(2)
   })
 })

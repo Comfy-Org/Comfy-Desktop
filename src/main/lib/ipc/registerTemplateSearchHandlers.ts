@@ -13,12 +13,15 @@ import { setSessionActionObserver } from './sessionActions'
 
 type SearchProcessApi = Pick<
   SearchProcess,
-  'decide' | 'prepare' | 'download' | 'onBuildAction' | 'onBuildActionEnd'
+  'decide' | 'prepare' | 'download' | 'downloadInBackground' | 'onBuildAction' | 'onBuildActionEnd'
 >
+
+export const LAUNCH_SETTLE_MS = 15_000
 
 interface TemplateSearchHandlerOptions {
   isLocalInstallation: (installation: InstallationRecord) => boolean
   terminalEnvOf: (installation: InstallationRecord) => TerminalEnv | null
+  settled?: Promise<unknown>
   process?: SearchProcessApi
 }
 
@@ -29,21 +32,36 @@ function broadcastAvailability(availability: TemplateSearchAvailability): void {
 export function registerTemplateSearchHandlers({
   isLocalInstallation,
   terminalEnvOf,
+  settled,
   process = createSearchProcess({
     isLocalInstallation,
     terminalEnvOf,
     broadcast: broadcastAvailability
   })
 }: TemplateSearchHandlerOptions): void {
+  let downloadedAutomatically = false
+
+  function downloadAutomatically(): void {
+    if (downloadedAutomatically) return
+    void process.downloadInBackground().then(
+      (done) => (downloadedAutomatically ||= done),
+      () => false
+    )
+  }
+
+  function onBuildActionEnd(): void {
+    process.onBuildActionEnd()
+    downloadAutomatically()
+  }
+
   setSessionActionObserver({
     async before(installationId, actionId) {
       if (changesBuildEnv(actionId)) await process.onBuildAction(installationId)
     },
-    after() {
-      process.onBuildActionEnd()
-    }
+    after: onBuildActionEnd
   })
-  sessionLifecycleEvents.on('launch-ended', () => process.onBuildActionEnd())
+  sessionLifecycleEvents.on('launch-ended', onBuildActionEnd)
+  void settled?.then(() => setTimeout(downloadAutomatically, LAUNCH_SETTLE_MS))
 
   ipcMain.handle('template-search:prepare', () => process.prepare())
   ipcMain.handle('template-search:download', () => process.download())

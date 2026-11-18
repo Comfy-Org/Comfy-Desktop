@@ -85,6 +85,7 @@ function store(over: Partial<BundleStoreDeps> = {}) {
     transfer,
     supports: async () => SUPPORTED,
     check: async () => true,
+    isOnline: () => true,
     onAvailability: (a) => announced.push(a),
     ...over
   }
@@ -116,10 +117,13 @@ function entriesIn(dir: string): string[] {
 }
 
 describe('bundle store', () => {
-  it('offers the download with its size when no bundle is on disk', async () => {
+  it('starts the download by itself when no bundle is on disk, and is ready once it lands', async () => {
     publish(server, '1.0.0', V1)
-    const { store: s } = store()
-    expect(await s.prepare()).toEqual({ kind: 'needs_download', bytes: V1_BYTES })
+    const { store: s, transfer } = store()
+    expect(await s.prepare()).toEqual({ kind: 'downloading', received: 0, total: 0 })
+    await vi.waitFor(() => expect(announced.at(-1)).toEqual({ kind: 'idle' }))
+    expect(transfer).toHaveBeenCalledTimes(3)
+    expect(await s.prepare()).toEqual({ kind: 'ready' })
   })
 
   it('is off when no base address is set and nothing is on disk', async () => {
@@ -127,9 +131,41 @@ describe('bundle store', () => {
     expect(await s.prepare()).toEqual({ kind: 'off' })
   })
 
-  it('says it is offline when the index cannot be read', async () => {
-    const { store: s } = store()
+  it('says it is offline, and starts nothing, when Desktop knows it is offline', async () => {
+    publish(server, '1.0.0', V1)
+    const { store: s, transfer } = store({ isOnline: () => false })
     expect(await s.prepare()).toEqual({ kind: 'unavailable', reason: 'offline' })
+    expect(transfer).not.toHaveBeenCalled()
+    expect(announced).toEqual([])
+  })
+
+  it('says the download did not finish when the index cannot be read', async () => {
+    const { store: s } = store()
+    await s.prepare()
+    await vi.waitFor(() =>
+      expect(announced.at(-1)).toEqual({ kind: 'unavailable', reason: 'download_failed' })
+    )
+  })
+
+  it('asks for a newer Desktop, instead of downloading again, when no listed version is readable', async () => {
+    publish(server, '1.0.0', V1, { min_sidecar: '9.0.0' })
+    const { store: s, transfer } = store()
+    await s.prepare()
+    await vi.waitFor(() =>
+      expect(announced.at(-1)).toEqual({ kind: 'unavailable', reason: 'update_desktop' })
+    )
+    expect(transfer).not.toHaveBeenCalled()
+  })
+
+  it('stays ready when an update check finds no version it reads', async () => {
+    publish(server, '1.0.0', V1)
+    const { store: s } = store()
+    await s.download()
+    server.index.bundles = []
+    publish(server, '2.0.0', V1, { min_sidecar: '9.0.0' })
+    await s.download()
+    expect(announced.at(-1)).toEqual({ kind: 'idle' })
+    expect(await s.prepare()).toEqual({ kind: 'ready' })
   })
 
   it('downloads, puts the bundle together under its version, and is then ready', async () => {
@@ -218,6 +254,7 @@ describe('bundle store', () => {
       transfer: async () => ({ ok: true }),
       supports: async () => ({ ...SUPPORTED, sidecar: '0.0.9' }),
       check: async () => true,
+      isOnline: () => true,
       onAvailability: () => {}
     })
     expect((await s.newest())?.version).toBe('1.0.0')
