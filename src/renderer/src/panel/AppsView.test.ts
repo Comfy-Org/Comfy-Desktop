@@ -17,7 +17,8 @@ const CUTOUT: AppCard = {
   id: 'remove-background',
   title: 'Remove Background',
   description: 'Cut the subject out of a picture or video.',
-  coverUrl: COVER
+  coverUrl: COVER,
+  premium: true
 }
 const HDR: AppCard = {
   id: 'sdr-to-hdr',
@@ -29,7 +30,8 @@ const GENJUTSU: AppCard = {
   id: 'genjutsu',
   title: 'Genjutsu',
   description: 'Move a character with the motion from a clip.',
-  coverUrl: null
+  coverUrl: null,
+  premium: true
 }
 
 const listApps = vi.fn<() => Promise<AppCard[]>>()
@@ -289,6 +291,33 @@ describe('AppsView', () => {
         .map((card) => card.attributes('data-testid'))
     ).toEqual(['app-card-remove-background', 'app-card-sdr-to-hdr', 'app-card-genjutsu'])
     expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
+  })
+
+  it('crowns a premium app on the top right of its picture and leaves a free app without one', async () => {
+    const wrapper = await mountApps()
+
+    const premiumCard = wrapper.get('[data-testid="app-card-remove-background"]')
+    const badge = premiumCard.get('[data-testid="premium-app-badge"]')
+    const picture = premiumCard.get('img').element.getBoundingClientRect()
+    const badgeBox = badge.element.getBoundingClientRect()
+    expect(Math.round(picture.right - badgeBox.right)).toBe(8)
+    expect(Math.round(badgeBox.top - picture.top)).toBe(8)
+    expect(getComputedStyle(badge.get('[data-testid="premium-app-crown"]').element).color).toBe(
+      'rgb(240, 255, 65)'
+    )
+    expect(premiumCard.text()).toContain('Premium app')
+    expect(
+      wrapper
+        .get('[data-testid="app-card-genjutsu"]')
+        .find('[data-testid="premium-app-badge"]')
+        .exists()
+    ).toBe(true)
+    expect(
+      wrapper
+        .get('[data-testid="app-card-sdr-to-hdr"]')
+        .find('[data-testid="premium-app-badge"]')
+        .exists()
+    ).toBe(false)
   })
 
   it('lists the apps in the order the website gave them', async () => {

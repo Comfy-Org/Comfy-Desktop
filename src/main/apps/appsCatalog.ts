@@ -7,6 +7,7 @@ import type { AppCard } from '../../types/ipc'
 import { fetchJSON } from '../lib/fetch'
 import { readFileSafeAsync, writeFileSafeAsync } from '../lib/safe-file'
 import { currentAppsLocation } from './appsConfig'
+import { isSimulatedPremiumApp } from './simulatedPremiumApps'
 
 const LIST_FILE = 'apps.json'
 const FETCH_TIMEOUT_MS = 8000
@@ -70,7 +71,8 @@ export function toListedApp(entry: unknown, location: AppsLocation): ListedApp |
       id,
       title,
       description: text(record.blurb) ?? '',
-      coverUrl: coverUrlFor(record.cover, location)
+      coverUrl: coverUrlFor(record.cover, location),
+      premium: isSimulatedPremiumApp(id)
     }
   }
 }

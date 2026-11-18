@@ -1,7 +1,12 @@
-<script setup lang="ts" generic="Card extends { id: string; title: string; description: string }">
+<script
+  setup
+  lang="ts"
+  generic="Card extends { id: string; title: string; description: string; premium?: boolean }"
+>
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from '@lucide/vue'
+import PremiumAppBadge from '../PremiumAppBadge.vue'
 
 interface ArcSlot {
   transform: string
@@ -257,6 +262,7 @@ function activate(placed: { card: Card; offset: number }): void {
             class="absolute inset-0 bg-linear-to-t from-black/75 via-black/40 via-30% to-transparent to-55%"
             aria-hidden="true"
           />
+          <PremiumAppBadge v-if="placed.card.premium" class="absolute top-3 left-3" />
           <span
             class="absolute top-3 right-3 grid size-8 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
             :class="

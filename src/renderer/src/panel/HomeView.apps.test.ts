@@ -18,7 +18,8 @@ const GENJUTSU: AppCard = {
   id: 'genjutsu',
   title: 'Genjutsu',
   description: 'Put someone else in a short clip.',
-  coverUrl: 'https://comfy.org/catalog-media/genjutsu/cover'
+  coverUrl: 'https://comfy.org/catalog-media/genjutsu/cover',
+  premium: true
 }
 const PRODUCT_ADS = app('product-ads', 'Product Ads')
 const HDR = app('sdr-to-hdr', 'SDR to HDR')
@@ -130,6 +131,13 @@ describe('Home apps', () => {
     await cardAt(wrapper, 0).trigger('click')
 
     expect(wrapper.emitted('open-app')).toEqual([[PRODUCT_ADS]])
+  })
+
+  it('crowns a premium app in the carousel and leaves a free app without one', async () => {
+    const wrapper = await openHome()
+
+    expect(cardAt(wrapper, 0).find('[data-testid="premium-app-badge"]').exists()).toBe(true)
+    expect(cardAt(wrapper, 2).find('[data-testid="premium-app-badge"]').exists()).toBe(false)
   })
 
   it('names the cards and arrows as apps for screen readers', async () => {

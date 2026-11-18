@@ -146,6 +146,7 @@ export interface AppCard {
   title: string
   description: string
   coverUrl: string | null
+  premium?: boolean
 }
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'

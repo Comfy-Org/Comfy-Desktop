@@ -46,6 +46,10 @@
     "emptyBody": "New apps will show up here.",
     "noMatches": "No apps match “{query}”",
     "allApps": "All apps",
+    "premium": {
+      "title": "Premium app",
+      "credits": "Runs with credits"
+    },
     "pageLoading": "Loading {app}",
     "pageFailedTitle": "{app} didn't load",
     "local": {

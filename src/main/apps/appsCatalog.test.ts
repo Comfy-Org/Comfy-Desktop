@@ -72,13 +72,15 @@ describe('the apps Desktop lists', () => {
         id: 'remove-background',
         title: 'Remove Background',
         description: 'Cut the subject out of a picture or video.',
-        coverUrl: 'https://comfy.org/catalog-media/cover-1/v2'
+        coverUrl: 'https://comfy.org/catalog-media/cover-1/v2',
+        premium: true
       },
       {
         id: 'sdr-to-hdr',
         title: 'SDR to HDR',
         description: 'Cut the subject out of a picture or video.',
-        coverUrl: 'https://comfy.org/catalog-media/cover-1/v2'
+        coverUrl: 'https://comfy.org/catalog-media/cover-1/v2',
+        premium: false
       }
     ])
     expect(mockedFetchJSON).toHaveBeenCalledWith('https://comfy.org/apps/apps.json', {

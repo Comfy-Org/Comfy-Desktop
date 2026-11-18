@@ -192,5 +192,6 @@
   --color-neutral-950: var(--neutral-950);
 
   --color-comfy-yellow: var(--comfy-yellow);
+  --color-brand-yellow: #f0ff41;
   --color-focus-ring: var(--focus-ring);
 }

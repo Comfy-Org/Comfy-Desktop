@@ -5,6 +5,7 @@ import { AppWindow, Search } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
+import PremiumAppBadge from './PremiumAppBadge.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { AppCard } from '../types/ipc'
@@ -214,6 +215,7 @@ onBeforeUnmount(() => {
                 >
                   <AppWindow :size="28" :stroke-width="1.5" aria-hidden="true" />
                 </span>
+                <PremiumAppBadge v-if="app.premium" class="absolute top-2 right-2" />
               </span>
               <span class="flex min-w-0 flex-col px-1.5 pt-2.5 pb-1.5">
                 <span class="truncate text-ui font-medium text-foreground">{{ app.title }}</span>
