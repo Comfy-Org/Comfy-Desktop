@@ -101,6 +101,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.doUnmock('electron')
   for (const key of ENV_KEYS) {
@@ -172,6 +173,28 @@ function writeInstallRecords(records: Record<string, unknown>[]): void {
   const text = JSON.stringify(records)
   write(path.join(userData, 'installations.json'), text)
   write(path.join(userData, 'installations.json.bak'), text)
+}
+
+function denied(): NodeJS.ErrnoException {
+  return Object.assign(new Error('denied'), { code: 'EACCES' })
+}
+
+function failReadsOf(file: string): void {
+  const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+  const read = (p: fs.PathOrFileDescriptor, opts?: unknown): string => {
+    if (p === file) throw denied()
+    return realRead(p, opts as BufferEncoding)
+  }
+  vi.spyOn(fs, 'readFileSync').mockImplementation(read as typeof fs.readFileSync)
+}
+
+function failLstatOf(target: string): void {
+  const realLstat = fs.lstatSync.bind(fs) as typeof fs.lstatSync
+  const lstat = (p: fs.PathLike, opts?: fs.StatSyncOptions): ReturnType<typeof realLstat> => {
+    if (p === target) throw denied()
+    return realLstat(p, opts)
+  }
+  vi.spyOn(fs, 'lstatSync').mockImplementation(lstat as typeof fs.lstatSync)
 }
 
 describe('plan per data-root mode', () => {
@@ -643,7 +666,12 @@ describe('order and failures', () => {
       expect(idsAndStatus(name)).toEqual([['inst-2', 'partial-delete']])
     }
     const keptText = fs.readFileSync(path.join(userData, 'uninstall-kept-paths.json'), 'utf-8')
-    expect(JSON.parse(keptText)).toEqual(expect.arrayContaining([oldOutput, newOutput]))
+    expect(JSON.parse(keptText)).toEqual(
+      expect.arrayContaining([
+        { path: oldOutput, roles: ['output'] },
+        { path: newOutput, roles: ['output'] }
+      ])
+    )
   })
 
   it('rewrites both copies of the install list when only the backup can be read', async () => {
@@ -702,6 +730,41 @@ describe('order and failures', () => {
     const result = results.find((r) => r.entry.reason === 'install list update')
     expect(result?.outcome).toBe('failed')
     expect(result?.detail).toBe('neither copy of the install list could be read')
+  })
+
+  it('changes neither list copy when the primary cannot be read during cleanup', async () => {
+    const { install } = installWithModels()
+
+    const c = await loadAs('win32')
+    const inputs = c.collectUninstallCleanupInputs(instancesBox)
+    failReadsOf(path.join(userData, 'installations.json'))
+    const results = c.runCleanup(inputs)
+    vi.restoreAllMocks()
+
+    expect(fs.existsSync(install)).toBe(false)
+    const result = results.find((r) => r.entry.reason === 'install list update')
+    expect(result?.outcome).toBe('failed')
+    expect(result?.detail).toBe('installations.json could not be read, so neither copy was changed')
+    for (const name of ['installations.json', 'installations.json.bak']) {
+      expect(idsAndStatus(name)).toEqual([['inst-1', undefined]])
+    }
+  })
+
+  it('keeps an install and its records when its type cannot be checked', async () => {
+    const { install } = installWithModels()
+    failLstatOf(install)
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG, c.DELETE_INSTANCES_FLAG])).toBe(1)
+    vi.restoreAllMocks()
+
+    expect(fs.readFileSync(path.join(install, '.comfyui-desktop-2'), 'utf-8')).toBe('inst-1')
+    expect(fs.existsSync(path.join(install, 'ComfyUI', 'main.py'))).toBe(true)
+    for (const name of ['installations.json', 'installations.json.bak']) {
+      expect(idsAndStatus(name)).toEqual([['inst-1', undefined]])
+    }
+    const log = fs.readFileSync(path.join(temp, c.UNINSTALL_CLEANUP_LOG_FILE), 'utf-8')
+    expect(log).toContain('could not be checked when cleanup started: EACCES')
   })
 })
 
@@ -1272,6 +1335,35 @@ describe('unreadable settings and install list', () => {
     expect(cleanupLog(c)).toContain('settings.json and its backup could not be read')
   })
 
+  it('keeps installs and both list copies when the primary list cannot be read', async () => {
+    const removed = path.join(localRoot(), 'ComfyUI-Installs', 'a')
+    write(path.join(removed, '.comfyui-desktop-2'), 'inst-1')
+    write(path.join(removed, 'ComfyUI', 'main.py'))
+    const unmarked = path.join(localRoot(), 'ComfyUI-Installs', 'b')
+    write(path.join(unmarked, 'ComfyUI', 'main.py'))
+    const newest = path.join(localRoot(), 'ComfyUI-Installs', 'c')
+    write(path.join(newest, '.comfyui-desktop-2'), 'inst-3')
+    const older = [
+      { id: 'inst-1', installPath: removed },
+      { id: 'inst-2', installPath: unmarked }
+    ]
+    const list = path.join(userData, 'installations.json')
+    const primaryText = JSON.stringify([...older, { id: 'inst-3', installPath: newest }])
+    const backupText = JSON.stringify(older)
+    write(list, primaryText)
+    write(`${list}.bak`, backupText)
+    failReadsOf(list)
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG, c.DELETE_INSTANCES_FLAG])).toBe(1)
+    vi.restoreAllMocks()
+
+    expect(fs.existsSync(path.join(removed, 'ComfyUI', 'main.py'))).toBe(true)
+    expect(fs.readFileSync(list, 'utf-8')).toBe(primaryText)
+    expect(fs.readFileSync(`${list}.bak`, 'utf-8')).toBe(backupText)
+    expect(cleanupLog(c)).toContain('installations.json could not be read')
+  })
+
   it('treats a missing install list as an empty one', async () => {
     write(path.join(userData, 'logs', 'main.log'))
 
@@ -1283,6 +1375,23 @@ describe('unreadable settings and install list', () => {
 })
 
 describe('models', () => {
+  it('removes default models that an earlier cleanup kept for a removed install', async () => {
+    const install = path.join(localRoot(), 'ComfyUI-Installs', 'a')
+    write(path.join(install, '.comfyui-desktop-2'), 'inst-1')
+    const models = path.join(localRoot(), 'ComfyUI-Shared', 'models')
+    write(path.join(models, 'a.safetensors'))
+    writeInstallRecords([{ id: 'inst-1', installPath: install, modelDirs: [models] }])
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG, c.DELETE_INSTANCES_FLAG])).toBe(0)
+    expect(fs.existsSync(path.join(models, 'a.safetensors'))).toBe(true)
+    const keptText = fs.readFileSync(path.join(userData, 'uninstall-kept-paths.json'), 'utf-8')
+    expect(JSON.parse(keptText)).toEqual([{ path: models, roles: ['models'] }])
+
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG, c.DELETE_MODELS_FLAG])).toBe(0)
+    expect(fs.existsSync(models)).toBe(false)
+  })
+
   it('removes only the default models folder', async () => {
     const shared = path.join(localRoot(), 'ComfyUI-Shared')
     const defaultModels = path.join(shared, 'models')
