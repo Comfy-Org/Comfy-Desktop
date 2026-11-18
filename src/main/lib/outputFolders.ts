@@ -134,6 +134,14 @@ interface OutputFolders {
   ofBuild: Map<string, string>
 }
 
+async function realHome(): Promise<string> {
+  return (await realDir(os.homedir())) ?? os.homedir()
+}
+
+function holdsHome(dir: string, home: string): boolean {
+  return isInsideRoot(home, dir)
+}
+
 async function findOutputFolders(): Promise<OutputFolders> {
   const sharedDir = sharedOutputDir()
   const shared = await realDir(sharedDir)
@@ -148,8 +156,8 @@ async function findOutputFolders(): Promise<OutputFolders> {
     if (realDownloads) downloadedTo.push(realDownloads)
   }
   const all = [...new Set([...(shared ? [shared] : []), ...ofBuild.values()])]
-  const home = os.homedir()
-  downloadRoots = downloadedTo.filter((dir) => !isInsideRoot(home, dir))
+  const home = await realHome()
+  downloadRoots = downloadedTo.filter((dir) => !holdsHome(dir, home))
   allowedRoots = all
   allowedRootsAt = Date.now()
   return { all, shared, ofBuild }
@@ -370,6 +378,12 @@ function copyQueries(value: unknown): OutputCopyQuery[] {
   })
 }
 
+interface DownloadedCandidate {
+  file: string
+  size: number
+  savedMs: number
+}
+
 function withoutCopyNumber(name: string): string {
   return name.replace(/ \(\d+\)(?=\.[^.]+$)/, '')
 }
@@ -382,28 +396,32 @@ export async function findDownloadedOutputs(
   const dir = inst && !hasOutputFolder(inst) ? autoDownloadDir(inst) : null
   const root = dir ? await realDir(dir) : null
   const sized = wanted.filter((item) => item.sizeBytes !== null)
-  if (!root || sized.length === 0) return {}
+  if (!root || sized.length === 0 || holdsHome(root, await realHome())) return {}
   const names = new Set(sized.map((item) => item.name))
-  const byName = new Map<string, { file: string; size: number; savedMs: number }[]>()
+  const exact = new Map<string, DownloadedCandidate[]>()
+  const renamed = new Map<string, DownloadedCandidate[]>()
   for (const file of await collectMediaFiles(root)) {
-    const name = withoutCopyNumber(path.basename(file))
-    if (!names.has(name)) continue
+    const name = path.basename(file)
+    const stripped = withoutCopyNumber(name)
+    if (!names.has(name) && !names.has(stripped)) continue
     const stat = await fsp.lstat(file).catch(() => null)
     if (!stat?.isFile()) continue
     const candidate = { file, size: stat.size, savedMs: stat.mtimeMs }
-    byName.set(name, [...(byName.get(name) ?? []), candidate])
+    exact.set(name, [...(exact.get(name) ?? []), candidate])
+    if (stripped !== name) renamed.set(stripped, [...(renamed.get(stripped) ?? []), candidate])
   }
   const found: Record<string, string> = {}
+  const taken = new Set<string>()
   for (const item of sized) {
     const madeMs = item.createdAt ? Date.parse(item.createdAt) : Number.NaN
-    const copy = byName
-      .get(item.name)
-      ?.find(
-        (candidate) =>
-          candidate.size === item.sizeBytes &&
-          (Number.isNaN(madeMs) || candidate.savedMs >= madeMs - SAVED_BEFORE_MADE_SLACK_MS)
-      )
-    if (copy) found[item.id] = copy.file
+    const fits = (candidate: DownloadedCandidate): boolean =>
+      !taken.has(candidate.file) &&
+      candidate.size === item.sizeBytes &&
+      (Number.isNaN(madeMs) || candidate.savedMs >= madeMs - SAVED_BEFORE_MADE_SLACK_MS)
+    const copy = exact.get(item.name)?.find(fits) ?? renamed.get(item.name)?.find(fits)
+    if (!copy) continue
+    taken.add(copy.file)
+    found[item.id] = copy.file
   }
   return found
 }

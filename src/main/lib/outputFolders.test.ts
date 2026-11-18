@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -806,6 +807,35 @@ describe('findDownloadedOutputs', () => {
     ])
 
     expect(found).toEqual({ a: path.join(sharedDir, 'take (2).png') })
+  })
+
+  it('prefers the exact name, and gives one saved file to one output only', async () => {
+    installs.mockResolvedValue([{ id: 'cloud', sourceId: 'cloud' }])
+    write(path.join(sharedDir, 'photo (1).png'), 'four')
+    write(path.join(sharedDir, 'photo.png'), 'four')
+
+    const found = await findDownloadedOutputs('cloud', [
+      { id: 'a', name: 'photo (1).png', sizeBytes: 4, createdAt: null },
+      { id: 'b', name: 'photo.png', sizeBytes: 4, createdAt: null },
+      { id: 'c', name: 'photo.png', sizeBytes: 4, createdAt: null }
+    ])
+
+    expect(found).toEqual({
+      a: path.join(sharedDir, 'photo (1).png'),
+      b: path.join(sharedDir, 'photo.png')
+    })
+  })
+
+  it('does not search a custom download folder that holds the home folder', async () => {
+    installs.mockResolvedValue([
+      { id: 'cloud', sourceId: 'cloud', useSharedOutputDir: false, outputDir: os.homedir() }
+    ])
+
+    expect(
+      await findDownloadedOutputs('cloud', [
+        { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: null }
+      ])
+    ).toEqual({})
   })
 
   it('finds nothing when the Cloud build does not auto-download', async () => {
