@@ -321,6 +321,16 @@ describe('outputFolderPaths and openOutputFolder', () => {
     expect(await openOutputFolder('unknown'), 'an unknown build opens nothing').toBe(false)
     expect(openedFolder.mock.calls).toEqual([[sharedDir], [ownDir]])
   })
+
+  it('names a folder that does not exist yet, so the picker can still show it', async () => {
+    const notYet = path.join(root, 'not-created-yet')
+    installs.mockResolvedValue([
+      { id: 'New', sourceId: 'standalone', useSharedOutput: false, outputDir: notYet }
+    ])
+
+    expect((await outputFolderPaths()).ofBuild).toEqual({ New: notYet })
+    expect(await openOutputFolder('New'), 'a missing folder does not open').toBe(false)
+  })
 })
 
 describe('listLocalAssets', () => {
@@ -449,6 +459,18 @@ describe('listLocalAssets', () => {
     expect(page.assets.map((a) => a.name)).toEqual(['c.png'])
     expect(page.total).toBe(3)
     expect(page.counts).toEqual({ all: 4, image: 3, video: 1, audio: 0, '3d': 0 })
+  })
+
+  it('keeps files with the same time in one order, so no file shows on two pages', async () => {
+    const same = new Date('2026-10-01T00:00:00Z')
+    for (const name of ['c.png', 'a.png', 'd.png', 'b.png'])
+      write(path.join(sharedDir, name), 'x', same)
+
+    const page = (offset: number) =>
+      listLocalAssets(undefined, { offset, limit: 2, order: 'newest' })
+    const names = [...(await page(0)).assets, ...(await page(2)).assets].map((a) => a.name)
+
+    expect(names).toEqual(['d.png', 'c.png', 'b.png', 'a.png'])
   })
 
   it('reads the first page for a page request it does not understand', () => {

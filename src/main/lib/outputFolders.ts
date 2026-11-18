@@ -140,8 +140,13 @@ async function findOutputFolders(): Promise<OutputFolders> {
 }
 
 export async function outputFolderPaths(): Promise<OutputFolderPaths> {
-  const { shared, ofBuild } = await findOutputFolders()
-  return { home: os.homedir(), shared, ofBuild: Object.fromEntries(ofBuild) }
+  const shared = sharedOutputDir()
+  const ofBuild: Record<string, string> = {}
+  for (const inst of await installations.list()) {
+    const dir = outputDirFor(inst, shared)
+    if (dir) ofBuild[inst.id] = dir
+  }
+  return { home: os.homedir(), shared, ofBuild }
 }
 
 export async function openOutputFolder(installationId?: string): Promise<boolean> {
@@ -320,7 +325,9 @@ export async function listLocalAssets(
   const direction = page.order === 'oldest' ? 1 : -1
   const matching = page.kind ? found.filter((asset) => asset.kind === page.kind) : found
   const shown = matching
-    .sort((a, b) => direction * a.createdAt!.localeCompare(b.createdAt!))
+    .sort(
+      (a, b) => direction * (a.createdAt!.localeCompare(b.createdAt!) || a.id.localeCompare(b.id))
+    )
     .slice(page.offset, page.offset + page.limit)
   await runPool(shown, STATS_AT_ONCE, addMediaFacts)
   return { assets: shown, total: matching.length, counts: countKinds(found) }

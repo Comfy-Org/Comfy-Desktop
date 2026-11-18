@@ -271,11 +271,17 @@ const placeGroups = computed(() =>
 )
 
 const outputFolders = ref<OutputFolderPaths | null>(null)
+const outputFoldersLoaded = ref(false)
+let outputFoldersRequest = 0
 
 watch(
   () => localBuilds.value.map((build) => build.id).join('\n'),
   async () => {
-    outputFolders.value = await window.api.listOutputFolders().catch(() => null)
+    const request = ++outputFoldersRequest
+    const folders = await window.api.listOutputFolders().catch(() => null)
+    if (request !== outputFoldersRequest) return
+    outputFolders.value = folders
+    outputFoldersLoaded.value = true
   },
   { immediate: true }
 )
@@ -309,8 +315,9 @@ function shortPath(folder: string): string {
 
 function placeSubtitle(option: AssetBuild): string | null {
   if (option.cloud) return t(`assets.buildState.${option.state}`)
+  if (!outputFoldersLoaded.value) return null
   const folder = folderPathOf(option)
-  return folder ? shortPath(folder) : null
+  return folder ? shortPath(folder) : ''
 }
 
 const revealFolderLabel = computed(() => t(revealInFolderKey(window.api.platform)))
@@ -940,8 +947,10 @@ async function moveToTrash(asset: GalleryAsset): Promise<void> {
   })
   if (!confirmed) return
   const removed = await window.api.trashAsset(asset.source, asset.id).catch(() => false)
-  if (removed) assets.value = assets.value.filter((other) => cardKey(other) !== cardKey(asset))
-  else await modal.alert({ title: t('assets.deleteFailed'), message: asset.name })
+  if (removed) {
+    assets.value = assets.value.filter((other) => cardKey(other) !== cardKey(asset))
+    void loadAssets()
+  } else await modal.alert({ title: t('assets.deleteFailed'), message: asset.name })
 }
 
 async function runAssetAction(action: string): Promise<void> {
@@ -1102,15 +1111,16 @@ function extensionOf(name: string): string {
                   :text="revealFolderLabel"
                   class="absolute top-1/2 right-7.5 -translate-y-1/2"
                 >
-                  <button
+                  <MenuItem
+                    as="button"
                     type="button"
-                    class="flex size-6.5 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
+                    class="size-6.5 min-h-0 justify-center rounded-md p-0 text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-foreground"
                     :aria-label="`${revealFolderLabel}: ${option.build.name}`"
                     :data-testid="`assets-place-reveal-${option.build.id}`"
-                    @click="openPlaceFolder(option)"
+                    @select="openPlaceFolder(option)"
                   >
                     <ScanSearch :size="15" aria-hidden="true" />
-                  </button>
+                  </MenuItem>
                 </Tooltip>
               </div>
             </template>
