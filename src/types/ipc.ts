@@ -141,11 +141,31 @@ export interface Installation {
 export type DashboardPage =
   'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
 
+export type AppBadgeStyle = 'crown' | 'chip' | 'label'
+
+export interface AppBadgeWords {
+  en: string
+  'zh-CN'?: string
+}
+
+export interface AppBadge {
+  id: string
+  style: AppBadgeStyle
+  text: AppBadgeWords
+  description?: AppBadgeWords
+}
+
+export interface AppCover {
+  url: string
+  stillUrl: string | null
+}
+
 export interface AppCard {
   id: string
   title: string
   description: string
-  coverUrl: string | null
+  covers: AppCover[]
+  badges?: AppBadge[]
 }
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'
@@ -167,6 +187,8 @@ export interface AppOutput {
   bytes: Uint8Array<ArrayBuffer>
   tags: string[]
   workflow: boolean
+  savedOn?: 'cloud' | 'computer'
+  folder?: string
 }
 
 export interface AppOutputs {
@@ -175,7 +197,7 @@ export interface AppOutputs {
 }
 
 export interface AppOutputAction {
-  action: 'download' | 'open-workflow'
+  action: 'download' | 'open-workflow' | 'show-in-folder'
   index: number
 }
 
@@ -187,6 +209,9 @@ export interface CatalogWorkflow {
 }
 
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
+
+export type CloudAssetLookup =
+  { status: 'found'; asset: AssetSummary } | { status: 'absent' } | { status: 'incomplete' }
 
 export interface AssetSummary {
   id: string
@@ -201,6 +226,24 @@ export interface AssetSummary {
   width: number | null
   height: number | null
   durationSeconds: number | null
+}
+
+export type AssetOrder = 'newest' | 'oldest'
+
+export interface CloudAssetPageRequest {
+  offset: number
+  after?: string
+  limit: number
+  order: AssetOrder
+  kind?: AssetKind
+}
+
+export interface CloudAssetPage {
+  assets: AssetSummary[]
+  total: number | null
+  totalIsLowerBound?: true
+  nextCursor?: string
+  scanLimit?: number
 }
 
 export interface LocalAssetListing {
@@ -1201,11 +1244,13 @@ export interface ElectronApi {
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   openPageInNewWindow(page: NewWindowDashboardPage): void
-  listAssets(installationId: string): Promise<AssetSummary[]>
+  listAssets(installationId: string, page: CloudAssetPageRequest): Promise<CloudAssetPage | null>
   listLocalAssets(installationId?: string): Promise<LocalAssetListing>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
+  findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>
+  readAssetModel(source: string, assetId: string): Promise<Uint8Array | null>
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>

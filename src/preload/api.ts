@@ -102,13 +102,16 @@ export function buildElectronApi(): ElectronApi {
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     openPageInNewWindow: (page) => ipcRenderer.send('comfy-window:open-page-in-new-window', page),
-    listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
+    listAssets: (installationId, page) => ipcRenderer.invoke('assets:list', installationId, page),
     listLocalAssets: (installationId?: string) =>
       ipcRenderer.invoke('assets:list-local', installationId),
     downloadAsset: (source, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
     revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),
+    findCloudAsset: (installationId, name) =>
+      ipcRenderer.invoke('assets:find', installationId, name),
     copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),
+    readAssetModel: (source, assetId) => ipcRenderer.invoke('assets:read-model', source, assetId),
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),

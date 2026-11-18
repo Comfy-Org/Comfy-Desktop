@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   root,
   sharedDir,
+  sharedInputDir,
   ownDir,
   installDir,
   outsideDir,
@@ -14,7 +15,8 @@ const {
   fullImage,
   shownInFolder,
   trashed,
-  copiedImage
+  copiedImage,
+  runningSessions
 } = await vi.hoisted(async () => {
   const nodeFs = await import('node:fs')
   const nodeOs = await import('node:os')
@@ -25,6 +27,7 @@ const {
   return {
     root: base,
     sharedDir: nodePath.join(base, 'shared-output'),
+    sharedInputDir: nodePath.join(base, 'shared-input'),
     ownDir: nodePath.join(base, 'own-output'),
     installDir: nodePath.join(base, 'install'),
     outsideDir: nodePath.join(base, 'outside'),
@@ -34,7 +37,8 @@ const {
     fullImage: vi.fn(),
     shownInFolder: vi.fn(),
     trashed: vi.fn(async (file: string) => nodeFs.rmSync(file)),
-    copiedImage: vi.fn()
+    copiedImage: vi.fn(),
+    runningSessions: new Map<string, { launchFolders?: { output: string; input: string } }>()
   }
 })
 
@@ -55,15 +59,21 @@ vi.mock('electron', () => ({
   net: { fetch: (url: string) => fetchFile(url) },
   nativeImage: {
     createThumbnailFromPath: (file: string) => thumbnailImage(file),
-    createFromPath: (file: string) => fullImage(file)
+    createFromPath: (file: string) => fullImage(file),
+    createFromBuffer: (bytes: Buffer) => fullImage(bytes)
   }
 }))
 vi.mock('../installations', () => ({ list: () => installs() }))
 vi.mock('../settings', () => ({
-  get: (key: string) => (key === 'outputDir' ? sharedDir : undefined),
-  defaults: { outputDir: path.join(root, 'default-output') }
+  get: (key: string) =>
+    ({ outputDir: sharedDir, inputDir: sharedInputDir })[key as 'outputDir' | 'inputDir'],
+  defaults: {
+    outputDir: path.join(root, 'default-output'),
+    inputDir: path.join(root, 'default-input')
+  }
 }))
 vi.mock('./ipc/shared', () => ({
+  _runningSessions: runningSessions,
   sourceMap: {
     standalone: { category: 'local' },
     desktop: { category: 'local', managesOwnPaths: true },
@@ -71,7 +81,8 @@ vi.mock('./ipc/shared', () => ({
   }
 }))
 vi.mock('./models', () => ({
-  installOutputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'output')
+  installOutputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'output'),
+  installInputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'input')
 }))
 vi.mock('./assets', () => ({
   assetKind: (name: string) =>
@@ -85,8 +96,11 @@ import {
   MAX_FOLDER_DEPTH,
   MAX_LOCAL_ASSETS,
   THUMBNAIL_WAIT_MS,
+  comfyFoldersOf,
+  comfyOutputPath,
   copyOutputImage,
   hasOutputFolder,
+  launchFoldersOf,
   revealOutputFile,
   trashOutputFile,
   listLocalAssets,
@@ -94,7 +108,9 @@ import {
   outputDirOverride,
   outputFilePath,
   outputFileUrl,
-  serveOutputFile
+  serveOutputFile,
+  thumbnailDataUrl,
+  thumbnailDataUrlFromBytes
 } from './outputFolders'
 
 function install(name: string, extra: Record<string, unknown> = {}): InstallationRecord {
@@ -134,6 +150,7 @@ function write(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  runningSessions.clear()
   thumbnailImage.mockReset()
   fullImage.mockReset()
   for (const dir of [sharedDir, ownDir, outsideDir, installDir])
@@ -175,6 +192,94 @@ describe('hasOutputFolder', () => {
       'a build that manages its own paths'
     ).toBe(false)
     expect(hasOutputFolder(install('a', { sourceId: 'gone' })), 'an unknown source').toBe(false)
+  })
+})
+
+describe('comfyFoldersOf', () => {
+  it("gives a build's output and input folders, the shared ones by default", () => {
+    expect(comfyFoldersOf(install('a'))).toEqual({ output: sharedDir, input: sharedInputDir })
+    expect(
+      comfyFoldersOf(
+        install('a', {
+          useSharedOutput: false,
+          outputDir: ownDir,
+          useSharedInput: false,
+          inputDir: path.join(root, 'own-input')
+        })
+      )
+    ).toEqual({ output: ownDir, input: path.join(root, 'own-input') })
+    expect(
+      comfyFoldersOf(install('a', { useSharedOutput: false, useSharedInput: false })),
+      'a build that keeps both inside its install'
+    ).toEqual({
+      output: path.join(installDir, 'ComfyUI', 'output'),
+      input: path.join(installDir, 'ComfyUI', 'input')
+    })
+  })
+
+  it('gives the shared folders when no build is known, and none for Cloud', () => {
+    expect(comfyFoldersOf(null)).toEqual({ output: sharedDir, input: sharedInputDir })
+    expect(comfyFoldersOf(install('a', { sourceId: 'cloud' }))).toEqual({
+      output: null,
+      input: null
+    })
+    expect(comfyFoldersOf(install('a', { sourceId: 'desktop' }))).toEqual({
+      output: null,
+      input: null
+    })
+  })
+})
+
+describe('comfyFoldersOf a running build', () => {
+  it('gives the folders it was launched with, not the ones the settings name now', () => {
+    const launchedOutput = path.join(root, 'output-at-launch')
+    const launchedInput = path.join(root, 'input-at-launch')
+    runningSessions.set('a', { launchFolders: { output: launchedOutput, input: launchedInput } })
+
+    expect(comfyFoldersOf(install('a'))).toEqual({ output: launchedOutput, input: launchedInput })
+    expect(comfyFoldersOf(install('b')), 'a build that is not running').toEqual({
+      output: sharedDir,
+      input: sharedInputDir
+    })
+  })
+
+  it('gives no folders when the launch folders are not known', () => {
+    runningSessions.set('a', {})
+
+    expect(comfyFoldersOf(install('a'))).toEqual({ output: null, input: null })
+  })
+})
+
+describe('launchFoldersOf', () => {
+  it('reads the folders from the arguments ComfyUI was started with', () => {
+    const args = ['main.py', '--input-directory', '/old-input', '--output-directory', '/old-output']
+
+    expect(launchFoldersOf(install('a'), { args })).toEqual({
+      output: '/old-output',
+      input: '/old-input'
+    })
+  })
+
+  it('takes the last of a repeated flag, written either way, as ComfyUI does', () => {
+    const args = ['--input-directory', '/first', '--input-directory=/second']
+
+    expect(launchFoldersOf(install('a'), { args }).input).toBe('/second')
+  })
+
+  it("falls back to ComfyUI's own folders when no folder was passed", () => {
+    expect(launchFoldersOf(install('a'), { args: ['main.py'] })).toEqual({
+      output: path.join(installDir, 'ComfyUI', 'output'),
+      input: path.join(installDir, 'ComfyUI', 'input')
+    })
+  })
+
+  it('gives no folders when Desktop could not pass them', () => {
+    const none = { output: null, input: null }
+    const args = ['--input-directory', '/in']
+
+    expect(launchFoldersOf(install('a'), { args, skipSharedPaths: true })).toEqual(none)
+    expect(launchFoldersOf(install('a'), {})).toEqual(none)
+    expect(launchFoldersOf(install('a', { sourceId: 'desktop' }), { args })).toEqual(none)
   })
 })
 
@@ -342,6 +447,106 @@ describe('outputFilePath', () => {
   })
 })
 
+describe('comfyOutputPath', () => {
+  const CUTOUT = Buffer.from('cutout bytes')
+  const appsBuild = (): InstallationRecord =>
+    install('Apps', { useSharedOutput: false, outputDir: ownDir })
+  const cutout = { filename: 'cutout_00001_.png', subfolder: 'apps/remove-background' }
+
+  it("finds the file ComfyUI named in the build's own output folder, or in the shared one", async () => {
+    const own = path.join(ownDir, 'apps', 'remove-background', 'cutout_00001_.png')
+    const shared = path.join(sharedDir, 'cutout_00001_.png')
+    write(own, CUTOUT)
+    write(shared, CUTOUT)
+
+    expect(await comfyOutputPath(appsBuild(), cutout, new Uint8Array(CUTOUT))).toBe(own)
+    expect(
+      await comfyOutputPath(
+        install('Test Instance'),
+        { filename: 'cutout_00001_.png', subfolder: '' },
+        new Uint8Array(CUTOUT)
+      )
+    ).toBe(shared)
+  })
+
+  it('finds nothing for a missing file, or a file without exactly the bytes the page shows', async () => {
+    write(path.join(ownDir, 'apps', 'remove-background', 'cutout_00001_.png'), CUTOUT)
+
+    expect(
+      await comfyOutputPath(
+        appsBuild(),
+        { ...cutout, filename: 'gone.png' },
+        new Uint8Array(CUTOUT)
+      )
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), cutout, new Uint8Array(Buffer.from('cutout bytez'))),
+      'same size, other bytes'
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), cutout, new Uint8Array(Buffer.from('cutout'))),
+      'other size'
+    ).toBeNull()
+  })
+
+  it("refuses links out of the build's output folder, even into another build's", async () => {
+    write(path.join(outsideDir, 'secret.png'), CUTOUT)
+    write(path.join(sharedDir, 'shared.png'), CUTOUT)
+    fs.symlinkSync(path.join(outsideDir, 'secret.png'), path.join(ownDir, 'secret.png'))
+    fs.symlinkSync(path.join(sharedDir, 'shared.png'), path.join(ownDir, 'shared.png'))
+    const bytes = new Uint8Array(CUTOUT)
+
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: 'secret.png', subfolder: '' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: 'shared.png', subfolder: '' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(
+        appsBuild(),
+        { filename: 'shared.png', subfolder: '../shared-output' },
+        bytes
+      )
+    ).toBeNull()
+  })
+
+  it("refuses a subfolder that climbs out of the build's output folder, and an absolute filename", async () => {
+    const secret = path.join(outsideDir, 'secret.png')
+    write(secret, CUTOUT)
+    const bytes = new Uint8Array(CUTOUT)
+
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: 'secret.png', subfolder: '../outside' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(
+        appsBuild(),
+        { filename: 'secret.png', subfolder: 'apps/../../outside' },
+        bytes
+      )
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: secret, subfolder: '' }, bytes)
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(appsBuild(), { filename: '/etc/passwd', subfolder: '' }, bytes)
+    ).toBeNull()
+  })
+
+  it('finds nothing for Cloud or a build that manages its own paths', async () => {
+    write(path.join(sharedDir, 'cutout_00001_.png'), CUTOUT)
+    const file = { filename: 'cutout_00001_.png', subfolder: '' }
+
+    expect(
+      await comfyOutputPath(install('Cloud', { sourceId: 'cloud' }), file, new Uint8Array(CUTOUT))
+    ).toBeNull()
+    expect(
+      await comfyOutputPath(install('Old', { sourceId: 'desktop' }), file, new Uint8Array(CUTOUT))
+    ).toBeNull()
+  })
+})
+
 describe('serveOutputFile', () => {
   it('serves the file itself when the OS thumbnail is slow, then the thumbnail once it is made', async () => {
     write(path.join(sharedDir, 'slow.png'))
@@ -451,6 +656,37 @@ describe('serveOutputFile', () => {
       new Request(outputFileUrl(path.join(sharedDir, 'broken.png'), 1))
     )
     expect(await none.text()).toMatch(/^file file:\/\/.*broken\.png$/)
+  })
+})
+
+describe('small thumbnails as data URLs', () => {
+  it('scales the long side to the size asked for', async () => {
+    write(path.join(sharedDir, 'small.png'))
+    const resize = vi.fn(() => ({ toJPEG: () => Buffer.from('tiny') }))
+    const big = { isEmpty: () => false, getSize: () => ({ width: 1000, height: 2000 }), resize }
+    thumbnailImage.mockResolvedValueOnce(big)
+    fullImage.mockReturnValueOnce(big)
+
+    expect(await thumbnailDataUrl(path.join(sharedDir, 'small.png'), 256)).toBe(
+      `data:image/jpeg;base64,${Buffer.from('tiny').toString('base64')}`
+    )
+    expect(resize).toHaveBeenCalledWith({ width: 128, height: 256 })
+  })
+
+  it('makes one from bytes, or none when they are not a picture', () => {
+    const resize = vi.fn(() => ({ toJPEG: () => Buffer.from('cloud') }))
+    fullImage.mockReturnValueOnce({
+      isEmpty: () => false,
+      getSize: () => ({ width: 512, height: 512 }),
+      resize
+    })
+    expect(thumbnailDataUrlFromBytes(new Uint8Array([1, 2]), 256)).toBe(
+      `data:image/jpeg;base64,${Buffer.from('cloud').toString('base64')}`
+    )
+    expect(resize).toHaveBeenCalledWith({ width: 256, height: 256 })
+
+    fullImage.mockReturnValueOnce({ isEmpty: () => true })
+    expect(thumbnailDataUrlFromBytes(new Uint8Array([1]), 256)).toBeNull()
   })
 })
 

@@ -15,6 +15,7 @@ interface BridgeState {
   checkForUpdateCalls: number
   downloadUpdateCalls: number
   installUpdateCalls: number
+  removeAppDataCalls: Array<{ deleteInstances: boolean; deleteModels: boolean }>
   closeCalls: number
 }
 
@@ -29,6 +30,7 @@ function installMockBridge(): BridgeState {
     checkForUpdateCalls: 0,
     downloadUpdateCalls: 0,
     installUpdateCalls: 0,
+    removeAppDataCalls: [],
     closeCalls: 0
   }
   const bridge = {
@@ -63,7 +65,10 @@ function installMockBridge(): BridgeState {
     globalSettingsInstallUpdate: () => {
       state.installUpdateCalls += 1
     },
-    globalSettingsSetLastCheckedAt: () => {}
+    globalSettingsSetLastCheckedAt: () => {},
+    globalSettingsRemoveAppData: (options: { deleteInstances: boolean; deleteModels: boolean }) => {
+      state.removeAppDataCalls.push({ ...options })
+    }
   }
   ;(window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
   return state
@@ -330,7 +335,8 @@ describe('GlobalSettingsView', () => {
     const wrapper = await openFolders()
     expect(wrapper.findAll('.gs-micro-title').map((el) => el.text())).toEqual([
       'Default Install Location',
-      'Shared Folders'
+      'Shared Folders',
+      'Remove Comfy Desktop data'
     ])
     const row = wrapper.find('.storage-dir-row')
     expect(row.find('.storage-dir-name').text()).toBe('/home/u/ComfyUI-Installs')
@@ -524,7 +530,85 @@ describe('GlobalSettingsView', () => {
       .findAll('.gs-micro-title .info-tooltip-trigger')
       .map((el) => el.attributes('aria-label') ?? '')
     expect(tooltips.some((text) => text.includes('Use for downloads'))).toBe(true)
-    expect(tooltips.some((text) => text.includes('in its own Storage tab'))).toBe(true)
+    expect(tooltips.some((text) => text.includes('in its own Folders tab'))).toBe(true)
+  })
+
+  function snapshotOn(platform: string) {
+    const base = makeSnapshot()
+    return makeSnapshot({ appUpdate: { ...base.appUpdate, platform } })
+  }
+
+  async function openRemoveAppData(platform: string) {
+    const bridge = installMockBridge()
+    const wrapper = await openFolders(snapshotOn(platform))
+    await wrapper.find('.gs-remove-app-data-btn').trigger('click')
+    await flushPromises()
+    return { bridge, wrapper, modal: useModal() }
+  }
+
+  it.each(['darwin', 'linux'])('Folders tab offers Remove Comfy Desktop data on %s', async (p) => {
+    installMockBridge()
+    const wrapper = await openFolders(snapshotOn(p))
+    expect(wrapper.find('.gs-remove-app-data-btn').exists()).toBe(true)
+  })
+
+  it('Folders tab hides Remove Comfy Desktop data on Windows', async () => {
+    installMockBridge()
+    const wrapper = await openFolders(snapshotOn('win32'))
+    expect(wrapper.find('.gs-remove-app-data-btn').exists()).toBe(false)
+    expect(wrapper.findAll('.gs-micro-title').map((el) => el.text())).toEqual([
+      'Default Install Location',
+      'Shared Folders'
+    ])
+  })
+
+  it('Remove Comfy Desktop data asks first, with both boxes unchecked', async () => {
+    const { modal } = await openRemoveAppData('darwin')
+    expect(modal.state.visible).toBe(true)
+    expect(modal.state.title).toBe('Remove Comfy Desktop data?')
+    expect(modal.state.confirmStyle).toBe('danger')
+    expect(modal.state.checkboxes).toEqual([
+      { id: 'deleteInstances', label: 'Delete all ComfyUI instances', checked: false },
+      { id: 'deleteModels', label: 'Delete all model files', checked: false }
+    ])
+    const details = modal.state.messageDetails.flatMap((group) => group.items).join('\n')
+    expect(details).toContain('Trash')
+    expect(details).toContain('input and output')
+    modal.close(false)
+    await flushPromises()
+  })
+
+  it('Remove Comfy Desktop data tells Linux users how to delete the app', async () => {
+    const { modal } = await openRemoveAppData('linux')
+    const details = modal.state.messageDetails.flatMap((group) => group.items).join('\n')
+    expect(details).toContain('AppImage')
+    expect(details).toContain('apt remove')
+    expect(details).not.toContain('Trash')
+    modal.close(false)
+    await flushPromises()
+  })
+
+  it('Remove Comfy Desktop data sends the checked boxes through the bridge', async () => {
+    const { bridge, modal } = await openRemoveAppData('linux')
+    modal.setCheckboxValue('deleteModels', true)
+    modal.close(true)
+    await flushPromises()
+    expect(bridge.removeAppDataCalls).toEqual([{ deleteInstances: false, deleteModels: true }])
+  })
+
+  it('Remove Comfy Desktop data keeps everything when unchecked', async () => {
+    const { bridge, modal } = await openRemoveAppData('darwin')
+    modal.close(true)
+    await flushPromises()
+    expect(bridge.removeAppDataCalls).toEqual([{ deleteInstances: false, deleteModels: false }])
+  })
+
+  it('Remove Comfy Desktop data does nothing when cancelled', async () => {
+    const { bridge, modal } = await openRemoveAppData('darwin')
+    modal.setCheckboxValue('deleteInstances', true)
+    modal.close(false)
+    await flushPromises()
+    expect(bridge.removeAppDataCalls).toEqual([])
   })
 
   it('Advanced tab renders the cache dir as a readonly path row that browses + opens', async () => {

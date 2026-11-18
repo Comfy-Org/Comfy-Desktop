@@ -1,10 +1,25 @@
 import type { AppOutput, AppOutputAction, AppOutputs } from '../../types/ipc'
 
+export interface ComfyOutputFile {
+  filename: string
+  subfolder: string
+}
+
+export interface RequestedOutput extends AppOutput {
+  comfyFile?: ComfyOutputFile
+}
+
+export interface OutputRequest extends Omit<AppOutputs, 'items'> {
+  items: RequestedOutput[]
+}
+
 export const MAX_OUTPUTS = 40
 export const MAX_OUTPUTS_BYTES = 100_000_000
 const MAX_NAME_LENGTH = 200
 const MAX_TAGS = 8
 const MAX_TAG_LENGTH = 40
+const MAX_PATH_LENGTH = 1024
+const ABSOLUTE_LOCAL_PATH = /^(\/|[A-Za-z]:[\\/])/
 const INVISIBLE_FORMATTING = /[\u0080-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/
 const FIRST_PRINTABLE_CODE = 32
 const DELETE_CODE = 127
@@ -43,7 +58,30 @@ function readTags(value: unknown): string[] {
     .filter((tag): tag is string => tag !== null)
 }
 
-function readOutput(value: unknown): AppOutput | null {
+function readFolder(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > MAX_PATH_LENGTH) return null
+  if (hasHiddenCharacters(value)) return null
+  return ABSOLUTE_LOCAL_PATH.test(value) ? value : null
+}
+
+function readComfyFile(value: unknown): ComfyOutputFile | null {
+  if (!isRecord(value)) return null
+  const { filename, subfolder = '', type } = value
+  if (type !== 'output' || typeof filename !== 'string' || typeof subfolder !== 'string')
+    return null
+  return filename.length + subfolder.length > MAX_PATH_LENGTH ? null : { filename, subfolder }
+}
+
+function readSavedPlace(value: Record<string, unknown>): Partial<RequestedOutput> {
+  const savedOn = value['savedOn']
+  if (savedOn === 'cloud') return { savedOn }
+  if (savedOn !== 'computer') return {}
+  const folder = readFolder(value['folder'])
+  const comfyFile = readComfyFile(value['comfyFile'])
+  return { savedOn, ...(folder ? { folder } : {}), ...(comfyFile ? { comfyFile } : {}) }
+}
+
+function readOutput(value: unknown): RequestedOutput | null {
   if (!isRecord(value)) return null
   const name = trimmed(value['name'], MAX_NAME_LENGTH)
   const { mimeType, bytes } = value
@@ -54,18 +92,19 @@ function readOutput(value: unknown): AppOutput | null {
     mimeType,
     bytes: bytes as Uint8Array<ArrayBuffer>,
     tags: readTags(value['tags']),
-    workflow: value['workflow'] === true
+    workflow: value['workflow'] === true,
+    ...readSavedPlace(value)
   }
 }
 
-export function readOutputRequest(raw: unknown): AppOutputs | null {
+export function readOutputRequest(raw: unknown): OutputRequest | null {
   if (!isRecord(raw)) return null
   const { items, index } = raw
   if (!Array.isArray(items) || items.length === 0 || items.length > MAX_OUTPUTS) return null
   if (!isIndex(index) || index >= items.length) return null
   const outputs = Array.from(items, readOutput)
   if (outputs.some((output) => output === null)) return null
-  const shown = outputs as AppOutput[]
+  const shown = outputs as RequestedOutput[]
   const sentBytes = shown.reduce((sum, output) => sum + output.bytes.buffer.byteLength, 0)
   return sentBytes > MAX_OUTPUTS_BYTES ? null : { items: shown, index }
 }
@@ -73,6 +112,7 @@ export function readOutputRequest(raw: unknown): AppOutputs | null {
 export function readOutputAction(raw: unknown): AppOutputAction | null {
   if (!isRecord(raw)) return null
   const { action, index } = raw
-  if (action !== 'download' && action !== 'open-workflow') return null
+  if (action !== 'download' && action !== 'open-workflow' && action !== 'show-in-folder')
+    return null
   return isIndex(index) ? { action, index } : null
 }

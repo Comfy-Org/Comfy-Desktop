@@ -320,10 +320,12 @@ export interface ComfyDesktopHostedLocalBridge {
  * Usage events from a Comfy page hosted in Desktop's Apps view. Desktop
  * exposes it to that page as `window.comfyDesktopTelemetry` and sends an event
  * as `comfy.desktop.apps.<name>` only when the person allows telemetry.
- * `name` matches `^[a-z][a-z0-9_]{0,47}$`; `app_opened` and `app_page_failed`
- * are refused because Desktop sends them itself, and so is `error`. Desktop
- * sends at most 60 events a minute for one app and 1,000 page events a
- * session, and drops the rest. Desktop keeps at most 16
+ * `name` matches `^[a-z][a-z0-9_]{0,47}$`. Desktop sends these app events
+ * itself and refuses them from a page: `app_opened`, `app_page_failed`,
+ * `run_finished` (how a run on this computer ended) and `setup` (Desktop
+ * installing or starting the ComfyUI an app runs on); it refuses `error` too.
+ * Desktop sends at most 60 events a minute for one app and 1,000 page events
+ * a session, and drops the rest. Desktop keeps at most 16
  * properties, each named `^[a-z][a-z0-9_]{0,31}$` with a boolean, a finite
  * number or a slug of at most 64 characters (`^[a-z0-9][a-z0-9._-]{0,63}$`),
  * and drops anything else. Desktop sets `app_id` itself, to the app whose
@@ -332,6 +334,16 @@ export interface ComfyDesktopHostedLocalBridge {
  */
 export interface ComfyDesktopHostedTelemetryBridge {
   track(name: string, props?: Record<string, string | number | boolean>): void
+}
+/**
+ * A file ComfyUI saved in its output folder, named as a run's history names
+ * it. `filename` has no folder in it, and `subfolder` is relative, with no
+ * `.` or `..` parts. Only `type: 'output'` is kept.
+ */
+export interface ComfyDesktopOutputFile {
+  filename: string
+  subfolder?: string
+  type: 'output'
 }
 /**
  * One output a hosted page asks Desktop to show. `mimeType` is one of
@@ -343,6 +355,11 @@ export interface ComfyDesktopHostedTelemetryBridge {
  * `workflow` is true. Desktop refuses a `name`, and drops a tag, that has
  * control, bidirectional or zero-width formatting characters in the part it
  * keeps.
+ *
+ * `savedOn` says where the output is saved. For `cloud`, Desktop shows
+ * "Saved in Comfy Cloud assets" and View in Assets, which opens Desktop's
+ * Assets page on Comfy Cloud with the newest file of that `name` open. For
+ * `computer`, Desktop shows the folder it is saved in and Show in folder.
  */
 export interface ComfyDesktopOutput {
   name: string
@@ -350,6 +367,20 @@ export interface ComfyDesktopOutput {
   bytes: Uint8Array
   tags?: string[]
   workflow?: boolean
+  savedOn?: 'cloud' | 'computer'
+  /**
+   * For `computer` without `comfyFile`: the absolute path of the folder the
+   * page saved the output in. Desktop only shows it, and Show in folder comes
+   * back to the page on `onOutputAction`.
+   */
+  folder?: string
+  /**
+   * For `computer`: the file ComfyUI saved for this output. Desktop looks for
+   * it in the output folder of the build the page runs on, and uses it only
+   * when it has exactly the output's `bytes`. Desktop then shows its folder
+   * and shows the file in its folder itself; otherwise it shows no folder.
+   */
+  comfyFile?: ComfyDesktopOutputFile
 }
 /** At most 40 outputs and 100 MB of bytes in all, and the index of the one to show first. */
 export interface ComfyDesktopShowOutputRequest {
@@ -358,24 +389,124 @@ export interface ComfyDesktopShowOutputRequest {
 }
 /**
  * What the person picked in Desktop's output dialog for the output at `index`
- * of the page's last `showOutput` request: download it, or open its workflow.
+ * of the page's last `showOutput` request: download it, open its workflow, or
+ * show it in its `folder`. Desktop does not send `show-in-folder` for an
+ * output whose `comfyFile` it found, because it shows that file itself.
  */
 export interface ComfyDesktopOutputAction {
-  action: 'download' | 'open-workflow'
+  action: 'download' | 'open-workflow' | 'show-in-folder'
   index: number
 }
 /**
  * Desktop's output dialog, for a Comfy page hosted in Desktop's Apps view.
  * Desktop exposes it to that page as `window.comfyDesktopOutputs`. Desktop
  * shows the outputs over the Apps view and does not save or open anything
- * itself: Download and Open workflow come back to the page on
+ * itself: Download, Open workflow and Show in folder come back to the page on
  * `onOutputAction`, only while the page that showed the outputs is still the
- * app's loaded page.
+ * app's loaded page. Desktop itself only shows a found `comfyFile` in its
+ * folder, and opens the Assets page for View in Assets.
  */
 export interface ComfyDesktopHostedOutputsBridge {
-  /** Resolves true once Desktop shows the outputs, and false when the app is not on screen. Rejects a request Desktop cannot show. */
+  /** Resolves true once Desktop shows the outputs, and false when the app is not on screen or a newer request from the page replaced this one. Rejects a request Desktop cannot show. */
   showOutput(request: ComfyDesktopShowOutputRequest): Promise<boolean>
   onOutputAction(callback: (action: ComfyDesktopOutputAction) => void): () => void
+}
+/** A kind of picture an app input takes. Desktop tells it by the file's extension. */
+export type ComfyDesktopAssetKind = 'image' | 'video'
+/** Where a run goes: `local` is This computer, `cloud` is Comfy Cloud. */
+export type ComfyDesktopAssetWhere = 'local' | 'cloud'
+/**
+ * A picture Desktop holds for a page, named by an opaque `ref` that works
+ * only in the page document that received it. The page never learns a path.
+ */
+export interface ComfyDesktopAssetRef {
+  ref: string
+  /** The file name to show, such as `cutout_00001_.png`. */
+  name: string
+  kind: ComfyDesktopAssetKind
+  where: ComfyDesktopAssetWhere
+  /** The app that made it, the `<app>` in `output/apps/<app>/...`, or null. */
+  app: string | null
+  /** Milliseconds since the epoch: the file's modified time, or the Cloud asset's creation time. */
+  createdAt: number
+  /** Its size in bytes. */
+  size: number
+  /** A small `data:` URL whose long side is at most 256 px, or null when none is cheap to make. */
+  thumb: string | null
+}
+/**
+ * Why Desktop could not answer: `missing` (the file or reference is gone),
+ * `elsewhere` (the reference is for the other place, has no run value
+ * there, or Desktop could not reach it), `too-large`, `wrong-kind`,
+ * `not-a-file` (a folder),
+ * `no-path` (a pasted or made-up file with no path on disk) or `signed-out`.
+ */
+export type ComfyDesktopAssetError =
+  'missing' | 'elsewhere' | 'too-large' | 'wrong-kind' | 'not-a-file' | 'no-path' | 'signed-out'
+export interface ComfyDesktopAssetFailure {
+  error: ComfyDesktopAssetError
+}
+/** `limit` is 12 when absent, and at most 48. */
+export interface ComfyDesktopAssetRecentRequest {
+  kinds: ComfyDesktopAssetKind[]
+  where: ComfyDesktopAssetWhere
+  limit?: number
+}
+export interface ComfyDesktopAssetFileRequest {
+  kinds: ComfyDesktopAssetKind[]
+}
+export interface ComfyDesktopAssetValueRequest {
+  where: ComfyDesktopAssetWhere
+}
+export interface ComfyDesktopAssetBytes {
+  bytes: ArrayBuffer
+  mime: string
+}
+/** What to put in `LoadImage.image` or `LoadVideo.file`. */
+export interface ComfyDesktopAssetValue {
+  value: string
+}
+/**
+ * The person's pictures for the inputs of a Comfy page hosted in Desktop's
+ * Apps view. Desktop exposes it to that page as `window.comfyDesktopAssets`.
+ * The page gets references, never paths, and asks Desktop for the run value
+ * of a reference when a run starts. Absent on Desktop builds that predate it.
+ */
+export interface ComfyDesktopHostedAssetsBridge {
+  /**
+   * Newest first. `local`: the files under `output/apps/` of the build the
+   * page's local runs go to, which is the shared output folder by default, and
+   * no other output files. `cloud`: the signed-in workspace's Comfy Cloud
+   * outputs, as Desktop's Assets page lists them; empty when signed out.
+   */
+  recent(request: ComfyDesktopAssetRecentRequest): Promise<ComfyDesktopAssetRef[]>
+  /**
+   * A file the person dropped or chose. Only its path reaches Desktop, which
+   * takes it when it is a regular file (after following links), of a kind in
+   * `kinds` by its extension, and at most 2 GiB. A file with no path on disk
+   * answers `no-path`, and the page uploads it as before. The answer's
+   * `thumb` is null, since the page already has the file to show.
+   */
+  fromFile(
+    file: File,
+    request: ComfyDesktopAssetFileRequest
+  ): Promise<ComfyDesktopAssetRef | ComfyDesktopAssetFailure>
+  /** The bytes, for the page's preview and its saved run. Above 512 MiB answers `too-large`. Desktop fetches a Cloud reference with its own sign-in. */
+  read(ref: string): Promise<ComfyDesktopAssetBytes | ComfyDesktopAssetFailure>
+  /**
+   * The value for a run going to `where`. A file on this computer, for a run
+   * on This computer: inside the build's output folder
+   * `<path/with/forward/slashes> [output]`, inside its input folder
+   * `<path> [input]`, and anywhere else `desktop/<hash>.<ext> [input]` after
+   * Desktop copies it once into `input/desktop/`, reusing an earlier copy. A
+   * Cloud output, for a run on Comfy Cloud: `<loader path> [output]`. A
+   * reference for the other place answers `elsewhere`, and the page uploads
+   * the bytes from `read` as before. A file that is gone answers `missing`.
+   */
+  valueFor(
+    ref: string,
+    request: ComfyDesktopAssetValueRequest
+  ): Promise<ComfyDesktopAssetValue | ComfyDesktopAssetFailure>
 }
 export interface ComfyDesktop2TerminalBridge {
   subscribe(installationId?: string): Promise<TerminalRestore>

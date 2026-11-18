@@ -1,3 +1,4 @@
+import fs from 'fs'
 import fsp from 'fs/promises'
 import type { Dirent } from 'fs'
 import path from 'path'
@@ -6,12 +7,13 @@ import { ipcMain, nativeImage, net, protocol, shell } from 'electron'
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
+import type { ComfyOutputFile } from '../apps/outputRequest'
 import { assetKind } from './assets'
 import { copyImageToClipboard } from './clipboardImage'
 import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
-import { installOutputDir } from './models'
-import { sourceMap } from './ipc/shared'
+import { installInputDir, installOutputDir } from './models'
+import { _runningSessions, sourceMap } from './ipc/shared'
 import type { AssetSummary, LocalAssetListing } from '../../types/ipc'
 
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
@@ -27,6 +29,8 @@ const STATS_AT_ONCE = 32
 const ROOTS_FRESH_MS = 5000
 const MAX_LINUX_THUMBNAIL_SOURCE_BYTES = 40 * 1024 * 1024
 const SERVED_KINDS = new Set(['image', 'video', 'audio'])
+const READ_WITHOUT_FOLLOWING =
+  fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0)
 
 const thumbnails = new Map<string, Buffer>()
 const thumbnailsInFlight = new Map<string, Promise<Buffer | null>>()
@@ -52,6 +56,50 @@ export function hasOutputFolder(inst: InstallationRecord): boolean {
 function outputDirFor(inst: InstallationRecord, sharedDir: string): string | null {
   if (!hasOutputFolder(inst)) return null
   return outputDirOverride(inst, sharedDir) ?? installOutputDir(inst.installPath)
+}
+
+export function sharedInputDir(): string {
+  return (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
+}
+
+function inputDirFor(inst: InstallationRecord): string | null {
+  if (!hasOutputFolder(inst)) return null
+  if ((inst.useSharedInput as boolean | undefined) !== false) return sharedInputDir()
+  return (inst.inputDir as string | undefined) || installInputDir(inst.installPath)
+}
+
+export interface ComfyFolders {
+  output: string | null
+  input: string | null
+}
+
+const NO_FOLDERS: ComfyFolders = { output: null, input: null }
+
+function lastArgValue(args: readonly string[], flag: string): string | null {
+  let value: string | undefined
+  for (const [i, arg] of args.entries()) {
+    if (arg === flag) value = args[i + 1]
+    else if (arg.startsWith(`${flag}=`)) value = arg.slice(flag.length + 1)
+  }
+  return value || null
+}
+
+export function launchFoldersOf(
+  inst: InstallationRecord,
+  launch: { args?: readonly string[]; skipSharedPaths?: boolean }
+): ComfyFolders {
+  if (launch.skipSharedPaths || !launch.args || !hasOutputFolder(inst)) return NO_FOLDERS
+  return {
+    output: lastArgValue(launch.args, '--output-directory') ?? installOutputDir(inst.installPath),
+    input: lastArgValue(launch.args, '--input-directory') ?? installInputDir(inst.installPath)
+  }
+}
+
+export function comfyFoldersOf(inst: InstallationRecord | null): ComfyFolders {
+  if (!inst) return { output: sharedOutputDir(), input: sharedInputDir() }
+  const running = _runningSessions.get(inst.id)
+  if (running) return running.launchFolders ?? NO_FOLDERS
+  return { output: outputDirFor(inst, sharedOutputDir()), input: inputDirFor(inst) }
 }
 
 async function realDir(dir: string): Promise<string | null> {
@@ -104,6 +152,36 @@ export async function outputFilePath(target: string): Promise<string | null> {
   if (!file) return null
   const stat = await fsp.stat(file).catch(() => null)
   return stat?.isFile() ? file : null
+}
+
+async function hasSameBytes(file: string, bytes: Uint8Array): Promise<boolean> {
+  const stat = await fsp.stat(file).catch(() => null)
+  if (!stat?.isFile() || stat.size !== bytes.byteLength) return false
+  const handle = await fsp.open(file, READ_WITHOUT_FOLLOWING).catch(() => null)
+  if (!handle) return false
+  try {
+    const content = Buffer.alloc(bytes.byteLength + 1)
+    const { bytesRead } = await handle.read(content, 0, content.length, 0)
+    const expected = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    return bytesRead === bytes.byteLength && expected.equals(content.subarray(0, bytesRead))
+  } catch {
+    return false
+  } finally {
+    await handle.close().catch(() => {})
+  }
+}
+
+export async function comfyOutputPath(
+  inst: InstallationRecord,
+  file: ComfyOutputFile,
+  bytes: Uint8Array
+): Promise<string | null> {
+  const dir = outputDirFor(inst, sharedOutputDir())
+  const root = dir ? await realDir(dir) : null
+  if (!root) return null
+  const real = await allowedPath(path.join(root, file.subfolder, file.filename))
+  if (!real || !isInsideRoot(real, root)) return null
+  return (await hasSameBytes(real, bytes)) ? real : null
 }
 
 export async function revealOutputFile(target: string): Promise<boolean> {
@@ -205,15 +283,23 @@ function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeI
   }
 }
 
-async function makeThumbnail(file: string, sizeBytes: number): Promise<Buffer | null> {
-  const size = { width: THUMBNAIL_SIZE, height: THUMBNAIL_SIZE }
+async function makeThumbnail(
+  file: string,
+  sizeBytes: number,
+  longSide: number
+): Promise<Buffer | null> {
+  const size = { width: longSide, height: longSide }
   const image =
     process.platform === 'linux'
       ? linuxThumbnailSource(file, sizeBytes)
       : await nativeImage.createThumbnailFromPath(file, size).catch(() => null)
-  if (!image || image.isEmpty()) return null
+  return image ? scaledJpeg(image, longSide) : null
+}
+
+function scaledJpeg(image: Electron.NativeImage, longSide: number): Buffer | null {
+  if (image.isEmpty()) return null
   const { width, height } = image.getSize()
-  const scale = Math.min(1, THUMBNAIL_SIZE / Math.max(width, height))
+  const scale = Math.min(1, longSide / Math.max(width, height))
   const scaled =
     scale < 1
       ? image.resize({
@@ -237,15 +323,15 @@ async function fewAtATime<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
-async function thumbnailFor(file: string): Promise<Buffer | null> {
+async function thumbnailFor(file: string, longSide = THUMBNAIL_SIZE): Promise<Buffer | null> {
   const stat = await fsp.stat(file).catch(() => null)
   if (!stat) return null
-  const key = `${file}\n${stat.mtimeMs}`
+  const key = `${file}\n${stat.mtimeMs}\n${longSide}`
   const cached = thumbnails.get(key)
   if (cached) return cached
   let making = thumbnailsInFlight.get(key)
   if (!making) {
-    making = fewAtATime(() => makeThumbnail(file, stat.size))
+    making = fewAtATime(() => makeThumbnail(file, stat.size, longSide))
       .then((made) => {
         if (made) {
           thumbnails.set(key, made)
@@ -266,6 +352,22 @@ async function thumbnailFor(file: string): Promise<Buffer | null> {
     return await Promise.race([making, tooSlow])
   } finally {
     clearTimeout(timer)
+  }
+}
+
+function jpegDataUrl(jpeg: Buffer | null): string | null {
+  return jpeg ? `data:image/jpeg;base64,${jpeg.toString('base64')}` : null
+}
+
+export async function thumbnailDataUrl(file: string, longSide: number): Promise<string | null> {
+  return jpegDataUrl(await thumbnailFor(file, longSide))
+}
+
+export function thumbnailDataUrlFromBytes(bytes: Uint8Array, longSide: number): string | null {
+  try {
+    return jpegDataUrl(scaledJpeg(nativeImage.createFromBuffer(Buffer.from(bytes)), longSide))
+  } catch {
+    return null
   }
 }
 

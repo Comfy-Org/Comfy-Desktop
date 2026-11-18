@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow, Search } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
+import AppBadges from './AppBadges.vue'
+import CoverRotation from '../components/CoverRotation.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
+import { badgeDescriptionIds } from './appCardBadges'
 import type { AppCard } from '../types/ipc'
 
 type LoadState = 'loading' | 'ready' | 'failed'
@@ -17,7 +20,10 @@ const { revisit = 0 } = defineProps<{ revisit?: number }>()
 
 const startWith = defineModel<AppCard | null>('startWith', { default: null })
 
-const emit = defineEmits<{ 'app-open-change': [open: boolean] }>()
+const emit = defineEmits<{
+  'app-open-change': [open: boolean]
+  'view-in-assets': [name: string]
+}>()
 
 const { t } = useI18n()
 
@@ -27,6 +33,8 @@ const query = ref('')
 const openApp = ref<AppCard | null>(null)
 const coversThatFailed = reactive(new Set<string>())
 const cardButtons = new Map<string, HTMLElement>()
+const keyboardFocusedId = ref<string | null>(null)
+const badgeIdPrefix = useId()
 
 let lastOpenedId: string | null = null
 let stopClosedUpdates: (() => void) | null = null
@@ -53,6 +61,20 @@ async function loadApps(): Promise<void> {
 function rememberCard(id: string, element: unknown): void {
   if (element instanceof HTMLElement) cardButtons.set(id, element)
   else cardButtons.delete(id)
+}
+
+function badgeIdPrefixFor(app: AppCard): string {
+  return `${badgeIdPrefix}-${app.id}`
+}
+
+function badgesDescribing(app: AppCard): string | undefined {
+  return badgeDescriptionIds(badgeIdPrefixFor(app), app.badges)
+}
+
+function noteCardFocus(app: AppCard, event: FocusEvent): void {
+  const card = event.currentTarget
+  keyboardFocusedId.value =
+    card instanceof HTMLElement && card.matches(':focus-visible') ? app.id : null
 }
 
 function open(app: AppCard): void {
@@ -190,19 +212,21 @@ onBeforeUnmount(() => {
               :ref="(element) => rememberCard(app.id, element)"
               type="button"
               class="group flex size-full cursor-pointer flex-col rounded-card border-0 bg-[rgb(29_29_29/0.72)] p-1 text-left outline-none transition-colors duration-150 hover:bg-card-hover focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+              :aria-describedby="badgesDescribing(app)"
               :data-testid="`app-card-${app.id}`"
               @click="open(app)"
+              @focus="noteCardFocus(app, $event)"
+              @blur="keyboardFocusedId = null"
             >
               <span
                 class="relative block aspect-[505/316] w-full overflow-hidden rounded-control bg-[rgb(235_235_235/0.05)]"
+                data-testid="app-card-picture"
               >
-                <img
-                  v-if="app.coverUrl && !coversThatFailed.has(app.id)"
-                  :src="app.coverUrl"
-                  alt=""
-                  loading="lazy"
-                  class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                  @error="coversThatFailed.add(app.id)"
+                <CoverRotation
+                  v-if="app.covers.length > 0 && !coversThatFailed.has(app.id)"
+                  :pictures="app.covers"
+                  class="transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  @broken="coversThatFailed.add(app.id)"
                 />
                 <span
                   v-else
@@ -211,6 +235,13 @@ onBeforeUnmount(() => {
                 >
                   <AppWindow :size="28" :stroke-width="1.5" aria-hidden="true" />
                 </span>
+                <AppBadges
+                  v-if="app.badges?.length"
+                  :badges="app.badges"
+                  :description-id-prefix="badgeIdPrefixFor(app)"
+                  :revealed="keyboardFocusedId === app.id"
+                  class="absolute top-2 left-2 max-w-[calc(100%-1rem)]"
+                />
               </span>
               <span class="flex min-w-0 flex-col px-1.5 pt-2.5 pb-1.5">
                 <span class="truncate text-ui font-medium text-foreground">{{ app.title }}</span>
@@ -222,7 +253,12 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <div v-if="openApp" class="absolute inset-0 flex">
-      <AppPageHost :app-id="openApp.id" :title="openApp.title" @close="closeApp" />
+      <AppPageHost
+        :app-id="openApp.id"
+        :title="openApp.title"
+        @close="closeApp"
+        @view-in-assets="emit('view-in-assets', $event)"
+      />
     </div>
   </div>
 </template>

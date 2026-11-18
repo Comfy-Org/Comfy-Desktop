@@ -273,11 +273,9 @@ describe('AppPageHost', () => {
     showAppPage.mockClear()
 
     const menu = coverPartOfThePage()
-    await nextFrame()
-    await nextFrame()
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
 
     expect(captureAppPage).toHaveBeenCalledTimes(1)
-    expect(hideAppPage).toHaveBeenCalledTimes(1)
     expect(wrapper.get('[data-testid="app-page-frozen-frame"]').attributes('src')).toBe(FRAME)
     expect(showAppPage).not.toHaveBeenCalled()
 
@@ -355,7 +353,7 @@ describe('AppPageHost outputs', () => {
     expect(outputDialog()?.querySelector('h2')?.textContent?.trim()).toBe('cutout-2.png')
     expect(inOutputDialog('output-detail-image')?.getAttribute('src')).toMatch(/^blob:/)
     expect(inOutputDialog('output-detail-thumb-0')).not.toBeNull()
-    expect(hideAppPage).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
   })
 
   it("ignores outputs from another app's page", async () => {
@@ -391,6 +389,61 @@ describe('AppPageHost outputs', () => {
       action: 'open-workflow',
       index: 0
     })
+    expect(outputDialog()).toBeNull()
+  })
+
+  it('says where a result on this computer is saved, and sends Show in folder to the page', async () => {
+    await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [first!, { ...second!, savedOn: 'computer', folder: '/Users/me/ComfyUI/output/apps' }],
+      index: 1
+    })
+
+    expect(inOutputDialog('output-detail-saved-in')?.textContent).toContain('apps')
+    expect(inOutputDialog('output-detail-saved-in')?.textContent).toContain(
+      '/Users/me/ComfyUI/output'
+    )
+    expect(inOutputDialog('output-detail-view-in-assets')).toBeNull()
+
+    inOutputDialog('output-detail-show-in-folder')!.click()
+    await flushPromises()
+
+    expect(sendAppOutputAction).toHaveBeenCalledExactlyOnceWith({
+      action: 'show-in-folder',
+      index: 1
+    })
+    expect(outputDialog()).not.toBeNull()
+  })
+
+  it('shows no saved place for a result on this computer whose folder Desktop does not know', async () => {
+    await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [first!, { ...second!, savedOn: 'computer' }],
+      index: 1
+    })
+
+    expect(inOutputDialog('output-detail-saved-in')).toBeNull()
+    expect(inOutputDialog('output-detail-show-in-folder')).toBeNull()
+  })
+
+  it('says a Cloud result is saved in Comfy Cloud assets, and View in Assets asks for it by name', async () => {
+    const wrapper = await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [first!, { ...second!, savedOn: 'cloud' }],
+      index: 1
+    })
+
+    expect(inOutputDialog('output-detail-saved-in')?.textContent).toContain('Comfy Cloud assets')
+    expect(inOutputDialog('output-detail-show-in-folder')).toBeNull()
+
+    inOutputDialog('output-detail-view-in-assets')!.click()
+    await flushPromises()
+
+    expect(wrapper.emitted('view-in-assets')).toEqual([['cutout-2.png']])
+    expect(sendAppOutputAction).not.toHaveBeenCalled()
     expect(outputDialog()).toBeNull()
   })
 

@@ -1,10 +1,11 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page as browserPage } from 'vitest/browser'
+import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import '../assets/main.css'
 import AppsView from './AppsView.vue'
-import type { AppCard, AppPagePlacement, AppPageStatus } from '../types/ipc'
+import AppPageHost from './AppPageHost.vue'
+import type { AppBadge, AppCard, AppPagePlacement, AppPageStatus } from '../types/ipc'
 
 const FOUR_COLUMN_PAGE_WIDTH = 1172
 const MEDIUM_PAGE_WIDTH = 900
@@ -12,23 +13,33 @@ const NARROW_PAGE_WIDTH = 532
 const COVER =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
+const CROWN: AppBadge = {
+  id: 'uses-credits',
+  style: 'crown',
+  text: { en: 'Uses credits' },
+  description: { en: 'Runs a paid partner model' }
+}
+const NEW_CHIP: AppBadge = { id: 'new', style: 'chip', text: { en: 'New' } }
+
 const CUTOUT: AppCard = {
   id: 'remove-background',
   title: 'Remove Background',
   description: 'Cut the subject out of a picture or video.',
-  coverUrl: COVER
+  covers: [{ url: COVER, stillUrl: null }],
+  badges: [CROWN, NEW_CHIP]
 }
 const HDR: AppCard = {
   id: 'sdr-to-hdr',
   title: 'SDR to HDR',
   description: 'Give a picture or video HDR brightness.',
-  coverUrl: COVER
+  covers: [{ url: COVER, stillUrl: null }]
 }
 const GENJUTSU: AppCard = {
   id: 'genjutsu',
   title: 'Genjutsu',
   description: 'Move a character with the motion from a clip.',
-  coverUrl: null
+  covers: [],
+  badges: [NEW_CHIP]
 }
 
 const listApps = vi.fn<() => Promise<AppCard[]>>()
@@ -83,7 +94,10 @@ beforeEach(() => {
   }
 })
 
-afterEach(() => page.remove())
+afterEach(() => {
+  page.remove()
+  delete document.documentElement.dataset.theme
+})
 
 describe('AppsView', () => {
   it('lists every app as a card with its picture, name and one line on what it does', async () => {
@@ -97,6 +111,24 @@ describe('AppsView', () => {
     expect(wrapper.findAll('[data-testid="apps-grid"] button')).toHaveLength(3)
   })
 
+  it("plays an app's covers on its card, one shown and the next loading behind it", async () => {
+    const covers = ['red', 'green', 'blue'].map((fill) => ({
+      url: `data:image/svg+xml,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5"><rect width="8" height="5" fill="${fill}"/></svg>`
+      )}`,
+      stillUrl: null
+    }))
+    const wrapper = await mountApps([{ ...CUTOUT, covers }])
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+    const urls = covers.map((cover) => cover.url)
+
+    expect(urls).toContain(card.get('img[data-cover="shown"]').attributes('src'))
+    expect(urls).toContain(card.get('img[data-cover="upcoming"]').attributes('src'))
+    expect(card.get('img[data-cover="upcoming"]').attributes('src')).not.toBe(
+      card.get('img[data-cover="shown"]').attributes('src')
+    )
+  })
+
   it('shows a glyph instead of a picture for an app with no cover', async () => {
     const wrapper = await mountApps()
     const card = wrapper.get('[data-testid="app-card-genjutsu"]')
@@ -106,7 +138,9 @@ describe('AppsView', () => {
   })
 
   it('swaps a picture that fails to load for the glyph', async () => {
-    const wrapper = await mountApps([{ ...CUTOUT, coverUrl: 'data:image/png;base64,broken' }])
+    const wrapper = await mountApps([
+      { ...CUTOUT, covers: [{ url: 'data:image/png;base64,broken', stillUrl: null }] }
+    ])
     const card = wrapper.get('[data-testid="app-card-remove-background"]')
 
     await expect.poll(() => card.find('[data-testid="app-card-no-cover"]').exists()).toBe(true)
@@ -127,7 +161,7 @@ describe('AppsView', () => {
   it('sizes a card as the design does: 4px around a 505 by 316 picture, 13px text', async () => {
     const wrapper = await mountApps()
     const card = wrapper.get('[data-testid="app-card-remove-background"]')
-    const picture = card.get('img').element.parentElement as HTMLElement
+    const picture = card.get('[data-testid="app-card-picture"]').element as HTMLElement
     const cardBox = card.element.getBoundingClientRect()
     const pictureBox = picture.getBoundingClientRect()
 
@@ -136,7 +170,7 @@ describe('AppsView', () => {
     expect(pictureBox.width / pictureBox.height).toBeCloseTo(505 / 316, 2)
     expect(getComputedStyle(card.element).borderRadius).toBe('12px')
     expect(getComputedStyle(picture).borderRadius).toBe('8px')
-    expect(getComputedStyle(card.get('span.font-medium').element).fontSize).toBe('13px')
+    expect(getComputedStyle(card.get('span.text-ui.font-medium').element).fontSize).toBe('13px')
   })
 
   it('narrows the cards to the apps whose name or description matches the search', async () => {
@@ -233,6 +267,16 @@ describe('AppsView', () => {
     expect(hideAppPage).toHaveBeenCalled()
   })
 
+  it("passes on the Cloud file an app's output dialog asks to see in Assets", async () => {
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-remove-background"]').trigger('click')
+    await flushPromises()
+
+    wrapper.findComponent(AppPageHost).vm.$emit('view-in-assets', 'cutout.png')
+
+    expect(wrapper.emitted('view-in-assets')).toEqual([['cutout.png']])
+  })
+
   it('returns to the cards when Apps is picked in the sidebar again', async () => {
     const wrapper = await mountApps()
     await wrapper.get('[data-testid="app-card-genjutsu"]').trigger('click')
@@ -278,6 +322,65 @@ describe('AppsView', () => {
         .map((card) => card.attributes('data-testid'))
     ).toEqual(['app-card-remove-background', 'app-card-sdr-to-hdr', 'app-card-genjutsu'])
     expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
+  })
+
+  it("draws an app's badges on the top left of its picture, the crown alone in the credits gold, and none on an app without badges", async () => {
+    const wrapper = await mountApps()
+
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+    const badges = card.get('[data-testid="app-badges"]')
+    const picture = card.get('[data-testid="app-card-picture"]').element.getBoundingClientRect()
+    const badgesBox = badges.element.getBoundingClientRect()
+    expect(Math.round(badgesBox.left - picture.left)).toBe(8)
+    expect(Math.round(badgesBox.top - picture.top)).toBe(8)
+    expect(
+      badges.findAll('[data-badge-style]').map((badge) => badge.attributes('data-badge-style'))
+    ).toEqual(['crown'])
+    expect(Math.round(badgesBox.width)).toBe(28)
+    document.documentElement.dataset.theme = 'dark'
+    expect(getComputedStyle(badges.get('[data-testid="app-badge-crown"]').element).color).toBe(
+      'rgb(233, 196, 34)'
+    )
+    expect(
+      wrapper
+        .get('[data-testid="app-card-genjutsu"]')
+        .find('[data-testid="app-badge-new"]')
+        .exists()
+    ).toBe(true)
+    expect(
+      wrapper.get('[data-testid="app-card-sdr-to-hdr"]').find('[data-testid="app-badges"]').exists()
+    ).toBe(false)
+  })
+
+  it('describes a card with each of its badges for screen readers, and a card without badges with none', async () => {
+    const wrapper = await mountApps()
+
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+    const ids = card.attributes('aria-describedby')?.split(' ') ?? []
+    const notes = ids.map((id) => document.getElementById(id)?.textContent)
+    expect(notes).toEqual(['Uses credits: Runs a paid partner model', 'New'])
+    expect(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').attributes('aria-describedby')).toBe(
+      undefined
+    )
+  })
+
+  it("shows the first badge's description when a card with badges gets keyboard focus, and not for a card without", async () => {
+    const wrapper = await mountApps()
+
+    wrapper.get('input').element.focus()
+    await userEvent.tab()
+
+    expect(document.activeElement).toBe(
+      wrapper.get('[data-testid="app-card-remove-background"]').element
+    )
+    await expect
+      .poll(() => document.querySelector('.tooltip-bubble')?.textContent ?? '')
+      .toContain('Runs a paid partner model')
+
+    await userEvent.tab()
+
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
+    await expect.poll(() => document.querySelector('.tooltip-bubble')).toBe(null)
   })
 
   it('lists the apps in the order the website gave them', async () => {

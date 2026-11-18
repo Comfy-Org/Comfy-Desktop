@@ -54,7 +54,7 @@ vi.mock('../../views/comfyUISettings/SnapshotsView.vue', () => ({
 vi.mock('../../views/comfyUISettings/SettingsSectionList.vue', () => ({
   default: {
     name: 'SettingsSectionList',
-    props: ['columns'],
+    props: ['stacked'],
     template: '<div data-testid="settings-section-list-stub"></div>'
   }
 }))
@@ -132,6 +132,20 @@ describe('ComfyUISettingsContent', () => {
 
       expect(target.querySelector('.settings-v2-footer')).not.toBeNull()
       expect(wrapper.find('.settings-v2-footer').exists()).toBe(false)
+
+      wrapper.unmount()
+      target.remove()
+    })
+
+    it('leaves room around the page body so focus rings at its edges are not clipped', async () => {
+      const target = document.createElement('div')
+      target.id = 'page-actions'
+      document.body.append(target)
+
+      const wrapper = await mountContent({ pageActionsTarget: '#page-actions' })
+      expect(wrapper.find('.settings-v2-body').classes()).toEqual(
+        expect.arrayContaining(['-mx-1', 'px-1'])
+      )
 
       wrapper.unmount()
       target.remove()
@@ -477,7 +491,14 @@ describe('ComfyUISettingsContent', () => {
     const CONSOLE_TOOLTIP =
       "An interactive shell running in this build's folder. Works whether ComfyUI is running or stopped."
 
-    const TAB_LABELS = new Set(['Overview', 'Startup Args', 'Snapshots', 'Storage', 'Terminal'])
+    const TAB_LABELS = new Set([
+      'Overview',
+      'Startup Args',
+      'Snapshots',
+      'Folders',
+      'Storage',
+      'Terminal'
+    ])
 
     function tabTooltips(w: VueWrapper) {
       return w
@@ -830,7 +851,7 @@ describe('ComfyUISettingsContent', () => {
     })
   })
 
-  describe('Startup Args two-column layout', () => {
+  describe('Startup Args stacked layout', () => {
     let priorSections: unknown[]
     let target: HTMLElement
 
@@ -851,32 +872,32 @@ describe('ComfyUISettingsContent', () => {
       target.remove()
     })
 
-    async function columnsFor(props: Record<string, unknown>): Promise<unknown> {
+    async function stackedFor(props: Record<string, unknown>): Promise<unknown> {
       const w = await mountContent({ initialTab: 'config', ...props })
-      const columns = w.findComponent({ name: 'SettingsSectionList' }).props('columns')
+      const stacked = w.findComponent({ name: 'SettingsSectionList' }).props('stacked')
       w.unmount()
-      return columns
+      return stacked
     }
 
-    it('lays out the Startup Args tab in two columns on the build page', async () => {
-      expect(await columnsFor({ pageActionsTarget: '#page-actions' })).toBe(true)
+    it('stacks the Startup Args settings under their section title on the build page', async () => {
+      expect(await stackedFor({ pageActionsTarget: '#page-actions' })).toBe(true)
     })
 
-    it('keeps the settings modal single-column', async () => {
-      expect(await columnsFor({})).toBe(false)
+    it('keeps the settings modal in its own compact layout', async () => {
+      expect(await stackedFor({})).toBe(false)
     })
 
-    it('keeps a cloud build single-column, where that tab is labelled Storage', async () => {
+    it('keeps a cloud build in its own layout, where that tab is labelled Storage', async () => {
       expect(
-        await columnsFor({
+        await stackedFor({
           pageActionsTarget: '#page-actions',
           installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
         })
       ).toBe(false)
     })
 
-    it('keeps the Update tab single-column on the build page', async () => {
-      expect(await columnsFor({ pageActionsTarget: '#page-actions', initialTab: 'update' })).toBe(
+    it('keeps the Update tab out of the stacked layout on the build page', async () => {
+      expect(await stackedFor({ pageActionsTarget: '#page-actions', initialTab: 'update' })).toBe(
         false
       )
     })

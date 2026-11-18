@@ -66,6 +66,7 @@ export interface ComfyWindowEntry {
   sourceCategory: string | null
   previewInstallationId: string | null
   coldStartPendingReveal: boolean
+  maximizeOnReveal?: boolean
   _installCleanup: (() => void) | null
   detachInstall: () => void
 }
@@ -277,8 +278,16 @@ export function findPreferredInstallHostWindow(): BrowserWindow | null {
   return fallback?.window ?? null
 }
 
+export function maximizeIfPendingReveal(win: BrowserWindow): void {
+  const entry = findEntryByHostWindow(win)
+  if (!entry?.maximizeOnReveal) return
+  entry.maximizeOnReveal = false
+  win.maximize()
+}
+
 export function bringToFront(win: BrowserWindow): void {
   if (win.isMinimized()) win.restore()
+  maximizeIfPendingReveal(win)
   if (process.platform === 'win32') {
     win.setAlwaysOnTop(true)
     win.show()

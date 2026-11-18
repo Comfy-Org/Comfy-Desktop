@@ -1,3 +1,4 @@
+import './lib/uninstallCleanupEntry'
 import {
   app,
   Menu,
@@ -27,6 +28,7 @@ import * as settings from './settings'
 import { installAppMenu } from './menu'
 import * as i18n from './lib/i18n'
 import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
+import { relaunchIntoUninstallCleanup } from './lib/uninstallCleanup'
 import { saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
@@ -121,6 +123,7 @@ import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initAppsFlag } from './apps/appsFlag'
+import { appsEnabledAtStart } from './apps/appsConfig'
 import { runningPortOf } from './apps/localBuild'
 import {
   isRunningForAppsOnly,
@@ -148,6 +151,7 @@ import {
   getEntryByInstallationId,
   isChooserHost,
   isInstallHost,
+  maximizeIfPendingReveal,
   openOrFocusAnyHostWindow,
   openOrFocusChooserHostWindow,
   openOrFocusHomeHostWindow,
@@ -689,13 +693,18 @@ ipcMain.on('comfy-window:click-announcement', (event) => {
   openAnnouncement(found.entry.windowKey)
 })
 
-ipcMain.on('comfy-window:new-chooser-window', () => {
-  openChooserHostWindow()
+ipcMain.on('comfy-window:new-chooser-window', (event) => {
+  openChooserHostWindow('comfy', {
+    nearWindow: findEntryByTitleBarSender(event.sender)?.entry.window
+  })
 })
 
-ipcMain.on('comfy-window:open-page-in-new-window', (_event, page: unknown) => {
+ipcMain.on('comfy-window:open-page-in-new-window', (event, page: unknown) => {
   if (!isNewWindowDashboardPage(page)) return
-  openChooserHostWindow('comfy', { dashboardPage: page })
+  openChooserHostWindow('comfy', {
+    dashboardPage: page,
+    nearWindow: findHostWindowByPanelSender(event.sender) ?? undefined
+  })
 })
 
 ipcMain.on('comfy-window:show-home', (event) => {
@@ -739,6 +748,7 @@ async function focusOpenComfyWindow(
   const entry = getEntryByInstallationId(installationId)
   if (!entry || entry.window.isDestroyed()) return false
   if (await prepareBuildWindowFocus(entry, requester, pickerWorkspaceId)) {
+    maximizeIfPendingReveal(entry.window)
     entry.window.show()
     entry.window.focus()
   }
@@ -937,11 +947,15 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     } catch (err) {
       console.warn('[comfy-procs] startup scan failed:', err)
     }
+    const appsEnabled = appsEnabledAtStart()
     mainTelemetry.initTelemetry({
       appVersion: APP_VERSION,
       appEnv: app.isPackaged ? 'prod-v2' : 'dev',
       isPackaged: app.isPackaged,
-      sessionStartProps: { prior_session_unclean: priorSessionUnclean }
+      sessionStartProps: {
+        prior_session_unclean: priorSessionUnclean,
+        ...(appsEnabled === undefined ? {} : { apps_enabled: appsEnabled })
+      }
     })
     mainTelemetry.setConsentState(initialConsent)
     mainTelemetry.installAppHooks()
@@ -1114,6 +1128,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       confirmAndCloseAllHostWindows: (parentWindow) =>
         confirmAndCloseAllHostWindows(parentWindow, quitApp),
       confirmAndCloseHostWindow,
+      removeAppDataAndQuit: (options) =>
+        relaunchIntoUninstallCleanup(options, {
+          suppressInstallOnQuit: updater.suppressInstallOnQuit,
+          quit: quitApp
+        }),
       setActivePanel,
       triggerOpenFeedback,
       resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),

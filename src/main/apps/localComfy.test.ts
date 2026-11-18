@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   startModelJob: (_options: Record<string, unknown>): Promise<unknown> => Promise.resolve(null),
   makeRelay: (): unknown => null,
   hearFromComfy: (_message: unknown): void => {},
+  socketOpened: (): void => {},
+  captured: [] as { event: string; properties: Record<string, unknown> }[],
   broadcasts: [] as [string, unknown][],
   keepComfyRunning: true
 }))
@@ -76,9 +78,20 @@ vi.mock('../lib/models', () => ({
 vi.mock('../lib/process', () => ({ COMFY_BOOT_TIMEOUT_MS: 300_000 }))
 vi.mock('./appsPages', () => ({ liveAppsPages: () => mocks.pages }))
 vi.mock('./localRelay', () => ({
-  createLocalRelay: (onMessage: (message: unknown) => void) => {
+  createLocalRelay: (
+    onMessage: (message: unknown) => void,
+    _openSocket: unknown,
+    onOpen: () => void
+  ) => {
     mocks.hearFromComfy = onMessage
+    mocks.socketOpened = onOpen
     return mocks.makeRelay()
+  }
+}))
+vi.mock('../lib/telemetry', () => ({
+  capture: (event: string, properties: Record<string, unknown>) => {
+    mocks.captured.push({ event, properties })
+    return true
   }
 }))
 
@@ -114,7 +127,7 @@ interface Asked {
 
 class FakeComfy {
   asked: Asked[] = []
-  queue = {
+  queue: { queue_running: unknown[][]; queue_pending: unknown[][] } = {
     queue_running: [[4, OTHER_RUN, { 3: { class_type: 'KSampler' } }, { client_id: 'theirs' }]],
     queue_pending: [[5, RUN, { 1: {} }, { comfy_app: { name: 'Remove Background' } }]]
   }
@@ -122,6 +135,12 @@ class FakeComfy {
     status: 200,
     body: { prompt_id: RUN, number: 5, node_errors: {} }
   }
+  historyEntry: Record<string, unknown> | null = {
+    status: { completed: true },
+    outputs: { save: { images: [CUTOUT] } }
+  }
+  brokenHistory: 'body' | 'status' | null = null
+  brokenQueueReads = 0
 
   answer = async (input: string | URL | Request, init: RequestInit = {}): Promise<Response> => {
     const url = new URL(String(input))
@@ -135,13 +154,24 @@ class FakeComfy {
         headers: { 'content-type': 'application/json' }
       })
     if (![PORT, LAB_PORT].includes(Number(url.port))) throw new TypeError('fetch failed')
+    if (url.pathname === '/queue' && init.method !== 'POST' && this.brokenQueueReads > 0) {
+      this.brokenQueueReads -= 1
+      return json({ error: 'busy' }, 500)
+    }
     if (url.pathname === '/queue' && init.method !== 'POST') return json(this.queue)
     if (url.pathname === '/prompt') return json(this.promptAnswer.body, this.promptAnswer.status)
+    if (url.pathname.startsWith('/history/') && this.brokenHistory === 'status') {
+      return json({ error: 'busy' }, 500)
+    }
+    if (url.pathname.startsWith('/history/') && this.brokenHistory === 'body') {
+      const body = new ReadableStream({
+        start: (stream) => stream.error(new TypeError('terminated'))
+      })
+      return new Response(body, { headers: { 'content-type': 'application/json' } })
+    }
     if (url.pathname.startsWith('/history/')) {
       const promptId = url.pathname.slice('/history/'.length)
-      return json({
-        [promptId]: { status: { completed: true }, outputs: { save: { images: [CUTOUT] } } }
-      })
+      return json(this.historyEntry ? { [promptId]: this.historyEntry } : {})
     }
     if (url.pathname === '/view') {
       const bytes = Number(url.port) === LAB_PORT ? LAB_CUTOUT_BYTES : STUDIO_CUTOUT_BYTES
@@ -239,6 +269,7 @@ beforeEach(() => {
   launches = []
   stopped = []
   mocks.makeRelay = () => relay
+  mocks.captured = []
   mocks.pages = [page]
   mocks.records = [build()]
   mocks.onList = () => {}
@@ -475,7 +506,7 @@ describe('a run from an app page', () => {
 
     expect((await post('/queue', { delete: [RUN] })).status).toBe(200)
     expect((await post('/interrupt', { prompt_id: RUN })).status).toBe(200)
-    expect(comfy.asked.slice(-2)).toEqual([
+    expect(comfy.asked.filter((asked) => asked.method === 'POST').slice(-2)).toEqual([
       { port: PORT, method: 'POST', path: '/queue', body: { delete: [RUN] } },
       { port: PORT, method: 'POST', path: '/interrupt', body: { prompt_id: RUN } }
     ])
@@ -1398,5 +1429,606 @@ describe('a ComfyUI whose window the person closed', () => {
     expect(stopped).toEqual([])
     expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
     expect(local.runsWithItsWindowClosed(STUDIO)).toBe(true)
+  })
+})
+
+const APP = 'product-ads'
+const RUN_FINISHED = 'comfy.desktop.apps.run_finished'
+const SETUP = 'comfy.desktop.apps.setup'
+
+function captured(event: string): Record<string, unknown>[] {
+  return mocks.captured.filter((one) => one.event === event).map((one) => one.properties)
+}
+
+function setupSteps(): string[] {
+  return captured(SETUP).map((one) => `${one['stage']} ${one['outcome']}`)
+}
+
+describe('run_finished, for an app run on this computer', () => {
+  let t0 = 0
+
+  function runFromApp(extraData: Record<string, unknown> = {}) {
+    return local.localFetch(
+      asContents(page),
+      {
+        method: 'POST',
+        path: '/prompt',
+        body: JSON.stringify({ prompt: { 1: { class_type: 'LoadImage' } }, extra_data: extraData })
+      },
+      APP
+    )
+  }
+
+  function hear(type: string, data: Record<string, unknown> = {}): void {
+    mocks.hearFromComfy({ type, data: { prompt_id: RUN, ...data } })
+  }
+
+  beforeEach(async () => {
+    running()
+    await localState(WANT)
+    comfy.queue = { queue_running: [], queue_pending: [] }
+    t0 = Date.now()
+  })
+
+  it('names the app whose page sent the run, not the name the page tagged it with', async () => {
+    await runFromApp({ comfy_app: { name: 'Remove Background' } })
+    hear('execution_start', { timestamp: t0 + 2_000 })
+    hear('execution_success', { timestamp: t0 + 9_000 })
+
+    expect(captured(RUN_FINISHED)).toEqual([
+      {
+        app_id: APP,
+        where: 'local',
+        outcome: 'success',
+        run_seconds: 7,
+        queue_seconds: 2
+      }
+    ])
+  })
+
+  it.each([
+    ['execution_error', { exception_type: 'torch.OutOfMemoryError' }, 'failed'],
+    ['execution_interrupted', {}, 'cancelled']
+  ])('reports %s as %s', async (type, data, outcome) => {
+    await runFromApp()
+    hear('execution_start', { timestamp: t0 })
+    hear(type, { ...data, exception_message: 'at /home/someone', timestamp: t0 + 1_000 })
+
+    expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ app_id: APP, outcome })])
+    expect(JSON.stringify(mocks.captured)).not.toContain('/home/someone')
+  })
+
+  it('sends nothing for a graph ComfyUI refused, which never got a prompt id', async () => {
+    comfy.promptAnswer = { status: 400, body: { error: { type: 'prompt_no_outputs' } } }
+
+    await runFromApp()
+    hear('execution_success')
+
+    expect(captured(RUN_FINISHED)).toEqual([])
+  })
+
+  it('reports a run as failed once, when its ComfyUI exits before it ends', async () => {
+    await runFromApp()
+    hear('execution_start', { timestamp: t0 })
+
+    mocks.sessions.delete(STUDIO)
+    sessionLifecycleEvents.emit('changed')
+    sessionLifecycleEvents.emit('changed')
+    hear('execution_success')
+
+    expect(captured(RUN_FINISHED)).toEqual([
+      expect.objectContaining({ app_id: APP, outcome: 'failed', error_class: 'comfyui_exited' })
+    ])
+  })
+
+  it('reads how a run ended from ComfyUI history when the socket was down as it ended', async () => {
+    await runFromApp()
+    comfy.historyEntry = {
+      outputs: {},
+      status: {
+        status_str: 'success',
+        completed: true,
+        messages: [
+          ['execution_start', { prompt_id: RUN, timestamp: t0 + 1_000 }],
+          ['execution_success', { prompt_id: RUN, timestamp: t0 + 5_000 }]
+        ]
+      }
+    }
+
+    mocks.socketOpened()
+
+    await vi.waitFor(() =>
+      expect(captured(RUN_FINISHED)).toEqual([
+        expect.objectContaining({ outcome: 'success', run_seconds: 4, queue_seconds: 1 })
+      ])
+    )
+  })
+
+  it('keeps following a run that is still queued when the socket opens again', async () => {
+    comfy.queue = { queue_running: [[5, RUN, {}, {}]], queue_pending: [] }
+    await runFromApp()
+    hear('execution_start', { timestamp: t0 })
+
+    mocks.socketOpened()
+    await vi.waitFor(() => expect(comfy.calls('/queue')).toHaveLength(1))
+    await vi.advanceTimersByTimeAsync(0)
+    hear('execution_success')
+
+    expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ outcome: 'success' })])
+    expect(comfy.calls(`/history/${RUN}`)).toEqual([])
+  })
+
+  it('reports a run ComfyUI no longer knows after the socket opens again as failed', async () => {
+    comfy.historyEntry = null
+    await runFromApp()
+
+    mocks.socketOpened()
+
+    await vi.waitFor(() =>
+      expect(captured(RUN_FINISHED)).toEqual([
+        expect.objectContaining({ outcome: 'failed', error_class: 'comfyui_exited' })
+      ])
+    )
+  })
+
+  it('reports a run the page took out of the queue before it started as cancelled', async () => {
+    comfy.historyEntry = null
+    await runFromApp()
+
+    expect((await post('/queue', { delete: [RUN] })).status).toBe(200)
+
+    await vi.waitFor(() =>
+      expect(captured(RUN_FINISHED)).toEqual([
+        expect.objectContaining({ app_id: APP, outcome: 'cancelled' })
+      ])
+    )
+    expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('run_seconds')
+  })
+
+  describe('when a read fails after the page takes a run out of the queue', () => {
+    const queueReads = (): Asked[] =>
+      comfy.calls('/queue').filter((asked) => asked.method === 'GET')
+
+    async function takeOutOfQueue(): Promise<void> {
+      comfy.historyEntry = null
+      await runFromApp()
+      expect((await post('/queue', { delete: [RUN] })).status).toBe(200)
+      await vi.advanceTimersByTimeAsync(0)
+    }
+
+    it.each([
+      [
+        'queue',
+        (): void => {
+          comfy.brokenQueueReads = 1
+        }
+      ],
+      [
+        'history',
+        (): void => {
+          comfy.brokenHistory = 'status'
+        }
+      ]
+    ] as const)(
+      'reports the run as cancelled when the %s read works on a later try',
+      async (_read, breakRead) => {
+        breakRead()
+        await takeOutOfQueue()
+        expect(captured(RUN_FINISHED)).toEqual([])
+        comfy.brokenHistory = null
+
+        await vi.advanceTimersByTimeAsync(2_000)
+
+        expect(captured(RUN_FINISHED)).toEqual([
+          expect.objectContaining({ app_id: APP, outcome: 'cancelled' })
+        ])
+      }
+    )
+
+    it('tries a few more times, then stops without guessing an outcome', async () => {
+      comfy.brokenQueueReads = Number.POSITIVE_INFINITY
+      await takeOutOfQueue()
+
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(queueReads()).toHaveLength(4)
+      expect(captured(RUN_FINISHED)).toEqual([])
+    })
+
+    it('stops trying once Desktop no longer follows the run', async () => {
+      comfy.brokenQueueReads = Number.POSITIVE_INFINITY
+      await takeOutOfQueue()
+      mocks.sessions.delete(STUDIO)
+      sessionLifecycleEvents.emit('changed')
+
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(queueReads()).toHaveLength(1)
+      expect(captured(RUN_FINISHED)).toEqual([
+        expect.objectContaining({ outcome: 'failed', error_class: 'comfyui_exited' })
+      ])
+    })
+
+    it('stops trying once local apps are reset', async () => {
+      comfy.brokenQueueReads = Number.POSITIVE_INFINITY
+      await takeOutOfQueue()
+      _resetForTest()
+
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(queueReads()).toHaveLength(1)
+    })
+  })
+
+  describe('when the queue changes, as when another ComfyUI client clears pending work', () => {
+    const queueChanged = (remaining = 0): void =>
+      mocks.hearFromComfy({
+        type: 'status',
+        data: { status: { exec_info: { queue_remaining: remaining } } }
+      })
+    const queueReads = (): Asked[] =>
+      comfy.calls('/queue').filter((asked) => asked.method === 'GET')
+
+    it('reports a run that is gone from the queue before it started as cancelled, once', async () => {
+      comfy.historyEntry = null
+      await runFromApp()
+
+      queueChanged()
+      queueChanged()
+
+      await vi.waitFor(() =>
+        expect(captured(RUN_FINISHED)).toEqual([
+          expect.objectContaining({ app_id: APP, outcome: 'cancelled' })
+        ])
+      )
+      await vi.advanceTimersByTimeAsync(0)
+      expect(captured(RUN_FINISHED)).toHaveLength(1)
+    })
+
+    it('reports a run that ended meanwhile from its history', async () => {
+      await runFromApp()
+      comfy.historyEntry = {
+        outputs: {},
+        status: {
+          status_str: 'success',
+          completed: true,
+          messages: [
+            ['execution_start', { prompt_id: RUN, timestamp: t0 + 1_000 }],
+            ['execution_success', { prompt_id: RUN, timestamp: t0 + 4_000 }]
+          ]
+        }
+      }
+
+      queueChanged()
+
+      await vi.waitFor(() =>
+        expect(captured(RUN_FINISHED)).toEqual([
+          expect.objectContaining({ outcome: 'success', run_seconds: 3 })
+        ])
+      )
+    })
+
+    it('keeps following a run that is still queued', async () => {
+      comfy.queue = { queue_running: [], queue_pending: [[5, RUN, {}, {}]] }
+      await runFromApp()
+
+      queueChanged(1)
+      await vi.waitFor(() => expect(queueReads()).toHaveLength(1))
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(captured(RUN_FINISHED)).toEqual([])
+      expect(comfy.calls(`/history/${RUN}`)).toEqual([])
+    })
+
+    it('reads the queue at most once more for changes heard while it reads it', async () => {
+      comfy.queue = { queue_running: [], queue_pending: [[5, RUN, {}, {}]] }
+      await runFromApp()
+
+      queueChanged(1)
+      queueChanged(1)
+      queueChanged(1)
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(queueReads()).toHaveLength(2)
+    })
+
+    it('takes the start of a run from its history when the socket missed it', async () => {
+      comfy.queue = { queue_running: [[5, RUN, {}, {}]], queue_pending: [] }
+      await runFromApp()
+      mocks.socketOpened()
+      await vi.waitFor(() => expect(queueReads()).toHaveLength(1))
+      await vi.advanceTimersByTimeAsync(0)
+      comfy.queue = { queue_running: [], queue_pending: [] }
+      comfy.historyEntry = {
+        outputs: {},
+        status: {
+          status_str: 'success',
+          completed: true,
+          messages: [
+            ['execution_start', { prompt_id: RUN, timestamp: t0 + 1_000 }],
+            ['execution_success', { prompt_id: RUN, timestamp: t0 + 6_000 }]
+          ]
+        }
+      }
+
+      hear('execution_success', { timestamp: t0 + 6_000 })
+      expect(captured(RUN_FINISHED)).toEqual([])
+      queueChanged()
+
+      await vi.waitFor(() =>
+        expect(captured(RUN_FINISHED)).toEqual([
+          expect.objectContaining({ outcome: 'success', run_seconds: 5, queue_seconds: 1 })
+        ])
+      )
+    })
+
+    it.each(['body', 'status'] as const)(
+      'sends a heard end with no run time, once, when the history read fails (%s)',
+      async (broken) => {
+        comfy.brokenHistory = broken
+        await runFromApp()
+
+        hear('execution_success', { timestamp: t0 + 6_000 })
+        queueChanged()
+
+        await vi.waitFor(() =>
+          expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ outcome: 'success' })])
+        )
+        await vi.advanceTimersByTimeAsync(0)
+        expect(captured(RUN_FINISHED)).toHaveLength(1)
+        expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('run_seconds')
+        expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('queue_seconds')
+      }
+    )
+
+    it('sends a run whose start the socket missed with no run time when its history is gone', async () => {
+      comfy.historyEntry = null
+      await runFromApp()
+
+      hear('execution_success', { timestamp: t0 + 6_000 })
+      queueChanged()
+
+      await vi.waitFor(() =>
+        expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ outcome: 'success' })])
+      )
+      expect(captured(RUN_FINISHED)[0]).not.toHaveProperty('run_seconds')
+    })
+
+    it('reads nothing once every run Desktop follows has started', async () => {
+      await runFromApp()
+      hear('execution_start', { timestamp: t0 })
+
+      queueChanged()
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(queueReads()).toEqual([])
+    })
+
+    it('reads nothing for the status ComfyUI sends each socket as it connects', async () => {
+      await runFromApp()
+
+      mocks.hearFromComfy({
+        type: 'status',
+        data: { status: { exec_info: { queue_remaining: 0 } }, sid: 'desktop-client' }
+      })
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(queueReads()).toEqual([])
+    })
+  })
+
+  it('leaves a run that already started when the page asks to take it out of the queue', async () => {
+    comfy.queue = { queue_running: [[5, RUN, {}, {}]], queue_pending: [] }
+    await runFromApp()
+    hear('execution_start', { timestamp: t0 })
+
+    await post('/queue', { delete: [RUN] })
+    await vi.waitFor(() =>
+      expect(comfy.calls('/queue').filter((asked) => asked.method === 'GET')).toHaveLength(1)
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    hear('execution_success')
+
+    expect(captured(RUN_FINISHED)).toEqual([expect.objectContaining({ outcome: 'success' })])
+  })
+})
+
+describe('setup, when Desktop starts the ComfyUI an app runs on', () => {
+  const startFor = (app: string | null) => local.startLocal(asContents(page), WANT, app)
+
+  it('says it started and finished, for the app that asked', async () => {
+    startsWhenLaunched()
+
+    expect((await startFor(APP)).state).toBe('running')
+
+    expect(captured(SETUP)).toEqual([
+      { app_id: APP, stage: 'start', outcome: 'started' },
+      { app_id: APP, stage: 'start', outcome: 'finished', seconds: 0 }
+    ])
+  })
+
+  it('says so once when two pages ask together', async () => {
+    startsWhenLaunched()
+
+    await Promise.all([startFor(APP), startFor('remove-background')])
+
+    expect(setupSteps()).toEqual(['start started', 'start finished'])
+  })
+
+  it.each([
+    ['gives no reason', async () => ({ ok: false }), 'start_failed'],
+    ['says the port is taken', async () => ({ ok: false, portConflict: {} }), 'port_conflict'],
+    [
+      'throws',
+      async () => {
+        throw new Error('spawn /Users/someone/ComfyUI failed')
+      },
+      'start_failed'
+    ]
+  ])('says it failed when the launch %s', async (_how, launch, errorClass) => {
+    mocks.handleLaunch = launch
+
+    await startFor(APP)
+
+    expect(captured(SETUP).at(-1)).toEqual(
+      expect.objectContaining({ stage: 'start', outcome: 'failed', error_class: errorClass })
+    )
+    expect(JSON.stringify(mocks.captured)).not.toContain('someone')
+  })
+
+  it('says nothing more when the start was cancelled', async () => {
+    mocks.handleLaunch = async () => ({ ok: false, cancelled: true })
+
+    await startFor(APP)
+
+    expect(setupSteps()).toEqual(['start started'])
+  })
+
+  it('says nothing when the build is already running, or the person is starting it', async () => {
+    running()
+    await startFor(APP)
+    mocks.sessions.clear()
+    mocks.launching.add(STUDIO)
+    const waiting = startFor(APP)
+    await vi.advanceTimersByTimeAsync(1_200)
+    running()
+    mocks.launching.delete(STUDIO)
+    await vi.advanceTimersByTimeAsync(600)
+    await waiting
+
+    expect(captured(SETUP)).toEqual([])
+  })
+
+  it('says nothing for the Auto start build Desktop starts as it opens', async () => {
+    startsWhenLaunched()
+
+    await local.startWithDesktop(build() as unknown as InstallationRecord)
+
+    expect(captured(SETUP)).toEqual([])
+  })
+})
+
+describe('setup, when an app waits for the first build to install', () => {
+  const NEW_BUILD = 'first-build'
+
+  function finishInstall(status: string): void {
+    const record = mocks.records.find((one) => one['id'] === NEW_BUILD)
+    if (record) Object.assign(record, { status, version: 'v0.42.1' })
+    mocks.installing.delete(NEW_BUILD)
+  }
+
+  beforeEach(() => {
+    mocks.records = [
+      build({
+        id: NEW_BUILD,
+        name: 'ComfyUI',
+        installPath: '/builds/first-build',
+        status: 'installing',
+        version: undefined
+      })
+    ]
+    mocks.installing.add(NEW_BUILD)
+  })
+
+  it('says the install started and finished, then the start', async () => {
+    startsWhenLaunched()
+    const starting = local.startLocal(asContents(page), WANT, APP)
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(captured(SETUP)).toEqual([{ app_id: APP, stage: 'install', outcome: 'started' }])
+
+    finishInstall('installed')
+    await vi.advanceTimersByTimeAsync(1_000)
+    await starting
+
+    expect(setupSteps()).toEqual([
+      'install started',
+      'install finished',
+      'start started',
+      'start finished'
+    ])
+    expect(captured(SETUP)[1]).toMatchObject({ app_id: APP, seconds: 4 })
+  })
+
+  it('says the install failed when it fails', async () => {
+    const starting = local.startLocal(asContents(page), WANT, APP)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    finishInstall('failed')
+    await vi.advanceTimersByTimeAsync(1_000)
+    await starting
+
+    expect(captured(SETUP).at(-1)).toEqual(
+      expect.objectContaining({
+        stage: 'install',
+        outcome: 'failed',
+        error_class: 'install_failed'
+      })
+    )
+  })
+
+  it('says the install failed when the app stops waiting after an hour', async () => {
+    const starting = local.startLocal(asContents(page), WANT, APP)
+
+    await vi.advanceTimersByTimeAsync(60 * 60_000 + 1_000)
+    await starting
+
+    expect(captured(SETUP).at(-1)).toEqual(
+      expect.objectContaining({ outcome: 'failed', error_class: 'install_timed_out' })
+    )
+  })
+
+  it('says nothing more when the person cancels the install', async () => {
+    const starting = local.startLocal(asContents(page), WANT, APP)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    mocks.records = []
+    mocks.installing.clear()
+    await vi.advanceTimersByTimeAsync(1_000)
+    await starting
+
+    expect(setupSteps()).toEqual(['install started'])
+  })
+
+  it('says it once when a model download and a start wait on the same install', async () => {
+    mocks.ownModels.add(NEW_BUILD)
+    mocks.startModelJob = async () => ({
+      id: 'job',
+      release: vi.fn(),
+      completion: Promise.resolve({ status: 'completed', savePath: '/models/x' })
+    })
+    await localState(WANT)
+    const downloading = local.localDownload(asContents(page), BIREFNET, APP)
+    const starting = local.startLocal(asContents(page), WANT, APP)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    finishInstall('installed')
+    await vi.advanceTimersByTimeAsync(1_000)
+    await Promise.all([downloading, starting])
+
+    expect(setupSteps().filter((step) => step.startsWith('install'))).toEqual([
+      'install started',
+      'install finished'
+    ])
+  })
+})
+
+describe('a model download an app asked for', () => {
+  it('names that app to the download, for its telemetry', async () => {
+    const started: Record<string, unknown>[] = []
+    mocks.startModelJob = async (options) => {
+      started.push(options)
+      return {
+        id: 'job',
+        release: vi.fn(),
+        completion: Promise.resolve({ status: 'completed', savePath: '/models/x' })
+      }
+    }
+    running()
+    await localState(WANT)
+
+    expect(await local.localDownload(asContents(page), BIREFNET, APP)).toEqual({ state: 'done' })
+
+    expect(started).toEqual([expect.objectContaining({ source: 'app', appId: APP })])
   })
 })

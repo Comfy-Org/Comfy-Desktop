@@ -71,7 +71,12 @@ vi.mock('../views/ChooserView.vue', () => ({
   }
 }))
 vi.mock('./AssetsView.vue', () => ({
-  default: { name: 'AssetsView', template: '<div data-testid="assets-view" />' }
+  default: {
+    name: 'AssetsView',
+    props: ['focusName'],
+    emits: ['focus-used'],
+    template: '<div data-testid="assets-view" :data-focus-name="focusName ?? undefined" />'
+  }
 }))
 vi.mock('./BuildDetailsView.vue', () => ({
   default: {
@@ -157,6 +162,7 @@ vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
+import AppsView from './AppsView.vue'
 import { en } from '../lib/i18nMessages'
 import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
 import { useOverlay } from '../composables/useOverlay'
@@ -1470,7 +1476,7 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
-      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', coverUrl: null }
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
     const wrapper = mountPanel()
     await flushPromises()
@@ -1492,7 +1498,7 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
-      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', coverUrl: null }
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
     const wrapper = mountPanel()
     await flushPromises()
@@ -1512,8 +1518,8 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
-      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', coverUrl: null },
-      { id: 'cutout', title: 'Remove Background', description: '', coverUrl: null }
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
+      { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
     ])
     const wrapper = mountPanel()
     await flushPromises()
@@ -1537,7 +1543,7 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
-      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', coverUrl: null }
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
     const wrapper = mountPanel()
     await flushPromises()
@@ -1565,7 +1571,7 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
-      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', coverUrl: null }
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
     const wrapper = mountPanel()
     await flushPromises()
@@ -1593,7 +1599,7 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
-      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', coverUrl: null }
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
     ])
     const wrapper = mountPanel()
     await flushPromises()
@@ -1655,6 +1661,31 @@ describe('PanelApp', () => {
       { page: 'chooser', from_page: 'assets' },
       { page: 'home', from_page: 'chooser' }
     ])
+  })
+
+  it('opens Assets on the Cloud file an app asks to see, and passes the file on only once', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    wrapper.findComponent(AppsView).vm.$emit('view-in-assets', 'cutout.png')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-sidebar-assets"]').attributes('aria-current')).toBe(
+      'page'
+    )
+    expect(wrapper.get('[data-testid="assets-view"]').attributes('data-focus-name')).toBe(
+      'cutout.png'
+    )
+
+    wrapper.findComponent({ name: 'AssetsView' }).vm.$emit('focus-used')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-view"]').attributes('data-focus-name')).toBeUndefined()
   })
 
   it('does not record a sidebar page open for See all apps on Home', async () => {

@@ -47,6 +47,7 @@ import {
   getEntryByInstallationId,
   hostInstallEvents,
   isChooserHost,
+  maximizeIfPendingReveal,
   unhostedLaunches
 } from '../host/registry'
 import type { ComfyPanelKey, ComfyWindowEntry } from '../host/registry'
@@ -1009,7 +1010,10 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
 }
 
 export interface TitlePopupHostBindings {
-  openChooserHostWindow: (initialPanel?: ComfyPanelKey) => void
+  openChooserHostWindow: (
+    initialPanel?: ComfyPanelKey,
+    opts?: { nearWindow?: BrowserWindow }
+  ) => void
   returnToDashboard: (parentEntryId: number) => Promise<void> | void
   confirmAndCloseAllHostWindows: (parentWindow: BrowserWindow | null) => Promise<void> | void
   confirmAndCloseHostWindow: (parentWindow: BrowserWindow) => Promise<void> | void
@@ -1054,6 +1058,7 @@ export interface TitlePopupHostBindings {
     cancellable: boolean
   }) => void
   broadcastPickerSnapshot: () => void
+  removeAppDataAndQuit: (options: { deleteInstances: boolean; deleteModels: boolean }) => void
 }
 
 export function parseGlobalSettingsTarget(
@@ -1241,14 +1246,15 @@ export function activateTitlePopupMenuItem(
   })
   let releaseFocusToParent = true
   const parentEntry = comfyWindows.get(entry.parentEntryId)
+  const nearParent = { nearWindow: parentEntry?.window }
   if (id === 'new-window') {
-    bindings.openChooserHostWindow()
+    bindings.openChooserHostWindow('comfy', nearParent)
     releaseFocusToParent = false
   } else if (id === 'performance-test' || id === 'benchmarks') {
     if (parentEntry && isChooserHost(parentEntry)) {
       bindings.setActivePanel(entry.parentEntryId, id)
     } else {
-      bindings.openChooserHostWindow(id)
+      bindings.openChooserHostWindow(id, nearParent)
       releaseFocusToParent = false
     }
   } else if (id === 'return-to-dashboard') {
@@ -1826,6 +1832,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       if (!targetEntry) return
 
       if (routing === 'target-host' && !targetEntry.window.isDestroyed()) {
+        maximizeIfPendingReveal(targetEntry.window)
         targetEntry.window.show()
         targetEntry.window.focus()
       }
@@ -1926,7 +1933,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     if (parentEntry.installationId === null) {
       bindings.setActivePanel(entry.parentEntryId, 'new-install')
     } else {
-      bindings.openChooserHostWindow('new-install')
+      bindings.openChooserHostWindow('new-install', { nearWindow: parentEntry.window })
     }
   })
 
@@ -2092,6 +2099,19 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     if (!popupEntry || popupEntry.kind !== 'global-settings') return
     updater.installUpdate()
   })
+
+  ipcMain.on(
+    'comfy-titlepopup:global-settings-remove-app-data',
+    (event, payload: { deleteInstances?: unknown; deleteModels?: unknown }) => {
+      const popupEntry = titlePopupsByWebContents.get(event.sender.id)
+      if (!popupEntry || popupEntry.kind !== 'global-settings') return
+      if (process.platform !== 'darwin' && process.platform !== 'linux') return
+      bindings.removeAppDataAndQuit({
+        deleteInstances: payload?.deleteInstances === true,
+        deleteModels: payload?.deleteModels === true
+      })
+    }
+  )
 
   ipcMain.on(
     'comfy-titlepopup:global-settings-set-last-checked',

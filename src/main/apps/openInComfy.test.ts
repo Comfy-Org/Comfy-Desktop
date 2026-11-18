@@ -21,12 +21,14 @@ const mocks = vi.hoisted(() => ({
   launchQuietly: vi.fn(),
   otherLaunchSettled: vi.fn(),
   onLaunch: vi.fn(),
-  setActivePanel: vi.fn()
+  setActivePanel: vi.fn(),
+  maximizeIfPendingReveal: vi.fn()
 }))
 
 vi.mock('../host/panelView', () => ({ setActivePanel: mocks.setActivePanel }))
 vi.mock('../host/registry', () => ({
-  getEntryByInstallationId: (id: string) => mocks.windows.get(id)
+  getEntryByInstallationId: (id: string) => mocks.windows.get(id),
+  maximizeIfPendingReveal: mocks.maximizeIfPendingReveal
 }))
 vi.mock('../installations', () => ({
   CLOUD_SOURCE_ID: 'cloud',
@@ -209,6 +211,21 @@ describe('opening a run workflow in the ComfyUI on this computer', () => {
     expect(mocks.setActivePanel).toHaveBeenCalledWith(7, 'comfy')
     expect(mocks.launchOnce).not.toHaveBeenCalled()
     expect(mocks.onLaunch).not.toHaveBeenCalled()
+  })
+
+  it('maximizes a window still waiting for its first reveal before it shows it', async () => {
+    runLocal(STUDIO.id, 8190, 'window')
+    const studio = windowFor(STUDIO.id, 'http://127.0.0.1:8190/')
+    const shownWhenMaximized: boolean[] = []
+    mocks.maximizeIfPendingReveal.mockImplementationOnce(() => {
+      shownWhenMaximized.push(studio.shown)
+    })
+
+    await openInComfy(PAGE, ON_THIS_COMPUTER)
+
+    expect(mocks.maximizeIfPendingReveal).toHaveBeenCalledExactlyOnceWith(studio.window)
+    expect(shownWhenMaximized).toEqual([false])
+    expect(studio.shown).toBe(true)
   })
 
   it('shows a window for the build when it runs without one', async () => {
