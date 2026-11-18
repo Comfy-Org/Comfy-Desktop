@@ -154,7 +154,7 @@ describe('parseDecision', () => {
     expect(parseDecision(decision({ options: undefined }))?.alsoTry).toEqual([])
   })
 
-  it('marks partner templates', () => {
+  it('marks partner templates by their name when the build index is not known', () => {
     const body = decision({
       split: { run: [candidate('as_given', 'api_partner_template')], download: [] }
     })
@@ -162,10 +162,25 @@ describe('parseDecision', () => {
     expect(parseDecision(decision())?.run[0]).toMatchObject({ partner: false })
   })
 
+  it("takes partner templates from the build's own index, which also marks ones without the api_ prefix", () => {
+    const describe = (id: string) => ({
+      title: id,
+      thumbnailUrl: null,
+      partner: id === 'poster_template'
+    })
+    const [poster, logo] = parseDecision(decision(), describe)!.run
+    expect(poster).toMatchObject({ templateId: 'poster_template', partner: true })
+    expect(logo).toMatchObject({ partner: false })
+  })
+
   it("takes titles and thumbnails from the build's own template index", () => {
     const describe = (id: string) =>
       id === 'poster_template'
-        ? { title: 'Bake sale poster', thumbnailUrl: 'https://thumbs.example.test/poster.webp' }
+        ? {
+            title: 'Bake sale poster',
+            thumbnailUrl: 'https://thumbs.example.test/poster.webp',
+            partner: false
+          }
         : null
     const [poster, logo] = parseDecision(decision(), describe)!.run
     expect(poster).toMatchObject({

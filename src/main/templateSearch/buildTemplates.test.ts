@@ -27,7 +27,9 @@ function model(name: string, directory = 'checkpoints') {
   return { name, url: `https://huggingface.co/org/repo/resolve/main/${name}`, directory }
 }
 
-function index(...templates: { name: string; title?: string; mediaSubtype?: string }[]) {
+function index(
+  ...templates: { name: string; title?: string; mediaSubtype?: string; openSource?: boolean }[]
+) {
   return [{ moduleName: 'default', title: 'Image', templates }]
 }
 
@@ -102,10 +104,31 @@ describe('readBuildTemplates', () => {
     const { labels } = await readBuildTemplates(sitePackages, onDiskIn(models))
     expect(labels.get('poster')).toEqual({
       title: 'Bake sale poster',
-      thumbnailUrl: expect.stringMatching(/\/poster-1\.png$/)
+      thumbnailUrl: expect.stringMatching(/\/poster-1\.png$/),
+      partner: false
     })
-    expect(labels.get('song')).toEqual({ title: 'A song', thumbnailUrl: null })
+    expect(labels.get('song')).toEqual({ title: 'A song', thumbnailUrl: null, partner: false })
     expect(labels.get('untitled')?.title).toBe('untitled')
+  })
+
+  it('marks the templates its index says are not open source as partner templates, whatever their name', async () => {
+    const dir = path.join(sitePackages, 'comfyui_workflow_templates_json', 'templates')
+    write(
+      path.join(dir, 'index.json'),
+      index(
+        { name: 'templates-character_sheet', openSource: false },
+        { name: 'api_poster', openSource: false },
+        { name: 'open_poster', openSource: true },
+        { name: 'unmarked_poster' }
+      )
+    )
+    const { labels } = await readBuildTemplates(sitePackages, onDiskIn(models))
+    expect([...labels].map(([name, label]) => [name, label.partner])).toEqual([
+      ['templates-character_sheet', true],
+      ['api_poster', true],
+      ['open_poster', false],
+      ['unmarked_poster', false]
+    ])
   })
 
   it('reads the older layout, with the index and workflows in the main template package', async () => {
