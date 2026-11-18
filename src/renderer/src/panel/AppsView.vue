@@ -254,7 +254,7 @@ onBeforeUnmount(() => {
                 aria-hidden="true"
               />
               <span
-                class="absolute top-3 right-3 grid size-8 scale-90 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-100 group-hover:opacity-100 group-hover:delay-100 group-focus-visible:scale-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+                class="absolute top-3 right-3 grid size-8 scale-90 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-100 group-hover:opacity-100 group-hover:delay-100 group-focus-visible:scale-100 group-focus-visible:opacity-100 motion-reduce:scale-100 motion-reduce:transition-none"
                 aria-hidden="true"
                 data-testid="app-card-go"
               >
@@ -268,7 +268,7 @@ onBeforeUnmount(() => {
                   {{ app.title }}
                 </span>
                 <span
-                  class="translate-y-1.5 self-end truncate text-xs/4 text-white/78 opacity-0 transition-[opacity,translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100 motion-reduce:transition-none"
+                  class="translate-y-1.5 self-end truncate text-xs/4 text-white/78 opacity-0 transition-[opacity,translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100 motion-reduce:translate-y-0 motion-reduce:transition-none"
                 >
                   {{ app.description }}
                 </span>
