@@ -582,7 +582,9 @@ function actionIcon(id: string): Component {
 const NOW_ACTION_IDS = new Set(['stop'])
 
 const pinBottomMenuActions = computed<MenuAction[]>(() => {
-  const actions = pinBottomActions.value
+  const actions = sectionsFresh.value
+    ? pinBottomActions.value
+    : pinBottomActions.value.filter((action) => NOW_ACTION_IDS.has(action.id))
   const now = actions.filter((action) => NOW_ACTION_IDS.has(action.id))
   const rest = actions.filter((action) => !NOW_ACTION_IDS.has(action.id) && action.id !== 'delete')
   const last = actions.filter((action) => action.id === 'delete')
@@ -1184,9 +1186,7 @@ defineExpose({
               aria-haspopup="menu"
               :aria-expanded="moreMenuOpen"
               :aria-label="t('comfyUISettings.more')"
-              :disabled="
-                !installation || pinBottomActions.length === 0 || opInflight || !sectionsFresh
-              "
+              :disabled="!installation || pinBottomMenuActions.length === 0 || opInflight"
               :data-testid="TID.pickerMoreTrigger"
               @click="toggleMoreMenu"
             >

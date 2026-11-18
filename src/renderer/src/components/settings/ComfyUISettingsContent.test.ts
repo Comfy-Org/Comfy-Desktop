@@ -616,6 +616,18 @@ describe('ComfyUISettingsContent', () => {
         .map((m) => m.props('actions') as { id: string }[] | undefined)
         .filter((acts) => acts?.some((a) => a.id === 'stop')).length
     }
+    function stopRows(wrapper: VueWrapper): number {
+      return wrapper
+        .findAllComponents({ name: 'MoreMenu' })
+        .flatMap((m) => (m.props('actions') as { id: string }[] | undefined) ?? [])
+        .filter((a) => a.id === 'stop').length
+    }
+    function moreMenuActions(wrapper: VueWrapper): { id: string }[] {
+      return (
+        (wrapper.findComponent({ name: 'MoreMenu' }).props('actions') as
+          { id: string }[] | undefined) ?? []
+      )
+    }
 
     it('running elsewhere → Open with no caret, and Stop only in the more menu', async () => {
       useComfyUISettingsState.pinBottomActions.value = [{ id: 'stop', label: 'Stop' }]
@@ -629,6 +641,7 @@ describe('ComfyUISettingsContent', () => {
       expect(w.find('.settings-v2-relaunch').text()).toBe('Open')
       expect(w.find('.settings-v2-cta-caret').exists()).toBe(false)
       expect(menusOfferingStop(w)).toBe(1)
+      expect(stopRows(w)).toBe(1)
     })
 
     it('running in this window → Restart with no caret, and Stop only in the more menu', async () => {
@@ -643,15 +656,16 @@ describe('ComfyUISettingsContent', () => {
       expect(w.find('.settings-v2-relaunch').text()).toBe('Restart')
       expect(w.find('.settings-v2-cta-caret').exists()).toBe(false)
       expect(menusOfferingStop(w)).toBe(1)
+      expect(stopRows(w)).toBe(1)
     })
 
     it('orders the more menu like Home: Stop first in neutral, Uninstall last and the only red row', async () => {
       useComfyUISettingsState.pinBottomActions.value = [
-        { id: 'stop', label: 'Stop' },
+        { id: 'delete', label: 'Uninstall', style: 'danger' },
         { id: 'rename', label: 'Rename' },
+        { id: 'stop', label: 'Stop' },
         { id: 'share', label: 'Export snapshot' },
-        { id: 'remove', label: 'Forget', style: 'danger' },
-        { id: 'delete', label: 'Uninstall', style: 'danger' }
+        { id: 'remove', label: 'Forget', style: 'danger' }
       ] as never
       markRunning('inst-1')
       const w = await mountContent({
@@ -667,6 +681,49 @@ describe('ComfyUISettingsContent', () => {
       expect(actions.map((a) => a.id)).toEqual(['stop', 'rename', 'share', 'remove', 'delete'])
       expect(actions.filter((a) => a.style === 'danger').map((a) => a.id)).toEqual(['delete'])
       expect(actions.filter((a) => a.separator).map((a) => a.id)).toEqual(['rename', 'delete'])
+    })
+
+    it('keeps Stop in the more menu when the build details fail to load, and hides stale actions', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'rename', label: 'Rename' },
+        { id: 'stop', label: 'Stop' },
+        { id: 'delete', label: 'Uninstall', style: 'danger' }
+      ] as never
+      useComfyUISettingsState.sectionsFresh.value = false
+      markRunning('inst-1')
+      try {
+        const w = await mountContent({
+          currentView: 'instance',
+          currentCategory: 'local',
+          activeInstallationId: 'inst-1',
+          installation: SAMPLE_INSTALL
+        })
+        const trigger = w.find('[data-testid="picker-more-trigger"]')
+        expect(trigger.attributes('disabled')).toBeUndefined()
+        expect(moreMenuActions(w).map((a) => a.id)).toEqual(['stop'])
+      } finally {
+        useComfyUISettingsState.sectionsFresh.value = true
+      }
+    })
+
+    it('disables the more menu while details are stale and the build is not running', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'rename', label: 'Rename' },
+        { id: 'delete', label: 'Uninstall', style: 'danger' }
+      ] as never
+      useComfyUISettingsState.sectionsFresh.value = false
+      try {
+        const w = await mountContent({
+          currentView: 'instance',
+          currentCategory: 'local',
+          activeInstallationId: null,
+          installation: SAMPLE_INSTALL
+        })
+        const trigger = w.find('[data-testid="picker-more-trigger"]')
+        expect(trigger.attributes('disabled')).toBeDefined()
+      } finally {
+        useComfyUISettingsState.sectionsFresh.value = true
+      }
     })
 
     it('stopped cloud target (dashboard host) → Open Cloud with no caret', async () => {
