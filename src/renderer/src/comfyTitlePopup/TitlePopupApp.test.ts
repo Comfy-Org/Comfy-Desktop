@@ -264,6 +264,18 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
     wrapper.unmount()
   })
 
+  it('stays open when Escape was already handled, as when it cancels a rename', async () => {
+    const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
+    const wrapper = mount(TitlePopupApp, { attachTo: document.body })
+    await flushPromises()
+    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
+    handled.preventDefault()
+    window.dispatchEvent(handled)
+    await flushPromises()
+    expect(bridgeState.closeCalls).toBe(0)
+    wrapper.unmount()
+  })
+
   it.each(['menu', 'downloads'] as const)(
     'keeps %s on the Desktop palette when the editor theme changes',
     async (kind) => {

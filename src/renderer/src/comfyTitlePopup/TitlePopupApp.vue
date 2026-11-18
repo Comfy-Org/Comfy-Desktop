@@ -200,6 +200,7 @@ const { syncLocale } = useAppLocale(popupLocaleSource())
 
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return
+  if (event.defaultPrevented) return
   if (modalState.visible) return
   event.preventDefault()
   bridge?.close()

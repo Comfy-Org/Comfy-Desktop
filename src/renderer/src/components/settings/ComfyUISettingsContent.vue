@@ -1202,6 +1202,7 @@ defineExpose({
 
       <Teleport v-if="pageTitleTarget && installation" defer :to="pageTitleTarget">
         <InlineNameEdit
+          :key="installation.id"
           ref="titleEdit"
           prefix="build-details-title"
           :name="installation.name"

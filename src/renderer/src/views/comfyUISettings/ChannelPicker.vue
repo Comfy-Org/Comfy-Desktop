@@ -464,7 +464,7 @@ function actionClass(
       ? 'h-7 min-h-7 px-3 py-0 text-[12px] leading-none'
       : 'h-8 min-h-8 px-4 py-0 text-[13px] leading-none',
     variant === 'accent'
-      ? 'border-[var(--action)] bg-[var(--brand-surface-bg)] text-[var(--action)] font-semibold disabled:hover:bg-[var(--action)] enabled:hover:bg-[var(--action)] enabled:hover:text-[var(--bg)] enabled:focus-visible:bg-[var(--action)] enabled:focus-visible:text-[var(--bg)]'
+      ? 'border-[var(--action)] bg-[var(--brand-surface-bg)] text-[var(--action)] font-semibold enabled:hover:bg-[var(--action)] enabled:hover:text-[var(--bg)] enabled:focus-visible:bg-[var(--action)] enabled:focus-visible:text-[var(--bg)]'
       : variant === 'danger'
         ? 'border-transparent bg-secondary text-danger font-medium enabled:hover:bg-secondary-background-hover'
         : 'border-transparent bg-secondary text-neutral-100 font-medium enabled:hover:bg-secondary-background-hover',
