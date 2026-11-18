@@ -293,14 +293,14 @@ describe('AppsView', () => {
     expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
   })
 
-  it('crowns a premium app on the top right of its picture and leaves a free app without one', async () => {
+  it('crowns a premium app on the top left of its picture and leaves a free app without one', async () => {
     const wrapper = await mountApps()
 
     const premiumCard = wrapper.get('[data-testid="app-card-remove-background"]')
     const badge = premiumCard.get('[data-testid="premium-app-badge"]')
     const picture = premiumCard.get('img').element.getBoundingClientRect()
     const badgeBox = badge.element.getBoundingClientRect()
-    expect(Math.round(picture.right - badgeBox.right)).toBe(8)
+    expect(Math.round(badgeBox.left - picture.left)).toBe(8)
     expect(Math.round(badgeBox.top - picture.top)).toBe(8)
     expect(getComputedStyle(badge.get('[data-testid="premium-app-crown"]').element).color).toBe(
       'rgb(240, 255, 65)'

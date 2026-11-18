@@ -215,7 +215,7 @@ onBeforeUnmount(() => {
                 >
                   <AppWindow :size="28" :stroke-width="1.5" aria-hidden="true" />
                 </span>
-                <PremiumAppBadge v-if="app.premium" class="absolute top-2 right-2" />
+                <PremiumAppBadge v-if="app.premium" class="absolute top-2 left-2" />
               </span>
               <span class="flex min-w-0 flex-col px-1.5 pt-2.5 pb-1.5">
                 <span class="truncate text-ui font-medium text-foreground">{{ app.title }}</span>

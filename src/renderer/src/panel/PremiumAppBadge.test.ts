@@ -12,14 +12,17 @@ afterEach(() => {
 })
 
 describe('PremiumAppBadge', () => {
-  it('shows the crown on glass, with the name only for screen readers', () => {
+  it('is a square of glass with only the crown, its name for screen readers', () => {
     const wrapper = mount(PremiumAppBadge, { attachTo: document.body })
     mounted.push(wrapper)
 
-    const tag = wrapper.get('[data-testid="premium-app-badge"] > span')
-    expect(getComputedStyle(tag.element).backdropFilter).toContain('blur(14px)')
+    const square = wrapper.get('[data-testid="premium-app-square"]')
+    const box = square.element.getBoundingClientRect()
+    expect(box.width).toBe(28)
+    expect(box.height).toBe(28)
+    expect(getComputedStyle(square.element).backdropFilter).toContain('blur(14px)')
     expect(wrapper.find('[data-testid="premium-app-crown"]').exists()).toBe(true)
-    const name = tag.get('svg + span')
+    const name = square.get('svg + span')
     expect(name.text()).toBe('Premium app')
     expect(getComputedStyle(name.element).position).toBe('absolute')
     expect(name.element.getBoundingClientRect().width).toBeLessThanOrEqual(1)

@@ -73,7 +73,7 @@ describe('the apps Desktop lists', () => {
         title: 'Remove Background',
         description: 'Cut the subject out of a picture or video.',
         coverUrl: 'https://comfy.org/catalog-media/cover-1/v2',
-        premium: true
+        premium: false
       },
       {
         id: 'sdr-to-hdr',
