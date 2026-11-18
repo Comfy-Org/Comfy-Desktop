@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 
+import { loadedAppPage } from '../../apps/appPageView'
 import { areAppsEnabled } from '../../apps/appsConfig'
 import { isAppsPageSender } from '../../apps/appsPages'
 import { localDownload, localFetch, localState, startLocal } from '../../apps/localComfy'
@@ -26,6 +27,10 @@ async function isFromAppsPage(event: IpcMainInvokeEvent): Promise<boolean> {
   return isAppsPageSender(event.sender, event.senderFrame) && (await areAppsEnabled())
 }
 
+function appOf(event: IpcMainInvokeEvent): string | null {
+  return loadedAppPage(event.sender)?.appId ?? null
+}
+
 function notOffered(): ComfyDesktopLocalComfy {
   return { state: 'unsupported', error: i18n.t('apps.local.notRunning') }
 }
@@ -36,19 +41,19 @@ export function registerAppsLocalHandlers(): void {
   )
 
   ipcMain.handle(APPS_LOCAL_CHANNELS.start, async (event, want: unknown) =>
-    (await isFromAppsPage(event)) ? startLocal(event.sender, want) : notOffered()
+    (await isFromAppsPage(event)) ? startLocal(event.sender, want, appOf(event)) : notOffered()
   )
 
   ipcMain.handle(APPS_LOCAL_CHANNELS.fetch, async (event, request: unknown) => {
     if (!(await isFromAppsPage(event))) throw new Error(i18n.t('apps.local.notRunning'))
-    return localFetch(event.sender, request)
+    return localFetch(event.sender, request, appOf(event))
   })
 
   ipcMain.handle(
     APPS_LOCAL_CHANNELS.download,
     async (event, model: unknown): Promise<ComfyDesktopLocalDownload> =>
       (await isFromAppsPage(event))
-        ? localDownload(event.sender, model)
+        ? localDownload(event.sender, model, appOf(event))
         : { state: 'failed', error: i18n.t('apps.local.notRunning') }
   )
 

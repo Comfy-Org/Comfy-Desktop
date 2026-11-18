@@ -13,4 +13,6 @@ export const initAppsFlag = flag.init
 
 export const isAppsFlagOn = flag.get
 
+export const savedAppsFlag = flag.saved
+
 export const _resetForTest = flag._resetForTest

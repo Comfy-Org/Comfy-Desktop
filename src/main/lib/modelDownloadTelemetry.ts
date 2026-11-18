@@ -21,6 +21,7 @@ interface ModelDownloadTelemetryOptions {
   directory: string
   installationId: string
   isRetry?: boolean
+  appId?: string | null
 }
 
 const MODEL_DIRECTORIES = new Set([
@@ -101,12 +102,14 @@ export class ModelDownloadTelemetry {
     filename,
     directory,
     installationId,
-    isRetry = false
+    isRetry = false,
+    appId
   }: ModelDownloadTelemetryOptions) {
     this.properties = {
       download_id: randomUUID(),
       installation_id: installationId,
       source,
+      ...(source === 'app' && appId ? { app_id: appId } : {}),
       provider: providerOf(url),
       is_retry: isRetry,
       directory_bucket: toModelDirectoryBucket(directory),

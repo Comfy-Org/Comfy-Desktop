@@ -27,12 +27,14 @@ function parseMessage(data: unknown): unknown {
 
 export function createLocalRelay(
   onMessage: (message: unknown) => void,
-  openSocket: (url: string) => RelaySocket = (url) => new WebSocket(url)
+  openSocket: (url: string) => RelaySocket = (url) => new WebSocket(url),
+  onReopen: () => void = () => {}
 ): LocalRelay {
   const clientId = randomUUID()
   let followedPort: number | null = null
   let socket: RelaySocket | null = null
   let isOpen = false
+  let openedBefore = false
   let retryMs = FIRST_RETRY_MS
   let retryTimer: ReturnType<typeof setTimeout> | null = null
   let waiters: ((open: boolean) => void)[] = []
@@ -60,6 +62,8 @@ export function createLocalRelay(
       isOpen = true
       retryMs = FIRST_RETRY_MS
       tellWaiters(true)
+      if (openedBefore) onReopen()
+      openedBefore = true
     })
     connecting.addEventListener('message', (event) => {
       if (socket !== connecting) return

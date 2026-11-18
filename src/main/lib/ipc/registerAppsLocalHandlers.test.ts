@@ -11,7 +11,8 @@ const mocks = vi.hoisted(() => ({
   localFetch: vi.fn(),
   localDownload: vi.fn(),
   openInComfy: vi.fn(),
-  localBuilds: vi.fn()
+  localBuilds: vi.fn(),
+  loadedApp: 'product-ads' as string | null
 }))
 
 vi.mock('electron', () => ({
@@ -20,6 +21,9 @@ vi.mock('electron', () => ({
   }
 }))
 vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: async () => mocks.appsEnabled }))
+vi.mock('../../apps/appPageView', () => ({
+  loadedAppPage: () => (mocks.loadedApp ? { appId: mocks.loadedApp, document: 1 } : null)
+}))
 vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
 vi.mock('../../apps/localComfy', () => ({
   localState: mocks.localState,
@@ -56,6 +60,7 @@ beforeEach(() => {
   mocks.handlers.clear()
   mocks.isAppsPage = true
   mocks.appsEnabled = true
+  mocks.loadedApp = 'product-ads'
   mocks.localState.mockResolvedValue({ state: 'stopped', own: true, name: 'Studio' })
   mocks.startLocal.mockResolvedValue(RUNNING)
   mocks.localFetch.mockResolvedValue({ status: 200, contentType: 'application/json', body: null })
@@ -76,9 +81,20 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
     expect(await call(APPS_LOCAL_CHANNELS.download, model)).toEqual({ state: 'done' })
 
     expect(mocks.localState).toHaveBeenCalledWith(EVENT.sender, WANT)
-    expect(mocks.startLocal).toHaveBeenCalledWith(EVENT.sender, WANT)
-    expect(mocks.localFetch).toHaveBeenCalledWith(EVENT.sender, request)
-    expect(mocks.localDownload).toHaveBeenCalledWith(EVENT.sender, model)
+    expect(mocks.startLocal).toHaveBeenCalledWith(EVENT.sender, WANT, 'product-ads')
+    expect(mocks.localFetch).toHaveBeenCalledWith(EVENT.sender, request, 'product-ads')
+    expect(mocks.localDownload).toHaveBeenCalledWith(EVENT.sender, model, 'product-ads')
+  })
+
+  it('names no app when the view has no app page loaded', async () => {
+    mocks.loadedApp = null
+    const request = { path: '/queue' }
+
+    await call(APPS_LOCAL_CHANNELS.start, WANT)
+    await call(APPS_LOCAL_CHANNELS.fetch, request)
+
+    expect(mocks.startLocal).toHaveBeenCalledWith(EVENT.sender, WANT, null)
+    expect(mocks.localFetch).toHaveBeenCalledWith(EVENT.sender, request, null)
   })
 
   it('opens a workflow in ComfyUI and lists this computer builds for the page', async () => {

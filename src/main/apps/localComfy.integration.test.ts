@@ -53,6 +53,7 @@ vi.mock('../lib/ipc/shared', async () => {
 vi.mock('../lib/models', () => ({ resolveComfyDir: (installPath: string) => installPath }))
 vi.mock('../lib/process', () => ({ COMFY_BOOT_TIMEOUT_MS: 300_000 }))
 vi.mock('./appsPages', () => ({ liveAppsPages: () => mocks.pages }))
+vi.mock('../lib/telemetry', () => ({ capture: () => false }))
 
 import * as local from './localComfy'
 
