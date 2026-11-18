@@ -39,6 +39,7 @@ const RESULT: TemplateSearchResult = {
   download: [candidate('mural_template', { family: 'mural', needsDownload: true })],
   more: [candidate('zine_template', { family: 'mural', calibrated: 0.5 })],
   alsoTry: [candidate('sticker_template')],
+  matched: null,
   partnerSwitch: true,
   partnersShown: true
 }
@@ -128,6 +129,9 @@ describe('createSearchTelemetry', () => {
           top_match_pct: 87,
           top_match_level: 'strong',
           has_best_match: true,
+          matched: null,
+          matched_names: null,
+          matched_names_count: 0,
           has_partner_switch: true,
           process_ms: 38,
           is_cold_start: true,
@@ -386,6 +390,29 @@ describe('createSearchTelemetry', () => {
       session_ms: 61_000,
       last_results_shown_ms: 1000,
       last_outcome: 'template'
+    })
+  })
+
+  it('names a model-name lookup and what it matched, with no best match or match figure', () => {
+    const unscored = (id: string) => candidate(id, { score: null })
+    const result: TemplateSearchResult = {
+      ...RESULT,
+      run: [unscored('qwen_a'), unscored('qwen_b')],
+      download: [],
+      more: [],
+      alsoTry: [],
+      matched: ['qwen 2.1', 'kling']
+    }
+    const { telemetry, sent, at } = harness()
+    telemetry.answered('qwen 2.1 kling', { ...ANSWER, result }, ANSWER_AT(at), true)
+    expect(sent[0]!.context).toMatchObject({
+      matched: 'model',
+      matched_names: ['qwen 2.1', 'kling'],
+      matched_names_count: 2,
+      has_best_match: false,
+      top_match_pct: null,
+      top_match_level: 'none',
+      run_count: 2
     })
   })
 
