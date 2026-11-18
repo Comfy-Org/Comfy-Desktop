@@ -135,8 +135,6 @@
     "signIn": "登录 Comfy Cloud",
     "noCloudBuildTitle": "此工作区没有 Comfy Cloud 构建",
     "noCloudBuildBody": "重启 Comfy Desktop 以重新添加 Comfy Cloud。",
-    "noMatchesOnPage": "此页没有匹配的资产",
-    "noMatchesOnPageHint": "试试其他页面、类型或搜索词。",
     "cloudScanLimit": "类型筛选涵盖当前排序下的前 {limit} 个云端输出。",
     "pagination": {
       "label": "页面",

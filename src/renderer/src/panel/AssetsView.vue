@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
+import { refDebounced, useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
 import { DropdownMenuRadioGroup, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import {
   Box,
@@ -92,6 +92,7 @@ const SKELETON_COUNT = 8
 const CLOUD_PAGE_SIZES = [50, 100, 200] as const
 const DEFAULT_PAGE_SIZE = 100
 const PAGE_CACHE_TTL_MS = 30 * 60_000
+const SEARCH_DEBOUNCE_MS = 300
 const PREFETCH_DEADLINE_MS = 1000
 const NAME_TOOLTIP_DELAY_MS = 600
 const MIN_CARD_WIDTH = 240
@@ -129,6 +130,10 @@ void dashboardScope.initialize()
 
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
+const listedSearch = refDebounced(
+  computed(() => searchQuery.value.trim()),
+  SEARCH_DEBOUNCE_MS
+)
 const signingIn = ref(false)
 const downloading = ref(new Set<string>())
 const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
@@ -354,19 +359,11 @@ function cardKey(asset: GalleryAsset): string {
   return `${asset.source}:${asset.id}`
 }
 
-const searchedAssets = computed(() => {
-  const query = searchQuery.value.trim().toLowerCase()
-  return query
-    ? assets.value.filter((asset) => asset.name.toLowerCase().includes(query))
-    : assets.value
-})
-
 const pageCount = computed(() => Math.max(1, Math.ceil(assetTotal.value / pageSize.value)))
-const pagedList = computed(() => pageCount.value > 1)
 const showPagination = computed(() => !!selectedBuild.value && assetTotal.value > 0)
 
 function kindCount(kind: KindFilter): number | undefined {
-  if (selectedBuild.value?.cloud || searchQuery.value.trim()) return undefined
+  if (selectedBuild.value?.cloud) return undefined
   return localCounts.value?.[kind]
 }
 
@@ -403,7 +400,7 @@ watch(
 )
 
 const visibleAssets = computed(() => {
-  const filtered = searchedAssets.value.filter(
+  const filtered = assets.value.filter(
     (asset) => kindFilter.value === 'all' || asset.kind === kindFilter.value
   )
   const direction = sortOrder.value === 'newest' ? -1 : 1
@@ -482,9 +479,6 @@ interface EmptyState {
 
 const emptyState = computed<EmptyState>(() => {
   if (failed.value) return { title: t('assets.loadFailed'), body: '' }
-  if (assets.value.length > 0 && pagedList.value) {
-    return { title: t('assets.noMatchesOnPage'), body: t('assets.noMatchesOnPageHint') }
-  }
   const noMatches = { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
   if (assets.value.length > 0) return noMatches
   if (!authStore.isSignedIn && selectedBuild.value?.cloud) {
@@ -497,7 +491,7 @@ const emptyState = computed<EmptyState>(() => {
   if (selectedBuild.value?.cloud && !cloudBuild.value) {
     return { title: t('assets.noCloudBuildTitle'), body: t('assets.noCloudBuildBody') }
   }
-  if (kindFilter.value !== 'all') return noMatches
+  if (kindFilter.value !== 'all' || listedSearch.value) return noMatches
   return {
     title: t('assets.emptyTitle'),
     body: t('assets.emptyBody')
@@ -545,7 +539,16 @@ function recordCloudPage(page: CloudAssetPage, pageNumber: number): void {
 function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage> {
   const kind = kindFilter.value === 'all' ? undefined : kindFilter.value
   const after = pageCursors.get(pageNumber)
-  const key = [loadKey.value, cloudId, sortOrder.value, kind, pageSize.value, pageNumber].join('\n')
+  const search = listedSearch.value || undefined
+  const key = [
+    loadKey.value,
+    cloudId,
+    sortOrder.value,
+    kind,
+    search,
+    pageSize.value,
+    pageNumber
+  ].join('\n')
   const cached = pageCache.get(key)
   if (cached && Date.now() - cached.savedAt < PAGE_CACHE_TTL_MS) return cached.page
   for (const replacedKey of pagesInFlight.keys()) pageCache.delete(replacedKey)
@@ -556,7 +559,8 @@ function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage>
       limit: pageSize.value,
       order: sortOrder.value,
       ...(after && { after }),
-      kind
+      kind,
+      search
     })
     .then((listed) => listed ?? Promise.reject(new Error('a newer page replaced this one')))
   pageCache.set(key, { savedAt: Date.now(), page })
@@ -577,7 +581,8 @@ function localPage(selected: AssetBuild, pageNumber: number): Promise<LocalAsset
     offset: (pageNumber - 1) * pageSize.value,
     limit: pageSize.value,
     order: sortOrder.value,
-    kind
+    kind,
+    search: listedSearch.value || undefined
   })
 }
 
@@ -725,7 +730,9 @@ const listedCloudId = computed(() =>
   selectedBuild.value?.cloud ? cloudBuild.value?.id : undefined
 )
 const listQuery = computed(() =>
-  selectedBuild.value ? [sortOrder.value, kindFilter.value, pageSize.value].join('\n') : ''
+  selectedBuild.value
+    ? [sortOrder.value, kindFilter.value, listedSearch.value, pageSize.value].join('\n')
+    : ''
 )
 
 watch([loadKey, listedCloudId], () => {

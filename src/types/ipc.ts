@@ -236,6 +236,7 @@ export interface CloudAssetPageRequest {
   limit: number
   order: AssetOrder
   kind?: AssetKind
+  search?: string
 }
 
 export interface CloudAssetPage {
@@ -251,6 +252,7 @@ export interface LocalAssetPageRequest {
   limit: number
   order: AssetOrder
   kind?: AssetKind
+  search?: string
 }
 
 export interface OutputFolderPaths {

@@ -43,6 +43,7 @@ const TALL_PAGE_HEIGHT = 3000
 const FIRST_PAGE = { offset: 0, limit: 100, order: 'newest' }
 
 let page: HTMLElement
+const localPages: LocalAssetPageRequest[] = []
 
 const panelLayout = document.createElement('style')
 panelLayout.textContent = '[data-panel-page] > div { display: flex; height: 100%; }'
@@ -65,13 +66,16 @@ function localListing(
   all: AssetSummary[],
   page: LocalAssetPageRequest = { offset: 0, limit: 500, order: 'newest' }
 ): LocalAssetListing {
-  const count = (kind: AssetSummary['kind']) => all.filter((item) => item.kind === kind).length
-  const matching = page.kind ? all.filter((item) => item.kind === page.kind) : all
+  localPages.push(page)
+  const term = page.search?.toLowerCase()
+  const named = term ? all.filter((item) => item.name.toLowerCase().includes(term)) : all
+  const count = (kind: AssetSummary['kind']) => named.filter((item) => item.kind === kind).length
+  const matching = page.kind ? named.filter((item) => item.kind === page.kind) : named
   return {
     assets: matching.slice(page.offset, page.offset + page.limit),
     total: matching.length,
     counts: {
-      all: all.length,
+      all: named.length,
       image: count('image'),
       video: count('video'),
       audio: count('audio'),
@@ -236,6 +240,7 @@ beforeEach(() => {
   page.style.cssText = `width: ${FOUR_COLUMN_PAGE_WIDTH}px; height: ${TALL_PAGE_HEIGHT}px`
   document.body.append(page)
   vi.clearAllMocks()
+  localPages.length = 0
   window.localStorage.clear()
   listLocalAssets.mockResolvedValue([])
   openAsset.mockResolvedValue(true)
@@ -651,9 +656,8 @@ describe('AssetsView', () => {
 
     typedInto.value = 'forest'
     typedInto.dispatchEvent(new Event('input'))
-    await flushPromises()
 
-    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['forest.png']))
     expect(input(), 'the same input stays on the page').toBe(typedInto)
   })
 
@@ -678,14 +682,42 @@ describe('AssetsView', () => {
     expect(listLocalAssets, 'the type is read from the folder').toHaveBeenCalledTimes(2)
 
     await wrapper.get('input').setValue('terr')
-    expect(assetNames(wrapper)).toEqual(['terraces.png'])
-    expect(tabs(), 'folder-wide counts hide while a search narrows the page').toEqual([
-      'All',
-      'Images',
-      'Videos',
-      '3D',
-      'Audio'
+    await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['terraces.png']))
+    expect(localPages.at(-1), 'the folder is searched, not only the open page').toEqual({
+      offset: 0,
+      limit: 100,
+      order: 'newest',
+      kind: 'image',
+      search: 'terr'
+    })
+    expect(tabs(), 'the type tabs count the matches in the whole folder').toEqual([
+      'All1',
+      'Images1',
+      'Videos0',
+      '3D0',
+      'Audio0'
     ])
+  })
+
+  it('searches the whole folder once the typing stops, from page 1', async () => {
+    const wrapper = await mountAssets(
+      Array.from({ length: 150 }, (_, i) =>
+        asset(`f${i}`, i === 140 ? 'lighthouse.png' : `frame-${i}.png`, 'image')
+      )
+    )
+    await wrapper.get('[data-testid="assets-page-2"]').trigger('click')
+    await flushPromises()
+    const readsBefore = localPages.length
+
+    const input = wrapper.get('input')
+    for (const typed of ['l', 'li', 'lig', 'light']) await input.setValue(typed)
+    await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['lighthouse.png']))
+
+    expect(
+      localPages.slice(readsBefore),
+      'one read for the finished word, not one per key'
+    ).toEqual([{ offset: 0, limit: 100, order: 'newest', search: 'light' }])
+    expect(wrapper.find('[data-testid="assets-pagination"]').text()).toContain('1–1 of 1')
   })
 
   it('shows each folder in its file manager from the picker', async () => {
@@ -1387,7 +1419,9 @@ describe('AssetsView', () => {
 
     await wrapper.get('input').setValue('zzz')
 
-    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain('No matching assets')
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain('No matching assets')
+    )
   })
 
   it('reports a failed load', async () => {
@@ -1591,6 +1625,7 @@ describe('AssetsView Comfy Cloud pages', () => {
     limit: number
     order: string
     kind?: string
+    search?: string
   }
 
   function output(index: number): AssetSummary {
@@ -1599,7 +1634,14 @@ describe('AssetsView Comfy Cloud pages', () => {
       : asset(`c${index}`, `out-${index}.png`, 'image')
   }
 
-  function outputPage(total: number, { offset, limit, kind }: PageRequest): CloudAssetPage {
+  function outputPage(total: number, request: PageRequest): CloudAssetPage {
+    const { offset, limit, kind, search } = request
+    if (search) {
+      const matches = Array.from({ length: total }, (_, i) => output(i)).filter(
+        (candidate) => candidate.name.includes(search) && (!kind || candidate.kind === kind)
+      )
+      return { assets: matches.slice(offset, offset + limit), total: matches.length }
+    }
     if (kind) {
       const matches = Array.from({ length: total }, (_, i) => output(i)).filter(
         (candidate) => candidate.kind === kind
@@ -1949,6 +1991,36 @@ describe('AssetsView Comfy Cloud pages', () => {
     expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
       '1–5 of 5'
     )
+  })
+
+  it('searches every Comfy Cloud output by name, with or without a type', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud()
+    await goToPage(wrapper, 2)
+
+    await wrapper.get('input').setValue('mesh')
+    await vi.waitFor(() => expect(asked()).toContainEqual({ ...FIRST_PAGE, search: 'mesh' }))
+    await flushPromises()
+
+    expect(assetNames(wrapper)).toEqual([
+      'mesh-7.glb',
+      'mesh-57.glb',
+      'mesh-107.glb',
+      'mesh-157.glb',
+      'mesh-207.glb'
+    ])
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '1–5 of 5'
+    )
+
+    await wrapper.get('[data-testid="assets-kind-3d"]').trigger('click')
+    await flushPromises()
+
+    expect(asked().at(-1)).toEqual({ ...FIRST_PAGE, kind: '3d', search: 'mesh' })
+    expect(
+      wrapper.findAll('[data-testid^="assets-kind-"]').map((tab) => tab.text()),
+      'Cloud tabs show no counts, with or without a search'
+    ).toEqual(['All', 'Images', 'Videos', '3D', 'Audio'])
   })
 
   it('says nothing matches when Comfy Cloud has no outputs of the picked type', async () => {
