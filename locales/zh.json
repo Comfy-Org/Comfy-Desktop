@@ -46,6 +46,9 @@
     "emptyBody": "新应用会显示在这里。",
     "noMatches": "没有与“{query}”匹配的应用",
     "allApps": "全部应用",
+    "badge": {
+      "withDescription": "{text}：{description}"
+    },
     "pageLoading": "正在加载{app}",
     "pageFailedTitle": "{app}未能加载",
     "local": {
@@ -308,7 +311,8 @@
     "tabConfig": "启动参数",
     "tabOverview": "概览",
     "tabSnapshots": "快照",
-    "tabStorage": "存储",
+    "tabFolders": "文件夹",
+    "tabCloudStorage": "存储",
     "tabTerminal": "终端",
     "relaunch": "重新启动",
     "more": "更多",
@@ -321,7 +325,6 @@
     "yamlTag": "YAML",
     "includeSharedDirs": "包含共享目录",
     "manageSharedDirs": "在桌面设置中管理共享目录",
-    "manageShort": "管理",
     "refreshCustomPaths": "刷新状态",
     "extraModelPathsModalTitle": "自定义模型路径",
     "extraModelPathsModalNote": "只读 —— ComfyUI 会搜索这些目录，但启动器不会管理它们。请编辑 extra_model_paths.yaml 以更改它们。",
@@ -416,6 +419,7 @@
     "directoriesDesc": "所有构建共享的模型目录。放在这里的模型可供每个 ComfyUI 构建使用，避免重复下载。新下载的模型会保存到下载目录。",
     "addDir": "添加共享目录",
     "removeDir": "移除",
+    "changeDir": "更改文件夹",
     "primary": "下载",
     "default": "默认",
     "makePrimary": "用于模型下载",
@@ -427,8 +431,7 @@
     "removeInstanceDirConfirm": "这不会删除任何文件。你之后可以从此列表重新添加该目录。",
     "removeDirTitle": "要移除共享模型目录吗？",
     "removeDirConfirm": "这不会删除任何文件。你之后可以从此列表重新添加该目录。",
-    "moreActions": "更多操作",
-    "addInstanceDir": "添加目录"
+    "moreActions": "更多操作"
   },
   "common": {
     "back": "返回",
@@ -842,7 +845,7 @@
     "community": "社区",
     "storageTab": "文件夹",
     "sharedDirectories": "共享目录",
-    "storageSharedHint": "这些文件夹由所有构建共享。每个构建可在自己的“存储”标签页中选择是否使用。",
+    "storageSharedHint": "这些文件夹由所有构建共享。每个构建可在自己的“文件夹”标签页中选择是否使用。",
     "installLocation": "默认安装位置",
     "updatesTab": "更新",
     "diagnostics": "诊断",
@@ -852,7 +855,21 @@
     "folderKindInput": "输入",
     "folderKindOutput": "输出",
     "useForDownloads": "用于下载",
-    "addModelsFolder": "添加模型文件夹"
+    "addModelsFolder": "添加模型文件夹",
+    "removeAppDataTitle": "移除 Comfy Desktop 数据",
+    "removeAppDataHint": "删除应用之前，先移除 Comfy Desktop 保存在这台电脑上的日志、缓存和临时文件。你可以选择是否一并删除 ComfyUI 实例和模型。",
+    "removeAppDataButton": "移除 Comfy Desktop 数据",
+    "removeAppDataConfirmTitle": "移除 Comfy Desktop 数据？",
+    "removeAppDataConfirmMessage": "Comfy Desktop 将退出并移除其日志、缓存和临时文件。两个选项都不勾选即可保留你的 ComfyUI 实例和模型；重新安装 Comfy Desktop 后会找到它们。",
+    "removeAppDataKeptLabel": "始终保留",
+    "removeAppDataKeptFolders": "你的共享输入和输出文件夹",
+    "removeAppDataKeptAdded": "你自己添加的模型文件夹",
+    "removeAppDataAfterLabel": "然后删除应用",
+    "removeAppDataAfterMac": "将 Comfy Desktop 从“应用程序”拖到废纸篓。",
+    "removeAppDataAfterLinux": "删除 AppImage 文件；如果安装的是 .deb 软件包，请运行 sudo apt remove comfyui-desktop-2。",
+    "removeAppDataInstances": "删除所有 ComfyUI 实例",
+    "removeAppDataModels": "删除所有模型文件",
+    "removeAppDataConfirm": "移除并退出"
   },
   "zoom": {
     "changed": "缩放级别已更改",
@@ -1713,7 +1730,7 @@
     "console": "在此构建文件夹中运行的交互式 shell。无论 ComfyUI 正在运行还是已停止都可使用。",
     "tabOverview": "一览此构建：ComfyUI 及其更新通道、PyTorch、磁盘占用、Python 以及安装位置。",
     "tabConfig": "启动时传递给 ComfyUI 的命令行参数——端口、低显存模式、自定义目录和其他启动覆盖项。",
-    "tabStorage": "显示此构建及其读取的共享模型、输入和输出目录的磁盘占用。",
+    "tabFolders": "此构建读取模型、输入和输出的位置：共享文件夹以及仅属于此构建的文件夹。",
     "standalone": "自包含构建，带有自己的 Python 和依赖。易于更新和管理。",
     "portable": "官方 Windows 便携版，内置 Python。可从单个文件夹运行，无需系统级安装。",
     "git": "从 ComfyUI 仓库克隆的基于 git 的安装。需要系统中安装 git 和 Python。",
@@ -1723,9 +1740,10 @@
     "launchMode": "选择 ComfyUI 的运行方式：在自己的应用窗口中运行，或仅作为控制台进程运行。",
     "browserPartition": "控制此构建是与其他构建共享浏览器缓存（cookies、本地存储），还是保留独立缓存。",
     "sharedDirs": "所有构建共享的输入和输出目录。",
-    "sharedModels": "所有构建共享的模型文件夹，避免重复下载模型。新下载的模型会保存到下载文件夹；下载文件夹在使用中时无法移除，请先选择其他下载文件夹。所有构建默认包含这些目录；每个构建也可以在自己的存储设置中添加仅属于自己的目录。",
-    "sharedDirectories": "全局输入和输出文件夹，在此处的修改对所有构建生效。每个构建可在自己的存储设置中独立选择使用共享输入文件夹、共享输出文件夹，还是自己的文件夹。",
+    "sharedModels": "所有构建共享的模型文件夹，避免重复下载模型。新下载的模型会保存到下载文件夹；下载文件夹在使用中时无法移除，请先选择其他下载文件夹。所有构建默认包含这些目录；每个构建也可以在自己的“文件夹”标签页中添加仅属于自己的目录。",
+    "sharedDirectories": "全局输入和输出文件夹，在此处的修改对所有构建生效。每个构建可在自己的“文件夹”标签页中独立选择使用共享输入文件夹、共享输出文件夹，还是自己的文件夹。",
     "modelsPrimary": "新下载的模型会保存在这里。",
+    "modelsShared": "所有构建共享此目录。可在桌面设置中更改。",
     "instanceOwnModelsDir": "此构建自己的模型文件夹。它始终会被使用，且不会与其他构建共享。",
     "sharedDir": "在你所有的 ComfyUI 构建之间共享。",
     "instanceModels": "此构建读取的所有模型目录：它包含的共享目录、专为此构建添加的目录，以及它自己的内部 models 文件夹。",
@@ -1753,7 +1771,7 @@
     "managerSecurityLevel": "控制 ComfyUI-Manager 允许安装哪些节点包。级别越严格，越会阻止高风险安装，尤其是在使用 --listen 将 ComfyUI 暴露到网络时。下次启动时生效。",
     "managerNetworkMode": "控制此安装中 ComfyUI-Manager 的联网方式。选择“个人云”可在 ComfyUI 通过 --listen 暴露时（例如你自己的云 GPU 机器）允许安装节点包。下次启动时生效。",
     "betaFeaturesNeedTelemetry": "Beta 功能需要在设置中确认数据共享，即使遥测当前已开启。",
-    "sharedFolders": "所有构建都可使用的文件夹，避免重复下载模型。新模型会下载到标记为“下载”的文件夹；可通过“用于下载”选择其他文件夹。每个构建可在自己的存储标签页中选择是否使用共享的输入和输出文件夹，也可以添加仅供自己使用的模型文件夹。"
+    "sharedFolders": "所有构建都可使用的文件夹，避免重复下载模型。新模型会下载到标记为“下载”的文件夹；可通过“用于下载”选择其他文件夹。每个构建可在自己的“文件夹”标签页中选择是否使用共享的输入和输出文件夹，也可以添加仅供自己使用的模型文件夹。"
   },
   "envVars": {
     "name": "名称",

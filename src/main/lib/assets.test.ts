@@ -95,7 +95,9 @@ const {
   downloadAsset,
   findCloudAsset,
   listAssets,
+  listNewestCloudOutputs,
   readAssetModel,
+  readCloudOutput,
   registerAssetsHandlers,
   signedStorageUrl
 } = await import('./assets')
@@ -1277,5 +1279,147 @@ describe('the delete handler', () => {
 
     expect(await trash({ sender: panelSender }, 'local', '/out/still.png')).toBe(true)
     expect(trashOutputFile).toHaveBeenCalledExactlyOnceWith('/out/still.png')
+  })
+})
+
+describe('Cloud outputs for an app input', () => {
+  const signed = 'https://storage.googleapis.com/bucket/a1?sig=1'
+
+  function cloudContent(content: Response): void {
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockImplementation(async (url: string) =>
+      url === signed ? content : new Response(null, { status: 302, headers: { Location: signed } })
+    )
+  }
+
+  it("lists the newest outputs of the signed-in workspace, with each one's loader path", async () => {
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        assets: [
+          {
+            id: 'a1',
+            name: 'apps/cutout_00001_.png',
+            size: 10,
+            mime_type: 'image/png',
+            created_at: '2026-11-10T12:00:00Z',
+            loader_path: '0f3a.png',
+            tags: ['output']
+          },
+          { id: 'a2', name: 'clip.mp4', loader_path: null },
+          { name: 'no id' }
+        ],
+        has_more: true
+      })
+    )
+
+    expect(await listNewestCloudOutputs(12)).toEqual({
+      outputs: [
+        {
+          id: 'a1',
+          name: 'cutout_00001_.png',
+          size: 10,
+          mimeType: 'image/png',
+          createdAt: '2026-11-10T12:00:00Z',
+          loaderPath: '0f3a.png',
+          tags: ['output']
+        },
+        {
+          id: 'a2',
+          name: 'clip.mp4',
+          size: null,
+          mimeType: null,
+          createdAt: null,
+          loaderPath: null,
+          tags: []
+        }
+      ],
+      nextCursor: null
+    })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const query = new URL(url).searchParams
+    expect(Object.fromEntries(query)).toMatchObject({
+      tags_any: 'output',
+      include_public: 'false',
+      sort: 'created_at',
+      order: 'desc',
+      limit: '12'
+    })
+    expect(query.has('after')).toBe(false)
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer token' })
+  })
+
+  it('reads the page after a cursor, and gives the next cursor while there is more', async () => {
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ assets: [{ id: 'a3', name: 'older.png' }], has_more: true, next_cursor: 'c2' })
+    )
+
+    const page = await listNewestCloudOutputs(12, 'c1')
+
+    expect(page?.outputs.map((output) => output.id)).toEqual(['a3'])
+    expect(page?.nextCursor).toBe('c2')
+    const [url] = fetchMock.mock.calls[0] as [string]
+    expect(new URL(url).searchParams.get('after')).toBe('c1')
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ assets: [], has_more: false, next_cursor: 'x' }))
+    expect((await listNewestCloudOutputs(12, 'c2'))?.nextCursor, 'the last page').toBeNull()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ assets: [], has_more: true, next_cursor: 'c3' }))
+    expect((await listNewestCloudOutputs(12, 'c3'))?.nextCursor, 'a repeated cursor').toBeNull()
+  })
+
+  it('lists nothing when signed out, and fails on a bad answer', async () => {
+    getAccessToken.mockResolvedValue(null)
+    expect(await listNewestCloudOutputs(12)).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValue(new Response(null, { status: 500 }))
+    await expect(listNewestCloudOutputs(12)).rejects.toThrow('HTTP 500')
+  })
+
+  it('reads an output through its signed link, up to the cap', async () => {
+    cloudContent(new Response(new Uint8Array([1, 2, 3])))
+    const read = await readCloudOutput('a1', 3, 1_000)
+    expect(Array.from((read as { bytes: Uint8Array }).bytes)).toEqual([1, 2, 3])
+
+    cloudContent(new Response(new Uint8Array([1, 2, 3, 4])))
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'too-large' })
+
+    cloudContent(new Response(new Uint8Array([1]), { headers: { 'Content-Length': '99' } }))
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'too-large' })
+  })
+
+  it('says why it could not read an output', async () => {
+    getAccessToken.mockResolvedValue(null)
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'signed-out' })
+
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValue(new Response(null, { status: 404 }))
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'missing' })
+
+    cloudContent(new Response(null, { status: 404 }))
+    expect(await readCloudOutput('a1', 3, 1_000), 'the signed file is gone').toEqual({
+      error: 'missing'
+    })
+  })
+
+  it('answers elsewhere, not missing, when Cloud cannot be reached or refuses', async () => {
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'))
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'elsewhere' })
+
+    fetchMock.mockResolvedValue(new Response(null, { status: 500 }))
+    expect(await readCloudOutput('a1', 3, 1_000), 'no signed link').toEqual({ error: 'elsewhere' })
+
+    cloudContent(new Response(null, { status: 403 }))
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'elsewhere' })
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === signed) throw new TypeError('connection reset')
+      return new Response(null, { status: 302, headers: { Location: signed } })
+    })
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'elsewhere' })
   })
 })

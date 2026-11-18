@@ -25,7 +25,7 @@ import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AppCard, CatalogWorkflow, Installation } from '../types/ipc'
+import type { AppCard, AppCover, CatalogWorkflow, Installation } from '../types/ipc'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 
 type LoadState = 'loading' | 'ready' | 'unavailable'
@@ -120,12 +120,14 @@ const carouselIsLoading = computed(() =>
     : appsState.value === 'checking' || appsState.value === 'loading'
 )
 
-function coverOf(app: AppCard): string | null {
-  return app.coverUrl
+function coversOf(app: AppCard): readonly AppCover[] {
+  return app.covers
 }
 
-function thumbnailOf(workflow: CatalogWorkflow): string | null {
+function thumbnailOf(workflow: CatalogWorkflow): readonly AppCover[] {
   return workflow.thumbnailUrl
+    ? [{ url: workflow.thumbnailUrl, stillUrl: workflow.thumbnailUrl }]
+    : []
 }
 
 async function loadWorkflows(): Promise<void> {
@@ -193,7 +195,7 @@ onMounted(() => {
           v-else-if="appsState === 'ready'"
           kind="apps"
           :cards="apps"
-          :picture-of="coverOf"
+          :pictures-of="coversOf"
           @open="emit('open-app', $event)"
         />
         <div
@@ -220,7 +222,7 @@ onMounted(() => {
           v-else-if="state === 'ready'"
           kind="workflows"
           :cards="workflows"
-          :picture-of="thumbnailOf"
+          :pictures-of="thumbnailOf"
           @open="openWorkflow"
         />
         <div

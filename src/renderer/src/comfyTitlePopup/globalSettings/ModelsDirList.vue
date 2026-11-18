@@ -4,16 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
-import {
-  ChevronRight,
-  FileText,
-  Folder,
-  FolderLock,
-  FolderOpen,
-  MoreHorizontal,
-  Plus
-} from '@lucide/vue'
-import InfoTooltip from '../../components/InfoTooltip.vue'
+import { FileText, Folder, FolderLock, MoreHorizontal, Plus } from '@lucide/vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 import StorageTag from '../../components/StorageTag.vue'
 
@@ -29,7 +20,6 @@ interface ModelsDir {
 
 interface Props {
   dirs: ModelsDir[]
-  addLabel?: string
   hideSharedTag?: boolean
 }
 
@@ -41,13 +31,14 @@ const emit = defineEmits<{
   'make-primary': [index: number]
   open: [index: number]
   details: [index: number]
+  manage: []
   add: []
 }>()
 
 const { t } = useI18n()
-const actionClass = 'models-dir-action shrink-0'
+const actionClass = 'models-dir-action size-7 shrink-0 rounded-md'
 const nameClass =
-  'models-dir-name static block min-w-0 max-w-full truncate gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono text-[12.5px] leading-[18px] font-normal text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0'
+  'models-dir-name static block min-w-0 max-w-full whitespace-normal [overflow-wrap:anywhere] gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono text-[12.5px] leading-[18px] font-normal text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0'
 const openMenuIndex = ref<number | null>(null)
 
 function canPromote(dir: ModelsDir): boolean {
@@ -58,8 +49,12 @@ function canRemove(dir: ModelsDir): boolean {
   return dir.kind !== 'extra' && !dir.isPrimary && !dir.locked && !dir.readonly
 }
 
+function canChange(dir: ModelsDir): boolean {
+  return dir.kind !== 'extra' && !dir.locked && !dir.readonly
+}
+
 function hasMenuActions(dir: ModelsDir): boolean {
-  return canPromote(dir) || canRemove(dir)
+  return dir.kind === 'extra' || dir.shared === true || canChange(dir) || canPromote(dir)
 }
 
 function closeMenu(): void {
@@ -76,6 +71,16 @@ onBeforeUnmount(() => window.removeEventListener('blur', closeMenu))
 function handleChange(index: number): void {
   closeMenu()
   emit('change', index)
+}
+
+function handleDetails(index: number): void {
+  closeMenu()
+  emit('details', index)
+}
+
+function handleManage(): void {
+  closeMenu()
+  emit('manage')
 }
 
 function handleRemove(index: number): void {
@@ -114,6 +119,7 @@ const rows = computed(() =>
     locked: dir.locked === true,
     isExtra: dir.kind === 'extra',
     showMenu: hasMenuActions(dir),
+    canChange: canChange(dir),
     canPromote: canPromote(dir),
     canRemove: canRemove(dir)
   }))
@@ -121,121 +127,132 @@ const rows = computed(() =>
 </script>
 
 <template>
-  <div class="models-dir-list flex flex-col rounded-[14px] bg-white/5 p-1.5" @click="closeMenu()">
-    <div
-      v-for="row in rows"
-      :key="row.path"
-      class="models-dir-row flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] py-1.5 pr-1.5 pl-3 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]"
-      :class="{
-        'is-just-promoted animate-[models-dir-promote_1200ms_ease-out]':
-          row.path === justPromotedPath
-      }"
-    >
-      <StorageItemIcon
-        :icon="row.isExtra ? FileText : row.locked ? FolderLock : Folder"
-        :shared="row.shared"
-        :title="row.locked ? t('models.lockedDir') : undefined"
-      />
-      <div class="models-dir-main flex min-w-0 flex-auto items-center">
-        <Button
-          type="button"
-          variant="textonly"
-          size="unset"
-          :class="nameClass"
-          :title="row.isExtra ? t('comfyUISettings.viewCustomPathDetails') : t('models.openDir')"
-          @click.stop="row.isExtra ? emit('details', row.index) : emit('open', row.index)"
-        >
-          {{ row.path }}
-        </Button>
-      </div>
-      <StorageTag v-if="row.isPrimary" class="models-dir-tag tag-primary">
-        {{ t('models.primary') }}
-        <InfoTooltip :text="t('tooltips.modelsPrimary')" />
-      </StorageTag>
-      <StorageTag v-if="row.shared && !props.hideSharedTag" class="models-dir-tag tag-shared">
-        {{ t('models.sharedTag') }}
-      </StorageTag>
-      <StorageTag v-if="row.locked || row.isExtra" class="models-dir-tag tag-local">
-        {{ row.isExtra ? t('comfyUISettings.yamlTag') : t('models.instanceOnly') }}
-        <InfoTooltip
-          :text="
-            row.isExtra ? t('tooltips.extraModelPathsInstance') : t('tooltips.instanceOwnModelsDir')
-          "
+  <div class="models-dir-list flex flex-col gap-2.5" @click="closeMenu()">
+    <div class="models-dir-card flex flex-col gap-3 rounded-[14px] bg-card px-1.5 py-[10px]">
+      <template v-for="row in rows" :key="row.path">
+        <div
+          v-if="row.index > 0"
+          class="models-dir-divider -mx-1.5 h-px shrink-0 bg-[var(--chooser-surface-border)]"
+          aria-hidden="true"
         />
-      </StorageTag>
-      <div class="models-dir-actions inline-flex shrink-0 items-center gap-0.5">
-        <Button
-          v-if="row.isExtra"
-          type="button"
-          variant="textonly"
-          size="icon"
-          :class="actionClass"
-          :aria-label="t('comfyUISettings.viewCustomPathDetails')"
-          :title="t('comfyUISettings.viewCustomPathDetails')"
-          @click.stop="emit('details', row.index)"
+        <div
+          class="models-dir-row flex min-w-0 items-start gap-2.5 rounded-[10px] py-1.5 pr-[3px] pl-3 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]"
+          :class="{
+            'is-just-promoted animate-[models-dir-promote_1200ms_ease-out]':
+              row.path === justPromotedPath
+          }"
         >
-          <ChevronRight :size="14" aria-hidden="true" />
-        </Button>
-        <Button
-          v-if="!row.locked && !row.isExtra && !row.readonly"
-          type="button"
-          variant="textonly"
-          size="icon"
-          :class="actionClass"
-          :aria-label="t('common.browse')"
-          :title="t('common.browse')"
-          @click.stop="handleChange(row.index)"
-        >
-          <FolderOpen :size="14" aria-hidden="true" />
-        </Button>
-        <div v-if="row.showMenu" class="models-dir-menu-wrap">
-          <Menu
-            :open="openMenuIndex === row.index"
-            :modal="false"
-            align="end"
-            class="models-dir-menu"
-            @update:open="(isOpen) => (openMenuIndex = isOpen ? row.index : null)"
-            @keydown.capture="onMenuKeydown"
-          >
-            <template #trigger>
-              <Button
-                type="button"
-                variant="textonly"
-                size="icon"
-                :class="actionClass"
-                :aria-label="t('models.moreActions')"
-                @click.stop
-              >
-                <MoreHorizontal :size="14" aria-hidden="true" />
-              </Button>
-            </template>
-            <MenuItem v-if="row.canPromote" @select="handleMakePrimary(row.index)">
-              {{ t('models.makePrimary') }}
-            </MenuItem>
-            <MenuItem
-              v-if="row.canRemove"
-              class="text-destructive"
-              @select="handleRemove(row.index)"
+          <span class="models-dir-icon-slot flex h-8 shrink-0 items-center">
+            <StorageItemIcon
+              :icon="row.isExtra ? FileText : row.locked ? FolderLock : Folder"
+              :shared="row.shared"
+              :title="row.locked ? t('models.lockedDir') : undefined"
+            />
+          </span>
+          <div class="models-dir-main flex min-w-0 flex-auto items-start py-[7px]">
+            <Button
+              type="button"
+              variant="textonly"
+              size="unset"
+              :class="nameClass"
+              :title="
+                row.isExtra ? t('comfyUISettings.viewCustomPathDetails') : t('models.openDir')
+              "
+              @click.stop="row.isExtra ? emit('details', row.index) : emit('open', row.index)"
             >
-              {{ t('models.removeDir') }}
-            </MenuItem>
-          </Menu>
+              {{ row.path }}
+            </Button>
+          </div>
+          <span
+            v-if="
+              row.isPrimary || (row.shared && !props.hideSharedTag) || row.locked || row.isExtra
+            "
+            class="models-dir-tags flex h-8 shrink-0 items-center gap-2.5"
+          >
+            <StorageTag
+              v-if="row.isPrimary"
+              class="models-dir-tag tag-primary"
+              :tooltip="t('tooltips.modelsPrimary')"
+            >
+              {{ t('models.primary') }}
+            </StorageTag>
+            <StorageTag
+              v-if="row.shared && !props.hideSharedTag"
+              class="models-dir-tag tag-shared"
+              :tooltip="t('tooltips.modelsShared')"
+            >
+              {{ t('models.sharedTag') }}
+            </StorageTag>
+            <StorageTag
+              v-if="row.locked || row.isExtra"
+              class="models-dir-tag tag-local"
+              :tooltip="
+                row.isExtra
+                  ? t('tooltips.extraModelPathsInstance')
+                  : t('tooltips.instanceOwnModelsDir')
+              "
+            >
+              {{ row.isExtra ? t('comfyUISettings.yamlTag') : t('models.instanceOnly') }}
+            </StorageTag>
+          </span>
+          <div class="models-dir-actions inline-flex h-8 w-7 shrink-0 items-center justify-end">
+            <div v-if="row.showMenu" class="models-dir-menu-wrap">
+              <Menu
+                :open="openMenuIndex === row.index"
+                :modal="false"
+                align="end"
+                class="models-dir-menu"
+                @update:open="(isOpen) => (openMenuIndex = isOpen ? row.index : null)"
+                @keydown.capture="onMenuKeydown"
+              >
+                <template #trigger>
+                  <Button
+                    type="button"
+                    variant="textonly"
+                    size="unset"
+                    :class="actionClass"
+                    :aria-label="t('models.moreActions')"
+                    @click.stop
+                  >
+                    <MoreHorizontal :size="14" aria-hidden="true" />
+                  </Button>
+                </template>
+                <MenuItem v-if="row.isExtra" @select="handleDetails(row.index)">
+                  {{ t('comfyUISettings.viewCustomPathDetails') }}
+                </MenuItem>
+                <MenuItem v-if="row.canPromote" @select="handleMakePrimary(row.index)">
+                  {{ t('models.makePrimary') }}
+                </MenuItem>
+                <MenuItem v-if="row.canChange" @select="handleChange(row.index)">
+                  {{ t('models.changeDir') }}
+                </MenuItem>
+                <MenuItem v-if="row.shared" @select="handleManage()">
+                  {{ t('comfyUISettings.manageSharedDirs') }}
+                </MenuItem>
+                <MenuItem
+                  v-if="row.canRemove"
+                  class="text-destructive"
+                  @select="handleRemove(row.index)"
+                >
+                  {{ t('models.removeDir') }}
+                </MenuItem>
+              </Menu>
+            </div>
+          </div>
         </div>
-      </div>
+      </template>
     </div>
 
-    <div class="models-dir-foot flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 px-1 pt-1">
+    <div class="models-dir-foot flex min-w-0 items-center">
       <Button
         type="button"
-        variant="muted-textonly"
-        size="md"
-        class="models-dir-add rounded-[10px] px-2"
+        variant="textonly"
+        class="models-dir-add static inline-flex h-8 items-center justify-center gap-1 self-start rounded-lg border-none bg-[var(--chooser-surface-border-hover)] px-3.5 py-2 text-[12px] leading-4 font-medium text-neutral-100 appearance-auto transition-[background-color,color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-border-hover)] hover:text-text focus-visible:bg-[var(--brand-surface-border-hover)] focus-visible:text-text focus-visible:outline-none focus-visible:ring-0"
         @click="emit('add')"
       >
-        <Plus :size="14" aria-hidden="true" />
-        <span>{{ props.addLabel ?? t('models.addDir') }}</span>
+        <Plus :size="16" aria-hidden="true" />
+        <span>{{ t('settings.addModelsFolder') }}</span>
       </Button>
-      <slot name="footer" />
     </div>
   </div>
 </template>
