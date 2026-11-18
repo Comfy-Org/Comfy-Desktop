@@ -108,6 +108,13 @@ describe('CoverRotation', () => {
   })
 
   it('shows the still of the first cover until its moving picture loads, and loads no other yet', async () => {
+    const shownWhenTheNextAppeared: Array<string | null> = []
+    const observer = new MutationObserver(() => {
+      if (!card.querySelector('img[data-cover="upcoming"]')) return
+      const current = card.querySelector('img[data-cover="shown"]')
+      shownWhenTheNextAppeared.push(current?.getAttribute('data-loaded') ?? null)
+    })
+    observer.observe(card, { subtree: true, childList: true, attributes: true })
     const wrapper = mountCovers()
     await nextTick()
 
@@ -117,7 +124,9 @@ describe('CoverRotation', () => {
     expect(layer(wrapper, 'upcoming').exists()).toBe(false)
 
     await untilTheNextIsLoaded(wrapper)
-    expect(layer(wrapper, 'shown').attributes('data-loaded')).toBe('true')
+    observer.disconnect()
+    expect(shownWhenTheNextAppeared.length).toBeGreaterThan(0)
+    expect(shownWhenTheNextAppeared.every((loaded) => loaded === 'true')).toBe(true)
   })
 
   it('takes the still away once the moving cover has faded in over it', async () => {
