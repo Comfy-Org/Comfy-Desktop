@@ -336,14 +336,18 @@ describe('AppSidebar', () => {
     wrapper.unmount()
   })
 
-  it('keeps a tooltip on the icon-only buttons whether or not the sidebar is collapsed', async () => {
+  it('keeps a tooltip on the icon-only buttons but none on the fold toggle, whose icon says it', async () => {
     const wrapper = await mountSidebar()
-    expect(tooltipOf(wrapper, 'app-sidebar-toggle')).toBe('Collapse sidebar')
+    expect(wrapper.get('[data-testid="app-sidebar-toggle"]').findComponent(Tooltip).exists()).toBe(
+      false
+    )
     expect(tooltipOf(wrapper, 'app-sidebar-new-build')).toBe('New build')
 
     await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
 
-    expect(tooltipOf(wrapper, 'app-sidebar-toggle')).toBe('Expand sidebar')
+    expect(wrapper.get('[data-testid="app-sidebar-toggle"]').findComponent(Tooltip).exists()).toBe(
+      false
+    )
     expect(wrapper.findAllComponents(Tooltip).every((tip) => tip.props('side') === 'right')).toBe(
       true
     )
@@ -358,7 +362,7 @@ describe('AppSidebar', () => {
     const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
     await flushPromises()
 
-    for (const testId of ['app-sidebar-home', 'app-sidebar-settings', 'app-sidebar-toggle']) {
+    for (const testId of ['app-sidebar-home', 'app-sidebar-settings']) {
       const row = wrapper.get(`[data-testid="${testId}"]`).element.getBoundingClientRect()
       const trigger = wrapper
         .get(`[data-testid="${testId}"] .tooltip-wrap`)
@@ -566,6 +570,8 @@ describe('AppSidebar', () => {
       const wrapper = await mountSidebar('chooser', [OLD], 'old')
 
       expect(wrapper.find('[data-testid="app-sidebar-builds"]').exists()).toBe(false)
+      expect(wrapper.findAll('[data-testid="app-sidebar-chooser"]')).toHaveLength(1)
+      expect(wrapper.find('nav [inert]').exists(), 'folded Builds list is out of reach').toBe(true)
       const builds = wrapper.get('[data-testid="app-sidebar-chooser"]')
       expect(tooltipOf(wrapper, 'app-sidebar-chooser')).toBe('Builds')
       expect(builds.attributes('aria-current')).toBe('page')

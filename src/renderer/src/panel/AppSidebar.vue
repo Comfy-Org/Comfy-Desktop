@@ -84,6 +84,14 @@ const faceTransition = {
     'transition-[opacity,scale] duration-120 ease-out motion-reduce:transition-opacity',
   leaveToClass: 'opacity-0 motion-safe:scale-90'
 }
+const wordmarkTransition = {
+  enterActiveClass:
+    'origin-left transition-[opacity,scale] duration-200 delay-90 ease-out motion-reduce:transition-opacity',
+  enterFromClass: 'opacity-0 motion-safe:scale-95',
+  leaveActiveClass:
+    'origin-left transition-[opacity,scale] duration-100 ease-out motion-reduce:transition-opacity',
+  leaveToClass: 'opacity-0 motion-safe:scale-95'
+}
 const labelTransition = {
   enterActiveClass: 'transition-opacity duration-180 delay-30 ease-out',
   enterFromClass: 'opacity-0',
@@ -205,7 +213,7 @@ function openSettings(): void {
     @pointerleave="sidebarHovered = false"
   >
     <div class="relative mt-2 mb-3.5 h-9 w-full shrink-0" data-testid="app-sidebar-header">
-      <Transition v-bind="faceTransition">
+      <Transition v-bind="wordmarkTransition">
         <Button
           v-show="!collapsed"
           variant="textonly"
@@ -231,25 +239,19 @@ function openSettings(): void {
           aria-expanded="false"
           @click="toggleCollapsed"
         >
-          <Tooltip
-            :text="t('sidebar.expand')"
-            side="right"
-            class="size-full items-center justify-center"
-          >
-            <span class="relative grid size-full place-items-center">
-              <ComfyCLogo
-                :size="20"
-                class="text-foreground transition-[opacity,scale] duration-180 ease-out group-hover:opacity-0 group-focus-visible:opacity-0 motion-safe:group-hover:scale-90 motion-safe:group-focus-visible:scale-90 motion-reduce:transition-opacity"
-                data-testid="app-sidebar-logo-face"
-              />
-              <span
-                class="absolute inset-0 grid place-items-center opacity-0 transition-[opacity,scale] duration-180 ease-out group-hover:opacity-100 group-focus-visible:opacity-100 motion-safe:scale-90 motion-safe:group-hover:scale-100 motion-safe:group-focus-visible:scale-100 motion-reduce:transition-opacity"
-                data-testid="app-sidebar-expand-face"
-              >
-                <SidebarToggleIcon />
-              </span>
+          <span class="relative grid size-full place-items-center">
+            <ComfyCLogo
+              :size="20"
+              class="text-foreground transition-[opacity,scale] duration-180 ease-out group-hover:opacity-0 group-focus-visible:opacity-0 motion-safe:group-hover:scale-90 motion-safe:group-focus-visible:scale-90 motion-reduce:transition-opacity"
+              data-testid="app-sidebar-logo-face"
+            />
+            <span
+              class="absolute inset-0 grid place-items-center opacity-0 transition-[opacity,scale] duration-180 ease-out group-hover:opacity-100 group-focus-visible:opacity-100 motion-safe:scale-90 motion-safe:group-hover:scale-100 motion-safe:group-focus-visible:scale-100 motion-reduce:transition-opacity"
+              data-testid="app-sidebar-expand-face"
+            >
+              <SidebarToggleIcon />
             </span>
-          </Tooltip>
+          </span>
         </Button>
       </Transition>
       <Transition v-bind="faceTransition">
@@ -263,13 +265,7 @@ function openSettings(): void {
           aria-expanded="true"
           @click="toggleCollapsed"
         >
-          <Tooltip
-            :text="t('sidebar.collapse')"
-            side="right"
-            class="size-full items-center justify-center"
-          >
-            <SidebarToggleIcon />
-          </Tooltip>
+          <SidebarToggleIcon />
         </Button>
       </Transition>
     </div>
@@ -315,11 +311,17 @@ function openSettings(): void {
             </Transition>
           </Tooltip>
         </Button>
-        <Transition v-bind="labelTransition">
+        <div
+          v-if="group.key === 'main'"
+          class="grid shrink-0 transition-[grid-template-rows,opacity] ease-[cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-opacity"
+          :class="
+            collapsed ? 'grid-rows-[0fr] opacity-0 duration-200' : 'grid-rows-[1fr] duration-260'
+          "
+          :inert="collapsed"
+        >
           <div
-            v-if="group.key === 'main' && !collapsed"
-            class="flex flex-col gap-px overflow-hidden text-nowrap"
-            data-testid="app-sidebar-builds"
+            class="flex min-h-0 w-[220px] flex-col gap-px overflow-hidden text-nowrap"
+            :data-testid="collapsed ? undefined : 'app-sidebar-builds'"
           >
             <div class="mt-5.5 flex h-6.5 shrink-0 items-center justify-between pr-1 pl-3">
               <Button
@@ -327,7 +329,7 @@ function openSettings(): void {
                 size="unset"
                 class="group/title -ml-1.5 h-[22px] gap-[5px] rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-transparent hover:text-foreground focus-visible:text-foreground aria-[current=page]:text-foreground"
                 :aria-current="buildsPageActive ? 'page' : undefined"
-                data-testid="app-sidebar-chooser"
+                :data-testid="collapsed ? undefined : 'app-sidebar-chooser'"
                 @click="navigate('chooser')"
                 @contextmenu.prevent="openPageMenu($event, 'chooser')"
               >
@@ -344,7 +346,7 @@ function openSettings(): void {
                 size="unset"
                 class="size-6 rounded-md p-0 hover:bg-secondary hover:text-foreground"
                 :aria-label="t('sidebar.newBuild')"
-                data-testid="app-sidebar-new-build"
+                :data-testid="collapsed ? undefined : 'app-sidebar-new-build'"
                 @click="emit('new-build')"
               >
                 <Tooltip
@@ -359,7 +361,7 @@ function openSettings(): void {
             <p
               v-if="!buildRows.length"
               class="m-0 flex h-8 shrink-0 items-center gap-2.5 px-3 text-[13px]/5 text-subtle-foreground"
-              data-testid="app-sidebar-no-builds"
+              :data-testid="collapsed ? undefined : 'app-sidebar-no-builds'"
             >
               <Server :size="15" aria-hidden="true" />{{ t('sidebar.noBuilds') }}
             </p>
@@ -417,7 +419,7 @@ function openSettings(): void {
               >
             </Button>
           </div>
-        </Transition>
+        </div>
       </template>
     </nav>
 
