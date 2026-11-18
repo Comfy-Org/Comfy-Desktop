@@ -277,8 +277,8 @@ const bare = (file: string): string => file.replace(/\.[a-z0-9]+$/i, '')
   background: color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
 }
 .jp-summary.is-busy .jp-pulse {
-  background: #0b8ce9;
-  box-shadow: 0 0 0 3px color-mix(in srgb, #0b8ce9 25%, transparent);
+  background: var(--color-base-foreground);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-base-foreground) 20%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .jp-clear {
   height: 28px;
@@ -323,7 +323,7 @@ const bare = (file: string): string => file.replace(/\.[a-z0-9]+$/i, '')
   color: var(--rp-meta);
 }
 .jp-row.is-running .jp-thumb {
-  color: #0b8ce9;
+  color: var(--rp-text);
 }
 .jp-row.is-failed .jp-thumb {
   background: color-mix(in srgb, #e5484d 16%, transparent);
@@ -374,7 +374,7 @@ const bare = (file: string): string => file.replace(/\.[a-z0-9]+$/i, '')
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: #0b8ce9;
+  background: var(--color-base-foreground);
   transition: width 0.2s linear;
 }
 .jp-actions {

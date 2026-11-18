@@ -559,28 +559,3 @@
   color: var(--color-base-foreground);
   font-size: 13px;
 }
-
-/* Folders (Comfy-Desktop#2217): sections stacked, full paths wrap. */
-.mar-bt-folders {
-  display: flex;
-  flex-direction: column;
-}
-.mar-bt-folders > .mar-bt-note {
-  max-width: 48rem;
-  margin: 0 0 20px;
-}
-.mar-bt-folder-path {
-  min-width: 0;
-  flex: 1;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12.5px;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-bb .mar-st-toggle {
-  width: auto;
-  justify-content: flex-end;
-}
-.mar-bb .mar-bt-folder {
-  padding: 6px 6px 6px 12px;
-}

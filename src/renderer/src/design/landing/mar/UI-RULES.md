@@ -30,14 +30,16 @@ DS's Motion page (`ds/motion.ts`).
 - **Dropdown titles are uppercase too.** Every group or section title inside
   a dropdown or menu uses the same uppercase label style. The locale string
   stays in sentence case; `uppercase` is applied in CSS.
-- **Page titles are Inter at the display size** (`--text-display`, 34px),
-  the same as Home's title, on every page and on a build's page. Assets
-  keeps its larger title for now.
 - **English only** in the prototype, Figma, Linear and the repo.
 - **No em dashes** in product copy.
 
 ## Buttons and actions
 
+- **No blue in the prototype.** Run, Resume and every primary action are
+  white with dark text (the toolbar Run, `--mg-run`); value fills (a
+  stepper's fill) and status chips (Paused) are grey widget tokens; running
+  outlines, progress bars and busy dots are the foreground white. Only data
+  types keep their colour (the IMAGE wires and slots).
 - **Primary is white, never blue.** One per screen. To make something
   stand out, use the white primary, order and size, not colour.
 - **One tool per header.** A section header has one tool: + when you can
@@ -63,8 +65,8 @@ DS's Motion page (`ds/motion.ts`).
   sidebar row show one shared menu. A page in the sidebar (Home, Apps,
   Assets, the Builds title) right-clicks to Open in new window only; Open
   in new tab joins it once builds share one window.
-- **Build menu order:** what you can do now first (Ready: Start; Starting
-  or Updating: View logs, Cancel; Running: View logs, Restart, Stop), then
+- **Build menu order:** what you can do now first (Ready: Start; Starting:
+  View logs, Cancel; Running: View logs, Restart, Stop), then
   Auto start, then the rest (Manage, Update, Duplicate, Show in Finder,
   Export snapshot, Restore snapshot, Upload build), Uninstall last. No Open
   in new window: every build opens in its own window.
@@ -127,12 +129,9 @@ DS's Motion page (`ds/motion.ts`).
 
 - **The whole tile is the action.** A build tile or row on Home and Builds
   has no Start or Update button: a click starts it, opens it when it runs,
-  shows its logs while busy and opens its page when broken; the hover hint
+  shows its logs while starting and opens its page when broken; the hover hint
   says which (Click to start / open / view logs). An update waiting is a
-  grey "Update" note after the version; updating is in ⋯.
-- **Progress stays on the build.** Start, update and uninstall show on the
-  tile, the sidebar row and the build page ("Updating · 40%" and the bar);
-  never a full-screen loader.
+  grey "Update" note after the version; Update is in ⋯.
 - **Tiles stack when they don't fit.** Below the width where a tile can't
   hold its name and status, Home's build tiles go one per row; never
   squeeze two side by side. A tile in progress looks like every other
@@ -140,11 +139,6 @@ DS's Motion page (`ds/motion.ts`).
   click opens its logs, actions live in ⋯.
 
 ## Feedback
-
-- **Lists in a popup are rows, not cards** (the title bar's downloads): a
-  32px leading tile, the name, one quiet line under it, the actions you
-  always need in view and the rest on hover, uppercase sections, no
-  borders, the panel a step lighter. Empty, it says what will appear.
 
 - **Toasts only when you stay** on the page and something changes state.
   No toast after a redirect, on opening things, or for pickers.

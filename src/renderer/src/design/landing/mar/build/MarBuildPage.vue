@@ -14,6 +14,7 @@ import {
   Laptop,
   Pencil,
   Play,
+  Repeat2,
   Rocket,
   RotateCcw,
   RotateCw,
@@ -21,8 +22,8 @@ import {
   ScrollText,
   Server,
   Settings2,
+  Share2,
   Square,
-  SquareArrowOutUpRight,
   Trash2,
   Upload,
   Workflow
@@ -52,7 +53,7 @@ import {
   versionsOf
 } from '../../parts/env/env'
 import { allWorkflows } from '../../gallery'
-import { deployEnv, go, goIn, hostActions, proto, toast, type Page } from '../../useProto'
+import { deployEnv, go, goIn, proto, toast, type Page } from '../../useProto'
 import { can } from '../../milestones'
 import { buildsAsM1 } from './buildsAsM1'
 import { PROJECTS, type ProtoInstance } from '../../mock'
@@ -60,6 +61,7 @@ import MarEntityHeader from '../pages/MarEntityHeader.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
 import MarItemMenu from '../pages/MarItemMenu.vue'
 import MarSeg from '../pages/MarSeg.vue'
+import MarSplitButton from '../pages/MarSplitButton.vue'
 import MarStatus, { type ItemStatus } from '../pages/MarStatus.vue'
 import { notify } from '../pages/undo'
 import type { MenuLine } from '../pages/menu'
@@ -69,11 +71,9 @@ import BuildAbout from './BuildAbout.vue'
 import BuildArgs from './BuildArgs.vue'
 import BuildOp from './BuildOp.vue'
 import BuildOverviewCards from './BuildOverviewCards.vue'
-import BuildUpdating from './BuildUpdating.vue'
 import BuildStorage from './BuildStorage.vue'
 import BuildTerminal from './BuildTerminal.vue'
 import { opOf } from './buildOps'
-import { runs } from './homeRun'
 import { extraOf, isRemote } from './m1Builds'
 import BuildSettings from './BuildSettings.vue'
 import BuildSnapshots from './BuildSnapshots.vue'
@@ -270,10 +270,9 @@ function restartHere(): void {
   state.restart = false
   toast(`Restarting ${env.name}…`)
 }
-// Comfy-Desktop#2215: a running build reads Open (its window comes to
-// the front), the same word as Home's cards; one button, no caret.
-// Stop lives in More only, in its danger group beside Forget and
-// Uninstall, as in Home's build menu.
+// A running build reads Switch (its window comes to the front); the caret
+// holds Window options, only Stop now that every build opens in its own
+// window (Comfy-Desktop#2147).
 const main = computed<{ label: string; icon: unknown; run: () => void }>(() => {
   if (remote) return { label: 'Open Remote', icon: Server, run: () => toast(`Opening ${env.name}`) }
   if (k.value !== 'local')
@@ -281,11 +280,14 @@ const main = computed<{ label: string; icon: unknown; run: () => void }>(() => {
   if (running.value)
     return state.restart
       ? { label: 'Restart to apply changes', icon: RotateCcw, run: restartHere }
-      : { label: 'Open', icon: SquareArrowOutUpRight, run: () => hostActions.launch(env) }
+      : { label: 'Switch', icon: Repeat2, run: () => toast(`Switched to ${env.name}`) }
   return { label: 'Start', icon: Play, run: startHere }
 })
-// An update running on the build (homeRun.ts) takes the tabs' place.
-const updating = computed(() => runs.get(env.id)?.kind === 'update')
+const windowLines = computed<MenuLine[]>(() =>
+  running.value && own.value
+    ? [{ label: 'Stop', icon: CircleStop, danger: true, run: stopHere }]
+    : []
+)
 // Rename in the title, as Desktop does (the About tab is gone).
 const renaming = ref(false)
 const draft = ref('')
@@ -313,7 +315,7 @@ const moreLines = computed<MenuLine[]>(() => [
     ? [
         { label: 'Duplicate', icon: CopyPlus, ...gate.value, run: duplicateHere },
         { label: 'Open Directory', icon: FolderOpen, run: () => toast(`Opened ${env.name}`) },
-        { label: 'Export snapshot', icon: Download, run: () => toast('Snapshot exported') }
+        { label: 'Share', icon: Share2, run: () => toast('Snapshot ready to share') }
       ]
     : []),
   'sep',
@@ -420,9 +422,19 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         </template>
       </template>
       <template v-if="mvp && buildPage.id === 'production'" #actions>
+        <MarSplitButton
+          v-if="windowLines.length"
+          :label="main.label"
+          :icon="main.icon as never"
+          :disabled="op?.status === 'running'"
+          :lines="windowLines"
+          menu-label="Window options"
+          @run="main.run()"
+        />
         <Button
+          v-else
           variant="primary"
-          :disabled="state.run === 'launching' || op?.status === 'running' || updating"
+          :disabled="state.run === 'launching' || op?.status === 'running'"
           @click="main.run()"
           ><component :is="main.icon" :size="15" />{{
             state.run === 'launching' ? 'Starting…' : main.label
@@ -481,8 +493,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
     <!-- The Builds milestone: production's tabs, or Overview first. -->
     <template v-if="mvp">
       <!-- A long operation takes the tab's place until it settles. -->
-      <BuildUpdating v-if="updating" :env />
-      <BuildOp v-else-if="op" :id="env.id" :op :name="env.name" />
+      <BuildOp v-if="op" :id="env.id" :op :name="env.name" />
       <BuildOverviewCards
         v-else-if="tab === 'overview' && buildPage.id === 'production' && own"
         :env

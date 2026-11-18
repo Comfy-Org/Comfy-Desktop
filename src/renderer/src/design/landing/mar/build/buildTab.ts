@@ -15,8 +15,8 @@ export type BuildTab =
   | 'deployments'
 
 /** Desktop's tabs (ComfyUISettingsContent.vue): Overview (the facts as
- *  cards, Comfy-Desktop#2062, in place of Update and About), Folders
- *  (#2198 moved it second, #2217 named it), Startup arguments (#2179),
+ *  cards, Comfy-Desktop#2062, in place of Update and About), Storage
+ *  (#2198 moved it second), Startup arguments (#2179),
  *  Snapshots, Terminal. Cloud: Overview and Storage (its browser cache,
  *  not folders). Remote: Overview. The update dot sits on Overview. */
 export function desktopTabs(
@@ -32,7 +32,7 @@ export function desktopTabs(
     ]
   return [
     { value: 'overview', label: 'Overview', dot },
-    { value: 'storage', label: 'Folders' },
+    { value: 'storage', label: 'Storage' },
     { value: 'args', label: 'Startup arguments' },
     { value: 'snapshots', label: 'Snapshots' },
     { value: 'terminal', label: 'Terminal' }

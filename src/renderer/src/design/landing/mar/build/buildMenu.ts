@@ -31,7 +31,6 @@ import {
   startBuild,
   stopBuild,
   uninstallBuild,
-  updateBuild,
   viewLogs,
   type BuildNow
 } from './homeRun'
@@ -50,8 +49,6 @@ export interface BuildMenuTarget {
   now: BuildNow
   update?: boolean
   launch: () => void
-  /** Run the update on the build (Comfy-Desktop#2216). */
-  updateNow?: () => void
   autoStart?: boolean
   toggleAutoStart?: () => void
   viewLogs: () => void
@@ -66,11 +63,7 @@ export interface BuildMenuTarget {
 const sep = 'sep' as const
 
 export function buildMenuLines(t: BuildMenuTarget): MenuLine[] {
-  const busy =
-    t.now === 'starting' ||
-    t.now === 'installing' ||
-    t.now === 'updating' ||
-    t.now === 'uninstalling'
+  const busy = t.now === 'starting' || t.now === 'installing' || t.now === 'uninstalling'
   const running = t.now === 'running'
   const why = busy ? 'Wait until it finishes.' : running ? 'Stop the running build first.' : ''
   const gated = { disabled: busy || running, title: why || undefined }
@@ -85,20 +78,10 @@ export function buildMenuLines(t: BuildMenuTarget): MenuLine[] {
           ]
         : t.now === 'uninstalling'
           ? [{ label: 'Cancel', icon: X, run: t.cancel }]
-          : t.now === 'updating'
-            ? [
-                { label: 'View logs', icon: ScrollText, run: t.viewLogs },
-                {
-                  label: 'Cancel',
-                  icon: X,
-                  run: t.cancel,
-                  confirm: { text: 'Stop updating?', yes: 'Stop updating' }
-                }
-              ]
-            : [
-                { label: 'View logs', icon: ScrollText, run: t.viewLogs },
-                { label: 'Cancel', icon: X, run: t.cancel }
-              ]
+          : [
+              { label: 'View logs', icon: ScrollText, run: t.viewLogs },
+              { label: 'Cancel', icon: X, run: t.cancel }
+            ]
   const rest: MenuAction[] = [
     {
       label: 'Manage',
@@ -107,9 +90,7 @@ export function buildMenuLines(t: BuildMenuTarget): MenuLine[] {
       disabled: busy,
       title: busy ? why : undefined
     },
-    ...(t.update
-      ? [{ label: 'Update', icon: ArrowUpCircle, run: t.updateNow ?? t.manage, ...gated }]
-      : []),
+    ...(t.update ? [{ label: 'Update', icon: ArrowUpCircle, run: t.manage, ...gated }] : []),
     ...(t.local
       ? [
           {
@@ -195,11 +176,10 @@ export function instanceTarget(i: ProtoInstance): BuildMenuTarget {
     now: nowOf(i),
     update: hasUpdate(i),
     launch: () => startBuild(i),
-    updateNow: () => updateBuild(i),
     autoStart: autoStart.id === i.id,
     toggleAutoStart: () => (autoStart.id = autoStart.id === i.id ? '' : i.id),
-    // Starting or updating: its steps and log; running: its ComfyUI log window.
-    viewLogs: () => viewLogs(i),
+    // Starting: the start's own logs; running: the build's Terminal.
+    viewLogs: () => (nowOf(i) === 'running' ? openBuild(i.id, 'terminal') : viewLogs(i)),
     cancel: () => cancelRun(i),
     restart: () => restartBuild(i),
     stop: () => stopBuild(i),

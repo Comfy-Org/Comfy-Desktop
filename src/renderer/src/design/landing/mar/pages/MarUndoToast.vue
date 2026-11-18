@@ -31,7 +31,7 @@ const ICONS = { success: CircleCheck, info: Info, warning: TriangleAlert, error:
 /* Comfy's palette (ds/theme/model.ts): azure-600, jade-600, gold-600,
    coral-500. */
 .mar-undo.is-info {
-  --tone: #0b8ce9;
+  --tone: var(--color-base-foreground);
 }
 .mar-undo.is-success {
   --tone: #00cd72;

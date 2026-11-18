@@ -150,9 +150,10 @@ const itemClass = (page: Page): string =>
           ><InstanceGlyph :inst="envById(r.envId!)!" size="xs"
         /></span>
       </Tooltip>
-      <!-- Starting, updating or uninstalling on its tile: how far. -->
+      <!-- Uninstalling on its tile: how far (a start shows its percent on
+           the tile only, as in Desktop's sidebar). -->
       <span
-        v-else-if="r.envId && runs.get(r.envId)"
+        v-else-if="r.envId && runs.get(r.envId) && runs.get(r.envId)!.kind !== 'start'"
         class="text-ui text-subtle-foreground tabular-nums"
         >{{ runs.get(r.envId)!.percent }}%</span
       >

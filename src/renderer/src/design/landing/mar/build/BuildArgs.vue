@@ -4,16 +4,14 @@ import { Search, X } from 'lucide-vue-next'
 import Input from '../../ui/Input.vue'
 import Select from '../../ui/Select.vue'
 import SettingsRow from '../../ui/SettingsRow.vue'
+import SettingsSection from '../../ui/SettingsSection.vue'
 import Switch from '../../ui/Switch.vue'
 import type { ProtoInstance } from '../../mock'
-import BuildBlock from './BuildBlock.vue'
 import { LAUNCH_MODES, NETWORK, PORT_CONFLICT, SECURITY, settingsOf, stateOf } from './buildFacts'
 import './buildTabs.css'
 
 /**
- * Desktop's Startup arguments (views/comfyUISettings/ArgsBuilderPage.vue),
- * read top-down (Comfy-Desktop#2217): each uppercase title on top, every
- * setting its own full-width row, no side column, no paired fields. The
+ * Desktop's Startup arguments (views/comfyUISettings/ArgsBuilderPage.vue): the
  * raw arguments on top, editable, then every flag ComfyUI takes, grouped
  * and searchable, set ones pinned under Active. A flag that takes a value
  * shows its field when on; flags that exclude each other are one choice.
@@ -178,8 +176,8 @@ watch(
 </script>
 
 <template>
-  <div class="mar-bt-folders">
-    <BuildBlock title="Startup arguments" info="Passed to ComfyUI as it starts.">
+  <div class="mar-bt-settings">
+    <SettingsSection title="Startup arguments" description="Passed to ComfyUI as it starts.">
       <div class="mar-args-raw">
         <span class="mar-bt-label">Raw arguments</span>
         <Input v-model="set.args" mono placeholder="No arguments set" aria-label="Raw arguments" />
@@ -230,18 +228,21 @@ watch(
           />
         </div>
       </div>
-    </BuildBlock>
+    </SettingsSection>
 
-    <BuildBlock title="Launch Settings" info="How ComfyUI starts and where it opens.">
+    <SettingsSection title="Launch Settings" description="How ComfyUI starts and where it opens.">
       <SettingsRow label="Launch Mode" layout="inline">
         <Select v-model="set.mode" :options="LAUNCH_MODES" class="w-44" />
       </SettingsRow>
       <SettingsRow label="If Port is Busy" layout="inline">
         <Select v-model="set.portConflict" :options="PORT_CONFLICT" class="w-52" />
       </SettingsRow>
-    </BuildBlock>
+    </SettingsSection>
 
-    <BuildBlock title="ComfyUI-Manager" info="Installs and updates node packs from inside ComfyUI.">
+    <SettingsSection
+      title="ComfyUI-Manager"
+      description="Installs and updates node packs from inside ComfyUI."
+    >
       <SettingsRow
         label="Manager Security Level"
         layout="inline"
@@ -256,6 +257,6 @@ watch(
       >
         <Select v-model="set.network" :options="NETWORK" class="w-52" />
       </SettingsRow>
-    </BuildBlock>
+    </SettingsSection>
   </div>
 </template>

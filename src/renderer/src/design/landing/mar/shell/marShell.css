@@ -49,9 +49,9 @@
   }
 }
 
-/* A page's title: Inter at the display size, the same as Home's title
-   (Comfy-Desktop#2210). Nothing above it but the panel's own inset, about
-   what it has on the left, on a laptop and a big monitor alike. */
+/* A page's title, larger, following the window's smaller side. Nothing
+   above it but the panel's own inset, about what it has on the left, on a
+   laptop and a big monitor alike. */
 :root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child {
   padding-top: 0;
 }
@@ -60,12 +60,6 @@
   padding-top: 12px;
 }
 :root[data-mar-ui='on'] .mar-backdrop ~ div > header:first-child h1 {
-  font-size: var(--text-display);
-  line-height: var(--text-display--line-height);
-  letter-spacing: -0.02em;
-}
-/* Assets keeps its larger title for now, as in Desktop (Jaeone's page). */
-:root[data-mar-ui='on'] .mar-backdrop ~ div[data-page^='assets'] > header:first-child h1 {
   font-size: clamp(32px, min(3.6vw, 6vh), 52px);
   line-height: 1.05;
   letter-spacing: -0.025em;

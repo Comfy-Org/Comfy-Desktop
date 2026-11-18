@@ -14,10 +14,8 @@ import BuildSnapshots from './BuildSnapshots.vue'
 import BuildStorage from './BuildStorage.vue'
 import BuildTerminal from './BuildTerminal.vue'
 import BuildOverviewCards from './BuildOverviewCards.vue'
-import BuildUpdating from './BuildUpdating.vue'
 import { stateOf } from './buildFacts'
 import { opOf } from './buildOps'
-import { runs } from './homeRun'
 import { desktopTabs, nextBuildTab, tabOf, type BuildTab } from './buildTab'
 import { isRemote } from './m1Builds'
 
@@ -34,7 +32,6 @@ const state = stateOf(env)
 const remote = isRemote(env)
 const own = env.kind === 'local'
 const op = computed(() => opOf(env.id))
-const updating = computed(() => runs.get(env.id)?.kind === 'update')
 const TABS = computed(() => desktopTabs(own, remote))
 
 const asked = tabOf(nextBuildTab.value)
@@ -71,8 +68,7 @@ watch(TABS, (list) => {
     </div>
 
     <!-- A long operation takes the tab's place until it settles. -->
-    <BuildUpdating v-if="updating" :env />
-    <BuildOp v-else-if="op" :id="env.id" :op :name="env.name" />
+    <BuildOp v-if="op" :id="env.id" :op :name="env.name" />
     <BuildOverviewCards v-else-if="tab === 'overview' && own" :env />
     <BuildAbout v-else-if="tab === 'overview'" :env />
     <BuildArgs v-else-if="tab === 'args'" :env />

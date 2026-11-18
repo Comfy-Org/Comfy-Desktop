@@ -143,10 +143,10 @@ function continueFirst(): void {
 // Today's estimate: the download, unpacked, takes about 2.25 times its size.
 const REQUIRED_GB = (DETECTED.downloadGb * 2.25).toFixed(1)
 
-// Set up › Continue: low space asks first, as today. M1 has no Home, so the
-// starter workflow stays a step here, as today. Once the Home exists it
-// offers the apps on the Home instead (setup/HomeInstall.vue).
-const workflowStep = computed(() => localSetup.scope === 'm1')
+// Set up › Install: low space asks first, as today. No starter workflow
+// step on any scope: Desktop dropped it (Comfy-Desktop#2133), Set up
+// installs what it shows. The Home offers the apps (setup/HomeInstall.vue).
+const workflowStep = computed(() => false)
 function continueSetup(): void {
   // One-click install: the consent sits on this screen; the terms gate.
   if (homeOneClick.value && flow.takeover && !terms.value) {
