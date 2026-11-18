@@ -208,6 +208,24 @@ export interface AssetSummary {
   durationSeconds: number | null
 }
 
+export type AssetOrder = 'newest' | 'oldest'
+
+export interface CloudAssetPageRequest {
+  offset: number
+  after?: string
+  limit: number
+  order: AssetOrder
+  kind?: AssetKind
+}
+
+export interface CloudAssetPage {
+  assets: AssetSummary[]
+  total: number | null
+  totalIsLowerBound?: true
+  nextCursor?: string
+  scanLimit?: number
+}
+
 export interface LocalAssetListing {
   assets: AssetSummary[]
   truncated: boolean
@@ -1206,7 +1224,7 @@ export interface ElectronApi {
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   openPageInNewWindow(page: NewWindowDashboardPage): void
-  listAssets(installationId: string): Promise<AssetSummary[]>
+  listAssets(installationId: string, page: CloudAssetPageRequest): Promise<CloudAssetPage | null>
   listLocalAssets(installationId?: string): Promise<LocalAssetListing>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>

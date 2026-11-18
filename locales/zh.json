@@ -133,6 +133,18 @@
     "noCloudBuildTitle": "此工作区没有 Comfy Cloud 构建",
     "noCloudBuildBody": "重启 Comfy Desktop 以重新添加 Comfy Cloud。",
     "truncated": "仅显示最新的 {count} 个文件。",
+    "noMatchesOnPage": "此页没有匹配的资产",
+    "noMatchesOnPageHint": "试试其他页面、类型或搜索词。",
+    "cloudScanLimit": "类型筛选涵盖当前排序下的前 {limit} 个云端输出。",
+    "pagination": {
+      "label": "页面",
+      "previous": "上一页",
+      "next": "下一页",
+      "page": "第 {page} 页",
+      "range": "第 {first}–{last} 个，共 {total} 个",
+      "rangeLowerBound": "第 {first}–{last} 个，至少 {total} 个",
+      "pageSize": "每页资产数"
+    },
     "inspect": "查看 {name}",
     "detail": {
       "tags": "标签",

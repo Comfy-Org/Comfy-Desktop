@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { Readable, Writable } from 'stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DownloadProgress } from './comfyDownloadManager'
+import type { CloudAssetPage } from '../../types/ipc'
 
 const getInstallation = vi.fn()
 const getAccessToken = vi.fn()
@@ -119,6 +120,8 @@ function pngHeader(width: number, height: number): Uint8Array<ArrayBuffer> {
   return new Uint8Array(header)
 }
 
+const FIRST_PAGE = { offset: 0, limit: 100, order: 'newest' } as const
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -165,9 +168,9 @@ describe('signedStorageUrl', () => {
 describe('listAssets', () => {
   it('never asks a local or remote build over HTTP', async () => {
     getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    expect(await listAssets('local-1')).toEqual([])
+    expect((await listAssets('local-1', FIRST_PAGE)).assets).toEqual([])
     getInstallation.mockResolvedValue({ id: 'remote-1', sourceId: 'remote' })
-    expect(await listAssets('remote-1')).toEqual([])
+    expect((await listAssets('remote-1', FIRST_PAGE)).assets).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -175,7 +178,7 @@ describe('listAssets', () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue(null)
 
-    expect(await listAssets('cloud-1')).toEqual([])
+    expect((await listAssets('cloud-1', FIRST_PAGE)).assets).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -188,12 +191,14 @@ describe('listAssets', () => {
           assets: [
             { id: 'bad', name: 'bad.png', mime_type: 1 },
             { id: 'good', name: 'good.png', mime_type: null, created_at: null, size: 0 }
-          ]
+          ],
+          total: 2,
+          has_more: false
         })
       )
       .mockResolvedValue(new Response(null, { status: 404 }))
 
-    const assets = await listAssets('cloud-1')
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
 
     expect(assets.map((a) => [a.id, a.sizeBytes])).toEqual([['good', 0]])
   })
@@ -204,15 +209,276 @@ describe('listAssets', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assets: Array.from({ length: 150 }, (_, i) => ({ id: `a${i}`, name: `a${i}.bin` }))
+          assets: Array.from({ length: 150 }, (_, i) => ({ id: `a${i}`, name: `a${i}.bin` })),
+          total: 150,
+          has_more: true,
+          next_cursor: 'next'
         })
       )
       .mockResolvedValue(new Response(null, { status: 404 }))
 
-    const assets = await listAssets('cloud-1')
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
 
     expect(assets).toHaveLength(100)
     expect(assets.at(-1)!.id).toBe('a99')
+  })
+
+  it('asks for a capped total on the first page and treats 10,000 as a lower bound', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        assets: [{ id: 'a1', name: 'a1.bin' }],
+        total: 10_000,
+        has_more: true,
+        next_cursor: 'start-2'
+      })
+    )
+
+    const page = await listAssets('cloud-1', FIRST_PAGE)
+
+    const query = new URL(fetchMock.mock.calls[0]![0]).searchParams
+    expect(query.get('capped_total')).toBe('true')
+    expect(query.has('include_total')).toBe(false)
+    expect(query.has('offset')).toBe(false)
+    expect(page).toMatchObject({ total: 10_000, totalIsLowerBound: true, nextCursor: 'start-2' })
+  })
+
+  it('jumps to a numbered page at the requested offset, size and order without a count', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        assets: [{ id: 'a1', name: 'a1.bin' }],
+        total: 152,
+        has_more: true,
+        next_cursor: 'next'
+      })
+    )
+
+    const page = await listAssets('cloud-1', { offset: 150, limit: 50, order: 'oldest' })
+
+    const asked = new URL(fetchMock.mock.calls[0]![0])
+    expect(Object.fromEntries(asked.searchParams)).toEqual({
+      tags_any: 'output',
+      sort: 'created_at',
+      order: 'asc',
+      limit: '50',
+      offset: '150',
+      include_public: 'false',
+      include_total: 'false'
+    })
+    expect(page).toMatchObject({ total: null, nextCursor: 'next' })
+  })
+
+  it('follows the cursor past 10,000 with no offset or count, and uses raw rows to find the end', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        assets: [
+          { id: 42, name: 'bad.bin' },
+          { id: 'a10002', name: 'last.bin' }
+        ],
+        total: 2,
+        has_more: false
+      })
+    )
+
+    const page = await listAssets('cloud-1', { ...FIRST_PAGE, offset: 10_000, after: 'next' })
+
+    const query = new URL(fetchMock.mock.calls[0]![0]).searchParams
+    expect(query.get('after')).toBe('next')
+    expect(query.get('include_total')).toBe('false')
+    expect(query.has('offset')).toBe(false)
+    expect(query.has('capped_total')).toBe(false)
+    expect(page.assets.map((asset) => asset.name)).toEqual(['last.bin'])
+    expect(page.total).toBe(10_002)
+  })
+
+  it('rejects a continuing Cloud page with no next cursor', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ assets: [{ id: 'a1', name: 'a1.bin' }], total: 101, has_more: true })
+    )
+
+    await expect(listAssets('cloud-1', FIRST_PAGE)).rejects.toThrow('invalid cursor')
+  })
+
+  describe('with a type', () => {
+    function cloudOfOutputs(total: number): number[] {
+      const offsetsAsked: number[] = []
+      getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+      getAccessToken.mockResolvedValue('token')
+      fetchMock.mockImplementation(async (url: string) => {
+        const asked = new URL(url)
+        const offset = Number(asked.searchParams.get('after')?.replace('cursor-', '') ?? 0)
+        const limit = Number(asked.searchParams.get('limit'))
+        offsetsAsked.push(offset)
+        const count = Math.max(0, Math.min(limit, total - offset))
+        return jsonResponse({
+          assets: Array.from({ length: count }, (_, i) => {
+            const index = offset + i
+            return index % 100 === 3
+              ? { id: `m${index}`, name: `mesh-${index}.glb` }
+              : { id: `a${index}`, name: `out-${index}.bin` }
+          }),
+          total: count,
+          has_more: offset + count < total,
+          next_cursor: offset + count < total ? `cursor-${offset + count}` : undefined
+        })
+      })
+      return offsetsAsked
+    }
+
+    it('reads the whole Cloud list in large pages and keeps only that type, without opening any file', async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+
+      const page = await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
+
+      expect(offsetsAsked).toEqual([0, 500, 1000])
+      expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.get('limit')).toBe('500')
+      expect(page.total).toBe(12)
+      expect(page.assets.map((a) => a.name)).toEqual([
+        'mesh-3.glb',
+        'mesh-103.glb',
+        'mesh-203.glb',
+        'mesh-303.glb',
+        'mesh-403.glb'
+      ])
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    })
+
+    it('scans by cursor without asking for any count or offset', async () => {
+      cloudOfOutputs(1200)
+
+      await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
+
+      const counts = fetchMock.mock.calls.map(([url]) => {
+        const asked = new URL(url as string).searchParams
+        return [asked.get('after'), asked.get('offset'), asked.get('include_total')]
+      })
+      expect(counts).toEqual([
+        [null, null, 'false'],
+        ['cursor-500', null, 'false'],
+        ['cursor-1000', null, 'false']
+      ])
+    })
+
+    it('stops a cursor scan when a page fails', async () => {
+      getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+      getAccessToken.mockResolvedValue('token')
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            assets: [{ id: 'a1', name: 'asset.bin' }],
+            has_more: true,
+            next_cursor: 'next'
+          })
+        )
+        .mockResolvedValueOnce(new Response(null, { status: 500 }))
+
+      await expect(listAssets('cloud-1', { ...FIRST_PAGE, kind: '3d' })).rejects.toThrow('HTTP 500')
+
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('reports when it reaches the 50,000-output scan limit with more rows available', async () => {
+      const checked = cloudOfOutputs(50_001)
+
+      const page = await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
+
+      expect(checked).toHaveLength(100)
+      expect(page).toMatchObject({ total: 500, scanLimit: 50_000 })
+    })
+
+    it('reads the list again for a later page once the read is 30 minutes old', async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+      const slot = {}
+      const signal = new AbortController().signal
+      const threeD = { ...FIRST_PAGE, limit: 5, kind: '3d' } as const
+      const now = vi.spyOn(Date, 'now')
+      try {
+        now.mockReturnValue(0)
+        await listAssets('cloud-1', threeD, signal, slot)
+        now.mockReturnValue(30 * 60_000)
+
+        await listAssets('cloud-1', { ...threeD, offset: 5 }, signal, slot)
+      } finally {
+        now.mockRestore()
+      }
+
+      expect(offsetsAsked).toHaveLength(6)
+    })
+
+    it('reuses that read for the later pages of the type, and reads again for the first page', async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+      const signal = new AbortController().signal
+      const slot = {}
+      const page = (offset: number) =>
+        listAssets('cloud-1', { ...FIRST_PAGE, offset, limit: 5, kind: '3d' }, signal, slot)
+      await page(0)
+
+      const second = await page(5)
+      expect(offsetsAsked, 'page 2 reads nothing new').toHaveLength(3)
+      expect(second.assets[0]!.name).toBe('mesh-503.glb')
+
+      await page(0)
+      expect(offsetsAsked, 'page 1 reads the list again').toHaveLength(6)
+    })
+
+    it('reads again for a later page when a new read of page 1 was stopped', async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+      const slot = {}
+      const threeD = { ...FIRST_PAGE, limit: 5, kind: '3d' } as const
+      await listAssets('cloud-1', threeD, new AbortController().signal, slot)
+
+      const stopped = new AbortController()
+      stopped.abort()
+      await expect(listAssets('cloud-1', threeD, stopped.signal, slot)).rejects.toThrow()
+      const asksBefore = offsetsAsked.length
+      await listAssets('cloud-1', { ...threeD, offset: 5 }, new AbortController().signal, slot)
+
+      expect(offsetsAsked.length - asksBefore, 'page 2 does not reuse the old read').toBe(3)
+    })
+
+    it("keeps each window's read apart", async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+      registerAssetsHandlers()
+      const list = handlers.get('assets:list')!
+      const firstWindow = {}
+      const threeD = { ...FIRST_PAGE, limit: 5, kind: '3d' }
+
+      await list({ sender: firstWindow }, 'cloud-1', threeD)
+      await list({ sender: {} }, 'cloud-1', { ...threeD, order: 'oldest' })
+      const second = (await list({ sender: firstWindow }, 'cloud-1', {
+        ...threeD,
+        offset: 5
+      })) as CloudAssetPage
+
+      expect(offsetsAsked, "page 2 uses the first window's own read").toHaveLength(6)
+      expect(second.assets[0]!.name).toBe('mesh-503.glb')
+    })
+
+    it('keeps only one copy when Cloud returns the same output across two scan pages', async () => {
+      getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+      getAccessToken.mockResolvedValue('token')
+      fetchMock.mockImplementation(async (url: string) => {
+        const first = !new URL(url).searchParams.has('after')
+        const indexes = first ? Array.from({ length: 500 }, (_, i) => i) : [499, 500]
+        return jsonResponse({
+          assets: indexes.map((i) => ({ id: `m${i}`, name: `mesh-${i}.glb` })),
+          has_more: first,
+          next_cursor: first ? 'next' : undefined
+        })
+      })
+
+      const page = await listAssets('cloud-1', { ...FIRST_PAGE, offset: 497, kind: '3d' })
+
+      expect(page.assets.map((a) => a.id)).toEqual(['m497', 'm498', 'm499', 'm500'])
+      expect(page.total).toBe(501)
+    })
   })
 
   it('lists the signed-in cloud workspace and resolves signed media links for playable kinds', async () => {
@@ -225,7 +491,9 @@ describe('listAssets', () => {
             { id: 'v1', name: 'clip.mp4', created_at: '2026-11-09T10:00:00Z' },
             { id: 's1', name: 'audio/voice.wav', created_at: '2026-11-09T09:00:00Z' },
             { id: 'm1', name: 'mesh.glb', created_at: '2026-11-09T08:00:00Z' }
-          ]
+          ],
+          total: 3,
+          has_more: false
         })
       )
       .mockImplementation(
@@ -238,7 +506,7 @@ describe('listAssets', () => {
           })
       )
 
-    const assets = await listAssets('cloud-1')
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
 
     expect(fetchMock.mock.calls[0]![1].headers.Authorization).toBe('Bearer token')
     expect(assets.map((a) => [a.name, a.kind, a.previewUrl])).toEqual([
@@ -263,7 +531,9 @@ describe('listAssets', () => {
           assets: [
             { id: 'p1', name: 'portrait.png', created_at: '2026-11-09T10:00:00Z' },
             { id: 'v1', name: 'clip.webm', created_at: '2026-11-09T09:00:00Z' }
-          ]
+          ],
+          total: 2,
+          has_more: false
         })
       const id = /\/assets\/([^/]+)\/content/.exec(url)?.[1]
       if (id)
@@ -276,7 +546,7 @@ describe('listAssets', () => {
       return new Response(file, { status: 206 })
     })
 
-    const assets = await listAssets('cloud-1')
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
 
     expect(
       assets.map((a) => [
@@ -353,6 +623,7 @@ describe('findCloudAsset', () => {
     expect(asked.map((url) => url.searchParams.get('after'))).toEqual([null, 'c1'])
     expect(asked[0]!.searchParams.get('tags_any')).toBe('output')
     expect(asked[0]!.searchParams.get('include_public')).toBe('false')
+    expect(asked.every((url) => url.searchParams.get('include_total') === 'false')).toBe(true)
   })
 
   it('says the file is absent only after Comfy Cloud reports no more pages', async () => {
@@ -833,6 +1104,73 @@ describe('the download handler', () => {
     await handlers.get('assets:download')!({ sender }, 'local', '/out/still.png', 'still.png')
 
     expect(showSaveDialog.mock.calls[0]![0]).toBe(owner)
+  })
+})
+
+describe('the list handler', () => {
+  function cloudListThatWaits(): AbortSignal[] {
+    const signals: AbortSignal[] = []
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((resolve, reject) => {
+          signals.push(init.signal)
+          init.signal.addEventListener('abort', () => reject(init.signal.reason))
+          setTimeout(() => resolve(jsonResponse({ assets: [], total: 0, has_more: false })), 50)
+        })
+    )
+    return signals
+  }
+
+  it('stops the page a window asked for before when the window asks for another', async () => {
+    const signals = cloudListThatWaits()
+    registerAssetsHandlers()
+    const list = handlers.get('assets:list')!
+    const sender = {}
+
+    const first = list({ sender }, 'cloud-1', FIRST_PAGE)
+    await vi.waitFor(() => expect(signals).toHaveLength(1))
+    const second = list({ sender }, 'cloud-1', { ...FIRST_PAGE, offset: 100 })
+
+    expect(await first, 'the replaced page').toBeNull()
+    expect(signals[0]!.aborted).toBe(true)
+    expect(await second).toEqual({ assets: [], total: null })
+  })
+
+  it('lets two windows list pages at the same time', async () => {
+    const signals = cloudListThatWaits()
+    registerAssetsHandlers()
+    const list = handlers.get('assets:list')!
+
+    const pages = await Promise.all([
+      list({ sender: {} }, 'cloud-1', FIRST_PAGE),
+      list({ sender: {} }, 'cloud-1', FIRST_PAGE)
+    ])
+
+    expect(pages, 'neither window replaced the other').toEqual([
+      { assets: [], total: 0 },
+      { assets: [], total: 0 }
+    ])
+    expect(signals).toHaveLength(2)
+  })
+
+  it.each([
+    ['no page', undefined],
+    ['a negative offset', { ...FIRST_PAGE, offset: -1 }],
+    ['an offset beyond the count cap without a cursor', { ...FIRST_PAGE, offset: 10_000 }],
+    ['an empty cursor', { ...FIRST_PAGE, offset: 100, after: '' }],
+    ['a page larger than Cloud allows here', { ...FIRST_PAGE, limit: 500 }],
+    ['an unknown order', { ...FIRST_PAGE, order: 'random' }],
+    ['an unknown type', { ...FIRST_PAGE, kind: 'font' }]
+  ])('asks Cloud nothing for %s', async (_case, page) => {
+    registerAssetsHandlers()
+
+    expect(await handlers.get('assets:list')!({ sender: {} }, 'cloud-1', page)).toEqual({
+      assets: [],
+      total: 0
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 

@@ -7,6 +7,7 @@ export type {
   AppPageStatus,
   AssetKind,
   AssetSummary,
+  CloudAssetPage,
   LocalAssetListing,
   CatalogWorkflow,
   CloudAssetLookup,
