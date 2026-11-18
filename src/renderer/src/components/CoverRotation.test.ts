@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
+import { nextTick } from 'vue'
 
 import '../assets/main.css'
 import CoverRotation from './CoverRotation.vue'
@@ -43,8 +44,9 @@ async function untilAllLoaded(wrapper: VueWrapper): Promise<void> {
 
 async function untilTheCoverChanges(wrapper: VueWrapper, from: string | undefined) {
   await expect
-    .poll(() => {
+    .poll(async () => {
       vi.advanceTimersByTime(COVER_HOLD_MS)
+      await nextTick()
       return shownSrc(wrapper)
     })
     .not.toBe(from)
