@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
-  const loadHandlers: Array<() => void> = []
+  const loadHandlers = new Map<string, () => void>()
   const webContents = {
-    once: vi.fn((_event: string, handler: () => void) => {
-      loadHandlers.push(handler)
+    once: vi.fn((event: string, handler: () => void) => {
+      loadHandlers.set(event, handler)
     }),
     executeJavaScript: vi.fn(async () => {})
   }
@@ -36,7 +36,7 @@ describe('logsPopoutWindow', () => {
   beforeEach(() => {
     closeAllLogsPopouts()
     vi.clearAllMocks()
-    mocks.loadHandlers.length = 0
+    mocks.loadHandlers.clear()
     mocks.window.isDestroyed.mockReturnValue(false)
   })
 
@@ -57,7 +57,7 @@ describe('logsPopoutWindow', () => {
     mocks.getInstallation.mockResolvedValue({ name: 'My build' })
 
     await openLogsPopout('install-a')
-    for (const handler of mocks.loadHandlers) handler()
+    mocks.loadHandlers.get('did-finish-load')?.()
 
     expect(mocks.window.setTitle).toHaveBeenCalledWith('Comfy Logs — My build')
   })
