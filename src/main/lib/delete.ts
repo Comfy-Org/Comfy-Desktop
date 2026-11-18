@@ -2,8 +2,6 @@ import fs from 'fs'
 import path from 'path'
 import { formatTime } from './util'
 
-// Windows briefly holds handles on files after git/uv exit (AV, Search
-// Indexer, Restart Manager), making delete fail transiently; retry with backoff.
 const TRANSIENT_DELETE_ERRORS = new Set(['ENOTEMPTY', 'EBUSY', 'EPERM', 'EACCES'])
 const DELETE_RETRY_DELAYS_MS = [50, 100, 200, 400, 800]
 
@@ -21,7 +19,6 @@ function retryFsOp(
     if (!err || attempt >= DELETE_RETRY_DELAYS_MS.length || !isTransientDeleteError(err)) {
       return cb(err)
     }
-    // Honour cancel between retries so a hot file can't keep the loop alive.
     if (signal?.aborted) return cb(new Error('Delete cancelled'))
     setTimeout(() => {
       if (signal?.aborted) return cb(new Error('Delete cancelled'))
@@ -121,7 +118,6 @@ export async function deleteDir(
   const report = (): void => {
     if (!onProgress) return
     const now = Date.now()
-    // Throttle reports, but always emit the final state.
     if (now - lastReportTime < REPORT_INTERVAL_MS && deleted < total) return
     lastReportTime = now
     const elapsedSecs = (now - startTime) / 1000

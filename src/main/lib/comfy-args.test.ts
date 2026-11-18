@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { execFile } from 'child_process'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readGitHead } from './git'
@@ -72,21 +71,17 @@ describe('parseHelpOutput', () => {
     const schema = parseHelpOutput(SAMPLE_HELP)
     const byName = new Map(schema.args.map((a) => [a.name, a]))
 
-    // Boolean flags
     expect(byName.get('enable-manager')?.type).toBe('boolean')
     expect(byName.get('cuda-malloc')?.type).toBe('boolean')
     expect(byName.get('force-fp32')?.type).toBe('boolean')
     expect(byName.get('gpu-only')?.type).toBe('boolean')
     expect(byName.get('use-ck-attention')?.type).toBe('boolean')
 
-    // Value flag
     expect(byName.get('port')?.type).toBe('value')
     expect(byName.get('port')?.metavar).toBe('PORT')
 
-    // Optional-value flag
     expect(byName.get('listen')?.type).toBe('optional-value')
 
-    // -h/--help should be excluded
     expect(byName.has('h')).toBe(false)
     expect(byName.has('help')).toBe(false)
   })
@@ -111,7 +106,6 @@ options:
     expect(byName.get('fast')?.type).toBe('multi-value')
     expect(byName.get('whitelist-custom-nodes')?.type).toBe('multi-value')
 
-    // A single-value flag in the same exclusive group stays a plain value flag.
     expect(byName.get('cache-lru')?.type).toBe('value')
   })
 
@@ -133,19 +127,16 @@ options:
     const schema = parseHelpOutput(SAMPLE_HELP)
     const byName = new Map(schema.args.map((a) => [a.name, a]))
 
-    // cuda-malloc and disable-cuda-malloc should be in the same group
     const g1 = byName.get('cuda-malloc')?.exclusiveGroup
     const g2 = byName.get('disable-cuda-malloc')?.exclusiveGroup
     expect(g1).toBeDefined()
     expect(g1).toBe(g2)
 
-    // VRAM group
     const vramNames = ['gpu-only', 'highvram', 'normalvram', 'lowvram', 'novram', 'cpu']
     const vramGroups = vramNames.map((n) => byName.get(n)?.exclusiveGroup)
     expect(vramGroups.every((g) => g !== undefined)).toBe(true)
     expect(new Set(vramGroups).size).toBe(1)
 
-    // force-fp32 and force-fp16 should be exclusive
     expect(byName.get('force-fp32')?.exclusiveGroup).toBe(byName.get('force-fp16')?.exclusiveGroup)
 
     const ckAttentionGroup = byName.get('use-ck-attention')?.exclusiveGroup
@@ -237,15 +228,12 @@ options:
     const schema = parseHelpOutput(helpWithFeatureFlags)
     const argNames = new Set(schema.args.map((a) => a.name))
 
-    // Hidden from the suggestion list
     expect(argNames.has('feature-flag')).toBe(false)
     expect(argNames.has('list-feature-flags')).toBe(false)
 
-    // But still recognized so user-typed values pass filterUnsupportedArgs
     expect(schema.knownFlags.has('feature-flag')).toBe(true)
     expect(schema.knownFlags.has('list-feature-flags')).toBe(true)
 
-    // Surrounding args unaffected
     expect(argNames.has('port')).toBe(true)
     expect(argNames.has('enable-manager')).toBe(true)
   })
@@ -438,8 +426,6 @@ options:
   })
 
   it('keeps every member of a group whose alternative has a nested optional metavar', () => {
-    // `--cache-ram [GB ...]` embeds brackets that must not close the cache group
-    // early and drop `--cache-none`.
     const help = `usage: main.py [-h] [--cache-classic | --cache-lru CACHE_LRU | --cache-ram [GB ...] | --cache-none]
 
 options:

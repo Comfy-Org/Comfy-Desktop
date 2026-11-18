@@ -557,8 +557,6 @@ describe('agentTap', () => {
   })
 })
 
-// The agent's lines, byte-identical to cloud's
-// services/agent/internal/productevents/testdata/events.txt.
 const PRODUCT_FIXTURE = fs
   .readFileSync(path.join(__dirname, 'fixtures', 'agent-product-events.txt'), 'utf8')
   .trimEnd()
@@ -569,8 +567,6 @@ const TURN = '5e1d9c3a-8b7f-4e2d-a1c6-3f9b0d4e8a72'
 const WORKFLOW = 'd3a8f1c6-7e2b-4a9d-8c5f-2b1e9a0d6c34'
 const JOB = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
 
-// What ComfyUI prints for an agent line it logs as its own record: ANSI level
-// tag, the line, the installed agent's version, CRLF on Windows.
 function relayed(agentLine: string): string {
   return `\u001b[32m[INFO]\u001b[0m ${agentLine} agent_version=0.0.1\r\n`
 }
@@ -1156,10 +1152,6 @@ describe('agentTap consent gating', () => {
   })
 })
 
-// The host's startup records, byte-identical to cloud's
-// services/agent/packaging/testdata/startup_events.txt, and the step ids to
-// its startup_step_ids.txt. The events, operations and files were copied
-// from Comfy-Org/cloud#16572 at d595cd23054; re-copy them when cloud changes.
 const STARTUP_FIXTURE = fs
   .readFileSync(path.join(__dirname, 'fixtures', 'agent-startup-events.txt'), 'utf8')
   .trimEnd()
@@ -1191,7 +1183,6 @@ describe('agentTap startup records', () => {
     vi.restoreAllMocks()
   })
 
-  // As ComfyUI prints a record it logs: ANSI level tag, CRLF on Windows.
   function ingest(lines: string[]): void {
     createAgentTap({ installationId: 'inst-1' }).ingest(
       lines.map((line) => `\u001b[32m[INFO]\u001b[0m ${line}\r\n`).join(''),

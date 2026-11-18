@@ -1,26 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { h } from 'vue'
 
 import BrandFinishedSurface from './BrandFinishedSurface.vue'
 
-const messages = {
-  en: {
-    common: { copy: 'Copy' },
-    launch: { viewLogs: 'View logs' }
-  }
-}
-
-function createTestI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages })
-}
-
-// Stub BrandTakeoverLayout's Teleport + focus-trap so assertions can
-// query the rendered tree inline.
 const brandTakeoverStub = {
   name: 'BrandTakeoverLayout',
-  props: ['theme', 'vignette', 'ariaLabel'],
+  props: ['theme', 'ariaLabel'],
   template: '<div class="brand-takeover-stub"><slot /><slot name="footer" /></div>'
 }
 
@@ -29,7 +15,6 @@ function mountSurface(props: Record<string, unknown>, slots: Record<string, unkn
     props,
     slots,
     global: {
-      plugins: [createTestI18n()],
       stubs: { BrandTakeoverLayout: brandTakeoverStub }
     }
   })
@@ -99,8 +84,6 @@ describe('BrandFinishedSurface', () => {
     })
 
     it('gives each instance a unique logs id so two surfaces cannot collide', () => {
-      // Both surfaces must mount under one Vue app: useId()'s counter is
-      // per-app, so separate mount() calls would each restart and collide.
       const parent = {
         components: { BrandFinishedSurface },
         template: `
@@ -112,7 +95,6 @@ describe('BrandFinishedSurface', () => {
       }
       const wrapper = mount(parent, {
         global: {
-          plugins: [createTestI18n()],
           stubs: { BrandTakeoverLayout: brandTakeoverStub }
         }
       })
@@ -165,6 +147,11 @@ describe('BrandFinishedSurface', () => {
       const wrapper = mountSurface({ title: 'Crashed' })
       expect(wrapper.find('.brand-progress__error-actions').exists()).toBe(false)
     })
+  })
+
+  it('uses the visible result title as the default accessible name', () => {
+    const wrapper = mountSurface({ title: 'ComfyUI stopped' })
+    expect(wrapper.findComponent(brandTakeoverStub).props('ariaLabel')).toBe('ComfyUI stopped')
   })
 
   it('forwards ariaLabel to the BrandTakeoverLayout chrome', () => {

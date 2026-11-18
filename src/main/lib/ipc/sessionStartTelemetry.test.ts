@@ -1,12 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Configurable ctx + source category returned by the mocked `./shared` module.
 let mockCtx: Record<string, unknown> | null = null
 let mockSourceCategory: string | null = 'local'
 
 vi.mock('./shared', () => ({
   buildInstallationDdContext: vi.fn(async () => mockCtx),
-  // `emitInstanceStartedTelemetry` looks up `sourceMap[ctx.source_id]?.category`.
   sourceMap: new Proxy(
     {},
     {
@@ -70,7 +68,6 @@ describe('emitInstanceStartedTelemetry — first_local_instance_started_at guard
       await emitInstanceStartedTelemetry(info)
 
       expect(telemetry.registerPersonPropertiesOnce).not.toHaveBeenCalled()
-      // The per-boot events still fire regardless of source category.
       expect(telemetry.capture).toHaveBeenCalledWith(
         'comfy.desktop.session.instance_started',
         expect.anything()

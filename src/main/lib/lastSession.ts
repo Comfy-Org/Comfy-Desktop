@@ -3,11 +3,6 @@ import fs from 'fs'
 import { stateDir } from './paths'
 import { isQuitInProgress } from './quit-state'
 
-/**
- * The surface the user last had active, persisted across quits so the next
- * boot can reopen it. `instance` carries the installation id so the boot flow
- * can re-launch that specific install; `dashboard` opens the chooser host.
- */
 export type LastActiveSurface = { kind: 'dashboard' } | { kind: 'instance'; installationId: string }
 
 const lastSessionPath = (): string => path.join(stateDir(), 'last-session.json')
@@ -40,7 +35,6 @@ function scheduleFlush(): void {
   flushTimer = setTimeout(() => void flushLastSession(), 250)
 }
 
-/** Persist the in-memory surface to disk. Safe to call when nothing changed. */
 export async function flushLastSession(): Promise<void> {
   if (cache === undefined) return
   try {
@@ -52,22 +46,13 @@ export async function flushLastSession(): Promise<void> {
     } else {
       await fs.promises.writeFile(p, data)
     }
-  } catch {
-    // Best-effort: a failed write just means the next boot falls back to the
-    // dashboard, which is the safe default.
-  }
+  } catch {}
 }
 
-/** Build the bytes to persist, or `null` to remove the file. */
 function serialize(): string | null {
   return cache == null ? null : JSON.stringify(cache, null, 2)
 }
 
-/**
- * Persist the in-memory surface synchronously. Used on `will-quit`, where
- * Electron exits without awaiting promises — an async write would be torn down
- * mid-flight and lose a surface change made right before quitting.
- */
 export function flushLastSessionSync(): void {
   if (cache === undefined) return
   if (flushTimer) {
@@ -83,20 +68,13 @@ export function flushLastSessionSync(): void {
     } else {
       fs.writeFileSync(p, data)
     }
-  } catch {
-    // Best-effort: a failed write just means the next boot falls back to the
-    // dashboard, which is the safe default.
-  }
+  } catch {}
 }
 
-/** The persisted surface from the previous session, or `null` if none. */
 export function getLastActiveSurface(): LastActiveSurface | null {
   return load()
 }
 
-/** Record that the dashboard (chooser host) is the active surface. Deduped so
- *  focus churn doesn't spam writes. Skipped while quitting: the user's last
- *  surface is whatever they left from, not focus churn during teardown. */
 export function recordDashboardSurface(): void {
   if (isQuitInProgress()) return
   const current = load()
@@ -105,8 +83,6 @@ export function recordDashboardSurface(): void {
   scheduleFlush()
 }
 
-/** Record that an instance window is the active surface. Deduped per id.
- *  Skipped while quitting (see {@link recordDashboardSurface}). */
 export function recordInstanceSurface(installationId: string): void {
   if (isQuitInProgress()) return
   const current = load()
@@ -115,14 +91,12 @@ export function recordInstanceSurface(installationId: string): void {
   scheduleFlush()
 }
 
-/** Drop the persisted surface (e.g. the restore target install was deleted). */
 export function clearLastActiveSurface(): void {
   if (cache === null) return
   cache = null
   scheduleFlush()
 }
 
-/** Test-only reset of the in-memory cache. */
 export function _resetLastSessionCacheForTest(): void {
   cache = undefined
   if (flushTimer) {

@@ -20,14 +20,12 @@ vi.mock('./useModal', () => ({
 }))
 
 vi.mock('../i18n', () => ({
-  // Identity translator — tests assert against the i18n keys themselves.
   i18n: { global: { t: (key: string) => key } }
 }))
 
 describe('useOverlay — cancel-prompt copy', () => {
   beforeEach(() => {
     confirmMock.mockReset()
-    // Reset the singleton overlay slot so test order doesn't matter.
     useOverlay().current.value = null
   })
 
@@ -58,7 +56,6 @@ describe('useOverlay — cancel-prompt copy', () => {
     confirmMock.mockResolvedValueOnce(true)
     const { openOverlay, closeOverlay, current } = useOverlay()
 
-    // Install-flow takeovers keep the generic copy until they opt in.
     await openOverlay({ kind: 'takeover', component: 'new-install' })
 
     await closeOverlay()
@@ -126,12 +123,10 @@ describe('useOverlay — cancel-prompt copy', () => {
 describe('useOverlay — onCancel firing', () => {
   beforeEach(() => {
     confirmMock.mockReset()
-    // Reset the singleton overlay slot so test order doesn't matter.
     useOverlay().current.value = null
   })
 
   it('fires onCancel after the user confirms the cancel-prompt for an in-flight progress overlay', async () => {
-    // onCancel must fire before the slot clears so the main-side op rolls back.
     confirmMock.mockResolvedValueOnce(true)
     const onCancel = vi.fn()
     const { openOverlay, closeOverlay, current } = useOverlay()
@@ -149,8 +144,6 @@ describe('useOverlay — onCancel firing', () => {
   })
 
   it('fires onCancel after confirm when an in-flight progress overlay is pre-empted by a Tier 3 takeover (no orphaned op)', async () => {
-    // Without onCancel here the original op would be orphaned when the
-    // takeover replaces it.
     confirmMock.mockResolvedValueOnce(true)
     const onCancel = vi.fn()
     const { openOverlay, current } = useOverlay()
@@ -171,8 +164,6 @@ describe('useOverlay — onCancel firing', () => {
   })
 
   it('does NOT fire onCancel when the user dismisses the cancel-prompt', async () => {
-    // The slot stays mounted — the underlying op must keep running, so
-    // onCancel must NOT have fired.
     confirmMock.mockResolvedValueOnce(false)
     const onCancel = vi.fn()
     const { openOverlay, closeOverlay, current } = useOverlay()
@@ -191,8 +182,6 @@ describe('useOverlay — onCancel firing', () => {
   })
 
   it('does NOT fire onCancel on a Tier 3 → Tier 3 swap when both overlays target the same installationId (re-present, not abandon)', async () => {
-    // Same install = re-present; firing onCancel would cancel the very op
-    // the new overlay is about to show.
     const onCancel = vi.fn()
     const { openOverlay, current } = useOverlay()
     await openOverlay({
@@ -213,9 +202,6 @@ describe('useOverlay — onCancel firing', () => {
   })
 
   it('fires onCancel on a Tier 3 → Tier 3 swap when the install differs (chain-local / cross-install handoff)', async () => {
-    // Different installationId means the prior takeover is being
-    // abandoned, not re-presented — its onCancel must fire so the
-    // underlying op (if any) is told to roll back.
     const onCancel = vi.fn()
     const { openOverlay, current } = useOverlay()
     await openOverlay({
@@ -236,9 +222,6 @@ describe('useOverlay — onCancel firing', () => {
   })
 
   it('does not require onCancel — closing without it still clears the slot on confirm', async () => {
-    // Wizard takeovers (install flows / first-use) carry no
-    // onCancel; the cancel-prompt for those just dismisses the
-    // wizard with no main-side rollback to fire.
     confirmMock.mockResolvedValueOnce(true)
     const { openOverlay, closeOverlay, current } = useOverlay()
     await openOverlay({

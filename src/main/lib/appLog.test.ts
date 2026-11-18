@@ -3,8 +3,6 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
-// appLog imports `app` from electron only for the default log dir; tests
-// inject an explicit dir so the mock just needs to exist.
 vi.mock('electron', () => ({
   app: { getPath: () => os.tmpdir() }
 }))
@@ -98,7 +96,6 @@ describe('appLog', () => {
 
   it('scrubs a credential split across two operation chunks', () => {
     initAppLog({ dir: tmpDir })
-    // The secret straddles the chunk boundary; per-chunk scrubbing would miss it.
     writeOperationOutput('inst-1', 'downloading from https://user:to')
     writeOperationOutput('inst-1', 'ken@mirror.example/simple\n')
     const out = read()
@@ -129,16 +126,11 @@ describe('appLog', () => {
     const isRotated = (f: string): boolean =>
       /^app\.log_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.log$/.test(f)
     initAppLog({ dir: tmpDir })
-    // Fill the live log to exactly the 5 MB cap (the line's `[ts] [INFO] ..\n`
-    // framing adds 35 bytes) without crossing it, so no rotation happens here.
     writeAppLog('INFO', 'x'.repeat(5 * 1024 * 1024 - 35))
     expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(0)
-    // The crash line crosses the cap; rotation here could fail and drop it, so
-    // the crash path must append in place instead of rotating.
     writeAppLogSync('CRITICAL', 'final breath')
     expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(0)
     expect(read()).toContain('[CRITICAL] final breath')
-    // A later normal write is free to rotate the overage.
     writeAppLog('INFO', 'after crash')
     expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(1)
   })
@@ -147,13 +139,9 @@ describe('appLog', () => {
     const isRotated = (f: string): boolean =>
       /^app\.log_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.log$/.test(f)
     initAppLog({ dir: tmpDir })
-    // A partial operation line with no trailing newline stays buffered.
     writeOperationOutput('inst-1', 'dying mid-line, no newline')
-    // Fill the live log to exactly the 5 MB cap.
     writeAppLog('INFO', 'x'.repeat(5 * 1024 * 1024 - 35))
     expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(0)
-    // The crash-path flush (as called from processErrorHandlers) must append
-    // the tail in place rather than rotate, which could drop it.
     flushOperationOutput(undefined, { rotate: false })
     expect(fs.readdirSync(tmpDir).filter(isRotated)).toHaveLength(0)
     expect(read()).toContain('dying mid-line, no newline')

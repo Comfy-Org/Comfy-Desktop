@@ -39,7 +39,6 @@ describe('validateArgs', () => {
   it('flags an unrecognized flag and swallows its value token', () => {
     const v = validateArgs('--nope value --cpu', SCHEMA)
     expect(v.unsupportedFlags).toEqual(['nope'])
-    // The flag and its value are both marked unsupported (value not orphaned).
     expect(v.tokens[0]).toMatchObject({ text: '--nope', status: 'unsupported' })
     expect(v.tokens[1]).toMatchObject({ text: 'value', status: 'unsupported' })
     expect(v.tokens[2]).toMatchObject({ text: '--cpu', status: 'ok' })
@@ -120,7 +119,6 @@ describe('validateArgs', () => {
     })
 
     it('does not suppress a trailing positional value', () => {
-      // `81` is a value for --port, already ok — suppression must not touch it.
       const v = validateArgs('--port 81', SCHEMA, { suppressTrailingPartial: true })
       expect(v.tokens.map((t) => t.status)).toEqual(['ok', 'ok'])
       expect(v.hasIssues).toBe(false)

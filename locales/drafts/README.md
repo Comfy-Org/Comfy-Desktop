@@ -29,10 +29,10 @@ know its grammatical gender or number.
 So, when translating these four strings:
 
 - **Keep `{feature}` a modifier, never the grammatical head.** In English it
-  modifies a constant head noun — "The *{feature}* **beta** is on" — and it is
+  modifies a constant head noun — "The _{feature}_ **beta** is on" — and it is
   that head noun ("beta") the sentence agrees with. Keep an equivalent constant
-  head in your language and let it carry the agreement: *la bêta {feature}*,
-  *die {feature}-Beta*, *бета-функция {feature}*.
+  head in your language and let it carry the agreement: _la bêta {feature}_,
+  _die {feature}-Beta_, _бета-функция {feature}_.
 - **Do not make the sentence agree with, decline, or inflect `{feature}`.** A
   form like "{feature} est activé" or "{feature} включён" needs the name's
   gender, which is unknowable — it would be guessing, and the guess changes

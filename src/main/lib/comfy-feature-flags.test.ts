@@ -56,8 +56,6 @@ describe('parseFeatureFlagOutput', () => {
 
 describe('feature-flag registry cache accessors', () => {
   const installationId = 'cache-test-install'
-  // A path that can't be executed, so discovery fails and caches {} —
-  // exercising the spawn-free accessors without needing a real Python.
   const badPython = '/nonexistent/python-binary'
 
   beforeEach(() => {
@@ -79,7 +77,6 @@ describe('feature-flag registry cache accessors', () => {
     await getComfyFeatureFlagRegistry(badPython, 'main.py', process.cwd(), installationId, '1.0.0')
     expect(getCachedFeatureFlagRegistry(installationId, '1.0.0')).toEqual({})
     expect(getCachedFeatureFlagRegistry(installationId, '2.0.0')).toBeNull()
-    // A version-less query always hits the cache.
     expect(getCachedFeatureFlagRegistry(installationId)).toEqual({})
   })
 

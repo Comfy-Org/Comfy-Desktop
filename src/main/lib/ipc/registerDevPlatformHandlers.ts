@@ -1,25 +1,15 @@
-/**
- * Dev-platform IPC bridge: the ONE seam between the renderer and the
- * cloud-auth + comfy-builder libraries.
- *
- * Auth, workspace, build-catalog, and install-kickoff all funnel through
- * the single main-process `CloudSession` (see `../../devplatform/session`).
- * Access/refresh tokens NEVER cross this boundary: handlers return and broadcast
- * only renderer-safe shapes: `AuthStatus`, `Workspace[]`, and build
- * DISPLAY rows: never a token or a download ref.
- *
- * `signInToCloud` is exported alongside the handlers because the title-bar file
- * menu starts sign-ins from main, with no renderer in the loop. It shares the
- * same auth broadcast as renderer-driven sign-ins.
- */
-import { BrowserWindow, ipcMain, shell } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 
 import { comfyWindows } from '../../host/registry'
 import type { ComfyWindowEntry } from '../../host/registry'
 import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
+import { creditBalanceAuthChanged } from './registerCreditBalanceHandlers'
+import { getViewWorkspaceGrants } from '../viewWorkspaceGrants'
+import { openExternalUrl } from '../openExternal'
 import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
-import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
+import { PLATFORM_SETTINGS_PATHS, PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
+import type { PlatformSettingsPage } from '../../devplatform/config'
 import {
   getBuilderClient,
   getCloudSession,
@@ -33,7 +23,13 @@ import {
 } from '../../devplatform/builds'
 import type { BuildRow } from '../../devplatform/builds'
 import { clearVersionCache, getVersionCacheGeneration } from '../../devplatform/versionCache'
-import type { AuthStatus, Workspace } from '../../cloud'
+import type {
+  AuthStatus,
+  Workspace,
+  WorkspaceSwitchIntent,
+  WorkspaceSwitchOutcome,
+  WorkspaceSwitchStatus
+} from '../../cloud'
 import {
   installations,
   defaultInstallDir,
@@ -56,7 +52,6 @@ import {
   workspaceContextId
 } from '../../../shared/workspaces'
 
-/** IPC channels for the dev-platform bridge. Kept together so a rename can't desync. */
 export const DEVPLATFORM_CHANNELS = {
   signIn: 'comfybuilder:signIn',
   signOut: 'comfybuilder:signOut',
@@ -66,6 +61,7 @@ export const DEVPLATFORM_CHANNELS = {
   switchWorkspace: 'comfybuilder:switchWorkspace',
   listBuilds: 'comfybuilder:listBuilds',
   openBuildsPage: 'comfybuilder:openBuildsPage',
+  openSettingsPage: 'comfybuilder:openSettingsPage',
   installBuild: 'comfybuilder:installBuild',
   promoteLocalInstance: 'comfybuilder:promoteLocalInstance'
 } as const
@@ -88,17 +84,6 @@ function isPromotableLocalInstallation(inst: InstallationRecord): boolean {
   )
 }
 
-/**
- * Push the renderer-safe {@link AuthStatus} to every surface so they update in
- * lockstep. Only the status (never tokens) is sent.
- *
- * A host window loads NO page of its own - the dashboard/chooser renderer lives
- * in a child `panelView` WebContentsView - so `BrowserWindow.getAllWindows()`
- * alone delivers to an empty webContents and the chip never repaints. That went
- * unnoticed while the only sign-in trigger was the chip itself, which set the
- * store from `signIn()`'s return value and never needed the push. Now that the
- * file menu starts sign-ins from main, this broadcast is the only path back.
- */
 export function broadcastAuthChanged(status: AuthStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.webContents.isDestroyed())
@@ -110,49 +95,60 @@ export function broadcastAuthChanged(status: AuthStatus): void {
       panel.webContents.send(DEVPLATFORM_CHANNELS.authChanged, status)
   }
   void broadcastEmbeddedSessionChanged()
+  creditBalanceAuthChanged()
 }
 
-/**
- * Run the browser sign-in handoff and announce the result. The primitive
- * behind both the `comfybuilder:signIn` IPC and the title-bar file menu's
- * sign-in item. `CloudSession` owns browser-auth race handling.
- */
 export async function signInToCloud(): Promise<AuthStatus> {
   const session = getCloudSession()
   clearVersionCache()
-  const status = await session.login()
+  const login = session.login()
+  const generation = session.currentAuthGeneration()
+  const status = await login
   clearVersionCache()
+  if (session.currentAuthGeneration() === generation) {
+    getViewWorkspaceGrants().endAll()
+    getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+  }
   broadcastAuthChanged(status)
   return status
 }
 
-/**
- * Activate `workspaceId`'s credentials and announce the result. Cached
- * credentials activate silently; first access or expired, unusable ones run
- * browser auth because cloud tokens are scoped at consent time. Shared by the
- * chooser and the hosted ComfyUI view.
- */
-export async function switchCloudWorkspace(workspaceId: string): Promise<AuthStatus> {
+async function switchAndAnnounce(
+  workspaceId: string,
+  intent: WorkspaceSwitchIntent
+): Promise<{ reply: WorkspaceSwitchStatus; reached: boolean }> {
+  const session = getCloudSession()
+  const subjectBefore = session.currentSubject()
   clearVersionCache()
-  const status = await getCloudSession().switchWorkspace(workspaceId)
+  const switching = session.switchWorkspace(workspaceId, intent)
+  const generation = session.currentAuthGeneration()
+  const { reachedThroughConsent, reached, ...reply } = await switching
   clearVersionCache()
+  const { workspaceSwitchFailure: _failure, ...status } = reply
+  const superseded = session.currentAuthGeneration() !== generation
+  if (!superseded && session.currentSubject() !== subjectBefore) {
+    getViewWorkspaceGrants().endAll()
+    getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+  } else if (reachedThroughConsent) {
+    getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+  }
   broadcastAuthChanged(status)
-  return status
+  return { reply, reached: reached && !superseded }
 }
 
-/**
- * Sign Desktop out of its Cloud account and announce it. Asks first, on
- * `host`'s window, when an install or update still needs the account; without
- * a window to ask on, it keeps the session. Shared by the account chip and the
- * hosted ComfyUI view.
- */
+export async function switchCloudWorkspace(
+  workspaceId: string,
+  intent: WorkspaceSwitchIntent = 'chosen'
+): Promise<WorkspaceSwitchOutcome> {
+  const { reply, reached } = await switchAndAnnounce(workspaceId, intent)
+  return { status: reply, reached }
+}
+
 export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promise<AuthStatus> {
   const session = getCloudSession()
   const installingOperations: Array<[string, AbortController]> = []
   for (const [installationId, abort] of _operationAborts) {
     const installation = await installations.get(installationId)
-    // In-place updates ('updating') ride the same install dispatch path and
-    // hold the same auth-dependent downloads, so they need the guard too.
     if (installation?.status === 'installing' || installation?.status === 'updating') {
       installingOperations.push([installationId, abort])
     }
@@ -182,44 +178,35 @@ export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promis
     }
   }
   session.logout()
+  getViewWorkspaceGrants().endAll()
   clearVersionCache()
   broadcastAuthChanged(SIGNED_OUT)
   return SIGNED_OUT
 }
 
-/** Sign-in state for main-side surfaces that decide what to render (the file
- *  menu). Renderer surfaces read it over `getAuthStatus` instead. */
-export function isSignedInToCloud(): boolean {
-  return getCloudSession().status().signedIn
-}
-
-/**
- * Register the dev-platform IPC handlers. Call once at startup.
- *
- * The renderer can never pass a token in or read one out: `signIn` takes no
- * arguments and returns only the status; every catalog call reads the bearer
- * token main-side via the session's `TokenProvider`.
- */
 export function registerDevPlatformHandlers(): void {
   const session = getCloudSession()
   setUnauthorizedHandler(() => {
+    getViewWorkspaceGrants().endAll()
     clearVersionCache()
     broadcastAuthChanged(SIGNED_OUT)
   })
+  session.setReturnedToAnchorHandler(() => {
+    const status = session.status()
+    getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+    clearVersionCache()
+    broadcastAuthChanged(status)
+  })
 
-  // Build ids whose install-kickoff is mid-flight, so a double-click cannot
-  // create two records for the same build.
   const installing = new Set<string>()
   const promoting = new Set<string>()
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.signIn, (): Promise<AuthStatus> => signInToCloud())
 
-  ipcMain.handle(
-    DEVPLATFORM_CHANNELS.signOut,
-    (event): Promise<AuthStatus> =>
-      signOutOfCloud(
-        [...comfyWindows.values()].find((entry) => entry.panelView?.webContents === event.sender)
-      )
+  ipcMain.handle(DEVPLATFORM_CHANNELS.signOut, (event): Promise<AuthStatus> =>
+    signOutOfCloud(
+      [...comfyWindows.values()].find((entry) => entry.panelView?.webContents === event.sender)
+    )
   )
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.getAuthStatus, (): AuthStatus => session.status())
@@ -241,12 +228,38 @@ export function registerDevPlatformHandlers(): void {
       }
       const url = new URL('/profile/builds', PLATFORM_WEB_BASE_URL)
       url.searchParams.set('workspace', workspaceId)
-      await shell.openExternal(url.toString())
+      await openExternalUrl(url.toString())
     }
   )
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, (_event, workspaceId: string) =>
-    switchCloudWorkspace(workspaceId)
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.openSettingsPage,
+    async (_event, page: unknown, workspaceId: unknown): Promise<void> => {
+      if (typeof page !== 'string' || !Object.hasOwn(PLATFORM_SETTINGS_PATHS, page)) {
+        throw new Error('Unknown Developer Platform settings page.')
+      }
+      if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
+        throw new Error('A workspace is required to open Developer Platform settings.')
+      }
+      const url = new URL(
+        PLATFORM_SETTINGS_PATHS[page as PlatformSettingsPage],
+        PLATFORM_WEB_BASE_URL
+      )
+      url.searchParams.set('workspace', workspaceId)
+      await openExternalUrl(url.toString())
+    }
+  )
+
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.switchWorkspace,
+    async (_event, workspaceId: string, intent?: WorkspaceSwitchIntent) => {
+      const { reply: status, reached } = await switchAndAnnounce(
+        workspaceId,
+        intent === 'restored' ? 'restored' : 'chosen'
+      )
+      if (reached) getViewWorkspaceGrants().allowDesktop(workspaceId)
+      return status
+    }
   )
 
   ipcMain.handle(
@@ -264,6 +277,7 @@ export function registerDevPlatformHandlers(): void {
         }
         const status = session.status()
         if (!status.signedIn) return { ok: false, message: 'Not signed in.' }
+        const subject = session.currentSubject()
         let workspaceId: string | undefined
         if (!inst.workspaceId || inst.workspaceId === PERSONAL_WORKSPACE_ID) {
           workspaceId =
@@ -275,13 +289,14 @@ export function registerDevPlatformHandlers(): void {
         }
         if (!workspaceId) return { ok: false, message: 'No active workspace.' }
         if (status.workspaceId !== workspaceId) {
-          clearVersionCache()
-          const switched = await session.switchWorkspace(workspaceId)
-          clearVersionCache()
-          broadcastAuthChanged(switched)
-          if (!switched.signedIn || switched.workspaceId !== workspaceId) {
+          if (session.currentSubject() !== subject) {
             return { ok: false, message: 'Could not activate the instance workspace.' }
           }
+          const { reached } = await switchAndAnnounce(workspaceId, 'chosen')
+          if (!reached) {
+            return { ok: false, message: 'Could not activate the instance workspace.' }
+          }
+          getViewWorkspaceGrants().allowDesktop(workspaceId)
         }
 
         const filename = await saveSnapshot(inst.installPath, inst, 'manual')
@@ -297,7 +312,7 @@ export function registerDevPlatformHandlers(): void {
         ) {
           return { ok: false, message: 'The instance changed. Try again.' }
         }
-        if (session.status().workspaceId !== workspaceId) {
+        if (session.status().workspaceId !== workspaceId || session.currentSubject() !== subject) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
 
@@ -314,18 +329,15 @@ export function registerDevPlatformHandlers(): void {
         ) {
           return { ok: false, message: 'The instance changed. Try again.' }
         }
-        if (session.status().workspaceId !== workspaceId) {
+        if (session.status().workspaceId !== workspaceId || session.currentSubject() !== subject) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
-        // The portal's draft route receives a hand-off: it processes workspace
-        // deep links, marks the Build as just arrived, and redirects to the
-        // Build page, which opens the "Desktop snapshot received" dialog.
         const url = new URL(
           `/profile/builds/${encodeURIComponent(draft.buildId)}/draft`,
           PLATFORM_WEB_BASE_URL
         )
         url.searchParams.set('workspace', workspaceId)
-        await shell.openExternal(url.toString())
+        await openExternalUrl(url.toString())
         return { ok: true }
       } catch (err) {
         console.warn('[dev-platform] Failed to promote local instance:', err)
@@ -336,9 +348,6 @@ export function registerDevPlatformHandlers(): void {
     }
   )
 
-  // Display rows for the current workspace. Signed out -> empty (no network
-  // calls); the renderer already gates the grid on sign-in. The installed-version
-  // map lets a row whose newer build runs here surface as `update-available`.
   ipcMain.handle(DEVPLATFORM_CHANNELS.listBuilds, async (): Promise<BuildRow[]> => {
     if (!session.isSignedIn()) return []
     const status = session.status()
@@ -357,8 +366,6 @@ export function registerDevPlatformHandlers(): void {
           return []
         })
       : Promise.resolve([])
-    // Associate only unowned installs whose exact opaque id is present in the
-    // successfully fetched catalog for the same active workspace.
     if (workspaceId && session.status().workspaceId === workspaceId) {
       try {
         await installations.associateUnownedBuildInstalls(
@@ -382,8 +389,6 @@ export function registerDevPlatformHandlers(): void {
     const creatorNames = new Map(
       members.map((member) => [member.id, member.name || member.email || member.id])
     )
-    // Catalog reads warm the synchronous source update cache. Re-pull
-    // installations so existing managed instances gain their Update action.
     _broadcastToRenderer('installations-changed', {})
     return rows.map((row) => ({
       ...row,
@@ -391,10 +396,6 @@ export function registerDevPlatformHandlers(): void {
     }))
   })
 
-  // Resolve the host artifact for one build and create an `installing`
-  // record, then hand the id back so the renderer runs the normal
-  // `installInstance` + progress flow. The install itself (download -> verify
-  // sha -> extract) runs in the comfybuilder SourcePlugin.
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.installBuild,
     async (_event, request: InstallBuildRequest): Promise<InstallBuildResult> => {
@@ -485,9 +486,6 @@ export function registerDevPlatformHandlers(): void {
   )
 }
 
-/** Persisted build id -> highest installed version, over the comfybuilder
- *  installs, so `listBuildRows` can mark an outdated one `update-available`.
- *  The installation schema retains the legacy `distributionId` field name. */
 async function installedBuildVersions(
   workspaceId: string | undefined
 ): Promise<Map<string, number>> {

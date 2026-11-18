@@ -8,20 +8,13 @@ import {
 } from './git'
 import type { ComfyVersion } from './version'
 
-/** Pre-resolved latest tag info, shared across repos with the same origin. */
 export interface LatestTagOverride {
-  /** Tag name, e.g. "v0.17.1". */
   name: string
-  /** Full commit SHA the tag points to. */
   sha: string
 }
 
-/** Resolved-version cache keyed by "repoPath\0commitSha". Stores git-derived
- *  data only (no fallbackTag) so callers with different fallbacks share entries
- *  safely. */
 const _cache = new Map<string, ComfyVersion>()
 
-/** Short-lived cache for the latest version tag per repo path. */
 let _latestTagCache: { repoPath: string; tag: string | undefined; ts: number } | null = null
 const LATEST_TAG_TTL_MS = 5_000
 
@@ -38,18 +31,8 @@ async function getCachedLatestTag(repoPath: string): Promise<string | undefined>
   return tag
 }
 
-/** Maximum number of tags to walk backward on a release branch. */
 const MAX_BACKPORT_WALK = 10
 
-/**
- * Walk the release branch backward from `startRef` to find the highest tag
- * whose content is fully represented in `commit` (cherry-pick–aware). A tag
- * qualifies when its unique commits don't exceed the branch distance from
- * `stopTag` (accommodating version bumps + release-only cherry-picks).
- *
- * @returns The qualifying tag name and cherry-pick–aware "+N" count, or
- *          undefined if none qualifies before reaching `stopTag`.
- */
 async function findBestBackportTag(
   repoPath: string,
   startRef: string,
@@ -57,7 +40,6 @@ async function findBestBackportTag(
   stopTag: string,
   ancestorDist?: number
 ): Promise<{ tag: string; commitsAhead: number } | undefined> {
-  // Collect candidate tags by walking backward from startRef.
   const candidates: string[] = []
   let ref = startRef
   for (let i = 0; i < MAX_BACKPORT_WALK; i++) {
@@ -68,9 +50,6 @@ async function findBestBackportTag(
   }
   if (candidates.length === 0) return undefined
 
-  // Evaluate lowest-to-highest. In shallow clones (and the pygit2 fallback,
-  // which can't honour `--cherry-pick`) countUniqueCommits inflates wildly, so
-  // bail when any result exceeds ancestorDist and let the caller use merge-base.
   let best: { tag: string; commitsAhead: number } | undefined
   for (let pos = candidates.length - 1; pos >= 0; pos--) {
     const tag = candidates[pos]!
@@ -79,8 +58,6 @@ async function findBestBackportTag(
     const unique = await countUniqueCommits(repoPath, tag, commit)
     if (unique === undefined) break
     if (ancestorDist !== undefined && unique > ancestorDist) return undefined
-    // Too many unique commits — stop ascending (higher tags have even more);
-    // any `best` from a lower tag is still valid.
     if (unique > branchDist) break
     const ahead = await countUniqueCommits(repoPath, commit, tag)
     if (ahead === undefined) break
@@ -89,23 +66,6 @@ async function findBestBackportTag(
   return best
 }
 
-/**
- * Resolve a {@link ComfyVersion} from local git state. Uses the nearest
- * ancestor tag as a base, upgrading to a newer version tag when one is a direct
- * ancestor or a cherry-pick–aware match on a parallel release branch. Results
- * are cached by (repoPath, commit).
- *
- * `baseTagVerified` reports whether the chosen tag is reachable from `commit`; the upgrade
- * heuristics and `fallbackTag` produce a label good enough to display but not to gate on. When an
- * unverified upgrade replaced the `git describe` tag, that tag is kept as `ancestorTag`.
- *
- * @param comfyuiDir         Path to the ComfyUI git working tree.
- * @param commit             The commit SHA to resolve.
- * @param fallbackTag        Tag to use when no git tags exist (e.g. manifest comfyui_ref).
- * @param latestTagOverride  Pre-resolved latest tag from a sibling repo sharing
- *                           the same origin; its SHA is used directly (works
- *                           even if the tag ref doesn't exist locally).
- */
 export async function resolveLocalVersion(
   comfyuiDir: string,
   commit: string,
@@ -118,7 +78,6 @@ export async function resolveLocalVersion(
   const cacheKey = `${comfyuiDir}\0${commit}${overrideKey}`
   const cached = _cache.get(cacheKey)
   if (cached) {
-    // Apply fallbackTag at read time without mutating the git-only cache entry.
     if (fallbackTag && !cached.baseTag) {
       return { ...cached, baseTag: fallbackTag, baseTagVerified: false }
     }
@@ -133,10 +92,6 @@ export async function resolveLocalVersion(
     ? await countCommitsAhead(comfyuiDir, ancestorTag, commit)
     : undefined
 
-  // Try to upgrade the ancestor tag to a newer one. Direct-ancestor case: use
-  // latestTag directly. Backport case (latestTag not an ancestor, but ancestorTag
-  // is an ancestor of latestTag): walk the release branch backward for the
-  // highest cherry-pick–aware match.
   let baseTag: string | undefined
   let commitsAhead: number | undefined
   let baseTagVerified = false
@@ -151,7 +106,6 @@ export async function resolveLocalVersion(
       : false
 
     if (ancestorIsParent && (await isAncestorOf(comfyuiDir, latestTagRef!, commit))) {
-      // Direct ancestor — count from tag to commit directly.
       const dist = await countCommitsAhead(comfyuiDir, latestTagRef!, commit)
       if (dist !== undefined) {
         baseTag = latestTagName
@@ -171,13 +125,8 @@ export async function resolveLocalVersion(
         baseTag = found.tag
         commitsAhead = found.commitsAhead
         upgraded = true
-        // Patch-id equivalence, not reachability: the qualifying test tolerates up to
-        // `branchDist` of the tag's commits having no match in `commit`, so the install may
-        // still be missing part of that release.
         baseTagVerified = false
       } else {
-        // Cherry-pick detection failed (shallow clone). Fall back to merge-base:
-        // less precise (+N includes cherry-picks) but still reasonable.
         const mergeBase = await findMergeBase(comfyuiDir, latestTagRef!, commit)
         const dist =
           mergeBase && mergeBase !== commit
@@ -187,8 +136,6 @@ export async function resolveLocalVersion(
           baseTag = latestTagName
           commitsAhead = dist
           upgraded = true
-          // Reached only because latestTag is NOT an ancestor of commit, so this labels the
-          // install with a release it provably does not contain in full.
           baseTagVerified = false
         }
       }
@@ -198,26 +145,19 @@ export async function resolveLocalVersion(
   if (!upgraded) {
     baseTag = ancestorTag
     commitsAhead = ancestorDist
-    // `findNearestTag` is `git describe`, so the tag it names is reachable from commit.
     baseTagVerified = ancestorTag !== undefined
   }
 
-  // Cache git-only data (no fallbackTag) so callers sharing (repoPath, commit)
-  // don't poison each other.
   const result: ComfyVersion = { commit, baseTag, commitsAhead, baseTagVerified }
-  // An unverified upgrade displaces a tag that IS reachable. Keep it, so a gate can measure the
-  // release the install provably contains instead of refusing outright.
   if (upgraded && !baseTagVerified && ancestorTag) result.ancestorTag = ancestorTag
   _cache.set(cacheKey, result)
 
   if (fallbackTag && !baseTag) {
-    // A caller-supplied tag (e.g. a manifest's comfyui_ref) was never checked against the graph.
     return { ...result, baseTag: fallbackTag, baseTagVerified: false }
   }
   return result
 }
 
-/** Clear the version cache (e.g. after an update changes tags). */
 export function clearVersionCache(): void {
   _cache.clear()
   _latestTagCache = null

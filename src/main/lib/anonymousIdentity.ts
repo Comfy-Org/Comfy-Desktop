@@ -42,7 +42,6 @@ export function getOrCreateAnonymousDistinctId(): string {
   const persisted = readPersistedAnonymousDistinctId()
   if (persisted) return persisted
   const created = randomUUID()
-  // A failed first write must not prevent telemetry for this process.
   persistAnonymousDistinctId(created)
   return created
 }
@@ -64,7 +63,6 @@ export function hasPersistedUnmergeableAnonymousEpoch(): boolean {
   }
 }
 
-/** Persist taint, or delete the reusable identity as a fail-safe fallback. */
 export function persistUnmergeableAnonymousEpoch(): boolean {
   try {
     writeFileSafe(unmergeableEpochPath(), '1')

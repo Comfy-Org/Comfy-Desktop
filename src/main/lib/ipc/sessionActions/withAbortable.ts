@@ -1,11 +1,6 @@
 import { _operationAborts, MSG_CANCELLED } from '../shared'
 import type { ActionContext, ActionResult } from './types'
 
-/**
- * Lifecycle wrapper for session-action handlers needing an AbortController
- * registered in `_operationAborts`. Inner handlers must re-throw after their
- * own rollback so this wrapper maps the error correctly.
- */
 export async function withAbortableSessionAction(
   ctx: ActionContext,
   fn: (signal: AbortSignal, ctx: ActionContext) => Promise<ActionResult>

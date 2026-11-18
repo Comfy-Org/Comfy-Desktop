@@ -1,6 +1,5 @@
 type Translator = (key: string, params?: Record<string, unknown>) => string
 
-/** Localised relative-time string from epoch ms, falling back to absolute date past 30 days or in the future. */
 export function formatRelativeFromMs(ms: number, t: Translator): string {
   if (!Number.isFinite(ms)) return ''
   const diff = Date.now() - ms
@@ -13,4 +12,12 @@ export function formatRelativeFromMs(ms: number, t: Translator): string {
   const days = Math.floor(hours / 24)
   if (days < 30) return t('snapshots.timeDaysAgo', { count: days })
   return new Date(ms).toLocaleDateString()
+}
+
+export function formatPlaybackTime(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const secs = String(total % 60).padStart(2, '0')
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${secs}` : `${minutes}:${secs}`
 }

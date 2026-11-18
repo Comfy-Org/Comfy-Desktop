@@ -147,6 +147,7 @@ describe('listPerformanceTestBenchmarks', () => {
       medianJobDurationSeconds: 2,
       measuredJobCount: 5,
       hardware: { deviceName: 'NVIDIA RTX 4090' },
+      systemInfo: { cpu_model: 'AMD Ryzen 9 7950X', total_memory_gb: 64, platform: 'win32' },
       customMetric: 42
     }
     await Promise.all(
@@ -191,7 +192,7 @@ describe('listPerformanceTestBenchmarks', () => {
       averageJobDurationSeconds: 2.125,
       medianJobDurationSeconds: 2,
       measuredJobCount: 5,
-      hardwareName: 'mps',
+      machine: { gpu: 'mps', cpu: 'AMD Ryzen 9 7950X', memoryGb: 64, platform: 'win32' },
       result: {
         ...validSummary,
         createdAt: '2026-09-13T15:30:45.000Z',
@@ -202,6 +203,7 @@ describe('listPerformanceTestBenchmarks', () => {
       }
     })
     expect(benchmarks[1]!.createdAt).toBeNull()
+    expect(benchmarks[1]!.machine.gpu).toBe('NVIDIA RTX 4090')
   })
 
   it('returns an empty list before any performance tests have been saved', async () => {

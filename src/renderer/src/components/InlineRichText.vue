@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// Renders inline `**bold**` markers as <strong> spans, avoiding a markdown
-// library for the few bolded phrases in the privacy policy.
 interface Props {
   text: string
 }

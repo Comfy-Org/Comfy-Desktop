@@ -3,9 +3,6 @@ import fs from 'fs'
 import path from 'path'
 import { STAGING_META_SUFFIX, STAGING_META_TMP_SUFFIX } from '../../lib/modelDownloadStaging'
 
-// Back `t()` with the real en.json (vitest `__dirname` doesn't line up with the
-// i18n module's relative `locales/` lookup), so the formatter is asserted
-// against real English copy + interpolation.
 const EN = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), 'locales', 'en.json'), 'utf-8')
 ) as Record<string, Record<string, string>>
@@ -78,7 +75,7 @@ describe('summarizeTemplateState', () => {
     expect(s.receivedBytes).toBe(3 * GB)
     expect(s.totalBytes).toBe(6 * GB)
     expect(s.doneCount).toBe(1)
-    expect(s.fileIndex).toBe(2) // 'b' is the first not-finished
+    expect(s.fileIndex).toBe(2)
     expect(s.currentFile).toBe('b')
     expect(s.percent).toBe(50)
   })
@@ -90,7 +87,7 @@ describe('summarizeTemplateState', () => {
         files: [file({ name: 'a', received: 1 * GB, total: 0 })]
       })
     )
-    expect(s.totalBytes).toBe(4 * GB) // estimate, since no real total yet
+    expect(s.totalBytes).toBe(4 * GB)
     expect(s.percent).toBe(25)
   })
 
@@ -114,8 +111,8 @@ describe('summarizeTemplateState', () => {
         files: [file({ name: 'a', failed: true }), file({ name: 'b', received: 1, total: 2 })]
       })
     )
-    expect(s.doneCount).toBe(1) // 'a' failed (terminal); 'b' still in-flight
-    expect(s.currentFile).toBe('b') // pointer skipped past the failed 'a'
+    expect(s.doneCount).toBe(1)
+    expect(s.currentFile).toBe('b')
   })
 
   it('skipped-on-disk files contribute their bytes', () => {
@@ -169,7 +166,7 @@ describe('runPool', () => {
       ctrl.signal
     )
     await p
-    expect(done.length).toBeLessThan(10) // aborted before scheduling all
+    expect(done.length).toBeLessThan(10)
   })
 
   it('cap is clamped to item count', async () => {
@@ -204,7 +201,7 @@ describe('withRetry', () => {
       return 'ok'
     }, 2)
     expect(out).toBe('ok')
-    expect(calls).toBe(3) // 1 initial + 2 retries
+    expect(calls).toBe(3)
   })
 
   it('rethrows the last error once the budget is exhausted', async () => {
@@ -246,7 +243,7 @@ describe('withRetry', () => {
         }
       )
     ).rejects.toThrow()
-    expect(attempts).toEqual([2, 3]) // before the 2nd and 3rd tries
+    expect(attempts).toEqual([2, 3])
   })
 })
 
@@ -274,10 +271,6 @@ describe('truncateForMaxPath', () => {
   })
 
   it('reserves room for the staging sidecar suffix', () => {
-    // Build a path that fits MAX_PATH exactly on its own, so any positive
-    // reserve forces a truncation. The reserve is the same one the template
-    // task passes in production: sidecar suffix plus its atomic-write
-    // scratch suffix.
     const dir = 'C:\\models\\checkpoints'
     const ext = '.safetensors'
     const stemLen = 259 - dir.length - 1 - ext.length
@@ -293,8 +286,6 @@ describe('truncateForMaxPath', () => {
   it('returns null when the reserve leaves no room for a stem', () => {
     const ext = '.safetensors'
     const reserve = STAGING_META_SUFFIX.length + STAGING_META_TMP_SUFFIX.length
-    // Directory sized so exactly zero stem characters fit once the reserve
-    // and extension are accounted for.
     const dir = 'C:\\' + 'd'.repeat(259 - 3 - 1 - ext.length - reserve)
     expect(truncateForMaxPath(dir, 'm' + ext, 'win32', reserve)).toBeNull()
   })
@@ -316,7 +307,6 @@ describe('describeDownloadFailure', () => {
   })
 
   it('does not false-match a 401 inside an unrelated number', () => {
-    // 4012 must not trip the gated-repo branch (word-boundary guard).
     expect(describeDownloadFailure('m.safetensors', 'wrote 4012 bytes then reset')).toMatch(
       /fall back to in-app/i
     )

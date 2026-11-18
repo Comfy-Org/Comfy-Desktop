@@ -1,13 +1,9 @@
-/** Copy is re-cut from the marketing site's `cloud.*` strings, which carry HTML
- *  and hard line breaks that vue-i18n would render literally. */
-
 export type ShowcaseAction = 'cloud'
 
 export interface ShowcaseCard {
   id: string
   title: string
   body: string
-  /** Present only on the card that offers a way out of the wait. */
   action?: ShowcaseAction
 }
 

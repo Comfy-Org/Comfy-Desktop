@@ -4,20 +4,13 @@ import type { AddressInfo } from 'node:net'
 import { idpCallbackFailure, SignInFailure } from './signInFailure'
 
 export interface LoopbackListenerOptions {
-  /** The exact `state` value generated for this authorization request. */
   expectedState: string
-  /** How long to wait for the browser callback before giving up, in ms. */
   timeoutMs: number
 }
 
 export interface LoopbackListener {
-  /** The `http://127.0.0.1:<port>/callback` URI to register as the redirect target. */
   redirectUri: string
-  /** Resolves with the authorization `code` on a matching callback; rejects on
-   *  an IdP error (matching state) or timeout. A callback with a wrong/missing
-   *  state is ignored (kept listening), never settling. Same promise every call. */
   waitForCode: () => Promise<{ code: string }>
-  /** Tear the listener down (idempotent); safe to call after settle. */
   close: () => void
 }
 
@@ -131,11 +124,6 @@ function html(kind: 'success' | 'error' | 'invalid'): string {
 </html>`
 }
 
-/**
- * Single-shot loopback HTTP listener for a PKCE redirect (RFC 8252 section 7.3): binds
- * `127.0.0.1` on an ephemeral port, waits for exactly one `GET /callback`,
- * validates `state`, and shuts down.
- */
 export function startLoopbackListener(options: LoopbackListenerOptions): Promise<LoopbackListener> {
   const { expectedState, timeoutMs } = options
   return new Promise((resolveListener, rejectListener) => {
@@ -154,9 +142,7 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
       if (server) {
         try {
           server.close()
-        } catch {
-          /* best-effort */
-        }
+        } catch {}
         server = null
       }
     }
@@ -165,9 +151,6 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
       settled = true
       close()
       rejectCode(err)
-      // If listen() never completed, the caller is still awaiting the outer
-      // promise; reject it too so the timeout bounds listener startup as well.
-      // A no-op once the listener has already resolved.
       rejectListener(err)
     }
     const succeed = (code: string): void => {
@@ -209,8 +192,6 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
         res.end()
         return
       }
-      // Wrong/missing state = not our callback (a port scan, prefetch, or another
-      // flow). Refuse it but KEEP LISTENING so an outsider can't abort our sign-in.
       if (params.get('state') !== expectedState) {
         res.statusCode = 400
         res.setHeader('Content-Type', 'text/html; charset=utf-8')
