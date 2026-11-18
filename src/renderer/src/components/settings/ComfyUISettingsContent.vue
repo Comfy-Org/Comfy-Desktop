@@ -769,7 +769,9 @@ defineExpose({
     <div ref="root" class="settings-v2-content flex min-h-0 flex-1 flex-col">
       <div
         class="settings-v2-tabrow"
-        :class="isPage ? 'flex min-w-0 shrink-0 items-center justify-between gap-3' : 'contents'"
+        :class="
+          isPage ? 'flex min-w-0 shrink-0 flex-wrap items-center justify-between gap-3' : 'contents'
+        "
       >
         <TabsList as-child>
           <nav
@@ -843,7 +845,7 @@ defineExpose({
           <div
             v-if="isPage && activeTab === 'snapshots' && installation"
             id="settings-v2-tab-tools"
-            class="settings-v2-tab-tools flex shrink-0 items-center"
+            class="settings-v2-tab-tools ml-auto flex shrink-0 items-center"
           ></div>
         </Transition>
       </div>
