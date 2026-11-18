@@ -125,18 +125,20 @@ const rows = computed(() =>
     <div
       v-for="row in rows"
       :key="row.path"
-      class="models-dir-row flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] py-1.5 pr-1.5 pl-3 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]"
+      class="models-dir-row flex min-h-11 min-w-0 items-start gap-2.5 rounded-[10px] py-1.5 pr-1.5 pl-3 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]"
       :class="{
         'is-just-promoted animate-[models-dir-promote_1200ms_ease-out]':
           row.path === justPromotedPath
       }"
     >
-      <StorageItemIcon
-        :icon="row.isExtra ? FileText : row.locked ? FolderLock : Folder"
-        :shared="row.shared"
-        :title="row.locked ? t('models.lockedDir') : undefined"
-      />
-      <div class="models-dir-main flex min-w-0 flex-auto items-center">
+      <span class="models-dir-icon-slot flex h-8 shrink-0 items-center">
+        <StorageItemIcon
+          :icon="row.isExtra ? FileText : row.locked ? FolderLock : Folder"
+          :shared="row.shared"
+          :title="row.locked ? t('models.lockedDir') : undefined"
+        />
+      </span>
+      <div class="models-dir-main flex min-w-0 flex-auto items-start py-[7px]">
         <Button
           type="button"
           variant="textonly"
@@ -148,22 +150,31 @@ const rows = computed(() =>
           {{ row.path }}
         </Button>
       </div>
-      <StorageTag v-if="row.isPrimary" class="models-dir-tag tag-primary">
-        {{ t('models.primary') }}
-        <InfoTooltip :text="t('tooltips.modelsPrimary')" />
-      </StorageTag>
-      <StorageTag v-if="row.shared && !props.hideSharedTag" class="models-dir-tag tag-shared">
-        {{ t('models.sharedTag') }}
-      </StorageTag>
-      <StorageTag v-if="row.locked || row.isExtra" class="models-dir-tag tag-local">
-        {{ row.isExtra ? t('comfyUISettings.yamlTag') : t('models.instanceOnly') }}
-        <InfoTooltip
-          :text="
-            row.isExtra ? t('tooltips.extraModelPathsInstance') : t('tooltips.instanceOwnModelsDir')
-          "
-        />
-      </StorageTag>
-      <div class="models-dir-actions inline-flex shrink-0 items-center gap-0.5">
+      <span
+        v-if="row.isPrimary || (row.shared && !props.hideSharedTag) || row.locked || row.isExtra"
+        class="models-dir-tags flex h-8 shrink-0 items-center gap-2.5"
+      >
+        <StorageTag v-if="row.isPrimary" class="models-dir-tag tag-primary">
+          {{ t('models.primary') }}
+          <InfoTooltip :text="t('tooltips.modelsPrimary')" />
+        </StorageTag>
+        <StorageTag v-if="row.shared && !props.hideSharedTag" class="models-dir-tag tag-shared">
+          {{ t('models.sharedTag') }}
+        </StorageTag>
+        <StorageTag v-if="row.locked || row.isExtra" class="models-dir-tag tag-local">
+          {{ row.isExtra ? t('comfyUISettings.yamlTag') : t('models.instanceOnly') }}
+          <InfoTooltip
+            :text="
+              row.isExtra
+                ? t('tooltips.extraModelPathsInstance')
+                : t('tooltips.instanceOwnModelsDir')
+            "
+          />
+        </StorageTag>
+      </span>
+      <div
+        class="models-dir-actions inline-flex h-8 min-w-18 shrink-0 items-center justify-end gap-0.5"
+      >
         <Button
           v-if="row.isExtra"
           type="button"
@@ -229,7 +240,7 @@ const rows = computed(() =>
         type="button"
         variant="muted-textonly"
         size="md"
-        class="models-dir-add rounded-[10px] px-2"
+        class="models-dir-add gap-2.5 rounded-[10px] px-2"
         @click="emit('add')"
       >
         <Plus :size="14" aria-hidden="true" />

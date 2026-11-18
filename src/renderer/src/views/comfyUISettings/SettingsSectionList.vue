@@ -216,8 +216,9 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
       :class="[
         readonly
           ? 'is-readonly-list gap-0 rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--secondary-background)] px-3 py-1'
-          : 'gap-4',
-        isStackedTitled(section) && 'max-w-3xl',
+          : isStackedTitled(section)
+            ? 'max-w-3xl gap-2'
+            : 'gap-4',
         {
           'is-collapsible': isCollapsible(section),
           'is-collapsed [&>*:not(.settings-v2-section-title)]:hidden':
@@ -227,12 +228,12 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
     >
       <header
         v-if="isStackedTitled(section)"
-        class="settings-v2-section-head -mb-1 flex min-w-0 flex-col gap-1.5"
+        class="settings-v2-section-head flex min-w-0 flex-col gap-1.5"
       >
         <h3
-          class="settings-v2-section-title m-0 text-[11px] leading-[16px] font-semibold tracking-[0.06em] text-text-muted uppercase"
+          class="settings-v2-section-title m-0 flex items-center px-0 pt-0 pb-1 text-[11px] leading-4 font-semibold tracking-[0.04em] text-text-muted uppercase [&>span]:opacity-55"
         >
-          {{ section.title }}
+          <span>{{ section.title }}</span>
         </h3>
         <p
           v-if="section.description"
@@ -277,7 +278,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 
       <div
         class="settings-v2-section-body"
-        :class="isStackedTitled(section) ? 'flex min-w-0 flex-col gap-4' : 'contents'"
+        :class="isStackedTitled(section) ? 'flex min-w-0 flex-col gap-1' : 'contents'"
       >
         <div
           v-for="(item, i) in section.items"
@@ -336,7 +337,9 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
             :class="[
               readonly
                 ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-start gap-x-4 gap-y-2 border-b border-solid border-[var(--chooser-surface-border)] px-0 py-2.5'
-                : 'flex flex-col gap-2.5',
+                : isStackedTitled(section)
+                  ? 'flex flex-col gap-1'
+                  : 'flex flex-col gap-2.5',
               {
                 'min-w-0 flex-[1_1_240px]': row.length > 1,
                 'is-boolean-row': field.editType === 'boolean',
