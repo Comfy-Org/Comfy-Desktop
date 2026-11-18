@@ -5,6 +5,14 @@ const mocks = vi.hoisted(() => ({
   sitePackages: '/sp' as string | null,
   modelOnDisk: vi.fn(
     async (_ctx: unknown, _base: string, _directory: string, _filename: string) => false
+  ),
+  modelBytesOnDisk: vi.fn(
+    async (
+      _ctx: unknown,
+      _base: string,
+      _directory: string,
+      _filename: string
+    ): Promise<number | null> => null
   )
 }))
 
@@ -17,7 +25,7 @@ vi.mock('../lib/modelDownloadPaths', () => ({
     downloadBaseDir: '/build-models'
   }),
   modelOnDisk: mocks.modelOnDisk,
-  modelBytesOnDisk: async () => null
+  modelBytesOnDisk: mocks.modelBytesOnDisk
 }))
 vi.mock('./buildRuntime', () => ({
   buildRuntime: (build: { id: string }) => ({
@@ -27,7 +35,7 @@ vi.mock('./buildRuntime', () => ({
 }))
 
 import { createDesktopSearch } from './desktopSearch'
-import type { BuildTemplates, HasModel } from './buildTemplates'
+import type { BuildTemplates, HasModel, ModelBytes } from './buildTemplates'
 import type { SidecarDecision } from './service'
 
 const LOCAL = { id: 'local-1', sourceId: 'standalone' }
@@ -58,13 +66,23 @@ const OFF: SidecarDecision = { kind: 'unavailable', availability: { kind: 'off' 
 function setup(
   answer: SidecarDecision = { kind: 'answer', body: ANSWER },
   on = true,
-  { partnersOn = true, partnerSwitch = false } = {}
+  { partnersOn = true, offersSwitch = false } = {}
 ) {
   let clock = 0
-  const decide = vi.fn(async (_body: unknown) => answer)
-  const prepare = vi.fn(async () => undefined)
+  let running = false
+  const decide = vi.fn(async (_body: unknown) => {
+    running = true
+    return answer
+  })
+  const prepare = vi.fn(async () => {
+    running = true
+  })
   const readTemplates = vi.fn(
-    async (_sitePackages: string, _hasModel: HasModel): Promise<BuildTemplates> => ({
+    async (
+      _sitePackages: string,
+      _hasModel: HasModel,
+      _modelBytes?: ModelBytes
+    ): Promise<BuildTemplates> => ({
       installed: ['poster_template'],
       labels: new Map([
         [
@@ -81,7 +99,7 @@ function setup(
     })
   )
   const search = createDesktopSearch({
-    process: { decide, prepare, partnerSwitch: () => partnerSwitch },
+    process: { decide, prepare, partnerSwitch: () => running && offersSwitch },
     isLocalInstallation: (b) => b.sourceId === 'standalone',
     terminalEnvOf: () => null,
     searchOn: () => on,
@@ -136,6 +154,67 @@ describe('createDesktopSearch', () => {
       'vae',
       'v.safetensors'
     )
+
+    const modelBytes = readTemplates.mock.calls[0]![2]!
+    mocks.modelBytesOnDisk.mockResolvedValueOnce(42)
+    expect(await modelBytes('vae', 'v.safetensors')).toBe(42)
+    expect(mocks.modelBytesOnDisk).toHaveBeenCalledWith(
+      expect.anything(),
+      '/build-models',
+      'vae',
+      'v.safetensors'
+    )
+  })
+
+  it('gives each Download and run card the download size the build reads for it', async () => {
+    const needsFiles = {
+      ...ANSWER.split.run[0]!,
+      option_id: 'mural:as_given',
+      family_id: 'mural',
+      variant: { template_id: 'mural_template', title: null },
+      download: ['mural_template', 'mural.safetensors']
+    }
+    const body = { ...ANSWER, split: { run: ANSWER.split.run, download: [needsFiles] } }
+    const { search } = setup({ kind: 'answer', body })
+
+    const local = await search.search('a mural', 'local-1')
+    const unknown = await search.search('a mural', null)
+
+    expect(local).toMatchObject({
+      result: { download: [{ templateId: 'mural_template', downloadBytes: 18_000_000_000 }] }
+    })
+    expect(unknown).toMatchObject({
+      result: { download: [{ templateId: 'mural_template', downloadBytes: null }] }
+    })
+  })
+
+  it('starts the search and asks it to leave partner templates out while the setting is off', async () => {
+    const { search, decide, prepare } = setup(undefined, true, {
+      partnersOn: false,
+      offersSwitch: true
+    })
+    const response = await search.search('a poster', 'local-1')
+
+    expect(prepare).toHaveBeenCalled()
+    expect(decide.mock.calls[0]![0]).toMatchObject({ partner_on: false })
+    expect(response).toMatchObject({ kind: 'result', result: { partnerSwitch: true } })
+  })
+
+  it('never asks a search that cannot leave partner templates out to do so', async () => {
+    const { search, decide } = setup(undefined, true, { partnersOn: false, offersSwitch: false })
+    const response = await search.search('a poster', 'local-1')
+
+    expect(decide.mock.calls[0]![0]).not.toHaveProperty('partner_on')
+    expect(response).toMatchObject({ kind: 'result', result: { partnerSwitch: false } })
+  })
+
+  it('asks for partner templates as usual while the setting is on, and still offers the switch', async () => {
+    const { search, decide, prepare } = setup(undefined, true, { offersSwitch: true })
+    const response = await search.search('a poster', 'local-1')
+
+    expect(prepare).not.toHaveBeenCalled()
+    expect(decide.mock.calls[0]![0]).not.toHaveProperty('partner_on')
+    expect(response).toMatchObject({ kind: 'result', result: { partnerSwitch: true } })
   })
 
   it.each([

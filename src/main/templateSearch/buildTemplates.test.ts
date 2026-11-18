@@ -8,10 +8,15 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../lib/fetch', () => ({ fetchJSON: vi.fn() }))
 
-import { readBuildTemplates, type HasModel } from './buildTemplates'
+import { readBuildTemplates, type HasModel, type ModelBytes } from './buildTemplates'
 
 function onDiskIn(root: string): HasModel {
   return async (directory, filename) => fs.existsSync(path.join(root, directory, filename))
+}
+
+function bytesIn(root: string): ModelBytes {
+  return async (directory, filename) =>
+    fs.statSync(path.join(root, directory, filename), { throwIfNoEntry: false })?.size ?? null
 }
 
 let root: string
@@ -28,7 +33,13 @@ function model(name: string, directory = 'checkpoints') {
 }
 
 function index(
-  ...templates: { name: string; title?: string; mediaSubtype?: string; openSource?: boolean }[]
+  ...templates: {
+    name: string
+    title?: string
+    mediaSubtype?: string
+    openSource?: boolean
+    size?: unknown
+  }[]
 ) {
   return [{ moduleName: 'default', title: 'Image', templates }]
 }
@@ -143,6 +154,39 @@ describe('readBuildTemplates', () => {
     write(path.join(dir, 'poster.json'), { nodes: [] })
 
     expect((await readBuildTemplates(sitePackages, onDiskIn(models))).installed).toEqual(['poster'])
+  })
+
+  it("estimates a template's download as the size its index gives, less the model files already on disk", async () => {
+    const dir = path.join(sitePackages, 'comfyui_workflow_templates_json', 'templates')
+    write(
+      path.join(dir, 'index.json'),
+      index(
+        { name: 'video', size: 1000 },
+        { name: 'small', size: 100 },
+        { name: 'unsized' },
+        { name: 'zero', size: 0 },
+        { name: 'text', size: '1000' },
+        { name: 'no_workflow', size: 500 }
+      )
+    )
+    write(path.join(dir, 'video.json'), {
+      models: [model('wan.safetensors', 'diffusion_models'), model('vae.safetensors', 'vae')]
+    })
+    write(path.join(dir, 'small.json'), { models: [model('wan.safetensors', 'diffusion_models')] })
+    for (const name of ['unsized', 'zero', 'text'])
+      write(path.join(dir, `${name}.json`), { nodes: [] })
+    write(path.join(models, 'diffusion_models', 'wan.safetensors'), 'x'.repeat(300))
+
+    const { downloadBytes } = await readBuildTemplates(
+      sitePackages,
+      onDiskIn(models),
+      bytesIn(models)
+    )
+    expect(await downloadBytes('video')).toBe(700)
+    expect(await downloadBytes('small')).toBe(0)
+    for (const name of ['unsized', 'zero', 'text', 'no_workflow', 'not_listed']) {
+      expect(await downloadBytes(name), name).toBeNull()
+    }
   })
 
   it('knows no templates in a build without a template package', async () => {
