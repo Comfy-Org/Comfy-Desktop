@@ -194,6 +194,7 @@ defineExpose({ verticalTarget, revealActive })
     tabindex="-1"
     :class="{ 'scroll-pt-10': controller.openFailed.value }"
     @mousedown.prevent
+    @keydown.esc="emit('refocus')"
   >
     <div
       v-if="notice"

@@ -45,11 +45,6 @@ function close(): void {
   panelOpen.value = false
 }
 
-function onEscape(event: KeyboardEvent): void {
-  if ((results.value?.$el as HTMLElement | undefined)?.contains(event.target as Node)) focusInput()
-  close()
-}
-
 function onFocusOut(event: FocusEvent): void {
   const next = event.relatedTarget as Node | null
   if (!(event.currentTarget as HTMLElement).contains(next)) close()
@@ -90,7 +85,7 @@ function moveAcross(event: KeyboardEvent, step: 1 | -1): void {
     class="relative mx-auto w-full max-w-180"
     data-testid="home-template-search"
     @focusout="onFocusOut"
-    @keydown.esc="onEscape"
+    @keydown.esc="close"
   >
     <label
       class="flex h-12 items-center gap-2.5 rounded-2xl border border-[rgb(137_137_137/0.16)] bg-[rgb(137_137_137/0.06)] px-4 shadow-[0_8px_30px_-12px_rgb(0_0_0/0.5)] transition-colors focus-within:border-[rgb(137_137_137/0.32)] focus-within:bg-[rgb(137_137_137/0.09)]"

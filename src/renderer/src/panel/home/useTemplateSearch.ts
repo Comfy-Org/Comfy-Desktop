@@ -109,10 +109,14 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     pendingSearch = setTimeout(() => void search(text), SEARCH_DELAY_MS)
   })
 
-  watch(options.buildId, () => {
-    if (!query.value.trim() || state.value.kind === 'idle') return
+  function searchAgainOrForget(): void {
     if (panelOpen.value) void search(query.value)
     else forgetAnswer()
+  }
+
+  watch(options.buildId, () => {
+    if (!query.value.trim() || state.value.kind === 'idle') return
+    searchAgainOrForget()
   })
 
   onScopeDispose(() => {
@@ -129,8 +133,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   onScopeDispose(
     window.api.onSettingsChanged(({ key }) => {
       if (key !== PARTNERS_SETTING || !query.value.trim()) return
-      if (panelOpen.value) void search(query.value)
-      else forgetAnswer()
+      searchAgainOrForget()
     })
   )
 

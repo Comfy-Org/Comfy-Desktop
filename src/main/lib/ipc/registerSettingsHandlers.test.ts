@@ -45,7 +45,7 @@ vi.mock('../globalSettingsEvents', () => ({
 vi.mock('../e2eOverrides', () => ({ recordIpcInvocation: vi.fn() }))
 vi.mock('../../settings', () => ({}))
 
-import { ipcMain } from './shared'
+import { _broadcastToRenderer, ipcMain } from './shared'
 import {
   applySettingSet,
   buildSettingsSections,
@@ -141,6 +141,14 @@ describe('buildSettingsSections', () => {
 
     mockSettings.templateSearchPartners = false
     expect(fields().find((f) => f.id === 'templateSearchPartners')?.value).toBe(false)
+  })
+
+  it('tells every window when the partner templates setting is saved, so Home searches again', () => {
+    applySettingSet('templateSearchPartners', false)
+    expect(mockSettings.templateSearchPartners).toBe(false)
+    expect(_broadcastToRenderer).toHaveBeenCalledWith('settings-changed', {
+      key: 'templateSearchPartners'
+    })
   })
 
   it('offers hardware acceleration under Advanced with a restart notice', () => {
