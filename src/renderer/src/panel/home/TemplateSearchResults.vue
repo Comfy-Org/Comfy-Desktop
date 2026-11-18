@@ -93,9 +93,18 @@ function availabilityNotice(availability: TemplateSearchAvailability): Notice {
   }
 }
 
-const resultsTitle = computed(() => {
+const matchedNames = computed(() => {
   const state = props.controller.state.value
-  const names = state.kind === 'result' ? state.result.matched : null
+  return state.kind === 'result' ? state.result.matched : null
+})
+
+const replyShown = computed(
+  () =>
+    !!props.controller.reply.value && !(matchedNames.value && props.controller.rows.value.length)
+)
+
+const resultsTitle = computed(() => {
+  const names = matchedNames.value
   return names
     ? t('home.search.resultsFor', { names: new Intl.ListFormat(locale.value).format(names) })
     : t('home.search.resultsTitle')
@@ -251,7 +260,7 @@ defineExpose({ verticalTarget, revealActive })
     </div>
     <template v-else-if="controller.state.value.kind === 'result'">
       <p
-        v-if="controller.reply.value"
+        v-if="replyShown"
         class="m-0 px-2.5 py-2 text-[13px]/5 text-foreground"
         data-testid="home-template-search-reply"
       >
