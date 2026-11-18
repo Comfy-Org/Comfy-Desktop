@@ -12,7 +12,7 @@ import { assetKind } from './assets'
 import { copyImageToClipboard } from './clipboardImage'
 import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
-import { installOutputDir } from './models'
+import { installInputDir, installOutputDir } from './models'
 import { sourceMap } from './ipc/shared'
 import type { AssetSummary, LocalAssetListing } from '../../types/ipc'
 
@@ -56,6 +56,26 @@ export function hasOutputFolder(inst: InstallationRecord): boolean {
 function outputDirFor(inst: InstallationRecord, sharedDir: string): string | null {
   if (!hasOutputFolder(inst)) return null
   return outputDirOverride(inst, sharedDir) ?? installOutputDir(inst.installPath)
+}
+
+export function sharedInputDir(): string {
+  return (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
+}
+
+function inputDirFor(inst: InstallationRecord): string | null {
+  if (!hasOutputFolder(inst)) return null
+  if ((inst.useSharedInput as boolean | undefined) !== false) return sharedInputDir()
+  return (inst.inputDir as string | undefined) || installInputDir(inst.installPath)
+}
+
+export interface ComfyFolders {
+  output: string | null
+  input: string | null
+}
+
+export function comfyFoldersOf(inst: InstallationRecord | null): ComfyFolders {
+  if (!inst) return { output: sharedOutputDir(), input: sharedInputDir() }
+  return { output: outputDirFor(inst, sharedOutputDir()), input: inputDirFor(inst) }
 }
 
 async function realDir(dir: string): Promise<string | null> {
@@ -239,15 +259,23 @@ function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeI
   }
 }
 
-async function makeThumbnail(file: string, sizeBytes: number): Promise<Buffer | null> {
-  const size = { width: THUMBNAIL_SIZE, height: THUMBNAIL_SIZE }
+async function makeThumbnail(
+  file: string,
+  sizeBytes: number,
+  longSide: number
+): Promise<Buffer | null> {
+  const size = { width: longSide, height: longSide }
   const image =
     process.platform === 'linux'
       ? linuxThumbnailSource(file, sizeBytes)
       : await nativeImage.createThumbnailFromPath(file, size).catch(() => null)
-  if (!image || image.isEmpty()) return null
+  return image ? scaledJpeg(image, longSide) : null
+}
+
+function scaledJpeg(image: Electron.NativeImage, longSide: number): Buffer | null {
+  if (image.isEmpty()) return null
   const { width, height } = image.getSize()
-  const scale = Math.min(1, THUMBNAIL_SIZE / Math.max(width, height))
+  const scale = Math.min(1, longSide / Math.max(width, height))
   const scaled =
     scale < 1
       ? image.resize({
@@ -271,15 +299,15 @@ async function fewAtATime<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
-async function thumbnailFor(file: string): Promise<Buffer | null> {
+async function thumbnailFor(file: string, longSide = THUMBNAIL_SIZE): Promise<Buffer | null> {
   const stat = await fsp.stat(file).catch(() => null)
   if (!stat) return null
-  const key = `${file}\n${stat.mtimeMs}`
+  const key = `${file}\n${stat.mtimeMs}\n${longSide}`
   const cached = thumbnails.get(key)
   if (cached) return cached
   let making = thumbnailsInFlight.get(key)
   if (!making) {
-    making = fewAtATime(() => makeThumbnail(file, stat.size))
+    making = fewAtATime(() => makeThumbnail(file, stat.size, longSide))
       .then((made) => {
         if (made) {
           thumbnails.set(key, made)
@@ -300,6 +328,22 @@ async function thumbnailFor(file: string): Promise<Buffer | null> {
     return await Promise.race([making, tooSlow])
   } finally {
     clearTimeout(timer)
+  }
+}
+
+function jpegDataUrl(jpeg: Buffer | null): string | null {
+  return jpeg ? `data:image/jpeg;base64,${jpeg.toString('base64')}` : null
+}
+
+export async function thumbnailDataUrl(file: string, longSide: number): Promise<string | null> {
+  return jpegDataUrl(await thumbnailFor(file, longSide))
+}
+
+export function thumbnailDataUrlFromBytes(bytes: Uint8Array, longSide: number): string | null {
+  try {
+    return jpegDataUrl(scaledJpeg(nativeImage.createFromBuffer(Buffer.from(bytes)), longSide))
+  } catch {
+    return null
   }
 }
 

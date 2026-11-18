@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   root,
   sharedDir,
+  sharedInputDir,
   ownDir,
   installDir,
   outsideDir,
@@ -25,6 +26,7 @@ const {
   return {
     root: base,
     sharedDir: nodePath.join(base, 'shared-output'),
+    sharedInputDir: nodePath.join(base, 'shared-input'),
     ownDir: nodePath.join(base, 'own-output'),
     installDir: nodePath.join(base, 'install'),
     outsideDir: nodePath.join(base, 'outside'),
@@ -55,13 +57,18 @@ vi.mock('electron', () => ({
   net: { fetch: (url: string) => fetchFile(url) },
   nativeImage: {
     createThumbnailFromPath: (file: string) => thumbnailImage(file),
-    createFromPath: (file: string) => fullImage(file)
+    createFromPath: (file: string) => fullImage(file),
+    createFromBuffer: (bytes: Buffer) => fullImage(bytes)
   }
 }))
 vi.mock('../installations', () => ({ list: () => installs() }))
 vi.mock('../settings', () => ({
-  get: (key: string) => (key === 'outputDir' ? sharedDir : undefined),
-  defaults: { outputDir: path.join(root, 'default-output') }
+  get: (key: string) =>
+    ({ outputDir: sharedDir, inputDir: sharedInputDir })[key as 'outputDir' | 'inputDir'],
+  defaults: {
+    outputDir: path.join(root, 'default-output'),
+    inputDir: path.join(root, 'default-input')
+  }
 }))
 vi.mock('./ipc/shared', () => ({
   sourceMap: {
@@ -71,7 +78,8 @@ vi.mock('./ipc/shared', () => ({
   }
 }))
 vi.mock('./models', () => ({
-  installOutputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'output')
+  installOutputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'output'),
+  installInputDir: (installPath: string) => path.join(installPath, 'ComfyUI', 'input')
 }))
 vi.mock('./assets', () => ({
   assetKind: (name: string) =>
@@ -85,6 +93,7 @@ import {
   MAX_FOLDER_DEPTH,
   MAX_LOCAL_ASSETS,
   THUMBNAIL_WAIT_MS,
+  comfyFoldersOf,
   comfyOutputPath,
   copyOutputImage,
   hasOutputFolder,
@@ -95,7 +104,9 @@ import {
   outputDirOverride,
   outputFilePath,
   outputFileUrl,
-  serveOutputFile
+  serveOutputFile,
+  thumbnailDataUrl,
+  thumbnailDataUrlFromBytes
 } from './outputFolders'
 
 function install(name: string, extra: Record<string, unknown> = {}): InstallationRecord {
@@ -176,6 +187,41 @@ describe('hasOutputFolder', () => {
       'a build that manages its own paths'
     ).toBe(false)
     expect(hasOutputFolder(install('a', { sourceId: 'gone' })), 'an unknown source').toBe(false)
+  })
+})
+
+describe('comfyFoldersOf', () => {
+  it("gives a build's output and input folders, the shared ones by default", () => {
+    expect(comfyFoldersOf(install('a'))).toEqual({ output: sharedDir, input: sharedInputDir })
+    expect(
+      comfyFoldersOf(
+        install('a', {
+          useSharedOutput: false,
+          outputDir: ownDir,
+          useSharedInput: false,
+          inputDir: path.join(root, 'own-input')
+        })
+      )
+    ).toEqual({ output: ownDir, input: path.join(root, 'own-input') })
+    expect(
+      comfyFoldersOf(install('a', { useSharedOutput: false, useSharedInput: false })),
+      'a build that keeps both inside its install'
+    ).toEqual({
+      output: path.join(installDir, 'ComfyUI', 'output'),
+      input: path.join(installDir, 'ComfyUI', 'input')
+    })
+  })
+
+  it('gives the shared folders when no build is known, and none for Cloud', () => {
+    expect(comfyFoldersOf(null)).toEqual({ output: sharedDir, input: sharedInputDir })
+    expect(comfyFoldersOf(install('a', { sourceId: 'cloud' }))).toEqual({
+      output: null,
+      input: null
+    })
+    expect(comfyFoldersOf(install('a', { sourceId: 'desktop' }))).toEqual({
+      output: null,
+      input: null
+    })
   })
 })
 
@@ -552,6 +598,37 @@ describe('serveOutputFile', () => {
       new Request(outputFileUrl(path.join(sharedDir, 'broken.png'), 1))
     )
     expect(await none.text()).toMatch(/^file file:\/\/.*broken\.png$/)
+  })
+})
+
+describe('small thumbnails as data URLs', () => {
+  it('scales the long side to the size asked for', async () => {
+    write(path.join(sharedDir, 'small.png'))
+    const resize = vi.fn(() => ({ toJPEG: () => Buffer.from('tiny') }))
+    const big = { isEmpty: () => false, getSize: () => ({ width: 1000, height: 2000 }), resize }
+    thumbnailImage.mockResolvedValueOnce(big)
+    fullImage.mockReturnValueOnce(big)
+
+    expect(await thumbnailDataUrl(path.join(sharedDir, 'small.png'), 256)).toBe(
+      `data:image/jpeg;base64,${Buffer.from('tiny').toString('base64')}`
+    )
+    expect(resize).toHaveBeenCalledWith({ width: 128, height: 256 })
+  })
+
+  it('makes one from bytes, or none when they are not a picture', () => {
+    const resize = vi.fn(() => ({ toJPEG: () => Buffer.from('cloud') }))
+    fullImage.mockReturnValueOnce({
+      isEmpty: () => false,
+      getSize: () => ({ width: 512, height: 512 }),
+      resize
+    })
+    expect(thumbnailDataUrlFromBytes(new Uint8Array([1, 2]), 256)).toBe(
+      `data:image/jpeg;base64,${Buffer.from('cloud').toString('base64')}`
+    )
+    expect(resize).toHaveBeenCalledWith({ width: 256, height: 256 })
+
+    fullImage.mockReturnValueOnce({ isEmpty: () => true })
+    expect(thumbnailDataUrlFromBytes(new Uint8Array([1]), 256)).toBeNull()
   })
 })
 

@@ -456,6 +456,79 @@ export async function listAssets(
   return accessToken ? listCloudAssets(accessToken, request, signal, slot) : EMPTY_PAGE
 }
 
+export interface CloudOutput {
+  id: string
+  name: string
+  size: number | null
+  mimeType: string | null
+  createdAt: string | null
+  loaderPath: string | null
+  tags: string[]
+}
+
+export type CloudOutputBytes =
+  { bytes: Uint8Array } | { error: 'signed-out' | 'too-large' | 'missing' }
+
+function cloudOutputOf(value: unknown): CloudOutput | null {
+  if (!isAssetRow(value)) return null
+  const loaderPath = (value as { loader_path?: unknown }).loader_path
+  const summary = toSummary(value, null)
+  return {
+    id: value.id,
+    name: summary.name,
+    size: summary.sizeBytes,
+    mimeType: summary.mimeType,
+    createdAt: summary.createdAt,
+    loaderPath: typeof loaderPath === 'string' && loaderPath !== '' ? loaderPath : null,
+    tags: summary.tags
+  }
+}
+
+export async function listNewestCloudOutputs(limit: number): Promise<CloudOutput[] | null> {
+  const accessToken = await getCloudSession().getAccessToken()
+  if (!accessToken) return null
+  const query = new URLSearchParams({
+    tags_any: 'output',
+    sort: 'created_at',
+    order: 'desc',
+    limit: String(Math.min(Math.max(1, limit), MAX_PAGE_SIZE)),
+    include_public: 'false',
+    include_total: 'false'
+  })
+  const res = await fetch(`${CLOUD_CONFIG.apiBase}/assets?${query}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  })
+  if (!res.ok) throw new Error(`List assets failed: HTTP ${res.status}`)
+  const body: unknown = await res.json().catch(() => null)
+  const assets = body && typeof body === 'object' ? (body as Record<string, unknown>).assets : null
+  if (!Array.isArray(assets)) throw new Error('List assets returned an invalid page')
+  return assets.map(cloudOutputOf).filter((output): output is CloudOutput => output !== null)
+}
+
+export async function readCloudOutput(
+  assetId: string,
+  maxBytes: number,
+  timeoutMs: number
+): Promise<CloudOutputBytes> {
+  const accessToken = await getCloudSession().getAccessToken()
+  if (!accessToken) return { error: 'signed-out' }
+  const deadline = AbortSignal.timeout(timeoutMs)
+  const url = await resolveCloudContentUrl(assetId, accessToken, 'inline', deadline)
+  if (!url) return { error: 'missing' }
+  const res = await fetch(url, { redirect: 'error', signal: deadline })
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {})
+    return { error: 'missing' }
+  }
+  if (contentLength(res) > maxBytes) {
+    await res.body?.cancel().catch(() => {})
+    return { error: 'too-large' }
+  }
+  const bytes = await firstBytes(res, maxBytes + 1)
+  return bytes.byteLength > maxBytes ? { error: 'too-large' } : { bytes }
+}
+
 function isCount(value: unknown, min: number, max: number): value is number {
   return Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max
 }
