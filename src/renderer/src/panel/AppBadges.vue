@@ -5,7 +5,11 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import { badgeDescriptionId, badgeWords } from './appCardBadges'
 import type { AppBadge } from '../types/ipc'
 
-const { badges, descriptionIdPrefix, revealed = false } = defineProps<{
+const {
+  badges,
+  descriptionIdPrefix,
+  revealed = false
+} = defineProps<{
   badges: readonly AppBadge[]
   descriptionIdPrefix: string
   revealed?: boolean

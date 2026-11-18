@@ -99,9 +99,7 @@ describe('AppBadges', () => {
 
     expect(wrapper.get('[data-testid="app-badge-new"]').text()).toContain('新')
     expect(wrapper.get('[data-testid="app-badge-video"]').text()).toContain('Video')
-    expect(document.getElementById('card-uses-credits')?.textContent).toContain(
-      '运行付费合作模型'
-    )
+    expect(document.getElementById('card-uses-credits')?.textContent).toContain('运行付费合作模型')
 
     await userEvent.hover(wrapper.get('[data-testid="app-badge-new"]').element)
 

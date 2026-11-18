@@ -327,10 +327,7 @@ describe('AppsView', () => {
         .exists()
     ).toBe(true)
     expect(
-      wrapper
-        .get('[data-testid="app-card-sdr-to-hdr"]')
-        .find('[data-testid="app-badges"]')
-        .exists()
+      wrapper.get('[data-testid="app-card-sdr-to-hdr"]').find('[data-testid="app-badges"]').exists()
     ).toBe(false)
   })
 
