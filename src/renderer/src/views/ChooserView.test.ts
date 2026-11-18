@@ -260,7 +260,7 @@ describe('ChooserView', () => {
     await flushPromises()
 
     const invitation = wrapper.get('.chooser-no-builds')
-    expect(invitation.text()).toContain('Set up where your work runs')
+    expect(invitation.text()).toContain('No builds yet')
 
     await invitation.get('button').trigger('click')
     expect(wrapper.emitted('show-new-install')).toEqual([[]])

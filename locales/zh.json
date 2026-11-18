@@ -262,8 +262,8 @@
     "nothingMatches": "没有匹配项",
     "nothingMatchesHint": "换个关键词试试，或清除筛选条件查看全部内容。",
     "clearFilters": "清除筛选",
-    "noBuildsTitle": "设置工作的运行位置",
-    "noBuildsBody": "构建是拥有独立版本、自定义节点和模型的 ComfyUI。你可以在此电脑上安装一个，也可以直接在 Comfy Cloud 上运行，无需安装。",
+    "noBuildsTitle": "还没有构建",
+    "noBuildsBody": "在此电脑上安装 ComfyUI，或在 Comfy Cloud 上运行。",
     "filterLabel": "来源筛选"
   },
   "titleBar": {
