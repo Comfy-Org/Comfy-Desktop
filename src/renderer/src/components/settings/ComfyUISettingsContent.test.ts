@@ -808,7 +808,19 @@ describe('ComfyUISettingsContent', () => {
 
       await wrapper.get(`[data-testid="${TID.settingsTab('snapshots')}"]`).trigger('click')
       await flushPromises()
-      expect(isInsideStrip(strip, tabTrigger(wrapper, 'snapshots'))).toBe(true)
+      await expect.poll(() => isInsideStrip(strip, tabTrigger(wrapper, 'snapshots'))).toBe(true)
+    })
+
+    it('fades the edge once a wider tab label pushes the last tab out of view', async () => {
+      pane.style.width = '1200px'
+      const wrapper = await mountNarrow('update')
+      const strip = wrapper.get<HTMLElement>('.settings-v2-tabs').element
+      await expect.poll(() => getComputedStyle(strip).maskImage).toBe('none')
+
+      strip.style.width = `${strip.getBoundingClientRect().width}px`
+      await expect.poll(() => getComputedStyle(strip).maskImage).toBe('none')
+      tabTrigger(wrapper, 'storage').style.paddingInline = '80px'
+      await expect.poll(() => getComputedStyle(strip).maskImage).not.toBe('none')
     })
 
     it('shows the chosen tab when the pane opens straight onto a later tab', async () => {

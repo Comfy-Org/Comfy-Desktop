@@ -354,12 +354,17 @@ function measureTabStrip(): void {
   tabsHiddenEnd.value = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1
 }
 let tabStripObserver: ResizeObserver | undefined
-watch(tabStrip, (strip) => {
+function observeTabStrip(): void {
   tabStripObserver?.disconnect()
+  const strip = tabStrip.value
   if (!strip || typeof ResizeObserver === 'undefined') return
   tabStripObserver = new ResizeObserver(measureTabStrip)
   tabStripObserver.observe(strip)
-})
+  for (const trigger of strip.querySelectorAll<HTMLElement>('.settings-v2-tab')) {
+    tabStripObserver.observe(trigger, { box: 'border-box' })
+  }
+}
+watch(tabStrip, observeTabStrip, { flush: 'post' })
 onUnmounted(() => tabStripObserver?.disconnect())
 function revealActiveTab(): void {
   tabStrip.value
@@ -370,6 +375,7 @@ watch([activeTab, tabStrip], revealActiveTab, { flush: 'post' })
 watch(
   [() => tabs.value.map((tab) => tab.key).join(), () => showUpdateBadge.value],
   () => {
+    observeTabStrip()
     measureTabStrip()
     revealActiveTab()
   },
