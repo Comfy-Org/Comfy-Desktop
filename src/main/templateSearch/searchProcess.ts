@@ -269,6 +269,7 @@ export function createSearchProcess({
   return {
     decide: (body: unknown): Promise<SidecarDecision> => service.decide(body),
     prepare: (): Promise<void> => service.prepare(),
+    partnerSwitch: (): boolean => service.partnerSwitch(),
     download: (): Promise<void> => (pyz() ? store.download() : Promise.resolve()),
     downloadInBackground,
     onBuildAction,
