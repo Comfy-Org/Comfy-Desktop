@@ -355,6 +355,39 @@ describe('HomeTemplateSearch results', () => {
     expect(wrapper.get('[role="option"][aria-selected="true"]').text()).toContain('qwen_a title')
   })
 
+  it('leads a model-name lookup with the card the search puts first, even a download, with no best match', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({
+        outcome: 'download',
+        matched: ['wan 2.2'],
+        run: [candidate('wan_installed', { score: null })],
+        download: [candidate('wan_lead', { score: null, needsDownload: true })]
+      })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'wan 2.2')
+    expect(rowTitles(wrapper)).toEqual(['wan_lead title', 'wan_installed title'])
+    expect(wrapper.find('[data-testid="home-template-search-best"]').exists()).toBe(false)
+  })
+
+  it('lets the heading row grow with a long list of names instead of running into the cards', async () => {
+    searchTemplates.mockResolvedValue(
+      answer({
+        matched: ['qwen 2.1', 'kling', 'wan 2.2', 'flux 2 klein', 'ltx 2', 'hunyuan 3', 'seedance'],
+        run: [candidate('qwen_a', { score: null })],
+        partnerSwitch: true
+      })
+    )
+    const wrapper = mountSearch()
+    page(wrapper).style.width = '400px'
+    await searchFor(wrapper, 'qwen 2.1 kling')
+    const heading = wrapper.get('h2').element.getBoundingClientRect()
+    expect(heading.height, 'the names wrap').toBeGreaterThan(24)
+    expect(
+      wrapper.get('[role="option"]').element.getBoundingClientRect().top
+    ).toBeGreaterThanOrEqual(heading.bottom)
+  })
+
   it('says which files a template needs, one chip per kind', async () => {
     searchTemplates.mockResolvedValue(
       answer({
@@ -1076,6 +1109,12 @@ describe('HomeTemplateSearch cards', () => {
     expect(label.scrollWidth, 'the label is longer than the card has room for').toBeGreaterThan(
       label.clientWidth
     )
+    const text = document.createRange()
+    text.selectNodeContents(label)
+    const glyphs = text.getBoundingClientRect()
+    const box = label.getBoundingClientRect()
+    expect(glyphs.top, 'nothing above the label is cut').toBeGreaterThanOrEqual(box.top - 0.5)
+    expect(glyphs.bottom, 'no descender is cut').toBeLessThanOrEqual(box.bottom + 0.5)
     expect(chip.element.scrollWidth).toBeLessThanOrEqual(chip.element.clientWidth)
     expect(chip.element.getBoundingClientRect().right).toBeLessThanOrEqual(
       mural.element.getBoundingClientRect().right
