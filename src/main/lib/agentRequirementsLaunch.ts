@@ -147,39 +147,36 @@ async function goneWithin(pid: number, ms: number): Promise<boolean> {
 export async function reapOrphanedAgentUv(installPath: string): Promise<void> {
   if (process.platform === 'win32') return
   const names = await fs.promises.readdir(installPath).catch((): string[] => [])
-  const kills = await Promise.all(
+  const signalled = await Promise.all(
     names
       .filter((entry) => entry.startsWith(UV_RECORD_PREFIX))
       .map((name) => reapRecord(path.join(installPath, name)))
   )
-  const killed = kills.filter((kill) => kill !== null)
-  if (killed.length === 0) return
+  const killed = signalled.filter(Boolean).length
+  if (killed === 0) return
   try {
-    telemetry.emit('comfy.desktop.agent_requirements_orphan_reaped', {
-      killed: killed.length,
-      survived: killed.filter((kill) => kill === 'survived').length
-    })
+    telemetry.emit('comfy.desktop.agent_requirements_orphan_reaped', { killed })
   } catch {}
 }
 
-async function reapRecord(record: string): Promise<'gone' | 'survived' | null> {
+async function reapRecord(record: string): Promise<boolean> {
   let keep = false
-  let kill: 'gone' | 'survived' | null = null
+  let signalled = false
   try {
     const { pid, startedAt } = JSON.parse(await fs.promises.readFile(record, 'utf-8'))
     const valid = Number.isInteger(pid) && pid > 1 && Number.isFinite(startedAt)
-    if (valid && runningOwnUv.has(pid)) return null
+    if (valid && runningOwnUv.has(pid)) return false
     const fresh = valid && Date.now() - startedAt < RECORD_MAX_AGE_MS
     const identity = fresh ? await recordedUvIdentity(pid, startedAt) : 'other'
     keep = identity === 'unknown'
     if (identity === 'match') {
       killGroup(pid)
+      signalled = true
       keep = !(await goneWithin(pid, FORCE_STOP_TIMEOUT_MS))
-      kill = keep ? 'survived' : 'gone'
     }
   } catch {}
   if (!keep) await fs.promises.rm(record, { force: true }).catch(() => {})
-  return kill
+  return signalled
 }
 
 type InstallOutcome =
@@ -398,7 +395,7 @@ export async function installAgentRequirements(
   overrideState: AgentOverrideState | null = null,
   onDeferred?: (request: PrefetchRequest, deferral: Deferral) => void,
   onCoreFailed?: (report: InstallReport) => void,
-  onCacheRescued?: () => void
+  onCacheRescued?: (step: 'core' | 'override') => void
 ): Promise<OverrideDecision | undefined> {
   sendOutput('\nInstalling agent requirements…\n')
   let onlineLeft = ONLINE_BUDGET_MS
@@ -429,7 +426,7 @@ export async function installAgentRequirements(
       const late =
         fetched.stage === 'fetch' && fetched.run.report.outcome === 'timed_out' && !signal?.aborted
       const retried = late && (await cacheHoldsAll()).ok ? await fromCache() : null
-      if (retried?.ok) onCacheRescued?.()
+      if (retried?.ok) onCacheRescued?.(reqPath === plan.reqPath ? 'core' : 'override')
       return retried?.ok ? { ...retried, online: true } : { ...fetched.run, online: true }
     }
     if (fetched.kind !== 'fetched') {
@@ -939,7 +936,7 @@ const UV_DOWNLOADING_SIZE = /^\s*Downloading\s+(\S+)\s+\(([\d.]+)\s*(B|KiB|MiB|G
 const BYTES_PER_UNIT: Record<string, number> = { B: 1, KiB: 1024, MiB: 1024 ** 2, GiB: 1024 ** 3 }
 
 function downloadedBytes(output: string): number {
-  const lines = stripAnsi(output).split(/\r?\n/)
+  const lines = output.split(/\r?\n/)
   const finished = new Set(lines.flatMap((line) => line.match(UV_DOWNLOADED_NAME)?.[1] ?? []))
   let bytes = 0
   for (const line of lines) {

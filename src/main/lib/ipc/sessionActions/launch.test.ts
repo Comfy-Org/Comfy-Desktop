@@ -3980,11 +3980,7 @@ describe('agent requirements at launch', () => {
       expect(spawnArgs).toContain('--enable-agent')
       expect(installed).toEqual([OVERRIDDEN])
       expect(overrideEvents()).toEqual([
-        expect.objectContaining({
-          decision: 'applied',
-          pins: 'comfy-agent==0.2.3',
-          cache_retry_rescued: false
-        })
+        expect.objectContaining({ decision: 'applied', pins: 'comfy-agent==0.2.3' })
       ])
     })
 

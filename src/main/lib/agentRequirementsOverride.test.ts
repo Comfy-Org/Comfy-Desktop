@@ -23,6 +23,7 @@ import {
   readFrontendPin,
   readOverrideState,
   reportAgentCoreFailure,
+  reportCacheRescued,
   reportOverrideDecision
 } from './agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from './agentRequirementsOverride'
@@ -1157,17 +1158,18 @@ describe('indexKind', () => {
   })
 })
 
-describe('reportOverrideDecision: a launch the cache retry rescued', () => {
-  it('flags it only when the launch says so', () => {
+describe('reportCacheRescued', () => {
+  it('reports which install the cache retry saved', () => {
     const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
     try {
-      const applied = { decision: 'applied', pins: pins({ 'comfy-agent': '0.2.3' }) } as const
-      reportOverrideDecision('i', applied, 'pypi', true)
-      reportOverrideDecision('i', applied, 'pypi')
+      reportCacheRescued('i', 'core', 'cn_mirror')
 
-      expect(
-        emit.mock.calls.map(([, props]) => (props as Record<string, unknown>).cache_retry_rescued)
-      ).toEqual([true, false])
+      expect(emit.mock.calls).toEqual([
+        [
+          'comfy.desktop.agent_requirements_cache_rescued',
+          { installation_id: 'i', step: 'core', index: 'cn_mirror' }
+        ]
+      ])
     } finally {
       emit.mockRestore()
     }

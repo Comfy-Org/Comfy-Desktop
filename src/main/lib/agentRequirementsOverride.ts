@@ -419,8 +419,7 @@ export function indexKind(mirrors: {
 export function reportOverrideDecision(
   installationId: string,
   d: OverrideDecision,
-  index: IndexKind | null = null,
-  cacheRetryRescued = false
+  index: IndexKind | null = null
 ): void {
   try {
     const pins = d.pins ? overrideSignature(d.pins) : null
@@ -440,8 +439,7 @@ export function reportOverrideDecision(
       budget_ms: install?.budgetMs ?? null,
       error_tail: install?.errorTail ?? null,
       kept_agent: kept,
-      index,
-      cache_retry_rescued: cacheRetryRescued
+      index
     })
   } catch {}
 }
@@ -459,6 +457,20 @@ export function reportAgentCoreFailure(
       elapsed_ms: r.elapsedMs,
       budget_ms: r.budgetMs,
       error_tail: r.errorTail,
+      index
+    })
+  } catch {}
+}
+
+export function reportCacheRescued(
+  installationId: string,
+  step: 'core' | 'override',
+  index: IndexKind
+): void {
+  try {
+    telemetry.emit('comfy.desktop.agent_requirements_cache_rescued', {
+      installation_id: installationId,
+      step,
       index
     })
   } catch {}

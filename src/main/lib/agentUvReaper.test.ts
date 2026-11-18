@@ -130,15 +130,16 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
   it('kills the process group of a uv a killed Desktop left running, and removes its record', async () => {
     const { pid, startedAt } = await start(fakeUv, ['60'], 'uv')
     const file = record(pid, startedAt)
+    record(2 ** 22 + 1, Date.now() - 2 * 60 * 60_000)
 
     await reapOrphanedAgentUv(dir)
 
     expect(alive(pid), 'the orphan no longer holds the environment').toBe(false)
     expect(fs.existsSync(file)).toBe(false)
-    expect(reapedEvents()).toEqual([{ killed: 1, survived: 0 }])
+    expect(reapedEvents(), 'the stale record next to it killed nothing').toEqual([{ killed: 1 }])
   })
 
-  it('reports a uv that outlived the kill as survived, and keeps its record', async () => {
+  it('counts a uv it signalled even when it outlived the kill, and keeps its record', async () => {
     const { pid, startedAt } = await start(fakeUv, ['60'], 'uv')
     const file = record(pid, startedAt)
     const realKill = process.kill.bind(process)
@@ -153,7 +154,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
 
     expect(alive(pid)).toBe(true)
     expect(fs.existsSync(file)).toBe(true)
-    expect(reapedEvents()).toEqual([{ killed: 1, survived: 1 }])
+    expect(reapedEvents()).toEqual([{ killed: 1 }])
   })
 
   it.each([
@@ -188,6 +189,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
         'pid 0 or -1 signals a whole process group, and 1 is init'
       ).toEqual([])
       expect(files.filter((file) => fs.existsSync(file))).toEqual([])
+      expect(reapedEvents()).toEqual([])
     } finally {
       kill.mockRestore()
       fakePs.answer = null
@@ -201,6 +203,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
 
     expect(fakePs.calls, 'the real ps was asked').toBe(1)
     expect(fs.existsSync(file)).toBe(false)
+    expect(reapedEvents()).toEqual([])
   })
 
   it.each([
@@ -218,6 +221,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
 
         expect(fs.existsSync(file), 'an uncertain check proves nothing').toBe(true)
         expect(kill).not.toHaveBeenCalled()
+        expect(reapedEvents()).toEqual([])
       } finally {
         kill.mockRestore()
       }
@@ -231,6 +235,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
 
     expect(fakePs.calls, 'no agent uv runs that long').toBe(0)
     expect(fs.existsSync(file)).toBe(false)
+    expect(reapedEvents()).toEqual([])
   })
 
   it('checks every record at once, so a hold waits on one ps bound however many are stuck', async () => {

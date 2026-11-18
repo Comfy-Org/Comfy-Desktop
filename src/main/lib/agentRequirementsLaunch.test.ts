@@ -2348,7 +2348,67 @@ describe('installAgentRequirements with a version override', () => {
         decision,
         'a 60 s install from the cache is never cut short at the 30 s a check gets'
       ).toMatchObject({ decision: 'applied' })
-      expect(onCacheRescued, 'the cache retry saved this launch').toHaveBeenCalledTimes(1)
+      expect(onCacheRescued, 'the cache retry saved this launch').toHaveBeenCalledExactlyOnceWith(
+        'override'
+      )
+    })
+
+    it('reports a rescue of the core install on a launch with no override', async () => {
+      let stopped = false
+      mockInstall.mockImplementation(async (_file, ...rest) => {
+        const signal = rest[5] as AbortSignal
+        const extraArgs = rest[7] as string[]
+        if (extraArgs.includes('--offline')) return { code: stopped ? 0 : 1, output: '' }
+        if (!extraArgs.includes('--target')) return { code: 0, output: ' + comfy-agent==0.2.3\n' }
+        waiting++
+        return new Promise((resolve) =>
+          signal.addEventListener('abort', () => {
+            waiting--
+            stopped = true
+            resolve({ code: 1, output: '' })
+          })
+        )
+      })
+      const onCacheRescued = vi.fn()
+
+      await settle(
+        installAgentRequirements(
+          plan,
+          vi.fn(),
+          undefined,
+          undefined,
+          null,
+          undefined,
+          undefined,
+          onCacheRescued
+        )
+      )
+
+      expect(onCacheRescued).toHaveBeenCalledExactlyOnceWith('core')
+    })
+
+    it('reports no rescue when the install from the cache fails after the check passed', async () => {
+      downloadRunsOut((extraArgs) =>
+        extraArgs.includes('--dry-run')
+          ? { code: 0, output: '' }
+          : { code: 1, output: 'error: Failed to install\n' }
+      )
+      const onCacheRescued = vi.fn()
+
+      await settle(
+        installAgentRequirements(
+          plan,
+          vi.fn(),
+          undefined,
+          OVERRIDE,
+          null,
+          undefined,
+          undefined,
+          onCacheRescued
+        )
+      )
+
+      expect(onCacheRescued).not.toHaveBeenCalled()
     })
 
     it("stops a cache check held up behind another install's download at 30 s, and installs nothing", async () => {
@@ -3035,7 +3095,7 @@ describe('prefetchAgentRequirements', () => {
     fetchAnswer = {
       code: 0,
       output: [
-        '\u001b[1mDownloading\u001b[0m comfy-agent (1.5GiB)',
+        'Downloading comfy-agent (1.5GiB)',
         'Downloading comfy-agent-go (49.3MiB)',
         'Downloading tiny (512.0KiB)',
         'Downloading odd (12B)',
@@ -3053,7 +3113,7 @@ describe('prefetchAgentRequirements', () => {
     )
   })
 
-  it('times only the downloads, not the resolve before them, so bytes over time is the link speed', async () => {
+  it('times the download runs, not the resolve before them', async () => {
     const respond = mockInstall.getMockImplementation()!
     mockInstall.mockImplementation(async (...args) => {
       const extraArgs = args[8] as string[]
