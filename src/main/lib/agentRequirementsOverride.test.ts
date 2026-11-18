@@ -585,6 +585,7 @@ describe('coreLeavesAgentUnpinned', () => {
     ['comfy-agent==0.0.0.dev0\n', false],
     ['comfy-agent>=0.1.0rc5\n', false],
     ['comfy-agent; python_version >= "3.10"\n', false],
+    ['comfy-agent\ncomfy_agent==0.0.0.dev0\n', false],
     ['comfy-cli\n', false]
   ])('%j → %s', (coreText, expected) => {
     expect(coreLeavesAgentUnpinned(coreText)).toBe(expected)
@@ -596,13 +597,31 @@ describe('placeholderAgentFloor', () => {
 
   it('floors the agent above the placeholder it found installed', () => {
     expect(placeholderAgentFloor('comfy-agent\n', listed('0.0.0.dev0'))).toEqual({
+      coreText: 'comfy-agent\n',
       placeholder: 'comfy-agent==0.0.0.dev0',
       constraints: 'comfy-agent>0.0.0\n'
     })
   })
 
+  it('holds every other installed package where it is while the agent moves', () => {
+    const pipList = JSON.stringify([
+      { name: 'comfy-agent', version: '0.0.0.dev0' },
+      { name: 'torch', version: '2.9.0+cu130' },
+      { name: 'requests', version: '2.32.0' }
+    ])
+
+    expect(placeholderAgentFloor('comfy-agent\n', pipList)?.constraints).toBe(
+      'torch==2.9.0+cu130\nrequests>=2.32.0\ncomfy-agent>0.0.0\n'
+    )
+  })
+
   it.each([
     ['a released agent is installed', 'comfy-agent\n', listed('0.1.0')],
+    [
+      'a 0.0.0 post-release already above the floor is installed',
+      'comfy-agent\n',
+      listed('0.0.0.1')
+    ],
     ['no agent is installed', 'comfy-agent\n', '[]'],
     ["core's file pins the version", 'comfy-agent==0.0.0.dev0\n', listed('0.0.0.dev0')],
     ['the package list is unreadable', 'comfy-agent\n', 'not json']

@@ -443,7 +443,11 @@ export async function installAgentRequirements(
     const steps = [
       ...(coreText === null
         ? []
-        : [floor ? { text: coreText, constraints: floor.constraints } : { text: coreText }]),
+        : [
+            floor?.coreText === coreText
+              ? { text: coreText, constraints: floor.constraints }
+              : { text: coreText }
+          ]),
       ...(overrideStep ? [overrideStep] : [])
     ]
     const placeholder = corePinsPlaceholderAgent(
@@ -482,12 +486,9 @@ export async function installAgentRequirements(
     floor = await installedPlaceholderFloor(plan, signal)
     if (signal?.aborted) return decision
   }
-  if (floor)
-    sendOutput(
-      `Replacing the placeholder ${floor.placeholder} with a released agent: ComfyUI's agent requirements name the agent without a version\n`
-    )
-  const core = await runCore(plan, run, floor)
+  const { result: core, floorDeferred } = await runCore(plan, run, floor, sendOutput)
   if (signal?.aborted) return decision
+  if (core.ok && floorDeferred) await defer(true)
   if (!core.ok) {
     if (cannotDownload(core)) onCoreFailed?.(core.report)
     else await defer(true)
@@ -516,23 +517,32 @@ async function installedPlaceholderFloor(
 async function runCore(
   plan: AgentRequirementsInstall,
   run: CachedRun,
-  floor: PlaceholderFloor | null
-): Promise<CachedResult> {
+  floor: PlaceholderFloor | null,
+  sendOutput: (text: string) => void
+): Promise<{ result: CachedResult; floorDeferred: boolean }> {
   const tag = attemptTag()
   const tempName = `.launch-agent-reqs-${tag}.txt`
-  if (!floor) return run(plan.reqPath, tempName)
+  const asListed = async (): Promise<CachedResult> => run(plan.reqPath, tempName)
+  if (!floor) return { result: await asListed(), floorDeferred: false }
   const name = `.launch-agent-reqs-floor-${tag}-constraints.txt`
   const at = path.join(plan.installPath, name)
+  let floored: CachedResult
   try {
-    await fs.promises.writeFile(at, floor.constraints, 'utf-8')
+    await fs.promises.writeFile(at, floor.constraints, { encoding: 'utf-8', flag: 'wx' })
+    sendOutput(
+      `Replacing the placeholder ${floor.placeholder} with a released agent: ComfyUI's agent requirements name the agent without a version\n`
+    )
+    floored = await run(plan.reqPath, tempName, { name, text: floor.constraints })
   } catch {
-    return run(plan.reqPath, tempName)
-  }
-  try {
-    return await run(plan.reqPath, tempName, { name, text: floor.constraints })
+    return { result: await asListed(), floorDeferred: false }
   } finally {
     void fs.promises.unlink(at).catch(() => {})
   }
+  if (floored.ok) return { result: floored, floorDeferred: false }
+  sendOutput(
+    `Couldn't install a released agent over ${floor.placeholder}; installing ComfyUI's agent requirements as listed\n`
+  )
+  return { result: await asListed(), floorDeferred: !cannotDownload(floored) }
 }
 
 export async function installedWorkingAgent(

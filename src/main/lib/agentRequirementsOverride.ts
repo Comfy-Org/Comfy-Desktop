@@ -345,17 +345,21 @@ export function corePinsPlaceholderAgent(coreText: string): boolean {
   })
 }
 
-const UNPINNED_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(?:#.*)?$/
+const UNPINNED_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*(?:#.*)?$/
+const BELOW_FLOOR = /^0\.0\.0(?:(?:a|b|rc)\d+)?(?:\.dev\d+)?$/
 
 export function coreLeavesAgentUnpinned(coreText: string): boolean {
   const name = agentPackage(coreText)
-  return coreText.split(/\r?\n/).some((line) => {
-    const match = line.match(UNPINNED_LINE)
-    return !!match && normalizePackageName(match[1]!) === name
+  if (name === undefined) return false
+  const agentLines = coreText.split(/\r?\n/).filter((line) => {
+    const leading = line.match(LEADING_NAME)?.[1]
+    return leading !== undefined && normalizePackageName(leading) === name
   })
+  return agentLines.length > 0 && agentLines.every((line) => UNPINNED_LINE.test(line))
 }
 
 export interface PlaceholderFloor {
+  coreText: string
   placeholder: string
   constraints: string
 }
@@ -369,8 +373,13 @@ export function placeholderAgentFloor(
   const version = parseInstalled(pipListOutput)?.find(
     (p) => normalizePackageName(p.name) === name
   )?.version
-  if (version === undefined || !PLACEHOLDER_VERSION.test(version)) return null
-  return { placeholder: `${name}==${version}`, constraints: `${name}>0.0.0\n` }
+  if (version === undefined || !BELOW_FLOOR.test(version)) return null
+  const held = installedConstraints(pipListOutput, new Map(), coreText) ?? ''
+  return {
+    coreText,
+    placeholder: `${name}==${version}`,
+    constraints: `${held.trim() ? held : ''}${name}>0.0.0\n`
+  }
 }
 
 export function keepableAgent(

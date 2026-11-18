@@ -2617,7 +2617,7 @@ describe('installAgentRequirements with a version override', () => {
 
       await installAgentRequirements(plan, vi.fn(), undefined, undefined)
 
-      expect(calls.every((call) => call.constraints === null)).toBe(true)
+      expect(calls).toEqual([{ content: UNPINNED_FILE, constraints: null }])
     })
 
     it("leaves core's own placeholder pin to the existing keep step", async () => {
@@ -2625,7 +2625,7 @@ describe('installAgentRequirements with a version override', () => {
 
       await installAgentRequirements(plan, vi.fn(), undefined, undefined)
 
-      expect(calls.every((call) => call.constraints === null)).toBe(true)
+      expect(calls).toEqual([{ content: 'comfy-agent==0.0.0.dev0\n', constraints: null }])
     })
 
     it('leaves a campaign decision to the campaign', async () => {
@@ -2634,7 +2634,48 @@ describe('installAgentRequirements with a version override', () => {
       })
 
       expect(decision).toEqual({ decision: 'refused', reason: 'bad_version' })
-      expect(calls.every((call) => call.constraints === null)).toBe(true)
+      expect(calls).toEqual([{ content: UNPINNED_FILE, constraints: null }])
+    })
+
+    it("installs core's file as listed when no released agent can be resolved", async () => {
+      cached = true
+      respond = ({ constraints }) =>
+        constraints === FLOOR
+          ? { code: 1, output: 'error: No solution found when resolving dependencies\n' }
+          : { code: 0, output: '' }
+      const onCoreFailed = vi.fn()
+      const onDeferred = vi.fn()
+      const sendOutput = vi.fn()
+
+      await installAgentRequirements(
+        plan,
+        sendOutput,
+        undefined,
+        undefined,
+        null,
+        onDeferred,
+        onCoreFailed
+      )
+
+      expect(offlineTries, "core's file went in from the cache without the floor").toBe(1)
+      expect(onCoreFailed).not.toHaveBeenCalled()
+      expect(onDeferred, 'nothing to download when no release resolves').not.toHaveBeenCalled()
+      expect(sendOutput.mock.calls.join('')).toContain("Couldn't install a released agent")
+    })
+
+    it('installs core as listed now and downloads the released agent for the next launch when the network fails', async () => {
+      cached = true
+      respond = ({ constraints }) =>
+        constraints === FLOOR ? { code: 2, output: '' } : { code: 0, output: '' }
+      const onDeferred = vi.fn()
+
+      await installAgentRequirements(plan, vi.fn(), undefined, undefined, null, onDeferred)
+
+      expect(offlineTries).toBe(1)
+      expect(onDeferred).toHaveBeenCalledWith(
+        { plan, steps: [{ text: UNPINNED_FILE, constraints: FLOOR }], signature: 'core' },
+        'agent'
+      )
     })
 
     it('hands the floor to the background download when the released agent is not cached', async () => {
