@@ -1047,7 +1047,6 @@ function posterAnswer(): TemplateSearchResponse {
           score: 0.9,
           calibrated: null,
           belowThreshold: false,
-          missing: [],
           downloadBytes: null
         }
       ],
@@ -1100,7 +1099,7 @@ describe('Home template search', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="home-template-search-results"]').exists()).toBe(true)
     expect(apps().style.display).toBe('none')
-    expect(wrapper.find('[data-testid="home-builds"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="home-builds"]').isVisible()).toBe(true)
 
     await input.setValue('')
     await flushPromises()

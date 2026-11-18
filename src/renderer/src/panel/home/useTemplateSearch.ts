@@ -71,10 +71,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     if (request !== latestRequest) return
     if (response?.kind === 'result') {
       state.value = { kind: 'result', query: trimmed, result: response.result }
-      activeIndex.value = Math.max(
-        0,
-        rows.value.findIndex((row) => row.best)
-      )
+      activeIndex.value = 0
     } else if (response?.kind === 'unavailable') {
       state.value = { kind: 'unavailable', availability: response.availability }
     } else {
