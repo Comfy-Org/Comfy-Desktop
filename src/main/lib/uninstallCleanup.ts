@@ -73,6 +73,20 @@ const TEMP_ENTRY_PATTERNS = [
   /^cnr-.+-\d{13}(\.zip)?$/
 ]
 
+const APP_LOG_FILE_PATTERNS = [
+  /^app\.log$/,
+  /^app\.log_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.log$/
+]
+
+const UPDATER_PENDING_DIR = 'pending'
+const UPDATER_FILE_PATTERNS = [
+  /^(installer\.exe|package\.7z|current\.blockmap|update\.zip)$/,
+  /^pending[\\/](update-info\.json|temp-[^\\/]+|[^\\/]+\.(exe|7z|zip|dmg|AppImage|blockmap))$/
+]
+
+const TRANSIENT_DELETE_ERRORS = new Set(['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY'])
+const DELETE_RETRY_DELAYS_MS = [50, 100, 200]
+
 export type CleanupBucket = 'A' | 'B' | 'C'
 
 export interface CleanupOptions {
@@ -120,6 +134,7 @@ export type PathRole = 'models' | 'input' | 'output' | 'cache' | 'other'
 export interface NamedPath {
   path: string
   role: PathRole
+  source?: string
 }
 
 export interface InstallationOnDisk {
@@ -135,8 +150,8 @@ export interface CleanupInputs {
   platform: NodeJS.Platform
   options: CleanupOptions
   folders: CleanupFolders
-  appDirEntries: Record<string, string[]>
-  appDirLinks: string[]
+  logFiles: string[]
+  updaterFiles: string[]
   tempEntries: string[]
   modelsDirs: string[]
   outputDir: string | null
@@ -153,7 +168,7 @@ export interface CleanupEntry {
   bucket: CleanupBucket
   reason: string
   onlyIfEmpty?: true
-  onlyLink?: true
+  onlyFile?: true
   installId?: string
 }
 
@@ -161,15 +176,18 @@ export interface DeletionGuard {
   protectedPaths: string[]
   keptPaths: string[]
   allowedRoots: string[]
-  linkedFolders: string[]
+  linksAllowedAtOrAbove: string[]
 }
 
 export interface CleanupPlan {
   entries: CleanupEntry[]
   guard: DeletionGuard
+  namedKeptPaths: string[]
 }
 
-export type CleanupOutcome = 'removed' | 'absent' | 'not-empty' | 'refused' | 'failed'
+export type CleanupOutcome = 'removed' | 'emptied' | 'absent' | 'not-empty' | 'refused' | 'failed'
+
+export type DeletionScope = 'whole' | 'around-kept' | 'if-empty'
 
 export interface CleanupResult {
   entry: CleanupEntry
@@ -290,18 +308,30 @@ function withRoles(paths: [PathRole, string | null][]): NamedPath[] {
   return paths.flatMap(([role, p]) => (p ? [{ path: p, role }] : []))
 }
 
-function cleanupRoots(platform: NodeJS.Platform, folders: CleanupFolders): string[] {
-  return presentPaths([
+function tempEntriesToRemove(temp: string, names: string[]): string[] {
+  return names
+    .filter((name) => TEMP_ENTRY_PATTERNS.some((pattern) => pattern.test(name)))
+    .map((name) => path.join(temp, name))
+}
+
+type WalkedRootSources = Pick<
+  CleanupInputs,
+  'platform' | 'folders' | 'modelsDirs' | 'outputDir' | 'configuredCacheEntries' | 'tempEntries'
+>
+
+function walkedRoots(inputs: WalkedRootSources, installPaths: string[]): string[] {
+  const { folders } = inputs
+  return [
     ...appOwnedDirs(folders),
-    ...windowsAppDataDirs(platform, folders),
-    windowsLocalDataRoot({ platform, folders }),
-    dataRootFolder(folders),
-    folders.installDir,
-    path.dirname(folders.models),
-    path.dirname(folders.benchmarks),
-    cacheParentDir(folders),
-    folders.downloadCache
-  ])
+    ...windowsAppDataDirs(inputs.platform, folders),
+    folders.downloadCache,
+    folders.benchmarks,
+    folders.models,
+    ...partialDownloadDirs(inputs),
+    ...inputs.configuredCacheEntries,
+    ...tempEntriesToRemove(folders.temp, inputs.tempEntries),
+    ...installPaths
+  ]
 }
 
 function adoptionMarkerToRetire(inst: InstallationOnDisk): string | null {
@@ -337,12 +367,24 @@ function keptCandidates(sources: KeptSources): KeptCandidate[] {
   ]
 }
 
+function sourceFiles(source: string): string[] {
+  const dir = path.dirname(source)
+  return INSTALL_LIST_FILES.includes(path.basename(source))
+    ? INSTALL_LIST_FILES.map((name) => path.join(dir, name))
+    : [source]
+}
+
+interface KeptPaths {
+  paths: string[]
+  named: string[]
+}
+
 function keptPaths(
   inputs: CleanupInputs,
   installs: InstallationOnDisk[],
   removedOnPurpose: NamedPath[],
   pointerNames: string[]
-): string[] {
+): KeptPaths {
   const releasedByRemoval = (candidate: KeptCandidate): boolean =>
     installs.some(
       (inst) => inst.id === candidate.installId && isSameOrInside(candidate.path, inst.installPath)
@@ -354,12 +396,15 @@ function keptPaths(
   const kept = keptCandidates(inputs).filter(
     (candidate) => !releasedByRemoval(candidate) && !releasedOnPurpose(candidate)
   )
-  return [...keptPointerPaths(inputs.folders, pointerNames), ...kept.map((c) => c.path)]
-}
-
-function listingOf(listings: Record<string, string[]>, dir: string): string[] {
-  const key = Object.keys(listings).find((listed) => samePath(listed, dir))
-  return key ? (listings[key] ?? []) : []
+  const named = kept.flatMap((c) => (c.source ? [{ path: c.path, source: c.source }] : []))
+  return {
+    paths: [
+      ...keptPointerPaths(inputs.folders, pointerNames),
+      ...named.flatMap((c) => sourceFiles(c.source)),
+      ...kept.map((c) => c.path)
+    ],
+    named: named.map((c) => c.path)
+  }
 }
 
 function buildGuard(
@@ -401,7 +446,8 @@ function buildGuard(
     ...installs.map(adoptionMarkerToRetire)
   ])
 
-  return { protectedPaths, keptPaths: kept, allowedRoots, linkedFolders: inputs.appDirLinks }
+  const linksAllowedAtOrAbove = presentPaths([folders.home, folders.temp])
+  return { protectedPaths, keptPaths: kept, allowedRoots, linksAllowedAtOrAbove }
 }
 
 export function planUninstallCleanup(
@@ -412,16 +458,14 @@ export function planUninstallCleanup(
   const { folders, options } = inputs
   const ownershipKnown = inputs.unreadableFiles.length === 0
   const entries: CleanupEntry[] = []
-  const isLink = (p: string): boolean => inputs.appDirLinks.some((link) => samePath(link, p))
   const add = (
     p: string,
     bucket: CleanupBucket,
     reason: string,
-    extra: { onlyIfEmpty?: true; installId?: string } = {}
+    extra: { onlyIfEmpty?: true; onlyFile?: true; installId?: string } = {}
   ): void => {
     if (entries.some((e) => samePath(e.path, p))) return
-    const entry: CleanupEntry = { path: p, bucket, reason, ...extra }
-    entries.push(isLink(p) && !extra.onlyIfEmpty ? { ...entry, onlyLink: true } : entry)
+    entries.push({ path: p, bucket, reason, ...extra })
   }
 
   const deletingInstances = options.deleteInstances && ownershipKnown
@@ -429,8 +473,7 @@ export function planUninstallCleanup(
   const deletingSharedInputOutput = deletingInstances && policy.deleteSharedInputOutput
   const installs = deletingInstances
     ? inputs.installations.filter(
-        (inst) =>
-          hasExactInstallMarker(inst) && !keptIds.includes(inst.id) && !isLink(inst.installPath)
+        (inst) => hasExactInstallMarker(inst) && !keptIds.includes(inst.id)
       )
     : []
   const recordsSurvive =
@@ -448,7 +491,7 @@ export function planUninstallCleanup(
     ['output', deletingSharedInputOutput ? folders.output : null]
   ])
   const kept = keptPaths(inputs, installs, removedOnPurpose, keptPointerNames)
-  const guard = buildGuard(inputs, kept, installs)
+  const guard = buildGuard(inputs, kept.paths, installs)
 
   for (const inst of installs) {
     add(inst.installPath, 'B', `ComfyUI install ${inst.id}`, { installId: inst.id })
@@ -463,39 +506,34 @@ export function planUninstallCleanup(
     add(folders.output, 'B', 'shared output folder')
   }
 
-  const held = [...guard.protectedPaths, ...guard.keptPaths]
-  const holdsAny = (dir: string): boolean => held.some((p) => isSameOrInside(p, dir))
-  const addAround = (dir: string, reason: string): void => {
-    const inner = held.filter((p) => isSameOrInside(p, dir))
-    if (inner.length === 0) {
-      add(dir, 'A', reason)
-    } else if (!isLink(dir) && !inner.some((p) => samePath(p, dir))) {
-      for (const name of listingOf(inputs.appDirEntries, dir)) {
-        addAround(path.join(dir, name), reason)
-      }
+  const addFiles = (dir: string, names: string[], patterns: RegExp[], reason: string): void => {
+    for (const name of names.filter((n) => patterns.some((pattern) => pattern.test(n)))) {
+      add(path.join(dir, name), 'A', reason, { onlyFile: true })
     }
   }
   const addWhenEmpty = (dir: string, bucket: CleanupBucket, name: string): void => {
-    if (!isLink(dir)) add(dir, bucket, `${name} when empty`, { onlyIfEmpty: true })
-    else if (!holdsAny(dir)) add(dir, 'A', `link in place of the ${name}`)
+    add(dir, bucket, `${name} when empty`, { onlyIfEmpty: true })
   }
   if (ownershipKnown) {
-    for (const dir of appOwnedDirs(folders)) addAround(dir, 'app settings, logs and caches')
+    for (const dir of appOwnedDirs(folders)) add(dir, 'A', 'app settings, logs and caches')
     for (const dir of windowsAppDataDirs(inputs.platform, folders)) {
-      addAround(dir, 'app data under a current or earlier app name')
+      add(dir, 'A', 'app data under a current or earlier app name')
     }
     add(folders.downloadCache, 'A', 'download cache')
     for (const entry of inputs.configuredCacheEntries) add(entry, 'A', 'download cache entry')
     add(folders.benchmarks, 'A', 'GPU benchmark results')
     for (const dir of partialDownloadDirs(inputs)) add(dir, 'A', 'unfinished downloads')
   } else {
-    addAround(folders.logs, 'app logs')
-    addAround(folders.updaterCache, 'downloaded app updates')
+    addFiles(folders.logs, inputs.logFiles, APP_LOG_FILE_PATTERNS, 'app log file')
+    addFiles(
+      folders.updaterCache,
+      inputs.updaterFiles,
+      UPDATER_FILE_PATTERNS,
+      'downloaded app update file'
+    )
   }
-  for (const name of inputs.tempEntries) {
-    if (TEMP_ENTRY_PATTERNS.some((pattern) => pattern.test(name))) {
-      add(path.join(folders.temp, name), 'A', 'temporary files')
-    }
+  for (const entry of tempEntriesToRemove(folders.temp, inputs.tempEntries)) {
+    add(entry, 'A', 'temporary files')
   }
 
   if (deletingInstances) addWhenEmpty(folders.installDir, 'B', 'installs folder')
@@ -510,24 +548,25 @@ export function planUninstallCleanup(
     if (localDataRoot) addWhenEmpty(localDataRoot, 'A', 'data folder')
   }
 
-  return { entries, guard }
+  return { entries, guard, namedKeptPaths: kept.named }
+}
+
+function removesKept(kept: string, target: string, scope: DeletionScope): boolean {
+  if (scope === 'whole') return isSameOrInside(kept, target)
+  return scope === 'around-kept' && samePath(kept, target)
 }
 
 export function deletionRefusal(
   target: string,
   guard: DeletionGuard,
-  onlyIfEmpty = false
+  scope: DeletionScope = 'whole'
 ): string | null {
   if (!path.isAbsolute(target)) return 'not an absolute path'
   const resolved = path.resolve(target)
   if (resolved === path.parse(resolved).root) return 'drive root'
-  const throughLink = guard.linkedFolders.find(
-    (link) => !samePath(link, resolved) && isSameOrInside(resolved, link)
-  )
-  if (throughLink) return `inside a linked folder: ${throughLink}`
   const shielded = guard.protectedPaths.find((p) => isSameOrInside(p, resolved))
   if (shielded) return `would remove a protected folder: ${shielded}`
-  const kept = onlyIfEmpty ? undefined : guard.keptPaths.find((p) => isSameOrInside(p, resolved))
+  const kept = guard.keptPaths.find((p) => removesKept(p, resolved, scope))
   if (kept) return `would remove kept data: ${kept}`
   if (!guard.allowedRoots.some((root) => isSameOrInside(resolved, root))) {
     return 'outside the folders Comfy Desktop writes'
@@ -535,35 +574,69 @@ export function deletionRefusal(
   return null
 }
 
-export type EntryKind = 'absent' | 'link' | 'other'
+function scopeOf(entry: CleanupEntry): DeletionScope {
+  if (entry.onlyIfEmpty) return 'if-empty'
+  return entry.installId ? 'whole' : 'around-kept'
+}
+
+export type EntryKind = 'absent' | 'link' | 'dir' | 'file'
+
+export interface EntryInfo {
+  kind: EntryKind
+  device: number
+}
 
 export interface CleanupFs {
-  entryKind(p: string): EntryKind
+  entryInfo(p: string): EntryInfo
   realPath(p: string): string
-  remove(p: string): void
+  list(dir: string): string[]
+  removeFile(p: string): void
   removeLink(p: string): void
-  isEmptyDir(p: string): boolean
   removeEmptyDir(p: string): void
   writeFile(p: string, content: string): void
 }
 
-export const nodeCleanupFs: CleanupFs = {
-  entryKind: (p) => {
-    const stat = fs.lstatSync(p, { throwIfNoEntry: false })
-    if (!stat) return 'absent'
-    return stat.isSymbolicLink() ? 'link' : 'other'
-  },
-  realPath: (p) => {
+function entryKind(stat: fs.Stats): EntryKind {
+  if (stat.isSymbolicLink()) return 'link'
+  return stat.isDirectory() ? 'dir' : 'file'
+}
+
+function realPathOf(p: string): string {
+  const resolved = path.resolve(p)
+  try {
+    return fs.realpathSync(resolved)
+  } catch {
+    const parent = path.dirname(resolved)
+    return parent === resolved ? resolved : path.join(realPathOf(parent), path.basename(resolved))
+  }
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+function withRetries(op: () => void): void {
+  for (const delay of [...DELETE_RETRY_DELAYS_MS, null]) {
     try {
-      return fs.realpathSync(p)
-    } catch {
-      return path.resolve(p)
+      op()
+      return
+    } catch (err) {
+      if (delay === null || !TRANSIENT_DELETE_ERRORS.has(errorCode(err))) throw err
+      sleepSync(delay)
     }
+  }
+}
+
+export const nodeCleanupFs: CleanupFs = {
+  entryInfo: (p) => {
+    const stat = fs.lstatSync(p, { throwIfNoEntry: false })
+    return stat ? { kind: entryKind(stat), device: stat.dev } : { kind: 'absent', device: 0 }
   },
-  remove: (p) => fs.rmSync(p, { recursive: true, force: true, maxRetries: 3 }),
-  removeLink: (p) => fs.unlinkSync(p),
-  isEmptyDir: (p) => fs.readdirSync(p).length === 0,
-  removeEmptyDir: (p) => fs.rmdirSync(p),
+  realPath: realPathOf,
+  list: (dir) => fs.readdirSync(dir),
+  removeFile: (p) => withRetries(() => fs.unlinkSync(p)),
+  removeLink: (p) => withRetries(() => fs.unlinkSync(p)),
+  removeEmptyDir: (p) => withRetries(() => fs.rmdirSync(p)),
   writeFile: (p, content) => {
     fs.mkdirSync(path.dirname(p), { recursive: true })
     fs.writeFileSync(p, content, 'utf-8')
@@ -575,49 +648,112 @@ function errorCode(err: unknown): string {
   return typeof code === 'string' ? code : 'error'
 }
 
-function wrongKindRefusal(entry: CleanupEntry, kind: EntryKind): string | null {
-  if (entry.onlyLink) return kind === 'link' ? null : 'no longer a link'
-  return kind === 'link' ? 'a link, not followed' : null
+function ancestorsOf(p: string): string[] {
+  const parent = path.dirname(p)
+  return parent === p ? [] : [parent, ...ancestorsOf(parent)]
 }
 
-function heldBehindLinks(target: string, guard: DeletionGuard, ops: CleanupFs): string | undefined {
-  const realTarget = ops.realPath(target)
-  return [...guard.protectedPaths, ...guard.keptPaths].find((p) =>
-    isSameOrInside(ops.realPath(p), realTarget)
+function linkedAncestor(target: string, guard: DeletionGuard, ops: CleanupFs): string | undefined {
+  const systemLink = (dir: string): boolean =>
+    guard.linksAllowedAtOrAbove.some((base) => isSameOrInside(base, dir))
+  return ancestorsOf(path.resolve(target)).find(
+    (dir) => !systemLink(dir) && ops.entryInfo(dir).kind === 'link'
   )
 }
 
-function removeEntry(entry: CleanupEntry, guard: DeletionGuard, ops: CleanupFs): CleanupResult {
-  const kind = ops.entryKind(entry.path)
-  if (kind === 'absent') return { entry, outcome: 'absent' }
-  const wrongKind = wrongKindRefusal(entry, kind)
-  if (wrongKind) return { entry, outcome: 'refused', detail: wrongKind }
-  if (entry.onlyLink) {
-    ops.removeLink(entry.path)
-  } else if (entry.onlyIfEmpty) {
-    if (!ops.isEmptyDir(entry.path)) return { entry, outcome: 'not-empty' }
-    ops.removeEmptyDir(entry.path)
-  } else {
-    const held = heldBehindLinks(entry.path, guard, ops)
-    if (held) return { entry, outcome: 'refused', detail: `would remove kept data: ${held}` }
-    ops.remove(entry.path)
+function heldInside(target: string, guard: DeletionGuard, ops: CleanupFs): string[] {
+  const realTarget = ops.realPath(target)
+  const inTarget = (real: string): string[] =>
+    isSameOrInside(real, realTarget) ? [path.join(target, path.relative(realTarget, real))] : []
+  const held = [...guard.protectedPaths, ...guard.keptPaths].flatMap((p) => [
+    ...(isSameOrInside(p, target) ? [p] : []),
+    ...inTarget(ops.realPath(p))
+  ])
+  return distinct(held)
+}
+
+interface Walk {
+  held: string[]
+  ops: CleanupFs
+  problems: string[]
+}
+
+function removeWalking(p: string, parentDevice: number | null, walk: Walk): boolean {
+  const { held, ops } = walk
+  if (held.some((h) => samePath(h, p))) return false
+  try {
+    const info = ops.entryInfo(p)
+    if (info.kind === 'absent') return true
+    if (parentDevice !== null && info.device !== parentDevice) {
+      walk.problems.push(`another drive is mounted at ${p}`)
+      return false
+    }
+    if (info.kind === 'link') {
+      if (held.some((h) => isSameOrInside(h, p))) return false
+      ops.removeLink(p)
+    } else if (info.kind === 'file') {
+      ops.removeFile(p)
+    } else {
+      const child = (name: string): boolean => removeWalking(path.join(p, name), info.device, walk)
+      if (ops.list(p).map(child).includes(false)) return false
+      ops.removeEmptyDir(p)
+    }
+    return true
+  } catch (err) {
+    walk.problems.push(errorCode(err))
+    return false
   }
-  return { entry, outcome: 'removed' }
+}
+
+function removeEntry(entry: CleanupEntry, guard: DeletionGuard, ops: CleanupFs): CleanupResult {
+  const refused = (detail: string): CleanupResult => ({ entry, outcome: 'refused', detail })
+  const info = ops.entryInfo(entry.path)
+  if (info.kind === 'absent') return { entry, outcome: 'absent' }
+  const linked = linkedAncestor(entry.path, guard, ops)
+  if (linked) return refused(`inside a linked folder: ${linked}`)
+  if (entry.onlyFile && info.kind !== 'file') return refused('not a file')
+  const held = heldInside(entry.path, guard, ops)
+  if (info.kind === 'link') {
+    if (entry.installId) return refused('a link, not followed')
+    if (held.length > 0) return refused(`a link to kept data: ${held.join(', ')}`)
+    ops.removeLink(entry.path)
+    return { entry, outcome: 'removed' }
+  }
+  if (entry.onlyIfEmpty) {
+    if (info.kind !== 'dir') return refused('not a folder')
+    if (ops.list(entry.path).length > 0) return { entry, outcome: 'not-empty' }
+    ops.removeEmptyDir(entry.path)
+    return { entry, outcome: 'removed' }
+  }
+  const whole = held.find((p) => entry.installId !== undefined || samePath(p, entry.path))
+  if (whole) return refused(`would remove kept data: ${whole}`)
+  const walk: Walk = { held, ops, problems: [] }
+  if (removeWalking(entry.path, null, walk)) return { entry, outcome: 'removed' }
+  const [problem] = walk.problems
+  if (problem) return { entry, outcome: 'failed', detail: problem }
+  return { entry, outcome: 'emptied', detail: `kept ${held.join(', ')}` }
+}
+
+function removeOrFail(entry: CleanupEntry, guard: DeletionGuard, ops: CleanupFs): CleanupResult {
+  try {
+    return removeEntry(entry, guard, ops)
+  } catch (err) {
+    return { entry, outcome: 'failed', detail: errorCode(err) }
+  }
 }
 
 export function executeUninstallCleanup(
-  plan: CleanupPlan,
+  plan: Pick<CleanupPlan, 'entries' | 'guard'>,
   ops: CleanupFs = nodeCleanupFs
 ): CleanupResult[] {
   return plan.entries.map((entry): CleanupResult => {
-    const refusal = deletionRefusal(entry.path, plan.guard, entry.onlyIfEmpty === true)
+    const refusal = deletionRefusal(entry.path, plan.guard, scopeOf(entry))
     if (refusal) return { entry, outcome: 'refused', detail: refusal }
-    try {
-      return removeEntry(entry, plan.guard, ops)
-    } catch (err) {
-      if (entry.installId) restoreInstallMarker(entry.path, entry.installId, ops)
-      return { entry, outcome: 'failed', detail: errorCode(err) }
+    const result = removeOrFail(entry, plan.guard, ops)
+    if (entry.installId && result.outcome === 'failed') {
+      restoreInstallMarker(entry.path, entry.installId, ops)
     }
+    return result
   })
 }
 
@@ -651,10 +787,15 @@ function removedInstalls(results: CleanupResult[]): InstallIdentity[] {
   )
 }
 
+function namesPath(value: unknown, p: string): boolean {
+  return absolutePathsIn(value).some((named) => samePath(named, p))
+}
+
 function updateInstallList(
   dataDirPath: string,
   removed: readonly InstallIdentity[],
-  failedIds: readonly string[]
+  failedIds: readonly string[],
+  namedKept: readonly string[]
 ): void {
   if (removed.length === 0 && failedIds.length === 0) return
   const file = path.join(dataDirPath, 'installations.json')
@@ -677,7 +818,12 @@ function updateInstallList(
         ? { ...record, status: PARTIAL_DELETE_STATUS }
         : value
     })
-    writeFileSafe(file, JSON.stringify(records, null, 2), { backup: true })
+    const backup = backupValue(file, Array.isArray)
+    const stillNamed = (newBackup: unknown): boolean =>
+      namedKept.every((p) => !namesPath([parsed, backup], p) || namesPath([records, newBackup], p))
+    const text = JSON.stringify(records, null, 2)
+    if (stillNamed(parsed)) writeFileSafe(file, text, { backup: true })
+    else if (stillNamed(backup)) writeFileSafe(file, text, { backup: false })
   } catch {}
 }
 
@@ -692,7 +838,8 @@ export function runCleanup(
   updateInstallList(
     inputs.folders.dataDir,
     removedInstalls(dataResults),
-    failedInstallIds(dataResults)
+    failedInstallIds(dataResults),
+    first.namedKeptPaths
   )
   const rest = planUninstallCleanup(inputs, policy, keptInstallIds(dataResults))
   const remaining = rest.entries.filter(
@@ -702,14 +849,17 @@ export function runCleanup(
   return [...dataResults, ...restResults]
 }
 
-type StoredJson = { kind: 'value'; value: unknown } | { kind: 'absent' } | { kind: 'unreadable' }
+type StoredJson =
+  | { kind: 'value'; value: unknown; file: string }
+  | { kind: 'absent' }
+  | { kind: 'unreadable' }
 
 function readStoredJsonFile(file: string, accepts: (value: unknown) => boolean): StoredJson {
   const read = readFileWithRetrySync(file)
   if (read.kind !== 'data') return read
   try {
     const value: unknown = JSON.parse(read.data)
-    return accepts(value) ? { kind: 'value', value } : { kind: 'unreadable' }
+    return accepts(value) ? { kind: 'value', value, file } : { kind: 'unreadable' }
   } catch {
     return { kind: 'unreadable' }
   }
@@ -765,47 +915,6 @@ function listDir(dir: string): string[] {
   } catch {
     return []
   }
-}
-
-function listAppDir(dir: string): { names: string[]; links: string[] } {
-  try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true })
-    const links = entries.filter((entry) => entry.isSymbolicLink())
-    return {
-      names: entries.map((entry) => entry.name),
-      links: links.map((entry) => path.join(dir, entry.name))
-    }
-  } catch {
-    return { names: [], links: [] }
-  }
-}
-
-function isSymbolicLink(p: string): boolean {
-  try {
-    return fs.lstatSync(p).isSymbolicLink()
-  } catch {
-    return false
-  }
-}
-
-function linksFromRoot(p: string, root: string): string[] {
-  const links: string[] = []
-  let current = path.resolve(p)
-  while (isSameOrInside(current, root)) {
-    if (isSymbolicLink(current)) links.push(current)
-    if (samePath(current, root)) break
-    current = path.dirname(current)
-  }
-  return links
-}
-
-function linksAlong(paths: string[], roots: string[]): string[] {
-  const outer = outermost(roots)
-  const linksFor = (p: string): string[] => {
-    const root = outer.find((r) => isSameOrInside(p, r))
-    return root ? linksFromRoot(p, root) : []
-  }
-  return distinct(paths.flatMap(linksFor))
 }
 
 function listSubdirs(dir: string): string[] {
@@ -922,25 +1031,35 @@ function earlierAppDataPaths(dirs: string[]): NamedPath[] {
       readStoredJson(path.join(dir, name), isJsonContainer)
     )
     if (files.some((file) => file.kind === 'unreadable')) return [{ path: dir, role: 'other' }]
-    return files
-      .flatMap((file) => (file.kind === 'value' ? absolutePathsIn(file.value) : []))
-      .filter((p) => dirs.some((earlierDir) => isSameOrInside(p, earlierDir)))
-      .map((p): NamedPath => ({ path: p, role: 'other' }))
+    return files.flatMap((file) =>
+      file.kind === 'value'
+        ? absolutePathsIn(file.value)
+            .filter((p) => dirs.some((earlierDir) => isSameOrInside(p, earlierDir)))
+            .map((p): NamedPath => ({ path: p, role: 'other', source: file.file }))
+        : []
+    )
   })
 }
 
-function dirsToList(appDirs: string[], keptCandidates: string[]): string[] {
-  const dirs = [...appDirs]
-  for (const target of keptCandidates) {
-    const appDir = appDirs.find((dir) => isSameOrInside(target, dir))
-    if (!appDir) continue
-    let dir = path.dirname(path.resolve(target))
-    while (isSameOrInside(dir, appDir) && !samePath(dir, appDir)) {
-      if (!dirs.some((listed) => samePath(listed, dir))) dirs.push(dir)
-      dir = path.dirname(dir)
-    }
-  }
-  return dirs
+function reachedBy(roots: string[]): (p: string) => boolean {
+  const realRoots = roots.map(realPathOf)
+  return (p) =>
+    roots.some((root) => isSameOrInside(p, root)) ||
+    realRoots.some((root) => isSameOrInside(realPathOf(p), root))
+}
+
+function namedBy(
+  source: string,
+  paths: NamedPath[],
+  inWalkedRoot: (p: string) => boolean
+): NamedPath[] {
+  return paths.map((p) => (inWalkedRoot(p.path) ? { ...p, source } : p))
+}
+
+function updaterFileNames(updaterCache: string): string[] {
+  const pending = listDir(path.join(updaterCache, UPDATER_PENDING_DIR))
+  const pendingNames = pending.map((name) => path.join(UPDATER_PENDING_DIR, name))
+  return [...listDir(updaterCache), ...pendingNames]
 }
 
 function updaterCacheRoot(
@@ -1001,7 +1120,7 @@ export function collectUninstallCleanupInputs(
   const settings = asRecord(settingsFile.kind === 'value' ? settingsFile.value : null)
   const records =
     listFile.kind === 'value' && Array.isArray(listFile.value) ? listFile.value.map(asRecord) : []
-  const installations = installationsOnDisk(records)
+  const listedInstalls = installationsOnDisk(records)
   const unidentifiedRecords = records.filter((record) => !installIdentity(record))
   const modelsDirs = stringList(settings.modelsDirs)
   const outputDir = nonEmptyString(settings.outputDir)
@@ -1030,44 +1149,40 @@ export function collectUninstallCleanupInputs(
     input: settingsDefaults.inputDir,
     output: settingsDefaults.outputDir
   }
-  const storedPaths = [
-    ...namedPathsIn(settings),
-    ...namedPathsIn(asRecord(backupValue(settingsPath, isObject))),
-    ...unidentifiedRecords.flatMap(namedPathsIn),
-    ...earlierRecordPaths(records, backupValue(listPath, Array.isArray)),
-    ...earlierAppDataPaths(windowsAppDataDirs(platform, folders))
-  ]
   const cacheEntries = configuredCacheEntries(
     nonEmptyString(settings.cacheDir),
     folders.downloadCache,
     records
   )
-  const kept = keptCandidates({ folders, storedPaths, installations, unreadableFiles })
-  const appDirs = [...appOwnedDirs(folders), ...windowsAppDataDirs(platform, folders)]
-  const keptOnDisk = presentPaths([...kept.map((c) => c.path), desktopOneBasePath])
-  const dirs = dirsToList(appDirs, keptOnDisk)
-  const roots = cleanupRoots(platform, folders)
-  const targets = [
-    ...installations.map((inst) => inst.installPath),
-    folders.models,
-    folders.input,
-    folders.output,
-    folders.benchmarks,
-    ...partialDownloadDirs({ folders, modelsDirs, outputDir }),
-    ...cacheEntries
+  const tempEntries = listDir(temp)
+  const roots = walkedRoots(
+    { platform, folders, modelsDirs, outputDir, configuredCacheEntries: cacheEntries, tempEntries },
+    listedInstalls.map((inst) => inst.installPath)
+  )
+  const inWalkedRoot = reachedBy(roots)
+  const settingsSource = settingsFile.kind === 'value' ? settingsFile.file : settingsPath
+  const listSource = listFile.kind === 'value' ? listFile.file : listPath
+  const installations = listedInstalls.map((inst) => ({
+    ...inst,
+    recordedPaths: namedBy(listSource, inst.recordedPaths, inWalkedRoot)
+  }))
+  const settingsBackup = asRecord(backupValue(settingsPath, isObject))
+  const earlierRecords = earlierRecordPaths(records, backupValue(listPath, Array.isArray))
+  const storedPaths = [
+    ...namedBy(settingsSource, namedPathsIn(settings), inWalkedRoot),
+    ...namedBy(`${settingsPath}.bak`, namedPathsIn(settingsBackup), inWalkedRoot),
+    ...namedBy(listSource, unidentifiedRecords.flatMap(namedPathsIn), inWalkedRoot),
+    ...namedBy(`${listPath}.bak`, earlierRecords, inWalkedRoot),
+    ...earlierAppDataPaths(windowsAppDataDirs(platform, folders))
   ]
-  const links = linksAlong([...roots, ...dirs, ...targets], roots)
-  const listings = dirs
-    .filter((dir) => !links.some((link) => isSameOrInside(dir, link)))
-    .map((dir) => ({ dir, ...listAppDir(dir) }))
 
   return {
     platform,
     options,
     folders,
-    appDirEntries: Object.fromEntries(listings.map(({ dir, names }) => [dir, names])),
-    appDirLinks: distinct([...links, ...listings.flatMap((listing) => listing.links)]),
-    tempEntries: listDir(temp),
+    logFiles: listDir(folders.logs),
+    updaterFiles: updaterFileNames(folders.updaterCache),
+    tempEntries,
     modelsDirs,
     outputDir,
     storedPaths,
@@ -1091,7 +1206,7 @@ export function formatCleanupLog(
     const detail = r.detail ? `: ${r.detail}` : ''
     return `${r.outcome} [${r.entry.bucket}] ${r.entry.path} (${r.entry.reason})${detail}`
   }
-  const outcomes = ['removed', 'absent', 'not-empty', 'refused', 'failed'] as const
+  const outcomes = ['removed', 'emptied', 'absent', 'not-empty', 'refused', 'failed'] as const
   const summary = outcomes.map((outcome) => `${outcome}=${count(outcome)}`).join(' ')
   const lines = [
     `Comfy Desktop uninstall cleanup ${startedAt.toISOString()}`,
@@ -1113,7 +1228,7 @@ export function formatCleanupLog(
 function unreadableFileNotes(inputs: CleanupInputs): string[] {
   return inputs.unreadableFiles.map(
     (name) =>
-      `${name} and its backup could not be read: removed only logs, downloaded app updates and temporary files, and kept everything else`
+      `${name} and its backup could not be read: removed only app log files, downloaded app update files and temporary files, and kept everything else`
   )
 }
 

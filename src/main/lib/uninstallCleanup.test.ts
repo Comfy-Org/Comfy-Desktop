@@ -5,6 +5,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 
 type CleanupModule = typeof import('./uninstallCleanup')
 type CleanupFs = import('./uninstallCleanup').CleanupFs
+type DeletionGuard = import('./uninstallCleanup').DeletionGuard
+type CleanupEntry = import('./uninstallCleanup').CleanupEntry
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'comfyui-desktop-2-uninstall-'))
 const ENV_KEYS = [
@@ -132,33 +134,37 @@ const noBoxes = { deleteInstances: false, deleteModels: false }
 const bothBoxes = { deleteInstances: true, deleteModels: true }
 const instancesBox = { deleteInstances: true, deleteModels: false }
 
-function diskOps(order: string[], failing: string | null = null): CleanupFs {
-  return {
-    entryKind: (p) => {
-      const stat = fs.lstatSync(p, { throwIfNoEntry: false })
-      if (!stat) return 'absent'
-      return stat.isSymbolicLink() ? 'link' : 'other'
-    },
-    realPath: (p) => (fs.existsSync(p) ? fs.realpathSync(p) : path.resolve(p)),
-    remove: (p) => {
+const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+
+function diskOps(c: CleanupModule, order: string[], failing: string | null = null): CleanupFs {
+  function tracked(op: (p: string) => void): (p: string) => void {
+    return (p) => {
       order.push(p)
-      if (p === failing) {
-        fs.rmSync(path.join(p, '.comfyui-desktop-2'), { force: true })
+      op(p)
+    }
+  }
+  const ops = c.nodeCleanupFs
+  return {
+    ...ops,
+    list: (dir) => {
+      if (dir === failing) {
+        fs.rmSync(path.join(dir, '.comfyui-desktop-2'), { force: true })
         throw Object.assign(new Error('busy'), { code: 'EBUSY' })
       }
-      fs.rmSync(p, { recursive: true, force: true })
+      return ops.list(dir)
     },
-    removeLink: (p) => {
-      order.push(p)
-      fs.unlinkSync(p)
-    },
-    isEmptyDir: (p) => fs.readdirSync(p).length === 0,
-    removeEmptyDir: (p) => {
-      order.push(p)
-      fs.rmdirSync(p)
-    },
-    writeFile: (p, content) => write(p, content)
+    removeFile: tracked((p) => ops.removeFile(p)),
+    removeLink: tracked((p) => ops.removeLink(p)),
+    removeEmptyDir: tracked((p) => ops.removeEmptyDir(p))
   }
+}
+
+function bareGuard(allowedRoots: string[], linksAllowedAtOrAbove: string[] = []): DeletionGuard {
+  return { protectedPaths: [], keptPaths: [], allowedRoots, linksAllowedAtOrAbove }
+}
+
+function testEntry(p: string): CleanupEntry {
+  return { path: p, bucket: 'A', reason: 'test' }
 }
 
 function writeInstallRecords(records: Record<string, unknown>[]): void {
@@ -390,7 +396,7 @@ describe('instances', () => {
     write(path.join(external, 'ComfyUI', 'main.py'))
     const linked = path.join(localRoot(), 'ComfyUI-Installs', 'linked')
     fs.mkdirSync(path.dirname(linked), { recursive: true })
-    fs.symlinkSync(external, linked, process.platform === 'win32' ? 'junction' : 'dir')
+    fs.symlinkSync(external, linked, linkType)
     writeRecords([{ id: 'inst-1', installPath: linked }])
 
     const c = await loadAs('win32')
@@ -400,6 +406,24 @@ describe('instances', () => {
     const text = fs.readFileSync(path.join(userData, 'installations.json'), 'utf-8')
     const records = JSON.parse(text) as Record<string, unknown>[]
     expect(records.map((r) => r.id)).toEqual(['inst-1'])
+  })
+
+  it('refuses a custom install under a linked parent folder', async () => {
+    const realParent = path.join(caseRoot, 'real-parent')
+    const linkedParent = path.join(caseRoot, 'linked-parent')
+    const main = path.join(realParent, 'install', 'ComfyUI', 'main.py')
+    write(path.join(realParent, 'install', '.comfyui-desktop-2'), 'inst-1')
+    write(main, 'keep')
+    fs.symlinkSync(realParent, linkedParent, linkType)
+    const install = path.join(linkedParent, 'install')
+    writeRecords([{ id: 'inst-1', installPath: install }])
+
+    const c = await loadAs('win32')
+    const results = c.runCleanup(c.collectUninstallCleanupInputs(instancesBox))
+    const result = results.find((r) => r.entry.path === install)
+    expect(result?.outcome).toBe('refused')
+    expect(result?.detail).toBe(`inside a linked folder: ${linkedParent}`)
+    expect(fs.readFileSync(main, 'utf-8')).toBe('keep')
   })
 
   it('keeps a per-install models folder inside the shared models folder', async () => {
@@ -450,7 +474,7 @@ describe('instances', () => {
 
     const c = await loadAs('win32')
     const inputs = c.collectUninstallCleanupInputs(instancesBox)
-    c.runCleanup(inputs, c.DEFAULT_CLEANUP_POLICY, diskOps([], dir))
+    c.runCleanup(inputs, c.DEFAULT_CLEANUP_POLICY, diskOps(c, [], dir))
     expect(fs.readFileSync(path.join(legacy, '.comfyui-desktop-2'), 'utf-8')).toBe('inst-1\n')
   })
 
@@ -531,7 +555,7 @@ describe('order and failures', () => {
     const c = await loadAs('win32')
     const order: string[] = []
     const inputs = c.collectUninstallCleanupInputs(bothBoxes)
-    c.runCleanup(inputs, c.DEFAULT_CLEANUP_POLICY, diskOps(order))
+    c.runCleanup(inputs, c.DEFAULT_CLEANUP_POLICY, diskOps(c, order))
 
     expect(order).toContain(install)
     expect(order).toContain(models)
@@ -544,7 +568,7 @@ describe('order and failures', () => {
 
     const c = await loadAs('win32')
     const inputs = c.collectUninstallCleanupInputs(bothBoxes)
-    const results = c.runCleanup(inputs, c.DEFAULT_CLEANUP_POLICY, diskOps([], install))
+    const results = c.runCleanup(inputs, c.DEFAULT_CLEANUP_POLICY, diskOps(c, [], install))
 
     expect(results.find((r) => r.entry.path === install)?.outcome).toBe('failed')
     expect(fs.readFileSync(path.join(install, '.comfyui-desktop-2'), 'utf-8')).toBe('inst-1')
@@ -569,7 +593,7 @@ describe('order and failures', () => {
 
     const c = await loadAs('win32')
     const inputs = c.collectUninstallCleanupInputs(bothBoxes)
-    const results = c.runCleanup(inputs, c.DEFAULT_CLEANUP_POLICY, diskOps([], install))
+    const results = c.runCleanup(inputs, c.DEFAULT_CLEANUP_POLICY, diskOps(c, [], install))
 
     expect(results.find((r) => r.entry.path === install)?.outcome).toBe('failed')
     expect(results.find((r) => r.entry.path === basePath)?.outcome).toBe('refused')
@@ -584,8 +608,6 @@ describe('order and failures', () => {
 })
 
 describe('links inside app data', () => {
-  const linkType = process.platform === 'win32' ? 'junction' : 'dir'
-
   it('leaves a link alone when a kept models folder lies behind it', async () => {
     const external = path.join(caseRoot, 'external')
     const linked = path.join(userData, 'linked')
@@ -681,45 +703,47 @@ describe('links inside app data', () => {
     return photo
   }
 
-  it('refuses a planned link that became a folder before the cleanup ran', async () => {
+  it('leaves a planned link that became a folder unless the folder is empty', async () => {
     const linked = linkedCache()
 
     const c = await loadAs('win32')
     const plan = c.planUninstallCleanup(c.collectUninstallCleanupInputs(noBoxes))
-    expect(plan.entries.find((e) => e.path === linked)?.onlyLink).toBe(true)
+    expect(plan.entries.find((e) => e.path === linked)?.onlyIfEmpty).toBe(true)
     const photo = swapForFolder(linked)
     const results = c.executeUninstallCleanup(plan)
 
-    const result = results.find((r) => r.entry.path === linked)
-    expect(result?.outcome).toBe('refused')
-    expect(result?.detail).toBe('no longer a link')
+    expect(results.find((r) => r.entry.path === linked)?.outcome).toBe('not-empty')
     expect(fs.readFileSync(photo, 'utf-8')).toBe('keep')
   })
 
-  it('never removes a folder recursively in place of a link swapped after the check', async () => {
-    const linked = linkedCache()
+  it('does not walk into a folder swapped in for a link during the walk', async () => {
+    const external = path.join(caseRoot, 'external')
+    write(path.join(external, 'a.bin'), 'cached')
+    const walked = path.join(userData, 'walked')
+    const linked = path.join(walked, 'linked')
+    write(path.join(walked, 'scratch.txt'))
+    fs.symlinkSync(external, linked, linkType)
 
     const c = await loadAs('win32')
+    const guard = c.planUninstallCleanup(c.collectUninstallCleanupInputs(noBoxes)).guard
     let photo = ''
     const swapping: CleanupFs = {
       ...c.nodeCleanupFs,
-      entryKind: (p) => {
-        const kind = c.nodeCleanupFs.entryKind(p)
-        if (p === linked && kind === 'link' && !photo) photo = swapForFolder(linked)
-        return kind
+      entryInfo: (p) => {
+        const info = c.nodeCleanupFs.entryInfo(p)
+        if (p === linked && info.kind === 'link' && !photo) photo = swapForFolder(linked)
+        return info
       }
     }
-    const results = c.runCleanup(
-      c.collectUninstallCleanupInputs(noBoxes),
-      c.DEFAULT_CLEANUP_POLICY,
-      swapping
-    )
+    const [result] = c.executeUninstallCleanup({ entries: [testEntry(walked)], guard }, swapping)
 
-    expect(results.find((r) => r.entry.path === linked)?.outcome).toBe('failed')
+    expect(result?.outcome).toBe('failed')
     expect(fs.readFileSync(photo, 'utf-8')).toBe('keep')
+    expect(fs.existsSync(path.join(walked, 'scratch.txt'))).toBe(false)
+    expect(fs.readFileSync(path.join(external, 'a.bin'), 'utf-8')).toBe('cached')
   })
 
-  it('refuses a planned folder that became a link before the cleanup ran', async () => {
+  it('removes a planned folder that became a link as a link only', async () => {
     const external = path.join(caseRoot, 'external')
     write(path.join(external, 'family.png'), 'keep')
     const logDir = path.join(userData, 'logs')
@@ -729,10 +753,9 @@ describe('links inside app data', () => {
     const plan = c.planUninstallCleanup(c.collectUninstallCleanupInputs(noBoxes))
     fs.rmSync(logDir, { recursive: true, force: true })
     fs.symlinkSync(external, logDir, linkType)
-    const results = c.executeUninstallCleanup(plan)
+    c.executeUninstallCleanup(plan)
 
-    expect(results.find((r) => r.entry.path === logDir)?.outcome).toBe('refused')
-    expect(fs.lstatSync(logDir).isSymbolicLink()).toBe(true)
+    expect(fs.lstatSync(logDir, { throwIfNoEntry: false })).toBeUndefined()
     expect(fs.readFileSync(path.join(external, 'family.png'), 'utf-8')).toBe('keep')
   })
 
@@ -747,9 +770,88 @@ describe('links inside app data', () => {
 
     const c = await loadAs('win32')
     const results = c.runCleanup(c.collectUninstallCleanupInputs(noBoxes))
-    expect(results.find((r) => r.entry.path === saved)?.outcome).toBe('refused')
+    expect(results.find((r) => r.entry.path === userData)?.outcome).toBe('emptied')
     expect(fs.readFileSync(path.join(saved, 'family.png'), 'utf-8')).toBe('keep')
     expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
+  })
+
+  it('empties a folder around a kept folder inside it', async () => {
+    const saved = path.join(userData, 'Saved')
+    const output = path.join(saved, 'output')
+    write(path.join(output, 'family.png'), 'keep')
+    write(path.join(saved, 'scratch.txt'))
+    write(path.join(userData, 'settings.json'), JSON.stringify({ outputDir: output }))
+    write(path.join(userData, 'logs', 'main.log'))
+
+    const c = await loadAs('win32')
+    const results = c.runCleanup(c.collectUninstallCleanupInputs(noBoxes))
+    const result = results.find((r) => r.entry.path === userData)
+    expect(result?.outcome).toBe('emptied')
+    expect(result?.detail).toContain(output)
+    expect(fs.readFileSync(path.join(output, 'family.png'), 'utf-8')).toBe('keep')
+    expect(fs.existsSync(path.join(saved, 'scratch.txt'))).toBe(false)
+    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
+    expect(fs.existsSync(path.join(userData, 'settings.json'))).toBe(true)
+  })
+
+  it('stops at another drive mounted inside a folder', async () => {
+    const c = await loadAs('win32')
+    const mounted = path.join(userData, 'mounted')
+    const onDrive = path.join(mounted, 'a.bin')
+    const appLog = path.join(userData, 'app.log')
+    const listings = new Map([[userData, ['mounted', 'app.log']], [mounted, ['a.bin']]])
+    const removed: string[] = []
+    const results = c.executeUninstallCleanup(
+      { entries: [testEntry(userData)], guard: bareGuard([userData]) },
+      {
+        entryInfo: (p) => ({
+          kind: listings.has(p) ? 'dir' : 'file',
+          device: p === onDrive ? 2 : 1
+        }),
+        realPath: (p) => p,
+        list: (dir) => listings.get(dir) ?? [],
+        removeFile: (p) => {
+          removed.push(p)
+        },
+        removeLink: () => undefined,
+        removeEmptyDir: (p) => {
+          removed.push(p)
+        },
+        writeFile: () => undefined
+      }
+    )
+    expect(results[0]?.outcome).toBe('failed')
+    expect(results[0]?.detail).toBe(`another drive is mounted at ${onDrive}`)
+    expect(removed).toEqual([appLog])
+  })
+
+  it('allows links at or above the home folder and refuses other links', async () => {
+    const c = await loadAs('darwin')
+    const system = path.join(caseRoot, 'system')
+    fs.mkdirSync(path.join(caseRoot, 'private'), { recursive: true })
+    fs.symlinkSync(path.join(caseRoot, 'private'), system, linkType)
+    const userHome = path.join(system, 'home')
+    const appFolder = path.join(userHome, 'app')
+    write(path.join(appFolder, 'cache', 'a.bin'))
+    const external = path.join(caseRoot, 'external')
+    write(path.join(external, 'b.bin'), 'keep')
+    const below = path.join(userHome, 'linked')
+    const beside = path.join(caseRoot, 'tmp-link')
+    fs.symlinkSync(external, below, linkType)
+    fs.symlinkSync(external, beside, linkType)
+
+    const cache = path.join(appFolder, 'cache')
+    const targets = [cache, path.join(below, 'b.bin'), path.join(beside, 'b.bin')]
+    const results = c.executeUninstallCleanup({
+      entries: targets.map(testEntry),
+      guard: bareGuard([appFolder, below, beside], [userHome])
+    })
+
+    expect(results.map((r) => r.outcome)).toEqual(['removed', 'refused', 'refused'])
+    expect(results[1]?.detail).toBe(`inside a linked folder: ${below}`)
+    expect(results[2]?.detail).toBe(`inside a linked folder: ${beside}`)
+    expect(fs.existsSync(cache)).toBe(false)
+    expect(fs.readFileSync(path.join(external, 'b.bin'), 'utf-8')).toBe('keep')
   })
 })
 
@@ -781,6 +883,38 @@ describe('earlier settings and app names', () => {
     expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
   })
 
+  it('keeps an install named only in the install list backup across two cleanups', async () => {
+    const earlier = path.join(userData, 'OldInstall')
+    write(path.join(earlier, 'ComfyUI', 'main.py'))
+    write(path.join(userData, 'installations.json'), '[]')
+    const backup = JSON.stringify([{ id: 'inst-9', installPath: earlier }])
+    write(path.join(userData, 'installations.json.bak'), backup)
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
+    expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
+    expect(fs.existsSync(path.join(earlier, 'ComfyUI', 'main.py'))).toBe(true)
+    expect(fs.readFileSync(path.join(userData, 'installations.json.bak'), 'utf-8')).toBe(backup)
+  })
+
+  it('keeps the list backup that names a kept install when the list is rewritten', async () => {
+    const install = path.join(localRoot(), 'ComfyUI-Installs', 'a')
+    write(path.join(install, '.comfyui-desktop-2'), 'inst-1')
+    const earlier = path.join(userData, 'OldInstall')
+    write(path.join(earlier, 'ComfyUI', 'main.py'))
+    const current = JSON.stringify([{ id: 'inst-1', installPath: install }])
+    write(path.join(userData, 'installations.json'), current)
+    const backup = JSON.stringify([{ id: 'inst-9', installPath: earlier }])
+    write(path.join(userData, 'installations.json.bak'), backup)
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
+    expect(fs.existsSync(install)).toBe(false)
+    expect(fs.readFileSync(path.join(userData, 'installations.json.bak'), 'utf-8')).toBe(backup)
+    expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
+    expect(fs.existsSync(path.join(earlier, 'ComfyUI', 'main.py'))).toBe(true)
+  })
+
   it('keeps models named by the settings in an older-name app data folder', async () => {
     const older = path.join(appData, 'ComfyUI Launcher')
     const models = path.join(older, 'models')
@@ -789,6 +923,21 @@ describe('earlier settings and app names', () => {
     write(path.join(older, 'logs', 'old.log'))
 
     const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
+    expect(fs.existsSync(path.join(models, 'model.safetensors'))).toBe(true)
+    expect(fs.existsSync(path.join(older, 'logs'))).toBe(false)
+  })
+
+  it('keeps older-name models and the settings naming them across two cleanups', async () => {
+    const older = path.join(appData, 'ComfyUI Launcher')
+    const models = path.join(older, 'models')
+    write(path.join(models, 'model.safetensors'))
+    write(path.join(older, 'settings.json'), JSON.stringify({ modelsDirs: [models] }))
+    write(path.join(older, 'logs', 'old.log'))
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
+    expect(fs.existsSync(path.join(older, 'settings.json'))).toBe(true)
     expect(c.runUninstallCleanup([c.UNINSTALL_CLEANUP_FLAG])).toBe(0)
     expect(fs.existsSync(path.join(models, 'model.safetensors'))).toBe(true)
     expect(fs.existsSync(path.join(older, 'logs'))).toBe(false)
@@ -952,28 +1101,54 @@ describe('unreadable settings and install list', () => {
     expect(cleanupLog(c)).toContain('settings.json and its backup could not be read')
   })
 
-  it('removes only logs, updates and temp files when the settings cannot be read', async () => {
+  it('removes only app log, update and temp files when the settings cannot be read', async () => {
     const cache = path.join(localRoot(), 'ComfyUI-Cache', 'download-cache')
     const photo = path.join(cache, 'outputs', 'family.png')
     write(photo, 'keep')
     const partial = path.join(localRoot(), 'ComfyUI-Shared', '.desktop2-downloads', 'a.part')
     write(partial)
     write(path.join(userData, 'settings.json'), '{"outputDir": "')
-    write(path.join(userData, 'logs', 'main.log'))
+    const logDir = path.join(userData, 'logs')
+    const rotated = path.join(logDir, 'app.log_2026-01-02T03-04-05-678Z.log')
+    const appLogs = [path.join(logDir, 'app.log'), rotated]
+    for (const file of appLogs) write(file)
+    const otherLog = path.join(logDir, 'notes.txt')
+    write(otherLog, 'keep')
     const updates = path.join(localAppData, 'comfyui-desktop-2-updater')
-    write(path.join(updates, 'pending', 'setup.exe'))
+    const download = path.join(updates, 'pending', 'setup.exe')
+    write(download)
+    const otherUpdate = path.join(updates, 'pending', 'notes.txt')
+    write(otherUpdate, 'keep')
 
     const c = await loadAs('win32')
     const plan = c.planUninstallCleanup(c.collectUninstallCleanupInputs(bothBoxes))
     expect(plannedPaths(plan)).not.toContain(cache)
+    expect(plannedPaths(plan)).not.toContain(logDir)
+    expect(plannedPaths(plan)).not.toContain(updates)
     expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
     expect(fs.readFileSync(photo, 'utf-8')).toBe('keep')
     expect(fs.existsSync(partial)).toBe(true)
-    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
-    expect(fs.existsSync(updates)).toBe(false)
+    for (const file of [...appLogs, download]) expect(fs.existsSync(file)).toBe(false)
+    expect(fs.readFileSync(otherLog, 'utf-8')).toBe('keep')
+    expect(fs.readFileSync(otherUpdate, 'utf-8')).toBe('keep')
     expect(cleanupLog(c)).toContain(
-      'settings.json and its backup could not be read: removed only logs, downloaded app updates'
+      'settings.json and its backup could not be read: removed only app log files'
     )
+  })
+
+  it('keeps output under the logs folder when neither settings copy can be read', async () => {
+    const photo = path.join(userData, 'logs', 'outputs', 'family.png')
+    write(photo, 'keep')
+    const appLog = path.join(userData, 'logs', 'app.log')
+    write(appLog)
+    write(path.join(userData, 'settings.json'), '{"outputDir": "')
+    write(path.join(userData, 'settings.json.bak'), '{"outputDir": "')
+
+    const c = await loadAs('win32')
+    expect(c.runUninstallCleanup(allFlags(c))).toBe(0)
+    expect(fs.readFileSync(photo, 'utf-8')).toBe('keep')
+    expect(fs.existsSync(appLog)).toBe(false)
+    expect(cleanupLog(c)).toContain('settings.json and its backup could not be read')
   })
 
   it('treats a missing install list as an empty one', async () => {
@@ -1052,26 +1227,24 @@ describe('pointer files', () => {
     expect(c.pointerFilesToKeep({ deleteInstances: true, deleteModels: false }, false)).toEqual([])
   })
 
-  it('plans the whole app data folder only when nothing is kept', async () => {
+  it('empties the app data folder around kept pointer files', async () => {
     write(path.join(userData, 'settings.json'), '{}')
     write(path.join(userData, 'installations.json'), '[]')
     write(path.join(userData, 'logs', 'main.log'))
 
     const c = await loadAs('win32')
-    const inputs = c.collectUninstallCleanupInputs(noBoxes)
+    const outcome = (keepPointerFiles: boolean): string | undefined => {
+      const policy = { keepPointerFiles, deleteSharedInputOutput: false }
+      const results = c.runCleanup(c.collectUninstallCleanupInputs(noBoxes), policy)
+      return results.find((r) => r.entry.path === userData)?.outcome
+    }
 
-    const kept = plannedPaths(
-      c.planUninstallCleanup(inputs, { keepPointerFiles: true, deleteSharedInputOutput: false })
-    )
-    expect(kept).toContain(path.join(userData, 'logs'))
-    expect(kept).not.toContain(path.join(userData, 'settings.json'))
-    expect(kept).not.toContain(path.join(userData, 'installations.json'))
-    expect(kept).not.toContain(userData)
-
-    const wiped = plannedPaths(
-      c.planUninstallCleanup(inputs, { keepPointerFiles: false, deleteSharedInputOutput: false })
-    )
-    expect(wiped).toContain(userData)
+    expect(outcome(true)).toBe('emptied')
+    expect(fs.existsSync(path.join(userData, 'settings.json'))).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'installations.json'))).toBe(true)
+    expect(fs.existsSync(path.join(userData, 'logs'))).toBe(false)
+    expect(outcome(false)).toBe('removed')
+    expect(fs.existsSync(userData)).toBe(false)
   })
 
   it('removes the whole app data folder when both boxes are checked', async () => {
@@ -1133,27 +1306,20 @@ describe('deletionRefusal', () => {
 
   it('keeps going after a failed delete and reports it', async () => {
     const c = await loadAs('win32')
-    const guard = { protectedPaths: [], keptPaths: [], allowedRoots: [userData], linkedFolders: [] }
     const first = path.join(userData, 'first')
     const second = path.join(userData, 'second')
     const removed: string[] = []
     const results = c.executeUninstallCleanup(
+      { entries: [testEntry(first), testEntry(second)], guard: bareGuard([userData]) },
       {
-        entries: [
-          { path: first, bucket: 'A', reason: 'test' },
-          { path: second, bucket: 'A', reason: 'test' }
-        ],
-        guard
-      },
-      {
-        entryKind: () => 'other',
+        entryInfo: () => ({ kind: 'file', device: 1 }),
         realPath: (p) => p,
-        remove: (p) => {
+        list: () => [],
+        removeFile: (p) => {
           if (p === first) throw Object.assign(new Error('busy'), { code: 'EBUSY' })
           removed.push(p)
         },
         removeLink: () => undefined,
-        isEmptyDir: () => true,
         removeEmptyDir: () => undefined,
         writeFile: () => undefined
       }
@@ -1348,6 +1514,24 @@ describe('Linux', () => {
     const plan = c.planUninstallCleanup(inputs)
     expect(plannedPaths(plan)).toContain(path.join(xdgCache, 'comfyui-desktop-2'))
     expect(c.deletionRefusal(xdgCache, plan.guard)).not.toBeNull()
+  })
+
+  it('refuses an app folder under an XDG folder reached through a link', async () => {
+    useLinuxLayout()
+    const realConfig = path.join(caseRoot, 'real-config')
+    const linkedConfig = path.join(caseRoot, 'linked-config')
+    const windowState = path.join(realConfig, 'comfyui-desktop-2', 'window-state.json')
+    write(windowState, 'keep')
+    fs.symlinkSync(realConfig, linkedConfig, linkType)
+    process.env.XDG_CONFIG_HOME = linkedConfig
+
+    const c = await loadAs('linux')
+    const results = c.runCleanup(c.collectUninstallCleanupInputs(bothBoxes, 'linux'))
+    const configDir = path.join(linkedConfig, 'comfyui-desktop-2')
+    const result = results.find((r) => r.entry.path === configDir)
+    expect(result?.outcome).toBe('refused')
+    expect(result?.detail).toBe(`inside a linked folder: ${linkedConfig}`)
+    expect(fs.readFileSync(windowState, 'utf-8')).toBe('keep')
   })
 
   it.each([
