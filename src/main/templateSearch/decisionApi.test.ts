@@ -360,6 +360,58 @@ describe('parseDecision', () => {
     expect(result.alsoTry[0]).toMatchObject({ templateId: 'flyer_template', needsDownload: true })
   })
 
+  it('lists every card a model-name lookup sends, none of them scored, and names what it matched', () => {
+    const weak = (item: object) => ({ ...item, score: 0.01, calibrated: 0.02, clears: false })
+    const body = decision({
+      outcome: { kind: 'template', reply: null, matched: ['qwen 2.1'] },
+      split: {
+        run: ['a', 'b', 'c', 'd'].map((id) => weak(pick(id, id))),
+        download: ['m', 'z', 'q'].map((id) => weak(pick(id, id, [`${id}.bin`]))),
+        more: [weak(pick('far', 'far')), weak(pick('a', 'a'))]
+      },
+      options: []
+    })
+    const result = parseDecision(body)!
+    expect(result.matched).toEqual(['qwen 2.1'])
+    expect(result.run.map((c) => c.templateId)).toEqual(['a', 'b', 'c', 'd'])
+    expect(result.download.map((c) => c.templateId)).toEqual(['m', 'z', 'q'])
+    expect(result.more.map((c) => c.templateId)).toEqual(['far'])
+    expect(
+      [...result.run, ...result.download, ...result.more].map((c) => [
+        c.score,
+        c.calibrated,
+        c.belowThreshold
+      ])
+    ).toEqual(Array.from({ length: 8 }, () => [null, null, false]))
+    expect(result.download.every((c) => c.needsDownload)).toBe(true)
+  })
+
+  it('names nothing matched for an answer to a request, and keeps its reply when a lookup finds nothing', () => {
+    expect(parseDecision(decision())?.matched).toBeNull()
+    const noNames = parseDecision(
+      decision({ outcome: { kind: 'template', reply: null, matched: [] } })
+    )
+    expect(noNames?.matched).toBeNull()
+    expect(noNames?.run).toHaveLength(3)
+    const none = parseDecision(
+      decision({
+        outcome: {
+          kind: 'unsat',
+          reply: "kling 9 isn't one of the templates here.",
+          matched: ['kling 9']
+        },
+        split: { run: [], download: [] }
+      })
+    )
+    expect(none).toMatchObject({
+      outcome: 'unsat',
+      reply: "kling 9 isn't one of the templates here.",
+      matched: ['kling 9'],
+      run: [],
+      download: []
+    })
+  })
+
   it("keeps the search's first twelve further templates, and none from a search that sends none", () => {
     const more = Array.from({ length: 14 }, (_, i) => pick(`more_${i}`, 'poster'))
     const result = parseDecision(

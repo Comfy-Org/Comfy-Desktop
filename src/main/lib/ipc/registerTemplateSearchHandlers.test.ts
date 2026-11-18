@@ -67,6 +67,7 @@ const RESULT: TemplateSearchResult = {
   download: [],
   more: [],
   alsoTry: [],
+  matched: null,
   partnerSwitch: false,
   partnersShown: true
 }
