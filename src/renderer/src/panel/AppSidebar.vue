@@ -19,6 +19,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import BuildMenu from './home/BuildMenu.vue'
 import SidebarPageMenu from './SidebarPageMenu.vue'
+import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { TOOLTIP_GATE } from '../components/ui/tooltipGate'
@@ -217,7 +218,20 @@ function openSettings(): void {
         @click="toggleCollapsed"
       >
         <Tooltip :text="toggleLabel" side="right" class="size-full items-center justify-center">
-          <SidebarToggleIcon />
+          <span v-if="collapsed" class="relative grid size-full place-items-center">
+            <ComfyCLogo
+              :size="20"
+              class="transition-[opacity,transform] duration-180 ease-out motion-reduce:transition-none text-foreground group-hover:scale-90 group-hover:opacity-0 group-focus-visible:scale-90 group-focus-visible:opacity-0"
+              data-testid="app-sidebar-logo-face"
+            />
+            <span
+              class="transition-[opacity,transform] duration-180 ease-out motion-reduce:transition-none absolute inset-0 grid scale-90 place-items-center opacity-0 group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100"
+              data-testid="app-sidebar-expand-face"
+            >
+              <SidebarToggleIcon />
+            </span>
+          </span>
+          <SidebarToggleIcon v-else />
         </Tooltip>
       </Button>
     </div>

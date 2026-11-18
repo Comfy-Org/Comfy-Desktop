@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { userEvent } from 'vitest/browser'
 import { createPinia, setActivePinia } from 'pinia'
 
 import '../assets/main.css'
@@ -248,7 +249,7 @@ describe('AppSidebar', () => {
     expect(reopened.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
   })
 
-  it('keeps the collapse toggle on the top row when the sidebar folds, with no Comfy mark above it', async () => {
+  it('folds to the Comfy mark on the same top row, which turns into the expand button on hover or keyboard focus', async () => {
     useInstallationStore().installations = []
     const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
     await flushPromises()
@@ -271,6 +272,31 @@ describe('AppSidebar', () => {
     expect(offsetFromTop(toggle()), 'toggle top').toBe(expandedToggleTop)
     expect(homeRowTop(), 'first row top').toBe(expandedHomeRowTop)
     expect(wrapper.get('[data-testid="app-sidebar-header"]').findAll('button')).toHaveLength(1)
+    expect(toggle().getAttribute('aria-label')).toBe('Expand sidebar')
+
+    const faceOpacity = (face: 'logo' | 'expand') =>
+      getComputedStyle(wrapper.get(`[data-testid="app-sidebar-${face}-face"]`).element).opacity
+    const settle = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 260))
+    }
+    expect([faceOpacity('logo'), faceOpacity('expand')], 'at rest').toEqual(['1', '0'])
+
+    await userEvent.hover(toggle())
+    await settle()
+    expect([faceOpacity('logo'), faceOpacity('expand')], 'on hover').toEqual(['0', '1'])
+
+    await userEvent.unhover(toggle())
+    await settle()
+    expect([faceOpacity('logo'), faceOpacity('expand')], 'after hover').toEqual(['1', '0'])
+
+    ;(toggle() as HTMLElement).focus()
+    await settle()
+    expect([faceOpacity('logo'), faceOpacity('expand')], 'on keyboard focus').toEqual(['0', '1'])
+
+    await userEvent.click(toggle())
+    await flushPromises()
+    expect(sidebar.getAttribute('data-collapsed')).toBe('false')
+    await userEvent.unhover(sidebar)
     wrapper.unmount()
   })
 
