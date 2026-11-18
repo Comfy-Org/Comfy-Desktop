@@ -127,7 +127,7 @@ interface Asked {
 
 class FakeComfy {
   asked: Asked[] = []
-  queue = {
+  queue: { queue_running: unknown[][]; queue_pending: unknown[][] } = {
     queue_running: [[4, OTHER_RUN, { 3: { class_type: 'KSampler' } }, { client_id: 'theirs' }]],
     queue_pending: [[5, RUN, { 1: {} }, { comfy_app: { name: 'Remove Background' } }]]
   }

@@ -8,6 +8,7 @@ export const COMFYUI_EXITED = 'comfyui_exited'
 const MAX_RUNS = 200
 const MAX_EARLY_RUNS = 50
 const CLASS_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
+const DOTTED_NAME = /^[A-Za-z_][A-Za-z0-9_.]{0,255}$/
 const RUN_ENDS: Readonly<Record<string, RunOutcome>> = {
   execution_success: 'success',
   execution_error: 'failed',
@@ -61,7 +62,7 @@ function appIdOf(appId: string | null): TelemetryContext {
 }
 
 export function errorClassOf(exceptionType: unknown): string | undefined {
-  if (typeof exceptionType !== 'string') return undefined
+  if (typeof exceptionType !== 'string' || !DOTTED_NAME.test(exceptionType)) return undefined
   const name = exceptionType.split('.').pop() ?? ''
   if (!CLASS_NAME.test(name)) return undefined
   return name
