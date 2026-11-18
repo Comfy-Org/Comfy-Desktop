@@ -54,9 +54,13 @@ interface ActiveOperation {
 interface Props {
   installationId: string
   activeOperation?: ActiveOperation | null
+  toolbarTarget?: string
 }
 
-const props = withDefaults(defineProps<Props>(), { activeOperation: null })
+const props = withDefaults(defineProps<Props>(), {
+  activeOperation: null,
+  toolbarTarget: undefined
+})
 
 const emit = defineEmits<{
   'run-action': [action: ActionDef]
@@ -561,7 +565,10 @@ async function handleImport(): Promise<void> {
 
 <template>
   <div class="snapshots-view flex flex-col gap-3">
-    <header class="snapshots-view-header flex items-center justify-between gap-3">
+    <header
+      v-show="!toolbarTarget || latestRelative"
+      class="snapshots-view-header flex items-center justify-between gap-3"
+    >
       <span
         class="snapshots-view-latest text-[13px] leading-4 text-[var(--color-subtle-foreground)]"
       >
@@ -570,46 +577,48 @@ async function handleImport(): Promise<void> {
           {{ latestRelative }}
         </template>
       </span>
-      <div class="snapshots-view-toolbar inline-flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="textonly"
-          size="md"
-          class="snapshots-view-toolbtn gap-1.5 px-2.5"
-          :aria-label="t('snapshots.importSnapshots')"
-          :data-testid="TID.snapshotsImport"
-          @click="handleImport"
-        >
-          <Upload :size="14" aria-hidden="true" />
-          <span>{{ t('snapshots.importSnapshots') }}</span>
-        </Button>
-        <Button
-          type="button"
-          variant="textonly"
-          size="md"
-          class="snapshots-view-toolbtn gap-1.5 px-2.5"
-          :disabled="snapshots.length === 0"
-          :aria-label="t('snapshots.exportAllSnapshots')"
-          :data-testid="TID.snapshotsExportAll"
-          @click="handleExportAll"
-        >
-          <Download :size="14" aria-hidden="true" />
-          <span>{{ t('snapshots.exportAllSnapshots') }}</span>
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="md"
-          class="snapshots-view-toolbtn gap-1.5 px-3"
-          :disabled="showRestoreCard"
-          :aria-label="t('snapshots.createSnapshot')"
-          :data-testid="TID.snapshotsSaveCta"
-          @click="handleSave"
-        >
-          <Plus :size="14" aria-hidden="true" />
-          <span>{{ t('snapshots.createSnapshot') }}</span>
-        </Button>
-      </div>
+      <Teleport defer :to="toolbarTarget" :disabled="!toolbarTarget">
+        <div class="snapshots-view-toolbar inline-flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="textonly"
+            size="md"
+            class="snapshots-view-toolbtn gap-1.5 px-2.5"
+            :aria-label="t('snapshots.importSnapshots')"
+            :data-testid="TID.snapshotsImport"
+            @click="handleImport"
+          >
+            <Upload :size="14" aria-hidden="true" />
+            <span>{{ t('snapshots.importSnapshots') }}</span>
+          </Button>
+          <Button
+            type="button"
+            variant="textonly"
+            size="md"
+            class="snapshots-view-toolbtn gap-1.5 px-2.5"
+            :disabled="snapshots.length === 0"
+            :aria-label="t('snapshots.exportAllSnapshots')"
+            :data-testid="TID.snapshotsExportAll"
+            @click="handleExportAll"
+          >
+            <Download :size="14" aria-hidden="true" />
+            <span>{{ t('snapshots.exportAllSnapshots') }}</span>
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            class="snapshots-view-toolbtn gap-1.5 px-3"
+            :disabled="showRestoreCard"
+            :aria-label="t('snapshots.createSnapshot')"
+            :data-testid="TID.snapshotsSaveCta"
+            @click="handleSave"
+          >
+            <Plus :size="14" aria-hidden="true" />
+            <span>{{ t('snapshots.createSnapshot') }}</span>
+          </Button>
+        </div>
+      </Teleport>
     </header>
 
     <div
