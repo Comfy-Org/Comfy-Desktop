@@ -44,7 +44,11 @@ import { recordDashboardSurface, recordInstanceSurface } from '../lib/lastSessio
 import * as settings from '../settings'
 import * as updater from '../lib/updater'
 import { getSavedBounds, getWindowOptions, saveWindowBounds } from '../lib/windowState'
-import { defaultWindowBoundsNear, defaultWindowBoundsUnderCursor } from '../lib/defaultWindowSize'
+import {
+  defaultWindowBoundsNear,
+  defaultWindowBoundsUnderCursor,
+  fitWindowToDisplay
+} from '../lib/defaultWindowSize'
 import { ensureSystemModal } from '../popups/systemModal'
 import { hideTitlePopupForParent, prewarmTitlePopup } from '../popups/titlePopup'
 import { destroyPanelView, ensurePanelView } from './panelView'
@@ -244,10 +248,9 @@ export interface CreateHostWindowResult {
 
 const CASCADE_STEP_PX = 30
 
-export function cascadeOffsetForCollisions(
-  windowOptions: Partial<Electron.BrowserWindowConstructorOptions>,
-  existingOrigins: ReadonlyArray<{ x: number; y: number }>
-): Partial<Electron.BrowserWindowConstructorOptions> {
+export function cascadeOffsetForCollisions<
+  T extends Partial<Electron.BrowserWindowConstructorOptions>
+>(windowOptions: T, existingOrigins: ReadonlyArray<{ x: number; y: number }>): T {
   if (typeof windowOptions.x !== 'number' || typeof windowOptions.y !== 'number') {
     return windowOptions
   }
@@ -367,12 +370,12 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
         height: fresh.height
       }
     : getWindowOptions(opts.boundsKey)
-  const windowOptions = cascadeOffsetForCollisions(initialOptions, liveHostOrigins())
+  const windowOptions = fitWindowToDisplay(
+    cascadeOffsetForCollisions(initialOptions, liveHostOrigins())
+  )
   const comfyWindow = new BrowserWindow({
     ...windowOptions,
     show: !opts.initiallyHidden,
-    minWidth: 800,
-    minHeight: 600,
     icon: APP_ICON,
     title: opts.windowTitle,
     backgroundColor: COMFY_BG,

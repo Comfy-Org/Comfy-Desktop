@@ -53,9 +53,7 @@ export function getSavedBounds(installationId: string): WindowBounds | undefined
   return getWindowStateCache()[installationId]
 }
 
-export function getWindowOptions(
-  installationId: string
-): Partial<Electron.BrowserWindowConstructorOptions> {
+export function getWindowOptions(installationId: string): Electron.Rectangle {
   const saved = getSavedBounds(installationId)
   if (!saved) {
     const { x, y, width, height } = defaultWindowBoundsUnderCursor()

@@ -15,14 +15,20 @@ vi.mock('electron', () => ({
             point.x >= d.x && point.x < d.x + d.width && point.y >= d.y && point.y < d.y + d.height
         ) ?? mocks.displays[0]
       return { workArea }
-    }
+    },
+    getDisplayMatching: (rect: { x: number; y: number }) => ({
+      workArea:
+        mocks.displays.find((d) => rect.x >= d.x && rect.x < d.x + d.width) ?? mocks.displays[0]
+    })
   }
 }))
 
 import {
   defaultWindowBounds,
   defaultWindowBoundsNear,
-  defaultWindowBoundsUnderCursor
+  defaultWindowBoundsUnderCursor,
+  fitWindowToDisplay,
+  fitWindowToWorkArea
 } from './defaultWindowSize'
 
 describe('defaultWindowBounds', () => {
@@ -108,6 +114,62 @@ describe('defaultWindowBoundsNear', () => {
       width: 1285,
       height: 756,
       maximize: true
+    })
+  })
+})
+
+describe('fitWindowToWorkArea', () => {
+  const monitor = { x: 0, y: 0, width: 1920, height: 1032 }
+
+  it('leaves a window that already fits where it is', () => {
+    expect(fitWindowToWorkArea({ x: 144, y: 70, width: 1632, height: 877 }, monitor)).toEqual({
+      x: 144,
+      y: 70,
+      width: 1632,
+      height: 877,
+      minWidth: 800,
+      minHeight: 600
+    })
+  })
+
+  it('moves a window opened next to another back inside the screen', () => {
+    expect(fitWindowToWorkArea({ x: 330, y: 250, width: 1632, height: 877 }, monitor)).toEqual({
+      x: 288,
+      y: 155,
+      width: 1632,
+      height: 877,
+      minWidth: 800,
+      minHeight: 600
+    })
+  })
+
+  it('shrinks a window larger than the screen and keeps it on the screen', () => {
+    expect(
+      fitWindowToWorkArea({ x: -200, y: 0, width: 2176, height: 1183 }, monitor)
+    ).toMatchObject({ x: 0, y: 0, width: 1920, height: 1032 })
+  })
+
+  it('lowers the smallest window size on a screen shorter than 600', () => {
+    const laptopAt125 = { x: 0, y: 0, width: 1093, height: 566 }
+    const bounds = { x: 0, y: 0, width: 1024, height: 566 }
+    expect(fitWindowToWorkArea(bounds, laptopAt125)).toMatchObject({
+      minWidth: 800,
+      minHeight: 566
+    })
+  })
+})
+
+describe('fitWindowToDisplay', () => {
+  it('fits the window to the display it sits on', () => {
+    mocks.displays = [
+      { x: 0, y: 25, width: 1512, height: 889 },
+      { x: 1512, y: 0, width: 2560, height: 1392 }
+    ]
+    expect(fitWindowToDisplay({ x: 3000, y: 300, width: 2176, height: 1183 })).toMatchObject({
+      x: 1896,
+      y: 209,
+      width: 2176,
+      height: 1183
     })
   })
 })
