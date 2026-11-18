@@ -48,6 +48,7 @@ import {
   defaultWindowBoundsNear,
   defaultWindowBoundsUnderCursor,
   fitWindowToDisplay,
+  fitWindowToWorkArea,
   type FittedWindow
 } from '../lib/defaultWindowSize'
 import { ensureSystemModal } from '../popups/systemModal'
@@ -321,9 +322,10 @@ export function placeHostWindow(
         height: fresh.height
       }
     : getWindowOptions(boundsKey)
+  const cascaded = cascadeOffsetForCollisions(initialOptions, existingOrigins)
   const maximize = saved ? saved.maximized : fresh?.maximize === true
   return {
-    bounds: fitWindowToDisplay(cascadeOffsetForCollisions(initialOptions, existingOrigins)),
+    bounds: fresh ? fitWindowToWorkArea(cascaded, fresh.workArea) : fitWindowToDisplay(cascaded),
     maximizeNow: maximize && !initiallyHidden,
     maximizeOnReveal: maximize && initiallyHidden
   }

@@ -213,6 +213,22 @@ describe('placeHostWindow', () => {
       maximizeOnReveal: false
     })
   })
+
+  it('keeps a window opened next to one near the edge of a screen on that screen', () => {
+    mocks.displays = [
+      { x: 0, y: 0, width: 1920, height: 1032 },
+      { x: 1920, y: 0, width: 1920, height: 1032 }
+    ]
+    const sibling = { x: 1100, y: 300 }
+    expect(placeHostWindow('inst-new', false, sibling, [sibling]).bounds).toEqual({
+      x: 288,
+      y: 155,
+      width: 1632,
+      height: 877,
+      minWidth: 800,
+      minHeight: 600
+    })
+  })
 })
 
 describe('shouldBailAfterConsult', () => {

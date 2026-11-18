@@ -43,11 +43,16 @@ export function defaultWindowBounds(workArea: WorkArea): DefaultWindowBounds {
   }
 }
 
-export function defaultWindowBoundsNear(point: Electron.Point): DefaultWindowBounds {
-  return defaultWindowBounds(screen.getDisplayNearestPoint(point).workArea)
+export interface FreshWindowBounds extends DefaultWindowBounds {
+  workArea: WorkArea
 }
 
-export function defaultWindowBoundsUnderCursor(): DefaultWindowBounds {
+export function defaultWindowBoundsNear(point: Electron.Point): FreshWindowBounds {
+  const { workArea } = screen.getDisplayNearestPoint(point)
+  return { ...defaultWindowBounds(workArea), workArea }
+}
+
+export function defaultWindowBoundsUnderCursor(): FreshWindowBounds {
   return defaultWindowBoundsNear(screen.getCursorScreenPoint())
 }
 

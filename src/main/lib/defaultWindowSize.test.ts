@@ -99,7 +99,8 @@ describe('defaultWindowBoundsUnderCursor', () => {
       y: 94,
       width: 2176,
       height: 1183,
-      maximize: false
+      maximize: false,
+      workArea: { x: 1512, y: 0, width: 2560, height: 1392 }
     })
   })
 })
@@ -113,7 +114,8 @@ describe('defaultWindowBoundsNear', () => {
     expect(defaultWindowBoundsNear({ x: 100, y: 100 })).toMatchObject({
       width: 1285,
       height: 756,
-      maximize: true
+      maximize: true,
+      workArea: { x: 0, y: 25, width: 1512, height: 889 }
     })
   })
 })
