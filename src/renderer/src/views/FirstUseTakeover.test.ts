@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setChecked } from './testHelpers'
 
@@ -491,6 +492,84 @@ describe('Set up, the first screen', () => {
     expect(window.api.setFirstUseMode).toHaveBeenLastCalledWith('consent-lockdown')
     w.unmount()
     expect(window.api.setFirstUseMode).toHaveBeenLastCalledWith('none')
+  })
+})
+
+const CONSENT_FROM_CHANGE: SetupConsent = {
+  acceptedTos: false,
+  telemetryEnabled: true,
+  betaFeaturesEnabled: true,
+  betaTouched: false,
+  preservePersistedBetaOptIn: false,
+  locale: 'en'
+}
+
+function emulateReducedMotion(reduce: boolean): void {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: reduce && query === '(prefers-reduced-motion: reduce)',
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  }))
+}
+
+describe('The first open', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('starts with the Comfy wordmark alone in the middle, with a glint and the light coming on', async () => {
+    emulateReducedMotion(false)
+    const w = await mountSetup()
+
+    const mark = w.find('[data-testid="setup-wordmark"]')
+    expect(mark.attributes('data-arriving')).toBe('true')
+    expect(mark.find('[data-testid="setup-wordmark-glint"]').exists()).toBe(true)
+    expect(w.find('[data-testid="setup-light"]').exists()).toBe(true)
+    expect(w.find('[data-testid="setup-column"]').attributes('data-rise-after-arrival')).toBe(
+      'true'
+    )
+    w.unmount()
+  })
+
+  it('ends the opening once the last block of Set up has risen, so later screens rise at once', async () => {
+    emulateReducedMotion(false)
+    const w = await mountSetup()
+    const mark = () => w.find('[data-testid="setup-wordmark"]')
+    const column = () => w.find('[data-testid="setup-column"]')
+    const blocks = [...column().element.children]
+
+    blocks[0].dispatchEvent(new Event('animationend', { bubbles: true }))
+    await nextTick()
+    expect(mark().attributes('data-arriving')).toBe('true')
+    expect(column().attributes('data-rise-after-arrival')).toBe('true')
+
+    blocks[blocks.length - 1].dispatchEvent(new Event('animationend', { bubbles: true }))
+    await nextTick()
+    expect(mark().attributes('data-arriving')).toBeUndefined()
+    expect(mark().findAll('svg')).toHaveLength(1)
+    expect(w.find('[data-testid="setup-light"]').exists()).toBe(false)
+    expect(column().attributes('data-rise-after-arrival')).toBeUndefined()
+    w.unmount()
+  })
+
+  it.each([
+    ['when coming back from Change', false, { consent: CONSENT_FROM_CHANGE }],
+    ['under reduced motion', true, {}]
+  ])('opens straight onto Set up %s', async (_case, reduce, props) => {
+    emulateReducedMotion(reduce)
+    const w = mount(FirstUseTakeover, { props })
+    await flushPromises()
+
+    const mark = w.find('[data-testid="setup-wordmark"]')
+    expect(mark.attributes('data-arriving')).toBeUndefined()
+    expect(mark.findAll('svg')).toHaveLength(1)
+    expect(w.find('[data-testid="setup-light"]').exists()).toBe(false)
+    expect(
+      w.find('[data-testid="setup-column"]').attributes('data-rise-after-arrival')
+    ).toBeUndefined()
+    w.unmount()
   })
 })
 

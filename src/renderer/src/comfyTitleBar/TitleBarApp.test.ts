@@ -628,86 +628,12 @@ describe('TitleBarApp', () => {
     expect(bridgeState.refreshInstanceClicks).toBe(1)
   })
 
-  it('hides both status pills by default (no update available, no install update)', async () => {
+  it('leaves the Desktop update to the sidebar and shows no update pill in the title bar', async () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
-    expect(wrapper.find('.title-update-pill.is-app-update').exists()).toBe(false)
-    expect(wrapper.find('.title-update-pill.is-install-update').exists()).toBe(false)
-  })
-
-  it('renders the app-update pill with "Desktop Update" copy when state.kind=available (auto-updates OFF)', async () => {
-    const { default: TitleBarApp } = await import('./TitleBarApp.vue')
-    const wrapper = mount(TitleBarApp)
-    await flushPromises()
-    bridgeState.appUpdateStateCallbacks.forEach((cb) =>
-      cb({ kind: 'available', version: '2.3.4', autoUpdate: false })
-    )
-    await flushPromises()
-    const pill = wrapper.find('.title-update-pill.is-app-update')
-    expect(pill.exists()).toBe(true)
-    expect(pill.classes()).not.toContain('is-ready')
-    expect(pill.text()).toContain('Desktop Update')
-    expect(pill.attributes('title')).toBe('Desktop Update (v2.3.4)')
-    expect(pill.attributes('aria-label')).toBe('Desktop Update (v2.3.4)')
-  })
-
-  it('renders the app-update pill with "Desktop Update Ready" copy when state.kind=ready (auto-updates OFF)', async () => {
-    const { default: TitleBarApp } = await import('./TitleBarApp.vue')
-    const wrapper = mount(TitleBarApp)
-    await flushPromises()
-    bridgeState.appUpdateStateCallbacks.forEach((cb) =>
-      cb({ kind: 'ready', version: '2.3.4', autoUpdate: false })
-    )
-    await flushPromises()
-    const pill = wrapper.find('.title-update-pill.is-app-update')
-    expect(pill.exists()).toBe(true)
-    expect(pill.classes()).toContain('is-ready')
-    expect(pill.text()).toContain('Desktop Update Ready')
-    expect(pill.attributes('title')).toBe('Desktop Update Ready (v2.3.4)')
-  })
-
-  it('renders the app-update pill with "Desktop Update Ready" copy when state.kind=ready (auto-updates ON)', async () => {
-    const { default: TitleBarApp } = await import('./TitleBarApp.vue')
-    const wrapper = mount(TitleBarApp)
-    await flushPromises()
-    bridgeState.appUpdateStateCallbacks.forEach((cb) =>
-      cb({ kind: 'ready', version: '2.3.4', autoUpdate: true })
-    )
-    await flushPromises()
-    const pill = wrapper.find('.title-update-pill.is-app-update')
-    expect(pill.exists()).toBe(true)
-    expect(pill.classes()).toContain('is-ready')
-    expect(pill.text()).toContain('Desktop Update Ready')
-  })
-
-  it('forwards app-update pill clicks through the bridge', async () => {
-    const { default: TitleBarApp } = await import('./TitleBarApp.vue')
-    const wrapper = mount(TitleBarApp, { attachTo: document.body })
-    await flushPromises()
-    bridgeState.appUpdateStateCallbacks.forEach((cb) =>
-      cb({ kind: 'available', version: '1.0.0', autoUpdate: false })
-    )
-    await flushPromises()
-    await wrapper.find('.title-update-pill.is-app-update').trigger('click')
-    expect(bridgeState.appUpdatePillClicks).toBe(1)
-    wrapper.unmount()
-  })
-
-  it('hides the app-update pill when state transitions back to kind=null', async () => {
-    const { default: TitleBarApp } = await import('./TitleBarApp.vue')
-    const wrapper = mount(TitleBarApp)
-    await flushPromises()
-    bridgeState.appUpdateStateCallbacks.forEach((cb) =>
-      cb({ kind: 'ready', version: '2.0.0', autoUpdate: false })
-    )
-    await flushPromises()
-    expect(wrapper.find('.title-update-pill.is-app-update').exists()).toBe(true)
-    bridgeState.appUpdateStateCallbacks.forEach((cb) =>
-      cb({ kind: null, version: null, autoUpdate: true })
-    )
-    await flushPromises()
-    expect(wrapper.find('.title-update-pill.is-app-update').exists()).toBe(false)
+    expect(bridgeState.appUpdateStateCallbacks).toHaveLength(0)
+    expect(wrapper.find('.title-update-pill').exists()).toBe(false)
   })
 
   it('renders the downloads tray with no badge in the empty steady state', async () => {
@@ -1075,96 +1001,6 @@ describe('TitleBarApp', () => {
     } finally {
       vi.useRealTimers()
     }
-  })
-
-  describe('fitting the right side next to Home', () => {
-    const rect = (left: number, width: number): DOMRect =>
-      ({
-        left,
-        right: left + width,
-        width,
-        top: 0,
-        bottom: 32,
-        height: 32,
-        x: left,
-        y: 0
-      }) as DOMRect
-
-    let resizeCallbacks: ResizeObserverCallback[] = []
-
-    beforeEach(() => {
-      resizeCallbacks = []
-      vi.stubGlobal(
-        'ResizeObserver',
-        class {
-          constructor(cb: ResizeObserverCallback) {
-            resizeCallbacks.push(cb)
-          }
-          observe(): void {}
-          unobserve(): void {}
-          disconnect(): void {}
-        }
-      )
-    })
-
-    afterEach(() => {
-      vi.unstubAllGlobals()
-      vi.restoreAllMocks()
-    })
-
-    async function mountWithTrailingAt(trailingLeft: number) {
-      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
-        this: Element
-      ) {
-        if (this.matches('header')) return rect(0, 800)
-        if (this.closest('.title-trailing')) return rect(trailingLeft, 788 - trailingLeft)
-        return rect(12, 88)
-      })
-      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
-      const wrapper = mount(TitleBarApp, { attachTo: document.body })
-      const header = wrapper.find('header').element as HTMLElement
-      header.style.columnGap = '12px'
-      await flushPromises()
-      resizeCallbacks.forEach((cb) => cb([], {} as ResizeObserver))
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-      await flushPromises()
-      return wrapper
-    }
-
-    it('collapses once only the two grid gutters are left between Home and the right side', async () => {
-      const wrapper = await mountWithTrailingAt(124)
-      expect(wrapper.find('header').classes()).toContain('is-collapsed-feedback')
-      wrapper.unmount()
-    })
-
-    it('stays expanded while the empty middle still has room', async () => {
-      const wrapper = await mountWithTrailingAt(200)
-      expect(wrapper.find('header').classes()).not.toContain('is-collapsed-feedback')
-      wrapper.unmount()
-    })
-  })
-
-  describe('without ResizeObserver', () => {
-    let originalResizeObserver: typeof globalThis.ResizeObserver | undefined
-
-    beforeEach(() => {
-      originalResizeObserver = (globalThis as { ResizeObserver?: typeof globalThis.ResizeObserver })
-        .ResizeObserver
-      delete (globalThis as { ResizeObserver?: typeof globalThis.ResizeObserver }).ResizeObserver
-    })
-
-    afterEach(() => {
-      ;(globalThis as { ResizeObserver?: typeof globalThis.ResizeObserver }).ResizeObserver =
-        originalResizeObserver
-    })
-
-    it('still mounts and renders the title bar', async () => {
-      const mod = await import('./TitleBarApp.vue')
-      const wrapper = mount(mod.default, { attachTo: document.body })
-      await flushPromises()
-      expect(wrapper.find('.title-trailing').exists()).toBe(true)
-      wrapper.unmount()
-    })
   })
 
   describe('core beta activation notice', () => {

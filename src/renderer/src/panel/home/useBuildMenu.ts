@@ -85,6 +85,14 @@ export function useBuildMenu(build: () => Installation) {
     return inst.sourceCategory !== 'cloud'
   }
 
+  function isStarting(inst: Installation): boolean {
+    const operation = sessionStore.operationInstances.get(inst.id)
+    return (
+      sessionStore.isLaunching(inst.id) ||
+      (operation?.actionId === 'launch' && operation.sessionId === undefined)
+    )
+  }
+
   const items = computed<BuildMenuEntry[]>(() => {
     const inst = build()
     const progress = buildProgressOf(progressStore, inst.id)
@@ -102,6 +110,11 @@ export function useBuildMenu(build: () => Installation) {
         { id: 'view-logs', label: t('installProgress.viewLogs'), icon: ScrollText },
         { id: 'restart', label: t('actions.restart'), icon: RotateCw },
         { id: 'stop', label: t('actions.stop'), icon: CircleStop }
+      )
+    } else if (isLocal(inst) && isStarting(inst)) {
+      now.push(
+        { id: 'view-logs', label: t('installProgress.viewLogs'), icon: ScrollText },
+        { id: 'cancel', label: t('common.cancel'), icon: X }
       )
     } else if (canLaunch.value) {
       now.push({ id: 'launch', label: t('actions.launch'), icon: Play })
@@ -161,6 +174,11 @@ export function useBuildMenu(build: () => Installation) {
     await host.launch(inst, { isRestart: true })
   }
 
+  async function cancelLeftStart(inst: Installation): Promise<void> {
+    await window.api.cancelOperation(inst.id)
+    await window.api.stopComfyUI(inst.id)
+  }
+
   async function run(id: string, opts: { confirmed?: boolean } = {}): Promise<void> {
     const inst = build()
     switch (id) {
@@ -172,7 +190,7 @@ export function useBuildMenu(build: () => Installation) {
         else openInstallManager(inst, { initialTab: 'console' })
         return
       case 'cancel':
-        return install.cancel()
+        return install.progress.value ? install.cancel() : cancelLeftStart(inst)
       case 'restart':
         if (canLaunch.value) return restart(inst)
         return

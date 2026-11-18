@@ -70,12 +70,13 @@ function dispatchToSessionHandler(
   }
 }
 
-interface ActiveAction {
+interface ActiveOperation {
   actionId: string
-  ready?: Promise<void>
+  sessionId?: string
 }
 
-const _activeActions = new Map<string, ActiveAction>()
+const _activeActions = new Map<string, ActiveOperation>()
+const _actionReady = new WeakMap<ActiveOperation, Promise<void>>()
 
 export interface SessionActionObserver {
   before(installationId: string, actionId: string): Promise<void>
@@ -88,30 +89,29 @@ export function setSessionActionObserver(next: SessionActionObserver | null): vo
   observer = next
 }
 
-export function _getActiveOperations(): { installationId: string; actionId: string }[] {
-  return Array.from(_activeActions, ([installationId, { actionId }]) => ({
-    installationId,
-    actionId
-  }))
+export function _getActiveOperations(): ({ installationId: string } & ActiveOperation)[] {
+  return Array.from(_activeActions, ([installationId, entry]) => ({ installationId, ...entry }))
 }
 
 export async function dispatchSessionAction(
   ctx: ActionContext,
   actionId: string
 ): Promise<ActionResult> {
-  const { installationId } = ctx
+  const { installationId, sessionId } = ctx
   const running = _activeActions.get(installationId)
   const takesOverFromLookup =
     running !== undefined && occupiesInstall(actionId) && !occupiesInstall(running.actionId)
   const owned = running === undefined || takesOverFromLookup
-  const entry: ActiveAction = { actionId }
+  const entry: ActiveOperation = sessionId ? { actionId, sessionId } : { actionId }
   if (owned) {
     _activeActions.set(installationId, entry)
-    _broadcastToRenderer('operation-changed', { installationId, actionId, active: true })
+    _broadcastToRenderer('operation-changed', { installationId, ...entry, active: true })
   }
   try {
-    if (owned) entry.ready = observer?.before(installationId, actionId).catch(() => {})
-    const ready = owned ? entry.ready : running?.ready
+    const before = owned ? observer?.before(installationId, actionId).catch(() => {}) : undefined
+    if (before) _actionReady.set(entry, before)
+    const holder = owned ? entry : running
+    const ready = holder && _actionReady.get(holder)
     if (ready) await ready
     if (isSessionActionId(actionId)) {
       return await dispatchToSessionHandler(ctx, actionId)
@@ -120,7 +120,7 @@ export async function dispatchSessionAction(
   } finally {
     if (owned && _activeActions.get(installationId) === entry) {
       _activeActions.delete(installationId)
-      _broadcastToRenderer('operation-changed', { installationId, actionId, active: false })
+      _broadcastToRenderer('operation-changed', { installationId, ...entry, active: false })
     }
     if (owned) observer?.after(installationId, actionId)
   }

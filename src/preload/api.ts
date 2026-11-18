@@ -1,6 +1,7 @@
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type {
+  AppOutputs,
   AppPageStatus,
   ElectronApi,
   ResolvedTheme,
@@ -108,6 +109,8 @@ export function buildElectronApi(): ElectronApi {
     downloadAsset: (source, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
     revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),
+    findCloudAsset: (installationId, name) =>
+      ipcRenderer.invoke('assets:find', installationId, name),
     copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
@@ -143,6 +146,13 @@ export function buildElectronApi(): ElectronApi {
     },
     openTemplateInBuild: (installationId, templateId) =>
       ipcRenderer.invoke('template-search:open', installationId, templateId),
+    onAppOutputs: (callback) => {
+      const handler = (_event: IpcRendererEvent, appId: string, outputs: AppOutputs | null): void =>
+        callback(appId, outputs)
+      ipcRenderer.on('apps:outputs', handler)
+      return () => ipcRenderer.removeListener('apps:outputs', handler)
+    },
+    sendAppOutputAction: (action) => ipcRenderer.send('apps:output-action', action),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     openGlobalSettings: (tab, opts) =>
       ipcRenderer.send(
