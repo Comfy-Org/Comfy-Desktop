@@ -46,8 +46,8 @@
     "emptyBody": "新应用会显示在这里。",
     "noMatches": "没有与“{query}”匹配的应用",
     "allApps": "全部应用",
-    "premium": {
-      "tooltip": "高级应用，使用积分运行"
+    "badge": {
+      "withDescription": "{text}：{description}"
     },
     "pageLoading": "正在加载{app}",
     "pageFailedTitle": "{app}未能加载",

@@ -1,12 +1,14 @@
 <script
   setup
   lang="ts"
-  generic="Card extends { id: string; title: string; description: string; premium?: boolean }"
+  generic="Card extends Pick<AppCard, 'id' | 'title' | 'description' | 'badges'>"
 >
 import { computed, nextTick, onBeforeUnmount, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from '@lucide/vue'
-import PremiumAppBadge from '../PremiumAppBadge.vue'
+import AppBadges from '../AppBadges.vue'
+import { badgeDescriptionIds } from '../appCardBadges'
+import type { AppCard } from '../../types/ipc'
 
 interface ArcSlot {
   transform: string
@@ -59,10 +61,14 @@ const jumpedAcross = ref(new Set<string>())
 const loadedPictures = ref(new Set<string>())
 const brokenPictures = ref(new Set<string>())
 const keyboardFocusedId = ref<string | null>(null)
-const premiumIdPrefix = useId()
+const badgeIdPrefix = useId()
 
-function premiumDescriptionId(card: Card): string {
-  return `${premiumIdPrefix}-premium-${card.id}`
+function badgeIdPrefixFor(card: Card): string {
+  return `${badgeIdPrefix}-${card.id}`
+}
+
+function badgesDescribing(card: Card): string | undefined {
+  return badgeDescriptionIds(badgeIdPrefixFor(card), card.badges)
 }
 
 function noteCardFocus(card: Card, event: FocusEvent): void {
@@ -242,7 +248,7 @@ function activate(placed: { card: Card; offset: number }): void {
           ]"
           :style="slotStyle(placed.offset)"
           :aria-label="labelFor(placed)"
-          :aria-describedby="placed.card.premium ? premiumDescriptionId(placed.card) : undefined"
+          :aria-describedby="badgesDescribing(placed.card)"
           :aria-current="placed.offset === 0 ? 'true' : undefined"
           :aria-hidden="placed.onStage ? undefined : 'true'"
           :tabindex="placed.onStage ? undefined : -1"
@@ -277,9 +283,10 @@ function activate(placed: { card: Card; offset: number }): void {
             class="absolute inset-0 bg-linear-to-t from-black/75 via-black/40 via-30% to-transparent to-55%"
             aria-hidden="true"
           />
-          <PremiumAppBadge
-            v-if="placed.card.premium"
-            :description-id="premiumDescriptionId(placed.card)"
+          <AppBadges
+            v-if="placed.card.badges?.length"
+            :badges="placed.card.badges"
+            :description-id-prefix="badgeIdPrefixFor(placed.card)"
             :revealed="keyboardFocusedId === placed.card.id"
             class="absolute top-3 left-3"
           />

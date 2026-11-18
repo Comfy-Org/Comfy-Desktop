@@ -4,19 +4,28 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 
 import '../../assets/main.css'
 import HomeCarousel from './HomeCarousel.vue'
+import type { AppBadge } from '../../types/ipc'
 
 interface CarouselCard {
   id: string
   title: string
   description: string
-  premium?: boolean
+  badges?: AppBadge[]
 }
 
 const PRODUCT_SWAP: CarouselCard = {
   id: 'product-swap',
   title: 'Product Swap',
   description: 'Put your product in a clip.',
-  premium: true
+  badges: [
+    {
+      id: 'uses-credits',
+      style: 'crown',
+      text: { en: 'Uses credits' },
+      description: { en: 'Runs a paid partner model' }
+    },
+    { id: 'new', style: 'chip', text: { en: 'New' } }
+  ]
 }
 const HDR: CarouselCard = { id: 'sdr-to-hdr', title: 'SDR to HDR', description: '' }
 const EXTEND: CarouselCard = { id: 'extend-picture', title: 'Extend Picture', description: '' }
@@ -48,30 +57,31 @@ function frontCard(wrapper: VueWrapper) {
   return wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]')
 }
 
-describe('HomeCarousel premium apps', () => {
-  it('puts the crown in the top left corner and the open arrow in the top right, apart', () => {
+describe('HomeCarousel app badges', () => {
+  it('puts the badges in the top left corner and the open arrow in the top right, apart', () => {
     const wrapper = mountCarousel()
 
     const card = frontCard(wrapper).element as HTMLElement
-    const crown = frontCard(wrapper).get('[data-testid="premium-app-badge"]').element as HTMLElement
+    const badges = frontCard(wrapper).get('[data-testid="app-badges"]').element as HTMLElement
     const arrow = frontCard(wrapper).get('[data-testid="home-carousel-cta"]').element as HTMLElement
 
-    expect(crown.offsetParent).toBe(card)
+    expect(badges.offsetParent).toBe(card)
     expect(arrow.offsetParent).toBe(card)
-    expect([crown.offsetLeft, crown.offsetTop]).toEqual([12, 12])
+    expect([badges.offsetLeft, badges.offsetTop]).toEqual([12, 12])
     expect([card.offsetWidth - arrow.offsetLeft - arrow.offsetWidth, arrow.offsetTop]).toEqual([
       12, 12
     ])
-    expect(crown.offsetLeft + crown.offsetWidth).toBeLessThan(arrow.offsetLeft)
+    expect(badges.offsetLeft + badges.offsetWidth).toBeLessThan(arrow.offsetLeft)
   })
 
-  it('describes a premium card with its credit note and leaves a free card without one', () => {
+  it('describes a card with each of its badges and leaves a card without badges undescribed', () => {
     const wrapper = mountCarousel()
 
-    const noteId = frontCard(wrapper).attributes('aria-describedby')
-    expect(noteId && document.getElementById(noteId)?.textContent).toBe(
-      'Premium app, runs with credits'
-    )
+    const ids = frontCard(wrapper).attributes('aria-describedby')?.split(' ') ?? []
+    expect(ids.map((id) => document.getElementById(id)?.textContent)).toEqual([
+      'Uses credits: Runs a paid partner model',
+      'New'
+    ])
     expect(frontCard(wrapper).attributes('aria-label')).toBe('Open Product Swap')
     expect(
       wrapper
@@ -80,7 +90,7 @@ describe('HomeCarousel premium apps', () => {
     ).toBe(undefined)
   })
 
-  it('shows the credit note when the premium card gets keyboard focus, and Escape closes it with focus kept on the card', async () => {
+  it("shows the first badge's description when the card gets keyboard focus, and Escape closes it with focus kept on the card", async () => {
     const wrapper = mountCarousel()
     expect(document.querySelector('.tooltip-bubble')).toBe(null)
 
@@ -89,7 +99,7 @@ describe('HomeCarousel premium apps', () => {
     expect(document.activeElement).toBe(frontCard(wrapper).element)
     await expect
       .poll(() => document.querySelector('.tooltip-bubble')?.textContent ?? '')
-      .toContain('Premium app, runs with credits')
+      .toContain('Runs a paid partner model')
     const bubble = document.querySelector('.tooltip-bubble')!.getBoundingClientRect()
     expect(bubble.width).toBeGreaterThan(0)
     expect(bubble.height).toBeGreaterThan(0)

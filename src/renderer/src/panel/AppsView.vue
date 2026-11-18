@@ -5,9 +5,10 @@ import { AppWindow, Search } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
-import PremiumAppBadge from './PremiumAppBadge.vue'
+import AppBadges from './AppBadges.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
+import { badgeDescriptionIds } from './appCardBadges'
 import type { AppCard } from '../types/ipc'
 
 type LoadState = 'loading' | 'ready' | 'failed'
@@ -32,7 +33,7 @@ const openApp = ref<AppCard | null>(null)
 const coversThatFailed = reactive(new Set<string>())
 const cardButtons = new Map<string, HTMLElement>()
 const keyboardFocusedId = ref<string | null>(null)
-const premiumIdPrefix = useId()
+const badgeIdPrefix = useId()
 
 let lastOpenedId: string | null = null
 let stopClosedUpdates: (() => void) | null = null
@@ -61,8 +62,12 @@ function rememberCard(id: string, element: unknown): void {
   else cardButtons.delete(id)
 }
 
-function premiumDescriptionId(app: AppCard): string {
-  return `${premiumIdPrefix}-premium-${app.id}`
+function badgeIdPrefixFor(app: AppCard): string {
+  return `${badgeIdPrefix}-${app.id}`
+}
+
+function badgesDescribing(app: AppCard): string | undefined {
+  return badgeDescriptionIds(badgeIdPrefixFor(app), app.badges)
 }
 
 function noteCardFocus(app: AppCard, event: FocusEvent): void {
@@ -206,7 +211,7 @@ onBeforeUnmount(() => {
               :ref="(element) => rememberCard(app.id, element)"
               type="button"
               class="group flex size-full cursor-pointer flex-col rounded-card border-0 bg-[rgb(29_29_29/0.72)] p-1 text-left outline-none transition-colors duration-150 hover:bg-card-hover focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
-              :aria-describedby="app.premium ? premiumDescriptionId(app) : undefined"
+              :aria-describedby="badgesDescribing(app)"
               :data-testid="`app-card-${app.id}`"
               @click="open(app)"
               @focus="noteCardFocus(app, $event)"
@@ -230,9 +235,10 @@ onBeforeUnmount(() => {
                 >
                   <AppWindow :size="28" :stroke-width="1.5" aria-hidden="true" />
                 </span>
-                <PremiumAppBadge
-                  v-if="app.premium"
-                  :description-id="premiumDescriptionId(app)"
+                <AppBadges
+                  v-if="app.badges?.length"
+                  :badges="app.badges"
+                  :description-id-prefix="badgeIdPrefixFor(app)"
                   :revealed="keyboardFocusedId === app.id"
                   class="absolute top-2 left-2"
                 />

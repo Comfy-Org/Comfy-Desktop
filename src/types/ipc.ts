@@ -141,12 +141,26 @@ export interface Installation {
 export type DashboardPage =
   'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
 
+export type AppBadgeStyle = 'crown' | 'chip' | 'label'
+
+export interface AppBadgeWords {
+  en: string
+  'zh-CN'?: string
+}
+
+export interface AppBadge {
+  id: string
+  style: AppBadgeStyle
+  text: AppBadgeWords
+  description?: AppBadgeWords
+}
+
 export interface AppCard {
   id: string
   title: string
   description: string
   coverUrl: string | null
-  premium?: boolean
+  badges?: AppBadge[]
 }
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'

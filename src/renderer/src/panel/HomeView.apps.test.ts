@@ -19,7 +19,14 @@ const GENJUTSU: AppCard = {
   title: 'Genjutsu',
   description: 'Put someone else in a short clip.',
   coverUrl: 'https://comfy.org/catalog-media/genjutsu/cover',
-  premium: true
+  badges: [
+    {
+      id: 'uses-credits',
+      style: 'crown',
+      text: { en: 'Uses credits' },
+      description: { en: 'Runs a paid partner model' }
+    }
+  ]
 }
 const PRODUCT_ADS = app('product-ads', 'Product Ads')
 const HDR = app('sdr-to-hdr', 'SDR to HDR')
@@ -133,11 +140,11 @@ describe('Home apps', () => {
     expect(wrapper.emitted('open-app')).toEqual([[PRODUCT_ADS]])
   })
 
-  it('crowns a premium app in the carousel and leaves a free app without one', async () => {
+  it("draws an app's badges in the carousel and none on an app without badges", async () => {
     const wrapper = await openHome()
 
-    expect(cardAt(wrapper, 0).find('[data-testid="premium-app-badge"]').exists()).toBe(true)
-    expect(cardAt(wrapper, 2).find('[data-testid="premium-app-badge"]').exists()).toBe(false)
+    expect(cardAt(wrapper, 0).find('[data-testid="app-badge-uses-credits"]').exists()).toBe(true)
+    expect(cardAt(wrapper, 2).find('[data-testid="app-badges"]').exists()).toBe(false)
   })
 
   it('names the cards and arrows as apps for screen readers', async () => {

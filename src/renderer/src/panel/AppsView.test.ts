@@ -5,7 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import '../assets/main.css'
 import AppsView from './AppsView.vue'
 import AppPageHost from './AppPageHost.vue'
-import type { AppCard, AppPagePlacement, AppPageStatus } from '../types/ipc'
+import type { AppBadge, AppCard, AppPagePlacement, AppPageStatus } from '../types/ipc'
 
 const FOUR_COLUMN_PAGE_WIDTH = 1172
 const MEDIUM_PAGE_WIDTH = 900
@@ -13,12 +13,20 @@ const NARROW_PAGE_WIDTH = 532
 const COVER =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
+const CROWN: AppBadge = {
+  id: 'uses-credits',
+  style: 'crown',
+  text: { en: 'Uses credits' },
+  description: { en: 'Runs a paid partner model' }
+}
+const NEW_CHIP: AppBadge = { id: 'new', style: 'chip', text: { en: 'New' } }
+
 const CUTOUT: AppCard = {
   id: 'remove-background',
   title: 'Remove Background',
   description: 'Cut the subject out of a picture or video.',
   coverUrl: COVER,
-  premium: true
+  badges: [CROWN, NEW_CHIP]
 }
 const HDR: AppCard = {
   id: 'sdr-to-hdr',
@@ -31,7 +39,7 @@ const GENJUTSU: AppCard = {
   title: 'Genjutsu',
   description: 'Move a character with the motion from a clip.',
   coverUrl: null,
-  premium: true
+  badges: [NEW_CHIP]
 }
 
 const listApps = vi.fn<() => Promise<AppCard[]>>()
@@ -296,41 +304,49 @@ describe('AppsView', () => {
     expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
   })
 
-  it('crowns a premium app on the top left of its picture, in the credits gold, and leaves a free app without one', async () => {
+  it("draws an app's badges on the top left of its picture, the crown in the credits gold, and none on an app without badges", async () => {
     const wrapper = await mountApps()
 
-    const premiumCard = wrapper.get('[data-testid="app-card-remove-background"]')
-    const badge = premiumCard.get('[data-testid="premium-app-badge"]')
-    const picture = premiumCard.get('img').element.getBoundingClientRect()
-    const badgeBox = badge.element.getBoundingClientRect()
-    expect(Math.round(badgeBox.left - picture.left)).toBe(8)
-    expect(Math.round(badgeBox.top - picture.top)).toBe(8)
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+    const badges = card.get('[data-testid="app-badges"]')
+    const picture = card.get('img').element.getBoundingClientRect()
+    const badgesBox = badges.element.getBoundingClientRect()
+    expect(Math.round(badgesBox.left - picture.left)).toBe(8)
+    expect(Math.round(badgesBox.top - picture.top)).toBe(8)
+    expect(
+      badges.findAll('[data-badge-style]').map((badge) => badge.attributes('data-badge-style'))
+    ).toEqual(['crown', 'chip'])
     document.documentElement.dataset.theme = 'dark'
-    expect(getComputedStyle(badge.get('[data-testid="premium-app-crown"]').element).color).toBe(
+    expect(getComputedStyle(badges.get('[data-testid="app-badge-crown"]').element).color).toBe(
       'rgb(233, 196, 34)'
-    )
-    const noteId = premiumCard.attributes('aria-describedby')
-    expect(noteId && document.getElementById(noteId)?.textContent).toBe(
-      'Premium app, runs with credits'
-    )
-    expect(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').attributes('aria-describedby')).toBe(
-      undefined
     )
     expect(
       wrapper
         .get('[data-testid="app-card-genjutsu"]')
-        .find('[data-testid="premium-app-badge"]')
+        .find('[data-testid="app-badge-new"]')
         .exists()
     ).toBe(true)
     expect(
       wrapper
         .get('[data-testid="app-card-sdr-to-hdr"]')
-        .find('[data-testid="premium-app-badge"]')
+        .find('[data-testid="app-badges"]')
         .exists()
     ).toBe(false)
   })
 
-  it('shows the credit note when a premium card gets keyboard focus, and not for a free card', async () => {
+  it('describes a card with each of its badges for screen readers, and a card without badges with none', async () => {
+    const wrapper = await mountApps()
+
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+    const ids = card.attributes('aria-describedby')?.split(' ') ?? []
+    const notes = ids.map((id) => document.getElementById(id)?.textContent)
+    expect(notes).toEqual(['Uses credits: Runs a paid partner model', 'New'])
+    expect(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').attributes('aria-describedby')).toBe(
+      undefined
+    )
+  })
+
+  it("shows the first badge's description when a card with badges gets keyboard focus, and not for a card without", async () => {
     const wrapper = await mountApps()
 
     wrapper.get('input').element.focus()
@@ -341,7 +357,7 @@ describe('AppsView', () => {
     )
     await expect
       .poll(() => document.querySelector('.tooltip-bubble')?.textContent ?? '')
-      .toContain('Premium app, runs with credits')
+      .toContain('Runs a paid partner model')
 
     await userEvent.tab()
 
