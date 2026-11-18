@@ -298,6 +298,7 @@ function wheel(e: WheelEvent): void {
         /></span>
         <span class="mar-arc-bar">
           <span class="mar-arc-title">{{ x.label }}</span>
+          <span v-if="x.does" class="mar-arc-does">{{ x.does }}</span>
         </span>
       </button>
     </div>
@@ -435,6 +436,36 @@ function wheel(e: WheelEvent): void {
   align-items: center;
   gap: 10px;
 }
+/* Pointing at the front card, the title rises and what it does fades in
+   under it, as on the Apps gallery's tiles. */
+.mar-arc-bar {
+  display: grid;
+}
+.mar-arc-bar > * {
+  grid-area: 1 / 1;
+  transition:
+    opacity 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mar-arc-does {
+  overflow: hidden;
+  align-self: end;
+  color: rgb(255 255 255 / 0.78);
+  font-size: 12px;
+  line-height: 1.3;
+  opacity: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  transform: translateY(6px);
+  white-space: nowrap;
+}
+.mar-arc-card.is-front:is(:hover, :focus-visible) .mar-arc-bar .mar-arc-title {
+  transform: translateY(-18px);
+}
+.mar-arc-card.is-front:is(:hover, :focus-visible) .mar-arc-does {
+  opacity: 1;
+  transform: none;
+}
 .mar-arc-bar .mar-arc-title {
   display: -webkit-box;
   overflow: hidden;
@@ -493,7 +524,8 @@ function wheel(e: WheelEvent): void {
 @media (prefers-reduced-motion: reduce) {
   .mar-arc-card .mar-arc-after,
   .mar-arc-go,
-  .mar-arc-scrim {
+  .mar-arc-scrim,
+  .mar-arc-bar > * {
     transition: none;
   }
   :root .proto-main .mar-arc-card.is-front img {
