@@ -79,7 +79,8 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
       trimmed,
       response ?? { kind: 'failed' },
       { triggeredAt, requestedAt },
-      panelOpen.value
+      panelOpen.value,
+      { partnersShown: partnersShown.value }
     )
     if (response?.kind === 'result') {
       state.value = { kind: 'result', query: trimmed, result: response.result }
@@ -162,6 +163,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
 
   async function setPartnersShown(shown: boolean): Promise<void> {
     partnersShown.value = shown
+    telemetry.partnerSwitchChanged(shown)
     await window.api.setSetting(PARTNERS_SETTING, shown).catch(() => null)
     if (query.value.trim()) await search(query.value)
   }

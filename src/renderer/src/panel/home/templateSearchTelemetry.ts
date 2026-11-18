@@ -88,6 +88,7 @@ function answerProperties(response: TemplateSearchResponse): TelemetryContext {
     top_match_pct: matchPct(rows[0]),
     top_match_level: (rows[0] && matchLevel(rows[0].candidate)) ?? 'none',
     has_best_match: rows.some((row) => row.best),
+    has_partner_switch: response.result.partnerSwitch,
     process_ms: metrics?.processMs ?? null,
     is_cold_start: metrics?.coldStart ?? null,
     bundle_version: metrics?.bundleVersion ?? null
@@ -110,6 +111,10 @@ interface Session {
 export interface SearchTiming {
   triggeredAt: number
   requestedAt: number
+}
+
+export interface SearchSettings {
+  partnersShown: boolean
 }
 
 export interface SearchTelemetryOptions {
@@ -160,7 +165,8 @@ export function createSearchTelemetry({
     request: string,
     response: TemplateSearchResponse,
     timing: SearchTiming,
-    visible: boolean
+    visible: boolean,
+    { partnersShown }: SearchSettings
   ): void {
     if (isOff(response)) {
       session = null
@@ -178,6 +184,7 @@ export function createSearchTelemetry({
       session_search_count: current?.searches ?? 0,
       ...requestProperties(request),
       edit_chars_count: previous === null ? null : changedChars(previous, request),
+      partners_shown: partnersShown,
       ...properties,
       input_to_answer_ms: answeredAt - timing.triggeredAt,
       request_ms: answeredAt - timing.requestedAt
@@ -233,6 +240,14 @@ export function createSearchTelemetry({
     if (result === 'opened' || result === 'launch') session = null
   }
 
+  function partnerSwitchChanged(partnersShown: boolean): void {
+    send('partner_switch_changed', {
+      partners_shown: partnersShown,
+      search_id: session?.answer?.searchId ?? null,
+      session_search_count: session?.searches ?? 0
+    })
+  }
+
   function abandoned(reason: AbandonReason): void {
     const current = session
     session = null
@@ -247,7 +262,16 @@ export function createSearchTelemetry({
     })
   }
 
-  return { requested, answered, reopened, hidden, picked, opened, abandoned }
+  return {
+    requested,
+    answered,
+    reopened,
+    hidden,
+    picked,
+    opened,
+    partnerSwitchChanged,
+    abandoned
+  }
 }
 
 export type SearchTelemetry = ReturnType<typeof createSearchTelemetry>

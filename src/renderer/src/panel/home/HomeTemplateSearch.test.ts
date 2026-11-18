@@ -1168,6 +1168,27 @@ describe('HomeTemplateSearch telemetry', () => {
     expect(opened()).toEqual([])
   })
 
+  it('sends the partner switch state with each search, and a change of the switch', async () => {
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search-partner-switch"] button').trigger('click')
+    await flushPromises()
+
+    const [first, second] = named('searched')
+    expect(first!.context).toMatchObject({ partners_shown: true, has_partner_switch: true })
+    expect(named('partner_switch_changed')).toEqual([
+      expect.objectContaining({
+        context: {
+          partners_shown: false,
+          search_id: first!.context!.search_id,
+          session_search_count: 1
+        }
+      })
+    ])
+    expect(second!.context).toMatchObject({ partners_shown: false })
+  })
+
   it('sends a pointer pick for a clicked card', async () => {
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
