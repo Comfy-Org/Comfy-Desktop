@@ -190,6 +190,9 @@ describe('embeddedSession', () => {
     await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
     await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBeNull()
+    await expect(
+      billingHandoffForSender(event, 'ws-1', 'billing_web', undefined, undefined, '1.2.3')
+    ).resolves.toEqual({ status: 'disabled' })
     expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
   })
 
