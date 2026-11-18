@@ -2041,6 +2041,21 @@ describe('telemetry Firebase consensus identity lifecycle', () => {
     expect(captured.at(-1)?.distinctId).toBe('user-123')
   })
 
+  it('does not replay a held event of a feature switched off while it was held', () => {
+    let on = true
+    telemetry.gateEventsByPrefix('comfy.desktop.held_feature.', () => on)
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture('comfy.desktop.held_feature.used', { request_text: 'a poster' })
+    telemetry.capture('pending.event')
+    on = false
+    telemetry.applyFirebaseUserConsensus('user-123')
+    const events = captured.map((call) => call.event)
+    expect(events).toContain('pending.event')
+    expect(events).not.toContain('comfy.desktop.held_feature.used')
+  })
+
   it('discards quarantined writes when pending resolves to a different user', () => {
     telemetry.applyFirebaseUserConsensus('user-a')
     captured.length = 0
@@ -2698,5 +2713,57 @@ describe('telemetry SDK-level volume guards', () => {
     expect(
       captured.filter((c) => c.event === 'comfy.desktop.telemetry.session_cap_hit')
     ).toHaveLength(1)
+  })
+})
+
+describe('the Home template search request text', () => {
+  const SEARCHED = 'comfy.desktop.template_search.searched'
+  const TOKEN = 'sk-abcdefghijklmnopqrstuvwxyz123456'
+  const REQUEST = `a flyer for the bake sale, proofs to ada.lovelace@example.com, logo in /home/ada/Pictures/logo.png, key ${TOKEN}`
+
+  it('sends the request text with consent granted, without emails, home folder names or tokens', () => {
+    setupTelemetry()
+    captured.length = 0
+    telemetry.emit(SEARCHED, { request_text: REQUEST, request_chars_count: REQUEST.length })
+    expect(captured.map((c) => c.event)).toEqual([SEARCHED])
+    const text = captured[0]!.properties?.request_text as string
+    expect(text).toContain('a flyer for the bake sale, proofs to')
+    expect(text).not.toContain('ada.lovelace@example.com')
+    expect(text).not.toContain('/home/ada/')
+    expect(text).not.toContain(TOKEN)
+  })
+
+  it.each(['undecided', 'denied'] as const)(
+    'sends nothing about a search while consent is %s',
+    (consent) => {
+      setupTelemetry({ consent })
+      captured.length = 0
+      telemetry.emit(SEARCHED, { request_text: REQUEST })
+      expect(captured).toEqual([])
+    }
+  )
+
+  it('sends nothing about a search from a development build', () => {
+    setupTelemetry({ isPackaged: false })
+    captured.length = 0
+    telemetry.emit(SEARCHED, { request_text: REQUEST })
+    expect(captured).toEqual([])
+  })
+})
+
+describe('telemetry.gateEventsByPrefix', () => {
+  it('drops the events of a feature that is switched off, and only those', () => {
+    setupTelemetry()
+    let on = false
+    telemetry.gateEventsByPrefix('comfy.desktop.gated_feature.', () => on)
+    captured.length = 0
+    telemetry.emit('comfy.desktop.gated_feature.used', { request_text: 'a poster' })
+    telemetry.capture('comfy.desktop.session.started', {})
+    on = true
+    telemetry.emit('comfy.desktop.gated_feature.used', { request_text: 'a poster' })
+    expect(captured.map((c) => c.event)).toEqual([
+      'comfy.desktop.session.started',
+      'comfy.desktop.gated_feature.used'
+    ])
   })
 })

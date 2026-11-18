@@ -42,10 +42,6 @@ function focusInput(): void {
   input.value?.focus()
 }
 
-function close(): void {
-  panelOpen.value = false
-}
-
 function onEnter(event: KeyboardEvent): void {
   if (event.isComposing) return
   event.preventDefault()
@@ -77,7 +73,7 @@ function moveAcross(event: KeyboardEvent, step: 1 | -1): void {
 </script>
 
 <template>
-  <div class="w-full" data-testid="home-template-search" @keydown.esc="close">
+  <div class="w-full" data-testid="home-template-search" @keydown.esc="search.close('closed')">
     <label
       class="mx-auto flex h-12 max-w-180 items-center gap-2.5 rounded-2xl border border-[rgb(137_137_137/0.16)] bg-[rgb(137_137_137/0.06)] px-4 shadow-[0_8px_30px_-12px_rgb(0_0_0/0.5)] transition-colors focus-within:border-[rgb(137_137_137/0.32)] focus-within:bg-[rgb(137_137_137/0.09)]"
     >

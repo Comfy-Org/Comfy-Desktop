@@ -19,11 +19,17 @@ vi.mock('../installations', () => ({ list: async () => mocks.builds }))
 vi.mock('../lib/ipc/shared', () => ({ _operationAborts: new Map(), _hasActiveLaunch: () => false }))
 vi.mock('../lib/ipc/sessionActions', () => ({ _getActiveOperations: mocks.activeOperations }))
 vi.mock('../lib/modelDownloadTransport', () => ({ startModelTransfer: mocks.transfer }))
+vi.mock('./searchTelemetry', () => ({ reportBundleDownload: vi.fn(), reportStartAttempt: vi.fn() }))
+vi.mock(import('./sidecar'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  startSidecar: vi.fn(async () => ({ ok: false as const, problem: 'failed' as const }))
+}))
 vi.mock('./buildRuntime', () => ({
   buildRuntime: (build: { id: string }) => ({ python: `python-${build.id}`, sitePackages: null })
 }))
 
 import { killProcessTree } from '../lib/process'
+import { reportBundleDownload, reportStartAttempt } from './searchTelemetry'
 import {
   createSearchProcess,
   helperResult,
@@ -111,6 +117,8 @@ function setup({ online = false } = {}) {
 }
 
 beforeEach(() => {
+  vi.mocked(reportBundleDownload).mockClear()
+  vi.mocked(reportStartAttempt).mockClear()
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'search-process-'))
   spawned = []
   mocks.settings = {
@@ -140,6 +148,44 @@ describe('createSearchProcess', () => {
     expect(spawned).toEqual([])
     expect(mocks.fetch).not.toHaveBeenCalled()
     expect(announced).toEqual([{ kind: 'off' }])
+  })
+
+  it('labels a background download started at the end of an operation as build_ready', async () => {
+    mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
+    serveBundle({ 'catalog.json': '{}' })
+    const { search } = setup({ online: true })
+    expect(await search.downloadInBackground('build_ready')).toBe(true)
+    expect(reportBundleDownload).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ result: 'completed', trigger: 'build_ready' })
+    )
+  })
+
+  it('counts a background download that failed as the attempt, and reports it with its trigger', async () => {
+    mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
+    serveBundle({ 'catalog.json': '{}' })
+    mocks.transfer.mockReturnValue({ done: Promise.resolve({ outcome: 'error', error: 'reset' }) })
+    const { search, announced } = setup({ online: true })
+    expect(await search.downloadInBackground('launch')).toBe(true)
+    expect(reportBundleDownload).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ result: 'failed', trigger: 'launch' })
+    )
+    expect(announced, 'a quiet failure says nothing').toEqual([])
+  })
+
+  it('reports the model download and each start attempt of the search program', async () => {
+    mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
+    serveBundle({ 'catalog.json': '{}' })
+    const { search } = setup()
+    await search.download()
+    expect(reportBundleDownload).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ result: 'completed', version: '1.0.0', trigger: 'retry' })
+    )
+
+    await search.prepare()
+    expect(reportStartAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ bundleVersion: '1.0.0', verified: false })
+    )
+    await search.download()
   })
 
   it('asks the next build when one Python cannot run the search program', async () => {
@@ -216,12 +262,15 @@ describe('createSearchProcess', () => {
     mocks.builds = [{ id: 'ok', lastLaunchedAt: 1 }]
     serveBundle({ 'catalog.json': '{}' })
     const { search, announced } = setup({ online: true })
-    expect(await search.downloadInBackground()).toBe(true)
+    expect(await search.downloadInBackground('launch')).toBe(true)
     expect(bundlesOnDisk()).toEqual(['1.0.0'])
+    expect(reportBundleDownload).toHaveBeenCalledWith(
+      expect.objectContaining({ result: 'completed', trigger: 'launch' })
+    )
     expect(announced).toEqual([{ kind: 'idle' }])
 
     const fetches = mocks.fetch.mock.calls.length
-    expect(await search.downloadInBackground()).toBe(true)
+    expect(await search.downloadInBackground('build_ready')).toBe(true)
     expect(mocks.fetch.mock.calls.length, 'nothing is fetched once the bundle is on disk').toBe(
       fetches
     )
@@ -248,7 +297,7 @@ describe('createSearchProcess', () => {
     mocks.builds = given.builds
     serveBundle({ 'catalog.json': '{}' })
     const { search } = setup({ online: given.online })
-    expect(await search.downloadInBackground()).toBe(false)
+    expect(await search.downloadInBackground('launch')).toBe(false)
     expect(mocks.fetch).not.toHaveBeenCalled()
     expect(spawned).toEqual([])
   })
@@ -257,7 +306,7 @@ describe('createSearchProcess', () => {
     mocks.builds = [{ id: 'unsupported', lastLaunchedAt: 1 }]
     serveBundle({ 'catalog.json': '{}' })
     const { search } = setup({ online: true })
-    expect(await search.downloadInBackground()).toBe(false)
+    expect(await search.downloadInBackground('launch')).toBe(false)
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
 
@@ -279,7 +328,7 @@ describe('createSearchProcess', () => {
 
     serveBundle({ 'catalog.json': '{}' })
     mocks.activeOperations.mockReturnValue([{ installationId: 'ok', actionId: 'copy-update' }])
-    expect(await search.downloadInBackground()).toBe(false)
+    expect(await search.downloadInBackground('launch')).toBe(false)
     expect(mocks.transfer).not.toHaveBeenCalled()
   })
 
@@ -288,7 +337,7 @@ describe('createSearchProcess', () => {
     mocks.activeOperations.mockReturnValue([{ installationId: 'ok', actionId: 'copy-update' }])
     serveBundle({ 'catalog.json': '{}' })
     const { search } = setup({ online: true })
-    expect(await search.downloadInBackground()).toBe(false)
+    expect(await search.downloadInBackground('launch')).toBe(false)
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
 

@@ -76,7 +76,12 @@ const SIZES = new Map([
 const OFF: SidecarDecision = { kind: 'unavailable', availability: { kind: 'off' } }
 
 function setup(
-  answer: SidecarDecision = { kind: 'answer', body: ANSWER, partnerSwitch: false },
+  answer: SidecarDecision = {
+    kind: 'answer',
+    body: ANSWER,
+    coldStart: false,
+    partnerSwitch: false
+  },
   on = true,
   { partnersOn = true, offersSwitch = false } = {}
 ) {
@@ -121,6 +126,20 @@ beforeEach(() => {
 })
 
 describe('createDesktopSearch', () => {
+  it("passes on the search process's own time, bundle version and whether the search waited for a start", async () => {
+    const body = {
+      ...ANSWER,
+      protocol: 1,
+      bundle: { version: '2.3.0' },
+      latency_ms: { total: 41.6 }
+    }
+    const { search } = setup({ kind: 'answer', body, coldStart: true, partnerSwitch: false })
+    expect(await search.search('a poster', 'local-1')).toMatchObject({
+      kind: 'result',
+      metrics: { processMs: 42, bundleVersion: '2.3.0', coldStart: true }
+    })
+  })
+
   it("sends what the build has installed, and labels results from the build's own index", async () => {
     const { search, sent, readTemplates } = setup()
     const response = await search.search('a poster', 'local-1')
@@ -170,7 +189,7 @@ describe('createDesktopSearch', () => {
         download: [needsFiles('mural_template'), needsFiles('zine_template')]
       }
     }
-    const { search } = setup({ kind: 'answer', body, partnerSwitch: false })
+    const { search } = setup({ kind: 'answer', body, coldStart: false, partnerSwitch: false })
 
     const local = await search.search('a mural', 'local-1')
     const unknown = await search.search('a mural', null)
@@ -206,7 +225,7 @@ describe('createDesktopSearch', () => {
         offer('banner_template')
       ]
     }
-    const { search } = setup({ kind: 'answer', body, partnerSwitch: false })
+    const { search } = setup({ kind: 'answer', body, coldStart: false, partnerSwitch: false })
 
     expect(await search.search('a mural', 'local-1')).toMatchObject({
       result: {
@@ -228,7 +247,7 @@ describe('createDesktopSearch', () => {
         more: [further('zine_template', ['zine_template']), further('banner_template', [])]
       }
     }
-    const { search } = setup({ kind: 'answer', body, partnerSwitch: false })
+    const { search } = setup({ kind: 'answer', body, coldStart: false, partnerSwitch: false })
 
     expect(await search.search('a poster', 'local-1')).toMatchObject({
       result: {
@@ -241,13 +260,18 @@ describe('createDesktopSearch', () => {
   })
 
   it('asks a search that can leave partner templates out to do so while the setting is off', async () => {
-    const { search, sent } = setup(undefined, true, { partnersOn: false, offersSwitch: true })
+    const { search, sent } = setup(
+      { kind: 'answer', body: ANSWER, coldStart: true, partnerSwitch: false },
+      true,
+      { partnersOn: false, offersSwitch: true }
+    )
     const response = await search.search('a poster', 'local-1')
 
     expect(sent[0]).toMatchObject({ partner_on: false })
     expect(response).toMatchObject({
       kind: 'result',
-      result: { partnerSwitch: true, partnersShown: false }
+      result: { partnerSwitch: true, partnersShown: false },
+      metrics: { coldStart: true }
     })
   })
 
@@ -332,7 +356,12 @@ describe('createDesktopSearch', () => {
   })
 
   it('reports an answer it cannot read as failed', async () => {
-    const { search } = setup({ kind: 'answer', body: { nothing: true }, partnerSwitch: false })
+    const { search } = setup({
+      kind: 'answer',
+      body: { nothing: true },
+      coldStart: false,
+      partnerSwitch: false
+    })
     expect(await search.search('a poster', 'local-1')).toEqual({ kind: 'failed' })
   })
 })

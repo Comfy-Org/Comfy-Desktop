@@ -93,6 +93,17 @@ describe('registerTelemetryHandlers', () => {
     expect(paths[127]).toBe(127)
   })
 
+  it('passes a Home search request on as text, clamped to the string limit', () => {
+    const request = 'a poster for the spring fair on the village green '.repeat(60)
+    listener('telemetry:capture')(null, {
+      event: 'comfy.desktop.template_search.searched',
+      properties: { request_text: request, request_chars_count: request.length }
+    })
+    const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
+    expect(sent.request_text).toBe(request.slice(0, 2048))
+    expect(sent.request_chars_count).toBe(request.length)
+  })
+
   it('drops arrays of objects but preserves a JSON-stringified payload', () => {
     const gpus = [
       { vendor: 'NVIDIA', model: 'RTX 4090', vram_mb: 24576 },

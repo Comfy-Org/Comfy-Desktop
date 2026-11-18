@@ -256,8 +256,14 @@ export type TemplateSearchAvailability =
   | { kind: 'downloading'; received: number; total: number }
   | { kind: 'unavailable'; reason: TemplateSearchUnavailableReason }
 
+export interface TemplateSearchMetrics {
+  processMs: number | null
+  bundleVersion: string | null
+  coldStart: boolean
+}
+
 export type TemplateSearchResponse =
-  | { kind: 'result'; result: TemplateSearchResult }
+  | { kind: 'result'; result: TemplateSearchResult; metrics?: TemplateSearchMetrics }
   | { kind: 'unavailable'; availability: TemplateSearchAvailability }
   | { kind: 'failed' }
 

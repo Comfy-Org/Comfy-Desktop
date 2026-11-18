@@ -55,10 +55,34 @@ export interface BundleStoreDeps {
   supports: () => Promise<Supported | null>
   check: (bundleDir: string) => Promise<boolean>
   onAvailability: (availability: TemplateSearchAvailability) => void
+  onDownloaded?: (download: BundleDownload) => void
   now?: () => number
 }
 
+export type DownloadTrigger = 'launch' | 'build_ready' | 'bar' | 'retry' | 'update_check'
+export type BackgroundTrigger = Extract<DownloadTrigger, 'launch' | 'build_ready'>
+
+export interface BundleDownload {
+  result: 'completed' | 'up_to_date' | 'no_readable_version' | 'failed'
+  bytes: number
+  durationMs: number
+  trigger: DownloadTrigger
+  version: string | null
+}
+
 type Semver = [number, number, number]
+
+type Fetched =
+  | { kind: 'current' }
+  | { kind: 'none_readable' }
+  | { kind: 'fetched'; version: string; bytes: number }
+
+function downloadResult(fetched: Fetched): Pick<BundleDownload, 'result' | 'bytes' | 'version'> {
+  if (fetched.kind === 'fetched')
+    return { result: 'completed', bytes: fetched.bytes, version: fetched.version }
+  const result = fetched.kind === 'current' ? 'up_to_date' : 'no_readable_version'
+  return { result, bytes: 0, version: null }
+}
 
 export function parseSemver(text: unknown): Semver | null {
   const match = typeof text === 'string' ? SEMVER.exec(text) : null
@@ -157,7 +181,7 @@ async function place(source: string, target: string): Promise<void> {
 }
 
 export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
-  download(options?: { quietly?: boolean }): Promise<void>
+  download(options?: { quietly?: boolean; trigger?: DownloadTrigger }): Promise<void>
   hasBase(): boolean
 } {
   const now = deps.now ?? Date.now
@@ -251,7 +275,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     )
   }
 
-  async function fetchFiles(base: string, files: BundleFile[]): Promise<void> {
+  async function fetchFiles(base: string, files: BundleFile[]): Promise<number> {
     const missing: BundleFile[] = []
     for (const file of files) {
       if (await storedSound(file)) continue
@@ -275,6 +299,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       if (!result.ok) throw new Error(result.error)
       done += file.size
     }
+    return done
   }
 
   async function assemble(version: string, raw: Buffer, files: BundleFile[]): Promise<void> {
@@ -323,23 +348,27 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
     }
   }
 
-  async function fetchNewest(base: string): Promise<void> {
+  async function fetchNewest(base: string): Promise<Fetched> {
     progress = { received: 0, total: 0 }
     await clearPartials()
     const found = await wanted(base)
-    if (!found) return
+    if (!found) return { kind: 'none_readable' }
     const local = await localVersions()
     const current = local.find((b) => b.version === found.entry.version)
     if (current) {
       const onDisk = await fs.promises.readFile(path.join(current.dir, MANIFEST)).catch(() => null)
-      if (onDisk && sha256Of(onDisk) === found.entry.manifestSha256) return
+      if (onDisk && sha256Of(onDisk) === found.entry.manifestSha256) return { kind: 'current' }
     }
-    await fetchFiles(base, found.manifest.files)
+    const bytes = await fetchFiles(base, found.manifest.files)
     await assemble(found.manifest.version, found.raw, found.manifest.files)
     await removeUnlistedFiles()
+    return { kind: 'fetched', version: found.manifest.version, bytes }
   }
 
-  function download({ quietly = false } = {}): Promise<void> {
+  function download({
+    quietly = false,
+    trigger = 'retry'
+  }: { quietly?: boolean; trigger?: DownloadTrigger } = {}): Promise<void> {
     const base = baseUrl()
     if (!base || (quietly && waitingForRetry)) return Promise.resolve()
     if (downloading) {
@@ -350,12 +379,17 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       return downloading
     }
     quiet = quietly
+    const startedAt = now()
+    const reportDownload = (download: Pick<BundleDownload, 'result' | 'bytes' | 'version'>): void =>
+      deps.onDownloaded?.({ ...download, durationMs: now() - startedAt, trigger })
     downloading = fetchNewest(base)
-      .then(() => {
+      .then((fetched) => {
+        reportDownload(downloadResult(fetched))
         waitingForRetry = false
         deps.onAvailability({ kind: 'idle' })
       })
       .catch(() => {
+        reportDownload({ result: 'failed', bytes: progress.received, version: null })
         if (!quiet) waitingForRetry = true
         report(DOWNLOAD_FAILED)
       })
@@ -373,7 +407,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       if (!downloading) await removeOlderVersions()
       if (base && now() - lastUpdateCheck > UPDATE_CHECK_MS) {
         lastUpdateCheck = now()
-        void download({ quietly: true })
+        void download({ quietly: true, trigger: 'update_check' })
       }
       return { kind: 'ready' }
     }
@@ -390,7 +424,7 @@ export function createBundleStore(deps: BundleStoreDeps): BundleSource & {
       waitingForRetry = true
       return DOWNLOAD_FAILED
     }
-    void download()
+    void download({ trigger: 'bar' })
     return { kind: 'downloading', ...progress }
   }
 

@@ -11,7 +11,13 @@ import { _getActiveOperations } from '../lib/ipc/sessionActions'
 import { occupiesInstall } from '../lib/ipc/sessionActions/occupiesInstall'
 import type { TerminalEnv } from '../types/sources'
 import type { TemplateSearchAvailability } from '../../types/ipc'
-import { createBundleStore, Unreachable, type Supported, type TransferResult } from './bundles'
+import {
+  createBundleStore,
+  Unreachable,
+  type BackgroundTrigger,
+  type Supported,
+  type TransferResult
+} from './bundles'
 import { buildRuntime } from './buildRuntime'
 import {
   createSearchService,
@@ -22,6 +28,7 @@ import {
 import { RUNTIME_UNSUPPORTED_EXIT, startSidecar } from './sidecar'
 import { postToSidecar } from './sidecarClient'
 import { asRecord } from './json'
+import { reportBundleDownload, reportStartAttempt } from './searchTelemetry'
 
 export const SIDECAR_PATH_ENV = 'COMFY_DESKTOP_TEMPLATE_SEARCH_SIDECAR'
 const SEARCH_TIMEOUT_MS = 3000
@@ -245,7 +252,8 @@ export function createSearchProcess({
       const out = await withPyz(['check', dir])
       return out === null || out.code === 0
     },
-    onAvailability: broadcast
+    onAvailability: broadcast,
+    onDownloaded: reportBundleDownload
   })
 
   const service = createSearchService({
@@ -256,7 +264,8 @@ export function createSearchProcess({
     bundles: store,
     start: (launch, signal) => startSidecar(launch, { signal }),
     post: (sidecar, body) => postToSidecar(sidecar.ready, '/api/decide', body, SEARCH_TIMEOUT_MS),
-    onAvailability: broadcast
+    onAvailability: broadcast,
+    onStartAttempt: reportStartAttempt
   })
 
   async function onBuildAction(installationId: string): Promise<void> {
@@ -268,10 +277,10 @@ export function createSearchProcess({
     ])
   }
 
-  async function downloadInBackground(): Promise<boolean> {
+  async function downloadInBackground(trigger: BackgroundTrigger): Promise<boolean> {
     if (!pyz() || !store.hasBase() || !isOnline()) return false
     if ((await service.freePythons()).length === 0 || !(await supports())) return false
-    if (!(await store.newest())) await store.download({ quietly: true })
+    if (!(await store.newest())) await store.download({ quietly: true, trigger })
     return true
   }
 

@@ -5,7 +5,8 @@ import {
   IDLE_STOP_MS,
   type BundleSource,
   type SearchServiceDeps,
-  type SidecarPython
+  type SidecarPython,
+  type StartAttempt
 } from './service'
 import type { RunningSidecar, SidecarLaunch, SidecarReady, SidecarStart } from './sidecar'
 import { SidecarRequestError } from './sidecarClient'
@@ -79,6 +80,7 @@ describe('search service', () => {
     expect(await service.decide(request)).toEqual({
       kind: 'answer',
       body: { ok: 1 },
+      coldStart: true,
       partnerSwitch: true
     })
     expect(request.mock.calls.map(([ready]) => ready.partner)).toEqual([false, true])
@@ -134,10 +136,16 @@ describe('search service', () => {
       service.decide(() => ({ text: 'two' }))
     ])
     expect(start).toHaveBeenCalledTimes(1)
-    expect(first).toEqual({ kind: 'answer', body: { echo: { text: 'one' } }, partnerSwitch: false })
+    expect(first).toEqual({
+      kind: 'answer',
+      body: { echo: { text: 'one' } },
+      coldStart: true,
+      partnerSwitch: false
+    })
     expect(second).toEqual({
       kind: 'answer',
       body: { echo: { text: 'two' } },
+      coldStart: true,
       partnerSwitch: false
     })
     expect(announced).toEqual([{ kind: 'starting' }, { kind: 'ready' }])
@@ -436,6 +444,7 @@ describe('search service', () => {
     expect(await service.decide(() => ({ text: 'x' }))).toEqual({
       kind: 'answer',
       body: { ok: 1 },
+      coldStart: true,
       partnerSwitch: false
     })
     expect(start).toHaveBeenCalledTimes(2)
@@ -447,5 +456,93 @@ describe('search service', () => {
     const { service, start } = setup({ post })
     await expect(service.decide(() => ({ text: 'x' }))).rejects.toThrow('400')
     expect(start).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('search service telemetry', () => {
+  it('says a search waited for a start only when the sidecar was not already running', async () => {
+    const { service } = setup()
+    const first = await service.decide(() => ({ text: 'one' }))
+    const second = await service.decide(() => ({ text: 'two' }))
+    expect([first, second].map((answer) => answer.kind === 'answer' && answer.coldStart)).toEqual([
+      true,
+      false
+    ])
+  })
+
+  it('reports each start attempt with its result, its time, the bundle and whether it verified', async () => {
+    let clock = 1000
+    const attempts: StartAttempt[] = []
+    const start = vi.fn<Start>(async () => {
+      clock += 250
+      return { ok: false, problem: 'runtime_unsupported' }
+    })
+    start.mockImplementationOnce(async () => {
+      clock += 400
+      return { ok: false, problem: 'runtime_unsupported' }
+    })
+    const { service } = setup({ start, now: () => clock, onStartAttempt: (a) => attempts.push(a) })
+    await service.decide(() => ({ text: 'x' }))
+    expect(attempts).toEqual([
+      { result: 'runtime_unsupported', startMs: 400, bundleVersion: '1.0.0', verified: false },
+      { result: 'runtime_unsupported', startMs: 250, bundleVersion: '1.0.0', verified: false }
+    ])
+  })
+
+  it('says a search waited for a start when a warm sidecar stopped answering and had to start again', async () => {
+    const post = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: 1 })
+      .mockRejectedValueOnce(new SidecarRequestError('ECONNREFUSED', true))
+      .mockResolvedValueOnce({ ok: 2 })
+    const { service } = setup({ post })
+    await service.decide(() => ({ text: 'warm' }))
+    expect(await service.decide(() => ({ text: 'x' }))).toEqual({
+      kind: 'answer',
+      body: { ok: 2 },
+      coldStart: true,
+      partnerSwitch: false
+    })
+  })
+
+  it('reports the start after a crash as verified', async () => {
+    const attempts: StartAttempt[] = []
+    const { service, started, announced } = setup({ onStartAttempt: (a) => attempts.push(a) })
+    await service.decide(() => ({ text: 'x' }))
+    started[0]!.crash()
+    await vi.waitFor(() => expect(announced.at(-1)).toEqual({ kind: 'idle' }))
+    await service.decide(() => ({ text: 'x' }))
+    expect(attempts.map((a) => a.verified)).toEqual([false, true])
+  })
+
+  it('starts nothing and reports no start while search is switched off', async () => {
+    const attempts: StartAttempt[] = []
+    const { service, start } = setup({ pyz: () => null, onStartAttempt: (a) => attempts.push(a) })
+    expect(await service.decide(() => ({ text: 'x' }))).toEqual({
+      kind: 'unavailable',
+      availability: { kind: 'off' }
+    })
+    expect(start).not.toHaveBeenCalled()
+    expect(attempts).toEqual([])
+  })
+
+  it('reports a start that came up as ready, and one stopped by a build action as aborted', async () => {
+    const attempts: StartAttempt[] = []
+    const { service } = setup({ onStartAttempt: (a) => attempts.push(a) })
+    await service.decide(() => ({ text: 'x' }))
+    expect(attempts.map((a) => a.result)).toEqual(['ready'])
+
+    let finish!: (start: SidecarStart) => void
+    const slow = vi.fn<Start>(async () => ({ ok: true, sidecar: fakeSidecar().sidecar }))
+    slow.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+    const stopped: StartAttempt[] = []
+    const second = setup({ start: slow, onStartAttempt: (a) => stopped.push(a) })
+    const pending = second.service.decide(() => ({ text: 'x' }))
+    await vi.waitFor(() => expect(slow).toHaveBeenCalled())
+    const action = second.service.onBuildAction('a')
+    finish({ ok: false, problem: 'failed' })
+    await action
+    await pending
+    expect(stopped.map((a) => a.result)).toEqual(['aborted', 'ready'])
   })
 })

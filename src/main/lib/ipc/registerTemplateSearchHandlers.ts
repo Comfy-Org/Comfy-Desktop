@@ -4,7 +4,13 @@ import { getEntryByInstallationId, type ComfyWindowEntry } from '../../host/regi
 import { navigatorFor } from '../../host/buildNavigator'
 import { isPersistableTemplateId } from '../../sources/standalone/curatedTemplates'
 import type { TerminalEnv } from '../../types/sources'
-import { opensInAWindow, TEMPLATE_SEARCH_MAX_QUERY } from '../../../shared/templateSearch'
+import type { BackgroundTrigger } from '../../templateSearch/bundles'
+import {
+  opensInAWindow,
+  TEMPLATE_SEARCH_EVENT_PREFIX,
+  TEMPLATE_SEARCH_MAX_QUERY
+} from '../../../shared/templateSearch'
+import { gateEventsByPrefix } from '../telemetry'
 import {
   changesBuildEnv,
   createSearchProcess,
@@ -78,11 +84,13 @@ export function registerTemplateSearchHandlers({
     partnersOn: templateSearchPartnersOn
   })
 }: TemplateSearchHandlerOptions): void {
+  gateEventsByPrefix(TEMPLATE_SEARCH_EVENT_PREFIX, templateSearchOn)
+
   let automaticDownload: 'after_startup' | 'pending' | 'done' = 'after_startup'
 
-  function downloadAutomatically(): void {
+  function downloadAutomatically(trigger: BackgroundTrigger): void {
     if (automaticDownload !== 'pending') return
-    void process.downloadInBackground().then(
+    void process.downloadInBackground(trigger).then(
       (done) => {
         if (done) automaticDownload = 'done'
       },
@@ -92,7 +100,7 @@ export function registerTemplateSearchHandlers({
 
   function onBuildActionEnd(): void {
     process.onBuildActionEnd()
-    downloadAutomatically()
+    downloadAutomatically('build_ready')
   }
 
   setSessionActionObserver({
@@ -112,7 +120,7 @@ export function registerTemplateSearchHandlers({
   void settled.then(() =>
     setTimeout(() => {
       automaticDownload = 'pending'
-      downloadAutomatically()
+      downloadAutomatically('launch')
     }, STARTUP_SETTLE_MS)
   )
 

@@ -183,7 +183,7 @@ function changePartners(shown: boolean): void {
 
 function pick(row: SearchRow, event: MouseEvent): void {
   if (event.detail > 1) return
-  props.controller.activate(row)
+  props.controller.activate(row, 'pointer')
 }
 
 function startsAlsoTry(index: number): boolean {

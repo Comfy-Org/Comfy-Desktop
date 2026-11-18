@@ -8,6 +8,7 @@ import HomeTemplateSearch from './HomeTemplateSearch.vue'
 import { SEARCH_DELAY_MS } from './useTemplateSearch'
 import { verticalNeighbour } from './templateSearch'
 import { TEMPLATE_SEARCH_MAX_QUERY } from '../../../../shared/templateSearch'
+import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../../lib/telemetry'
 import type {
   OpenTemplateOutcome,
   TemplateSearchAvailability,
@@ -1468,6 +1469,458 @@ describe('verticalNeighbour', () => {
 
   it('stays put when every card is in one row', () => {
     expect(verticalNeighbour([box(0, 0), box(110, 0), box(220, 0)], 1, 1)).toBe(1)
+  })
+})
+
+describe('HomeTemplateSearch telemetry', () => {
+  const sent: TelemetryActionEventDetail[] = []
+  const collect = (event: Event): void => {
+    sent.push((event as CustomEvent<TelemetryActionEventDetail>).detail)
+  }
+
+  beforeEach(() => {
+    sent.length = 0
+    window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, collect)
+  })
+
+  afterEach(() => {
+    window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, collect)
+  })
+
+  function named(name: string): TelemetryActionEventDetail[] {
+    return sent.filter((event) => event.actionName === `comfy.desktop.template_search.${name}`)
+  }
+
+  it('sends the search and the keyboard pick, and opens with the id of the search it came from', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    const [searched] = named('searched')
+    const searchId = searched!.context!.search_id
+    expect(searched!.context).toMatchObject({
+      outcome: 'template',
+      run_count: 2,
+      download_count: 1
+    })
+    expect(named('picked')[0]!.context).toMatchObject({
+      search_id: searchId,
+      template_id: 'poster_template',
+      input_method: 'keyboard',
+      is_best_match: true
+    })
+    expect(openTemplateInBuild).toHaveBeenCalledWith('build-1', 'poster_template')
+    expect(named('open_result')[0]!.context).toMatchObject({
+      search_id: searchId,
+      result: 'launch'
+    })
+  })
+
+  it('sends a sign_in pick, and no open result, when a signed-out user picks a partner card', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: false })
+    signIn.mockReturnValue(new Promise(() => {}))
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER, PARTNER_POSTER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.findAll('[role="option"]')[1]!.trigger('click')
+    await flushPromises()
+
+    expect(named('picked')[0]!.context).toMatchObject({
+      search_id: named('searched')[0]!.context!.search_id,
+      template_id: 'api_poster_template',
+      list: 'run',
+      list_position: 1,
+      position: 1,
+      input_method: 'pointer',
+      action: 'sign_in'
+    })
+    expect(named('open_result')).toEqual([])
+    expect(opened()).toEqual([])
+  })
+
+  it('sends the partner switch state with each search, and a change of the switch', async () => {
+    searchTemplates.mockImplementation(async () =>
+      answer({
+        run: [POSTER],
+        partnerSwitch: true,
+        partnersShown: settingsStore.get('templateSearchPartners') !== false
+      })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search-partner-switch"] button').trigger('click')
+    await flushPromises()
+
+    const [first, second] = named('searched')
+    expect(first!.context).toMatchObject({ partners_shown: true, has_partner_switch: true })
+    expect(named('partner_switch_changed')).toEqual([
+      expect.objectContaining({
+        context: {
+          partners_shown: false,
+          search_id: first!.context!.search_id,
+          session_search_count: 1
+        }
+      })
+    ])
+    expect(second!.context).toMatchObject({ partners_shown: false })
+  })
+
+  it('sends the switch change even when saving it fails, and no new search', async () => {
+    searchTemplates.mockResolvedValue(answer({ run: [POSTER], partnerSwitch: true }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    setSetting.mockRejectedValueOnce(new Error('the disk is full'))
+    await wrapper.get('[data-testid="home-template-search-partner-switch"] button').trigger('click')
+    await flushPromises()
+    expect(named('partner_switch_changed')).toHaveLength(1)
+    expect(named('searched')).toHaveLength(1)
+  })
+
+  it('sends no search for a setting change while the results are closed, until they open again', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    const searched = named('searched').length
+
+    settingChanged({ key: 'templateSearchPartners' })
+    await flushPromises()
+    expect(named('searched')).toHaveLength(searched)
+
+    await input(wrapper).trigger('focus')
+    await flushPromises()
+    expect(named('searched')).toHaveLength(searched + 1)
+  })
+
+  it('sends a pointer pick for a clicked card', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.findAll('[role="option"]')[2]!.trigger('click')
+    await flushPromises()
+    expect(named('picked')[0]!.context).toMatchObject({
+      template_id: 'mural_template',
+      list: 'download',
+      input_method: 'pointer',
+      action: 'download'
+    })
+  })
+
+  it('sends a pick made after the results close and open again, against the answer kept', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    await input(wrapper).trigger('focus')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(named('picked')[0]!.context).toMatchObject({
+      search_id: named('searched')[0]!.context!.search_id,
+      session_search_count: 0
+    })
+  })
+
+  it('sends a pick made after Down reopens closed results', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    await input(wrapper).trigger('keydown', { key: 'ArrowDown' })
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(named('picked')[0]!.context).toMatchObject({ template_id: 'poster_template' })
+  })
+
+  it('sends an abandon when Home closes with results showing', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    wrapper.unmount()
+    expect(named('abandoned').map((event) => event.context!.reason)).toEqual(['left'])
+  })
+
+  it('sends an abandon when the request is cleared', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).setValue('')
+    expect(named('abandoned').map((event) => event.context!.reason)).toEqual(['cleared'])
+  })
+
+  it('reports an open that never reached a build as failed', async () => {
+    openTemplateInBuild.mockRejectedValueOnce(new Error('ipc gone'))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const noBuild = mountSearch(null)
+    await searchFor(noBuild, 'a poster')
+    await input(noBuild).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(named('open_result').map((event) => event.context!.result)).toEqual(['failed', 'failed'])
+  })
+
+  it('sends an abandon when the results close without a pick', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    expect(named('abandoned').map((event) => event.context!.reason)).toEqual(['closed'])
+  })
+
+  it('sends the typed request as text with the search, trimmed as it was searched', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, '  a flyer for the bake sale on Saturday  ')
+    expect(named('searched')[0]!.context).toMatchObject({
+      request_text: 'a flyer for the bake sale on Saturday',
+      request_chars_count: 37,
+      request_words_count: 8,
+      request_script: 'latin'
+    })
+    expect(named('picked')).toEqual([])
+  })
+
+  it('times a typed search from the last key press, including the wait before it searches', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountSearch()
+    await input(wrapper).setValue('a post')
+    await vi.advanceTimersByTimeAsync(SEARCH_DELAY_MS - 100)
+    await input(wrapper).setValue('a poster')
+    await vi.advanceTimersByTimeAsync(SEARCH_DELAY_MS)
+    expect(named('searched').map((event) => event.context!.input_to_answer_ms)).toEqual([
+      SEARCH_DELAY_MS
+    ])
+  })
+
+  it('keeps the results and the session when focus leaves the bar for something else on Home', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper
+      .get('[data-testid="home-template-search"]')
+      .trigger('focusout', { relatedTarget: null })
+    expect(panel(wrapper).exists()).toBe(true)
+    expect(named('abandoned')).toEqual([])
+  })
+
+  it('keeps the session when the window loses focus, and counts it on return', async () => {
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    window.dispatchEvent(new Event('blur'))
+    expect(panel(wrapper).exists()).toBe(true)
+    window.dispatchEvent(new Event('focus'))
+    await searchFor(wrapper, 'a poster for a bake sale')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(named('abandoned')).toEqual([])
+    expect(named('picked')[0]!.context).toMatchObject({ session_search_count: 2 })
+  })
+
+  function frozenClock(): (ms: number) => void {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    return (ms) => vi.setSystemTime(Date.now() + ms)
+  }
+
+  it('pauses the time looking at the results while the window is away, and goes on on return', async () => {
+    const later = frozenClock()
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    later(5000)
+    window.dispatchEvent(new Event('blur'))
+    later(60_000)
+    window.dispatchEvent(new Event('focus'))
+    later(700)
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(named('picked')[0]!.context).toMatchObject({
+      results_to_pick_ms: 5700,
+      session_ms: 65_700
+    })
+  })
+
+  it('sends the time spent looking before the window went away when Home closes while away', async () => {
+    const later = frozenClock()
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    later(5000)
+    window.dispatchEvent(new Event('blur'))
+    later(60_000)
+    wrapper.unmount()
+    expect(named('abandoned')[0]!.context).toMatchObject({
+      reason: 'left',
+      session_ms: 65_000,
+      last_results_shown_ms: 5000,
+      last_outcome: 'template'
+    })
+  })
+
+  it('times an answer that arrived while the window was away from when the window comes back', async () => {
+    const later = frozenClock()
+    let answerLater!: (response: TemplateSearchResponse) => void
+    searchTemplates.mockReturnValueOnce(new Promise((resolve) => (answerLater = resolve)))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    window.dispatchEvent(new Event('blur'))
+    answerLater(answer({ run: [POSTER] }))
+    await flushPromises()
+    later(60_000)
+    window.dispatchEvent(new Event('focus'))
+    later(400)
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(named('picked')[0]!.context).toMatchObject({ results_to_pick_ms: 400 })
+  })
+
+  it('sends a give-up with the answer that arrived while the window was away, seen for no time', async () => {
+    const later = frozenClock()
+    let answerLater!: (response: TemplateSearchResponse) => void
+    searchTemplates.mockReturnValueOnce(new Promise((resolve) => (answerLater = resolve)))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    window.dispatchEvent(new Event('blur'))
+    answerLater(answer({ run: [POSTER] }))
+    await flushPromises()
+    later(2000)
+    wrapper.unmount()
+    expect(named('abandoned')[0]!.context).toMatchObject({
+      reason: 'left',
+      last_results_shown_ms: 0,
+      last_outcome: 'template'
+    })
+  })
+
+  it('starts no session when the window comes back after the results closed or a template opened', async () => {
+    const closed = mountSearch()
+    await searchFor(closed, 'a poster')
+    await closed.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    window.dispatchEvent(new Event('blur'))
+    window.dispatchEvent(new Event('focus'))
+    closed.unmount()
+
+    const picked = mountSearch()
+    await searchFor(picked, 'a poster')
+    await input(picked).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    window.dispatchEvent(new Event('blur'))
+    window.dispatchEvent(new Event('focus'))
+    picked.unmount()
+    expect(named('abandoned').map((event) => event.context!.reason)).toEqual(['closed'])
+  })
+
+  it('sends nothing while search answers that it is switched off', async () => {
+    searchTemplates.mockResolvedValue(unavailable({ kind: 'off' }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster for my aunt')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    wrapper.unmount()
+    expect(sent).toEqual([])
+  })
+
+  it('sends an abandon when Home closes after an open was refused', async () => {
+    openTemplateInBuild.mockResolvedValueOnce('refused')
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    wrapper.unmount()
+    expect(named('abandoned').map((event) => event.context!.reason)).toEqual(['left'])
+  })
+
+  it.each([
+    ['', false],
+    [', even after the window went away and came back', true]
+  ])(
+    'sends a give-up during a follow-up search as searching, not against the results it replaced%s',
+    async (_name, windowAway) => {
+      const wrapper = mountSearch()
+      await searchFor(wrapper, 'a poster')
+      searchTemplates.mockReturnValueOnce(new Promise(() => {}))
+      await searchFor(wrapper, 'a poster for a bake sale')
+      if (windowAway) {
+        window.dispatchEvent(new Event('blur'))
+        window.dispatchEvent(new Event('focus'))
+      }
+      await wrapper
+        .get('[data-testid="home-template-search"]')
+        .trigger('keydown', { key: 'Escape' })
+      expect(named('abandoned')[0]!.context).toMatchObject({
+        reason: 'closed',
+        last_outcome: 'searching',
+        last_results_shown_ms: null,
+        session_search_count: 1
+      })
+    }
+  )
+
+  it('resumes the session when a kept notice is shown again', async () => {
+    searchTemplates.mockResolvedValue(
+      unavailable({ kind: 'downloading', received: 0, total: 1_000_000 })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    await input(wrapper).trigger('focus')
+    await flushPromises()
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    expect(named('abandoned').map((event) => event.context!.last_outcome)).toEqual([
+      'unavailable',
+      'unavailable'
+    ])
+  })
+
+  it('sends nothing for an answer that arrives after Home closed', async () => {
+    let answerLater!: (response: TemplateSearchResponse) => void
+    searchTemplates.mockReturnValueOnce(new Promise((resolve) => (answerLater = resolve)))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    wrapper.unmount()
+    answerLater(answer({ run: [POSTER] }))
+    await flushPromises()
+    expect(named('searched')).toEqual([])
+    expect(named('abandoned')).toHaveLength(1)
+  })
+
+  it('counts a search that answers while the results are closed only when they open again', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountSearch()
+    await input(wrapper).setValue('a poster')
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    await vi.advanceTimersByTimeAsync(SEARCH_DELAY_MS)
+    expect(named('searched')[0]!.context).toMatchObject({ session_search_count: 0 })
+    wrapper.unmount()
+    expect(named('abandoned')).toEqual([])
+  })
+
+  it('sends the second pick after an open was refused', async () => {
+    openTemplateInBuild.mockResolvedValueOnce('refused')
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.findAll('[role="option"]')[1]!.trigger('click')
+    await flushPromises()
+    expect(named('picked').map((event) => event.context!.template_id)).toEqual([
+      'poster_template',
+      'banner_template'
+    ])
+  })
+
+  it('times the pick from when a hidden answer is first shown', async () => {
+    vi.useFakeTimers()
+    let answerLater!: (response: TemplateSearchResponse) => void
+    searchTemplates.mockReturnValueOnce(new Promise((resolve) => (answerLater = resolve)))
+    const wrapper = mountSearch()
+    await input(wrapper).setValue('a poster')
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await wrapper.get('[data-testid="home-template-search"]').trigger('keydown', { key: 'Escape' })
+    answerLater(answer({ run: [POSTER, BANNER], download: [MURAL] }))
+    await vi.advanceTimersByTimeAsync(60_000)
+    await input(wrapper).trigger('focus')
+    await vi.advanceTimersByTimeAsync(700)
+    await input(wrapper).trigger('keydown', { key: 'Enter' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(named('abandoned')[0]!.context).toMatchObject({
+      reason: 'closed',
+      last_outcome: 'searching'
+    })
+    expect(named('picked')[0]!.context).toMatchObject({
+      results_to_pick_ms: 700,
+      session_ms: 700,
+      session_search_count: 0
+    })
   })
 })
 

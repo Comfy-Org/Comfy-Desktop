@@ -8,7 +8,7 @@ import type {
 } from '../../types/ipc'
 import { readBuildTemplates, type BuildTemplates } from './buildTemplates'
 import { buildRuntime } from './buildRuntime'
-import { decideRequest, parseDecision } from './decisionApi'
+import { decideRequest, decisionMetrics, parseDecision } from './decisionApi'
 import type { SearchProcess } from './searchProcess'
 
 const TEMPLATES_TTL_MS = 60_000
@@ -97,7 +97,8 @@ export function createDesktopSearch({
     const sized = await withDownloadSizes(result, known ?? NOTHING_KNOWN)
     return {
       kind: 'result',
-      result: { ...sized, partnerSwitch: decision.partnerSwitch, partnersShown: !partnersOff }
+      result: { ...sized, partnerSwitch: decision.partnerSwitch, partnersShown: !partnersOff },
+      metrics: { ...decisionMetrics(decision.body), coldStart: decision.coldStart }
     }
   }
 

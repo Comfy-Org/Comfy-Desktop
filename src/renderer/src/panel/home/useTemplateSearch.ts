@@ -1,6 +1,11 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import type { TemplateSearchAvailability, TemplateSearchResult } from '../../types/ipc'
 import { searchRows, type SearchRow } from './templateSearch'
+import {
+  createSearchTelemetry,
+  type AbandonReason,
+  type InputMethod
+} from './templateSearchTelemetry'
 
 export const SEARCH_DELAY_MS = 300
 const PARTNERS_SETTING = 'templateSearchPartners'
@@ -22,6 +27,7 @@ export interface TemplateSearchOptions {
 }
 
 export function useTemplateSearch(options: TemplateSearchOptions) {
+  const telemetry = createSearchTelemetry()
   const query = ref('')
   const state = ref<SearchState>({ kind: 'idle' })
   const panelOpen = ref(false)
@@ -30,6 +36,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   const openFailed = ref(false)
   let latestRequest = 0
   let prepared = false
+  let windowAway = false
   let pendingSearch: ReturnType<typeof setTimeout> | undefined
 
   const partnerSwitch = computed(
@@ -55,7 +62,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     state.value = { kind: 'idle' }
   }
 
-  async function search(text: string): Promise<void> {
+  async function search(text: string, triggeredAt = Date.now()): Promise<void> {
     cancelPendingSearch()
     const trimmed = text.trim()
     if (!trimmed) {
@@ -65,10 +72,18 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     const request = ++latestRequest
     state.value = { kind: 'searching' }
     openFailed.value = false
+    if (panelOpen.value) telemetry.requested()
+    const requestedAt = Date.now()
     const response = await window.api
       .searchTemplates(trimmed, options.buildId() ?? '')
       .catch(() => null)
     if (request !== latestRequest) return
+    telemetry.answered(
+      trimmed,
+      response ?? { kind: 'failed' },
+      { triggeredAt, requestedAt },
+      panelOpen.value && !windowAway
+    )
     if (response?.kind === 'result') {
       state.value = { kind: 'result', query: trimmed, result: response.result }
       activeIndex.value = 0
@@ -94,16 +109,19 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
 
   watch(panelOpen, (open) => {
     if (!open) leaveResults()
+    else if (answerShowing()) telemetry.reopened()
   })
 
   watch(query, (text) => {
+    const typedAt = Date.now()
     leaveResults()
     cancelPendingSearch()
     if (!text.trim()) {
+      telemetry.abandoned('cleared')
       forgetAnswer()
       return
     }
-    pendingSearch = setTimeout(() => void search(text), SEARCH_DELAY_MS)
+    pendingSearch = setTimeout(() => void search(text, typedAt), SEARCH_DELAY_MS)
   })
 
   function searchAgainOrForget(): void {
@@ -116,9 +134,30 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     searchAgainOrForget()
   })
 
+  function answerShowing(): boolean {
+    return panelOpen.value && state.value.kind !== 'idle' && state.value.kind !== 'searching'
+  }
+
+  function onWindowAway(): void {
+    windowAway = true
+    telemetry.hidden()
+  }
+
+  function onWindowBack(): void {
+    windowAway = false
+    if (answerShowing()) telemetry.reopened()
+  }
+
+  window.addEventListener('blur', onWindowAway)
+  window.addEventListener('focus', onWindowBack)
+
   onScopeDispose(() => {
+    latestRequest++
+    telemetry.abandoned('left')
     cancelPendingSearch()
     unsubscribe()
+    window.removeEventListener('blur', onWindowAway)
+    window.removeEventListener('focus', onWindowBack)
   })
 
   function prepare(): void {
@@ -135,6 +174,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   )
 
   async function setPartnersShown(shown: boolean): Promise<void> {
+    telemetry.partnerSwitchChanged(shown)
     await window.api.setSetting(PARTNERS_SETTING, shown).catch(() => null)
   }
 
@@ -146,11 +186,14 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     return state.value.kind === 'result' && state.value.query === query.value.trim()
   }
 
-  async function openRow(row: SearchRow): Promise<void> {
+  async function openRow(row: SearchRow, inputMethod: InputMethod): Promise<void> {
     const buildId = options.buildId()
+    const templateId = row.candidate.templateId
+    const searchId = telemetry.picked(rows.value, row, inputMethod)
     const outcome = buildId
-      ? await window.api.openTemplateInBuild(buildId, row.candidate.templateId).catch(() => null)
+      ? await window.api.openTemplateInBuild(buildId, templateId).catch(() => null)
       : null
+    telemetry.opened(searchId, templateId, outcome ?? 'failed')
     if (!buildId || (outcome !== 'opened' && outcome !== 'launch')) {
       openFailed.value = true
       return
@@ -169,9 +212,18 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     return row.candidate.partner && options.signedOut()
   }
 
-  function activate(row: SearchRow): void {
-    if (needsSignIn(row)) options.signIn()
-    else void openRow(row)
+  function activate(row: SearchRow, inputMethod: InputMethod): void {
+    if (!needsSignIn(row)) {
+      void openRow(row, inputMethod)
+      return
+    }
+    telemetry.picked(rows.value, row, inputMethod, 'sign_in')
+    options.signIn()
+  }
+
+  function close(reason: AbandonReason): void {
+    panelOpen.value = false
+    telemetry.abandoned(reason)
   }
 
   function onEnter(): void {
@@ -179,7 +231,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     panelOpen.value = true
     if (isCurrent()) {
       const row = activeRow.value
-      if (wasOpen && row) activate(row)
+      if (wasOpen && row) activate(row, 'keyboard')
       return
     }
     void search(query.value)
@@ -218,6 +270,7 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
     setPartnersShown,
     prepare,
     open,
+    close,
     download,
     needsSignIn,
     activate,
