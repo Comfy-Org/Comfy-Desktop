@@ -17,19 +17,19 @@ const CUTOUT: AppCard = {
   id: 'remove-background',
   title: 'Remove Background',
   description: 'Cut the subject out of a picture or video.',
-  coverUrl: COVER
+  covers: [{ url: COVER, stillUrl: null }]
 }
 const HDR: AppCard = {
   id: 'sdr-to-hdr',
   title: 'SDR to HDR',
   description: 'Give a picture or video HDR brightness.',
-  coverUrl: COVER
+  covers: [{ url: COVER, stillUrl: null }]
 }
 const GENJUTSU: AppCard = {
   id: 'genjutsu',
   title: 'Genjutsu',
   description: 'Move a character with the motion from a clip.',
-  coverUrl: null
+  covers: []
 }
 
 const listApps = vi.fn<() => Promise<AppCard[]>>()
@@ -98,6 +98,24 @@ describe('AppsView', () => {
     expect(wrapper.findAll('[data-testid="apps-grid"] button')).toHaveLength(3)
   })
 
+  it("plays an app's covers on its card, one shown and the next loading behind it", async () => {
+    const covers = ['red', 'green', 'blue'].map((fill) => ({
+      url: `data:image/svg+xml,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5"><rect width="8" height="5" fill="${fill}"/></svg>`
+      )}`,
+      stillUrl: null
+    }))
+    const wrapper = await mountApps([{ ...CUTOUT, covers }])
+    const card = wrapper.get('[data-testid="app-card-remove-background"]')
+    const urls = covers.map((cover) => cover.url)
+
+    expect(urls).toContain(card.get('img[data-cover="shown"]').attributes('src'))
+    expect(urls).toContain(card.get('img[data-cover="upcoming"]').attributes('src'))
+    expect(card.get('img[data-cover="upcoming"]').attributes('src')).not.toBe(
+      card.get('img[data-cover="shown"]').attributes('src')
+    )
+  })
+
   it('shows a glyph instead of a picture for an app with no cover', async () => {
     const wrapper = await mountApps()
     const card = wrapper.get('[data-testid="app-card-genjutsu"]')
@@ -107,7 +125,9 @@ describe('AppsView', () => {
   })
 
   it('swaps a picture that fails to load for the glyph', async () => {
-    const wrapper = await mountApps([{ ...CUTOUT, coverUrl: 'data:image/png;base64,broken' }])
+    const wrapper = await mountApps([
+      { ...CUTOUT, covers: [{ url: 'data:image/png;base64,broken', stillUrl: null }] }
+    ])
     const card = wrapper.get('[data-testid="app-card-remove-background"]')
 
     await expect.poll(() => card.find('[data-testid="app-card-no-cover"]').exists()).toBe(true)
@@ -128,7 +148,7 @@ describe('AppsView', () => {
   it('sizes a card as the design does: 4px around a 505 by 316 picture, 13px text', async () => {
     const wrapper = await mountApps()
     const card = wrapper.get('[data-testid="app-card-remove-background"]')
-    const picture = card.get('img').element.parentElement as HTMLElement
+    const picture = card.get('[data-testid="app-card-picture"]').element as HTMLElement
     const cardBox = card.element.getBoundingClientRect()
     const pictureBox = picture.getBoundingClientRect()
 

@@ -3,7 +3,7 @@ import path from 'path'
 
 import { APP_ID_PATTERN, isAppsListUrl, isInAppsScope } from '../../shared/appsLocation'
 import type { AppsLocation } from '../../shared/appsLocation'
-import type { AppCard } from '../../types/ipc'
+import type { AppCard, AppCover } from '../../types/ipc'
 import { fetchJSON } from '../lib/fetch'
 import { readFileSafeAsync, writeFileSafeAsync } from '../lib/safe-file'
 import { currentAppsLocation } from './appsConfig'
@@ -16,6 +16,7 @@ const RETRY_DELAYS_MS = [1000, 3000]
 const SAVED_LIST_FILE = 'apps-catalog.json'
 const MAX_APPS = 200
 const MAX_TEXT_LENGTH = 4096
+const MAX_COVERS = 24
 
 interface ListedApp {
   card: AppCard
@@ -51,6 +52,24 @@ function coverUrlFor(cover: unknown, location: AppsLocation): string | null {
   return url && url.origin === location.origin ? url.href : null
 }
 
+function coverFor(entry: unknown, location: AppsLocation): AppCover | null {
+  const record = asRecord(entry)
+  const url = coverUrlFor(record?.cover, location)
+  return url ? { url, stillUrl: coverUrlFor(record?.still, location) } : null
+}
+
+function coversFor(record: JsonRecord, location: AppsLocation): AppCover[] {
+  const listed = Array.isArray(record.covers) ? record.covers.slice(0, MAX_COVERS) : []
+  const covers: AppCover[] = []
+  for (const entry of listed) {
+    const cover = coverFor(entry, location)
+    if (cover && !covers.some((kept) => kept.url === cover.url)) covers.push(cover)
+  }
+  if (covers.length > 0) return covers
+  const own = coverFor(record, location)
+  return own ? [own] : []
+}
+
 function pageUrlFor(id: string, page: unknown, location: AppsLocation): string | null {
   const url = page === undefined ? resolved(`#/${id}`, location.url) : resolved(page, location.url)
   if (!url || !isInAppsScope(location, url.href) || isAppsListUrl(location, url.href)) return null
@@ -70,7 +89,7 @@ export function toListedApp(entry: unknown, location: AppsLocation): ListedApp |
       id,
       title,
       description: text(record.blurb) ?? '',
-      coverUrl: coverUrlFor(record.cover, location)
+      covers: coversFor(record, location)
     }
   }
 }
