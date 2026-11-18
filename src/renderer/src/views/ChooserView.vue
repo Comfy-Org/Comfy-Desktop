@@ -125,14 +125,18 @@ const scopedVisibleInstalls = computed(() => {
 const scopedInstalls = computed(() => effectiveInstalls.value.filter(installationIsInSelectedScope))
 
 const whereOptions = computed(() => {
-  const has = (category: string): boolean =>
-    scopedInstalls.value.some((inst) => inst.sourceCategory === category)
-  const options: { value: FilterKey; label: string }[] = [
-    { value: 'all', label: t('chooser.filterAll') },
-    { value: 'local', label: t('chooser.filterThisComputer') }
+  const count = (category: string): number =>
+    scopedInstalls.value.filter((inst) => inst.sourceCategory === category).length
+  const options: { value: FilterKey; label: string; count: number }[] = [
+    { value: 'all', label: t('chooser.filterAll'), count: scopedInstalls.value.length },
+    { value: 'local', label: t('chooser.filterThisComputer'), count: count('local') }
   ]
-  if (has('cloud')) options.push({ value: 'cloud', label: t('chooser.filterCloud') })
-  if (has('remote')) options.push({ value: 'remote', label: t('chooser.filterRemote') })
+  if (count('cloud') > 0) {
+    options.push({ value: 'cloud', label: t('chooser.filterCloud'), count: count('cloud') })
+  }
+  if (count('remote') > 0) {
+    options.push({ value: 'remote', label: t('chooser.filterRemote'), count: count('remote') })
+  }
   return options
 })
 watch(whereOptions, (options) => {
