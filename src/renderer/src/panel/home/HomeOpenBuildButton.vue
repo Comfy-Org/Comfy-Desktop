@@ -28,8 +28,7 @@ const open = ref(false)
 const sessionStore = useSessionStore()
 
 function isLive(build: Installation): boolean {
-  const status = statusOf(build)
-  return status === 'running' || status === 'always-on'
+  return statusOf(build) === 'running'
 }
 
 function brokenReason(build: Installation): string | undefined {

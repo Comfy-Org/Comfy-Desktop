@@ -115,8 +115,7 @@ const { visibleInstalls } = useInstallList({
 const buildsPageActive = computed(() => activePage === 'chooser' && !activeBuildId)
 
 function isLive(build: Installation): boolean {
-  const status = homeBuildStatus(build, sessionStore)
-  return status === 'running' || status === 'always-on'
+  return homeBuildStatus(build, sessionStore) === 'running'
 }
 
 function failureText(build: Installation): string | null {

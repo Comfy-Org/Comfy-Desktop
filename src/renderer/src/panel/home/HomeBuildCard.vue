@@ -78,12 +78,9 @@ const statusLabel = computed(() => {
       return t('home.buildRunning')
     case 'starting':
       return t('home.buildStarting')
-    case 'always-on':
-      return t('home.buildAlwaysOn')
     case 'update':
     case 'ready':
-      if (isCloudBuild(build)) return t('home.buildAlwaysOn')
-      return autoStart ? t('home.autoStartOn') : t('home.buildReady')
+      return autoStart && !isCloudBuild(build) ? t('home.autoStartOn') : t('home.buildReady')
     default:
       return status satisfies never
   }
@@ -91,10 +88,7 @@ const statusLabel = computed(() => {
 const detail = computed(() =>
   isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
 )
-const isLive = computed(
-  () =>
-    status === 'running' || status === 'always-on' || (status === 'update' && isCloudBuild(build))
-)
+const isLive = computed(() => status === 'running')
 const resting = computed(() => status === 'ready' || status === 'update')
 const updateNote = computed(() =>
   !uninstalling.value && status !== 'updating' && build.statusTag?.style === 'update'
@@ -110,7 +104,13 @@ const openHint = computed(() => {
   ) {
     return t('home.buildClickToViewLogs')
   }
-  if (broken.value || isLive.value || status === 'starting' || build.sourceCategory === 'remote')
+  if (
+    broken.value ||
+    isLive.value ||
+    status === 'starting' ||
+    build.sourceCategory === 'remote' ||
+    isCloudBuild(build)
+  )
     return t('home.buildClickToOpen')
   return t('home.buildClickToStart')
 })

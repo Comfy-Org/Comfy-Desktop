@@ -164,10 +164,9 @@ const showWhyCloudTrigger = computed(
 )
 
 const startsWithDesktop = computed(() => props.autoStart && !isCloudBuild(inst.value))
-const restingLabel = computed(() => {
-  if (isCloudBuild(inst.value)) return t('home.buildAlwaysOn')
-  return startsWithDesktop.value ? t('home.autoStartOn') : t('home.buildReady')
-})
+const restingLabel = computed(() =>
+  startsWithDesktop.value ? t('home.autoStartOn') : t('home.buildReady')
+)
 
 const isFromBuild = computed(() => isBuildInstall(inst.value))
 
@@ -395,13 +394,8 @@ function openContextMenu(event: MouseEvent): void {
           <span class="truncate">{{ t(statusPill.label) }}</span>
         </span>
         <span v-else class="flex min-w-0 items-center gap-1.5">
-          <span
-            v-if="isCloudBuild(inst)"
-            class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
-            aria-hidden="true"
-          />
           <Power
-            v-else-if="startsWithDesktop"
+            v-if="startsWithDesktop"
             :size="12"
             class="shrink-0"
             aria-hidden="true"

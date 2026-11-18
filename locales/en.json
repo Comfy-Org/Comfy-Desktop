@@ -185,7 +185,6 @@
     "buildRunning": "Running",
     "buildStarting": "Starting",
     "buildReady": "Ready",
-    "buildAlwaysOn": "Always on",
     "buildDidntStart": "Didn't start",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "Example workflows",
