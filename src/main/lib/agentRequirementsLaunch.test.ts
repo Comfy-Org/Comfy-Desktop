@@ -2679,6 +2679,31 @@ describe('installAgentRequirements with a version override', () => {
       )
     })
 
+    it('queues no background floor when uv cannot start for the floored install', async () => {
+      cached = true
+      respond = ({ constraints }) => {
+        if (constraints === FLOOR) throw new Error('spawn /uv ENOENT')
+        return { code: 0, output: '' }
+      }
+      const onCoreFailed = vi.fn()
+      const onDeferred = vi.fn()
+      const sendOutput = vi.fn()
+
+      await installAgentRequirements(
+        plan,
+        sendOutput,
+        undefined,
+        undefined,
+        null,
+        onDeferred,
+        onCoreFailed
+      )
+
+      expect(sendOutput.mock.calls.join('')).toContain("Couldn't install a released agent")
+      expect(onCoreFailed).not.toHaveBeenCalled()
+      expect(onDeferred, 'a local start failure is not a download to retry').not.toHaveBeenCalled()
+    })
+
     it('starts no fallback install for a launch cancelled during the floored install', async () => {
       const abort = new AbortController()
       respond = () => {

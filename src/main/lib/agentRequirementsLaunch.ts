@@ -550,8 +550,12 @@ async function runCore(
   sendOutput(
     `Couldn't install a released agent over ${floor.placeholder}; installing ComfyUI's agent requirements as listed\n`
   )
-  const rejected = cannotDownload(floored)
-  return { result: await asListed(), floor: rejected ? 'rejected' : 'deferred' }
+  return { result: await asListed(), floor: floorFailure(floored) }
+}
+
+function floorFailure(floored: CachedResult): FloorOutcome {
+  if (floored.report.outcome === 'spawn_error') return 'none'
+  return cannotDownload(floored) ? 'rejected' : 'deferred'
 }
 
 function cancelledRun(): CachedResult {
