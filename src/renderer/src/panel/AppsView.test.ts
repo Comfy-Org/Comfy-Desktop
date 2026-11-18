@@ -150,7 +150,7 @@ describe('AppsView', () => {
     expect(pictureBox.width / pictureBox.height).toBeCloseTo(505 / 316, 2)
     expect(getComputedStyle(card.element).borderRadius).toBe('12px')
     expect(getComputedStyle(picture).borderRadius).toBe('8px')
-    expect(getComputedStyle(card.get('span.font-medium').element).fontSize).toBe('13px')
+    expect(getComputedStyle(card.get('span.text-ui.font-medium').element).fontSize).toBe('13px')
   })
 
   it('narrows the cards to the apps whose name or description matches the search', async () => {
