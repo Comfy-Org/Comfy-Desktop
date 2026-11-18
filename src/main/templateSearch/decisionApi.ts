@@ -1,6 +1,7 @@
 import { isPersistableTemplateId } from '../sources/standalone/curatedTemplates'
 import type {
   TemplateSearchCandidate,
+  TemplateSearchInput,
   TemplateSearchOutcome,
   TemplateSearchResult
 } from '../../types/ipc'
@@ -21,6 +22,7 @@ const OUTCOMES: readonly TemplateSearchOutcome[] = [
   'download'
 ]
 const KNOWN_OUTCOMES: ReadonlySet<string> = new Set(OUTCOMES)
+const INPUTS: ReadonlySet<string> = new Set<TemplateSearchInput>(['image', 'video', 'audio'])
 
 export interface TemplateLabel {
   title: string
@@ -51,6 +53,10 @@ function isOfferableOption(value: unknown): boolean {
 
 function listsFiles(value: unknown): boolean {
   return asTexts(asRecord(value)?.download).length > 0
+}
+
+function inputsOf(value: unknown): TemplateSearchInput[] {
+  return asTexts(value).filter((kind): kind is TemplateSearchInput => INPUTS.has(kind))
 }
 
 function asNumber(value: unknown): number | null {
@@ -95,6 +101,7 @@ function candidateFrom(
     score: asNumber(candidate.score),
     calibrated: asNumber(candidate.calibrated),
     belowThreshold: isBelowThreshold(candidate),
+    needs: inputsOf(variant.needs),
     downloadBytes: null
   }
 }
