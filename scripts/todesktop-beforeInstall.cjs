@@ -18,7 +18,5 @@ module.exports = async ({ pkgJsonPath, pkgJson }) => {
   }
 
   await writeFile(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`)
-  console.log(
-    `[todesktop:beforeInstall] Removed lifecycle scripts: ${removedScripts.join(', ')}`
-  )
+  console.log(`[todesktop:beforeInstall] Removed lifecycle scripts: ${removedScripts.join(', ')}`)
 }

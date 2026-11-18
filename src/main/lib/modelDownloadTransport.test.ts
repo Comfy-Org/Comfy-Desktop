@@ -69,7 +69,6 @@ function makeResponse(
   }) as FakeResponse
 }
 
-/** Flush a couple of macrotask turns so stream close callbacks run. */
 async function flush(turns = 4): Promise<void> {
   for (let i = 0; i < turns; i++) {
     await new Promise((r) => setImmediate(r))
@@ -133,7 +132,6 @@ describe('completion', () => {
     res.emit('data', Buffer.from('01234'))
     await flush()
 
-    // Mid-transfer: bytes live ONLY under the staging name.
     expect(fs.existsSync(finalPath)).toBe(false)
     expect(fs.existsSync(stagingPathFor(finalPath))).toBe(true)
     expect(readStagedMeta(stagingMetaPathFor(finalPath))?.url).toBe(URL_MAIN)
@@ -186,9 +184,6 @@ describe('completion', () => {
   })
 
   it('never finalizes a body whose total size cannot be verified', async () => {
-    // Fresh 200 with no Content-Length, no caller expectation and no
-    // persisted total: the bytes cannot be proven complete, so they must
-    // never land under a recognized model extension (issue #1322).
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     const res = makeResponse(200, {})
@@ -199,8 +194,6 @@ describe('completion', () => {
     expect(outcome.outcome).toBe('error')
     expect((outcome as { error: string }).error).toMatch(/did not report a size/)
     expect(fs.existsSync(finalPath)).toBe(false)
-    // Staged bytes and sidecar survive so a Range retry can learn the total
-    // from a 206 Content-Range and then verify.
     expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
     expect(readStagedMeta(stagingMetaPathFor(finalPath))?.url).toBe(URL_MAIN)
   })
@@ -245,7 +238,6 @@ describe('pause / cancel', () => {
     expect(fs.existsSync(finalPath)).toBe(false)
     expect(fs.statSync(stagingPathFor(finalPath)).size).toBe(5)
     expect(readStagedMeta(stagingMetaPathFor(finalPath))?.etag).toBe('"v1"')
-    // Already settled: a second stop is a no-op.
     expect(handle.pause()).toBe(false)
     expect(handle.cancel()).toBe(false)
   })
@@ -297,10 +289,6 @@ describe('network failure', () => {
   })
 
   it('aborts a stalled transfer and keeps staged bytes', async () => {
-    // Fake timers: the idle timer must fire only when WE advance the clock,
-    // after the data chunk landed - otherwise a loaded runner could burn the
-    // 25 ms window during the synchronous response setup and abort before
-    // any byte was staged.
     vi.useFakeTimers()
     let handle!: ReturnType<typeof startModelTransfer>
     let req!: (typeof requests)[number]
@@ -312,8 +300,6 @@ describe('network failure', () => {
       res.emit('data', Buffer.from('012'))
       await vi.advanceTimersByTimeAsync(30)
     } finally {
-      // The stream close callback that settles `done` is fs I/O, not a
-      // timer - real timers must be back before awaiting it.
       vi.useRealTimers()
     }
     const outcome = await handle.done
@@ -352,10 +338,6 @@ describe('resume', () => {
     preStage('AAAAA', stagedMeta({ expectedSize: 10, etag: '"v1"' }))
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
-    // RFC 9110 requires Content-Range on every 206. A server that omits it
-    // gives no proof its body continues our staged bytes - splicing it in
-    // blind could corrupt the file. The staged pair stays for a retry
-    // against a compliant response.
     const res = makeResponse(206, { 'content-length': '5' })
     req.emit('response', res)
     res.emit('data', Buffer.from('BBBBB'))
@@ -372,8 +354,6 @@ describe('resume', () => {
     preStage('AAAAA', stagedMeta({ expectedSize: 10, etag: '"v1"' }))
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
-    // Range says 5 bytes (5-9) but Content-Length says 4: internally
-    // inconsistent response - no part of it can be trusted.
     const res = makeResponse(206, { 'content-length': '4', 'content-range': 'bytes 5-9/10' })
     req.emit('response', res)
     const outcome = await handle.done
@@ -386,16 +366,12 @@ describe('resume', () => {
     preStage('AAAAA', stagedMeta({ expectedSize: 10, etag: '"v1"' }))
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
-    // A misbehaving server/proxy answers with a range that does NOT start at
-    // our staged byte count - appending its body would corrupt the file.
     const res = makeResponse(206, { 'content-length': '8', 'content-range': 'bytes 2-9/10' })
     req.emit('response', res)
     const outcome = await handle.done
     expect(outcome.outcome).toBe('error')
     expect(req.abort).toHaveBeenCalled()
     await flush()
-    // The staged pair is not resumable against this source - discarded so the
-    // next attempt restarts clean.
     expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
     expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
     expect(fs.existsSync(finalPath)).toBe(false)
@@ -419,7 +395,6 @@ describe('resume', () => {
     res.emit('end')
     const outcome = await handle.done
     expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
-    // New content only - the stale staged bytes were discarded, not prepended.
     expect(fs.readFileSync(finalPath, 'utf-8')).toBe('CCCCCCCCCC')
   })
 
@@ -428,8 +403,6 @@ describe('resume', () => {
     const handle = startModelTransfer(baseOpts())
     const headers = headerCalls(requests[0]!)
     expect(headers['Range']).toBeUndefined()
-    // The unverifiable pair was discarded; a fresh zero-byte placeholder +
-    // sidecar replace it so a crash right here still hydrates a job.
     expect(fs.statSync(stagingPathFor(finalPath)).size).toBe(0)
     expect(readStagedMeta(stagingMetaPathFor(finalPath))?.url).toBe(URL_MAIN)
     handle.cancel()
@@ -459,7 +432,6 @@ describe('resume', () => {
   it('never treats staged bytes EXCEEDING the expected size as complete', async () => {
     preStage('0123456789X', stagedMeta({ expectedSize: 10 }))
     const handle = startModelTransfer(baseOpts())
-    // Corrupt overrun: restart clean instead of finalizing.
     expect(requests).toHaveLength(1)
     const headers = headerCalls(requests[0]!)
     expect(headers['Range']).toBeUndefined()
@@ -470,14 +442,10 @@ describe('resume', () => {
   })
 
   it('finalizes on HTTP 416 only with server-confirmed proof of completeness', async () => {
-    // Sidecar total unknown (0) so the pre-network completion path is
-    // skipped; a resume request goes out from byte 10.
     preStage('0123456789', stagedMeta({ expectedSize: 0 }))
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
     expect(headerCalls(req)['Range']).toBe('bytes=10-')
-    // RFC 9110 unsatisfied-range response confirms the real total equals our
-    // staged byte count - independent proof the file is complete.
     req.emit('response', makeResponse(416, { 'content-range': 'bytes */10' }))
     const outcome = await handle.done
     expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
@@ -499,7 +467,6 @@ describe('resume', () => {
   it('treats a malformed 416 Content-Range as failure, not as absent', async () => {
     preStage('0123456789', stagedMeta({ expectedSize: 0 }))
     const handle = startModelTransfer(baseOpts())
-    // Present but garbage: must NOT fall through to any finalize heuristic.
     requests[0]!.emit('response', makeResponse(416, { 'content-range': 'bytes */banana' }))
     const outcome = await handle.done
     expect(outcome.outcome).toBe('error')
@@ -509,8 +476,6 @@ describe('resume', () => {
   it('does not finalize on HTTP 416 when the server reports a different total', async () => {
     preStage('0123456789', stagedMeta({ expectedSize: 0 }))
     const handle = startModelTransfer(baseOpts())
-    // RFC 9110 unsatisfied-range response names the REAL total - 12, not our
-    // staged 10, so the staged bytes are stale content, not a complete file.
     requests[0]!.emit('response', makeResponse(416, { 'content-range': 'bytes */12' }))
     const outcome = await handle.done
     expect(outcome.outcome).toBe('error')
@@ -521,8 +486,6 @@ describe('resume', () => {
   it('does not finalize on HTTP 416 when the caller expects a different total', async () => {
     preStage('0123456789', stagedMeta({ expectedSize: 0 }))
     const handle = startModelTransfer(baseOpts({ expectedSize: 12 }))
-    // Server confirms 10 bytes total but the CALLER expects 12: the staged
-    // content cannot be the model the caller asked for.
     requests[0]!.emit('response', makeResponse(416, { 'content-range': 'bytes */10' }))
     const outcome = await handle.done
     expect(outcome.outcome).toBe('error')
@@ -533,8 +496,6 @@ describe('resume', () => {
     preStage('AAAAA', stagedMeta({ expectedSize: 10 }))
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
-    // Right start offset, wrong entity: the server now reports 20 total bytes
-    // where our staged pair expects 10 - appending would corrupt the file.
     const res = makeResponse(206, { 'content-length': '15', 'content-range': 'bytes 5-19/20' })
     req.emit('response', res)
     const outcome = await handle.done
@@ -560,8 +521,6 @@ describe('resume', () => {
     preStage('AAAAA', stagedMeta({ expectedSize: 10, etag: '"v1"' }))
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
-    // If-Range compliance forbids a 206 for a changed entity; a broken server
-    // that answers 206 with a NEW ETag must not have its bytes spliced in.
     const res = makeResponse(206, {
       'content-length': '5',
       'content-range': 'bytes 5-9/10',
@@ -596,8 +555,6 @@ describe('resume', () => {
     preStage('AAAAA', stagedMeta({ expectedSize: 10, etag: '"v1"' }))
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
-    // Chunked 206 with a valid Content-Range but no Content-Length. The
-    // interrupted short body must NOT finalize as a complete model.
     const res = makeResponse(206, { 'content-range': 'bytes 5-9/10' })
     req.emit('response', res)
     res.emit('data', Buffer.from('BBB'))
@@ -608,7 +565,6 @@ describe('resume', () => {
       error: 'Download incomplete: expected 10 bytes but got 8'
     })
     expect(fs.existsSync(finalPath)).toBe(false)
-    // Retained for resume - 8 of 10 bytes staged.
     expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('AAAAABBB')
     expect(readStagedMeta(stagingMetaPathFor(finalPath))?.expectedSize).toBe(10)
   })
@@ -616,8 +572,6 @@ describe('resume', () => {
   it('restarts clean instead of finalizing when the caller expects a different size', async () => {
     preStage('0123456789', stagedMeta({ expectedSize: 10 }))
     const handle = startModelTransfer(baseOpts({ expectedSize: 12 }))
-    // Staged bytes match the sidecar but NOT what the caller now expects -
-    // stale content; a fresh request goes out with no Range header.
     expect(requests).toHaveLength(1)
     const headers = headerCalls(requests[0]!)
     expect(headers['Range']).toBeUndefined()
@@ -628,8 +582,6 @@ describe('resume', () => {
   })
 
   it('uses Last-Modified for If-Range when the staged ETag is weak', () => {
-    // RFC 9110: a weak ETag never guarantees byte-for-byte equality, so it
-    // must not gate a Range splice.
     preStage('AAAAA', stagedMeta({ etag: 'W/"v1"', lastModified: 'Wed, 01 Jan 2026' }))
     startModelTransfer(baseOpts())
     const headers = headerCalls(requests[0]!)
@@ -666,7 +618,6 @@ describe('sha-256 integrity', () => {
     req.emit('response', res)
     res.emit('data', Buffer.from('01234'))
     await flush()
-    // The expectation survives a crash: a hydrated resume can still verify.
     expect(readStagedMeta(stagingMetaPathFor(finalPath))?.sha256).toBe(SHA_0123456789)
 
     res.emit('data', Buffer.from('56789'))
@@ -686,7 +637,6 @@ describe('sha-256 integrity', () => {
     const outcome = await handle.done
     expect(outcome.outcome).toBe('error')
     expect((outcome as { code?: string }).code).toBe('checksum-mismatch')
-    // Wrong bytes are not short bytes: nothing to resume, so nothing stays.
     expect(fs.existsSync(finalPath)).toBe(false)
     expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
     expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
@@ -721,7 +671,6 @@ describe('sha-256 integrity', () => {
     preStage('AAAAA', stagedMeta({ sha256: SHA_0123456789, expectedSize: 10, etag: '"v1"' }))
     const handle = startModelTransfer(baseOpts({ sha256: SHA_AAAAABBBBB }))
     const headers = headerCalls(requests[0]!)
-    // Splicing onto bytes for other content could only fail verification.
     expect(headers['Range']).toBeUndefined()
     expect(fs.statSync(stagingPathFor(finalPath)).size).toBe(0)
     expect(readStagedMeta(stagingMetaPathFor(finalPath))?.sha256).toBe(SHA_AAAAABBBBB)
@@ -733,7 +682,6 @@ describe('sha-256 integrity', () => {
     preStage('0123456789', stagedMeta({ sha256: SHA_AAAAABBBBB, expectedSize: 10 }))
     const handle = startModelTransfer(baseOpts())
     const outcome = await handle.done
-    // Hydrated finalize without a network attempt still runs verification.
     expect(requests).toHaveLength(0)
     expect(outcome.outcome).toBe('error')
     expect((outcome as { code?: string }).code).toBe('checksum-mismatch')
@@ -767,7 +715,6 @@ describe('redirects', () => {
     handle.pause()
     await handle.done
 
-    // A later resume keys off the original url, not the redirect target.
     const resumed = startModelTransfer(baseOpts())
     const req2 = requests[1]!
     expect(req2.__url).toBe(URL_MAIN)
@@ -822,8 +769,6 @@ describe('R2 mirror fallback', () => {
 describe('durable staging placeholder', () => {
   it('persists a hydratable pair before any network response arrives', async () => {
     const handle = startModelTransfer(baseOpts({ jobId: 'job-1', expectedSize: 10 }))
-    // No response yet - a quit/crash right now must still leave a pair the
-    // next launch can hydrate into a paused job.
     expect(fs.statSync(stagingPathFor(finalPath)).size).toBe(0)
     expect(readStagedMeta(stagingMetaPathFor(finalPath))).toMatchObject({
       url: URL_MAIN,
@@ -846,7 +791,6 @@ describe('durable staging placeholder', () => {
 })
 
 describe('staging durability failures', () => {
-  /** Throw only for writes matching `match`; pass every other write through. */
   function failWritesMatching(match: (file: string) => boolean): ReturnType<typeof vi.spyOn> {
     const realWriteFileSync = fs.writeFileSync.bind(fs)
     return vi.spyOn(fs, 'writeFileSync').mockImplementation(((
@@ -866,7 +810,6 @@ describe('staging durability failures', () => {
     spy.mockRestore()
     expect(outcome.outcome).toBe('error')
     expect((outcome as { error: string }).error).toMatch(/cannot create staging file/)
-    // The failure happened before the request was ever issued.
     expect(requests.length).toBe(0)
     expect(fs.existsSync(finalPath)).toBe(false)
   })
@@ -881,14 +824,12 @@ describe('staging durability failures', () => {
       error: 'Download failed: cannot write staging metadata'
     })
     expect(requests.length).toBe(0)
-    // The .part placeholder that DID land stays for a later retry.
     expect(fs.existsSync(stagingPathFor(finalPath))).toBe(true)
   })
 
   it('refuses body bytes when the response-phase sidecar rewrite fails', async () => {
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
-    // Initial placeholder + sidecar landed fine; the refresh on response fails.
     const spy = failWritesMatching((file) => file.endsWith('.dl-meta.tmp'))
     const res = makeResponse(200, { 'content-length': '10' })
     req.emit('response', res)
@@ -899,8 +840,6 @@ describe('staging durability failures', () => {
       error: 'Download failed: cannot write staging metadata'
     })
     expect(req.abort).toHaveBeenCalled()
-    // No byte was accepted without a durable resume identity - even ones the
-    // aborted response flushes late.
     res.emit('data', Buffer.from('0123456789'))
     res.emit('end')
     await flush()
@@ -912,13 +851,10 @@ describe('staging durability failures', () => {
 
 describe('orphan staged bytes (no sidecar)', () => {
   it('parks orphan .part bytes aside instead of truncating them', async () => {
-    // A `.part` with no readable sidecar may be quarantined migration data of
-    // unknown provenance - never a new transfer's to claim or destroy.
     fs.mkdirSync(path.dirname(finalPath), { recursive: true })
     fs.writeFileSync(stagingPathFor(finalPath), 'foreign bytes')
     const handle = startModelTransfer(baseOpts())
     const req = requests[0]!
-    // The new transfer starts fresh - no Range resume into foreign bytes.
     expect(headerCalls(req)['Range']).toBeUndefined()
     const res = makeResponse(200, { 'content-length': '10' })
     req.emit('response', res)
@@ -927,7 +863,6 @@ describe('orphan staged bytes (no sidecar)', () => {
     const outcome = await handle.done
     expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
     expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
-    // The orphan bytes were preserved under a parked non-model name.
     expect(fs.readFileSync(stagingPathFor(finalPath) + '.orphan', 'utf-8')).toBe('foreign bytes')
   })
 
@@ -935,7 +870,6 @@ describe('orphan staged bytes (no sidecar)', () => {
     fs.mkdirSync(path.dirname(finalPath), { recursive: true })
     const orphanPath = stagingPathFor(finalPath)
     fs.writeFileSync(orphanPath, 'foreign bytes')
-    // Both park primitives (hard link and claim+rename fallback) fail.
     const realLinkSync = fs.linkSync.bind(fs)
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(((
       from: Parameters<typeof fs.linkSync>[0],
@@ -958,7 +892,6 @@ describe('orphan staged bytes (no sidecar)', () => {
     renameSpy.mockRestore()
     expect(outcome.outcome).toBe('error')
     expect((outcome as { error: string }).error).toMatch(/unidentified staged bytes/)
-    // No network activity and no truncation of the unmovable bytes.
     expect(requests.length).toBe(0)
     expect(fs.readFileSync(orphanPath, 'utf-8')).toBe('foreign bytes')
     expect(fs.existsSync(finalPath)).toBe(false)
@@ -974,7 +907,6 @@ describe('setup failures settle the transfer', () => {
     const handle = startModelTransfer(baseOpts())
     const outcome = await handle.done
     expect(outcome).toEqual({ outcome: 'error', error: 'Download failed: bad url' })
-    // The pre-network placeholder stays hydratable.
     expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(true)
   })
 
@@ -1017,7 +949,6 @@ describe('terminal race safety', () => {
     req.emit('response', res)
     res.emit('data', Buffer.from('abcd'))
     res.emit('end')
-    // Verification claimed the outcome synchronously on 'end'.
     expect(handle.pause()).toBe(false)
     expect(handle.cancel()).toBe(false)
     const outcome = await handle.done
@@ -1034,7 +965,6 @@ describe('terminal race safety', () => {
     expect(handle.cancel()).toBe(true)
     const outcome = await handle.done
     expect(outcome).toEqual({ outcome: 'cancelled' })
-    // The aborted request may still flush buffered events.
     res.emit('data', Buffer.from('56789'))
     res.emit('end')
     res.emit('error', new Error('aborted'))
@@ -1052,8 +982,6 @@ describe('final destination conflicts', () => {
     const res = makeResponse(200, { 'content-length': '10' })
     req.emit('response', res)
     res.emit('data', Buffer.from('01234'))
-    // The user (or another process) drops a DIFFERENT file at the final name
-    // mid-download - the verified staged bytes must not overwrite it.
     fs.writeFileSync(finalPath, 'XXX')
     res.emit('data', Buffer.from('56789'))
     res.emit('end')
@@ -1061,7 +989,6 @@ describe('final destination conflicts', () => {
     expect(outcome.outcome).toBe('error')
     expect((outcome as { error: string }).error).toMatch(/already exists/)
     expect(fs.readFileSync(finalPath, 'utf-8')).toBe('XXX')
-    // Staged bytes survive the conflict for the user to resolve.
     expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
   })
 
@@ -1076,7 +1003,6 @@ describe('final destination conflicts', () => {
     res.emit('end')
     const outcome = await handle.done
     expect(outcome).toEqual({ outcome: 'completed', savePath: finalPath, finalBytes: 10 })
-    // The independently placed identical file stays authoritative.
     expect(fs.readFileSync(finalPath, 'utf-8')).toBe('0123456789')
     expect(fs.existsSync(stagingPathFor(finalPath))).toBe(false)
     expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(false)
@@ -1088,16 +1014,12 @@ describe('final destination conflicts', () => {
     const res = makeResponse(200, { 'content-length': '10' })
     req.emit('response', res)
     res.emit('data', Buffer.from('01234'))
-    // Same length as the download but different content - e.g. a different
-    // model that happens to match in size. Equal length must never be
-    // accepted as proof of identity.
     fs.writeFileSync(finalPath, 'ZZZZZZZZZZ')
     res.emit('data', Buffer.from('56789'))
     res.emit('end')
     const outcome = await handle.done
     expect(outcome.outcome).toBe('error')
     expect((outcome as { error: string }).error).toMatch(/already exists/)
-    // Both files are preserved for the user to resolve.
     expect(fs.readFileSync(finalPath, 'utf-8')).toBe('ZZZZZZZZZZ')
     expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
   })
@@ -1133,8 +1055,6 @@ describe('final destination conflicts', () => {
   })
 
   it('fails closed on a real link error instead of degrading to claim+rename', async () => {
-    // A genuine I/O failure must surface as the transfer error it is, keeping
-    // the staged bytes for retry.
     const linkSpy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       const err = new Error('EIO: i/o error') as NodeJS.ErrnoException
       err.code = 'EIO'
@@ -1150,8 +1070,6 @@ describe('final destination conflicts', () => {
       const outcome = await handle.done
       expect(outcome.outcome).toBe('error')
       expect((outcome as { error: string }).error).toMatch(/EIO/)
-      // No zero-byte claim marker was left at the final name; staged bytes
-      // and sidecar survive for retry.
       expect(fs.existsSync(finalPath)).toBe(false)
       expect(fs.readFileSync(stagingPathFor(finalPath), 'utf-8')).toBe('0123456789')
       expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(true)

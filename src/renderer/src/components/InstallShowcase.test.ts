@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
-import en from '../../../../locales/en.json'
 import InstallShowcase from './InstallShowcase.vue'
 import { TID } from '../../../shared/testIds'
 import { SHOWCASE_CARDS } from '../lib/installShowcase'
@@ -11,8 +9,7 @@ const mounted: Array<{ unmount: () => void }> = []
 
 function mountShowcase(canOfferCloud = true) {
   const wrapper = mount(InstallShowcase, {
-    props: { canOfferCloud },
-    global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en } })] }
+    props: { canOfferCloud }
   })
   mounted.push(wrapper)
   return wrapper
@@ -20,23 +17,11 @@ function mountShowcase(canOfferCloud = true) {
 
 const find = (w: ReturnType<typeof mountShowcase>, id: string) => w.find(`[data-testid="${id}"]`)
 
-/** Resolved from the card list, so reordering the carousel does not require
- *  rewriting every positional assertion. */
-const titleAt = (index: number): string => {
-  const card = SHOWCASE_CARDS[index]!
-  return card.title.split('.').reduce<unknown>((node, part) => {
-    if (node && typeof node === 'object') return (node as Record<string, unknown>)[part]
-    return undefined
-  }, en) as string
-}
-
 beforeEach(() => {
   vi.useFakeTimers()
   mounted.length = 0
 })
 
-// Unmount before the clock is restored, so a component's interval cannot
-// outlive the fake timers that were driving it.
 afterEach(() => {
   mounted.forEach((w) => w.unmount())
   mounted.length = 0
@@ -45,9 +30,7 @@ afterEach(() => {
 
 describe('cards', () => {
   it('opens on the skip-the-wait card', () => {
-    expect(find(mountShowcase(), TID.installShowcaseTitle).text()).toBe(
-      en.installShowcase.cloud.title
-    )
+    expect(find(mountShowcase(), TID.installShowcaseTitle).text()).toBe('Skip the setup entirely')
   })
 
   it('shows one card at a time', () => {
@@ -55,19 +38,19 @@ describe('cards', () => {
   })
 
   it('renders the card body alongside its title', () => {
-    expect(mountShowcase().text()).toContain(en.installShowcase.cloud.body)
+    expect(mountShowcase().text()).toContain('Cloud is ready now. No install, no drivers, no GPU.')
   })
 
   it('advances to the next card on its own', async () => {
     const w = mountShowcase()
     vi.advanceTimersByTime(SHOWCASE_INTERVAL_MS)
     await w.vm.$nextTick()
-    expect(find(w, TID.installShowcaseTitle).text()).toBe(titleAt(1))
+    expect(find(w, TID.installShowcaseTitle).text()).toBe('RTX 6000 Pro, 96GB VRAM')
   })
 
   it('names the section for screen readers', () => {
     expect(find(mountShowcase(), TID.installShowcase).attributes('aria-label')).toBe(
-      en.installShowcase.label
+      'While you wait'
     )
   })
 })
@@ -75,7 +58,7 @@ describe('cards', () => {
 describe('the cloud action', () => {
   it('offers a way to skip the wait', () => {
     const w = mountShowcase()
-    expect(find(w, TID.installShowcaseCloud).text()).toContain(en.installShowcase.cloudCta)
+    expect(find(w, TID.installShowcaseCloud).text()).toContain('Try Cloud free')
   })
 
   it('emits when taken', async () => {
@@ -87,7 +70,7 @@ describe('the cloud action', () => {
   it('hides the action when cloud is unavailable, keeping the card', () => {
     const w = mountShowcase(false)
     expect(find(w, TID.installShowcaseCloud).exists()).toBe(false)
-    expect(find(w, TID.installShowcaseTitle).text()).toBe(en.installShowcase.cloud.title)
+    expect(find(w, TID.installShowcaseTitle).text()).toBe('Skip the setup entirely')
   })
 
   it('stays put as the cards rotate, so it is always actionable', async () => {
@@ -107,8 +90,6 @@ describe('the cloud action', () => {
   })
 })
 
-/** Shipped installers rotate passively - no dots, no arrows, no transport.
- *  The cloud CTA is the only control on the surface. */
 describe('passive rotation', () => {
   it('ships no carousel transport controls', () => {
     const w = mountShowcase()
@@ -134,7 +115,7 @@ describe('pausing while the user reads', () => {
     await find(w, TID.installShowcase).trigger('mouseenter')
     vi.advanceTimersByTime(SHOWCASE_INTERVAL_MS * 2)
     await w.vm.$nextTick()
-    expect(find(w, TID.installShowcaseTitle).text()).toBe(en.installShowcase.cloud.title)
+    expect(find(w, TID.installShowcaseTitle).text()).toBe('Skip the setup entirely')
   })
 
   it('resumes when the pointer leaves', async () => {
@@ -144,7 +125,7 @@ describe('pausing while the user reads', () => {
     await find(w, TID.installShowcase).trigger('mouseleave')
     vi.advanceTimersByTime(SHOWCASE_INTERVAL_MS)
     await w.vm.$nextTick()
-    expect(find(w, TID.installShowcaseTitle).text()).toBe(titleAt(1))
+    expect(find(w, TID.installShowcaseTitle).text()).toBe('RTX 6000 Pro, 96GB VRAM')
   })
 
   it('holds while the cloud CTA has focus', async () => {
@@ -152,7 +133,7 @@ describe('pausing while the user reads', () => {
     await find(w, TID.installShowcase).trigger('focusin')
     vi.advanceTimersByTime(SHOWCASE_INTERVAL_MS * 2)
     await w.vm.$nextTick()
-    expect(find(w, TID.installShowcaseTitle).text()).toBe(en.installShowcase.cloud.title)
+    expect(find(w, TID.installShowcaseTitle).text()).toBe('Skip the setup entirely')
   })
 
   it('stays paused until both hover and focus have left', async () => {
@@ -163,11 +144,11 @@ describe('pausing while the user reads', () => {
     await showcase.trigger('mouseleave')
     vi.advanceTimersByTime(SHOWCASE_INTERVAL_MS)
     await w.vm.$nextTick()
-    expect(find(w, TID.installShowcaseTitle).text()).toBe(en.installShowcase.cloud.title)
+    expect(find(w, TID.installShowcaseTitle).text()).toBe('Skip the setup entirely')
 
     await showcase.trigger('focusout')
     vi.advanceTimersByTime(SHOWCASE_INTERVAL_MS)
     await w.vm.$nextTick()
-    expect(find(w, TID.installShowcaseTitle).text()).toBe(titleAt(1))
+    expect(find(w, TID.installShowcaseTitle).text()).toBe('RTX 6000 Pro, 96GB VRAM')
   })
 })

@@ -104,7 +104,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-uv-reaper-'))
     fakeUv = path.join(dir, 'bin', 'uv')
     fs.mkdirSync(path.dirname(fakeUv))
-    fs.writeFileSync(fakeUv, '#!/bin/sh\nsleep 60\n', { mode: 0o755 })
+    fs.symlinkSync(execFileSync('which', ['sleep'], { encoding: 'utf-8' }).trim(), fakeUv)
   })
 
   afterEach(() => {
@@ -118,7 +118,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
   })
 
   it('kills the process group of a uv a killed Desktop left running, and removes its record', async () => {
-    const { pid, startedAt } = await start(fakeUv, [], 'uv')
+    const { pid, startedAt } = await start(fakeUv, ['60'], 'uv')
     const file = record(pid, startedAt)
 
     await reapOrphanedAgentUv(dir)
@@ -132,7 +132,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
     ['a uv that started at another time, so its pid was reused', 'uv', -60_000]
   ])('leaves %s alone, and removes only the record', async (_label, name, skew) => {
     const { pid, startedAt } =
-      name === 'uv' ? await start(fakeUv, [], 'uv') : await start('sleep', ['60'], 'sleep')
+      name === 'uv' ? await start(fakeUv, ['60'], 'uv') : await start('sleep', ['60'], 'sleep')
     const file = record(pid, startedAt + skew)
 
     await reapOrphanedAgentUv(dir)
@@ -219,7 +219,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
     let own: ChildProcess | undefined
     vi.mocked(installFilteredRequirementsDetailed).mockImplementation(async (...args) => {
       if ((args[8] as string[]).includes('--dry-run')) return { code: 0, output: '' }
-      own = spawn(fakeUv, [], { detached: true, stdio: 'ignore' })
+      own = spawn(fakeUv, ['60'], { detached: true, stdio: 'ignore' })
       children.push(own)
       args[9]?.(own)
       return new Promise((resolve) => own!.once('close', () => resolve({ code: 0, output: '' })))

@@ -1,6 +1,5 @@
 import type { FieldOption } from '../types/ipc'
 
-/** Map GPU vendor key (from variantId) to a logo image path */
 export const variantImages: Record<string, string> = {
   nvidia: './images/nvidia-logo.jpg',
   amd: './images/amd-logo.png',
@@ -8,7 +7,6 @@ export const variantImages: Record<string, string> = {
   mps: './images/apple-mps-logo.png'
 }
 
-/** Preferred display order for variant cards */
 export const variantOrder: string[] = ['amd', 'nvidia', 'intel-xpu', 'cpu', 'mps']
 
 export function stripVariantPrefix(variantId: string): string {
@@ -23,7 +21,6 @@ export function getVariantImage(option: FieldOption): string | null {
   return null
 }
 
-/** Map base GPU vendor key to a human-readable label */
 export const variantLabels: Record<string, string> = {
   nvidia: 'NVIDIA',
   amd: 'AMD',
@@ -32,7 +29,6 @@ export const variantLabels: Record<string, string> = {
   cpu: 'CPU'
 }
 
-/** Extract a human-readable GPU label from a variant ID like "win-nvidia-cu128" -> "NVIDIA" */
 export function getVariantGpuLabel(variantId: string): string | null {
   const stripped = stripVariantPrefix(variantId)
   for (const key of Object.keys(variantLabels)) {
@@ -41,10 +37,6 @@ export function getVariantGpuLabel(variantId: string): string | null {
   return null
 }
 
-/**
- * Pick the best default variant from a list of options, preferring the
- * GPU-recommended option, then a match to the snapshot's variant, then first.
- */
 export function findBestVariant(
   options: FieldOption[],
   snapshotVariantId: string

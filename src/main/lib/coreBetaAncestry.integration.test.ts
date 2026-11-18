@@ -176,9 +176,6 @@ describe('resolveCoreCommitState against a real repository', () => {
   })
 })
 
-// master:  base -> m1 -> m2 -> M(merge of m2 + s1) -> y
-// side:    base -> s1 -> x1
-// `shallow` is a depth-2 clone at M, so its grafts are m2 and s1.
 describe('resolveCoreCommitState against a real shallow clone', () => {
   let shallowRoot = ''
   let shallow = ''
@@ -229,7 +226,6 @@ describe('resolveCoreCommitState against a real shallow clone', () => {
     expect(grafts.sort()).toEqual([s.m2, s.s1].sort())
   })
 
-  /** First launch starts the fetch and cannot use it; the next launch finds the object local. */
   async function secondLaunch(target: string) {
     const first = await resolveCoreCommitState(shallow, { kind: 'head', commit: s.merge! }, [
       target

@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// Stub the electron surface ./shared touches so the test needs no runtime.
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -21,8 +20,6 @@ vi.mock('../i18n', () => ({
     params ? `${key}:${JSON.stringify(params)}` : key
 }))
 
-// The diagnostic log write is best-effort; make it explode to prove the
-// original failure result is still returned.
 vi.mock('../logsBroadcast', () => ({
   appendLog: vi.fn(() => {
     throw new Error('disk full')

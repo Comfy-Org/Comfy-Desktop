@@ -7,13 +7,6 @@ import { isDownloadComplete } from './download'
 import type { DownloadProgress } from './download'
 import type { ExtractProgress } from './extract'
 
-/** Per-phase boundary signal for `comfy.desktop.install.phase` telemetry. The
- *  installer owns the genuine download↔extract seam (the two are one call from
- *  the caller's view but distinct work here), so it reports the boundaries; the
- *  caller in `install.ts` maps them to the consent-gated telemetry pipeline with
- *  the installation_id / variant it holds. Optional + best-effort so a throwing
- *  callback never breaks an install. `info.error` is pre-bucketed by the caller's
- *  emitter — the installer only forwards the raw Error for classification. */
 export type InstallPhaseName = 'download' | 'extract'
 export type InstallPhaseStatus = 'start' | 'end' | 'error'
 export interface InstallerContext {
@@ -31,8 +24,8 @@ export interface InstallerContext {
     onProgress?: ((p: ExtractProgress) => void) | null,
     options?: { signal?: AbortSignal }
   ) => Promise<void>
+  sendOutput?: (text: string) => void
   signal?: AbortSignal
-  /** Optional per-phase boundary tap. See `InstallPhaseName`. */
   onPhase?: (
     phase: InstallPhaseName,
     status: InstallPhaseStatus,
@@ -40,25 +33,29 @@ export interface InstallerContext {
   ) => void
 }
 
-/** Run an installer phase, emitting start/end/error boundaries through the
- *  optional `onPhase` tap. Re-throws so existing control flow (cancel, retry)
- *  is unchanged; telemetry is a pure side-channel. */
+export function stepLog(
+  sendOutput: ((text: string) => void) | undefined,
+  phase: string
+): (message: string) => void {
+  return (message) => sendOutput?.(`[${phase}] ${message}\n`)
+}
+
+function sizeNote(bytes: number | undefined): string {
+  return bytes && bytes > 0 ? ` (${(bytes / 1048576).toFixed(0)} MB)` : ''
+}
+
 async function withInstallPhase<T>(
   onPhase: InstallerContext['onPhase'],
   phase: InstallPhaseName,
   fn: () => Promise<T>
 ): Promise<T> {
-  // The phase tap is a pure side-channel; a throwing `onPhase` must never abort
-  // or mask the install, so every invocation is isolated.
   const safeOnPhase = (
     status: InstallPhaseStatus,
     info?: { durationMs?: number; error?: unknown }
   ): void => {
     try {
       onPhase?.(phase, status, info)
-    } catch {
-      // swallow: telemetry failures don't affect install control flow
-    }
+    } catch {}
   }
   safeOnPhase('start')
   const t0 = Date.now()
@@ -78,8 +75,6 @@ interface DownloadFile {
   size: number
 }
 
-// Per-cache-path lock so concurrent installs don't write the same file; the
-// second caller waits, then hits the cache and skips the download.
 const _downloadLocks = new Map<string, Promise<void>>()
 
 interface DownloadLockOptions {
@@ -155,6 +150,7 @@ export async function downloadAndExtract(
   expectedSize?: number
 ): Promise<void> {
   const { sendProgress, download, cache, extract, signal, onPhase } = ctx
+  const logDownload = stepLog(ctx.sendOutput, 'download')
   const filename = url.split('/').pop()!
   const cacheBase = cache.getCachePath(cacheKey)
   fs.mkdirSync(cacheBase, { recursive: true })
@@ -165,13 +161,17 @@ export async function downloadAndExtract(
       cachePath,
       {
         signal,
-        onWait: () =>
+        onWait: () => {
+          logDownload(`Waiting for another install to finish downloading ${filename}`)
           sendProgress('download', { percent: 0, status: t('installer.waitingForDownload') })
+        }
       },
       async () => {
         if (isCacheValid(cachePath, expectedSize)) {
+          logDownload(`Using the cached copy of ${filename}${sizeNote(expectedSize)}`)
           sendProgress('download', { percent: 100, status: t('installer.cachedDownload') })
         } else {
+          logDownload(`Downloading ${filename}${sizeNote(expectedSize)}`)
           sendProgress('download', { percent: 0, status: t('installer.startingDownload') })
           await download(
             url,
@@ -191,6 +191,7 @@ export async function downloadAndExtract(
     )
   )
 
+  stepLog(ctx.sendOutput, 'extract')(`Extracting ${filename}`)
   sendProgress('extract', {
     percent: 0,
     status: t('installer.extracting', { progress: '' }).trim()
@@ -221,6 +222,7 @@ export async function downloadAndExtractMulti(
   ctx: InstallerContext
 ): Promise<void> {
   const { sendProgress, download, cache, extract, signal, onPhase } = ctx
+  const logDownload = stepLog(ctx.sendOutput, 'download')
   const cacheBase = cache.getCachePath(cacheDir)
   fs.mkdirSync(cacheBase, { recursive: true })
 
@@ -241,11 +243,14 @@ export async function downloadAndExtractMulti(
         fileCachePath,
         {
           signal,
-          onWait: () =>
+          onWait: () => {
+            logDownload(`Waiting for another install to finish downloading ${file.filename}`)
             sendProgress('download', { percent: 0, status: t('installer.waitingForDownload') })
+          }
         },
         async () => {
           if (isCacheValid(fileCachePath, file.size)) {
+            logDownload(`Using the cached copy of ${file.filename}${sizeNote(file.size)}`)
             completedBytes += file.size || 0
             const percent =
               totalBytes > 0
@@ -256,6 +261,7 @@ export async function downloadAndExtractMulti(
               status: `${t('installer.cachedDownload')}${fileLabel}`
             })
           } else {
+            logDownload(`Downloading ${file.filename}${sizeNote(file.size)}`)
             allCached = false
             const basePercent =
               totalBytes > 0
@@ -317,6 +323,7 @@ export async function downloadAndExtractMulti(
           .find((f) => /\.001$/.test(f.filename))?.filename ?? firstFile!.filename)
   const extractPath = path.join(cacheBase, extractFile)
 
+  stepLog(ctx.sendOutput, 'extract')(`Extracting ${extractFile}`)
   sendProgress('extract', {
     percent: 0,
     status: t('installer.extracting', { progress: '' }).trim()

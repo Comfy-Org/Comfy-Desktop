@@ -1,11 +1,20 @@
-// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({ shell: { openExternal: vi.fn(async () => {}) } }))
+vi.mock('electron', () => ({
+  app: { isPackaged: false },
+  shell: { openExternal: vi.fn(async () => {}) }
+}))
+vi.mock('./loopback', async (importOriginal) => {
+  const actual = await importOriginal<typeof LoopbackModule>()
+  return { ...actual, startLoopbackListener: vi.fn(actual.startLoopbackListener) }
+})
 
 import { get } from 'node:http'
-import { shell } from 'electron'
-import { refresh, signIn } from './oauth'
+import { app, shell } from 'electron'
+import { startLoopbackListener } from './loopback'
+import type * as LoopbackModule from './loopback'
+import { getShellOpenExternalCalls, resetShellOpenExternalCalls } from '../lib/e2eOverrides'
+import { openAuthorizePage, refresh, signIn } from './oauth'
 
 function stub(status: number, body: unknown): void {
   vi.stubGlobal(
@@ -47,7 +56,7 @@ describe('oauth.refresh', () => {
   })
 
   it('keeps the prior refresh token when the server omits one', async () => {
-    stub(200, { access_token: 'a2', expires_in: 3600 }) // no refresh_token
+    stub(200, { access_token: 'a2', expires_in: 3600 })
     const t = await refresh('old-refresh', { tokenUrl: 'https://c/oauth/token' })
     expect(t.accessToken).toBe('a2')
     expect(t.refreshToken).toBe('old-refresh')
@@ -57,6 +66,22 @@ describe('oauth.refresh', () => {
   it('adopts a rotated refresh token when the server returns one', async () => {
     stub(200, { access_token: 'a2', refresh_token: 'new', expires_in: 3600 })
     expect((await refresh('old', { tokenUrl: 'https://c/oauth/token' })).refreshToken).toBe('new')
+  })
+
+  it.each<[string, number, unknown, string | undefined]>([
+    ['invalid_grant', 400, { error: 'invalid_grant', error_description: 'x' }, 'invalid_grant'],
+    ['invalid_client', 400, { error: 'invalid_client' }, 'invalid_client'],
+    ['a body with no error', 400, { message: 'nope' }, undefined],
+    ['a non-string error', 400, { error: 7 }, undefined],
+    ['a non-object body', 401, 'nope', undefined]
+  ])('keeps the OAuth error code from %s', async (_name, status, body, oauthError) => {
+    stub(status, body)
+
+    await expect(refresh('r', { tokenUrl: 'https://c/oauth/token' })).rejects.toMatchObject({
+      name: 'SignInFailure',
+      httpStatus: status,
+      oauthError
+    })
   })
 
   it('rejects a response missing access_token', async () => {
@@ -111,13 +136,59 @@ describe('oauth.signIn', () => {
     resource: 'https://c/api'
   }
 
+  it('records the authorize page instead of opening a browser in an E2E run', async () => {
+    vi.stubEnv('E2E', '1')
+    resetShellOpenExternalCalls()
+    vi.mocked(shell.openExternal).mockClear()
+
+    await openAuthorizePage('https://cloud.test/authorize')
+
+    expect(getShellOpenExternalCalls()).toEqual(['https://cloud.test/authorize'])
+    expect(shell.openExternal).not.toHaveBeenCalled()
+    vi.unstubAllEnvs()
+  })
+
+  it('opens the system browser in a packaged app even with E2E set', async () => {
+    vi.stubEnv('E2E', '1')
+    resetShellOpenExternalCalls()
+    vi.mocked(shell.openExternal).mockClear()
+    Object.defineProperty(app, 'isPackaged', { value: true, configurable: true })
+
+    await openAuthorizePage('https://cloud.test/authorize')
+
+    expect(shell.openExternal).toHaveBeenCalledExactlyOnceWith('https://cloud.test/authorize')
+    expect(getShellOpenExternalCalls()).toEqual([])
+    Object.defineProperty(app, 'isPackaged', { value: false, configurable: true })
+    vi.unstubAllEnvs()
+  })
+
+  it('opens the system browser outside an E2E run', async () => {
+    vi.stubEnv('E2E', '')
+    vi.mocked(shell.openExternal).mockClear()
+
+    await openAuthorizePage('https://cloud.test/authorize')
+
+    expect(shell.openExternal).toHaveBeenCalledExactlyOnceWith('https://cloud.test/authorize')
+    vi.unstubAllEnvs()
+  })
+
+  it('announces no authorize URL and opens no browser when the listener cannot start', async () => {
+    vi.mocked(startLoopbackListener).mockRejectedValueOnce(new Error('address in use'))
+    vi.mocked(shell.openExternal).mockClear()
+    const onAuthorizeUrl = vi.fn()
+
+    await expect(signIn({ onAuthorizeUrl })).rejects.toThrow('address in use')
+
+    expect(onAuthorizeUrl).not.toHaveBeenCalled()
+    expect(shell.openExternal).not.toHaveBeenCalled()
+  })
+
   it('completes the flow when the browser opens and calls back', async () => {
     stub(200, { access_token: 'tok', refresh_token: 'r1', expires_in: 3600 })
     vi.mocked(shell.openExternal).mockImplementation(async (authorizeUrl: string) => {
       const u = new URL(authorizeUrl)
       const redirect = u.searchParams.get('redirect_uri')
       const state = u.searchParams.get('state')
-      // Simulate the browser redirect with raw http (global fetch is stubbed).
       get(`${redirect}?code=abc&state=${state}`, (res) => res.resume())
     })
     const { tokens, status } = await signIn({ ...opts, timeoutMs: 5000 })
@@ -126,9 +197,32 @@ describe('oauth.signIn', () => {
     expect(status.signedIn).toBe(true)
   })
 
+  it('asks for the partner-node, workspace mint and billing write scopes by default', async () => {
+    stub(200, { access_token: 'tok', refresh_token: 'r1', expires_in: 3600 })
+    let requested: string[] = []
+    vi.mocked(shell.openExternal).mockImplementation(async (authorizeUrl: string) => {
+      const u = new URL(authorizeUrl)
+      requested = (u.searchParams.get('scope') ?? '').split(' ')
+      get(
+        `${u.searchParams.get('redirect_uri')}?code=abc&state=${u.searchParams.get('state')}`,
+        (res) => res.resume()
+      )
+    })
+    const { scope: _scope, ...defaults } = opts
+
+    await signIn({ ...defaults, timeoutMs: 5000 })
+
+    expect(requested).toEqual(
+      expect.arrayContaining([
+        'comfy-cloud:user:read',
+        'comfy-cloud:jobs:write',
+        'comfy-cloud:workspace-token:mint',
+        'comfy-cloud:billing:write'
+      ])
+    )
+  })
+
   it('rejects on the callback timeout even when openExternal never settles', async () => {
-    // A wedged OS shell handler must not strand the sign-in (and with it the
-    // single-flight login promise) forever.
     stub(200, {})
     vi.mocked(shell.openExternal).mockImplementation(() => new Promise<void>(() => {}))
     await expect(signIn({ ...opts, timeoutMs: 250 })).rejects.toThrow(/timed out/)
@@ -161,7 +255,6 @@ describe('oauth.signIn', () => {
   it('fails fast when the browser cannot be opened, without waiting for the timeout', async () => {
     stub(200, {})
     vi.mocked(shell.openExternal).mockRejectedValue(new Error('no browser handler'))
-    // timeoutMs far beyond the test timeout proves the rejection is immediate.
     await expect(signIn({ ...opts, timeoutMs: 600_000 })).rejects.toMatchObject({
       message: 'no browser handler',
       reason: 'browser_unavailable'

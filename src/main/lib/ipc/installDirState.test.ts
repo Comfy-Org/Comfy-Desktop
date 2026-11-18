@@ -3,7 +3,6 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Stub the electron surface ../shared touches so the test needs no runtime.
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -69,8 +68,6 @@ describe('installDirState', () => {
 })
 
 describe('isEffectivelyEmptyInstallDir', () => {
-  // Behavior relied on by the delete/cancel cleanup path: a gone dir is still
-  // "effectively empty" (nothing to delete), as is a leftover empty dir.
   it('is true for missing and empty dirs', () => {
     expect(isEffectivelyEmptyInstallDir(path.join(tmpRoot, 'nope'))).toBe(true)
     const dir = path.join(tmpRoot, 'empty')
@@ -98,8 +95,6 @@ describe('isInstallDirUnavailable', () => {
 })
 
 describe('installDirDashboardKind', () => {
-  // The refresh broadcast keys off this, so a label-changing transition with the
-  // same unavailable boolean (missing↔no-permission) MUST map to distinct kinds.
   it('gives no-permission its own pill, separate from the shared not-found pill', () => {
     expect(installDirDashboardKind('no-permission')).toBe('no-permission')
     expect(installDirDashboardKind('missing')).toBe('not-found')
@@ -149,7 +144,6 @@ describe('installDirStateAsync', () => {
 
   it("reports 'inaccessible' when the probe never settles (dead network drive)", async () => {
     vi.useFakeTimers()
-    // A readdir that hangs forever — simulates an offline UNC/network path.
     vi.spyOn(fs.promises, 'readdir').mockReturnValue(new Promise(() => {}) as never)
     const p = installDirStateAsync('//dead/share')
     await vi.runOnlyPendingTimersAsync()

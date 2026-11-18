@@ -26,6 +26,16 @@ function runInstallAppDeps() {
   return 1
 }
 
+function ensureElectronBinary() {
+  const installElectronPath = require.resolve('electron/install.js')
+  const result = spawnSync(process.execPath, [installElectronPath], { stdio: 'inherit' })
+  if (result.status === 0) return
+
+  const reason = result.error?.message ?? `exit status ${result.status ?? result.signal}`
+  console.error(`[postinstall] Electron binary download failed: ${reason}`)
+  process.exit(1)
+}
+
 const isToDesktopCI = process.env.TODESKTOP_CI === 'true'
 const isToDesktopInitialInstall = process.env.TODESKTOP_INITIAL_INSTALL_PHASE === 'true'
 
@@ -38,10 +48,11 @@ if (isToDesktopCI) {
   process.exit(0)
 }
 
+ensureElectronBinary()
+
 try {
   process.exit(runInstallAppDeps())
 } catch {
-  // Some CI/build environments install prod deps only, which excludes electron-builder.
   console.log('[postinstall] electron-builder not installed; skipping install-app-deps')
   process.exit(0)
 }

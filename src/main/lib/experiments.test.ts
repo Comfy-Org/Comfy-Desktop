@@ -5,8 +5,6 @@ import path from 'path'
 
 let testUserData = ''
 
-// Mock paths.ts directly: configDir() reads XDG_CONFIG_HOME on Linux, bypassing
-// the electron.app.getPath mock and breaking CI.
 vi.mock('./paths', () => ({
   configDir: () => testUserData
 }))
@@ -109,9 +107,7 @@ describe('experiments', () => {
     }
     try {
       fs.rmSync(testUserData, { recursive: true, force: true })
-    } catch {
-      /* ignore */
-    }
+    } catch {}
   })
 
   describe('initExperiments', () => {
@@ -121,7 +117,7 @@ describe('experiments', () => {
         JSON.stringify({ 'flag.a': 'treatment', 'flag.b': true })
       )
 
-      mockFlagsDelayMs = 100 // keep the fetch in-flight while we check getFlag
+      mockFlagsDelayMs = 100
       const refresh = experiments.initExperiments({
         distinctId: 'test-distinct-id',
         personProperties: {}
@@ -151,13 +147,10 @@ describe('experiments', () => {
         personProperties: {}
       })
 
-      // Keys present at boot stay locked (no mid-session flips)...
       expect(experiments.getFlag('flag.x')).toBe('control')
       expect(experiments.getFlag('flag.y')).toBe(true)
-      // ...but a key absent at boot is back-filled for this session.
       expect(experiments.getFlag('flag.z')).toBe('treatment')
 
-      // Disk reflects the full refreshed set for the next boot.
       const onDisk = JSON.parse(
         fs.readFileSync(path.join(testUserData, 'experiment-flags.json'), 'utf-8')
       )
@@ -172,8 +165,6 @@ describe('experiments', () => {
         personProperties: {}
       })
 
-      // Back-fill: a key absent at boot is filled for THIS session so a
-      // first-ever boot isn't stuck on control.
       expect(experiments.getFlag('flag.x')).toBe('treatment')
 
       const onDisk = JSON.parse(
@@ -187,7 +178,7 @@ describe('experiments', () => {
         path.join(testUserData, 'experiment-flags.json'),
         JSON.stringify({ 'flag.a': 'treatment' })
       )
-      mockFlags = {} // timeout/empty response
+      mockFlags = {}
       await experiments.initExperiments({
         distinctId: 'test-distinct-id',
         personProperties: {}
@@ -200,7 +191,7 @@ describe('experiments', () => {
         path.join(testUserData, 'experiment-flags.json'),
         JSON.stringify({ 'flag.a': 'treatment' })
       )
-      mockFlags = { 'flag.a': 'control' } // distinct from the seed
+      mockFlags = { 'flag.a': 'control' }
       const first = experiments.initExperiments({
         distinctId: 'test-distinct-id',
         personProperties: {}
@@ -210,15 +201,12 @@ describe('experiments', () => {
         personProperties: {}
       })
       await Promise.all([first, second])
-      // Second init is a no-op; the session keeps the boot value.
       expect(experiments.getFlag('flag.a')).toBe('treatment')
     })
   })
 
   describe('getFlagAsync', () => {
     it('awaits the in-flight fetch so a first-boot query gets the real variant, not control', async () => {
-      // No on-disk cache + a slow fetch: sync getFlag would miss the value
-      // mid-fetch (control), but getFlagAsync awaits the settle.
       mockFlags = { 'flag.x': 'treatment' }
       mockFlagsDelayMs = 50
       const refresh = experiments.initExperiments({
@@ -226,7 +214,7 @@ describe('experiments', () => {
         personProperties: {}
       })
 
-      expect(experiments.getFlag('flag.x')).toBeUndefined() // race window
+      expect(experiments.getFlag('flag.x')).toBeUndefined()
       await expect(experiments.getFlagAsync('flag.x')).resolves.toBe('treatment')
       await refresh
     })

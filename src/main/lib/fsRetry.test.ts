@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import { renameWithLockRetry } from './fsRetry'

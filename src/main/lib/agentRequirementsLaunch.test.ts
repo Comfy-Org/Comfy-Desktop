@@ -18,7 +18,6 @@ vi.mock('./pip', async (importOriginal) => ({
   runUvPipDetailed: vi.fn(async () => ({ code: 0, output: '[]' }))
 }))
 
-/** Observes the force-stop path: process discovery and, on Windows, the kill. */
 const execCalls: { cmd: string; args: string[] }[] = []
 const execAnswered: string[] = []
 const slowTaskkill = { ms: 0 }
@@ -68,13 +67,11 @@ const mockUvPip = vi.mocked(runUvPipDetailed)
 
 let installDir = ''
 
-/** Create a file (and its parents) the way the real layout has it on disk. */
 function touch(target: string): void {
   fs.mkdirSync(path.dirname(target), { recursive: true })
   fs.writeFileSync(target, '')
 }
 
-/** A standalone install: `standalone-env` uv + the managed `ComfyUI/.venv`. */
 function managedInstall(): InstallationRecord {
   touch(getUvPath(installDir))
   touch(getVenvPythonPath(installDir))
@@ -124,8 +121,6 @@ describe('planAgentRequirementsInstall', () => {
   })
 
   it('plans the install when a beta grant added the flag', () => {
-    // A grant reaches the final args ahead of the user's own, which is the only
-    // difference from the hand-typed case - the args are all this reads.
     const reqPath = writeAgentRequirements()
     const inst = managedInstall()
 
@@ -155,8 +150,6 @@ describe('planAgentRequirementsInstall', () => {
   })
 
   it('plans nothing for an install with no Desktop-managed Python environment', () => {
-    // Portable, git and build installs: the requirements file may well be there,
-    // but there is no uv/venv pair to install it into.
     writeAgentRequirements()
     const inst = { installPath: installDir } as unknown as InstallationRecord
 
@@ -349,9 +342,6 @@ describe('installAgentRequirements', () => {
   })
 
   it('does not reprint uv output it already streamed', async () => {
-    // The shared helper streams into the same sink it captures from, so
-    // appending the captured tail to the failure line put uv's error in the
-    // log twice - seen on a real Windows run of a failing install.
     online(async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
       const stream = args[5]
       stream('ERROR: No solution found for comfyui-agent\n')
@@ -378,8 +368,6 @@ describe('installAgentRequirements', () => {
   })
 
   it('abandons an install that outlives the ceiling and lets the launch continue', async () => {
-    // The whole point of the bound: a stalled uv must not hold the user at the
-    // launcher. Core starts with the flag and disables the agent itself.
     vi.useFakeTimers()
     try {
       let uvSignal: AbortSignal | undefined
@@ -406,16 +394,9 @@ describe('installAgentRequirements', () => {
   })
 
   it('stops waiting for a uv that never exits after being killed', async () => {
-    // The ceiling only asks uv to stop: killProcTree sends SIGTERM and does not
-    // wait, and the helper settles on the child's exit, so a uv that ignores the
-    // signal would hold the launch open past the bound meant to prevent exactly
-    // that. The wait has to end on its own.
     vi.useFakeTimers()
     try {
-      online(
-        // Never settles, however it is signalled.
-        () => new Promise<never>(() => {})
-      )
+      online(() => new Promise<never>(() => {}))
       const sendOutput = vi.fn()
 
       const pending = installAgentRequirements(plan, sendOutput)
@@ -431,8 +412,6 @@ describe('installAgentRequirements', () => {
   })
 
   it('keeps waiting while uv is still within the grace period', async () => {
-    // The grace must not cut short a uv that is on its way out, or the warning
-    // would fire on every ordinary cancellation.
     vi.useFakeTimers()
     try {
       online(async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
@@ -462,9 +441,6 @@ describe('installAgentRequirements', () => {
   })
 
   it('reports success for an install that finishes inside the grace period', async () => {
-    // The ceiling can fire while uv is already on its way out with a zero exit.
-    // Reporting that from the timer rather than the exit code would tell the
-    // user the agent was skipped on a launch that actually installed it.
     vi.useFakeTimers()
     try {
       online(async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
@@ -495,8 +471,6 @@ describe('installAgentRequirements', () => {
   })
 
   it('does not cancel the launch when the ceiling fires', async () => {
-    // The deadline aborts a controller this module owns, never the launch's own
-    // signal - the launch must proceed, not report itself cancelled.
     vi.useFakeTimers()
     try {
       const launchAbort = new AbortController()
@@ -558,8 +532,6 @@ describe('installAgentRequirements', () => {
   })
 
   it('stays quiet about the exit code when the launch was cancelled mid-install', async () => {
-    // Cancelling kills uv, so its non-zero exit IS the cancellation; reporting it
-    // would put a spurious failure in the output of a launch the user stopped.
     const abort = new AbortController()
     online(async () => {
       abort.abort()
@@ -749,8 +721,6 @@ describe('force-stopping an abandoned install', () => {
     installPath: dir
   })
 
-  /** Stand-in for the helper: delivers a handle, then never settles, which is
-   *  what a uv that ignored the SIGTERM looks like from here. */
   const deliverThenHang = (pid: number): void => {
     mockInstall.mockImplementation(
       (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
@@ -795,10 +765,8 @@ describe('force-stopping an abandoned install', () => {
       if (process.platform === 'win32') {
         expect(execCalls).toEqual([{ cmd: 'taskkill', args: ['/F', '/T', '/PID', '4242'] }])
       } else {
-        // Negated pid: the helper spawns detached, so the group is the tree.
         expect(kill).toHaveBeenCalledWith(-4242, 'SIGKILL')
         expect(kill).toHaveBeenCalledTimes(1)
-        // Nothing is searched for: no process enumeration of any kind.
         expect(execCalls).toEqual([])
       }
       expect(fs.existsSync(filtered)).toBe(false)
@@ -982,7 +950,7 @@ describe('installAgentRequirements with a version override', () => {
 
   const OVERRIDE = { 'comfy-agent': '0.2.3' }
 
-  it('installs the overridden file once, holding every other installed package where it is', async () => {
+  it('installs the overridden file once, keeping every other installed package from moving down', async () => {
     const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
 
     expect(decision).toMatchObject({
@@ -990,7 +958,7 @@ describe('installAgentRequirements with a version override', () => {
       pins: new Map([['comfy-agent', '0.2.3']])
     })
     expect(calls).toEqual([
-      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
     ])
   })
 
@@ -1002,10 +970,10 @@ describe('installAgentRequirements with a version override', () => {
 
     await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
 
-    expect(calls[0]!.constraints).toBe('requests==2.32.0\nidna==3.20+qa316\n')
+    expect(calls[0]!.constraints).toBe('requests>=2.32.0\nidna==3.20+qa316\n')
   })
 
-  it("pins the frontend from ComfyUI's requirements.txt, letting only it move", async () => {
+  it("pins the frontend from ComfyUI's requirements.txt, freeing only it", async () => {
     fs.writeFileSync(
       path.join(installDir, 'ComfyUI', 'requirements.txt'),
       'comfyui-frontend-package==1.55.18\n'
@@ -1020,12 +988,12 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls).toEqual([
       {
         content: `${CORE_FILE}comfyui-frontend-package==1.55.19\n`,
-        constraints: 'requests==2.32.0\n'
+        constraints: 'requests>=2.32.0\n'
       }
     ])
   })
 
-  it('installs a comfy-agent-go pin on its own line, holding everything else', async () => {
+  it('installs a comfy-agent-go pin on its own line, flooring everything else', async () => {
     const sendOutput = vi.fn()
     const go = { 'comfy-agent-go': '0.2.3' }
     const decision = await installAgentRequirements(plan, sendOutput, undefined, go)
@@ -1037,7 +1005,7 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls).toEqual([
       {
         content: 'comfy-cli==1.21.0\ncomfy-agent-go==0.2.3\n',
-        constraints: 'requests==2.32.0\n'
+        constraints: 'requests>=2.32.0\n'
       }
     ])
     expect(sendOutput.mock.calls.join('')).not.toContain('bundled agent')
@@ -1067,7 +1035,7 @@ describe('installAgentRequirements with a version override', () => {
     expect(calls).toEqual([
       {
         content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\ncomfy-agent-go==0.2.3\n',
-        constraints: 'requests==2.32.0\n'
+        constraints: 'requests>=2.32.0\n'
       }
     ])
   })
@@ -1103,7 +1071,7 @@ describe('installAgentRequirements with a version override', () => {
       { content: CORE_FILE, constraints: null },
       {
         content: 'comfy-cli==1.21.0\ncomfy-agent-go==0.1.9\n',
-        constraints: 'requests==2.32.0\n'
+        constraints: 'requests>=2.32.0\n'
       }
     ])
     expect(
@@ -1205,7 +1173,7 @@ describe('installAgentRequirements with a version override', () => {
     })
     expect(calls, "core's file, then the override constrained by what it installed").toEqual([
       { content: CORE_FILE, constraints: null },
-      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+      { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
     ])
   })
 
@@ -1395,7 +1363,7 @@ describe('installAgentRequirements with a version override', () => {
 
     expect(decision).toMatchObject({ decision: 'applied' })
     expect(calls).toEqual([
-      { content: 'comfy-agent==0.1.0\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+      { content: 'comfy-agent==0.1.0\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
     ])
   })
 
@@ -1592,7 +1560,7 @@ describe('installAgentRequirements with a version override', () => {
           plan,
           steps: [
             { text: CORE_FILE },
-            { text: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests==2.32.0\n' }
+            { text: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
           ],
           signature: 'comfy-agent==0.2.3'
         },
@@ -1623,7 +1591,8 @@ describe('installAgentRequirements with a version override', () => {
     })
 
     it.each([
-      ['agent', 'only the placeholder release', 'comfy-agent==0.0.0.dev0\n', '0.1.0rc2'],
+      ['agent', 'only the placeholder release', 'comfy-agent==0.0.0.dev0\n', '0.0.0.dev0'],
+      ['update', 'the placeholder over a kept agent', 'comfy-agent==0.0.0.dev0\n', '0.1.0rc2'],
       ['update', 'a real release', CORE_FILE, '0.2.0']
     ])(
       "hands a deferred override over as '%s' when core's file pins %s",
@@ -2460,6 +2429,323 @@ describe('installAgentRequirements with a version override', () => {
       )
     })
   })
+  describe("keeping a working agent over core's placeholder", () => {
+    const PLACEHOLDER_FILE = 'comfy-agent==0.0.0.dev0\ncomfy-cli==1.21.0\n'
+    const KEPT = 'comfy-agent==0.1.0rc5'
+    const installedAgent = (version: string): void => {
+      mockUvPip.mockResolvedValue({
+        code: 0,
+        output: JSON.stringify([
+          { name: 'comfy-agent', version },
+          { name: 'comfy-cli', version: '1.21.0' },
+          { name: 'requests', version: '2.32.0' }
+        ])
+      })
+    }
+    const failing = (output: string): typeof respond => {
+      return ({ constraints }) => (constraints ? { code: 1, output } : { code: 0, output: '' })
+    }
+    const placeholderRuns = (): number =>
+      calls.filter((call) => call.content === PLACEHOLDER_FILE).length
+
+    beforeEach(() => {
+      fs.writeFileSync(plan.reqPath, PLACEHOLDER_FILE)
+      installedAgent('0.1.0rc5')
+    })
+
+    it('keeps it when the payload is refused, installing nothing', async () => {
+      const sendOutput = vi.fn()
+      const decision = await installAgentRequirements(plan, sendOutput, undefined, {
+        'comfy-agent': 'latest'
+      })
+
+      expect(decision).toEqual({ decision: 'refused', reason: 'bad_version', kept: KEPT })
+      expect(calls).toEqual([])
+      expect(sendOutput.mock.calls.join('')).toContain(`Keeping the installed agent ${KEPT}`)
+    })
+
+    it('keeps it when the override fails to install', async () => {
+      respond = failing('error: failed to remove file `x.pyd`: Access is denied. (os error 5)\n')
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+
+      expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed', kept: KEPT })
+      expect(placeholderRuns(), "core's file never ran").toBe(0)
+    })
+
+    it('keeps it when the pinned version is not on the index', async () => {
+      respond = failing(
+        'error: No solution found when resolving dependencies\n  cause: Because there is no version of comfy-agent==0.2.3 and you require comfy-agent==0.2.3, we can conclude that your requirements are unsatisfiable.\n'
+      )
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+
+      expect(decision).toMatchObject({ decision: 'reverted', reason: 'install_failed', kept: KEPT })
+      expect(placeholderRuns()).toBe(0)
+    })
+
+    it('keeps it while a not-yet-downloaded override fetches for the next launch', async () => {
+      respond = ({ constraints }) =>
+        constraints ? { code: 2, output: '' } : { code: 0, output: '' }
+      const onDeferred = vi.fn()
+
+      const decision = await installAgentRequirements(
+        plan,
+        vi.fn(),
+        undefined,
+        OVERRIDE,
+        null,
+        onDeferred
+      )
+
+      expect(decision).toMatchObject({ decision: 'deferred', reason: 'not_cached', kept: KEPT })
+      expect(placeholderRuns()).toBe(0)
+      expect(onDeferred.mock.calls[0]![1], 'the agent runs now; the newer one applies next').toBe(
+        'update'
+      )
+    })
+
+    it('keeps an older agent when the override was retired after failing', async () => {
+      const state = { signature: 'comfy-agent==0.2.3', failures: 2 }
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, state)
+
+      expect(decision).toMatchObject({
+        decision: 'reverted',
+        reason: 'previously_failed',
+        kept: KEPT
+      })
+      expect(calls).toEqual([])
+    })
+
+    it('does not keep the very version that was retired for failing to start', async () => {
+      installedAgent('0.2.3')
+      const state = { signature: 'comfy-agent==0.2.3', failures: 2 }
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, state)
+
+      expect(decision).not.toHaveProperty('kept')
+      expect(placeholderRuns()).toBe(1)
+    })
+
+    it("lets core's file in first when it lists a package that isn't installed yet", async () => {
+      mockUvPip.mockResolvedValue({
+        code: 0,
+        output: JSON.stringify([{ name: 'comfy-agent', version: '0.1.0rc5' }])
+      })
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE)
+
+      expect(decision).not.toHaveProperty('kept')
+      expect(placeholderRuns(), "core's file installs what it is missing").toBeGreaterThan(0)
+    })
+
+    it('falls back to core when nothing but the placeholder is installed', async () => {
+      installedAgent('0.0.0.dev0')
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, {
+        'comfy-agent': 'latest'
+      })
+
+      expect(decision).toEqual({ decision: 'refused', reason: 'bad_version' })
+      expect(calls).toEqual([{ content: PLACEHOLDER_FILE, constraints: null }])
+    })
+
+    it("falls back to core when core's file pins a real release", async () => {
+      fs.writeFileSync(plan.reqPath, CORE_FILE)
+
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, {
+        'comfy-agent': 'latest'
+      })
+
+      expect(decision).toEqual({ decision: 'refused', reason: 'bad_version' })
+      expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
+    })
+
+    it("follows core's file when a valid answer carries no override (a dropped override)", async () => {
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, undefined)
+
+      expect(decision).toBeUndefined()
+      expect(calls).toEqual([{ content: PLACEHOLDER_FILE, constraints: null }])
+    })
+  })
+
+  describe("replacing the placeholder under core's unpinned agent line", () => {
+    const UNPINNED_FILE = 'comfy-agent\ncomfy-cli==1.21.0\n'
+    const FLOOR = 'comfy-agent>0.0.0\n'
+    const installedAgent = (version: string): void => {
+      mockUvPip.mockResolvedValue({
+        code: 0,
+        output: JSON.stringify([
+          { name: 'comfy-agent', version },
+          { name: 'comfy-cli', version: '1.21.0' }
+        ])
+      })
+    }
+
+    beforeEach(() => {
+      fs.writeFileSync(plan.reqPath, UNPINNED_FILE)
+      installedAgent('0.0.0.dev0')
+    })
+
+    it('moves an installed placeholder up to a released agent when no campaign answers', async () => {
+      const sendOutput = vi.fn()
+
+      const decision = await installAgentRequirements(plan, sendOutput, undefined, undefined)
+
+      expect(decision).toBeUndefined()
+      expect(calls.length, "core's file ran").toBeGreaterThan(0)
+      expect(
+        calls.every((call) => call.content === UNPINNED_FILE && call.constraints === FLOOR)
+      ).toBe(true)
+      expect(sendOutput.mock.calls.join('')).toContain(
+        'Replacing the placeholder comfy-agent==0.0.0.dev0'
+      )
+    })
+
+    it('moves it up when the unpinned line asks for extras', async () => {
+      const withExtras = 'comfy-agent[go-nonfree]\n'
+      fs.writeFileSync(plan.reqPath, withExtras)
+
+      await installAgentRequirements(plan, vi.fn(), undefined, undefined)
+
+      expect(calls[0]).toEqual({ content: withExtras, constraints: FLOOR })
+    })
+
+    it('leaves a released agent where it is', async () => {
+      installedAgent('0.1.0')
+
+      await installAgentRequirements(plan, vi.fn(), undefined, undefined)
+
+      expect(calls).toEqual([{ content: UNPINNED_FILE, constraints: null }])
+    })
+
+    it("leaves core's own placeholder pin to the existing keep step", async () => {
+      fs.writeFileSync(plan.reqPath, 'comfy-agent==0.0.0.dev0\n')
+
+      await installAgentRequirements(plan, vi.fn(), undefined, undefined)
+
+      expect(calls).toEqual([{ content: 'comfy-agent==0.0.0.dev0\n', constraints: null }])
+    })
+
+    it('leaves a campaign decision to the campaign', async () => {
+      const decision = await installAgentRequirements(plan, vi.fn(), undefined, {
+        'comfy-agent': 'latest'
+      })
+
+      expect(decision).toEqual({ decision: 'refused', reason: 'bad_version' })
+      expect(calls).toEqual([{ content: UNPINNED_FILE, constraints: null }])
+    })
+
+    it("installs core's file as listed when no released agent can be resolved", async () => {
+      cached = true
+      respond = ({ constraints }) =>
+        constraints === FLOOR
+          ? { code: 1, output: 'error: No solution found when resolving dependencies\n' }
+          : { code: 0, output: '' }
+      const onCoreFailed = vi.fn()
+      const onDeferred = vi.fn()
+      const sendOutput = vi.fn()
+
+      await installAgentRequirements(
+        plan,
+        sendOutput,
+        undefined,
+        undefined,
+        null,
+        onDeferred,
+        onCoreFailed
+      )
+
+      expect(offlineTries, "core's file went in from the cache without the floor").toBe(1)
+      expect(onCoreFailed).not.toHaveBeenCalled()
+      expect(onDeferred, 'nothing to download when no release resolves').not.toHaveBeenCalled()
+      expect(sendOutput.mock.calls.join('')).toContain("Couldn't install a released agent")
+    })
+
+    it('hands the background download no floor that uv already rejected', async () => {
+      respond = ({ constraints }) =>
+        constraints === FLOOR
+          ? { code: 1, output: 'error: No solution found when resolving dependencies\n' }
+          : { code: 2, output: '' }
+      const onDeferred = vi.fn()
+
+      await installAgentRequirements(plan, vi.fn(), undefined, undefined, null, onDeferred)
+
+      expect(calls.map((call) => call.constraints)).toEqual([FLOOR, null])
+      expect(onDeferred).toHaveBeenCalledWith(
+        { plan, steps: [{ text: UNPINNED_FILE }], signature: 'core' },
+        'agent'
+      )
+    })
+
+    it('queues no background floor when uv cannot start for the floored install', async () => {
+      cached = true
+      respond = ({ constraints }) => {
+        if (constraints === FLOOR) throw new Error('spawn /uv ENOENT')
+        return { code: 0, output: '' }
+      }
+      const onCoreFailed = vi.fn()
+      const onDeferred = vi.fn()
+      const sendOutput = vi.fn()
+
+      await installAgentRequirements(
+        plan,
+        sendOutput,
+        undefined,
+        undefined,
+        null,
+        onDeferred,
+        onCoreFailed
+      )
+
+      expect(sendOutput.mock.calls.join('')).toContain("Couldn't install a released agent")
+      expect(onCoreFailed).not.toHaveBeenCalled()
+      expect(onDeferred, 'a local start failure is not a download to retry').not.toHaveBeenCalled()
+    })
+
+    it('starts no fallback install for a launch cancelled during the floored install', async () => {
+      const abort = new AbortController()
+      respond = () => {
+        abort.abort()
+        return { code: 2, output: '' }
+      }
+      const sendOutput = vi.fn()
+
+      await installAgentRequirements(plan, sendOutput, abort.signal, undefined)
+
+      expect(abort.signal.aborted).toBe(true)
+      expect(calls).toEqual([{ content: UNPINNED_FILE, constraints: FLOOR }])
+      expect(sendOutput.mock.calls.join('')).not.toContain("Couldn't install a released agent")
+    })
+
+    it('installs core as listed now and downloads the released agent for the next launch when the network fails', async () => {
+      cached = true
+      respond = ({ constraints }) =>
+        constraints === FLOOR ? { code: 2, output: '' } : { code: 0, output: '' }
+      const onDeferred = vi.fn()
+
+      await installAgentRequirements(plan, vi.fn(), undefined, undefined, null, onDeferred)
+
+      expect(offlineTries).toBe(1)
+      expect(onDeferred).toHaveBeenCalledWith(
+        { plan, steps: [{ text: UNPINNED_FILE, constraints: FLOOR }], signature: 'core' },
+        'agent'
+      )
+    })
+
+    it('hands the floor to the background download when the released agent is not cached', async () => {
+      respond = () => ({ code: 2, output: '' })
+      const onDeferred = vi.fn()
+
+      await installAgentRequirements(plan, vi.fn(), undefined, undefined, null, onDeferred)
+
+      expect(onDeferred).toHaveBeenCalledWith(
+        { plan, steps: [{ text: UNPINNED_FILE, constraints: FLOOR }], signature: 'core' },
+        'agent'
+      )
+    })
+  })
 })
 
 describe('restoreCoreFrontend', () => {
@@ -2664,7 +2950,7 @@ describe('prefetchAgentRequirements', () => {
 
   const request = (): PrefetchRequest => ({
     plan,
-    steps: [{ text: 'comfy-agent[go-nonfree]==0.1.0rc3\n', constraints: 'requests==2.32.0\n' }],
+    steps: [{ text: 'comfy-agent[go-nonfree]==0.1.0rc3\n', constraints: 'requests>=2.32.0\n' }],
     signature: 'comfy-agent[go-nonfree]==0.1.0rc3'
   })
 
@@ -2850,13 +3136,13 @@ describe('prefetchAgentRequirements', () => {
 
     const report = await finish({
       ...request(),
-      steps: [{ ...request().steps[0]!, constraints: 'requests==2.32.0\nidna==3.20+qa316\n' }]
+      steps: [{ ...request().steps[0]!, constraints: 'requests>=2.32.0\nidna==3.20+qa316\n' }]
     })
 
     expect(
       calls[0]!.constraints,
       'no index serves it, so pinning it leaves the compile no solution'
-    ).toBe('requests==2.32.0\n')
+    ).toBe('requests>=2.32.0\n')
     expect(report).toMatchObject({ outcome: 'completed' })
     expect(calls.at(-1)!.content, 'its replacement is not fetched').toBe(
       'comfy-agent==0.1.0rc3\ncomfy-agent-go==0.1.0rc3\n'
@@ -3472,7 +3758,7 @@ describe('prepareAgentPrefetch', () => {
   it("prepares the override's text and constraints, as the launch would install them", async () => {
     expect(await prepareAgentPrefetch(plan, { 'comfy-agent': '0.1.0rc3' }, null)).toEqual({
       plan,
-      steps: [{ text: 'comfy-agent==0.1.0rc3\n', constraints: 'requests==2.32.0\n' }],
+      steps: [{ text: 'comfy-agent==0.1.0rc3\n', constraints: 'requests>=2.32.0\n' }],
       signature: 'comfy-agent==0.1.0rc3',
       eager: true
     })
