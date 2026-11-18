@@ -113,7 +113,7 @@ const latest = computed(() => snaps[0]?.when)
 
 <template>
   <div class="mar-sn-bar">
-    <span class="mar-bt-hint">{{ latest ? `Latest: ${latest}` : 'No snapshots yet' }}</span>
+    <span v-if="latest" class="mar-bt-hint">Latest: {{ latest }}</span>
     <div class="ml-auto flex items-center gap-2">
       <Button variant="ghost" size="sm" @click="toast('Choose a snapshot file to import')"
         ><Upload :size="13" />Import</Button
@@ -142,6 +142,12 @@ const latest = computed(() => snaps[0]?.when)
     </div>
   </form>
 
+  <!-- Empty: no box, a title and one line (Comfy-Desktop#2218); Create
+       Snapshot stays in the bar only. -->
+  <div v-if="!snaps.length && !naming" class="mar-sn-empty">
+    <h2>No snapshots yet</h2>
+    <p>Snapshots are captured automatically when ComfyUI starts.</p>
+  </div>
   <div v-if="snaps.length" class="mar-sn-list">
     <div
       v-for="(s, i) in snaps"

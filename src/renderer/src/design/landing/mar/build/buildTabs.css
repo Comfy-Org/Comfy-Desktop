@@ -678,3 +678,78 @@
   color: var(--color-base-foreground);
   font-size: 13px;
 }
+
+/* Folders (Comfy-Desktop#2217): sections stacked, full paths wrap. */
+.mar-bt-folders {
+  display: flex;
+  flex-direction: column;
+}
+.mar-bt-folders > .mar-bt-note {
+  max-width: 48rem;
+  margin: 0 0 20px;
+}
+.mar-bt-folder-path {
+  min-width: 0;
+  flex: 1;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bb .mar-st-toggle {
+  width: auto;
+  justify-content: flex-end;
+}
+.mar-bb .mar-bt-folder {
+  /* Icon, the full path (wraps), its badges, then one action column:
+     badges and actions line up across Models, Input and Output. The icon
+     and badges stay on a wrapped path's first line. */
+  display: grid;
+  min-height: 44px;
+  grid-template-columns: 14px minmax(0, 1fr) auto 76px;
+  align-items: start;
+  padding: 8px 6px 8px 12px;
+}
+.mar-bb .mar-bt-folder > svg {
+  margin-top: 4px;
+}
+.mar-bb .mar-bt-folder-path {
+  padding-top: 2px;
+  line-height: 18px;
+}
+.mar-bt-folder-tags {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.mar-bt-folder-acts {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  margin-top: -2px;
+}
+
+/* A tab with nothing yet: no box, a title and one line (Comfy-Desktop#2218). */
+.mar-sn-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 64px 24px;
+  text-align: center;
+}
+.mar-sn-empty h2 {
+  margin: 0;
+  color: var(--color-base-foreground);
+  font-size: 16px;
+  font-weight: 600;
+}
+.mar-sn-empty p {
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}

@@ -1,7 +1,8 @@
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import type { ProtoInstance } from '../../mock'
 import { toast } from '../../useProto'
 import { notify } from '../pages/undo'
+import { updated, updateBuild as runUpdate } from './homeRun'
 
 /**
  * What a build's page knows beyond the shared mock (mock.ts), for the
@@ -69,6 +70,8 @@ export interface BuildState {
   run: ProtoInstance['state']
 }
 const STATES = new Map<string, BuildState>()
+const BUILDS = new Map<string, ProtoInstance>()
+const APPLIED = new Set<string>()
 
 /** The build's version and channel, shared by its header and tabs. */
 export function stateOf(b: ProtoInstance): BuildState {
@@ -83,9 +86,24 @@ export function stateOf(b: ProtoInstance): BuildState {
       run: b.state
     })
     STATES.set(b.id, s)
+    BUILDS.set(b.id, b)
+    applyUpdates()
   }
   return s
 }
+
+// An update that ran on the build (homeRun.ts: from Home, the sidebar or
+// this page) lands here: the build is on the newest ComfyUI of its channel.
+function applyUpdates(): void {
+  for (const id of updated) {
+    const s = STATES.get(id)
+    const b = BUILDS.get(id)
+    if (!s || !b || APPLIED.has(id)) continue
+    APPLIED.add(id)
+    s.version = factsOf(b).latest[s.channel]
+  }
+}
+watch(() => updated.size, applyUpdates)
 
 /** The newer ComfyUI on a channel, when it is the build's channel and the
  *  build is behind it (a build marked "update" on the one it started on). */
@@ -102,17 +120,14 @@ export function pendingOf(b: ProtoInstance): string | undefined {
   return nextOn(b, stateOf(b).channel)
 }
 
+/** Update in place (Comfy-Desktop#2216): it runs on the build, which
+ *  shows "Updating · N%" on its tile, its sidebar row and its page. */
 export function updateBuild(b: ProtoInstance, channel?: Channel): void {
   const s = stateOf(b)
   if (channel) s.channel = channel
-  const next = factsOf(b).latest[s.channel]
-  s.updating = true
-  setTimeout(() => {
-    const was = s.version
-    s.version = next
-    s.updating = false
-    notify(`${b.name} is on ComfyUI ${next}`, () => (s.version = was))
-  }, 1600)
+  APPLIED.delete(b.id)
+  updated.delete(b.id)
+  runUpdate(b)
 }
 
 /** Forget or Uninstall from a build's page, for the Builds list to carry out. */

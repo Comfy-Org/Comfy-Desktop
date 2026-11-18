@@ -44,7 +44,7 @@ const shown = computed(() =>
 const machine = computed(() => can.value.exploreApps)
 // The drawing says where it runs; the line says on what.
 const detail = (i: ProtoInstance): string => [i.gpu, i.version].filter(Boolean).join(' · ')
-const RUN_LABEL = { start: 'Starting ComfyUI', uninstall: 'Uninstalling' }
+const RUN_LABEL = { start: 'Starting ComfyUI', update: 'Updating', uninstall: 'Uninstalling' }
 // In progress, a tile says what and how far, and the version under the name.
 function status(i: ProtoInstance): { label: string; live?: boolean; busy?: boolean } {
   const run = runs.get(i.id)
@@ -74,7 +74,7 @@ function hint(i: ProtoInstance): string {
 }
 function open(i: ProtoInstance): void {
   const run = runs.get(i.id)
-  if (run?.kind === 'start') viewLogs(i)
+  if (run?.kind === 'start' || run?.kind === 'update') viewLogs(i)
   else if (!run) startBuild(i)
 }
 // No build on this computer (all uninstalled, or Cloud only): the row ends
