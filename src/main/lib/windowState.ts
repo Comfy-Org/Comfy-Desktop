@@ -40,11 +40,8 @@ export async function flushWindowState(): Promise<void> {
 export function saveWindowBounds(installationId: string, window: BrowserWindow): void {
   const state = getWindowStateCache()
   const maximized = window.isMaximized()
-  const bounds = window.getBounds()
-  state[installationId] = {
-    ...(maximized ? (state[installationId] ?? bounds) : bounds),
-    maximized
-  }
+  const bounds = maximized ? window.getNormalBounds() : window.getBounds()
+  state[installationId] = { ...bounds, maximized }
   if (flushTimer) clearTimeout(flushTimer)
   flushTimer = setTimeout(flushWindowState, 500)
 }
