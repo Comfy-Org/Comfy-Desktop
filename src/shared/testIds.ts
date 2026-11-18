@@ -27,7 +27,7 @@ export const TID = {
 
   updateChannelCard: (channel: string) => `update-channel-card-${channel}`,
   updateActionButton: (actionId: string) => `update-action-${actionId}`,
-  channelPickerFooterToggle: 'channel-picker-footer-toggle',
+  buildOverviewRestartWhenIdle: 'build-overview-restart-when-idle',
   channelGroupSelect: (level: number) => `channel-group-select-${level}`,
   buildOverviewChannel: 'build-overview-channel',
   buildOverviewChannelOption: (channel: string) => `build-overview-channel-${channel}`,

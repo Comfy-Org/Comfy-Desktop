@@ -39,6 +39,7 @@ export interface BuildOverviewModel {
   currentChannel: string
   channels: OverviewChannel[]
   checkAction?: ActionDef
+  restartWhenIdle?: DetailField
   torch: OverviewTorch | null
   facts: Partial<Record<OverviewFactKey, OverviewFact>>
 }
@@ -157,6 +158,7 @@ export function buildOverviewModel(
     checkAction: updateSections
       .flatMap((s) => s.actions ?? [])
       .find((a) => a.id === 'check-update'),
+    restartWhenIdle: channelField.footerToggle,
     torch: torchField ? toTorch(torchField) : null,
     facts
   }

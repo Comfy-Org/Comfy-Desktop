@@ -29,28 +29,36 @@ async function instanceUpdateChannel(installationId: string): Promise<string | n
   return inst?.sourceId === 'standalone' ? idleUpdateChannel(inst) : null
 }
 
+function envMs(name: string): number | undefined {
+  const value = Number(process.env[name])
+  return process.env[name] && Number.isFinite(value) ? value : undefined
+}
+
 export function startIdleUpdates(
   runBackgroundOp: TitlePopupHostBindings['pickerRunBackgroundOp']
 ): IdleUpdateWatcher {
-  const watcher = createIdleUpdateWatcher({
-    now: () => Date.now(),
-    runningSessions: localSessions,
-    probeQueue: (port) => probeQueue(port),
-    instanceUpdateChannel,
-    updateInstance: (installationId, channel) =>
-      runBackgroundOp({
-        installationId,
-        actionId: 'update-comfyui',
-        actionData: { channel },
-        title: t('standalone.restartWhenIdle'),
-        cancellable: false
-      }),
-    appUpdateWaiting: () =>
-      settings.get('installUpdatesWhenIdle') === true &&
-      updater.getCurrentUpdateState().kind === 'ready' &&
-      _operationAborts.size === 0,
-    installAppUpdate: () => updater.installUpdate(false)
-  })
+  const watcher = createIdleUpdateWatcher(
+    {
+      now: () => Date.now(),
+      runningSessions: localSessions,
+      probeQueue: (port) => probeQueue(port),
+      instanceUpdateChannel,
+      updateInstance: (installationId, channel) =>
+        runBackgroundOp({
+          installationId,
+          actionId: 'update-comfyui',
+          actionData: { channel },
+          title: t('standalone.restartWhenIdle'),
+          cancellable: false
+        }),
+      appUpdateWaiting: () =>
+        settings.get('installUpdatesWhenIdle') === true &&
+        updater.getCurrentUpdateState().kind === 'ready' &&
+        _operationAborts.size === 0,
+      installAppUpdate: () => updater.installUpdate(false)
+    },
+    { tickMs: envMs('E2E_IDLE_UPDATE_TICK_MS'), quietMs: envMs('E2E_IDLE_UPDATE_QUIET_MS') }
+  )
   app.on('web-contents-created', (_event, contents) => {
     contents.on('input-event', () => watcher.noteInput(findInstallationIdByComfySender(contents)))
   })

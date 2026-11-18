@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { DetailSection } from '../../types/ipc'
+import type { DetailField, DetailSection } from '../../types/ipc'
 import { buildOverviewModel, channelAction, splitVersion } from './overviewModel'
 
 const updateAction = { id: 'update-comfyui', label: 'Update Now', style: 'primary' as const }
@@ -115,6 +115,19 @@ describe('buildOverviewModel', () => {
     expect(channelAction(stable, 'copy-update')).toEqual(copyUpdate)
     expect(model.channels[1]!.actions).toEqual([])
     expect(model.checkAction).toEqual(checkUpdate)
+  })
+
+  it('carries the restart-when-idle checkbox from the channel field', () => {
+    const toggle: DetailField = {
+      id: 'restartWhenIdle',
+      label: 'Restart when idle to install the latest',
+      value: true,
+      editType: 'boolean'
+    }
+    const sections = updateSections()
+    sections[0]!.fields![0]!.footerToggle = toggle
+    expect(buildOverviewModel(sections, statusSections())!.restartWhenIdle).toEqual(toggle)
+    expect(buildOverviewModel(updateSections(), statusSections())!.restartWhenIdle).toBeUndefined()
   })
 
   it('groups the PyTorch versions by series and marks the one in use', () => {

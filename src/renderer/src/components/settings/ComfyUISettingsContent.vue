@@ -1101,6 +1101,7 @@ defineExpose({
                         :disk-free="diskFree"
                         :running-action-ids="runningActionIds"
                         @action="runAction"
+                        @update-field="updateField"
                       />
                       <template v-else>
                         <SettingsSectionList

@@ -79,6 +79,12 @@ function model(
       }
     ],
     checkAction: checkUpdate,
+    restartWhenIdle: {
+      id: 'restartWhenIdle',
+      label: 'Restart when idle to install the latest',
+      value: true,
+      editType: 'boolean'
+    },
     torch: withTorchMenu
       ? {
           label: 'PyTorch',

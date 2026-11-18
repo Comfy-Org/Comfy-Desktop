@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { DropdownMenuLabel, DropdownMenuRadioGroup } from 'reka-ui'
-import { ArrowUpCircle, ChevronDown, FolderOpen, Loader2 } from '@lucide/vue'
+import {
+  DropdownMenuCheckboxItem,
+  DropdownMenuItemIndicator,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup
+} from 'reka-ui'
+import { ArrowUpCircle, Check, ChevronDown, FolderOpen, Loader2 } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
+import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import MenuSub from '@comfyorg/design-system/menu/MenuSub'
 import MenuSubContent from '@comfyorg/design-system/menu/MenuSubContent'
 import MenuSubTrigger from '@comfyorg/design-system/menu/MenuSubTrigger'
@@ -15,7 +21,7 @@ import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import { formatRelativeFromMs } from '../../lib/datetime'
 import { useSessionStore } from '../../stores/sessionStore'
-import type { ActionDef, Installation } from '../../types/ipc'
+import type { ActionDef, DetailField, Installation } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
 import { channelAction, splitVersion, type BuildOverviewModel } from './overviewModel'
 
@@ -33,7 +39,10 @@ const {
   runningActionIds?: Set<string>
 }>()
 
-const emit = defineEmits<{ action: [action: ActionDef] }>()
+const emit = defineEmits<{
+  action: [action: ActionDef]
+  'update-field': [field: DetailField, value: boolean]
+}>()
 
 const { t } = useI18n()
 const sessionStore = useSessionStore()
@@ -196,6 +205,27 @@ function openLocation(): void {
               </span>
             </MenuRadioItem>
           </DropdownMenuRadioGroup>
+          <template v-if="model.restartWhenIdle">
+            <MenuSeparator />
+            <DropdownMenuCheckboxItem
+              :model-value="model.restartWhenIdle.value === true"
+              class="group flex min-h-8 cursor-default items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-none data-highlighted:bg-accent"
+              :title="model.restartWhenIdle.tooltip"
+              :data-testid="TID.buildOverviewRestartWhenIdle"
+              @update:model-value="emit('update-field', model.restartWhenIdle, $event === true)"
+              @select.prevent
+            >
+              <span
+                class="inline-flex size-4 shrink-0 items-center justify-center rounded-sm border text-background group-data-[state=checked]:border-primary group-data-[state=checked]:bg-primary"
+                aria-hidden="true"
+              >
+                <DropdownMenuItemIndicator>
+                  <Check :size="12" />
+                </DropdownMenuItemIndicator>
+              </span>
+              <span>{{ model.restartWhenIdle.label }}</span>
+            </DropdownMenuCheckboxItem>
+          </template>
         </Menu>
 
         <div

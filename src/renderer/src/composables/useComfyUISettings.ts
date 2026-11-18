@@ -231,8 +231,10 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
 
   function findFieldInSections(fieldId: string): DetailField | null {
     for (const s of sections.value) {
-      const f = s.fields?.find((x) => x.id === fieldId)
-      if (f) return f as DetailField
+      for (const f of s.fields ?? []) {
+        if (f.id === fieldId) return f as DetailField
+        if (f.footerToggle?.id === fieldId) return f.footerToggle
+      }
     }
     return null
   }
