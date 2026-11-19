@@ -22,7 +22,6 @@ const { t } = useI18n()
 const container = ref<HTMLElement | null>(null)
 const loading = ref(true)
 const failed = ref(false)
-const attempt = ref(0)
 const submitted = ref(false)
 let autocloseTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -48,30 +47,41 @@ function onSubmit(): void {
   }, AUTOCLOSE_MS)
 }
 
+let loadTimer: ReturnType<typeof setTimeout> | null = null
+let reloadWidget: (() => void) | null = null
+
+function clearLoadTimer(): void {
+  if (loadTimer != null) {
+    clearTimeout(loadTimer)
+    loadTimer = null
+  }
+}
+
+function waitForForm(): void {
+  clearLoadTimer()
+  loading.value = true
+  failed.value = false
+  loadTimer = setTimeout(() => {
+    loadTimer = null
+    if (!loading.value) return
+    loading.value = false
+    failed.value = true
+  }, LOAD_TIMEOUT_MS)
+}
+
 function retry(): void {
-  attempt.value += 1
+  if (!reloadWidget) return
+  waitForForm()
+  reloadWidget()
 }
 
 watch(
-  [() => props.open, container, attempt],
+  [() => props.open, container],
   ([open, element], _previous, onCleanup) => {
     if (!open || !element) return
-    loading.value = true
-    failed.value = false
     submitted.value = false
     let active = true
-    let loadTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
-      loadTimer = null
-      if (!active || !loading.value) return
-      loading.value = false
-      failed.value = true
-    }, LOAD_TIMEOUT_MS)
-    const clearLoadTimer = (): void => {
-      if (loadTimer != null) {
-        clearTimeout(loadTimer)
-        loadTimer = null
-      }
-    }
+    waitForForm()
     const widget = createWidget(FEEDBACK_FORM_ID, {
       container: element,
       hidden: props.hiddenFields,
@@ -91,8 +101,10 @@ watch(
         if (active) onSubmit()
       }
     })
+    reloadWidget = () => widget.refresh()
     onCleanup(() => {
       active = false
+      reloadWidget = null
       clearLoadTimer()
       clearAutoclose()
       widget.unmount()
