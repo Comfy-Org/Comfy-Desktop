@@ -1215,6 +1215,7 @@ export interface ElectronApi {
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
   logsSnapshot(installationId: string): Promise<string>
+  openLogsWindow(installationId: string): Promise<void>
   validateInstallPath(targetPath: string): Promise<PathIssue[]>
   getInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   cancelInstallationSize(): Promise<void>
