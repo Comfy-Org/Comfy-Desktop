@@ -249,24 +249,27 @@ describe('AppRequestModal', () => {
     expect(sendButton().disabled).toBe(true)
   })
 
-  it('shows the first five apps and an app of your own beside the form, hidden from screen readers', async () => {
-    const app = (id: string, stillUrl: string | null, url = `${id}.mp4`) => ({
+  const picture = (fill: string) =>
+    `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="${fill}"/></svg>`)}`
+  const A1 = picture('red')
+  const A2 = picture('green')
+  const B1 = picture('blue')
+
+  it('runs every app example above the form once, skips pictures that fail, and hides it from screen readers', async () => {
+    const app = (id: string, ...covers: { url: string; stillUrl: string | null }[]) => ({
       id,
-      title: id.toUpperCase(),
+      title: id,
       description: '',
-      covers: stillUrl === null && url === '' ? [] : [{ url, stillUrl }]
+      covers
     })
     const wrapper = mount(AppRequestModal, {
       attachTo: document.body,
       props: {
         open: true,
         apps: [
-          app('a', '/a-still.webp'),
-          app('b', null, '/b.png'),
-          app('c', null),
-          app('d', '/d.webp'),
-          app('e', '/e.webp'),
-          app('f', '/f.webp')
+          app('a', { url: 'a1.mp4', stillUrl: A1 }, { url: 'a2.mp4', stillUrl: A2 }),
+          app('b', { url: `${B1}#.png`, stillUrl: null }, { url: 'b2.mp4', stillUrl: null }),
+          app('c', { url: 'c1.mp4', stillUrl: A1 })
         ]
       }
     })
@@ -275,17 +278,40 @@ describe('AppRequestModal', () => {
 
     const art = document.querySelector('[data-testid="app-request-art"]')!
     expect(art.getAttribute('aria-hidden')).toBe('true')
-    const rows = [...art.querySelectorAll('[data-testid="app-request-art-app"]')]
-    expect(rows.map((row) => row.textContent?.trim())).toEqual(['A', 'B', 'C', 'D', 'E'])
-    expect(rows.map((row) => row.querySelector('img')?.getAttribute('src') ?? null)).toEqual([
-      '/a-still.webp',
-      '/b.png',
-      null,
-      '/d.webp',
-      '/e.webp'
-    ])
     expect(art.querySelector('[data-testid="app-request-art-yours"]')?.textContent?.trim()).toBe(
       'Your app'
     )
+    const shown = () =>
+      new Set(
+        [...art.querySelectorAll<HTMLImageElement>('[data-testid="app-request-art-row"] img')].map(
+          (img) => img.getAttribute('src')
+        )
+      )
+    expect(shown()).toEqual(new Set([A1, `${B1}#.png`, A2]))
+    expect(document.querySelector('.app-request-row')?.getBoundingClientRect().top).toBeLessThan(
+      document.querySelector('h2')!.getBoundingClientRect().top
+    )
+
+    const brokenImg = [...art.querySelectorAll<HTMLImageElement>('img')].find(
+      (img) => img.getAttribute('src') === `${B1}#.png`
+    )!
+    brokenImg.dispatchEvent(new Event('error'))
+    await flushPromises()
+    expect(shown()).toEqual(new Set([A1, A2]))
+  })
+
+  it('shows no picture when no app has a still', async () => {
+    const wrapper = mount(AppRequestModal, {
+      attachTo: document.body,
+      props: {
+        open: true,
+        apps: [{ id: 'v', title: 'v', description: '', covers: [{ url: 'v.mp4', stillUrl: null }] }]
+      }
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="app-request-art"]')).toBeNull()
+    expect(document.querySelector('[data-testid="app-request-input"]')).not.toBeNull()
   })
 })
