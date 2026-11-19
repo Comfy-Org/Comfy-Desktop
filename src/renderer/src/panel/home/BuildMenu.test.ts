@@ -10,6 +10,7 @@ import Tooltip from '../../components/ui/Tooltip.vue'
 import { provideBuildMenuHost, type BuildMenuHost } from './useBuildMenu'
 import { homeBuildStatus } from './homeBuild'
 import { provideBuildLogs } from '../../composables/useBuildProgress'
+import { useModal } from '../../composables/useModal'
 import { useAuthStore } from '../../stores/authStore'
 import { useInstallationStore } from '../../stores/installationStore'
 import { useProgressStore, type Operation } from '../../stores/progressStore'
@@ -701,6 +702,72 @@ describe('Build menu', () => {
 
     expect(tile.get('[data-testid="home-build"]').text()).toContain('Ready')
   })
+
+  function failStart(): void {
+    useProgressStore().operations.set(BUILD.id, {
+      opKind: 'launch',
+      finished: true,
+      cancelRequested: false,
+      error: 'Port 8188 is in use'
+    } as Operation)
+    useSessionStore().errorInstances.set(BUILD.id, {
+      installationName: BUILD.name,
+      message: 'Port 8188 is in use'
+    })
+  }
+
+  it("treats a build that didn't start the same on the Builds tile as on Home: Didn't start, Click to view logs, a click opens its start logs", async () => {
+    const home = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(home)
+    const builds = await mountBuildsTile('ready')
+    failStart()
+    await flushPromises()
+
+    expect(home.get('[data-testid="home-build-status"]').text()).toBe("Didn't start")
+    expect(home.findAllComponents(Tooltip)[0]?.props('text')).toBe('Click to view logs')
+    expect(builds.get('.chooser-tile-error-badge').text()).toBe("Didn't start")
+    expect(builds.findAllComponents(Tooltip)[0]?.props('text')).toBe('Click to view logs')
+    expect(builds.get('.chooser-tile-body').findAll('button, a')).toHaveLength(0)
+
+    await builds.get(BUILDS_TILE).trigger('click')
+    expect(viewLogs).toHaveBeenCalledExactlyOnceWith(BUILD.id)
+    const tile = builds.findComponent(ChooserInstallTile)
+    expect(tile.emitted('pick')).toBeUndefined()
+    expect(tile.emitted('open-details')).toBeUndefined()
+    expect(host.launch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['Home', 'home'],
+    ['Builds', 'builds']
+  ] as const)(
+    "opens the start logs from View error in the %s tile menu of a build that didn't start",
+    async (_page, where) => {
+      useModal().dismiss()
+      const wrapper =
+        where === 'home'
+          ? mount(
+              withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+              { attachTo: document.body }
+            )
+          : await mountBuildsTile('ready')
+      if (where === 'home') mounted.push(wrapper)
+      failStart()
+      await flushPromises()
+
+      await wrapper
+        .get(where === 'home' ? '[data-testid="home-build-more"]' : '.chooser-tile-kebab')
+        .trigger('click')
+      expect((await shownMenu())[0]).toBe('view-error')
+      await press(document.querySelector('[data-testid="build-menu-view-error"]')!)
+
+      expect(viewLogs).toHaveBeenCalledExactlyOnceWith(BUILD.id)
+      expect(useModal().state.visible).toBe(false)
+    }
+  )
 
   it('keeps the build menu closed on a right-click on a page in the sidebar', async () => {
     const sidebar = await mountSidebar('ready')

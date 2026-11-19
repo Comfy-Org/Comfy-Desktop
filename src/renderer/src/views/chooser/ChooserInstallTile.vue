@@ -109,6 +109,15 @@ const hasError = computed(() =>
     : props.lifecycleStatus === 'error'
 )
 
+const didntStart = computed(
+  () =>
+    launchFailed(progressStore, inst.value.id) ||
+    sessionStore.errorInstances.get(inst.value.id)?.startFailed === true
+)
+const errorLabel = computed(() =>
+  didntStart.value ? t('home.buildDidntStart') : t('chooser.statusError')
+)
+
 const canActivate = computed(
   () => !isUninstalling.value && !isUpdating.value && !isStopping.value && !isPromoting.value
 )
@@ -372,7 +381,7 @@ function openContextMenu(event: MouseEvent): void {
           :class="hasError ? 'chooser-tile-error-badge' : 'chooser-tile-danger-tag'"
         >
           <OctagonAlert :size="12" class="shrink-0" aria-hidden="true" />
-          <span class="truncate">{{ hasError ? t('chooser.statusError') : dangerTag?.label }}</span>
+          <span class="truncate">{{ hasError ? errorLabel : dangerTag?.label }}</span>
         </span>
         <span
           v-else-if="statusPill"
