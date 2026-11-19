@@ -1769,7 +1769,7 @@ defineExpose({ open })
 
     <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
       <div
-        class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
+        class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-5 py-3"
       >
         <label
           class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"

@@ -595,7 +595,7 @@ defineExpose({ open, resetContinue })
           </div>
         </section>
 
-        <div class="mt-9 flex flex-col gap-2.5 pl-[21px]">
+        <div class="mt-9 flex flex-col gap-2.5 pl-5">
           <label
             v-if="hasLegacyDesktop"
             :class="CONSENT_ROW_CLASS"

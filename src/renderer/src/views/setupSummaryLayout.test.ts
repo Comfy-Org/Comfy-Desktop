@@ -220,6 +220,39 @@ describe.each([
     expect(firstRun.noteRight.every((right) => right === firstRun.edges.top)).toBe(true)
   })
 
+  it('draws the summary like the Name box: no border, the same fill, icons and labels on the same x', async () => {
+    await browserPage.viewport(width, height)
+    const firstRun = await firstRunSummary()
+    const { metrics: newBuild, box } = await newBuildSummary()
+    const nameCard = document.querySelector<HTMLElement>('.config-name-card')!
+    const nameEdge = nameCard.getBoundingClientRect()
+    const nameLabel = nameCard.querySelector('label')!
+    const nameIcon = nameLabel.querySelector('svg')!.getBoundingClientRect()
+    const nameStyle = getComputedStyle(nameCard)
+    const rowIcon = box.querySelector('.config-summary-row svg')!.getBoundingClientRect()
+    const rowLabel = box.querySelector('.config-summary-row')!.children[0]
+
+    for (const metrics of [firstRun, newBuild]) {
+      expect(metrics.border).toMatch(/^0px 0px 0px 0px /)
+      expect(metrics.fill).toBe(nameStyle.backgroundColor)
+      expect(metrics.radius).toBe(nameStyle.borderRadius)
+      expect(new Set(metrics.iconX)).toEqual(new Set([Math.round(nameIcon.left - nameEdge.left)]))
+    }
+    expect([rowIcon.width, rowIcon.height]).toEqual([nameIcon.width, nameIcon.height])
+    expect(Math.round(rowIcon.left - box.getBoundingClientRect().left)).toBe(
+      Math.round(nameIcon.left - nameEdge.left)
+    )
+    expect(Math.round(rowLabel.getBoundingClientRect().left)).toBe(
+      Math.round(nameLabel.getBoundingClientRect().left)
+    )
+    expect(getComputedStyle(rowLabel).color).toBe(getComputedStyle(nameLabel).color)
+    expect(new Set(newBuild.valueX)).toEqual(
+      new Set([
+        Math.round(nameCard.querySelector('input')!.getBoundingClientRect().left - nameEdge.left)
+      ])
+    )
+  })
+
   it('draws Browse as a filled secondary button, without an outline', async () => {
     await browserPage.viewport(width, height)
     const { box } = await newBuildSummary()
@@ -244,7 +277,7 @@ describe.each([
     const button = browse.getBoundingClientRect()
     expect(Math.abs(button.top + button.height / 2 - (line.top + line.height / 2))).toBeLessThan(1)
     expect(Math.round(box.getBoundingClientRect().right - button.right)).toBe(
-      parseFloat(getComputedStyle(box).paddingRight) + 1
+      parseFloat(getComputedStyle(box).paddingRight)
     )
   })
 })
