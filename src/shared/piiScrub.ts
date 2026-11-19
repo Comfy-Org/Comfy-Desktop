@@ -19,8 +19,8 @@ const USERS_AFTER_ESCAPED_BREAK = String.raw`((?<=\\(?-i:[nrt]))\\+Users)`
 
 const userPathPatterns = (roots: string[], escapedSepName: string): RegExp[] =>
   roots.map((root) => new RegExp(`${root}(?:${escapedSepName}|${RAW_SEP_NAME})`, 'gi'))
-const MAIN_USER_PATH_PATTERNS = userPathPatterns(USER_PATH_ROOTS, ESCAPED_SEP_NAME)
-const USER_PATH_PATTERNS = userPathPatterns(
+const SEQUENTIAL_USER_PATH_PATTERNS = userPathPatterns(USER_PATH_ROOTS, ESCAPED_SEP_NAME)
+const EVERY_START_USER_PATH_PATTERNS = userPathPatterns(
   [...USER_PATH_ROOTS, USERS_AFTER_ESCAPED_BREAK],
   MIXED_SEP_NAME
 )
@@ -63,7 +63,7 @@ function nameSpansFromEveryStart(pattern: RegExp, text: string): Span[] {
 function sequentialNameSpans(text: string): Span[] {
   const spans: Span[] = []
   let masked = text
-  for (const pattern of MAIN_USER_PATH_PATTERNS) {
+  for (const pattern of SEQUENTIAL_USER_PATH_PATTERNS) {
     masked = masked.replace(
       pattern,
       (whole: string, root: string, escapedSep: string | undefined, rawSep: string, at: number) => {
@@ -77,7 +77,7 @@ function sequentialNameSpans(text: string): Span[] {
 }
 
 export function scrubPII(value: string): string {
-  const everyStart = USER_PATH_PATTERNS.flatMap((pattern) =>
+  const everyStart = EVERY_START_USER_PATH_PATTERNS.flatMap((pattern) =>
     nameSpansFromEveryStart(pattern, value)
   )
   const spans = [...sequentialNameSpans(value), ...everyStart].sort(([a], [b]) => a - b)

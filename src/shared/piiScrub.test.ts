@@ -217,10 +217,17 @@ describe('piiScrub', () => {
       expect(scrubPII('C:/Users/home\\u00e9secret\\u00e9more/z')).toBe('C:/Users/[REDACTED]/z')
     })
 
-    it('hides the folder after a nested Users folder under a folder named exactly t', () => {
-      expect(scrubPII('C:\\project\\t\\Users\\fixture.json')).toBe(
-        'C:\\project\\t\\Users\\[REDACTED]'
-      )
+    it.each(['n', 'r', 't'])(
+      'also hides the folder after a nested Users folder under a folder named exactly %s, as the cost of reading it as an escape',
+      (folder) => {
+        expect(scrubPII(`C:\\project\\${folder}\\Users\\fixture.json`)).toBe(
+          `C:\\project\\${folder}\\Users\\[REDACTED]`
+        )
+      }
+    )
+
+    it('also hides the folder after a username that is literally home, as the cost of matching from every start', () => {
+      expect(scrubPII('/Users/home/docs/x')).toBe('/Users/[REDACTED]/[REDACTED]/x')
     })
 
     it.each([
