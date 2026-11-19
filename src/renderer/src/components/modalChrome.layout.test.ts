@@ -19,8 +19,12 @@ vi.mock('../lib/telemetry', () => ({
   emitTelemetryEvent: vi.fn()
 }))
 
-const MODAL_PADDING = 24
+const CONTENT_PADDING = 20
+const FOOTER_PADDING = 16
+const BIG_PADDING = 24
 const TITLE_GAP = 16
+const LABEL_GAP = 8
+const GROUP_GAP = 20
 
 const mounted: VueWrapper[] = []
 
@@ -153,29 +157,125 @@ function expectSpanning(selectors: string[], contentSelector: string): void {
   }
 }
 
+function innerBox(node: HTMLElement): DOMRect {
+  const rect = node.getBoundingClientRect()
+  const left = rect.left + px(node, 'border-left-width')
+  const top = rect.top + px(node, 'border-top-width')
+  return new DOMRect(
+    left,
+    top,
+    rect.right - px(node, 'border-right-width') - left,
+    rect.bottom - px(node, 'border-bottom-width') - top
+  )
+}
+
+function lowestContent(bodySelector: string): number {
+  const bottoms = [...el(bodySelector).querySelectorAll<HTMLElement>('*')]
+    .filter((node) => {
+      const rect = node.getBoundingClientRect()
+      return rect.width > 0 && rect.height > 0 && getComputedStyle(node).position !== 'absolute'
+    })
+    .map((node) => node.getBoundingClientRect().bottom)
+  return Math.max(...bottoms)
+}
+
+function expectNear(actual: number, expected: number, what: string): void {
+  expect(Math.abs(actual - expected), `${what} ${actual}`).toBeLessThanOrEqual(1)
+}
+
 function expectFooterInsets(
   panelSelector: string,
   bodySelector: string,
-  footerSelector: string
+  footerSelector: string,
+  pad: { content: number; footer: number } = { content: CONTENT_PADDING, footer: FOOTER_PADDING }
 ): void {
-  const panel = el(panelSelector).getBoundingClientRect()
+  const panel = innerBox(el(panelSelector))
   const footer = el(footerSelector)
   const buttons = footer.querySelectorAll<HTMLElement>('button')
   const last = buttons[buttons.length - 1]
   if (!last) throw new Error(`no button in ${footerSelector}`)
   const button = last.getBoundingClientRect()
   const line = footer.getBoundingClientRect().top + px(footer, 'border-top-width')
-  const gaps = {
-    top: button.top - line,
-    bottom: panel.bottom - button.bottom,
-    right: panel.right - button.right,
-    side: contentBox(el(bodySelector)).left - panel.left
+  expectNear(button.top - line, pad.footer, `${footerSelector} button below the line`)
+  expectNear(panel.bottom - button.bottom, pad.footer, `${footerSelector} button above the bottom`)
+  expectNear(panel.right - button.right, pad.content, `${footerSelector} button right`)
+  expectNear(
+    contentBox(el(bodySelector)).left - panel.left,
+    pad.content,
+    `${bodySelector} content left`
+  )
+}
+
+function expectContentPadding(
+  panelSelector: string,
+  titleSelector: string,
+  bodySelector: string,
+  footerSelector: string
+): void {
+  const panel = innerBox(el(panelSelector))
+  const title = contentBox(el(titleSelector))
+  const body = el(bodySelector)
+  const content = contentBox(body)
+  const footer = el(footerSelector)
+  const button = [...footer.querySelectorAll<HTMLElement>('button')].pop()!
+  expectNear(title.top - panel.top, CONTENT_PADDING, `${titleSelector} top`)
+  expectNear(title.left - panel.left, CONTENT_PADDING, `${titleSelector} left`)
+  expectNear(content.left - panel.left, CONTENT_PADDING, `${bodySelector} left`)
+  expectNear(panel.right - content.right, CONTENT_PADDING, `${bodySelector} right`)
+  expectNear(button.getBoundingClientRect().right, content.right, 'footer button right vs content')
+  expectNear(
+    footer.getBoundingClientRect().top - lowestContent(bodySelector),
+    CONTENT_PADDING,
+    `${bodySelector} content to the footer line`
+  )
+}
+
+function boxBelow(label: HTMLElement, boxes: HTMLElement[]): DOMRect | undefined {
+  const top = label.getBoundingClientRect().top
+  return boxes
+    .map((box) => box.getBoundingClientRect())
+    .filter((rect) => rect.bottom <= top + 0.5)
+    .sort((a, b) => b.bottom - a.bottom)[0]
+}
+
+function expectFieldSpacing(labelSelector: string, boxSelector: string): void {
+  const labels = [...document.querySelectorAll<HTMLElement>(labelSelector)]
+  const boxes = [...document.querySelectorAll<HTMLElement>(boxSelector)]
+  expect(labels.length, labelSelector).toBeGreaterThan(0)
+  for (const label of labels) {
+    const name = label.textContent?.trim()
+    const field = label.nextElementSibling as HTMLElement
+    expectNear(
+      field.getBoundingClientRect().top - label.getBoundingClientRect().bottom,
+      LABEL_GAP,
+      `label "${name}" to its box`
+    )
+    const before = boxBelow(label, boxes)
+    if (before) {
+      expectNear(
+        label.getBoundingClientRect().top - before.bottom,
+        GROUP_GAP,
+        `box before label "${name}"`
+      )
+    }
   }
-  for (const [edge, gap] of Object.entries(gaps)) {
-    expect(
-      Math.abs(gap - MODAL_PADDING),
-      `${footerSelector} ${edge} gap ${gap}`
-    ).toBeLessThanOrEqual(1)
+  const options = document.querySelector<HTMLElement>('.dialog-options')
+  if (options) {
+    const before = boxBelow(options, boxes)!
+    expectNear(options.getBoundingClientRect().top - before.bottom, GROUP_GAP, 'box to checkboxes')
+  }
+}
+
+function expectSurfaceFill(boxSelector: string): void {
+  const surface = document.createElement('div')
+  surface.style.background = 'var(--surface)'
+  document.body.appendChild(surface)
+  const fill = getComputedStyle(surface).backgroundColor
+  surface.remove()
+  const boxes = document.querySelectorAll<HTMLElement>(boxSelector)
+  expect(boxes.length, boxSelector).toBeGreaterThan(0)
+  for (const box of boxes) {
+    expect(getComputedStyle(box).backgroundColor, `${box.classList[0]} fill`).toBe(fill)
   }
 }
 
@@ -218,6 +318,88 @@ function darkerThanCard(cardSelector: string): string[] {
     }
   }
   return darker
+}
+
+function stubWizardApi(): void {
+  Object.assign(window, {
+    api: new Proxy(
+      {
+        getSources: vi.fn().mockResolvedValue([]),
+        getInstallations: vi.fn().mockResolvedValue([]),
+        getDiskSpace: vi.fn().mockResolvedValue({ free: 1e11, total: 1e12 }),
+        validateInstallPath: vi.fn().mockResolvedValue([]),
+        getFieldOptions: vi.fn().mockResolvedValue([]),
+        comfybuilder: {
+          getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+          onAuthChanged: vi.fn(() => vi.fn()),
+          listWorkspaces: vi.fn().mockResolvedValue([]),
+          listBuilds: vi.fn().mockResolvedValue([])
+        }
+      } as Record<string, unknown>,
+      {
+        get: (stubs, method) =>
+          String(method) in stubs
+            ? stubs[String(method)]
+            : String(method).startsWith('on')
+              ? vi.fn(() => vi.fn())
+              : vi.fn().mockResolvedValue(undefined)
+      }
+    )
+  })
+}
+
+async function openNewBuild(): Promise<void> {
+  stubWizardApi()
+  const wizard = await open(() => mount(InstallWizardModal, { attachTo: document.body }))
+  await (wizard.vm as unknown as { open: (opts: object) => Promise<void> }).open({})
+  await settle()
+}
+
+async function openAddExisting(): Promise<void> {
+  const track = await open(() => mount(TrackModal, { attachTo: document.body }))
+  ;(track.vm as unknown as { open: () => void }).open()
+  await settle()
+}
+
+const PROMPT_WITH_DETAILS = {
+  title: 'Copy build',
+  message: 'Name the copy of Flux Sandbox.',
+  defaultValue: 'Flux Sandbox copy',
+  messageDetails: [
+    { label: 'Will be copied', items: ['/Users/alex/ComfyUI/Flux Sandbox'] },
+    { label: 'Not copied', items: ['Models stay shared'] }
+  ]
+}
+
+const DELETE_BUILD = {
+  title: 'Delete build',
+  message: 'This removes Flux Sandbox from this computer.',
+  confirmLabel: 'Delete',
+  confirmStyle: 'danger' as const,
+  messageDetails: [{ label: 'Will be removed', items: ['/Users/alex/ComfyUI/Flux Sandbox'] }],
+  checkboxes: [
+    { id: 'models', label: 'Also delete its models', checked: false },
+    { id: 'outputs', label: 'Also delete its outputs', checked: false }
+  ]
+}
+
+const BUILD_RUNNING = {
+  open: true,
+  title: 'A build is already running',
+  message: 'Choosing "Close and start" will stop the builds listed below.',
+  hint: 'You can turn off this warning in Preferences.',
+  messageDetails: [{ label: 'Will be stopped', items: ['Flux Sandbox', 'Wan video'] }],
+  buttonLabel: 'Close and start',
+  secondaryLabel: 'Run all',
+  showCloseIcon: true
+}
+
+const NAME_SNAPSHOT = {
+  open: true,
+  title: 'Name snapshot',
+  message: 'Give this snapshot a name.',
+  defaultValue: 'Before update',
+  messageDetails: [{ label: 'Includes', items: ['12 custom nodes', '48 Python packages'] }]
 }
 
 function lineWidths(node: HTMLElement): { top: string; bottom: string } {
@@ -314,7 +496,7 @@ describe('modal chrome', () => {
     })
   })
 
-  it('puts the footer button 24px from the footer line, the bottom and the right, like the body sides', async () => {
+  it('puts small-modal footer buttons 16px below the line and above the bottom, lined up with the 20px content', async () => {
     await open(() =>
       mount(BaseModal, {
         attachTo: document.body,
@@ -322,7 +504,10 @@ describe('modal chrome', () => {
         slots: { header: 'Title', default: 'Body', footer: '<button>OK</button>' }
       })
     )
-    expectFooterInsets('.base-modal-panel', '.base-modal-body', '.base-modal-footer')
+    expectFooterInsets('.base-modal-panel', '.base-modal-body', '.base-modal-footer', {
+      content: BIG_PADDING,
+      footer: BIG_PADDING
+    })
     await closeAll()
 
     await open(() =>
@@ -453,36 +638,117 @@ describe('modal chrome', () => {
     darker.push(...darkerThanCard('.setup-modal-panel'))
     await closeAll()
 
-    Object.assign(window, {
-      api: new Proxy(
-        {
-          getSources: vi.fn().mockResolvedValue([]),
-          getInstallations: vi.fn().mockResolvedValue([]),
-          getDiskSpace: vi.fn().mockResolvedValue({ free: 1e11, total: 1e12 }),
-          validateInstallPath: vi.fn().mockResolvedValue([]),
-          getFieldOptions: vi.fn().mockResolvedValue([]),
-          comfybuilder: {
-            getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
-            onAuthChanged: vi.fn(() => vi.fn()),
-            listWorkspaces: vi.fn().mockResolvedValue([]),
-            listBuilds: vi.fn().mockResolvedValue([])
-          }
-        } as Record<string, unknown>,
-        {
-          get: (stubs, method) =>
-            String(method) in stubs
-              ? stubs[String(method)]
-              : String(method).startsWith('on')
-                ? vi.fn(() => vi.fn())
-                : vi.fn().mockResolvedValue(undefined)
-        }
-      )
-    })
-    const wizard = await open(() => mount(InstallWizardModal, { attachTo: document.body }))
-    await (wizard.vm as unknown as { open: (opts: object) => Promise<void> }).open({})
-    await settle()
+    await openNewBuild()
     darker.push(...darkerThanCard('.setup-modal-panel'))
 
+    expect(darker).toEqual([])
+  })
+
+  it('pads small modals 20px around the content and lines the footer button up with it', async () => {
+    await open(() => mount(ModalDialog, { attachTo: document.body }))
+    void useModal().prompt(PROMPT_WITH_DETAILS)
+    await settle()
+    expectContentPadding('.dialog-box', '.dialog-title', '.dialog-body', '.dialog-actions')
+    expectFooterInsets('.dialog-box', '.dialog-body', '.dialog-actions')
+    useModal().dismiss()
+    await settle()
+    void useModal().confirm(DELETE_BUILD)
+    await settle()
+    expectContentPadding('.dialog-box', '.dialog-title', '.dialog-body', '.dialog-actions')
+    expectFooterInsets('.dialog-box', '.dialog-body', '.dialog-actions')
+    await closeAll()
+
+    await open(() => mount(BaseAlert, { attachTo: document.body, props: BUILD_RUNNING }))
+    expectContentPadding(
+      '.base-alert-panel',
+      '.base-alert-title',
+      '.base-alert-message',
+      '.base-alert-footer'
+    )
+    expectFooterInsets('.base-alert-panel', '.base-alert-message', '.base-alert-footer')
+    await closeAll()
+
+    await open(() => mount(BasePrompt, { attachTo: document.body, props: NAME_SNAPSHOT }))
+    expectContentPadding(
+      '.base-modal-panel',
+      '.base-prompt-title',
+      '.base-modal-body',
+      '.base-modal-footer'
+    )
+    expectFooterInsets('.base-modal-panel', '.base-modal-body', '.base-modal-footer')
+    await closeAll()
+
+    for (const openIt of [openNewBuild, openAddExisting]) {
+      await openIt()
+      expectContentPadding(
+        '.setup-modal-panel',
+        '.setup-modal-title',
+        '.setup-modal-body',
+        '.setup-modal-foot'
+      )
+      expectFooterInsets('.setup-modal-panel', '.setup-modal-body', '.setup-modal-foot')
+      await closeAll()
+    }
+  })
+
+  it('sets every label 8px above its own box and 20px below the box before it', async () => {
+    const modalDialogLabels = '.dialog-detail-label, .dialog-input-label'
+    const modalDialogBoxes = '.dialog-prompt-card, .dialog-detail-recessed, .dialog-input'
+    await open(() => mount(ModalDialog, { attachTo: document.body }))
+    void useModal().prompt(PROMPT_WITH_DETAILS)
+    await settle()
+    expectFieldSpacing(modalDialogLabels, modalDialogBoxes)
+    useModal().dismiss()
+    await settle()
+    void useModal().confirm(DELETE_BUILD)
+    await settle()
+    expectFieldSpacing(modalDialogLabels, modalDialogBoxes)
+    await closeAll()
+
+    await open(() => mount(BaseAlert, { attachTo: document.body, props: BUILD_RUNNING }))
+    expectFieldSpacing(
+      '.base-alert-detail-label',
+      '.base-alert-message-text, .base-alert-detail-recessed'
+    )
+    await closeAll()
+
+    await open(() => mount(BasePrompt, { attachTo: document.body, props: NAME_SNAPSHOT }))
+    expectFieldSpacing(
+      '.base-prompt-detail-label, .base-prompt-field-label',
+      '.base-prompt-message, .base-prompt-detail-recessed'
+    )
+  })
+
+  it('fills every box in a modal with the surface color, a step lighter than the card', async () => {
+    const darker: string[] = []
+    await open(() => mount(ModalDialog, { attachTo: document.body }))
+    void useModal().prompt(PROMPT_WITH_DETAILS)
+    await settle()
+    expectSurfaceFill('.dialog-prompt-card, .dialog-detail-recessed')
+    darker.push(...darkerThanCard('.dialog-box'))
+    useModal().dismiss()
+    await settle()
+    void useModal().confirm(DELETE_BUILD)
+    await settle()
+    expectSurfaceFill('.dialog-prompt-card, .dialog-detail-recessed')
+    darker.push(...darkerThanCard('.dialog-box'))
+    await closeAll()
+
+    await open(() => mount(BaseAlert, { attachTo: document.body, props: BUILD_RUNNING }))
+    expectSurfaceFill('.base-alert-detail-recessed')
+    darker.push(...darkerThanCard('.base-alert-panel'))
+    await closeAll()
+
+    await open(() => mount(BasePrompt, { attachTo: document.body, props: NAME_SNAPSHOT }))
+    expectSurfaceFill('.base-prompt-detail-recessed')
+    darker.push(...darkerThanCard('.base-modal-panel'))
+    await closeAll()
+
+    for (const openIt of [openNewBuild, openAddExisting]) {
+      await openIt()
+      darker.push(...darkerThanCard('.setup-modal-panel'))
+      await closeAll()
+    }
     expect(darker).toEqual([])
   })
 })
