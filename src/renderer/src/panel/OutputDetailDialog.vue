@@ -43,7 +43,7 @@ export interface OutputDetailItem {
   inCloud?: boolean
   workflow?: boolean
   workflowBuilds?: { id: string; name: string }[]
-  workflowPending?: boolean
+  workflowSlot?: boolean
   mainAction: 'download' | null
   loadModel?: () => Promise<Uint8Array | null>
 }
@@ -387,7 +387,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           </template>
         </Menu>
         <Button
-          v-else-if="item.workflow || item.workflowPending"
+          v-else-if="item.workflow || item.workflowSlot"
           type="button"
           variant="secondary"
           size="md"

@@ -184,7 +184,7 @@ function jsonEnd(bytes: Uint8Array, start: number, budget: ScanBudget): number {
 
 function startsObject(bytes: Uint8Array, at: number): boolean {
   let next = at + 1
-  while (bytes[next] === 0x20 || bytes[next] === 0x0a || bytes[next] === 0x0d) next++
+  while ([0x20, 0x09, 0x0a, 0x0d].includes(bytes[next]!)) next++
   return bytes[next] === QUOTE
 }
 

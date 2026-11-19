@@ -23,6 +23,7 @@ vi.mock('../apps/openInComfy', () => ({ openEmbeddedWorkflow: mocks.openEmbedded
 vi.mock('../host/registry', () => ({ isPanelSender: () => mocks.fromPanel }))
 vi.mock('./i18n', () => ({ t: (key: string) => key }))
 vi.mock('./outputFolders', () => ({
+  READ_WITHOUT_FOLLOWING: 'r',
   outputFilePath: vi.fn(async (id: string) => mocks.files.get(id) ?? null)
 }))
 vi.mock('./assets', () => ({
@@ -211,6 +212,26 @@ describe('a file in Comfy Cloud', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
+  it('reads a Cloud file a little over 4 MB in two pieces that join, so a workflow across the 4 MB mark is found', async () => {
+    mocks.cloudAccessToken.mockResolvedValue('token')
+    mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/clip')
+    const whole = `${'\u0000'.repeat(PART_BYTES - 10)}${SAVED_WORKFLOW}`
+    const head = whole.slice(0, PART_BYTES)
+    const rest = whole.slice(PART_BYTES)
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const range = (init.headers as Record<string, string>)['Range']
+      return range === `bytes=${PART_BYTES}-`
+        ? partial(rest, whole.length)
+        : partial(head, whole.length)
+    })
+    vi.stubGlobal('fetch', fetch)
+
+    expect(await hasWorkflow('inst-cloud', 'asset-6')).toBe(true)
+    expect(
+      fetch.mock.calls.map(([, init]) => (init.headers as Record<string, string>)['Range'])
+    ).toEqual([`bytes=0-${PART_BYTES - 1}`, `bytes=${PART_BYTES}-`])
+  })
+
   it('reads only the start of a large Cloud PNG, where ComfyUI saves its workflow', async () => {
     mocks.cloudAccessToken.mockResolvedValue('token')
     mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/big.png')
@@ -243,7 +264,7 @@ describe('who can ask', () => {
     expect(await hasWorkflow(LOCAL, 'fox.flac')).toBe(false)
     expect(await openWorkflow(LOCAL, 'fox.flac', 'fox.flac', 'inst-lab')).toEqual({
       opened: false,
-      error: 'apps.local.openNotWorkflow'
+      error: 'apps.local.openNotTaken'
     })
     expect(outputFilePath).not.toHaveBeenCalled()
   })

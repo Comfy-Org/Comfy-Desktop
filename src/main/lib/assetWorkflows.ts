@@ -1,4 +1,4 @@
-import { constants as fsConstants, promises as fsp } from 'fs'
+import { promises as fsp } from 'fs'
 import { ipcMain } from 'electron'
 
 import { openEmbeddedWorkflow } from '../apps/openInComfy'
@@ -11,7 +11,7 @@ import { cloudAccessToken, firstBytes, resolveCloudContentUrl } from './assets'
 import { isPng, readEmbeddedWorkflow } from './embeddedWorkflow'
 import type { EmbeddedWorkflow } from './embeddedWorkflow'
 import * as i18n from './i18n'
-import { outputFilePath } from './outputFolders'
+import { outputFilePath, READ_WITHOUT_FOLLOWING } from './outputFolders'
 
 export const ASSET_WORKFLOW_CHANNELS = {
   has: 'assets:has-workflow',
@@ -21,8 +21,6 @@ export const ASSET_WORKFLOW_CHANNELS = {
 export const PART_BYTES = 4 * 1024 * 1024
 const READ_TIMEOUT_MS = 30_000
 const REMEMBERED_CLOUD_ASSETS = 20
-const READ_WITHOUT_FOLLOWING =
-  fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0)
 
 const remembered = new Map<string, Promise<EmbeddedWorkflow | null>>()
 
@@ -73,6 +71,11 @@ async function cloudParts(assetId: string, accessToken: string): Promise<Uint8Ar
   const head = await firstBytes(headResponse, PART_BYTES)
   const size = headResponse.status === 206 ? totalSize(headResponse) : null
   if (size === null || size <= PART_BYTES || isPng(head)) return [head]
+  if (size <= PART_BYTES * 2) {
+    const restResponse = await rangeOf(url, `bytes=${PART_BYTES}-`, deadline)
+    if (restResponse.status !== 206) return null
+    return [Buffer.concat([head, await firstBytes(restResponse, PART_BYTES)])]
+  }
   const tailResponse = await rangeOf(url, `bytes=-${PART_BYTES}`, deadline)
   if (!tailResponse.ok) return null
   if (tailResponse.status !== 206) return [head]
@@ -151,7 +154,7 @@ export function registerAssetWorkflowHandlers(): void {
     ): ComfyDesktopOpenInComfy | Promise<ComfyDesktopOpenInComfy> =>
       isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'
         ? openAssetWorkflow(source, assetId, name, build)
-        : { opened: false, error: i18n.t('apps.local.openNotWorkflow') }
+        : { opened: false, error: i18n.t('apps.local.openNotTaken') }
   )
 }
 

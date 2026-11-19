@@ -819,7 +819,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     savedIn: isLocal(asset) ? folderOf(asset.id) : null,
     mainAction: isLocal(asset) ? null : 'download',
     workflow: canOpenWorkflow(asset),
-    workflowPending: mayOpenWorkflow(asset) && !workflowFound.value.has(cardKey(asset)),
+    workflowSlot: mayOpenWorkflow(asset),
     workflowBuilds: workflowBuildsOf(asset),
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
@@ -859,8 +859,8 @@ const shownDetail = computed(() =>
 )
 
 async function checkWorkflow(asset: GalleryAsset, checks: number): Promise<void> {
-  const found = await window.api.hasAssetWorkflow(asset.source, asset.id).catch(() => false)
-  if (checks !== workflowChecks.value) return
+  const found = await window.api.hasAssetWorkflow(asset.source, asset.id).catch(() => null)
+  if (found === null || checks !== workflowChecks.value) return
   workflowFound.value = new Map(workflowFound.value).set(cardKey(asset), found)
 }
 

@@ -122,16 +122,24 @@ describe('reading the workflow ComfyUI saved in a PNG', () => {
     expect(readEmbeddedWorkflow([png(tEXt('parameters', 'a red fox, 20 steps'))])).toBeNull()
   })
 
-  it('does not unpack compressed text under other names, and stops unpacking past a total size', () => {
-    const big = 'x'.repeat(9_000_000)
-    const file = png(
-      zTXt('comment', big),
-      zTXt('workflow', big),
-      zTXt('prompt', big),
-      tEXt('workflow', JSON.stringify(GRAPH))
-    )
+  it('does not unpack compressed text under other names', () => {
+    const big = 'x'.repeat(20_000_000)
+    const file = png(zTXt('comment', big), zTXt('workflow', JSON.stringify(GRAPH)))
 
     expect(readEmbeddedWorkflow([file])).toEqual({ format: 'graph', data: GRAPH })
+  })
+
+  it('stops unpacking once the chunks have unpacked 16 MB in total', () => {
+    const big = 'x'.repeat(9_000_000)
+    const small = zTXt('workflow', JSON.stringify(GRAPH))
+
+    expect(readEmbeddedWorkflow([png(zTXt('workflow', big), small)])).toEqual({
+      format: 'graph',
+      data: GRAPH
+    })
+    expect(
+      readEmbeddedWorkflow([png(zTXt('workflow', big), zTXt('prompt', big), small)])
+    ).toBeNull()
   })
 
   it('finds nothing in text that is not valid JSON', () => {
