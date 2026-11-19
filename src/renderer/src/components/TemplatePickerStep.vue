@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Crown, HardDriveDownload } from 'lucide-vue-next'
+import { Check, Crown, HardDriveDownload } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import type { DiskSpaceInfo, FieldOption } from '../types/ipc'
 import { formatBytesCoarse } from '../lib/formatting'
@@ -16,6 +16,7 @@ import { useTemplateTabs } from '../composables/useTemplateTabs'
 import ComfyCLogo from './icons/ComfyCLogo.vue'
 import TruncatedText from './TruncatedText.vue'
 import Tooltip from './ui/Tooltip.vue'
+import { vSlidingPill } from './ui/vSlidingPill'
 
 const props = withDefaults(
   defineProps<{
@@ -128,6 +129,7 @@ defineExpose({ shownDiskError })
   <div :class="['tps w-full text-center', { 'tps--compact': compact }]">
     <div
       v-if="tabs.length > 1"
+      v-sliding-pill="'bg-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)]'"
       class="tps__tabs mb-[clamp(16px,3vh,28px)] flex flex-wrap justify-center gap-2"
       role="tablist"
       :aria-label="t('standalone.templateTabsAria')"

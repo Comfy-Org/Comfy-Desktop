@@ -4,6 +4,14 @@ import type { Installation } from '../types/ipc'
 
 export type ReturnToDashboardReason = 'in_flight' | 'crashed' | 'stopped' | 'running'
 
+export async function keepsComfyRunningWhenWindowCloses(): Promise<boolean> {
+  try {
+    return (await window.api.getSetting('keepComfyRunningWhenWindowCloses')) !== false
+  } catch {
+    return true
+  }
+}
+
 export function useReturnToDashboardConfirm() {
   const { t } = useI18n()
   const modal = useModal()
@@ -22,6 +30,7 @@ export function useReturnToDashboardConfirm() {
     }
     if (!installation || installation.sourceCategory !== 'local') return true
     if (reason === 'stopped' || reason === 'crashed') return true
+    if (await keepsComfyRunningWhenWindowCloses()) return true
     return modal.confirm({
       title: t('dashboard.confirmStopLocal.title'),
       message: t('dashboard.confirmStopLocal.message'),

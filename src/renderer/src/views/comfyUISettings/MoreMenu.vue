@@ -2,15 +2,17 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
+import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import { TID } from '../../../../shared/testIds'
 import type { ActionDef } from '../../types/ipc'
 
-export type MenuAction = ActionDef & { icon?: Component }
+export type MenuAction = ActionDef & { icon?: Component; separator?: boolean }
 const props = defineProps<{
   open: boolean
   actions: MenuAction[]
   heading?: string
   anchor?: HTMLElement | null
+  side?: 'top' | 'bottom'
 }>()
 const emit = defineEmits<{ close: []; pick: [action: MenuAction] }>()
 const visible = computed({
@@ -19,7 +21,6 @@ const visible = computed({
     if (!open) emit('close')
   }
 })
-const hasIcons = computed(() => props.actions.some((action) => !!action.icon))
 const restoreFocus = ref(true)
 watch(
   () => props.open,
@@ -42,7 +43,10 @@ function onInteractOutside(event: Event): void {
 }
 function onCloseAutoFocus(event: Event): void {
   event.preventDefault()
-  if (restoreFocus.value) props.anchor?.focus()
+  const active = document.activeElement
+  const movedOn =
+    active instanceof HTMLElement && active !== document.body && !active.closest('.more-menu')
+  if (restoreFocus.value && !movedOn) props.anchor?.focus()
 }
 function onWindowBlur(): void {
   restoreFocus.value = false
@@ -59,37 +63,33 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     :reference="anchor ?? undefined"
     :label="heading"
     :aria-label="heading || $t('comfyUISettings.more')"
-    side="top"
+    :side="side ?? 'top'"
     align="end"
-    :side-offset="6"
-    class="more-menu z-62 min-w-[200px] max-w-[280px]"
-    :class="{ 'has-heading': !!heading, 'has-icons': hasIcons }"
+    :collision-padding="4"
+    :side-offset="4"
+    class="more-menu z-62 w-[232px]"
     @interact-outside="onInteractOutside"
     @close-auto-focus="onCloseAutoFocus"
   >
     <template #trigger><span hidden aria-hidden="true" /></template>
-    <MenuItem
-      v-for="action in actions"
-      :key="action.id"
-      as="button"
-      type="button"
-      :disabled="action.enabled === false"
-      class="more-menu-item w-full justify-start text-left"
-      :class="{
-        'is-danger text-destructive': action.style === 'danger',
-        'is-disabled': action.enabled === false
-      }"
-      :data-testid="TID.pinBottomAction(action.id)"
-      @select="handlePick(action)"
-    >
-      <span
-        v-if="hasIcons"
-        class="more-menu-item-icon inline-flex size-4 shrink-0 items-center justify-center"
-        aria-hidden="true"
+    <template v-for="(action, index) in actions" :key="action.id">
+      <MenuSeparator v-if="action.separator && index > 0" />
+      <MenuItem
+        :disabled="action.enabled === false"
+        :class="action.style === 'danger' && 'text-destructive focus:text-destructive'"
+        :text-value="action.label"
+        :data-testid="TID.pinBottomAction(action.id)"
+        @select="handlePick(action)"
       >
-        <component :is="action.icon" v-if="action.icon" :size="15" />
-      </span>
-      <span class="more-menu-item-label flex-auto">{{ action.label }}</span>
-    </MenuItem>
+        <component
+          :is="action.icon"
+          v-if="action.icon"
+          :size="15"
+          class="shrink-0"
+          aria-hidden="true"
+        />
+        {{ action.label }}
+      </MenuItem>
+    </template>
   </Menu>
 </template>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Cloud, Computer, LaptopMinimal, Globe, Box, Package } from 'lucide-vue-next'
+import { Cloud, Computer, LaptopMinimal, Globe, Box, Package } from '@lucide/vue'
 
 import { installTypeMetaFor, installTypeMetaForInstall } from './installTypeIcon'
 

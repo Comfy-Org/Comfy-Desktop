@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { Eye, EyeOff, Plus, X } from 'lucide-vue-next'
+import { Eye, EyeOff, Plus, X } from '@lucide/vue'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import type { DetailField } from '../../types/ipc'
 
@@ -203,7 +203,7 @@ function onValueChange(i: number, val: string): void {
       class="env-var-add static inline-flex h-8 items-center justify-center gap-1 self-start rounded-lg border-none bg-[var(--chooser-surface-border-hover)] px-3.5 py-2 text-[12px] leading-4 font-medium text-neutral-100 appearance-auto transition-[background-color,color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-border-hover)] hover:text-text focus-visible:bg-[var(--brand-surface-border-hover)] focus-visible:text-text focus-visible:outline-none focus-visible:ring-0"
       @click="addRow"
     >
-      <Plus :size="16" aria-hidden="true" />
+      <Plus :size="14" aria-hidden="true" />
       <span>{{ t('envVars.add') }}</span>
     </Button>
   </div>

@@ -183,6 +183,23 @@ export function effectiveAgentRequirements(
   return { kind: 'text', text: lines.join('\n') }
 }
 
+type ResolvedOverride =
+  { kind: 'text'; text: string; pins: OverridePins } | { kind: 'refused'; reason: OverrideRefusal }
+
+export function resolveOverride(
+  coreText: string,
+  pins: OverridePins,
+  mainText = ''
+): ResolvedOverride {
+  const effective = effectiveAgentRequirements(coreText, pins, mainText)
+  if (effective.kind === 'text') return { ...effective, pins }
+  const agentPins = new Map(pins)
+  agentPins.delete(FRONTEND_PACKAGE)
+  if (effective.reason !== 'not_newer' || agentPins.size === 0) return effective
+  const withoutFrontend = effectiveAgentRequirements(coreText, agentPins, mainText)
+  return withoutFrontend.kind === 'text' ? { ...withoutFrontend, pins: agentPins } : effective
+}
+
 export function parseInstalled(pipListOutput: string): { name: string; version: string }[] | null {
   const json = pipListOutput
     .split(/\r?\n/)
@@ -302,7 +319,7 @@ interface Kept {
 }
 
 export type OverrideDecision =
-  | { decision: 'applied'; pins: OverridePins }
+  | { decision: 'applied'; pins: OverridePins; reason?: 'frontend_not_newer' }
   | ({ decision: 'refused'; reason: OverrideRefusal; pins?: OverridePins } & Kept)
   | ({
       decision: 'deferred'
@@ -343,6 +360,45 @@ export function corePinsPlaceholderAgent(coreText: string): boolean {
       !!match && normalizePackageName(match[1]!) === name && PLACEHOLDER_VERSION.test(match[2]!)
     )
   })
+}
+
+const UNPINNED_LINE = /^\s*([A-Za-z0-9][A-Za-z0-9._-]*)(?:\s*\[[^\]]*\])?\s*(?:#.*)?$/
+const BELOW_FLOOR = /^0\.0\.0(?:(?:a|b|rc)\d+)?(?:\.dev\d+)?$/
+
+export function coreLeavesAgentUnpinned(coreText: string): boolean {
+  const name = agentPackage(coreText)
+  if (name === undefined) return false
+  const agentLines = coreText.split(/\r?\n/).filter((line) => {
+    const leading = line.match(LEADING_NAME)?.[1]
+    return leading !== undefined && normalizePackageName(leading) === name
+  })
+  return agentLines.length > 0 && agentLines.every((line) => UNPINNED_LINE.test(line))
+}
+
+export interface PlaceholderFloor {
+  coreText: string
+  placeholder: string
+  constraints: string
+  agentFloor: string
+}
+
+export function placeholderAgentFloor(
+  coreText: string,
+  pipListOutput: string
+): PlaceholderFloor | null {
+  if (!coreLeavesAgentUnpinned(coreText)) return null
+  const name = agentPackage(coreText)!
+  const version = parseInstalled(pipListOutput)?.find(
+    (p) => normalizePackageName(p.name) === name
+  )?.version
+  if (version === undefined || !BELOW_FLOOR.test(version)) return null
+  const held = installedConstraints(pipListOutput, new Map(), coreText) ?? ''
+  return {
+    coreText,
+    placeholder: `${name}==${version}`,
+    constraints: `${held.trim() ? held : ''}${name}>0.0.0\n`,
+    agentFloor: `${name}>0.0.0\n`
+  }
 }
 
 export function keepableAgent(
@@ -389,7 +445,7 @@ export function reportOverrideDecision(
     telemetry.emit('comfy.desktop.agent_requirements_override', {
       installation_id: installationId,
       decision: d.decision,
-      reason: 'reason' in d ? d.reason : null,
+      reason: 'reason' in d ? (d.reason ?? null) : null,
       pins,
       failures: 'failures' in d ? (d.failures ?? null) : null,
       stays_installed:
@@ -418,6 +474,20 @@ export function reportAgentCoreFailure(
       elapsed_ms: r.elapsedMs,
       budget_ms: r.budgetMs,
       error_tail: r.errorTail,
+      index
+    })
+  } catch {}
+}
+
+export function reportCacheRescued(
+  installationId: string,
+  step: 'core' | 'override',
+  index: IndexKind
+): void {
+  try {
+    telemetry.emit('comfy.desktop.agent_requirements_cache_rescued', {
+      installation_id: installationId,
+      step,
       index
     })
   } catch {}
@@ -526,6 +596,8 @@ export interface PrefetchReport {
   elapsedMs: number
   downloadsStarted: number
   downloadsFinished: number
+  downloadedBytes: number
+  fetchMs: number
   errorTail: string | null
   uvVersion: string | null
 }
@@ -546,6 +618,8 @@ export function reportAgentPrefetch(
       elapsed_ms: r.elapsedMs,
       downloads_started: r.downloadsStarted,
       downloads_finished: r.downloadsFinished,
+      downloaded_bytes: r.downloadedBytes,
+      fetch_ms: r.fetchMs,
       error_tail: r.errorTail,
       index,
       uv_version: r.uvVersion

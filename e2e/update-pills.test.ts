@@ -1,7 +1,5 @@
-import { test, expect, type ElectronApplication } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { findWebContentsId } from './support/cdpPages'
-import { evalWithRetry } from './support/evalRetry'
 import { setAppUpdateState, setInstallUpdate, type AppUpdateStateLike } from './support/devHooks'
 
 let ctx: AppContext
@@ -17,126 +15,83 @@ test.afterAll(async () => {
 })
 
 test.beforeEach(async () => {
-  await closeSystemModalIfOpen(ctx.app)
+  await closeUpdateQuestionIfOpen()
   await setAppUpdateState(ctx.app, IDLE_APP_UPDATE)
   await setInstallUpdate(ctx.app, { available: false })
 })
 
 const IDLE_APP_UPDATE: AppUpdateStateLike = { kind: null, version: null, autoUpdate: true }
+const SIDEBAR_UPDATE = '[data-testid="app-sidebar-desktop-update"]'
 
-test('desktop-update pill is hidden when state is idle @windows @macos @linux', async () => {
-  expect(await ctx.titleBar.exists('.title-update-pill.is-app-update')).toBe(false)
+function sidebarUpdateIn(kind: NonNullable<AppUpdateStateLike['kind']>): string {
+  return `${SIDEBAR_UPDATE}[data-state="${kind}"]`
+}
+
+async function expectSidebarUpdate(kind: NonNullable<AppUpdateStateLike['kind']>): Promise<void> {
+  await ctx.panel.waitForVisible(sidebarUpdateIn(kind), { timeout: 5_000 })
+}
+
+const QUESTION_ACTION = '[data-testid="base-alert-action"]'
+const QUESTION_CANCEL = '[data-testid="base-alert-cancel"]'
+
+async function expectUpdateQuestion(actionLabel: string): Promise<void> {
+  await ctx.panel.waitForVisible(QUESTION_ACTION, { timeout: 5_000 })
+  expect(await ctx.panel.textOf(QUESTION_ACTION)).toContain(actionLabel)
+}
+
+async function closeUpdateQuestionIfOpen(): Promise<void> {
+  if (!(await ctx.panel.isVisible(QUESTION_CANCEL))) return
+  expect(await ctx.panel.click(QUESTION_CANCEL)).toBe(true)
+  await ctx.panel.waitFor(async () => !(await ctx.panel.isVisible(QUESTION_ACTION)), {
+    timeout: 3_000,
+    message: 'the update question did not close'
+  })
+}
+
+test('desktop update is hidden in the sidebar and the title bar when state is idle @windows @macos @linux', async () => {
+  await ctx.panel.waitFor(async () => !(await ctx.panel.exists(SIDEBAR_UPDATE)), {
+    timeout: 5_000,
+    message: 'sidebar desktop update stayed visible while idle'
+  })
+  expect(await ctx.titleBar.exists('.title-update-pill')).toBe(false)
 })
 
-test('desktop-update pill renders for state=available @windows @macos @linux', async () => {
+test('desktop update shows in the sidebar for state=available @windows @macos @linux', async () => {
   await setAppUpdateState(ctx.app, { kind: 'available', version: '1.2.3', autoUpdate: false })
-  await expect
-    .poll(() => ctx.titleBar.exists('.title-update-pill.is-app-update'), {
-      timeout: 5_000,
-      intervals: [100, 200]
-    })
-    .toBe(true)
-  const label = await ctx.titleBar.textOf(
-    '.title-update-pill.is-app-update .title-update-pill-label'
-  )
-  expect(label?.toLowerCase()).toContain('update')
-  expect(await ctx.titleBar.exists('.title-update-pill.is-app-update.is-ready')).toBe(false)
-  expect(await ctx.titleBar.exists('.title-update-pill.is-app-update.is-downloading')).toBe(false)
+  await expectSidebarUpdate('available')
+  expect(await ctx.titleBar.exists('.title-update-pill')).toBe(false)
 })
 
-test('desktop-update pill renders for state=downloading @windows @macos @linux', async () => {
+test('desktop update shows in the sidebar for state=downloading @windows @macos @linux', async () => {
   await setAppUpdateState(ctx.app, { kind: 'downloading', version: '1.2.3', autoUpdate: true })
-  await expect
-    .poll(() => ctx.titleBar.exists('.title-update-pill.is-app-update.is-downloading'), {
-      timeout: 5_000,
-      intervals: [100, 200]
-    })
-    .toBe(true)
+  await expectSidebarUpdate('downloading')
 })
 
-test('desktop-update pill renders for state=ready @windows @macos @linux', async () => {
+test('desktop update shows in the sidebar for state=ready @windows @macos @linux', async () => {
   await setAppUpdateState(ctx.app, { kind: 'ready', version: '1.2.3', autoUpdate: true })
-  await expect
-    .poll(() => ctx.titleBar.exists('.title-update-pill.is-app-update.is-ready'), {
-      timeout: 5_000,
-      intervals: [100, 200]
-    })
-    .toBe(true)
+  await expectSidebarUpdate('ready')
 })
 
-test('clicking the ready desktop-update pill opens the embedded system-modal restart prompt @windows @macos @linux', async () => {
-  await setAppUpdateState(ctx.app, { kind: 'ready', version: '1.2.3', autoUpdate: true })
-  await expect
-    .poll(() => ctx.titleBar.exists('.title-update-pill.is-app-update.is-ready'), {
-      timeout: 5_000,
-      intervals: [100, 200]
-    })
-    .toBe(true)
+test('clicking the available sidebar desktop update asks to download in the panel @windows @macos @linux', async () => {
+  await setAppUpdateState(ctx.app, { kind: 'available', version: '1.2.3', autoUpdate: false })
+  await expectSidebarUpdate('available')
 
-  const ok = await ctx.titleBar.click('.title-update-pill.is-app-update')
-  expect(ok, 'desktop-update pill click dispatched').toBe(true)
-
-  await expect
-    .poll(() => isSystemModalVisible(ctx.app), {
-      timeout: 5_000,
-      intervals: [100, 200]
-    })
-    .toBe(true)
-})
-
-test('install-update chip stays hidden on the install-less chooser host even with an override @windows @macos @linux', async () => {
-  await setInstallUpdate(ctx.app, { available: true, version: '99.0.0' })
-  await new Promise((r) => setTimeout(r, 250))
-  await expect
-    .poll(() => ctx.titleBar.exists('.title-install-update-chip'), {
-      timeout: 3_000,
-      intervals: [100, 200]
-    })
-    .toBe(false)
-})
-
-async function isSystemModalVisible(app: ElectronApplication): Promise<boolean> {
-  try {
-    return await evalWithRetry(() =>
-      app.evaluate(({ BrowserWindow, WebContentsView }) => {
-        for (const win of BrowserWindow.getAllWindows()) {
-          for (const child of win.contentView.children) {
-            if (!(child instanceof WebContentsView)) continue
-            if (!child.webContents.getURL().includes('comfySystemModal.html')) continue
-            if (!child.getVisible()) return false
-            const b = child.getBounds()
-            return b.width > 0 && b.height > 0
-          }
-        }
-        return false
-      })
-    )
-  } catch {
-    return false
-  }
-}
-
-async function closeSystemModalIfOpen(app: ElectronApplication): Promise<void> {
-  const id = await findWebContentsId(app, 'comfySystemModal.html')
-  if (id === null) return
-  if (!(await isSystemModalVisible(app))) return
-  await evalWithRetry(() =>
-    app.evaluate(({ webContents }) => {
-      const wc = webContents
-        .getAllWebContents()
-        .find((w) => w.getURL().includes('comfySystemModal.html'))
-      if (!wc) return
-      return wc
-        .executeJavaScript(
-          `(() => {
-      const ev = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
-      document.dispatchEvent(ev)
-    })()`
-        )
-        .catch(() => {})
-    })
+  expect(await ctx.panel.click(SIDEBAR_UPDATE), 'sidebar desktop update click dispatched').toBe(
+    true
   )
-  await expect
-    .poll(() => isSystemModalVisible(app), { timeout: 3_000, intervals: [100, 200] })
-    .toBe(false)
-}
+
+  await expectUpdateQuestion('Download')
+  await closeUpdateQuestionIfOpen()
+})
+
+test('clicking the ready sidebar desktop update asks to restart in the panel @windows @macos @linux', async () => {
+  await setAppUpdateState(ctx.app, { kind: 'ready', version: '1.2.3', autoUpdate: true })
+  await expectSidebarUpdate('ready')
+
+  expect(await ctx.panel.click(SIDEBAR_UPDATE), 'sidebar desktop update click dispatched').toBe(
+    true
+  )
+
+  await expectUpdateQuestion('Restart & update')
+  await closeUpdateQuestionIfOpen()
+})

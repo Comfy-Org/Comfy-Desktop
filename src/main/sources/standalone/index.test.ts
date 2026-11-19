@@ -15,9 +15,8 @@ vi.mock('../../lib/comfyui-releases', () => ({
   getLatestStableTag: vi.fn()
 }))
 
+import en from '../../../../locales/en.json'
 import { standalone, buildPinnedVariant } from './index'
-import { resetTemplateCatalogCache } from './templateCatalog'
-import { CURATED_TEMPLATES, NO_TEMPLATE_VALUE, INDEX_URL } from './curatedTemplates'
 import { fetchJSON } from '../../lib/fetch'
 import { getLatestStableTag } from '../../lib/comfyui-releases'
 import { PLATFORM_PREFIX } from './envPaths'
@@ -132,166 +131,35 @@ describe('standalone.buildInstallation', () => {
     expect(result.originalTorchVersion).toBe('2.7.0')
   })
 
-  describe('starter template', () => {
-    const base = {
+  it('asks a new install only for its release, ComfyUI version and variant', () => {
+    expect(standalone.fields.map((field) => field.id)).toEqual([
+      'release',
+      'comfyVersion',
+      'variant'
+    ])
+  })
+
+  it('labels the version row Version, the same as the first-use summary', () => {
+    expect(standalone.fields.find((field) => field.id === 'comfyVersion')?.label).toBe(
+      'standalone.comfyVersion'
+    )
+    expect(en.standalone.comfyVersion).toBe('Version')
+    expect(en.standalone.comfyVersion).toBe(en.setup.version)
+  })
+
+  it('writes no starter workflow onto a new install, even from a stale template selection', () => {
+    const result = standalone.buildInstallation({
       release: makeRelease('stable', 'v0.18.2-env1'),
-      variant: makeVariant(VENDOR_ID)
-    }
-    const template = (value: string, sizeBytes?: number): FieldOption => ({
-      value,
-      label: value,
-      ...(sizeBytes !== undefined ? { data: { sizeBytes } } : {})
+      variant: makeVariant(VENDOR_ID),
+      bundledTemplate: { value: 'image_z_image_turbo', label: 'Z-Image', data: { sizeBytes: 5 } }
     })
-
-    it('records an API-node pick for auto-open even though it downloads nothing', () => {
-      const apiTemplate = CURATED_TEMPLATES.find((t) => t.apiNode)!
-      const result = standalone.buildInstallation({
-        ...base,
-        bundledTemplate: template(apiTemplate.id, 0)
-      })
-      expect(result.bundledTemplateId).toBe(apiTemplate.id)
-      expect(result.pendingTemplateOpen).toBe(apiTemplate.id)
-      expect(result.bundledTemplateSizeBytes).toBe(0)
-    })
-
-    it('"Skip & Install" (template = none) builds NO model download', () => {
-      const result = standalone.buildInstallation({
-        ...base,
-        bundledTemplate: template(NO_TEMPLATE_VALUE)
-      })
-      expect(result.bundledTemplateId).toBeUndefined()
-      expect(result.pendingTemplateOpen).toBeUndefined()
-      expect(result.downloadTemplateModels).toBeUndefined()
-      expect(result.bundledTemplateSizeBytes).toBeUndefined()
-    })
-
-    it('"Skip & Install" with no bundledTemplate selection at all builds no download', () => {
-      const result = standalone.buildInstallation(base)
-      expect(result.bundledTemplateId).toBeUndefined()
-      expect(result.downloadTemplateModels).toBeUndefined()
-    })
-
-    it('picking a real template records the id, one-shot open flag, and download opt-in', () => {
-      const realId = CURATED_TEMPLATES[0]!.id
-      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId) })
-      expect(result.bundledTemplateId).toBe(realId)
-      expect(result.pendingTemplateOpen).toBe(realId)
-      expect(result.downloadTemplateModels).toBe(true)
-    })
-
-    it('freezes the hydrated size on the record so the download estimate matches consent', () => {
-      const realId = CURATED_TEMPLATES[0]!.id
-      const result = standalone.buildInstallation({
-        ...base,
-        bundledTemplate: template(realId, 1234)
-      })
-      expect(result.bundledTemplateSizeBytes).toBe(1234)
-    })
-
-    it('defaults size to 0 when the selection carries no hydrated size', () => {
-      const realId = CURATED_TEMPLATES[0]!.id
-      const result = standalone.buildInstallation({ ...base, bundledTemplate: template(realId) })
-      expect(result.bundledTemplateSizeBytes).toBe(0)
-    })
-
-    it('persists a live-index substitute id not in the curated set (substitution survives the gate)', () => {
-      const substituteId = 'some_live_image_model'
-      expect(CURATED_TEMPLATES.some((t) => t.id === substituteId)).toBe(false)
-      const result = standalone.buildInstallation({
-        ...base,
-        bundledTemplate: template(substituteId, 5)
-      })
-      expect(result.bundledTemplateId).toBe(substituteId)
-      expect(result.pendingTemplateOpen).toBe(substituteId)
-      expect(result.downloadTemplateModels).toBe(true)
-    })
-
-    it('rejects a forged id that could escape a path/URL', () => {
-      const result = standalone.buildInstallation({
-        ...base,
-        bundledTemplate: template('../../etc/passwd')
-      })
-      expect(result.bundledTemplateId).toBeUndefined()
-      expect(result.downloadTemplateModels).toBeUndefined()
-    })
-  })
-})
-
-describe('standalone.getFieldOptions bundledTemplate', () => {
-  beforeEach(() => {
-    mockedFetchJSON.mockReset()
-    resetTemplateCatalogCache()
-  })
-
-  it('leads with the skip sentinel, then one option per curated template', async () => {
-    mockedFetchJSON.mockResolvedValue([])
-    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
-    expect(options[0]!.value).toBe(NO_TEMPLATE_VALUE)
-    expect(options.length).toBe(CURATED_TEMPLATES.length + 1)
-  })
-
-  it('marks the per-modality recommended picks (not the skip option)', async () => {
-    mockedFetchJSON.mockResolvedValue([])
-    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
-    const skip = options.find((o) => o.value === NO_TEMPLATE_VALUE)!
-    expect(skip.recommended).toBeFalsy()
-    const recommendedIds = options.filter((o) => o.recommended).map((o) => o.value)
-    expect(recommendedIds.sort()).toEqual(
-      CURATED_TEMPLATES.filter((t) => t.recommended)
-        .map((t) => t.id)
-        .sort()
-    )
-  })
-
-  it('falls back to snapshot metadata when the index fetch fails (offline)', async () => {
-    mockedFetchJSON.mockImplementation((url: string) =>
-      String(url).includes('index.json')
-        ? Promise.reject(new Error('offline'))
-        : Promise.resolve(null)
-    )
-    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
-    const first = CURATED_TEMPLATES[0]!
-    const card = options.find((o) => o.value === first.id)!
-    expect(card.label).toBe(first.snapshot.title)
-    expect(card.data!.sizeBytes).toBe(first.snapshot.sizeBytes)
-  })
-
-  it('hydrates title/size from the live index, overriding the snapshot', async () => {
-    const first = CURATED_TEMPLATES[0]!
-    mockedFetchJSON.mockImplementation((url: string) => {
-      if (url === INDEX_URL) {
-        return Promise.resolve([
-          {
-            title: 'Image',
-            templates: [
-              {
-                name: first.id,
-                title: 'Live Title',
-                description: 'Live desc',
-                size: 999,
-                mediaSubtype: 'webp'
-              }
-            ]
-          }
-        ])
-      }
-      return Promise.resolve(undefined)
-    })
-    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
-    const card = options.find((o) => o.value === first.id)!
-    expect(card.label).toBe('Live Title')
-    expect(card.description).toBe('Live desc')
-    expect(card.data!.sizeBytes).toBe(999)
-    expect(card.data!.category).toBe('Image')
-  })
-
-  it('carries the API-node flag to the card, and never on the skip option', async () => {
-    mockedFetchJSON.mockResolvedValue([])
-    const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
-    expect(options.find((o) => o.value === NO_TEMPLATE_VALUE)!.data?.apiNode).toBeUndefined()
-    for (const curated of CURATED_TEMPLATES) {
-      const card = options.find((o) => o.value === curated.id)!
-      expect(card.data!.apiNode, curated.id).toBe(curated.apiNode === true)
+    for (const field of [
+      'bundledTemplateId',
+      'bundledTemplateSizeBytes',
+      'pendingTemplateOpen',
+      'downloadTemplateModels'
+    ]) {
+      expect(result, field).not.toHaveProperty(field)
     }
   })
 })

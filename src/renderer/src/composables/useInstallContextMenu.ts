@@ -1,15 +1,32 @@
 import { ref, computed } from 'vue'
+import {
+  ArrowRightLeft,
+  ArrowUpCircle,
+  CircleStop,
+  CloudUpload,
+  Copy,
+  Download,
+  FolderOpen,
+  History,
+  Power,
+  PowerOff,
+  Settings2,
+  Trash2
+} from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '../stores/sessionStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useModal } from './useModal'
+import { useDialogs } from './useDialogs'
 import { useStopAction } from './useStopAction'
+import type { AutoStartBuild } from './useAutoStartBuild'
 import { revealInFolderLabel } from './usePlatform'
 import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/progressOpKind'
 import { shareLatestSnapshot } from '../lib/snapshots'
 import { isBuildInstall } from '../devplatform/buildState'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
+import { progressTitle } from '../lib/progressTitle'
 
 export type InstallMenuActionId =
   | 'manage'
@@ -21,11 +38,18 @@ export type InstallMenuActionId =
   | 'share'
   | 'promote-to-workspace'
   | 'copy-install'
+  | 'auto-start'
   | 'delete'
 
 export interface ManageOpenOptions {
   initialTab?: string
   autoAction?: string | null
+}
+
+const promotingInstallationIds = ref<ReadonlySet<string>>(new Set())
+
+export function isPromotingToWorkspace(inst: Installation): boolean {
+  return promotingInstallationIds.value.has(inst.id)
 }
 
 export function useInstallContextMenu(
@@ -34,10 +58,13 @@ export function useInstallContextMenu(
     onShowProgress?: (showOpts: ShowProgressOpts) => void
     onUpdate?: (inst: Installation) => Promise<void>
     canPromoteToWorkspace?: (inst: Installation) => boolean
+    autoStart?: AutoStartBuild
+    onStartAgain?: (inst: Installation) => void | Promise<void>
   } = {}
 ) {
   const { t } = useI18n()
   const modal = useModal()
+  const dialogs = useDialogs()
   const { confirmAndStop } = useStopAction({
     confirm: (o) => modal.confirm({ ...o, confirmStyle: 'danger' }),
     alert: (o) => modal.alert(o)
@@ -51,17 +78,11 @@ export function useInstallContextMenu(
     y: 0,
     inst: null as Installation | null
   })
-  const promotingInstallationIds = ref<ReadonlySet<string>>(new Set())
-
   function setPromotingToWorkspace(installationId: string, promoting: boolean): void {
     const next = new Set(promotingInstallationIds.value)
     if (promoting) next.add(installationId)
     else next.delete(installationId)
     promotingInstallationIds.value = next
-  }
-
-  function isPromotingToWorkspace(inst: Installation): boolean {
-    return promotingInstallationIds.value.has(inst.id)
   }
 
   function isLocalLikeInstall(inst: Installation): boolean {
@@ -92,23 +113,37 @@ export function useInstallContextMenu(
     )
   }
 
+  function stoppedActionGatedReason(inst: Installation): string | undefined {
+    if (sessionStore.isStopping(inst.id)) return t('chooser.gatedReasonStopping')
+    if (sessionStore.isRunning(inst.id)) return t('chooser.stoppedActionGatedReason')
+    const op = progressStore.operations.get(inst.id)
+    if (!op || op.finished) return undefined
+    if (op.opKind === 'install' || op.chainSpan === 'install')
+      return t('chooser.gatedReasonInstalling')
+    if (op.opKind === 'launch') return t('chooser.gatedReasonStarting')
+    if (op.opKind === 'update') return t('chooser.gatedReasonUpdating')
+    return t('chooser.gatedReasonBusy')
+  }
+
   function getMenuItems(inst: Installation): ContextMenuItem[] {
     const items: ContextMenuItem[] = []
     const stoppedActionGated = isStoppedActionGated(inst)
     const supportsSnapshotActions =
       isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst) && !isBuildInstall(inst)
-    const gatedTitle = stoppedActionGated ? t('chooser.stoppedActionGatedReason') : undefined
+    const gatedTitle = stoppedActionGated ? stoppedActionGatedReason(inst) : undefined
 
     if (opts.onManage) {
       items.push({
         id: 'manage',
-        label: t('chooser.manageInstall')
+        label: t('chooser.manageInstall'),
+        icon: Settings2
       })
 
       if (isInstalled(inst) && hasUpdateTag(inst)) {
         items.push({
           id: 'update',
           label: t('chooser.menuUpdate'),
+          icon: ArrowUpCircle,
           disabled: stoppedActionGated,
           title: gatedTitle
         })
@@ -117,6 +152,7 @@ export function useInstallContextMenu(
         items.push({
           id: 'migrate',
           label: t('chooser.menuMigrate'),
+          icon: ArrowRightLeft,
           disabled: stoppedActionGated,
           title: gatedTitle
         })
@@ -127,6 +163,7 @@ export function useInstallContextMenu(
       items.push({
         id: 'copy-install',
         label: t('actions.copyInstallation'),
+        icon: Copy,
         disabled: stoppedActionGated,
         title: gatedTitle
       })
@@ -135,7 +172,8 @@ export function useInstallContextMenu(
     if (hasInstallPath(inst) && isLocalLikeInstall(inst)) {
       items.push({
         id: 'reveal-in-folder',
-        label: revealInFolderLabel(window.api?.platform)
+        label: revealInFolderLabel(window.api?.platform),
+        icon: FolderOpen
       })
     }
 
@@ -144,7 +182,8 @@ export function useInstallContextMenu(
     if (supportsSnapshotActions) {
       snapshotCluster.push({
         id: 'share',
-        label: t('chooser.menuExportSnapshot')
+        label: t('chooser.menuExportSnapshot'),
+        icon: Download
       })
     }
 
@@ -152,6 +191,7 @@ export function useInstallContextMenu(
       snapshotCluster.push({
         id: 'restore-snapshot',
         label: t('chooser.menuRestoreSnapshot'),
+        icon: History,
         disabled: stoppedActionGated,
         title: gatedTitle
       })
@@ -159,15 +199,18 @@ export function useInstallContextMenu(
 
     if (opts.canPromoteToWorkspace?.(inst)) {
       const promoting = isPromotingToWorkspace(inst)
+      const taskRunning = !promoting && progressStore.getProgressInfo(inst.id) !== null
       snapshotCluster.push({
         id: 'promote-to-workspace',
+        icon: CloudUpload,
         label: promoting
           ? t('devPlatform.workspace.promoting')
           : t('devPlatform.workspace.promoteToWorkspace'),
         hint: t('devPlatform.workspace.promoteToWorkspaceHint'),
         hintUrl: 'https://platform.comfy.org/profile/deploy',
         hintLinkLabel: t('devPlatform.workspace.readMore'),
-        disabled: promoting
+        disabled: promoting || taskRunning,
+        title: taskRunning ? t('chooser.busyActionGatedReason') : undefined
       })
     }
 
@@ -179,12 +222,13 @@ export function useInstallContextMenu(
 
     const cluster: ContextMenuItem[] = []
     if (isLocalLikeInstall(inst) && sessionStore.isRunning(inst.id)) {
-      cluster.push({ id: 'stop', label: t('actions.stop'), style: 'danger' })
+      cluster.push({ id: 'stop', label: t('actions.stop'), icon: CircleStop, style: 'danger' })
     }
     if (isLocalLikeInstall(inst) && (isInstalled(inst) || isBuildInstall(inst))) {
       cluster.push({
         id: 'delete',
         label: t('chooser.menuDelete'),
+        icon: Trash2,
         disabled: stoppedActionGated,
         title: gatedTitle,
         style: 'danger'
@@ -194,6 +238,17 @@ export function useInstallContextMenu(
     if (clusterHead) {
       clusterHead.separator = items.length > 0
       items.push(...cluster)
+    }
+
+    if (opts.autoStart && isLocalLikeInstall(inst) && isInstalled(inst)) {
+      const startsOnOpen = opts.autoStart.startsOnOpen(inst.id)
+      const [head] = items
+      if (head) head.separator = true
+      items.unshift({
+        id: 'auto-start',
+        label: startsOnOpen ? t('home.turnOffAutoStart') : t('home.turnOnAutoStart'),
+        icon: startsOnOpen ? PowerOff : Power
+      })
     }
 
     return items
@@ -239,7 +294,11 @@ export function useInstallContextMenu(
     }
   }
 
-  async function triggerAction(id: string, inst: Installation): Promise<void> {
+  async function triggerAction(
+    id: string,
+    inst: Installation,
+    actionOpts: { confirmed?: boolean } = {}
+  ): Promise<void> {
     if (id === 'manage') {
       opts.onManage?.(inst)
     } else if (id === 'update') {
@@ -289,28 +348,32 @@ export function useInstallContextMenu(
         setPromotingToWorkspace(inst.id, false)
       }
       if (failureMessage) await modal.alert({ title, message: failureMessage })
+    } else if (id === 'auto-start') {
+      await opts.autoStart?.setStartsOnOpen(inst.id, !opts.autoStart.startsOnOpen(inst.id))
     } else if (id === 'copy-install') {
       opts.onManage?.(inst, { autoAction: 'copy' })
     } else if (id === 'delete') {
       if (opts.onShowProgress) {
         const deleteLabel = t('actions.delete')
-        const confirmed = await modal.confirm({
-          title: t('actions.deleteConfirmTitle'),
-          message: `${inst.installPath ? inst.installPath + '\n\n' : ''}${t(
-            'actions.deleteConfirmMessage'
-          )}\n\n${t('actions.deleteConfirmDetail')}`,
-          confirmLabel: deleteLabel,
-          confirmStyle: 'danger'
-        })
-        if (!confirmed) return
+        const confirmed =
+          actionOpts.confirmed === true ||
+          (await dialogs.confirm({
+            title: t('actions.deleteConfirmTitle'),
+            message: `${t('actions.deleteConfirmMessage')} ${t('actions.deleteConfirmDetail')}`,
+            hint: inst.installPath || undefined,
+            confirmLabel: deleteLabel,
+            tone: 'danger'
+          })) === 'primary'
+        if (!confirmed || isStoppedActionGated(inst)) return
         opts.onShowProgress({
           installationId: inst.id,
-          title: `${deleteLabel} - ${inst.name}`,
+          title: progressTitle(deleteLabel, inst.name),
           apiCall: () => window.api.runAction(inst.id, 'delete'),
           cancellable: true,
           returnTo: 'list',
           opKind: progressOpKindForActionId('delete'),
-          destroysInstance: destroysInstanceForActionId('delete')
+          destroysInstance: destroysInstanceForActionId('delete'),
+          actionId: 'delete'
         })
         return
       }
@@ -351,7 +414,26 @@ export function useInstallContextMenu(
       }
     }
     if (err.lastStderr) message = `${message}\n\n${err.lastStderr}`
-    void modal.alert({ title: t('chooser.errorTitle'), message })
+    if (!err.startFailed) {
+      void modal.alert({ title: t('chooser.errorTitle'), message })
+      return
+    }
+    const title = t('installProgress.launchFailedTitle')
+    const startAgain = opts.onStartAgain
+    if (!startAgain) {
+      void modal.alert({ title, message })
+      return
+    }
+    void modal
+      .confirm({
+        title,
+        message,
+        confirmLabel: t('installProgress.startAgain'),
+        confirmStyle: 'primary'
+      })
+      .then((again) => {
+        if (again) void startAgain(inst)
+      })
   }
 
   function viewDanger(inst: Installation): void {
@@ -363,6 +445,7 @@ export function useInstallContextMenu(
   return {
     ctxMenu,
     ctxMenuItems,
+    getMenuItems,
     openCardMenu,
     openKebabMenu,
     handleCtxMenuSelect,
@@ -371,6 +454,7 @@ export function useInstallContextMenu(
     viewError,
     viewDanger,
     isStoppedActionGated,
+    stoppedActionGatedReason,
     isPromotingToWorkspace
   }
 }

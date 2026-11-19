@@ -14,6 +14,9 @@ const extraFileExtensions = ['.vue']
 
 const publishedApiSpecs = ['./src/types/comfyDesktopBridge.ts']
 
+const useOpenExternalHelper =
+  'Use openExternalUrl or tryOpenExternalUrl from src/main/lib/openExternal.ts. They hand the OS only http, https and mailto links.'
+
 const desktop = {
   rules: { 'no-comments': noComments, 'no-new-vue-style-blocks': noNewVueStyleBlocks }
 }
@@ -100,6 +103,52 @@ export default defineConfig([
   {
     files: publishedApiSpecs,
     rules: { 'desktop/no-comments': ['error', { allowDocComments: true }] }
+  },
+  {
+    files: ['./src/main/**/*.ts'],
+    ignores: ['./src/main/lib/webContentsViewLifetime.ts', './src/main/**/*.test.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "NewExpression[callee.name='WebContentsView']",
+          message:
+            'Create the view with createWebContentsView. Electron crashes the app at quit when a WebContentsView is garbage-collected while its webContents is alive.'
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='loadURL']:matches([callee.object.name='comfyContents'], [callee.object.property.name='webContents'][callee.object.object.property.name='comfyView'])",
+          message:
+            'Navigate a build window through navigatorFor(entry) in src/main/host/buildNavigator.ts. It decides which request wins when a refresh, retry, restart or workspace switch overlap.'
+        },
+        {
+          selector:
+            "CallExpression:matches([callee.name='get'], [callee.property.name='get'])[arguments.0.value='telemetryEnabled']",
+          message:
+            'Read telemetry consent with settings.telemetryConsent(). settings.get can serve a stale settings.json.bak when settings.json is unreadable.'
+        }
+      ]
+    }
+  },
+  {
+    files: ['./src/**/*.{ts,vue}'],
+    ignores: ['./src/main/lib/openExternal.ts', './src/**/*.test.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        { object: 'shell', property: 'openExternal', message: useOpenExternalHelper }
+      ]
+    }
+  },
+  {
+    files: ['./src/{main,preload,shared}/**/*.ts'],
+    ignores: ['./src/main/lib/openExternal.ts', './src/**/*.test.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        { property: 'openExternal', message: useOpenExternalHelper }
+      ]
+    }
   },
   {
     files: ['./e2e/support/**/*.cjs'],

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
 import { computed } from 'vue'
-import { ExternalLink, Github, Star } from 'lucide-vue-next'
+import { ExternalLink, Star } from '@lucide/vue'
+import GithubIcon from '../../components/icons/GithubIcon.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -38,7 +39,7 @@ const starCountLabel = computed(() => {
     @click="emit('open', url)"
   >
     <span class="github-link-main inline-flex min-w-0 items-center gap-2">
-      <Github :size="16" aria-hidden="true" />
+      <GithubIcon :size="16" />
       <span class="github-link-label text-[13px] leading-[19px] font-medium">{{ label }}</span>
       <ExternalLink
         :size="12"

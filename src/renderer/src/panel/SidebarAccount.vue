@@ -1,36 +1,24 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronsUpDown, LogIn, LogOut } from 'lucide-vue-next'
+import { LogIn } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
-import MenuItem from '@comfyorg/design-system/menu/MenuItem'
-import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
-import DevPlatformWorkspaceSelector from '../views/devplatform/DevPlatformWorkspaceSelector.vue'
+import SidebarWorkspaceSwitcher from './SidebarWorkspaceSwitcher.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import hillsSunset from '../assets/sidebar/hills-sunset.jpg'
-import portraitGarden from '../assets/sidebar/portrait-garden.jpg'
-import portraitSun from '../assets/sidebar/portrait-sun.jpg'
 
 const { collapsed } = defineProps<{
   collapsed: boolean
 }>()
-
-const SHOWCASE_IMAGES = [portraitSun, hillsSunset, portraitGarden]
 
 const { t } = useI18n()
 const store = useAuthStore()
 const dashboardScope = useDashboardScopeStore()
 void dashboardScope.initialize()
 
-const selectedWorkspace = computed({
-  get: () => dashboardScope.selectedWorkspaceId,
-  set: dashboardScope.selectWorkspace
-})
-
 const signingIn = ref(false)
-const email = computed(() => store.status.email ?? '')
 
 async function onSignIn(): Promise<void> {
   if (signingIn.value) return
@@ -43,112 +31,79 @@ async function onSignIn(): Promise<void> {
     signingIn.value = false
   }
 }
-
-async function onSignOut(): Promise<void> {
-  try {
-    await store.signOut()
-  } catch {
-    return
-  }
-}
 </script>
 
 <template>
   <div class="sidebar-account">
-    <DevPlatformWorkspaceSelector v-if="store.isSignedIn" v-model="selectedWorkspace" side="top">
-      <template #trigger="{ workspaceName }">
-        <Button
-          type="button"
-          variant="textonly"
-          size="unset"
-          class="w-full rounded-lg text-[13px]/5 font-medium hover:bg-secondary"
-          :class="collapsed ? 'h-12 justify-center p-1' : 'h-13 justify-start gap-2.5 p-1.5'"
-          data-testid="devplatform-workspace-selector"
-          :aria-label="t('devPlatform.account.signedInAs', { email })"
-          :title="collapsed ? workspaceName : undefined"
-        >
-          <span
-            class="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-accent text-xs font-semibold"
-            aria-hidden="true"
-            >{{ workspaceName.charAt(0).toUpperCase() }}</span
-          >
-          <template v-if="!collapsed">
-            <span class="flex min-w-0 flex-1 flex-col text-left leading-tight">
-              <span class="workspace-selector__name truncate">{{ workspaceName }}</span>
-              <span class="truncate font-normal text-subtle-foreground">{{ email }}</span>
-            </span>
-            <ChevronsUpDown class="text-subtle-foreground" :size="14" aria-hidden="true" />
-          </template>
-        </Button>
-      </template>
-      <template #footer>
-        <MenuSeparator />
-        <MenuItem
-          as="button"
-          type="button"
-          class="w-full"
-          data-testid="devplatform-account-signout"
-          @select="onSignOut"
-        >
-          <LogOut :size="16" aria-hidden="true" />
-          <span>{{ t('devPlatform.account.signOut') }}</span>
-        </MenuItem>
-      </template>
-    </DevPlatformWorkspaceSelector>
+    <SidebarWorkspaceSwitcher v-if="store.isSignedIn" :collapsed="collapsed" />
 
-    <Button
-      v-else-if="collapsed"
-      type="button"
-      variant="muted-textonly"
-      size="unset"
-      class="mx-auto size-10 rounded-xl p-0 hover:bg-secondary hover:text-foreground"
-      data-testid="devplatform-account-signin"
-      :aria-label="t('devPlatform.signIn.cta')"
-      :title="t('devPlatform.signIn.cta')"
-      :disabled="signingIn"
-      @click="onSignIn"
-    >
-      <LogIn :size="16" aria-hidden="true" />
-    </Button>
-
-    <div
-      v-else
-      class="group/signin rounded-xl bg-[oklch(1_0_0/0.04)] p-1 text-[13px]/[1.35] text-pretty [box-shadow:inset_0_0_0_1px_oklch(1_0_0/0.06)]"
-    >
-      <div class="relative grid h-16 grid-cols-3 gap-0.5 overflow-hidden rounded-lg">
-        <span
-          v-for="image in SHOWCASE_IMAGES"
-          :key="image"
-          class="relative isolate overflow-hidden bg-[oklch(0.87_0.075_350)]"
-        >
-          <img
-            :src="image"
-            alt=""
-            class="size-full object-cover mix-blend-multiply transition-transform duration-600 ease-out group-hover/signin:scale-108 motion-reduce:transition-none"
-          />
-          <span class="absolute inset-0 bg-[oklch(0.26_0.1_282)] mix-blend-lighten" />
-        </span>
-        <span
-          class="absolute top-1/2 left-1/2 flex size-[30px] -translate-1/2 items-center justify-center rounded-[9px] bg-white text-[#111] shadow-lg"
-          aria-hidden="true"
-        >
-          <ComfyCLogo :size="14" />
-        </span>
-      </div>
-      <div class="px-2 pt-2.5 pb-3">
-        <p class="font-medium text-foreground">{{ t('sidebar.signInTitle') }}</p>
-        <p class="mt-0.5 text-subtle-foreground">{{ t('sidebar.signInBody') }}</p>
-      </div>
-      <Button
-        type="button"
-        variant="inverted"
-        size="md"
-        class="w-full"
-        data-testid="devplatform-account-signin"
-        :disabled="signingIn"
-        @click="onSignIn"
-        >{{ t('devPlatform.signIn.cta') }}</Button
+    <template v-else>
+      <div
+        class="grid transition-[grid-template-rows,opacity] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-opacity"
+        :class="
+          collapsed ? 'grid-rows-[0fr] opacity-0 duration-300' : 'grid-rows-[1fr] duration-260'
+        "
+        :inert="collapsed"
+        data-testid="sidebar-signin-card"
       >
-    </div>
+        <div class="min-h-0 overflow-hidden">
+          <div
+            class="group/signin w-[220px] rounded-xl bg-[oklch(1_0_0/0.04)] p-1 text-[13px]/[1.35] text-pretty [box-shadow:inset_0_0_0_1px_oklch(1_0_0/0.06)]"
+          >
+            <div class="relative h-18 overflow-hidden rounded-lg">
+              <img
+                :src="hillsSunset"
+                alt=""
+                class="size-full object-cover transition-transform duration-600 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/signin:-translate-y-0.5 group-hover/signin:scale-108 motion-reduce:transition-none"
+              />
+              <span
+                class="absolute top-1/2 left-1/2 flex size-[30px] -translate-1/2 items-center justify-center rounded-[9px] bg-white text-[#111] shadow-lg transition-transform duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/signin:-translate-y-[calc(50%+2px)] group-hover/signin:scale-105 motion-reduce:transition-none"
+                aria-hidden="true"
+              >
+                <ComfyCLogo :size="14" />
+              </span>
+            </div>
+            <div class="px-2 pt-2.5 pb-3">
+              <p class="font-medium text-foreground">{{ t('sidebar.signInTitle') }}</p>
+              <p class="mt-0.5 text-subtle-foreground">{{ t('sidebar.signInBody') }}</p>
+            </div>
+            <Button
+              type="button"
+              variant="inverted"
+              size="md"
+              class="w-full"
+              :data-testid="collapsed ? undefined : 'devplatform-account-signin'"
+              :disabled="signingIn"
+              @click="onSignIn"
+              >{{ t('devPlatform.signIn.cta') }}</Button
+            >
+          </div>
+        </div>
+      </div>
+      <div
+        class="grid transition-[grid-template-rows,opacity] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-opacity"
+        :class="
+          collapsed ? 'grid-rows-[1fr] duration-300' : 'grid-rows-[0fr] opacity-0 duration-260'
+        "
+        :inert="!collapsed"
+        data-testid="sidebar-signin-icon"
+      >
+        <div class="min-h-0 overflow-hidden">
+          <Button
+            type="button"
+            variant="muted-textonly"
+            size="unset"
+            class="size-10 rounded-xl p-0 hover:bg-secondary hover:text-foreground"
+            :data-testid="collapsed ? 'devplatform-account-signin' : undefined"
+            :aria-label="t('devPlatform.signIn.cta')"
+            :title="t('devPlatform.signIn.cta')"
+            :disabled="signingIn"
+            @click="onSignIn"
+          >
+            <LogIn :size="16" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+    </template>
   </div>
 </template>

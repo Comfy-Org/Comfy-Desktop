@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
@@ -7,6 +7,7 @@ import { nextTick } from 'vue'
 import { useSessionStore } from '../../stores/sessionStore'
 import StatusFactPanel from './StatusFactPanel.vue'
 import type { DetailSection, Installation } from '../../types/ipc'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 beforeEach(() => {
   setActivePinia(createTestingPinia({ stubActions: false }))
@@ -55,7 +56,8 @@ function mountPanel(props: {
   onRename?: (newName: string) => Promise<boolean>
 }) {
   return mount(StatusFactPanel, {
-    props: { sections: [], diskUsage: null, ...props }
+    props: { sections: [], diskUsage: null, ...props },
+    attachTo: document.body
   })
 }
 
@@ -73,9 +75,10 @@ describe('StatusFactPanel — hero name', () => {
     const wrapper = mountPanel({ installation: makeInstall('Old'), onRename })
     await nextTick()
 
-    const el = wrapper.find('.status-fact-hero-name')
-    ;(el.element as HTMLElement).textContent = 'New Name'
-    await el.trigger('blur')
+    const el = wrapper.find<HTMLElement>('.status-fact-hero-name')
+    await focusAndType(el.element, 'New Name')
+    el.element.blur()
+    await flushPromises()
 
     expect(onRename).toHaveBeenCalledWith('New Name')
   })
@@ -96,18 +99,17 @@ describe('StatusFactPanel — hero name', () => {
     const wrapper = mountPanel({ installation: makeInstall('Original'), onRename })
     await nextTick()
 
-    const el = wrapper.find('.status-fact-hero-name')
-    ;(el.element as HTMLElement).textContent = 'Duplicate'
-    await el.trigger('blur')
-    await nextTick()
+    const el = wrapper.find<HTMLElement>('.status-fact-hero-name')
+    await focusAndType(el.element, 'Duplicate')
+    el.element.blur()
+    await flushPromises()
 
     expect(onRename).toHaveBeenCalledWith('Duplicate')
     expect((el.element as HTMLElement).textContent).toBe('Original')
   })
 
-  it('renders the Cloud name as static, non-editable text (issue #922)', async () => {
-    const onRename = vi.fn().mockResolvedValue(true)
-    const wrapper = mountPanel({ installation: makeCloudInstall('Comfy Cloud'), onRename })
+  it('renders the Cloud name as static, non-editable text when renaming is not offered (issue #922)', async () => {
+    const wrapper = mountPanel({ installation: makeCloudInstall('Comfy Cloud') })
     await nextTick()
 
     const name = wrapper.find('.status-fact-hero-name')
@@ -116,9 +118,16 @@ describe('StatusFactPanel — hero name', () => {
     expect(name.attributes('contenteditable')).toBeUndefined()
     expect(wrapper.find('.status-fact-hero-name-static').exists()).toBe(true)
     expect(wrapper.find('.status-fact-hero-edit-hint').exists()).toBe(false)
+  })
 
-    await name.trigger('blur')
-    expect(onRename).not.toHaveBeenCalled()
+  it('leaves the name to the page title when the hero is hidden', async () => {
+    const wrapper = mount(StatusFactPanel, {
+      props: { installation: makeInstall('Paged'), sections: [], diskUsage: null, hideHero: true }
+    })
+    await nextTick()
+
+    expect(wrapper.find('.status-fact-hero').exists()).toBe(false)
+    expect(wrapper.find('.status-fact-hero-badge').exists()).toBe(false)
   })
 
   it('repaints the hero when the installation name prop changes', async () => {
@@ -143,6 +152,9 @@ describe('StatusFactPanel — running details', () => {
 
     const titles = wrapper.findAll('.status-fact-group-title').map((n) => n.text())
     expect(titles).toContain('Running details')
+    for (const title of wrapper.findAll('.status-fact-group-title')) {
+      expect(title.classes()).toEqual(expect.arrayContaining(SECTION_TITLE_CLASS.split(' ')))
+    }
     expect(wrapper.text()).toContain('8188')
   })
 
@@ -206,3 +218,80 @@ describe('StatusFactPanel — location', () => {
     delete (window as unknown as { api?: unknown }).api
   })
 })
+
+describe('StatusFactPanel — remote URL', () => {
+  function remoteInstall(): Installation {
+    return {
+      id: 'remote-1',
+      name: 'Studio box',
+      sourceLabel: 'Remote',
+      sourceCategory: 'remote',
+      status: 'installed',
+      remoteUrl: 'http://studio.local:8188'
+    } as Installation
+  }
+
+  function urlSection(url: string): DetailSection {
+    return {
+      tab: 'status',
+      fields: [{ id: 'remoteUrl', label: 'URL', value: url }]
+    } as unknown as DetailSection
+  }
+
+  function mountRemote(onUpdateUrl: (url: string) => Promise<boolean>) {
+    const wrapper = mount(StatusFactPanel, {
+      props: {
+        installation: remoteInstall(),
+        sections: [urlSection('http://studio.local:8188')],
+        diskUsage: null,
+        onUpdateUrl
+      },
+      attachTo: document.body
+    })
+    return wrapper.get<HTMLElement>('.status-fact-url-editable').element
+  }
+
+  it('saves a new connection URL on Enter', async () => {
+    const onUpdateUrl = vi.fn().mockResolvedValue(true)
+    const field = mountRemote(onUpdateUrl)
+    await nextTick()
+
+    await focusAndType(field, 'http://studio.local:9000')
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    expect(onUpdateUrl).toHaveBeenCalledWith('http://studio.local:9000')
+  })
+
+  it('puts the saved URL back instead of saving one that cannot be parsed', async () => {
+    const onUpdateUrl = vi.fn().mockResolvedValue(true)
+    const field = mountRemote(onUpdateUrl)
+    await nextTick()
+
+    await focusAndType(field, 'http://[bad')
+    field.blur()
+    await flushPromises()
+
+    expect(onUpdateUrl).not.toHaveBeenCalled()
+    expect(field.textContent).toBe('http://studio.local:8188')
+  })
+
+  it('puts the saved URL back when the update is refused', async () => {
+    const onUpdateUrl = vi.fn().mockResolvedValue(false)
+    const field = mountRemote(onUpdateUrl)
+    await nextTick()
+
+    await focusAndType(field, 'http://other.local:8188')
+    field.blur()
+    await flushPromises()
+
+    expect(onUpdateUrl).toHaveBeenCalledWith('http://other.local:8188')
+    expect(field.textContent).toBe('http://studio.local:8188')
+  })
+})
+
+async function focusAndType(field: HTMLElement, text: string): Promise<void> {
+  field.focus()
+  field.textContent = text
+  await nextTick()
+}

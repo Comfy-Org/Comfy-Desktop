@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import BaseAlert from './BaseAlert.vue'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 const wrappers: VueWrapper[] = []
 
@@ -175,9 +176,12 @@ describe('BaseAlert', async () => {
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
-  it('does NOT render the header close icon by default', async () => {
-    const wrapper = await mountAlert()
-    expect(wrapper.find('[data-testid="base-alert-close-icon"]').exists()).toBe(false)
+  it('always shows the round close outside the panel, also without showCloseIcon', async () => {
+    const wrapper = await mountAlert({ showCancel: true })
+    const close = wrapper.find('[data-testid="base-alert-close-icon"]')
+    expect(close.exists()).toBe(true)
+    await close.trigger('click')
+    expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
   it('emits `cancel` on ESC when showCloseIcon is true (close icon is a cancel affordance)', async () => {
@@ -195,6 +199,9 @@ describe('BaseAlert', async () => {
       ]
     })
     expect(wrapper.find('.base-alert-detail-label').text()).toBe('Changes when restoring')
+    expect(wrapper.find('.base-alert-detail-label').classes()).toEqual(
+      expect.arrayContaining(SECTION_TITLE_CLASS.split(' '))
+    )
     const items = wrapper.findAll('.base-alert-detail-item')
     expect(items).toHaveLength(2)
     expect(items.at(0)?.text()).toBe('+1 custom node')

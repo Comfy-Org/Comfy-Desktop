@@ -26,6 +26,17 @@ export function progressOpKindForActionId(actionId: string): ProgressOpKind {
   }
 }
 
+export function isUninstallOpKind(opKind: ProgressOpKind | undefined): boolean {
+  return opKind === 'destructive'
+}
+
 export function destroysInstanceForActionId(actionId: string): boolean {
   return actionId === 'delete'
+}
+
+export function updatesBuildInPlace(
+  opKind: ProgressOpKind | undefined,
+  actionId: string | undefined
+): boolean {
+  return opKind === 'update' && !actionId?.startsWith('copy-')
 }

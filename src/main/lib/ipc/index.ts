@@ -35,7 +35,18 @@ import { registerLogsHandlers } from './registerLogsHandlers'
 import { registerCrashHandlers } from './registerCrashHandlers'
 import { registerTelemetryHandlers } from './registerTelemetryHandlers'
 import { registerDevPlatformHandlers } from './registerDevPlatformHandlers'
+import {
+  refreshCreditBalance,
+  registerCreditBalanceHandlers
+} from './registerCreditBalanceHandlers'
+import { registerAssetsHandlers } from '../assets'
 import { registerEmbeddedSessionHandlers } from './registerEmbeddedSessionHandlers'
+import { registerCatalogHandlers } from './registerCatalogHandlers'
+import { registerAppsHandlers } from './registerAppsHandlers'
+import { registerAppsLocalHandlers } from './registerAppsLocalHandlers'
+import { registerAppsAssetsHandlers } from './registerAppsAssetsHandlers'
+import { registerAppsOutputsHandlers } from './registerAppsOutputsHandlers'
+import { registerAppsTelemetryHandlers } from './registerAppsTelemetryHandlers'
 import { reconcileAdoptedSettings } from '../desktopAdopt'
 import {
   finalizeComfyBuilderRecovery,
@@ -265,6 +276,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   setInterval(() => refreshInstallDirStates(), UPDATE_CHECK_INTERVAL)
   app.on('browser-window-focus', () => {
     void refreshInstallDirStates()
+    refreshCreditBalance()
   })
 
   registerAppHandlers()
@@ -278,6 +290,14 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerCrashHandlers()
   registerTelemetryHandlers()
   registerDevPlatformHandlers()
+  registerCreditBalanceHandlers()
+  registerAssetsHandlers()
   registerEmbeddedSessionHandlers()
+  registerCatalogHandlers()
+  registerAppsHandlers()
+  registerAppsLocalHandlers()
+  registerAppsOutputsHandlers()
+  registerAppsAssetsHandlers()
+  registerAppsTelemetryHandlers()
   return startupRecovery.then(() => undefined)
 }

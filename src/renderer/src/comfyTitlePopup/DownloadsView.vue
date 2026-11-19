@@ -1,8 +1,17 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
-import { computed } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CircleAlert, CircleCheck, LoaderCircle, PauseCircle, RotateCcw, X } from 'lucide-vue-next'
+import {
+  Ban,
+  CircleAlert,
+  CircleCheck,
+  FolderOpen,
+  LoaderCircle,
+  PauseCircle,
+  RotateCcw,
+  X
+} from '@lucide/vue'
 import { fileLabel, statusKindClass, statusLine } from '../lib/downloadFormatters'
 import { revealInFolderLabel } from '../composables/usePlatform'
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
@@ -100,28 +109,41 @@ function closeLabel(d: DownloadEntry): string {
 }
 
 function subtitle(d: DownloadEntry): string {
-  if (d.status === 'downloading' || d.status === 'pending') {
-    return statusLine(d)
-  }
   if (d.status === 'paused') {
     return `${t('downloadsPopup.pause')} · ${statusLine(d)}`
   }
-  if (d.status === 'completed' && d.savePath) {
-    return revealLabel.value
-  }
-  if ((d.status === 'error' || d.status === 'cancelled') && d.savePath) {
-    return revealLabel.value
-  }
-  return statusLine(d)
+  return statusLine(d, { completedShowsSize: true })
+}
+
+function canRetry(d: DownloadEntry): boolean {
+  return d.status === 'error' || d.status === 'cancelled'
 }
 
 function handleRowClick(d: DownloadEntry, event: MouseEvent): void {
-  if ((event.target as HTMLElement).closest('.downloads-item-close, .downloads-item-retry')) return
+  if ((event.target as HTMLElement).closest('.downloads-item-action, .downloads-item-close')) return
   if (d.status === 'completed' && d.savePath) showInFolder(d, d.savePath)
 }
 
 function isRowClickable(d: DownloadEntry): boolean {
   return d.status === 'completed' && !!d.savePath
+}
+
+const list = useTemplateRef<HTMLElement>('list')
+
+function onRowKeydown(d: DownloadEntry, event: KeyboardEvent): void {
+  const row = event.currentTarget as HTMLElement
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    const rows = [...(list.value?.querySelectorAll<HTMLElement>('.downloads-item') ?? [])]
+    const next = rows[rows.indexOf(row) + (event.key === 'ArrowDown' ? 1 : -1)]
+    if (!next) return
+    event.preventDefault()
+    next.focus()
+    return
+  }
+  if (event.target !== row || (event.key !== 'Enter' && event.key !== ' ')) return
+  if (!isRowClickable(d) || !d.savePath) return
+  event.preventDefault()
+  showInFolder(d, d.savePath)
 }
 
 function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
@@ -136,47 +158,60 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
 
 <template>
   <div
-    class="downloads flex size-full flex-col bg-neutral-800 [--downloads-card:var(--color-card-hover)] [--downloads-bar-rest:var(--color-card)]"
+    class="downloads flex size-full flex-col bg-neutral-800 [--downloads-bar-rest:var(--color-card)] [--downloads-card:var(--color-card-hover)] [--downloads-row-hover:var(--color-card-hover)]"
   >
     <header
-      class="downloads-head flex flex-none items-center justify-between gap-2 border-b border-solid border-white/10 px-4 py-3"
+      class="downloads-head flex flex-none items-baseline justify-between gap-2 px-4 pt-4 pb-3"
     >
-      <h2 class="downloads-title m-0 text-[14px] font-bold text-neutral-100">
+      <h2
+        class="downloads-title m-0 text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase"
+      >
         {{ t('downloadsPopup.title') }}
       </h2>
+      <Button
+        type="button"
+        variant="link"
+        size="unset"
+        class="downloads-link rounded-sm text-[12px] font-normal"
+        :aria-label="t('downloadsPopup.viewAllLabel')"
+        @click="viewAllDownloads"
+      >
+        {{ t('downloadsPopup.viewAll') }}
+      </Button>
     </header>
 
     <div
       v-if="orderedEntries.length === 0"
-      class="downloads-empty px-4 py-6 text-center text-[12px] text-text-muted"
+      class="downloads-empty px-4 pt-4 pb-6 text-center text-[12px] text-text-muted"
     >
       {{ t('downloadsPopup.empty') }}
     </div>
 
     <ul
       v-else
-      class="downloads-list m-0 flex min-h-0 flex-auto list-none flex-col gap-2 overflow-y-auto p-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      ref="list"
+      class="downloads-list mx-4 mt-0 mb-4 flex min-h-0 flex-auto list-none flex-col overflow-y-auto rounded-[14px] bg-card p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       <li
         v-for="d in orderedEntries"
         :key="d.id ?? d.url"
-        class="downloads-item flex items-center gap-2 rounded-lg px-4 py-3 transition-[background] duration-[220ms] ease-[ease]"
+        class="downloads-item group relative flex flex-none items-center gap-2 border-t border-solid border-[var(--chooser-surface-border)] py-3 pr-2.5 pl-[18px] outline-none first:rounded-t-[14px] first:border-t-0 last:rounded-b-[14px] focus-within:bg-[var(--downloads-row-hover)] hover:bg-[var(--downloads-row-hover)] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         :class="[
           statusKindClass(d),
-          d.status === 'error' || d.status === 'cancelled'
-            ? 'bg-[color-mix(in_srgb,var(--downloads-card)_50%,transparent)]'
-            : 'bg-[var(--downloads-card)]',
           {
             'is-finished': isTerminal(d),
-            'is-clickable cursor-pointer hover:bg-[color-mix(in_srgb,var(--downloads-card)_85%,var(--neutral-500))]':
-              isRowClickable(d)
+            'is-clickable cursor-pointer': isRowClickable(d)
           }
         ]"
         :style="progressStyle(d)"
+        tabindex="0"
+        :aria-description="isRowClickable(d) ? revealLabel : undefined"
+        :aria-keyshortcuts="isRowClickable(d) ? 'Enter Space' : undefined"
         @click="(e) => handleRowClick(d, e)"
+        @keydown="(e) => onRowKeydown(d, e)"
       >
         <span
-          class="downloads-item-icon inline-flex grow-0 shrink-0 items-center justify-center text-neutral-100"
+          class="downloads-item-icon inline-flex shrink-0 grow-0 items-center justify-center text-neutral-100"
           :class="
             isCompletedImage(d)
               ? 'is-image size-9 basis-9 self-center overflow-hidden rounded-md bg-[color-mix(in_srgb,var(--downloads-bar-rest)_60%,transparent)]'
@@ -186,11 +221,8 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
           <DownloadThumbnail :entry="d" :fetcher="fetchThumbnail">
             <template #fallback>
               <CircleCheck v-if="d.status === 'completed'" :size="16" class="ok text-neutral-100" />
-              <CircleAlert
-                v-else-if="d.status === 'error' || d.status === 'cancelled'"
-                :size="16"
-                class="bad text-[#ff5454]"
-              />
+              <CircleAlert v-else-if="d.status === 'error'" :size="16" class="bad text-[#ff5454]" />
+              <Ban v-else-if="d.status === 'cancelled'" :size="16" class="muted text-text-muted" />
               <PauseCircle v-else-if="d.status === 'paused'" :size="16" />
               <LoaderCircle
                 v-else
@@ -210,23 +242,39 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
             subtitle(d)
           }}</span>
         </div>
-        <Button
-          v-if="d.status === 'error' || d.status === 'cancelled'"
-          type="button"
-          variant="muted-textonly"
-          size="icon"
-          class="downloads-item-retry ml-1 shrink-0"
-          :title="t('downloadsPopup.retry')"
-          :aria-label="t('downloadsPopup.retry')"
-          @click.stop="retry(d)"
+        <div
+          v-if="canRetry(d) || isRowClickable(d)"
+          class="downloads-item-action hidden shrink-0 items-center group-focus-within:flex group-hover:flex"
         >
-          <RotateCcw :size="16" />
-        </Button>
+          <Button
+            v-if="canRetry(d)"
+            type="button"
+            variant="secondary"
+            size="md"
+            class="downloads-item-retry"
+            @click.stop="retry(d)"
+          >
+            <RotateCcw :size="14" />
+            {{ t('downloadsPopup.retry') }}
+          </Button>
+          <Button
+            v-else-if="d.savePath"
+            type="button"
+            variant="secondary"
+            size="icon"
+            class="downloads-item-reveal"
+            :title="revealLabel"
+            :aria-label="revealLabel"
+            @click.stop="showInFolder(d, d.savePath)"
+          >
+            <FolderOpen :size="16" aria-hidden="true" />
+          </Button>
+        </div>
         <Button
           type="button"
           variant="muted-textonly"
           size="icon"
-          class="downloads-item-close ml-1 shrink-0"
+          class="downloads-item-close shrink-0"
           :title="closeLabel(d)"
           :aria-label="closeLabel(d)"
           @click.stop="handleClose(d)"
@@ -235,19 +283,5 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
         </Button>
       </li>
     </ul>
-
-    <footer
-      class="downloads-foot flex flex-none items-center border-t border-solid border-white/10 p-2"
-    >
-      <Button
-        type="button"
-        variant="textonly"
-        size="md"
-        class="downloads-link flex-auto justify-start"
-        @click="viewAllDownloads"
-      >
-        {{ t('downloadsPopup.viewAllInSettings') }}
-      </Button>
-    </footer>
   </div>
 </template>

@@ -116,17 +116,18 @@ export interface FakeComfyInstall {
 export async function writeFakeComfyInstall(opts: {
   installPath: string
   port: number
+  serverScript?: string
 }): Promise<FakeComfyInstall> {
-  const { installPath, port } = opts
+  const { installPath, port, serverScript = SERVER_JS } = opts
   await mkdir(path.join(installPath, 'ComfyUI'), { recursive: true })
   await writeFile(path.join(installPath, 'ComfyUI', 'main.py'), '# e2e stub\n')
 
   const serverPath = path.join(installPath, 'stub-server.cjs')
-  await writeFile(serverPath, SERVER_JS)
+  await writeFile(serverPath, serverScript)
 
-  if (process.platform !== 'linux') {
+  if (process.platform === 'win32') {
     throw new Error(
-      'writeFakeComfyInstall is Linux-only (see the file header); tag the spec @linux.'
+      'writeFakeComfyInstall needs a shell script for python3, which Windows cannot run as python.exe; tag the spec @linux or @macos.'
     )
   }
 
@@ -134,6 +135,10 @@ export async function writeFakeComfyInstall(opts: {
   const sh = [
     '#!/bin/sh',
     'case "$*" in',
+    '  *--list-feature-flags*)',
+    "    echo '{}'",
+    '    exit 0',
+    '    ;;',
     '  *--help*)',
     "    cat <<'COMFY_USAGE'",
     helpText(),

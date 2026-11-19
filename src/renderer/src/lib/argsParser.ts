@@ -91,12 +91,7 @@ export function parseArgs(raw: string, schema: ComfyArgDef[]): ParsedArgs {
 }
 
 export type ArgTokenStatus =
-  | 'ok'
-  | 'unsupported'
-  | 'missing-value'
-  | 'awaiting-value'
-  | 'orphaned'
-  | 'partial'
+  'ok' | 'unsupported' | 'missing-value' | 'awaiting-value' | 'orphaned' | 'partial'
 
 export interface ArgToken {
   text: string
@@ -143,7 +138,7 @@ export function validateArgs(
         result.push({
           text: token,
           status: 'unsupported',
-          tooltip: 'Unrecognized argument — will not be passed when launching'
+          tooltip: 'Unrecognized argument. It will not be passed when launching'
         })
         i++
         if (i < tokens.length && !tokens[i]!.startsWith('--')) {
@@ -201,7 +196,7 @@ export function validateArgs(
       result.push({
         text: token,
         status: 'orphaned',
-        tooltip: 'Unexpected positional argument — use --flag syntax'
+        tooltip: 'Unexpected positional argument. Use --flag syntax'
       })
       i++
     }

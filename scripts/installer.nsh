@@ -21,6 +21,13 @@
   !define allowToChangeInstallationDirectory
 !endif
 
+!ifdef BUILD_UNINSTALLER
+  Var comfyRemoveInstances
+  Var comfyRemoveModels
+  Var comfyRemoveInputOutput
+  Var comfyFullUninstall
+!endif
+
 !macro customHeader
   !pragma warning disable 6030
   LangString perUserInstallExists 1033 "$(^Name) is already installed for your account.$\r$\n"
@@ -282,4 +289,149 @@
       Abort
     ${endif}
   FunctionEnd
+!macroend
+
+!macro customUnWelcomePage
+  !insertmacro MUI_UNPAGE_WELCOME
+
+  Var comfyRemoveDialog
+  Var comfyRemoveInstancesCheckbox
+  Var comfyRemoveModelsCheckbox
+  Var comfyRemoveInputOutputCheckbox
+
+  Function un.ComfyRemovalChoicesPage
+    ${If} ${isUpdated}
+      Abort
+    ${EndIf}
+    ${If} ${Silent}
+      Abort
+    ${EndIf}
+    ${If} $installMode == "all"
+      Abort
+    ${EndIf}
+
+    !insertmacro MUI_HEADER_TEXT "Choose what to remove" "Comfy Desktop's logs, caches and temporary files are always removed."
+
+    nsDialogs::Create 1018
+    Pop $comfyRemoveDialog
+    ${If} $comfyRemoveDialog == error
+      Abort
+    ${EndIf}
+
+    ${NSD_CreateCheckbox} 0 0u 100% 12u "Delete all ComfyUI instances"
+    Pop $comfyRemoveInstancesCheckbox
+    ${If} $comfyRemoveInstances == ${BST_CHECKED}
+      ${NSD_Check} $comfyRemoveInstancesCheckbox
+    ${EndIf}
+    ${NSD_CreateLabel} 12u 13u 92% 24u "Removes every ComfyUI install Comfy Desktop created and everything in it, including an install's own input and output if it does not use the shared ones."
+    Pop $0
+
+    ${NSD_CreateCheckbox} 0 41u 100% 12u "Delete all model files"
+    Pop $comfyRemoveModelsCheckbox
+    ${If} $comfyRemoveModels == ${BST_CHECKED}
+      ${NSD_Check} $comfyRemoveModelsCheckbox
+    ${EndIf}
+    ${NSD_CreateLabel} 12u 54u 92% 16u "Removes the shared models folder Comfy Desktop downloads into. Model folders you added yourself are kept."
+    Pop $0
+
+    ${NSD_CreateCheckbox} 0 74u 100% 12u "Delete shared input and output files"
+    Pop $comfyRemoveInputOutputCheckbox
+    ${If} $comfyRemoveInputOutput == ${BST_CHECKED}
+      ${NSD_Check} $comfyRemoveInputOutputCheckbox
+    ${EndIf}
+    ${NSD_CreateLabel} 12u 87u 92% 16u "Removes the shared input and output folders. Folders you picked outside a deleted instance are kept."
+    Pop $0
+
+    ${NSD_CreateLabel} 0 110u 100% 16u "Unchecked boxes keep their data, except files inside a deleted instance. Installing Comfy Desktop again will find what is kept."
+    Pop $0
+
+    nsDialogs::Show
+  FunctionEnd
+
+  Function un.ComfyRemovalChoicesPageLeave
+    ${NSD_GetState} $comfyRemoveInstancesCheckbox $comfyRemoveInstances
+    ${NSD_GetState} $comfyRemoveModelsCheckbox $comfyRemoveModels
+    ${NSD_GetState} $comfyRemoveInputOutputCheckbox $comfyRemoveInputOutput
+  FunctionEnd
+
+  UninstPage custom un.ComfyRemovalChoicesPage un.ComfyRemovalChoicesPageLeave
+!macroend
+
+!macro runComfyUninstallCleanup
+  Push $0
+  Push $1
+
+  StrCpy $1 ""
+  ${If} $comfyRemoveInstances == ${BST_CHECKED}
+    StrCpy $1 "$1 --delete-instances"
+  ${EndIf}
+  ${If} $comfyRemoveModels == ${BST_CHECKED}
+    StrCpy $1 "$1 --delete-models"
+  ${EndIf}
+  ${If} $comfyRemoveInputOutput == ${BST_CHECKED}
+    StrCpy $1 "$1 --delete-input-output"
+  ${EndIf}
+
+  ${If} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+    DetailPrint "Removing Comfy Desktop data..."
+    nsExec::Exec /TIMEOUT=1800000 '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --uninstall-cleanup$1'
+    Pop $0
+    DetailPrint "  Data cleanup finished: $0"
+    ${If} $0 != "0"
+      DetailPrint "  Some data was kept. See $TEMP\comfy-desktop-uninstall-cleanup.log"
+    ${EndIf}
+  ${EndIf}
+
+  Pop $1
+  Pop $0
+!macroend
+
+!macro customRemoveFiles
+  StrCpy $comfyFullUninstall "1"
+  ${If} ${isUpdated}
+    StrCpy $comfyFullUninstall "0"
+  ${EndIf}
+  Push $R1
+  Push $R2
+  ${GetParameters} $R1
+  ClearErrors
+  ${GetOptions} $R1 "/KEEP_APP_DATA" $R2
+  ${IfNot} ${Errors}
+    StrCpy $comfyFullUninstall "0"
+  ${EndIf}
+  ClearErrors
+  Pop $R2
+  Pop $R1
+
+  ${If} $comfyFullUninstall == "1"
+  ${AndIf} $installMode != "all"
+    !insertmacro runComfyUninstallCleanup
+  ${EndIf}
+
+  ${If} ${isUpdated}
+    CreateDirectory "$PLUGINSDIR\old-install"
+
+    Push ""
+    Call un.atomicRMDir
+    Pop $R0
+
+    ${If} $R0 != 0
+      DetailPrint "File is busy, aborting: $R0"
+
+      Push ""
+      Call un.restoreFiles
+      Pop $R0
+
+      Abort `Can't rename "$INSTDIR" to "$PLUGINSDIR\old-install".`
+    ${EndIf}
+  ${EndIf}
+
+  SetOutPath $TEMP
+  RMDir /r $INSTDIR
+
+  ${If} $comfyFullUninstall == "1"
+    RMDir /REBOOTOK $INSTDIR
+    WinShell::UninstShortcut "$newDesktopLink"
+    Delete "$newDesktopLink"
+  ${EndIf}
 !macroend

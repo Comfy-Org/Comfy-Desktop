@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import DesktopDialogSurface from './ui/DesktopDialogSurface.vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { Check, X } from 'lucide-vue-next'
+import { Check, X } from '@lucide/vue'
 import heroUrl from '../assets/first-use/why-cloud-hero.svg'
 
 const emit = defineEmits<{
@@ -23,14 +23,14 @@ const benefits = computed<string[]>(() => {
   <DesktopDialogSurface
     :open="true"
     :aria-label="$t('firstUse.whyCloud.title')"
-    overlay-class="why-cloud-overlay fixed inset-0 z-60 grid place-items-center px-[clamp(32px,5vw,80px)] pt-[clamp(72px,10vh,132px)] pb-[clamp(80px,11vh,140px)] bg-neutral-800/70"
-    content-class="why-cloud-content relative flex w-[min(100%,calc((100vh_-_clamp(152px,21vh,272px))_*_(916_/_445)))] max-w-full max-h-full aspect-[916/445] overflow-hidden rounded-panel border border-solid border-neutral-100/8 bg-neutral-900"
+    overlay-class="why-cloud-overlay fixed inset-0 z-60 grid place-items-center px-[clamp(32px,5vw,80px)] pt-[clamp(72px,10vh,132px)] pb-[clamp(80px,11vh,140px)] bg-black/70"
+    content-class="why-cloud-content relative flex w-[min(100%,calc((100vh_-_clamp(152px,21vh,272px))_*_(916_/_445)))] max-w-[min(100%,calc(100vw_-_128px))] max-h-full aspect-[916/445] overflow-visible rounded-panel border border-solid border-neutral-100/8 bg-neutral-900"
     @close="emit('close')"
   >
     <Button
       variant="muted-textonly"
       size="icon"
-      class="why-cloud-close absolute top-4 right-4 z-2"
+      class="why-cloud-close absolute top-0 -right-12 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--color-neutral-900)] text-white hover:text-white"
       type="button"
       :aria-label="$t('common.close')"
       data-testid="why-cloud-close"
@@ -39,7 +39,7 @@ const benefits = computed<string[]>(() => {
       <X :size="18" />
     </Button>
     <div
-      class="why-cloud-grid flex-auto grid size-full grid-cols-[repeat(auto-fit,minmax(min(360px,100%),1fr))]"
+      class="why-cloud-grid flex-auto grid size-full overflow-hidden rounded-[inherit] grid-cols-[repeat(auto-fit,minmax(min(360px,100%),1fr))]"
     >
       <img
         :src="heroUrl"
@@ -53,9 +53,7 @@ const benefits = computed<string[]>(() => {
           class="why-cloud-body-main flex flex-auto flex-col justify-center gap-[clamp(0.75rem,1.2vw,1.25rem)]"
         >
           <header class="why-cloud-header flex flex-wrap items-center gap-3">
-            <h2
-              class="why-cloud-title m-0 font-display text-[length:var(--takeover-fs-h2)] leading-8 font-extrabold tracking-normal text-neutral-100"
-            >
+            <h2 class="why-cloud-title m-0 text-title font-semibold text-foreground">
               {{ $t('firstUse.whyCloud.title') }}
             </h2>
           </header>
@@ -76,16 +74,6 @@ const benefits = computed<string[]>(() => {
         <footer
           class="why-cloud-footer flex items-center justify-end gap-4 border-t border-solid border-neutral-100/8 pt-[clamp(1rem,1.5vw,1.5rem)]"
         >
-          <Button
-            size="lg"
-            variant="textonly"
-            class="why-cloud-maybe whitespace-normal"
-            type="button"
-            data-testid="why-cloud-maybe"
-            @click="emit('close')"
-          >
-            {{ $t('firstUse.whyCloud.maybeLater') }}
-          </Button>
           <Button
             size="lg"
             variant="inverted"

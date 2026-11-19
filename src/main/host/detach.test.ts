@@ -1,4 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+
+import type * as SystemModalModule from '../popups/systemModal'
+import type * as SettingsModule from '../settings'
+
+const mocks = vi.hoisted(() => ({
+  confirmBeforeClosing: false,
+  appsBuildRunning: false,
+  agrees: true,
+  asked: [] as { spec: { message: string; details?: { items: string[] }[] } }[],
+  stopAppsBuilds: vi.fn(async () => {}),
+  keepComfyRunning: undefined as boolean | undefined
+}))
 
 vi.mock('electron', () => ({
   app: {
@@ -15,9 +27,46 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
-import { _runningSessions } from '../lib/ipc/shared'
-import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from './registry'
-import { closeAllHostWindows, detachOrphanedInstallHosts, preClearedClose } from './detach'
+vi.mock('../apps/localComfy', () => ({
+  hasBuildsRunningForAppsOnly: () => mocks.appsBuildRunning,
+  stopEveryBuildRunningForAppsOnly: () => mocks.stopAppsBuilds()
+}))
+vi.mock('../popups/systemModal', async (importOriginal) => ({
+  ...(await importOriginal<typeof SystemModalModule>()),
+  openSystemModalAsync: async (options: (typeof mocks.asked)[number]) => {
+    mocks.asked.push(options)
+    return mocks.agrees
+  }
+}))
+vi.mock('../settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof SettingsModule>()
+  return {
+    ...actual,
+    get: (key: string) =>
+      key === 'confirmBeforeClosingWindow'
+        ? mocks.confirmBeforeClosing
+        : key === 'keepComfyRunningWhenWindowCloses'
+          ? mocks.keepComfyRunning
+          : actual.get(key)
+  }
+})
+
+import { _beginLaunch, _endLaunch, _runningSessions, type SessionInfo } from '../lib/ipc/shared'
+import {
+  comfyWindows,
+  dropInstallationIndex,
+  indexInstallationId,
+  nextWindowKey,
+  type ComfyWindowEntry
+} from './registry'
+import {
+  closeAllHostWindows,
+  confirmAndCloseAllHostWindows,
+  confirmAndCloseHostWindow,
+  detachOrphanedInstallHosts,
+  preClearedClose,
+  returnToDashboard
+} from './detach'
 
 interface FakeWindow {
   destroyed: boolean
@@ -69,6 +118,7 @@ beforeEach(() => {
 afterEach(() => {
   comfyWindows.clear()
   _runningSessions.clear()
+  mocks.keepComfyRunning = undefined
 })
 
 describe('closeAllHostWindows', () => {
@@ -191,5 +241,274 @@ describe('preClearedClose', () => {
     preClearedClose.add(a as unknown as Electron.BrowserWindow)
     expect(preClearedClose.delete(a as unknown as Electron.BrowserWindow)).toBe(true)
     expect(preClearedClose.has(a as unknown as Electron.BrowserWindow)).toBe(false)
+  })
+})
+
+describe('closing the last Desktop window while an app uses a ComfyUI Desktop started for it', () => {
+  function openDashboard(): FakeWindow {
+    const win = makeWindow()
+    const entry = makeEntry(win)
+    comfyWindows.set(entry.windowKey, entry)
+    return win
+  }
+
+  beforeEach(() => {
+    mocks.keepComfyRunning = false
+    mocks.confirmBeforeClosing = true
+    mocks.appsBuildRunning = true
+    mocks.agrees = true
+    mocks.asked = []
+    mocks.stopAppsBuilds.mockClear()
+  })
+
+  it('asks first, and Cancel keeps both the window and that ComfyUI', async () => {
+    mocks.agrees = false
+    const win = openDashboard()
+
+    await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
+
+    expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([
+      'Close this window? This stops ComfyUI and quits Comfy Desktop.'
+    ])
+    expect(win.closed).toBe(false)
+    expect(mocks.stopAppsBuilds).not.toHaveBeenCalled()
+  })
+
+  it('stops that ComfyUI and closes once the person agrees', async () => {
+    const win = openDashboard()
+
+    await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
+
+    expect(mocks.stopAppsBuilds).toHaveBeenCalledTimes(1)
+    expect(win.closed).toBe(true)
+  })
+})
+
+describe('closing a window while ComfyUI runs on this computer', () => {
+  const realPlatform = process.platform
+
+  function onPlatform(platform: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+  }
+
+  function comfyRunning(): void {
+    _runningSessions.set('studio', {
+      port: 8188,
+      mode: 'window',
+      installationName: 'Studio'
+    } as SessionInfo)
+  }
+
+  function openWindow(installationId: string | null = null): FakeWindow {
+    const win = makeWindow()
+    const entry = makeEntry(win)
+    entry.installationId = installationId
+    entry.sourceCategory = installationId === null ? null : 'local'
+    comfyWindows.set(entry.windowKey, entry)
+    return win
+  }
+
+  beforeEach(() => {
+    mocks.keepComfyRunning = false
+    mocks.confirmBeforeClosing = true
+    mocks.appsBuildRunning = false
+    mocks.agrees = true
+    mocks.asked = []
+    mocks.stopAppsBuilds.mockClear()
+    comfyRunning()
+  })
+
+  afterEach(() => {
+    onPlatform(realPlatform)
+  })
+
+  it('with keepComfyRunningWhenWindowCloses off, asks before closing a ComfyUI window while other windows are open', async () => {
+    onPlatform('win32')
+    mocks.agrees = false
+    const win = openWindow('studio')
+    openWindow()
+
+    await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
+
+    expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([
+      'Close this window? This stops the running ComfyUI instance.'
+    ])
+    expect(win.closed).toBe(false)
+  })
+
+  it('with keepComfyRunningWhenWindowCloses off, asks before the last ComfyUI window on macOS closes', async () => {
+    onPlatform('darwin')
+    const win = openWindow('studio')
+
+    await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
+
+    expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([
+      'Close this window? This stops ComfyUI and quits Comfy Desktop.'
+    ])
+    expect(mocks.stopAppsBuilds).toHaveBeenCalledTimes(1)
+    expect(win.closed).toBe(true)
+  })
+
+  describe('with keepComfyRunningWhenWindowCloses absent, so on by default', () => {
+    beforeEach(() => {
+      mocks.keepComfyRunning = undefined
+    })
+
+    it('closes a ComfyUI window without asking while other windows are open', async () => {
+      onPlatform('win32')
+      const win = openWindow('studio')
+      openWindow()
+
+      await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
+
+      expect(mocks.asked).toEqual([])
+      expect(win.closed).toBe(true)
+    })
+
+    it('closes the last ComfyUI window on macOS without asking, since ComfyUI keeps running', async () => {
+      onPlatform('darwin')
+      const win = openWindow('studio')
+
+      await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
+
+      expect(mocks.asked).toEqual([])
+      expect(mocks.stopAppsBuilds).not.toHaveBeenCalled()
+      expect(win.closed).toBe(true)
+    })
+
+    it.each(['win32', 'linux'] as const)(
+      'asks on %s before the last window closes, since that stops ComfyUI and quits, and Cancel keeps the window',
+      async (platform) => {
+        onPlatform(platform)
+        mocks.agrees = false
+        const win = openWindow()
+
+        await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
+
+        expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([
+          'Close this window? This stops ComfyUI and quits Comfy Desktop.'
+        ])
+        expect(win.closed).toBe(false)
+      }
+    )
+
+    it('closes the last window once the person agrees, leaving the stop to quitting', async () => {
+      onPlatform('win32')
+      const win = openWindow()
+
+      await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
+
+      expect(mocks.stopAppsBuilds).not.toHaveBeenCalled()
+      expect(win.closed).toBe(true)
+    })
+
+    it('closes the last window on macOS without saying it quits while its build starts, since Desktop stays', async () => {
+      onPlatform('darwin')
+      _runningSessions.clear()
+      const launch = _beginLaunch('studio')
+      onTestFinished(() => _endLaunch('studio', launch))
+      const win = openWindow('studio')
+
+      await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
+
+      expect(mocks.asked).toEqual([])
+      expect(win.closed).toBe(true)
+    })
+  })
+})
+
+describe('quitting while a ComfyUI runs with no window', () => {
+  beforeEach(() => {
+    mocks.keepComfyRunning = false
+    mocks.agrees = true
+    mocks.asked = []
+    _runningSessions.set('studio', {
+      port: 8188,
+      mode: 'window',
+      installationName: 'Studio'
+    } as SessionInfo)
+  })
+
+  it('with keepComfyRunningWhenWindowCloses off, quits without asking, as only windows are counted', async () => {
+    const entry = makeEntry(makeWindow())
+    comfyWindows.set(entry.windowKey, entry)
+    const performQuit = vi.fn()
+
+    await confirmAndCloseAllHostWindows(null, performQuit)
+
+    expect(mocks.asked).toEqual([])
+    expect(performQuit).toHaveBeenCalledTimes(1)
+  })
+
+  describe('with keepComfyRunningWhenWindowCloses absent, so on by default', () => {
+    beforeEach(() => {
+      mocks.keepComfyRunning = undefined
+    })
+
+    it('warns that quitting stops it, and names it', async () => {
+      const entry = makeEntry(makeWindow())
+      comfyWindows.set(entry.windowKey, entry)
+      const performQuit = vi.fn()
+
+      await confirmAndCloseAllHostWindows(null, performQuit)
+
+      expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([
+        'Quit Desktop? This will close the running ComfyUI instance.'
+      ])
+      expect(mocks.asked[0]?.spec.details?.[0]?.items).toEqual(['Studio'])
+      expect(performQuit).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not count it as windowless while its window is open', async () => {
+      const entry = makeEntry(makeWindow())
+      entry.installationId = 'studio'
+      entry.sourceCategory = 'local'
+      entry.titleBarText = 'Studio'
+      comfyWindows.set(entry.windowKey, entry)
+      indexInstallationId('studio', entry.windowKey)
+
+      await confirmAndCloseAllHostWindows(null, vi.fn())
+      dropInstallationIndex('studio')
+
+      expect(mocks.asked[0]?.spec.details?.[0]?.items).toEqual(['Studio'])
+    })
+  })
+})
+
+describe('returning to the dashboard from a running ComfyUI', () => {
+  function openRunningComfy(): ComfyWindowEntry {
+    _runningSessions.set('studio', { port: 8188, mode: 'window' } as SessionInfo)
+    const entry = makeEntry(makeWindow())
+    entry.installationId = 'studio'
+    entry.sourceCategory = 'local'
+    entry.detachInstall = vi.fn()
+    comfyWindows.set(entry.windowKey, entry)
+    return entry
+  }
+
+  beforeEach(() => {
+    mocks.asked = []
+    mocks.agrees = false
+  })
+
+  it('asks first when the window has no panel to ask, and Cancel keeps it, with keepComfyRunningWhenWindowCloses off', async () => {
+    mocks.keepComfyRunning = false
+    const entry = openRunningComfy()
+
+    await returnToDashboard(entry.windowKey)
+
+    expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([
+      'This will stop the current ComfyUI.'
+    ])
+    expect(entry.detachInstall).not.toHaveBeenCalled()
+  })
+
+  it('leaves it running and does not ask with keepComfyRunningWhenWindowCloses absent', async () => {
+    const entry = openRunningComfy()
+
+    await returnToDashboard(entry.windowKey)
+
+    expect(mocks.asked).toEqual([])
+    expect(entry.detachInstall).toHaveBeenCalledTimes(1)
   })
 })

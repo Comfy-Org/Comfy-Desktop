@@ -4,11 +4,15 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import en from '../locales/en.json'
 import { launchApp, type AppContext, type SeedInstallation } from './launchApp'
-import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
+import {
+  clickInstallTile,
+  expectChooserVisible,
+  pickFromBuildsTileMenu
+} from './support/chooserHelpers'
 import { getIpcInvocations, hasActiveLaunch, resetIpcInvocations } from './support/devHooks'
 import { byTestId, TID } from './support/testIds'
 
-const NEW_INSTALL_WIZARD = '.config-shell, .template-shell'
+const NEW_INSTALL_WIZARD = '[data-testid="new-build-modal"]'
 
 interface BuildCase {
   id: string
@@ -109,8 +113,10 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
     )
     .toBe(true)
 
-  await ctx.panel.waitForVisible('.brand-progress', { timeout: 10_000 })
   expect(await ctx.panel.exists(NEW_INSTALL_WIZARD)).toBe(false)
+  expect(await ctx.panel.exists('.brand-progress'), 'starts on its tile, not a takeover').toBe(
+    false
+  )
 
   await expect
     .poll(() => hasActiveLaunch(ctx.app, INSTALLED.id), {
@@ -118,13 +124,21 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
       intervals: [250, 500]
     })
     .toBe(false)
-  await ctx.panel.waitForVisible(byTestId(TID.progressErrorMessage), { timeout: 10_000 })
-  expect(await ctx.panel.click(byTestId(TID.progressBack))).toBe(true)
+  await ctx.panel.waitForVisible('.chooser-tile-error-badge', { timeout: 10_000 })
   await expectChooserVisible(ctx.panel)
 })
 
-test('clicking a not-ready ComfyBuilder tile explains itself instead of opening the new-install wizard @windows @macos', async () => {
+test('clicking a not-ready ComfyBuilder tile opens its build page instead of the new-install wizard @windows @macos', async () => {
   await clickInstallTile(ctx.panel, FAILED.name)
+
+  await ctx.panel.waitForVisible('[data-testid="build-details"]', { timeout: 10_000 })
+  expect(await ctx.panel.exists(NEW_INSTALL_WIZARD)).toBe(false)
+  expect(await ctx.panel.click('[data-testid="app-sidebar-chooser"]')).toBe(true)
+  await expectChooserVisible(ctx.panel)
+})
+
+test('launching a not-ready ComfyBuilder build from its menu explains itself instead of opening the new-install wizard @windows @macos', async () => {
+  await pickFromBuildsTileMenu(ctx.panel, FAILED.id, 'launch')
 
   await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
   expect(await ctx.panel.textOf('.base-alert-message-text')).toContain(en.errors.installNotReady)

@@ -3,7 +3,8 @@ import type { RumErrorEvent } from '@datadog/browser-rum'
 import {
   normalizeDatadogBundlePaths,
   normalizeRumErrorEvent,
-  scrubPII
+  rumBeforeSend,
+  scrubRumText
 } from './datadogPathNormalization'
 
 describe('normalizeDatadogBundlePaths', () => {
@@ -29,55 +30,67 @@ describe('normalizeDatadogBundlePaths', () => {
   })
 })
 
-describe('scrubPII', () => {
-  it('redacts Windows user paths', () => {
-    expect(scrubPII('C:\\Users\\JohnDoe\\AppData\\Local\\foo')).toBe(
+describe('scrubRumText', () => {
+  it('scrubs a user path with the shared scrubber', () => {
+    expect(scrubRumText('C:\\Users\\JohnDoe\\AppData\\Local\\foo')).toBe(
       'C:\\Users\\[REDACTED]\\AppData\\Local\\foo'
     )
   })
 
-  it('redacts macOS user paths', () => {
-    expect(scrubPII('/Users/alice/Library/foo')).toBe('/Users/[REDACTED]/Library/foo')
+  it('redacts the query of a link, where signed links keep their credentials', () => {
+    expect(
+      scrubRumText(
+        "THREE.GLTFLoader: Couldn't load texture https://storage.googleapis.com/b/t.png?X-Goog-Signature=abc&X-Goog-Credential=def"
+      )
+    ).toBe(
+      "THREE.GLTFLoader: Couldn't load texture https://storage.googleapis.com/b/t.png?[REDACTED]"
+    )
   })
 
-  it('redacts Linux user paths', () => {
-    expect(scrubPII('/home/bob/.config/foo')).toBe('/home/[REDACTED]/.config/foo')
-  })
-
-  it('leaves non-user paths unchanged', () => {
-    expect(scrubPII('D:\\Program Files\\foo')).toBe('D:\\Program Files\\foo')
-  })
-
-  it('handles multiple occurrences in one string', () => {
-    const input = '/Users/alice/foo and /home/bob/bar'
-    expect(scrubPII(input)).toBe('/Users/[REDACTED]/foo and /home/[REDACTED]/bar')
-  })
-
-  it('handles forward slashes in Windows-style paths', () => {
-    expect(scrubPII('C:/Users/JohnDoe/foo')).toBe('C:/Users/[REDACTED]/foo')
-  })
-
-  it('handles usernames with spaces', () => {
-    expect(scrubPII('C:\\Users\\John Doe\\AppData\\Local\\foo')).toBe(
-      'C:\\Users\\[REDACTED]\\AppData\\Local\\foo'
+  it('redacts embedded file content', () => {
+    expect(scrubRumText('bad texture data:image/png;base64,iVBORw0KGgo= here')).toBe(
+      'bad texture data:[REDACTED] here'
     )
   })
 })
 
 describe('normalizeRumErrorEvent', () => {
-  it('updates the main stack, cause stacks, and resource URL when they point at built bundles', () => {
+  it('scrubs a doubled-backslash user path from the error message', () => {
+    const event = {
+      error: { message: 'open "C:\\\\Users\\\\alice\\\\x" failed', source: 'custom' }
+    } as unknown as RumErrorEvent
+
+    normalizeRumErrorEvent(event)
+
+    expect(event.error.message).toBe('open "C:\\\\Users\\\\[REDACTED]\\\\x" failed')
+  })
+
+  it('scrubs user paths outside the bundles from the stack and resource URL', () => {
+    const event = {
+      error: {
+        message: 'boom',
+        source: 'custom',
+        stack: 'Error: boom\n    at C:\\Users\\alice\\plugins\\x.js:1:1',
+        resource: {
+          method: 'GET',
+          status_code: 404,
+          url: 'file:///Users/carol/models/z.png'
+        }
+      }
+    } as unknown as RumErrorEvent
+
+    normalizeRumErrorEvent(event)
+
+    expect(event.error.stack).toBe('Error: boom\n    at C:\\Users\\[REDACTED]\\plugins\\x.js:1:1')
+    expect(event.error.resource?.url).toBe('file:///Users/[REDACTED]/models/z.png')
+  })
+
+  it('updates the stack and resource URL when they point at built bundles', () => {
     const event = {
       error: {
         message: 'boom',
         source: 'custom',
         stack: 'Error: boom\n    at /Applications/ComfyUI/out/preload/index.js:5:2',
-        causes: [
-          {
-            message: 'cause',
-            source: 'custom',
-            stack: 'Error: cause\n    at C:\\ComfyUI\\out\\main\\index.js:8:3'
-          }
-        ],
         resource: {
           method: 'GET',
           status_code: 500,
@@ -89,7 +102,47 @@ describe('normalizeRumErrorEvent', () => {
     normalizeRumErrorEvent(event)
 
     expect(event.error.stack).toContain('app://app/preload/index.js:5:2')
-    expect(event.error.causes?.[0]?.stack).toContain('app://app/main/index.js:8:3')
     expect(event.error.resource?.url).toBe('app://app/renderer/assets/index-abc123.js')
+  })
+})
+
+describe('rumBeforeSend', () => {
+  const send = (event: unknown): boolean | undefined =>
+    rumBeforeSend(event as Parameters<typeof rumBeforeSend>[0], {} as never) as boolean | undefined
+
+  it('drops an error event that carries causes, since the SDK sends causes as they were', () => {
+    const event = {
+      type: 'error',
+      error: {
+        message: 'wrapped',
+        source: 'custom',
+        causes: [
+          {
+            message: 'inner C:\\Users\\alice\\x',
+            source: 'custom',
+            stack: 'Error: inner\n    at /home/bob/plugins/y.js:2:2'
+          }
+        ]
+      }
+    }
+
+    expect(send(event)).toBe(false)
+  })
+
+  it('scrubs and keeps an error event without causes', () => {
+    const event = {
+      type: 'error',
+      error: { message: 'open C:\\Users\\alice\\x failed', source: 'custom', causes: [] }
+    }
+
+    expect(send(event)).toBe(true)
+    expect(event.error.message).toBe('open C:\\Users\\[REDACTED]\\x failed')
+  })
+
+  it('keeps other events as they are', () => {
+    const event = { type: 'view', view: { url: 'app://app/index.html' } }
+
+    expect(send(event)).toBe(true)
+    expect(event.view.url).toBe('app://app/index.html')
   })
 })

@@ -6,6 +6,7 @@ import { handleCopy, handleCopyUpdate, handleCopyChangePytorch, handleReleaseUpd
 import { handleMigrateToStandalone } from './migrate'
 import { handleLaunch } from './launch'
 import { handleDelegateToSource } from './delegate'
+import { occupiesInstall } from './occupiesInstall'
 
 export type { ActionContext, ActionResult } from './types'
 export { handleRemove, handleOpenFolder, handleRename } from './basic'
@@ -69,24 +70,30 @@ function dispatchToSessionHandler(
   }
 }
 
-const _activeActions = new Map<string, { actionId: string }>()
+interface ActiveOperation {
+  actionId: string
+  sessionId?: string
+}
 
-export function _getActiveOperations(): { installationId: string; actionId: string }[] {
-  return Array.from(_activeActions, ([installationId, { actionId }]) => ({
-    installationId,
-    actionId
-  }))
+const _activeActions = new Map<string, ActiveOperation>()
+
+export function _getActiveOperations(): ({ installationId: string } & ActiveOperation)[] {
+  return Array.from(_activeActions, ([installationId, entry]) => ({ installationId, ...entry }))
 }
 
 export async function dispatchSessionAction(
   ctx: ActionContext,
   actionId: string
 ): Promise<ActionResult> {
-  const { installationId } = ctx
-  const owned = !_activeActions.has(installationId)
+  const { installationId, sessionId } = ctx
+  const running = _activeActions.get(installationId)
+  const takesOverFromLookup =
+    running !== undefined && occupiesInstall(actionId) && !occupiesInstall(running.actionId)
+  const owned = running === undefined || takesOverFromLookup
+  const entry: ActiveOperation = sessionId ? { actionId, sessionId } : { actionId }
   if (owned) {
-    _activeActions.set(installationId, { actionId })
-    _broadcastToRenderer('operation-changed', { installationId, actionId, active: true })
+    _activeActions.set(installationId, entry)
+    _broadcastToRenderer('operation-changed', { installationId, ...entry, active: true })
   }
   try {
     if (isSessionActionId(actionId)) {
@@ -94,9 +101,9 @@ export async function dispatchSessionAction(
     }
     return await handleDelegateToSource(ctx, actionId)
   } finally {
-    if (owned) {
+    if (owned && _activeActions.get(installationId) === entry) {
       _activeActions.delete(installationId)
-      _broadcastToRenderer('operation-changed', { installationId, actionId, active: false })
+      _broadcastToRenderer('operation-changed', { installationId, ...entry, active: false })
     }
   }
 }

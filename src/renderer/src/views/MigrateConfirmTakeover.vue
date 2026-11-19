@@ -25,8 +25,7 @@ const details = ref<MigrateDetailGroup[]>([])
 const checkboxes = ref<MigrateCheckbox[]>([])
 
 let resolver:
-  | ((value: { confirmed: boolean; checkboxValues: Record<string, boolean> }) => void)
-  | null = null
+  ((value: { confirmed: boolean; checkboxValues: Record<string, boolean> }) => void) | null = null
 
 async function open(
   initialTitle: string,
@@ -82,7 +81,7 @@ defineExpose({ open, update, commit })
       class="migrate-takeover relative z-1 flex w-full max-w-[640px] flex-col items-center gap-[var(--takeover-gap-md)] text-center"
     >
       <h1
-        class="migrate-takeover__title m-0 font-display text-[length:var(--takeover-fs-title)] leading-[1.15] font-extrabold tracking-normal text-[var(--legacy-color-text)] opacity-85"
+        class="migrate-takeover__title m-0 text-display font-semibold tracking-[-0.055em] text-foreground"
       >
         {{ title }}
       </h1>

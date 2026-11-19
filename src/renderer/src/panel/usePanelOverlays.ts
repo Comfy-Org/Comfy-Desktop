@@ -3,14 +3,19 @@ import type ProgressModal from '../views/ProgressModal.vue'
 import type InstallWizardModal from '../views/InstallWizardModal.vue'
 import type TrackModal from '../views/TrackModal.vue'
 import type LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
-import type QuickInstallModal from '../views/QuickInstallModal.vue'
 import type FirstUseTakeover from '../views/FirstUseTakeover.vue'
+import type { ChangeSetupDraft } from '../lib/setupPlan'
 import { useOverlay, type FlowComponent, type Overlay } from '../composables/useOverlay'
+import { keepsComfyRunningWhenWindowCloses } from '../composables/useReturnToDashboardConfirm'
 import { useProgressStore } from '../stores/progressStore'
+import { useInstallationStore } from '../stores/installationStore'
 import { emitTelemetryAction } from '../lib/telemetry'
+import { usePortConflictPrompt } from '../composables/usePortConflictPrompt'
+import { stopsWithItsWindow, useConfirmStopTask } from '../composables/useBuildProgress'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { progressActionName } from '../lib/progressTitle'
 
 export type PanelKey =
   | 'comfy'
@@ -22,7 +27,6 @@ export type PanelKey =
   | 'new-install'
   | 'track'
   | 'load-snapshot'
-  | 'quick-install'
   | 'progress'
   | 'announcement'
 
@@ -36,21 +40,14 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'new-install',
   'track',
   'load-snapshot',
-  'quick-install',
   'progress',
   'announcement'
 ])
 
-const FLOW_PANELS: ReadonlySet<PanelKey> = new Set([
-  'new-install',
-  'track',
-  'load-snapshot',
-  'quick-install'
-])
+const FLOW_PANELS: ReadonlySet<PanelKey> = new Set(['new-install', 'track', 'load-snapshot'])
 
 const FLOW_TELEMETRY_NAMES: Record<FlowComponent, string> = {
   'new-install': 'new_install',
-  'quick-install': 'quick_install',
   track: 'track_existing',
   'load-snapshot': 'load_snapshot'
 }
@@ -66,7 +63,13 @@ export function isFlowPanel(panel: PanelKey): boolean {
 export interface FirstUseChainHooks {
   shouldForceTakeover: () => boolean
   onShowProgress: (opts: ShowProgressOpts) => void
-  consumeCameFromLocalBranch: () => boolean
+  onBackgroundInstall: (opts: ShowProgressOpts) => void
+  consumeSetupHandoff: () => SetupHandoff | null
+}
+
+export interface SetupHandoff {
+  needsConsent: boolean
+  restore?: ChangeSetupDraft
 }
 
 export interface UsePanelOverlaysOpts {
@@ -76,11 +79,13 @@ export interface UsePanelOverlaysOpts {
     triggersInstanceStart?: boolean
   ) => Promise<void>
   firstUseChain?: FirstUseChainHooks
+  onBackgroundInstall?: (installationId: string) => void
+  onBuildCreated?: (installationId: string) => void
+  launchesInPlace?: (installationId: string) => boolean
   progressRef: Ref<InstanceType<typeof ProgressModal> | null>
   newInstallRef: Ref<InstanceType<typeof InstallWizardModal> | null>
   trackRef: Ref<InstanceType<typeof TrackModal> | null>
   loadSnapshotRef: Ref<InstanceType<typeof LoadSnapshotModal> | null>
-  quickInstallRef: Ref<InstanceType<typeof QuickInstallModal> | null>
   firstUseRef: Ref<InstanceType<typeof FirstUseTakeover> | null>
 }
 
@@ -91,11 +96,12 @@ export interface UsePanelOverlaysApi {
   currentOverlay: ReturnType<typeof useOverlay>['current']
   openOverlay: ReturnType<typeof useOverlay>['openOverlay']
   closeOverlay: ReturnType<typeof useOverlay>['closeOverlay']
+  answerCloseRequest: () => Promise<{ cleared: boolean } | { defer: true }>
 
   handleShowProgress: (opts: ShowProgressOpts) => Promise<void>
   handleProgressClose: () => void
   openFlowTakeover: (component: FlowComponent, entrypoint: string) => Promise<void>
-  openFirstUseTakeover: (opts?: { initialStep?: 'start' | 'localBranch' }) => Promise<void>
+  openFirstUseTakeover: () => Promise<void>
   dismissTakeoverDirect: () => void
   switchPanel: (panel: PanelKey, entrypoint?: string) => Promise<void>
 }
@@ -120,18 +126,17 @@ export function firstUseModeForOverlaySwap(
 }
 
 export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysApi {
-  const {
-    installationId,
-    progressRef,
-    newInstallRef,
-    trackRef,
-    loadSnapshotRef,
-    quickInstallRef,
-    firstUseRef
-  } = opts
+  const { installationId, progressRef, newInstallRef, trackRef, loadSnapshotRef, firstUseRef } =
+    opts
   const progressStore = useProgressStore()
+  const installationStore = useInstallationStore()
   const dashboardScope = useDashboardScopeStore()
-  const { current: currentOverlay, openOverlay, closeOverlay } = useOverlay()
+  const confirmStopTask = useConfirmStopTask()
+  const {
+    current: currentOverlay,
+    openOverlay,
+    closeOverlay: confirmAndCloseOverlay
+  } = useOverlay()
 
   watch(
     currentOverlay,
@@ -159,34 +164,141 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     FLOW_PANELS.has(initialPanel) ? defaultBodyPanel() : initialPanel
   )
 
-  async function handleShowProgress(showOpts: ShowProgressOpts): Promise<void> {
-    const operationName = showOpts.title.split(' — ')[0] || showOpts.title
-    opts.firstUseChain?.onShowProgress(showOpts)
-    const onCancel = (): void => {
-      progressStore.cancelOperation(showOpts.installationId)
-    }
+  function startOperationOnce(
+    showOpts: ShowProgressOpts,
+    onSettled?: (installationId: string) => void
+  ): boolean {
     const existing = progressStore.operations.get(showOpts.installationId)
-    if (!existing || existing.finished) {
-      progressStore.startOperation({
-        installationId: showOpts.installationId,
-        title: showOpts.title,
-        apiCall: showOpts.apiCall as () => Promise<ActionResult>,
-        cancellable: showOpts.cancellable,
-        returnTo: showOpts.returnTo,
-        opKind: showOpts.opKind,
-        destroysInstance: showOpts.destroysInstance,
-        chainSpan: showOpts.chainSpan,
-        successTerminal: showOpts.successTerminal,
-        actionId: showOpts.actionId
-      })
+    if (existing && !existing.finished) return false
+    progressStore.startOperation({
+      installationId: showOpts.installationId,
+      title: showOpts.title,
+      apiCall: showOpts.apiCall as () => Promise<ActionResult>,
+      cancellable: showOpts.cancellable,
+      returnTo: showOpts.returnTo,
+      opKind: showOpts.opKind,
+      destroysInstance: showOpts.destroysInstance,
+      chainSpan: showOpts.chainSpan,
+      successTerminal: showOpts.successTerminal,
+      actionId: showOpts.actionId,
+      onSettled
+    })
+    return true
+  }
+
+  function runsInBackground(showOpts: ShowProgressOpts): boolean {
+    if (installationId) return false
+    if (showOpts.opKind === 'install') return true
+    if (showOpts.opKind === 'launch') return !opts.launchesInPlace?.(showOpts.installationId)
+    return opts.firstUseChain?.shouldForceTakeover() !== true
+  }
+
+  const resolvePortConflict = usePortConflictPrompt((relaunchOpts) =>
+    handleShowProgress(relaunchOpts)
+  )
+
+  function answerConflict(id: string): void {
+    if (!progressStore.operations.get(id)?.result?.portConflict) return
+    resolvePortConflict(id).catch((err: unknown) => {
+      console.error('[ports] the port conflict prompt failed', err)
+    })
+  }
+
+  function afterBackgroundTask(id: string): void {
+    const result = progressStore.operations.get(id)?.result
+    if (result?.portConflict) {
+      answerConflict(id)
+      return
     }
-    const ok = await openOverlay({
+    if (result?.ok && result.newInstallationId) opts.onBuildCreated?.(result.newInstallationId)
+  }
+
+  function closeProgressPanel(): void {
+    if (activePanel.value !== 'progress') return
+    activePanel.value = defaultBodyPanel()
+    window.api.closeCurrentPanel()
+  }
+
+  function openProgressTakeover(id: string, operationName: string): Promise<boolean> {
+    return openOverlay({
       kind: 'takeover',
       component: 'update',
-      installationId: showOpts.installationId,
+      installationId: id,
       operationName,
-      onCancel
+      onCancel: () => progressStore.cancelOperation(id)
     })
+  }
+
+  function showsLocalStartInFlight(overlay: Overlay | null): boolean {
+    if (overlay?.kind !== 'takeover' || !overlay.installationId) return false
+    const op = progressStore.operations.get(overlay.installationId)
+    const installation = installationStore.getById(overlay.installationId)
+    return op?.opKind === 'launch' && !op.finished && installation?.sourceCategory === 'local'
+  }
+
+  async function leavesLocalStartRunning(overlay: Overlay | null): Promise<boolean> {
+    return (
+      showsLocalStartInFlight(overlay) &&
+      (await keepsComfyRunningWhenWindowCloses()) &&
+      currentOverlay.value === overlay
+    )
+  }
+
+  async function closeOverlay(): Promise<boolean> {
+    if (!(await leavesLocalStartRunning(currentOverlay.value))) return confirmAndCloseOverlay()
+    currentOverlay.value = null
+    return true
+  }
+
+  function taskStoppedByClose(): string | null {
+    if (installationId) return null
+    for (const [id, op] of progressStore.operations) {
+      if (!op.finished && !op.cancelRequested && stopsWithItsWindow(op.opKind)) return id
+    }
+    return null
+  }
+
+  async function confirmStopsTasks(): Promise<boolean> {
+    for (let id = taskStoppedByClose(); id; id = taskStoppedByClose()) {
+      const name = installationStore.getById(id)?.name ?? progressStore.operations.get(id)!.title
+      if (!(await confirmStopTask(id, name))) return false
+    }
+    return true
+  }
+
+  async function answerCloseRequest(): Promise<{ cleared: boolean } | { defer: true }> {
+    const overlay = currentOverlay.value
+    if (overlay === null) {
+      if (!taskStoppedByClose()) return { defer: true }
+      return { cleared: await confirmStopsTasks() }
+    }
+    if (await leavesLocalStartRunning(overlay)) return { defer: true }
+    if (!(await confirmAndCloseOverlay())) return { cleared: false }
+    return { cleared: await confirmStopsTasks() }
+  }
+
+  async function handleShowProgress(showOpts: ShowProgressOpts): Promise<void> {
+    const operationName = progressActionName(showOpts.title)
+    if (runsInBackground(showOpts)) {
+      const settled =
+        showOpts.opKind === 'launch'
+          ? answerConflict
+          : showOpts.opKind === 'install'
+            ? undefined
+            : afterBackgroundTask
+      startOperationOnce({ ...showOpts, chainSpan: undefined }, settled)
+      closeProgressPanel()
+      const keepsTakeover = showOpts.opKind !== 'launch' && showOpts.opKind !== 'install'
+      if (!keepsTakeover && currentOverlay.value?.kind === 'takeover') dismissTakeoverDirect()
+      if (showOpts.opKind === 'install') {
+        opts.firstUseChain?.onBackgroundInstall(showOpts)
+        opts.onBackgroundInstall?.(showOpts.installationId)
+      }
+      return
+    }
+    opts.firstUseChain?.onShowProgress(showOpts)
+    startOperationOnce(showOpts)
+    const ok = await openProgressTakeover(showOpts.installationId, operationName)
     if (!ok) return
     if (!installationId && opts.prepareChooserHostHandoff && !showOpts.destroysInstance) {
       await opts.prepareChooserHostHandoff(
@@ -213,24 +325,25 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     })
     await nextTick()
     if (component === 'new-install') {
-      const cameFromLocalBranch = opts.firstUseChain
-        ? opts.firstUseChain.consumeCameFromLocalBranch() === true
-        : false
+      const setupHandoff = opts.firstUseChain?.consumeSetupHandoff() ?? null
       await dashboardScope.initialize()
       if (currentOverlay.value !== openedOverlay) return
       await newInstallRef.value?.open({
         entrypoint,
         workspaceId: dashboardScope.selectedWorkspaceId,
-        ...(cameFromLocalBranch ? { cameFromLocalBranch } : {})
+        ...(setupHandoff
+          ? {
+              cameFromSetup: true,
+              needsConsent: setupHandoff.needsConsent,
+              restore: setupHandoff.restore
+            }
+          : {})
       })
     } else if (component === 'track') trackRef.value?.open()
     else if (component === 'load-snapshot') loadSnapshotRef.value?.open()
-    else if (component === 'quick-install') await quickInstallRef.value?.open()
   }
 
-  async function openFirstUseTakeover(firstUseOpts?: {
-    initialStep?: 'start' | 'localBranch'
-  }): Promise<void> {
+  async function openFirstUseTakeover(): Promise<void> {
     const statePromise = window.api
       .getFirstUseState()
       .catch(() => ({ skipPick: false, hasLegacyDesktop: false }))
@@ -244,8 +357,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     const state = await statePromise
     await firstUseRef.value?.open({
       skipPick: state.skipPick,
-      hasLegacyDesktop: state.hasLegacyDesktop,
-      ...(firstUseOpts?.initialStep ? { initialStep: firstUseOpts.initialStep } : {})
+      hasLegacyDesktop: state.hasLegacyDesktop
     })
   }
 
@@ -283,6 +395,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     currentOverlay,
     openOverlay,
     closeOverlay,
+    answerCloseRequest,
     handleShowProgress,
     handleProgressClose,
     openFlowTakeover,

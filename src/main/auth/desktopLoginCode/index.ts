@@ -16,12 +16,12 @@ import { CLOUD_LOGIN_ORIGIN, cloudLoginOriginForUrl } from './origins'
 import { codeChallengeS256, createCodeVerifier } from './pkce'
 import {
   closeActiveBridge,
-  openExternalSafely,
   runBannerCleanup,
   showCopyLinkBanner
 } from '../firebaseBridge/flowState'
 import { detectFirebaseEnv, getFirebaseConfig } from '../firebaseBridge/config'
 import { abortableSleep } from '../firebaseBridge/flowControl'
+import { tryOpenExternalUrl } from '../../lib/openExternal'
 import {
   bindSignedInUser,
   emitSignInFailure,
@@ -91,7 +91,7 @@ export async function signInViaDesktopLoginCode(
     app_version: app.getVersion(),
     code_challenge: codeChallengeS256(codeVerifier)
   }
-  if (settings.get('telemetryEnabled') === true) {
+  if (settings.telemetryConsent() === true) {
     request.installation_id = getDeviceId()
   }
 
@@ -121,7 +121,7 @@ export async function signInViaDesktopLoginCode(
   try {
     const loginUrl = new URL('/cloud/login', cloudOrigin)
     loginUrl.searchParams.set('desktop_login_code', grant.code)
-    openExternalSafely(loginUrl.href)
+    void tryOpenExternalUrl(loginUrl.href)
     showCopyLinkBanner(comfyContents, loginUrl.href)
 
     const deadlineMs = Date.now() + grant.expires_in * 1000

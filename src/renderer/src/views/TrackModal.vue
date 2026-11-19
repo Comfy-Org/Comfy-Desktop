@@ -1,194 +1,24 @@
 <script setup lang="ts">
-import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
-import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
-import InputGroupAddon from '@comfyorg/design-system/input-group/InputGroupAddon'
-import { ref, computed, toRaw } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { ref } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
-import { TID } from '../../../shared/testIds'
-import { HardDrive } from 'lucide-vue-next'
-import { useModal } from '../composables/useModal'
-import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
-import TakeoverBack from '../components/TakeoverBack.vue'
-import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
-import { BaseSelect, type BaseSelectOption } from '../components/ui'
-
-import type { ProbeResult } from '../types/ipc'
-import { emitTelemetryAction, toCountBucket } from '../lib/telemetry'
+import SetupModal from '../components/SetupModal.vue'
+import TrackBuildForm from '../components/TrackBuildForm.vue'
 
 const emit = defineEmits<{
   close: []
   'navigate-list': []
 }>()
 
-const brandInputClass =
-  'flex w-full items-center gap-2.5 rounded-md border border-solid border-[var(--color-border)] bg-[var(--brand-surface-bg)] text-[length:var(--takeover-fs-body)] text-neutral-100 [font-family:inherit] transition-[border-color,background] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] has-[input:focus-visible]:[box-shadow:0_0_0_2px_color-mix(in_srgb,var(--action)_35%,transparent)]'
-const browseClass =
-  'static flex h-10 items-center justify-center rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-3.5 py-0 text-[13px] leading-[inherit] font-medium whitespace-normal text-neutral-100 appearance-auto touch-auto [&]:[appearance:button] transition-[background,border-color,color] duration-[120ms] ease-[ease] enabled:hover:border-[var(--brand-surface-border-hover)] enabled:hover:bg-[var(--brand-surface-bg-hover)] focus-visible:[box-shadow:none] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55'
-
-const { t } = useI18n()
-const modal = useModal()
-
 const isOpen = ref(false)
-const trackPath = ref('')
-const trackName = ref('')
-const suggestedName = ref('')
-const probeResults = ref<ProbeResult[]>([])
-const selectedProbe = ref<ProbeResult | null>(null)
-const venvOverride = ref<string | null>(null)
-const probing = ref(false)
-
-const saveDisabled = computed(() => !trackPath.value || !selectedProbe.value)
-
-let probeGeneration = 0
+const openCount = ref(0)
+const formRef = ref<InstanceType<typeof TrackBuildForm> | null>(null)
 
 function open(): void {
-  probeGeneration++
-  trackPath.value = ''
-  trackName.value = ''
-  probeResults.value = []
-  selectedProbe.value = null
-  venvOverride.value = null
-  suggestedName.value = ''
-  probing.value = false
+  openCount.value++
   isOpen.value = true
-  void window.api
-    .getUniqueName(DEFAULT_INSTALL_NAME)
-    .then((name) => {
-      suggestedName.value = name
-    })
-    .catch(() => {})
 }
 
-async function handleBrowse(): Promise<void> {
-  const dir = await window.api.browseFolder(trackPath.value || undefined)
-  if (dir) {
-    trackPath.value = dir
-    await probe(dir)
-  }
-}
-
-function handleOpenTrackPath(): void {
-  if (trackPath.value) void window.api.openPath(trackPath.value)
-}
-
-async function probe(dirPath: string): Promise<void> {
-  const generation = ++probeGeneration
-  probing.value = true
-  selectedProbe.value = null
-  probeResults.value = []
-
-  let results: ProbeResult[]
-  try {
-    results = await window.api.probeInstallation(dirPath)
-  } finally {
-    if (generation === probeGeneration) probing.value = false
-  }
-
-  if (generation !== probeGeneration) return
-  probeResults.value = results
-  if (results.length > 0) {
-    selectedProbe.value = results[0] ?? null
-  }
-}
-
-function onProbeSelect(value: string): void {
-  const idx = parseInt(value, 10)
-  selectedProbe.value = probeResults.value[idx] ?? null
-  venvOverride.value = null
-}
-
-const probeOptions = computed<BaseSelectOption[]>(() =>
-  probeResults.value.map((r, i) => ({ value: String(i), label: r.sourceLabel }))
-)
-
-const selectedProbeValue = computed(() => {
-  if (!selectedProbe.value) return ''
-  const idx = probeResults.value.indexOf(selectedProbe.value)
-  return idx >= 0 ? String(idx) : ''
-})
-
-const selectPlaceholder = computed(() => {
-  if (probing.value) return t('track.detecting')
-  if (probeResults.value.length > 0) return ''
-  return trackPath.value ? t('track.noDetected') : t('track.browseDirFirst')
-})
-
-interface DetailFieldEntry {
-  label: string
-  value: string
-}
-
-const detailFields = computed<DetailFieldEntry[]>(() => {
-  if (!selectedProbe.value) return []
-  const p = selectedProbe.value
-  const fields: DetailFieldEntry[] = []
-  if (p.version && p.version !== 'unknown') {
-    fields.push({ label: t('track.version'), value: p.version })
-  }
-  if (p.repo) {
-    fields.push({ label: t('track.repository'), value: p.repo })
-  }
-  if (p.branch) {
-    fields.push({ label: t('track.branch'), value: p.branch })
-  }
-  return fields
-})
-
-const showVenvField = computed(() => {
-  if (!selectedProbe.value) return false
-  return selectedProbe.value.sourceId === 'git'
-})
-
-const effectiveVenvPath = computed(() => {
-  if (venvOverride.value !== null) return venvOverride.value
-  return (selectedProbe.value?.venvPath as string | undefined) || ''
-})
-
-const effectiveVenvName = computed(() => {
-  const p = effectiveVenvPath.value
-  if (!p) return ''
-  const sep = p.includes('\\') ? '\\' : '/'
-  return p.split(sep).pop() || ''
-})
-
-async function handleBrowseVenv(): Promise<void> {
-  const defaultPath = effectiveVenvPath.value || trackPath.value || undefined
-  const dir = await window.api.browseFolder(defaultPath)
-  if (dir) {
-    venvOverride.value = dir
-  }
-}
-
-async function handleSave(): Promise<void> {
-  if (!selectedProbe.value) return
-
-  const name = trackName.value.trim() || DEFAULT_INSTALL_NAME
-
-  const rawProbe = JSON.parse(JSON.stringify(toRaw(selectedProbe.value))) as Record<string, unknown>
-  if (venvOverride.value !== null) {
-    rawProbe.venvPath = venvOverride.value
-  }
-  const installPath = (rawProbe.installPath as string | undefined) || trackPath.value
-  const data: Record<string, unknown> = {
-    name,
-    ...rawProbe,
-    installPath
-  }
-
-  const result = await window.api.trackInstallation(data)
-  if (!result.ok) {
-    await modal.alert({
-      title: t('track.cannotTrack'),
-      message: result.message || ''
-    })
-    return
-  }
-  emitTelemetryAction('comfy.desktop.track_existing.saved', {
-    detected_source_label: selectedProbe.value.sourceLabel || 'unknown',
-    probe_count_bucket: toCountBucket(probeResults.value.length),
-    custom_name_used: trackName.value.trim().length > 0
-  })
+function handleSaved(): void {
   isOpen.value = false
   emit('close')
   emit('navigate-list')
@@ -198,163 +28,29 @@ defineExpose({ open })
 </script>
 
 <template>
-  <BrandTakeoverLayout
+  <SetupModal
     v-if="isOpen"
-    dismissible
-    :aria-label="$t('track.grandTitle')"
+    :dialog-label="$t('track.grandTitle')"
+    :title="$t('track.grandTitle')"
+    :lead="$t('track.grandSubtitle')"
+    dismiss-on-escape
+    data-testid="track-modal"
     @close="emit('close')"
   >
-    <div
-      class="track-shell mx-auto flex h-full max-h-full min-h-0 w-full max-w-[640px] flex-col items-center justify-center self-stretch py-[clamp(1.5rem,4vh,3rem)] text-center"
-      data-testid="track-modal"
-    >
-      <h1
-        class="track-title m-0 text-[length:var(--takeover-fs-title)] leading-[1.15] font-extrabold text-white [font-family:var(--font-display)] opacity-85 text-center"
+    <TrackBuildForm ref="formRef" :key="openCount" class="mt-4" @saved="handleSaved" />
+
+    <template #footer>
+      <span class="flex-1" />
+      <Button
+        type="button"
+        size="lg"
+        variant="inverted"
+        class="track-save h-9 min-w-[104px] rounded-[10px]"
+        :disabled="!formRef?.canSave"
+        @click="formRef?.save()"
       >
-        {{ $t('track.grandTitle') }}
-      </h1>
-      <p
-        class="track-lead mt-[var(--takeover-gap-md)] mr-0 mb-[var(--takeover-gap-lg)] ml-0 text-[length:var(--takeover-fs-lead)] leading-[normal] font-normal text-neutral-200 [font-family:var(--font-sans)] text-center"
-      >
-        {{ $t('track.grandSubtitle') }}
-      </p>
-      <div
-        class="track-card flex max-h-full w-full flex-col overflow-hidden rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-left [backdrop-filter:blur(var(--brand-surface-blur))]"
-      >
-        <div
-          class="track-card-body flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto p-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          <div class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]">
-            <label class="track-label text-[13px] text-neutral-200">{{
-              $t('track.installDir')
-            }}</label>
-            <div class="track-path-row flex items-stretch gap-2">
-              <div :class="[brandInputClass, 'track-path-input h-10 min-w-0 flex-auto px-3 py-0']">
-                <HardDrive :size="14" aria-hidden="true" />
-                <Button
-                  v-if="trackPath"
-                  variant="textonly"
-                  size="unset"
-                  type="button"
-                  class="track-path-open static block min-w-0 flex-[0_1_auto] cursor-pointer overflow-hidden rounded-lg border-none bg-transparent p-0 text-left text-ellipsis whitespace-nowrap text-inherit [font:inherit] appearance-auto touch-auto [&]:[appearance:button] transition-none hover:bg-transparent hover:text-inherit hover:underline focus-visible:bg-transparent focus-visible:text-inherit focus-visible:underline focus-visible:[box-shadow:none] focus-visible:outline-none"
-                  :title="$t('actions.openDirectory')"
-                  :aria-label="`${$t('actions.openDirectory')}: ${trackPath}`"
-                  @click="handleOpenTrackPath"
-                >
-                  {{ trackPath }}
-                </Button>
-                <span
-                  v-else
-                  class="track-path-placeholder min-w-0 flex-[0_1_auto] cursor-default overflow-hidden border-none bg-transparent p-0 text-left text-ellipsis whitespace-nowrap text-neutral-400 [font:inherit]"
-                  >{{ $t('track.selectDir') }}</span
-                >
-              </div>
-              <Button
-                variant="textonly"
-                size="unset"
-                :class="browseClass"
-                :data-testid="TID.trackBrowse"
-                type="button"
-                @click="handleBrowse"
-              >
-                {{ $t('common.browse') }}
-              </Button>
-            </div>
-          </div>
-
-          <div class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]">
-            <label class="track-label text-[13px] text-neutral-200" for="track-name">{{
-              $t('common.name')
-            }}</label>
-            <InputGroup>
-              <InputGroupInput
-                id="track-name"
-                v-model="trackName"
-                data-initial-focus
-                type="text"
-                :placeholder="suggestedName || $t('common.namePlaceholder')"
-              />
-            </InputGroup>
-          </div>
-
-          <div class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]">
-            <label class="track-label text-[13px] text-neutral-200">{{
-              $t('track.detectedType')
-            }}</label>
-            <BaseSelect
-              :model-value="selectedProbeValue"
-              :options="probeOptions"
-              :placeholder="selectPlaceholder"
-              :disabled="probing || probeResults.length <= 1"
-              :aria-label="$t('track.detectedType')"
-              @update:model-value="onProbeSelect"
-            />
-          </div>
-
-          <div
-            v-if="detailFields.length > 0"
-            class="track-summary flex flex-col gap-0.5 rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-4 py-3.5"
-          >
-            <div
-              v-for="field in detailFields"
-              :key="field.label"
-              class="track-summary-row flex items-baseline justify-between gap-3 py-1.5 text-[length:var(--takeover-fs-body)] [&+&]:border-t [&+&]:border-solid [&+&]:border-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]"
-            >
-              <span class="track-summary-label flex-none text-neutral-300">{{ field.label }}</span>
-              <span class="track-summary-value max-w-[60%] truncate font-medium text-neutral-100">{{
-                field.value
-              }}</span>
-            </div>
-          </div>
-
-          <div
-            v-if="showVenvField"
-            class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]"
-          >
-            <label class="track-label text-[13px] text-neutral-200">{{ $t('git.venv') }}</label>
-            <div class="track-path-row flex items-stretch gap-2">
-              <InputGroup class="track-path-input min-w-0 flex-auto">
-                <InputGroupAddon><HardDrive :size="14" aria-hidden="true" /></InputGroupAddon>
-                <InputGroupInput
-                  type="text"
-                  :model-value="effectiveVenvName || $t('git.venvNotFound')"
-                  disabled
-                />
-              </InputGroup>
-              <Button
-                variant="textonly"
-                size="unset"
-                :class="browseClass"
-                type="button"
-                @click="handleBrowseVenv"
-              >
-                {{ $t('common.browse') }}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div
-          class="track-card-footer flex flex-none items-center justify-end gap-3 border-t border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-5 py-3.5"
-        >
-          <Button
-            variant="inverted"
-            size="unset"
-            class="track-save static inline-flex min-w-[120px] items-center justify-center rounded-lg border border-solid border-comfy-yellow bg-comfy-yellow px-4 py-2.5 text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal text-neutral-900 appearance-auto touch-auto [&]:[appearance:button] transition-[background,border-color,color] duration-[120ms] ease-[ease] enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] focus-visible:[box-shadow:none] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:bg-comfy-yellow"
-            :disabled="saveDisabled"
-            @click="handleSave"
-          >
-            {{ $t('track.trackInstallation') }}
-          </Button>
-        </div>
-      </div>
-    </div>
-    <template #footer-left>
-      <TakeoverBack
-        class="track-back-to-dashboard absolute bottom-[clamp(1.25rem,2vw,2rem)] left-[clamp(1.25rem,2vw,2rem)] z-2"
-        :label="$t('common.backToDashboard')"
-        @back="emit('close')"
-      />
+        {{ $t('track.trackInstallation') }}
+      </Button>
     </template>
-  </BrandTakeoverLayout>
+  </SetupModal>
 </template>

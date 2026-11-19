@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, nextTick } from 'vue'
 import BaseAlert from '../components/ui/BaseAlert.vue'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 type SystemModalConfirmStyle = 'primary' | 'danger'
 type SystemModalSecondaryStyle = 'primary' | 'danger' | 'default'
@@ -88,9 +89,7 @@ onUnmounted(() => {
         :key="`detail-${gi}`"
         class="system-modal-detail-group [&+.system-modal-detail-group]:mt-2.5"
       >
-        <p
-          class="system-modal-detail-label mt-0 mr-0 mb-1 ml-0 text-[12px] font-semibold tracking-[0.04em] text-text-muted uppercase"
-        >
+        <p class="system-modal-detail-label mt-0 mr-0 mb-1 ml-0" :class="SECTION_TITLE_CLASS">
           {{ group.label }}
         </p>
         <ul

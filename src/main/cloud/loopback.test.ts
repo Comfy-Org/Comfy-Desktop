@@ -75,14 +75,14 @@ describe('loopback listener', () => {
   })
 
   it.for([
-    { query: 'error=access_denied', reason: 'cancelled' },
-    { query: 'error=server_error', reason: 'idp_error' },
-    { query: '', reason: 'idp_error' }
-  ])('reports a callback with $query as $reason', async ({ query, reason }) => {
+    { query: 'error=access_denied', reason: 'cancelled', oauthError: 'access_denied' },
+    { query: 'error=server_error', reason: 'idp_error', oauthError: 'server_error' },
+    { query: '', reason: 'idp_error', oauthError: undefined }
+  ])('reports a callback with $query as $reason', async ({ query, reason, oauthError }) => {
     listener = await startLoopbackListener({ expectedState: 'st', timeoutMs: 5000 })
     const codeP = listener.waitForCode()
     await get(`${listener.redirectUri}?state=st&${query}`)
-    await expect(codeP).rejects.toMatchObject({ name: 'SignInFailure', reason })
+    await expect(codeP).rejects.toMatchObject({ name: 'SignInFailure', reason, oauthError })
   })
 
   it('reports a callback that never comes as a timeout', async () => {

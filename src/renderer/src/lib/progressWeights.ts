@@ -1,21 +1,31 @@
 import type { ProgressStep } from '../types/ipc'
 
 const TABLES: Record<string, Record<string, number>> = {
-  'cleanup|download|extract|setup|update': {
+  'download|extract|setup|update': {
     download: 0.4,
     extract: 0.2,
     setup: 0.3,
-    cleanup: 0.05,
-    update: 0.05
+    update: 0.1
   },
-  'cleanup|download|extract|restore-nodes|restore-pip|setup|update': {
+  'download|extract|setup': {
+    download: 0.45,
+    extract: 0.2,
+    setup: 0.35
+  },
+  'download|extract|restore-nodes|restore-pip|setup|update': {
     download: 0.3,
     extract: 0.15,
     setup: 0.2,
-    cleanup: 0.05,
-    update: 0.05,
+    update: 0.1,
     'restore-nodes': 0.15,
     'restore-pip': 0.1
+  },
+  'download|extract|restore-nodes|restore-pip|setup': {
+    download: 0.3,
+    extract: 0.15,
+    setup: 0.25,
+    'restore-nodes': 0.18,
+    'restore-pip': 0.12
   },
   'download|extract': {
     download: 0.7,

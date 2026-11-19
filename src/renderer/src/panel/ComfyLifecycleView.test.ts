@@ -80,13 +80,13 @@ describe('ComfyLifecycleView', () => {
     expect(wrapper.find('.lifecycle-placeholder').exists()).toBe(false)
     const button = wrapper.find(`[data-testid="${TID.lifecycleRelaunch}"]`)
     expect(button.exists()).toBe(true)
-    expect(button.text()).toContain('Relaunch ComfyUI')
+    expect(button.text()).toContain('Restart ComfyUI')
   })
 
-  it('labels the stopped-surface back button "Return to Dashboard" and routes to the dashboard', async () => {
+  it('labels the stopped-surface back button "Back to Home" and routes to the dashboard', async () => {
     const wrapper = mountView()
     await flushPromises()
-    const back = wrapper.findAll('button').find((b) => b.text().includes('Return to Dashboard'))
+    const back = wrapper.findAll('button').find((b) => b.text().includes('Back to Home'))
     expect(back?.exists()).toBe(true)
     expect(back!.attributes('data-testid')).toBe(TID.lifecycleReturnDashboard)
     await back!.trigger('click')

@@ -1,10 +1,17 @@
+import { relaunchAfterAction, stopThenRun } from '../lib/relaunchAfterAction'
 import { onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { useProgressStore } from '../stores/progressStore'
 import { IN_PLACE_RELAUNCH, stopAndWaitForExit } from '../lib/stopWarning'
 import { successTerminalGoDashboardOrOpen } from '../lib/progressTerminalPresets'
-import { REQUIRES_STOPPED, type Installation, type ShowProgressOpts } from '../types/ipc'
+import {
+  REQUIRES_STOPPED,
+  type ActionResult,
+  type Installation,
+  type ShowProgressOpts
+} from '../types/ipc'
 
 import type { Overlay } from './useOverlay'
 
@@ -16,7 +23,7 @@ interface DeepLinkRouterOpts {
   showAppUpdateDownloadPrompt: (version: string | null) => Promise<void>
   pickInstallFromPicker?: (
     installation: Installation,
-    opts?: { startupRestore?: boolean; isRestart?: boolean }
+    opts?: { isRestart?: boolean; pickerWorkspaceId?: string }
   ) => Promise<void> | void
   runInstallActionFromPicker?: (
     installation: Installation,
@@ -28,6 +35,7 @@ interface DeepLinkRouterOpts {
 export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
   const installationStore = useInstallationStore()
   const sessionStore = useSessionStore()
+  const progressStore = useProgressStore()
   const { t } = useI18n()
   let unsubPanelTriggerOverlay: (() => void) | null = null
 
@@ -80,16 +88,16 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
           await opts.bootstrapReady
           const id = payload.installationId
           if (!id) return
-          const inst = installationStore.getById(id)
-          if (!inst) {
-            if (payload.startupRestore) {
-              window.api.resolveStartupRestoreReveal('dashboard-fallback')
-            }
-            return
-          }
+          const inst =
+            installationStore.getById(id) ??
+            (await installationStore.fetchInstallations().catch(() => [])).find(
+              (installation) => installation.id === id
+            )
+          if (!inst) return
+          const pickerWorkspaceId = payload.actionData?.pickerWorkspaceId
           await opts.pickInstallFromPicker?.(inst, {
-            startupRestore: payload.startupRestore === true,
-            isRestart: payload.isRestart === true
+            isRestart: payload.isRestart === true,
+            pickerWorkspaceId: typeof pickerWorkspaceId === 'string' ? pickerWorkspaceId : undefined
           })
           return
         }
@@ -109,12 +117,13 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
           const actionId = payload.actionId
           const title = payload.title
           if (!id || !actionId || !title) return
-          const inst = installationStore.getById(id)
-          if (!inst) return
+          if (!installationStore.getById(id)) {
+            await installationStore.fetchInstallations().catch(() => {})
+          }
+          if (!installationStore.getById(id)) return
           const isRestart = !!payload.isRestart
           const actionData = (payload.actionData ?? undefined) as
-            | Record<string, unknown>
-            | undefined
+            Record<string, unknown> | undefined
           const wasRunning = sessionStore.isRunning(id)
           const requiresStoppedGuard = !isRestart && REQUIRES_STOPPED.has(actionId)
           const needsSelfStop = wasRunning && requiresStoppedGuard
@@ -127,12 +136,13 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
               }
             : needsSelfStop
               ? async () => {
-                  await stopAndWaitForExit(id, isRunning)
-                  const result = await window.api.runAction(id, actionId, actionData)
-                  if (wantsRelaunch && result?.ok !== false) {
-                    await window.api.runAction(id, 'launch')
-                  }
-                  return result
+                  const run = (): Promise<ActionResult> =>
+                    window.api.runAction(id, actionId, actionData)
+                  const cancelRequested = (): boolean =>
+                    progressStore.operations.get(id)?.cancelRequested === true
+                  const result = await stopThenRun(id, isRunning, cancelRequested, run)
+                  if (result.cancelled) return result
+                  return wantsRelaunch ? relaunchAfterAction(id, result) : result
                 }
               : () => window.api.runAction(id, actionId, actionData)
           const successTerminal = payload.successChoice

@@ -1,6 +1,8 @@
-import { ipcMain, shell, dialog, WebContentsView, BrowserWindow } from 'electron'
+import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
+import type { WebContentsView } from 'electron'
+import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
-import type { PopupTheme, TitlePopupKind } from '../../types/ipc'
+import type { PopupTheme, TitlePopupKind, TitlePopupMenuItem } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
 import {
   cancelModelDownload,
@@ -20,6 +22,7 @@ import * as settings from '../settings'
 import { defaultInstallDir } from '../lib/paths'
 import { convertLevelToZoomPercent } from '../lib/zoom'
 import { getAppLogDir } from '../lib/appLog'
+import { tryOpenExternalUrl } from '../lib/openExternal'
 import {
   openPath as openPathHelper,
   getAppVersion,
@@ -36,7 +39,6 @@ import {
   buildInstallLocationFields
 } from '../lib/ipc/registerSettingsHandlers'
 import { globalSettingsEvents } from '../lib/globalSettingsEvents'
-import * as installations from '../installations'
 import { getCachedGithubStarCount, getGithubStarCount } from '../lib/githubStars'
 import {
   comfyWindows,
@@ -45,7 +47,8 @@ import {
   getEntryByInstallationId,
   hostInstallEvents,
   isChooserHost,
-  isPanelSender
+  maximizeIfPendingReveal,
+  unhostedLaunches
 } from '../host/registry'
 import type { ComfyPanelKey, ComfyWindowEntry } from '../host/registry'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
@@ -59,14 +62,6 @@ import type { Category, ViewKind } from '../../shared/viewKind'
 import { getTitleTooltipForParent, hideTitleTooltipPopup } from './titleTooltip'
 import { EmbeddedPopupView } from './embeddedPopupView'
 import { recordIpcInvocation } from '../lib/e2eOverrides'
-
-interface TitlePopupMenuItem {
-  id?: string
-  label?: string
-  labelKey?: string
-  checked?: boolean
-  kind?: 'separator'
-}
 
 function kindUsesBackdrop(kind: TitlePopupKind): boolean {
   return (
@@ -104,6 +99,7 @@ export interface InstancePickerSnapshot {
   runningInstallationIds: string[]
   runningSessionStartedAt: Record<string, number>
   launchingInstallationIds: string[]
+  unhostedLaunchingInstallationIds: string[]
   selectedInstallationId: string | null
   pickerSelectionEpoch: number
   selectedSettings: Record<string, unknown>[] | null
@@ -167,6 +163,7 @@ interface BuildInstancePickerSnapshotArgs {
   runningInstallationIds: string[]
   runningSessionStartedAt?: Record<string, number>
   launchingInstallationIds: string[]
+  unhostedLaunchingInstallationIds?: string[]
   selectedInstallationId?: string | null
   pickerSelectionEpoch?: number
   selectedSettings?: Record<string, unknown>[] | null
@@ -215,6 +212,7 @@ export function resolvePickerSelectedInstallId(
 export interface InstancePickerScope {
   installs: InstancePickerInstall[]
   selectedInstallationId: string | null
+  workspaceId: string
 }
 
 export function scopeInstancePicker(
@@ -227,7 +225,10 @@ export function scopeInstancePicker(
     allInstalls.find((install) => install.id === hostInstallationId) ??
     allInstalls.find((install) => install.id === anchorInstallationId)
   const workspaceId = scopeInstall
-    ? installationWorkspaceId(scopeInstall)
+    ? installationWorkspaceId(
+        scopeInstall,
+        settings.get(DASHBOARD_WORKSPACE_SETTING) || PERSONAL_WORKSPACE_ID
+      )
     : settings.get(DASHBOARD_WORKSPACE_SETTING) || PERSONAL_WORKSPACE_ID
   const hideCloud = settings.get('hideCloudFromPicker') === true
   const installs = allInstalls.filter(
@@ -237,6 +238,7 @@ export function scopeInstancePicker(
   )
   return {
     installs,
+    workspaceId,
     selectedInstallationId: resolvePickerSelectedInstallId(
       requestedInstallationId,
       hostInstallationId,
@@ -268,6 +270,7 @@ export function buildInstancePickerSnapshot(
     runningInstallationIds: args.runningInstallationIds,
     runningSessionStartedAt: args.runningSessionStartedAt ?? {},
     launchingInstallationIds: args.launchingInstallationIds,
+    unhostedLaunchingInstallationIds: args.unhostedLaunchingInstallationIds ?? [],
     selectedInstallationId: args.selectedInstallationId ?? null,
     pickerSelectionEpoch: args.pickerSelectionEpoch ?? 0,
     selectedSettings: args.selectedSettings ?? null,
@@ -315,6 +318,7 @@ export interface TitlePopupEntry {
   lastConfigJson: string | null
   lastSyncedConfigJson: string | null
   pickerSelectedInstallationId: string | null
+  pickerWorkspaceId: string | null
   pickerScopeAnchor: { installationId: string; dashboardWorkspaceId: unknown } | null
   pickerSelectionEpoch: number
   pickerInitialTab: string | null
@@ -381,7 +385,7 @@ const POPUP_BACKDROP_HTML = `<!doctype html>
 function ensurePopupBackdrop(parent: BrowserWindow): PopupBackdropEntry {
   const existing = popupBackdropsByParent.get(parent.id)
   if (existing && !existing.view.webContents.isDestroyed()) return existing
-  const view = new WebContentsView({
+  const view = createWebContentsView({
     webPreferences: {
       contextIsolation: false,
       nodeIntegration: true,
@@ -451,17 +455,32 @@ function hidePopupBackdrop(parent: BrowserWindow): void {
 }
 
 const POPUP_WIDTH = 220
-const POPUP_ITEM_HEIGHT = 32
+const POPUP_ITEM_HEIGHT = 28
 const POPUP_SEPARATOR_HEIGHT = 9
 const POPUP_VPADDING = 8
 const POPUP_VBORDER = 2
+const POPUP_ICON_ROW_GAP = 2
 
 export function computePopupHeight(items: readonly TitlePopupMenuItem[]): number {
   const content = items.reduce(
     (sum, item) => sum + (item.kind === 'separator' ? POPUP_SEPARATOR_HEIGHT : POPUP_ITEM_HEIGHT),
     0
   )
-  return content + POPUP_VPADDING + POPUP_VBORDER
+  const rowGap = items.some((item) => item.icon) ? POPUP_ICON_ROW_GAP : 0
+  const gaps = rowGap * Math.max(0, items.length - 1)
+  return content + gaps + POPUP_VPADDING + POPUP_VBORDER
+}
+
+function desktopWindowMenuItems(): TitlePopupMenuItem[] {
+  return [
+    {
+      id: 'performance-test',
+      label: 'Performance tests',
+      labelKey: 'fileMenu.performanceTests',
+      icon: 'performance-test'
+    },
+    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks', icon: 'benchmarks' }
+  ]
 }
 
 export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMenuItem[] {
@@ -469,30 +488,41 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     return [
       {
         id: 'skip-onboarding',
-        label: 'Skip Onboarding',
+        label: 'Skip onboarding',
         labelKey: 'fileMenu.skipOnboarding'
       }
     ]
   }
+  if (isChooserHost(entry)) return desktopWindowMenuItems()
   const items: TitlePopupMenuItem[] = [
-    { id: 'new-window', label: 'Open Dashboard', labelKey: 'fileMenu.newWindow' },
-    { kind: 'separator' },
     {
-      id: 'settings',
-      label: 'Desktop Settings',
-      labelKey: 'fileMenu.globalSettings'
-    }
+      id: 'performance-test',
+      label: 'Performance tests',
+      labelKey: 'fileMenu.performanceTest'
+    },
+    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' }
   ]
+  if (entry.installationId !== null) {
+    items.push(
+      { kind: 'separator' },
+      { id: 'settings', label: 'Desktop settings', labelKey: 'fileMenu.globalSettings' }
+    )
+  }
   if (entry.installationId !== null && !entry.comfyView.webContents.isDestroyed()) {
     const level = entry.comfyView.webContents.getZoomLevel()
     if (level !== 0) {
       const percent = convertLevelToZoomPercent(level)
-      items.push({ id: 'reset-zoom', label: `Reset Zoom (${percent}%)` })
+      items.push({
+        id: 'reset-zoom',
+        label: `Reset zoom (${percent}%)`,
+        labelKey: 'fileMenu.resetZoom',
+        labelParams: { percent }
+      })
     }
   }
   items.push(
     { kind: 'separator' },
-    { id: 'exit-window', label: 'Close Window', labelKey: 'fileMenu.exitWindow' },
+    { id: 'exit-window', label: 'Close window', labelKey: 'fileMenu.exitWindow' },
     {
       id: 'close-all-windows',
       label: 'Quit Desktop',
@@ -537,7 +567,11 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
     const parentEntry = comfyWindows.get(entry.parentEntryId)
     const effectiveHostInstallationId =
       parentEntry?.installationId ?? parentEntry?.previewInstallationId ?? null
-    const { installs, selectedInstallationId: selectedId } = scopeInstancePicker(
+    const {
+      installs,
+      selectedInstallationId: selectedId,
+      workspaceId
+    } = scopeInstancePicker(
       allInstalls,
       effectiveHostInstallationId,
       entry.pickerSelectedInstallationId,
@@ -551,6 +585,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
         }))
       : { settings: null, snapshots: null }
     if (mySeq !== pickerSnapshotBroadcastSeq) return
+    entry.pickerWorkspaceId = workspaceId
     const snapshot = buildInstancePickerSnapshot({
       installs,
       hostInstallationId: parentEntry?.installationId ?? null,
@@ -558,6 +593,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
       runningInstallationIds,
       runningSessionStartedAt,
       launchingInstallationIds,
+      unhostedLaunchingInstallationIds: unhostedLaunches(launchingInstallationIds),
       selectedInstallationId: selectedId,
       pickerSelectionEpoch: entry.pickerSelectionEpoch,
       selectedSettings: details.settings,
@@ -634,6 +670,7 @@ function ensureTitlePopup(parent: BrowserWindow): TitlePopupEntry {
     lastConfigJson: null,
     lastSyncedConfigJson: null,
     pickerSelectedInstallationId: null,
+    pickerWorkspaceId: null,
     pickerScopeAnchor: null,
     pickerSelectionEpoch: 0,
     pickerInitialTab: null,
@@ -700,6 +737,7 @@ const PICKER_TOP_GUTTER = 8
 const PICKER_EXPANDED_MAX_WIDTH = 960
 const PICKER_EXPANDED_MAX_HEIGHT_RATIO = 0.85
 const PICKER_EXPANDED_MAX_HEIGHT = 720
+const PICKER_CLOSE_LANE = 48
 
 interface PickerBounds {
   x: number
@@ -712,18 +750,21 @@ function computePickerBounds(parent: BrowserWindow): PickerBounds {
   const content = parent.getContentBounds()
   const innerTop = TITLEBAR_HEIGHT + PICKER_TOP_GUTTER
   const innerHeight = Math.max(0, content.height - innerTop - PICKER_BOTTOM_GUTTER)
-  const innerWidth = Math.max(0, content.width - 2 * PICKER_SIDE_GUTTER)
+  const innerWidth = Math.max(0, content.width - 2 * PICKER_SIDE_GUTTER - 2 * PICKER_CLOSE_LANE)
 
-  const width = Math.min(PICKER_EXPANDED_MAX_WIDTH, innerWidth)
+  const panelWidth = Math.min(PICKER_EXPANDED_MAX_WIDTH, innerWidth)
   const height = Math.min(
     innerHeight,
     Math.round(content.height * PICKER_EXPANDED_MAX_HEIGHT_RATIO),
     PICKER_EXPANDED_MAX_HEIGHT
   )
-  const x = Math.max(PICKER_SIDE_GUTTER, Math.round((content.width - width) / 2))
+  const x = Math.max(
+    PICKER_SIDE_GUTTER + PICKER_CLOSE_LANE,
+    Math.round((content.width - panelWidth) / 2)
+  )
   const slack = Math.max(0, innerHeight - height)
   const y = slack > 0 ? innerTop + Math.round(slack / 3) : innerTop
-  return { x, y, width, height }
+  return { x, y, width: panelWidth + PICKER_CLOSE_LANE, height }
 }
 
 interface CenteredCardClamp {
@@ -760,13 +801,18 @@ function kindIsCentered(kind: TitlePopupKind): kind is CenteredCardKind {
   return kind === POPUP_KIND.globalSettings || kind === POPUP_KIND.downloadsFull
 }
 
+export const CENTERED_CARD_CLOSE_GUTTER = 48
+const CENTERED_CARD_EDGE_MARGIN = 16
+
 function computeCenteredCardBounds(
   kind: CenteredCardKind,
   parent: BrowserWindow
 ): { x: number; y: number; width: number; height: number } {
   const clamp = CENTERED_CARD_CLAMPS[kind]
   const { width: cw, height: ch } = parent.getContentBounds()
+  const room = Math.max(0, cw - 2 * (CENTERED_CARD_CLOSE_GUTTER + CENTERED_CARD_EDGE_MARGIN))
   const width = Math.min(
+    room,
     clamp.maxWidth,
     Math.max(clamp.minWidth, Math.round(cw * clamp.widthRatio))
   )
@@ -780,6 +826,15 @@ function computeCenteredCardBounds(
     Math.round(TITLEBAR_HEIGHT + (ch - TITLEBAR_HEIGHT - height) / 2)
   )
   return { x, y, width, height }
+}
+
+function withOutsideCloseGutter(bounds: { x: number; y: number; width: number; height: number }): {
+  x: number
+  y: number
+  width: number
+  height: number
+} {
+  return { ...bounds, width: bounds.width + CENTERED_CARD_CLOSE_GUTTER }
 }
 
 const POPUP_EDGE_GUTTER = 8
@@ -813,7 +868,7 @@ function refitPopupForParent(entry: TitlePopupEntry): void {
   }
 
   if (kindIsCentered(entry.kind)) {
-    const target = computeCenteredCardBounds(entry.kind, parent)
+    const target = withOutsideCloseGutter(computeCenteredCardBounds(entry.kind, parent))
     if (
       target.x === cur.x &&
       target.y === cur.y &&
@@ -862,6 +917,26 @@ export function requiresPerOpenConfigSync(
   return opts.snapshot?.initialTab != null || opts.snapshot?.highlightFieldId != null
 }
 
+export function syncTitlePopupConfig(
+  entry: TitlePopupEntry,
+  config: TitlePopupConfig,
+  syncEveryOpen: boolean
+): void {
+  const configJson = JSON.stringify(config)
+  const popupContents = entry.view.popup.webContents
+  if (!syncEveryOpen && entry.lastSyncedConfigJson === configJson && !popupContents.isDestroyed()) {
+    return
+  }
+
+  entry.lastConfigJson = configJson
+  entry.lastSyncedConfigJson = null
+  if (entry.view.rendererReady && !popupContents.isDestroyed()) {
+    popupContents.send('comfy-titlepopup:set-config', config)
+  } else {
+    entry.pendingConfig = config
+  }
+}
+
 function openTitlePopup(opts: OpenTitlePopupOpts): void {
   hideTitleTooltipPopup(getTitleTooltipForParent(opts.parent.id))
   const entry = ensureTitlePopup(opts.parent)
@@ -904,7 +979,9 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     x = bounds.x
     y = bounds.y
   } else {
-    ;({ x, y, width, height } = computeCenteredCardBounds(opts.kind, opts.parent))
+    ;({ x, y, width, height } = withOutsideCloseGutter(
+      computeCenteredCardBounds(opts.kind, opts.parent)
+    ))
   }
 
   entry.view.popup.setBounds({ x, y, width, height })
@@ -931,46 +1008,15 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     config = { kind: POPUP_KIND.globalSettings, snapshot: opts.snapshot, theme: opts.theme }
     entry.lastGlobalSettingsBroadcastJson = JSON.stringify(opts.snapshot)
   }
-  const configJson = JSON.stringify(config)
-
-  if (
-    !requiresPerOpenConfigSync(opts) &&
-    entry.lastSyncedConfigJson === configJson &&
-    !entry.view.popup.webContents.isDestroyed()
-  ) {
-    showTitlePopupNow(entry)
-    return
-  }
-
-  entry.lastConfigJson = configJson
-  if (entry.view.rendererReady && !entry.view.popup.webContents.isDestroyed()) {
-    entry.view.popup.webContents.send('comfy-titlepopup:set-config', config)
-  } else {
-    entry.pendingConfig = config
-  }
-
+  syncTitlePopupConfig(entry, config, requiresPerOpenConfigSync(opts))
   showTitlePopupNow(entry)
 }
 
-export function openDownloadsTrayForInstall(installationId: string): void {
-  const entry = getEntryByInstallationId(installationId)
-  if (!entry || entry.window.isDestroyed()) return
-  const existing = titlePopupsByParent.get(entry.window.id)
-  if (existing && (existing.view.isOpen || existing.view.pendingShowTimer !== null)) {
-    return
-  }
-  openTitlePopup({
-    parent: entry.window,
-    parentEntryId: entry.windowKey,
-    kind: 'downloads',
-    anchor: { x: entry.window.getContentBounds().width, y: TITLEBAR_HEIGHT },
-    theme: entry.lastTheme,
-    titleBarSender: entry.titleBarView.webContents
-  })
-}
-
 export interface TitlePopupHostBindings {
-  openChooserHostWindow: (initialPanel?: ComfyPanelKey) => void
+  openChooserHostWindow: (
+    initialPanel?: ComfyPanelKey,
+    opts?: { nearWindow?: BrowserWindow }
+  ) => void
   returnToDashboard: (parentEntryId: number) => Promise<void> | void
   confirmAndCloseAllHostWindows: (parentWindow: BrowserWindow | null) => Promise<void> | void
   confirmAndCloseHostWindow: (parentWindow: BrowserWindow) => Promise<void> | void
@@ -986,11 +1032,7 @@ export interface TitlePopupHostBindings {
   pickInstallFromPicker: (
     installationId: string,
     parentEntryId: number,
-    opts?: { confirmed?: boolean }
-  ) => Promise<void> | void
-  openInstallInNewWindow: (
-    installationId: string,
-    opts?: { allowDuplicate?: boolean }
+    pickerWorkspaceId?: string
   ) => Promise<void> | void
   restartInstallFromPicker: (
     installationId: string,
@@ -1019,6 +1061,11 @@ export interface TitlePopupHostBindings {
     cancellable: boolean
   }) => void
   broadcastPickerSnapshot: () => void
+  removeAppDataAndQuit: (options: {
+    deleteInstances: boolean
+    deleteModels: boolean
+    deleteInputOutput: boolean
+  }) => void
 }
 
 export function parseGlobalSettingsTarget(
@@ -1051,7 +1098,7 @@ function openGlobalSettingsForHost(
     parent: parentEntry.window,
     parentEntryId,
     kind: 'global-settings',
-    snapshot: buildGlobalSettingsSnapshot(undefined, initialTab, highlightFieldId),
+    snapshot: buildGlobalSettingsSnapshot(initialTab, highlightFieldId),
     anchor: { x: 0, y: TITLEBAR_HEIGHT },
     theme: parentEntry.lastTheme,
     titleBarSender
@@ -1060,7 +1107,7 @@ function openGlobalSettingsForHost(
     await getGithubStarCount('comfy-org/ComfyUI').catch(() => null)
     githubStarsFetchAttempted = true
     if (parentEntry.window.isDestroyed()) return
-    await broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+    broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
   })()
 }
 
@@ -1128,7 +1175,11 @@ function showInstancePickerForHost(
   const launchingInstallationIds = bindings.getLaunchingInstallationIds()
   const effectiveHostInstallationId =
     parentEntry.installationId ?? parentEntry.previewInstallationId ?? null
-  const { installs, selectedInstallationId: initialSelectedId } = scopeInstancePicker(
+  const {
+    installs,
+    selectedInstallationId: initialSelectedId,
+    workspaceId
+  } = scopeInstancePicker(
     allInstalls,
     effectiveHostInstallationId,
     selectedInstallationId ?? null,
@@ -1139,6 +1190,7 @@ function showInstancePickerForHost(
   const popupEntry = ensureTitlePopup(parentEntry.window)
   const pickerSelectionEpoch = popupEntry.pickerSelectionEpoch + 1
   popupEntry.pickerSelectedInstallationId = initialSelectedId
+  popupEntry.pickerWorkspaceId = workspaceId
   popupEntry.pickerScopeAnchor = selectedInstallationId
     ? {
         installationId: selectedInstallationId,
@@ -1156,6 +1208,7 @@ function showInstancePickerForHost(
     runningInstallationIds,
     runningSessionStartedAt,
     launchingInstallationIds,
+    unhostedLaunchingInstallationIds: unhostedLaunches(launchingInstallationIds),
     selectedInstallationId: initialSelectedId,
     pickerSelectionEpoch,
     selectedSettings: null,
@@ -1188,28 +1241,6 @@ function showInstancePickerForHost(
   })()
 }
 
-export type FlowMenuItemId = 'new-install' | 'track' | 'load-snapshot' | 'quick-install'
-
-const FLOW_MENU_ITEM_IDS: ReadonlySet<string> = new Set<FlowMenuItemId>([
-  'new-install',
-  'track',
-  'load-snapshot',
-  'quick-install'
-])
-
-export function isFlowMenuItemId(id: string): id is FlowMenuItemId {
-  return FLOW_MENU_ITEM_IDS.has(id)
-}
-
-export function decideFlowMenuItemTarget(
-  entry: ComfyWindowEntry,
-  id: FlowMenuItemId
-): { kind: 'set-active-panel' | 'open-chooser-host'; panel: ComfyPanelKey } {
-  return isChooserHost(entry)
-    ? { kind: 'set-active-panel', panel: id }
-    : { kind: 'open-chooser-host', panel: id }
-}
-
 export function activateTitlePopupMenuItem(
   entry: TitlePopupEntry,
   id: string,
@@ -1222,12 +1253,17 @@ export function activateTitlePopupMenuItem(
   })
   let releaseFocusToParent = true
   const parentEntry = comfyWindows.get(entry.parentEntryId)
+  const nearParent = { nearWindow: parentEntry?.window }
   if (id === 'new-window') {
-    bindings.openChooserHostWindow()
+    bindings.openChooserHostWindow('comfy', nearParent)
     releaseFocusToParent = false
   } else if (id === 'performance-test' || id === 'benchmarks') {
-    bindings.openChooserHostWindow(id)
-    releaseFocusToParent = false
+    if (parentEntry && isChooserHost(parentEntry)) {
+      bindings.setActivePanel(entry.parentEntryId, id)
+    } else {
+      bindings.openChooserHostWindow(id, nearParent)
+      releaseFocusToParent = false
+    }
   } else if (id === 'return-to-dashboard') {
     void bindings.returnToDashboard(entry.parentEntryId)
   } else if (id === 'exit-window') {
@@ -1257,16 +1293,6 @@ export function activateTitlePopupMenuItem(
   } else if (id === 'reset-zoom') {
     if (parentEntry != null && parentEntry.installationId !== null) {
       bindings.resetComfyZoom(parentEntry.installationId)
-    }
-  } else if (isFlowMenuItemId(id)) {
-    if (parentEntry) {
-      const target = decideFlowMenuItemTarget(parentEntry, id)
-      if (target.kind === 'set-active-panel') {
-        bindings.setActivePanel(entry.parentEntryId, target.panel)
-      } else {
-        bindings.openChooserHostWindow(target.panel)
-        releaseFocusToParent = false
-      }
     }
   }
   hideTitlePopup(entry, { releaseFocusToParent })
@@ -1321,11 +1347,10 @@ function findSettingsFields(
 }
 
 function buildGlobalSettingsSnapshot(
-  installs?: Pick<{ id: string; name: string }, 'id' | 'name'>[],
   initialTab: GlobalSettingsTab | null = null,
   highlightFieldId: string | null = null
 ): GlobalSettingsSnapshot {
-  const settingsSections = buildSettingsSections(installs)
+  const settingsSections = buildSettingsSections()
   const mediaSections = buildMediaSections()
   const modelsPayload = buildModelsPayload()
   const generalRaw = findSettingsFields(settingsSections, 'settings.general', 0)
@@ -1362,7 +1387,7 @@ function buildGlobalSettingsSnapshot(
       isPrimary: i === 0
     })),
     modelsSystemDefault: modelsDefault,
-    telemetryGranted: settings.get('telemetryEnabled') === true,
+    telemetryGranted: settings.telemetryConsent() === true,
     appUpdate: {
       state: appUpdateState,
       progress: lastAppUpdateProgress,
@@ -1390,19 +1415,12 @@ function buildGlobalSettingsSnapshot(
   }
 }
 
-async function broadcastGlobalSettingsSnapshotToTitlePopups(
-  _bindings: TitlePopupHostBindings
-): Promise<void> {
-  const hasOpen = Array.from(titlePopupsByParent.values()).some(
-    (e) => e.kind === 'global-settings' && (e.view.isOpen || e.view.pendingShowTimer !== null)
-  )
-  if (!hasOpen) return
-  const installs = (await installations.list()).map((i) => ({ id: i.id, name: i.name }))
+function broadcastGlobalSettingsSnapshotToTitlePopups(_bindings: TitlePopupHostBindings): void {
   for (const entry of titlePopupsByParent.values()) {
     if (entry.kind !== 'global-settings') continue
     if (!entry.view.isOpen && entry.view.pendingShowTimer === null) continue
     if (entry.view.popup.webContents.isDestroyed()) continue
-    const snapshot = buildGlobalSettingsSnapshot(installs)
+    const snapshot = buildGlobalSettingsSnapshot()
     const snapshotJson = JSON.stringify(snapshot)
     if (entry.lastGlobalSettingsBroadcastJson === snapshotJson) continue
     entry.lastGlobalSettingsBroadcastJson = snapshotJson
@@ -1462,6 +1480,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     if (!entry) return
     const id = payload?.id
     if (typeof id !== 'string') return
+    if (!entry.view.isOpen) return
     activateTitlePopupMenuItem(entry, id, bindings)
   })
 
@@ -1655,34 +1674,6 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   })
 
   ipcMain.on(
-    'comfy-window:click-install-pill',
-    (event, payload: { anchor?: { x?: number; y?: number } } | undefined) => {
-      const found = findEntryByTitleBarSender(event.sender)
-      if (!found) return
-      const { id: windowKey, entry } = found
-      if (entry.window.isDestroyed()) return
-
-      const existingPopup = titlePopupsByParent.get(entry.window.id)
-      if (
-        existingPopup &&
-        existingPopup.kind === 'instance-picker' &&
-        (existingPopup.view.isOpen || existingPopup.view.pendingShowTimer !== null)
-      ) {
-        hideTitlePopup(existingPopup, { releaseFocusToParent: true })
-        return
-      }
-
-      const x = Math.max(0, Math.round(payload?.anchor?.x ?? 0))
-      const y = Math.max(0, Math.round(payload?.anchor?.y ?? TITLEBAR_HEIGHT))
-
-      openInstancePickerForHost(entry, windowKey, bindings, entry.titleBarView.webContents, {
-        x,
-        y
-      })
-    }
-  )
-
-  ipcMain.on(
     'comfy-window:open-instance-picker-for-install',
     (
       event,
@@ -1790,43 +1781,19 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     }
   )
 
-  ipcMain.on(
-    'comfy-titlepopup:pick-install',
-    (event, payload: { installationId?: unknown; confirmed?: unknown }) => {
-      const entry = titlePopupsByWebContents.get(event.sender.id)
-      if (!entry || entry.kind !== POPUP_KIND.instancePicker) return
-      const installationId = payload?.installationId
-      if (typeof installationId !== 'string' || installationId.length === 0) return
-      const confirmed = payload?.confirmed === true
-      hideTitlePopup(entry, { releaseFocusToParent: false })
-      Promise.resolve(
-        bindings.pickInstallFromPicker(installationId, entry.parentEntryId, { confirmed })
-      ).catch((err) => console.error('pickInstallFromPicker failed:', err))
-    }
-  )
-
-  ipcMain.on(
-    'comfy-titlepopup:open-install-new-window',
-    (event, payload: { installationId?: unknown; allowDuplicate?: unknown }) => {
-      const entry = titlePopupsByWebContents.get(event.sender.id)
-      if (!entry || entry.kind !== POPUP_KIND.instancePicker) return
-      const installationId = payload?.installationId
-      if (typeof installationId !== 'string' || installationId.length === 0) return
-      hideTitlePopup(entry, { releaseFocusToParent: false })
-      Promise.resolve(
-        bindings.openInstallInNewWindow(installationId, {
-          allowDuplicate: payload?.allowDuplicate === true
-        })
-      ).catch((err) => console.error('openInstallInNewWindow failed:', err))
-    }
-  )
-
-  ipcMain.on('comfy-window:open-install-new-window', (event, installationId: unknown) => {
-    if (!isPanelSender(event.sender)) return
+  ipcMain.on('comfy-titlepopup:pick-install', (event, payload: { installationId?: unknown }) => {
+    const entry = titlePopupsByWebContents.get(event.sender.id)
+    if (!entry || entry.kind !== POPUP_KIND.instancePicker) return
+    const installationId = payload?.installationId
     if (typeof installationId !== 'string' || installationId.length === 0) return
-    Promise.resolve(bindings.openInstallInNewWindow(installationId)).catch((err) =>
-      console.error('openInstallInNewWindow failed:', err)
-    )
+    hideTitlePopup(entry, { releaseFocusToParent: false })
+    Promise.resolve(
+      bindings.pickInstallFromPicker(
+        installationId,
+        entry.parentEntryId,
+        entry.pickerWorkspaceId ?? undefined
+      )
+    ).catch((err) => console.error('pickInstallFromPicker failed:', err))
   })
 
   ipcMain.on(
@@ -1872,6 +1839,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       if (!targetEntry) return
 
       if (routing === 'target-host' && !targetEntry.window.isDestroyed()) {
+        maximizeIfPendingReveal(targetEntry.window)
         targetEntry.window.show()
         targetEntry.window.focus()
       }
@@ -1972,7 +1940,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     if (parentEntry.installationId === null) {
       bindings.setActivePanel(entry.parentEntryId, 'new-install')
     } else {
-      bindings.openChooserHostWindow('new-install')
+      bindings.openChooserHostWindow('new-install', { nearWindow: parentEntry.window })
     }
   })
 
@@ -2111,9 +2079,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     (event, payload: { url?: unknown }) => {
       const popupEntry = titlePopupsByWebContents.get(event.sender.id)
       if (!popupEntry || popupEntry.kind !== 'global-settings') return
-      const url = payload?.url
-      if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return
-      void shell.openExternal(url)
+      void tryOpenExternalUrl(payload?.url)
     }
   )
 
@@ -2142,6 +2108,23 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   })
 
   ipcMain.on(
+    'comfy-titlepopup:global-settings-remove-app-data',
+    (
+      event,
+      payload: { deleteInstances?: unknown; deleteModels?: unknown; deleteInputOutput?: unknown }
+    ) => {
+      const popupEntry = titlePopupsByWebContents.get(event.sender.id)
+      if (!popupEntry || popupEntry.kind !== 'global-settings') return
+      if (process.platform !== 'darwin' && process.platform !== 'linux') return
+      bindings.removeAppDataAndQuit({
+        deleteInstances: payload?.deleteInstances === true,
+        deleteModels: payload?.deleteModels === true,
+        deleteInputOutput: payload?.deleteInputOutput === true
+      })
+    }
+  )
+
+  ipcMain.on(
     'comfy-titlepopup:global-settings-set-last-checked',
     (event, payload: { value?: unknown }) => {
       const popupEntry = titlePopupsByWebContents.get(event.sender.id)
@@ -2149,7 +2132,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       const value = payload?.value
       if (typeof value !== 'number' || !Number.isFinite(value)) return
       globalSettingsLastCheckedAt = value
-      void broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+      broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
     }
   )
 
@@ -2157,7 +2140,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   installationEvents.on('changed', () => {
     void refreshCachedInstallsForPicker()
     void broadcastInstancePickerSnapshotToTitlePopups(bindings)
-    void broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+    broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
   })
   hostInstallEvents.on('changed', () => {
     void broadcastInstancePickerSnapshotToTitlePopups(bindings)
@@ -2166,11 +2149,11 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     void broadcastInstancePickerSnapshotToTitlePopups(bindings)
   })
   globalSettingsEvents.on('changed', () => {
-    void broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+    broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
     void broadcastInstancePickerSnapshotToTitlePopups(bindings)
   })
   updater.onUpdateStateChanged(() => {
-    void broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
+    broadcastGlobalSettingsSnapshotToTitlePopups(bindings)
   })
   ipcMain.on('comfy-popup-internal:noop', () => {})
 }
@@ -2178,7 +2161,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 export function notifyGlobalSettingsDownloadProgress(progress: Record<string, unknown>): void {
   lastAppUpdateProgress = progress
   if (!activeBindings) return
-  void broadcastGlobalSettingsSnapshotToTitlePopups(activeBindings)
+  broadcastGlobalSettingsSnapshotToTitlePopups(activeBindings)
 }
 
 export function _test_setTitlePopupEntry(webContentsId: number, entry: TitlePopupEntry): void {
@@ -2203,4 +2186,11 @@ export function _test_getOpenTitlePopupBounds(): {
     return { kind: entry.kind, bounds: entry.view.popup.getBounds() }
   }
   return null
+}
+
+export function _test_centeredCardBounds(
+  kind: CenteredCardKind,
+  parent: BrowserWindow
+): { x: number; y: number; width: number; height: number } {
+  return withOutsideCloseGutter(computeCenteredCardBounds(kind, parent))
 }

@@ -30,7 +30,9 @@ export interface KnownSettings {
   autoUpdate?: boolean
   autoInstallUpdates?: boolean
   autoLaunchOnStartup?: string
+  autoStartAwaitingFirstStart?: string
   confirmBeforeClosingWindow?: boolean
+  keepComfyRunningWhenWindowCloses?: boolean
   warnBeforeRunningMultipleInstances?: boolean
   hardwareAcceleration?: boolean
   pypiMirror?: string
@@ -43,12 +45,12 @@ export interface KnownSettings {
   cloudNodesAnnouncementSeen?: boolean
   comfyRouterAnnouncementSeen?: boolean
   comfyApiAnnouncementSeen?: boolean
+  hasSeenCentralPillHint?: boolean
   betaNoticeAnnouncedArgs?: string[]
   hideCloudFromPicker?: boolean
   oemManagedModelDirs?: string[]
   oemWorkflowImportVersion?: number
   lastSaveDialogDir?: string
-  skipTemplatePickerStep?: boolean
   dashboardWorkspaceId?: string
   pendingDownloadedUpdateVersion?: string
   lastStartupUpdateAttemptVersion?: string
@@ -142,10 +144,12 @@ const SETTINGS_SCHEMA = {
     }
   },
   autoLaunchOnStartup: { nullable: false, telemetry: { policy: 'presence' } },
+  autoStartAwaitingFirstStart: { nullable: false, telemetry: { policy: 'omit' } },
   confirmBeforeClosingWindow: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
   },
+  keepComfyRunningWhenWindowCloses: { nullable: false, telemetry: { policy: 'omit' } },
   warnBeforeRunningMultipleInstances: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw !== false }
@@ -167,6 +171,7 @@ const SETTINGS_SCHEMA = {
   cloudNodesAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   comfyRouterAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   comfyApiAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
+  hasSeenCentralPillHint: { nullable: false, telemetry: { policy: 'omit' } },
   betaNoticeAnnouncedArgs: { nullable: false, telemetry: { policy: 'omit' } },
   hideCloudFromPicker: {
     nullable: false,
@@ -175,10 +180,6 @@ const SETTINGS_SCHEMA = {
   oemManagedModelDirs: { nullable: false, telemetry: { policy: 'presence' } },
   oemWorkflowImportVersion: { nullable: false, telemetry: { policy: 'omit' } },
   lastSaveDialogDir: { nullable: true, telemetry: { policy: 'presence' } },
-  skipTemplatePickerStep: {
-    nullable: false,
-    telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
-  },
   dashboardWorkspaceId: { nullable: false, telemetry: { policy: 'omit' } },
   pendingDownloadedUpdateVersion: { nullable: true, telemetry: { policy: 'omit' } },
   lastStartupUpdateAttemptVersion: { nullable: true, telemetry: { policy: 'omit' } },
@@ -357,7 +358,8 @@ function loadOutcome(preRead?: SafeReadOutcome): {
     'primaryInstallId',
     'pinnedInstallIds',
     'maxCachedFiles',
-    'closeDirectlyOnLastWindow'
+    'closeDirectlyOnLastWindow',
+    'skipTemplatePickerStep'
   ]) {
     if (Object.prototype.hasOwnProperty.call(result, key)) {
       delete result[key]
@@ -547,6 +549,17 @@ export async function readSettled(signal?: AbortSignal): Promise<Settings | null
   return null
 }
 
+export function telemetryConsent(): boolean | undefined {
+  const { settings, unreadable } = loadOutcome()
+  return consentIn(settings, unreadable)
+}
+
+function consentIn(settings: Partial<Settings>, unreadable: boolean): boolean | undefined {
+  const stored = settings.telemetryEnabled
+  if (typeof stored !== 'boolean') return undefined
+  return unreadable && stored ? undefined : stored
+}
+
 export function resolveBetaFeaturesEnabled(): boolean {
   const { settings, unreadable } = loadOutcome()
   const enabled = betaFeaturesEnabledIn(settings, unreadable)
@@ -573,7 +586,7 @@ export function peekBetaFeaturesEnabled(): boolean {
 function betaFeaturesEnabledIn(settings: Partial<Settings>, unreadable: boolean): boolean {
   const stored = settings.betaFeaturesEnabled
   if (typeof stored === 'boolean') return stored
-  return unreadable ? false : settings.telemetryEnabled === true
+  return consentIn(settings, unreadable) === true
 }
 
 function camelToSnake(s: string): string {

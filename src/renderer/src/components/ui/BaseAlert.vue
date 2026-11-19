@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue'
-import { X } from 'lucide-vue-next'
+import { computed, useId, useSlots } from 'vue'
+import { X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from './DesktopDialogSurface.vue'
 import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'
 import type { ModalDetailGroup } from '../../types/ipc'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 interface Props {
   open: boolean
@@ -18,6 +19,7 @@ interface Props {
   secondaryLabel?: string
   secondaryTone?: 'primary' | 'danger' | 'default'
   showCloseIcon?: boolean
+  wide?: boolean
   messageDetails?: ModalDetailGroup[]
   ariaLabel?: string
   ariaLabelledby?: string
@@ -41,6 +43,7 @@ const props = withDefaults(defineProps<Props>(), {
   secondaryLabel: undefined,
   secondaryTone: 'default',
   showCloseIcon: false,
+  wide: false,
   messageDetails: () => [],
   ariaLabel: undefined,
   ariaLabelledby: undefined,
@@ -68,12 +71,17 @@ function dismiss(): void {
 }
 
 const hasDetails = computed(() => props.messageDetails.length > 0)
+const slots = useSlots()
+const isShortMessage = computed(
+  () => !hasDetails.value && !slots.default && !slots.extra && !!(props.message || props.hint)
+)
 const linkifiedMessage = computed(() => linkify(props.message))
 const hasWideActions = computed(() => !!props.secondaryLabel)
 
 const actionVariants = { default: 'secondary', primary: 'inverted', danger: 'destructive' } as const
 
 const panelWidthClass = computed(() => {
+  if (props.wide) return 'w-[min(600px,100%)]'
   if (hasWideActions.value) return hasDetails.value ? 'w-[min(540px,100%)]' : 'w-[min(520px,100%)]'
   return hasDetails.value ? 'w-[min(480px,100%)]' : 'w-[min(440px,100%)]'
 })
@@ -92,58 +100,55 @@ const linkClass =
     :dismiss-on-outside="dismissOnOutside"
     :prevent-scroll="preventScroll"
     :data-testid="testIdRoot"
-    overlay-class="base-alert-overlay fixed inset-0 z-[1000] grid place-items-center bg-neutral-800/60 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]"
+    overlay-class="base-alert-overlay fixed inset-0 z-[1000] grid place-items-center bg-black/70 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]"
     :content-class="[
-      'base-alert-panel flex min-w-80 flex-col overflow-hidden rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4 text-neutral-100 shadow-[var(--modal-surface-shadow)]',
+      'base-alert-panel relative flex min-w-80 flex-col overflow-visible rounded-panel border border-solid border-border bg-neutral-800 px-5 pt-5 pb-4 text-neutral-100 shadow-[var(--modal-surface-shadow)]',
       panelWidthClass,
       hasDetails ? 'max-h-[min(80vh,640px)]' : 'max-h-[min(80vh,560px)]',
       { 'base-alert-panel--rich': hasDetails, 'base-alert-panel--wide-actions': hasWideActions }
     ]"
     @close="dismiss"
   >
-    <header
-      class="base-alert-header relative -mx-6 mb-3 border-b border-solid border-neutral-100/8 px-6 pb-3"
+    <Button
+      type="button"
+      variant="muted-textonly"
+      size="icon"
+      class="base-alert-close-icon absolute top-0 -right-12 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--color-neutral-800)] text-white hover:text-white max-[860px]:top-3 max-[860px]:right-3"
+      :aria-label="$t('common.close')"
+      :data-testid="testIdCloseIcon ?? 'base-alert-close-icon'"
+      @click="dismiss"
     >
-      <h2 :id="TITLE_ID" class="base-alert-title m-0 pr-8 text-base leading-[1.3] font-semibold">
+      <X :size="18" />
+    </Button>
+    <header class="base-alert-header relative mb-4 max-[860px]:pr-8">
+      <h2 :id="TITLE_ID" class="base-alert-title m-0 text-base leading-[1.3] font-semibold">
         {{ title }}
       </h2>
-      <Button
-        v-if="showCloseIcon"
-        type="button"
-        variant="muted-textonly"
-        size="icon"
-        class="base-alert-close-icon absolute -top-1 right-[18px]"
-        :aria-label="$t('common.close')"
-        :data-testid="testIdCloseIcon ?? 'base-alert-close-icon'"
-        @click="emit('cancel')"
-      >
-        <X :size="16" />
-      </Button>
     </header>
     <div
       v-if="message || hint || hasDetails || $slots.default || $slots.extra"
-      class="base-alert-message mb-5 min-h-0 flex-auto overflow-y-auto text-sm leading-[1.5] whitespace-pre-line text-text-muted select-text"
+      class="base-alert-message min-h-0 flex-auto overflow-y-auto text-sm leading-[1.5] whitespace-pre-line text-text-muted select-text"
+      :class="isShortMessage ? 'base-alert-message--short mb-5 [&:has(+footer)]:mb-8' : 'mb-5'"
     >
       <slot>
         <div
           v-if="message"
-          class="base-alert-message-text whitespace-pre-line [&_strong]:font-semibold [&_strong]:text-text"
+          class="base-alert-message-text whitespace-pre-line text-pretty [&_strong]:font-semibold [&_strong]:text-text"
           :class="linkClass"
           @click="handleModalLinkClick"
           v-html="linkifiedMessage"
         ></div>
-        <div v-if="hasDetails" class="base-alert-details mt-3 flex flex-col gap-2">
+        <div v-if="hasDetails" class="base-alert-details mt-5 flex flex-col gap-5">
           <div
             v-for="(group, gi) in messageDetails"
             :key="gi"
-            class="base-alert-detail-group flex flex-col gap-1"
+            class="base-alert-detail-group flex flex-col gap-2"
           >
-            <span
-              class="base-alert-detail-label text-xs leading-[1.5] font-semibold tracking-[0.04em] text-text-muted uppercase"
-              >{{ group.label }}</span
-            >
+            <span class="base-alert-detail-label" :class="SECTION_TITLE_CLASS">{{
+              group.label
+            }}</span>
             <div
-              class="base-alert-detail-recessed max-h-[220px] overflow-y-auto rounded-lg border border-solid border-neutral-100/8 bg-neutral-100/4 px-2.5 py-2"
+              class="base-alert-detail-recessed max-h-[220px] overflow-y-auto rounded-lg bg-[var(--surface)] px-2.5 py-2"
               @click="handleModalLinkClick"
             >
               <div
@@ -157,7 +162,10 @@ const linkClass =
           </div>
         </div>
       </slot>
-      <p v-if="hint" class="base-alert-hint mt-3 text-xs leading-[1.4] text-text-muted/75">
+      <p
+        v-if="hint"
+        class="base-alert-hint mt-3 text-xs leading-[1.4] [overflow-wrap:anywhere] text-text-muted/75"
+      >
         {{ hint }}
       </p>
       <div v-if="$slots.extra" class="base-alert-extra mt-3">
@@ -165,7 +173,7 @@ const linkClass =
       </div>
     </div>
     <footer
-      class="base-alert-footer -mx-6 flex flex-wrap justify-end gap-2 border-t border-solid border-neutral-100/8 px-6 pt-3 [&>button]:max-w-60 [&>button]:min-w-24 [&>button]:overflow-hidden [&>button]:text-ellipsis [&>button]:whitespace-nowrap"
+      class="base-alert-footer -mx-5 flex flex-wrap justify-end gap-2 border-t border-solid border-neutral-100/8 px-5 pt-4 [&>button]:max-w-60 [&>button]:min-w-24 [&>button]:overflow-hidden [&>button]:text-ellipsis [&>button]:whitespace-nowrap"
     >
       <slot name="footer">
         <Button

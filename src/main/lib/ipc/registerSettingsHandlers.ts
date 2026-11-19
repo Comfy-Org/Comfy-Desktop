@@ -18,11 +18,8 @@ import { globalSettingsEvents } from '../globalSettingsEvents'
 import { acknowledgeBetaActivationNotice, peekBetaActivationNotice } from '../betaActivationNotice'
 import { recordIpcInvocation } from '../e2eOverrides'
 import type { SettingsSection } from '../../../types/ipc'
-import { AUTO_LAUNCH_LAST, AUTO_LAUNCH_NONE } from '../../settings'
 
-export function buildSettingsSections(
-  installs?: Pick<{ id: string; name: string }, 'id' | 'name'>[]
-): SettingsSection[] {
+export function buildSettingsSections(): SettingsSection[] {
   const s = settings.getAll()
   const chineseMirrorsField = {
     id: 'useChineseMirrors',
@@ -45,19 +42,6 @@ export function buildSettingsSections(
           type: 'select',
           value: s.language || i18n.getLocale(),
           options: i18n.getAvailableLocales()
-        },
-
-        {
-          id: 'autoLaunchOnStartup',
-          label: i18n.t('settings.autoLaunchOnStartup'),
-          type: 'select',
-          value: (s.autoLaunchOnStartup as string | undefined) ?? AUTO_LAUNCH_NONE,
-          options: [
-            { value: AUTO_LAUNCH_NONE, label: i18n.t('settings.autoLaunchOnStartupNone') },
-            { value: AUTO_LAUNCH_LAST, label: i18n.t('settings.autoLaunchOnStartupLast') },
-            ...(installs ?? []).map((i) => ({ value: i.id, label: i.name }))
-          ],
-          tooltip: i18n.t('settings.autoLaunchOnStartupDescription')
         },
 
         {
@@ -245,7 +229,7 @@ export function applySettingSet(key: string, value: unknown): void {
     key === 'betaFeaturesEnabled' &&
     value === true &&
     settings.get('betaFeaturesEnabled') !== true &&
-    settings.get('telemetryEnabled') !== true
+    settings.telemetryConsent() !== true
   ) {
     return
   }
@@ -287,11 +271,12 @@ export function registerSettingsHandlers(): void {
 
   ipcMain.handle('set-setting', (_event, key: string, value: unknown) => {
     recordIpcInvocation('set-setting', { key, value })
+    if (key === 'autoLaunchOnStartup') settings.set('autoStartAwaitingFirstStart', undefined)
     applySettingSet(key, value)
   })
 
   ipcMain.handle('get-setting', (_event, key: string) => {
-    return settings.get(key)
+    return key === 'telemetryEnabled' ? settings.telemetryConsent() : settings.get(key)
   })
 
   ipcMain.handle('get-pending-beta-notice', (_event, installationId: unknown) => {

@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import Button from '@comfyorg/design-system/button/Button'
-import { AlertTriangle } from 'lucide-vue-next'
+import { AlertTriangle } from '@lucide/vue'
 import { useModal } from '../../composables/useModal'
-import GlobalSettingsMicroSection from '../../comfyTitlePopup/globalSettings/GlobalSettingsMicroSection.vue'
 import ModelsDirList from '../../comfyTitlePopup/globalSettings/ModelsDirList.vue'
 import StorageDirRow from './StorageDirRow.vue'
+import GlobalSettingsMicroSection from '../../comfyTitlePopup/globalSettings/GlobalSettingsMicroSection.vue'
 import BooleanToggle from './BooleanToggle.vue'
 import ExtraModelPathsModal, { type ExtraModelPathSection } from './ExtraModelPathsModal.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
@@ -330,18 +329,18 @@ function handleRevealPath(path: string): void {
 </script>
 
 <template>
-  <div class="storage-pane flex flex-col gap-4">
+  <div class="storage-pane flex max-w-3xl flex-col gap-2.5">
     <div
       v-if="showRestartWarning"
-      class="storage-note is-warning m-0 flex items-center gap-2 rounded-lg border border-solid border-[var(--warning)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-3 py-2.5 font-medium text-[var(--warning)] transition-[color,background-color,border-color] duration-[160ms] ease-[ease]"
+      class="storage-note is-warning m-0 flex items-center gap-2.5 rounded-[14px] bg-card px-4 py-3 text-neutral-100"
       role="status"
     >
       <AlertTriangle
         :size="14"
-        class="storage-note-icon shrink-0 text-[var(--warning)] opacity-100"
+        class="storage-note-icon shrink-0 text-[var(--warning)]"
         aria-hidden="true"
       />
-      <p class="storage-note-text m-0 text-[12px] leading-[1.45]">
+      <p class="storage-note-text m-0 text-[13px] leading-[1.45]">
         {{ t('comfyUISettings.storageRestartNote') }}
       </p>
     </div>
@@ -352,7 +351,7 @@ function handleRevealPath(path: string): void {
     >
       <template v-if="useSharedModelsField" #actions>
         <label
-          class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
+          class="storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 [&>span]:truncate [&>.bt-switch]:ml-1.5"
         >
           <span>{{ t('comfyUISettings.includeSharedDirs') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedModels')" />
@@ -365,31 +364,20 @@ function handleRevealPath(path: string): void {
 
       <ModelsDirList
         :dirs="modelDirRows"
-        :add-label="t('models.addInstanceDir')"
         @change="handleChangeModelDir"
         @remove="handleRemoveModelDir"
         @make-primary="handleMakeModelPrimary"
         @open="handleOpenModelDir"
         @details="handleModelDetails"
+        @manage="handleManageSharedDirs"
         @add="handleAddModelDir"
       />
-
-      <Button
-        v-if="useSharedModelsEnabled"
-        type="button"
-        variant="textonly"
-        size="unset"
-        class="storage-manage-link static inline-block self-start gap-0 rounded-lg border-none bg-transparent p-0 text-[12px] leading-[1.5] font-normal whitespace-normal text-text-muted underline appearance-auto hover:bg-transparent hover:text-[var(--action)] focus-visible:bg-transparent focus-visible:text-[var(--action)] focus-visible:outline-none focus-visible:ring-0"
-        @click="handleManageSharedDirs"
-      >
-        {{ t('comfyUISettings.manageSharedDirs') }}
-      </Button>
     </GlobalSettingsMicroSection>
 
     <GlobalSettingsMicroSection :title="t('settings.inputStorage')">
       <template v-if="useSharedInputField" #actions>
         <label
-          class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
+          class="storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 [&>span]:truncate [&>.bt-switch]:ml-1.5"
         >
           <span>{{ t('comfyUISettings.useSharedInput') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedInput')" />
@@ -402,6 +390,7 @@ function handleRevealPath(path: string): void {
       <template v-if="useSharedInputEnabled">
         <StorageDirRow
           v-if="sharedInputField"
+          list-aligned
           :path="sharedFieldPath(sharedInputField)"
           shared
           :browsable="false"
@@ -412,6 +401,7 @@ function handleRevealPath(path: string): void {
       </template>
       <StorageDirRow
         v-else
+        list-aligned
         :path="effectiveInputDir"
         :tag="!inputOverridden ? t('models.default') : ''"
         :resettable="inputOverridden"
@@ -424,7 +414,7 @@ function handleRevealPath(path: string): void {
     <GlobalSettingsMicroSection :title="t('settings.outputStorage')">
       <template v-if="useSharedOutputField" #actions>
         <label
-          class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
+          class="storage-header-toggle flex min-w-0 cursor-pointer items-center gap-1.5 [&>span]:truncate [&>.bt-switch]:ml-1.5"
         >
           <span>{{ t('comfyUISettings.useSharedOutput') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedOutput')" />
@@ -437,6 +427,7 @@ function handleRevealPath(path: string): void {
       <template v-if="useSharedOutputEnabled">
         <StorageDirRow
           v-if="sharedOutputField"
+          list-aligned
           :path="sharedFieldPath(sharedOutputField)"
           shared
           :browsable="false"
@@ -447,6 +438,7 @@ function handleRevealPath(path: string): void {
       </template>
       <StorageDirRow
         v-else
+        list-aligned
         :path="effectiveOutputDir"
         :tag="!outputOverridden ? t('models.default') : ''"
         :resettable="outputOverridden"

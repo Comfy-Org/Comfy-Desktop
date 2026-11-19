@@ -35,6 +35,7 @@ import type { FieldOption } from './shared'
 import type { InstallationRecord } from '../../installations'
 import * as mainTelemetry from '../telemetry'
 import { getDeviceId } from '../deviceId'
+import { isOpenableExternalUrl, openExternalUrl } from '../openExternal'
 import { getCachedWorkspaceName } from '../../cloud/tokenStore'
 import { getCloudSession } from '../../devplatform/session'
 import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
@@ -42,6 +43,7 @@ import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { defaultBenchmarksDir } from '../paths'
 import { deriveGpuTier } from '../../../shared/gpuTier'
+import { setHardwareProbe } from '../agentClientContext'
 import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import { installationIdOf, sessionKindOf } from '../../../shared/performanceTestSession'
 import {
@@ -488,7 +490,7 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle('open-path', (_event, targetPath: string) => {
     if (typeof targetPath !== 'string' || !targetPath) return ''
-    if (/^https?:\/\//i.test(targetPath)) return shell.openExternal(targetPath)
+    if (isOpenableExternalUrl(targetPath)) return openExternalUrl(targetPath)
     const resolved = path.resolve(targetPath)
     if (!fs.existsSync(resolved)) return ''
     return openPath(resolved)
@@ -496,11 +498,9 @@ export function registerAppHandlers(): void {
   ipcMain.on('reveal-path', (_event, targetPath: unknown) => {
     if (typeof targetPath === 'string' && targetPath) shell.showItemInFolder(targetPath)
   })
-  ipcMain.handle('open-external', (_event, url: string) => {
-    if (typeof url !== 'string' || !url) return Promise.resolve()
-    if (!/^https?:\/\//i.test(url)) return Promise.resolve()
-    return shell.openExternal(url)
-  })
+  ipcMain.handle('open-external', (_event, url: unknown) =>
+    isOpenableExternalUrl(url) ? openExternalUrl(url) : Promise.resolve()
+  )
   ipcMain.handle('get-disk-space', (_event, targetPath: string) => getDiskSpace(targetPath))
   ipcMain.handle('validate-install-path', (_event, targetPath: string) =>
     validateInstallPath(targetPath)
@@ -541,6 +541,7 @@ export function registerAppHandlers(): void {
     })
     return hardwareProbe
   }
+  setHardwareProbe(probeHardwareCached)
 
   async function getSystemInfo(): Promise<SystemInfo> {
     const hardware = await probeHardwareCached()

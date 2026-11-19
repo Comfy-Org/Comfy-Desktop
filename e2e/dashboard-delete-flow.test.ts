@@ -3,7 +3,11 @@ import path from 'node:path'
 import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { expectChooserVisible } from './support/chooserHelpers'
+import {
+  buildMenuItem,
+  expectChooserVisible,
+  pickFromBuildsTileMenu
+} from './support/chooserHelpers'
 import { byTestId, TID } from './support/testIds'
 import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
 
@@ -58,25 +62,23 @@ test('chooser shows the seeded tile @windows @macos @linux', async () => {
   ).toBe(INSTALL_NAME)
 })
 
-test('Delete from kebab opens confirm without invoking get-detail-sections @windows @macos @linux', async () => {
+test('Uninstall from the ⋯ menu asks in the shared confirm box, with the folder, without invoking get-detail-sections @windows @macos @linux', async () => {
   await resetIpcInvocations(ctx.app, 'get-detail-sections')
 
-  const kebabClicked = await ctx.panel.click(byTestId(TID.dashboardTileKebab(INSTALL_ID)))
-  expect(kebabClicked, 'kebab button click dispatched').toBe(true)
-
-  await ctx.panel.waitForVisible(byTestId(TID.contextMenuItem('delete')), { timeout: 5_000 })
-  const deleteClicked = await ctx.panel.click(byTestId(TID.contextMenuItem('delete')))
-  expect(deleteClicked, 'delete menu item click dispatched').toBe(true)
+  await pickFromBuildsTileMenu(ctx.panel, INSTALL_ID, 'delete')
 
   await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
+  expect(await ctx.panel.exists(buildMenuItem('delete')), 'the menu closed').toBe(false)
+  expect(await ctx.panel.textOf('[role="alertdialog"]')).toContain(installPath)
 
   const invocations = await getIpcInvocations(ctx.app, 'get-detail-sections')
   expect(invocations, 'Delete dispatch must not call get-detail-sections').toEqual([])
 })
 
 test('Confirm removes the install directory and tile @windows @macos @linux', async () => {
-  const confirmClicked = await ctx.panel.click(byTestId(TID.baseAlertAction))
-  expect(confirmClicked, 'confirm button click dispatched').toBe(true)
+  expect(await ctx.panel.click(byTestId(TID.baseAlertAction)), 'confirm click dispatched').toBe(
+    true
+  )
 
   await ctx.panel.waitFor(
     async () => !(await ctx.panel.exists(byTestId(TID.dashboardTile(INSTALL_ID)))),

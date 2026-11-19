@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events'
 import type { BrowserWindow, WebContents, WebContentsView } from 'electron'
-import { _runningSessions, _isStopping } from '../lib/ipc/shared'
+import { _runningSessions, _isStopping, noteStartWindowClosed } from '../lib/ipc/shared'
 import type { FirstUseMode } from '../../shared/firstUseMode'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
 import type { ViewKind } from '../../shared/viewKind'
@@ -15,7 +15,6 @@ export type ComfyPanelKey =
   | 'new-install'
   | 'track'
   | 'load-snapshot'
-  | 'quick-install'
   | 'progress'
   | 'announcement'
 
@@ -27,7 +26,6 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'new-install',
   'track',
   'load-snapshot',
-  'quick-install',
   'progress',
   'announcement'
 ])
@@ -43,7 +41,6 @@ export type BodyMode =
   | 'new-install'
   | 'track'
   | 'load-snapshot'
-  | 'quick-install'
   | 'announcement'
 
 export interface ComfyWindowEntry {
@@ -66,6 +63,7 @@ export interface ComfyWindowEntry {
   sourceCategory: string | null
   previewInstallationId: string | null
   coldStartPendingReveal: boolean
+  maximizeOnReveal?: boolean
   _installCleanup: (() => void) | null
   detachInstall: () => void
 }
@@ -96,7 +94,9 @@ export function consumeAttachClaim(installationId: string): number | undefined {
 
 export function dropAttachClaimsForWindow(windowKey: number): void {
   for (const [installationId, claimedKey] of pendingAttachClaims) {
-    if (claimedKey === windowKey) pendingAttachClaims.delete(installationId)
+    if (claimedKey !== windowKey) continue
+    pendingAttachClaims.delete(installationId)
+    noteStartWindowClosed(installationId)
   }
 }
 
@@ -112,6 +112,30 @@ export function nextWindowKey(): number {
 export function getEntryByInstallationId(installationId: string): ComfyWindowEntry | undefined {
   const key = installationIdToWindowKey.get(installationId)
   return key === undefined ? undefined : comfyWindows.get(key)
+}
+
+function isInstallationShownInWindow(installationId: string): boolean {
+  if (pendingAttachClaims.has(installationId)) return true
+  for (const entry of comfyWindows.values()) {
+    if (entry.window.isDestroyed()) continue
+    if (entry.installationId === installationId) return true
+    if (entry.previewInstallationId === installationId) return true
+  }
+  return false
+}
+
+export function unhostedLaunches(launchingInstallationIds: readonly string[]): string[] {
+  return launchingInstallationIds.filter((id) => !isInstallationShownInWindow(id))
+}
+
+export function canRestartFromPicker(
+  parentEntry: ComfyWindowEntry,
+  installationId: string,
+  launchingInstallationIds: readonly string[]
+): boolean {
+  const boundInstallationId = parentEntry.installationId ?? parentEntry.previewInstallationId
+  if (boundInstallationId != null) return boundInstallationId === installationId
+  return unhostedLaunches(launchingInstallationIds).includes(installationId)
 }
 
 export function indexInstallationId(installationId: string, windowKey: number): void {
@@ -196,6 +220,13 @@ export function isPanelSender(wc: WebContents): boolean {
   return false
 }
 
+export function findHostWindowByPanelSender(wc: WebContents): BrowserWindow | null {
+  for (const entry of comfyWindows.values()) {
+    if (entry.panelView?.webContents === wc) return entry.window
+  }
+  return null
+}
+
 export function findEntryByComfySender(wc: WebContents): ComfyWindowEntry | null {
   for (const entry of comfyWindows.values()) {
     if (entry.comfyView.webContents === wc) return entry
@@ -244,8 +275,16 @@ export function findPreferredInstallHostWindow(): BrowserWindow | null {
   return fallback?.window ?? null
 }
 
+export function maximizeIfPendingReveal(win: BrowserWindow): void {
+  const entry = findEntryByHostWindow(win)
+  if (!entry?.maximizeOnReveal) return
+  entry.maximizeOnReveal = false
+  win.maximize()
+}
+
 export function bringToFront(win: BrowserWindow): void {
   if (win.isMinimized()) win.restore()
+  maximizeIfPendingReveal(win)
   if (process.platform === 'win32') {
     win.setAlwaysOnTop(true)
     win.show()
@@ -260,14 +299,6 @@ export function bringToFront(win: BrowserWindow): void {
 export function revealColdStartHostIfPending(windowKey: number): void {
   const entry = comfyWindows.get(windowKey)
   if (!entry?.coldStartPendingReveal || entry.window.isDestroyed()) return
-  entry.coldStartPendingReveal = false
-  entry.layoutViews()
-  bringToFront(entry.window)
-}
-
-export function forceRevealHostWindow(windowKey: number): void {
-  const entry = comfyWindows.get(windowKey)
-  if (!entry || entry.window.isDestroyed()) return
   entry.coldStartPendingReveal = false
   entry.layoutViews()
   bringToFront(entry.window)
@@ -294,6 +325,62 @@ export function openOrFocusChooserHostWindow(): BrowserWindow {
     return existing
   }
   return requireChooserFactory()()
+}
+
+function isHandingOffToBuild(entry: ComfyWindowEntry): boolean {
+  if (entry.previewInstallationId !== null) return true
+  for (const claimedKey of pendingAttachClaims.values()) {
+    if (claimedKey === entry.windowKey) return true
+  }
+  return false
+}
+
+export function isHomeHostEntry(entry: ComfyWindowEntry): boolean {
+  return !entry.window.isDestroyed() && isChooserHost(entry) && !isHandingOffToBuild(entry)
+}
+
+function findHomeHostWindow(): BrowserWindow | null {
+  return findPreferredHostByVisibility(isHomeHostEntry)?.window ?? null
+}
+
+export function openOrFocusHomeHostWindow(): BrowserWindow {
+  const existing = findHomeHostWindow()
+  if (existing) {
+    bringToFront(existing)
+    return existing
+  }
+  return requireChooserFactory()()
+}
+
+export type BuildOpenRoute =
+  | { kind: 'focus'; entry: ComfyWindowEntry }
+  | { kind: 'start-from'; entry: ComfyWindowEntry }
+  | { kind: 'start-from-home' }
+  | { kind: 'show-starting'; entry: ComfyWindowEntry | null }
+  | { kind: 'ignore' }
+
+function findWindowForBuild(installationId: string): ComfyWindowEntry | undefined {
+  const hosted = getEntryByInstallationId(installationId)
+  if (hosted && !hosted.window.isDestroyed()) return hosted
+  const claimedKey = pendingAttachClaims.get(installationId)
+  const claimed = claimedKey === undefined ? undefined : comfyWindows.get(claimedKey)
+  return claimed && !claimed.window.isDestroyed() ? claimed : undefined
+}
+
+export function routeBuildOpen(
+  installationId: string,
+  requester: ComfyWindowEntry | undefined,
+  launchingInstallationIds: readonly string[]
+): BuildOpenRoute {
+  const own = findWindowForBuild(installationId)
+  if (own) return { kind: 'focus', entry: own }
+  if (requester?.installationId === installationId) return { kind: 'ignore' }
+  const homeRequester = requester && isHomeHostEntry(requester) ? requester : null
+  if (launchingInstallationIds.includes(installationId)) {
+    return { kind: 'show-starting', entry: homeRequester }
+  }
+  if (homeRequester) return { kind: 'start-from', entry: homeRequester }
+  return { kind: 'start-from-home' }
 }
 
 export function openOrFocusAnyHostWindow(): BrowserWindow {

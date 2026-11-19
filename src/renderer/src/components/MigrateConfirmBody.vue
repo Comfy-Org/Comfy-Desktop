@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import Switch from '@comfyorg/design-system/switch/Switch'
-import { Check } from 'lucide-vue-next'
+import ToggleSwitch from './ui/ToggleSwitch.vue'
+import { Check } from '@lucide/vue'
 import type { SnapshotDetailData } from '../types/ipc'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 export interface MigrateDetailGroup {
   label: string
@@ -65,10 +66,7 @@ function onCheckboxToggle(id: string, checked: boolean): void {
 
     <div v-if="details.length" class="mig-actions-list flex flex-col gap-2">
       <div v-for="(group, gi) in details" :key="gi" class="mig-actions-group flex flex-col gap-2">
-        <span
-          class="mig-actions-label text-[length:var(--takeover-fs-caption)] font-semibold tracking-[0.06em] text-neutral-300 uppercase"
-          >{{ group.label }}</span
-        >
+        <span class="mig-actions-label" :class="SECTION_TITLE_CLASS">{{ group.label }}</span>
         <ul class="mig-actions-items m-0 flex list-none flex-col gap-1.5 p-0 text-neutral-100">
           <li
             v-for="(item, ii) in group.items"
@@ -93,7 +91,7 @@ function onCheckboxToggle(id: string, checked: boolean): void {
         :key="cb.id"
         class="mig-option flex cursor-pointer items-center gap-2.5 text-[length:var(--takeover-fs-body)] text-neutral-200"
       >
-        <Switch
+        <ToggleSwitch
           class="mt-2"
           :model-value="cb.checked"
           @update:model-value="onCheckboxToggle(cb.id, $event)"

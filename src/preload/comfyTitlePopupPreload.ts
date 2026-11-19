@@ -2,15 +2,12 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { Category, ViewKind } from '../shared/viewKind'
 import { PICKER_SETTINGS_CHANNELS as CH, POPUP_KIND } from '../types/ipc'
-import type { PopupTheme, TerminalRestore } from '../types/ipc'
-
-export interface TitlePopupMenuItem {
-  id?: string
-  label?: string
-  labelKey?: string
-  checked?: boolean
-  kind?: 'separator'
-}
+import type {
+  CloseComfyWindowOptions,
+  PopupTheme,
+  TerminalRestore,
+  TitlePopupMenuItem
+} from '../types/ipc'
 
 export interface PopupInstancePickerInstall {
   id: string
@@ -126,6 +123,7 @@ export interface PopupDownloadEntry {
   error?: string
   createdAt?: number
   isImage?: boolean
+  canPause?: boolean
 }
 
 export interface PopupDownloadsState {
@@ -157,8 +155,7 @@ export interface ComfyTitlePopupBridge {
   openDownloadsModal(): void
   requestSize(height: number): void
   onInstancePickerSnapshot(cb: (snapshot: PopupInstancePickerSnapshot) => void): () => void
-  pickInstall(installationId: string, opts?: { confirmed?: boolean }): void
-  openInstallNewWindow(installationId: string, opts?: { allowDuplicate?: boolean }): void
+  pickInstall(installationId: string): void
   openNewInstall(): void
   restartInstall(installationId: string, opts?: { confirmed?: boolean }): void
   getDownloadThumbnail(savePath: string): Promise<string | null>
@@ -190,6 +187,11 @@ export interface ComfyTitlePopupBridge {
   globalSettingsDownloadUpdate(): Promise<void>
   globalSettingsInstallUpdate(): void
   globalSettingsSetLastCheckedAt(value: number): void
+  globalSettingsRemoveAppData(options: {
+    deleteInstances: boolean
+    deleteModels: boolean
+    deleteInputOutput: boolean
+  }): void
 
   pickerSettingsGetDetailSections(installationId: string): Promise<Record<string, unknown>[]>
   pickerSettingsGetDiskSpace(path: string): Promise<{ total: number; free: number }>
@@ -212,6 +214,10 @@ export interface ComfyTitlePopupBridge {
   pickerSettingsGetInstallations(): Promise<Record<string, unknown>[]>
   pickerSettingsGetInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   pickerSettingsStopComfyUI(installationId: string): Promise<void>
+  pickerSettingsCloseComfyWindow(
+    installationId: string,
+    opts?: CloseComfyWindowOptions
+  ): Promise<boolean>
   pickerSettingsGetSnapshots(installationId: string): Promise<Record<string, unknown>>
   pickerSettingsGetSnapshotDetail(
     installationId: string,
@@ -452,17 +458,8 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.on('comfy-titlepopup:installs-changed', handler)
     return () => ipcRenderer.removeListener('comfy-titlepopup:installs-changed', handler)
   },
-  pickInstall: (installationId, opts) => {
-    ipcRenderer.send('comfy-titlepopup:pick-install', {
-      installationId,
-      confirmed: opts?.confirmed === true
-    })
-  },
-  openInstallNewWindow: (installationId, opts) => {
-    ipcRenderer.send('comfy-titlepopup:open-install-new-window', {
-      installationId,
-      allowDuplicate: opts?.allowDuplicate === true
-    })
+  pickInstall: (installationId) => {
+    ipcRenderer.send('comfy-titlepopup:pick-install', { installationId })
   },
   openNewInstall: () => {
     ipcRenderer.send('comfy-titlepopup:open-new-install')
@@ -548,6 +545,9 @@ const bridge: ComfyTitlePopupBridge = {
   globalSettingsSetLastCheckedAt: (value) => {
     ipcRenderer.send('comfy-titlepopup:global-settings-set-last-checked', { value })
   },
+  globalSettingsRemoveAppData: (options) => {
+    ipcRenderer.send('comfy-titlepopup:global-settings-remove-app-data', options)
+  },
   pickerSettingsGetDetailSections: (installationId) =>
     ipcRenderer.invoke(CH.getDetailSections, { installationId }),
   pickerSettingsGetDiskSpace: (path) => ipcRenderer.invoke(CH.getDiskSpace, { path }),
@@ -564,6 +564,8 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.invoke(CH.getInstallationSize, { installationId }),
   pickerSettingsStopComfyUI: (installationId) =>
     ipcRenderer.invoke(CH.stopComfyUI, { installationId }),
+  pickerSettingsCloseComfyWindow: (installationId, opts) =>
+    ipcRenderer.invoke(CH.closeComfyWindow, { installationId, opts }),
   pickerSettingsGetSnapshots: (installationId) =>
     ipcRenderer.invoke(CH.getSnapshots, { installationId }),
   pickerSettingsGetSnapshotDetail: (installationId, filename) =>

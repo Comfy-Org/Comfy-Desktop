@@ -72,8 +72,7 @@ export interface SharedMigrationInput {
 }
 
 export type StandaloneTargetSelection =
-  | { mode: 'auto' }
-  | { mode: 'selected'; release: FieldOption; variant: FieldOption }
+  { mode: 'auto' } | { mode: 'selected'; release: FieldOption; variant: FieldOption }
 
 export function sendMigrationSteps(
   sendProgress: MigrationTools['sendProgress'],
@@ -442,7 +441,7 @@ export async function migrateToStandaloneFromSnapshot(
   input: SharedMigrationInput,
   tools: MigrationTools
 ): Promise<{ entry: InstallationRecord; destPath: string; restoreError?: string }> {
-  const { sendProgress, signal, uniqueName } = tools
+  const { sendProgress, sendOutput, signal, uniqueName } = tools
   const { stagedSnapshot, sourcePaths, labels, target } = input
 
   const cleanupStagedFile = (): void => {
@@ -509,6 +508,7 @@ export async function migrateToStandaloneFromSnapshot(
     await telemetry.trackedStep('comfy.desktop.install.standalone', installContext, async () => {
       await standaloneSource.install!(installRecord, {
         sendProgress,
+        sendOutput,
         download,
         cache,
         extract,
@@ -519,7 +519,7 @@ export async function migrateToStandaloneFromSnapshot(
     const update = (data: Record<string, unknown>): Promise<void> =>
       installations.update(entry.id, data).then(() => {})
     await telemetry.trackedStep('comfy.desktop.install.post_install', installContext, async () => {
-      await standaloneSource.postInstall!(installRecord, { sendProgress, update })
+      await standaloneSource.postInstall!(installRecord, { sendProgress, sendOutput, update })
     })
 
     let restoreError: string | undefined

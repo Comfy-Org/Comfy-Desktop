@@ -3,10 +3,11 @@ import { stubWindowApi } from '../lib/stubWindowApi'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ActionResult } from '../types/ipc'
+import type { ActionResult, ProgressData } from '../types/ipc'
 import type * as TelemetryModule from '../lib/telemetry'
 import { useProgressStore } from './progressStore'
 import { useSessionStore } from './sessionStore'
+import { launchFailed } from '../composables/useBuildProgress'
 
 vi.mock('vue-i18n', async (importOriginal) =>
   (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
@@ -27,6 +28,7 @@ stubWindowApi({
   cancelOperation: vi.fn(),
   stopComfyUI: vi.fn(),
   getRunningInstances: vi.fn().mockResolvedValue([]),
+  onInstanceLaunching: vi.fn(() => vi.fn()),
   onInstanceStarted: vi.fn(() => vi.fn()),
   onInstanceStopped: vi.fn(() => vi.fn()),
   onComfyExited: vi.fn(() => vi.fn()),
@@ -506,5 +508,130 @@ describe('useProgressStore', () => {
 
       expect(store.globalProgressFor(op).percent).toBe(100)
     })
+  })
+
+  describe('a standalone install, as its progress events arrive', () => {
+    function startInstall(): {
+      receive: (event: Omit<ProgressData, 'installationId'>) => void
+      barPercent: () => number
+    } {
+      store.startOperation({
+        installationId: 'build-1',
+        title: 'Installing',
+        apiCall: () => new Promise<ActionResult>(() => {}),
+        opKind: 'install'
+      })
+      const onProgress = vi.mocked(window.api.onInstallProgress).mock.calls.at(-1)![0] as (
+        data: ProgressData
+      ) => void
+      return {
+        receive: (event) => onProgress({ installationId: 'build-1', ...event }),
+        barPercent: () =>
+          Math.round(store.globalProgressFor(store.operations.get('build-1')!).percent)
+      }
+    }
+
+    const fourSteps = [
+      { phase: 'download', label: 'Download' },
+      { phase: 'extract', label: 'Extract' },
+      { phase: 'setup', label: 'Set up environment' },
+      { phase: 'update', label: 'Get ComfyUI v0.3.50' }
+    ]
+
+    it('holds the bar where the package copy left it while the rest of Set up environment runs', () => {
+      const install = startInstall()
+      install.receive({ phase: 'steps', steps: fourSteps })
+
+      const bar: number[] = []
+      const after = (event: Omit<ProgressData, 'installationId'>): void => {
+        install.receive(event)
+        bar.push(install.barPercent())
+      }
+      after({ phase: 'download', percent: 100, status: 'Downloading… 3 / 3 MB' })
+      after({ phase: 'extract', percent: 100, status: 'Extracting… 100%' })
+      after({ phase: 'setup', percent: 0, status: 'Creating Python environment…' })
+      after({ phase: 'setup', percent: 100, status: 'Copying packages… 9 / 9 files' })
+      after({ phase: 'setup', percent: -1, status: 'Removing duplicate packages…' })
+      after({ phase: 'setup', percent: -1, status: 'Fetching version tags…' })
+      after({ phase: 'update', percent: -1, status: 'Checking the version in this download…' })
+      after({ phase: 'update', percent: 100, status: 'Now on ComfyUI v0.3.50' })
+
+      expect(bar).toEqual([40, 60, 60, 90, 90, 90, 90, 99])
+    })
+  })
+})
+
+describe('a later start supersedes a failed one', () => {
+  type Recovery = (data: { installationId: string }) => void
+  function freshStore() {
+    setActivePinia(createTestingPinia({ stubActions: false }))
+    const store = useProgressStore()
+    const lastListener = (fn: unknown) =>
+      vi.mocked(fn as (cb: Recovery) => void).mock.calls.at(-1)![0]
+    return {
+      store,
+      launching: lastListener(window.api.onInstanceLaunching),
+      started: lastListener(window.api.onInstanceStarted)
+    }
+  }
+
+  function finishedOp(opKind: string, error: string | null) {
+    return {
+      opKind,
+      finished: true,
+      superseded: false,
+      cancelRequested: false,
+      error,
+      terminalOutput: 'Port 8188 is in use\n'
+    } as never
+  }
+
+  it('retires the failed start from status but keeps its diagnostics once the build starts again', () => {
+    for (const recovery of ['launching', 'started'] as const) {
+      const fresh = freshStore()
+      fresh.store.operations.set('a', finishedOp('launch', 'Port 8188 is in use'))
+      expect(launchFailed(fresh.store, 'a')).toBe(true)
+
+      fresh[recovery]({ installationId: 'a' })
+      fresh[recovery]({ installationId: 'a' })
+
+      expect(launchFailed(fresh.store, 'a')).toBe(false)
+      const op = fresh.store.operations.get('a')!
+      expect(op.error).toBe('Port 8188 is in use')
+      expect(op.terminalOutput).toBe('Port 8188 is in use\n')
+    }
+  })
+
+  it('lets a new start from this window replace the superseded one', () => {
+    const { store, started } = freshStore()
+    store.operations.set('a', finishedOp('launch', 'Port 8188 is in use'))
+    started({ installationId: 'a' })
+
+    store.startOperation({
+      installationId: 'a',
+      title: 'Starting',
+      opKind: 'launch',
+      apiCall: () => new Promise<ActionResult>(() => {})
+    })
+
+    expect(store.operations.get('a')).toMatchObject({ finished: false, superseded: false })
+  })
+
+  it('keeps a failed install and a start still in progress', () => {
+    const { store, started } = freshStore()
+    store.operations.set('a', finishedOp('install', 'Disk full'))
+    store.operations.set('b', {
+      opKind: 'launch',
+      finished: false,
+      superseded: false,
+      cancelRequested: false,
+      error: null
+    } as never)
+
+    started({ installationId: 'a' })
+    started({ installationId: 'b' })
+
+    expect(store.operations.get('a')).toMatchObject({ error: 'Disk full', superseded: false })
+    expect(store.operations.get('b')).toMatchObject({ finished: false, superseded: false })
   })
 })
