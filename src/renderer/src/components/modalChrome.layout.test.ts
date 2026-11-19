@@ -398,6 +398,33 @@ const DELETE_BUILD = {
   ]
 }
 
+const UNINSTALL_WITH_PATH = {
+  title: 'Uninstall',
+  message: 'This permanently removes this ComfyUI installation and all its files.',
+  confirmLabel: 'Delete',
+  confirmStyle: 'danger' as const,
+  messageDetails: [{ label: 'Will be removed', items: ['/Users/alex/ComfyUI/Flux Sandbox'] }]
+}
+
+const MIGRATE_CONFIRM = {
+  title: 'Migrate to Desktop',
+  message: 'Your setup moves into a new build.',
+  confirmLabel: 'Migrate',
+  snapshotPreview: {
+    filename: 'snapshot.json',
+    createdAt: '2026-11-19T10:00:00Z',
+    trigger: 'manual',
+    label: null,
+    comfyuiVersion: '0.3.60',
+    comfyui: { ref: 'v0.3.60', commit: null, releaseTag: 'v0.3.60', variant: 'nvidia' },
+    customNodes: [],
+    pipPackageCount: 48,
+    pipPackages: {}
+  },
+  messageDetails: [{ label: 'Will be copied', items: ['/Users/alex/ComfyUI'] }],
+  checkboxes: [{ id: 'models', label: 'Share my models', checked: true }]
+}
+
 const SHORT_ALERT = {
   title: "Couldn't add this build",
   message: 'Directory does not exist: /Users/alex/ComfyUI-old'
@@ -555,6 +582,11 @@ describe('modal chrome', () => {
     await eachModalDialogVariant(() =>
       expectFooterInsets('.dialog-box', '.dialog-box', '.dialog-actions')
     )
+
+    void useModal().confirm(MIGRATE_CONFIRM)
+    await settle()
+    expect(document.querySelector('.mig-modal')).not.toBeNull()
+    expectFooterInsets('.mig-modal', '.mig-modal', '.dialog-actions')
   })
 
   it('lines fields and text boxes up with the body edges and the footer button', async () => {
@@ -674,6 +706,13 @@ describe('modal chrome', () => {
     await settle()
     void useModal().confirm(DELETE_BUILD)
     await settle()
+    expectContentPadding('.dialog-box', '.dialog-title', '.dialog-body', '.dialog-actions')
+    expectFooterInsets('.dialog-box', '.dialog-body', '.dialog-actions')
+    useModal().dismiss()
+    await settle()
+    void useModal().confirm(UNINSTALL_WITH_PATH)
+    await settle()
+    expect(document.querySelector('.dialog-options')).toBeNull()
     expectContentPadding('.dialog-box', '.dialog-title', '.dialog-body', '.dialog-actions')
     expectFooterInsets('.dialog-box', '.dialog-body', '.dialog-actions')
     await closeAll()

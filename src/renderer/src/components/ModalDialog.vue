@@ -178,7 +178,7 @@ watch(
       class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid bg-[var(--neutral-800)] px-5"
       :class="
         isMigrateConfirm
-          ? 'mig-modal w-[600px] max-w-full border-[var(--brand-surface-border)] pt-5 pb-6 shadow-[0_24px_64px_0_rgba(0,0,0,0.35)]'
+          ? 'mig-modal w-[600px] max-w-full border-[var(--brand-surface-border)] pt-5 pb-4 shadow-[0_24px_64px_0_rgba(0,0,0,0.35)]'
           : [
               'border-[var(--border)] pt-5 pb-4',
               state.snapshotPreview ||
@@ -352,7 +352,10 @@ watch(
             <div
               v-for="(group, gi) in state.messageDetails"
               :key="gi"
-              class="dialog-detail-group mb-5"
+              class="dialog-detail-group"
+              :class="
+                gi === state.messageDetails.length - 1 && !state.checkboxes.length ? 'mb-0' : 'mb-5'
+              "
             >
               <span
                 class="dialog-detail-label mb-2 block text-[13px] font-semibold text-text uppercase"
@@ -394,7 +397,7 @@ watch(
         class="dialog-actions -mx-5 flex justify-end gap-2 border-t border-solid px-5"
         :class="
           isMigrateConfirm
-            ? 'mt-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pt-5'
+            ? 'mt-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pt-4'
             : 'mt-5 border-[var(--border)] pt-4'
         "
       >
