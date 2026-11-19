@@ -97,6 +97,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   activateFirebaseAuthReporter(comfyContents)
 
   entry.installationId = installationId
+  entry.sourceId = installation.sourceId
   entry.comfyUrl = comfyUrl
   entry.titleBarText = installation.name
   entry.sourceCategory = sourceMap[installation.sourceId]?.category ?? null
@@ -131,6 +132,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
 
   const onInstallationUpdated = (updated: InstallationRecord): void => {
     if (updated.id !== entry.installationId) return
+    entry.sourceId = updated.sourceId
     const nextTabText = updated.name
     if (nextTabText !== entry.titleBarText) {
       entry.titleBarText = nextTabText
@@ -441,6 +443,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       entry.installationId = null
     }
     entry.comfyUrl = ''
+    delete entry.sourceId
   }
   return true
 }

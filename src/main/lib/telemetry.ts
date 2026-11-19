@@ -1,5 +1,11 @@
 import { app } from 'electron'
 import { PostHog } from 'posthog-node'
+import {
+  parseProactiveGreetingAttribution,
+  proactiveGreetingExposureKey,
+  proactiveGreetingProperties,
+  PROACTIVE_GREETING_FLAG
+} from './proactiveGreetingTelemetry'
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 export type FeatureFlagValue = string | boolean
@@ -52,6 +58,11 @@ export function _resetTelemetryRelayTargets(): void {
 }
 
 export function _resetForTest(): void {
+  proactiveGreetingExposures.clear()
+  proactiveGreetingAdmissionObservers.clear()
+  observedProactiveGreetingActor = null
+  observedProactiveGreetingConsentRevision = null
+  consentRevision = 0
   client = null
   distinctId = null
   anonymousDistinctId = null
@@ -312,15 +323,18 @@ export function _test_resetVolumeGuards(): void {
 
 export function setConsentState(state: ConsentState): void {
   const previous = consentState
+  if (state !== previous) ++consentRevision
   consentState = state
   if (state !== 'granted') {
     void client?.flush().catch(() => {})
     if (state === 'denied') discardDeferredTelemetry()
+    publishProactiveGreetingAdmission()
     return
   }
   if (previous !== 'granted') {
     tryFlushDeferred()
   }
+  publishProactiveGreetingAdmission()
 }
 
 export function getConsentState(): ConsentState {
@@ -586,8 +600,8 @@ export function bindAnonymousId(
       ...properties
     }
   }
-  if (!canEmit()) return
-  tryFlushDeferred()
+  if (canEmit()) tryFlushDeferred()
+  publishProactiveGreetingAdmission()
 }
 
 function persistablePersonProperties(properties: TelemetryContext): PendingIdentityProperties {
@@ -636,6 +650,15 @@ function applyFirebaseUserBinding(
   userId: string,
   emitLoginEvent: boolean,
   properties: Record<string, TelemetryValue> = {}
+): void {
+  updateFirebaseUserBinding(userId, emitLoginEvent, properties)
+  publishProactiveGreetingAdmission()
+}
+
+function updateFirebaseUserBinding(
+  userId: string,
+  emitLoginEvent: boolean,
+  properties: Record<string, TelemetryValue>
 ): void {
   const normalizedUserId = normalizePostHogUserId(userId)
   endFirebaseWriteQuarantine(
@@ -737,11 +760,13 @@ export function bindUserId(userId: string, properties: Record<string, TelemetryV
 
 export function applyFirebasePendingConsensus(): void {
   firebaseConsensusPending = true
+  publishProactiveGreetingAdmission()
 }
 
 export function releaseFirebasePendingConsensus(): void {
   endFirebaseWriteQuarantine('replay')
   tryFlushDeferred()
+  publishProactiveGreetingAdmission()
 }
 
 function detachFromBoundUser(): void {
@@ -767,6 +792,7 @@ function detachFromBoundUser(): void {
 export function applyFirebaseAnonymousConsensus(): void {
   pendingLoginAttribution = null
   detachFromBoundUser()
+  publishProactiveGreetingAdmission()
 }
 
 export function discardUnmergeableAnonymousEpoch(): boolean {
@@ -827,14 +853,100 @@ function capturePersonProperties(
   return capture('comfy.desktop.person.set', properties)
 }
 
+const proactiveGreetingExposures = new Set<string>()
+const proactiveGreetingAdmissionObservers = new Set<() => void>()
+let observedProactiveGreetingActor: string | null = null
+let observedProactiveGreetingConsentRevision: number | null = null
+let consentRevision = 0
+
+export function getProactiveGreetingConsentRevision(): number | null {
+  return canEmit() && consentState === 'granted' ? consentRevision : null
+}
+
+export function getProactiveGreetingActor(): string | null {
+  if (
+    getProactiveGreetingConsentRevision() === null ||
+    boundUserId !== distinctId ||
+    firebaseWritesQuarantined()
+  )
+    return null
+  return boundUserId
+}
+
+export function canEnrollProactiveGreeting(userId: string): boolean {
+  return getProactiveGreetingActor() === userId
+}
+
+export function observeProactiveGreetingAdmissionChanged(observer: () => void): () => void {
+  proactiveGreetingAdmissionObservers.add(observer)
+  return () => proactiveGreetingAdmissionObservers.delete(observer)
+}
+
+function publishProactiveGreetingAdmission(): void {
+  const actor = getProactiveGreetingActor()
+  const revision = getProactiveGreetingConsentRevision()
+  if (
+    actor === observedProactiveGreetingActor &&
+    revision === observedProactiveGreetingConsentRevision
+  )
+    return
+  observedProactiveGreetingActor = actor
+  observedProactiveGreetingConsentRevision = revision
+  for (const observer of proactiveGreetingAdmissionObservers) observer()
+}
+
+export function canCaptureVerifiedProactiveGreeting(userId: string): boolean {
+  return (
+    getProactiveGreetingConsentRevision() !== null &&
+    !firebaseConsensusPending &&
+    (boundUserId === null || boundUserId === userId)
+  )
+}
+
+export function enrollProactiveGreeting(
+  properties: TelemetryContext,
+  verifiedActor?: string
+): boolean {
+  const event = '$experiment_exposure'
+  const attribution = parseProactiveGreetingAttribution(event, properties)
+  if (!attribution) return false
+  const allowed = verifiedActor
+    ? attribution.userId === verifiedActor && canCaptureVerifiedProactiveGreeting(verifiedActor)
+    : canEnrollProactiveGreeting(attribution.userId)
+  if (!allowed) return false
+  if (proactiveGreetingExposures.has(proactiveGreetingExposureKey(attribution))) return true
+  return captureEvent(event, properties, false, verifiedActor)
+}
+
+export function captureVerifiedProactiveGreeting(
+  event: string,
+  properties: TelemetryContext,
+  verifiedActor: string
+): boolean {
+  return captureEvent(event, properties, false, verifiedActor)
+}
+
 export function capture(event: string, properties: TelemetryContext = {}): boolean {
   return captureEvent(event, properties, false)
 }
 
-function captureEvent(event: string, properties: TelemetryContext, forward: boolean): boolean {
+function captureEvent(
+  event: string,
+  properties: TelemetryContext,
+  forward: boolean,
+  verifiedActor?: string
+): boolean {
   recordIpcInvocation(`telemetry:${event}`, properties)
-  if (!canEmit() || !distinctId) return false
+  if (!canEmit() || !(verifiedActor ?? distinctId)) return false
   if (!isAllowedToFire(event)) return false
+  const attribution = parseProactiveGreetingAttribution(event, properties)
+  if (
+    attribution === null ||
+    (attribution && attribution.userId !== (verifiedActor ?? boundUserId))
+  )
+    return false
+  if (verifiedActor && (!attribution || !canCaptureVerifiedProactiveGreeting(verifiedActor)))
+    return false
   if (!_checkRateLimit(event)) return false
   if (firebaseWritesQuarantined()) {
     if (
@@ -844,7 +956,7 @@ function captureEvent(event: string, properties: TelemetryContext, forward: bool
     _recordCapturedEvent(event)
     return true
   }
-  if (!deliverEvent(event, properties, forward, null)) return false
+  if (!deliverEvent(event, properties, forward, null, verifiedActor)) return false
   _recordCapturedEvent(event)
   return true
 }
@@ -853,16 +965,40 @@ function deliverEvent(
   event: string,
   properties: TelemetryContext,
   forward: boolean,
-  timestamp: Date | null
+  timestamp: Date | null,
+  verifiedActor?: string
 ): boolean {
   try {
-    const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+    const attribution = parseProactiveGreetingAttribution(event, properties)
+    if (
+      attribution === null ||
+      (attribution && attribution.userId !== (verifiedActor ?? boundUserId))
+    )
+      return false
+    const exposureKey =
+      attribution && event === '$experiment_exposure'
+        ? proactiveGreetingExposureKey(attribution)
+        : null
+    if (exposureKey && proactiveGreetingExposures.has(exposureKey)) return false
+    const merged = { ...defaultEventProperties, ...properties }
+    const policyProperties = verifiedActor ? merged : enforcePersonProcessingPolicy(merged)
     client!.capture({
-      distinctId: distinctId!,
+      distinctId: (verifiedActor ?? distinctId)!,
       event,
-      properties: scrubProperties(merged),
+      ...(attribution ? { groups: { user_workspace: attribution.groupKey } } : {}),
+      properties: {
+        ...scrubProperties(policyProperties),
+        ...(attribution ? proactiveGreetingProperties(attribution) : {}),
+        ...(exposureKey
+          ? {
+              $feature_flag: PROACTIVE_GREETING_FLAG,
+              $feature_flag_response: attribution!.variant
+            }
+          : {})
+      },
       ...(timestamp ? { timestamp } : {})
     })
+    if (exposureKey) proactiveGreetingExposures.add(exposureKey)
     if (forward) forwardToRenderer(event, properties)
     return true
   } catch {
@@ -1214,6 +1350,7 @@ export async function shutdown(reason: string): Promise<void> {
   } finally {
     client = null
     initialized = false
+    publishProactiveGreetingAdmission()
   }
 }
 
@@ -1227,7 +1364,7 @@ export function installAppHooks(): void {
   beforeQuitHooked = true
 
   app.on('before-quit', (event) => {
-    if (drainingForQuit || !client) return
+    if (event.defaultPrevented || drainingForQuit || !client) return
     drainingForQuit = true
     event.preventDefault()
     const drainPromise = shutdown('quit').catch(() => {})
