@@ -866,7 +866,7 @@
     "removeAppDataConfirmTitle": "移除 Comfy Desktop 数据？",
     "removeAppDataConfirmMessage": "Comfy Desktop 将退出并移除其日志、缓存和临时文件。不勾选某个选项即可保留对应的数据，但你删除的实例中的文件除外；重新安装 Comfy Desktop 后会找到保留的数据。",
     "removeAppDataKeptLabel": "始终保留",
-    "removeAppDataKeptFolders": "你自己选择的输入和输出文件夹，位于你删除的实例中的除外",
+    "removeAppDataKeptFolders": "你自己选择的、不在你删除的实例中的输入和输出文件夹",
     "removeAppDataKeptAdded": "你自己添加的模型文件夹",
     "removeAppDataAfterLabel": "然后删除应用",
     "removeAppDataAfterMac": "将 Comfy Desktop 从“应用程序”拖到废纸篓。",

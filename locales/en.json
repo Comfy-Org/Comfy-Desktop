@@ -866,7 +866,7 @@
     "removeAppDataConfirmTitle": "Remove Comfy Desktop data?",
     "removeAppDataConfirmMessage": "Comfy Desktop will quit and remove its logs, caches and temporary files. Leave a box unchecked to keep that data, except files inside an instance you delete; installing Comfy Desktop again will find what is kept.",
     "removeAppDataKeptLabel": "Always kept",
-    "removeAppDataKeptFolders": "Input and output folders you picked yourself, unless they are inside an instance you delete",
+    "removeAppDataKeptFolders": "Input and output folders you picked yourself, outside the instances you delete",
     "removeAppDataKeptAdded": "Model folders you added yourself",
     "removeAppDataAfterLabel": "Then delete the app",
     "removeAppDataAfterMac": "Drag Comfy Desktop from Applications to the Trash.",

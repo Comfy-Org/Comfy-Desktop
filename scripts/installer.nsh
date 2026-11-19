@@ -339,7 +339,7 @@
     ${If} $comfyRemoveInputOutput == ${BST_CHECKED}
       ${NSD_Check} $comfyRemoveInputOutputCheckbox
     ${EndIf}
-    ${NSD_CreateLabel} 12u 87u 92% 16u "Removes the shared input and output folders. Folders you picked are kept unless they are inside a deleted instance."
+    ${NSD_CreateLabel} 12u 87u 92% 16u "Removes the shared input and output folders. Folders you picked outside a deleted instance are kept."
     Pop $0
 
     ${NSD_CreateLabel} 0 110u 100% 16u "Unchecked boxes keep their data, except files inside a deleted instance. Installing Comfy Desktop again will find what is kept."
