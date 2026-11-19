@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AppWindow, ArrowUpRight, Search } from '@lucide/vue'
+import { AppWindow, ArrowUpRight, Plus, Search } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
 import AppBadges from './AppBadges.vue'
 import CoverRotation from '../components/CoverRotation.vue'
+import AppRequestModal from '../components/AppRequestModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
@@ -32,6 +33,7 @@ const state = ref<LoadState>('loading')
 const apps = ref<AppCard[]>([])
 const query = ref('')
 const openApp = ref<AppCard | null>(null)
+const requestOpen = ref(false)
 const coversThatFailed = reactive(new Set<string>())
 const cardButtons = new Map<string, HTMLElement>()
 const keyboardFocusedId = ref<string | null>(null)
@@ -222,16 +224,28 @@ onBeforeUnmount(() => {
           :title="t('common.nothingMatches')"
           :text="t('common.nothingMatchesHint')"
         >
-          <Button
-            type="button"
-            variant="secondary"
-            size="md"
-            class="px-3 text-[13px]/5"
-            data-testid="apps-clear-filters"
-            @click="query = ''"
-          >
-            {{ t('common.clearFilters') }}
-          </Button>
+          <div class="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              class="px-3 text-[13px]/5"
+              data-testid="apps-clear-filters"
+              @click="query = ''"
+            >
+              {{ t('common.clearFilters') }}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              class="px-3 text-[13px]/5"
+              data-testid="apps-no-matches-request"
+              @click="requestOpen = true"
+            >
+              {{ t('apps.request.ask') }}
+            </Button>
+          </div>
         </EmptyState>
 
         <ul v-else :class="RHYTHM_GRID_CLASS" data-testid="apps-grid">
@@ -306,9 +320,25 @@ onBeforeUnmount(() => {
               </span>
             </button>
           </li>
+          <li
+            class="min-w-0"
+            :class="rhythmSpanClass(matchingApps.length)"
+            data-testid="app-request-tile"
+          >
+            <button
+              type="button"
+              class="flex aspect-square w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-card border border-dashed border-border bg-transparent p-6 text-center text-muted-foreground outline-none transition-colors duration-200 hover:bg-[rgb(235_235_235/0.05)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+              data-testid="app-request-open"
+              @click="requestOpen = true"
+            >
+              <Plus :size="24" :stroke-width="1.5" aria-hidden="true" />
+              <span class="text-sm/[17px] font-semibold">{{ t('apps.request.tile') }}</span>
+            </button>
+          </li>
         </ul>
       </div>
     </div>
+    <AppRequestModal :open="requestOpen" @close="requestOpen = false" />
     <div v-if="openApp" class="absolute inset-0 flex">
       <AppPageHost
         :app-id="openApp.id"
