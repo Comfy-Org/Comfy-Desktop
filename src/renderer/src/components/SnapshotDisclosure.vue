@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ChevronRight } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 defineProps<{ label: string }>()
 
@@ -16,7 +17,8 @@ const open = defineModel<boolean>('open', { required: true })
       variant="textonly"
       size="unset"
       type="button"
-      class="load-snapshot-disclosure__summary static flex w-full items-center justify-start gap-1.5 rounded-md px-0 py-1 text-[13px] leading-5 font-medium text-text-muted hover:bg-transparent hover:text-neutral-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:ring-0"
+      class="load-snapshot-disclosure__summary static flex w-full items-center justify-start gap-1.5 rounded-md px-0 py-1.5 hover:bg-transparent hover:text-neutral-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:ring-0"
+      :class="SECTION_TITLE_CLASS"
       :aria-expanded="open"
       @click="open = !open"
     >
