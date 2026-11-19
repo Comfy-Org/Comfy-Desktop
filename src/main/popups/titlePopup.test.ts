@@ -24,6 +24,7 @@ vi.mock('../lib/ipc/registerSettingsHandlers', async () => ({
 
 import {
   _test_buildGlobalSettingsSnapshot,
+  _test_centeredCardBounds,
   _test_deleteTitlePopupEntry,
   _test_setTitlePopupEntry,
   activateTitlePopupMenuItem,
@@ -1028,4 +1029,19 @@ describe('global settings remove app data', () => {
     removeAppData(openPopup('menu'), { deleteInstances: true, deleteModels: true })
     expect(removeAppDataAndQuit).not.toHaveBeenCalled()
   })
+})
+
+describe('centered card popups', () => {
+  const parent = {
+    getContentBounds: () => ({ x: 0, y: 0, width: 1400, height: 900 })
+  } as unknown as Electron.BrowserWindow
+
+  it.each(['global-settings', 'downloads-full'] as const)(
+    'leaves room beside the %s card for the round close button outside it',
+    (kind) => {
+      const bounds = _test_centeredCardBounds(kind, parent)
+      const cardWidth = kind === 'global-settings' ? 880 : 900
+      expect(bounds.width).toBe(cardWidth + 48)
+    }
+  )
 })

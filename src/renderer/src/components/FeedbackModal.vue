@@ -81,8 +81,9 @@ watch(
   <BaseModal
     :open="open"
     size="xl"
+    close-outside
     :aria-label="t('feedback.modalLabel')"
-    content-class="feedback-modal-panel [&.base-modal-panel]:min-h-0 [&_.base-modal-body]:overflow-hidden [&_.base-modal-body]:p-0"
+    content-class="feedback-modal-panel [&.base-modal-panel]:min-h-0 [&_.base-modal-body]:overflow-hidden [&_.base-modal-body]:rounded-[inherit] [&_.base-modal-body]:p-0"
     @close="onClose"
   >
     <div class="feedback-modal-body relative h-[clamp(520px,76vh,820px)] w-full overflow-hidden">
