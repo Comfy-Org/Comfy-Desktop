@@ -1,4 +1,4 @@
-import type { RumErrorEvent } from '@datadog/browser-rum'
+import type { RumBeforeSend, RumErrorEvent } from '@datadog/browser-rum'
 import { scrubPII } from '../../../shared/piiScrub'
 
 export const DATADOG_BUNDLE_BASE_URL = 'app://app'
@@ -48,4 +48,11 @@ export function normalizeRumErrorEvent(event: RumErrorEvent): void {
       normalizeDatadogBundlePaths(event.error.resource.url) || event.error.resource.url
     event.error.resource.url = scrubRumText(event.error.resource.url)
   }
+}
+
+export const rumBeforeSend: RumBeforeSend = (event) => {
+  if (event.type !== 'error') return true
+  if (event.error.causes?.length) return false
+  normalizeRumErrorEvent(event)
+  return true
 }

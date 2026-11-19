@@ -3,6 +3,7 @@ import type { RumErrorEvent } from '@datadog/browser-rum'
 import {
   normalizeDatadogBundlePaths,
   normalizeRumErrorEvent,
+  rumBeforeSend,
   scrubRumText
 } from './datadogPathNormalization'
 
@@ -120,5 +121,40 @@ describe('normalizeRumErrorEvent', () => {
     expect(event.error.stack).toContain('app://app/preload/index.js:5:2')
     expect(event.error.causes?.[0]?.stack).toContain('app://app/main/index.js:8:3')
     expect(event.error.resource?.url).toBe('app://app/renderer/assets/index-abc123.js')
+  })
+})
+
+describe('rumBeforeSend', () => {
+  const send = (event: unknown): boolean | undefined =>
+    rumBeforeSend(event as Parameters<typeof rumBeforeSend>[0], {} as never) as boolean | undefined
+
+  it('drops an error event that carries causes, since the SDK sends causes as they were', () => {
+    const event = {
+      type: 'error',
+      error: {
+        message: 'wrapped',
+        source: 'custom',
+        causes: [{ message: 'inner C:\\Users\\alice\\x', source: 'custom' }]
+      }
+    }
+
+    expect(send(event)).toBe(false)
+  })
+
+  it('scrubs and keeps an error event without causes', () => {
+    const event = {
+      type: 'error',
+      error: { message: 'open C:\\Users\\alice\\x failed', source: 'custom', causes: [] }
+    }
+
+    expect(send(event)).toBe(true)
+    expect(event.error.message).toBe('open C:\\Users\\[REDACTED]\\x failed')
+  })
+
+  it('keeps other events as they are', () => {
+    const event = { type: 'view', view: { url: 'app://app/index.html' } }
+
+    expect(send(event)).toBe(true)
+    expect(event.view.url).toBe('app://app/index.html')
   })
 })

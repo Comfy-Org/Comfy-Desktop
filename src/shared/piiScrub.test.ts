@@ -168,6 +168,30 @@ describe('piiScrub', () => {
       )
     })
 
+    it.each([
+      [
+        'File "\\\\tsclient\\C\\Users\\alice\\x.py"',
+        'File "\\\\tsclient\\C\\Users\\[REDACTED]\\x.py"'
+      ],
+      [
+        JSON.stringify({ p: '\\\\tsclient\\D\\Users\\alice\\x.py' }),
+        JSON.stringify({ p: '\\\\tsclient\\D\\Users\\[REDACTED]\\x.py' })
+      ],
+      [
+        'open \\\\wsl$\\Ubuntu\\mnt\\c\\Users\\alice\\x.py',
+        'open \\\\wsl$\\Ubuntu\\mnt\\c\\Users\\[REDACTED]\\x.py'
+      ],
+      [
+        JSON.stringify({ p: '\\\\wsl.localhost\\Ubuntu-22.04\\mnt\\c\\Users\\alice\\x.py' }),
+        JSON.stringify({ p: '\\\\wsl.localhost\\Ubuntu-22.04\\mnt\\c\\Users\\[REDACTED]\\x.py' })
+      ]
+    ])(
+      'redacts a Remote Desktop client drive or a WSL-mounted Windows profile: %s',
+      (input, expected) => {
+        expect(scrubPII(input)).toBe(expected)
+      }
+    )
+
     it('keeps a Windows line ending after a path', () => {
       expect(scrubPII('at C:\\Users\\alice\r\nnext')).toBe('at C:\\Users\\[REDACTED]\r\nnext')
     })
