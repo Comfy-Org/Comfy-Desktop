@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { computed, reactive, ref, useId, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import Textarea from '@comfyorg/design-system/textarea/Textarea'
-import { Check, Plus } from '@lucide/vue'
-import type { AppCard } from '../types/ipc'
+import { Check } from '@lucide/vue'
 import BaseModal from './ui/BaseModal.vue'
-import { stillsOf } from '../lib/appStills'
+import requestArt from '../assets/app-request/request-art.webp'
 
 type RequestStatus = 'idle' | 'sending' | 'sent' | 'failed'
 
@@ -14,7 +13,7 @@ const APP_REQUEST_MAX_LENGTH = 500
 const AUTOCLOSE_MS = 2000
 const IME_COMPOSING_KEY_CODE = 229
 
-const props = withDefaults(defineProps<{ open: boolean; apps?: AppCard[] }>(), { apps: () => [] })
+const props = defineProps<{ open: boolean }>()
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -25,39 +24,6 @@ const request = ref('')
 const status = ref<RequestStatus>('idle')
 let attempt = 0
 let autocloseTimer: ReturnType<typeof setTimeout> | null = null
-
-const ART_PICTURE_LIMIT = 12
-const ART_ROW_MIN = 6
-
-function fillRow(pictures: string[]): string[] {
-  if (pictures.length === 0) return []
-  const row = [...pictures]
-  while (row.length < ART_ROW_MIN) row.push(...pictures)
-  return row
-}
-
-const brokenPictures = reactive(new Set<string>())
-
-const artPictures = computed(() => {
-  const perApp = props.apps.map(stillsOf)
-  const pictures: string[] = []
-  for (let round = 0; perApp.some((list) => round < list.length); round++) {
-    for (const list of perApp) {
-      const picture = list[round]
-      if (picture && !brokenPictures.has(picture) && !pictures.includes(picture)) {
-        pictures.push(picture)
-      }
-    }
-  }
-  return pictures.slice(0, ART_PICTURE_LIMIT)
-})
-
-const artRows = computed(() => {
-  const pictures = artPictures.value
-  const top = fillRow(pictures.filter((_, index) => index % 2 === 0))
-  const bottom = fillRow(pictures.filter((_, index) => index % 2 === 1))
-  return [top, bottom.length > 0 ? bottom : [...top].reverse()].filter((row) => row.length > 0)
-})
 
 const sending = computed(() => status.value === 'sending')
 const sent = computed(() => status.value === 'sent')
@@ -130,46 +96,23 @@ watch(
 <template>
   <BaseModal
     :open="open"
-    size="sm"
+    size="md"
     close-outside
     :aria-labelledby="titleId"
-    content-class="[&_.base-modal-footer]:p-4 [&_.base-modal-header]:border-b-0 [&_.base-modal-header]:pb-0"
+    content-class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto] min-[600px]:grid-cols-[232px_minmax(0,1fr)] [&_.base-modal-media]:hidden min-[600px]:[&_.base-modal-media]:block [&_.base-modal-media]:row-span-3 [&_.base-modal-media]:p-2 [&_.base-modal-body]:flex [&_.base-modal-body]:flex-col [&_.base-modal-footer]:p-4 [&_.base-modal-header]:border-b-0 [&_.base-modal-header]:pt-6 [&_.base-modal-header]:pb-0"
     @close="close"
   >
-    <template v-if="artRows.length > 0" #media>
+    <template #media>
       <div
-        class="relative flex h-48 flex-col justify-center overflow-hidden rounded-t-[inherit]"
+        class="relative size-full overflow-hidden rounded-[8px]"
         aria-hidden="true"
         data-testid="app-request-art"
       >
-        <div class="flex -rotate-6 scale-110 flex-col gap-2">
-          <div
-            v-for="(row, rowIndex) in artRows"
-            :key="rowIndex"
-            class="app-request-row flex w-max animate-marquee gap-2 motion-reduce:animate-none"
-            :class="{ '[animation-direction:reverse]': rowIndex % 2 === 1 }"
-            data-testid="app-request-art-row"
-          >
-            <img
-              v-for="(picture, index) in [...row, ...row]"
-              :key="index"
-              :src="picture"
-              alt=""
-              class="h-[72px] w-[112px] shrink-0 rounded-[10px] object-cover"
-              @error="brokenPictures.add(picture)"
-            />
-          </div>
-        </div>
-        <div
-          class="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,transparent_55%,var(--modal-surface-bg))]"
-        />
-        <div
-          class="absolute top-1/2 left-1/2 flex h-[72px] w-[112px] -translate-1/2 flex-col items-center justify-center gap-1.5 rounded-[10px] bg-[var(--modal-surface-bg)] text-foreground shadow-[0_12px_32px_-8px_rgb(0_0_0/0.7)]"
-          data-testid="app-request-art-yours"
-        >
-          <Plus :size="18" :stroke-width="1.75" />
-          <span class="text-xs leading-none font-semibold">{{ t('apps.request.artYours') }}</span>
-        </div>
+        <img :src="requestArt" alt="" class="absolute inset-0 size-full object-cover" />
+        <div class="absolute inset-0 bg-[linear-gradient(to_top,rgb(0_0_0/0.6),transparent_40%)]" />
+        <span class="absolute bottom-4 left-4 text-sm/[17px] font-semibold text-white">{{
+          t('apps.request.artApp')
+        }}</span>
       </div>
     </template>
     <template #header>
@@ -192,17 +135,17 @@ watch(
       </span>
       {{ t('apps.request.thanks') }}
     </p>
-    <div v-else class="flex flex-col gap-2">
+    <div v-else class="flex flex-1 flex-col gap-2">
       <Textarea
         v-model="request"
         data-initial-focus
-        rows="4"
+        rows="5"
         :maxlength="APP_REQUEST_MAX_LENGTH"
         :readonly="sending"
         :aria-labelledby="titleId"
         :aria-describedby="failed ? errorId : undefined"
         :placeholder="t('apps.request.placeholder')"
-        class="resize-none leading-[1.5]"
+        class="min-h-28 flex-1 resize-none leading-[1.5]"
         data-testid="app-request-input"
         @keydown.meta.enter="sendFromKeyboard"
         @keydown.ctrl.enter="sendFromKeyboard"

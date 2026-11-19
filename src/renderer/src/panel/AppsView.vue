@@ -91,7 +91,7 @@ function requestSpan(cardCount: number, tier: RhythmTier): { span: number; besid
   }
   const free = column === 0 ? 0 : tier.columns - column
   return free >= tier.smallestCard
-    ? { span: free, beside: true }
+    ? { span: tier.smallestCard, beside: true }
     : { span: tier.columns, beside: false }
 }
 
@@ -107,9 +107,18 @@ const requestLayout = computed(() => {
       '--request-span-wide': wide.span
     },
     class: [
-      narrow.beside ? 'flex-col items-start' : 'flex-row items-center',
-      medium.beside ? '@3xl:flex-col @3xl:items-start' : '@3xl:flex-row @3xl:items-center',
-      wide.beside ? '@5xl:flex-col @5xl:items-start' : '@5xl:flex-row @5xl:items-center'
+      narrow.beside ? 'aspect-square flex-col items-start' : 'flex-row items-center',
+      medium.beside
+        ? '@3xl:aspect-square @3xl:flex-col @3xl:items-start'
+        : '@3xl:aspect-auto @3xl:flex-row @3xl:items-center',
+      wide.beside
+        ? '@5xl:aspect-square @5xl:flex-col @5xl:items-start'
+        : '@5xl:aspect-auto @5xl:flex-row @5xl:items-center'
+    ],
+    bodyClass: [
+      narrow.beside ? 'block' : 'hidden @[36rem]/request:block',
+      medium.beside ? '@3xl/apps:block' : '@3xl/apps:hidden @3xl/apps:@[36rem]/request:block',
+      wide.beside ? '@5xl/apps:block' : '@5xl/apps:hidden @5xl/apps:@[36rem]/request:block'
     ]
   }
 })
@@ -193,7 +202,7 @@ onBeforeUnmount(() => {
   <div class="relative flex min-h-0 w-full flex-auto flex-col">
     <div
       v-show="!openApp"
-      class="@container flex min-h-0 w-full flex-auto flex-col overflow-y-auto [scrollbar-gutter:stable]"
+      class="@container/apps flex min-h-0 w-full flex-auto flex-col overflow-y-auto [scrollbar-gutter:stable]"
       :class="PAGE_SPOTLIGHT_CLASS"
       data-testid="apps-view"
     >
@@ -364,7 +373,7 @@ onBeforeUnmount(() => {
           >
             <button
               type="button"
-              class="group/request @container/request flex size-full cursor-pointer gap-3 rounded-card border-0 bg-[rgb(235_235_235/0.05)] px-[18px] py-4 text-left outline-none transition-colors duration-200 hover:bg-[rgb(235_235_235/0.08)] focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+              class="group/request @container/request flex w-full cursor-pointer gap-3 rounded-card border-0 bg-[rgb(235_235_235/0.05)] px-[18px] py-4 text-left outline-none transition-colors duration-200 hover:bg-[rgb(235_235_235/0.08)] focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
               :class="requestLayout.class"
               data-testid="app-request-open"
               @click="requestOpen = true"
@@ -396,7 +405,8 @@ onBeforeUnmount(() => {
                   t('apps.request.bandTitle')
                 }}</span>
                 <span
-                  class="hidden text-xs/4 text-muted-foreground @[15rem]/request:line-clamp-3"
+                  class="text-xs/4 text-muted-foreground"
+                  :class="requestLayout.bodyClass"
                   data-testid="app-request-body"
                   >{{ t('apps.request.bandBody') }}</span
                 >
@@ -411,7 +421,7 @@ onBeforeUnmount(() => {
         </ul>
       </div>
     </div>
-    <AppRequestModal :open="requestOpen" :apps="apps" @close="requestOpen = false" />
+    <AppRequestModal :open="requestOpen" @close="requestOpen = false" />
     <div v-if="openApp" class="absolute inset-0 flex">
       <AppPageHost
         :app-id="openApp.id"

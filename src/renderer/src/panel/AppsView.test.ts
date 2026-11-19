@@ -379,14 +379,24 @@ describe('AppsView', () => {
         const band = wrapper.get('[data-testid="app-request-open"]').element.getBoundingClientRect()
         const label = `${width}px, ${count} cards`
 
-        expect(band.right, label).toBeCloseTo(grid.right, 0)
         if (grid.right - last.right - gap >= smallest - 1) {
           expect(band.top, label).toBeCloseTo(last.top, 0)
           expect(band.left, label).toBeCloseTo(last.right + gap, 0)
-          expect(band.height, label).toBeCloseTo(last.height, 0)
+          expect(band.width, label).toBeLessThanOrEqual(smallest + 0.5)
+          expect(band.height, label).toBeCloseTo(band.width, 0)
         } else {
           expect(band.left, label).toBeCloseTo(grid.left, 0)
+          expect(band.right, label).toBeCloseTo(grid.right, 0)
           expect(band.top, label).toBeGreaterThan(last.bottom)
+        }
+        const body = wrapper.get('[data-testid="app-request-body"]').element as HTMLElement
+        const besideCards = Math.abs(band.top - last.top) < 1
+        expect(getComputedStyle(body).display !== 'none', label).toBe(
+          besideCards || band.width >= 576
+        )
+        if (getComputedStyle(body).display !== 'none') {
+          expect(body.scrollHeight, label).toBeLessThanOrEqual(body.clientHeight + 1)
+          expect(body.getBoundingClientRect().bottom, label).toBeLessThanOrEqual(band.bottom)
         }
         for (const part of wrapper.get('[data-testid="app-request-open"]').element.children) {
           const box = part.getBoundingClientRect()

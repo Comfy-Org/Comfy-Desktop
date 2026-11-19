@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { page } from 'vitest/browser'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import '../assets/main.css'
 import { stubWindowApi } from '../lib/stubWindowApi'
 import AppRequestModal from './AppRequestModal.vue'
 
@@ -249,69 +251,28 @@ describe('AppRequestModal', () => {
     expect(sendButton().disabled).toBe(true)
   })
 
-  const picture = (fill: string) =>
-    `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="${fill}"/></svg>`)}`
-  const A1 = picture('red')
-  const A2 = picture('green')
-  const B1 = picture('blue')
-
-  it('runs every app example above the form once, skips pictures that fail, and hides it from screen readers', async () => {
-    const app = (id: string, ...covers: { url: string; stillUrl: string | null }[]) => ({
-      id,
-      title: id,
-      description: '',
-      covers
-    })
-    const wrapper = mount(AppRequestModal, {
-      attachTo: document.body,
-      props: {
-        open: true,
-        apps: [
-          app('a', { url: 'a1.mp4', stillUrl: A1 }, { url: 'a2.mp4', stillUrl: A2 }),
-          app('b', { url: `${B1}#.png`, stillUrl: null }, { url: 'b2.mp4', stillUrl: null }),
-          app('c', { url: 'c1.mp4', stillUrl: A1 })
-        ]
-      }
-    })
-    wrappers.push(wrapper)
-    await flushPromises()
-
+  it('shows an app example beside the form on a wide window, hidden from screen readers, and drops it when narrow', async () => {
+    await page.viewport(900, 700)
+    await mountRequest()
     const art = document.querySelector('[data-testid="app-request-art"]')!
+    const artBox = art.getBoundingClientRect()
+    const title = document.querySelector('h2')!.getBoundingClientRect()
+
     expect(art.getAttribute('aria-hidden')).toBe('true')
-    expect(art.querySelector('[data-testid="app-request-art-yours"]')?.textContent?.trim()).toBe(
-      'Your app'
-    )
-    const shown = () =>
-      new Set(
-        [...art.querySelectorAll<HTMLImageElement>('[data-testid="app-request-art-row"] img')].map(
-          (img) => img.getAttribute('src')
-        )
-      )
-    expect(shown()).toEqual(new Set([A1, `${B1}#.png`, A2]))
-    expect(document.querySelector('.app-request-row')?.getBoundingClientRect().top).toBeLessThan(
-      document.querySelector('h2')!.getBoundingClientRect().top
-    )
+    expect(art.querySelector('img')?.getAttribute('alt')).toBe('')
+    expect(art.textContent?.trim()).toBe('Character Swap')
+    const card = document.querySelector('.base-modal-panel')!.getBoundingClientRect()
+    expect(artBox.width).toBeCloseTo(216, 0)
+    expect(artBox.left - card.left).toBeCloseTo(9, 0)
+    expect(artBox.top - card.top).toBeCloseTo(9, 0)
+    expect(card.bottom - artBox.bottom).toBeCloseTo(9, 0)
+    expect(getComputedStyle(art).borderTopLeftRadius).toBe('8px')
+    expect(artBox.right).toBeLessThanOrEqual(title.left)
+    expect(artBox.top).toBeLessThanOrEqual(title.top)
 
-    const brokenImg = [...art.querySelectorAll<HTMLImageElement>('img')].find(
-      (img) => img.getAttribute('src') === `${B1}#.png`
-    )!
-    brokenImg.dispatchEvent(new Event('error'))
-    await flushPromises()
-    expect(shown()).toEqual(new Set([A1, A2]))
-  })
-
-  it('shows no picture when no app has a still', async () => {
-    const wrapper = mount(AppRequestModal, {
-      attachTo: document.body,
-      props: {
-        open: true,
-        apps: [{ id: 'v', title: 'v', description: '', covers: [{ url: 'v.mp4', stillUrl: null }] }]
-      }
-    })
-    wrappers.push(wrapper)
-    await flushPromises()
-
-    expect(document.querySelector('[data-testid="app-request-art"]')).toBeNull()
-    expect(document.querySelector('[data-testid="app-request-input"]')).not.toBeNull()
+    await page.viewport(520, 700)
+    await expect.poll(() => art.getBoundingClientRect().width).toBe(0)
+    expect(input().getBoundingClientRect().width).toBeGreaterThan(0)
+    await page.viewport(1280, 800)
   })
 })
