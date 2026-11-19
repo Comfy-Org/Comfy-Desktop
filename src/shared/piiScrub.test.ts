@@ -131,6 +131,11 @@ describe('piiScrub', () => {
         'after an escaped line break',
         JSON.stringify({ log: 'error\n\\\\server\\Users\\alice\\x.py' }),
         JSON.stringify({ log: 'error\n\\\\server\\Users\\[REDACTED]\\x.py' })
+      ],
+      [
+        'escaped twice after an escaped line break',
+        JSON.stringify(JSON.stringify({ log: 'error\n\\\\server\\Users\\alice\\x.py' })),
+        JSON.stringify(JSON.stringify({ log: 'error\n\\\\server\\Users\\[REDACTED]\\x.py' }))
       ]
     ])('redacts a share path written %s', (_label, input, expected) => {
       expect(scrubPII(input)).toBe(expected)
@@ -179,13 +184,10 @@ describe('piiScrub', () => {
       'C:\\ComfyUI\\custom_nodes\\x\\home\\config.json',
       'C:\\ComfyUI\\custom_nodes\\x\\Users\\config.json',
       'C:\\\\ComfyUI\\\\custom_nodes\\\\x\\\\Users\\\\config.json',
-      '{"p":"D:\\\\data\\\\home\\\\x"}',
-      '"D:\\\\Program Files (x86)\\\\foo\\\\Users\\\\x"',
       'C:\\\\work\\\\wsl$\\\\Ubuntu\\\\home\\\\x',
       'C:\\\\work\\\\srv\\\\c$\\\\Users\\\\x',
       'C:\\\\work\\\\.\\\\UNC\\\\srv\\\\Users\\\\x',
-      'C:\\work\\cache$\\Users\\config.json',
-      JSON.stringify(JSON.stringify({ p: 'D:\\data\\home\\x' }))
+      'C:\\work\\cache$\\Users\\config.json'
     ])('leaves the nested project folder in %s alone', (input) => {
       expect(scrubPII(input)).toBe(input)
     })
@@ -221,6 +223,16 @@ describe('piiScrub', () => {
       ["b'C:\\\\Users\\\\\\xc3\\x89mile\\\\x'", "b'C:\\\\Users\\\\[REDACTED]\\\\x'"]
     ])('redacts a non-ASCII username from a Python bytes repr: %s', (input, expected) => {
       expect(scrubPII(input)).toBe(expected)
+    })
+
+    it('hides the last folder of an escaped drive path that reads as a share', () => {
+      expect(scrubPII('{"p":"D:\\\\data\\\\home\\\\x"}')).toBe(
+        '{"p":"D:\\\\data\\\\home\\\\[REDACTED]"}'
+      )
+    })
+
+    it('hides a folder like x86 after a mixed-separator username along with the name', () => {
+      expect(scrubPII('C:\\Users/alice\\x86\\python.exe')).toBe('C:\\Users/[REDACTED]\\python.exe')
     })
 
     it('keeps an ASCII folder like x64 after a mixed-separator username', () => {

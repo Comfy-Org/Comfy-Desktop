@@ -1,12 +1,12 @@
 const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)(?:\\u[0-9a-fA-F]{4}|\\x[89a-fA-F][0-9a-fA-F]|[^\\/"\r\n])+`
 const RAW_SEP_NAME = String.raw`(\\)[^\\/"\r\n]+`
-const SHARE_START = String.raw`(?:(?<=(?<!\\)(?:\\\\)*\\[nrt])|(?<![\w.~$\\)-]|\b[A-Za-z]:))(?:\\\\)+`
+const NOT_IN_COMPONENT = String.raw`(?<![\w.~$-])`
 const PII_PATH_PATTERNS: RegExp[] = [
   String.raw`([A-Za-z]:[\\/]+Users)`,
-  String.raw`(${SHARE_START}(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home)`,
-  String.raw`(${SHARE_START}[^\\/]+[\\/]+(?:Users|home))`,
-  String.raw`(${SHARE_START}[^\\/]+[\\/]+[A-Za-z]\$[\\/]+Users)`,
-  String.raw`(${SHARE_START}[?.][\\/]+UNC[\\/]+[^\\/]+(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
+  String.raw`${NOT_IN_COMPONENT}(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home)`,
+  String.raw`${NOT_IN_COMPONENT}(\\\\[^\\/]+[\\/]+(?:Users|home))`,
+  String.raw`${NOT_IN_COMPONENT}(\\\\[^\\/]+[\\/]+[A-Za-z]\$[\\/]+Users)`,
+  String.raw`${NOT_IN_COMPONENT}(\\\\[?.][\\/]+UNC[\\/]+[^\\/]+(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
   String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users)`,
   String.raw`((?<![\w.~$\\/-])\\+Users)`,
   String.raw`(\/Users)`,
