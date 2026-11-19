@@ -3,7 +3,7 @@ import process from 'node:process'
 
 export const GRACEFUL_CLOSE_DEADLINE_MS = 10_000
 export const FORCED_EXIT_DEADLINE_MS = 10_000
-const EXIT_POLL_MS = 50
+const EXIT_POLL_MS = 100
 const EXIT_SETTLE_MS = 2_000
 
 export interface ShutdownTarget {
@@ -20,6 +20,18 @@ export interface ShutdownOptions {
   forceKill?: (pids: number[]) => void
   log?: (line: string) => void
 }
+
+export interface ShutdownHandle {
+  shutdown: () => Promise<void>
+  trackHelpers: () => void
+}
+
+interface ListedProcess {
+  parentPid: number
+  startTime: string
+}
+
+export class ProcessLookupError extends Error {}
 
 export function isPidAlive(pid: number): boolean {
   try {
@@ -46,50 +58,59 @@ export function killProcessTrees(pids: number[]): void {
   }
 }
 
-export function processStartTime(pid: number): string | undefined {
-  const result =
-    process.platform === 'win32'
-      ? spawnSync(
-          'powershell',
-          [
-            '-NoProfile',
-            '-NonInteractive',
-            '-Command',
-            `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToFileTimeUtc()`
-          ],
-          { encoding: 'utf8', timeout: FORCED_EXIT_DEADLINE_MS, windowsHide: true }
-        )
-      : spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
-          encoding: 'utf8',
-          timeout: FORCED_EXIT_DEADLINE_MS
-        })
-  const startTime = result.status === 0 ? result.stdout.trim() : ''
-  return startTime || undefined
-}
-
-export function descendantsOf(roots: number[]): number[] {
-  if (process.platform === 'win32' || roots.length === 0) return []
-  const listing = spawnSync('ps', ['-A', '-o', 'pid=,ppid='], {
+export function listProcesses(): Map<number, ListedProcess> {
+  const listing = spawnSync('ps', ['-A', '-o', 'pid=,ppid=,lstart='], {
     encoding: 'utf8',
     timeout: FORCED_EXIT_DEADLINE_MS
   })
-  if (listing.status !== 0) return []
-  const childrenByParent = new Map<number, number[]>()
-  for (const line of listing.stdout.split('\n')) {
-    const [pid, ppid] = line.trim().split(/\s+/).map(Number)
-    if (!pid || !ppid) continue
-    childrenByParent.set(ppid, [...(childrenByParent.get(ppid) ?? []), pid])
+  if (listing.status !== 0) {
+    throw new ProcessLookupError('[e2e-harness] could not list processes with ps')
   }
-  const found = new Set<number>()
+  const processes = new Map<number, ListedProcess>()
+  for (const line of listing.stdout.split('\n')) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line)
+    if (!match) continue
+    processes.set(Number(match[1]), { parentPid: Number(match[2]), startTime: match[3]! })
+  }
+  return processes
+}
+
+export function processStartTime(pid: number): string | undefined {
+  if (process.platform !== 'win32') return listProcesses().get(pid)?.startTime
+  const result = spawnSync(
+    'powershell',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p) { $p.StartTime.ToFileTimeUtc() }`
+    ],
+    { encoding: 'utf8', timeout: FORCED_EXIT_DEADLINE_MS, windowsHide: true }
+  )
+  if (result.status !== 0) {
+    throw new ProcessLookupError(`[e2e-harness] could not read the start time of process ${pid}`)
+  }
+  return result.stdout.trim() || undefined
+}
+
+export function descendantsOf(
+  roots: number[],
+  processes: Map<number, ListedProcess> = listProcesses()
+): Map<number, string> {
+  const childrenByParent = new Map<number, number[]>()
+  for (const [pid, { parentPid }] of processes) {
+    childrenByParent.set(parentPid, [...(childrenByParent.get(parentPid) ?? []), pid])
+  }
+  const found = new Map<number, string>()
   const pending = [...roots]
   while (pending.length > 0) {
     for (const child of childrenByParent.get(pending.pop()!) ?? []) {
       if (found.has(child) || roots.includes(child)) continue
-      found.add(child)
+      found.set(child, processes.get(child)!.startTime)
       pending.push(child)
     }
   }
-  return [...found]
+  return found
 }
 
 function wait(ms: number): Promise<void> {
@@ -113,31 +134,46 @@ async function closeWithin(closeGracefully: () => Promise<void>, ms: number): Pr
 export function createShutdown(
   target: ShutdownTarget,
   options: ShutdownOptions = {}
-): () => Promise<void> {
+): ShutdownHandle {
   const gracefulCloseMs = options.gracefulCloseMs ?? GRACEFUL_CLOSE_DEADLINE_MS
   const forcedExitMs = options.forcedExitMs ?? FORCED_EXIT_DEADLINE_MS
   const forceKill = options.forceKill ?? killProcessTrees
   const log = options.log ?? ((line: string) => console.log(line))
+  const helpersAreTracked = process.platform !== 'win32'
 
   const launcher = target.launcher
   const launcherAlive = (): boolean =>
     !!launcher && launcher.exitCode === null && launcher.signalCode === null
   let appPid = target.appPid !== launcher?.pid ? target.appPid : undefined
-  const helpers = new Set<number>()
+  const helpers = new Map<number, string>()
+
   const rootPids = (): number[] => {
     const pids: number[] = []
     if (launcherAlive() && launcher?.pid !== undefined) pids.push(launcher.pid)
     if (appPid !== undefined && isPidAlive(appPid)) pids.push(appPid)
     return pids
   }
+
   const trackHelpers = (): void => {
-    for (const pid of descendantsOf(rootPids())) helpers.add(pid)
+    if (!helpersAreTracked) return
+    for (const [pid, startTime] of descendantsOf(rootPids())) helpers.set(pid, startTime)
   }
-  const livePids = (): number[] => [...rootPids(), ...[...helpers].filter(isPidAlive)]
+
+  const liveHelpers = (): number[] => {
+    if (!helpersAreTracked || helpers.size === 0) return []
+    const processes = listProcesses()
+    return [...helpers]
+      .filter(([pid, startTime]) => processes.get(pid)?.startTime === startTime)
+      .map(([pid]) => pid)
+  }
+
+  const livePids = (): number[] => [...rootPids(), ...liveHelpers()]
+
   const forgetAppIfItsPidWasReused = (): void => {
     if (appPid === undefined || target.appStartTime === undefined) return
     if (!isPidAlive(appPid)) return
-    if (processStartTime(appPid) !== target.appStartTime) appPid = undefined
+    const startTime = processStartTime(appPid)
+    if (startTime !== undefined && startTime !== target.appStartTime) appPid = undefined
   }
 
   const waitForExit = async (ms: number): Promise<boolean> => {
@@ -168,6 +204,6 @@ export function createShutdown(
     )
   }
 
-  let shutdown: Promise<void> | undefined
-  return () => (shutdown ??= run())
+  let running: Promise<void> | undefined
+  return { shutdown: () => (running ??= run()), trackHelpers }
 }

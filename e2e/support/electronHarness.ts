@@ -10,6 +10,8 @@ import { evalWithRetry } from './evalRetry'
 import { FOREGROUND_PROJECTS, isBackgroundRun } from './focusMode'
 import { recordVideoOptions } from './videoRecording'
 
+const HELPER_TRACKING_INTERVAL_MS = 5_000
+
 export interface LauncherAppHandle {
   application: ElectronApplication
   homeDir: string
@@ -295,15 +297,24 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   })
 
   const appPid = await evalWithRetry(() => application.evaluate(() => globalThis.process.pid))
-  const shutdown = createShutdown({
+  const { shutdown, trackHelpers } = createShutdown({
     launcher: application.process() ?? undefined,
     appPid,
     appStartTime: processStartTime(appPid),
     closeGracefully: () => application.close(),
     connectionClosed: () => connectionClosed
   })
+  const trackHelpersNow = (): void => {
+    try {
+      trackHelpers()
+    } catch {}
+  }
+  trackHelpersNow()
+  const helperWatch = setInterval(trackHelpersNow, HELPER_TRACKING_INTERVAL_MS)
+  helperWatch.unref()
 
   const cleanup = async (): Promise<void> => {
+    clearInterval(helperWatch)
     await shutdown()
     if (!reuseDir) {
       await rm(homeDir, { recursive: true, force: true })

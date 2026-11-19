@@ -7,6 +7,7 @@ import {
   descendantsOf,
   isPidAlive,
   killProcessTrees,
+  ProcessLookupError,
   processStartTime
 } from './appShutdown'
 
@@ -53,6 +54,16 @@ async function launchShellAndApp(
 
 const never = (): Promise<void> => new Promise(() => {})
 
+async function withoutProcessTools<T>(run: () => Promise<T>): Promise<T> {
+  const path = process.env['PATH']
+  process.env['PATH'] = ''
+  try {
+    return await run()
+  } finally {
+    process.env['PATH'] = path
+  }
+}
+
 afterEach(() => {
   killProcessTrees(started.filter(isPidAlive))
   started.length = 0
@@ -62,7 +73,7 @@ describe('app shutdown', () => {
   it('stops the app itself, not only the launcher, when a graceful close hangs', async () => {
     const { launcher, appPid } = await launchShellAndApp()
     const log = vi.fn()
-    const shutdown = createShutdown(
+    const { shutdown } = createShutdown(
       { launcher, appPid, closeGracefully: never, connectionClosed: () => false },
       { gracefulCloseMs: 100, log }
     )
@@ -85,7 +96,7 @@ describe('app shutdown', () => {
       appPid,
       closeGracefully: never,
       connectionClosed: () => true
-    })()
+    }).shutdown()
 
     expect(isPidAlive(appPid)).toBe(false)
   })
@@ -101,7 +112,7 @@ describe('app shutdown', () => {
     await createShutdown(
       { launcher, appPid, closeGracefully, connectionClosed: () => false },
       { forceKill }
-    )()
+    ).shutdown()
 
     expect(forceKill).not.toHaveBeenCalled()
     expect(isPidAlive(appPid)).toBe(false)
@@ -109,7 +120,7 @@ describe('app shutdown', () => {
 
   it('fails loudly within its deadline when the app survives the forced kill', async () => {
     const { launcher, appPid } = await launchShellAndApp()
-    const shutdown = createShutdown(
+    const { shutdown } = createShutdown(
       { launcher, appPid, closeGracefully: never, connectionClosed: () => false },
       { gracefulCloseMs: 50, forcedExitMs: 200, forceKill: () => {}, log: () => {} }
     )
@@ -120,7 +131,7 @@ describe('app shutdown', () => {
   it('runs one shutdown when cleanup is called twice at once', async () => {
     const { launcher, appPid } = await launchShellAndApp()
     const closeGracefully = vi.fn(never)
-    const shutdown = createShutdown(
+    const { shutdown } = createShutdown(
       { launcher, appPid, closeGracefully, connectionClosed: () => false },
       { gracefulCloseMs: 50, log: () => {} }
     )
@@ -137,7 +148,7 @@ describe('app shutdown', () => {
       const { launcher, appPid } = await launchShellAndApp(
         LAUNCHER_THAT_STARTS_AN_APP_WITH_A_HELPER
       )
-      await vi.waitFor(() => expect(descendantsOf([appPid])).toHaveLength(1))
+      await vi.waitFor(() => expect(descendantsOf([appPid]).size).toBe(1))
       const killed: number[] = []
       await createShutdown(
         { launcher, appPid, closeGracefully: never, connectionClosed: () => false },
@@ -149,7 +160,7 @@ describe('app shutdown', () => {
             killProcessTrees(pids)
           }
         }
-      )()
+      ).shutdown()
 
       const helpers = killed.filter((pid) => pid !== launcher.pid && pid !== appPid)
       started.push(...helpers)
@@ -171,10 +182,73 @@ describe('app shutdown', () => {
         connectionClosed: () => true
       },
       { forceKill }
-    )()
+    ).shutdown()
 
     expect(forceKill).not.toHaveBeenCalled()
     expect(isPidAlive(appPid), 'the unrelated process still runs').toBe(true)
     expect(processStartTime(appPid)).toBeDefined()
   })
+
+  it.skipIf(process.platform === 'win32')(
+    'stops a helper it saw earlier even after the launcher and the app are gone',
+    async () => {
+      const { launcher, appPid } = await launchShellAndApp(
+        LAUNCHER_THAT_STARTS_AN_APP_WITH_A_HELPER
+      )
+      await vi.waitFor(() => expect(descendantsOf([appPid]).size).toBe(1))
+      const [helperPid] = [...descendantsOf([appPid]).keys()]
+      started.push(helperPid!)
+      const { shutdown, trackHelpers } = createShutdown({
+        launcher,
+        appPid,
+        closeGracefully: never,
+        connectionClosed: () => true
+      })
+      trackHelpers()
+
+      killProcessTrees([launcher.pid!, appPid])
+      await exited(launcher)
+      await vi.waitFor(() => expect(isPidAlive(appPid)).toBe(false))
+      expect(isPidAlive(helperPid!), 'the helper outlived its parents').toBe(true)
+
+      await shutdown()
+
+      expect(isPidAlive(helperPid!)).toBe(false)
+    }
+  )
+
+  it.skipIf(process.platform === 'win32')(
+    'fails instead of reporting success when it cannot list processes',
+    async () => {
+      const { launcher, appPid } = await launchShellAndApp()
+      const { shutdown } = createShutdown(
+        { launcher, appPid, closeGracefully: never, connectionClosed: () => true },
+        { log: () => {} }
+      )
+
+      await expect(withoutProcessTools(shutdown)).rejects.toBeInstanceOf(ProcessLookupError)
+    }
+  )
+
+  it.skipIf(process.platform === 'win32')(
+    'keeps the app and fails when it cannot check who owns the app pid',
+    async () => {
+      const { appPid } = await launchShellAndApp()
+      const forceKill = vi.fn()
+      const { shutdown } = createShutdown(
+        {
+          launcher: undefined,
+          appPid,
+          appStartTime: processStartTime(appPid),
+          closeGracefully: never,
+          connectionClosed: () => true
+        },
+        { forceKill }
+      )
+
+      await expect(withoutProcessTools(shutdown)).rejects.toBeInstanceOf(ProcessLookupError)
+      expect(forceKill).not.toHaveBeenCalled()
+      expect(isPidAlive(appPid)).toBe(true)
+    }
+  )
 })
