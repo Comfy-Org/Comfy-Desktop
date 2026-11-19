@@ -39,7 +39,7 @@ async function backdropOf(mountIt: () => VueWrapper, overlaySelector: string): P
 }
 
 describe('modal backdrops', () => {
-  it('dim the page behind every modal with one tone', async () => {
+  it('dim the page behind every modal with black at 70%', async () => {
     document.documentElement.dataset.theme = 'dark'
     window.api = new Proxy(
       {},
@@ -91,7 +91,6 @@ describe('modal backdrops', () => {
       )
     }
 
-    expect(tones.baseModal).not.toBe('rgba(0, 0, 0, 0)')
-    for (const tone of Object.values(tones)) expect(tone).toBe(tones.baseModal)
+    for (const tone of Object.values(tones)) expect(tone).toBe('oklab(0 0 0 / 0.7)')
   })
 })

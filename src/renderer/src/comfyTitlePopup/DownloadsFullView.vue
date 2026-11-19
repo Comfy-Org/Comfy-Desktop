@@ -163,9 +163,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
     class="dlm-panel [--download-success:#22c55e] [--download-error:#ef4444] [--download-warning:#f59e0b] flex size-full flex-col text-neutral-100"
     @mousemove="onPointerMove"
   >
-    <header
-      class="dlm-modal-header flex items-center justify-between gap-3 border-b border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-5 pb-3"
-    >
+    <header class="dlm-modal-header flex items-center justify-between gap-3 px-6 pt-5 pb-3">
       <h2 class="dlm-title m-0 text-title font-semibold text-foreground">
         {{ t('downloadsTab.title') }}
       </h2>
@@ -397,7 +395,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
 
     <footer
       v-if="ordered.length > 0"
-      class="dlm-modal-footer border-t border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-3 pb-4"
+      class="dlm-modal-footer border-t border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-3 pb-6"
     >
       <div class="dlm-footer flex w-full items-center justify-between">
         <span class="dlm-footer-stats flex items-center gap-1.5 text-[12px] text-text-muted">

@@ -155,7 +155,7 @@ async function cancel(): Promise<void> {
   <DesktopDialogSurface
     :open="true"
     :aria-label="title"
-    overlay-class="build-progress-overlay fixed inset-0 z-50 bg-neutral-800/70 backdrop-blur-[10px]"
+    overlay-class="build-progress-overlay fixed inset-0 z-50 bg-black/70 backdrop-blur-[10px]"
     content-class="fixed top-1/2 left-1/2 z-50 w-[760px] max-w-[calc(100vw-96px)] -translate-x-1/2 -translate-y-1/2 outline-none"
     data-testid="build-progress-dialog"
     @close="emit('close')"

@@ -156,7 +156,7 @@ watch(
   <DesktopDialogSurface
     :open="state.visible && !usesBaseAlert"
     :aria-label="state.title"
-    overlay-class="dialog-overlay fixed inset-0 z-[100] flex items-center justify-center bg-neutral-800/70 px-4 py-8"
+    overlay-class="dialog-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 py-8"
     @close="dismiss"
   >
     <div
@@ -164,9 +164,9 @@ watch(
       class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid bg-[var(--neutral-800)] px-6"
       :class="
         isMigrateConfirm
-          ? 'mig-modal w-[600px] max-w-full border-[var(--brand-surface-border)] pt-5 pb-[18px] shadow-[0_24px_64px_0_rgba(0,0,0,0.35)]'
+          ? 'mig-modal w-[600px] max-w-full border-[var(--brand-surface-border)] pt-5 pb-6 shadow-[0_24px_64px_0_rgba(0,0,0,0.35)]'
           : [
-              'border-[var(--border)] py-4',
+              'border-[var(--border)] pt-4 pb-6',
               state.snapshotPreview ||
               state.loading ||
               state.variantLoading ||
@@ -177,17 +177,17 @@ watch(
       "
     >
       <div
-        class="dialog-title -mx-6 border-b border-solid px-6"
+        class="dialog-title -mx-6 px-6"
         :class="
           isMigrateConfirm
-            ? 'mb-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pb-3.5 text-[length:var(--takeover-fs-h3)] font-medium text-text'
-            : 'mb-3 border-[var(--border)] pb-3 text-[16px] font-semibold'
+            ? 'mb-4 pb-3.5 text-[length:var(--takeover-fs-h3)] font-medium text-text'
+            : 'mb-3 pb-3 text-[16px] font-semibold'
         "
       >
         {{ state.title }}
       </div>
       <div
-        class="dialog-body mb-0 overflow-y-auto"
+        class="dialog-body -m-1 overflow-y-auto p-1"
         :class="
           isMigrateConfirm
             ? 'flex max-h-[70vh] flex-col gap-3.5'
@@ -405,11 +405,9 @@ watch(
 
     <div
       v-else-if="state.type === 'confirmWithOptions'"
-      class="dialog-box min-w-[320px] max-w-[400px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
+      class="dialog-box min-w-[320px] max-w-[400px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 pt-4 pb-6"
     >
-      <div
-        class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
-      >
+      <div class="dialog-title -mx-6 mb-3 px-6 pb-3 text-[16px] font-semibold">
         {{ state.title }}
       </div>
       <div
@@ -452,16 +450,14 @@ watch(
 
     <div
       v-else-if="state.type === 'prompt'"
-      class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
+      class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 pt-4 pb-6"
       :class="state.messageDetails.length > 0 ? 'w-[720px] max-w-full' : 'max-w-[400px]'"
     >
-      <div
-        class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
-      >
+      <div class="dialog-title -mx-6 mb-3 px-6 pb-3 text-[16px] font-semibold">
         {{ state.title }}
       </div>
       <div
-        class="dialog-body mb-0 overflow-y-auto"
+        class="dialog-body -m-1 overflow-y-auto p-1"
         :class="state.messageDetails.length > 0 ? 'max-h-[70vh]' : 'max-h-[50vh]'"
       >
         <div
@@ -526,11 +522,9 @@ watch(
 
     <div
       v-else-if="state.type === 'select'"
-      class="dialog-box dialog-select-box min-w-[340px] max-w-[440px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
+      class="dialog-box dialog-select-box min-w-[340px] max-w-[440px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 pt-4 pb-6"
     >
-      <div
-        class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
-      >
+      <div class="dialog-title -mx-6 mb-3 px-6 pb-3 text-[16px] font-semibold">
         {{ state.title }}
       </div>
       <div

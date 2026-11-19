@@ -48,7 +48,7 @@ const hostProps = computed(() =>
         dismissOnEscape: props.dismissOnEscape,
         dismissOnOutside: false,
         overlayClass: [
-          'setup-modal-overlay fixed inset-0 z-50 grid overflow-y-auto bg-neutral-800/70 p-6 animate-fade-in motion-reduce:animate-none',
+          'setup-modal-overlay fixed inset-0 z-50 grid overflow-y-auto bg-black/70 p-6 animate-fade-in motion-reduce:animate-none',
           props.anchorTop ? 'justify-items-center items-start' : 'place-items-center'
         ].join(' '),
         contentClass: 'setup-modal-surface relative max-w-full outline-none'
@@ -110,7 +110,7 @@ const hostProps = computed(() =>
 
         <footer
           v-if="$slots.footer"
-          class="setup-modal-foot flex min-h-16 flex-none items-center gap-2 px-8 py-3 [box-shadow:inset_0_1px_0_rgb(255_255_255/0.08)]"
+          class="setup-modal-foot flex flex-none items-center gap-2 px-8 pt-3 pb-8 [box-shadow:inset_0_1px_0_rgb(255_255_255/0.08)]"
         >
           <slot name="footer" />
         </footer>

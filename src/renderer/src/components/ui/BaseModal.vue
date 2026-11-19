@@ -65,7 +65,7 @@ const sizeStyleClass = computed(() => {
     :dismiss-on-outside="dismissOnOutside"
     :prevent-scroll="preventScroll"
     :overlay-class="[
-      'base-modal-overlay fixed inset-0 z-60 grid place-items-center bg-neutral-800/70 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]',
+      'base-modal-overlay fixed inset-0 z-60 grid place-items-center bg-black/70 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]',
       { 'base-modal-overlay--blur backdrop-blur-[8px] backdrop-saturate-[115%]': blurOverlay }
     ]"
     :content-class="[
@@ -94,10 +94,7 @@ const sizeStyleClass = computed(() => {
     >
       <X :size="18" />
     </Button>
-    <header
-      v-if="$slots.header"
-      class="base-modal-header border-b border-solid border-neutral-100/8 pt-5 pr-14 pb-3 pl-6"
-    >
+    <header v-if="$slots.header" class="base-modal-header pt-5 pr-14 pb-3 pl-6">
       <slot name="header" />
     </header>
     <div class="base-modal-body min-h-0 flex-auto overflow-y-auto px-6 py-4">
@@ -105,7 +102,7 @@ const sizeStyleClass = computed(() => {
     </div>
     <footer
       v-if="$slots.footer"
-      class="base-modal-footer flex items-center justify-end gap-2 border-t border-solid border-neutral-100/8 px-6 pt-3 pb-4"
+      class="base-modal-footer flex items-center justify-end gap-2 border-t border-solid border-neutral-100/8 px-6 pt-3 pb-6"
     >
       <slot name="footer" />
     </footer>

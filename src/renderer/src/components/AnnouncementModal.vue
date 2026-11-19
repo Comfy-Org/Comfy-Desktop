@@ -46,7 +46,7 @@ onMounted(() => {
   <DesktopDialogSurface
     :open="true"
     :aria-label="$t('announcement.comfyApi.title')"
-    overlay-class="announce-overlay fixed inset-0 z-60 grid place-items-center px-[clamp(32px,5vw,80px)] pt-[clamp(72px,10vh,132px)] pb-[clamp(80px,11vh,140px)] bg-neutral-800/70"
+    overlay-class="announce-overlay fixed inset-0 z-60 grid place-items-center px-[clamp(32px,5vw,80px)] pt-[clamp(72px,10vh,132px)] pb-[clamp(80px,11vh,140px)] bg-black/70"
     content-class="announce-content relative flex w-[min(100%,calc((100vh_-_clamp(152px,21vh,272px))_*_(916_/_445)))] max-w-full max-h-full aspect-[916/445] overflow-hidden rounded-panel border border-solid border-border bg-neutral-900 max-[800px]:h-full max-[800px]:aspect-auto"
     @close="dismiss"
   >

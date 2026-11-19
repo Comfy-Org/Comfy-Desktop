@@ -92,18 +92,16 @@ const linkClass =
     :dismiss-on-outside="dismissOnOutside"
     :prevent-scroll="preventScroll"
     :data-testid="testIdRoot"
-    overlay-class="base-alert-overlay fixed inset-0 z-[1000] grid place-items-center bg-neutral-800/70 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]"
+    overlay-class="base-alert-overlay fixed inset-0 z-[1000] grid place-items-center bg-black/70 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]"
     :content-class="[
-      'base-alert-panel flex min-w-80 flex-col overflow-hidden rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4 text-neutral-100 shadow-[var(--modal-surface-shadow)]',
+      'base-alert-panel flex min-w-80 flex-col overflow-hidden rounded-panel border border-solid border-border bg-neutral-800 px-6 pt-4 pb-6 text-neutral-100 shadow-[var(--modal-surface-shadow)]',
       panelWidthClass,
       hasDetails ? 'max-h-[min(80vh,640px)]' : 'max-h-[min(80vh,560px)]',
       { 'base-alert-panel--rich': hasDetails, 'base-alert-panel--wide-actions': hasWideActions }
     ]"
     @close="dismiss"
   >
-    <header
-      class="base-alert-header relative -mx-6 mb-3 border-b border-solid border-neutral-100/8 px-6 pb-3"
-    >
+    <header class="base-alert-header relative -mx-6 mb-3 px-6 pb-3">
       <h2 :id="TITLE_ID" class="base-alert-title m-0 pr-8 text-base leading-[1.3] font-semibold">
         {{ title }}
       </h2>
