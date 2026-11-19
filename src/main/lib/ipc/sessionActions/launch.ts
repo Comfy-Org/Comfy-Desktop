@@ -1356,7 +1356,12 @@ async function runLaunch(
           filterUnsupportedArgs(['--enable-agent'], schema).length > 0
         desktopAddedAssets =
           built.args.includes('--enable-assets') && !userArgs.includes('--enable-assets')
-      } catch {}
+      } catch (err) {
+        console.warn(
+          '[launch] flag planning failed; launching without Desktop-planned flags or the unsupported-arg filter:',
+          err
+        )
+      }
     }
   }
   if (abort.signal.aborted) return { ok: false, cancelled: true }

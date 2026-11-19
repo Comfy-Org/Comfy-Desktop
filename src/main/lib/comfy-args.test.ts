@@ -265,6 +265,19 @@ describe('getComfyArgsSchema', () => {
     mockedReadGitHead.mockReset()
   })
 
+  it("allows ComfyUI's --help 60 seconds before giving up", async () => {
+    mockHelpOutput(() => SAMPLE_HELP)
+
+    await getComfyArgsSchema('python', 'main.py', '.', installationId)
+
+    expect(mockedExecFile).toHaveBeenCalledWith(
+      'python',
+      ['-s', 'main.py', '--help'],
+      expect.objectContaining({ timeout: 60_000 }),
+      expect.any(Function)
+    )
+  })
+
   it('reuses a schema for one commit and refreshes it when the checkout changes', async () => {
     const oldHelp = SAMPLE_HELP.replace(' | --use-ck-attention', '').replace(
       '  --use-ck-attention    Use Comfy Kitchen attention.\n',

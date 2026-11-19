@@ -1,5 +1,6 @@
 import { execFile } from 'child_process'
 import * as path from 'path'
+import { COMFY_DISCOVERY_TIMEOUT_MS } from './comfy-args'
 
 export interface FeatureFlagInfo {
   type: string
@@ -72,7 +73,7 @@ function runListFeatureFlags(pythonPath: string, mainPyPath: string, cwd: string
     execFile(
       pythonPath,
       ['-s', mainPyRel, '--list-feature-flags'],
-      { cwd, timeout: 15000 },
+      { cwd, timeout: COMFY_DISCOVERY_TIMEOUT_MS },
       (err, stdout, stderr) => {
         if (err) {
           const detail = stderr ? `\nstderr: ${stderr.slice(0, 500)}` : ''
