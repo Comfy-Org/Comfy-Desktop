@@ -81,6 +81,7 @@ import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { formatBytes, formatFreeSpace } from '../lib/formatting'
+import { alertAddFailure } from '../lib/addFailureAlert'
 import type { Build, BuildTarget } from '../devplatform/types'
 
 const emit = defineEmits<{
@@ -992,9 +993,12 @@ async function handOffInstall(result: InstallBuildResult, failureTitle: string):
       reason: 'add_installation_failed',
       error_bucket: toErrorBucket(result.message || '')
     })
-    await modal.alert({
+    await alertAddFailure({
+      notice: modal.notice,
+      t,
       title: failureTitle,
-      message: result.message || t('errors.cannotAddDetail')
+      failure: result,
+      onChangeLocation: handleBrowse
     })
     return
   }
@@ -1100,9 +1104,11 @@ async function handleSave(): Promise<void> {
       ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
     })
     if (!result.ok) {
-      await modal.alert({
+      await alertAddFailure({
+        notice: modal.notice,
+        t,
         title: t('errors.cannotAdd'),
-        message: result.message || t('errors.cannotAddDetail')
+        failure: result
       })
       return
     }

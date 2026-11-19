@@ -13,6 +13,7 @@ import { saveSetupConsent, type SetupConsent } from '../lib/setupConsent'
 import type { SavedSetup, SetupPlan } from '../lib/setupPlan'
 import type { InstallBuildResult, Installation, ShowProgressOpts } from '../types/ipc'
 import type { ChooserLaunchOutcome } from './useChooserHandoff'
+import { alertAddFailure } from '../lib/addFailureAlert'
 import type { FirstUseChainHooks, PanelKey, SetupHandoff } from './usePanelOverlays'
 
 export interface FirstUseChainOpts {
@@ -25,6 +26,7 @@ export interface FirstUseChainOpts {
   ) => Promise<ChooserLaunchOutcome>
   openFirstUseTakeover: () => Promise<void>
   resetFirstUseSpinner: () => void
+  changeInstallLocation?: () => Promise<void> | void
 }
 
 export interface FirstUseChainApi {
@@ -162,9 +164,12 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       }
       const result = await addPlannedInstallation(plan)
       if (!result.ok || !result.entry) {
-        await modal.alert({
+        await alertAddFailure({
+          notice: modal.notice,
+          t,
           title: t('errors.cannotAdd'),
-          message: result.message || t('errors.cannotAddDetail')
+          failure: result,
+          onChangeLocation: opts.changeInstallLocation
         })
         opts.resetFirstUseSpinner()
         return
@@ -193,9 +198,11 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
         entrypoint: 'first_use',
         reason: 'error'
       })
-      await modal.alert({
+      await alertAddFailure({
+        notice: modal.notice,
+        t,
         title: t('errors.cannotAdd'),
-        message: (err as Error).message || t('errors.cannotAddDetail')
+        failure: { message: (err as Error).message }
       })
       opts.resetFirstUseSpinner()
     }

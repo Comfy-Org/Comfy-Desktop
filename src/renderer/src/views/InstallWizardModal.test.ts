@@ -1523,6 +1523,55 @@ describe('InstallWizardModal workspace Builds', () => {
     })
   })
 
+  async function failBuildInstall(failure: Record<string, unknown>) {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    ;(window.api.comfybuilder.installBuild as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      ...failure
+    })
+    const wrapper = await openWorkspaceModal()
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('offers Change location when the folder is the problem, and opens the location picker', async () => {
+    const wrapper = await failBuildInstall({
+      message: 'Invalid install location.',
+      reason: 'location'
+    })
+    const modal = useModal()
+    expect(modal.state.visible).toBe(true)
+    expect(modal.state.message).toBe('Invalid install location.')
+    expect(modal.state.showButton).toBe(true)
+    expect(modal.state.buttonLabel).toBe('Change location')
+    expect(window.api.browseFolder).not.toHaveBeenCalled()
+
+    modal.close(true)
+    await flushPromises()
+
+    expect(window.api.browseFolder).toHaveBeenCalledExactlyOnceWith('/home/user/ComfyUI')
+    expect(window.api.comfybuilder.installBuild).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('show-progress')).toBeUndefined()
+    await showChangeSetup(wrapper)
+    expect(wrapper.text()).toContain('/home/user/Picked')
+  })
+
+  it('shows any other failure with no footer button, only the close ×', async () => {
+    const wrapper = await failBuildInstall({ message: 'Install already starting.' })
+    const modal = useModal()
+    expect(modal.state.visible).toBe(true)
+    expect(modal.state.message).toBe('Install already starting.')
+    expect(modal.state.showButton).toBe(false)
+
+    modal.dismiss()
+    await flushPromises()
+
+    expect(window.api.browseFolder).not.toHaveBeenCalled()
+    expect(wrapper.emitted('show-progress')).toBeUndefined()
+  })
+
   it('lets users choose among compatible managed Build release targets', async () => {
     signInToWorkspace([
       {

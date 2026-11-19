@@ -69,9 +69,12 @@ export interface DevPlatformBuild {
   installedVersion?: number
 }
 
+export type AddFailureReason = 'location'
+
 export interface InstallBuildResult {
   ok: boolean
   message?: string
+  reason?: AddFailureReason
   entry?: { id: string; name: string }
 }
 
@@ -525,6 +528,7 @@ export interface PortConflictInfo {
 export interface AddResult {
   ok: boolean
   message?: string
+  reason?: AddFailureReason
   entry?: Installation
 }
 
@@ -723,6 +727,7 @@ export interface ModelDownloadProgress {
 export interface TrackResult {
   ok: boolean
   message?: string
+  reason?: AddFailureReason
 }
 
 export interface SystemGpuInfo {

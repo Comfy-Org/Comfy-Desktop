@@ -13,6 +13,7 @@ import { BaseSelect, type BaseSelectOption } from './ui'
 
 import type { ProbeResult } from '../types/ipc'
 import { emitTelemetryAction, toCountBucket } from '../lib/telemetry'
+import { alertAddFailure } from '../lib/addFailureAlert'
 
 const emit = defineEmits<{ saved: [] }>()
 
@@ -169,9 +170,12 @@ async function trackProbedInstall(probed: ProbeResult): Promise<void> {
 
   const result = await window.api.trackInstallation(data)
   if (!result.ok) {
-    await modal.alert({
+    await alertAddFailure({
+      notice: modal.notice,
+      t,
       title: t('track.cannotTrack'),
-      message: result.message || t('errors.cannotAddDetail')
+      failure: result,
+      onChangeLocation: handleBrowse
     })
     return
   }

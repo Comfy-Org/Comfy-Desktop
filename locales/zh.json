@@ -1696,6 +1696,7 @@
     "deleteLockedUnidentified": "文件无法删除，因为它正被另一个程序使用，但 Comfy Desktop 无法确定是哪一个。请关闭可能正在打开此目录中文件的应用程序，然后重试。\n{path}",
     "cannotAdd": "无法添加此构建",
     "cannotAddDetail": "添加时出错。请检查安装位置，然后重试。",
+    "changeLocation": "更改位置",
     "dirNotExist": "目录不存在：{path}",
     "cannotOpenDir": "无法打开目录：{error}",
     "launchCancelled": "启动已取消。",

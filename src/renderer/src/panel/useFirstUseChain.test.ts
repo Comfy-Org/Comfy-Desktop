@@ -13,7 +13,7 @@ import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
 import type { SetupConsent } from '../lib/setupConsent'
 import type { SavedSetup, SetupPlan } from '../lib/setupPlan'
 
-const modal = vi.hoisted(() => ({ confirm: vi.fn(), alert: vi.fn() }))
+const modal = vi.hoisted(() => ({ confirm: vi.fn(), alert: vi.fn(), notice: vi.fn() }))
 vi.mock('../composables/useModal', () => ({ useModal: () => modal }))
 
 vi.mock('../lib/telemetry', () => ({
@@ -181,6 +181,7 @@ interface MountedChain {
   performChooserLaunch: ReturnType<typeof vi.fn>
   openFirstUseTakeover: ReturnType<typeof vi.fn>
   resetFirstUseSpinner: ReturnType<typeof vi.fn>
+  changeInstallLocation: ReturnType<typeof vi.fn>
 }
 
 function mountChain(): MountedChain {
@@ -190,6 +191,7 @@ function mountChain(): MountedChain {
   const performChooserLaunch = vi.fn().mockResolvedValue('launched')
   const openFirstUseTakeover = vi.fn().mockResolvedValue(undefined)
   const resetFirstUseSpinner = vi.fn()
+  const changeInstallLocation = vi.fn().mockResolvedValue(undefined)
 
   const apiRef: Ref<FirstUseChainApi | null> = ref(null)
 
@@ -201,7 +203,8 @@ function mountChain(): MountedChain {
         dismissTakeoverDirect,
         performChooserLaunch,
         openFirstUseTakeover,
-        resetFirstUseSpinner
+        resetFirstUseSpinner,
+        changeInstallLocation
       })
       return () => h('div')
     }
@@ -216,7 +219,8 @@ function mountChain(): MountedChain {
     dismissTakeoverDirect,
     performChooserLaunch,
     openFirstUseTakeover,
-    resetFirstUseSpinner
+    resetFirstUseSpinner,
+    changeInstallLocation
   }
 }
 
@@ -230,6 +234,7 @@ describe('useFirstUseChain — Set up', () => {
     vi.clearAllMocks()
     vi.mocked(modal.confirm).mockResolvedValue(true)
     vi.mocked(modal.alert).mockResolvedValue(undefined)
+    vi.mocked(modal.notice).mockResolvedValue(false)
     __resetLauncherPrefsForTest()
   })
 
@@ -292,19 +297,56 @@ describe('useFirstUseChain — Set up', () => {
     expect(chain.resetFirstUseSpinner).toHaveBeenCalled()
   })
 
-  it('explains a build that cannot be added and stays on Set up', async () => {
+  it('explains a build that cannot be added, with no button beside the close ×', async () => {
     testApi.addInstallation = vi.fn().mockResolvedValue({ ok: false, message: 'path conflict' })
     stubWindowApi(testApi)
 
     const chain = mountChain()
     await chain.api!.handleSetupInstall(setupPlan())
 
-    expect(modal.alert).toHaveBeenCalledWith({
+    expect(modal.notice).toHaveBeenCalledWith({
       title: "Couldn't add this build",
       message: 'path conflict'
     })
+    expect(modal.alert).not.toHaveBeenCalled()
+    expect(chain.changeInstallLocation).not.toHaveBeenCalled()
     expect(chain.handleShowProgress).not.toHaveBeenCalled()
     expect(chain.resetFirstUseSpinner).toHaveBeenCalled()
+  })
+
+  it('offers Change location when the folder is the problem, and opens the picker', async () => {
+    testApi.addInstallation = vi
+      .fn()
+      .mockResolvedValue({ ok: false, message: 'Invalid install location.', reason: 'location' })
+    stubWindowApi(testApi)
+    vi.mocked(modal.notice).mockResolvedValue(true)
+
+    const chain = mountChain()
+    await chain.api!.handleSetupInstall(setupPlan())
+
+    expect(modal.notice).toHaveBeenCalledWith({
+      title: "Couldn't add this build",
+      message: 'Invalid install location.',
+      actionLabel: 'Change location'
+    })
+    expect(chain.changeInstallLocation).toHaveBeenCalledTimes(1)
+    expect(chain.handleShowProgress).not.toHaveBeenCalled()
+    expect(chain.resetFirstUseSpinner).toHaveBeenCalled()
+  })
+
+  it('leaves the location alone when Change location is closed with the ×', async () => {
+    testApi.addInstallation = vi
+      .fn()
+      .mockResolvedValue({ ok: false, message: 'Invalid install location.', reason: 'location' })
+    stubWindowApi(testApi)
+
+    const chain = mountChain()
+    await chain.api!.handleSetupInstall(setupPlan())
+
+    expect(modal.notice).toHaveBeenCalledWith(
+      expect.objectContaining({ actionLabel: 'Change location' })
+    )
+    expect(chain.changeInstallLocation).not.toHaveBeenCalled()
   })
 
   it('still explains a build that cannot be added when the reason is empty', async () => {
@@ -314,7 +356,7 @@ describe('useFirstUseChain — Set up', () => {
     const chain = mountChain()
     await chain.api!.handleSetupInstall(setupPlan())
 
-    expect(modal.alert).toHaveBeenCalledWith({
+    expect(modal.notice).toHaveBeenCalledWith({
       title: "Couldn't add this build",
       message: 'Something went wrong while adding it. Check the install location, then try again.'
     })

@@ -317,6 +317,22 @@ function retryPlan(): void {
   void loadPlan(openGeneration)
 }
 
+async function browseInstallLocation(): Promise<void> {
+  const current = plan.value
+  if (!current) return
+  const chosen = await window.api.browseFolder(current.installRoot || undefined)
+  if (!chosen || plan.value !== current) return
+  plan.value = { ...current, installRoot: chosen }
+  diskFree.value = null
+  const gen = openGeneration
+  void window.api
+    .getDiskSpace(chosen)
+    .then((space) => {
+      if (gen === openGeneration && plan.value?.installRoot === chosen) diskFree.value = space.free
+    })
+    .catch(() => {})
+}
+
 interface OpenOpts {
   skipPick?: boolean
   hasLegacyDesktop?: boolean
@@ -419,7 +435,7 @@ onUnmounted(() => {
   if (!chainHandoff) window.api.setFirstUseMode('none')
 })
 
-defineExpose({ open, resetContinue })
+defineExpose({ open, resetContinue, browseInstallLocation })
 </script>
 
 <template>

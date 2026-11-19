@@ -205,6 +205,38 @@ describe('Set up, the first screen', () => {
     )
   })
 
+  it('Change location picks a new folder for the plan, and Install then uses it', async () => {
+    ;(window.api as unknown as { browseFolder: unknown }).browseFolder = vi
+      .fn()
+      .mockResolvedValue('/Volumes/Big/ComfyUI')
+    const w = await mountSetup()
+    type Exposed = { browseInstallLocation: () => Promise<void> }
+    await (w.vm as unknown as Exposed).browseInstallLocation()
+    await flushPromises()
+
+    expect(window.api.browseFolder).toHaveBeenCalledWith('/Users/ada/ComfyUI-Installs')
+    expect(window.api.getDiskSpace).toHaveBeenLastCalledWith('/Volumes/Big/ComfyUI')
+    expect(w.emitted('install')).toBeUndefined()
+    await agree(w)
+    await install(w)
+    const [plan] = w.emitted('install')![0] as [SetupPlan]
+    expect(plan.installRoot).toBe('/Volumes/Big/ComfyUI')
+  })
+
+  it('keeps the plan when the folder picker is cancelled', async () => {
+    ;(window.api as unknown as { browseFolder: unknown }).browseFolder = vi
+      .fn()
+      .mockResolvedValue(null)
+    const w = await mountSetup()
+    await (
+      w.vm as unknown as { browseInstallLocation: () => Promise<void> }
+    ).browseInstallLocation()
+    await agree(w)
+    await install(w)
+    const [plan] = w.emitted('install')![0] as [SetupPlan]
+    expect(plan.installRoot).toBe('/Users/ada/ComfyUI-Installs')
+  })
+
   it('shows and installs the setup saved in Change instead of working out a new one', async () => {
     const savedPlan: SetupPlan = {
       sourceId: 'standalone',

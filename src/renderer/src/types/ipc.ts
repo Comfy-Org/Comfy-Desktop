@@ -51,6 +51,7 @@ export type {
   ActionResult,
   ComfyArgDef,
   PortConflictInfo,
+  AddFailureReason,
   AddResult,
   KillResult,
   QuitActiveItem,

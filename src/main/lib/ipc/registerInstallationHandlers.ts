@@ -206,12 +206,16 @@ export function registerInstallationHandlers(): void {
       return { ok: false, message: `That directory is already used by "${duplicate.name}".` }
     }
     if (!fs.existsSync(data.installPath as string)) {
-      return { ok: false, message: 'That directory does not exist.' }
+      return { ok: false, message: 'That directory does not exist.', reason: 'location' }
     }
     try {
       fs.writeFileSync(path.join(data.installPath as string, MARKER_FILE), 'tracked')
     } catch (err) {
-      return { ok: false, message: `Cannot write to directory: ${(err as Error).message}` }
+      return {
+        ok: false,
+        message: `Cannot write to directory: ${(err as Error).message}`,
+        reason: 'location'
+      }
     }
     const entry = await installations.add({ ...data, status: 'installed', seen: false })
     await syncOemSeedBestEffort()

@@ -99,6 +99,51 @@ describe('ModalDialog shared controls', () => {
     await expect(result).resolves.toBe(true)
   })
 
+  it('resolves a notice true from its button and false from the round ×', async () => {
+    const pressed = modal.notice({
+      title: 'Cannot add',
+      message: 'Missing folder.',
+      actionLabel: 'Change location'
+    })
+    await settle()
+    const action = getElement<HTMLButtonElement>('[data-testid="base-alert-action"]')
+    expect(action.textContent?.trim()).toBe('Change location')
+    expect(action.getAttribute('data-variant')).toBe('inverted')
+    action.click()
+    await expect(pressed).resolves.toBe(true)
+    await settle()
+
+    const closed = modal.notice({
+      title: 'Cannot add',
+      message: 'Missing folder.',
+      actionLabel: 'Change location'
+    })
+    await settle()
+    getElement<HTMLButtonElement>('[data-testid="base-alert-close-icon"]').click()
+    await expect(closed).resolves.toBe(false)
+  })
+
+  it('shows a notice with no action as title, message and the × only', async () => {
+    const result = modal.notice({ title: 'Cannot add', message: 'Already added.' })
+    await settle()
+    expect(document.querySelector('.base-alert-footer')).toBeNull()
+    expect(document.querySelector('[data-testid="base-alert-action"]')).toBeNull()
+    getElement<HTMLButtonElement>('[data-testid="base-alert-close-icon"]').click()
+    await expect(result).resolves.toBe(false)
+  })
+
+  it('still resolves a plain alert from its OK button and from the ×', async () => {
+    const ok = modal.alert({ title: 'Done', message: 'Saved.' })
+    await settle()
+    getElement<HTMLButtonElement>('[data-testid="base-alert-action"]').click()
+    await expect(ok).resolves.toBeUndefined()
+    await settle()
+    const closed = modal.alert({ title: 'Done', message: 'Saved.' })
+    await settle()
+    getElement<HTMLButtonElement>('[data-testid="base-alert-close-icon"]').click()
+    await expect(closed).resolves.toBeUndefined()
+  })
+
   it('keeps a loading confirmation disabled and dismisses it as cancellation', async () => {
     const result = modal.confirm({ title: 'Restore snapshot', message: '', loading: true })
     await settle()

@@ -164,6 +164,22 @@ describe('BaseAlert', async () => {
     expect(secondary.attributes('data-variant')).toBe('destructive')
   })
 
+  it('drops the footer and its line when showAction is false and nothing else is in it', async () => {
+    const wrapper = await mountAlert({ showAction: false })
+    expect(wrapper.find('.base-alert-footer').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="base-alert-action"]').exists()).toBe(false)
+    expect(wrapper.find('.base-alert-message').classes()).toContain('mb-0')
+    expect(wrapper.find('.base-alert-panel').classes()).toContain('base-alert-panel--no-footer')
+    expect(wrapper.find('[data-testid="base-alert-close-icon"]').exists()).toBe(true)
+  })
+
+  it('keeps the footer for Cancel when only the main button is dropped', async () => {
+    const wrapper = await mountAlert({ showAction: false, showCancel: true })
+    expect(wrapper.find('.base-alert-footer').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="base-alert-cancel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="base-alert-action"]').exists()).toBe(false)
+  })
+
   it('renders the header close icon when showCloseIcon is true', async () => {
     const wrapper = await mountAlert({ showCloseIcon: true, showCancel: false })
     expect(wrapper.find('[data-testid="base-alert-close-icon"]').exists()).toBe(true)

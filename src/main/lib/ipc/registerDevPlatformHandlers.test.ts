@@ -1378,6 +1378,15 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.add).not.toHaveBeenCalled()
   })
 
+  it('installBuild marks a bad install location so the alert can offer Change location', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1', installRoot: 7 })
+
+    expect(result).toEqual({ ok: false, message: 'Invalid install location.', reason: 'location' })
+    expect(mocks.listBuilds).not.toHaveBeenCalled()
+  })
+
   it('installBuild rejects the legacy string request shape', async () => {
     mocks.isSignedIn.mockReturnValue(true)
 

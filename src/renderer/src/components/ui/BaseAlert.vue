@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue'
+import { computed, useId, useSlots } from 'vue'
 import { X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from './DesktopDialogSurface.vue'
@@ -12,6 +12,7 @@ interface Props {
   message?: string
   hint?: string
   buttonLabel?: string
+  showAction?: boolean
   showCancel?: boolean
   cancelLabel?: string
   tone?: 'primary' | 'danger'
@@ -36,6 +37,7 @@ const props = withDefaults(defineProps<Props>(), {
   message: '',
   hint: '',
   buttonLabel: undefined,
+  showAction: true,
   showCancel: false,
   cancelLabel: undefined,
   tone: 'primary',
@@ -58,6 +60,8 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{ close: []; cancel: []; secondary: [] }>()
 
+const slots = useSlots()
+
 const TITLE_ID = `base-alert-title-${useId()}`
 
 const dialogAriaLabelledby = computed(
@@ -72,6 +76,9 @@ function dismiss(): void {
 const hasDetails = computed(() => props.messageDetails.length > 0)
 const linkifiedMessage = computed(() => linkify(props.message))
 const hasWideActions = computed(() => !!props.secondaryLabel)
+const hasFooter = computed(
+  () => props.showAction || props.showCancel || !!props.secondaryLabel || !!slots.footer
+)
 
 const actionVariants = { default: 'secondary', primary: 'inverted', danger: 'destructive' } as const
 
@@ -100,7 +107,11 @@ const linkClass =
       'base-alert-panel relative flex min-w-80 flex-col overflow-visible rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4 text-neutral-100 shadow-[var(--modal-surface-shadow)]',
       panelWidthClass,
       hasDetails ? 'max-h-[min(80vh,640px)]' : 'max-h-[min(80vh,560px)]',
-      { 'base-alert-panel--rich': hasDetails, 'base-alert-panel--wide-actions': hasWideActions }
+      {
+        'base-alert-panel--rich': hasDetails,
+        'base-alert-panel--wide-actions': hasWideActions,
+        'base-alert-panel--no-footer pb-5': !hasFooter
+      }
     ]"
     @close="dismiss"
   >
@@ -122,7 +133,8 @@ const linkClass =
     </header>
     <div
       v-if="message || hint || hasDetails || $slots.default || $slots.extra"
-      class="base-alert-message mb-5 min-h-0 flex-auto overflow-y-auto text-sm leading-[1.5] whitespace-pre-line text-text-muted select-text"
+      class="base-alert-message min-h-0 flex-auto overflow-y-auto text-sm leading-[1.5] whitespace-pre-line text-text-muted select-text"
+      :class="hasFooter ? 'mb-5' : 'mb-0'"
     >
       <slot>
         <div
@@ -168,6 +180,7 @@ const linkClass =
       </div>
     </div>
     <footer
+      v-if="hasFooter"
       class="base-alert-footer -mx-6 flex flex-wrap justify-end gap-2 border-t border-solid border-neutral-100/8 pt-4 pr-4 pl-6 [&>button]:max-w-60 [&>button]:min-w-24 [&>button]:overflow-hidden [&>button]:text-ellipsis [&>button]:whitespace-nowrap"
     >
       <slot name="footer">
@@ -192,6 +205,7 @@ const linkClass =
           <span class="truncate">{{ secondaryLabel }}</span>
         </Button>
         <Button
+          v-if="showAction"
           type="button"
           :variant="actionVariants[tone]"
           size="lg"

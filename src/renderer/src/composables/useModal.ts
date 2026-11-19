@@ -46,6 +46,7 @@ export interface ModalState {
   variantLoading: boolean
   checkboxes: ModalCheckbox[]
   buttonLabel: string
+  showButton: boolean
   confirmLabel: string
   confirmStyle: string
   secondaryLabel: string
@@ -71,6 +72,7 @@ const state = reactive<ModalState>({
   variantLoading: false,
   checkboxes: [],
   buttonLabel: 'OK',
+  showButton: true,
   confirmLabel: 'Confirm',
   confirmStyle: 'danger',
   secondaryLabel: '',
@@ -96,6 +98,7 @@ function reset(): void {
   state.variantLoading = false
   state.checkboxes = []
   state.buttonLabel = 'OK'
+  state.showButton = true
   state.confirmLabel = 'Confirm'
   state.confirmStyle = 'danger'
   state.secondaryLabel = ''
@@ -152,6 +155,23 @@ export function useModal() {
       state.message = opts.message
       state.buttonLabel = opts.buttonLabel ?? i18n.global.t('modal.ok')
       state.resolve = () => resolve()
+    })
+  }
+
+  function notice(opts: {
+    title: string
+    message: string
+    actionLabel?: string
+  }): Promise<boolean> {
+    return new Promise((resolve) => {
+      reset()
+      state.visible = true
+      state.type = 'alert'
+      state.title = opts.title
+      state.message = opts.message
+      state.buttonLabel = opts.actionLabel ?? ''
+      state.showButton = !!opts.actionLabel
+      state.resolve = (value) => resolve(value === true)
     })
   }
 
@@ -298,6 +318,7 @@ export function useModal() {
   return {
     state: readonly(state) as ModalState,
     alert,
+    notice,
     confirm,
     choose,
     updateConfirm,
