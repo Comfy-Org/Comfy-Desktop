@@ -87,6 +87,7 @@ import { BaseSelect, type BaseSelectOption } from '../components/ui'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { formatBytes, formatFreeSpace } from '../lib/formatting'
 import type { Build, BuildTarget } from '../devplatform/types'
+import { progressTitle } from '../lib/progressTitle'
 
 const emit = defineEmits<{
   close: []
@@ -1009,7 +1010,7 @@ async function handOffInstall(result: InstallBuildResult, failureTitle: string):
     })
     emit('show-progress', {
       installationId: result.entry.id,
-      title: `${t('newInstall.installing')} - ${result.entry.name}`,
+      title: progressTitle(t('newInstall.installing'), result.entry.name),
       apiCall: () => window.api.installInstance(result.entry!.id),
       autoLaunchOnFinish: true,
       opKind: 'install'
