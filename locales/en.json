@@ -2033,7 +2033,6 @@
     "noMatches": "No builds match",
     "newInstance": "New build",
     "openDashboard": "Open Home",
-    "openDashboardHint": "Opens Home in a new window. Your running build keeps running.",
     "latestOnGithub": "Latest on GitHub",
     "open": "Start",
     "restart": "Restart",

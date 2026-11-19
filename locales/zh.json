@@ -2033,7 +2033,6 @@
     "noMatches": "没有匹配的构建",
     "newInstance": "新建构建",
     "openDashboard": "打开仪表板",
-    "openDashboardHint": "在新窗口中打开仪表板。正在运行的构建会继续运行。",
     "latestOnGithub": "GitHub 最新版",
     "open": "启动",
     "restart": "重启",
