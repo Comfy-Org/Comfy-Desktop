@@ -24,16 +24,16 @@ import {
   Copy,
   CopyPlus,
   FolderOpen,
-  Share2,
   ArrowRightLeft,
   Pencil,
   Trash2,
   CircleStop,
   EyeOff,
   Settings2,
-  Repeat2,
   Server,
-  Ellipsis
+  Ellipsis,
+  Download,
+  SquareArrowOutUpRight
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import { useComfyUISettings } from '../../composables/useComfyUISettings'
@@ -526,8 +526,8 @@ function navIcon(labelKey: string): Component {
     case 'instancePicker.restart':
     case 'instancePicker.restartToApply':
       return RotateCcw
-    case 'instancePicker.switch':
-      return Repeat2
+    case 'instancePicker.openRunning':
+      return SquareArrowOutUpRight
     case 'instancePicker.open':
       return Play
     default:
@@ -546,15 +546,6 @@ const primaryActionIcon = computed<Component>(() =>
   hasPendingRestart.value ? RotateCcw : navIconFor(primaryDecision.value.primaryLabel)
 )
 
-const stopAction = computed<ActionDef | undefined>(() =>
-  pinBottomActions.value.find((a) => a.id === 'stop')
-)
-const caretActions = computed<MenuAction[]>(() => {
-  const verb = primaryDecision.value.verb
-  if (!stopAction.value || (verb !== 'focus' && verb !== 'restart')) return []
-  return [{ ...stopAction.value, icon: actionIcon('stop') }]
-})
-
 function actionIcon(id: string): Component {
   switch (id) {
     case 'update-comfyui':
@@ -569,7 +560,7 @@ function actionIcon(id: string): Component {
     case 'reveal-in-folder':
       return FolderOpen
     case 'share':
-      return Share2
+      return Download
     case 'migrate-to-standalone':
     case 'migrate':
       return ArrowRightLeft
@@ -589,15 +580,44 @@ function actionIcon(id: string): Component {
   }
 }
 
+const NOW_ACTION_IDS = new Set(['stop'])
+
 const pinBottomMenuActions = computed<MenuAction[]>(() => {
-  const firstDanger = pinBottomActions.value.findIndex((action) => action.style === 'danger')
-  return pinBottomActions.value.map((action, index) => ({
-    ...action,
-    icon: actionIcon(action.id),
-    style: action.id === 'untrack' || action.id === 'remove' ? undefined : action.style,
-    separator: index === firstDanger
-  }))
+  const actions = sectionsFresh.value
+    ? pinBottomActions.value
+    : pinBottomActions.value.filter((action) => NOW_ACTION_IDS.has(action.id))
+  const now = actions.filter((action) => NOW_ACTION_IDS.has(action.id))
+  const rest = actions.filter((action) => !NOW_ACTION_IDS.has(action.id) && action.id !== 'delete')
+  const last = actions.filter((action) => action.id === 'delete')
+  return [now, rest, last]
+    .filter((group) => group.length > 0)
+    .flatMap((group, groupIndex) =>
+      group.map((action, index) => ({
+        ...action,
+        icon: actionIcon(action.id),
+        style: action.id === 'delete' ? ('danger' as const) : undefined,
+        separator: groupIndex > 0 && index === 0
+      }))
+    )
 })
+
+const ctaWrap = useTemplateRef<HTMLElement>('ctaWrap')
+
+function focusLostToMenu(): boolean {
+  const active = document.activeElement
+  return !active || active === document.body || !!active.closest('.more-menu')
+}
+
+watch(
+  () => pinBottomMenuActions.value.length,
+  async (count) => {
+    if (count > 0 || !moreMenuOpen.value) return
+    closeMoreMenu()
+    await nextTick()
+    if (!focusLostToMenu()) return
+    ctaWrap.value?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus()
+  }
+)
 
 function handlePrimaryAction(): void {
   const selectedInstall = installation.value
@@ -606,18 +626,6 @@ function handlePrimaryAction(): void {
     clearPendingRestart(selectedInstall.id)
   }
   emit('primary-action', primaryDecision.value)
-}
-
-const caretMenuOpen = ref(false)
-function toggleCaretMenu(): void {
-  caretMenuOpen.value = !caretMenuOpen.value
-}
-function closeCaretMenu(): void {
-  caretMenuOpen.value = false
-}
-function handleCaretPick(action: ActionDef): void {
-  if (!installation.value) return
-  void runAction(action)
 }
 
 const opInflight = computed(() => props.activeOperation != null && !props.activeOperation.done)
@@ -1182,19 +1190,15 @@ defineExpose({
             </span>
           </Transition>
 
-          <div
-            class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto]"
-            :class="{ 'has-caret': caretActions.length > 0 }"
-          >
+          <div ref="ctaWrap" class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto]">
             <Button
               variant="inverted"
               size="md"
               type="button"
-              class="settings-v2-relaunch flex-[0_1_auto] [&.is-split]:rounded-r-none"
+              class="settings-v2-relaunch flex-[0_1_auto]"
               :class="[
                 isPage ? 'gap-1.5 px-3 text-[13px]/5' : 'min-w-[200px]',
-                { 'is-pending-restart': hasPendingRestart },
-                { 'is-split': caretActions.length > 0 }
+                { 'is-pending-restart': hasPendingRestart }
               ]"
               :disabled="!installation || opBlocksFooter"
               :data-testid="TID.pickerPrimaryCta"
@@ -1208,32 +1212,6 @@ defineExpose({
               />
               <span>{{ primaryActionLabel }}</span>
             </Button>
-            <template v-if="caretActions.length > 0">
-              <Button
-                variant="inverted"
-                size="icon"
-                type="button"
-                class="settings-v2-cta-caret rounded-l-none border-l border-solid border-background/20"
-                data-more-trigger
-                :class="{ 'is-active brightness-[0.94]': caretMenuOpen }"
-                aria-haspopup="menu"
-                :aria-expanded="caretMenuOpen"
-                :aria-label="t('instancePicker.moreWindowOptions')"
-                :disabled="!installation || opBlocksFooter"
-                :data-testid="TID.pickerNewWindow"
-                @click="toggleCaretMenu"
-              >
-                <component :is="menuChevron" :size="14" />
-              </Button>
-              <MoreMenu
-                :open="caretMenuOpen"
-                :anchor="footerRef?.querySelector<HTMLElement>('.settings-v2-cta-caret')"
-                :actions="caretActions"
-                :heading="t('instancePicker.windowOptions')"
-                @close="closeCaretMenu"
-                @pick="handleCaretPick"
-              />
-            </template>
           </div>
 
           <div class="settings-v2-more-wrap relative inline-flex">
@@ -1247,9 +1225,7 @@ defineExpose({
               aria-haspopup="menu"
               :aria-expanded="moreMenuOpen"
               :aria-label="t('comfyUISettings.more')"
-              :disabled="
-                !installation || pinBottomActions.length === 0 || opInflight || !sectionsFresh
-              "
+              :disabled="!installation || pinBottomMenuActions.length === 0 || opInflight"
               :data-testid="TID.pickerMoreTrigger"
               @click="toggleMoreMenu"
             >

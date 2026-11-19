@@ -468,15 +468,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     const inst = toValue(opts.installation)
     if (!inst) return acts
     if (inst.sourceCategory !== 'cloud' && sessionStore.isRunning(inst.id)) {
-      const stopAction: ActionDef = {
-        id: 'stop',
-        label: t('actions.stop'),
-        style: 'danger',
-        enabled: true
-      }
-      const firstDanger = acts.findIndex((a) => a.style === 'danger')
-      if (firstDanger === -1) acts.push(stopAction)
-      else acts.splice(firstDanger, 0, stopAction)
+      acts.unshift({ id: 'stop', label: t('actions.stop'), enabled: true })
     }
     return acts
   })
