@@ -1,7 +1,10 @@
 import { net } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import { formatBytes } from '../../shared/formatBytes'
 import * as settings from '../settings'
+import { getDiskSpace } from './disk'
+import * as i18n from './i18n'
 import { r2MirrorUrl } from './r2Mirror'
 import {
   installStagedAtFinal,
@@ -75,6 +78,14 @@ function resumeValidatorFor(
   return null
 }
 
+function describeWriteFailure(error: Error): { message: string; discard: boolean } {
+  const discard = (error as NodeJS.ErrnoException).code === 'ENOSPC'
+  const message = discard
+    ? i18n.t('diskSpace.modelDownloadDiskFull')
+    : `Write failed: ${error.message}`
+  return { message, discard }
+}
+
 export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHandle {
   const {
     url,
@@ -92,6 +103,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
 
   const stagingPath = stagingPathFor(finalPath)
   const metaPath = stagingMetaPathFor(finalPath)
+  const destinationDir = path.dirname(finalPath)
 
   let phase: 'active' | 'terminating' | 'settled' = 'active'
   const claim = (): boolean => {
@@ -231,7 +243,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     }
 
     try {
-      fs.mkdirSync(path.dirname(finalPath), { recursive: true })
+      fs.mkdirSync(destinationDir, { recursive: true })
     } catch (err) {
       failRetaining(`Download failed: ${(err as Error).message}`)
       return
@@ -307,7 +319,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
         }
       })
 
-      request.on('response', (rawResponse) => {
+      request.on('response', async (rawResponse) => {
         if (stale()) return
         const response = rawResponse as Electron.IncomingMessage & {
           pause(): void
@@ -436,6 +448,27 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           return
         }
 
+        response.on('error', (err: Error) => {
+          if (stale()) return
+          failRetaining(`Download failed: ${err.message}`)
+        })
+
+        const remainingBytes = effectiveSize - baseBytes
+        if (remainingBytes > 0) {
+          response.pause()
+          const disk = await getDiskSpace(destinationDir).catch(() => null)
+          if (stale()) return
+          if (disk && disk.free < remainingBytes) {
+            const message = i18n.t('diskSpace.modelDownloadBlockMessage', {
+              required: formatBytes(remainingBytes),
+              free: formatBytes(disk.free)
+            })
+            if (isResumed) failRetaining(message)
+            else failDiscarding(message)
+            return
+          }
+        }
+
         const meta: StagedDownloadMeta = {
           version: 2,
           jobId,
@@ -456,10 +489,13 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
         }
 
         let receivedBytes = baseBytes
-        fileStream = fs.createWriteStream(stagingPath, isResumed ? { flags: 'a' } : undefined)
-        fileStream.on('error', (err: Error) => {
+        const stream = fs.createWriteStream(stagingPath, isResumed ? { flags: 'a' } : undefined)
+        fileStream = stream
+        stream.on('error', (err: Error) => {
           if (stale()) return
-          failRetaining(`Write failed: ${err.message}`)
+          const { message, discard } = describeWriteFailure(err)
+          if (discard) failDiscarding(message)
+          else failRetaining(message)
         })
 
         response.on('data', (chunk: Buffer) => {
@@ -481,7 +517,6 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           if (stale()) return
           if (!claim()) return
           clearIdle()
-          const stream = fileStream
           fileStream = null
           const verify = (): void => {
             let actualSize = -1
@@ -516,17 +551,24 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
             }
             finalizeClaimed(actualSize)
           }
-          if (stream && !stream.closed) {
-            stream.end(() => stream.close(() => verify()))
+          const finish = (): void => {
+            if (stream.errored) {
+              const { message, discard } = describeWriteFailure(stream.errored)
+              if (discard) removeStagedArtifacts(finalPath)
+              settle({ outcome: 'error', error: message })
+            } else {
+              verify()
+            }
+          }
+          if (stream.closed) {
+            finish()
           } else {
-            verify()
+            stream.once('close', finish)
+            stream.end()
           }
         })
 
-        response.on('error', (err: Error) => {
-          if (stale()) return
-          failRetaining(`Download failed: ${err.message}`)
-        })
+        if (remainingBytes > 0) response.resume()
       })
 
       request.on('error', (err: Error) => {

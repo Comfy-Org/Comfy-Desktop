@@ -655,6 +655,8 @@
     "warningMessage": "The target drive only has {free} free. This operation may require approximately {required}. You may run out of space during the process.",
     "warningMessageGeneric": "The target drive only has {free} free. You may run out of space during the process.",
     "templateBlockMessage": "Needs ~{required}, only {free} free. Free up space or pick a lighter workflow.",
+    "modelDownloadBlockMessage": "Not enough disk space. {required} needed, {free} free.",
+    "modelDownloadDiskFull": "Not enough disk space. Free up space and retry.",
     "continueAnyway": "Continue Anyway",
     "calculatingSize": "Calculating…",
     "sizeLabel": "Disk Usage",
