@@ -2,12 +2,13 @@
 import { computed, onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
 import type { Component } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChartColumn, Gauge } from '@lucide/vue'
+import { ChartColumn, Gauge, MessageSquarePlus } from '@lucide/vue'
 import type { TitlePopupMenuIcon, TitlePopupMenuItem as MenuItem } from '../../../types/ipc'
 
 const MENU_ICONS: Record<TitlePopupMenuIcon, Component> = {
   'performance-test': Gauge,
-  benchmarks: ChartColumn
+  benchmarks: ChartColumn,
+  feedback: MessageSquarePlus
 }
 
 const props = defineProps<{

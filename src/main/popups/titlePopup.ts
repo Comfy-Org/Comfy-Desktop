@@ -479,7 +479,8 @@ function desktopWindowMenuItems(): TitlePopupMenuItem[] {
       labelKey: 'fileMenu.performanceTests',
       icon: 'performance-test'
     },
-    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks', icon: 'benchmarks' }
+    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks', icon: 'benchmarks' },
+    { id: 'feedback', label: 'Send Feedback', labelKey: 'fileMenu.sendFeedback', icon: 'feedback' }
   ]
 }
 
@@ -500,7 +501,8 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
       label: 'Performance tests',
       labelKey: 'fileMenu.performanceTest'
     },
-    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' }
+    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' },
+    { id: 'feedback', label: 'Send Feedback', labelKey: 'fileMenu.sendFeedback' }
   ]
   if (entry.installationId !== null) {
     items.push(

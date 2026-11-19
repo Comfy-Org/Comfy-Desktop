@@ -1,15 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  ArrowDownToLine,
-  Bell,
-  House,
-  Menu as MenuIcon,
-  MessageSquarePlus,
-  RotateCw,
-  ZoomIn
-} from '@lucide/vue'
+import { ArrowDownToLine, Bell, House, Menu as MenuIcon, RotateCw, ZoomIn } from '@lucide/vue'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
 import { useTitleBarMenus } from './useTitleBarMenus'
 import { useTitleBarIdentity } from './useTitleBarIdentity'
@@ -167,10 +159,6 @@ const zoomPercent = computed(() => Math.round(Math.pow(1.2, zoomLevel.value) * 1
 const showZoomReset = computed(
   () => zoomLevel.value !== 0 && !isInstallLess.value && !isFirstUseLockdown.value
 )
-
-function handleFeedback(): void {
-  bridge?.clickFeedback()
-}
 
 function handleRefreshInstance(): void {
   bridge?.clickRefreshInstance()
@@ -468,16 +456,6 @@ onUnmounted(() => {
           class="title-announcement-dot pointer-events-none absolute top-[3px] right-1 size-1.5 rounded-[50%] bg-[var(--comfy-yellow,#ffd23f)] [box-shadow:0_0_0_1.5px_var(--titlebar-bg,rgba(0,0,0,0.5))]"
           aria-hidden="true"
         />
-      </button>
-      <button
-        v-if="!isFirstUseLockdown"
-        type="button"
-        class="title-menu-button title-menu-button--icon title-feedback-button"
-        :class="titleMenuButtonClass"
-        v-bind="tooltipAttrs(t('titleBar.feedbackTooltip'), t('titleBar.feedback'))"
-        @click="handleFeedback"
-      >
-        <MessageSquarePlus :size="16" />
       </button>
       <button
         v-if="!isFirstUseLockdown"

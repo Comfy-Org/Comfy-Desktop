@@ -208,7 +208,7 @@ test('title popup + system modal webContents are pre-warmed on the chooser host 
   await waitForWebContents(ctx.app, 'comfySystemModal.html', 10_000)
 })
 
-test('the Desktop window tests menu opens with Performance tests and Benchmarks, and closes via bridge @windows @macos @linux', async () => {
+test('the Desktop window menu opens with Performance tests, Benchmarks and Send Feedback, and closes via bridge @windows @macos @linux', async () => {
   await openTitleMenu(ctx.titleBar)
 
   await expect
@@ -219,7 +219,7 @@ test('the Desktop window tests menu opens with Performance tests and Benchmarks,
     .toBe(true)
 
   const popupItems = await readPopupMenuItems(ctx.app, 'comfyTitlePopup.html')
-  expect(popupItems).toEqual(['Performance tests', 'Benchmarks'])
+  expect(popupItems).toEqual(['Performance tests', 'Benchmarks', 'Send Feedback'])
 
   await evalWithRetry(() =>
     ctx.app.evaluate(({ webContents }) => {

@@ -144,6 +144,7 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items.flatMap((item) => (item.label ? [item.label] : []))).toEqual([
       'Performance tests',
       'Benchmarks',
+      'Send Feedback',
       'Desktop Settings',
       'Reset zoom (144%)',
       'Close window',
@@ -151,7 +152,7 @@ describe('buildTitlePopupMenuItems', () => {
     ])
   })
 
-  it('the Desktop window menu holds only Performance tests and Benchmarks, with icons', () => {
+  it('the Desktop window menu holds Performance tests, Benchmarks and Send Feedback, with icons', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
     expect(items).toEqual([
       {
@@ -160,7 +161,18 @@ describe('buildTitlePopupMenuItems', () => {
         labelKey: 'fileMenu.performanceTests',
         icon: 'performance-test'
       },
-      { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks', icon: 'benchmarks' }
+      {
+        id: 'benchmarks',
+        label: 'Benchmarks',
+        labelKey: 'fileMenu.benchmarks',
+        icon: 'benchmarks'
+      },
+      {
+        id: 'feedback',
+        label: 'Send Feedback',
+        labelKey: 'fileMenu.sendFeedback',
+        icon: 'feedback'
+      }
     ])
   })
 
@@ -185,6 +197,7 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items.map((item) => item.id ?? 'separator')).toEqual([
       'performance-test',
       'benchmarks',
+      'feedback',
       'separator',
       'settings',
       'separator',
@@ -199,6 +212,7 @@ describe('buildTitlePopupMenuItems', () => {
     expect(ids).toEqual([
       'performance-test',
       'benchmarks',
+      'feedback',
       'settings',
       'reset-zoom',
       'exit-window',
@@ -315,6 +329,19 @@ describe('activateTitlePopupMenuItem', () => {
       nearWindow: host.window
     })
   })
+
+  it.each([null, 'inst-1'] as const)(
+    'opens Send Feedback over the window it was chosen from (installation %s)',
+    (installationId) => {
+      const host = makeEntry({ installationId })
+      comfyWindows.set(host.windowKey, host)
+      const bindings = { triggerOpenFeedback: vi.fn() } as unknown as TitlePopupHostBindings
+
+      activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'feedback', bindings)
+
+      expect(bindings.triggerOpenFeedback).toHaveBeenCalledExactlyOnceWith(host.windowKey, 'menu')
+    }
+  )
 
   it('routes Reset Zoom through resetComfyZoom with the host installation id', () => {
     const host = makeEntry({ installationId: 'inst-1', zoomLevel: 3 })
