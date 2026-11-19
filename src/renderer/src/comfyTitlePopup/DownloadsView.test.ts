@@ -123,7 +123,7 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(sub).toContain('10%')
   })
 
-  it('renders a completed entry as a clickable row with a Show-in-folder subtitle and a dismiss X', async () => {
+  it('renders a completed entry as a clickable row with a Completed subtitle, a Show in Finder action and a dismiss X', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const state: MockDownloadsState = {
       active: [],
@@ -143,7 +143,9 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(item.exists()).toBe(true)
     expect(item.classes()).toContain('is-completed')
     expect(item.classes()).toContain('is-clickable')
-    expect(item.find('.downloads-item-sub').text()).toBe('Show in Finder')
+    expect(item.find('.downloads-item-sub').text()).toBe('Completed')
+    expect(item.get('.downloads-item-reveal').text()).toBe('Show in Finder')
+    expect(item.find('.downloads-item-retry').exists()).toBe(false)
     const close = item.find('.downloads-item-close')
     expect(close.exists()).toBe(true)
     expect(close.attributes('aria-label')).toBe('Remove from list')
@@ -334,13 +336,59 @@ describe('comfyTitlePopup/DownloadsView', () => {
     })
   })
 
-  it('routes the footer link to the full downloads popup (not the Settings tab)', async () => {
+  it('puts View all downloads in the header, beside the title, and opens the full downloads popup', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const wrapper = mount(DownloadsView, { props: { state: EMPTY_STATE } })
     await flushPromises()
-    expect(wrapper.find('.downloads-link').text()).toBe('View All Downloads')
-    await wrapper.find('.downloads-link').trigger('click')
+    const link = wrapper.get('.downloads-head .downloads-link')
+    expect(link.text()).toBe('View all downloads')
+    expect(wrapper.find('.downloads-foot').exists()).toBe(false)
+    await link.trigger('click')
     expect(bridgeState.openDownloadsModalCalls).toBe(1)
     expect(bridgeState.openSettingsTabCalls).toEqual([])
+  })
+
+  describe('row actions', () => {
+    const state: MockDownloadsState = {
+      active: [],
+      recent: [
+        {
+          url: 'https://example.com/ok.bin',
+          filename: 'ok.bin',
+          progress: 1,
+          status: 'completed',
+          savePath: '/tmp/ok.bin'
+        },
+        { url: 'https://example.com/c.bin', filename: 'c.bin', progress: 0.3, status: 'cancelled' },
+        { url: 'https://example.com/e.bin', filename: 'e.bin', progress: 0.3, status: 'error' }
+      ]
+    }
+
+    async function mountRows() {
+      const { default: DownloadsView } = await import('./DownloadsView.vue')
+      const wrapper = mount(DownloadsView, { props: { state } })
+      await flushPromises()
+      return wrapper
+    }
+
+    it('names the actions like the full Downloads list', async () => {
+      const wrapper = await mountRows()
+
+      expect(wrapper.get('.is-completed .downloads-item-action').text()).toBe('Show in Finder')
+      expect(wrapper.get('.is-cancelled .downloads-item-action').text()).toBe('Retry')
+      expect(wrapper.get('.is-error .downloads-item-action').text()).toBe('Retry')
+    })
+
+    it('runs the action without also opening the row', async () => {
+      const wrapper = await mountRows()
+
+      await wrapper.get('.is-completed .downloads-item-reveal').trigger('click')
+      await wrapper.get('.is-cancelled .downloads-item-retry').trigger('click')
+
+      expect(bridgeState.downloadsActions).toEqual([
+        { action: 'show-in-folder', url: 'https://example.com/ok.bin', savePath: '/tmp/ok.bin' },
+        { action: 'retry', url: 'https://example.com/c.bin' }
+      ])
+    })
   })
 })

@@ -129,7 +129,7 @@ async function openFullDownloads(): Promise<void> {
     .toBe(true)
   await popup.waitForSelector('.downloads-link', { timeout: 10_000 })
   await waitForStableBounds()
-  expect(await popup.clickByText('.downloads-link', 'View All')).toBe(true)
+  expect(await popup.clickByText('.downloads-link', 'View all')).toBe(true)
   await popup.waitForSelector('.dlm-panel', { timeout: 10_000 })
 }
 
