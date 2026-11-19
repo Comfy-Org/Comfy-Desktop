@@ -851,6 +851,9 @@ function revertOnInstall(
 const FRONTEND_RESTORE_TIMEOUT_MS = 60_000
 
 const FRONTEND_BACKUP_PREFIX = '.launch-frontend-backup-'
+const FRONTEND_MODULE = FRONTEND_PACKAGE.replace(/-/g, '_')
+const isFrontendDistInfo = (entry: string): boolean =>
+  entry.startsWith(`${FRONTEND_MODULE}-`) && entry.endsWith('.dist-info')
 const liveFrontendBackups = new Set<string>()
 
 export async function restoreCoreFrontend(
@@ -894,7 +897,11 @@ export async function restoreCoreFrontend(
       signal,
       { extraArgs: ['--no-deps'] }
     )
-    if (!restored.ok && savedFrom !== null) {
+    if (
+      !restored.ok &&
+      savedFrom !== null &&
+      !(await otherFrontendInstalled(savedFrom, backupDir))
+    ) {
       sendOutput(`Putting back any ${FRONTEND_PACKAGE} files the failed restore removed\n`)
       await putBackMissingFiles(backupDir, savedFrom)
     }
@@ -912,14 +919,11 @@ export async function restoreCoreFrontend(
 async function backUpFrontend(pythonPath: string, backupDir: string): Promise<string | null> {
   const sitePackages = findSitePackages(path.dirname(path.dirname(pythonPath)))
   if (sitePackages === null) return null
-  const module = FRONTEND_PACKAGE.replace(/-/g, '_')
   const listed = await fs.promises.readdir(sitePackages).catch((err: NodeJS.ErrnoException) => {
     if (err.code === 'ENOENT') return []
     throw err
   })
-  const entries = listed.filter(
-    (entry) => entry === module || (entry.startsWith(`${module}-`) && entry.endsWith('.dist-info'))
-  )
+  const entries = listed.filter((entry) => entry === FRONTEND_MODULE || isFrontendDistInfo(entry))
   if (entries.length === 0) return null
   for (const entry of entries) {
     await fs.promises.cp(path.join(sitePackages, entry), path.join(backupDir, entry), {
@@ -927,6 +931,12 @@ async function backUpFrontend(pythonPath: string, backupDir: string): Promise<st
     })
   }
   return sitePackages
+}
+
+async function otherFrontendInstalled(sitePackages: string, backupDir: string): Promise<boolean> {
+  const saved = new Set(await fs.promises.readdir(backupDir))
+  const listed = await fs.promises.readdir(sitePackages)
+  return listed.some((entry) => isFrontendDistInfo(entry) && !saved.has(entry))
 }
 
 async function putBackMissingFiles(backupDir: string, sitePackages: string): Promise<void> {

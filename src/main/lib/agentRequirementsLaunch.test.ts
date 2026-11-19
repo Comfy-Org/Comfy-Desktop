@@ -3153,6 +3153,27 @@ describe('restoreCoreFrontend', () => {
     await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
+  it('leaves a frontend another restore installed alone when this restore fails', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    mockInstall.mockImplementationOnce(async () => {
+      fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info'), {
+        recursive: true
+      })
+      fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package/static/index.html'))
+      fs.mkdirSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.7.dist-info'))
+      return { code: 2, output: '' }
+    })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    expect(
+      fs.existsSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info'))
+    ).toBe(false)
+    expect(read(sitePackages, 'comfyui_frontend_package/static/index.html')).toBeNull()
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
   it('puts back the frontend files a cancelled restore removed', async () => {
     const inst = managedInstall()
     writeCore('comfyui-frontend-package==1.28.7\n')
