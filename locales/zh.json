@@ -44,7 +44,7 @@
     "retry": "重试",
     "emptyTitle": "暂无应用",
     "emptyBody": "新应用会显示在这里。",
-    "noMatches": "没有与“{query}”匹配的应用",
+    "noMatchesHint": "换个关键词试试。",
     "allApps": "全部应用",
     "request": {
       "bandTitle": "没有你想要的应用？",
@@ -516,7 +516,11 @@
     "error": "错误",
     "retry": "重试",
     "unknown": "未知",
-    "none": "无"
+    "none": "无",
+    "nothingMatches": "没有匹配项",
+    "nothingMatchesHint": "换个关键词试试，或清除筛选条件查看全部内容。",
+    "clearFilters": "清除筛选",
+    "clearSearch": "清除搜索"
   },
   "comfybuilder": {
     "build": "构建",
@@ -1976,14 +1980,12 @@
     "missing": "不可用",
     "durationRange": "耗时范围（最短 → 最长）",
     "durationRangeHint": "每条线显示最快和最慢运行，并标记平均值。",
-    "noMatches": "没有符合筛选条件的运行",
     "loadError": "无法加载性能测试结果",
     "loadErrorHint": "请检查文件夹后重试。",
     "refreshButton": "刷新",
     "emptyTitle": "暂无性能测试结果",
     "emptyHint": "完成一次性能测试以添加运行记录。",
     "openPerformanceTest": "打开性能测试",
-    "noMatchesHint": "请尝试其他搜索或筛选条件。",
     "filterAll": "全部",
     "filterWorkspace": "工作区",
     "filterBuild": "构建",

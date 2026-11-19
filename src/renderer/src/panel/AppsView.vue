@@ -295,24 +295,37 @@ onBeforeUnmount(() => {
           :text="t('apps.emptyBody')"
         />
 
-        <div
+        <EmptyState
           v-else-if="matchingApps.length === 0"
-          class="flex flex-col items-center gap-3 pt-24 text-center"
+          class="pt-24"
           data-testid="apps-no-matches"
+          :icon="AppWindow"
+          :title="t('common.nothingMatches')"
+          :text="t('apps.noMatchesHint')"
         >
-          <p class="m-0 text-ui text-muted-foreground">
-            {{ t('apps.noMatches', { query: query.trim() }) }}
-          </p>
-          <Button
-            type="button"
-            variant="secondary"
-            size="md"
-            data-testid="apps-no-matches-request"
-            @click="requestOpen = true"
-          >
-            {{ t('apps.request.ask') }}
-          </Button>
-        </div>
+          <div class="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              class="px-3 text-[13px]/5"
+              data-testid="apps-clear-search"
+              @click="query = ''"
+            >
+              {{ t('common.clearSearch') }}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              class="px-3 text-[13px]/5"
+              data-testid="apps-no-matches-request"
+              @click="requestOpen = true"
+            >
+              {{ t('apps.request.ask') }}
+            </Button>
+          </div>
+        </EmptyState>
 
         <ul v-else :class="RHYTHM_GRID_CLASS" data-testid="apps-grid">
           <li

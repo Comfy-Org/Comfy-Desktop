@@ -869,7 +869,7 @@ describe('BenchmarksView', () => {
     expect(wrapper.find('[data-testid="benchmark-row-9"]').exists()).toBe(true)
 
     await search(wrapper, 'nothing here')
-    expect(wrapper.get('.benchmarks__no-results').text()).toContain('No runs match these filters')
+    expect(wrapper.get('.benchmarks__no-results').text()).toContain('Nothing matches')
 
     await search(wrapper, '')
     await chooseOption(wrapper, 'hardware', 'Apple M3 Max')
@@ -878,6 +878,24 @@ describe('BenchmarksView', () => {
     await chooseOption(wrapper, 'hardware', 'All')
     await chooseOption(wrapper, 'workflow', 'landscape.json')
     expect(wrapper.findAll('.benchmarks__group')).toHaveLength(1)
+  })
+
+  it('says Nothing matches with a Clear filters button that resets the search and every filter', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const allRows = wrapper.findAll('[data-testid^="benchmark-row-"]').length
+
+    await chooseOption(wrapper, 'hardware', 'Apple M3 Max')
+    await search(wrapper, 'nothing here')
+    const empty = wrapper.get('.benchmarks__no-results')
+    expect(empty.get('h2').text()).toBe('Nothing matches')
+    expect(empty.text()).toContain('Try another word, or clear the filters to see everything.')
+
+    await wrapper.get('[data-testid="benchmarks-clear-filters"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.benchmarks__no-results').exists()).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('.benchmarks__search input').element.value).toBe('')
+    expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(allRows)
   })
 
   it('labels unmanaged workspaces and unknown hardware', async () => {
