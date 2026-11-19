@@ -1843,7 +1843,8 @@
   },
   "feedback": {
     "modalLabel": "发送反馈",
-    "loading": "正在加载反馈表单…"
+    "loading": "正在加载反馈表单…",
+    "failedTitle": "反馈表单未能加载"
   },
   "performanceTest": {
     "title": "性能测试",
