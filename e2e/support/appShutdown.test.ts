@@ -251,4 +251,23 @@ describe('app shutdown', () => {
       expect(isPidAlive(appPid)).toBe(true)
     }
   )
+
+  it('keeps the app and fails when its pid is alive but has no readable start time', async () => {
+    const { appPid } = await launchShellAndApp()
+    const forceKill = vi.fn()
+    const { shutdown } = createShutdown(
+      {
+        launcher: undefined,
+        appPid,
+        appStartTime: 'the start time recorded at launch',
+        closeGracefully: never,
+        connectionClosed: () => true
+      },
+      { forceKill, readStartTime: () => undefined }
+    )
+
+    await expect(shutdown()).rejects.toBeInstanceOf(ProcessLookupError)
+    expect(forceKill).not.toHaveBeenCalled()
+    expect(isPidAlive(appPid)).toBe(true)
+  })
 })

@@ -19,6 +19,7 @@ export interface ShutdownOptions {
   forcedExitMs?: number
   forceKill?: (pids: number[]) => void
   log?: (line: string) => void
+  readStartTime?: (pid: number) => string | undefined
 }
 
 export interface ShutdownHandle {
@@ -139,6 +140,7 @@ export function createShutdown(
   const forcedExitMs = options.forcedExitMs ?? FORCED_EXIT_DEADLINE_MS
   const forceKill = options.forceKill ?? killProcessTrees
   const log = options.log ?? ((line: string) => console.log(line))
+  const readStartTime = options.readStartTime ?? processStartTime
   const helpersAreTracked = process.platform !== 'win32'
 
   const launcher = target.launcher
@@ -172,8 +174,14 @@ export function createShutdown(
   const forgetAppIfItsPidWasReused = (): void => {
     if (appPid === undefined || target.appStartTime === undefined) return
     if (!isPidAlive(appPid)) return
-    const startTime = processStartTime(appPid)
-    if (startTime !== undefined && startTime !== target.appStartTime) appPid = undefined
+    const startTime = readStartTime(appPid)
+    if (startTime === undefined) {
+      if (!isPidAlive(appPid)) return
+      throw new ProcessLookupError(
+        `[e2e-harness] process ${appPid} is running but its start time could not be read`
+      )
+    }
+    if (startTime !== target.appStartTime) appPid = undefined
   }
 
   const waitForExit = async (ms: number): Promise<boolean> => {
