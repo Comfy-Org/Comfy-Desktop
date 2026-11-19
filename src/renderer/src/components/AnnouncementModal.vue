@@ -102,9 +102,7 @@ onMounted(() => {
           class="announce-body-main flex flex-auto flex-col justify-center gap-[clamp(0.75rem,1.2vw,1.25rem)]"
         >
           <header class="announce-header flex flex-wrap items-center gap-3">
-            <h2
-              class="announce-title m-0 font-display text-[length:var(--takeover-fs-h2)] leading-8 font-extrabold tracking-normal text-neutral-100"
-            >
+            <h2 class="announce-title m-0 text-title font-semibold text-foreground">
               {{ $t('announcement.comfyApi.title') }}
             </h2>
           </header>

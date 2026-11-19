@@ -165,9 +165,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
     <header
       class="dlm-modal-header flex items-center justify-between gap-3 border-b border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-5 pb-3"
     >
-      <h2
-        class="dlm-title m-0 font-display text-[length:var(--takeover-fs-h3,18px)] font-bold text-neutral-100"
-      >
+      <h2 class="dlm-title m-0 text-title font-semibold text-foreground">
         {{ t('downloadsTab.title') }}
       </h2>
       <Button
