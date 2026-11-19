@@ -58,7 +58,8 @@ import {
 import type { PrefetchRequest } from './agentRequirementsLaunch'
 import type { PrefetchReport } from './agentRequirementsOverride'
 import { installFilteredRequirementsDetailed, runUvPipDetailed } from './pip'
-import { getUvPath, getVenvPythonPath, getLegacyVenvUvPath } from './pythonEnv'
+import { getUvPath, getVenvDir, getVenvPythonPath, getLegacyVenvUvPath } from './pythonEnv'
+import { findSitePackages } from '../sources/standalone/envPaths'
 import type { InstallationRecord } from '../installations'
 import type * as ChildProcessModule from 'child_process'
 
@@ -3014,6 +3015,76 @@ describe('restoreCoreFrontend', () => {
     writeCore('comfyui-frontend-package>=1.0\n')
     expect(await restoreCoreFrontend(inst, vi.fn()), 'a range').toBe(true)
     expect(mockInstall).not.toHaveBeenCalled()
+  })
+
+  const installedFrontend = (): string => {
+    const venv = getVenvDir(installDir)
+    fs.mkdirSync(path.join(venv, 'lib', 'python3.12'), { recursive: true })
+    const sitePackages = findSitePackages(venv)!
+    const files = {
+      'comfyui_frontend_package/__init__.py': 'old init',
+      'comfyui_frontend_package/static/index.html': 'old index',
+      'comfyui_frontend_package/static/locked.js': 'old locked',
+      'comfyui_frontend_package-1.28.8.dist-info/METADATA': 'Version: 1.28.8'
+    }
+    const record = Object.keys(files).map((file) => `${file},,`)
+    for (const [file, text] of Object.entries({
+      ...files,
+      'comfyui_frontend_package-1.28.8.dist-info/RECORD': record.join('\n')
+    })) {
+      fs.mkdirSync(path.dirname(path.join(sitePackages, file)), { recursive: true })
+      fs.writeFileSync(path.join(sitePackages, file), text)
+    }
+    return sitePackages
+  }
+
+  const read = (sitePackages: string, file: string): string | null =>
+    fs.existsSync(path.join(sitePackages, file))
+      ? fs.readFileSync(path.join(sitePackages, file), 'utf-8')
+      : null
+
+  it('puts back the frontend files a failed restore removed, leaving the ones it could not', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    mockInstall.mockImplementationOnce(async () => {
+      fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package/__init__.py'))
+      fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package/static/index.html'))
+      fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info/METADATA'))
+      fs.writeFileSync(path.join(sitePackages, 'comfyui_frontend_package/static/locked.js'), 'kept')
+      return { code: 2, output: 'error: failed to remove file: Access is denied. (os error 5)' }
+    })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    expect(read(sitePackages, 'comfyui_frontend_package/__init__.py')).toBe('old init')
+    expect(read(sitePackages, 'comfyui_frontend_package/static/index.html')).toBe('old index')
+    expect(read(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info/METADATA')).toBe(
+      'Version: 1.28.8'
+    )
+    expect(
+      read(sitePackages, 'comfyui_frontend_package/static/locked.js'),
+      'a file uv could not remove is left as it is'
+    ).toBe('kept')
+    await vi.waitFor(() =>
+      expect(fs.readdirSync(installDir).filter((name) => name.startsWith('.launch'))).toEqual([])
+    )
+  })
+
+  it('leaves the new frontend alone when the restore succeeds', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    mockInstall.mockImplementationOnce(async () => {
+      fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info'), {
+        recursive: true
+      })
+      return { code: 0, output: '' }
+    })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(true)
+    expect(
+      fs.existsSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info'))
+    ).toBe(false)
   })
 
   it('drops the record for an install with no uv', async () => {
