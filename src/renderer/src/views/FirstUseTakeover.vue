@@ -35,7 +35,7 @@ const props = defineProps<{ consent?: SetupConsent | null; savedPlan?: SetupPlan
 
 const emit = defineEmits<{
   install: [plan: SetupPlan]
-  change: [consent: SetupConsent]
+  change: [consent: SetupConsent, pickedInstallRoot?: string]
   'complete-skip': []
   'chain-migrate': [{ express: boolean }]
 }>()
@@ -55,6 +55,7 @@ const plan = ref<SetupPlan | null>(null)
 const planState = ref<'loading' | 'ready' | 'unavailable'>('loading')
 const systemInfo = ref<SystemInfo | null>(null)
 const diskFree = ref<number | null>(null)
+const pickedInstallRoot = ref<string | null>(null)
 const unsupportedReason = ref('')
 const hardwareWarning = ref('')
 
@@ -262,7 +263,8 @@ function route(action: SetupAction): void {
   }
   if (action === 'change') {
     emitCompleted('local-configure')
-    emit('change', currentConsent())
+    if (pickedInstallRoot.value) emit('change', currentConsent(), pickedInstallRoot.value)
+    else emit('change', currentConsent())
     return
   }
   if (migrating.value) {
@@ -302,7 +304,9 @@ async function loadPlan(gen: number): Promise<void> {
       void window.api
         .getDiskSpace(next.installRoot)
         .then((space) => {
-          if (gen === openGeneration) diskFree.value = space.free
+          if (gen === openGeneration && plan.value?.installRoot === next.installRoot) {
+            diskFree.value = space.free
+          }
         })
         .catch(() => {})
     }
@@ -324,6 +328,7 @@ async function browseInstallLocation(): Promise<void> {
   const chosen = await window.api.browseFolder(current.installRoot || undefined)
   if (!chosen || plan.value !== current) return
   plan.value = { ...current, installRoot: chosen }
+  pickedInstallRoot.value = chosen
   diskFree.value = null
   const gen = openGeneration
   void window.api
@@ -342,6 +347,7 @@ interface OpenOpts {
 async function open(opts: OpenOpts = {}): Promise<void> {
   const gen = ++openGeneration
   step.value = 'setup'
+  pickedInstallRoot.value = null
   skipPick.value = opts.skipPick === true
   hasLegacyDesktop.value = opts.hasLegacyDesktop === true
   migrateExisting.value = true

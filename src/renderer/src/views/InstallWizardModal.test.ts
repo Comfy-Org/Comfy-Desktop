@@ -371,6 +371,31 @@ describe('InstallWizardModal heading', () => {
     again.unmount()
   })
 
+  it('opens Change from Set up on the folder picked there with Change location', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'cpu', label: 'CPU', recommended: true, data: { variantId: 'win-cpu' } }
+    ])
+    const wrapper = mountModal({ hideBackToDashboard: true })
+    await wrapper.vm.open({
+      cameFromSetup: true,
+      entrypoint: 'first_use',
+      installRoot: '/Volumes/Big/ComfyUI'
+    })
+    await flushPromises()
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(savedSetups(wrapper)[0]?.plan.installRoot).toBe('/Volumes/Big/ComfyUI')
+    wrapper.unmount()
+  })
+
   it('keeps the saved choices when hardware picked after reopening Change is discarded', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {

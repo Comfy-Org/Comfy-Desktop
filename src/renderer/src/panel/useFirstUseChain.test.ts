@@ -395,6 +395,16 @@ describe('useFirstUseChain — Set up', () => {
     })
   })
 
+  it('opens Change on the folder picked on Set up', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent({ acceptedTos: true }), '/Volumes/Big/ComfyUI')
+
+    expect(chain.api!.hooks.consumeSetupHandoff()).toEqual({
+      needsConsent: false,
+      installRoot: '/Volumes/Big/ComfyUI'
+    })
+  })
+
   it('opens every install option from Change, with a way back to Set up', async () => {
     const chain = mountChain()
     await chain.api!.handleSetupChange(setupConsent({ acceptedTos: true }))

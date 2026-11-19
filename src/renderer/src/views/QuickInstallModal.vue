@@ -20,6 +20,7 @@ import InstallNamePath from '../components/InstallNamePath.vue'
 import TakeoverHeader from '../components/TakeoverHeader.vue'
 import TakeoverBack from '../components/TakeoverBack.vue'
 import ModalShell from '../components/ModalShell.vue'
+import { alertAddFailure } from '../lib/addFailureAlert'
 
 const emit = defineEmits<{
   close: []
@@ -241,9 +242,12 @@ async function handleInstall(): Promise<void> {
     })
 
     if (!result.ok) {
-      await modal.alert({
+      await alertAddFailure({
+        modal,
+        t,
         title: t('errors.cannotAdd'),
-        message: result.message || t('errors.cannotAddDetail')
+        failure: result,
+        onChangeLocation: handleBrowse
       })
       installing.value = false
       return

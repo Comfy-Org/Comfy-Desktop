@@ -247,6 +247,46 @@ describe('Set up, the first screen', () => {
     expect(plan.installRoot).toBe('/Volumes/Big/ComfyUI')
   })
 
+  it('hands a folder picked with Change location on to Change', async () => {
+    ;(window.api as unknown as { browseFolder: unknown }).browseFolder = vi
+      .fn()
+      .mockResolvedValue('/Volumes/Big/ComfyUI')
+    const w = await mountSetup()
+    await (
+      w.vm as unknown as { browseInstallLocation: () => Promise<void> }
+    ).browseInstallLocation()
+    await w.find('[data-testid="setup-change"]').trigger('click')
+    await flushPromises()
+
+    expect(w.emitted('change')).toEqual([[expect.any(Object), '/Volumes/Big/ComfyUI']])
+  })
+
+  it('keeps the free space of the folder picked last when an earlier lookup lands late', async () => {
+    let finishFirst: (space: { free: number; total: number }) => void = () => {}
+    const getDiskSpace = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishFirst = resolve
+          })
+      )
+      .mockResolvedValue({ free: 412 * GB, total: 1000 * GB })
+    ;(window.api as unknown as Record<string, unknown>).getDiskSpace = getDiskSpace
+    ;(window.api as unknown as { browseFolder: unknown }).browseFolder = vi
+      .fn()
+      .mockResolvedValue('/Volumes/Big/ComfyUI')
+    const w = await mountSetup()
+    await (
+      w.vm as unknown as { browseInstallLocation: () => Promise<void> }
+    ).browseInstallLocation()
+    await flushPromises()
+    finishFirst({ free: 1024 ** 3, total: 2 * 1024 ** 3 })
+    await flushPromises()
+
+    expect(text(w, 'setup-location-meta')).not.toContain('Only')
+  })
+
   it('keeps the plan when the folder picker is cancelled', async () => {
     ;(window.api as unknown as { browseFolder: unknown }).browseFolder = vi
       .fn()

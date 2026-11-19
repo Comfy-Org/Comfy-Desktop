@@ -513,6 +513,7 @@ interface OpenOpts {
   entrypoint?: string
   workspaceId?: string
   restore?: ChangeSetupDraft
+  installRoot?: string
 }
 
 const cameFromSetup = ref(false)
@@ -599,6 +600,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       instName.value = opts.restore.instName
       await restoreNewInstallSetup(opts.restore)
     }
+    if (opts.installRoot && gen === modeGeneration) instPath.value = opts.installRoot
   } finally {
     if (gen === modeGeneration) initializing.value = false
   }

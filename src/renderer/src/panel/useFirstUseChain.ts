@@ -36,7 +36,7 @@ export interface FirstUseChainApi {
   savedSetup: Readonly<ShallowRef<SavedSetup | null>>
   completeFirstUseAndDismiss: () => Promise<void>
   handleSetupInstall: (plan: SetupPlan) => Promise<void>
-  handleSetupChange: (consent: SetupConsent) => Promise<void>
+  handleSetupChange: (consent: SetupConsent, pickedInstallRoot?: string) => Promise<void>
   handleNewInstallConsentChange: (accepted: boolean) => void
   handleFirstUseChainMigrate: (payload?: { express?: boolean }) => Promise<void>
   handleNewInstallTakeoverClose: () => Promise<void>
@@ -208,7 +208,10 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     }
   }
 
-  async function handleSetupChange(consent: SetupConsent): Promise<void> {
+  async function handleSetupChange(
+    consent: SetupConsent,
+    pickedInstallRoot?: string
+  ): Promise<void> {
     const needsConsent = !consent.acceptedTos
     setupConsent.value = consent
     setupConsentSaved = consent.acceptedTos
@@ -216,7 +219,8 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     pendingFirstUseAutoLaunchId.value = null
     pendingSetupHandoff.value = {
       needsConsent,
-      ...(savedSetup.value ? { restore: savedSetup.value.draft } : {})
+      ...(savedSetup.value ? { restore: savedSetup.value.draft } : {}),
+      ...(pickedInstallRoot ? { installRoot: pickedInstallRoot } : {})
     }
     window.api.setFirstUseMode(needsConsent ? 'consent-lockdown' : 'post-consent')
     await opts.switchPanel('new-install', 'first_use')
