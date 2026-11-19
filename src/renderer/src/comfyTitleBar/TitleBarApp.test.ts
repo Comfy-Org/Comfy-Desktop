@@ -868,7 +868,7 @@ describe('TitleBarApp', () => {
     wrapper.unmount()
   })
 
-  it('has no Send Feedback button, which lives in the ☰ menu', async () => {
+  it('has no Send Feedback button', async () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()

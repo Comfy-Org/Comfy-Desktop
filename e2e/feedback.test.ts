@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { pickFromTitleMenu } from './support/chooserHelpers'
 
 const FEEDBACK_FRAME = '[data-testid="feedback-widget"] iframe'
 const FEEDBACK_CLOSE = '.feedback-modal-panel [data-testid="base-modal-close"]'
@@ -49,7 +48,7 @@ test.afterAll(async () => {
 })
 
 async function openFeedback(): Promise<URL> {
-  await pickFromTitleMenu(ctx.app, ctx.titleBar, 'Send Feedback')
+  await ctx.titleBar.evaluate('window.__comfyTitleBar.clickFeedback()')
   await ctx.panel.waitForVisible(FEEDBACK_FRAME)
   await expect.poll(() => ctx.panel.exists(FEEDBACK_LOADING)).toBe(false)
   return new URL(
