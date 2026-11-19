@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createWidget } from '@typeform/embed'
 import { emitTelemetryAction } from '../lib/telemetry'
@@ -22,16 +22,15 @@ async function mountFeedback(open = true) {
   return wrapper
 }
 
-function deliverQueuedMessages() {
+function postFormReady(embedId: string) {
   return new Promise<void>((resolve) => {
-    const token = Symbol.for('flush').toString()
     const onMessage = (event: MessageEvent) => {
-      if (event.data !== token) return
+      if (event.data?.embedId !== embedId) return
       window.removeEventListener('message', onMessage)
       resolve()
     }
     window.addEventListener('message', onMessage)
-    window.postMessage(token, '*')
+    window.postMessage({ type: 'form-ready', embedId }, '*')
   })
 }
 
@@ -43,11 +42,16 @@ describe('FeedbackModal', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     vi.mocked(createWidget).mockReset()
-    vi.mocked(createWidget).mockImplementation(() => ({
-      unmount: vi.fn(),
-      refresh: vi.fn(),
-      focus: vi.fn()
-    }))
+    let embeds = 0
+    vi.mocked(createWidget).mockImplementation((_formId, options) => {
+      const embedId = `embed-${++embeds}`
+      window.addEventListener('message', (event: MessageEvent) => {
+        if (event.data?.type === 'form-ready' && event.data.embedId === embedId) {
+          options.onReady?.(ready)
+        }
+      })
+      return { embedId, unmount: vi.fn(), refresh: vi.fn(), focus: vi.fn() }
+    })
     vi.mocked(emitTelemetryAction).mockClear()
   })
 
@@ -160,9 +164,9 @@ describe('FeedbackModal', () => {
     expect(emitTelemetryAction).not.toHaveBeenCalled()
   })
 
-  it('says the form did not load after ten seconds without onReady, and Try again reloads the same form with a fresh wait', async () => {
+  it('says the form did not load after ten seconds without onReady, and Try again loads a fresh form with a fresh wait', async () => {
     await mountFeedback()
-    const widget = vi.mocked(createWidget).mock.results[0]!.value
+    const first = vi.mocked(createWidget).mock.results[0]!.value
 
     await vi.advanceTimersByTimeAsync(9999)
     expect(document.querySelector('.feedback-modal-loading')).not.toBeNull()
@@ -176,17 +180,19 @@ describe('FeedbackModal', () => {
     expect(failed?.getAttribute('role')).toBe('alert')
 
     document.querySelector<HTMLButtonElement>('[data-testid="feedback-retry"]')!.click()
-    await deliverQueuedMessages()
     await flushPromises()
-    expect(widget.refresh).toHaveBeenCalledOnce()
-    expect(widget.unmount).not.toHaveBeenCalled()
-    expect(createWidget).toHaveBeenCalledOnce()
+    expect(first.unmount).toHaveBeenCalledOnce()
+    expect(first.refresh).not.toHaveBeenCalled()
+    expect(createWidget).toHaveBeenCalledTimes(2)
+    expect(widgetOptions(1).container).toBe(
+      document.querySelector('[data-testid="feedback-widget"]')
+    )
     expect(document.querySelector('[data-testid="feedback-failed"]')).toBeNull()
     expect(document.querySelector('.feedback-modal-loading')).not.toBeNull()
 
     await vi.advanceTimersByTimeAsync(9999)
     expect(document.querySelector('[data-testid="feedback-failed"]')).toBeNull()
-    widgetOptions().onReady?.(ready)
+    widgetOptions(1).onReady?.(ready)
     await vi.advanceTimersByTimeAsync(10_000)
     expect(document.querySelector('.feedback-modal-loading')).toBeNull()
     expect(document.querySelector('[data-testid="feedback-failed"]')).toBeNull()
@@ -194,12 +200,11 @@ describe('FeedbackModal', () => {
 
   it('says the form did not load again when a retry also gets no onReady for ten seconds', async () => {
     await mountFeedback()
-    const widget = vi.mocked(createWidget).mock.results[0]!.value
     await vi.advanceTimersByTimeAsync(10_000)
 
     document.querySelector<HTMLButtonElement>('[data-testid="feedback-retry"]')!.click()
     await flushPromises()
-    expect(widget.refresh).toHaveBeenCalledOnce()
+    expect(createWidget).toHaveBeenCalledTimes(2)
 
     await vi.advanceTimersByTimeAsync(9999)
     expect(document.querySelector('.feedback-modal-loading')).not.toBeNull()
@@ -210,20 +215,43 @@ describe('FeedbackModal', () => {
     expect(document.querySelector('[data-testid="feedback-failed"]')).not.toBeNull()
   })
 
-  it('ignores a ready signal the replaced form sent before Try again, and still fails after ten seconds', async () => {
+  it('a late ready from the form Try again replaced neither settles nor cancels the new wait, and its listeners and timer are released', async () => {
+    const add = vi.spyOn(window, 'addEventListener')
+    const remove = vi.spyOn(window, 'removeEventListener')
+    onTestFinished(() => {
+      add.mockRestore()
+      remove.mockRestore()
+    })
     await mountFeedback()
+    const first = vi.mocked(createWidget).mock.results[0]!.value
+    const firstListeners = add.mock.calls.filter(([type]) => type === 'message')
+    expect(firstListeners).toHaveLength(1)
     await vi.advanceTimersByTimeAsync(10_000)
 
     document.querySelector<HTMLButtonElement>('[data-testid="feedback-retry"]')!.click()
-    widgetOptions().onReady?.(ready)
-    await deliverQueuedMessages()
+    await flushPromises()
+    const second = vi.mocked(createWidget).mock.results[1]!.value
+    expect(second.embedId).not.toBe(first.embedId)
+    expect(first.unmount).toHaveBeenCalledOnce()
+    for (const args of firstListeners) expect(remove).toHaveBeenCalledWith(...args)
+    expect(vi.getTimerCount()).toBe(1)
+
+    const firstOnReady = vi.spyOn(widgetOptions(0), 'onReady')
+    await postFormReady(first.embedId)
+    expect(firstOnReady).not.toHaveBeenCalled()
+    widgetOptions(0).onReady?.(ready)
     await flushPromises()
     expect(document.querySelector('.feedback-modal-loading')).not.toBeNull()
 
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(9999)
+    await postFormReady(first.embedId)
+    expect(document.querySelector('.feedback-modal-loading')).not.toBeNull()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(document.querySelector('.feedback-modal-loading')).toBeNull()
     expect(document.querySelector('[data-testid="feedback-failed"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="feedback-retry"]')).not.toBeNull()
 
-    widgetOptions().onReady?.(ready)
+    await postFormReady(second.embedId)
     await flushPromises()
     expect(document.querySelector('[data-testid="feedback-failed"]')).toBeNull()
   })

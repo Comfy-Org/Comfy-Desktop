@@ -10,7 +10,6 @@ import { emitTelemetryAction } from '../lib/telemetry'
 const FEEDBACK_FORM_ID = 'VhOXmuaL'
 const AUTOCLOSE_MS = 2000
 const LOAD_TIMEOUT_MS = 10_000
-const RETRY_BARRIER = 'comfy-feedback-retry'
 
 const props = defineProps<{
   open: boolean
@@ -48,41 +47,83 @@ function onSubmit(): void {
   }, AUTOCLOSE_MS)
 }
 
-let loadTimer: ReturnType<typeof setTimeout> | null = null
-let reloadWidget: (() => void) | null = null
-let attempt = 0
-let readyAttempt = 0
+type WindowListener = Parameters<Window['addEventListener']>
 
-function onRetryBarrier(event: MessageEvent): void {
-  if (event.source !== window || event.data?.type !== RETRY_BARRIER) return
-  readyAttempt = event.data.attempt
+interface LoadAttempt {
+  retire: () => void
 }
 
-function clearLoadTimer(): void {
-  if (loadTimer != null) {
-    clearTimeout(loadTimer)
-    loadTimer = null
+let current: LoadAttempt | null = null
+
+function createTrackedWidget(options: Parameters<typeof createWidget>[1]): {
+  widget: ReturnType<typeof createWidget>
+  listeners: WindowListener[]
+} {
+  const listeners: WindowListener[] = []
+  const add = window.addEventListener
+  window.addEventListener = function (this: Window, ...args: WindowListener) {
+    listeners.push(args)
+    add.apply(this, args)
+  } as Window['addEventListener']
+  try {
+    return { widget: createWidget(FEEDBACK_FORM_ID, options), listeners }
+  } finally {
+    window.addEventListener = add
   }
 }
 
-function waitForForm(): void {
-  clearLoadTimer()
+function startAttempt(element: HTMLElement): void {
+  current?.retire()
   loading.value = true
   failed.value = false
+  let loadTimer: ReturnType<typeof setTimeout> | null = null
+  const attempt: LoadAttempt = { retire }
+  const isCurrent = () => current === attempt
+  const { widget, listeners } = createTrackedWidget({
+    container: element,
+    hidden: props.hiddenFields,
+    inlineOnMobile: true,
+    redirectTarget: '_self',
+    iframeProps: {
+      title: t('feedback.modalLabel'),
+      allow: 'camera; microphone; autoplay; encrypted-media; fullscreen'
+    },
+    onReady: () => {
+      if (!isCurrent()) return
+      clearLoadTimer()
+      loading.value = false
+      failed.value = false
+    },
+    onSubmit: () => {
+      if (isCurrent()) onSubmit()
+    }
+  })
+
+  function clearLoadTimer(): void {
+    if (loadTimer != null) {
+      clearTimeout(loadTimer)
+      loadTimer = null
+    }
+  }
+
+  function retire(): void {
+    if (isCurrent()) current = null
+    clearLoadTimer()
+    for (const args of listeners.splice(0)) window.removeEventListener(...args)
+    widget.unmount()
+  }
+
+  current = attempt
   loadTimer = setTimeout(() => {
     loadTimer = null
-    if (!loading.value) return
+    if (!isCurrent() || !loading.value) return
     loading.value = false
     failed.value = true
   }, LOAD_TIMEOUT_MS)
 }
 
 function retry(): void {
-  if (!reloadWidget) return
-  attempt += 1
-  window.postMessage({ type: RETRY_BARRIER, attempt }, '*')
-  waitForForm()
-  reloadWidget()
+  if (current && container.value) startAttempt(container.value)
 }
 
 watch(
@@ -90,37 +131,10 @@ watch(
   ([open, element], _previous, onCleanup) => {
     if (!open || !element) return
     submitted.value = false
-    let active = true
-    readyAttempt = attempt
-    window.addEventListener('message', onRetryBarrier)
-    waitForForm()
-    const widget = createWidget(FEEDBACK_FORM_ID, {
-      container: element,
-      hidden: props.hiddenFields,
-      inlineOnMobile: true,
-      redirectTarget: '_self',
-      iframeProps: {
-        title: t('feedback.modalLabel'),
-        allow: 'camera; microphone; autoplay; encrypted-media; fullscreen'
-      },
-      onReady: () => {
-        if (!active || readyAttempt !== attempt) return
-        clearLoadTimer()
-        loading.value = false
-        failed.value = false
-      },
-      onSubmit: () => {
-        if (active) onSubmit()
-      }
-    })
-    reloadWidget = () => widget.refresh()
+    startAttempt(element)
     onCleanup(() => {
-      active = false
-      reloadWidget = null
-      window.removeEventListener('message', onRetryBarrier)
-      clearLoadTimer()
+      current?.retire()
       clearAutoclose()
-      widget.unmount()
     })
   },
   { flush: 'post' }
