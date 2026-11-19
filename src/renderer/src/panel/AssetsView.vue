@@ -1116,10 +1116,10 @@ function extensionOf(name: string): string {
                 >
                   <Button
                     type="button"
-                    variant="muted-textonly"
-                    size="icon"
+                    variant="link"
+                    size="icon-sm"
                     tabindex="-1"
-                    class="size-6.5 rounded-md p-0 text-muted-foreground hover:bg-transparent hover:text-foreground"
+                    class="size-6.5 rounded-md"
                     :aria-label="`${revealFolderLabel}: ${option.build.name}`"
                     :data-testid="`assets-place-reveal-${option.build.id}`"
                     @click="openPlaceFolder(option)"

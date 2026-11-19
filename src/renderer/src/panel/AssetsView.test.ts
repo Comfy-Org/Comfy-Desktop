@@ -720,7 +720,9 @@ describe('AssetsView', () => {
     }
     await press('ArrowUp')
     visited.push(focused())
+    await new Promise((resolve) => setTimeout(resolve, 300))
 
+    expect(visited, 'focus moves to the next row').toContain('assets-build-art')
     expect(visited.every((id) => id?.startsWith('assets-build-'))).toBe(true)
     expect(document.querySelector('.tooltip-bubble'), 'no tooltip opens').toBeNull()
   })
@@ -736,6 +738,7 @@ describe('AssetsView', () => {
     expect(wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded')).toBe(
       'false'
     )
+    expect(document.querySelector('[data-testid="assets-place-reveal-lab"]')).toBeNull()
   })
 
   it('says when a folder does not open', async () => {
