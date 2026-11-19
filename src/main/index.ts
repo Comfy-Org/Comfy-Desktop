@@ -20,6 +20,7 @@ import type { ChildProcess } from 'child_process'
 import todesktop from '@todesktop/runtime'
 import * as ipc from './lib/ipc'
 import { getAppVersion } from './lib/ipc'
+import { recordHomeTourAudience } from './lib/homeTourAudience'
 import type { ExitCallbackInfo } from './lib/ipc'
 import { closeAllPopouts } from './lib/popoutWindows'
 import { disposeAllTerminals } from './lib/terminal'
@@ -961,6 +962,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     mainTelemetry.installAppHooks()
 
     const existingInstallation = hasCompletedFirstLaunch() || hasPersistedDeviceId()
+    recordHomeTourAudience(existingInstallation)
     const { legacyId } = await initDeviceId()
     clearLegacyIdentityRetryMarker()
     const installationId = getDeviceId()

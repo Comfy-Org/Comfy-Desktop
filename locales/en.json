@@ -212,6 +212,51 @@
     "buildClickToOpen": "Click to open",
     "buildClickToViewLogs": "Click to view logs"
   },
+  "homeTour": {
+    "buildsIntro": {
+      "title": "Builds run ComfyUI",
+      "body": "A build is a copy of ComfyUI that you can open. Most people need only one."
+    },
+    "buildsRenamed": {
+      "title": "Instances are now builds",
+      "body": "Your ComfyUI instances are now called builds. They keep the same models and settings."
+    },
+    "cloudBuild": {
+      "title": "Comfy Cloud",
+      "body": "Comfy Cloud needs no setup. It runs on GPUs in the cloud, so it works on any computer."
+    },
+    "localBuild": {
+      "title": "Local build",
+      "body": "A local build runs on this computer, for free. Your files stay on this computer."
+    },
+    "allBuilds": {
+      "title": "All your builds",
+      "body": "Click here to see all your builds."
+    },
+    "newBuild": {
+      "title": "Add a build",
+      "body": "Click + to add a new build."
+    },
+    "newApps": {
+      "title": "New: Apps",
+      "body": "Apps are ready-made tools. Pick one, add your image or text, and run it."
+    },
+    "allApps": {
+      "title": "All apps",
+      "body": "Find all apps here."
+    },
+    "assets": {
+      "title": "Your results",
+      "body": "Everything you make shows here: images, video, audio and 3D."
+    },
+    "progress": "{current} of {total}",
+    "next": "Next",
+    "back": "Back",
+    "skip": "Skip",
+    "done": "Done",
+    "replayHint": "Replay this tour from the bell in the title bar.",
+    "replay": "Take the tour"
+  },
   "installType": {
     "standalone": "Standalone",
     "cloud": "Cloud",

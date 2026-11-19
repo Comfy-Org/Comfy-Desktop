@@ -212,6 +212,51 @@
     "nextApp": "下一个应用",
     "retry": "重试"
   },
+  "homeTour": {
+    "buildsIntro": {
+      "title": "构建用于运行 ComfyUI",
+      "body": "构建是一份可以打开的 ComfyUI。大多数人只需要一个。"
+    },
+    "buildsRenamed": {
+      "title": "实例现在叫作构建",
+      "body": "你的 ComfyUI 实例现在叫作构建。它们保留原有的模型和设置。"
+    },
+    "cloudBuild": {
+      "title": "Comfy Cloud",
+      "body": "Comfy Cloud 无需设置。它在云端 GPU 上运行，因此任何电脑都能使用。"
+    },
+    "localBuild": {
+      "title": "本地构建",
+      "body": "本地构建在这台电脑上免费运行。你的文件保存在这台电脑上。"
+    },
+    "allBuilds": {
+      "title": "你的全部构建",
+      "body": "点击这里查看你的全部构建。"
+    },
+    "newBuild": {
+      "title": "添加构建",
+      "body": "点击 + 添加新的构建。"
+    },
+    "newApps": {
+      "title": "新功能：应用",
+      "body": "应用是现成的工具。选择一个，添加图片或文字，然后运行。"
+    },
+    "allApps": {
+      "title": "全部应用",
+      "body": "在这里查看全部应用。"
+    },
+    "assets": {
+      "title": "你的作品",
+      "body": "你创作的所有内容都显示在这里：图片、视频、音频和 3D。"
+    },
+    "progress": "第 {current} 步，共 {total} 步",
+    "next": "下一步",
+    "back": "上一步",
+    "skip": "跳过",
+    "done": "完成",
+    "replayHint": "可在标题栏的铃铛图标中再次查看本导览。",
+    "replay": "查看导览"
+  },
   "installType": {
     "standalone": "独立版",
     "cloud": "云端",

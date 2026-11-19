@@ -46,6 +46,8 @@ export interface KnownSettings {
   comfyRouterAnnouncementSeen?: boolean
   comfyApiAnnouncementSeen?: boolean
   hasSeenCentralPillHint?: boolean
+  homeTourAudience?: 'new' | 'updated'
+  homeTourDone?: boolean
   betaNoticeAnnouncedArgs?: string[]
   hideCloudFromPicker?: boolean
   oemManagedModelDirs?: string[]
@@ -172,6 +174,8 @@ const SETTINGS_SCHEMA = {
   comfyRouterAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   comfyApiAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   hasSeenCentralPillHint: { nullable: false, telemetry: { policy: 'omit' } },
+  homeTourAudience: { nullable: false, telemetry: { policy: 'omit' } },
+  homeTourDone: { nullable: false, telemetry: { policy: 'omit' } },
   betaNoticeAnnouncedArgs: { nullable: false, telemetry: { policy: 'omit' } },
   hideCloudFromPicker: {
     nullable: false,

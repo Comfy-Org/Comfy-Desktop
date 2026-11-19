@@ -171,6 +171,7 @@ function openContextMenu(event: MouseEvent): void {
     :class="canOpen && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
     :data-testid="testId"
     :data-build-id="build.id"
+    :data-home-tour="isCloudBuild(build) ? 'cloud-build' : 'local-build'"
     @click="onClick"
     @contextmenu.prevent="openContextMenu"
   >

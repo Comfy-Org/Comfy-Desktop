@@ -52,6 +52,8 @@ import {
 } from '../lib/progressTerminalPresets'
 import { provideBuildLogs } from '../composables/useBuildProgress'
 import { provideBuildMenuHost } from './home/useBuildMenu'
+import HomeTour from './home/HomeTour.vue'
+import { useHomeTour } from './home/useHomeTour'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
@@ -77,6 +79,13 @@ useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
 const { feedbackOpen, feedbackHiddenFields, closeFeedback } = useSendFeedback()
 const { announcementOpen, closeAnnouncement } = useAnnouncement()
+const homeTour = useHomeTour()
+
+function takeHomeTour(): void {
+  closeAnnouncement()
+  if (activePanel.value === 'chooser') handleSidebarNavigate('home')
+  void homeTour.replay()
+}
 
 const installation = computed<Installation | null>(() =>
   installationId ? (installationStore.getById(installationId) ?? null) : null
@@ -311,6 +320,16 @@ const showPanelBody = computed(() => {
 })
 
 const showSidebar = computed(() => showPanelBody.value && sidebarPage.value !== null)
+
+const homeTourCanShow = computed(
+  () =>
+    showSidebar.value &&
+    sidebarPage.value === 'home' &&
+    currentOverlay.value === null &&
+    !announcementOpen.value &&
+    !feedbackOpen.value &&
+    buildProgressId.value === null
+)
 
 const performanceTestRunActive = ref(false)
 
@@ -671,7 +690,12 @@ onUnmounted(() => {
       :hidden-fields="feedbackHiddenFields"
       @close="closeFeedback"
     />
-    <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
+    <AnnouncementModal
+      v-if="announcementOpen"
+      @close="closeAnnouncement"
+      @take-tour="takeHomeTour"
+    />
+    <HomeTour :active="homeTourCanShow" />
 
     <ModalDialog />
     <DialogHost />
