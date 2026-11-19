@@ -24,6 +24,7 @@
 !ifdef BUILD_UNINSTALLER
   Var comfyRemoveInstances
   Var comfyRemoveModels
+  Var comfyRemoveInputOutput
   Var comfyFullUninstall
 !endif
 
@@ -296,6 +297,7 @@
   Var comfyRemoveDialog
   Var comfyRemoveInstancesCheckbox
   Var comfyRemoveModelsCheckbox
+  Var comfyRemoveInputOutputCheckbox
 
   Function un.ComfyRemovalChoicesPage
     ${If} ${isUpdated}
@@ -321,18 +323,26 @@
     ${If} $comfyRemoveInstances == ${BST_CHECKED}
       ${NSD_Check} $comfyRemoveInstancesCheckbox
     ${EndIf}
-    ${NSD_CreateLabel} 12u 14u 92% 32u "Removes every ComfyUI install Comfy Desktop created and everything in it, including an install's own input and output if it does not use the shared ones. Only the shared input and output folders are kept."
+    ${NSD_CreateLabel} 12u 13u 92% 24u "Removes every ComfyUI install Comfy Desktop created and everything in it, including an install's own input and output if it does not use the shared ones."
     Pop $0
 
-    ${NSD_CreateCheckbox} 0 52u 100% 12u "Delete all model files"
+    ${NSD_CreateCheckbox} 0 41u 100% 12u "Delete all model files"
     Pop $comfyRemoveModelsCheckbox
     ${If} $comfyRemoveModels == ${BST_CHECKED}
       ${NSD_Check} $comfyRemoveModelsCheckbox
     ${EndIf}
-    ${NSD_CreateLabel} 12u 66u 92% 24u "Removes the shared models folder Comfy Desktop downloads into. Model folders you added yourself are kept."
+    ${NSD_CreateLabel} 12u 54u 92% 16u "Removes the shared models folder Comfy Desktop downloads into. Model folders you added yourself are kept."
     Pop $0
 
-    ${NSD_CreateLabel} 0 104u 100% 24u "Leave both unchecked to keep your ComfyUI instances and models. Installing Comfy Desktop again will find them."
+    ${NSD_CreateCheckbox} 0 74u 100% 12u "Delete shared input and output files"
+    Pop $comfyRemoveInputOutputCheckbox
+    ${If} $comfyRemoveInputOutput == ${BST_CHECKED}
+      ${NSD_Check} $comfyRemoveInputOutputCheckbox
+    ${EndIf}
+    ${NSD_CreateLabel} 12u 87u 92% 16u "Removes the shared input and output folders. Folders you picked outside a deleted instance are kept."
+    Pop $0
+
+    ${NSD_CreateLabel} 0 110u 100% 16u "Unchecked boxes keep their data, except files inside a deleted instance. Installing Comfy Desktop again will find what is kept."
     Pop $0
 
     nsDialogs::Show
@@ -341,6 +351,7 @@
   Function un.ComfyRemovalChoicesPageLeave
     ${NSD_GetState} $comfyRemoveInstancesCheckbox $comfyRemoveInstances
     ${NSD_GetState} $comfyRemoveModelsCheckbox $comfyRemoveModels
+    ${NSD_GetState} $comfyRemoveInputOutputCheckbox $comfyRemoveInputOutput
   FunctionEnd
 
   UninstPage custom un.ComfyRemovalChoicesPage un.ComfyRemovalChoicesPageLeave
@@ -356,6 +367,9 @@
   ${EndIf}
   ${If} $comfyRemoveModels == ${BST_CHECKED}
     StrCpy $1 "$1 --delete-models"
+  ${EndIf}
+  ${If} $comfyRemoveInputOutput == ${BST_CHECKED}
+    StrCpy $1 "$1 --delete-input-output"
   ${EndIf}
 
   ${If} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
