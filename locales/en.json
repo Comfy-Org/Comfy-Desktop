@@ -251,6 +251,7 @@
     "statusLaunching": "Starting…",
     "statusStopping": "Stopping…",
     "statusError": "Error",
+    "viewErrorTooltip": "View error details",
     "menuViewError": "View error",
     "menuWhyTryCloud": "Why try Cloud",
     "errorTitle": "Error",
