@@ -10,7 +10,6 @@ export const TID = {
 
   dashboardTile: (installId: string) => `dashboard-tile-${installId}`,
   dashboardTileKebab: (installId: string) => `dashboard-tile-kebab-${installId}`,
-  dashboardTileWhyCloud: (installId: string) => `dashboard-tile-why-cloud-${installId}`,
 
   contextMenuItem: (id: string) => `context-menu-item-${id}`,
 
