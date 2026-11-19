@@ -1217,6 +1217,7 @@ export interface ElectronApi {
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
   logsSnapshot(installationId: string): Promise<string>
+  openLogsWindow(installationId: string): Promise<void>
   validateInstallPath(targetPath: string): Promise<PathIssue[]>
   getInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   cancelInstallationSize(): Promise<void>
@@ -1267,10 +1268,6 @@ export interface ElectronApi {
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
   openAsset(source: string, assetId: string): Promise<boolean>
-  findDownloadedOutputs(
-    installationId: string,
-    wanted: { id: string; name: string; sizeBytes: number | null; createdAt: string | null }[]
-  ): Promise<Record<string, string>>
   findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>
   readAssetModel(source: string, assetId: string): Promise<Uint8Array | null>

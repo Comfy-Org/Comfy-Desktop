@@ -12,6 +12,7 @@ import {
   buildDeviceKind,
   HOME_BUILD_TONES,
   isBuildUpdating,
+  connectsElsewhere,
   isCloudBuild,
   type HomeBuildTone
 } from '../../panel/home/homeBuild'
@@ -150,7 +151,7 @@ const statusPill = computed<{
       tone: 'quiet',
       spinning: true
     }
-  if (isRunning.value)
+  if (isRunning.value && !connectsElsewhere(inst.value))
     return {
       label: 'chooser.statusRunning',
       markerClass: 'chooser-tile-status--running',
@@ -160,14 +161,18 @@ const statusPill = computed<{
 })
 
 const showWhyCloudTrigger = computed(
-  () => props.showWhyCloud && !hasError.value && !statusPill.value && !dangerTag.value
+  () =>
+    props.showWhyCloud &&
+    !hasError.value &&
+    !isRunning.value &&
+    !statusPill.value &&
+    !dangerTag.value
 )
 
 const startsWithDesktop = computed(() => props.autoStart && !isCloudBuild(inst.value))
-const restingLabel = computed(() => {
-  if (isCloudBuild(inst.value)) return t('home.buildAlwaysOn')
-  return startsWithDesktop.value ? t('home.autoStartOn') : t('home.buildReady')
-})
+const restingLabel = computed(() =>
+  startsWithDesktop.value ? t('home.autoStartOn') : t('home.buildReady')
+)
 
 const isFromBuild = computed(() => isBuildInstall(inst.value))
 
@@ -395,13 +400,8 @@ function openContextMenu(event: MouseEvent): void {
           <span class="truncate">{{ t(statusPill.label) }}</span>
         </span>
         <span v-else class="flex min-w-0 items-center gap-1.5">
-          <span
-            v-if="isCloudBuild(inst)"
-            class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
-            aria-hidden="true"
-          />
           <Power
-            v-else-if="startsWithDesktop"
+            v-if="startsWithDesktop"
             :size="12"
             class="shrink-0"
             aria-hidden="true"
@@ -411,7 +411,7 @@ function openContextMenu(event: MouseEvent): void {
           <span class="truncate">{{ restingLabel }}</span>
         </span>
         <span
-          v-if="props.showFreeRunsPill && !hasError && !statusPill && !dangerTag"
+          v-if="props.showFreeRunsPill && !hasError && !isRunning && !statusPill && !dangerTag"
           class="chooser-cloud-runs-pill ml-1 inline-flex h-4 shrink-0 items-center rounded-[5px] bg-foreground/10 px-1.5 text-[11px] font-medium whitespace-nowrap text-foreground"
           data-testid="chooser-cloud-runs-pill"
           ><span class="block lowercase first-letter:uppercase">{{

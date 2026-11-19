@@ -525,6 +525,22 @@ describe('Build menu', () => {
     expect(hint()).toBe('Click to start')
   })
 
+  it('opens the running build its ComfyUI log window from View logs, not the shell', async () => {
+    const openLogsWindow = vi.fn(async () => {})
+    const openInstancePicker = vi.fn()
+    Object.assign(window.api, { openLogsWindow, openInstancePicker })
+    const tile = await mountTile('running')
+
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    await shownMenu()
+    document.querySelector<HTMLElement>('[data-testid="build-menu-view-logs"]')!.click()
+    await flushPromises()
+
+    expect(openLogsWindow).toHaveBeenCalledExactlyOnceWith(BUILD.id)
+    expect(openInstancePicker).not.toHaveBeenCalled()
+    expect(viewLogs).not.toHaveBeenCalled()
+  })
+
   it('offers Cancel for a start left running by a window that went back to Home, and cancels it', async () => {
     const cancelOperation = vi.fn(async () => {})
     Object.assign(window.api, { cancelOperation, stopComfyUI: vi.fn(async () => {}) })
@@ -678,7 +694,7 @@ describe('Build menu', () => {
     const tile = await openMenuFrom('more')
 
     const line = autoStartLine()
-    expect(line.textContent?.trim()).toBe('Turn off Auto start')
+    expect(line.textContent?.trim()).toBe('Turn off auto start')
     expect(line.querySelector('.lucide-power-off')).not.toBeNull()
     line.click()
     await flushPromises()

@@ -16,7 +16,6 @@ import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installInputDir, installOutputDir } from './models'
 import { _runningSessions, sourceMap } from './ipc/shared'
-import { isPanelSender } from '../host/registry'
 import type {
   AssetKind,
   AssetSummary,
@@ -28,7 +27,6 @@ import type {
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
 
 const LIST_LOCAL_CHANNEL = 'assets:list-local'
-const FIND_DOWNLOADED_CHANNEL = 'assets:find-downloaded'
 const FOLDERS_CHANNEL = 'assets:output-folders'
 const OPEN_FOLDER_CHANNEL = 'assets:open-output-folder'
 export const MAX_LOCAL_ASSETS = 500
@@ -49,7 +47,6 @@ const thumbnailsInFlight = new Map<string, Promise<Buffer | null>>()
 const thumbnailQueue: (() => void)[] = []
 let thumbnailsRunning = 0
 let allowedRoots: string[] = []
-let downloadRoots: string[] = []
 let allowedRootsAt = 0
 
 export function sharedOutputDir(): string {
@@ -64,13 +61,6 @@ export function outputDirOverride(inst: InstallationRecord, sharedDir: string): 
 export function hasOutputFolder(inst: InstallationRecord): boolean {
   const source = sourceMap[inst.sourceId]
   return source?.category === 'local' && !source.managesOwnPaths
-}
-
-export function autoDownloadDir(inst: InstallationRecord): string | null {
-  if ((inst.autoDownloadOutputs as boolean | undefined) === false) return null
-  if ((inst.useSharedOutputDir as boolean | undefined) !== false) return sharedOutputDir()
-  const custom = inst.outputDir as string | undefined
-  return custom && custom.trim() !== '' ? custom : sharedOutputDir()
 }
 
 function outputDirFor(inst: InstallationRecord, sharedDir: string): string | null {
@@ -135,30 +125,16 @@ interface OutputFolders {
   ofBuild: Map<string, string>
 }
 
-async function realHome(): Promise<string> {
-  return (await realDir(os.homedir())) ?? os.homedir()
-}
-
-function holdsHome(dir: string, home: string): boolean {
-  return isInsideRoot(home, dir)
-}
-
 async function findOutputFolders(): Promise<OutputFolders> {
   const sharedDir = sharedOutputDir()
   const shared = await realDir(sharedDir)
   const ofBuild = new Map<string, string>()
-  const downloadedTo: string[] = []
   for (const inst of await installations.list()) {
     const dir = outputDirFor(inst, sharedDir)
     const real = dir ? await realDir(dir) : null
     if (real) ofBuild.set(inst.id, real)
-    const downloads = hasOutputFolder(inst) ? null : autoDownloadDir(inst)
-    const realDownloads = downloads ? await realDir(downloads) : null
-    if (realDownloads) downloadedTo.push(realDownloads)
   }
   const all = [...new Set([...(shared ? [shared] : []), ...ofBuild.values()])]
-  const home = await realHome()
-  downloadRoots = downloadedTo.filter((dir) => !holdsHome(dir, home))
   allowedRoots = all
   allowedRootsAt = Date.now()
   return { all, shared, ofBuild }
@@ -235,32 +211,24 @@ export async function comfyOutputPath(
   return (await hasSameBytes(real, bytes)) ? real : null
 }
 
-async function openableFilePath(target: string): Promise<string | null> {
-  if (!path.isAbsolute(target)) return null
-  const real = await fsp.realpath(target).catch(() => null)
-  if (!real) return null
-  const inside = (): boolean =>
-    [...allowedRoots, ...downloadRoots].some((root) => isInsideRoot(real, root))
-  if (Date.now() - allowedRootsAt > ROOTS_FRESH_MS || !inside()) await findOutputFolders()
-  if (!inside()) return null
-  const stat = await fsp.stat(real).catch(() => null)
-  return stat?.isFile() ? real : null
-}
-
 export async function revealOutputFile(target: string): Promise<boolean> {
-  const file = await openableFilePath(target)
+  const file = await outputFilePath(target)
   if (!file) return false
   shell.showItemInFolder(file)
   return true
 }
 
 export async function openOutputFile(target: string): Promise<boolean> {
-  const file = await openableFilePath(target)
+  const file = await outputFilePath(target)
   if (!file) return false
-  const kind = assetKind(file)
-  const opened = kind !== null && SERVED_KINDS.has(kind) && (await shell.openPath(file)) === ''
+  const opened = opensInApp(file) && (await shell.openPath(file)) === ''
   if (!opened) shell.showItemInFolder(file)
   return true
+}
+
+function opensInApp(file: string): boolean {
+  const kind = assetKind(file)
+  return kind !== null && SERVED_KINDS.has(kind) && path.extname(file).toLowerCase() !== '.svg'
 }
 
 export async function trashOutputFile(target: string): Promise<boolean> {
@@ -354,79 +322,6 @@ function countKinds(assets: AssetSummary[]): LocalAssetListing['counts'] {
   const counts = { all: assets.length, image: 0, video: 0, audio: 0, '3d': 0 }
   for (const { kind } of assets) if (kind) counts[kind]++
   return counts
-}
-
-export interface OutputCopyQuery {
-  id: string
-  name: string
-  sizeBytes: number | null
-  createdAt: string | null
-}
-
-const SAVED_BEFORE_MADE_SLACK_MS = 60_000
-
-const MAX_COPY_QUERIES = 500
-
-function copyQueries(value: unknown): OutputCopyQuery[] {
-  if (!Array.isArray(value)) return []
-  return value.slice(0, MAX_COPY_QUERIES).flatMap((item: unknown) => {
-    if (!item || typeof item !== 'object') return []
-    const { id, name, sizeBytes, createdAt } = item as Record<string, unknown>
-    return typeof id === 'string' &&
-      typeof name === 'string' &&
-      (sizeBytes === null || isCount(sizeBytes, 0, Number.MAX_SAFE_INTEGER)) &&
-      (createdAt === null || typeof createdAt === 'string')
-      ? [{ id, name, sizeBytes, createdAt }]
-      : []
-  })
-}
-
-interface DownloadedCandidate {
-  file: string
-  size: number
-  savedMs: number
-}
-
-function withoutCopyNumber(name: string): string {
-  return name.replace(/ \(\d+\)(?=\.[^.]+$)/, '')
-}
-
-export async function findDownloadedOutputs(
-  installationId: string,
-  wanted: OutputCopyQuery[]
-): Promise<Record<string, string>> {
-  const inst = (await installations.list()).find((each) => each.id === installationId)
-  const dir = inst && !hasOutputFolder(inst) ? autoDownloadDir(inst) : null
-  const root = dir ? await realDir(dir) : null
-  const sized = wanted.filter((item) => item.sizeBytes !== null)
-  if (!root || sized.length === 0 || holdsHome(root, await realHome())) return {}
-  const names = new Set(sized.map((item) => item.name))
-  const exact = new Map<string, DownloadedCandidate[]>()
-  const renamed = new Map<string, DownloadedCandidate[]>()
-  for (const file of await collectMediaFiles(root)) {
-    const name = path.basename(file)
-    const stripped = withoutCopyNumber(name)
-    if (!names.has(name) && !names.has(stripped)) continue
-    const stat = await fsp.lstat(file).catch(() => null)
-    if (!stat?.isFile()) continue
-    const candidate = { file, size: stat.size, savedMs: stat.mtimeMs }
-    exact.set(name, [...(exact.get(name) ?? []), candidate])
-    if (stripped !== name) renamed.set(stripped, [...(renamed.get(stripped) ?? []), candidate])
-  }
-  const found: Record<string, string> = {}
-  const taken = new Set<string>()
-  for (const item of sized) {
-    const madeMs = item.createdAt ? Date.parse(item.createdAt) : Number.NaN
-    const fits = (candidate: DownloadedCandidate): boolean =>
-      !taken.has(candidate.file) &&
-      candidate.size === item.sizeBytes &&
-      (Number.isNaN(madeMs) || candidate.savedMs >= madeMs - SAVED_BEFORE_MADE_SLACK_MS)
-    const copy = exact.get(item.name)?.find(fits) ?? renamed.get(item.name)?.find(fits)
-    if (!copy) continue
-    taken.add(copy.file)
-    found[item.id] = copy.file
-  }
-  return found
 }
 
 function nameContains(search: string): (asset: AssetSummary) => boolean {
@@ -610,11 +505,6 @@ export function registerOutputFilesScheme(): void {
 
 export function registerOutputFolderHandlers(): void {
   protocol.handle(OUTPUT_FILES_SCHEME, serveOutputFile)
-  ipcMain.handle(FIND_DOWNLOADED_CHANNEL, (event, installationId: unknown, wanted: unknown) =>
-    isPanelSender(event.sender) && typeof installationId === 'string'
-      ? findDownloadedOutputs(installationId, copyQueries(wanted))
-      : {}
-  )
   ipcMain.handle(FOLDERS_CHANNEL, () => outputFolderPaths())
   ipcMain.handle(OPEN_FOLDER_CHANNEL, (_event, installationId: unknown) =>
     openOutputFolder(typeof installationId === 'string' ? installationId : undefined)

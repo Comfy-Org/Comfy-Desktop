@@ -142,6 +142,7 @@ const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newes
 const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
 const searchOpen = ref(false)
+const placePickerOpen = ref(false)
 const toolbarRow = useTemplateRef<HTMLElement>('toolbarRow')
 const toolbarCompactness = ref(0)
 const SEARCH_AS_ICON = 1
@@ -158,7 +159,6 @@ const pageSize = ref(DEFAULT_PAGE_SIZE)
 const currentPage = ref(1)
 const assetTotal = ref(0)
 const localCounts = ref<LocalAssetListing['counts'] | null>(null)
-const downloadedCopies = ref(new Map<string, string>())
 const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 
@@ -262,6 +262,10 @@ const selectedBuild = computed<AssetBuild | null>(() => {
   )
 })
 
+watch(selectedBuild, (build) => {
+  if (!build) placePickerOpen.value = false
+})
+
 function choosePlace(id: string): void {
   pickedPlace.value = id
   focusMiss.value = null
@@ -331,6 +335,7 @@ function placeSubtitle(option: AssetBuild): string | null {
 const revealFolderLabel = computed(() => t(revealInFolderKey(window.api.platform)))
 
 async function openPlaceFolder(option: AssetBuild): Promise<void> {
+  placePickerOpen.value = false
   const opened = await window.api
     .openOutputFolder(option.computer ? undefined : option.build.id)
     .catch(() => false)
@@ -587,29 +592,6 @@ function localPage(selected: AssetBuild, pageNumber: number): Promise<LocalAsset
   })
 }
 
-async function findDownloadedCopies(
-  cloudId: string,
-  listed: GalleryAsset[],
-  request: number
-): Promise<void> {
-  const wanted = listed.map(({ id, name, sizeBytes, createdAt }) => ({
-    id,
-    name,
-    sizeBytes,
-    createdAt
-  }))
-  const found = await window.api
-    .findDownloadedOutputs(cloudId, wanted)
-    .catch((): Record<string, string> => ({}))
-  if (request !== requestId) return
-  downloadedCopies.value = new Map(
-    listed.flatMap((asset) => {
-      const file = found[asset.id]
-      return file ? [[cardKey(asset), file] as const] : []
-    })
-  )
-}
-
 function prefetchPage(cloudId: string, pageNumber: number): void {
   if (pageNumber > pageCount.value) return
   prefetchHandle = requestIdleCallback(() => void cloudPage(cloudId, pageNumber).catch(() => {}), {
@@ -690,7 +672,6 @@ async function loadAssets(userAsked = false): Promise<void> {
       cloudScanLimit.value = listed.scanLimit
     }
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
-    if (cloud) void findDownloadedCopies(cloud.id, assets.value, current)
     if (cloud && pendingFocus.value && pendingFocus.value !== wanted) {
       void loadAssets(userAsked)
       return
@@ -739,7 +720,6 @@ const listQuery = computed(() =>
 watch([loadKey, listedCloudId], () => {
   resetCloudPaging()
   localCounts.value = null
-  downloadedCopies.value = new Map()
   currentPage.value = 1
   focusMiss.value = null
   lookedUpDetail.value = null
@@ -845,8 +825,8 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     tags: asset.tags,
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
-    savedIn: savedFolderOf(asset),
-    mainAction: mainAction(asset),
+    savedIn: isLocal(asset) ? folderOf(asset.id) : null,
+    mainAction: isLocal(asset) ? null : 'download',
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
@@ -926,30 +906,21 @@ function folderOf(file: string): string {
   return file.slice(0, Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')))
 }
 
-function savedFolderOf(asset: GalleryAsset): string | null {
-  const file = fileOnDisk(asset)
-  return file ? folderOf(file) : null
+async function reveal(asset: GalleryAsset): Promise<void> {
+  const shown = await window.api.revealAsset(asset.source, asset.id).catch(() => false)
+  if (!shown) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
 }
 
-function fileOnDisk(asset: GalleryAsset): string | null {
-  return isLocal(asset) ? asset.id : (downloadedCopies.value.get(cardKey(asset)) ?? null)
-}
-
-function reveal(asset: GalleryAsset): void {
-  const file = fileOnDisk(asset)
-  if (file) void window.api.revealAsset(LOCAL_ASSETS_SOURCE, file)
-}
+const OPENS_IN_APP: readonly (AssetKind | null)[] = ['image', 'video', 'audio']
 
 function mainAction(asset: GalleryAsset): 'download' | 'open' | null {
-  if (!fileOnDisk(asset)) return 'download'
-  return asset.kind === '3d' ? null : 'open'
+  if (!isLocal(asset)) return 'download'
+  const vector = asset.name.toLowerCase().endsWith('.svg')
+  return OPENS_IN_APP.includes(asset.kind) && !vector ? 'open' : null
 }
 
 async function openLocally(asset: GalleryAsset): Promise<void> {
-  const file = fileOnDisk(asset)
-  const opened = file
-    ? await window.api.openAsset(LOCAL_ASSETS_SOURCE, file).catch(() => false)
-    : false
+  const opened = await window.api.openAsset(asset.source, asset.id).catch(() => false)
   if (!opened) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
 }
 
@@ -978,7 +949,7 @@ const assetMenuItems = computed<ContextMenuItem[]>(() => {
     ...(action === 'download'
       ? [{ id: 'download', label: t('assets.download'), icon: Download }]
       : []),
-    ...(fileOnDisk(asset)
+    ...(isLocal(asset)
       ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: ScanSearch }]
       : []),
     ...(asset.kind === 'image' && asset.previewUrl
@@ -1038,7 +1009,7 @@ async function runAssetAction(action: string): Promise<void> {
   if (!asset) return
   if (action === 'download') await download(asset)
   else if (action === 'open') await openLocally(asset)
-  else if (action === 'reveal') reveal(asset)
+  else if (action === 'reveal') await reveal(asset)
   else if (action === 'copy') await copy(asset)
   else if (action === 'delete') await moveToTrash(asset)
 }
@@ -1078,7 +1049,7 @@ function extensionOf(name: string): string {
     data-testid="assets-view"
   >
     <header class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
-      <h1 class="m-0 font-display text-display font-semibold text-foreground">
+      <h1 class="m-0 text-display font-semibold tracking-[-0.055em] text-foreground">
         {{ t('sidebar.assets') }}
       </h1>
     </header>
@@ -1094,6 +1065,7 @@ function extensionOf(name: string): string {
       >
         <Menu
           v-if="selectedBuild"
+          v-model:open="placePickerOpen"
           :modal="false"
           align="start"
           :side-offset="6"
@@ -1191,16 +1163,18 @@ function extensionOf(name: string): string {
                   :text="revealFolderLabel"
                   class="absolute top-1/2 right-7.5 -translate-y-1/2"
                 >
-                  <MenuItem
-                    as="button"
+                  <Button
                     type="button"
-                    class="size-6.5 min-h-0 justify-center rounded-md p-0 text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-foreground"
+                    variant="link"
+                    size="icon-sm"
+                    tabindex="-1"
+                    class="size-6.5 rounded-md"
                     :aria-label="`${revealFolderLabel}: ${option.build.name}`"
                     :data-testid="`assets-place-reveal-${option.build.id}`"
-                    @select="openPlaceFolder(option)"
+                    @click="openPlaceFolder(option)"
                   >
                     <ScanSearch :size="15" aria-hidden="true" />
-                  </MenuItem>
+                  </Button>
                 </Tooltip>
               </div>
             </template>
@@ -1615,7 +1589,6 @@ function extensionOf(name: string): string {
       :items="detailItems"
       @close="closeDetail"
       @download="download(detailAssets[$event]!)"
-      @open="openLocally(detailAssets[$event]!)"
       @show-in-folder="reveal(detailAssets[$event]!)"
     />
 

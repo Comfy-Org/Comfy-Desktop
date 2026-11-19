@@ -8,7 +8,7 @@ import InstancePickerView from './InstancePickerView.vue'
 
 const START_DECISION: NavDecision = { verb: 'start', primaryLabel: NAV_LABEL.start }
 const RESTART_DECISION: NavDecision = { verb: 'restart', primaryLabel: NAV_LABEL.restart }
-const FOCUS_DECISION: NavDecision = { verb: 'focus', primaryLabel: NAV_LABEL.switch }
+const FOCUS_DECISION: NavDecision = { verb: 'focus', primaryLabel: NAV_LABEL.openRunning }
 import type { SnapshotListData } from '../types/ipc'
 
 vi.mock('../views/comfyUISettings/ConsoleTerminalPane.vue', () => ({
@@ -573,7 +573,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       expect(bridge.restarts).toEqual([])
     })
 
-    it('keeps Switch from the dashboard for a build another window is starting', async () => {
+    it('keeps Open from the dashboard for a build another window is starting', async () => {
       const wrapper = await mountPicker({
         installs: [makeInstall({ id: 'a', name: 'Alpha', sourceCategory: 'local' })],
         activeInstallationId: null,
@@ -584,7 +584,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       })
       await flushPromises()
       const primary = wrapper.get('[data-testid="picker-primary-cta"]')
-      expect(primary.text()).toBe('Switch')
+      expect(primary.text()).toBe('Open')
       await primary.trigger('click')
       await flushPromises()
       expect(bridge.picks).toEqual(['a'])

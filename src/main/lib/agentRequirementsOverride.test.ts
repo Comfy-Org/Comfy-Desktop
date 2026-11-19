@@ -23,7 +23,8 @@ import {
   readFrontendPin,
   readOverrideState,
   reportAgentCoreFailure,
-  reportOverrideDecision
+  reportOverrideDecision,
+  resolveOverride
 } from './agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from './agentRequirementsOverride'
 import type { InstallationRecord } from '../installations'
@@ -709,6 +710,32 @@ describe('reportOverrideDecision', () => {
       reportOverrideDecision('i', { decision: 'refused', reason: 'bad_version' })
     ).not.toThrow()
   })
+
+  it('reports an agent-only apply as applied with reason frontend_not_newer, a plain one with none', () => {
+    const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
+    emit.mockClear()
+    try {
+      const agent = pins({ 'comfy-agent': '0.2.3' })
+      reportOverrideDecision('i', {
+        decision: 'applied',
+        pins: agent,
+        reason: 'frontend_not_newer'
+      })
+      reportOverrideDecision('i', { decision: 'applied', pins: agent })
+
+      expect(
+        emit.mock.calls.map(([, props]) => {
+          const { decision, reason, pins } = props as Record<string, unknown>
+          return { decision, reason, pins }
+        })
+      ).toEqual([
+        { decision: 'applied', reason: 'frontend_not_newer', pins: 'comfy-agent==0.2.3' },
+        { decision: 'applied', reason: null, pins: 'comfy-agent==0.2.3' }
+      ])
+    } finally {
+      emit.mockRestore()
+    }
+  })
 })
 
 describe('reportAgentCoreFailure', () => {
@@ -842,6 +869,103 @@ describe('the frontend package', () => {
     expect(readFrontendPin(record({ version: '1.55.19' }))).toBe('1.55.19')
     for (const bad of [undefined, null, 'x', { version: 3 }])
       expect(readFrontendPin(record(bad))).toBeNull()
+  })
+})
+
+describe("resolveOverride: a frontend pin no newer than ComfyUI's", () => {
+  const AGENT = 'comfy-agent==0.2.0\ncomfy-cli==1.21.0\n'
+  const MAIN = 'torch\ncomfyui-frontend-package==1.55.18\n'
+  const AGENT_ONLY = 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n'
+
+  it.each(['1.55.18', '1.55.17'])(
+    'drops a frontend pin at %s and applies the agent pin beside it',
+    (frontend) => {
+      const both = pins({ 'comfy-agent': '0.2.3', 'comfyui-frontend-package': frontend })
+      expect(resolveOverride(AGENT, both, MAIN)).toEqual({
+        kind: 'text',
+        text: AGENT_ONLY,
+        pins: pins({ 'comfy-agent': '0.2.3' })
+      })
+    }
+  )
+
+  it('applies a newer frontend pin with the agent pin, as before', () => {
+    const both = pins({ 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.19' })
+    expect(resolveOverride(AGENT, both, MAIN)).toEqual({
+      kind: 'text',
+      text: `${AGENT_ONLY}comfyui-frontend-package==1.55.19\n`,
+      pins: both
+    })
+  })
+
+  it('refuses a frontend-only pin that is not newer, leaving nothing to apply', () => {
+    for (const frontend of ['1.55.18', '1.55.17'])
+      expect(
+        resolveOverride(AGENT, pins({ 'comfyui-frontend-package': frontend }), MAIN),
+        frontend
+      ).toEqual({ kind: 'refused', reason: 'not_newer' })
+  })
+
+  it('refuses the whole override when the agent pin is not newer, whatever the frontend', () => {
+    for (const frontend of ['1.55.17', '1.55.19'])
+      expect(
+        resolveOverride(
+          AGENT,
+          pins({ 'comfy-agent': '0.2.0', 'comfyui-frontend-package': frontend }),
+          MAIN
+        ),
+        frontend
+      ).toEqual({ kind: 'refused', reason: 'not_newer' })
+  })
+
+  it("keeps every other refusal when the frontend isn't newer either", () => {
+    const old = { 'comfyui-frontend-package': '1.55.17' }
+    expect(
+      resolveOverride(
+        AGENT,
+        pins({ 'comfy-agent': '0.2.3', ...old }),
+        'comfyui-frontend-package>=1.55\n'
+      ),
+      "a frontend line ComfyUI doesn't pin exactly is refused, not dropped"
+    ).toEqual({ kind: 'refused', reason: 'unsupported_line' })
+    expect(
+      resolveOverride('comfy-agent>=0.2\n', pins({ 'comfy-agent': '0.2.3', ...old }), MAIN)
+    ).toEqual({ kind: 'refused', reason: 'unsupported_line' })
+    expect(
+      resolveOverride('comfy-agent==0.2.0\n', pins({ 'comfy-cli': '1.22.0', ...old }), MAIN),
+      'comfy-cli is not in the file, so the agent pins cannot apply alone either'
+    ).toEqual({ kind: 'refused', reason: 'not_newer' })
+  })
+
+  it("still refuses a frontend pin ComfyUI's requirements.txt doesn't name", () => {
+    expect(
+      resolveOverride(
+        AGENT,
+        pins({ 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.17' }),
+        'torch\n'
+      )
+    ).toEqual({ kind: 'refused', reason: 'not_in_core_file' })
+  })
+
+  it("applies the campaign's go-nonfree agent and Go carrier over ComfyUI v0.46.0's frontend", () => {
+    const campaign = parseAgentRequirementsOverride({
+      'comfy-agent[go-nonfree]': '0.1.1',
+      'comfy-agent-go': '0.1.1',
+      'comfyui-frontend-package': '1.59.2'
+    })
+    if (campaign.kind !== 'pins') throw new Error('the campaign payload must parse')
+    const result = resolveOverride(
+      'comfy-agent\n',
+      campaign.pins,
+      'comfyui-frontend-package==1.59.6\n'
+    )
+    expect(result).toMatchObject({
+      kind: 'text',
+      text: 'comfy-agent[go-nonfree]==0.1.1\ncomfy-agent-go==0.1.1\n'
+    })
+    expect(result.kind === 'text' && overrideSignature(result.pins)).toBe(
+      'comfy-agent-go==0.1.1,comfy-agent[go-nonfree]==0.1.1'
+    )
   })
 })
 

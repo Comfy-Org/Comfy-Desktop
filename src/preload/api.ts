@@ -57,6 +57,8 @@ export function buildElectronApi(): ElectronApi {
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),
     logsSnapshot: (installationId: string): Promise<string> =>
       ipcRenderer.invoke('logs-snapshot', installationId),
+    openLogsWindow: (installationId: string): Promise<void> =>
+      ipcRenderer.invoke('logs-popout-open', installationId),
     validateInstallPath: (targetPath) => ipcRenderer.invoke('validate-install-path', targetPath),
     getInstallationSize: (installationId) =>
       ipcRenderer.invoke('get-installation-size', installationId),
@@ -112,8 +114,6 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
     revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),
     openAsset: (source, assetId) => ipcRenderer.invoke('assets:open', source, assetId),
-    findDownloadedOutputs: (installationId, wanted) =>
-      ipcRenderer.invoke('assets:find-downloaded', installationId, wanted),
     findCloudAsset: (installationId, name) =>
       ipcRenderer.invoke('assets:find', installationId, name),
     copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),

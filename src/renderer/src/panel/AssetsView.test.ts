@@ -25,7 +25,6 @@ const listLocalAssets = vi.fn()
 const downloadAsset = vi.fn()
 const revealAsset = vi.fn()
 const openAsset = vi.fn()
-const findDownloadedOutputs = vi.fn()
 const openOutputFolder = vi.fn()
 const copyAsset = vi.fn()
 const readAssetModel = vi.fn()
@@ -244,7 +243,7 @@ beforeEach(() => {
   window.localStorage.clear()
   listLocalAssets.mockResolvedValue([])
   openAsset.mockResolvedValue(true)
-  findDownloadedOutputs.mockResolvedValue({})
+  revealAsset.mockResolvedValue(true)
   openOutputFolder.mockResolvedValue(true)
   listWorkspaces.mockResolvedValue([
     { id: 'me', name: 'Personal Workspace', type: 'personal' },
@@ -271,7 +270,6 @@ beforeEach(() => {
     downloadAsset,
     revealAsset,
     openAsset,
-    findDownloadedOutputs,
     openOutputFolder,
     listOutputFolders: async () => ({
       home: '/Users/me',
@@ -778,21 +776,61 @@ describe('AssetsView', () => {
     ).toBe(true)
   })
 
-  it('reaches Show in Finder with the arrow keys and opens the folder with Enter', async () => {
+  it('moves between rows with the arrow keys and never stops on Show in Finder', async () => {
+    const wrapper = await mountAssets([], {
+      builds: [localBuild('lab', 'Video Lab'), localBuild('art', 'Art Lab')]
+    })
+    await openBuildPicker(wrapper)
+    const press = async (key: string) => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      await flushPromises()
+    }
+    const focused = () => document.activeElement?.getAttribute('data-testid') ?? undefined
+    expect(buildRows().length, 'more than one row').toBeGreaterThan(1)
+
+    document.querySelector<HTMLElement>('[data-testid="assets-build-lab"]')!.focus()
+    const visited: (string | undefined)[] = []
+    for (let step = 0; step < 4; step++) {
+      await press('ArrowDown')
+      visited.push(focused())
+    }
+    await press('ArrowUp')
+    visited.push(focused())
+
+    expect(visited, 'focus moves to the next row').toContain('assets-build-art')
+    expect(visited.every((id) => id?.startsWith('assets-build-'))).toBe(true)
+  })
+
+  it('opens the picker closed again after it leaves and comes back', async () => {
     const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
     await openBuildPicker(wrapper)
-    const row = document.querySelector<HTMLElement>('[data-testid="assets-build-lab"]')!
-    const press = (key: string) =>
-      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    const installationStore = useInstallationStore()
 
-    row.focus()
-    press('ArrowDown')
+    installationStore.loading = true
+    installationStore.installations = []
+    await flushPromises()
+    expect(wrapper.find('[data-testid="assets-build-picker"]').exists()).toBe(false)
+    installationStore.installations = [localBuild('lab', 'Video Lab')]
+    installationStore.loading = false
     await flushPromises()
 
-    expect(document.activeElement?.getAttribute('data-testid')).toBe('assets-place-reveal-lab')
-    press('Enter')
+    expect(wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded')).toBe(
+      'false'
+    )
+  })
+
+  it('closes the picker when Show in Finder is clicked', async () => {
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    await openBuildPicker(wrapper)
+
+    document.querySelector<HTMLElement>('[data-testid="assets-place-reveal-lab"]')!.click()
     await flushPromises()
+
     expect(openOutputFolder).toHaveBeenCalledExactlyOnceWith('lab')
+    expect(wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded')).toBe(
+      'false'
+    )
+    expect(document.querySelector('[data-testid="assets-place-reveal-lab"]')).toBeNull()
   })
 
   it('says when a folder does not open', async () => {
@@ -969,6 +1007,17 @@ describe('AssetsView', () => {
     expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', 'm')
   })
 
+  it('shows an SVG or a file of no media kind in its folder instead of opening it', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/logo.svg', 'logo.svg', 'image'),
+      asset('/out/notes.txt', 'notes.txt', null)
+    ])
+
+    expect(wrapper.find('[data-testid="asset-open-file-/out/logo.svg"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="asset-reveal-/out/logo.svg"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="asset-reveal-/out/notes.txt"]').exists()).toBe(true)
+  })
+
   it('tells the user when a file on this computer does not open', async () => {
     openAsset.mockResolvedValue(false)
     const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
@@ -980,25 +1029,6 @@ describe('AssetsView', () => {
       title: "Couldn't open asset",
       message: 'forest.png'
     })
-  })
-
-  it('opens a Cloud output that Auto-Download already saved, and downloads one it did not', async () => {
-    findDownloadedOutputs.mockResolvedValue({ saved: '/out/saved.png' })
-    const wrapper = await mountAssets()
-    await signInWith([
-      asset('saved', 'saved.png', 'image', { sizeBytes: 2048 }),
-      asset('older', 'older.png', 'image')
-    ])
-    await flushPromises()
-
-    expect(findDownloadedOutputs).toHaveBeenLastCalledWith('cloud', [
-      { id: 'saved', name: 'saved.png', sizeBytes: 2048, createdAt: null },
-      { id: 'older', name: 'older.png', sizeBytes: 1024, createdAt: null }
-    ])
-    await wrapper.get('[data-testid="asset-open-file-saved"]').trigger('click')
-    expect(openAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/saved.png')
-    await wrapper.get('[data-testid="asset-download-older"]').trigger('click')
-    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('cloud', 'older', 'older.png')
   })
 
   it('downloads a Cloud file through the Cloud build', async () => {
@@ -1471,7 +1501,7 @@ describe('AssetsView', () => {
   })
 
   it('opens the asset menu on right-click instead of the browser menu, with actions for a file on this computer', async () => {
-    const wrapper = await mountAssets([picture('b', 300)])
+    const wrapper = await mountAssets([{ ...picture('b', 300), name: 'b.png' }])
 
     const event = await rightClick(wrapper.get('[data-testid="asset-b"]').element)
 
@@ -1629,21 +1659,47 @@ describe('AssetsView', () => {
     expect(viewer()!.querySelector('[data-testid="output-detail-show-in-folder"]')).toBeNull()
   })
 
-  it('opens the file on this computer that the viewer is showing', async () => {
-    openAsset.mockResolvedValue(true)
+  it('gives a file on this computer only Show in Finder in the viewer, for the file it is showing', async () => {
     const wrapper = await mountAssets([
-      asset('a', 'surfer.mp4', 'video', { createdAt: '2026-11-02T00:00:00Z' }),
-      asset('b', 'forest.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
+      asset('/out/surfer.mp4', 'surfer.mp4', 'video', { createdAt: '2026-11-02T00:00:00Z' }),
+      asset('/out/forest.png', 'forest.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
     ])
 
-    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+    await wrapper.get('[data-testid="asset-open-/out/surfer.mp4"]').trigger('click')
     await flushPromises()
     await press('ArrowRight')
     expect(document.querySelector('[data-testid="output-detail-download"]')).toBeNull()
-    document.querySelector<HTMLElement>('[data-testid="output-detail-open"]')!.click()
+    document.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
     await flushPromises()
 
-    expect(openAsset).toHaveBeenCalledExactlyOnceWith('local', 'b')
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/forest.png')
+    expect(openAsset).not.toHaveBeenCalled()
+  })
+
+  it('gives a file at the top of the disk Show in Finder in the viewer, even with no folder to show', async () => {
+    const wrapper = await mountAssets([asset('/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/forest.png"]').trigger('click')
+    await flushPromises()
+
+    expect(viewer()!.querySelector('[data-testid="output-detail-download"]')).toBeNull()
+    viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', '/forest.png')
+  })
+
+  it('tells the user when Show in Finder cannot find the file', async () => {
+    revealAsset.mockResolvedValue(false)
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+    viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't open asset",
+      message: 'forest.png'
+    })
   })
 
   it('gives a 3D file on this computer only Show in Finder in the viewer', async () => {
@@ -1652,7 +1708,6 @@ describe('AssetsView', () => {
     await wrapper.get('[data-testid="asset-open-/out/mesh.glb"]').trigger('click')
     await flushPromises()
 
-    expect(document.querySelector('[data-testid="output-detail-open"]')).toBeNull()
     expect(document.querySelector('[data-testid="output-detail-download"]')).toBeNull()
     expect(document.querySelector('[data-testid="output-detail-show-in-folder"]')).not.toBeNull()
   })

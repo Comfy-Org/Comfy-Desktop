@@ -180,17 +180,69 @@ describe('CoverRotation', () => {
     await expect.poll(() => wrapper.emitted('broken')).toHaveLength(1)
   })
 
-  it('stands still while it is paused', async () => {
+  it('shows a still while it is paused, with its moving cover loading hidden behind it', async () => {
     const wrapper = mountCovers(COVERS, { paused: true })
     await untilAllLoaded(wrapper)
-    const first = shownSrc(wrapper)
+    const still = shownSrc(wrapper)
+
+    expect(STILLS).toContain(still)
+    expect(layer(wrapper, 'shown').attributes('data-kind')).toBe('still')
+    const behind = layer(wrapper, 'upcoming')
+    expect(behind.attributes('data-kind')).toBe('cover')
+    expect(URLS).toContain(behind.attributes('src'))
+    expect(behind.classes()).toContain('opacity-0')
 
     vi.advanceTimersByTime(COVER_HOLD_MS * 6)
     await wrapper.vm.$nextTick()
-    expect(shownSrc(wrapper)).toBe(first)
+    expect(shownSrc(wrapper)).toBe(still)
+  })
+
+  it('plays the moving cover once it is no longer paused', async () => {
+    const wrapper = mountCovers(COVERS, { paused: true })
+    await untilAllLoaded(wrapper)
 
     await wrapper.setProps({ paused: false })
+    await untilAllLoaded(wrapper)
+    const first = shownSrc(wrapper)
+
+    expect(URLS).toContain(first)
+    expect(layer(wrapper, 'shown').attributes('data-kind')).toBe('cover')
     await untilTheCoverChanges(wrapper, first)
+  })
+
+  it('shows nothing moving while it is paused and the cover has no still', async () => {
+    const wrapper = mountCovers(
+      COVERS.map((cover) => ({ ...cover, stillUrl: null })),
+      { paused: true }
+    )
+    await untilAllLoaded(wrapper)
+
+    expect(layer(wrapper, 'shown').exists()).toBe(false)
+    expect(wrapper.findAll('img')).toHaveLength(1)
+    expect(layer(wrapper, 'upcoming').classes()).toContain('opacity-0')
+    expect(wrapper.emitted('broken')).toBeUndefined()
+  })
+
+  it('keeps the still of a paused card when its moving cover fails, also once it plays', async () => {
+    const broken = 'data:image/png;base64,broken'
+    const wrapper = mountCovers([{ ...COVERS[0]!, url: broken }], { paused: true })
+
+    await expect.poll(() => wrapper.findAll('img')).toHaveLength(1)
+    await untilAllLoaded(wrapper)
+    expect(shownSrc(wrapper)).toBe(STILLS[0])
+    expect(wrapper.emitted('broken')).toBeUndefined()
+
+    await wrapper.setProps({ paused: false })
+    await untilAllLoaded(wrapper)
+    expect(shownSrc(wrapper)).toBe(STILLS[0])
+    expect(wrapper.emitted('broken')).toBeUndefined()
+  })
+
+  it('reports broken when a paused card has no still and its moving cover fails', async () => {
+    const broken = 'data:image/png;base64,broken'
+    const wrapper = mountCovers([{ url: broken, stillUrl: null }], { paused: true })
+
+    await expect.poll(() => wrapper.emitted('broken')).toHaveLength(1)
   })
 
   it('stands still while it is off screen', async () => {
