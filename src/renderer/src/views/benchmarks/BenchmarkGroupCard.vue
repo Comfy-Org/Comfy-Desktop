@@ -508,7 +508,7 @@ function toggleBaseline(id: string): void {
                 @drop="drop($event, row.benchmark.id)"
               >
                 <td
-                  class="benchmarks__session sticky left-0 z-[1] max-w-65 min-w-40 !pr-14 !pl-[18px]"
+                  class="benchmarks__session sticky left-0 z-[1] max-w-[254px] min-w-40 !pr-14 !pl-[18px]"
                 >
                   <div
                     class="benchmarks__select absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-1"
@@ -545,7 +545,7 @@ function toggleBaseline(id: string): void {
                       @update:model-value="emit('toggleSelected', row.benchmark.id)"
                     />
                   </div>
-                  <div class="benchmarks__session-body max-w-[186px] min-w-0">
+                  <div class="benchmarks__session-body max-w-[180px] min-w-0">
                     <BenchmarkSessionName
                       :ref="(component) => rememberSessionName(row.benchmark.id, component)"
                       :name="row.benchmark.id"

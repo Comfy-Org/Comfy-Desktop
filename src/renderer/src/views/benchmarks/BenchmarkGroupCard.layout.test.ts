@@ -194,7 +194,9 @@ describe('Benchmarks session cell', () => {
         controlsBox.left - Math.max(textBox(name).right, textBox(meta).right)
       ).toBeGreaterThanOrEqual(8)
       expect(meta.scrollWidth).toBeLessThanOrEqual(meta.clientWidth)
-      expect(cellBox.width).toBeLessThan(262)
+      expect(
+        cell.querySelector('.benchmarks__session-body')!.getBoundingClientRect().width
+      ).toBeLessThanOrEqual(180)
       await userEvent.unhover(cell, { force: true })
     }
   )
@@ -210,7 +212,9 @@ describe('Benchmarks session cell', () => {
 
     const cellBox = cell.getBoundingClientRect()
     const controlsLeft = controls.getBoundingClientRect().left
-    expect(cellBox.width).toBeLessThan(262)
+    expect(
+      cell.querySelector('.benchmarks__session-body')!.getBoundingClientRect().width
+    ).toBeLessThanOrEqual(180)
     expect(name.scrollWidth).toBeGreaterThan(name.clientWidth)
     expect(name.getBoundingClientRect().right).toBeLessThanOrEqual(controlsLeft - 8)
     expect(meta.getBoundingClientRect().right).toBeLessThanOrEqual(controlsLeft - 8)
