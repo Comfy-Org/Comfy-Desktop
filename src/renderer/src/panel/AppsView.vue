@@ -9,6 +9,7 @@ import AppBadges from './AppBadges.vue'
 import CoverRotation from '../components/CoverRotation.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { badgeDescriptionIds } from './appCardBadges'
 import type { AppCard } from '../types/ipc'
@@ -67,6 +68,11 @@ function rhythmSpanClass(index: number): string {
   const medium = index % 5 < 2 ? '@3xl:col-span-3' : '@3xl:col-span-2'
   const wide = index % 7 < 3 ? '@5xl:col-span-4' : '@5xl:col-span-3'
   return `${medium} ${wide}`
+}
+
+function nameIsClipped(id: string): boolean {
+  const name = cardButtons.get(id)?.querySelector<HTMLElement>('[data-testid="app-card-name"]')
+  return !!name && name.scrollWidth > name.clientWidth
 }
 
 function rememberCard(id: string, element: unknown): void {
@@ -279,7 +285,11 @@ onBeforeUnmount(() => {
               >
                 <ArrowUpRight :size="16" :stroke-width="2.25" />
               </span>
-              <span class="absolute inset-x-3.5 bottom-3 grid">
+              <Tooltip
+                class="absolute inset-x-3.5 bottom-3 pt-4.5 [&.tooltip-wrap]:grid"
+                :text="app.title"
+                :should-open="() => nameIsClipped(app.id)"
+              >
                 <span
                   data-testid="app-card-name"
                   class="truncate text-sm/[17px] font-semibold text-white transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] group-hover:-translate-y-4.5 group-focus-visible:-translate-y-4.5 motion-reduce:transition-none"
@@ -291,7 +301,7 @@ onBeforeUnmount(() => {
                 >
                   {{ app.description }}
                 </span>
-              </span>
+              </Tooltip>
             </button>
           </li>
         </ul>

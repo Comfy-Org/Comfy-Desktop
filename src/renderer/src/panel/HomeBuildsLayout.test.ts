@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page as browserPage } from 'vitest/browser'
+import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -180,5 +180,34 @@ describe('Home build tiles', () => {
     expect(moreBox.right).toBeLessThanOrEqual(tileBox.right)
     expect(moreBox.top + moreBox.height / 2).toBeCloseTo(tileBox.top + tileBox.height / 2, 0)
     wrapper.unmount()
+  })
+})
+
+describe('Home build tile names', () => {
+  const bubble = () => document.querySelector('[role="tooltip"]')?.textContent?.trim() ?? null
+
+  async function hoverTileOf(id: string): Promise<void> {
+    const wrapper = mount(HomeView, { attachTo: host })
+    await flushPromises()
+    const section = await layBuildsOut(MIN_WINDOW_BUILDS_WIDTH)
+    const tile = section.querySelector<HTMLElement>(`[data-build-id="${id}"]`)!
+    await userEvent.hover(tile.querySelector<HTMLElement>('[data-testid="home-build-open"]')!)
+  }
+
+  it('adds the full name to the hint when the tile cuts the name short', async () => {
+    const name = 'My ComfyUI Build for the long weekend of video experiments and upscaling'
+    vi.mocked(window.api.getInstallations).mockResolvedValue([{ ...READY, name }, CLOUD])
+
+    await hoverTileOf(READY.id)
+
+    await expect.poll(bubble).toBe(`${name} · Click to start`)
+  })
+
+  it('keeps the hint alone when the whole name fits', async () => {
+    vi.mocked(window.api.getInstallations).mockResolvedValue([READY, CLOUD])
+
+    await hoverTileOf(READY.id)
+
+    await expect.poll(bubble).toBe('Click to start')
   })
 })

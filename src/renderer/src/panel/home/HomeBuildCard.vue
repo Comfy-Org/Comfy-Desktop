@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, shallowRef, useTemplateRef } from 'vue'
+import { computed, ref, shallowRef, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Ellipsis, LoaderCircle, OctagonAlert, Power } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
@@ -117,6 +117,17 @@ const openHint = computed(() => {
     return t('home.buildClickToOpen')
   return t('home.buildClickToStart')
 })
+const nameLabel = useTemplateRef<HTMLElement>('nameLabel')
+const nameClipped = ref(false)
+
+function measureName(): void {
+  const label = nameLabel.value
+  nameClipped.value = !!label && label.scrollWidth > label.clientWidth
+}
+
+const cardHint = computed(() =>
+  nameClipped.value ? [build.name, openHint.value].filter(Boolean).join(' · ') : openHint.value
+)
 const testId = computed(() => (busy.value ? busyTestId.value : 'home-build'))
 
 function onClick(): void {
@@ -159,11 +170,12 @@ function openContextMenu(event: MouseEvent): void {
     :data-build-id="build.id"
     @click="onClick"
     @contextmenu.prevent="openContextMenu"
+    @pointerenter="measureName"
   >
     <Tooltip
       v-if="!uninstalling && !promoting"
       class="absolute inset-0 flex"
-      :text="openHint"
+      :text="cardHint"
       :disabled="!canOpen"
       side="top"
       :delay-ms="500"
@@ -176,6 +188,7 @@ function openContextMenu(event: MouseEvent): void {
         :aria-label="`${build.name}, ${statusLabel}`"
         :disabled="!canOpen"
         data-testid="home-build-open"
+        @focus="measureName"
       />
     </Tooltip>
     <span
@@ -229,6 +242,7 @@ function openContextMenu(event: MouseEvent): void {
         <span class="truncate">{{ statusLabel }}</span>
       </span>
       <span
+        ref="nameLabel"
         class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground"
         data-testid="home-build-name"
       >

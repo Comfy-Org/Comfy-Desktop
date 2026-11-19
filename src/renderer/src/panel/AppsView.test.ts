@@ -324,6 +324,29 @@ describe('AppsView', () => {
     ).toBeGreaterThanOrEqual(4.5)
   })
 
+  it('shows the full name on hover only when the card cuts it short', async () => {
+    page.style.width = `${NARROW_PAGE_WIDTH}px`
+    const LONG = {
+      ...HDR,
+      id: 'long-name',
+      title: 'Turn any standard dynamic range picture or video into high dynamic range'
+    }
+    const wrapper = await mountApps([LONG, CUTOUT])
+    const bubble = () => document.querySelector('[role="tooltip"]')?.textContent?.trim() ?? null
+
+    await userEvent.hover(
+      wrapper.get('[data-testid="app-card-remove-background"] [data-testid="app-card-name"]')
+        .element
+    )
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(bubble()).toBeNull()
+
+    await userEvent.hover(
+      wrapper.get('[data-testid="app-card-long-name"] [data-testid="app-card-name"]').element
+    )
+    await expect.poll(bubble).toBe(LONG.title)
+  })
+
   it('narrows the cards to the apps whose name or description matches the search', async () => {
     const wrapper = await mountApps()
 
