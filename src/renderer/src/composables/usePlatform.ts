@@ -24,9 +24,7 @@ export function revealInFolderLabel(platform: string | undefined | null): string
       return 'Show in Finder'
     case 'windows':
       return 'Show in Explorer'
-    case 'linux':
-      return 'Show in folder'
     default:
-      return 'Open folder'
+      return 'Show in folder'
   }
 }

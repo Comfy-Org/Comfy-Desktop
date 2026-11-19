@@ -218,7 +218,7 @@ const placeholderTitle = computed<string>(() => {
           @click="returnToDashboard"
         >
           <ArrowLeft :size="14" />
-          {{ $t('common.back') }}
+          {{ $t('common.backToDashboard') }}
         </Button>
         <Button
           size="unset"
