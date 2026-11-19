@@ -344,6 +344,7 @@ let unsubAppUpdateUserActionFailed: (() => void) | null = null
 const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
 const { triggerAction: triggerInstallAction, viewError: viewBuildError } = useInstallContextMenu({
+  onStartAgain: (inst) => launchFromBuildDetails(inst),
   onManage: (inst, manageOpts) => {
     const autoAction = manageOpts?.autoAction ?? null
     const initialTab = manageOpts?.initialTab

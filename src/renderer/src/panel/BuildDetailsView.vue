@@ -71,10 +71,13 @@ const metaLine = computed(() =>
 )
 
 const failure = computed(() => buildFailure(installation, sessionStore, progressStore, t))
+const opensStartLogs = computed(
+  () => failure.value?.kind === 'didnt-start' && launchFailed(progressStore, installation.id)
+)
 const failureHint = computed(() => {
   const kind = failure.value?.kind
   if (!kind || kind === 'broken' || cardReplacesSettings.value) return ''
-  return kind === 'didnt-start' ? t('home.buildClickToViewLogs') : t('chooser.viewErrorTooltip')
+  return opensStartLogs.value ? t('home.buildClickToViewLogs') : t('chooser.viewErrorTooltip')
 })
 const startNotice = computed(() => {
   const kind = failure.value?.kind
@@ -92,7 +95,7 @@ const startNotice = computed(() => {
   }
 })
 function openFailure(): void {
-  if (failure.value?.kind === 'didnt-start') viewLogs()
+  if (opensStartLogs.value) viewLogs()
   else emit('view-error', installation)
 }
 
@@ -209,7 +212,7 @@ onUnmounted(() => unsubscribeSettings?.())
           :title="startNotice.title"
           :reason="startNotice.reason"
           :dismiss-label="null"
-          :retry-label="t('installProgress.viewLogs')"
+          :retry-label="opensStartLogs ? t('installProgress.viewLogs') : t('chooser.menuViewError')"
           @retry="openFailure"
         />
         <ComfyUISettingsContent

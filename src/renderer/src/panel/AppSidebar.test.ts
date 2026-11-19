@@ -600,6 +600,17 @@ describe('AppSidebar', () => {
       expect(row.get('.sr-only').text()).toBe("· Didn't start: Port 8188 is in use")
     })
 
+    it("says Didn't start, not Crashed, for a failed start with an exit code and no reason", async () => {
+      useSessionStore().errorInstances.set(OLD.id, {
+        installationName: OLD.name,
+        exitCode: 1,
+        startFailed: true
+      })
+      const wrapper = await mountSidebar('home', [OLD])
+
+      expect(tooltipOf(wrapper, 'app-sidebar-build-old')).toBe("Flux Sandbox · Didn't start")
+    })
+
     it('does not say a build failed to start when only its update failed', async () => {
       useSessionStore().errorInstances.set(OLD.id, {
         installationName: OLD.name,

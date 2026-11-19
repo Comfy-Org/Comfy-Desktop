@@ -61,6 +61,15 @@ export const useProgressStore = defineStore('progress', () => {
     }
   })
 
+  function supersedeFailedLaunch(data: { installationId: string }): void {
+    const op = operations.get(data.installationId)
+    if (!op || !op.finished || op.opKind !== 'launch' || !op.error) return
+    cleanupOperation(data.installationId)
+    operations.delete(data.installationId)
+  }
+  window.api.onInstanceLaunching?.(supersedeFailedLaunch)
+  window.api.onInstanceStarted?.(supersedeFailedLaunch)
+
   function emitOpResult(
     op: Operation,
     installationId: string,

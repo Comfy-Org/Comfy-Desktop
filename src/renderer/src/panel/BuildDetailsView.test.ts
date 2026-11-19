@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import BuildDetailsView from './BuildDetailsView.vue'
 import { useSessionStore } from '../stores/sessionStore'
+import { useProgressStore, type Operation } from '../stores/progressStore'
 import { provideBuildLogs } from '../composables/useBuildProgress'
 import type { Installation } from '../types/ipc'
 
@@ -33,6 +34,7 @@ const INSTALL: Installation = {
 }
 
 const unsubscribeSettings = vi.fn()
+const launchEvents: Record<string, (data: { installationId: string }) => void> = {}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -40,12 +42,34 @@ beforeEach(() => {
     getBuildStorageSnapshot: vi.fn().mockResolvedValue(SNAPSHOT),
     onSettingsChanged: vi.fn(() => unsubscribeSettings),
     onInstallationsChanged: vi.fn(() => () => {}),
-    onInstallationsVersionsUpdated: vi.fn(() => () => {})
+    onInstallationsVersionsUpdated: vi.fn(() => () => {}),
+    onInstanceLaunching: vi.fn((cb) => {
+      launchEvents.launching = cb
+      return () => {}
+    }),
+    onInstanceStarted: vi.fn((cb) => {
+      launchEvents.started = cb
+      return () => {}
+    })
   }
   setActivePinia(createPinia())
 })
 
 const viewBuildLogs = vi.fn()
+
+function failStart(message = 'Port 8188 is in use'): void {
+  useProgressStore().operations.set('a', {
+    opKind: 'launch',
+    finished: true,
+    cancelRequested: false,
+    error: message
+  } as Operation)
+  useSessionStore().errorInstances.set('a', {
+    installationName: 'Video Lab',
+    startFailed: true,
+    message
+  })
+}
 
 async function mountDetails(installation: Installation = INSTALL) {
   const Host = defineComponent({
@@ -97,11 +121,7 @@ describe('BuildDetailsView', () => {
 
   it("opens the start logs from the Didn't start chip, like the Home tile", async () => {
     const { wrapper } = await mountDetails()
-    useSessionStore().errorInstances.set('a', {
-      installationName: 'Video Lab',
-      startFailed: true,
-      message: 'Port 8188 is in use'
-    })
+    failStart()
     await flushPromises()
 
     await wrapper.get('[data-testid="build-details-failure"]').trigger('click')
@@ -109,6 +129,52 @@ describe('BuildDetailsView', () => {
     expect(viewBuildLogs).toHaveBeenCalledWith('a')
     expect(wrapper.emitted('view-error')).toBeUndefined()
   })
+
+  it("opens the error details from the Didn't start chip when this window has no start logs", async () => {
+    const { wrapper } = await mountDetails()
+    useSessionStore().errorInstances.set('a', {
+      installationName: 'Video Lab',
+      startFailed: true,
+      message: 'Port 8188 is in use'
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.build-details-status').text()).toBe("Didn't start")
+    await wrapper.get('[data-testid="build-details-failure"]').trigger('click')
+
+    expect(wrapper.emitted('view-error')).toEqual([[INSTALL]])
+    expect(viewBuildLogs).not.toHaveBeenCalled()
+  })
+
+  it.each(['launching', 'started'])(
+    "stops saying Didn't start once the build is %s again from any window",
+    async (event) => {
+      const { wrapper } = await mountDetails()
+      failStart()
+      await flushPromises()
+      expect(wrapper.get('.build-details-status').text()).toBe("Didn't start")
+
+      const sessions = useSessionStore()
+      sessions.errorInstances.delete('a')
+      if (event === 'started') {
+        sessions.runningInstances.set('a', {
+          installationId: 'a',
+          installationName: 'Video Lab',
+          mode: 'window'
+        })
+      } else {
+        sessions.launchingInstances.set('a', { installationName: 'Video Lab' })
+      }
+      launchEvents[event]!({ installationId: 'a' })
+      await flushPromises()
+
+      expect(wrapper.get('.build-details-status').text()).toBe(
+        event === 'started' ? 'Running' : 'Starting…'
+      )
+      expect(wrapper.find('[data-testid="build-start-failed"]').exists()).toBe(false)
+      expect(useProgressStore().operations.has('a')).toBe(false)
+    }
+  )
 
   it('opens the crash details from the Crashed chip, like the Builds tile', async () => {
     const { wrapper } = await mountDetails()
@@ -139,11 +205,7 @@ describe('BuildDetailsView', () => {
 
     it('names the failure and its reason above the tabs, with View logs as its one action', async () => {
       const { wrapper } = await mountDetails()
-      useSessionStore().errorInstances.set('a', {
-        installationName: 'Video Lab',
-        startFailed: true,
-        message: 'Port 8188 is in use'
-      })
+      failStart()
       await flushPromises()
 
       expect(notice(wrapper).get('h2').text()).toBe("ComfyUI didn't start")
@@ -177,15 +239,29 @@ describe('BuildDetailsView', () => {
 
     it('opens the start logs from View logs', async () => {
       const { wrapper } = await mountDetails()
-      useSessionStore().errorInstances.set('a', {
-        installationName: 'Video Lab',
-        startFailed: true
-      })
+      failStart()
       await flushPromises()
 
       await notice(wrapper).get('[data-testid="build-start-retry"]').trigger('click')
 
       expect(viewBuildLogs).toHaveBeenCalledWith('a')
+    })
+
+    it('offers View error, not an empty logs window, after an Auto start or earlier start failed', async () => {
+      const { wrapper } = await mountDetails()
+      useSessionStore().errorInstances.set('a', {
+        installationName: 'Video Lab',
+        startFailed: true,
+        message: 'Port 8188 is in use'
+      })
+      await flushPromises()
+
+      const action = notice(wrapper).get('[data-testid="build-start-retry"]')
+      expect(action.text()).toBe('View error')
+      await action.trigger('click')
+
+      expect(wrapper.emitted('view-error')).toEqual([[INSTALL]])
+      expect(viewBuildLogs).not.toHaveBeenCalled()
     })
 
     it('opens the crash details from View logs on a build that crashed', async () => {

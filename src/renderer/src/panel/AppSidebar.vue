@@ -182,8 +182,10 @@ function failureText(build: Installation): string | null {
   if (!failure) return null
   const error = sessionStore.errorInstances.get(build.id)
   if (failure.kind === 'broken' || !error) return failure.label
-  if (failure.kind === 'didnt-start' && error.message) {
-    return t('sidebar.failedToStartReason', { reason: error.message })
+  if (failure.kind === 'didnt-start') {
+    return error.message
+      ? t('sidebar.failedToStartReason', { reason: error.message })
+      : failure.label
   }
   if (failure.kind === 'error' && error.message) return `${failure.label}: ${error.message}`
   if (error.signal) return t('sidebar.crashedWithSignal', { signal: error.signal })

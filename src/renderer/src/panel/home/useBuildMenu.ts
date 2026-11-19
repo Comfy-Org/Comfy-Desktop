@@ -70,7 +70,8 @@ export function useBuildMenu(build: () => Installation, opts: { whyCloud?: () =>
     onShowProgress: (opts) => void host.showProgress(opts),
     onUpdate: runQuickUpdate,
     canPromoteToWorkspace: useCanPromoteToWorkspace(),
-    autoStart: useAutoStartBuild()
+    autoStart: useAutoStartBuild(),
+    onStartAgain: (inst) => host.launch(inst)
   })
   const status = computed(() => homeBuildStatus(build(), sessionStore))
   const canLaunch = computed(

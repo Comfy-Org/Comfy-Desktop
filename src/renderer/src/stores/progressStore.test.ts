@@ -558,3 +558,44 @@ describe('useProgressStore', () => {
     })
   })
 })
+
+describe('a later start supersedes a failed one', () => {
+  function freshStore() {
+    setActivePinia(createTestingPinia({ stubActions: false }))
+    const store = useProgressStore()
+    const started = vi
+      .mocked(window.api.onInstanceStarted)
+      .mock.calls.at(-1)![0] as unknown as (data: { installationId: string }) => void
+    return { store, started }
+  }
+
+  function finishedOp(opKind: string, error: string | null) {
+    return { opKind, finished: true, cancelRequested: false, error } as never
+  }
+
+  it('drops the failed start once the build starts again', () => {
+    const { store, started } = freshStore()
+    store.operations.set('a', finishedOp('launch', 'Port 8188 is in use'))
+
+    started({ installationId: 'a' })
+
+    expect(store.operations.has('a')).toBe(false)
+  })
+
+  it('keeps a failed install and a start still in progress', () => {
+    const { store, started } = freshStore()
+    store.operations.set('a', finishedOp('install', 'Disk full'))
+    store.operations.set('b', {
+      opKind: 'launch',
+      finished: false,
+      cancelRequested: false,
+      error: null
+    } as never)
+
+    started({ installationId: 'a' })
+    started({ installationId: 'b' })
+
+    expect(store.operations.has('a')).toBe(true)
+    expect(store.operations.has('b')).toBe(true)
+  })
+})
