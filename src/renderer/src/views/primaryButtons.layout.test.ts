@@ -111,4 +111,88 @@ describe('primary buttons', () => {
     expect(getComputedStyle(icon).color).toBe(getComputedStyle(probe).color)
     expect(getComputedStyle(icon).borderTopWidth).toBe('0px')
   })
+
+  it('the launch screen centres the spinner block and shows the build under the title', async () => {
+    const host = document.createElement('div')
+    host.style.cssText = 'display:flex;flex-direction:column;width:1244px;height:892px'
+    document.body.appendChild(host)
+    useSessionStore().ready = true
+    await track(
+      mount(ComfyLifecycleView, {
+        attachTo: host,
+        props: {
+          installationId: 'inst-1',
+          installation: {
+            id: 'inst-1',
+            name: 'My build',
+            version: 'v0.3.62',
+            status: 'installed'
+          } as Installation
+        }
+      })
+    )
+    const mountPoint = host.firstElementChild as HTMLElement
+    mountPoint.style.cssText = 'display:flex;flex-direction:column;flex:1 1 0%;min-height:0'
+    useSessionStore().launchingInstances.set('inst-1', { installationName: 'My build' })
+    await flushPromises()
+    const hostBox = host.getBoundingClientRect()
+    const block = document.querySelector('.lifecycle-placeholder')!.getBoundingClientRect()
+    const icon = document.querySelector('.lifecycle-placeholder__icon')!.getBoundingClientRect()
+    expect(
+      Math.abs(block.left + block.width / 2 - (hostBox.left + hostBox.width / 2))
+    ).toBeLessThanOrEqual(1)
+    expect(
+      Math.abs(block.top + block.height / 2 - (hostBox.top + hostBox.height / 2))
+    ).toBeLessThanOrEqual(1)
+    expect(
+      Math.abs(icon.left + icon.width / 2 - (hostBox.left + hostBox.width / 2))
+    ).toBeLessThanOrEqual(1)
+
+    const title = document.querySelector('.lifecycle-placeholder h2')!.getBoundingClientRect()
+    const line = document.querySelector('.lifecycle-placeholder__build')!
+    expect(line.textContent?.trim()).toBe('My build · v0.3.62')
+    expect(Math.round(line.getBoundingClientRect().top - title.bottom)).toBe(4)
+    const muted = document.createElement('span')
+    muted.className = 'text-muted-foreground'
+    document.body.appendChild(muted)
+    expect(getComputedStyle(line).color).toBe(getComputedStyle(muted).color)
+  })
+
+  it('the launch screen has no build line without a build name or version', async () => {
+    useSessionStore().ready = true
+    await track(
+      mount(ComfyLifecycleView, {
+        attachTo: document.body,
+        props: { installationId: 'inst-1', installation: null }
+      })
+    )
+    useSessionStore().launchingInstances.set('inst-1', { installationName: '' })
+    await flushPromises()
+    expect(document.querySelector('.lifecycle-placeholder')).not.toBeNull()
+    expect(document.querySelector('.lifecycle-placeholder__build')).toBeNull()
+  })
+
+  it('Browse in Add existing build is the filled secondary button with no outline', async () => {
+    await track(
+      mount(
+        () => h(Button, { variant: 'secondary', size: 'sm', 'data-testid': 'ref' }, () => 'Change'),
+        {
+          attachTo: document.body
+        }
+      )
+    )
+    const reference = document.querySelector('[data-testid="ref"]')!
+    const modal = mount(TrackModal, { attachTo: document.body })
+    ;(modal.vm as unknown as { open: () => void }).open()
+    await track(modal)
+    const browse = document.querySelector('.config-path-browse')!
+    const style = getComputedStyle(browse)
+    expect(style.backgroundColor).toBe(getComputedStyle(reference).backgroundColor)
+    expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    expect(style.boxShadow).toBe('none')
+    expect(style.borderTopWidth).toBe('0px')
+    expect((browse as HTMLElement).offsetHeight).toBe(24)
+    const field = document.querySelector('.config-path-input') as HTMLElement
+    expect(field.offsetHeight).toBe(40)
+  })
 })

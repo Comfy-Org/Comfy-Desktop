@@ -52,6 +52,7 @@ export const TID = {
 
   lifecycleRelaunch: 'lifecycle-relaunch',
   lifecycleReturnDashboard: 'lifecycle-return-dashboard',
+  lifecycleViewLogs: 'lifecycle-view-logs',
 
   consoleTerminal: 'console-terminal',
   consoleSessionEnded: 'console-session-ended',
