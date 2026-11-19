@@ -161,3 +161,42 @@ describe('HomeCarousel covers', () => {
     expect(playingCards(wrapper)).toEqual(['0'])
   })
 })
+
+describe('HomeCarousel card names', () => {
+  it('shows only the title until the front card is hovered, then lifts it and brings in what the app does', async () => {
+    const wrapper = mountCarousel()
+    const card = frontCard(wrapper).element as HTMLElement
+    const title = frontCard(wrapper).get('[data-testid="home-carousel-title"]')
+      .element as HTMLElement
+    const description = frontCard(wrapper).get('[data-testid="home-carousel-description"]')
+      .element as HTMLElement
+    const bottomOf = (element: HTMLElement) =>
+      Math.round(card.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom)
+
+    expect(getComputedStyle(description).opacity).toBe('0')
+    expect(bottomOf(title)).toBe(16)
+
+    await userEvent.hover(card)
+    await expect.poll(() => getComputedStyle(description).opacity).toBe('1')
+    await expect.poll(() => bottomOf(description)).toBe(16)
+    await expect.poll(() => bottomOf(title)).toBe(34)
+
+    await userEvent.unhover(card)
+    await expect.poll(() => getComputedStyle(description).opacity).toBe('0')
+    await expect.poll(() => bottomOf(title)).toBe(16)
+  })
+
+  it('keeps what the app does hidden on a side card when it is hovered', async () => {
+    const wrapper = mount(HomeCarousel<CarouselCard>, {
+      attachTo: document.body,
+      props: { cards: [HDR, PRODUCT_SWAP, EXTEND], kind: 'apps', picturesOf: () => [] }
+    })
+    mounted.push(wrapper)
+    const side = wrapper.get('[data-testid="home-carousel-card"][data-arc-offset="1"]')
+    const description = side.get('[data-testid="home-carousel-description"]').element
+
+    await userEvent.hover(side.element)
+    await Promise.all(description.getAnimations().map((animation) => animation.finished))
+    expect(getComputedStyle(description).opacity).toBe('0')
+  })
+})
