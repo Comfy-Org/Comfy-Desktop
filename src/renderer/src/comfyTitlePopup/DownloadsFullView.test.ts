@@ -109,3 +109,16 @@ describe('DownloadsFullView shared controls', () => {
     expect(actions.at(-1)).toEqual({ action: 'clear-finished' })
   })
 })
+
+describe('DownloadsFullView close', () => {
+  it('puts the round close button outside the card and closes the window', async () => {
+    const view = await mountView()
+    const close = view.get('[aria-label="Close"]')
+    expect(view.get('.dlm-card').find('[aria-label="Close"]').exists()).toBe(false)
+    expect(close.classes()).toContain('rounded-full')
+    await close.trigger('click')
+    const bridge = (window as unknown as { __comfyTitlePopup: { close: () => void } })
+      .__comfyTitlePopup
+    expect(bridge.close).toHaveBeenCalledOnce()
+  })
+})

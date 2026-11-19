@@ -213,9 +213,10 @@ async function tileMenuItems(): Promise<string[]> {
 
 async function uninstallFromTheBuildsList(): Promise<void> {
   await chooseOnTileMenu('delete')
-  await vi.waitFor(() => expect(onPage('build-menu-confirm-uninstall')).not.toBeNull())
-  await press('build-menu-confirm-uninstall')
-  expect(onPage(TID.baseAlertAction), 'the menu asked, so no second dialog').toBeNull()
+  await vi.waitFor(() => expect(onPage('build-menu')).toBeNull())
+  await vi.waitFor(() => expect(onPage(TID.baseAlertAction)).not.toBeNull())
+  await press(TID.baseAlertAction)
+  await vi.waitFor(() => expect(onPage(TID.baseAlertAction)).toBeNull())
 }
 
 async function openBuildPage(): Promise<void> {
