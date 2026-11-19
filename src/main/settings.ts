@@ -29,6 +29,7 @@ export interface KnownSettings {
   theme?: string
   autoUpdate?: boolean
   autoInstallUpdates?: boolean
+  installUpdatesWhenIdle?: boolean
   autoLaunchOnStartup?: string
   autoStartAwaitingFirstStart?: string
   confirmBeforeClosingWindow?: boolean
@@ -141,6 +142,14 @@ const SETTINGS_SCHEMA = {
         { kind: 'value', prop: 'auto_install_updates', toTelemetry: (raw) => raw !== false },
         { kind: 'presence', prop: 'auto_install_updates_explicit' }
       ]
+    }
+  },
+  installUpdatesWhenIdle: {
+    nullable: false,
+    telemetry: {
+      policy: 'value',
+      prop: 'install_updates_when_idle',
+      toTelemetry: (raw) => raw === true
     }
   },
   autoLaunchOnStartup: { nullable: false, telemetry: { policy: 'presence' } },

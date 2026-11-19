@@ -241,6 +241,19 @@ export function findInstallationIdByComfySender(wc: WebContents): string | null 
   return findEntryByComfySender(wc)?.installationId ?? null
 }
 
+export function findInstallationIdByHostSender(wc: WebContents): string | null {
+  for (const entry of comfyWindows.values()) {
+    if (
+      entry.comfyView.webContents === wc ||
+      entry.titleBarView.webContents === wc ||
+      entry.panelView?.webContents === wc
+    ) {
+      return entry.installationId
+    }
+  }
+  return null
+}
+
 export function findEntryByHostWindow(window: BrowserWindow): ComfyWindowEntry | null {
   for (const entry of comfyWindows.values()) {
     if (entry.window === window) return entry

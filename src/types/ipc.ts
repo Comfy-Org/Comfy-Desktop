@@ -400,6 +400,7 @@ export interface DetailField {
   placeholder?: string
   min?: number
   max?: number
+  footerToggle?: DetailField
 }
 
 export interface ActionDef {

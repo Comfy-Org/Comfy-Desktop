@@ -1343,11 +1343,11 @@ function buildGlobalSettingsSnapshot(
   const mediaSections = buildMediaSections()
   const modelsPayload = buildModelsPayload()
   const generalRaw = findSettingsFields(settingsSections, 'settings.general', 0)
-  const desktopUpdateFields = generalRaw.filter((f) => f.id === 'autoInstallUpdates')
+  const isDesktopUpdateField = (f: Record<string, unknown>): boolean =>
+    f.id === 'autoInstallUpdates' || f.id === 'installUpdatesWhenIdle'
+  const desktopUpdateFields = generalRaw.filter(isDesktopUpdateField)
   const languageFields = generalRaw.filter((f) => f.id === 'language')
-  const generalFields = generalRaw.filter(
-    (f) => f.id !== 'autoInstallUpdates' && f.id !== 'language'
-  )
+  const generalFields = generalRaw.filter((f) => !isDesktopUpdateField(f) && f.id !== 'language')
   const telemetryFields = findSettingsFields(settingsSections, 'settings.telemetry', 1)
   const cache = findSettingsFields(settingsSections, 'settings.cache', 2)
   const advanced = findSettingsFields(settingsSections, 'settings.advanced', 3)

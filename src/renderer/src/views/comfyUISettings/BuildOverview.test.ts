@@ -6,7 +6,7 @@ import { setActivePinia } from 'pinia'
 import { useSessionStore } from '../../stores/sessionStore'
 import BuildOverview from './BuildOverview.vue'
 import type { BuildOverviewModel, OverviewChannel } from './overviewModel'
-import type { ActionDef, Installation } from '../../types/ipc'
+import type { ActionDef, DetailField, Installation } from '../../types/ipc'
 
 const updateNow: ActionDef = { id: 'update-comfyui', label: 'Update Now', style: 'primary' }
 const copyUpdate: ActionDef = { id: 'copy-update', label: 'Copy & Update' }
@@ -189,6 +189,48 @@ describe('BuildOverview — ComfyUI card', () => {
     await openMenu(w, 'build-overview-update-menu')
     await select('update-action-copy-update')
     expect(w.emitted('action')).toEqual([[updateNow], [copyUpdate]])
+  })
+
+  it('offers Restart when idle in the channel menu, and saves the choice', async () => {
+    const toggle: DetailField = {
+      id: 'restartWhenIdle',
+      label: 'Restart when idle to install the latest',
+      value: false,
+      editType: 'boolean'
+    }
+    const w = mountOverview({ model: model({ restartWhenIdle: toggle }) })
+    await openMenu(w, 'build-overview-channel')
+    const item = byTestId('build-overview-restart-when-idle')!
+    expect(item.textContent).toBe('Restart when idle to install the latest')
+    expect(item.getAttribute('aria-checked')).toBe('false')
+    await select('build-overview-restart-when-idle')
+    expect(w.emitted('update-field')).toEqual([[toggle, true]])
+    expect(byTestId('build-overview-channel-stable'), 'the menu stays open').not.toBeNull()
+  })
+
+  it('has no Restart when idle item for a build that cannot update in place', async () => {
+    const w = mountOverview()
+    await openMenu(w, 'build-overview-channel')
+    expect(byTestId('build-overview-channel-stable')).not.toBeNull()
+    expect(byTestId('build-overview-restart-when-idle')).toBeNull()
+  })
+
+  it('says why Restart when idle did not save, beside the channel', () => {
+    const toggle: DetailField = {
+      id: 'restartWhenIdle',
+      label: 'Restart when idle to install the latest',
+      value: false,
+      editType: 'boolean'
+    }
+    const w = mountOverview({ model: model({ restartWhenIdle: toggle }) })
+    expect(w.find('[data-testid="build-overview-restart-when-idle-error"]').exists()).toBe(false)
+    const failed = mountOverview({
+      model: model({ restartWhenIdle: toggle }),
+      fieldErrorMessages: new Map([['restartWhenIdle', 'Saving timed out']])
+    })
+    const tag = failed.get('[data-testid="build-overview-restart-when-idle-error"]')
+    expect(tag.text()).toBe('Saving timed out')
+    expect(tag.attributes('role')).toBe('alert')
   })
 
   it('lists each channel with what it means and switches to the picked one', async () => {

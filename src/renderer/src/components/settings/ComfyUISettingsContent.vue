@@ -1129,7 +1129,9 @@ defineExpose({
                         :disk-usage="diskUsageItem?.value ?? null"
                         :disk-free="diskFree"
                         :running-action-ids="runningActionIds"
+                        :field-error-messages="fieldErrorMessages"
                         @action="runAction"
+                        @update-field="updateField"
                       />
                       <template v-else>
                         <SettingsSectionList

@@ -41,7 +41,7 @@ import * as releaseCache from '../../lib/release-cache'
 import { getCachedTorchStacks } from './torchStackCatalog'
 import type { TorchStackEntry } from './torchStackCatalog'
 import { _setRemoteDefsForTest, _setNvidiaDriverForTest } from './torchIndexManifest'
-import { getDetailSections, getEffectiveChannel } from './updateSections'
+import { getDetailSections, getEffectiveChannel, idleUpdateChannel } from './updateSections'
 
 interface UpdateAction {
   id: string
@@ -843,5 +843,53 @@ describe('updateSections — PyTorch picker', () => {
       const newer = options.find((o) => o.value === 'pytorch-index:rocm7.2.1:2.10.0')
       expect(newer!.groupPath).toEqual([{ id: 'rocm7.2.1', label: 'ROCm 7.2.1' }])
     })
+  })
+})
+
+describe('updateSections — restart when idle', () => {
+  beforeEach(() => {
+    vi.mocked(releaseCache.getEffectiveInfo)
+      .mockReset()
+      .mockReturnValue({
+        installedTag: 'v0.3.20',
+        latestTag: 'v0.3.21',
+        checkedAt: Date.now()
+      } as ReturnType<typeof releaseCache.getEffectiveInfo>)
+    vi.mocked(releaseCache.isUpdateAvailable).mockReset().mockReturnValue(true)
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function footerToggleOf(installation: InstallationRecord): Record<string, unknown> | undefined {
+    const sections = getDetailSections(installation) as unknown as Array<{
+      tab: string
+      fields?: Array<{ id: string; footerToggle?: Record<string, unknown> }>
+    }>
+    const updates = sections.find((s) => s.tab === 'update')
+    return updates?.fields?.find((f) => f.id === 'updateChannel')?.footerToggle
+  }
+
+  it('offers an editable restart-when-idle toggle beside the update buttons of a git install', () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+    const toggle = footerToggleOf(baseInstall({ restartWhenIdle: true }))
+    expect(toggle).toMatchObject({
+      id: 'restartWhenIdle',
+      editable: true,
+      editType: 'boolean',
+      value: true
+    })
+  })
+
+  it('offers no toggle for an install without a git checkout, which cannot update in place', () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(false)
+    expect(footerToggleOf(baseInstall({ restartWhenIdle: true }))).toBeUndefined()
+  })
+
+  it('names the effective channel as the idle update target only when opted in and an update is available', () => {
+    expect(idleUpdateChannel(baseInstall({ restartWhenIdle: true }))).toBe('stable')
+    expect(idleUpdateChannel(baseInstall())).toBeNull()
+    vi.mocked(releaseCache.isUpdateAvailable).mockReturnValue(false)
+    expect(idleUpdateChannel(baseInstall({ restartWhenIdle: true }))).toBeNull()
   })
 })

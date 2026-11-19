@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { DropdownMenuLabel, DropdownMenuRadioGroup } from 'reka-ui'
-import { ArrowUpCircle, ChevronDown, FolderOpen, Loader2 } from '@lucide/vue'
+import {
+  DropdownMenuCheckboxItem,
+  DropdownMenuItemIndicator,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup
+} from 'reka-ui'
+import { ArrowUpCircle, Check, ChevronDown, FolderOpen, Loader2 } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
+import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import MenuSub from '@comfyorg/design-system/menu/MenuSub'
 import MenuSubContent from '@comfyorg/design-system/menu/MenuSubContent'
 import MenuSubTrigger from '@comfyorg/design-system/menu/MenuSubTrigger'
@@ -15,7 +21,7 @@ import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import { formatRelativeFromMs } from '../../lib/datetime'
 import { useSessionStore } from '../../stores/sessionStore'
-import type { ActionDef, Installation } from '../../types/ipc'
+import type { ActionDef, DetailField, Installation } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
 import { channelAction, splitVersion, type BuildOverviewModel } from './overviewModel'
 
@@ -24,16 +30,21 @@ const {
   model,
   diskUsage = null,
   diskFree = null,
-  runningActionIds = new Set<string>()
+  runningActionIds = new Set<string>(),
+  fieldErrorMessages = new Map<string, string>()
 } = defineProps<{
   installation: Installation
   model: BuildOverviewModel
   diskUsage?: string | null
   diskFree?: string | null
   runningActionIds?: Set<string>
+  fieldErrorMessages?: Map<string, string>
 }>()
 
-const emit = defineEmits<{ action: [action: ActionDef] }>()
+const emit = defineEmits<{
+  action: [action: ActionDef]
+  'update-field': [field: DetailField, value: boolean]
+}>()
 
 const { t } = useI18n()
 const sessionStore = useSessionStore()
@@ -59,6 +70,9 @@ const switchAction = computed(() =>
   channel.value ? channelAction(channel.value, 'switch-channel') : undefined
 )
 const updateMenuOpen = ref(false)
+const restartWhenIdleError = computed(() =>
+  model.restartWhenIdle ? (fieldErrorMessages.get(model.restartWhenIdle.id) ?? null) : null
+)
 
 const comfyVersion = computed(() =>
   splitVersion(
@@ -150,53 +164,85 @@ function openLocation(): void {
             >{{ comfyVersion.rest }}</span
           >
         </span>
-        <Menu
-          :modal="false"
-          align="start"
-          :side-offset="6"
-          class="z-20 max-w-80 min-w-60"
-          :aria-label="model.channelLabel"
-        >
-          <template #trigger>
-            <Button
-              type="button"
-              variant="muted-textonly"
-              size="sm"
-              class="-mx-2 mt-0.5 max-w-[calc(100%+1rem)] min-w-0 gap-0.5 self-start text-[12px]/4 font-normal data-[state=open]:bg-accent data-[state=open]:text-foreground"
-              :aria-label="`${model.channelLabel}: ${channel?.label ?? ''}`"
-              :title="model.channelTooltip"
-              :data-testid="TID.buildOverviewChannel"
-            >
-              <span class="truncate">{{ channel?.label }}</span>
-              <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
-            </Button>
-          </template>
-          <DropdownMenuLabel
-            class="px-3 pt-1.5 pb-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+        <div class="mt-0.5 flex min-w-0 items-center gap-2">
+          <Menu
+            :modal="false"
+            align="start"
+            :side-offset="6"
+            class="z-20 max-w-80 min-w-60"
+            :aria-label="model.channelLabel"
           >
-            {{ model.channelLabel }}
-          </DropdownMenuLabel>
-          <DropdownMenuRadioGroup
-            :model-value="pickedChannel"
-            class="flex flex-col gap-0.5"
-            @update:model-value="pickedChannel = String($event)"
-          >
-            <MenuRadioItem
-              v-for="c in model.channels"
-              :key="c.value"
-              :value="c.value"
-              class="h-auto items-start py-1.5 data-[state=checked]:bg-muted data-[state=checked]:data-highlighted:bg-muted"
-              :data-testid="TID.buildOverviewChannelOption(c.value)"
+            <template #trigger>
+              <Button
+                type="button"
+                variant="muted-textonly"
+                size="sm"
+                class="-mx-2 max-w-[calc(100%+1rem)] min-w-0 gap-0.5 self-start text-[12px]/4 font-normal data-[state=open]:bg-accent data-[state=open]:text-foreground"
+                :aria-label="`${model.channelLabel}: ${channel?.label ?? ''}`"
+                :title="model.channelTooltip"
+                :data-testid="TID.buildOverviewChannel"
+              >
+                <span class="truncate">{{ channel?.label }}</span>
+                <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
+              </Button>
+            </template>
+            <DropdownMenuLabel
+              class="px-3 pt-1.5 pb-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
             >
-              <span class="flex min-w-0 flex-col text-left">
-                <span>{{ c.label }}</span>
-                <span v-if="c.description" class="text-[12px]/4 text-muted-foreground">{{
-                  c.description
-                }}</span>
-              </span>
-            </MenuRadioItem>
-          </DropdownMenuRadioGroup>
-        </Menu>
+              {{ model.channelLabel }}
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              :model-value="pickedChannel"
+              class="flex flex-col gap-0.5"
+              @update:model-value="pickedChannel = String($event)"
+            >
+              <MenuRadioItem
+                v-for="c in model.channels"
+                :key="c.value"
+                :value="c.value"
+                class="h-auto items-start py-1.5 data-[state=checked]:bg-muted data-[state=checked]:data-highlighted:bg-muted"
+                :data-testid="TID.buildOverviewChannelOption(c.value)"
+              >
+                <span class="flex min-w-0 flex-col text-left">
+                  <span>{{ c.label }}</span>
+                  <span v-if="c.description" class="text-[12px]/4 text-muted-foreground">{{
+                    c.description
+                  }}</span>
+                </span>
+              </MenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <template v-if="model.restartWhenIdle">
+              <MenuSeparator />
+              <DropdownMenuCheckboxItem
+                :model-value="model.restartWhenIdle.value === true"
+                class="group flex min-h-8 cursor-default items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-none data-highlighted:bg-accent"
+                :title="model.restartWhenIdle.tooltip"
+                :data-testid="TID.buildOverviewRestartWhenIdle"
+                @update:model-value="emit('update-field', model.restartWhenIdle, $event === true)"
+                @select.prevent
+              >
+                <span
+                  class="inline-flex size-4 shrink-0 items-center justify-center rounded-sm border text-background group-data-[state=checked]:border-primary group-data-[state=checked]:bg-primary"
+                  aria-hidden="true"
+                >
+                  <DropdownMenuItemIndicator>
+                    <Check :size="12" />
+                  </DropdownMenuItemIndicator>
+                </span>
+                <span>{{ model.restartWhenIdle.label }}</span>
+              </DropdownMenuCheckboxItem>
+            </template>
+          </Menu>
+          <span
+            v-if="restartWhenIdleError"
+            class="max-w-60 min-w-0 truncate rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--danger)_36%,transparent)] bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] text-danger"
+            role="alert"
+            :title="restartWhenIdleError"
+            :data-testid="TID.buildOverviewRestartWhenIdleError"
+          >
+            {{ restartWhenIdleError }}
+          </span>
+        </div>
 
         <div
           class="mt-auto flex min-w-0 items-end gap-2.5 pt-3 text-[12px]/4 text-muted-foreground"

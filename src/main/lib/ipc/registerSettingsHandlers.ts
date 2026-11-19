@@ -73,6 +73,13 @@ export function buildSettingsSections(): SettingsSection[] {
           type: 'boolean',
           value: s.autoInstallUpdates !== false
         },
+        {
+          id: 'installUpdatesWhenIdle',
+          label: i18n.t('settings.installUpdatesWhenIdle'),
+          type: 'boolean',
+          value: s.installUpdatesWhenIdle === true,
+          tooltip: i18n.t('settings.installUpdatesWhenIdleDescription')
+        },
         ...(isChinese ? [chineseMirrorsField] : [])
       ]
     },
