@@ -3126,6 +3126,72 @@ describe('restoreCoreFrontend', () => {
     await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
+  it("keeps another restore's live backup when a second restore of the same install starts", async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    let finishFirst: () => void = () => {}
+    let firstBackups: string[] = []
+    mockInstall.mockImplementationOnce(async () => {
+      firstBackups = backupEntriesLeft().filter((name) =>
+        name.startsWith('.launch-frontend-backup-')
+      )
+      await new Promise<void>((resolve) => {
+        finishFirst = resolve
+      })
+      fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package/__init__.py'))
+      return { code: 2, output: '' }
+    })
+    const first = restoreCoreFrontend(inst, vi.fn())
+    await vi.waitFor(() => expect(firstBackups).toHaveLength(1))
+
+    await restoreCoreFrontend(inst, vi.fn())
+    finishFirst()
+
+    expect(await first).toBe(false)
+    expect(read(sitePackages, 'comfyui_frontend_package/__init__.py')).toBe('old init')
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('puts back the frontend files a cancelled restore removed', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    const abort = new AbortController()
+    mockInstall.mockImplementationOnce(async () => {
+      await removeHalfTheFrontend(sitePackages)()
+      abort.abort()
+      return { code: 0, output: '' }
+    })
+
+    expect(await restoreCoreFrontend(inst, vi.fn(), abort.signal)).toBe(false)
+    expect(read(sitePackages, 'comfyui_frontend_package/__init__.py')).toBe('old init')
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('puts back the dist-info even when putting back the package folder fails', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    mockInstall.mockImplementationOnce(removeHalfTheFrontend(sitePackages))
+    const copy = fs.promises.cp.bind(fs.promises)
+    const cp = vi
+      .spyOn(fs.promises, 'cp')
+      .mockImplementation(((from: string, to: string, options: fs.CopyOptions) =>
+        to === path.join(sitePackages, 'comfyui_frontend_package')
+          ? Promise.reject(new Error('EBUSY'))
+          : copy(from, to, options)) as typeof fs.promises.cp)
+    try {
+      expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    } finally {
+      cp.mockRestore()
+    }
+    expect(read(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info/METADATA')).toBe(
+      'Version: 1.28.8'
+    )
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
   it('leaves the new frontend alone when the restore succeeds', async () => {
     const inst = managedInstall()
     writeCore('comfyui-frontend-package==1.28.7\n')
