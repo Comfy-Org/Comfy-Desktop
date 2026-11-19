@@ -722,29 +722,39 @@ describe('resolveBetaFeaturesEnabled', () => {
     vi.restoreAllMocks()
   })
 
-  it.each([true, false])(
-    'retains a stored %s from a backup when the primary is unreadable',
-    (choice) => {
-      fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-      fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: !choice }))
-      fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ betaFeaturesEnabled: choice }))
+  function failPrimaryReads(): void {
+    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      p: fs.PathOrFileDescriptor,
+      opts?: unknown
+    ) => {
+      if (p === settingsPath) {
+        const err = new Error('fake EPERM') as NodeJS.ErrnoException
+        err.code = 'EPERM'
+        throw err
+      }
+      return realRead(p, opts as BufferEncoding)
+    }) as typeof fs.readFileSync)
+  }
 
-      const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
-      vi.spyOn(fs, 'readFileSync').mockImplementation(((
-        p: fs.PathOrFileDescriptor,
-        opts?: unknown
-      ) => {
-        if (p === settingsPath) {
-          const err = new Error('fake EPERM') as NodeJS.ErrnoException
-          err.code = 'EPERM'
-          throw err
-        }
-        return realRead(p, opts as BufferEncoding)
-      }) as typeof fs.readFileSync)
+  it.each([
+    ['an opt-out', { betaFeaturesEnabled: false, telemetryEnabled: true }],
+    ['an opt-in', { betaFeaturesEnabled: true }],
+    ['an opt-in and a telemetry opt-in', { betaFeaturesEnabled: true, telemetryEnabled: true }]
+  ])('keeps beta off with %s in the backup when the primary is unreadable', (_label, backup) => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    const primary = JSON.stringify({ betaFeaturesEnabled: !backup.betaFeaturesEnabled })
+    fs.writeFileSync(settingsPath, primary)
+    fs.writeFileSync(settingsPath + '.bak', JSON.stringify(backup))
+    failPrimaryReads()
 
-      expect(settings.resolveBetaFeaturesEnabled()).toBe(choice)
-    }
-  )
+    expect(settings.telemetryConsent(), 'consent is withheld').toBeUndefined()
+    expect(settings.resolveBetaFeaturesEnabled(), 'resolve').toBe(false)
+    expect(settings.peekBetaFeaturesEnabled(), 'peek').toBe(false)
+
+    vi.restoreAllMocks()
+    expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(primary)
+  })
 
   it('does not enroll from a stale telemetry backup when the primary is unreadable', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
