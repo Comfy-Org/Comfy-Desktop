@@ -161,7 +161,7 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
     class="downloads flex size-full flex-col bg-neutral-800 [--downloads-bar-rest:var(--color-card)] [--downloads-card:var(--color-card-hover)] [--downloads-row-hover:var(--color-card-hover)]"
   >
     <header
-      class="downloads-head flex flex-none items-baseline justify-between gap-2 px-4 pt-3.5 pb-2"
+      class="downloads-head flex flex-none items-baseline justify-between gap-2 px-4 pt-4 pb-3"
     >
       <h2
         class="downloads-title m-0 text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase"
@@ -173,6 +173,7 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
         variant="link"
         size="unset"
         class="downloads-link rounded-sm text-[12px] font-normal"
+        :aria-label="t('downloadsPopup.viewAllLabel')"
         @click="viewAllDownloads"
       >
         {{ t('downloadsPopup.viewAll') }}

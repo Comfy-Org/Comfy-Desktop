@@ -89,7 +89,7 @@ describe('Downloads popup layout', () => {
     }
   })
 
-  it('sets View all downloads on the title row, on the same baseline, aligned with the card edge', async () => {
+  it('sets View all on the title row, on the same baseline, aligned with the card edge', async () => {
     const wrapper = await mountPopup()
     const title = wrapper.get('.downloads-title').element
     const link = wrapper.get('.downloads-link').element
@@ -108,6 +108,17 @@ describe('Downloads popup layout', () => {
     expect(Math.abs(baseline(title) - baseline(link))).toBeLessThanOrEqual(0.5)
     expect(rect(title).left).toBe(rect(list).left)
     expect(rect(link).right).toBe(rect(list).right)
+  })
+
+  it('gives the header the same top inset as the side inset and 12px above the card', async () => {
+    const wrapper = await mountPopup()
+    const root = rect(wrapper.get('.downloads').element)
+    const title = rect(wrapper.get('.downloads-title').element)
+    const link = rect(wrapper.get('.downloads-link').element)
+    const list = rect(wrapper.get('.downloads-list').element)
+
+    expect(Math.min(title.top, link.top) - root.top).toBe(list.left - root.left)
+    expect(list.top - Math.max(title.bottom, link.bottom)).toBe(12)
   })
 
   it('shows the row action only on hover or focus, beside the remove button without covering it', async () => {

@@ -336,12 +336,13 @@ describe('comfyTitlePopup/DownloadsView', () => {
     })
   })
 
-  it('puts View all downloads in the header, beside the title, and opens the full downloads popup', async () => {
+  it('puts View all in the header, beside the title, and opens the full downloads popup', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const wrapper = mount(DownloadsView, { props: { state: EMPTY_STATE } })
     await flushPromises()
     const link = wrapper.get('.downloads-head .downloads-link')
-    expect(link.text()).toBe('View all downloads')
+    expect(link.text()).toBe('View all')
+    expect(link.attributes('aria-label')).toBe('View all downloads')
     expect(wrapper.find('.downloads-foot').exists()).toBe(false)
     await link.trigger('click')
     expect(bridgeState.openDownloadsModalCalls).toBe(1)
