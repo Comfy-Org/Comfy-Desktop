@@ -740,7 +740,7 @@ describe('InstallWizardModal workspace Builds', () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       { id: 'standalone', label: 'Standalone', fields: [] },
       { id: 'portable', label: 'Portable', fields: [] },
-      { id: 'remote', label: 'Remote Connection', skipInstall: true, fields: [] }
+      { id: 'remote', label: 'Remote connection', skipInstall: true, fields: [] }
     ])
     signInToWorkspace([
       { id: 'ready', name: 'Ready Build', state: 'installable' },
@@ -789,7 +789,7 @@ describe('InstallWizardModal workspace Builds', () => {
       },
       {
         id: 'remote',
-        label: 'Remote Connection',
+        label: 'Remote connection',
         skipInstall: true,
         fields: [{ id: 'url', label: 'Server URL', type: 'text' }]
       }
@@ -828,7 +828,7 @@ describe('InstallWizardModal workspace Builds', () => {
       { id: 'standalone', label: 'Standalone', fields: [] },
       {
         id: 'remote',
-        label: 'Remote Connection',
+        label: 'Remote connection',
         skipInstall: true,
         fields: [{ id: 'url', label: 'Server URL', type: 'text' }]
       }
@@ -856,7 +856,7 @@ describe('InstallWizardModal workspace Builds', () => {
       { id: 'standalone', label: 'Standalone', fields: [] },
       {
         id: 'remote',
-        label: 'Remote Connection',
+        label: 'Remote connection',
         skipInstall: true,
         fields: [{ id: 'url', label: 'Server URL', type: 'text' }]
       }
@@ -1430,7 +1430,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="workspace-authorization-status"]').text()).toBe(
-      'Waiting for workspace authorization... Complete authorization in your browser if prompted.'
+      'Waiting for workspace authorization… Complete authorization in your browser if prompted.'
     )
 
     finishAuthorization({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
@@ -1711,7 +1711,7 @@ describe('InstallWizardModal hardware warning', () => {
   const KFD_WARNING =
     'Your user cannot access the AMD GPU compute interface (/dev/kfd), so ComfyUI will not be able to use the GPU.'
   const standaloneSource = { id: 'standalone', label: 'Standalone', fields: [] }
-  const remoteSource = { id: 'remote', label: 'Remote Connection', skipInstall: true, fields: [] }
+  const remoteSource = { id: 'remote', label: 'Remote connection', skipInstall: true, fields: [] }
 
   it('renders the validateHardware warning under the detected GPU field', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([standaloneSource])
@@ -1875,7 +1875,7 @@ describe('InstallWizardModal Change setup', () => {
       { id: 'comfyVersion', label: 'Version', type: 'select' }
     ]
   }
-  const remoteSource = { id: 'remote', label: 'Remote Connection', skipInstall: true, fields: [] }
+  const remoteSource = { id: 'remote', label: 'Remote connection', skipInstall: true, fields: [] }
 
   function mockReleaseOptions(): void {
     ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockImplementation(

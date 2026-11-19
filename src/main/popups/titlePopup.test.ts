@@ -145,7 +145,7 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items.flatMap((item) => (item.label ? [item.label] : []))).toEqual([
       'Performance tests',
       'Benchmarks',
-      'Desktop Settings',
+      'Desktop settings',
       'Reset zoom (144%)',
       'Close window',
       'Quit Desktop'
@@ -730,7 +730,7 @@ describe('title popup renderer readiness', () => {
   it('replays the last config when the cached popup renderer reloads', () => {
     const config = {
       kind: 'menu' as const,
-      items: [{ id: 'settings', label: 'Desktop Settings' }],
+      items: [{ id: 'settings', label: 'Desktop settings' }],
       theme: { bg: '#111111', text: '#eeeeee' }
     }
     const send = vi.fn()
@@ -761,7 +761,7 @@ describe('title popup config sync', () => {
   const theme = { bg: '#111111', text: '#eeeeee' }
   const menuConfig: PopupConfig = {
     kind: 'menu',
-    items: [{ id: 'settings', label: 'Desktop Settings' }],
+    items: [{ id: 'settings', label: 'Desktop settings' }],
     theme
   }
   const downloadsConfig: PopupConfig = { kind: 'downloads', theme }

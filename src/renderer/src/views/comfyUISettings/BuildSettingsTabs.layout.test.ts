@@ -36,7 +36,7 @@ const STORAGE_SECTIONS = [
       field('useSharedModels', 'Use Shared Models', { value: true, editType: 'boolean' }),
       field('useSharedInput', 'Use Shared Input', { value: true, editType: 'boolean' }),
       field('useSharedOutput', 'Use Shared Output', { value: false, editType: 'boolean' }),
-      field('modelDirs', 'Model Directories', { value: [SHORT_PATH], editType: 'model-dirs' }),
+      field('modelDirs', 'Model directories', { value: [SHORT_PATH], editType: 'model-dirs' }),
       field('installModelsDir', 'installModelsDir', { value: LONG_PATH, editType: 'hidden' }),
       field('outputDir', 'Output Folder', { value: LONG_PATH, editType: 'path' })
     ]
@@ -89,15 +89,15 @@ function selectField(id: string, label: string, rowGroup?: string): DetailField 
 const CONTROL = '.ui-input, [role="combobox"]'
 
 const LAUNCH_SECTION: DetailSection = {
-  title: 'Launch Settings',
+  title: 'Launch settings',
   fields: [
     field('launchArgs', 'Startup arguments', { editType: 'args-builder' }),
-    selectField('managerSecurityLevel', 'Manager Security Level', 'manager'),
-    selectField('managerNetworkMode', 'Manager Network Mode', 'manager'),
-    selectField('launchMode', 'Launch Mode', 'launch-window'),
-    selectField('browserPartition', 'Browser Cache', 'launch-window'),
-    selectField('portConflict', 'If Port is Busy'),
-    field('envVars', 'Environment Variables', {
+    selectField('managerSecurityLevel', 'Manager security level', 'manager'),
+    selectField('managerNetworkMode', 'Manager network mode', 'manager'),
+    selectField('launchMode', 'Launch mode', 'launch-window'),
+    selectField('browserPartition', 'Browser cache', 'launch-window'),
+    selectField('portConflict', 'If port is busy'),
+    field('envVars', 'Environment variables', {
       editType: 'env-vars',
       value: { HF_HOME: 'D:\\hf' }
     })

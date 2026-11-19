@@ -97,7 +97,7 @@ export async function openLogsPopout(installationId: string): Promise<void> {
   let label = 'Comfy Logs'
   try {
     const inst = await installations.get(installationId)
-    if (inst?.name) label = `Comfy Logs — ${inst.name}`
+    if (inst?.name) label = `Comfy Logs · ${inst.name}`
   } catch {}
 
   const win = new BrowserWindow({
