@@ -20,6 +20,7 @@ export interface Operation {
   returnTo?: string
   opKind: NonNullable<ShowProgressOpts['opKind']>
   destroysInstance: boolean
+  cancellable: boolean
   chainSpan: 'install' | 'launch' | null
   successTerminal: NonNullable<ShowProgressOpts['successTerminal']> | null
   steps: ProgressStep[] | null
@@ -42,6 +43,7 @@ export interface Operation {
   unsubProgress: Unsubscribe | null
   unsubOutput: Unsubscribe | null
   apiCall: (() => Promise<ActionResult>) | null
+  onSettled: ((installationId: string) => void) | null
   _globalFloor: number
 }
 
@@ -113,17 +115,20 @@ export const useProgressStore = defineStore('progress', () => {
     chainSpan?: ShowProgressOpts['chainSpan']
     successTerminal?: ShowProgressOpts['successTerminal']
     actionId?: string
+    onSettled?: (installationId: string) => void
   }): void {
     const {
       installationId,
       title,
       apiCall,
+      cancellable,
       returnTo,
       opKind,
       destroysInstance,
       chainSpan,
       successTerminal,
-      actionId
+      actionId,
+      onSettled
     } = opts
 
     const outgoing = operations.get(installationId)
@@ -143,6 +148,7 @@ export const useProgressStore = defineStore('progress', () => {
       returnTo,
       opKind: opKind ?? 'generic',
       destroysInstance: !!destroysInstance,
+      cancellable: !!cancellable,
       chainSpan: chainSpan ?? null,
       successTerminal: successTerminal ?? null,
       steps: null,
@@ -165,6 +171,7 @@ export const useProgressStore = defineStore('progress', () => {
       unsubProgress: null,
       unsubOutput: null,
       apiCall,
+      onSettled: onSettled ?? null,
       _globalFloor: 0
     }
     operations.set(installationId, op)
@@ -231,6 +238,14 @@ export const useProgressStore = defineStore('progress', () => {
       rop.unsubProgress = null
       rop.unsubOutput = null
     }
+    const settle = (): void => {
+      if (operations.get(installationId) !== rop) return
+      try {
+        rop.onSettled?.(installationId)
+      } catch (err) {
+        console.error('[progress] a finished task could not hand off its result', err)
+      }
+    }
 
     let p: Promise<ActionResult>
     try {
@@ -245,6 +260,7 @@ export const useProgressStore = defineStore('progress', () => {
         message: rop.error
       })
       emitOpResult(rop, installationId, 'failed')
+      settle()
       return
     }
 
@@ -268,6 +284,7 @@ export const useProgressStore = defineStore('progress', () => {
         })
         emitOpResult(rop, installationId, 'failed')
       }
+      settle()
     }).catch((err: Error) => {
       rop.error = err.message
       rop.finished = true
@@ -278,6 +295,7 @@ export const useProgressStore = defineStore('progress', () => {
         message: rop.error
       })
       emitOpResult(rop, installationId, 'failed')
+      settle()
     })
   }
 
@@ -298,10 +316,12 @@ export const useProgressStore = defineStore('progress', () => {
       installationId,
       title: op.title,
       apiCall: op.apiCall,
+      cancellable: op.cancellable,
       returnTo: op.returnTo,
       opKind: op.opKind,
       destroysInstance: op.destroysInstance,
-      actionId: op.actionId
+      actionId: op.actionId,
+      onSettled: op.onSettled ?? undefined
     })
   }
 

@@ -5,7 +5,11 @@ import { computed, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Ellipsis, Info, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
-import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import {
+  inPlaceTaskLabel,
+  launchFailed,
+  useBuildProgress
+} from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useProgressStore } from '../../stores/progressStore'
 import {
@@ -62,6 +66,10 @@ function viewError(): void {
 }
 const isBusy = computed(() => install.progress.value !== null)
 const isUninstalling = computed(() => install.progress.value?.kind === 'uninstall')
+const isUpdatingHere = computed(() => {
+  const kind = install.progress.value?.kind
+  return kind === 'update' || kind === 'working'
+})
 const isPromoting = computed(() => isPromotingToWorkspace(inst.value))
 const progressLabel = computed(() => {
   const current = install.progress.value
@@ -72,6 +80,8 @@ const progressLabel = computed(() => {
       ? t('uninstallProgress.status')
       : t('uninstallProgress.tileStatus', { percent: current.percent })
   }
+  const inPlace = inPlaceTaskLabel(current, t)
+  if (inPlace !== null) return inPlace
   const phase = t(current.kind === 'launch' ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
   return current.percent == null
     ? phase
@@ -94,8 +104,10 @@ const isStopping = computed(() =>
     ? sessionStore.isStopping(inst.value.id)
     : props.lifecycleStatus === 'stopping'
 )
-const isUpdating = computed(() =>
-  isBuildUpdating(inst.value, sessionStore.operationInstances.get(inst.value.id)?.actionId)
+const isUpdating = computed(
+  () =>
+    !isUpdatingHere.value &&
+    isBuildUpdating(inst.value, sessionStore.operationInstances.get(inst.value.id)?.actionId)
 )
 const hasError = computed(() =>
   props.lifecycleStatus == null
@@ -202,7 +214,10 @@ const leadingFact = computed(() =>
 )
 
 const updateNote = computed(() =>
-  !isUninstalling.value && inst.value.statusTag?.style === 'update' && !isUpdating.value
+  !isUninstalling.value &&
+  !isUpdatingHere.value &&
+  inst.value.statusTag?.style === 'update' &&
+  !isUpdating.value
     ? t('chooser.updatePill')
     : ''
 )
