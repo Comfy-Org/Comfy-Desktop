@@ -1194,6 +1194,53 @@ describe('InstallWizardModal workspace Builds', () => {
     })
   })
 
+  it('keeps the folder picked in Set up when Change restores another install mode', async () => {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'cpu', label: 'CPU', recommended: true, data: { variantId: 'win-cpu' } }
+    ])
+    const first = mountModal({ hideBackToDashboard: true })
+    await flushPromises()
+    await first.vm.open({ cameFromSetup: true, entrypoint: 'first_use', workspaceId: 'w1' })
+    await flushPromises()
+    await pickSource(first, 'install-source-standalone')
+    await flushPromises()
+    await first.get('#inst-name-standalone').setValue('Studio')
+    await first.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    const [saved] = savedSetups(first)
+    first.unmount()
+    if (!saved) throw new Error('Save changes emitted nothing')
+    expect(saved.plan.sourceId).toBe('standalone')
+
+    const again = mountModal({ hideBackToDashboard: true })
+    await flushPromises()
+    await again.vm.open({
+      cameFromSetup: true,
+      entrypoint: 'first_use',
+      workspaceId: 'w1',
+      restore: saved.draft,
+      installRoot: '/Volumes/Big/ComfyUI'
+    })
+    await flushPromises()
+    expect(sourceChecked(again, 'install-source-standalone')).toBe('true')
+    await again.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(savedSetups(again)[0]?.plan).toMatchObject({
+      sourceId: 'standalone',
+      installRoot: '/Volumes/Big/ComfyUI'
+    })
+    again.unmount()
+  })
+
   it('opens the selected workspace Builds page online', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     const wrapper = await openWorkspaceModal()
@@ -1568,6 +1615,7 @@ describe('InstallWizardModal workspace Builds', () => {
     })
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
+    expect(modal.state.title).toBe("Couldn't add this build")
     expect(modal.state.message).toBe('Invalid install location.')
     expect(modal.state.buttonLabel).toBe('Change location')
     expect(window.api.browseFolder).not.toHaveBeenCalled()
@@ -1586,6 +1634,7 @@ describe('InstallWizardModal workspace Builds', () => {
     const wrapper = await failBuildInstall({ message: 'Install already starting.' })
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
+    expect(modal.state.title).toBe("Couldn't add this build")
     expect(modal.state.message).toBe('Install already starting.')
     expect(modal.state.buttonLabel).toBe('OK')
 

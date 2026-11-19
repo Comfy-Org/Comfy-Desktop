@@ -598,9 +598,12 @@ async function open(opts: OpenOpts = {}): Promise<void> {
     }
     if (opts.restore && gen === modeGeneration) {
       instName.value = opts.restore.instName
-      await restoreNewInstallSetup(opts.restore)
+      await restoreNewInstallSetup(
+        opts.installRoot ? { ...opts.restore, instPath: opts.installRoot } : opts.restore
+      )
+    } else if (opts.installRoot && gen === modeGeneration) {
+      instPath.value = opts.installRoot
     }
-    if (opts.installRoot && gen === modeGeneration) instPath.value = opts.installRoot
   } finally {
     if (gen === modeGeneration) initializing.value = false
   }
@@ -1065,7 +1068,7 @@ async function handleWorkspaceBuildSave(): Promise<void> {
       ok: false,
       message: error instanceof Error ? error.message : String(error)
     }))
-  await handOffInstall(result, t('errors.installFailed'))
+  await handOffInstall(result, t('errors.cannotAdd'))
 }
 
 async function confirmNvidiaDriver(source: Source): Promise<boolean> {
