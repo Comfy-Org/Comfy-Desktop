@@ -33,6 +33,9 @@ export const PARTNER_REFUSAL_SIGNALS: readonly (string | RegExp)[] = [
   'model refused to respond'
 ]
 
+const MAX_MESSAGE_LENGTH = 16_384
+const MAX_JSON_DEPTH = 64
+
 const ECHOED_REQUEST_KEYS = new Set(['request', 'input', 'inputs', 'params', 'parameters', 'text'])
 
 function isEchoedRequestKey(key: string): boolean {
@@ -40,14 +43,15 @@ function isEchoedRequestKey(key: string): boolean {
   return ECHOED_REQUEST_KEYS.has(name) || /prompts?(?:text)?$/.test(name)
 }
 
-function withoutEchoedRequest(value: unknown): unknown {
+function withoutEchoedRequest(value: unknown, depth = 0): unknown {
   if (typeof value === 'string') return failureTextOf(value)
-  if (Array.isArray(value)) return value.map(withoutEchoedRequest)
   if (value === null || typeof value !== 'object') return value
+  if (depth >= MAX_JSON_DEPTH) return null
+  if (Array.isArray(value)) return value.map((item) => withoutEchoedRequest(item, depth + 1))
   return Object.fromEntries(
     Object.entries(value)
       .filter(([key]) => !isEchoedRequestKey(key))
-      .map(([key, item]): [string, unknown] => [key, withoutEchoedRequest(item)])
+      .map(([key, item]): [string, unknown] => [key, withoutEchoedRequest(item, depth + 1)])
   )
 }
 
@@ -99,8 +103,13 @@ function failureTextOf(message: string): string {
 
 export function isPartnerRefusal(exceptionMessage: unknown): boolean {
   if (typeof exceptionMessage !== 'string' || exceptionMessage === '') return false
-  const text = failureTextOf(exceptionMessage).toLowerCase()
-  return PARTNER_REFUSAL_SIGNALS.some((signal) =>
-    typeof signal === 'string' ? text.includes(signal) : signal.test(text)
-  )
+  if (exceptionMessage.length > MAX_MESSAGE_LENGTH) return false
+  try {
+    const text = failureTextOf(exceptionMessage).toLowerCase()
+    return PARTNER_REFUSAL_SIGNALS.some((signal) =>
+      typeof signal === 'string' ? text.includes(signal) : signal.test(text)
+    )
+  } catch {
+    return false
+  }
 }

@@ -18,6 +18,12 @@ const LUMA_SERVICE_FAILURE =
   '"model": "photon-1", "request": {"prompt": "A poster saying content moderated", "model": "photon-1", ' +
   '"aspect_ratio": "16:9"}}\n'
 
+function nestedArrays(depth: number, inner = ''): string {
+  return `${'['.repeat(depth)}${inner}${']'.repeat(depth)}`
+}
+
+const DEEP_TEXT_ANSWER = `Gemini answered with text: {"result": ${nestedArrays(20_000)}}`
+
 describe('isPartnerRefusal', () => {
   it.each([
     [
@@ -120,10 +126,28 @@ describe('isPartnerRefusal', () => {
     ],
     ['a model that names safety', 'Error loading safety_checker: file not found'],
     ['a model file that names nsfw', 'No such file: models/checkpoints/nsfw_v2.safetensors'],
+    ['a text answer of 20,000 nested arrays', DEEP_TEXT_ANSWER],
+    [
+      'a refusal code nested deeper than the classifier reads',
+      `Task failed: {"result": ${nestedArrays(100, '"content_filter"')}}`
+    ],
+    ['a message too long to classify, even one naming a refusal', 'content_filter '.repeat(2_000)],
     ['an empty message', ''],
     ['no message', undefined],
     ['a message that is not text', 42]
   ])('says no for %s', (_what, message) => {
     expect(isPartnerRefusal(message)).toBe(false)
+  })
+
+  it('does not throw for a text answer of 20,000 nested arrays', () => {
+    expect(() => isPartnerRefusal(DEEP_TEXT_ANSWER)).not.toThrow()
+  })
+
+  it('finds a refusal code next to an array nested deeper than the classifier reads', () => {
+    expect(
+      isPartnerRefusal(
+        `Task failed: {"error": {"code": "content_filter"}, "result": ${nestedArrays(5_000)}}`
+      )
+    ).toBe(true)
   })
 })

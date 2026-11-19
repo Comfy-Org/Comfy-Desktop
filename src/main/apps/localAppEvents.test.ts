@@ -76,6 +76,9 @@ const ECHOED_PROMPT_FAILURE = `Polling aborted due to error: Task failed: ${JSON
   request: { prompt: 'A poster saying content moderated' }
 })}\n`
 
+const DEEP_ARRAYS = `${'['.repeat(20_000)}${']'.repeat(20_000)}`
+const DEEP_TEXT_ANSWER = `Gemini answered with text: {"result": ${DEEP_ARRAYS}}`
+
 function message(type: string, data: Record<string, unknown> = {}, promptId = RUN): unknown {
   return { type, data: { prompt_id: promptId, ...data } }
 }
@@ -237,6 +240,24 @@ describe('run_finished', () => {
 
     expect(sent(RUN_FINISHED_EVENT)).toEqual([
       expect.objectContaining({ outcome: 'failed', error_class: 'exception' })
+    ])
+  })
+
+  it('keeps a failed run whose message nests JSON 20,000 deep as failed', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_start', { timestamp: T0 }))
+    expect(() =>
+      noteRunMessage(
+        message('execution_error', {
+          exception_type: 'ValueError',
+          exception_message: DEEP_TEXT_ANSWER,
+          timestamp: T0 + 1_000
+        })
+      )
+    ).not.toThrow()
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ outcome: 'failed', error_class: 'value_error' })
     ])
   })
 
@@ -569,6 +590,23 @@ describe('runEndFromHistory', () => {
         ])
       )
     ).toMatchObject({ outcome: 'failed', errorClass: 'exception' })
+  })
+
+  it('reads a failed run whose message nests JSON 20,000 deep as failed', () => {
+    expect(
+      runEndFromHistory(
+        entry('error', [
+          [
+            'execution_error',
+            {
+              prompt_id: RUN,
+              exception_type: 'ValueError',
+              exception_message: DEEP_TEXT_ANSWER
+            }
+          ]
+        ])
+      )
+    ).toMatchObject({ outcome: 'failed', errorClass: 'value_error' })
   })
 
   it('reads a run that failed with no message as failed', () => {
