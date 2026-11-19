@@ -144,7 +144,7 @@ const linkClass =
               >{{ group.label }}</span
             >
             <div
-              class="base-alert-detail-recessed max-h-[220px] overflow-y-auto rounded-lg border border-solid border-neutral-100/8 bg-[var(--surface)] px-2.5 py-2"
+              class="base-alert-detail-recessed max-h-[220px] overflow-y-auto rounded-lg bg-[var(--surface)] px-2.5 py-2"
               @click="handleModalLinkClick"
             >
               <div

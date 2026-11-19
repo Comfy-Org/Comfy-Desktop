@@ -320,6 +320,20 @@ function darkerThanCard(cardSelector: string): string[] {
   return darker
 }
 
+function expectNoStroke(selector: string): void {
+  const nodes = document.querySelectorAll<HTMLElement>(selector)
+  expect(nodes.length, selector).toBeGreaterThan(0)
+  for (const node of nodes) {
+    node.blur()
+    const style = getComputedStyle(node)
+    const name = node.classList[0]
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      expect(style.getPropertyValue(`border-${side}-width`), `${name} ${side} border`).toBe('0px')
+    }
+    expect(focusRingReach(node), `${name} ring at rest`).toBe(0)
+  }
+}
+
 function stubWizardApi(): void {
   Object.assign(window, {
     api: new Proxy(
@@ -750,5 +764,25 @@ describe('modal chrome', () => {
       await closeAll()
     }
     expect(darker).toEqual([])
+  })
+
+  it('draws no stroke around the boxes and text fields in a modal, only the fill', async () => {
+    await open(() => mount(ModalDialog, { attachTo: document.body }))
+    void useModal().prompt(PROMPT_WITH_DETAILS)
+    await settle()
+    expectNoStroke('.dialog-prompt-card, .dialog-detail-recessed, .dialog-input')
+    useModal().dismiss()
+    await settle()
+    void useModal().confirm(DELETE_BUILD)
+    await settle()
+    expectNoStroke('.dialog-prompt-card, .dialog-detail-recessed')
+    await closeAll()
+
+    await open(() => mount(BaseAlert, { attachTo: document.body, props: BUILD_RUNNING }))
+    expectNoStroke('.base-alert-detail-recessed')
+    await closeAll()
+
+    await open(() => mount(BasePrompt, { attachTo: document.body, props: NAME_SNAPSHOT }))
+    expectNoStroke('.base-prompt-detail-recessed, .base-prompt-input')
   })
 })

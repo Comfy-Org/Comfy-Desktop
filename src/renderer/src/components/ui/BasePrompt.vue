@@ -134,7 +134,7 @@ watch(
             >{{ group.label }}</span
           >
           <div
-            class="base-prompt-detail-recessed max-h-[200px] overflow-y-auto rounded-lg border border-solid border-neutral-100/8 bg-[var(--surface)] px-2.5 py-2"
+            class="base-prompt-detail-recessed max-h-[200px] overflow-y-auto rounded-lg bg-[var(--surface)] px-2.5 py-2"
             @click="handleModalLinkClick"
           >
             <div

@@ -212,7 +212,7 @@ watch(
       >
         <div
           v-if="state.message"
-          class="dialog-prompt-card mb-5 rounded-lg border border-solid border-[var(--border)] bg-[var(--surface)] px-[15px] py-[7px] text-[14px] leading-6 whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
+          class="dialog-prompt-card mb-5 rounded-lg bg-[var(--surface)] px-4 py-2 text-[14px] leading-6 whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
           @click="handleModalLinkClick"
           v-html="linkifiedMessage"
         ></div>
@@ -282,7 +282,7 @@ watch(
             <template v-if="spNodesExpanded">
               <div
                 v-if="state.snapshotPreview.customNodes.length > 0"
-                class="dialog-list flex max-h-[240px] flex-col gap-[3px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] p-1.5"
+                class="dialog-list flex max-h-[240px] flex-col gap-[3px] overflow-y-auto rounded-md bg-[var(--surface)] p-1.5"
               >
                 <div
                   v-for="node in state.snapshotPreview.customNodes"
@@ -325,7 +325,7 @@ watch(
             <template v-if="spPipExpanded">
               <div
                 v-if="state.snapshotPreview.pipPackageCount > 0"
-                class="dialog-list flex max-h-[240px] flex-col gap-[3px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] p-1.5"
+                class="dialog-list flex max-h-[240px] flex-col gap-[3px] overflow-y-auto rounded-md bg-[var(--surface)] p-1.5"
               >
                 <div
                   v-for="(version, name) in state.snapshotPreview.pipPackages"
@@ -359,7 +359,7 @@ watch(
                 >{{ group.label }}</span
               >
               <div
-                class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+                class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md bg-[var(--surface)] px-3 py-2"
                 @click="handleModalLinkClick"
               >
                 <div
@@ -473,7 +473,7 @@ watch(
         :class="state.messageDetails.length > 0 ? 'max-h-[70vh]' : 'max-h-[50vh]'"
       >
         <div
-          class="dialog-prompt-card mb-5 rounded-lg border border-solid border-[var(--border)] bg-[var(--surface)] px-[15px] py-[7px] text-[14px] leading-6 whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
+          class="dialog-prompt-card mb-5 rounded-lg bg-[var(--surface)] px-4 py-2 text-[14px] leading-6 whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
           v-html="linkify(state.message)"
         ></div>
         <div v-if="state.messageDetails.length" class="dialog-details mt-5 mb-0">
@@ -487,7 +487,7 @@ watch(
               >{{ group.label }}</span
             >
             <div
-              class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+              class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md bg-[var(--surface)] px-3 py-2"
               @click="handleModalLinkClick"
             >
               <div
