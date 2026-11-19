@@ -699,7 +699,7 @@ function reachesContentsDirectly(
   )
 }
 
-const contentsWatchedForDestroy = new WeakSet<Electron.WebContents>()
+const contentsWatchedForTeardown = new WeakSet<Electron.WebContents>()
 
 function addInstallationSubscriber(
   pending: PendingDownload,
@@ -707,11 +707,13 @@ function addInstallationSubscriber(
   installationId: string | null
 ): void {
   ;(pending.installationSubscribers ??= new Map()).set(contents, installationId)
-  if (contentsWatchedForDestroy.has(contents)) return
-  contentsWatchedForDestroy.add(contents)
-  contents.once('destroyed', () => {
+  if (contentsWatchedForTeardown.has(contents)) return
+  contentsWatchedForTeardown.add(contents)
+  const unsubscribe = (): void => {
     for (const job of pendingDownloads.values()) job.installationSubscribers?.delete(contents)
-  })
+  }
+  contents.once('destroyed', unsubscribe)
+  contents.on('did-navigate', unsubscribe)
 }
 
 function joinModelJob(
