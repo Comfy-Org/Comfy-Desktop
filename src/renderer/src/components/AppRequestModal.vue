@@ -3,7 +3,10 @@ import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import Textarea from '@comfyorg/design-system/textarea/Textarea'
+import { AppWindow, Plus } from '@lucide/vue'
+import type { AppCard } from '../types/ipc'
 import BaseModal from './ui/BaseModal.vue'
+import requestArt from '../assets/app-request/request-art.webp'
 
 type RequestStatus = 'idle' | 'sending' | 'sent' | 'failed'
 
@@ -11,7 +14,7 @@ const APP_REQUEST_MAX_LENGTH = 500
 const AUTOCLOSE_MS = 2000
 const IME_COMPOSING_KEY_CODE = 229
 
-const props = defineProps<{ open: boolean }>()
+const props = withDefaults(defineProps<{ open: boolean; apps?: AppCard[] }>(), { apps: () => [] })
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -22,6 +25,22 @@ const request = ref('')
 const status = ref<RequestStatus>('idle')
 let attempt = 0
 let autocloseTimer: ReturnType<typeof setTimeout> | null = null
+
+const ART_APP_COUNT = 3
+const PICTURE_URL = /\.(avif|gif|jpe?g|png|webp)(\?|#|$)/i
+
+function stillOf(app: AppCard): string | null {
+  const cover = app.covers[0]
+  if (!cover) return null
+  if (cover.stillUrl) return cover.stillUrl
+  return PICTURE_URL.test(cover.url) ? cover.url : null
+}
+
+const artApps = computed(() =>
+  props.apps
+    .slice(0, ART_APP_COUNT)
+    .map((app) => ({ id: app.id, title: app.title, still: stillOf(app) }))
+)
 
 const sending = computed(() => status.value === 'sending')
 const sent = computed(() => status.value === 'sent')
@@ -94,16 +113,70 @@ watch(
 <template>
   <BaseModal
     :open="open"
-    size="sm"
+    size="md"
     close-outside
     :aria-labelledby="titleId"
-    content-class="[&_.base-modal-footer]:p-4 [&_.base-modal-header]:border-b-0 [&_.base-modal-header]:pb-0"
+    content-class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto] min-[600px]:grid-cols-[232px_minmax(0,1fr)] [&_.base-modal-aside]:hidden min-[600px]:[&_.base-modal-aside]:block [&_.base-modal-aside]:row-span-3 [&_.base-modal-aside]:overflow-hidden [&_.base-modal-aside]:rounded-l-[inherit] [&_.base-modal-body]:flex [&_.base-modal-body]:flex-col [&_.base-modal-footer]:p-4 [&_.base-modal-header]:border-b-0 [&_.base-modal-header]:pt-6 [&_.base-modal-header]:pb-0"
     @close="close"
   >
+    <template #aside>
+      <div
+        class="relative grid size-full place-items-center bg-cover bg-center px-6"
+        :style="{ backgroundImage: `url(${requestArt})` }"
+        aria-hidden="true"
+        data-testid="app-request-art"
+      >
+        <div
+          class="flex w-full flex-col gap-1 rounded-[14px] bg-white/92 p-2 text-neutral-900 shadow-[0_18px_40px_-16px_rgb(40_40_80/0.45)]"
+        >
+          <p class="m-0 px-1.5 pt-1 pb-1.5 text-xs font-semibold text-neutral-900">
+            {{ t('sidebar.apps') }}
+          </p>
+          <div
+            v-for="app in artApps"
+            :key="app.id"
+            class="flex min-w-0 items-center gap-2.5 rounded-[9px] px-1.5 py-1"
+            data-testid="app-request-art-app"
+          >
+            <img
+              v-if="app.still"
+              :src="app.still"
+              alt=""
+              class="size-7 shrink-0 rounded-[7px] object-cover"
+            />
+            <span
+              v-else
+              class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-neutral-900/8 text-neutral-500"
+            >
+              <AppWindow :size="14" :stroke-width="1.75" />
+            </span>
+            <span class="truncate text-[12.5px] leading-tight text-neutral-700">
+              {{ app.title }}
+            </span>
+          </div>
+          <div
+            class="flex min-w-0 items-center gap-2.5 rounded-[9px] bg-neutral-900/6 px-1.5 py-1"
+            data-testid="app-request-art-yours"
+          >
+            <span
+              class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-neutral-900 text-white"
+            >
+              <Plus :size="14" :stroke-width="2" />
+            </span>
+            <span class="truncate text-[12.5px] leading-tight font-semibold text-neutral-900">
+              {{ t('apps.request.artYours') }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </template>
     <template #header>
       <h2 :id="titleId" class="m-0 text-base leading-[1.3] font-semibold text-neutral-100">
         {{ t('apps.request.title') }}
       </h2>
+      <p class="m-0 mt-1.5 text-sm leading-[1.5] text-text-muted">
+        {{ t('apps.request.intro') }}
+      </p>
     </template>
 
     <p
@@ -114,17 +187,17 @@ watch(
     >
       {{ t('apps.request.thanks') }}
     </p>
-    <div v-else class="flex flex-col gap-2">
+    <div v-else class="flex flex-1 flex-col gap-2">
       <Textarea
         v-model="request"
         data-initial-focus
-        rows="4"
+        rows="5"
         :maxlength="APP_REQUEST_MAX_LENGTH"
         :readonly="sending"
         :aria-labelledby="titleId"
         :aria-describedby="failed ? errorId : undefined"
         :placeholder="t('apps.request.placeholder')"
-        class="resize-none leading-[1.5]"
+        class="min-h-28 flex-1 resize-none leading-[1.5]"
         data-testid="app-request-input"
         @keydown.meta.enter="sendFromKeyboard"
         @keydown.ctrl.enter="sendFromKeyboard"

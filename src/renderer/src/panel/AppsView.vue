@@ -335,7 +335,7 @@ onBeforeUnmount(() => {
         </ul>
       </div>
     </div>
-    <AppRequestModal :open="requestOpen" @close="requestOpen = false" />
+    <AppRequestModal :open="requestOpen" :apps="apps" @close="requestOpen = false" />
     <div v-if="openApp" class="absolute inset-0 flex">
       <AppPageHost
         :app-id="openApp.id"

@@ -248,4 +248,40 @@ describe('AppRequestModal', () => {
     expect(input().value).toBe('')
     expect(sendButton().disabled).toBe(true)
   })
+
+  it('shows the first three apps and an app of your own beside the form, hidden from screen readers', async () => {
+    const app = (id: string, stillUrl: string | null, url = `${id}.mp4`) => ({
+      id,
+      title: id.toUpperCase(),
+      description: '',
+      covers: stillUrl === null && url === '' ? [] : [{ url, stillUrl }]
+    })
+    const wrapper = mount(AppRequestModal, {
+      attachTo: document.body,
+      props: {
+        open: true,
+        apps: [
+          app('a', '/a-still.webp'),
+          app('b', null, '/b.png'),
+          app('c', null),
+          app('d', '/d.webp')
+        ]
+      }
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+
+    const art = document.querySelector('[data-testid="app-request-art"]')!
+    expect(art.getAttribute('aria-hidden')).toBe('true')
+    const rows = [...art.querySelectorAll('[data-testid="app-request-art-app"]')]
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(['A', 'B', 'C'])
+    expect(rows.map((row) => row.querySelector('img')?.getAttribute('src') ?? null)).toEqual([
+      '/a-still.webp',
+      '/b.png',
+      null
+    ])
+    expect(art.querySelector('[data-testid="app-request-art-yours"]')?.textContent?.trim()).toBe(
+      'Your app'
+    )
+  })
 })

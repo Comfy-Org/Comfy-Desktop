@@ -50,6 +50,8 @@
       "tile": "Tell us what app you want…",
       "ask": "Ask for an app",
       "title": "What app do you want?",
+      "intro": "Your idea helps us choose what to build next.",
+      "artYours": "Your app",
       "placeholder": "Say what it should make, from what",
       "send": "Send",
       "sending": "Sending…",
