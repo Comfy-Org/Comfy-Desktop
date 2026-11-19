@@ -153,13 +153,19 @@ describe('piiScrub', () => {
         ['\\\\server\\c$\\Users\\alice\\x', '\\\\server\\c$\\Users\\[REDACTED]\\x'],
         ['\\\\?\\UNC\\server\\c$\\Users\\alice\\x', '\\\\?\\UNC\\server\\c$\\Users\\[REDACTED]\\x']
       ].flatMap(([path, scrubbed]) =>
-        ['\\n', '\\r\\n', '\\t'].map((escape) => [
+        ['\\n', '\\r\\n', '\\t', '\x1b[0m', '\\f', '\\u000a'].map((escape) => [
           `Traceback${escape}${path}`,
           `Traceback${escape}${scrubbed}`
         ])
       )
-    )('redacts a raw share path after an escaped control character: %s', (input, expected) => {
+    )('redacts a raw share path after an escape or a colour code: %s', (input, expected) => {
       expect(scrubPII(input)).toBe(expected)
+    })
+
+    it('redacts a share path after an escaped path in the same line', () => {
+      expect(scrubPII('copy "C:\\\\work\\\\temp" to \\\\home\\Users\\alice\\x')).toBe(
+        'copy "C:\\\\work\\\\temp" to \\\\home\\Users\\[REDACTED]\\x'
+      )
     })
 
     it('keeps a Windows line ending after a path', () => {
@@ -259,17 +265,6 @@ describe('piiScrub', () => {
       ]
     ])(
       'hides the last folder of an escaped path whose folders read as a share: %s',
-      (input, expected) => {
-        expect(scrubPII(input)).toBe(expected)
-      }
-    )
-
-    it.each([
-      ['\x1b[0m\\\\server\\Users\\alice\\x', '\x1b[0m\\\\server\\Users\\[REDACTED]\\x'],
-      ['x\\f\\\\server\\Users\\alice\\x', 'x\\f\\\\server\\Users\\[REDACTED]\\x'],
-      ['x\\u000a\\\\server\\Users\\alice\\x', 'x\\u000a\\\\server\\Users\\[REDACTED]\\x']
-    ])(
-      'redacts a raw share path right after a colour code or another escape: %s',
       (input, expected) => {
         expect(scrubPII(input)).toBe(expected)
       }
