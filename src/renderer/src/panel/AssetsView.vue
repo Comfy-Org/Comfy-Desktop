@@ -323,6 +323,11 @@ function placeSubtitle(option: AssetBuild): string | null {
 
 const revealFolderLabel = computed(() => t(revealInFolderKey(window.api.platform)))
 
+function revealPlaceFolder(option: AssetBuild): void {
+  placePickerOpen.value = false
+  void openPlaceFolder(option)
+}
+
 async function openPlaceFolder(option: AssetBuild): Promise<void> {
   const opened = await window.api
     .openOutputFolder(option.computer ? undefined : option.build.id)
@@ -1113,17 +1118,18 @@ function extensionOf(name: string): string {
                   :text="revealFolderLabel"
                   class="absolute top-1/2 right-7.5 -translate-y-1/2"
                 >
-                  <MenuItem
-                    as="button"
+                  <Button
                     type="button"
-                    class="size-6.5 min-h-0 justify-center rounded-md p-0 text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-foreground"
+                    variant="muted-textonly"
+                    size="icon"
+                    tabindex="-1"
+                    class="size-6.5 rounded-md p-0 text-muted-foreground hover:bg-transparent hover:text-foreground"
                     :aria-label="`${revealFolderLabel}: ${option.build.name}`"
                     :data-testid="`assets-place-reveal-${option.build.id}`"
-                    @keydown.escape="placePickerOpen = false"
-                    @select="openPlaceFolder(option)"
+                    @click="revealPlaceFolder(option)"
                   >
                     <ScanSearch :size="15" aria-hidden="true" />
-                  </MenuItem>
+                  </Button>
                 </Tooltip>
               </div>
             </template>

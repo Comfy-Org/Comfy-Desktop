@@ -700,38 +700,39 @@ describe('AssetsView', () => {
     ).toBe(true)
   })
 
-  it('reaches Show in Finder with the arrow keys and opens the folder with Enter', async () => {
-    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+  it('moves between rows with the arrow keys and never stops on Show in Finder', async () => {
+    const wrapper = await mountAssets([], {
+      builds: [localBuild('lab', 'Video Lab'), localBuild('art', 'Art Lab')]
+    })
     await openBuildPicker(wrapper)
-    const row = document.querySelector<HTMLElement>('[data-testid="assets-build-lab"]')!
-    const press = (key: string) =>
+    const press = async (key: string) => {
       document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
-
-    row.focus()
-    press('ArrowDown')
-    await flushPromises()
-
-    expect(document.activeElement?.getAttribute('data-testid')).toBe('assets-place-reveal-lab')
-    press('Enter')
-    await flushPromises()
-    expect(openOutputFolder).toHaveBeenCalledExactlyOnceWith('lab')
-  })
-
-  it('closes the picker with one Escape when Show in Finder has focus', async () => {
-    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
-    await openBuildPicker(wrapper)
-    const press = (key: string) =>
-      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      await flushPromises()
+    }
+    const focused = () => document.activeElement?.getAttribute('data-testid') ?? undefined
+    expect(buildRows().length, 'more than one row').toBeGreaterThan(1)
 
     document.querySelector<HTMLElement>('[data-testid="assets-build-lab"]')!.focus()
-    press('ArrowDown')
-    await flushPromises()
-    expect(document.activeElement?.getAttribute('data-testid')).toBe('assets-place-reveal-lab')
+    const visited: (string | undefined)[] = []
+    for (let step = 0; step < 4; step++) {
+      await press('ArrowDown')
+      visited.push(focused())
+    }
+    await press('ArrowUp')
+    visited.push(focused())
 
-    press('Escape')
+    expect(visited.every((id) => id?.startsWith('assets-build-'))).toBe(true)
+    expect(document.querySelector('.tooltip-bubble'), 'no tooltip opens').toBeNull()
+  })
+
+  it('closes the picker when Show in Finder is clicked', async () => {
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    await openBuildPicker(wrapper)
+
+    document.querySelector<HTMLElement>('[data-testid="assets-place-reveal-lab"]')!.click()
     await flushPromises()
 
-    expect(document.querySelector('[data-testid="assets-place-reveal-lab"]')).toBeNull()
+    expect(openOutputFolder).toHaveBeenCalledExactlyOnceWith('lab')
     expect(wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded')).toBe(
       'false'
     )
