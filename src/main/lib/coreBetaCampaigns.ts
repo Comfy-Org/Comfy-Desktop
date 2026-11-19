@@ -332,14 +332,18 @@ export function enrolledAgentOverride(
     registry: readonly CampaignRegistryEntry[]
     answers: ReadonlyMap<string, CampaignAnswer>
   },
+  records: CampaignRecords,
   now: number,
   idClass: IdClass
 ): { override: unknown } | null {
   for (const { key, args } of campaigns.registry) {
     const answer = campaigns.answers.get(key)
-    if (!answer?.enrol || !args.includes('--enable-agent')) continue
-    if (!answer.grants.some(({ grant }) => grant.arg === '--enable-agent')) continue
-    if (answerRefusal(answer, false, now, idClass)) continue
+    if (!answer || !args.includes('--enable-agent')) continue
+    const candidate = answer.grants.find(({ grant }) => grant.arg === '--enable-agent')
+    if (!candidate) continue
+    const member = heldRecord(records, key, candidate) !== undefined
+    if (!member && !answer.enrol) continue
+    if (answerRefusal(answer, member, now, idClass)) continue
     const payload = answer.payload
     return {
       override:

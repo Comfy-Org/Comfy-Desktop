@@ -187,6 +187,31 @@ describe('initCoreBetaCampaigns', () => {
     expect(deadlines()).toEqual({ desktop_campaigns: 5000, [KEY]: 5000 })
   })
 
+  it('a live read waits for this boot to answer instead of serving the saved answer', async () => {
+    seed('campaign-flags.json', {
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW },
+      [KEY]: { value: 'enrol', payload: AGENT, fetchedAt: NOW - DAY_MS }
+    })
+    let answerNow: (answer: Answer) => void = () => {}
+    getOpsFlagResult.mockImplementation((key: string) =>
+      key === KEY
+        ? new Promise((resolve) => {
+            answerNow = resolve
+          })
+        : Promise.resolve(value(true, REGISTRY))
+    )
+    await initCoreBetaCampaigns({ distinctId: 'id' })
+    expect((await getCoreBetaCampaigns()).answers.get(KEY)).toMatchObject({ enrol: true })
+    let answered = false
+    const live = getCoreBetaCampaigns({ live: true }).finally(() => {
+      answered = true
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(answered, 'still waiting for this boot to answer').toBe(false)
+    answerNow(value('hold', AGENT))
+    expect((await live).answers.get(KEY)).toMatchObject({ enrol: false, fetchedAt: NOW })
+  })
+
   it('fetches a key the fresh registry lists for the first time on the same boot', async () => {
     serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
     await initCoreBetaCampaigns({ distinctId: 'id' })
