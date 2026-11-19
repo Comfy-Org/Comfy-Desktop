@@ -576,11 +576,11 @@ describe('GlobalSettingsView', () => {
     expect(modal.state.checkboxes).toEqual([
       { id: 'deleteInstances', label: 'Delete all ComfyUI instances', checked: false },
       { id: 'deleteModels', label: 'Delete all model files', checked: false },
-      { id: 'deleteInputOutput', label: 'Delete all input and output files', checked: false }
+      { id: 'deleteInputOutput', label: 'Delete shared input and output files', checked: false }
     ])
     const details = modal.state.messageDetails.flatMap((group) => group.items).join('\n')
     expect(details).toContain('Trash')
-    expect(details).toContain('Input and output folders you picked yourself')
+    expect(details).toContain('Input and output folders you picked yourself, unless they are inside an instance you delete')
     modal.close(false)
     await flushPromises()
   })

@@ -334,15 +334,15 @@
     ${NSD_CreateLabel} 12u 54u 92% 16u "Removes the shared models folder Comfy Desktop downloads into. Model folders you added yourself are kept."
     Pop $0
 
-    ${NSD_CreateCheckbox} 0 74u 100% 12u "Delete all input and output files"
+    ${NSD_CreateCheckbox} 0 74u 100% 12u "Delete shared input and output files"
     Pop $comfyRemoveInputOutputCheckbox
     ${If} $comfyRemoveInputOutput == ${BST_CHECKED}
       ${NSD_Check} $comfyRemoveInputOutputCheckbox
     ${EndIf}
-    ${NSD_CreateLabel} 12u 87u 92% 16u "Removes the shared input and output folders and the files in them. Folders you picked yourself are kept."
+    ${NSD_CreateLabel} 12u 87u 92% 16u "Removes the shared input and output folders. Folders you picked are kept unless they are inside a deleted instance."
     Pop $0
 
-    ${NSD_CreateLabel} 0 110u 100% 16u "Leave a box unchecked to keep that data. Installing Comfy Desktop again will find it."
+    ${NSD_CreateLabel} 0 110u 100% 16u "Unchecked boxes keep their data, except files inside a deleted instance. Installing Comfy Desktop again will find what is kept."
     Pop $0
 
     nsDialogs::Show
