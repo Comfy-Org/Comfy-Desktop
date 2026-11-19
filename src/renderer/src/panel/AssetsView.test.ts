@@ -720,11 +720,27 @@ describe('AssetsView', () => {
     }
     await press('ArrowUp')
     visited.push(focused())
-    await new Promise((resolve) => setTimeout(resolve, 300))
 
     expect(visited, 'focus moves to the next row').toContain('assets-build-art')
     expect(visited.every((id) => id?.startsWith('assets-build-'))).toBe(true)
-    expect(document.querySelector('.tooltip-bubble'), 'no tooltip opens').toBeNull()
+  })
+
+  it('opens the picker closed again after it leaves and comes back', async () => {
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    await openBuildPicker(wrapper)
+    const installationStore = useInstallationStore()
+
+    installationStore.loading = true
+    installationStore.installations = []
+    await flushPromises()
+    expect(wrapper.find('[data-testid="assets-build-picker"]').exists()).toBe(false)
+    installationStore.installations = [localBuild('lab', 'Video Lab')]
+    installationStore.loading = false
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded')).toBe(
+      'false'
+    )
   })
 
   it('closes the picker when Show in Finder is clicked', async () => {

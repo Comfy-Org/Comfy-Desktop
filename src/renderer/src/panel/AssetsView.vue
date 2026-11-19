@@ -255,6 +255,10 @@ const selectedBuild = computed<AssetBuild | null>(() => {
   )
 })
 
+watch(selectedBuild, (build) => {
+  if (!build) placePickerOpen.value = false
+})
+
 function choosePlace(id: string): void {
   pickedPlace.value = id
   focusMiss.value = null
