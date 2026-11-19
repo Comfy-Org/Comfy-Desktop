@@ -11,8 +11,7 @@ import {
   Download,
   FolderOpen,
   Pause,
-  PauseCircle,
-  PlayCircle,
+  Play,
   RotateCcw,
   Trash2,
   X
@@ -319,25 +318,26 @@ const footerStats = computed<string[]>(() =>
                   v-if="d.status === 'downloading' && d.canPause !== false"
                   type="button"
                   variant="secondary"
-                  size="icon"
+                  size="md"
                   class="dlm-btn"
                   :title="t('downloadsPopup.pause')"
                   :aria-label="t('downloadsPopup.pause')"
                   @click="pause(d)"
                 >
-                  <PauseCircle :size="14" />
+                  <Pause :size="14" />
+                  {{ t('downloadsPopup.pause') }}
                 </Button>
                 <Button
                   v-else-if="d.status === 'paused'"
                   type="button"
-                  variant="inverted"
+                  variant="secondary"
                   size="md"
                   class="dlm-btn"
                   :title="t('downloadsPopup.resume')"
                   :aria-label="t('downloadsPopup.resume')"
                   @click="resume(d)"
                 >
-                  <PlayCircle :size="14" />
+                  <Play :size="14" />
                   {{ t('downloadsPopup.resume') }}
                 </Button>
                 <Button

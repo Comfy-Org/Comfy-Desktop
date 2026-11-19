@@ -196,8 +196,26 @@ describe('DownloadsFullView progress ring', () => {
     expect(ring.attributes('aria-valuenow')).toBe('30')
     expect(arcOffset(view)).toBe(70)
     expect(view.get('.dlm-ring-svg').classes()).not.toContain('animate-spin')
-    expect(view.find('.lucide-pause').exists()).toBe(true)
-    expect(view.find('.lucide-download').exists()).toBe(false)
+    expect(ring.find('.lucide-pause').exists()).toBe(true)
+    expect(ring.find('.lucide-download').exists()).toBe(false)
+  })
+
+  it('labels the live row actions Pause and Resume, and sends the matching action', async () => {
+    const view = await mountView(live({ progress: 0.5, totalBytes: 100 }))
+    const pause = view.get('.dlm-primary .dlm-btn')
+    expect(pause.text()).toBe('Pause')
+    expect(pause.attributes('aria-label')).toBe('Pause')
+    await pause.trigger('click')
+    await view.setProps({ state: live({ status: 'paused', progress: 0.5, totalBytes: 100 }) })
+    const resume = view.get('.dlm-primary .dlm-btn')
+    expect(resume.text()).toBe('Resume')
+    expect(resume.attributes('aria-label')).toBe('Resume')
+    expect(resume.find('.lucide-play').exists()).toBe(true)
+    await resume.trigger('click')
+    expect(actions).toEqual([
+      { action: 'pause', ref: 'live', url: 'https://example.com/live' },
+      { action: 'resume', ref: 'live', url: 'https://example.com/live' }
+    ])
   })
 
   it('keeps the arc transition off for reduced motion', async () => {

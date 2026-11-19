@@ -48,7 +48,7 @@ afterEach(() => {
   while (hosts.length) hosts.pop()?.remove()
 })
 
-async function mountView() {
+async function mountView(viewState: PopupDownloadsState = state) {
   Object.defineProperty(window, '__comfyTitlePopup', {
     configurable: true,
     value: {
@@ -62,7 +62,7 @@ async function mountView() {
   host.style.cssText = 'position: fixed; left: 40px; top: 40px; width: 860px; height: 560px'
   document.body.append(host)
   hosts.push(host)
-  const wrapper = mount(DownloadsFullView, { props: { state }, attachTo: host })
+  const wrapper = mount(DownloadsFullView, { props: { state: viewState }, attachTo: host })
   mounted.push(wrapper)
   await flushPromises()
   return wrapper
@@ -135,6 +135,56 @@ describe('DownloadsFullView layout', () => {
     expect(trailing[0]!.right).toBe(clear - 18)
   })
 
+  it('gives every row the same labelled secondary action: Pause, Resume, Show in Finder and Retry share variant, height and right edge', async () => {
+    await mountView({
+      ...state,
+      active: [
+        ...state.active,
+        {
+          id: 'paused',
+          url: 'https://example.com/paused',
+          filename: 'ltx-video.safetensors',
+          progress: 0.3,
+          receivedBytes: 300,
+          totalBytes: 1000,
+          status: 'paused'
+        }
+      ]
+    })
+    const rows = [...document.querySelectorAll<HTMLElement>('.dlm-row')]
+    const kinds = rows.map((row) => row.className.match(/is-\w+/)![0])
+    expect(kinds).toEqual(['is-active', 'is-paused', 'is-completed', 'is-error'])
+    const buttons = rows.map((row) => row.querySelector<HTMLElement>('.dlm-primary .dlm-btn')!)
+    expect(buttons.map((b) => b.textContent!.trim())).toEqual([
+      'Pause',
+      'Resume',
+      'Show in Finder',
+      'Retry'
+    ])
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Pause',
+      'Resume',
+      null,
+      'Retry'
+    ])
+    for (const b of buttons) expect(b.querySelector('svg')!.getBoundingClientRect().width).toBe(14)
+    expect(buttons[0]!.querySelector('.lucide-pause')).not.toBeNull()
+    expect(buttons[1]!.querySelector('.lucide-play')).not.toBeNull()
+    expect(new Set(buttons.map((b) => b.className)).size).toBe(1)
+    const rects = buttons.map((b) => b.getBoundingClientRect())
+    expect(new Set(rects.map((r) => r.height)).size).toBe(1)
+    expect(new Set(rects.map((r) => r.right)).size).toBe(1)
+    for (const [i, b] of buttons.entries()) {
+      expect(b.scrollWidth).toBeLessThanOrEqual(b.clientWidth)
+      const row = rows[i]!.getBoundingClientRect()
+      expect(
+        Math.abs(rects[i]!.top + rects[i]!.height / 2 - (row.top + row.height / 2))
+      ).toBeLessThanOrEqual(0.5)
+    }
+    const ring = rows[1]!.querySelector('.dlm-ring')!
+    expect(ring.getAttribute('aria-valuenow')).toBe('30')
+  })
+
   it('puts every row in one card with a line between rows only, edge to edge', async () => {
     await mountView()
     const list = document.querySelector<HTMLElement>('.dlm-list')!
@@ -201,7 +251,7 @@ describe('DownloadsFullView layout', () => {
     await mountView()
     const active = document.querySelector('.dlm-row.is-active')!
     expect(active.querySelector('.dlm-sub')!.textContent).toMatch(/^42% · /)
-    expect(active.querySelector('.dlm-primary')!.textContent!.trim()).toBe('')
+    expect(active.querySelector('.dlm-primary')!.textContent!.trim()).toBe('Pause')
     const failed = document.querySelector('.dlm-row.is-error')!
     expect(failed.textContent).not.toMatch(/Failed/)
     expect(failed.querySelector('.dlm-sub')!.textContent).toBe('Network error')
