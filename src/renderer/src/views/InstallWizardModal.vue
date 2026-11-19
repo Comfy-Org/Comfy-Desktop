@@ -1759,7 +1759,6 @@ defineExpose({ open })
     :anchor-top="view === 'change'"
     :brand-backdrop="useTakeoverHost"
     :closable="view === 'summary' && !hideBackToDashboard"
-    :close-title="$t('common.backToDashboard')"
     data-testid="new-build-modal"
     @close="emit('close')"
   >

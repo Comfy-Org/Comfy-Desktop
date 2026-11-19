@@ -574,14 +574,14 @@ describe('GlobalSettingsView', () => {
     expect(modal.state.title).toBe('Remove Comfy Desktop data?')
     expect(modal.state.confirmStyle).toBe('danger')
     expect(modal.state.checkboxes).toEqual([
-      { id: 'deleteInstances', label: 'Delete all ComfyUI instances', checked: false },
+      { id: 'deleteInstances', label: 'Delete all ComfyUI builds', checked: false },
       { id: 'deleteModels', label: 'Delete all model files', checked: false },
       { id: 'deleteInputOutput', label: 'Delete shared input and output files', checked: false }
     ])
     const details = modal.state.messageDetails.flatMap((group) => group.items).join('\n')
     expect(details).toContain('Trash')
     expect(details).toContain(
-      'Input and output folders you picked yourself, outside the instances you delete'
+      'Input and output folders you picked yourself, outside the builds you delete'
     )
     modal.close(false)
     await flushPromises()

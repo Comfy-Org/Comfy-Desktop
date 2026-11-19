@@ -509,6 +509,19 @@ describe('InstallWizardModal heading', () => {
     expect(wrapper.find('[data-testid="config-change-form"]').exists()).toBe(false)
   })
 
+  it('titles the close button Close, since closing New build only dismisses it', async () => {
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    const close = wrapper.get('.setup-modal-close')
+    expect(close.attributes('title')).toBe('Close')
+    expect(close.attributes('aria-label')).toBe('Close')
+    await close.trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('sums up the detected setup and opens every field from Change', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {

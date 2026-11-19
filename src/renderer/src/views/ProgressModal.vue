@@ -769,7 +769,7 @@ defineExpose({ startOperation, showOperation })
             @click="returnToDashboard('crashed')"
           >
             <ArrowLeft :size="14" />
-            {{ $t('common.back') }}
+            {{ $t('common.backToDashboard') }}
           </Button>
           <Button
             v-if="!currentOp.destroysInstance"

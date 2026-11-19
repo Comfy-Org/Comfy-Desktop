@@ -167,7 +167,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.exists('.brand-progress__bar')).toBe(true)
 
     expect(body.exists('.brand-progress__footer')).toBe(true)
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Back to Home')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Minimize')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Try again')
     expect(body.classList('.brand-progress__footer-bar')).not.toContain('is-centered')
@@ -317,7 +317,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     )
 
     expect(body.exists('.brand-progress__footer')).toBe(true)
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Back to Home')
     expect(body.selectorText('.brand-progress__footer')).toContain('Use next available port')
     expect(body.selectorText('.brand-progress__footer')).toContain('Stop process and retry')
 
@@ -343,7 +343,7 @@ describe('ProgressModal — brand branch state transitions', () => {
 
     expect(body.selectorText('.brand-progress__footer')).toContain('Use next available port')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Stop process and retry')
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Back to Home')
   })
 
   it('renders only Return to Dashboard when a port conflict has no suggested fix', async () => {
@@ -361,7 +361,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     })
 
     expect(body.exists('.brand-progress__footer')).toBe(true)
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Back to Home')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Use next available port')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Stop process and retry')
 
@@ -411,7 +411,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(body.selectorText('.brand-progress__banner')).toContain(
       'ComfyUI is still running a prompt'
     )
-    expect(body.selectorText('.brand-progress__footer')).toContain('Return to Home')
+    expect(body.selectorText('.brand-progress__footer')).toContain('Back to Home')
     expect(body.selectorText('.brand-progress__footer')).toContain('Stop it and start this build')
     expect(body.selectorText('.brand-progress__footer')).not.toContain('Use next available port')
 
@@ -528,7 +528,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     })
     expect(body.exists('.brand-progress__footer')).toBe(true)
     expect(body.selectorText('.brand-progress__footer')).toContain('Cancel')
-    expect(body.selectorText('.brand-progress__footer')).not.toContain('Return to Home')
+    expect(body.selectorText('.brand-progress__footer')).not.toContain('Back to Home')
   })
 
   it('labels a failed launch\'s retry "Restart ComfyUI", not "Try again"', async () => {
@@ -608,7 +608,7 @@ describe('ProgressModal — brand branch state transitions', () => {
       flatPercent: 42
     })
 
-    const returnBtn = body.buttonByText('Return to Home')
+    const returnBtn = body.buttonByText('Back to Home')
     expect(returnBtn).not.toBeNull()
     returnBtn!.click()
     await flushPromises()
@@ -624,14 +624,14 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(api.returnToDashboard).toHaveBeenCalled()
   })
 
-  it('leaves a start of a build on this computer running when Return to Home is clicked', async () => {
+  it('leaves a start of a build on this computer running when Back to Home is clicked', async () => {
     mockModal.confirm.mockClear()
     useInstallationStore().installations = [
       { id: 'inst-1', name: 'Studio', sourceCategory: 'local' } as Installation
     ]
     const { wrapper, body } = await mountWithOp('inst-1', { opKind: 'launch' })
 
-    body.buttonByText('Return to Home')!.click()
+    body.buttonByText('Back to Home')!.click()
     await flushPromises()
 
     expect(mockModal.confirm).not.toHaveBeenCalled()
@@ -642,7 +642,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(api.returnToDashboard).toHaveBeenCalled()
   })
 
-  it('asks, then cancels a start when Return to Home is clicked with keepComfyRunningWhenWindowCloses off', async () => {
+  it('asks, then cancels a start when Back to Home is clicked with keepComfyRunningWhenWindowCloses off', async () => {
     mockModal.confirm.mockClear()
     useInstallationStore().installations = [
       { id: 'inst-1', name: 'Studio', sourceCategory: 'local' } as Installation
@@ -651,7 +651,7 @@ describe('ProgressModal — brand branch state transitions', () => {
     const api = (window as unknown as { api: MockApi }).api
     api.getSetting = vi.fn().mockResolvedValue(false)
 
-    body.buttonByText('Return to Home')!.click()
+    body.buttonByText('Back to Home')!.click()
     await flushPromises()
 
     expect(api.getSetting).toHaveBeenCalledWith('keepComfyRunningWhenWindowCloses')
@@ -661,14 +661,14 @@ describe('ProgressModal — brand branch state transitions', () => {
     expect(useProgressStore().operations.get('inst-1')?.cancelRequested).toBe(true)
   })
 
-  it('still asks, then cancels an install in flight when Return to Home is clicked', async () => {
+  it('still asks, then cancels an install in flight when Back to Home is clicked', async () => {
     mockModal.confirm.mockClear()
     useInstallationStore().installations = [
       { id: 'inst-1', name: 'Studio', sourceCategory: 'local' } as Installation
     ]
     const { body } = await mountWithOp('inst-1', { opKind: 'install' })
 
-    body.buttonByText('Return to Home')!.click()
+    body.buttonByText('Back to Home')!.click()
     await flushPromises()
 
     expect(mockModal.confirm).toHaveBeenCalledWith(

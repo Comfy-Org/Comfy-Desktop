@@ -279,7 +279,7 @@ defineExpose({ open })
   <ModalShell binding content-class="max-w-[620px]" @close="emit('close')">
     <template #header>
       <div class="flex min-w-0 flex-auto flex-col items-start gap-3 [&_.takeover-header]:w-full">
-        <TakeoverBack :label="$t('common.backToDashboard')" @back="emit('close')" />
+        <TakeoverBack :label="$t('common.back')" @back="emit('close')" />
         <TakeoverHeader
           :title="$t('quickInstall.grandTitle')"
           :subtitle="$t('quickInstall.grandSubtitle')"

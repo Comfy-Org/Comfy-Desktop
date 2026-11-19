@@ -311,7 +311,7 @@ describe('BuildProgressDialog', () => {
     }
   })
 
-  it('cancels a start without asking and offers Start again', async () => {
+  it('cancels a start without asking and offers Try again', async () => {
     const w = await openDialog('launch')
     expect(w.find('[role="dialog"]').attributes('aria-label')).toBe('Starting ComfyUI')
 
@@ -322,7 +322,7 @@ describe('BuildProgressDialog', () => {
     expect(w.emitted('retry')).toHaveLength(1)
   })
 
-  it('makes Start again the white primary and Close the grey secondary when a start fails', async () => {
+  it('makes Try again the white primary and Close the grey secondary when a start fails', async () => {
     const w = await openDialog('launch')
     settle({ ok: false, message: 'ComfyUI exited with code 1' })
     await flushPromises()
