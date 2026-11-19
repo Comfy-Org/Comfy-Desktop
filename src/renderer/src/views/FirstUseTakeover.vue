@@ -9,10 +9,12 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import TermsModal from '../components/TermsModal.vue'
 import TermsConsentRow from '../components/TermsConsentRow.vue'
 import InlineRichText from '../components/InlineRichText.vue'
+import SetupSummaryRow from '../components/SetupSummaryRow.vue'
 import BuildDeviceArt from '../panel/home/BuildDeviceArt.vue'
 import { deviceKindForPlatform } from '../panel/home/homeBuild'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { formatSize } from '../lib/formatting'
+import { SUMMARY_BOX_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
 import { saveSetupConsent, type SetupConsent } from '../lib/setupConsent'
 import {
   displayPath,
@@ -46,7 +48,6 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const modal = useModal()
 
-const ROW_CLASS = 'grid h-4 grid-cols-[147px_minmax(0,1fr)_auto] items-center text-[13px]/4'
 const CONSENT_ROW_CLASS = 'flex w-fit cursor-pointer items-center gap-2.5 text-xs/[15px]'
 const CHECKBOX_CLASS =
   'size-5 rounded-[5px] border-0 bg-white/6 text-[#070709] data-[state=checked]:bg-[#f1f1f3] [&_i]:size-3'
@@ -549,23 +550,25 @@ defineExpose({ open, resetContinue, browseInstallLocation })
         </section>
 
         <section
-          class="mt-3 flex flex-col gap-8 rounded-[14px] border border-white/7 bg-[rgb(230_230_230/0.04)] py-5 pr-[31px] pl-[33px]"
+          class="mt-3"
+          :class="SUMMARY_BOX_CLASS"
           :aria-label="t('setup.summary')"
           data-testid="setup-summary"
         >
           <template v-if="planState !== 'unavailable'">
-            <div :class="ROW_CLASS" data-testid="setup-row-hardware">
-              <span class="flex items-center gap-2.5 text-subtle-foreground">
-                <Zap :size="13" :stroke-width="1.75" aria-hidden="true" />{{ t('setup.hardware') }}
-              </span>
+            <SetupSummaryRow
+              :icon="Zap"
+              :label="t('setup.hardware')"
+              data-testid="setup-row-hardware"
+            >
               <span class="truncate text-foreground" data-testid="setup-hardware">
                 {{ hardware || t('setup.checking') }}
               </span>
               <span
-                class="ml-4 text-right whitespace-nowrap"
-                :class="
+                :class="[
+                  SUMMARY_META_CLASS,
                   unsupportedReason || hardwareWarning ? 'text-[#f0b135]' : 'text-subtle-foreground'
-                "
+                ]"
                 :title="unsupportedReason || hardwareWarning || undefined"
               >
                 {{
@@ -578,13 +581,12 @@ defineExpose({ open, resetContinue, browseInstallLocation })
                         : ''
                 }}
               </span>
-            </div>
-            <div :class="ROW_CLASS" data-testid="setup-row-location">
-              <span class="flex items-center gap-2.5 text-subtle-foreground">
-                <HardDrive :size="13" :stroke-width="1.75" aria-hidden="true" />{{
-                  t('setup.location')
-                }}
-              </span>
+            </SetupSummaryRow>
+            <SetupSummaryRow
+              :icon="HardDrive"
+              :label="t('setup.location')"
+              data-testid="setup-row-location"
+            >
               <span
                 v-if="location"
                 class="flex min-w-0 text-foreground"
@@ -596,26 +598,24 @@ defineExpose({ open, resetContinue, browseInstallLocation })
               </span>
               <span v-else class="truncate text-foreground">{{ t('setup.checking') }}</span>
               <span
-                class="ml-4 text-right whitespace-nowrap"
-                :class="lowDisk ? 'text-[#f0b135]' : 'text-subtle-foreground'"
+                :class="[SUMMARY_META_CLASS, lowDisk ? 'text-[#f0b135]' : 'text-subtle-foreground']"
                 data-testid="setup-location-meta"
               >
                 {{ locationMeta }}
               </span>
-            </div>
-            <div :class="ROW_CLASS" data-testid="setup-row-version">
-              <span class="flex items-center gap-2.5 text-subtle-foreground">
-                <Package :size="13" :stroke-width="1.75" aria-hidden="true" />{{
-                  t('setup.version')
-                }}
-              </span>
+            </SetupSummaryRow>
+            <SetupSummaryRow
+              :icon="Package"
+              :label="t('setup.version')"
+              data-testid="setup-row-version"
+            >
               <span class="truncate text-foreground" data-testid="setup-version">{{
                 version || t('setup.checking')
               }}</span>
-              <span class="ml-4 text-right whitespace-nowrap text-subtle-foreground">
+              <span :class="[SUMMARY_META_CLASS, 'text-subtle-foreground']">
                 {{ downloadSize ? t('setup.download', { size: downloadSize }) : '' }}
               </span>
-            </div>
+            </SetupSummaryRow>
           </template>
           <div
             v-else
@@ -636,7 +636,7 @@ defineExpose({ open, resetContinue, browseInstallLocation })
           </div>
         </section>
 
-        <div class="mt-9 flex flex-col gap-2.5 pl-8">
+        <div class="mt-9 flex flex-col gap-2.5 pl-5">
           <label
             v-if="hasLegacyDesktop"
             :class="CONSENT_ROW_CLASS"
