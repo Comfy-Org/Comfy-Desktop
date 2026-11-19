@@ -3,11 +3,13 @@ import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createWidget } from '@typeform/embed'
 import '@typeform/embed/build/css/widget.css'
+import Button from '@comfyorg/design-system/button/Button'
 import BaseModal from './ui/BaseModal.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 
 const FEEDBACK_FORM_ID = 'VhOXmuaL'
 const AUTOCLOSE_MS = 2000
+const LOAD_TIMEOUT_MS = 10_000
 
 const props = defineProps<{
   open: boolean
@@ -19,6 +21,8 @@ const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const container = ref<HTMLElement | null>(null)
 const loading = ref(true)
+const failed = ref(false)
+const attempt = ref(0)
 const submitted = ref(false)
 let autocloseTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -44,13 +48,30 @@ function onSubmit(): void {
   }, AUTOCLOSE_MS)
 }
 
+function retry(): void {
+  attempt.value += 1
+}
+
 watch(
-  [() => props.open, container],
+  [() => props.open, container, attempt],
   ([open, element], _previous, onCleanup) => {
     if (!open || !element) return
     loading.value = true
+    failed.value = false
     submitted.value = false
     let active = true
+    let loadTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      loadTimer = null
+      if (!active || !loading.value) return
+      loading.value = false
+      failed.value = true
+    }, LOAD_TIMEOUT_MS)
+    const clearLoadTimer = (): void => {
+      if (loadTimer != null) {
+        clearTimeout(loadTimer)
+        loadTimer = null
+      }
+    }
     const widget = createWidget(FEEDBACK_FORM_ID, {
       container: element,
       hidden: props.hiddenFields,
@@ -61,7 +82,10 @@ watch(
         allow: 'camera; microphone; autoplay; encrypted-media; fullscreen'
       },
       onReady: () => {
-        if (active) loading.value = false
+        if (!active) return
+        clearLoadTimer()
+        loading.value = false
+        failed.value = false
       },
       onSubmit: () => {
         if (active) onSubmit()
@@ -69,6 +93,7 @@ watch(
     })
     onCleanup(() => {
       active = false
+      clearLoadTimer()
       clearAutoclose()
       widget.unmount()
     })
@@ -94,7 +119,34 @@ watch(
       >
         {{ t('feedback.loading') }}
       </div>
-      <div ref="container" class="absolute inset-0 size-full" data-testid="feedback-widget" />
+      <div
+        v-else-if="failed"
+        class="absolute inset-0 z-1 flex flex-col items-center justify-center gap-3 px-10 text-center"
+        data-testid="feedback-failed"
+      >
+        <h2 class="m-0 text-heading font-semibold text-foreground">
+          {{ t('feedback.failedTitle') }}
+        </h2>
+        <p class="m-0 max-w-90 text-ui text-muted-foreground">
+          {{ t('apps.failedBody') }}
+        </p>
+        <Button
+          type="button"
+          variant="secondary"
+          size="md"
+          class="mt-1"
+          data-testid="feedback-retry"
+          @click="retry"
+        >
+          {{ t('apps.retry') }}
+        </Button>
+      </div>
+      <div
+        ref="container"
+        class="absolute inset-0 size-full"
+        :class="{ invisible: failed }"
+        data-testid="feedback-widget"
+      />
     </div>
   </BaseModal>
 </template>

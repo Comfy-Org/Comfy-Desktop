@@ -1817,7 +1817,8 @@
   },
   "feedback": {
     "modalLabel": "Send Feedback",
-    "loading": "Loading feedback form…"
+    "loading": "Loading feedback form…",
+    "failedTitle": "Feedback form didn't load"
   },
   "performanceTest": {
     "title": "Performance Tests",

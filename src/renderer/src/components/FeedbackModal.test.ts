@@ -146,4 +146,38 @@ describe('FeedbackModal', () => {
     expect(wrapper.emitted('close')).toBeUndefined()
     expect(emitTelemetryAction).not.toHaveBeenCalled()
   })
+
+  it('says the form did not load after ten seconds without onReady, and Try again reloads it', async () => {
+    await mountFeedback()
+    const widget = vi.mocked(createWidget).mock.results[0]!.value
+
+    await vi.advanceTimersByTimeAsync(9999)
+    expect(document.querySelector('.feedback-modal-loading')).not.toBeNull()
+    expect(document.querySelector('[data-testid="feedback-failed"]')).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(document.querySelector('.feedback-modal-loading')).toBeNull()
+    const failed = document.querySelector('[data-testid="feedback-failed"]')
+    expect(failed?.textContent).toContain("Feedback form didn't load")
+    expect(failed?.textContent).toContain('Check your internet connection, then try again.')
+
+    document.querySelector<HTMLButtonElement>('[data-testid="feedback-retry"]')!.click()
+    await flushPromises()
+    expect(widget.unmount).toHaveBeenCalledOnce()
+    expect(createWidget).toHaveBeenCalledTimes(2)
+    expect(document.querySelector('[data-testid="feedback-failed"]')).toBeNull()
+    expect(document.querySelector('.feedback-modal-loading')).not.toBeNull()
+
+    widgetOptions(1).onReady?.(ready)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(document.querySelector('.feedback-modal-loading')).toBeNull()
+    expect(document.querySelector('[data-testid="feedback-failed"]')).toBeNull()
+  })
+
+  it('never shows the failure once the form is ready', async () => {
+    await mountFeedback()
+    widgetOptions().onReady?.(ready)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(document.querySelector('[data-testid="feedback-failed"]')).toBeNull()
+  })
 })
