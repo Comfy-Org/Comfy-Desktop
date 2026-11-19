@@ -7,7 +7,7 @@ import * as settings from '../settings'
 import * as telemetry from './telemetry'
 import { VALID_PIP_NAME, installFilteredRequirementsDetailed, runUvPipDetailed } from './pip'
 import type { UvPipResult } from './pip'
-import { getActivePythonPath, getActiveUvPath, getActiveVenvDir } from './pythonEnv'
+import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
 import { findSitePackages } from '../sources/standalone/envPaths'
 import type { InstallationRecord } from '../installations'
 import { stripAnsi } from './stderrTail'
@@ -866,10 +866,13 @@ export async function restoreCoreFrontend(
   if (version === null) return true
   const tag = attemptTag()
   const reqPath = path.join(installation.installPath, `.launch-frontend-restore-${tag}-src.txt`)
-  const sitePackages = findSitePackages(getActiveVenvDir(installation))
   const backupDir = path.join(installation.installPath, `.launch-frontend-backup-${tag}`)
   try {
-    const backedUp = sitePackages !== null && (await backUpFrontend(sitePackages, backupDir))
+    const savedFrom = await backUpFrontend(pythonPath, backupDir)
+    if (savedFrom === 'failed') {
+      sendOutput(`Could not copy the installed ${FRONTEND_PACKAGE} aside; keeping it for now\n`)
+      return false
+    }
     await fs.promises.writeFile(reqPath, `${FRONTEND_PACKAGE}==${version}\n`, 'utf-8')
     sendOutput(`\nPutting ComfyUI's ${FRONTEND_PACKAGE}==${version} back…\n`)
     const restored = await runBoundedInstall(
@@ -887,9 +890,9 @@ export async function restoreCoreFrontend(
       signal,
       { extraArgs: ['--no-deps'] }
     )
-    if (!restored.ok && backedUp && sitePackages) {
+    if (!restored.ok && savedFrom !== null) {
       sendOutput(`Putting back any ${FRONTEND_PACKAGE} files the failed restore removed\n`)
-      await putBackMissingFiles(backupDir, sitePackages)
+      await putBackMissingFiles(backupDir, savedFrom)
     }
     return restored.ok
   } catch {
@@ -900,22 +903,27 @@ export async function restoreCoreFrontend(
   }
 }
 
-async function backUpFrontend(sitePackages: string, backupDir: string): Promise<boolean> {
+async function backUpFrontend(
+  pythonPath: string,
+  backupDir: string
+): Promise<string | null | 'failed'> {
+  const sitePackages = findSitePackages(path.dirname(path.dirname(pythonPath)))
+  if (sitePackages === null) return null
   const module = FRONTEND_PACKAGE.replace(/-/g, '_')
+  const entries = (await fs.promises.readdir(sitePackages).catch(() => [])).filter(
+    (entry) => entry === module || (entry.startsWith(`${module}-`) && entry.endsWith('.dist-info'))
+  )
+  if (entries.length === 0) return null
   try {
-    const entries = (await fs.promises.readdir(sitePackages)).filter(
-      (entry) =>
-        entry === module || (entry.startsWith(`${module}-`) && entry.endsWith('.dist-info'))
-    )
     for (const entry of entries) {
       await fs.promises.cp(path.join(sitePackages, entry), path.join(backupDir, entry), {
         recursive: true
       })
     }
-    return entries.length > 0
+    return sitePackages
   } catch (err) {
     console.warn('frontend restore: could not back up the installed frontend:', err)
-    return false
+    return 'failed'
   }
 }
 
