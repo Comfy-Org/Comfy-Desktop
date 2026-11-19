@@ -290,7 +290,7 @@ describe('BuildProgressDialog', () => {
     }
   })
 
-  it('cancels a start without asking and offers Start again', async () => {
+  it('cancels a start without asking and offers Try again', async () => {
     const w = await openDialog('launch')
     expect(w.find('[role="dialog"]').attributes('aria-label')).toBe('Starting ComfyUI')
 
