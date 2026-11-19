@@ -65,19 +65,12 @@ describe('normalizeRumErrorEvent', () => {
     expect(event.error.message).toBe('open "C:\\\\Users\\\\[REDACTED]\\\\x" failed')
   })
 
-  it('scrubs user paths outside the bundles from the stack, cause stacks, and resource URL', () => {
+  it('scrubs user paths outside the bundles from the stack and resource URL', () => {
     const event = {
       error: {
         message: 'boom',
         source: 'custom',
         stack: 'Error: boom\n    at C:\\Users\\alice\\plugins\\x.js:1:1',
-        causes: [
-          {
-            message: 'cause',
-            source: 'custom',
-            stack: 'Error: cause\n    at /home/bob/plugins/y.js:2:2'
-          }
-        ],
         resource: {
           method: 'GET',
           status_code: 404,
@@ -89,25 +82,15 @@ describe('normalizeRumErrorEvent', () => {
     normalizeRumErrorEvent(event)
 
     expect(event.error.stack).toBe('Error: boom\n    at C:\\Users\\[REDACTED]\\plugins\\x.js:1:1')
-    expect(event.error.causes?.[0]?.stack).toBe(
-      'Error: cause\n    at /home/[REDACTED]/plugins/y.js:2:2'
-    )
     expect(event.error.resource?.url).toBe('file:///Users/[REDACTED]/models/z.png')
   })
 
-  it('updates the main stack, cause stacks, and resource URL when they point at built bundles', () => {
+  it('updates the stack and resource URL when they point at built bundles', () => {
     const event = {
       error: {
         message: 'boom',
         source: 'custom',
         stack: 'Error: boom\n    at /Applications/ComfyUI/out/preload/index.js:5:2',
-        causes: [
-          {
-            message: 'cause',
-            source: 'custom',
-            stack: 'Error: cause\n    at C:\\ComfyUI\\out\\main\\index.js:8:3'
-          }
-        ],
         resource: {
           method: 'GET',
           status_code: 500,
@@ -119,7 +102,6 @@ describe('normalizeRumErrorEvent', () => {
     normalizeRumErrorEvent(event)
 
     expect(event.error.stack).toContain('app://app/preload/index.js:5:2')
-    expect(event.error.causes?.[0]?.stack).toContain('app://app/main/index.js:8:3')
     expect(event.error.resource?.url).toBe('app://app/renderer/assets/index-abc123.js')
   })
 })
@@ -134,7 +116,13 @@ describe('rumBeforeSend', () => {
       error: {
         message: 'wrapped',
         source: 'custom',
-        causes: [{ message: 'inner C:\\Users\\alice\\x', source: 'custom' }]
+        causes: [
+          {
+            message: 'inner C:\\Users\\alice\\x',
+            source: 'custom',
+            stack: 'Error: inner\n    at /home/bob/plugins/y.js:2:2'
+          }
+        ]
       }
     }
 

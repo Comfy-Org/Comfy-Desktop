@@ -37,12 +37,6 @@ export function normalizeRumErrorEvent(event: RumErrorEvent): void {
   if (event.error.stack) {
     event.error.stack = scrubRumText(event.error.stack)
   }
-  for (const cause of event.error.causes || []) {
-    cause.stack = normalizeDatadogBundlePaths(cause.stack)
-    if (cause.stack) {
-      cause.stack = scrubRumText(cause.stack)
-    }
-  }
   if (event.error.resource?.url) {
     event.error.resource.url =
       normalizeDatadogBundlePaths(event.error.resource.url) || event.error.resource.url

@@ -1,12 +1,13 @@
 const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)(?:\\u[0-9a-fA-F]{4}|\\x[89a-fA-F][0-9a-fA-F]|[^\\/"\r\n])+`
 const RAW_SEP_NAME = String.raw`(\\)[^\\/"\r\n]+`
+const SHARE_HOST = String.raw`[^\\/\s"']+`
 const PII_PATH_PATTERNS: RegExp[] = [
   String.raw`([A-Za-z]:[\\/]+Users)`,
-  String.raw`(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/\s"']+[\\/]+(?:home|mnt[\\/]+[A-Za-z][\\/]+Users))`,
+  String.raw`(\\\\(?:wsl\$|wsl\.localhost)[\\/]+${SHARE_HOST}[\\/]+(?:home|mnt[\\/]+[A-Za-z][\\/]+Users))`,
   String.raw`(\\\\tsclient[\\/]+[A-Za-z][\\/]+Users)`,
-  String.raw`(\\\\[^\\/\s"']+[\\/]+(?:Users|home))`,
-  String.raw`(\\\\[^\\/\s"']+[\\/]+[A-Za-z]\$[\\/]+Users)`,
-  String.raw`(\\\\[?.][\\/]+UNC[\\/]+[^\\/\s"']+(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
+  String.raw`(\\\\${SHARE_HOST}[\\/]+(?:Users|home))`,
+  String.raw`(\\\\${SHARE_HOST}[\\/]+[A-Za-z]\$[\\/]+Users)`,
+  String.raw`(\\\\[?.][\\/]+UNC[\\/]+${SHARE_HOST}(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
   String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users)`,
   String.raw`((?<![\w.~$\\/-])\\+Users)`,
   String.raw`(\/Users)`,
