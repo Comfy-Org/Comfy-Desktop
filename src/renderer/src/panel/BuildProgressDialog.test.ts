@@ -301,6 +301,21 @@ describe('BuildProgressDialog', () => {
     expect(w.emitted('retry')).toHaveLength(1)
   })
 
+  it('makes Start again the white primary and Close the grey secondary when a start fails', async () => {
+    const w = await openDialog('launch')
+    settle({ ok: false, message: 'ComfyUI exited with code 1' })
+    await flushPromises()
+
+    const retry = w.get('[data-testid="build-progress-retry"]')
+    const close = w.get('[data-testid="build-progress-close-failed"]')
+    expect(retry.classes()).toContain('bg-foreground')
+    expect(close.classes()).not.toContain('bg-foreground')
+    expect(close.classes()).toContain('hover:bg-accent')
+    expect(
+      close.element.compareDocumentPosition(retry.element) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
   it('stops a starting build straight away', async () => {
     const w = await openDialog('launch')
     await w.get('[data-testid="build-progress-cancel"]').trigger('click')

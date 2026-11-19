@@ -305,9 +305,9 @@ async function cancel(): Promise<void> {
           <template v-if="failed">
             <Button
               type="button"
-              variant="muted-textonly"
+              variant="secondary"
               size="unset"
-              class="ml-auto h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal text-muted-foreground hover:text-foreground"
+              class="ml-auto h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-[17px] text-[13px]/4 font-normal text-foreground"
               data-testid="build-progress-close-failed"
               @click="emit('close')"
             >
@@ -316,9 +316,9 @@ async function cancel(): Promise<void> {
             <Button
               v-if="launching"
               type="button"
-              variant="secondary"
+              variant="inverted"
               size="unset"
-              class="h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-[17px] text-[13px]/4 font-normal text-foreground"
+              class="h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal"
               data-testid="build-progress-retry"
               @click="emit('retry')"
             >

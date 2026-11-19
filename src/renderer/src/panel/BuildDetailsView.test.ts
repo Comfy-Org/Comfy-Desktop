@@ -133,6 +133,89 @@ describe('BuildDetailsView', () => {
     expect(wrapper.find('[data-testid="build-details-failure"]').exists()).toBe(false)
   })
 
+  describe('the notice when the build did not start', () => {
+    const notice = (wrapper: Awaited<ReturnType<typeof mountDetails>>['wrapper']) =>
+      wrapper.find('[data-testid="build-start-failed"]')
+
+    it('names the failure and its reason above the tabs, with View logs as its one action', async () => {
+      const { wrapper } = await mountDetails()
+      useSessionStore().errorInstances.set('a', {
+        installationName: 'Video Lab',
+        startFailed: true,
+        message: 'Port 8188 is in use'
+      })
+      await flushPromises()
+
+      expect(notice(wrapper).get('h2').text()).toBe("ComfyUI didn't start")
+      expect(notice(wrapper).get('[data-testid="build-start-failed-reason"]').text()).toBe(
+        'Port 8188 is in use'
+      )
+      expect(
+        notice(wrapper)
+          .findAll('button')
+          .map((b) => b.text())
+      ).toEqual(['View logs'])
+      expect(wrapper.find('[data-testid="settings-content"]').exists()).toBe(true)
+      expect(
+        notice(wrapper).element.compareDocumentPosition(
+          wrapper.get('[data-testid="settings-content"]').element
+        ) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+    })
+
+    it('shows the title alone when the reason is unknown', async () => {
+      const { wrapper } = await mountDetails()
+      useSessionStore().errorInstances.set('a', {
+        installationName: 'Video Lab',
+        startFailed: true
+      })
+      await flushPromises()
+
+      expect(notice(wrapper).get('h2').text()).toBe("ComfyUI didn't start")
+      expect(notice(wrapper).find('[data-testid="build-start-failed-reason"]').exists()).toBe(false)
+    })
+
+    it('opens the start logs from View logs', async () => {
+      const { wrapper } = await mountDetails()
+      useSessionStore().errorInstances.set('a', {
+        installationName: 'Video Lab',
+        startFailed: true
+      })
+      await flushPromises()
+
+      await notice(wrapper).get('[data-testid="build-start-retry"]').trigger('click')
+
+      expect(viewBuildLogs).toHaveBeenCalledWith('a')
+    })
+
+    it('opens the crash details from View logs on a build that crashed', async () => {
+      const { wrapper } = await mountDetails()
+      useSessionStore().errorInstances.set('a', { installationName: 'Video Lab', exitCode: 1 })
+      await flushPromises()
+
+      expect(notice(wrapper).get('h2').text()).toBe('ComfyUI exited unexpectedly')
+      await notice(wrapper).get('[data-testid="build-start-retry"]').trigger('click')
+
+      expect(wrapper.emitted('view-error')).toEqual([[INSTALL]])
+      expect(viewBuildLogs).not.toHaveBeenCalled()
+    })
+
+    it('goes away when the build starts again', async () => {
+      const { wrapper } = await mountDetails()
+      const sessions = useSessionStore()
+      sessions.errorInstances.set('a', { installationName: 'Video Lab', startFailed: true })
+      await flushPromises()
+      expect(notice(wrapper).exists()).toBe(true)
+
+      sessions.errorInstances.delete('a')
+      sessions.launchingInstances.set('a', { installationName: 'Video Lab' })
+      await flushPromises()
+
+      expect(notice(wrapper).exists()).toBe(false)
+      expect(wrapper.get('.build-details-status').text()).toBe('Starting…')
+    })
+  })
+
   it('hands the settings body its build, shared storage, title and action slots', async () => {
     const { content } = await mountDetails()
 

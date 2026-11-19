@@ -11,6 +11,7 @@ import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
 import type { StorageSnapshot } from '../views/comfyUISettings/StoragePane.vue'
 import {
   buildFailure,
+  launchFailed,
   operationFailureOf,
   operationTask,
   uninstallFailureOf,
@@ -74,6 +75,21 @@ const failureHint = computed(() => {
   const kind = failure.value?.kind
   if (!kind || kind === 'broken' || cardReplacesSettings.value) return ''
   return kind === 'didnt-start' ? t('home.buildClickToViewLogs') : t('chooser.viewErrorTooltip')
+})
+const startNotice = computed(() => {
+  const kind = failure.value?.kind
+  if (kind !== 'didnt-start' && kind !== 'crashed') return null
+  return {
+    title:
+      kind === 'didnt-start'
+        ? t('installProgress.launchFailedTitle')
+        : t('comfyLifecycle.crashedTitle'),
+    reason:
+      sessionStore.errorInstances.get(installation.id)?.message ||
+      (launchFailed(progressStore, installation.id)
+        ? (progressStore.operations.get(installation.id)?.error ?? '')
+        : '')
+  }
 })
 function openFailure(): void {
   if (failure.value?.kind === 'didnt-start') viewLogs()
@@ -185,19 +201,30 @@ onUnmounted(() => unsubscribeSettings?.())
         @retry="progressStore.retryOperation(installation.id)"
         @dismiss="progressStore.dismissOperation(installation.id)"
       />
-      <ComfyUISettingsContent
-        v-else
-        :installation="installation"
-        :global-settings-snapshot="storage"
-        :page-actions-target="`#${ACTIONS_ID}`"
-        :page-title-target="`#${TITLE_ID}`"
-        class="min-h-0 flex-auto"
-        @show-progress="emit('show-progress', $event)"
-        @navigate-list="emit('back')"
-        @request-close="emit('back')"
-        @request-dismiss="emit('back')"
-        @primary-action="emit('launch', installation)"
-      />
+      <template v-else>
+        <BuildUninstallFailed
+          v-if="startNotice"
+          class="mb-6"
+          kind="start"
+          :title="startNotice.title"
+          :reason="startNotice.reason"
+          :dismiss-label="null"
+          :retry-label="t('installProgress.viewLogs')"
+          @retry="openFailure"
+        />
+        <ComfyUISettingsContent
+          :installation="installation"
+          :global-settings-snapshot="storage"
+          :page-actions-target="`#${ACTIONS_ID}`"
+          :page-title-target="`#${TITLE_ID}`"
+          class="min-h-0 flex-auto"
+          @show-progress="emit('show-progress', $event)"
+          @navigate-list="emit('back')"
+          @request-close="emit('back')"
+          @request-dismiss="emit('back')"
+          @primary-action="emit('launch', installation)"
+        />
+      </template>
     </div>
   </div>
 </template>
