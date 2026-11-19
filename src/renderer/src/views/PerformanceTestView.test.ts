@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import PerformanceTestView from './PerformanceTestView.vue'
+import PerformanceTestBuildMenu from './performanceTest/PerformanceTestBuildMenu.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
+
+const scopedInstallations = vi.hoisted(() => ({ value: [] as unknown[] }))
 
 vi.mock('../stores/authStore', () => ({
   useAuthStore: () => ({ isSignedIn: false })
@@ -17,7 +21,7 @@ vi.mock('../composables/useWorkspaceInstallScope', async () => {
   return {
     useWorkspaceInstallScope: () => ({
       selectedWorkspaceId: ref(null),
-      scopedInstallations: ref([])
+      scopedInstallations: ref(scopedInstallations.value)
     })
   }
 })
@@ -37,6 +41,7 @@ function mountView() {
 }
 
 beforeEach(() => {
+  scopedInstallations.value = []
   window.api = new Proxy(
     {},
     {
@@ -74,5 +79,33 @@ describe('PerformanceTestView run counts', () => {
     await nextTick()
 
     expect(field.element.value).toBe('100')
+  })
+})
+
+describe('PerformanceTestView Run reason', () => {
+  function runReason(wrapper: ReturnType<typeof mountView>) {
+    const tooltip = wrapper
+      .findAllComponents(Tooltip)
+      .find((c) => c.find('.performance-test__run').exists())
+    return tooltip?.props('text')
+  }
+
+  it('says to pick a build while none is picked', () => {
+    const wrapper = mountView()
+
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+    expect(runReason(wrapper)).toBe('Pick a build first.')
+  })
+
+  it('says to choose a workflow once a build is picked', async () => {
+    scopedInstallations.value = [
+      { id: 'b1', name: 'Build 1', sourceCategory: 'local', status: 'installed' }
+    ]
+    const wrapper = mountView()
+    wrapper.getComponent(PerformanceTestBuildMenu).vm.$emit('update:modelValue', 'b1')
+    await nextTick()
+
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+    expect(runReason(wrapper)).toBe('Choose a workflow first.')
   })
 })

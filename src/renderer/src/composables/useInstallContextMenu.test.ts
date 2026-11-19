@@ -228,6 +228,74 @@ describe('useInstallContextMenu - gated REQUIRES_STOPPED items', () => {
   })
 })
 
+describe('useInstallContextMenu - gated items say what to wait for', () => {
+  function operation(overrides: Record<string, unknown>) {
+    return {
+      title: 'Working…',
+      opKind: 'generic',
+      chainSpan: null,
+      steps: null,
+      activePhase: null,
+      activePercent: 0,
+      lastStatus: {},
+      flatStatus: 'Working…',
+      flatPercent: 0.5,
+      terminalOutput: '',
+      done: false,
+      finished: false,
+      error: null,
+      cancelRequested: false,
+      result: null,
+      ...overrides
+    } as never
+  }
+
+  function deleteTitle(mutate: (h: HarnessHandles) => void): string | undefined {
+    const inst = makeInstall()
+    const { menu } = mountHarness(inst, mutate)
+    const item = findItem(menu.ctxMenuItems.value, 'delete')
+    expect(item?.disabled).toBe(true)
+    return item?.title
+  }
+
+  it('asks to stop a running build first', () => {
+    expect(
+      deleteTitle(({ session }) => {
+        session.runningInstances.set('inst-1', { installationId: 'inst-1' } as never)
+      })
+    ).toBe('Stop the running build first.')
+  })
+
+  it('asks to wait while the build stops', () => {
+    expect(
+      deleteTitle(({ session }) => {
+        session.stoppingInstances.add('inst-1')
+      })
+    ).toBe('Wait for the build to stop.')
+  })
+
+  it.each([
+    [{ opKind: 'install' }, 'Wait for the install to finish.'],
+    [{ opKind: 'launch', chainSpan: 'install' }, 'Wait for the install to finish.'],
+    [{ opKind: 'launch' }, 'Wait for the build to start.'],
+    [{ opKind: 'update' }, 'Wait for the update to finish.'],
+    [{ opKind: 'snapshot' }, 'Wait for the current task to finish.']
+  ])('names the task in flight (%o)', (overrides, reason) => {
+    expect(
+      deleteTitle(({ progress }) => {
+        progress.operations.set('inst-1', operation(overrides))
+      })
+    ).toBe(reason)
+  })
+
+  it('gives no reason when nothing gates the item', () => {
+    const inst = makeInstall()
+    const { menu } = mountHarness(inst)
+    expect(menu.stoppedActionGatedReason(inst)).toBeUndefined()
+    expect(findItem(menu.ctxMenuItems.value, 'delete')?.title).toBeUndefined()
+  })
+})
+
 function mountHarnessWithProgress(
   _inst: Installation,
   onShowProgress: (opts: ShowProgressOpts) => void
