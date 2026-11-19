@@ -408,11 +408,11 @@ onBeforeUnmount(() => {
                   :key="still"
                   :src="still"
                   alt=""
-                  class="object-cover rounded-full"
+                  class="rounded-full object-cover not-last:[mask-image:radial-gradient(ellipse_58%_58%_at_125%_50%,transparent_99%,#000_100%)]"
                   :class="requestLayout.thumbClass"
                 />
                 <span
-                  class="grid place-items-center rounded-full bg-[color-mix(in_srgb,rgb(235_235_235)_16%,var(--color-content-background))] text-foreground"
+                  class="grid place-items-center rounded-full bg-[color-mix(in_srgb,rgb(235_235_235)_24%,var(--color-content-background))] text-foreground"
                   :class="requestLayout.thumbClass"
                 >
                   <Plus
