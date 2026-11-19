@@ -2012,6 +2012,7 @@
     "footerActive": "{n} 个活动",
     "footerCompleted": "{n} 个已完成",
     "footerFailed": "{n} 个失败",
+    "progressAriaLabel": "{name} 的下载进度",
     "clearFinished": "清除已完成"
   },
   "instancePicker": {

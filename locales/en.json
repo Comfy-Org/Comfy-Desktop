@@ -2012,6 +2012,7 @@
     "footerActive": "{n} active",
     "footerCompleted": "{n} completed",
     "footerFailed": "{n} failed",
+    "progressAriaLabel": "Download progress for {name}",
     "clearFinished": "Clear finished"
   },
   "instancePicker": {

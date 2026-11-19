@@ -56,9 +56,9 @@ afterEach(() => {
   if (originalBridge) Object.defineProperty(window, '__comfyTitlePopup', originalBridge)
   else delete (window as unknown as { __comfyTitlePopup?: unknown }).__comfyTitlePopup
 })
-async function mountView() {
+async function mountView(viewState: PopupDownloadsState = state) {
   const { default: DownloadsFullView } = await import('./DownloadsFullView.vue')
-  wrapper = mount(DownloadsFullView, { props: { state }, attachTo: document.body })
+  wrapper = mount(DownloadsFullView, { props: { state: viewState }, attachTo: document.body })
   await flushPromises()
   return wrapper
 }
@@ -136,5 +136,74 @@ describe('DownloadsFullView close', () => {
     const bridge = (window as unknown as { __comfyTitlePopup: { close: () => void } })
       .__comfyTitlePopup
     expect(bridge.close).toHaveBeenCalledOnce()
+  })
+})
+
+describe('DownloadsFullView progress ring', () => {
+  const live = (entry: Partial<PopupDownloadsState['active'][number]>): PopupDownloadsState => ({
+    active: [
+      {
+        id: 'live',
+        url: 'https://example.com/live',
+        filename: 'live.bin',
+        progress: 0,
+        status: 'downloading',
+        ...entry
+      }
+    ],
+    recent: []
+  })
+  const arcOffset = (view: VueWrapper) =>
+    Number(view.get('.dlm-ring-arc').attributes('stroke-dashoffset'))
+
+  it('draws the arc to the downloaded share and moves it when progress changes', async () => {
+    const view = await mountView(live({ progress: 0.5, totalBytes: 100, receivedBytes: 50 }))
+    const ring = view.get('.dlm-ring')
+    expect(ring.attributes('role')).toBe('progressbar')
+    expect(ring.attributes('aria-valuenow')).toBe('50')
+    expect(arcOffset(view)).toBe(50)
+    expect(view.get('.dlm-ring-svg').classes()).not.toContain('animate-spin')
+    expect(view.find('.lucide-download').exists()).toBe(true)
+    await view.setProps({
+      state: live({ progress: 0.73, totalBytes: 100, receivedBytes: 73 })
+    })
+    expect(ring.attributes('aria-valuenow')).toBe('73')
+    expect(arcOffset(view)).toBe(27)
+  })
+
+  it('spins a partial arc with no value while the size is unknown', async () => {
+    for (const entry of [
+      { status: 'pending' as const },
+      { status: 'downloading' as const, totalBytes: undefined }
+    ]) {
+      const view = await mountView(live(entry))
+      const ring = view.get('.dlm-ring')
+      expect(ring.attributes('aria-valuenow')).toBeUndefined()
+      expect(ring.attributes('aria-valuemin')).toBe('0')
+      expect(ring.attributes('aria-valuemax')).toBe('100')
+      expect(view.get('.dlm-ring-svg').classes()).toEqual(
+        expect.arrayContaining(['animate-spin', 'motion-reduce:animate-none'])
+      )
+      expect(arcOffset(view)).toBe(75)
+      view.unmount()
+    }
+    wrapper = undefined
+  })
+
+  it('holds the value when paused and swaps the arrow for a pause mark', async () => {
+    const view = await mountView(live({ status: 'paused', progress: 0.3, totalBytes: 100 }))
+    const ring = view.get('.dlm-ring')
+    expect(ring.attributes('aria-valuenow')).toBe('30')
+    expect(arcOffset(view)).toBe(70)
+    expect(view.get('.dlm-ring-svg').classes()).not.toContain('animate-spin')
+    expect(view.find('.lucide-pause').exists()).toBe(true)
+    expect(view.find('.lucide-download').exists()).toBe(false)
+  })
+
+  it('keeps the arc transition off for reduced motion', async () => {
+    const view = await mountView(live({ progress: 0.5, totalBytes: 100 }))
+    expect(view.get('.dlm-ring-arc').classes()).toEqual(
+      expect.arrayContaining(['transition-[stroke-dashoffset]', 'motion-reduce:transition-none'])
+    )
   })
 })

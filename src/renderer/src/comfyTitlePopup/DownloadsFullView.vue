@@ -10,7 +10,7 @@ import {
   CircleAlert,
   Download,
   FolderOpen,
-  LoaderCircle,
+  Pause,
   PauseCircle,
   PlayCircle,
   RotateCcw,
@@ -143,6 +143,15 @@ function progressPercent(d: DownloadEntry): number {
   return Math.round(d.progress * 100)
 }
 
+const INDETERMINATE_ARC = 25
+function isIndeterminate(d: DownloadEntry): boolean {
+  if (d.status === 'pending') return true
+  return d.status === 'downloading' && !(d.totalBytes && d.totalBytes > 0) && d.progress <= 0
+}
+function ringValue(d: DownloadEntry): number {
+  return isIndeterminate(d) ? INDETERMINATE_ARC : progressPercent(d)
+}
+
 const footerStats = computed<string[]>(() =>
   [
     activeCount.value > 0 && t('downloadsTab.footerActive', { n: activeCount.value }),
@@ -207,12 +216,12 @@ const footerStats = computed<string[]>(() =>
           <ul
             v-else
             :key="filter"
-            class="dlm-list m-0 -mx-3 grid list-none grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-x-1.5 gap-y-0.5 p-0"
+            class="dlm-list m-0 grid list-none grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-x-1.5 overflow-hidden rounded-[14px] bg-card p-0"
           >
             <li
               v-for="d in filtered"
               :key="d.id ?? d.url"
-              class="dlm-row col-span-full grid min-h-18 grid-cols-subgrid items-center rounded-[10px] px-3 py-2.5 transition-[background] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_4%,transparent)]"
+              class="dlm-row col-span-full grid min-h-18 grid-cols-subgrid items-center border-t border-solid border-[var(--chooser-surface-border)] px-[18px] py-2.5 first:border-t-0"
               :class="statusKindClass(d)"
             >
               <span
@@ -244,19 +253,49 @@ const footerStats = computed<string[]>(() =>
                       <Ban :size="16" />
                     </span>
                     <span
-                      v-else-if="d.status === 'paused'"
-                      class="dlm-icon-circle warn bg-[color-mix(in_oklab,var(--download-warning)_15%,transparent)] text-[#f59e0b] inline-flex size-8 items-center justify-center rounded-[50%]"
-                    >
-                      <PauseCircle :size="16" />
-                    </span>
-                    <span
                       v-else
-                      class="dlm-icon-circle active bg-[color-mix(in_oklab,var(--action,#60a5fa)_15%,transparent)] text-[var(--action,#60a5fa)] inline-flex size-8 items-center justify-center rounded-[50%]"
+                      class="dlm-icon-circle dlm-ring active relative inline-flex size-8 items-center justify-center rounded-[50%] text-foreground"
+                      role="progressbar"
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                      :aria-valuenow="isIndeterminate(d) ? undefined : progressPercent(d)"
+                      :aria-label="t('downloadsTab.progressAriaLabel', { name: fileLabel(d) })"
                     >
-                      <LoaderCircle
-                        :size="16"
-                        class="dlm-spin animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-                      />
+                      <svg
+                        class="dlm-ring-svg absolute inset-0 -rotate-90"
+                        :class="{
+                          'animate-spin [animation-duration:900ms] motion-reduce:animate-none':
+                            isIndeterminate(d)
+                        }"
+                        width="32"
+                        height="32"
+                        viewBox="0 0 32 32"
+                        aria-hidden="true"
+                      >
+                        <circle
+                          class="dlm-ring-track stroke-[color-mix(in_oklab,var(--foreground)_22%,transparent)]"
+                          cx="16"
+                          cy="16"
+                          r="15"
+                          fill="none"
+                          stroke-width="2"
+                        />
+                        <circle
+                          class="dlm-ring-arc stroke-foreground transition-[stroke-dashoffset] duration-300 ease-[ease] motion-reduce:transition-none"
+                          :class="{ 'opacity-0': ringValue(d) === 0 }"
+                          cx="16"
+                          cy="16"
+                          r="15"
+                          fill="none"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          pathLength="100"
+                          stroke-dasharray="100 100"
+                          :stroke-dashoffset="100 - ringValue(d)"
+                        />
+                      </svg>
+                      <Pause v-if="d.status === 'paused'" :size="14" class="dlm-ring-icon" />
+                      <Download v-else :size="14" class="dlm-ring-icon" />
                     </span>
                   </template>
                 </DownloadThumbnail>
@@ -273,28 +312,6 @@ const footerStats = computed<string[]>(() =>
                   :title="d.savePath"
                   >{{ modalSubtitle(d, now) }}</span
                 >
-                <div
-                  v-if="
-                    d.status === 'downloading' || d.status === 'paused' || d.status === 'pending'
-                  "
-                  class="dlm-bar mt-0.5 h-[3px] overflow-hidden rounded-[2px] bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)]"
-                >
-                  <div
-                    class="dlm-bar-fill h-full rounded-[2px] transition-[width] duration-300 ease-[ease]"
-                    :class="
-                      d.status === 'pending'
-                        ? 'indeterminate bg-[repeating-linear-gradient(90deg,var(--action,#60a5fa),var(--action,#60a5fa)_8px,color-mix(in_oklab,var(--action,#60a5fa)_50%,transparent)_8px,color-mix(in_oklab,var(--action,#60a5fa)_50%,transparent)_16px)] animate-[dlm-shimmer_1.2s_linear_infinite]'
-                        : d.status === 'paused'
-                          ? 'paused bg-[#f59e0b]'
-                          : 'bg-[var(--action,#60a5fa)]'
-                    "
-                    :style="
-                      d.status === 'pending'
-                        ? { width: '100%' }
-                        : { width: `${progressPercent(d)}%` }
-                    "
-                  />
-                </div>
               </div>
 
               <div class="dlm-primary flex items-center justify-end">
@@ -398,11 +415,3 @@ const footerStats = computed<string[]>(() =>
     </div>
   </div>
 </template>
-
-<style>
-@keyframes dlm-shimmer {
-  to {
-    background-position: 32px 0;
-  }
-}
-</style>

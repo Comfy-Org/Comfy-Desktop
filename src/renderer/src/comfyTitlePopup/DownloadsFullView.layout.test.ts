@@ -71,12 +71,13 @@ async function mountView() {
 const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect()
 
 describe('DownloadsFullView layout', () => {
-  it('lines the title, the tabs and every row icon up on one left edge, with no line under the title or the tabs', async () => {
+  it('lines the title, the tabs and the list card up on one left edge, with every row icon 18px inside the card', async () => {
     await mountView()
     const title = box('.dlm-title').left
     expect(box('.dlm-filterbar').left).toBe(title)
+    expect(box('.dlm-list').left).toBe(title)
     for (const icon of document.querySelectorAll('.dlm-icon-circle')) {
-      expect(icon.getBoundingClientRect().left).toBe(title)
+      expect(icon.getBoundingClientRect().left).toBe(title + 18)
     }
     const card = document.querySelector<HTMLElement>('.dlm-card')!
     expect(title - box('.dlm-card').left - card.clientLeft).toBe(24)
@@ -111,10 +112,36 @@ describe('DownloadsFullView layout', () => {
     expect(new Set(trailing.map((slot) => slot.width)).size).toBe(1)
     for (const row of rows) expect(row.querySelector('.dlm-trailing .dlm-x')).not.toBeNull()
     expect(primaries[0]).toBeLessThan(trailing[0]!.left)
-    expect(right(document.querySelector('.dlm-clear-btn')!)).toBe(trailing[0]!.right)
+    const clear = right(document.querySelector('.dlm-clear-btn')!)
+    expect(box('.dlm-list').right).toBe(clear)
+    expect(trailing[0]!.right).toBe(clear - 18)
   })
 
-  it('keeps rows the same height with their actions centred, and runs the bar to the action column', async () => {
+  it('puts every row in one card with a line between rows only, edge to edge', async () => {
+    await mountView()
+    const list = document.querySelector<HTMLElement>('.dlm-list')!
+    const card = getComputedStyle(list)
+    expect(card.borderTopLeftRadius).toBe('14px')
+    expect(card.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    expect(document.querySelectorAll('.dlm-list')).toHaveLength(1)
+    const rows = [...list.querySelectorAll<HTMLElement>(':scope > .dlm-row')]
+    expect(rows).toHaveLength(3)
+    const lines = rows.map((row) => getComputedStyle(row).borderTopWidth)
+    expect(lines).toEqual(['0px', '1px', '1px'])
+    for (const row of rows) {
+      const style = getComputedStyle(row)
+      expect(style.borderBottomWidth).toBe('0px')
+      expect(style.borderTopLeftRadius).toBe('0px')
+      expect(style.paddingLeft).toBe('18px')
+      expect(style.paddingRight).toBe('18px')
+      const r = row.getBoundingClientRect()
+      expect(r.left).toBe(box('.dlm-list').left)
+      expect(r.right).toBe(box('.dlm-list').right)
+    }
+    expect(getComputedStyle(rows[1]!).borderTopColor).not.toBe('rgba(0, 0, 0, 0)')
+  })
+
+  it('keeps rows 72px tall with their actions centred, and shows progress on the ring instead of a bar', async () => {
     await mountView()
     const rows = [...document.querySelectorAll<HTMLElement>('.dlm-row')].map((row) =>
       row.getBoundingClientRect()
@@ -127,10 +154,29 @@ describe('DownloadsFullView layout', () => {
         expect(Math.abs(b.top + b.height / 2 - (r.top + r.height / 2))).toBeLessThanOrEqual(0.5)
       }
     }
-    const active = document.querySelector('.dlm-row.is-active')!
-    const bar = active.querySelector('.dlm-bar')!.getBoundingClientRect()
-    expect(bar.left).toBe(active.querySelector('.dlm-name')!.getBoundingClientRect().left)
-    expect(active.querySelector('.dlm-primary')!.getBoundingClientRect().left - bar.right).toBe(16)
+    expect(document.querySelector('.dlm-bar')).toBeNull()
+    expect(document.querySelectorAll('.dlm-ring')).toHaveLength(1)
+    const ring = document.querySelector('.dlm-row.is-active .dlm-ring')!
+    expect(ring.getBoundingClientRect().width).toBe(32)
+    expect(ring.getAttribute('role')).toBe('progressbar')
+    expect(ring.getAttribute('aria-valuenow')).toBe('42')
+    expect(ring.getAttribute('aria-valuemin')).toBe('0')
+    expect(ring.getAttribute('aria-valuemax')).toBe('100')
+    expect(ring.getAttribute('aria-label')).toBe('Download progress for wan2.2-t2v.safetensors')
+    const arc = ring.querySelector<SVGCircleElement>('.dlm-ring-arc')!
+    expect(arc.getAttribute('pathLength')).toBe('100')
+    expect(Number(arc.getAttribute('stroke-dashoffset'))).toBe(100 - 42)
+    expect(getComputedStyle(arc).transitionProperty).toBe('stroke-dashoffset')
+    expect(getComputedStyle(arc).strokeWidth).toBe('2px')
+    expect(ring.querySelector('.dlm-ring-icon')!.getBoundingClientRect().width).toBe(14)
+  })
+
+  it('keeps the ring track visible against the card', async () => {
+    await mountView()
+    const track = getComputedStyle(document.querySelector('.dlm-ring-track')!).stroke
+    const alpha = Number(track.match(/\/\s*([\d.]+)\)$/)?.[1] ?? '1')
+    expect(alpha).toBeGreaterThanOrEqual(0.2)
+    expect(alpha).toBeLessThanOrEqual(0.25)
   })
 
   it('says progress and failure once', async () => {
