@@ -1,27 +1,29 @@
 const ESCAPED_NAME = String.raw`(?:\\u[0-9a-fA-F]{4}|\\x[89a-fA-F][0-9a-fA-F]|[^\\/"\r\n])+`
+const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)${ESCAPED_NAME}`
+const MIXED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+|[\\/]{2,})${ESCAPED_NAME}`
 const RAW_SEP_NAME = String.raw`(\\)[^\\/"\r\n]+`
 const SHARE_HOST = String.raw`[^\\/\s"']+`
+const USER_PATH_ROOTS = [
+  String.raw`([A-Za-z]:[\\/]+Users)`,
+  String.raw`(\\\\(?:wsl\$|wsl\.localhost)[\\/]+${SHARE_HOST}[\\/]+(?:home|mnt[\\/]+[A-Za-z][\\/]+Users))`,
+  String.raw`(\\\\tsclient[\\/]+[A-Za-z][\\/]+Users)`,
+  String.raw`(\\\\${SHARE_HOST}[\\/]+(?:Users|home))`,
+  String.raw`(\\\\${SHARE_HOST}[\\/]+[A-Za-z]\$[\\/]+Users)`,
+  String.raw`(\\\\[?.][\\/]+UNC[\\/]+${SHARE_HOST}(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
+  String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users)`,
+  String.raw`((?<![\w.~$\\/-])\\+Users)`,
+  String.raw`(\/Users)`,
+  String.raw`(\/home)`
+]
+const USERS_AFTER_ESCAPED_BREAK = String.raw`((?<=\\(?-i:[nrt]))\\+Users)`
 
-function userPathPatterns(widened: boolean): RegExp[] {
-  const mixedSeparatorRun = widened ? String.raw`|[\\/]{2,}` : ''
-  const afterEscapedBreak = widened ? String.raw`(?<=\\(?-i:[nrt]))|` : ''
-  const escapedSepName = String.raw`((?:\\\\)+|(?:\\?\/)+${mixedSeparatorRun})${ESCAPED_NAME}`
-  return [
-    String.raw`([A-Za-z]:[\\/]+Users)`,
-    String.raw`(\\\\(?:wsl\$|wsl\.localhost)[\\/]+${SHARE_HOST}[\\/]+(?:home|mnt[\\/]+[A-Za-z][\\/]+Users))`,
-    String.raw`(\\\\tsclient[\\/]+[A-Za-z][\\/]+Users)`,
-    String.raw`(\\\\${SHARE_HOST}[\\/]+(?:Users|home))`,
-    String.raw`(\\\\${SHARE_HOST}[\\/]+[A-Za-z]\$[\\/]+Users)`,
-    String.raw`(\\\\[?.][\\/]+UNC[\\/]+${SHARE_HOST}(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
-    String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users)`,
-    String.raw`((?:${afterEscapedBreak}(?<![\w.~$\\/-]))\\+Users)`,
-    String.raw`(\/Users)`,
-    String.raw`(\/home)`
-  ].map((root) => new RegExp(`${root}(?:${escapedSepName}|${RAW_SEP_NAME})`, 'gi'))
-}
-
-const MAIN_USER_PATH_PATTERNS = userPathPatterns(false)
-const USER_PATH_PATTERNS = userPathPatterns(true)
+const userPathPatterns = (roots: string[], escapedSepName: string): RegExp[] =>
+  roots.map((root) => new RegExp(`${root}(?:${escapedSepName}|${RAW_SEP_NAME})`, 'gi'))
+const MAIN_USER_PATH_PATTERNS = userPathPatterns(USER_PATH_ROOTS, ESCAPED_SEP_NAME)
+const USER_PATH_PATTERNS = userPathPatterns(
+  [...USER_PATH_ROOTS, USERS_AFTER_ESCAPED_BREAK],
+  MIXED_SEP_NAME
+)
 
 const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] = [
   [/sk-[A-Za-z0-9_-]{20,}/g, '[REDACTED]'],
