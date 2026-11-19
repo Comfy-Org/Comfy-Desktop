@@ -170,6 +170,38 @@ describe('piiScrub', () => {
 
     it.each([
       [
+        'C:\\\\work\\\\temp;\\\\home\\Users\\alice\\x',
+        'C:\\\\work\\\\temp;\\\\home\\[REDACTED]\\[REDACTED]\\x'
+      ],
+      [
+        'C:\\\\work\\\\temp|\\\\HOME\\USERS\\alice\\x',
+        'C:\\\\work\\\\temp|\\\\HOME\\[REDACTED]\\[REDACTED]\\x'
+      ]
+    ])(
+      'redacts a share path whose server name an earlier match took as a folder: %s',
+      (input, expected) => {
+        expect(scrubPII(input)).toBe(expected)
+      }
+    )
+
+    it.each([
+      ['C:\\Users/\\alice\\x', 'C:\\Users/\\[REDACTED]\\x'],
+      ['C:\\Users\\\\/alice\\x', 'C:\\Users\\\\/[REDACTED]\\x'],
+      ['C:\\Users\\\\\\alice\\x', 'C:\\Users\\\\\\[REDACTED]\\x'],
+      ['\\\\server\\Users/\\alice\\x', '\\\\server\\Users/\\[REDACTED]\\x'],
+      ['/home/\\alice/x', '/home/\\[REDACTED]/x']
+    ])('redacts a username after a mixed run of separators: %s', (input, expected) => {
+      expect(scrubPII(input)).toBe(expected)
+    })
+
+    it('redacts a nested Users folder that directly follows a redacted username', () => {
+      expect(scrubPII('C:\\Users\\alice\\Users\\bob\\x')).toBe(
+        'C:\\Users\\[REDACTED]\\Users\\[REDACTED]\\x'
+      )
+    })
+
+    it.each([
+      [
         'File "\\\\tsclient\\C\\Users\\alice\\x.py"',
         'File "\\\\tsclient\\C\\Users\\[REDACTED]\\x.py"'
       ],

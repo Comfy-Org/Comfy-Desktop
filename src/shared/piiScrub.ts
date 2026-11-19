@@ -1,4 +1,4 @@
-const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)(?:\\u[0-9a-fA-F]{4}|\\x[89a-fA-F][0-9a-fA-F]|[^\\/"\r\n])+`
+const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+|[\\/]{2,})(?:\\u[0-9a-fA-F]{4}|\\x[89a-fA-F][0-9a-fA-F]|[^\\/"\r\n])+`
 const RAW_SEP_NAME = String.raw`(\\)[^\\/"\r\n]+`
 const SHARE_HOST = String.raw`[^\\/\s"']+`
 const PII_PATH_PATTERNS: RegExp[] = [
@@ -33,14 +33,35 @@ const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] 
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 
+function usernameSpans(text: string): [number, number][] {
+  const spans: [number, number][] = []
+  for (const pattern of PII_PATH_PATTERNS) {
+    pattern.lastIndex = 0
+    for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
+      const [whole, root = '', escapedSep, rawSep = ''] = match
+      const nameStart = match.index + root.length + (escapedSep ?? rawSep).length
+      spans.push([nameStart, match.index + whole.length])
+      pattern.lastIndex = match.index + 1
+    }
+  }
+  return spans.sort(([a], [b]) => a - b)
+}
+
+function redactUsernames(text: string): string {
+  let redacted = ''
+  let cursor = 0
+  for (const [start, end] of usernameSpans(text)) {
+    if (start > cursor) redacted += `${text.slice(cursor, start)}[REDACTED]`
+    cursor = Math.max(cursor, end)
+  }
+  return redacted + text.slice(cursor)
+}
+
 export function scrubPII(value: string): string {
   let scrubbed = value
-  for (const pattern of PII_PATH_PATTERNS) {
-    scrubbed = scrubbed.replace(
-      pattern,
-      (_match, root: string, escapedSep: string | undefined, rawSep: string) =>
-        `${root}${escapedSep ?? rawSep}[REDACTED]`
-    )
+  for (let previous = ''; previous !== scrubbed;) {
+    previous = scrubbed
+    scrubbed = redactUsernames(previous)
   }
   return scrubbed.replace(EMAIL_PATTERN, '[REDACTED]')
 }
