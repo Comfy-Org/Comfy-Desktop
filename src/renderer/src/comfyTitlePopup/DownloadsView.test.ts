@@ -375,8 +375,8 @@ describe('comfyTitlePopup/DownloadsView', () => {
       const wrapper = await mountRows()
 
       expect(wrapper.get('.is-completed .downloads-item-action').text()).toBe('Show in Finder')
-      expect(wrapper.get('.is-cancelled .downloads-item-action').text()).toBe('Retry')
-      expect(wrapper.get('.is-error .downloads-item-action').text()).toBe('Retry')
+      expect(wrapper.get('.is-cancelled .downloads-item-action').text()).toBe('Try again')
+      expect(wrapper.get('.is-error .downloads-item-action').text()).toBe('Try again')
     })
 
     it('runs the action without also opening the row', async () => {
