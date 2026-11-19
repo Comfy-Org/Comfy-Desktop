@@ -170,6 +170,7 @@ const migrating = computed(() => hasLegacyDesktop.value && migrateExisting.value
 const installBlocked = computed(
   () => !migrating.value && (planState.value !== 'ready' || unsupportedReason.value !== '')
 )
+const planChecking = computed(() => !migrating.value && planState.value === 'loading')
 const isChinese = computed(() => locale.value.startsWith('zh'))
 
 function applyBetaEntryRule(): void {
@@ -679,18 +680,25 @@ defineExpose({ open, resetContinue })
             type="button"
             variant="inverted"
             size="lg"
+            :class="planChecking && 'cursor-progress'"
             :aria-disabled="installBlocked || undefined"
-            :aria-busy="busy || undefined"
+            :aria-busy="busy || planChecking || undefined"
             data-testid="setup-install"
             @click="request('install')"
           >
             <Loader2
-              v-if="busy"
+              v-if="busy || planChecking"
               :size="14"
               class="animate-spin [animation-duration:750ms]"
               aria-hidden="true"
             />
-            {{ migrating ? t('setup.migrate') : t('setup.install') }}
+            {{
+              planChecking
+                ? t('setup.checking')
+                : migrating
+                  ? t('setup.migrate')
+                  : t('setup.install')
+            }}
           </Button>
         </div>
       </template>

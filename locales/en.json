@@ -31,7 +31,7 @@
     "crashed": "Crashed",
     "crashedWithCode": "Crashed (exit code {code})",
     "crashedWithSignal": "Crashed ({signal})",
-    "failedToStartReason": "Failed to start: {reason}",
+    "failedToStartReason": "Didn't start: {reason}",
     "credits": "Credits",
     "creditsTooltip": "{credits} Credits",
     "creditsError": "Unable to load balance",
@@ -44,8 +44,21 @@
     "retry": "Try again",
     "emptyTitle": "No apps yet",
     "emptyBody": "New apps will show up here.",
-    "noMatches": "No apps match “{query}”",
+    "noMatchesHint": "Try another word.",
     "allApps": "All apps",
+    "request": {
+      "bandTitle": "Missing an app?",
+      "bandBody": "Your ideas decide which apps we build next.",
+      "ask": "Ask for an app",
+      "title": "What app do you want?",
+      "intro": "Your idea helps us choose what to build next.",
+      "placeholder": "Say what it should make, from what",
+      "send": "Send",
+      "sending": "Sending…",
+      "failed": "Couldn't send your request. Try again.",
+      "thanks": "Thanks. We got your request.",
+      "done": "Done"
+    },
     "badge": {
       "withDescription": "{text}: {description}"
     },
@@ -78,11 +91,6 @@
     },
     "cloud": "Comfy Cloud",
     "sharedFolder": "Shared folder",
-    "buildState": {
-      "running": "Running",
-      "starting": "Starting",
-      "stopped": "Stopped"
-    },
     "kind": {
       "all": "All",
       "image": "Images",
@@ -183,6 +191,7 @@
     "buildStarting": "Starting",
     "buildReady": "Ready",
     "buildDidntStart": "Didn't start",
+    "buildCrashed": "Crashed",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "Example workflows",
     "seeAllApps": "See all apps",
@@ -237,11 +246,14 @@
     "menuRevealInFolder": "Open Folder",
     "menuDelete": "Uninstall",
     "stoppedActionGatedReason": "Stop the running build first.",
+    "busyActionGatedReason": "Wait for the current task on this build to finish.",
     "statusRunning": "Running",
     "statusLaunching": "Starting…",
     "statusStopping": "Stopping…",
     "statusError": "Error",
     "viewErrorTooltip": "View error details",
+    "menuViewError": "View error",
+    "menuWhyTryCloud": "Why try Cloud",
     "errorTitle": "Error",
     "searchPlaceholder": "Search builds",
     "noMatches": "No instances match",
@@ -502,7 +514,11 @@
     "clear": "Clear",
     "active": "active",
     "error": "Error",
-    "retry": "Retry"
+    "retry": "Retry",
+    "nothingMatches": "Nothing matches",
+    "nothingMatchesHint": "Try another word, or clear the filters to see everything.",
+    "clearFilters": "Clear filters",
+    "clearSearch": "Clear search"
   },
   "comfybuilder": {
     "build": "Build",
@@ -851,18 +867,19 @@
     "useForDownloads": "Use for downloads",
     "addModelsFolder": "Add models folder",
     "removeAppDataTitle": "Remove Comfy Desktop data",
-    "removeAppDataHint": "Before you delete the app, remove the logs, caches and temporary files Comfy Desktop keeps on this computer. You choose whether your ComfyUI instances and models go too.",
+    "removeAppDataHint": "Before you delete the app, remove the logs, caches and temporary files Comfy Desktop keeps on this computer. You choose whether your ComfyUI instances, models, and input and output files go too.",
     "removeAppDataButton": "Remove Comfy Desktop data",
     "removeAppDataConfirmTitle": "Remove Comfy Desktop data?",
-    "removeAppDataConfirmMessage": "Comfy Desktop will quit and remove its logs, caches and temporary files. Leave both boxes unchecked to keep your ComfyUI instances and models; installing Comfy Desktop again will find them.",
+    "removeAppDataConfirmMessage": "Comfy Desktop will quit and remove its logs, caches and temporary files. Leave a box unchecked to keep that data, except files inside an instance you delete; installing Comfy Desktop again will find what is kept.",
     "removeAppDataKeptLabel": "Always kept",
-    "removeAppDataKeptFolders": "Your shared input and output folders",
+    "removeAppDataKeptFolders": "Input and output folders you picked yourself, outside the instances you delete",
     "removeAppDataKeptAdded": "Model folders you added yourself",
     "removeAppDataAfterLabel": "Then delete the app",
     "removeAppDataAfterMac": "Drag Comfy Desktop from Applications to the Trash.",
     "removeAppDataAfterLinux": "Delete the AppImage file, or run sudo apt remove comfyui-desktop-2 if you installed the .deb package.",
     "removeAppDataInstances": "Delete all ComfyUI instances",
     "removeAppDataModels": "Delete all model files",
+    "removeAppDataInputOutput": "Delete shared input and output files",
     "removeAppDataConfirm": "Remove and quit"
   },
   "zoom": {
@@ -943,7 +960,6 @@
     "tosLinkLabel": "Terms of Service",
     "notNow": "Not now",
     "cloudFreeRunsPill": "TRY FREE",
-    "whyTryCloud": "Why try Cloud?",
     "whyCloud": {
       "title": "Why try Cloud?",
       "creditsPill": "400 FREE CREDITS",
@@ -955,7 +971,6 @@
         "Models ready to use, verified for commercial license",
         "Top custom node packs pre-installed"
       ],
-      "maybeLater": "Maybe Later",
       "tryCta": "Try Cloud For Free",
       "imageAlt": "Cloud-powered landscape illustration"
     },
@@ -1037,6 +1052,23 @@
     "failedTitle": "Uninstall didn't finish",
     "tryAgain": "Try again",
     "dismiss": "Dismiss"
+  },
+  "updateProgress": {
+    "status": "Updating",
+    "tileStatus": "Updating · {percent}%",
+    "cancelTitle": "Stop updating?",
+    "cancelMessage": "{name} stops updating. You can update it again later.",
+    "cancelConfirm": "Stop updating"
+  },
+  "workingProgress": {
+    "cancelTitle": "Stop now?",
+    "cancelMessage": "{task} stops for {name}. You can start it again later.",
+    "cancelConfirm": "Stop",
+    "failedTitle": "{task} didn't finish",
+    "cannotStopTitle": "This task can't be stopped",
+    "cannotStopMessage": "Wait for {task} to finish on {name}, then close the window.",
+    "relaunchSkippedTitle": "{name} didn't start",
+    "relaunchSkippedMessage": "{name} is busy with another task, so it didn't start. Start it again when that task finishes."
   },
   "announcement": {
     "comfyApi": {
@@ -1817,7 +1849,8 @@
   },
   "feedback": {
     "modalLabel": "Send Feedback",
-    "loading": "Loading feedback form…"
+    "loading": "Loading feedback form…",
+    "failedTitle": "Feedback form didn't load"
   },
   "performanceTest": {
     "title": "Performance Tests",
@@ -1945,14 +1978,12 @@
     "missing": "Unavailable",
     "durationRange": "Duration range (min → max)",
     "durationRangeHint": "Each line shows the fastest and slowest run, with the average marked.",
-    "noMatches": "No runs match these filters",
     "loadError": "Could not load performance test results",
     "loadErrorHint": "Check the folder and try again.",
     "refreshButton": "Refresh",
     "emptyTitle": "No performance test results yet",
     "emptyHint": "Complete a Performance Test to add a run.",
     "openPerformanceTest": "Open Performance Test",
-    "noMatchesHint": "Try another search or filter.",
     "filterAll": "All",
     "filterWorkspace": "Workspace",
     "filterBuild": "Build",
@@ -2010,10 +2041,11 @@
     "filterErrored": "Failed",
     "filterAriaLabel": "Status filter",
     "retry": "Retry",
-    "badgeFailed": "Failed",
-    "badgeCancelled": "Cancelled",
     "footerActive": "{n} active",
     "footerCompleted": "{n} completed",
+    "footerFailed": "{n} failed",
+    "footerCancelled": "{n} cancelled",
+    "progressAriaLabel": "Download progress for {name}",
     "clearFinished": "Clear finished"
   },
   "instancePicker": {
@@ -2022,7 +2054,6 @@
     "noMatches": "No builds match",
     "newInstance": "New build",
     "openDashboard": "Open Home",
-    "openDashboardHint": "Opens Home in a new window. Your running build keeps running.",
     "latestOnGithub": "Latest on GitHub",
     "open": "Start",
     "restart": "Restart",

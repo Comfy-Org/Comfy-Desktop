@@ -24,6 +24,7 @@ vi.mock('../lib/ipc/registerSettingsHandlers', async () => ({
 
 import {
   _test_buildGlobalSettingsSnapshot,
+  _test_centeredCardBounds,
   _test_deleteTitlePopupEntry,
   _test_setTitlePopupEntry,
   activateTitlePopupMenuItem,
@@ -1013,8 +1014,19 @@ describe('global settings remove app data', () => {
     removeAppData(openPopup('global-settings'), { deleteInstances: true, deleteModels: 'yes' })
     expect(removeAppDataAndQuit).toHaveBeenCalledExactlyOnceWith({
       deleteInstances: true,
-      deleteModels: false
+      deleteModels: false,
+      deleteInputOutput: false
     })
+  })
+
+  it('passes the input and output box only when it is exactly true', () => {
+    vi.stubGlobal('process', { ...process, platform: 'linux' })
+    removeAppData(openPopup('global-settings'), { deleteInputOutput: true })
+    removeAppData(openPopup('global-settings'), { deleteInputOutput: 'true' })
+    expect(removeAppDataAndQuit.mock.calls).toEqual([
+      [{ deleteInstances: false, deleteModels: false, deleteInputOutput: true }],
+      [{ deleteInstances: false, deleteModels: false, deleteInputOutput: false }]
+    ])
   })
 
   it('ignores the request on Windows, where the uninstaller does the cleanup', () => {
@@ -1027,5 +1039,49 @@ describe('global settings remove app data', () => {
     vi.stubGlobal('process', { ...process, platform: 'darwin' })
     removeAppData(openPopup('menu'), { deleteInstances: true, deleteModels: true })
     expect(removeAppDataAndQuit).not.toHaveBeenCalled()
+  })
+})
+
+describe('centered card popups', () => {
+  function parentOf(width: number, height: number): Electron.BrowserWindow {
+    return {
+      getContentBounds: () => ({ x: 0, y: 0, width, height })
+    } as unknown as Electron.BrowserWindow
+  }
+
+  it.each(['global-settings', 'downloads-full'] as const)(
+    'leaves room beside the %s card for the round close button outside it',
+    (kind) => {
+      const bounds = _test_centeredCardBounds(kind, parentOf(1400, 900))
+      const cardWidth = kind === 'global-settings' ? 880 : 900
+      expect(bounds.width).toBe(cardWidth + 48)
+    }
+  )
+
+  it.each([
+    ['global-settings', 640],
+    ['downloads-full', 640],
+    ['global-settings', 800],
+    ['downloads-full', 1000]
+  ] as const)(
+    'shrinks the %s card in a %ipx window so the close button stays inside it',
+    (kind, windowWidth) => {
+      const bounds = _test_centeredCardBounds(kind, parentOf(windowWidth, 480))
+      const cardLeft = bounds.x
+      const cardRight = bounds.x + bounds.width - 48
+      const closeLeft = cardRight + 12
+      const closeRight = cardRight + 48
+      expect(cardLeft).toBeGreaterThanOrEqual(16)
+      expect(closeLeft).toBeGreaterThan(cardRight)
+      expect(closeRight).toBeLessThanOrEqual(windowWidth - 16)
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(windowWidth)
+    }
+  )
+
+  it('keeps the card centered in a narrow window', () => {
+    const bounds = _test_centeredCardBounds('downloads-full', parentOf(640, 480))
+    const cardWidth = bounds.width - 48
+    expect(cardWidth).toBe(640 - 128)
+    expect(bounds.x).toBe((640 - cardWidth) / 2)
   })
 })

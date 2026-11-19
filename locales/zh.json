@@ -44,8 +44,21 @@
     "retry": "重试",
     "emptyTitle": "暂无应用",
     "emptyBody": "新应用会显示在这里。",
-    "noMatches": "没有与“{query}”匹配的应用",
+    "noMatchesHint": "换个关键词试试。",
     "allApps": "全部应用",
+    "request": {
+      "bandTitle": "没有你想要的应用？",
+      "bandBody": "你的想法决定我们接下来做哪些应用。",
+      "ask": "提出应用需求",
+      "title": "你想要什么应用？",
+      "intro": "你的想法会帮助我们决定下一个做什么。",
+      "placeholder": "说说它要用什么生成什么",
+      "send": "发送",
+      "sending": "正在发送…",
+      "failed": "没能发送你的需求，请重试。",
+      "thanks": "谢谢，我们已收到你的需求。",
+      "done": "完成"
+    },
     "badge": {
       "withDescription": "{text}：{description}"
     },
@@ -78,11 +91,6 @@
     },
     "cloud": "Comfy Cloud",
     "sharedFolder": "共享文件夹",
-    "buildState": {
-      "running": "运行中",
-      "starting": "启动中",
-      "stopped": "已停止"
-    },
     "kind": {
       "all": "全部",
       "image": "图片",
@@ -183,6 +191,7 @@
     "buildStarting": "启动中",
     "buildReady": "就绪",
     "buildDidntStart": "未能启动",
+    "buildCrashed": "已崩溃",
     "buildInstalling": "正在安装 ComfyUI",
     "buildStartingComfyUI": "正在启动 ComfyUI",
     "buildClickToStart": "点击启动",
@@ -237,11 +246,14 @@
     "menuRevealInFolder": "打开文件夹",
     "menuDelete": "卸载",
     "stoppedActionGatedReason": "请先停止正在运行的实例。",
+    "busyActionGatedReason": "请等待此构建上的当前任务完成。",
     "statusRunning": "运行中",
     "statusLaunching": "正在启动…",
     "statusStopping": "正在停止…",
     "statusError": "错误",
     "viewErrorTooltip": "查看错误详情",
+    "menuViewError": "查看错误",
+    "menuWhyTryCloud": "为什么试用云端",
     "errorTitle": "错误",
     "searchPlaceholder": "搜索实例",
     "noMatches": "没有匹配的实例",
@@ -502,7 +514,11 @@
     "clear": "清除",
     "active": "当前",
     "error": "错误",
-    "retry": "重试"
+    "retry": "重试",
+    "nothingMatches": "没有匹配项",
+    "nothingMatchesHint": "换个关键词试试，或清除筛选条件查看全部内容。",
+    "clearFilters": "清除筛选",
+    "clearSearch": "清除搜索"
   },
   "comfybuilder": {
     "build": "构建",
@@ -851,18 +867,19 @@
     "useForDownloads": "用于下载",
     "addModelsFolder": "添加模型文件夹",
     "removeAppDataTitle": "移除 Comfy Desktop 数据",
-    "removeAppDataHint": "删除应用之前，先移除 Comfy Desktop 保存在这台电脑上的日志、缓存和临时文件。你可以选择是否一并删除 ComfyUI 实例和模型。",
+    "removeAppDataHint": "删除应用之前，先移除 Comfy Desktop 保存在这台电脑上的日志、缓存和临时文件。你可以选择是否一并删除 ComfyUI 实例、模型以及输入和输出文件。",
     "removeAppDataButton": "移除 Comfy Desktop 数据",
     "removeAppDataConfirmTitle": "移除 Comfy Desktop 数据？",
-    "removeAppDataConfirmMessage": "Comfy Desktop 将退出并移除其日志、缓存和临时文件。两个选项都不勾选即可保留你的 ComfyUI 实例和模型；重新安装 Comfy Desktop 后会找到它们。",
+    "removeAppDataConfirmMessage": "Comfy Desktop 将退出并移除其日志、缓存和临时文件。不勾选某个选项即可保留对应的数据，但你删除的实例中的文件除外；重新安装 Comfy Desktop 后会找到保留的数据。",
     "removeAppDataKeptLabel": "始终保留",
-    "removeAppDataKeptFolders": "你的共享输入和输出文件夹",
+    "removeAppDataKeptFolders": "你自己选择的、不在你删除的实例中的输入和输出文件夹",
     "removeAppDataKeptAdded": "你自己添加的模型文件夹",
     "removeAppDataAfterLabel": "然后删除应用",
     "removeAppDataAfterMac": "将 Comfy Desktop 从“应用程序”拖到废纸篓。",
     "removeAppDataAfterLinux": "删除 AppImage 文件；如果安装的是 .deb 软件包，请运行 sudo apt remove comfyui-desktop-2。",
     "removeAppDataInstances": "删除所有 ComfyUI 实例",
     "removeAppDataModels": "删除所有模型文件",
+    "removeAppDataInputOutput": "删除共享的输入和输出文件",
     "removeAppDataConfirm": "移除并退出"
   },
   "zoom": {
@@ -943,7 +960,6 @@
     "tosLinkLabel": "服务条款",
     "notNow": "暂不",
     "cloudFreeRunsPill": "免费试用",
-    "whyTryCloud": "为什么试用云端？",
     "whyCloud": {
       "title": "为什么试用云端？",
       "creditsPill": "400 免费额度",
@@ -955,7 +971,6 @@
         "模型即开即用，并已验证商业许可",
         "预装热门自定义节点包"
       ],
-      "maybeLater": "稍后再说",
       "tryCta": "免费试用云端",
       "imageAlt": "云端驱动的风景插图"
     },
@@ -1037,6 +1052,23 @@
     "failedTitle": "卸载未完成",
     "tryAgain": "重试",
     "dismiss": "忽略"
+  },
+  "updateProgress": {
+    "status": "正在更新",
+    "tileStatus": "正在更新 · {percent}%",
+    "cancelTitle": "停止更新？",
+    "cancelMessage": "{name} 将停止更新。之后可以再次更新。",
+    "cancelConfirm": "停止更新"
+  },
+  "workingProgress": {
+    "cancelTitle": "现在停止？",
+    "cancelMessage": "{name} 的“{task}”将停止。你可以稍后再次开始。",
+    "cancelConfirm": "停止",
+    "failedTitle": "“{task}”未完成",
+    "cannotStopTitle": "此任务无法停止",
+    "cannotStopMessage": "请等待 {name} 的“{task}”完成后再关闭窗口。",
+    "relaunchSkippedTitle": "{name} 未启动",
+    "relaunchSkippedMessage": "{name} 正在执行另一个任务，因此未启动。请在该任务完成后再次启动。"
   },
   "announcement": {
     "comfyApi": {
@@ -1817,7 +1849,8 @@
   },
   "feedback": {
     "modalLabel": "发送反馈",
-    "loading": "正在加载反馈表单…"
+    "loading": "正在加载反馈表单…",
+    "failedTitle": "反馈表单未能加载"
   },
   "performanceTest": {
     "title": "性能测试",
@@ -1945,14 +1978,12 @@
     "missing": "不可用",
     "durationRange": "耗时范围（最短 → 最长）",
     "durationRangeHint": "每条线显示最快和最慢运行，并标记平均值。",
-    "noMatches": "没有符合筛选条件的运行",
     "loadError": "无法加载性能测试结果",
     "loadErrorHint": "请检查文件夹后重试。",
     "refreshButton": "刷新",
     "emptyTitle": "暂无性能测试结果",
     "emptyHint": "完成一次性能测试以添加运行记录。",
     "openPerformanceTest": "打开性能测试",
-    "noMatchesHint": "请尝试其他搜索或筛选条件。",
     "filterAll": "全部",
     "filterWorkspace": "工作区",
     "filterBuild": "构建",
@@ -2010,10 +2041,11 @@
     "filterErrored": "失败",
     "filterAriaLabel": "状态筛选",
     "retry": "重试",
-    "badgeFailed": "失败",
-    "badgeCancelled": "已取消",
     "footerActive": "{n} 个活动",
     "footerCompleted": "{n} 个已完成",
+    "footerFailed": "{n} 个失败",
+    "footerCancelled": "{n} 个已取消",
+    "progressAriaLabel": "{name} 的下载进度",
     "clearFinished": "清除已完成"
   },
   "instancePicker": {
@@ -2022,7 +2054,6 @@
     "noMatches": "没有匹配的构建",
     "newInstance": "新建构建",
     "openDashboard": "打开仪表板",
-    "openDashboardHint": "在新窗口中打开仪表板。正在运行的构建会继续运行。",
     "latestOnGithub": "GitHub 最新版",
     "open": "启动",
     "restart": "重启",

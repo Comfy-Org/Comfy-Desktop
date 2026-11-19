@@ -21,8 +21,6 @@ const props = withDefaults(
 const emit = defineEmits<{
   pick: [installation: Installation]
   'open-details': [installation: Installation]
-  'view-error': [installation: Installation]
-  'view-danger': [installation: Installation]
   'why-cloud': []
 }>()
 
@@ -106,8 +104,6 @@ function unlockTileSize(el: Element): void {
         @why-cloud="emit('why-cloud')"
         @pick="emit('pick', $event)"
         @open-details="emit('open-details', $event)"
-        @view-error="emit('view-error', $event)"
-        @view-danger="emit('view-danger', $event)"
       />
     </TransitionGroup>
   </div>
