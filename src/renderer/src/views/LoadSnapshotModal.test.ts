@@ -147,7 +147,40 @@ describe('LoadSnapshotModal preview', () => {
     await flushPromises()
 
     const wraps = wrapper.findAll('.load-snapshot-disclosure__wrap')
-    expect(wraps.map((wrap) => wrap.attributes('aria-hidden'))).toEqual(['false', 'true', 'true'])
-    expect(wraps.map((wrap) => wrap.attributes('inert') !== undefined)).toEqual([false, true, true])
+    expect(wraps.map((wrap) => wrap.attributes('aria-hidden'))).toEqual(['true', 'true', 'true'])
+    expect(wraps.map((wrap) => wrap.attributes('inert') !== undefined)).toEqual([true, true, true])
+
+    await wrapper.findAll('.load-snapshot-disclosure__summary')[0].trigger('click')
+    expect(wraps[0].attributes('aria-hidden')).toBe('false')
+    expect(wraps[0].attributes('inert')).toBeUndefined()
+  })
+
+  it('keeps an empty Custom nodes list folded and opens it when the snapshot has nodes', async () => {
+    installApi()
+    const wrapper = mountLoadSnapshot()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+    await wrapper.get('.load-snapshot-tertiary').trigger('click')
+    await flushPromises()
+
+    const nodes = wrapper.findAll('.load-snapshot-disclosure')[0]
+    expect(nodes.text()).toContain('Custom nodes (0)')
+    expect(nodes.classes()).not.toContain('is-open')
+
+    const withNodes = {
+      ...preview,
+      newestSnapshot: {
+        ...preview.newestSnapshot,
+        customNodes: [{ id: 'comfyui-impact-pack', type: 'cnr', enabled: true, version: '1.0.0' }]
+      }
+    }
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    api.previewSnapshotFile.mockResolvedValueOnce({ ok: true, preview: withNodes })
+    await wrapper.get('.load-snapshot-file .config-path-browse').trigger('click')
+    await flushPromises()
+
+    const reopened = wrapper.findAll('.load-snapshot-disclosure')[0]
+    expect(reopened.text()).toContain('Custom nodes (1)')
+    expect(reopened.classes()).toContain('is-open')
   })
 })

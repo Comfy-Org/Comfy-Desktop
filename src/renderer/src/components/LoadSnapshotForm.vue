@@ -197,6 +197,10 @@ watch(selectedRelease, () => {
   loadVariantOptions()
 })
 
+watch(preview, (next) => {
+  nodesExpanded.value = (next?.newestSnapshot.customNodes.length ?? 0) > 0
+})
+
 async function loadFromPath(filePath: string): Promise<void> {
   loading.value = true
   try {
@@ -352,14 +356,14 @@ defineExpose({ create, canCreate, creating, hasPreview })
 <template>
   <div
     ref="cardRef"
-    class="load-snapshot-card flex flex-col"
+    class="load-snapshot-card flex flex-col [&>.setup-form-row:last-child]:pb-0"
     @dragover="!preview && handleDragOver($event)"
     @dragleave="!preview && handleDragLeave($event)"
     @drop="!preview && handleDrop($event)"
   >
     <div
       v-if="!preview"
-      class="load-snapshot-dropzone my-3 flex min-h-[220px] flex-col items-center justify-center gap-2.5 rounded-[14px] border-2 border-dashed p-8 text-neutral-200 transition-[border-color,background] duration-160 ease-[ease] motion-reduce:transition-none"
+      class="load-snapshot-dropzone mt-3 flex min-h-[220px] flex-col items-center justify-center gap-2.5 rounded-[14px] border-2 border-dashed p-8 text-neutral-200 transition-[border-color,background] duration-160 ease-[ease] motion-reduce:transition-none"
       :class="[
         dragging
           ? 'load-snapshot-dropzone--active border-white/40 bg-white/6'
@@ -400,7 +404,7 @@ defineExpose({ create, canCreate, creating, hasPreview })
 
     <template v-else>
       <InstallLocationRow
-        class="load-snapshot-file"
+        class="load-snapshot-file [&_.config-path-input]:pl-4"
         :label="$t('loadSnapshot.file')"
         :icon="FileArchive"
         :path="preview.filePath"
@@ -429,7 +433,7 @@ defineExpose({ create, canCreate, creating, hasPreview })
 
       <SetupFormRow :label="$t('list.snapshotRelease')" :icon="Package">
         <BaseSelect
-          class="text-[13px]"
+          class="load-snapshot-release pl-3.5 text-[13px]"
           :model-value="selectedRelease?.value ?? ''"
           :options="releaseSelectOptions"
           :placeholder="releasePlaceholder"
@@ -452,7 +456,7 @@ defineExpose({ create, canCreate, creating, hasPreview })
       <SetupFormRow :label="$t('standalone.variant')" :icon="Zap">
         <BaseSelect
           v-if="variantSelectOptions.length > 0"
-          class="load-snapshot-hardware text-[13px]"
+          class="load-snapshot-hardware pl-3.5 text-[13px]"
           :model-value="shownVariantValue ?? ''"
           :options="variantSelectOptions"
           :loading="variantLoading"
