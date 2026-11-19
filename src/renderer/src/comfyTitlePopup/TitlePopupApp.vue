@@ -200,6 +200,7 @@ const { syncLocale } = useAppLocale(popupLocaleSource())
 
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return
+  if (event.isComposing || event.defaultPrevented) return
   if (modalState.visible) return
   event.preventDefault()
   bridge?.close()
@@ -319,16 +320,17 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="popup box-border m-0 h-full w-full overflow-hidden border border-solid border-border text-text select-none"
+    class="popup box-border m-0 h-full w-full overflow-hidden text-text select-none"
     :class="{
+      'border border-solid border-border': kind !== 'instance-picker',
       'is-menu rounded-lg bg-popover text-xs': kind === 'menu',
       'rounded-card bg-neutral-800 [box-shadow:var(--shadow-highlight)]':
-        kind !== 'menu' && kind !== 'global-settings',
-      'is-picker': kind === 'instance-picker',
+        kind !== 'menu' && kind !== 'instance-picker' && kind !== 'global-settings',
+      'is-picker bg-transparent': kind === 'instance-picker',
       'is-global-settings': kind === 'global-settings',
       'is-downloads-full': kind === 'downloads-full',
       'rounded-panel border-[var(--modal-surface-border)] bg-[var(--modal-surface-bg)]':
-        kind === 'instance-picker' || kind === 'downloads-full',
+        kind === 'downloads-full',
       'border-0 bg-transparent': kind === 'global-settings'
     }"
   >

@@ -19,10 +19,15 @@ import { defaults as settingsDefaults } from '../settings'
 export const UNINSTALL_CLEANUP_FLAG = '--uninstall-cleanup'
 export const DELETE_INSTANCES_FLAG = '--delete-instances'
 export const DELETE_MODELS_FLAG = '--delete-models'
-const CLEANUP_FLAGS = [UNINSTALL_CLEANUP_FLAG, DELETE_INSTANCES_FLAG, DELETE_MODELS_FLAG]
+export const DELETE_INPUT_OUTPUT_FLAG = '--delete-input-output'
+const CLEANUP_FLAGS = [
+  UNINSTALL_CLEANUP_FLAG,
+  DELETE_INSTANCES_FLAG,
+  DELETE_MODELS_FLAG,
+  DELETE_INPUT_OUTPUT_FLAG
+]
 
 export const KEEP_POINTER_FILES_FOR_KEPT_DATA = true
-export const DELETE_SHARED_INPUT_OUTPUT_WITH_INSTANCES = false
 
 export const UNINSTALL_CLEANUP_LOG_FILE = 'comfy-desktop-uninstall-cleanup.log'
 
@@ -51,7 +56,7 @@ const INSTANCE_POINTER_FILES = [
   'settings.json.bak',
   'data-location.json'
 ]
-const MODEL_POINTER_FILES = ['settings.json', 'settings.json.bak', 'data-location.json']
+const SHARED_FOLDER_POINTER_FILES = ['settings.json', 'settings.json.bak', 'data-location.json']
 const INSTALL_LIST_FILES = ['installations.json', 'installations.json.bak']
 const KEPT_PATHS_FILE = 'uninstall-kept-paths.json'
 const PARTIAL_DELETE_STATUS = 'partial-delete'
@@ -94,21 +99,20 @@ const UPDATER_FILE_PATTERNS = [
 const TRANSIENT_DELETE_ERRORS = new Set(['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY'])
 const DELETE_RETRY_DELAYS_MS = [50, 100, 200]
 
-export type CleanupBucket = 'A' | 'B' | 'C'
+export type CleanupBucket = 'A' | 'B' | 'C' | 'D'
 
 export interface CleanupOptions {
   deleteInstances: boolean
   deleteModels: boolean
+  deleteInputOutput: boolean
 }
 
 export interface CleanupPolicy {
   keepPointerFiles: boolean
-  deleteSharedInputOutput: boolean
 }
 
 export const DEFAULT_CLEANUP_POLICY: CleanupPolicy = {
-  keepPointerFiles: KEEP_POINTER_FILES_FOR_KEPT_DATA,
-  deleteSharedInputOutput: DELETE_SHARED_INPUT_OUTPUT_WITH_INSTANCES
+  keepPointerFiles: KEEP_POINTER_FILES_FOR_KEPT_DATA
 }
 
 export interface CleanupFolders {
@@ -236,7 +240,8 @@ export interface CleanupResult {
 export function parseCleanupOptions(argv: readonly string[]): CleanupOptions {
   return {
     deleteInstances: argv.includes(DELETE_INSTANCES_FLAG),
-    deleteModels: argv.includes(DELETE_MODELS_FLAG)
+    deleteModels: argv.includes(DELETE_MODELS_FLAG),
+    deleteInputOutput: argv.includes(DELETE_INPUT_OUTPUT_FLAG)
   }
 }
 
@@ -247,7 +252,9 @@ export function pointerFilesToKeep(
   if (!keepPointerFiles) return []
   const keep = new Set<string>()
   if (!options.deleteInstances) INSTANCE_POINTER_FILES.forEach((name) => keep.add(name))
-  if (!options.deleteModels) MODEL_POINTER_FILES.forEach((name) => keep.add(name))
+  if (!options.deleteModels || !options.deleteInputOutput) {
+    SHARED_FOLDER_POINTER_FILES.forEach((name) => keep.add(name))
+  }
   return [...keep]
 }
 
@@ -334,6 +341,10 @@ function cacheParentDir(folders: CleanupFolders): string | null {
   return path.basename(parent) === CACHE_PARENT_DIR_NAME ? parent : null
 }
 
+function sharedInputOutputDirs(folders: CleanupFolders): string[] {
+  return [folders.input, folders.output]
+}
+
 function dataRootFolder(folders: CleanupFolders): string | null {
   return samePath(folders.dataRoot, folders.home) ? null : folders.dataRoot
 }
@@ -365,6 +376,7 @@ function walkedRoots(inputs: WalkedRootSources, installPaths: string[]): string[
     folders.downloadCache,
     folders.benchmarks,
     folders.models,
+    ...sharedInputOutputDirs(folders),
     ...partialDownloadDirs(inputs),
     ...inputs.configuredCacheEntries,
     ...tempEntriesToRemove(folders.temp, inputs.tempEntries),
@@ -477,6 +489,7 @@ function buildGuard(
     cacheParentDir(folders),
     folders.installDir,
     path.dirname(folders.models),
+    ...sharedInputOutputDirs(folders).map((dir) => path.dirname(dir)),
     path.dirname(folders.benchmarks),
     windowsLocalDataRoot(inputs),
     dataRootFolder(folders),
@@ -520,7 +533,7 @@ function planTargets(
 
   const deletingInstances = options.deleteInstances && ownershipKnown
   const deletingModels = options.deleteModels && ownershipKnown
-  const deletingSharedInputOutput = deletingInstances && policy.deleteSharedInputOutput
+  const deletingInputOutput = options.deleteInputOutput && ownershipKnown
   const installs = deletingInstances
     ? inputs.installations.filter(
         (inst) => hasExactInstallMarker(inst) && !keptIds.includes(inst.id)
@@ -537,8 +550,8 @@ function planTargets(
   const removedOnPurpose = withRoles([
     ['cache', folders.downloadCache],
     ['models', deletingModels ? folders.models : null],
-    ['input', deletingSharedInputOutput ? folders.input : null],
-    ['output', deletingSharedInputOutput ? folders.output : null]
+    ['input', deletingInputOutput ? folders.input : null],
+    ['output', deletingInputOutput ? folders.output : null]
   ])
   const kept = keptPaths(inputs, installs, removedOnPurpose, keptPointerNames)
   const guard = buildGuard(inputs, kept.paths, installs)
@@ -553,9 +566,9 @@ function planTargets(
     const reason = `adoption marker of ComfyUI install ${inst.id}`
     if (file) add(file, 'B', reason, { marker: { file, id: inst.id } })
   }
-  if (deletingSharedInputOutput) {
-    add(folders.input, 'B', 'shared input folder')
-    add(folders.output, 'B', 'shared output folder')
+  if (deletingInputOutput) {
+    add(folders.input, 'D', 'shared input folder')
+    add(folders.output, 'D', 'shared output folder')
   }
 
   const addFiles = (dir: string, names: string[], patterns: RegExp[], reason: string): void => {
@@ -590,6 +603,11 @@ function planTargets(
 
   if (deletingInstances) addWhenEmpty(folders.installDir, 'B', 'installs folder')
   if (deletingModels) addWhenEmpty(path.dirname(folders.models), 'C', 'shared folder')
+  if (deletingInputOutput) {
+    for (const dir of sharedInputOutputDirs(folders)) {
+      addWhenEmpty(path.dirname(dir), 'D', 'shared folder')
+    }
+  }
   if (ownershipKnown) {
     addWhenEmpty(path.dirname(folders.benchmarks), 'A', 'shared folder')
     const cacheParent = cacheParentDir(folders)
@@ -619,12 +637,17 @@ export function planUninstallCleanup(
 }
 
 const EVERY_TARGET_POLICY: CleanupPolicy = {
-  keepPointerFiles: false,
-  deleteSharedInputOutput: true
+  keepPointerFiles: false
+}
+
+const EVERY_BOX: CleanupOptions = {
+  deleteInstances: true,
+  deleteModels: true,
+  deleteInputOutput: true
 }
 
 function everyTarget(sources: CleanupSources): string[] {
-  const everything = { ...sources, options: { deleteInstances: true, deleteModels: true } }
+  const everything = { ...sources, options: EVERY_BOX }
   return planTargets(everything, EVERY_TARGET_POLICY, []).entries.map((target) => target.path)
 }
 
@@ -1506,7 +1529,11 @@ export function formatCleanupLog(
   const summary = outcomes.map((outcome) => `${outcome}=${count(outcome)}`).join(' ')
   const lines = [
     `Comfy Desktop uninstall cleanup ${startedAt.toISOString()}`,
-    `delete-instances=${options.deleteInstances} delete-models=${options.deleteModels}`,
+    [
+      `delete-instances=${options.deleteInstances}`,
+      `delete-models=${options.deleteModels}`,
+      `delete-input-output=${options.deleteInputOutput}`
+    ].join(' '),
     ...(extras.notes ?? []),
     ...results.map(describe),
     summary
@@ -1575,7 +1602,8 @@ export function cleanupRelaunchOptions(
     ...passthrough,
     UNINSTALL_CLEANUP_FLAG,
     ...(options.deleteInstances ? [DELETE_INSTANCES_FLAG] : []),
-    ...(options.deleteModels ? [DELETE_MODELS_FLAG] : [])
+    ...(options.deleteModels ? [DELETE_MODELS_FLAG] : []),
+    ...(options.deleteInputOutput ? [DELETE_INPUT_OUTPUT_FLAG] : [])
   ]
   return context.appImage ? { execPath: context.appImage, args } : { args }
 }
