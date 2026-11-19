@@ -27,14 +27,23 @@ const { items, run } = useBuildMenu(() => build)
 
 const reference = computed(() => anchor)
 
+function focusTrigger(): void {
+  if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true })
+}
+
 function select(id: string): void {
+  if (id === 'delete') focusTrigger()
   void run(id)
 }
 
 function onCloseAutoFocus(event: Event): void {
   if (!returnFocus?.isConnected) return
   event.preventDefault()
-  returnFocus.focus({ preventScroll: true })
+  const active = document.activeElement
+  if (active instanceof HTMLElement && active.closest('[role="dialog"], [role="alertdialog"]')) {
+    return
+  }
+  focusTrigger()
 }
 
 function onKeydown(event: KeyboardEvent): void {

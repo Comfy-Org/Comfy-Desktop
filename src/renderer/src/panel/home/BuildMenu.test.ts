@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { userEvent } from 'vitest/browser'
 import { createPinia, setActivePinia } from 'pinia'
 
 import AppSidebar from '../AppSidebar.vue'
@@ -372,6 +373,44 @@ describe('Build menu', () => {
 
     expect(host.showProgress).not.toHaveBeenCalled()
   })
+
+  it.each(['Cancel', 'Escape'] as const)(
+    'puts keyboard focus back on the ⋯ button after Uninstall is answered with %s',
+    async (answer) => {
+      const tile = await mountTile('ready')
+      mountDialogs()
+      const more = tile.get<HTMLElement>('[data-testid="home-build-more"]').element
+      more.focus()
+      await userEvent.keyboard('{Enter}')
+      await shownMenu()
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector('[data-testid="build-menu"]')?.contains(document.activeElement)
+        ).toBe(true)
+      )
+      await userEvent.keyboard('{End}')
+      await vi.waitFor(() =>
+        expect(document.activeElement).toBe(
+          document.querySelector('[data-testid="build-menu-delete"]')
+        )
+      )
+      await userEvent.keyboard('{Enter}')
+      const box = await confirmBox()
+      await vi.waitFor(() => expect(box.contains(document.activeElement)).toBe(true))
+
+      if (answer === 'Cancel') {
+        box.querySelector<HTMLElement>('[data-testid="base-alert-cancel"]')!.focus()
+        await userEvent.keyboard('{Enter}')
+      } else {
+        await userEvent.keyboard('{Escape}')
+      }
+
+      await vi.waitFor(() => expect(document.querySelector('[role="alertdialog"]')).toBeNull())
+      await vi.waitFor(() => expect(document.activeElement).toBe(more))
+      expect(document.querySelector('[data-testid="build-menu"]')).toBeNull()
+      expect(host.showProgress).not.toHaveBeenCalled()
+    }
+  )
 
   it('closes the menu when the ⋯ button is pressed again', async () => {
     const tile = await mountTile('ready')
