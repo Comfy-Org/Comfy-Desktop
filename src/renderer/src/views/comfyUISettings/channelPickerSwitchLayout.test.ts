@@ -243,11 +243,19 @@ async function pick(dropdownName: string, optionLabel: string): Promise<void> {
   await flushPromises()
 }
 
+async function measureInInterNotTheFallbackFont(): Promise<void> {
+  const faces = ['500 14px Inter', '12px Inter', 'italic 12px Inter']
+  await Promise.all(faces.map((face) => document.fonts.load(face)))
+  await document.fonts.ready
+  for (const face of faces) expect(document.fonts.check(face)).toBe(true)
+}
+
 beforeAll(async () => {
   const noListboxAnimation = document.createElement('style')
   noListboxAnimation.textContent = '.ui-select-listbox { animation: none !important; }'
   document.head.append(noListboxAnimation)
   await browserPage.viewport(1280, 900)
+  await measureInInterNotTheFallbackFont()
 })
 
 afterEach(() => {
