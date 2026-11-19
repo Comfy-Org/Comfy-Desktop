@@ -25,17 +25,20 @@ const {
   build,
   anchor,
   align = 'start',
-  returnFocus = null
+  returnFocus = null,
+  whyCloud = false
 } = defineProps<{
   build: Installation
   anchor: BuildMenuAnchor
   align?: 'start' | 'end'
   returnFocus?: HTMLElement | null
+  whyCloud?: boolean
 }>()
 const open = defineModel<boolean>('open', { default: false })
+const emit = defineEmits<{ 'why-cloud': [] }>()
 
 const { t } = useI18n()
-const { items, run } = useBuildMenu(() => build)
+const { items, run } = useBuildMenu(() => build, { whyCloud: () => whyCloud })
 const confirmingUninstall = ref(false)
 const confirmUninstallItem = useTemplateRef<ComponentPublicInstance>('confirmUninstallItem')
 
@@ -53,6 +56,7 @@ watch([open, () => build.id, itemsKey], () => {
 })
 
 function select(event: Event, id: string): void {
+  if (id === 'why-cloud') return emit('why-cloud')
   if (id === 'delete') {
     event.preventDefault()
     confirmingUninstall.value = true

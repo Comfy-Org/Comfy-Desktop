@@ -595,7 +595,6 @@ onUnmounted(() => {
               @open-details="openBuildDetails"
               @show-new-install="handleChooserShowNewInstall"
               @show-build-import="switchPanel($event, 'chooser')"
-              @show-progress="handleShowProgress"
             />
           </div>
 

@@ -3,7 +3,11 @@ import path from 'node:path'
 import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { expectChooserVisible, uninstallFromBuildsTileMenu } from './support/chooserHelpers'
+import {
+  expectChooserVisible,
+  pickFromBuildsTileMenu,
+  uninstallFromBuildsTileMenu
+} from './support/chooserHelpers'
 import { closeTitlePopupIfOpen, titlePopupPage, waitForWebContents } from './support/cdpPages'
 import { byTestId, TID } from './support/testIds'
 
@@ -35,7 +39,7 @@ async function tileExists(installationId: string): Promise<boolean> {
 
 async function errorShownOnDeletedBuild(): Promise<string | null> {
   if (!(await ctx.panel.isVisible(DELETE_ERROR_BADGE))) return null
-  expect(await ctx.panel.click(DELETE_ERROR_BADGE), 'error badge click dispatched').toBe(true)
+  await pickFromBuildsTileMenu(ctx.panel, DELETE_ID, 'view-error')
   await ctx.panel.waitForVisible('.base-alert-message-text', { timeout: 5_000 })
   return ctx.panel.textOf('.base-alert-message-text')
 }
