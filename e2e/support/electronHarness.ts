@@ -5,11 +5,10 @@ import process from 'node:process'
 import { test } from '@playwright/test'
 import { _electron as electron, type ElectronApplication } from 'playwright'
 
+import { createShutdown } from './appShutdown'
 import { evalWithRetry } from './evalRetry'
 import { FOREGROUND_PROJECTS, isBackgroundRun } from './focusMode'
 import { recordVideoOptions } from './videoRecording'
-
-const GRACEFUL_CLOSE_DEADLINE_MS = 10_000
 
 export interface LauncherAppHandle {
   application: ElectronApplication
@@ -295,37 +294,16 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     )
   })
 
+  const appPid = await evalWithRetry(() => application.evaluate(() => globalThis.process.pid))
+  const shutdown = createShutdown({
+    launcher: application.process() ?? undefined,
+    appPid,
+    closeGracefully: () => application.close(),
+    connectionClosed: () => connectionClosed
+  })
+
   const cleanup = async (): Promise<void> => {
-    try {
-      const proc = application.process()
-      const stillRunning = (): boolean =>
-        !!proc && proc.exitCode === null && proc.signalCode === null
-      if (stillRunning() && !connectionClosed) {
-        let deadline: ReturnType<typeof setTimeout> | undefined
-        const closedOrGaveUp = await Promise.race([
-          application
-            .close()
-            .catch(() => {})
-            .then(() => 'closed' as const),
-          new Promise<'gave-up'>((resolve) => {
-            deadline = setTimeout(() => resolve('gave-up'), GRACEFUL_CLOSE_DEADLINE_MS)
-          })
-        ])
-        clearTimeout(deadline)
-        if (closedOrGaveUp === 'gave-up') {
-          console.log(
-            `[e2e-harness] app did not quit within ${GRACEFUL_CLOSE_DEADLINE_MS}ms, killing it`
-          )
-        }
-      }
-      if (proc) {
-        const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()))
-        if (stillRunning()) {
-          proc.kill('SIGKILL')
-          await exited
-        }
-      }
-    } catch {}
+    await shutdown()
     if (!reuseDir) {
       await rm(homeDir, { recursive: true, force: true })
     }

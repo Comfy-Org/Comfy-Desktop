@@ -44,6 +44,7 @@ export default defineConfig({
             'src/shared/**/*.test.ts',
             'scripts/eslint/**/*.test.ts',
             'e2e/support/videoRecording.test.ts',
+            'e2e/support/appShutdown.test.ts',
             'scripts/preview/**/*.test.mjs',
             ...RENDERER_TESTS_THAT_READ_FILES
           ],
