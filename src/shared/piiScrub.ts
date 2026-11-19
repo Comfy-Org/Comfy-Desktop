@@ -1,12 +1,11 @@
 const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)(?:\\u[0-9a-fA-F]{4}|\\x[89a-fA-F][0-9a-fA-F]|[^\\/"\r\n])+`
 const RAW_SEP_NAME = String.raw`(\\)[^\\/"\r\n]+`
-const NOT_IN_COMPONENT = String.raw`(?<![\w.~$-](?<!\\[nrt]))`
 const PII_PATH_PATTERNS: RegExp[] = [
   String.raw`([A-Za-z]:[\\/]+Users)`,
-  String.raw`${NOT_IN_COMPONENT}(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home)`,
-  String.raw`${NOT_IN_COMPONENT}(\\\\[^\\/]+[\\/]+(?:Users|home))`,
-  String.raw`${NOT_IN_COMPONENT}(\\\\[^\\/]+[\\/]+[A-Za-z]\$[\\/]+Users)`,
-  String.raw`${NOT_IN_COMPONENT}(\\\\[?.][\\/]+UNC[\\/]+[^\\/]+(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
+  String.raw`(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home)`,
+  String.raw`(\\\\[^\\/]+[\\/]+(?:Users|home))`,
+  String.raw`(\\\\[^\\/]+[\\/]+[A-Za-z]\$[\\/]+Users)`,
+  String.raw`(\\\\[?.][\\/]+UNC[\\/]+[^\\/]+(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
   String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users)`,
   String.raw`((?<![\w.~$\\/-])\\+Users)`,
   String.raw`(\/Users)`,

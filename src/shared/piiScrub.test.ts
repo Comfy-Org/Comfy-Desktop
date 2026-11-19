@@ -204,10 +204,6 @@ describe('piiScrub', () => {
     it.each([
       'C:\\ComfyUI\\custom_nodes\\x\\home\\config.json',
       'C:\\ComfyUI\\custom_nodes\\x\\Users\\config.json',
-      'C:\\\\ComfyUI\\\\custom_nodes\\\\x\\\\Users\\\\config.json',
-      'C:\\\\work\\\\wsl$\\\\Ubuntu\\\\home\\\\x',
-      'C:\\\\work\\\\srv\\\\c$\\\\Users\\\\x',
-      'C:\\\\work\\\\.\\\\UNC\\\\srv\\\\Users\\\\x',
       'C:\\work\\cache$\\Users\\config.json'
     ])('leaves the nested project folder in %s alone', (input) => {
       expect(scrubPII(input)).toBe(input)
@@ -246,11 +242,38 @@ describe('piiScrub', () => {
       expect(scrubPII(input)).toBe(expected)
     })
 
-    it('hides the last folder of an escaped drive path that reads as a share', () => {
-      expect(scrubPII('{"p":"D:\\\\data\\\\home\\\\x"}')).toBe(
-        '{"p":"D:\\\\data\\\\home\\\\[REDACTED]"}'
-      )
-    })
+    it.each([
+      ['{"p":"D:\\\\data\\\\home\\\\x"}', '{"p":"D:\\\\data\\\\home\\\\[REDACTED]"}'],
+      [
+        'C:\\\\ComfyUI\\\\custom_nodes\\\\x\\\\Users\\\\config.json',
+        'C:\\\\ComfyUI\\\\custom_nodes\\\\x\\\\Users\\\\[REDACTED]'
+      ],
+      [
+        'C:\\\\work\\\\wsl$\\\\Ubuntu\\\\home\\\\x',
+        'C:\\\\work\\\\wsl$\\\\Ubuntu\\\\home\\\\[REDACTED]'
+      ],
+      ['C:\\\\work\\\\srv\\\\c$\\\\Users\\\\x', 'C:\\\\work\\\\srv\\\\c$\\\\Users\\\\[REDACTED]'],
+      [
+        'C:\\\\work\\\\.\\\\UNC\\\\srv\\\\Users\\\\x',
+        'C:\\\\work\\\\.\\\\UNC\\\\srv\\\\Users\\\\[REDACTED]'
+      ]
+    ])(
+      'hides the last folder of an escaped path whose folders read as a share: %s',
+      (input, expected) => {
+        expect(scrubPII(input)).toBe(expected)
+      }
+    )
+
+    it.each([
+      ['\x1b[0m\\\\server\\Users\\alice\\x', '\x1b[0m\\\\server\\Users\\[REDACTED]\\x'],
+      ['x\\f\\\\server\\Users\\alice\\x', 'x\\f\\\\server\\Users\\[REDACTED]\\x'],
+      ['x\\u000a\\\\server\\Users\\alice\\x', 'x\\u000a\\\\server\\Users\\[REDACTED]\\x']
+    ])(
+      'redacts a raw share path right after a colour code or another escape: %s',
+      (input, expected) => {
+        expect(scrubPII(input)).toBe(expected)
+      }
+    )
 
     it('hides a folder like x86 after a mixed-separator username along with the name', () => {
       expect(scrubPII('C:\\Users/alice\\x86\\python.exe')).toBe('C:\\Users/[REDACTED]\\python.exe')
