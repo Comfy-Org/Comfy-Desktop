@@ -1874,7 +1874,7 @@ defineExpose({ open })
         >
           <span class="truncate text-foreground">{{ row.value }}</span>
           <span
-            :class="[SUMMARY_META_CLASS, 'min-w-0 truncate text-subtle-foreground']"
+            :class="[SUMMARY_META_CLASS, 'max-w-[220px] min-w-0 truncate text-subtle-foreground']"
             :title="row.meta"
             >{{ row.meta }}</span
           >

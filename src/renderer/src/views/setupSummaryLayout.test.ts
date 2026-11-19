@@ -264,6 +264,33 @@ describe.each([
     expect(browse.borderTopWidth).toBe('0px')
   })
 
+  it('keeps the value readable when a row note is very long', async () => {
+    await browserPage.viewport(width, height)
+    const longNote = 'A very long build description '.repeat(12).trim()
+    const options = window.api.getFieldOptions as ReturnType<typeof vi.fn>
+    const defaultOptions = options.getMockImplementation()!
+    options.mockImplementation(async (source: string, field: string) => {
+      const list = await defaultOptions(source, field)
+      return field === 'variant'
+        ? list.map((option) => ({ ...option, description: longNote }))
+        : list
+    })
+    const { box } = await newBuildSummary()
+    const row = [...box.querySelectorAll<HTMLElement>('.config-summary-row')].find(
+      (candidate) => candidate.children[2]?.textContent === longNote
+    )!
+    const value = row.children[1] as HTMLElement
+    const note = row.children[2] as HTMLElement
+
+    expect(value.textContent).toBe('Apple Silicon (MPS)')
+    expect(value.getBoundingClientRect().width).toBeGreaterThanOrEqual(value.scrollWidth)
+    expect(note.scrollWidth).toBeGreaterThan(note.clientWidth)
+    expect(note.title).toBe(longNote)
+    expect(Math.round(box.getBoundingClientRect().right - note.getBoundingClientRect().right)).toBe(
+      parseFloat(getComputedStyle(box).paddingRight)
+    )
+  })
+
   it('puts the Location note and Browse on the Location line, right-aligned', async () => {
     await browserPage.viewport(width, height)
     const { box } = await newBuildSummary()
