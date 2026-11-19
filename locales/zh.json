@@ -44,6 +44,7 @@
     "retry": "重试",
     "emptyTitle": "暂无应用",
     "emptyBody": "新应用会显示在这里。",
+    "noMatchesHint": "换个关键词试试。",
     "allApps": "全部应用",
     "request": {
       "bandTitle": "没有你想要的应用？",
@@ -516,7 +517,8 @@
     "retry": "重试",
     "nothingMatches": "没有匹配项",
     "nothingMatchesHint": "换个关键词试试，或清除筛选条件查看全部内容。",
-    "clearFilters": "清除筛选"
+    "clearFilters": "清除筛选",
+    "clearSearch": "清除搜索"
   },
   "comfybuilder": {
     "build": "构建",

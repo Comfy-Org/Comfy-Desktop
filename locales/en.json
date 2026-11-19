@@ -44,6 +44,7 @@
     "retry": "Try again",
     "emptyTitle": "No apps yet",
     "emptyBody": "New apps will show up here.",
+    "noMatchesHint": "Try another word.",
     "allApps": "All apps",
     "request": {
       "bandTitle": "Missing an app?",
@@ -516,7 +517,8 @@
     "retry": "Retry",
     "nothingMatches": "Nothing matches",
     "nothingMatchesHint": "Try another word, or clear the filters to see everything.",
-    "clearFilters": "Clear filters"
+    "clearFilters": "Clear filters",
+    "clearSearch": "Clear search"
   },
   "comfybuilder": {
     "build": "Build",

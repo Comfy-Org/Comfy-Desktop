@@ -341,7 +341,8 @@ describe('AppsView', () => {
     await wrapper.get('input').setValue('spreadsheet')
     const empty = wrapper.get('[data-testid="apps-no-matches"]')
     expect(empty.get('h2').text()).toBe('Nothing matches')
-    expect(empty.text()).toContain('Try another word, or clear the filters to see everything.')
+    expect(empty.get('p').text()).toBe('Try another word.')
+    expect(empty.text()).not.toContain('filters')
   })
 
   it('clears the search from the Nothing matches state', async () => {
@@ -349,7 +350,9 @@ describe('AppsView', () => {
     const allCards = wrapper.findAll('[data-testid="apps-grid"] button').length
 
     await wrapper.get('input').setValue('spreadsheet')
-    await wrapper.get('[data-testid="apps-clear-filters"]').trigger('click')
+    const clear = wrapper.get('[data-testid="apps-clear-search"]')
+    expect(clear.text()).toBe('Clear search')
+    await clear.trigger('click')
 
     expect(wrapper.get<HTMLInputElement>('input').element.value).toBe('')
     expect(wrapper.find('[data-testid="apps-no-matches"]').exists()).toBe(false)

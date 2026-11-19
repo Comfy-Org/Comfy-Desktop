@@ -301,7 +301,7 @@ onBeforeUnmount(() => {
           data-testid="apps-no-matches"
           :icon="AppWindow"
           :title="t('common.nothingMatches')"
-          :text="t('common.nothingMatchesHint')"
+          :text="t('apps.noMatchesHint')"
         >
           <div class="flex items-center gap-2">
             <Button
@@ -309,10 +309,10 @@ onBeforeUnmount(() => {
               variant="secondary"
               size="md"
               class="px-3 text-[13px]/5"
-              data-testid="apps-clear-filters"
+              data-testid="apps-clear-search"
               @click="query = ''"
             >
-              {{ t('common.clearFilters') }}
+              {{ t('common.clearSearch') }}
             </Button>
             <Button
               type="button"
