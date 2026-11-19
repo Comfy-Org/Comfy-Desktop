@@ -23,6 +23,7 @@ import {
   readFrontendPin,
   readOverrideState,
   reportAgentCoreFailure,
+  reportCacheRescued,
   reportOverrideDecision,
   resolveOverride
 } from './agentRequirementsOverride'
@@ -1278,6 +1279,24 @@ describe('indexKind', () => {
       indexKind({ pypiMirror: 'https://mirror.example/simple/', useChineseMirrors: true })
     ).toBe('custom')
     expect(indexKind({ pypiMirror: '  ' }), 'a blank mirror setting is no mirror').toBe('pypi')
+  })
+})
+
+describe('reportCacheRescued', () => {
+  it('reports which install the cache retry saved', () => {
+    const emit = vi.spyOn(telemetry, 'emit').mockImplementation(() => {})
+    try {
+      reportCacheRescued('i', 'core', 'cn_mirror')
+
+      expect(emit.mock.calls).toEqual([
+        [
+          'comfy.desktop.agent_requirements_cache_rescued',
+          { installation_id: 'i', step: 'core', index: 'cn_mirror' }
+        ]
+      ])
+    } finally {
+      emit.mockRestore()
+    }
   })
 })
 

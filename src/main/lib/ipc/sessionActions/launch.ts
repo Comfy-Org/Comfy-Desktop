@@ -117,6 +117,7 @@ import {
   readFrontendPin,
   readOverrideState,
   reportAgentCoreFailure,
+  reportCacheRescued,
   reportOverrideDecision
 } from '../../agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from '../../agentRequirementsOverride'
@@ -1421,7 +1422,8 @@ async function runLaunch(
           status: i18n.t('launch.agentRequirements.failed')
         })
         reportAgentCoreFailure(installationId, report, indexKind(settings.getMirrorConfig()))
-      }
+      },
+      (step) => reportCacheRescued(installationId, step, indexKind(settings.getMirrorConfig()))
     )
     if (abort.signal.aborted) {
       startHandedBack()

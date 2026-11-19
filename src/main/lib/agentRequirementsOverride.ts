@@ -479,6 +479,20 @@ export function reportAgentCoreFailure(
   } catch {}
 }
 
+export function reportCacheRescued(
+  installationId: string,
+  step: 'core' | 'override',
+  index: IndexKind
+): void {
+  try {
+    telemetry.emit('comfy.desktop.agent_requirements_cache_rescued', {
+      installation_id: installationId,
+      step,
+      index
+    })
+  } catch {}
+}
+
 export type AgentStartOutcome = 'started' | 'failed' | 'inconclusive'
 
 const AGENT_EVENT_LINE = /^\[agent-event\] ([a-z][a-z0-9_]*)((?: [a-z_]+=[^ =]+)*)$/
@@ -582,6 +596,8 @@ export interface PrefetchReport {
   elapsedMs: number
   downloadsStarted: number
   downloadsFinished: number
+  downloadedBytes: number
+  fetchMs: number
   errorTail: string | null
   uvVersion: string | null
 }
@@ -602,6 +618,8 @@ export function reportAgentPrefetch(
       elapsed_ms: r.elapsedMs,
       downloads_started: r.downloadsStarted,
       downloads_finished: r.downloadsFinished,
+      downloaded_bytes: r.downloadedBytes,
+      fetch_ms: r.fetchMs,
       error_tail: r.errorTail,
       index,
       uv_version: r.uvVersion
