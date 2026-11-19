@@ -46,6 +46,14 @@
     "emptyBody": "新应用会显示在这里。",
     "noMatches": "没有与“{query}”匹配的应用",
     "allApps": "全部应用",
+    "request": {
+      "tile": "告诉我们你想要什么应用…",
+      "ask": "提出应用需求",
+      "title": "你想要什么应用？",
+      "placeholder": "说说它要用什么生成什么",
+      "send": "发送",
+      "thanks": "谢谢，我们已收到你的需求。"
+    },
     "badge": {
       "withDescription": "{text}：{description}"
     },

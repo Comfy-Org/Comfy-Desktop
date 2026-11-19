@@ -103,7 +103,8 @@ let rendererRole: RendererRole = 'panel'
 let resolvedTelemetryEnabled: boolean | undefined = undefined
 
 const PRE_CONSENT_ALLOWED_EVENTS: ReadonlySet<string> = new Set([
-  'comfy.desktop.first_use.consent_decision'
+  'comfy.desktop.first_use.consent_decision',
+  'survey sent'
 ])
 const RENDERER_TELEMETRY_EVENT_CAP = 5_000
 let rendererTelemetryEventsEmitted = 0

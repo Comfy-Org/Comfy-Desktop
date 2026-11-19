@@ -1756,6 +1756,27 @@ describe('telemetry consent state (3-state)', () => {
     })
   })
 
+  it.each(['denied', 'undecided'] as const)(
+    'sends a survey answer the person submitted while consent is %s',
+    (state) => {
+      telemetry.setConsentState(state)
+      bindTestAnonymous('test-distinct-id')
+      captured.length = 0
+
+      telemetry.capture('comfy.desktop.session.started', {})
+      telemetry.capture('survey sent', {
+        $survey_id: 'survey-id',
+        '$survey_response_question-id': 'An app that colors line art'
+      })
+
+      expect(captured.map((c) => c.event)).toEqual(['survey sent'])
+      expect(captured[0]?.properties).toMatchObject({
+        $survey_id: 'survey-id',
+        '$survey_response_question-id': 'An app that colors line art'
+      })
+    }
+  )
+
   it('defers session.started while consent is undecided', () => {
     telemetry.setConsentState('undecided')
     bindTestAnonymous('deferred-id', { app_version: '1.2.3' })

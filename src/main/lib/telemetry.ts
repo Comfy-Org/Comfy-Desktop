@@ -222,7 +222,8 @@ function opsFlagPersonProperties(): Record<string, string> {
 }
 
 const PRE_CONSENT_ALLOWED_EVENTS: ReadonlySet<string> = new Set([
-  'comfy.desktop.first_use.consent_decision'
+  'comfy.desktop.first_use.consent_decision',
+  'survey sent'
 ])
 
 function isAllowedToFire(event: string): boolean {
