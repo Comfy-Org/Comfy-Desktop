@@ -344,39 +344,58 @@ describe('AppsView', () => {
     )
   })
 
-  it('ends the list with a square tile that asks what app the person wants', async () => {
+  it('ends the list with a band that asks what app the person wants', async () => {
     const wrapper = await mountApps()
     const items = wrapper.findAll('[data-testid="apps-grid"] > li')
-    const tile = wrapper.get('[data-testid="app-request-open"]')
-    const box = tile.element.getBoundingClientRect()
+    const band = wrapper.get('[data-testid="app-request-open"]')
 
     expect(items).toHaveLength(4)
     expect(items.at(-1)!.attributes('data-testid')).toBe('app-request-tile')
-    expect(tile.text()).toBe('Tell us what app you want…')
-    expect(box.width / box.height).toBeCloseTo(1, 2)
+    expect(band.text()).toContain('Missing an app?')
+    expect(band.text()).toContain('Ask for an app')
+    expect(wrapper.findAll('[data-testid="app-request-thumbs"] img')).toHaveLength(2)
     wrapper.unmount()
   })
 
-  it('draws the request tile like an app card, with no border, at every width', async () => {
+  it('fills the free space beside the last row of cards, or takes a full row under a full one', async () => {
+    const pool = [CUTOUT, HDR, GENJUTSU]
     for (const width of [WIDE_PAGE_WIDTH, MEDIUM_PAGE_WIDTH, NARROW_PAGE_WIDTH]) {
       page.style.width = `${width}px`
-      const wrapper = await mountApps([CUTOUT, HDR, GENJUTSU, { ...HDR, id: 'fourth' }])
-      const tile = wrapper.get('[data-testid="app-request-open"]').element
-      const card = wrapper.get('[data-testid="app-card-fourth"]').element
-      const tileStyle = getComputedStyle(tile)
-      const cardStyle = getComputedStyle(card)
-      const tileBox = tile.getBoundingClientRect()
-      const label = wrapper.get('[data-testid="app-request-label"]').element.getBoundingClientRect()
+      for (let count = 1; count <= 8; count++) {
+        const list = Array.from({ length: count }, (_, index) => ({
+          ...pool[index % pool.length]!,
+          id: `card-${index}`
+        }))
+        const wrapper = await mountApps(list)
+        const grid = wrapper.get('[data-testid="apps-grid"]').element.getBoundingClientRect()
+        const cards = list.map((app) =>
+          wrapper.get(`[data-testid="app-card-${app.id}"]`).element.getBoundingClientRect()
+        )
+        const last = cards.at(-1)!
+        const smallest = Math.min(...cards.map((card) => card.width))
+        const gap = parseFloat(
+          getComputedStyle(wrapper.get('[data-testid="apps-grid"]').element).columnGap
+        )
+        const band = wrapper.get('[data-testid="app-request-open"]').element.getBoundingClientRect()
+        const label = `${width}px, ${count} cards`
 
-      expect(tileStyle.borderTopWidth).toBe('0px')
-      expect(tileStyle.backgroundColor).toBe(cardStyle.backgroundColor)
-      expect(tileStyle.borderTopLeftRadius).toBe(cardStyle.borderTopLeftRadius)
-      expect(tileBox.width / tileBox.height).toBeCloseTo(1, 2)
-      expect(tileBox.height).toBeCloseTo(card.getBoundingClientRect().height, 0)
-      expect(label.left).toBeGreaterThanOrEqual(tileBox.left)
-      expect(label.right).toBeLessThanOrEqual(tileBox.right)
-      expect(label.bottom).toBeLessThanOrEqual(tileBox.bottom)
-      wrapper.unmount()
+        expect(band.right, label).toBeCloseTo(grid.right, 0)
+        if (grid.right - last.right - gap >= smallest - 1) {
+          expect(band.top, label).toBeCloseTo(last.top, 0)
+          expect(band.left, label).toBeCloseTo(last.right + gap, 0)
+          expect(band.height, label).toBeCloseTo(last.height, 0)
+        } else {
+          expect(band.left, label).toBeCloseTo(grid.left, 0)
+          expect(band.top, label).toBeGreaterThan(last.bottom)
+        }
+        for (const part of wrapper.get('[data-testid="app-request-open"]').element.children) {
+          const box = part.getBoundingClientRect()
+          expect(box.left, label).toBeGreaterThanOrEqual(band.left)
+          expect(box.right, label).toBeLessThanOrEqual(band.right + 0.5)
+          expect(box.bottom, label).toBeLessThanOrEqual(band.bottom + 0.5)
+        }
+        wrapper.unmount()
+      }
     }
   })
 

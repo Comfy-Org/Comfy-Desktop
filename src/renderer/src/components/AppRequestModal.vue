@@ -6,6 +6,7 @@ import Textarea from '@comfyorg/design-system/textarea/Textarea'
 import { Check, Plus } from '@lucide/vue'
 import type { AppCard } from '../types/ipc'
 import BaseModal from './ui/BaseModal.vue'
+import { stillsOf } from '../lib/appStills'
 
 type RequestStatus = 'idle' | 'sending' | 'sent' | 'failed'
 
@@ -27,14 +28,6 @@ let autocloseTimer: ReturnType<typeof setTimeout> | null = null
 
 const ART_PICTURE_LIMIT = 12
 const ART_ROW_MIN = 6
-const PICTURE_URL = /\.(avif|gif|jpe?g|png|webp)(\?|#|$)/i
-
-function stillsOf(app: AppCard): string[] {
-  return app.covers.flatMap((cover) => {
-    if (cover.stillUrl) return [cover.stillUrl]
-    return PICTURE_URL.test(cover.url) ? [cover.url] : []
-  })
-}
 
 function fillRow(pictures: string[]): string[] {
   if (pictures.length === 0) return []
