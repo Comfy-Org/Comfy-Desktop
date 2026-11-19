@@ -18,6 +18,8 @@ export interface ComfyArgsSchema {
   knownFlags: Set<string>
 }
 
+export const COMFY_DISCOVERY_TIMEOUT_MS = 60_000
+
 const CATEGORY_MAP: Record<string, string> = {
   listen: 'network',
   port: 'network',
@@ -348,7 +350,7 @@ function runHelp(pythonPath: string, mainPyPath: string, cwd: string): Promise<s
     execFile(
       pythonPath,
       ['-s', mainPyRel, '--help'],
-      { cwd, timeout: 15000 },
+      { cwd, timeout: COMFY_DISCOVERY_TIMEOUT_MS },
       (err, stdout, stderr) => {
         if (stdout && stdout.includes('usage:')) {
           resolve(stdout)

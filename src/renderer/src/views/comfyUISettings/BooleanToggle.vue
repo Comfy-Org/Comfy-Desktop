@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import Switch from '@comfyorg/design-system/switch/Switch'
+import ToggleSwitch from '../../components/ui/ToggleSwitch.vue'
 import type { DetailField } from '../../types/ipc'
 
 interface Props {
@@ -40,8 +40,8 @@ function handleUpdate(next: boolean): void {
 </script>
 
 <template>
-  <Switch
-    class="bt-switch aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
+  <ToggleSwitch
+    class="bt-switch"
     :model-value="visualOn"
     :readonly="blocked"
     :aria-label="field.label"
