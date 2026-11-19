@@ -1825,6 +1825,34 @@ describe('AssetsView Open workflow', () => {
     expect(hasAssetWorkflow).toHaveBeenCalledOnce()
   })
 
+  it('checks a file on this computer again when it was replaced at the same path', async () => {
+    hasAssetWorkflow.mockResolvedValueOnce(false).mockResolvedValue(true)
+    const wrapper = await mountAssets([
+      asset('/out/forest.png', 'forest.png', 'image', {
+        createdAt: '2026-11-01T00:00:00Z',
+        sizeBytes: 1024
+      })
+    ])
+    await openViewer(wrapper, '/out/forest.png')
+    expect(workflowButton()?.classList.contains('invisible')).toBe(true)
+    await press('Escape')
+
+    listLocalAssets.mockReturnValue(
+      Promise.resolve([
+        asset('/out/forest.png', 'forest.png', 'image', {
+          createdAt: '2026-11-02T00:00:00Z',
+          sizeBytes: 2048
+        })
+      ])
+    )
+    await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+    await flushPromises()
+    await openViewer(wrapper, '/out/forest.png')
+
+    expect(hasAssetWorkflow).toHaveBeenCalledTimes(2)
+    expect(workflowButton()?.classList.contains('invisible')).toBe(false)
+  })
+
   it('drops an answer that comes back after the place changed, and checks again there', async () => {
     const answers: ((found: boolean) => void)[] = []
     hasAssetWorkflow.mockImplementation(

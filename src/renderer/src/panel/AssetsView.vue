@@ -843,13 +843,18 @@ function workflowBuildsOf(asset: GalleryAsset): { id: string; name: string }[] |
   return builds.map(({ id, name }) => ({ id, name }))
 }
 
+function workflowKey(asset: GalleryAsset): string {
+  const key = cardKey(asset)
+  return isLocal(asset) ? `${key}\n${asset.createdAt}\n${asset.sizeBytes}` : key
+}
+
 function mayOpenWorkflow(asset: GalleryAsset): boolean {
   if (!WORKFLOW_KINDS.includes(asset.kind)) return false
   return !isLocal(asset) || (workflowBuildsOf(asset)?.length ?? 0) > 0
 }
 
 function canOpenWorkflow(asset: GalleryAsset): boolean {
-  return workflowFound.value.get(cardKey(asset)) === true && mayOpenWorkflow(asset)
+  return workflowFound.value.get(workflowKey(asset)) === true && mayOpenWorkflow(asset)
 }
 
 const shownDetail = computed(() =>
@@ -859,7 +864,7 @@ const shownDetail = computed(() =>
 async function checkWorkflow(asset: GalleryAsset, checks: number): Promise<void> {
   const found = await window.api.hasAssetWorkflow(asset.source, asset.id).catch(() => null)
   if (found === null || checks !== workflowChecks.value) return
-  workflowFound.value = new Map(workflowFound.value).set(cardKey(asset), found)
+  workflowFound.value = new Map(workflowFound.value).set(workflowKey(asset), found)
 }
 
 const WORKFLOW_CHECK_DELAY_MS = 150
@@ -876,8 +881,9 @@ watch(
 watch(
   () => {
     const asset = shownDetail.value
-    if (!asset || !mayOpenWorkflow(asset) || workflowFound.value.has(cardKey(asset))) return null
-    return `${workflowChecks.value}\n${cardKey(asset)}`
+    if (!asset || !mayOpenWorkflow(asset) || workflowFound.value.has(workflowKey(asset)))
+      return null
+    return `${workflowChecks.value}\n${workflowKey(asset)}`
   },
   (pending) => {
     clearTimeout(workflowCheckTimer)

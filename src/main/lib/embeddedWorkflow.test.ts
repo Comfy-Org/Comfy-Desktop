@@ -129,30 +129,32 @@ describe('reading the workflow ComfyUI saved in a PNG', () => {
     expect(readEmbeddedWorkflow([file])).toEqual({ format: 'graph', data: GRAPH })
   })
 
-  it('keeps reading after a compressed chunk that is broken', () => {
-    const broken = chunk(
-      'zTXt',
-      concat(encoder.encode('workflow'), new Uint8Array([0, 0, 1, 2, 3, 4]))
-    )
-
-    expect(readEmbeddedWorkflow([png(broken, zTXt('workflow', JSON.stringify(GRAPH)))])).toEqual({
-      format: 'graph',
-      data: GRAPH
-    })
-  })
-
-  it('stops unpacking after a few broken compressed chunks', () => {
-    const broken = chunk(
+  it('skips a compressed chunk whose header is broken, without using up the unpack limit', () => {
+    const brokenHeader = chunk(
       'zTXt',
       concat(encoder.encode('workflow'), new Uint8Array([0, 0, 1, 2, 3, 4]))
     )
     const good = zTXt('workflow', JSON.stringify(GRAPH))
 
-    expect(readEmbeddedWorkflow([png(broken, broken, broken, good)])).toEqual({
+    expect(readEmbeddedWorkflow([png(brokenHeader, brokenHeader, brokenHeader, good)])).toEqual({
       format: 'graph',
       data: GRAPH
     })
-    expect(readEmbeddedWorkflow([png(broken, broken, broken, broken, good)])).toBeNull()
+  })
+
+  it('stops unpacking after a stream that fails partway, since its output is unknown', () => {
+    const big = deflateSync(encoder.encode('x'.repeat(9_000_000)))
+    const badChecksum = Uint8Array.from(big)
+    badChecksum[badChecksum.length - 1]! ^= 0xff
+    const truncated = big.subarray(0, Math.floor(big.length * 0.9))
+    const good = zTXt('workflow', JSON.stringify(GRAPH))
+    const compressed = (body: Uint8Array) =>
+      chunk('zTXt', concat(encoder.encode('workflow'), new Uint8Array([0, 0]), body))
+
+    for (const failing of [badChecksum, truncated]) {
+      expect(readEmbeddedWorkflow([png(compressed(failing), good)])).toBeNull()
+      expect(readEmbeddedWorkflow([png(compressed(failing), compressed(failing), good)])).toBeNull()
+    }
   })
 
   it('stops unpacking once the chunks have unpacked 16 MB in total', () => {
@@ -166,6 +168,34 @@ describe('reading the workflow ComfyUI saved in a PNG', () => {
     expect(
       readEmbeddedWorkflow([png(zTXt('workflow', big), zTXt('prompt', big), small)])
     ).toBeNull()
+  })
+
+  it('reads the comf chunks that ComfyUI saves after the frames of an animated PNG', () => {
+    const comf = (key: string, text: string) =>
+      chunk('comf', concat(encoder.encode(key), new Uint8Array([0]), encoder.encode(text)))
+    const file = concat(
+      new Uint8Array(PNG_SIGNATURE),
+      chunk('IHDR', new Uint8Array(13)),
+      chunk('IDAT', new Uint8Array([0x78, 0x9c, 0x00])),
+      comf('prompt', JSON.stringify(PROMPT)),
+      comf('workflow', JSON.stringify(GRAPH)),
+      chunk('IEND', new Uint8Array())
+    )
+
+    expect(readEmbeddedWorkflow([file])).toEqual({ format: 'graph', data: GRAPH })
+  })
+
+  it('reads a workflow with bare NaN and Infinity the way ComfyUI does, and keeps them inside text', () => {
+    const text =
+      '{"nodes":[{"id":1,"type":"Note","widgets_values":[NaN,Infinity,-Infinity,"NaN and Infinity"]}],"links":[]}'
+
+    expect(readEmbeddedWorkflow([png(tEXt('workflow', text))])).toEqual({
+      format: 'graph',
+      data: {
+        nodes: [{ id: 1, type: 'Note', widgets_values: [null, null, null, 'NaN and Infinity'] }],
+        links: []
+      }
+    })
   })
 
   it('finds nothing in text that is not valid JSON', () => {

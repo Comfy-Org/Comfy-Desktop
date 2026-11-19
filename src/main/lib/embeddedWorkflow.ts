@@ -10,7 +10,7 @@ const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 const MAX_JSON_BYTES = 8_000_000
 const SCAN_BUDGET_BYTES = 64_000_000
 const MAX_INFLATED_BYTES = 16_000_000
-const FAILED_INFLATE_COST = MAX_INFLATED_BYTES / 4
+const TEXT_CHUNKS: ReadonlySet<string> = new Set(['tEXt', 'zTXt', 'iTXt', 'comf'])
 const MAX_GRAPH_NODES = 5_000
 const OPEN_BRACE = 0x7b
 const CLOSE_BRACE = 0x7d
@@ -37,11 +37,21 @@ export function isGraphWorkflow(value: unknown): value is Record<string, unknown
   )
 }
 
+const NON_FINITE_TOKEN = /"(?:\\.|[^"\\])*"|(?<![\w.-])(-?Infinity|NaN)(?![\w.])/g
+
+function withoutNonFinite(text: string): string {
+  return text.replace(NON_FINITE_TOKEN, (match, token) => (token ? 'null' : match))
+}
+
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(text)
   } catch {
-    return undefined
+    try {
+      return JSON.parse(withoutNonFinite(text))
+    } catch {
+      return undefined
+    }
   }
 }
 
@@ -94,15 +104,22 @@ interface InflateBudget {
   left: number
 }
 
+function isZlibHeader(bytes: Uint8Array): boolean {
+  const [method, flags] = bytes
+  if (method === undefined || flags === undefined) return false
+  const deflate = (method & 0x0f) === 8 && method >> 4 <= 7
+  const presetDictionary = (flags & 0x20) !== 0
+  return deflate && !presetDictionary && ((method << 8) | flags) % 31 === 0
+}
+
 function inflated(bytes: Uint8Array, budget: InflateBudget): Uint8Array | null {
-  if (budget.left <= 0) return null
+  if (budget.left <= 0 || !isZlibHeader(bytes)) return null
   try {
     const body = inflateSync(bytes, { maxOutputLength: budget.left })
     budget.left -= body.length
     return body
-  } catch (error) {
-    const tooLarge = (error as { code?: string }).code === 'ERR_BUFFER_TOO_LARGE'
-    budget.left = tooLarge ? 0 : budget.left - FAILED_INFLATE_COST
+  } catch {
+    budget.left = 0
     return null
   }
 }
@@ -118,7 +135,7 @@ function chunkText(
   keyEnd: number,
   budget: InflateBudget
 ): string | null {
-  if (type === 'tEXt') return utf8.decode(data.subarray(keyEnd + 1))
+  if (type === 'tEXt' || type === 'comf') return utf8.decode(data.subarray(keyEnd + 1))
   if (type === 'zTXt') {
     const body = inflated(data.subarray(keyEnd + 2), budget)
     return body ? utf8.decode(body) : null
@@ -141,7 +158,7 @@ function fromPng(bytes: Uint8Array): EmbeddedWorkflow | null {
     const type = latin1(bytes.subarray(at + 4, at + 8))
     const start = at + 8
     if (type === 'IEND' || start + length > bytes.length) break
-    if (type === 'tEXt' || type === 'zTXt' || type === 'iTXt') {
+    if (TEXT_CHUNKS.has(type)) {
       const data = bytes.subarray(start, start + length)
       const named = chunkKey(data)
       const text =
