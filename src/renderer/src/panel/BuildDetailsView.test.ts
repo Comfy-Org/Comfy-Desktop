@@ -74,6 +74,19 @@ describe('BuildDetailsView', () => {
     expect(wrapper.get('.build-details-status').text()).toBe('Running')
   })
 
+  it.each([
+    ["Didn't start", { startFailed: true, message: 'Port 8188 is in use' }],
+    ['Crashed', { exitCode: 1 }],
+    ['Error', { message: 'Could not install the new dependencies' }]
+  ] as const)('names a build that went wrong %s, like its tile', async (label, error) => {
+    const { wrapper } = await mountDetails()
+
+    useSessionStore().errorInstances.set('a', { installationName: 'Video Lab', ...error })
+    await flushPromises()
+
+    expect(wrapper.get('.build-details-status').text()).toBe(label)
+  })
+
   it('hands the settings body its build, shared storage, title and action slots', async () => {
     const { content } = await mountDetails()
 

@@ -183,6 +183,7 @@
     "buildStarting": "启动中",
     "buildReady": "就绪",
     "buildDidntStart": "未能启动",
+    "buildCrashed": "已崩溃",
     "buildInstalling": "正在安装 ComfyUI",
     "buildStartingComfyUI": "正在启动 ComfyUI",
     "buildClickToStart": "点击启动",

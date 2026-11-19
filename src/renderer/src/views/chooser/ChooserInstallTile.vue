@@ -5,7 +5,7 @@ import { computed, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Ellipsis, Info, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
-import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import { buildFailure, launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useProgressStore } from '../../stores/progressStore'
 import {
@@ -56,6 +56,8 @@ const inst = computed(() => props.installation)
 const install = useBuildProgress(() => props.installation)
 const progressStore = useProgressStore()
 
+const failure = computed(() => buildFailure(inst.value, sessionStore, progressStore, t))
+
 function viewError(): void {
   if (launchFailed(progressStore, inst.value.id)) install.viewLogs()
   else emit('view-error', inst.value)
@@ -101,6 +103,11 @@ const hasError = computed(() =>
   props.lifecycleStatus == null
     ? sessionStore.errorInstances.has(inst.value.id)
     : props.lifecycleStatus === 'error'
+)
+const errorLabel = computed(() =>
+  failure.value && inst.value.statusTag?.style !== 'danger'
+    ? failure.value.label
+    : t('chooser.statusError')
 )
 
 const canActivate = computed(
@@ -367,7 +374,7 @@ function openContextMenu(event: MouseEvent): void {
           @click.stop="viewError"
         >
           <OctagonAlert :size="12" />
-          {{ t('chooser.statusError') }}
+          {{ errorLabel }}
         </Button>
         <Button
           v-else-if="dangerTag && canActivate"

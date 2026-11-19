@@ -8,7 +8,7 @@ import BuildUninstallFailed from './BuildUninstallFailed.vue'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
 import type { StorageSnapshot } from '../views/comfyUISettings/StoragePane.vue'
-import { uninstallFailureOf, useBuildProgress } from '../composables/useBuildProgress'
+import { buildFailure, uninstallFailureOf, useBuildProgress } from '../composables/useBuildProgress'
 import { installTypeMetaForInstall } from '../lib/installTypeIcon'
 import { useInstallationStore } from '../stores/installationStore'
 import { useProgressStore } from '../stores/progressStore'
@@ -57,8 +57,8 @@ const status = computed(() => {
   if (uninstalling.value) {
     return { tone: 'quiet', label: 'uninstallProgress.status', spinning: true } as const
   }
-  if (sessionStore.errorInstances.has(id))
-    return { tone: 'bad', label: 'chooser.statusError' } as const
+  const failure = buildFailure(installation, sessionStore, progressStore, t)
+  if (failure) return { tone: 'bad', label: failure.label, text: true } as const
   if (sessionStore.isStopping(id))
     return { tone: 'quiet', label: 'chooser.statusStopping' } as const
   if (sessionStore.isLaunching(id)) {
@@ -105,7 +105,7 @@ onUnmounted(() => unsubscribeSettings?.())
                   aria-hidden="true"
                 />
               </template>
-              {{ t(status.label) }}
+              {{ 'text' in status ? status.label : t(status.label) }}
             </StatusChip>
           </div>
           <p

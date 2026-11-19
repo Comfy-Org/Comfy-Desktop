@@ -630,6 +630,21 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('pick')).toBeUndefined()
   })
 
+  it.each([
+    ["Didn't start", { startFailed: true, message: 'Port 8188 is in use' }],
+    ['Crashed', { exitCode: 1 }]
+  ] as const)('names the error badge %s, like Home and the sidebar', async (label, error) => {
+    installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    useSessionStore().errorInstances.set('a', { installationName: 'Alpha', ...error })
+    await flushPromises()
+
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Alpha'))!
+    expect(tile.get('.chooser-tile-error-badge').text()).toBe(label)
+  })
+
   it('focuses the existing window instead of relaunching a crashed build', async () => {
     const api = installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
     api.focusComfyWindow = vi.fn().mockResolvedValue(true)

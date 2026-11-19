@@ -22,7 +22,7 @@ function operationInstanceOf(op: OperationInstance): OperationInstance {
     : { actionId: op.actionId }
 }
 
-interface ErrorInstance {
+export interface ErrorInstance {
   installationName: string
   exitCode?: number | string
   signal?: string

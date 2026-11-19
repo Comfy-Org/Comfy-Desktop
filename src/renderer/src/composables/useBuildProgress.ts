@@ -4,6 +4,7 @@ import { useProgressStore } from '../stores/progressStore'
 import { useModal } from './useModal'
 import { isUninstallOpKind } from '../lib/progressOpKind'
 import { progressStepName } from '../lib/progressStatusLabel'
+import type { ErrorInstance } from '../stores/sessionStore'
 import type { Installation, ProgressStep } from '../types/ipc'
 
 export type BuildProgressKind = 'install' | 'launch' | 'uninstall'
@@ -69,6 +70,33 @@ export function launchFailed(
 ): boolean {
   const op = progressStore.operations.get(installationId)
   return !!op && op.opKind === 'launch' && op.finished && !!op.error
+}
+
+export type BuildFailureKind = 'broken' | 'didnt-start' | 'crashed' | 'error'
+
+export interface BuildFailure {
+  kind: BuildFailureKind
+  label: string
+}
+
+type FailureSession = { errorInstances: ReadonlyMap<string, ErrorInstance> }
+
+export function buildFailure(
+  build: Installation,
+  sessionStore: FailureSession,
+  progressStore: ReturnType<typeof useProgressStore>,
+  t: (key: string) => string
+): BuildFailure | null {
+  if (build.statusTag?.style === 'danger') return { kind: 'broken', label: build.statusTag.label }
+  const error = sessionStore.errorInstances.get(build.id)
+  if (launchFailed(progressStore, build.id) || error?.startFailed) {
+    return { kind: 'didnt-start', label: t('home.buildDidntStart') }
+  }
+  if (!error) return null
+  if (error.exitCode != null || error.signal != null) {
+    return { kind: 'crashed', label: t('home.buildCrashed') }
+  }
+  return { kind: 'error', label: t('chooser.statusError') }
 }
 
 export function uninstallFailureOf(

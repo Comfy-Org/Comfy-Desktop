@@ -19,7 +19,7 @@ import {
   type HomeBuildStatus,
   type HomeBuildTone
 } from './homeBuild'
-import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import { buildFailure, launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useProgressStore } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -54,12 +54,15 @@ const busyTestId = computed(() => {
   if (uninstalling.value) return 'home-build-uninstalling'
   return starting.value ? 'home-build-starting' : 'home-build-installing'
 })
-const broken = computed(() => {
-  if (build.statusTag?.style === 'danger') return build.statusTag.label
-  const startFailed = sessionStore.errorInstances.get(build.id)?.startFailed === true
-  const failed = launchFailed(progressStore, build.id) || startFailed
-  return failed ? t('home.buildDidntStart') : undefined
-})
+const failure = computed(() => buildFailure(build, sessionStore, progressStore, t))
+const broken = computed(() =>
+  failure.value?.kind === 'broken' || failure.value?.kind === 'didnt-start'
+    ? failure.value.label
+    : undefined
+)
+const startFailedLogs = computed(
+  () => build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id)
+)
 
 const toneStyle = computed(() => HOME_BUILD_TONES[tone])
 const statusLabel = computed(() => {
@@ -101,12 +104,7 @@ const updateNote = computed(() =>
 const subtitle = computed(() => (uninstalling.value ? install.detail.value : detail.value))
 const openHint = computed(() => {
   if (!canOpen.value) return ''
-  if (
-    busy.value ||
-    (build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id))
-  ) {
-    return t('home.buildClickToViewLogs')
-  }
+  if (busy.value || startFailedLogs.value) return t('home.buildClickToViewLogs')
   if (
     broken.value ||
     isLive.value ||
