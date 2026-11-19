@@ -144,7 +144,11 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(item.classes()).toContain('is-completed')
     expect(item.classes()).toContain('is-clickable')
     expect(item.find('.downloads-item-sub').text()).toBe('Completed')
-    expect(item.get('.downloads-item-reveal').text()).toBe('Show in Finder')
+    const reveal = item.get('.downloads-item-reveal')
+    expect(reveal.text()).toBe('')
+    expect(reveal.attributes('aria-label')).toBe('Show in Finder')
+    expect(reveal.attributes('title')).toBe('Show in Finder')
+    expect(reveal.find('svg').exists()).toBe(true)
     expect(item.find('.downloads-item-retry').exists()).toBe(false)
     const close = item.find('.downloads-item-close')
     expect(close.exists()).toBe(true)
@@ -375,9 +379,24 @@ describe('comfyTitlePopup/DownloadsView', () => {
     it('names the actions like the full Downloads list', async () => {
       const wrapper = await mountRows()
 
-      expect(wrapper.get('.is-completed .downloads-item-action').text()).toBe('Show in Finder')
+      expect(wrapper.get('.is-completed .downloads-item-reveal').attributes('aria-label')).toBe(
+        'Show in Finder'
+      )
       expect(wrapper.get('.is-cancelled .downloads-item-action').text()).toBe('Try again')
       expect(wrapper.get('.is-error .downloads-item-action').text()).toBe('Try again')
+    })
+
+    it.each([
+      ['win32', 'Show in Explorer'],
+      ['linux', 'Show in folder']
+    ])('names the icon-only reveal action for %s', async (platform, label) => {
+      installMockBridge(platform)
+      const wrapper = await mountRows()
+
+      const reveal = wrapper.get('.is-completed .downloads-item-reveal')
+      expect(reveal.text()).toBe('')
+      expect(reveal.attributes('aria-label')).toBe(label)
+      expect(reveal.attributes('title')).toBe(label)
     })
 
     it('runs the action without also opening the row', async () => {

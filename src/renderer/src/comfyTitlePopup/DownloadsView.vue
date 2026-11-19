@@ -259,12 +259,13 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
             v-else-if="d.savePath"
             type="button"
             variant="secondary"
-            size="md"
+            size="icon"
             class="downloads-item-reveal"
+            :title="revealLabel"
+            :aria-label="revealLabel"
             @click.stop="showInFolder(d, d.savePath)"
           >
-            <FolderOpen :size="14" />
-            {{ revealLabel }}
+            <FolderOpen :size="16" aria-hidden="true" />
           </Button>
         </div>
         <Button

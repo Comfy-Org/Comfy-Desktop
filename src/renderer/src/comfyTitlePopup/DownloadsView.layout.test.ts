@@ -163,6 +163,31 @@ describe('Downloads popup layout', () => {
     expect(rect(name).right).toBeLessThanOrEqual(rect(action).left)
   })
 
+  it('shows Show in Finder as a filled square icon button beside the remove button', async () => {
+    const wrapper = await mountPopup()
+    const row = wrapper.get('.is-completed')
+    const reveal = row.get('.downloads-item-reveal').element as HTMLElement
+    const close = row.get('.downloads-item-close').element
+    const name = row.get('.downloads-item-name').element as HTMLElement
+    const nameLeft = rect(name).left
+    const rowHeight = rect(row.element).height
+
+    ;(row.element as HTMLElement).focus()
+    await vi.waitFor(() => expect(rect(reveal).width).toBeGreaterThan(0))
+    const style = getComputedStyle(reveal)
+    expect(rect(reveal).width).toBe(rect(reveal).height)
+    expect(rect(reveal).height).toBe(rect(close).height)
+    expect(rect(reveal).top).toBe(rect(close).top)
+    expect(Number.parseFloat(style.borderTopLeftRadius)).toBeGreaterThan(0)
+    expect(style.backgroundColor).not.toBe(getComputedStyle(row.element).backgroundColor)
+    expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    expect(reveal.textContent?.trim()).toBe('')
+    expect(rect(reveal).right).toBeLessThanOrEqual(rect(close).left)
+    expect(rect(name).right).toBeLessThanOrEqual(rect(reveal).left)
+    expect(rect(row.element).height).toBe(rowHeight)
+    expect(rect(name).left).toBe(nameLeft)
+  })
+
   it('puts the remove glyph 18px from the card edge', async () => {
     const wrapper = await mountPopup()
     const list = wrapper.get('.downloads-list').element
