@@ -86,6 +86,7 @@ function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
     executeJavaScript: ReturnType<typeof vi.fn>
     isDestroyed: ReturnType<typeof vi.fn>
   }
+  session: { cookies: { remove: ReturnType<typeof vi.fn> } }
 } {
   const mainFrame = {
     executeJavaScript: vi.fn((script: string) =>
@@ -97,11 +98,13 @@ function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
     isDestroyed: vi.fn(() => false),
     getURL: vi.fn(() => url),
     executeJavaScript: vi.fn(() => Promise.resolve()),
-    mainFrame
+    mainFrame,
+    session: { cookies: { remove: vi.fn(() => Promise.resolve()) } }
   } as unknown as WebContents & {
     executeJavaScript: ReturnType<typeof vi.fn>
     getURL: ReturnType<typeof vi.fn>
     mainFrame: typeof mainFrame
+    session: { cookies: { remove: ReturnType<typeof vi.fn> } }
   }
 }
 
@@ -238,6 +241,13 @@ describe('signInViaDesktopLoginCode', () => {
     expect(contents.mainFrame.executeJavaScript).toHaveBeenCalledWith(
       expect.stringContaining('location.reload()'),
       true
+    )
+    expect(contents.session.cookies.remove).toHaveBeenCalledWith(
+      'https://cloud.comfy.org/',
+      '__Host-comfy_session'
+    )
+    expect(contents.session.cookies.remove.mock.invocationCallOrder[0]).toBeLessThan(
+      contents.mainFrame.executeJavaScript.mock.invocationCallOrder[1]!
     )
     expect(parentWindow.restore).toHaveBeenCalled()
     expect(parentWindow.show).toHaveBeenCalled()

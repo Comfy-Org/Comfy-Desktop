@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   beginFirebaseSessionInjection,
   buildIndexedDbInjectScript,
+  CLOUD_WEB_SESSION_COOKIE,
   FIREBASE_SESSION_INJECTION_OWNER_FIELD,
   injectFirebaseSession,
   isFirebaseSessionInjectionRecordOwnedBy,
@@ -83,22 +84,69 @@ describe('buildIndexedDbInjectScript', () => {
   })
 })
 
+function fakeHostedView(removeCookie: () => Promise<void> = () => Promise.resolve()) {
+  const executeJavaScript = vi
+    .fn()
+    .mockResolvedValueOnce(undefined)
+    .mockResolvedValueOnce(true)
+    .mockResolvedValue(undefined)
+  const remove = vi.fn(removeCookie)
+  const contents = {
+    getURL: vi.fn(() => `${ORIGIN}/workspaces/test`),
+    isDestroyed: vi.fn(() => false),
+    mainFrame: { executeJavaScript, isDestroyed: vi.fn(() => false) },
+    session: { cookies: { remove } }
+  } as unknown as Electron.WebContents
+  return { contents, executeJavaScript, remove }
+}
+
 describe('injectFirebaseSession', () => {
+  it('removes the previous Cloud session cookie before the reload', async () => {
+    const { contents, executeJavaScript, remove } = fakeHostedView()
+
+    const injection = beginFirebaseSessionInjection(contents)
+    await expect(injectFirebaseSession(injection, ORIGIN, SAMPLE_USER, 'AIzaTEST')).resolves.toBe(
+      true
+    )
+
+    expect(remove).toHaveBeenCalledWith(`${ORIGIN}/`, CLOUD_WEB_SESSION_COOKIE)
+    expect(remove.mock.invocationCallOrder[0]).toBeLessThan(
+      executeJavaScript.mock.invocationCallOrder[1]!
+    )
+    releaseFirebaseSessionInjection(injection)
+  })
+
+  it('still writes the user when the cookie cannot be removed', async () => {
+    const { contents, executeJavaScript } = fakeHostedView(() =>
+      Promise.reject(new Error('cookie store unavailable'))
+    )
+
+    const injection = beginFirebaseSessionInjection(contents)
+    await expect(injectFirebaseSession(injection, ORIGIN, SAMPLE_USER, 'AIzaTEST')).resolves.toBe(
+      true
+    )
+
+    expect(executeJavaScript).toHaveBeenCalledWith(
+      expect.stringContaining('location.reload()'),
+      true
+    )
+    releaseFirebaseSessionInjection(injection)
+  })
+
+  it('leaves the cookie alone when the view is on another origin', async () => {
+    const { contents, remove } = fakeHostedView()
+
+    const injection = beginFirebaseSessionInjection(contents)
+    await expect(
+      injectFirebaseSession(injection, 'https://stagingcloud.comfy.org', SAMPLE_USER, 'AIzaTEST')
+    ).resolves.toBe(false)
+
+    expect(remove).not.toHaveBeenCalled()
+    releaseFirebaseSessionInjection(injection)
+  })
+
   it('executes on the captured main frame and invalidates it when superseded', async () => {
-    const executeJavaScript = vi
-      .fn()
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValue(undefined)
-    const frame = {
-      executeJavaScript,
-      isDestroyed: vi.fn(() => false)
-    }
-    const contents = {
-      getURL: vi.fn(() => `${ORIGIN}/workspaces/test`),
-      isDestroyed: vi.fn(() => false),
-      mainFrame: frame
-    } as unknown as Electron.WebContents
+    const { contents, executeJavaScript } = fakeHostedView()
 
     const first = beginFirebaseSessionInjection(contents)
     await expect(injectFirebaseSession(first, ORIGIN, SAMPLE_USER, 'AIzaTEST')).resolves.toBe(true)

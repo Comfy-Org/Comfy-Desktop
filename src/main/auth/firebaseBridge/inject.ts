@@ -3,6 +3,7 @@ import type { WebContents, WebFrameMain } from 'electron'
 
 const INJECTION_OWNER_KEY = '__comfyDesktopFirebaseSessionInjectionOwner'
 export const FIREBASE_SESSION_INJECTION_OWNER_FIELD = '__comfyDesktopInjectionOwner'
+export const CLOUD_WEB_SESSION_COOKIE = '__Host-comfy_session'
 
 export interface FirebaseSessionInjection {
   contents: WebContents
@@ -125,6 +126,10 @@ export function buildIndexedDbInjectScript(
 })()`
 }
 
+async function forgetPreviousWebSession(contents: WebContents, origin: string): Promise<void> {
+  await contents.session.cookies.remove(`${origin}/`, CLOUD_WEB_SESSION_COOKIE).catch(() => {})
+}
+
 export async function injectFirebaseSession(
   injection: FirebaseSessionInjection,
   expectedOrigin: string,
@@ -139,6 +144,7 @@ export async function injectFirebaseSession(
     return false
   }
 
+  await forgetPreviousWebSession(injection.contents, expectedOrigin)
   const frame = injection.contents.mainFrame
   injection.frame = frame
   await frame.executeJavaScript(setInjectionOwnerScript(injection.token))
