@@ -1555,21 +1555,21 @@ describe('AssetsView', () => {
     expect(viewer()!.querySelector('[data-testid="output-detail-show-in-folder"]')).toBeNull()
   })
 
-  it('opens the file on this computer that the viewer is showing', async () => {
-    openAsset.mockResolvedValue(true)
+  it('gives a file on this computer only Show in Finder in the viewer, for the file it is showing', async () => {
     const wrapper = await mountAssets([
-      asset('a', 'surfer.mp4', 'video', { createdAt: '2026-11-02T00:00:00Z' }),
-      asset('b', 'forest.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
+      asset('/out/surfer.mp4', 'surfer.mp4', 'video', { createdAt: '2026-11-02T00:00:00Z' }),
+      asset('/out/forest.png', 'forest.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
     ])
 
-    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+    await wrapper.get('[data-testid="asset-open-/out/surfer.mp4"]').trigger('click')
     await flushPromises()
     await press('ArrowRight')
     expect(document.querySelector('[data-testid="output-detail-download"]')).toBeNull()
-    document.querySelector<HTMLElement>('[data-testid="output-detail-open"]')!.click()
+    document.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
     await flushPromises()
 
-    expect(openAsset).toHaveBeenCalledExactlyOnceWith('local', 'b')
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/forest.png')
+    expect(openAsset).not.toHaveBeenCalled()
   })
 
   it('gives a 3D file on this computer only Show in Finder in the viewer', async () => {
@@ -1578,7 +1578,6 @@ describe('AssetsView', () => {
     await wrapper.get('[data-testid="asset-open-/out/mesh.glb"]').trigger('click')
     await flushPromises()
 
-    expect(document.querySelector('[data-testid="output-detail-open"]')).toBeNull()
     expect(document.querySelector('[data-testid="output-detail-download"]')).toBeNull()
     expect(document.querySelector('[data-testid="output-detail-show-in-folder"]')).not.toBeNull()
   })

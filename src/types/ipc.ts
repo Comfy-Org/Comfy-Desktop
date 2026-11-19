@@ -189,7 +189,6 @@ export interface AppOutput {
   workflow: boolean
   savedOn?: 'cloud' | 'computer'
   folder?: string
-  filePath?: string
 }
 
 export interface AppOutputs {

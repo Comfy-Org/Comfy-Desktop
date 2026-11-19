@@ -838,7 +838,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
     savedIn: savedFolderOf(asset),
-    mainAction: mainAction(asset),
+    mainAction: fileOnDisk(asset) ? null : 'download',
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
@@ -1607,7 +1607,6 @@ function extensionOf(name: string): string {
       :items="detailItems"
       @close="closeDetail"
       @download="download(detailAssets[$event]!)"
-      @open="openLocally(detailAssets[$event]!)"
       @show-in-folder="reveal(detailAssets[$event]!)"
     />
 

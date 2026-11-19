@@ -18,10 +18,6 @@ const showAppPage = vi.fn<(appId: string, placement: AppPagePlacement) => Promis
 const captureAppPage = vi.fn<() => Promise<string | null>>()
 const hideAppPage = vi.fn()
 const sendAppOutputAction = vi.fn<(action: AppOutputAction) => void>()
-const openAsset = vi.fn<(source: string, assetId: string) => Promise<boolean>>()
-const alert = vi.fn<(options: { title: string; message: string }) => Promise<void>>()
-
-vi.mock('../composables/useModal', () => ({ useModal: () => ({ alert }) }))
 
 const mountPointFillsThePage = document.createElement('style')
 mountPointFillsThePage.textContent = '[data-apps-page] > div { display: flex; flex: 1 1 auto; }'
@@ -118,8 +114,7 @@ beforeEach(() => {
         stoppedListeningForOutputs = true
       }
     },
-    sendAppOutputAction,
-    openAsset
+    sendAppOutputAction
   }
 })
 
@@ -452,110 +447,39 @@ describe('AppPageHost outputs', () => {
     expect(outputDialog()).toBeNull()
   })
 
-  it('opens a result Desktop found on this computer in its default app, instead of Download', async () => {
-    openAsset.mockResolvedValue(true)
+  it('gives a result on this computer only Show in Finder as its main button, before Open workflow', async () => {
     await mountHost()
     const [first, second] = TWO_CUTOUTS.items
     await showOutputs('remove-background', {
-      items: [
-        first!,
-        {
-          ...second!,
-          savedOn: 'computer',
-          folder: '/Users/me/ComfyUI/output/apps',
-          filePath: '/Users/me/ComfyUI/output/apps/cutout-2.png'
-        }
-      ],
-      index: 1
-    })
-
-    expect(inOutputDialog('output-detail-download')).toBeNull()
-    inOutputDialog('output-detail-open')!.click()
-    await flushPromises()
-
-    expect(openAsset).toHaveBeenCalledExactlyOnceWith(
-      'local',
-      '/Users/me/ComfyUI/output/apps/cutout-2.png'
-    )
-    expect(sendAppOutputAction).not.toHaveBeenCalled()
-    expect(alert).not.toHaveBeenCalled()
-    expect(outputDialog()).not.toBeNull()
-  })
-
-  it('tells the user when a result on this computer does not open', async () => {
-    openAsset.mockResolvedValue(false)
-    await mountHost()
-    const [first, second] = TWO_CUTOUTS.items
-    await showOutputs('remove-background', {
-      items: [
-        first!,
-        {
-          ...second!,
-          savedOn: 'computer',
-          folder: '/Users/me/ComfyUI/output/apps',
-          filePath: '/Users/me/ComfyUI/output/apps/cutout-2.png'
-        }
-      ],
-      index: 1
-    })
-
-    inOutputDialog('output-detail-open')!.click()
-    await flushPromises()
-
-    expect(alert).toHaveBeenCalledExactlyOnceWith({
-      title: "Couldn't open asset",
-      message: 'cutout-2.png'
-    })
-  })
-
-  it('makes Show in folder the main button for a 3D result on this computer, with no Open or Download', async () => {
-    await mountHost()
-    await showOutputs('remove-background', {
-      items: [
-        {
-          name: 'mesh.glb',
-          mimeType: 'model/gltf-binary',
-          bytes: new Uint8Array([1]),
-          tags: [],
-          workflow: false,
-          savedOn: 'computer',
-          folder: '/Users/me/ComfyUI/output/apps',
-          filePath: '/Users/me/ComfyUI/output/apps/mesh.glb'
-        }
-      ],
+      items: [{ ...first!, savedOn: 'computer', folder: '/Users/me/ComfyUI/output/apps' }, second!],
       index: 0
     })
 
-    expect(inOutputDialog('output-detail-open')).toBeNull()
     expect(inOutputDialog('output-detail-download')).toBeNull()
-    inOutputDialog('output-detail-show-in-folder')!.click()
-    await flushPromises()
-
-    expect(sendAppOutputAction).toHaveBeenCalledExactlyOnceWith({
-      action: 'show-in-folder',
-      index: 0
-    })
-    expect(openAsset).not.toHaveBeenCalled()
+    const buttons = [
+      ...outputDialog()!.querySelectorAll<HTMLElement>('[data-testid^="output-detail-"]')
+    ]
+      .map((element) => element.dataset.testid)
+      .filter((id) => id === 'output-detail-show-in-folder' || id === 'output-detail-workflow')
+    expect(buttons).toEqual(['output-detail-show-in-folder', 'output-detail-workflow'])
   })
 
-  it('keeps Download for a result Desktop did not find on this computer, and for a Cloud result', async () => {
+  it('keeps Download for a Cloud result and for a result on this computer whose folder Desktop does not know', async () => {
     await mountHost()
     const [first, second] = TWO_CUTOUTS.items
     await showOutputs('remove-background', {
       items: [
         { ...first!, savedOn: 'cloud' },
-        { ...second!, savedOn: 'computer', folder: '/Users/me/ComfyUI/output/apps' }
+        { ...second!, savedOn: 'computer' }
       ],
       index: 1
     })
 
-    expect(inOutputDialog('output-detail-open')).toBeNull()
     expect(inOutputDialog('output-detail-download')).not.toBeNull()
 
     inOutputDialog('output-detail-thumb-0')!.click()
     await flushPromises()
 
-    expect(inOutputDialog('output-detail-open')).toBeNull()
     expect(inOutputDialog('output-detail-download')).not.toBeNull()
   })
 

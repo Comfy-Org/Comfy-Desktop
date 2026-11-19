@@ -27,7 +27,7 @@ export async function locateOutputFiles(
   })
   const items = request.items.map(({ comfyFile, folder, ...output }, i): AppOutput => {
     const file = files[i]
-    if (file) return { ...output, folder: path.dirname(file), filePath: file }
+    if (file) return { ...output, folder: path.dirname(file) }
     return folder && !comfyFile ? { ...output, folder } : output
   })
   return { outputs: { items, index: request.index }, files }
