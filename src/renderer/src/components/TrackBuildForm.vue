@@ -187,7 +187,10 @@ async function trackProbedInstall(probed: ProbeResult): Promise<void> {
   const installPath = (rawProbe.installPath as string | undefined) || trackPath.value
   const finalName = await window.api.getUniqueName(typedName || DEFAULT_INSTALL_NAME)
   if (typedName && finalName !== typedName) {
-    if (name.value.trim() === typedName) nameTaken.value = true
+    if (name.value.trim() === typedName) {
+      nameCheck++
+      nameTaken.value = true
+    }
     return
   }
 

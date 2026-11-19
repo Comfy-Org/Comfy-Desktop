@@ -475,5 +475,41 @@ describe('TrackModal — build name', () => {
       expect(wrapper.find('#track-name-error').exists()).toBe(false)
       expect(trackButton(wrapper).attributes('disabled')).toBeUndefined()
     })
+
+    it('keeps the warning when an older check for the same name returns free after Add build found it taken', async () => {
+      let releaseEditCheck: () => void = () => {}
+      let holdNextCheck = false
+      const api = installMockApi({
+        getUniqueName: vi.fn((base: string) => {
+          if (base !== 'ComfyUI') return Promise.resolve(base)
+          if (holdNextCheck) {
+            holdNextCheck = false
+            return new Promise<string>((resolve) => {
+              releaseEditCheck = () => resolve(base)
+            })
+          }
+          return Promise.resolve(`${base} (1)`)
+        }),
+        browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI')
+      })
+      const wrapper = mountTrack()
+      ;(wrapper.vm as unknown as { open: () => void }).open()
+      await flushPromises()
+      await browseButton(wrapper).trigger('click')
+      await flushPromises()
+      holdNextCheck = true
+      await wrapper.get('#track-name').setValue('ComfyUI')
+      await trackButton(wrapper).trigger('click')
+      await flushPromises()
+
+      releaseEditCheck()
+      await flushPromises()
+
+      expect(api.trackInstallation).not.toHaveBeenCalled()
+      expect(wrapper.get('#track-name-error').text()).toBe(
+        'A build named "ComfyUI" already exists. Please choose a different name.'
+      )
+      expect(trackButton(wrapper).attributes('disabled')).toBeDefined()
+    })
   })
 })
