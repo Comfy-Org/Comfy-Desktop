@@ -31,7 +31,15 @@ const isSimpleConfirm = computed(
     !state.variantLoading
 )
 
-const usesBaseAlert = computed(() => state.type === 'alert' || isSimpleConfirm.value)
+const usesBaseAlert = computed(
+  () => state.type === 'alert' || state.type === 'choice' || isSimpleConfirm.value
+)
+
+const isChoice = computed(() => state.type === 'choice')
+
+const baseAlertSecondaryTone = computed<'danger' | 'default'>(() =>
+  state.confirmStyle === 'danger' ? 'danger' : 'default'
+)
 
 const baseAlertTone = computed<'primary' | 'danger'>(() =>
   state.type === 'confirm' && ['danger', 'danger-solid'].includes(state.confirmStyle)
@@ -45,11 +53,12 @@ const baseAlertButtonLabel = computed(() =>
 
 function onBaseAlertClose(): void {
   if (state.type === 'alert') close(undefined)
+  else if (isChoice.value) close('primary')
   else close(true)
 }
 
 function onBaseAlertCancel(): void {
-  close(false)
+  close(isChoice.value ? null : false)
 }
 
 function onMigrateCheckboxToggle(id: string, checked: boolean): void {
@@ -144,14 +153,19 @@ watch(
     :open="state.visible && usesBaseAlert"
     :title="state.title"
     :message="state.message"
-    :show-cancel="isSimpleConfirm"
+    :show-cancel="isSimpleConfirm || isChoice"
     :button-label="baseAlertButtonLabel"
     :tone="baseAlertTone"
+    :secondary-label="isChoice ? state.secondaryLabel : undefined"
+    :secondary-tone="baseAlertSecondaryTone"
+    :wide="isChoice"
     :test-id-root="state.testIds.root"
     :test-id-action="state.testIds.action"
     :test-id-cancel="state.testIds.cancel"
+    :test-id-secondary="state.testIds.secondary"
     @close="onBaseAlertClose"
     @cancel="onBaseAlertCancel"
+    @secondary="close('secondary')"
   />
 
   <DesktopDialogSurface

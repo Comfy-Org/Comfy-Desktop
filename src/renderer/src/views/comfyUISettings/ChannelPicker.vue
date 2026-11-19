@@ -460,15 +460,15 @@ function actionClass(
   compact = false
 ): string[] {
   return [
-    'static inline-flex flex-none items-center justify-center gap-1.5 rounded-lg border border-solid bg-[var(--brand-surface-bg)] whitespace-nowrap box-border appearance-auto transition-[background-color,filter] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg)] enabled:hover:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-auto disabled:opacity-50 disabled:cursor-not-allowed',
+    'static inline-flex flex-none items-center justify-center gap-1.5 rounded-lg border border-solid whitespace-nowrap box-border appearance-auto transition-[background-color,filter] duration-100 ease-[ease] enabled:focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-auto disabled:opacity-50 disabled:cursor-not-allowed',
     compact
       ? 'h-7 min-h-7 px-3 py-0 text-[12px] leading-none'
       : 'h-8 min-h-8 px-4 py-0 text-[13px] leading-none',
     variant === 'accent'
-      ? 'border-[var(--action)] text-[var(--action)] font-semibold disabled:hover:bg-[var(--action)] enabled:hover:bg-[var(--action)] enabled:hover:text-[var(--bg)] enabled:focus-visible:bg-[var(--action)] enabled:focus-visible:text-[var(--bg)]'
+      ? 'border-[var(--action)] bg-[var(--brand-surface-bg)] text-[var(--action)] font-semibold enabled:hover:bg-[var(--action)] enabled:hover:text-[var(--bg)] enabled:focus-visible:bg-[var(--action)] enabled:focus-visible:text-[var(--bg)]'
       : variant === 'danger'
-        ? 'border-[var(--chooser-surface-border)] text-danger font-medium disabled:hover:bg-[var(--danger)]'
-        : 'border-[var(--chooser-surface-border)] text-neutral-100 font-medium',
+        ? 'border-transparent bg-secondary text-danger font-medium enabled:hover:bg-secondary-background-hover'
+        : 'border-transparent bg-secondary text-neutral-100 font-medium enabled:hover:bg-secondary-background-hover',
     running ? 'is-running cursor-progress opacity-85' : 'cursor-pointer'
   ]
 }
@@ -477,7 +477,7 @@ function actionClass(
 <template>
   <div class="channel-picker flex flex-col gap-3">
     <div
-      class="channel-picker-status-stack grid grid-cols-1 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)]"
+      class="channel-picker-status-stack grid grid-cols-1 rounded-[14px] border border-solid border-transparent bg-card"
     >
       <div
         v-for="(status, index) in selectedFirstThenEveryOtherOption"
