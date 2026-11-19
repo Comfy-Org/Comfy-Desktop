@@ -9,6 +9,7 @@ const EXIT_SETTLE_MS = 2_000
 export interface ShutdownTarget {
   launcher: ChildProcess | undefined
   appPid: number | undefined
+  appStartTime?: string | undefined
   closeGracefully: () => Promise<void>
   connectionClosed: () => boolean
 }
@@ -45,6 +46,52 @@ export function killProcessTrees(pids: number[]): void {
   }
 }
 
+export function processStartTime(pid: number): string | undefined {
+  const result =
+    process.platform === 'win32'
+      ? spawnSync(
+          'powershell',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToFileTimeUtc()`
+          ],
+          { encoding: 'utf8', timeout: FORCED_EXIT_DEADLINE_MS, windowsHide: true }
+        )
+      : spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+          encoding: 'utf8',
+          timeout: FORCED_EXIT_DEADLINE_MS
+        })
+  const startTime = result.status === 0 ? result.stdout.trim() : ''
+  return startTime || undefined
+}
+
+export function descendantsOf(roots: number[]): number[] {
+  if (process.platform === 'win32' || roots.length === 0) return []
+  const listing = spawnSync('ps', ['-A', '-o', 'pid=,ppid='], {
+    encoding: 'utf8',
+    timeout: FORCED_EXIT_DEADLINE_MS
+  })
+  if (listing.status !== 0) return []
+  const childrenByParent = new Map<number, number[]>()
+  for (const line of listing.stdout.split('\n')) {
+    const [pid, ppid] = line.trim().split(/\s+/).map(Number)
+    if (!pid || !ppid) continue
+    childrenByParent.set(ppid, [...(childrenByParent.get(ppid) ?? []), pid])
+  }
+  const found = new Set<number>()
+  const pending = [...roots]
+  while (pending.length > 0) {
+    for (const child of childrenByParent.get(pending.pop()!) ?? []) {
+      if (found.has(child) || roots.includes(child)) continue
+      found.add(child)
+      pending.push(child)
+    }
+  }
+  return [...found]
+}
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -75,12 +122,22 @@ export function createShutdown(
   const launcher = target.launcher
   const launcherAlive = (): boolean =>
     !!launcher && launcher.exitCode === null && launcher.signalCode === null
-  const appPid = target.appPid !== launcher?.pid ? target.appPid : undefined
-  const livePids = (): number[] => {
+  let appPid = target.appPid !== launcher?.pid ? target.appPid : undefined
+  const helpers = new Set<number>()
+  const rootPids = (): number[] => {
     const pids: number[] = []
     if (launcherAlive() && launcher?.pid !== undefined) pids.push(launcher.pid)
     if (appPid !== undefined && isPidAlive(appPid)) pids.push(appPid)
     return pids
+  }
+  const trackHelpers = (): void => {
+    for (const pid of descendantsOf(rootPids())) helpers.add(pid)
+  }
+  const livePids = (): number[] => [...rootPids(), ...[...helpers].filter(isPidAlive)]
+  const forgetAppIfItsPidWasReused = (): void => {
+    if (appPid === undefined || target.appStartTime === undefined) return
+    if (!isPidAlive(appPid)) return
+    if (processStartTime(appPid) !== target.appStartTime) appPid = undefined
   }
 
   const waitForExit = async (ms: number): Promise<boolean> => {
@@ -93,6 +150,8 @@ export function createShutdown(
   }
 
   const run = async (): Promise<void> => {
+    forgetAppIfItsPidWasReused()
+    trackHelpers()
     let quitOnItsOwn = true
     if (livePids().length > 0 && !target.connectionClosed()) {
       quitOnItsOwn = await closeWithin(target.closeGracefully, gracefulCloseMs)
@@ -101,6 +160,7 @@ export function createShutdown(
       }
     }
     if (quitOnItsOwn && (await waitForExit(EXIT_SETTLE_MS))) return
+    trackHelpers()
     forceKill(livePids())
     if (await waitForExit(forcedExitMs)) return
     throw new Error(

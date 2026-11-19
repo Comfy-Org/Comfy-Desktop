@@ -5,7 +5,7 @@ import process from 'node:process'
 import { test } from '@playwright/test'
 import { _electron as electron, type ElectronApplication } from 'playwright'
 
-import { createShutdown } from './appShutdown'
+import { createShutdown, processStartTime } from './appShutdown'
 import { evalWithRetry } from './evalRetry'
 import { FOREGROUND_PROJECTS, isBackgroundRun } from './focusMode'
 import { recordVideoOptions } from './videoRecording'
@@ -298,6 +298,7 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   const shutdown = createShutdown({
     launcher: application.process() ?? undefined,
     appPid,
+    appStartTime: processStartTime(appPid),
     closeGracefully: () => application.close(),
     connectionClosed: () => connectionClosed
   })

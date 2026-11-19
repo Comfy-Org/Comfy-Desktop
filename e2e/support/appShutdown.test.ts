@@ -2,12 +2,30 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import process from 'node:process'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createShutdown, isPidAlive, killProcessTrees } from './appShutdown'
+import {
+  createShutdown,
+  descendantsOf,
+  isPidAlive,
+  killProcessTrees,
+  processStartTime
+} from './appShutdown'
 
 const IDLE = 'setInterval(() => {}, 1000)'
 const LAUNCHER_THAT_STARTS_THE_APP = `
 const { spawn } = require('node:child_process')
 const app = spawn(process.execPath, ['-e', ${JSON.stringify(IDLE)}], { stdio: 'ignore' })
+process.stdout.write(String(app.pid) + '\\n')
+${IDLE}
+`
+
+const APP_WITH_A_HELPER = `
+const { spawn } = require('node:child_process')
+spawn(process.execPath, ['-e', ${JSON.stringify(IDLE)}], { stdio: 'ignore' })
+${IDLE}
+`
+const LAUNCHER_THAT_STARTS_AN_APP_WITH_A_HELPER = `
+const { spawn } = require('node:child_process')
+const app = spawn(process.execPath, ['-e', ${JSON.stringify(APP_WITH_A_HELPER)}], { stdio: 'ignore' })
 process.stdout.write(String(app.pid) + '\\n')
 ${IDLE}
 `
@@ -19,8 +37,10 @@ function exited(child: ChildProcess): Promise<void> {
   return new Promise((resolve) => child.once('exit', () => resolve()))
 }
 
-async function launchShellAndApp(): Promise<{ launcher: ChildProcess; appPid: number }> {
-  const launcher = spawn(process.execPath, ['-e', LAUNCHER_THAT_STARTS_THE_APP], {
+async function launchShellAndApp(
+  script = LAUNCHER_THAT_STARTS_THE_APP
+): Promise<{ launcher: ChildProcess; appPid: number }> {
+  const launcher = spawn(process.execPath, ['-e', script], {
     stdio: ['ignore', 'pipe', 'ignore']
   })
   const appPid = await new Promise<number>((resolve, reject) => {
@@ -109,5 +129,52 @@ describe('app shutdown', () => {
 
     expect(closeGracefully).toHaveBeenCalledTimes(1)
     expect(isPidAlive(appPid)).toBe(false)
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'stops the helpers the app started, not only the app',
+    async () => {
+      const { launcher, appPid } = await launchShellAndApp(
+        LAUNCHER_THAT_STARTS_AN_APP_WITH_A_HELPER
+      )
+      await vi.waitFor(() => expect(descendantsOf([appPid])).toHaveLength(1))
+      const killed: number[] = []
+      await createShutdown(
+        { launcher, appPid, closeGracefully: never, connectionClosed: () => false },
+        {
+          gracefulCloseMs: 50,
+          log: () => {},
+          forceKill: (pids) => {
+            killed.push(...pids)
+            killProcessTrees(pids)
+          }
+        }
+      )()
+
+      const helpers = killed.filter((pid) => pid !== launcher.pid && pid !== appPid)
+      started.push(...helpers)
+      expect(helpers, 'the helper was part of the forced kill').toHaveLength(1)
+      expect(helpers.filter(isPidAlive), 'no helper outlives the shutdown').toEqual([])
+    }
+  )
+
+  it('leaves alone a process that took over the app pid after the app exited', async () => {
+    const { appPid } = await launchShellAndApp()
+    const forceKill = vi.fn()
+
+    await createShutdown(
+      {
+        launcher: undefined,
+        appPid,
+        appStartTime: 'a start time from an app that is gone',
+        closeGracefully: never,
+        connectionClosed: () => true
+      },
+      { forceKill }
+    )()
+
+    expect(forceKill).not.toHaveBeenCalled()
+    expect(isPidAlive(appPid), 'the unrelated process still runs').toBe(true)
+    expect(processStartTime(appPid)).toBeDefined()
   })
 })
