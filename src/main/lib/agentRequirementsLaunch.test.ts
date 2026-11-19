@@ -3024,7 +3024,9 @@ describe('restoreCoreFrontend', () => {
       'comfyui_frontend_package/__init__.py': 'old init',
       'comfyui_frontend_package/static/index.html': 'old index',
       'comfyui_frontend_package/static/locked.js': 'old locked',
-      'comfyui_frontend_package-1.28.8.dist-info/METADATA': 'Version: 1.28.8'
+      'comfyui_frontend_package-1.28.8.dist-info/METADATA': 'Version: 1.28.8',
+      'comfyui_frontend_package_extra/__init__.py': 'not the frontend',
+      'torch/__init__.py': 'not the frontend'
     })) {
       fs.mkdirSync(path.dirname(path.join(sitePackages, file)), { recursive: true })
       fs.writeFileSync(path.join(sitePackages, file), text)
@@ -3039,6 +3041,9 @@ describe('restoreCoreFrontend', () => {
     fs.writeFileSync(path.join(sitePackages, 'comfyui_frontend_package/static/locked.js'), 'kept')
     return { code: 2, output: 'error: failed to remove file: Access is denied. (os error 5)' }
   }
+
+  const backupEntriesLeft = (): string[] =>
+    fs.readdirSync(installDir).filter((name) => name.startsWith('.launch'))
 
   const read = (sitePackages: string, file: string): string | null =>
     fs.existsSync(path.join(sitePackages, file))
@@ -3061,9 +3066,7 @@ describe('restoreCoreFrontend', () => {
       read(sitePackages, 'comfyui_frontend_package/static/locked.js'),
       'a file uv could not remove is left as it is'
     ).toBe('kept')
-    await vi.waitFor(() =>
-      expect(fs.readdirSync(installDir).filter((name) => name.startsWith('.launch'))).toEqual([])
-    )
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
   it('puts back the frontend of a legacy envs/default install', async () => {
@@ -3088,9 +3091,11 @@ describe('restoreCoreFrontend', () => {
     writeCore('comfyui-frontend-package==1.28.7\n')
     const sitePackages = installedFrontend()
     const cp = vi.spyOn(fs.promises, 'cp').mockRejectedValueOnce(new Error('EBUSY'))
-
-    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
-    cp.mockRestore()
+    try {
+      expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    } finally {
+      cp.mockRestore()
+    }
     expect(mockInstall).not.toHaveBeenCalled()
     expect(read(sitePackages, 'comfyui_frontend_package/__init__.py')).toBe('old init')
   })
@@ -3110,6 +3115,35 @@ describe('restoreCoreFrontend', () => {
     expect(
       fs.existsSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info'))
     ).toBe(false)
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('copies aside only the frontend package and its dist-info', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    installedFrontend()
+    const cp = vi.spyOn(fs.promises, 'cp')
+    try {
+      await restoreCoreFrontend(inst, vi.fn())
+      expect(cp.mock.calls.map(([from]) => path.basename(String(from))).sort()).toEqual([
+        'comfyui_frontend_package',
+        'comfyui_frontend_package-1.28.8.dist-info'
+      ])
+    } finally {
+      cp.mockRestore()
+    }
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('runs the restore when site-packages holds no frontend', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const venv = getVenvDir(installDir)
+    fs.mkdirSync(path.join(venv, 'lib', 'python3.12'), { recursive: true })
+    fs.mkdirSync(findSitePackages(venv)!, { recursive: true })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(true)
+    expect(mockInstall).toHaveBeenCalledTimes(1)
   })
 
   it('drops the record for an install with no uv', async () => {
