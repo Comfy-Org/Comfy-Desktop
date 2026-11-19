@@ -1032,16 +1032,45 @@ describe('global settings remove app data', () => {
 })
 
 describe('centered card popups', () => {
-  const parent = {
-    getContentBounds: () => ({ x: 0, y: 0, width: 1400, height: 900 })
-  } as unknown as Electron.BrowserWindow
+  function parentOf(width: number, height: number): Electron.BrowserWindow {
+    return {
+      getContentBounds: () => ({ x: 0, y: 0, width, height })
+    } as unknown as Electron.BrowserWindow
+  }
 
   it.each(['global-settings', 'downloads-full'] as const)(
     'leaves room beside the %s card for the round close button outside it',
     (kind) => {
-      const bounds = _test_centeredCardBounds(kind, parent)
+      const bounds = _test_centeredCardBounds(kind, parentOf(1400, 900))
       const cardWidth = kind === 'global-settings' ? 880 : 900
       expect(bounds.width).toBe(cardWidth + 48)
     }
   )
+
+  it.each([
+    ['global-settings', 640],
+    ['downloads-full', 640],
+    ['global-settings', 800],
+    ['downloads-full', 1000]
+  ] as const)(
+    'shrinks the %s card in a %ipx window so the close button stays inside it',
+    (kind, windowWidth) => {
+      const bounds = _test_centeredCardBounds(kind, parentOf(windowWidth, 480))
+      const cardLeft = bounds.x
+      const cardRight = bounds.x + bounds.width - 48
+      const closeLeft = cardRight + 12
+      const closeRight = cardRight + 48
+      expect(cardLeft).toBeGreaterThanOrEqual(16)
+      expect(closeLeft).toBeGreaterThan(cardRight)
+      expect(closeRight).toBeLessThanOrEqual(windowWidth - 16)
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(windowWidth)
+    }
+  )
+
+  it('keeps the card centered in a narrow window', () => {
+    const bounds = _test_centeredCardBounds('downloads-full', parentOf(640, 480))
+    const cardWidth = bounds.width - 48
+    expect(cardWidth).toBe(640 - 128)
+    expect(bounds.x).toBe((640 - cardWidth) / 2)
+  })
 })

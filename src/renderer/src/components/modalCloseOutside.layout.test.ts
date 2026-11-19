@@ -6,6 +6,7 @@ import '../assets/main.css'
 import AnnouncementModal from './AnnouncementModal.vue'
 import WhyTryCloudModal from './WhyTryCloudModal.vue'
 import ExtraModelPathsModal from '../views/comfyUISettings/ExtraModelPathsModal.vue'
+import BaseModal from './ui/BaseModal.vue'
 
 vi.mock('../lib/telemetry', () => ({ emitTelemetryAction: vi.fn() }))
 
@@ -37,7 +38,17 @@ function expectCloseOutside(closeSelector: string, cardSelector: string): void {
   expect(close.width).toBeGreaterThan(0)
   expect(close.left).toBeGreaterThanOrEqual(card.right)
   expect(close.top).toBeLessThanOrEqual(card.top + 1)
+  expect(card.left).toBeGreaterThanOrEqual(0)
+  expect(close.right).toBeLessThanOrEqual(window.innerWidth)
+  expect(close.top).toBeGreaterThanOrEqual(0)
 }
+
+const NARROW_VIEWPORTS = [
+  [640, 480],
+  [860, 700],
+  [900, 700],
+  [1100, 800]
+] as const
 
 describe('modals close with the round button outside the card', () => {
   it('announcement', async () => {
@@ -61,5 +72,32 @@ describe('modals close with the round button outside the card', () => {
       })
     )
     expectCloseOutside('[data-testid="base-modal-close"]', '.base-modal-panel')
+  })
+
+  describe.each(NARROW_VIEWPORTS)('in a %ix%i window, fully inside the window', (w, h) => {
+    beforeEach(async () => {
+      await page.viewport(w, h)
+    })
+
+    it('announcement', async () => {
+      await track(mount(AnnouncementModal, { attachTo: document.body }))
+      expectCloseOutside('[data-testid="announcement-close"]', '.announce-content')
+    })
+
+    it('why try cloud', async () => {
+      await track(mount(WhyTryCloudModal, { attachTo: document.body }))
+      expectCloseOutside('[data-testid="why-cloud-close"]', '.why-cloud-content')
+    })
+
+    it.each(['md', 'xl'] as const)('a %s modal', async (size) => {
+      await track(
+        mount(BaseModal, {
+          attachTo: document.body,
+          props: { open: true, size, closeOutside: true, ariaLabel: 'Modal' },
+          slots: { default: '<p>Body</p>' }
+        })
+      )
+      expectCloseOutside('[data-testid="base-modal-close"]', '.base-modal-panel')
+    })
   })
 })
