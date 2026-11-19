@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue'
+import { computed, useId, useSlots } from 'vue'
 import { X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from './DesktopDialogSurface.vue'
@@ -70,6 +70,10 @@ function dismiss(): void {
 }
 
 const hasDetails = computed(() => props.messageDetails.length > 0)
+const slots = useSlots()
+const isShortMessage = computed(
+  () => !hasDetails.value && !slots.default && !slots.extra && !!(props.message || props.hint)
+)
 const linkifiedMessage = computed(() => linkify(props.message))
 const hasWideActions = computed(() => !!props.secondaryLabel)
 
@@ -122,7 +126,8 @@ const linkClass =
     </header>
     <div
       v-if="message || hint || hasDetails || $slots.default || $slots.extra"
-      class="base-alert-message mb-5 min-h-0 flex-auto overflow-y-auto text-sm leading-[1.5] whitespace-pre-line text-text-muted select-text"
+      class="base-alert-message min-h-0 flex-auto overflow-y-auto text-sm leading-[1.5] whitespace-pre-line text-text-muted select-text"
+      :class="isShortMessage ? 'base-alert-message--short mb-5 [&:has(+footer)]:mb-8' : 'mb-5'"
     >
       <slot>
         <div

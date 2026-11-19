@@ -25,6 +25,7 @@ const BIG_PADDING = 24
 const TITLE_GAP = 16
 const LABEL_GAP = 8
 const GROUP_GAP = 20
+const SHORT_MESSAGE_GAP = 32
 
 const mounted: VueWrapper[] = []
 
@@ -397,6 +398,11 @@ const DELETE_BUILD = {
   ]
 }
 
+const SHORT_ALERT = {
+  title: "Couldn't add this build",
+  message: 'Directory does not exist: /Users/alex/ComfyUI-old'
+}
+
 const BUILD_RUNNING = {
   open: true,
   title: 'A build is already running',
@@ -703,6 +709,52 @@ describe('modal chrome', () => {
       expectFooterInsets('.setup-modal-panel', '.setup-modal-body', '.setup-modal-foot')
       await closeAll()
     }
+  })
+
+  it('lets a short alert or confirm breathe 32px above the footer line, other modals keep 20px', async () => {
+    const textToLine = (bodySelector: string, footerSelector: string): number =>
+      el(footerSelector).getBoundingClientRect().top - lowestContent(bodySelector)
+
+    await open(() => mount(ModalDialog, { attachTo: document.body }))
+    void useModal().alert(SHORT_ALERT)
+    await settle()
+    expectNear(
+      textToLine('.base-alert-message', '.base-alert-footer'),
+      SHORT_MESSAGE_GAP,
+      'short alert text to the footer line'
+    )
+    expectFooterInsets('.base-alert-panel', '.base-alert-message', '.base-alert-footer')
+    useModal().dismiss()
+    await settle()
+    void useModal().confirm({
+      title: 'Remove this build?',
+      message: 'Flux Sandbox leaves the list. Its folder stays on this computer.',
+      confirmLabel: 'Remove'
+    })
+    await settle()
+    expectNear(
+      textToLine('.base-alert-message', '.base-alert-footer'),
+      SHORT_MESSAGE_GAP,
+      'short confirm text to the footer line'
+    )
+    useModal().dismiss()
+    await settle()
+    void useModal().prompt(PROMPT_WITH_DETAILS)
+    await settle()
+    expectNear(
+      textToLine('.dialog-body', '.dialog-actions'),
+      CONTENT_PADDING,
+      'prompt content to the footer line'
+    )
+    await closeAll()
+
+    await open(() => mount(BaseAlert, { attachTo: document.body, props: BUILD_RUNNING }))
+    expectNear(
+      textToLine('.base-alert-message', '.base-alert-footer'),
+      CONTENT_PADDING,
+      'alert with details to the footer line'
+    )
+    await closeAll()
   })
 
   it('sets every label 8px above its own box and 20px below the box before it', async () => {
