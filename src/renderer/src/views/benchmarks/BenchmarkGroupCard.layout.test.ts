@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 
@@ -42,6 +42,17 @@ function run(id: string, average: number, day = id): PerformanceTestBenchmark {
 }
 
 let wrapper: VueWrapper | null = null
+
+async function measureInInterNotTheFallbackFont(): Promise<void> {
+  const faces = ['400 13px Inter', '500 13px Inter', '600 13px Inter']
+  await Promise.all(faces.map((face) => document.fonts.load(face)))
+  await document.fonts.ready
+  for (const face of faces) expect(document.fonts.check(face)).toBe(true)
+}
+
+beforeAll(async () => {
+  await measureInInterNotTheFallbackFont()
+})
 
 beforeEach(() => {
   document.documentElement.setAttribute('data-theme', 'dark')
