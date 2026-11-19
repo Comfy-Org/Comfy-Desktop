@@ -838,7 +838,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
     savedIn: savedFolderOf(asset),
-    mainAction: mainAction(asset),
+    mainAction: fileOnDisk(asset) ? null : 'download',
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
@@ -927,9 +927,12 @@ function fileOnDisk(asset: GalleryAsset): string | null {
   return isLocal(asset) ? asset.id : (downloadedCopies.value.get(cardKey(asset)) ?? null)
 }
 
-function reveal(asset: GalleryAsset): void {
+async function reveal(asset: GalleryAsset): Promise<void> {
   const file = fileOnDisk(asset)
-  if (file) void window.api.revealAsset(LOCAL_ASSETS_SOURCE, file)
+  const shown = file
+    ? await window.api.revealAsset(LOCAL_ASSETS_SOURCE, file).catch(() => false)
+    : false
+  if (!shown) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
 }
 
 function mainAction(asset: GalleryAsset): 'download' | 'open' | null {
@@ -1030,7 +1033,7 @@ async function runAssetAction(action: string): Promise<void> {
   if (!asset) return
   if (action === 'download') await download(asset)
   else if (action === 'open') await openLocally(asset)
-  else if (action === 'reveal') reveal(asset)
+  else if (action === 'reveal') await reveal(asset)
   else if (action === 'copy') await copy(asset)
   else if (action === 'delete') await moveToTrash(asset)
 }
@@ -1607,7 +1610,6 @@ function extensionOf(name: string): string {
       :items="detailItems"
       @close="closeDetail"
       @download="download(detailAssets[$event]!)"
-      @open="openLocally(detailAssets[$event]!)"
       @show-in-folder="reveal(detailAssets[$event]!)"
     />
 
