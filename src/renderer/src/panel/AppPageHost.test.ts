@@ -292,17 +292,14 @@ describe('AppPageHost', () => {
     showAppPage.mockClear()
 
     sidebarHovered.value = true
-    await nextFrame()
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
 
     expect(captureAppPage).toHaveBeenCalledTimes(1)
-    expect(hideAppPage).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="app-page-frozen-frame"]').exists()).toBe(true)
     expect(appPageShown.value).toBe(false)
 
     sidebarHovered.value = false
-    await nextFrame()
-
-    expect(showAppPage).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(showAppPage).toHaveBeenCalledTimes(1))
     expect(appPageShown.value).toBe(true)
   })
 
