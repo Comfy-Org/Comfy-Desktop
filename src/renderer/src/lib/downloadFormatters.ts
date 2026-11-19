@@ -110,7 +110,7 @@ export function modalSubtitle(d: ModalFormatInput, now = Date.now()): string {
     case 'pending':
       return 'Waiting…'
     case 'downloading': {
-      const parts: string[] = []
+      const parts: string[] = [`${pct}%`]
       if (d.totalBytes && d.totalBytes > 0 && d.receivedBytes != null) {
         parts.push(`${formatBytes(d.receivedBytes)} / ${formatBytes(d.totalBytes)}`)
       }
@@ -120,7 +120,7 @@ export function modalSubtitle(d: ModalFormatInput, now = Date.now()): string {
       if (d.etaSeconds != null && d.etaSeconds > 0 && isFinite(d.etaSeconds)) {
         parts.push(`~${formatEta(d.etaSeconds)} left`)
       }
-      return parts.join(' · ') || `${pct}%`
+      return parts.join(' · ')
     }
     case 'paused': {
       const parts = [`Paused at ${pct}%`]
