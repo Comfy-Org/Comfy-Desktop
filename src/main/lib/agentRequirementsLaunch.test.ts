@@ -3084,6 +3084,7 @@ describe('restoreCoreFrontend', () => {
 
     expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
     expect(read(sitePackages, 'comfyui_frontend_package/__init__.py')).toBe('old init')
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
   it('keeps the installed frontend without running uv when it cannot be copied aside', async () => {
@@ -3098,6 +3099,7 @@ describe('restoreCoreFrontend', () => {
     }
     expect(mockInstall).not.toHaveBeenCalled()
     expect(read(sitePackages, 'comfyui_frontend_package/__init__.py')).toBe('old init')
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
   it('leaves the new frontend alone when the restore succeeds', async () => {
@@ -3148,6 +3150,16 @@ describe('restoreCoreFrontend', () => {
       readdir.mockRestore()
     }
     expect(mockInstall).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('runs the restore when the env has no site-packages directory yet', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    fs.mkdirSync(path.join(getVenvDir(installDir), 'lib', 'python3.12'), { recursive: true })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(true)
+    expect(mockInstall).toHaveBeenCalledTimes(1)
   })
 
   it('runs the restore when site-packages holds no frontend', async () => {
