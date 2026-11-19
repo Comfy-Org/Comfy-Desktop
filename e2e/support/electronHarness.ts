@@ -241,20 +241,39 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     application.evaluate(({ app: electronApp, dialog }) => {
       dialog.showErrorBox = () => {}
       const marked = electronApp as typeof electronApp & {
-        __e2eRenderProcessGoneInstalled?: boolean
+        __e2eRendererLossLogged?: boolean
       }
-      if (!marked.__e2eRenderProcessGoneInstalled) {
-        marked.__e2eRenderProcessGoneInstalled = true
-        electronApp.on('render-process-gone', () => electronApp.exit(1))
+      if (!marked.__e2eRendererLossLogged) {
+        marked.__e2eRendererLossLogged = true
+        electronApp.on('render-process-gone', (_event, contents, details) => {
+          const url = contents.isDestroyed() ? '(destroyed)' : contents.getURL()
+          console.error(
+            `[e2e-harness] renderer gone reason=${details.reason} exitCode=${details.exitCode} url=${url}`
+          )
+        })
       }
     })
   )
 
+  let connectionClosed = false
+  application.once('close', () => {
+    connectionClosed = true
+  })
+
   const cleanup = async (): Promise<void> => {
     try {
       const proc = application.process()
-      if (proc && proc.exitCode === null) {
+      const stillRunning = (): boolean =>
+        !!proc && proc.exitCode === null && proc.signalCode === null
+      if (stillRunning() && !connectionClosed) {
         await application.close().catch(() => {})
+      }
+      if (proc) {
+        const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()))
+        if (stillRunning()) {
+          proc.kill('SIGKILL')
+          await exited
+        }
       }
     } catch {}
     if (!reuseDir) {
