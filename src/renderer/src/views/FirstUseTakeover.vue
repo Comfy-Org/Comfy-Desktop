@@ -485,7 +485,7 @@ defineExpose({ open, resetContinue })
 
         <dl
           v-if="planState !== 'unavailable'"
-          class="m-0 mt-3 flex flex-col"
+          class="m-0 mt-3 flex flex-col rounded-[14px] bg-white/5 py-1"
           :aria-label="t('setup.summary')"
           data-testid="setup-summary"
         >
@@ -550,7 +550,7 @@ defineExpose({ open, resetContinue })
         </dl>
         <div
           v-else
-          class="mt-3 flex min-h-16 items-center justify-between gap-4 px-4 text-[13px]/4"
+          class="mt-3 flex min-h-16 items-center justify-between gap-4 rounded-[14px] bg-white/5 px-4 text-[13px]/4"
           role="alert"
           data-testid="setup-unavailable"
         >

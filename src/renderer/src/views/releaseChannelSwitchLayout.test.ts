@@ -279,6 +279,45 @@ describe('opening Change setup from the New build summary', () => {
   )
 })
 
+describe('the New build summary rows', () => {
+  it.each([
+    [1100, 860],
+    [800, 563]
+  ])(
+    'sit in a borderless box like the Name row, icons on the Name icon edge, at %i × %i',
+    async (width, height) => {
+      await browserPage.viewport(width, height)
+      installStandaloneApi(createLoadGate())
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      const wrapper = mount(InstallWizardModal, {
+        attachTo: document.body,
+        global: { plugins: [pinia] }
+      })
+      await wrapper.vm.open({})
+      await flushPromises()
+      await finishEntranceAnimations()
+
+      const nameCard = getComputedStyle(only('.config-name-card'))
+      const list = getComputedStyle(only('.config-summary-list'))
+      expect(list.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+      expect(list.backgroundColor).toBe(nameCard.backgroundColor)
+      expect(list.borderRadius).toBe(nameCard.borderRadius)
+      for (const side of ['Top', 'Right', 'Bottom', 'Left'] as const) {
+        expect(list[`border${side}Width`]).toBe('0px')
+      }
+
+      const nameIcon = only('.config-name-card label svg').getBoundingClientRect().left
+      const rowIcons = onScreen('.config-summary-list .config-summary-row dt svg')
+      expect(rowIcons.length).toBeGreaterThanOrEqual(3)
+      for (const icon of rowIcons) {
+        expect(Math.abs(icon.getBoundingClientRect().left - nameIcon)).toBeLessThanOrEqual(0.5)
+      }
+      wrapper.unmount()
+    }
+  )
+})
+
 describe('switching where Change setup gets ComfyUI', () => {
   function installSetupChoices() {
     installStandaloneApi(createLoadGate())

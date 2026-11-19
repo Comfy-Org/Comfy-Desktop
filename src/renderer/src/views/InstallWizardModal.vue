@@ -1825,7 +1825,7 @@ defineExpose({ open })
       </div>
 
       <dl
-        class="config-summary-list m-0 mt-3 flex flex-col"
+        class="config-summary-list m-0 mt-3 flex flex-col rounded-[14px] bg-white/5 py-1"
         :aria-label="$t('newInstall.installSummary')"
       >
         <SetupSummaryRow

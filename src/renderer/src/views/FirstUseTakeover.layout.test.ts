@@ -107,4 +107,29 @@ describe.each([
     for (const icon of summaryIcons) expect(Math.abs(leftOf(icon) - edge)).toBeLessThanOrEqual(1)
     for (const box of checkboxes) expect(Math.abs(leftOf(box) - edge)).toBeLessThanOrEqual(1)
   })
+
+  it('puts the summary rows in a borderless box, the icons 16px inside it', async () => {
+    await browserPage.viewport(width, height)
+    wrapper = mount(FirstUseTakeover, { attachTo: document.body })
+    await flushPromises()
+    await settle()
+
+    const summary = document.querySelector<HTMLElement>('[data-testid="setup-summary"]')!
+    const style = getComputedStyle(summary)
+    const probe = document.body.appendChild(document.createElement('div'))
+    probe.className = 'bg-white/5'
+    const nameRowFill = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    expect(nameRowFill).not.toBe('rgba(0, 0, 0, 0)')
+    expect(style.backgroundColor).toBe(nameRowFill)
+    expect(style.borderRadius).toBe('14px')
+    for (const side of ['Top', 'Right', 'Bottom', 'Left'] as const) {
+      expect(style[`border${side}Width`]).toBe('0px')
+    }
+    const icons = [...summary.querySelectorAll('.config-summary-row dt svg')]
+    expect(icons).toHaveLength(3)
+    for (const icon of icons) {
+      expect(Math.abs(leftOf(icon) - leftOf(summary) - 16)).toBeLessThanOrEqual(0.5)
+    }
+  })
 })
