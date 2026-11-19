@@ -850,6 +850,8 @@ function revertOnInstall(
 
 const FRONTEND_RESTORE_TIMEOUT_MS = 60_000
 
+const FRONTEND_BACKUP_PREFIX = '.launch-frontend-backup-'
+
 export async function restoreCoreFrontend(
   installation: InstallationRecord,
   sendOutput: (text: string) => void,
@@ -866,7 +868,8 @@ export async function restoreCoreFrontend(
   if (version === null) return true
   const tag = attemptTag()
   const reqPath = path.join(installation.installPath, `.launch-frontend-restore-${tag}-src.txt`)
-  const backupDir = path.join(installation.installPath, `.launch-frontend-backup-${tag}`)
+  const backupDir = path.join(installation.installPath, `${FRONTEND_BACKUP_PREFIX}${tag}`)
+  await removeScratch(installation.installPath, (name) => name.startsWith(FRONTEND_BACKUP_PREFIX))
   try {
     const savedFrom = await backUpFrontend(pythonPath, backupDir)
     await fs.promises.writeFile(reqPath, `${FRONTEND_PACKAGE}==${version}\n`, 'utf-8')

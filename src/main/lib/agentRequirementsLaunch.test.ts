@@ -3102,6 +3102,30 @@ describe('restoreCoreFrontend', () => {
     await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
+  it('removes a backup a crashed restore left behind before backing up again', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    const orphan = path.join(installDir, '.launch-frontend-backup-999-1')
+    fs.mkdirSync(path.join(orphan, 'comfyui_frontend_package'), { recursive: true })
+    fs.writeFileSync(path.join(orphan, 'comfyui_frontend_package', '__init__.py'), 'orphan')
+    let leftDuringRestore: string[] = []
+    mockInstall.mockImplementationOnce(async () => {
+      leftDuringRestore = backupEntriesLeft().filter((name) =>
+        name.startsWith('.launch-frontend-backup-')
+      )
+      return { code: 0, output: '' }
+    })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(true)
+    expect(leftDuringRestore, "only this attempt's backup is present while uv runs").toHaveLength(1)
+    expect(leftDuringRestore).not.toContain('.launch-frontend-backup-999-1')
+    expect(fs.existsSync(path.join(sitePackages, 'comfyui_frontend_package/__init__.py'))).toBe(
+      true
+    )
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
   it('leaves the new frontend alone when the restore succeeds', async () => {
     const inst = managedInstall()
     writeCore('comfyui-frontend-package==1.28.7\n')
@@ -3140,10 +3164,14 @@ describe('restoreCoreFrontend', () => {
   it('keeps the installed frontend without running uv when site-packages cannot be listed', async () => {
     const inst = managedInstall()
     writeCore('comfyui-frontend-package==1.28.7\n')
-    installedFrontend()
+    const sitePackages = installedFrontend()
+    const listDir = fs.promises.readdir.bind(fs.promises) as (dir: string) => Promise<string[]>
     const readdir = vi
       .spyOn(fs.promises, 'readdir')
-      .mockRejectedValueOnce(Object.assign(new Error('EACCES'), { code: 'EACCES' }))
+      .mockImplementation(((dir: string) =>
+        dir === sitePackages
+          ? Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }))
+          : listDir(dir)) as unknown as typeof fs.promises.readdir)
     try {
       expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
     } finally {
