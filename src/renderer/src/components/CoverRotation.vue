@@ -25,9 +25,10 @@ const LAYER_CLASS: Record<Role, string> = {
   poster: 'z-0'
 }
 
-const { pictures, paused = false } = defineProps<{
+const { pictures, paused = false, loadOnPlay = false } = defineProps<{
   pictures: readonly AppCover[]
   paused?: boolean
+  loadOnPlay?: boolean
 }>()
 
 const emit = defineEmits<{ broken: [] }>()
@@ -41,6 +42,14 @@ const still = computed(() => motion.value === 'reduce')
 const listKey = () => pictures.map((picture) => picture.url).join('\n')
 const playing = computed(() => !paused && !still.value && onScreen.value && page.value !== 'hidden')
 const generation = ref(0)
+const woken = ref(!paused)
+
+watch(
+  () => paused,
+  (now) => {
+    if (!now) woken.value = true
+  }
+)
 
 const { shown, leaving, upcoming, loaded, allFailed, markLoaded, markFailed } = useCoverRotation({
   count: () => pictures.length,
@@ -104,11 +113,14 @@ function stillIndex(): number | null {
 
 function pick(): Array<[number | null, Role, Kind]> {
   if (still.value || allFailed.value) return [[stillIndex(), 'shown', 'still']]
-  if (paused)
+  if (paused) {
+    const stillAt = stillIndex()
+    if (loadOnPlay && !woken.value && stillAt !== null) return [[stillAt, 'shown', 'still']]
     return [
-      [stillIndex(), 'shown', 'still'],
+      [stillAt, 'shown', 'still'],
       [shown.value, 'upcoming', 'cover']
     ]
+  }
   const picked: Array<[number | null, Role, Kind]> = [
     [leaving.value, 'leaving', 'cover'],
     [shown.value, 'shown', 'cover'],

@@ -35,6 +35,7 @@ const openApp = ref<AppCard | null>(null)
 const coversThatFailed = reactive(new Set<string>())
 const cardButtons = new Map<string, HTMLElement>()
 const keyboardFocusedId = ref<string | null>(null)
+const hoveredId = ref<string | null>(null)
 const badgeIdPrefix = useId()
 
 let lastOpenedId: string | null = null
@@ -87,7 +88,16 @@ function noteCardFocus(app: AppCard, event: FocusEvent): void {
     card instanceof HTMLElement && card.matches(':focus-visible') ? app.id : null
 }
 
+function playsCover(app: AppCard): boolean {
+  return (
+    app.coverPlayback === 'always' ||
+    hoveredId.value === app.id ||
+    keyboardFocusedId.value === app.id
+  )
+}
+
 function open(app: AppCard): void {
+  hoveredId.value = null
   lastOpenedId = app.id
   openApp.value = app
 }
@@ -228,6 +238,8 @@ onBeforeUnmount(() => {
               @click="open(app)"
               @focus="noteCardFocus(app, $event)"
               @blur="keyboardFocusedId = null"
+              @mouseenter="hoveredId = app.id"
+              @mouseleave="hoveredId = null"
             >
               <span
                 class="absolute inset-0 block overflow-hidden transition-transform duration-600 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04] group-focus-visible:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100 motion-reduce:group-focus-visible:scale-100"
@@ -236,6 +248,8 @@ onBeforeUnmount(() => {
                 <CoverRotation
                   v-if="app.covers.length > 0 && !coversThatFailed.has(app.id)"
                   :pictures="app.covers"
+                  :paused="!playsCover(app)"
+                  load-on-play
                   @broken="coversThatFailed.add(app.id)"
                 />
                 <span
