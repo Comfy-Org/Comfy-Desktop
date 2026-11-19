@@ -7,7 +7,7 @@ import { launchApp, type AppContext } from './launchApp'
 import {
   clickInstallTile,
   expectChooserVisible,
-  openPickerViaTitlePill
+  openPickerInWindow
 } from './support/chooserHelpers'
 import { closeTitlePopupIfOpen, isPopupVisible, type WebContentsPage } from './support/cdpPages'
 import { getRunningSessionSnapshot } from './support/devHooks'
@@ -84,7 +84,7 @@ test.afterAll(async () => {
 
 async function openStartupArgs(): Promise<WebContentsPage> {
   await closeTitlePopupIfOpen(ctx.app)
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'config')
   await popup.waitForVisible(`${ARGS_FIELD} .ui-input`, { timeout: 15_000 })
   return popup
 }
@@ -94,7 +94,7 @@ const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
     `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`
   )
 
-test('the pill follows the new session after a Restart that drops a grant @linux', async () => {
+test('the pill follows the new session after a Restart that drops a grant @linux @macos', async () => {
   await clickInstallTile(ctx.panel, INSTALL_NAME)
   let before: Awaited<ReturnType<typeof getRunningSessionSnapshot>> = null
   await expect

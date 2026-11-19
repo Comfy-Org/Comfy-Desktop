@@ -27,6 +27,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import { isNewWindowDashboardPage } from '../../../shared/dashboardPages'
 import { seedLauncherPrefsFromUrl, useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useModal } from '../composables/useModal'
 import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
@@ -50,6 +51,8 @@ import {
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
 import { provideBuildLogs } from '../composables/useBuildProgress'
+import { provideBuildMenuHost } from './home/useBuildMenu'
+import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
@@ -72,7 +75,7 @@ const { loaded: launcherPrefsLoaded, firstUseCompleted } = launcherPrefs
 const modal = useModal()
 useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
-const { feedbackOpen, feedbackUrl, closeFeedback } = useSendFeedback()
+const { feedbackOpen, feedbackHiddenFields, closeFeedback } = useSendFeedback()
 const { announcementOpen, closeAnnouncement } = useAnnouncement()
 
 const installation = computed<Installation | null>(() =>
@@ -136,6 +139,7 @@ const {
   currentOverlay,
   openOverlay,
   closeOverlay,
+  answerCloseRequest,
   handleShowProgress,
   handleProgressClose,
   openFirstUseTakeover,
@@ -157,7 +161,10 @@ if (params.get('e2e') === '1') {
 
 type DashboardHomePage = Extract<DashboardPage, 'home' | 'apps' | 'chooser' | 'assets'>
 
-const dashboardHomePage = ref<DashboardHomePage>('home')
+const urlDashboardPage = params.get('dashboardPage')
+const dashboardHomePage = ref<DashboardHomePage>(
+  isNewWindowDashboardPage(urlDashboardPage) ? urlDashboardPage : 'home'
+)
 
 const sidebarPage = computed<DashboardPage | null>(() => {
   const panel = activePanel.value
@@ -210,6 +217,7 @@ async function showHome(): Promise<void> {
 
 const appsVisits = ref(0)
 const appIsOpen = ref(false)
+const assetsFocusName = ref<string | null>(null)
 const appPickedOnHome = ref<AppCard | null>(null)
 
 function openAppFromHome(app: AppCard): void {
@@ -227,8 +235,14 @@ function handleSidebarClick(page: DashboardPage): void {
   handleSidebarNavigate(page)
 }
 
+function viewInAssets(name: string): void {
+  handleSidebarNavigate('assets')
+  assetsFocusName.value = name
+}
+
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
+  assetsFocusName.value = null
   if (page === 'apps') appsVisits.value += 1
   if (page === 'home' || page === 'apps' || page === 'chooser' || page === 'assets')
     dashboardHomePage.value = page
@@ -266,17 +280,12 @@ chooserHandoff = useChooserHandoff({
 })
 const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
-async function handleStartupRestorePick(inst: Installation): Promise<void> {
-  try {
-    const outcome = await chooserHandoff.performChooserLaunch(inst, undefined, { inPlace: true })
-    await nextTick()
-    const takeoverReady = outcome === 'launched' && currentOverlay.value?.kind === 'takeover'
-    window.api.resolveStartupRestoreReveal(takeoverReady ? 'takeover-ready' : 'dashboard-fallback')
-  } catch (err) {
-    console.error('startup restore launch failed', err)
-    window.api.resolveStartupRestoreReveal('dashboard-fallback')
-  }
-}
+provideAutoStartBuild()
+provideBuildMenuHost({
+  launch: (inst, launchOpts) => handleChooserPick(inst, launchOpts),
+  openDetails: openBuildFromSidebar,
+  showProgress: handleShowProgress
+})
 
 if (!installationId) {
   watch(currentOverlay, (next, prev) => {
@@ -317,16 +326,14 @@ useDeepLinkRouter({
   showAppUpdateRestartPrompt,
   showAppUpdateDownloadPrompt,
   pickInstallFromPicker: async (inst, pickOpts) => {
+    const launchOpts = {
+      isRestart: pickOpts?.isRestart === true,
+      pickerWorkspaceId: pickOpts?.pickerWorkspaceId
+    }
     if (!installationId) {
-      if (pickOpts?.startupRestore) {
-        await handleStartupRestorePick(inst)
-      } else {
-        await chooserHandoff.handleChooserPick(inst, {
-          isRestart: pickOpts?.isRestart === true
-        })
-      }
+      await chooserHandoff.handleChooserPick(inst, launchOpts)
     } else {
-      await chooserHandoff.performPickerLaunch(inst, { isRestart: pickOpts?.isRestart === true })
+      await chooserHandoff.performPickerLaunch(inst, launchOpts)
     }
   },
   runInstallActionFromPicker: async (inst, actionId) => {
@@ -378,11 +385,7 @@ onMounted(async () => {
   unsubCloseRequest = window.api.onCloseRequest(({ requestId }) => {
     window.api.ackCloseRequest({ requestId })
     void (async () => {
-      if (currentOverlay.value !== null) {
-        window.api.respondCloseRequest({ requestId, cleared: await closeOverlay() })
-      } else {
-        window.api.respondCloseRequest({ requestId, defer: true })
-      }
+      window.api.respondCloseRequest({ requestId, ...(await answerCloseRequest()) })
     })()
   })
 
@@ -522,14 +525,21 @@ onUnmounted(() => {
               @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
               @show-apps="handleSidebarNavigate('apps')"
+              @new-build="handleChooserShowNewInstall"
             />
             <AppsView
               v-else-if="dashboardHomePage === 'apps'"
               v-model:start-with="appPickedOnHome"
               :revisit="appsVisits"
               @app-open-change="appIsOpen = $event"
+              @view-in-assets="viewInAssets"
             />
-            <AssetsView v-else-if="dashboardHomePage === 'assets'" />
+            <AssetsView
+              v-else-if="dashboardHomePage === 'assets'"
+              :installation-id="installationId"
+              :focus-name="assetsFocusName"
+              @focus-used="assetsFocusName = null"
+            />
             <BuildDetailsView
               v-else-if="buildDetailsInstall"
               :installation="buildDetailsInstall"
@@ -614,7 +624,11 @@ onUnmounted(() => {
       @close="buildProgressId = null"
       @retry="retryLaunch(buildProgressId)"
     />
-    <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
+    <FeedbackModal
+      :open="feedbackOpen"
+      :hidden-fields="feedbackHiddenFields"
+      @close="closeFeedback"
+    />
     <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
 
     <ModalDialog />

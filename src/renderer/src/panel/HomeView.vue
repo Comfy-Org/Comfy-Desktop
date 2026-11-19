@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowRight, ChevronRight } from '@lucide/vue'
+import { AppWindow, ArrowRight, ChevronRight } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
+import EmptyState from '../components/ui/EmptyState.vue'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
+import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
-import { homeBuildStatus, homeBuildTones, isCloudBuild } from './home/homeBuild'
+import { homeBuildStatus, homeBuildTones, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
 import { useInstallList } from '../composables/useInstallList'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
@@ -17,12 +19,13 @@ import {
   useInstallingBuilds,
   useViewBuildLogs
 } from '../composables/useBuildProgress'
+import { isPromotingToWorkspace } from '../composables/useInstallContextMenu'
 import { useProgressStore } from '../stores/progressStore'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AppCard, CatalogWorkflow, Installation } from '../types/ipc'
+import type { AppCard, AppCover, CatalogWorkflow, Installation } from '../types/ipc'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 
 type LoadState = 'loading' | 'ready' | 'unavailable'
@@ -37,6 +40,7 @@ const emit = defineEmits<{
   'open-build': [installation: Installation]
   'show-builds': []
   'show-apps': []
+  'new-build': []
 }>()
 
 const { t } = useI18n()
@@ -63,6 +67,9 @@ const builds = computed(() =>
     ...workspaceBuilds.value.filter((build) => !isInstalling(build.id))
   ].slice(0, HOME_BUILD_LIMIT)
 )
+const showNewBuildSlot = computed(
+  () => !installationStore.loading && builds.value.every((build) => isCloudBuild(build))
+)
 const buildTones = computed(() => homeBuildTones(builds.value, installationStore.installations))
 const narrowBuildIds = computed(() => {
   const [latest, ...rest] = builds.value
@@ -71,7 +78,12 @@ const narrowBuildIds = computed(() => {
   return new Set([latest.id, ...(second ? [second.id] : [])])
 })
 const openableBuilds = computed(() =>
-  workspaceBuilds.value.filter((build) => buildProgressOf(progressStore, build.id) === null)
+  workspaceBuilds.value.filter(
+    (build) =>
+      buildProgressOf(progressStore, build.id) === null &&
+      !isBuildOpenBlocked(buildStatus(build)) &&
+      !isPromotingToWorkspace(build)
+  )
 )
 const mostRecentBuild = computed(
   () =>
@@ -80,6 +92,13 @@ const mostRecentBuild = computed(
         build.statusTag?.style !== 'danger' &&
         (typeof build.lastLaunchedAt === 'number' || !isCloudBuild(build))
     ) ?? null
+)
+const pickedBuildId = ref<string | null>(null)
+const openTarget = computed(
+  () =>
+    openableBuilds.value.find(
+      (build) => build.id === pickedBuildId.value && build.statusTag?.style !== 'danger'
+    ) ?? mostRecentBuild.value
 )
 function openBuild(build: Installation): void {
   if (build.statusTag?.style === 'danger') emit('open-build', build)
@@ -101,12 +120,14 @@ const carouselIsLoading = computed(() =>
     : appsState.value === 'checking' || appsState.value === 'loading'
 )
 
-function coverOf(app: AppCard): string | null {
-  return app.coverUrl
+function coversOf(app: AppCard): readonly AppCover[] {
+  return app.covers
 }
 
-function thumbnailOf(workflow: CatalogWorkflow): string | null {
+function thumbnailOf(workflow: CatalogWorkflow): readonly AppCover[] {
   return workflow.thumbnailUrl
+    ? [{ url: workflow.thumbnailUrl, stillUrl: workflow.thumbnailUrl }]
+    : []
 }
 
 async function loadWorkflows(): Promise<void> {
@@ -140,17 +161,18 @@ onMounted(() => {
     data-testid="home-view"
   >
     <HomeOpenBuildButton
-      v-if="mostRecentBuild"
+      v-if="openTarget"
       class="absolute top-4 right-4 z-10"
       :builds="openableBuilds"
-      :target="mostRecentBuild"
+      :target="openTarget"
       :status-of="buildStatus"
       @open="emit('pick', $event)"
+      @pick="pickedBuildId = $event.id"
     />
 
     <div class="mx-auto w-full max-w-300 px-10 pb-16">
       <h1
-        class="m-0 pt-[152px] text-center text-[34px]/10 font-semibold tracking-[-0.055em] text-foreground"
+        class="m-0 pt-[152px] text-center text-display font-semibold tracking-[-0.055em] text-foreground"
       >
         {{ t('home.title') }}
       </h1>
@@ -173,7 +195,7 @@ onMounted(() => {
           v-else-if="appsState === 'ready'"
           kind="apps"
           :cards="apps"
-          :picture-of="coverOf"
+          :pictures-of="coversOf"
           @open="emit('open-app', $event)"
         />
         <div
@@ -188,19 +210,19 @@ onMounted(() => {
             {{ t('home.retry') }}
           </Button>
         </div>
-        <div
+        <EmptyState
           v-else-if="appsState === 'empty'"
-          class="flex h-75 flex-col items-center justify-center gap-1 text-center"
+          class="h-75 justify-center"
           data-testid="home-apps-empty"
-        >
-          <p class="m-0 text-[13px]/5 font-medium text-foreground">{{ t('apps.emptyTitle') }}</p>
-          <p class="m-0 text-[13px]/5 text-muted-foreground">{{ t('apps.emptyBody') }}</p>
-        </div>
+          :icon="AppWindow"
+          :title="t('apps.emptyTitle')"
+          :text="t('apps.emptyBody')"
+        />
         <HomeCarousel
           v-else-if="state === 'ready'"
           kind="workflows"
           :cards="workflows"
-          :picture-of="thumbnailOf"
+          :pictures-of="thumbnailOf"
           @open="openWorkflow"
         />
         <div
@@ -232,7 +254,7 @@ onMounted(() => {
       </section>
 
       <section
-        v-if="builds.length > 0"
+        v-if="builds.length > 0 || showNewBuildSlot"
         class="@container/home-builds mt-[50px]"
         aria-labelledby="home-builds"
         data-testid="home-builds"
@@ -258,9 +280,10 @@ onMounted(() => {
         </div>
         <ul
           class="m-0 grid list-none gap-[15px] p-0"
-          :class="
-            builds.length > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2'
-          "
+          :class="[
+            builds.length > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2',
+            '@max-[40rem]/home-builds:grid-cols-1'
+          ]"
         >
           <li
             v-for="(build, index) in builds"
@@ -275,8 +298,10 @@ onMounted(() => {
               :tone="buildTones[index]!"
               :auto-start="autoStart.startsOnOpen(build.id)"
               @open="openBuild(build)"
-              @auto-start="autoStart.setStartsOnOpen(build.id, $event)"
             />
+          </li>
+          <li v-if="showNewBuildSlot" class="min-w-0">
+            <HomeNewBuildTile @open="emit('new-build')" />
           </li>
         </ul>
       </section>

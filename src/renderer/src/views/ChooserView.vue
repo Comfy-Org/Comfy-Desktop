@@ -10,15 +10,14 @@ import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useInstallingBuilds } from '../composables/useBuildProgress'
-import { useQuickUpdate } from '../composables/useQuickUpdate'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { Plus, RefreshCw, Search } from '@lucide/vue'
-import ContextMenu from '../components/ContextMenu.vue'
+import { Plus, RefreshCw, Search, Server } from '@lucide/vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import SplitButton from '../components/ui/SplitButton.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
@@ -27,7 +26,7 @@ import { openInstallManager } from '../lib/openInstallManager'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { FilterKey } from '../composables/useInstallList'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
-import { PERSONAL_WORKSPACE_ID, isInstallationInWorkspace } from '../../../shared/workspaces'
+import { isInstallationInWorkspace } from '../../../shared/workspaces'
 
 const props = withDefaults(
   defineProps<{
@@ -76,14 +75,9 @@ const { searchQuery, activeFilter, effectiveInstalls, visibleInstalls } = useIns
 
 defineExpose({ activeFilter })
 
-const selectedManagedWorkspaceId = computed(() => {
-  if (!authStore.isSignedIn) return null
-  if (dashboardScope.selectedWorkspaceId !== PERSONAL_WORKSPACE_ID) {
-    return dashboardScope.selectedWorkspaceId
-  }
-  if (authStore.status.workspaceType === 'personal') return authStore.status.workspaceId ?? null
-  return authStore.personalWorkspace?.id ?? null
-})
+const selectedManagedWorkspaceId = computed(() =>
+  authStore.sessionWorkspaceFor(dashboardScope.selectedWorkspaceId)
+)
 
 let buildPrefetchGeneration = 0
 watch(
@@ -152,8 +146,13 @@ watch(whereOptions, (options) => {
 const hasFilters = computed(
   () => searchQuery.value.trim().length > 0 || activeFilter.value !== 'all'
 )
-const showNoMatches = computed(() => scopedVisibleInstalls.value.length === 0 && hasFilters.value)
-const showNoBuilds = computed(() => scopedVisibleInstalls.value.length === 0 && !hasFilters.value)
+const hasNoBuilds = computed(() => scopedInstalls.value.length === 0)
+const showNoMatches = computed(
+  () => !hasNoBuilds.value && scopedVisibleInstalls.value.length === 0 && hasFilters.value
+)
+const showNoBuilds = computed(
+  () => hasNoBuilds.value || (scopedVisibleInstalls.value.length === 0 && !hasFilters.value)
+)
 
 function clearFilters(): void {
   searchQuery.value = ''
@@ -171,39 +170,10 @@ async function refreshWorkspace(): Promise<void> {
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
 
-function canPromoteToWorkspace(inst: Installation): boolean {
-  return (
-    authStore.isSignedIn &&
-    Boolean(authStore.status.workspaceId) &&
-    inst.status === 'installed' &&
-    inst.sourceCategory === 'local' &&
-    Boolean(inst.installPath)
-  )
-}
-
-const { runQuickUpdate } = useQuickUpdate({
-  onShowProgress: (showOpts) => emit('show-progress', showOpts),
-  onUnavailable: (inst) => openInstallManager(inst, { initialTab: 'update' })
-})
-
-const {
-  ctxMenu,
-  ctxMenuItems,
-  openCardMenu,
-  openKebabMenu,
-  handleCtxMenuSelect,
-  closeMenu,
-  triggerAction,
-  viewError,
-  viewDanger,
-  isStoppedActionGated,
-  isPromotingToWorkspace
-} = useInstallContextMenu({
+const { viewError, viewDanger } = useInstallContextMenu({
   onManage: (inst, options) =>
     options ? openInstallManager(inst, options) : emit('open-details', inst),
-  onShowProgress: (showOpts) => emit('show-progress', showOpts),
-  onUpdate: runQuickUpdate,
-  canPromoteToWorkspace
+  onShowProgress: (showOpts) => emit('show-progress', showOpts)
 })
 
 async function pickInstall(inst: Installation): Promise<void> {
@@ -265,10 +235,6 @@ function handleNewInstallClick(): void {
 const gridHandlers = {
   pick: pickInstall,
   'open-details': (inst: Installation) => emit('open-details', inst),
-  'open-card-menu': openCardMenu,
-  'open-kebab-menu': openKebabMenu,
-  'trigger-action': (action: 'update' | 'migrate', inst: Installation) =>
-    triggerAction(action, inst),
   'view-error': viewError,
   'view-danger': viewDanger,
   'why-cloud': openWhyCloud
@@ -283,7 +249,7 @@ const gridHandlers = {
   >
     <div class="mx-auto w-full max-w-300 px-10 pb-24">
       <header class="chooser-header flex items-end justify-between gap-6 pt-9 pb-6">
-        <h1 class="m-0 text-[22px]/[1.4] font-semibold tracking-[-0.01em] text-foreground">
+        <h1 class="m-0 text-display font-semibold tracking-[-0.055em] text-foreground">
           {{ t('chooser.buildsTitle') }}
         </h1>
         <SplitButton
@@ -321,6 +287,7 @@ const gridHandlers = {
 
       <div class="chooser-toolbar mb-5 flex min-h-8 flex-wrap items-center gap-2">
         <SegmentedControl
+          v-if="!hasNoBuilds"
           v-model="activeFilter"
           :options="whereOptions"
           :label="t('chooser.whereLabel')"
@@ -346,7 +313,7 @@ const gridHandlers = {
               }"
             />
           </Button>
-          <div class="w-38">
+          <div v-if="!hasNoBuilds" class="w-38">
             <BaseSelect
               v-model="sortOrder"
               :options="sortOptions"
@@ -354,7 +321,7 @@ const gridHandlers = {
               compact
             />
           </div>
-          <div class="chooser-search w-[220px]">
+          <div v-if="!hasNoBuilds" class="chooser-search w-[220px]">
             <BaseInput
               v-model="searchQuery"
               class="h-8 [&_input]:text-[13px]"
@@ -389,18 +356,13 @@ const gridHandlers = {
         {{ t('common.loading') }}
       </div>
 
-      <section
+      <EmptyState
         v-else-if="showNoMatches"
-        class="chooser-empty flex flex-col items-center gap-3 px-6 py-16 text-center"
+        class="chooser-empty px-6 py-16"
+        :icon="Server"
+        :title="t('chooser.nothingMatches')"
+        :text="t('chooser.nothingMatchesHint')"
       >
-        <div class="flex flex-col gap-1.5">
-          <h2 class="m-0 text-[16px]/6 font-semibold text-foreground">
-            {{ t('chooser.nothingMatches') }}
-          </h2>
-          <p class="m-0 text-[13px]/5 text-muted-foreground">
-            {{ t('chooser.nothingMatchesHint') }}
-          </p>
-        </div>
         <Button
           type="button"
           variant="secondary"
@@ -410,51 +372,24 @@ const gridHandlers = {
         >
           {{ t('chooser.clearFilters') }}
         </Button>
-      </section>
+      </EmptyState>
 
-      <section
+      <EmptyState
         v-else-if="showNoBuilds"
-        class="chooser-no-builds flex flex-col items-center gap-3 px-6 py-16 text-center"
-      >
-        <div class="flex max-w-[420px] flex-col gap-1.5">
-          <h2 class="m-0 text-[16px]/6 font-semibold text-foreground">
-            {{ t('chooser.noBuildsTitle') }}
-          </h2>
-          <p class="m-0 text-[13px]/5 text-muted-foreground">
-            {{ t('chooser.noBuildsBody') }}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="inverted"
-          size="md"
-          class="gap-1.5 px-3 text-[13px]/5"
-          @click="handleNewInstallClick"
-        >
-          <Plus :size="15" aria-hidden="true" />
-          {{ t('chooser.newBuild') }}
-        </Button>
-      </section>
+        class="chooser-no-builds px-6 py-16"
+        :icon="Server"
+        :title="t('chooser.noBuildsTitle')"
+        :text="t('chooser.noBuildsBody')"
+      />
 
       <ChooserFamilyGrid
         v-else
         :installations="scopedVisibleInstalls"
         :show-free-runs-pill="showCloudFreeRunsPill"
         :show-why-cloud="showWhyCloud"
-        :is-stopped-action-gated="isStoppedActionGated"
-        :is-promoting-to-workspace="isPromotingToWorkspace"
         v-on="gridHandlers"
       />
     </div>
-
-    <ContextMenu
-      :open="ctxMenu.open"
-      :x="ctxMenu.x"
-      :y="ctxMenu.y"
-      :items="ctxMenuItems"
-      @close="closeMenu"
-      @select="handleCtxMenuSelect"
-    />
 
     <WhyTryCloudModal
       v-if="whyCloudOpen"

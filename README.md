@@ -127,6 +127,22 @@ At runtime the main process picks a git backend in priority order ([`src/main/li
 
 </details>
 
+### Preview a screen without Electron
+
+```bash
+pnpm run preview                 # opens http://127.0.0.1:5199/preview.html, a list of screens
+pnpm run preview:shots           # writes one PNG per screen to preview-shots/
+pnpm run preview:shots --scenario first-use --platform win32 --size 800x563
+```
+
+The preview mounts the real `PanelApp` in a browser against a fake of the preload bridge, so a screen can be opened by URL (`?scenario=home&platform=win32`) and edits hot-reload. `--platform` takes `darwin`, `win32` or `linux` and can be repeated, as can `--scenario`.
+
+- [`src/renderer/src/preview/fakeBridge.ts`](src/renderer/src/preview/fakeBridge.ts) is the fake. It is typed as `ElectronApi`, so a bridge method added in `src/types/ipc.ts` fails the type-check until the fake answers it.
+- [`src/renderer/src/preview/scenarios.ts`](src/renderer/src/preview/scenarios.ts) lists the screens. A scenario seeds the bridge (builds, settings, replies), optionally clicks its way to a state, and names the element that shows the screen is drawn.
+- [`src/renderer/src/preview/fixtures.ts`](src/renderer/src/preview/fixtures.ts) holds the builds, machines and install steps the scenarios share.
+
+`pnpm test` loads every scenario on all three platforms and fails on a screen that does not draw or logs an error.
+
 ### Run tests
 
 ```bash

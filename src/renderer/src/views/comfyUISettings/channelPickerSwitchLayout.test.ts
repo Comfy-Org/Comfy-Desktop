@@ -243,7 +243,12 @@ async function pick(dropdownName: string, optionLabel: string): Promise<void> {
   await flushPromises()
 }
 
-beforeAll(() => browserPage.viewport(1280, 900))
+beforeAll(async () => {
+  const noListboxAnimation = document.createElement('style')
+  noListboxAnimation.textContent = '.ui-select-listbox { animation: none !important; }'
+  document.head.append(noListboxAnimation)
+  await browserPage.viewport(1280, 900)
+})
 
 afterEach(() => {
   pane?.remove()

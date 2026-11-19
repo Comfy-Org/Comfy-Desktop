@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, LoaderCircle, OctagonAlert } from '@lucide/vue'
-import Button from '@comfyorg/design-system/button/Button'
+import { LoaderCircle, OctagonAlert } from '@lucide/vue'
 import ComfyUISettingsContent from '../components/settings/ComfyUISettingsContent.vue'
 import StatusChip from '../components/ui/StatusChip.vue'
 import BuildUninstallFailed from './BuildUninstallFailed.vue'
@@ -71,10 +70,6 @@ const status = computed(() => {
 
 const storage = ref<StorageSnapshot | undefined>()
 
-function openInNewWindow(): void {
-  window.api.openInstallInNewWindow(installation.id)
-}
-
 async function loadStorage(): Promise<void> {
   storage.value = await window.api.getBuildStorageSnapshot()
 }
@@ -90,23 +85,12 @@ onUnmounted(() => unsubscribeSettings?.())
 <template>
   <div class="build-details flex min-h-0 w-full flex-auto flex-col" data-testid="build-details">
     <div class="mx-auto flex min-h-0 w-full max-w-300 flex-auto flex-col px-10">
-      <Button
-        type="button"
-        variant="muted-textonly"
-        size="unset"
-        class="build-details-back mt-6 mb-3.5 -ml-2 h-[26px] w-fit gap-1.5 rounded-lg px-2 text-[13px] hover:bg-secondary hover:text-foreground"
-        @click="emit('back')"
-      >
-        <ArrowLeft :size="14" aria-hidden="true" />
-        {{ t('chooser.buildsTitle') }}
-      </Button>
-
-      <header class="flex shrink-0 flex-wrap items-center gap-x-[18px] gap-y-3 pb-6">
+      <header class="flex shrink-0 flex-wrap items-center gap-x-[18px] gap-y-3 pt-9 pb-6">
         <div class="min-w-0 flex-1 basis-60">
           <div class="flex min-w-0 items-center gap-2">
             <h1
               :id="TITLE_ID"
-              class="m-0 flex min-w-0 font-display text-display font-semibold text-foreground"
+              class="m-0 flex min-w-0 text-display font-semibold tracking-[-0.055em] text-foreground"
             >
               <span v-if="uninstallReplacesSettings" class="truncate">{{ installation.name }}</span>
             </h1>
@@ -159,7 +143,6 @@ onUnmounted(() => unsubscribeSettings?.())
         @request-close="emit('back')"
         @request-dismiss="emit('back')"
         @primary-action="emit('launch', installation)"
-        @open-new-window="openInNewWindow"
       />
     </div>
   </div>

@@ -31,14 +31,17 @@ import { defaultInstallDir, sanitizeDirName, allocateUniqueDir } from '../paths'
 import { download } from '../download'
 import { createCache } from '../cache'
 import { holdAgentPrefetch } from '../agentRequirementsLaunch'
+import { AGENT_CLIENT_ENV_VARS, type AgentClientContext } from '../agentClientContext'
 import { extractNested as extract } from '../extract'
 import { deleteDir, formatDeleteStatus } from '../delete'
 import { deleteAction, untrackAction } from '../actions'
 import { _broadcastToRenderer } from './broadcast'
+import { recordCrash } from '../crashBuffer'
 import { appendLog } from '../logsBroadcast'
 import { flushOperationOutput } from '../appLog'
 import { stripAnsi } from '../stderrTail'
 import type { AcceleratorSnapshot } from '../hardwareTap'
+import type { ComfyFolders } from '../outputFolders'
 import {
   spawnProcess,
   waitForPort,
@@ -276,7 +279,8 @@ export const RESERVED_ENV_VARS = new Set([
   'PYTHONFAULTHANDLER',
   '__COMFY_CLI_SESSION__',
   'CM_USE_PYGIT2',
-  '__COMFYUI_DESKTOP_VERSION__'
+  '__COMFYUI_DESKTOP_VERSION__',
+  ...AGENT_CLIENT_ENV_VARS
 ])
 
 const DESKTOP_MANAGED_SOURCES = new Set(['standalone', 'comfybuilder'])
@@ -290,9 +294,11 @@ export interface SessionInfo {
   installationName: string
   sourceInstallationId?: string
   startedAt: number
+  hadWindow?: boolean
   flushTelemetry?: () => void
   getAcceleratorInfo?: () => AcceleratorSnapshot | null
   coreBetaArgs?: readonly BetaArgView[]
+  launchFolders?: ComfyFolders
 }
 
 export interface LaunchCallbackInfo {
@@ -370,10 +376,16 @@ interface ActiveLaunch {
   abort: AbortController
   settled: Promise<void>
   _resolveSettled: () => void
+  pickerWorkspaceId?: string
+  hadWindow?: boolean
+  local: boolean
 }
 const _activeLaunches = new Map<string, ActiveLaunch>()
 
-export function _beginLaunch(installationId: string): { abort: AbortController } {
+export function _beginLaunch(
+  installationId: string,
+  { local = true }: { local?: boolean } = {}
+): ActiveLaunch {
   let resolveSettled!: () => void
   const settled = new Promise<void>((resolve) => {
     resolveSettled = resolve
@@ -381,10 +393,16 @@ export function _beginLaunch(installationId: string): { abort: AbortController }
   const launch: ActiveLaunch = {
     abort: new AbortController(),
     settled,
-    _resolveSettled: resolveSettled
+    _resolveSettled: resolveSettled,
+    local
   }
   _activeLaunches.set(installationId, launch)
   return launch
+}
+
+export function _setActiveLaunchPickerWorkspace(installationId: string, workspaceId: string): void {
+  const launch = _activeLaunches.get(installationId)
+  if (launch) launch.pickerWorkspaceId = workspaceId
 }
 
 export function _endLaunch(installationId: string, launch: { abort: AbortController }): void {
@@ -401,6 +419,10 @@ export function _hasActiveLaunch(installationId: string): boolean {
 
 export function _getActiveLaunchIds(): string[] {
   return Array.from(_activeLaunches.keys())
+}
+
+export function _hasActiveLocalLaunch(): boolean {
+  return [..._activeLaunches.values()].some((launch) => launch.local)
 }
 
 export const sessionLifecycleEvents = new EventEmitter()
@@ -865,7 +887,8 @@ export function sanitizeEnvVars(raw: unknown): Record<string, string> {
 
 export function buildLaunchEnv(
   inst: InstallationRecord,
-  sessionPath?: string
+  sessionPath?: string,
+  clientContext?: AgentClientContext
 ): Record<string, string | undefined> {
   const userEnvVars = sanitizeEnvVars(inst.envVars)
   const desktopManaged = DESKTOP_MANAGED_SOURCES.has(inst.sourceId)
@@ -881,6 +904,14 @@ export function buildLaunchEnv(
       : {})
   }
   if (!desktopManaged) delete env.__COMFYUI_DESKTOP_VERSION__
+  for (const key of Object.keys(env)) {
+    if ((AGENT_CLIENT_ENV_VARS as readonly string[]).includes(key.toUpperCase())) delete env[key]
+  }
+  if (clientContext) {
+    env.AGENT_CLIENT_CONTEXT = 'desktop'
+    env.AGENT_CLIENT_CHANNEL = clientContext.channel
+    if (clientContext.gpuTier) env.AGENT_CLIENT_GPU_TIER = clientContext.gpuTier
+  }
   return env
 }
 
@@ -934,7 +965,8 @@ export function _addSession(
     installationName,
     flushTelemetry,
     getAcceleratorInfo,
-    coreBetaArgs
+    coreBetaArgs,
+    launchFolders
   }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
   retries?: { portRetries: number; rebootRetries: number },
@@ -950,6 +982,7 @@ export function _addSession(
     flushTelemetry,
     getAcceleratorInfo,
     coreBetaArgs,
+    launchFolders,
     startedAt: Date.now()
   })
   _launchingInstances.delete(installationId)
@@ -1354,6 +1387,7 @@ export async function stopRunning(
   if (installationId) {
     const session = _runningSessions.get(installationId)
     if (!session) return
+    _activeLaunches.get(installationId)?.abort.abort()
     _stoppingInstallationIds.add(installationId)
     _broadcastToRenderer('instance-stopping', { installationId })
     onEnterStopping?.({ installationId })
@@ -1370,6 +1404,7 @@ export async function stopRunning(
   } else {
     const sessions = [..._runningSessions.entries()]
     for (const [id] of sessions) {
+      _activeLaunches.get(id)?.abort.abort()
       _stoppingInstallationIds.add(id)
       _broadcastToRenderer('instance-stopping', { installationId: id })
       onEnterStopping?.({ installationId: id })
@@ -1418,6 +1453,37 @@ export async function cancelLaunching(
   return true
 }
 
+export function keepsComfyRunningWhenWindowCloses(): boolean {
+  return settings.get('keepComfyRunningWhenWindowCloses') !== false
+}
+
+export function noteWindowClosed(installationId: string): void {
+  const session = _runningSessions.get(installationId)
+  if (session) session.hadWindow = true
+  noteStartWindowClosed(installationId)
+}
+
+export function noteStartWindowClosed(installationId: string): void {
+  const launch = _activeLaunches.get(installationId)
+  if (launch) launch.hadWindow = true
+}
+
+export function launchHadWindow(installationId: string): boolean {
+  return _activeLaunches.get(installationId)?.hadWindow === true
+}
+
+export function recordLeftStartFailure(
+  installationId: string,
+  launch: { abort: AbortController },
+  failure: { installationName: string; message: string }
+): void {
+  const current = _activeLaunches.get(installationId)
+  if (current?.abort !== launch.abort || !current.hadWindow) return
+  const startFailure = { installationId, ...failure, crashedAtMs: Date.now(), startFailed: true }
+  recordCrash(startFailure)
+  _broadcastToRenderer('instance-crashed', startFailure)
+}
+
 export function hasRunningSessions(): boolean {
   return _runningSessions.size > 0
 }
@@ -1457,7 +1523,8 @@ export function _test_addRunningSession(
   installationId: string,
   installationName: string,
   flushTelemetry?: () => void,
-  coreBetaArgs?: readonly BetaArgView[]
+  coreBetaArgs?: readonly BetaArgView[],
+  launchFolders?: ComfyFolders
 ): void {
   _runningSessions.set(installationId, {
     proc: null,
@@ -1467,6 +1534,7 @@ export function _test_addRunningSession(
     installationName,
     flushTelemetry,
     coreBetaArgs,
+    launchFolders,
     startedAt: Date.now()
   })
   _broadcastToRenderer('instance-started', {

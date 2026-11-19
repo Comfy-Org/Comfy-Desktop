@@ -79,6 +79,7 @@ const launchHarness = vi.hoisted(() => ({
   busyPids: [31337] as number[],
   portLockPid: null as null | number,
   killExits: true,
+  killGate: null as null | ((proc: unknown) => Promise<void>),
   campaigns: { registry: [] as unknown[], answers: new Map<string, unknown>() },
   campaignRecords: {} as Record<string, Record<string, { epoch: number; enrolledAt: number }>>,
   recordWrites: [] as Array<[string, string, number]>,
@@ -213,7 +214,10 @@ vi.mock('../shared', async (importOriginal) => {
       launchHarness.busyPorts
         ? Promise.resolve({ name: 'python', commandLine: 'python -s ComfyUI/main.py' })
         : actual.getProcessInfo(...args),
-    killProcessTree: async () => ({ exited: launchHarness.killExits, waitMs: 0 })
+    killProcessTree: async (proc: unknown) => {
+      if (launchHarness.killGate) await launchHarness.killGate(proc)
+      return { exited: launchHarness.killExits, waitMs: 0 }
+    }
   }
 })
 
@@ -366,6 +370,8 @@ import {
   peekBetaActivationNotice
 } from '../../betaActivationNotice'
 import * as settingsModule from '../../../settings'
+import { setHardwareProbe } from '../../agentClientContext'
+import { getAppVersion } from '../shared'
 import { instanceModelPathsYaml } from '../../models'
 import { lookupEnMessage } from '../../localeTestHelper'
 import { previewCoreBetaArgs } from '../../coreBetaPreview'
@@ -382,6 +388,7 @@ import { appliedPassThrough, parseCampaignAnswer } from '../../coreBetaCampaigns
 import type { CoreBetaGrant, CoreCommitState } from '../../coreBetaGrants'
 import * as telemetry from '../../telemetry'
 import * as i18nModule from '../../i18n'
+import { getCloudSession } from '../../../devplatform/session'
 import {
   COMFY_BOOT_QUIET_MS,
   COMFY_BOOT_TIMEOUT_MS,
@@ -394,9 +401,15 @@ import {
   _reservePort,
   _beginLaunch,
   _endLaunch,
+  _hasActiveLocalLaunch,
+  _setActiveLaunchPickerWorkspace,
   _stoppingInstallationIds,
-  setCallbacks
+  cancelAll,
+  noteWindowClosed,
+  setCallbacks,
+  stopRunning
 } from '../shared'
+import { clearCrash, getCrash } from '../../crashBuffer'
 import type { InstanceStartedCallbackInfo, SessionInfo } from '../shared'
 import type { ChildProcess, InstallationRecord } from '../shared'
 import type * as SharedModule from '../shared'
@@ -682,6 +695,50 @@ describe('handleLaunch model-download startup await (#1322)', () => {
     modelStartup.impl = async () => ({ safe: false, unsafePaths: [] })
     await handleLaunch(ctxFor('gate-slot-release'))
     expect(_operationAborts.has('gate-slot-release')).toBe(false)
+  })
+})
+
+describe('handleLaunch of a start whose window was left', () => {
+  const ctxFor = (installationId: string): ActionContext => ({
+    event: {
+      sender: { send: vi.fn(), isDestroyed: () => true }
+    } as unknown as Electron.IpcMainInvokeEvent,
+    installationId,
+    inst: { ...installOf('not-a-real-source'), name: 'Studio' },
+    actionData: {}
+  })
+
+  afterEach(() => {
+    modelStartup.impl = null
+  })
+
+  it('records its failure where a Home opened later reads it', async () => {
+    const id = 'left-start-fails'
+    onTestFinished(() => clearCrash(id))
+    modelStartup.impl = async () => {
+      noteWindowClosed(id)
+      return { safe: true, unsafePaths: [] }
+    }
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(false)
+    expect(getCrash(id)).toMatchObject({
+      installationId: id,
+      installationName: 'Studio',
+      message: res.message,
+      startFailed: true
+    })
+  })
+
+  it('records nothing when the window that started it is still there', async () => {
+    const id = 'kept-start-fails'
+    modelStartup.impl = async () => ({ safe: true, unsafePaths: [] })
+
+    const res = await handleLaunch(ctxFor(id))
+
+    expect(res.ok).toBe(false)
+    expect(getCrash(id)).toBeNull()
   })
 })
 
@@ -1430,6 +1487,66 @@ describe('core beta report placement', () => {
 
   const reportedEvents = (): string[] => events.map((e) => e.event)
 
+  describe.each([
+    ['skip-port', true],
+    ['port-wait', false]
+  ])('agent client context (%s path)', (pathName, skipPortWait) => {
+    let spawnEnv: Record<string, string | undefined> | undefined
+    let port = 48240 + (skipPortWait ? 0 : 10)
+    beforeEach(() => {
+      spawnEnv = undefined
+      launchHarness.spawn = (_cmd: unknown, _args: unknown, _cwd: unknown, env: unknown) => {
+        spawnEnv = env as Record<string, string | undefined>
+        return fakeChild()
+      }
+      launchHarness.launchCommand = { ...launchHarness.launchCommand, skipPortWait, port: ++port }
+      launchHarness.waitForPort = async () => {}
+      launchHarness.busyPorts = []
+    })
+    afterEach(() => {
+      settingsModule.set('telemetryEnabled', undefined)
+      setHardwareProbe(null)
+      launchHarness.busyPorts = null
+    })
+
+    it('hands the agent its channel and the probed GPU tier with telemetry consent', async () => {
+      settingsModule.set('telemetryEnabled', true)
+      setHardwareProbe(async () => ({ gpu_tier: 'mid' }))
+      expect((await handleLaunch(ctxFor(`harness-client-context-on-${pathName}`))).ok).toBe(true)
+      expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
+      expect(spawnEnv!.AGENT_CLIENT_CONTEXT).toBe('desktop')
+      expect(spawnEnv!.AGENT_CLIENT_CHANNEL).toBe(telemetry.deriveAppChannel(getAppVersion()))
+      expect(spawnEnv!.AGENT_CLIENT_GPU_TIER).toBe('mid')
+    })
+
+    it('still launches, without the context, when reading consent throws', async () => {
+      const readSetting = settingsModule.get
+      vi.spyOn(settingsModule, 'get').mockImplementation((key) => {
+        if (key === 'telemetryEnabled') throw new Error('EPERM: settings.json write failed')
+        return readSetting(key)
+      })
+      const res = await handleLaunch(ctxFor(`harness-client-context-throws-${pathName}`))
+      expect(res.ok, 'a failed consent read must not fail the launch').toBe(true)
+      expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
+      expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CONTEXT')
+    })
+
+    it.each([false, undefined])('sends none with telemetry consent %s', async (consent) => {
+      settingsModule.set('telemetryEnabled', consent)
+      setHardwareProbe(async () => ({ gpu_tier: 'mid' }))
+      const res = await handleLaunch(ctxFor(`harness-client-context-${consent}-${pathName}`))
+      expect(res.ok).toBe(true)
+      expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
+      for (const name of [
+        'AGENT_CLIENT_CONTEXT',
+        'AGENT_CLIENT_CHANNEL',
+        'AGENT_CLIENT_GPU_TIER'
+      ]) {
+        expect(spawnEnv).not.toHaveProperty(name)
+      }
+    })
+  })
+
   function fakeChild(): FakeChild {
     const proc = new EventEmitter() as FakeChild
     proc.stdout = new EventEmitter()
@@ -1822,6 +1939,84 @@ describe('core beta report placement', () => {
       expect(reads).toBe(0)
     })
 
+    it('does not count a Cloud connection that is still connecting as a local start', async () => {
+      const installationId = 'harness-cloud-not-local'
+      const ctx = ctxFor(installationId)
+      vi.spyOn(getCloudSession(), 'status').mockReturnValue({ signedIn: true })
+      let localWhileConnecting: boolean | undefined
+      launchHarness.waitForUrl = async () => {
+        localWhileConnecting = _hasActiveLocalLaunch()
+      }
+
+      const result = await handleLaunch({
+        ...ctx,
+        inst: {
+          ...ctx.inst,
+          id: installationId,
+          sourceId: 'cloud',
+          remoteUrl: 'https://cloud.comfy.org/'
+        },
+        actionData: { pickerWorkspaceId: 'team-a' }
+      })
+
+      expect(result.ok).toBe(true)
+      expect(localWhileConnecting).toBe(false)
+    })
+
+    it('opens Cloud in the latest picker workspace requested while it connects', async () => {
+      const installationId = 'harness-cloud-picker'
+      const ctx = ctxFor(installationId)
+      const session = getCloudSession()
+      vi.spyOn(session, 'status').mockReturnValue({ signedIn: true })
+      launchHarness.waitForUrl = async () => {
+        _setActiveLaunchPickerWorkspace(installationId, 'team-b')
+      }
+
+      const result = await handleLaunch({
+        ...ctx,
+        inst: {
+          ...ctx.inst,
+          id: installationId,
+          sourceId: 'cloud',
+          remoteUrl: 'https://cloud.comfy.org/'
+        },
+        actionData: { pickerWorkspaceId: 'team-a' }
+      })
+
+      expect(result.ok).toBe(true)
+      expect(new URL(result.url!).searchParams.get('workspace')).toBe('team-b')
+    })
+
+    it('opens the newer picker workspace even when the superseded Personal lookup fails', async () => {
+      const installationId = 'harness-cloud-picker-after-personal'
+      const ctx = ctxFor(installationId)
+      const session = getCloudSession()
+      vi.spyOn(session, 'status').mockReturnValue({
+        signedIn: true,
+        workspaceId: 'team-a',
+        workspaceType: 'team'
+      })
+      vi.spyOn(session, 'listWorkspaces').mockImplementationOnce(async () => {
+        _setActiveLaunchPickerWorkspace(installationId, 'team-b')
+        throw new Error('Workspace list unavailable')
+      })
+      launchHarness.waitForUrl = async () => {}
+
+      const result = await handleLaunch({
+        ...ctx,
+        inst: {
+          ...ctx.inst,
+          id: installationId,
+          sourceId: 'cloud',
+          remoteUrl: 'https://cloud.comfy.org/'
+        },
+        actionData: { pickerWorkspaceId: 'personal' }
+      })
+
+      expect(result.ok).toBe(true)
+      expect(new URL(result.url!).searchParams.get('workspace')).toBe('team-b')
+    })
+
     it('still launches a command that takes none of the folder arguments', async () => {
       launchHarness.launchCommand = { ...launchHarness.launchCommand, skipSharedPaths: true }
       let reads = 0
@@ -2058,6 +2253,20 @@ describe('core beta report placement', () => {
       expect(launchHarness.commitShas).toEqual([[ASSETS_MIN_CORE_COMMIT], []])
       expect(spawnArgs).toContain('--enable-assets')
       expect(peekBetaActivationNotice('harness-assets-floor')).toBeNull()
+    })
+
+    it('says why a launch whose schema discovery failed starts without the assets flag', async () => {
+      launchHarness.schemaThrows = true
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const res = await handleLaunch(ctxFor('harness-assets-schema-failure'))
+
+      expect(res.ok).toBe(true)
+      expect(spawnArgs).not.toContain('--enable-assets')
+      expect(warn).toHaveBeenCalledWith(
+        '[launch] flag planning failed; launching without Desktop-planned flags or the unsupported-arg filter:',
+        expect.objectContaining({ message: 'schema discovery unavailable' })
+      )
     })
 
     it('does not ask a core without the floor commit', async () => {
@@ -5523,6 +5732,81 @@ describe('prior ComfyUI process handling at launch', () => {
       expect(res.ok).toBe(false)
       expect(children).toHaveLength(1)
     })
+  })
+
+  describe('stopped while it restarts for model folders a custom node added', () => {
+    let modelsDir = ''
+
+    beforeEach(() => {
+      modelsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'model-folder-restart-'))
+      fs.mkdirSync(path.join(installDir, 'ComfyUI', 'models'), { recursive: true })
+      launchHarness.waitForPort = async () => {
+        fs.mkdirSync(path.join(installDir, 'ComfyUI', 'models', 'node_added_models'), {
+          recursive: true
+        })
+      }
+      launchHarness.spawn = () => {
+        const child = fakeChild()
+        child.pid = 0
+        children.push(child)
+        return child
+      }
+    })
+
+    afterEach(() => {
+      launchHarness.killGate = null
+      fs.rmSync(modelsDir, { recursive: true, force: true })
+    })
+
+    it.each([
+      {
+        by: "Home's Cancel",
+        id: 'model-restart-home-cancel',
+        stop: (id: string): Promise<void> => {
+          _operationAborts.get(id)?.abort()
+          return stopRunning(id)
+        }
+      },
+      {
+        by: 'quitting Desktop',
+        id: 'model-restart-quit',
+        stop: async (): Promise<void> => cancelAll()
+      }
+    ])(
+      'leaves no ComfyUI running untracked when $by arrives while the first process stops',
+      async ({ id, stop }) => {
+        const killed: unknown[] = []
+        let releaseFirstKill = (): void => {}
+        let firstKillHeld = (): void => {}
+        const firstKillStarted = new Promise<void>((resolve) => (firstKillHeld = resolve))
+        let firstKillGated = false
+        launchHarness.killGate = (proc) => {
+          killed.push(proc)
+          if (proc !== children[0] || firstKillGated) return Promise.resolve()
+          firstKillGated = true
+          firstKillHeld()
+          return new Promise<void>((resolve) => (releaseFirstKill = resolve))
+        }
+        const inst = {
+          ...install(),
+          useSharedModels: false,
+          modelDirs: [modelsDir]
+        } as unknown as InstallationRecord
+
+        const launching = handleLaunch({ ...ctxFor(id), inst })
+        await firstKillStarted
+        await stop(id)
+        releaseFirstKill()
+        const res = await launching
+
+        expect(
+          children.filter((child) => !killed.includes(child)),
+          'ComfyUI processes still running with nothing tracking them'
+        ).toHaveLength(0)
+        expect(_runningSessions.has(id)).toBe(false)
+        expect(res).toMatchObject({ ok: false, cancelled: true })
+      }
+    )
   })
 })
 

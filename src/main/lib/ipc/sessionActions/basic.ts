@@ -1,8 +1,27 @@
-import { fs, installations, i18n, openPath } from '../shared'
+import {
+  _runningSessions,
+  fs,
+  installations,
+  i18n,
+  keepsComfyRunningWhenWindowCloses,
+  openPath,
+  stopRunning
+} from '../shared'
 import type { ActionContext, ActionResult } from './types'
+
+function sessionIdsOfBuild(installationId: string): string[] {
+  return [..._runningSessions]
+    .filter(
+      ([sessionId, session]) => (session.sourceInstallationId ?? sessionId) === installationId
+    )
+    .map(([sessionId]) => sessionId)
+}
 
 export async function handleRemove({ installationId }: ActionContext): Promise<ActionResult> {
   await installations.remove(installationId)
+  if (keepsComfyRunningWhenWindowCloses()) {
+    for (const sessionId of sessionIdsOfBuild(installationId)) void stopRunning(sessionId)
+  }
   return { ok: true, navigate: 'list' }
 }
 

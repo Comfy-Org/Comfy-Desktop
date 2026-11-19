@@ -30,7 +30,7 @@ async function settleClose(): Promise<void> {
 }
 
 test("closing What's New stays on the Performance Tests page @windows @macos @linux", async () => {
-  await pickFromTitleMenu(ctx.app, ctx.titleBar, 'Performance Tests')
+  await pickFromTitleMenu(ctx.app, ctx.titleBar, 'Performance tests')
   await ctx.panel.waitForVisible(PERFORMANCE_TEST)
 
   await openWhatsNew()

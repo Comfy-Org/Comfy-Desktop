@@ -30,7 +30,9 @@ export interface KnownSettings {
   autoUpdate?: boolean
   autoInstallUpdates?: boolean
   autoLaunchOnStartup?: string
+  autoStartAwaitingFirstStart?: string
   confirmBeforeClosingWindow?: boolean
+  keepComfyRunningWhenWindowCloses?: boolean
   warnBeforeRunningMultipleInstances?: boolean
   hardwareAcceleration?: boolean
   pypiMirror?: string
@@ -142,10 +144,12 @@ const SETTINGS_SCHEMA = {
     }
   },
   autoLaunchOnStartup: { nullable: false, telemetry: { policy: 'presence' } },
+  autoStartAwaitingFirstStart: { nullable: false, telemetry: { policy: 'omit' } },
   confirmBeforeClosingWindow: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw === true }
   },
+  keepComfyRunningWhenWindowCloses: { nullable: false, telemetry: { policy: 'omit' } },
   warnBeforeRunningMultipleInstances: {
     nullable: false,
     telemetry: { policy: 'value', toTelemetry: (raw) => raw !== false }

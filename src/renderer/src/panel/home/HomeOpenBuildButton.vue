@@ -7,7 +7,7 @@ import BaseMenuRadioItem from '../../components/ui/BaseMenuRadioItem.vue'
 import SplitButton from '../../components/ui/SplitButton.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import { useSessionStore } from '../../stores/sessionStore'
-import { isCloudBuild, type HomeBuildStatus } from './homeBuild'
+import { isCloudBuild, runsOnThisComputer, type HomeBuildStatus } from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
 const { builds, target, statusOf } = defineProps<{
@@ -18,6 +18,7 @@ const { builds, target, statusOf } = defineProps<{
 
 const emit = defineEmits<{
   open: [build: Installation]
+  pick: [build: Installation]
 }>()
 
 const { t } = useI18n()
@@ -27,8 +28,7 @@ const open = ref(false)
 const sessionStore = useSessionStore()
 
 function isLive(build: Installation): boolean {
-  const status = statusOf(build)
-  return status === 'running' || status === 'always-on'
+  return runsOnThisComputer(build, statusOf(build))
 }
 
 function brokenReason(build: Installation): string | undefined {
@@ -78,9 +78,10 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
             type="button"
             :value="build.id"
             :disabled="brokenReason(build) !== undefined"
+            :check="false"
             class="group ui-select-option w-full"
             data-testid="home-open-build-option"
-            @select="emit('open', build)"
+            @select="emit('pick', build)"
           >
             <span class="relative flex shrink-0">
               <component :is="isCloudBuild(build) ? Cloud : Laptop" :size="14" aria-hidden="true" />

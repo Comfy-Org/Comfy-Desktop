@@ -51,12 +51,51 @@ export async function clickInstallTile(
     const tile = [...document.querySelectorAll('.chooser-tile')].find((candidate) =>
       candidate.querySelector('.chooser-tile-name')?.textContent?.toLowerCase().includes(needle),
     )
-    const launch = tile?.querySelector('.chooser-tile-launch')
-    if (!launch) return false
-    launch.click()
+    if (!tile) return false
+    tile.click()
     return true
   })()`)
   expect(launched, `Install tile matching "${nameSubstring}" launched`).toBe(true)
+}
+
+export function buildMenuItem(item: string): string {
+  return byTestId(`build-menu-${item}`)
+}
+
+export async function openBuildsTileMenu(
+  panel: WebContentsPage,
+  installationId: string
+): Promise<void> {
+  await panel.waitForVisible(byTestId(TID.dashboardTile(installationId)), { timeout: 15_000 })
+  expect(
+    await panel.click(byTestId(TID.dashboardTileKebab(installationId))),
+    `build menu ⋯ clicked on ${installationId}`
+  ).toBe(true)
+  await panel.waitForVisible(`[data-testid="build-menu"][data-build-id="${installationId}"]`, {
+    timeout: 5_000
+  })
+}
+
+export async function pickFromBuildsTileMenu(
+  panel: WebContentsPage,
+  installationId: string,
+  item: string
+): Promise<void> {
+  await openBuildsTileMenu(panel, installationId)
+  await panel.waitForVisible(buildMenuItem(item), { timeout: 5_000 })
+  expect(await panel.click(buildMenuItem(item)), `build menu ${item} picked`).toBe(true)
+}
+
+export async function uninstallFromBuildsTileMenu(
+  panel: WebContentsPage,
+  installationId: string
+): Promise<void> {
+  await pickFromBuildsTileMenu(panel, installationId, 'delete')
+  await panel.waitForVisible(buildMenuItem('confirm-uninstall'), { timeout: 5_000 })
+  expect(
+    await panel.click(buildMenuItem('confirm-uninstall')),
+    'uninstall confirmed in the build menu'
+  ).toBe(true)
 }
 
 export async function openTitleMenu(titleBar: WebContentsPage): Promise<void> {
@@ -129,20 +168,20 @@ export async function openManageViaDashboard(
   return popup
 }
 
-export async function openPickerViaTitlePill(
+export async function openPickerInWindow(
   app: ElectronApplication,
   titleBar: WebContentsPage,
   tabKey?: string
 ): Promise<WebContentsPage> {
   if (await isPopupVisible(app, 'comfyTitlePopup.html')) {
     throw new Error(
-      'openPickerViaTitlePill: picker popup is already open - close it before re-entering via the pill'
+      'openPickerInWindow: picker popup is already open - close it before opening it again'
     )
   }
-  await titleBar.waitForVisible('.title-install-pill.is-interactive', { timeout: 15_000 })
+  await titleBar.waitForVisible('.title-trailing', { timeout: 15_000 })
   expect(
-    await titleBar.click('.title-install-pill.is-interactive'),
-    'title-bar install pill clicked'
+    await titleBar.evaluate<boolean>('(() => { window.api.openInstancePicker(); return true })()'),
+    'picker requested from the title bar'
   ).toBe(true)
   await waitForWebContents(app, 'comfyTitlePopup.html')
   await expect
@@ -182,4 +221,67 @@ export async function openNewBuildChangeSetup(panel: WebContentsPage): Promise<v
 
 export async function dismissOverlay(panel: WebContentsPage): Promise<void> {
   await panel.pressKey('Escape')
+}
+
+export const SOURCE_DROPDOWN = '[data-testid="install-source-tabs"]'
+export const HARDWARE_DROPDOWN = '[data-testid="config-select-variant"]'
+export const WHERE_IT_IS_DROPDOWN = '[data-testid="existing-comfy-tabs"]'
+
+export async function openSetupDropdown(panel: WebContentsPage, trigger: string): Promise<void> {
+  await panel.waitForVisible(`${trigger}:not([disabled])`, { timeout: 15_000 })
+  expect(await panel.click(trigger), `${trigger} opened`).toBe(true)
+  await panel.waitForVisible('[role="listbox"] [role="option"]', { timeout: 5_000 })
+}
+
+export async function closeSetupDropdown(panel: WebContentsPage): Promise<void> {
+  await panel.pressKey('Escape')
+  await panel.waitFor(async () => !(await panel.isVisible('[role="listbox"]')), {
+    timeout: 5_000,
+    message: 'the dropdown did not close'
+  })
+}
+
+export async function setupDropdownOffers(
+  panel: WebContentsPage,
+  trigger: string,
+  option: string
+): Promise<boolean> {
+  await openSetupDropdown(panel, trigger)
+  const offered = await panel.exists(`[role="listbox"] ${option}`)
+  await closeSetupDropdown(panel)
+  return offered
+}
+
+export async function pickFromSetupDropdown(
+  panel: WebContentsPage,
+  trigger: string,
+  option: string
+): Promise<boolean> {
+  await openSetupDropdown(panel, trigger)
+  const picked = await panel.click(`[role="listbox"] ${option}`)
+  await panel.waitFor(async () => !(await panel.isVisible('[role="listbox"]')), {
+    timeout: 5_000,
+    message: 'the dropdown did not close after a pick'
+  })
+  return picked
+}
+
+export async function pickFromSetupDropdownByText(
+  panel: WebContentsPage,
+  trigger: string,
+  text: string
+): Promise<boolean> {
+  await openSetupDropdown(panel, trigger)
+  const picked = await panel.clickByText('[role="listbox"] [role="option"]', text)
+  await panel.waitFor(async () => !(await panel.isVisible('[role="listbox"]')), {
+    timeout: 5_000,
+    message: 'the dropdown did not close after a pick'
+  })
+  return picked
+}
+
+export function setupDropdownValue(panel: WebContentsPage, trigger: string): Promise<string> {
+  return panel.evaluate<string>(
+    `document.querySelector(${JSON.stringify(`${trigger} .ui-select-label`)})?.textContent?.trim() ?? ''`
+  )
 }

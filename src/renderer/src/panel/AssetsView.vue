@@ -1,24 +1,27 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useLocalStorage, useScroll } from '@vueuse/core'
-import { DropdownMenuRadioGroup } from 'reka-ui'
+import { refDebounced, useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
+import { DropdownMenuRadioGroup, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import {
-  AudioLines,
   Box,
   Check,
+  ChevronDown,
+  Cloud,
   Copy,
   Download,
   Ellipsis,
+  ExternalLink,
   File,
-  FolderOpen,
+  Folder,
   LayoutGrid,
   LayoutDashboard,
-  ListFilter,
+  Music,
   RefreshCw,
+  ScanSearch,
   Search,
-  Trash2,
-  Video
+  Play,
+  Trash2
 } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
@@ -26,18 +29,36 @@ import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
+import PopoverContent from '@comfyorg/design-system/popover/PopoverContent'
 import BaseInput from '../components/ui/BaseInput.vue'
 import ContextMenu from '../components/ContextMenu.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import AssetsPagination from './AssetsPagination.vue'
+import OutputDetailDialog from './OutputDetailDialog.vue'
+import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useModal } from '../composables/useModal'
+import { revealInFolderKey } from '../composables/usePlatform'
 import { useAuthStore } from '../stores/authStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
+import { useSessionStore } from '../stores/sessionStore'
+import { isCloudBuild } from './home/homeBuild'
+import { installationWorkspaceId, isInstallationInWorkspace } from '../../../shared/workspaces'
 import { useVirtualMasonry } from '../composables/useVirtualMasonry'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatPlaybackTime, formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { LOCAL_ASSETS_SOURCE } from '../types/ipc'
-import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
+import type {
+  AssetKind,
+  AssetSummary,
+  CloudAssetLookup,
+  CloudAssetPage,
+  Installation,
+  LocalAssetListing,
+  OutputFolderPaths
+} from '../types/ipc'
 import type { ContextMenuItem } from '../types/context-menu'
 
 interface GalleryAsset extends AssetSummary {
@@ -53,6 +74,14 @@ interface AssetMenu {
 type KindFilter = 'all' | AssetKind
 type Layout = 'masonry' | 'grid'
 type SortOrder = 'newest' | 'oldest'
+type BuildState = 'running' | 'starting' | 'stopped'
+
+interface AssetBuild {
+  build: Installation
+  cloud: boolean
+  computer: boolean
+  state: BuildState
+}
 
 interface Shape {
   width: number
@@ -60,6 +89,12 @@ interface Shape {
 }
 
 const SKELETON_COUNT = 8
+const CLOUD_PAGE_SIZES = [50, 100, 200] as const
+const DEFAULT_PAGE_SIZE = 100
+const PAGE_CACHE_TTL_MS = 30 * 60_000
+const SEARCH_DEBOUNCE_MS = 300
+const MAX_SEARCH_LENGTH = 200
+const PREFETCH_DEADLINE_MS = 1000
 const NAME_TOOLTIP_DELAY_MS = 600
 const MIN_CARD_WIDTH = 240
 const CARD_GAP = 14
@@ -79,19 +114,53 @@ const PLACEHOLDER_TINT = {
   file: 'bg-[linear-gradient(168deg,rgb(200_211_222/0.09),rgb(255_255_255/0.02))] text-[rgb(160_166_175)]'
 } as const
 
+const { installationId = '', focusName = null } = defineProps<{
+  installationId?: string
+  focusName?: string | null
+}>()
+
+const emit = defineEmits<{ 'focus-used': [] }>()
+
 const { t } = useI18n()
 const modal = useModal()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
+const sessionStore = useSessionStore()
+const dashboardScope = useDashboardScopeStore()
+void dashboardScope.initialize()
 
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
+const listedSearch = refDebounced(
+  computed(() => [...searchQuery.value.trim()].slice(0, MAX_SEARCH_LENGTH).join('')),
+  SEARCH_DEBOUNCE_MS
+)
 const signingIn = ref(false)
 const downloading = ref(new Set<string>())
 const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
 const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newest')
 const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
+const searchOpen = ref(false)
+const placePickerOpen = ref(false)
+const toolbarRow = useTemplateRef<HTMLElement>('toolbarRow')
+const toolbarCompactness = ref(0)
+const SEARCH_AS_ICON = 1
+const KINDS_AS_MENU = 2
+const CLOUD = 'cloud'
+const SHARED = 'shared'
+const savedPlace = useLocalStorage('comfy.desktop.assets.place', '')
+const pickedPlace = ref(focusName ? CLOUD : '')
+const pendingFocus = ref<string | null>(focusName)
+const focusMiss = ref<{ name: string; checked: boolean } | null>(null)
+const lookedUpDetail = ref<GalleryAsset | null>(null)
+const detailKey = ref<string | null>(null)
+const pageSize = ref(DEFAULT_PAGE_SIZE)
+const currentPage = ref(1)
+const assetTotal = ref(0)
+const localCounts = ref<LocalAssetListing['counts'] | null>(null)
+const cloudTotalIsLowerBound = ref(false)
+const cloudScanLimit = ref<number | undefined>()
 
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
@@ -101,26 +170,184 @@ let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
 const failed = ref(false)
 
-function isCloudBuild(inst: Installation): boolean {
-  return inst.sourceCategory === 'cloud'
+const buildsKnown = computed(
+  () =>
+    dashboardScope.initialized &&
+    !(installationStore.loading && installationStore.installations.length === 0)
+)
+
+function buildState(build: Installation): BuildState {
+  if (sessionStore.isLaunching(build.id)) return 'starting'
+  return sessionStore.isRunning(build.id) || isCloudBuild(build) ? 'running' : 'stopped'
 }
 
-const cloudBuildId = computed(() =>
-  authStore.isSignedIn ? (installationStore.installations.find(isCloudBuild)?.id ?? null) : null
+function inWorkspace(build: Installation): boolean {
+  return isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId)
+}
+
+function savesToSharedFolder(build: Installation): boolean {
+  return build.useSharedOutput !== false
+}
+
+function placeOption(id: string, name: string, cloud: boolean): AssetBuild {
+  return {
+    build: { id, name, sourceLabel: '', sourceCategory: cloud ? 'cloud' : 'local' },
+    cloud,
+    computer: !cloud,
+    state: cloud ? 'running' : 'stopped'
+  }
+}
+
+const cloudBuild = computed(
+  () =>
+    installationStore.installations.find((build) => isCloudBuild(build) && inWorkspace(build)) ??
+    null
 )
 
-const kindOptions = computed(() => [
-  { value: 'all' as const, label: t('assets.kind.all') },
-  { value: 'image' as const, label: t('assets.kind.image') },
-  { value: 'video' as const, label: t('assets.kind.video') },
-  { value: '3d' as const, label: t('assets.kind.3d') },
-  { value: 'audio' as const, label: t('assets.kind.audio') }
-])
-const filterLabel = computed(() =>
-  kindFilter.value === 'all'
-    ? t('assets.filter')
-    : (kindOptions.value.find((option) => option.value === kindFilter.value)?.label ?? '')
+const cloudListable = computed(
+  () => buildsKnown.value && authStore.isSignedIn && cloudBuild.value !== null
 )
+const cloudSettled = computed(
+  () =>
+    buildsKnown.value &&
+    authStore.statusLoaded &&
+    (!authStore.isSignedIn || authStore.workspacesLoaded)
+)
+
+const localBuilds = computed(() =>
+  installationStore.installations.filter(
+    (build) => build.hasOutputFolder === true && inWorkspace(build)
+  )
+)
+const hasLocalBuild = computed(() => localBuilds.value.length > 0)
+
+const assetBuilds = computed<AssetBuild[]>(() => {
+  const local = localBuilds.value
+  const dedicated = local.filter((build) => !savesToSharedFolder(build))
+  return [
+    placeOption(CLOUD, t('assets.cloud'), true),
+    ...(!hasLocalBuild.value || local.some(savesToSharedFolder)
+      ? [placeOption(SHARED, t('assets.sharedFolder'), false)]
+      : []),
+    ...dedicated.map((build) => ({
+      build,
+      cloud: false,
+      computer: false,
+      state: buildState(build)
+    }))
+  ]
+})
+
+const windowPlace = computed(() => {
+  const build = installationId ? installationStore.getById(installationId) : null
+  if (!build) return ''
+  if (isCloudBuild(build)) return CLOUD
+  return savesToSharedFolder(build) ? SHARED : build.id
+})
+
+const selectedBuild = computed<AssetBuild | null>(() => {
+  if (!buildsKnown.value) return null
+  const options = assetBuilds.value
+  const withId = (id: string) => (id ? options.find(({ build }) => build.id === id) : undefined)
+  const restorablePlace =
+    savedPlace.value === CLOUD && !authStore.isSignedIn ? '' : savedPlace.value
+  return (
+    withId(pickedPlace.value) ??
+    withId(windowPlace.value) ??
+    withId(restorablePlace) ??
+    (hasLocalBuild.value || !cloudBuild.value || !authStore.isSignedIn
+      ? options.find((option) => !option.cloud)
+      : undefined) ??
+    options[0]!
+  )
+})
+
+watch(selectedBuild, (build) => {
+  if (!build) placePickerOpen.value = false
+})
+
+function choosePlace(id: string): void {
+  pickedPlace.value = id
+  focusMiss.value = null
+  savedPlace.value = id
+}
+
+const placeGroups = computed(() =>
+  (['cloud', 'computer'] as const)
+    .map((id) => ({
+      id,
+      label: t(`assets.placeGroup.${id}`),
+      options: assetBuilds.value.filter((option) => option.cloud === (id === 'cloud'))
+    }))
+    .filter((group) => group.options.length > 0)
+)
+
+const outputFolders = ref<OutputFolderPaths | null>(null)
+const outputFoldersLoaded = ref(false)
+let outputFoldersRequest = 0
+
+watch(
+  () => localBuilds.value.map((build) => build.id).join('\n'),
+  async () => {
+    const request = ++outputFoldersRequest
+    const folders = await window.api.listOutputFolders().catch(() => null)
+    if (request !== outputFoldersRequest) return
+    outputFolders.value = folders
+    outputFoldersLoaded.value = true
+  },
+  { immediate: true }
+)
+
+function folderPathOf({ build, computer }: AssetBuild): string | null {
+  const folders = outputFolders.value
+  if (!folders) return null
+  return (computer ? folders.shared : folders.ofBuild[build.id]) ?? null
+}
+
+const SHORT_PATH_LENGTH = 34
+
+function homePath(folder: string): string {
+  const home = outputFolders.value?.home
+  if (!home) return folder
+  const rest = folder.slice(home.length)
+  return folder.startsWith(home) && (rest === '' || rest[0] === '/' || rest[0] === '\\')
+    ? `~${rest}`
+    : folder
+}
+
+function shortPath(folder: string): string {
+  const shown = homePath(folder)
+  if (shown.length <= SHORT_PATH_LENGTH) return shown
+  const separator = shown.includes('\\') && !shown.includes('/') ? '\\' : '/'
+  const parts = shown.split(separator)
+  return parts.length > 3
+    ? [parts[0], '…', ...parts.slice(-2)].join(separator)
+    : `…${shown.slice(-SHORT_PATH_LENGTH)}`
+}
+
+function placeSubtitle(option: AssetBuild): string | null {
+  if (option.cloud) return t(`assets.buildState.${option.state}`)
+  if (!outputFoldersLoaded.value) return null
+  const folder = folderPathOf(option)
+  return folder ? shortPath(folder) : ''
+}
+
+const revealFolderLabel = computed(() => t(revealInFolderKey(window.api.platform)))
+
+async function openPlaceFolder(option: AssetBuild): Promise<void> {
+  placePickerOpen.value = false
+  const opened = await window.api
+    .openOutputFolder(option.computer ? undefined : option.build.id)
+    .catch(() => false)
+  if (!opened) {
+    await modal.alert({
+      title: t('assets.openFolderFailed'),
+      message: folderPathOf(option) ?? option.build.name
+    })
+  }
+}
+
+const kinds: KindFilter[] = ['all', 'image', 'video', '3d', 'audio']
 const layoutOptions = computed(() => [
   { value: 'masonry' as const, label: t('assets.layout.masonry'), icon: LayoutDashboard },
   { value: 'grid' as const, label: t('assets.layout.grid'), icon: LayoutGrid }
@@ -138,18 +365,57 @@ function cardKey(asset: GalleryAsset): string {
   return `${asset.source}:${asset.id}`
 }
 
+const pageCount = computed(() => Math.max(1, Math.ceil(assetTotal.value / pageSize.value)))
+const showPagination = computed(() => !!selectedBuild.value && assetTotal.value > 0)
+
+function kindCount(kind: KindFilter): number | undefined {
+  if (selectedBuild.value?.cloud) return undefined
+  return localCounts.value?.[kind]
+}
+
+const kindOptions = computed(() =>
+  kinds.map((kind) => ({
+    value: kind,
+    label: t(`assets.kind.${kind}`),
+    count: kindCount(kind),
+    testId: `assets-kind-${kind}`
+  }))
+)
+
+const currentKind = computed(() =>
+  kindOptions.value.find((option) => option.value === kindFilter.value)!
+)
+
+let fitRun = 0
+async function fitToolbar(): Promise<void> {
+  const row = toolbarRow.value
+  const run = ++fitRun
+  if (!row || searchOpen.value) return
+  for (let level = 0; level <= KINDS_AS_MENU; level++) {
+    toolbarCompactness.value = level
+    await nextTick()
+    if (run !== fitRun || row.scrollWidth <= row.clientWidth) return
+  }
+}
+
+useResizeObserver(toolbarRow, () => void fitToolbar())
+watch(
+  [selectedBuild, searchOpen, () => kindOptions.value.map((option) => option.count).join()],
+  () => void fitToolbar(),
+  { flush: 'post' }
+)
+
 const visibleAssets = computed(() => {
-  const query = searchQuery.value.trim().toLowerCase()
   const filtered = assets.value.filter(
-    (asset) =>
-      (kindFilter.value === 'all' || asset.kind === kindFilter.value) &&
-      (!query || asset.name.toLowerCase().includes(query))
+    (asset) => kindFilter.value === 'all' || asset.kind === kindFilter.value
   )
   const direction = sortOrder.value === 'newest' ? -1 : 1
   return filtered.toSorted((a, b) => direction * (createdMs(a) - createdMs(b)))
 })
 
-const showSkeleton = computed(() => loading.value && assets.value.length === 0)
+const showSkeleton = computed(
+  () => !selectedBuild.value || (loading.value && assets.value.length === 0)
+)
 
 function assetShape(asset: AssetSummary): Shape {
   if (layout.value === 'grid' || asset.kind === 'audio') return WIDE
@@ -185,7 +451,7 @@ function cardShape(index: number): Shape {
   return showSkeleton.value || !asset ? skeletonShape(index) : assetShape(asset)
 }
 
-const { cards, galleryStyle, cardStyle, measureCard } = useVirtualMasonry({
+const masonry = useVirtualMasonry({
   scroller,
   gallery: useTemplateRef<HTMLElement>('gallery'),
   count: () => (showSkeleton.value ? SKELETON_COUNT : visibleAssets.value.length),
@@ -202,6 +468,7 @@ const { cards, galleryStyle, cardStyle, measureCard } = useVirtualMasonry({
   gap: CARD_GAP,
   relayoutWhen: () => [visibleAssets.value, showSkeleton.value, layout.value, captionHeight.value]
 })
+const { cards, galleryStyle, cardStyle, measureCard, scrollToIndex, scrollToTop } = masonry
 
 const assetCards = computed(() =>
   cards.value.flatMap((card) => {
@@ -218,16 +485,19 @@ interface EmptyState {
 
 const emptyState = computed<EmptyState>(() => {
   if (failed.value) return { title: t('assets.loadFailed'), body: '' }
-  if (assets.value.length > 0) {
-    return { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
-  }
-  if (!authStore.isSignedIn) {
+  const noMatches = { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
+  if (assets.value.length > 0) return noMatches
+  if (!authStore.isSignedIn && selectedBuild.value?.cloud) {
     return {
       title: t('assets.signedOutTitle'),
       body: t('assets.signedOutBody'),
       action: { label: t('assets.signIn'), run: () => void signIn() }
     }
   }
+  if (selectedBuild.value?.cloud && !cloudBuild.value) {
+    return { title: t('assets.noCloudBuildTitle'), body: t('assets.noCloudBuildBody') }
+  }
+  if (kindFilter.value !== 'all' || listedSearch.value) return noMatches
   return {
     title: t('assets.emptyTitle'),
     body: t('assets.emptyBody')
@@ -235,24 +505,192 @@ const emptyState = computed<EmptyState>(() => {
 })
 
 let requestId = 0
-async function loadAssets(): Promise<void> {
+let prefetchHandle = 0
+
+interface CachedPage {
+  savedAt: number
+  page: Promise<CloudAssetPage>
+}
+
+const pageCache = new Map<string, CachedPage>()
+const pagesInFlight = new Map<string, Promise<CloudAssetPage>>()
+const pageCursors = new Map<number, string>()
+
+function resetCloudPageNumbers(): void {
+  pageCursors.clear()
+  assetTotal.value = 0
+  cloudTotalIsLowerBound.value = false
+}
+
+function resetCloudPaging(): void {
+  pageCache.clear()
+  pagesInFlight.clear()
+  resetCloudPageNumbers()
+}
+
+function recordCloudPage(page: CloudAssetPage, pageNumber: number): void {
+  if (page.total !== null && (!page.nextCursor || assetTotal.value === 0)) {
+    assetTotal.value = page.total
+    cloudTotalIsLowerBound.value = page.totalIsLowerBound === true
+  }
+  if (!page.nextCursor) return
+  pageCursors.set(pageNumber + 1, page.nextCursor)
+  const minimum = pageNumber * pageSize.value + 1
+  if (minimum > assetTotal.value) {
+    assetTotal.value = minimum
+    cloudTotalIsLowerBound.value = true
+  }
+}
+
+function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage> {
+  const kind = kindFilter.value === 'all' ? undefined : kindFilter.value
+  const after = pageCursors.get(pageNumber)
+  const search = listedSearch.value || undefined
+  const key = JSON.stringify([
+    loadKey.value,
+    cloudId,
+    sortOrder.value,
+    kind,
+    search,
+    pageSize.value,
+    pageNumber
+  ])
+  const cached = pageCache.get(key)
+  if (cached && Date.now() - cached.savedAt < PAGE_CACHE_TTL_MS) return cached.page
+  for (const replacedKey of pagesInFlight.keys()) pageCache.delete(replacedKey)
+  pagesInFlight.clear()
+  const page = window.api
+    .listAssets(cloudId, {
+      offset: (pageNumber - 1) * pageSize.value,
+      limit: pageSize.value,
+      order: sortOrder.value,
+      ...(after && { after }),
+      kind,
+      search
+    })
+    .then((listed) => listed ?? Promise.reject(new Error('a newer page replaced this one')))
+  pageCache.set(key, { savedAt: Date.now(), page })
+  pagesInFlight.set(key, page)
+  const settle = (): void => {
+    if (pagesInFlight.get(key) === page) pagesInFlight.delete(key)
+  }
+  page.then(settle, () => {
+    settle()
+    if (pageCache.get(key)?.page === page) pageCache.delete(key)
+  })
+  return page
+}
+
+function localPage(selected: AssetBuild, pageNumber: number): Promise<LocalAssetListing> {
+  const kind = kindFilter.value === 'all' ? undefined : kindFilter.value
+  return window.api.listLocalAssets(selected.computer ? undefined : selected.build.id, {
+    offset: (pageNumber - 1) * pageSize.value,
+    limit: pageSize.value,
+    order: sortOrder.value,
+    kind,
+    search: listedSearch.value || undefined
+  })
+}
+
+function prefetchPage(cloudId: string, pageNumber: number): void {
+  if (pageNumber > pageCount.value) return
+  prefetchHandle = requestIdleCallback(() => void cloudPage(cloudId, pageNumber).catch(() => {}), {
+    timeout: PREFETCH_DEADLINE_MS
+  })
+}
+
+onBeforeUnmount(() => {
+  requestId++
+  cancelIdleCallback(prefetchHandle)
+})
+
+async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean): Promise<void> {
+  const dashboardWorkspaceId = installationWorkspaceId(build, dashboardScope.selectedWorkspaceId)
+  if (!authStore.sessionWorkspaceFor(dashboardWorkspaceId)) await authStore.fetchWorkspaces()
+  const workspaceId = authStore.sessionWorkspaceFor(dashboardWorkspaceId)
+  if (!workspaceId) throw new Error("the build's workspace is unknown")
+  if (authStore.status.workspaceId === workspaceId) return
+  const intent = userAsked || dashboardScope.takeChosenSelection() ? 'chosen' : 'restored'
+  await authStore.switchWorkspace(workspaceId, intent)
+  if (authStore.status.workspaceId !== workspaceId) throw new Error('workspace switch failed')
+}
+
+function lookUpCloudAsset(cloudId: string, name: string): Promise<CloudAssetLookup> {
+  return window.api
+    .findCloudAsset(cloudId, name)
+    .catch((): CloudAssetLookup => ({ status: 'incomplete' }))
+}
+
+async function loadAssets(userAsked = false): Promise<void> {
   const current = ++requestId
-  loading.value = true
+  cancelIdleCallback(prefetchHandle)
+  const settled = cloudSettled.value
+  const selected = selectedBuild.value
+  const cloud = selected?.cloud ? cloudBuild.value : null
   failed.value = false
+  cloudScanLimit.value = undefined
+  if (!selected || (selected.cloud && (!cloud || !authStore.isSignedIn))) {
+    assets.value = []
+    loading.value = false
+    openPendingFocus(settled)
+    return
+  }
+  loading.value = true
+  const source = cloud ? cloud.id : LOCAL_ASSETS_SOURCE
   try {
-    const cloudId = cloudBuildId.value
-    const sources = [
-      { source: LOCAL_ASSETS_SOURCE, load: () => window.api.listLocalAssets() },
-      ...(cloudId ? [{ source: cloudId, load: () => window.api.listAssets(cloudId) }] : [])
-    ]
-    const results = await Promise.allSettled(sources.map(({ load }) => load()))
+    if (cloud) {
+      await moveSessionToWorkspaceOf(cloud, userAsked || pickedPlace.value === CLOUD)
+      if (current !== requestId) return
+    }
+    const pageNumber = currentPage.value
+    const wanted = pendingFocus.value ?? focusMiss.value?.name
+    const [listed, lookup] = await Promise.all([
+      cloud ? cloudPage(cloud.id, pageNumber) : localPage(selected, pageNumber),
+      cloud && wanted ? lookUpCloudAsset(cloud.id, wanted) : null
+    ])
+    if (current !== requestId || pageNumber !== currentPage.value) return
+    if ('counts' in listed) {
+      localCounts.value = listed.counts
+      assetTotal.value = listed.total
+      if (pageNumber > pageCount.value) {
+        currentPage.value = pageCount.value
+        return
+      }
+    } else {
+      if (pageNumber > 1 && listed.total === null && !listed.nextCursor) {
+        resetCloudPaging()
+        currentPage.value = 1
+        return
+      }
+      recordCloudPage(listed, pageNumber)
+      if (pageNumber > pageCount.value) {
+        pageCache.clear()
+        pageCursors.clear()
+        currentPage.value = pageCount.value
+        return
+      }
+      cloudScanLimit.value = listed.scanLimit
+    }
+    assets.value = listed.assets.map((asset) => ({ ...asset, source }))
+    if (cloud && pendingFocus.value && pendingFocus.value !== wanted) {
+      void loadAssets(userAsked)
+      return
+    }
+    if (cloud) prefetchPage(cloud.id, pageNumber + 1)
+    const miss = focusMiss.value
+    if (cloud && miss && miss.name === wanted) {
+      if (assets.value.some((asset) => asset.name === miss.name)) focusMiss.value = null
+      else if (lookup?.status === 'found') {
+        focusMiss.value = null
+        openLookedUpDetail(lookup.asset, source)
+      } else focusMiss.value = { name: miss.name, checked: lookup?.status === 'absent' }
+    }
+    openPendingFocus(settled, lookup)
+  } catch {
     if (current !== requestId) return
-    assets.value = results.flatMap((result, i) =>
-      result.status === 'fulfilled'
-        ? result.value.map((asset) => ({ ...asset, source: sources[i]!.source }))
-        : []
-    )
-    failed.value = assets.value.length === 0 && results.some((r) => r.status === 'rejected')
+    assets.value = []
+    failed.value = true
+    openPendingFocus(settled)
   } finally {
     if (current === requestId) loading.value = false
   }
@@ -262,13 +700,161 @@ const accountContext = computed(
   () => `${authStore.isSignedIn}:${authStore.status.workspaceId ?? ''}`
 )
 
-watch(accountContext, () => (assets.value = []))
+const loadKey = computed(() => {
+  const selected = selectedBuild.value
+  if (!selected) return ''
+  return selected.cloud
+    ? `${selected.build.id}\n${dashboardScope.selectedWorkspaceId}\n${accountContext.value}`
+    : selected.build.id
+})
+
+const listedCloudId = computed(() =>
+  selectedBuild.value?.cloud ? cloudBuild.value?.id : undefined
+)
+const listQuery = computed(() =>
+  selectedBuild.value
+    ? [sortOrder.value, kindFilter.value, listedSearch.value, pageSize.value].join('\n')
+    : ''
+)
+
+watch([loadKey, listedCloudId], () => {
+  resetCloudPaging()
+  localCounts.value = null
+  currentPage.value = 1
+  focusMiss.value = null
+  lookedUpDetail.value = null
+  detailKey.value = null
+})
+watch(listQuery, () => {
+  resetCloudPageNumbers()
+  currentPage.value = 1
+})
+let reloadAskedByUser = false
 
 watch(
-  () => `${cloudBuildId.value ?? ''}\n${accountContext.value}`,
-  () => void loadAssets(),
+  [loadKey, listedCloudId, listQuery, currentPage],
+  () => {
+    scrollToTop()
+    assets.value = []
+    const userAsked = reloadAskedByUser
+    reloadAskedByUser = false
+    void loadAssets(userAsked)
+  },
   { immediate: true }
 )
+
+function refresh(): void {
+  resetCloudPaging()
+  if (currentPage.value === 1) {
+    void loadAssets(true)
+    return
+  }
+  reloadAskedByUser = true
+  currentPage.value = 1
+}
+
+function newestNamed(name: string): GalleryAsset | null {
+  return visibleAssets.value
+    .filter((asset) => asset.name === name)
+    .reduce<GalleryAsset | null>(
+      (newest, asset) => (newest && createdMs(newest) >= createdMs(asset) ? newest : asset),
+      null
+    )
+}
+
+function openPendingFocus(settled: boolean, lookup: CloudAssetLookup | null = null): void {
+  const name = pendingFocus.value
+  if (!name || (!cloudListable.value && !settled)) return
+  pendingFocus.value = null
+  const cloud = cloudBuild.value
+  if (!selectedBuild.value?.cloud || failed.value || !cloudListable.value || !cloud) return
+  const asset = newestNamed(name)
+  if (lookup?.status === 'found' && (!asset || createdMs(lookup.asset) > createdMs(asset))) {
+    openLookedUpDetail(lookup.asset, cloud.id)
+  } else if (asset) openDetail(asset)
+  else focusMiss.value = { name, checked: lookup?.status === 'absent' }
+}
+
+watch(
+  cloudSettled,
+  (settled) => {
+    if (settled && !loading.value) openPendingFocus(true)
+  },
+  { flush: 'post' }
+)
+
+watch(
+  () => focusName,
+  (name) => {
+    if (!name) return
+    emit('focus-used')
+    const cloudShown = selectedBuild.value?.cloud === true && !loading.value
+    pendingFocus.value = name
+    focusMiss.value = null
+    pickedPlace.value = CLOUD
+    if (!cloudShown) return
+    if (cloudListable.value && !failed.value) void loadAssets()
+    else openPendingFocus(cloudSettled.value)
+  },
+  { immediate: true }
+)
+
+const detailAssets = computed(() =>
+  lookedUpDetail.value ? [...visibleAssets.value, lookedUpDetail.value] : visibleAssets.value
+)
+
+const detailIndex = computed<number | null>({
+  get: () => {
+    if (detailKey.value === null) return null
+    const index = detailAssets.value.findIndex((asset) => cardKey(asset) === detailKey.value)
+    return index >= 0 ? index : null
+  },
+  set: (index) => {
+    const asset = index === null ? undefined : detailAssets.value[index]
+    detailKey.value = asset ? cardKey(asset) : null
+  }
+})
+
+const detailItems = computed<OutputDetailItem[]>(() =>
+  detailAssets.value.map((asset) => ({
+    key: cardKey(asset),
+    name: asset.name,
+    kind: asset.kind,
+    sizeBytes: asset.sizeBytes,
+    createdAt: asset.createdAt,
+    tags: asset.tags,
+    previewUrl: asset.previewUrl,
+    thumbnailUrl: asset.thumbnailUrl,
+    savedIn: isLocal(asset) ? folderOf(asset.id) : null,
+    mainAction: isLocal(asset) ? null : 'download',
+    loadModel:
+      asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
+  }))
+)
+
+watch(detailIndex, (index) => {
+  if (index === null) {
+    detailKey.value = null
+    lookedUpDetail.value = null
+  } else if (index < visibleAssets.value.length) scrollToIndex(index)
+})
+
+function openDetail(asset: GalleryAsset): void {
+  lookedUpDetail.value = null
+  detailKey.value = cardKey(asset)
+}
+
+function openLookedUpDetail(asset: AssetSummary, source: string): void {
+  lookedUpDetail.value = { ...asset, source }
+  detailKey.value = cardKey(lookedUpDetail.value)
+}
+
+async function closeDetail(): Promise<void> {
+  const viewedKey = detailKey.value ?? ''
+  detailKey.value = null
+  await nextTick()
+  scroller.value?.querySelector<HTMLElement>(`[data-card-key="${CSS.escape(viewedKey)}"]`)?.focus()
+}
 
 function warmNameTooltips(): void {
   clearTimeout(warmTimer)
@@ -316,18 +902,56 @@ function isLocal(asset: GalleryAsset): boolean {
   return asset.source === LOCAL_ASSETS_SOURCE
 }
 
-function revealLabel(): string {
-  if (window.api.platform === 'darwin') return t('assets.showInFinder')
-  if (window.api.platform === 'win32') return t('assets.showInExplorer')
-  return t('assets.showInFolder')
+function folderOf(file: string): string {
+  return file.slice(0, Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')))
+}
+
+async function reveal(asset: GalleryAsset): Promise<void> {
+  const shown = await window.api.revealAsset(asset.source, asset.id).catch(() => false)
+  if (!shown) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
+}
+
+const OPENS_IN_APP: readonly (AssetKind | null)[] = ['image', 'video', 'audio']
+
+function mainAction(asset: GalleryAsset): 'download' | 'open' | null {
+  if (!isLocal(asset)) return 'download'
+  const vector = asset.name.toLowerCase().endsWith('.svg')
+  return OPENS_IN_APP.includes(asset.kind) && !vector ? 'open' : null
+}
+
+async function openLocally(asset: GalleryAsset): Promise<void> {
+  const opened = await window.api.openAsset(asset.source, asset.id).catch(() => false)
+  if (!opened) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
+}
+
+function cardTool(asset: GalleryAsset) {
+  const action = mainAction(asset)
+  if (action === 'open') {
+    return { id: 'open-file', label: t('assets.open'), icon: ExternalLink, run: openLocally }
+  }
+  if (action === null) {
+    return {
+      id: 'reveal',
+      label: t(revealInFolderKey(window.api.platform)),
+      icon: ScanSearch,
+      run: reveal
+    }
+  }
+  return { id: 'download', label: t('assets.download'), icon: Download, run: download }
 }
 
 const assetMenuItems = computed<ContextMenuItem[]>(() => {
   const asset = assetMenu.value?.asset
   if (!asset) return []
+  const action = mainAction(asset)
   return [
-    { id: 'download', label: t('assets.download'), icon: Download },
-    ...(isLocal(asset) ? [{ id: 'reveal', label: revealLabel(), icon: FolderOpen }] : []),
+    ...(action === 'open' ? [{ id: 'open', label: t('assets.open'), icon: ExternalLink }] : []),
+    ...(action === 'download'
+      ? [{ id: 'download', label: t('assets.download'), icon: Download }]
+      : []),
+    ...(isLocal(asset)
+      ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: ScanSearch }]
+      : []),
     ...(asset.kind === 'image' && asset.previewUrl
       ? [{ id: 'copy', label: t('assets.copy'), icon: Copy }]
       : []),
@@ -373,8 +997,10 @@ async function moveToTrash(asset: GalleryAsset): Promise<void> {
   })
   if (!confirmed) return
   const removed = await window.api.trashAsset(asset.source, asset.id).catch(() => false)
-  if (removed) assets.value = assets.value.filter((other) => cardKey(other) !== cardKey(asset))
-  else await modal.alert({ title: t('assets.deleteFailed'), message: asset.name })
+  if (removed) {
+    assets.value = assets.value.filter((other) => cardKey(other) !== cardKey(asset))
+    void loadAssets()
+  } else await modal.alert({ title: t('assets.deleteFailed'), message: asset.name })
 }
 
 async function runAssetAction(action: string): Promise<void> {
@@ -382,7 +1008,8 @@ async function runAssetAction(action: string): Promise<void> {
   assetMenu.value = null
   if (!asset) return
   if (action === 'download') await download(asset)
-  else if (action === 'reveal') await window.api.revealAsset(asset.source, asset.id)
+  else if (action === 'open') await openLocally(asset)
+  else if (action === 'reveal') await reveal(asset)
   else if (action === 'copy') await copy(asset)
   else if (action === 'delete') await moveToTrash(asset)
 }
@@ -394,6 +1021,18 @@ function assetDetails(asset: AssetSummary): string {
   ]
     .filter(Boolean)
     .join(' · ')
+}
+
+function noteDuration(asset: AssetSummary, event: Event): void {
+  const seconds = (event.target as HTMLVideoElement).duration
+  if (!asset.durationSeconds && Number.isFinite(seconds) && seconds > 0) {
+    asset.durationSeconds = seconds
+  }
+}
+
+function cardImage(asset: AssetSummary): string | null {
+  if (asset.kind === 'image') return asset.thumbnailUrl ?? asset.previewUrl
+  return asset.kind === '3d' ? asset.thumbnailUrl : null
 }
 
 function extensionOf(name: string): string {
@@ -410,7 +1049,7 @@ function extensionOf(name: string): string {
     data-testid="assets-view"
   >
     <header class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
-      <h1 class="m-0 font-display text-display font-semibold text-foreground">
+      <h1 class="m-0 text-display font-semibold tracking-[-0.055em] text-foreground">
         {{ t('sidebar.assets') }}
       </h1>
     </header>
@@ -420,28 +1059,143 @@ function extensionOf(name: string): string {
       :class="scrollTop > 0 && 'bg-content-background/75 backdrop-blur-lg'"
       data-testid="assets-toolbar"
     >
-      <div class="mx-auto flex min-h-8 w-full max-w-300 flex-wrap items-center gap-2 px-10 py-3">
-        <div class="ml-auto flex items-center gap-2">
-          <Button
-            variant="muted-textonly"
-            size="icon"
-            type="button"
-            :disabled="loading"
-            :aria-label="t('assets.refresh')"
-            :title="t('assets.refresh')"
-            data-testid="assets-refresh"
-            @click="loadAssets"
+      <div
+        ref="toolbarRow"
+        class="mx-auto flex min-h-8 w-full max-w-300 flex-nowrap items-center gap-2 px-10 py-3"
+      >
+        <Menu
+          v-if="selectedBuild"
+          v-model:open="placePickerOpen"
+          :modal="false"
+          align="start"
+          :side-offset="6"
+          class="z-20 w-80 min-w-0 rounded-[14px] border-[rgb(240_240_240/0.07)] bg-[rgb(17_17_17/0.86)] px-1.5 pt-0 pb-1.5 shadow-[0_18px_24px_rgb(0_0_0/0.65),0_1px_1px_rgb(0_0_0/0.2)] backdrop-blur-[16px]"
+          :aria-label="t('assets.buildPickerLabel')"
+        >
+          <template #trigger>
+            <button
+              type="button"
+              class="flex h-[34px] max-w-60 shrink-0 items-center gap-2 rounded-[10px] bg-secondary pr-[13px] pl-[15px] text-[13px]/5 text-foreground outline-none backdrop-blur-[8px] transition-colors hover:bg-[rgb(238_238_238/0.1)] focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
+              :aria-label="t('assets.buildPickerLabel')"
+              data-testid="assets-build-picker"
+            >
+              <component
+                :is="selectedBuild.cloud ? Cloud : Folder"
+                :size="14"
+                class="shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <span class="truncate">{{ selectedBuild.build.name }}</span>
+              <ChevronDown :size="13" class="shrink-0 text-muted-foreground" aria-hidden="true" />
+            </button>
+          </template>
+          <DropdownMenuRadioGroup
+            :model-value="selectedBuild.build.id"
+            class="flex flex-col gap-0.5"
           >
-            <RefreshCw
-              :size="13"
-              :class="loading && 'animate-spin [animation-duration:900ms]'"
-              aria-hidden="true"
-            />
-          </Button>
+            <template v-for="group in placeGroups" :key="group.id">
+              <div
+                class="px-[9px] pt-[12.5px] pb-[8.6px] text-[11px]/[15.4px] font-medium tracking-[0.88px] text-subtle-foreground uppercase"
+                :data-testid="`assets-place-group-${group.id}`"
+              >
+                {{ group.label }}
+              </div>
+              <div
+                v-for="option in group.options"
+                :key="option.build.id"
+                class="group/place relative"
+              >
+                <MenuRadioItem
+                  as="button"
+                  type="button"
+                  :value="option.build.id"
+                  class="min-h-0 w-full gap-2.5 rounded-lg px-2.5 py-2 data-highlighted:bg-accent data-[state=checked]:bg-muted"
+                  :class="
+                    !option.cloud &&
+                    'pr-15 group-hover/place:bg-accent [&>svg:last-child]:absolute [&>svg:last-child]:right-2.5'
+                  "
+                  :data-testid="`assets-build-${option.build.id}`"
+                  @select="choosePlace(option.build.id)"
+                >
+                  <span
+                    class="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-[rgb(240_240_240/0.07)] text-muted-foreground"
+                  >
+                    <component :is="option.cloud ? Cloud : Folder" :size="15" aria-hidden="true" />
+                  </span>
+                  <span class="flex min-w-0 flex-1 flex-col text-left">
+                    <span class="truncate text-[13px]/5 text-foreground">{{
+                      option.build.name
+                    }}</span>
+                    <span
+                      class="flex h-4 min-w-0 items-center gap-1.5 text-[12px]/[16.2px] text-subtle-foreground"
+                      :data-testid="`assets-place-subtitle-${option.build.id}`"
+                    >
+                      <span
+                        v-if="option.cloud"
+                        class="size-1.5 shrink-0 rounded-[3px]"
+                        :class="option.state === 'running' ? 'bg-success' : 'bg-subtle-foreground'"
+                        aria-hidden="true"
+                      />
+                      <Skeleton
+                        v-if="placeSubtitle(option) === null"
+                        class="h-3 w-36 rounded-sm"
+                        :data-testid="`assets-place-subtitle-loading-${option.build.id}`"
+                      />
+                      <Tooltip
+                        v-else-if="!option.cloud"
+                        :text="folderPathOf(option) ?? ''"
+                        class="min-w-0"
+                      >
+                        <span class="truncate">{{ placeSubtitle(option) }}</span>
+                      </Tooltip>
+                      <span v-else class="truncate">{{ placeSubtitle(option) }}</span>
+                    </span>
+                  </span>
+                  <Check
+                    v-if="option.build.id === selectedBuild.build.id"
+                    :size="14"
+                    class="shrink-0 text-foreground"
+                    aria-hidden="true"
+                  />
+                </MenuRadioItem>
+                <Tooltip
+                  v-if="!option.cloud"
+                  :text="revealFolderLabel"
+                  class="absolute top-1/2 right-7.5 -translate-y-1/2"
+                >
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="icon-sm"
+                    tabindex="-1"
+                    class="size-6.5 rounded-md"
+                    :aria-label="`${revealFolderLabel}: ${option.build.name}`"
+                    :data-testid="`assets-place-reveal-${option.build.id}`"
+                    @click="openPlaceFolder(option)"
+                  >
+                    <ScanSearch :size="15" aria-hidden="true" />
+                  </Button>
+                </Tooltip>
+              </div>
+            </template>
+          </DropdownMenuRadioGroup>
+        </Menu>
+        <Skeleton
+          v-else
+          class="h-[34px] w-40 shrink-0 rounded-[10px]"
+          data-testid="assets-build-picker-loading"
+        />
+        <SegmentedControl
+          v-if="toolbarCompactness < KINDS_AS_MENU"
+          v-model="kindFilter"
+          :options="kindOptions"
+          :label="t('assets.kindLabel')"
+        />
+        <div v-else class="shrink-0">
           <Menu
             :modal="false"
-            align="end"
-            class="z-20 min-w-[180px]"
+            align="start"
+            class="z-20 min-w-50"
             :aria-label="t('assets.kindLabel')"
           >
             <template #trigger>
@@ -449,11 +1203,16 @@ function extensionOf(name: string): string {
                 type="button"
                 variant="secondary"
                 size="md"
-                class="gap-1.5 px-3 text-[13px]/5"
-                data-testid="assets-filter"
+                class="gap-1.5 text-[13px]"
+                data-testid="assets-kind-menu"
               >
-                <ListFilter :size="15" aria-hidden="true" />
-                {{ filterLabel }}
+                {{ currentKind.label }}
+                <span
+                  v-if="currentKind.count !== undefined"
+                  class="text-subtle-foreground tabular-nums"
+                  >{{ currentKind.count }}</span
+                >
+                <ChevronDown :size="14" aria-hidden="true" />
               </Button>
             </template>
             <DropdownMenuRadioGroup :model-value="kindFilter">
@@ -463,16 +1222,39 @@ function extensionOf(name: string): string {
                 as="button"
                 type="button"
                 :value="option.value"
-                class="w-full"
-                :data-testid="`assets-filter-${option.value}`"
-                @select="kindFilter = option.value"
+                class="w-full gap-2.5"
+                :data-testid="`assets-kind-menu-${option.value}`"
+                @select.prevent="kindFilter = option.value"
               >
                 <span class="flex-1 text-left">{{ option.label }}</span>
+                <span
+                  v-if="option.count !== undefined"
+                  class="text-subtle-foreground tabular-nums"
+                  >{{ option.count }}</span
+                >
                 <Check v-if="kindFilter === option.value" :size="15" aria-hidden="true" />
               </MenuRadioItem>
             </DropdownMenuRadioGroup>
           </Menu>
-          <div class="w-[220px]">
+        </div>
+        <div class="ml-auto flex min-w-0 items-center gap-2">
+          <Button
+            variant="muted-textonly"
+            size="icon"
+            type="button"
+            :disabled="loading"
+            :aria-label="t('assets.refresh')"
+            :title="t('assets.refresh')"
+            data-testid="assets-refresh"
+            @click="refresh"
+          >
+            <RefreshCw
+              :size="13"
+              :class="loading && 'animate-spin [animation-duration:900ms]'"
+              aria-hidden="true"
+            />
+          </Button>
+          <div v-if="toolbarCompactness < SEARCH_AS_ICON" class="w-[220px] min-w-[150px] shrink">
             <BaseInput
               v-model="searchQuery"
               class="h-8 [&_input]:text-ui"
@@ -481,6 +1263,34 @@ function extensionOf(name: string): string {
             >
               <template #leading><Search :size="14" /></template>
             </BaseInput>
+          </div>
+          <div v-else>
+            <PopoverRoot v-model:open="searchOpen">
+              <PopoverTrigger as-child>
+                <Button
+                  type="button"
+                  :variant="searchQuery ? 'secondary' : 'muted-textonly'"
+                  size="icon"
+                  :aria-label="t('assets.search')"
+                  :title="t('assets.search')"
+                  data-testid="assets-search-toggle"
+                >
+                  <Search :size="15" aria-hidden="true" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" :side-offset="6" class="w-64 p-1.5">
+                <BaseInput
+                  v-model="searchQuery"
+                  class="h-8 [&_input]:text-ui"
+                  :placeholder="t('assets.search')"
+                  :aria-label="t('assets.search')"
+                  data-testid="assets-search-compact"
+                  @keydown.enter="searchOpen = false"
+                >
+                  <template #leading><Search :size="14" /></template>
+                </BaseInput>
+              </PopoverContent>
+            </PopoverRoot>
           </div>
           <Menu
             :modal="false"
@@ -565,6 +1375,18 @@ function extensionOf(name: string): string {
     </div>
 
     <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
+      <p
+        v-if="focusMiss && selectedBuild?.cloud"
+        role="status"
+        class="m-0 mb-4 text-ui text-subtle-foreground"
+        data-testid="assets-not-found"
+      >
+        {{
+          t(focusMiss.checked ? 'assets.notFoundInCloud' : 'assets.notCheckedInCloud', {
+            name: focusMiss.name
+          })
+        }}
+      </p>
       <div v-if="showSkeleton" role="status" :aria-label="t('common.loading')">
         <ul
           ref="gallery"
@@ -631,7 +1453,7 @@ function extensionOf(name: string): string {
           :key="String(card.key)"
           :ref="measureCard"
           :data-index="card.index"
-          class="group rounded-card bg-[rgb(29_29_29/0.72)] p-1"
+          class="group rounded-card bg-[rgb(29_29_29/0.72)] p-1 has-[[data-card-key]:focus-visible]:shadow-[0_0_0_2px_var(--color-ring)]"
           :style="cardStyle(card)"
           :data-testid="`asset-${asset.id}`"
           @contextmenu.prevent="openAssetMenu(asset, $event)"
@@ -642,17 +1464,25 @@ function extensionOf(name: string): string {
             :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
             class="w-full align-top"
           >
-            <div class="block w-full">
+            <button
+              type="button"
+              class="block w-full cursor-pointer text-left outline-none"
+              :aria-label="t('assets.inspect', { name: asset.name })"
+              :data-testid="`asset-open-${asset.id}`"
+              :data-card-key="cardKey(asset)"
+              @click="openDetail(asset)"
+            >
               <span
                 class="relative block overflow-hidden rounded-control bg-[rgb(235_235_235/0.05)]"
                 :style="aspectStyle(assetShape(asset))"
               >
                 <img
-                  v-if="asset.previewUrl && asset.kind === 'image'"
-                  :src="asset.thumbnailUrl ?? asset.previewUrl"
+                  v-if="cardImage(asset)"
+                  :src="cardImage(asset) ?? undefined"
                   :alt="asset.name"
                   loading="lazy"
-                  class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  class="block size-full transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  :class="asset.kind === '3d' ? 'object-contain' : 'object-cover'"
                 />
                 <video
                   v-else-if="asset.previewUrl && asset.kind === 'video'"
@@ -660,23 +1490,31 @@ function extensionOf(name: string): string {
                   preload="metadata"
                   muted
                   class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  @loadedmetadata="noteDuration(asset, $event)"
                 />
                 <span
                   v-else
                   class="flex size-full flex-col items-center justify-center gap-2 text-[14px]/[14px] font-semibold transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                   :class="placeholderTint(asset)"
                 >
-                  <AudioLines v-if="asset.kind === 'audio'" :size="40" aria-hidden="true" />
+                  <Music v-if="asset.kind === 'audio'" :size="40" aria-hidden="true" />
                   <Box v-else-if="asset.kind === '3d'" :size="40" aria-hidden="true" />
                   <File v-else :size="40" aria-hidden="true" />
                   <span>{{ extensionOf(asset.name) }}</span>
                 </span>
                 <span
-                  v-if="asset.kind === 'video' && asset.durationSeconds"
-                  class="absolute bottom-2 left-2 flex h-[22px] items-center gap-[5px] rounded-full bg-[rgb(14_14_14/0.28)] pr-2 pl-[7px] text-[11.5px]/[16.1px] font-medium text-white"
+                  v-if="asset.kind === 'video' && asset.previewUrl"
+                  class="pointer-events-none absolute top-1/2 left-1/2 flex size-10 -translate-1/2 items-center justify-center rounded-full bg-media-overlay text-foreground backdrop-blur-sm"
+                  aria-hidden="true"
+                  data-testid="asset-play"
+                >
+                  <Play :size="18" class="translate-x-px" />
+                </span>
+                <span
+                  v-if="(asset.kind === 'video' || asset.kind === 'audio') && asset.durationSeconds"
+                  class="absolute right-2 bottom-2 rounded-md bg-media-overlay px-1.5 py-0.5 text-xs font-medium text-foreground tabular-nums backdrop-blur-sm"
                   data-testid="asset-duration"
                 >
-                  <Video :size="12" class="opacity-92" aria-hidden="true" />
                   {{ formatPlaybackTime(asset.durationSeconds) }}
                 </span>
               </span>
@@ -695,7 +1533,7 @@ function extensionOf(name: string): string {
                   >{{ assetDetails(asset) }}</span
                 >
               </span>
-            </div>
+            </button>
           </Tooltip>
 
           <div
@@ -705,13 +1543,13 @@ function extensionOf(name: string): string {
             <button
               type="button"
               :class="ASSET_TOOL_CLASS"
-              :aria-label="t('assets.download')"
-              :title="t('assets.download')"
+              :aria-label="cardTool(asset).label"
+              :title="cardTool(asset).label"
               :disabled="downloading.has(cardKey(asset))"
-              :data-testid="`asset-download-${asset.id}`"
-              @click="download(asset)"
+              :data-testid="`asset-${cardTool(asset).id}-${asset.id}`"
+              @click="cardTool(asset).run(asset)"
             >
-              <Download :size="14" aria-hidden="true" />
+              <component :is="cardTool(asset).icon" :size="14" aria-hidden="true" />
             </button>
             <button
               type="button"
@@ -728,7 +1566,31 @@ function extensionOf(name: string): string {
           </div>
         </li>
       </ul>
+      <p
+        v-if="cloudScanLimit !== undefined && !showSkeleton"
+        class="m-0 mt-6 text-center text-ui text-subtle-foreground"
+        data-testid="assets-scan-limit"
+      >
+        {{ t('assets.cloudScanLimit', { limit: cloudScanLimit }) }}
+      </p>
+      <AssetsPagination
+        v-if="showPagination"
+        v-model:page="currentPage"
+        v-model:page-size="pageSize"
+        :total="assetTotal"
+        :total-is-lower-bound="cloudTotalIsLowerBound"
+        :page-sizes="CLOUD_PAGE_SIZES"
+      />
     </div>
+
+    <OutputDetailDialog
+      v-if="detailIndex !== null"
+      v-model:index="detailIndex"
+      :items="detailItems"
+      @close="closeDetail"
+      @download="download(detailAssets[$event]!)"
+      @show-in-folder="reveal(detailAssets[$event]!)"
+    />
 
     <ContextMenu
       :open="assetMenu !== null"

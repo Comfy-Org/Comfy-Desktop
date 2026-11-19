@@ -5,10 +5,10 @@ import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupIte
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  ArrowDownToLine,
   Ban,
   CheckCircle2,
   CircleAlert,
+  Download,
   FolderOpen,
   LoaderCircle,
   PauseCircle,
@@ -19,6 +19,7 @@ import {
   XCircle
 } from '@lucide/vue'
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import { fileLabel, modalSubtitle, statusKindClass } from '../lib/downloadFormatters'
 import { revealInFolderLabel } from '../composables/usePlatform'
 import type {
@@ -165,9 +166,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
     <header
       class="dlm-modal-header flex items-center justify-between gap-3 border-b border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-5 pb-3"
     >
-      <h2
-        class="dlm-title m-0 font-display text-[length:var(--takeover-fs-h3,18px)] font-bold text-neutral-100"
-      >
+      <h2 class="dlm-title m-0 text-title font-semibold text-foreground">
         {{ t('downloadsTab.title') }}
       </h2>
       <Button
@@ -202,22 +201,13 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
             >{{ f.label }}</ToggleGroupItem
           >
         </ToggleGroup>
-        <div
+        <EmptyState
           v-if="filtered.length === 0"
-          class="dlm-empty flex flex-auto flex-col items-center justify-center gap-2 p-6 text-center"
-        >
-          <div
-            class="dlm-empty-icon mb-1 flex size-14 items-center justify-center rounded-2xl bg-[color-mix(in_oklab,var(--neutral-100)_5%,transparent)] text-text-muted"
-          >
-            <ArrowDownToLine :size="28" />
-          </div>
-          <span class="dlm-empty-title text-[14px] font-semibold text-neutral-100">{{
-            t('downloadsTab.empty')
-          }}</span>
-          <span class="dlm-empty-hint text-[13px] text-text-muted">{{
-            t('downloadsTab.emptyHint')
-          }}</span>
-        </div>
+          class="dlm-empty flex-auto justify-center p-6"
+          :icon="Download"
+          :title="t('downloadsTab.empty')"
+          :text="t('downloadsTab.emptyHint')"
+        />
 
         <ul v-else :key="filter" class="dlm-list m-0 flex list-none flex-col gap-0.5 p-0">
           <li
@@ -326,7 +316,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                 {{ progressPercent(d) }}%
               </span>
               <Button
-                v-if="d.status === 'downloading'"
+                v-if="d.status === 'downloading' && d.canPause !== false"
                 type="button"
                 variant="secondary"
                 size="md"

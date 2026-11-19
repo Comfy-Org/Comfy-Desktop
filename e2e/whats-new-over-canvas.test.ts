@@ -58,7 +58,7 @@ async function panelViewVisible(): Promise<boolean> {
   })
 }
 
-test("What's New shows over the live canvas and closing brings the canvas back @linux", async () => {
+test("What's New shows over the live canvas and closing brings the canvas back @linux @macos", async () => {
   await clickInstallTile(ctx.panel, INSTALL_NAME)
   await ctx.panel.waitFor(
     async () =>

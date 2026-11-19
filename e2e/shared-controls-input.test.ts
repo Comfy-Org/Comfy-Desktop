@@ -5,12 +5,12 @@ import { isPopupVisible } from './support/cdpPages'
 
 test('the WebContents facade drives shared selects and tabs with native input @windows @macos @linux', async () => {
   const ctx = await launchApp({
-    settings: { firstUseCompleted: true, language: 'en', autoLaunchOnStartup: 'none' }
+    settings: { firstUseCompleted: true, language: 'en' }
   })
   try {
     const popup = await openDesktopSettings(ctx.app, ctx.panel)
 
-    const trigger = '[data-field-id="autoLaunchOnStartup"] [role="combobox"]'
+    const trigger = '[data-field-id="language"] [role="combobox"]'
     await popup.waitForVisible(trigger)
     await popup.evaluate(`(() => {
       window.__inputEvents = []
@@ -31,12 +31,8 @@ test('the WebContents facade drives shared selects and tabs with native input @w
         { type: 'mouseup', trusted: true },
         { type: 'click', trusted: true }
       ])
-    expect(await popup.clickByText('[role="listbox"] [role="option"]', 'Last used build')).toBe(
-      true
-    )
-    await expect
-      .poll(() => ctx.panel.evaluate("window.api.getSetting('autoLaunchOnStartup')"))
-      .toBe('last')
+    expect(await popup.clickByText('[role="listbox"] [role="option"]', '简体中文')).toBe(true)
+    await expect.poll(() => ctx.panel.evaluate("window.api.getSetting('language')")).toBe('zh')
 
     await expect
       .poll(() =>
@@ -50,13 +46,11 @@ test('the WebContents facade drives shared selects and tabs with native input @w
     await popup.pressKey('Escape')
     await expect.poll(() => popup.exists('[role="listbox"]')).toBe(false)
     expect(await isPopupVisible(ctx.app, 'comfyTitlePopup.html')).toBe(true)
-    await popup.selectOption(trigger, 'None (show dashboard)')
-    await expect
-      .poll(() => ctx.panel.evaluate("window.api.getSetting('autoLaunchOnStartup')"))
-      .toBe('none')
+    await popup.selectOption(trigger, 'English')
+    await expect.poll(() => ctx.panel.evaluate("window.api.getSetting('language')")).toBe('en')
 
     expect(await popup.clickNth('[role="tab"]', 2)).toBe(true)
-    await expect.poll(() => popup.textOf('[role="tab"][aria-selected="true"]')).toBe('Storage')
+    await expect.poll(() => popup.textOf('[role="tab"][aria-selected="true"]')).toBe('Folders')
     await popup.pressKey('Home')
     await expect
       .poll(() =>

@@ -1,3 +1,4 @@
+import { toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useModal } from './useModal'
 import { useDialogs } from './useDialogs'
@@ -34,6 +35,11 @@ export interface PreparedDetailAction {
 export interface DetailActionProgressTarget {
   returnTo: ShowProgressOpts['returnTo']
   onShowProgress: (opts: ShowProgressOpts) => void
+}
+
+function withIpcCloneableData(action: ActionDef): ActionDef {
+  if (action.data === undefined) return action
+  return { ...action, data: JSON.parse(JSON.stringify(toRaw(action.data))) }
 }
 
 export function useDetailActionPreflight() {
@@ -91,7 +97,7 @@ export function useDetailActionPreflight() {
 
     if (!(await runDiskSpaceCheck(next, inst, modal, t, null, dialogs))) return null
 
-    return { action: next, wasRunning, requiresStoppedGuard }
+    return { action: withIpcCloneableData(next), wasRunning, requiresStoppedGuard }
   }
 
   function showDetailActionProgress(

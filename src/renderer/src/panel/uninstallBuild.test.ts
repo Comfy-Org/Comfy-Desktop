@@ -133,8 +133,10 @@ function openDesktop(installations: Installation[]): Desktop {
     listHomeWorkflows: async () => [],
     listApps: async () => [],
     getAppsEnabled: async () => false,
+    getAppUpdateState: async () => ({ kind: null, version: null, autoUpdate: true }),
     getCloudFreeRunsEnabled: async () => false,
     getCloudUserTier: async () => 'unknown',
+    refreshCreditBalance: async () => ({ status: 'signed_out' }),
     getDetailSections: async () => UNINSTALL_ACTION_SECTIONS,
     getDiskSpace: async () => null,
     getInstallationSize: async () => ({ sizeBytes: 0 }),
@@ -187,15 +189,37 @@ async function openBuildsList(): Promise<Panel> {
   return panel
 }
 
-async function uninstallFromTheBuildsList(): Promise<void> {
+async function openTileMenu(): Promise<void> {
   await press(TID.dashboardTileKebab(BUILD.id))
-  await press(TID.contextMenuItem('delete'))
-  await vi.waitFor(() => expect(onPage(TID.baseAlertAction)).not.toBeNull())
-  await press(TID.baseAlertAction)
+  await vi.waitFor(() => expect(onPage('build-menu')).not.toBeNull())
+}
+
+async function chooseOnTileMenu(item: string): Promise<void> {
+  await openTileMenu()
+  await press(`build-menu-${item}`)
+}
+
+async function tileMenuItems(): Promise<string[]> {
+  await openTileMenu()
+  const items = [...onPage('build-menu')!.querySelectorAll('[role="menuitem"]')].map((row) =>
+    row.getAttribute('data-testid')!.replace('build-menu-', '')
+  )
+  onPage('build-menu')!.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+  )
+  await vi.waitFor(() => expect(onPage('build-menu')).toBeNull())
+  return items
+}
+
+async function uninstallFromTheBuildsList(): Promise<void> {
+  await chooseOnTileMenu('delete')
+  await vi.waitFor(() => expect(onPage('build-menu-confirm-uninstall')).not.toBeNull())
+  await press('build-menu-confirm-uninstall')
+  expect(onPage(TID.baseAlertAction), 'the menu asked, so no second dialog').toBeNull()
 }
 
 async function openBuildPage(): Promise<void> {
-  await press(TID.dashboardTile(BUILD.id))
+  await chooseOnTileMenu('manage')
   await vi.waitFor(() => expect(onPage(TID.pickerMoreTrigger)).not.toBeNull())
   await vi.waitFor(() =>
     expect(onPage<HTMLButtonElement>(TID.pickerMoreTrigger)!.disabled).toBe(false)
@@ -248,7 +272,7 @@ describe('uninstalling a build', () => {
     expect(onPage('app-sidebar')).not.toBeNull()
     expect(buildTile()!.checkVisibility()).toBe(true)
     expect(buildTile()!.textContent).toContain('Uninstalling')
-    expect(onPage(`chooser-tile-cancel-${BUILD.id}`)).not.toBeNull()
+    expect(await tileMenuItems()).toContain('cancel')
 
     await desktop.reportProgress({
       installationId: BUILD.id,
@@ -275,8 +299,10 @@ describe('uninstalling a build', () => {
     expect(desktop.uninstalls).toHaveLength(1)
     expect(fullScreenProgress()).toBeNull()
     expect(buildTile()!.textContent).toContain('Uninstalling')
-    expect(onPage(TID.dashboardTileKebab(BUILD.id))).toBeNull()
-    expect(onPage(`chooser-tile-view-logs-${BUILD.id}`)).toBeNull()
+    const whileUninstalling = await tileMenuItems()
+    expect(whileUninstalling[0]).toBe('cancel')
+    expect(whileUninstalling).not.toContain('launch')
+    expect(whileUninstalling).not.toContain('view-logs')
 
     await desktop.reportProgress({
       installationId: BUILD.id,
@@ -296,7 +322,7 @@ describe('uninstalling a build', () => {
       buildTile()!.textContent,
       'the tile keeps uninstalling until the build leaves the list'
     ).toContain('Uninstalling')
-    expect(onPage(TID.dashboardTileKebab(BUILD.id))).toBeNull()
+    expect(await tileMenuItems()).not.toContain('launch')
 
     await desktop.removeBuild(BUILD.id)
 
@@ -423,7 +449,7 @@ describe('uninstalling a build', () => {
     expect(buildTile()!.textContent).not.toContain('Uninstalling')
     expect(buildTile()!.querySelector('.chooser-tile-error-badge')).not.toBeNull()
 
-    await press(TID.dashboardTile(BUILD.id))
+    await chooseOnTileMenu('manage')
 
     await vi.waitFor(() =>
       expect(onPage('build-uninstall-failed-reason')!.textContent).toContain('python.exe')
@@ -434,7 +460,7 @@ describe('uninstalling a build', () => {
     await openBuildsList()
     await uninstallFromTheBuildsList()
 
-    await press(`chooser-tile-cancel-${BUILD.id}`)
+    await chooseOnTileMenu('cancel')
     await vi.waitFor(() => expect(onPage(TID.baseAlertAction)).not.toBeNull())
     expect(document.body.textContent).toContain('Stop uninstalling?')
     await press(TID.baseAlertAction)

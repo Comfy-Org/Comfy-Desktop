@@ -47,7 +47,12 @@ const mocks = vi.hoisted(() => ({
   operationAborts: new Map<string, AbortController>(),
   translate: vi.fn((key: string) => key),
   endViewGrants: vi.fn(),
-  allowDesktopWorkspace: vi.fn()
+  allowDesktopWorkspace: vi.fn(),
+  creditBalanceAuthChanged: vi.fn()
+}))
+
+vi.mock('./registerCreditBalanceHandlers', () => ({
+  creditBalanceAuthChanged: mocks.creditBalanceAuthChanged
 }))
 
 vi.mock('../viewWorkspaceGrants', () => ({
@@ -289,6 +294,32 @@ describe('registerDevPlatformHandlers', () => {
     )
   })
 
+  it.each([
+    ['general', 'https://platform.comfy.org/settings/general?workspace=w1'],
+    ['people', 'https://platform.comfy.org/settings/people?workspace=w1'],
+    ['billing', 'https://platform.comfy.org/settings/billing?workspace=w1']
+  ])('opens the Platform %s settings page for the workspace', async (page, url) => {
+    await handler('comfybuilder:openSettingsPage')({}, page, 'w1')
+
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url)
+  })
+
+  it('rejects a missing workspace instead of opening an unscoped settings page', async () => {
+    await expect(handler('comfybuilder:openSettingsPage')({}, 'billing', '')).rejects.toThrow(
+      'A workspace is required to open Developer Platform settings.'
+    )
+
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('refuses a settings page Platform does not have', async () => {
+    await expect(handler('comfybuilder:openSettingsPage')({}, 'constructor', 'w1')).rejects.toThrow(
+      'Unknown Developer Platform settings page.'
+    )
+
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+  })
+
   it('rejects a missing workspace instead of opening an unscoped Builds page', async () => {
     await expect(handler('comfybuilder:openBuildsPage')({}, '')).rejects.toThrow(
       'A workspace is required to open Builds.'
@@ -319,6 +350,15 @@ describe('registerDevPlatformHandlers', () => {
 
     expect(destroyed).not.toHaveBeenCalled()
     expect(live).toHaveBeenCalledOnce()
+  })
+
+  it('resets the credit balance on sign-in and on sign-out', async () => {
+    mocks.login.mockResolvedValue({ signedIn: true, workspaceId: 'ws-1' })
+
+    await handler('comfybuilder:signIn')({})
+    await handler('comfybuilder:signOut')({})
+
+    expect(mocks.creditBalanceAuthChanged).toHaveBeenCalledTimes(2)
   })
 
   it('signOut clears the session and broadcasts signed-out', async () => {
@@ -505,6 +545,14 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.switchWorkspace).toHaveBeenCalledWith('w2', 'chosen')
     expect(status).toMatchObject({ workspaceId: 'w2' })
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
+  })
+
+  it('forces a fresh credit balance read when the workspace switches', async () => {
+    mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })
+
+    await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+    expect(mocks.creditBalanceAuthChanged).toHaveBeenCalledOnce()
   })
 
   it('lets no view hold the target when a newer auth operation superseded the dashboard switch', async () => {

@@ -1,7 +1,10 @@
 import type * as NodeFs from 'node:fs'
 import path from 'node:path'
-import { Writable } from 'stream'
+import { pathToFileURL } from 'node:url'
+import { Readable, Writable } from 'stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { DownloadProgress } from './comfyDownloadManager'
+import type { CloudAssetPage } from '../../types/ipc'
 
 const getInstallation = vi.fn()
 const getAccessToken = vi.fn()
@@ -39,18 +42,20 @@ const renameFile = vi.fn(async (from: string, to: string) => {
   written.set(to, written.get(from) ?? '')
   written.delete(from)
 })
-const copyFile = vi.fn(async (from: string, to: string, _mode: number) => {
-  written.set(to, `copy of ${from}`)
-})
+const copyOf = (filePath: string): string => `copy of ${filePath}`
+const createReadStream = vi.fn((filePath: string) => Readable.from([Buffer.from(copyOf(filePath))]))
+const statFile = vi.fn(async (filePath: string) => ({ size: copyOf(filePath).length }))
+const readFile = vi.fn(async (filePath: string) => Buffer.from(copyOf(filePath)))
 const savedSettings = new Map<string, string>()
 vi.mock('fs', () => ({
   default: {
-    constants: { COPYFILE_EXCL: 1 },
     existsSync: (dir: string) => dir === '/remembered',
+    createReadStream: (filePath: string) => createReadStream(filePath),
     createWriteStream: (filePath: string, options?: { flags: string }) =>
       createWriteStream(filePath, options),
     promises: {
-      copyFile: (from: string, to: string, mode: number) => copyFile(from, to, mode),
+      stat: (filePath: string) => statFile(filePath),
+      readFile: (filePath: string) => readFile(filePath),
       rm: (path: string, options: { force: boolean }) => removeFile(path, options),
       rename: (from: string, to: string) => renameFile(from, to)
     }
@@ -59,9 +64,6 @@ vi.mock('fs', () => ({
 vi.mock('../settings', () => ({
   get: (key: string) => savedSettings.get(key),
   set: (key: string, value: string) => savedSettings.set(key, value)
-}))
-vi.mock('./comfyDownloadManager', () => ({
-  buildSaveDialogFilters: (name: string) => [{ name, extensions: ['*'] }]
 }))
 const panelSender = { panel: true }
 const trashOutputFile = vi.fn()
@@ -72,6 +74,7 @@ vi.mock('../host/registry', () => ({
 vi.mock('./outputFolders', () => ({
   outputFilePath: (target: string) => outputFile(target),
   revealOutputFile: vi.fn(),
+  openOutputFile: vi.fn(),
   copyOutputImage: vi.fn(),
   trashOutputFile: (target: string) => trashOutputFile(target)
 }))
@@ -80,6 +83,7 @@ vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({ getAccessToken })
 }))
 vi.mock('./ipc/shared', () => ({
+  _broadcastToRenderer: vi.fn(),
   sourceMap: {
     cloud: { category: 'cloud' },
     standalone: { category: 'local' },
@@ -87,8 +91,24 @@ vi.mock('./ipc/shared', () => ({
   }
 }))
 
-const { assetKind, downloadAsset, listAssets, registerAssetsHandlers, signedStorageUrl } =
-  await import('./assets')
+const {
+  assetKind,
+  downloadAsset,
+  findCloudAsset,
+  listAssets,
+  listNewestCloudOutputs,
+  readAssetModel,
+  readCloudOutput,
+  registerAssetsHandlers,
+  signedStorageUrl
+} = await import('./assets')
+const {
+  cancelModelDownload,
+  clearFinishedDownloads,
+  getDownloadsTrayState,
+  pauseModelDownload,
+  retryDownload
+} = await import('./comfyDownloadManager')
 
 const fetchMock = vi.fn()
 const realFs = await vi.importActual<typeof NodeFs>('node:fs')
@@ -105,6 +125,8 @@ function pngHeader(width: number, height: number): Uint8Array<ArrayBuffer> {
   header.writeUInt8(2, 25)
   return new Uint8Array(header)
 }
+
+const FIRST_PAGE = { offset: 0, limit: 100, order: 'newest' } as const
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -152,9 +174,9 @@ describe('signedStorageUrl', () => {
 describe('listAssets', () => {
   it('never asks a local or remote build over HTTP', async () => {
     getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    expect(await listAssets('local-1')).toEqual([])
+    expect((await listAssets('local-1', FIRST_PAGE)).assets).toEqual([])
     getInstallation.mockResolvedValue({ id: 'remote-1', sourceId: 'remote' })
-    expect(await listAssets('remote-1')).toEqual([])
+    expect((await listAssets('remote-1', FIRST_PAGE)).assets).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -162,7 +184,7 @@ describe('listAssets', () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue(null)
 
-    expect(await listAssets('cloud-1')).toEqual([])
+    expect((await listAssets('cloud-1', FIRST_PAGE)).assets).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -175,12 +197,14 @@ describe('listAssets', () => {
           assets: [
             { id: 'bad', name: 'bad.png', mime_type: 1 },
             { id: 'good', name: 'good.png', mime_type: null, created_at: null, size: 0 }
-          ]
+          ],
+          total: 2,
+          has_more: false
         })
       )
       .mockResolvedValue(new Response(null, { status: 404 }))
 
-    const assets = await listAssets('cloud-1')
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
 
     expect(assets.map((a) => [a.id, a.sizeBytes])).toEqual([['good', 0]])
   })
@@ -191,15 +215,317 @@ describe('listAssets', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assets: Array.from({ length: 150 }, (_, i) => ({ id: `a${i}`, name: `a${i}.bin` }))
+          assets: Array.from({ length: 150 }, (_, i) => ({ id: `a${i}`, name: `a${i}.bin` })),
+          total: 150,
+          has_more: true,
+          next_cursor: 'next'
         })
       )
       .mockResolvedValue(new Response(null, { status: 404 }))
 
-    const assets = await listAssets('cloud-1')
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
 
     expect(assets).toHaveLength(100)
     expect(assets.at(-1)!.id).toBe('a99')
+  })
+
+  it('asks for a capped total on the first page and treats 10,000 as a lower bound', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        assets: [{ id: 'a1', name: 'a1.bin' }],
+        total: 10_000,
+        has_more: true,
+        next_cursor: 'start-2'
+      })
+    )
+
+    const page = await listAssets('cloud-1', FIRST_PAGE)
+
+    const query = new URL(fetchMock.mock.calls[0]![0]).searchParams
+    expect(query.get('capped_total')).toBe('true')
+    expect(query.has('include_total')).toBe(false)
+    expect(query.has('offset')).toBe(false)
+    expect(page).toMatchObject({ total: 10_000, totalIsLowerBound: true, nextCursor: 'start-2' })
+  })
+
+  it('jumps to a numbered page at the requested offset, size and order without a count', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        assets: [{ id: 'a1', name: 'a1.bin' }],
+        total: 152,
+        has_more: true,
+        next_cursor: 'next'
+      })
+    )
+
+    const page = await listAssets('cloud-1', { offset: 150, limit: 50, order: 'oldest' })
+
+    const asked = new URL(fetchMock.mock.calls[0]![0])
+    expect(Object.fromEntries(asked.searchParams)).toEqual({
+      tags_any: 'output',
+      sort: 'created_at',
+      order: 'asc',
+      limit: '50',
+      offset: '150',
+      include_public: 'false',
+      include_total: 'false'
+    })
+    expect(page).toMatchObject({ total: null, nextCursor: 'next' })
+  })
+
+  it('follows the cursor past 10,000 with no offset or count, and uses raw rows to find the end', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        assets: [
+          { id: 42, name: 'bad.bin' },
+          { id: 'a10002', name: 'last.bin' }
+        ],
+        total: 2,
+        has_more: false
+      })
+    )
+
+    const page = await listAssets('cloud-1', { ...FIRST_PAGE, offset: 10_000, after: 'next' })
+
+    const query = new URL(fetchMock.mock.calls[0]![0]).searchParams
+    expect(query.get('after')).toBe('next')
+    expect(query.get('include_total')).toBe('false')
+    expect(query.has('offset')).toBe(false)
+    expect(query.has('capped_total')).toBe(false)
+    expect(page.assets.map((asset) => asset.name)).toEqual(['last.bin'])
+    expect(page.total).toBe(10_002)
+  })
+
+  it('asks Cloud for names that contain the search, with a capped total and cursors', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        assets: [{ id: 'a1', name: 'forest-1.png' }],
+        total: 240,
+        has_more: true,
+        next_cursor: 'forest-2'
+      })
+    )
+
+    const page = await listAssets('cloud-1', { ...FIRST_PAGE, search: 'forest' })
+
+    const query = new URL(fetchMock.mock.calls[0]![0]).searchParams
+    expect(query.get('name_contains')).toBe('forest')
+    expect(query.get('capped_total')).toBe('true')
+    expect(page).toMatchObject({ total: 240, nextCursor: 'forest-2' })
+  })
+
+  it('rejects a continuing Cloud page with no next cursor', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ assets: [{ id: 'a1', name: 'a1.bin' }], total: 101, has_more: true })
+    )
+
+    await expect(listAssets('cloud-1', FIRST_PAGE)).rejects.toThrow('invalid cursor')
+  })
+
+  describe('with a type', () => {
+    function cloudOfOutputs(total: number): number[] {
+      const offsetsAsked: number[] = []
+      getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+      getAccessToken.mockResolvedValue('token')
+      fetchMock.mockImplementation(async (url: string) => {
+        const asked = new URL(url)
+        const offset = Number(asked.searchParams.get('after')?.replace('cursor-', '') ?? 0)
+        const limit = Number(asked.searchParams.get('limit'))
+        offsetsAsked.push(offset)
+        const count = Math.max(0, Math.min(limit, total - offset))
+        return jsonResponse({
+          assets: Array.from({ length: count }, (_, i) => {
+            const index = offset + i
+            return index % 100 === 3
+              ? { id: `m${index}`, name: `mesh-${index}.glb` }
+              : { id: `a${index}`, name: `out-${index}.bin` }
+          }),
+          total: count,
+          has_more: offset + count < total,
+          next_cursor: offset + count < total ? `cursor-${offset + count}` : undefined
+        })
+      })
+      return offsetsAsked
+    }
+
+    it('reads the whole Cloud list in large pages and keeps only that type, without opening any file', async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+
+      const page = await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
+
+      expect(offsetsAsked).toEqual([0, 500, 1000])
+      expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.get('limit')).toBe('500')
+      expect(page.total).toBe(12)
+      expect(page.assets.map((a) => a.name)).toEqual([
+        'mesh-3.glb',
+        'mesh-103.glb',
+        'mesh-203.glb',
+        'mesh-303.glb',
+        'mesh-403.glb'
+      ])
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    })
+
+    it('scans by cursor without asking for any count or offset', async () => {
+      cloudOfOutputs(1200)
+
+      await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
+
+      const counts = fetchMock.mock.calls.map(([url]) => {
+        const asked = new URL(url as string).searchParams
+        return [asked.get('after'), asked.get('offset'), asked.get('include_total')]
+      })
+      expect(counts).toEqual([
+        [null, null, 'false'],
+        ['cursor-500', null, 'false'],
+        ['cursor-1000', null, 'false']
+      ])
+    })
+
+    it('stops a cursor scan when a page fails', async () => {
+      getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+      getAccessToken.mockResolvedValue('token')
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            assets: [{ id: 'a1', name: 'asset.bin' }],
+            has_more: true,
+            next_cursor: 'next'
+          })
+        )
+        .mockResolvedValueOnce(new Response(null, { status: 500 }))
+
+      await expect(listAssets('cloud-1', { ...FIRST_PAGE, kind: '3d' })).rejects.toThrow('HTTP 500')
+
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('reports when it reaches the 50,000-output scan limit with more rows available', async () => {
+      const checked = cloudOfOutputs(50_001)
+
+      const page = await listAssets('cloud-1', { ...FIRST_PAGE, limit: 5, kind: '3d' })
+
+      expect(checked).toHaveLength(100)
+      expect(page).toMatchObject({ total: 500, scanLimit: 50_000 })
+    })
+
+    it('reads the list again for a later page once the read is 30 minutes old', async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+      const slot = {}
+      const signal = new AbortController().signal
+      const threeD = { ...FIRST_PAGE, limit: 5, kind: '3d' } as const
+      const now = vi.spyOn(Date, 'now')
+      try {
+        now.mockReturnValue(0)
+        await listAssets('cloud-1', threeD, signal, slot)
+        now.mockReturnValue(30 * 60_000)
+
+        await listAssets('cloud-1', { ...threeD, offset: 5 }, signal, slot)
+      } finally {
+        now.mockRestore()
+      }
+
+      expect(offsetsAsked).toHaveLength(6)
+    })
+
+    it('reuses that read for the later pages of the type, and reads again for the first page', async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+      const signal = new AbortController().signal
+      const slot = {}
+      const page = (offset: number) =>
+        listAssets('cloud-1', { ...FIRST_PAGE, offset, limit: 5, kind: '3d' }, signal, slot)
+      await page(0)
+
+      const second = await page(5)
+      expect(offsetsAsked, 'page 2 reads nothing new').toHaveLength(3)
+      expect(second.assets[0]!.name).toBe('mesh-503.glb')
+
+      await page(0)
+      expect(offsetsAsked, 'page 1 reads the list again').toHaveLength(6)
+    })
+
+    it('reads again for a later page when a new read of page 1 was stopped', async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+      const slot = {}
+      const threeD = { ...FIRST_PAGE, limit: 5, kind: '3d' } as const
+      await listAssets('cloud-1', threeD, new AbortController().signal, slot)
+
+      const stopped = new AbortController()
+      stopped.abort()
+      await expect(listAssets('cloud-1', threeD, stopped.signal, slot)).rejects.toThrow()
+      const asksBefore = offsetsAsked.length
+      await listAssets('cloud-1', { ...threeD, offset: 5 }, new AbortController().signal, slot)
+
+      expect(offsetsAsked.length - asksBefore, 'page 2 does not reuse the old read').toBe(3)
+    })
+
+    it("keeps each window's read apart", async () => {
+      const offsetsAsked = cloudOfOutputs(1200)
+      registerAssetsHandlers()
+      const list = handlers.get('assets:list')!
+      const firstWindow = {}
+      const threeD = { ...FIRST_PAGE, limit: 5, kind: '3d' }
+
+      await list({ sender: firstWindow }, 'cloud-1', threeD)
+      await list({ sender: {} }, 'cloud-1', { ...threeD, order: 'oldest' })
+      const second = (await list({ sender: firstWindow }, 'cloud-1', {
+        ...threeD,
+        offset: 5
+      })) as CloudAssetPage
+
+      expect(offsetsAsked, "page 2 uses the first window's own read").toHaveLength(6)
+      expect(second.assets[0]!.name).toBe('mesh-503.glb')
+    })
+
+    it('scans only the outputs whose names contain the search, and reads again for a new search', async () => {
+      cloudOfOutputs(1200)
+      const slot = {}
+      const signal = new AbortController().signal
+      const threeD = { ...FIRST_PAGE, limit: 5, kind: '3d' } as const
+
+      await listAssets('cloud-1', { ...threeD, search: 'mesh' }, signal, slot)
+      const searched = fetchMock.mock.calls.map(([url]) =>
+        new URL(url as string).searchParams.get('name_contains')
+      )
+      expect(searched).toEqual(['mesh', 'mesh', 'mesh'])
+
+      fetchMock.mockClear()
+      await listAssets('cloud-1', { ...threeD, offset: 5, search: 'out' }, signal, slot)
+      expect(
+        fetchMock,
+        'a later page of another search does not reuse the old read'
+      ).toHaveBeenCalled()
+      expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.get('name_contains')).toBe('out')
+    })
+
+    it('keeps only one copy when Cloud returns the same output across two scan pages', async () => {
+      getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+      getAccessToken.mockResolvedValue('token')
+      fetchMock.mockImplementation(async (url: string) => {
+        const first = !new URL(url).searchParams.has('after')
+        const indexes = first ? Array.from({ length: 500 }, (_, i) => i) : [499, 500]
+        return jsonResponse({
+          assets: indexes.map((i) => ({ id: `m${i}`, name: `mesh-${i}.glb` })),
+          has_more: first,
+          next_cursor: first ? 'next' : undefined
+        })
+      })
+
+      const page = await listAssets('cloud-1', { ...FIRST_PAGE, offset: 497, kind: '3d' })
+
+      expect(page.assets.map((a) => a.id)).toEqual(['m497', 'm498', 'm499', 'm500'])
+      expect(page.total).toBe(501)
+    })
   })
 
   it('lists the signed-in cloud workspace and resolves signed media links for playable kinds', async () => {
@@ -212,7 +538,9 @@ describe('listAssets', () => {
             { id: 'v1', name: 'clip.mp4', created_at: '2026-11-09T10:00:00Z' },
             { id: 's1', name: 'audio/voice.wav', created_at: '2026-11-09T09:00:00Z' },
             { id: 'm1', name: 'mesh.glb', created_at: '2026-11-09T08:00:00Z' }
-          ]
+          ],
+          total: 3,
+          has_more: false
         })
       )
       .mockImplementation(
@@ -225,7 +553,7 @@ describe('listAssets', () => {
           })
       )
 
-    const assets = await listAssets('cloud-1')
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
 
     expect(fetchMock.mock.calls[0]![1].headers.Authorization).toBe('Bearer token')
     expect(assets.map((a) => [a.name, a.kind, a.previewUrl])).toEqual([
@@ -233,7 +561,43 @@ describe('listAssets', () => {
       ['voice.wav', 'audio', 'https://storage.googleapis.com/bucket/s1?sig=1'],
       ['mesh.glb', '3d', null]
     ])
-    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(
+      fetchMock,
+      'the list, two links, and the start of the video and the audio'
+    ).toHaveBeenCalledTimes(5)
+  })
+
+  it('shows the picture Cloud keeps for a 3D output, and opens no model file to list it', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assets: [
+            { id: 'm1', name: 'fox.glb', preview_id: 'p9' },
+            { id: 'm2', name: 'robot.glb', preview_id: null }
+          ],
+          total: 2,
+          has_more: false
+        })
+      )
+      .mockImplementation(
+        async (url: string) =>
+          new Response(null, {
+            status: 302,
+            headers: {
+              Location: `https://storage.googleapis.com/bucket/${/\/assets\/([^/]+)\/content/.exec(url)?.[1]}?sig=1`
+            }
+          })
+      )
+
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
+
+    expect(assets.map((a) => [a.name, a.thumbnailUrl, a.previewUrl])).toEqual([
+      ['fox.glb', 'https://storage.googleapis.com/bucket/p9?sig=1', null],
+      ['robot.glb', null, null]
+    ])
+    expect(fetchMock, 'the list and one picture link').toHaveBeenCalledTimes(2)
   })
 
   it('reads the size of each Cloud picture and video, and how long a video runs, from the start of the file', async () => {
@@ -250,7 +614,9 @@ describe('listAssets', () => {
           assets: [
             { id: 'p1', name: 'portrait.png', created_at: '2026-11-09T10:00:00Z' },
             { id: 'v1', name: 'clip.webm', created_at: '2026-11-09T09:00:00Z' }
-          ]
+          ],
+          total: 2,
+          has_more: false
         })
       const id = /\/assets\/([^/]+)\/content/.exec(url)?.[1]
       if (id)
@@ -263,7 +629,7 @@ describe('listAssets', () => {
       return new Response(file, { status: 206 })
     })
 
-    const assets = await listAssets('cloud-1')
+    const { assets } = await listAssets('cloud-1', FIRST_PAGE)
 
     expect(
       assets.map((a) => [
@@ -283,10 +649,146 @@ describe('listAssets', () => {
   })
 })
 
+describe('findCloudAsset', () => {
+  type LookupPage = { assets: unknown; has_more?: unknown; next_cursor?: unknown }
+
+  function serveLookup(pages: Record<string, LookupPage | Response>): URL[] {
+    const asked: URL[] = []
+    fetchMock.mockImplementation(async (url: string) => {
+      const id = /\/assets\/([^/?]+)\/content/.exec(url)?.[1]
+      if (id)
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `https://storage.googleapis.com/bucket/${id}?sig=1` }
+        })
+      if (url.startsWith('https://storage.googleapis.com/'))
+        return new Response(null, { status: 404 })
+      const request = new URL(url)
+      asked.push(request)
+      const page = pages[request.searchParams.get('after') ?? 'first']
+      if (!page) return new Response(null, { status: 404 })
+      return page instanceof Response ? page : jsonResponse(page)
+    })
+    return asked
+  }
+
+  const row = (id: string, name: string) => ({ id, name, created_at: '2026-11-01T00:00:00Z' })
+
+  beforeEach(() => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+  })
+
+  it('asks Comfy Cloud by name, follows the cursor, and returns the newest exact match', async () => {
+    const asked = serveLookup({
+      first: { assets: [row('a1', 'my-cutout.png')], has_more: true, next_cursor: 'c1' },
+      c1: {
+        assets: [row('a2', 'audio/cutout.png'), row('a3', 'cutout.png')],
+        has_more: true,
+        next_cursor: 'c2'
+      }
+    })
+
+    const lookup = await findCloudAsset('cloud-1', 'cutout.png')
+
+    expect(lookup).toMatchObject({
+      status: 'found',
+      asset: {
+        id: 'a2',
+        name: 'cutout.png',
+        previewUrl: 'https://storage.googleapis.com/bucket/a2?sig=1'
+      }
+    })
+    expect(asked.map((url) => url.searchParams.get('name_contains'))).toEqual([
+      'cutout.png',
+      'cutout.png'
+    ])
+    expect(asked.map((url) => url.searchParams.get('after'))).toEqual([null, 'c1'])
+    expect(asked[0]!.searchParams.get('tags_any')).toBe('output')
+    expect(asked[0]!.searchParams.get('include_public')).toBe('false')
+    expect(asked.every((url) => url.searchParams.get('include_total') === 'false')).toBe(true)
+  })
+
+  it('says the file is absent only after Comfy Cloud reports no more pages', async () => {
+    serveLookup({
+      first: { assets: [row('a1', 'my-cutout.png')], has_more: true, next_cursor: 'c1' },
+      c1: { assets: [row('a2', 'cutout.png.webp')], has_more: false }
+    })
+
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'absent' })
+  })
+
+  it('says the search is incomplete when a later page fails', async () => {
+    serveLookup({
+      first: { assets: [row('a1', 'my-cutout.png')], has_more: true, next_cursor: 'c1' },
+      c1: new Response(null, { status: 500 })
+    })
+
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+  })
+
+  it('says the search is incomplete when it reaches its page limit', async () => {
+    const pages: Record<string, LookupPage> = {}
+    for (let i = 0; i < 12; i++) {
+      pages[i === 0 ? 'first' : `c${i}`] = {
+        assets: [row(`a${i}`, `other-${i}.png`)],
+        has_more: true,
+        next_cursor: `c${i + 1}`
+      }
+    }
+    const asked = serveLookup(pages)
+
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+    expect(asked).toHaveLength(10)
+  })
+
+  it('says the search is incomplete for unreadable rows or unusable page details', async () => {
+    serveLookup({ first: { assets: [{ id: 7, name: 'cutout.png' }], has_more: false } })
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+
+    serveLookup({ first: { assets: [], has_more: true } })
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+
+    serveLookup({ first: { assets: [] } })
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+
+    serveLookup({
+      first: { assets: [], has_more: true, next_cursor: 'c1' },
+      c1: { assets: [], has_more: true, next_cursor: 'c1' }
+    })
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+  })
+
+  it('says the search is incomplete when signed out, and asks nothing', async () => {
+    getAccessToken.mockResolvedValue(null)
+
+    expect(await findCloudAsset('cloud-1', 'cutout.png')).toEqual({ status: 'incomplete' })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
 describe('downloadAsset', () => {
-  const win = {} as Parameters<typeof downloadAsset>[0]
+  const win = {
+    isDestroyed: () => false,
+    setProgressBar: vi.fn(),
+    webContents: { isDestroyed: () => false, send: vi.fn() }
+  } as unknown as Parameters<typeof downloadAsset>[0]
   const signedUrl = 'https://storage.googleapis.com/bucket/v1?sig=1'
   const partFilePath = (): string => createWriteStream.mock.calls[0]![0]
+
+  function downloadsRow(savePath: string): DownloadProgress | undefined {
+    const { active, recent } = getDownloadsTrayState()
+    const url = pathToFileURL(savePath).href
+    return [...recent, ...active].find((row) => row.url === url)
+  }
+
+  async function finishedRow(savePath: string): Promise<DownloadProgress> {
+    return vi.waitFor(() => {
+      const row = downloadsRow(savePath)
+      expect(row?.status).toMatch(/^(completed|error|cancelled)$/)
+      return row!
+    })
+  }
 
   function fileOnThisComputer(file: string): void {
     outputFile.mockImplementation(async (target: string) => (target === file ? file : null))
@@ -302,15 +804,46 @@ describe('downloadAsset', () => {
     )
   }
 
-  it('copies a file on this computer to where the user picks, without asking a build', async () => {
+  function heldOpenStream(
+    init: { signal: AbortSignal },
+    first: string
+  ): { response: Response; finish: () => void } {
+    let finish = (): void => {}
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(first))
+        finish = () => controller.close()
+        init.signal.addEventListener('abort', () => controller.error(new Error('aborted')))
+      }
+    })
+    return {
+      response: new Response(body, { headers: { 'Content-Length': String(first.length * 2) } }),
+      finish: () => finish()
+    }
+  }
+
+  afterEach(() => {
+    clearFinishedDownloads()
+  })
+
+  it('copies a file on this computer to where the user picks and lists it in Downloads as finished', async () => {
     fileOnThisComputer('/out/still.png')
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
 
     expect(await downloadAsset(win, 'local', '/out/still.png', '../still.png')).toBe(true)
+
+    expect(await finishedRow('/picked/still.png')).toMatchObject({
+      status: 'completed',
+      filename: 'still.png',
+      savePath: '/picked/still.png',
+      isImage: true
+    })
     expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/downloads/still.png')
-    expect(copyFile.mock.calls[0]![0]).toBe('/out/still.png')
-    expect(copyFile.mock.calls[0]![1]).toMatch(/^\/picked\/still\.png\..+\.part$/)
-    expect(copyFile.mock.calls[0]![2], 'never overwrites a partial file').toBe(1)
+    expect(createReadStream).toHaveBeenCalledExactlyOnceWith('/out/still.png')
+    expect(partFilePath()).toMatch(/^\/picked\/still\.png\..+\.part$/)
+    expect(createWriteStream.mock.calls[0]![1], 'never overwrites a partial file').toEqual({
+      flags: 'wx'
+    })
     expect(written.get('/picked/still.png')).toBe('copy of /out/still.png')
     expect(savedSettings.get('lastSaveDialogDir')).toBe('/picked')
     expect(fetchMock).not.toHaveBeenCalled()
@@ -323,19 +856,35 @@ describe('downloadAsset', () => {
       'not available'
     )
     expect(showSaveDialog).not.toHaveBeenCalled()
-    expect(copyFile).not.toHaveBeenCalled()
+    expect(createReadStream).not.toHaveBeenCalled()
   })
 
-  it('removes the partial copy when copying a file on this computer fails', async () => {
+  it('shows a failed copy in Downloads, and Retry saves the file to the same place', async () => {
     fileOnThisComputer('/out/still.png')
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
-    copyFile.mockRejectedValueOnce(new Error('disk full'))
-
-    await expect(downloadAsset(win, 'local', '/out/still.png', 'still.png')).rejects.toThrow(
-      'disk full'
+    createReadStream.mockImplementationOnce(
+      () =>
+        new Readable({
+          read() {
+            this.destroy(new Error('disk read error'))
+          }
+        })
     )
-    expect(removeFile).toHaveBeenCalledWith(copyFile.mock.calls[0]![1], { force: true })
+
+    await downloadAsset(win, 'local', '/out/still.png', 'still.png')
+
+    const failed = await finishedRow('/picked/still.png')
+    expect(failed).toMatchObject({ status: 'error', error: 'disk read error' })
+    expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true })
     expect(renameFile, 'the file the user picked is never overwritten').not.toHaveBeenCalled()
+    expect(savedSettings.has('lastSaveDialogDir'), 'remembered only once saved').toBe(false)
+
+    expect(retryDownload(failed.id!)).toBe(true)
+
+    await vi.waitFor(() => expect(downloadsRow('/picked/still.png')?.status).toBe('completed'))
+    expect(showSaveDialog, 'Retry does not ask again').toHaveBeenCalledOnce()
+    expect(written.get('/picked/still.png')).toBe('copy of /out/still.png')
+    expect(savedSettings.get('lastSaveDialogDir')).toBe('/picked')
   })
 
   it('offers only a plain file name in the save dialog when the name is unusable', async () => {
@@ -357,23 +906,131 @@ describe('downloadAsset', () => {
     expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/remembered/still.png')
   })
 
-  it('writes nothing when the save dialog is cancelled', async () => {
+  it('writes nothing and lists nothing in Downloads when the save dialog is cancelled', async () => {
     fileOnThisComputer('/out/still.png')
     showSaveDialog.mockResolvedValue({ canceled: true })
 
     expect(await downloadAsset(win, 'local', '/out/still.png', 'still.png')).toBe(false)
-    expect(copyFile).not.toHaveBeenCalled()
+    expect(createReadStream).not.toHaveBeenCalled()
     expect(createWriteStream).not.toHaveBeenCalled()
+    expect(getDownloadsTrayState()).toEqual({ active: [], recent: [] })
   })
 
-  it('saves a Cloud asset through its signed storage link', async () => {
+  it('saves a Cloud asset through its signed storage link and lists it in Downloads', async () => {
     cloudFile(() => new Response('video'))
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
 
     expect(await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).toBe(true)
+
+    expect(await finishedRow('/picked/clip.mp4')).toMatchObject({
+      status: 'completed',
+      filename: 'clip.mp4',
+      savePath: '/picked/clip.mp4',
+      isImage: false
+    })
     expect(fetchMock.mock.calls[0]![0]).toContain('/api/assets/v1/content?disposition=attachment')
     expect(fetchMock.mock.calls[1]![0]).toBe(signedUrl)
     expect(written.get('/picked/clip.mp4')).toBe('video')
+  })
+
+  it('shows a Cloud download in Downloads with its progress while it runs', async () => {
+    let stream: ReturnType<typeof heldOpenStream> | undefined
+    cloudFile((init) => {
+      stream = heldOpenStream(init, 'half')
+      return stream.response
+    })
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
+
+    await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+
+    const running = await vi.waitFor(() => {
+      const row = downloadsRow('/picked/clip.mp4')
+      expect(row).toMatchObject({
+        status: 'downloading',
+        filename: 'clip.mp4',
+        progress: 0.5,
+        receivedBytes: 4,
+        totalBytes: 8,
+        canPause: false
+      })
+      return row!
+    })
+    expect(win.setProgressBar, 'the Dock icon shows progress').toHaveBeenCalledWith(0.5)
+    expect(pauseModelDownload(running.id!), 'a streamed save offers no Pause').toBe(false)
+
+    stream!.finish()
+
+    expect((await finishedRow('/picked/clip.mp4')).status).toBe('completed')
+    expect(win.setProgressBar).toHaveBeenLastCalledWith(-1)
+  })
+
+  it('stops a Cloud download cancelled from Downloads and removes the partial file', async () => {
+    cloudFile((init) => heldOpenStream(init, 'half').response)
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
+
+    await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+    const running = await vi.waitFor(() => {
+      const row = downloadsRow('/picked/clip.mp4')
+      expect(row?.status).toBe('downloading')
+      return row!
+    })
+
+    expect(cancelModelDownload(running.id!)).toBe(true)
+
+    expect((await finishedRow('/picked/clip.mp4')).status).toBe('cancelled')
+    await vi.waitFor(() => expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true }))
+    expect(renameFile, 'the file the user picked is never written').not.toHaveBeenCalled()
+    expect(win.setProgressBar, 'the Dock icon stops showing progress').toHaveBeenLastCalledWith(-1)
+  })
+
+  it('shows the progress of a copy on this computer while it runs', async () => {
+    fileOnThisComputer('/out/clip.mp4')
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
+    statFile.mockResolvedValueOnce({ size: 8 })
+    const source = new Readable({ read() {} })
+    createReadStream.mockReturnValueOnce(source)
+
+    await downloadAsset(win, 'local', '/out/clip.mp4', 'clip.mp4')
+    source.push('half')
+
+    await vi.waitFor(() =>
+      expect(downloadsRow('/picked/clip.mp4')).toMatchObject({
+        status: 'downloading',
+        progress: 0.5,
+        receivedBytes: 4,
+        totalBytes: 8
+      })
+    )
+
+    source.push('done')
+    source.push(null)
+
+    expect((await finishedRow('/picked/clip.mp4')).status).toBe('completed')
+    expect(written.get('/picked/clip.mp4')).toBe('halfdone')
+  })
+
+  it('stops a copy on this computer cancelled mid-copy and leaves the picked file untouched', async () => {
+    fileOnThisComputer('/out/still.png')
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+    const source = new Readable({ read() {} })
+    createReadStream.mockReturnValueOnce(source)
+
+    await downloadAsset(win, 'local', '/out/still.png', 'still.png')
+    source.push('part')
+    const copying = await vi.waitFor(() => {
+      const row = downloadsRow('/picked/still.png')
+      expect(row?.status).toBe('downloading')
+      return row!
+    })
+
+    expect(cancelModelDownload(copying.id!)).toBe(true)
+
+    expect((await finishedRow('/picked/still.png')).status).toBe('cancelled')
+    await vi.waitFor(() => expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true }))
+    expect(source.destroyed, 'the copy stops reading the source').toBe(true)
+    expect(renameFile, 'the file the user picked is never replaced').not.toHaveBeenCalled()
+    expect(written.has('/picked/still.png')).toBe(false)
+    expect(savedSettings.has('lastSaveDialogDir')).toBe(false)
   })
 
   it('does not follow a redirect away from the signed storage link', async () => {
@@ -381,19 +1038,9 @@ describe('downloadAsset', () => {
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
 
     await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+    await finishedRow('/picked/clip.mp4')
 
     expect(fetchMock.mock.calls[1]![1].redirect).toBe('error')
-  })
-
-  it('remembers the save folder only after the file is saved', async () => {
-    fileOnThisComputer('/out/still.png')
-    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
-    copyFile.mockRejectedValueOnce(new Error('disk full'))
-
-    await expect(downloadAsset(win, 'local', '/out/still.png', 'still.png')).rejects.toThrow(
-      'disk full'
-    )
-    expect(savedSettings.has('lastSaveDialogDir')).toBe(false)
   })
 
   it('fails before asking where to save when signed out of Cloud', async () => {
@@ -410,6 +1057,7 @@ describe('downloadAsset', () => {
 
     await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
     await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+    await vi.waitFor(() => expect(renameFile).toHaveBeenCalledTimes(2))
 
     const [first, second] = createWriteStream.mock.calls
     expect(first![0]).toMatch(/^\/picked\/clip\.mp4\..+\.part$/)
@@ -417,7 +1065,7 @@ describe('downloadAsset', () => {
     expect(first![1]).toEqual({ flags: 'wx' })
   })
 
-  it('fails without writing a file when storage cannot serve the asset', async () => {
+  it('shows the failure in Downloads without writing a file when storage cannot serve the asset', async () => {
     let signal: AbortSignal | undefined
     cloudFile((init) => {
       signal = init.signal
@@ -425,7 +1073,12 @@ describe('downloadAsset', () => {
     })
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
 
-    await expect(downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).rejects.toThrow('HTTP 503')
+    await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+
+    expect(await finishedRow('/picked/clip.mp4')).toMatchObject({
+      status: 'error',
+      error: 'Download failed: HTTP 503'
+    })
     expect(createWriteStream).not.toHaveBeenCalled()
     expect(signal?.aborted, 'the failed response is released').toBe(true)
   })
@@ -444,9 +1097,12 @@ describe('downloadAsset', () => {
     )
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
 
-    await expect(downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).rejects.toThrow(
-      'connection reset'
-    )
+    await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+
+    expect(await finishedRow('/picked/clip.mp4')).toMatchObject({
+      status: 'error',
+      error: 'connection reset'
+    })
     expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true })
     expect(renameFile, 'the file the user picked is never overwritten').not.toHaveBeenCalled()
   })
@@ -482,12 +1138,12 @@ describe('downloadAsset', () => {
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
-      const download = downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+      expect(await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).toBe(true)
       await vi.advanceTimersByTimeAsync(90_000)
-      expect(await download).toBe(true)
     } finally {
       vi.useRealTimers()
     }
+    expect((await finishedRow('/picked/clip.mp4')).status).toBe('completed')
     expect(written.get('/picked/clip.mp4')).toBe('ab')
   })
 
@@ -498,7 +1154,7 @@ describe('downloadAsset', () => {
           new ReadableStream({
             start(controller) {
               controller.enqueue(new TextEncoder().encode('part'))
-              init.signal.addEventListener('abort', () => controller.error(new Error('stalled')))
+              init.signal.addEventListener('abort', () => controller.error(init.signal.reason))
             }
           })
         )
@@ -506,13 +1162,15 @@ describe('downloadAsset', () => {
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
-      const download = downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
-      const failed = expect(download).rejects.toThrow('stalled')
+      await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
       await vi.advanceTimersByTimeAsync(20_000)
-      await failed
     } finally {
       vi.useRealTimers()
     }
+    expect(await finishedRow('/picked/clip.mp4')).toMatchObject({
+      status: 'error',
+      error: 'The download stopped sending data.'
+    })
     expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true })
   })
 })
@@ -532,6 +1190,148 @@ describe('the download handler', () => {
   })
 })
 
+describe('the list handler', () => {
+  function cloudListThatWaits(): AbortSignal[] {
+    const signals: AbortSignal[] = []
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((resolve, reject) => {
+          signals.push(init.signal)
+          init.signal.addEventListener('abort', () => reject(init.signal.reason))
+          setTimeout(() => resolve(jsonResponse({ assets: [], total: 0, has_more: false })), 50)
+        })
+    )
+    return signals
+  }
+
+  it('stops the page a window asked for before when the window asks for another', async () => {
+    const signals = cloudListThatWaits()
+    registerAssetsHandlers()
+    const list = handlers.get('assets:list')!
+    const sender = {}
+
+    const first = list({ sender }, 'cloud-1', FIRST_PAGE)
+    await vi.waitFor(() => expect(signals).toHaveLength(1))
+    const second = list({ sender }, 'cloud-1', { ...FIRST_PAGE, offset: 100 })
+
+    expect(await first, 'the replaced page').toBeNull()
+    expect(signals[0]!.aborted).toBe(true)
+    expect(await second).toEqual({ assets: [], total: null })
+  })
+
+  it('lets two windows list pages at the same time', async () => {
+    const signals = cloudListThatWaits()
+    registerAssetsHandlers()
+    const list = handlers.get('assets:list')!
+
+    const pages = await Promise.all([
+      list({ sender: {} }, 'cloud-1', FIRST_PAGE),
+      list({ sender: {} }, 'cloud-1', FIRST_PAGE)
+    ])
+
+    expect(pages, 'neither window replaced the other').toEqual([
+      { assets: [], total: 0 },
+      { assets: [], total: 0 }
+    ])
+    expect(signals).toHaveLength(2)
+  })
+
+  it('sends Cloud the search without its outer spaces', async () => {
+    cloudListThatWaits()
+    registerAssetsHandlers()
+
+    await handlers.get('assets:list')!({ sender: {} }, 'cloud-1', {
+      ...FIRST_PAGE,
+      search: '  forest '
+    })
+
+    expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.get('name_contains')).toBe('forest')
+  })
+
+  it('lists every Cloud output for a blank search', async () => {
+    cloudListThatWaits()
+    registerAssetsHandlers()
+
+    await handlers.get('assets:list')!({ sender: {} }, 'cloud-1', { ...FIRST_PAGE, search: '  ' })
+
+    expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.has('name_contains')).toBe(false)
+  })
+
+  it.each([
+    ['no page', undefined],
+    ['a negative offset', { ...FIRST_PAGE, offset: -1 }],
+    ['an offset beyond the count cap without a cursor', { ...FIRST_PAGE, offset: 10_000 }],
+    ['an empty cursor', { ...FIRST_PAGE, offset: 100, after: '' }],
+    ['a page larger than Cloud allows here', { ...FIRST_PAGE, limit: 500 }],
+    ['an unknown order', { ...FIRST_PAGE, order: 'random' }],
+    ['an unknown type', { ...FIRST_PAGE, kind: 'font' }],
+    ['a search that is not text', { ...FIRST_PAGE, search: 7 }],
+    ['a very long search', { ...FIRST_PAGE, search: 'a'.repeat(201) }]
+  ])('asks Cloud nothing for %s', async (_case, page) => {
+    registerAssetsHandlers()
+
+    expect(await handlers.get('assets:list')!({ sender: {} }, 'cloud-1', page)).toEqual({
+      assets: [],
+      total: 0
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('readAssetModel', () => {
+  const signedModel = 'https://storage.googleapis.com/bucket/m1?sig=1'
+
+  function cloudModel(model: Response): void {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockImplementation(async (url: string) =>
+      url === signedModel
+        ? model
+        : new Response(null, { status: 302, headers: { Location: signedModel } })
+    )
+  }
+
+  it('reads a Cloud model through its signed link', async () => {
+    cloudModel(new Response(new Uint8Array([1, 2, 3])))
+
+    const bytes = await readAssetModel('cloud-1', 'm1')
+
+    expect(Array.from(bytes ?? [])).toEqual([1, 2, 3])
+  })
+
+  it('does not read a Cloud model larger than 100 MB', async () => {
+    cloudModel(
+      new Response(new Uint8Array([1]), {
+        headers: { 'Content-Length': String(150 * 1024 * 1024) }
+      })
+    )
+
+    expect(await readAssetModel('cloud-1', 'm1')).toBeNull()
+  })
+
+  it('reads a model in an output folder on this computer, and nothing outside them', async () => {
+    outputFile.mockImplementation(async (target: string) =>
+      target === '/out/fox.glb' ? target : null
+    )
+
+    expect(Buffer.from((await readAssetModel('local', '/out/fox.glb'))!).toString()).toBe(
+      copyOf('/out/fox.glb')
+    )
+    expect(await readAssetModel('local', '/etc/passwd')).toBeNull()
+    expect(readFile).toHaveBeenCalledExactlyOnceWith('/out/fox.glb')
+  })
+
+  it('answers only the Assets page', async () => {
+    cloudModel(new Response(new Uint8Array([1])))
+    registerAssetsHandlers()
+
+    expect(await handlers.get('assets:read-model')!({ sender: {} }, 'cloud-1', 'm1')).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
 describe('the delete handler', () => {
   it('moves a file on this computer to the Trash only when the Assets page asks', async () => {
     trashOutputFile.mockResolvedValue(true)
@@ -544,5 +1344,147 @@ describe('the delete handler', () => {
 
     expect(await trash({ sender: panelSender }, 'local', '/out/still.png')).toBe(true)
     expect(trashOutputFile).toHaveBeenCalledExactlyOnceWith('/out/still.png')
+  })
+})
+
+describe('Cloud outputs for an app input', () => {
+  const signed = 'https://storage.googleapis.com/bucket/a1?sig=1'
+
+  function cloudContent(content: Response): void {
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockImplementation(async (url: string) =>
+      url === signed ? content : new Response(null, { status: 302, headers: { Location: signed } })
+    )
+  }
+
+  it("lists the newest outputs of the signed-in workspace, with each one's loader path", async () => {
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        assets: [
+          {
+            id: 'a1',
+            name: 'apps/cutout_00001_.png',
+            size: 10,
+            mime_type: 'image/png',
+            created_at: '2026-11-10T12:00:00Z',
+            loader_path: '0f3a.png',
+            tags: ['output']
+          },
+          { id: 'a2', name: 'clip.mp4', loader_path: null },
+          { name: 'no id' }
+        ],
+        has_more: true
+      })
+    )
+
+    expect(await listNewestCloudOutputs(12)).toEqual({
+      outputs: [
+        {
+          id: 'a1',
+          name: 'cutout_00001_.png',
+          size: 10,
+          mimeType: 'image/png',
+          createdAt: '2026-11-10T12:00:00Z',
+          loaderPath: '0f3a.png',
+          tags: ['output']
+        },
+        {
+          id: 'a2',
+          name: 'clip.mp4',
+          size: null,
+          mimeType: null,
+          createdAt: null,
+          loaderPath: null,
+          tags: []
+        }
+      ],
+      nextCursor: null
+    })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const query = new URL(url).searchParams
+    expect(Object.fromEntries(query)).toMatchObject({
+      tags_any: 'output',
+      include_public: 'false',
+      sort: 'created_at',
+      order: 'desc',
+      limit: '12'
+    })
+    expect(query.has('after')).toBe(false)
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer token' })
+  })
+
+  it('reads the page after a cursor, and gives the next cursor while there is more', async () => {
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ assets: [{ id: 'a3', name: 'older.png' }], has_more: true, next_cursor: 'c2' })
+    )
+
+    const page = await listNewestCloudOutputs(12, 'c1')
+
+    expect(page?.outputs.map((output) => output.id)).toEqual(['a3'])
+    expect(page?.nextCursor).toBe('c2')
+    const [url] = fetchMock.mock.calls[0] as [string]
+    expect(new URL(url).searchParams.get('after')).toBe('c1')
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ assets: [], has_more: false, next_cursor: 'x' }))
+    expect((await listNewestCloudOutputs(12, 'c2'))?.nextCursor, 'the last page').toBeNull()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ assets: [], has_more: true, next_cursor: 'c3' }))
+    expect((await listNewestCloudOutputs(12, 'c3'))?.nextCursor, 'a repeated cursor').toBeNull()
+  })
+
+  it('lists nothing when signed out, and fails on a bad answer', async () => {
+    getAccessToken.mockResolvedValue(null)
+    expect(await listNewestCloudOutputs(12)).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValue(new Response(null, { status: 500 }))
+    await expect(listNewestCloudOutputs(12)).rejects.toThrow('HTTP 500')
+  })
+
+  it('reads an output through its signed link, up to the cap', async () => {
+    cloudContent(new Response(new Uint8Array([1, 2, 3])))
+    const read = await readCloudOutput('a1', 3, 1_000)
+    expect(Array.from((read as { bytes: Uint8Array }).bytes)).toEqual([1, 2, 3])
+
+    cloudContent(new Response(new Uint8Array([1, 2, 3, 4])))
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'too-large' })
+
+    cloudContent(new Response(new Uint8Array([1]), { headers: { 'Content-Length': '99' } }))
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'too-large' })
+  })
+
+  it('says why it could not read an output', async () => {
+    getAccessToken.mockResolvedValue(null)
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'signed-out' })
+
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValue(new Response(null, { status: 404 }))
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'missing' })
+
+    cloudContent(new Response(null, { status: 404 }))
+    expect(await readCloudOutput('a1', 3, 1_000), 'the signed file is gone').toEqual({
+      error: 'missing'
+    })
+  })
+
+  it('answers elsewhere, not missing, when Cloud cannot be reached or refuses', async () => {
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'))
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'elsewhere' })
+
+    fetchMock.mockResolvedValue(new Response(null, { status: 500 }))
+    expect(await readCloudOutput('a1', 3, 1_000), 'no signed link').toEqual({ error: 'elsewhere' })
+
+    cloudContent(new Response(null, { status: 403 }))
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'elsewhere' })
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === signed) throw new TypeError('connection reset')
+      return new Response(null, { status: 302, headers: { Location: signed } })
+    })
+    expect(await readCloudOutput('a1', 3, 1_000)).toEqual({ error: 'elsewhere' })
   })
 })

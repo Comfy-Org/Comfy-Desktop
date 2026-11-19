@@ -14,9 +14,17 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
-import { _runningSessions, _stoppingInstallationIds } from '../lib/ipc/shared'
+import {
+  _beginLaunch,
+  _endLaunch,
+  _runningSessions,
+  _stoppingInstallationIds,
+  launchHadWindow,
+  type SessionInfo
+} from '../lib/ipc/shared'
 import {
   _resetAttachClaimsForTest,
+  bringToFront,
   canRestartFromPicker,
   claimAttachHost,
   comfyWindows,
@@ -30,11 +38,14 @@ import {
   getEntryByInstallationId,
   hostInstallEvents,
   indexInstallationId,
+  maximizeIfPendingReveal,
   nextWindowKey,
-  forceRevealHostWindow,
+  openOrFocusHomeHostWindow,
+  routeBuildOpen,
   hasRunningSessionForEntry,
   raiseAllHostWindows,
   registerHostEntry,
+  revealColdStartHostIfPending,
   setHostFactories,
   setLastFocusedInstallationId,
   shouldConfirmKillForEntry,
@@ -51,6 +62,7 @@ interface FakeWindow {
   raised: string[]
   show: () => void
   focus: () => void
+  maximize: () => void
   restore: () => void
   setAlwaysOnTop: () => void
 }
@@ -64,6 +76,7 @@ function makeWindow(opts: { destroyed?: boolean; minimized?: boolean } = {}): Fa
     raised: [],
     show: () => win.raised.push('show'),
     focus: () => win.raised.push('focus'),
+    maximize: () => win.raised.push('maximize'),
     restore: () => {
       win.minimized = false
       win.raised.push('restore')
@@ -287,30 +300,6 @@ describe('hasRunningSessionForEntry', () => {
   })
 })
 
-describe('forceRevealHostWindow', () => {
-  it('reveals a deferred host regardless of the coldStartPendingReveal flag', () => {
-    const entry = makeEntry({ installationId: null })
-    entry.coldStartPendingReveal = false
-    registerHostEntry(entry)
-
-    forceRevealHostWindow(entry.windowKey)
-
-    expect(entry.coldStartPendingReveal).toBe(false)
-    expect((entry.window as unknown as FakeWindow).raised).toContain('show')
-  })
-
-  it('no-ops for a destroyed window', () => {
-    const entry = makeEntry({ installationId: null, destroyed: true })
-    registerHostEntry(entry)
-    forceRevealHostWindow(entry.windowKey)
-    expect((entry.window as unknown as FakeWindow).raised).not.toContain('show')
-  })
-
-  it('no-ops for an unknown window key', () => {
-    expect(() => forceRevealHostWindow(999_999)).not.toThrow()
-  })
-})
-
 describe('attach-claim helpers', () => {
   it('consumeAttachClaim returns the claimed key and clears the entry', () => {
     claimAttachHost('inst-A', 7)
@@ -338,6 +327,29 @@ describe('attach-claim helpers', () => {
     expect(consumeAttachClaim('inst-A')).toBeUndefined()
     expect(consumeAttachClaim('inst-C')).toBeUndefined()
     expect(consumeAttachClaim('inst-B')).toBe(9)
+  })
+
+  it('remembers that a start lost the window it was to open in, and only that start', () => {
+    const left = _beginLaunch('inst-A')
+    const kept = _beginLaunch('inst-B')
+    try {
+      claimAttachHost('inst-A', 7)
+      claimAttachHost('inst-B', 9)
+      dropAttachClaimsForWindow(7)
+      expect(launchHadWindow('inst-A')).toBe(true)
+      expect(launchHadWindow('inst-B')).toBe(false)
+    } finally {
+      _endLaunch('inst-A', left)
+      _endLaunch('inst-B', kept)
+    }
+  })
+
+  it('leaves a console Build that finished starting without a window when Home lets go of its claim', () => {
+    const session = { mode: 'console' } as SessionInfo
+    _runningSessions.set('inst-A', session)
+    claimAttachHost('inst-A', 7)
+    dropAttachClaimsForWindow(7)
+    expect(session.hadWindow).toBeUndefined()
   })
 })
 
@@ -599,5 +611,216 @@ describe('raiseAllHostWindows', () => {
     raiseAllHostWindows()
     expect(fakeWin(min).raised).toContain('restore')
     expect(fakeWin(min).raised).toContain('focus')
+  })
+})
+
+describe('revealColdStartHostIfPending', () => {
+  function fakeWin(entry: ComfyWindowEntry): FakeWindow {
+    return entry.window as unknown as FakeWindow
+  }
+
+  it('maximizes a hidden window that opens maximized when it is revealed', () => {
+    const chooser = makeEntry({ installationId: null })
+    chooser.coldStartPendingReveal = true
+    chooser.maximizeOnReveal = true
+    registerHostEntry(chooser)
+
+    revealColdStartHostIfPending(chooser.windowKey)
+    expect(fakeWin(chooser).raised).toEqual(['maximize', 'show', 'focus'])
+    expect(chooser.maximizeOnReveal).toBe(false)
+  })
+
+  it('reveals a window that does not open maximized at its own size', () => {
+    const chooser = makeEntry({ installationId: null })
+    chooser.coldStartPendingReveal = true
+    registerHostEntry(chooser)
+
+    revealColdStartHostIfPending(chooser.windowKey)
+    expect(fakeWin(chooser).raised).toEqual(['show', 'focus'])
+  })
+
+  it('maximizes only on the first reveal, so a window the user unmaximized stays that size', () => {
+    const chooser = makeEntry({ installationId: null })
+    chooser.coldStartPendingReveal = true
+    chooser.maximizeOnReveal = true
+    registerHostEntry(chooser)
+
+    revealColdStartHostIfPending(chooser.windowKey)
+    bringToFront(chooser.window)
+    expect(fakeWin(chooser).raised).toEqual(['maximize', 'show', 'focus', 'show', 'focus'])
+  })
+
+  it('maximizes a window shown before its cold-start reveal once, on that first show', () => {
+    const chooser = makeEntry({ installationId: null })
+    chooser.coldStartPendingReveal = true
+    chooser.maximizeOnReveal = true
+    registerHostEntry(chooser)
+
+    maximizeIfPendingReveal(chooser.window)
+    chooser.window.show()
+    revealColdStartHostIfPending(chooser.windowKey)
+    expect(fakeWin(chooser).raised).toEqual(['maximize', 'show', 'show', 'focus'])
+  })
+
+  it('leaves a window that was already revealed at its own size', () => {
+    const chooser = makeEntry({ installationId: null })
+    registerHostEntry(chooser)
+
+    maximizeIfPendingReveal(chooser.window)
+    expect(fakeWin(chooser).raised).toEqual([])
+  })
+})
+
+describe('openOrFocusHomeHostWindow', () => {
+  function fakeWin(entry: ComfyWindowEntry): FakeWindow {
+    return entry.window as unknown as FakeWindow
+  }
+
+  function trackChooserFactory(): ReturnType<typeof vi.fn> {
+    const createChooser = vi.fn(() => makeWindow() as unknown as ComfyWindowEntry['window'])
+    setHostFactories({ createChooser })
+    return createChooser
+  }
+
+  it('brings the open Desktop window to the front instead of opening another', () => {
+    const createChooser = trackChooserFactory()
+    const home = makeEntry({ installationId: null })
+    const build = makeEntry({ installationId: 'inst-A' })
+    registerHostEntry(home)
+    registerHostEntry(build)
+
+    expect(openOrFocusHomeHostWindow()).toBe(home.window)
+    expect(fakeWin(home).raised).toContain('focus')
+    expect(fakeWin(build).raised).toEqual([])
+    expect(createChooser).not.toHaveBeenCalled()
+  })
+
+  it('restores a minimised Desktop window', () => {
+    const createChooser = trackChooserFactory()
+    const home = makeEntry({ installationId: null, minimized: true })
+    registerHostEntry(home)
+
+    expect(openOrFocusHomeHostWindow()).toBe(home.window)
+    expect(fakeWin(home).raised).toEqual(expect.arrayContaining(['restore', 'focus']))
+    expect(createChooser).not.toHaveBeenCalled()
+  })
+
+  it('opens a Desktop window when only build windows are open', () => {
+    const createChooser = trackChooserFactory()
+    registerHostEntry(makeEntry({ installationId: 'inst-A' }))
+    registerHostEntry(makeEntry({ installationId: 'inst-B' }))
+
+    openOrFocusHomeHostWindow()
+    expect(createChooser).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens a Desktop window when the only one is turning into a build window', () => {
+    const createChooser = trackChooserFactory()
+    const claimed = makeEntry({ installationId: null })
+    const previewing = makeEntry({ installationId: null })
+    previewing.previewInstallationId = 'inst-B'
+    registerHostEntry(claimed)
+    registerHostEntry(previewing)
+    claimAttachHost('inst-A', claimed.windowKey)
+
+    openOrFocusHomeHostWindow()
+    expect(createChooser).toHaveBeenCalledTimes(1)
+    expect(fakeWin(claimed).raised).toEqual([])
+    expect(fakeWin(previewing).raised).toEqual([])
+  })
+
+  it('skips a closed Desktop window', () => {
+    const createChooser = trackChooserFactory()
+    registerHostEntry(makeEntry({ installationId: null, destroyed: true }))
+
+    openOrFocusHomeHostWindow()
+    expect(createChooser).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('routeBuildOpen', () => {
+  it('focuses the window a build already has, whoever asks', () => {
+    const buildWindow = makeEntry({ installationId: 'inst-B' })
+    const desktop = makeEntry({ installationId: null })
+    registerHostEntry(buildWindow)
+    registerHostEntry(desktop)
+
+    expect(routeBuildOpen('inst-B', desktop, [])).toEqual({ kind: 'focus', entry: buildWindow })
+    expect(routeBuildOpen('inst-B', undefined, [])).toEqual({ kind: 'focus', entry: buildWindow })
+  })
+
+  it('focuses the Desktop window that is becoming the build window, instead of opening another Desktop window', () => {
+    const becomingB = makeEntry({ installationId: null })
+    const buildA = makeEntry({ installationId: 'inst-A' })
+    registerHostEntry(becomingB)
+    registerHostEntry(buildA)
+    claimAttachHost('inst-B', becomingB.windowKey)
+
+    expect(routeBuildOpen('inst-B', buildA, ['inst-B'])).toEqual({
+      kind: 'focus',
+      entry: becomingB
+    })
+  })
+
+  it('shows a build that is already starting from the Desktop window instead of starting it again', () => {
+    const desktop = makeEntry({ installationId: null })
+    const buildA = makeEntry({ installationId: 'inst-A' })
+    registerHostEntry(desktop)
+    registerHostEntry(buildA)
+
+    expect(routeBuildOpen('inst-B', buildA, ['inst-B'])).toEqual({
+      kind: 'show-starting',
+      entry: null
+    })
+    expect(routeBuildOpen('inst-B', desktop, ['inst-B'])).toEqual({
+      kind: 'show-starting',
+      entry: desktop
+    })
+  })
+
+  it('shows a starting build in the Desktop window that asked, not the first one registered', () => {
+    const firstDesktop = makeEntry({ installationId: null })
+    const secondDesktop = makeEntry({ installationId: null })
+    registerHostEntry(firstDesktop)
+    registerHostEntry(secondDesktop)
+
+    expect(routeBuildOpen('inst-B', secondDesktop, ['inst-B'])).toEqual({
+      kind: 'show-starting',
+      entry: secondDesktop
+    })
+  })
+
+  it('starts a build from the Desktop window that asked for it', () => {
+    const desktop = makeEntry({ installationId: null })
+    registerHostEntry(desktop)
+
+    expect(routeBuildOpen('inst-B', desktop, [])).toEqual({ kind: 'start-from', entry: desktop })
+  })
+
+  it('never hands another build to a build window: it starts from the Desktop window instead', () => {
+    const buildA = makeEntry({ installationId: 'inst-A' })
+    registerHostEntry(buildA)
+
+    expect(routeBuildOpen('inst-B', buildA, [])).toEqual({ kind: 'start-from-home' })
+  })
+
+  it('treats a Desktop window that is becoming a build window like a build window', () => {
+    const claimed = makeEntry({ installationId: null })
+    registerHostEntry(claimed)
+    claimAttachHost('inst-A', claimed.windowKey)
+
+    expect(routeBuildOpen('inst-B', claimed, [])).toEqual({ kind: 'start-from-home' })
+  })
+
+  it('does nothing when a build window asks for itself', () => {
+    const buildA = makeEntry({ installationId: 'inst-A' })
+    buildA.window.isDestroyed = () => false
+    comfyWindows.set(buildA.windowKey, buildA)
+
+    expect(routeBuildOpen('inst-A', buildA, [])).toEqual({ kind: 'ignore' })
+  })
+
+  it('starts from the Desktop window when the request names no window', () => {
+    expect(routeBuildOpen('inst-B', undefined, [])).toEqual({ kind: 'start-from-home' })
   })
 })

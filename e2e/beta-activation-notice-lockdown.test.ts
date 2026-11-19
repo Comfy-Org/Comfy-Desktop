@@ -57,8 +57,8 @@ async function popupVisible(app: ElectronApplication): Promise<boolean | 'detach
 
 async function lockdownEngaged(titleBar: WebContentsPage): Promise<boolean> {
   const bell = await titleBar.exists('.title-announcement-button')
-  const pill = await titleBar.exists('.title-install-pill.is-interactive')
-  return !bell && !pill
+  const firstUseLabel = await titleBar.exists('.title-install-pill')
+  return !bell && firstUseLabel
 }
 
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
@@ -111,7 +111,7 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-test('first-use lockdown never costs the user the beta notice @linux', async () => {
+test('first-use lockdown never costs the user the beta notice @linux @macos', async () => {
   const popup = coachmarkPopup(ctx.app)
 
   await ctx.panel.evaluate(`window.api.setFirstUseMode('post-consent')`)

@@ -7,6 +7,17 @@ export function normalizePlatform(platform: string | undefined | null): Renderer
   return 'unknown'
 }
 
+export function revealInFolderKey(platform: string | undefined | null): string {
+  switch (normalizePlatform(platform)) {
+    case 'mac':
+      return 'assets.showInFinder'
+    case 'windows':
+      return 'assets.showInExplorer'
+    default:
+      return 'assets.showInFolder'
+  }
+}
+
 export function revealInFolderLabel(platform: string | undefined | null): string {
   switch (normalizePlatform(platform)) {
     case 'mac':
@@ -14,8 +25,8 @@ export function revealInFolderLabel(platform: string | undefined | null): string
     case 'windows':
       return 'Show in Explorer'
     case 'linux':
-      return 'Show in Folder'
+      return 'Show in folder'
     default:
-      return 'Open Folder'
+      return 'Open folder'
   }
 }

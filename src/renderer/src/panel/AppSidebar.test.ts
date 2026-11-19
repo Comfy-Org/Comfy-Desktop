@@ -1,13 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { userEvent } from 'vitest/browser'
 import { createPinia, setActivePinia } from 'pinia'
 
+import '../assets/main.css'
 import AppSidebar from './AppSidebar.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
+import { appPageShown, sidebarHovered } from './appPageCover'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
-import type { DashboardPage, Installation } from '../types/ipc'
+import type { CreditBalanceState, DashboardPage, Installation } from '../types/ipc'
 
 function build(over: Partial<Installation> & { id: string; name: string }): Installation {
   return { sourceLabel: 'Standalone', sourceCategory: 'local', ...over }
@@ -27,28 +31,43 @@ const TEAM = build({ id: 'team', name: 'Team Build', lastLaunchedAt: 400, worksp
 
 const navigatePanel = vi.fn()
 const openGlobalSettings = vi.fn()
+const openPageInNewWindow = vi.fn()
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
+const refreshCreditBalance = vi.fn<() => Promise<CreditBalanceState>>()
 
 beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
   getAppsEnabled.mockResolvedValue(false)
+  refreshCreditBalance.mockResolvedValue({ status: 'signed_out' })
   ;(window as unknown as { api: unknown }).api = {
     navigatePanel,
     openGlobalSettings,
+    openPageInNewWindow,
     getAppsEnabled,
+    getAppUpdateState: vi.fn().mockResolvedValue({ kind: null, version: null, autoUpdate: true }),
+    onAppUpdateStateChanged: vi.fn(() => () => {}),
     getInstallations: vi.fn().mockResolvedValue([]),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     getSetting: vi.fn().mockResolvedValue(undefined),
     setSetting: vi.fn().mockResolvedValue(undefined),
     onSettingsChanged: vi.fn(() => () => {}),
+    refreshCreditBalance,
+    onCreditBalanceChanged: vi.fn(() => () => {}),
+    onAppPageClosed: vi.fn(() => () => {}),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       onAuthChanged: vi.fn(() => () => {})
     }
   }
   setActivePinia(createPinia())
+  appPageShown.value = false
+  sidebarHovered.value = false
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 async function mountSidebar(
@@ -62,6 +81,13 @@ async function mountSidebar(
   })
   await flushPromises()
   return wrapper
+}
+
+function tooltipOf(
+  wrapper: Awaited<ReturnType<typeof mountSidebar>>,
+  testId: string
+): string | undefined {
+  return wrapper.get(`[data-testid="${testId}"]`).findComponent(Tooltip).props('text')
 }
 
 describe('AppSidebar', () => {
@@ -148,10 +174,13 @@ describe('AppSidebar', () => {
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith(page)
   })
 
-  it('returns Home from the Comfy mark', async () => {
+  it('returns Home from the Comfy wordmark, which shows no tooltip', async () => {
     const wrapper = await mountSidebar('benchmarks')
 
-    await wrapper.get('button[title="Home"]').trigger('click')
+    const logo = wrapper.get('button[aria-label="Home"]')
+    expect(logo.element.closest('nav')).toBeNull()
+    expect(logo.findComponent(Tooltip).exists()).toBe(false)
+    await logo.trigger('click')
 
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('home')
   })
@@ -191,7 +220,7 @@ describe('AppSidebar', () => {
     const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
     expect(settings.text()).toBe('')
     expect(settings.attributes('aria-label')).toBe('Desktop Settings')
-    expect(settings.attributes('title')).toBe('Desktop Settings')
+    expect(tooltipOf(wrapper, 'app-sidebar-settings')).toBe('Desktop Settings')
 
     await settings.trigger('click')
 
@@ -202,13 +231,15 @@ describe('AppSidebar', () => {
     const wrapper = await mountSidebar()
     const home = wrapper.get('[data-testid="app-sidebar-home"]')
     expect(home.text()).toBe('Home')
-    expect(home.attributes('title')).toBeUndefined()
+    expect(tooltipOf(wrapper, 'app-sidebar-home')).toBeUndefined()
+    expect(tooltipOf(wrapper, 'app-sidebar-settings')).toBeUndefined()
 
     await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
     await flushPromises()
 
     expect(home.text()).toBe('')
-    expect(home.attributes('title')).toBe('Home')
+    expect(tooltipOf(wrapper, 'app-sidebar-home')).toBe('Home')
+    expect(home.attributes('title')).toBeUndefined()
     expect(wrapper.get('[data-testid="app-sidebar-toggle"]').attributes('aria-expanded')).toBe(
       'false'
     )
@@ -216,6 +247,278 @@ describe('AppSidebar', () => {
     wrapper.unmount()
     const reopened = await mountSidebar()
     expect(reopened.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
+  })
+
+  it('folds to the Comfy mark on the same top row, which turns into the expand button on hover or keyboard focus', async () => {
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+    const sidebar = wrapper.get('[data-testid="app-sidebar"]').element
+    const toggle = () => wrapper.get('[data-testid="app-sidebar-toggle"]').element
+    const offsetFromTop = (el: Element) =>
+      el.getBoundingClientRect().top - sidebar.getBoundingClientRect().top
+    const homeRowTop = () => offsetFromTop(wrapper.get('[data-testid="app-sidebar-home"]').element)
+
+    const expandedToggleTop = offsetFromTop(toggle())
+    const expandedHomeRowTop = homeRowTop()
+    expect(
+      wrapper.find('[data-testid="app-sidebar-header"] button[aria-label="Home"]').exists()
+    ).toBe(true)
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(sidebar.getAttribute('data-collapsed')).toBe('true')
+    expect(offsetFromTop(toggle()), 'toggle top').toBe(expandedToggleTop)
+    expect(homeRowTop(), 'first row top').toBe(expandedHomeRowTop)
+    expect(
+      wrapper
+        .get('[data-testid="app-sidebar-header"]')
+        .findAll('button')
+        .filter((button) => button.isVisible())
+    ).toHaveLength(1)
+    expect(toggle().getAttribute('aria-label')).toBe('Expand sidebar')
+
+    const faceOpacity = (face: 'logo' | 'expand') =>
+      getComputedStyle(wrapper.get(`[data-testid="app-sidebar-${face}-face"]`).element).opacity
+    const settle = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 260))
+    }
+    expect([faceOpacity('logo'), faceOpacity('expand')], 'at rest').toEqual(['1', '0'])
+
+    await userEvent.hover(toggle())
+    await settle()
+    expect([faceOpacity('logo'), faceOpacity('expand')], 'on hover').toEqual(['0', '1'])
+
+    await userEvent.unhover(toggle())
+    await settle()
+    expect([faceOpacity('logo'), faceOpacity('expand')], 'after hover').toEqual(['1', '0'])
+
+    ;(toggle() as HTMLElement).focus()
+    await settle()
+    expect([faceOpacity('logo'), faceOpacity('expand')], 'on keyboard focus').toEqual(['0', '1'])
+
+    await userEvent.click(toggle())
+    await flushPromises()
+    expect(sidebar.getAttribute('data-collapsed')).toBe('false')
+    await userEvent.unhover(sidebar)
+    wrapper.unmount()
+  })
+
+  it('keeps every row icon at the same left edge when the sidebar folds, so only the labels go', async () => {
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+    const sidebarLeft = () =>
+      wrapper.get('[data-testid="app-sidebar"]').element.getBoundingClientRect().left
+    const iconLeft = (testId: string) =>
+      wrapper.get(`[data-testid="${testId}"] svg`).element.getBoundingClientRect().left -
+      sidebarLeft()
+    const rows = ['app-sidebar-home', 'app-sidebar-assets', 'app-sidebar-settings']
+    const expanded = rows.map(iconLeft)
+    const signInCardWidth = () =>
+      wrapper
+        .get('[data-testid="sidebar-signin-card"] .group\\/signin')
+        .element.getBoundingClientRect().width
+    expect(signInCardWidth(), 'log-in card width when open').toBe(220)
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(rows.map(iconLeft)).toEqual(expanded)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(rows.map(iconLeft), 'after the width settles').toEqual(expanded)
+    expect(signInCardWidth(), 'log-in card width when folded').toBe(220)
+    const rail = wrapper.get('[data-testid="app-sidebar"]').element.getBoundingClientRect().width
+    const homeIcon = wrapper.get('[data-testid="app-sidebar-home"] svg').element
+    const iconCentre = iconLeft('app-sidebar-home') + homeIcon.getBoundingClientRect().width / 2
+    expect(Math.abs(iconCentre - rail / 2), 'icon centred in the rail').toBeLessThanOrEqual(1)
+    wrapper.unmount()
+  })
+
+  it('keeps a tooltip on the icon-only buttons but none on the fold toggle, whose icon says it', async () => {
+    const wrapper = await mountSidebar()
+    expect(wrapper.get('[data-testid="app-sidebar-toggle"]').findComponent(Tooltip).exists()).toBe(
+      false
+    )
+    expect(tooltipOf(wrapper, 'app-sidebar-new-build')).toBe('New build')
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="app-sidebar-toggle"]').findComponent(Tooltip).exists()).toBe(
+      false
+    )
+    expect(wrapper.findAllComponents(Tooltip).every((tip) => tip.props('side') === 'right')).toBe(
+      true
+    )
+    expect(
+      wrapper.findAll('[title]').filter((el) => !el.element.closest('.sidebar-account'))
+    ).toHaveLength(0)
+  })
+
+  it('keeps keyboard focus on the toggle when Enter folds and unfolds the sidebar', async () => {
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+    const toggle = () => wrapper.get('[data-testid="app-sidebar-toggle"]').element as HTMLElement
+
+    toggle().focus()
+    await userEvent.keyboard('{Enter}')
+    await flushPromises()
+    expect(document.activeElement, 'focus after folding').toBe(toggle())
+    expect(toggle().getAttribute('aria-label')).toBe('Expand sidebar')
+
+    await userEvent.keyboard('{Enter}')
+    await flushPromises()
+    expect(document.activeElement, 'focus after unfolding').toBe(toggle())
+    expect(toggle().getAttribute('aria-label')).toBe('Collapse sidebar')
+    wrapper.unmount()
+  })
+
+  it('leaves a 4px gap between rows so two filled rows never touch', async () => {
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+
+    const home = wrapper.get('[data-testid="app-sidebar-home"]').element.getBoundingClientRect()
+    const assets = wrapper.get('[data-testid="app-sidebar-assets"]').element.getBoundingClientRect()
+    expect(assets.top - home.bottom).toBe(4)
+    wrapper.unmount()
+  })
+
+  it('turns every folded row into a square centred in the rail without moving its icon', async () => {
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+    const sidebar = wrapper.get('[data-testid="app-sidebar"]').element
+    const iconSpot = (testId: string) => {
+      const icon = wrapper.get(`[data-testid="${testId}"] svg`).element.getBoundingClientRect()
+      return [icon.left - sidebar.getBoundingClientRect().left, icon.top]
+    }
+    const openSpots = ['app-sidebar-home', 'app-sidebar-assets'].map(iconSpot)
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 400))
+
+    expect(['app-sidebar-home', 'app-sidebar-assets'].map(iconSpot)).toEqual(openSpots)
+    const rail = sidebar.getBoundingClientRect()
+    for (const testId of ['app-sidebar-home', 'app-sidebar-assets', 'app-sidebar-settings']) {
+      const row = wrapper.get(`[data-testid="${testId}"]`).element.getBoundingClientRect()
+      expect([row.width, row.height], testId).toEqual([32, 32])
+      expect(row.left + row.width / 2 - rail.left, testId).toBe(rail.width / 2)
+    }
+    wrapper.unmount()
+  })
+
+  it('gives a folded row its tooltip over the whole row, not only the icon', async () => {
+    window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+
+    for (const testId of ['app-sidebar-home', 'app-sidebar-settings']) {
+      const row = wrapper.get(`[data-testid="${testId}"]`).element.getBoundingClientRect()
+      const trigger = wrapper
+        .get(`[data-testid="${testId}"] .tooltip-wrap`)
+        .element.getBoundingClientRect()
+      expect([trigger.width, trigger.height], testId).toEqual([row.width, row.height])
+    }
+    wrapper.unmount()
+  })
+
+  it('tells the app page the pointer is over the sidebar, and when it leaves', async () => {
+    const wrapper = await mountSidebar()
+    const sidebar = wrapper.get('[data-testid="app-sidebar"]')
+
+    await sidebar.trigger('pointerenter')
+    expect(sidebarHovered.value).toBe(true)
+
+    await sidebar.trigger('pointerleave')
+    expect(sidebarHovered.value).toBe(false)
+  })
+
+  it('holds a folded row tooltip while an app page is on screen, and opens it once the page is hidden', async () => {
+    window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+    appPageShown.value = true
+    vi.useFakeTimers()
+    const wrapper = mount(AppSidebar, { props: { activePage: 'apps' }, attachTo: document.body })
+    await vi.advanceTimersByTimeAsync(1)
+    await flushPromises()
+
+    wrapper
+      .get('[data-testid="app-sidebar-home"] .tooltip-wrap')
+      .element.dispatchEvent(
+        new PointerEvent('pointermove', { pointerType: 'mouse', bubbles: true })
+      )
+    await vi.advanceTimersByTimeAsync(200)
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+
+    appPageShown.value = false
+    await flushPromises()
+
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Home')
+    wrapper.unmount()
+  })
+
+  it('shows Credits between Desktop Settings and the account once signed in', async () => {
+    refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: 100 })
+    const wrapper = await mountSidebar()
+
+    const credits = wrapper.get('[data-testid="app-sidebar-credits"]')
+    const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
+    expect(settings.element.nextElementSibling?.contains(credits.element)).toBe(true)
+    expect(credits.element.parentElement?.nextElementSibling?.classList).toContain(
+      'sidebar-account'
+    )
+  })
+
+  it('keeps the credits coin and the workspace avatar in place when the signed-in sidebar folds', async () => {
+    refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: 100 })
+    ;(
+      window.api as unknown as { comfybuilder: { getAuthStatus: ReturnType<typeof vi.fn> } }
+    ).comfybuilder.getAuthStatus = vi.fn().mockResolvedValue({
+      signedIn: true,
+      email: 'someone@comfy.org',
+      workspaceId: 'w1',
+      workspaceName: 'Silverside',
+      workspaceType: 'team'
+    })
+    useInstallationStore().installations = []
+    const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+    await flushPromises()
+    const sidebar = wrapper.get('[data-testid="app-sidebar"]').element
+    const leftOf = (selector: string) =>
+      wrapper.get(selector).element.getBoundingClientRect().left -
+      sidebar.getBoundingClientRect().left
+    const coin = '[data-testid="app-sidebar-credits"] svg'
+    const avatar = '[data-testid="workspace-switcher-trigger"] > :first-child'
+    const creditsHeight = () =>
+      wrapper.get('[data-testid="app-sidebar-credits"]').element.getBoundingClientRect().height
+    const open = [leftOf(coin), leftOf(avatar)]
+    expect(creditsHeight(), 'credits row open').toBe(32)
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 400))
+
+    expect([leftOf(coin), leftOf(avatar)], 'coin and avatar folded').toEqual(open)
+    expect(creditsHeight(), 'credits row folded').toBe(44)
+    const short = wrapper.get('[data-testid="app-sidebar-credits-short"]').element
+    expect(short.textContent?.trim()).toBe('211')
+    expect(getComputedStyle(short).opacity, 'short count visible').toBe('1')
+    const shortBox = short.getBoundingClientRect()
+    const creditsBox = wrapper
+      .get('[data-testid="app-sidebar-credits"]')
+      .element.getBoundingClientRect()
+    expect(
+      shortBox.left >= creditsBox.left &&
+        shortBox.right <= creditsBox.right &&
+        shortBox.top >= creditsBox.top &&
+        shortBox.bottom <= creditsBox.bottom,
+      'short count fits inside the folded credits button'
+    ).toBe(true)
+    wrapper.unmount()
   })
 
   describe('Builds group', () => {
@@ -230,12 +533,19 @@ describe('AppSidebar', () => {
     })
 
     it('follows the workspace picked in the sidebar', async () => {
-      const wrapper = await mountSidebar('home', [OLD, TEAM])
+      const wrapper = await mountSidebar('home', [OLD, TEAM, CLOUD])
+
+      expect(buildNames(wrapper)).toEqual(['Comfy Cloud', 'Flux Sandbox'])
 
       useDashboardScopeStore().selectedWorkspaceId = 'ws-team'
       await flushPromises()
 
-      expect(buildNames(wrapper)).toEqual(['Team Build'])
+      expect(buildNames(wrapper)).toEqual(['Team Build', 'Comfy Cloud'])
+
+      useDashboardScopeStore().selectedWorkspaceId = 'personal'
+      await flushPromises()
+
+      expect(buildNames(wrapper)).toEqual(['Comfy Cloud', 'Flux Sandbox'])
     })
 
     it('marks only the open build, not the Builds title', async () => {
@@ -252,10 +562,16 @@ describe('AppSidebar', () => {
       expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Builds'])
     })
 
-    it('puts the green dot on running and always-on builds only', async () => {
+    it('puts the green dot only on a running build, even with no ComfyUI window open', async () => {
+      expect(useSessionStore().activeSessions.size).toBe(0)
       useSessionStore().runningInstances.set(NEW.id, {
         installationId: NEW.id,
         installationName: NEW.name,
+        mode: 'window'
+      })
+      useSessionStore().runningInstances.set(CLOUD.id, {
+        installationId: CLOUD.id,
+        installationName: CLOUD.name,
         mode: 'window'
       })
       const wrapper = await mountSidebar('home', [OLD, CLOUD, NEW])
@@ -265,7 +581,7 @@ describe('AppSidebar', () => {
           .get(`[data-testid="app-sidebar-build-${id}"]`)
           .find('[data-testid="app-sidebar-dot-live"]')
           .exists()
-      expect([live('new'), live('cloud'), live('old')]).toEqual([true, true, false])
+      expect([live('new'), live('cloud'), live('old')]).toEqual([true, false, false])
     })
 
     it('marks a build that failed to start and says why on hover', async () => {
@@ -277,7 +593,10 @@ describe('AppSidebar', () => {
 
       const row = wrapper.get('[data-testid="app-sidebar-build-old"]')
       expect(row.find('[data-testid="app-sidebar-dot-failed"]').exists()).toBe(true)
-      expect(row.attributes('title')).toBe('Flux Sandbox · Failed to start: Port 8188 is in use')
+      expect(tooltipOf(wrapper, 'app-sidebar-build-old')).toBe(
+        'Flux Sandbox · Failed to start: Port 8188 is in use'
+      )
+      expect(row.get('.sr-only').text()).toBe('· Failed to start: Port 8188 is in use')
     })
 
     it('says a build crashed, with its exit code, rather than that it failed to start', async () => {
@@ -289,7 +608,9 @@ describe('AppSidebar', () => {
 
       const row = wrapper.get('[data-testid="app-sidebar-build-old"]')
       expect(row.find('[data-testid="app-sidebar-dot-failed"]').exists()).toBe(true)
-      expect(row.attributes('title')).toBe('Flux Sandbox · Crashed (exit code 3221225477)')
+      expect(tooltipOf(wrapper, 'app-sidebar-build-old')).toBe(
+        'Flux Sandbox · Crashed (exit code 3221225477)'
+      )
     })
 
     it('opens a build without launching or navigating', async () => {
@@ -310,6 +631,45 @@ describe('AppSidebar', () => {
       expect(navigatePanel).not.toHaveBeenCalled()
     })
 
+    it('unmounts the build rows once the rail has folded, and brings them back on unfold', async () => {
+      useInstallationStore().installations = [OLD]
+      const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+      await flushPromises()
+      expect(buildNames(wrapper)).toEqual(['Flux Sandbox'])
+
+      await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+      await flushPromises()
+      expect(buildNames(wrapper), 'kept during the fold').toEqual(['Flux Sandbox'])
+      await new Promise((resolve) => setTimeout(resolve, 350))
+      expect(buildNames(wrapper), 'gone once folded').toEqual([])
+
+      await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+      await flushPromises()
+      expect(buildNames(wrapper), 'back on unfold').toEqual(['Flux Sandbox'])
+      wrapper.unmount()
+    })
+
+    it('keeps the build rows when the sidebar reopens before the fold ends', async () => {
+      useInstallationStore().installations = [OLD]
+      const wrapper = mount(AppSidebar, { props: { activePage: 'home' }, attachTo: document.body })
+      await flushPromises()
+
+      await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+      await new Promise((resolve) => setTimeout(resolve, 450))
+
+      expect(buildNames(wrapper)).toEqual(['Flux Sandbox'])
+      wrapper.unmount()
+    })
+
+    it('does not mount the build rows when the sidebar starts folded', async () => {
+      window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+      const wrapper = await mountSidebar('home', [OLD])
+
+      expect(buildNames(wrapper)).toEqual([])
+    })
+
     it('says there are no builds yet when the workspace has none', async () => {
       const wrapper = await mountSidebar('home', [TEAM])
 
@@ -322,9 +682,92 @@ describe('AppSidebar', () => {
       const wrapper = await mountSidebar('chooser', [OLD], 'old')
 
       expect(wrapper.find('[data-testid="app-sidebar-builds"]').exists()).toBe(false)
+      expect(wrapper.findAll('[data-testid="app-sidebar-chooser"]')).toHaveLength(1)
+      expect(wrapper.find('nav [inert]').exists(), 'folded Builds list is out of reach').toBe(true)
       const builds = wrapper.get('[data-testid="app-sidebar-chooser"]')
-      expect(builds.attributes('title')).toBe('Builds')
+      expect(tooltipOf(wrapper, 'app-sidebar-chooser')).toBe('Builds')
       expect(builds.attributes('aria-current')).toBe('page')
+    })
+  })
+
+  describe('page right-click menu', () => {
+    const mounted: ReturnType<typeof mount>[] = []
+
+    afterEach(() => {
+      for (const wrapper of mounted.splice(0)) wrapper.unmount()
+      document.body.innerHTML = ''
+    })
+
+    async function mountAttached(builds: Installation[] = []) {
+      getAppsEnabled.mockResolvedValue(true)
+      useInstallationStore().installations = builds
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'home' },
+        attachTo: document.body
+      })
+      mounted.push(wrapper)
+      await flushPromises()
+      return wrapper
+    }
+
+    async function rightClick(element: Element): Promise<void> {
+      element.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 })
+      )
+      await flushPromises()
+    }
+
+    function pageMenu(): Element | null {
+      return document.querySelector('[data-testid="sidebar-page-menu"]')
+    }
+
+    async function shownPageMenu(): Promise<Element> {
+      await vi.waitFor(() => expect(pageMenu()).not.toBeNull())
+      return pageMenu()!
+    }
+
+    it.each([
+      ['app-sidebar-home', 'home'],
+      ['app-sidebar-apps', 'apps'],
+      ['app-sidebar-assets', 'assets'],
+      ['app-sidebar-chooser', 'chooser']
+    ] as const)('right-clicking %s offers only Open in new window', async (testId, page) => {
+      const wrapper = await mountAttached()
+
+      await rightClick(wrapper.get(`[data-testid="${testId}"]`).element)
+
+      const menu = await shownPageMenu()
+      expect(menu.getAttribute('data-page')).toBe(page)
+      expect(
+        [...menu.querySelectorAll('[role="menuitem"]')].map((row) => row.textContent?.trim())
+      ).toEqual(['Open in new window'])
+      expect(navigatePanel).not.toHaveBeenCalled()
+    })
+
+    it('opens the right-clicked page in a new window and closes the menu', async () => {
+      const wrapper = await mountAttached()
+
+      await rightClick(wrapper.get('[data-testid="app-sidebar-assets"]').element)
+      const item = (await shownPageMenu()).querySelector(
+        '[data-testid="sidebar-page-menu-new-window"]'
+      ) as HTMLElement
+      item.click()
+      await flushPromises()
+
+      expect(openPageInNewWindow).toHaveBeenCalledExactlyOnceWith('assets')
+      expect(navigatePanel).not.toHaveBeenCalled()
+      await vi.waitFor(() => expect(pageMenu()).toBeNull())
+    })
+
+    it('leaves a build row to the build menu', async () => {
+      const wrapper = await mountAttached([OLD])
+
+      await rightClick(wrapper.get('[data-testid="app-sidebar-build-old"]').element)
+
+      await vi.waitFor(() =>
+        expect(document.querySelector('[data-testid="build-menu"]')).not.toBeNull()
+      )
+      expect(pageMenu()).toBeNull()
     })
   })
 })

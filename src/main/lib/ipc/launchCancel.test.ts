@@ -22,9 +22,13 @@ import {
   _operationAborts,
   cancelAll,
   cancelLaunching,
+  launchHadWindow,
+  noteWindowClosed,
   _test_addRunningSession,
   _test_clearRunningSessions
 } from './shared'
+import { comfyFoldersOf } from '../outputFolders'
+import type { InstallationRecord } from '../../installations'
 
 const INSTALL = 'install-under-test'
 
@@ -42,6 +46,33 @@ describe('cancelAll', () => {
     cancelAll()
 
     expect(flushTelemetry).toHaveBeenCalledOnce()
+  })
+
+  it('stops a start whose window was closed, as quitting Desktop does', () => {
+    const launch = _beginLaunch(INSTALL)
+    _operationAborts.set(INSTALL, launch.abort)
+    noteWindowClosed(INSTALL)
+    try {
+      cancelAll()
+
+      expect(launch.abort.signal.aborted).toBe(true)
+    } finally {
+      _endLaunch(INSTALL, launch)
+    }
+  })
+})
+
+describe('a start whose window closed', () => {
+  it('is remembered until the start ends', () => {
+    const launch = _beginLaunch(INSTALL)
+    try {
+      expect(launchHadWindow(INSTALL)).toBe(false)
+      noteWindowClosed(INSTALL)
+      expect(launchHadWindow(INSTALL)).toBe(true)
+    } finally {
+      _endLaunch(INSTALL, launch)
+    }
+    expect(launchHadWindow(INSTALL)).toBe(false)
   })
 })
 
@@ -69,6 +100,23 @@ describe('launch tracking (_beginLaunch/_endLaunch/_hasActiveLaunch)', () => {
     expect(_hasActiveLaunch(INSTALL)).toBe(true)
     _endLaunch(INSTALL, fresh)
     expect(_hasActiveLaunch(INSTALL)).toBe(false)
+  })
+})
+
+describe('_test_addRunningSession', () => {
+  const runningInstall = { id: INSTALL } as InstallationRecord
+
+  it('gives the running session the folders it was launched with', () => {
+    const launchFolders = { output: '/launched/output', input: '/launched/input' }
+    _test_addRunningSession(INSTALL, 'install-under-test-name', undefined, undefined, launchFolders)
+
+    expect(comfyFoldersOf(runningInstall)).toEqual(launchFolders)
+  })
+
+  it('leaves a running session seeded without folders with none', () => {
+    _test_addRunningSession(INSTALL, 'install-under-test-name')
+
+    expect(comfyFoldersOf(runningInstall)).toEqual({ output: null, input: null })
   })
 })
 

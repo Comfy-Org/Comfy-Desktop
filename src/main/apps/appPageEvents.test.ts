@@ -82,9 +82,17 @@ describe('checkAppPageEvent', () => {
   })
 
   it.each([...DESKTOP_APP_EVENTS])('refuses %s, which only Desktop sends', (name) => {
-    expect(['app_opened', 'app_page_failed']).toContain(name)
+    expect(['app_opened', 'app_page_failed', 'run_finished', 'setup']).toContain(name)
     expect(checkAppPageEvent(name, {}, APP)).toBeNull()
   })
+
+  it.each(['run_finished', 'setup'])(
+    'refuses %s from a page, so a page cannot forge how a run or setup ended',
+    (name) => {
+      expect(DESKTOP_APP_EVENTS.has(name)).toBe(true)
+      expect(checkAppPageEvent(name, { where: 'local', outcome: 'success' }, APP)).toBeNull()
+    }
+  )
 
   it('takes app_id from Desktop and ignores the app the page names', () => {
     expect(

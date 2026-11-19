@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setChecked } from './testHelpers'
 
@@ -63,7 +64,7 @@ function installApi(overrides: ApiOverrides = {}): void {
         label: 'Standalone',
         fields: [
           { id: 'release', label: 'Release', type: 'select' },
-          { id: 'comfyVersion', label: 'ComfyUI version', type: 'select' },
+          { id: 'comfyVersion', label: 'Version', type: 'select' },
           { id: 'variant', label: 'Variant', type: 'select' }
         ]
       }
@@ -129,7 +130,7 @@ describe('Set up, the first screen', () => {
 
     expect(w.find('[role="dialog"]').attributes('aria-label')).toBe('Install ComfyUI on this Mac')
     expect(text(w, 'setup-lead')).toBe(
-      'Checked for your Apple M3 Max. Change anything before you install.'
+      'The best settings for your Apple M3 Max are picked. Change any you like.'
     )
     expect(text(w, 'setup-machine-name')).toBe('Apple M3 Max')
     expect(text(w, 'setup-machine')).toContain('36 GB memory')
@@ -150,6 +151,20 @@ describe('Set up, the first screen', () => {
     expect(linux.find('[role="dialog"]').attributes('aria-label')).toBe(
       'Install ComfyUI on this computer'
     )
+  })
+
+  it('keeps the end of a long install path in view, with the full path on hover', async () => {
+    installApi({ platform: 'win32' })
+    const root = 'C:\\Users\\Alexis\\AppData\\Local\\Comfy-Desktop\\ComfyUI-Installs'
+    window.api.getDefaultInstallDir = vi.fn().mockResolvedValue(root)
+    const w = await mountSetup()
+    const path = w.get('[data-testid="setup-location"]')
+    expect(path.attributes('title')).toBe(`${root}\\ComfyUI`)
+    const [head, tail] = path.findAll('span')
+    expect(head?.text()).toBe(root)
+    expect(head?.classes()).toContain('truncate')
+    expect(tail?.text()).toBe('\\ComfyUI')
+    expect(tail?.classes()).toContain('shrink-0')
   })
 
   it('says a CPU install has no GPU acceleration', async () => {
@@ -477,6 +492,84 @@ describe('Set up, the first screen', () => {
     expect(window.api.setFirstUseMode).toHaveBeenLastCalledWith('consent-lockdown')
     w.unmount()
     expect(window.api.setFirstUseMode).toHaveBeenLastCalledWith('none')
+  })
+})
+
+const CONSENT_FROM_CHANGE: SetupConsent = {
+  acceptedTos: false,
+  telemetryEnabled: true,
+  betaFeaturesEnabled: true,
+  betaTouched: false,
+  preservePersistedBetaOptIn: false,
+  locale: 'en'
+}
+
+function emulateReducedMotion(reduce: boolean): void {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: reduce && query === '(prefers-reduced-motion: reduce)',
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  }))
+}
+
+describe('The first open', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('starts with the Comfy wordmark alone in the middle, with a glint and the light coming on', async () => {
+    emulateReducedMotion(false)
+    const w = await mountSetup()
+
+    const mark = w.find('[data-testid="setup-wordmark"]')
+    expect(mark.attributes('data-arriving')).toBe('true')
+    expect(mark.find('[data-testid="setup-wordmark-glint"]').exists()).toBe(true)
+    expect(w.find('[data-testid="setup-light"]').exists()).toBe(true)
+    expect(w.find('[data-testid="setup-column"]').attributes('data-rise-after-arrival')).toBe(
+      'true'
+    )
+    w.unmount()
+  })
+
+  it('ends the opening once the last block of Set up has risen, so later screens rise at once', async () => {
+    emulateReducedMotion(false)
+    const w = await mountSetup()
+    const mark = () => w.find('[data-testid="setup-wordmark"]')
+    const column = () => w.find('[data-testid="setup-column"]')
+    const blocks = [...column().element.children]
+
+    blocks[0].dispatchEvent(new Event('animationend', { bubbles: true }))
+    await nextTick()
+    expect(mark().attributes('data-arriving')).toBe('true')
+    expect(column().attributes('data-rise-after-arrival')).toBe('true')
+
+    blocks[blocks.length - 1].dispatchEvent(new Event('animationend', { bubbles: true }))
+    await nextTick()
+    expect(mark().attributes('data-arriving')).toBeUndefined()
+    expect(mark().findAll('svg')).toHaveLength(1)
+    expect(w.find('[data-testid="setup-light"]').exists()).toBe(false)
+    expect(column().attributes('data-rise-after-arrival')).toBeUndefined()
+    w.unmount()
+  })
+
+  it.each([
+    ['when coming back from Change', false, { consent: CONSENT_FROM_CHANGE }],
+    ['under reduced motion', true, {}]
+  ])('opens straight onto Set up %s', async (_case, reduce, props) => {
+    emulateReducedMotion(reduce)
+    const w = mount(FirstUseTakeover, { props })
+    await flushPromises()
+
+    const mark = w.find('[data-testid="setup-wordmark"]')
+    expect(mark.attributes('data-arriving')).toBeUndefined()
+    expect(mark.findAll('svg')).toHaveLength(1)
+    expect(w.find('[data-testid="setup-light"]').exists()).toBe(false)
+    expect(
+      w.find('[data-testid="setup-column"]').attributes('data-rise-after-arrival')
+    ).toBeUndefined()
+    w.unmount()
   })
 })
 

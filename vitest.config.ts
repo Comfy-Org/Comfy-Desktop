@@ -44,6 +44,7 @@ export default defineConfig({
             'src/shared/**/*.test.ts',
             'scripts/eslint/**/*.test.ts',
             'e2e/support/videoRecording.test.ts',
+            'scripts/preview/**/*.test.mjs',
             ...RENDERER_TESTS_THAT_READ_FILES
           ],
           exclude: ['node_modules', ...INJECTED_PAGE_SCRIPT_TESTS]
@@ -54,6 +55,18 @@ export default defineConfig({
         plugins: [tailwindcss()],
         resolve: {
           alias: [{ find: /^vue$/, replacement: VUE_BUILD_THAT_COMPILES_TEMPLATE_STUBS }]
+        },
+        optimizeDeps: {
+          include: [
+            'three',
+            'three/examples/jsm/controls/OrbitControls.js',
+            'three/examples/jsm/environments/RoomEnvironment.js',
+            'three/examples/jsm/exporters/GLTFExporter.js',
+            'three/examples/jsm/loaders/GLTFLoader.js',
+            'three/examples/jsm/loaders/OBJLoader.js',
+            'three/examples/jsm/loaders/PLYLoader.js',
+            'three/examples/jsm/loaders/STLLoader.js'
+          ]
         },
         test: {
           name: 'browser',

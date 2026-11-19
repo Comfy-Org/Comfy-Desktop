@@ -88,5 +88,13 @@ export function useVirtualMasonry(options: VirtualMasonryOptions) {
     virtualizer.value.measureElement(el instanceof Element ? el : null)
   }
 
-  return { cards, galleryStyle, cardStyle, measureCard }
+  function scrollToIndex(index: number): void {
+    virtualizer.value.scrollToIndex(index, { align: 'auto' })
+  }
+
+  function scrollToTop(): void {
+    virtualizer.value.scrollToOffset(0)
+  }
+
+  return { cards, galleryStyle, cardStyle, measureCard, scrollToIndex, scrollToTop }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildDeviceKind, homeBuildTones } from './homeBuild'
+import { buildDeviceKind, homeBuildStatus, homeBuildTones, runsOnThisComputer } from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
 const build = (sourceCategory: string): Installation =>
@@ -46,5 +46,40 @@ describe('homeBuildTones', () => {
 
     expect(homeBuildTones([second], everyBuild)).toEqual(['iris'])
     expect(homeBuildTones([third, second], everyBuild)).toEqual(['ember', 'iris'])
+  })
+})
+
+describe('homeBuildStatus', () => {
+  const session = (running: string[] = []) => ({
+    isRunning: (id: string) => running.includes(id),
+    isLaunching: () => false,
+    isStopping: () => false,
+    operationInstances: new Map()
+  })
+
+  it('reads Running for a build whose ComfyUI runs in the background with no window', () => {
+    expect(homeBuildStatus(build('local'), session(['b']))).toBe('running')
+  })
+
+  it('gives Comfy Cloud no Always on, since it has no process on this computer', () => {
+    expect(homeBuildStatus(build('cloud'), session())).toBe('ready')
+  })
+})
+
+describe('runsOnThisComputer', () => {
+  it('is true for a running local build', () => {
+    expect(runsOnThisComputer(build('local'), 'running')).toBe(true)
+  })
+
+  it('is false for an opened Comfy Cloud, which runs no process here', () => {
+    expect(runsOnThisComputer(build('cloud'), 'running')).toBe(false)
+  })
+
+  it('is false for an opened remote server, which runs no process here', () => {
+    expect(runsOnThisComputer(build('remote'), 'running')).toBe(false)
+  })
+
+  it('is false for a local build at rest', () => {
+    expect(runsOnThisComputer(build('local'), 'ready')).toBe(false)
   })
 })

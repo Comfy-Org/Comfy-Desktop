@@ -13,17 +13,27 @@ export async function liveWindowCount(app: ElectronApplication): Promise<number>
   )
 }
 
-export async function openPicker(
-  app: ElectronApplication,
-  panel: WebContentsPage,
-  bridgeFn: 'pickInstall' | 'openInstallNewWindow'
-): Promise<void> {
+export async function desktopWindowCount(app: ElectronApplication): Promise<number> {
+  return evalWithRetry(() =>
+    app.evaluate(
+      ({ webContents }) =>
+        webContents.getAllWebContents().filter((wc) => {
+          if (wc.isDestroyed()) return false
+          const url = wc.getURL()
+          if (!url.includes('panel.html')) return false
+          return new URL(url).searchParams.get('installationId') === ''
+        }).length
+    )
+  )
+}
+
+export async function openPicker(app: ElectronApplication, panel: WebContentsPage): Promise<void> {
   await panel.evaluate<boolean>(`(() => { window.api.openInstancePicker({}); return true })()`)
   await waitForWebContents(app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(app)
   await popup.waitFor(
     async () =>
-      popup.evaluate<boolean>(`typeof window.__comfyTitlePopup?.${bridgeFn} === "function"`),
+      popup.evaluate<boolean>(`typeof window.__comfyTitlePopup?.pickInstall === "function"`),
     { timeout: 10_000, message: 'picker bridge never appeared' }
   )
 }

@@ -101,6 +101,8 @@ export async function resolveLocalVersion(
   let upgraded = false
 
   if (shouldUpgrade) {
+    const latestTagContainsBuild = (): Promise<boolean> =>
+      isAncestorOf(comfyuiDir, commit, latestTagRef!)
     const ancestorIsParent = ancestorTag
       ? await isAncestorOf(comfyuiDir, ancestorTag, latestTagRef!)
       : false
@@ -113,7 +115,7 @@ export async function resolveLocalVersion(
         upgraded = true
         baseTagVerified = true
       }
-    } else if (ancestorIsParent) {
+    } else if (ancestorIsParent && !(await latestTagContainsBuild())) {
       const found = await findBestBackportTag(
         comfyuiDir,
         latestTagRef!,

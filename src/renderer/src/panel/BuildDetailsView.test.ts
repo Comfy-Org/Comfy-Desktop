@@ -10,14 +10,7 @@ vi.mock('../components/settings/ComfyUISettingsContent.vue', () => ({
   default: {
     name: 'ComfyUISettingsContent',
     props: ['installation', 'globalSettingsSnapshot', 'pageActionsTarget', 'pageTitleTarget'],
-    emits: [
-      'show-progress',
-      'navigate-list',
-      'request-close',
-      'request-dismiss',
-      'primary-action',
-      'open-new-window'
-    ],
+    emits: ['show-progress', 'navigate-list', 'request-close', 'request-dismiss', 'primary-action'],
     template:
       '<div data-testid="settings-content"><Teleport defer :to="pageTitleTarget">{{ installation.name }}</Teleport></div>'
   }
@@ -38,7 +31,6 @@ const INSTALL: Installation = {
 }
 
 const unsubscribeSettings = vi.fn()
-const openInstallInNewWindow = vi.fn()
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -46,8 +38,7 @@ beforeEach(() => {
     getBuildStorageSnapshot: vi.fn().mockResolvedValue(SNAPSHOT),
     onSettingsChanged: vi.fn(() => unsubscribeSettings),
     onInstallationsChanged: vi.fn(() => () => {}),
-    onInstallationsVersionsUpdated: vi.fn(() => () => {}),
-    openInstallInNewWindow
+    onInstallationsVersionsUpdated: vi.fn(() => () => {})
   }
   setActivePinia(createPinia())
 })
@@ -95,18 +86,9 @@ describe('BuildDetailsView', () => {
   it('launches the build from the primary action', async () => {
     const { wrapper, content } = await mountDetails()
 
-    content.vm.$emit('primary-action', { verb: 'switch' })
+    content.vm.$emit('primary-action', { verb: 'start' })
 
     expect(wrapper.emitted('launch')).toEqual([[INSTALL]])
-  })
-
-  it('opens the build in its own window instead of launching it into this one', async () => {
-    const { wrapper, content } = await mountDetails()
-
-    content.vm.$emit('open-new-window', { verb: 'open-new' })
-
-    expect(openInstallInNewWindow).toHaveBeenCalledExactlyOnceWith('a')
-    expect(wrapper.emitted('launch')).toBeUndefined()
   })
 
   it.each(['navigate-list', 'request-close', 'request-dismiss'])(
@@ -120,12 +102,10 @@ describe('BuildDetailsView', () => {
     }
   )
 
-  it('returns to the list from the back link', async () => {
+  it('has no back link, since the sidebar returns to the list', async () => {
     const { wrapper } = await mountDetails()
 
-    await wrapper.get('.build-details-back').trigger('click')
-
-    expect(wrapper.emitted('back')).toHaveLength(1)
+    expect(wrapper.find('.build-details-back').exists()).toBe(false)
   })
 
   it('stops listening for settings changes when closed', async () => {
