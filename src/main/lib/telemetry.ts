@@ -255,7 +255,7 @@ function enforcePersonProcessingPolicy(properties: TelemetryContext): TelemetryC
 }
 
 function _emitWarning(event: string, properties: TelemetryContext): void {
-  if (!canEmit() || !distinctId || firebaseWritesQuarantined()) return
+  if (!canEmit() || !distinctId || !isAllowedToFire(event) || firebaseWritesQuarantined()) return
   try {
     client!.capture({
       distinctId,
@@ -943,7 +943,9 @@ export async function sendSurveyResponse(
   const scrubbed = scrubProperties(merged)
   _recordCapturedEvent(SURVEY_SENT_EVENT)
   const send = surveySendQueue.then(() =>
-    firebaseWritesQuarantined() ? false : deliverSurveyResponse(surveyDistinctId, scrubbed)
+    firebaseWritesQuarantined() || distinctId !== surveyDistinctId
+      ? false
+      : deliverSurveyResponse(surveyDistinctId, scrubbed)
   )
   surveySendQueue = send
   return send

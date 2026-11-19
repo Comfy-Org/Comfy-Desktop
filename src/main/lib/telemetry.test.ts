@@ -1976,6 +1976,7 @@ describe('telemetry.sendSurveyResponse', () => {
 
     expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'One more')).toBe(false)
     expect(captured.filter((c) => c.event === 'survey sent')).toHaveLength(60)
+    expect(captured.map((c) => c.event)).not.toContain('comfy.desktop.telemetry.rate_limited')
   })
 
   it('returns false and sends nothing while the signed-in identity is being confirmed', async () => {
@@ -2002,6 +2003,30 @@ describe('telemetry.sendSurveyResponse', () => {
     const second = telemetry.sendSurveyResponse('survey-id', 'question-id', 'Second app')
     await vi.waitFor(() => expect(pendingImmediateCaptures).toHaveLength(1))
     telemetry.applyFirebasePendingConsensus()
+    pendingImmediateCaptures[0]!.accept()
+
+    expect(await first).toBe(true)
+    expect(await second).toBe(false)
+    expect(pendingImmediateCaptures).toHaveLength(1)
+    expect(
+      captured
+        .filter((c) => c.event === 'survey sent')
+        .map((c) => c.properties?.['$survey_response_question-id'])
+    ).toEqual(['First app'])
+  })
+
+  it('drops a queued answer when a different user is confirmed before its turn to send', async () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('test-distinct-id')
+    telemetry.applyFirebaseUserConsensus('user-a')
+    captured.length = 0
+    posthogClientMock.immediateCaptureOutcome = 'deferred'
+
+    const first = telemetry.sendSurveyResponse('survey-id', 'question-id', 'First app')
+    const second = telemetry.sendSurveyResponse('survey-id', 'question-id', 'Second app')
+    await vi.waitFor(() => expect(pendingImmediateCaptures).toHaveLength(1))
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.applyFirebaseUserConsensus('user-b')
     pendingImmediateCaptures[0]!.accept()
 
     expect(await first).toBe(true)
