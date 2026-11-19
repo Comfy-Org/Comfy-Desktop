@@ -9,6 +9,8 @@ import { evalWithRetry } from './evalRetry'
 import { FOREGROUND_PROJECTS, isBackgroundRun } from './focusMode'
 import { recordVideoOptions } from './videoRecording'
 
+const GRACEFUL_CLOSE_DEADLINE_MS = 10_000
+
 export interface LauncherAppHandle {
   application: ElectronApplication
   homeDir: string
@@ -291,7 +293,22 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
       const stillRunning = (): boolean =>
         !!proc && proc.exitCode === null && proc.signalCode === null
       if (stillRunning() && !connectionClosed) {
-        await application.close().catch(() => {})
+        let deadline: ReturnType<typeof setTimeout> | undefined
+        const closedOrGaveUp = await Promise.race([
+          application
+            .close()
+            .catch(() => {})
+            .then(() => 'closed' as const),
+          new Promise<'gave-up'>((resolve) => {
+            deadline = setTimeout(() => resolve('gave-up'), GRACEFUL_CLOSE_DEADLINE_MS)
+          })
+        ])
+        clearTimeout(deadline)
+        if (closedOrGaveUp === 'gave-up') {
+          console.log(
+            `[e2e-harness] app did not quit within ${GRACEFUL_CLOSE_DEADLINE_MS}ms, killing it`
+          )
+        }
       }
       if (proc) {
         const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()))
