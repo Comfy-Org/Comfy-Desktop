@@ -1,0 +1,142 @@
+<script setup lang="ts">
+import { CREDITS_STATES } from '../../credits'
+import type { AppAction } from '../appActions'
+import AppShot from '../kit/AppShot.vue'
+import Cells from '../kit/Cells.vue'
+import Section from '../kit/Section.vue'
+import Stage from '../kit/Stage.vue'
+
+// Explore's Filters on its Workflows tab, in app pixels: the menu and
+// the list a row opens beside it.
+const EXPLORE: { label: string; run: AppAction; crop: [number, number, number, number] }[] = [
+  { label: 'Explore · Filters', run: 'explore-filters', crop: [700, 180, 540, 180] },
+  { label: 'Explore · a row open', run: 'explore-filter-rows', crop: [700, 180, 540, 460] }
+]
+</script>
+
+<template>
+  <Section
+    title="Create"
+    note="Top right of Home. Layered: more blur, the current pick raised. Idle, then with a row highlighted."
+  >
+    <Cells :min="300">
+      <Stage id="create-menu" label="open" />
+      <Stage id="create-menu-hover" label="row highlighted" />
+    </Cells>
+  </Section>
+  <Section
+    title="Rows with values"
+    note="A menu of groups (Assets' Layout, Explore's Filters): the uppercase group name on the left, what's picked on the right (All, or the names), a chevron opening its list beside. One level. A lone group (Type) just lists its choices; each choice shows how many it would leave, and one that leaves none is left out."
+  >
+    <Cells :min="420">
+      <Stage id="layout-menu" label="Layout · Assets (assets/AssetLayoutMenu.vue)" />
+      <AppShot
+        v-for="e in EXPLORE.slice(0, 1)"
+        :key="e.label"
+        :label="e.label"
+        page="explore"
+        :run="e.run"
+        :crop="e.crop"
+      />
+    </Cells>
+  </Section>
+  <Section
+    title="One submenu open at a time"
+    note="Every submenu is controlled (DropdownMenuSub with :open): opening one closes the last, so a quick sweep down the list never leaves two side by side."
+  >
+    <Cells :min="420">
+      <Stage id="layout-menu-sub" label="Layout · Sort by open" />
+      <AppShot
+        v-for="e in EXPLORE.slice(1)"
+        :key="e.label"
+        :label="e.label"
+        page="explore"
+        :run="e.run"
+        :crop="e.crop"
+      />
+      <Stage id="item-menu-sub" label="Item ⋯ · Move to project open" />
+    </Cells>
+  </Section>
+  <Section
+    title="Confirm inside the menu"
+    note="A destructive line that asks first turns the same menu into the question (confirm on a MenuLine, pages/MarItemMenu.vue), so the answer sits where the click was. Never a box in the page. Nothing to lose (a tag on no file), no question."
+  >
+    <Cells :min="300">
+      <Stage id="item-menu" label="a tag's ⋯" />
+      <Stage id="item-menu-ask" label="Delete tag · asking" />
+    </Cells>
+  </Section>
+  <Section
+    title="A red line has a divider over it"
+    note="Delete, Remove, Stop: anything red sits last, under a hairline, the one line inside a menu that No lines allows. MarItemMenu adds it on its own for a danger line."
+  >
+    <Cells :min="300">
+      <Stage id="item-menu-card" label="a card's ⋯" />
+      <Stage id="item-menu" label="a tag's ⋯" />
+    </Cells>
+  </Section>
+  <Section
+    title="One choice marks its row"
+    note="A single-choice dropdown fills the picked row: no check, and no column kept for one (ui/Select.vue). A check is only for a multi-select, where several rows can be on (Assets' Filters › More types)."
+  >
+    <Cells :min="420">
+      <Stage id="select-menu" label="single choice · the row filled" />
+      <AppShot
+        label="multi-select · a check per pick"
+        page="assets"
+        run="assets-filters"
+        :crop="[600, 180, 560, 320]"
+      />
+    </Cells>
+  </Section>
+  <Section
+    title="Workspace"
+    note="From the sidebar's foot, upwards. The summary (workspace, credits, Add credits) is a raised panel at the top."
+  >
+    <Cells :min="300">
+      <Stage id="workspace-menu" label="open" />
+      <Stage id="workspace-menu-hover" label="row highlighted" />
+    </Cells>
+  </Section>
+  <Section
+    title="Run on and build switch"
+    note="The prompt's build picker, grouped by where it runs (this computer, Cloud), each build with its state, GPU and what picking it costs; the current one raised. Then the title bar's switcher (none on Comfy Cloud)."
+  >
+    <Cells :min="520">
+      <Stage id="run-on-menu" label="Run on" />
+      <Stage id="build-switch" label="build switch" />
+    </Cells>
+  </Section>
+  <Section
+    title="A menu with one option is a button"
+    note="With nothing to choose, there is no menu: Create becomes the one thing it would do (here, on Comfy Cloud: Open ComfyUI). The workspace menu offers Create workspace instead of a switcher when there is only one; a picker with one build reads as plain text."
+  >
+    <Cells :min="420">
+      <AppShot
+        label="Create · several options (menu)"
+        page="overview"
+        :crop="[880, 30, 400, 120]"
+      />
+      <AppShot
+        label="Create · one option (button)"
+        page="overview"
+        :seed="{ 'comfy.design.mar.surface': 'cloud' }"
+        :crop="[880, 30, 400, 120]"
+      />
+    </Cells>
+  </Section>
+  <Section
+    title="Credits flyout"
+    note="Opens from Credits in the sidebar. Every one of Alex's states (UI Playground › Credits state)."
+  >
+    <Cells :min="560">
+      <Stage
+        v-for="s in CREDITS_STATES"
+        id="credits-flyout"
+        :key="s.value"
+        :label="s.label"
+        :seed="{ 'comfy.design.mar.creditsState': s.value }"
+      />
+    </Cells>
+  </Section>
+</template>

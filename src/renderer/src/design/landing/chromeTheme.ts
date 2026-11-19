@@ -1,4 +1,5 @@
 import { TITLEBAR_STATE_KEY } from './titleBarBridge'
+import './look'
 
 /**
  * The app chrome (title bar, its popups and tooltips - separate renderers)

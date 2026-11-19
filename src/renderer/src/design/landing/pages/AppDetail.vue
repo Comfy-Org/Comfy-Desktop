@@ -10,9 +10,9 @@ import {
   EllipsisVertical,
   Rocket,
   Sparkles,
-  Users,
-  Waypoints
+  Users
 } from 'lucide-vue-next'
+import { GraphIcon } from '../mar/icons/kindIcons'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import Badge from '../ui/Badge.vue'
 import Button from '../ui/Button.vue'
@@ -51,6 +51,8 @@ const { id } = defineProps<{ id: string }>()
 // The store's record (ModePages keys this page by id).
 const app: LibApp = libApp(id)!
 const yours = computed(() => app.group === 'yours')
+// Your own app's page goes back to Apps, where it is listed.
+const back = computed(() => ({ page: 'apps' as const, label: 'Apps' }))
 type Tab = 'run' | 'activity' | 'access' | 'versions' | 'api'
 const tab = ref<Tab>('run')
 
@@ -123,9 +125,9 @@ function revokeAll(): void {
     <button
       type="button"
       class="mt-8 inline-flex items-center gap-1 text-ui text-muted-foreground outline-none hover:text-base-foreground focus-visible:text-base-foreground"
-      @click="go('apps')"
+      @click="go(back.page)"
     >
-      <ChevronLeft :size="14" />Apps
+      <ChevronLeft :size="14" />{{ back.label }}
     </button>
 
     <header class="flex items-end justify-between gap-6 pt-5 pb-8">
@@ -189,7 +191,7 @@ function revokeAll(): void {
             >
             <DropdownMenuItem
               @select="hostActions.launch(instanceById('local-1')!, 'product-relight-studio')"
-              ><Waypoints :size="14" />Edit the workflow in ComfyUI</DropdownMenuItem
+              ><GraphIcon :size="14" />Edit the workflow in ComfyUI</DropdownMenuItem
             >
           </DropdownMenuContent>
         </DropdownMenuRoot>

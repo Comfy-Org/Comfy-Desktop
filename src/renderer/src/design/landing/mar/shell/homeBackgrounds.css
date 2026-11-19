@@ -1,0 +1,102 @@
+/* Home backgrounds from the brand imagery rules (DS › Brand imagery):
+   Canvas, Wires and Latent grade. Each sits on the Spotlight's light, so
+   the page underneath is the same; only the motif on top changes. */
+
+/* Canvas: the node editor's dot grid, under the spotlight, fading out from
+   the top centre. Fully neutral; the dots are the only Comfy cue. */
+:root[data-mar-ui='on'] .mar-backdrop.is-canvas .mar-bg {
+  background:
+    radial-gradient(
+        circle,
+        color-mix(in oklch, var(--color-base-foreground) 34%, transparent) 1.1px,
+        transparent 1.7px
+      )
+      0 0 / 22px 22px,
+    radial-gradient(
+      ellipse 55% 85% at 50% -15%,
+      color-mix(in oklch, var(--color-base-foreground) 12%, transparent),
+      transparent 70%
+    );
+  mask-image: radial-gradient(ellipse 70% 95% at 50% 0%, #000 20%, transparent 80%);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .mar-backdrop.is-canvas .mar-bg {
+  background:
+    radial-gradient(
+        circle,
+        color-mix(in oklch, var(--color-base-foreground) 24%, transparent) 1.1px,
+        transparent 1.7px
+      )
+      0 0 / 22px 22px,
+    radial-gradient(ellipse 55% 85% at 50% -15%, oklch(0.84 0.06 290 / 0.35), transparent 70%);
+}
+
+/* Wires: the graph (MarWires.vue) over a faint spotlight. */
+:root[data-mar-ui='on'] .mar-backdrop.is-wires .mar-bg {
+  background: radial-gradient(
+    ellipse 55% 85% at 50% -15%,
+    color-mix(in oklch, var(--color-base-foreground) 10%, transparent),
+    transparent 70%
+  );
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .mar-backdrop.is-wires .mar-bg {
+  background: radial-gradient(
+    ellipse 55% 85% at 50% -15%,
+    oklch(0.84 0.06 290 / 0.3),
+    transparent 70%
+  );
+}
+
+/* Latent grade: your latest output through the Latent grade
+   (GradedImage.vue), blurred into colour. Behind UI the grade's end that
+   matches the page drops out: in dark the shadows are the page and only
+   the light glows pink; in light the light is the page and only the
+   shadows tint violet. */
+:root[data-mar-ui='on'] .mar-backdrop.is-grade {
+  --grade-shadow-on: var(--color-content-background);
+}
+:root[data-mar-ui='on'] .mar-backdrop.is-grade .mar-graded {
+  position: absolute;
+  inset: 0;
+  opacity: 0.22;
+  mix-blend-mode: screen;
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .mar-backdrop.is-grade {
+  --grade-shadow-on: oklch(0.62 0.11 290);
+  --grade-light-on: #fff;
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .mar-backdrop.is-grade .mar-graded {
+  opacity: 0.32;
+  mix-blend-mode: multiply;
+}
+
+/* All three carry the spotlight's light down the page, like Spotlight. */
+:root[data-mar-ui='on'] .proto-main:has(> .mar-backdrop:is(.is-canvas, .is-wires, .is-grade)) {
+  background:
+    radial-gradient(
+      ellipse 62% 100% at 50% 0%,
+      color-mix(in oklch, var(--color-base-foreground) 5%, transparent),
+      color-mix(in oklch, var(--color-base-foreground) 2%, transparent) 50%,
+      transparent 100%
+    ),
+    var(--color-content-background);
+  background-attachment: local;
+}
+/* Light mode: a page's blurred photo turns beige on white and reads as
+   dirt, so every page takes Home's light instead. */
+:root[data-mar-ui='on'][data-ds-theme='light'] .mar-backdrop:not(.is-bloom, .is-space) {
+  display: none;
+}
+:root[data-mar-ui='on'][data-ds-theme='light']
+  .proto-main:has(
+    > .mar-backdrop:is(.is-canvas, .is-wires, .is-grade, :not(.is-bloom, .is-space))
+  ) {
+  background:
+    radial-gradient(
+      ellipse 62% 100% at 50% 0%,
+      oklch(0.9 0.04 290 / 0.22),
+      oklch(0.94 0.02 290 / 0.05) 60%,
+      transparent 100%
+    ),
+    var(--color-content-background);
+  background-attachment: local;
+}

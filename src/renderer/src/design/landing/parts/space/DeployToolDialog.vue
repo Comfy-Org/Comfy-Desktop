@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Code, LayoutGrid, Rocket, Waypoints } from 'lucide-vue-next'
+import { Code, Rocket } from 'lucide-vue-next'
+import { GraphIcon, AppIcon } from '../../mar/icons/kindIcons'
 import { DialogDescription, DialogRoot, DialogTitle } from 'reka-ui'
 import Badge from '../../ui/Badge.vue'
 import Button from '../../ui/Button.vue'
@@ -113,8 +114,8 @@ function deploy(): void {
           v-model="flavor"
           variant="contained"
           :options="[
-            { value: 'app', label: 'App', icon: LayoutGrid },
-            { value: 'workflow', label: 'Workflow', icon: Waypoints }
+            { value: 'app', label: 'App', icon: AppIcon },
+            { value: 'workflow', label: 'Workflow', icon: GraphIcon }
           ]"
         />
       </template>

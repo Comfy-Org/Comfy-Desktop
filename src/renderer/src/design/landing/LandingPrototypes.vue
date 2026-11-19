@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import { TooltipProvider } from 'reka-ui'
-import DevBar from './DevBar.vue'
 import DesktopTitleBar from './parts/DesktopTitleBar.vue'
 import ComfyTab from './parts/ComfyTab.vue'
 import SwitcherMenu from './parts/nav/SwitcherMenu.vue'
@@ -11,9 +10,13 @@ import ClassicDashboard from './parts/milestones/ClassicDashboard.vue'
 import ClientPortal from './portal/ClientPortal.vue'
 import ViewToggle from './parts/space/ViewToggle.vue'
 import AppTab from './parts/apps/AppTab.vue'
+import MarUndoToast from './mar/pages/MarUndoToast.vue'
+import UiTuner from './mar/UiTuner.vue'
+import MarSetupFlow from './mar/setup/MarSetupFlow.vue'
 import { appsProto } from './appFlow'
-import { hostActions, proto, toast } from './useProto'
+import { hostActions, newInstanceHooks, proto, toast } from './useProto'
 import { can } from './milestones'
+import { usePrototypeShortcuts } from './prototypeShortcuts'
 import { connectAccount, realAccount, realSignIn } from './account'
 import { connectTitleBar } from './titleBar'
 import { connectBuildTabs, openInNewWindow } from './buildTabs'
@@ -50,6 +53,8 @@ const toggleSpace = computed(() => {
   return proto.page.startsWith('space:') ? proto.page.slice(6) : ''
 })
 
+usePrototypeShortcuts()
+
 // Unit tests drive the shipping chooser; in the app it is Milestone 0.
 const showToday = computed(
   () => import.meta.env.MODE === 'test' || (!props.standalone && proto.milestone === 0)
@@ -68,7 +73,9 @@ hostActions.launch = (inst, what) => {
     if (can.value.breadcrumb) return void openInNewWindow(inst.id)
     return emit('pick', inst.source as Installation)
   }
-  toast(can.value.breadcrumb ? `${inst.name} opens in its own window` : `${inst.name} opens`)
+  // The prototype has no second window: the build opens in a tab here, so
+  // a click always lands in ComfyUI.
+  openHere(inst, what)
 }
 
 function relative(ms?: number): string {
@@ -126,7 +133,11 @@ onMounted(() => {
   const mockSignIn = hostActions.signIn
   hostActions.signIn = () => (realAccount.value ? void realSignIn() : mockSignIn())
   const mockNew = hostActions.newInstance
-  hostActions.newInstance = () => (proto.live ? emit('show-new-install') : mockNew())
+  hostActions.newInstance = () => {
+    if (newInstanceHooks.some((take) => take())) return
+    if (proto.live) emit('show-new-install')
+    else mockNew()
+  }
 })
 
 watch(
@@ -168,10 +179,14 @@ watch(
         :space-id="toggleSpace"
         class="fixed top-1.5 left-1/2 z-40 -translate-x-1/2 shadow-popover"
       />
+      <!-- UI tuner (mar/): knobs on top of the UI. -->
+      <UiTuner />
+      <!-- Mar's proposed local setup (UI Playground › Local setup). -->
+      <MarSetupFlow />
       <!-- The breadcrumb's build switcher, just under the stand-in bar. -->
       <SwitcherMenu v-if="standalone && can.breadcrumb" :top="44" />
       <Toaster />
-      <DevBar :in-title-bar="!standalone" />
+      <MarUndoToast />
     </div>
   </TooltipProvider>
 </template>

@@ -43,3 +43,6 @@ docs/telemetry.md
 __pycache__/
 *.pyc
 coverage/
+
+# Design prototype screenshots and contrast reports (pnpm design:shots / design:contrast)
+design-shots/

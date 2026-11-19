@@ -47,10 +47,7 @@ function send(): void {
 
 <template>
   <div class="mx-auto w-full max-w-280 px-10 pb-16">
-    <PageHeader
-      title="Requests"
-      :description="`Ask ${STUDIO.name} for a new tool or a change to one.`"
-    >
+    <PageHeader title="Requests">
       <template #actions
         ><BrandButton size="lg" @click="open = true"
           ><MessageSquarePlus :size="15" />Request a tool</BrandButton

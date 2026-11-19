@@ -13,10 +13,7 @@ const space = computed(() => currentSpace.value)
 
 <template>
   <div class="mx-auto w-full max-w-280 px-10 pb-16">
-    <PageHeader
-      title="Usage"
-      :description="`Monthly credits for ${space.name}, set by ${STUDIO.name}.`"
-    />
+    <PageHeader title="Usage" />
     <Card class="mb-3.5 p-5">
       <p class="text-ui text-muted-foreground">
         <span class="text-title font-semibold text-base-foreground tabular-nums">{{

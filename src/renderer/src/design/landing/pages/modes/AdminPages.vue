@@ -26,18 +26,12 @@ const PROVIDERS = [
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pb-16">
     <template v-if="proto.page === 'usage'">
-      <PageHeader
-        title="Usage"
-        :description="`Credits across ${workspace.name}: ComfyUI sessions and API requests, by person.`"
-      />
+      <PageHeader title="Usage" />
       <ProjectUsage />
     </template>
 
     <template v-else-if="proto.page === 'billing'">
-      <PageHeader
-        title="Billing & credits"
-        :description="`${workspace.plan} · billed to ${workspace.name}.`"
-      >
+      <PageHeader title="Billing & credits">
         <template #actions
           ><Button variant="primary" size="lg" @click="toast('Buy credits')"
             ><Plus :size="15" />Buy credits</Button
@@ -69,10 +63,7 @@ const PROVIDERS = [
     </template>
 
     <template v-else-if="proto.page === 'limits'">
-      <PageHeader
-        title="Limits"
-        description="Caps that stop runs and API requests before they surprise you."
-      />
+      <PageHeader title="Limits" />
       <div class="divide-y divide-border-default">
         <SettingsSection
           title="Workspace"
@@ -97,18 +88,12 @@ const PROVIDERS = [
     </template>
 
     <template v-else-if="proto.page === 'people'">
-      <PageHeader
-        title="People"
-        :description="`Who's in ${workspace.name} and what they can do.`"
-      />
+      <PageHeader title="People" />
       <ProjectMembers />
     </template>
 
     <template v-else>
-      <PageHeader
-        title="Provider keys"
-        description="Bring your own keys for partner models. Calls through the Models API use them instead of credits."
-      >
+      <PageHeader title="Provider keys">
         <template #actions
           ><Button variant="primary" size="lg" @click="toast('Add provider key')"
             ><Plus :size="15" />Add key</Button

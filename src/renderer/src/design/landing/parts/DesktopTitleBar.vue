@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { Bell, ChevronDown, Download, Menu, MessageSquarePlus } from 'lucide-vue-next'
+import { ArrowDownToLine, Bell, ChevronDown, Menu } from 'lucide-vue-next'
 import TitleBarBreadcrumb from './nav/TitleBarBreadcrumb.vue'
 import ComfyCLogo from '../../../components/icons/ComfyCLogo.vue'
 import { toast } from '../useProto'
 import { can } from '../milestones'
 import { runTitleBarCommand, titleBarState } from '../titleBar'
+import MarProtoMenu from '../mar/MarProtoMenu.vue'
+import MarTitleMenu from '../mar/shell/MarTitleMenu.vue'
+import MarDownloadsMenu from '../mar/shell/MarDownloadsMenu.vue'
 
 /**
  * Browser preview only: a stand-in for the desktop app's title bar, laid
  * out like the real one at this milestone: today's layout (menu left, the
  * centre pill) until the breadcrumb arrives (Milestone 3) - then the
- * breadcrumb on the left and the app menu at the right.
+ * breadcrumb. From Builds on, the ☰ is Desktop's menu (mar/shell/MarTitleMenu.vue),
+ * last on the right, as in Comfy-Desktop#2027.
  */
 </script>
 
@@ -31,6 +35,7 @@ import { runTitleBarCommand, titleBarState } from '../titleBar'
     />
     <template v-else>
       <button
+        v-if="!can.builds"
         type="button"
         class="text-muted-foreground hover:text-base-foreground"
         aria-label="Menu"
@@ -50,17 +55,11 @@ import { runTitleBarCommand, titleBarState } from '../titleBar'
     </template>
     <span class="ml-auto flex items-center gap-3.5 text-muted-foreground">
       <Bell :size="15" />
-      <MessageSquarePlus :size="15" />
-      <Download :size="15" />
-      <button
-        v-if="can.breadcrumb"
-        type="button"
-        class="hover:text-base-foreground"
-        aria-label="Menu"
-        @click="toast('App menu')"
-      >
-        <Menu :size="16" />
-      </button>
+      <MarDownloadsMenu v-if="can.builds" />
+      <ArrowDownToLine v-else :size="15" />
+      <MarTitleMenu v-if="can.builds" />
+      <!-- The prototype controls. -->
+      <MarProtoMenu />
     </span>
   </header>
 </template>

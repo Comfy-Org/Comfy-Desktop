@@ -1,0 +1,80 @@
+/* The brand motif's quiet touches (brandMotif.ts), on only while
+   <html data-mar-motif="trio">. Each takes the C mark's 16° in a form of
+   its own; the trio itself lives in MarTrio.vue. */
+
+/* Cut edge: progress fills end on the angle instead of round. The cut is
+   the bar's height × tan 16°. Credits, a node's run, Jobs. */
+:root[data-mar-motif='trio'] :is(.mar-credits-bar, .mar-cf .mar-cf-bar, .jp-track) {
+  border-radius: 1.5px;
+}
+:root[data-mar-motif='trio']
+  :is(.mar-credits-bar > span, .mar-cf .mar-cf-bar > span, .jp-track > i, .sg-run-bar) {
+  --cut: 1.15px;
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%);
+}
+:root[data-mar-motif='trio'] .sg-progress i {
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 2.3px) 100%, 0 100%);
+}
+
+/* Slab shimmer: the skeletons' sheen is a hard-edged slab at 16°. */
+:root[data-mar-motif='trio'] .mar-sk {
+  background: linear-gradient(
+      106deg,
+      transparent 40%,
+      color-mix(in oklch, var(--color-base-foreground) 7%, transparent) 40% 50%,
+      transparent 50%
+    )
+    color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  background-size: 250% 100%;
+}
+
+/* Step markers (Deploy): done is material, the current step the slot
+   filling, the rest wait; a failed step keeps its red. */
+:root[data-mar-motif='trio'] .mar-dep-dot {
+  position: relative;
+  background: none !important;
+}
+:root[data-mar-motif='trio'] .mar-dep-dot::before {
+  position: absolute;
+  inset: 2px 5px;
+  border-radius: 4px;
+  background: var(--dep-well-2);
+  content: '';
+  transform: skewX(-16deg);
+}
+:root[data-mar-motif='trio'] .mar-dep-dot > * {
+  position: relative;
+}
+:root[data-mar-motif='trio'] [data-s='done'] > .mar-dep-dot {
+  color: var(--color-base-background);
+}
+:root[data-mar-motif='trio'] [data-s='done'] > .mar-dep-dot::before {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--color-muted-foreground), white 8%),
+    var(--color-muted-foreground)
+  );
+}
+:root[data-mar-motif='trio'] [data-s='now'] > .mar-dep-dot::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.25px var(--dep-ink);
+  animation: mar-motif-slot 1.5s cubic-bezier(0.645, 0.045, 0.355, 1) infinite;
+}
+:root[data-mar-motif='trio'] [data-s='now'] > .mar-dep-dot > .mar-trio {
+  display: none;
+}
+:root[data-mar-motif='trio'] [data-s='failed'] > .mar-dep-dot::before {
+  background: color-mix(in oklch, var(--dep-bad) 15%, transparent);
+}
+@keyframes mar-motif-slot {
+  40% {
+    background: color-mix(in oklab, var(--dep-ink) 18%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-mar-motif='trio'] [data-s='now'] > .mar-dep-dot::before {
+    animation-duration: 3s;
+  }
+}

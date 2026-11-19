@@ -1,0 +1,10 @@
+/*
+ * Direction B. Override token values here (see README.md for the list);
+ * dark values in the first block, light values in the second. Empty means
+ * "same as Original".
+ */
+:root[data-ds-direction='b']:not([data-ds-theme='light']) {
+}
+
+:root[data-ds-direction='b'][data-ds-theme='light'] {
+}

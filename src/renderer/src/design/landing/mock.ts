@@ -6,7 +6,11 @@ import { reactive } from 'vue'
  */
 
 const TPL = 'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main/templates'
-export const thumb = (id: string): string => `${TPL}/${id}-1.webp`
+/** Mock slots are `templateId~slot`: the template's thumbnail, unless a
+ *  proposal gives that slot its own picture (Mar's: mar/assets/mock). */
+export const thumbSource: { pick?: (id: string) => string | undefined } = {}
+export const thumb = (id: string): string =>
+  thumbSource.pick?.(id) ?? `${TPL}/${id.split('~')[0]}-1.webp`
 
 export type InstanceKind = 'local' | 'cloud'
 export type InstanceState = 'running' | 'stopped' | 'launching' | 'update' | 'error'
@@ -329,53 +333,54 @@ export const WORKFLOWS: Workflow[] = [
     name: 'hero-shot-v4.json',
     instanceId: 'local-1',
     modified: '12 min ago',
-    thumbId: 'image_z_image_turbo',
+    thumbId: 'image_z_image_turbo~hero-shot-v4',
     project: 'Product campaign'
   },
   {
     name: 'rice-terraces-i2v.json',
     instanceId: 'local-video',
     modified: '1 hour ago',
-    thumbId: 'video_wan2_2_14B_i2v',
+    thumbId: 'video_wan2_2_14B_i2v~rice-terraces-i2v',
     project: 'My first project'
   },
   {
     name: 'product-relight.json',
     instanceId: 'cloud',
     modified: 'Yesterday',
-    thumbId: 'template_product_placement',
+    thumbId: 'template_product_placement~product-relight',
     project: 'Product campaign'
   },
   {
     name: 'angles-sheet.json',
     instanceId: 'local-1',
     modified: '2 days ago',
-    thumbId: 'image_qwen_image_edit_2511'
+    thumbId: 'image_qwen_image_edit_2511~angles-sheet'
   },
   {
     name: 'flux-portraits.json',
     instanceId: 'local-flux',
     modified: 'Last week',
-    thumbId: 'image_flux2'
+    thumbId: 'image_flux2~flux-portraits'
   },
   {
     name: 'logo-texture.json',
     instanceId: 'team-build',
     modified: 'Last week',
-    thumbId: 'templates_graphic_design_recomposer',
+    thumbId: 'templates_graphic_design_recomposer~logo-texture',
     project: 'Product campaign'
   }
 ]
 
 /** Projects (when the product has them): a shared space that always runs
- *  on one environment. Several projects can share an environment. */
-export const PROJECTS: { id: string; name: string; envId: string }[] = [
+ *  on one environment. Several projects can share an environment.
+ *  Reactive: a first-time user (Mar's proposal) has none. */
+export const PROJECTS: { id: string; name: string; envId: string }[] = reactive([
   { id: 'hero', name: 'Hero shots', envId: 'local-1' },
   { id: 'first', name: 'My first project', envId: 'local-video' },
   { id: 'flux', name: 'Flux tests', envId: 'local-flux' },
   { id: 'campaign', name: 'Product campaign', envId: 'dep-product' },
   { id: 'explore', name: 'Explorations', envId: 'cloud' }
-]
+])
 
 // --- Assets + workflows: Local / Comfy Cloud split ----------------------
 
@@ -425,7 +430,7 @@ export const CLOUD_ASSETS: CloudAsset[] = [
   ca(
     'c1',
     'hero_shot_00012.png',
-    'image_z_image_turbo',
+    'image_z_image_turbo~hero-shot-00012',
     'image',
     2.4,
     0,
@@ -437,7 +442,7 @@ export const CLOUD_ASSETS: CloudAsset[] = [
   ca(
     'c2',
     'terraces_i2v_00003.mp4',
-    'video_ltx2_5_i2v',
+    'video_ltx2_5_i2v~terraces-i2v-00003',
     'video',
     18.2,
     1,
@@ -448,7 +453,7 @@ export const CLOUD_ASSETS: CloudAsset[] = [
   ca(
     'c3',
     'relight_banana_00007.png',
-    'api_google_nano_banana2_image_edit',
+    'api_google_nano_banana2_image_edit~relight-banana-00007',
     'image',
     3.1,
     2,
@@ -459,7 +464,7 @@ export const CLOUD_ASSETS: CloudAsset[] = [
   ca(
     'c4',
     'angles_sheet_00002.png',
-    'image_qwen_image_edit_2511',
+    'image_qwen_image_edit_2511~angles-sheet-00002',
     'image',
     4.8,
     3,
@@ -469,7 +474,7 @@ export const CLOUD_ASSETS: CloudAsset[] = [
   ca(
     'c5',
     'wan_portrait_00011.mp4',
-    'video_wan2_2_14B_i2v',
+    'video_wan2_2_14B_i2v~wan-portrait-00011',
     'video',
     26.5,
     4,
@@ -481,18 +486,27 @@ export const CLOUD_ASSETS: CloudAsset[] = [
   ca(
     'c6',
     'axe_model_00001.glb',
-    '3d_pixal3d_trellis2_image_to_model',
+    '3d_pixal3d_trellis2_image_to_model~axe-model-00001',
     '3d',
     41.0,
     5,
     'week',
     '2 days ago'
   ),
-  ca('c7', 'flux_portrait_00004.png', 'image_flux2', 'image', 2.2, 6, 'week', '3 days ago'),
+  ca(
+    'c7',
+    'flux_portrait_00004.png',
+    'image_flux2~flux-portrait-00004',
+    'image',
+    2.2,
+    6,
+    'week',
+    '3 days ago'
+  ),
   ca(
     'c8',
     'product_place_00009.png',
-    'template_product_placement',
+    'template_product_placement~product-place-00009',
     'image',
     2.9,
     7,
@@ -514,7 +528,7 @@ export const CLOUD_ASSETS: CloudAsset[] = [
   ca(
     'c10',
     'krea_street_00006.png',
-    'image_krea2_turbo_t2i',
+    'image_krea2_turbo_t2i~krea-street-00006',
     'image',
     1.8,
     9,
@@ -524,7 +538,7 @@ export const CLOUD_ASSETS: CloudAsset[] = [
   ca(
     'c11',
     'minimax_eye_00002.mp4',
-    'video_minimax_h3_i2v',
+    'video_minimax_h3_i2v~minimax-eye-00002',
     'video',
     12.7,
     10,
@@ -534,7 +548,7 @@ export const CLOUD_ASSETS: CloudAsset[] = [
   ca(
     'c12',
     'poster_recompose_00001.png',
-    'templates_graphic_design_recomposer',
+    'templates_graphic_design_recomposer~poster-recompose-00001',
     'image',
     3.6,
     11,
@@ -545,7 +559,7 @@ export const CLOUD_ASSETS: CloudAsset[] = [
   ca(
     'c13',
     'upscale_4k_00003.png',
-    'utility_seedvr2_image_upscale',
+    'utility_seedvr2_image_upscale~upscale-4k-00003',
     'image',
     9.4,
     12,
@@ -588,21 +602,21 @@ export const LOCAL_ASSET_FOLDERS: LocalFolder[] = [
         size: '2.4 MB',
         modified: '12 min ago',
         kind: 'image',
-        thumbId: 'image_z_image_turbo'
+        thumbId: 'image_z_image_turbo~hero-shot-00012'
       },
       {
         name: 'hero_shot_00011.png',
         size: '2.3 MB',
         modified: '14 min ago',
         kind: 'image',
-        thumbId: 'image_krea2_turbo_t2i'
+        thumbId: 'image_krea2_turbo_t2i~hero-shot-00011'
       },
       {
         name: 'angles_sheet_00002.png',
         size: '4.8 MB',
         modified: '2 days ago',
         kind: 'image',
-        thumbId: 'image_qwen_image_edit_2511'
+        thumbId: 'image_qwen_image_edit_2511~angles-sheet-00002'
       },
       { name: 'upscaled', size: '—', modified: 'Last week', kind: 'folder' }
     ]
@@ -618,14 +632,14 @@ export const LOCAL_ASSET_FOLDERS: LocalFolder[] = [
         size: '1.2 MB',
         modified: 'Yesterday',
         kind: 'image',
-        thumbId: 'template_product_placement'
+        thumbId: 'template_product_placement~product-ref'
       },
       {
         name: 'pose_ref.png',
         size: '860 KB',
         modified: '3 days ago',
         kind: 'image',
-        thumbId: 'image_flux2'
+        thumbId: 'image_flux2~pose-ref'
       }
     ]
   },
@@ -640,14 +654,14 @@ export const LOCAL_ASSET_FOLDERS: LocalFolder[] = [
         size: '18.2 MB',
         modified: '1 hour ago',
         kind: 'video',
-        thumbId: 'video_ltx2_5_i2v'
+        thumbId: 'video_ltx2_5_i2v~terraces-i2v-00003'
       },
       {
         name: 'wan_portrait_00011.mp4',
         size: '26.5 MB',
         modified: 'Yesterday',
         kind: 'video',
-        thumbId: 'video_wan2_2_14B_i2v'
+        thumbId: 'video_wan2_2_14B_i2v~wan-portrait-00011'
       },
       { name: 'voiceover_take3.mp3', size: '940 KB', modified: '5 days ago', kind: 'audio' }
     ]
@@ -663,7 +677,7 @@ export const LOCAL_ASSET_FOLDERS: LocalFolder[] = [
         size: '3.3 MB',
         modified: '1 hour ago',
         kind: 'image',
-        thumbId: 'video_minimax_h3_i2v'
+        thumbId: 'video_minimax_h3_i2v~terraces-still'
       }
     ]
   },
@@ -678,14 +692,14 @@ export const LOCAL_ASSET_FOLDERS: LocalFolder[] = [
         size: '2.2 MB',
         modified: 'Last week',
         kind: 'image',
-        thumbId: 'image_flux2'
+        thumbId: 'image_flux2~flux-portrait-00004'
       },
       {
         name: 'upscale_4k_00003.png',
         size: '9.4 MB',
         modified: 'Last week',
         kind: 'image',
-        thumbId: 'utility_seedvr2_image_upscale'
+        thumbId: 'utility_seedvr2_image_upscale~upscale-4k-00003'
       }
     ]
   },
@@ -710,21 +724,21 @@ export const LOCAL_WORKFLOW_FOLDERS: LocalFolder[] = [
         size: '48 KB',
         modified: '12 min ago',
         kind: 'workflow',
-        thumbId: 'image_z_image_turbo'
+        thumbId: 'image_z_image_turbo~hero-shot-v4'
       },
       {
         name: 'angles-sheet.json',
         size: '61 KB',
         modified: '2 days ago',
         kind: 'workflow',
-        thumbId: 'image_qwen_image_edit_2511'
+        thumbId: 'image_qwen_image_edit_2511~angles-sheet'
       },
       {
         name: 'krea-street.json',
         size: '22 KB',
         modified: '2 weeks ago',
         kind: 'workflow',
-        thumbId: 'image_krea2_turbo_t2i'
+        thumbId: 'image_krea2_turbo_t2i~krea-street'
       }
     ]
   },
@@ -739,14 +753,14 @@ export const LOCAL_WORKFLOW_FOLDERS: LocalFolder[] = [
         size: '74 KB',
         modified: '1 hour ago',
         kind: 'workflow',
-        thumbId: 'video_wan2_2_14B_i2v'
+        thumbId: 'video_wan2_2_14B_i2v~rice-terraces-i2v'
       },
       {
         name: 'ltx-camera-moves.json',
         size: '52 KB',
         modified: 'Last week',
         kind: 'workflow',
-        thumbId: 'video_ltx2_5_i2v'
+        thumbId: 'video_ltx2_5_i2v~ltx-camera-moves'
       }
     ]
   },
@@ -761,7 +775,7 @@ export const LOCAL_WORKFLOW_FOLDERS: LocalFolder[] = [
         size: '31 KB',
         modified: 'Last week',
         kind: 'workflow',
-        thumbId: 'image_flux2'
+        thumbId: 'image_flux2~flux-portraits'
       }
     ]
   }
@@ -779,7 +793,7 @@ export interface CloudWorkflow {
 export const CLOUD_WORKFLOWS: CloudWorkflow[] = [
   {
     name: 'product-relight.json',
-    thumbId: 'template_product_placement',
+    thumbId: 'template_product_placement~product-relight',
     project: 'Product campaign',
     modified: 'Yesterday',
     age: 1,
@@ -787,27 +801,27 @@ export const CLOUD_WORKFLOWS: CloudWorkflow[] = [
   },
   {
     name: 'banana-edit-batch.json',
-    thumbId: 'api_google_nano_banana2_image_edit',
+    thumbId: 'api_google_nano_banana2_image_edit~banana-edit-batch',
     project: 'Product campaign',
     modified: '2 days ago',
     age: 2
   },
   {
     name: 'terraces-i2v-cloud.json',
-    thumbId: 'video_ltx2_5_i2v',
+    thumbId: 'video_ltx2_5_i2v~terraces-i2v-cloud',
     project: 'My first project',
     modified: '4 days ago',
     age: 3
   },
   {
     name: 'trellis-props.json',
-    thumbId: '3d_pixal3d_trellis2_image_to_model',
+    thumbId: '3d_pixal3d_trellis2_image_to_model~trellis-props',
     modified: 'Last week',
     age: 4
   },
   {
     name: 'poster-recompose.json',
-    thumbId: 'templates_graphic_design_recomposer',
+    thumbId: 'templates_graphic_design_recomposer~poster-recompose',
     project: 'Product campaign',
     modified: '2 weeks ago',
     age: 5,
@@ -815,7 +829,7 @@ export const CLOUD_WORKFLOWS: CloudWorkflow[] = [
   },
   {
     name: 'minimax-eye.json',
-    thumbId: 'video_minimax_h3_i2v',
+    thumbId: 'video_minimax_h3_i2v~minimax-eye',
     project: 'My first project',
     modified: '3 weeks ago',
     age: 6
@@ -829,6 +843,10 @@ export interface Tutorial {
   kind: 'graph' | 'app'
   thumbId: string
   minutes: number
+  /** How much you've watched, 0 to 1 (1 = watched). Basics lessons run in
+   *  the order listed. */
+  progress?: number
+  isNew?: boolean
 }
 
 export const TUTORIALS: Tutorial[] = [
@@ -837,31 +855,34 @@ export const TUTORIALS: Tutorial[] = [
     blurb: 'Learn how nodes, links and the run queue fit together.',
     category: 'Basics',
     kind: 'graph',
-    thumbId: 'image_z_image_turbo',
-    minutes: 8
+    thumbId: 'image_z_image_turbo~node-graph-basics',
+    minutes: 8,
+    progress: 1
   },
   {
     title: 'Text to image and image to image',
     blurb: 'Build your first image workflows and learn when to use each.',
     category: 'Basics',
     kind: 'graph',
-    thumbId: 'image_flux2',
-    minutes: 12
+    thumbId: 'image_flux2~text-to-image-and-image-to-image',
+    minutes: 12,
+    progress: 1
   },
   {
     title: 'LoRAs, style transfer and ControlNets',
     blurb: 'Add style and control to an image workflow.',
     category: 'Basics',
     kind: 'graph',
-    thumbId: 'image_krea2_turbo_t2i',
-    minutes: 15
+    thumbId: 'image_krea2_turbo_t2i~loras-style-transfer-and-controlnets',
+    minutes: 15,
+    progress: 0.4
   },
   {
     title: 'Inpainting, outpainting and upscaling',
     blurb: 'Edit, extend and sharpen an image in ComfyUI.',
     category: 'Basics',
     kind: 'app',
-    thumbId: 'utility_seedvr2_image_upscale',
+    thumbId: 'utility_seedvr2_image_upscale~inpainting-outpainting-and-upscaling',
     minutes: 11
   },
   {
@@ -869,7 +890,7 @@ export const TUTORIALS: Tutorial[] = [
     blurb: 'Turn a still image into motion and refine the result.',
     category: 'Basics',
     kind: 'graph',
-    thumbId: 'video_ltx2_5_i2v',
+    thumbId: 'video_ltx2_5_i2v~image-to-video-and-motion-control',
     minutes: 14
   },
   {
@@ -877,7 +898,7 @@ export const TUTORIALS: Tutorial[] = [
     blurb: 'Follow a hands-on visual effects workflow.',
     category: 'VFX',
     kind: 'graph',
-    thumbId: 'video_wan2_2_14B_i2v',
+    thumbId: 'video_wan2_2_14B_i2v~cleanplate-walkthrough',
     minutes: 18
   },
   {
@@ -885,15 +906,16 @@ export const TUTORIALS: Tutorial[] = [
     blurb: 'Explore a practical character deaging workflow.',
     category: 'VFX',
     kind: 'graph',
-    thumbId: 'image_qwen_image_edit_2511',
-    minutes: 16
+    thumbId: 'image_qwen_image_edit_2511~deaging-workflow',
+    minutes: 16,
+    isNew: true
   },
   {
     title: 'Character sheet',
     blurb: 'Create a set of consistent character views.',
     category: 'Animations',
     kind: 'graph',
-    thumbId: '3d_pixal3d_trellis2_image_to_model',
+    thumbId: '3d_pixal3d_trellis2_image_to_model~character-sheet',
     minutes: 10
   },
   {
@@ -901,15 +923,16 @@ export const TUTORIALS: Tutorial[] = [
     blurb: 'Animate a portrait to match a voice track.',
     category: 'Animations',
     kind: 'graph',
-    thumbId: 'video_minimax_h3_i2v',
-    minutes: 13
+    thumbId: 'video_minimax_h3_i2v~lip-sync-from-a-single-image',
+    minutes: 13,
+    progress: 0.65
   },
   {
     title: 'Product placement in one click',
     blurb: 'Place a product into any scene with consistent light.',
     category: 'Ads',
     kind: 'app',
-    thumbId: 'template_product_placement',
+    thumbId: 'template_product_placement~product-placement-in-one-click',
     minutes: 7
   },
   {
@@ -917,7 +940,7 @@ export const TUTORIALS: Tutorial[] = [
     blurb: 'Rebuild a poster layout for every ad size.',
     category: 'Ads',
     kind: 'app',
-    thumbId: 'templates_graphic_design_recomposer',
+    thumbId: 'templates_graphic_design_recomposer~poster-recomposition',
     minutes: 9
   },
   {
@@ -925,8 +948,9 @@ export const TUTORIALS: Tutorial[] = [
     blurb: 'Make precise image edits with a partner model.',
     category: 'Ads',
     kind: 'graph',
-    thumbId: 'api_google_nano_banana2_image_edit',
-    minutes: 6
+    thumbId: 'api_google_nano_banana2_image_edit~edits-with-nano-banana-2',
+    minutes: 6,
+    isNew: true
   }
 ]
 
@@ -1281,7 +1305,7 @@ export const APPS: App[] = reactive([
   {
     id: 'a-relight',
     name: 'Product relight',
-    thumbId: 'template_product_placement',
+    thumbId: 'template_product_placement~app-product-relight',
     owner: 'You',
     you: true,
     shared: 'everyone',
@@ -1292,7 +1316,7 @@ export const APPS: App[] = reactive([
   {
     id: 'a-angles',
     name: 'Character angles',
-    thumbId: 'image_qwen_image_edit_2511',
+    thumbId: 'image_qwen_image_edit_2511~app-character-angles',
     owner: 'You',
     you: true,
     shared: 'private',
@@ -1303,7 +1327,7 @@ export const APPS: App[] = reactive([
   {
     id: 'a-poster',
     name: 'Poster resizer',
-    thumbId: 'templates_graphic_design_recomposer',
+    thumbId: 'templates_graphic_design_recomposer~app-poster-resizer',
     owner: 'Jane Park',
     you: false,
     shared: 'team',
@@ -1314,7 +1338,7 @@ export const APPS: App[] = reactive([
   {
     id: 'a-i2v',
     name: 'Photo to video',
-    thumbId: 'video_ltx2_5_i2v',
+    thumbId: 'video_ltx2_5_i2v~app-photo-to-video',
     owner: 'Marcus Lin',
     you: false,
     shared: 'team',
@@ -1325,7 +1349,7 @@ export const APPS: App[] = reactive([
   {
     id: 'a-upscale',
     name: '4K upscaler',
-    thumbId: 'utility_seedvr2_image_upscale',
+    thumbId: 'utility_seedvr2_image_upscale~app-4k-upscaler',
     owner: 'You',
     you: true,
     shared: 'team',
@@ -1336,7 +1360,7 @@ export const APPS: App[] = reactive([
   {
     id: 'a-3d',
     name: 'Image to 3D prop',
-    thumbId: '3d_pixal3d_trellis2_image_to_model',
+    thumbId: '3d_pixal3d_trellis2_image_to_model~app-image-to-3d-prop',
     owner: 'Alex Carmoid',
     you: false,
     shared: 'everyone',

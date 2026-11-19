@@ -123,6 +123,9 @@ importers:
       lucide-vue-next:
         specifier: ^0.525.0
         version: 0.525.0(vue@3.5.29(typescript@5.9.3))
+      motion-v:
+        specifier: 2.6.0
+        version: 2.6.0(@vueuse/core@13.9.0(vue@3.5.29(typescript@5.9.3)))(vue@3.5.29(typescript@5.9.3))
       pinia:
         specifier: ^3.0.3
         version: 3.0.4(typescript@5.9.3)(vue@3.5.29(typescript@5.9.3))
@@ -2228,6 +2231,17 @@ packages:
     resolution: {integrity: sha512-8RipRLol37bNs2bhoV67fiTEvdTrbMUYcFTiy3+wuuOnUog2QBHCZWXDRijWQfAkhBj2Uf5UnVaiWwA5vdd82w==}
     engines: {node: '>= 6'}
 
+  framer-motion@14.0.0:
+    resolution: {integrity: sha512-QAtHmybrDFSliyW1sexMtSQTQd+1jw2ajibEmzpuI4XdPVzQkn+dAzJMm2sW3pl9MJuSS4xN51djQ7huhlP/VA==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      react:
+        optional: true
+      react-dom:
+        optional: true
+
   fs-extra@10.1.0:
     resolution: {integrity: sha512-oRXApq54ETRj4eMiFzGnHWGy+zo5raudjuxN0b8H7s/RU2oW0Wvsx9O0ACRN/kRq9E8Vu/ReskGB5o3ji+FzHQ==}
     engines: {node: '>=12'}
@@ -2379,6 +2393,9 @@ packages:
   hasown@2.0.2:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
+
+  hey-listen@1.0.8:
+    resolution: {integrity: sha512-COpmrF2NOg4TBWUJ5UVyaCU2A88wEMkUPK4hNqyCkqHbxT92BbvfjoSozkAIIm6XhicGlJHhFdullInrdhwU8Q==}
 
   hookable@5.5.3:
     resolution: {integrity: sha512-Yc+BQe8SvoXH1643Qez1zqLRmbA5rCL+sSmk6TVos0LWVfNIB7PGncdlId77WzLGSIB5KaWgTaNTs2lNVEI6VQ==}
@@ -2875,6 +2892,18 @@ packages:
     resolution: {integrity: sha512-vVqVZQyf3WLx2Shd0qJ9xuvqgAyKPLAiqITEtqW0oIUjzo3PePDd6fW9iFz30ef7Ysp/oiWqbhszeGWW2T6Gzw==}
     engines: {node: '>=10'}
     hasBin: true
+
+  motion-dom@14.0.0:
+    resolution: {integrity: sha512-aU3ApXo1yTpeUi3JU+jbDk2TELjxPE3MbBMUP7nZHlARb6RweJK+ojmLjpuB0YsY6zhbBl1YWGo8LMsI1/Llqw==}
+
+  motion-utils@14.0.0:
+    resolution: {integrity: sha512-jBsyjVxTTRZNeuvd/v+btVXr90LQkYl4HhRu9T2ARc+PMnvkmjsjRVeAg4Qm10b6TlTw+kykWI8gu/6LuvpLSQ==}
+
+  motion-v@2.6.0:
+    resolution: {integrity: sha512-AJ/fNF7d53DyUg0xfzncDIQ6ztCHUMdLlFAZrSZ0HGQ65Y2ULTOMOlWI5FqQss1JDTstI3A2kOSQVf2+O5C1gg==}
+    peerDependencies:
+      '@vueuse/core': '>=10.0.0'
+      vue: '>=3.0.0'
 
   ms@2.0.0:
     resolution: {integrity: sha512-Tpp60P6IUJDTuOq/5Z8cdskzJujfwqfOTkrwIwj7IRISpnkJnT6SyJ4PCPnGMoFjC9ddhal5KVIYtAt97ix05A==}
@@ -6114,6 +6143,12 @@ snapshots:
       hasown: 2.0.2
       mime-types: 2.1.35
 
+  framer-motion@14.0.0:
+    dependencies:
+      motion-dom: 14.0.0
+      motion-utils: 14.0.0
+      tslib: 2.8.1
+
   fs-extra@10.1.0:
     dependencies:
       graceful-fs: 4.2.11
@@ -6319,6 +6354,8 @@ snapshots:
   hasown@2.0.2:
     dependencies:
       function-bind: 1.1.2
+
+  hey-listen@1.0.8: {}
 
   hookable@5.5.3: {}
 
@@ -6791,6 +6828,24 @@ snapshots:
       minimist: 1.2.8
 
   mkdirp@1.0.4: {}
+
+  motion-dom@14.0.0:
+    dependencies:
+      motion-utils: 14.0.0
+
+  motion-utils@14.0.0: {}
+
+  motion-v@2.6.0(@vueuse/core@13.9.0(vue@3.5.29(typescript@5.9.3)))(vue@3.5.29(typescript@5.9.3)):
+    dependencies:
+      '@vueuse/core': 13.9.0(vue@3.5.29(typescript@5.9.3))
+      framer-motion: 14.0.0
+      hey-listen: 1.0.8
+      motion-dom: 14.0.0
+      motion-utils: 14.0.0
+      vue: 3.5.29(typescript@5.9.3)
+    transitivePeerDependencies:
+      - react
+      - react-dom
 
   ms@2.0.0: {}
 

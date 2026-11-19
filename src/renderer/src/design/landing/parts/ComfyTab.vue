@@ -5,6 +5,9 @@ import Button from '../ui/Button.vue'
 import InstanceGlyph from './InstanceGlyph.vue'
 import { closeTab, instanceById, proto } from '../useProto'
 import { buildState } from '../buildTabs'
+import MarGraph from '../mar/graph/MarGraph.vue'
+import MarCloudBar from '../mar/shell/MarCloudBar.vue'
+import { onCloud } from '../mar/shell/surface'
 
 /**
  * A build's tab, under its ComfyUI. In the app with your real builds, main
@@ -19,8 +22,16 @@ const real = computed(() => proto.live && !!inst.value?.source)
 </script>
 
 <template>
+  <!-- On Comfy Cloud the browser bar stays, with its way back to Home
+       (mar/shell). -->
+  <MarCloudBar v-if="onCloud" />
+  <!-- A mock of ComfyUI's graph editor (mar/graph). -->
+  <MarGraph
+    v-if="tab && inst && !real && state?.kind !== 'error'"
+    :workflow="tab.workflow === 'Untitled workflow' ? undefined : tab.workflow"
+  />
   <div
-    v-if="tab && inst"
+    v-else-if="tab && inst"
     class="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-center"
   >
     <InstanceGlyph :inst="inst" size="lg" />

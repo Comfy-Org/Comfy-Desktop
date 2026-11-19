@@ -24,6 +24,7 @@ const {
       <p v-if="description" class="mt-1.5 text-ui leading-relaxed text-muted-foreground">
         {{ description }}
       </p>
+      <div v-if="$slots.actions" class="mt-3"><slot name="actions" /></div>
     </header>
     <!-- Card 12; rows are full-bleed with their own padding. -->
     <div

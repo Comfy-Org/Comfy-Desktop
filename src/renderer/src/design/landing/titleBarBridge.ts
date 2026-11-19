@@ -47,6 +47,21 @@ export interface TitleBarState {
    *  switcher; `appFront` is the tab in front (null: none). */
   apps?: { id: string; name: string; thumb: string }[]
   appFront?: string | null
+  /** Mar's proposal, ComfyUI (Glass): Assets opened as a whole tab, after
+   *  the build like an app; `front` while it is the tab on show. */
+  assets?: { front: boolean }
+  /** Mar's tabs title bar (mar/shell/titleTabs.ts), only while it's on:
+   *  the open workflows as tabs, the one in front, where Home runs next,
+   *  and whether the agent is open. */
+  tabs?: { id: string; name: string; build: string; kind: 'local' | 'cloud' }[]
+  tabFront?: string | null
+  runsOn?: { name: string; kind: 'local' | 'cloud' }
+  agent?: boolean
+  /** Mar's proposal (mar/build/buildNav.ts): where the page on view sits,
+   *  after Home - each step a page to go back to, the last one current. */
+  trail?: { label: string; page?: string; kind?: 'local' | 'cloud' }[]
+  /** Mar's proposal on Comfy Cloud: no build to pick, so no switcher. */
+  noSwitcher?: boolean
   /** The Prototype menu: each switch and its current value. */
   options: {
     key: string
@@ -61,6 +76,16 @@ export type TitleBarCommand =
   /** Bring an app's tab to the front, or close it. */
   | { type: 'app'; id: string }
   | { type: 'closeApp'; id: string }
+  /** Bring the Assets tab to the front, or close it. */
+  | { type: 'assets' }
+  | { type: 'closeAssets' }
+  /** Mar's tabs title bar: bring a workflow tab to the front, close it, or
+   *  open and close the agent. */
+  | { type: 'tab'; id: string }
+  | { type: 'closeTab'; id: string }
+  | { type: 'agent' }
+  /** A step of Mar's page trail: go to that page. */
+  | { type: 'page'; page: string }
   /** Toggle the build switcher under the chevron (window px). */
   | { type: 'switcher'; left: number; width: number; bottom: number }
   /** The pointer entered / left the build's name, or it was clicked - its

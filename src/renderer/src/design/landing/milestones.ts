@@ -20,7 +20,10 @@ import { appsProto } from './appFlow'
  *                   (use cases); an app opens in a tab, as its user. Shown
  *                   as "5" in the menu; the later ones are shown one up.
  *                   (The value stays 4.5 so every `m >= n` check holds.)
- *   5  Explore    - Explore and Learn.
+ * 4.7  Explore    - Milestone 3: Explore, the Hub's apps and workflows
+ *                   in one place (Apps moves inside it). Shown as "6".
+ *   5  Learn      - Learn, and the person's own work: Recently used on
+ *                   Home and the Workflows library.
  *   6  Builder    - the Build lens (deploy builds as APIs).
  *   7  One window - the long-term vision: builds open in the same window,
  *                   switched from the breadcrumb, still running.
@@ -31,26 +34,36 @@ import { appsProto } from './appFlow'
  *  10  Agent      - future: a third lens beside Create and Build, where an
  *                   agent makes workflows and apps from a prompt; Home
  *                   gains the prompt box.
+ *
+ * Every milestone from 1 on is drawn in the New UI (mar/). A milestone only
+ * decides what is there, never how it looks.
  */
 export const MILESTONES = [
   { value: '0', label: '0 · Today (main)' },
   { value: '1', label: '1 · Design system' },
-  { value: '2', label: '2 · Builds' },
+  { value: '2', label: '2 · Builds · MVP (Milestone 1)' },
   { value: '3', label: '3 · Breadcrumb' },
   { value: '4', label: '4 · Home' },
-  { value: '4.5', label: '5 · Explore apps' },
-  { value: '5', label: '6 · Explore & Learn' },
-  { value: '6', label: '7 · Builder' },
-  { value: '7', label: '8 · One window' },
-  { value: '8', label: '9 · Projects (future)' },
-  { value: '9', label: '10 · Spaces (future)' },
-  { value: '10', label: '11 · Agent (future)' }
+  { value: '4.5', label: '5 · Explore apps (Milestone 2)' },
+  { value: '4.7', label: '6 · Explore (Milestone 3)' },
+  { value: '5', label: '7 · Learn & Recents' },
+  { value: '6', label: '8 · Builder' },
+  { value: '7', label: '9 · One window' },
+  { value: '8', label: '10 · Projects (future)' },
+  { value: '9', label: '11 · Spaces (future)' },
+  { value: '10', label: '12 · Agent (future)' }
 ]
 
 // Each run of the app opens on the latest milestone; within a run (a
 // reload included) it stays on the one picked.
 const MILESTONE_KEY = 'comfy.design.milestone'
-proto.milestone = Number(sessionStorage.getItem(MILESTONE_KEY) ?? MILESTONES.at(-1)!.value)
+// A shared link can open on one milestone: ?milestone=4.7 (Milestone 3).
+const fromUrl = new URLSearchParams(location.search).get('milestone')
+proto.milestone = Number(
+  (fromUrl && MILESTONES.some((m) => m.value === fromUrl) ? fromUrl : null) ??
+    sessionStorage.getItem(MILESTONE_KEY) ??
+    MILESTONES.at(-1)!.value
+)
 watch(
   () => proto.milestone,
   (m) => sessionStorage.setItem(MILESTONE_KEY, String(m))
@@ -68,7 +81,15 @@ export const can = computed(() => {
     home: m >= 4,
     /** Explore, leading with apps; apps open in their own tabs. */
     exploreApps: m >= 4.5,
-    explore: m >= 5,
+    /** The person's own workflows: the library and Recently used. */
+    workflows: m >= 5,
+    /** Explore (Milestone 3), with the Hub's apps and workflows; Learn after. */
+    explore: m >= 4.7,
+    /** A build's page: About and Update as one Overview tab, then Assets & Models. */
+    buildOverview: m >= 4.7,
+    learn: m >= 5,
+    /** Search (⌘K) comes with Learn, not with Explore. */
+    search: m >= 5,
     builder: m >= 6,
     oneWindow: m >= 7,
     projects: m >= 8,
@@ -102,8 +123,6 @@ watch(
     proto.activeTab = 'home'
     proto.mode = 'create'
     proto.page = landingPage()
-    // A first-run Home only exists from Milestone 4.
-    if (!can.value.home) proto.fresh = false
   }
 )
 

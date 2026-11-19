@@ -29,7 +29,7 @@ const SIZE = {
     <span
       :class="
         cn(
-          'inline-flex shrink-0 items-center justify-center font-bold [&_svg]:size-full',
+          'space-mark inline-flex shrink-0 items-center justify-center font-bold [&_svg]:size-full',
           SIZE[size]
         )
       "
