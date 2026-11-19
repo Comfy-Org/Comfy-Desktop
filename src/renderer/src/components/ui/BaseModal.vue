@@ -94,10 +94,7 @@ const sizeStyleClass = computed(() => {
     >
       <X :size="18" />
     </Button>
-    <header
-      v-if="$slots.header"
-      class="base-modal-header border-b border-solid border-neutral-100/8 pt-5 pr-14 pb-3 pl-6"
-    >
+    <header v-if="$slots.header" class="base-modal-header pt-5 pr-14 pb-1 pl-6">
       <slot name="header" />
     </header>
     <div class="base-modal-body min-h-0 flex-auto overflow-y-auto px-6 py-4">

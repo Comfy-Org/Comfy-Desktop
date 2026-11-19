@@ -1077,7 +1077,6 @@
     "delete": "卸载",
     "deleteConfirmTitle": "卸载",
     "deleteConfirmMessage": "这将永久移除此 ComfyUI 安装及其所有文件。此操作无法撤销。",
-    "deleteConfirmDetail": "其他安装不受影响。",
     "untrack": "忘记",
     "untrackConfirmTitle": "忘记实例",
     "untrackConfirmMessage": "这会从应用中移除该实例。文件不会被删除。",

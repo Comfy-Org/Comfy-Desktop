@@ -1239,6 +1239,7 @@ defineExpose({
               :open="moreMenuOpen"
               :anchor="footerRef?.querySelector<HTMLElement>('.settings-v2-more')"
               :actions="pinBottomMenuActions"
+              :side="isPage ? 'bottom' : 'top'"
               @close="closeMoreMenu"
               @pick="handleMorePick"
             />

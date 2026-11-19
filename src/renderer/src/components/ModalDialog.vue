@@ -177,11 +177,11 @@ watch(
       "
     >
       <div
-        class="dialog-title -mx-6 border-b border-solid px-6"
+        class="dialog-title"
         :class="
           isMigrateConfirm
-            ? 'mb-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pb-3.5 text-[length:var(--takeover-fs-h3)] font-medium text-text'
-            : 'mb-3 border-[var(--border)] pb-3 text-[16px] font-semibold'
+            ? 'mb-4 text-[length:var(--takeover-fs-h3)] font-medium text-text'
+            : 'mb-3 text-[16px] font-semibold'
         "
       >
         {{ state.title }}

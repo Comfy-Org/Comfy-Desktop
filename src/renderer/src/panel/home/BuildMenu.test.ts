@@ -7,6 +7,7 @@ import AppSidebar from '../AppSidebar.vue'
 import HomeBuildCard from './HomeBuildCard.vue'
 import ChooserInstallTile from '../../views/chooser/ChooserInstallTile.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
+import DialogHost from '../../components/DialogHost.vue'
 import { provideBuildMenuHost, type BuildMenuHost } from './useBuildMenu'
 import { homeBuildStatus } from './homeBuild'
 import { provideBuildLogs } from '../../composables/useBuildProgress'
@@ -187,6 +188,17 @@ async function rightClick(element: Element): Promise<void> {
   await flushPromises()
 }
 
+function mountDialogs(): void {
+  mounted.push(mount(DialogHost, { attachTo: document.body }))
+}
+
+async function confirmBox(): Promise<HTMLElement> {
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="base-alert-action"]')).not.toBeNull()
+  )
+  return document.querySelector<HTMLElement>('[role="alertdialog"]')!
+}
+
 describe('Build menu', () => {
   it.each(Object.keys(EXPECTED) as State[])(
     'lists what a %s build can do now first, Uninstall last',
@@ -327,40 +339,38 @@ describe('Build menu', () => {
     expect(await shownMenu()).not.toContain('promote-to-workspace')
   })
 
-  it('asks inside the menu before it uninstalls, then uninstalls without another dialog', async () => {
+  it('closes the menu and asks in a separate box before it uninstalls', async () => {
     const tile = await mountTile('ready')
+    mountDialogs()
     await tile.get('[data-testid="home-build-more"]').trigger('click')
     await shownMenu()
 
     document.querySelector<HTMLElement>('[data-testid="build-menu-delete"]')!.click()
-    await flushPromises()
 
-    const question = document.querySelector('[data-testid="build-menu-uninstall-question"]')
-    expect(question?.textContent).toContain('Flux Sandbox')
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="build-menu"]')).toBeNull())
+    const box = await confirmBox()
+    expect(box.textContent).toContain(BUILD.installPath)
     expect(host.showProgress).not.toHaveBeenCalled()
 
-    document.querySelector<HTMLElement>('[data-testid="build-menu-confirm-uninstall"]')!.click()
+    box.querySelector<HTMLElement>('[data-testid="base-alert-action"]')!.click()
     await flushPromises()
 
     expect(host.showProgress).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ installationId: BUILD.id, actionId: 'delete' })
     )
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 
-  it('puts focus on the Uninstall answer when it asks', async () => {
+  it('keeps the build when the separate box is cancelled', async () => {
     const tile = await mountTile('ready')
+    mountDialogs()
     await tile.get('[data-testid="home-build-more"]').trigger('click')
     await shownMenu()
-
     document.querySelector<HTMLElement>('[data-testid="build-menu-delete"]')!.click()
+
+    ;(await confirmBox()).querySelector<HTMLElement>('[data-testid="base-alert-cancel"]')!.click()
     await flushPromises()
 
-    await vi.waitFor(() =>
-      expect(document.activeElement).toBe(
-        document.querySelector('[data-testid="build-menu-confirm-uninstall"]')
-      )
-    )
+    expect(host.showProgress).not.toHaveBeenCalled()
   })
 
   it('closes the menu when the ⋯ button is pressed again', async () => {
@@ -385,19 +395,19 @@ describe('Build menu', () => {
     expect(await shownMenu()).not.toContain('auto-start')
   })
 
-  it('drops the uninstall question when the build starts running, and never uninstalls it', async () => {
+  it('never uninstalls a build that started while the separate box was open', async () => {
     const tile = await mountTile('ready')
+    mountDialogs()
     await tile.get('[data-testid="home-build-more"]').trigger('click')
     await shownMenu()
     document.querySelector<HTMLElement>('[data-testid="build-menu-delete"]')!.click()
-    await flushPromises()
-    expect(document.querySelector('[data-testid="build-menu-uninstall-question"]')).not.toBeNull()
+    const box = await confirmBox()
 
     putIn('running')
     await flushPromises()
+    box.querySelector<HTMLElement>('[data-testid="base-alert-action"]')!.click()
+    await flushPromises()
 
-    expect(document.querySelector('[data-testid="build-menu-uninstall-question"]')).toBeNull()
-    expect(document.querySelector('[data-testid="build-menu-confirm-uninstall"]')).toBeNull()
     expect(host.showProgress).not.toHaveBeenCalled()
   })
 
