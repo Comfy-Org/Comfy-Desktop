@@ -11,13 +11,11 @@ import {
   CircleAlert,
   Download,
   FolderOpen,
-  LoaderCircle,
-  PauseCircle,
-  PlayCircle,
+  Pause,
+  Play,
   RotateCcw,
   Trash2,
-  X,
-  XCircle
+  X
 } from '@lucide/vue'
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
@@ -75,6 +73,8 @@ const completedCount = computed(() => finished.value.filter((d) => d.status === 
 const errorCount = computed(
   () => finished.value.filter((d) => d.status === 'error' || d.status === 'cancelled').length
 )
+const failedCount = computed(() => finished.value.filter((d) => d.status === 'error').length)
+const cancelledCount = computed(() => finished.value.filter((d) => d.status === 'cancelled').length)
 const finishedCount = computed(() => finished.value.length)
 
 const filtered = computed<DownloadEntry[]>(() => {
@@ -145,18 +145,23 @@ function progressPercent(d: DownloadEntry): number {
   return Math.round(d.progress * 100)
 }
 
-type StatusBadge = { label: string; cls: string }
+const INDETERMINATE_ARC = 25
+function isIndeterminate(d: DownloadEntry): boolean {
+  if (d.status === 'pending') return true
+  return d.status === 'downloading' && !(d.totalBytes && d.totalBytes > 0) && d.progress <= 0
+}
+function ringValue(d: DownloadEntry): number {
+  return isIndeterminate(d) ? INDETERMINATE_ARC : progressPercent(d)
+}
 
-const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBadge>>>(() => ({
-  error: {
-    label: t('downloadsTab.badgeFailed'),
-    cls: 'dlm-badge-error bg-[color-mix(in_oklab,var(--download-error)_15%,transparent)] text-[#ef4444]'
-  },
-  cancelled: {
-    label: t('downloadsTab.badgeCancelled'),
-    cls: 'dlm-badge-muted bg-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] text-text-muted'
-  }
-}))
+const footerStats = computed<string[]>(() =>
+  [
+    activeCount.value > 0 && t('downloadsTab.footerActive', { n: activeCount.value }),
+    completedCount.value > 0 && t('downloadsTab.footerCompleted', { n: completedCount.value }),
+    failedCount.value > 0 && t('downloadsTab.footerFailed', { n: failedCount.value }),
+    cancelledCount.value > 0 && t('downloadsTab.footerCancelled', { n: cancelledCount.value })
+  ].filter((stat): stat is string => typeof stat === 'string')
+)
 </script>
 
 <template>
@@ -177,9 +182,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
     <div
       class="dlm-card box-border flex min-w-0 flex-auto flex-col overflow-hidden rounded-panel border border-solid border-[var(--modal-surface-border)] bg-[var(--modal-surface-bg)] [box-shadow:var(--shadow-highlight)]"
     >
-      <header
-        class="dlm-modal-header flex items-center justify-between gap-3 border-b border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-5 pb-3"
-      >
+      <header class="dlm-modal-header flex items-center justify-between gap-3 px-6 pt-5">
         <h2 class="dlm-title m-0 text-title font-semibold text-foreground">
           {{ t('downloadsTab.title') }}
         </h2>
@@ -190,18 +193,18 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
           <ToggleGroup
             v-if="visibleFilters.length > 0"
             v-model="filter"
-            v-sliding-pill="'bg-secondary'"
+            v-sliding-pill="'bg-accent'"
             type="single"
             :allow-empty="false"
             roving-focus
-            class="dlm-filterbar sticky -top-4 z-2 -mx-6 -mt-4 mb-2 border-b border-solid border-border bg-background px-6 pt-3 pb-2.5"
+            class="dlm-filterbar mb-3 inline-flex shrink-0 gap-0.5 self-start rounded-[10px] bg-secondary p-[3px]"
             :aria-label="t('downloadsTab.filterAriaLabel')"
           >
             <ToggleGroupItem
               v-for="f in visibleFilters"
               :key="f.key"
               :value="f.key"
-              class="dlm-filter-chip flex-1 text-xs"
+              class="dlm-filter-chip h-[26px] rounded-[7px] px-[11px] text-[13px] whitespace-nowrap hover:bg-transparent hover:text-foreground data-[state=on]:bg-accent data-[state=on]:hover:bg-accent"
               :class="{ active: filter === f.key }"
               >{{ f.label }}</ToggleGroupItem
             >
@@ -214,25 +217,23 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
             :text="t('downloadsTab.emptyHint')"
           />
 
-          <ul v-else :key="filter" class="dlm-list m-0 flex list-none flex-col gap-0.5 p-0">
+          <ul
+            v-else
+            :key="filter"
+            class="dlm-list m-0 grid shrink-0 list-none grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-x-1.5 overflow-hidden rounded-[14px] bg-card p-0"
+          >
             <li
               v-for="d in filtered"
               :key="d.id ?? d.url"
-              class="dlm-row flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-[background] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_4%,transparent)]"
-              :class="[
-                statusKindClass(d),
-                {
-                  '[--download-close-opacity:0] hover:[--download-close-opacity:0.5]':
-                    d.status === 'pending' || d.status === 'downloading'
-                }
-              ]"
+              class="dlm-row col-span-full grid min-h-18 grid-cols-subgrid items-center border-t border-solid border-[var(--chooser-surface-border)] px-[18px] py-2.5 first:border-t-0"
+              :class="statusKindClass(d)"
             >
               <span
                 :class="[
-                  'dlm-leading inline-flex flex-none items-center justify-center',
+                  'dlm-leading mr-1.5 inline-flex flex-none items-center justify-center',
                   isCompletedImage(d)
                     ? 'dlm-thumb size-10 overflow-hidden rounded-lg bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]'
-                    : 'size-9'
+                    : 'size-8'
                 ]"
               >
                 <DownloadThumbnail :entry="d" :fetcher="fetchThumbnail">
@@ -256,25 +257,55 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                       <Ban :size="16" />
                     </span>
                     <span
-                      v-else-if="d.status === 'paused'"
-                      class="dlm-icon-circle warn bg-[color-mix(in_oklab,var(--download-warning)_15%,transparent)] text-[#f59e0b] inline-flex size-8 items-center justify-center rounded-[50%]"
-                    >
-                      <PauseCircle :size="16" />
-                    </span>
-                    <span
                       v-else
-                      class="dlm-icon-circle active bg-[color-mix(in_oklab,var(--action,#60a5fa)_15%,transparent)] text-[var(--action,#60a5fa)] inline-flex size-8 items-center justify-center rounded-[50%]"
+                      class="dlm-icon-circle dlm-ring active relative inline-flex size-8 items-center justify-center rounded-[50%] text-foreground"
+                      role="progressbar"
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                      :aria-valuenow="isIndeterminate(d) ? undefined : progressPercent(d)"
+                      :aria-label="t('downloadsTab.progressAriaLabel', { name: fileLabel(d) })"
                     >
-                      <LoaderCircle
-                        :size="16"
-                        class="dlm-spin animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-                      />
+                      <svg
+                        class="dlm-ring-svg absolute inset-0 -rotate-90"
+                        :class="{
+                          'animate-spin [animation-duration:900ms] motion-reduce:animate-none':
+                            isIndeterminate(d)
+                        }"
+                        width="32"
+                        height="32"
+                        viewBox="0 0 32 32"
+                        aria-hidden="true"
+                      >
+                        <circle
+                          class="dlm-ring-track stroke-[color-mix(in_oklab,var(--foreground)_22%,transparent)]"
+                          cx="16"
+                          cy="16"
+                          r="15"
+                          fill="none"
+                          stroke-width="2"
+                        />
+                        <circle
+                          class="dlm-ring-arc stroke-foreground transition-[stroke-dashoffset] duration-300 ease-[ease] motion-reduce:transition-none"
+                          :class="{ 'opacity-0': ringValue(d) === 0 }"
+                          cx="16"
+                          cy="16"
+                          r="15"
+                          fill="none"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          pathLength="100"
+                          stroke-dasharray="100 100"
+                          :stroke-dashoffset="100 - ringValue(d)"
+                        />
+                      </svg>
+                      <Pause v-if="d.status === 'paused'" :size="14" class="dlm-ring-icon" />
+                      <Download v-else :size="14" class="dlm-ring-icon" />
                     </span>
                   </template>
                 </DownloadThumbnail>
               </span>
 
-              <div class="dlm-content flex min-w-0 flex-auto flex-col gap-[3px]">
+              <div class="dlm-content flex min-w-0 flex-col gap-[3px] pr-2.5">
                 <span
                   class="dlm-name truncate text-[13px] font-medium text-neutral-100"
                   :title="fileLabel(d)"
@@ -285,45 +316,9 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                   :title="d.savePath"
                   >{{ modalSubtitle(d, now) }}</span
                 >
-                <div
-                  v-if="
-                    d.status === 'downloading' || d.status === 'paused' || d.status === 'pending'
-                  "
-                  class="dlm-bar mt-0.5 h-[3px] overflow-hidden rounded-[2px] bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)]"
-                >
-                  <div
-                    class="dlm-bar-fill h-full rounded-[2px] transition-[width] duration-300 ease-[ease]"
-                    :class="
-                      d.status === 'pending'
-                        ? 'indeterminate bg-[repeating-linear-gradient(90deg,var(--action,#60a5fa),var(--action,#60a5fa)_8px,color-mix(in_oklab,var(--action,#60a5fa)_50%,transparent)_8px,color-mix(in_oklab,var(--action,#60a5fa)_50%,transparent)_16px)] animate-[dlm-shimmer_1.2s_linear_infinite]'
-                        : d.status === 'paused'
-                          ? 'paused bg-[#f59e0b]'
-                          : 'bg-[var(--action,#60a5fa)]'
-                    "
-                    :style="
-                      d.status === 'pending'
-                        ? { width: '100%' }
-                        : { width: `${progressPercent(d)}%` }
-                    "
-                  />
-                </div>
               </div>
 
-              <div class="dlm-actions flex flex-none items-center gap-1.5">
-                <span
-                  v-if="statusBadgeFor[d.status]"
-                  class="dlm-badge flex-none rounded px-[7px] py-[3px] text-[11px] leading-none font-semibold whitespace-nowrap"
-                  :class="statusBadgeFor[d.status]!.cls"
-                >
-                  {{ statusBadgeFor[d.status]!.label }}
-                </span>
-
-                <span
-                  v-if="d.status === 'downloading'"
-                  class="dlm-pct min-w-9 text-right text-[13px] font-bold text-[var(--action,#60a5fa)] tabular-nums"
-                >
-                  {{ progressPercent(d) }}%
-                </span>
+              <div class="dlm-primary flex items-center justify-end">
                 <Button
                   v-if="d.status === 'downloading' && d.canPause !== false"
                   type="button"
@@ -334,23 +329,24 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                   :aria-label="t('downloadsPopup.pause')"
                   @click="pause(d)"
                 >
-                  <PauseCircle :size="14" />
+                  <Pause :size="14" />
+                  {{ t('downloadsPopup.pause') }}
                 </Button>
                 <Button
-                  v-if="d.status === 'paused'"
+                  v-else-if="d.status === 'paused'"
                   type="button"
-                  variant="inverted"
+                  variant="secondary"
                   size="md"
                   class="dlm-btn"
                   :title="t('downloadsPopup.resume')"
                   :aria-label="t('downloadsPopup.resume')"
                   @click="resume(d)"
                 >
-                  <PlayCircle :size="14" />
+                  <Play :size="14" />
                   {{ t('downloadsPopup.resume') }}
                 </Button>
                 <Button
-                  v-if="d.status === 'error' || d.status === 'cancelled'"
+                  v-else-if="d.status === 'error' || d.status === 'cancelled'"
                   type="button"
                   variant="secondary"
                   size="md"
@@ -363,7 +359,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                   {{ t('downloadsTab.retry') }}
                 </Button>
                 <Button
-                  v-if="d.status === 'completed' && d.savePath"
+                  v-else-if="d.status === 'completed' && d.savePath"
                   type="button"
                   variant="secondary"
                   size="md"
@@ -373,28 +369,21 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                   <FolderOpen :size="14" />
                   {{ revealLabel }}
                 </Button>
+              </div>
 
+              <div class="dlm-trailing flex w-8 items-center justify-center">
                 <Button
-                  v-if="!isTerminal(d.status)"
                   type="button"
                   variant="muted-textonly"
                   size="icon"
-                  class="dlm-x shrink-0 opacity-[var(--download-close-opacity,0.5)] hover:opacity-100 focus-visible:opacity-100"
-                  :title="t('downloadsPopup.cancel')"
-                  :aria-label="t('downloadsPopup.cancel')"
-                  @click="cancel(d)"
-                >
-                  <XCircle :size="14" />
-                </Button>
-                <Button
-                  v-if="isTerminal(d.status)"
-                  type="button"
-                  variant="muted-textonly"
-                  size="icon"
-                  class="dlm-x shrink-0 opacity-[var(--download-close-opacity,0.5)] hover:opacity-100 focus-visible:opacity-100"
-                  :title="t('downloadsPopup.remove')"
-                  :aria-label="t('downloadsPopup.remove')"
-                  @click="dismissOne(d)"
+                  class="dlm-x opacity-50 hover:opacity-100 focus-visible:opacity-100"
+                  :title="
+                    isTerminal(d.status) ? t('downloadsPopup.remove') : t('downloadsPopup.cancel')
+                  "
+                  :aria-label="
+                    isTerminal(d.status) ? t('downloadsPopup.remove') : t('downloadsPopup.cancel')
+                  "
+                  @click="isTerminal(d.status) ? dismissOne(d) : cancel(d)"
                 >
                   <X :size="14" />
                 </Button>
@@ -410,25 +399,20 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
       >
         <div class="dlm-footer flex w-full items-center justify-between">
           <span class="dlm-footer-stats flex items-center gap-1.5 text-[12px] text-text-muted">
-            <span v-if="activeCount > 0" class="dlm-footer-stat tabular-nums">
-              {{ t('downloadsTab.footerActive', { n: activeCount }) }}
-            </span>
-            <span v-if="activeCount > 0 && completedCount > 0" class="dlm-footer-sep opacity-40"
-              >&middot;</span
-            >
-            <span v-if="completedCount > 0" class="dlm-footer-stat tabular-nums">
-              {{ t('downloadsTab.footerCompleted', { n: completedCount }) }}
-            </span>
+            <template v-for="(stat, i) in footerStats" :key="stat">
+              <span v-if="i > 0" class="dlm-footer-sep opacity-40">&middot;</span>
+              <span class="dlm-footer-stat tabular-nums">{{ stat }}</span>
+            </template>
           </span>
           <Button
             v-if="finishedCount > 0"
             type="button"
-            variant="muted-textonly"
+            variant="secondary"
             size="md"
             class="dlm-clear-btn"
             @click="clearFinished"
           >
-            <Trash2 :size="13" />
+            <Trash2 :size="14" />
             {{ t('downloadsTab.clearFinished') }}
           </Button>
         </div>
@@ -436,11 +420,3 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
     </div>
   </div>
 </template>
-
-<style>
-@keyframes dlm-shimmer {
-  to {
-    background-position: 32px 0;
-  }
-}
-</style>
