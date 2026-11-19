@@ -3,7 +3,7 @@ import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import Textarea from '@comfyorg/design-system/textarea/Textarea'
-import { AppWindow, Plus } from '@lucide/vue'
+import { AppWindow, Check, Plus } from '@lucide/vue'
 import type { AppCard } from '../types/ipc'
 import BaseModal from './ui/BaseModal.vue'
 import requestArt from '../assets/app-request/request-art.webp'
@@ -181,10 +181,13 @@ watch(
 
     <p
       v-if="sent"
-      class="m-0 text-sm leading-[1.5] text-text-muted"
+      class="m-0 my-auto flex flex-col items-center gap-3 text-center text-sm leading-[1.5] text-text-muted"
       role="status"
       data-testid="app-request-thanks"
     >
+      <span class="grid size-10 place-items-center rounded-full bg-white/8 text-neutral-100">
+        <Check :size="18" :stroke-width="2" aria-hidden="true" />
+      </span>
       {{ t('apps.request.thanks') }}
     </p>
     <div v-else class="flex flex-1 flex-col gap-2">
