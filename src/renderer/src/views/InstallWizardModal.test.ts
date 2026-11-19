@@ -5,7 +5,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import InstallWizardModal from './InstallWizardModal.vue'
 import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
-import SetupMachineCard from '../components/SetupMachineCard.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -503,9 +502,8 @@ describe('InstallWizardModal heading', () => {
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="setup-machine-name"]').text()).toBe('Apple Silicon')
-    expect(wrapper.get('.setup-machine-kicker').text()).toBe('Detected')
-    expect(wrapper.getComponent(SetupMachineCard).classes()).toContain('config-machine')
+    expect(wrapper.get('[data-testid="detected-gpu-field"]').text()).toBe('Apple Silicon')
+    expect(wrapper.get('.config-machine-kicker').text()).toBe('Detected')
     const rows = wrapper.findAll('.config-summary-row').map((row) => row.text())
     expect(wrapper.get('.config-name-card #inst-name-standalone').exists()).toBe(true)
     expect(rows[0]).toContain('Apple Silicon (MPS)')
@@ -1722,7 +1720,7 @@ describe('InstallWizardModal hardware warning', () => {
     expect(
       machine.compareDocumentPosition(warning.element) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
-    expect(wrapper.get('[data-testid="setup-machine-name"]').text()).toBe('Radeon RX 7900')
+    expect(wrapper.get('[data-testid="detected-gpu-field"]').text()).toBe('Radeon RX 7900')
   })
 
   it('names the computer the way first use does, with its memory', async () => {
@@ -1738,10 +1736,10 @@ describe('InstallWizardModal hardware warning', () => {
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="setup-machine-name"]').text()).toBe(
+    expect(wrapper.get('[data-testid="detected-gpu-field"]').text()).toBe(
       'NVIDIA GeForce RTX 5080 Laptop GPU'
     )
-    expect(wrapper.get('[data-testid="setup-machine-memory"]').text()).toBe('31 GB memory')
+    expect(wrapper.get('[data-testid="detected-machine-memory"]').text()).toBe('31 GB memory')
   })
 
   it('renders no warning element when validateHardware reports none', async () => {
@@ -1811,7 +1809,7 @@ describe('InstallWizardModal hardware warning', () => {
     await flushPromises()
 
     expect(wrapper.find('.config-machine--unsupported').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="setup-machine-name"]').text()).toBe(
+    expect(wrapper.get('[data-testid="detected-gpu-field"]').text()).toBe(
       'This CPU is missing AVX support.'
     )
 

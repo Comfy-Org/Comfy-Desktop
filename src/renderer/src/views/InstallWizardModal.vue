@@ -13,6 +13,7 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
+  Check,
   Download,
   FileArchive,
   FolderArchive,
@@ -69,12 +70,13 @@ import TermsConsentRow from '../components/TermsConsentRow.vue'
 import InstallNameInput from '../components/InstallNameInput.vue'
 import TrackBuildForm from '../components/TrackBuildForm.vue'
 import LoadSnapshotForm from '../components/LoadSnapshotForm.vue'
-import SetupMachineCard from '../components/SetupMachineCard.vue'
+import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
 import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
 import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
+import { SUMMARY_BOX_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
 import PathOpenButton from '../components/PathOpenButton.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
@@ -1741,7 +1743,7 @@ defineExpose({ open })
     :dialog-label="ariaLabel"
     :title="modalTitle"
     :lead="modalLead"
-    anchor-top
+    :anchor-top="view === 'change'"
     :brand-backdrop="useTakeoverHost"
     :closable="view === 'summary' && !hideBackToDashboard"
     :close-title="$t('common.backToDashboard')"
@@ -1782,18 +1784,52 @@ defineExpose({ open })
         />
       </div>
 
-      <SetupMachineCard
-        class="config-machine mt-3"
+      <div
+        class="config-machine relative mt-3 flex items-center gap-5 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
         :class="machineBlocked && 'config-machine--unsupported'"
-        :name="machineTitle"
-        :platform="platform"
-        :memory-gb="machineMemoryGb"
-        :detected="machineDetected"
-        :blocked="machineBlocked"
-        change-testid="config-change-setup"
-        :change-disabled="!setupPicked"
-        @change="openChangeSetup"
-      />
+      >
+        <SetupMachineIllustration
+          class="h-[68px] w-[104px] flex-none max-[640px]:hidden"
+          :os="platform"
+          :bad="machineBlocked"
+        />
+        <span class="grid min-w-0">
+          <span
+            v-if="machineDetected"
+            class="config-machine-kicker mb-1 inline-flex items-center gap-1.5 text-[12px] leading-4 text-text-muted"
+            ><Check :size="11" :stroke-width="3" aria-hidden="true" />{{
+              $t('newInstall.detected')
+            }}</span
+          >
+          <span
+            class="config-gpu-value text-[22px] leading-7 font-semibold tracking-[-0.01em]"
+            :class="
+              machineBlocked
+                ? 'text-[16px] leading-6 break-words text-[var(--danger)]'
+                : 'truncate text-neutral-100'
+            "
+            data-testid="detected-gpu-field"
+            >{{ machineTitle }}</span
+          >
+          <span
+            v-if="machineMemoryGb && !machineBlocked"
+            class="config-machine-memory mt-[3px] text-[13px] leading-4 text-text-muted"
+            data-testid="detected-machine-memory"
+            >{{ $t('setup.memory', { gb: machineMemoryGb }) }}</span
+          >
+        </span>
+        <Button
+          size="md"
+          variant="secondary"
+          type="button"
+          class="config-change ml-auto flex-none px-3"
+          data-testid="config-change-setup"
+          :disabled="!setupPicked"
+          @click="openChangeSetup"
+        >
+          {{ $t('newInstall.change') }}
+        </Button>
+      </div>
       <div
         v-if="showsHardwareWarning"
         class="config-hardware-warning mt-2 px-1 text-[12px] leading-[1.4] text-[var(--warning)]"
@@ -1824,71 +1860,81 @@ defineExpose({ open })
         </Button>
       </div>
 
-      <dl
-        class="config-summary-list m-0 mt-3 flex flex-col rounded-[14px] bg-white/5 py-1"
+      <section
+        class="config-summary-list mt-3"
+        :class="SUMMARY_BOX_CLASS"
         :aria-label="$t('newInstall.installSummary')"
       >
         <SetupSummaryRow
           v-for="row in summaryRows"
           :key="row.key"
+          class="config-summary-row"
           :icon="row.icon"
           :label="row.label"
         >
-          <span class="grid min-w-0 flex-1 gap-1">
-            <span class="truncate text-[13px] leading-5 text-neutral-100">{{ row.value }}</span>
-            <span v-if="row.meta" class="truncate text-[12px] leading-4 text-text-muted">{{
-              row.meta
-            }}</span>
-          </span>
+          <span class="truncate text-foreground">{{ row.value }}</span>
+          <span
+            :class="[SUMMARY_META_CLASS, 'min-w-0 truncate text-subtle-foreground']"
+            :title="row.meta"
+            >{{ row.meta }}</span
+          >
         </SetupSummaryRow>
         <SetupSummaryRow
           v-if="showLocation"
-          class="config-summary-location"
+          class="config-summary-row config-summary-location"
           :icon="HardDrive"
           :label="$t('common.location')"
         >
-          <div class="grid min-w-0 flex-1 gap-1" data-testid="config-summary-path">
+          <span class="flex min-w-0" data-testid="config-summary-path">
             <PathOpenButton
               v-if="instPath"
-              class="leading-5"
+              class="leading-4"
               :path="instPath"
               @open="handleOpenInstPath"
             />
-            <span v-if="locationMeta" class="truncate text-[12px] leading-4 text-text-muted">{{
-              locationMeta
-            }}</span>
-            <span
-              v-if="diskShortLabel"
-              class="config-path-required text-[12px] leading-4 text-[var(--warning)]"
-              >{{ diskShortLabel }}</span
-            >
-            <PathDiskInfo
-              issues-only
-              :path-issues="pathIssues"
-              :disk-space-loading="diskSpaceLoading"
-              :disk-space="diskSpace"
-              :estimated-size="estimatedInstallSize"
-            />
-          </div>
-          <Button
-            size="sm"
-            variant="textonly"
-            type="button"
-            class="config-path-browse flex-none rounded-lg px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
-            data-testid="config-summary-browse"
-            @click="handleBrowse"
+          </span>
+          <span
+            class="flex min-w-0 items-center justify-end gap-3"
+            :class="[
+              SUMMARY_META_CLASS,
+              diskShortLabel ? 'text-[#f0b135]' : 'text-subtle-foreground'
+            ]"
           >
-            {{ $t('common.browse') }}
-          </Button>
+            <span class="min-w-0 truncate"
+              >{{ locationMeta }}<template v-if="locationMeta && diskShortLabel"> · </template
+              ><span v-if="diskShortLabel" class="config-path-required">{{
+                diskShortLabel
+              }}</span></span
+            >
+            <Button
+              size="sm"
+              variant="textonly"
+              type="button"
+              class="config-path-browse -my-1 flex-none rounded-lg px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
+              data-testid="config-summary-browse"
+              @click="handleBrowse"
+            >
+              {{ $t('common.browse') }}
+            </Button>
+          </span>
         </SetupSummaryRow>
         <div
           v-if="initializing && summaryRows.length === 0"
-          class="config-loading px-3.5 py-3 text-[13px] text-text-muted"
+          class="config-loading h-4 text-[13px]/4 text-subtle-foreground"
           :class="spinnerClass"
         >
           {{ $t('newInstall.loading') }}
         </div>
-      </dl>
+      </section>
+      <div v-if="showLocation" class="px-1">
+        <PathDiskInfo
+          issues-only
+          :path-issues="pathIssues"
+          :disk-space-loading="diskSpaceLoading"
+          :disk-space="diskSpace"
+          :estimated-size="estimatedInstallSize"
+        />
+      </div>
     </div>
 
     <div

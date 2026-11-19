@@ -1,0 +1,215 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { page as browserPage } from 'vitest/browser'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+
+vi.mock('../lib/telemetry', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  emitTelemetryAction: vi.fn()
+}))
+
+import '../assets/main.css'
+import FirstUseTakeover from './FirstUseTakeover.vue'
+import InstallWizardModal from './InstallWizardModal.vue'
+import { useModal } from '../composables/useModal'
+
+const GB = 1024 ** 3
+
+const STANDALONE = {
+  id: 'standalone',
+  label: 'Standalone',
+  fields: [
+    { id: 'release', label: 'Release', type: 'select' },
+    { id: 'comfyVersion', label: 'Version', type: 'select' },
+    { id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }
+  ]
+}
+
+function installApi(): void {
+  window.api = {
+    platform: 'darwin',
+    openPath: vi.fn().mockResolvedValue(undefined),
+    setSetting: vi.fn().mockResolvedValue(undefined),
+    getSetting: vi.fn().mockResolvedValue(undefined),
+    getLocale: vi.fn().mockResolvedValue('en'),
+    setFirstUseMode: vi.fn(),
+    getSystemInfo: vi.fn().mockResolvedValue({
+      gpu_label: 'Apple M3 Max',
+      gpu_model: 'Apple M3 Max',
+      cpu_model: 'Apple M3 Max',
+      total_memory_gb: 36,
+      gpu_tier: 'high'
+    }),
+    detectGPU: vi.fn().mockResolvedValue({ label: 'Apple M3 Max' }),
+    getDefaultInstallDir: vi.fn().mockResolvedValue('/Users/ada/ComfyUI-Installs'),
+    getSources: vi.fn().mockResolvedValue([STANDALONE]),
+    getFieldOptions: vi.fn(async (_source: string, field: string) => {
+      if (field === 'release') {
+        return [{ value: 'stable', label: 'Stable', recommended: true, data: {} }]
+      }
+      if (field === 'comfyVersion') {
+        return [{ value: 'v0.42.4', label: 'v0.42.4', recommended: true }]
+      }
+      if (field === 'variant') {
+        return [
+          {
+            value: 'mac-mps',
+            label: 'Apple Silicon (MPS)',
+            recommended: true,
+            description: 'ComfyUI 0.42.4',
+            data: { variantId: 'mac-mps', downloadFiles: [{ size: 1.2 * GB }] }
+          }
+        ]
+      }
+      return []
+    }),
+    validateHardware: vi.fn().mockResolvedValue({ supported: true }),
+    onSettingsChanged: vi.fn(() => () => {}),
+    getInstallationsSummary: vi.fn().mockResolvedValue({ localCount: 0 }),
+    getUniqueName: vi.fn().mockResolvedValue('ComfyUI'),
+    getDiskSpace: vi.fn().mockResolvedValue({ free: 412 * GB, total: 1000 * GB }),
+    validateInstallPath: vi.fn().mockResolvedValue([]),
+    getInstallations: vi.fn().mockResolvedValue([]),
+    onInstallationsChanged: vi.fn(() => () => {}),
+    onInstallationsVersionsUpdated: vi.fn(() => () => {}),
+    comfybuilder: {
+      getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+      onAuthChanged: vi.fn(() => () => {}),
+      listWorkspaces: vi.fn().mockResolvedValue([]),
+      listBuilds: vi.fn().mockResolvedValue([])
+    }
+  } as unknown as typeof window.api
+}
+
+async function settle(): Promise<void> {
+  for (let frame = 0; frame < 5; frame++) {
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    for (const animation of document.getAnimations()) {
+      if (animation.effect?.getComputedTiming().iterations !== Infinity) animation.finish()
+    }
+    await flushPromises()
+  }
+}
+
+interface SummaryMetrics {
+  fill: string
+  border: string
+  radius: string
+  padding: string
+  rowHeights: number[]
+  rowGaps: number[]
+  iconX: number[]
+  labelX: number[]
+  valueX: number[]
+  noteRight: number[]
+}
+
+function measure(box: HTMLElement, rows: HTMLElement[]): SummaryMetrics {
+  const style = getComputedStyle(box)
+  const edge = box.getBoundingClientRect()
+  const x = (element: Element | null | undefined): number =>
+    Math.round(element!.getBoundingClientRect().left - edge.left)
+  return {
+    fill: style.backgroundColor,
+    border: `${style.borderTopWidth} ${style.borderRightWidth} ${style.borderBottomWidth} ${style.borderLeftWidth} ${style.borderTopColor}`,
+    radius: style.borderRadius,
+    padding: `${style.paddingTop} ${style.paddingRight} ${style.paddingBottom} ${style.paddingLeft}`,
+    rowHeights: rows.map((row) => Math.round(row.getBoundingClientRect().height)),
+    rowGaps: rows
+      .slice(1)
+      .map((row, i) =>
+        Math.round(row.getBoundingClientRect().top - rows[i].getBoundingClientRect().bottom)
+      ),
+    iconX: rows.map((row) => x(row.querySelector('svg'))),
+    labelX: rows.map((row) => x(row.children[0])),
+    valueX: rows.map((row) => x(row.children[1])),
+    noteRight: rows.map((row) =>
+      Math.round(edge.right - row.children[2]!.getBoundingClientRect().right)
+    )
+  }
+}
+
+async function firstRunSummary(): Promise<SummaryMetrics> {
+  const wrapper = mount(FirstUseTakeover, { attachTo: document.body })
+  mounted.push(wrapper)
+  await flushPromises()
+  await settle()
+  const box = document.querySelector<HTMLElement>('[data-testid="setup-summary"]')!
+  const rows = [...box.querySelectorAll<HTMLElement>('[data-testid^="setup-row-"]')]
+  expect(rows).toHaveLength(3)
+  const metrics = measure(box, rows)
+  wrapper.unmount()
+  return metrics
+}
+
+async function newBuildSummary(): Promise<{ metrics: SummaryMetrics; box: HTMLElement }> {
+  setActivePinia(createPinia())
+  useModal().dismiss()
+  const wrapper = mount(InstallWizardModal, { attachTo: document.body })
+  mounted.push(wrapper)
+  await (wrapper.vm as unknown as { open: (options: object) => Promise<void> }).open({})
+  await flushPromises()
+  await settle()
+  await vi.waitFor(() =>
+    expect(document.querySelector('.config-summary-location')?.textContent).toContain('GB free')
+  )
+  await settle()
+  const box = document.querySelector<HTMLElement>('.config-summary-list')!
+  const rows = [...box.querySelectorAll<HTMLElement>('.config-summary-row')]
+  expect(rows).toHaveLength(4)
+  return { metrics: measure(box, rows), box }
+}
+
+const mounted: VueWrapper[] = []
+
+beforeEach(installApi)
+
+afterEach(async () => {
+  for (const wrapper of mounted.splice(0)) wrapper.unmount()
+  document.body.innerHTML = ''
+  await browserPage.viewport(1100, 860)
+})
+
+describe.each([
+  [1100, 860],
+  [800, 563]
+])('the New build summary at %i × %i', (width, height) => {
+  it('is drawn with the first-run summary box: fill, border, radius, padding, rows, columns', async () => {
+    await browserPage.viewport(width, height)
+    const firstRun = await firstRunSummary()
+    const { metrics: newBuild } = await newBuildSummary()
+
+    expect(firstRun.fill).not.toBe('rgba(0, 0, 0, 0)')
+    expect(newBuild.fill).toBe(firstRun.fill)
+    expect(newBuild.border).toBe(firstRun.border)
+    expect(newBuild.radius).toBe(firstRun.radius)
+    expect(newBuild.padding).toBe(firstRun.padding)
+    for (const key of [
+      'rowHeights',
+      'rowGaps',
+      'iconX',
+      'labelX',
+      'valueX',
+      'noteRight'
+    ] as const) {
+      expect(new Set(newBuild[key]), key).toEqual(new Set(firstRun[key]))
+    }
+  })
+
+  it('puts the Location note and Browse on the Location line, right-aligned', async () => {
+    await browserPage.viewport(width, height)
+    const { box } = await newBuildSummary()
+    const location = box.querySelector<HTMLElement>('.config-summary-location')!
+    const note = location.children[2] as HTMLElement
+    const browse = location.querySelector<HTMLElement>('[data-testid="config-summary-browse"]')!
+
+    expect(note.textContent).toContain('412 GB free · ~2.70 GB required')
+    expect(note.contains(browse)).toBe(true)
+    const line = location.getBoundingClientRect()
+    const button = browse.getBoundingClientRect()
+    expect(Math.abs(button.top + button.height / 2 - (line.top + line.height / 2))).toBeLessThan(1)
+    expect(Math.round(box.getBoundingClientRect().right - button.right)).toBe(
+      parseFloat(getComputedStyle(box).paddingRight) + 1
+    )
+  })
+})
