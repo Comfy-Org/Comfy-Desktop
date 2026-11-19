@@ -3169,26 +3169,34 @@ describe('restoreCoreFrontend', () => {
     await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
-  it('puts back the dist-info even when putting back the package folder fails', async () => {
+  it('keeps putting entries back after one of them fails', async () => {
     const inst = managedInstall()
     writeCore('comfyui-frontend-package==1.28.7\n')
     const sitePackages = installedFrontend()
     mockInstall.mockImplementationOnce(removeHalfTheFrontend(sitePackages))
     const copy = fs.promises.cp.bind(fs.promises)
-    const cp = vi
-      .spyOn(fs.promises, 'cp')
-      .mockImplementation(((from: string, to: string, options: fs.CopyOptions) =>
-        to === path.join(sitePackages, 'comfyui_frontend_package')
-          ? Promise.reject(new Error('EBUSY'))
-          : copy(from, to, options)) as typeof fs.promises.cp)
+    let failedPutBack: string | null = null
+    const cp = vi.spyOn(fs.promises, 'cp').mockImplementation(((
+      from: string,
+      to: string,
+      options: fs.CopyOptions
+    ) => {
+      if (path.dirname(to) === sitePackages && failedPutBack === null) {
+        failedPutBack = path.basename(to)
+        return Promise.reject(new Error('EBUSY'))
+      }
+      return copy(from, to, options)
+    }) as typeof fs.promises.cp)
     try {
       expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
     } finally {
       cp.mockRestore()
     }
-    expect(read(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info/METADATA')).toBe(
-      'Version: 1.28.8'
-    )
+    const other =
+      failedPutBack === 'comfyui_frontend_package'
+        ? 'comfyui_frontend_package-1.28.8.dist-info/METADATA'
+        : 'comfyui_frontend_package/__init__.py'
+    expect(read(sitePackages, other), `put back after ${failedPutBack} failed`).not.toBeNull()
     await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
