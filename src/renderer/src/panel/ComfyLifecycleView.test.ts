@@ -503,9 +503,9 @@ describe('ComfyLifecycleView', () => {
       expect(wrapper.find('.lifecycle-placeholder__build').exists()).toBe(false)
     })
 
-    function seedLocalLaunchOperation(): void {
+    function seedLocalOperation(opKind: Operation['opKind']): void {
       useProgressStore().operations.set('inst-1', {
-        opKind: 'launch',
+        opKind,
         finished: false,
         steps: null,
         activePhase: null,
@@ -513,6 +513,10 @@ describe('ComfyLifecycleView', () => {
         flatStatus: '',
         cancelRequested: false
       } as unknown as Operation)
+    }
+
+    function seedLocalLaunchOperation(): void {
+      seedLocalOperation('launch')
     }
 
     it('offers View logs only after 15 seconds of starting, and opens the build logs', async () => {
@@ -548,6 +552,25 @@ describe('ComfyLifecycleView', () => {
       expect(api.openLogsWindow).toHaveBeenCalledExactlyOnceWith('inst-1')
       expect(viewLogs).not.toHaveBeenCalled()
     })
+
+    it.each(['update', 'install'] as const)(
+      'opens the log window, not the build logs, while an unfinished %s operation is running',
+      async (opKind) => {
+        vi.useFakeTimers()
+        const { wrapper, viewLogs } = mountWithLogs()
+        seedLocalOperation(opKind)
+        useSessionStore().launchingInstances.set('inst-1', { installationName: 'My Local Install' })
+        await flushPromises()
+        await vi.advanceTimersByTimeAsync(15_000)
+        const logs = wrapper.find(`[data-testid="${TID.lifecycleViewLogs}"]`)
+        expect(logs.exists()).toBe(true)
+        await logs.trigger('click')
+        await flushPromises()
+        const api = (window as unknown as { api: MockApi }).api
+        expect(api.openLogsWindow).toHaveBeenCalledExactlyOnceWith('inst-1')
+        expect(viewLogs).not.toHaveBeenCalled()
+      }
+    )
 
     it('does not offer View logs while stopping, however long it takes', async () => {
       vi.useFakeTimers()

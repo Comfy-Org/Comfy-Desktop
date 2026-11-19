@@ -230,7 +230,7 @@ const viewBuildLogs = useViewBuildLogs()
 
 async function viewLaunchLogs(): Promise<void> {
   const id = props.installationId
-  if (buildProgressOf(progressStore, id)) viewBuildLogs(id)
+  if (buildProgressOf(progressStore, id)?.kind === 'launch') viewBuildLogs(id)
   else await window.api.openLogsWindow(id)
 }
 </script>
