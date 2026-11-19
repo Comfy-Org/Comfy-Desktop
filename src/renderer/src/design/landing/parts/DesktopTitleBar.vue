@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowDownToLine, Bell, ChevronDown, Menu, MessageSquarePlus } from 'lucide-vue-next'
+import { ArrowDownToLine, Bell, ChevronDown, Menu } from 'lucide-vue-next'
 import TitleBarBreadcrumb from './nav/TitleBarBreadcrumb.vue'
 import ComfyCLogo from '../../../components/icons/ComfyCLogo.vue'
 import { toast } from '../useProto'
@@ -55,7 +55,6 @@ import MarDownloadsMenu from '../mar/shell/MarDownloadsMenu.vue'
     </template>
     <span class="ml-auto flex items-center gap-3.5 text-muted-foreground">
       <Bell :size="15" />
-      <MessageSquarePlus :size="15" />
       <MarDownloadsMenu v-if="can.builds" />
       <ArrowDownToLine v-else :size="15" />
       <MarTitleMenu v-if="can.builds" />

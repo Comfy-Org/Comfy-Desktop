@@ -34,13 +34,15 @@ const rows = computed(() => [
       ]
     : []),
   ...assetBuilds.value.map((b) => {
-    const status = buildStatus(b)
+    const cloud = b.kind === 'cloud'
+    // Cloud is always there to browse: Ready, with no running dot.
+    const status = cloud ? '' : buildStatus(b)
     return {
       id: b.id,
       name: b.name,
-      cloud: b.kind === 'cloud',
+      cloud,
       status,
-      sub: `${b.kind === 'cloud' ? 'Cloud' : 'Local'} · ${STATE[status]}`
+      sub: cloud ? 'Cloud · Ready' : `Local · ${STATE[buildStatus(b)]}`
     }
   })
 ])

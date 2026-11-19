@@ -9,6 +9,8 @@ import {
   ChevronDown,
   Link2,
   Plug,
+  Puzzle,
+  RefreshCw,
   Star,
   TriangleAlert,
   X
@@ -32,7 +34,10 @@ import {
   MACHINE,
   aboutFor,
   fmtGb,
+  hasPack,
   infoFor,
+  minComfyFor,
+  packsFor,
   mediaFor,
   needsFor,
   rankTargets,
@@ -40,6 +45,7 @@ import {
   targetFor,
   tplById,
   totalGb,
+  versionShort,
   type Target
 } from './templateData'
 import { graphFor } from './graphSpec'
@@ -169,6 +175,7 @@ const modelState = computed<'here' | 'get' | 'cloud' | undefined>(() => {
   const s = selected.value?.state
   if (s === 'running' || s === 'ready') return 'here'
   if (s === 'download') return 'get'
+  if (s === 'update' || s === 'nodes') return selected.value!.fetch ? 'get' : 'here'
   if (s === 'cloud') return 'cloud'
   if (s === 'memory') return selected.value!.cost === 'May fail' ? 'here' : 'get'
   return undefined
@@ -184,6 +191,8 @@ const busyLabel = computed(() => {
   if (!s) return ''
   if (s.state === 'download')
     return `Downloading ${fmtGb(total.value * progress.value)} of ${fmtGb(total.value)}`
+  if (s.state === 'update') return `Updating ${s.inst.name}`
+  if (s.state === 'nodes') return 'Installing node packs'
   if (s.inst.kind === 'cloud') return `Opening ${s.inst.name}`
   if (s.state === 'running') return `Opening in ${s.inst.name}`
   return `Starting ${s.inst.name}`
@@ -198,7 +207,7 @@ function confirm(): void {
     return
   }
   phase.value = 'busy'
-  const ms = s.state === 'download' ? 2600 : s.state === 'running' ? 700 : 1400
+  const ms = s.state === 'download' || s.fetch ? 2600 : s.state === 'running' ? 700 : 1400
   const t0 = Date.now()
   timer = setInterval(() => {
     progress.value = Math.min(1, (Date.now() - t0) / ms)
@@ -259,16 +268,38 @@ const needsLine = computed(() => {
   const n = needs.value.length
   if (!n)
     return template.value?.runs === 'cloud' ? 'Partner API on Comfy Cloud' : 'Nothing to download'
-  return `${n} ${n === 1 ? 'model' : 'models'} · ${fmtGb(total.value)}`
+  const p = packs.value.length
+  const extra = p ? ` · ${p} node ${p === 1 ? 'pack' : 'packs'}` : ''
+  return `${n} ${n === 1 ? 'model' : 'models'} · ${fmtGb(total.value)}${extra}`
 })
+const packs = computed(() => (template.value ? packsFor(template.value) : []))
+const minComfy = computed(() => (template.value ? minComfyFor(template.value) : ''))
+/** Per pack or version line, what the chosen build means for it. */
+const packMark = (pack: string): 'here' | 'get' =>
+  !selected.value || hasPack(selected.value.inst, pack) ? 'here' : 'get'
+const comfyMark = computed<'here' | 'get'>(() =>
+  selected.value && template.value && versionShort(template.value, selected.value.inst)
+    ? 'get'
+    : 'here'
+)
 const needsState = computed(() =>
-  !needs.value.length
-    ? ''
-    : modelState.value === 'cloud'
-      ? 'Ready on Cloud'
-      : modelState.value === 'here'
-        ? 'Installed'
-        : 'Downloads first'
+  comfyMark.value === 'get'
+    ? 'Updates first'
+    : packs.value.some((p) => packMark(p) === 'get')
+      ? 'Installs first'
+      : !needs.value.length
+        ? ''
+        : modelState.value === 'cloud'
+          ? 'Ready on Cloud'
+          : modelState.value === 'here'
+            ? 'Installed'
+            : 'Downloads first'
+)
+
+const needsTone = computed(() =>
+  needsState.value === 'Updates first' || needsState.value === 'Installs first'
+    ? 'get'
+    : modelState.value
 )
 
 const aboutEl = ref<HTMLElement>()
@@ -483,7 +514,7 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
               >
                 <summary>
                   <span class="mar-tpl-total">{{ needsLine }}</span>
-                  <span v-if="needsState" class="mar-tpl-state" :data-m="modelState">{{
+                  <span v-if="needsState" class="mar-tpl-state" :data-m="needsTone">{{
                     needsState
                   }}</span>
                   <ChevronDown :size="14" class="mar-tpl-fold" />
@@ -508,6 +539,32 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                     >
                       <Check v-if="modelState === 'here' || modelState === 'cloud'" :size="12" />
                       <ArrowDownToLine v-else-if="modelState === 'get'" :size="12" />
+                    </span>
+                  </li>
+                  <li v-for="p in packs" :key="p">
+                    <Puzzle :size="14" />
+                    <span class="mar-tpl-file">{{ p }}</span>
+                    <span class="mar-tpl-size">Node pack</span>
+                    <span
+                      class="mar-tpl-mark"
+                      :data-m="packMark(p)"
+                      :title="packMark(p) === 'here' ? 'Installed' : 'Installs first'"
+                    >
+                      <Check v-if="packMark(p) === 'here'" :size="12" />
+                      <ArrowDownToLine v-else :size="12" />
+                    </span>
+                  </li>
+                  <li v-if="minComfy">
+                    <RefreshCw :size="14" />
+                    <span class="mar-tpl-file">ComfyUI {{ minComfy }} or newer</span>
+                    <span class="mar-tpl-size">{{ selected?.inst.version ?? '' }}</span>
+                    <span
+                      class="mar-tpl-mark"
+                      :data-m="comfyMark"
+                      :title="comfyMark === 'here' ? 'Up to date' : 'Updates first'"
+                    >
+                      <Check v-if="comfyMark === 'here'" :size="12" />
+                      <ArrowDownToLine v-else :size="12" />
                     </span>
                   </li>
                   <li v-if="template.runs === 'cloud'">

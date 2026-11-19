@@ -169,9 +169,53 @@ const INSTALLED: Record<string, string[]> = {
   'team-build': ['templates_graphic_design_recomposer']
 }
 
+/** The ComfyUI each workflow needs, when newer than every build's. */
+const MIN_COMFY: Record<string, string> = {
+  [ANGLES_ID]: 'v0.38.0'
+}
+
+/** The node packs each workflow loads beyond ComfyUI's own nodes. */
+const PACKS: Record<string, string[]> = {
+  [ANGLES_ID]: ['ComfyUI-KJNodes', 'rgthree-comfy'],
+  video_wan2_2_14B_i2v: ['ComfyUI-VideoHelperSuite'],
+  video_ltx2_5_i2v: ['ComfyUI-VideoHelperSuite']
+}
+
+/** The node packs each local build has installed. */
+const INSTALLED_PACKS: Record<string, string[]> = {
+  'local-1': ['rgthree-comfy', 'ComfyUI-VideoHelperSuite'],
+  'local-video': ['rgthree-comfy'],
+  'local-flux': [],
+  'team-build': ['rgthree-comfy', 'ComfyUI-KJNodes']
+}
+
+export const minComfyFor = (t: Template): string => MIN_COMFY[t.id] ?? ''
+
+export const packsFor = (t: Template): string[] => PACKS[t.id] ?? []
+
+export const hasPack = (inst: ProtoInstance, pack: string): boolean =>
+  inst.kind === 'cloud' || Boolean(INSTALLED_PACKS[inst.id]?.includes(pack))
+
+const parts = (v: string): number[] => v.replace(/^v/, '').split('-')[0]!.split('.').map(Number)
+
+/** The ComfyUI version this build is short of, or '' when it is new enough. */
+export function versionShort(t: Template, inst: ProtoInstance): string {
+  const need = MIN_COMFY[t.id]
+  if (!need || !inst.version) return ''
+  const a = parts(inst.version)
+  const b = parts(need)
+  for (let i = 0; i < b.length; i++) {
+    if ((a[i] ?? 0) > b[i]!) return ''
+    if ((a[i] ?? 0) < b[i]!) return need
+  }
+  return ''
+}
+
 export type TargetState =
   | 'running'
   | 'ready'
+  | 'update'
+  | 'nodes'
   | 'cloud'
   | 'download'
   | 'memory'
@@ -191,6 +235,8 @@ export interface Target {
   /** One line above the button: what happens next. */
   note: string
   disabled: boolean
+  /** The models still have to download on this build. */
+  fetch?: boolean
 }
 
 const credits = (t: Template): number => Math.max(4, Math.round(totalGb(t) * 0.7))
@@ -269,9 +315,33 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
       state: 'memory',
       status: `Only ${MACHINE.memGb} of ${vram} GB memory`,
       cost: has ? 'May fail' : fmtGb(gb),
-      action: 'Launch anyway',
+      action: 'Start anyway',
       note: `It may run out of memory. Smaller sizes help, or run it on Cloud.`
     }
+  const short = versionShort(t, inst)
+  const packs = packsFor(t).filter((p) => !hasPack(inst, p))
+  if (short || packs.length) {
+    const n = packs.length
+    const steps = [
+      short && `updates ${inst.name} to ComfyUI ${short}`,
+      n && `installs ${n} node pack${n === 1 ? '' : 's'}`,
+      !has && `downloads ${fmtGb(gb)} once`
+    ].filter(Boolean) as string[]
+    const line = `${steps.join(', ')}, then opens this graph.`
+    const again = inst.state === 'running' ? 'restart' : 'start'
+    return {
+      ...base,
+      state: short ? 'update' : 'nodes',
+      // The row names only what blocks most: the version, then the nodes.
+      status: short
+        ? `Needs ComfyUI ${short} · has ${inst.version}`
+        : `${n} node pack${n === 1 ? '' : 's'} missing`,
+      cost: has ? '' : fmtGb(gb),
+      action: short ? `Update and ${again}` : `Install nodes and ${again}`,
+      note: line[0]!.toUpperCase() + line.slice(1),
+      fetch: !has
+    }
+  }
   if (has && inst.state === 'running')
     return {
       ...base,
@@ -288,7 +358,7 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
       state: 'ready',
       status: 'Stopped · every model here',
       cost: '',
-      action: `Launch ${inst.name}`,
+      action: `Start ${inst.name}`,
       note: `Starts ComfyUI (about 20 s), then opens this graph. Runs free on this Mac.`
     }
   const missing = needsFor(t).length
@@ -301,26 +371,31 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
         ? `Running · ${missing} models missing`
         : `${missing} model${missing === 1 ? '' : 's'} missing`,
     cost: fmtGb(gb),
-    action: 'Download and launch',
-    note: `Downloads ${fmtGb(gb)} once (about ${mins} min), then launches ${inst.name}.`
+    action: 'Download and start',
+    note: `Downloads ${fmtGb(gb)} once (about ${mins} min), then starts ${inst.name}.`
   }
 }
 
 const RANK: Record<TargetState, number> = {
   running: 0,
   ready: 1,
-  cloud: 2,
-  download: 3,
-  memory: 4,
-  login: 5,
+  nodes: 2,
+  update: 3,
+  cloud: 4,
+  download: 5,
+  memory: 6,
+  login: 7,
   offline: 8,
   blocked: 9
 }
 
+/** An update or node install that also downloads ranks with downloads. */
+const rank = (x: Target): number => (x.fetch ? RANK.download + 0.5 : RANK[x.state])
+
 export function rankTargets(list: Target[]): Target[] {
   return [...list].sort(
     (a, b) =>
-      RANK[a.state] - RANK[b.state] ||
+      rank(a) - rank(b) ||
       // A deployment is a workspace build: Comfy Cloud itself comes first.
       Number(Boolean(a.inst.deployment)) - Number(Boolean(b.inst.deployment)) ||
       a.inst.lastUsedRank - b.inst.lastUsedRank
@@ -334,6 +409,10 @@ export function reasonFor(best: Target, all: Target[], t: Template): string {
       return 'Already running with every model. Opens instantly, free.'
     case 'ready':
       return 'Has every model this needs. Runs free on this Mac.'
+    case 'update':
+      return 'Has every model. Updates ComfyUI first, then runs free on this Mac.'
+    case 'nodes':
+      return 'Has every model. Installs the missing node packs, then runs free.'
     case 'cloud':
       if (all.some((x) => x.state === 'memory'))
         return `Needs ${t.vram} of GPU memory; this Mac has ${MACHINE.memGb} GB. Cloud has every model ready.`
