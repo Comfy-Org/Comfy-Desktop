@@ -318,6 +318,46 @@ describe('TrackModal — install path resolution on save', () => {
     expect(api.trackInstallation).toHaveBeenCalledTimes(1)
     expect(wrapper.emitted('navigate-list')).toHaveLength(1)
   })
+
+  it('saves the folder that was picked when Add build was pressed, even if another is browsed during the name check', async () => {
+    let holdNames = false
+    let releaseName: () => void = () => {}
+    const api = installMockApi({
+      getUniqueName: vi.fn((base: string) => {
+        if (!holdNames) return Promise.resolve(base)
+        return new Promise<string>((resolve) => {
+          releaseName = () => resolve(base)
+        })
+      }),
+      browseFolder: vi
+        .fn()
+        .mockResolvedValueOnce('/Users/jo/A')
+        .mockResolvedValueOnce('/Users/jo/B'),
+      probeInstallation: vi
+        .fn()
+        .mockResolvedValueOnce([{ ...gitProbe, commit: 'aaaa1111', venvPath: '/Users/jo/A/.venv' }])
+        .mockResolvedValueOnce([{ ...gitProbe, commit: 'bbbb2222', venvPath: '/Users/jo/B/.venv' }])
+    })
+    const wrapper = mountTrack()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+    await browseButton(wrapper).trigger('click')
+    await flushPromises()
+
+    holdNames = true
+    await trackButton(wrapper).trigger('click')
+    await flushPromises()
+    await browseButton(wrapper).trigger('click')
+    await flushPromises()
+    releaseName()
+    await flushPromises()
+
+    expect(api.trackInstallation).toHaveBeenCalledTimes(1)
+    const data = api.trackInstallation.mock.calls[0]![0] as Record<string, unknown>
+    expect(data.installPath).toBe('/Users/jo/A')
+    expect(data.commit).toBe('aaaa1111')
+    expect(data.venvPath).toBe('/Users/jo/A/.venv')
+  })
 })
 
 describe('TrackModal — build name', () => {
@@ -382,5 +422,58 @@ describe('TrackModal — build name', () => {
       'Enter a name, or leave blank to use the suggested one.'
     )
     expect(trackButton(wrapper).attributes('disabled')).toBeDefined()
+  })
+
+  describe('when the name is checked again on Add build', () => {
+    async function openWithHeldName() {
+      const held: Array<() => void> = []
+      const api = installMockApi({
+        getUniqueName: vi.fn((base: string) => {
+          const unique = takenNames.has(base) ? `${base} (1)` : base
+          if (base !== 'ComfyUI') return Promise.resolve(unique)
+          return new Promise<string>((resolve) => {
+            held.push(() => resolve(unique))
+          })
+        }),
+        browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI')
+      })
+      const wrapper = mountTrack()
+      ;(wrapper.vm as unknown as { open: () => void }).open()
+      await flushPromises()
+      await browseButton(wrapper).trigger('click')
+      await flushPromises()
+      await wrapper.get('#track-name').setValue('ComfyUI')
+      await trackButton(wrapper).trigger('click')
+      await flushPromises()
+      const releaseAll = async () => {
+        held.splice(0).forEach((release) => release())
+        await flushPromises()
+      }
+      return { api, wrapper, releaseAll }
+    }
+
+    it('still rejects a taken name when the field has not changed', async () => {
+      const { api, wrapper, releaseAll } = await openWithHeldName()
+
+      await releaseAll()
+
+      expect(api.trackInstallation).not.toHaveBeenCalled()
+      expect(wrapper.get('#track-name-error').text()).toBe(
+        'A build named "ComfyUI" already exists. Please choose a different name.'
+      )
+      expect(trackButton(wrapper).attributes('disabled')).toBeDefined()
+    })
+
+    it('does not flag a new name when the check for the old one returns late', async () => {
+      const { api, wrapper, releaseAll } = await openWithHeldName()
+
+      await wrapper.get('#track-name').setValue('Old portable')
+      await flushPromises()
+      await releaseAll()
+
+      expect(api.trackInstallation).not.toHaveBeenCalled()
+      expect(wrapper.find('#track-name-error').exists()).toBe(false)
+      expect(trackButton(wrapper).attributes('disabled')).toBeUndefined()
+    })
   })
 })

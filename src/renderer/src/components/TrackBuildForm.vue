@@ -180,17 +180,17 @@ async function save(): Promise<void> {
 async function trackProbedInstall(probed: ProbeResult): Promise<void> {
   const typedName = name.value.trim()
   const probeCount = probeResults.value.length
-  const finalName = await window.api.getUniqueName(typedName || DEFAULT_INSTALL_NAME)
-  if (typedName && finalName !== typedName) {
-    nameTaken.value = true
-    return
-  }
-
   const rawProbe = JSON.parse(JSON.stringify(toRaw(probed))) as Record<string, unknown>
   if (venvOverride.value !== null) {
     rawProbe.venvPath = venvOverride.value
   }
   const installPath = (rawProbe.installPath as string | undefined) || trackPath.value
+  const finalName = await window.api.getUniqueName(typedName || DEFAULT_INSTALL_NAME)
+  if (typedName && finalName !== typedName) {
+    if (name.value.trim() === typedName) nameTaken.value = true
+    return
+  }
+
   const data: Record<string, unknown> = {
     name: finalName,
     ...rawProbe,
