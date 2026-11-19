@@ -12,14 +12,11 @@ const BYTEPLUS_REFUSAL = JSON.stringify({
   }
 })
 
-const BYTEPLUS_AUDIO_REFUSAL = JSON.stringify({
-  id: 'cgt-20261118-0002',
-  status: 'failed',
-  error: {
-    code: 'OutputAudioSensitiveContentDetected.PolicyViolation',
-    message: 'The output audio may contain sensitive information.'
-  }
-})
+const LUMA_SERVICE_FAILURE =
+  'Polling aborted due to error: Task failed: {"id": "gen-1", "generation_type": "image", "state": "failed", ' +
+  '"failure_reason": "Internal service error", "created_at": "2026-11-19T10:00:00Z", "assets": null, ' +
+  '"model": "photon-1", "request": {"prompt": "A poster saying content moderated", "model": "photon-1", ' +
+  '"aspect_ratio": "16:9"}}\n'
 
 describe('isPartnerRefusal', () => {
   it.each([
@@ -29,7 +26,11 @@ describe('isPartnerRefusal', () => {
     ],
     [
       'a failed task wrapped by the polling loop',
-      `Polling aborted due to error: Task failed: ${BYTEPLUS_AUDIO_REFUSAL}`
+      `Polling aborted due to error: Task failed: ${BYTEPLUS_REFUSAL}\n`
+    ],
+    [
+      'a refusal code next to an echoed request',
+      'Task failed: {"status": "failed", "request": {"prompt": "a cat"}, "error": {"code": "InputTextSensitiveContentDetected"}}\n'
     ],
     [
       'an API error whose type is a content policy violation',
@@ -52,7 +53,39 @@ describe('isPartnerRefusal', () => {
       'a refusal phrase',
       'Task failed: {"task_status": "failed", "task_status_msg": "Failure to pass the risk control system"}'
     ],
-    ['a content filter finish reason', 'API Error: {"finish_reason": "content_filter"}']
+    ['a content filter finish reason', 'API Error: {"finish_reason": "content_filter"}'],
+    [
+      "the Seedance node's message for a refused audio track",
+      'The provider rejected the audio track this model generated for the video (possible copyright match). The video itself was fine. Turn off generate_audio to get a silent video, or adjust the prompt and try again.\n'
+    ],
+    [
+      "the Hunyuan node's message for a content filter stop",
+      'Tencent blocked this request with its content filter.\n'
+    ],
+    [
+      "the Gemini node's message for prohibited image content",
+      "Gemini API blocked the request. Reasons: ['IMAGE_PROHIBITED_CONTENT']\n"
+    ],
+    [
+      "the Gemini node's message for a blocked prompt",
+      'Gemini API blocked the request. Reason: SAFETY (None)\n'
+    ],
+    [
+      "the Anthropic node's message for a refusal stop",
+      'Claude declined to answer this request for safety reasons. Rephrase the prompt or try a different model.\n'
+    ],
+    [
+      "the Ideogram node's message for an unsafe image",
+      "The generation was blocked by Ideogram's content safety filter. Adjust the prompt and try again.\n"
+    ],
+    [
+      "the Veo node's message for filtered videos",
+      "Content blocked by Google's Responsible AI filters: Unsafe content detected (1 video filtered).\n"
+    ],
+    [
+      "an LLM node's message for a model refusal",
+      "Model refused to respond: I can't help with that.\n"
+    ]
   ])('says yes for %s', (_what, message) => {
     expect(isPartnerRefusal(message)).toBe(true)
   })
@@ -71,6 +104,19 @@ describe('isPartnerRefusal', () => {
     [
       'a rate limit',
       'Rate Limit Exceeded: The server returned 429 after all retry attempts. Please wait and try again.'
+    ],
+    ['a Luma service failure whose echoed prompt names a moderation status', LUMA_SERVICE_FAILURE],
+    [
+      'a failure whose echoed prompt quotes a refusal phrase',
+      'Task failed: {"status": "failed", "prompt": "a sign that violates our content policy", "error": {"code": "InternalServiceError"}}\n'
+    ],
+    [
+      'a failure whose echoed input names a refusal code',
+      'Task failed: {"status": "failed", "input": {"negative_prompt": "content_filter, blurry"}, "failure_reason": "timeout"}\n'
+    ],
+    [
+      'a request echoed inside a JSON string',
+      'API Error: {"detail": "{\\"request\\": {\\"prompt\\": \\"request moderated\\"}}", "code": 500}\n'
     ],
     ['a model that names safety', 'Error loading safety_checker: file not found'],
     ['a model file that names nsfw', 'No such file: models/checkpoints/nsfw_v2.safetensors'],

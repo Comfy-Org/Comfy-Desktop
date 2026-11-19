@@ -69,6 +69,13 @@ const REFUSAL_MESSAGE = `Polling aborted due to error: Task failed: ${JSON.strin
   }
 })}`
 
+const ECHOED_PROMPT_FAILURE = `Polling aborted due to error: Task failed: ${JSON.stringify({
+  id: 'gen-1',
+  state: 'failed',
+  failure_reason: 'Internal service error',
+  request: { prompt: 'A poster saying content moderated' }
+})}\n`
+
 function message(type: string, data: Record<string, unknown> = {}, promptId = RUN): unknown {
   return { type, data: { prompt_id: promptId, ...data } }
 }
@@ -214,6 +221,22 @@ describe('run_finished', () => {
 
     expect(sent(RUN_FINISHED_EVENT)).toEqual([
       expect.objectContaining({ outcome: 'failed', error_class: 'key_error' })
+    ])
+  })
+
+  it('keeps a failed run whose echoed prompt names a refusal status as failed', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_start', { timestamp: T0 }))
+    noteRunMessage(
+      message('execution_error', {
+        exception_type: 'Exception',
+        exception_message: ECHOED_PROMPT_FAILURE,
+        timestamp: T0 + 1_000
+      })
+    )
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ outcome: 'failed', error_class: 'exception' })
     ])
   })
 
@@ -529,6 +552,23 @@ describe('runEndFromHistory', () => {
         ])
       )
     ).toMatchObject({ outcome: 'refused', errorClass: 'exception' })
+  })
+
+  it('reads a failed run whose echoed prompt names a refusal status as failed', () => {
+    expect(
+      runEndFromHistory(
+        entry('error', [
+          [
+            'execution_error',
+            {
+              prompt_id: RUN,
+              exception_type: 'Exception',
+              exception_message: ECHOED_PROMPT_FAILURE
+            }
+          ]
+        ])
+      )
+    ).toMatchObject({ outcome: 'failed', errorClass: 'exception' })
   })
 
   it('reads a run that failed with no message as failed', () => {
