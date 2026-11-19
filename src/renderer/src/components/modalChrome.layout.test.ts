@@ -11,6 +11,7 @@ import ModalDialog from './ModalDialog.vue'
 import ModalShell from './ModalShell.vue'
 import SetupModal from './SetupModal.vue'
 import TrackModal from '../views/TrackModal.vue'
+import InstallWizardModal from '../views/InstallWizardModal.vue'
 import { useModal } from '../composables/useModal'
 
 vi.mock('../lib/telemetry', () => ({
@@ -181,6 +182,42 @@ function expectFooterInsets(
 function expectTitleGap(titleSelector: string, firstContent: HTMLElement): void {
   const gap = firstContent.getBoundingClientRect().top - contentBox(el(titleSelector)).bottom
   expect(Math.abs(gap - TITLE_GAP), `${titleSelector} to body ${gap}`).toBeLessThanOrEqual(1)
+}
+
+const swatch = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!
+
+function paintedLuminance(node: Element, card: Element): number {
+  const layers: Element[] = []
+  for (let n: Element | null = node; n && n !== card; n = n.parentElement) layers.unshift(n)
+  swatch.globalCompositeOperation = 'copy'
+  swatch.fillStyle = '#000'
+  swatch.fillRect(0, 0, 1, 1)
+  swatch.globalCompositeOperation = 'source-over'
+  for (const layer of [card, ...layers]) {
+    swatch.fillStyle = getComputedStyle(layer).backgroundColor
+    swatch.fillRect(0, 0, 1, 1)
+  }
+  const [r, g, b] = [...swatch.getImageData(0, 0, 1, 1).data].map((v) => {
+    const c = v / 255
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+}
+
+function darkerThanCard(cardSelector: string): string[] {
+  const card = el(cardSelector)
+  const floor = paintedLuminance(card, card)
+  const darker: string[] = []
+  for (const node of card.querySelectorAll<HTMLElement>('*')) {
+    const style = getComputedStyle(node)
+    if (style.backgroundColor === 'rgba(0, 0, 0, 0)' || style.maskImage !== 'none') continue
+    const rect = node.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) continue
+    if (paintedLuminance(node, card) < floor - 0.0005) {
+      darker.push(`${cardSelector} .${node.classList[0]} ${style.backgroundColor}`)
+    }
+  }
+  return darker
 }
 
 function lineWidths(node: HTMLElement): { top: string; bottom: string } {
@@ -364,5 +401,88 @@ describe('modal chrome', () => {
       })
     )
     await expectFocusRingInside('.base-prompt-input', '.base-modal-body')
+  })
+
+  it('keeps every box inside a modal a step lighter than the card, never darker', async () => {
+    const darker: string[] = []
+
+    await open(() =>
+      mount(BaseModal, {
+        attachTo: document.body,
+        props: { open: true, ariaLabel: 'M' },
+        slots: { header: 'Title', default: 'Body', footer: '<button>OK</button>' }
+      })
+    )
+    darker.push(...darkerThanCard('.base-modal-panel'))
+    await closeAll()
+
+    await open(() =>
+      mount(BaseAlert, {
+        attachTo: document.body,
+        props: { open: true, title: 'Alert', message: 'Something happened.' }
+      })
+    )
+    darker.push(...darkerThanCard('.base-alert-panel'))
+    await closeAll()
+
+    await open(() =>
+      mount(BasePrompt, {
+        attachTo: document.body,
+        props: { open: true, title: 'Name', message: 'Give it a name.' }
+      })
+    )
+    darker.push(...darkerThanCard('.base-modal-panel'))
+    await closeAll()
+
+    await open(() =>
+      mount(ModalShell, {
+        attachTo: document.body,
+        props: { title: 'View' },
+        slots: { default: 'Body' }
+      })
+    )
+    darker.push(...darkerThanCard('[data-modal-content]'))
+    await closeAll()
+
+    await eachModalDialogVariant(() => darker.push(...darkerThanCard('.dialog-box')))
+    await closeAll()
+
+    const track = await open(() => mount(TrackModal, { attachTo: document.body }))
+    ;(track.vm as unknown as { open: () => void }).open()
+    await settle()
+    darker.push(...darkerThanCard('.setup-modal-panel'))
+    await closeAll()
+
+    Object.assign(window, {
+      api: new Proxy(
+        {
+          getSources: vi.fn().mockResolvedValue([]),
+          getInstallations: vi.fn().mockResolvedValue([]),
+          getDiskSpace: vi.fn().mockResolvedValue({ free: 1e11, total: 1e12 }),
+          validateInstallPath: vi.fn().mockResolvedValue([]),
+          getFieldOptions: vi.fn().mockResolvedValue([]),
+          comfybuilder: {
+            getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+            onAuthChanged: vi.fn(() => vi.fn()),
+            listWorkspaces: vi.fn().mockResolvedValue([]),
+            listBuilds: vi.fn().mockResolvedValue([])
+          }
+        } as Record<string, unknown>,
+        {
+          get: (stubs, method) =>
+            String(method) in stubs
+              ? stubs[String(method)]
+              : String(method).startsWith('on')
+                ? vi.fn(() => vi.fn())
+                : vi.fn().mockResolvedValue(undefined)
+        }
+      )
+    })
+    const wizard = await open(() => mount(InstallWizardModal, { attachTo: document.body }))
+    await (wizard.vm as unknown as { open: (opts: object) => Promise<void> }).open({})
+    await settle()
+    darker.push(...darkerThanCard('.setup-modal-panel'))
+
+    expect(darker).toEqual([])
   })
 })
