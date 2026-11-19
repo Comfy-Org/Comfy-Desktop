@@ -241,7 +241,7 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
         </div>
         <div
           v-if="canRetry(d) || isRowClickable(d)"
-          class="downloads-item-action pointer-events-none absolute inset-y-0.5 right-[46px] flex items-center bg-[linear-gradient(to_right,transparent,var(--downloads-row-hover)_28px)] pl-8 opacity-0 transition-opacity duration-150 ease-out group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 motion-reduce:transition-none"
+          class="downloads-item-action hidden shrink-0 items-center group-focus-within:flex group-hover:flex"
         >
           <Button
             v-if="canRetry(d)"

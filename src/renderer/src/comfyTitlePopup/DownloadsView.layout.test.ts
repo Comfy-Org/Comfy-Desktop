@@ -115,16 +115,32 @@ describe('Downloads popup layout', () => {
     const row = wrapper.get('.is-cancelled')
     const action = row.get('.downloads-item-action').element as HTMLElement
     const close = row.get('.downloads-item-close').element
+    const name = row.get('.downloads-item-name').element as HTMLElement
+    const nameLeft = rect(name).left
+    const rowHeight = rect(row.element).height
 
-    expect(getComputedStyle(action).opacity).toBe('0')
-    expect(getComputedStyle(action).pointerEvents).toBe('none')
+    expect(getComputedStyle(action).display).toBe('none')
 
-    ;(row.get('.downloads-item-retry').element as HTMLElement).focus()
-    await vi.waitFor(() => expect(getComputedStyle(action).opacity).toBe('1'))
-    expect(getComputedStyle(action).pointerEvents).toBe('auto')
+    ;(row.element as HTMLElement).focus()
+    await vi.waitFor(() => expect(getComputedStyle(action).display).toBe('flex'))
     expect(rect(action).right).toBeLessThanOrEqual(rect(close).left)
     expect(rect(action).top).toBeGreaterThanOrEqual(rect(row.element).top)
     expect(rect(action).bottom).toBeLessThanOrEqual(rect(row.element).bottom)
+    expect(rect(row.element).height).toBe(rowHeight)
+    expect(rect(name).left).toBe(nameLeft)
+  })
+
+  it('truncates the name with an ellipsis just before the action, never under it', async () => {
+    const wrapper = await mountPopup()
+    const row = wrapper.get('.is-cancelled')
+    const name = row.get('.downloads-item-name').element as HTMLElement
+    const action = row.get('.downloads-item-action').element as HTMLElement
+
+    ;(row.element as HTMLElement).focus()
+    await vi.waitFor(() => expect(getComputedStyle(action).display).toBe('flex'))
+    expect(getComputedStyle(name).textOverflow).toBe('ellipsis')
+    expect(name.scrollWidth).toBeGreaterThan(name.clientWidth)
+    expect(rect(name).right).toBeLessThanOrEqual(rect(action).left)
   })
 
   it('puts the remove glyph 18px from the card edge', async () => {
