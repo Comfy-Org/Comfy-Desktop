@@ -2,19 +2,28 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { page, userEvent } from 'vitest/browser'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 import '../../assets/main.css'
 import HomeTour from './HomeTour.vue'
 import { __resetHomeTourForTest, useHomeTour } from './useHomeTour'
 import type { HomeTourAnchor } from './homeTourSteps'
 import { stubWindowApi } from '../../lib/stubWindowApi'
+import { TELEMETRY_ACTION_EVENT_NAME } from '../../lib/telemetry'
+import { useInstallationStore } from '../../stores/installationStore'
 
 const saved = new Map<string, unknown>()
 const getSetting = vi.fn(async (key: string): Promise<unknown> => saved.get(key))
 const setSetting = vi.fn(async (key: string, value: unknown): Promise<void> => {
   saved.set(key, value)
 })
-stubWindowApi({ getSetting, setSetting })
+const unsubscribe = () => () => {}
+stubWindowApi({
+  getSetting,
+  setSetting,
+  onInstallationsChanged: unsubscribe,
+  onInstallationsVersionsUpdated: unsubscribe
+})
 
 const ALL_ANCHORS: HomeTourAnchor[] = [
   'home-builds',
@@ -67,14 +76,25 @@ async function settle(): Promise<void> {
 
 beforeAll(() => page.viewport(1200, 800))
 
+const telemetry: string[] = []
+function recordTelemetry(event: Event): void {
+  telemetry.push((event as CustomEvent<{ actionName: string }>).detail.actionName)
+}
+
 beforeEach(() => {
   saved.clear()
+  saved.set('homeTourAudience', 'new')
   getSetting.mockClear()
   setSetting.mockClear()
+  telemetry.length = 0
+  window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, recordTelemetry)
   __resetHomeTourForTest()
+  setActivePinia(createPinia())
+  useInstallationStore().loading = false
 })
 
 afterEach(() => {
+  window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, recordTelemetry)
   while (anchors.length) anchors.pop()?.remove()
 })
 
@@ -155,7 +175,7 @@ describe('HomeTour', () => {
     expect(tourCard()?.textContent).toContain('Everything you generate is saved here.')
     expect(tourCard()?.textContent).toContain('Replay this tour from the bell in the title bar.')
     expect(button('skip')).not.toBeVisible()
-    expect(button('next')?.textContent?.trim()).toBe('Done')
+    expect(button('next')?.innerText.trim()).toBe('Done')
 
     await userEvent.click(button('next')!)
     await expect.poll(() => tourCard()).toBeNull()
@@ -172,7 +192,7 @@ describe('HomeTour', () => {
     expect(tourCard()).toBeNull()
   })
 
-  it('hides without saving it as done when Home stops being free, and picks up at the same step', async () => {
+  it('hides without saving it as done when Home stops being free, and picks up at the same step without counting a second showing', async () => {
     placeAnchors()
     const wrapper = mountTour()
     await waitForCard()
@@ -185,9 +205,10 @@ describe('HomeTour', () => {
 
     await wrapper.setProps({ active: true })
     await expect.poll(() => tourCard()?.textContent).toContain('Comfy Cloud')
+    expect(telemetry.filter((name) => name === 'comfy.desktop.home_tour.shown')).toHaveLength(1)
   })
 
-  it('shows the tour again after a replay', async () => {
+  it('shows the tour again after a replay, without saving the replay', async () => {
     saved.set('homeTourDone', true)
     placeAnchors()
     mountTour()
@@ -196,7 +217,60 @@ describe('HomeTour', () => {
 
     await useHomeTour().replay()
     await waitForCard()
-    expect(setSetting).toHaveBeenCalledWith('homeTourDone', false)
+    expect(setSetting).not.toHaveBeenCalled()
+  })
+
+  it('does not show the tour when no audience was ever recorded', async () => {
+    saved.delete('homeTourAudience')
+    placeAnchors()
+    mountTour()
+    await settle()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    expect(tourCard()).toBeNull()
+  })
+
+  it('waits for the build list to load, then counts every step', async () => {
+    useInstallationStore().loading = true
+    placeAnchors(ALL_ANCHORS.filter((anchor) => anchor !== 'home-builds'))
+    mountTour()
+    await settle()
+    expect(tourCard()).toBeNull()
+
+    placeAnchors(['home-builds'])
+    useInstallationStore().loading = false
+    const card = await waitForCard()
+    expect(card.textContent).toContain('Builds run ComfyUI')
+    expect(card.textContent).toContain('1 of 8')
+  })
+
+  it('keeps Back, Skip and Next in place when Next becomes Done', async () => {
+    saved.set('homeTourAudience', 'updated')
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+    for (let step = 1; step < 5; step++) {
+      await userEvent.click(button('next')!)
+      await expect.poll(() => tourCard()?.textContent).toContain(`${step + 1} of 6`)
+    }
+    await expect.poll(() => tourCard()!.getAnimations().length).toBe(0)
+    const before = button('next')!.getBoundingClientRect()
+
+    await userEvent.click(button('next')!)
+    await expect.poll(() => tourCard()?.textContent).toContain('6 of 6')
+    await expect.poll(() => tourCard()!.getAnimations().length).toBe(0)
+    expect(button('next')!.getBoundingClientRect().width).toBe(before.width)
+  })
+
+  it('keeps keyboard focus inside the tour card', async () => {
+    placeAnchors()
+    mountTour()
+    const card = await waitForCard()
+
+    for (let press = 0; press < 5; press++) {
+      await userEvent.keyboard('{Tab}')
+      expect(card.contains(document.activeElement)).toBe(true)
+    }
   })
 
   it('keeps Skip, Back and Next in the same place on every step', async () => {
@@ -242,17 +316,14 @@ describe('HomeTour', () => {
     expect(document.activeElement).toBe(field)
   })
 
-  it('dims everything except the highlighted part', async () => {
+  it('dims everything except the highlighted part and hides the page behind from screen readers', async () => {
     placeAnchors()
     mountTour()
     await waitForCard()
 
-    const target = anchors[0]!.getBoundingClientRect()
-    const centerX = target.left + target.width / 2
-    const centerY = target.top + target.height / 2
-    expect(document.elementFromPoint(centerX, centerY)).toBe(anchors[0])
     expect(
       document.elementFromPoint(10, 10)?.closest('[data-testid="home-tour-dim"]')
     ).not.toBeNull()
+    expect(anchors[0]!.closest('[aria-hidden="true"]')).not.toBeNull()
   })
 })

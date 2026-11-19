@@ -1,58 +1,64 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, shallowRef, useId, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  ref,
+  shallowRef,
+  useId,
+  useTemplateRef,
+  watch
+} from 'vue'
 import { useI18n } from 'vue-i18n'
+import { until } from '@vueuse/core'
 import { PopoverRoot } from 'reka-ui'
 import Button from '@comfyorg/design-system/button/Button'
 import CoachmarkCard from '@comfyorg/design-system/card/CoachmarkCard'
 import PopoverContent from '@comfyorg/design-system/popover/PopoverContent'
 import { emitTelemetryAction } from '../../lib/telemetry'
-import { HOME_TOUR_STEPS, findHomeTourAnchor, type HomeTourStep } from './homeTourSteps'
+import { useInstallationStore } from '../../stores/installationStore'
+import {
+  HOME_TOUR_STEPS,
+  findHomeTourAnchor,
+  type HomeTourAnchor,
+  type HomeTourStep
+} from './homeTourSteps'
 import { useHomeTour } from './useHomeTour'
 
 const { active } = defineProps<{ active: boolean }>()
 
-const FIRST_ANCHOR_WAIT_MS = 1500
 const HOLE_PADDING = 4
 
 const { t } = useI18n()
+const installationStore = useInstallationStore()
 const { audience, done, loaded, finish } = useHomeTour()
 const titleId = useId()
 const bodyId = useId()
 const nextButton = useTemplateRef<{ $el: HTMLElement }>('nextButton')
+const card = useTemplateRef<{ $el: HTMLElement }>('card')
 
-const steps = computed(() => HOME_TOUR_STEPS[audience.value])
 const running = computed(() => active && loaded.value && !done.value)
+const tourSteps = shallowRef<HomeTourStep[]>([])
 const index = ref<number | null>(null)
 const step = computed<HomeTourStep | null>(() =>
-  index.value === null ? null : (steps.value[index.value] ?? null)
+  index.value === null ? null : (tourSteps.value[index.value] ?? null)
 )
-const shownSteps = shallowRef<HomeTourStep[]>([])
-const position = computed(() => {
-  const current = step.value ? shownSteps.value.indexOf(step.value) : -1
-  return { current: current + 1, total: shownSteps.value.length }
-})
+const position = computed(() => ({
+  current: (index.value ?? 0) + 1,
+  total: tourSteps.value.length
+}))
 const isLast = computed(() => position.value.current === position.value.total)
 
 const rect = shallowRef<DOMRect | null>(null)
 let frame = 0
 let startToken = 0
-let resumeAt = 0
+let resumeAnchor: HomeTourAnchor | null = null
 let focusBeforeTour: HTMLElement | null = null
-
-function nearestStep(from: number, direction: 1 | -1): number | null {
-  for (let i = from; i >= 0 && i < steps.value.length; i += direction) {
-    if (findHomeTourAnchor(steps.value[i]!.anchor)) return i
-  }
-  return null
-}
+let restoreFocusOnClose = false
 
 function sameRect(a: DOMRect | null, b: DOMRect | null): boolean {
   if (!a || !b) return a === b
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
-}
-
-function sameSteps(a: HomeTourStep[], b: HomeTourStep[]): boolean {
-  return a.length === b.length && a.every((s, i) => s === b[i])
 }
 
 function trackAnchor(): void {
@@ -61,72 +67,80 @@ function trackAnchor(): void {
     ? (findHomeTourAnchor(current.anchor)?.getBoundingClientRect() ?? null)
     : null
   if (!sameRect(rect.value, next)) rect.value = next
-  const shown = steps.value.filter((s) => findHomeTourAnchor(s.anchor) !== null)
-  if (!sameSteps(shownSteps.value, shown)) shownSteps.value = shown
   frame = requestAnimationFrame(trackAnchor)
 }
 
-function waitForFirstAnchor(token: number): Promise<void> {
-  const deadline = performance.now() + FIRST_ANCHOR_WAIT_MS
-  return new Promise((resolve) => {
-    const poll = (): void => {
-      const first = steps.value[0]
-      const found = first ? findHomeTourAnchor(first.anchor) !== null : true
-      if (token !== startToken || found || performance.now() >= deadline) resolve()
-      else requestAnimationFrame(poll)
-    }
-    poll()
-  })
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
+}
+
+async function homeHasRendered(): Promise<void> {
+  await until(() => installationStore.loading).toBe(false)
+  await nextTick()
+  await nextFrame()
 }
 
 async function start(): Promise<void> {
   const token = ++startToken
-  await waitForFirstAnchor(token)
+  await homeHasRendered()
   if (token !== startToken || !running.value) return
-  index.value = nearestStep(resumeAt, 1) ?? nearestStep(0, 1)
-  if (index.value === null) return
+  const shown = HOME_TOUR_STEPS[audience.value].filter((s) => findHomeTourAnchor(s.anchor) !== null)
+  if (shown.length === 0) return
+  const resumed = resumeAnchor !== null
+  tourSteps.value = shown
+  index.value = Math.max(
+    0,
+    shown.findIndex((s) => s.anchor === resumeAnchor)
+  )
   focusBeforeTour = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  emitTelemetryAction('comfy.desktop.home_tour.shown', { audience: audience.value })
+  if (!resumed) {
+    emitTelemetryAction('comfy.desktop.home_tour.shown', { audience: audience.value })
+  }
   trackAnchor()
+}
+
+function restoreFocus(event: Event): void {
+  event.preventDefault()
+  if (!restoreFocusOnClose) return
+  restoreFocusOnClose = false
+  if (focusBeforeTour?.isConnected) focusBeforeTour.focus()
+  focusBeforeTour = null
 }
 
 function stop(): void {
   startToken += 1
   cancelAnimationFrame(frame)
-  if (index.value !== null) resumeAt = index.value
+  if (step.value) resumeAnchor = step.value.anchor
+  if (card.value?.$el.contains(document.activeElement)) restoreFocusOnClose = true
   index.value = null
+  tourSteps.value = []
   rect.value = null
-  shownSteps.value = []
 }
 
 function end(): void {
-  resumeAt = 0
-  if (focusBeforeTour?.isConnected) focusBeforeTour.focus()
-  focusBeforeTour = null
+  resumeAnchor = null
+  restoreFocusOnClose = true
   void finish()
 }
 
 watch(running, (now) => (now ? void start() : stop()), { immediate: true })
 watch(done, (isDone) => {
-  if (isDone) resumeAt = 0
+  if (isDone) resumeAnchor = null
 })
 onBeforeUnmount(stop)
 
 function next(): void {
   if (index.value === null) return
-  const target = nearestStep(index.value + 1, 1)
-  if (target === null) {
+  if (isLast.value) {
     emitTelemetryAction('comfy.desktop.home_tour.completed', { audience: audience.value })
     end()
     return
   }
-  index.value = target
+  index.value += 1
 }
 
 function back(): void {
-  if (index.value === null) return
-  const target = nearestStep(index.value - 1, -1)
-  if (target !== null) index.value = target
+  if (index.value !== null && index.value > 0) index.value -= 1
 }
 
 function skip(): void {
@@ -161,7 +175,7 @@ function focusNext(event: Event): void {
 
 <template>
   <template v-if="running && step && hole">
-    <div class="pointer-events-none fixed inset-0 z-40" data-testid="home-tour-dim">
+    <div class="pointer-events-none fixed inset-0 z-tour" data-testid="home-tour-dim">
       <div
         class="pointer-events-auto absolute inset-x-0 top-0 bg-black/70"
         :style="{ height: `${hole.y}px` }"
@@ -188,7 +202,7 @@ function focusNext(event: Event): void {
         }"
       />
     </div>
-    <PopoverRoot :open="true">
+    <PopoverRoot :open="true" modal>
       <PopoverContent
         :key="step.anchor"
         :reference="reference"
@@ -197,13 +211,15 @@ function focusNext(event: Event): void {
         :side-offset="16"
         :aria-labelledby="titleId"
         :aria-describedby="bodyId"
-        class="w-80 overflow-visible rounded-2xl border-0 bg-background p-0 shadow-none"
+        class="z-tour w-80 overflow-visible rounded-2xl border-0 bg-background p-0 shadow-none motion-reduce:animate-none"
         data-testid="home-tour"
         @open-auto-focus="focusNext"
+        @close-auto-focus="restoreFocus"
         @interact-outside.prevent
         @escape-key-down="skip"
       >
         <CoachmarkCard
+          ref="card"
           :title="t(step.titleKey)"
           :title-id="titleId"
           :message="isLast ? `${t(step.bodyKey)} ${t('homeTour.replayHint')}` : t(step.bodyKey)"
@@ -239,7 +255,14 @@ function focusNext(event: Event): void {
               data-testid="home-tour-next"
               @click="next"
             >
-              {{ isLast ? t('homeTour.done') : t('homeTour.next') }}
+              <span class="grid">
+                <span class="col-start-1 row-start-1" :class="isLast && 'invisible'">
+                  {{ t('homeTour.next') }}
+                </span>
+                <span class="col-start-1 row-start-1" :class="!isLast && 'invisible'">
+                  {{ t('homeTour.done') }}
+                </span>
+              </span>
             </Button>
           </template>
         </CoachmarkCard>

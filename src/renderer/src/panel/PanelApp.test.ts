@@ -28,6 +28,7 @@ vi.mock('../main', () => ({
 
 vi.mock('../composables/useTheme', () => ({ useTheme: () => ({ theme: 'dark' }) }))
 const mockModal = {
+  state: reactive({ visible: false }),
   alert: vi.fn(),
   confirm: vi.fn(),
   close: vi.fn()
@@ -152,6 +153,9 @@ vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
   }
 }))
 import { mount, flushPromises } from '@vue/test-utils'
+import { reactive } from 'vue'
+import { __resetHomeTourForTest } from './home/useHomeTour'
+import { useDialogs } from '../composables/useDialogs'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
 import AppsView from './AppsView.vue'
@@ -3837,5 +3841,111 @@ describe('PanelApp', () => {
         .api
       expect(api.respondCloseRequest).toHaveBeenCalledWith({ requestId: 'req-2', defer: true })
     })
+  })
+})
+
+describe('PanelApp home tour', () => {
+  let openAnnouncement: () => void = () => {}
+
+  function homeTour(): HTMLElement | null {
+    return document.querySelector<HTMLElement>('[data-testid="home-tour"]')
+  }
+
+  function mountWithTour(settings: Record<string, unknown> = {}) {
+    setActivePinia(createPinia())
+    __resetLauncherPrefsForTest()
+    __resetHomeTourForTest()
+    useOverlay().current.value = null
+    mockModal.state.visible = false
+    const state = installMockApi({
+      installations: [SAMPLE_INSTALL],
+      settings: { homeTourAudience: 'new', ...settings }
+    })
+    Object.assign(window.api, {
+      onOpenAnnouncement: vi.fn((cb: () => void) => {
+        openAnnouncement = cb
+        return () => {}
+      }),
+      closeAnnouncement: vi.fn()
+    })
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    return { wrapper, state }
+  }
+
+  afterEach(() => {
+    mockModal.state.visible = false
+    useDialogs().cancel()
+    __resetHomeTourForTest()
+  })
+
+  it('shows the tour on Home when nothing else is open', async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+  })
+
+  it("waits while What's new is open", async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    openAnnouncement()
+    await expect.poll(homeTour).toBeNull()
+  })
+
+  it('waits while Send feedback is open', async () => {
+    const { state } = mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    for (const cb of state.openFeedbackCallbacks) cb({ source: 'titlebar' })
+    await expect.poll(homeTour).toBeNull()
+  })
+
+  it('waits while a confirm dialog is open', async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    mockModal.state.visible = true
+    await expect.poll(homeTour).toBeNull()
+    mockModal.state.visible = false
+    await expect.poll(homeTour).not.toBeNull()
+  })
+
+  it('waits while a prompt or alert dialog is open', async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    void useDialogs().alert({ title: 'Update ready', message: 'Restart to update.' })
+    await expect.poll(homeTour).toBeNull()
+  })
+
+  it('waits while a takeover is open', async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    useOverlay().current.value = { kind: 'takeover', component: 'track' }
+    await expect.poll(homeTour).toBeNull()
+  })
+
+  it('does not show once the tour is done', async () => {
+    mountWithTour({ homeTourDone: true })
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    expect(homeTour()).toBeNull()
+  })
+
+  it("Take the tour in What's new closes the dialog and shows the tour again", async () => {
+    mountWithTour({ homeTourDone: true })
+    await flushPromises()
+    openAnnouncement()
+    await expect
+      .poll(() => document.querySelector('[data-testid="announcement-take-tour"]'))
+      .not.toBeNull()
+
+    document.querySelector<HTMLElement>('[data-testid="announcement-take-tour"]')!.click()
+
+    await expect.poll(homeTour).not.toBeNull()
+    expect(window.api.closeAnnouncement).toHaveBeenCalled()
+    expect(window.api.navigatePanel).toHaveBeenCalledWith('home')
   })
 })

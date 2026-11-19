@@ -342,7 +342,7 @@ function openSettings(): void {
           :aria-current="row.page === activePage ? 'page' : undefined"
           :aria-label="row.label"
           :data-testid="`app-sidebar-${row.page}`"
-          :data-home-tour="row.page"
+          :data-home-tour="row.page === 'home' ? undefined : row.page"
           @click="navigate(row.page)"
           @contextmenu.prevent="openPageMenu($event, row.page)"
         >

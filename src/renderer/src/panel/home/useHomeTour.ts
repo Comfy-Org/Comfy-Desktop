@@ -19,27 +19,25 @@ async function load(): Promise<void> {
     readSetting('homeTourAudience'),
     readSetting('homeTourDone')
   ])
+  const recorded = savedAudience === 'new' || savedAudience === 'updated'
   audience.value = savedAudience === 'updated' ? 'updated' : 'new'
-  done.value = savedDone === true
+  done.value = !recorded || savedDone === true
   loaded.value = true
 }
 
-async function saveDone(value: boolean): Promise<void> {
+async function finish(): Promise<void> {
   await loading
-  done.value = value
+  done.value = true
   try {
-    await window.api.setSetting('homeTourDone', value)
+    await window.api.setSetting('homeTourDone', true)
   } catch (err) {
     console.warn('[home-tour] could not save the tour state:', err)
   }
 }
 
-function finish(): Promise<void> {
-  return saveDone(true)
-}
-
-function replay(): Promise<void> {
-  return saveDone(false)
+async function replay(): Promise<void> {
+  await loading
+  done.value = false
 }
 
 export function useHomeTour() {

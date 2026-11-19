@@ -53,6 +53,7 @@ import { provideBuildLogs } from '../composables/useBuildProgress'
 import { provideBuildMenuHost } from './home/useBuildMenu'
 import HomeTour from './home/HomeTour.vue'
 import { useHomeTour } from './home/useHomeTour'
+import { useDialogs } from '../composables/useDialogs'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
@@ -79,10 +80,14 @@ const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdate
 const { feedbackOpen, feedbackHiddenFields, closeFeedback } = useSendFeedback()
 const { announcementOpen, closeAnnouncement } = useAnnouncement()
 const homeTour = useHomeTour()
+const dialogs = useDialogs()
 
 function takeHomeTour(): void {
   closeAnnouncement()
-  if (activePanel.value === 'chooser') handleSidebarNavigate('home')
+  if (showSidebar.value) {
+    window.api.navigatePanel('home')
+    handleSidebarNavigate('home')
+  }
   void homeTour.replay()
 }
 
@@ -325,7 +330,9 @@ const homeTourCanShow = computed(
     currentOverlay.value === null &&
     !announcementOpen.value &&
     !feedbackOpen.value &&
-    buildProgressId.value === null
+    buildProgressId.value === null &&
+    !modal.state.visible &&
+    !dialogs.state.open
 )
 
 const performanceTestRunActive = ref(false)
