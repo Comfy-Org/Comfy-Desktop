@@ -11,6 +11,7 @@ import {
   Copy,
   Download,
   Ellipsis,
+  ExternalLink,
   File,
   Folder,
   LayoutGrid,
@@ -817,6 +818,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
     savedIn: isLocal(asset) ? folderOf(asset.id) : null,
+    mainAction: isLocal(asset) ? null : 'download',
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
@@ -896,15 +898,49 @@ function folderOf(file: string): string {
   return file.slice(0, Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')))
 }
 
-function reveal(asset: GalleryAsset): void {
-  void window.api.revealAsset(asset.source, asset.id)
+async function reveal(asset: GalleryAsset): Promise<void> {
+  const shown = await window.api.revealAsset(asset.source, asset.id).catch(() => false)
+  if (!shown) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
+}
+
+const OPENS_IN_APP: readonly (AssetKind | null)[] = ['image', 'video', 'audio']
+
+function mainAction(asset: GalleryAsset): 'download' | 'open' | null {
+  if (!isLocal(asset)) return 'download'
+  const vector = asset.name.toLowerCase().endsWith('.svg')
+  return OPENS_IN_APP.includes(asset.kind) && !vector ? 'open' : null
+}
+
+async function openLocally(asset: GalleryAsset): Promise<void> {
+  const opened = await window.api.openAsset(asset.source, asset.id).catch(() => false)
+  if (!opened) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
+}
+
+function cardTool(asset: GalleryAsset) {
+  const action = mainAction(asset)
+  if (action === 'open') {
+    return { id: 'open-file', label: t('assets.open'), icon: ExternalLink, run: openLocally }
+  }
+  if (action === null) {
+    return {
+      id: 'reveal',
+      label: t(revealInFolderKey(window.api.platform)),
+      icon: ScanSearch,
+      run: reveal
+    }
+  }
+  return { id: 'download', label: t('assets.download'), icon: Download, run: download }
 }
 
 const assetMenuItems = computed<ContextMenuItem[]>(() => {
   const asset = assetMenu.value?.asset
   if (!asset) return []
+  const action = mainAction(asset)
   return [
-    { id: 'download', label: t('assets.download'), icon: Download },
+    ...(action === 'open' ? [{ id: 'open', label: t('assets.open'), icon: ExternalLink }] : []),
+    ...(action === 'download'
+      ? [{ id: 'download', label: t('assets.download'), icon: Download }]
+      : []),
     ...(isLocal(asset)
       ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: ScanSearch }]
       : []),
@@ -964,7 +1000,8 @@ async function runAssetAction(action: string): Promise<void> {
   assetMenu.value = null
   if (!asset) return
   if (action === 'download') await download(asset)
-  else if (action === 'reveal') await window.api.revealAsset(asset.source, asset.id)
+  else if (action === 'open') await openLocally(asset)
+  else if (action === 'reveal') await reveal(asset)
   else if (action === 'copy') await copy(asset)
   else if (action === 'delete') await moveToTrash(asset)
 }
@@ -1498,13 +1535,13 @@ function extensionOf(name: string): string {
             <button
               type="button"
               :class="ASSET_TOOL_CLASS"
-              :aria-label="t('assets.download')"
-              :title="t('assets.download')"
+              :aria-label="cardTool(asset).label"
+              :title="cardTool(asset).label"
               :disabled="downloading.has(cardKey(asset))"
-              :data-testid="`asset-download-${asset.id}`"
-              @click="download(asset)"
+              :data-testid="`asset-${cardTool(asset).id}-${asset.id}`"
+              @click="cardTool(asset).run(asset)"
             >
-              <Download :size="14" aria-hidden="true" />
+              <component :is="cardTool(asset).icon" :size="14" aria-hidden="true" />
             </button>
             <button
               type="button"

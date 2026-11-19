@@ -111,6 +111,8 @@
     "loadFailed": "无法加载资产",
     "download": "下载",
     "downloadFailed": "无法下载资产",
+    "open": "打开",
+    "openFailed": "无法打开资产",
     "openFolderFailed": "无法打开文件夹",
     "moreActions": "更多操作",
     "showInFinder": "在 Finder 中显示",

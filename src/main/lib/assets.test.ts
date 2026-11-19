@@ -74,6 +74,7 @@ vi.mock('../host/registry', () => ({
 vi.mock('./outputFolders', () => ({
   outputFilePath: (target: string) => outputFile(target),
   revealOutputFile: vi.fn(),
+  openOutputFile: vi.fn(),
   copyOutputImage: vi.fn(),
   trashOutputFile: (target: string) => trashOutputFile(target)
 }))

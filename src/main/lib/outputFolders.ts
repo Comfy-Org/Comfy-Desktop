@@ -217,6 +217,19 @@ export async function revealOutputFile(target: string): Promise<boolean> {
   return true
 }
 
+export async function openOutputFile(target: string): Promise<boolean> {
+  const file = await outputFilePath(target)
+  if (!file) return false
+  const opened = opensInApp(file) && (await shell.openPath(file)) === ''
+  if (!opened) shell.showItemInFolder(file)
+  return true
+}
+
+function opensInApp(file: string): boolean {
+  const kind = assetKind(file)
+  return kind !== null && SERVED_KINDS.has(kind) && path.extname(file).toLowerCase() !== '.svg'
+}
+
 export async function trashOutputFile(target: string): Promise<boolean> {
   const file = await outputFilePath(target)
   if (!file) return false

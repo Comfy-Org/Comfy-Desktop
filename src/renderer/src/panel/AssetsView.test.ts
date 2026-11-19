@@ -24,6 +24,7 @@ const findCloudAsset = vi.fn()
 const listLocalAssets = vi.fn()
 const downloadAsset = vi.fn()
 const revealAsset = vi.fn()
+const openAsset = vi.fn()
 const openOutputFolder = vi.fn()
 const copyAsset = vi.fn()
 const readAssetModel = vi.fn()
@@ -236,6 +237,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
   listLocalAssets.mockResolvedValue([])
+  openAsset.mockResolvedValue(true)
+  revealAsset.mockResolvedValue(true)
   openOutputFolder.mockResolvedValue(true)
   listWorkspaces.mockResolvedValue([
     { id: 'me', name: 'Personal Workspace', type: 'personal' },
@@ -261,6 +264,7 @@ beforeEach(() => {
       localListing(await listLocalAssets(installationId), page),
     downloadAsset,
     revealAsset,
+    openAsset,
     openOutputFolder,
     listOutputFolders: async () => ({
       home: '/Users/me',
@@ -908,15 +912,51 @@ describe('AssetsView', () => {
     expect(wrapper.findAll('[data-testid="assets-skeleton"] > li')).toHaveLength(8)
   })
 
-  it('downloads a file on this computer from its card', async () => {
+  it('opens a file on this computer in its default app from its card', async () => {
+    openAsset.mockResolvedValue(true)
     const wrapper = await mountAssets([
       asset('a', 'surfer.mp4', 'video'),
       asset('b', 'forest.png', 'image')
     ])
 
-    await wrapper.get('[data-testid="asset-download-b"]').trigger('click')
+    expect(wrapper.find('[data-testid="asset-download-b"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="asset-open-file-b"]').trigger('click')
 
-    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('local', 'b', 'forest.png')
+    expect(openAsset).toHaveBeenCalledExactlyOnceWith('local', 'b')
+    expect(downloadAsset).not.toHaveBeenCalled()
+  })
+
+  it('shows a 3D file on this computer in its folder from its card', async () => {
+    const wrapper = await mountAssets([asset('m', 'mesh.glb', '3d')])
+
+    expect(wrapper.find('[data-testid="asset-open-file-m"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="asset-reveal-m"]').trigger('click')
+
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', 'm')
+  })
+
+  it('shows an SVG or a file of no media kind in its folder instead of opening it', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/logo.svg', 'logo.svg', 'image'),
+      asset('/out/notes.txt', 'notes.txt', null)
+    ])
+
+    expect(wrapper.find('[data-testid="asset-open-file-/out/logo.svg"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="asset-reveal-/out/logo.svg"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="asset-reveal-/out/notes.txt"]').exists()).toBe(true)
+  })
+
+  it('tells the user when a file on this computer does not open', async () => {
+    openAsset.mockResolvedValue(false)
+    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-file-a"]').trigger('click')
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't open asset",
+      message: 'forest.png'
+    })
   })
 
   it('downloads a Cloud file through the Cloud build', async () => {
@@ -931,7 +971,8 @@ describe('AssetsView', () => {
   it('starts one download at a time for a file', async () => {
     let finish: () => void = () => {}
     downloadAsset.mockReturnValue(new Promise<void>((resolve) => (finish = resolve)))
-    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets()
+    await signInWith([asset('a', 'forest.png', 'image')])
     const button = wrapper.get('[data-testid="asset-download-a"]')
 
     await button.trigger('click')
@@ -946,7 +987,8 @@ describe('AssetsView', () => {
 
   it('tells the user when a download fails', async () => {
     downloadAsset.mockRejectedValue(new Error('offline'))
-    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets()
+    await signInWith([asset('a', 'forest.png', 'image')])
 
     await wrapper.get('[data-testid="asset-download-a"]').trigger('click')
     await flushPromises()
@@ -1385,14 +1427,17 @@ describe('AssetsView', () => {
   })
 
   it('opens the asset menu on right-click instead of the browser menu, with actions for a file on this computer', async () => {
-    const wrapper = await mountAssets([picture('b', 300)])
+    const wrapper = await mountAssets([{ ...picture('b', 300), name: 'b.png' }])
 
     const event = await rightClick(wrapper.get('[data-testid="asset-b"]').element)
 
     expect(event.defaultPrevented, 'the browser menu with Save Image does not open').toBe(true)
-    expect(menuLabels()).toEqual(['Download', 'Show in Finder', 'Copy', 'Delete'])
+    expect(menuLabels()).toEqual(['Open', 'Show in Finder', 'Copy', 'Delete'])
     await pickMenuItem('reveal')
     expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', 'b')
+    await rightClick(wrapper.get('[data-testid="asset-b"]').element)
+    await pickMenuItem('open')
+    expect(openAsset).toHaveBeenCalledExactlyOnceWith('local', 'b')
   })
 
   it('offers only Download and Copy for a Cloud file, from the more actions button', async () => {
@@ -1540,19 +1585,57 @@ describe('AssetsView', () => {
     expect(viewer()!.querySelector('[data-testid="output-detail-show-in-folder"]')).toBeNull()
   })
 
-  it('downloads the file the viewer is showing', async () => {
+  it('gives a file on this computer only Show in Finder in the viewer, for the file it is showing', async () => {
     const wrapper = await mountAssets([
-      asset('a', 'surfer.mp4', 'video', { createdAt: '2026-11-02T00:00:00Z' }),
-      asset('b', 'forest.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
+      asset('/out/surfer.mp4', 'surfer.mp4', 'video', { createdAt: '2026-11-02T00:00:00Z' }),
+      asset('/out/forest.png', 'forest.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
     ])
 
-    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+    await wrapper.get('[data-testid="asset-open-/out/surfer.mp4"]').trigger('click')
     await flushPromises()
     await press('ArrowRight')
-    document.querySelector<HTMLElement>('[data-testid="output-detail-download"]')!.click()
+    expect(document.querySelector('[data-testid="output-detail-download"]')).toBeNull()
+    document.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
     await flushPromises()
 
-    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('local', 'b', 'forest.png')
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/forest.png')
+    expect(openAsset).not.toHaveBeenCalled()
+  })
+
+  it('gives a file at the top of the disk Show in Finder in the viewer, even with no folder to show', async () => {
+    const wrapper = await mountAssets([asset('/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/forest.png"]').trigger('click')
+    await flushPromises()
+
+    expect(viewer()!.querySelector('[data-testid="output-detail-download"]')).toBeNull()
+    viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', '/forest.png')
+  })
+
+  it('tells the user when Show in Finder cannot find the file', async () => {
+    revealAsset.mockResolvedValue(false)
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+    viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't open asset",
+      message: 'forest.png'
+    })
+  })
+
+  it('gives a 3D file on this computer only Show in Finder in the viewer', async () => {
+    const wrapper = await mountAssets([asset('/out/mesh.glb', 'mesh.glb', '3d')])
+
+    await wrapper.get('[data-testid="asset-open-/out/mesh.glb"]').trigger('click')
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="output-detail-download"]')).toBeNull()
+    expect(document.querySelector('[data-testid="output-detail-show-in-folder"]')).not.toBeNull()
   })
 })
 

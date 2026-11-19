@@ -14,7 +14,13 @@ import { buildSaveDialogFilters, startFileSave } from './comfyDownloadManager'
 import type { FileSaveTransfer } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
 import { copyImageToClipboard } from './clipboardImage'
-import { copyOutputImage, outputFilePath, revealOutputFile, trashOutputFile } from './outputFolders'
+import {
+  copyOutputImage,
+  openOutputFile,
+  outputFilePath,
+  revealOutputFile,
+  trashOutputFile
+} from './outputFolders'
 import type { CloudAssetLookup } from '../../types/ipc'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { mediaFactsFromBytes } from './mediaFacts'
@@ -29,6 +35,7 @@ import type {
 const ASSETS_LIST_CHANNEL = 'assets:list'
 const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
 const ASSETS_REVEAL_CHANNEL = 'assets:reveal'
+const ASSETS_OPEN_CHANNEL = 'assets:open'
 const ASSETS_COPY_CHANNEL = 'assets:copy'
 const ASSETS_READ_MODEL_CHANNEL = 'assets:read-model'
 const MAX_MODEL_BYTES = 100 * 1024 * 1024
@@ -807,6 +814,7 @@ export function registerAssetsHandlers(): void {
     }
   )
   ipcMain.handle(ASSETS_REVEAL_CHANNEL, localFileAction(revealOutputFile))
+  ipcMain.handle(ASSETS_OPEN_CHANNEL, localFileAction(openOutputFile))
   ipcMain.handle(ASSETS_TRASH_CHANNEL, localFileAction(trashOutputFile))
   ipcMain.handle(ASSETS_READ_MODEL_CHANNEL, (event, source: unknown, assetId: unknown) =>
     isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'
