@@ -580,7 +580,9 @@ describe('GlobalSettingsView', () => {
     ])
     const details = modal.state.messageDetails.flatMap((group) => group.items).join('\n')
     expect(details).toContain('Trash')
-    expect(details).toContain('Input and output folders you picked yourself, unless they are inside an instance you delete')
+    expect(details).toContain(
+      'Input and output folders you picked yourself, unless they are inside an instance you delete'
+    )
     modal.close(false)
     await flushPromises()
   })
