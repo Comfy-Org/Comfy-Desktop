@@ -1303,6 +1303,50 @@ describe('InstallWizardModal workspace Builds', () => {
     wrapper.unmount()
   })
 
+  it('keeps the folder picked in Set up when Public builds is picked before the catalog loads', async () => {
+    signInToWorkspace([])
+    let finishBuilds: (builds: unknown[]) => void = () => {}
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        finishBuilds = resolve
+      })
+    )
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'cpu', label: 'CPU', recommended: true, data: { variantId: 'win-cpu' } }
+    ])
+    const wrapper = mountModal({ hideBackToDashboard: true })
+    await flushPromises()
+    const opening = wrapper.vm.open({
+      cameFromSetup: true,
+      entrypoint: 'first_use',
+      workspaceId: 'w1',
+      installRoot: '/Volumes/Big/ComfyUI'
+    })
+    await flushPromises()
+
+    await pickSource(wrapper, 'install-source-standalone')
+    await flushPromises()
+    finishBuilds([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    await opening
+    await flushPromises()
+    await wrapper.get('#inst-name-standalone').setValue('Studio')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(savedSetups(wrapper)[0]?.plan).toMatchObject({
+      sourceId: 'standalone',
+      installRoot: '/Volumes/Big/ComfyUI'
+    })
+    wrapper.unmount()
+  })
+
   it('keeps the folder picked in Set up when Change switches to Public builds', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([

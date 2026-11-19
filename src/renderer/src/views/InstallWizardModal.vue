@@ -402,6 +402,7 @@ watch(instPath, (newPath) => {
 let loadGeneration = 0
 let modeGeneration = 0
 let changeSetupSession = 0
+let setupInstallRoot = ''
 
 const nameError = computed(() =>
   instName.value.length > 0 && instName.value.trim().length === 0
@@ -531,6 +532,7 @@ function onConsentToggle(accepted: boolean): void {
 async function open(opts: OpenOpts = {}): Promise<void> {
   loadGeneration++
   changeSetupSession++
+  setupInstallRoot = opts.installRoot ?? ''
   const gen = ++modeGeneration
   instName.value = ''
   workspaceId.value = opts.workspaceId?.trim() || PERSONAL_WORKSPACE_ID
@@ -619,7 +621,7 @@ async function initializeInstallMode(
   const installDir = await installDirPromise
   if (gen !== modeGeneration) return
   defaultInstPath.value = installDir ?? ''
-  if (!keepPath || !instPath.value) instPath.value = defaultInstPath.value
+  if (!keepPath || !instPath.value) instPath.value = setupInstallRoot || defaultInstPath.value
 
   if (managedBuildMode.value) {
     await Promise.all([initializeManagedBuilds(gen, refreshManagedBuilds), loadSources()])
