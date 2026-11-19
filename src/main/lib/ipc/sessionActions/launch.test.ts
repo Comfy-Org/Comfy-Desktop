@@ -2264,10 +2264,9 @@ describe('core beta report placement', () => {
       expect(res.ok).toBe(true)
       expect(spawnArgs).not.toContain('--enable-assets')
       expect(warn).toHaveBeenCalledWith(
-        '[launch] flag planning failed; Desktop adds no flags this launch:',
+        '[launch] flag planning failed; launching without Desktop-planned flags or the unsupported-arg filter:',
         expect.objectContaining({ message: 'schema discovery unavailable' })
       )
-      warn.mockRestore()
     })
 
     it('does not ask a core without the floor commit', async () => {

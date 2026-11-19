@@ -265,7 +265,7 @@ describe('getComfyArgsSchema', () => {
     mockedReadGitHead.mockReset()
   })
 
-  it('gives a --help on a busy machine a minute before giving up', async () => {
+  it("allows ComfyUI's --help 60 seconds before giving up", async () => {
     mockHelpOutput(() => SAMPLE_HELP)
 
     await getComfyArgsSchema('python', 'main.py', '.', installationId)

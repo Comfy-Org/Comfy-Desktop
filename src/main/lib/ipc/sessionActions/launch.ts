@@ -1356,7 +1356,10 @@ async function runLaunch(
         desktopAddedAssets =
           built.args.includes('--enable-assets') && !userArgs.includes('--enable-assets')
       } catch (err) {
-        console.warn('[launch] flag planning failed; Desktop adds no flags this launch:', err)
+        console.warn(
+          '[launch] flag planning failed; launching without Desktop-planned flags or the unsupported-arg filter:',
+          err
+        )
       }
     }
   }
