@@ -322,7 +322,7 @@ describe('BuildProgressDialog', () => {
     expect(w.emitted('retry')).toHaveLength(1)
   })
 
-  it('makes Start again the white primary and Close the grey secondary when a start fails', async () => {
+  it('makes Try again the white primary and Close the grey secondary when a start fails', async () => {
     const w = await openDialog('launch')
     settle({ ok: false, message: 'ComfyUI exited with code 1' })
     await flushPromises()

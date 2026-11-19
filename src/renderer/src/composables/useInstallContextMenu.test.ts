@@ -724,7 +724,7 @@ describe('useInstallContextMenu - error details for a build that went wrong', ()
     modalMock.confirm.mockReset()
   })
 
-  it('names a start that failed with no start logs, shows its reason and offers Start again', async () => {
+  it('names a start that failed with no start logs, shows its reason and offers Try again', async () => {
     modalMock.confirm.mockResolvedValue(true)
     const onStartAgain = vi.fn()
     const inst = makeInstall()
@@ -743,7 +743,7 @@ describe('useInstallContextMenu - error details for a build that went wrong', ()
     expect(modalMock.confirm).toHaveBeenCalledWith({
       title: "ComfyUI didn't start",
       message: 'Port 8188 is in use',
-      confirmLabel: 'Start again',
+      confirmLabel: 'Try again',
       confirmStyle: 'primary'
     })
     expect(onStartAgain).toHaveBeenCalledWith(inst)
@@ -763,7 +763,7 @@ describe('useInstallContextMenu - error details for a build that went wrong', ()
     expect(onStartAgain).not.toHaveBeenCalled()
   })
 
-  it('keeps a crash as Error details with no Start again', () => {
+  it('keeps a crash as Error details with no Try again', () => {
     const inst = makeInstall()
     const { menu, session } = mountViewError(vi.fn())
     session.errorInstances.set(inst.id, { installationName: inst.name, exitCode: 1 })
