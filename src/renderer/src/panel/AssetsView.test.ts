@@ -898,6 +898,31 @@ describe('AssetsView', () => {
     expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', 'm')
   })
 
+  it('shows an SVG or a file of no media kind in its folder instead of opening it', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/logo.svg', 'logo.svg', 'image'),
+      asset('/out/notes.txt', 'notes.txt', null)
+    ])
+
+    expect(wrapper.find('[data-testid="asset-open-file-/out/logo.svg"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="asset-reveal-/out/logo.svg"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="asset-reveal-/out/notes.txt"]').exists()).toBe(true)
+  })
+
+  it('offers Download again when a saved Cloud copy does not open', async () => {
+    findDownloadedOutputs.mockResolvedValue({ saved: '/out/saved.png' })
+    openAsset.mockResolvedValue(false)
+    const wrapper = await mountAssets()
+    await signInWith([asset('saved', 'saved.png', 'image')])
+    await flushPromises()
+
+    await wrapper.get('[data-testid="asset-open-file-saved"]').trigger('click')
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledOnce()
+    expect(wrapper.find('[data-testid="asset-download-saved"]').exists()).toBe(true)
+  })
+
   it('tells the user when a file on this computer does not open', async () => {
     openAsset.mockResolvedValue(false)
     const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
@@ -1398,7 +1423,7 @@ describe('AssetsView', () => {
   })
 
   it('opens the asset menu on right-click instead of the browser menu, with actions for a file on this computer', async () => {
-    const wrapper = await mountAssets([picture('b', 300)])
+    const wrapper = await mountAssets([{ ...picture('b', 300), name: 'b.png' }])
 
     const event = await rightClick(wrapper.get('[data-testid="asset-b"]').element)
 

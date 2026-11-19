@@ -584,7 +584,8 @@ function localPage(selected: AssetBuild, pageNumber: number): Promise<LocalAsset
 async function findDownloadedCopies(
   cloudId: string,
   listed: GalleryAsset[],
-  request: number
+  request: number,
+  keepFound = false
 ): Promise<void> {
   const wanted = listed.map(({ id, name, sizeBytes, createdAt }) => ({
     id,
@@ -596,12 +597,11 @@ async function findDownloadedCopies(
     .findDownloadedOutputs(cloudId, wanted)
     .catch((): Record<string, string> => ({}))
   if (request !== requestId) return
-  downloadedCopies.value = new Map(
-    listed.flatMap((asset) => {
-      const file = found[asset.id]
-      return file ? [[cardKey(asset), file] as const] : []
-    })
-  )
+  const matches = listed.flatMap((asset) => {
+    const file = Object.hasOwn(found, asset.id) ? found[asset.id] : undefined
+    return typeof file === 'string' ? [[cardKey(asset), file] as const] : []
+  })
+  downloadedCopies.value = new Map([...(keepFound ? downloadedCopies.value : []), ...matches])
 }
 
 function prefetchPage(cloudId: string, pageNumber: number): void {
@@ -684,7 +684,7 @@ async function loadAssets(userAsked = false): Promise<void> {
       cloudScanLimit.value = listed.scanLimit
     }
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
-    if (cloud) void findDownloadedCopies(cloud.id, assets.value, current)
+    if (cloud) void findDownloadedCopies(cloud.id, withLookedUpDetail(assets.value), current)
     if (cloud && pendingFocus.value && pendingFocus.value !== wanted) {
       void loadAssets(userAsked)
       return
@@ -856,9 +856,17 @@ function openDetail(asset: GalleryAsset): void {
   detailKey.value = cardKey(asset)
 }
 
+function withLookedUpDetail(listed: GalleryAsset[]): GalleryAsset[] {
+  const lookedUp = lookedUpDetail.value
+  return lookedUp && lookedUp.source !== LOCAL_ASSETS_SOURCE ? [...listed, lookedUp] : listed
+}
+
 function openLookedUpDetail(asset: AssetSummary, source: string): void {
   lookedUpDetail.value = { ...asset, source }
   detailKey.value = cardKey(lookedUpDetail.value)
+  if (source !== LOCAL_ASSETS_SOURCE) {
+    void findDownloadedCopies(source, [lookedUpDetail.value], requestId, true)
+  }
 }
 
 async function closeDetail(): Promise<void> {
@@ -935,9 +943,12 @@ async function reveal(asset: GalleryAsset): Promise<void> {
   if (!shown) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
 }
 
+const OPENS_IN_APP: readonly (AssetKind | null)[] = ['image', 'video', 'audio']
+
 function mainAction(asset: GalleryAsset): 'download' | 'open' | null {
   if (!fileOnDisk(asset)) return 'download'
-  return asset.kind === '3d' ? null : 'open'
+  const vector = asset.name.toLowerCase().endsWith('.svg')
+  return OPENS_IN_APP.includes(asset.kind) && !vector ? 'open' : null
 }
 
 async function openLocally(asset: GalleryAsset): Promise<void> {
@@ -945,7 +956,13 @@ async function openLocally(asset: GalleryAsset): Promise<void> {
   const opened = file
     ? await window.api.openAsset(LOCAL_ASSETS_SOURCE, file).catch(() => false)
     : false
-  if (!opened) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
+  if (opened) return
+  if (!isLocal(asset)) {
+    downloadedCopies.value = new Map(
+      [...downloadedCopies.value].filter(([key]) => key !== cardKey(asset))
+    )
+  }
+  await modal.alert({ title: t('assets.openFailed'), message: asset.name })
 }
 
 function cardTool(asset: GalleryAsset) {

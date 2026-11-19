@@ -91,7 +91,7 @@ vi.mock('./models', () => ({
 }))
 vi.mock('./assets', () => ({
   assetKind: (name: string) =>
-    ({ png: 'image', mp4: 'video', webm: 'video', wav: 'audio', glb: '3d' })[
+    ({ png: 'image', svg: 'image', mp4: 'video', webm: 'video', wav: 'audio', glb: '3d' })[
       name.split('.').pop() ?? ''
     ] ?? null
 }))
@@ -787,9 +787,9 @@ describe('findDownloadedOutputs', () => {
     write(path.join(sharedDir, 'same-name.png'), 'other bytes')
 
     const found = await findDownloadedOutputs('cloud', [
-      { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: null },
-      { id: 'b', name: 'same-name.png', sizeBytes: 3, createdAt: null },
-      { id: 'c', name: 'never-saved.png', sizeBytes: 4, createdAt: null },
+      { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: '2026-10-01T00:00:00Z' },
+      { id: 'b', name: 'same-name.png', sizeBytes: 3, createdAt: '2026-10-01T00:00:00Z' },
+      { id: 'c', name: 'never-saved.png', sizeBytes: 4, createdAt: '2026-10-01T00:00:00Z' },
       { id: 'd', name: 'cutout.png', sizeBytes: null, createdAt: null }
     ])
 
@@ -809,15 +809,38 @@ describe('findDownloadedOutputs', () => {
     expect(found).toEqual({ a: path.join(sharedDir, 'take (2).png') })
   })
 
+  it('does not match a saved file when the output has no time it was made', async () => {
+    installs.mockResolvedValue([{ id: 'cloud', sourceId: 'cloud' }])
+    write(path.join(sharedDir, 'cutout.png'), 'four')
+
+    expect(
+      await findDownloadedOutputs('cloud', [
+        { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: null }
+      ])
+    ).toEqual({})
+  })
+
+  it('gives an exact name its own file before any renamed copy is handed out', async () => {
+    installs.mockResolvedValue([{ id: 'cloud', sourceId: 'cloud' }])
+    write(path.join(sharedDir, 'photo (1).png'), 'four')
+
+    const found = await findDownloadedOutputs('cloud', [
+      { id: 'plain', name: 'photo.png', sizeBytes: 4, createdAt: '2026-10-01T00:00:00Z' },
+      { id: 'numbered', name: 'photo (1).png', sizeBytes: 4, createdAt: '2026-10-01T00:00:00Z' }
+    ])
+
+    expect(found).toEqual({ numbered: path.join(sharedDir, 'photo (1).png') })
+  })
+
   it('prefers the exact name, and gives one saved file to one output only', async () => {
     installs.mockResolvedValue([{ id: 'cloud', sourceId: 'cloud' }])
     write(path.join(sharedDir, 'photo (1).png'), 'four')
     write(path.join(sharedDir, 'photo.png'), 'four')
 
     const found = await findDownloadedOutputs('cloud', [
-      { id: 'a', name: 'photo (1).png', sizeBytes: 4, createdAt: null },
-      { id: 'b', name: 'photo.png', sizeBytes: 4, createdAt: null },
-      { id: 'c', name: 'photo.png', sizeBytes: 4, createdAt: null }
+      { id: 'a', name: 'photo (1).png', sizeBytes: 4, createdAt: '2026-10-01T00:00:00Z' },
+      { id: 'b', name: 'photo.png', sizeBytes: 4, createdAt: '2026-10-01T00:00:00Z' },
+      { id: 'c', name: 'photo.png', sizeBytes: 4, createdAt: '2026-10-01T00:00:00Z' }
     ])
 
     expect(found).toEqual({
@@ -833,7 +856,7 @@ describe('findDownloadedOutputs', () => {
 
     expect(
       await findDownloadedOutputs('cloud', [
-        { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: null }
+        { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: '2026-10-01T00:00:00Z' }
       ])
     ).toEqual({})
   })
@@ -844,7 +867,7 @@ describe('findDownloadedOutputs', () => {
 
     expect(
       await findDownloadedOutputs('cloud', [
-        { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: null }
+        { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: '2026-10-01T00:00:00Z' }
       ])
     ).toEqual({})
   })
@@ -859,10 +882,11 @@ describe('findDownloadedOutputs', () => {
 
     expect(
       await findDownloadedOutputs('cloud', [
-        { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: null }
+        { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: '2026-10-01T00:00:00Z' }
       ])
     ).toEqual({ a: file })
-    expect(await openOutputFile(file), 'the custom folder is found without a warm cache').toBe(true)
+    await listOutputFolders()
+    expect(await openOutputFile(file), 'the custom folder is an Open root').toBe(true)
   })
 })
 
@@ -893,6 +917,15 @@ describe('acting on a file from its card', () => {
     expect(await copiedItem?.items['image/png']?.text()).toBe('png bytes')
     expect(await trashOutputFile(inside)).toBe(true)
     expect(fs.existsSync(inside), 'the picture left the output folder').toBe(false)
+  })
+
+  it('shows an SVG in its folder instead of handing it to a browser', async () => {
+    const vector = path.join(sharedDir, 'logo.svg')
+    write(vector)
+
+    expect(await openOutputFile(vector)).toBe(true)
+    expect(openedPath).not.toHaveBeenCalled()
+    expect(shownInFolder).toHaveBeenCalledExactlyOnceWith(vector)
   })
 
   it('never hands a file that is not a picture, clip or sound to an app', async () => {

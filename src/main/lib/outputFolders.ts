@@ -38,6 +38,7 @@ const THUMBNAILS_AT_ONCE = 2
 export const THUMBNAIL_WAIT_MS = 1500
 const STATS_AT_ONCE = 32
 const ROOTS_FRESH_MS = 5000
+const ROOTS_RECHECK_MS = 1000
 const MAX_LINUX_THUMBNAIL_SOURCE_BYTES = 40 * 1024 * 1024
 const SERVED_KINDS = new Set(['image', 'video', 'audio'])
 const READ_WITHOUT_FOLLOWING =
@@ -142,7 +143,16 @@ function holdsHome(dir: string, home: string): boolean {
   return isInsideRoot(home, dir)
 }
 
-async function findOutputFolders(): Promise<OutputFolders> {
+let foldersInFlight: Promise<OutputFolders> | null = null
+
+function findOutputFolders(): Promise<OutputFolders> {
+  foldersInFlight ??= scanOutputFolders().finally(() => {
+    foldersInFlight = null
+  })
+  return foldersInFlight
+}
+
+async function scanOutputFolders(): Promise<OutputFolders> {
   const sharedDir = sharedOutputDir()
   const shared = await realDir(sharedDir)
   const ofBuild = new Map<string, string>()
@@ -240,7 +250,8 @@ async function openableFilePath(target: string): Promise<string | null> {
   if (!real) return null
   const inside = (): boolean =>
     [...allowedRoots, ...downloadRoots].some((root) => isInsideRoot(real, root))
-  if (Date.now() - allowedRootsAt > ROOTS_FRESH_MS || !inside()) await findOutputFolders()
+  const age = Date.now() - allowedRootsAt
+  if (age > ROOTS_FRESH_MS || (!inside() && age > ROOTS_RECHECK_MS)) await findOutputFolders()
   if (!inside()) return null
   const stat = await fsp.stat(real).catch(() => null)
   return stat?.isFile() ? real : null
@@ -256,10 +267,14 @@ export async function revealOutputFile(target: string): Promise<boolean> {
 export async function openOutputFile(target: string): Promise<boolean> {
   const file = await openableFilePath(target)
   if (!file) return false
-  const kind = assetKind(file)
-  const opened = kind !== null && SERVED_KINDS.has(kind) && (await shell.openPath(file)) === ''
+  const opened = opensInApp(file) && (await shell.openPath(file)) === ''
   if (!opened) shell.showItemInFolder(file)
   return true
+}
+
+function opensInApp(file: string): boolean {
+  const kind = assetKind(file)
+  return kind !== null && SERVED_KINDS.has(kind) && path.extname(file).toLowerCase() !== '.svg'
 }
 
 export async function trashOutputFile(target: string): Promise<boolean> {
@@ -395,35 +410,66 @@ export async function findDownloadedOutputs(
   const inst = (await installations.list()).find((each) => each.id === installationId)
   const dir = inst && !hasOutputFolder(inst) ? autoDownloadDir(inst) : null
   const root = dir ? await realDir(dir) : null
-  const sized = wanted.filter((item) => item.sizeBytes !== null)
-  if (!root || sized.length === 0 || holdsHome(root, await realHome())) return {}
-  const names = new Set(sized.map((item) => item.name))
+  const dated = wanted.filter(
+    (item) => item.sizeBytes !== null && item.createdAt && !Number.isNaN(Date.parse(item.createdAt))
+  )
+  if (!root || dated.length === 0 || holdsHome(root, await realHome())) return {}
+  const names = new Set(dated.map((item) => item.name))
   const exact = new Map<string, DownloadedCandidate[]>()
   const renamed = new Map<string, DownloadedCandidate[]>()
-  for (const file of await collectMediaFiles(root)) {
+  const add = (
+    index: Map<string, DownloadedCandidate[]>,
+    name: string,
+    item: DownloadedCandidate
+  ) => {
+    const list = index.get(name)
+    if (list) list.push(item)
+    else index.set(name, [item])
+  }
+  for (const file of await downloadIndex(root)) {
     const name = path.basename(file)
     const stripped = withoutCopyNumber(name)
     if (!names.has(name) && !names.has(stripped)) continue
     const stat = await fsp.lstat(file).catch(() => null)
     if (!stat?.isFile()) continue
     const candidate = { file, size: stat.size, savedMs: stat.mtimeMs }
-    exact.set(name, [...(exact.get(name) ?? []), candidate])
-    if (stripped !== name) renamed.set(stripped, [...(renamed.get(stripped) ?? []), candidate])
+    add(exact, name, candidate)
+    if (stripped !== name) add(renamed, stripped, candidate)
   }
-  const found: Record<string, string> = {}
+  const found: Record<string, string> = Object.create(null)
   const taken = new Set<string>()
-  for (const item of sized) {
-    const madeMs = item.createdAt ? Date.parse(item.createdAt) : Number.NaN
-    const fits = (candidate: DownloadedCandidate): boolean =>
-      !taken.has(candidate.file) &&
-      candidate.size === item.sizeBytes &&
-      (Number.isNaN(madeMs) || candidate.savedMs >= madeMs - SAVED_BEFORE_MADE_SLACK_MS)
-    const copy = exact.get(item.name)?.find(fits) ?? renamed.get(item.name)?.find(fits)
-    if (!copy) continue
-    taken.add(copy.file)
-    found[item.id] = copy.file
+  const assign = (index: Map<string, DownloadedCandidate[]>): void => {
+    for (const item of dated) {
+      if (found[item.id]) continue
+      const madeMs = Date.parse(item.createdAt!)
+      const copy = index
+        .get(item.name)
+        ?.find(
+          (candidate) =>
+            !taken.has(candidate.file) &&
+            candidate.size === item.sizeBytes &&
+            candidate.savedMs >= madeMs - SAVED_BEFORE_MADE_SLACK_MS
+        )
+      if (!copy) continue
+      taken.add(copy.file)
+      found[item.id] = copy.file
+    }
   }
-  return found
+  assign(exact)
+  assign(renamed)
+  return { ...found }
+}
+
+const downloadIndexes = new Map<string, Promise<string[]>>()
+
+function downloadIndex(root: string): Promise<string[]> {
+  const walking = downloadIndexes.get(root)
+  if (walking) return walking
+  const files = collectMediaFiles(root)
+    .catch((): string[] => [])
+    .finally(() => downloadIndexes.delete(root))
+  downloadIndexes.set(root, files)
+  return files
 }
 
 export async function listLocalAssets(
