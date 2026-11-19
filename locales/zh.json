@@ -541,14 +541,6 @@
     "console": "控制台",
     "viewProgress": "查看进度"
   },
-  "quickInstall": {
-    "title": "安装 ComfyUI",
-    "grandTitle": "快速安装",
-    "grandSubtitle": "为检测到的硬件安装最新版 ComfyUI。",
-    "desc": "我们将安装最新版 ComfyUI。请在下方确认你的 GPU 类型。",
-    "selectVariant": "选择你的 GPU",
-    "confirmInstall": "安装 ComfyUI"
-  },
   "loadSnapshot": {
     "grandTitle": "加载快照",
     "grandSubtitle": "加载快照文件以安装构建。",
@@ -560,7 +552,6 @@
     "grandTitle": "安装新构建",
     "grandSubtitle": "设置全新的 ComfyUI 安装。选择来源、命名并完成配置。",
     "installMethod": "安装方式",
-    "installLocation": "安装位置",
     "addInstallation": "添加实例",
     "loading": "正在加载…",
     "detectingGpu": "正在检测 GPU…",

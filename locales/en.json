@@ -541,14 +541,6 @@
     "console": "Console",
     "viewProgress": "View Progress"
   },
-  "quickInstall": {
-    "title": "Install ComfyUI",
-    "grandTitle": "Quick Install",
-    "grandSubtitle": "Install the latest version of ComfyUI for your detected hardware.",
-    "desc": "We'll install the latest version of ComfyUI. Please confirm your GPU type below.",
-    "selectVariant": "Select your GPU",
-    "confirmInstall": "Install ComfyUI"
-  },
   "loadSnapshot": {
     "grandTitle": "Load snapshot",
     "grandSubtitle": "Load a snapshot file to install a build.",
@@ -560,7 +552,6 @@
     "grandTitle": "Install a New Build",
     "grandSubtitle": "Set up a fresh ComfyUI install. Pick a source, name it, and configure it.",
     "installMethod": "Install Method",
-    "installLocation": "Install location",
     "addInstallation": "Add Instance",
     "loading": "Loading…",
     "detectingGpu": "Detecting GPU…",

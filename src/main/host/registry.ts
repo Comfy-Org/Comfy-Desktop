@@ -15,7 +15,6 @@ export type ComfyPanelKey =
   | 'new-install'
   | 'track'
   | 'load-snapshot'
-  | 'quick-install'
   | 'progress'
   | 'announcement'
 
@@ -27,7 +26,6 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'new-install',
   'track',
   'load-snapshot',
-  'quick-install',
   'progress',
   'announcement'
 ])
@@ -43,7 +41,6 @@ export type BodyMode =
   | 'new-install'
   | 'track'
   | 'load-snapshot'
-  | 'quick-install'
   | 'announcement'
 
 export interface ComfyWindowEntry {

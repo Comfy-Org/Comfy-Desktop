@@ -85,7 +85,6 @@ describe('leaving a window while its build is starting', () => {
             newInstallRef: ref(null),
             trackRef: ref(null),
             loadSnapshotRef: ref(null),
-            quickInstallRef: ref(null),
             firstUseRef: ref(null)
           })
           return () => h('div')
