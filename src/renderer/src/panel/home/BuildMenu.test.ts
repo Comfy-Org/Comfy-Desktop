@@ -694,7 +694,7 @@ describe('Build menu', () => {
     const tile = await openMenuFrom('more')
 
     const line = autoStartLine()
-    expect(line.textContent?.trim()).toBe('Turn off Auto start')
+    expect(line.textContent?.trim()).toBe('Turn off auto start')
     expect(line.querySelector('.lucide-power-off')).not.toBeNull()
     line.click()
     await flushPromises()
