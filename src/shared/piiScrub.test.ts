@@ -200,6 +200,10 @@ describe('piiScrub', () => {
       )
     })
 
+    it('keeps hiding a nested Users folder when another match covers the folder before it', () => {
+      expect(scrubPII('C:\\Users/home\\Users\\bob\\x')).not.toContain('bob')
+    })
+
     it.each([
       [
         'File "\\\\tsclient\\C\\Users\\alice\\x.py"',
@@ -266,7 +270,9 @@ describe('piiScrub', () => {
     it.each([
       'C:\\ComfyUI\\custom_nodes\\x\\home\\config.json',
       'C:\\ComfyUI\\custom_nodes\\x\\Users\\config.json',
-      'C:\\work\\cache$\\Users\\config.json'
+      'C:\\work\\cache$\\Users\\config.json',
+      'C:\\ComfyUI\\custom_nodes\\comfyui-manager\\Users\\config.json',
+      'C:\\ComfyUI\\custom_nodes\\N\\Users\\config.json'
     ])('leaves the nested project folder in %s alone', (input) => {
       expect(scrubPII(input)).toBe(input)
     })
@@ -293,7 +299,12 @@ describe('piiScrub', () => {
     it.each([
       ['Traceback\\n\\Users\\alice\\x', 'Traceback\\n\\Users\\[REDACTED]\\x'],
       ['Traceback\\r\\n\\Users\\alice\\x', 'Traceback\\r\\n\\Users\\[REDACTED]\\x'],
-      ['x\\t\\Users\\alice\\x', 'x\\t\\Users\\[REDACTED]\\x']
+      ['x\\t\\Users\\alice\\x', 'x\\t\\Users\\[REDACTED]\\x'],
+      ['x\\r\\Users\\alice\\x', 'x\\r\\Users\\[REDACTED]\\x'],
+      [
+        JSON.stringify({ log: 'error\n\\Users\\alice\\x' }),
+        JSON.stringify({ log: 'error\n\\Users\\[REDACTED]\\x' })
+      ]
     ])(
       'redacts a root-relative Users path after an escaped line break or tab: %s',
       (input, expected) => {
