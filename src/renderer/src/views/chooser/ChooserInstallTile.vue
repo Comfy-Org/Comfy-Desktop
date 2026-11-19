@@ -283,9 +283,8 @@ function openContextMenu(event: MouseEvent): void {
 <template>
   <div
     ref="tile"
-    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] transition-colors select-none"
+    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl bg-[rgb(137_137_137/0.05)] px-[18px] transition-colors select-none"
     :class="[statusClasses, canActivate && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]']"
-    :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"
     @click="open"

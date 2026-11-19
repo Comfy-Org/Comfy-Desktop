@@ -156,7 +156,7 @@ watch(
   <DesktopDialogSurface
     :open="state.visible && !usesBaseAlert"
     :aria-label="state.title"
-    overlay-class="dialog-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 py-8"
+    overlay-class="dialog-overlay fixed inset-0 z-[100] flex items-center justify-center bg-neutral-800/70 px-4 py-8"
     @close="dismiss"
   >
     <div

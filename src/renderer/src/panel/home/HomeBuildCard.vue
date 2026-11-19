@@ -152,9 +152,8 @@ function openContextMenu(event: MouseEvent): void {
 
 <template>
   <div
-    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
+    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
     :class="canOpen && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
-    :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
     :data-testid="testId"
     :data-build-id="build.id"
     @click="onClick"

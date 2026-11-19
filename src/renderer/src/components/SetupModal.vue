@@ -48,7 +48,7 @@ const hostProps = computed(() =>
         dismissOnEscape: props.dismissOnEscape,
         dismissOnOutside: false,
         overlayClass: [
-          'setup-modal-overlay fixed inset-0 z-50 grid overflow-y-auto bg-black/60 p-6 animate-fade-in motion-reduce:animate-none',
+          'setup-modal-overlay fixed inset-0 z-50 grid overflow-y-auto bg-neutral-800/70 p-6 animate-fade-in motion-reduce:animate-none',
           props.anchorTop ? 'justify-items-center items-start' : 'place-items-center'
         ].join(' '),
         contentClass: 'setup-modal-surface relative max-w-full outline-none'

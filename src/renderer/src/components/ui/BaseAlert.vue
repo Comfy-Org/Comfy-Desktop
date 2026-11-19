@@ -92,7 +92,7 @@ const linkClass =
     :dismiss-on-outside="dismissOnOutside"
     :prevent-scroll="preventScroll"
     :data-testid="testIdRoot"
-    overlay-class="base-alert-overlay fixed inset-0 z-[1000] grid place-items-center bg-neutral-800/60 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]"
+    overlay-class="base-alert-overlay fixed inset-0 z-[1000] grid place-items-center bg-neutral-800/70 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]"
     :content-class="[
       'base-alert-panel flex min-w-80 flex-col overflow-hidden rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4 text-neutral-100 shadow-[var(--modal-surface-shadow)]',
       panelWidthClass,

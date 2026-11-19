@@ -9,13 +9,12 @@ export type HomeBuildStatus = 'running' | 'starting' | 'stopping' | 'updating' |
 export interface HomeBuildToneStyle {
   glow: string
   tint: string
-  border: string
 }
 
 export const HOME_BUILD_TONES: Record<HomeBuildTone, HomeBuildToneStyle> = {
-  ember: { glow: '#FA8746', tint: '232 126 66', border: '226 177 157' },
-  iris: { glow: '#989CFF', tint: '142 146 248', border: '177 186 226' },
-  tide: { glow: '#00C6E2', tint: '0 182 209', border: '147 196 216' }
+  ember: { glow: '#FA8746', tint: '232 126 66' },
+  iris: { glow: '#989CFF', tint: '142 146 248' },
+  tide: { glow: '#00C6E2', tint: '0 182 209' }
 }
 
 const LOCAL_TONES: readonly HomeBuildTone[] = ['ember', 'iris']
