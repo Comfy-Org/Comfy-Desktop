@@ -1991,6 +1991,29 @@ describe('telemetry.sendSurveyResponse', () => {
     expect(captured.filter((c) => c.event === 'survey sent')).toHaveLength(0)
   })
 
+  it('drops a queued answer when identity confirmation starts before its turn to send', async () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('test-distinct-id')
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+    posthogClientMock.immediateCaptureOutcome = 'deferred'
+
+    const first = telemetry.sendSurveyResponse('survey-id', 'question-id', 'First app')
+    const second = telemetry.sendSurveyResponse('survey-id', 'question-id', 'Second app')
+    await vi.waitFor(() => expect(pendingImmediateCaptures).toHaveLength(1))
+    telemetry.applyFirebasePendingConsensus()
+    pendingImmediateCaptures[0]!.accept()
+
+    expect(await first).toBe(true)
+    expect(await second).toBe(false)
+    expect(pendingImmediateCaptures).toHaveLength(1)
+    expect(
+      captured
+        .filter((c) => c.event === 'survey sent')
+        .map((c) => c.properties?.['$survey_response_question-id'])
+    ).toEqual(['First app'])
+  })
+
   it('sends answers on a PostHog client of their own, made on the first send and reused', async () => {
     telemetry.setConsentState('denied')
     bindTestAnonymous('test-distinct-id')

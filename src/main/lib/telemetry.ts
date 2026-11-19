@@ -942,7 +942,9 @@ export async function sendSurveyResponse(
   const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
   const scrubbed = scrubProperties(merged)
   _recordCapturedEvent(SURVEY_SENT_EVENT)
-  const send = surveySendQueue.then(() => deliverSurveyResponse(surveyDistinctId, scrubbed))
+  const send = surveySendQueue.then(() =>
+    firebaseWritesQuarantined() ? false : deliverSurveyResponse(surveyDistinctId, scrubbed)
+  )
   surveySendQueue = send
   return send
 }
