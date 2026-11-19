@@ -10,6 +10,7 @@ const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 const MAX_JSON_BYTES = 8_000_000
 const SCAN_BUDGET_BYTES = 64_000_000
 const MAX_INFLATED_BYTES = 16_000_000
+const FAILED_INFLATE_COST = MAX_INFLATED_BYTES / 4
 const MAX_GRAPH_NODES = 5_000
 const OPEN_BRACE = 0x7b
 const CLOSE_BRACE = 0x7d
@@ -100,7 +101,8 @@ function inflated(bytes: Uint8Array, budget: InflateBudget): Uint8Array | null {
     budget.left -= body.length
     return body
   } catch (error) {
-    if ((error as { code?: string }).code === 'ERR_BUFFER_TOO_LARGE') budget.left = 0
+    const tooLarge = (error as { code?: string }).code === 'ERR_BUFFER_TOO_LARGE'
+    budget.left = tooLarge ? 0 : budget.left - FAILED_INFLATE_COST
     return null
   }
 }
