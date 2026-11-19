@@ -89,6 +89,7 @@ describe('feature-flag registry cache accessors', () => {
   })
 
   it("allows ComfyUI's --list-feature-flags 60 seconds before giving up", async () => {
+    vi.mocked(execFile).mockClear()
     await getComfyFeatureFlagRegistry(badPython, 'main.py', process.cwd(), installationId, '1.0.0')
 
     expect(vi.mocked(execFile)).toHaveBeenCalledWith(
