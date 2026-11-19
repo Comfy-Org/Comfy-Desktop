@@ -3135,6 +3135,21 @@ describe('restoreCoreFrontend', () => {
     await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
+  it('keeps the installed frontend without running uv when site-packages cannot be listed', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    installedFrontend()
+    const readdir = vi
+      .spyOn(fs.promises, 'readdir')
+      .mockRejectedValueOnce(Object.assign(new Error('EACCES'), { code: 'EACCES' }))
+    try {
+      expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    } finally {
+      readdir.mockRestore()
+    }
+    expect(mockInstall).not.toHaveBeenCalled()
+  })
+
   it('runs the restore when site-packages holds no frontend', async () => {
     const inst = managedInstall()
     writeCore('comfyui-frontend-package==1.28.7\n')

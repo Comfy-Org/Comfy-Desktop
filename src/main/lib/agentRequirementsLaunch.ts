@@ -910,7 +910,11 @@ async function backUpFrontend(
   const sitePackages = findSitePackages(path.dirname(path.dirname(pythonPath)))
   if (sitePackages === null) return null
   const module = FRONTEND_PACKAGE.replace(/-/g, '_')
-  const entries = (await fs.promises.readdir(sitePackages).catch(() => [])).filter(
+  const listed = await fs.promises
+    .readdir(sitePackages)
+    .catch((err: NodeJS.ErrnoException) => (err.code === 'ENOENT' ? [] : null))
+  if (listed === null) return 'failed'
+  const entries = listed.filter(
     (entry) => entry === module || (entry.startsWith(`${module}-`) && entry.endsWith('.dist-info'))
   )
   if (entries.length === 0) return null
