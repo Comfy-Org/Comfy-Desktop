@@ -842,7 +842,7 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="performance-test"]').exists()).toBe(true)
-    expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance Tests')
+    expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance tests')
     expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
     expect(wrapper.find('.performance-test__workspace-select').exists()).toBe(false)
     expect(wrapper.find('.performance-test__setup').exists()).toBe(true)
