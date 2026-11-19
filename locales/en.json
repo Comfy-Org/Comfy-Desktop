@@ -247,6 +247,7 @@
     "menuRevealInFolder": "Open Folder",
     "menuDelete": "Uninstall",
     "stoppedActionGatedReason": "Stop the running build first.",
+    "busyActionGatedReason": "Wait for the current task on this build to finish.",
     "statusRunning": "Running",
     "statusLaunching": "Starting…",
     "statusStopping": "Stopping…",
@@ -1048,6 +1049,23 @@
     "failedTitle": "Uninstall didn't finish",
     "tryAgain": "Try again",
     "dismiss": "Dismiss"
+  },
+  "updateProgress": {
+    "status": "Updating",
+    "tileStatus": "Updating · {percent}%",
+    "cancelTitle": "Stop updating?",
+    "cancelMessage": "{name} stops updating. You can update it again later.",
+    "cancelConfirm": "Stop updating"
+  },
+  "workingProgress": {
+    "cancelTitle": "Stop now?",
+    "cancelMessage": "{task} stops for {name}. You can start it again later.",
+    "cancelConfirm": "Stop",
+    "failedTitle": "{task} didn't finish",
+    "cannotStopTitle": "This task can't be stopped",
+    "cannotStopMessage": "Wait for {task} to finish on {name}, then close the window.",
+    "relaunchSkippedTitle": "{name} didn't start",
+    "relaunchSkippedMessage": "{name} is busy with another task, so it didn't start. Start it again when that task finishes."
   },
   "announcement": {
     "comfyApi": {
