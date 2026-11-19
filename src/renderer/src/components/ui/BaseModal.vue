@@ -94,6 +94,9 @@ const sizeStyleClass = computed(() => {
     >
       <X :size="18" />
     </Button>
+    <div v-if="$slots.media" class="base-modal-media">
+      <slot name="media" />
+    </div>
     <header v-if="$slots.header" class="base-modal-header pt-5 pr-14 pl-6">
       <slot name="header" />
     </header>

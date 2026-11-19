@@ -18,6 +18,7 @@ interface Props {
   secondaryLabel?: string
   secondaryTone?: 'primary' | 'danger' | 'default'
   showCloseIcon?: boolean
+  wide?: boolean
   messageDetails?: ModalDetailGroup[]
   ariaLabel?: string
   ariaLabelledby?: string
@@ -41,6 +42,7 @@ const props = withDefaults(defineProps<Props>(), {
   secondaryLabel: undefined,
   secondaryTone: 'default',
   showCloseIcon: false,
+  wide: false,
   messageDetails: () => [],
   ariaLabel: undefined,
   ariaLabelledby: undefined,
@@ -74,6 +76,7 @@ const hasWideActions = computed(() => !!props.secondaryLabel)
 const actionVariants = { default: 'secondary', primary: 'inverted', danger: 'destructive' } as const
 
 const panelWidthClass = computed(() => {
+  if (props.wide) return 'w-[min(600px,100%)]'
   if (hasWideActions.value) return hasDetails.value ? 'w-[min(540px,100%)]' : 'w-[min(520px,100%)]'
   return hasDetails.value ? 'w-[min(480px,100%)]' : 'w-[min(440px,100%)]'
 })

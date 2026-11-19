@@ -4,7 +4,13 @@ import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown, LoaderCircle, OctagonAlert, X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
-import { useModal } from '../composables/useModal'
+import {
+  buildProgressOf,
+  cancelConfirmKey,
+  operationTask,
+  useConfirmStopTask,
+  type BuildProgressKind
+} from '../composables/useBuildProgress'
 import { useTerminalScroll } from '../composables/useTerminalScroll'
 import { progressStatusText, progressStepName } from '../lib/progressStatusLabel'
 import { useProgressStore } from '../stores/progressStore'
@@ -52,7 +58,7 @@ const i18n = useI18n()
 const { t } = i18n
 const progressStore = useProgressStore()
 const installationStore = useInstallationStore()
-const modal = useModal()
+const confirmStopTask = useConfirmStopTask()
 
 const op = computed(() => progressStore.operations.get(installationId) ?? null)
 const build = computed(() => installationStore.getById(installationId) ?? null)
@@ -110,12 +116,30 @@ const steps = computed<StepRow[]>(() => {
 
 const failed = computed(() => !!op.value?.finished && !!op.value.error)
 const launching = computed(() => op.value?.opKind === 'launch')
+const progress = computed(() => buildProgressOf(progressStore, installationId))
+const lastKind = ref<BuildProgressKind>('install')
+watch(
+  () => progress.value?.kind,
+  (kind) => {
+    if (kind) lastKind.value = kind
+  },
+  { immediate: true }
+)
+const task = computed(() => operationTask(op.value?.title ?? ''))
 const title = computed(() => {
   if (launching.value) {
     return failed.value ? t('installProgress.launchFailedTitle') : t('home.buildStartingComfyUI')
   }
-  return failed.value ? t('installProgress.failedTitle') : t('home.buildInstalling')
+  if (lastKind.value === 'install') {
+    return failed.value ? t('installProgress.failedTitle') : t('home.buildInstalling')
+  }
+  if (failed.value) return t('workingProgress.failedTitle', { task: task.value })
+  return lastKind.value === 'update' ? t('updateProgress.status') : task.value
 })
+const canCancel = computed(() => progress.value?.cancellable !== false)
+const cancelLabel = computed(() =>
+  launching.value ? t('common.cancel') : t(cancelConfirmKey(lastKind.value))
+)
 const cancelling = computed(() => !!op.value?.cancelRequested)
 const logText = computed(() => {
   const output = op.value?.terminalOutput ?? ''
@@ -139,15 +163,7 @@ async function cancel(): Promise<void> {
     emit('close')
     return
   }
-  const confirmed = await modal.confirm({
-    title: t('installProgress.cancelTitle'),
-    message: t('installProgress.cancelMessage', { name: build.value?.name ?? '' }),
-    confirmLabel: t('installProgress.cancelConfirm'),
-    confirmStyle: 'danger'
-  })
-  if (!confirmed) return
-  progressStore.cancelOperation(installationId)
-  emit('close')
+  if (await confirmStopTask(installationId, build.value?.name ?? '')) emit('close')
 }
 </script>
 
@@ -310,7 +326,7 @@ async function cancel(): Promise<void> {
             </Button>
           </template>
           <Button
-            v-else
+            v-else-if="canCancel"
             type="button"
             variant="secondary"
             size="unset"
@@ -319,7 +335,7 @@ async function cancel(): Promise<void> {
             data-testid="build-progress-cancel"
             @click="cancel"
           >
-            {{ launching ? t('common.cancel') : t('installProgress.cancelConfirm') }}
+            {{ cancelLabel }}
           </Button>
         </div>
       </div>

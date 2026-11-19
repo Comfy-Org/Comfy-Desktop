@@ -537,8 +537,12 @@ describe('AssetsView', () => {
       ),
       'Cloud and this computer are grouped apart'
     ).toEqual(['Comfy Cloud', 'This computer'])
+    expect(
+      document.querySelector('[data-testid="assets-place-subtitle-cloud"] .bg-success'),
+      'Cloud runs nowhere on this computer, so it has no green dot'
+    ).toBe(null)
     expect(buildRows(), 'no Shared folder when no build saves there').toEqual([
-      'Comfy Cloud Running',
+      'Comfy Cloud Ready',
       'My Local 1 ~/My Local 1/output',
       'Video Lab /Volumes/Work/Video Lab/output'
     ])
@@ -576,7 +580,7 @@ describe('AssetsView', () => {
 
     await openBuildPicker(wrapper)
 
-    expect(buildRows()).toEqual(['Comfy Cloud Running', 'My Local 1 ~/My Local 1/output'])
+    expect(buildRows()).toEqual(['Comfy Cloud Ready', 'My Local 1 ~/My Local 1/output'])
   })
 
   it('opens on a build it can list, not on a running build that keeps its files to itself', async () => {
@@ -627,7 +631,7 @@ describe('AssetsView', () => {
     expect(shown('assets-search-toggle')).toBe(false)
     expect(shown('assets-kind-menu')).toBe(false)
 
-    page.style.width = '520px'
+    page.style.width = '420px'
     await vi.waitFor(() => expect(shown('assets-kind-menu')).toBe(true))
     expect(shown('assets-kind-all')).toBe(false)
     expect(shown('assets-search-toggle')).toBe(true)
@@ -638,8 +642,8 @@ describe('AssetsView', () => {
     expect(shown('assets-search-toggle')).toBe(false)
   })
 
-  it('keeps the compact search open while a query changes the counts', async () => {
-    page.style.width = '640px'
+  it('keeps the compact search open while a query changes the results', async () => {
+    page.style.width = '560px'
     const wrapper = await mountAssets([
       asset('a', 'surfer.mp4', 'video'),
       asset('b', 'forest.png', 'image')
@@ -667,12 +671,12 @@ describe('AssetsView', () => {
     ])
 
     const tabs = () => wrapper.findAll('[data-testid^="assets-kind-"]').map((tab) => tab.text())
-    expect(tabs(), 'each type tab counts its files').toEqual([
-      'All3',
-      'Images2',
-      'Videos1',
-      '3D0',
-      'Audio0'
+    expect(tabs(), 'the type tabs show no counts').toEqual([
+      'All',
+      'Images',
+      'Videos',
+      '3D',
+      'Audio'
     ])
 
     await wrapper.get('[data-testid="assets-kind-image"]').trigger('click')
@@ -688,12 +692,12 @@ describe('AssetsView', () => {
       kind: 'image',
       search: 'terr'
     })
-    expect(tabs(), 'the type tabs count the matches in the whole folder').toEqual([
-      'All1',
-      'Images1',
-      'Videos0',
-      '3D0',
-      'Audio0'
+    expect(tabs(), 'a search adds no counts to the type tabs').toEqual([
+      'All',
+      'Images',
+      'Videos',
+      '3D',
+      'Audio'
     ])
   })
 
@@ -860,7 +864,7 @@ describe('AssetsView', () => {
     expect(assetNames(wrapper)).toEqual(['forest.png'])
     await openBuildPicker(wrapper)
     expect(buildRows()).toEqual([
-      'Comfy Cloud Running',
+      'Comfy Cloud Ready',
       'Shared folder ~/ComfyUI/output',
       'Video Lab /Volumes/Work/Video Lab/output'
     ])
@@ -1547,10 +1551,7 @@ describe('AssetsView', () => {
     expect(trashAsset).toHaveBeenCalledExactlyOnceWith('local', 'gone')
     expect(assetNames(wrapper)).toEqual(['keep.svg'])
     await vi.waitFor(() =>
-      expect(
-        wrapper.get('[data-testid="assets-kind-all"]').text(),
-        'the folder is read again, so the counts drop'
-      ).toBe('All1')
+      expect(listLocalAssets, 'the folder is read again').toHaveBeenCalledTimes(2)
     )
   })
 

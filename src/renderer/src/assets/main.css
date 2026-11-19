@@ -339,3 +339,33 @@
   margin-block: 2px;
   margin-inline: -4px;
 }
+
+[data-sliding-pill] {
+  isolation: isolate;
+}
+
+[data-sliding-pill='on']
+  :is(
+    [role='tab'][aria-selected='true'],
+    [role='radio'][aria-checked='true'],
+    [aria-pressed='true']
+  ) {
+  background-color: transparent !important;
+}
+
+.sliding-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  pointer-events: none;
+  transition:
+    transform 280ms var(--ease-out-expo),
+    width 280ms var(--ease-out-expo);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sliding-pill {
+    transition: none;
+  }
+}
