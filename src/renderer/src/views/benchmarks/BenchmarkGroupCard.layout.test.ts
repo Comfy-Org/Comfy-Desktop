@@ -94,3 +94,42 @@ describe('Benchmarks table sticky columns', () => {
     }
   )
 })
+
+describe('Benchmarks table card', () => {
+  it.each([960, 1280])(
+    'is one 14px card with straight dividers and 18px sides at %ipx',
+    async (width) => {
+      await page.viewport(width, 800)
+      wrapper = mount(BenchmarksView, { attachTo: document.body })
+      await flushPromises()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+
+      const box = document.querySelector<HTMLElement>('.benchmarks__group-box')!
+      const card = box.getBoundingClientRect()
+      expect(getComputedStyle(box).borderRadius).toBe('14px')
+      expect(getComputedStyle(box).borderTopWidth).toBe('0px')
+
+      for (const cell of box.querySelectorAll<HTMLElement>('th, td')) {
+        expect(getComputedStyle(cell).borderRadius).toBe('0px')
+      }
+
+      const row = box.querySelector<HTMLElement>('tbody tr')!
+      const cells = row.querySelectorAll<HTMLElement>('td')
+      expect(cells[0].getBoundingClientRect().left).toBeCloseTo(card.left, 0)
+      expect(cells[cells.length - 1].getBoundingClientRect().right).toBeCloseTo(card.right, 0)
+
+      const grip = row.querySelector('.benchmarks__grip')!.getBoundingClientRect()
+      const rowMenu = row.querySelector('.benchmarks__row-menu svg')!.getBoundingClientRect()
+      const chevron = document
+        .querySelector('.benchmarks__group-toggle svg')!
+        .getBoundingClientRect()
+      const groupMenu = document
+        .querySelector('.benchmarks__group-menu svg')!
+        .getBoundingClientRect()
+      expect(grip.left - card.left).toBeCloseTo(18, 0)
+      expect(chevron.left - card.left).toBeCloseTo(18, 0)
+      expect(card.right - rowMenu.right).toBeCloseTo(18, 0)
+      expect(card.right - groupMenu.right).toBeCloseTo(18, 0)
+    }
+  )
+})
