@@ -138,8 +138,9 @@ function ensureCoachmarkPopup(parent: BrowserWindow): CoachmarkPopupEntry {
     },
     hideOnParentEvents: ['will-move', 'move', 'resize'],
     onHide: () => {
-      if (retireDrivingHide) return
       const entry = coachmarkPopupsByParent.get(parent.id)
+      if (entry) entry.pendingAnchor = null
+      if (retireDrivingHide) return
       if (!entry || parent.isDestroyed()) return
       const tb = findTitleBarByParent?.(parent)
       if (tb && !tb.isDestroyed()) {
@@ -208,6 +209,7 @@ function repositionAndShow(
 
 export function hideCoachmarkPopup(entry: CoachmarkPopupEntry | undefined): void {
   if (!entry) return
+  entry.pendingAnchor = null
   entry.view.hide()
 }
 
