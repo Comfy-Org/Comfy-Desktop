@@ -1,3 +1,4 @@
+import { toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useModal } from './useModal'
 import { useDialogs } from './useDialogs'
@@ -90,6 +91,11 @@ export function useDetailActionPreflight() {
     }
 
     if (!(await runDiskSpaceCheck(next, inst, modal, t, null, dialogs))) return null
+
+    // Electron cannot send Vue's reactive proxies over IPC, so hand back a plain copy of the data.
+    if (next.data !== undefined) {
+      next = { ...next, data: JSON.parse(JSON.stringify(toRaw(next.data))) }
+    }
 
     return { action: next, wasRunning, requiresStoppedGuard }
   }
