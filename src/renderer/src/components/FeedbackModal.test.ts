@@ -22,6 +22,19 @@ async function mountFeedback(open = true) {
   return wrapper
 }
 
+function deliverQueuedMessages() {
+  return new Promise<void>((resolve) => {
+    const token = Symbol.for('flush').toString()
+    const onMessage = (event: MessageEvent) => {
+      if (event.data !== token) return
+      window.removeEventListener('message', onMessage)
+      resolve()
+    }
+    window.addEventListener('message', onMessage)
+    window.postMessage(token, '*')
+  })
+}
+
 function widgetOptions(index = 0) {
   return vi.mocked(createWidget).mock.calls[index]![1]
 }
@@ -163,6 +176,7 @@ describe('FeedbackModal', () => {
     expect(failed?.getAttribute('role')).toBe('alert')
 
     document.querySelector<HTMLButtonElement>('[data-testid="feedback-retry"]')!.click()
+    await deliverQueuedMessages()
     await flushPromises()
     expect(widget.refresh).toHaveBeenCalledOnce()
     expect(widget.unmount).not.toHaveBeenCalled()
@@ -194,6 +208,24 @@ describe('FeedbackModal', () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(document.querySelector('.feedback-modal-loading')).toBeNull()
     expect(document.querySelector('[data-testid="feedback-failed"]')).not.toBeNull()
+  })
+
+  it('ignores a ready signal the replaced form sent before Try again, and still fails after ten seconds', async () => {
+    await mountFeedback()
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    document.querySelector<HTMLButtonElement>('[data-testid="feedback-retry"]')!.click()
+    widgetOptions().onReady?.(ready)
+    await deliverQueuedMessages()
+    await flushPromises()
+    expect(document.querySelector('.feedback-modal-loading')).not.toBeNull()
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(document.querySelector('[data-testid="feedback-failed"]')).not.toBeNull()
+
+    widgetOptions().onReady?.(ready)
+    await flushPromises()
+    expect(document.querySelector('[data-testid="feedback-failed"]')).toBeNull()
   })
 
   it('never shows the failure once the form is ready', async () => {

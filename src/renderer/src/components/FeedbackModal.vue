@@ -10,6 +10,7 @@ import { emitTelemetryAction } from '../lib/telemetry'
 const FEEDBACK_FORM_ID = 'VhOXmuaL'
 const AUTOCLOSE_MS = 2000
 const LOAD_TIMEOUT_MS = 10_000
+const RETRY_BARRIER = 'comfy-feedback-retry'
 
 const props = defineProps<{
   open: boolean
@@ -49,6 +50,13 @@ function onSubmit(): void {
 
 let loadTimer: ReturnType<typeof setTimeout> | null = null
 let reloadWidget: (() => void) | null = null
+let attempt = 0
+let readyAttempt = 0
+
+function onRetryBarrier(event: MessageEvent): void {
+  if (event.source !== window || event.data?.type !== RETRY_BARRIER) return
+  readyAttempt = event.data.attempt
+}
 
 function clearLoadTimer(): void {
   if (loadTimer != null) {
@@ -71,6 +79,8 @@ function waitForForm(): void {
 
 function retry(): void {
   if (!reloadWidget) return
+  attempt += 1
+  window.postMessage({ type: RETRY_BARRIER, attempt }, '*')
   waitForForm()
   reloadWidget()
 }
@@ -81,6 +91,8 @@ watch(
     if (!open || !element) return
     submitted.value = false
     let active = true
+    readyAttempt = attempt
+    window.addEventListener('message', onRetryBarrier)
     waitForForm()
     const widget = createWidget(FEEDBACK_FORM_ID, {
       container: element,
@@ -92,7 +104,7 @@ watch(
         allow: 'camera; microphone; autoplay; encrypted-media; fullscreen'
       },
       onReady: () => {
-        if (!active) return
+        if (!active || readyAttempt !== attempt) return
         clearLoadTimer()
         loading.value = false
         failed.value = false
@@ -105,6 +117,7 @@ watch(
     onCleanup(() => {
       active = false
       reloadWidget = null
+      window.removeEventListener('message', onRetryBarrier)
       clearLoadTimer()
       clearAutoclose()
       widget.unmount()
