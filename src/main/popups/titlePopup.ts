@@ -1054,7 +1054,11 @@ export interface TitlePopupHostBindings {
     cancellable: boolean
   }) => void
   broadcastPickerSnapshot: () => void
-  removeAppDataAndQuit: (options: { deleteInstances: boolean; deleteModels: boolean }) => void
+  removeAppDataAndQuit: (options: {
+    deleteInstances: boolean
+    deleteModels: boolean
+    deleteInputOutput: boolean
+  }) => void
 }
 
 export function parseGlobalSettingsTarget(
@@ -2098,13 +2102,17 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 
   ipcMain.on(
     'comfy-titlepopup:global-settings-remove-app-data',
-    (event, payload: { deleteInstances?: unknown; deleteModels?: unknown }) => {
+    (
+      event,
+      payload: { deleteInstances?: unknown; deleteModels?: unknown; deleteInputOutput?: unknown }
+    ) => {
       const popupEntry = titlePopupsByWebContents.get(event.sender.id)
       if (!popupEntry || popupEntry.kind !== 'global-settings') return
       if (process.platform !== 'darwin' && process.platform !== 'linux') return
       bindings.removeAppDataAndQuit({
         deleteInstances: payload?.deleteInstances === true,
-        deleteModels: payload?.deleteModels === true
+        deleteModels: payload?.deleteModels === true,
+        deleteInputOutput: payload?.deleteInputOutput === true
       })
     }
   )

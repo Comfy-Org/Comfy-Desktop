@@ -8,6 +8,7 @@ import GlobalSettingsMicroSection from './GlobalSettingsMicroSection.vue'
 interface RemoveAppDataOptions {
   deleteInstances: boolean
   deleteModels: boolean
+  deleteInputOutput: boolean
 }
 
 interface RemoveAppDataBridge {
@@ -41,7 +42,8 @@ async function handleRemove(): Promise<void> {
     ],
     checkboxes: [
       { id: 'deleteInstances', label: t('settings.removeAppDataInstances'), checked: false },
-      { id: 'deleteModels', label: t('settings.removeAppDataModels'), checked: false }
+      { id: 'deleteModels', label: t('settings.removeAppDataModels'), checked: false },
+      { id: 'deleteInputOutput', label: t('settings.removeAppDataInputOutput'), checked: false }
     ],
     confirmLabel: t('settings.removeAppDataConfirm'),
     confirmStyle: 'danger'
@@ -50,7 +52,8 @@ async function handleRemove(): Promise<void> {
   const values = modal.getLastCheckboxValues()
   bridge?.globalSettingsRemoveAppData({
     deleteInstances: values.deleteInstances === true,
-    deleteModels: values.deleteModels === true
+    deleteModels: values.deleteModels === true,
+    deleteInputOutput: values.deleteInputOutput === true
   })
 }
 </script>
