@@ -187,7 +187,7 @@ export function useBuildMenu(build: () => Installation) {
         return
       case 'view-logs':
         if (install.progress.value) install.viewLogs()
-        else openInstallManager(inst, { initialTab: 'console' })
+        else await window.api.openLogsWindow(inst.id)
         return
       case 'cancel':
         return install.progress.value ? install.cancel() : cancelLeftStart(inst)

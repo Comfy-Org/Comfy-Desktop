@@ -488,7 +488,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     return [
       {
         id: 'skip-onboarding',
-        label: 'Skip Onboarding',
+        label: 'Skip onboarding',
         labelKey: 'fileMenu.skipOnboarding'
       }
     ]
@@ -497,7 +497,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   const items: TitlePopupMenuItem[] = [
     {
       id: 'performance-test',
-      label: 'Performance Tests',
+      label: 'Performance tests',
       labelKey: 'fileMenu.performanceTest'
     },
     { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' }
@@ -514,7 +514,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
       const percent = convertLevelToZoomPercent(level)
       items.push({
         id: 'reset-zoom',
-        label: `Reset Zoom (${percent}%)`,
+        label: `Reset zoom (${percent}%)`,
         labelKey: 'fileMenu.resetZoom',
         labelParams: { percent }
       })
@@ -522,7 +522,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   }
   items.push(
     { kind: 'separator' },
-    { id: 'exit-window', label: 'Close Window', labelKey: 'fileMenu.exitWindow' },
+    { id: 'exit-window', label: 'Close window', labelKey: 'fileMenu.exitWindow' },
     {
       id: 'close-all-windows',
       label: 'Quit Desktop',
