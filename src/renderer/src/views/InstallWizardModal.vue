@@ -530,6 +530,7 @@ function onConsentToggle(accepted: boolean): void {
 
 async function open(opts: OpenOpts = {}): Promise<void> {
   loadGeneration++
+  changeSetupSession++
   const gen = ++modeGeneration
   instName.value = ''
   workspaceId.value = opts.workspaceId?.trim() || PERSONAL_WORKSPACE_ID

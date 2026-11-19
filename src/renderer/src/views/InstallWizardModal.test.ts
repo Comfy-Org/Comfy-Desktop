@@ -1254,6 +1254,55 @@ describe('InstallWizardModal workspace Builds', () => {
     again.unmount()
   })
 
+  it('keeps the folder of the newest open when an earlier open restores late', async () => {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'cpu', label: 'CPU', recommended: true, data: { variantId: 'win-cpu' } }
+    ])
+    const first = mountModal({ hideBackToDashboard: true })
+    await flushPromises()
+    await first.vm.open({ cameFromSetup: true, entrypoint: 'first_use', workspaceId: 'w1' })
+    await flushPromises()
+    await pickSource(first, 'install-source-standalone')
+    await flushPromises()
+    await first.get('#inst-name-standalone').setValue('Studio')
+    await first.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    const [saved] = savedSetups(first)
+    first.unmount()
+    if (!saved) throw new Error('Save changes emitted nothing')
+
+    let finishHardware: (value: { supported: boolean }) => void = () => {}
+    ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishHardware = resolve
+        })
+    )
+    const wrapper = mountModal({ hideBackToDashboard: true })
+    await flushPromises()
+    const base = { cameFromSetup: true, entrypoint: 'first_use' as const, workspaceId: 'w1' }
+    const earlier = wrapper.vm.open({ ...base, restore: saved.draft, installRoot: '/Volumes/Old' })
+    await flushPromises()
+    await wrapper.vm.open({ ...base, restore: saved.draft, installRoot: '/Volumes/New' })
+    await flushPromises()
+    finishHardware({ supported: true })
+    await earlier
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    expect(savedSetups(wrapper)[0]?.plan.installRoot).toBe('/Volumes/New')
+    wrapper.unmount()
+  })
+
   it('keeps the folder picked in Set up when Change switches to Public builds', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
