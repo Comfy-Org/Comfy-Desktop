@@ -113,7 +113,8 @@ export async function resolveLocalVersion(
         upgraded = true
         baseTagVerified = true
       }
-    } else if (ancestorIsParent) {
+    } else if (ancestorIsParent && !(await isAncestorOf(comfyuiDir, commit, latestTagRef!))) {
+      // A build the latest tag already contains is behind it, so it keeps its own nearest tag.
       const found = await findBestBackportTag(
         comfyuiDir,
         latestTagRef!,
