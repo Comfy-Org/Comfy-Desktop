@@ -395,7 +395,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
 
     <footer
       v-if="ordered.length > 0"
-      class="dlm-modal-footer border-t border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-3 pb-6"
+      class="dlm-modal-footer border-t border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-3 pb-4"
     >
       <div class="dlm-footer flex w-full items-center justify-between">
         <span class="dlm-footer-stats flex items-center gap-1.5 text-[12px] text-text-muted">

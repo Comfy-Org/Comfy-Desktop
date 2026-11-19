@@ -101,7 +101,7 @@ const linkClass =
     ]"
     @close="dismiss"
   >
-    <header class="base-alert-header relative -mx-6 mb-3 px-6 pb-3">
+    <header class="base-alert-header relative -mx-6 mb-4 px-6">
       <h2 :id="TITLE_ID" class="base-alert-title m-0 pr-8 text-base leading-[1.3] font-semibold">
         {{ title }}
       </h2>
@@ -163,7 +163,7 @@ const linkClass =
       </div>
     </div>
     <footer
-      class="base-alert-footer -mx-6 flex flex-wrap justify-end gap-2 border-t border-solid border-neutral-100/8 px-6 pt-3 [&>button]:max-w-60 [&>button]:min-w-24 [&>button]:overflow-hidden [&>button]:text-ellipsis [&>button]:whitespace-nowrap"
+      class="base-alert-footer -mx-6 flex flex-wrap justify-end gap-2 border-t border-solid border-neutral-100/8 px-6 pt-6 [&>button]:max-w-60 [&>button]:min-w-24 [&>button]:overflow-hidden [&>button]:text-ellipsis [&>button]:whitespace-nowrap"
     >
       <slot name="footer">
         <Button

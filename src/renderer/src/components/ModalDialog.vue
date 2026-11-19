@@ -180,8 +180,8 @@ watch(
         class="dialog-title -mx-6 px-6"
         :class="
           isMigrateConfirm
-            ? 'mb-4 pb-3.5 text-[length:var(--takeover-fs-h3)] font-medium text-text'
-            : 'mb-3 pb-3 text-[16px] font-semibold'
+            ? 'mb-4 text-[length:var(--takeover-fs-h3)] font-medium text-text'
+            : 'mb-4 text-[16px] font-semibold'
         "
       >
         {{ state.title }}
@@ -198,7 +198,7 @@ watch(
       >
         <div
           v-if="state.message"
-          class="dialog-prompt-card mb-3 rounded-md border border-solid border-[var(--border)] bg-[var(--bg)] px-3.5 py-2.5 text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
+          class="dialog-prompt-card mb-3 rounded-lg border border-solid border-[var(--border)] bg-[var(--bg)] px-4 py-[7px] text-[14px] leading-6 whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
           @click="handleModalLinkClick"
           v-html="linkifiedMessage"
         ></div>
@@ -359,7 +359,7 @@ watch(
           </div>
           <div
             v-if="state.checkboxes.length"
-            class="dialog-options mt-3 mb-4 flex flex-col items-start gap-1.5 border-t border-solid border-[var(--border)] pt-3"
+            class="dialog-options mt-4 mb-4 flex flex-col items-start gap-1.5"
           >
             <label
               v-for="cb in state.checkboxes"
@@ -380,8 +380,8 @@ watch(
         class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid px-6"
         :class="
           isMigrateConfirm
-            ? 'mt-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pt-3.5'
-            : 'border-[var(--border)] pt-3'
+            ? 'mt-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pt-6'
+            : 'border-[var(--border)] pt-6'
         "
       >
         <Button variant="secondary" size="lg" :data-testid="TID.modalCancel" @click="close(false)">
@@ -407,7 +407,7 @@ watch(
       v-else-if="state.type === 'confirmWithOptions'"
       class="dialog-box min-w-[320px] max-w-[400px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 pt-4 pb-6"
     >
-      <div class="dialog-title -mx-6 mb-3 px-6 pb-3 text-[16px] font-semibold">
+      <div class="dialog-title -mx-6 mb-4 px-6 text-[16px] font-semibold">
         {{ state.title }}
       </div>
       <div
@@ -415,9 +415,7 @@ watch(
       >
         {{ state.message }}
       </div>
-      <div
-        class="dialog-options mt-3 mb-4 flex flex-col items-start gap-1.5 border-t border-solid border-[var(--border)] pt-3"
-      >
+      <div class="dialog-options mt-4 mb-4 flex flex-col items-start gap-1.5">
         <label
           v-for="opt in localOptions"
           :key="opt.id"
@@ -432,7 +430,7 @@ watch(
         </label>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-6"
       >
         <Button variant="secondary" size="lg" @click="close(null)">{{
           $t('common.cancel')
@@ -453,7 +451,7 @@ watch(
       class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 pt-4 pb-6"
       :class="state.messageDetails.length > 0 ? 'w-[720px] max-w-full' : 'max-w-[400px]'"
     >
-      <div class="dialog-title -mx-6 mb-3 px-6 pb-3 text-[16px] font-semibold">
+      <div class="dialog-title -mx-6 mb-4 px-6 text-[16px] font-semibold">
         {{ state.title }}
       </div>
       <div
@@ -461,7 +459,7 @@ watch(
         :class="state.messageDetails.length > 0 ? 'max-h-[70vh]' : 'max-h-[50vh]'"
       >
         <div
-          class="dialog-prompt-card mb-3 rounded-md border border-solid border-[var(--border)] bg-[var(--bg)] px-3.5 py-2.5 text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
+          class="dialog-prompt-card mb-3 rounded-lg border border-solid border-[var(--border)] bg-[var(--bg)] px-4 py-[7px] text-[14px] leading-6 whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
           v-html="linkify(state.message)"
         ></div>
         <div v-if="state.messageDetails.length" class="dialog-details mt-3 mb-0">
@@ -509,7 +507,7 @@ watch(
         </div>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-6"
       >
         <Button variant="secondary" size="lg" :data-testid="TID.modalCancel" @click="close(null)">
           {{ $t('common.cancel') }}
@@ -524,7 +522,7 @@ watch(
       v-else-if="state.type === 'select'"
       class="dialog-box dialog-select-box min-w-[340px] max-w-[440px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 pt-4 pb-6"
     >
-      <div class="dialog-title -mx-6 mb-3 px-6 pb-3 text-[16px] font-semibold">
+      <div class="dialog-title -mx-6 mb-4 px-6 text-[16px] font-semibold">
         {{ state.title }}
       </div>
       <div
@@ -557,7 +555,7 @@ watch(
         </Button>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-6"
       >
         <Button variant="secondary" size="lg" @click="close(null)">{{
           $t('common.cancel')

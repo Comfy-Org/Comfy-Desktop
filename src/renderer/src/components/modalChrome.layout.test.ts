@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { h } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -9,7 +10,7 @@ import BasePrompt from './ui/BasePrompt.vue'
 import ModalDialog from './ModalDialog.vue'
 import ModalShell from './ModalShell.vue'
 import SetupModal from './SetupModal.vue'
-import DownloadsFullView from '../comfyTitlePopup/DownloadsFullView.vue'
+import TrackModal from '../views/TrackModal.vue'
 import { useModal } from '../composables/useModal'
 
 vi.mock('../lib/telemetry', () => ({
@@ -17,17 +18,76 @@ vi.mock('../lib/telemetry', () => ({
   emitTelemetryEvent: vi.fn()
 }))
 
+const MODAL_PADDING = 24
+const TITLE_GAP = 16
+
 const mounted: VueWrapper[] = []
 
-function setup(): void {
+beforeEach(() => {
   document.documentElement.dataset.theme = 'dark'
+  window.api = new Proxy(
+    {},
+    {
+      get: (_, method) =>
+        String(method).startsWith('on')
+          ? vi.fn(() => vi.fn())
+          : vi.fn().mockResolvedValue(undefined)
+    }
+  ) as unknown as typeof window.api
   setActivePinia(createPinia())
-}
+})
 
-async function open(mountIt: () => VueWrapper): Promise<void> {
-  mounted.push(mountIt())
+afterEach(() => {
+  useModal().dismiss()
+  mounted.splice(0).forEach((w) => w.unmount())
+  document.body.innerHTML = ''
+})
+
+async function settle(): Promise<void> {
   await flushPromises()
   await Promise.all(document.getAnimations().map((animation) => animation.finished))
+}
+
+async function open(mountIt: () => VueWrapper): Promise<VueWrapper> {
+  const wrapper = mountIt()
+  mounted.push(wrapper)
+  await settle()
+  return wrapper
+}
+
+async function closeAll(): Promise<void> {
+  useModal().dismiss()
+  mounted.splice(0).forEach((w) => w.unmount())
+  await settle()
+}
+
+const MODAL_DIALOG_VARIANTS: Record<string, () => void> = {
+  prompt: () => void useModal().prompt({ title: 'Name snapshot', message: 'Give it a name.' }),
+  confirm: () =>
+    void useModal().confirm({
+      title: 'Confirm',
+      message: 'Sure?',
+      messageDetails: [{ label: 'Details', items: ['One'] }],
+      checkboxes: [{ id: 'keep', label: 'Keep my models', checked: true }]
+    }),
+  confirmWithOptions: () =>
+    void useModal().confirmWithOptions({
+      title: 'Options',
+      message: 'Pick',
+      options: [{ id: 'a', label: 'A' }]
+    }),
+  select: () => void useModal().select({ title: 'Select', items: [{ value: 'a', label: 'A' }] })
+}
+
+async function eachModalDialogVariant(check: (variant: string) => void): Promise<void> {
+  await open(() => mount(ModalDialog, { attachTo: document.body }))
+  for (const [variant, show] of Object.entries(MODAL_DIALOG_VARIANTS)) {
+    show()
+    await settle()
+    check(variant)
+    useModal().dismiss()
+    await settle()
+  }
 }
 
 function el(selector: string): HTMLElement {
@@ -36,9 +96,23 @@ function el(selector: string): HTMLElement {
   return found
 }
 
-function lineWidths(node: HTMLElement): { top: string; bottom: string } {
-  const style = getComputedStyle(node)
-  return { top: style.borderTopWidth, bottom: style.borderBottomWidth }
+function px(node: HTMLElement, property: string): number {
+  return parseFloat(getComputedStyle(node).getPropertyValue(property))
+}
+
+function contentBox(node: HTMLElement): {
+  left: number
+  right: number
+  top: number
+  bottom: number
+} {
+  const rect = node.getBoundingClientRect()
+  return {
+    left: rect.left + px(node, 'border-left-width') + px(node, 'padding-left'),
+    right: rect.right - px(node, 'border-right-width') - px(node, 'padding-right'),
+    top: rect.top + px(node, 'border-top-width') + px(node, 'padding-top'),
+    bottom: rect.bottom - px(node, 'border-bottom-width') - px(node, 'padding-bottom')
+  }
 }
 
 function focusRingReach(node: HTMLElement): number {
@@ -57,57 +131,65 @@ async function expectFocusRingInside(inputSelector: string, bodySelector: string
   input.focus()
   await flushPromises()
   expect(document.activeElement).toBe(input)
-  const spread = focusRingReach(input)
-  expect(spread).toBeGreaterThan(0)
+  const reach = focusRingReach(input)
+  expect(reach).toBeGreaterThan(0)
   const ring = input.getBoundingClientRect()
   const body = el(bodySelector).getBoundingClientRect()
-  expect(ring.left - spread).toBeGreaterThanOrEqual(body.left)
-  expect(ring.right + spread).toBeLessThanOrEqual(body.right)
-  expect(ring.top - spread).toBeGreaterThanOrEqual(body.top)
-  expect(ring.bottom + spread).toBeLessThanOrEqual(body.bottom)
+  expect(ring.left - reach).toBeGreaterThanOrEqual(body.left)
+  expect(ring.right + reach).toBeLessThanOrEqual(body.right)
+  expect(ring.top - reach).toBeGreaterThanOrEqual(body.top)
+  expect(ring.bottom + reach).toBeLessThanOrEqual(body.bottom)
 }
 
-function contentLeft(node: HTMLElement): number {
-  const style = getComputedStyle(node)
-  return (
-    node.getBoundingClientRect().left +
-    parseFloat(style.borderLeftWidth) +
-    parseFloat(style.paddingLeft)
-  )
+function expectSpanning(selectors: string[], contentSelector: string): void {
+  const content = contentBox(el(contentSelector))
+  for (const selector of selectors) {
+    for (const field of document.querySelectorAll<HTMLElement>(selector)) {
+      const rect = field.getBoundingClientRect()
+      expect(Math.abs(rect.left - content.left), `${selector} left`).toBeLessThanOrEqual(1)
+      expect(Math.abs(rect.right - content.right), `${selector} right`).toBeLessThanOrEqual(1)
+    }
+  }
 }
 
-function expectEvenFooterInsets(
+function expectFooterInsets(
   panelSelector: string,
   bodySelector: string,
   footerSelector: string
 ): void {
   const panel = el(panelSelector).getBoundingClientRect()
-  const buttons = el(footerSelector).querySelectorAll<HTMLElement>('button')
+  const footer = el(footerSelector)
+  const buttons = footer.querySelectorAll<HTMLElement>('button')
   const last = buttons[buttons.length - 1]
   if (!last) throw new Error(`no button in ${footerSelector}`)
   const button = last.getBoundingClientRect()
-  const right = panel.right - button.right
-  const bottom = panel.bottom - button.bottom
-  const side = contentLeft(el(bodySelector)) - panel.left
-  expect(
-    Math.abs(right - bottom),
-    `${footerSelector} right ${right} vs bottom ${bottom}`
-  ).toBeLessThanOrEqual(1)
-  expect(
-    Math.abs(right - side),
-    `${footerSelector} right ${right} vs body side ${side}`
-  ).toBeLessThanOrEqual(1)
+  const line = footer.getBoundingClientRect().top + px(footer, 'border-top-width')
+  const gaps = {
+    top: button.top - line,
+    bottom: panel.bottom - button.bottom,
+    right: panel.right - button.right,
+    side: contentBox(el(bodySelector)).left - panel.left
+  }
+  for (const [edge, gap] of Object.entries(gaps)) {
+    expect(
+      Math.abs(gap - MODAL_PADDING),
+      `${footerSelector} ${edge} gap ${gap}`
+    ).toBeLessThanOrEqual(1)
+  }
 }
 
-afterEach(() => {
-  useModal().dismiss()
-  mounted.splice(0).forEach((w) => w.unmount())
-  document.body.innerHTML = ''
-})
+function expectTitleGap(titleSelector: string, firstContent: HTMLElement): void {
+  const gap = firstContent.getBoundingClientRect().top - contentBox(el(titleSelector)).bottom
+  expect(Math.abs(gap - TITLE_GAP), `${titleSelector} to body ${gap}`).toBeLessThanOrEqual(1)
+}
+
+function lineWidths(node: HTMLElement): { top: string; bottom: string } {
+  const style = getComputedStyle(node)
+  return { top: style.borderTopWidth, bottom: style.borderBottomWidth }
+}
 
 describe('modal chrome', () => {
   it('keeps only the line above the footer: no divider under the header', async () => {
-    setup()
     await open(() =>
       mount(BaseModal, {
         attachTo: document.body,
@@ -117,10 +199,8 @@ describe('modal chrome', () => {
     )
     expect(lineWidths(el('.base-modal-header')).bottom).toBe('0px')
     expect(lineWidths(el('.base-modal-footer')).top).toBe('1px')
-  })
+    await closeAll()
 
-  it('has no header divider in the alert box', async () => {
-    setup()
     await open(() =>
       mount(BaseAlert, {
         attachTo: document.body,
@@ -128,39 +208,8 @@ describe('modal chrome', () => {
       })
     )
     expect(lineWidths(el('.base-alert-header')).bottom).toBe('0px')
-  })
+    await closeAll()
 
-  it('has no header divider in any ModalDialog variant and keeps the footer line', async () => {
-    setup()
-    await open(() => mount(ModalDialog, { attachTo: document.body }))
-    const variants: Array<() => void> = [
-      () => void useModal().prompt({ title: 'Name snapshot', message: 'Give it a name.' }),
-      () =>
-        void useModal().confirm({
-          title: 'Confirm',
-          message: 'Sure?',
-          messageDetails: [{ label: 'Details', items: ['One'] }]
-        }),
-      () =>
-        void useModal().confirmWithOptions({
-          title: 'Options',
-          message: 'Pick',
-          options: [{ id: 'a', label: 'A' }]
-        }),
-      () => void useModal().select({ title: 'Select', items: [{ value: 'a', label: 'A' }] })
-    ]
-    for (const show of variants) {
-      show()
-      await flushPromises()
-      expect(lineWidths(el('.dialog-title')).bottom).toBe('0px')
-      expect(lineWidths(el('.dialog-actions')).top).toBe('1px')
-      useModal().dismiss()
-      await flushPromises()
-    }
-  })
-
-  it('has no header divider in the full view modal shell', async () => {
-    setup()
     await open(() =>
       mount(ModalShell, {
         attachTo: document.body,
@@ -169,38 +218,30 @@ describe('modal chrome', () => {
       })
     )
     expect(lineWidths(el('.view-modal-header')).bottom).toBe('0px')
+    await closeAll()
+
+    await eachModalDialogVariant(() => {
+      expect(lineWidths(el('.dialog-title')).bottom).toBe('0px')
+      expect(lineWidths(el('.dialog-actions')).top).toBe('1px')
+      for (const options of document.querySelectorAll<HTMLElement>('.dialog-options')) {
+        expect(lineWidths(options)).toEqual({ top: '0px', bottom: '0px' })
+      }
+    })
   })
 
-  it('shows the whole focus ring of the Name snapshot input', async () => {
-    setup()
-    await open(() => mount(ModalDialog, { attachTo: document.body }))
-    void useModal().prompt({ title: 'Name snapshot', message: 'Give this snapshot a name.' })
-    await flushPromises()
-    await expectFocusRingInside('.dialog-input', '.dialog-body')
-  })
-
-  it('shows the whole focus ring of the BasePrompt input', async () => {
-    setup()
-    await open(() =>
-      mount(BasePrompt, {
-        attachTo: document.body,
-        props: { open: true, title: 'Name', message: 'Give it a name.' }
-      })
-    )
-    await expectFocusRingInside('.base-prompt-input', '.base-modal-body')
-  })
-
-  it('insets the footer button equally from the right and bottom edges, matching the body side padding', async () => {
-    setup()
+  it('leaves the same gap between the title and the body in every modal', async () => {
     await open(() =>
       mount(BaseModal, {
         attachTo: document.body,
         props: { open: true, ariaLabel: 'M' },
-        slots: { header: 'Title', default: 'Body', footer: '<button>OK</button>' }
+        slots: {
+          header: () => h('h2', { class: 'm-0' }, 'Title'),
+          default: () => h('p', { class: 'm-0' }, 'Body')
+        }
       })
     )
-    expectEvenFooterInsets('.base-modal-panel', '.base-modal-body', '.base-modal-footer')
-    mounted.splice(0).forEach((w) => w.unmount())
+    expectTitleGap('.base-modal-header', el('.base-modal-body > p'))
+    await closeAll()
 
     await open(() =>
       mount(BaseAlert, {
@@ -208,8 +249,53 @@ describe('modal chrome', () => {
         props: { open: true, title: 'Alert', message: 'Something happened.' }
       })
     )
-    expectEvenFooterInsets('.base-alert-panel', '.base-alert-panel', '.base-alert-footer')
-    mounted.splice(0).forEach((w) => w.unmount())
+    expectTitleGap('.base-alert-header', el('.base-alert-message'))
+    await closeAll()
+
+    await open(() =>
+      mount(ModalShell, {
+        attachTo: document.body,
+        props: { title: 'View' },
+        slots: { default: () => h('p', { class: 'm-0' }, 'Body') }
+      })
+    )
+    expectTitleGap('.view-modal-header', el('.view-modal-body > p'))
+    await closeAll()
+
+    const track = await open(() => mount(TrackModal, { attachTo: document.body }))
+    ;(track.vm as unknown as { open: () => void }).open()
+    await settle()
+    expectTitleGap('.setup-modal-lead', el('.setup-modal-lead').nextElementSibling as HTMLElement)
+    await closeAll()
+
+    await eachModalDialogVariant((variant) => {
+      const first =
+        variant === 'confirmWithOptions' || variant === 'select'
+          ? el('.dialog-title').nextElementSibling
+          : el('.dialog-body').firstElementChild
+      expectTitleGap('.dialog-title', first as HTMLElement)
+    })
+  })
+
+  it('puts the footer button 24px from the footer line, the bottom and the right, like the body sides', async () => {
+    await open(() =>
+      mount(BaseModal, {
+        attachTo: document.body,
+        props: { open: true, ariaLabel: 'M' },
+        slots: { header: 'Title', default: 'Body', footer: '<button>OK</button>' }
+      })
+    )
+    expectFooterInsets('.base-modal-panel', '.base-modal-body', '.base-modal-footer')
+    await closeAll()
+
+    await open(() =>
+      mount(BaseAlert, {
+        attachTo: document.body,
+        props: { open: true, title: 'Alert', message: 'Something happened.' }
+      })
+    )
+    expectFooterInsets('.base-alert-panel', '.base-alert-panel', '.base-alert-footer')
+    await closeAll()
 
     await open(() =>
       mount(SetupModal, {
@@ -221,58 +307,61 @@ describe('modal chrome', () => {
         }
       })
     )
-    expectEvenFooterInsets('.setup-modal-panel', '.setup-modal-body', '.setup-modal-foot')
-    mounted.splice(0).forEach((w) => w.unmount())
+    expectFooterInsets('.setup-modal-panel', '.setup-modal-body', '.setup-modal-foot')
+    await closeAll()
 
-    const host = document.createElement('div')
-    host.style.cssText = 'position:fixed;inset:0;display:flex'
-    document.body.appendChild(host)
+    await eachModalDialogVariant(() =>
+      expectFooterInsets('.dialog-box', '.dialog-box', '.dialog-actions')
+    )
+  })
+
+  it('lines fields and text boxes up with the body edges and the footer button', async () => {
+    await open(() => mount(ModalDialog, { attachTo: document.body }))
+    MODAL_DIALOG_VARIANTS.prompt!()
+    await settle()
+    expectSpanning(['.dialog-prompt-card', '.dialog-input'], '.dialog-box')
+    const card = el('.dialog-prompt-card')
+    const input = el('.dialog-input')
+    expect(getComputedStyle(card).borderRadius).toBe(getComputedStyle(input).borderRadius)
+    expect(card.getBoundingClientRect().height).toBe(input.getBoundingClientRect().height)
+    await closeAll()
+
     await open(() =>
-      mount(DownloadsFullView, {
-        attachTo: host,
-        props: {
-          state: {
-            active: [],
-            recent: [
-              {
-                id: 'done',
-                url: 'https://example.com/done',
-                filename: 'done.bin',
-                progress: 1,
-                status: 'completed'
-              }
-            ]
-          }
-        }
+      mount(BasePrompt, {
+        attachTo: document.body,
+        props: { open: true, title: 'Name', message: 'Give it a name.' }
       })
     )
-    expectEvenFooterInsets('.dlm-panel', '.dlm-modal-body', '.dlm-modal-footer')
-    mounted.splice(0).forEach((w) => w.unmount())
+    expectSpanning(['.base-prompt-input'], '.base-modal-body')
+    await closeAll()
 
-    await open(() => mount(ModalDialog, { attachTo: document.body }))
-    const variants: Array<() => void> = [
-      () => void useModal().prompt({ title: 'Name snapshot', message: 'Give it a name.' }),
-      () =>
-        void useModal().confirm({
-          title: 'Confirm',
-          message: 'Sure?',
-          messageDetails: [{ label: 'Details', items: ['One'] }]
-        }),
-      () =>
-        void useModal().confirmWithOptions({
-          title: 'Options',
-          message: 'Pick',
-          options: [{ id: 'a', label: 'A' }]
-        }),
-      () => void useModal().select({ title: 'Select', items: [{ value: 'a', label: 'A' }] })
-    ]
-    for (const show of variants) {
-      show()
-      await flushPromises()
-      await Promise.all(document.getAnimations().map((animation) => animation.finished))
-      expectEvenFooterInsets('.dialog-box', '.dialog-box', '.dialog-actions')
-      useModal().dismiss()
-      await flushPromises()
+    const track = await open(() => mount(TrackModal, { attachTo: document.body }))
+    ;(track.vm as unknown as { open: () => void }).open()
+    await settle()
+    expectSpanning(['.setup-form-row'], '.setup-modal-body')
+    const body = contentBox(el('.setup-modal-body'))
+    for (const control of document.querySelectorAll<HTMLElement>('.setup-form-row__control')) {
+      expect(Math.abs(control.getBoundingClientRect().right - body.right)).toBeLessThanOrEqual(1)
     }
+    const buttons = el('.setup-modal-foot').querySelectorAll<HTMLElement>('button')
+    const install = buttons[buttons.length - 1]!.getBoundingClientRect()
+    expect(Math.abs(install.right - body.right)).toBeLessThanOrEqual(1)
+  })
+
+  it('shows the whole focus ring of the Name snapshot input', async () => {
+    await open(() => mount(ModalDialog, { attachTo: document.body }))
+    MODAL_DIALOG_VARIANTS.prompt!()
+    await settle()
+    await expectFocusRingInside('.dialog-input', '.dialog-body')
+  })
+
+  it('shows the whole focus ring of the BasePrompt input', async () => {
+    await open(() =>
+      mount(BasePrompt, {
+        attachTo: document.body,
+        props: { open: true, title: 'Name', message: 'Give it a name.' }
+      })
+    )
+    await expectFocusRingInside('.base-prompt-input', '.base-modal-body')
   })
 })

@@ -93,7 +93,7 @@ const hostProps = computed(() =>
         </Button>
 
         <div
-          class="setup-modal-body min-h-0 flex-auto overflow-y-auto px-8 pt-7 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          class="setup-modal-body min-h-0 flex-auto overflow-y-auto px-6 pt-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           :class="anchorTop ? 'pb-4' : 'pb-6'"
         >
           <h2
@@ -110,7 +110,7 @@ const hostProps = computed(() =>
 
         <footer
           v-if="$slots.footer"
-          class="setup-modal-foot flex flex-none items-center gap-2 px-8 pt-3 pb-8 [box-shadow:inset_0_1px_0_rgb(255_255_255/0.08)]"
+          class="setup-modal-foot flex flex-none items-center gap-2 p-6 [box-shadow:inset_0_1px_0_rgb(255_255_255/0.08)]"
         >
           <slot name="footer" />
         </footer>
