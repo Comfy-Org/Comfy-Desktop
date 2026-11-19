@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
-import { computed } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CircleAlert, CircleCheck, LoaderCircle, PauseCircle, RotateCcw, X } from '@lucide/vue'
+import { Ban, CircleAlert, CircleCheck, LoaderCircle, PauseCircle, RotateCcw, X } from '@lucide/vue'
 import { fileLabel, statusKindClass, statusLine } from '../lib/downloadFormatters'
 import { revealInFolderLabel } from '../composables/usePlatform'
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
@@ -124,6 +124,24 @@ function isRowClickable(d: DownloadEntry): boolean {
   return d.status === 'completed' && !!d.savePath
 }
 
+const list = useTemplateRef<HTMLElement>('list')
+
+function onRowKeydown(d: DownloadEntry, event: KeyboardEvent): void {
+  const row = event.currentTarget as HTMLElement
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    const rows = [...(list.value?.querySelectorAll<HTMLElement>('.downloads-item') ?? [])]
+    const next = rows[rows.indexOf(row) + (event.key === 'ArrowDown' ? 1 : -1)]
+    if (!next) return
+    event.preventDefault()
+    next.focus()
+    return
+  }
+  if (event.target !== row || (event.key !== 'Enter' && event.key !== ' ')) return
+  if (!isRowClickable(d) || !d.savePath) return
+  event.preventDefault()
+  showInFolder(d, d.savePath)
+}
+
 function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
   if (d.status !== 'downloading' && d.status !== 'pending') return undefined
   const pct = d.status === 'pending' ? 0 : Math.max(0, Math.min(1, d.progress)) * 100
@@ -157,12 +175,13 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
 
     <ul
       v-else
+      ref="list"
       class="downloads-list m-0 flex min-h-0 flex-auto list-none flex-col gap-2 overflow-y-auto p-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       <li
         v-for="d in orderedEntries"
         :key="d.id ?? d.url"
-        class="downloads-item flex items-center gap-2 rounded-lg px-4 py-3 transition-[background] duration-[220ms] ease-[ease]"
+        class="downloads-item flex items-center gap-2 rounded-lg px-4 py-3 transition-[background] duration-[220ms] ease-[ease] outline-none focus-visible:ring-2 focus-visible:ring-ring"
         :class="[
           statusKindClass(d),
           d.status === 'error' || d.status === 'cancelled'
@@ -175,7 +194,9 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
           }
         ]"
         :style="progressStyle(d)"
+        tabindex="0"
         @click="(e) => handleRowClick(d, e)"
+        @keydown="(e) => onRowKeydown(d, e)"
       >
         <span
           class="downloads-item-icon inline-flex grow-0 shrink-0 items-center justify-center text-neutral-100"
@@ -188,11 +209,8 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
           <DownloadThumbnail :entry="d" :fetcher="fetchThumbnail">
             <template #fallback>
               <CircleCheck v-if="d.status === 'completed'" :size="16" class="ok text-neutral-100" />
-              <CircleAlert
-                v-else-if="d.status === 'error' || d.status === 'cancelled'"
-                :size="16"
-                class="bad text-[#ff5454]"
-              />
+              <CircleAlert v-else-if="d.status === 'error'" :size="16" class="bad text-[#ff5454]" />
+              <Ban v-else-if="d.status === 'cancelled'" :size="16" class="muted text-text-muted" />
               <PauseCircle v-else-if="d.status === 'paused'" :size="16" />
               <LoaderCircle
                 v-else

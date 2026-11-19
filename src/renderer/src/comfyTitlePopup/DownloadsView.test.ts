@@ -252,6 +252,88 @@ describe('comfyTitlePopup/DownloadsView', () => {
     ])
   })
 
+  it('draws a cancelled download grey, like the full list, and a failed one red', async () => {
+    const { default: DownloadsView } = await import('./DownloadsView.vue')
+    const state: MockDownloadsState = {
+      active: [],
+      recent: [
+        { url: 'https://example.com/c.bin', filename: 'c.bin', progress: 0.3, status: 'cancelled' },
+        { url: 'https://example.com/e.bin', filename: 'e.bin', progress: 0.3, status: 'error' }
+      ]
+    }
+    const wrapper = mount(DownloadsView, { props: { state } })
+    await flushPromises()
+    const cancelledIcon = wrapper.get('.downloads-item.is-cancelled .downloads-item-icon svg')
+    const failedIcon = wrapper.get('.downloads-item.is-error .downloads-item-icon svg')
+
+    expect(cancelledIcon.classes()).toContain('text-text-muted')
+    expect(cancelledIcon.classes()).not.toContain('text-[#ff5454]')
+    expect(failedIcon.classes()).toContain('text-[#ff5454]')
+  })
+
+  describe('keyboard', () => {
+    const state: MockDownloadsState = {
+      active: [],
+      recent: [
+        {
+          url: 'https://example.com/ok.bin',
+          filename: 'ok.bin',
+          progress: 1,
+          status: 'completed',
+          savePath: '/tmp/ok.bin'
+        },
+        { url: 'https://example.com/c.bin', filename: 'c.bin', progress: 0.3, status: 'cancelled' }
+      ]
+    }
+
+    async function mountRows() {
+      const { default: DownloadsView } = await import('./DownloadsView.vue')
+      const wrapper = mount(DownloadsView, { props: { state }, attachTo: document.body })
+      await flushPromises()
+      return { wrapper, rows: wrapper.findAll('.downloads-item') }
+    }
+
+    it('lets Tab reach every row', async () => {
+      const { rows } = await mountRows()
+
+      expect(rows.map((row) => row.attributes('tabindex'))).toEqual(['0', '0'])
+    })
+
+    it.each(['Enter', ' '])("opens a finished file's folder with %j on its row", async (key) => {
+      const { rows } = await mountRows()
+
+      await rows[0]!.trigger('keydown', { key })
+
+      expect(bridgeState.downloadsActions).toEqual([
+        { action: 'show-in-folder', url: 'https://example.com/ok.bin', savePath: '/tmp/ok.bin' }
+      ])
+    })
+
+    it('leaves Enter on a row button to that button', async () => {
+      const { rows } = await mountRows()
+
+      await rows[0]!.get('.downloads-item-close').trigger('keydown', { key: 'Enter' })
+
+      expect(bridgeState.downloadsActions).toEqual([])
+    })
+
+    it('moves between rows with the arrow keys', async () => {
+      const { rows } = await mountRows()
+      const first = rows[0]!.element as HTMLElement
+      const second = rows[1]!.element as HTMLElement
+      first.focus()
+
+      await rows[0]!.trigger('keydown', { key: 'ArrowDown' })
+      expect(document.activeElement).toBe(second)
+
+      await rows[1]!.trigger('keydown', { key: 'ArrowDown' })
+      expect(document.activeElement).toBe(second)
+
+      await rows[1]!.trigger('keydown', { key: 'ArrowUp' })
+      expect(document.activeElement).toBe(first)
+    })
+  })
+
   it('routes the footer link to the full downloads popup (not the Settings tab)', async () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const wrapper = mount(DownloadsView, { props: { state: EMPTY_STATE } })
