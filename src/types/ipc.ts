@@ -167,6 +167,7 @@ export interface AppCard {
   description: string
   covers: AppCover[]
   badges?: AppBadge[]
+  coverPlayback?: 'always'
 }
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'
@@ -237,6 +238,7 @@ export interface CloudAssetPageRequest {
   limit: number
   order: AssetOrder
   kind?: AssetKind
+  search?: string
 }
 
 export interface CloudAssetPage {
@@ -252,6 +254,7 @@ export interface LocalAssetPageRequest {
   limit: number
   order: AssetOrder
   kind?: AssetKind
+  search?: string
 }
 
 export interface OutputFolderPaths {
@@ -1267,10 +1270,6 @@ export interface ElectronApi {
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
   openAsset(source: string, assetId: string): Promise<boolean>
-  findDownloadedOutputs(
-    installationId: string,
-    wanted: { id: string; name: string; sizeBytes: number | null; createdAt: string | null }[]
-  ): Promise<Record<string, string>>
   findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>
   readAssetModel(source: string, assetId: string): Promise<Uint8Array | null>
@@ -1295,6 +1294,7 @@ export interface ElectronApi {
   onAppPageClosed(callback: () => void): () => void
   onAppOutputs(callback: (appId: string, outputs: AppOutputs | null) => void): () => void
   sendAppOutputAction(action: AppOutputAction): void
+  sendAppRequest(text: string): Promise<boolean>
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   openGlobalSettings(
     tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',

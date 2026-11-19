@@ -211,6 +211,23 @@ describe('a file in Comfy Cloud', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
+  it('reads only the start of a large Cloud PNG, where ComfyUI saves its workflow', async () => {
+    mocks.cloudAccessToken.mockResolvedValue('token')
+    mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/big.png')
+    const pngStart = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    const fetch = vi.fn(
+      async () =>
+        new Response(pngStart, {
+          status: 206,
+          headers: { 'content-range': `bytes 0-${PART_BYTES - 1}/${PART_BYTES * 3}` }
+        })
+    )
+    vi.stubGlobal('fetch', fetch)
+
+    expect(await hasWorkflow('inst-cloud', 'asset-5')).toBe(false)
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
   it('has no Open workflow when Desktop is not signed in to Comfy Cloud', async () => {
     mocks.cloudAccessToken.mockResolvedValue(null)
 

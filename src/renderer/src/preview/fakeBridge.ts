@@ -266,7 +266,6 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     downloadAsset: async () => true,
     revealAsset: async () => true,
     openAsset: async () => true,
-    findDownloadedOutputs: async () => ({}),
     findCloudAsset: async () => ({ status: 'absent' }),
     copyAsset: async () => true,
     readAssetModel: async () => null,
@@ -281,6 +280,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     captureAppPage: async () => null,
     hideAppPage: () => {},
     sendAppOutputAction: () => {},
+    sendAppRequest: async () => true,
     getBuildStorageSnapshot: async () => ({
       sharedDirectoriesFields: [],
       modelsDirs: settings.modelsDirs.map((path, index) => ({ path, isPrimary: index === 0 })),

@@ -12,6 +12,7 @@ import { emitTelemetryAction } from '../lib/telemetry'
 import BrandFinishedSurface from '../components/BrandFinishedSurface.vue'
 import { TID } from '../../../shared/testIds'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
+import { progressTitle } from '../lib/progressTitle'
 
 interface Props {
   installation: Installation | null
@@ -157,7 +158,7 @@ function startLaunch(): void {
   emit('show-progress', {
     installationId: props.installationId,
     title: installationName.value
-      ? `${t('comfyLifecycle.launchProgressTitle')} — ${installationName.value}`
+      ? progressTitle(t('comfyLifecycle.launchProgressTitle'), installationName.value)
       : t('comfyLifecycle.launchProgressTitle'),
     apiCall: () => window.api.runAction(props.installationId, 'launch'),
     cancellable: true,
@@ -218,7 +219,7 @@ const placeholderTitle = computed<string>(() => {
           @click="returnToDashboard"
         >
           <ArrowLeft :size="14" />
-          {{ $t('common.back') }}
+          {{ $t('common.backToDashboard') }}
         </Button>
         <Button
           size="unset"

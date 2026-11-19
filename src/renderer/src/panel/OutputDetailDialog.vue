@@ -392,8 +392,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           variant="secondary"
           size="md"
           class="gap-1.5 text-[13px]/5"
-          data-testid="output-detail-workflow"
+          :class="{ invisible: !item.workflow }"
+          :aria-hidden="item.workflow ? undefined : 'true'"
+          :tabindex="item.workflow ? undefined : -1"
           :disabled="!item.workflow"
+          data-testid="output-detail-workflow"
           @click="emit('open-workflow', index, item.workflowBuilds?.[0]?.id)"
         >
           <Workflow :size="15" aria-hidden="true" />

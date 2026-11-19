@@ -73,7 +73,7 @@ function bestOf(found: Found): EmbeddedWorkflow | null {
   return null
 }
 
-function isPng(bytes: Uint8Array): boolean {
+export function isPng(bytes: Uint8Array): boolean {
   return PNG_SIGNATURE.every((byte, i) => bytes[i] === byte)
 }
 
@@ -138,7 +138,7 @@ function fromPng(bytes: Uint8Array): EmbeddedWorkflow | null {
     const length = readUint32(bytes, at)
     const type = latin1(bytes.subarray(at + 4, at + 8))
     const start = at + 8
-    if (type === 'IDAT' || type === 'IEND' || start + length > bytes.length) break
+    if (type === 'IEND' || start + length > bytes.length) break
     if (type === 'tEXt' || type === 'zTXt' || type === 'iTXt') {
       const data = bytes.subarray(start, start + length)
       const named = chunkKey(data)

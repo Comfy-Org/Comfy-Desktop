@@ -1,5 +1,4 @@
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -76,7 +75,6 @@ vi.mock('../settings', () => ({
     inputDir: path.join(root, 'default-input')
   }
 }))
-vi.mock('../host/registry', () => ({ isPanelSender: () => true }))
 vi.mock('./ipc/shared', () => ({
   _runningSessions: runningSessions,
   sourceMap: {
@@ -91,7 +89,7 @@ vi.mock('./models', () => ({
 }))
 vi.mock('./assets', () => ({
   assetKind: (name: string) =>
-    ({ png: 'image', mp4: 'video', webm: 'video', wav: 'audio', glb: '3d' })[
+    ({ png: 'image', svg: 'image', mp4: 'video', webm: 'video', wav: 'audio', glb: '3d' })[
       name.split('.').pop() ?? ''
     ] ?? null
 }))
@@ -111,7 +109,6 @@ import {
   trashOutputFile,
   listLocalAssets,
   localPageRequest,
-  findDownloadedOutputs,
   listOutputFolders,
   outputFolderPaths,
   openOutputFolder,
@@ -465,6 +462,25 @@ describe('listLocalAssets', () => {
     expect(page.counts).toEqual({ all: 4, image: 3, video: 1, audio: 0, '3d': 0 })
   })
 
+  it('searches every file name, in any case, before it pages and counts', async () => {
+    write(path.join(sharedDir, 'Forest-1.png'), 'x', new Date('2026-10-01T00:00:00Z'))
+    write(path.join(sharedDir, 'forest-2.mp4'), 'x', new Date('2026-10-02T00:00:00Z'))
+    write(path.join(sharedDir, 'night', 'forest-3.png'), 'x', new Date('2026-10-03T00:00:00Z'))
+    write(path.join(sharedDir, 'sea.png'), 'x', new Date('2026-10-04T00:00:00Z'))
+
+    const page = await listLocalAssets(undefined, {
+      offset: 1,
+      limit: 1,
+      order: 'newest',
+      kind: 'image',
+      search: 'FOREST'
+    })
+
+    expect(page.assets.map((a) => a.name)).toEqual(['Forest-1.png'])
+    expect(page.total).toBe(2)
+    expect(page.counts).toEqual({ all: 3, image: 2, video: 1, audio: 0, '3d': 0 })
+  })
+
   it('keeps files with the same time in one order, so no file shows on two pages', async () => {
     const same = new Date('2026-10-01T00:00:00Z')
     for (const name of ['c.png', 'a.png', 'd.png', 'b.png'])
@@ -490,6 +506,21 @@ describe('listLocalAssets', () => {
       limit: 10,
       order: 'oldest',
       kind: '3d'
+    })
+    expect(
+      localPageRequest({ offset: 40, limit: 10, order: 'newest', search: ' ' }),
+      'a blank search filters nothing and keeps the page'
+    ).toEqual({ offset: 40, limit: 10, order: 'newest' })
+    expect(
+      localPageRequest({ offset: 0, limit: 10, order: 'newest', search: '🌲'.repeat(200) }),
+      'the length counts characters, not code units'
+    ).toEqual({ offset: 0, limit: 10, order: 'newest', search: '🌲'.repeat(200) })
+    expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: 3 })).toEqual(first)
+    expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: ' sea ' })).toEqual({
+      offset: 0,
+      limit: 10,
+      order: 'newest',
+      search: 'sea'
     })
   })
 
@@ -780,92 +811,6 @@ describe('small thumbnails as data URLs', () => {
   })
 })
 
-describe('findDownloadedOutputs', () => {
-  it('finds Cloud outputs that Auto-Download saved, by name and size', async () => {
-    installs.mockResolvedValue([{ id: 'cloud', sourceId: 'cloud' }])
-    write(path.join(sharedDir, 'cloud', 'cutout.png'), 'four')
-    write(path.join(sharedDir, 'same-name.png'), 'other bytes')
-
-    const found = await findDownloadedOutputs('cloud', [
-      { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: null },
-      { id: 'b', name: 'same-name.png', sizeBytes: 3, createdAt: null },
-      { id: 'c', name: 'never-saved.png', sizeBytes: 4, createdAt: null },
-      { id: 'd', name: 'cutout.png', sizeBytes: null, createdAt: null }
-    ])
-
-    expect(found).toEqual({ a: path.join(sharedDir, 'cloud', 'cutout.png') })
-  })
-
-  it('matches a copy the downloader renamed, and skips a file saved before the output was made', async () => {
-    installs.mockResolvedValue([{ id: 'cloud', sourceId: 'cloud' }])
-    write(path.join(sharedDir, 'take (2).png'), 'four', new Date('2026-11-02T00:00:00Z'))
-    write(path.join(sharedDir, 'older.png'), 'four', new Date('2026-10-01T00:00:00Z'))
-
-    const found = await findDownloadedOutputs('cloud', [
-      { id: 'a', name: 'take.png', sizeBytes: 4, createdAt: '2026-11-01T23:59:30Z' },
-      { id: 'b', name: 'older.png', sizeBytes: 4, createdAt: '2026-11-01T00:00:00Z' }
-    ])
-
-    expect(found).toEqual({ a: path.join(sharedDir, 'take (2).png') })
-  })
-
-  it('prefers the exact name, and gives one saved file to one output only', async () => {
-    installs.mockResolvedValue([{ id: 'cloud', sourceId: 'cloud' }])
-    write(path.join(sharedDir, 'photo (1).png'), 'four')
-    write(path.join(sharedDir, 'photo.png'), 'four')
-
-    const found = await findDownloadedOutputs('cloud', [
-      { id: 'a', name: 'photo (1).png', sizeBytes: 4, createdAt: null },
-      { id: 'b', name: 'photo.png', sizeBytes: 4, createdAt: null },
-      { id: 'c', name: 'photo.png', sizeBytes: 4, createdAt: null }
-    ])
-
-    expect(found).toEqual({
-      a: path.join(sharedDir, 'photo (1).png'),
-      b: path.join(sharedDir, 'photo.png')
-    })
-  })
-
-  it('does not search a custom download folder that holds the home folder', async () => {
-    installs.mockResolvedValue([
-      { id: 'cloud', sourceId: 'cloud', useSharedOutputDir: false, outputDir: os.homedir() }
-    ])
-
-    expect(
-      await findDownloadedOutputs('cloud', [
-        { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: null }
-      ])
-    ).toEqual({})
-  })
-
-  it('finds nothing when the Cloud build does not auto-download', async () => {
-    installs.mockResolvedValue([{ id: 'cloud', sourceId: 'cloud', autoDownloadOutputs: false }])
-    write(path.join(sharedDir, 'cutout.png'), 'four')
-
-    expect(
-      await findDownloadedOutputs('cloud', [
-        { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: null }
-      ])
-    ).toEqual({})
-  })
-
-  it('reads a custom Auto-Download folder and lets its files open', async () => {
-    const custom = path.join(outsideDir, 'cloud-downloads')
-    installs.mockResolvedValue([
-      { id: 'cloud', sourceId: 'cloud', useSharedOutputDir: false, outputDir: custom }
-    ])
-    const file = path.join(custom, 'cutout.png')
-    write(file, 'four')
-
-    expect(
-      await findDownloadedOutputs('cloud', [
-        { id: 'a', name: 'cutout.png', sizeBytes: 4, createdAt: null }
-      ])
-    ).toEqual({ a: file })
-    expect(await openOutputFile(file), 'the custom folder is found without a warm cache').toBe(true)
-  })
-})
-
 describe('acting on a file from its card', () => {
   it('shows, copies and moves to the Trash only files inside an output folder', async () => {
     const inside = path.join(sharedDir, 'portrait.png')
@@ -893,6 +838,15 @@ describe('acting on a file from its card', () => {
     expect(await copiedItem?.items['image/png']?.text()).toBe('png bytes')
     expect(await trashOutputFile(inside)).toBe(true)
     expect(fs.existsSync(inside), 'the picture left the output folder').toBe(false)
+  })
+
+  it('shows an SVG in its folder instead of handing it to a browser', async () => {
+    const vector = path.join(sharedDir, 'logo.svg')
+    write(vector)
+
+    expect(await openOutputFile(vector)).toBe(true)
+    expect(openedPath).not.toHaveBeenCalled()
+    expect(shownInFolder).toHaveBeenCalledExactlyOnceWith(vector)
   })
 
   it('never hands a file that is not a picture, clip or sound to an app', async () => {

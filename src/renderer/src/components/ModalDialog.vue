@@ -30,7 +30,15 @@ const isSimpleConfirm = computed(
     !state.variantLoading
 )
 
-const usesBaseAlert = computed(() => state.type === 'alert' || isSimpleConfirm.value)
+const usesBaseAlert = computed(
+  () => state.type === 'alert' || state.type === 'choice' || isSimpleConfirm.value
+)
+
+const isChoice = computed(() => state.type === 'choice')
+
+const baseAlertSecondaryTone = computed<'danger' | 'default'>(() =>
+  state.confirmStyle === 'danger' ? 'danger' : 'default'
+)
 
 const baseAlertTone = computed<'primary' | 'danger'>(() =>
   state.type === 'confirm' && ['danger', 'danger-solid'].includes(state.confirmStyle)
@@ -44,11 +52,12 @@ const baseAlertButtonLabel = computed(() =>
 
 function onBaseAlertClose(): void {
   if (state.type === 'alert') close(undefined)
+  else if (isChoice.value) close('primary')
   else close(true)
 }
 
 function onBaseAlertCancel(): void {
-  close(false)
+  close(isChoice.value ? null : false)
 }
 
 function onMigrateCheckboxToggle(id: string, checked: boolean): void {
@@ -143,30 +152,35 @@ watch(
     :open="state.visible && usesBaseAlert"
     :title="state.title"
     :message="state.message"
-    :show-cancel="isSimpleConfirm"
+    :show-cancel="isSimpleConfirm || isChoice"
     :button-label="baseAlertButtonLabel"
     :tone="baseAlertTone"
+    :secondary-label="isChoice ? state.secondaryLabel : undefined"
+    :secondary-tone="baseAlertSecondaryTone"
+    :wide="isChoice"
     :test-id-root="state.testIds.root"
     :test-id-action="state.testIds.action"
     :test-id-cancel="state.testIds.cancel"
+    :test-id-secondary="state.testIds.secondary"
     @close="onBaseAlertClose"
     @cancel="onBaseAlertCancel"
+    @secondary="close('secondary')"
   />
 
   <DesktopDialogSurface
     :open="state.visible && !usesBaseAlert"
     :aria-label="state.title"
-    overlay-class="dialog-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 py-8"
+    overlay-class="dialog-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 py-8"
     @close="dismiss"
   >
     <div
       v-if="state.type === 'confirm'"
-      class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid bg-[var(--neutral-800)] px-6"
+      class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid bg-[var(--neutral-800)] px-5"
       :class="
         isMigrateConfirm
-          ? 'mig-modal w-[600px] max-w-full border-[var(--brand-surface-border)] pt-5 pb-[18px] shadow-[0_24px_64px_0_rgba(0,0,0,0.35)]'
+          ? 'mig-modal w-[600px] max-w-full border-[var(--brand-surface-border)] pt-5 pb-4 shadow-[0_24px_64px_0_rgba(0,0,0,0.35)]'
           : [
-              'border-[var(--border)] py-4',
+              'border-[var(--border)] pt-5 pb-4',
               state.snapshotPreview ||
               state.loading ||
               state.variantLoading ||
@@ -177,17 +191,17 @@ watch(
       "
     >
       <div
-        class="dialog-title -mx-6 border-b border-solid px-6"
+        class="dialog-title -mx-5 px-5"
         :class="
           isMigrateConfirm
-            ? 'mb-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pb-3.5 text-[length:var(--takeover-fs-h3)] font-medium text-text'
-            : 'mb-3 border-[var(--border)] pb-3 text-[16px] font-semibold'
+            ? 'mb-4 text-[length:var(--takeover-fs-h3)] font-medium text-text'
+            : 'mb-4 text-[16px] font-semibold'
         "
       >
         {{ state.title }}
       </div>
       <div
-        class="dialog-body mb-0 overflow-y-auto"
+        class="dialog-body [&>*:last-child]:mb-0 -m-1 overflow-y-auto p-1"
         :class="
           isMigrateConfirm
             ? 'flex max-h-[70vh] flex-col gap-3.5'
@@ -198,7 +212,7 @@ watch(
       >
         <div
           v-if="state.message"
-          class="dialog-prompt-card mb-3 rounded-md border border-solid border-[var(--border)] bg-[var(--bg)] px-3.5 py-2.5 text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
+          class="dialog-prompt-card mb-5 rounded-lg bg-[var(--surface)] px-4 py-2 text-[14px] leading-6 whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
           @click="handleModalLinkClick"
           v-html="linkifiedMessage"
         ></div>
@@ -237,7 +251,7 @@ watch(
                 $t('snapshots.variant')
               }}</span>
               <span class="dialog-value text-[14px] text-text select-text">{{
-                state.snapshotPreview.comfyui.variant || '—'
+                state.snapshotPreview.comfyui.variant || $t('common.unknown')
               }}</span>
             </div>
             <div
@@ -268,7 +282,7 @@ watch(
             <template v-if="spNodesExpanded">
               <div
                 v-if="state.snapshotPreview.customNodes.length > 0"
-                class="dialog-list flex max-h-[240px] flex-col gap-[3px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] p-1.5"
+                class="dialog-list flex max-h-[240px] flex-col gap-[3px] overflow-y-auto rounded-md bg-[var(--surface)] p-1.5"
               >
                 <div
                   v-for="node in state.snapshotPreview.customNodes"
@@ -292,7 +306,9 @@ watch(
                   >
                 </div>
               </div>
-              <div v-else class="dialog-empty text-[14px] text-text-muted">—</div>
+              <div v-else class="dialog-empty text-[14px] text-text-muted">
+                {{ $t('common.none') }}
+              </div>
             </template>
           </div>
 
@@ -311,7 +327,7 @@ watch(
             <template v-if="spPipExpanded">
               <div
                 v-if="state.snapshotPreview.pipPackageCount > 0"
-                class="dialog-list flex max-h-[240px] flex-col gap-[3px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] p-1.5"
+                class="dialog-list flex max-h-[240px] flex-col gap-[3px] overflow-y-auto rounded-md bg-[var(--surface)] p-1.5"
               >
                 <div
                   v-for="(version, name) in state.snapshotPreview.pipPackages"
@@ -328,24 +344,29 @@ watch(
                   >
                 </div>
               </div>
-              <div v-else class="dialog-empty text-[14px] text-text-muted">—</div>
+              <div v-else class="dialog-empty text-[14px] text-text-muted">
+                {{ $t('common.none') }}
+              </div>
             </template>
           </div>
         </template>
 
         <template v-if="!isMigrateConfirm">
-          <div v-if="state.messageDetails.length" class="dialog-details mt-3 mb-0">
+          <div v-if="state.messageDetails.length" class="dialog-details mt-5 mb-0">
             <div
               v-for="(group, gi) in state.messageDetails"
               :key="gi"
-              class="dialog-detail-group mb-1.5"
+              class="dialog-detail-group"
+              :class="
+                gi === state.messageDetails.length - 1 && !state.checkboxes.length ? 'mb-0' : 'mb-5'
+              "
             >
               <span
-                class="dialog-detail-label mb-1.5 block text-[13px] font-semibold text-text uppercase"
+                class="dialog-detail-label mb-2 block text-[13px] font-semibold text-text uppercase"
                 >{{ group.label }}</span
               >
               <div
-                class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+                class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md bg-[var(--surface)] px-3 py-2"
                 @click="handleModalLinkClick"
               >
                 <div
@@ -359,7 +380,7 @@ watch(
           </div>
           <div
             v-if="state.checkboxes.length"
-            class="dialog-options mt-3 mb-4 flex flex-col items-start gap-1.5 border-t border-solid border-[var(--border)] pt-3"
+            class="dialog-options mt-5 mb-4 flex flex-col items-start gap-1.5"
           >
             <label
               v-for="cb in state.checkboxes"
@@ -377,11 +398,11 @@ watch(
         </template>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid px-6"
+        class="dialog-actions -mx-5 flex justify-end gap-2 border-t border-solid px-5"
         :class="
           isMigrateConfirm
-            ? 'mt-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pt-3.5'
-            : 'border-[var(--border)] pt-3'
+            ? 'mt-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pt-4'
+            : 'mt-5 border-[var(--border)] pt-4'
         "
       >
         <Button variant="secondary" size="lg" :data-testid="TID.modalCancel" @click="close(false)">
@@ -405,11 +426,9 @@ watch(
 
     <div
       v-else-if="state.type === 'confirmWithOptions'"
-      class="dialog-box min-w-[320px] max-w-[400px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
+      class="dialog-box min-w-[320px] max-w-[400px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-5 pt-5 pb-4"
     >
-      <div
-        class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
-      >
+      <div class="dialog-title -mx-5 mb-4 px-5 text-[16px] font-semibold">
         {{ state.title }}
       </div>
       <div
@@ -417,9 +436,7 @@ watch(
       >
         {{ state.message }}
       </div>
-      <div
-        class="dialog-options mt-3 mb-4 flex flex-col items-start gap-1.5 border-t border-solid border-[var(--border)] pt-3"
-      >
+      <div class="dialog-options mt-4 mb-4 flex flex-col items-start gap-1.5">
         <label
           v-for="opt in localOptions"
           :key="opt.id"
@@ -434,7 +451,7 @@ watch(
         </label>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        class="dialog-actions -mx-5 flex justify-end gap-2 border-t border-solid mt-5 border-[var(--border)] px-5 pt-4"
       >
         <Button variant="secondary" size="lg" @click="close(null)">{{
           $t('common.cancel')
@@ -452,34 +469,32 @@ watch(
 
     <div
       v-else-if="state.type === 'prompt'"
-      class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
+      class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-5 pt-5 pb-4"
       :class="state.messageDetails.length > 0 ? 'w-[720px] max-w-full' : 'max-w-[400px]'"
     >
-      <div
-        class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
-      >
+      <div class="dialog-title -mx-5 mb-4 px-5 text-[16px] font-semibold">
         {{ state.title }}
       </div>
       <div
-        class="dialog-body mb-0 overflow-y-auto"
+        class="dialog-body [&>*:last-child]:mb-0 -m-1 overflow-y-auto p-1"
         :class="state.messageDetails.length > 0 ? 'max-h-[70vh]' : 'max-h-[50vh]'"
       >
         <div
-          class="dialog-prompt-card mb-3 rounded-md border border-solid border-[var(--border)] bg-[var(--bg)] px-3.5 py-2.5 text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
+          class="dialog-prompt-card mb-5 rounded-lg bg-[var(--surface)] px-4 py-2 text-[14px] leading-6 whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
           v-html="linkify(state.message)"
         ></div>
-        <div v-if="state.messageDetails.length" class="dialog-details mt-3 mb-0">
+        <div v-if="state.messageDetails.length" class="dialog-details mt-5 mb-0">
           <div
             v-for="(group, gi) in state.messageDetails"
             :key="gi"
-            class="dialog-detail-group mb-1.5"
+            class="dialog-detail-group mb-5"
           >
             <span
-              class="dialog-detail-label mb-1.5 block text-[13px] font-semibold text-text uppercase"
+              class="dialog-detail-label mb-2 block text-[13px] font-semibold text-text uppercase"
               >{{ group.label }}</span
             >
             <div
-              class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+              class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md bg-[var(--surface)] px-3 py-2"
               @click="handleModalLinkClick"
             >
               <div
@@ -492,14 +507,14 @@ watch(
           </div>
         </div>
         <div class="dialog-input-wrap mb-3">
-          <label class="dialog-input-label mb-1 block text-[13px] font-semibold text-text">{{
+          <label class="dialog-input-label mb-2 block text-[13px] font-semibold text-text">{{
             $t('common.name')
           }}</label>
           <Input
             v-model="inputValue"
             data-initial-focus
             type="text"
-            class="dialog-input mt-1.5 w-full"
+            class="dialog-input w-full"
             :data-testid="TID.modalPromptInput"
             :placeholder="state.placeholder"
             :aria-label="$t('common.name')"
@@ -513,7 +528,7 @@ watch(
         </div>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        class="dialog-actions -mx-5 flex justify-end gap-2 border-t border-solid mt-5 border-[var(--border)] px-5 pt-4"
       >
         <Button variant="secondary" size="lg" :data-testid="TID.modalCancel" @click="close(null)">
           {{ $t('common.cancel') }}
@@ -526,11 +541,9 @@ watch(
 
     <div
       v-else-if="state.type === 'select'"
-      class="dialog-box dialog-select-box min-w-[340px] max-w-[440px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
+      class="dialog-box dialog-select-box min-w-[340px] max-w-[440px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-5 pt-5 pb-4"
     >
-      <div
-        class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
-      >
+      <div class="dialog-title -mx-5 mb-4 px-5 text-[16px] font-semibold">
         {{ state.title }}
       </div>
       <div
@@ -563,7 +576,7 @@ watch(
         </Button>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        class="dialog-actions -mx-5 flex justify-end gap-2 border-t border-solid mt-5 border-[var(--border)] px-5 pt-4"
       >
         <Button variant="secondary" size="lg" @click="close(null)">{{
           $t('common.cancel')

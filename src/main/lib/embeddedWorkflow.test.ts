@@ -106,6 +106,18 @@ describe('reading the workflow ComfyUI saved in a PNG', () => {
     }
   })
 
+  it('reads text chunks saved after the picture data', () => {
+    const file = concat(
+      new Uint8Array(PNG_SIGNATURE),
+      chunk('IHDR', new Uint8Array(13)),
+      chunk('IDAT', new Uint8Array([0x78, 0x9c, 0x00])),
+      tEXt('workflow', JSON.stringify(GRAPH)),
+      chunk('IEND', new Uint8Array())
+    )
+
+    expect(readEmbeddedWorkflow([file])).toEqual({ format: 'graph', data: GRAPH })
+  })
+
   it('finds nothing in a PNG without a workflow, even when the picture data looks like one', () => {
     expect(readEmbeddedWorkflow([png(tEXt('parameters', 'a red fox, 20 steps'))])).toBeNull()
   })
@@ -180,11 +192,12 @@ describe('reading the workflow ComfyUI saved in other files', () => {
 })
 
 describe('reading a file made to be slow to read', () => {
-  it('gives up within a fixed amount of work on text that opens objects and never closes them', () => {
+  it('stops after a fixed amount of work, even before a later part that holds a workflow', () => {
+    const short = encoder.encode('{"'.repeat(2_000))
     const endless = encoder.encode('{"'.repeat(2 * 1024 * 1024))
-    const started = performance.now()
+    const workflow = binary(`workflow=${JSON.stringify(GRAPH)}`)
 
-    expect(readEmbeddedWorkflow([endless, endless])).toBeNull()
-    expect(performance.now() - started).toBeLessThan(2_000)
+    expect(readEmbeddedWorkflow([short, workflow])).toEqual({ format: 'graph', data: GRAPH })
+    expect(readEmbeddedWorkflow([endless, workflow])).toBeNull()
   })
 })

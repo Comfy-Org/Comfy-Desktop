@@ -989,6 +989,48 @@ const build = (over: {
     ...(over.campaign && { campaign: over.campaign })
   })
 
+describe('buildLaunchArgs user args', () => {
+  const schema: ComfyArgsSchema = {
+    args: [
+      { name: 'cuda-device', flag: '--cuda-device', help: '', type: 'value', category: 'gpuVram' }
+    ],
+    knownFlags: new Set(['cuda-device'])
+  }
+
+  it('never passes a --cuda-device with no value to ComfyUI', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const { args } = build({ userArgs: ['--cuda-device'], schema, betaFlags: [] })
+      expect(args, 'argparse would exit: "expected one argument"').not.toContain('--cuda-device')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it("drops only from the user's args, never Desktop's or a grant's", () => {
+    const valueTyped: ComfyArgsSchema = {
+      args: [
+        ...schema.args,
+        { name: 'enable-assets', flag: '--enable-assets', help: '', type: 'value', category: 'x' }
+      ],
+      knownFlags: new Set(['cuda-device', 'enable-assets'])
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const { args } = build({ userArgs: ['--cuda-device'], schema: valueTyped })
+      expect(args, 'a grant is never filtered for a missing value').toContain('--enable-assets')
+      expect(args).not.toContain('--cuda-device')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('passes --cuda-device with its value through', () => {
+    const { args } = build({ userArgs: ['--cuda-device', '1'], schema, betaFlags: [] })
+    expect(args.slice(-2)).toEqual(['--cuda-device', '1'])
+  })
+})
+
 describe('buildLaunchArgs campaigns', () => {
   const KEY = 'desktop_core_beta_agent'
   const schema = schemaOf('enable-assets', 'enable-agent', 'disable-agent')
@@ -2253,6 +2295,20 @@ describe('core beta report placement', () => {
       expect(launchHarness.commitShas).toEqual([[ASSETS_MIN_CORE_COMMIT], []])
       expect(spawnArgs).toContain('--enable-assets')
       expect(peekBetaActivationNotice('harness-assets-floor')).toBeNull()
+    })
+
+    it('says why a launch whose schema discovery failed starts without the assets flag', async () => {
+      launchHarness.schemaThrows = true
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const res = await handleLaunch(ctxFor('harness-assets-schema-failure'))
+
+      expect(res.ok).toBe(true)
+      expect(spawnArgs).not.toContain('--enable-assets')
+      expect(warn).toHaveBeenCalledWith(
+        '[launch] flag planning failed; launching without Desktop-planned flags or the unsupported-arg filter:',
+        expect.objectContaining({ message: 'schema discovery unavailable' })
+      )
     })
 
     it('does not ask a core without the floor commit', async () => {

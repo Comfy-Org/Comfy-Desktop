@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 
-const FEEDBACK_BUTTON = '.title-feedback-button'
 const FEEDBACK_FRAME = '[data-testid="feedback-widget"] iframe'
 const FEEDBACK_CLOSE = '.feedback-modal-panel [data-testid="base-modal-close"]'
 const FEEDBACK_LOADING = '.feedback-modal-loading'
@@ -49,7 +48,7 @@ test.afterAll(async () => {
 })
 
 async function openFeedback(): Promise<URL> {
-  expect(await ctx.titleBar.click(FEEDBACK_BUTTON)).toBe(true)
+  await ctx.titleBar.evaluate('window.__comfyTitleBar.clickFeedback()')
   await ctx.panel.waitForVisible(FEEDBACK_FRAME)
   await expect.poll(() => ctx.panel.exists(FEEDBACK_LOADING)).toBe(false)
   return new URL(

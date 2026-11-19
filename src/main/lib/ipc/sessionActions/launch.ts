@@ -55,6 +55,7 @@ import {
   makeSendProgress,
   makeSendOutput,
   getComfyArgsSchema,
+  dropValuelessArgs,
   filterUnsupportedArgs,
   getComfyFeatureFlagRegistry,
   _broadcastToRenderer
@@ -117,6 +118,7 @@ import {
   readFrontendPin,
   readOverrideState,
   reportAgentCoreFailure,
+  reportCacheRescued,
   reportOverrideDecision
 } from '../../agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from '../../agentRequirementsOverride'
@@ -258,7 +260,7 @@ export function buildLaunchArgs(input: {
   campaign?: Pick<CampaignFacts, 'registry' | 'answers' | 'records' | 'idClass' | 'now'>
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
-  const filtered = filterUnsupportedArgs([...userArgs], schema)
+  const filtered = dropValuelessArgs(filterUnsupportedArgs([...userArgs], schema), schema)
   const plan = planCoreBetaArgs({
     grants: input.betaFlags,
     betaEnabled: input.betaEnabled,
@@ -1355,7 +1357,12 @@ async function runLaunch(
           filterUnsupportedArgs(['--enable-agent'], schema).length > 0
         desktopAddedAssets =
           built.args.includes('--enable-assets') && !userArgs.includes('--enable-assets')
-      } catch {}
+      } catch (err) {
+        console.warn(
+          '[launch] flag planning failed; launching without Desktop-planned flags or the unsupported-arg filter:',
+          err
+        )
+      }
     }
   }
   if (abort.signal.aborted) return { ok: false, cancelled: true }
@@ -1421,7 +1428,8 @@ async function runLaunch(
           status: i18n.t('launch.agentRequirements.failed')
         })
         reportAgentCoreFailure(installationId, report, indexKind(settings.getMirrorConfig()))
-      }
+      },
+      (step) => reportCacheRescued(installationId, step, indexKind(settings.getMirrorConfig()))
     )
     if (abort.signal.aborted) {
       startHandedBack()

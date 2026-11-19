@@ -5,6 +5,12 @@ import { nextTick } from 'vue'
 import { useModal } from '../composables/useModal'
 import GlobalSettingsView from './GlobalSettingsView.vue'
 
+interface RemoveAppDataOptions {
+  deleteInstances: boolean
+  deleteModels: boolean
+  deleteInputOutput: boolean
+}
+
 interface BridgeState {
   updateFieldCalls: Array<{ id: string; value: unknown }>
   setModelsDirsCalls: string[][]
@@ -15,7 +21,7 @@ interface BridgeState {
   checkForUpdateCalls: number
   downloadUpdateCalls: number
   installUpdateCalls: number
-  removeAppDataCalls: Array<{ deleteInstances: boolean; deleteModels: boolean }>
+  removeAppDataCalls: RemoveAppDataOptions[]
   closeCalls: number
 }
 
@@ -66,7 +72,7 @@ function installMockBridge(): BridgeState {
       state.installUpdateCalls += 1
     },
     globalSettingsSetLastCheckedAt: () => {},
-    globalSettingsRemoveAppData: (options: { deleteInstances: boolean; deleteModels: boolean }) => {
+    globalSettingsRemoveAppData: (options: RemoveAppDataOptions) => {
       state.removeAppDataCalls.push({ ...options })
     }
   }
@@ -311,8 +317,8 @@ describe('GlobalSettingsView', () => {
   })
 
   const SHARED_IO = [
-    { id: 'inputDir', label: 'Input Directory', value: '/shared/in', type: 'path' },
-    { id: 'outputDir', label: 'Output Directory', value: '/shared/out', type: 'path' }
+    { id: 'inputDir', label: 'Input directory', value: '/shared/in', type: 'path' },
+    { id: 'outputDir', label: 'Output directory', value: '/shared/out', type: 'path' }
   ]
 
   async function openFolders(snapshot = makeSnapshot()) {
@@ -334,8 +340,8 @@ describe('GlobalSettingsView', () => {
     bridge.browseFolderReturn = '/picked/installs'
     const wrapper = await openFolders()
     expect(wrapper.findAll('.gs-micro-title').map((el) => el.text())).toEqual([
-      'Default Install Location',
-      'Shared Folders',
+      'Default install location',
+      'Shared folders',
       'Remove Comfy Desktop data'
     ])
     const row = wrapper.find('.storage-dir-row')
@@ -557,23 +563,26 @@ describe('GlobalSettingsView', () => {
     const wrapper = await openFolders(snapshotOn('win32'))
     expect(wrapper.find('.gs-remove-app-data-btn').exists()).toBe(false)
     expect(wrapper.findAll('.gs-micro-title').map((el) => el.text())).toEqual([
-      'Default Install Location',
-      'Shared Folders'
+      'Default install location',
+      'Shared folders'
     ])
   })
 
-  it('Remove Comfy Desktop data asks first, with both boxes unchecked', async () => {
+  it('Remove Comfy Desktop data asks first, with all three boxes unchecked', async () => {
     const { modal } = await openRemoveAppData('darwin')
     expect(modal.state.visible).toBe(true)
     expect(modal.state.title).toBe('Remove Comfy Desktop data?')
     expect(modal.state.confirmStyle).toBe('danger')
     expect(modal.state.checkboxes).toEqual([
-      { id: 'deleteInstances', label: 'Delete all ComfyUI instances', checked: false },
-      { id: 'deleteModels', label: 'Delete all model files', checked: false }
+      { id: 'deleteInstances', label: 'Delete all ComfyUI builds', checked: false },
+      { id: 'deleteModels', label: 'Delete all model files', checked: false },
+      { id: 'deleteInputOutput', label: 'Delete shared input and output files', checked: false }
     ])
     const details = modal.state.messageDetails.flatMap((group) => group.items).join('\n')
     expect(details).toContain('Trash')
-    expect(details).toContain('input and output')
+    expect(details).toContain(
+      'Input and output folders you picked yourself, outside the builds you delete'
+    )
     modal.close(false)
     await flushPromises()
   })
@@ -593,14 +602,28 @@ describe('GlobalSettingsView', () => {
     modal.setCheckboxValue('deleteModels', true)
     modal.close(true)
     await flushPromises()
-    expect(bridge.removeAppDataCalls).toEqual([{ deleteInstances: false, deleteModels: true }])
+    expect(bridge.removeAppDataCalls).toEqual([
+      { deleteInstances: false, deleteModels: true, deleteInputOutput: false }
+    ])
+  })
+
+  it('Remove Comfy Desktop data sends the input and output box through the bridge', async () => {
+    const { bridge, modal } = await openRemoveAppData('darwin')
+    modal.setCheckboxValue('deleteInputOutput', true)
+    modal.close(true)
+    await flushPromises()
+    expect(bridge.removeAppDataCalls).toEqual([
+      { deleteInstances: false, deleteModels: false, deleteInputOutput: true }
+    ])
   })
 
   it('Remove Comfy Desktop data keeps everything when unchecked', async () => {
     const { bridge, modal } = await openRemoveAppData('darwin')
     modal.close(true)
     await flushPromises()
-    expect(bridge.removeAppDataCalls).toEqual([{ deleteInstances: false, deleteModels: false }])
+    expect(bridge.removeAppDataCalls).toEqual([
+      { deleteInstances: false, deleteModels: false, deleteInputOutput: false }
+    ])
   })
 
   it('Remove Comfy Desktop data does nothing when cancelled', async () => {
@@ -618,7 +641,7 @@ describe('GlobalSettingsView', () => {
       cacheFields: [
         {
           id: 'cacheDir',
-          label: 'Cache Directory',
+          label: 'Cache directory',
           value: '/home/u/cache',
           type: 'path',
           openable: true

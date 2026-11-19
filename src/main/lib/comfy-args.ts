@@ -18,6 +18,8 @@ export interface ComfyArgsSchema {
   knownFlags: Set<string>
 }
 
+export const COMFY_DISCOVERY_TIMEOUT_MS = 60_000
+
 const CATEGORY_MAP: Record<string, string> = {
   listen: 'network',
   port: 'network',
@@ -348,7 +350,7 @@ function runHelp(pythonPath: string, mainPyPath: string, cwd: string): Promise<s
     execFile(
       pythonPath,
       ['-s', mainPyRel, '--help'],
-      { cwd, timeout: 15000 },
+      { cwd, timeout: COMFY_DISCOVERY_TIMEOUT_MS },
       (err, stdout, stderr) => {
         if (stdout && stdout.includes('usage:')) {
           resolve(stdout)
@@ -407,6 +409,20 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
     i++
   }
   return result
+}
+
+export function dropValuelessArgs(args: string[], schema: ComfyArgsSchema): string[] {
+  const needsValue = new Set(
+    schema.args.filter((a) => a.type === 'value' && !a.name.startsWith('tls-')).map((a) => a.name)
+  )
+  return args.filter((arg, i) => {
+    if (!arg.startsWith('--')) return true
+    const [name, inline] = arg.slice(2).split(/=(.*)/s)
+    if (!needsValue.has(name!)) return true
+    const valueless = inline === undefined ? (args[i + 1]?.startsWith('--') ?? true) : inline === ''
+    if (valueless) console.warn(`launch: dropped ${arg}, which needs a value and has none`)
+    return !valueless
+  })
 }
 
 export function clearSchemaCache(installationId: string): void {

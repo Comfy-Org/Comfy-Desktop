@@ -114,8 +114,6 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
     revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),
     openAsset: (source, assetId) => ipcRenderer.invoke('assets:open', source, assetId),
-    findDownloadedOutputs: (installationId, wanted) =>
-      ipcRenderer.invoke('assets:find-downloaded', installationId, wanted),
     findCloudAsset: (installationId, name) =>
       ipcRenderer.invoke('assets:find', installationId, name),
     copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),
@@ -153,6 +151,7 @@ export function buildElectronApi(): ElectronApi {
       return () => ipcRenderer.removeListener('apps:outputs', handler)
     },
     sendAppOutputAction: (action) => ipcRenderer.send('apps:output-action', action),
+    sendAppRequest: (text) => ipcRenderer.invoke('apps:send-request', text),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     openGlobalSettings: (tab, opts) =>
       ipcRenderer.send(

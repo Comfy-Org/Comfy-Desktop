@@ -8,7 +8,7 @@ import { isPanelSender } from '../host/registry'
 import type { ComfyDesktopOpenInComfy } from '../../types/comfyDesktopBridge'
 import { LOCAL_ASSETS_SOURCE } from '../../types/ipc'
 import { cloudAccessToken, firstBytes, resolveCloudContentUrl } from './assets'
-import { readEmbeddedWorkflow } from './embeddedWorkflow'
+import { isPng, readEmbeddedWorkflow } from './embeddedWorkflow'
 import type { EmbeddedWorkflow } from './embeddedWorkflow'
 import * as i18n from './i18n'
 import { outputFilePath } from './outputFolders'
@@ -42,8 +42,12 @@ async function localParts(assetId: string): Promise<Uint8Array[] | null> {
   const handle = await fsp.open(file, READ_WITHOUT_FOLLOWING)
   try {
     const { size } = await handle.stat()
-    if (size <= PART_BYTES * 2) return [await readPart(handle, 0, size)]
-    const head = await readPart(handle, 0, PART_BYTES)
+    const head = await readPart(handle, 0, Math.min(size, PART_BYTES))
+    if (size <= PART_BYTES || isPng(head)) return [head]
+    if (size <= PART_BYTES * 2) {
+      const rest = await readPart(handle, PART_BYTES, size - PART_BYTES)
+      return [Buffer.concat([head, rest])]
+    }
     const tailStart = Math.max(PART_BYTES, size - PART_BYTES)
     return [head, await readPart(handle, tailStart, size - tailStart)]
   } finally {
@@ -68,7 +72,7 @@ async function cloudParts(assetId: string, accessToken: string): Promise<Uint8Ar
   if (!headResponse.ok) return null
   const head = await firstBytes(headResponse, PART_BYTES)
   const size = headResponse.status === 206 ? totalSize(headResponse) : null
-  if (size === null || size <= PART_BYTES) return [head]
+  if (size === null || size <= PART_BYTES || isPng(head)) return [head]
   const tailResponse = await rangeOf(url, `bytes=-${PART_BYTES}`, deadline)
   if (!tailResponse.ok) return null
   if (tailResponse.status !== 206) return [head]
