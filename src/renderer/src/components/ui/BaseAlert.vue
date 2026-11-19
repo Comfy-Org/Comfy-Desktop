@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue'
+import { computed, useId, useSlots } from 'vue'
 import { X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from './DesktopDialogSurface.vue'
@@ -70,6 +70,10 @@ function dismiss(): void {
 }
 
 const hasDetails = computed(() => props.messageDetails.length > 0)
+const slots = useSlots()
+const isShortMessage = computed(
+  () => !hasDetails.value && !slots.default && !slots.extra && !!(props.message || props.hint)
+)
 const linkifiedMessage = computed(() => linkify(props.message))
 const hasWideActions = computed(() => !!props.secondaryLabel)
 
@@ -95,9 +99,9 @@ const linkClass =
     :dismiss-on-outside="dismissOnOutside"
     :prevent-scroll="preventScroll"
     :data-testid="testIdRoot"
-    overlay-class="base-alert-overlay fixed inset-0 z-[1000] grid place-items-center bg-neutral-800/60 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]"
+    overlay-class="base-alert-overlay fixed inset-0 z-[1000] grid place-items-center bg-black/70 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]"
     :content-class="[
-      'base-alert-panel relative flex min-w-80 flex-col overflow-visible rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4 text-neutral-100 shadow-[var(--modal-surface-shadow)]',
+      'base-alert-panel relative flex min-w-80 flex-col overflow-visible rounded-panel border border-solid border-border bg-neutral-800 px-5 pt-5 pb-4 text-neutral-100 shadow-[var(--modal-surface-shadow)]',
       panelWidthClass,
       hasDetails ? 'max-h-[min(80vh,640px)]' : 'max-h-[min(80vh,560px)]',
       { 'base-alert-panel--rich': hasDetails, 'base-alert-panel--wide-actions': hasWideActions }
@@ -108,21 +112,22 @@ const linkClass =
       type="button"
       variant="muted-textonly"
       size="icon"
-      class="base-alert-close-icon absolute top-0 -right-12 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white max-[860px]:top-3 max-[860px]:right-3"
+      class="base-alert-close-icon absolute top-0 -right-12 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--color-neutral-800)] text-white hover:text-white max-[860px]:top-3 max-[860px]:right-3"
       :aria-label="$t('common.close')"
       :data-testid="testIdCloseIcon ?? 'base-alert-close-icon'"
       @click="dismiss"
     >
       <X :size="18" />
     </Button>
-    <header class="base-alert-header relative mb-3 pt-1 max-[860px]:pr-8">
+    <header class="base-alert-header relative mb-4 max-[860px]:pr-8">
       <h2 :id="TITLE_ID" class="base-alert-title m-0 text-base leading-[1.3] font-semibold">
         {{ title }}
       </h2>
     </header>
     <div
       v-if="message || hint || hasDetails || $slots.default || $slots.extra"
-      class="base-alert-message mb-5 min-h-0 flex-auto overflow-y-auto text-sm leading-[1.5] whitespace-pre-line text-text-muted select-text"
+      class="base-alert-message min-h-0 flex-auto overflow-y-auto text-sm leading-[1.5] whitespace-pre-line text-text-muted select-text"
+      :class="isShortMessage ? 'base-alert-message--short mb-5 [&:has(+footer)]:mb-8' : 'mb-5'"
     >
       <slot>
         <div
@@ -132,18 +137,18 @@ const linkClass =
           @click="handleModalLinkClick"
           v-html="linkifiedMessage"
         ></div>
-        <div v-if="hasDetails" class="base-alert-details mt-3 flex flex-col gap-2">
+        <div v-if="hasDetails" class="base-alert-details mt-5 flex flex-col gap-5">
           <div
             v-for="(group, gi) in messageDetails"
             :key="gi"
-            class="base-alert-detail-group flex flex-col gap-1"
+            class="base-alert-detail-group flex flex-col gap-2"
           >
             <span
               class="base-alert-detail-label text-xs leading-[1.5] font-semibold tracking-[0.04em] text-text-muted uppercase"
               >{{ group.label }}</span
             >
             <div
-              class="base-alert-detail-recessed max-h-[220px] overflow-y-auto rounded-lg border border-solid border-neutral-100/8 bg-neutral-100/4 px-2.5 py-2"
+              class="base-alert-detail-recessed max-h-[220px] overflow-y-auto rounded-lg bg-[var(--surface)] px-2.5 py-2"
               @click="handleModalLinkClick"
             >
               <div
@@ -168,7 +173,7 @@ const linkClass =
       </div>
     </div>
     <footer
-      class="base-alert-footer -mx-6 flex flex-wrap justify-end gap-2 border-t border-solid border-neutral-100/8 pt-4 pr-4 pl-6 [&>button]:max-w-60 [&>button]:min-w-24 [&>button]:overflow-hidden [&>button]:text-ellipsis [&>button]:whitespace-nowrap"
+      class="base-alert-footer -mx-5 flex flex-wrap justify-end gap-2 border-t border-solid border-neutral-100/8 px-5 pt-4 [&>button]:max-w-60 [&>button]:min-w-24 [&>button]:overflow-hidden [&>button]:text-ellipsis [&>button]:whitespace-nowrap"
     >
       <slot name="footer">
         <Button
