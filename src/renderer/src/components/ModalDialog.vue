@@ -191,11 +191,11 @@ watch(
       "
     >
       <div
-        class="dialog-title -mx-6 border-b border-solid px-6"
+        class="dialog-title"
         :class="
           isMigrateConfirm
-            ? 'mb-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pb-3.5 text-[length:var(--takeover-fs-h3)] font-medium text-text'
-            : 'mb-3 border-[var(--border)] pb-3 text-[16px] font-semibold'
+            ? 'mb-4 text-[length:var(--takeover-fs-h3)] font-medium text-text'
+            : 'mb-3 text-[16px] font-semibold'
         "
       >
         {{ state.title }}
@@ -395,11 +395,11 @@ watch(
         </template>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid px-6"
+        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid pr-4 pl-6"
         :class="
           isMigrateConfirm
             ? 'mt-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pt-3.5'
-            : 'border-[var(--border)] pt-3'
+            : 'border-[var(--border)] pt-4'
         "
       >
         <Button variant="secondary" size="lg" :data-testid="TID.modalCancel" @click="close(false)">
@@ -452,7 +452,7 @@ watch(
         </label>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] pt-4 pr-4 pl-6"
       >
         <Button variant="secondary" size="lg" @click="close(null)">{{
           $t('common.cancel')
@@ -531,7 +531,7 @@ watch(
         </div>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] pt-4 pr-4 pl-6"
       >
         <Button variant="secondary" size="lg" :data-testid="TID.modalCancel" @click="close(null)">
           {{ $t('common.cancel') }}
@@ -581,7 +581,7 @@ watch(
         </Button>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] pt-4 pr-4 pl-6"
       >
         <Button variant="secondary" size="lg" @click="close(null)">{{
           $t('common.cancel')

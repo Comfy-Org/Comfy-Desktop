@@ -47,14 +47,17 @@
     "noMatches": "没有与“{query}”匹配的应用",
     "allApps": "全部应用",
     "request": {
-      "tile": "告诉我们你想要什么应用…",
+      "bandTitle": "没有你想要的应用？",
+      "bandBody": "你的想法决定我们接下来做哪些应用。",
       "ask": "提出应用需求",
       "title": "你想要什么应用？",
+      "intro": "你的想法会帮助我们决定下一个做什么。",
       "placeholder": "说说它要用什么生成什么",
       "send": "发送",
       "sending": "正在发送…",
       "failed": "没能发送你的需求，请重试。",
-      "thanks": "谢谢，我们已收到你的需求。"
+      "thanks": "谢谢，我们已收到你的需求。",
+      "done": "完成"
     },
     "badge": {
       "withDescription": "{text}：{description}"
@@ -188,6 +191,7 @@
     "buildStarting": "启动中",
     "buildReady": "就绪",
     "buildDidntStart": "未能启动",
+    "buildCrashed": "已崩溃",
     "buildInstalling": "正在安装 ComfyUI",
     "buildStartingComfyUI": "正在启动 ComfyUI",
     "buildClickToStart": "点击启动",
@@ -248,6 +252,8 @@
     "statusStopping": "正在停止…",
     "statusError": "错误",
     "viewErrorTooltip": "查看错误详情",
+    "menuViewError": "查看错误",
+    "menuWhyTryCloud": "为什么试用云端",
     "errorTitle": "错误",
     "searchPlaceholder": "搜索实例",
     "noMatches": "没有匹配的实例",
@@ -952,7 +958,6 @@
     "tosLinkLabel": "服务条款",
     "notNow": "暂不",
     "cloudFreeRunsPill": "免费试用",
-    "whyTryCloud": "为什么试用云端？",
     "whyCloud": {
       "title": "为什么试用云端？",
       "creditsPill": "400 免费额度",
@@ -964,7 +969,6 @@
         "模型即开即用，并已验证商业许可",
         "预装热门自定义节点包"
       ],
-      "maybeLater": "稍后再说",
       "tryCta": "免费试用云端",
       "imageAlt": "云端驱动的风景插图"
     },
@@ -1843,7 +1847,8 @@
   },
   "feedback": {
     "modalLabel": "发送反馈",
-    "loading": "正在加载反馈表单…"
+    "loading": "正在加载反馈表单…",
+    "failedTitle": "反馈表单未能加载"
   },
   "performanceTest": {
     "title": "性能测试",
@@ -2036,10 +2041,11 @@
     "filterErrored": "失败",
     "filterAriaLabel": "状态筛选",
     "retry": "重试",
-    "badgeFailed": "失败",
-    "badgeCancelled": "已取消",
     "footerActive": "{n} 个活动",
     "footerCompleted": "{n} 个已完成",
+    "footerFailed": "{n} 个失败",
+    "footerCancelled": "{n} 个已取消",
+    "progressAriaLabel": "{name} 的下载进度",
     "clearFinished": "清除已完成"
   },
   "instancePicker": {

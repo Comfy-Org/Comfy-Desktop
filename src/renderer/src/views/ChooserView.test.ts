@@ -603,7 +603,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('pick')).toBeUndefined()
   })
 
-  it('shows a clickable error badge that opens the error details without emitting pick', async () => {
+  it('shows the error as plain status text and opens its details from the build menu', async () => {
     installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
     const wrapper = mountChooser()
     await flushPromises()
@@ -620,14 +620,31 @@ describe('ChooserView', () => {
     const badge = tile.find('.chooser-tile-error-badge')
     expect(badge.exists()).toBe(true)
     expect(badge.text()).toContain('Error')
+    expect(badge.element.tagName).toBe('SPAN')
+    expect(tile.get('.chooser-tile-body').findAll('button')).toHaveLength(0)
 
-    await badge.trigger('click')
-    await flushPromises()
+    expect((await openBuildMenu(wrapper, 'a'))[0]).toBe('view-error')
+    await chooseFromBuildMenu('a', 'view-error')
     expect(mockModal.alert).toHaveBeenCalledWith({
       title: 'Error',
       message: 'Migration failed: takeover did not start.'
     })
     expect(wrapper.emitted('pick')).toBeUndefined()
+  })
+
+  it.each([
+    ["Didn't start", { startFailed: true, message: 'Port 8188 is in use' }],
+    ['Crashed', { exitCode: 1 }]
+  ] as const)('names the error badge %s, like Home and the sidebar', async (label, error) => {
+    installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    useSessionStore().errorInstances.set('a', { installationName: 'Alpha', ...error })
+    await flushPromises()
+
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Alpha'))!
+    expect(tile.get('.chooser-tile-error-badge').text()).toBe(label)
   })
 
   it('focuses the existing window instead of relaunching a crashed build', async () => {
@@ -757,7 +774,7 @@ describe('ChooserView', () => {
     expect(await openBuildMenu(wrapper, 'long')).toContain('migrate')
   })
 
-  it('shows a clickable red danger pill that opens its detail without launching', async () => {
+  it('shows a red danger status as plain text and opens its detail from the build menu', async () => {
     installMockApi([
       makeInstall({
         id: 'nf',
@@ -777,9 +794,10 @@ describe('ChooserView', () => {
     expect(tag.exists()).toBe(true)
     expect(tag.text()).toContain('Folder not found')
     expect(tile.find('.chooser-tile-error-badge').exists()).toBe(false)
+    expect(tile.get('.chooser-tile-body').findAll('button')).toHaveLength(0)
 
-    await tag.trigger('click')
-    await flushPromises()
+    expect(await openBuildMenu(wrapper, 'nf')).toContain('view-error')
+    await chooseFromBuildMenu('nf', 'view-error')
     expect(mockModal.alert).toHaveBeenCalledWith({
       title: 'Folder not found',
       message: 'Instance folder not found.\n\nC:/comfy/gone'
@@ -1468,31 +1486,38 @@ describe('ChooserView', () => {
 })
 
 describe('ChooserView - why-Cloud explainer', () => {
-  const WHY_CLOUD = `[data-testid="${TID.dashboardTileWhyCloud('cloud-1')}"]`
-
   function cloudInstall(): Installation {
     return makeInstall({ id: 'cloud-1', name: 'Comfy Cloud', sourceCategory: 'cloud' })
   }
 
-  it('offers the explainer on the cloud tile, not on local tiles', async () => {
+  async function offersWhyCloud(wrapper: VueWrapper, id = 'cloud-1'): Promise<boolean> {
+    const items = await openBuildMenu(wrapper, id)
+    buildMenu(id)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    await vi.waitFor(() => expect(buildMenu(id)).toBeNull())
+    return items.includes('why-cloud')
+  }
+
+  async function openWhyCloud(wrapper: VueWrapper): Promise<void> {
+    await openBuildMenu(wrapper, 'cloud-1')
+    await chooseFromBuildMenu('cloud-1', 'why-cloud')
+  }
+
+  it('offers the explainer in the cloud tile menu, not on local tiles', async () => {
     installMockApi([cloudInstall(), makeInstall({ id: 'local-1', sourceCategory: 'local' })])
     const wrapper = mountChooser()
     await flushPromises()
-    expect(wrapper.find(WHY_CLOUD).exists()).toBe(true)
-    expect(wrapper.find(`[data-testid="${TID.dashboardTileWhyCloud('local-1')}"]`).exists()).toBe(
-      false
-    )
+    expect(await offersWhyCloud(wrapper)).toBe(true)
+    expect(await offersWhyCloud(wrapper, 'local-1')).toBe(false)
   })
 
-  it('sits inline after the tile name, not in the action row', async () => {
+  it('puts no button inside the tile: the explainer lives in its menu', async () => {
     installMockApi([cloudInstall()])
     const wrapper = mountChooser()
     await flushPromises()
-    const nameRow = wrapper.find('.chooser-tile-name-row')
-    expect(nameRow.find(WHY_CLOUD).exists()).toBe(true)
-    expect(nameRow.text()).toContain('Comfy Cloud')
-    expect(wrapper.findAll(WHY_CLOUD)).toHaveLength(1)
-    expect(wrapper.get('.chooser-tile-kebab').find(WHY_CLOUD).exists()).toBe(false)
+    const body = wrapper.get('.chooser-tile-body')
+    expect(body.text()).toContain('Comfy Cloud')
+    expect(body.findAll('button')).toHaveLength(0)
   })
 
   it('withholds the explainer from paid subscribers', async () => {
@@ -1500,17 +1525,15 @@ describe('ChooserView - why-Cloud explainer', () => {
     api.getCloudUserTier.mockResolvedValue('paid')
     const wrapper = mountChooser()
     await flushPromises()
-    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
+    expect(await offersWhyCloud(wrapper)).toBe(false)
   })
 
   it('fails closed until the tier lookup succeeds', async () => {
     const api = installMockApi([cloudInstall()])
     api.getCloudUserTier.mockRejectedValue(new Error('offline'))
     const wrapper = mountChooser()
-
-    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
     await flushPromises()
-    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
+    expect(await offersWhyCloud(wrapper)).toBe(false)
   })
 
   it('opens the modal without launching the install behind it', async () => {
@@ -1519,8 +1542,7 @@ describe('ChooserView - why-Cloud explainer', () => {
     await flushPromises()
     expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(false)
 
-    await wrapper.find(WHY_CLOUD).trigger('click')
-    await flushPromises()
+    await openWhyCloud(wrapper)
 
     expect(wrapper.findComponent(WhyTryCloudModal).exists()).toBe(true)
     expect(wrapper.emitted('pick')).toBeUndefined()
@@ -1531,8 +1553,7 @@ describe('ChooserView - why-Cloud explainer', () => {
     const api = installMockApi([cloudInstall()])
     const wrapper = mountChooser()
     await flushPromises()
-    await wrapper.find(WHY_CLOUD).trigger('click')
-    await flushPromises()
+    await openWhyCloud(wrapper)
 
     wrapper.findComponent(WhyTryCloudModal).vm.$emit('try-cloud')
     await flushPromises()
@@ -1546,8 +1567,7 @@ describe('ChooserView - why-Cloud explainer', () => {
     api.runAction.mockResolvedValue({ ok: false })
     const wrapper = mountChooser()
     await flushPromises()
-    await wrapper.find(WHY_CLOUD).trigger('click')
-    await flushPromises()
+    await openWhyCloud(wrapper)
 
     wrapper.findComponent(WhyTryCloudModal).vm.$emit('try-cloud')
     await flushPromises()
@@ -1563,8 +1583,7 @@ describe('ChooserView - why-Cloud explainer', () => {
     const api = installMockApi([cloudInstall()])
     const wrapper = mountChooser()
     await flushPromises()
-    await wrapper.find(WHY_CLOUD).trigger('click')
-    await flushPromises()
+    await openWhyCloud(wrapper)
 
     wrapper.findComponent(WhyTryCloudModal).vm.$emit('close')
     await flushPromises()
@@ -1577,11 +1596,11 @@ describe('ChooserView - why-Cloud explainer', () => {
     installMockApi([cloudInstall()])
     const wrapper = mountChooser()
     await flushPromises()
-    expect(wrapper.find(WHY_CLOUD).exists()).toBe(true)
+    expect(await offersWhyCloud(wrapper)).toBe(true)
 
     useSessionStore().runningInstances.set('cloud-1', { installationId: 'cloud-1' } as never)
     await flushPromises()
 
-    expect(wrapper.find(WHY_CLOUD).exists()).toBe(false)
+    expect(await offersWhyCloud(wrapper)).toBe(false)
   })
 })

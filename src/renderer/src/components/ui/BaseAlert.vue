@@ -97,31 +97,28 @@ const linkClass =
     :data-testid="testIdRoot"
     overlay-class="base-alert-overlay fixed inset-0 z-[1000] grid place-items-center bg-neutral-800/60 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]"
     :content-class="[
-      'base-alert-panel flex min-w-80 flex-col overflow-hidden rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4 text-neutral-100 shadow-[var(--modal-surface-shadow)]',
+      'base-alert-panel relative flex min-w-80 flex-col overflow-visible rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4 text-neutral-100 shadow-[var(--modal-surface-shadow)]',
       panelWidthClass,
       hasDetails ? 'max-h-[min(80vh,640px)]' : 'max-h-[min(80vh,560px)]',
       { 'base-alert-panel--rich': hasDetails, 'base-alert-panel--wide-actions': hasWideActions }
     ]"
     @close="dismiss"
   >
-    <header
-      class="base-alert-header relative -mx-6 mb-3 border-b border-solid border-neutral-100/8 px-6 pb-3"
+    <Button
+      type="button"
+      variant="muted-textonly"
+      size="icon"
+      class="base-alert-close-icon absolute top-0 -right-12 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white max-[860px]:top-3 max-[860px]:right-3"
+      :aria-label="$t('common.close')"
+      :data-testid="testIdCloseIcon ?? 'base-alert-close-icon'"
+      @click="dismiss"
     >
-      <h2 :id="TITLE_ID" class="base-alert-title m-0 pr-8 text-base leading-[1.3] font-semibold">
+      <X :size="18" />
+    </Button>
+    <header class="base-alert-header relative mb-3 pt-1 max-[860px]:pr-8">
+      <h2 :id="TITLE_ID" class="base-alert-title m-0 text-base leading-[1.3] font-semibold">
         {{ title }}
       </h2>
-      <Button
-        v-if="showCloseIcon"
-        type="button"
-        variant="muted-textonly"
-        size="icon"
-        class="base-alert-close-icon absolute -top-1 right-[18px]"
-        :aria-label="$t('common.close')"
-        :data-testid="testIdCloseIcon ?? 'base-alert-close-icon'"
-        @click="emit('cancel')"
-      >
-        <X :size="16" />
-      </Button>
     </header>
     <div
       v-if="message || hint || hasDetails || $slots.default || $slots.extra"
@@ -130,7 +127,7 @@ const linkClass =
       <slot>
         <div
           v-if="message"
-          class="base-alert-message-text whitespace-pre-line [&_strong]:font-semibold [&_strong]:text-text"
+          class="base-alert-message-text whitespace-pre-line text-pretty [&_strong]:font-semibold [&_strong]:text-text"
           :class="linkClass"
           @click="handleModalLinkClick"
           v-html="linkifiedMessage"
@@ -160,7 +157,10 @@ const linkClass =
           </div>
         </div>
       </slot>
-      <p v-if="hint" class="base-alert-hint mt-3 text-xs leading-[1.4] text-text-muted/75">
+      <p
+        v-if="hint"
+        class="base-alert-hint mt-3 text-xs leading-[1.4] [overflow-wrap:anywhere] text-text-muted/75"
+      >
         {{ hint }}
       </p>
       <div v-if="$slots.extra" class="base-alert-extra mt-3">
@@ -168,7 +168,7 @@ const linkClass =
       </div>
     </div>
     <footer
-      class="base-alert-footer -mx-6 flex flex-wrap justify-end gap-2 border-t border-solid border-neutral-100/8 px-6 pt-3 [&>button]:max-w-60 [&>button]:min-w-24 [&>button]:overflow-hidden [&>button]:text-ellipsis [&>button]:whitespace-nowrap"
+      class="base-alert-footer -mx-6 flex flex-wrap justify-end gap-2 border-t border-solid border-neutral-100/8 pt-4 pr-4 pl-6 [&>button]:max-w-60 [&>button]:min-w-24 [&>button]:overflow-hidden [&>button]:text-ellipsis [&>button]:whitespace-nowrap"
     >
       <slot name="footer">
         <Button

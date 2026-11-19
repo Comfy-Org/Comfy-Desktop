@@ -467,7 +467,7 @@ function toggleBaseline(id: string): void {
                     {{ column.label }} {{ sortIndicator(column.key) }}
                   </Button>
                 </th>
-                <th class="sticky right-54 z-[1] text-right" :aria-sort="ariaSort(metric)">
+                <th class="sticky right-58 z-[1] text-right" :aria-sort="ariaSort(metric)">
                   <Button
                     variant="textonly"
                     size="unset"
@@ -479,7 +479,7 @@ function toggleBaseline(id: string): void {
                   </Button>
                 </th>
                 <th
-                  class="benchmarks__vs-head sticky right-10 z-[1] w-44 min-w-44 !pr-9 text-right"
+                  class="benchmarks__vs-head sticky right-10 z-[1] w-48 min-w-48 !pr-9 text-right"
                 >
                   {{ t('benchmarks.vsBaseline') }}
                 </th>
@@ -630,7 +630,7 @@ function toggleBaseline(id: string): void {
                   {{ formatColumnValue(row.benchmark, column.key) }}
                 </td>
                 <td
-                  class="benchmarks__value sticky right-54 z-[1] text-right font-semibold tabular-nums"
+                  class="benchmarks__value sticky right-58 z-[1] text-right font-semibold tabular-nums"
                 >
                   <span v-if="row.value === null" class="font-normal text-subtle-foreground"
                     >—</span
@@ -638,7 +638,7 @@ function toggleBaseline(id: string): void {
                   <template v-else>{{ formatSeconds(row.value) }}</template>
                 </td>
                 <td
-                  class="benchmarks__vs sticky right-10 z-[1] w-44 min-w-44 text-right text-xs text-muted-foreground"
+                  class="benchmarks__vs sticky right-10 z-[1] w-48 min-w-48 text-right text-xs text-muted-foreground"
                 >
                   <span class="flex items-center justify-end gap-1">
                     <span

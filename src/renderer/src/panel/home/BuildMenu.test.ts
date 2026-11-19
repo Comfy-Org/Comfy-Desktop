@@ -1,15 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { userEvent } from 'vitest/browser'
 import { createPinia, setActivePinia } from 'pinia'
 
 import AppSidebar from '../AppSidebar.vue'
 import HomeBuildCard from './HomeBuildCard.vue'
 import ChooserInstallTile from '../../views/chooser/ChooserInstallTile.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
+import DialogHost from '../../components/DialogHost.vue'
+import ModalDialog from '../../components/ModalDialog.vue'
 import { provideBuildMenuHost, type BuildMenuHost } from './useBuildMenu'
 import { homeBuildStatus } from './homeBuild'
 import { provideBuildLogs } from '../../composables/useBuildProgress'
+import { useModal } from '../../composables/useModal'
 import { useAuthStore } from '../../stores/authStore'
 import { useInstallationStore } from '../../stores/installationStore'
 import { useProgressStore, type Operation } from '../../stores/progressStore'
@@ -187,6 +191,17 @@ async function rightClick(element: Element): Promise<void> {
   await flushPromises()
 }
 
+function mountDialogs(): void {
+  mounted.push(mount(DialogHost, { attachTo: document.body }))
+}
+
+async function confirmBox(): Promise<HTMLElement> {
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="base-alert-action"]')).not.toBeNull()
+  )
+  return document.querySelector<HTMLElement>('[role="alertdialog"]')!
+}
+
 describe('Build menu', () => {
   it.each(Object.keys(EXPECTED) as State[])(
     'lists what a %s build can do now first, Uninstall last',
@@ -230,6 +245,52 @@ describe('Build menu', () => {
       expect(fromBuildsTile).toEqual(fromMore)
     }
   )
+
+  it('puts View error first for a build that failed, Uninstall still last, on Home and Builds', async () => {
+    useSessionStore().errorInstances.set(BUILD.id, {
+      installationName: BUILD.name,
+      message: 'Exited with code 1'
+    } as never)
+    const expected = ['view-error', ...EXPECTED.ready]
+
+    const tile = await mountTile('ready')
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    expect(await shownMenu()).toEqual(expected)
+    await closeMenu()
+
+    const buildsTile = await mountBuildsTile('ready')
+    expect(buildsTile.get('.chooser-tile-body').findAll('button')).toHaveLength(0)
+    await buildsTile.get('.chooser-tile-kebab').trigger('click')
+    expect(await shownMenu()).toEqual(expected)
+  })
+
+  it('offers Why try Cloud from the Builds cloud tile menu and passes the pick up', async () => {
+    const cloud: Installation = {
+      ...BUILD,
+      id: 'cloud',
+      name: 'Comfy Cloud',
+      sourceId: 'cloud',
+      sourceCategory: 'cloud',
+      installPath: undefined
+    }
+    const onWhyCloud = vi.fn()
+    const wrapper = mount(
+      withHost(() =>
+        h(ChooserInstallTile, { installation: cloud, showWhyCloud: true, onWhyCloud })
+      ),
+      { attachTo: document.body }
+    )
+    mounted.push(wrapper)
+    await flushPromises()
+    expect(wrapper.get('.chooser-tile-body').findAll('button')).toHaveLength(0)
+
+    await wrapper.get('.chooser-tile-kebab').trigger('click')
+    expect((await shownMenu()).at(-1)).toBe('why-cloud')
+    await press(document.querySelector('[data-testid="build-menu-why-cloud"]')!)
+
+    expect(onWhyCloud).toHaveBeenCalledOnce()
+    expect(host.launch).not.toHaveBeenCalled()
+  })
 
   it.each([
     ['a build whose install failed', { ...BUILD, id: 'broken', status: 'failed' }],
@@ -327,41 +388,77 @@ describe('Build menu', () => {
     expect(await shownMenu()).not.toContain('promote-to-workspace')
   })
 
-  it('asks inside the menu before it uninstalls, then uninstalls without another dialog', async () => {
+  it('closes the menu and asks in a separate box before it uninstalls', async () => {
     const tile = await mountTile('ready')
+    mountDialogs()
     await tile.get('[data-testid="home-build-more"]').trigger('click')
     await shownMenu()
 
     document.querySelector<HTMLElement>('[data-testid="build-menu-delete"]')!.click()
-    await flushPromises()
 
-    const question = document.querySelector('[data-testid="build-menu-uninstall-question"]')
-    expect(question?.textContent).toContain('Flux Sandbox')
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="build-menu"]')).toBeNull())
+    const box = await confirmBox()
+    expect(box.textContent).toContain(BUILD.installPath)
     expect(host.showProgress).not.toHaveBeenCalled()
 
-    document.querySelector<HTMLElement>('[data-testid="build-menu-confirm-uninstall"]')!.click()
+    box.querySelector<HTMLElement>('[data-testid="base-alert-action"]')!.click()
     await flushPromises()
 
     expect(host.showProgress).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ installationId: BUILD.id, actionId: 'delete' })
     )
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 
-  it('puts focus on the Uninstall answer when it asks', async () => {
+  it('keeps the build when the separate box is cancelled', async () => {
     const tile = await mountTile('ready')
+    mountDialogs()
     await tile.get('[data-testid="home-build-more"]').trigger('click')
     await shownMenu()
-
     document.querySelector<HTMLElement>('[data-testid="build-menu-delete"]')!.click()
+
+    ;(await confirmBox()).querySelector<HTMLElement>('[data-testid="base-alert-cancel"]')!.click()
     await flushPromises()
 
-    await vi.waitFor(() =>
-      expect(document.activeElement).toBe(
-        document.querySelector('[data-testid="build-menu-confirm-uninstall"]')
-      )
-    )
+    expect(host.showProgress).not.toHaveBeenCalled()
   })
+
+  it.each(['Cancel', 'Escape'] as const)(
+    'puts keyboard focus back on the ⋯ button after Uninstall is answered with %s',
+    async (answer) => {
+      const tile = await mountTile('ready')
+      mountDialogs()
+      const more = tile.get<HTMLElement>('[data-testid="home-build-more"]').element
+      more.focus()
+      await userEvent.keyboard('{Enter}')
+      await shownMenu()
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector('[data-testid="build-menu"]')?.contains(document.activeElement)
+        ).toBe(true)
+      )
+      await userEvent.keyboard('{End}')
+      await vi.waitFor(() =>
+        expect(document.activeElement).toBe(
+          document.querySelector('[data-testid="build-menu-delete"]')
+        )
+      )
+      await userEvent.keyboard('{Enter}')
+      const box = await confirmBox()
+      await vi.waitFor(() => expect(box.contains(document.activeElement)).toBe(true))
+
+      if (answer === 'Cancel') {
+        box.querySelector<HTMLElement>('[data-testid="base-alert-cancel"]')!.focus()
+        await userEvent.keyboard('{Enter}')
+      } else {
+        await userEvent.keyboard('{Escape}')
+      }
+
+      await vi.waitFor(() => expect(document.querySelector('[role="alertdialog"]')).toBeNull())
+      await vi.waitFor(() => expect(document.activeElement).toBe(more))
+      expect(document.querySelector('[data-testid="build-menu"]')).toBeNull()
+      expect(host.showProgress).not.toHaveBeenCalled()
+    }
+  )
 
   it('closes the menu when the ⋯ button is pressed again', async () => {
     const tile = await mountTile('ready')
@@ -385,19 +482,19 @@ describe('Build menu', () => {
     expect(await shownMenu()).not.toContain('auto-start')
   })
 
-  it('drops the uninstall question when the build starts running, and never uninstalls it', async () => {
+  it('never uninstalls a build that started while the separate box was open', async () => {
     const tile = await mountTile('ready')
+    mountDialogs()
     await tile.get('[data-testid="home-build-more"]').trigger('click')
     await shownMenu()
     document.querySelector<HTMLElement>('[data-testid="build-menu-delete"]')!.click()
-    await flushPromises()
-    expect(document.querySelector('[data-testid="build-menu-uninstall-question"]')).not.toBeNull()
+    const box = await confirmBox()
 
     putIn('running')
     await flushPromises()
+    box.querySelector<HTMLElement>('[data-testid="base-alert-action"]')!.click()
+    await flushPromises()
 
-    expect(document.querySelector('[data-testid="build-menu-uninstall-question"]')).toBeNull()
-    expect(document.querySelector('[data-testid="build-menu-confirm-uninstall"]')).toBeNull()
     expect(host.showProgress).not.toHaveBeenCalled()
   })
 
@@ -654,6 +751,106 @@ describe('Build menu', () => {
     await flushPromises()
 
     expect(tile.get('[data-testid="home-build"]').text()).toContain('Ready')
+  })
+
+  function failStart(): void {
+    useProgressStore().operations.set(BUILD.id, {
+      opKind: 'launch',
+      finished: true,
+      cancelRequested: false,
+      error: 'Port 8188 is in use'
+    } as Operation)
+    useSessionStore().errorInstances.set(BUILD.id, {
+      installationName: BUILD.name,
+      message: 'Port 8188 is in use'
+    })
+  }
+
+  it("treats a build that didn't start the same on the Builds tile as on Home: Didn't start, Click to view logs, a click opens its start logs", async () => {
+    const home = mount(
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(home)
+    const builds = await mountBuildsTile('ready')
+    failStart()
+    await flushPromises()
+
+    expect(home.get('[data-testid="home-build-status"]').text()).toBe("Didn't start")
+    expect(home.findAllComponents(Tooltip)[0]?.props('text')).toBe('Click to view logs')
+    expect(builds.get('.chooser-tile-error-badge').text()).toBe("Didn't start")
+    expect(builds.findAllComponents(Tooltip)[0]?.props('text')).toBe('Click to view logs')
+    expect(builds.get('.chooser-tile-body').findAll('button, a')).toHaveLength(0)
+
+    await builds.get(BUILDS_TILE).trigger('click')
+    expect(viewLogs).toHaveBeenCalledExactlyOnceWith(BUILD.id)
+    const tile = builds.findComponent(ChooserInstallTile)
+    expect(tile.emitted('pick')).toBeUndefined()
+    expect(tile.emitted('open-details')).toBeUndefined()
+    expect(host.launch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['Home', 'home'],
+    ['Builds', 'builds']
+  ] as const)(
+    "opens the start logs from View error in the %s tile menu of a build that didn't start",
+    async (_page, where) => {
+      useModal().dismiss()
+      const wrapper =
+        where === 'home'
+          ? mount(
+              withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+              { attachTo: document.body }
+            )
+          : await mountBuildsTile('ready')
+      if (where === 'home') mounted.push(wrapper)
+      failStart()
+      await flushPromises()
+
+      await wrapper
+        .get(where === 'home' ? '[data-testid="home-build-more"]' : '.chooser-tile-kebab')
+        .trigger('click')
+      expect((await shownMenu())[0]).toBe('view-error')
+      await press(document.querySelector('[data-testid="build-menu-view-error"]')!)
+
+      expect(viewLogs).toHaveBeenCalledExactlyOnceWith(BUILD.id)
+      expect(useModal().state.visible).toBe(false)
+    }
+  )
+
+  it('says Crashed and opens the crash details after a failed start is followed by a start and a crash', async () => {
+    useModal().dismiss()
+    let started: ((data: { installationId: string }) => void) | undefined
+    Object.assign(window.api, {
+      onInstanceStarted: vi.fn((cb: (data: { installationId: string }) => void) => {
+        started = cb
+        return () => {}
+      })
+    })
+    const builds = await mountBuildsTile('ready')
+    failStart()
+    await flushPromises()
+    expect(builds.get('.chooser-tile-error-badge').text()).toBe("Didn't start")
+
+    const sessions = useSessionStore()
+    sessions.errorInstances.delete(BUILD.id)
+    started!({ installationId: BUILD.id })
+    sessions.errorInstances.set(BUILD.id, { installationName: BUILD.name, exitCode: 1 })
+    await flushPromises()
+
+    expect(builds.get('.chooser-tile-error-badge').text()).toBe('Crashed')
+    await builds.get('.chooser-tile-kebab').trigger('click')
+    await press(document.querySelector('[data-testid="build-menu-view-error"]')!)
+
+    mounted.push(mount(ModalDialog, { attachTo: document.body }))
+    await vi.waitFor(() => expect(document.querySelector('[role="alertdialog"]')).not.toBeNull())
+    const alert = document.querySelector<HTMLElement>('[role="alertdialog"]')!
+
+    expect(viewLogs).not.toHaveBeenCalled()
+    expect(alert.checkVisibility()).toBe(true)
+    expect(alert.querySelector('.base-alert-title')!.textContent?.trim()).toBe('Error')
+    useModal().dismiss()
   })
 
   it('keeps the build menu closed on a right-click on a page in the sidebar', async () => {

@@ -31,7 +31,7 @@
     "crashed": "Crashed",
     "crashedWithCode": "Crashed (exit code {code})",
     "crashedWithSignal": "Crashed ({signal})",
-    "failedToStartReason": "Failed to start: {reason}",
+    "failedToStartReason": "Didn't start: {reason}",
     "credits": "Credits",
     "creditsTooltip": "{credits} Credits",
     "creditsError": "Unable to load balance",
@@ -47,14 +47,17 @@
     "noMatches": "No apps match “{query}”",
     "allApps": "All apps",
     "request": {
-      "tile": "Tell us what app you want…",
+      "bandTitle": "Missing an app?",
+      "bandBody": "Your ideas decide which apps we build next.",
       "ask": "Ask for an app",
       "title": "What app do you want?",
+      "intro": "Your idea helps us choose what to build next.",
       "placeholder": "Say what it should make, from what",
       "send": "Send",
       "sending": "Sending…",
       "failed": "Couldn't send your request. Try again.",
-      "thanks": "Thanks. We got your request."
+      "thanks": "Thanks. We got your request.",
+      "done": "Done"
     },
     "badge": {
       "withDescription": "{text}: {description}"
@@ -188,6 +191,7 @@
     "buildStarting": "Starting",
     "buildReady": "Ready",
     "buildDidntStart": "Didn't start",
+    "buildCrashed": "Crashed",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "Example workflows",
     "seeAllApps": "See all apps",
@@ -248,6 +252,8 @@
     "statusStopping": "Stopping…",
     "statusError": "Error",
     "viewErrorTooltip": "View error details",
+    "menuViewError": "View error",
+    "menuWhyTryCloud": "Why try Cloud",
     "errorTitle": "Error",
     "searchPlaceholder": "Search builds",
     "noMatches": "No instances match",
@@ -952,7 +958,6 @@
     "tosLinkLabel": "Terms of Service",
     "notNow": "Not now",
     "cloudFreeRunsPill": "TRY FREE",
-    "whyTryCloud": "Why try Cloud?",
     "whyCloud": {
       "title": "Why try Cloud?",
       "creditsPill": "400 FREE CREDITS",
@@ -964,7 +969,6 @@
         "Models ready to use, verified for commercial license",
         "Top custom node packs pre-installed"
       ],
-      "maybeLater": "Maybe later",
       "tryCta": "Try Cloud for free",
       "imageAlt": "Cloud-powered landscape illustration"
     },
@@ -1843,7 +1847,8 @@
   },
   "feedback": {
     "modalLabel": "Send feedback",
-    "loading": "Loading feedback form…"
+    "loading": "Loading feedback form…",
+    "failedTitle": "Feedback form didn't load"
   },
   "performanceTest": {
     "title": "Performance Tests",
@@ -2036,10 +2041,11 @@
     "filterErrored": "Failed",
     "filterAriaLabel": "Status filter",
     "retry": "Retry",
-    "badgeFailed": "Failed",
-    "badgeCancelled": "Cancelled",
     "footerActive": "{n} active",
     "footerCompleted": "{n} completed",
+    "footerFailed": "{n} failed",
+    "footerCancelled": "{n} cancelled",
+    "progressAriaLabel": "Download progress for {name}",
     "clearFinished": "Clear finished"
   },
   "instancePicker": {
