@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createWidget } from '@typeform/embed'
 import { emitTelemetryAction } from '../lib/telemetry'
 import FeedbackModal from './FeedbackModal.vue'
+import BaseModal from './ui/BaseModal.vue'
 
 vi.mock('@typeform/embed', () => ({ createWidget: vi.fn() }))
 vi.mock('../lib/telemetry', () => ({ emitTelemetryAction: vi.fn() }))
@@ -145,5 +146,10 @@ describe('FeedbackModal', () => {
     expect(widget.unmount).toHaveBeenCalledOnce()
     expect(wrapper.emitted('close')).toBeUndefined()
     expect(emitTelemetryAction).not.toHaveBeenCalled()
+  })
+
+  it('puts the round close button outside the card', async () => {
+    const wrapper = await mountFeedback()
+    expect(wrapper.getComponent(BaseModal).props('closeOutside')).toBe(true)
   })
 })

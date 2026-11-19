@@ -17,6 +17,7 @@ import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '../stores/sessionStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useModal } from './useModal'
+import { useDialogs } from './useDialogs'
 import { useStopAction } from './useStopAction'
 import type { AutoStartBuild } from './useAutoStartBuild'
 import { revealInFolderLabel } from './usePlatform'
@@ -61,6 +62,7 @@ export function useInstallContextMenu(
 ) {
   const { t } = useI18n()
   const modal = useModal()
+  const dialogs = useDialogs()
   const { confirmAndStop } = useStopAction({
     confirm: (o) => modal.confirm({ ...o, confirmStyle: 'danger' }),
     alert: (o) => modal.alert(o)
@@ -353,15 +355,14 @@ export function useInstallContextMenu(
         const deleteLabel = t('actions.delete')
         const confirmed =
           actionOpts.confirmed === true ||
-          (await modal.confirm({
+          (await dialogs.confirm({
             title: t('actions.deleteConfirmTitle'),
-            message: `${inst.installPath ? inst.installPath + '\n\n' : ''}${t(
-              'actions.deleteConfirmMessage'
-            )}\n\n${t('actions.deleteConfirmDetail')}`,
+            message: `${t('actions.deleteConfirmMessage')} ${t('actions.deleteConfirmDetail')}`,
+            hint: inst.installPath || undefined,
             confirmLabel: deleteLabel,
-            confirmStyle: 'danger'
-          }))
-        if (!confirmed) return
+            tone: 'danger'
+          })) === 'primary'
+        if (!confirmed || isStoppedActionGated(inst)) return
         opts.onShowProgress({
           installationId: inst.id,
           title: `${deleteLabel} - ${inst.name}`,

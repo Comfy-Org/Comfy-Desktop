@@ -109,3 +109,34 @@ describe('PerformanceTestView Run reason', () => {
     expect(runReason(wrapper)).toBe('Choose a workflow first.')
   })
 })
+
+describe('PerformanceTestView example workflow picker', () => {
+  function mountWithPicker() {
+    return mount(PerformanceTestView, {
+      global: {
+        stubs: {
+          BrandBackground: { template: '<div><slot /></div>' },
+          BrandedPageHeader: true,
+          InfoTooltip: true,
+          TemplatePickerStep: true,
+          BaseModal: {
+            name: 'BaseModal',
+            props: { open: Boolean, closeOutside: Boolean },
+            template:
+              '<div data-testid="picker-modal"><slot name="header" /><slot /><footer><slot name="footer" /></footer></div>'
+          }
+        }
+      }
+    })
+  }
+
+  it('closes with the round button outside the card and keeps one action in the footer', () => {
+    const wrapper = mountWithPicker()
+    const modal = wrapper.getComponent({ name: 'BaseModal' })
+
+    expect(modal.props('closeOutside')).toBe(true)
+    const footerButtons = modal.findAll('footer button')
+    expect(footerButtons).toHaveLength(1)
+    expect(footerButtons[0]!.attributes('data-testid')).toBe('performance-test-use-example')
+  })
+})

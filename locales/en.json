@@ -47,14 +47,17 @@
     "noMatches": "No apps match “{query}”",
     "allApps": "All apps",
     "request": {
-      "tile": "Tell us what app you want…",
+      "bandTitle": "Missing an app?",
+      "bandBody": "Your ideas decide which apps we build next.",
       "ask": "Ask for an app",
       "title": "What app do you want?",
+      "intro": "Your idea helps us choose what to build next.",
       "placeholder": "Say what it should make, from what",
       "send": "Send",
       "sending": "Sending…",
       "failed": "Couldn't send your request. Try again.",
-      "thanks": "Thanks. We got your request."
+      "thanks": "Thanks. We got your request.",
+      "done": "Done"
     },
     "badge": {
       "withDescription": "{text}: {description}"
@@ -88,11 +91,6 @@
     },
     "cloud": "Comfy Cloud",
     "sharedFolder": "Shared folder",
-    "buildState": {
-      "running": "Running",
-      "starting": "Starting",
-      "stopped": "Stopped"
-    },
     "kind": {
       "all": "All",
       "image": "Images",
@@ -972,7 +970,6 @@
         "Models ready to use, verified for commercial license",
         "Top custom node packs pre-installed"
       ],
-      "maybeLater": "Maybe Later",
       "tryCta": "Try Cloud For Free",
       "imageAlt": "Cloud-powered landscape illustration"
     },

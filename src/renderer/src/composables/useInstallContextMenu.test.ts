@@ -11,6 +11,8 @@ const modalMock = {
   select: vi.fn(),
   confirmWithOptions: vi.fn()
 }
+const dialogsMock = vi.hoisted(() => ({ confirm: vi.fn() }))
+vi.mock('./useDialogs', () => ({ useDialogs: () => dialogsMock }))
 vi.mock('./useModal', () => ({
   useModal: () => modalMock
 }))
@@ -318,11 +320,11 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
   beforeEach(() => {
     apiMock.getDetailSections.mockClear()
     apiMock.runAction.mockClear()
-    modalMock.confirm.mockReset()
+    dialogsMock.confirm.mockReset()
   })
 
-  it('shows the confirm modal without calling getDetailSections', async () => {
-    modalMock.confirm.mockResolvedValue(true)
+  it('shows the shared confirm box, with the folder in its own box, without calling getDetailSections', async () => {
+    dialogsMock.confirm.mockResolvedValue('primary')
     const onShowProgress = vi.fn<(opts: ShowProgressOpts) => void>()
     const inst = makeInstall({ name: 'My Install', installPath: '/tmp/my' })
     const { menu } = mountHarnessWithProgress(inst, onShowProgress)
@@ -330,17 +332,20 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
     await menu.triggerAction('delete', inst)
 
     expect(apiMock.getDetailSections).not.toHaveBeenCalled()
-    expect(modalMock.confirm).toHaveBeenCalledTimes(1)
-    const confirmArgs = modalMock.confirm.mock.calls[0][0]
+    expect(dialogsMock.confirm).toHaveBeenCalledTimes(1)
+    const confirmArgs = dialogsMock.confirm.mock.calls[0][0]
     expect(confirmArgs.title).toBe('Uninstall')
     expect(confirmArgs.message).toContain('permanently removes this ComfyUI installation')
-    expect(confirmArgs.message).toContain('/tmp/my')
+    expect(confirmArgs.message).toContain('This cannot be undone. Other installs are not affected.')
+    expect(confirmArgs.message).not.toContain('\n')
+    expect(confirmArgs.hint).toBe('/tmp/my')
+    expect(confirmArgs.messageDetails).toBeUndefined()
     expect(confirmArgs.confirmLabel).toBe('Uninstall')
-    expect(confirmArgs.confirmStyle).toBe('danger')
+    expect(confirmArgs.tone).toBe('danger')
   })
 
   it('on confirm true, emits showProgress with the correct shape and does not pre-run the action', async () => {
-    modalMock.confirm.mockResolvedValue(true)
+    dialogsMock.confirm.mockResolvedValue('primary')
     const onShowProgress = vi.fn<(opts: ShowProgressOpts) => void>()
     const inst = makeInstall({ name: 'My Install', installPath: '/tmp/my' })
     const { menu } = mountHarnessWithProgress(inst, onShowProgress)
@@ -359,7 +364,7 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
   })
 
   it('on confirm cancel, does not emit showProgress and does not call runAction', async () => {
-    modalMock.confirm.mockResolvedValue(false)
+    dialogsMock.confirm.mockResolvedValue('cancel')
     const onShowProgress = vi.fn<(opts: ShowProgressOpts) => void>()
     const inst = makeInstall()
     const { menu } = mountHarnessWithProgress(inst, onShowProgress)
