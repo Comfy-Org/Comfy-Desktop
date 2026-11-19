@@ -94,7 +94,7 @@ describe('PerformanceTestView Run reason', () => {
     const wrapper = mountView()
 
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
-    expect(runReason(wrapper)).toBe('Pick a build first.')
+    expect(runReason(wrapper)).toBe('Select a build first.')
   })
 
   it('says to choose a workflow once a build is picked', async () => {

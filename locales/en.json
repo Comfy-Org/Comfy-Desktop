@@ -1884,7 +1884,7 @@
     "deleteWorkflow": "Delete workflow",
     "deleteFailed": "Could not delete the workflow.",
     "run": "Run",
-    "runNeedsBuild": "Pick a build first.",
+    "runNeedsBuild": "Select a build first.",
     "runNeedsWorkflow": "Choose a workflow first.",
     "runWaitsForWorkflow": "Wait for the workflow to be ready.",
     "runWaitsForBuild": "Wait for the build to finish starting.",
