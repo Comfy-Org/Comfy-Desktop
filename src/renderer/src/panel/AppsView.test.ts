@@ -353,6 +353,9 @@ describe('AppsView', () => {
     expect(items.at(-1)!.attributes('data-testid')).toBe('app-request-tile')
     expect(band.text()).toContain('Missing an app?')
     expect(band.text()).toContain('Ask for an app')
+    expect(
+      band.find('[data-testid="app-request-action"]').attributes('aria-hidden')
+    ).toBeUndefined()
     expect(wrapper.findAll('[data-testid="app-request-thumbs"] img')).toHaveLength(2)
     wrapper.unmount()
   })

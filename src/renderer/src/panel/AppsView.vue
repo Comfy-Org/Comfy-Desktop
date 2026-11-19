@@ -439,7 +439,7 @@ onBeforeUnmount(() => {
               </span>
               <span
                 class="inline-flex h-8 shrink-0 items-center rounded-[9px] bg-[rgb(235_235_235/0.1)] px-3 text-[13px] font-medium whitespace-nowrap text-foreground transition-colors duration-200 group-hover/request:bg-[rgb(235_235_235/0.16)] motion-reduce:transition-none"
-                aria-hidden="true"
+                data-testid="app-request-action"
                 >{{ t('apps.request.ask') }}</span
               >
             </button>
