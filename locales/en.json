@@ -246,8 +246,8 @@
       "body": "Find all apps here."
     },
     "assets": {
-      "title": "Your results",
-      "body": "Everything you make shows here: images, video, audio and 3D."
+      "title": "Assets",
+      "body": "Everything you generate is saved here."
     },
     "progress": "{current} of {total}",
     "next": "Next",

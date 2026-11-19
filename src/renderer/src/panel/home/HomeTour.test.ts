@@ -151,7 +151,9 @@ describe('HomeTour', () => {
       await userEvent.click(button('next')!)
       await expect.poll(() => tourCard()?.textContent).toContain(`${step + 1} of 6`)
     }
-    expect(tourCard()?.textContent).toContain('Replay this tour from')
+    expect(tourCard()?.textContent).toContain('Assets')
+    expect(tourCard()?.textContent).toContain('Everything you generate is saved here.')
+    expect(tourCard()?.textContent).toContain('Replay this tour from the bell in the title bar.')
     expect(button('skip')).not.toBeVisible()
     expect(button('next')?.textContent?.trim()).toBe('Done')
 
