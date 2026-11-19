@@ -335,9 +335,21 @@ describe('AppsView', () => {
     expect(wrapper.find('[data-testid="app-card-genjutsu"]').exists()).toBe(true)
 
     await wrapper.get('input').setValue('spreadsheet')
-    expect(wrapper.get('[data-testid="apps-no-matches"]').text()).toBe(
-      'No apps match “spreadsheet”'
-    )
+    const empty = wrapper.get('[data-testid="apps-no-matches"]')
+    expect(empty.get('h2').text()).toBe('Nothing matches')
+    expect(empty.text()).toContain('Try another word, or clear the filters to see everything.')
+  })
+
+  it('clears the search from the Nothing matches state', async () => {
+    const wrapper = await mountApps()
+    const allCards = wrapper.findAll('[data-testid="apps-grid"] button').length
+
+    await wrapper.get('input').setValue('spreadsheet')
+    await wrapper.get('[data-testid="apps-clear-filters"]').trigger('click')
+
+    expect(wrapper.get<HTMLInputElement>('input').element.value).toBe('')
+    expect(wrapper.find('[data-testid="apps-no-matches"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="apps-grid"] button')).toHaveLength(allCards)
   })
 
   it('shows placeholder cards while the list loads', async () => {

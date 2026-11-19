@@ -214,13 +214,25 @@ onBeforeUnmount(() => {
           :text="t('apps.emptyBody')"
         />
 
-        <p
+        <EmptyState
           v-else-if="matchingApps.length === 0"
-          class="m-0 pt-24 text-center text-ui text-muted-foreground"
+          class="pt-24"
           data-testid="apps-no-matches"
+          :icon="AppWindow"
+          :title="t('common.nothingMatches')"
+          :text="t('common.nothingMatchesHint')"
         >
-          {{ t('apps.noMatches', { query: query.trim() }) }}
-        </p>
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            class="px-3 text-[13px]/5"
+            data-testid="apps-clear-filters"
+            @click="query = ''"
+          >
+            {{ t('common.clearFilters') }}
+          </Button>
+        </EmptyState>
 
         <ul v-else :class="RHYTHM_GRID_CLASS" data-testid="apps-grid">
           <li
