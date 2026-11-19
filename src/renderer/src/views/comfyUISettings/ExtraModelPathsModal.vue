@@ -42,6 +42,7 @@ const { t } = useI18n()
   <BaseModal
     :open="open"
     size="md"
+    close-outside
     :aria-label="t('comfyUISettings.extraModelPathsModalTitle')"
     @close="emit('close')"
   >

@@ -161,271 +161,279 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
 
 <template>
   <div
-    class="dlm-panel [--download-success:#22c55e] [--download-error:#ef4444] [--download-warning:#f59e0b] flex size-full flex-col text-neutral-100"
+    class="dlm-panel [--download-success:#22c55e] [--download-error:#ef4444] [--download-warning:#f59e0b] relative flex size-full pr-12 text-neutral-100"
     @mousemove="onPointerMove"
   >
-    <header
-      class="dlm-modal-header flex items-center justify-between gap-3 border-b border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-5 pb-3"
+    <Button
+      type="button"
+      variant="muted-textonly"
+      size="icon"
+      class="dlm-close absolute top-0 right-0 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
+      :aria-label="t('common.close')"
+      @click="bridge?.close()"
     >
-      <h2 class="dlm-title m-0 text-title font-semibold text-foreground">
-        {{ t('downloadsTab.title') }}
-      </h2>
-      <Button
-        type="button"
-        variant="textonly"
-        size="icon"
-        class="dlm-close shrink-0"
-        :aria-label="t('common.close')"
-        @click="bridge?.close()"
+      <X :size="18" />
+    </Button>
+    <div
+      class="dlm-card box-border flex min-w-0 flex-auto flex-col overflow-hidden rounded-panel border border-solid border-[var(--modal-surface-border)] bg-[var(--modal-surface-bg)] [box-shadow:var(--shadow-highlight)]"
+    >
+      <header
+        class="dlm-modal-header flex items-center justify-between gap-3 border-b border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-5 pb-3"
       >
-        <X :size="18" />
-      </Button>
-    </header>
+        <h2 class="dlm-title m-0 text-title font-semibold text-foreground">
+          {{ t('downloadsTab.title') }}
+        </h2>
+      </header>
 
-    <div class="dlm-modal-body flex min-h-0 flex-auto flex-col overflow-y-auto px-6 py-4">
-      <div class="dlm-body flex min-h-full flex-auto flex-col">
-        <ToggleGroup
-          v-if="visibleFilters.length > 0"
-          v-model="filter"
-          v-sliding-pill="'bg-secondary'"
-          type="single"
-          :allow-empty="false"
-          roving-focus
-          class="dlm-filterbar sticky -top-4 z-2 -mx-6 -mt-4 mb-2 border-b border-solid border-border bg-background px-6 pt-3 pb-2.5"
-          :aria-label="t('downloadsTab.filterAriaLabel')"
-        >
-          <ToggleGroupItem
-            v-for="f in visibleFilters"
-            :key="f.key"
-            :value="f.key"
-            class="dlm-filter-chip flex-1 text-xs"
-            :class="{ active: filter === f.key }"
-            >{{ f.label }}</ToggleGroupItem
+      <div class="dlm-modal-body flex min-h-0 flex-auto flex-col overflow-y-auto px-6 py-4">
+        <div class="dlm-body flex min-h-full flex-auto flex-col">
+          <ToggleGroup
+            v-if="visibleFilters.length > 0"
+            v-model="filter"
+            v-sliding-pill="'bg-secondary'"
+            type="single"
+            :allow-empty="false"
+            roving-focus
+            class="dlm-filterbar sticky -top-4 z-2 -mx-6 -mt-4 mb-2 border-b border-solid border-border bg-background px-6 pt-3 pb-2.5"
+            :aria-label="t('downloadsTab.filterAriaLabel')"
           >
-        </ToggleGroup>
-        <EmptyState
-          v-if="filtered.length === 0"
-          class="dlm-empty flex-auto justify-center p-6"
-          :icon="Download"
-          :title="t('downloadsTab.empty')"
-          :text="t('downloadsTab.emptyHint')"
-        />
+            <ToggleGroupItem
+              v-for="f in visibleFilters"
+              :key="f.key"
+              :value="f.key"
+              class="dlm-filter-chip flex-1 text-xs"
+              :class="{ active: filter === f.key }"
+              >{{ f.label }}</ToggleGroupItem
+            >
+          </ToggleGroup>
+          <EmptyState
+            v-if="filtered.length === 0"
+            class="dlm-empty flex-auto justify-center p-6"
+            :icon="Download"
+            :title="t('downloadsTab.empty')"
+            :text="t('downloadsTab.emptyHint')"
+          />
 
-        <ul v-else :key="filter" class="dlm-list m-0 flex list-none flex-col gap-0.5 p-0">
-          <li
-            v-for="d in filtered"
-            :key="d.id ?? d.url"
-            class="dlm-row flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-[background] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_4%,transparent)]"
-            :class="[
-              statusKindClass(d),
-              {
-                '[--download-close-opacity:0] hover:[--download-close-opacity:0.5]':
-                  d.status === 'pending' || d.status === 'downloading'
-              }
-            ]"
-          >
-            <span
+          <ul v-else :key="filter" class="dlm-list m-0 flex list-none flex-col gap-0.5 p-0">
+            <li
+              v-for="d in filtered"
+              :key="d.id ?? d.url"
+              class="dlm-row flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-[background] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_4%,transparent)]"
               :class="[
-                'dlm-leading inline-flex flex-none items-center justify-center',
-                isCompletedImage(d)
-                  ? 'dlm-thumb size-10 overflow-hidden rounded-lg bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]'
-                  : 'size-9'
+                statusKindClass(d),
+                {
+                  '[--download-close-opacity:0] hover:[--download-close-opacity:0.5]':
+                    d.status === 'pending' || d.status === 'downloading'
+                }
               ]"
             >
-              <DownloadThumbnail :entry="d" :fetcher="fetchThumbnail">
-                <template #fallback>
-                  <span
-                    v-if="d.status === 'completed'"
-                    class="dlm-icon-circle ok bg-[color-mix(in_oklab,var(--download-success)_15%,transparent)] text-[#22c55e] inline-flex size-8 items-center justify-center rounded-[50%]"
-                  >
-                    <CheckCircle2 :size="16" />
-                  </span>
-                  <span
-                    v-else-if="d.status === 'error'"
-                    class="dlm-icon-circle error bg-[color-mix(in_oklab,var(--download-error)_15%,transparent)] text-[#ef4444] inline-flex size-8 items-center justify-center rounded-[50%]"
-                  >
-                    <CircleAlert :size="16" />
-                  </span>
-                  <span
-                    v-else-if="d.status === 'cancelled'"
-                    class="dlm-icon-circle muted bg-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] text-[var(--text-muted,#9ca0a8)] inline-flex size-8 items-center justify-center rounded-[50%]"
-                  >
-                    <Ban :size="16" />
-                  </span>
-                  <span
-                    v-else-if="d.status === 'paused'"
-                    class="dlm-icon-circle warn bg-[color-mix(in_oklab,var(--download-warning)_15%,transparent)] text-[#f59e0b] inline-flex size-8 items-center justify-center rounded-[50%]"
-                  >
-                    <PauseCircle :size="16" />
-                  </span>
-                  <span
-                    v-else
-                    class="dlm-icon-circle active bg-[color-mix(in_oklab,var(--action,#60a5fa)_15%,transparent)] text-[var(--action,#60a5fa)] inline-flex size-8 items-center justify-center rounded-[50%]"
-                  >
-                    <LoaderCircle
-                      :size="16"
-                      class="dlm-spin animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-                    />
-                  </span>
-                </template>
-              </DownloadThumbnail>
-            </span>
+              <span
+                :class="[
+                  'dlm-leading inline-flex flex-none items-center justify-center',
+                  isCompletedImage(d)
+                    ? 'dlm-thumb size-10 overflow-hidden rounded-lg bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]'
+                    : 'size-9'
+                ]"
+              >
+                <DownloadThumbnail :entry="d" :fetcher="fetchThumbnail">
+                  <template #fallback>
+                    <span
+                      v-if="d.status === 'completed'"
+                      class="dlm-icon-circle ok bg-[color-mix(in_oklab,var(--download-success)_15%,transparent)] text-[#22c55e] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    >
+                      <CheckCircle2 :size="16" />
+                    </span>
+                    <span
+                      v-else-if="d.status === 'error'"
+                      class="dlm-icon-circle error bg-[color-mix(in_oklab,var(--download-error)_15%,transparent)] text-[#ef4444] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    >
+                      <CircleAlert :size="16" />
+                    </span>
+                    <span
+                      v-else-if="d.status === 'cancelled'"
+                      class="dlm-icon-circle muted bg-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] text-[var(--text-muted,#9ca0a8)] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    >
+                      <Ban :size="16" />
+                    </span>
+                    <span
+                      v-else-if="d.status === 'paused'"
+                      class="dlm-icon-circle warn bg-[color-mix(in_oklab,var(--download-warning)_15%,transparent)] text-[#f59e0b] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    >
+                      <PauseCircle :size="16" />
+                    </span>
+                    <span
+                      v-else
+                      class="dlm-icon-circle active bg-[color-mix(in_oklab,var(--action,#60a5fa)_15%,transparent)] text-[var(--action,#60a5fa)] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    >
+                      <LoaderCircle
+                        :size="16"
+                        class="dlm-spin animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+                      />
+                    </span>
+                  </template>
+                </DownloadThumbnail>
+              </span>
 
-            <div class="dlm-content flex min-w-0 flex-auto flex-col gap-[3px]">
-              <span
-                class="dlm-name truncate text-[13px] font-medium text-neutral-100"
-                :title="fileLabel(d)"
-                >{{ fileLabel(d) }}</span
-              >
-              <span
-                class="dlm-sub truncate text-[12px] text-text-muted tabular-nums"
-                :title="d.savePath"
-                >{{ modalSubtitle(d, now) }}</span
-              >
-              <div
-                v-if="d.status === 'downloading' || d.status === 'paused' || d.status === 'pending'"
-                class="dlm-bar mt-0.5 h-[3px] overflow-hidden rounded-[2px] bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)]"
-              >
+              <div class="dlm-content flex min-w-0 flex-auto flex-col gap-[3px]">
+                <span
+                  class="dlm-name truncate text-[13px] font-medium text-neutral-100"
+                  :title="fileLabel(d)"
+                  >{{ fileLabel(d) }}</span
+                >
+                <span
+                  class="dlm-sub truncate text-[12px] text-text-muted tabular-nums"
+                  :title="d.savePath"
+                  >{{ modalSubtitle(d, now) }}</span
+                >
                 <div
-                  class="dlm-bar-fill h-full rounded-[2px] transition-[width] duration-300 ease-[ease]"
-                  :class="
-                    d.status === 'pending'
-                      ? 'indeterminate bg-[repeating-linear-gradient(90deg,var(--action,#60a5fa),var(--action,#60a5fa)_8px,color-mix(in_oklab,var(--action,#60a5fa)_50%,transparent)_8px,color-mix(in_oklab,var(--action,#60a5fa)_50%,transparent)_16px)] animate-[dlm-shimmer_1.2s_linear_infinite]'
-                      : d.status === 'paused'
-                        ? 'paused bg-[#f59e0b]'
-                        : 'bg-[var(--action,#60a5fa)]'
+                  v-if="
+                    d.status === 'downloading' || d.status === 'paused' || d.status === 'pending'
                   "
-                  :style="
-                    d.status === 'pending' ? { width: '100%' } : { width: `${progressPercent(d)}%` }
-                  "
-                />
+                  class="dlm-bar mt-0.5 h-[3px] overflow-hidden rounded-[2px] bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)]"
+                >
+                  <div
+                    class="dlm-bar-fill h-full rounded-[2px] transition-[width] duration-300 ease-[ease]"
+                    :class="
+                      d.status === 'pending'
+                        ? 'indeterminate bg-[repeating-linear-gradient(90deg,var(--action,#60a5fa),var(--action,#60a5fa)_8px,color-mix(in_oklab,var(--action,#60a5fa)_50%,transparent)_8px,color-mix(in_oklab,var(--action,#60a5fa)_50%,transparent)_16px)] animate-[dlm-shimmer_1.2s_linear_infinite]'
+                        : d.status === 'paused'
+                          ? 'paused bg-[#f59e0b]'
+                          : 'bg-[var(--action,#60a5fa)]'
+                    "
+                    :style="
+                      d.status === 'pending'
+                        ? { width: '100%' }
+                        : { width: `${progressPercent(d)}%` }
+                    "
+                  />
+                </div>
               </div>
-            </div>
 
-            <div class="dlm-actions flex flex-none items-center gap-1.5">
-              <span
-                v-if="statusBadgeFor[d.status]"
-                class="dlm-badge flex-none rounded px-[7px] py-[3px] text-[11px] leading-none font-semibold whitespace-nowrap"
-                :class="statusBadgeFor[d.status]!.cls"
-              >
-                {{ statusBadgeFor[d.status]!.label }}
-              </span>
+              <div class="dlm-actions flex flex-none items-center gap-1.5">
+                <span
+                  v-if="statusBadgeFor[d.status]"
+                  class="dlm-badge flex-none rounded px-[7px] py-[3px] text-[11px] leading-none font-semibold whitespace-nowrap"
+                  :class="statusBadgeFor[d.status]!.cls"
+                >
+                  {{ statusBadgeFor[d.status]!.label }}
+                </span>
 
-              <span
-                v-if="d.status === 'downloading'"
-                class="dlm-pct min-w-9 text-right text-[13px] font-bold text-[var(--action,#60a5fa)] tabular-nums"
-              >
-                {{ progressPercent(d) }}%
-              </span>
-              <Button
-                v-if="d.status === 'downloading' && d.canPause !== false"
-                type="button"
-                variant="secondary"
-                size="md"
-                class="dlm-btn"
-                :title="t('downloadsPopup.pause')"
-                :aria-label="t('downloadsPopup.pause')"
-                @click="pause(d)"
-              >
-                <PauseCircle :size="14" />
-              </Button>
-              <Button
-                v-if="d.status === 'paused'"
-                type="button"
-                variant="inverted"
-                size="md"
-                class="dlm-btn"
-                :title="t('downloadsPopup.resume')"
-                :aria-label="t('downloadsPopup.resume')"
-                @click="resume(d)"
-              >
-                <PlayCircle :size="14" />
-                {{ t('downloadsPopup.resume') }}
-              </Button>
-              <Button
-                v-if="d.status === 'error' || d.status === 'cancelled'"
-                type="button"
-                variant="secondary"
-                size="md"
-                class="dlm-btn"
-                :title="t('downloadsTab.retry')"
-                :aria-label="t('downloadsTab.retry')"
-                @click="retry(d)"
-              >
-                <RotateCcw :size="14" />
-                {{ t('downloadsTab.retry') }}
-              </Button>
-              <Button
-                v-if="d.status === 'completed' && d.savePath"
-                type="button"
-                variant="secondary"
-                size="md"
-                class="dlm-btn"
-                @click="showInFolder(d)"
-              >
-                <FolderOpen :size="14" />
-                {{ revealLabel }}
-              </Button>
+                <span
+                  v-if="d.status === 'downloading'"
+                  class="dlm-pct min-w-9 text-right text-[13px] font-bold text-[var(--action,#60a5fa)] tabular-nums"
+                >
+                  {{ progressPercent(d) }}%
+                </span>
+                <Button
+                  v-if="d.status === 'downloading' && d.canPause !== false"
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  class="dlm-btn"
+                  :title="t('downloadsPopup.pause')"
+                  :aria-label="t('downloadsPopup.pause')"
+                  @click="pause(d)"
+                >
+                  <PauseCircle :size="14" />
+                </Button>
+                <Button
+                  v-if="d.status === 'paused'"
+                  type="button"
+                  variant="inverted"
+                  size="md"
+                  class="dlm-btn"
+                  :title="t('downloadsPopup.resume')"
+                  :aria-label="t('downloadsPopup.resume')"
+                  @click="resume(d)"
+                >
+                  <PlayCircle :size="14" />
+                  {{ t('downloadsPopup.resume') }}
+                </Button>
+                <Button
+                  v-if="d.status === 'error' || d.status === 'cancelled'"
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  class="dlm-btn"
+                  :title="t('downloadsTab.retry')"
+                  :aria-label="t('downloadsTab.retry')"
+                  @click="retry(d)"
+                >
+                  <RotateCcw :size="14" />
+                  {{ t('downloadsTab.retry') }}
+                </Button>
+                <Button
+                  v-if="d.status === 'completed' && d.savePath"
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  class="dlm-btn"
+                  @click="showInFolder(d)"
+                >
+                  <FolderOpen :size="14" />
+                  {{ revealLabel }}
+                </Button>
 
-              <Button
-                v-if="!isTerminal(d.status)"
-                type="button"
-                variant="muted-textonly"
-                size="icon"
-                class="dlm-x shrink-0 opacity-[var(--download-close-opacity,0.5)] hover:opacity-100 focus-visible:opacity-100"
-                :title="t('downloadsPopup.cancel')"
-                :aria-label="t('downloadsPopup.cancel')"
-                @click="cancel(d)"
-              >
-                <XCircle :size="14" />
-              </Button>
-              <Button
-                v-if="isTerminal(d.status)"
-                type="button"
-                variant="muted-textonly"
-                size="icon"
-                class="dlm-x shrink-0 opacity-[var(--download-close-opacity,0.5)] hover:opacity-100 focus-visible:opacity-100"
-                :title="t('downloadsPopup.remove')"
-                :aria-label="t('downloadsPopup.remove')"
-                @click="dismissOne(d)"
-              >
-                <X :size="14" />
-              </Button>
-            </div>
-          </li>
-        </ul>
+                <Button
+                  v-if="!isTerminal(d.status)"
+                  type="button"
+                  variant="muted-textonly"
+                  size="icon"
+                  class="dlm-x shrink-0 opacity-[var(--download-close-opacity,0.5)] hover:opacity-100 focus-visible:opacity-100"
+                  :title="t('downloadsPopup.cancel')"
+                  :aria-label="t('downloadsPopup.cancel')"
+                  @click="cancel(d)"
+                >
+                  <XCircle :size="14" />
+                </Button>
+                <Button
+                  v-if="isTerminal(d.status)"
+                  type="button"
+                  variant="muted-textonly"
+                  size="icon"
+                  class="dlm-x shrink-0 opacity-[var(--download-close-opacity,0.5)] hover:opacity-100 focus-visible:opacity-100"
+                  :title="t('downloadsPopup.remove')"
+                  :aria-label="t('downloadsPopup.remove')"
+                  @click="dismissOne(d)"
+                >
+                  <X :size="14" />
+                </Button>
+              </div>
+            </li>
+          </ul>
+        </div>
       </div>
-    </div>
 
-    <footer
-      v-if="ordered.length > 0"
-      class="dlm-modal-footer border-t border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-3 pb-4"
-    >
-      <div class="dlm-footer flex w-full items-center justify-between">
-        <span class="dlm-footer-stats flex items-center gap-1.5 text-[12px] text-text-muted">
-          <span v-if="activeCount > 0" class="dlm-footer-stat tabular-nums">
-            {{ t('downloadsTab.footerActive', { n: activeCount }) }}
+      <footer
+        v-if="ordered.length > 0"
+        class="dlm-modal-footer border-t border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-3 pb-4"
+      >
+        <div class="dlm-footer flex w-full items-center justify-between">
+          <span class="dlm-footer-stats flex items-center gap-1.5 text-[12px] text-text-muted">
+            <span v-if="activeCount > 0" class="dlm-footer-stat tabular-nums">
+              {{ t('downloadsTab.footerActive', { n: activeCount }) }}
+            </span>
+            <span v-if="activeCount > 0 && completedCount > 0" class="dlm-footer-sep opacity-40"
+              >&middot;</span
+            >
+            <span v-if="completedCount > 0" class="dlm-footer-stat tabular-nums">
+              {{ t('downloadsTab.footerCompleted', { n: completedCount }) }}
+            </span>
           </span>
-          <span v-if="activeCount > 0 && completedCount > 0" class="dlm-footer-sep opacity-40"
-            >&middot;</span
+          <Button
+            v-if="finishedCount > 0"
+            type="button"
+            variant="muted-textonly"
+            size="md"
+            class="dlm-clear-btn"
+            @click="clearFinished"
           >
-          <span v-if="completedCount > 0" class="dlm-footer-stat tabular-nums">
-            {{ t('downloadsTab.footerCompleted', { n: completedCount }) }}
-          </span>
-        </span>
-        <Button
-          v-if="finishedCount > 0"
-          type="button"
-          variant="muted-textonly"
-          size="md"
-          class="dlm-clear-btn"
-          @click="clearFinished"
-        >
-          <Trash2 :size="13" />
-          {{ t('downloadsTab.clearFinished') }}
-        </Button>
-      </div>
-    </footer>
+            <Trash2 :size="13" />
+            {{ t('downloadsTab.clearFinished') }}
+          </Button>
+        </div>
+      </footer>
+    </div>
   </div>
 </template>
 
