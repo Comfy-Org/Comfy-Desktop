@@ -46,6 +46,16 @@
     "emptyBody": "New apps will show up here.",
     "noMatches": "No apps match “{query}”",
     "allApps": "All apps",
+    "request": {
+      "tile": "Tell us what app you want…",
+      "ask": "Ask for an app",
+      "title": "What app do you want?",
+      "placeholder": "Say what it should make, from what",
+      "send": "Send",
+      "sending": "Sending…",
+      "failed": "Couldn't send your request. Try again.",
+      "thanks": "Thanks. We got your request."
+    },
     "badge": {
       "withDescription": "{text}: {description}"
     },
