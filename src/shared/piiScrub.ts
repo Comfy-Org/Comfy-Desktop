@@ -1,12 +1,12 @@
-const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)(?:\\u[0-9a-fA-F]{4}|[^\\/"\r\n])+`
+const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)(?:\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2}|[^\\/"\r\n])+`
 const RAW_SEP_NAME = String.raw`(\\)[^\\/"\r\n]+`
-const NOT_IN_COMPONENT = String.raw`(?<![\w.~$-])`
+const SHARE_START = String.raw`(?<=^|[\s"'(\[{=,;<>|])(?:\\\\){1,2}`
 const PII_PATH_PATTERNS: RegExp[] = [
   String.raw`([A-Za-z]:[\\/]+Users)`,
-  String.raw`${NOT_IN_COMPONENT}(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home)`,
-  String.raw`${NOT_IN_COMPONENT}(\\\\[^\\/]+[\\/]+(?:Users|home))`,
-  String.raw`${NOT_IN_COMPONENT}(\\\\[^\\/]+[\\/]+[A-Za-z]\$[\\/]+Users)`,
-  String.raw`${NOT_IN_COMPONENT}(\\\\[?.][\\/]+UNC[\\/]+[^\\/]+(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
+  String.raw`(${SHARE_START}(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home)`,
+  String.raw`(${SHARE_START}[^\\/]+[\\/]+(?:Users|home))`,
+  String.raw`(${SHARE_START}[^\\/]+[\\/]+[A-Za-z]\$[\\/]+Users)`,
+  String.raw`(${SHARE_START}[?.][\\/]+UNC[\\/]+[^\\/]+(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
   String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users)`,
   String.raw`((?<![\w.~$\\/-])\\+Users)`,
   String.raw`(\/Users)`,
@@ -37,8 +37,8 @@ export function scrubPII(value: string): string {
   for (const pattern of PII_PATH_PATTERNS) {
     scrubbed = scrubbed.replace(
       pattern,
-      (_match, root: string, escapedSep?: string, rawSep?: string) =>
-        `${root}${escapedSep ?? rawSep ?? ''}[REDACTED]`
+      (_match, root: string, escapedSep: string | undefined, rawSep: string) =>
+        `${root}${escapedSep ?? rawSep}[REDACTED]`
     )
   }
   return scrubbed.replace(EMAIL_PATTERN, '[REDACTED]')

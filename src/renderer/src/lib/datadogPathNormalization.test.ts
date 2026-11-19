@@ -64,6 +64,36 @@ describe('normalizeRumErrorEvent', () => {
     expect(event.error.message).toBe('open "C:\\\\Users\\\\[REDACTED]\\\\x" failed')
   })
 
+  it('scrubs user paths outside the bundles from the stack, cause stacks, and resource URL', () => {
+    const event = {
+      error: {
+        message: 'boom',
+        source: 'custom',
+        stack: 'Error: boom\n    at C:\\Users\\alice\\plugins\\x.js:1:1',
+        causes: [
+          {
+            message: 'cause',
+            source: 'custom',
+            stack: 'Error: cause\n    at /home/bob/plugins/y.js:2:2'
+          }
+        ],
+        resource: {
+          method: 'GET',
+          status_code: 404,
+          url: 'file:///Users/carol/models/z.png'
+        }
+      }
+    } as unknown as RumErrorEvent
+
+    normalizeRumErrorEvent(event)
+
+    expect(event.error.stack).toBe('Error: boom\n    at C:\\Users\\[REDACTED]\\plugins\\x.js:1:1')
+    expect(event.error.causes?.[0]?.stack).toBe(
+      'Error: cause\n    at /home/[REDACTED]/plugins/y.js:2:2'
+    )
+    expect(event.error.resource?.url).toBe('file:///Users/[REDACTED]/models/z.png')
+  })
+
   it('updates the main stack, cause stacks, and resource URL when they point at built bundles', () => {
     const event = {
       error: {

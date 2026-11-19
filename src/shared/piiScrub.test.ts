@@ -87,7 +87,11 @@ describe('piiScrub', () => {
         '"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\alice\\\\x"',
         '"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\[REDACTED]\\\\x"'
       ],
-      ['\\\\?\\UNC\\srv\\c$\\Users\\gina\\x', '\\\\?\\UNC\\srv\\c$\\Users\\[REDACTED]\\x']
+      ['\\\\?\\UNC\\srv\\c$\\Users\\gina\\x', '\\\\?\\UNC\\srv\\c$\\Users\\[REDACTED]\\x'],
+      [
+        '{"p":"\\\\\\\\server\\\\Users\\\\alice\\\\x"}',
+        '{"p":"\\\\\\\\server\\\\Users\\\\[REDACTED]\\\\x"}'
+      ]
     ])('redacts a share path %s', (input, expected) => {
       expect(scrubPII(input)).toBe(expected)
     })
@@ -134,7 +138,13 @@ describe('piiScrub', () => {
     it.each([
       'C:\\ComfyUI\\custom_nodes\\x\\home\\config.json',
       'C:\\ComfyUI\\custom_nodes\\x\\Users\\config.json',
-      'C:\\\\ComfyUI\\\\custom_nodes\\\\x\\\\Users\\\\config.json'
+      'C:\\\\ComfyUI\\\\custom_nodes\\\\x\\\\Users\\\\config.json',
+      '{"p":"D:\\\\data\\\\home\\\\x"}',
+      '"D:\\\\Program Files (x86)\\\\foo\\\\Users\\\\x"',
+      'C:\\\\work\\\\wsl$\\\\Ubuntu\\\\home\\\\x',
+      'C:\\\\work\\\\srv\\\\c$\\\\Users\\\\x',
+      'C:\\\\work\\\\.\\\\UNC\\\\srv\\\\Users\\\\x',
+      'C:\\work\\cache$\\Users\\config.json'
     ])('leaves the nested project folder in %s alone', (input) => {
       expect(scrubPII(input)).toBe(input)
     })
@@ -164,6 +174,17 @@ describe('piiScrub', () => {
       )
     })
 
+    it.each([
+      ["b'C:\\\\Users\\\\Bj\\xc3\\xb6rn\\\\x'", "b'C:\\\\Users\\\\[REDACTED]\\\\x'"],
+      ["b'/home/bj\\xc3\\xb6rn/x'", "b'/home/[REDACTED]/x'"]
+    ])('redacts a non-ASCII username from a Python bytes repr: %s', (input, expected) => {
+      expect(scrubPII(input)).toBe(expected)
+    })
+
+    it('ends a raw path username at a closing double quote', () => {
+      expect(scrubPII('open "C:\\Users\\alice" failed')).toBe('open "C:\\Users\\[REDACTED]" failed')
+    })
+
     it('redacts a username containing an apostrophe in full', () => {
       expect(scrubPII("C:\\Users\\o'brien\\x")).toBe('C:\\Users\\[REDACTED]\\x')
     })
@@ -177,6 +198,7 @@ describe('piiScrub', () => {
     it.each([
       ['forward slashes', 'C:/Users/alice/ComfyUI', 'C:/Users/[REDACTED]/ComfyUI'],
       ['mixed separators', 'C:\\Users/alice\\ComfyUI', 'C:\\Users/[REDACTED]\\ComfyUI'],
+      ['a slash then a backslash', 'C:/\\Users\\alice\\x', 'C:/\\Users\\[REDACTED]\\x'],
       ['another drive letter', 'e:\\Users\\alice\\x', 'e:\\Users\\[REDACTED]\\x'],
       ['lowercase users', 'c:\\users\\alice\\x', 'c:\\users\\[REDACTED]\\x'],
       ['8.3 short name', 'C:\\Users\\ALICEB~1\\AppData', 'C:\\Users\\[REDACTED]\\AppData'],
