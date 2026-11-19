@@ -78,11 +78,6 @@
     },
     "cloud": "Comfy Cloud",
     "sharedFolder": "Shared folder",
-    "buildState": {
-      "running": "Running",
-      "starting": "Starting",
-      "stopped": "Stopped"
-    },
     "kind": {
       "all": "All",
       "image": "Images",

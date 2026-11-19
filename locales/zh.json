@@ -78,11 +78,6 @@
     },
     "cloud": "Comfy Cloud",
     "sharedFolder": "共享文件夹",
-    "buildState": {
-      "running": "运行中",
-      "starting": "启动中",
-      "stopped": "已停止"
-    },
     "kind": {
       "all": "全部",
       "image": "图片",
