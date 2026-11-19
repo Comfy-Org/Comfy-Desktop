@@ -241,7 +241,8 @@
     "statusLaunching": "Starting…",
     "statusStopping": "Stopping…",
     "statusError": "Error",
-    "viewErrorTooltip": "View error details",
+    "menuViewError": "View error",
+    "menuWhyTryCloud": "Why try Cloud",
     "errorTitle": "Error",
     "searchPlaceholder": "Search builds",
     "noMatches": "No instances match",
@@ -943,7 +944,6 @@
     "tosLinkLabel": "Terms of Service",
     "notNow": "Not now",
     "cloudFreeRunsPill": "TRY FREE",
-    "whyTryCloud": "Why try Cloud?",
     "whyCloud": {
       "title": "Why try Cloud?",
       "creditsPill": "400 FREE CREDITS",

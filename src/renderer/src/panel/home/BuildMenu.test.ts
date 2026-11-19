@@ -231,6 +231,52 @@ describe('Build menu', () => {
     }
   )
 
+  it('puts View error first for a build that failed, Uninstall still last, on Home and Builds', async () => {
+    useSessionStore().errorInstances.set(BUILD.id, {
+      installationName: BUILD.name,
+      message: 'Exited with code 1'
+    } as never)
+    const expected = ['view-error', ...EXPECTED.ready]
+
+    const tile = await mountTile('ready')
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    expect(await shownMenu()).toEqual(expected)
+    await closeMenu()
+
+    const buildsTile = await mountBuildsTile('ready')
+    expect(buildsTile.get('.chooser-tile-body').findAll('button')).toHaveLength(0)
+    await buildsTile.get('.chooser-tile-kebab').trigger('click')
+    expect(await shownMenu()).toEqual(expected)
+  })
+
+  it('offers Why try Cloud from the Builds cloud tile menu and passes the pick up', async () => {
+    const cloud: Installation = {
+      ...BUILD,
+      id: 'cloud',
+      name: 'Comfy Cloud',
+      sourceId: 'cloud',
+      sourceCategory: 'cloud',
+      installPath: undefined
+    }
+    const onWhyCloud = vi.fn()
+    const wrapper = mount(
+      withHost(() =>
+        h(ChooserInstallTile, { installation: cloud, showWhyCloud: true, onWhyCloud })
+      ),
+      { attachTo: document.body }
+    )
+    mounted.push(wrapper)
+    await flushPromises()
+    expect(wrapper.get('.chooser-tile-body').findAll('button')).toHaveLength(0)
+
+    await wrapper.get('.chooser-tile-kebab').trigger('click')
+    expect((await shownMenu()).at(-1)).toBe('why-cloud')
+    await press(document.querySelector('[data-testid="build-menu-why-cloud"]')!)
+
+    expect(onWhyCloud).toHaveBeenCalledOnce()
+    expect(host.launch).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['a build whose install failed', { ...BUILD, id: 'broken', status: 'failed' }],
     [
