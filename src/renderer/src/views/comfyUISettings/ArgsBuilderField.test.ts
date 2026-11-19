@@ -26,6 +26,16 @@ const SCHEMA: ComfyArgDef[] = [
   }
 ]
 
+const FEATURE_FLAG: ComfyArgDef = {
+  name: 'feature-flag',
+  flag: '--feature-flag',
+  help: 'Set a server feature flag.',
+  type: 'value',
+  metavar: 'KEY',
+  category: 'other',
+  hidden: true
+}
+
 const FIELD: DetailField = {
   id: 'launchArgs',
   label: 'Startup Arguments',
@@ -169,6 +179,16 @@ describe('ArgsBuilderField — inline autocomplete', () => {
     expect(err.exists()).toBe(true)
     expect(err.text()).toContain('--bogus')
     expect(wrapper.find('input[aria-invalid="true"]').exists()).toBe(true)
+  })
+
+  it('accepts a --feature-flag, which launch passes through to ComfyUI', async () => {
+    const api = stubElectronApi()
+    api.getComfyArgs.mockResolvedValue({ args: [...SCHEMA, FEATURE_FLAG] })
+    const wrapper = await mountField({
+      field: { ...FIELD, value: '--feature-flag open_on_cloud_enabled=true' }
+    })
+    expect(wrapper.find('.args-raw-validation-error').exists()).toBe(false)
+    expect(wrapper.find('input[aria-invalid="true"]').exists()).toBe(false)
   })
 })
 

@@ -1029,6 +1029,33 @@ describe('buildLaunchArgs user args', () => {
     const { args } = build({ userArgs: ['--cuda-device', '1'], schema, betaFlags: [] })
     expect(args.slice(-2)).toEqual(['--cuda-device', '1'])
   })
+
+  it("passes every user --feature-flag after Desktop's, so the user's value wins", () => {
+    const userArgs = [
+      '--feature-flag',
+      'open_on_cloud_enabled=true',
+      '--feature-flag',
+      'show_signin_button=false'
+    ]
+    const { args } = build({
+      userArgs,
+      schema: {
+        args: [
+          {
+            name: 'feature-flag',
+            flag: '--feature-flag',
+            help: '',
+            type: 'value',
+            category: 'other',
+            hidden: true
+          }
+        ],
+        knownFlags: new Set(['feature-flag', 'list-feature-flags'])
+      },
+      betaFlags: []
+    })
+    expect(args).toEqual([...PREFIX, ...DESKTOP_FLAGS, ...userArgs])
+  })
 })
 
 describe('buildLaunchArgs campaigns', () => {

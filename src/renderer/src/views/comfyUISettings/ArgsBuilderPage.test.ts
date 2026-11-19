@@ -39,9 +39,19 @@ const SCHEMA: ComfyArgDef[] = [
   }
 ]
 
-function stubElectronApi(): void {
+const FEATURE_FLAG: ComfyArgDef = {
+  name: 'feature-flag',
+  flag: '--feature-flag',
+  help: 'Set a server feature flag.',
+  type: 'value',
+  metavar: 'KEY',
+  category: 'other',
+  hidden: true
+}
+
+function stubElectronApi(args: ComfyArgDef[] = SCHEMA): void {
   ;(window as unknown as { api: unknown }).api = {
-    getComfyArgs: vi.fn().mockResolvedValue({ args: SCHEMA })
+    getComfyArgs: vi.fn().mockResolvedValue({ args })
   }
 }
 
@@ -420,5 +430,11 @@ describe('ArgsBuilderPage — flag switch', () => {
     expect(
       wrapper.find('button[role="switch"][aria-label="--port"]').attributes('aria-checked')
     ).toBe('true')
+  })
+
+  it('does not list a hidden flag among the flags to toggle', async () => {
+    stubElectronApi([...SCHEMA, FEATURE_FLAG])
+    const wrapper = await mountPage()
+    expect(wrapper.findAll('.args-page-flag').map((f) => f.text())).toEqual(['--port'])
   })
 })

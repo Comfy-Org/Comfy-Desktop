@@ -11,6 +11,7 @@ export interface ComfyArgDef {
   choices?: string[]
   exclusiveGroup?: string
   category: string
+  hidden?: boolean
 }
 
 export interface ComfyArgsSchema {
@@ -155,7 +156,9 @@ const CATEGORY_ORDER = [
   'other'
 ]
 
-const HIDDEN_ARGS = new Set(['feature-flag', 'list-feature-flags'])
+const HIDDEN_ARGS = new Set(['feature-flag'])
+
+const PRINT_AND_EXIT_ARGS = new Set(['list-feature-flags'])
 
 function getCategory(flagName: string): string {
   return CATEGORY_MAP[flagName] || 'other'
@@ -287,7 +290,7 @@ export function parseHelpOutput(helpText: string): ComfyArgsSchema {
   for (const opt of parsedOptions) {
     if (opt.name === 'h' || opt.name === 'help') continue
     knownFlags.add(opt.name)
-    if (HIDDEN_ARGS.has(opt.name)) continue
+    if (PRINT_AND_EXIT_ARGS.has(opt.name)) continue
     args.push({
       name: opt.name,
       flag: opt.flag,
@@ -296,7 +299,8 @@ export function parseHelpOutput(helpText: string): ComfyArgsSchema {
       metavar: opt.metavar,
       choices: opt.choices,
       exclusiveGroup: exclusiveGroups.get(opt.name),
-      category: getCategory(opt.name)
+      category: getCategory(opt.name),
+      hidden: HIDDEN_ARGS.has(opt.name)
     })
   }
 
@@ -395,7 +399,7 @@ export function filterUnsupportedArgs(userArgs: string[], schema: ComfyArgsSchem
         !isBoolean &&
         i + 1 < userArgs.length &&
         !userArgs[i + 1]!.startsWith('--')
-      if (schema.knownFlags.has(name)) {
+      if (schema.knownFlags.has(name) && !PRINT_AND_EXIT_ARGS.has(name)) {
         result.push(arg)
         if (hasTrailingValue) result.push(userArgs[i + 1]!)
       }

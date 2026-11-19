@@ -245,15 +245,16 @@ interface GroupItem {
 
 const structuredGroups = computed(() => {
   const q = search.value.trim().toLowerCase()
+  const listed = schema.value.filter((a) => !a.hidden)
   const scored = new Map<string, number>()
-  for (const arg of schema.value) {
+  for (const arg of listed) {
     const s = q ? scoreArg(q, arg) : 1
     if (s > 0) scored.set(arg.name, s)
   }
 
   function groupScore(exclusiveGroup: string): number {
     let best = 0
-    for (const a of schema.value) {
+    for (const a of listed) {
       if (a.exclusiveGroup === exclusiveGroup) {
         const s = scored.get(a.name) ?? 0
         if (s > best) best = s
@@ -263,7 +264,7 @@ const structuredGroups = computed(() => {
   }
 
   const groups = new Map<string, ComfyArgDef[]>()
-  for (const arg of schema.value) {
+  for (const arg of listed) {
     if (q && !scored.has(arg.name)) continue
     const list = groups.get(arg.category) ?? []
     list.push(arg)
@@ -278,7 +279,7 @@ const structuredGroups = computed(() => {
       if (arg.exclusiveGroup) {
         if (seenExclusive.has(arg.exclusiveGroup)) continue
         seenExclusive.add(arg.exclusiveGroup)
-        const siblings = schema.value.filter((a) => a.exclusiveGroup === arg.exclusiveGroup)
+        const siblings = listed.filter((a) => a.exclusiveGroup === arg.exclusiveGroup)
         if (siblings.length > 1) {
           items.push({
             item: { kind: 'exclusive', group: arg.exclusiveGroup, args: siblings },
