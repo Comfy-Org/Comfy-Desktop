@@ -4,7 +4,13 @@ import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown, LoaderCircle, OctagonAlert, X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
-import { useModal } from '../composables/useModal'
+import {
+  buildProgressOf,
+  cancelConfirmKey,
+  operationTask,
+  useConfirmStopTask,
+  type BuildProgressKind
+} from '../composables/useBuildProgress'
 import { useTerminalScroll } from '../composables/useTerminalScroll'
 import { progressStatusText, progressStepName } from '../lib/progressStatusLabel'
 import { useProgressStore } from '../stores/progressStore'
@@ -52,7 +58,7 @@ const i18n = useI18n()
 const { t } = i18n
 const progressStore = useProgressStore()
 const installationStore = useInstallationStore()
-const modal = useModal()
+const confirmStopTask = useConfirmStopTask()
 
 const op = computed(() => progressStore.operations.get(installationId) ?? null)
 const build = computed(() => installationStore.getById(installationId) ?? null)
@@ -110,12 +116,30 @@ const steps = computed<StepRow[]>(() => {
 
 const failed = computed(() => !!op.value?.finished && !!op.value.error)
 const launching = computed(() => op.value?.opKind === 'launch')
+const progress = computed(() => buildProgressOf(progressStore, installationId))
+const lastKind = ref<BuildProgressKind>('install')
+watch(
+  () => progress.value?.kind,
+  (kind) => {
+    if (kind) lastKind.value = kind
+  },
+  { immediate: true }
+)
+const task = computed(() => operationTask(op.value?.title ?? ''))
 const title = computed(() => {
   if (launching.value) {
     return failed.value ? t('installProgress.launchFailedTitle') : t('home.buildStartingComfyUI')
   }
-  return failed.value ? t('installProgress.failedTitle') : t('home.buildInstalling')
+  if (lastKind.value === 'install') {
+    return failed.value ? t('installProgress.failedTitle') : t('home.buildInstalling')
+  }
+  if (failed.value) return t('workingProgress.failedTitle', { task: task.value })
+  return lastKind.value === 'update' ? t('updateProgress.status') : task.value
 })
+const canCancel = computed(() => progress.value?.cancellable !== false)
+const cancelLabel = computed(() =>
+  launching.value ? t('common.cancel') : t(cancelConfirmKey(lastKind.value))
+)
 const cancelling = computed(() => !!op.value?.cancelRequested)
 const logText = computed(() => {
   const output = op.value?.terminalOutput ?? ''
@@ -139,15 +163,7 @@ async function cancel(): Promise<void> {
     emit('close')
     return
   }
-  const confirmed = await modal.confirm({
-    title: t('installProgress.cancelTitle'),
-    message: t('installProgress.cancelMessage', { name: build.value?.name ?? '' }),
-    confirmLabel: t('installProgress.cancelConfirm'),
-    confirmStyle: 'danger'
-  })
-  if (!confirmed) return
-  progressStore.cancelOperation(installationId)
-  emit('close')
+  if (await confirmStopTask(installationId, build.value?.name ?? '')) emit('close')
 }
 </script>
 
@@ -155,143 +171,151 @@ async function cancel(): Promise<void> {
   <DesktopDialogSurface
     :open="true"
     :aria-label="title"
-    overlay-class="fixed inset-0 z-50 bg-black/55 backdrop-blur-[10px]"
+    overlay-class="fixed inset-0 z-50 bg-black/70"
     content-class="fixed top-1/2 left-1/2 z-50 w-[760px] max-w-[calc(100vw-96px)] -translate-x-1/2 -translate-y-1/2 outline-none"
     data-testid="build-progress-dialog"
     @close="emit('close')"
   >
     <div class="relative">
       <div
-        class="flex max-h-[calc(100vh-48px)] flex-col overflow-y-auto rounded-[20px] border border-[rgb(242_242_242/0.08)] bg-[rgb(37_37_37/0.9)] p-[clamp(24px,calc(100vh-539px),32px)] backdrop-blur-[16px]"
+        class="flex max-h-[calc(100vh-48px)] flex-col overflow-hidden rounded-[20px] border border-[rgb(242_242_242/0.08)] bg-[rgb(37_37_37)]"
       >
-        <div class="flex gap-10">
-          <div class="flex min-w-0 flex-1 flex-col">
-            <h2 class="m-0 text-lg/[22px] font-semibold text-foreground">
-              {{ title }}
-            </h2>
-            <ol
-              class="m-0 mt-[29px] flex list-none flex-col p-0"
-              data-testid="build-progress-steps"
-            >
-              <li
-                v-for="(step, index) in steps"
-                :key="step.phase"
-                class="relative flex gap-3 pb-[15px] last:pb-0"
-                :data-state="step.state"
-                data-testid="build-progress-step"
+        <div class="flex min-h-0 flex-col overflow-y-auto p-5" data-testid="build-progress-body">
+          <div class="flex gap-10">
+            <div class="flex min-w-0 flex-1 flex-col">
+              <h2 class="m-0 text-lg/[22px] font-semibold text-foreground">
+                {{ title }}
+              </h2>
+              <ol
+                class="m-0 mt-[29px] flex list-none flex-col p-0"
+                data-testid="build-progress-steps"
               >
-                <span
-                  v-if="index < steps.length - 1"
-                  class="absolute top-[23px] bottom-0.5 left-[10px] w-px bg-[rgb(239_239_239/0.12)]"
-                  aria-hidden="true"
-                />
-                <span class="relative flex size-[21px] shrink-0 items-center justify-center">
-                  <LoaderCircle
-                    v-if="step.state === 'active'"
-                    :size="13"
-                    :stroke-width="1.6"
-                    class="animate-spin text-foreground [animation-duration:900ms] motion-reduce:animate-none"
-                    aria-hidden="true"
-                  />
-                  <OctagonAlert
-                    v-else-if="step.state === 'failed'"
-                    :size="14"
-                    class="text-destructive"
-                    aria-hidden="true"
-                  />
+                <li
+                  v-for="(step, index) in steps"
+                  :key="step.phase"
+                  class="relative flex gap-3 pb-[15px] last:pb-0"
+                  :data-state="step.state"
+                  data-testid="build-progress-step"
+                >
                   <span
-                    v-else
-                    class="flex size-[21px] items-center justify-center rounded-full border border-[rgb(241_241_241/0.14)]"
+                    v-if="index < steps.length - 1"
+                    class="absolute top-[23px] bottom-0.5 left-[10px] w-px bg-[rgb(239_239_239/0.12)]"
                     aria-hidden="true"
-                  >
-                    <Check
-                      v-if="step.state === 'done'"
-                      :size="11"
-                      :stroke-width="2"
-                      class="text-muted-foreground"
+                  />
+                  <span class="relative flex size-[21px] shrink-0 items-center justify-center">
+                    <LoaderCircle
+                      v-if="step.state === 'active'"
+                      :size="13"
+                      :stroke-width="1.6"
+                      class="animate-spin text-foreground [animation-duration:900ms] motion-reduce:animate-none"
+                      aria-hidden="true"
                     />
-                  </span>
-                </span>
-                <span class="flex min-w-0 flex-col pt-0.5">
-                  <span
-                    class="text-[13px]/4"
-                    :class="{
-                      'text-foreground': step.state === 'active',
-                      'text-destructive': step.state === 'failed',
-                      'text-muted-foreground': step.state === 'done',
-                      'text-subtle-foreground': step.state === 'pending'
-                    }"
-                  >
-                    <span data-testid="build-progress-step-name">{{ step.label }}</span><span
-                      v-if="step.percent !== null"
-                      class="ml-[0.3em] text-muted-foreground"
-                      >{{ t('installProgress.percent', { percent: step.percent }) }}</span
+                    <OctagonAlert
+                      v-else-if="step.state === 'failed'"
+                      :size="14"
+                      class="text-destructive"
+                      aria-hidden="true"
+                    />
+                    <span
+                      v-else
+                      class="flex size-[21px] items-center justify-center rounded-full border border-[rgb(241_241_241/0.14)]"
+                      aria-hidden="true"
                     >
+                      <Check
+                        v-if="step.state === 'done'"
+                        :size="11"
+                        :stroke-width="2"
+                        class="text-muted-foreground"
+                      />
+                    </span>
                   </span>
-                  <span
-                    v-if="step.detail"
-                    class="mt-[5px] text-xs/[15px] break-words whitespace-pre-line"
-                    :class="step.state === 'failed' ? 'text-destructive' : 'text-subtle-foreground'"
-                    data-testid="build-progress-step-detail"
-                  >
-                    {{ step.detail }}
+                  <span class="flex min-w-0 flex-col pt-0.5">
+                    <span
+                      class="text-[13px]/4"
+                      :class="{
+                        'text-foreground': step.state === 'active',
+                        'text-destructive': step.state === 'failed',
+                        'text-muted-foreground': step.state === 'done',
+                        'text-subtle-foreground': step.state === 'pending'
+                      }"
+                    >
+                      <span data-testid="build-progress-step-name">{{ step.label }}</span><span
+                        v-if="step.percent !== null"
+                        class="ml-[0.3em] text-muted-foreground"
+                        >{{ t('installProgress.percent', { percent: step.percent }) }}</span
+                      >
+                    </span>
+                    <span
+                      v-if="step.detail"
+                      class="mt-[5px] text-xs/[15px] break-words whitespace-pre-line"
+                      :class="
+                        step.state === 'failed' ? 'text-destructive' : 'text-subtle-foreground'
+                      "
+                      data-testid="build-progress-step-detail"
+                    >
+                      {{ step.detail }}
+                    </span>
                   </span>
-                </span>
-              </li>
-            </ol>
+                </li>
+              </ol>
+            </div>
+
+            <div class="size-[272px] shrink-0 overflow-hidden rounded-xl bg-[#161619]">
+              <video
+                class="size-full object-cover transition-opacity duration-200 motion-reduce:transition-none"
+                :class="videoReady ? 'opacity-100' : 'opacity-0'"
+                :src="video"
+                autoplay
+                muted
+                loop
+                playsinline
+                aria-hidden="true"
+                data-testid="build-progress-video"
+                @loadeddata="videoReady = true"
+              />
+            </div>
           </div>
 
-          <div class="size-[272px] shrink-0 overflow-hidden rounded-xl bg-[#161619]">
-            <video
-              class="size-full object-cover transition-opacity duration-200 motion-reduce:transition-none"
-              :class="videoReady ? 'opacity-100' : 'opacity-0'"
-              :src="video"
-              autoplay
-              muted
-              loop
-              playsinline
+          <Button
+            type="button"
+            variant="muted-textonly"
+            size="unset"
+            class="mt-[clamp(24px,calc(100vh-539px),32px)] h-4 w-fit gap-2 px-[3px] text-[13px]/4 font-normal text-subtle-foreground hover:bg-transparent hover:text-foreground"
+            :aria-expanded="logsOpen"
+            aria-controls="build-progress-logs"
+            data-testid="build-progress-logs-toggle"
+            @click="logsOpen = !logsOpen"
+          >
+            <ChevronDown
+              :size="12"
+              class="transition-transform duration-150 motion-reduce:transition-none"
+              :class="!logsOpen && '-rotate-90'"
               aria-hidden="true"
-              data-testid="build-progress-video"
-              @loadeddata="videoReady = true"
             />
-          </div>
+            {{ t('installProgress.viewLogs') }}
+          </Button>
+          <pre
+            v-show="logsOpen"
+            id="build-progress-logs"
+            ref="logsRef"
+            class="m-0 mt-3 h-[148px] min-h-[82px] overflow-y-auto overscroll-contain rounded-xl bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
+            tabindex="0"
+            data-testid="build-progress-logs"
+            @scroll="followLogsWhileAtNewestLine"
+            >{{ logText || t('installProgress.starting') }}</pre>
         </div>
 
-        <Button
-          type="button"
-          variant="muted-textonly"
-          size="unset"
-          class="mt-[clamp(24px,calc(100vh-539px),32px)] h-4 w-fit gap-2 px-[3px] text-[13px]/4 font-normal text-subtle-foreground hover:bg-transparent hover:text-foreground"
-          :aria-expanded="logsOpen"
-          aria-controls="build-progress-logs"
-          data-testid="build-progress-logs-toggle"
-          @click="logsOpen = !logsOpen"
+        <div
+          v-if="failed || canCancel"
+          class="flex shrink-0 items-center gap-2 border-t border-solid border-neutral-100/8 px-5 py-4"
+          data-testid="build-progress-footer"
         >
-          <ChevronDown
-            :size="12"
-            class="transition-transform duration-150 motion-reduce:transition-none"
-            :class="!logsOpen && '-rotate-90'"
-            aria-hidden="true"
-          />
-          {{ t('installProgress.viewLogs') }}
-        </Button>
-        <pre
-          v-show="logsOpen"
-          id="build-progress-logs"
-          ref="logsRef"
-          class="m-0 mt-3 h-[148px] min-h-[82px] overflow-y-auto overscroll-contain rounded-xl bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
-          tabindex="0"
-          data-testid="build-progress-logs"
-          @scroll="followLogsWhileAtNewestLine"
-          >{{ logText || t('installProgress.starting') }}</pre>
-
-        <div class="mt-[clamp(16px,calc(100vh-547px),24px)] flex min-h-9 items-center gap-2">
           <template v-if="failed">
             <Button
               type="button"
-              variant="muted-textonly"
+              variant="secondary"
               size="unset"
-              class="ml-auto h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal text-muted-foreground hover:text-foreground"
+              class="ml-auto h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-[17px] text-[13px]/4 font-normal text-foreground"
               data-testid="build-progress-close-failed"
               @click="emit('close')"
             >
@@ -300,9 +324,9 @@ async function cancel(): Promise<void> {
             <Button
               v-if="launching"
               type="button"
-              variant="secondary"
+              variant="inverted"
               size="unset"
-              class="h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-[17px] text-[13px]/4 font-normal text-foreground"
+              class="h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal"
               data-testid="build-progress-retry"
               @click="emit('retry')"
             >
@@ -310,7 +334,7 @@ async function cancel(): Promise<void> {
             </Button>
           </template>
           <Button
-            v-else
+            v-else-if="canCancel"
             type="button"
             variant="secondary"
             size="unset"
@@ -319,7 +343,7 @@ async function cancel(): Promise<void> {
             data-testid="build-progress-cancel"
             @click="cancel"
           >
-            {{ launching ? t('common.cancel') : t('installProgress.cancelConfirm') }}
+            {{ cancelLabel }}
           </Button>
         </div>
       </div>

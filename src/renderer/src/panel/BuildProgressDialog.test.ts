@@ -37,6 +37,7 @@ const STEPS = [
 let progress: (data: Partial<ProgressData>) => void = () => {}
 let output: (text: string) => void = () => {}
 let settle: (result: ActionResult) => void = () => {}
+let startedElsewhere: () => void = () => {}
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -51,6 +52,10 @@ beforeEach(() => {
       return () => {}
     }),
     onErrorDetail: vi.fn(() => () => {}),
+    onInstanceStarted: vi.fn((cb: (data: { installationId: string }) => void) => {
+      startedElsewhere = () => cb({ installationId: ID })
+      return () => {}
+    }),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     cancelOperation: vi.fn(async () => {}),
@@ -148,6 +153,22 @@ describe('BuildProgressDialog', () => {
     expect(w.find('[data-testid="build-progress-cancel"]').exists()).toBe(false)
     await w.get('[data-testid="build-progress-close-failed"]').trigger('click')
     expect(w.emitted('close')).toHaveLength(1)
+  })
+
+  it('keeps the failed start and its logs when the build starts from another window', async () => {
+    const duringStart = await openDialog('launch')
+    settle({ ok: false, message: 'Port 8188 is in use' })
+    await flushPromises()
+    const reopened = mount(BuildProgressDialog, { props: { installationId: ID } })
+
+    startedElsewhere()
+    await flushPromises()
+
+    for (const w of [duringStart, reopened]) {
+      expect(w.find('[role="dialog"]').attributes('aria-label')).toBe("ComfyUI didn't start")
+      expect(w.get('[data-testid="build-progress-step-detail"]').text()).toBe('Port 8188 is in use')
+      expect(w.get('[data-testid="build-progress-logs"]').text()).toContain('Downloading torch')
+    }
   })
 
   it('closes on its own when the install finishes', async () => {
@@ -301,6 +322,21 @@ describe('BuildProgressDialog', () => {
     expect(w.emitted('retry')).toHaveLength(1)
   })
 
+  it('makes Start again the white primary and Close the grey secondary when a start fails', async () => {
+    const w = await openDialog('launch')
+    settle({ ok: false, message: 'ComfyUI exited with code 1' })
+    await flushPromises()
+
+    const retry = w.get('[data-testid="build-progress-retry"]')
+    const close = w.get('[data-testid="build-progress-close-failed"]')
+    expect(retry.classes()).toContain('bg-foreground')
+    expect(close.classes()).not.toContain('bg-foreground')
+    expect(close.classes()).toContain('hover:bg-accent')
+    expect(
+      close.element.compareDocumentPosition(retry.element) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
   it('stops a starting build straight away', async () => {
     const w = await openDialog('launch')
     await w.get('[data-testid="build-progress-cancel"]').trigger('click')
@@ -308,5 +344,57 @@ describe('BuildProgressDialog', () => {
     expect(modal.confirm).not.toHaveBeenCalled()
     expect(window.api.cancelOperation).toHaveBeenCalledWith(ID)
     expect(w.emitted('close')).toHaveLength(1)
+  })
+})
+
+describe('an update in the logs dialog', () => {
+  async function openUpdate(cancellable: boolean) {
+    const wrapper = mount(BuildProgressDialog, { props: { installationId: ID } })
+    useProgressStore().startOperation({
+      installationId: ID,
+      title: 'Updating ComfyUI - Video Lab',
+      opKind: 'update',
+      actionId: 'update-comfyui',
+      cancellable,
+      apiCall: () =>
+        new Promise<ActionResult>((resolve) => {
+          settle = resolve
+        })
+    })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('says it is updating and offers to stop the update, not the install', async () => {
+    const w = await openUpdate(true)
+
+    expect(w.text()).toContain('Updating')
+    expect(w.text()).not.toContain('Installing')
+    expect(w.get('[data-testid="build-progress-cancel"]').text()).toBe('Stop updating')
+
+    modal.confirm.mockResolvedValueOnce(true)
+    await w.get('[data-testid="build-progress-cancel"]').trigger('click')
+    await flushPromises()
+
+    expect(modal.confirm.mock.calls[0]![0]).toMatchObject({
+      title: 'Stop updating?',
+      confirmLabel: 'Stop updating'
+    })
+    expect(window.api.cancelOperation).toHaveBeenCalledWith(ID)
+  })
+
+  it('offers no stop for an update that cannot be stopped', async () => {
+    const w = await openUpdate(false)
+
+    expect(w.find('[data-testid="build-progress-cancel"]').exists()).toBe(false)
+  })
+
+  it('names the update when it fails', async () => {
+    const w = await openUpdate(true)
+
+    settle({ ok: false, message: 'git pull failed' })
+    await flushPromises()
+
+    expect(w.text()).toContain("Updating ComfyUI didn't finish")
   })
 })
