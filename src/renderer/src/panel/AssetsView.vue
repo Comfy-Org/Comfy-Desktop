@@ -132,7 +132,7 @@ void dashboardScope.initialize()
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const listedSearch = refDebounced(
-  computed(() => searchQuery.value.trim().slice(0, MAX_SEARCH_LENGTH)),
+  computed(() => [...searchQuery.value.trim()].slice(0, MAX_SEARCH_LENGTH).join('')),
   SEARCH_DEBOUNCE_MS
 )
 const signingIn = ref(false)
@@ -541,7 +541,7 @@ function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage>
   const kind = kindFilter.value === 'all' ? undefined : kindFilter.value
   const after = pageCursors.get(pageNumber)
   const search = listedSearch.value || undefined
-  const key = [
+  const key = JSON.stringify([
     loadKey.value,
     cloudId,
     sortOrder.value,
@@ -549,7 +549,7 @@ function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage>
     search,
     pageSize.value,
     pageNumber
-  ].join('\n')
+  ])
   const cached = pageCache.get(key)
   if (cached && Date.now() - cached.savedAt < PAGE_CACHE_TTL_MS) return cached.page
   for (const replacedKey of pagesInFlight.keys()) pageCache.delete(replacedKey)

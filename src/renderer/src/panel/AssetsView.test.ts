@@ -750,6 +750,16 @@ describe('AssetsView', () => {
     expect(localPages.at(-1)?.search).toBe('l'.repeat(200))
   })
 
+  it('never cuts a character in half when it shortens a long search', async () => {
+    const wrapper = await mountAssets([asset('a', 'lighthouse.png', 'image')])
+    const readsBefore = localPages.length
+
+    await wrapper.get('input').setValue(`${'l'.repeat(199)}🌲🌲`)
+    await vi.waitFor(() => expect(localPages.length).toBeGreaterThan(readsBefore))
+
+    expect(localPages.at(-1)?.search).toBe(`${'l'.repeat(199)}🌲`)
+  })
+
   it('shows each folder in its file manager from the picker', async () => {
     const wrapper = await mountAssets([], {
       builds: [sharedBuild('a', 'Shared A'), localBuild('lab', 'Video Lab')]
@@ -1668,7 +1678,9 @@ describe('AssetsView Comfy Cloud pages', () => {
     const { offset, limit, kind, search } = request
     if (search) {
       const matches = Array.from({ length: total }, (_, i) => output(i)).filter(
-        (candidate) => candidate.name.includes(search) && (!kind || candidate.kind === kind)
+        (candidate) =>
+          candidate.name.toLowerCase().includes(search.toLowerCase()) &&
+          (!kind || candidate.kind === kind)
       )
       return { assets: matches.slice(offset, offset + limit), total: matches.length }
     }

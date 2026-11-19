@@ -1250,6 +1250,15 @@ describe('the list handler', () => {
     expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.get('name_contains')).toBe('forest')
   })
 
+  it('lists every Cloud output for a blank search', async () => {
+    cloudListThatWaits()
+    registerAssetsHandlers()
+
+    await handlers.get('assets:list')!({ sender: {} }, 'cloud-1', { ...FIRST_PAGE, search: '  ' })
+
+    expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.has('name_contains')).toBe(false)
+  })
+
   it.each([
     ['no page', undefined],
     ['a negative offset', { ...FIRST_PAGE, offset: -1 }],
@@ -1258,7 +1267,6 @@ describe('the list handler', () => {
     ['a page larger than Cloud allows here', { ...FIRST_PAGE, limit: 500 }],
     ['an unknown order', { ...FIRST_PAGE, order: 'random' }],
     ['an unknown type', { ...FIRST_PAGE, kind: 'font' }],
-    ['an empty search', { ...FIRST_PAGE, search: '  ' }],
     ['a search that is not text', { ...FIRST_PAGE, search: 7 }],
     ['a very long search', { ...FIRST_PAGE, search: 'a'.repeat(201) }]
   ])('asks Cloud nothing for %s', async (_case, page) => {

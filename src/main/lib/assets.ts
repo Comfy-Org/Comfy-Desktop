@@ -411,7 +411,7 @@ async function rowsOfKind(
   signal: AbortSignal,
   slot: ScanSlot
 ): Promise<AssetRowPage> {
-  const key = [accessToken, request.order, request.search ?? ''].join('\n')
+  const key = JSON.stringify([accessToken, request.order, request.search ?? ''])
   let scan = slot.scan
   if (request.offset === 0 || scan?.key !== key || Date.now() - scan.savedAt >= SCAN_REUSE_MS) {
     slot.scan = undefined

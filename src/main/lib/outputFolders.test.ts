@@ -510,7 +510,14 @@ describe('listLocalAssets', () => {
       order: 'oldest',
       kind: '3d'
     })
-    expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: ' ' })).toEqual(first)
+    expect(
+      localPageRequest({ offset: 40, limit: 10, order: 'newest', search: ' ' }),
+      'a blank search filters nothing and keeps the page'
+    ).toEqual({ offset: 40, limit: 10, order: 'newest' })
+    expect(
+      localPageRequest({ offset: 0, limit: 10, order: 'newest', search: '🌲'.repeat(200) }),
+      'the length counts characters, not code units'
+    ).toEqual({ offset: 0, limit: 10, order: 'newest', search: '🌲'.repeat(200) })
     expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: 3 })).toEqual(first)
     expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: ' sea ' })).toEqual({
       offset: 0,
