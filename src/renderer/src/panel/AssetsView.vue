@@ -326,7 +326,7 @@ function shortPath(folder: string): string {
 }
 
 function placeSubtitle(option: AssetBuild): string | null {
-  if (option.cloud) return t(`assets.buildState.${option.state}`)
+  if (option.cloud) return t('home.buildReady')
   if (!outputFoldersLoaded.value) return null
   const folder = folderPathOf(option)
   return folder ? shortPath(folder) : ''
@@ -1130,12 +1130,6 @@ function extensionOf(name: string): string {
                       class="flex h-4 min-w-0 items-center gap-1.5 text-[12px]/[16.2px] text-subtle-foreground"
                       :data-testid="`assets-place-subtitle-${option.build.id}`"
                     >
-                      <span
-                        v-if="option.cloud"
-                        class="size-1.5 shrink-0 rounded-[3px]"
-                        :class="option.state === 'running' ? 'bg-success' : 'bg-subtle-foreground'"
-                        aria-hidden="true"
-                      />
                       <Skeleton
                         v-if="placeSubtitle(option) === null"
                         class="h-3 w-36 rounded-sm"

@@ -537,8 +537,12 @@ describe('AssetsView', () => {
       ),
       'Cloud and this computer are grouped apart'
     ).toEqual(['Comfy Cloud', 'This computer'])
+    expect(
+      document.querySelector('[data-testid="assets-place-subtitle-cloud"] .bg-success'),
+      'Cloud runs nowhere on this computer, so it has no green dot'
+    ).toBe(null)
     expect(buildRows(), 'no Shared folder when no build saves there').toEqual([
-      'Comfy Cloud Running',
+      'Comfy Cloud Ready',
       'My Local 1 ~/My Local 1/output',
       'Video Lab /Volumes/Work/Video Lab/output'
     ])
@@ -576,7 +580,7 @@ describe('AssetsView', () => {
 
     await openBuildPicker(wrapper)
 
-    expect(buildRows()).toEqual(['Comfy Cloud Running', 'My Local 1 ~/My Local 1/output'])
+    expect(buildRows()).toEqual(['Comfy Cloud Ready', 'My Local 1 ~/My Local 1/output'])
   })
 
   it('opens on a build it can list, not on a running build that keeps its files to itself', async () => {
@@ -860,7 +864,7 @@ describe('AssetsView', () => {
     expect(assetNames(wrapper)).toEqual(['forest.png'])
     await openBuildPicker(wrapper)
     expect(buildRows()).toEqual([
-      'Comfy Cloud Running',
+      'Comfy Cloud Ready',
       'Shared folder ~/ComfyUI/output',
       'Video Lab /Volumes/Work/Video Lab/output'
     ])
