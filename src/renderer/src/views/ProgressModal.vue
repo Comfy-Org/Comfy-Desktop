@@ -747,7 +747,7 @@ defineExpose({ startOperation, showOperation })
           <BaseCopyButton
             :value="finishedErrorMessage"
             :aria-label="$t('common.copy')"
-            class="brand-progress__error-copy mt-1 flex-none"
+            class="brand-progress__error-copy mt-[13px] flex-none"
           />
         </div>
 
