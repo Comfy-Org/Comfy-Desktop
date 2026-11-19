@@ -55,6 +55,7 @@ import {
   makeSendProgress,
   makeSendOutput,
   getComfyArgsSchema,
+  dropValuelessArgs,
   filterUnsupportedArgs,
   getComfyFeatureFlagRegistry,
   _broadcastToRenderer
@@ -259,7 +260,7 @@ export function buildLaunchArgs(input: {
   campaign?: Pick<CampaignFacts, 'registry' | 'answers' | 'records' | 'idClass' | 'now'>
 }): { args: string[]; beta: CoreBetaLaunch } {
   const { prefixArgs, userArgs, desktopFlagArgs, schema, coreVersion } = input
-  const filtered = filterUnsupportedArgs([...userArgs], schema)
+  const filtered = dropValuelessArgs(filterUnsupportedArgs([...userArgs], schema), schema)
   const plan = planCoreBetaArgs({
     grants: input.betaFlags,
     betaEnabled: input.betaEnabled,
