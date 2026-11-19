@@ -1270,7 +1270,9 @@ describe('renderer model-job snapshot', () => {
     isDestroyed: () => boolean
     send: ReturnType<typeof vi.fn>
     once: (event: string, listener: () => void) => void
+    on: (event: string, listener: () => void) => void
     emitDestroyed: () => void
+    emitNavigated: () => void
     markDestroyed: () => void
     __ownerWindow?: unknown
   }
@@ -1279,6 +1281,7 @@ describe('renderer model-job snapshot', () => {
     opts: { installationId?: string; ownerWindow?: unknown; destroyed?: boolean } = {}
   ): FakeContents {
     const destroyedListeners: (() => void)[] = []
+    const navigatedListeners: (() => void)[] = []
     let destroyed = opts.destroyed === true
     const contents: FakeContents = {
       isDestroyed: () => destroyed,
@@ -1286,8 +1289,14 @@ describe('renderer model-job snapshot', () => {
       once: (event, listener) => {
         if (event === 'destroyed') destroyedListeners.push(listener)
       },
+      on: (event, listener) => {
+        if (event === 'did-navigate') navigatedListeners.push(listener)
+      },
       emitDestroyed: () => {
         for (const listener of destroyedListeners.splice(0)) listener()
+      },
+      emitNavigated: () => {
+        for (const listener of navigatedListeners) listener()
       },
       markDestroyed: () => {
         destroyed = true
@@ -1679,6 +1688,21 @@ describe('renderer model-job snapshot', () => {
     mod.subscribeToInstallationModelJobs(installationId, contents as never)
 
     contents.emitDestroyed()
+    transfer.resolve({ outcome: 'completed', savePath: job.savePath })
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+    await flush()
+
+    expect(progressEvents(contents)).toEqual([])
+  })
+
+  it('drops a listed view from a job once its page navigates to another document', async () => {
+    const installationId = uniqueInstallationId()
+    const job = await startJob(installationId)
+    const transfer = transfers.at(-1)!
+    const contents = fakeContents({ installationId })
+    mod.subscribeToInstallationModelJobs(installationId, contents as never)
+
+    contents.emitNavigated()
     transfer.resolve({ outcome: 'completed', savePath: job.savePath })
     await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
     await flush()
