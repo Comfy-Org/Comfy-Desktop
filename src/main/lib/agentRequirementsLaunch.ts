@@ -854,7 +854,7 @@ const FRONTEND_BACKUP_PREFIX = '.launch-frontend-backup-'
 const FRONTEND_MODULE = FRONTEND_PACKAGE.replace(/-/g, '_')
 const isFrontendDistInfo = (entry: string): boolean =>
   entry.startsWith(`${FRONTEND_MODULE}-`) && entry.endsWith('.dist-info')
-const liveFrontendBackups = new Set<string>()
+const restoringInstalls = new Set<string>()
 
 export async function restoreCoreFrontend(
   installation: InstallationRecord,
@@ -873,12 +873,13 @@ export async function restoreCoreFrontend(
   const tag = attemptTag()
   const reqPath = path.join(installation.installPath, `.launch-frontend-restore-${tag}-src.txt`)
   const backupDir = path.join(installation.installPath, `${FRONTEND_BACKUP_PREFIX}${tag}`)
-  await removeScratch(
-    installation.installPath,
-    (name, at) => name.startsWith(FRONTEND_BACKUP_PREFIX) && !liveFrontendBackups.has(at)
-  )
-  liveFrontendBackups.add(backupDir)
+  if (restoringInstalls.has(installation.installPath)) {
+    sendOutput(`\nAnother launch is already putting ${FRONTEND_PACKAGE} back; skipping\n`)
+    return false
+  }
+  restoringInstalls.add(installation.installPath)
   try {
+    await removeScratch(installation.installPath, (name) => name.startsWith(FRONTEND_BACKUP_PREFIX))
     const savedFrom = await backUpFrontend(pythonPath, backupDir)
     await fs.promises.writeFile(reqPath, `${FRONTEND_PACKAGE}==${version}\n`, 'utf-8')
     sendOutput(`\nPutting ComfyUI's ${FRONTEND_PACKAGE}==${version} back…\n`)
@@ -897,11 +898,7 @@ export async function restoreCoreFrontend(
       signal,
       { extraArgs: ['--no-deps'] }
     )
-    if (
-      !restored.ok &&
-      savedFrom !== null &&
-      !(await otherFrontendInstalled(savedFrom, backupDir))
-    ) {
+    if (!restored.ok && savedFrom !== null) {
       sendOutput(`Putting back any ${FRONTEND_PACKAGE} files the failed restore removed\n`)
       await putBackMissingFiles(backupDir, savedFrom)
     }
@@ -912,7 +909,7 @@ export async function restoreCoreFrontend(
   } finally {
     void fs.promises.unlink(reqPath).catch(() => {})
     void fs.promises.rm(backupDir, { recursive: true, force: true }).catch(() => {})
-    liveFrontendBackups.delete(backupDir)
+    restoringInstalls.delete(installation.installPath)
   }
 }
 
@@ -931,12 +928,6 @@ async function backUpFrontend(pythonPath: string, backupDir: string): Promise<st
     })
   }
   return sitePackages
-}
-
-async function otherFrontendInstalled(sitePackages: string, backupDir: string): Promise<boolean> {
-  const saved = new Set(await fs.promises.readdir(backupDir))
-  const listed = await fs.promises.readdir(sitePackages)
-  return listed.some((entry) => isFrontendDistInfo(entry) && !saved.has(entry))
 }
 
 async function putBackMissingFiles(backupDir: string, sitePackages: string): Promise<void> {

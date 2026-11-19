@@ -3126,16 +3126,14 @@ describe('restoreCoreFrontend', () => {
     await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
-  it("keeps another restore's live backup when a second restore of the same install starts", async () => {
+  it('skips a second restore of the same install while the first is still running', async () => {
     const inst = managedInstall()
     writeCore('comfyui-frontend-package==1.28.7\n')
     const sitePackages = installedFrontend()
     let finishFirst: () => void = () => {}
-    let firstBackups: string[] = []
+    let firstStarted = false
     mockInstall.mockImplementationOnce(async () => {
-      firstBackups = backupEntriesLeft().filter((name) =>
-        name.startsWith('.launch-frontend-backup-')
-      )
+      firstStarted = true
       await new Promise<void>((resolve) => {
         finishFirst = resolve
       })
@@ -3143,9 +3141,10 @@ describe('restoreCoreFrontend', () => {
       return { code: 2, output: '' }
     })
     const first = restoreCoreFrontend(inst, vi.fn())
-    await vi.waitFor(() => expect(firstBackups).toHaveLength(1))
+    await vi.waitFor(() => expect(firstStarted).toBe(true))
 
-    await restoreCoreFrontend(inst, vi.fn())
+    expect(await restoreCoreFrontend(inst, vi.fn()), 'the second restore skips').toBe(false)
+    expect(mockInstall).toHaveBeenCalledTimes(1)
     finishFirst()
 
     expect(await first).toBe(false)
@@ -3153,7 +3152,18 @@ describe('restoreCoreFrontend', () => {
     await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
-  it('leaves a frontend another restore installed alone when this restore fails', async () => {
+  it('runs the restore again once the earlier restore of the install has finished', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    installedFrontend()
+    mockInstall.mockResolvedValueOnce({ code: 2, output: '' })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(true)
+    expect(mockInstall).toHaveBeenCalledTimes(2)
+  })
+
+  it('puts the old files back when the restore fails after writing part of the new version', async () => {
     const inst = managedInstall()
     writeCore('comfyui-frontend-package==1.28.7\n')
     const sitePackages = installedFrontend()
@@ -3167,10 +3177,10 @@ describe('restoreCoreFrontend', () => {
     })
 
     expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
-    expect(
-      fs.existsSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info'))
-    ).toBe(false)
-    expect(read(sitePackages, 'comfyui_frontend_package/static/index.html')).toBeNull()
+    expect(read(sitePackages, 'comfyui_frontend_package/static/index.html')).toBe('old index')
+    expect(read(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info/METADATA')).toBe(
+      'Version: 1.28.8'
+    )
     await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
