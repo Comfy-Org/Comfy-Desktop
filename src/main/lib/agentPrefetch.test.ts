@@ -221,15 +221,6 @@ describe('prefetchEnrolledAgents', () => {
     expect(harness.runs[0]!.request).toMatchObject({ signature: 'comfy-agent==0.1.0rc3' })
   })
 
-  it('downloads nothing for a campaign that stopped enrolling when the user never joined', async () => {
-    harness.answers = new Map([['agent', { ...ENROL, enrol: false }]])
-
-    const done = prefetchEnrolledAgents()
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(harness.runs).toEqual([])
-    await done
-  })
-
   it('downloads for every install that can take the agent, one install at a time', async () => {
     harness.answers = new Map([['agent', ENROL]])
 

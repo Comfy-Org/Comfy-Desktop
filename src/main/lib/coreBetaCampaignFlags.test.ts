@@ -230,7 +230,9 @@ describe('initCoreBetaCampaigns', () => {
     const live = getCoreBetaCampaigns({ live: true })
     await new Promise((resolve) => setImmediate(resolve))
     listNow(value(true, [...REGISTRY, { key: LATER, args: ['--enable-agent'] }]))
-    expect((await live).registry.map(({ key }) => key)).toEqual([KEY, LATER])
+    const { registry, answers } = await live
+    expect(registry.map(({ key }) => key)).toEqual([KEY, LATER])
+    expect(answers.get(LATER)).toMatchObject({ enrol: true, fetchedAt: NOW })
   })
 
   it('fetches a key the fresh registry lists for the first time on the same boot', async () => {
