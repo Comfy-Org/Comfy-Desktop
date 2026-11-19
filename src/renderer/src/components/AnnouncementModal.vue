@@ -47,13 +47,13 @@ onMounted(() => {
     :open="true"
     :aria-label="$t('announcement.comfyApi.title')"
     overlay-class="announce-overlay fixed inset-0 z-60 grid place-items-center px-[clamp(32px,5vw,80px)] pt-[clamp(72px,10vh,132px)] pb-[clamp(80px,11vh,140px)] bg-neutral-800/70"
-    content-class="announce-content relative flex w-[min(100%,calc((100vh_-_clamp(152px,21vh,272px))_*_(916_/_445)))] max-w-full max-h-full aspect-[916/445] overflow-visible rounded-panel border border-solid border-border bg-neutral-900 max-[800px]:h-full max-[800px]:aspect-auto"
+    content-class="announce-content relative flex w-[min(100%,calc((100vh_-_clamp(152px,21vh,272px))_*_(916_/_445)))] max-w-[min(100%,calc(100vw_-_128px))] max-h-full aspect-[916/445] overflow-visible rounded-panel border border-solid border-border bg-neutral-900 max-[800px]:h-full max-[800px]:aspect-auto"
     @close="dismiss"
   >
     <Button
       variant="muted-textonly"
       size="icon"
-      class="announce-close absolute top-0 -right-12 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white max-[860px]:top-3 max-[860px]:right-3"
+      class="announce-close absolute top-0 -right-12 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
       type="button"
       :aria-label="$t('common.close')"
       data-testid="announcement-close"
