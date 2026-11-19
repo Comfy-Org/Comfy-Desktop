@@ -1572,6 +1572,23 @@ describe('AssetsView', () => {
     expect(openAsset).not.toHaveBeenCalled()
   })
 
+  it('gives a Cloud output that Auto-Download already saved Show in Finder in the viewer, and one it did not Download', async () => {
+    findDownloadedOutputs.mockResolvedValue({ saved: '/out/saved.png' })
+    const wrapper = await mountAssets()
+    await signInWith([asset('saved', 'saved.png', 'image'), asset('older', 'older.png', 'image')])
+    await flushPromises()
+
+    await wrapper.get('[data-testid="asset-open-saved"]').trigger('click')
+    await flushPromises()
+    expect(viewer()!.querySelector('[data-testid="output-detail-download"]')).toBeNull()
+    viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/saved.png')
+
+    await press('ArrowRight')
+    expect(viewer()!.querySelector('[data-testid="output-detail-show-in-folder"]')).toBeNull()
+    expect(viewer()!.querySelector('[data-testid="output-detail-download"]')).not.toBeNull()
+  })
+
   it('gives a 3D file on this computer only Show in Finder in the viewer', async () => {
     const wrapper = await mountAssets([asset('/out/mesh.glb', 'mesh.glb', '3d')])
 

@@ -838,7 +838,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
     savedIn: savedFolderOf(asset),
-    mainAction: fileOnDisk(asset) ? null : 'download',
+    mainAction: savedFolderOf(asset) ? null : 'download',
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
