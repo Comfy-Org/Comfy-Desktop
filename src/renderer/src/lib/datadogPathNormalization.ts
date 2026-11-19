@@ -1,5 +1,5 @@
 import { datadogRum, type RumBeforeSend, type RumErrorEvent } from '@datadog/browser-rum'
-import { scrubPII } from '../../../shared/piiScrub'
+import { scrubPII, scrubSecrets } from '../../../shared/piiScrub'
 
 export const DATADOG_BUNDLE_BASE_URL = 'app://app'
 
@@ -45,15 +45,16 @@ export function normalizeRumErrorEvent(event: RumErrorEvent): void {
 }
 
 export function flattenErrorWithCauses(error: RumErrorEvent['error']): Error {
+  const scrub = (text: string): string => scrubRumText(scrubSecrets(text))
   const causes = error.causes ?? []
   const message = [
     error.message,
-    ...causes.map((cause) => `Caused by: ${cause.type ?? 'Error'}: ${cause.message}`)
+    ...causes.map((cause) => `Caused by: ${cause.type ? `${cause.type}: ` : ''}${cause.message}`)
   ]
-  const flattened = new Error(scrubRumText(message.join('\n')))
+  const flattened = new Error(scrub(message.join('\n')))
   flattened.name = error.type ?? flattened.name
   const stacks = [error.stack, ...causes.map((cause) => cause.stack)].filter(Boolean)
-  flattened.stack = scrubRumText(normalizeDatadogBundlePaths(stacks.join('\n')) ?? '')
+  flattened.stack = scrub(normalizeDatadogBundlePaths(stacks.join('\n')) ?? '')
   return flattened
 }
 
@@ -61,7 +62,12 @@ export const rumBeforeSend: RumBeforeSend = (event) => {
   if (event.type !== 'error') return true
   if (event.error.causes?.length) {
     const flattened = flattenErrorWithCauses(event.error)
-    setTimeout(() => datadogRum.addError(flattened, event.context))
+    const context = {
+      ...event.context,
+      original_error_source: event.error.source,
+      original_error_handling: event.error.handling
+    }
+    setTimeout(() => datadogRum.addError(flattened, context))
     return false
   }
   normalizeRumErrorEvent(event)

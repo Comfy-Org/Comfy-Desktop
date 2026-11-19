@@ -48,7 +48,9 @@ test('the real RUM SDK sends a scrubbed error, and an error that wraps a cause o
 
   datadogRum.addError(new Error('plain failure at C:\\Users\\bob\\x'))
   datadogRum.addError(
-    new Error('wrapped failure', { cause: new Error('inner failure at C:\\Users\\alice\\x') }),
+    new Error('wrapped failure', {
+      cause: new Error('inner failure at C:\\Users\\alice\\x with password=hunter2')
+    }),
     { origin: 'sdk-test-context' }
   )
   await vi.waitFor(() => expect(errorsSeenByBeforeSend).toHaveLength(3), {
@@ -57,19 +59,28 @@ test('the real RUM SDK sends a scrubbed error, and an error that wraps a cause o
   })
   hidePage()
 
-  await vi.waitFor(() => expect(sentBodies.join('\n')).toContain('Caused by'), {
-    timeout: 10_000,
-    interval: 100
-  })
+  await vi.waitFor(
+    () => {
+      const sentSoFar = sentBodies.join('\n')
+      expect(sentSoFar).toContain('Caused by')
+      expect(sentSoFar).toContain('plain failure')
+    },
+    {
+      timeout: 10_000,
+      interval: 100
+    }
+  )
   const sent = sentBodies.join('\n')
   expect(sent).toContain('plain failure at C:\\\\Users\\\\[REDACTED]')
   expect(sent).not.toContain('bob')
   expect(sent).not.toContain('alice')
+  expect(sent).not.toContain('hunter2')
   expect(sent).toContain(
     'wrapped failure\\nCaused by: Error: inner failure at C:\\\\Users\\\\[REDACTED]'
   )
   expect(sent).not.toContain('"causes"')
   expect(sent).toContain('"origin":"sdk-test-context"')
+  expect(sent).toContain('"original_error_source":"custom"')
   expect(sent.match(/"message":"wrapped failure/g)).toHaveLength(1)
   expect(errorsSeenByBeforeSend[2]).toContain('Caused by')
 })

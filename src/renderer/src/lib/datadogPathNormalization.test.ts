@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import type { RumErrorEvent } from '@datadog/browser-rum'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { datadogRum, type RumErrorEvent } from '@datadog/browser-rum'
 import {
   flattenErrorWithCauses,
   normalizeDatadogBundlePaths,
@@ -111,23 +111,39 @@ describe('rumBeforeSend', () => {
   const send = (event: unknown): boolean | undefined =>
     rumBeforeSend(event as Parameters<typeof rumBeforeSend>[0], {} as never) as boolean | undefined
 
-  it('drops an error event that carries causes, since the SDK sends causes as they were', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('drops an error event that carries causes and reports it once, flattened, with its context', () => {
+    vi.useFakeTimers()
+    const addError = vi.spyOn(datadogRum, 'addError').mockImplementation(() => undefined)
     const event = {
       type: 'error',
+      context: { origin: 'renderer' },
       error: {
         message: 'wrapped',
-        source: 'custom',
-        causes: [
-          {
-            message: 'inner C:\\Users\\alice\\x',
-            source: 'custom',
-            stack: 'Error: inner\n    at /home/bob/plugins/y.js:2:2'
-          }
-        ]
+        source: 'console',
+        handling: 'unhandled',
+        causes: [{ message: 'inner C:\\Users\\alice\\x', source: 'console', type: 'Error' }]
       }
     }
 
     expect(send(event)).toBe(false)
+    expect(addError).not.toHaveBeenCalled()
+    vi.runAllTimers()
+
+    expect(addError).toHaveBeenCalledTimes(1)
+    const [reported, context] = addError.mock.calls[0] ?? []
+    expect((reported as Error).message).toBe(
+      'wrapped\nCaused by: Error: inner C:\\Users\\[REDACTED]\\x'
+    )
+    expect(context).toEqual({
+      origin: 'renderer',
+      original_error_source: 'console',
+      original_error_handling: 'unhandled'
+    })
   })
 
   it('flattens an error and its causes into one scrubbed error without a cause', () => {
@@ -135,34 +151,34 @@ describe('rumBeforeSend', () => {
       message: 'wrapped at /home/bob/a',
       source: 'custom',
       type: 'DesktopTelemetryError',
-      stack: 'Error: wrapped\n    at /home/bob/plugins/x.js:1:1',
+      stack: 'DesktopTelemetryError: wrapped\n  at load @ app://app/renderer/x.js:1:1',
       causes: [
         {
-          message: 'inner C:\\Users\\alice\\x',
+          message:
+            'fetch failed with Authorization: Bearer abcdefghijklmnop at C:\\Users\\alice\\x',
           source: 'custom',
           type: 'TypeError',
-          stack: 'TypeError: inner\n    at /home/bob/plugins/y.js:2:2'
+          stack: 'TypeError: fetch failed\n  at <anonymous> @ file:///home/bob/plugins/y.js:2:2'
         },
-        { message: 'plain string cause', source: 'custom' }
+        { message: '"plain string cause"', source: 'custom' }
       ]
     } as RumErrorEvent['error'])
 
     expect(flattened.message).toBe(
       [
         'wrapped at /home/[REDACTED]/a',
-        'Caused by: TypeError: inner C:\\Users\\[REDACTED]\\x',
-        'Caused by: Error: plain string cause'
+        'Caused by: TypeError: fetch failed with Authorization: Bearer [REDACTED] at C:\\Users\\[REDACTED]\\x',
+        'Caused by: "plain string cause"'
       ].join('\n')
     )
     expect(flattened.stack).toBe(
       [
-        'Error: wrapped',
-        '    at /home/[REDACTED]/plugins/x.js:1:1',
-        'TypeError: inner',
-        '    at /home/[REDACTED]/plugins/y.js:2:2'
+        'DesktopTelemetryError: wrapped',
+        '  at load @ app://app/renderer/x.js:1:1',
+        'TypeError: fetch failed',
+        '  at <anonymous> @ file:///home/[REDACTED]/plugins/y.js:2:2'
       ].join('\n')
     )
-    expect(flattened.cause).toBeUndefined()
     expect(flattened.name).toBe('DesktopTelemetryError')
   })
 
