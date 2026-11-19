@@ -251,6 +251,26 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
             `[e2e-harness] renderer gone reason=${details.reason} exitCode=${details.exitCode} url=${url}`
           )
         })
+        electronApp.on('child-process-gone', (_event, details) => {
+          console.error(
+            `[e2e-harness] child process gone type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`
+          )
+        })
+        for (const name of ['before-quit', 'will-quit', 'quit'] as const) {
+          electronApp.on(name as 'quit', () => {
+            console.error(`[e2e-harness] app ${name}\n${new Error().stack ?? ''}`)
+          })
+        }
+        const quit = electronApp.quit.bind(electronApp)
+        electronApp.quit = () => {
+          console.error(`[e2e-harness] app.quit() called\n${new Error().stack ?? ''}`)
+          quit()
+        }
+        const exit = electronApp.exit.bind(electronApp)
+        electronApp.exit = (code?: number) => {
+          console.error(`[e2e-harness] app.exit(${code}) called\n${new Error().stack ?? ''}`)
+          exit(code)
+        }
       }
     })
   )
@@ -258,6 +278,11 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   let connectionClosed = false
   application.once('close', () => {
     connectionClosed = true
+  })
+  application.process()?.once('exit', (code, signal) => {
+    console.log(
+      `[e2e-harness] app process ended at ${new Date().toISOString()} code=${code} signal=${signal}`
+    )
   })
 
   const cleanup = async (): Promise<void> => {
