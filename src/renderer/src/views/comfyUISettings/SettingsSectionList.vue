@@ -23,6 +23,7 @@ import type {
   VersionStatRow,
   VersionStatsValue
 } from '../../types/ipc'
+import { revealInFolderKey } from '../../composables/usePlatform'
 
 interface Props {
   sections: DetailSection[]
@@ -66,6 +67,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const revealFolderKey = revealInFolderKey(window.api?.platform)
 
 function asString(v: DetailField['value']): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
@@ -462,8 +464,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                   size="unset"
                   type="button"
                   class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open static inline-block w-full min-w-0 flex-[0_1_auto] justify-self-end truncate rounded-lg border-none bg-transparent p-0 text-right text-[13px] leading-[19px] font-normal text-neutral-100 [font-family:inherit] appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
-                  :title="t('models.openDir')"
-                  :aria-label="`${t('models.openDir')}: ${readonlyDisplayValue(field)}`"
+                  :title="t(revealFolderKey)"
+                  :aria-label="`${t(revealFolderKey)}: ${readonlyDisplayValue(field)}`"
                   @click="emit('open-path', readonlyDisplayValue(field))"
                 >
                   {{ readonlyDisplayValue(field) }}

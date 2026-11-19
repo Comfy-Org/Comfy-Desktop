@@ -1130,7 +1130,7 @@ describe('PanelApp', () => {
         .exists()
     ).toBe(true)
     const openResultsFolder = wrapper.get('.performance-test__open-results')
-    expect(openResultsFolder.text()).toBe('Open folder')
+    expect(openResultsFolder.text()).toBe('Show in folder')
     await openResultsFolder.trigger('click')
     expect(api.openPath).toHaveBeenCalledWith('C:\\ComfyUI\\performance-tests\\20260907225600')
     const exportResultsImage = wrapper.get('.performance-test__export-results')
