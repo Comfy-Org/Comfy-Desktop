@@ -76,6 +76,7 @@ import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
+import { SUMMARY_BOX_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
 import PathOpenButton from '../components/PathOpenButton.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
@@ -1745,7 +1746,6 @@ defineExpose({ open })
     :anchor-top="view === 'change'"
     :brand-backdrop="useTakeoverHost"
     :closable="view === 'summary' && !hideBackToDashboard"
-    :close-title="$t('common.backToDashboard')"
     data-testid="new-build-modal"
     @close="emit('close')"
   >
@@ -1768,7 +1768,7 @@ defineExpose({ open })
 
     <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
       <div
-        class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
+        class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-5 py-3"
       >
         <label
           class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
@@ -1859,71 +1859,81 @@ defineExpose({ open })
         </Button>
       </div>
 
-      <dl
-        class="config-summary-list m-0 mt-3 flex flex-col"
+      <section
+        class="config-summary-list mt-3"
+        :class="SUMMARY_BOX_CLASS"
         :aria-label="$t('newInstall.installSummary')"
       >
         <SetupSummaryRow
           v-for="row in summaryRows"
           :key="row.key"
+          class="config-summary-row"
           :icon="row.icon"
           :label="row.label"
         >
-          <span class="grid min-w-0 flex-1 gap-1">
-            <span class="truncate text-[13px] leading-5 text-neutral-100">{{ row.value }}</span>
-            <span v-if="row.meta" class="truncate text-[12px] leading-4 text-text-muted">{{
-              row.meta
-            }}</span>
-          </span>
+          <span class="truncate text-foreground">{{ row.value }}</span>
+          <span
+            :class="[SUMMARY_META_CLASS, 'max-w-[220px] min-w-0 truncate text-subtle-foreground']"
+            :title="row.meta"
+            >{{ row.meta }}</span
+          >
         </SetupSummaryRow>
         <SetupSummaryRow
           v-if="showLocation"
-          class="config-summary-location"
+          class="config-summary-row config-summary-location"
           :icon="HardDrive"
           :label="$t('common.location')"
         >
-          <div class="grid min-w-0 flex-1 gap-1" data-testid="config-summary-path">
+          <span class="flex min-w-0" data-testid="config-summary-path">
             <PathOpenButton
               v-if="instPath"
-              class="leading-5"
+              class="leading-4"
               :path="instPath"
               @open="handleOpenInstPath"
             />
-            <span v-if="locationMeta" class="truncate text-[12px] leading-4 text-text-muted">{{
-              locationMeta
-            }}</span>
-            <span
-              v-if="diskShortLabel"
-              class="config-path-required text-[12px] leading-4 text-[var(--warning)]"
-              >{{ diskShortLabel }}</span
-            >
-            <PathDiskInfo
-              issues-only
-              :path-issues="pathIssues"
-              :disk-space-loading="diskSpaceLoading"
-              :disk-space="diskSpace"
-              :estimated-size="estimatedInstallSize"
-            />
-          </div>
-          <Button
-            size="sm"
-            variant="textonly"
-            type="button"
-            class="config-path-browse flex-none rounded-lg px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
-            data-testid="config-summary-browse"
-            @click="handleBrowse"
+          </span>
+          <span
+            class="flex min-w-0 items-center justify-end gap-3"
+            :class="[
+              SUMMARY_META_CLASS,
+              diskShortLabel ? 'text-[#f0b135]' : 'text-subtle-foreground'
+            ]"
           >
-            {{ $t('common.browse') }}
-          </Button>
+            <span class="min-w-0 truncate"
+              >{{ locationMeta }}<template v-if="locationMeta && diskShortLabel"> · </template
+              ><span v-if="diskShortLabel" class="config-path-required">{{
+                diskShortLabel
+              }}</span></span
+            >
+            <Button
+              size="sm"
+              variant="secondary"
+              type="button"
+              class="config-path-browse -my-1 flex-none rounded-lg px-3"
+              data-testid="config-summary-browse"
+              @click="handleBrowse"
+            >
+              {{ $t('common.browse') }}
+            </Button>
+          </span>
         </SetupSummaryRow>
         <div
           v-if="initializing && summaryRows.length === 0"
-          class="config-loading px-3.5 py-3 text-[13px] text-text-muted"
+          class="config-loading h-4 text-[13px]/4 text-subtle-foreground"
           :class="spinnerClass"
         >
           {{ $t('newInstall.loading') }}
         </div>
-      </dl>
+      </section>
+      <div v-if="showLocation" class="px-1">
+        <PathDiskInfo
+          issues-only
+          :path-issues="pathIssues"
+          :disk-space-loading="diskSpaceLoading"
+          :disk-space="diskSpace"
+          :estimated-size="estimatedInstallSize"
+        />
+      </div>
     </div>
 
     <div

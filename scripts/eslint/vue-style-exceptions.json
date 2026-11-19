@@ -3,10 +3,6 @@
     "reason": "Download notification keyframes and reduced-motion override.",
     "sha256": "ae98e99ddcf4e544979bf9ec45aa7a511267fd069f4ed3b8c59a6aaed009f58c"
   },
-  "src/renderer/src/comfyTitlePopup/DownloadsFullView.vue": {
-    "reason": "Preserve the existing dlm-shimmer animation.",
-    "sha256": "bc1de6656ec6e8ec3b0786d4d1b5a0b760583d52b1641df2630fe54c4988341f"
-  },
   "src/renderer/src/comfyTitlePopup/globalSettings/GitHubLinkCard.vue": {
     "reason": "Preserve the existing github-stars-shimmer animation.",
     "sha256": "c950b42486fd8f4b20bc10f305bfedefd5f7e4c7acf495a330dd8301e71f680c"
