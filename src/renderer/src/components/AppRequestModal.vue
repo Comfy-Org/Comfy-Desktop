@@ -2,6 +2,7 @@
 import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
+import Textarea from '@comfyorg/design-system/textarea/Textarea'
 import BaseModal from './ui/BaseModal.vue'
 
 type RequestStatus = 'idle' | 'sending' | 'sent' | 'failed'
@@ -94,8 +95,9 @@ watch(
   <BaseModal
     :open="open"
     size="sm"
+    close-outside
     :aria-labelledby="titleId"
-    :show-close-button="false"
+    content-class="[&_.base-modal-footer]:p-4 [&_.base-modal-header]:border-b-0 [&_.base-modal-header]:pb-0"
     @close="close"
   >
     <template #header>
@@ -113,7 +115,7 @@ watch(
       {{ t('apps.request.thanks') }}
     </p>
     <div v-else class="flex flex-col gap-2">
-      <textarea
+      <Textarea
         v-model="request"
         data-initial-focus
         rows="4"
@@ -122,7 +124,7 @@ watch(
         :aria-labelledby="titleId"
         :aria-describedby="failed ? errorId : undefined"
         :placeholder="t('apps.request.placeholder')"
-        class="w-full resize-none rounded-lg border border-solid border-border bg-transparent px-3 py-2 text-sm leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        class="resize-none leading-[1.5]"
         data-testid="app-request-input"
         @keydown.meta.enter="sendFromKeyboard"
         @keydown.ctrl.enter="sendFromKeyboard"
@@ -139,15 +141,6 @@ watch(
     </div>
 
     <template v-if="!sent" #footer>
-      <Button
-        type="button"
-        variant="secondary"
-        size="lg"
-        data-testid="app-request-cancel"
-        @click="close"
-      >
-        {{ t('common.cancel') }}
-      </Button>
       <Button
         type="button"
         variant="inverted"

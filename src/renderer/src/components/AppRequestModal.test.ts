@@ -166,7 +166,7 @@ describe('AppRequestModal', () => {
 
     sendButton().click()
     await flushPromises()
-    document.querySelector<HTMLButtonElement>('[data-testid="app-request-cancel"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-testid="base-modal-close"]')!.click()
     await flushPromises()
     expect(wrapper.emitted('close')).toHaveLength(1)
 
@@ -224,11 +224,12 @@ describe('AppRequestModal', () => {
     expect(input()).not.toBeNull()
   })
 
-  it('closes on Cancel without sending anything', async () => {
+  it('closes from the round × without sending anything, with Send as the only footer button', async () => {
     const wrapper = await mountRequest()
     await type('An app that colors line art')
+    expect(document.querySelectorAll('.base-modal-footer button')).toHaveLength(1)
 
-    document.querySelector<HTMLButtonElement>('[data-testid="app-request-cancel"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-testid="base-modal-close"]')!.click()
     await flushPromises()
 
     expect(wrapper.emitted('close')).toHaveLength(1)

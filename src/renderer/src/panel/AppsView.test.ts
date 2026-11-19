@@ -357,6 +357,29 @@ describe('AppsView', () => {
     wrapper.unmount()
   })
 
+  it('draws the request tile like an app card, with no border, at every width', async () => {
+    for (const width of [WIDE_PAGE_WIDTH, MEDIUM_PAGE_WIDTH, NARROW_PAGE_WIDTH]) {
+      page.style.width = `${width}px`
+      const wrapper = await mountApps([CUTOUT, HDR, GENJUTSU, { ...HDR, id: 'fourth' }])
+      const tile = wrapper.get('[data-testid="app-request-open"]').element
+      const card = wrapper.get('[data-testid="app-card-fourth"]').element
+      const tileStyle = getComputedStyle(tile)
+      const cardStyle = getComputedStyle(card)
+      const tileBox = tile.getBoundingClientRect()
+      const label = wrapper.get('[data-testid="app-request-label"]').element.getBoundingClientRect()
+
+      expect(tileStyle.borderTopWidth).toBe('0px')
+      expect(tileStyle.backgroundColor).toBe(cardStyle.backgroundColor)
+      expect(tileStyle.borderTopLeftRadius).toBe(cardStyle.borderTopLeftRadius)
+      expect(tileBox.width / tileBox.height).toBeCloseTo(1, 2)
+      expect(tileBox.height).toBeCloseTo(card.getBoundingClientRect().height, 0)
+      expect(label.left).toBeGreaterThanOrEqual(tileBox.left)
+      expect(label.right).toBeLessThanOrEqual(tileBox.right)
+      expect(label.bottom).toBeLessThanOrEqual(tileBox.bottom)
+      wrapper.unmount()
+    }
+  })
+
   it('opens the request window from the tile', async () => {
     const wrapper = await mountApps()
     expect(document.querySelector('[data-testid="app-request-input"]')).toBeNull()
@@ -367,7 +390,7 @@ describe('AppsView', () => {
     expect(document.body.textContent).toContain('What app do you want?')
     expect(document.querySelector('[data-testid="app-request-input"]')).not.toBeNull()
 
-    document.querySelector<HTMLButtonElement>('[data-testid="app-request-cancel"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-testid="base-modal-close"]')!.click()
     await expect.poll(() => document.querySelector('[data-testid="app-request-input"]')).toBeNull()
     wrapper.unmount()
   })

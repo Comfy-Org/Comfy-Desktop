@@ -314,12 +314,22 @@ onBeforeUnmount(() => {
           >
             <button
               type="button"
-              class="flex aspect-square w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-card border border-dashed border-border bg-transparent p-6 text-center text-muted-foreground outline-none transition-colors duration-200 hover:bg-[rgb(235_235_235/0.05)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+              class="group relative block aspect-square w-full cursor-pointer overflow-hidden rounded-card border-0 bg-[rgb(235_235_235/0.05)] p-0 text-left text-muted-foreground outline-none transition-colors duration-200 hover:bg-[rgb(235_235_235/0.08)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
               data-testid="app-request-open"
               @click="requestOpen = true"
             >
-              <Plus :size="24" :stroke-width="1.5" aria-hidden="true" />
-              <span class="text-sm/[17px] font-semibold">{{ t('apps.request.tile') }}</span>
+              <span class="absolute inset-0 flex items-center justify-center" aria-hidden="true">
+                <Plus
+                  :size="28"
+                  :stroke-width="1.5"
+                  class="transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-110 group-focus-visible:scale-110 motion-reduce:transition-none motion-reduce:group-hover:scale-100 motion-reduce:group-focus-visible:scale-100"
+                />
+              </span>
+              <span
+                class="absolute inset-x-3.5 bottom-3 line-clamp-2 text-sm/[17px] font-semibold"
+                data-testid="app-request-label"
+                >{{ t('apps.request.tile') }}</span
+              >
             </button>
           </li>
         </ul>
