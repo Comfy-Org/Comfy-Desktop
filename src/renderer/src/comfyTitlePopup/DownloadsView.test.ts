@@ -315,6 +315,15 @@ describe('comfyTitlePopup/DownloadsView', () => {
       ])
     })
 
+    it("tells assistive tech what Enter does on a finished file's row", async () => {
+      const { rows } = await mountRows()
+
+      expect(rows[0]!.attributes('aria-description')).toBe('Show in Finder')
+      expect(rows[0]!.attributes('aria-keyshortcuts')).toBe('Enter Space')
+      expect(rows[1]!.attributes('aria-description')).toBeUndefined()
+      expect(rows[1]!.attributes('aria-keyshortcuts')).toBeUndefined()
+    })
+
     it('leaves Enter on a row button to that button', async () => {
       const { rows } = await mountRows()
 

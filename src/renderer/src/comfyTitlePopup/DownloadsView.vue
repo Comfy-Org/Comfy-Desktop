@@ -205,6 +205,8 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
         ]"
         :style="progressStyle(d)"
         tabindex="0"
+        :aria-description="isRowClickable(d) ? revealLabel : undefined"
+        :aria-keyshortcuts="isRowClickable(d) ? 'Enter Space' : undefined"
         @click="(e) => handleRowClick(d, e)"
         @keydown="(e) => onRowKeydown(d, e)"
       >
