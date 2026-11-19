@@ -257,7 +257,7 @@ function activate(placed: { card: Card; offset: number }): void {
           <CoverRotation
             v-if="showsPicture(placed.card)"
             :pictures="picturesOf(placed.card)"
-            :paused="!placed.onStage"
+            :paused="placed.offset !== 0"
             @broken="markPictureBroken(placed.card)"
           />
           <span

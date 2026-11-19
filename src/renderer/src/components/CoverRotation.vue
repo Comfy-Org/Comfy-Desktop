@@ -9,12 +9,13 @@ import { COVER_FADE_MS, useCoverRotation } from '../composables/useCoverRotation
 import type { AppCover } from '../types/ipc'
 
 type Role = 'shown' | 'leaving' | 'upcoming' | 'poster'
+type Kind = 'still' | 'cover'
 
 interface Layer {
   index: number
   src: string
   role: Role
-  kind: 'still' | 'cover'
+  kind: Kind
 }
 
 const LAYER_CLASS: Record<Role, string> = {
@@ -101,33 +102,35 @@ function stillIndex(): number | null {
   return other >= 0 ? other : null
 }
 
-const layers = computed<Layer[]>(() => {
-  const picked: Array<[number | null, Role]> = still.value
-    ? [[stillIndex(), 'shown']]
-    : [
-        [leaving.value, 'leaving'],
-        [shown.value, 'shown'],
-        [shownLoaded.value ? upcoming.value : null, 'upcoming']
-      ]
-  const seen = new Set<number>()
-  const covers = picked
-    .filter((entry): entry is [number, Role] => {
-      const [index] = entry
-      if (index === null || pictures[index] === undefined || seen.has(index)) return false
-      seen.add(index)
-      return true
-    })
-    .map(([index, role]): Layer => {
-      const picture = pictures[index]!
-      return still.value
-        ? { index, src: picture.stillUrl!, role, kind: 'still' }
-        : { index, src: picture.url, role, kind: 'cover' }
-    })
+function pick(): Array<[number | null, Role, Kind]> {
+  if (still.value || allFailed.value) return [[stillIndex(), 'shown', 'still']]
+  if (paused)
+    return [
+      [stillIndex(), 'shown', 'still'],
+      [shown.value, 'upcoming', 'cover']
+    ]
+  const picked: Array<[number | null, Role, Kind]> = [
+    [leaving.value, 'leaving', 'cover'],
+    [shown.value, 'shown', 'cover'],
+    [shownLoaded.value ? upcoming.value : null, 'upcoming', 'cover']
+  ]
   const poster = posterIndex()
-  if (poster !== null) {
-    covers.push({ index: poster, src: pictures[poster]!.stillUrl!, role: 'poster', kind: 'still' })
-  }
-  return covers.sort((a, b) => a.index - b.index)
+  if (poster !== null) picked.push([poster, 'poster', 'still'])
+  return picked
+}
+
+const layers = computed<Layer[]>(() => {
+  const seen = new Set<string>()
+  return pick()
+    .flatMap(([index, role, kind]): Layer[] => {
+      const picture = index === null ? undefined : pictures[index]
+      if (index === null || picture === undefined) return []
+      const src = kind === 'still' ? picture.stillUrl! : picture.url
+      if (seen.has(src)) return []
+      seen.add(src)
+      return [{ index, src, role, kind }]
+    })
+    .sort((a, b) => a.index - b.index)
 })
 
 function opacityOf(layer: Layer): string {
@@ -138,7 +141,9 @@ function opacityOf(layer: Layer): string {
 function onError(layer: Layer): void {
   if (layer.kind === 'cover') {
     markFailed(layer.index)
-    if (allFailed.value) emit('broken')
+    if (pictures[layer.index]?.stillUrl === layer.src)
+      failedStills.value = new Set(failedStills.value).add(layer.index)
+    if (allFailed.value && stillIndex() === null) emit('broken')
     return
   }
   if (layer.role === 'poster') {
@@ -146,7 +151,7 @@ function onError(layer: Layer): void {
     return
   }
   failedStills.value = new Set(failedStills.value).add(layer.index)
-  if (stillIndex() === null) emit('broken')
+  if ((still.value || allFailed.value) && stillIndex() === null) emit('broken')
 }
 </script>
 
@@ -168,6 +173,7 @@ function onError(layer: Layer): void {
       :class="[LAYER_CLASS[layer.role], opacityOf(layer)]"
       :aria-hidden="layer.role === 'shown' ? undefined : 'true'"
       :data-cover="layer.role"
+      :data-kind="layer.kind"
       :data-loaded="isLoaded(layer)"
       @load="onLoad(layer)"
       @error="onError(layer)"
