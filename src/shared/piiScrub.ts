@@ -9,7 +9,7 @@ const PII_PATH_PATTERNS: RegExp[] = [
   String.raw`(\\\\${SHARE_HOST}[\\/]+[A-Za-z]\$[\\/]+Users)`,
   String.raw`(\\\\[?.][\\/]+UNC[\\/]+${SHARE_HOST}(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
   String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users)`,
-  String.raw`((?<![\w.~$\\/-])\\+Users)`,
+  String.raw`((?:(?<=\\[nrt])|(?<![\w.~$\\/-]))\\+Users)`,
   String.raw`(\/Users)`,
   String.raw`(\/home)`
 ].map((root) => new RegExp(`${root}(?:${ESCAPED_SEP_NAME}|${RAW_SEP_NAME})`, 'gi'))

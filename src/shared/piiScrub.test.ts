@@ -290,6 +290,17 @@ describe('piiScrub', () => {
       expect(scrubPII(input)).toBe(expected)
     })
 
+    it.each([
+      ['Traceback\\n\\Users\\alice\\x', 'Traceback\\n\\Users\\[REDACTED]\\x'],
+      ['Traceback\\r\\n\\Users\\alice\\x', 'Traceback\\r\\n\\Users\\[REDACTED]\\x'],
+      ['x\\t\\Users\\alice\\x', 'x\\t\\Users\\[REDACTED]\\x']
+    ])(
+      'redacts a root-relative Users path after an escaped line break or tab: %s',
+      (input, expected) => {
+        expect(scrubPII(input)).toBe(expected)
+      }
+    )
+
     it('redacts the segment after a /users/ URL path', () => {
       expect(scrubPII('https://api.example.com/users/me/keys')).toBe(
         'https://api.example.com/users/[REDACTED]/keys'
