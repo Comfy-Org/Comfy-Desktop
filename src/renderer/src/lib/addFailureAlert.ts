@@ -5,22 +5,29 @@ interface AddFailure {
   reason?: AddFailureReason
 }
 
-interface NoticeFn {
-  (opts: { title: string; message: string; actionLabel?: string }): Promise<boolean>
+interface AddFailureModal {
+  alert: (opts: { title: string; message: string }) => Promise<void>
+  notice: (opts: { title: string; message: string; actionLabel: string }) => Promise<boolean>
 }
 
 export async function alertAddFailure(opts: {
-  notice: NoticeFn
+  modal: AddFailureModal
   t: (key: string) => string
   title: string
   failure: AddFailure
   onChangeLocation?: () => unknown
 }): Promise<void> {
-  const canChangeLocation = opts.failure.reason === 'location' && !!opts.onChangeLocation
-  const pressed = await opts.notice({
-    title: opts.title,
-    message: opts.failure.message || opts.t('errors.cannotAddDetail'),
-    ...(canChangeLocation ? { actionLabel: opts.t('errors.changeLocation') } : {})
+  const title = opts.title
+  const message = opts.failure.message || opts.t('errors.cannotAddDetail')
+  const changeLocation = opts.failure.reason === 'location' ? opts.onChangeLocation : undefined
+  if (!changeLocation) {
+    await opts.modal.alert({ title, message })
+    return
+  }
+  const pressed = await opts.modal.notice({
+    title,
+    message,
+    actionLabel: opts.t('errors.changeLocation')
   })
-  if (pressed && canChangeLocation) await opts.onChangeLocation!()
+  if (pressed) await changeLocation()
 }

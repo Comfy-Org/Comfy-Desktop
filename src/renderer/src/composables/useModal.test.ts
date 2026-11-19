@@ -41,24 +41,15 @@ describe('useModal', () => {
     it('shows its action button and resolves true when it is pressed', async () => {
       const promise = modal.notice({ title: 'T', message: 'M', actionLabel: 'Change location' })
       expect(modal.state.type).toBe('alert')
-      expect(modal.state.showButton).toBe(true)
       expect(modal.state.buttonLabel).toBe('Change location')
       modal.close(true)
       await expect(promise).resolves.toBe(true)
     })
 
-    it('has no button without an actionLabel and resolves false when dismissed', async () => {
-      const promise = modal.notice({ title: 'T', message: 'M' })
-      expect(modal.state.showButton).toBe(false)
+    it('resolves false when it is dismissed', async () => {
+      const promise = modal.notice({ title: 'T', message: 'M', actionLabel: 'Change location' })
       modal.dismiss()
       await expect(promise).resolves.toBe(false)
-    })
-
-    it('leaves plain alerts with their button', () => {
-      modal.notice({ title: 'T', message: 'M' })
-      modal.dismiss()
-      modal.alert({ title: 'T', message: 'M' })
-      expect(modal.state.showButton).toBe(true)
     })
   })
 

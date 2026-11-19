@@ -42,42 +42,49 @@ beforeEach(() => {
 })
 
 describe('TrackBuildForm, when the build cannot be added', () => {
-  it('offers Change location for a folder problem and opens the same folder picker', async () => {
-    const { wrapper, saving } = await failToAdd({
+  it.each([['That directory does not exist.'], ['That directory is already used by "Studio".']])(
+    'offers Change location for a folder problem (%s) and opens the same picker',
+    async (message) => {
+      const { wrapper, saving } = await failToAdd({ ok: false, message, reason: 'location' })
+      const modal = useModal()
+      expect(modal.state.visible).toBe(true)
+      expect(modal.state.title).toBe("Couldn't add this build")
+      expect(modal.state.message).toBe(message)
+      expect(modal.state.buttonLabel).toBe('Change location')
+
+      modal.close(true)
+      await saving
+      await flushPromises()
+
+      expect(window.api.browseFolder).toHaveBeenCalledTimes(2)
+      expect(window.api.browseFolder).toHaveBeenLastCalledWith('/home/user/Old')
+      expect(window.api.probeInstallation).toHaveBeenLastCalledWith('/home/user/New')
+      expect(wrapper.text()).toContain('/home/user/New')
+      expect(window.api.trackInstallation).toHaveBeenCalledTimes(1)
+      expect(wrapper.emitted('saved')).toBeUndefined()
+    }
+  )
+
+  it('leaves the location alone when Change location is closed with the ×', async () => {
+    const { saving } = await failToAdd({
       ok: false,
       message: 'That directory does not exist.',
       reason: 'location'
     })
-    const modal = useModal()
-    expect(modal.state.visible).toBe(true)
-    expect(modal.state.title).toBe("Couldn't add this build")
-    expect(modal.state.message).toBe('That directory does not exist.')
-    expect(modal.state.showButton).toBe(true)
-    expect(modal.state.buttonLabel).toBe('Change location')
-
-    modal.close(true)
+    useModal().dismiss()
     await saving
     await flushPromises()
-
-    expect(window.api.browseFolder).toHaveBeenCalledTimes(2)
-    expect(window.api.browseFolder).toHaveBeenLastCalledWith('/home/user/Old')
-    expect(window.api.probeInstallation).toHaveBeenLastCalledWith('/home/user/New')
-    expect(wrapper.text()).toContain('/home/user/New')
-    expect(window.api.trackInstallation).toHaveBeenCalledTimes(1)
-    expect(wrapper.emitted('saved')).toBeUndefined()
+    expect(window.api.browseFolder).toHaveBeenCalledTimes(1)
   })
 
-  it('shows any other failure with no footer button, only the close ×', async () => {
-    const { wrapper, saving } = await failToAdd({
-      ok: false,
-      message: 'That directory is already used by "Studio".'
-    })
+  it('shows any other failure with a single OK that only closes', async () => {
+    const { wrapper, saving } = await failToAdd({ ok: false, message: 'Disk is read-only.' })
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
-    expect(modal.state.message).toBe('That directory is already used by "Studio".')
-    expect(modal.state.showButton).toBe(false)
+    expect(modal.state.message).toBe('Disk is read-only.')
+    expect(modal.state.buttonLabel).toBe('OK')
 
-    modal.dismiss()
+    modal.close(true)
     await saving
     await flushPromises()
 

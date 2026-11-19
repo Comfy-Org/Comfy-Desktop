@@ -123,15 +123,6 @@ describe('ModalDialog shared controls', () => {
     await expect(closed).resolves.toBe(false)
   })
 
-  it('shows a notice with no action as title, message and the × only', async () => {
-    const result = modal.notice({ title: 'Cannot add', message: 'Already added.' })
-    await settle()
-    expect(document.querySelector('.base-alert-footer')).toBeNull()
-    expect(document.querySelector('[data-testid="base-alert-action"]')).toBeNull()
-    getElement<HTMLButtonElement>('[data-testid="base-alert-close-icon"]').click()
-    await expect(result).resolves.toBe(false)
-  })
-
   it('still resolves a plain alert from its OK button and from the ×', async () => {
     const ok = modal.alert({ title: 'Done', message: 'Saved.' })
     await settle()

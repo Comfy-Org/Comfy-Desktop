@@ -1544,7 +1544,6 @@ describe('InstallWizardModal workspace Builds', () => {
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
     expect(modal.state.message).toBe('Invalid install location.')
-    expect(modal.state.showButton).toBe(true)
     expect(modal.state.buttonLabel).toBe('Change location')
     expect(window.api.browseFolder).not.toHaveBeenCalled()
 
@@ -1558,14 +1557,14 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(wrapper.text()).toContain('/home/user/Picked')
   })
 
-  it('shows any other failure with no footer button, only the close ×', async () => {
+  it('shows any other failure with a single OK that only closes', async () => {
     const wrapper = await failBuildInstall({ message: 'Install already starting.' })
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
     expect(modal.state.message).toBe('Install already starting.')
-    expect(modal.state.showButton).toBe(false)
+    expect(modal.state.buttonLabel).toBe('OK')
 
-    modal.dismiss()
+    modal.close(true)
     await flushPromises()
 
     expect(window.api.browseFolder).not.toHaveBeenCalled()

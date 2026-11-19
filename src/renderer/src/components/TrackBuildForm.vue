@@ -171,7 +171,7 @@ async function trackProbedInstall(probed: ProbeResult): Promise<void> {
   const result = await window.api.trackInstallation(data)
   if (!result.ok) {
     await alertAddFailure({
-      notice: modal.notice,
+      modal,
       t,
       title: t('track.cannotTrack'),
       failure: result,

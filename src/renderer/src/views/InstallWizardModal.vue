@@ -994,7 +994,7 @@ async function handOffInstall(result: InstallBuildResult, failureTitle: string):
       error_bucket: toErrorBucket(result.message || '')
     })
     await alertAddFailure({
-      notice: modal.notice,
+      modal,
       t,
       title: failureTitle,
       failure: result,
@@ -1105,7 +1105,7 @@ async function handleSave(): Promise<void> {
     })
     if (!result.ok) {
       await alertAddFailure({
-        notice: modal.notice,
+        modal,
         t,
         title: t('errors.cannotAdd'),
         failure: result

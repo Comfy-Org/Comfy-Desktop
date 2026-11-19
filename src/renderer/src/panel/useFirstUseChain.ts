@@ -165,7 +165,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       const result = await addPlannedInstallation(plan)
       if (!result.ok || !result.entry) {
         await alertAddFailure({
-          notice: modal.notice,
+          modal,
           t,
           title: t('errors.cannotAdd'),
           failure: result,
@@ -199,7 +199,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
         reason: 'error'
       })
       await alertAddFailure({
-        notice: modal.notice,
+        modal,
         t,
         title: t('errors.cannotAdd'),
         failure: { message: (err as Error).message }

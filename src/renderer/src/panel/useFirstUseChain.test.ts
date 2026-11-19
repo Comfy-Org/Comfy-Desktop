@@ -297,18 +297,18 @@ describe('useFirstUseChain — Set up', () => {
     expect(chain.resetFirstUseSpinner).toHaveBeenCalled()
   })
 
-  it('explains a build that cannot be added, with no button beside the close ×', async () => {
+  it('explains a build that cannot be added, with a single OK', async () => {
     testApi.addInstallation = vi.fn().mockResolvedValue({ ok: false, message: 'path conflict' })
     stubWindowApi(testApi)
 
     const chain = mountChain()
     await chain.api!.handleSetupInstall(setupPlan())
 
-    expect(modal.notice).toHaveBeenCalledWith({
+    expect(modal.alert).toHaveBeenCalledWith({
       title: "Couldn't add this build",
       message: 'path conflict'
     })
-    expect(modal.alert).not.toHaveBeenCalled()
+    expect(modal.notice).not.toHaveBeenCalled()
     expect(chain.changeInstallLocation).not.toHaveBeenCalled()
     expect(chain.handleShowProgress).not.toHaveBeenCalled()
     expect(chain.resetFirstUseSpinner).toHaveBeenCalled()
@@ -334,6 +334,39 @@ describe('useFirstUseChain — Set up', () => {
     expect(chain.resetFirstUseSpinner).toHaveBeenCalled()
   })
 
+  it('offers Change location when the folder is already used by another build', async () => {
+    testApi.addInstallation = vi.fn().mockResolvedValue({
+      ok: false,
+      message: 'That directory is already used by "Studio".',
+      reason: 'location'
+    })
+    stubWindowApi(testApi)
+    vi.mocked(modal.notice).mockResolvedValue(true)
+
+    const chain = mountChain()
+    await chain.api!.handleSetupInstall(setupPlan())
+
+    expect(modal.notice).toHaveBeenCalledWith({
+      title: "Couldn't add this build",
+      message: 'That directory is already used by "Studio".',
+      actionLabel: 'Change location'
+    })
+    expect(chain.changeInstallLocation).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a thrown error with a single OK', async () => {
+    testApi.addInstallation = vi.fn().mockRejectedValue(new Error('boom'))
+    stubWindowApi(testApi)
+
+    const chain = mountChain()
+    await chain.api!.handleSetupInstall(setupPlan())
+
+    expect(modal.alert).toHaveBeenCalledWith({ title: "Couldn't add this build", message: 'boom' })
+    expect(modal.notice).not.toHaveBeenCalled()
+    expect(chain.changeInstallLocation).not.toHaveBeenCalled()
+    expect(chain.resetFirstUseSpinner).toHaveBeenCalled()
+  })
+
   it('leaves the location alone when Change location is closed with the ×', async () => {
     testApi.addInstallation = vi
       .fn()
@@ -356,7 +389,7 @@ describe('useFirstUseChain — Set up', () => {
     const chain = mountChain()
     await chain.api!.handleSetupInstall(setupPlan())
 
-    expect(modal.notice).toHaveBeenCalledWith({
+    expect(modal.alert).toHaveBeenCalledWith({
       title: "Couldn't add this build",
       message: 'Something went wrong while adding it. Check the install location, then try again.'
     })

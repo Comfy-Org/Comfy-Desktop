@@ -1431,6 +1431,32 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.add).not.toHaveBeenCalled()
   })
 
+  it('installBuild marks a folder another build already uses as a location problem', async () => {
+    mocks.isSignedIn.mockReturnValue(true)
+    mocks.resolveHostArtifact.mockResolvedValue({
+      version: 7,
+      artifact: {
+        id: 'art-9',
+        os: 'linux',
+        gpu: 'nvidia',
+        accelVariant: 'cu128',
+        status: 'ready',
+        archiveSha256: 'deadbeef'
+      }
+    })
+    mocks.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image Baseline' }])
+    mocks.findDuplicatePath.mockResolvedValueOnce({ name: 'Studio' } as never)
+
+    const result = await handler('comfybuilder:installBuild')({}, { buildId: 'd1' })
+
+    expect(result).toEqual({
+      ok: false,
+      message: 'That directory is already used by "Studio".',
+      reason: 'location'
+    })
+    expect(mocks.add).not.toHaveBeenCalled()
+  })
+
   it('installBuild refuses an artifact with no integrity value', async () => {
     mocks.isSignedIn.mockReturnValue(true)
     mocks.resolveHostArtifact.mockResolvedValue({
