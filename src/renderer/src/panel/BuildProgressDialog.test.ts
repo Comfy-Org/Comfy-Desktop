@@ -310,3 +310,55 @@ describe('BuildProgressDialog', () => {
     expect(w.emitted('close')).toHaveLength(1)
   })
 })
+
+describe('an update in the logs dialog', () => {
+  async function openUpdate(cancellable: boolean) {
+    const wrapper = mount(BuildProgressDialog, { props: { installationId: ID } })
+    useProgressStore().startOperation({
+      installationId: ID,
+      title: 'Updating ComfyUI - Video Lab',
+      opKind: 'update',
+      actionId: 'update-comfyui',
+      cancellable,
+      apiCall: () =>
+        new Promise<ActionResult>((resolve) => {
+          settle = resolve
+        })
+    })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('says it is updating and offers to stop the update, not the install', async () => {
+    const w = await openUpdate(true)
+
+    expect(w.text()).toContain('Updating')
+    expect(w.text()).not.toContain('Installing')
+    expect(w.get('[data-testid="build-progress-cancel"]').text()).toBe('Stop updating')
+
+    modal.confirm.mockResolvedValueOnce(true)
+    await w.get('[data-testid="build-progress-cancel"]').trigger('click')
+    await flushPromises()
+
+    expect(modal.confirm.mock.calls[0]![0]).toMatchObject({
+      title: 'Stop updating?',
+      confirmLabel: 'Stop updating'
+    })
+    expect(window.api.cancelOperation).toHaveBeenCalledWith(ID)
+  })
+
+  it('offers no stop for an update that cannot be stopped', async () => {
+    const w = await openUpdate(false)
+
+    expect(w.find('[data-testid="build-progress-cancel"]').exists()).toBe(false)
+  })
+
+  it('names the update when it fails', async () => {
+    const w = await openUpdate(true)
+
+    settle({ ok: false, message: 'git pull failed' })
+    await flushPromises()
+
+    expect(w.text()).toContain("Updating ComfyUI didn't finish")
+  })
+})
