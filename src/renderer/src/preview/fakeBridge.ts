@@ -190,6 +190,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     openExternal: async () => {},
     getDiskSpace: async () => ({ free: machine.diskFreeBytes, total: machine.diskTotalBytes }),
     logsSnapshot: async () => '',
+    openLogsWindow: async () => {},
     validateInstallPath: async () => [],
     getInstallationSize: async () => ({ sizeBytes: 0 }),
     cancelInstallationSize: async () => {},

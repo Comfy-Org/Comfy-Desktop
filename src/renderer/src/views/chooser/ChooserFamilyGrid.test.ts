@@ -7,11 +7,12 @@ import { createPinia, setActivePinia } from 'pinia'
 import '../../assets/main.css'
 import ChooserFamilyGrid from './ChooserFamilyGrid.vue'
 import { TID } from '../../../../shared/testIds'
+import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
 
 const GRID_WIDTH = 900
 
-function build(id: string, sourceCategory: 'local' | 'cloud', lastLaunchedAt: number) {
+function build(id: string, sourceCategory: 'local' | 'cloud' | 'remote', lastLaunchedAt: number) {
   return {
     id,
     name: id,
@@ -106,5 +107,58 @@ describe('Builds grid filtering', () => {
       expect(getComputedStyle(tile(leaving)).position).toBe('absolute')
     }
     expect(spot(CLOUD)).toEqual(firstCell)
+  })
+})
+
+describe('Builds tile status', () => {
+  it('shows Running with the green dot on a build running in the background with no window', async () => {
+    const session = useSessionStore()
+    session.runningInstances.set(FIRST_LOCAL.id, {
+      installationId: FIRST_LOCAL.id,
+      installationName: FIRST_LOCAL.name,
+      mode: 'window'
+    })
+    expect(session.activeSessions.size).toBe(0)
+    await mountGrid(ALL)
+
+    const running = tile(FIRST_LOCAL).querySelector('.chooser-tile-status--running')
+    expect(running?.textContent?.trim()).toBe('Running')
+    expect(running?.querySelector('.rounded-full')).not.toBeNull()
+  })
+
+  it('shows Comfy Cloud as Ready with no green dot, never Always on', async () => {
+    await mountGrid(ALL)
+
+    expect(tile(CLOUD).textContent).not.toContain('Always on')
+    expect(tile(CLOUD).textContent).toContain('Ready')
+    expect(tile(CLOUD).querySelector('.rounded-full.bg-\\[\\#59d38c\\]')).toBeNull()
+  })
+
+  it('shows an opened Comfy Cloud as Ready with no green dot, since it runs nothing here', async () => {
+    useSessionStore().runningInstances.set(CLOUD.id, {
+      installationId: CLOUD.id,
+      installationName: CLOUD.name,
+      mode: 'window'
+    })
+    await mountGrid(ALL)
+
+    expect(tile(CLOUD).querySelector('.chooser-tile-status--running')).toBeNull()
+    expect(tile(CLOUD).textContent).not.toContain('Running')
+    expect(tile(CLOUD).textContent).toContain('Ready')
+    expect(tile(CLOUD).querySelector('.rounded-full.bg-\\[\\#59d38c\\]')).toBeNull()
+  })
+
+  it('shows no Running or green dot on an opened remote server, since it runs nothing here', async () => {
+    const remote = build('remote', 'remote', 100)
+    useSessionStore().runningInstances.set(remote.id, {
+      installationId: remote.id,
+      installationName: remote.name,
+      mode: 'window'
+    })
+    await mountGrid([...ALL, remote])
+
+    expect(tile(remote).querySelector('.chooser-tile-status--running')).toBeNull()
+    expect(tile(remote).textContent).not.toContain('Running')
+    expect(tile(remote).querySelector('.rounded-full.bg-\\[\\#59d38c\\]')).toBeNull()
   })
 })

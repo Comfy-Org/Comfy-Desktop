@@ -7,7 +7,7 @@ import BaseMenuRadioItem from '../../components/ui/BaseMenuRadioItem.vue'
 import SplitButton from '../../components/ui/SplitButton.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import { useSessionStore } from '../../stores/sessionStore'
-import { isCloudBuild, type HomeBuildStatus } from './homeBuild'
+import { isCloudBuild, runsOnThisComputer, type HomeBuildStatus } from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
 const { builds, target, statusOf } = defineProps<{
@@ -28,8 +28,7 @@ const open = ref(false)
 const sessionStore = useSessionStore()
 
 function isLive(build: Installation): boolean {
-  const status = statusOf(build)
-  return status === 'running' || status === 'always-on'
+  return runsOnThisComputer(build, statusOf(build))
 }
 
 function brokenReason(build: Installation): string | undefined {

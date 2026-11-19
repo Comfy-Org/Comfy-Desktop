@@ -6,6 +6,7 @@ import { computed, ref, nextTick } from 'vue'
 import type { Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'
 import { TID } from '../../../../shared/testIds'
+import '../../assets/main.css'
 import ComfyUISettingsContent from './ComfyUISettingsContent.vue'
 
 const useComfyUISettingsState = {
@@ -77,7 +78,8 @@ vi.mock('../../views/comfyUISettings/MoreMenu.vue', () => ({
     name: 'MoreMenu',
     props: ['open', 'actions'],
     emits: ['pick', 'close'],
-    template: '<div v-if="open" data-testid="more-menu">menu</div>'
+    template:
+      '<div v-if="open" class="more-menu" data-testid="more-menu"><button v-for="action in actions" :key="action.id" type="button">{{ action.label }}</button></div>'
   }
 }))
 
@@ -132,6 +134,45 @@ describe('ComfyUISettingsContent', () => {
       expect(wrapper.find('.settings-v2-footer').exists()).toBe(false)
 
       wrapper.unmount()
+      target.remove()
+    })
+
+    it('wraps the tab tools under the tabs when the page is too narrow', async () => {
+      const target = document.createElement('div')
+      target.id = 'page-actions'
+      document.body.append(target)
+      const host = document.createElement('div')
+      host.style.width = '452px'
+      document.body.append(host)
+
+      const wrapper = mount(ComfyUISettingsContent, {
+        props: {
+          installation: SAMPLE_INSTALL,
+          initialTab: 'snapshots',
+          activeOperation: null,
+          pageActionsTarget: '#page-actions'
+        },
+        global: { plugins: [getActivePinia() ?? createPinia()] },
+        attachTo: host
+      })
+      await flushPromises()
+      const tools = document.getElementById('settings-v2-tab-tools')!
+      const filler = document.createElement('div')
+      filler.style.width = '200px'
+      filler.style.height = '32px'
+      tools.append(filler)
+      await nextTick()
+
+      const row = host.querySelector<HTMLElement>('.settings-v2-tabrow')!.getBoundingClientRect()
+      const placed = filler.getBoundingClientRect()
+      expect(placed.right).toBeLessThanOrEqual(row.right + 0.5)
+      expect(placed.left).toBeGreaterThanOrEqual(row.left - 0.5)
+      const tabs = host.querySelector<HTMLElement>('.settings-v2-tabs')!.getBoundingClientRect()
+      expect(tabs.width + 200, 'the fixture is too narrow for one line').toBeGreaterThan(row.width)
+      expect(placed.top, 'the tools wrap below the tabs').toBeGreaterThanOrEqual(tabs.bottom - 0.5)
+
+      wrapper.unmount()
+      host.remove()
       target.remove()
     })
 
@@ -580,26 +621,26 @@ describe('ComfyUISettingsContent', () => {
       expect(emittedDecision(w)).toMatchObject({ verb: 'restart' })
     })
 
-    it('labels "Switch" and emits a focus decision when running in ANOTHER window', async () => {
+    it('labels "Open" and emits a focus decision when running in ANOTHER window', async () => {
       markRunning('inst-1')
       const w = await mountContent({
         currentView: 'instance',
         currentCategory: 'local',
         activeInstallationId: 'other'
       })
-      expect(w.find('.settings-v2-relaunch').text()).toBe('Switch')
+      expect(w.find('.settings-v2-relaunch').text()).toBe('Open')
       await w.find('.settings-v2-relaunch').trigger('click')
       expect(emittedDecision(w)).toMatchObject({ verb: 'focus' })
     })
 
-    it('treats a running install as "Switch" on an install-less (dashboard) host', async () => {
+    it('treats a running install as "Open" on an install-less (dashboard) host', async () => {
       markRunning('inst-1')
       const w = await mountContent({
         currentView: 'dashboard',
         currentCategory: null,
         activeInstallationId: null
       })
-      expect(w.find('.settings-v2-relaunch').text()).toBe('Switch')
+      expect(w.find('.settings-v2-relaunch').text()).toBe('Open')
       await w.find('.settings-v2-relaunch').trigger('click')
       expect(emittedDecision(w)).toMatchObject({ verb: 'focus' })
     })
@@ -623,7 +664,7 @@ describe('ComfyUISettingsContent', () => {
     })
   })
 
-  describe('caret for a running-elsewhere target', () => {
+  describe('Stop for a running target', () => {
     function markRunning(installId: string): void {
       useSessionStore().runningInstances.set(installId, {
         installationId: installId,
@@ -631,16 +672,26 @@ describe('ComfyUISettingsContent', () => {
         mode: ''
       })
     }
-    function caretActions(wrapper: VueWrapper): { id: string }[] | undefined {
-      if (!wrapper.find('.settings-v2-cta-caret').exists()) return undefined
-      const menu = wrapper
+    function menusOfferingStop(wrapper: VueWrapper): number {
+      return wrapper
         .findAllComponents({ name: 'MoreMenu' })
         .map((m) => m.props('actions') as { id: string }[] | undefined)
-        .find((acts) => acts?.some((a) => a.id === 'stop'))
-      return menu
+        .filter((acts) => acts?.some((a) => a.id === 'stop')).length
+    }
+    function stopRows(wrapper: VueWrapper): number {
+      return wrapper
+        .findAllComponents({ name: 'MoreMenu' })
+        .flatMap((m) => (m.props('actions') as { id: string }[] | undefined) ?? [])
+        .filter((a) => a.id === 'stop').length
+    }
+    function moreMenuActions(wrapper: VueWrapper): { id: string }[] {
+      return (
+        (wrapper.findComponent({ name: 'MoreMenu' }).props('actions') as
+          { id: string }[] | undefined) ?? []
+      )
     }
 
-    it('remote running elsewhere → caret offers Stop, not "Open in new window"', async () => {
+    it('running elsewhere → Open with no caret, and Stop only in the more menu', async () => {
       useComfyUISettingsState.pinBottomActions.value = [{ id: 'stop', label: 'Stop' }]
       markRunning('inst-1')
       const w = await mountContent({
@@ -649,25 +700,154 @@ describe('ComfyUISettingsContent', () => {
         activeInstallationId: 'other',
         installation: { ...SAMPLE_INSTALL, sourceCategory: 'remote' }
       })
-      expect(w.find('.settings-v2-relaunch').text()).toBe('Switch')
-      const actions = caretActions(w)
-      expect(actions?.map((a) => a.id)).toEqual(['stop'])
+      expect(w.find('.settings-v2-relaunch').text()).toBe('Open')
+      expect(w.find('.settings-v2-cta-caret').exists()).toBe(false)
+      expect(menusOfferingStop(w)).toBe(1)
+      expect(stopRows(w)).toBe(1)
     })
 
-    it('cloud running elsewhere → no caret (cloud has no stop action)', async () => {
-      useComfyUISettingsState.pinBottomActions.value = []
+    it('running in this window → Restart with no caret, and Stop only in the more menu', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'stop', label: 'Stop' }]
       markRunning('inst-1')
       const w = await mountContent({
         currentView: 'instance',
         currentCategory: 'local',
-        activeInstallationId: 'other',
-        installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
+        activeInstallationId: 'inst-1',
+        installation: SAMPLE_INSTALL
       })
-      expect(w.find('.settings-v2-relaunch').text()).toBe('Switch')
+      expect(w.find('.settings-v2-relaunch').text()).toBe('Restart')
       expect(w.find('.settings-v2-cta-caret').exists()).toBe(false)
+      expect(menusOfferingStop(w)).toBe(1)
+      expect(stopRows(w)).toBe(1)
     })
 
-    it('stopped cloud target (dashboard host) → Open Cloud with no "Open in new window" caret', async () => {
+    it('orders the more menu like Home: Stop first in neutral, Uninstall last and the only red row', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'delete', label: 'Uninstall', style: 'danger' },
+        { id: 'rename', label: 'Rename' },
+        { id: 'stop', label: 'Stop' },
+        { id: 'share', label: 'Export snapshot' },
+        { id: 'remove', label: 'Forget', style: 'danger' }
+      ] as never
+      markRunning('inst-1')
+      const w = await mountContent({
+        currentView: 'instance',
+        currentCategory: 'local',
+        activeInstallationId: 'inst-1',
+        installation: SAMPLE_INSTALL
+      })
+      const actions = w
+        .findAllComponents({ name: 'MoreMenu' })
+        .map((m) => m.props('actions') as { id: string; style?: string; separator?: boolean }[])
+        .find((acts) => acts.some((a) => a.id === 'stop'))!
+      expect(actions.map((a) => a.id)).toEqual(['stop', 'rename', 'share', 'remove', 'delete'])
+      expect(actions.filter((a) => a.style === 'danger').map((a) => a.id)).toEqual(['delete'])
+      expect(actions.filter((a) => a.separator).map((a) => a.id)).toEqual(['rename', 'delete'])
+    })
+
+    it('keeps Stop in the more menu when the build details fail to load, and hides stale actions', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'rename', label: 'Rename' },
+        { id: 'stop', label: 'Stop' },
+        { id: 'delete', label: 'Uninstall', style: 'danger' }
+      ] as never
+      useComfyUISettingsState.sectionsFresh.value = false
+      markRunning('inst-1')
+      try {
+        const w = await mountContent({
+          currentView: 'instance',
+          currentCategory: 'local',
+          activeInstallationId: 'inst-1',
+          installation: SAMPLE_INSTALL
+        })
+        const trigger = w.find('[data-testid="picker-more-trigger"]')
+        expect(trigger.attributes('disabled')).toBeUndefined()
+        expect(moreMenuActions(w).map((a) => a.id)).toEqual(['stop'])
+      } finally {
+        useComfyUISettingsState.sectionsFresh.value = true
+      }
+    })
+
+    it('closes the more menu when its last action goes away', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'stop', label: 'Stop' }] as never
+      useComfyUISettingsState.sectionsFresh.value = false
+      markRunning('inst-1')
+      try {
+        const w = await mountContent({
+          currentView: 'instance',
+          currentCategory: 'local',
+          activeInstallationId: 'inst-1',
+          installation: SAMPLE_INSTALL
+        })
+        const trigger = w.find('[data-testid="picker-more-trigger"]')
+        await trigger.trigger('click')
+        expect(trigger.attributes('aria-expanded')).toBe('true')
+
+        useComfyUISettingsState.pinBottomActions.value = []
+        await nextTick()
+        expect(trigger.attributes('aria-expanded')).toBe('false')
+        expect(w.findComponent({ name: 'MoreMenu' }).props('open')).toBe(false)
+
+        useComfyUISettingsState.pinBottomActions.value = [{ id: 'stop', label: 'Stop' }] as never
+        await nextTick()
+        expect(w.findComponent({ name: 'MoreMenu' }).props('open')).toBe(false)
+      } finally {
+        useComfyUISettingsState.sectionsFresh.value = true
+      }
+    })
+
+    it('moves focus to the main button when the last more menu action goes away', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'stop', label: 'Stop' }] as never
+      useComfyUISettingsState.sectionsFresh.value = false
+      markRunning('inst-1')
+      try {
+        const w = await mountContent({
+          currentView: 'instance',
+          currentCategory: 'local',
+          activeInstallationId: 'inst-1',
+          installation: SAMPLE_INSTALL
+        })
+        document.body.appendChild(w.element)
+        await w.find('[data-testid="picker-more-trigger"]').trigger('click')
+        await flushPromises()
+        const stopRow = [...document.querySelectorAll<HTMLElement>('.more-menu button')].find(
+          (row) => row.textContent?.trim() === 'Stop'
+        )
+        expect(stopRow, 'the open more menu shows a Stop row').toBeDefined()
+        stopRow!.focus()
+        expect(document.activeElement).toBe(stopRow)
+
+        useComfyUISettingsState.pinBottomActions.value = []
+        await flushPromises()
+
+        expect(document.activeElement).toBe(w.find('.settings-v2-relaunch').element)
+        w.unmount()
+      } finally {
+        useComfyUISettingsState.sectionsFresh.value = true
+      }
+    })
+
+    it('disables the more menu while details are stale and the build is not running', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'rename', label: 'Rename' },
+        { id: 'delete', label: 'Uninstall', style: 'danger' }
+      ] as never
+      useComfyUISettingsState.sectionsFresh.value = false
+      try {
+        const w = await mountContent({
+          currentView: 'instance',
+          currentCategory: 'local',
+          activeInstallationId: null,
+          installation: SAMPLE_INSTALL
+        })
+        const trigger = w.find('[data-testid="picker-more-trigger"]')
+        expect(trigger.attributes('disabled')).toBeDefined()
+      } finally {
+        useComfyUISettingsState.sectionsFresh.value = true
+      }
+    })
+
+    it('stopped cloud target (dashboard host) → Open Cloud with no caret', async () => {
       useComfyUISettingsState.pinBottomActions.value = []
       const w = await mountContent({
         currentView: 'dashboard',

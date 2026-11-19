@@ -449,8 +449,23 @@ describe('Home builds', () => {
     expect(wrapper.findAll('[data-testid="home-build"]').map((card) => card.text())).toEqual([
       'ReadyMy Local 1Standalone · Update',
       'RunningVideo LabStandalone',
-      'Always onComfy CloudRTX 6000 Pro · 96 GB'
+      'ReadyComfy CloudRTX 6000 Pro · 96 GB'
     ])
+  })
+
+  it('shows an opened Comfy Cloud as Ready with no green dot, since it runs nothing here', async () => {
+    getInstallations.mockResolvedValue([CLOUD])
+    const wrapper = await openHome()
+    useSessionStore().runningInstances.set(CLOUD.id, {
+      installationId: CLOUD.id,
+      installationName: CLOUD.name,
+      mode: 'window'
+    })
+    await flushPromises()
+
+    const status = wrapper.get('[data-testid="home-build-status"]')
+    expect(status.text()).toBe('Ready')
+    expect(status.find('.rounded-full').exists()).toBe(false)
   })
 
   it('keeps Running on top of a running build with an update, and names the update at the bottom', async () => {
@@ -633,7 +648,7 @@ describe('Home builds', () => {
     await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull())
   })
 
-  it('lists every build of the workspace in the Open ComfyUI menu, with a dot only on live builds', async () => {
+  it('lists every build of the workspace in the Open ComfyUI menu, with a dot only on running builds', async () => {
     getInstallations.mockResolvedValue([OLDEST, CLOUD, RUNNING, NEWEST])
     const wrapper = await openHome()
     useSessionStore().runningInstances.set(RUNNING.id, {
@@ -662,7 +677,7 @@ describe('Home builds', () => {
             .querySelector('[data-testid="home-open-build-status-dot"]')
             ?.getAttribute('data-tone') ?? null
       )
-    ).toEqual([null, 'live', 'live', null])
+    ).toEqual([null, 'live', null, null])
   })
 
   it('marks a broken build red and keeps it from opening, with the reason on hover', async () => {
@@ -981,12 +996,12 @@ describe('Home build auto start', () => {
     expect(wrapper.emitted('open-build')).toBeUndefined()
   })
 
-  it('keeps Always on for Comfy Cloud when it is the one that starts with Desktop', async () => {
+  it('says Ready, never Always on, for Comfy Cloud when it is the one that starts with Desktop', async () => {
     saved = CLOUD.id
     getInstallations.mockResolvedValue([OLDEST, CLOUD])
     const wrapper = await openHome()
 
-    expect(statusOf(wrapper, CLOUD.id)).toBe('Always on')
+    expect(statusOf(wrapper, CLOUD.id)).toBe('Ready')
     expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
     expect(startingWithDesktop(wrapper)).toEqual([])
   })
