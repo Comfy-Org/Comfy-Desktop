@@ -1000,6 +1000,7 @@ describe('settings.json and its .bak both unreadable', () => {
 
 describe('telemetryConsent', () => {
   function failReads(...failing: string[]): void {
+    vi.spyOn(Atomics, 'wait').mockReturnValue('timed-out')
     const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
     vi.spyOn(fs, 'readFileSync').mockImplementation(((
       p: fs.PathOrFileDescriptor,
