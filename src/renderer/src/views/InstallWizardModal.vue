@@ -93,7 +93,7 @@ const emit = defineEmits<{
 }>()
 
 const spinnerClass =
-  'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:content-[""] before:[animation-duration:600ms]'
+  'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-foreground before:content-[""] before:[animation-duration:600ms]'
 
 const props = withDefaults(
   defineProps<{
@@ -2294,7 +2294,7 @@ defineExpose({ open })
           size="lg"
           variant="secondary"
           type="button"
-          class="h-9 rounded-[10px] config-discard-changes"
+          class="config-discard-changes"
           data-testid="config-discard-changes"
           :disabled="submittingExisting || savingSetup"
           @click="discardChanges"
@@ -2306,7 +2306,7 @@ defineExpose({ open })
           type="button"
           size="lg"
           variant="inverted"
-          class="h-9 rounded-[10px] config-use-existing min-w-[104px]"
+          class="config-use-existing min-w-[104px]"
           data-testid="config-use-existing"
           :disabled="!canProceed"
           @click="handleConfigureContinue"
@@ -2318,7 +2318,7 @@ defineExpose({ open })
           type="button"
           size="lg"
           variant="inverted"
-          class="h-9 rounded-[10px] config-save-changes min-w-[104px]"
+          class="config-save-changes min-w-[104px]"
           data-testid="config-save-changes"
           :disabled="cameFromSetup && (!canProceed || savingSetup)"
           @click="saveChanges"
@@ -2332,7 +2332,7 @@ defineExpose({ open })
           type="button"
           size="lg"
           variant="inverted"
-          class="h-9 rounded-[10px] config-continue min-w-[104px]"
+          class="config-continue min-w-[104px]"
           :disabled="!canProceed"
           @click="handleConfigureContinue"
         >

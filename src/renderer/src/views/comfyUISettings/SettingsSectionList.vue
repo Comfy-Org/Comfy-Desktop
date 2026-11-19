@@ -194,7 +194,7 @@ function actionButtonClass(running = false, itemRow = false, looksDisabled = fal
 function actionVariantClass(action: ActionDef, directStyle = true): string {
   switch (action.style) {
     case 'primary':
-      return 'bg-[var(--accent-primary)] text-background font-medium hover:bg-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] enabled:hover:bg-[var(--accent-hover)] hover:transition-[background,border-color] hover:duration-[120ms] hover:ease-[ease]'
+      return 'bg-foreground text-background font-medium hover:bg-foreground/80 enabled:hover:bg-foreground/80 hover:transition-[background,border-color] hover:duration-[120ms] hover:ease-[ease]'
     case 'accent':
       return directStyle
         ? 'bg-[var(--surface)] text-[var(--action)] font-semibold hover:bg-[var(--action)] hover:text-[var(--bg)]'

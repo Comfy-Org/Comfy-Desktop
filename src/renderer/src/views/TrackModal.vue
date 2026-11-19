@@ -45,7 +45,7 @@ defineExpose({ open })
         type="button"
         size="lg"
         variant="inverted"
-        class="track-save h-9 min-w-[104px] rounded-[10px]"
+        class="track-save min-w-[104px]"
         :disabled="!formRef?.canSave"
         @click="formRef?.save()"
       >

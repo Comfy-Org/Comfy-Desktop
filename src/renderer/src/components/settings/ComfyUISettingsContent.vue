@@ -1014,7 +1014,7 @@ defineExpose({
                             class="op-bar-track h-[3px] overflow-hidden rounded-[2px] bg-[var(--chooser-surface-border)]"
                           >
                             <div
-                              class="op-bar-fill h-full rounded-[2px] bg-[var(--brand-accent,#f5c518)] transition-[width] duration-300 ease-[ease]"
+                              class="op-bar-fill h-full rounded-[2px] bg-foreground transition-[width] duration-300 ease-[ease]"
                               :class="{
                                 'is-indeterminate w-2/5 animate-[op-bar-slide_1.5s_ease-in-out_infinite]':
                                   opIsIndeterminate

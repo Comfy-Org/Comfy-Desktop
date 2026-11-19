@@ -208,7 +208,7 @@ watch(
           class="dialog-loading flex items-center justify-center gap-2.5 py-6 text-[14px] text-text-muted"
         >
           <div
-            class="dialog-loading-spinner size-5 animate-spin rounded-[50%] border-2 border-solid border-[var(--border)] border-t-[var(--action)] [animation-duration:0.6s]"
+            class="dialog-loading-spinner size-5 animate-spin rounded-[50%] border-2 border-solid border-[var(--border)] border-t-foreground [animation-duration:0.6s]"
           />
           <span>{{ $t('common.loading') }}</span>
         </div>

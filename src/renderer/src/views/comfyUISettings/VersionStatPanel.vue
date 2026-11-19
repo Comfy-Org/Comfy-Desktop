@@ -98,7 +98,7 @@ function isRunning(id: string): boolean {
           :button-class="actionButtonClass(action)"
           :variant-class="
             action.style === 'primary'
-              ? 'border-[var(--action)] text-background font-semibold enabled:hover:bg-[var(--accent-hover)] enabled:hover:border-[var(--accent-hover)] enabled:hover:focus-visible:bg-[var(--accent-hover)]'
+              ? 'border-foreground bg-foreground text-background font-medium enabled:hover:border-foreground/80 enabled:hover:bg-foreground/80 enabled:focus-visible:bg-foreground/80'
               : 'border-[var(--chooser-surface-border)] text-neutral-100 font-medium'
           "
           tooltip-class="version-stat-action-tooltip flex-none"
