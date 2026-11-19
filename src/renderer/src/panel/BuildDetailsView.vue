@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { LoaderCircle, OctagonAlert } from '@lucide/vue'
 import ComfyUISettingsContent from '../components/settings/ComfyUISettingsContent.vue'
 import StatusChip from '../components/ui/StatusChip.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
 import BuildUninstallFailed from './BuildUninstallFailed.vue'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
@@ -26,6 +27,7 @@ const emit = defineEmits<{
   back: []
   launch: [installation: Installation]
   'show-progress': [opts: ShowProgressOpts]
+  'view-error': [installation: Installation]
 }>()
 
 const { t } = useI18n()
@@ -33,7 +35,7 @@ const sessionStore = useSessionStore()
 const progressStore = useProgressStore()
 const installationStore = useInstallationStore()
 
-const { progress } = useBuildProgress(() => installation)
+const { progress, viewLogs } = useBuildProgress(() => installation)
 const uninstalling = computed(() => progress.value?.kind === 'uninstall')
 const uninstallFailure = computed(() => uninstallFailureOf(progressStore, installation.id))
 const uninstallReplacesSettings = computed(
@@ -52,13 +54,23 @@ const metaLine = computed(() =>
   [whereLabel.value, t(typeMeta.value.labelKey), installation.version].filter(Boolean).join(' · ')
 )
 
+const failure = computed(() => buildFailure(installation, sessionStore, progressStore, t))
+const failureHint = computed(() => {
+  const kind = failure.value?.kind
+  if (!kind || kind === 'broken' || uninstalling.value) return ''
+  return kind === 'didnt-start' ? t('home.buildClickToViewLogs') : t('chooser.viewErrorTooltip')
+})
+function openFailure(): void {
+  if (failure.value?.kind === 'didnt-start') viewLogs()
+  else emit('view-error', installation)
+}
+
 const status = computed(() => {
   const id = installation.id
   if (uninstalling.value) {
     return { tone: 'quiet', label: 'uninstallProgress.status', spinning: true } as const
   }
-  const failure = buildFailure(installation, sessionStore, progressStore, t)
-  if (failure) return { tone: 'bad', label: failure.label, text: true } as const
+  if (failure.value) return { tone: 'bad', label: failure.value.label, text: true } as const
   if (sessionStore.isStopping(id))
     return { tone: 'quiet', label: 'chooser.statusStopping' } as const
   if (sessionStore.isLaunching(id)) {
@@ -94,7 +106,20 @@ onUnmounted(() => unsubscribeSettings?.())
             >
               <span v-if="uninstallReplacesSettings" class="truncate">{{ installation.name }}</span>
             </h1>
-            <StatusChip v-if="status" class="build-details-status" :tone="status.tone">
+            <Tooltip v-if="failureHint" :text="failureHint" side="top" :delay-ms="500">
+              <button
+                type="button"
+                class="build-details-failure flex cursor-pointer rounded-full transition-opacity outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
+                data-testid="build-details-failure"
+                @click="openFailure"
+              >
+                <StatusChip class="build-details-status" tone="bad">
+                  <template #icon><OctagonAlert :size="11" aria-hidden="true" /></template>
+                  {{ failure?.label }}
+                </StatusChip>
+              </button>
+            </Tooltip>
+            <StatusChip v-else-if="status" class="build-details-status" :tone="status.tone">
               <template v-if="status.tone === 'bad'" #icon>
                 <OctagonAlert :size="11" aria-hidden="true" />
               </template>

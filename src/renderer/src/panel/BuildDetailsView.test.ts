@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import BuildDetailsView from './BuildDetailsView.vue'
 import { useSessionStore } from '../stores/sessionStore'
+import { provideBuildLogs } from '../composables/useBuildProgress'
 import type { Installation } from '../types/ipc'
 
 vi.mock('../components/settings/ComfyUISettingsContent.vue', () => ({
@@ -43,13 +45,19 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
+const viewBuildLogs = vi.fn()
+
 async function mountDetails(installation: Installation = INSTALL) {
-  const wrapper = mount(BuildDetailsView, {
-    props: { installation },
-    attachTo: document.body
+  const Host = defineComponent({
+    setup() {
+      provideBuildLogs(viewBuildLogs)
+      return () => h(BuildDetailsView, { installation })
+    }
   })
+  const host = mount(Host, { attachTo: document.body })
+  const wrapper = host.getComponent(BuildDetailsView)
   await flushPromises()
-  return { wrapper, content: wrapper.findComponent({ name: 'ComfyUISettingsContent' }) }
+  return { wrapper, host, content: wrapper.findComponent({ name: 'ComfyUISettingsContent' }) }
 }
 
 describe('BuildDetailsView', () => {
@@ -87,6 +95,44 @@ describe('BuildDetailsView', () => {
     expect(wrapper.get('.build-details-status').text()).toBe(label)
   })
 
+  it("opens the start logs from the Didn't start chip, like the Home tile", async () => {
+    const { wrapper } = await mountDetails()
+    useSessionStore().errorInstances.set('a', {
+      installationName: 'Video Lab',
+      startFailed: true,
+      message: 'Port 8188 is in use'
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="build-details-failure"]').trigger('click')
+
+    expect(viewBuildLogs).toHaveBeenCalledWith('a')
+    expect(wrapper.emitted('view-error')).toBeUndefined()
+  })
+
+  it('opens the crash details from the Crashed chip, like the Builds tile', async () => {
+    const { wrapper } = await mountDetails()
+    useSessionStore().errorInstances.set('a', { installationName: 'Video Lab', exitCode: 1 })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="build-details-failure"]').trigger('click')
+
+    expect(wrapper.emitted('view-error')).toEqual([[INSTALL]])
+    expect(viewBuildLogs).not.toHaveBeenCalled()
+  })
+
+  it("keeps a running build's chip as plain text", async () => {
+    const { wrapper } = await mountDetails()
+    useSessionStore().runningInstances.set('a', {
+      installationId: 'a',
+      installationName: 'Video Lab',
+      mode: 'window'
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-details-failure"]').exists()).toBe(false)
+  })
+
   it('hands the settings body its build, shared storage, title and action slots', async () => {
     const { content } = await mountDetails()
 
@@ -122,9 +168,9 @@ describe('BuildDetailsView', () => {
   })
 
   it('stops listening for settings changes when closed', async () => {
-    const { wrapper } = await mountDetails()
+    const { host } = await mountDetails()
 
-    wrapper.unmount()
+    host.unmount()
 
     expect(unsubscribeSettings).toHaveBeenCalledOnce()
   })
