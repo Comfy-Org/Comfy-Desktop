@@ -64,6 +64,7 @@ import {
   LOAD_TIMEOUT_MS,
   localBuilds,
   NO_WORKFLOW_GRACE_MS,
+  openEmbeddedWorkflow,
   openInComfy,
   WINDOW_TIMEOUT_MS
 } from './openInComfy'
@@ -137,7 +138,11 @@ class FakeWindow {
   }
 
   loaded(): string[] {
-    return this.scripts.filter((script) => script.includes('loadApiJson(JSON.parse'))
+    return this.scripts.filter((script) => script.includes('app.loadApiJson(data,name)'))
+  }
+
+  loadedGraphs(): string[] {
+    return this.scripts.filter((script) => script.includes('app.loadGraphData(data'))
   }
 }
 
@@ -557,5 +562,70 @@ describe('the builds a page can pick from', () => {
       STUDIO.id,
       'inst-never'
     ])
+  })
+})
+
+describe('opening the workflow saved in a file', () => {
+  const GRAPH = { nodes: [{ id: 1, type: 'SaveImage' }], links: [] }
+
+  it('loads the graph into the build it is asked for, and not the one an app page used', async () => {
+    runLocal(STUDIO.id, 8190, 'window')
+    runLocal(LAB.id, 8191, 'window')
+    const studio = windowFor(STUDIO.id, 'http://127.0.0.1:8190/')
+    const lab = windowFor(LAB.id, 'http://127.0.0.1:8191/')
+
+    expect(
+      await openEmbeddedWorkflow(
+        { where: 'local', build: LAB.id },
+        { format: 'graph', data: GRAPH },
+        'ComfyUI_00001_'
+      )
+    ).toEqual({ opened: true })
+
+    expect(lab.loadedGraphs()).toHaveLength(1)
+    expect(lab.loadedGraphs()[0]).toContain('"ComfyUI_00001_"')
+    expect(studio.loadedGraphs()).toHaveLength(0)
+  })
+
+  it('loads a file that only has a prompt into Comfy Cloud', async () => {
+    mocks.records.push(CLOUD)
+    runCloud(CLOUD.id)
+    const cloud = windowFor(CLOUD.id, CLOUD_URL)
+
+    expect(
+      await openEmbeddedWorkflow({ where: 'cloud' }, { format: 'api', data: PROMPT }, 'fox')
+    ).toEqual({ opened: true })
+
+    expect(cloud.loaded()).toHaveLength(1)
+  })
+
+  it('refuses a graph or a prompt that holds a Comfy key and opens nothing', async () => {
+    const graphWithKey = {
+      nodes: [{ id: 1, type: 'X', inputs: [], api_key_comfy_org: 'secret' }],
+      links: []
+    }
+
+    expect(
+      await openEmbeddedWorkflow(
+        { where: 'local', build: STUDIO.id },
+        { format: 'graph', data: graphWithKey },
+        'x'
+      )
+    ).toEqual({ opened: false, error: 'apps.local.openCarriesKeys' })
+    expect(
+      await openEmbeddedWorkflow({ where: 'cloud' }, { format: 'api', data: WITH_KEY }, 'x')
+    ).toEqual({ opened: false, error: 'apps.local.openCarriesKeys' })
+    expect(mocks.launchOnce).not.toHaveBeenCalled()
+    expect(mocks.onLaunch).not.toHaveBeenCalled()
+  })
+
+  it('refuses a build that is not one of this computer builds', async () => {
+    expect(
+      await openEmbeddedWorkflow(
+        { where: 'local', build: 'inst-gone' },
+        { format: 'graph', data: GRAPH },
+        'x'
+      )
+    ).toEqual({ opened: false, error: 'apps.local.openUnknownBuild' })
   })
 })

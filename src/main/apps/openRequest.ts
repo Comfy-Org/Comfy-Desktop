@@ -3,6 +3,7 @@ const MAX_NODES = 500
 const BUILD_ID = /^[A-Za-z0-9_-]{1,64}$/
 const WORKFLOW_NAME = /^[\p{L}\p{N} .,()'&_-]{1,80}$/u
 const CREDENTIAL_INPUT = /^(api_key_comfy_org|auth_token_comfy_org)$/i
+const GRAPH_CREDENTIAL = /"(api_key_comfy_org|auth_token_comfy_org)"\s*:\s*"[^"]/i
 export const DEFAULT_WORKFLOW_NAME = 'Comfy app'
 
 export interface OpenRequest {
@@ -90,15 +91,38 @@ export const COMFY_STATE_SCRIPT =
   `if(workflows.isBusy===true)return 'starting';` +
   `return workflows.activeWorkflow?'ready':'no-workflow'})()`
 
-export function openWorkflowScript(request: OpenRequest): string {
+function loadScript(call: string, data: Record<string, unknown>, name: string): string {
   return (
-    `(function(promptText,name){` +
+    `(function(dataText,name){` +
     FIND_COMFY_APP +
     `if(!usable)return false;` +
-    `return Promise.resolve(app.loadApiJson(JSON.parse(promptText),name))` +
+    `var data=JSON.parse(dataText);` +
+    `return Promise.resolve(${call})` +
     `.then(function(r){return r!==false},function(){return false});` +
-    `})(${JSON.stringify(JSON.stringify(request.prompt))},${JSON.stringify(request.name)})`
+    `})(${JSON.stringify(JSON.stringify(data))},${JSON.stringify(name)})`
   )
+}
+
+export function openWorkflowScript(request: OpenRequest): string {
+  return loadScript('app.loadApiJson(data,name)', request.prompt, request.name)
+}
+
+export function openGraphScript(graph: Record<string, unknown>, name: string): string {
+  return loadScript(
+    `typeof app.loadGraphData==='function'?app.loadGraphData(data,true,true,name):false`,
+    graph,
+    name
+  )
+}
+
+export function graphCarriesCredentials(graph: Record<string, unknown>): boolean {
+  let text: string
+  try {
+    text = JSON.stringify(graph)
+  } catch {
+    return true
+  }
+  return GRAPH_CREDENTIAL.test(text)
 }
 
 export function isComfyPage(pageUrl: string, comfyUrl: string): boolean {

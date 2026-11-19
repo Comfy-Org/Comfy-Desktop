@@ -156,6 +156,8 @@
       "zoom": "Zoom",
       "zoomLevel": "Zoom: {level}",
       "openWorkflow": "Open workflow",
+      "openWorkflowFailed": "Couldn't open workflow",
+      "openWorkflowIn": "Open in",
       "savedIn": "Saved in",
       "cloudAssets": "Comfy Cloud assets",
       "modelView": "3D view of {name}. Drag to turn it, scroll to zoom.",

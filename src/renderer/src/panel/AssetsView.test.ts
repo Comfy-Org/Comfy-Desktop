@@ -29,6 +29,8 @@ const findDownloadedOutputs = vi.fn()
 const openOutputFolder = vi.fn()
 const copyAsset = vi.fn()
 const readAssetModel = vi.fn()
+const hasAssetWorkflow = vi.fn()
+const openAssetWorkflow = vi.fn()
 const trashAsset = vi.fn()
 const alert = vi.fn()
 const confirm = vi.fn()
@@ -252,6 +254,8 @@ beforeEach(() => {
   getAuthStatus.mockResolvedValue({ signedIn: false })
   getSetting.mockResolvedValue(undefined)
   findCloudAsset.mockResolvedValue({ status: 'absent' })
+  hasAssetWorkflow.mockResolvedValue(false)
+  openAssetWorkflow.mockResolvedValue({ opened: true })
   ;(window as unknown as { api: unknown }).api = {
     listAssets: async (installationId: string, request: unknown) => {
       const listed: AssetSummary[] | CloudAssetPage | null = await listAssets(
@@ -275,6 +279,8 @@ beforeEach(() => {
     }),
     copyAsset,
     readAssetModel,
+    hasAssetWorkflow,
+    openAssetWorkflow,
     trashAsset,
     platform: 'darwin',
     getSetting,
@@ -1580,6 +1586,99 @@ describe('AssetsView', () => {
 
     expect(document.querySelector('[data-testid="output-detail-download"]')).toBeNull()
     expect(document.querySelector('[data-testid="output-detail-show-in-folder"]')).not.toBeNull()
+  })
+})
+
+describe('AssetsView Open workflow', () => {
+  function workflowButton(): HTMLElement | null {
+    return document.querySelector<HTMLElement>('[data-testid="output-detail-workflow"]')
+  }
+
+  async function openViewer(
+    wrapper: Awaited<ReturnType<typeof mountAssets>>,
+    id: string
+  ): Promise<void> {
+    await wrapper.get(`[data-testid="asset-open-${id}"]`).trigger('click')
+    await flushPromises()
+  }
+
+  it('opens the workflow of a file in a build folder in that build, and closes the viewer', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await openViewer(wrapper, '/out/forest.png')
+    expect(hasAssetWorkflow).toHaveBeenCalledExactlyOnceWith('local', '/out/forest.png')
+    expect(workflowButton()?.textContent?.trim()).toBe('Open workflow')
+    workflowButton()!.click()
+    await flushPromises()
+
+    expect(openAssetWorkflow).toHaveBeenCalledExactlyOnceWith(
+      'local',
+      '/out/forest.png',
+      'forest.png',
+      'lab'
+    )
+    expect(viewer()).toBeNull()
+  })
+
+  it('has no Open workflow for a file that holds no workflow', async () => {
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await openViewer(wrapper, '/out/forest.png')
+
+    expect(viewer()).not.toBeNull()
+    expect(workflowButton()).toBeNull()
+  })
+
+  it('asks which build to open a file in the shared folder in', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: [sharedBuild('studio', 'Studio'), sharedBuild('lab', 'Lab')]
+    })
+
+    await openViewer(wrapper, '/out/forest.png')
+    workflowButton()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    const choices = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    expect(choices.map((choice) => choice.textContent?.trim())).toEqual(['Studio', 'Lab'])
+    expect(openAssetWorkflow).not.toHaveBeenCalled()
+    choices[1]!.click()
+    await flushPromises()
+
+    expect(openAssetWorkflow).toHaveBeenCalledExactlyOnceWith(
+      'local',
+      '/out/forest.png',
+      'forest.png',
+      'lab'
+    )
+  })
+
+  it('opens the workflow of a Cloud file in Comfy Cloud', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
+    await signInWith([asset('c', 'cloud.png', 'image')])
+
+    await openViewer(wrapper, 'c')
+    workflowButton()!.click()
+    await flushPromises()
+
+    expect(openAssetWorkflow).toHaveBeenCalledExactlyOnceWith('cloud', 'c', 'cloud.png', undefined)
+  })
+
+  it('says why the workflow did not open', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    openAssetWorkflow.mockResolvedValue({ opened: false, error: 'Lab did not start.' })
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await openViewer(wrapper, '/out/forest.png')
+    workflowButton()!.click()
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't open workflow",
+      message: 'Lab did not start.'
+    })
   })
 })
 

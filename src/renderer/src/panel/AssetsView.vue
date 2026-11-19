@@ -839,6 +839,8 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     thumbnailUrl: asset.thumbnailUrl,
     savedIn: savedFolderOf(asset),
     mainAction: fileOnDisk(asset) ? null : 'download',
+    workflow: canOpenWorkflow(asset),
+    workflowBuilds: workflowBuildsOf(asset),
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
@@ -850,6 +852,45 @@ watch(detailIndex, (index) => {
     lookedUpDetail.value = null
   } else if (index < visibleAssets.value.length) scrollToIndex(index)
 })
+
+const workflowFound = ref(new Map<string, boolean>())
+
+function workflowBuildsOf(asset: GalleryAsset): { id: string; name: string }[] | undefined {
+  if (!isLocal(asset)) return undefined
+  const place = selectedBuild.value
+  const builds =
+    place && !place.computer && !place.cloud
+      ? [place.build]
+      : localBuilds.value.filter(savesToSharedFolder)
+  return builds.map(({ id, name }) => ({ id, name }))
+}
+
+function canOpenWorkflow(asset: GalleryAsset): boolean {
+  if (workflowFound.value.get(cardKey(asset)) !== true) return false
+  return !isLocal(asset) || (workflowBuildsOf(asset)?.length ?? 0) > 0
+}
+
+watch(
+  () => (detailIndex.value === null ? null : (detailAssets.value[detailIndex.value] ?? null)),
+  async (asset) => {
+    if (!asset || workflowFound.value.has(cardKey(asset))) return
+    const key = cardKey(asset)
+    const found = await window.api.hasAssetWorkflow(asset.source, asset.id).catch(() => false)
+    workflowFound.value = new Map(workflowFound.value).set(key, found)
+  }
+)
+
+async function openWorkflow(asset: GalleryAsset, build?: string): Promise<void> {
+  await closeDetail()
+  const result = await window.api
+    .openAssetWorkflow(asset.source, asset.id, asset.name, build)
+    .catch(() => ({ opened: false, error: undefined }))
+  if (result.opened) return
+  await modal.alert({
+    title: t('assets.detail.openWorkflowFailed'),
+    message: result.error ?? asset.name
+  })
+}
 
 function openDetail(asset: GalleryAsset): void {
   lookedUpDetail.value = null
@@ -1608,6 +1649,7 @@ function extensionOf(name: string): string {
       @close="closeDetail"
       @download="download(detailAssets[$event]!)"
       @show-in-folder="reveal(detailAssets[$event]!)"
+      @open-workflow="(index, build) => openWorkflow(detailAssets[index]!, build)"
     />
 
     <ContextMenu

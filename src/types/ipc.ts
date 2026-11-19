@@ -213,6 +213,11 @@ export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 export type CloudAssetLookup =
   { status: 'found'; asset: AssetSummary } | { status: 'absent' } | { status: 'incomplete' }
 
+export interface AssetWorkflowOpened {
+  opened: boolean
+  error?: string
+}
+
 export interface AssetSummary {
   id: string
   name: string
@@ -1272,6 +1277,13 @@ export interface ElectronApi {
   findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>
   readAssetModel(source: string, assetId: string): Promise<Uint8Array | null>
+  hasAssetWorkflow(source: string, assetId: string): Promise<boolean>
+  openAssetWorkflow(
+    source: string,
+    assetId: string,
+    name: string,
+    build?: string
+  ): Promise<AssetWorkflowOpened>
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
