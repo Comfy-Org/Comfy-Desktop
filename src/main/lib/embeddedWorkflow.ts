@@ -99,8 +99,8 @@ function inflated(bytes: Uint8Array, budget: InflateBudget): Uint8Array | null {
     const body = inflateSync(bytes, { maxOutputLength: budget.left })
     budget.left -= body.length
     return body
-  } catch {
-    budget.left = 0
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ERR_BUFFER_TOO_LARGE') budget.left = 0
     return null
   }
 }

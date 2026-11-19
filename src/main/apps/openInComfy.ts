@@ -19,7 +19,6 @@ import { launchOnce, launchQuietly, otherLaunchSettled, pageBuildId } from './lo
 import type { EmbeddedWorkflow } from '../lib/embeddedWorkflow'
 import {
   COMFY_STATE_SCRIPT,
-  graphCarriesCredentials,
   isComfyPage,
   MARK_PAGE_STALE_SCRIPT,
   openGraphScript,
@@ -257,7 +256,6 @@ async function openGraphIn(
   graph: Record<string, unknown>,
   name: string
 ): Promise<ComfyDesktopOpenInComfy> {
-  if (graphCarriesCredentials(graph)) return { opened: false, error: refusalText('carries-keys') }
   const target =
     place.where === 'local' ? await localTarget(null, place.build) : await cloudTarget()
   return openScriptIn(target, openGraphScript(graph, workflowName(name)))

@@ -129,6 +129,18 @@ describe('reading the workflow ComfyUI saved in a PNG', () => {
     expect(readEmbeddedWorkflow([file])).toEqual({ format: 'graph', data: GRAPH })
   })
 
+  it('keeps reading after a compressed chunk that is broken', () => {
+    const broken = chunk(
+      'zTXt',
+      concat(encoder.encode('workflow'), new Uint8Array([0, 0, 1, 2, 3, 4]))
+    )
+
+    expect(readEmbeddedWorkflow([png(broken, zTXt('workflow', JSON.stringify(GRAPH)))])).toEqual({
+      format: 'graph',
+      data: GRAPH
+    })
+  })
+
   it('stops unpacking once the chunks have unpacked 16 MB in total', () => {
     const big = 'x'.repeat(9_000_000)
     const small = zTXt('workflow', JSON.stringify(GRAPH))

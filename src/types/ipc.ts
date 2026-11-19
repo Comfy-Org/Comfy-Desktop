@@ -1273,7 +1273,7 @@ export interface ElectronApi {
   findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>
   readAssetModel(source: string, assetId: string): Promise<Uint8Array | null>
-  hasAssetWorkflow(source: string, assetId: string): Promise<boolean>
+  hasAssetWorkflow(source: string, assetId: string): Promise<boolean | null>
   openAssetWorkflow(
     source: string,
     assetId: string,

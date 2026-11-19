@@ -614,8 +614,6 @@ function lookUpCloudAsset(cloudId: string, name: string): Promise<CloudAssetLook
 
 async function loadAssets(userAsked = false): Promise<void> {
   const current = ++requestId
-  workflowFound.value = new Map()
-  workflowChecks.value += 1
   cancelIdleCallback(prefetchHandle)
   const settled = cloudSettled.value
   const selected = selectedBuild.value
@@ -864,6 +862,17 @@ async function checkWorkflow(asset: GalleryAsset, checks: number): Promise<void>
   workflowFound.value = new Map(workflowFound.value).set(cardKey(asset), found)
 }
 
+const WORKFLOW_CHECK_DELAY_MS = 150
+let workflowCheckTimer: ReturnType<typeof setTimeout> | undefined
+
+watch(
+  () => selectedBuild.value?.build.id,
+  () => {
+    workflowFound.value = new Map()
+    workflowChecks.value += 1
+  }
+)
+
 watch(
   () => {
     const asset = shownDetail.value
@@ -871,11 +880,19 @@ watch(
     return `${workflowChecks.value}\n${cardKey(asset)}`
   },
   (pending) => {
+    clearTimeout(workflowCheckTimer)
     const asset = shownDetail.value
-    if (pending && asset) void checkWorkflow(asset, workflowChecks.value)
+    if (!pending || !asset) return
+    const checks = workflowChecks.value
+    workflowCheckTimer = setTimeout(
+      () => void checkWorkflow(asset, checks),
+      WORKFLOW_CHECK_DELAY_MS
+    )
   },
   { immediate: true }
 )
+
+onBeforeUnmount(() => clearTimeout(workflowCheckTimer))
 
 async function openWorkflow(asset: GalleryAsset, build?: string): Promise<void> {
   await closeDetail()

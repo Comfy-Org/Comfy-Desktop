@@ -138,8 +138,8 @@ describe('a file on this computer', () => {
     expect(outputFilePath).not.toHaveBeenCalled()
   })
 
-  it('reads nothing for a file outside the output folders', async () => {
-    expect(await hasWorkflow(LOCAL, '/etc/passwd')).toBe(false)
+  it('reads nothing for a file outside the output folders, and says the read failed', async () => {
+    expect(await hasWorkflow(LOCAL, '/etc/passwd')).toBeNull()
   })
 })
 
@@ -190,7 +190,7 @@ describe('a file in Comfy Cloud', () => {
       })
     )
 
-    expect(await hasWorkflow('inst-cloud', 'asset-3')).toBe(false)
+    expect(await hasWorkflow('inst-cloud', 'asset-3')).toBeNull()
     tailFails = false
     expect(await hasWorkflow('inst-cloud', 'asset-3')).toBe(true)
   })
@@ -206,7 +206,7 @@ describe('a file in Comfy Cloud', () => {
     expect(fetch).toHaveBeenCalledOnce()
 
     mocks.cloudAccessToken.mockResolvedValue(null)
-    expect(await hasWorkflow('inst-cloud', 'asset-4')).toBe(false)
+    expect(await hasWorkflow('inst-cloud', 'asset-4')).toBeNull()
     mocks.cloudAccessToken.mockResolvedValue('second-account')
     expect(await hasWorkflow('inst-cloud', 'asset-4')).toBe(true)
     expect(fetch).toHaveBeenCalledTimes(2)
@@ -249,10 +249,26 @@ describe('a file in Comfy Cloud', () => {
     expect(fetch).toHaveBeenCalledOnce()
   })
 
-  it('has no Open workflow when Desktop is not signed in to Comfy Cloud', async () => {
+  it('says the read failed, not that there is no workflow, when Comfy Cloud does not answer', async () => {
+    mocks.cloudAccessToken.mockResolvedValue('token')
+    mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/fox')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 503 }))
+    )
+
+    expect(await hasWorkflow('inst-cloud', 'asset-7')).toBeNull()
+    expect(await openWorkflow('inst-cloud', 'asset-7', 'fox.png')).toEqual({
+      opened: false,
+      error: 'apps.local.openNotTaken'
+    })
+    expect(mocks.openEmbeddedWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('says the read failed when Desktop is not signed in to Comfy Cloud', async () => {
     mocks.cloudAccessToken.mockResolvedValue(null)
 
-    expect(await hasWorkflow('inst-cloud', 'asset-1')).toBe(false)
+    expect(await hasWorkflow('inst-cloud', 'asset-1')).toBeNull()
   })
 })
 

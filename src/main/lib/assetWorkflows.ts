@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import { promises as fsp } from 'fs'
 import { ipcMain } from 'electron'
 
@@ -22,7 +23,7 @@ export const PART_BYTES = 4 * 1024 * 1024
 const READ_TIMEOUT_MS = 30_000
 const REMEMBERED_CLOUD_ASSETS = 20
 
-const remembered = new Map<string, Promise<EmbeddedWorkflow | null>>()
+const remembered = new Map<string, Promise<ReadFile | null>>()
 
 async function readPart(
   handle: fsp.FileHandle,
@@ -82,16 +83,24 @@ async function cloudParts(assetId: string, accessToken: string): Promise<Uint8Ar
   return [head, await firstBytes(tailResponse, PART_BYTES)]
 }
 
+interface ReadFile {
+  workflow: EmbeddedWorkflow | null
+}
+
 async function workflowIn(
   read: Promise<Uint8Array[] | null>,
   onUnread: () => void = () => {}
-): Promise<EmbeddedWorkflow | null> {
+): Promise<ReadFile | null> {
   const parts = await read.catch(() => null)
   if (!parts) onUnread()
-  return parts ? readEmbeddedWorkflow(parts) : null
+  return parts ? { workflow: readEmbeddedWorkflow(parts) } : null
 }
 
-function rememberCloud(key: string, read: Promise<EmbeddedWorkflow | null>): void {
+function sessionKey(accessToken: string): string {
+  return createHash('sha256').update(accessToken).digest('hex')
+}
+
+function rememberCloud(key: string, read: Promise<ReadFile | null>): void {
   remembered.delete(key)
   remembered.set(key, read)
   if (remembered.size > REMEMBERED_CLOUD_ASSETS) {
@@ -99,11 +108,11 @@ function rememberCloud(key: string, read: Promise<EmbeddedWorkflow | null>): voi
   }
 }
 
-async function assetWorkflow(source: string, assetId: string): Promise<EmbeddedWorkflow | null> {
+async function readAsset(source: string, assetId: string): Promise<ReadFile | null> {
   if (source === LOCAL_ASSETS_SOURCE) return workflowIn(localParts(assetId))
   const accessToken = await cloudAccessToken(source)
   if (!accessToken) return null
-  const key = `${source}\n${assetId}\n${accessToken}`
+  const key = `${source}\n${assetId}\n${sessionKey(accessToken)}`
   const known = remembered.get(key)
   if (known) return known
   const read = workflowIn(cloudParts(assetId, accessToken), () => remembered.delete(key))
@@ -130,18 +139,21 @@ async function openAssetWorkflow(
 ): Promise<ComfyDesktopOpenInComfy> {
   const place = placeOf(source, build)
   if (!place) return { opened: false, error: i18n.t('apps.local.openUnknownBuild') }
-  const workflow = await assetWorkflow(source, assetId)
-  if (!workflow) return { opened: false, error: i18n.t('apps.local.openNotWorkflow') }
-  return openEmbeddedWorkflow(place, workflow, titleOf(name))
+  const read = await readAsset(source, assetId)
+  if (!read) return { opened: false, error: i18n.t('apps.local.openNotTaken') }
+  if (!read.workflow) return { opened: false, error: i18n.t('apps.local.openNotWorkflow') }
+  return openEmbeddedWorkflow(place, read.workflow, titleOf(name))
 }
 
 export function registerAssetWorkflowHandlers(): void {
   ipcMain.handle(
     ASSET_WORKFLOW_CHANNELS.has,
-    async (event, source: unknown, assetId: unknown): Promise<boolean> =>
-      isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'
-        ? (await assetWorkflow(source, assetId)) !== null
-        : false
+    async (event, source: unknown, assetId: unknown): Promise<boolean | null> => {
+      if (!isPanelSender(event.sender)) return false
+      if (typeof source !== 'string' || typeof assetId !== 'string') return false
+      const read = await readAsset(source, assetId)
+      return read ? read.workflow !== null : null
+    }
   )
   ipcMain.handle(
     ASSET_WORKFLOW_CHANNELS.open,

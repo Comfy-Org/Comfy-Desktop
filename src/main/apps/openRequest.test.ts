@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import {
   COMFY_STATE_SCRIPT,
   DEFAULT_WORKFLOW_NAME,
-  graphCarriesCredentials,
   isApiWorkflow,
   isBuildId,
   isComfyPage,
@@ -287,14 +286,5 @@ describe('the script that loads a saved graph into the ComfyUI page', () => {
     const context = page({ graph: {}, canvas: {}, loadApiJson: () => undefined })
 
     expect(await runInNewContext(openGraphScript(graph, 'fox'), context)).toBe(false)
-  })
-})
-
-describe('a saved graph that holds a Comfy key', () => {
-  it('is any graph with a filled-in Comfy key or token', () => {
-    expect(graphCarriesCredentials({ nodes: [{ api_key_comfy_org: 'secret' }] })).toBe(true)
-    expect(graphCarriesCredentials({ extra: { AUTH_TOKEN_COMFY_ORG: 'secret' } })).toBe(true)
-    expect(graphCarriesCredentials({ nodes: [{ api_key_comfy_org: '' }] })).toBe(false)
-    expect(graphCarriesCredentials({ nodes: [{ type: 'SaveImage' }] })).toBe(false)
   })
 })

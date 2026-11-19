@@ -599,19 +599,7 @@ describe('opening the workflow saved in a file', () => {
     expect(cloud.loaded()).toHaveLength(1)
   })
 
-  it('refuses a graph or a prompt that holds a Comfy key and opens nothing', async () => {
-    const graphWithKey = {
-      nodes: [{ id: 1, type: 'X', inputs: [], api_key_comfy_org: 'secret' }],
-      links: []
-    }
-
-    expect(
-      await openEmbeddedWorkflow(
-        { where: 'local', build: STUDIO.id },
-        { format: 'graph', data: graphWithKey },
-        'x'
-      )
-    ).toEqual({ opened: false, error: 'apps.local.openCarriesKeys' })
+  it('refuses a prompt that holds a Comfy key and opens nothing', async () => {
     expect(
       await openEmbeddedWorkflow({ where: 'cloud' }, { format: 'api', data: WITH_KEY }, 'x')
     ).toEqual({ opened: false, error: 'apps.local.openCarriesKeys' })

@@ -3,7 +3,6 @@ const MAX_NODES = 500
 const BUILD_ID = /^[A-Za-z0-9_-]{1,64}$/
 const WORKFLOW_NAME = /^[\p{L}\p{N} .,()'&_-]{1,80}$/u
 const CREDENTIAL_INPUT = /^(api_key_comfy_org|auth_token_comfy_org)$/i
-const GRAPH_CREDENTIAL = /"(api_key_comfy_org|auth_token_comfy_org)"\s*:\s*"[^"]/i
 export const DEFAULT_WORKFLOW_NAME = 'Comfy app'
 
 export interface OpenRequest {
@@ -113,16 +112,6 @@ export function openGraphScript(graph: Record<string, unknown>, name: string): s
     graph,
     name
   )
-}
-
-export function graphCarriesCredentials(graph: Record<string, unknown>): boolean {
-  let text: string
-  try {
-    text = JSON.stringify(graph)
-  } catch {
-    return true
-  }
-  return GRAPH_CREDENTIAL.test(text)
 }
 
 export function isComfyPage(pageUrl: string, comfyUrl: string): boolean {

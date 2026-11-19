@@ -1730,6 +1730,11 @@ describe('AssetsView Open workflow', () => {
     id: string
   ): Promise<void> {
     await wrapper.get(`[data-testid="asset-open-${id}"]`).trigger('click')
+    await settle()
+  }
+
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 200))
     await flushPromises()
   }
 
@@ -1807,24 +1812,58 @@ describe('AssetsView Open workflow', () => {
     expect(workflowButton()).toBeNull()
   })
 
-  it('checks the file again after the list reloads, and drops the answer from before the reload', async () => {
-    const answers: ((found: boolean) => void)[] = []
-    hasAssetWorkflow.mockImplementation(
-      () => new Promise<boolean>((resolve) => answers.push(resolve))
-    )
+  it('keeps the answer when the list reloads, so Open workflow does not flicker', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
     const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
     await openViewer(wrapper, '/out/forest.png')
 
     await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
     await flushPromises()
-    expect(hasAssetWorkflow).toHaveBeenCalledTimes(2)
-    answers[1]!(true)
-    await flushPromises()
+
+    expect(workflowButton()?.classList.contains('invisible')).toBe(false)
+    await settle()
+    expect(hasAssetWorkflow).toHaveBeenCalledOnce()
+  })
+
+  it('drops an answer that comes back after the place changed, and checks again there', async () => {
+    const answers: ((found: boolean) => void)[] = []
+    hasAssetWorkflow.mockImplementation(
+      () => new Promise<boolean>((resolve) => answers.push(resolve))
+    )
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: [localBuild('lab'), localBuild('mine', 'My Local 1')]
+    })
+    await openViewer(wrapper, '/out/forest.png')
+    await press('Escape')
+
+    await openBuildPicker(wrapper)
+    await pickBuild('mine')
     answers[0]!(false)
     await flushPromises()
+    await openBuildPicker(wrapper)
+    await pickBuild('lab')
+    await openViewer(wrapper, '/out/forest.png')
+    answers[1]!(true)
+    await flushPromises()
 
-    expect(workflowButton()?.hasAttribute('disabled')).toBe(false)
+    expect(hasAssetWorkflow).toHaveBeenCalledTimes(2)
     expect(workflowButton()?.classList.contains('invisible')).toBe(false)
+  })
+
+  it('checks only the file you stop on when you arrow through files', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/a.png', 'a.png', 'image', { createdAt: '2026-11-03T00:00:00Z' }),
+      asset('/out/b.png', 'b.png', 'image', { createdAt: '2026-11-02T00:00:00Z' }),
+      asset('/out/c.png', 'c.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
+    ])
+    await wrapper.get('[data-testid="asset-open-/out/a.png"]').trigger('click')
+    await flushPromises()
+
+    await press('ArrowRight')
+    await press('ArrowRight')
+    await settle()
+
+    expect(hasAssetWorkflow).toHaveBeenCalledExactlyOnceWith('local', '/out/c.png')
   })
 
   it('keeps an invisible place for Open workflow when the file holds no workflow, so the buttons do not move', async () => {
@@ -1838,17 +1877,24 @@ describe('AssetsView Open workflow', () => {
   })
 
   it('checks the file again on the next open when the check failed', async () => {
-    hasAssetWorkflow.mockRejectedValueOnce(new Error('token refresh')).mockResolvedValue(true)
-    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+    for (const failure of ['call', 'read'] as const) {
+      hasAssetWorkflow.mockReset()
+      if (failure === 'call') hasAssetWorkflow.mockRejectedValueOnce(new Error('token refresh'))
+      else hasAssetWorkflow.mockResolvedValueOnce(null)
+      hasAssetWorkflow.mockResolvedValue(true)
+      const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
 
-    await openViewer(wrapper, '/out/forest.png')
-    expect(workflowButton()?.classList.contains('invisible')).toBe(true)
-    await press('Escape')
-    expect(viewer()).toBeNull()
-    await openViewer(wrapper, '/out/forest.png')
+      await openViewer(wrapper, '/out/forest.png')
+      expect(workflowButton()?.classList.contains('invisible'), failure).toBe(true)
+      await press('Escape')
+      expect(viewer()).toBeNull()
+      await openViewer(wrapper, '/out/forest.png')
 
-    expect(hasAssetWorkflow).toHaveBeenCalledTimes(2)
-    expect(workflowButton()?.classList.contains('invisible')).toBe(false)
+      expect(hasAssetWorkflow, failure).toHaveBeenCalledTimes(2)
+      expect(workflowButton()?.classList.contains('invisible'), failure).toBe(false)
+      await press('Escape')
+      wrapper.unmount()
+    }
   })
 
   it('asks which build to open a file in the shared folder in', async () => {
