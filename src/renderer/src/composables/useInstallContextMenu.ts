@@ -343,9 +343,8 @@ export function useInstallContextMenu(
           actionOpts.confirmed === true ||
           (await dialogs.confirm({
             title: t('actions.deleteConfirmTitle'),
-            message: `${inst.installPath ? inst.installPath + '\n\n' : ''}${t(
-              'actions.deleteConfirmMessage'
-            )}\n\n${t('actions.deleteConfirmDetail')}`,
+            message: `${t('actions.deleteConfirmMessage')} ${t('actions.deleteConfirmDetail')}`,
+            hint: inst.installPath || undefined,
             confirmLabel: deleteLabel,
             tone: 'danger'
           })) === 'primary'

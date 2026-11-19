@@ -268,8 +268,9 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
     const confirmArgs = dialogsMock.confirm.mock.calls[0][0]
     expect(confirmArgs.title).toBe('Uninstall')
     expect(confirmArgs.message).toContain('permanently removes this ComfyUI installation')
-    expect(confirmArgs.message).toContain('/tmp/my')
-    expect(confirmArgs.message).toContain('Other installs are not affected.')
+    expect(confirmArgs.message).toContain('This cannot be undone. Other installs are not affected.')
+    expect(confirmArgs.message).not.toContain('\n')
+    expect(confirmArgs.hint).toBe('/tmp/my')
     expect(confirmArgs.messageDetails).toBeUndefined()
     expect(confirmArgs.confirmLabel).toBe('Uninstall')
     expect(confirmArgs.tone).toBe('danger')

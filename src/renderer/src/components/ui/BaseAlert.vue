@@ -124,7 +124,7 @@ const linkClass =
       <slot>
         <div
           v-if="message"
-          class="base-alert-message-text whitespace-pre-line [&_strong]:font-semibold [&_strong]:text-text"
+          class="base-alert-message-text whitespace-pre-line text-pretty [&_strong]:font-semibold [&_strong]:text-text"
           :class="linkClass"
           @click="handleModalLinkClick"
           v-html="linkifiedMessage"
@@ -154,7 +154,10 @@ const linkClass =
           </div>
         </div>
       </slot>
-      <p v-if="hint" class="base-alert-hint mt-3 text-xs leading-[1.4] text-text-muted/75">
+      <p
+        v-if="hint"
+        class="base-alert-hint mt-3 text-xs leading-[1.4] [overflow-wrap:anywhere] text-text-muted/75"
+      >
         {{ hint }}
       </p>
       <div v-if="$slots.extra" class="base-alert-extra mt-3">
