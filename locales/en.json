@@ -1700,6 +1700,7 @@
     "cannotAdd": "Couldn't add this build",
     "cannotAddDetail": "Something went wrong while adding it. Check the install location, then try again.",
     "changeLocation": "Change location",
+    "locationCheckFailed": "Couldn't check this folder. Try again, or pick another location.",
     "dirNotExist": "Directory does not exist: {path}",
     "cannotOpenDir": "Could not open directory: {error}",
     "launchCancelled": "Launch cancelled.",

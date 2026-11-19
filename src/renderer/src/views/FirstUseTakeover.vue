@@ -27,7 +27,7 @@ import {
 } from '../lib/setupPlan'
 import type { SystemInfo } from '../../../types/ipc'
 import { useModal } from '../composables/useModal'
-import { locationIssueMessage } from '../lib/installHelpers'
+import { checkInstallLocation } from '../lib/installHelpers'
 
 type Step = 'setup' | 'mirrors'
 type SetupAction = 'install' | 'change' | 'skip'
@@ -327,26 +327,28 @@ function retryPlan(): void {
 }
 
 async function browseInstallLocation(): Promise<void> {
+  const gen = openGeneration
   const current = plan.value
   if (!current) return
   let chosen = await window.api.browseFolder(current.installRoot || undefined)
   while (chosen) {
-    const issue = await locationIssueMessage(chosen, 'first_use', 'browse', t)
-    if (!issue) break
+    if (gen !== openGeneration) return
+    const check = await checkInstallLocation(chosen, 'first_use', 'browse', t)
+    if (gen !== openGeneration) return
+    if (check.ok && !check.issue) break
     const pickAgain = await modal.notice({
       title: t('errors.cannotAdd'),
-      message: issue,
+      message: check.ok && check.issue ? check.issue : t('errors.locationCheckFailed'),
       actionLabel: t('errors.changeLocation')
     })
-    if (!pickAgain) return
+    if (!pickAgain || gen !== openGeneration) return
     chosen = await window.api.browseFolder(chosen)
   }
-  if (!chosen || plan.value !== current) return
+  if (!chosen || gen !== openGeneration || plan.value !== current) return
   plan.value = { ...current, installRoot: chosen }
   pickedInstallRoot.value = chosen
   emit('location-change', chosen)
   diskFree.value = null
-  const gen = openGeneration
   void window.api
     .getDiskSpace(chosen)
     .then((space) => {

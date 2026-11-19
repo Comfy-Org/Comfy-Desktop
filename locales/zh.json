@@ -1700,6 +1700,7 @@
     "cannotAdd": "无法添加此构建",
     "cannotAddDetail": "添加时出错。请检查安装位置，然后重试。",
     "changeLocation": "更改位置",
+    "locationCheckFailed": "无法检查此文件夹。请重试，或选择其他位置。",
     "dirNotExist": "目录不存在：{path}",
     "cannotOpenDir": "无法打开目录：{error}",
     "launchCancelled": "启动已取消。",

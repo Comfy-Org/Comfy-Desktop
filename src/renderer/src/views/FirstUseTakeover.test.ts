@@ -59,6 +59,7 @@ function installApi(overrides: ApiOverrides = {}): void {
     }),
     getDefaultInstallDir: vi.fn().mockResolvedValue('/Users/ada/ComfyUI-Installs'),
     getDiskSpace: vi.fn().mockResolvedValue({ free: overrides.free ?? 412 * GB, total: 1000 * GB }),
+    validateInstallPath: vi.fn().mockResolvedValue([]),
     getSources: vi.fn().mockResolvedValue([
       {
         id: 'standalone',
@@ -342,6 +343,74 @@ describe('Set up, the first screen', () => {
     await install(w)
     const [plan] = w.emitted('install')![0] as [SetupPlan]
     expect(plan.installRoot).toBe('/Users/ada/ComfyUI-Installs')
+  })
+
+  it('keeps the old folder and offers Change location again when the folder check fails', async () => {
+    const browseFolder = vi
+      .fn()
+      .mockResolvedValueOnce('/Volumes/Big/ComfyUI')
+      .mockResolvedValueOnce('/Volumes/Big/ComfyUI')
+    const validateInstallPath = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('ipc down'))
+      .mockResolvedValue([])
+    Object.assign(window.api, { browseFolder, validateInstallPath })
+    const w = await mountSetup()
+    type Exposed = { browseInstallLocation: () => Promise<void> }
+    const picking = (w.vm as unknown as Exposed).browseInstallLocation()
+    await flushPromises()
+
+    const modal = useModal()
+    expect(modal.state.visible).toBe(true)
+    expect(modal.state.title).toBe("Couldn't add this build")
+    expect(modal.state.message).toBe(
+      "Couldn't check this folder. Try again, or pick another location."
+    )
+    expect(modal.state.buttonLabel).toBe('Change location')
+    expect(w.emitted('location-change')).toBeUndefined()
+    expect(text(w, 'setup-location')).toBe('~/ComfyUI-Installs/ComfyUI')
+
+    modal.close(true)
+    await picking
+    await flushPromises()
+
+    expect(browseFolder).toHaveBeenCalledTimes(2)
+    expect(w.emitted('location-change')).toEqual([['/Volumes/Big/ComfyUI']])
+  })
+
+  it('drops a folder picked while Set up was opened again', async () => {
+    let finishPick: (path: string) => void = () => {}
+    Object.assign(window.api, {
+      browseFolder: vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            finishPick = resolve
+          })
+      )
+    })
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {},
+      installRoot: '/Volumes/Studio SSD',
+      downloadBytes: 0,
+      requiredBytes: 0,
+      name: 'Studio'
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+    type Exposed = {
+      browseInstallLocation: () => Promise<void>
+      open: () => Promise<void>
+    }
+    const picking = (w.vm as unknown as Exposed).browseInstallLocation()
+    await (w.vm as unknown as Exposed).open()
+    await flushPromises()
+    finishPick('/Volumes/Big/ComfyUI')
+    await picking
+    await flushPromises()
+
+    expect(w.emitted('location-change')).toBeUndefined()
+    expect(text(w, 'setup-location')).toContain('Studio SSD')
   })
 
   it('keeps the plan when the folder picker is cancelled', async () => {
