@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 
 import '../assets/main.css'
@@ -69,7 +69,16 @@ async function mountPopup() {
   const wrapper = mount(DownloadsView, { props: { state }, attachTo: host })
   mounted.push(wrapper)
   await flushPromises()
+  await parkPointerOutsidePopup()
   return wrapper
+}
+
+async function parkPointerOutsidePopup() {
+  const spot = document.createElement('div')
+  spot.style.cssText = 'position: fixed; right: 0; bottom: 0; width: 8px; height: 8px'
+  document.body.append(spot)
+  hosts.push(spot)
+  await userEvent.hover(spot)
 }
 
 const rect = (el: Element) => el.getBoundingClientRect()
