@@ -260,7 +260,7 @@ describe('AppRequestModal', () => {
 
     expect(art.getAttribute('aria-hidden')).toBe('true')
     expect(art.querySelector('img')?.getAttribute('alt')).toBe('')
-    expect(art.textContent?.trim()).toBe('Character Swap')
+    expect(art.textContent?.trim()).toBe('')
     const card = document.querySelector('.base-modal-panel')!.getBoundingClientRect()
     expect(artBox.width).toBeCloseTo(216, 0)
     expect(artBox.left - card.left).toBeCloseTo(9, 0)

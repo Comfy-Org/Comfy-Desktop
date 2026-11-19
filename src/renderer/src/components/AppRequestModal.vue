@@ -109,10 +109,6 @@ watch(
         data-testid="app-request-art"
       >
         <img :src="requestArt" alt="" class="absolute inset-0 size-full object-cover" />
-        <div class="absolute inset-0 bg-[linear-gradient(to_top,rgb(0_0_0/0.6),transparent_40%)]" />
-        <span class="absolute bottom-4 left-4 text-sm/[17px] font-semibold text-white">{{
-          t('apps.request.artApp')
-        }}</span>
       </div>
     </template>
     <template #header>
