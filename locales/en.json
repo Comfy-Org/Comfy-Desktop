@@ -2009,10 +2009,9 @@
     "filterErrored": "Failed",
     "filterAriaLabel": "Status filter",
     "retry": "Retry",
-    "badgeFailed": "Failed",
-    "badgeCancelled": "Cancelled",
     "footerActive": "{n} active",
     "footerCompleted": "{n} completed",
+    "footerFailed": "{n} failed",
     "clearFinished": "Clear finished"
   },
   "instancePicker": {

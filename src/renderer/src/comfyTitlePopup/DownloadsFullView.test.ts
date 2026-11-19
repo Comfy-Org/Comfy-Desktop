@@ -108,6 +108,22 @@ describe('DownloadsFullView shared controls', () => {
     await view.get('.dlm-clear-btn').trigger('click')
     expect(actions.at(-1)).toEqual({ action: 'clear-finished' })
   })
+
+  it('ends every row with an always-visible × that cancels an active download and removes a finished one', async () => {
+    const view = await mountView()
+    const rows = view.findAll('.dlm-row')
+    for (const row of rows)
+      expect(row.get('.dlm-trailing .dlm-x').classes()).toContain('opacity-50')
+    const active = rows.find((row) => row.text().includes('active.bin'))!
+    const failed = rows.find((row) => row.text().includes('failed.bin'))!
+    expect(active.get('.dlm-x').attributes('aria-label')).toBe('Cancel')
+    await active.get('.dlm-x').trigger('click')
+    await failed.get('.dlm-x').trigger('click')
+    expect(actions).toEqual([
+      { action: 'cancel', ref: 'active', url: 'https://example.com/active' },
+      { action: 'dismiss', ref: 'failed', url: 'https://example.com/failed' }
+    ])
+  })
 })
 
 describe('DownloadsFullView close', () => {

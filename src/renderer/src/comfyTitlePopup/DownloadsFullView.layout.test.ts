@@ -13,6 +13,8 @@ const state: PopupDownloadsState = {
       url: 'https://example.com/active',
       filename: 'wan2.2-t2v.safetensors',
       progress: 0.42,
+      receivedBytes: 6_120_000_000,
+      totalBytes: 14_570_000_000,
       status: 'downloading'
     }
   ],
@@ -91,5 +93,56 @@ describe('DownloadsFullView layout', () => {
     expect(tabs.length).toBe(4)
     expect(box('.dlm-filterbar').width).toBeLessThan(box('.dlm-card').width / 2)
     expect(new Set(tabs).size).toBeGreaterThan(1)
+  })
+
+  it('gives every row the same action grid: primary buttons and trailing slots share one right edge, down to Clear finished', async () => {
+    await mountView()
+    const rows = [...document.querySelectorAll<HTMLElement>('.dlm-row')]
+    expect(rows.map((row) => row.className.match(/is-\w+/)![0])).toEqual([
+      'is-active',
+      'is-completed',
+      'is-error'
+    ])
+    const right = (el: Element) => el.getBoundingClientRect().right
+    const primaries = rows.map((row) => right(row.querySelector('.dlm-primary .dlm-btn')!))
+    const trailing = rows.map((row) => row.querySelector('.dlm-trailing')!.getBoundingClientRect())
+    expect(new Set(primaries).size).toBe(1)
+    expect(new Set(trailing.map((slot) => slot.right)).size).toBe(1)
+    expect(new Set(trailing.map((slot) => slot.width)).size).toBe(1)
+    for (const row of rows) expect(row.querySelector('.dlm-trailing .dlm-x')).not.toBeNull()
+    expect(primaries[0]).toBeLessThan(trailing[0]!.left)
+    expect(right(document.querySelector('.dlm-clear-btn')!)).toBe(trailing[0]!.right)
+  })
+
+  it('keeps rows the same height with their actions centred, and runs the bar to the action column', async () => {
+    await mountView()
+    const rows = [...document.querySelectorAll<HTMLElement>('.dlm-row')].map((row) =>
+      row.getBoundingClientRect()
+    )
+    expect(rows.map((row) => row.height)).toEqual([72, 72, 72])
+    for (const row of document.querySelectorAll('.dlm-row')) {
+      const r = row.getBoundingClientRect()
+      for (const slot of row.querySelectorAll('.dlm-primary .dlm-btn, .dlm-trailing .dlm-x')) {
+        const b = slot.getBoundingClientRect()
+        expect(Math.abs(b.top + b.height / 2 - (r.top + r.height / 2))).toBeLessThanOrEqual(0.5)
+      }
+    }
+    const active = document.querySelector('.dlm-row.is-active')!
+    const bar = active.querySelector('.dlm-bar')!.getBoundingClientRect()
+    expect(bar.left).toBe(active.querySelector('.dlm-name')!.getBoundingClientRect().left)
+    expect(active.querySelector('.dlm-primary')!.getBoundingClientRect().left - bar.right).toBe(16)
+  })
+
+  it('says progress and failure once', async () => {
+    await mountView()
+    const active = document.querySelector('.dlm-row.is-active')!
+    expect(active.querySelector('.dlm-sub')!.textContent).toMatch(/^42% · /)
+    expect(active.querySelector('.dlm-primary')!.textContent!.trim()).toBe('')
+    const failed = document.querySelector('.dlm-row.is-error')!
+    expect(failed.textContent).not.toMatch(/Failed/)
+    expect(failed.querySelector('.dlm-sub')!.textContent).toBe('Network error')
+    expect(
+      [...document.querySelectorAll('.dlm-footer-stat')].map((stat) => stat.textContent!.trim())
+    ).toEqual(['1 active', '1 completed', '1 failed'])
   })
 })

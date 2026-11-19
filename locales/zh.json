@@ -2009,10 +2009,9 @@
     "filterErrored": "失败",
     "filterAriaLabel": "状态筛选",
     "retry": "重试",
-    "badgeFailed": "失败",
-    "badgeCancelled": "已取消",
     "footerActive": "{n} 个活动",
     "footerCompleted": "{n} 个已完成",
+    "footerFailed": "{n} 个失败",
     "clearFinished": "清除已完成"
   },
   "instancePicker": {
