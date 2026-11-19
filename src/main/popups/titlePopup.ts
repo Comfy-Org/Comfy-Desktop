@@ -737,6 +737,7 @@ const PICKER_TOP_GUTTER = 8
 const PICKER_EXPANDED_MAX_WIDTH = 960
 const PICKER_EXPANDED_MAX_HEIGHT_RATIO = 0.85
 const PICKER_EXPANDED_MAX_HEIGHT = 720
+const PICKER_CLOSE_LANE = 48
 
 interface PickerBounds {
   x: number
@@ -749,18 +750,21 @@ function computePickerBounds(parent: BrowserWindow): PickerBounds {
   const content = parent.getContentBounds()
   const innerTop = TITLEBAR_HEIGHT + PICKER_TOP_GUTTER
   const innerHeight = Math.max(0, content.height - innerTop - PICKER_BOTTOM_GUTTER)
-  const innerWidth = Math.max(0, content.width - 2 * PICKER_SIDE_GUTTER)
+  const innerWidth = Math.max(0, content.width - 2 * PICKER_SIDE_GUTTER - 2 * PICKER_CLOSE_LANE)
 
-  const width = Math.min(PICKER_EXPANDED_MAX_WIDTH, innerWidth)
+  const panelWidth = Math.min(PICKER_EXPANDED_MAX_WIDTH, innerWidth)
   const height = Math.min(
     innerHeight,
     Math.round(content.height * PICKER_EXPANDED_MAX_HEIGHT_RATIO),
     PICKER_EXPANDED_MAX_HEIGHT
   )
-  const x = Math.max(PICKER_SIDE_GUTTER, Math.round((content.width - width) / 2))
+  const x = Math.max(
+    PICKER_SIDE_GUTTER + PICKER_CLOSE_LANE,
+    Math.round((content.width - panelWidth) / 2)
+  )
   const slack = Math.max(0, innerHeight - height)
   const y = slack > 0 ? innerTop + Math.round(slack / 3) : innerTop
-  return { x, y, width, height }
+  return { x, y, width: panelWidth + PICKER_CLOSE_LANE, height }
 }
 
 interface CenteredCardClamp {
@@ -1054,7 +1058,11 @@ export interface TitlePopupHostBindings {
     cancellable: boolean
   }) => void
   broadcastPickerSnapshot: () => void
-  removeAppDataAndQuit: (options: { deleteInstances: boolean; deleteModels: boolean }) => void
+  removeAppDataAndQuit: (options: {
+    deleteInstances: boolean
+    deleteModels: boolean
+    deleteInputOutput: boolean
+  }) => void
 }
 
 export function parseGlobalSettingsTarget(
@@ -2098,13 +2106,17 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 
   ipcMain.on(
     'comfy-titlepopup:global-settings-remove-app-data',
-    (event, payload: { deleteInstances?: unknown; deleteModels?: unknown }) => {
+    (
+      event,
+      payload: { deleteInstances?: unknown; deleteModels?: unknown; deleteInputOutput?: unknown }
+    ) => {
       const popupEntry = titlePopupsByWebContents.get(event.sender.id)
       if (!popupEntry || popupEntry.kind !== 'global-settings') return
       if (process.platform !== 'darwin' && process.platform !== 'linux') return
       bindings.removeAppDataAndQuit({
         deleteInstances: payload?.deleteInstances === true,
-        deleteModels: payload?.deleteModels === true
+        deleteModels: payload?.deleteModels === true,
+        deleteInputOutput: payload?.deleteInputOutput === true
       })
     }
   )

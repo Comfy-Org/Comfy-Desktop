@@ -2,6 +2,7 @@
 import Button from '@comfyorg/design-system/button/Button'
 import ToggleGroup from '@comfyorg/design-system/toggle-group/ToggleGroup'
 import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupItem'
+import { vSlidingPill } from '../components/ui/vSlidingPill'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -189,6 +190,7 @@ const footerStats = computed<string[]>(() =>
           <ToggleGroup
             v-if="visibleFilters.length > 0"
             v-model="filter"
+            v-sliding-pill="'bg-accent'"
             type="single"
             :allow-empty="false"
             roving-focus

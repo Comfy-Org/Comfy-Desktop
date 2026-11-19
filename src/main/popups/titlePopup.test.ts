@@ -1014,8 +1014,19 @@ describe('global settings remove app data', () => {
     removeAppData(openPopup('global-settings'), { deleteInstances: true, deleteModels: 'yes' })
     expect(removeAppDataAndQuit).toHaveBeenCalledExactlyOnceWith({
       deleteInstances: true,
-      deleteModels: false
+      deleteModels: false,
+      deleteInputOutput: false
     })
+  })
+
+  it('passes the input and output box only when it is exactly true', () => {
+    vi.stubGlobal('process', { ...process, platform: 'linux' })
+    removeAppData(openPopup('global-settings'), { deleteInputOutput: true })
+    removeAppData(openPopup('global-settings'), { deleteInputOutput: 'true' })
+    expect(removeAppDataAndQuit.mock.calls).toEqual([
+      [{ deleteInstances: false, deleteModels: false, deleteInputOutput: true }],
+      [{ deleteInstances: false, deleteModels: false, deleteInputOutput: false }]
+    ])
   })
 
   it('ignores the request on Windows, where the uninstaller does the cleanup', () => {
