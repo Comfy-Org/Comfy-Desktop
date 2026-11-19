@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, HardDrive, Loader2, Package, Zap } from '@lucide/vue'
+import { HardDrive, Loader2, Package, Zap } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
@@ -9,8 +9,8 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import TermsModal from '../components/TermsModal.vue'
 import TermsConsentRow from '../components/TermsConsentRow.vue'
 import InlineRichText from '../components/InlineRichText.vue'
-import BuildDeviceArt from '../panel/home/BuildDeviceArt.vue'
-import { deviceKindForPlatform } from '../panel/home/homeBuild'
+import SetupMachineCard from '../components/SetupMachineCard.vue'
+import SetupSummaryRow from '../components/SetupSummaryRow.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { formatSize } from '../lib/formatting'
 import { saveSetupConsent, type SetupConsent } from '../lib/setupConsent'
@@ -42,7 +42,8 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const ROW_CLASS = 'grid h-4 grid-cols-[147px_minmax(0,1fr)_auto] items-center text-[13px]/4'
+const VALUE_CLASS = 'grid min-w-0 flex-1 gap-1 text-[13px]/5'
+const META_CLASS = 'truncate text-[12px]/4'
 const CONSENT_ROW_CLASS = 'flex w-fit cursor-pointer items-center gap-2.5 text-xs/[15px]'
 const CHECKBOX_CLASS =
   'size-5 rounded-[5px] border-0 bg-white/6 text-[#070709] data-[state=checked]:bg-[#f1f1f3] [&_i]:size-3'
@@ -122,6 +123,11 @@ const hardwareDetected = computed(
     (!props.savedPlan || variant.value.recommended === true)
 )
 const machine = computed(() => machineName(systemInfo.value, cpuOnly.value))
+const hardwareMeta = computed(() => {
+  if (unsupportedReason.value) return t('setup.unsupported')
+  if (cpuOnly.value) return t('setup.noGpu')
+  return hardwareDetected.value ? t('setup.detected') : ''
+})
 const memoryGb = computed(() =>
   systemInfo.value?.total_memory_gb ? Math.round(systemInfo.value.total_memory_gb) : null
 )
@@ -466,84 +472,49 @@ defineExpose({ open, resetContinue })
           {{ lead }}
         </p>
 
-        <section
-          class="relative mt-[26px] flex h-[165px] items-center overflow-hidden rounded-[18px] border border-white/7 bg-[rgb(137_137_137/0.05)] pr-8 pl-[35px]"
+        <SetupMachineCard
+          class="mt-[26px]"
           :aria-label="t('setup.computer')"
           data-testid="setup-machine"
-        >
-          <span
-            class="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_120%_at_15%_0%,rgb(244_244_244/0.09),rgb(244_244_244/0)_70%)]"
-            aria-hidden="true"
-          />
-          <BuildDeviceArt
-            class="relative h-[80px] w-[124px] shrink-0"
-            :kind="deviceKindForPlatform(platform)"
-            glow="#46464A"
-          />
-          <div class="relative ml-6 flex min-w-0 flex-1 flex-col">
-            <span class="flex h-[15px] items-center gap-1.5 text-xs/[15px] text-muted-foreground">
-              <Check :size="11" :stroke-width="2" aria-hidden="true" />
-              {{ t('setup.detected') }}
-            </span>
-            <span
-              class="mt-[5px] truncate text-[22px]/[27px] font-semibold text-foreground"
-              data-testid="setup-machine-name"
-            >
-              {{ machine || t('setup.thisComputer') }}
-            </span>
-            <span class="mt-[3px] h-4 text-[13px]/4 text-subtle-foreground">
-              {{ memoryGb ? t('setup.memory', { gb: memoryGb }) : '' }}
-            </span>
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="unset"
-            class="relative h-8 shrink-0 rounded-lg bg-[rgb(244_244_244/0.09)] px-[13px] text-[13px]/4 font-normal text-foreground hover:bg-[rgb(244_244_244/0.14)]"
-            data-testid="setup-change"
-            @click="request('change')"
-          >
-            {{ t('setup.change') }}
-          </Button>
-        </section>
+          :name="machine || t('setup.thisComputer')"
+          :platform="platform"
+          :memory-gb="memoryGb"
+          change-testid="setup-change"
+          @change="request('change')"
+        />
 
-        <section
-          class="mt-3 flex flex-col gap-8 rounded-[14px] border border-white/7 bg-[rgb(230_230_230/0.04)] py-5 pr-[31px] pl-[33px]"
+        <dl
+          v-if="planState !== 'unavailable'"
+          class="m-0 mt-3 flex flex-col"
           :aria-label="t('setup.summary')"
           data-testid="setup-summary"
         >
-          <template v-if="planState !== 'unavailable'">
-            <div :class="ROW_CLASS" data-testid="setup-row-hardware">
-              <span class="flex items-center gap-2.5 text-subtle-foreground">
-                <Zap :size="13" :stroke-width="1.75" aria-hidden="true" />{{ t('setup.hardware') }}
-              </span>
+          <SetupSummaryRow
+            :icon="Zap"
+            :label="t('setup.hardware')"
+            data-testid="setup-row-hardware"
+          >
+            <span :class="VALUE_CLASS">
               <span class="truncate text-foreground" data-testid="setup-hardware">
                 {{ hardware || t('setup.checking') }}
               </span>
               <span
-                class="ml-4 text-right whitespace-nowrap"
-                :class="
+                v-if="hardwareMeta"
+                :class="[
+                  META_CLASS,
                   unsupportedReason || hardwareWarning ? 'text-[#f0b135]' : 'text-subtle-foreground'
-                "
+                ]"
                 :title="unsupportedReason || hardwareWarning || undefined"
+                >{{ hardwareMeta }}</span
               >
-                {{
-                  unsupportedReason
-                    ? t('setup.unsupported')
-                    : cpuOnly
-                      ? t('setup.noGpu')
-                      : hardwareDetected
-                        ? t('setup.detected')
-                        : ''
-                }}
-              </span>
-            </div>
-            <div :class="ROW_CLASS" data-testid="setup-row-location">
-              <span class="flex items-center gap-2.5 text-subtle-foreground">
-                <HardDrive :size="13" :stroke-width="1.75" aria-hidden="true" />{{
-                  t('setup.location')
-                }}
-              </span>
+            </span>
+          </SetupSummaryRow>
+          <SetupSummaryRow
+            :icon="HardDrive"
+            :label="t('setup.location')"
+            data-testid="setup-row-location"
+          >
+            <span :class="VALUE_CLASS">
               <span
                 v-if="location"
                 class="flex min-w-0 text-foreground"
@@ -555,45 +526,45 @@ defineExpose({ open, resetContinue })
               </span>
               <span v-else class="truncate text-foreground">{{ t('setup.checking') }}</span>
               <span
-                class="ml-4 text-right whitespace-nowrap"
-                :class="lowDisk ? 'text-[#f0b135]' : 'text-subtle-foreground'"
+                v-if="locationMeta"
+                :class="[META_CLASS, lowDisk ? 'text-[#f0b135]' : 'text-subtle-foreground']"
                 data-testid="setup-location-meta"
+                >{{ locationMeta }}</span
               >
-                {{ locationMeta }}
-              </span>
-            </div>
-            <div :class="ROW_CLASS" data-testid="setup-row-version">
-              <span class="flex items-center gap-2.5 text-subtle-foreground">
-                <Package :size="13" :stroke-width="1.75" aria-hidden="true" />{{
-                  t('setup.version')
-                }}
-              </span>
+            </span>
+          </SetupSummaryRow>
+          <SetupSummaryRow
+            :icon="Package"
+            :label="t('setup.version')"
+            data-testid="setup-row-version"
+          >
+            <span :class="VALUE_CLASS">
               <span class="truncate text-foreground" data-testid="setup-version">{{
                 version || t('setup.checking')
               }}</span>
-              <span class="ml-4 text-right whitespace-nowrap text-subtle-foreground">
-                {{ downloadSize ? t('setup.download', { size: downloadSize }) : '' }}
-              </span>
-            </div>
-          </template>
-          <div
-            v-else
-            class="flex min-h-16 items-center justify-between gap-4 text-[13px]/4"
-            role="alert"
-            data-testid="setup-unavailable"
+              <span v-if="downloadSize" :class="[META_CLASS, 'text-subtle-foreground']">{{
+                t('setup.download', { size: downloadSize })
+              }}</span>
+            </span>
+          </SetupSummaryRow>
+        </dl>
+        <div
+          v-else
+          class="mt-3 flex min-h-16 items-center justify-between gap-4 px-4 text-[13px]/4"
+          role="alert"
+          data-testid="setup-unavailable"
+        >
+          <span class="text-muted-foreground">{{ t('setup.unavailable') }}</span>
+          <Button
+            type="button"
+            variant="secondary"
+            size="unset"
+            class="h-8 shrink-0 rounded-lg px-3 text-[13px]/4 font-normal"
+            @click="retryPlan"
           >
-            <span class="text-muted-foreground">{{ t('setup.unavailable') }}</span>
-            <Button
-              type="button"
-              variant="secondary"
-              size="unset"
-              class="h-8 shrink-0 rounded-lg px-3 text-[13px]/4 font-normal"
-              @click="retryPlan"
-            >
-              {{ t('setup.retry') }}
-            </Button>
-          </div>
-        </section>
+            {{ t('setup.retry') }}
+          </Button>
+        </div>
 
         <div class="mt-9 flex flex-col gap-2.5 pl-8">
           <label

@@ -238,6 +238,47 @@ beforeEach(() => {
 
 afterEach(() => browserPage.viewport(1100, 860))
 
+describe('opening Change setup from the New build summary', () => {
+  function dialogTop(): number {
+    return Math.round(only('.setup-modal-panel').getBoundingClientRect().top * 100) / 100
+  }
+
+  it.each([
+    [1100, 860],
+    [800, 563]
+  ])(
+    'keeps the dialog pinned at the top on Change and on Discard at %i × %i',
+    async (width, height) => {
+      await browserPage.viewport(width, height)
+      installStandaloneApi(createLoadGate())
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      const wrapper = mount(InstallWizardModal, {
+        attachTo: document.body,
+        global: { plugins: [pinia] }
+      })
+      await wrapper.vm.open({})
+      await flushPromises()
+      await finishEntranceAnimations()
+      expect(onScreen('[data-testid="config-summary"]')).toHaveLength(1)
+      const summaryTop = dialogTop()
+
+      only('[data-testid="config-change-setup"]').click()
+      await flushPromises()
+      await finishEntranceAnimations()
+      expect(onScreen('[data-testid="config-change-form"]')).toHaveLength(1)
+      expect(dialogTop()).toBe(summaryTop)
+
+      only('[data-testid="config-discard-changes"]').click()
+      await flushPromises()
+      await finishEntranceAnimations()
+      expect(onScreen('[data-testid="config-summary"]')).toHaveLength(1)
+      expect(dialogTop()).toBe(summaryTop)
+      wrapper.unmount()
+    }
+  )
+})
+
 describe('switching where Change setup gets ComfyUI', () => {
   function installSetupChoices() {
     installStandaloneApi(createLoadGate())

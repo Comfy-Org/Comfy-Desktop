@@ -13,7 +13,6 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  Check,
   Download,
   FileArchive,
   FolderArchive,
@@ -70,7 +69,7 @@ import TermsConsentRow from '../components/TermsConsentRow.vue'
 import InstallNameInput from '../components/InstallNameInput.vue'
 import TrackBuildForm from '../components/TrackBuildForm.vue'
 import LoadSnapshotForm from '../components/LoadSnapshotForm.vue'
-import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
+import SetupMachineCard from '../components/SetupMachineCard.vue'
 import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
 import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
@@ -1742,7 +1741,7 @@ defineExpose({ open })
     :dialog-label="ariaLabel"
     :title="modalTitle"
     :lead="modalLead"
-    :anchor-top="view === 'change'"
+    anchor-top
     :brand-backdrop="useTakeoverHost"
     :closable="view === 'summary' && !hideBackToDashboard"
     :close-title="$t('common.backToDashboard')"
@@ -1783,52 +1782,18 @@ defineExpose({ open })
         />
       </div>
 
-      <div
-        class="config-machine relative mt-3 flex items-center gap-5 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
+      <SetupMachineCard
+        class="config-machine mt-3"
         :class="machineBlocked && 'config-machine--unsupported'"
-      >
-        <SetupMachineIllustration
-          class="h-[68px] w-[104px] flex-none max-[640px]:hidden"
-          :os="platform"
-          :bad="machineBlocked"
-        />
-        <span class="grid min-w-0">
-          <span
-            v-if="machineDetected"
-            class="config-machine-kicker mb-1 inline-flex items-center gap-1.5 text-[12px] leading-4 text-text-muted"
-            ><Check :size="11" :stroke-width="3" aria-hidden="true" />{{
-              $t('newInstall.detected')
-            }}</span
-          >
-          <span
-            class="config-gpu-value text-[22px] leading-7 font-semibold tracking-[-0.01em]"
-            :class="
-              machineBlocked
-                ? 'text-[16px] leading-6 break-words text-[var(--danger)]'
-                : 'truncate text-neutral-100'
-            "
-            data-testid="detected-gpu-field"
-            >{{ machineTitle }}</span
-          >
-          <span
-            v-if="machineMemoryGb && !machineBlocked"
-            class="config-machine-memory mt-[3px] text-[13px] leading-4 text-text-muted"
-            data-testid="detected-machine-memory"
-            >{{ $t('setup.memory', { gb: machineMemoryGb }) }}</span
-          >
-        </span>
-        <Button
-          size="md"
-          variant="secondary"
-          type="button"
-          class="config-change ml-auto flex-none px-3"
-          data-testid="config-change-setup"
-          :disabled="!setupPicked"
-          @click="openChangeSetup"
-        >
-          {{ $t('newInstall.change') }}
-        </Button>
-      </div>
+        :name="machineTitle"
+        :platform="platform"
+        :memory-gb="machineMemoryGb"
+        :detected="machineDetected"
+        :blocked="machineBlocked"
+        change-testid="config-change-setup"
+        :change-disabled="!setupPicked"
+        @change="openChangeSetup"
+      />
       <div
         v-if="showsHardwareWarning"
         class="config-hardware-warning mt-2 px-1 text-[12px] leading-[1.4] text-[var(--warning)]"

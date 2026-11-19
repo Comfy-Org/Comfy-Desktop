@@ -21,6 +21,8 @@ vi.mock('../components/TermsModal.vue', () => ({
 }))
 
 import FirstUseTakeover from './FirstUseTakeover.vue'
+import SetupMachineCard from '../components/SetupMachineCard.vue'
+import SetupSummaryRow from '../components/SetupSummaryRow.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { SetupPlan } from '../lib/setupPlan'
 import type { SetupConsent } from '../lib/setupConsent'
@@ -139,6 +141,16 @@ describe('Set up, the first screen', () => {
     expect(text(w, 'setup-row-location')).toContain('412 GB free · ~2.7 GB required')
     expect(text(w, 'setup-row-version')).toContain('ComfyUI v0.42.4 · Stable')
     expect(text(w, 'setup-row-version')).toContain('1.2 GB download')
+  })
+
+  it('draws the computer and its summary with the same parts as New build', async () => {
+    const w = await mountSetup()
+
+    const machine = w.getComponent(SetupMachineCard)
+    expect(machine.attributes('data-testid')).toBe('setup-machine')
+    expect(machine.props('memoryGb')).toBe(36)
+    const rows = w.get('[data-testid="setup-summary"]').findAllComponents(SetupSummaryRow)
+    expect(rows.map((row) => row.props('label'))).toEqual(['Hardware', 'Location', 'Version'])
   })
 
   it('names the computer the way the platform does', async () => {
