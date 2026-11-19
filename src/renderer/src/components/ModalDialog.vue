@@ -198,7 +198,7 @@ watch(
       >
         <div
           v-if="state.message"
-          class="dialog-prompt-card mb-3 rounded-lg border border-solid border-[var(--border)] bg-[var(--bg)] px-4 py-[7px] text-[14px] leading-6 whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
+          class="dialog-prompt-card mb-3 rounded-lg border border-solid border-[var(--border)] bg-[var(--bg)] px-[15px] py-[7px] text-[14px] leading-6 whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
           @click="handleModalLinkClick"
           v-html="linkifiedMessage"
         ></div>
@@ -459,7 +459,7 @@ watch(
         :class="state.messageDetails.length > 0 ? 'max-h-[70vh]' : 'max-h-[50vh]'"
       >
         <div
-          class="dialog-prompt-card mb-3 rounded-lg border border-solid border-[var(--border)] bg-[var(--bg)] px-4 py-[7px] text-[14px] leading-6 whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
+          class="dialog-prompt-card mb-3 rounded-lg border border-solid border-[var(--border)] bg-[var(--bg)] px-[15px] py-[7px] text-[14px] leading-6 whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
           v-html="linkify(state.message)"
         ></div>
         <div v-if="state.messageDetails.length" class="dialog-details mt-3 mb-0">

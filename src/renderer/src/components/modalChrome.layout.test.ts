@@ -324,6 +324,7 @@ describe('modal chrome', () => {
     const input = el('.dialog-input')
     expect(getComputedStyle(card).borderRadius).toBe(getComputedStyle(input).borderRadius)
     expect(card.getBoundingClientRect().height).toBe(input.getBoundingClientRect().height)
+    expect(Math.abs(contentBox(card).left - contentBox(input).left)).toBeLessThanOrEqual(0.5)
     await closeAll()
 
     await open(() =>
