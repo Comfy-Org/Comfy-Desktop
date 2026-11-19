@@ -37,14 +37,18 @@ const PROD_CLOUD_ORIGIN = 'https://cloud.comfy.org'
 
 const REPORTABLE_ERROR_CODES: ReadonlySet<string> = new Set([
   'account_outside_organization',
+  'credential_unsupported',
   'desktop_web_session_disabled',
   'insufficient_scope',
+  'invalid_credential',
   'invalid_token',
   'oauth_grant_ended',
   'rate_limited',
+  'service_unavailable',
   'sso_required',
   'token_revoked',
-  'unauthorized'
+  'unauthorized',
+  'web_session_unavailable'
 ])
 
 export type DesktopIdentity =

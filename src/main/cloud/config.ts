@@ -9,7 +9,7 @@ export const PARTNER_NODE_MINT_SCOPE = 'comfy-cloud:jobs:write'
 
 export const BILLING_WRITE_SCOPE = 'comfy-cloud:billing:write'
 
-export const WEB_SESSION_SCOPE = 'comfy-cloud:web-session'
+export const WEB_SESSION_SCOPE = 'comfy-cloud:web-session:mint'
 
 export const CLOUD_ISSUER = process.env.COMFY_CLOUD_ISSUER || DEFAULT_ISSUER
 

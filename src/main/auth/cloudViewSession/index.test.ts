@@ -76,7 +76,7 @@ function jwt(claims: Record<string, unknown>): string {
 
 const WEB_SESSION_TOKEN = jwt({
   sub: 'desktop-sub',
-  scope: 'comfy-cloud:user:read comfy-cloud:web-session'
+  scope: 'comfy-cloud:user:read comfy-cloud:web-session:mint'
 })
 const READ_ONLY_TOKEN = jwt({ sub: 'desktop-sub', scope: 'comfy-cloud:user:read' })
 
@@ -286,6 +286,19 @@ describe('reconcileCloudViewSession', () => {
       { outcome: 'declined', reason: 'http', http_status: 403, error_code: 'other' }
     ])
   })
+
+  it.each(['web_session_unavailable', 'credential_unsupported', 'oauth_grant_ended'])(
+    'reports the Cloud refusal %s by name',
+    async (code) => {
+      h.requestWebSessionToken.mockResolvedValue({ kind: 'declined', status: 403, code })
+
+      await reconcileCloudViewSession(fakeView({ uid: null, marker: null }).contents)
+
+      expect(outcomes()).toEqual([
+        { outcome: 'declined', reason: 'http', http_status: 403, error_code: code }
+      ])
+    }
+  )
 
   it('drops the token when Desktop signs out during the exchange', async () => {
     h.requestWebSessionToken.mockImplementation(() => {
