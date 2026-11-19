@@ -957,6 +957,7 @@ describe('installAgentRequirements with a version override', () => {
       decision: 'applied',
       pins: new Map([['comfy-agent', '0.2.3']])
     })
+    expect(decision).not.toHaveProperty('reason')
     expect(calls).toEqual([
       { content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n', constraints: 'requests>=2.32.0\n' }
     ])
@@ -985,12 +986,100 @@ describe('installAgentRequirements with a version override', () => {
       decision: 'applied',
       pins: new Map([['comfyui-frontend-package', '1.55.19']])
     })
+    expect(decision).not.toHaveProperty('reason')
     expect(calls).toEqual([
       {
         content: `${CORE_FILE}comfyui-frontend-package==1.55.19\n`,
         constraints: 'requests>=2.32.0\n'
       }
     ])
+  })
+
+  it("applies the agent pin alone when the frontend pin is no newer than ComfyUI's", async () => {
+    fs.writeFileSync(
+      path.join(installDir, 'ComfyUI', 'requirements.txt'),
+      'comfyui-frontend-package==1.55.18\n'
+    )
+    mockUvPip.mockResolvedValue({
+      code: 0,
+      output: JSON.stringify([
+        ...JSON.parse(INSTALLED),
+        { name: 'comfyui-frontend-package', version: '1.55.18' }
+      ])
+    })
+    const payload = { 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.17' }
+    const sendOutput = vi.fn()
+
+    const decision = await installAgentRequirements(plan, sendOutput, undefined, payload)
+
+    expect(sendOutput.mock.calls.join('')).toContain(
+      "comfyui-frontend-package is not newer than ComfyUI's; keeping ComfyUI's"
+    )
+    expect(decision).toEqual({
+      decision: 'applied',
+      reason: 'frontend_not_newer',
+      pins: new Map([['comfy-agent', '0.2.3']])
+    })
+    expect(calls).toEqual([
+      {
+        content: 'comfy-agent==0.2.3\ncomfy-cli==1.21.0\n',
+        constraints: 'requests>=2.32.0\ncomfyui-frontend-package>=1.55.18\n'
+      }
+    ])
+  })
+
+  it('gives up on an agent-only override that failed before, by its own signature', async () => {
+    fs.writeFileSync(
+      path.join(installDir, 'ComfyUI', 'requirements.txt'),
+      'comfyui-frontend-package==1.55.18\n'
+    )
+    const payload = { 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.17' }
+    const state = { signature: 'comfy-agent==0.2.3', failures: 2 }
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, payload, state)
+
+    expect(decision).toEqual({
+      decision: 'reverted',
+      reason: 'previously_failed',
+      pins: new Map([['comfy-agent', '0.2.3']])
+    })
+    expect(calls).toEqual([{ content: CORE_FILE, constraints: null }])
+    expect(mockUvPip, 'the latch is read before listing what is installed').not.toHaveBeenCalled()
+  })
+
+  it("names the agent-only pins ComfyUI can't take back when it gives up on them", async () => {
+    fs.writeFileSync(plan.reqPath, 'comfy-agent\ncomfy-cli==1.21.0\n')
+    fs.writeFileSync(
+      path.join(installDir, 'ComfyUI', 'requirements.txt'),
+      'comfyui-frontend-package==1.55.18\n'
+    )
+    const payload = { 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.17' }
+    const state = { signature: 'comfy-agent==0.2.3', failures: 2 }
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, payload, state)
+
+    expect(decision).toMatchObject({
+      decision: 'reverted',
+      reason: 'previously_failed',
+      staysInstalled: new Map([['comfy-agent', '0.2.3']])
+    })
+  })
+
+  it('counts a failed listing against the agent-only override, not the payload it came from', async () => {
+    fs.writeFileSync(
+      path.join(installDir, 'ComfyUI', 'requirements.txt'),
+      'comfyui-frontend-package==1.55.18\n'
+    )
+    mockUvPip.mockResolvedValue({ code: 1, output: '' })
+    const payload = { 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.17' }
+
+    const decision = await installAgentRequirements(plan, vi.fn(), undefined, payload)
+
+    expect(decision).toEqual({
+      decision: 'refused',
+      reason: 'check_failed',
+      pins: new Map([['comfy-agent', '0.2.3']])
+    })
   })
 
   it('installs a comfy-agent-go pin on its own line, flooring everything else', async () => {
@@ -1575,6 +1664,28 @@ describe('installAgentRequirements with a version override', () => {
       await installAgentRequirements(plan, vi.fn(), undefined, OVERRIDE, null, onDeferred)
 
       expect(onDeferred).toHaveBeenCalledTimes(1)
+      expect(onDeferred.mock.calls[0]![0]).toMatchObject({ signature: 'comfy-agent==0.2.3' })
+    })
+
+    it('hands over the agent-only override when its frontend pin was dropped', async () => {
+      fs.writeFileSync(
+        path.join(installDir, 'ComfyUI', 'requirements.txt'),
+        'comfyui-frontend-package==1.55.18\n'
+      )
+      respond = () => ({ code: 2, output: '' })
+      const onDeferred = vi.fn()
+      const payload = { 'comfy-agent': '0.2.3', 'comfyui-frontend-package': '1.55.17' }
+
+      const decision = await installAgentRequirements(
+        plan,
+        vi.fn(),
+        undefined,
+        payload,
+        null,
+        onDeferred
+      )
+
+      expect(decision).toMatchObject({ pins: new Map([['comfy-agent', '0.2.3']]) })
       expect(onDeferred.mock.calls[0]![0]).toMatchObject({ signature: 'comfy-agent==0.2.3' })
     })
 
@@ -3812,6 +3923,26 @@ describe('prepareAgentPrefetch', () => {
       signature: 'core',
       eager: true
     })
+  })
+
+  it('prepares an agent-only override under its own signature when the frontend pin is not newer', async () => {
+    fs.writeFileSync(
+      path.join(dir, 'ComfyUI', 'requirements.txt'),
+      'comfyui-frontend-package==1.59.6\n'
+    )
+    const payload = { 'comfy-agent': '0.1.0rc3', 'comfyui-frontend-package': '1.59.2' }
+
+    expect(await prepareAgentPrefetch(plan, payload, null)).toMatchObject({
+      steps: [{ text: 'comfy-agent==0.1.0rc3\n' }],
+      signature: 'comfy-agent==0.1.0rc3'
+    })
+    expect(
+      await prepareAgentPrefetch(plan, payload, {
+        signature: 'comfy-agent==0.1.0rc3',
+        failures: 2
+      }),
+      'a latch on the agent-only signature retires the agent-only prefetch'
+    ).toMatchObject({ signature: 'core' })
   })
 
   it("falls back to core file's text for no override, or one that is refused", async () => {

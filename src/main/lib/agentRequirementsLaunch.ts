@@ -13,7 +13,7 @@ import {
   FRONTEND_PACKAGE,
   agentGoBehindAgent,
   coreFrontendVersion,
-  effectiveAgentRequirements,
+  resolveOverride,
   coreFileInstalled,
   installedConstraints,
   isRevertedFor,
@@ -610,26 +610,15 @@ async function tryOverride(
   const parsed = parseAgentRequirementsOverride(raw)
   if (parsed.kind === 'none') return undefined
   if (parsed.kind === 'refused') return refuse(sendOutput, parsed.reason)
-  const { pins } = parsed
-  if (isRevertedFor(state, pins)) {
+  if (isRevertedFor(state, parsed.pins)) {
     const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => '')
-    const stuck = pinsOverBareLines(coreText, pins)
-    sendOutput(
-      `agent version override ${overrideSignature(pins)} failed before; ` +
-        (stuck.size
-          ? `ComfyUI's requirements don't pin ${[...stuck.keys()].join(', ')}, so they can't take ${overrideSignature(stuck)} back if it went in\n`
-          : "using ComfyUI's versions\n")
-    )
-    return {
-      decision: 'reverted',
-      reason: 'previously_failed',
-      pins,
-      ...(stuck.size ? { staysInstalled: stuck } : {})
-    }
+    return previouslyFailed(sendOutput, coreText, parsed.pins)
   }
-  const ready = await prepareOverride(plan, pins, signal)
-  if (ready.kind === 'refused') return refuse(sendOutput, ready.reason, pins)
-  const { coreText, text, constraints, listed } = ready
+  const ready = await prepareOverride(plan, parsed.pins, state, signal)
+  if (ready.kind === 'refused') return refuse(sendOutput, ready.reason, ready.pins)
+  if (ready.kind === 'reverted') return previouslyFailed(sendOutput, ready.coreText, ready.pins)
+  const { coreText, text, constraints, listed, pins } = ready
+  const frontendDropped = parsed.pins.has(FRONTEND_PACKAGE) && !pins.has(FRONTEND_PACKAGE)
   prepare(text, constraints, pins)
   const tag = attemptTag()
   const constraintsName = `.launch-agent-reqs-override-${tag}-constraints.txt`
@@ -637,6 +626,11 @@ async function tryOverride(
   const constraintsPath = path.join(plan.installPath, constraintsName)
   try {
     if (!coreFileInstalled(coreText, listed)) return refuse(sendOutput, 'core_first', pins)
+    if (frontendDropped) {
+      sendOutput(
+        `The override's ${FRONTEND_PACKAGE} is not newer than ComfyUI's; keeping ComfyUI's\n`
+      )
+    }
     await fs.promises.writeFile(overridePath, text, 'utf-8')
     await fs.promises.writeFile(constraintsPath, constraints, 'utf-8')
     sendOutput(`Applying agent version override ${overrideSignature(pins)}\n`)
@@ -661,7 +655,27 @@ async function tryOverride(
     sendOutput(
       `⚠ comfy-agent-go ${behind.go} is older than ${behind.name} ${behind.agent}; the agent will run its bundled agent, not the Go one\n`
     )
-  return { decision: 'applied', pins }
+  return { decision: 'applied', pins, ...(frontendDropped && { reason: 'frontend_not_newer' }) }
+}
+
+function previouslyFailed(
+  sendOutput: (text: string) => void,
+  coreText: string,
+  pins: OverridePins
+): OverrideDecision {
+  const stuck = pinsOverBareLines(coreText, pins)
+  sendOutput(
+    `agent version override ${overrideSignature(pins)} failed before; ` +
+      (stuck.size
+        ? `ComfyUI's requirements don't pin ${[...stuck.keys()].join(', ')}, so they can't take ${overrideSignature(stuck)} back if it went in\n`
+        : "using ComfyUI's versions\n")
+  )
+  return {
+    decision: 'reverted',
+    reason: 'previously_failed',
+    pins,
+    ...(stuck.size ? { staysInstalled: stuck } : {})
+  }
 }
 
 const LIST_TIMEOUT_MS = 30_000
@@ -712,12 +726,21 @@ function refuse(
 }
 
 type PreparedOverride =
-  | { kind: 'refused'; reason: OverrideRefusal }
-  | { kind: 'ready'; coreText: string; text: string; constraints: string; listed: string }
+  | { kind: 'refused'; reason: OverrideRefusal; pins: OverridePins }
+  | { kind: 'reverted'; coreText: string; pins: OverridePins }
+  | {
+      kind: 'ready'
+      coreText: string
+      text: string
+      constraints: string
+      listed: string
+      pins: OverridePins
+    }
 
 async function prepareOverride(
   plan: AgentRequirementsInstall,
   pins: OverridePins,
+  state: AgentOverrideState | null,
   signal: AbortSignal | undefined,
   untilExit = false
 ): Promise<PreparedOverride> {
@@ -725,17 +748,21 @@ async function prepareOverride(
   try {
     coreText = await fs.promises.readFile(plan.reqPath, 'utf-8')
   } catch {
-    return { kind: 'refused', reason: 'check_failed' }
+    return { kind: 'refused', reason: 'check_failed', pins }
   }
   const mainText = await fs.promises
     .readFile(path.join(path.dirname(plan.reqPath), CORE_REQUIREMENTS), 'utf-8')
     .catch(() => '')
-  const effective = effectiveAgentRequirements(coreText, pins, mainText)
-  if (effective.kind === 'refused') return effective
+  const resolved = resolveOverride(coreText, pins, mainText)
+  if (resolved.kind === 'refused') return { ...resolved, pins }
+  if (isRevertedFor(state, resolved.pins))
+    return { kind: 'reverted', coreText, pins: resolved.pins }
   const listed = await listInstalled(plan, signal, untilExit)
-  const constraints = listed === null ? null : installedConstraints(listed, pins, coreText)
-  if (listed === null || constraints === null) return { kind: 'refused', reason: 'check_failed' }
-  return { kind: 'ready', coreText, text: effective.text, constraints, listed }
+  const constraints = listed === null ? null : installedConstraints(listed, resolved.pins, coreText)
+  if (listed === null || constraints === null) {
+    return { kind: 'refused', reason: 'check_failed', pins: resolved.pins }
+  }
+  return { ...resolved, kind: 'ready', coreText, constraints, listed }
 }
 
 export async function prepareAgentPrefetch(
@@ -768,14 +795,14 @@ async function preparePrefetch(
   try {
     const parsed = parseAgentRequirementsOverride(raw)
     if (parsed.kind === 'pins' && !isRevertedFor(state, parsed.pins)) {
-      const ready = await prepareOverride(plan, parsed.pins, signal, true)
+      const ready = await prepareOverride(plan, parsed.pins, state, signal, true)
       if (ready.kind === 'ready') {
         const { coreText, text, constraints, listed } = ready
         const core = coreFileInstalled(coreText, listed) ? [] : [{ text: coreText }]
         return {
           plan,
           steps: [...core, { text, constraints }],
-          signature: overrideSignature(parsed.pins),
+          signature: overrideSignature(ready.pins),
           eager: true
         }
       }
