@@ -97,10 +97,7 @@ const sizeStyleClass = computed(() => {
     <div v-if="$slots.media" class="base-modal-media">
       <slot name="media" />
     </div>
-    <header
-      v-if="$slots.header"
-      class="base-modal-header border-b border-solid border-neutral-100/8 pt-5 pr-14 pb-3 pl-6"
-    >
+    <header v-if="$slots.header" class="base-modal-header pt-5 pr-14 pb-1 pl-6">
       <slot name="header" />
     </header>
     <div class="base-modal-body min-h-0 flex-auto overflow-y-auto px-6 py-4">
@@ -108,7 +105,7 @@ const sizeStyleClass = computed(() => {
     </div>
     <footer
       v-if="$slots.footer"
-      class="base-modal-footer flex items-center justify-end gap-2 border-t border-solid border-neutral-100/8 px-6 pt-3 pb-4"
+      class="base-modal-footer flex items-center justify-end gap-2 border-t border-solid border-neutral-100/8 pt-4 pr-4 pb-4 pl-6"
     >
       <slot name="footer" />
     </footer>
