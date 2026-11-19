@@ -26,6 +26,7 @@ import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { CREDITS_STATES, creditsState } from './credits'
+import { WF_CASES, tplCase } from './templateModal/templateData'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
 import { LOOKS, marLook } from './looks/looks'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
@@ -152,6 +153,7 @@ const PARTS: Part[] = [
   one('fullAssets', fullAssets, 'home', FULL_ASSETS),
   one('pageState', pageState, 'live', PAGE_STATES),
   one('credits', creditsState, 'active', CREDITS_STATES),
+  one('wf', tplCase, 'catalog', WF_CASES),
   // After Graph look: Production sets it to Current.
   one('comfyui', comfyLook, 'proposal', COMFY_LOOKS),
   one('look', marLook, 'current', LOOKS),

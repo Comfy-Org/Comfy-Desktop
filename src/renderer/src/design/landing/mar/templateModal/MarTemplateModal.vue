@@ -37,6 +37,7 @@ import {
   hasPack,
   infoFor,
   minComfyFor,
+  newBuildTarget,
   packsFor,
   mediaFor,
   needsFor,
@@ -88,7 +89,10 @@ const graph = computed(() =>
 const targets = computed<Target[]>(() => {
   const t = template.value
   if (!t) return []
-  return rankTargets(instances.value.map((i) => targetFor(t, i, proto.signedIn)))
+  const list = instances.value.map((i) => targetFor(t, i, proto.signedIn))
+  const fresh = !instances.value.some((i) => i.kind === 'local' && !i.deployment)
+  const add = fresh ? newBuildTarget(t) : undefined
+  return rankTargets(add ? [...list, add] : list)
 })
 const best = computed(() => targets.value.find((x) => !x.disabled && x.state !== 'login'))
 const reason = computed(() =>
@@ -175,7 +179,7 @@ const modelState = computed<'here' | 'get' | 'cloud' | undefined>(() => {
   const s = selected.value?.state
   if (s === 'running' || s === 'ready') return 'here'
   if (s === 'download') return 'get'
-  if (s === 'update' || s === 'nodes') return selected.value!.fetch ? 'get' : 'here'
+  if (s === 'update' || s === 'nodes' || s === 'new') return selected.value!.fetch ? 'get' : 'here'
   if (s === 'cloud') return 'cloud'
   if (s === 'memory') return selected.value!.cost === 'May fail' ? 'here' : 'get'
   return undefined
@@ -186,9 +190,36 @@ const memoryOk = computed(() => {
   return selected.value?.inst.kind === 'cloud' || v <= MACHINE.memGb
 })
 
+/** The steps the one button runs, in order, each with its share of the bar. */
+const steps = computed<{ label: string; share: number }[]>(() => {
+  const s = selected.value
+  const t = template.value
+  if (!s || !t) return []
+  const out: { label: string; share: number }[] = []
+  if (s.state === 'new') out.push({ label: 'Installing ComfyUI', share: 2 })
+  if (versionShort(t, s.inst)) out.push({ label: `Updating ${s.inst.name}`, share: 2 })
+  const p = packs.value.filter((x) => !hasPack(s.inst, x)).length
+  if (p) out.push({ label: `Installing ${p} node ${p === 1 ? 'pack' : 'packs'}`, share: 1 })
+  if (s.fetch) out.push({ label: 'download', share: 3 })
+  return out
+})
 const busyLabel = computed(() => {
   const s = selected.value
   if (!s) return ''
+  const list = steps.value
+  if (list.length && s.state !== 'download') {
+    const all = list.reduce((n, x) => n + x.share, 0)
+    let at = 0
+    for (const x of list) {
+      const end = at + x.share / all
+      if (progress.value < end || x === list.at(-1)) {
+        if (x.label !== 'download') return x.label
+        const part = Math.min(1, (progress.value - at) / (end - at))
+        return `Downloading ${fmtGb(total.value * part)} of ${fmtGb(total.value)}`
+      }
+      at = end
+    }
+  }
   if (s.state === 'download')
     return `Downloading ${fmtGb(total.value * progress.value)} of ${fmtGb(total.value)}`
   if (s.state === 'update') return `Updating ${s.inst.name}`
@@ -206,8 +237,20 @@ function confirm(): void {
     hostActions.signIn()
     return
   }
+  if (s.state === 'new') {
+    hostActions.newInstance()
+    return
+  }
   phase.value = 'busy'
-  const ms = s.state === 'download' || s.fetch ? 2600 : s.state === 'running' ? 700 : 1400
+  const shares = steps.value.reduce((n, x) => n + x.share, 0)
+  const ms =
+    s.state !== 'download' && shares
+      ? 600 * shares
+      : s.state === 'download'
+        ? 2600
+        : s.state === 'running'
+          ? 700
+          : 1400
   const t0 = Date.now()
   timer = setInterval(() => {
     progress.value = Math.min(1, (Date.now() - t0) / ms)
@@ -557,7 +600,9 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                   <li v-if="minComfy">
                     <RefreshCw :size="14" />
                     <span class="mar-tpl-file">ComfyUI {{ minComfy }} or newer</span>
-                    <span class="mar-tpl-size">{{ selected?.inst.version ?? '' }}</span>
+                    <span class="mar-tpl-size">{{
+                      comfyMark === 'get' ? `has ${selected?.inst.version}` : ''
+                    }}</span>
                     <span
                       class="mar-tpl-mark"
                       :data-m="comfyMark"

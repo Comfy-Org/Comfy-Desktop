@@ -21,6 +21,7 @@ import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
+import { WF_CASES, tplCase } from './templateModal/templateData'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
@@ -129,7 +130,8 @@ const STATES: { id: TweakId; show: () => boolean }[] = [
   { id: 'account', show: () => true },
   { id: 'pageState', show: () => when.pageState.value },
   { id: 'credits', show: () => when.credits.value },
-  { id: 'deployState', show: () => when.deployState.value }
+  { id: 'deployState', show: () => when.deployState.value },
+  { id: 'wfCase', show: () => when.wfCase.value }
 ]
 const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeBackground', show: () => when.homeBackground.value },
@@ -301,6 +303,9 @@ const linkSays = computed(() => {
         <section aria-label="States" class="flex flex-col">
           <GroupHead title="States" :changed="dirty(stateIds)" @reset="resetGroup(stateIds)" />
           <!-- The Deploy as API modal's states, first while it's open. -->
+          <Row :show="shows('wfCase')" label="Workflow case">
+            <Select v-model="tplCase.id" :options="WF_CASES" class="w-full" />
+          </Row>
           <Row :show="shows('deployState')" label="Deploy state">
             <Select v-model="deployState" :options="DEPLOY_STATES" class="w-full" />
           </Row>

@@ -1,4 +1,4 @@
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
 import { thumb, type ProtoInstance, type Template } from '../../mock'
 import { modelsFor, templateAbout, templateById, templateStats, type ModelReq } from '../../fit'
 import { hubById, hubTemplate, hubThumb, type HubWorkflow } from '../explore/hubWorkflows'
@@ -19,6 +19,24 @@ export const MACHINE = { name: 'This Mac', chip: 'Apple M3 Max', memGb: 36 }
 
 /** Prototype-only switches for the states that need a world change. */
 export const tplMock = reactive({ offline: false })
+
+export type WfCase = 'catalog' | 'update' | 'nodes' | 'several' | 'offline'
+
+/** UI Playground › Workflow case: what every workflow asks of the builds. */
+export const WF_CASES: { value: WfCase; label: string }[] = [
+  { value: 'catalog', label: 'As the catalog says' },
+  { value: 'update', label: 'Needs a newer ComfyUI' },
+  { value: 'nodes', label: 'Needs a node pack' },
+  { value: 'several', label: 'Needs both' },
+  { value: 'offline', label: 'Offline' }
+]
+
+export const tplCase = reactive<{ id: WfCase }>({ id: 'catalog' })
+watch(
+  () => tplCase.id,
+  (id) => (tplMock.offline = id === 'offline'),
+  { immediate: true }
+)
 
 export interface TplMedia {
   hero: string
@@ -189,9 +207,17 @@ const INSTALLED_PACKS: Record<string, string[]> = {
   'team-build': ['rgthree-comfy', 'ComfyUI-KJNodes']
 }
 
-export const minComfyFor = (t: Template): string => MIN_COMFY[t.id] ?? ''
+const CASE_VERSION = 'v0.38.0'
+const CASE_PACK = 'ComfyUI-KJNodes'
 
-export const packsFor = (t: Template): string[] => PACKS[t.id] ?? []
+export const minComfyFor = (t: Template): string =>
+  tplCase.id === 'update' || tplCase.id === 'several' ? CASE_VERSION : (MIN_COMFY[t.id] ?? '')
+
+export function packsFor(t: Template): string[] {
+  const own = PACKS[t.id] ?? []
+  const add = tplCase.id === 'nodes' || tplCase.id === 'several'
+  return add && !own.includes(CASE_PACK) ? [...own, CASE_PACK] : own
+}
 
 export const hasPack = (inst: ProtoInstance, pack: string): boolean =>
   inst.kind === 'cloud' || Boolean(INSTALLED_PACKS[inst.id]?.includes(pack))
@@ -200,7 +226,7 @@ const parts = (v: string): number[] => v.replace(/^v/, '').split('-')[0]!.split(
 
 /** The ComfyUI version this build is short of, or '' when it is new enough. */
 export function versionShort(t: Template, inst: ProtoInstance): string {
-  const need = MIN_COMFY[t.id]
+  const need = minComfyFor(t)
   if (!need || !inst.version) return ''
   const a = parts(inst.version)
   const b = parts(need)
@@ -216,6 +242,7 @@ export type TargetState =
   | 'ready'
   | 'update'
   | 'nodes'
+  | 'new'
   | 'cloud'
   | 'download'
   | 'memory'
@@ -382,6 +409,7 @@ const RANK: Record<TargetState, number> = {
   nodes: 2,
   update: 3,
   cloud: 4,
+  new: 5,
   download: 5,
   memory: 6,
   login: 7,
@@ -389,8 +417,39 @@ const RANK: Record<TargetState, number> = {
   blocked: 9
 }
 
+/** No local build yet: one row sets up a build with everything the
+ *  workflow needs, so the picker never ends on Cloud alone. */
+export function newBuildTarget(t: Template): Target | undefined {
+  if (t.runs === 'cloud') return
+  const vram = t.vram ? parseInt(t.vram) : 0
+  if (vram > MACHINE.memGb) return
+  const gb = totalGb(t) + 2.4
+  const mins = Math.max(4, Math.round(gb / 5) + 3)
+  return {
+    inst: {
+      id: 'new-build',
+      name: 'New build',
+      kind: 'local',
+      channel: '',
+      state: 'stopped',
+      lastUsed: '',
+      lastUsedRank: 99,
+      workspace: 'personal',
+      hue: 0
+    },
+    state: 'new',
+    status: 'ComfyUI and every model',
+    cost: fmtGb(gb),
+    action: 'Set up and start',
+    note: `Installs ComfyUI with everything this needs (about ${mins} min), then opens this graph. Runs free on this Mac.`,
+    disabled: false,
+    fetch: true
+  }
+}
+
 /** An update or node install that also downloads ranks with downloads. */
-const rank = (x: Target): number => (x.fetch ? RANK.download + 0.5 : RANK[x.state])
+const rank = (x: Target): number =>
+  x.fetch && (x.state === 'update' || x.state === 'nodes') ? RANK.download + 0.5 : RANK[x.state]
 
 export function rankTargets(list: Target[]): Target[] {
   return [...list].sort(
@@ -410,9 +469,15 @@ export function reasonFor(best: Target, all: Target[], t: Template): string {
     case 'ready':
       return 'Has every model this needs. Runs free on this Mac.'
     case 'update':
-      return 'Has every model. Updates ComfyUI first, then runs free on this Mac.'
+      return best.fetch
+        ? `Downloads ${fmtGb(totalGb(t))} once, then runs free.`
+        : 'Has every model; only ComfyUI needs an update. Then runs free on this Mac.'
     case 'nodes':
-      return 'Has every model. Installs the missing node packs, then runs free.'
+      return best.fetch
+        ? `Downloads ${fmtGb(totalGb(t))} once, then runs free.`
+        : 'Has every model; only node packs are missing. Then runs free on this Mac.'
+    case 'new':
+      return 'No build on this Mac yet. Sets one up with everything this needs.'
     case 'cloud':
       if (all.some((x) => x.state === 'memory'))
         return `Needs ${t.vram} of GPU memory; this Mac has ${MACHINE.memGb} GB. Cloud has every model ready.`

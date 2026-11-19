@@ -34,6 +34,7 @@ import { marLook } from './looks/looks'
 import { PORTS, ports, type Port } from './navOptions'
 import { dep, scenarioPick } from './deploy/deployData'
 import { localSetup } from './setup/setupFlow'
+import { tplCase } from './templateModal/templateData'
 
 /**
  * UI Playground: when each tweak changes what's on screen, so the panel
@@ -114,6 +115,8 @@ export const when = {
   graph: inGraph,
   // The Deploy as API modal (deploy/MarDeployModal.vue), while it's open.
   deployState: computed(() => Boolean(proto.deploying)),
+  // The template modal (templateModal/MarTemplateModal.vue), while it's open.
+  wfCase: computed(() => proto.detail?.kind === 'template'),
   // Nav options (NavOptionsTuner.vue): each switch acts on the Floating
   // sidebar and the Tabs bar, each in its own situation.
   ports: computed(() => inShell.value && (marSideOn.value || marNav.id === 'tabs'))
@@ -226,6 +229,7 @@ export const TWEAKS = {
   fullAssets: one(fullAssets, 'home'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
+  wfCase: one(tplCase, 'catalog'),
   // The modal opens on Configure (or Needs upload for an unreleased version).
   deployState: {
     isDefault: () => !proto.deploying || ['configure', 'needs-publish'].includes(dep.scenario),
