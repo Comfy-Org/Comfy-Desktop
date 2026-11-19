@@ -27,7 +27,7 @@ function hidePage(): void {
   document.dispatchEvent(new Event('visibilitychange'))
 }
 
-test('the real RUM SDK sends a scrubbed error and drops an error that wraps a cause', async () => {
+test('the real RUM SDK sends a scrubbed error, and an error that wraps a cause once, flattened and scrubbed', async () => {
   captureIntake()
   datadogRum.init({
     applicationId: '00000000-0000-0000-0000-000000000000',
@@ -48,21 +48,28 @@ test('the real RUM SDK sends a scrubbed error and drops an error that wraps a ca
 
   datadogRum.addError(new Error('plain failure at C:\\Users\\bob\\x'))
   datadogRum.addError(
-    new Error('wrapped failure', { cause: new Error('inner failure at C:\\Users\\alice\\x') })
+    new Error('wrapped failure', { cause: new Error('inner failure at C:\\Users\\alice\\x') }),
+    { origin: 'sdk-test-context' }
   )
-  await vi.waitFor(() => expect(errorsSeenByBeforeSend).toHaveLength(2), {
+  await vi.waitFor(() => expect(errorsSeenByBeforeSend).toHaveLength(3), {
     timeout: 10_000,
     interval: 50
   })
   hidePage()
 
-  await vi.waitFor(() => expect(sentBodies.join('\n')).toContain('plain failure'), {
+  await vi.waitFor(() => expect(sentBodies.join('\n')).toContain('Caused by'), {
     timeout: 10_000,
     interval: 100
   })
   const sent = sentBodies.join('\n')
   expect(sent).toContain('plain failure at C:\\\\Users\\\\[REDACTED]')
   expect(sent).not.toContain('bob')
-  expect(sent).not.toContain('wrapped failure')
   expect(sent).not.toContain('alice')
+  expect(sent).toContain(
+    'wrapped failure\\nCaused by: Error: inner failure at C:\\\\Users\\\\[REDACTED]'
+  )
+  expect(sent).not.toContain('"causes"')
+  expect(sent).toContain('"origin":"sdk-test-context"')
+  expect(sent.match(/"message":"wrapped failure/g)).toHaveLength(1)
+  expect(errorsSeenByBeforeSend[2]).toContain('Caused by')
 })

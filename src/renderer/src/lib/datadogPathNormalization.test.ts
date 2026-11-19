@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { RumErrorEvent } from '@datadog/browser-rum'
 import {
+  flattenErrorWithCauses,
   normalizeDatadogBundlePaths,
   normalizeRumErrorEvent,
   rumBeforeSend,
@@ -127,6 +128,42 @@ describe('rumBeforeSend', () => {
     }
 
     expect(send(event)).toBe(false)
+  })
+
+  it('flattens an error and its causes into one scrubbed error without a cause', () => {
+    const flattened = flattenErrorWithCauses({
+      message: 'wrapped at /home/bob/a',
+      source: 'custom',
+      type: 'DesktopTelemetryError',
+      stack: 'Error: wrapped\n    at /home/bob/plugins/x.js:1:1',
+      causes: [
+        {
+          message: 'inner C:\\Users\\alice\\x',
+          source: 'custom',
+          type: 'TypeError',
+          stack: 'TypeError: inner\n    at /home/bob/plugins/y.js:2:2'
+        },
+        { message: 'plain string cause', source: 'custom' }
+      ]
+    } as RumErrorEvent['error'])
+
+    expect(flattened.message).toBe(
+      [
+        'wrapped at /home/[REDACTED]/a',
+        'Caused by: TypeError: inner C:\\Users\\[REDACTED]\\x',
+        'Caused by: Error: plain string cause'
+      ].join('\n')
+    )
+    expect(flattened.stack).toBe(
+      [
+        'Error: wrapped',
+        '    at /home/[REDACTED]/plugins/x.js:1:1',
+        'TypeError: inner',
+        '    at /home/[REDACTED]/plugins/y.js:2:2'
+      ].join('\n')
+    )
+    expect(flattened.cause).toBeUndefined()
+    expect(flattened.name).toBe('DesktopTelemetryError')
   })
 
   it('scrubs and keeps an error event without causes', () => {
