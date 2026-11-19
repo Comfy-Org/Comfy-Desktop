@@ -239,6 +239,7 @@ beforeEach(() => {
   window.localStorage.clear()
   listLocalAssets.mockResolvedValue([])
   openAsset.mockResolvedValue(true)
+  revealAsset.mockResolvedValue(true)
   findDownloadedOutputs.mockResolvedValue({})
   openOutputFolder.mockResolvedValue(true)
   listWorkspaces.mockResolvedValue([
@@ -1587,6 +1588,32 @@ describe('AssetsView', () => {
     await press('ArrowRight')
     expect(viewer()!.querySelector('[data-testid="output-detail-show-in-folder"]')).toBeNull()
     expect(viewer()!.querySelector('[data-testid="output-detail-download"]')).not.toBeNull()
+  })
+
+  it('gives a file at the top of the disk Show in Finder in the viewer, even with no folder to show', async () => {
+    const wrapper = await mountAssets([asset('/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/forest.png"]').trigger('click')
+    await flushPromises()
+
+    expect(viewer()!.querySelector('[data-testid="output-detail-download"]')).toBeNull()
+    viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', '/forest.png')
+  })
+
+  it('tells the user when Show in Finder cannot find the file', async () => {
+    revealAsset.mockResolvedValue(false)
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+    viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't open asset",
+      message: 'forest.png'
+    })
   })
 
   it('gives a 3D file on this computer only Show in Finder in the viewer', async () => {

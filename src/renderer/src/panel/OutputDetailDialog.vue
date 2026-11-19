@@ -41,7 +41,7 @@ export interface OutputDetailItem {
   savedIn?: string | null
   inCloud?: boolean
   workflow?: boolean
-  mainAction?: 'download' | null
+  mainAction: 'download' | null
   loadModel?: () => Promise<Uint8Array | null>
 }
 
@@ -329,7 +329,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
       <div class="mt-auto flex flex-col gap-2">
         <Button
-          v-if="item.mainAction !== null"
+          v-if="item.mainAction === 'download'"
           type="button"
           variant="inverted"
           size="md"
@@ -341,9 +341,9 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           {{ t('assets.download') }}
         </Button>
         <Button
-          v-if="item.savedIn"
+          v-if="item.mainAction === null"
           type="button"
-          :variant="item.mainAction === null ? 'inverted' : 'secondary'"
+          variant="inverted"
           size="md"
           class="gap-1.5 text-[13px]/5"
           data-testid="output-detail-show-in-folder"

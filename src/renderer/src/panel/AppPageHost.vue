@@ -108,7 +108,7 @@ function outputKind(mimeType: string): AssetKind | null {
 }
 
 function savedFolder(output: AppOutputs['items'][number]): string | null {
-  return output.savedOn === 'computer' ? (output.folder ?? null) : null
+  return output.savedOn === 'computer' ? output.folder || null : null
 }
 
 function releaseOutputs(): void {
