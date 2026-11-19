@@ -20,7 +20,7 @@ import {
   isFirebaseAuthHandlerUrl,
   type SignInFailureContext
 } from '../auth/firebaseBridge'
-import { isCheckoutUrl, isLikelyDownloadUrl, shouldOpenInPopup } from '../lib/allowedPopups'
+import { isCheckoutUrl, isExternalBrowserUrl, isLikelyDownloadUrl, shouldOpenInPopup } from '../lib/allowedPopups'
 import { COMFY_BG, TITLEBAR_BG } from '../lib/theme'
 import {
   TITLEBAR_HEIGHT,
@@ -727,7 +727,9 @@ export function buildComfyView(
       comfyContents.session.downloadURL(childUrl)
       return { action: 'deny' }
     }
-    void tryOpenExternalUrl(childUrl)
+    if (isExternalBrowserUrl(childUrl)) {
+      void tryOpenExternalUrl(childUrl)
+    }
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {
