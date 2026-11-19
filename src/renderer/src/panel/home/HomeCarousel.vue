@@ -293,14 +293,27 @@ function activate(placed: { card: Card; offset: number }): void {
           >
             <ArrowUpRight :size="16" :stroke-width="2.25" />
           </span>
-          <span
-            class="absolute inset-x-3.5 bottom-4 flex flex-col"
-            data-testid="home-carousel-name"
-          >
-            <span class="truncate text-sm/[17px] font-medium text-white">
+          <span class="absolute inset-x-3.5 bottom-4 grid" data-testid="home-carousel-name">
+            <span
+              class="truncate text-sm/[17px] font-medium text-white transition-[translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] motion-reduce:transition-none"
+              :class="
+                placed.offset === 0 &&
+                placed.card.description &&
+                'group-hover/card:-translate-y-[18px] group-focus-visible/card:-translate-y-[18px]'
+              "
+              data-testid="home-carousel-title"
+            >
               {{ placed.card.title }}
             </span>
-            <span v-if="placed.card.description" class="truncate text-[13px]/[18px] text-white/70">
+            <span
+              v-if="placed.card.description"
+              class="translate-y-1.5 self-end truncate text-[13px]/[18px] text-white/70 opacity-0 transition-[opacity,translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] motion-reduce:transition-none"
+              :class="
+                placed.offset === 0 &&
+                'group-hover/card:translate-y-0 group-hover/card:opacity-100 group-focus-visible/card:translate-y-0 group-focus-visible/card:opacity-100'
+              "
+              data-testid="home-carousel-description"
+            >
               {{ placed.card.description }}
             </span>
           </span>
