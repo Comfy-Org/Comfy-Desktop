@@ -1,18 +1,27 @@
-const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+|[\\/]{2,})(?:\\u[0-9a-fA-F]{4}|\\x[89a-fA-F][0-9a-fA-F]|[^\\/"\r\n])+`
+const ESCAPED_NAME = String.raw`(?:\\u[0-9a-fA-F]{4}|\\x[89a-fA-F][0-9a-fA-F]|[^\\/"\r\n])+`
 const RAW_SEP_NAME = String.raw`(\\)[^\\/"\r\n]+`
 const SHARE_HOST = String.raw`[^\\/\s"']+`
-const PII_PATH_PATTERNS: RegExp[] = [
-  String.raw`([A-Za-z]:[\\/]+Users)`,
-  String.raw`(\\\\(?:wsl\$|wsl\.localhost)[\\/]+${SHARE_HOST}[\\/]+(?:home|mnt[\\/]+[A-Za-z][\\/]+Users))`,
-  String.raw`(\\\\tsclient[\\/]+[A-Za-z][\\/]+Users)`,
-  String.raw`(\\\\${SHARE_HOST}[\\/]+(?:Users|home))`,
-  String.raw`(\\\\${SHARE_HOST}[\\/]+[A-Za-z]\$[\\/]+Users)`,
-  String.raw`(\\\\[?.][\\/]+UNC[\\/]+${SHARE_HOST}(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
-  String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users)`,
-  String.raw`((?:(?<=\\(?-i:[nrt]))|(?<![\w.~$\\/-]))\\+Users)`,
-  String.raw`(\/Users)`,
-  String.raw`(\/home)`
-].map((root) => new RegExp(`${root}(?:${ESCAPED_SEP_NAME}|${RAW_SEP_NAME})`, 'gi'))
+
+function userPathPatterns(widened: boolean): RegExp[] {
+  const mixedSeparatorRun = widened ? String.raw`|[\\/]{2,}` : ''
+  const afterEscapedBreak = widened ? String.raw`(?<=\\(?-i:[nrt]))|` : ''
+  const escapedSepName = String.raw`((?:\\\\)+|(?:\\?\/)+${mixedSeparatorRun})${ESCAPED_NAME}`
+  return [
+    String.raw`([A-Za-z]:[\\/]+Users)`,
+    String.raw`(\\\\(?:wsl\$|wsl\.localhost)[\\/]+${SHARE_HOST}[\\/]+(?:home|mnt[\\/]+[A-Za-z][\\/]+Users))`,
+    String.raw`(\\\\tsclient[\\/]+[A-Za-z][\\/]+Users)`,
+    String.raw`(\\\\${SHARE_HOST}[\\/]+(?:Users|home))`,
+    String.raw`(\\\\${SHARE_HOST}[\\/]+[A-Za-z]\$[\\/]+Users)`,
+    String.raw`(\\\\[?.][\\/]+UNC[\\/]+${SHARE_HOST}(?:[\\/]+[A-Za-z]\$)?[\\/]+Users)`,
+    String.raw`([\\/]Device[\\/]+[^\\/]+[\\/]+Users)`,
+    String.raw`((?:${afterEscapedBreak}(?<![\w.~$\\/-]))\\+Users)`,
+    String.raw`(\/Users)`,
+    String.raw`(\/home)`
+  ].map((root) => new RegExp(`${root}(?:${escapedSepName}|${RAW_SEP_NAME})`, 'gi'))
+}
+
+const MAIN_USER_PATH_PATTERNS = userPathPatterns(false)
+const USER_PATH_PATTERNS = userPathPatterns(true)
 
 const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] = [
   [/sk-[A-Za-z0-9_-]{20,}/g, '[REDACTED]'],
@@ -52,7 +61,7 @@ function nameSpansFromEveryStart(pattern: RegExp, text: string): Span[] {
 function sequentialNameSpans(text: string): Span[] {
   const spans: Span[] = []
   let masked = text
-  for (const pattern of PII_PATH_PATTERNS) {
+  for (const pattern of MAIN_USER_PATH_PATTERNS) {
     masked = masked.replace(
       pattern,
       (whole: string, root: string, escapedSep: string | undefined, rawSep: string, at: number) => {
@@ -66,7 +75,9 @@ function sequentialNameSpans(text: string): Span[] {
 }
 
 export function scrubPII(value: string): string {
-  const everyStart = PII_PATH_PATTERNS.flatMap((pattern) => nameSpansFromEveryStart(pattern, value))
+  const everyStart = USER_PATH_PATTERNS.flatMap((pattern) =>
+    nameSpansFromEveryStart(pattern, value)
+  )
   const spans = [...sequentialNameSpans(value), ...everyStart].sort(([a], [b]) => a - b)
   let redacted = ''
   let cursor = 0

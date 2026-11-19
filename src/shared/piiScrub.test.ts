@@ -200,8 +200,27 @@ describe('piiScrub', () => {
       )
     })
 
-    it('keeps hiding a nested Users folder when another match covers the folder before it', () => {
-      expect(scrubPII('C:\\Users/home\\Users\\bob\\x')).not.toContain('bob')
+    it.each([
+      ['C:\\Users/home\\Users\\bob\\x', 'C:\\Users/[REDACTED]\\[REDACTED]\\[REDACTED]\\x'],
+      [
+        'C:\\Users/\\Device\\vol\\Users\\alice\\Users\\bob\\x',
+        'C:\\Users/\\[REDACTED]\\vol\\Users\\[REDACTED]\\Users\\[REDACTED]\\x'
+      ]
+    ])(
+      'keeps hiding a nested Users folder when another match covers the folder before it: %s',
+      (input, expected) => {
+        expect(scrubPII(input)).toBe(expected)
+      }
+    )
+
+    it('hides the whole escaped name when a shorter match starts inside it', () => {
+      expect(scrubPII('C:/Users/home\\u00e9secret\\u00e9more/z')).toBe('C:/Users/[REDACTED]/z')
+    })
+
+    it('hides the folder after a nested Users folder under a folder named exactly t', () => {
+      expect(scrubPII('C:\\project\\t\\Users\\fixture.json')).toBe(
+        'C:\\project\\t\\Users\\[REDACTED]'
+      )
     })
 
     it.each([
