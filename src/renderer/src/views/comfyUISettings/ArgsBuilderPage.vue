@@ -449,7 +449,7 @@ function onRawChange(value: string): void {
         >
           <template v-if="item.kind === 'exclusive' && item.args && item.group">
             <div class="args-page-cluster flex min-w-0 flex-col gap-1">
-              <span class="args-page-cluster-label my-0.5 mx-0 px-0.5" :class="SECTION_TITLE_CLASS">
+              <span class="args-page-cluster-label my-0.5 mx-0" :class="SECTION_TITLE_CLASS">
                 {{ t('comfyUISettings.argsExclusiveLabel') }}:
                 <span
                   class="args-page-cluster-options [font-family:ui-monospace,SFMono-Regular,Menlo,monospace] normal-case tracking-normal text-[color-mix(in_srgb,var(--text-muted)_85%,transparent)]"
