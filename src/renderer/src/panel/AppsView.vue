@@ -132,13 +132,13 @@ const requestLayout = computed(() => {
       wide.beside ? '@5xl/apps:flex-none @5xl/apps:gap-2' : '@5xl/apps:flex-1 @5xl/apps:gap-1'
     ],
     bodyClass: [
-      narrow.beside ? 'block max-w-[30ch]' : 'hidden @[36rem]/request:block',
+      narrow.beside ? 'block max-w-[30ch]' : 'hidden max-w-none @[36rem]/request:block',
       medium.beside
         ? '@3xl/apps:block @3xl/apps:max-w-[30ch]'
-        : '@3xl/apps:hidden @3xl/apps:@[36rem]/request:block',
+        : '@3xl/apps:hidden @3xl/apps:max-w-none @3xl/apps:@[36rem]/request:block',
       wide.beside
         ? '@5xl/apps:block @5xl/apps:max-w-[30ch]'
-        : '@5xl/apps:hidden @5xl/apps:@[36rem]/request:block'
+        : '@5xl/apps:hidden @5xl/apps:max-w-none @5xl/apps:@[36rem]/request:block'
     ]
   }
 })
@@ -408,11 +408,11 @@ onBeforeUnmount(() => {
                   :key="still"
                   :src="still"
                   alt=""
-                  class="object-cover rounded-full not-last:[mask-image:radial-gradient(ellipse_58%_58%_at_125%_50%,transparent_99%,#000_100%)]"
+                  class="object-cover rounded-full"
                   :class="requestLayout.thumbClass"
                 />
                 <span
-                  class="grid place-items-center bg-[rgb(235_235_235/0.12)] text-foreground rounded-full not-last:[mask-image:radial-gradient(ellipse_58%_58%_at_125%_50%,transparent_99%,#000_100%)]"
+                  class="grid place-items-center rounded-full bg-[color-mix(in_srgb,rgb(235_235_235)_16%,var(--color-content-background))] text-foreground"
                   :class="requestLayout.thumbClass"
                 >
                   <Plus
@@ -431,7 +431,7 @@ onBeforeUnmount(() => {
                   t('apps.request.bandTitle')
                 }}</span>
                 <span
-                  class="text-xs/4 text-muted-foreground"
+                  class="text-xs/4 text-balance text-muted-foreground"
                   :class="requestLayout.bodyClass"
                   data-testid="app-request-body"
                   >{{ t('apps.request.bandBody') }}</span
