@@ -125,6 +125,10 @@ function barPercent(value: number | null): number {
   return Math.min(100, Math.max(0, (value / props.group.scaleMaximum) * 100))
 }
 
+function sessionMeta(benchmark: PerformanceTestBenchmark): string {
+  return `${props.formatDate(benchmark.createdAt)} · ${t('benchmarks.runCount', benchmark.measuredJobCount)}`
+}
+
 function rangeStyle(benchmark: PerformanceTestBenchmark): Record<string, string> | null {
   const fastest = benchmark.fastestJobDurationSeconds
   const slowest = benchmark.slowestJobDurationSeconds
@@ -391,11 +395,7 @@ function toggleBaseline(id: string): void {
           >
             <thead>
               <tr>
-                <th
-                  class="benchmarks__select-head sticky left-0 z-[1] w-[50px] min-w-[50px] !pr-0 !pl-[18px]"
-                  :aria-label="t('benchmarks.selection')"
-                />
-                <th class="sticky left-[50px] z-[1]" :aria-sort="ariaSort('id')">
+                <th class="sticky left-0 z-[1] !pl-[18px]" :aria-sort="ariaSort('id')">
                   <Button
                     variant="textonly"
                     size="unset"
@@ -508,12 +508,14 @@ function toggleBaseline(id: string): void {
                 @drop="drop($event, row.benchmark.id)"
               >
                 <td
-                  class="benchmarks__select sticky left-0 z-[1] w-[50px] min-w-[50px] !pr-0 !pl-[18px]"
+                  class="benchmarks__session sticky left-0 z-[1] max-w-65 min-w-40 !pr-14 !pl-[18px]"
                 >
-                  <div class="flex items-center gap-0.5">
+                  <div
+                    class="benchmarks__select absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-1"
+                  >
                     <span
                       :ref="(element) => rememberGrip(row.benchmark.id, element)"
-                      class="benchmarks__grip inline-flex flex-none cursor-grab rounded text-subtle-foreground focus-visible:opacity-100 focus-visible:outline-1 focus-visible:outline-[var(--focus-ring)] active:cursor-grabbing"
+                      class="benchmarks__grip inline-flex h-7 w-5 flex-none cursor-grab items-center justify-center rounded text-subtle-foreground focus-visible:opacity-100 focus-visible:outline-1 focus-visible:outline-[var(--focus-ring)] active:cursor-grabbing"
                       :class="
                         group.manual ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100'
                       "
@@ -543,18 +545,20 @@ function toggleBaseline(id: string): void {
                       @update:model-value="emit('toggleSelected', row.benchmark.id)"
                     />
                   </div>
-                </td>
-                <td class="benchmarks__session sticky left-[50px] z-[1] max-w-65">
-                  <BenchmarkSessionName
-                    :ref="(component) => rememberSessionName(row.benchmark.id, component)"
-                    :name="row.benchmark.id"
-                    :label="t('benchmarks.editSessionName', { session: row.benchmark.id })"
-                    :rename="(name) => renameSession(row.benchmark, name)"
-                  />
-                  <span class="benchmarks__session-meta block text-xs text-muted-foreground">
-                    {{ formatDate(row.benchmark.createdAt) }} ·
-                    {{ t('benchmarks.runCount', row.benchmark.measuredJobCount) }}
-                  </span>
+                  <div class="benchmarks__session-body max-w-[186px] min-w-0">
+                    <BenchmarkSessionName
+                      :ref="(component) => rememberSessionName(row.benchmark.id, component)"
+                      :name="row.benchmark.id"
+                      :label="t('benchmarks.editSessionName', { session: row.benchmark.id })"
+                      :rename="(name) => renameSession(row.benchmark, name)"
+                    />
+                    <span
+                      class="benchmarks__session-meta block truncate text-xs text-muted-foreground"
+                      :title="sessionMeta(row.benchmark)"
+                    >
+                      {{ sessionMeta(row.benchmark) }}
+                    </span>
+                  </div>
                 </td>
                 <td
                   v-if="workflowColumn && groupBy !== 'workflow'"

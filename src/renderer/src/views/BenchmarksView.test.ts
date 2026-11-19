@@ -388,7 +388,6 @@ describe('BenchmarksView', () => {
       '1 session · 5 runs'
     ])
     expect(texts(wrapper, 'thead th')).toEqual([
-      '',
       'Session',
       'Workflow',
       'Build',
@@ -697,7 +696,6 @@ describe('BenchmarksView', () => {
     await closeMenu()
 
     expect(texts(wrapper, 'thead th')).toEqual([
-      '',
       'Session',
       'Build',
       'Median ↑',
@@ -724,7 +722,6 @@ describe('BenchmarksView', () => {
     await closeMenu()
 
     expect(texts(wrapper, 'thead th')).toEqual([
-      '',
       'Session',
       'Workflow',
       'Median and range',
