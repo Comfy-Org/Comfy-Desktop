@@ -2255,6 +2255,20 @@ describe('core beta report placement', () => {
       expect(peekBetaActivationNotice('harness-assets-floor')).toBeNull()
     })
 
+    it('says why a launch whose schema discovery failed starts without the assets flag', async () => {
+      launchHarness.schemaThrows = true
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const res = await handleLaunch(ctxFor('harness-assets-schema-failure'))
+
+      expect(res.ok).toBe(true)
+      expect(spawnArgs).not.toContain('--enable-assets')
+      expect(warn).toHaveBeenCalledWith(
+        '[launch] flag planning failed; launching without Desktop-planned flags or the unsupported-arg filter:',
+        expect.objectContaining({ message: 'schema discovery unavailable' })
+      )
+    })
+
     it('does not ask a core without the floor commit', async () => {
       launchHarness.commits = { head: 'e'.repeat(40), ancestry: new Map() }
 
