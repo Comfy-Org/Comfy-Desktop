@@ -101,6 +101,8 @@ export async function resolveLocalVersion(
   let upgraded = false
 
   if (shouldUpgrade) {
+    const latestTagContainsBuild = (): Promise<boolean> =>
+      isAncestorOf(comfyuiDir, commit, latestTagRef!)
     const ancestorIsParent = ancestorTag
       ? await isAncestorOf(comfyuiDir, ancestorTag, latestTagRef!)
       : false
@@ -113,8 +115,7 @@ export async function resolveLocalVersion(
         upgraded = true
         baseTagVerified = true
       }
-    } else if (ancestorIsParent && !(await isAncestorOf(comfyuiDir, commit, latestTagRef!))) {
-      // A build the latest tag already contains is behind it, so it keeps its own nearest tag.
+    } else if (ancestorIsParent && !(await latestTagContainsBuild())) {
       const found = await findBestBackportTag(
         comfyuiDir,
         latestTagRef!,
