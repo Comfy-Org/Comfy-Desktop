@@ -2,12 +2,16 @@
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
 import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
 
-defineProps<{
-  modelValue: string
-  placeholder: string
-  error: string
-  initialFocus?: boolean
-}>()
+withDefaults(
+  defineProps<{
+    modelValue: string
+    placeholder: string
+    error: string
+    initialFocus?: boolean
+    inputId?: string
+  }>(),
+  { inputId: 'inst-name-standalone' }
+)
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -17,20 +21,20 @@ const emit = defineEmits<{
 <template>
   <InputGroup class="config-input" :class="{ 'config-input--invalid': error }">
     <InputGroupInput
-      id="inst-name-standalone"
+      :id="inputId"
       class="text-[13px] text-neutral-100"
       :data-initial-focus="initialFocus || undefined"
       :model-value="modelValue"
       type="text"
       :placeholder="placeholder"
       :aria-invalid="!!error"
-      :aria-describedby="error ? 'inst-name-error' : undefined"
+      :aria-describedby="error ? `${inputId}-error` : undefined"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     />
   </InputGroup>
   <div
     v-if="error"
-    id="inst-name-error"
+    :id="`${inputId}-error`"
     class="config-field-error col-start-2 mt-1.5 text-[13px] text-[var(--danger)]"
     role="alert"
   >

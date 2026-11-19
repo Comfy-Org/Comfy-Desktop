@@ -319,3 +319,68 @@ describe('TrackModal — install path resolution on save', () => {
     expect(wrapper.emitted('navigate-list')).toHaveLength(1)
   })
 })
+
+describe('TrackModal — build name', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const takenNames = new Set(['ComfyUI'])
+  const uniqueName = vi.fn(async (base: string) => (takenNames.has(base) ? `${base} (1)` : base))
+
+  async function openWithFolder() {
+    const api = installMockApi({
+      getUniqueName: uniqueName,
+      browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI')
+    })
+    const wrapper = mountTrack()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+    await browseButton(wrapper).trigger('click')
+    await flushPromises()
+    return { api, wrapper }
+  }
+
+  it('saves the suggested name shown in the empty field', async () => {
+    const { api, wrapper } = await openWithFolder()
+
+    expect(wrapper.get('#track-name').attributes('placeholder')).toBe('ComfyUI (1)')
+    await trackButton(wrapper).trigger('click')
+    await flushPromises()
+
+    const data = api.trackInstallation.mock.calls[0]![0] as Record<string, unknown>
+    expect(data.name).toBe('ComfyUI (1)')
+  })
+
+  it('warns and keeps Add build disabled when the typed name already exists', async () => {
+    const { api, wrapper } = await openWithFolder()
+
+    await wrapper.get('#track-name').setValue('ComfyUI')
+    await flushPromises()
+
+    expect(wrapper.get('#track-name-error').text()).toBe(
+      'A build named "ComfyUI" already exists. Please choose a different name.'
+    )
+    expect(trackButton(wrapper).attributes('disabled')).toBeDefined()
+
+    await wrapper.get('#track-name').setValue('Old portable')
+    await flushPromises()
+    expect(wrapper.find('#track-name-error').exists()).toBe(false)
+    await trackButton(wrapper).trigger('click')
+    await flushPromises()
+    const data = api.trackInstallation.mock.calls[0]![0] as Record<string, unknown>
+    expect(data.name).toBe('Old portable')
+  })
+
+  it('asks for a name when only spaces are typed', async () => {
+    const { wrapper } = await openWithFolder()
+
+    await wrapper.get('#track-name').setValue('   ')
+    await flushPromises()
+
+    expect(wrapper.get('#track-name-error').text()).toBe(
+      'Enter a name, or leave blank to use the suggested one.'
+    )
+    expect(trackButton(wrapper).attributes('disabled')).toBeDefined()
+  })
+})
