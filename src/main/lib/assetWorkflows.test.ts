@@ -99,7 +99,6 @@ describe('a file on this computer', () => {
       { format: 'graph', data: GRAPH },
       'fox'
     )
-    expect(outputFilePath).toHaveBeenCalledOnce()
   })
 
   it('finds a workflow saved at the end of a large video', async () => {
@@ -155,6 +154,16 @@ describe('a file in Comfy Cloud', () => {
       { format: 'graph', data: GRAPH },
       'clip'
     )
+  })
+
+  it('reads only the start of a Cloud file when the server sends the whole file', async () => {
+    mocks.cloudAccessToken.mockResolvedValue('token')
+    mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/fox')
+    const fetch = vi.fn(async () => new Response(`fLaC${SAVED_WORKFLOW}`, { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+
+    expect(await hasWorkflow('inst-cloud', 'asset-2')).toBe(true)
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
   it('has no Open workflow when Desktop is not signed in to Comfy Cloud', async () => {

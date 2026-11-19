@@ -159,3 +159,13 @@ describe('reading the workflow ComfyUI saved in other files', () => {
     expect(readEmbeddedWorkflow([])).toBeNull()
   })
 })
+
+describe('reading a file made to be slow to read', () => {
+  it('gives up within a fixed amount of work on text that opens objects and never closes them', () => {
+    const endless = encoder.encode('{"'.repeat(2 * 1024 * 1024))
+    const started = performance.now()
+
+    expect(readEmbeddedWorkflow([endless, endless])).toBeNull()
+    expect(performance.now() - started).toBeLessThan(2_000)
+  })
+})

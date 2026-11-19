@@ -1,4 +1,5 @@
 import type { FirstUseMode } from '../shared/firstUseMode'
+import type { ComfyDesktopOpenInComfy } from './comfyDesktopBridge'
 import type { GpuTier } from '../shared/gpuTier'
 import type { NewWindowDashboardPage } from '../shared/dashboardPages'
 export type { FirstUseMode }
@@ -212,11 +213,6 @@ export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 
 export type CloudAssetLookup =
   { status: 'found'; asset: AssetSummary } | { status: 'absent' } | { status: 'incomplete' }
-
-export interface AssetWorkflowOpened {
-  opened: boolean
-  error?: string
-}
 
 export interface AssetSummary {
   id: string
@@ -1283,7 +1279,7 @@ export interface ElectronApi {
     assetId: string,
     name: string,
     build?: string
-  ): Promise<AssetWorkflowOpened>
+  ): Promise<ComfyDesktopOpenInComfy>
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>

@@ -153,6 +153,7 @@ const currentPage = ref(1)
 const assetTotal = ref(0)
 const localCounts = ref<LocalAssetListing['counts'] | null>(null)
 const downloadedCopies = ref(new Map<string, string>())
+const workflowFound = ref(new Map<string, boolean>())
 const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 
@@ -635,6 +636,7 @@ function lookUpCloudAsset(cloudId: string, name: string): Promise<CloudAssetLook
 
 async function loadAssets(userAsked = false): Promise<void> {
   const current = ++requestId
+  workflowFound.value = new Map()
   cancelIdleCallback(prefetchHandle)
   const settled = cloudSettled.value
   const selected = selectedBuild.value
@@ -840,6 +842,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     savedIn: savedFolderOf(asset),
     mainAction: fileOnDisk(asset) ? null : 'download',
     workflow: canOpenWorkflow(asset),
+    workflowPending: mayOpenWorkflow(asset) && !workflowFound.value.has(cardKey(asset)),
     workflowBuilds: workflowBuildsOf(asset),
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
@@ -853,8 +856,6 @@ watch(detailIndex, (index) => {
   } else if (index < visibleAssets.value.length) scrollToIndex(index)
 })
 
-const workflowFound = ref(new Map<string, boolean>())
-
 function workflowBuildsOf(asset: GalleryAsset): { id: string; name: string }[] | undefined {
   if (!isLocal(asset)) return undefined
   const place = selectedBuild.value
@@ -865,9 +866,12 @@ function workflowBuildsOf(asset: GalleryAsset): { id: string; name: string }[] |
   return builds.map(({ id, name }) => ({ id, name }))
 }
 
-function canOpenWorkflow(asset: GalleryAsset): boolean {
-  if (workflowFound.value.get(cardKey(asset)) !== true) return false
+function mayOpenWorkflow(asset: GalleryAsset): boolean {
   return !isLocal(asset) || (workflowBuildsOf(asset)?.length ?? 0) > 0
+}
+
+function canOpenWorkflow(asset: GalleryAsset): boolean {
+  return workflowFound.value.get(cardKey(asset)) === true && mayOpenWorkflow(asset)
 }
 
 watch(
@@ -888,7 +892,7 @@ async function openWorkflow(asset: GalleryAsset, build?: string): Promise<void> 
   if (result.opened) return
   await modal.alert({
     title: t('assets.detail.openWorkflowFailed'),
-    message: result.error ?? asset.name
+    message: result.error ?? t('assets.detail.openWorkflowNoReason')
   })
 }
 

@@ -8,6 +8,7 @@ export type EmbeddedWorkflow =
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 const MAX_JSON_BYTES = 8_000_000
+const SCAN_BUDGET_BYTES = 64_000_000
 const MAX_INFLATED_BYTES = 16_000_000
 const MAX_GRAPH_NODES = 5_000
 const OPEN_BRACE = 0x7b
@@ -137,11 +138,16 @@ function isBinaryOutsideString(byte: number): boolean {
   return byte >= 0x80 || (byte < 0x20 && byte !== 0x09 && byte !== 0x0a && byte !== 0x0d)
 }
 
-function jsonEnd(bytes: Uint8Array, start: number): number {
+interface ScanBudget {
+  left: number
+}
+
+function jsonEnd(bytes: Uint8Array, start: number, budget: ScanBudget): number {
   let depth = 0
   let inString = false
   const limit = Math.min(bytes.length, start + MAX_JSON_BYTES)
   for (let i = start; i < limit; i++) {
+    if (--budget.left < 0) return -1
     const byte = bytes[i]!
     if (inString) {
       if (byte === BACKSLASH) i++
@@ -163,11 +169,11 @@ function startsObject(bytes: Uint8Array, at: number): boolean {
   return bytes[next] === QUOTE
 }
 
-function fromAnyBytes(bytes: Uint8Array): EmbeddedWorkflow | null {
+function fromAnyBytes(bytes: Uint8Array, budget: ScanBudget): EmbeddedWorkflow | null {
   const found: Found = { graph: null, api: null }
   let at = bytes.indexOf(OPEN_BRACE)
-  while (at >= 0 && !found.graph) {
-    const end = startsObject(bytes, at) ? jsonEnd(bytes, at) : -1
+  while (at >= 0 && !found.graph && budget.left > 0) {
+    const end = startsObject(bytes, at) ? jsonEnd(bytes, at, budget) : -1
     const value = end > at ? parseJson(utf8.decode(bytes.subarray(at, end))) : undefined
     if (value !== undefined) collect(value, found)
     at = bytes.indexOf(OPEN_BRACE, value === undefined ? at + 1 : end)
@@ -178,8 +184,9 @@ function fromAnyBytes(bytes: Uint8Array): EmbeddedWorkflow | null {
 export function readEmbeddedWorkflow(parts: Uint8Array[]): EmbeddedWorkflow | null {
   const [head] = parts
   if (head && isPng(head)) return fromPng(head)
+  const budget = { left: SCAN_BUDGET_BYTES }
   for (const part of parts) {
-    const workflow = fromAnyBytes(part)
+    const workflow = fromAnyBytes(part, budget)
     if (workflow) return workflow
   }
   return null

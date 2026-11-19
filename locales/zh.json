@@ -157,6 +157,7 @@
       "zoomLevel": "缩放：{level}",
       "openWorkflow": "打开工作流",
       "openWorkflowFailed": "无法打开工作流",
+      "openWorkflowNoReason": "ComfyUI 未能打开工作流。请重试。",
       "openWorkflowIn": "打开方式",
       "savedIn": "保存位置",
       "cloudAssets": "Comfy Cloud 资产",

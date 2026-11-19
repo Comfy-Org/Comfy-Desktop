@@ -1,4 +1,4 @@
-import { promises as fsp } from 'fs'
+import { constants as fsConstants, promises as fsp } from 'fs'
 import { ipcMain } from 'electron'
 
 import { openEmbeddedWorkflow } from '../apps/openInComfy'
@@ -20,7 +20,9 @@ export const ASSET_WORKFLOW_CHANNELS = {
 
 export const PART_BYTES = 4 * 1024 * 1024
 const READ_TIMEOUT_MS = 30_000
-const REMEMBERED_ASSETS = 100
+const REMEMBERED_CLOUD_ASSETS = 20
+const READ_WITHOUT_FOLLOWING =
+  fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0)
 
 const remembered = new Map<string, Promise<EmbeddedWorkflow | null>>()
 
@@ -37,7 +39,7 @@ async function readPart(
 async function localParts(assetId: string): Promise<Uint8Array[] | null> {
   const file = await outputFilePath(assetId)
   if (!file) return null
-  const handle = await fsp.open(file, 'r')
+  const handle = await fsp.open(file, READ_WITHOUT_FOLLOWING)
   try {
     const { size } = await handle.stat()
     const head = await readPart(handle, 0, Math.min(size, PART_BYTES))
@@ -74,31 +76,30 @@ async function cloudParts(installationId: string, assetId: string): Promise<Uint
   return [head, await firstBytes(tailResponse, PART_BYTES)]
 }
 
-function readParts(source: string, assetId: string): Promise<Uint8Array[] | null> {
-  return source === LOCAL_ASSETS_SOURCE ? localParts(assetId) : cloudParts(source, assetId)
+async function workflowIn(
+  read: Promise<Uint8Array[] | null>,
+  onUnread: () => void = () => {}
+): Promise<EmbeddedWorkflow | null> {
+  const parts = await read.catch(() => null)
+  if (!parts) onUnread()
+  return parts ? readEmbeddedWorkflow(parts) : null
 }
 
-function remember(key: string, read: Promise<EmbeddedWorkflow | null>): void {
+function rememberCloud(key: string, read: Promise<EmbeddedWorkflow | null>): void {
   remembered.delete(key)
   remembered.set(key, read)
-  if (remembered.size > REMEMBERED_ASSETS) remembered.delete(remembered.keys().next().value!)
+  if (remembered.size > REMEMBERED_CLOUD_ASSETS) {
+    remembered.delete(remembered.keys().next().value!)
+  }
 }
 
-export function assetWorkflow(source: string, assetId: string): Promise<EmbeddedWorkflow | null> {
+function assetWorkflow(source: string, assetId: string): Promise<EmbeddedWorkflow | null> {
+  if (source === LOCAL_ASSETS_SOURCE) return workflowIn(localParts(assetId))
   const key = `${source}\n${assetId}`
   const known = remembered.get(key)
   if (known) return known
-  const read = readParts(source, assetId).then(
-    (parts) => {
-      if (!parts) remembered.delete(key)
-      return parts ? readEmbeddedWorkflow(parts) : null
-    },
-    () => {
-      remembered.delete(key)
-      return null
-    }
-  )
-  remember(key, read)
+  const read = workflowIn(cloudParts(source, assetId), () => remembered.delete(key))
+  rememberCloud(key, read)
   return read
 }
 
@@ -113,7 +114,7 @@ function titleOf(name: unknown): string {
   return dot > 0 ? name.slice(0, dot) : name
 }
 
-export async function openAssetWorkflow(
+async function openAssetWorkflow(
   source: string,
   assetId: string,
   name: unknown,

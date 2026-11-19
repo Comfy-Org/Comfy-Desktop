@@ -1621,6 +1621,19 @@ describe('AssetsView Open workflow', () => {
     expect(viewer()).toBeNull()
   })
 
+  it('keeps the place of Open workflow while it checks the file, so the buttons do not move', async () => {
+    let answer: (found: boolean) => void = () => {}
+    hasAssetWorkflow.mockReturnValue(new Promise<boolean>((resolve) => (answer = resolve)))
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await openViewer(wrapper, '/out/forest.png')
+    expect(workflowButton()?.hasAttribute('disabled')).toBe(true)
+    answer(true)
+    await flushPromises()
+
+    expect(workflowButton()?.hasAttribute('disabled')).toBe(false)
+  })
+
   it('has no Open workflow for a file that holds no workflow', async () => {
     const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
 
@@ -1668,7 +1681,7 @@ describe('AssetsView Open workflow', () => {
 
   it('says why the workflow did not open', async () => {
     hasAssetWorkflow.mockResolvedValue(true)
-    openAssetWorkflow.mockResolvedValue({ opened: false, error: 'Lab did not start.' })
+    openAssetWorkflow.mockResolvedValueOnce({ opened: false, error: 'Lab did not start.' })
     const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
 
     await openViewer(wrapper, '/out/forest.png')

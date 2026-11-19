@@ -43,6 +43,7 @@ export interface OutputDetailItem {
   inCloud?: boolean
   workflow?: boolean
   workflowBuilds?: { id: string; name: string }[]
+  workflowPending?: boolean
   mainAction?: 'download' | null
   loadModel?: () => Promise<Uint8Array | null>
 }
@@ -386,12 +387,13 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           </template>
         </Menu>
         <Button
-          v-else-if="item.workflow"
+          v-else-if="item.workflow || item.workflowPending"
           type="button"
           variant="secondary"
           size="md"
           class="gap-1.5 text-[13px]/5"
           data-testid="output-detail-workflow"
+          :disabled="!item.workflow"
           @click="emit('open-workflow', index, item.workflowBuilds?.[0]?.id)"
         >
           <Workflow :size="15" aria-hidden="true" />
