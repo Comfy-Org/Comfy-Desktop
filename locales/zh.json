@@ -46,6 +46,16 @@
     "emptyBody": "新应用会显示在这里。",
     "noMatches": "没有与“{query}”匹配的应用",
     "allApps": "全部应用",
+    "request": {
+      "tile": "告诉我们你想要什么应用…",
+      "ask": "提出应用需求",
+      "title": "你想要什么应用？",
+      "placeholder": "说说它要用什么生成什么",
+      "send": "发送",
+      "sending": "正在发送…",
+      "failed": "没能发送你的需求，请重试。",
+      "thanks": "谢谢，我们已收到你的需求。"
+    },
     "badge": {
       "withDescription": "{text}：{description}"
     },
@@ -78,11 +88,6 @@
     },
     "cloud": "Comfy Cloud",
     "sharedFolder": "共享文件夹",
-    "buildState": {
-      "running": "运行中",
-      "starting": "启动中",
-      "stopped": "已停止"
-    },
     "kind": {
       "all": "全部",
       "image": "图片",
@@ -238,6 +243,7 @@
     "menuRevealInFolder": "打开文件夹",
     "menuDelete": "卸载",
     "stoppedActionGatedReason": "请先停止正在运行的实例。",
+    "busyActionGatedReason": "请等待此构建上的当前任务完成。",
     "statusRunning": "运行中",
     "statusLaunching": "正在启动…",
     "statusStopping": "正在停止…",
@@ -852,18 +858,19 @@
     "useForDownloads": "用于下载",
     "addModelsFolder": "添加模型文件夹",
     "removeAppDataTitle": "移除 Comfy Desktop 数据",
-    "removeAppDataHint": "删除应用之前，先移除 Comfy Desktop 保存在这台电脑上的日志、缓存和临时文件。你可以选择是否一并删除 ComfyUI 实例和模型。",
+    "removeAppDataHint": "删除应用之前，先移除 Comfy Desktop 保存在这台电脑上的日志、缓存和临时文件。你可以选择是否一并删除 ComfyUI 实例、模型以及输入和输出文件。",
     "removeAppDataButton": "移除 Comfy Desktop 数据",
     "removeAppDataConfirmTitle": "移除 Comfy Desktop 数据？",
-    "removeAppDataConfirmMessage": "Comfy Desktop 将退出并移除其日志、缓存和临时文件。两个选项都不勾选即可保留你的 ComfyUI 实例和模型；重新安装 Comfy Desktop 后会找到它们。",
+    "removeAppDataConfirmMessage": "Comfy Desktop 将退出并移除其日志、缓存和临时文件。不勾选某个选项即可保留对应的数据，但你删除的实例中的文件除外；重新安装 Comfy Desktop 后会找到保留的数据。",
     "removeAppDataKeptLabel": "始终保留",
-    "removeAppDataKeptFolders": "你的共享输入和输出文件夹",
+    "removeAppDataKeptFolders": "你自己选择的、不在你删除的实例中的输入和输出文件夹",
     "removeAppDataKeptAdded": "你自己添加的模型文件夹",
     "removeAppDataAfterLabel": "然后删除应用",
     "removeAppDataAfterMac": "将 Comfy Desktop 从“应用程序”拖到废纸篓。",
     "removeAppDataAfterLinux": "删除 AppImage 文件；如果安装的是 .deb 软件包，请运行 sudo apt remove comfyui-desktop-2。",
     "removeAppDataInstances": "删除所有 ComfyUI 实例",
     "removeAppDataModels": "删除所有模型文件",
+    "removeAppDataInputOutput": "删除共享的输入和输出文件",
     "removeAppDataConfirm": "移除并退出"
   },
   "zoom": {
@@ -1038,6 +1045,23 @@
     "failedTitle": "卸载未完成",
     "tryAgain": "重试",
     "dismiss": "忽略"
+  },
+  "updateProgress": {
+    "status": "正在更新",
+    "tileStatus": "正在更新 · {percent}%",
+    "cancelTitle": "停止更新？",
+    "cancelMessage": "{name} 将停止更新。之后可以再次更新。",
+    "cancelConfirm": "停止更新"
+  },
+  "workingProgress": {
+    "cancelTitle": "现在停止？",
+    "cancelMessage": "{name} 的“{task}”将停止。你可以稍后再次开始。",
+    "cancelConfirm": "停止",
+    "failedTitle": "“{task}”未完成",
+    "cannotStopTitle": "此任务无法停止",
+    "cannotStopMessage": "请等待 {name} 的“{task}”完成后再关闭窗口。",
+    "relaunchSkippedTitle": "{name} 未启动",
+    "relaunchSkippedMessage": "{name} 正在执行另一个任务，因此未启动。请在该任务完成后再次启动。"
   },
   "announcement": {
     "comfyApi": {
@@ -2023,7 +2047,6 @@
     "noMatches": "没有匹配的构建",
     "newInstance": "新建构建",
     "openDashboard": "打开仪表板",
-    "openDashboardHint": "在新窗口中打开仪表板。正在运行的构建会继续运行。",
     "latestOnGithub": "GitHub 最新版",
     "open": "启动",
     "restart": "重启",

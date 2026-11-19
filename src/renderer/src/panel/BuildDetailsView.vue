@@ -9,7 +9,13 @@ import BuildUninstallFailed from './BuildUninstallFailed.vue'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
 import type { StorageSnapshot } from '../views/comfyUISettings/StoragePane.vue'
-import { buildFailure, uninstallFailureOf, useBuildProgress } from '../composables/useBuildProgress'
+import {
+  buildFailure,
+  operationFailureOf,
+  operationTask,
+  uninstallFailureOf,
+  useBuildProgress
+} from '../composables/useBuildProgress'
 import { installTypeMetaForInstall } from '../lib/installTypeIcon'
 import { useInstallationStore } from '../stores/installationStore'
 import { useProgressStore } from '../stores/progressStore'
@@ -37,9 +43,18 @@ const installationStore = useInstallationStore()
 
 const { progress, viewLogs } = useBuildProgress(() => installation)
 const uninstalling = computed(() => progress.value?.kind === 'uninstall')
+const updating = computed(() => progress.value?.kind === 'update')
+const working = computed(() => progress.value?.kind === 'working')
+const cardReplacesSettings = computed(() => uninstalling.value || updating.value || working.value)
 const uninstallFailure = computed(() => uninstallFailureOf(progressStore, installation.id))
-const uninstallReplacesSettings = computed(
-  () => uninstalling.value || uninstallFailure.value !== null
+const operationFailure = computed(() => operationFailureOf(progressStore, installation.id))
+const failedTaskTitle = computed(() => {
+  const op = progressStore.operations.get(installation.id)
+  return t('workingProgress.failedTitle', { task: op ? operationTask(op.title) : '' })
+})
+const settingsHidden = computed(
+  () =>
+    cardReplacesSettings.value || uninstallFailure.value !== null || operationFailure.value !== null
 )
 const tone = computed(() => homeBuildTones([installation], installationStore.installations)[0]!)
 
@@ -57,7 +72,7 @@ const metaLine = computed(() =>
 const failure = computed(() => buildFailure(installation, sessionStore, progressStore, t))
 const failureHint = computed(() => {
   const kind = failure.value?.kind
-  if (!kind || kind === 'broken' || uninstalling.value) return ''
+  if (!kind || kind === 'broken' || cardReplacesSettings.value) return ''
   return kind === 'didnt-start' ? t('home.buildClickToViewLogs') : t('chooser.viewErrorTooltip')
 })
 function openFailure(): void {
@@ -70,7 +85,13 @@ const status = computed(() => {
   if (uninstalling.value) {
     return { tone: 'quiet', label: 'uninstallProgress.status', spinning: true } as const
   }
-  if (failure.value) return { tone: 'bad', label: failure.value.label, text: true } as const
+  if (updating.value) {
+    return { tone: 'quiet', label: 'updateProgress.status', spinning: true } as const
+  }
+  if (working.value) {
+    return { tone: 'quiet', text: progress.value?.task ?? '', spinning: true } as const
+  }
+  if (failure.value) return { tone: 'bad', text: failure.value.label } as const
   if (sessionStore.isStopping(id))
     return { tone: 'quiet', label: 'chooser.statusStopping' } as const
   if (sessionStore.isLaunching(id)) {
@@ -104,7 +125,7 @@ onUnmounted(() => unsubscribeSettings?.())
               :id="TITLE_ID"
               class="m-0 flex min-w-0 text-display font-semibold tracking-[-0.055em] text-foreground"
             >
-              <span v-if="uninstallReplacesSettings" class="truncate">{{ installation.name }}</span>
+              <span v-if="settingsHidden" class="truncate">{{ installation.name }}</span>
             </h1>
             <Tooltip v-if="failureHint" :text="failureHint" side="top" :delay-ms="500">
               <button
@@ -130,7 +151,7 @@ onUnmounted(() => unsubscribeSettings?.())
                   aria-hidden="true"
                 />
               </template>
-              {{ 'text' in status ? status.label : t(status.label) }}
+              {{ 'text' in status ? status.text : t(status.label) }}
             </StatusChip>
           </div>
           <p
@@ -144,7 +165,7 @@ onUnmounted(() => unsubscribeSettings?.())
       </header>
 
       <HomeBuildCard
-        v-if="uninstalling"
+        v-if="cardReplacesSettings"
         class="shrink-0"
         :build="installation"
         :status="homeBuildStatus(installation, sessionStore)"
@@ -153,6 +174,14 @@ onUnmounted(() => unsubscribeSettings?.())
       <BuildUninstallFailed
         v-else-if="uninstallFailure !== null"
         :reason="uninstallFailure"
+        @retry="progressStore.retryOperation(installation.id)"
+        @dismiss="progressStore.dismissOperation(installation.id)"
+      />
+      <BuildUninstallFailed
+        v-else-if="operationFailure !== null"
+        kind="operation"
+        :title="failedTaskTitle"
+        :reason="operationFailure"
         @retry="progressStore.retryOperation(installation.id)"
         @dismiss="progressStore.dismissOperation(installation.id)"
       />

@@ -19,7 +19,12 @@ import {
   type HomeBuildStatus,
   type HomeBuildTone
 } from './homeBuild'
-import { buildFailure, launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import {
+  buildFailure,
+  inPlaceTaskLabel,
+  launchFailed,
+  useBuildProgress
+} from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
 import { useProgressStore } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -46,12 +51,19 @@ const sessionStore = useSessionStore()
 const busy = computed(() => install.progress.value !== null)
 const starting = computed(() => install.progress.value?.kind === 'launch')
 const uninstalling = computed(() => install.progress.value?.kind === 'uninstall')
+const updating = computed(() => install.progress.value?.kind === 'update')
+const working = computed(() => install.progress.value?.kind === 'working')
+const changesInPlace = computed(() => updating.value || working.value)
+const showsUpdateLock = computed(() => status === 'updating' && !changesInPlace.value)
 const promoting = computed(() => isPromotingToWorkspace(build))
 const canOpen = computed(
-  () => !uninstalling.value && !promoting.value && !isBuildOpenBlocked(status)
+  () =>
+    !uninstalling.value && !promoting.value && (changesInPlace.value || !isBuildOpenBlocked(status))
 )
 const busyTestId = computed(() => {
   if (uninstalling.value) return 'home-build-uninstalling'
+  if (updating.value) return 'home-build-updating'
+  if (working.value) return 'home-build-working'
   return starting.value ? 'home-build-starting' : 'home-build-installing'
 })
 const failure = computed(() => buildFailure(build, sessionStore, progressStore, t))
@@ -68,6 +80,8 @@ const toneStyle = computed(() => HOME_BUILD_TONES[tone])
 const statusLabel = computed(() => {
   if (install.progress.value?.cancelling) return t('installProgress.cancelling')
   if (uninstalling.value) return t('uninstallProgress.status')
+  const inPlace = install.progress.value ? inPlaceTaskLabel(install.progress.value, t) : null
+  if (inPlace !== null) return inPlace
   if (busy.value) {
     const phase = t(starting.value ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
     const percent = install.progress.value?.percent
@@ -97,7 +111,10 @@ const resting = computed(
   () => status === 'ready' || status === 'update' || (status === 'running' && !isLive.value)
 )
 const updateNote = computed(() =>
-  !uninstalling.value && status !== 'updating' && build.statusTag?.style === 'update'
+  !uninstalling.value &&
+  !changesInPlace.value &&
+  status !== 'updating' &&
+  build.statusTag?.style === 'update'
     ? t('chooser.updatePill')
     : ''
 )
@@ -141,7 +158,7 @@ function openMoreMenu(event: MouseEvent): void {
 }
 
 function openContextMenu(event: MouseEvent): void {
-  if (status === 'updating') return
+  if (showsUpdateLock.value) return
   moreButton.value = null
   menuReturnFocus.value = openButton.value
   showMenuAtPointer(event)
@@ -243,7 +260,7 @@ function openContextMenu(event: MouseEvent): void {
       </span>
     </span>
     <Button
-      v-if="status !== 'updating'"
+      v-if="!showsUpdateLock"
       type="button"
       variant="muted-textonly"
       size="unset"
@@ -264,7 +281,7 @@ function openContextMenu(event: MouseEvent): void {
       data-testid="home-build-progress"
     />
     <BuildMenu
-      v-if="status !== 'updating' && menuAnchor"
+      v-if="!showsUpdateLock && menuAnchor"
       v-model:open="menuOpen"
       :build="build"
       :anchor="menuAnchor"
