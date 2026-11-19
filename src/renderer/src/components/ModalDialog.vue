@@ -237,7 +237,7 @@ watch(
                 $t('snapshots.variant')
               }}</span>
               <span class="dialog-value text-[14px] text-text select-text">{{
-                state.snapshotPreview.comfyui.variant || '—'
+                state.snapshotPreview.comfyui.variant || $t('common.unknown')
               }}</span>
             </div>
             <div
@@ -292,7 +292,9 @@ watch(
                   >
                 </div>
               </div>
-              <div v-else class="dialog-empty text-[14px] text-text-muted">—</div>
+              <div v-else class="dialog-empty text-[14px] text-text-muted">
+                {{ $t('common.none') }}
+              </div>
             </template>
           </div>
 
@@ -328,7 +330,9 @@ watch(
                   >
                 </div>
               </div>
-              <div v-else class="dialog-empty text-[14px] text-text-muted">—</div>
+              <div v-else class="dialog-empty text-[14px] text-text-muted">
+                {{ $t('common.none') }}
+              </div>
             </template>
           </div>
         </template>

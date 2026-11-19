@@ -155,7 +155,7 @@ const APP_ICON = path.join(__dirname, '..', '..', 'assets', 'Comfy_Logo_x256.png
 const APP_VERSION = getAppVersion()
 
 export const CHOOSER_HOST_TITLE_TEXT = 'Comfy Desktop'
-export const CHOOSER_HOST_WINDOW_TITLE = `${CHOOSER_HOST_TITLE_TEXT} — v${APP_VERSION}`
+export const CHOOSER_HOST_WINDOW_TITLE = `${CHOOSER_HOST_TITLE_TEXT} · v${APP_VERSION}`
 
 const CHOOSER_HOST_BOUNDS_KEY = 'chooser'
 

@@ -282,7 +282,7 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
     expect(onShowProgress).toHaveBeenCalledTimes(1)
     const opts = onShowProgress.mock.calls[0][0]
     expect(opts.installationId).toBe(inst.id)
-    expect(opts.title).toBe('Uninstall - My Install')
+    expect(opts.title).toBe('Uninstall · My Install')
     expect(opts.cancellable).toBe(true)
     expect(opts.returnTo).toBe('list')
     expect(opts.destroysInstance).toBe(true)
@@ -519,7 +519,7 @@ describe('useInstallContextMenu - promote to workspace', () => {
 
     expect(menu.isPromotingToWorkspace(inst)).toBe(true)
     expect(findItem(menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
-      label: 'Creating...',
+      label: 'Creating…',
       disabled: true
     })
 

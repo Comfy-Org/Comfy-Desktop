@@ -283,7 +283,7 @@ describe('Build menu', () => {
 
     try {
       await flushPromises()
-      expect(tile.get('[data-testid="home-build-status"]').text()).toBe('Creating...')
+      expect(tile.get('[data-testid="home-build-status"]').text()).toBe('Creating…')
       expect(tile.find('[data-testid="home-build-open"]').exists()).toBe(false)
       await more.trigger('click')
       expect(await shownMenu()).not.toContain('launch')

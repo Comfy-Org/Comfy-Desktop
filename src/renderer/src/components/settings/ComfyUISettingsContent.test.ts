@@ -1061,14 +1061,14 @@ describe('ComfyUISettingsContent', () => {
           fields: [
             {
               id: 'updateChannel',
-              label: 'Update Channel',
+              label: 'Update channel',
               editType: 'channel-cards',
               value: 'stable',
               options: [{ value: 'stable', label: 'Stable', data: { lastCheckedAt: Date.now() } }]
             }
           ]
         },
-        { tab: 'status', fields: [{ label: 'Install Method', value: 'Portable' }] }
+        { tab: 'status', fields: [{ label: 'Install method', value: 'Portable' }] }
       ]
       useComfyUISettingsState.sectionsFresh.value = true
       return mountContent({ installation, initialTab: 'update' })

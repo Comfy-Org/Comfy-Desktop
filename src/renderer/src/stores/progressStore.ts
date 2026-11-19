@@ -13,6 +13,7 @@ import type {
   ShowProgressOpts,
   Unsubscribe
 } from '../types/ipc'
+import { progressActionName } from '../lib/progressTitle'
 
 export interface Operation {
   title: string
@@ -134,7 +135,7 @@ export const useProgressStore = defineStore('progress', () => {
     cleanupOperation(installationId)
 
     sessionStore.startSession(installationId)
-    const sessionLabel = title.split(' — ')[0] || t('progress.working')
+    const sessionLabel = progressActionName(title) || t('progress.working')
     sessionStore.setActiveSession(installationId, sessionLabel)
 
     const op: Operation = {

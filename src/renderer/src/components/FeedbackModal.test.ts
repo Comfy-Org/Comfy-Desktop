@@ -57,7 +57,7 @@ describe('FeedbackModal', () => {
         hidden: hiddenFields,
         inlineOnMobile: true,
         redirectTarget: '_self',
-        iframeProps: expect.objectContaining({ title: 'Send Feedback' })
+        iframeProps: expect.objectContaining({ title: 'Send feedback' })
       })
     )
     expect(document.querySelector('.feedback-modal-loading')).not.toBeNull()

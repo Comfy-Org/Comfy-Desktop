@@ -189,7 +189,7 @@ describe('AppSidebar', () => {
     const wrapper = await mountSidebar('assets')
     const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
 
-    expect(settings.text()).toBe('Desktop Settings')
+    expect(settings.text()).toBe('Desktop settings')
     expect(settings.attributes('aria-haspopup')).toBe('dialog')
     expect(settings.element.closest('nav')).toBeNull()
     expect(settings.element.nextElementSibling?.classList.contains('sidebar-account')).toBe(true)
@@ -219,8 +219,8 @@ describe('AppSidebar', () => {
     await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
     const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
     expect(settings.text()).toBe('')
-    expect(settings.attributes('aria-label')).toBe('Desktop Settings')
-    expect(tooltipOf(wrapper, 'app-sidebar-settings')).toBe('Desktop Settings')
+    expect(settings.attributes('aria-label')).toBe('Desktop settings')
+    expect(tooltipOf(wrapper, 'app-sidebar-settings')).toBe('Desktop settings')
 
     await settings.trigger('click')
 

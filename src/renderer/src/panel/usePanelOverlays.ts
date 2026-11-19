@@ -15,6 +15,7 @@ import { isUninstallOpKind } from '../lib/progressOpKind'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { progressActionName } from '../lib/progressTitle'
 
 export type PanelKey =
   | 'comfy'
@@ -208,7 +209,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
         stop()
         const op = progressStore.operations.get(id)
         if (!op?.result?.portConflict) return
-        const ok = await openProgressTakeover(id, op.title.split(' — ')[0] || op.title)
+        const ok = await openProgressTakeover(id, progressActionName(op.title))
         if (!ok) return
         await nextTick()
         progressRef.value?.showOperation(id)
@@ -255,7 +256,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
   }
 
   async function handleShowProgress(showOpts: ShowProgressOpts): Promise<void> {
-    const operationName = showOpts.title.split(' — ')[0] || showOpts.title
+    const operationName = progressActionName(showOpts.title)
     if (runsInBackground(showOpts)) {
       startOperationOnce({ ...showOpts, chainSpan: undefined })
       if (isUninstallOpKind(showOpts.opKind)) {
