@@ -1,8 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import type { WebContents, WebFrameMain } from 'electron'
 
-const INJECTION_OWNER_KEY = '__comfyDesktopFirebaseSessionInjectionOwner'
-export const FIREBASE_SESSION_INJECTION_OWNER_FIELD = '__comfyDesktopInjectionOwner'
+import {
+  buildIndexedDbInjectScript,
+  FIREBASE_SESSION_INJECTION_OWNER_FIELD,
+  INJECTION_OWNER_KEY,
+  type InjectWriteOptions
+} from './injectScript'
+
+export { buildIndexedDbInjectScript, FIREBASE_SESSION_INJECTION_OWNER_FIELD }
+export type { InjectWriteOptions }
 
 export interface FirebaseSessionInjection {
   contents: WebContents
@@ -54,82 +61,16 @@ export function releaseFirebaseSessionInjection(injection: FirebaseSessionInject
   invalidateInjection(injection)
 }
 
-export function buildIndexedDbInjectScript(
-  user: Record<string, unknown>,
-  apiKey: string,
-  expectedOrigin: string,
-  ownerToken: string
-): string {
-  const userJson = JSON.stringify(user)
-  const apiKeyJson = JSON.stringify(apiKey)
-  const expectedOriginJson = JSON.stringify(expectedOrigin)
-  const ownerTokenJson = JSON.stringify(ownerToken)
-  const ownerKeyJson = JSON.stringify(INJECTION_OWNER_KEY)
-  const recordOwnerKeyJson = JSON.stringify(FIREBASE_SESSION_INJECTION_OWNER_FIELD)
-  return `(async () => {
-  const ownerKey = ${ownerKeyJson};
-  const expectedOrigin = ${expectedOriginJson};
-  const ownerToken = ${ownerTokenJson};
-  const recordOwnerKey = ${recordOwnerKeyJson};
-  const isCurrent = () =>
-    location.origin === expectedOrigin && globalThis[ownerKey] === ownerToken;
-  if (!isCurrent()) return false;
-  const userValue = ${userJson};
-  const apiKey = ${apiKeyJson};
-  const storageKey = 'firebase:authUser:' + apiKey + ':[DEFAULT]';
-  const committed = await new Promise((resolve, reject) => {
-    const req = indexedDB.open('firebaseLocalStorageDb', 1);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains('firebaseLocalStorage')) {
-        db.createObjectStore('firebaseLocalStorage', { keyPath: 'fbase_key' });
-      }
-    };
-    req.onerror = () => reject(new Error('open: ' + (req.error && req.error.message || 'unknown')));
-    req.onsuccess = () => {
-      const db = req.result;
-      if (!isCurrent()) { db.close(); resolve(false); return; }
-      const tx = db.transaction('firebaseLocalStorage', 'readwrite');
-      tx.oncomplete = () => {
-        if (isCurrent()) { db.close(); resolve(true); return; }
-        const cleanup = db.transaction('firebaseLocalStorage', 'readwrite');
-        cleanup.oncomplete = () => { db.close(); resolve(false); };
-        cleanup.onerror = () => { db.close(); resolve(false); };
-        const cleanupStore = cleanup.objectStore('firebaseLocalStorage');
-        const current = cleanupStore.get(storageKey);
-        current.onsuccess = () => {
-          if (current.result && current.result[recordOwnerKey] === ownerToken) {
-            cleanupStore.delete(storageKey);
-          }
-        };
-      };
-      tx.onerror = () => reject(new Error('tx: ' + (tx.error && tx.error.message || 'unknown')));
-      const store = tx.objectStore('firebaseLocalStorage');
-      if (isCurrent()) {
-        store.put({
-          fbase_key: storageKey,
-          value: userValue,
-          [recordOwnerKey]: ownerToken
-        });
-      }
-      else { tx.abort(); db.close(); resolve(false); }
-    };
-  });
-  if (!committed || !isCurrent()) return false;
-  // Tell the next page-load (handled by attach.ts's dom-ready patch) to
-  // hide documentElement briefly so the cloud login page doesn't flash
-  // between Firebase rehydrating and the FE redirecting to the workspace.
-  try { sessionStorage.setItem('__comfyDesktopPostSignin', '1'); } catch (_) {}
-  location.reload();
-  return true;
-})()`
+export function hasActiveFirebaseSessionInjection(): boolean {
+  return activeInjection !== null
 }
 
 export async function injectFirebaseSession(
   injection: FirebaseSessionInjection,
   expectedOrigin: string,
   user: Record<string, unknown>,
-  apiKey: string
+  apiKey: string,
+  options: InjectWriteOptions = {}
 ): Promise<boolean> {
   if (
     activeInjection !== injection ||
@@ -153,7 +94,7 @@ export async function injectFirebaseSession(
   }
 
   const result = await frame.executeJavaScript(
-    buildIndexedDbInjectScript(user, apiKey, expectedOrigin, injection.token),
+    buildIndexedDbInjectScript(user, apiKey, expectedOrigin, injection.token, options),
     true
   )
   return result === true && activeInjection === injection

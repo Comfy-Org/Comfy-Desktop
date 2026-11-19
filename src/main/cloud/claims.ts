@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 
-import { PARTNER_NODE_MINT_SCOPE, WORKSPACE_MINT_SCOPE } from './config'
+import { PARTNER_NODE_MINT_SCOPE, WEB_SESSION_SCOPE, WORKSPACE_MINT_SCOPE } from './config'
 import type { AuthStatus } from './types'
 
 interface AccessTokenClaims {
@@ -53,6 +53,10 @@ export function canMintWorkspaceTokens(accessToken: string): boolean {
 
 export function holdsPartnerNodeScope(accessToken: string): boolean {
   return holdsScope(accessToken, PARTNER_NODE_MINT_SCOPE)
+}
+
+export function holdsWebSessionScope(accessToken: string): boolean {
+  return holdsScope(accessToken, WEB_SESSION_SCOPE)
 }
 
 export function lifetimeSecondsOf(accessToken: string): number | null {
