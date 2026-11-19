@@ -8,7 +8,12 @@ import BuildUninstallFailed from './BuildUninstallFailed.vue'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
 import type { StorageSnapshot } from '../views/comfyUISettings/StoragePane.vue'
-import { uninstallFailureOf, useBuildProgress } from '../composables/useBuildProgress'
+import {
+  operationFailureOf,
+  operationTask,
+  uninstallFailureOf,
+  useBuildProgress
+} from '../composables/useBuildProgress'
 import { installTypeMetaForInstall } from '../lib/installTypeIcon'
 import { useInstallationStore } from '../stores/installationStore'
 import { useProgressStore } from '../stores/progressStore'
@@ -35,9 +40,18 @@ const installationStore = useInstallationStore()
 
 const { progress } = useBuildProgress(() => installation)
 const uninstalling = computed(() => progress.value?.kind === 'uninstall')
+const updating = computed(() => progress.value?.kind === 'update')
+const working = computed(() => progress.value?.kind === 'working')
+const cardReplacesSettings = computed(() => uninstalling.value || updating.value || working.value)
 const uninstallFailure = computed(() => uninstallFailureOf(progressStore, installation.id))
-const uninstallReplacesSettings = computed(
-  () => uninstalling.value || uninstallFailure.value !== null
+const operationFailure = computed(() => operationFailureOf(progressStore, installation.id))
+const failedTaskTitle = computed(() => {
+  const op = progressStore.operations.get(installation.id)
+  return t('workingProgress.failedTitle', { task: op ? operationTask(op.title) : '' })
+})
+const settingsHidden = computed(
+  () =>
+    cardReplacesSettings.value || uninstallFailure.value !== null || operationFailure.value !== null
 )
 const tone = computed(() => homeBuildTones([installation], installationStore.installations)[0]!)
 
@@ -56,6 +70,12 @@ const status = computed(() => {
   const id = installation.id
   if (uninstalling.value) {
     return { tone: 'quiet', label: 'uninstallProgress.status', spinning: true } as const
+  }
+  if (updating.value) {
+    return { tone: 'quiet', label: 'updateProgress.status', spinning: true } as const
+  }
+  if (working.value) {
+    return { tone: 'quiet', text: progress.value?.task ?? '', spinning: true } as const
   }
   if (sessionStore.errorInstances.has(id))
     return { tone: 'bad', label: 'chooser.statusError' } as const
@@ -92,7 +112,7 @@ onUnmounted(() => unsubscribeSettings?.())
               :id="TITLE_ID"
               class="m-0 flex min-w-0 text-display font-semibold tracking-[-0.055em] text-foreground"
             >
-              <span v-if="uninstallReplacesSettings" class="truncate">{{ installation.name }}</span>
+              <span v-if="settingsHidden" class="truncate">{{ installation.name }}</span>
             </h1>
             <StatusChip v-if="status" class="build-details-status" :tone="status.tone">
               <template v-if="status.tone === 'bad'" #icon>
@@ -105,7 +125,7 @@ onUnmounted(() => unsubscribeSettings?.())
                   aria-hidden="true"
                 />
               </template>
-              {{ t(status.label) }}
+              {{ 'text' in status ? status.text : t(status.label) }}
             </StatusChip>
           </div>
           <p
@@ -119,7 +139,7 @@ onUnmounted(() => unsubscribeSettings?.())
       </header>
 
       <HomeBuildCard
-        v-if="uninstalling"
+        v-if="cardReplacesSettings"
         class="shrink-0"
         :build="installation"
         :status="homeBuildStatus(installation, sessionStore)"
@@ -128,6 +148,14 @@ onUnmounted(() => unsubscribeSettings?.())
       <BuildUninstallFailed
         v-else-if="uninstallFailure !== null"
         :reason="uninstallFailure"
+        @retry="progressStore.retryOperation(installation.id)"
+        @dismiss="progressStore.dismissOperation(installation.id)"
+      />
+      <BuildUninstallFailed
+        v-else-if="operationFailure !== null"
+        kind="operation"
+        :title="failedTaskTitle"
+        :reason="operationFailure"
         @retry="progressStore.retryOperation(installation.id)"
         @dismiss="progressStore.dismissOperation(installation.id)"
       />

@@ -366,7 +366,6 @@ describe('TitleBarApp', () => {
     await flushPromises()
     expect(wrapper.find('.title-menu-button[aria-haspopup="menu"]').exists()).toBe(true)
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(true)
-    expect(wrapper.find('.title-feedback-button').exists()).toBe(true)
     expect(wrapper.find('.title-install-pill').exists()).toBe(false)
     expect(wrapper.find('header').classes()).not.toContain('is-consent-lockdown')
 
@@ -375,7 +374,6 @@ describe('TitleBarApp', () => {
     expect(wrapper.find('header').classes()).toContain('is-consent-lockdown')
     expect(wrapper.find('.title-menu-button[aria-haspopup="menu"]').exists()).toBe(false)
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(false)
-    expect(wrapper.find('.title-feedback-button').exists()).toBe(false)
     expect(wrapper.find('.title-install-pill').exists()).toBe(true)
 
     bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('post-consent'))
@@ -383,7 +381,6 @@ describe('TitleBarApp', () => {
     expect(wrapper.find('header').classes()).not.toContain('is-consent-lockdown')
     expect(wrapper.find('.title-menu-button[aria-haspopup="menu"]').exists()).toBe(true)
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(false)
-    expect(wrapper.find('.title-feedback-button').exists()).toBe(false)
     expect(wrapper.find('.title-install-pill').exists()).toBe(true)
 
     bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('loading-lockdown'))
@@ -391,7 +388,6 @@ describe('TitleBarApp', () => {
     expect(wrapper.find('header').classes()).not.toContain('is-consent-lockdown')
     expect(wrapper.find('.title-menu-button[aria-haspopup="menu"]').exists()).toBe(true)
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(true)
-    expect(wrapper.find('.title-feedback-button').exists()).toBe(true)
     expect(wrapper.find('.title-install-pill').exists()).toBe(false)
 
     bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('none'))
@@ -399,7 +395,6 @@ describe('TitleBarApp', () => {
     expect(wrapper.find('header').classes()).not.toContain('is-consent-lockdown')
     expect(wrapper.find('.title-menu-button[aria-haspopup="menu"]').exists()).toBe(true)
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(true)
-    expect(wrapper.find('.title-feedback-button').exists()).toBe(true)
     expect(wrapper.find('.title-install-pill').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -426,7 +421,7 @@ describe('TitleBarApp', () => {
       wrapper.unmount()
     })
 
-    it("ends the right side with the ☰, after refresh, What's new, Feedback and Downloads", async () => {
+    it("ends the right side with the ☰, after refresh, What's new and Downloads", async () => {
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp)
       await flushPromises()
@@ -437,14 +432,13 @@ describe('TitleBarApp', () => {
       const controls: [string, string][] = [
         ['.title-refresh-button', 'refresh'],
         ['.title-announcement-button', 'whats-new'],
-        ['.title-feedback-button', 'feedback'],
         ['.title-downloads-tray', 'downloads'],
         [menuButton, 'menu']
       ]
       const order = Array.from(trailing.children).flatMap((el) =>
         controls.filter(([selector]) => el.matches(selector)).map(([, name]) => name)
       )
-      expect(order).toEqual(['refresh', 'whats-new', 'feedback', 'downloads', 'menu'])
+      expect(order).toEqual(['refresh', 'whats-new', 'downloads', 'menu'])
       wrapper.unmount()
     })
 
@@ -874,32 +868,14 @@ describe('TitleBarApp', () => {
     wrapper.unmount()
   })
 
-  it('renders a Send Feedback button and forwards clicks through the bridge', async () => {
-    const { default: TitleBarApp } = await import('./TitleBarApp.vue')
-    const wrapper = mount(TitleBarApp, { attachTo: document.body })
-    await flushPromises()
-    const btn = wrapper.find('.title-feedback-button')
-    expect(btn.exists()).toBe(true)
-    expect(btn.attributes('aria-label')).toBe('Feedback')
-    expect(btn.text()).toBe('')
-    await btn.trigger('click')
-    expect(bridgeState.feedbackClicks).toBe(1)
-    wrapper.unmount()
-  })
-
-  it('hides the Send Feedback button for the full first-use takeover (consent + post-consent)', async () => {
+  it('has no Send Feedback button', async () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
-    bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('consent-lockdown'))
-    await flushPromises()
+    expect(wrapper.find('.title-announcement-button').exists()).toBe(true)
     expect(wrapper.find('.title-feedback-button').exists()).toBe(false)
-    bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('post-consent'))
-    await flushPromises()
-    expect(wrapper.find('.title-feedback-button').exists()).toBe(false)
-    bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('none'))
-    await flushPromises()
-    expect(wrapper.find('.title-feedback-button').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="Feedback"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('renders the downloads tray on install-less (chooser-host) windows too — downloads are global, not per-install', async () => {

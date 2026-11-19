@@ -4,19 +4,13 @@ import Tabs from '@comfyorg/design-system/tabs/Tabs'
 import TabsList from '@comfyorg/design-system/tabs/TabsList'
 import TabsTrigger from '@comfyorg/design-system/tabs/TabsTrigger'
 import TabsContent from '@comfyorg/design-system/tabs/TabsContent'
-import { computed, nextTick, onMounted, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   CheckCircle,
   XCircle,
-  ChevronDown,
-  ChevronUp,
-  HardDrive,
-  Folder,
-  SlidersHorizontal,
   RefreshCw,
   History,
-  SquareTerminal,
   Cloud,
   Play,
   RotateCcw,
@@ -92,7 +86,8 @@ interface Props {
   currentCategory?: Category | null
   startingWithoutWindow?: boolean
   pageActionsTarget?: string
-  pageTitleTarget?: string
+  actionsTarget?: HTMLElement | null
+  pageTitleTarget?: string | HTMLElement | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -106,6 +101,7 @@ const props = withDefaults(defineProps<Props>(), {
   currentCategory: null,
   startingWithoutWindow: false,
   pageActionsTarget: undefined,
+  actionsTarget: null,
   pageTitleTarget: undefined,
   globalSettingsSnapshot: () => ({
     sharedDirectoriesFields: [],
@@ -128,7 +124,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const isPage = computed(() => props.pageActionsTarget !== undefined)
-const menuChevron = computed(() => (isPage.value ? ChevronDown : ChevronUp))
+const footerTarget = computed(() => props.pageActionsTarget ?? props.actionsTarget)
 
 function overviewTab(tab: ComfyUISettingsTab): ComfyUISettingsTab {
   return tab === 'status' ? 'update' : tab
@@ -250,7 +246,6 @@ interface TabDef {
   key: ComfyUISettingsTab
   sectionTab: SectionTab
   label: string
-  icon: typeof SlidersHorizontal
   tooltip?: string
 }
 
@@ -259,35 +254,30 @@ const ALL_TABS: TabDef[] = [
     key: 'update',
     sectionTab: 'update',
     label: t('comfyUISettings.tabOverview'),
-    icon: LayoutDashboard,
     tooltip: t('tooltips.tabOverview')
   },
   {
     key: 'storage',
     sectionTab: 'storage',
     label: t('comfyUISettings.tabFolders'),
-    icon: Folder,
     tooltip: t('tooltips.tabFolders')
   },
   {
     key: 'config',
     sectionTab: 'settings',
     label: t('comfyUISettings.tabConfig'),
-    icon: SlidersHorizontal,
     tooltip: t('tooltips.tabConfig')
   },
   {
     key: 'snapshots',
     sectionTab: 'snapshots',
     label: t('comfyUISettings.tabSnapshots'),
-    icon: History,
     tooltip: t('tooltips.snapshots')
   },
   {
     key: 'console',
     sectionTab: 'console',
     label: t('comfyUISettings.tabTerminal'),
-    icon: SquareTerminal,
     tooltip: t('tooltips.console')
   }
 ]
@@ -309,7 +299,7 @@ function tabHasContent(tab: TabDef): boolean {
 const tabs = computed<TabDef[]>(() =>
   ALL_TABS.filter(tabHasContent).map((tab) =>
     isCloud.value && tab.key === 'config'
-      ? { ...tab, label: t('comfyUISettings.tabCloudStorage'), icon: HardDrive }
+      ? { ...tab, label: t('comfyUISettings.tabCloudStorage') }
       : tab
   )
 )
@@ -354,32 +344,44 @@ const storageSections = computed(() => sectionsForTab('storage').value)
 
 const rootRef = useTemplateRef<HTMLElement>('root')
 const footerRef = useTemplateRef<HTMLElement>('footer')
-const tabsRef = useTemplateRef<HTMLElement>('tabs')
-
-const TAB_COLLAPSE_PX = 640
-const tabsCollapsed = ref(false)
-let tabsObserver: ResizeObserver | undefined
-
-onMounted(() => {
-  if (tabsRef.value && typeof ResizeObserver !== 'undefined') {
-    tabsObserver = new ResizeObserver((entries) => {
-      const entry = entries[0]
-      if (!entry) return
-      tabsCollapsed.value = entry.contentRect.width < TAB_COLLAPSE_PX
-    })
-    tabsObserver.observe(tabsRef.value)
-  }
-})
-
-onUnmounted(() => {
-  tabsObserver?.disconnect()
-  tabsObserver = undefined
-})
-
-function isTabLabelHidden(key: ComfyUISettingsTab): boolean {
-  return tabsCollapsed.value && activeTab.value !== key
+const tabStrip = useTemplateRef<HTMLElement>('tabStrip')
+const tabsHiddenStart = ref(false)
+const tabsHiddenEnd = ref(false)
+function measureTabStrip(): void {
+  const strip = tabStrip.value
+  if (!strip) return
+  tabsHiddenStart.value = strip.scrollLeft > 1
+  tabsHiddenEnd.value = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1
 }
-
+let tabStripObserver: ResizeObserver | undefined
+function observeTabStrip(): void {
+  tabStripObserver?.disconnect()
+  const strip = tabStrip.value
+  if (!strip || typeof ResizeObserver === 'undefined') return
+  tabStripObserver = new ResizeObserver(measureTabStrip)
+  tabStripObserver.observe(strip)
+  for (const trigger of strip.querySelectorAll<HTMLElement>('.settings-v2-tab')) {
+    tabStripObserver.observe(trigger, { box: 'border-box' })
+  }
+}
+watch(tabStrip, observeTabStrip, { flush: 'post' })
+onUnmounted(() => tabStripObserver?.disconnect())
+function revealActiveTab(): void {
+  tabStrip.value
+    ?.querySelector<HTMLElement>(`[data-testid="${TID.settingsTab(activeTab.value)}"]`)
+    ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+}
+watch([activeTab, tabStrip], revealActiveTab, { flush: 'post' })
+watch(
+  () => tabs.value.map((tab) => tab.key).join(),
+  () => {
+    observeTabStrip()
+    measureTabStrip()
+    revealActiveTab()
+  },
+  { flush: 'post' }
+)
+watch(() => showUpdateBadge.value, measureTabStrip, { flush: 'post' })
 function onTabValueChange(value: string | number): void {
   const tab = tabs.value.find((item) => item.key === value)
   if (tab) selectTab(tab.key)
@@ -396,7 +398,14 @@ function closeMoreMenu(): void {
 const canRename = computed(() =>
   pinBottomActions.value.some((action) => action.id === 'rename' && action.enabled !== false)
 )
-const renameHandler = computed(() => (canRename.value ? renameInstallation : undefined))
+function renameOnlyWhileSelected(installationId: string) {
+  return (next: string): Promise<boolean> =>
+    installation.value?.id === installationId ? renameInstallation(next) : Promise.resolve(false)
+}
+const renameHandler = computed(() => {
+  const id = installation.value?.id
+  return canRename.value && sectionsFresh.value && id ? renameOnlyWhileSelected(id) : undefined
+})
 const titleEdit = useTemplateRef<InstanceType<typeof InlineNameEdit>>('titleEdit')
 function handleMorePick(action: ActionDef): void {
   if (action.id === 'rename' && titleEdit.value) {
@@ -785,58 +794,57 @@ defineExpose({
       >
         <TabsList as-child>
           <nav
-            ref="tabs"
+            ref="tabStrip"
             v-sliding-pill="isPage ? 'bg-accent' : 'bg-secondary'"
-            class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-hidden"
+            class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-x-auto overscroll-x-contain [scrollbar-width:none]"
             :class="[
-              isPage
-                ? 'w-fit gap-0.5 rounded-[10px] bg-secondary p-[3px]'
-                : '@container/settings-tabs gap-1.5 border-b border-solid border-[var(--chooser-surface-border)] p-3',
-              { 'is-subpage-active opacity-60': subPage !== null }
+              'w-fit gap-0.5 rounded-[10px] bg-secondary p-[3px]',
+              isPage ? 'max-w-full' : 'mx-5 max-w-[calc(100%-2.5rem)]',
+              {
+                'is-subpage-active opacity-60': subPage !== null,
+                '[mask-image:linear-gradient(to_right,black_calc(100%-40px),transparent)]':
+                  tabsHiddenEnd && !tabsHiddenStart,
+                '[mask-image:linear-gradient(to_left,black_calc(100%-40px),transparent)]':
+                  tabsHiddenStart && !tabsHiddenEnd,
+                '[mask-image:linear-gradient(to_right,transparent,black_40px,black_calc(100%-40px),transparent)]':
+                  tabsHiddenStart && tabsHiddenEnd
+              }
             ]"
             :aria-label="t('comfyUISettings.title')"
+            @scroll.passive="measureTabStrip"
           >
             <Tooltip
               v-for="tab in tabs"
               :key="tab.key"
               :text="tab.tooltip ?? tab.label"
               side="bottom"
-              :disabled="tab.tooltip ? false : !isTabLabelHidden(tab.key)"
+              :disabled="!tab.tooltip"
             >
               <TabsTrigger
                 :value="tab.key"
                 variant="panel"
                 :disabled="opInflight && activeTab !== tab.key"
-                class="settings-v2-tab group/settings-tab min-w-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:gap-0 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:px-2 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)>span:not(.settings-v2-tab-icon-wrap)]:hidden"
+                class="settings-v2-tab group/settings-tab shrink-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate"
                 :class="[
                   {
                     'is-active': activeTab === tab.key,
                     'is-locked': opInflight && activeTab !== tab.key
                   },
-                  isPage &&
-                    'm-0 h-[26px] rounded-[7px] border-0 bg-transparent px-[11px] py-0 text-[13px] font-normal text-muted-foreground hover:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground'
+                  'm-0 h-[26px] rounded-[7px] border-0 bg-transparent px-[11px] py-0 text-[13px] font-normal text-muted-foreground hover:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground'
                 ]"
                 :data-testid="TID.settingsTab(tab.key)"
                 @click="selectTab(tab.key)"
               >
                 <span
-                  v-if="!isPage || (tab.key === 'update' && showUpdateBadge)"
+                  v-if="tab.key === 'update' && showUpdateBadge"
                   class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center"
                 >
-                  <component
-                    :is="tab.icon"
-                    v-if="!isPage"
-                    :size="14"
-                    aria-hidden="true"
-                    class="settings-v2-tab-icon shrink-0 opacity-85"
-                  />
                   <span
                     v-if="tab.key === 'update' && showUpdateBadge"
                     :class="[
                       activeTab === tab.key
                         ? 'border-neutral-700'
-                        : 'border-[var(--modal-surface-bg)]',
-                      !isPage && 'absolute -right-px -bottom-px'
+                        : 'border-[var(--modal-surface-bg)]'
                     ]"
                     class="settings-v2-tab-badge box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
                     aria-hidden="true"
@@ -864,7 +872,7 @@ defineExpose({
       <TabsContent :value="activeTab" as-child force-mount>
         <section
           class="settings-v2-body scroll-visible relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto"
-          :class="isPage ? '-mx-1 px-1 pt-5 pb-8' : 'p-4'"
+          :class="isPage ? '-mx-1 px-1 pt-5 pb-8' : 'px-5 pt-4 pb-5'"
         >
           <p
             v-if="!installation"
@@ -1166,12 +1174,12 @@ defineExpose({
         </section>
       </TabsContent>
 
-      <Teleport defer :to="pageActionsTarget" :disabled="!pageActionsTarget">
+      <Teleport defer :to="footerTarget" :disabled="!footerTarget">
         <footer
           ref="footer"
           class="settings-v2-footer flex shrink-0 items-center justify-end gap-2"
           :class="
-            !isPage &&
+            !footerTarget &&
             'border-t border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)] px-4 py-3'
           "
         >
@@ -1198,10 +1206,7 @@ defineExpose({
               size="md"
               type="button"
               class="settings-v2-relaunch flex-[0_1_auto]"
-              :class="[
-                isPage ? 'gap-1.5 px-3 text-[13px]/5' : 'min-w-[200px]',
-                { 'is-pending-restart': hasPendingRestart }
-              ]"
+              :class="['gap-1.5 px-3 text-[13px]/5', { 'is-pending-restart': hasPendingRestart }]"
               :disabled="!installation || opBlocksFooter"
               :data-testid="TID.pickerPrimaryCta"
               @click="handlePrimaryAction"
@@ -1219,7 +1224,7 @@ defineExpose({
           <div class="settings-v2-more-wrap relative inline-flex">
             <Button
               variant="secondary"
-              :size="isPage ? 'icon' : 'md'"
+              size="icon"
               type="button"
               class="settings-v2-more"
               data-more-trigger
@@ -1231,11 +1236,7 @@ defineExpose({
               :data-testid="TID.pickerMoreTrigger"
               @click="toggleMoreMenu"
             >
-              <Ellipsis v-if="isPage" :size="16" aria-hidden="true" />
-              <template v-else>
-                {{ t('comfyUISettings.more') }}
-                <component :is="menuChevron" :size="14" />
-              </template>
+              <Ellipsis :size="16" aria-hidden="true" />
             </Button>
             <MoreMenu
               :open="moreMenuOpen"
@@ -1250,6 +1251,7 @@ defineExpose({
 
       <Teleport v-if="pageTitleTarget && installation" defer :to="pageTitleTarget">
         <InlineNameEdit
+          :key="installation.id"
           ref="titleEdit"
           prefix="build-details-title"
           :name="installation.name"

@@ -78,6 +78,9 @@ export function _resetForTest(): void {
   pendingIdentityMergeFileDirty = true
   queuedPendingIdentityMergeIds.clear()
   pendingLoginAttribution = null
+  surveyClient = null
+  surveyClientConfig = null
+  surveySendQueue = Promise.resolve()
 }
 
 export function _telemetryRelayTargetCount(): number {
@@ -135,6 +138,9 @@ function readPostHogConfig(isPackaged: boolean): PostHogConfig {
 }
 
 let client: PostHog | null = null
+let surveyClient: PostHog | null = null
+let surveyClientConfig: Pick<PostHogConfig, 'apiKey' | 'host'> | null = null
+let surveySendQueue: Promise<unknown> = Promise.resolve()
 let distinctId: string | null = null
 let bootstrapTimeMs: number = Date.now()
 let initialized = false
@@ -249,7 +255,7 @@ function enforcePersonProcessingPolicy(properties: TelemetryContext): TelemetryC
 }
 
 function _emitWarning(event: string, properties: TelemetryContext): void {
-  if (!canEmit() || !distinctId || firebaseWritesQuarantined()) return
+  if (!canEmit() || !distinctId || !isAllowedToFire(event) || firebaseWritesQuarantined()) return
   try {
     client!.capture({
       distinctId,
@@ -371,6 +377,7 @@ export function initTelemetry(opts: InitOptions): void {
       featureFlagsRequestTimeoutMs: 10_000,
       disableGeoip: false
     })
+    surveyClientConfig = { apiKey: cfg.apiKey, host: cfg.host }
     client.on('flush', acknowledgeDeliveredIdentityMerges)
     client.on('error', () => {
       queuedPendingIdentityMergeIds.clear()
@@ -870,6 +877,80 @@ function deliverEvent(
   }
 }
 
+const SURVEY_SENT_EVENT = 'survey sent'
+const SURVEY_RESPONSE_MAX_LENGTH = 2048
+
+function getSurveyClient(): PostHog | null {
+  if (surveyClient) return surveyClient
+  if (!surveyClientConfig) return null
+  try {
+    surveyClient = new PostHog(surveyClientConfig.apiKey, {
+      host: surveyClientConfig.host,
+      disableGeoip: false
+    })
+  } catch {
+    return null
+  }
+  return surveyClient
+}
+
+async function deliverSurveyResponse(
+  surveyDistinctId: string,
+  properties: TelemetryContext
+): Promise<boolean> {
+  const sender = getSurveyClient()
+  if (!sender) return false
+  let failed = false
+  const stopWatchingErrors = sender.on('error', () => {
+    failed = true
+  })
+  try {
+    await sender.captureImmediate({
+      distinctId: surveyDistinctId,
+      event: SURVEY_SENT_EVENT,
+      properties
+    })
+  } catch {
+    failed = true
+  } finally {
+    stopWatchingErrors()
+  }
+  return !failed
+}
+
+async function shutdownSurveyClient(): Promise<void> {
+  const sender = surveyClient
+  surveyClient = null
+  surveyClientConfig = null
+  if (sender) await sender.shutdown()
+}
+
+export async function sendSurveyResponse(
+  surveyId: string,
+  questionId: string,
+  response: string
+): Promise<boolean> {
+  const properties: TelemetryContext = {
+    $survey_id: surveyId,
+    [`$survey_response_${questionId}`]: response.slice(0, SURVEY_RESPONSE_MAX_LENGTH)
+  }
+  recordIpcInvocation(`telemetry:${SURVEY_SENT_EVENT}`, properties)
+  const surveyDistinctId = distinctId
+  if (!canEmit() || !surveyDistinctId) return false
+  if (!_checkRateLimit(SURVEY_SENT_EVENT)) return false
+  if (firebaseWritesQuarantined()) return false
+  const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+  const scrubbed = scrubProperties(merged)
+  _recordCapturedEvent(SURVEY_SENT_EVENT)
+  const send = surveySendQueue.then(() =>
+    firebaseWritesQuarantined() || distinctId !== surveyDistinctId
+      ? false
+      : deliverSurveyResponse(surveyDistinctId, scrubbed)
+  )
+  surveySendQueue = send
+  return send
+}
+
 export function captureFirstLaunch(properties: TelemetryContext = {}): void {
   if (consentState === 'denied') return
   if (
@@ -1209,7 +1290,7 @@ export async function shutdown(reason: string): Promise<void> {
   } catch {}
   try {
     await flushPendingIdentityMerges()
-    await client.shutdown()
+    await Promise.all([client.shutdown(), shutdownSurveyClient()])
   } catch {
   } finally {
     client = null
