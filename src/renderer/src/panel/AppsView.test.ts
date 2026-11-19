@@ -384,6 +384,11 @@ describe('AppsView', () => {
           expect(band.left, label).toBeCloseTo(last.right + gap, 0)
           expect(band.width, label).toBeLessThanOrEqual(smallest + 0.5)
           expect(band.height, label).toBeCloseTo(band.width, 0)
+          const bandMiddle = band.left + band.width / 2
+          for (const part of ['app-request-thumbs', 'app-request-label']) {
+            const box = wrapper.get(`[data-testid="${part}"]`).element.getBoundingClientRect()
+            expect(box.left + box.width / 2, `${label}, ${part}`).toBeCloseTo(bandMiddle, 0)
+          }
         } else {
           expect(band.left, label).toBeCloseTo(grid.left, 0)
           expect(band.right, label).toBeCloseTo(grid.right, 0)

@@ -107,18 +107,38 @@ const requestLayout = computed(() => {
       '--request-span-wide': wide.span
     },
     class: [
-      narrow.beside ? 'aspect-square flex-col items-start' : 'flex-row items-center',
+      narrow.beside
+        ? 'aspect-square flex-col items-center justify-center gap-4 text-center'
+        : 'flex-row items-center gap-3 text-left',
       medium.beside
-        ? '@3xl:aspect-square @3xl:flex-col @3xl:items-start'
-        : '@3xl:aspect-auto @3xl:flex-row @3xl:items-center',
+        ? '@3xl:aspect-square @3xl:flex-col @3xl:items-center @3xl:justify-center @3xl:gap-5 @3xl:text-center'
+        : '@3xl:aspect-auto @3xl:flex-row @3xl:items-center @3xl:justify-start @3xl:gap-3 @3xl:text-left',
       wide.beside
-        ? '@5xl:aspect-square @5xl:flex-col @5xl:items-start'
-        : '@5xl:aspect-auto @5xl:flex-row @5xl:items-center'
+        ? '@5xl:aspect-square @5xl:flex-col @5xl:items-center @5xl:justify-center @5xl:gap-5 @5xl:text-center'
+        : '@5xl:aspect-auto @5xl:flex-row @5xl:items-center @5xl:justify-start @5xl:gap-3 @5xl:text-left'
+    ],
+    thumbClass: [
+      narrow.beside ? 'size-10 not-first:-ml-2.5' : 'size-8 not-first:-ml-2',
+      medium.beside
+        ? '@3xl/apps:size-11 @3xl/apps:not-first:-ml-[11px]'
+        : '@3xl/apps:size-8 @3xl/apps:not-first:-ml-2',
+      wide.beside
+        ? '@5xl/apps:size-11 @5xl/apps:not-first:-ml-[11px]'
+        : '@5xl/apps:size-8 @5xl/apps:not-first:-ml-2'
+    ],
+    labelClass: [
+      narrow.beside ? 'flex-none gap-2' : 'flex-1 gap-1',
+      medium.beside ? '@3xl/apps:flex-none @3xl/apps:gap-2' : '@3xl/apps:flex-1 @3xl/apps:gap-1',
+      wide.beside ? '@5xl/apps:flex-none @5xl/apps:gap-2' : '@5xl/apps:flex-1 @5xl/apps:gap-1'
     ],
     bodyClass: [
-      narrow.beside ? 'block' : 'hidden @[36rem]/request:block',
-      medium.beside ? '@3xl/apps:block' : '@3xl/apps:hidden @3xl/apps:@[36rem]/request:block',
-      wide.beside ? '@5xl/apps:block' : '@5xl/apps:hidden @5xl/apps:@[36rem]/request:block'
+      narrow.beside ? 'block max-w-[30ch]' : 'hidden @[36rem]/request:block',
+      medium.beside
+        ? '@3xl/apps:block @3xl/apps:max-w-[30ch]'
+        : '@3xl/apps:hidden @3xl/apps:@[36rem]/request:block',
+      wide.beside
+        ? '@5xl/apps:block @5xl/apps:max-w-[30ch]'
+        : '@5xl/apps:hidden @5xl/apps:@[36rem]/request:block'
     ]
   }
 })
@@ -373,13 +393,13 @@ onBeforeUnmount(() => {
           >
             <button
               type="button"
-              class="group/request @container/request flex w-full cursor-pointer gap-3 rounded-card border-0 bg-[rgb(235_235_235/0.05)] px-[18px] py-4 text-left outline-none transition-colors duration-200 hover:bg-[rgb(235_235_235/0.08)] focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+              class="group/request @container/request flex w-full cursor-pointer rounded-card border-0 bg-[rgb(235_235_235/0.05)] px-[18px] py-4 text-left outline-none transition-colors duration-200 hover:bg-[rgb(235_235_235/0.08)] focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
               :class="requestLayout.class"
               data-testid="app-request-open"
               @click="requestOpen = true"
             >
               <span
-                class="flex shrink-0 items-center gap-1"
+                class="flex shrink-0 items-center"
                 aria-hidden="true"
                 data-testid="app-request-thumbs"
               >
@@ -388,10 +408,12 @@ onBeforeUnmount(() => {
                   :key="still"
                   :src="still"
                   alt=""
-                  class="size-8 rounded-[9px] object-cover"
+                  class="object-cover rounded-full not-last:[mask-image:radial-gradient(ellipse_58%_58%_at_125%_50%,transparent_99%,#000_100%)]"
+                  :class="requestLayout.thumbClass"
                 />
                 <span
-                  class="grid size-8 place-items-center rounded-[9px] bg-[rgb(235_235_235/0.12)] text-foreground"
+                  class="grid place-items-center bg-[rgb(235_235_235/0.12)] text-foreground rounded-full not-last:[mask-image:radial-gradient(ellipse_58%_58%_at_125%_50%,transparent_99%,#000_100%)]"
+                  :class="requestLayout.thumbClass"
                 >
                   <Plus
                     :size="16"
@@ -400,7 +422,11 @@ onBeforeUnmount(() => {
                   />
                 </span>
               </span>
-              <span class="flex min-w-0 flex-1 flex-col gap-1" data-testid="app-request-label">
+              <span
+                class="flex min-w-0 flex-col"
+                :class="requestLayout.labelClass"
+                data-testid="app-request-label"
+              >
                 <span class="text-sm/[17px] font-semibold text-foreground">{{
                   t('apps.request.bandTitle')
                 }}</span>
