@@ -96,6 +96,46 @@ describe('piiScrub', () => {
       expect(scrubPII(input)).toBe(expected)
     })
 
+    it.each([
+      [
+        'after a space',
+        'open \\\\server\\Users\\alice\\x',
+        'open \\\\server\\Users\\[REDACTED]\\x'
+      ],
+      [
+        'after an equals sign and a quote',
+        "path='\\\\server\\c$\\Users\\alice\\x'",
+        "path='\\\\server\\c$\\Users\\[REDACTED]\\x'"
+      ],
+      [
+        'in backticks',
+        'cannot open `\\\\server\\Users\\alice\\x`',
+        'cannot open `\\\\server\\Users\\[REDACTED]\\x`'
+      ],
+      [
+        'after a word and a colon',
+        'Error:\\\\server\\Users\\alice\\x',
+        'Error:\\\\server\\Users\\[REDACTED]\\x'
+      ],
+      [
+        'in parentheses',
+        'see (\\\\wsl$\\Ubuntu\\home\\alice\\x)',
+        'see (\\\\wsl$\\Ubuntu\\home\\[REDACTED]\\x)'
+      ],
+      [
+        'escaped twice',
+        JSON.stringify(JSON.stringify({ p: '\\\\server\\Users\\alice\\x' })),
+        JSON.stringify(JSON.stringify({ p: '\\\\server\\Users\\[REDACTED]\\x' }))
+      ],
+      [
+        'after an escaped line break',
+        JSON.stringify({ log: 'error\n\\\\server\\Users\\alice\\x.py' }),
+        JSON.stringify({ log: 'error\n\\\\server\\Users\\[REDACTED]\\x.py' })
+      ]
+    ])('redacts a share path written %s', (_label, input, expected) => {
+      expect(scrubPII(input)).toBe(expected)
+    })
+
     it('keeps a Windows line ending after a path', () => {
       expect(scrubPII('at C:\\Users\\alice\r\nnext')).toBe('at C:\\Users\\[REDACTED]\r\nnext')
     })
@@ -144,7 +184,8 @@ describe('piiScrub', () => {
       'C:\\\\work\\\\wsl$\\\\Ubuntu\\\\home\\\\x',
       'C:\\\\work\\\\srv\\\\c$\\\\Users\\\\x',
       'C:\\\\work\\\\.\\\\UNC\\\\srv\\\\Users\\\\x',
-      'C:\\work\\cache$\\Users\\config.json'
+      'C:\\work\\cache$\\Users\\config.json',
+      JSON.stringify(JSON.stringify({ p: 'D:\\data\\home\\x' }))
     ])('leaves the nested project folder in %s alone', (input) => {
       expect(scrubPII(input)).toBe(input)
     })
@@ -176,9 +217,16 @@ describe('piiScrub', () => {
 
     it.each([
       ["b'C:\\\\Users\\\\Bj\\xc3\\xb6rn\\\\x'", "b'C:\\\\Users\\\\[REDACTED]\\\\x'"],
-      ["b'/home/bj\\xc3\\xb6rn/x'", "b'/home/[REDACTED]/x'"]
+      ["b'/home/bj\\xc3\\xb6rn/x'", "b'/home/[REDACTED]/x'"],
+      ["b'C:\\\\Users\\\\\\xc3\\x89mile\\\\x'", "b'C:\\\\Users\\\\[REDACTED]\\\\x'"]
     ])('redacts a non-ASCII username from a Python bytes repr: %s', (input, expected) => {
       expect(scrubPII(input)).toBe(expected)
+    })
+
+    it('keeps an ASCII folder like x64 after a mixed-separator username', () => {
+      expect(scrubPII('C:\\Users/alice\\x64\\python.exe')).toBe(
+        'C:\\Users/[REDACTED]\\x64\\python.exe'
+      )
     })
 
     it('ends a raw path username at a closing double quote', () => {
