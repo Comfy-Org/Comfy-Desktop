@@ -72,7 +72,11 @@ import TrackBuildForm from '../components/TrackBuildForm.vue'
 import LoadSnapshotForm from '../components/LoadSnapshotForm.vue'
 import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
 import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
-import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
+import {
+  toCardSelectOption as cardToSelectOption,
+  toHardwareCards,
+  toOptionCards
+} from '../lib/setupOptionCards'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
@@ -84,6 +88,7 @@ import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { formatBytes, formatFreeSpace } from '../lib/formatting'
 import { alertAddFailure } from '../lib/addFailureAlert'
 import type { Build, BuildTarget } from '../devplatform/types'
+import { progressTitle } from '../lib/progressTitle'
 
 const emit = defineEmits<{
   close: []
@@ -1021,7 +1026,7 @@ async function handOffInstall(result: InstallBuildResult, failureTitle: string):
     })
     emit('show-progress', {
       installationId: result.entry.id,
-      title: `${t('newInstall.installing')} - ${result.entry.name}`,
+      title: progressTitle(t('newInstall.installing'), result.entry.name),
       apiCall: () => window.api.installInstance(result.entry!.id),
       autoLaunchOnFinish: true,
       opKind: 'install'
@@ -1602,15 +1607,7 @@ function selectCardOptionByValue(field: SourceField, fieldIndex: number, value: 
 }
 
 function toCardSelectOption(card: SetupOptionCard): BaseSelectOption {
-  return {
-    value: card.value,
-    label: card.label,
-    description: card.description,
-    disabled: card.disabled,
-    icon: card.icon,
-    testId: card.testId,
-    badge: card.recommended ? t('newInstall.recommended') : undefined
-  }
+  return cardToSelectOption(card, t('newInstall.recommended'))
 }
 
 const existingSelectOptions = computed(() => existingCards.value.map(toCardSelectOption))

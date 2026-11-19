@@ -15,6 +15,7 @@ import type { InstallBuildResult, Installation, ShowProgressOpts } from '../type
 import type { ChooserLaunchOutcome } from './useChooserHandoff'
 import { alertAddFailure } from '../lib/addFailureAlert'
 import type { FirstUseChainHooks, PanelKey, SetupHandoff } from './usePanelOverlays'
+import { progressTitle } from '../lib/progressTitle'
 
 export interface FirstUseChainOpts {
   handleShowProgress: (opts: ShowProgressOpts) => Promise<void>
@@ -188,7 +189,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       chainingFirstUseToNewInstall.value = true
       await opts.handleShowProgress({
         installationId: entry.id,
-        title: `${t('newInstall.installing')} — ${entry.name}`,
+        title: progressTitle(t('newInstall.installing'), entry.name),
         apiCall: () => window.api.installInstance(entry.id, true),
         autoLaunchOnFinish: true,
         opKind: 'install'
@@ -283,7 +284,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     window.api.setFirstUseMode('post-consent')
     await opts.handleShowProgress({
       installationId: legacy.id,
-      title: `Migrating — ${legacy.name}`,
+      title: progressTitle(t('desktop.migrating'), legacy.name),
       apiCall: () => window.api.runAction(legacy!.id, 'migrate-to-standalone', result),
       cancellable: true
     })

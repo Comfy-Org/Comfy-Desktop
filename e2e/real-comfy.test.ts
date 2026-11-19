@@ -1496,7 +1496,7 @@ test('per-install Manager security level + network mode land in Manager config.i
 
   const popup = await openPickerInWindow(ctx.app, ctx.titleBar, 'config')
 
-  const trigger = 'button.ui-select-trigger[aria-label="Manager Security Level"]'
+  const trigger = 'button.ui-select-trigger[aria-label="Manager security level"]'
   await popup.waitForVisible(trigger, { timeout: 15_000 })
   expect(await popup.textOf(trigger)).toContain(initialLabel)
 
@@ -1504,7 +1504,7 @@ test('per-install Manager security level + network mode land in Manager config.i
 
   await expect.poll(readRecordLevel, { timeout: 10_000, intervals: [100, 250] }).toBe(target.value)
 
-  const modeTrigger = 'button.ui-select-trigger[aria-label="Manager Network Mode"]'
+  const modeTrigger = 'button.ui-select-trigger[aria-label="Manager network mode"]'
   await popup.waitForVisible(modeTrigger, { timeout: 15_000 })
   expect(await popup.textOf(modeTrigger)).toContain(initialModeLabel)
   await popup.selectOption(modeTrigger, targetMode.label)

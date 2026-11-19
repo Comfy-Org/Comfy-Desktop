@@ -156,7 +156,7 @@ describe('SidebarAccount', () => {
       'Manage plan & credits'
     )
     expect(body.get('[data-testid="workspace-menu-user"]').text()).toBe('someone@comfy.org')
-    expect(body.get('[data-testid="workspace-logout"]').text()).toBe('Log Out')
+    expect(body.get('[data-testid="workspace-logout"]').text()).toBe('Log out')
     expect(body.text()).not.toContain('Add workspace')
   })
 

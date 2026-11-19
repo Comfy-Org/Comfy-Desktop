@@ -30,7 +30,7 @@ export async function applyAttachHostPreview(
   }
   entry.titleBarText = installation.name
   entry.sourceCategory = sourceMap[installation.sourceId]?.category ?? null
-  entry.window.setTitle(`${installation.name} — Comfy Desktop v${APP_VERSION}`)
+  entry.window.setTitle(`${installation.name} · Comfy Desktop v${APP_VERSION}`)
   if (!entry.titleBarView.webContents.isDestroyed()) {
     entry.titleBarView.webContents.send('comfy-titlebar:title-changed', entry.titleBarText)
     entry.titleBarView.webContents.send(

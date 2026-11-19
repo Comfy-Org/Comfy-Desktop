@@ -426,13 +426,13 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
 
     await composable.runAction({
       id: 'snapshot-restore',
-      label: 'Restore Snapshot'
+      label: 'Restore snapshot'
     } as ActionDef)
 
     expect(dialogsSpies.confirm).toHaveBeenCalledTimes(1)
     const callArg = dialogsSpies.confirm.mock.calls[0]![0] as { message: string; title: string }
     expect(callArg.message).toBe('A is running and will be stopped first.')
-    expect(callArg.title).toBe('Restore Snapshot')
+    expect(callArg.title).toBe('Restore snapshot')
     scope.stop()
   })
 
@@ -623,7 +623,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
 
     await composable.runAction({
       id: 'copy-update',
-      label: 'Copy & Update',
+      label: 'Copy & update',
       showProgress: true,
       confirm: { message: 'Copy & update?' }
     } as ActionDef)
@@ -652,10 +652,10 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
 
     await composable.runAction({
       id: 'copy-pytorch',
-      label: 'Copy & Change PyTorch',
+      label: 'Copy & change PyTorch',
       showProgress: true,
       data: { stackId: 'pytorch-index:cu126:2.11.0' },
-      prompt: { title: 'Copy & Change PyTorch', message: 'Name the copy.', field: 'name' }
+      prompt: { title: 'Copy & change PyTorch', message: 'Name the copy.', field: 'name' }
     } as ActionDef)
 
     const promptArg = dialogsSpies.prompt.mock.calls[0]![0] as { message: string }
@@ -702,7 +702,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
   it('sends a channel card action read from the loaded sections as plain data Electron can clone (DESK-398)', async () => {
     const updateAction = {
       id: 'update-comfyui',
-      label: 'Update Now',
+      label: 'Update now',
       showProgress: true,
       data: { channel: 'latest', isDowngrade: false },
       confirm: { message: 'Update?' }
@@ -711,7 +711,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
       getDetailSections: vi.fn().mockResolvedValue([
         {
           tab: 'update',
-          title: 'Update Channel',
+          title: 'Update channel',
           fields: [
             {
               id: 'updateChannel',

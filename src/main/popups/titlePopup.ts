@@ -505,7 +505,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   if (entry.installationId !== null) {
     items.push(
       { kind: 'separator' },
-      { id: 'settings', label: 'Desktop Settings', labelKey: 'fileMenu.globalSettings' }
+      { id: 'settings', label: 'Desktop settings', labelKey: 'fileMenu.globalSettings' }
     )
   }
   if (entry.installationId !== null && !entry.comfyView.webContents.isDestroyed()) {

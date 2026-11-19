@@ -19,7 +19,6 @@ import BenchmarksView from '../views/BenchmarksView.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
 import TrackModal from '../views/TrackModal.vue'
 import LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
-import QuickInstallModal from '../views/QuickInstallModal.vue'
 import FirstUseTakeover from '../views/FirstUseTakeover.vue'
 import MigrateConfirmTakeover from '../views/MigrateConfirmTakeover.vue'
 import { useTheme } from '../composables/useTheme'
@@ -91,7 +90,6 @@ const progressRef = ref<InstanceType<typeof ProgressModal> | null>(null)
 const newInstallRef = ref<InstanceType<typeof InstallWizardModal> | null>(null)
 const trackRef = ref<InstanceType<typeof TrackModal> | null>(null)
 const loadSnapshotRef = ref<InstanceType<typeof LoadSnapshotModal> | null>(null)
-const quickInstallRef = ref<InstanceType<typeof QuickInstallModal> | null>(null)
 const firstUseRef = ref<InstanceType<typeof FirstUseTakeover> | null>(null)
 const migrateTakeoverRef = ref<InstanceType<typeof MigrateConfirmTakeover> | null>(null)
 
@@ -128,7 +126,6 @@ overlays = usePanelOverlays({
   newInstallRef,
   trackRef,
   loadSnapshotRef,
-  quickInstallRef,
   firstUseRef,
   prepareChooserHostHandoff: (id) => chooserHandoff.prepareChooserHostHandoff(id),
   firstUseChain: firstUseChain.hooks,
@@ -641,12 +638,6 @@ onUnmounted(() => {
       <LoadSnapshotModal
         v-else-if="currentOverlay.component === 'load-snapshot'"
         ref="loadSnapshotRef"
-        @close="dismissTakeoverDirect"
-        @show-progress="handleShowProgress"
-      />
-      <QuickInstallModal
-        v-else-if="currentOverlay.component === 'quick-install'"
-        ref="quickInstallRef"
         @close="dismissTakeoverDirect"
         @show-progress="handleShowProgress"
       />

@@ -486,7 +486,7 @@ function onLaunch({
   const initialSourceCategory = sourceMap[installation.sourceId]?.category ?? null
 
   const { entry } = createHostWindow({
-    windowTitle: `${installation.name} — Comfy Desktop v${APP_VERSION}`,
+    windowTitle: `${installation.name} · Comfy Desktop v${APP_VERSION}`,
     boundsKey: installationId,
     initialTheme: { bg: COMFY_BG, text: '#dddddd' },
     titleBarOverlay:
