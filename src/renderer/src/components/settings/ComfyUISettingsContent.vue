@@ -47,6 +47,7 @@ import SettingsSectionList from '../../views/comfyUISettings/SettingsSectionList
 import StoragePane, { type StorageSnapshot } from '../../views/comfyUISettings/StoragePane.vue'
 import ConsoleTerminalPane from '../../views/comfyUISettings/ConsoleTerminalPane.vue'
 import Tooltip from '../ui/Tooltip.vue'
+import { vSlidingPill } from '../ui/vSlidingPill'
 import OperationErrorDetail from '../ui/OperationErrorDetail.vue'
 import type { PickerTab, SectionTab } from '../../lib/pickerTabs'
 import { isTabAllowedForCategory } from '../../lib/pickerTabs'
@@ -794,6 +795,7 @@ defineExpose({
         <TabsList as-child>
           <nav
             ref="tabStrip"
+            v-sliding-pill="isPage ? 'bg-accent' : 'bg-secondary'"
             class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-x-auto overscroll-x-contain [scrollbar-width:none]"
             :class="[
               'w-fit gap-0.5 rounded-[10px] bg-secondary p-[3px]',
