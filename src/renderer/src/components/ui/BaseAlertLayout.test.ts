@@ -16,7 +16,7 @@ afterEach(() => {
   while (wrappers.length) wrappers.pop()?.unmount()
 })
 
-it('keeps the same space above, below and to the right of the buttons', async () => {
+it('keeps 16px above and below the buttons, with their right edge on the 20px content edge', async () => {
   wrappers.push(
     mount(BaseAlert, {
       attachTo: document.body,
@@ -42,8 +42,7 @@ it('keeps the same space above, below and to the right of the buttons', async ()
   const below = Math.round(panel.bottom - line - action.bottom)
   const right = Math.round(panel.right - line - action.right)
 
-  expect(above).toBe(16)
-  expect([below, right]).toEqual([above, above])
+  expect([above, below, right]).toEqual([16, 16, 20])
 })
 
 const LONG_TITLE =

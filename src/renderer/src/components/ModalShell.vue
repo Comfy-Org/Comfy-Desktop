@@ -48,7 +48,7 @@ const titleId = `view-modal-title-${useId()}`
   >
     <div
       :id="$slots.header ? titleId : undefined"
-      class="view-modal-header flex shrink-0 items-center gap-3 border-b border-solid border-[var(--border)] px-5 py-4"
+      class="view-modal-header flex shrink-0 items-center gap-3 px-5 pt-4"
     >
       <slot name="header">
         <div
@@ -70,7 +70,7 @@ const titleId = `view-modal-title-${useId()}`
         </Button>
       </slot>
     </div>
-    <div class="view-modal-body flex min-h-0 flex-1 flex-col overflow-y-auto p-5">
+    <div class="view-modal-body flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pt-4 pb-5">
       <slot />
     </div>
     <div

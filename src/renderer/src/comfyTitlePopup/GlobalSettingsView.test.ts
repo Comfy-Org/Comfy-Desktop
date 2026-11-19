@@ -317,8 +317,8 @@ describe('GlobalSettingsView', () => {
   })
 
   const SHARED_IO = [
-    { id: 'inputDir', label: 'Input Directory', value: '/shared/in', type: 'path' },
-    { id: 'outputDir', label: 'Output Directory', value: '/shared/out', type: 'path' }
+    { id: 'inputDir', label: 'Input directory', value: '/shared/in', type: 'path' },
+    { id: 'outputDir', label: 'Output directory', value: '/shared/out', type: 'path' }
   ]
 
   async function openFolders(snapshot = makeSnapshot()) {
@@ -340,8 +340,8 @@ describe('GlobalSettingsView', () => {
     bridge.browseFolderReturn = '/picked/installs'
     const wrapper = await openFolders()
     expect(wrapper.findAll('.gs-micro-title').map((el) => el.text())).toEqual([
-      'Default Install Location',
-      'Shared Folders',
+      'Default install location',
+      'Shared folders',
       'Remove Comfy Desktop data'
     ])
     const row = wrapper.find('.storage-dir-row')
@@ -563,8 +563,8 @@ describe('GlobalSettingsView', () => {
     const wrapper = await openFolders(snapshotOn('win32'))
     expect(wrapper.find('.gs-remove-app-data-btn').exists()).toBe(false)
     expect(wrapper.findAll('.gs-micro-title').map((el) => el.text())).toEqual([
-      'Default Install Location',
-      'Shared Folders'
+      'Default install location',
+      'Shared folders'
     ])
   })
 
@@ -574,14 +574,14 @@ describe('GlobalSettingsView', () => {
     expect(modal.state.title).toBe('Remove Comfy Desktop data?')
     expect(modal.state.confirmStyle).toBe('danger')
     expect(modal.state.checkboxes).toEqual([
-      { id: 'deleteInstances', label: 'Delete all ComfyUI instances', checked: false },
+      { id: 'deleteInstances', label: 'Delete all ComfyUI builds', checked: false },
       { id: 'deleteModels', label: 'Delete all model files', checked: false },
       { id: 'deleteInputOutput', label: 'Delete shared input and output files', checked: false }
     ])
     const details = modal.state.messageDetails.flatMap((group) => group.items).join('\n')
     expect(details).toContain('Trash')
     expect(details).toContain(
-      'Input and output folders you picked yourself, outside the instances you delete'
+      'Input and output folders you picked yourself, outside the builds you delete'
     )
     modal.close(false)
     await flushPromises()
@@ -641,7 +641,7 @@ describe('GlobalSettingsView', () => {
       cacheFields: [
         {
           id: 'cacheDir',
-          label: 'Cache Directory',
+          label: 'Cache directory',
           value: '/home/u/cache',
           type: 'path',
           openable: true

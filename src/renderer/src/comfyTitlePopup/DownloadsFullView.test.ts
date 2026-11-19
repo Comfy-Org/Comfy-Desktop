@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { config, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import type { I18n } from 'vue-i18n'
+import zh from '@locales/zh.json'
 import type {
   PopupDownloadAction,
   PopupDownloadsState
@@ -123,6 +125,37 @@ describe('DownloadsFullView shared controls', () => {
       { action: 'cancel', ref: 'active', url: 'https://example.com/active' },
       { action: 'dismiss', ref: 'failed', url: 'https://example.com/failed' }
     ])
+  })
+})
+
+describe('DownloadsFullView reveal action', () => {
+  const appI18n = () =>
+    config.global.plugins.find(
+      (plugin): plugin is I18n<object, object, object, string, false> =>
+        typeof plugin === 'object' && plugin !== null && 'global' in plugin
+    )!
+
+  afterEach(() => {
+    appI18n().global.locale.value = 'en'
+  })
+
+  const revealButton = (view: VueWrapper) =>
+    view
+      .findAll('.dlm-row')
+      .find((row) => row.text().includes('done.bin'))!
+      .get('.dlm-btn')
+
+  it('names the completed-download action Show in Finder on mac', async () => {
+    const view = await mountView()
+    expect(revealButton(view).text()).toBe('Show in Finder')
+  })
+
+  it('translates the reveal action with the app locale', async () => {
+    const i18n = appI18n()
+    i18n.global.setLocaleMessage('zh', zh)
+    i18n.global.locale.value = 'zh'
+    const view = await mountView()
+    expect(revealButton(view).text()).toBe(zh.assets.showInFinder)
   })
 })
 

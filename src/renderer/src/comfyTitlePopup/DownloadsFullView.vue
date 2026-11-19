@@ -20,7 +20,7 @@ import {
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { fileLabel, modalSubtitle, statusKindClass } from '../lib/downloadFormatters'
-import { revealInFolderLabel } from '../composables/usePlatform'
+import { revealInFolderKey } from '../composables/usePlatform'
 import type {
   PopupDownloadAction,
   PopupDownloadEntry as DownloadEntry,
@@ -39,7 +39,7 @@ interface PopupBridge {
 }
 
 const bridge = (window as unknown as { __comfyTitlePopup?: PopupBridge }).__comfyTitlePopup
-const revealLabel = computed(() => revealInFolderLabel(bridge?.platform))
+const revealLabel = computed(() => t(revealInFolderKey(bridge?.platform)))
 
 const props = defineProps<{ state: DownloadsState }>()
 
@@ -173,7 +173,7 @@ const footerStats = computed<string[]>(() =>
       type="button"
       variant="muted-textonly"
       size="icon"
-      class="dlm-close absolute top-0 right-0 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
+      class="dlm-close absolute top-0 right-0 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--modal-surface-bg)] text-white hover:text-white"
       :aria-label="t('common.close')"
       @click="bridge?.close()"
     >
