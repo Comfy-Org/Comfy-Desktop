@@ -162,7 +162,10 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       }
       const result = await addPlannedInstallation(plan)
       if (!result.ok || !result.entry) {
-        await modal.alert({ title: t('errors.cannotAdd'), message: result.message || '' })
+        await modal.alert({
+          title: t('errors.cannotAdd'),
+          message: result.message || t('errors.cannotAddDetail')
+        })
         opts.resetFirstUseSpinner()
         return
       }
@@ -190,7 +193,10 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
         entrypoint: 'first_use',
         reason: 'error'
       })
-      await modal.alert({ title: t('errors.cannotAdd'), message: (err as Error).message || '' })
+      await modal.alert({
+        title: t('errors.cannotAdd'),
+        message: (err as Error).message || t('errors.cannotAddDetail')
+      })
       opts.resetFirstUseSpinner()
     }
   }

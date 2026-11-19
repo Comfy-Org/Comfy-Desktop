@@ -992,7 +992,10 @@ async function handOffInstall(result: InstallBuildResult, failureTitle: string):
       reason: 'add_installation_failed',
       error_bucket: toErrorBucket(result.message || '')
     })
-    await modal.alert({ title: failureTitle, message: result.message || '' })
+    await modal.alert({
+      title: failureTitle,
+      message: result.message || t('errors.cannotAddDetail')
+    })
     return
   }
   if (result.entry) {
@@ -1099,7 +1102,7 @@ async function handleSave(): Promise<void> {
     if (!result.ok) {
       await modal.alert({
         title: t('errors.cannotAdd'),
-        message: result.message || ''
+        message: result.message || t('errors.cannotAddDetail')
       })
       return
     }

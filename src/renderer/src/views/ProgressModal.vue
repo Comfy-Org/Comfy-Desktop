@@ -727,6 +727,13 @@ defineExpose({ startOperation, showOperation })
           </Button>
         </div>
 
+        <p
+          v-if="finishedErrorMessage && !isPortConflictOpen"
+          class="brand-progress__error-detail m-0 -mt-1 text-center text-[13px] leading-[1.45] text-neutral-300"
+          :data-testid="TID.progressErrorDetail"
+        >
+          {{ $t('progress.completedErrorDetail') }}
+        </p>
         <div
           v-if="finishedErrorMessage"
           class="brand-progress__error-row -mt-1 flex w-full max-w-[640px] items-start gap-2"

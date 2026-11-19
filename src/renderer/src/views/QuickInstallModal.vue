@@ -243,7 +243,7 @@ async function handleInstall(): Promise<void> {
     if (!result.ok) {
       await modal.alert({
         title: t('errors.cannotAdd'),
-        message: result.message || ''
+        message: result.message || t('errors.cannotAddDetail')
       })
       installing.value = false
       return

@@ -59,6 +59,7 @@ export const TID = {
   consoleRestart: 'console-restart',
 
   progressErrorMessage: 'progress-error-message',
+  progressErrorDetail: 'progress-error-detail',
   progressLogs: 'progress-logs',
   progressReboot: 'progress-reboot',
   progressBack: 'progress-back',

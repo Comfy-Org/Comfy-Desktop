@@ -171,7 +171,7 @@ async function trackProbedInstall(probed: ProbeResult): Promise<void> {
   if (!result.ok) {
     await modal.alert({
       title: t('track.cannotTrack'),
-      message: result.message || ''
+      message: result.message || t('errors.cannotAddDetail')
     })
     return
   }

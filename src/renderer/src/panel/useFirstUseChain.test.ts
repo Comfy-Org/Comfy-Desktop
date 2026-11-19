@@ -299,9 +299,25 @@ describe('useFirstUseChain — Set up', () => {
     const chain = mountChain()
     await chain.api!.handleSetupInstall(setupPlan())
 
-    expect(modal.alert).toHaveBeenCalledWith(expect.objectContaining({ message: 'path conflict' }))
+    expect(modal.alert).toHaveBeenCalledWith({
+      title: "Couldn't add this build",
+      message: 'path conflict'
+    })
     expect(chain.handleShowProgress).not.toHaveBeenCalled()
     expect(chain.resetFirstUseSpinner).toHaveBeenCalled()
+  })
+
+  it('still explains a build that cannot be added when the reason is empty', async () => {
+    testApi.addInstallation = vi.fn().mockResolvedValue({ ok: false })
+    stubWindowApi(testApi)
+
+    const chain = mountChain()
+    await chain.api!.handleSetupInstall(setupPlan())
+
+    expect(modal.alert).toHaveBeenCalledWith({
+      title: "Couldn't add this build",
+      message: 'Something went wrong while adding it. Check the install location, then try again.'
+    })
   })
 
   it('opens every install option from Change, with a way back to Set up', async () => {
