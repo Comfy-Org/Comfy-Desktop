@@ -311,4 +311,31 @@ ${IDLE}
       expect(isPidAlive(helperPid!)).toBe(false)
     }
   )
+
+  it.skipIf(process.platform === 'win32')(
+    'stops a helper started while the app was closing once both parents are gone',
+    async () => {
+      const profileDir = `/tmp/e2e-profile-${process.pid}-${Date.now()}`
+      const { launcher, appPid } = await launchShellAndApp()
+      let helper: ChildProcess | undefined
+      const closeGracefully = async (): Promise<void> => {
+        helper = spawn(process.execPath, ['-e', IDLE, '--', `--user-data-dir=${profileDir}`], {
+          stdio: 'ignore'
+        })
+        started.push(helper.pid!)
+        killProcessTrees([launcher.pid!, appPid])
+        await exited(launcher)
+        await vi.waitFor(() => expect(isPidAlive(appPid)).toBe(false))
+      }
+      const { shutdown } = createShutdown(
+        { launcher, appPid, profileDir, closeGracefully, connectionClosed: () => false },
+        { log: () => {} }
+      )
+
+      await shutdown()
+
+      await exited(helper!)
+      expect(helper!.signalCode, 'the helper was stopped by the shutdown').toBe('SIGKILL')
+    }
+  )
 })

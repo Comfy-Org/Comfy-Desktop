@@ -206,6 +206,12 @@ export function createShutdown(
     return true
   }
 
+  const allGoneWithin = async (ms: number): Promise<boolean> => {
+    if (!(await waitForExit(ms))) return false
+    trackHelpers()
+    return livePids().length === 0
+  }
+
   const run = async (): Promise<void> => {
     forgetAppIfItsPidWasReused()
     trackHelpers()
@@ -216,10 +222,10 @@ export function createShutdown(
         log(`[e2e-harness] app did not quit within ${gracefulCloseMs}ms, killing it`)
       }
     }
-    if (quitOnItsOwn && (await waitForExit(EXIT_SETTLE_MS))) return
+    if (quitOnItsOwn && (await allGoneWithin(EXIT_SETTLE_MS))) return
     trackHelpers()
     forceKill(livePids())
-    if (await waitForExit(forcedExitMs)) return
+    if (await allGoneWithin(forcedExitMs)) return
     throw new Error(
       `[e2e-harness] app processes ${livePids().join(', ')} still running ${forcedExitMs}ms after a forced kill`
     )
