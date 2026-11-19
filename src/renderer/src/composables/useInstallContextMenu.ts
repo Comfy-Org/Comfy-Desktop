@@ -58,6 +58,7 @@ export function useInstallContextMenu(
     onUpdate?: (inst: Installation) => Promise<void>
     canPromoteToWorkspace?: (inst: Installation) => boolean
     autoStart?: AutoStartBuild
+    onStartAgain?: (inst: Installation) => void | Promise<void>
   } = {}
 ) {
   const { t } = useI18n()
@@ -400,7 +401,26 @@ export function useInstallContextMenu(
       }
     }
     if (err.lastStderr) message = `${message}\n\n${err.lastStderr}`
-    void modal.alert({ title: t('chooser.errorTitle'), message })
+    if (!err.startFailed) {
+      void modal.alert({ title: t('chooser.errorTitle'), message })
+      return
+    }
+    const title = t('installProgress.launchFailedTitle')
+    const startAgain = opts.onStartAgain
+    if (!startAgain) {
+      void modal.alert({ title, message })
+      return
+    }
+    void modal
+      .confirm({
+        title,
+        message,
+        confirmLabel: t('installProgress.startAgain'),
+        confirmStyle: 'primary'
+      })
+      .then((again) => {
+        if (again) void startAgain(inst)
+      })
   }
 
   function viewDanger(inst: Installation): void {

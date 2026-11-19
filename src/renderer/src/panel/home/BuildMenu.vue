@@ -14,16 +14,19 @@ const {
   build,
   anchor,
   align = 'start',
-  returnFocus = null
+  returnFocus = null,
+  whyCloud = false
 } = defineProps<{
   build: Installation
   anchor: BuildMenuAnchor
   align?: 'start' | 'end'
   returnFocus?: HTMLElement | null
+  whyCloud?: boolean
 }>()
 const open = defineModel<boolean>('open', { default: false })
+const emit = defineEmits<{ 'why-cloud': [] }>()
 
-const { items, run } = useBuildMenu(() => build)
+const { items, run } = useBuildMenu(() => build, { whyCloud: () => whyCloud })
 
 const reference = computed(() => anchor)
 
@@ -32,6 +35,7 @@ function focusTrigger(): void {
 }
 
 function select(id: string): void {
+  if (id === 'why-cloud') return emit('why-cloud')
   if (id === 'delete') focusTrigger()
   void run(id)
 }

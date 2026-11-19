@@ -145,9 +145,9 @@ async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): 
   return openSystemModalAsync({
     parent: entry.window,
     spec: {
-      title: 'Return to Home?',
+      title: 'Back to Home?',
       message: 'This will stop the current ComfyUI.',
-      confirmLabel: 'Return to Home',
+      confirmLabel: 'Back to Home',
       cancelLabel: 'Cancel',
       confirmStyle: 'danger',
       theme: entry.lastTheme

@@ -7,7 +7,6 @@ import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
-import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
 import { useInstallingBuilds } from '../composables/useBuildProgress'
 import { useModal } from '../composables/useModal'
@@ -22,10 +21,9 @@ import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import SplitButton from '../components/ui/SplitButton.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
-import { openInstallManager } from '../lib/openInstallManager'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { FilterKey } from '../composables/useInstallList'
-import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
+import type { CloudUserTier, Installation } from '../types/ipc'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 
 const props = withDefaults(
@@ -42,7 +40,6 @@ const emit = defineEmits<{
   'open-details': [installation: Installation]
   'show-new-install': []
   'show-build-import': [flow: 'track' | 'load-snapshot']
-  'show-progress': [opts: ShowProgressOpts]
 }>()
 
 const { t } = useI18n()
@@ -166,12 +163,6 @@ async function refreshWorkspace(): Promise<void> {
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
 
-const { viewError, viewDanger } = useInstallContextMenu({
-  onManage: (inst, options) =>
-    options ? openInstallManager(inst, options) : emit('open-details', inst),
-  onShowProgress: (showOpts) => emit('show-progress', showOpts)
-})
-
 async function pickInstall(inst: Installation): Promise<void> {
   if (await focusRunningBuild(inst)) return
   emit('pick', inst)
@@ -231,8 +222,6 @@ function handleNewInstallClick(): void {
 const gridHandlers = {
   pick: pickInstall,
   'open-details': (inst: Installation) => emit('open-details', inst),
-  'view-error': viewError,
-  'view-danger': viewDanger,
   'why-cloud': openWhyCloud
 }
 </script>

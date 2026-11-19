@@ -587,16 +587,40 @@ describe('AppSidebar', () => {
     it('marks a build that failed to start and says why on hover', async () => {
       useSessionStore().errorInstances.set(OLD.id, {
         installationName: OLD.name,
-        message: 'Port 8188 is in use'
+        message: 'Port 8188 is in use',
+        startFailed: true
       })
       const wrapper = await mountSidebar('home', [OLD])
 
       const row = wrapper.get('[data-testid="app-sidebar-build-old"]')
       expect(row.find('[data-testid="app-sidebar-dot-failed"]').exists()).toBe(true)
       expect(tooltipOf(wrapper, 'app-sidebar-build-old')).toBe(
-        'Flux Sandbox · Failed to start: Port 8188 is in use'
+        "Flux Sandbox · Didn't start: Port 8188 is in use"
       )
-      expect(row.get('.sr-only').text()).toBe('· Failed to start: Port 8188 is in use')
+      expect(row.get('.sr-only').text()).toBe("· Didn't start: Port 8188 is in use")
+    })
+
+    it("says Didn't start, not Crashed, for a failed start with an exit code and no reason", async () => {
+      useSessionStore().errorInstances.set(OLD.id, {
+        installationName: OLD.name,
+        exitCode: 1,
+        startFailed: true
+      })
+      const wrapper = await mountSidebar('home', [OLD])
+
+      expect(tooltipOf(wrapper, 'app-sidebar-build-old')).toBe("Flux Sandbox · Didn't start")
+    })
+
+    it('does not say a build failed to start when only its update failed', async () => {
+      useSessionStore().errorInstances.set(OLD.id, {
+        installationName: OLD.name,
+        message: 'Could not install the new dependencies'
+      })
+      const wrapper = await mountSidebar('home', [OLD])
+
+      expect(tooltipOf(wrapper, 'app-sidebar-build-old')).toBe(
+        'Flux Sandbox · Error: Could not install the new dependencies'
+      )
     })
 
     it('says a build crashed, with its exit code, rather than that it failed to start', async () => {

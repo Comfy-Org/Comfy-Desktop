@@ -444,6 +444,14 @@ function selectRuns(runs: PerformanceTestBenchmark[]): void {
   selectedIds.value = new Set([...selectedIds.value, ...runs.map(({ id }) => id)])
 }
 
+function clearFilters(): void {
+  searchQuery.value = ''
+  workspaceFilter.value = ''
+  buildFilter.value = ''
+  machineFilter.value = ''
+  workflowFilter.value = ''
+}
+
 function clearSelection(): void {
   selectedIds.value = new Set()
   exportError.value = null
@@ -886,15 +894,24 @@ onActivated(() => {
             </Button>
           </div>
         </EmptyState>
-        <div
+        <EmptyState
           v-else-if="groups.length === 0"
-          class="benchmarks__no-results flex flex-col items-center gap-1.5 px-6 py-16 text-center"
+          class="benchmarks__no-results px-6 py-16"
+          :icon="ChartColumn"
+          :title="t('common.nothingMatches')"
+          :text="t('common.nothingMatchesHint')"
         >
-          <h2 class="m-0 text-heading font-semibold text-foreground">
-            {{ t('benchmarks.noMatches') }}
-          </h2>
-          <p class="m-0 text-ui text-muted-foreground">{{ t('benchmarks.noMatchesHint') }}</p>
-        </div>
+          <Button
+            variant="secondary"
+            size="md"
+            class="benchmarks__clear-filters px-3 text-[13px]/5"
+            type="button"
+            data-testid="benchmarks-clear-filters"
+            @click="clearFilters"
+          >
+            {{ t('common.clearFilters') }}
+          </Button>
+        </EmptyState>
         <div v-else class="benchmarks__groups flex flex-col gap-2">
           <BenchmarkGroupCard
             v-for="group in groups"
