@@ -40,7 +40,7 @@ import SidebarDesktopUpdate from './SidebarDesktopUpdate.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import { homeBuildStatus, isCloudBuild, runsOnThisComputer } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
-import { buildProgressOf } from '../composables/useBuildProgress'
+import { buildFailure, buildProgressOf } from '../composables/useBuildProgress'
 import { useProgressStore } from '../stores/progressStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -178,12 +178,19 @@ function isLive(build: Installation): boolean {
 }
 
 function failureText(build: Installation): string | null {
+  const failure = buildFailure(build, sessionStore, progressStore, t)
+  if (!failure) return null
   const error = sessionStore.errorInstances.get(build.id)
-  if (!error) return null
-  if (error.message) return t('sidebar.failedToStartReason', { reason: error.message })
+  if (failure.kind === 'broken' || !error) return failure.label
+  if (failure.kind === 'didnt-start') {
+    return error.message
+      ? t('sidebar.failedToStartReason', { reason: error.message })
+      : failure.label
+  }
+  if (failure.kind === 'error' && error.message) return `${failure.label}: ${error.message}`
   if (error.signal) return t('sidebar.crashedWithSignal', { signal: error.signal })
   if (error.exitCode != null) return t('sidebar.crashedWithCode', { code: error.exitCode })
-  return t('sidebar.crashed')
+  return failure.label
 }
 
 const buildRows = computed(() =>
