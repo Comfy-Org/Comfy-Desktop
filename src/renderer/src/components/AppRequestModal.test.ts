@@ -130,6 +130,22 @@ describe('AppRequestModal', () => {
     expect(thanks()?.textContent).toContain('Thanks. We got your request.')
   })
 
+  it('thanks the person in the middle of the window and closes right away from Done', async () => {
+    const wrapper = await mountRequest()
+    sendAppRequest.mockResolvedValue(true)
+    await type('An app that colors line art')
+    sendButton().click()
+    await flushPromises()
+
+    const body = document.querySelector('.base-modal-body')!.getBoundingClientRect()
+    const note = thanks()!.getBoundingClientRect()
+    expect(note.top - body.top).toBeCloseTo(body.bottom - note.bottom, 0)
+    expect(document.querySelectorAll('.base-modal-footer button')).toHaveLength(1)
+
+    document.querySelector<HTMLButtonElement>('[data-testid="app-request-done"]')!.click()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
   it('treats a failed send call like a request that was not accepted', async () => {
     await mountRequest()
     sendAppRequest.mockRejectedValueOnce(new Error('ipc failed'))

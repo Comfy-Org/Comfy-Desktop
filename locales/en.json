@@ -56,7 +56,8 @@
       "send": "Send",
       "sending": "Sending…",
       "failed": "Couldn't send your request. Try again.",
-      "thanks": "Thanks. We got your request."
+      "thanks": "Thanks. We got your request.",
+      "done": "Done"
     },
     "badge": {
       "withDescription": "{text}: {description}"

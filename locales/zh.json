@@ -56,7 +56,8 @@
       "send": "发送",
       "sending": "正在发送…",
       "failed": "没能发送你的需求，请重试。",
-      "thanks": "谢谢，我们已收到你的需求。"
+      "thanks": "谢谢，我们已收到你的需求。",
+      "done": "完成"
     },
     "badge": {
       "withDescription": "{text}：{description}"

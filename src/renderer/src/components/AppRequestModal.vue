@@ -122,7 +122,7 @@ watch(
 
     <p
       v-if="sent"
-      class="m-0 flex flex-col items-center gap-3 py-6 text-center text-sm leading-[1.5] text-text-muted"
+      class="m-0 flex flex-1 flex-col items-center justify-center gap-3 py-6 text-center text-sm leading-[1.5] text-text-muted"
       role="status"
       data-testid="app-request-thanks"
     >
@@ -157,8 +157,19 @@ watch(
       </p>
     </div>
 
-    <template v-if="!sent" #footer>
+    <template #footer>
       <Button
+        v-if="sent"
+        type="button"
+        variant="inverted"
+        size="lg"
+        data-testid="app-request-done"
+        @click="close"
+      >
+        {{ t('apps.request.done') }}
+      </Button>
+      <Button
+        v-else
         type="button"
         variant="inverted"
         size="lg"
