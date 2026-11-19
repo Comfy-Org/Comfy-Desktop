@@ -94,6 +94,7 @@ const canRun = computed(() =>
 const runBlockedReason = computed(() => {
   if (canRun.value) return undefined
   if (!selectedBuild.value) return t('performanceTest.runNeedsBuild')
+  if (workflow.isImporting) return t('performanceTest.runWaitsForWorkflow')
   if (!workflow.filePath) return t('performanceTest.runNeedsWorkflow')
   if (!workflow.isReady) return t('performanceTest.runWaitsForWorkflow')
   return t('performanceTest.runWaitsForBuild')

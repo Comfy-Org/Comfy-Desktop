@@ -175,4 +175,30 @@ describe('PerformanceTestView example workflow picker', () => {
     expect(footerButtons).toHaveLength(1)
     expect(footerButtons[0]!.attributes('data-testid')).toBe('performance-test-use-example')
   })
+
+  it('says to wait, not to choose, while the picked example is being prepared', async () => {
+    scopedInstallations.value = [
+      { id: 'b1', name: 'Build 1', sourceCategory: 'local', status: 'installed' }
+    ]
+    vi.mocked(window.api.getPerformanceTestExampleWorkflows).mockResolvedValue({
+      options: [{ value: 'flux', label: 'Flux', recommended: true }],
+      diskSpace: null
+    } as unknown as Awaited<ReturnType<typeof window.api.getPerformanceTestExampleWorkflows>>)
+    vi.mocked(window.api.preparePerformanceTestExampleWorkflow).mockReturnValue(
+      new Promise(() => {})
+    )
+    const wrapper = mountWithPicker()
+    wrapper.getComponent(PerformanceTestBuildMenu).vm.$emit('update:modelValue', 'b1')
+    await nextTick()
+    wrapper.getComponent(PerformanceTestWorkflowMenu).vm.$emit('choose-example')
+    await flushPromises()
+    await wrapper.get('[data-testid="performance-test-use-example"]').trigger('click')
+    await nextTick()
+
+    const runTooltip = wrapper
+      .findAllComponents(Tooltip)
+      .find((c) => c.find('.performance-test__run').exists())
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+    expect(runTooltip?.props('text')).toBe('Wait for the workflow to be ready.')
+  })
 })
