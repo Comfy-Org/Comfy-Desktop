@@ -3,6 +3,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import Tabs from '@comfyorg/design-system/tabs/Tabs'
 import TabsList from '@comfyorg/design-system/tabs/TabsList'
 import TabsTrigger from '@comfyorg/design-system/tabs/TabsTrigger'
+import { vSlidingPill } from '../components/ui/vSlidingPill'
 import TabsContent from '@comfyorg/design-system/tabs/TabsContent'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -295,6 +296,7 @@ onMounted(() => {
         </h2>
         <TabsList
           :key="requestedTabCount"
+          v-sliding-pill="'bg-secondary'"
           class="gs-tabs min-h-0 flex-col items-stretch gap-0.5 overflow-y-auto"
           :aria-label="t('settingsModal.tabGlobal')"
         >
