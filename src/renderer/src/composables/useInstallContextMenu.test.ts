@@ -500,6 +500,31 @@ describe('useInstallContextMenu - promote to workspace', () => {
     expect(findItem(ineligible.menu.ctxMenuItems.value, 'promote-to-workspace')).toBeUndefined()
   })
 
+  it('keeps Upload build unavailable while a task is changing the build', () => {
+    const inst = makeInstall()
+    const { menu } = mountHarness(
+      inst,
+      ({ progress }) => {
+        progress.operations.set(inst.id, {
+          title: 'Updating ComfyUI',
+          steps: null,
+          activePhase: null,
+          flatStatus: 'Pulling',
+          flatPercent: 40,
+          finished: false,
+          cancelRequested: false,
+          result: null
+        } as never)
+      },
+      () => true
+    )
+
+    expect(findItem(menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
+      disabled: true,
+      title: 'Wait for the current task on this build to finish.'
+    })
+  })
+
   it('asks main to create the draft and stays silent on success', async () => {
     const inst = makeInstall()
     const { menu } = mountHarness(inst, undefined, () => true)

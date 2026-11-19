@@ -185,6 +185,7 @@ export function useInstallContextMenu(
 
     if (opts.canPromoteToWorkspace?.(inst)) {
       const promoting = isPromotingToWorkspace(inst)
+      const taskRunning = !promoting && progressStore.getProgressInfo(inst.id) !== null
       snapshotCluster.push({
         id: 'promote-to-workspace',
         icon: CloudUpload,
@@ -194,7 +195,8 @@ export function useInstallContextMenu(
         hint: t('devPlatform.workspace.promoteToWorkspaceHint'),
         hintUrl: 'https://platform.comfy.org/profile/deploy',
         hintLinkLabel: t('devPlatform.workspace.readMore'),
-        disabled: promoting
+        disabled: promoting || taskRunning,
+        title: taskRunning ? t('chooser.busyActionGatedReason') : undefined
       })
     }
 
