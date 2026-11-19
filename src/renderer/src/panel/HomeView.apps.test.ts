@@ -117,7 +117,7 @@ describe('Home apps', () => {
     expect(getAppsEnabled).toHaveBeenCalledOnce()
   })
 
-  it('plays the covers of each app, the next one loading behind the one shown', async () => {
+  it('plays the covers of each app, the next loading behind the one shown once it has loaded', async () => {
     const covers = ['red', 'green', 'blue'].map((fill) => ({ url: picture(fill), stillUrl: null }))
     listApps.mockResolvedValue([{ ...GENJUTSU, covers }, PRODUCT_ADS])
     const wrapper = await openHome()
@@ -125,6 +125,7 @@ describe('Home apps', () => {
     const urls = covers.map((cover) => cover.url)
 
     expect(urls).toContain(front.get('img[data-cover="shown"]').attributes('src'))
+    await expect.poll(() => front.find('img[data-cover="upcoming"]').exists()).toBe(true)
     expect(urls).toContain(front.get('img[data-cover="upcoming"]').attributes('src'))
   })
 

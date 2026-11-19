@@ -72,15 +72,12 @@
   "assets": {
     "kindLabel": "Asset type",
     "buildPickerLabel": "Build",
-    "browseAssetsOf": "Browse the assets of",
+    "placeGroup": {
+      "cloud": "Comfy Cloud",
+      "computer": "This computer"
+    },
     "cloud": "Comfy Cloud",
     "sharedFolder": "Shared folder",
-    "outputFolder": "Output folder",
-    "buildStatus": "{where} · {state}",
-    "buildWhere": {
-      "local": "Local",
-      "cloud": "Cloud"
-    },
     "buildState": {
       "running": "Running",
       "starting": "Starting",
@@ -114,6 +111,7 @@
     "loadFailed": "Couldn't load assets",
     "download": "Download",
     "downloadFailed": "Couldn't download asset",
+    "openFolderFailed": "Couldn't open folder",
     "moreActions": "More actions",
     "showInFinder": "Show in Finder",
     "showInExplorer": "Show in File Explorer",
@@ -135,7 +133,6 @@
     "signIn": "Log in to Comfy Cloud",
     "noCloudBuildTitle": "This workspace has no Comfy Cloud build",
     "noCloudBuildBody": "Restart Comfy Desktop to add Comfy Cloud back.",
-    "truncated": "Showing the newest file only. | Showing the newest {count} files only.",
     "noMatchesOnPage": "No matching assets on this page",
     "noMatchesOnPageHint": "Try another page, type or search.",
     "cloudScanLimit": "Type filters cover the first {limit} Cloud outputs in this sort order.",
@@ -180,12 +177,11 @@
     "allBuilds": "All builds",
     "newBuildDetail": "Run ComfyUI on this computer",
     "turnOnAutoStart": "Auto start",
-    "turnOffAutoStart": "Turn off Auto start",
+    "turnOffAutoStart": "Turn off auto start",
     "autoStartOn": "Auto start",
     "buildRunning": "Running",
     "buildStarting": "Starting",
     "buildReady": "Ready",
-    "buildAlwaysOn": "Always on",
     "buildDidntStart": "Didn't start",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "Example workflows",
@@ -265,8 +261,8 @@
     "nothingMatches": "Nothing matches",
     "nothingMatchesHint": "Try another word, or clear the filters to see everything.",
     "clearFilters": "Clear filters",
-    "noBuildsTitle": "Set up where your work runs",
-    "noBuildsBody": "A build is ComfyUI with its own version, custom nodes and models. Install one on this computer, or run on Comfy Cloud with nothing to install.",
+    "noBuildsTitle": "No builds yet",
+    "noBuildsBody": "Install ComfyUI on this computer, or run it on Comfy Cloud.",
     "filterLabel": "Source filter"
   },
   "titleBar": {
@@ -1087,7 +1083,6 @@
     "untrack": "Forget",
     "untrackConfirmTitle": "Forget Build",
     "untrackConfirmMessage": "This will remove the build from the app. The files will not be deleted.",
-    "share": "Share",
     "rename": "Rename",
     "renameTitle": "Rename Build",
     "renameMessage": "Enter a new name for this build."
@@ -1435,12 +1430,12 @@
     "snapshotNoFile": "No snapshot file specified."
   },
   "snapshots": {
-    "empty": "No snapshots yet. Snapshots are captured automatically when ComfyUI starts.",
+    "emptyBody": "Snapshots are captured automatically when ComfyUI starts.",
     "createSnapshot": "Create Snapshot",
     "changesInSnapshot": "What changed in this snapshot",
     "ifYouRestore": "What restoring this would change",
     "noSnapshotsToShare": "There are no snapshots to share yet.",
-    "shareFailed": "Could not share the snapshot.",
+    "shareFailed": "Could not export the snapshot.",
     "current": "Current",
     "triggerBoot": "Boot",
     "triggerRestart": "Manager",
@@ -1810,17 +1805,17 @@
     "newInstall": "Install a New Build",
     "addExistingInstall": "Add Existing Build",
     "loadSnapshot": "Load Snapshot",
-    "performanceTest": "Performance Tests",
+    "performanceTest": "Performance tests",
     "benchmarks": "Benchmarks",
     "performanceTests": "Performance tests",
-    "resetZoom": "Reset Zoom ({percent}%)",
+    "resetZoom": "Reset zoom ({percent}%)",
     "globalSettings": "Desktop Settings",
     "sendFeedback": "Send Feedback",
     "returnToDashboard": "Return to Dashboard",
     "closeAllWindows": "Close All Windows",
-    "exitWindow": "Close Window",
+    "exitWindow": "Close window",
     "exitAllWindows": "Quit Desktop",
-    "skipOnboarding": "Skip Onboarding"
+    "skipOnboarding": "Skip onboarding"
   },
   "feedback": {
     "modalLabel": "Send Feedback",
@@ -2033,11 +2028,9 @@
     "latestOnGithub": "Latest on GitHub",
     "open": "Start",
     "restart": "Restart",
-    "switch": "Switch",
+    "openRunning": "Open",
     "openCloud": "Open Cloud",
     "openRemote": "Open Remote",
-    "windowOptions": "Window options",
-    "moreWindowOptions": "Window options",
     "restartConfirmTitle": "Restart this build?",
     "restartConfirmDetail": "Restarting will stop the running session. Any unsaved work in the workflow will be lost.",
     "restartConfirmAction": "Restart",

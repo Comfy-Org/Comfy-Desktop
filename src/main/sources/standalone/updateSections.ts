@@ -544,7 +544,12 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         renameAction(installation.name),
         copyAction(installation.name, installed),
         openFolderAction(installation.installPath),
-        { id: 'share', label: t('actions.share'), style: 'default', enabled: installed },
+        {
+          id: 'share',
+          label: t('chooser.menuExportSnapshot'),
+          style: 'default',
+          enabled: installed
+        },
         ...(installation.adopted ? [] : [untrackAction()]),
         deleteAction(installation)
       ]

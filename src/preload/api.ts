@@ -57,6 +57,8 @@ export function buildElectronApi(): ElectronApi {
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),
     logsSnapshot: (installationId: string): Promise<string> =>
       ipcRenderer.invoke('logs-snapshot', installationId),
+    openLogsWindow: (installationId: string): Promise<void> =>
+      ipcRenderer.invoke('logs-popout-open', installationId),
     validateInstallPath: (targetPath) => ipcRenderer.invoke('validate-install-path', targetPath),
     getInstallationSize: (installationId) =>
       ipcRenderer.invoke('get-installation-size', installationId),
@@ -103,8 +105,11 @@ export function buildElectronApi(): ElectronApi {
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     openPageInNewWindow: (page) => ipcRenderer.send('comfy-window:open-page-in-new-window', page),
     listAssets: (installationId, page) => ipcRenderer.invoke('assets:list', installationId, page),
-    listLocalAssets: (installationId?: string) =>
-      ipcRenderer.invoke('assets:list-local', installationId),
+    listLocalAssets: (installationId, page) =>
+      ipcRenderer.invoke('assets:list-local', installationId, page),
+    listOutputFolders: () => ipcRenderer.invoke('assets:output-folders'),
+    openOutputFolder: (installationId) =>
+      ipcRenderer.invoke('assets:open-output-folder', installationId),
     downloadAsset: (source, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
     revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),

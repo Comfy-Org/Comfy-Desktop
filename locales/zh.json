@@ -72,15 +72,12 @@
   "assets": {
     "kindLabel": "资产类型",
     "buildPickerLabel": "构建",
-    "browseAssetsOf": "浏览以下构建的资产",
+    "placeGroup": {
+      "cloud": "Comfy Cloud",
+      "computer": "这台电脑"
+    },
     "cloud": "Comfy Cloud",
     "sharedFolder": "共享文件夹",
-    "outputFolder": "输出文件夹",
-    "buildStatus": "{where} · {state}",
-    "buildWhere": {
-      "local": "本地",
-      "cloud": "云端"
-    },
     "buildState": {
       "running": "运行中",
       "starting": "启动中",
@@ -114,6 +111,7 @@
     "loadFailed": "无法加载资产",
     "download": "下载",
     "downloadFailed": "无法下载资产",
+    "openFolderFailed": "无法打开文件夹",
     "moreActions": "更多操作",
     "showInFinder": "在 Finder 中显示",
     "showInExplorer": "在文件资源管理器中显示",
@@ -135,7 +133,6 @@
     "signIn": "登录 Comfy Cloud",
     "noCloudBuildTitle": "此工作区没有 Comfy Cloud 构建",
     "noCloudBuildBody": "重启 Comfy Desktop 以重新添加 Comfy Cloud。",
-    "truncated": "仅显示最新的 {count} 个文件。",
     "noMatchesOnPage": "此页没有匹配的资产",
     "noMatchesOnPageHint": "试试其他页面、类型或搜索词。",
     "cloudScanLimit": "类型筛选涵盖当前排序下的前 {limit} 个云端输出。",
@@ -185,7 +182,6 @@
     "buildRunning": "运行中",
     "buildStarting": "启动中",
     "buildReady": "就绪",
-    "buildAlwaysOn": "始终在线",
     "buildDidntStart": "未能启动",
     "buildInstalling": "正在安装 ComfyUI",
     "buildStartingComfyUI": "正在启动 ComfyUI",
@@ -265,8 +261,8 @@
     "nothingMatches": "没有匹配项",
     "nothingMatchesHint": "换个关键词试试，或清除筛选条件查看全部内容。",
     "clearFilters": "清除筛选",
-    "noBuildsTitle": "设置工作的运行位置",
-    "noBuildsBody": "构建是拥有独立版本、自定义节点和模型的 ComfyUI。你可以在此电脑上安装一个，也可以直接在 Comfy Cloud 上运行，无需安装。",
+    "noBuildsTitle": "还没有构建",
+    "noBuildsBody": "在此电脑上安装 ComfyUI，或在 Comfy Cloud 上运行。",
     "filterLabel": "来源筛选"
   },
   "titleBar": {
@@ -1087,7 +1083,6 @@
     "untrack": "忘记",
     "untrackConfirmTitle": "忘记实例",
     "untrackConfirmMessage": "这会从应用中移除该实例。文件不会被删除。",
-    "share": "分享",
     "rename": "重命名",
     "renameTitle": "重命名实例",
     "renameMessage": "输入此实例的新名称。"
@@ -1435,12 +1430,12 @@
     "snapshotNoFile": "未指定快照文件。"
   },
   "snapshots": {
-    "empty": "还没有快照。ComfyUI 启动时会自动捕获快照。",
+    "emptyBody": "ComfyUI 启动时会自动捕获快照。",
     "createSnapshot": "创建快照",
     "changesInSnapshot": "此快照中发生的更改",
     "ifYouRestore": "恢复此快照将改变的内容",
     "noSnapshotsToShare": "还没有可分享的快照。",
-    "shareFailed": "无法分享快照。",
+    "shareFailed": "无法导出快照。",
     "current": "当前",
     "triggerBoot": "启动",
     "triggerRestart": "Manager",
@@ -2033,11 +2028,9 @@
     "latestOnGithub": "GitHub 最新版",
     "open": "启动",
     "restart": "重启",
-    "switch": "切换",
+    "openRunning": "打开",
     "openCloud": "打开云端",
     "openRemote": "打开远程",
-    "windowOptions": "窗口选项",
-    "moreWindowOptions": "窗口选项",
     "restartConfirmTitle": "重启此构建？",
     "restartConfirmDetail": "重启将停止正在运行的会话。工作流中任何未保存的工作都会丢失。",
     "restartConfirmAction": "重启",

@@ -14,15 +14,17 @@ import type {
   CloudAssetLookup,
   CloudAssetPage,
   Installation,
+  LocalAssetListing,
+  LocalAssetPageRequest,
   RunningInstance
 } from '../types/ipc'
 
 const listAssets = vi.fn()
 const findCloudAsset = vi.fn()
 const listLocalAssets = vi.fn()
-let localListCut = false
 const downloadAsset = vi.fn()
 const revealAsset = vi.fn()
+const openOutputFolder = vi.fn()
 const copyAsset = vi.fn()
 const readAssetModel = vi.fn()
 const trashAsset = vi.fn()
@@ -56,6 +58,25 @@ function picture(id: string, height: number): AssetSummary {
 vi.mock('../composables/useModal', () => ({
   useModal: () => ({ alert, confirm })
 }))
+
+function localListing(
+  all: AssetSummary[],
+  page: LocalAssetPageRequest = { offset: 0, limit: 500, order: 'newest' }
+): LocalAssetListing {
+  const count = (kind: AssetSummary['kind']) => all.filter((item) => item.kind === kind).length
+  const matching = page.kind ? all.filter((item) => item.kind === page.kind) : all
+  return {
+    assets: matching.slice(page.offset, page.offset + page.limit),
+    total: matching.length,
+    counts: {
+      all: all.length,
+      image: count('image'),
+      video: count('video'),
+      audio: count('audio'),
+      '3d': count('3d')
+    }
+  }
+}
 
 function asset(
   id: string,
@@ -144,7 +165,11 @@ function buildRows(): string[] {
     ...document.querySelectorAll(
       '[data-testid^="assets-build-"]:not([data-testid="assets-build-picker"])'
     )
-  ].map((row) => row.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+  ].map((row) =>
+    [...row.querySelectorAll('.truncate')]
+      .map((part) => part.textContent?.replace(/\s+/g, ' ').trim())
+      .join(' ')
+  )
 }
 
 async function pickBuild(id: string): Promise<void> {
@@ -211,6 +236,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
   listLocalAssets.mockResolvedValue([])
+  openOutputFolder.mockResolvedValue(true)
   listWorkspaces.mockResolvedValue([
     { id: 'me', name: 'Personal Workspace', type: 'personal' },
     { id: 'team-b', name: 'Team B', type: 'team' }
@@ -221,7 +247,6 @@ beforeEach(() => {
   }))
   getAuthStatus.mockResolvedValue({ signedIn: false })
   getSetting.mockResolvedValue(undefined)
-  localListCut = false
   findCloudAsset.mockResolvedValue({ status: 'absent' })
   ;(window as unknown as { api: unknown }).api = {
     listAssets: async (installationId: string, request: unknown) => {
@@ -232,12 +257,16 @@ beforeEach(() => {
       return Array.isArray(listed) ? { assets: listed, total: listed.length } : listed
     },
     findCloudAsset,
-    listLocalAssets: async (installationId?: string) => ({
-      assets: await listLocalAssets(installationId),
-      truncated: localListCut
-    }),
+    listLocalAssets: async (installationId?: string, page?: LocalAssetPageRequest) =>
+      localListing(await listLocalAssets(installationId), page),
     downloadAsset,
     revealAsset,
+    openOutputFolder,
+    listOutputFolders: async () => ({
+      home: '/Users/me',
+      shared: '/Users/me/ComfyUI/output',
+      ofBuild: { lab: '/Volumes/Work/Video Lab/output', mine: '/Users/me/My Local 1/output' }
+    }),
     copyAsset,
     readAssetModel,
     trashAsset,
@@ -413,7 +442,7 @@ describe('AssetsView', () => {
   it('puts only the cards on screen on the page, and the rest as the user scrolls', async () => {
     page.style.height = '600px'
     const wrapper = await mountAssets(
-      Array.from({ length: 300 }, (_, i) => picture(`card-${i}`, 300))
+      Array.from({ length: 100 }, (_, i) => picture(`card-${i}`, 300))
     )
     const cardCount = () => wrapper.findAll('[data-testid="assets-grid"] > li').length
 
@@ -424,7 +453,7 @@ describe('AssetsView', () => {
     view.scrollTop = view.scrollHeight
     await vi.waitFor(() =>
       expect(
-        wrapper.find('[data-testid="asset-card-299"]').exists(),
+        wrapper.find('[data-testid="asset-card-99"]').exists(),
         'the oldest card shows at the end'
       ).toBe(true)
     )
@@ -493,11 +522,16 @@ describe('AssetsView', () => {
     expect(assetNames(wrapper)).toEqual(['mine.png'])
 
     await openBuildPicker(wrapper)
-    expect(document.body.textContent).toContain('Browse the assets of')
+    expect(
+      [...document.querySelectorAll('[data-testid^="assets-place-group-"]')].map((header) =>
+        header.textContent?.trim()
+      ),
+      'Cloud and this computer are grouped apart'
+    ).toEqual(['Comfy Cloud', 'This computer'])
     expect(buildRows(), 'no Shared folder when no build saves there').toEqual([
-      'Comfy Cloud Cloud · Running',
-      'My Local 1 Local · Stopped',
-      'Video Lab Local · Running'
+      'Comfy Cloud Running',
+      'My Local 1 ~/My Local 1/output',
+      'Video Lab /Volumes/Work/Video Lab/output'
     ])
 
     await pickBuild('cloud')
@@ -533,7 +567,7 @@ describe('AssetsView', () => {
 
     await openBuildPicker(wrapper)
 
-    expect(buildRows()).toEqual(['Comfy Cloud Cloud · Running', 'My Local 1 Local · Stopped'])
+    expect(buildRows()).toEqual(['Comfy Cloud Running', 'My Local 1 ~/My Local 1/output'])
   })
 
   it('opens on a build it can list, not on a running build that keeps its files to itself', async () => {
@@ -634,17 +668,107 @@ describe('AssetsView', () => {
     ])
 
     await wrapper.get('[data-testid="assets-kind-image"]').trigger('click')
-    expect(assetNames(wrapper)).toEqual(['forest.png', 'terraces.png'])
+    await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['forest.png', 'terraces.png']))
+    expect(listLocalAssets, 'the type is read from the folder').toHaveBeenCalledTimes(2)
 
     await wrapper.get('input').setValue('terr')
     expect(assetNames(wrapper)).toEqual(['terraces.png'])
-    expect(tabs(), 'the counts follow the search').toEqual([
-      'All1',
-      'Images1',
-      'Videos0',
-      '3D0',
-      'Audio0'
+    expect(tabs(), 'folder-wide counts hide while a search narrows the page').toEqual([
+      'All',
+      'Images',
+      'Videos',
+      '3D',
+      'Audio'
     ])
+  })
+
+  it('shows each folder in its file manager from the picker', async () => {
+    const wrapper = await mountAssets([], {
+      builds: [sharedBuild('a', 'Shared A'), localBuild('lab', 'Video Lab')]
+    })
+    await openBuildPicker(wrapper)
+
+    document.querySelector<HTMLElement>('[data-testid="assets-place-reveal-shared"]')!.click()
+    document.querySelector<HTMLElement>('[data-testid="assets-place-reveal-lab"]')!.click()
+
+    expect(openOutputFolder.mock.calls).toEqual([[undefined], ['lab']])
+    expect(
+      wrapper
+        .findAllComponents(Tooltip)
+        .some((tip) => tip.props('text') === '/Volumes/Work/Video Lab/output'),
+      'the full path shows in a tooltip'
+    ).toBe(true)
+  })
+
+  it('moves between rows with the arrow keys and never stops on Show in Finder', async () => {
+    const wrapper = await mountAssets([], {
+      builds: [localBuild('lab', 'Video Lab'), localBuild('art', 'Art Lab')]
+    })
+    await openBuildPicker(wrapper)
+    const press = async (key: string) => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      await flushPromises()
+    }
+    const focused = () => document.activeElement?.getAttribute('data-testid') ?? undefined
+    expect(buildRows().length, 'more than one row').toBeGreaterThan(1)
+
+    document.querySelector<HTMLElement>('[data-testid="assets-build-lab"]')!.focus()
+    const visited: (string | undefined)[] = []
+    for (let step = 0; step < 4; step++) {
+      await press('ArrowDown')
+      visited.push(focused())
+    }
+    await press('ArrowUp')
+    visited.push(focused())
+
+    expect(visited, 'focus moves to the next row').toContain('assets-build-art')
+    expect(visited.every((id) => id?.startsWith('assets-build-'))).toBe(true)
+  })
+
+  it('opens the picker closed again after it leaves and comes back', async () => {
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    await openBuildPicker(wrapper)
+    const installationStore = useInstallationStore()
+
+    installationStore.loading = true
+    installationStore.installations = []
+    await flushPromises()
+    expect(wrapper.find('[data-testid="assets-build-picker"]').exists()).toBe(false)
+    installationStore.installations = [localBuild('lab', 'Video Lab')]
+    installationStore.loading = false
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded')).toBe(
+      'false'
+    )
+  })
+
+  it('closes the picker when Show in Finder is clicked', async () => {
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    await openBuildPicker(wrapper)
+
+    document.querySelector<HTMLElement>('[data-testid="assets-place-reveal-lab"]')!.click()
+    await flushPromises()
+
+    expect(openOutputFolder).toHaveBeenCalledExactlyOnceWith('lab')
+    expect(wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded')).toBe(
+      'false'
+    )
+    expect(document.querySelector('[data-testid="assets-place-reveal-lab"]')).toBeNull()
+  })
+
+  it('says when a folder does not open', async () => {
+    openOutputFolder.mockResolvedValue(false)
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    await openBuildPicker(wrapper)
+
+    document.querySelector<HTMLElement>('[data-testid="assets-place-reveal-lab"]')!.click()
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't open folder",
+      message: '/Volumes/Work/Video Lab/output'
+    })
   })
 
   it('lists Shared folder after Comfy Cloud when a build saves there, and opens on it', async () => {
@@ -660,9 +784,9 @@ describe('AssetsView', () => {
     expect(assetNames(wrapper)).toEqual(['forest.png'])
     await openBuildPicker(wrapper)
     expect(buildRows()).toEqual([
-      'Comfy Cloud Cloud · Running',
-      'Shared folder Output folder',
-      'Video Lab Local · Stopped'
+      'Comfy Cloud Running',
+      'Shared folder ~/ComfyUI/output',
+      'Video Lab /Volumes/Work/Video Lab/output'
     ])
   })
 
@@ -725,13 +849,18 @@ describe('AssetsView', () => {
     )
   })
 
-  it('says when the list keeps only the newest files', async () => {
-    localListCut = true
-    const wrapper = await mountAssets([asset('/out/a.png', 'a.png', 'image')])
-
-    expect(wrapper.get('[data-testid="assets-truncated"]').text()).toBe(
-      'Showing the newest file only.'
+  it('pages a large local folder with the same page bar as Comfy Cloud', async () => {
+    const files = Array.from({ length: 130 }, (_, i) =>
+      asset(`/out/f${i}.png`, `f${i}.png`, 'image')
     )
+    const wrapper = await mountAssets(files)
+
+    await vi.waitFor(() => expect(assetNames(wrapper)[0]).toBe('f0.png'))
+    expect(wrapper.get('[data-testid="assets-pagination"]').text()).toContain('130')
+
+    await wrapper.get('[data-testid="assets-page-2"]').trigger('click')
+    await vi.waitFor(() => expect(assetNames(wrapper)[0]).toBe('f100.png'))
+    expect(assetNames(wrapper)).not.toContain('f0.png')
   })
 
   it('asks a signed-out user who picked Comfy Cloud to log in', async () => {
@@ -1288,6 +1417,7 @@ describe('AssetsView', () => {
     expect(trashAsset, 'nothing is deleted when the user cancels').not.toHaveBeenCalled()
 
     confirm.mockResolvedValueOnce(true)
+    listLocalAssets.mockResolvedValue([picture('keep', 300)])
     await rightClick(wrapper.get('[data-testid="asset-gone"]').element)
     await pickMenuItem('delete')
 
@@ -1297,6 +1427,12 @@ describe('AssetsView', () => {
     })
     expect(trashAsset).toHaveBeenCalledExactlyOnceWith('local', 'gone')
     expect(assetNames(wrapper)).toEqual(['keep.svg'])
+    await vi.waitFor(() =>
+      expect(
+        wrapper.get('[data-testid="assets-kind-all"]').text(),
+        'the folder is read again, so the counts drop'
+      ).toBe('All1')
+    )
   })
 
   it('tells the user when a picture could not be copied', async () => {
