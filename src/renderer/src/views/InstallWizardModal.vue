@@ -72,7 +72,11 @@ import TrackBuildForm from '../components/TrackBuildForm.vue'
 import LoadSnapshotForm from '../components/LoadSnapshotForm.vue'
 import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
 import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
-import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
+import {
+  toCardSelectOption as cardToSelectOption,
+  toHardwareCards,
+  toOptionCards
+} from '../lib/setupOptionCards'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
@@ -1585,15 +1589,7 @@ function selectCardOptionByValue(field: SourceField, fieldIndex: number, value: 
 }
 
 function toCardSelectOption(card: SetupOptionCard): BaseSelectOption {
-  return {
-    value: card.value,
-    label: card.label,
-    description: card.description,
-    disabled: card.disabled,
-    icon: card.icon,
-    testId: card.testId,
-    badge: card.recommended ? t('newInstall.recommended') : undefined
-  }
+  return cardToSelectOption(card, t('newInstall.recommended'))
 }
 
 const existingSelectOptions = computed(() => existingCards.value.map(toCardSelectOption))
