@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
@@ -159,5 +159,112 @@ describe('HomeCarousel covers', () => {
 
     expect(frontCard(wrapper).attributes('aria-label')).not.toBe(before)
     expect(playingCards(wrapper)).toEqual(['0'])
+  })
+})
+
+describe('HomeCarousel trackpad and wheel', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function swipe(
+    wrapper: VueWrapper,
+    deltas: Array<{ deltaX?: number; deltaY?: number; shiftKey?: boolean }>
+  ) {
+    const target = frontCard(wrapper).element
+    return deltas.map((delta) => {
+      const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...delta })
+      target.dispatchEvent(event)
+      return event.defaultPrevented
+    })
+  }
+
+  const frontTitle = (wrapper: VueWrapper) => frontCard(wrapper).attributes('aria-label')
+
+  it('turns to the next card on a sideways swipe and back on a swipe the other way', async () => {
+    const wrapper = mountCarousel()
+
+    swipe(wrapper, [{ deltaX: 30 }, { deltaX: 30 }])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
+
+    vi.advanceTimersByTime(1000)
+    swipe(wrapper, [{ deltaX: -30 }, { deltaX: -30 }])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open Product Swap')
+  })
+
+  it('turns only one card for one long swipe', async () => {
+    const wrapper = mountCarousel()
+
+    swipe(
+      wrapper,
+      Array.from({ length: 30 }, () => ({ deltaX: 25 }))
+    )
+    await wrapper.vm.$nextTick()
+
+    expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
+  })
+
+  it('turns with shift and the mouse wheel', async () => {
+    const wrapper = mountCarousel()
+
+    swipe(wrapper, [{ deltaY: 100, shiftKey: true }])
+    await wrapper.vm.$nextTick()
+
+    expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
+  })
+
+  it('leaves an up or down scroll to the page', async () => {
+    const wrapper = mountCarousel()
+
+    const prevented = swipe(wrapper, [{ deltaY: 120 }, { deltaY: 120, deltaX: 4 }])
+    await wrapper.vm.$nextTick()
+
+    expect(prevented).toEqual([false, false])
+    expect(frontTitle(wrapper)).toBe('Open Product Swap')
+  })
+})
+
+describe('HomeCarousel card names', () => {
+  it('shows only the title until the front card is hovered, then lifts it and brings in what the app does', async () => {
+    const wrapper = mountCarousel()
+    const card = frontCard(wrapper).element as HTMLElement
+    const title = frontCard(wrapper).get('[data-testid="home-carousel-title"]')
+      .element as HTMLElement
+    const description = frontCard(wrapper).get('[data-testid="home-carousel-description"]')
+      .element as HTMLElement
+    const bottomOf = (element: HTMLElement) =>
+      Math.round(card.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom)
+
+    expect(getComputedStyle(description).opacity).toBe('0')
+    expect(bottomOf(title)).toBe(16)
+
+    await userEvent.hover(card)
+    await expect.poll(() => getComputedStyle(description).opacity).toBe('1')
+    await expect.poll(() => bottomOf(description)).toBe(16)
+    await expect.poll(() => bottomOf(title)).toBe(34)
+
+    await userEvent.unhover(card)
+    await expect.poll(() => getComputedStyle(description).opacity).toBe('0')
+    await expect.poll(() => bottomOf(title)).toBe(16)
+  })
+
+  it('keeps what the app does hidden on a side card when it is hovered', async () => {
+    const wrapper = mount(HomeCarousel<CarouselCard>, {
+      attachTo: document.body,
+      props: { cards: [HDR, PRODUCT_SWAP, EXTEND], kind: 'apps', picturesOf: () => [] }
+    })
+    mounted.push(wrapper)
+    const side = wrapper.get('[data-testid="home-carousel-card"][data-arc-offset="1"]')
+    const description = side.get('[data-testid="home-carousel-description"]').element
+
+    await userEvent.hover(side.element)
+    await Promise.all(description.getAnimations().map((animation) => animation.finished))
+    expect(getComputedStyle(description).opacity).toBe('0')
   })
 })

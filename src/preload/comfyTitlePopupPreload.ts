@@ -187,7 +187,11 @@ export interface ComfyTitlePopupBridge {
   globalSettingsDownloadUpdate(): Promise<void>
   globalSettingsInstallUpdate(): void
   globalSettingsSetLastCheckedAt(value: number): void
-  globalSettingsRemoveAppData(options: { deleteInstances: boolean; deleteModels: boolean }): void
+  globalSettingsRemoveAppData(options: {
+    deleteInstances: boolean
+    deleteModels: boolean
+    deleteInputOutput: boolean
+  }): void
 
   pickerSettingsGetDetailSections(installationId: string): Promise<Record<string, unknown>[]>
   pickerSettingsGetDiskSpace(path: string): Promise<{ total: number; free: number }>

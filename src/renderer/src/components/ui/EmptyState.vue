@@ -18,7 +18,7 @@ const { icon, title, text } = defineProps<{
     </span>
     <div class="flex flex-col gap-1">
       <h2 class="m-0 text-sm font-medium text-foreground">{{ title }}</h2>
-      <p class="m-0 max-w-80 text-ui text-pretty text-muted-foreground">{{ text }}</p>
+      <p class="m-0 max-w-90 text-ui text-balance text-muted-foreground">{{ text }}</p>
     </div>
     <slot />
   </div>

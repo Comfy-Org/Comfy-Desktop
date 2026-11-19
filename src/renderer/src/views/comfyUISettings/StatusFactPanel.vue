@@ -8,6 +8,7 @@ import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import type { DetailField, DetailSection, Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useInlineTextEdit } from '../../composables/useInlineTextEdit'
+import { revealInFolderKey } from '../../composables/usePlatform'
 
 interface Props {
   installation: Installation | null
@@ -22,6 +23,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const { t } = useI18n()
+const revealFolderKey = revealInFolderKey(window.api?.platform)
 const sessionStore = useSessionStore()
 
 function openPath(path: string): void {
@@ -299,7 +301,7 @@ const groups = computed<FactGroup[]>(() => {
               type="button"
               class="status-fact-value min-w-0 truncate status-fact-value-open static inline-block rounded-lg border-none bg-transparent p-0 [font:inherit] text-inherit appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
               :class="{ 'is-truncate-start [direction:rtl] text-left': row.truncate === 'start' }"
-              :title="t('models.openDir')"
+              :title="t(revealFolderKey)"
               @click="openPath(row.value)"
             >
               <bdi v-if="row.truncate === 'start'" dir="ltr">{{ row.value }}</bdi>

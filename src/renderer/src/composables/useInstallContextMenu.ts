@@ -17,6 +17,7 @@ import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '../stores/sessionStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useModal } from './useModal'
+import { useDialogs } from './useDialogs'
 import { useStopAction } from './useStopAction'
 import type { AutoStartBuild } from './useAutoStartBuild'
 import { revealInFolderLabel } from './usePlatform'
@@ -57,10 +58,12 @@ export function useInstallContextMenu(
     onUpdate?: (inst: Installation) => Promise<void>
     canPromoteToWorkspace?: (inst: Installation) => boolean
     autoStart?: AutoStartBuild
+    onStartAgain?: (inst: Installation) => void | Promise<void>
   } = {}
 ) {
   const { t } = useI18n()
   const modal = useModal()
+  const dialogs = useDialogs()
   const { confirmAndStop } = useStopAction({
     confirm: (o) => modal.confirm({ ...o, confirmStyle: 'danger' }),
     alert: (o) => modal.alert(o)
@@ -183,6 +186,7 @@ export function useInstallContextMenu(
 
     if (opts.canPromoteToWorkspace?.(inst)) {
       const promoting = isPromotingToWorkspace(inst)
+      const taskRunning = !promoting && progressStore.getProgressInfo(inst.id) !== null
       snapshotCluster.push({
         id: 'promote-to-workspace',
         icon: CloudUpload,
@@ -192,7 +196,8 @@ export function useInstallContextMenu(
         hint: t('devPlatform.workspace.promoteToWorkspaceHint'),
         hintUrl: 'https://platform.comfy.org/profile/deploy',
         hintLinkLabel: t('devPlatform.workspace.readMore'),
-        disabled: promoting
+        disabled: promoting || taskRunning,
+        title: taskRunning ? t('chooser.busyActionGatedReason') : undefined
       })
     }
 
@@ -339,15 +344,14 @@ export function useInstallContextMenu(
         const deleteLabel = t('actions.delete')
         const confirmed =
           actionOpts.confirmed === true ||
-          (await modal.confirm({
+          (await dialogs.confirm({
             title: t('actions.deleteConfirmTitle'),
-            message: `${inst.installPath ? inst.installPath + '\n\n' : ''}${t(
-              'actions.deleteConfirmMessage'
-            )}\n\n${t('actions.deleteConfirmDetail')}`,
+            message: `${t('actions.deleteConfirmMessage')} ${t('actions.deleteConfirmDetail')}`,
+            hint: inst.installPath || undefined,
             confirmLabel: deleteLabel,
-            confirmStyle: 'danger'
-          }))
-        if (!confirmed) return
+            tone: 'danger'
+          })) === 'primary'
+        if (!confirmed || isStoppedActionGated(inst)) return
         opts.onShowProgress({
           installationId: inst.id,
           title: `${deleteLabel} - ${inst.name}`,
@@ -397,7 +401,26 @@ export function useInstallContextMenu(
       }
     }
     if (err.lastStderr) message = `${message}\n\n${err.lastStderr}`
-    void modal.alert({ title: t('chooser.errorTitle'), message })
+    if (!err.startFailed) {
+      void modal.alert({ title: t('chooser.errorTitle'), message })
+      return
+    }
+    const title = t('installProgress.launchFailedTitle')
+    const startAgain = opts.onStartAgain
+    if (!startAgain) {
+      void modal.alert({ title, message })
+      return
+    }
+    void modal
+      .confirm({
+        title,
+        message,
+        confirmLabel: t('installProgress.startAgain'),
+        confirmStyle: 'primary'
+      })
+      .then((again) => {
+        if (again) void startAgain(inst)
+      })
   }
 
   function viewDanger(inst: Installation): void {
