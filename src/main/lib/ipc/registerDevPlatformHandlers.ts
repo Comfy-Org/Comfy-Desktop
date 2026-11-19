@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
 
+import { reconcileCloudViewSession } from '../../auth/cloudViewSession'
 import { comfyWindows } from '../../host/registry'
 import type { ComfyWindowEntry } from '../../host/registry'
 import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
@@ -96,6 +97,11 @@ export function broadcastAuthChanged(status: AuthStatus): void {
   }
   void broadcastEmbeddedSessionChanged()
   creditBalanceAuthChanged()
+  for (const entry of comfyWindows.values()) {
+    if (entry.sourceCategory !== 'cloud') continue
+    const contents = entry.comfyView.webContents
+    if (!contents.isDestroyed()) void reconcileCloudViewSession(contents)
+  }
 }
 
 export async function signInToCloud(): Promise<AuthStatus> {
