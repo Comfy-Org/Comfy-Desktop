@@ -135,6 +135,7 @@ const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newes
 const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
 const searchOpen = ref(false)
+const placePickerOpen = ref(false)
 const toolbarRow = useTemplateRef<HTMLElement>('toolbarRow')
 const toolbarCompactness = ref(0)
 const SEARCH_AS_ICON = 1
@@ -254,6 +255,10 @@ const selectedBuild = computed<AssetBuild | null>(() => {
   )
 })
 
+watch(selectedBuild, (build) => {
+  if (!build) placePickerOpen.value = false
+})
+
 function choosePlace(id: string): void {
   pickedPlace.value = id
   focusMiss.value = null
@@ -323,6 +328,7 @@ function placeSubtitle(option: AssetBuild): string | null {
 const revealFolderLabel = computed(() => t(revealInFolderKey(window.api.platform)))
 
 async function openPlaceFolder(option: AssetBuild): Promise<void> {
+  placePickerOpen.value = false
   const opened = await window.api
     .openOutputFolder(option.computer ? undefined : option.build.id)
     .catch(() => false)
@@ -1014,6 +1020,7 @@ function extensionOf(name: string): string {
       >
         <Menu
           v-if="selectedBuild"
+          v-model:open="placePickerOpen"
           :modal="false"
           align="start"
           :side-offset="6"
@@ -1111,16 +1118,18 @@ function extensionOf(name: string): string {
                   :text="revealFolderLabel"
                   class="absolute top-1/2 right-7.5 -translate-y-1/2"
                 >
-                  <MenuItem
-                    as="button"
+                  <Button
                     type="button"
-                    class="size-6.5 min-h-0 justify-center rounded-md p-0 text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-foreground"
+                    variant="link"
+                    size="icon-sm"
+                    tabindex="-1"
+                    class="size-6.5 rounded-md"
                     :aria-label="`${revealFolderLabel}: ${option.build.name}`"
                     :data-testid="`assets-place-reveal-${option.build.id}`"
-                    @select="openPlaceFolder(option)"
+                    @click="openPlaceFolder(option)"
                   >
                     <ScanSearch :size="15" aria-hidden="true" />
-                  </MenuItem>
+                  </Button>
                 </Tooltip>
               </div>
             </template>
