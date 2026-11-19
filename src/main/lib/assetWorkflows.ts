@@ -42,8 +42,8 @@ async function localParts(assetId: string): Promise<Uint8Array[] | null> {
   const handle = await fsp.open(file, READ_WITHOUT_FOLLOWING)
   try {
     const { size } = await handle.stat()
-    const head = await readPart(handle, 0, Math.min(size, PART_BYTES))
-    if (size <= PART_BYTES) return [head]
+    if (size <= PART_BYTES * 2) return [await readPart(handle, 0, size)]
+    const head = await readPart(handle, 0, PART_BYTES)
     const tailStart = Math.max(PART_BYTES, size - PART_BYTES)
     return [head, await readPart(handle, tailStart, size - tailStart)]
   } finally {
@@ -60,9 +60,7 @@ async function rangeOf(url: string, range: string, deadline: AbortSignal): Promi
   return fetch(url, { headers: { Range: range }, redirect: 'error', signal: deadline })
 }
 
-async function cloudParts(installationId: string, assetId: string): Promise<Uint8Array[] | null> {
-  const accessToken = await cloudAccessToken(installationId)
-  if (!accessToken) return null
+async function cloudParts(assetId: string, accessToken: string): Promise<Uint8Array[] | null> {
   const deadline = AbortSignal.timeout(READ_TIMEOUT_MS)
   const url = await resolveCloudContentUrl(assetId, accessToken, 'inline', deadline)
   if (!url) return null
@@ -72,6 +70,7 @@ async function cloudParts(installationId: string, assetId: string): Promise<Uint
   const size = headResponse.status === 206 ? totalSize(headResponse) : null
   if (size === null || size <= PART_BYTES) return [head]
   const tailResponse = await rangeOf(url, `bytes=-${PART_BYTES}`, deadline)
+  if (!tailResponse.ok) return null
   if (tailResponse.status !== 206) return [head]
   return [head, await firstBytes(tailResponse, PART_BYTES)]
 }
@@ -93,12 +92,14 @@ function rememberCloud(key: string, read: Promise<EmbeddedWorkflow | null>): voi
   }
 }
 
-function assetWorkflow(source: string, assetId: string): Promise<EmbeddedWorkflow | null> {
+async function assetWorkflow(source: string, assetId: string): Promise<EmbeddedWorkflow | null> {
   if (source === LOCAL_ASSETS_SOURCE) return workflowIn(localParts(assetId))
-  const key = `${source}\n${assetId}`
+  const accessToken = await cloudAccessToken(source)
+  if (!accessToken) return null
+  const key = `${source}\n${assetId}\n${accessToken}`
   const known = remembered.get(key)
   if (known) return known
-  const read = workflowIn(cloudParts(source, assetId), () => remembered.delete(key))
+  const read = workflowIn(cloudParts(assetId, accessToken), () => remembered.delete(key))
   rememberCloud(key, read)
   return read
 }

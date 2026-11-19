@@ -89,34 +89,50 @@ function latin1(bytes: Uint8Array): string {
   return text
 }
 
-function inflated(bytes: Uint8Array): Uint8Array | null {
+interface InflateBudget {
+  left: number
+}
+
+function inflated(bytes: Uint8Array, budget: InflateBudget): Uint8Array | null {
+  if (budget.left <= 0) return null
   try {
-    return inflateSync(bytes, { maxOutputLength: MAX_INFLATED_BYTES })
+    const body = inflateSync(bytes, { maxOutputLength: budget.left })
+    budget.left -= body.length
+    return body
   } catch {
+    budget.left = 0
     return null
   }
 }
 
-function textChunk(type: string, data: Uint8Array): { key: string; text: string } | null {
+function chunkKey(data: Uint8Array): { key: string; keyEnd: number } | null {
   const keyEnd = data.indexOf(0)
-  if (keyEnd <= 0) return null
-  const key = latin1(data.subarray(0, keyEnd)).toLowerCase()
-  if (type === 'tEXt') return { key, text: utf8.decode(data.subarray(keyEnd + 1)) }
+  return keyEnd > 0 ? { key: latin1(data.subarray(0, keyEnd)).toLowerCase(), keyEnd } : null
+}
+
+function chunkText(
+  type: string,
+  data: Uint8Array,
+  keyEnd: number,
+  budget: InflateBudget
+): string | null {
+  if (type === 'tEXt') return utf8.decode(data.subarray(keyEnd + 1))
   if (type === 'zTXt') {
-    const body = inflated(data.subarray(keyEnd + 2))
-    return body ? { key, text: utf8.decode(body) } : null
+    const body = inflated(data.subarray(keyEnd + 2), budget)
+    return body ? utf8.decode(body) : null
   }
   const compressed = data[keyEnd + 1] === 1
   const languageEnd = data.indexOf(0, keyEnd + 3)
   const translatedEnd = languageEnd < 0 ? -1 : data.indexOf(0, languageEnd + 1)
   if (translatedEnd < 0) return null
   const raw = data.subarray(translatedEnd + 1)
-  const body = compressed ? inflated(raw) : raw
-  return body ? { key, text: utf8.decode(body) } : null
+  const body = compressed ? inflated(raw, budget) : raw
+  return body ? utf8.decode(body) : null
 }
 
 function fromPng(bytes: Uint8Array): EmbeddedWorkflow | null {
   const found: Found = { graph: null, api: null }
+  const budget = { left: MAX_INFLATED_BYTES }
   let at = PNG_SIGNATURE.length
   while (at + 8 <= bytes.length) {
     const length = readUint32(bytes, at)
@@ -124,10 +140,13 @@ function fromPng(bytes: Uint8Array): EmbeddedWorkflow | null {
     const start = at + 8
     if (type === 'IDAT' || type === 'IEND' || start + length > bytes.length) break
     if (type === 'tEXt' || type === 'zTXt' || type === 'iTXt') {
-      const chunk = textChunk(type, bytes.subarray(start, start + length))
-      if (chunk && (chunk.key === 'workflow' || chunk.key === 'prompt')) {
-        collect(parseJson(chunk.text), found)
-      }
+      const data = bytes.subarray(start, start + length)
+      const named = chunkKey(data)
+      const text =
+        named && (named.key === 'workflow' || named.key === 'prompt')
+          ? chunkText(type, data, named.keyEnd, budget)
+          : null
+      if (text !== null) collect(parseJson(text), found)
     }
     at = start + length + 4
   }
@@ -185,9 +204,11 @@ export function readEmbeddedWorkflow(parts: Uint8Array[]): EmbeddedWorkflow | nu
   const [head] = parts
   if (head && isPng(head)) return fromPng(head)
   const budget = { left: SCAN_BUDGET_BYTES }
+  let prompt: EmbeddedWorkflow | null = null
   for (const part of parts) {
     const workflow = fromAnyBytes(part, budget)
-    if (workflow) return workflow
+    if (workflow?.format === 'graph') return workflow
+    prompt ??= workflow
   }
-  return null
+  return prompt
 }

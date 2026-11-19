@@ -154,6 +154,7 @@ const assetTotal = ref(0)
 const localCounts = ref<LocalAssetListing['counts'] | null>(null)
 const downloadedCopies = ref(new Map<string, string>())
 const workflowFound = ref(new Map<string, boolean>())
+let workflowChecks = 0
 const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 
@@ -637,6 +638,7 @@ function lookUpCloudAsset(cloudId: string, name: string): Promise<CloudAssetLook
 async function loadAssets(userAsked = false): Promise<void> {
   const current = ++requestId
   workflowFound.value = new Map()
+  workflowChecks += 1
   cancelIdleCallback(prefetchHandle)
   const settled = cloudSettled.value
   const selected = selectedBuild.value
@@ -879,7 +881,9 @@ watch(
   async (asset) => {
     if (!asset || workflowFound.value.has(cardKey(asset))) return
     const key = cardKey(asset)
+    const checkedIn = workflowChecks
     const found = await window.api.hasAssetWorkflow(asset.source, asset.id).catch(() => false)
+    if (checkedIn !== workflowChecks) return
     workflowFound.value = new Map(workflowFound.value).set(key, found)
   }
 )

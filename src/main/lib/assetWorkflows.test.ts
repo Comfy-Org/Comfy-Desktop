@@ -101,6 +101,14 @@ describe('a file on this computer', () => {
     )
   })
 
+  it('finds a workflow that runs across the middle of a file a little over 4 MB', async () => {
+    const workflow = Buffer.from(SAVED_WORKFLOW)
+    const padding = Buffer.alloc(PART_BYTES - 10, 0)
+    await savedFile('clip.mp4', Buffer.concat([padding, workflow, Buffer.alloc(1000, 0)]))
+
+    expect(await hasWorkflow(LOCAL, 'clip.mp4')).toBe(true)
+  })
+
   it('finds a workflow saved at the end of a large video', async () => {
     const padding = Buffer.alloc(PART_BYTES * 2, 0)
     await savedFile('clip.mp4', Buffer.concat([padding, Buffer.from(`moov${SAVED_WORKFLOW}`)]))
@@ -164,6 +172,43 @@ describe('a file in Comfy Cloud', () => {
 
     expect(await hasWorkflow('inst-cloud', 'asset-2')).toBe(true)
     expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('reads the file again next time when the end of it could not be read', async () => {
+    mocks.cloudAccessToken.mockResolvedValue('token')
+    mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/clip')
+    let tailFails = true
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const range = (init.headers as Record<string, string>)['Range']
+        if (range !== `bytes=-${PART_BYTES}`) return partial('ftypisom', PART_BYTES * 3)
+        return tailFails
+          ? new Response('', { status: 503 })
+          : partial(SAVED_WORKFLOW, PART_BYTES * 3)
+      })
+    )
+
+    expect(await hasWorkflow('inst-cloud', 'asset-3')).toBe(false)
+    tailFails = false
+    expect(await hasWorkflow('inst-cloud', 'asset-3')).toBe(true)
+  })
+
+  it('never answers from what another Comfy Cloud sign-in read', async () => {
+    mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/fox')
+    const fetch = vi.fn(async () => new Response(`fLaC${SAVED_WORKFLOW}`, { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+
+    mocks.cloudAccessToken.mockResolvedValue('first-account')
+    expect(await hasWorkflow('inst-cloud', 'asset-4')).toBe(true)
+    expect(await hasWorkflow('inst-cloud', 'asset-4')).toBe(true)
+    expect(fetch).toHaveBeenCalledOnce()
+
+    mocks.cloudAccessToken.mockResolvedValue(null)
+    expect(await hasWorkflow('inst-cloud', 'asset-4')).toBe(false)
+    mocks.cloudAccessToken.mockResolvedValue('second-account')
+    expect(await hasWorkflow('inst-cloud', 'asset-4')).toBe(true)
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 
   it('has no Open workflow when Desktop is not signed in to Comfy Cloud', async () => {
