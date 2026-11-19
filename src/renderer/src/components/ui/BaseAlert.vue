@@ -115,7 +115,7 @@ const linkClass =
     >
       <X :size="18" />
     </Button>
-    <header class="base-alert-header relative mb-3 pt-1">
+    <header class="base-alert-header relative mb-3 pt-1 max-[860px]:pr-8">
       <h2 :id="TITLE_ID" class="base-alert-title m-0 text-base leading-[1.3] font-semibold">
         {{ title }}
       </h2>
