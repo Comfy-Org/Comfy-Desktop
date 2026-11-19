@@ -818,6 +818,36 @@ describe('Build menu', () => {
     }
   )
 
+  it('says Crashed and opens the crash details after a failed start is followed by a start and a crash', async () => {
+    useModal().dismiss()
+    let started: ((data: { installationId: string }) => void) | undefined
+    Object.assign(window.api, {
+      onInstanceStarted: vi.fn((cb: (data: { installationId: string }) => void) => {
+        started = cb
+        return () => {}
+      })
+    })
+    const builds = await mountBuildsTile('ready')
+    failStart()
+    await flushPromises()
+    expect(builds.get('.chooser-tile-error-badge').text()).toBe("Didn't start")
+
+    const sessions = useSessionStore()
+    sessions.errorInstances.delete(BUILD.id)
+    started!({ installationId: BUILD.id })
+    sessions.errorInstances.set(BUILD.id, { installationName: BUILD.name, exitCode: 1 })
+    await flushPromises()
+
+    expect(builds.get('.chooser-tile-error-badge').text()).toBe('Crashed')
+    await builds.get('.chooser-tile-kebab').trigger('click')
+    await press(document.querySelector('[data-testid="build-menu-view-error"]')!)
+
+    expect(viewLogs).not.toHaveBeenCalled()
+    expect(useModal().state.visible).toBe(true)
+    expect(useModal().state.title).toBe('Error')
+    useModal().dismiss()
+  })
+
   it('keeps the build menu closed on a right-click on a page in the sidebar', async () => {
     const sidebar = await mountSidebar('ready')
 
