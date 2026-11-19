@@ -141,6 +141,27 @@ describe('piiScrub', () => {
       expect(scrubPII(input)).toBe(expected)
     })
 
+    it.each(
+      [
+        ['\\\\server\\Users\\alice\\x', '\\\\server\\Users\\[REDACTED]\\x'],
+        ['\\\\nas\\home\\alice\\x', '\\\\nas\\home\\[REDACTED]\\x'],
+        ['\\\\wsl$\\Ubuntu\\home\\alice\\x', '\\\\wsl$\\Ubuntu\\home\\[REDACTED]\\x'],
+        [
+          '\\\\wsl.localhost\\Ubuntu\\home\\alice\\x',
+          '\\\\wsl.localhost\\Ubuntu\\home\\[REDACTED]\\x'
+        ],
+        ['\\\\server\\c$\\Users\\alice\\x', '\\\\server\\c$\\Users\\[REDACTED]\\x'],
+        ['\\\\?\\UNC\\server\\c$\\Users\\alice\\x', '\\\\?\\UNC\\server\\c$\\Users\\[REDACTED]\\x']
+      ].flatMap(([path, scrubbed]) =>
+        ['\\n', '\\r\\n', '\\t'].map((escape) => [
+          `Traceback${escape}${path}`,
+          `Traceback${escape}${scrubbed}`
+        ])
+      )
+    )('redacts a raw share path after an escaped control character: %s', (input, expected) => {
+      expect(scrubPII(input)).toBe(expected)
+    })
+
     it('keeps a Windows line ending after a path', () => {
       expect(scrubPII('at C:\\Users\\alice\r\nnext')).toBe('at C:\\Users\\[REDACTED]\r\nnext')
     })

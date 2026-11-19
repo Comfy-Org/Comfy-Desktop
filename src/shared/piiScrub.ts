@@ -1,6 +1,6 @@
 const ESCAPED_SEP_NAME = String.raw`((?:\\\\)+|(?:\\?\/)+)(?:\\u[0-9a-fA-F]{4}|\\x[89a-fA-F][0-9a-fA-F]|[^\\/"\r\n])+`
 const RAW_SEP_NAME = String.raw`(\\)[^\\/"\r\n]+`
-const NOT_IN_COMPONENT = String.raw`(?<![\w.~$-])`
+const NOT_IN_COMPONENT = String.raw`(?<![\w.~$-](?<!\\[nrt]))`
 const PII_PATH_PATTERNS: RegExp[] = [
   String.raw`([A-Za-z]:[\\/]+Users)`,
   String.raw`${NOT_IN_COMPONENT}(\\\\(?:wsl\$|wsl\.localhost)[\\/]+[^\\/]+[\\/]+home)`,
