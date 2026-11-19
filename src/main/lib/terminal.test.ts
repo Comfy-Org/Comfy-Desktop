@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-/**
- * Fake node-pty machinery. Defined inside vi.hoisted so the (also hoisted)
- * vi.mock factory can reference it. Lets a test drive output/exit and inspect
- * what was written, without spawning a real shell.
- */
 const { spawned, spawn } = vi.hoisted(() => {
   class FakePty {
     dataCb: ((d: string) => void) | undefined
@@ -36,7 +31,6 @@ const { spawned, spawn } = vi.hoisted(() => {
     }
     kill() {
       this.killed = true
-      // node-pty fires onExit asynchronously after kill().
       queueMicrotask(() => this.exitCb?.())
     }
 
@@ -96,12 +90,10 @@ function makeWebContents(): FakeWebContents {
   return wc
 }
 
-// The manager only uses WebContents.send/once/isDestroyed, so the fake is enough.
 function asWc(wc: FakeWebContents) {
   return wc as unknown as Parameters<typeof subscribeTerminal>[1]
 }
 
-/** Nth spawned fake pty, asserting it exists (satisfies noUncheckedIndexedAccess). */
 function ptyAt(i: number) {
   const p = spawned[i]
   if (!p) throw new Error(`No pty spawned at index ${i}`)
@@ -113,7 +105,6 @@ describe('terminal manager', () => {
     _resetTerminalsForTest()
     spawned.length = 0
     spawn.mockClear()
-    // Default: no source-specific env, so #spawn uses the standalone fallback.
     setTerminalEnvResolver(() => null)
   })
 
@@ -123,14 +114,12 @@ describe('terminal manager', () => {
 
     expect(spawn).toHaveBeenCalledTimes(1)
     expect(restore.exited).toBe(false)
-    // Init commands (venv activate + pip alias) are written into the shell.
     expect(ptyAt(0).written.length).toBeGreaterThanOrEqual(2)
   })
 
   it('falls back to the standalone env (ComfyUI/.venv + bundled uv) when no source env', async () => {
     await subscribeTerminal('inst-a', asWc(makeWebContents()))
     const init = ptyAt(0).written.join('\n')
-    // installPath is /installs/inst-a (see the installations mock above).
     expect(init).toContain('ComfyUI')
     expect(init).toContain('.venv')
     expect(init).toContain('standalone-env')
@@ -141,7 +130,6 @@ describe('terminal manager', () => {
     await subscribeTerminal('inst-a', asWc(makeWebContents()))
     const init = ptyAt(0).written.join('\n')
     expect(init).toContain('/repo/.venv')
-    // The reported bug: a git env must not point pip at a nonexistent uv.exe.
     expect(init).not.toContain('standalone-env')
     expect(init).not.toMatch(/\bpip\b/)
   })
@@ -173,13 +161,11 @@ describe('terminal manager', () => {
     expect(init).toContain('python_embeded')
     expect(init).toContain('pip')
     expect(init).not.toContain('standalone-env')
-    // No venv to activate for a portable build.
     expect(init).not.toContain('activate')
     expect(init).not.toContain('VIRTUAL_ENV =')
   })
 
   it('opens the shell in the resolved ComfyUI code folder when it exists', async () => {
-    // process.cwd() is a real, existing dir, so it survives the existence guard.
     const codeDir = process.cwd()
     setTerminalEnvResolver(() => ({ cwd: codeDir }))
     await subscribeTerminal('inst-a', asWc(makeWebContents()))
@@ -191,7 +177,6 @@ describe('terminal manager', () => {
     setTerminalEnvResolver(() => ({ cwd: '/definitely/not/a/real/dir' }))
     await subscribeTerminal('inst-a', asWc(makeWebContents()))
     const opts = spawn.mock.calls[0]?.[2] as { cwd: string } | undefined
-    // installPath is /installs/inst-a (see the installations mock above).
     expect(opts?.cwd).toBe('/installs/inst-a')
   })
 
@@ -223,7 +208,6 @@ describe('terminal manager', () => {
     ptyAt(0).emitExit()
 
     expect(() => writeTerminal('inst-a', 'ls\r')).not.toThrow()
-    // Nothing reached the dead shell.
     expect(ptyAt(0).written.filter((w) => w === 'ls\r')).toHaveLength(0)
   })
 
@@ -236,7 +220,6 @@ describe('terminal manager', () => {
 
     expect(spawn).toHaveBeenCalledTimes(2)
     expect(restore.exited).toBe(false)
-    // The new shell accepts input.
     writeTerminal('inst-a', 'echo hi\r')
     expect(ptyAt(1).written).toContain('echo hi\r')
   })
@@ -249,7 +232,6 @@ describe('terminal manager', () => {
 
     ptyAt(0).emitExit()
 
-    // Re-subscribing respawns the shell; the dead session's scrollback is gone.
     const restore = await subscribeTerminal('inst-a', asWc(wc))
 
     expect(spawn).toHaveBeenCalledTimes(2)
@@ -262,7 +244,6 @@ describe('terminal manager', () => {
     await subscribeTerminal('inst-a', asWc(wc))
 
     await restartTerminal('inst-a')
-    // Let the killed old pty's async onExit microtask run.
     await Promise.resolve()
     await Promise.resolve()
 
@@ -283,7 +264,6 @@ describe('terminal manager', () => {
   })
 
   it('spawns only one shell when subscribed concurrently', async () => {
-    // Two surfaces racing to subscribe must share one PTY, not orphan extras.
     await Promise.all([
       subscribeTerminal('inst-a', asWc(makeWebContents())),
       subscribeTerminal('inst-a', asWc(makeWebContents()))
@@ -299,7 +279,6 @@ describe('terminal manager', () => {
     disposeTerminal('inst-a')
 
     expect(ptyAt(0).killed).toBe(true)
-    // A fresh subscribe respawns a new shell rather than reusing the dead one.
     await subscribeTerminal('inst-a', asWc(makeWebContents()))
     expect(spawn).toHaveBeenCalledTimes(2)
   })

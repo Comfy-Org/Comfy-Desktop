@@ -4,7 +4,6 @@ function flowAbortError(): Error {
   return error
 }
 
-/** Reject a pending operation when its owning sign-in flow is superseded. */
 export async function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) throw flowAbortError()
   let onAbort!: () => void
@@ -19,7 +18,6 @@ export async function abortable<T>(promise: Promise<T>, signal: AbortSignal): Pr
   }
 }
 
-/** Abort-aware delay shared by both browser sign-in paths. */
 export function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) {

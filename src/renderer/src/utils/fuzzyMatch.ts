@@ -1,8 +1,3 @@
-/**
- * Fuzzy-match a lowercased needle against a lowercased name. Returns >0 on hit, 0 on miss, 1 on empty needle.
- * Tiers: exact (1000), whole-string prefix (900−len), word-prefix (800), substring (600−pos), acronym (400), tight subsequence (50–200, span ≤ 2× needle).
- * Loose subsequence is rejected on purpose (it made "cuda" match `--enable-cors-header`). Word boundaries are hyphen, underscore, and whitespace.
- */
 export function scoreName(needle: string, name: string): number {
   if (!needle) return 1
   if (!name) return 0

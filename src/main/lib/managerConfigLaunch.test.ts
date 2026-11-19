@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// In-memory settings store so the test never touches electron or disk.
 let mockSettings: Record<string, unknown> = {}
 
 vi.mock('../settings', () => ({
@@ -127,8 +126,6 @@ describe('reconcileManagerConfigForLaunch', () => {
       ).resolves.toEqual({ ok: true })
 
       expect(warn).toHaveBeenCalledWith('Failed to reconcile ComfyUI-Manager config:', err)
-      // Exact match against the canonical scrubbed fields - a drift to an
-      // ad hoc (unsanitized) payload must fail here.
       expect(telemetry.capture).toHaveBeenCalledWith(
         'comfy.desktop.manager.config_seed_failed',
         buildErrorFields(err)
@@ -138,8 +135,6 @@ describe('reconcileManagerConfigForLaunch', () => {
     }
   })
 
-  // Fail closed: launching after a failed write would run Manager with stale
-  // (possibly weaker) security settings while the UI claims the new values.
   it('fails closed when a chosen security level cannot be written', async () => {
     const err = new Error('EACCES: permission denied')
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})

@@ -1,11 +1,3 @@
-/**
- * Workspace client: list the workspaces a signed-in user belongs to.
- *
- * `GET {apiBase}/workspaces` (the ingest service) returns the caller's
- * workspaces. Switching the ACTIVE workspace is a re-auth, not a call here (a
- * PKCE cloud token is scoped at consent time and cannot be silently re-scoped);
- * `CloudSession.switchWorkspace` drives that. This module is read-only listing.
- */
 import { CLOUD_CONFIG } from './config'
 import type { Workspace, WorkspaceMember } from './types'
 
@@ -16,13 +8,12 @@ interface WorkspaceRow {
   name: string
   type: string
   role: string
-  subscription_tier?: string
+  subscription_tier?: unknown
   created_at?: string
   joined_at?: string
 }
 
 export interface ListWorkspacesOptions {
-  /** Cloud API base. Defaults to the configured issuer's `/api`. */
   apiBase?: string
   timeoutMs?: number
 }
@@ -41,6 +32,10 @@ interface WorkspaceMembersResponse {
   pagination?: { has_more?: boolean }
 }
 
+function isPlanTier(value: unknown): value is string | null {
+  return typeof value === 'string' || value === null
+}
+
 function isWorkspaceRow(value: unknown): value is WorkspaceRow {
   if (!value || typeof value !== 'object') return false
   const row = value as Partial<WorkspaceRow>
@@ -53,7 +48,6 @@ function isWorkspaceRow(value: unknown): value is WorkspaceRow {
   )
 }
 
-/** Only a valid catalog establishes membership; unavailable catalogs must reject. */
 export async function listWorkspaces(
   accessToken: string,
   options: ListWorkspacesOptions = {}
@@ -76,13 +70,12 @@ export async function listWorkspaces(
     name: w.name,
     type: w.type,
     role: w.role,
-    ...(w.subscription_tier ? { subscriptionTier: w.subscription_tier } : {}),
+    ...(isPlanTier(w.subscription_tier) ? { subscriptionTier: w.subscription_tier } : {}),
     ...(w.created_at ? { createdAt: w.created_at } : {}),
     ...(w.joined_at ? { joinedAt: w.joined_at } : {})
   }))
 }
 
-/** List every member of the active workspace for creator-name resolution. */
 export async function listWorkspaceMembers(
   accessToken: string,
   options: ListWorkspacesOptions = {}

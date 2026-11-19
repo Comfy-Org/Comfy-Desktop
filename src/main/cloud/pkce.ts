@@ -17,7 +17,6 @@ export interface BuildAuthorizeUrlParams {
   resource?: string
   state: string
   codeChallenge: string
-  /** Pre-select a workspace at consent time (the switch-workspace path). */
   workspaceId?: string
 }
 

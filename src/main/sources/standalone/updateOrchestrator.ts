@@ -57,19 +57,7 @@ export interface UpdateOrchestrationOptions {
   dryRunConflictCheck?: boolean
   saveRollback?: boolean
   preUpdateSnapshot?: boolean
-  /** Force `uv pip install -r requirements.txt` to run after the git update,
-   *  even when the requirements.txt content is byte-identical pre/post. Used
-   *  by the post-install auto-update in `install.ts` to reconcile the
-   *  pre-extracted standalone bundle's venv against ComfyUI's pinned deps. */
   forceDepsSync?: boolean
-  /** Optional explicit ComfyUI release tag (e.g. `v1.19.4`). Set by the
-   *  install-wizard / IPP version picker. When present, `update_comfyui.py`
-   *  is invoked with `--tag <ref>` instead of `--stable` / no flag, so the
-   *  checkout lands on a specific historical release (upgrade or downgrade).
-   *  Must be a strict `vMAJOR.MINOR.PATCH` shape; the script rejects anything
-   *  else with exit code 2. The `channel` carried alongside still records the
-   *  user's declared preference — same as a manual checkout on the stable
-   *  channel. */
   targetTag?: string
 }
 
@@ -205,16 +193,10 @@ export async function runComfyUIUpdate(
   let { installation } = opts
   const sendOutput = opts.sendOutput
   const comfyuiDir = path.join(installPath, 'ComfyUI')
-  // Adopted installs run the updater against the legacy `.venv` Python (it has
-  // pygit2 from adoption); `update_comfyui.py` only needs pygit2 + stdlib.
   const updaterPython =
     installation.adopted === true
       ? (installation.adoptedPythonPath as string)
       : getMasterPythonPath(installPath)
-  // `targetTag` (vMAJOR.MINOR.PATCH) wins over channel: the user explicitly
-  // picked a specific release in the install wizard or IPP, and `--tag` and
-  // `--stable` are mutually exclusive script-side. The orchestration record
-  // still keeps `channel` for downstream bookkeeping (release-cache, snapshots).
   const channelArgs = opts.targetTag
     ? ['--tag', opts.targetTag]
     : channel === 'stable'
@@ -244,18 +226,13 @@ export async function runComfyUIUpdate(
     }
   }
 
-  // Mark the source-moving window so a hard process kill (power loss, taskkill)
-  // mid-update is recovered on the next launch — see recoverInterruptedComfyOp.
-  // The marker is cleared once source + packages are consistent below.
   const preOpHead = readGitHead(comfyuiDir)
-  // An earlier update left the tree half-written: only a success clears it; resync deps.
   const pending = readOpMarker(installPath)
   const repairing = pending?.op === 'update' && !pending.postHead
   if (preOpHead && !repairing) {
     await writeOpMarker(installPath, { op: 'update', preHead: preOpHead, startedAt: Date.now() })
   }
 
-  // Run the update script (with a macOS SIGKILL repair-and-retry).
   let result = await spawnUpdateScript(updaterPython, comfyuiDir, channelArgs, sendOutput, signal)
 
   if (result.exitCode !== 0 && result.exitSignal === 'SIGKILL' && process.platform === 'darwin') {
@@ -264,8 +241,6 @@ export async function runComfyUIUpdate(
     } else {
       console.warn('macOS killed update process — attempting binary repair and retry')
     }
-    // Recovers a Gatekeeper SIGKILL on either install type: `repairMacBinaries`
-    // picks the right runtime venv via `getActiveVenvDir(installation)`.
     await repairMacBinaries(installPath, sendProgress, sendOutput, installation)
     if (sendOutput) {
       sendOutput('Repair complete — retrying update…\n\n')
@@ -273,9 +248,6 @@ export async function runComfyUIUpdate(
     result = await spawnUpdateScript(updaterPython, comfyuiDir, channelArgs, sendOutput, signal)
   }
 
-  // Record the local backup branch (created by the update script at the pre-op
-  // HEAD) in the op marker so a failed launch-time recovery can point the user at
-  // an offline restore point. Diagnostics only — the rollback target stays preHead.
   if (result.markers.BACKUP_BRANCH && preOpHead && !repairing) {
     const existingMarker = readOpMarker(installPath)
     if (existingMarker && !existingMarker.postHead) {
@@ -286,15 +258,9 @@ export async function runComfyUIUpdate(
     }
   }
 
-  // The script stopped before writing (fetch failure, missing tag, cancel): nothing changed.
   const wroteNothing = !result.markers.WRITING_TARGET && readGitHead(comfyuiDir) === preOpHead
   if (result.exitCode !== 0 && wroteNothing && !repairing) await clearOpMarker(installPath)
 
-  // A failed or cancelled git step can leave the source moved: the update script
-  // advances the branch ref before the working-tree checkout, so a checkout failure
-  // (e.g. a Windows symlink-privilege error) or a kill mid-checkout strands new
-  // source against the old venv (crashes on import). Roll it back. The marker is
-  // left in place so recoverInterruptedComfyOp retries next launch if this fails.
   let rollbackNote = ''
   if (
     (signal?.aborted || result.exitCode !== 0) &&
@@ -305,8 +271,6 @@ export async function runComfyUIUpdate(
     rollbackNote = `\n\n${rollbackStatusMessage(rolledBack, preOpHead, result.markers.BACKUP_BRANCH)}`
   }
 
-  // Check cancellation before the exit code — aborted processes exit non-zero
-  // and shouldn't surface an error.
   if (signal?.aborted) return { ok: false, message: `Cancelled${rollbackNote}`, installation }
 
   if (result.exitCode !== 0) {
@@ -341,23 +305,15 @@ export async function runComfyUIUpdate(
     postReqs = await fs.promises.readFile(reqPath, 'utf-8')
   } catch {}
 
-  // Re-sync deps when reqs changed (the historical trigger), OR when git HEAD
-  // moved (source can import new APIs without bumping requirements.txt — saw
-  // this with `comfy_aimdo.vram_buffer` showing up in `model_management.py`
-  // between aimdo bumps), OR when the caller demands it (first-run auto-update
-  // reconciling the bundled venv against the bundled requirements.txt).
   const headMoved = !!(
     markers.PRE_UPDATE_HEAD &&
     markers.POST_UPDATE_HEAD &&
     markers.PRE_UPDATE_HEAD !== markers.POST_UPDATE_HEAD
   )
   const reqsChanged = preReqs !== postReqs
-  // A repair resyncs too: the interrupted update may have moved HEAD already.
   const forceDeps = repairing || !!opts.forceDepsSync
   const shouldSyncDeps = (reqsChanged || headMoved || forceDeps) && postReqs.length > 0
 
-  // Tracks a dependency-sync failure so the transactional guard below can roll
-  // ComfyUI's source back instead of leaving new source + stale packages.
   let depFailure: string | null = null
 
   if (shouldSyncDeps) {
@@ -401,7 +357,6 @@ export async function runComfyUIUpdate(
               signal
             )
 
-            // Dry-run conflicts are advisory only — never a rollback trigger.
             if (dryRunResult.code !== 0) {
               sendOutput?.(
                 `\n⚠ Requirements dry-run detected potential conflicts:\n${dryRunResult.stderr || dryRunResult.stdout}\n`
@@ -471,7 +426,6 @@ export async function runComfyUIUpdate(
     postMgrReqs = await fs.promises.readFile(mgrReqPath, 'utf-8')
   } catch {}
 
-  // Fail fast: skip the manager requirements sync if the main one already failed.
   const mgrReqsChanged = preMgrReqs !== postMgrReqs || repairing
   if (!depFailure && !signal?.aborted && mgrReqsChanged && postMgrReqs.length > 0) {
     const uvPath = getActiveUvPath(installation)
@@ -508,12 +462,6 @@ export async function runComfyUIUpdate(
     }
   }
 
-  // Transactional guard: if the dependency sync failed or was cancelled after the
-  // git update moved ComfyUI's source, roll the source back to the pre-update
-  // commit. Otherwise we leave new source + stale packages — the half-applied
-  // state that crashes on import (e.g. `comfy_aimdo.vram_buffer`). uv installs are
-  // ~atomic, so on failure packages are typically untouched and restoring the
-  // source restores a consistent old-source/old-packages state.
   if (depFailure || signal?.aborted) {
     const preHead = markers.PRE_UPDATE_HEAD
     const sourceMoved = !!preHead && readGitHead(comfyuiDir) !== preHead
@@ -526,24 +474,16 @@ export async function runComfyUIUpdate(
       ? `${reason}\n\n${rollbackStatusMessage(rolledBack, preHead!, markers.BACKUP_BRANCH)}`
       : reason
     if (!sendOutput) console.warn(`ComfyUI update aborted: ${reason}`)
-    // Leave the op marker: if the in-process rollback failed (rolledBack=false),
-    // recoverInterruptedComfyOp retries on the next launch; if it succeeded,
-    // HEAD already matches preHead so recovery is a harmless no-op.
     return { ok: false, message, installation }
   }
 
-  // Source + packages are now consistent — the update succeeded. Stamp the marker
-  // completed and clear it so the next launch doesn't roll a good update back.
   await completeOpMarker(installPath)
 
-  // Fetch tags so version resolution sees all release tags (the update script
-  // may only fetch master on the latest channel).
   await fetchTags(comfyuiDir)
   clearVersionCache()
   const checkedOutTag = markers.CHECKED_OUT_TAG || undefined
   const fullPostHead = markers.POST_UPDATE_HEAD || readGitHead(comfyuiDir)
 
-  // Pass the tag's SHA directly to resolveLocalVersion.
   let latestTagOverride: LatestTagOverride | undefined
   const latestTag = await findLatestVersionTag(comfyuiDir)
   if (latestTag) {
@@ -597,7 +537,6 @@ export async function runComfyUIUpdate(
     const snapshotCount = await snapshots.getSnapshotCount(installPath)
     await update({ lastSnapshot: filename, snapshotCount })
 
-    // Prune the pre-update snapshot if identical to the one before it.
     if (preUpdateFilename) {
       const pruned = await snapshots.deduplicatePreUpdateSnapshot(installPath, preUpdateFilename)
       if (pruned) {

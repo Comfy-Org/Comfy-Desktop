@@ -6,29 +6,12 @@ import { killProcTree } from './process'
 import { stripAnsi } from './stderrTail'
 import { scrubAll } from '../../shared/piiScrub'
 
-/** Regex matching PyTorch-family packages that must never be overwritten by pip. */
 export const PYTORCH_RE = /^(torch|torchvision|torchaudio|torchsde)(\s*[<>=!~;[#]|$)/i
 
-/** A parseable distribution name. Shared with the snapshot import guard: these
- *  names reach argv for `uv pip uninstall`, so anything option-shaped or
- *  otherwise malformed must be dropped rather than passed through. */
 export const VALID_PIP_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
-/** Environment variables that force colour on. Matched case-insensitively:
- *  Windows environment names are case-insensitive, so an inherited
- *  `Force_Color` reaches the child exactly as `FORCE_COLOR` would. */
 const COLOUR_FORCING_VARS = new Set(['FORCE_COLOR', 'CLICOLOR_FORCE'])
 
-/**
- * Environment for a `uv` subprocess, with colour forced off.
- *
- * `uv` honours `FORCE_COLOR` / `CLICOLOR_FORCE` even when its stdout is a pipe,
- * so whatever env the app was launched with can wrap every package name in SGR
- * codes — `\x1b[1maiohttp\x1b[0m==3.9.5` instead of `aiohttp==3.9.5`. Parsed
- * output must never carry them: in #1514 those names were fed back to
- * `uv pip uninstall`, which rejected them all and tipped the restore into a
- * revert that deleted the user's environment.
- */
 export function uvEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env: Record<string, string | undefined> = {}
   for (const [key, value] of Object.entries(base)) {
@@ -39,21 +22,15 @@ export function uvEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv 
   return env
 }
 
-/** Cap on captured pip output (characters) so a verbose install can't grow an unbounded string in memory. */
 const MAX_CAPTURED_OUTPUT_CHARS = 256 * 1024
 
 export interface UvPipResult {
   code: number
-  /** Combined stdout+stderr in arrival order, capped to the last ~256K characters. */
   output: string
 }
 
-/** Handed the spawned uv so a caller can act on the process itself. Optional and
- *  purely additive: callers that do not pass one are unaffected, and nothing here
- *  depends on it. A caller that keeps the handle owns whatever it does with it. */
 export type OnUvSpawn = (proc: ChildProcess) => void
 
-/** Run a uv pip command, streaming output and capturing a bounded tail. Returns the exit code and captured output. */
 export function runUvPipDetailed(
   uvPath: string,
   args: string[],
@@ -75,9 +52,7 @@ export function runUvPipDetailed(
     if (onSpawn) {
       try {
         onSpawn(proc)
-      } catch {
-        // A caller's own bookkeeping must not take down the install.
-      }
+      } catch {}
     }
 
     let captured = ''
@@ -108,7 +83,6 @@ export function runUvPipDetailed(
   })
 }
 
-/** Run a uv pip command and stream output. Returns the exit code. */
 export function runUvPip(
   uvPath: string,
   args: string[],
@@ -124,8 +98,6 @@ export interface PipMirrorConfig {
   useChineseMirrors?: boolean
 }
 
-/** Install a requirements file via `uv pip install -r`, filtering out PyTorch packages first. Returns the exit code and captured output.
- *  `compile` resolves it into an output file instead and installs nothing. */
 export async function installFilteredRequirementsDetailed(
   reqPath: string,
   uvPath: string,
@@ -174,7 +146,6 @@ export async function installFilteredRequirementsDetailed(
   }
 }
 
-/** Install a requirements file via `uv pip install -r`, filtering out PyTorch packages first. Returns the exit code. */
 export async function installFilteredRequirements(
   reqPath: string,
   uvPath: string,
@@ -202,13 +173,11 @@ export async function installFilteredRequirements(
 
 export const PYPI_INDEX_URL = 'https://pypi.org/simple/'
 
-/** Additional PyPI mirror URLs for regions with restricted access (e.g. China). */
 export const PYPI_MIRROR_URLS: string[] = [
   'https://mirrors.aliyun.com/pypi/simple/',
   'https://mirrors.cloud.tencent.com/pypi/simple/'
 ]
 
-/** Trim whitespace and ensure a trailing slash for consistent URL comparison. */
 function normalizeIndexUrl(url: string): string {
   const trimmed = url.trim()
   return trimmed.endsWith('/') ? trimmed : trimmed + '/'
@@ -252,22 +221,11 @@ export function getPipIndexArgs(pypiMirror?: string, useChineseMirrors?: boolean
   return args
 }
 
-/**
- * Parse `uv pip freeze` output into `{ name: version }`.
- *
- * ANSI escapes are stripped before parsing, not after: a colourised stream
- * yields `\x1b[1maiohttp\x1b[0m==3.9.5`, and a name carrying those bytes is
- * both unmatchable against a snapshot and unusable as a `uv pip` argument
- * (#1514). Callers pass the raw stdout; nothing downstream sees an escape.
- */
 export function parsePipFreeze(output: string): Record<string, string> {
-  // Null prototype: consumers test membership with `in`, so an inherited
-  // `constructor` / `toString` would read as an installed distribution.
   const packages: Record<string, string> = Object.create(null)
   for (const line of stripAnsi(output).split('\n')) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
-    // Editable installs: "-e git+https://...@commit#egg=name"
     if (trimmed.startsWith('-e ')) {
       const eggMatch = trimmed.match(/#egg=(.+)/)
       if (eggMatch) {
@@ -276,18 +234,14 @@ export function parsePipFreeze(output: string): Record<string, string> {
       }
       continue
     }
-    // PEP 508 direct references: "package @ git+https://..." or "package @ file:///..."
     const atMatch = trimmed.match(/^([A-Za-z0-9_.-]+)\s*@\s*(.+)$/)
     if (atMatch) {
       const name = atMatch[1]!.trim()
       if (VALID_PIP_NAME.test(name)) packages[name] = atMatch[2]!.trim()
       continue
     }
-    // Standard: "package==version"
     const eqIdx = trimmed.indexOf('==')
     if (eqIdx > 0) {
-      // Trim: a styled span can enclose trailing whitespace, and `aiohttp `
-      // is as unusable as an escape-carrying name.
       const name = trimmed.slice(0, eqIdx).trim()
       if (VALID_PIP_NAME.test(name)) packages[name] = trimmed.slice(eqIdx + 2)
     }
@@ -306,8 +260,6 @@ export async function pipFreeze(
       { windowsHide: true, timeout: 60_000, maxBuffer: 10 * 1024 * 1024, env: uvEnv() },
       (err, stdout, stderr) => {
         if (err) {
-          // Surfaced in restore failure dialogs and logs: scrub absolute
-          // paths (and so the OS username) and strip any escapes.
           const raw = stderr ? stripAnsi(stderr).slice(0, 500) : err.message
           return reject(new Error(`uv pip freeze failed: ${scrubAll(raw)}`))
         }

@@ -67,7 +67,6 @@ describe('lerpKf', () => {
   })
 })
 
-// Minimal comp so `useBrandScene` gets an onMounted context and a stage node.
 const TINY_SCENE: BrandScene = {
   fps: 60,
   duration: 100,
@@ -146,8 +145,6 @@ describe('useBrandScene playback gating', () => {
   })
 })
 
-// A fake <video> exposing enough surface for markPaintedWhenReady: a class list,
-// an event registry, a settable readyState, and a manually-drained rVFC queue.
 interface FakeVideoEl {
   classList: { add(c: string): void; remove(c: string): void; contains(c: string): boolean }
   readyState: number
@@ -205,7 +202,6 @@ describe('markPaintedWhenReady', () => {
     rvfcCallbacks[0]!()
     expect(el.isPainted()).toBe(true)
 
-    // The scene loops: the clip is seeked back and re-activated.
     markPaintedWhenReady(el as unknown as HTMLVideoElement)
     expect(el.isPainted(), 'the gate must re-close for the fresh seek, not stay latched').toBe(
       false
@@ -216,10 +212,9 @@ describe('markPaintedWhenReady', () => {
 
   it('ignores a stale callback that resolves after a later activation', () => {
     const { el, rvfcCallbacks } = makeFakeVideo({ rvfc: true })
-    markPaintedWhenReady(el as unknown as HTMLVideoElement) // activation 1 → rvfcCallbacks[0]
-    markPaintedWhenReady(el as unknown as HTMLVideoElement) // activation 2 → rvfcCallbacks[1]
+    markPaintedWhenReady(el as unknown as HTMLVideoElement)
+    markPaintedWhenReady(el as unknown as HTMLVideoElement)
 
-    // The first activation's frame callback fires late, after the re-activation.
     rvfcCallbacks[0]!()
     expect(el.isPainted(), "a prior activation's frame must not paint the current seek").toBe(false)
     rvfcCallbacks[1]!()
@@ -229,16 +224,16 @@ describe('markPaintedWhenReady', () => {
   it('fallback path: gates on readyState and does not stack listeners across activations', () => {
     const { el, listenerCount } = makeFakeVideo({ rvfc: false })
     markPaintedWhenReady(el as unknown as HTMLVideoElement)
-    el.emit('seeked') // readyState still 0 → not enough data, no paint
+    el.emit('seeked')
     expect(el.isPainted()).toBe(false)
 
     const afterFirst = listenerCount()
-    markPaintedWhenReady(el as unknown as HTMLVideoElement) // re-activate
+    markPaintedWhenReady(el as unknown as HTMLVideoElement)
     expect(listenerCount(), 'the prior activation listeners are torn down, not stacked').toBe(
       afterFirst
     )
 
-    el.readyState = 2 /* HAVE_CURRENT_DATA */
+    el.readyState = 2
     el.emit('seeked')
     expect(el.isPainted(), 'paints once the seeked frame has data').toBe(true)
   })

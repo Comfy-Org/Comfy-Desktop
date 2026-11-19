@@ -1,60 +1,78 @@
 <script setup lang="ts">
-/** One grid of installed instances for the selected dashboard scope. */
-import { useI18n } from 'vue-i18n'
-import { Plus } from 'lucide-vue-next'
+import { computed, onBeforeUpdate, useTemplateRef, type ComponentPublicInstance } from 'vue'
 import ChooserInstallTile from './ChooserInstallTile.vue'
+import { homeBuildTones } from '../../panel/home/homeBuild'
+import { useInstallationStore } from '../../stores/installationStore'
+import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
 import type { Installation } from '../../types/ipc'
 
 const props = withDefaults(
   defineProps<{
     installations: Installation[]
-    /** Lead with the New Install tile. */
-    showNew?: boolean
     showFreeRunsPill?: boolean
     showWhyCloud?: boolean
-    isStoppedActionGated: (inst: Installation) => boolean
-    isPromotingToWorkspace?: (inst: Installation) => boolean
   }>(),
   {
-    showNew: false,
     showFreeRunsPill: false,
-    showWhyCloud: false,
-    isPromotingToWorkspace: () => false
+    showWhyCloud: false
   }
 )
 
 const emit = defineEmits<{
-  'new-install': []
   pick: [installation: Installation]
-  'open-card-menu': [event: MouseEvent, installation: Installation]
-  'open-kebab-menu': [event: MouseEvent, installation: Installation]
-  'trigger-action': [action: 'update' | 'migrate', installation: Installation]
+  'open-details': [installation: Installation]
   'view-error': [installation: Installation]
   'view-danger': [installation: Installation]
   'why-cloud': []
 }>()
 
-const { t } = useI18n()
+const installationStore = useInstallationStore()
+const tones = computed(() => homeBuildTones(props.installations, installationStore.installations))
+const autoStart = useAutoStartBuild()
 
-/** Freeze a leaving tile's box so it doesn't collapse under `position:
- *  absolute`, letting survivors FLIP into the gap immediately. */
-function lockLeavingTileSize(el: Element): void {
-  const node = el as HTMLElement
-  const grid = node.parentElement
-  if (!grid) return
-  const rect = node.getBoundingClientRect()
-  const gridRect = grid.getBoundingClientRect()
-  node.style.width = `${rect.width}px`
-  node.style.height = `${rect.height}px`
-  node.style.left = `${rect.left - gridRect.left + grid.scrollLeft}px`
-  node.style.top = `${rect.top - gridRect.top + grid.scrollTop}px`
+interface TileBox {
+  left: number
+  top: number
+  width: number
+  height: number
 }
 
-/** Drop the locked box when a leaving tile is reinserted (leave cancelled):
- *  Vue reuses the DOM node, and `.tile-leave-active` no longer applies, so a
- *  stale inline width/height would otherwise freeze the revived tile's size. */
+const grid = useTemplateRef<ComponentPublicInstance>('grid')
+let boxesBeforeChange = new WeakMap<Element, TileBox>()
+
+onBeforeUpdate(() => {
+  const gridEl = grid.value?.$el
+  if (!(gridEl instanceof HTMLElement)) return
+  boxesBeforeChange = new WeakMap()
+  for (const tile of gridEl.children) {
+    if (!(tile instanceof HTMLElement)) continue
+    boxesBeforeChange.set(tile, {
+      left: tile.offsetLeft,
+      top: tile.offsetTop,
+      width: tile.offsetWidth,
+      height: tile.offsetHeight
+    })
+  }
+})
+
+function lockLeavingTileSize(el: Element): void {
+  const node = el as HTMLElement
+  const box = boxesBeforeChange.get(node) ?? {
+    left: node.offsetLeft,
+    top: node.offsetTop,
+    width: node.offsetWidth,
+    height: node.offsetHeight
+  }
+  node.style.position = 'absolute'
+  node.style.width = `${box.width}px`
+  node.style.height = `${box.height}px`
+  node.style.left = `${box.left}px`
+  node.style.top = `${box.top}px`
+}
+
 function unlockTileSize(el: Element): void {
   const node = el as HTMLElement
+  node.style.removeProperty('position')
   node.style.removeProperty('width')
   node.style.removeProperty('height')
   node.style.removeProperty('left')
@@ -63,93 +81,34 @@ function unlockTileSize(el: Element): void {
 </script>
 
 <template>
-  <TransitionGroup
-    tag="div"
-    name="tile"
-    class="chooser-family-grid"
-    @before-leave="lockLeavingTileSize"
-    @leave-cancelled="unlockTileSize"
-  >
-    <button
-      v-if="props.showNew"
-      key="__new"
-      type="button"
-      class="chooser-tile chooser-tile-new"
-      @click="emit('new-install')"
+  <div class="@container/builds w-full">
+    <TransitionGroup
+      ref="grid"
+      tag="div"
+      name="tile"
+      enter-active-class="tile-enter-active [transition:opacity_200ms_ease,transform_200ms_cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:duration-[1ms]"
+      enter-from-class="tile-enter-from opacity-0 [transform:translateY(8px)_scale(0.98)] motion-reduce:transform-none"
+      leave-active-class="tile-leave-active [transition:opacity_140ms_ease,transform_140ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
+      leave-to-class="tile-leave-to opacity-0 [transform:scale(0.98)] motion-reduce:transform-none"
+      move-class="tile-move [transition:transform_220ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
+      class="chooser-family-grid relative grid w-full grid-cols-2 gap-[15px] @max-[40rem]/builds:grid-cols-1"
+      @before-leave="lockLeavingTileSize"
+      @leave-cancelled="unlockTileSize"
     >
-      <div class="chooser-tile-icon"><Plus :size="32" /></div>
-      <div class="chooser-tile-name">{{ t('chooser.newInstall') }}</div>
-      <div class="chooser-tile-meta">{{ t('chooser.newInstallDesc') }}</div>
-    </button>
-
-    <ChooserInstallTile
-      v-for="installation in props.installations"
-      :key="`install:${installation.id}`"
-      :installation="installation"
-      :show-free-runs-pill="props.showFreeRunsPill && installation.sourceCategory === 'cloud'"
-      :show-why-cloud="props.showWhyCloud && installation.sourceCategory === 'cloud'"
-      :is-stopped-action-gated="props.isStoppedActionGated(installation)"
-      :is-promoting-to-workspace="props.isPromotingToWorkspace(installation)"
-      @why-cloud="emit('why-cloud')"
-      @pick="emit('pick', $event)"
-      @open-card-menu="(event, inst) => emit('open-card-menu', event, inst)"
-      @open-kebab-menu="(event, inst) => emit('open-kebab-menu', event, inst)"
-      @trigger-action="(action, inst) => emit('trigger-action', action, inst)"
-      @view-error="emit('view-error', $event)"
-      @view-danger="emit('view-danger', $event)"
-    />
-  </TransitionGroup>
+      <ChooserInstallTile
+        v-for="(installation, index) in props.installations"
+        :key="`install:${installation.id}`"
+        :installation="installation"
+        :tone="tones[index]"
+        :show-free-runs-pill="props.showFreeRunsPill && installation.sourceCategory === 'cloud'"
+        :show-why-cloud="props.showWhyCloud && installation.sourceCategory === 'cloud'"
+        :auto-start="autoStart.startsOnOpen(installation.id)"
+        @why-cloud="emit('why-cloud')"
+        @pick="emit('pick', $event)"
+        @open-details="emit('open-details', $event)"
+        @view-error="emit('view-error', $event)"
+        @view-danger="emit('view-danger', $event)"
+      />
+    </TransitionGroup>
+  </div>
 </template>
-
-<style scoped>
-@import './chooser-tiles.css';
-
-.chooser-family-grid {
-  /* Containing block for absolutely-positioned leaving tiles. */
-  position: relative;
-  width: 100%;
-  display: grid;
-  /* Fixed-width tracks instead of `auto-fill` `minmax(...)`: with `auto-fill`
-   * the grid reserves blank tracks across the full width, leaving 1-3 cards
-   * stuck at the left edge. Fixed tracks wrap honestly. */
-  grid-template-columns: repeat(auto-fit, 280px);
-  justify-content: start;
-  gap: 16px;
-  align-content: start;
-}
-
-/* Tile FLIP. */
-.tile-enter-active {
-  transition:
-    opacity 200ms ease,
-    transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.tile-enter-from {
-  opacity: 0;
-  transform: translateY(8px) scale(0.98);
-}
-.tile-leave-active {
-  transition:
-    opacity 140ms ease,
-    transform 140ms cubic-bezier(0.32, 0.72, 0, 1);
-  position: absolute;
-}
-.tile-leave-to {
-  opacity: 0;
-  transform: scale(0.98);
-}
-.tile-move {
-  transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-@media (prefers-reduced-motion: reduce) {
-  .tile-enter-active,
-  .tile-leave-active,
-  .tile-move {
-    transition-duration: 1ms;
-  }
-  .tile-enter-from,
-  .tile-leave-to {
-    transform: none;
-  }
-}
-</style>

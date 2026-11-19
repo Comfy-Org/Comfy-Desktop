@@ -15,7 +15,6 @@ export function proactiveGreetingExposureKey(attribution: ProactiveGreetingAttri
   return JSON.stringify([attribution.groupKey, attribution.variant])
 }
 
-/** undefined is unrelated telemetry; null is a malformed experiment event. */
 export function parseProactiveGreetingAttribution(
   event: string,
   properties: Record<string, unknown>
@@ -49,7 +48,6 @@ export function parseProactiveGreetingAttribution(
   return { userId, workspaceId, groupKey, variant }
 }
 
-/** Construct reserved PostHog properties only after validating the originating actor. */
 export function proactiveGreetingProperties(attribution: ProactiveGreetingAttribution) {
   return {
     distinct_id: attribution.userId,

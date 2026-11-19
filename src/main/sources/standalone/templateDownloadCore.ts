@@ -2,22 +2,10 @@ import { formatTime } from '../../lib/util'
 import { t } from '../../lib/i18n'
 import type { TemplateDownloadStatus } from '../../../types/ipc'
 
-/**
- * Pure core of the template-download feature: state shape, the read-side
- * aggregation, the bounded-concurrency pool, and the substatus formatter.
- *
- * Deliberately free of Electron/IPC/fs imports so it is unit-testable in
- * isolation (the stateful task in `templateDownloadTask.ts` composes these).
- * These are the pieces that carry the correctness-critical math, so they're
- * the ones worth testing without a window.
- */
-
 export interface FileProgress {
   name: string
   directory: string
-  /** Bytes written so far (hot-path target). */
   received: number
-  /** Real total once known (0 until the first chunk / completion). */
   total: number
   done: boolean
   failed: boolean
@@ -27,12 +15,8 @@ export type { TemplateDownloadStatus }
 
 export interface TemplateDownloadState {
   status: TemplateDownloadStatus
-  /** One entry per required model — the sole mutation target of the hot path. */
   files: FileProgress[]
-  /** Index `sizeBytes` estimate; the cumulative-bar denominator until real
-   *  per-file totals are known. */
   estimatedTotalBytes: number
-  /** Latest instantaneous speed/ETA snapshot. Written O(1) on each chunk. */
   speedMBs: number
   etaSecs: number
   error?: string
@@ -48,10 +32,7 @@ export interface TemplateDownloadSummary {
   currentFile: string
   speedMBs: number
   etaSecs: number
-  /** 0–100, clamped; -1 when no denominator is known yet. */
   percent: number
-  /** Carried through from the state so the formatter can pick error-specific
-   *  copy (e.g. the disk-space message) without re-reading the state. */
   error?: string
 }
 
@@ -59,13 +40,6 @@ export function isTerminal(status: TemplateDownloadStatus): boolean {
   return status === 'done' || status === 'error' || status === 'cancelled'
 }
 
-/**
- * Turn a per-file `download()` failure message into a human log line. A gated
- * Hugging Face / Civitai repo answers 401/403 — surface a clearer "requires
- * login or a license" hint instead of the raw `HTTP 401`, since the fix (sign
- * in / accept the license in ComfyUI) is different from a transient failure.
- * Pure → unit-testable. `filename` names the file the line is about.
- */
 export function describeDownloadFailure(filename: string, message: string): string {
   if (/\b(401|403)\b/.test(message)) {
     return `[templates] Couldn't download ${filename}: the model repo requires a login or license. Open the template in ComfyUI to sign in / accept it, then it'll download in-app.\n`
@@ -73,13 +47,6 @@ export function describeDownloadFailure(filename: string, message: string): stri
   return `[templates] Failed ${filename}: ${message} — will fall back to in-app download.\n`
 }
 
-/**
- * Run `attempt` up to `1 + retries` times, returning the first success. Rethrows
- * the last error once all tries are exhausted. Stops early (no retry) when
- * `isFatal` returns true — used so a user cancel isn't retried. `onRetry(next,
- * err)` fires before each re-attempt for logging. Pure (no module state) so the
- * retry policy is unit-testable without a real download.
- */
 export async function withRetry<T>(
   attempt: () => Promise<T>,
   retries: number,
@@ -101,19 +68,8 @@ export async function withRetry<T>(
   throw lastErr
 }
 
-/** Windows MAX_PATH is 260 chars (259 usable + null terminator). */
 const WIN_MAX_PATH = 259
 
-/**
- * Defensively shorten a model filename so `<dir>/<stem><ext>` stays within the
- * Windows MAX_PATH limit (no-op on other platforms / short paths). Returns the
- * (possibly shortened) filename, or null when even an empty stem wouldn't fit.
- * `reserveSuffixLen` reserves extra room after the full path - used for the
- * managed download's staging sidecar plus its atomic-write scratch file
- * (`<name>.part.dl-meta.tmp`) so the staged artifacts fit MAX_PATH too, not
- * just the final name. Pure - `platform` is injected so it can be
- * unit-tested off Windows.
- */
 export function truncateForMaxPath(
   destDir: string,
   filename: string,
@@ -132,12 +88,6 @@ export function truncateForMaxPath(
   return stem.slice(0, available) + ext
 }
 
-/**
- * Run `worker` over `items` with at most `concurrency` in flight at once. A
- * rolling pool (not fixed batches) so a single large item can't stall the
- * others. Never rejects — each item's outcome is the worker's responsibility;
- * an aborted signal stops scheduling further items. Pure (no module state).
- */
 export async function runPool<T>(
   items: readonly T[],
   concurrency: number,
@@ -158,10 +108,6 @@ export async function runPool<T>(
   await Promise.all(Array.from({ length: cap }, () => runner()))
 }
 
-/**
- * Derive cumulative progress from the per-file counters. Pure — the single
- * place the "X of Y" math lives, so it's unit-testable without a download.
- */
 export function summarizeTemplateState(state: TemplateDownloadState): TemplateDownloadSummary {
   const fileCount = state.files.length
   let receivedBytes = 0
@@ -173,7 +119,7 @@ export function summarizeTemplateState(state: TemplateDownloadState): TemplateDo
     receivedBytes += f.received
     knownTotal += f.total
     if (f.done || f.failed) doneCount++
-    else if (activeIndex === 0) activeIndex = i + 1 // first not-finished file
+    else if (activeIndex === 0) activeIndex = i + 1
   }
   const fileIndex = activeIndex === 0 ? fileCount : activeIndex
   const current = fileCount > 0 ? state.files[Math.min(fileIndex, fileCount) - 1] : undefined
@@ -204,11 +150,8 @@ export function gbStr(bytes: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 * 1024 ? 0 : 1)
 }
 
-/** Internal task error codes that map to a dedicated substatus message. */
 export const DISK_SPACE_ERROR = 'insufficient-disk'
 
-/** i18n key for each non-downloading status (the `downloading` line is built
- *  separately since it interpolates per-file figures). */
 const STATUS_MESSAGE_KEY: Record<Exclude<TemplateDownloadStatus, 'downloading'>, string> = {
   resolving: 'standalone.templateModelsResolving',
   done: 'standalone.templateModelsDone',
@@ -216,10 +159,6 @@ const STATUS_MESSAGE_KEY: Record<Exclude<TemplateDownloadStatus, 'downloading'>,
   cancelled: 'standalone.templateModelsCancelled'
 }
 
-/**
- * Build the rich, localized substatus line shown under the active step. Pure
- * (state → string); called only by the 500 ms reader, never the hot path.
- */
 export function formatTemplateSubStatus(summary: TemplateDownloadSummary): string {
   const { status } = summary
 

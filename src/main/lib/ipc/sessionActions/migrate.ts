@@ -28,7 +28,6 @@ interface PromptSpec {
   cancelId: number
 }
 
-// Build the in-app prompt spec for a prompt kind; each button maps to a UserChoice.
 function buildAdoptPromptSpec(kind: AdoptPromptKind, ctx: unknown): PromptSpec {
   const data = (ctx ?? {}) as Record<string, unknown>
   switch (kind) {
@@ -74,7 +73,6 @@ function buildAdoptPromptSpec(kind: AdoptPromptKind, ctx: unknown): PromptSpec {
         cancelId: 1
       }
     case 'confirm-adopt':
-      // Only shown if the orchestrator escalates a runtime decision.
       return {
         type: 'question',
         title: i18n.t('desktop.adoptConfirmTitle'),
@@ -92,7 +90,6 @@ function buildAdoptPromptSpec(kind: AdoptPromptKind, ctx: unknown): PromptSpec {
   }
 }
 
-// Pending adopt prompts awaiting a renderer response, keyed by promptId.
 interface PendingAdoptPrompt {
   webContentsId: number
   ack: () => void
@@ -101,9 +98,6 @@ interface PendingAdoptPrompt {
 }
 const pendingAdoptPrompts = new Map<string, PendingAdoptPrompt>()
 
-// How long to wait for the renderer to ACK delivery before giving up. This
-// only guards delivery (no window listening) — once ACKed, the user may take
-// as long as they like to answer.
 const ADOPT_PROMPT_ACK_TIMEOUT_MS = 5_000
 
 let adoptPromptHandlersRegistered = false
@@ -122,11 +116,6 @@ function ensureAdoptPromptHandlers(): void {
   })
 }
 
-// A real renderer WebContents is an EventEmitter we can talk to. Synthetic
-// dispatch paths (e.g. the picker's background-op stub) pass an object with
-// only `send`/`isDestroyed`, which can't deliver an interactive prompt — and
-// calling EventEmitter methods on it would throw. Validate up front so those
-// callers fall back to cancel instead of crashing the main process.
 function isPromptCapableSender(sender: Electron.WebContents): boolean {
   const maybe = sender as Partial<Electron.WebContents>
   return (
@@ -138,9 +127,6 @@ function isPromptCapableSender(sender: Electron.WebContents): boolean {
   )
 }
 
-// Best-effort listener removal that can never throw — a destroyed or stale
-// wrapper may have lost its EventEmitter methods, and prompt cleanup must not
-// surface an uncaught exception on the main-process event loop.
 function removeDestroyedListenerSafe(sender: Electron.WebContents, listener: () => void): void {
   type ListenerRemover = (event: string, listener: (...args: unknown[]) => void) => void
   const maybe = sender as unknown as {
@@ -156,15 +142,9 @@ function removeDestroyedListenerSafe(sender: Electron.WebContents, listener: () 
   if (!remove) return
   try {
     remove.call(sender, 'destroyed', listener)
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
-// Ask the originating renderer to surface an in-app prompt and resolve to the
-// chosen button index. Rejects (so the caller can fall back to cancel) if the
-// window never ACKs, is destroyed, can't deliver prompts, or the operation
-// aborts mid-prompt.
 function requestAdoptPromptButton(
   sender: Electron.WebContents,
   signal: AbortSignal,
@@ -198,8 +178,6 @@ function requestAdoptPromptButton(
       reject(new Error('adopt-prompt-aborted'))
       return
     }
-    // Synthetic / destroyed senders can't deliver a prompt — bail before
-    // arming any timer or registering listeners on a non-EventEmitter.
     if (!isPromptCapableSender(sender)) {
       reject(new Error('adopt-prompt-unavailable'))
       return
@@ -244,16 +222,11 @@ function requestAdoptPromptButton(
         cancelId: spec.cancelId
       })
     } catch (err) {
-      // Sender went away between the capability check and send. Settle now
-      // so the pending entry, listeners, and timer are cleaned up immediately.
       settle(() => reject(err instanceof Error ? err : new Error(String(err))))
     }
   })
 }
 
-// Resolve a UserChoice via an in-app dialog in the originating renderer.
-// On any delivery failure we fall back to the prompt's cancel choice so
-// adoption fails cleanly instead of blocking forever.
 async function showAdoptPrompt(
   sender: Electron.WebContents,
   signal: AbortSignal,
@@ -269,8 +242,6 @@ async function showAdoptPrompt(
   } catch {
     idx = spec.cancelId
   }
-  // A malformed index (NaN / out of range / non-integer from a buggy renderer)
-  // falls back to cancel rather than throwing.
   const safe = Number.isInteger(idx) ? idx : spec.cancelId
   const clamped = Math.max(0, Math.min(safe, spec.buttons.length - 1))
   return (spec.buttons[clamped] ?? spec.buttons[spec.cancelId] ?? spec.buttons[0]!).choice
@@ -298,8 +269,6 @@ export async function handleMigrateToStandalone({
     source_installation_id: inst.id
   }
 
-  // Desktop source → adopt the legacy install in place (the legacy record
-  // is left alone), returning a fresh standalone record.
   if (inst.sourceId === 'desktop') {
     let adopted: InstallationRecord | null = null
     try {
@@ -333,9 +302,6 @@ export async function handleMigrateToStandalone({
       }
       if (abort.signal.aborted) return { ok: true, navigate: 'detail' }
       const message = (err as Error).message
-      // Adoption couldn't obtain the ComfyUI source (no staged copy and the
-      // git clone failed). Fail clearly with a message that points the user
-      // at doing a fresh install, rather than the old fake-success no-op.
       if (message.startsWith('source-missing')) {
         return { ok: false, message: i18n.t('desktop.adoptSourceMissingFailed') }
       }
@@ -343,7 +309,6 @@ export async function handleMigrateToStandalone({
     }
   }
 
-  // Non-desktop source → standard local-install migration.
   let entry: InstallationRecord | null = null
   let destPath = ''
   try {
@@ -367,8 +332,6 @@ export async function handleMigrateToStandalone({
 
     _operationAborts.delete(installationId)
     if (result.restoreError) {
-      // The new install exists and is bootable; only the snapshot could not be
-      // fully applied. Report the failure without deleting the install.
       return snapshotRestoreFailureResult(installationId, result.restoreError)
     }
     sendProgress('done', { percent: 100, status: 'Complete' })

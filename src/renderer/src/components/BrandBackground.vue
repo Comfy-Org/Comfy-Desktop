@@ -1,145 +1,40 @@
 <script setup lang="ts">
-// Brand-refresh backdrop (frame + angled SVG beams), extracted from
-// BrandTakeoverLayout so non-takeover surfaces can reuse the visuals
-// without the takeover chrome. Forces dark; the brand palette is dark-only.
-import { ref, watch } from 'vue'
-import beamSvg from '../assets/lighting/beam.svg?raw'
-import beam2Svg from '../assets/lighting/beam_2.svg?raw'
+import filmGrainUrl from '../assets/lighting/film-grain.svg?url'
+import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 
-const props = withDefaults(
+const filmGrainStyle = { '--film-grain': `url("${filmGrainUrl}")` }
+
+const TAKEOVER_SPOTLIGHT_CLASS =
+  '[background:var(--film-grain),radial-gradient(ellipse_55%_85%_at_50%_-15%,oklch(0.955_0.002_285/0.07),transparent_70%),radial-gradient(ellipse_45%_60%_at_50%_-15%,oklch(0.955_0.002_285/0.07),transparent_70%),oklch(0.16_0.003_285)]'
+
+withDefaults(
   defineProps<{
-    vignette?: boolean
+    takeover?: boolean
     scrollContent?: boolean
   }>(),
-  { vignette: false, scrollContent: false }
-)
-
-const innerFrameRef = ref<HTMLElement | null>(null)
-const scrollAreaRef = ref<HTMLElement | null>(null)
-
-// The non-scrolling frame is still a scroll container (overflow: hidden), and
-// the beams give it a scroll range. Without this, a step that scrolled hands
-// its offset to the next, non-scrolling step, which then sits shifted up with
-// no way to scroll back. The scroll area is reset on the way in instead: once
-// scrolling is off it is display: contents and has no box to reset.
-watch(
-  () => props.scrollContent,
-  (scrolls) => {
-    if (scrolls) {
-      if (scrollAreaRef.value) scrollAreaRef.value.scrollTop = 0
-    } else if (innerFrameRef.value) {
-      innerFrameRef.value.scrollTop = 0
-    }
-  },
-  { flush: 'post' }
+  { takeover: false, scrollContent: false }
 )
 </script>
 
 <template>
-  <div class="brand-background" data-theme="dark">
-    <div class="brand-outer-frame">
+  <div class="brand-background flex h-full w-full flex-auto bg-background" data-theme="dark">
+    <div class="brand-outer-frame relative flex flex-auto">
       <div
-        ref="innerFrameRef"
-        class="brand-inner-frame"
-        :class="{
-          'brand-inner-frame--vignette': vignette,
-          'brand-inner-frame--scroll-content': scrollContent
-        }"
+        class="brand-inner-frame relative isolate flex flex-auto flex-col items-center overflow-hidden rounded-lg p-[clamp(2rem,5vw,48px)]"
+        :class="[
+          takeover
+            ? TAKEOVER_SPOTLIGHT_CLASS
+            : [PAGE_SPOTLIGHT_CLASS, '[background-color:var(--color-content-background)]'],
+          scrollContent
+            ? 'brand-inner-frame--scroll-content justify-start overflow-y-auto'
+            : 'justify-center'
+        ]"
+        :style="takeover ? filmGrainStyle : undefined"
       >
-        <div class="brand-beam" aria-hidden="true" v-html="beamSvg" />
-        <div class="brand-beam brand-beam--2" aria-hidden="true" v-html="beam2Svg" />
-        <!-- In scroll mode the step content scrolls here, apart from the beams:
-             they are taller than the window and would otherwise stretch the
-             scroll range past the end of the content. Always rendered (not
-             v-if) so toggling scroll mode never remounts the step. -->
-        <div
-          ref="scrollAreaRef"
-          class="brand-scroll-area"
-          :class="{ 'brand-scroll-area--active': scrollContent }"
-        >
-          <slot />
-        </div>
+        <slot />
       </div>
       <slot name="footer-left" />
       <slot name="footer" />
     </div>
   </div>
 </template>
-
-<style scoped>
-.brand-background {
-  display: flex;
-  flex: 1 1 auto;
-  width: 100%;
-  height: 100%;
-  background: var(--neutral-900);
-}
-
-.brand-outer-frame {
-  position: relative;
-  flex: 1 1 auto;
-  display: flex;
-}
-
-.brand-beam {
-  position: absolute;
-  position-anchor: --brand-beam-torch;
-  top: -17%;
-  left: anchor(center, clamp(39%, calc(52.5vw - 135px), 44%));
-  pointer-events: none;
-  z-index: -1;
-  overflow: visible;
-  transform: translateX(-50%);
-}
-.brand-beam--2 {
-  position-anchor: --brand-beam-target;
-  anchor-name: --brand-beam-torch;
-  top: -10%;
-  left: anchor(end, clamp(45%, calc(56vw - 115px), 50%));
-}
-.brand-beam :deep(svg) {
-  display: block;
-  overflow: visible;
-}
-
-.brand-inner-frame {
-  position: relative;
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(2rem, 5vw, 48px);
-  border-radius: 8px;
-  background: var(--neutral-800);
-  overflow: hidden;
-  isolation: isolate;
-}
-
-.brand-inner-frame--vignette {
-  background:
-    radial-gradient(circle 196px at 50% 50%, #151317 0%, #151317 35%, var(--neutral-800) 100%),
-    var(--neutral-800);
-}
-.brand-inner-frame--scroll-content {
-  justify-content: flex-start;
-  padding: 0;
-}
-
-/* Inactive: no box of its own, so the step lays out in the frame as before. */
-.brand-scroll-area {
-  display: contents;
-}
-.brand-scroll-area--active {
-  position: relative;
-  flex: 1 1 auto;
-  align-self: stretch;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: clamp(2rem, 5vw, 48px);
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-</style>

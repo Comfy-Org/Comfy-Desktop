@@ -39,7 +39,6 @@ describe('buildIndexedDbInjectScript', () => {
 
   it('is parseable as JavaScript', () => {
     const script = buildIndexedDbInjectScript(SAMPLE_USER, 'AIzaTEST', ORIGIN, OWNER)
-    // `Function` surfaces syntax errors without executing the body.
     expect(() => new Function(script)).not.toThrow()
   })
 
@@ -70,7 +69,6 @@ describe('buildIndexedDbInjectScript', () => {
     }
     expect(isFirebaseSessionInjectionRecordOwnedBy(currentRecord, staleOwner)).toBe(true)
 
-    // Replacement write wins before the stale flow's compensating cleanup.
     currentRecord = {
       fbase_key: 'firebase:authUser:key:[DEFAULT]',
       value: { uid: 'new-user' },

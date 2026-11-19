@@ -1,16 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FolderOpen } from 'lucide-vue-next'
+import InputGroupButton from '@comfyorg/design-system/input-group/InputGroupButton'
+import { FolderOpen } from '@lucide/vue'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import StorageDirRow from './StorageDirRow.vue'
 import type { DetailField } from '../../types/ipc'
-
-/**
- * Path field for the Settings drawer. `field.browseOnly === true` renders a
- * clickable open-in-file-manager path row (the value is only changed via
- * Browse); otherwise the path is an editable text input.
- */
 
 interface Props {
   field: DetailField
@@ -46,6 +41,7 @@ function handleOpen(): void {
   <StorageDirRow
     v-if="isBrowseOnly"
     :path="stringValue"
+    variant="field"
     @open="handleOpen"
     @browse="handleBrowse"
   />
@@ -56,9 +52,9 @@ function handleOpen(): void {
     @change="handleChange"
   >
     <template #trailing>
-      <button type="button" :aria-label="t('common.browse', 'Browse')" @click="handleBrowse">
+      <InputGroupButton size="icon-sm" :aria-label="t('common.browse')" @click="handleBrowse">
         <FolderOpen :size="14" />
-      </button>
+      </InputGroupButton>
     </template>
   </BaseInput>
 </template>

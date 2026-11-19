@@ -1,18 +1,3 @@
-/**
- * E2E: staging a Build's models in the real app.
- *
- * A Build archive carries no model weights, so the comfybuilder install
- * downloads the version's declared models into `<installPath>/ComfyUI/models/
- * <type>/<filename>` before launch. This drives the REAL staging code (real
- * Electron download, real fs, real sha256) in the real main process, decoupled
- * from the archive/auth path via the E2E hook, and serves the model bytes from a
- * local HTTP server so the run is hermetic and deterministic.
- *
- * The manifest source is the `COMFY_BUILDER_MODELS_MANIFEST` env seam (a file the
- * test rewrites per case), which is exactly how the mocked manifest is injected
- * until the builder endpoint is deployed.
- */
-
 import { createHash } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { mkdtempSync, rmSync, mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -23,7 +8,6 @@ import { launchApp, type AppContext } from './launchApp'
 
 const sha = (b: Buffer): string => createHash('sha256').update(b).digest('hex')
 
-// Two deterministic "model" payloads served locally.
 const DECODER = Buffer.from('taesd-decoder-bytes-fixture')
 const ENCODER = Buffer.from('taesd-encoder-bytes-fixture')
 
@@ -40,13 +24,9 @@ function freshInstall(): string {
   return dir
 }
 
-/** Ask the app to run the real staging against installPath, reading the manifest
- *  from the env-pointed file the test controls. */
 async function stage(
   installPath: string
 ): Promise<{ staged?: string[]; error?: string; kind?: string }> {
-  // Deliberately not retried: staging mutates the install's model tree, so a
-  // retry after a lost result could run the real staging twice.
   return ctx.app.evaluate(
     async (_electron, arg) => {
       const helpers = (
@@ -125,7 +105,6 @@ test('stages verified models into ComfyUI/models/<type>/<filename> @windows @mac
   expect(existsSync(decoder)).toBe(true)
   expect(readFileSync(decoder)).toEqual(DECODER)
   expect(existsSync(encoder)).toBe(true)
-  // No leftover partials.
   expect(existsSync(`${decoder}.partial`)).toBe(false)
 })
 

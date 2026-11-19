@@ -11,13 +11,11 @@ const step = (
 ): ProgressStepVM => ({ phase, label: phase, status, detail, subPercent: null, isError })
 
 const ROW_H = 46
-const CENTER_SLOT = 1 // Math.floor(VISIBLE_ROWS / 2) with VISIBLE_ROWS = 3
+const CENTER_SLOT = 1
 
-/** The row index the track is translated to centre (from the translateY style). */
 function centeredIndex(wrapper: ReturnType<typeof mount>): number {
   const transform = wrapper.find('.bpv__track').attributes('style') ?? ''
   const px = Number(/translateY\((-?\d+(?:\.\d+)?)px\)/.exec(transform)?.[1] ?? NaN)
-  // translateY = (CENTER_SLOT - activeIndex) * ROW_H  ⇒  activeIndex = CENTER_SLOT - px/ROW_H
   return CENTER_SLOT - px / ROW_H
 }
 
@@ -44,8 +42,6 @@ describe('BrandProgressView', () => {
   })
 
   it('anchors to the FIRST row when no row is active yet (the steps-but-no-phase gap)', () => {
-    // Regression guard: an empty-active list must NOT centre the last row and
-    // then jerk back to the first when the first real phase fires.
     const wrapper = mount(BrandProgressView, {
       props: { steps: [step('a', 'pending'), step('b', 'pending'), step('c', 'pending')] }
     })

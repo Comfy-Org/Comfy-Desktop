@@ -25,7 +25,6 @@ interface TitleBarIdentityBridge {
 
 interface UseTitleBarIdentityOpts {
   bridge: TitleBarIdentityBridge | undefined
-  /** When true, the icon is suppressed and the pill reads as a static label. */
   isInstallLess: Ref<boolean>
 }
 
@@ -38,25 +37,16 @@ interface TitleBarIdentityApi {
   firstUseMode: Ref<FirstUseMode>
   isPreviewMode: Ref<boolean>
   isConsentLockdown: ComputedRef<boolean>
-  /** True during first-use takeover; pill / trailing pills / feedback hidden. */
   isFirstUseLockdown: ComputedRef<boolean>
-  /** True during a ProgressModal takeover; the title bar stays fully usable. */
   isLoadingLockdown: ComputedRef<boolean>
-  /** Legacy union flag (true for any non-`'none'` mode), kept for the CSS class hook.
-   *  New gates should use `isFirstUseLockdown` / `isLoadingLockdown`. */
   isChromeLocked: ComputedRef<boolean>
   installTypeMeta: ComputedRef<InstallTypeMeta>
   installTypeLabel: ComputedRef<string>
   showInstallTypeIcon: ComputedRef<boolean>
-  /** True only on the bare dashboard, where the pill leads with the Comfy brand mark. */
   showBrandMark: ComputedRef<boolean>
   isLight: ComputedRef<boolean>
 }
 
-/**
- * Title-bar identity / theme / lifecycle state pushed by main: install identity + icon,
- * theme colours (`isLight` drives lighter chrome), fullscreen, and first-use step.
- */
 export function useTitleBarIdentity(opts: UseTitleBarIdentityOpts): TitleBarIdentityApi {
   const { t } = useI18n()
 
@@ -66,8 +56,6 @@ export function useTitleBarIdentity(opts: UseTitleBarIdentityOpts): TitleBarIden
   const themeText = ref<string | null>(null)
   const isFullscreen = ref(false)
   const firstUseMode = ref<FirstUseMode>('none')
-  /** `true` during an install-identity preview on a chooser host; treated as
-   *  identity-equivalent to a real attach for install-less-suppressed chrome. */
   const isPreviewMode = ref(false)
 
   const isConsentLockdown = computed(() => firstUseMode.value === 'consent-lockdown')
@@ -81,15 +69,12 @@ export function useTitleBarIdentity(opts: UseTitleBarIdentityOpts): TitleBarIden
     t(installTypeMeta.value.labelKey, t('installType.unknown'))
   )
 
-  /** Suppressed on install-less hosts unless an install-identity preview is active. */
   const showInstallTypeIcon = computed(
     () => (!opts.isInstallLess.value || isPreviewMode.value) && sourceCategory.value !== null
   )
 
   const showBrandMark = computed(() => opts.isInstallLess.value && !isPreviewMode.value)
 
-  /** True when the reported ComfyUI bg is light, so the title bar's `.is-light` chrome
-   *  variants (lighter hover/pills/chips) kick in to stay legible on the matching surface. */
   const isLight = computed(() => isColorLight(themeBg.value))
 
   let unsubTitle: (() => void) | undefined

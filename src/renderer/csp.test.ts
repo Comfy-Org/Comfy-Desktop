@@ -43,8 +43,19 @@ describe('Content-Security-Policy: panel.html', () => {
     expect(csp['connect-src']).toContain('https://*.posthog.com')
   })
 
+  it('lets the 3D view decode the pictures packed inside a model', () => {
+    expect(csp['connect-src']).toContain('blob:')
+  })
+
   it('restricts script-src to self only', () => {
     expect(csp['script-src']).toBe("'self'")
+  })
+
+  it('shows output files from this computer only through the output-folder protocol', () => {
+    expect(csp['img-src']).toContain('comfy-output:')
+    expect(csp['media-src']).toContain('comfy-output:')
+    expect(csp['img-src']).not.toContain('127.0.0.1')
+    expect(csp['media-src']).not.toContain('127.0.0.1')
   })
 
   it('restricts default-src to self only', () => {
@@ -56,10 +67,12 @@ describe('Content-Security-Policy: panel.html', () => {
   })
 
   it('allows GitHub-hosted starter-template thumbnails in img-src', () => {
-    // The template picker hydrates card previews from the live workflow_templates
-    // repo; without this the panel CSP would block them and every card would fall
-    // back to its modality glyph.
     expect(csp['img-src']).toContain('https://raw.githubusercontent.com')
+  })
+
+  it('shows the outputs an app page sends, which the panel holds as blob URLs', () => {
+    expect(csp['img-src']).toContain('blob:')
+    expect(csp['media-src']).toContain('blob:')
   })
 })
 
@@ -88,8 +101,6 @@ describe.each(NON_TELEMETRY_RENDERER_HTMLS)(
   (file) => {
     const csp = parseCSP(readHtml(file))
 
-    // These transient popups don't initialise Datadog/PostHog; the narrow CSP enforces
-    // that, so adding a telemetry SDK here would also need a CSP change (a useful tripwire).
     it('does NOT include Datadog endpoints', () => {
       expect(csp['connect-src']).not.toContain('datadoghq.com')
     })

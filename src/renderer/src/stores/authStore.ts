@@ -1,42 +1,33 @@
 import { computed, onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import type { AuthStatus, ElectronApi, Workspace } from '../../../types/ipc'
+import type {
+  AuthStatus,
+  ElectronApi,
+  Workspace,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent
+} from '../../../types/ipc'
 import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import type { Build } from '../devplatform/types'
 
-/**
- * Dev-platform session store: the renderer's single source of auth + workspace
- * + build state.
- *
- * It only ever holds renderer-safe data (AuthStatus / Workspace / build
- * display rows); tokens live in the main process. Every mutation goes through
- * `window.api.comfybuilder`, and `onAuthChanged` keeps the store in lockstep
- * with a sign-in / switch / sign-out that originated anywhere.
- */
 export const useAuthStore = defineStore('auth', () => {
   const status = ref<AuthStatus>({ signedIn: false })
-  /** False until a status read or authoritative auth event succeeds. */
   const statusLoaded = ref(false)
   const workspaces = ref<Workspace[]>([])
   const builds = ref<Build[]>([])
-  /** Workspace currently selected in workspace-scoped renderer surfaces. */
   const selectedWorkspaceId = ref(PERSONAL_WORKSPACE_ID)
   const loadingWorkspaces = ref(false)
-  /** Distinguishes unknown membership from a successfully fetched empty catalog. */
   const workspacesLoaded = ref(false)
   let workspacesRequest: Promise<Workspace[]> | undefined
   const loadingBuilds = ref(false)
-  /** Distinguishes a successfully loaded empty catalog from one not fetched yet. */
   const buildsLoaded = ref(false)
-  // Load-failure flags so the UI can tell a transient error apart from an empty
-  // workspace (both otherwise leave the arrays empty).
   const workspacesError = ref(false)
   const buildsError = ref(false)
+  const workspaceSwitchFailure = ref<WorkspaceSwitchFailure>()
+  let latestSwitch = 0
   const comfybuilderApi = (window as Window & { api: ElectronApi }).api.comfybuilder
 
-  /** Bumped on every authoritative status change (push, sign-in, switch,
-   *  sign-out) so a slower in-flight pull can never overwrite a newer status. */
   let revision = 0
   let workspaceContextInitialized = false
 
@@ -51,10 +42,6 @@ export const useAuthStore = defineStore('auth', () => {
     workspaceContextInitialized = false
   }
 
-  /** Advance the revision on an authoritative status change. Every in-flight
-   *  fetch becomes stale, and a stale fetch's guarded `finally` refuses to
-   *  touch the shared flags - so reset them here, otherwise a transition with
-   *  no follow-up fetch (e.g. sign-out) would leave loading stuck on. */
   function advanceRevision(): void {
     revision += 1
     loadingWorkspaces.value = false
@@ -63,20 +50,13 @@ export const useAuthStore = defineStore('auth', () => {
     loadingBuilds.value = false
     workspacesError.value = false
     buildsError.value = false
+    workspaceSwitchFailure.value = undefined
   }
 
-  /** The session identity the scoped caches are keyed on. */
   function sameIdentity(a: AuthStatus, b: AuthStatus): boolean {
     return a.signedIn === b.signedIn && a.workspaceId === b.workspaceId
   }
 
-  /** Apply an authoritative status (push, sign-in, switch, sign-out result).
-   *  A sign-in/switch lands twice - main pushes `onAuthChanged` AND the invoke
-   *  resolves with the same status - so only an identity CHANGE invalidates
-   *  in-flight fetches and scoped caches. The duplicate arrival (either order)
-   *  must not advance the revision: it would discard the sole fetch the first
-   *  arrival triggered, and no watcher re-fires for an unchanged identity,
-   *  leaving the UI showing a false empty workspace. */
   function applyAuthoritativeStatus(next: AuthStatus): void {
     statusLoaded.value = true
     if (sameIdentity(status.value, next)) {
@@ -94,8 +74,6 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /** Drop workspace-scoped caches: the list and the builds both belong
-   *  to the token's single workspace, so a switch/sign-out invalidates them. */
   function resetScopedState(): void {
     workspaces.value = []
     builds.value = []
@@ -109,8 +87,6 @@ export const useAuthStore = defineStore('auth', () => {
     return next
   }
 
-  /** Run the PKCE browser handoff. Rethrows failures so callers own the
-   *  feedback; a completed sign-in also lands via `onAuthChanged`. */
   async function signIn(): Promise<AuthStatus> {
     const next = await comfybuilderApi.signIn()
     applyAuthoritativeStatus(next)
@@ -123,9 +99,7 @@ export const useAuthStore = defineStore('auth', () => {
     return status.value
   }
 
-  /** The workspaces the signed-in user belongs to (for the switcher). */
   function fetchWorkspaces(): Promise<Workspace[]> {
-    // Scope initialization and the selector can request membership together.
     const seen = revision
     workspacesRequest ??= loadWorkspaces().finally(() => {
       if (revision === seen) workspacesRequest = undefined
@@ -159,11 +133,18 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /** Activate the workspace for remote operations. Main uses cached credentials
-   *  when available and opens browser auth only when authorization is needed. */
-  async function switchWorkspace(workspaceId: string): Promise<AuthStatus> {
-    const next = await comfybuilderApi.switchWorkspace(workspaceId)
+  async function switchWorkspace(
+    workspaceId: string,
+    intent: WorkspaceSwitchIntent = 'chosen'
+  ): Promise<AuthStatus> {
+    const thisSwitch = ++latestSwitch
+    workspaceSwitchFailure.value = undefined
+    const { workspaceSwitchFailure: failure, ...next } = await comfybuilderApi.switchWorkspace(
+      workspaceId,
+      intent
+    )
     applyAuthoritativeStatus(next)
+    if (thisSwitch === latestSwitch) workspaceSwitchFailure.value = failure
     return next
   }
 
@@ -171,9 +152,6 @@ export const useAuthStore = defineStore('auth', () => {
     applyAuthoritativeStatus(nextStatus)
   })
 
-  // Hydrate from the persisted session once at creation: main only pushes
-  // CHANGES, so the boot state has to be pulled. The revision guard keeps
-  // this pull from overwriting anything newer.
   const initialStatus = fetchStatus().catch(() => status.value)
 
   onScopeDispose(() => {
@@ -183,7 +161,13 @@ export const useAuthStore = defineStore('auth', () => {
   const isSignedIn = computed(() => status.value.signedIn)
   const personalWorkspace = computed(() => workspaces.value.find(isPersonalWorkspace) ?? null)
 
-  /** The builds published to the signed-in workspace, as display rows. */
+  function sessionWorkspaceFor(dashboardWorkspaceId: string): string | null {
+    if (!isSignedIn.value) return null
+    if (dashboardWorkspaceId !== PERSONAL_WORKSPACE_ID) return dashboardWorkspaceId
+    if (status.value.workspaceType === 'personal') return status.value.workspaceId ?? null
+    return personalWorkspace.value?.id ?? null
+  }
+
   async function fetchBuilds(): Promise<Build[]> {
     if (!isSignedIn.value) {
       builds.value = []
@@ -220,8 +204,10 @@ export const useAuthStore = defineStore('auth', () => {
     buildsLoaded,
     workspacesError,
     buildsError,
+    workspaceSwitchFailure,
     isSignedIn,
     personalWorkspace,
+    sessionWorkspaceFor,
     initializeWorkspaceContext,
     resetWorkspaceContext,
     fetchStatus,
