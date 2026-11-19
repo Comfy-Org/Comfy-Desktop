@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
+import { refDebounced, useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
 import { DropdownMenuRadioGroup, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import {
   Box,
@@ -11,6 +11,7 @@ import {
   Copy,
   Download,
   Ellipsis,
+  ExternalLink,
   File,
   Folder,
   LayoutGrid,
@@ -91,6 +92,8 @@ const SKELETON_COUNT = 8
 const CLOUD_PAGE_SIZES = [50, 100, 200] as const
 const DEFAULT_PAGE_SIZE = 100
 const PAGE_CACHE_TTL_MS = 30 * 60_000
+const SEARCH_DEBOUNCE_MS = 300
+const MAX_SEARCH_LENGTH = 200
 const PREFETCH_DEADLINE_MS = 1000
 const NAME_TOOLTIP_DELAY_MS = 600
 const MIN_CARD_WIDTH = 240
@@ -128,6 +131,10 @@ void dashboardScope.initialize()
 
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
+const listedSearch = refDebounced(
+  computed(() => [...searchQuery.value.trim()].slice(0, MAX_SEARCH_LENGTH).join('')),
+  SEARCH_DEBOUNCE_MS
+)
 const signingIn = ref(false)
 const downloading = ref(new Set<string>())
 const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
@@ -135,6 +142,7 @@ const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newes
 const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
 const searchOpen = ref(false)
+const placePickerOpen = ref(false)
 const toolbarRow = useTemplateRef<HTMLElement>('toolbarRow')
 const toolbarCompactness = ref(0)
 const SEARCH_AS_ICON = 1
@@ -254,6 +262,10 @@ const selectedBuild = computed<AssetBuild | null>(() => {
   )
 })
 
+watch(selectedBuild, (build) => {
+  if (!build) placePickerOpen.value = false
+})
+
 function choosePlace(id: string): void {
   pickedPlace.value = id
   focusMiss.value = null
@@ -323,6 +335,7 @@ function placeSubtitle(option: AssetBuild): string | null {
 const revealFolderLabel = computed(() => t(revealInFolderKey(window.api.platform)))
 
 async function openPlaceFolder(option: AssetBuild): Promise<void> {
+  placePickerOpen.value = false
   const opened = await window.api
     .openOutputFolder(option.computer ? undefined : option.build.id)
     .catch(() => false)
@@ -352,19 +365,11 @@ function cardKey(asset: GalleryAsset): string {
   return `${asset.source}:${asset.id}`
 }
 
-const searchedAssets = computed(() => {
-  const query = searchQuery.value.trim().toLowerCase()
-  return query
-    ? assets.value.filter((asset) => asset.name.toLowerCase().includes(query))
-    : assets.value
-})
-
 const pageCount = computed(() => Math.max(1, Math.ceil(assetTotal.value / pageSize.value)))
-const pagedList = computed(() => pageCount.value > 1)
 const showPagination = computed(() => !!selectedBuild.value && assetTotal.value > 0)
 
 function kindCount(kind: KindFilter): number | undefined {
-  if (selectedBuild.value?.cloud || searchQuery.value.trim()) return undefined
+  if (selectedBuild.value?.cloud) return undefined
   return localCounts.value?.[kind]
 }
 
@@ -401,7 +406,7 @@ watch(
 )
 
 const visibleAssets = computed(() => {
-  const filtered = searchedAssets.value.filter(
+  const filtered = assets.value.filter(
     (asset) => kindFilter.value === 'all' || asset.kind === kindFilter.value
   )
   const direction = sortOrder.value === 'newest' ? -1 : 1
@@ -480,9 +485,6 @@ interface EmptyState {
 
 const emptyState = computed<EmptyState>(() => {
   if (failed.value) return { title: t('assets.loadFailed'), body: '' }
-  if (assets.value.length > 0 && pagedList.value) {
-    return { title: t('assets.noMatchesOnPage'), body: t('assets.noMatchesOnPageHint') }
-  }
   const noMatches = { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
   if (assets.value.length > 0) return noMatches
   if (!authStore.isSignedIn && selectedBuild.value?.cloud) {
@@ -495,7 +497,7 @@ const emptyState = computed<EmptyState>(() => {
   if (selectedBuild.value?.cloud && !cloudBuild.value) {
     return { title: t('assets.noCloudBuildTitle'), body: t('assets.noCloudBuildBody') }
   }
-  if (kindFilter.value !== 'all') return noMatches
+  if (kindFilter.value !== 'all' || listedSearch.value) return noMatches
   return {
     title: t('assets.emptyTitle'),
     body: t('assets.emptyBody')
@@ -543,7 +545,16 @@ function recordCloudPage(page: CloudAssetPage, pageNumber: number): void {
 function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage> {
   const kind = kindFilter.value === 'all' ? undefined : kindFilter.value
   const after = pageCursors.get(pageNumber)
-  const key = [loadKey.value, cloudId, sortOrder.value, kind, pageSize.value, pageNumber].join('\n')
+  const search = listedSearch.value || undefined
+  const key = JSON.stringify([
+    loadKey.value,
+    cloudId,
+    sortOrder.value,
+    kind,
+    search,
+    pageSize.value,
+    pageNumber
+  ])
   const cached = pageCache.get(key)
   if (cached && Date.now() - cached.savedAt < PAGE_CACHE_TTL_MS) return cached.page
   for (const replacedKey of pagesInFlight.keys()) pageCache.delete(replacedKey)
@@ -554,7 +565,8 @@ function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage>
       limit: pageSize.value,
       order: sortOrder.value,
       ...(after && { after }),
-      kind
+      kind,
+      search
     })
     .then((listed) => listed ?? Promise.reject(new Error('a newer page replaced this one')))
   pageCache.set(key, { savedAt: Date.now(), page })
@@ -575,7 +587,8 @@ function localPage(selected: AssetBuild, pageNumber: number): Promise<LocalAsset
     offset: (pageNumber - 1) * pageSize.value,
     limit: pageSize.value,
     order: sortOrder.value,
-    kind
+    kind,
+    search: listedSearch.value || undefined
   })
 }
 
@@ -699,7 +712,9 @@ const listedCloudId = computed(() =>
   selectedBuild.value?.cloud ? cloudBuild.value?.id : undefined
 )
 const listQuery = computed(() =>
-  selectedBuild.value ? [sortOrder.value, kindFilter.value, pageSize.value].join('\n') : ''
+  selectedBuild.value
+    ? [sortOrder.value, kindFilter.value, listedSearch.value, pageSize.value].join('\n')
+    : ''
 )
 
 watch([loadKey, listedCloudId], () => {
@@ -811,6 +826,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
     savedIn: isLocal(asset) ? folderOf(asset.id) : null,
+    mainAction: isLocal(asset) ? null : 'download',
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
@@ -890,15 +906,49 @@ function folderOf(file: string): string {
   return file.slice(0, Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')))
 }
 
-function reveal(asset: GalleryAsset): void {
-  void window.api.revealAsset(asset.source, asset.id)
+async function reveal(asset: GalleryAsset): Promise<void> {
+  const shown = await window.api.revealAsset(asset.source, asset.id).catch(() => false)
+  if (!shown) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
+}
+
+const OPENS_IN_APP: readonly (AssetKind | null)[] = ['image', 'video', 'audio']
+
+function mainAction(asset: GalleryAsset): 'download' | 'open' | null {
+  if (!isLocal(asset)) return 'download'
+  const vector = asset.name.toLowerCase().endsWith('.svg')
+  return OPENS_IN_APP.includes(asset.kind) && !vector ? 'open' : null
+}
+
+async function openLocally(asset: GalleryAsset): Promise<void> {
+  const opened = await window.api.openAsset(asset.source, asset.id).catch(() => false)
+  if (!opened) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
+}
+
+function cardTool(asset: GalleryAsset) {
+  const action = mainAction(asset)
+  if (action === 'open') {
+    return { id: 'open-file', label: t('assets.open'), icon: ExternalLink, run: openLocally }
+  }
+  if (action === null) {
+    return {
+      id: 'reveal',
+      label: t(revealInFolderKey(window.api.platform)),
+      icon: ScanSearch,
+      run: reveal
+    }
+  }
+  return { id: 'download', label: t('assets.download'), icon: Download, run: download }
 }
 
 const assetMenuItems = computed<ContextMenuItem[]>(() => {
   const asset = assetMenu.value?.asset
   if (!asset) return []
+  const action = mainAction(asset)
   return [
-    { id: 'download', label: t('assets.download'), icon: Download },
+    ...(action === 'open' ? [{ id: 'open', label: t('assets.open'), icon: ExternalLink }] : []),
+    ...(action === 'download'
+      ? [{ id: 'download', label: t('assets.download'), icon: Download }]
+      : []),
     ...(isLocal(asset)
       ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: ScanSearch }]
       : []),
@@ -958,7 +1008,8 @@ async function runAssetAction(action: string): Promise<void> {
   assetMenu.value = null
   if (!asset) return
   if (action === 'download') await download(asset)
-  else if (action === 'reveal') await window.api.revealAsset(asset.source, asset.id)
+  else if (action === 'open') await openLocally(asset)
+  else if (action === 'reveal') await reveal(asset)
   else if (action === 'copy') await copy(asset)
   else if (action === 'delete') await moveToTrash(asset)
 }
@@ -1014,6 +1065,7 @@ function extensionOf(name: string): string {
       >
         <Menu
           v-if="selectedBuild"
+          v-model:open="placePickerOpen"
           :modal="false"
           align="start"
           :side-offset="6"
@@ -1111,16 +1163,18 @@ function extensionOf(name: string): string {
                   :text="revealFolderLabel"
                   class="absolute top-1/2 right-7.5 -translate-y-1/2"
                 >
-                  <MenuItem
-                    as="button"
+                  <Button
                     type="button"
-                    class="size-6.5 min-h-0 justify-center rounded-md p-0 text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-foreground"
+                    variant="link"
+                    size="icon-sm"
+                    tabindex="-1"
+                    class="size-6.5 rounded-md"
                     :aria-label="`${revealFolderLabel}: ${option.build.name}`"
                     :data-testid="`assets-place-reveal-${option.build.id}`"
-                    @select="openPlaceFolder(option)"
+                    @click="openPlaceFolder(option)"
                   >
                     <ScanSearch :size="15" aria-hidden="true" />
-                  </MenuItem>
+                  </Button>
                 </Tooltip>
               </div>
             </template>
@@ -1489,13 +1543,13 @@ function extensionOf(name: string): string {
             <button
               type="button"
               :class="ASSET_TOOL_CLASS"
-              :aria-label="t('assets.download')"
-              :title="t('assets.download')"
+              :aria-label="cardTool(asset).label"
+              :title="cardTool(asset).label"
               :disabled="downloading.has(cardKey(asset))"
-              :data-testid="`asset-download-${asset.id}`"
-              @click="download(asset)"
+              :data-testid="`asset-${cardTool(asset).id}-${asset.id}`"
+              @click="cardTool(asset).run(asset)"
             >
-              <Download :size="14" aria-hidden="true" />
+              <component :is="cardTool(asset).icon" :size="14" aria-hidden="true" />
             </button>
             <button
               type="button"

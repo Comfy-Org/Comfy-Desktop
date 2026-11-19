@@ -14,7 +14,14 @@ import { buildSaveDialogFilters, startFileSave } from './comfyDownloadManager'
 import type { FileSaveTransfer } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
 import { copyImageToClipboard } from './clipboardImage'
-import { copyOutputImage, outputFilePath, revealOutputFile, trashOutputFile } from './outputFolders'
+import { searchTerm } from './assetSearch'
+import {
+  copyOutputImage,
+  openOutputFile,
+  outputFilePath,
+  revealOutputFile,
+  trashOutputFile
+} from './outputFolders'
 import type { CloudAssetLookup } from '../../types/ipc'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { mediaFactsFromBytes } from './mediaFacts'
@@ -29,6 +36,7 @@ import type {
 const ASSETS_LIST_CHANNEL = 'assets:list'
 const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
 const ASSETS_REVEAL_CHANNEL = 'assets:reveal'
+const ASSETS_OPEN_CHANNEL = 'assets:open'
 const ASSETS_COPY_CHANNEL = 'assets:copy'
 const ASSETS_READ_MODEL_CHANNEL = 'assets:read-model'
 const MAX_MODEL_BYTES = 100 * 1024 * 1024
@@ -132,7 +140,7 @@ interface AssetRowPage extends Omit<CloudAssetPage, 'assets'> {
 }
 
 function cloudListUrl(
-  { offset, after, limit, order }: CloudAssetPageRequest,
+  { offset, after, limit, order, search }: CloudAssetPageRequest,
   count: boolean
 ): string {
   const query = new URLSearchParams({
@@ -143,6 +151,7 @@ function cloudListUrl(
     include_public: 'false',
     ...(count ? { capped_total: 'true' } : { include_total: 'false' })
   })
+  if (search !== undefined) query.set('name_contains', search)
   if (after !== undefined) query.set('after', after)
   else if (offset > 0) query.set('offset', String(offset))
   return `${CLOUD_CONFIG.apiBase}/assets?${query}`
@@ -371,7 +380,7 @@ interface ScanSlot {
 }
 
 async function scanAllRows(
-  order: CloudAssetPageRequest['order'],
+  { order, search }: Pick<CloudAssetPageRequest, 'order' | 'search'>,
   headers: Record<string, string>,
   signal: AbortSignal
 ): Promise<ScannedRows> {
@@ -381,7 +390,7 @@ async function scanAllRows(
   let after: string | undefined
   for (let page = 0; page < MAX_SCAN_PAGES; page++) {
     const listed = await fetchAssetRows(
-      { offset: 0, limit: SCAN_PAGE_SIZE, order, after },
+      { offset: 0, limit: SCAN_PAGE_SIZE, order, after, search },
       headers,
       scanSignal,
       false
@@ -402,12 +411,12 @@ async function rowsOfKind(
   signal: AbortSignal,
   slot: ScanSlot
 ): Promise<AssetRowPage> {
-  const key = [accessToken, request.order].join('\n')
+  const key = JSON.stringify([accessToken, request.order, request.search ?? ''])
   let scan = slot.scan
   if (request.offset === 0 || scan?.key !== key || Date.now() - scan.savedAt >= SCAN_REUSE_MS) {
     slot.scan = undefined
     const headers = { Authorization: `Bearer ${accessToken}` }
-    const scanned = await scanAllRows(request.order, headers, signal)
+    const scanned = await scanAllRows(request, headers, signal)
     scan = { key, savedAt: Date.now(), ...scanned }
     slot.scan = scan
   }
@@ -574,15 +583,24 @@ function isCount(value: unknown, min: number, max: number): value is number {
 
 function pageRequest(value: unknown): CloudAssetPageRequest | null {
   if (!value || typeof value !== 'object') return null
-  const { offset, after, limit, order, kind } = value as Record<string, unknown>
+  const { offset, after, limit, order, kind, search } = value as Record<string, unknown>
   const knownKind = ASSET_KINDS.find((known) => known === kind)
+  const term = searchTerm(search)
   return isCount(offset, 0, Number.MAX_SAFE_INTEGER) &&
     isCount(limit, 1, MAX_PAGE_SIZE) &&
     (order === 'newest' || order === 'oldest') &&
     (kind === undefined || knownKind) &&
+    term !== null &&
     (after === undefined || (typeof after === 'string' && after.length > 0 && offset > 0)) &&
     (offset < CLOUD_COUNT_CAP || after !== undefined || knownKind)
-    ? { offset, limit, order, ...(after && { after }), ...(knownKind && { kind: knownKind }) }
+    ? {
+        offset,
+        limit,
+        order,
+        ...(after && { after }),
+        ...(knownKind && { kind: knownKind }),
+        ...(term && { search: term })
+      }
     : null
 }
 
@@ -807,6 +825,7 @@ export function registerAssetsHandlers(): void {
     }
   )
   ipcMain.handle(ASSETS_REVEAL_CHANNEL, localFileAction(revealOutputFile))
+  ipcMain.handle(ASSETS_OPEN_CHANNEL, localFileAction(openOutputFile))
   ipcMain.handle(ASSETS_TRASH_CHANNEL, localFileAction(trashOutputFile))
   ipcMain.handle(ASSETS_READ_MODEL_CHANNEL, (event, source: unknown, assetId: unknown) =>
     isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'

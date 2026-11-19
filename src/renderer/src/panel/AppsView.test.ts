@@ -13,6 +13,14 @@ const NARROW_PAGE_WIDTH = 532
 const COVER =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
+function picture(fill: string): string {
+  return `data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5"><rect width="8" height="5" fill="${fill}"/></svg>`
+  )}`
+}
+
+const MOVING = { url: picture('red'), stillUrl: picture('darkred') }
+
 const CROWN: AppBadge = {
   id: 'uses-credits',
   style: 'crown',
@@ -62,6 +70,15 @@ async function mountApps(
   const wrapper = mount(AppsView, { attachTo: page, props })
   await flushPromises()
   return wrapper
+}
+
+function srcOf(card: { element: Element }, role: string): string | null {
+  return card.element.querySelector(`img[data-cover="${role}"]`)?.getAttribute('src') ?? null
+}
+
+function playingOf(card: { element: Element }): string | null {
+  const rotation = card.element.querySelector('[data-testid="cover-rotation"]')
+  return rotation?.getAttribute('data-playing') ?? null
 }
 
 function rowSizes(wrapper: Awaited<ReturnType<typeof mountApps>>): number[] {
@@ -145,23 +162,84 @@ describe('AppsView', () => {
     expect(wrapper.findAll('[data-testid="apps-grid"] button')).toHaveLength(3)
   })
 
-  it("plays an app's covers on its card, the next loading behind the one shown once it has loaded", async () => {
-    const covers = ['red', 'green', 'blue'].map((fill) => ({
-      url: `data:image/svg+xml,${encodeURIComponent(
-        `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5"><rect width="8" height="5" fill="${fill}"/></svg>`
-      )}`,
-      stillUrl: null
-    }))
+  it("plays an app's covers on its card while the mouse is over it, the next loading behind the one shown once it has loaded", async () => {
+    const covers = ['red', 'green', 'blue'].map((fill) => ({ url: picture(fill), stillUrl: null }))
     const wrapper = await mountApps([{ ...CUTOUT, covers }])
     const card = wrapper.get('[data-testid="app-card-remove-background"]')
     const urls = covers.map((cover) => cover.url)
 
+    await userEvent.hover(card.element)
+
+    await expect.poll(() => card.find('img[data-cover="shown"]').exists()).toBe(true)
     expect(urls).toContain(card.get('img[data-cover="shown"]').attributes('src'))
     await expect.poll(() => card.find('img[data-cover="upcoming"]').exists()).toBe(true)
     expect(urls).toContain(card.get('img[data-cover="upcoming"]').attributes('src'))
     expect(card.get('img[data-cover="upcoming"]').attributes('src')).not.toBe(
       card.get('img[data-cover="shown"]').attributes('src')
     )
+    await userEvent.unhover(card.element)
+  })
+
+  it("shows each card's still and loads no moving cover while the mouse is not over it", async () => {
+    const wrapper = await mountApps([{ ...HDR, covers: [MOVING] }])
+    const card = wrapper.get('[data-testid="app-card-sdr-to-hdr"]')
+    await userEvent.hover(wrapper.get('input').element)
+
+    await expect
+      .poll(() => card.get('img[data-cover="shown"]').attributes('data-loaded'))
+      .toBe('true')
+    expect(card.findAll('img').map((img) => img.attributes('src'))).toEqual([MOVING.stillUrl])
+    expect(playingOf(card)).toBe('false')
+  })
+
+  it('plays the moving cover while the mouse is over the card and goes back to the still when it leaves', async () => {
+    const wrapper = await mountApps([{ ...HDR, covers: [MOVING] }])
+    const card = wrapper.get('[data-testid="app-card-sdr-to-hdr"]')
+
+    await userEvent.hover(card.element)
+
+    await expect.poll(() => playingOf(card)).toBe('true')
+    await expect.poll(() => srcOf(card, 'shown')).toBe(MOVING.url)
+
+    await userEvent.unhover(card.element)
+
+    await expect.poll(() => playingOf(card)).toBe('false')
+    expect(srcOf(card, 'shown')).toBe(MOVING.stillUrl)
+    expect(srcOf(card, 'upcoming')).toBe(MOVING.url)
+  })
+
+  it('plays the moving cover while the card has keyboard focus and stops when focus leaves', async () => {
+    const wrapper = await mountApps([{ ...HDR, covers: [MOVING] }])
+    const card = wrapper.get('[data-testid="app-card-sdr-to-hdr"]')
+    await userEvent.hover(wrapper.get('input').element)
+    await expect.poll(() => playingOf(card)).toBe('false')
+
+    wrapper.get('input').element.focus()
+    await userEvent.tab()
+
+    expect(document.activeElement).toBe(card.element)
+    await expect.poll(() => playingOf(card)).toBe('true')
+    await expect.poll(() => srcOf(card, 'shown')).toBe(MOVING.url)
+
+    wrapper.get('input').element.focus()
+
+    await expect.poll(() => playingOf(card)).toBe('false')
+    expect(srcOf(card, 'shown')).toBe(MOVING.stillUrl)
+  })
+
+  it('plays the moving cover of an app the catalog says always plays, with no mouse over it, and no other', async () => {
+    const wrapper = await mountApps([
+      { ...CUTOUT, covers: [MOVING], coverPlayback: 'always' },
+      { ...HDR, covers: [MOVING] }
+    ])
+    const always = wrapper.get('[data-testid="app-card-remove-background"]')
+    const onHover = wrapper.get('[data-testid="app-card-sdr-to-hdr"]')
+    await userEvent.hover(wrapper.get('input').element)
+
+    await expect.poll(() => playingOf(always)).toBe('true')
+    await expect.poll(() => srcOf(always, 'shown')).toBe(MOVING.url)
+    expect(playingOf(onHover)).toBe('false')
+    expect(srcOf(onHover, 'shown')).toBe(MOVING.stillUrl)
   })
 
   it('shows a glyph instead of a picture for an app with no cover', async () => {

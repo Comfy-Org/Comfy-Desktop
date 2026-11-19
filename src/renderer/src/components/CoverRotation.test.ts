@@ -24,7 +24,10 @@ const STILLS = COVERS.map((cover) => cover.stillUrl)
 const mounted: VueWrapper[] = []
 let card: HTMLElement
 
-function mountCovers(covers: readonly AppCover[] = COVERS, props: { paused?: boolean } = {}) {
+function mountCovers(
+  covers: readonly AppCover[] = COVERS,
+  props: { paused?: boolean; loadOnPlay?: boolean } = {}
+) {
   const wrapper = mount(CoverRotation, { attachTo: card, props: { pictures: covers, ...props } })
   mounted.push(wrapper)
   return wrapper
@@ -208,6 +211,80 @@ describe('CoverRotation', () => {
     expect(URLS).toContain(first)
     expect(layer(wrapper, 'shown').attributes('data-kind')).toBe('cover')
     await untilTheCoverChanges(wrapper, first)
+  })
+
+  it('loads no moving cover while it waits to play for the first time, only the still', async () => {
+    const wrapper = mountCovers(COVERS, { paused: true, loadOnPlay: true })
+    await untilAllLoaded(wrapper)
+
+    expect(wrapper.findAll('img')).toHaveLength(1)
+    expect(layer(wrapper, 'shown').attributes('data-kind')).toBe('still')
+    expect(STILLS).toContain(shownSrc(wrapper))
+    expect(layer(wrapper, 'upcoming').exists()).toBe(false)
+
+    vi.advanceTimersByTime(COVER_HOLD_MS * 6)
+    await nextTick()
+    expect(wrapper.findAll('img')).toHaveLength(1)
+  })
+
+  it('loads and plays the moving cover once it first plays, and keeps it hidden behind the still when paused again', async () => {
+    const wrapper = mountCovers(COVERS, { paused: true, loadOnPlay: true })
+    await untilAllLoaded(wrapper)
+    const still = shownSrc(wrapper)
+
+    await wrapper.setProps({ paused: false })
+    await expect.poll(() => layer(wrapper, 'shown').attributes('data-kind')).toBe('cover')
+    const moving = shownSrc(wrapper)
+    expect(URLS).toContain(moving)
+    expect(layer(wrapper, 'poster').attributes('src')).toBe(still)
+    await untilAllLoaded(wrapper)
+
+    await wrapper.setProps({ paused: true })
+    await nextTick()
+    expect(layer(wrapper, 'shown').attributes('data-kind')).toBe('still')
+    expect(layer(wrapper, 'upcoming').attributes('src')).toBe(moving)
+    expect(layer(wrapper, 'upcoming').attributes('data-loaded')).toBe('true')
+    expect(layer(wrapper, 'upcoming').classes()).toContain('opacity-0')
+  })
+
+  it('plays at once when it waits to play but is not paused', async () => {
+    const wrapper = mountCovers(COVERS, { loadOnPlay: true })
+    await untilAllLoaded(wrapper)
+
+    expect(layer(wrapper, 'shown').attributes('data-kind')).toBe('cover')
+    await untilTheNextIsLoaded(wrapper)
+    await untilTheCoverChanges(wrapper, shownSrc(wrapper))
+  })
+
+  it('still loads the moving cover, hidden, while it waits to play and no cover has a still', async () => {
+    const wrapper = mountCovers(
+      COVERS.map((cover) => ({ ...cover, stillUrl: null })),
+      { paused: true, loadOnPlay: true }
+    )
+    await untilAllLoaded(wrapper)
+
+    expect(wrapper.findAll('img')).toHaveLength(1)
+    expect(layer(wrapper, 'upcoming').attributes('data-kind')).toBe('cover')
+    expect(layer(wrapper, 'upcoming').classes()).toContain('opacity-0')
+  })
+
+  it('shows only a still while it waits to play when reduced motion is preferred, and still after it is no longer paused', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {}
+    }))
+    const wrapper = mountCovers(COVERS, { paused: true, loadOnPlay: true })
+    await untilAllLoaded(wrapper)
+    const still = shownSrc(wrapper)
+
+    await wrapper.setProps({ paused: false })
+    await nextTick()
+
+    expect(wrapper.findAll('img')).toHaveLength(1)
+    expect(shownSrc(wrapper)).toBe(still)
+    expect(layer(wrapper, 'shown').attributes('data-kind')).toBe('still')
   })
 
   it('shows nothing moving while it is paused and the cover has no still', async () => {

@@ -16,7 +16,7 @@ const {
   shownInFolder,
   trashed,
   copiedImage,
-  openedFolder,
+  openedPath,
   runningSessions
 } = await vi.hoisted(async () => {
   const nodeFs = await import('node:fs')
@@ -39,7 +39,7 @@ const {
     shownInFolder: vi.fn(),
     trashed: vi.fn(async (file: string) => nodeFs.rmSync(file)),
     copiedImage: vi.fn(),
-    openedFolder: vi.fn(async (_folder: string) => ''),
+    openedPath: vi.fn(async (_file: string) => ''),
     runningSessions: new Map<string, { launchFolders?: { output: string; input: string } }>()
   }
 })
@@ -48,8 +48,8 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
   shell: {
     showItemInFolder: (file: string) => shownInFolder(file),
-    trashItem: (file: string) => trashed(file),
-    openPath: (folder: string) => openedFolder(folder)
+    openPath: (file: string) => openedPath(file),
+    trashItem: (file: string) => trashed(file)
   },
   clipboard: { write: async (items: unknown[]) => copiedImage(items) },
   ClipboardItem: class {
@@ -89,7 +89,7 @@ vi.mock('./models', () => ({
 }))
 vi.mock('./assets', () => ({
   assetKind: (name: string) =>
-    ({ png: 'image', mp4: 'video', webm: 'video', wav: 'audio', glb: '3d' })[
+    ({ png: 'image', svg: 'image', mp4: 'video', webm: 'video', wav: 'audio', glb: '3d' })[
       name.split('.').pop() ?? ''
     ] ?? null
 }))
@@ -105,6 +105,7 @@ import {
   hasOutputFolder,
   launchFoldersOf,
   revealOutputFile,
+  openOutputFile,
   trashOutputFile,
   listLocalAssets,
   localPageRequest,
@@ -319,7 +320,7 @@ describe('outputFolderPaths and openOutputFolder', () => {
     expect(await openOutputFolder()).toBe(true)
     expect(await openOutputFolder('Test Instance')).toBe(true)
     expect(await openOutputFolder('unknown'), 'an unknown build opens nothing').toBe(false)
-    expect(openedFolder.mock.calls).toEqual([[sharedDir], [ownDir]])
+    expect(openedPath.mock.calls).toEqual([[sharedDir], [ownDir]])
   })
 
   it('names a folder that does not exist yet, so the picker can still show it', async () => {
@@ -461,6 +462,25 @@ describe('listLocalAssets', () => {
     expect(page.counts).toEqual({ all: 4, image: 3, video: 1, audio: 0, '3d': 0 })
   })
 
+  it('searches every file name, in any case, before it pages and counts', async () => {
+    write(path.join(sharedDir, 'Forest-1.png'), 'x', new Date('2026-10-01T00:00:00Z'))
+    write(path.join(sharedDir, 'forest-2.mp4'), 'x', new Date('2026-10-02T00:00:00Z'))
+    write(path.join(sharedDir, 'night', 'forest-3.png'), 'x', new Date('2026-10-03T00:00:00Z'))
+    write(path.join(sharedDir, 'sea.png'), 'x', new Date('2026-10-04T00:00:00Z'))
+
+    const page = await listLocalAssets(undefined, {
+      offset: 1,
+      limit: 1,
+      order: 'newest',
+      kind: 'image',
+      search: 'FOREST'
+    })
+
+    expect(page.assets.map((a) => a.name)).toEqual(['Forest-1.png'])
+    expect(page.total).toBe(2)
+    expect(page.counts).toEqual({ all: 3, image: 2, video: 1, audio: 0, '3d': 0 })
+  })
+
   it('keeps files with the same time in one order, so no file shows on two pages', async () => {
     const same = new Date('2026-10-01T00:00:00Z')
     for (const name of ['c.png', 'a.png', 'd.png', 'b.png'])
@@ -486,6 +506,21 @@ describe('listLocalAssets', () => {
       limit: 10,
       order: 'oldest',
       kind: '3d'
+    })
+    expect(
+      localPageRequest({ offset: 40, limit: 10, order: 'newest', search: ' ' }),
+      'a blank search filters nothing and keeps the page'
+    ).toEqual({ offset: 40, limit: 10, order: 'newest' })
+    expect(
+      localPageRequest({ offset: 0, limit: 10, order: 'newest', search: '🌲'.repeat(200) }),
+      'the length counts characters, not code units'
+    ).toEqual({ offset: 0, limit: 10, order: 'newest', search: '🌲'.repeat(200) })
+    expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: 3 })).toEqual(first)
+    expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: ' sea ' })).toEqual({
+      offset: 0,
+      limit: 10,
+      order: 'newest',
+      search: 'sea'
     })
   })
 
@@ -803,5 +838,47 @@ describe('acting on a file from its card', () => {
     expect(await copiedItem?.items['image/png']?.text()).toBe('png bytes')
     expect(await trashOutputFile(inside)).toBe(true)
     expect(fs.existsSync(inside), 'the picture left the output folder').toBe(false)
+  })
+
+  it('shows an SVG in its folder instead of handing it to a browser', async () => {
+    const vector = path.join(sharedDir, 'logo.svg')
+    write(vector)
+
+    expect(await openOutputFile(vector)).toBe(true)
+    expect(openedPath).not.toHaveBeenCalled()
+    expect(shownInFolder).toHaveBeenCalledExactlyOnceWith(vector)
+  })
+
+  it('never hands a file that is not a picture, clip or sound to an app', async () => {
+    const script = path.join(sharedDir, 'run.command')
+    write(script)
+
+    expect(await openOutputFile(script)).toBe(true)
+    expect(openedPath).not.toHaveBeenCalled()
+    expect(shownInFolder).toHaveBeenCalledExactlyOnceWith(script)
+  })
+
+  it('opens a file in its default app, and shows a 3D file or a file no app opens in its folder', async () => {
+    const picture = path.join(sharedDir, 'portrait.png')
+    const mesh = path.join(sharedDir, 'mesh.glb')
+    const outside = path.join(outsideDir, 'secret.png')
+    write(picture)
+    write(mesh)
+    write(outside)
+
+    expect(await openOutputFile(outside), 'a file outside is not opened').toBe(false)
+    expect(openedPath).not.toHaveBeenCalled()
+
+    expect(await openOutputFile(picture)).toBe(true)
+    expect(openedPath).toHaveBeenCalledExactlyOnceWith(picture)
+    expect(shownInFolder).not.toHaveBeenCalled()
+
+    expect(await openOutputFile(mesh)).toBe(true)
+    expect(openedPath, 'a 3D file is not handed to an app').toHaveBeenCalledOnce()
+    expect(shownInFolder).toHaveBeenCalledExactlyOnceWith(mesh)
+
+    openedPath.mockResolvedValueOnce('No application knows how to open this file')
+    expect(await openOutputFile(picture)).toBe(true)
+    expect(shownInFolder).toHaveBeenLastCalledWith(picture)
   })
 })

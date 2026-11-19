@@ -183,6 +183,23 @@ export function effectiveAgentRequirements(
   return { kind: 'text', text: lines.join('\n') }
 }
 
+type ResolvedOverride =
+  { kind: 'text'; text: string; pins: OverridePins } | { kind: 'refused'; reason: OverrideRefusal }
+
+export function resolveOverride(
+  coreText: string,
+  pins: OverridePins,
+  mainText = ''
+): ResolvedOverride {
+  const effective = effectiveAgentRequirements(coreText, pins, mainText)
+  if (effective.kind === 'text') return { ...effective, pins }
+  const agentPins = new Map(pins)
+  agentPins.delete(FRONTEND_PACKAGE)
+  if (effective.reason !== 'not_newer' || agentPins.size === 0) return effective
+  const withoutFrontend = effectiveAgentRequirements(coreText, agentPins, mainText)
+  return withoutFrontend.kind === 'text' ? { ...withoutFrontend, pins: agentPins } : effective
+}
+
 export function parseInstalled(pipListOutput: string): { name: string; version: string }[] | null {
   const json = pipListOutput
     .split(/\r?\n/)
@@ -302,7 +319,7 @@ interface Kept {
 }
 
 export type OverrideDecision =
-  | { decision: 'applied'; pins: OverridePins }
+  | { decision: 'applied'; pins: OverridePins; reason?: 'frontend_not_newer' }
   | ({ decision: 'refused'; reason: OverrideRefusal; pins?: OverridePins } & Kept)
   | ({
       decision: 'deferred'
@@ -428,7 +445,7 @@ export function reportOverrideDecision(
     telemetry.emit('comfy.desktop.agent_requirements_override', {
       installation_id: installationId,
       decision: d.decision,
-      reason: 'reason' in d ? d.reason : null,
+      reason: 'reason' in d ? (d.reason ?? null) : null,
       pins,
       failures: 'failures' in d ? (d.failures ?? null) : null,
       stays_installed:
@@ -457,6 +474,20 @@ export function reportAgentCoreFailure(
       elapsed_ms: r.elapsedMs,
       budget_ms: r.budgetMs,
       error_tail: r.errorTail,
+      index
+    })
+  } catch {}
+}
+
+export function reportCacheRescued(
+  installationId: string,
+  step: 'core' | 'override',
+  index: IndexKind
+): void {
+  try {
+    telemetry.emit('comfy.desktop.agent_requirements_cache_rescued', {
+      installation_id: installationId,
+      step,
       index
     })
   } catch {}
@@ -565,6 +596,8 @@ export interface PrefetchReport {
   elapsedMs: number
   downloadsStarted: number
   downloadsFinished: number
+  downloadedBytes: number
+  fetchMs: number
   errorTail: string | null
   uvVersion: string | null
 }
@@ -585,6 +618,8 @@ export function reportAgentPrefetch(
       elapsed_ms: r.elapsedMs,
       downloads_started: r.downloadsStarted,
       downloads_finished: r.downloadsFinished,
+      downloaded_bytes: r.downloadedBytes,
+      fetch_ms: r.fetchMs,
       error_tail: r.errorTail,
       index,
       uv_version: r.uvVersion

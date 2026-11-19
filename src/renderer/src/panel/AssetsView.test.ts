@@ -24,6 +24,7 @@ const findCloudAsset = vi.fn()
 const listLocalAssets = vi.fn()
 const downloadAsset = vi.fn()
 const revealAsset = vi.fn()
+const openAsset = vi.fn()
 const openOutputFolder = vi.fn()
 const copyAsset = vi.fn()
 const readAssetModel = vi.fn()
@@ -41,6 +42,7 @@ const TALL_PAGE_HEIGHT = 3000
 const FIRST_PAGE = { offset: 0, limit: 100, order: 'newest' }
 
 let page: HTMLElement
+const localPages: LocalAssetPageRequest[] = []
 
 const panelLayout = document.createElement('style')
 panelLayout.textContent = '[data-panel-page] > div { display: flex; height: 100%; }'
@@ -63,13 +65,16 @@ function localListing(
   all: AssetSummary[],
   page: LocalAssetPageRequest = { offset: 0, limit: 500, order: 'newest' }
 ): LocalAssetListing {
-  const count = (kind: AssetSummary['kind']) => all.filter((item) => item.kind === kind).length
-  const matching = page.kind ? all.filter((item) => item.kind === page.kind) : all
+  localPages.push(page)
+  const term = page.search?.toLowerCase()
+  const named = term ? all.filter((item) => item.name.toLowerCase().includes(term)) : all
+  const count = (kind: AssetSummary['kind']) => named.filter((item) => item.kind === kind).length
+  const matching = page.kind ? named.filter((item) => item.kind === page.kind) : named
   return {
     assets: matching.slice(page.offset, page.offset + page.limit),
     total: matching.length,
     counts: {
-      all: all.length,
+      all: named.length,
       image: count('image'),
       video: count('video'),
       audio: count('audio'),
@@ -234,8 +239,11 @@ beforeEach(() => {
   page.style.cssText = `width: ${FOUR_COLUMN_PAGE_WIDTH}px; height: ${TALL_PAGE_HEIGHT}px`
   document.body.append(page)
   vi.clearAllMocks()
+  localPages.length = 0
   window.localStorage.clear()
   listLocalAssets.mockResolvedValue([])
+  openAsset.mockResolvedValue(true)
+  revealAsset.mockResolvedValue(true)
   openOutputFolder.mockResolvedValue(true)
   listWorkspaces.mockResolvedValue([
     { id: 'me', name: 'Personal Workspace', type: 'personal' },
@@ -261,6 +269,7 @@ beforeEach(() => {
       localListing(await listLocalAssets(installationId), page),
     downloadAsset,
     revealAsset,
+    openAsset,
     openOutputFolder,
     listOutputFolders: async () => ({
       home: '/Users/me',
@@ -645,9 +654,8 @@ describe('AssetsView', () => {
 
     typedInto.value = 'forest'
     typedInto.dispatchEvent(new Event('input'))
-    await flushPromises()
 
-    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['forest.png']))
     expect(input(), 'the same input stays on the page').toBe(typedInto)
   })
 
@@ -672,14 +680,82 @@ describe('AssetsView', () => {
     expect(listLocalAssets, 'the type is read from the folder').toHaveBeenCalledTimes(2)
 
     await wrapper.get('input').setValue('terr')
-    expect(assetNames(wrapper)).toEqual(['terraces.png'])
-    expect(tabs(), 'folder-wide counts hide while a search narrows the page').toEqual([
-      'All',
-      'Images',
-      'Videos',
-      '3D',
-      'Audio'
+    await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['terraces.png']))
+    expect(localPages.at(-1), 'the folder is searched, not only the open page').toEqual({
+      offset: 0,
+      limit: 100,
+      order: 'newest',
+      kind: 'image',
+      search: 'terr'
+    })
+    expect(tabs(), 'the type tabs count the matches in the whole folder').toEqual([
+      'All1',
+      'Images1',
+      'Videos0',
+      '3D0',
+      'Audio0'
     ])
+  })
+
+  it('searches the whole folder once the typing stops, from page 1', async () => {
+    const wrapper = await mountAssets(
+      Array.from({ length: 150 }, (_, i) =>
+        asset(`f${i}`, i === 140 ? 'lighthouse.png' : `frame-${i}.png`, 'image')
+      )
+    )
+    await wrapper.get('[data-testid="assets-page-2"]').trigger('click')
+    await flushPromises()
+    const readsBefore = localPages.length
+
+    const input = wrapper.get('input')
+    for (const typed of ['l', 'li', 'lig', 'light']) await input.setValue(typed)
+    await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['lighthouse.png']))
+
+    expect(
+      localPages.slice(readsBefore),
+      'one read for the finished word, not one per key'
+    ).toEqual([{ offset: 0, limit: 100, order: 'newest', search: 'light' }])
+    expect(wrapper.find('[data-testid="assets-pagination"]').text()).toContain('1–1 of 1')
+  })
+
+  it('lists every output again from page 1 when the search is cleared', async () => {
+    const wrapper = await mountAssets(
+      Array.from({ length: 150 }, (_, i) =>
+        asset(`f${i}`, i === 140 ? 'lighthouse.png' : `frame-${i}.png`, 'image')
+      )
+    )
+    const input = wrapper.get('input')
+    await input.setValue('light')
+    await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['lighthouse.png']))
+    const readsBefore = localPages.length
+
+    await input.setValue('')
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="assets-pagination"]').text()).toContain('1–100 of 150')
+    )
+
+    expect(localPages.slice(readsBefore)).toEqual([{ offset: 0, limit: 100, order: 'newest' }])
+    expect(assetNames(wrapper)).toContain('frame-0.png')
+  })
+
+  it('sends at most the first 200 characters of a long search', async () => {
+    const wrapper = await mountAssets([asset('a', 'lighthouse.png', 'image')])
+    const readsBefore = localPages.length
+
+    await wrapper.get('input').setValue('l'.repeat(250))
+    await vi.waitFor(() => expect(localPages.length).toBeGreaterThan(readsBefore))
+
+    expect(localPages.at(-1)?.search).toBe('l'.repeat(200))
+  })
+
+  it('never cuts a character in half when it shortens a long search', async () => {
+    const wrapper = await mountAssets([asset('a', 'lighthouse.png', 'image')])
+    const readsBefore = localPages.length
+
+    await wrapper.get('input').setValue(`${'l'.repeat(199)}🌲🌲`)
+    await vi.waitFor(() => expect(localPages.length).toBeGreaterThan(readsBefore))
+
+    expect(localPages.at(-1)?.search).toBe(`${'l'.repeat(199)}🌲`)
   })
 
   it('shows each folder in its file manager from the picker', async () => {
@@ -700,21 +776,61 @@ describe('AssetsView', () => {
     ).toBe(true)
   })
 
-  it('reaches Show in Finder with the arrow keys and opens the folder with Enter', async () => {
+  it('moves between rows with the arrow keys and never stops on Show in Finder', async () => {
+    const wrapper = await mountAssets([], {
+      builds: [localBuild('lab', 'Video Lab'), localBuild('art', 'Art Lab')]
+    })
+    await openBuildPicker(wrapper)
+    const press = async (key: string) => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      await flushPromises()
+    }
+    const focused = () => document.activeElement?.getAttribute('data-testid') ?? undefined
+    expect(buildRows().length, 'more than one row').toBeGreaterThan(1)
+
+    document.querySelector<HTMLElement>('[data-testid="assets-build-lab"]')!.focus()
+    const visited: (string | undefined)[] = []
+    for (let step = 0; step < 4; step++) {
+      await press('ArrowDown')
+      visited.push(focused())
+    }
+    await press('ArrowUp')
+    visited.push(focused())
+
+    expect(visited, 'focus moves to the next row').toContain('assets-build-art')
+    expect(visited.every((id) => id?.startsWith('assets-build-'))).toBe(true)
+  })
+
+  it('opens the picker closed again after it leaves and comes back', async () => {
     const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
     await openBuildPicker(wrapper)
-    const row = document.querySelector<HTMLElement>('[data-testid="assets-build-lab"]')!
-    const press = (key: string) =>
-      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    const installationStore = useInstallationStore()
 
-    row.focus()
-    press('ArrowDown')
+    installationStore.loading = true
+    installationStore.installations = []
+    await flushPromises()
+    expect(wrapper.find('[data-testid="assets-build-picker"]').exists()).toBe(false)
+    installationStore.installations = [localBuild('lab', 'Video Lab')]
+    installationStore.loading = false
     await flushPromises()
 
-    expect(document.activeElement?.getAttribute('data-testid')).toBe('assets-place-reveal-lab')
-    press('Enter')
+    expect(wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded')).toBe(
+      'false'
+    )
+  })
+
+  it('closes the picker when Show in Finder is clicked', async () => {
+    const wrapper = await mountAssets([], { builds: [localBuild('lab', 'Video Lab')] })
+    await openBuildPicker(wrapper)
+
+    document.querySelector<HTMLElement>('[data-testid="assets-place-reveal-lab"]')!.click()
     await flushPromises()
+
     expect(openOutputFolder).toHaveBeenCalledExactlyOnceWith('lab')
+    expect(wrapper.get('[data-testid="assets-build-picker"]').attributes('aria-expanded')).toBe(
+      'false'
+    )
+    expect(document.querySelector('[data-testid="assets-place-reveal-lab"]')).toBeNull()
   })
 
   it('says when a folder does not open', async () => {
@@ -868,15 +984,51 @@ describe('AssetsView', () => {
     expect(wrapper.findAll('[data-testid="assets-skeleton"] > li')).toHaveLength(8)
   })
 
-  it('downloads a file on this computer from its card', async () => {
+  it('opens a file on this computer in its default app from its card', async () => {
+    openAsset.mockResolvedValue(true)
     const wrapper = await mountAssets([
       asset('a', 'surfer.mp4', 'video'),
       asset('b', 'forest.png', 'image')
     ])
 
-    await wrapper.get('[data-testid="asset-download-b"]').trigger('click')
+    expect(wrapper.find('[data-testid="asset-download-b"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="asset-open-file-b"]').trigger('click')
 
-    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('local', 'b', 'forest.png')
+    expect(openAsset).toHaveBeenCalledExactlyOnceWith('local', 'b')
+    expect(downloadAsset).not.toHaveBeenCalled()
+  })
+
+  it('shows a 3D file on this computer in its folder from its card', async () => {
+    const wrapper = await mountAssets([asset('m', 'mesh.glb', '3d')])
+
+    expect(wrapper.find('[data-testid="asset-open-file-m"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="asset-reveal-m"]').trigger('click')
+
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', 'm')
+  })
+
+  it('shows an SVG or a file of no media kind in its folder instead of opening it', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/logo.svg', 'logo.svg', 'image'),
+      asset('/out/notes.txt', 'notes.txt', null)
+    ])
+
+    expect(wrapper.find('[data-testid="asset-open-file-/out/logo.svg"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="asset-reveal-/out/logo.svg"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="asset-reveal-/out/notes.txt"]').exists()).toBe(true)
+  })
+
+  it('tells the user when a file on this computer does not open', async () => {
+    openAsset.mockResolvedValue(false)
+    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-file-a"]').trigger('click')
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't open asset",
+      message: 'forest.png'
+    })
   })
 
   it('downloads a Cloud file through the Cloud build', async () => {
@@ -891,7 +1043,8 @@ describe('AssetsView', () => {
   it('starts one download at a time for a file', async () => {
     let finish: () => void = () => {}
     downloadAsset.mockReturnValue(new Promise<void>((resolve) => (finish = resolve)))
-    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets()
+    await signInWith([asset('a', 'forest.png', 'image')])
     const button = wrapper.get('[data-testid="asset-download-a"]')
 
     await button.trigger('click')
@@ -906,7 +1059,8 @@ describe('AssetsView', () => {
 
   it('tells the user when a download fails', async () => {
     downloadAsset.mockRejectedValue(new Error('offline'))
-    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets()
+    await signInWith([asset('a', 'forest.png', 'image')])
 
     await wrapper.get('[data-testid="asset-download-a"]').trigger('click')
     await flushPromises()
@@ -1335,7 +1489,9 @@ describe('AssetsView', () => {
 
     await wrapper.get('input').setValue('zzz')
 
-    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain('No matching assets')
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain('No matching assets')
+    )
   })
 
   it('reports a failed load', async () => {
@@ -1345,14 +1501,17 @@ describe('AssetsView', () => {
   })
 
   it('opens the asset menu on right-click instead of the browser menu, with actions for a file on this computer', async () => {
-    const wrapper = await mountAssets([picture('b', 300)])
+    const wrapper = await mountAssets([{ ...picture('b', 300), name: 'b.png' }])
 
     const event = await rightClick(wrapper.get('[data-testid="asset-b"]').element)
 
     expect(event.defaultPrevented, 'the browser menu with Save Image does not open').toBe(true)
-    expect(menuLabels()).toEqual(['Download', 'Show in Finder', 'Copy', 'Delete'])
+    expect(menuLabels()).toEqual(['Open', 'Show in Finder', 'Copy', 'Delete'])
     await pickMenuItem('reveal')
     expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', 'b')
+    await rightClick(wrapper.get('[data-testid="asset-b"]').element)
+    await pickMenuItem('open')
+    expect(openAsset).toHaveBeenCalledExactlyOnceWith('local', 'b')
   })
 
   it('offers only Download and Copy for a Cloud file, from the more actions button', async () => {
@@ -1500,19 +1659,57 @@ describe('AssetsView', () => {
     expect(viewer()!.querySelector('[data-testid="output-detail-show-in-folder"]')).toBeNull()
   })
 
-  it('downloads the file the viewer is showing', async () => {
+  it('gives a file on this computer only Show in Finder in the viewer, for the file it is showing', async () => {
     const wrapper = await mountAssets([
-      asset('a', 'surfer.mp4', 'video', { createdAt: '2026-11-02T00:00:00Z' }),
-      asset('b', 'forest.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
+      asset('/out/surfer.mp4', 'surfer.mp4', 'video', { createdAt: '2026-11-02T00:00:00Z' }),
+      asset('/out/forest.png', 'forest.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
     ])
 
-    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+    await wrapper.get('[data-testid="asset-open-/out/surfer.mp4"]').trigger('click')
     await flushPromises()
     await press('ArrowRight')
-    document.querySelector<HTMLElement>('[data-testid="output-detail-download"]')!.click()
+    expect(document.querySelector('[data-testid="output-detail-download"]')).toBeNull()
+    document.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
     await flushPromises()
 
-    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('local', 'b', 'forest.png')
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/forest.png')
+    expect(openAsset).not.toHaveBeenCalled()
+  })
+
+  it('gives a file at the top of the disk Show in Finder in the viewer, even with no folder to show', async () => {
+    const wrapper = await mountAssets([asset('/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/forest.png"]').trigger('click')
+    await flushPromises()
+
+    expect(viewer()!.querySelector('[data-testid="output-detail-download"]')).toBeNull()
+    viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', '/forest.png')
+  })
+
+  it('tells the user when Show in Finder cannot find the file', async () => {
+    revealAsset.mockResolvedValue(false)
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-open-/out/forest.png"]').trigger('click')
+    await flushPromises()
+    viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't open asset",
+      message: 'forest.png'
+    })
+  })
+
+  it('gives a 3D file on this computer only Show in Finder in the viewer', async () => {
+    const wrapper = await mountAssets([asset('/out/mesh.glb', 'mesh.glb', '3d')])
+
+    await wrapper.get('[data-testid="asset-open-/out/mesh.glb"]').trigger('click')
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="output-detail-download"]')).toBeNull()
+    expect(document.querySelector('[data-testid="output-detail-show-in-folder"]')).not.toBeNull()
   })
 })
 
@@ -1523,6 +1720,7 @@ describe('AssetsView Comfy Cloud pages', () => {
     limit: number
     order: string
     kind?: string
+    search?: string
   }
 
   function output(index: number): AssetSummary {
@@ -1531,7 +1729,16 @@ describe('AssetsView Comfy Cloud pages', () => {
       : asset(`c${index}`, `out-${index}.png`, 'image')
   }
 
-  function outputPage(total: number, { offset, limit, kind }: PageRequest): CloudAssetPage {
+  function outputPage(total: number, request: PageRequest): CloudAssetPage {
+    const { offset, limit, kind, search } = request
+    if (search) {
+      const matches = Array.from({ length: total }, (_, i) => output(i)).filter(
+        (candidate) =>
+          candidate.name.toLowerCase().includes(search.toLowerCase()) &&
+          (!kind || candidate.kind === kind)
+      )
+      return { assets: matches.slice(offset, offset + limit), total: matches.length }
+    }
     if (kind) {
       const matches = Array.from({ length: total }, (_, i) => output(i)).filter(
         (candidate) => candidate.kind === kind
@@ -1881,6 +2088,36 @@ describe('AssetsView Comfy Cloud pages', () => {
     expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
       '1–5 of 5'
     )
+  })
+
+  it('searches every Comfy Cloud output by name, with or without a type', async () => {
+    cloudOutputs(250)
+    const wrapper = await mountCloud()
+    await goToPage(wrapper, 2)
+
+    await wrapper.get('input').setValue('mesh')
+    await vi.waitFor(() => expect(asked()).toContainEqual({ ...FIRST_PAGE, search: 'mesh' }))
+    await flushPromises()
+
+    expect(assetNames(wrapper)).toEqual([
+      'mesh-7.glb',
+      'mesh-57.glb',
+      'mesh-107.glb',
+      'mesh-157.glb',
+      'mesh-207.glb'
+    ])
+    expect(shownText(wrapper.get('[data-testid="assets-pagination"]').element)).toContain(
+      '1–5 of 5'
+    )
+
+    await wrapper.get('[data-testid="assets-kind-3d"]').trigger('click')
+    await flushPromises()
+
+    expect(asked().at(-1)).toEqual({ ...FIRST_PAGE, kind: '3d', search: 'mesh' })
+    expect(
+      wrapper.findAll('[data-testid^="assets-kind-"]').map((tab) => tab.text()),
+      'Cloud tabs show no counts, with or without a search'
+    ).toEqual(['All', 'Images', 'Videos', '3D', 'Audio'])
   })
 
   it('says nothing matches when Comfy Cloud has no outputs of the picked type', async () => {

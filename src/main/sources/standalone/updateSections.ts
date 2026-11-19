@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import semver from 'semver'
 import * as releaseCache from '../../lib/release-cache'
 import { buildChannelCards, buildChannelLabelMap } from '../../lib/channel-cards'
 import type { ChannelDef } from '../../lib/channel-cards'
@@ -64,6 +65,22 @@ export function getEffectiveChannel(installation: InstallationRecord): string {
   if (stored !== 'stable') return stored
   const cv = installation.comfyVersion as ComfyVersion | undefined
   return typeof cv?.commitsAhead === 'number' && cv.commitsAhead > 0 ? 'latest' : stored
+}
+
+function tagSemver(tag: string | undefined): string | null {
+  return tag ? semver.valid(tag.replace(/^v/, '')) : null
+}
+
+function hasCommitsPastBaseTag(cv: ComfyVersion): boolean {
+  return cv.commitsAhead === undefined ? !!cv.baseTag : cv.commitsAhead > 0
+}
+
+function isStableDowngrade(installed: ComfyVersion, stableTag: string | undefined): boolean {
+  const installedSemver = tagSemver(installed.baseTag)
+  const stableSemver = tagSemver(stableTag)
+  if (!installedSemver || !stableSemver) return hasCommitsPastBaseTag(installed)
+  const order = semver.compare(installedSemver, stableSemver)
+  return order === 0 ? hasCommitsPastBaseTag(installed) : order > 0
 }
 
 export function getListPreview(installation: InstallationRecord): string | null {
@@ -415,9 +432,7 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
       const isSwitching = card.value !== channel
       const isDowngrade =
         card.value === 'stable' && cv
-          ? cv.commitsAhead === undefined
-            ? !!cv.baseTag
-            : cv.commitsAhead > 0
+          ? isStableDowngrade(cv, channelInfo.baseTag || channelInfo.latestTag)
           : false
       const msgKey = isDowngrade
         ? 'standalone.updateConfirmMessageDowngrade'
