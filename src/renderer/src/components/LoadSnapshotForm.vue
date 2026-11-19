@@ -21,9 +21,8 @@ import { getVariantGpuLabel, sortedCardOptions, findBestVariant } from '../lib/v
 import { triggerLabel as _triggerLabel, formatDate, formatNodeVersion } from '../lib/snapshots'
 import SetupFormRow from './SetupFormRow.vue'
 import InstallLocationRow from './InstallLocationRow.vue'
-import SetupOptionCards from './SetupOptionCards.vue'
 import SnapshotDisclosure from './SnapshotDisclosure.vue'
-import { toHardwareCards } from '../lib/setupOptionCards'
+import { toCardSelectOption, toHardwareCards } from '../lib/setupOptionCards'
 import { BaseSelect, type BaseSelectOption } from './ui'
 import { emitTelemetryAction, toVariantBucket } from '../lib/telemetry'
 
@@ -63,7 +62,11 @@ const cardRef = ref<HTMLElement | null>(null)
 const sortedVariants = computed(() =>
   sortedCardOptions(heldVariants.value?.options ?? variantOptions.value)
 )
-const variantCards = computed(() => toHardwareCards(sortedVariants.value))
+const variantSelectOptions = computed(() =>
+  toHardwareCards(sortedVariants.value).map((card) =>
+    toCardSelectOption(card, t('newInstall.recommended'))
+  )
+)
 const shownVariantValue = computed(
   () => (heldVariants.value?.selection ?? selectedVariant.value)?.value
 )
@@ -445,14 +448,16 @@ defineExpose({ create, canCreate, creating, hasPreview })
         </p>
       </SetupFormRow>
 
-      <SetupFormRow :label="$t('list.snapshotDevice')" :icon="Zap" control-height="cards">
-        <SetupOptionCards
-          v-if="variantCards.length > 0"
-          :options="variantCards"
-          :selected-value="shownVariantValue"
-          :refreshing="variantLoading"
-          :aria-label="$t('list.snapshotDevice')"
-          @select="selectVariantByValue"
+      <SetupFormRow :label="$t('standalone.variant')" :icon="Zap">
+        <BaseSelect
+          v-if="variantSelectOptions.length > 0"
+          class="load-snapshot-hardware text-[13px]"
+          :model-value="shownVariantValue ?? ''"
+          :options="variantSelectOptions"
+          :loading="variantLoading"
+          :disabled="variantLoading"
+          :aria-label="$t('standalone.variant')"
+          @update:model-value="selectVariantByValue"
         />
         <div
           v-else-if="variantLoading"

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import LoadSnapshotModal from './LoadSnapshotModal.vue'
+import { BaseSelect } from '../components/ui'
 
 function mountLoadSnapshot() {
   return mount(LoadSnapshotModal, {
@@ -21,6 +22,16 @@ describe('LoadSnapshotModal', () => {
 
     expect(wrapper.get('.setup-modal-title').text()).toBe('Load snapshot')
     expect(wrapper.get('.setup-modal-lead').text()).toBe('Load a snapshot file to install a build.')
+  })
+
+  it('shows Create build from the start, disabled until a snapshot file is picked', async () => {
+    const wrapper = mountLoadSnapshot()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+
+    const create = wrapper.get('.load-snapshot-create')
+    expect(create.text()).toBe('Create build')
+    expect(create.attributes('disabled')).toBeDefined()
   })
 })
 
@@ -57,7 +68,7 @@ describe('LoadSnapshotModal preview', () => {
     }
   }
 
-  it('lays the snapshot out as form rows with the device as option cards', async () => {
+  it('lays the snapshot out as form rows with the same Hardware dropdown as New build', async () => {
     installApi()
     const wrapper = mountLoadSnapshot()
     ;(wrapper.vm as unknown as { open: () => void }).open()
@@ -71,16 +82,23 @@ describe('LoadSnapshotModal preview', () => {
         .findAll('.config-label')
         .map((label) => label.text())
         .slice(0, 5)
-    ).toEqual(['Snapshot file', 'Name', 'Release', 'Device', 'Contents'])
-    const card = (label: string) =>
-      wrapper
-        .findAll('.setup-option')
-        .find((option) => option.get('.setup-option__label').text() === label)!
-    expect(card('Apple Silicon (MPS)').attributes('aria-checked')).toBe('true')
+    ).toEqual(['Snapshot file', 'Name', 'Release', 'Hardware', 'Contents'])
+    expect(wrapper.find('.setup-option').exists()).toBe(false)
+    const hardware = wrapper
+      .findAllComponents(BaseSelect)
+      .find((select) => select.props('ariaLabel') === 'Hardware')!
+    expect(hardware.props('modelValue')).toBe('mps')
+    expect(hardware.props('options').map((option) => option.label)).toEqual([
+      'CPU',
+      'Apple Silicon (MPS)'
+    ])
 
-    await card('CPU').trigger('click')
-    expect(card('CPU').attributes('aria-checked')).toBe('true')
-    expect(wrapper.get('.load-snapshot-create').text()).toBe('Create build')
+    hardware.vm.$emit('update:modelValue', 'cpu')
+    await flushPromises()
+    expect(hardware.props('modelValue')).toBe('cpu')
+    const create = wrapper.get('.load-snapshot-create')
+    expect(create.text()).toBe('Create build')
+    expect(create.attributes('disabled')).toBeUndefined()
   })
 
   it('swaps the snapshot from its file row instead of a Back button', async () => {

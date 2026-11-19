@@ -535,7 +535,6 @@
     "snapshotNameHint": "类似 < > : \" / \\ | ? * 的字符将被移除",
     "snapshotRelease": "版本",
     "snapshotOriginalRelease": "快照版本：{tag}",
-    "snapshotDevice": "设备",
     "snapshotHardwareMismatch": "该快照创建于 {snapshotDevice}。检测到你的硬件为 {detectedDevice}。已预选适合你硬件的推荐版本。",
     "view": "管理",
     "console": "控制台",
