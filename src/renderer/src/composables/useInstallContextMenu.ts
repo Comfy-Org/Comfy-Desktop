@@ -26,6 +26,7 @@ import { shareLatestSnapshot } from '../lib/snapshots'
 import { isBuildInstall } from '../devplatform/buildState'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
+import { progressTitle } from '../lib/progressTitle'
 
 export type InstallMenuActionId =
   | 'manage'
@@ -354,7 +355,7 @@ export function useInstallContextMenu(
         if (!confirmed || isStoppedActionGated(inst)) return
         opts.onShowProgress({
           installationId: inst.id,
-          title: `${deleteLabel} - ${inst.name}`,
+          title: progressTitle(deleteLabel, inst.name),
           apiCall: () => window.api.runAction(inst.id, 'delete'),
           cancellable: true,
           returnTo: 'list',

@@ -138,7 +138,7 @@ export function validateArgs(
         result.push({
           text: token,
           status: 'unsupported',
-          tooltip: 'Unrecognized argument — will not be passed when launching'
+          tooltip: 'Unrecognized argument. It will not be passed when launching'
         })
         i++
         if (i < tokens.length && !tokens[i]!.startsWith('--')) {
@@ -196,7 +196,7 @@ export function validateArgs(
       result.push({
         text: token,
         status: 'orphaned',
-        tooltip: 'Unexpected positional argument — use --flag syntax'
+        tooltip: 'Unexpected positional argument. Use --flag syntax'
       })
       i++
     }

@@ -171,7 +171,7 @@ async function cancel(): Promise<void> {
   <DesktopDialogSurface
     :open="true"
     :aria-label="title"
-    overlay-class="fixed inset-0 z-50 bg-black/70"
+    overlay-class="build-progress-overlay fixed inset-0 z-50 bg-black/70"
     content-class="fixed top-1/2 left-1/2 z-50 w-[760px] max-w-[calc(100vw-96px)] -translate-x-1/2 -translate-y-1/2 outline-none"
     data-testid="build-progress-dialog"
     @close="emit('close')"
@@ -352,7 +352,7 @@ async function cancel(): Promise<void> {
         type="button"
         variant="secondary"
         size="unset"
-        class="absolute top-px -right-[47px] size-9 rounded-full bg-white/10 p-0 text-white hover:bg-white/15"
+        class="absolute top-px -right-[47px] size-9 rounded-full modal-close-fill [--modal-close-card:rgb(37_37_37)] p-0 text-white"
         :aria-label="t('common.close')"
         data-testid="build-progress-close"
         @click="emit('close')"
