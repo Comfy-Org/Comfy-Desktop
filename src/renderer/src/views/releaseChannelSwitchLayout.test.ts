@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { page as browserPage } from 'vitest/browser'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import '../assets/main.css'
@@ -195,9 +195,7 @@ function hardwareTrigger(): HTMLElement {
   return only('[data-testid="config-select-variant"]')
 }
 
-type Mounted = Awaited<ReturnType<typeof openChangeSetup>>
-
-function hardwareDescriptions(wrapper: Mounted): string[] {
+function hardwareDescriptions(wrapper: Pick<VueWrapper, 'findAllComponents'>): string[] {
   const select = wrapper
     .findAllComponents(BaseSelect)
     .find((candidate) => candidate.props('ariaLabel') === 'Hardware')
@@ -485,7 +483,7 @@ describe('switching the release in Load snapshot', () => {
     }
   }
 
-  it('keeps the device cards and the rows under them in place while the other release loads', async () => {
+  it('keeps the Hardware dropdown and the rows under it in place while the other release loads', async () => {
     const gate = createLoadGate()
     window.api = {
       previewSnapshotFile: vi.fn().mockResolvedValue({ ok: true, preview }),
@@ -503,24 +501,26 @@ describe('switching the release in Load snapshot', () => {
     await flushPromises()
     await finishEntranceAnimations()
     const settled = formLayout()
-    expect(settled.map((box) => box.what)).toContain('Device')
+    expect(settled.map((box) => box.what)).toContain('Hardware')
     const createBuild = only('.load-snapshot-create') as HTMLButtonElement
     expect(createBuild.disabled).toBe(false)
     gate.hold()
 
+    const hardware = only('.load-snapshot-hardware') as HTMLButtonElement
+
     wrapper.findComponent(BaseSelect).vm.$emit('update:modelValue', 'latest')
     await flushPromises()
     expect(gate.pending()).toBe(1)
-    expect(only('[role="radiogroup"]').getAttribute('aria-busy')).toBe('true')
-    expect(onScreen('[role="radio"]')).toHaveLength(HARDWARE.length)
+    expect(hardware.getAttribute('aria-busy')).toBe('true')
+    expect(hardware.disabled).toBe(true)
+    expect(hardwareDescriptions(wrapper)).toHaveLength(HARDWARE.length)
     expect(onScreen('.load-snapshot-loading')).toEqual([])
     expect(createBuild.disabled).toBe(true)
 
     for (const layout of await layoutsWhileLoading(gate)) expect(layout).toEqual(settled)
-    expect(only('[role="radiogroup"]').hasAttribute('aria-busy')).toBe(false)
+    expect(hardware.hasAttribute('aria-busy')).toBe(false)
+    expect(hardware.disabled).toBe(false)
     expect(createBuild.disabled).toBe(false)
-    expect(
-      onScreen('.setup-option__meta').every((meta) => meta.textContent?.includes('(nightly)'))
-    ).toBe(true)
+    expect(hardwareDescriptions(wrapper).every((text) => text.includes('(nightly)'))).toBe(true)
   })
 })

@@ -4,13 +4,7 @@ import { buildElectronApi } from './api'
 import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode'
 
 export type ComfyPanelKey =
-  | 'comfy'
-  | 'performance-test'
-  | 'benchmarks'
-  | 'new-install'
-  | 'track'
-  | 'load-snapshot'
-  | 'quick-install'
+  'comfy' | 'performance-test' | 'benchmarks' | 'new-install' | 'track' | 'load-snapshot'
 
 export type CoachmarkKind = 'beta-notice'
 

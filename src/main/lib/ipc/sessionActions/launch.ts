@@ -172,15 +172,12 @@ import { getIdClass } from '../../deviceId'
 import { launchFoldersOf, outputDirOverride } from '../../outputFolders'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
-export function desktopFeatureFlags(
-  inst: InstallationRecord,
-  telemetryEnabled: boolean
-): Record<string, string> {
+export function desktopFeatureFlags(inst: InstallationRecord): Record<string, string> {
   const flags: Record<string, string> = {
     show_signin_button: 'true',
     supports_terminal: 'false'
   }
-  if (inst.sourceId === 'standalone' && telemetryEnabled) {
+  if (inst.sourceId === 'standalone' && settings.telemetryConsent() === true) {
     flags.enable_telemetry = 'true'
   }
   return flags
@@ -188,7 +185,7 @@ export function desktopFeatureFlags(
 
 async function launchClientContext(): ReturnType<typeof agentClientContext> {
   try {
-    return await agentClientContext(settings.get('telemetryEnabled') === true, getAppVersion())
+    return await agentClientContext(settings.telemetryConsent() === true, getAppVersion())
   } catch {
     return undefined
   }
@@ -1290,9 +1287,7 @@ async function runLaunch(
             installationId,
             revision
           )
-          const flagEntries = Object.entries(
-            desktopFeatureFlags(inst, settings.get('telemetryEnabled') === true)
-          )
+          const flagEntries = Object.entries(desktopFeatureFlags(inst))
           for (const [key, value] of flagEntries) {
             if (key in registry) {
               desktopFlagArgs.push('--feature-flag', `${key}=${value}`)

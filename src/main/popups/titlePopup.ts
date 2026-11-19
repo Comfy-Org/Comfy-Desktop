@@ -1387,7 +1387,7 @@ function buildGlobalSettingsSnapshot(
       isPrimary: i === 0
     })),
     modelsSystemDefault: modelsDefault,
-    telemetryGranted: settings.get('telemetryEnabled') === true,
+    telemetryGranted: settings.telemetryConsent() === true,
     appUpdate: {
       state: appUpdateState,
       progress: lastAppUpdateProgress,
