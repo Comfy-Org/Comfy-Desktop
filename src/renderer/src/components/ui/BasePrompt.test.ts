@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import BasePrompt from './BasePrompt.vue'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 const wrappers: VueWrapper[] = []
 
@@ -98,6 +99,9 @@ describe('BasePrompt', async () => {
     })
     await flushPromises()
     expect(wrapper.find('.base-prompt-detail-label').text()).toBe('Release notes')
+    expect(wrapper.find('.base-prompt-detail-label').classes()).toEqual(
+      expect.arrayContaining(SECTION_TITLE_CLASS.split(' '))
+    )
     const items = wrapper.findAll('.base-prompt-detail-item')
     expect(items).toHaveLength(2)
     expect(items[0].text()).toBe('Line A')

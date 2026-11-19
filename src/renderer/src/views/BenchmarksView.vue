@@ -50,6 +50,7 @@ import {
 import { createResultsPng } from '../lib/performanceTestResultsSvg'
 import { useDialogs } from '../composables/useDialogs'
 import BenchmarkGroupCard from './benchmarks/BenchmarkGroupCard.vue'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 interface MenuOption {
   value: string
@@ -444,6 +445,14 @@ function selectRuns(runs: PerformanceTestBenchmark[]): void {
   selectedIds.value = new Set([...selectedIds.value, ...runs.map(({ id }) => id)])
 }
 
+function clearFilters(): void {
+  searchQuery.value = ''
+  workspaceFilter.value = ''
+  buildFilter.value = ''
+  machineFilter.value = ''
+  workflowFilter.value = ''
+}
+
 function clearSelection(): void {
   selectedIds.value = new Set()
   exportError.value = null
@@ -792,7 +801,8 @@ onActivated(() => {
                   </Button>
                 </template>
                 <DropdownMenuLabel
-                  class="benchmarks__columns-title px-3 pt-1.5 pb-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+                  class="benchmarks__columns-title px-3 pt-1.5 pb-1"
+                  :class="SECTION_TITLE_CLASS"
                 >
                   {{ t('benchmarks.columnsToDisplay') }}
                 </DropdownMenuLabel>
@@ -886,15 +896,24 @@ onActivated(() => {
             </Button>
           </div>
         </EmptyState>
-        <div
+        <EmptyState
           v-else-if="groups.length === 0"
-          class="benchmarks__no-results flex flex-col items-center gap-1.5 px-6 py-16 text-center"
+          class="benchmarks__no-results px-6 py-16"
+          :icon="ChartColumn"
+          :title="t('common.nothingMatches')"
+          :text="t('common.nothingMatchesHint')"
         >
-          <h2 class="m-0 text-heading font-semibold text-foreground">
-            {{ t('benchmarks.noMatches') }}
-          </h2>
-          <p class="m-0 text-ui text-muted-foreground">{{ t('benchmarks.noMatchesHint') }}</p>
-        </div>
+          <Button
+            variant="secondary"
+            size="md"
+            class="benchmarks__clear-filters px-3 text-[13px]/5"
+            type="button"
+            data-testid="benchmarks-clear-filters"
+            @click="clearFilters"
+          >
+            {{ t('common.clearFilters') }}
+          </Button>
+        </EmptyState>
         <div v-else class="benchmarks__groups flex flex-col gap-2">
           <BenchmarkGroupCard
             v-for="group in groups"

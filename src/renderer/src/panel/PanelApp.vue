@@ -19,7 +19,6 @@ import BenchmarksView from '../views/BenchmarksView.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
 import TrackModal from '../views/TrackModal.vue'
 import LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
-import QuickInstallModal from '../views/QuickInstallModal.vue'
 import FirstUseTakeover from '../views/FirstUseTakeover.vue'
 import MigrateConfirmTakeover from '../views/MigrateConfirmTakeover.vue'
 import { useTheme } from '../composables/useTheme'
@@ -91,7 +90,6 @@ const progressRef = ref<InstanceType<typeof ProgressModal> | null>(null)
 const newInstallRef = ref<InstanceType<typeof InstallWizardModal> | null>(null)
 const trackRef = ref<InstanceType<typeof TrackModal> | null>(null)
 const loadSnapshotRef = ref<InstanceType<typeof LoadSnapshotModal> | null>(null)
-const quickInstallRef = ref<InstanceType<typeof QuickInstallModal> | null>(null)
 const firstUseRef = ref<InstanceType<typeof FirstUseTakeover> | null>(null)
 const migrateTakeoverRef = ref<InstanceType<typeof MigrateConfirmTakeover> | null>(null)
 
@@ -126,11 +124,11 @@ overlays = usePanelOverlays({
   newInstallRef,
   trackRef,
   loadSnapshotRef,
-  quickInstallRef,
   firstUseRef,
   prepareChooserHostHandoff: (id) => chooserHandoff.prepareChooserHostHandoff(id),
   firstUseChain: firstUseChain.hooks,
   onBackgroundInstall: () => void showHome(),
+  onBuildCreated: (id) => landOnNewBuild(id),
   launchesInPlace: (id) => chooserHandoff.launchesInPlace(id)
 })
 const {
@@ -206,6 +204,46 @@ async function openBuildFromSidebar(inst: Installation): Promise<void> {
     await nextTick()
   }
   openBuildDetails(inst)
+}
+
+const NEW_BUILD_REFRESH_DELAYS_MS = [0, 1000, 3000]
+
+function landOnNewBuild(id: string): void {
+  const startedIn = dashboardScope.selectedWorkspaceId
+  const open = (inst: Installation | undefined): boolean => {
+    if (!inst) return false
+    const stillWhereItStarted = dashboardScope.selectedWorkspaceId === startedIn
+    if (stillWhereItStarted && isInstallationInWorkspace(inst, startedIn)) {
+      void openBuildFromSidebar(inst)
+    }
+    return true
+  }
+  if (open(installationStore.getById(id))) return
+  let waiting = true
+  const land = (inst: Installation | undefined): boolean => {
+    if (!waiting || !open(inst)) return !waiting
+    waiting = false
+    stop()
+    return true
+  }
+  const stop = watch(
+    () => installationStore.getById(id),
+    (inst) => {
+      land(inst)
+    }
+  )
+  void (async () => {
+    for (const delay of NEW_BUILD_REFRESH_DELAYS_MS) {
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+      if (!waiting) return
+      await installationStore.fetchInstallations().catch(() => {})
+      if (land(installationStore.getById(id))) return
+    }
+    if (!waiting) return
+    waiting = false
+    stop()
+    console.warn('[builds] the copied build could not be listed, so its page was not opened', id)
+  })()
 }
 
 async function showHome(): Promise<void> {
@@ -302,7 +340,8 @@ let unsubAppUpdatePromptRestart: (() => void) | null = null
 let unsubAppUpdateUserActionFailed: (() => void) | null = null
 const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
-const { triggerAction: triggerInstallAction } = useInstallContextMenu({
+const { triggerAction: triggerInstallAction, viewError: viewBuildError } = useInstallContextMenu({
+  onStartAgain: (inst) => launchFromBuildDetails(inst),
   onManage: (inst, manageOpts) => {
     const autoAction = manageOpts?.autoAction ?? null
     const initialTab = manageOpts?.initialTab
@@ -546,6 +585,7 @@ onUnmounted(() => {
               @back="closeBuildDetails"
               @launch="launchFromBuildDetails"
               @show-progress="handleShowProgress"
+              @view-error="viewBuildError"
             />
             <ChooserView
               :visible="dashboardHomePage === 'chooser' && !buildDetailsInstall"
@@ -553,7 +593,6 @@ onUnmounted(() => {
               @open-details="openBuildDetails"
               @show-new-install="handleChooserShowNewInstall"
               @show-build-import="switchPanel($event, 'chooser')"
-              @show-progress="handleShowProgress"
             />
           </div>
 
@@ -597,12 +636,6 @@ onUnmounted(() => {
       <LoadSnapshotModal
         v-else-if="currentOverlay.component === 'load-snapshot'"
         ref="loadSnapshotRef"
-        @close="dismissTakeoverDirect"
-        @show-progress="handleShowProgress"
-      />
-      <QuickInstallModal
-        v-else-if="currentOverlay.component === 'quick-install'"
-        ref="quickInstallRef"
         @close="dismissTakeoverDirect"
         @show-progress="handleShowProgress"
       />

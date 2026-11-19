@@ -440,25 +440,43 @@ type FakeChild = EventEmitter & {
 }
 
 describe('desktopFeatureFlags', () => {
+  const withConsent = (consent: boolean | undefined): void => {
+    vi.spyOn(settingsModule, 'telemetryConsent').mockReturnValue(consent)
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('always injects the unconditional desktop flags', () => {
-    const flags = desktopFeatureFlags(installOf('standalone'), false)
+    withConsent(false)
+    const flags = desktopFeatureFlags(installOf('standalone'))
     expect(flags.show_signin_button).toBe('true')
     expect(flags.supports_terminal).toBe('false')
   })
 
   it('injects enable_telemetry only for standalone installs that opted in', () => {
-    expect(desktopFeatureFlags(installOf('standalone'), true).enable_telemetry).toBe('true')
+    withConsent(true)
+    expect(desktopFeatureFlags(installOf('standalone')).enable_telemetry).toBe('true')
   })
 
-  it('omits enable_telemetry when telemetry is disabled (default off)', () => {
-    expect(desktopFeatureFlags(installOf('standalone'), false)).not.toHaveProperty(
-      'enable_telemetry'
-    )
+  it.each([false, undefined])('omits enable_telemetry with telemetry consent %s', (consent) => {
+    withConsent(consent)
+    expect(desktopFeatureFlags(installOf('standalone'))).not.toHaveProperty('enable_telemetry')
+  })
+
+  it('omits enable_telemetry when settings serve a consent the accessor withholds', () => {
+    settingsModule.set('telemetryEnabled', true)
+    onTestFinished(() => settingsModule.set('telemetryEnabled', undefined))
+    expect(settingsModule.get('telemetryEnabled'), 'settings serve the opt-in').toBe(true)
+    withConsent(undefined)
+    expect(desktopFeatureFlags(installOf('standalone'))).not.toHaveProperty('enable_telemetry')
   })
 
   it('omits enable_telemetry for non-standalone installs even when opted in', () => {
-    expect(desktopFeatureFlags(installOf('portable'), true)).not.toHaveProperty('enable_telemetry')
-    expect(desktopFeatureFlags(installOf('git'), true)).not.toHaveProperty('enable_telemetry')
+    withConsent(true)
+    expect(desktopFeatureFlags(installOf('portable'))).not.toHaveProperty('enable_telemetry')
+    expect(desktopFeatureFlags(installOf('git'))).not.toHaveProperty('enable_telemetry')
   })
 })
 
@@ -989,6 +1007,48 @@ const build = (over: {
     ...(over.campaign && { campaign: over.campaign })
   })
 
+describe('buildLaunchArgs user args', () => {
+  const schema: ComfyArgsSchema = {
+    args: [
+      { name: 'cuda-device', flag: '--cuda-device', help: '', type: 'value', category: 'gpuVram' }
+    ],
+    knownFlags: new Set(['cuda-device'])
+  }
+
+  it('never passes a --cuda-device with no value to ComfyUI', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const { args } = build({ userArgs: ['--cuda-device'], schema, betaFlags: [] })
+      expect(args, 'argparse would exit: "expected one argument"').not.toContain('--cuda-device')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it("drops only from the user's args, never Desktop's or a grant's", () => {
+    const valueTyped: ComfyArgsSchema = {
+      args: [
+        ...schema.args,
+        { name: 'enable-assets', flag: '--enable-assets', help: '', type: 'value', category: 'x' }
+      ],
+      knownFlags: new Set(['cuda-device', 'enable-assets'])
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const { args } = build({ userArgs: ['--cuda-device'], schema: valueTyped })
+      expect(args, 'a grant is never filtered for a missing value').toContain('--enable-assets')
+      expect(args).not.toContain('--cuda-device')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('passes --cuda-device with its value through', () => {
+    const { args } = build({ userArgs: ['--cuda-device', '1'], schema, betaFlags: [] })
+    expect(args.slice(-2)).toEqual(['--cuda-device', '1'])
+  })
+})
+
 describe('buildLaunchArgs campaigns', () => {
   const KEY = 'desktop_core_beta_agent'
   const schema = schemaOf('enable-assets', 'enable-agent', 'disable-agent')
@@ -1504,6 +1564,7 @@ describe('core beta report placement', () => {
       launchHarness.busyPorts = []
     })
     afterEach(() => {
+      vi.restoreAllMocks()
       settingsModule.set('telemetryEnabled', undefined)
       setHardwareProbe(null)
       launchHarness.busyPorts = null
@@ -1520,13 +1581,21 @@ describe('core beta report placement', () => {
     })
 
     it('still launches, without the context, when reading consent throws', async () => {
-      const readSetting = settingsModule.get
-      vi.spyOn(settingsModule, 'get').mockImplementation((key) => {
-        if (key === 'telemetryEnabled') throw new Error('EPERM: settings.json write failed')
-        return readSetting(key)
+      vi.spyOn(settingsModule, 'telemetryConsent').mockImplementation(() => {
+        throw new Error('EPERM: settings.json write failed')
       })
       const res = await handleLaunch(ctxFor(`harness-client-context-throws-${pathName}`))
       expect(res.ok, 'a failed consent read must not fail the launch').toBe(true)
+      expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
+      expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CONTEXT')
+    })
+
+    it('sends none when settings serve a consent the accessor withholds', async () => {
+      settingsModule.set('telemetryEnabled', true)
+      vi.spyOn(settingsModule, 'telemetryConsent').mockReturnValue(undefined)
+      setHardwareProbe(async () => ({ gpu_tier: 'mid' }))
+      const res = await handleLaunch(ctxFor(`harness-client-context-withheld-${pathName}`))
+      expect(res.ok).toBe(true)
       expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
       expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CONTEXT')
     })

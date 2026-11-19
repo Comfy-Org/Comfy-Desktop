@@ -110,14 +110,6 @@ vi.mock('../views/LoadSnapshotModal.vue', () => ({
     methods: { open: vi.fn() }
   }
 }))
-vi.mock('../views/QuickInstallModal.vue', () => ({
-  default: {
-    name: 'QuickInstallModal',
-    emits: ['close', 'show-progress'],
-    template: '<div data-testid="quick-install-modal" />',
-    methods: { open: vi.fn() }
-  }
-}))
 vi.mock('../views/FirstUseTakeover.vue', () => ({
   default: {
     name: 'FirstUseTakeover',
@@ -802,7 +794,7 @@ describe('PanelApp', () => {
         status: 'installed',
         statusTag: {
           style: 'danger',
-          label: 'Folder Not Found',
+          label: 'Folder not found',
           detail: 'The instance folder could not be found.'
         },
         workspaceId: 'workspace-1'
@@ -842,7 +834,7 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="performance-test"]').exists()).toBe(true)
-    expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance Tests')
+    expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance tests')
     expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
     expect(wrapper.find('.performance-test__workspace-select').exists()).toBe(false)
     expect(wrapper.find('.performance-test__setup').exists()).toBe(true)
@@ -1012,7 +1004,7 @@ describe('PanelApp', () => {
       3
     )
     expect(wrapper.get('.performance-test__logs').text()).toContain(
-      'Submitting 3 warm-up runs and 5 measured runs...'
+      'Submitting 3 warm-up runs and 5 measured runs…'
     )
     expect(wrapper.get('.performance-test__logs').text()).toContain(
       'Finished 5 measured runs (0 failed). Final response saved to '
@@ -1022,7 +1014,7 @@ describe('PanelApp', () => {
     )
     expect(api.savePerformanceTestLogs).toHaveBeenCalledWith(
       'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json',
-      expect.stringContaining('Submitting 3 warm-up runs and 5 measured runs...')
+      expect.stringContaining('Submitting 3 warm-up runs and 5 measured runs…')
     )
     expect(api.savePerformanceTestLogs.mock.calls[0]![1]).toContain(
       'Finished 5 measured runs (0 failed). Final response saved to '
@@ -1138,7 +1130,7 @@ describe('PanelApp', () => {
         .exists()
     ).toBe(true)
     const openResultsFolder = wrapper.get('.performance-test__open-results')
-    expect(openResultsFolder.text()).toBe('Open folder')
+    expect(openResultsFolder.text()).toBe('Show in folder')
     await openResultsFolder.trigger('click')
     expect(api.openPath).toHaveBeenCalledWith('C:\\ComfyUI\\performance-tests\\20260907225600')
     const exportResultsImage = wrapper.get('.performance-test__export-results')
@@ -1156,8 +1148,8 @@ describe('PanelApp', () => {
     expect(createResultsPngMock).toHaveBeenCalledTimes(1)
     const svg = createResultsPngMock.mock.calls[0]![0]
     expect(svg).toContain('<svg')
-    expect(svg).toContain('Performance Test: results-json-workflow.json')
-    expect(svg).not.toContain('Performance Test: cat-workflow.json')
+    expect(svg).toContain('Performance test: results-json-workflow.json')
+    expect(svg).not.toContain('Performance test: cat-workflow.json')
     expect(svg).toContain('role="img" aria-label="Comfy"')
     expect(svg).toContain('Median run · 7 measured · 2 failed')
     expect(svg).toContain('9.100 s')
@@ -2764,7 +2756,7 @@ describe('PanelApp', () => {
     await flushPromises()
     expect(api.stopComfyUI).toHaveBeenCalledWith('performance-test:workspace-install')
     expect(stopButton.attributes('disabled')).toBe('')
-    expect(stopButton.text()).toBe('Stopping...')
+    expect(stopButton.text()).toBe('Stopping…')
     expect(
       telemetryEvents.filter(
         (event) => event.actionName === 'comfy.desktop.performance_test.stopped'
@@ -3003,7 +2995,7 @@ describe('PanelApp', () => {
 
     await wrapper.get('.performance-test__run').trigger('click')
     await flushPromises()
-    expect(wrapper.get('.performance-test__progress-heading').text()).toBe('Starting the build...')
+    expect(wrapper.get('.performance-test__progress-heading').text()).toBe('Starting the build…')
     expect(wrapper.find('.performance-test__progress-detail').exists()).toBe(false)
 
     finishLaunch({ ok: true })
@@ -3127,11 +3119,18 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="load-snapshot-modal"]').exists()).toBe(true)
   })
 
-  it('renders the quick-install takeover when initialised with panel=quick-install', async () => {
-    window.history.replaceState({}, '', '/?panel=quick-install&firstUseCompleted=true')
+  it('no longer knows the removed quick-install panel', async () => {
     const wrapper = mountPanel()
     await flushPromises()
-    expect(wrapper.find('[data-testid="quick-install-modal"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="comfy-lifecycle"]').exists()).toBe(true)
+
+    const events = captureTelemetry()
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'quick-install' }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="comfy-lifecycle"]').exists()).toBe(true)
+    expect(events.filter((e) => e.actionName === 'comfy.desktop.install.flow.opened')).toHaveLength(
+      0
+    )
   })
 
   it.each([
@@ -3140,11 +3139,6 @@ describe('PanelApp', () => {
       panel: 'load-snapshot',
       selector: '[data-testid="load-snapshot-modal"]',
       name: 'LoadSnapshotModal'
-    },
-    {
-      panel: 'quick-install',
-      selector: '[data-testid="quick-install-modal"]',
-      name: 'QuickInstallModal'
     },
     {
       panel: 'new-install',
@@ -3609,7 +3603,7 @@ describe('PanelApp', () => {
     expect(api.openInstancePicker).not.toHaveBeenCalled()
   })
 
-  it('shows the "Desktop Update Ready" confirm modal when a restart-prompt event arrives, and installs on confirm', async () => {
+  it('shows the "Desktop update ready" confirm modal when a restart-prompt event arrives, and installs on confirm', async () => {
     mockModal.confirm.mockResolvedValueOnce(true)
     mountPanel()
     await flushPromises()
@@ -3621,8 +3615,8 @@ describe('PanelApp', () => {
 
     expect(mockModal.confirm).toHaveBeenCalledTimes(1)
     expect(mockModal.confirm.mock.calls[0]?.[0]).toMatchObject({
-      title: 'Desktop Update Ready',
-      confirmLabel: 'Restart & Update'
+      title: 'Desktop update ready',
+      confirmLabel: 'Restart & update'
     })
     expect(mockState.installUpdate).toHaveBeenCalledTimes(1)
   })
@@ -3641,7 +3635,7 @@ describe('PanelApp', () => {
     expect(mockState.installUpdate).not.toHaveBeenCalled()
   })
 
-  it('shows the "Desktop Update Available" confirm modal when a download-prompt event arrives, and downloads on confirm', async () => {
+  it('shows the "Desktop update available" confirm modal when a download-prompt event arrives, and downloads on confirm', async () => {
     mockModal.confirm.mockResolvedValueOnce(true)
     mountPanel()
     await flushPromises()
@@ -3653,7 +3647,7 @@ describe('PanelApp', () => {
 
     expect(mockModal.confirm).toHaveBeenCalledTimes(1)
     expect(mockModal.confirm.mock.calls[0]?.[0]).toMatchObject({
-      title: 'Desktop Update Available',
+      title: 'Desktop update available',
       confirmLabel: 'Download'
     })
     expect(mockState.downloadUpdate).toHaveBeenCalledTimes(1)
@@ -3669,7 +3663,7 @@ describe('PanelApp', () => {
 
     expect(mockModal.confirm).toHaveBeenCalledTimes(1)
     expect(mockModal.confirm.mock.calls[0]?.[0]).toMatchObject({
-      title: 'Desktop Update Ready'
+      title: 'Desktop update ready'
     })
     expect(mockState.installUpdate).toHaveBeenCalledTimes(1)
   })
@@ -3683,7 +3677,7 @@ describe('PanelApp', () => {
 
     expect(mockModal.alert).toHaveBeenCalledTimes(1)
     expect(mockModal.alert.mock.calls[0]?.[0]).toMatchObject({
-      title: 'Desktop Update Error',
+      title: 'Desktop update error',
       message: 'network down'
     })
   })
@@ -3725,12 +3719,12 @@ describe('PanelApp', () => {
       mountPanel()
       await flushPromises()
       const events = captureTelemetry()
-      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'quick-install' }))
+      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'track' }))
       await flushPromises()
       const flowEvents = events.filter((e) => e.actionName === 'comfy.desktop.install.flow.opened')
       expect(flowEvents).toHaveLength(1)
       expect(flowEvents[0].context).toMatchObject({
-        flow: 'quick_install',
+        flow: 'track_existing',
         entrypoint: 'titlebar'
       })
     })
@@ -3743,8 +3737,7 @@ describe('PanelApp', () => {
       const cases: { panel: string; flow: string }[] = [
         { panel: 'new-install', flow: 'new_install' },
         { panel: 'track', flow: 'track_existing' },
-        { panel: 'load-snapshot', flow: 'load_snapshot' },
-        { panel: 'quick-install', flow: 'quick_install' }
+        { panel: 'load-snapshot', flow: 'load_snapshot' }
       ]
       for (const { panel } of cases) {
         mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel }))

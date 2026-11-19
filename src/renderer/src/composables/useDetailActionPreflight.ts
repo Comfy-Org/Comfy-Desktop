@@ -1,10 +1,12 @@
 import { toRaw } from 'vue'
+import { relaunchAfterAction, stopThenRun } from '../lib/relaunchAfterAction'
 import { useI18n } from 'vue-i18n'
 import { useModal } from './useModal'
 import { useDialogs } from './useDialogs'
 import { useActionGuard } from './useActionGuard'
 import { useMigrateAction } from './useMigrateAction'
 import { useSessionStore } from '../stores/sessionStore'
+import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/progressOpKind'
 import {
@@ -25,6 +27,7 @@ import {
   runPromptChain,
   runSelectChain
 } from './actionShoppingList'
+import { progressTitle } from '../lib/progressTitle'
 
 export interface PreparedDetailAction {
   action: ActionDef
@@ -49,6 +52,7 @@ export function useDetailActionPreflight() {
   const actionGuard = useActionGuard()
   const { confirmMigration } = useMigrateAction()
   const sessionStore = useSessionStore()
+  const progressStore = useProgressStore()
 
   async function prepareDetailAction(
     inst: Installation,
@@ -109,7 +113,7 @@ export function useDetailActionPreflight() {
     const rawTitle = (action.progressTitle || action.label).replace(/\{(\w+)\}/g, (_, k: string) =>
       String((action.data as Record<string, unknown>)?.[k] ?? k)
     )
-    const title = `${rawTitle} — ${inst.name}`
+    const title = progressTitle(rawTitle, inst.name)
     const isRestart = action.id === 'restart'
     const needsSelfStop = wasRunning && requiresStoppedGuard && !isRestart
     const wantsRelaunch = needsSelfStop && IN_PLACE_RELAUNCH.has(action.id)
@@ -121,12 +125,14 @@ export function useDetailActionPreflight() {
         }
       : needsSelfStop
         ? async (): Promise<ReturnType<typeof window.api.runAction>> => {
-            await stopAndWaitForExit(inst.id, isRunning)
-            const result = await window.api.runAction(inst.id, action.id, action.data)
-            if (wantsRelaunch && result?.ok !== false) {
-              await window.api.runAction(inst.id, 'launch')
-            }
-            return result
+            const result = await stopThenRun(
+              inst.id,
+              isRunning,
+              () => progressStore.operations.get(inst.id)?.cancelRequested === true,
+              () => window.api.runAction(inst.id, action.id, action.data)
+            )
+            if (result.cancelled) return result
+            return wantsRelaunch ? relaunchAfterAction(inst.id, result) : result
           }
         : (): ReturnType<typeof window.api.runAction> =>
             window.api.runAction(inst.id, action.id, action.data)

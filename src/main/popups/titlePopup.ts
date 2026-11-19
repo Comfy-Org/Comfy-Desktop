@@ -505,7 +505,7 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
   if (entry.installationId !== null) {
     items.push(
       { kind: 'separator' },
-      { id: 'settings', label: 'Desktop Settings', labelKey: 'fileMenu.globalSettings' }
+      { id: 'settings', label: 'Desktop settings', labelKey: 'fileMenu.globalSettings' }
     )
   }
   if (entry.installationId !== null && !entry.comfyView.webContents.isDestroyed()) {
@@ -737,6 +737,7 @@ const PICKER_TOP_GUTTER = 8
 const PICKER_EXPANDED_MAX_WIDTH = 960
 const PICKER_EXPANDED_MAX_HEIGHT_RATIO = 0.85
 const PICKER_EXPANDED_MAX_HEIGHT = 720
+const PICKER_CLOSE_LANE = 48
 
 interface PickerBounds {
   x: number
@@ -749,18 +750,21 @@ function computePickerBounds(parent: BrowserWindow): PickerBounds {
   const content = parent.getContentBounds()
   const innerTop = TITLEBAR_HEIGHT + PICKER_TOP_GUTTER
   const innerHeight = Math.max(0, content.height - innerTop - PICKER_BOTTOM_GUTTER)
-  const innerWidth = Math.max(0, content.width - 2 * PICKER_SIDE_GUTTER)
+  const innerWidth = Math.max(0, content.width - 2 * PICKER_SIDE_GUTTER - 2 * PICKER_CLOSE_LANE)
 
-  const width = Math.min(PICKER_EXPANDED_MAX_WIDTH, innerWidth)
+  const panelWidth = Math.min(PICKER_EXPANDED_MAX_WIDTH, innerWidth)
   const height = Math.min(
     innerHeight,
     Math.round(content.height * PICKER_EXPANDED_MAX_HEIGHT_RATIO),
     PICKER_EXPANDED_MAX_HEIGHT
   )
-  const x = Math.max(PICKER_SIDE_GUTTER, Math.round((content.width - width) / 2))
+  const x = Math.max(
+    PICKER_SIDE_GUTTER + PICKER_CLOSE_LANE,
+    Math.round((content.width - panelWidth) / 2)
+  )
   const slack = Math.max(0, innerHeight - height)
   const y = slack > 0 ? innerTop + Math.round(slack / 3) : innerTop
-  return { x, y, width, height }
+  return { x, y, width: panelWidth + PICKER_CLOSE_LANE, height }
 }
 
 interface CenteredCardClamp {
@@ -797,13 +801,18 @@ function kindIsCentered(kind: TitlePopupKind): kind is CenteredCardKind {
   return kind === POPUP_KIND.globalSettings || kind === POPUP_KIND.downloadsFull
 }
 
+export const CENTERED_CARD_CLOSE_GUTTER = 48
+const CENTERED_CARD_EDGE_MARGIN = 16
+
 function computeCenteredCardBounds(
   kind: CenteredCardKind,
   parent: BrowserWindow
 ): { x: number; y: number; width: number; height: number } {
   const clamp = CENTERED_CARD_CLAMPS[kind]
   const { width: cw, height: ch } = parent.getContentBounds()
+  const room = Math.max(0, cw - 2 * (CENTERED_CARD_CLOSE_GUTTER + CENTERED_CARD_EDGE_MARGIN))
   const width = Math.min(
+    room,
     clamp.maxWidth,
     Math.max(clamp.minWidth, Math.round(cw * clamp.widthRatio))
   )
@@ -819,14 +828,13 @@ function computeCenteredCardBounds(
   return { x, y, width, height }
 }
 
-export const GLOBAL_SETTINGS_CLOSE_GUTTER = 48
-
-function withOutsideCloseGutter(
-  kind: CenteredCardKind,
-  bounds: { x: number; y: number; width: number; height: number }
-): { x: number; y: number; width: number; height: number } {
-  if (kind !== POPUP_KIND.globalSettings) return bounds
-  return { ...bounds, width: bounds.width + GLOBAL_SETTINGS_CLOSE_GUTTER }
+function withOutsideCloseGutter(bounds: { x: number; y: number; width: number; height: number }): {
+  x: number
+  y: number
+  width: number
+  height: number
+} {
+  return { ...bounds, width: bounds.width + CENTERED_CARD_CLOSE_GUTTER }
 }
 
 const POPUP_EDGE_GUTTER = 8
@@ -860,7 +868,7 @@ function refitPopupForParent(entry: TitlePopupEntry): void {
   }
 
   if (kindIsCentered(entry.kind)) {
-    const target = withOutsideCloseGutter(entry.kind, computeCenteredCardBounds(entry.kind, parent))
+    const target = withOutsideCloseGutter(computeCenteredCardBounds(entry.kind, parent))
     if (
       target.x === cur.x &&
       target.y === cur.y &&
@@ -972,7 +980,6 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     y = bounds.y
   } else {
     ;({ x, y, width, height } = withOutsideCloseGutter(
-      opts.kind,
       computeCenteredCardBounds(opts.kind, opts.parent)
     ))
   }
@@ -1054,7 +1061,11 @@ export interface TitlePopupHostBindings {
     cancellable: boolean
   }) => void
   broadcastPickerSnapshot: () => void
-  removeAppDataAndQuit: (options: { deleteInstances: boolean; deleteModels: boolean }) => void
+  removeAppDataAndQuit: (options: {
+    deleteInstances: boolean
+    deleteModels: boolean
+    deleteInputOutput: boolean
+  }) => void
 }
 
 export function parseGlobalSettingsTarget(
@@ -1376,7 +1387,7 @@ function buildGlobalSettingsSnapshot(
       isPrimary: i === 0
     })),
     modelsSystemDefault: modelsDefault,
-    telemetryGranted: settings.get('telemetryEnabled') === true,
+    telemetryGranted: settings.telemetryConsent() === true,
     appUpdate: {
       state: appUpdateState,
       progress: lastAppUpdateProgress,
@@ -2098,13 +2109,17 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 
   ipcMain.on(
     'comfy-titlepopup:global-settings-remove-app-data',
-    (event, payload: { deleteInstances?: unknown; deleteModels?: unknown }) => {
+    (
+      event,
+      payload: { deleteInstances?: unknown; deleteModels?: unknown; deleteInputOutput?: unknown }
+    ) => {
       const popupEntry = titlePopupsByWebContents.get(event.sender.id)
       if (!popupEntry || popupEntry.kind !== 'global-settings') return
       if (process.platform !== 'darwin' && process.platform !== 'linux') return
       bindings.removeAppDataAndQuit({
         deleteInstances: payload?.deleteInstances === true,
-        deleteModels: payload?.deleteModels === true
+        deleteModels: payload?.deleteModels === true,
+        deleteInputOutput: payload?.deleteInputOutput === true
       })
     }
   )
@@ -2171,4 +2186,11 @@ export function _test_getOpenTitlePopupBounds(): {
     return { kind: entry.kind, bounds: entry.view.popup.getBounds() }
   }
   return null
+}
+
+export function _test_centeredCardBounds(
+  kind: CenteredCardKind,
+  parent: BrowserWindow
+): { x: number; y: number; width: number; height: number } {
+  return withOutsideCloseGutter(computeCenteredCardBounds(kind, parent))
 }

@@ -7,11 +7,13 @@ import InputGroupButton from '@comfyorg/design-system/input-group/InputGroupButt
 import { AlertCircle, ArrowLeft, Loader2, Search, SearchX, X } from '@lucide/vue'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
+import ToggleSwitch from '../../components/ui/ToggleSwitch.vue'
 import ArgsRawInput from './ArgsRawInput.vue'
 import type { ComfyArgDef } from '../../types/ipc'
 import { parseArgs, serialize } from '../../lib/argsParser'
 import { emitTelemetryAction } from '../../lib/telemetry'
 import { scoreName } from '../../utils/fuzzyMatch'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 interface Props {
   installationId: string
@@ -437,9 +439,7 @@ function onRawChange(value: string): void {
         :key="category"
         class="args-page-category flex flex-col gap-1.5 [&+.args-page-category]:mt-3"
       >
-        <header
-          class="args-page-category-title mt-0 mr-0 mb-1 ml-0 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase"
-        >
+        <header class="args-page-category-title mt-0 mr-0 mb-1 ml-0" :class="SECTION_TITLE_CLASS">
           {{ categoryLabel(category) }}
         </header>
 
@@ -450,9 +450,7 @@ function onRawChange(value: string): void {
         >
           <template v-if="item.kind === 'exclusive' && item.args && item.group">
             <div class="args-page-cluster flex min-w-0 flex-col gap-1">
-              <span
-                class="args-page-cluster-label my-0.5 mx-0 px-0.5 text-[11px] font-medium tracking-[0.06em] text-text-muted uppercase"
-              >
+              <span class="args-page-cluster-label my-0.5 mx-0" :class="SECTION_TITLE_CLASS">
                 {{ t('comfyUISettings.argsExclusiveLabel') }}:
                 <span
                   class="args-page-cluster-options [font-family:ui-monospace,SFMono-Regular,Menlo,monospace] normal-case tracking-normal text-[color-mix(in_srgb,var(--text-muted)_85%,transparent)]"
@@ -491,32 +489,12 @@ function onRawChange(value: string): void {
             <div
               class="args-page-arg-row grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-2.5 -mx-2.5 rounded-lg px-2.5 py-2 transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_4%,transparent)]"
             >
-              <Button
-                variant="textonly"
-                size="unset"
-                type="button"
-                role="switch"
-                class="args-page-switch relative mt-0.5 inline-block h-5 w-9 shrink-0 rounded-[999px] border-none p-0 cursor-pointer appearance-auto transition-[background-color] duration-200 ease-[ease] motion-reduce:duration-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--action)] focus-visible:outline-offset-2 focus-visible:ring-0"
-                :class="
-                  isActive(item.arg.name)
-                    ? 'bg-[var(--accent-primary)] hover:bg-[var(--accent-primary)]'
-                    : 'bg-[color-mix(in_srgb,var(--text-muted)_40%,transparent)] hover:bg-[color-mix(in_srgb,var(--text-muted)_40%,transparent)]'
-                "
-                :data-state="isActive(item.arg.name) ? 'checked' : 'unchecked'"
-                :aria-checked="isActive(item.arg.name)"
+              <ToggleSwitch
+                class="args-page-switch -mx-0.5"
+                :model-value="isActive(item.arg.name)"
                 :aria-label="`--${item.arg.name}`"
-                @click="toggleFlag(item.arg)"
-              >
-                <span
-                  class="args-page-switch-thumb absolute top-0.5 left-0.5 size-4 rounded-[50%] transition-transform duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:duration-0"
-                  :class="
-                    isActive(item.arg.name)
-                      ? '[transform:translateX(16px)] bg-background shadow-none'
-                      : '[transform:translateX(0)] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2),0_1px_1px_rgba(0,0,0,0.08)]'
-                  "
-                  aria-hidden="true"
-                ></span>
-              </Button>
+                @update:model-value="toggleFlag(item.arg)"
+              />
               <div class="args-page-arg-body flex min-w-0 flex-col gap-0.5">
                 <span
                   class="args-page-flag [font:13px_ui-monospace,SFMono-Regular,Menlo,monospace] text-text [overflow-wrap:anywhere] [word-break:break-word]"

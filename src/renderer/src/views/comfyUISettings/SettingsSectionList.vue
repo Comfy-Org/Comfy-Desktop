@@ -23,6 +23,8 @@ import type {
   VersionStatRow,
   VersionStatsValue
 } from '../../types/ipc'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
+import { revealInFolderKey } from '../../composables/usePlatform'
 
 interface Props {
   sections: DetailSection[]
@@ -66,6 +68,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const revealFolderKey = revealInFolderKey(window.api?.platform)
 
 function asString(v: DetailField['value']): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
@@ -181,7 +184,7 @@ function fieldOwnsLabel(field: DetailField): boolean {
 
 const sectionTitleClass = computed(() =>
   props.readonly
-    ? 'pt-2 pb-1 m-0 leading-[1.5] text-[11px] font-semibold tracking-[0.04em] uppercase text-text-muted opacity-55'
+    ? `pt-2 pb-1 m-0 ${SECTION_TITLE_CLASS}`
     : 'leading-[1.5] text-[length:var(--takeover-fs-body)] font-medium text-text-muted'
 )
 
@@ -231,7 +234,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         class="settings-v2-section-head flex min-w-0 flex-col gap-1.5"
       >
         <h3
-          class="settings-v2-section-title m-0 flex items-center px-0 pt-0 pb-1 text-[11px] leading-4 font-semibold tracking-[0.04em] text-text-muted uppercase [&>span]:opacity-55"
+          class="settings-v2-section-title m-0 flex items-center px-0 pt-0 pb-1"
+          :class="SECTION_TITLE_CLASS"
         >
           <span>{{ section.title }}</span>
         </h3>
@@ -248,7 +252,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         variant="textonly"
         size="unset"
         type="button"
-        class="settings-v2-section-title is-toggle static inline-flex items-center gap-1 self-start rounded-lg border-none bg-transparent p-0 text-left text-text-muted whitespace-normal appearance-auto hover:bg-transparent hover:text-text focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color]"
+        class="settings-v2-section-title is-toggle static inline-flex items-center gap-1 self-start rounded-lg border-none bg-transparent p-0 text-left whitespace-normal appearance-auto hover:bg-transparent hover:text-text focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color]"
         :class="sectionTitleClass"
         :aria-expanded="!isCollapsed(section)"
         @click="toggleCollapsed(section)"
@@ -462,8 +466,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                   size="unset"
                   type="button"
                   class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open static inline-block w-full min-w-0 flex-[0_1_auto] justify-self-end truncate rounded-lg border-none bg-transparent p-0 text-right text-[13px] leading-[19px] font-normal text-neutral-100 [font-family:inherit] appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
-                  :title="t('models.openDir')"
-                  :aria-label="`${t('models.openDir')}: ${readonlyDisplayValue(field)}`"
+                  :title="t(revealFolderKey)"
+                  :aria-label="`${t(revealFolderKey)}: ${readonlyDisplayValue(field)}`"
                   @click="emit('open-path', readonlyDisplayValue(field))"
                 >
                   {{ readonlyDisplayValue(field) }}

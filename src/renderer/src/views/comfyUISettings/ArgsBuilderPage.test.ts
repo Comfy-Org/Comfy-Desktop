@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import ArgsBuilderPage from './ArgsBuilderPage.vue'
 import type { ComfyArgDef } from '../../types/ipc'
 import { TELEMETRY_ACTION_EVENT_NAME } from '../../lib/telemetry'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 const SCHEMA: ComfyArgDef[] = [
   {
@@ -120,6 +121,7 @@ describe('ArgsBuilderPage — exclusive group dropdown', () => {
     const wrapper = await mountPage()
     const label = wrapper.find('.args-page-cluster-label')
     expect(label.exists()).toBe(true)
+    expect(label.classes()).toEqual(expect.arrayContaining(SECTION_TITLE_CLASS.split(' ')))
     expect(label.text()).toContain('--cpu')
     expect(label.text()).toContain('--gpu-only')
     expect(label.text()).toContain('--lowvram')
@@ -393,5 +395,32 @@ describe('ArgsBuilderPage — args.changed telemetry', () => {
     } finally {
       stop()
     }
+  })
+})
+
+describe('ArgsBuilderPage — flag switch', () => {
+  it('uses the shared ToggleSwitch for every flag row', async () => {
+    const wrapper = await mountPage()
+    const switches = wrapper.findAll('.args-page-arg-row button[role="switch"]')
+    expect(switches.length).toBeGreaterThan(0)
+    for (const toggle of switches) {
+      expect(toggle.attributes('data-slot')).toBe('toggle-switch')
+      expect(toggle.find('[data-slot="toggle-switch-knob"]').exists()).toBe(true)
+    }
+    expect(wrapper.find('.args-page-switch-thumb').exists()).toBe(false)
+  })
+
+  it('keeps the flag name as the accessible label and flips aria-checked on click', async () => {
+    const wrapper = await mountPage()
+    const toggle = wrapper.find('button[role="switch"][aria-label="--port"]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+
+    await toggle.trigger('click')
+    await flushPromises()
+
+    expect(lastUpdate(wrapper)).toContain('--port')
+    expect(
+      wrapper.find('button[role="switch"][aria-label="--port"]').attributes('aria-checked')
+    ).toBe('true')
   })
 })

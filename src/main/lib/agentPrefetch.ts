@@ -9,7 +9,7 @@ import {
 } from './agentRequirementsLaunch'
 import type { PrefetchRequest } from './agentRequirementsLaunch'
 import { indexKind, readOverrideState, reportAgentPrefetch } from './agentRequirementsOverride'
-import { getCoreBetaCampaigns } from './coreBetaCampaignFlags'
+import { getCoreBetaCampaigns, readCampaignRecords } from './coreBetaCampaignFlags'
 import { enrolledAgentOverride } from './coreBetaCampaigns'
 import { getIdClass } from './deviceId'
 
@@ -35,7 +35,12 @@ export async function startAgentPrefetch(
 export async function prefetchEnrolledAgents(): Promise<void> {
   try {
     if (!settings.peekBetaFeaturesEnabled()) return
-    const enrolled = enrolledAgentOverride(await getCoreBetaCampaigns(), Date.now(), getIdClass())
+    const enrolled = enrolledAgentOverride(
+      await getCoreBetaCampaigns({ live: true }),
+      readCampaignRecords(),
+      Date.now(),
+      getIdClass()
+    )
     if (!enrolled) return
     for (const inst of await installations.list()) {
       if (agentPrefetchesStopped()) return

@@ -486,7 +486,7 @@ function onLaunch({
   const initialSourceCategory = sourceMap[installation.sourceId]?.category ?? null
 
   const { entry } = createHostWindow({
-    windowTitle: `${installation.name} — Comfy Desktop v${APP_VERSION}`,
+    windowTitle: `${installation.name} · Comfy Desktop v${APP_VERSION}`,
     boundsKey: installationId,
     initialTheme: { bg: COMFY_BG, text: '#dddddd' },
     titleBarOverlay:
@@ -938,7 +938,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       })
     }
 
-    const telemetrySetting = settings.get('telemetryEnabled') as boolean | undefined
+    const telemetrySetting = settings.telemetryConsent()
     const initialConsent: mainTelemetry.ConsentState =
       telemetrySetting === true ? 'granted' : telemetrySetting === false ? 'denied' : 'undecided'
     let priorSessionUnclean = false

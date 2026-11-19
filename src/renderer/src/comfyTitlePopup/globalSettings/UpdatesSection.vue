@@ -38,7 +38,7 @@ const emit = defineEmits<{
 const { t, d } = useI18n()
 
 function formatVersionLabel(raw: string | undefined | null): string {
-  if (!raw) return '—'
+  if (!raw) return t('common.unknown')
   const trimmed = raw.trim()
   if (trimmed.startsWith('v') || trimmed.startsWith('V')) return trimmed
   return `v${trimmed}`

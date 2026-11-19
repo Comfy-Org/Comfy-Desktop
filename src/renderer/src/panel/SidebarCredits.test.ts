@@ -51,6 +51,7 @@ function row(wrapper: VueWrapper) {
 }
 
 async function announce(state: CreditBalanceState) {
+  refreshCreditBalance.mockResolvedValue(state)
   for (const listener of balanceListeners) listener(state)
   await flushPromises()
 }

@@ -549,6 +549,17 @@ export async function readSettled(signal?: AbortSignal): Promise<Settings | null
   return null
 }
 
+export function telemetryConsent(): boolean | undefined {
+  const { settings, unreadable } = loadOutcome()
+  return consentIn(settings, unreadable)
+}
+
+function consentIn(settings: Partial<Settings>, unreadable: boolean): boolean | undefined {
+  const stored = settings.telemetryEnabled
+  if (typeof stored !== 'boolean') return undefined
+  return unreadable && stored ? undefined : stored
+}
+
 export function resolveBetaFeaturesEnabled(): boolean {
   const { settings, unreadable } = loadOutcome()
   const enabled = betaFeaturesEnabledIn(settings, unreadable)
@@ -575,7 +586,7 @@ export function peekBetaFeaturesEnabled(): boolean {
 function betaFeaturesEnabledIn(settings: Partial<Settings>, unreadable: boolean): boolean {
   const stored = settings.betaFeaturesEnabled
   if (typeof stored === 'boolean') return stored
-  return unreadable ? false : settings.telemetryEnabled === true
+  return consentIn(settings, unreadable) === true
 }
 
 function camelToSnake(s: string): string {

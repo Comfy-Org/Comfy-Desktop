@@ -92,6 +92,6 @@ test('clicking the ready sidebar desktop update asks to restart in the panel @wi
     true
   )
 
-  await expectUpdateQuestion('Restart & Update')
+  await expectUpdateQuestion('Restart & update')
   await closeUpdateQuestionIfOpen()
 })

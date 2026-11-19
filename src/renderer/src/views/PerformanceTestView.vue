@@ -7,6 +7,7 @@ import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import BaseModal from '../components/ui/BaseModal.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
 import { usePerformanceTestRun } from '../composables/usePerformanceTestRun'
 import { usePerformanceTestWorkflow } from '../composables/usePerformanceTestWorkflow'
 import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScope'
@@ -34,12 +35,14 @@ import PerformanceTestRunCountField from './performanceTest/PerformanceTestRunCo
 import PerformanceTestSystemFacts from './performanceTest/PerformanceTestSystemFacts.vue'
 import PerformanceTestWorkflowMenu from './performanceTest/PerformanceTestWorkflowMenu.vue'
 import { durationLabels, systemFactLabels } from './performanceTest/labels'
+import { revealInFolderKey } from '../composables/usePlatform'
 
 const emit = defineEmits<{
   'run-active-change': [active: boolean]
 }>()
 
 const { t } = useI18n()
+const revealFolderKey = revealInFolderKey(window.api?.platform)
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const { selectedWorkspaceId, scopedInstallations } = useWorkspaceInstallScope(
@@ -88,6 +91,14 @@ const exportResultsError = ref<string | null>(null)
 const canRun = computed(() =>
   Boolean(selectedBuild.value && workflow.isReady && run.canStart(selectedBuild.value.id))
 )
+const runBlockedReason = computed(() => {
+  if (canRun.value) return undefined
+  if (!selectedBuild.value) return t('performanceTest.runNeedsBuild')
+  if (workflow.isImporting) return t('performanceTest.runWaitsForWorkflow')
+  if (!workflow.filePath) return t('performanceTest.runNeedsWorkflow')
+  if (!workflow.isReady) return t('performanceTest.runWaitsForWorkflow')
+  return t('performanceTest.runWaitsForBuild')
+})
 const summary = computed(() => run.result?.resultsSummary ?? null)
 const resultsFolder = computed(() => {
   const resultPath = run.result?.resultsSummaryPath ?? run.result?.resultPath
@@ -257,18 +268,25 @@ async function exportResultsImage(): Promise<void> {
                 run.stage === 'stopping' ? t('performanceTest.stopping') : t('performanceTest.stop')
               }}
             </Button>
-            <Button
+            <Tooltip
               v-else
-              class="performance-test__run ml-auto min-w-20 gap-1.5 px-3 text-[13px]/5"
-              variant="inverted"
-              size="md"
-              type="button"
-              :disabled="!canRun"
-              @click="startRun"
+              class="ml-auto"
+              :text="runBlockedReason"
+              :disabled="canRun"
+              :tabindex="!canRun && runBlockedReason ? 0 : undefined"
             >
-              <Play :size="14" fill="currentColor" aria-hidden="true" />
-              {{ t('performanceTest.run') }}
-            </Button>
+              <Button
+                class="performance-test__run min-w-20 gap-1.5 px-3 text-[13px]/5"
+                variant="inverted"
+                size="md"
+                type="button"
+                :disabled="!canRun"
+                @click="startRun"
+              >
+                <Play :size="14" fill="currentColor" aria-hidden="true" />
+                {{ t('performanceTest.run') }}
+              </Button>
+            </Tooltip>
           </div>
 
           <p
@@ -357,13 +375,11 @@ async function exportResultsImage(): Promise<void> {
                   variant="muted-textonly"
                   size="unset"
                   type="button"
-                  :title="t('performanceTest.openResultsFolder')"
+                  :title="t(revealFolderKey)"
                   @click="openResultsFolder"
                 >
                   <FolderOpen :size="15" aria-hidden="true" />
-                  <span class="@max-[640px]:sr-only">{{
-                    t('performanceTest.openResultsFolder')
-                  }}</span>
+                  <span class="@max-[640px]:sr-only">{{ t(revealFolderKey) }}</span>
                 </Button>
                 <Button
                   v-if="canExport"
@@ -431,6 +447,7 @@ async function exportResultsImage(): Promise<void> {
     <BaseModal
       :open="workflow.example.isPickerOpen"
       size="xl"
+      close-outside
       :aria-label="t('performanceTest.exampleWorkflowPickerTitle')"
       content-class="performance-test__example-modal"
       @close="workflow.example.isPickerOpen = false"
@@ -462,14 +479,6 @@ async function exportResultsImage(): Promise<void> {
         @select="workflow.example.selectedId = $event.value"
       />
       <template #footer>
-        <Button
-          variant="secondary"
-          size="lg"
-          type="button"
-          @click="workflow.example.isPickerOpen = false"
-        >
-          {{ t('common.cancel') }}
-        </Button>
         <Button
           variant="inverted"
           size="lg"

@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import type { DetailSection } from '../../types/ipc'
 import { buildOverviewModel, channelAction, splitVersion } from './overviewModel'
 
-const updateAction = { id: 'update-comfyui', label: 'Update Now', style: 'primary' as const }
-const copyUpdate = { id: 'copy-update', label: 'Copy & Update' }
+const updateAction = { id: 'update-comfyui', label: 'Update now', style: 'primary' as const }
+const copyUpdate = { id: 'copy-update', label: 'Copy & update' }
 const checkUpdate = { id: 'check-update', label: 'Check for updates' }
 const changeTorch = { id: 'change-pytorch', label: 'Change PyTorch' }
-const copyTorch = { id: 'copy-pytorch', label: 'Copy & Change PyTorch' }
+const copyTorch = { id: 'copy-pytorch', label: 'Copy & change PyTorch' }
 
 function updateSections(): DetailSection[] {
   return [
@@ -16,7 +16,7 @@ function updateSections(): DetailSection[] {
       fields: [
         {
           id: 'updateChannel',
-          label: 'Update Channel',
+          label: 'Update channel',
           value: 'stable',
           editType: 'channel-cards',
           tooltip: 'Where updates come from',
@@ -100,7 +100,7 @@ describe('buildOverviewModel', () => {
   it('reads the channels with their versions, last check and actions', () => {
     const model = buildOverviewModel(updateSections(), statusSections())!
     expect(model.currentChannel).toBe('stable')
-    expect(model.channelLabel).toBe('Update Channel')
+    expect(model.channelLabel).toBe('Update channel')
     expect(model.channelTooltip).toBe('Where updates come from')
     expect(model.channels.map((c) => c.value)).toEqual(['stable', 'latest'])
     const stable = model.channels[0]!
