@@ -102,7 +102,7 @@ const sizeStyleClass = computed(() => {
     </div>
     <footer
       v-if="$slots.footer"
-      class="base-modal-footer flex items-center justify-end gap-2 border-t border-solid border-neutral-100/8 px-6 pt-3 pb-4"
+      class="base-modal-footer flex items-center justify-end gap-2 border-t border-solid border-neutral-100/8 pt-4 pr-4 pb-4 pl-6"
     >
       <slot name="footer" />
     </footer>
