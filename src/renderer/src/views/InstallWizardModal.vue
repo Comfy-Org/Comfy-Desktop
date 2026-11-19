@@ -612,12 +612,13 @@ async function open(opts: OpenOpts = {}): Promise<void> {
 async function initializeInstallMode(
   gen: number,
   refreshManagedBuilds = false,
-  source?: Source
+  source?: Source,
+  keepPath = false
 ): Promise<void> {
   const installDir = await installDirPromise
   if (gen !== modeGeneration) return
   defaultInstPath.value = installDir ?? ''
-  instPath.value = defaultInstPath.value
+  if (!keepPath || !instPath.value) instPath.value = defaultInstPath.value
 
   if (managedBuildMode.value) {
     await Promise.all([initializeManagedBuilds(gen, refreshManagedBuilds), loadSources()])
@@ -729,7 +730,7 @@ async function selectManagedInstallMode(): Promise<void> {
   const gen = ++modeGeneration
   initializing.value = true
   try {
-    await initializeInstallMode(gen, authenticatedNow)
+    await initializeInstallMode(gen, authenticatedNow, undefined, true)
   } finally {
     if (gen === modeGeneration) initializing.value = false
   }
@@ -753,7 +754,7 @@ async function selectSourceCard(source: Source): Promise<void> {
     const gen = ++modeGeneration
     initializing.value = true
     try {
-      await initializeInstallMode(gen, false, source)
+      await initializeInstallMode(gen, false, source, true)
     } finally {
       if (gen === modeGeneration) initializing.value = false
     }

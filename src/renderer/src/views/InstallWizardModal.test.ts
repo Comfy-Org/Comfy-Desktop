@@ -1254,6 +1254,42 @@ describe('InstallWizardModal workspace Builds', () => {
     again.unmount()
   })
 
+  it('keeps the folder picked in Set up when Change switches to Public builds', async () => {
+    signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'cpu', label: 'CPU', recommended: true, data: { variantId: 'win-cpu' } }
+    ])
+    const wrapper = mountModal({ hideBackToDashboard: true })
+    await flushPromises()
+    await wrapper.vm.open({
+      cameFromSetup: true,
+      entrypoint: 'first_use',
+      workspaceId: 'w1',
+      installRoot: '/Volumes/Big/ComfyUI'
+    })
+    await flushPromises()
+    expect(sourceChecked(wrapper, 'workspace-install-source-managed')).toBe('true')
+
+    await pickSource(wrapper, 'install-source-standalone')
+    await flushPromises()
+    await wrapper.get('#inst-name-standalone').setValue('Studio')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(savedSetups(wrapper)[0]?.plan).toMatchObject({
+      sourceId: 'standalone',
+      installRoot: '/Volumes/Big/ComfyUI'
+    })
+    wrapper.unmount()
+  })
+
   it('opens the selected workspace Builds page online', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     const wrapper = await openWorkspaceModal()
