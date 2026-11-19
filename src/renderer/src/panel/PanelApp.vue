@@ -128,6 +128,7 @@ overlays = usePanelOverlays({
   prepareChooserHostHandoff: (id) => chooserHandoff.prepareChooserHostHandoff(id),
   firstUseChain: firstUseChain.hooks,
   onBackgroundInstall: () => void showHome(),
+  onBuildCreated: (id) => landOnNewBuild(id),
   launchesInPlace: (id) => chooserHandoff.launchesInPlace(id)
 })
 const {
@@ -203,6 +204,46 @@ async function openBuildFromSidebar(inst: Installation): Promise<void> {
     await nextTick()
   }
   openBuildDetails(inst)
+}
+
+const NEW_BUILD_REFRESH_DELAYS_MS = [0, 1000, 3000]
+
+function landOnNewBuild(id: string): void {
+  const startedIn = dashboardScope.selectedWorkspaceId
+  const open = (inst: Installation | undefined): boolean => {
+    if (!inst) return false
+    const stillWhereItStarted = dashboardScope.selectedWorkspaceId === startedIn
+    if (stillWhereItStarted && isInstallationInWorkspace(inst, startedIn)) {
+      void openBuildFromSidebar(inst)
+    }
+    return true
+  }
+  if (open(installationStore.getById(id))) return
+  let waiting = true
+  const land = (inst: Installation | undefined): boolean => {
+    if (!waiting || !open(inst)) return !waiting
+    waiting = false
+    stop()
+    return true
+  }
+  const stop = watch(
+    () => installationStore.getById(id),
+    (inst) => {
+      land(inst)
+    }
+  )
+  void (async () => {
+    for (const delay of NEW_BUILD_REFRESH_DELAYS_MS) {
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+      if (!waiting) return
+      await installationStore.fetchInstallations().catch(() => {})
+      if (land(installationStore.getById(id))) return
+    }
+    if (!waiting) return
+    waiting = false
+    stop()
+    console.warn('[builds] the copied build could not be listed, so its page was not opened', id)
+  })()
 }
 
 async function showHome(): Promise<void> {

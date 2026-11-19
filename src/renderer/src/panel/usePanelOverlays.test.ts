@@ -21,6 +21,26 @@ const firstUseTakeover: Overlay = { kind: 'takeover', component: 'first-use' }
 const newInstallTakeover: Overlay = { kind: 'takeover', component: 'new-install' }
 const progressOverlay: Overlay = { kind: 'progress', installationId: 'inst-1' }
 
+function mountOverlays(installationId: string): ReturnType<typeof usePanelOverlays> {
+  let overlays!: ReturnType<typeof usePanelOverlays>
+  mount(
+    defineComponent({
+      setup() {
+        overlays = usePanelOverlays({
+          installationId,
+          progressRef: ref(null),
+          newInstallRef: ref(null),
+          trackRef: ref(null),
+          loadSnapshotRef: ref(null),
+          firstUseRef: ref(null)
+        })
+        return () => h('div')
+      }
+    })
+  )
+  return overlays
+}
+
 describe('firstUseModeForOverlaySwap', () => {
   it('pushes loading-lockdown when the ProgressModal takeover mounts', () => {
     expect(firstUseModeForOverlaySwap(progressTakeover, null, false)).toBe('loading-lockdown')
@@ -75,22 +95,7 @@ describe('leaving a window while its build is starting', () => {
   async function showInWindow(
     opKind: Operation['opKind']
   ): Promise<ReturnType<typeof usePanelOverlays>> {
-    let overlays!: ReturnType<typeof usePanelOverlays>
-    mount(
-      defineComponent({
-        setup() {
-          overlays = usePanelOverlays({
-            installationId: BUILD,
-            progressRef: ref(null),
-            newInstallRef: ref(null),
-            trackRef: ref(null),
-            loadSnapshotRef: ref(null),
-            firstUseRef: ref(null)
-          })
-          return () => h('div')
-        }
-      })
-    )
+    const overlays = mountOverlays(BUILD)
     overlays.currentOverlay.value = null
     useInstallationStore().installations = [
       { id: BUILD, name: 'Studio', sourceCategory: 'local' } as Installation
@@ -209,5 +214,44 @@ describe('leaving a window while its build is starting', () => {
 
     expect(modal.confirm).toHaveBeenCalledOnce()
     expect(overlays.currentOverlay.value).toBeNull()
+  })
+})
+
+describe('closing the Desktop window with a dialog open while a build updates', () => {
+  const BUILD = 'studio'
+  const api = {
+    setFirstUseMode: vi.fn(),
+    onInstallationsChanged: vi.fn(() => () => {}),
+    onInstallationsVersionsUpdated: vi.fn(() => () => {}),
+    cancelOperation: vi.fn(),
+    stopComfyUI: vi.fn(),
+    closeCurrentPanel: vi.fn(),
+    getSetting: vi.fn().mockResolvedValue(undefined)
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    ;(window as unknown as { api: typeof api }).api = api
+    for (const fn of Object.values(api)) fn.mockClear()
+    modal.confirm.mockClear()
+  })
+
+  it('closes the dialog, then still asks before it stops the update', async () => {
+    const overlays = mountOverlays('')
+    useInstallationStore().installations = [{ id: BUILD, name: 'Studio' } as Installation]
+    useProgressStore().operations.set(BUILD, {
+      title: 'Updating ComfyUI - Studio',
+      opKind: 'update',
+      cancellable: true,
+      finished: false,
+      cancelRequested: false
+    } as Operation)
+    overlays.currentOverlay.value = { ...newInstallTakeover, cancelCopyKey: 'discard-setup' }
+    modal.confirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+
+    await expect(overlays.answerCloseRequest()).resolves.toEqual({ cleared: false })
+
+    expect(modal.confirm, 'one ask for the dialog, one for the update').toHaveBeenCalledTimes(2)
+    expect(api.cancelOperation).not.toHaveBeenCalled()
   })
 })
