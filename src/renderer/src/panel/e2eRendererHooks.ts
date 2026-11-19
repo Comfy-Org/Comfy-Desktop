@@ -41,6 +41,7 @@ export interface StartInFlightOpOpts {
   opKind?: ShowProgressOpts['opKind']
   destroysInstance?: boolean
   triggersInstanceStart?: boolean
+  cancellable?: boolean
 }
 
 export interface SettleInFlightOpOpts {
@@ -140,7 +141,7 @@ export function registerE2ERendererHooks(): void {
       await b.showProgress({
         installationId,
         title: title ?? `Launching ComfyUI`,
-        opKind: 'generic',
+        opKind: 'launch',
         triggersInstanceStart: true,
         apiCall: () => {
           const next = (injectedApiCallCounts.get(installationId) ?? 0) + 1
@@ -174,7 +175,8 @@ export function registerE2ERendererHooks(): void {
       title,
       opKind,
       destroysInstance,
-      triggersInstanceStart
+      triggersInstanceStart,
+      cancellable
     }) {
       const b = ensureBound()
       inFlightSettlers.get(installationId)?.({ ok: false, cancelled: true })
@@ -187,6 +189,7 @@ export function registerE2ERendererHooks(): void {
         opKind: opKind ?? 'generic',
         destroysInstance: destroysInstance ?? false,
         triggersInstanceStart: triggersInstanceStart ?? false,
+        cancellable: cancellable ?? false,
         apiCall: () => pending
       })
     },
