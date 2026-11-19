@@ -3,7 +3,7 @@ import type { WebContents, WebFrameMain } from 'electron'
 
 const INJECTION_OWNER_KEY = '__comfyDesktopFirebaseSessionInjectionOwner'
 export const FIREBASE_SESSION_INJECTION_OWNER_FIELD = '__comfyDesktopInjectionOwner'
-export const CLOUD_WEB_SESSION_COOKIE = '__Host-comfy_session'
+export const WEB_SESSION_CREATE_TIMEOUT_MS = 8000
 
 export interface FirebaseSessionInjection {
   contents: WebContents
@@ -117,6 +117,18 @@ export function buildIndexedDbInjectScript(
     };
   });
   if (!committed || !isCurrent()) return false;
+  const idToken = userValue && userValue.stsTokenManager && userValue.stsTokenManager.accessToken;
+  if (idToken) {
+    try {
+      await fetch('/api/auth/session', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { Authorization: 'Bearer ' + idToken },
+        signal: AbortSignal.timeout(${WEB_SESSION_CREATE_TIMEOUT_MS})
+      });
+    } catch (_) {}
+    if (!isCurrent()) return false;
+  }
   // Tell the next page-load (handled by attach.ts's dom-ready patch) to
   // hide documentElement briefly so the cloud login page doesn't flash
   // between Firebase rehydrating and the FE redirecting to the workspace.
@@ -124,10 +136,6 @@ export function buildIndexedDbInjectScript(
   location.reload();
   return true;
 })()`
-}
-
-async function forgetPreviousWebSession(contents: WebContents, origin: string): Promise<void> {
-  await contents.session.cookies.remove(`${origin}/`, CLOUD_WEB_SESSION_COOKIE).catch(() => {})
 }
 
 export async function injectFirebaseSession(
@@ -144,7 +152,6 @@ export async function injectFirebaseSession(
     return false
   }
 
-  await forgetPreviousWebSession(injection.contents, expectedOrigin)
   const frame = injection.contents.mainFrame
   injection.frame = frame
   await frame.executeJavaScript(setInjectionOwnerScript(injection.token))

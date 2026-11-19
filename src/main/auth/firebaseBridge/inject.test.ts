@@ -3,11 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   beginFirebaseSessionInjection,
   buildIndexedDbInjectScript,
-  CLOUD_WEB_SESSION_COOKIE,
   FIREBASE_SESSION_INJECTION_OWNER_FIELD,
   injectFirebaseSession,
   isFirebaseSessionInjectionRecordOwnedBy,
-  releaseFirebaseSessionInjection
+  releaseFirebaseSessionInjection,
+  WEB_SESSION_CREATE_TIMEOUT_MS
 } from './inject'
 
 const ORIGIN = 'https://cloud.comfy.org'
@@ -36,6 +36,26 @@ describe('buildIndexedDbInjectScript', () => {
   it('reloads the page after the IDB write commits', () => {
     const script = buildIndexedDbInjectScript(SAMPLE_USER, 'AIzaTEST', ORIGIN, OWNER)
     expect(script).toContain('location.reload()')
+  })
+
+  it('creates the web session from the new ID token before reloading', () => {
+    const script = buildIndexedDbInjectScript(SAMPLE_USER, 'AIzaTEST', ORIGIN, OWNER)
+    const create = script.indexOf("fetch('/api/auth/session'")
+    expect(create).toBeGreaterThan(script.indexOf('if (!committed || !isCurrent()) return false'))
+    expect(create).toBeLessThan(script.indexOf('location.reload()'))
+    expect(script).toContain("method: 'POST'")
+    expect(script).toContain("credentials: 'include'")
+    expect(script).toContain("Authorization: 'Bearer ' + idToken")
+    expect(script).toContain('userValue.stsTokenManager.accessToken')
+    expect(script).toContain(`AbortSignal.timeout(${WEB_SESSION_CREATE_TIMEOUT_MS})`)
+  })
+
+  it('does not reload for a flow superseded while the web session was being created', () => {
+    const script = buildIndexedDbInjectScript(SAMPLE_USER, 'AIzaTEST', ORIGIN, OWNER)
+    const afterCreate = script.slice(script.indexOf("fetch('/api/auth/session'"))
+    expect(afterCreate.indexOf('if (!isCurrent()) return false')).toBeLessThan(
+      afterCreate.indexOf('location.reload()')
+    )
   })
 
   it('is parseable as JavaScript', () => {
@@ -84,69 +104,22 @@ describe('buildIndexedDbInjectScript', () => {
   })
 })
 
-function fakeHostedView(removeCookie: () => Promise<void> = () => Promise.resolve()) {
-  const executeJavaScript = vi
-    .fn()
-    .mockResolvedValueOnce(undefined)
-    .mockResolvedValueOnce(true)
-    .mockResolvedValue(undefined)
-  const remove = vi.fn(removeCookie)
-  const contents = {
-    getURL: vi.fn(() => `${ORIGIN}/workspaces/test`),
-    isDestroyed: vi.fn(() => false),
-    mainFrame: { executeJavaScript, isDestroyed: vi.fn(() => false) },
-    session: { cookies: { remove } }
-  } as unknown as Electron.WebContents
-  return { contents, executeJavaScript, remove }
-}
-
 describe('injectFirebaseSession', () => {
-  it('removes the previous Cloud session cookie before the reload', async () => {
-    const { contents, executeJavaScript, remove } = fakeHostedView()
-
-    const injection = beginFirebaseSessionInjection(contents)
-    await expect(injectFirebaseSession(injection, ORIGIN, SAMPLE_USER, 'AIzaTEST')).resolves.toBe(
-      true
-    )
-
-    expect(remove).toHaveBeenCalledWith(`${ORIGIN}/`, CLOUD_WEB_SESSION_COOKIE)
-    expect(remove.mock.invocationCallOrder[0]).toBeLessThan(
-      executeJavaScript.mock.invocationCallOrder[1]!
-    )
-    releaseFirebaseSessionInjection(injection)
-  })
-
-  it('still writes the user when the cookie cannot be removed', async () => {
-    const { contents, executeJavaScript } = fakeHostedView(() =>
-      Promise.reject(new Error('cookie store unavailable'))
-    )
-
-    const injection = beginFirebaseSessionInjection(contents)
-    await expect(injectFirebaseSession(injection, ORIGIN, SAMPLE_USER, 'AIzaTEST')).resolves.toBe(
-      true
-    )
-
-    expect(executeJavaScript).toHaveBeenCalledWith(
-      expect.stringContaining('location.reload()'),
-      true
-    )
-    releaseFirebaseSessionInjection(injection)
-  })
-
-  it('leaves the cookie alone when the view is on another origin', async () => {
-    const { contents, remove } = fakeHostedView()
-
-    const injection = beginFirebaseSessionInjection(contents)
-    await expect(
-      injectFirebaseSession(injection, 'https://stagingcloud.comfy.org', SAMPLE_USER, 'AIzaTEST')
-    ).resolves.toBe(false)
-
-    expect(remove).not.toHaveBeenCalled()
-    releaseFirebaseSessionInjection(injection)
-  })
-
   it('executes on the captured main frame and invalidates it when superseded', async () => {
-    const { contents, executeJavaScript } = fakeHostedView()
+    const executeJavaScript = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValue(undefined)
+    const frame = {
+      executeJavaScript,
+      isDestroyed: vi.fn(() => false)
+    }
+    const contents = {
+      getURL: vi.fn(() => `${ORIGIN}/workspaces/test`),
+      isDestroyed: vi.fn(() => false),
+      mainFrame: frame
+    } as unknown as Electron.WebContents
 
     const first = beginFirebaseSessionInjection(contents)
     await expect(injectFirebaseSession(first, ORIGIN, SAMPLE_USER, 'AIzaTEST')).resolves.toBe(true)
