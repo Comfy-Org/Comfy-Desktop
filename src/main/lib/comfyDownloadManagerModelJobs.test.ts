@@ -1196,6 +1196,37 @@ describe('destination-keyed retry (issue #1322)', () => {
     mod._test_resetModelDownloadsInit()
   })
 
+  it('retries a verified stage through the conflict check even when the destination is occupied', async () => {
+    const filename = uniqueName()
+    const url = `https://host.example/${filename}`
+    const directory = 'checkpoints'
+    const destinationBaseDir = getModelsBaseDir()
+    const finalPath = path.join(destinationBaseDir, directory, filename)
+    const before = transfers.length
+    const job = await mod.startManagedModelJob({ url, filename, directory, destinationBaseDir })
+    await waitForTransfers(before + 1)
+    fs.mkdirSync(path.dirname(finalPath), { recursive: true })
+    fs.writeFileSync(finalPath, 'external writer')
+    transfers[before]!.resolve({ outcome: 'error', error: 'destination conflict' })
+    await expect(job.completion).resolves.toMatchObject({ status: 'error' })
+
+    revalidateStagedPair.mockReturnValueOnce({
+      stagedBytes: 10,
+      meta: { url, readyToInstall: true, expectedSize: 10 }
+    })
+    try {
+      expect(mod.retryDownload(job.id)).toBe(true)
+      await waitForTransfers(before + 2)
+      const retried = transfers[before + 1]!
+      expect(retried.opts.finalPath).toBe(finalPath)
+      expect(fs.readFileSync(finalPath, 'utf8')).toBe('external writer')
+      expect(mod.cancelModelDownload(retried.opts.jobId!)).toBe(true)
+      await flush()
+    } finally {
+      fs.unlinkSync(finalPath)
+    }
+  })
+
   it('refuses a retry while another job owns the same canonical destination', async () => {
     const name = uniqueName()
     const url = `https://host.example/${name}`

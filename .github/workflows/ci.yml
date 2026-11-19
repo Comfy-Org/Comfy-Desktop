@@ -172,6 +172,10 @@ jobs:
       - name: Bundle app
         run: pnpm exec electron-vite build
 
+      - name: Test native model download finalization
+        if: matrix.shard == 1
+        run: pnpm exec vitest run --project node src/main/lib/renameNoReplace.test.ts
+
       - name: Verify the Windows hardware UUID lookup
         if: matrix.platform == 'windows' && matrix.shard == 1
         run: pnpm exec vitest run --project node src/main/lib/deviceId.dependency.test.ts

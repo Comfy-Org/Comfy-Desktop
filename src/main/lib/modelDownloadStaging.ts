@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { ALLOWED_EXTENSIONS } from './downloadFilename'
+import { renameNoReplace } from './renameNoReplace'
 
 export const STAGING_SUFFIX = '.part'
 export const STAGING_META_SUFFIX = '.part.dl-meta'
@@ -13,6 +14,7 @@ export interface StagedDownloadMeta {
   jobId?: string
   url: string
   expectedSize: number
+  readyToInstall?: true
   etag?: string
   lastModified?: string
   directory: string
@@ -219,10 +221,19 @@ export async function installStagedAtFinal(
   finalPath: string,
   finalBytes: number
 ): Promise<void> {
+  const staged = fs.lstatSync(stagingPath)
+  if (!staged.isFile() || finalBytes <= 0 || staged.size !== finalBytes) {
+    throw new Error('Staged model is not a complete regular file')
+  }
+  if (path.dirname(stagingPath) !== path.dirname(finalPath)) {
+    throw new Error('Staged model must be beside its destination')
+  }
+
   const conflictOrAccept = async (): Promise<void> => {
     let existingSize = -1
     try {
-      existingSize = fs.statSync(finalPath).size
+      const existing = fs.lstatSync(finalPath)
+      if (existing.isFile()) existingSize = existing.size
     } catch {}
     if (existingSize === finalBytes && (await filesHaveSameBytes(stagingPath, finalPath))) {
       try {
@@ -241,12 +252,28 @@ export async function installStagedAtFinal(
       await conflictOrAccept()
       return
     }
-    if (!LINK_UNSUPPORTED_CODES.has(code ?? '')) throw err
-    if (fs.existsSync(finalPath)) {
-      await conflictOrAccept()
-      return
+    const windowsLinkReportedDirectory =
+      process.platform === 'win32' &&
+      code === 'EISDIR' &&
+      !fs.lstatSync(finalPath, { throwIfNoEntry: false })?.isDirectory()
+    if (
+      !windowsLinkReportedDirectory &&
+      (code === 'EXDEV' || !LINK_UNSUPPORTED_CODES.has(code ?? ''))
+    ) {
+      throw err
     }
-    throw new Error('atomic no-replace install is not supported by this filesystem', { cause: err })
+    try {
+      await renameNoReplace(stagingPath, finalPath)
+    } catch (renameFailure) {
+      const renameCode = (renameFailure as NodeJS.ErrnoException).code
+      if (renameCode === 'EEXIST') await conflictOrAccept()
+      else if (renameCode === 'ENOTSUP' || renameCode === 'ENOSYS') {
+        throw new Error('atomic no-replace install is unavailable for this location', {
+          cause: renameFailure
+        })
+      } else throw renameFailure
+    }
+    return
   }
   try {
     fs.unlinkSync(stagingPath)
@@ -447,7 +474,9 @@ export async function scanForStagedDownloads(
     try {
       const stat = await fs.promises.stat(partPath)
       if (stat.isFile()) stagedBytes = stat.size
-    } catch {}
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    }
     if (!meta || stagedBytes < 0) {
       try {
         await fs.promises.unlink(metaPath)
@@ -462,7 +491,7 @@ export async function scanForStagedDownloads(
       try {
         finalSize = fs.statSync(finalPath).size
       } catch {}
-      if (finalSize === 0) {
+      if (finalSize === 0 && meta.readyToInstall !== true) {
         const parked = parkFileNoClobber(finalPath, (n) =>
           n === 0
             ? finalPath + '.claimed' + STAGING_SUFFIX

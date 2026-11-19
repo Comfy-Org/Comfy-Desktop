@@ -195,26 +195,26 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
       (existingMeta.url === url || (sha256 !== undefined && existingMeta.sha256 === sha256))
     if (existingMeta && stagedContentMatches && fs.existsSync(stagingPath)) {
       resumeValidator = resumeValidatorFor(existingMeta)
-      if (resumeValidator) {
+      if (resumeValidator || existingMeta.readyToInstall === true) {
         try {
           resumeFrom = fs.statSync(stagingPath).size
         } catch {
           resumeFrom = 0
         }
       }
-      if (!resumeValidator || resumeFrom === 0) {
-        removeStagedArtifacts(finalPath)
-        existingMeta = null
-        resumeValidator = null
-        resumeFrom = 0
-      } else if (existingMeta.expectedSize > 0 && resumeFrom >= existingMeta.expectedSize) {
-        if (
-          resumeFrom === existingMeta.expectedSize &&
-          (!expectedSize || expectedSize === existingMeta.expectedSize)
-        ) {
-          finalize(resumeFrom)
-          return
-        }
+      if (
+        resumeFrom > 0 &&
+        resumeFrom === existingMeta.expectedSize &&
+        (!expectedSize || expectedSize === existingMeta.expectedSize)
+      ) {
+        finalize(resumeFrom)
+        return
+      }
+      if (
+        !resumeValidator ||
+        resumeFrom === 0 ||
+        (existingMeta.expectedSize > 0 && resumeFrom >= existingMeta.expectedSize)
+      ) {
         removeStagedArtifacts(finalPath)
         existingMeta = null
         resumeValidator = null
@@ -545,7 +545,8 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
 
   const finalizeClaimed = (finalBytes: number): void => {
     void (async () => {
-      const expectedSha256 = sha256 ?? readStagedMeta(metaPath)?.sha256
+      const meta = readStagedMeta(metaPath)
+      const expectedSha256 = sha256 ?? meta?.sha256
       if (expectedSha256) {
         let actualSha256: string
         try {
@@ -566,6 +567,14 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           })
           return
         }
+      }
+      if (
+        !meta ||
+        ((meta.readyToInstall !== true || meta.expectedSize !== finalBytes) &&
+          !writeStagedMeta(metaPath, { ...meta, expectedSize: finalBytes, readyToInstall: true }))
+      ) {
+        settle({ outcome: 'error', error: 'Download failed: cannot record verified staged bytes' })
+        return
       }
       try {
         await installStagedAtFinal(stagingPath, finalPath, finalBytes)

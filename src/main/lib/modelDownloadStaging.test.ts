@@ -247,6 +247,22 @@ describe('scanForStagedDownloads', () => {
     expect(fs.existsSync(stagingMetaPathFor(finalPath))).toBe(true)
   })
 
+  it('keeps an independently created empty destination beside a verified stage', async () => {
+    const finalPath = path.join(tmpDir, 'model.safetensors')
+    fs.writeFileSync(finalPath, '')
+    fs.writeFileSync(stagingPathFor(finalPath), 'verified bytes')
+    writeStagedMeta(
+      stagingMetaPathFor(finalPath),
+      validMeta({ expectedSize: 14, readyToInstall: true })
+    )
+
+    const scan = await scanForStagedDownloads([tmpDir])
+    expect(scan.downloads).toMatchObject([{ finalPath, stagedBytes: 14 }])
+    expect(scan.unsafeFinalPaths).toEqual([])
+    expect(fs.readFileSync(finalPath, 'utf8')).toBe('')
+    expect(fs.readFileSync(stagingPathFor(finalPath), 'utf8')).toBe('verified bytes')
+  })
+
   it('parks a zero-byte claim marker even when the staged bytes are also empty', async () => {
     const finalPath = path.join(tmpDir, 'model.safetensors')
     fs.writeFileSync(finalPath, '')

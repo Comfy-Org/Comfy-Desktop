@@ -83,6 +83,7 @@
     "@xterm/xterm": "^5.5.0",
     "electron-updater": "^6.8.11",
     "image-size": "^2.1.0",
+    "koffi": "3.3.8",
     "music-metadata": "^12.5.0",
     "node-pty": "^1.1.0",
     "posthog-node": "^5.73.1",
