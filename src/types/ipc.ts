@@ -166,6 +166,7 @@ export interface AppCard {
   description: string
   covers: AppCover[]
   badges?: AppBadge[]
+  coverPlayback?: 'always'
 }
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'
