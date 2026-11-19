@@ -158,7 +158,8 @@ describe('rumBeforeSend', () => {
             'fetch failed with Authorization: Bearer abcdefghijklmnop at C:\\Users\\alice\\x',
           source: 'custom',
           type: 'TypeError',
-          stack: 'TypeError: fetch failed\n  at <anonymous> @ file:///home/bob/plugins/y.js:2:2'
+          stack:
+            'TypeError: fetch failed for token=abcdefghijklmnop\n  at <anonymous> @ file:///home/bob/plugins/y.js:2:2'
         },
         { message: '"plain string cause"', source: 'custom' }
       ]
@@ -175,11 +176,12 @@ describe('rumBeforeSend', () => {
       [
         'DesktopTelemetryError: wrapped',
         '  at load @ app://app/renderer/x.js:1:1',
-        'TypeError: fetch failed',
+        'TypeError: fetch failed for token=[REDACTED]',
         '  at <anonymous> @ file:///home/[REDACTED]/plugins/y.js:2:2'
       ].join('\n')
     )
     expect(flattened.name).toBe('DesktopTelemetryError')
+    expect(flattened.cause).toBeUndefined()
   })
 
   it('scrubs and keeps an error event without causes', () => {

@@ -54,7 +54,7 @@ export function flattenErrorWithCauses(error: RumErrorEvent['error']): Error {
   const flattened = new Error(scrub(message.join('\n')))
   flattened.name = error.type ?? flattened.name
   const stacks = [error.stack, ...causes.map((cause) => cause.stack)].filter(Boolean)
-  flattened.stack = scrub(normalizeDatadogBundlePaths(stacks.join('\n')) ?? '')
+  flattened.stack = scrub(stacks.join('\n'))
   return flattened
 }
 

@@ -47,12 +47,17 @@ test('the real RUM SDK sends a scrubbed error, and an error that wraps a cause o
   })
 
   datadogRum.addError(new Error('plain failure at C:\\Users\\bob\\x'))
-  datadogRum.addError(
-    new Error('wrapped failure', {
-      cause: new Error('inner failure at C:\\Users\\alice\\x with password=hunter2')
-    }),
-    { origin: 'sdk-test-context' }
-  )
+  const cause = new Error('inner failure at C:\\Users\\alice\\x with password=hunter2')
+  cause.stack = [
+    'Error: inner failure with Authorization: Bearer abcdefghijklmnop',
+    '    at loadInner (file:///home/bob/plugins/inner-frame.js:3:4)'
+  ].join('\n')
+  const wrapped = new Error('wrapped failure', { cause })
+  wrapped.stack = [
+    'Error: wrapped failure',
+    '    at load (file:///C:/Users/alice/AppData/Local/Programs/ComfyUI/resources/app.asar/out/renderer/assets/index-x.js:1:2)'
+  ].join('\n')
+  datadogRum.addError(wrapped, { origin: 'sdk-test-context' })
   await vi.waitFor(() => expect(errorsSeenByBeforeSend).toHaveLength(3), {
     timeout: 10_000,
     interval: 50
@@ -75,6 +80,9 @@ test('the real RUM SDK sends a scrubbed error, and an error that wraps a cause o
   expect(sent).not.toContain('bob')
   expect(sent).not.toContain('alice')
   expect(sent).not.toContain('hunter2')
+  expect(sent).not.toContain('abcdefghijklmnop')
+  expect(sent).toContain('app://app/renderer/assets/index-x.js:1:2')
+  expect(sent).toContain('file:///home/[REDACTED]/plugins/inner-frame.js:3:4')
   expect(sent).toContain(
     'wrapped failure\\nCaused by: Error: inner failure at C:\\\\Users\\\\[REDACTED]'
   )
