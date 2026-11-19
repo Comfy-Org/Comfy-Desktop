@@ -1077,6 +1077,7 @@
     "delete": "Uninstall",
     "deleteConfirmTitle": "Uninstall",
     "deleteConfirmMessage": "This permanently removes this ComfyUI installation and all its files. This cannot be undone.",
+    "deleteConfirmDetail": "Other installs are not affected.",
     "untrack": "Forget",
     "untrackConfirmTitle": "Forget Build",
     "untrackConfirmMessage": "This will remove the build from the app. The files will not be deleted.",

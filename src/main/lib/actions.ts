@@ -9,12 +9,7 @@ interface ActionDef {
   showProgress?: boolean
   progressTitle?: string
   cancellable?: boolean
-  confirm?: {
-    title: string
-    message: string
-    confirmLabel?: string
-    messageDetails?: { label: string; items: string[] }[]
-  }
+  confirm?: { title: string; message: string; confirmLabel?: string }
   disabledMessage?: string
 }
 
@@ -29,8 +24,7 @@ export function deleteAction(installation: { installPath: string }): ActionDef {
     cancellable: true,
     confirm: {
       title: t('actions.deleteConfirmTitle'),
-      message: t('actions.deleteConfirmMessage'),
-      messageDetails: [{ label: t('common.location'), items: [installation.installPath] }]
+      message: t('actions.deleteConfirmMessage') + `\n${installation.installPath}`
     }
   }
 }
