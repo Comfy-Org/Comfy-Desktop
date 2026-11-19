@@ -25,6 +25,8 @@ const ARC_REACH = 2
 const OFFSTAGE = ARC_REACH + 1
 const DRAG_PIXELS_PER_CARD = 150
 const DRAG_START_PIXELS = 6
+const WHEEL_PIXELS_PER_CARD = 40
+const WHEEL_GESTURE_GAP_MS = 180
 const ARC_SLOTS: Record<number, ArcSlot> = {
   0: { transform: 'translateX(0) rotateY(0deg) scale(1)', opacity: 1, dim: 0, layer: 3 },
   1: {
@@ -204,7 +206,32 @@ function startDrag(event: PointerEvent): void {
   window.addEventListener('pointercancel', stopDrag)
 }
 
-onBeforeUnmount(stopDrag)
+let wheelDistance = 0
+let wheelTurned = false
+let wheelGestureTimer: ReturnType<typeof setTimeout> | undefined
+
+function endWheelGesture(): void {
+  wheelDistance = 0
+  wheelTurned = false
+}
+
+function onWheel(event: WheelEvent): void {
+  const sideways = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX
+  if (sideways === 0 || (!event.shiftKey && Math.abs(event.deltaY) > Math.abs(sideways))) return
+  event.preventDefault()
+  clearTimeout(wheelGestureTimer)
+  wheelGestureTimer = setTimeout(endWheelGesture, WHEEL_GESTURE_GAP_MS)
+  if (wheelTurned) return
+  wheelDistance += sideways
+  if (Math.abs(wheelDistance) < WHEEL_PIXELS_PER_CARD) return
+  wheelTurned = true
+  moveTo(frontPosition.value + Math.sign(wheelDistance))
+}
+
+onBeforeUnmount(() => {
+  stopDrag()
+  clearTimeout(wheelGestureTimer)
+})
 
 async function turn(direction: number): Promise<void> {
   const focused = document.activeElement
@@ -224,7 +251,12 @@ function activate(placed: { card: Card; offset: number }): void {
 </script>
 
 <template>
-  <div class="group/arc relative" @keydown.left.prevent="turn(-1)" @keydown.right.prevent="turn(1)">
+  <div
+    class="group/arc relative"
+    @keydown.left.prevent="turn(-1)"
+    @keydown.right.prevent="turn(1)"
+    @wheel="onWheel"
+  >
     <ul
       ref="arc"
       class="relative m-0 h-75 w-full touch-pan-y list-none p-0 select-none [perspective:3000px]"

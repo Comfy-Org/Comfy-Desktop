@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
@@ -159,5 +159,73 @@ describe('HomeCarousel covers', () => {
 
     expect(frontCard(wrapper).attributes('aria-label')).not.toBe(before)
     expect(playingCards(wrapper)).toEqual(['0'])
+  })
+})
+
+describe('HomeCarousel trackpad and wheel', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function swipe(
+    wrapper: VueWrapper,
+    deltas: Array<{ deltaX?: number; deltaY?: number; shiftKey?: boolean }>
+  ) {
+    const target = frontCard(wrapper).element
+    return deltas.map((delta) => {
+      const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...delta })
+      target.dispatchEvent(event)
+      return event.defaultPrevented
+    })
+  }
+
+  const frontTitle = (wrapper: VueWrapper) => frontCard(wrapper).attributes('aria-label')
+
+  it('turns to the next card on a sideways swipe and back on a swipe the other way', async () => {
+    const wrapper = mountCarousel()
+
+    swipe(wrapper, [{ deltaX: 30 }, { deltaX: 30 }])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
+
+    vi.advanceTimersByTime(1000)
+    swipe(wrapper, [{ deltaX: -30 }, { deltaX: -30 }])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open Product Swap')
+  })
+
+  it('turns only one card for one long swipe', async () => {
+    const wrapper = mountCarousel()
+
+    swipe(
+      wrapper,
+      Array.from({ length: 30 }, () => ({ deltaX: 25 }))
+    )
+    await wrapper.vm.$nextTick()
+
+    expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
+  })
+
+  it('turns with shift and the mouse wheel', async () => {
+    const wrapper = mountCarousel()
+
+    swipe(wrapper, [{ deltaY: 100, shiftKey: true }])
+    await wrapper.vm.$nextTick()
+
+    expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
+  })
+
+  it('leaves an up or down scroll to the page', async () => {
+    const wrapper = mountCarousel()
+
+    const prevented = swipe(wrapper, [{ deltaY: 120 }, { deltaY: 120, deltaX: 4 }])
+    await wrapper.vm.$nextTick()
+
+    expect(prevented).toEqual([false, false])
+    expect(frontTitle(wrapper)).toBe('Open Product Swap')
   })
 })
