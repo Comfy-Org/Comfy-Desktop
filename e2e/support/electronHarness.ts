@@ -301,6 +301,7 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     launcher: application.process() ?? undefined,
     appPid,
     appStartTime: processStartTime(appPid),
+    profileDir: homeDir,
     closeGracefully: () => application.close(),
     connectionClosed: () => connectionClosed
   })

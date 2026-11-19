@@ -7,6 +7,7 @@ import {
   descendantsOf,
   isPidAlive,
   killProcessTrees,
+  listProcesses,
   ProcessLookupError,
   processStartTime
 } from './appShutdown'
@@ -270,4 +271,44 @@ describe('app shutdown', () => {
     expect(forceKill).not.toHaveBeenCalled()
     expect(isPidAlive(appPid)).toBe(true)
   })
+
+  it.skipIf(process.platform === 'win32')(
+    'stops a helper started after the last look once the app and launcher are gone',
+    async () => {
+      const profileDir = `/tmp/e2e-profile-${process.pid}-${Date.now()}`
+      const appThatHandsOffToAHelper = `
+const { spawn } = require('node:child_process')
+setTimeout(() => {
+  spawn(process.execPath, ['-e', ${JSON.stringify(IDLE)}, '--', '--user-data-dir=${profileDir}'], { stdio: 'ignore' })
+  setTimeout(() => process.exit(0), 200)
+}, 300)
+${IDLE}
+`
+      const { launcher, appPid } = await launchShellAndApp(`
+const { spawn } = require('node:child_process')
+const app = spawn(process.execPath, ['-e', ${JSON.stringify(appThatHandsOffToAHelper)}], { stdio: 'ignore' })
+process.stdout.write(String(app.pid) + '\\n')
+${IDLE}
+`)
+      const { shutdown, trackHelpers } = createShutdown({
+        launcher,
+        appPid,
+        profileDir,
+        closeGracefully: never,
+        connectionClosed: () => true
+      })
+      trackHelpers()
+
+      await vi.waitFor(() => expect(isPidAlive(appPid)).toBe(false), { timeout: 3000 })
+      launcher.kill('SIGKILL')
+      await exited(launcher)
+      const helperPid = [...listProcesses()].find(([, p]) => p.command.includes(profileDir))?.[0]
+      expect(helperPid, 'the helper outlived the app and launcher').toBeDefined()
+      started.push(helperPid!)
+
+      await shutdown()
+
+      expect(isPidAlive(helperPid!)).toBe(false)
+    }
+  )
 })

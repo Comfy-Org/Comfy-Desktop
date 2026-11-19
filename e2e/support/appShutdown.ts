@@ -10,6 +10,7 @@ export interface ShutdownTarget {
   launcher: ChildProcess | undefined
   appPid: number | undefined
   appStartTime?: string | undefined
+  profileDir?: string | undefined
   closeGracefully: () => Promise<void>
   connectionClosed: () => boolean
 }
@@ -30,6 +31,7 @@ export interface ShutdownHandle {
 interface ListedProcess {
   parentPid: number
   startTime: string
+  command: string
 }
 
 export class ProcessLookupError extends Error {}
@@ -60,7 +62,7 @@ export function killProcessTrees(pids: number[]): void {
 }
 
 export function listProcesses(): Map<number, ListedProcess> {
-  const listing = spawnSync('ps', ['-A', '-o', 'pid=,ppid=,lstart='], {
+  const listing = spawnSync('ps', ['-A', '-ww', '-o', 'pid=,ppid=,lstart=,command='], {
     encoding: 'utf8',
     timeout: FORCED_EXIT_DEADLINE_MS
   })
@@ -69,9 +71,13 @@ export function listProcesses(): Map<number, ListedProcess> {
   }
   const processes = new Map<number, ListedProcess>()
   for (const line of listing.stdout.split('\n')) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line)
+    const match = /^\s*(\d+)\s+(\d+)\s+(\S+\s+\S+\s+\S+\s+\S+\s+\S+)\s+(.*)$/.exec(line)
     if (!match) continue
-    processes.set(Number(match[1]), { parentPid: Number(match[2]), startTime: match[3]! })
+    processes.set(Number(match[1]), {
+      parentPid: Number(match[2]),
+      startTime: match[3]!,
+      command: match[4]!
+    })
   }
   return processes
 }
@@ -158,7 +164,14 @@ export function createShutdown(
 
   const trackHelpers = (): void => {
     if (!helpersAreTracked) return
-    for (const [pid, startTime] of descendantsOf(rootPids())) helpers.set(pid, startTime)
+    const processes = listProcesses()
+    const roots = rootPids()
+    for (const [pid, startTime] of descendantsOf(roots, processes)) helpers.set(pid, startTime)
+    if (!target.profileDir) return
+    for (const [pid, listed] of processes) {
+      if (roots.includes(pid) || pid === process.pid) continue
+      if (listed.command.includes(target.profileDir)) helpers.set(pid, listed.startTime)
+    }
   }
 
   const liveHelpers = (): number[] => {
