@@ -92,6 +92,7 @@ async function settle(): Promise<void> {
 }
 
 interface SummaryMetrics {
+  edges: { top: number; right: number; bottom: number; left: number }
   fill: string
   border: string
   radius: string
@@ -110,6 +111,12 @@ function measure(box: HTMLElement, rows: HTMLElement[]): SummaryMetrics {
   const x = (element: Element | null | undefined): number =>
     Math.round(element!.getBoundingClientRect().left - edge.left)
   return {
+    edges: {
+      top: Math.round(rows[0].getBoundingClientRect().top - edge.top),
+      right: Math.round(edge.right - rows[0].getBoundingClientRect().right),
+      bottom: Math.round(edge.bottom - rows[rows.length - 1].getBoundingClientRect().bottom),
+      left: Math.round(rows[0].querySelector('svg')!.getBoundingClientRect().left - edge.left)
+    },
     fill: style.backgroundColor,
     border: `${style.borderTopWidth} ${style.borderRightWidth} ${style.borderBottomWidth} ${style.borderLeftWidth} ${style.borderTopColor}`,
     radius: style.borderRadius,
@@ -138,6 +145,10 @@ async function firstRunSummary(): Promise<SummaryMetrics> {
   const rows = [...box.querySelectorAll<HTMLElement>('[data-testid^="setup-row-"]')]
   expect(rows).toHaveLength(3)
   const metrics = measure(box, rows)
+  const terms = document.querySelector('[data-testid="setup-consent-telemetry"]')!
+  expect(Math.round(terms.getBoundingClientRect().left - box.getBoundingClientRect().left)).toBe(
+    metrics.edges.left
+  )
   wrapper.unmount()
   return metrics
 }
@@ -194,6 +205,30 @@ describe.each([
     ] as const) {
       expect(new Set(newBuild[key]), key).toEqual(new Set(firstRun[key]))
     }
+  })
+
+  it('keeps the same space between the box edge and its rows on every side', async () => {
+    await browserPage.viewport(width, height)
+    const firstRun = await firstRunSummary()
+    const { metrics: newBuild } = await newBuildSummary()
+
+    for (const { edges } of [firstRun, newBuild]) {
+      expect(edges.right).toBe(edges.top)
+      expect(edges.bottom).toBe(edges.top)
+      expect(edges.left).toBe(edges.top)
+    }
+    expect(firstRun.noteRight.every((right) => right === firstRun.edges.top)).toBe(true)
+  })
+
+  it('draws Browse as a filled secondary button, without an outline', async () => {
+    await browserPage.viewport(width, height)
+    const { box } = await newBuildSummary()
+    const browse = getComputedStyle(box.querySelector('[data-testid="config-summary-browse"]')!)
+    const change = getComputedStyle(document.querySelector('[data-testid="config-change-setup"]')!)
+
+    expect(browse.backgroundColor).toBe(change.backgroundColor)
+    expect(browse.boxShadow).toBe('none')
+    expect(browse.borderTopWidth).toBe('0px')
   })
 
   it('puts the Location note and Browse on the Location line, right-aligned', async () => {
