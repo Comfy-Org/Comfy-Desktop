@@ -562,10 +562,16 @@ describe('AppSidebar', () => {
       expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Builds'])
     })
 
-    it('puts the green dot on running and always-on builds only', async () => {
+    it('puts the green dot only on a running build, even with no ComfyUI window open', async () => {
+      expect(useSessionStore().activeSessions.size).toBe(0)
       useSessionStore().runningInstances.set(NEW.id, {
         installationId: NEW.id,
         installationName: NEW.name,
+        mode: 'window'
+      })
+      useSessionStore().runningInstances.set(CLOUD.id, {
+        installationId: CLOUD.id,
+        installationName: CLOUD.name,
         mode: 'window'
       })
       const wrapper = await mountSidebar('home', [OLD, CLOUD, NEW])
@@ -575,7 +581,7 @@ describe('AppSidebar', () => {
           .get(`[data-testid="app-sidebar-build-${id}"]`)
           .find('[data-testid="app-sidebar-dot-live"]')
           .exists()
-      expect([live('new'), live('cloud'), live('old')]).toEqual([true, true, false])
+      expect([live('new'), live('cloud'), live('old')]).toEqual([true, false, false])
     })
 
     it('marks a build that failed to start and says why on hover', async () => {

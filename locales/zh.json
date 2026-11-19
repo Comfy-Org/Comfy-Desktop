@@ -182,7 +182,6 @@
     "buildRunning": "运行中",
     "buildStarting": "启动中",
     "buildReady": "就绪",
-    "buildAlwaysOn": "始终在线",
     "buildDidntStart": "未能启动",
     "buildInstalling": "正在安装 ComfyUI",
     "buildStartingComfyUI": "正在启动 ComfyUI",
