@@ -232,7 +232,12 @@ describe('makeOpsFlag persistence', () => {
     )
     await flag.init({ distinctId: 'anon' })
     expect(await flag.get()).toBe('disabled')
-    const live = flag.getLive()
+    let answered = false
+    const live = flag.getLive().finally(() => {
+      answered = true
+    })
+    await settle()
+    expect(answered, 'still waiting for the boot fetch').toBe(false)
     release(flagResult('degraded'))
     expect(await live).toBe('degraded')
   })

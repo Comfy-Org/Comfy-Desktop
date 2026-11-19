@@ -212,6 +212,27 @@ describe('initCoreBetaCampaigns', () => {
     expect((await live).answers.get(KEY)).toMatchObject({ enrol: false, fetchedAt: NOW })
   })
 
+  it('a live read sees a campaign this boot lists for the first time', async () => {
+    const LATER = 'desktop_core_beta_later'
+    seed('campaign-flags.json', {
+      desktop_campaigns: { value: true, payload: REGISTRY, fetchedAt: NOW },
+      [KEY]: { value: 'enrol', payload: AGENT, fetchedAt: NOW }
+    })
+    let listNow: (answer: Answer) => void = () => {}
+    getOpsFlagResult.mockImplementation((key: string) =>
+      key === 'desktop_campaigns'
+        ? new Promise((resolve) => {
+            listNow = resolve
+          })
+        : Promise.resolve(value('enrol', AGENT))
+    )
+    await initCoreBetaFlags({ distinctId: 'id', betaEnabled: true })
+    const live = getCoreBetaCampaigns({ live: true })
+    await new Promise((resolve) => setImmediate(resolve))
+    listNow(value(true, [...REGISTRY, { key: LATER, args: ['--enable-agent'] }]))
+    expect((await live).registry.map(({ key }) => key)).toEqual([KEY, LATER])
+  })
+
   it('fetches a key the fresh registry lists for the first time on the same boot', async () => {
     serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
     await initCoreBetaCampaigns({ distinctId: 'id' })
