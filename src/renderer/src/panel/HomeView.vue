@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowRight, ChevronRight } from '@lucide/vue'
+import { AppWindow, ArrowRight, ChevronRight } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
+import EmptyState from '../components/ui/EmptyState.vue'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
@@ -171,7 +172,7 @@ onMounted(() => {
 
     <div class="mx-auto w-full max-w-300 px-10 pb-16">
       <h1
-        class="m-0 pt-[152px] text-center text-[34px]/10 font-semibold tracking-[-0.055em] text-foreground"
+        class="m-0 pt-[152px] text-center text-display font-semibold tracking-[-0.055em] text-foreground"
       >
         {{ t('home.title') }}
       </h1>
@@ -209,14 +210,14 @@ onMounted(() => {
             {{ t('home.retry') }}
           </Button>
         </div>
-        <div
+        <EmptyState
           v-else-if="appsState === 'empty'"
-          class="flex h-75 flex-col items-center justify-center gap-1 text-center"
+          class="h-75 justify-center"
           data-testid="home-apps-empty"
-        >
-          <p class="m-0 text-[13px]/5 font-medium text-foreground">{{ t('apps.emptyTitle') }}</p>
-          <p class="m-0 text-[13px]/5 text-muted-foreground">{{ t('apps.emptyBody') }}</p>
-        </div>
+          :icon="AppWindow"
+          :title="t('apps.emptyTitle')"
+          :text="t('apps.emptyBody')"
+        />
         <HomeCarousel
           v-else-if="state === 'ready'"
           kind="workflows"

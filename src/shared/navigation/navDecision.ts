@@ -9,7 +9,7 @@ export type Verb = 'start' | 'restart' | 'open-new' | 'focus' | 'no-op' | 'insta
 export const NAV_LABEL = {
   start: 'instancePicker.open',
   restart: 'instancePicker.restart',
-  switch: 'instancePicker.switch',
+  openRunning: 'instancePicker.openRunning',
   openDashboard: 'instancePicker.openDashboard',
   openCloud: 'instancePicker.openCloud',
   newInstall: 'instancePicker.newInstance'
@@ -39,24 +39,24 @@ const NO_OP = dec('no-op', NAV_LABEL.start)
 const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
   [cellKey('dashboard', 'dashboard', 'self'), NO_OP],
   [cellKey('dashboard', 'instance', 'stopped'), dec('start', NAV_LABEL.start)],
-  [cellKey('dashboard', 'instance', 'running-elsewhere'), dec('focus', NAV_LABEL.switch)],
+  [cellKey('dashboard', 'instance', 'running-elsewhere'), dec('focus', NAV_LABEL.openRunning)],
   [cellKey('dashboard', 'instance', 'starting-unhosted'), dec('restart', NAV_LABEL.restart)],
   [cellKey('dashboard', 'cloud', 'stopped'), dec('start', NAV_LABEL.openCloud)],
-  [cellKey('dashboard', 'cloud', 'running-elsewhere'), dec('focus', NAV_LABEL.switch)],
+  [cellKey('dashboard', 'cloud', 'running-elsewhere'), dec('focus', NAV_LABEL.openRunning)],
   [cellKey('dashboard', 'new-instance', 'stopped'), dec('install-wizard', NAV_LABEL.newInstall)],
 
   [cellKey('instance', 'dashboard', 'self'), dec('open-new', NAV_LABEL.openDashboard)],
   [cellKey('instance', 'instance', 'self'), dec('restart', NAV_LABEL.restart)],
   [cellKey('instance', 'instance', 'stopped'), dec('start', NAV_LABEL.start)],
-  [cellKey('instance', 'instance', 'running-elsewhere'), dec('focus', NAV_LABEL.switch)],
+  [cellKey('instance', 'instance', 'running-elsewhere'), dec('focus', NAV_LABEL.openRunning)],
   [cellKey('instance', 'cloud', 'stopped'), dec('start', NAV_LABEL.openCloud)],
-  [cellKey('instance', 'cloud', 'running-elsewhere'), dec('focus', NAV_LABEL.switch)],
+  [cellKey('instance', 'cloud', 'running-elsewhere'), dec('focus', NAV_LABEL.openRunning)],
 
   [cellKey('cloud', 'dashboard', 'self'), dec('open-new', NAV_LABEL.openDashboard)],
   [cellKey('cloud', 'instance', 'stopped'), dec('start', NAV_LABEL.start)],
-  [cellKey('cloud', 'instance', 'running-elsewhere'), dec('focus', NAV_LABEL.switch)],
+  [cellKey('cloud', 'instance', 'running-elsewhere'), dec('focus', NAV_LABEL.openRunning)],
   [cellKey('cloud', 'cloud', 'self'), dec('restart', NAV_LABEL.restart)],
-  [cellKey('cloud', 'cloud', 'running-elsewhere'), dec('focus', NAV_LABEL.switch)],
+  [cellKey('cloud', 'cloud', 'running-elsewhere'), dec('focus', NAV_LABEL.openRunning)],
   [cellKey('cloud', 'cloud', 'stopped'), dec('start', NAV_LABEL.openCloud)],
   [cellKey('cloud', 'new-instance', 'stopped'), dec('install-wizard', NAV_LABEL.newInstall)]
 ])
