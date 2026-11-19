@@ -75,9 +75,22 @@ const featureFlagResultCalls: Array<{
 }> = []
 const posthogConstructorCalls: Array<{ apiKey: string; options: Record<string, unknown> }> = []
 
+interface MockPostHogClient {
+  shutdownCalls: number
+  emitError(error: Error): void
+}
+const posthogInstances: MockPostHogClient[] = []
+
+interface PendingImmediateCapture {
+  call: CapturedCall
+  accept(): void
+  reportError(): void
+}
+const pendingImmediateCaptures: PendingImmediateCapture[] = []
+
 const posthogClientMock = vi.hoisted(() => ({
   failNextCaptures: 0,
-  immediateCaptureOutcome: 'sent' as 'sent' | 'rejected' | 'reported-error',
+  immediateCaptureOutcome: 'sent' as 'sent' | 'rejected' | 'reported-error' | 'deferred',
   failNextFlushes: 0,
   autoFailNextIdentifies: 0,
   featureFlagResult: undefined as
@@ -98,9 +111,15 @@ vi.mock('posthog-node', () => ({
   PostHog: class {
     private listeners = new Map<string, Set<(...args: unknown[]) => void>>()
     private queuedIdentifies: Array<Record<string, unknown>> = []
+    shutdownCalls = 0
 
     constructor(apiKey: string, options: Record<string, unknown>) {
       posthogConstructorCalls.push({ apiKey, options })
+      posthogInstances.push(this)
+    }
+
+    emitError(error: Error): void {
+      this.emit('error', error)
     }
 
     on(event: string, listener: (...args: unknown[]) => void): () => void {
@@ -126,6 +145,21 @@ vi.mock('posthog-node', () => ({
       if (posthogClientMock.immediateCaptureOutcome === 'reported-error') {
         this.emit('error', new Error('batch request failed'))
         return
+      }
+      if (posthogClientMock.immediateCaptureOutcome === 'deferred') {
+        return new Promise<void>((resolve) => {
+          pendingImmediateCaptures.push({
+            call,
+            accept: () => {
+              captured.push(call)
+              resolve()
+            },
+            reportError: () => {
+              this.emit('error', new Error('batch request failed'))
+              resolve()
+            }
+          })
+        })
       }
       captured.push(call)
     }
@@ -162,6 +196,7 @@ vi.mock('posthog-node', () => ({
       return Promise.resolve()
     }
     shutdown(): Promise<void> {
+      this.shutdownCalls++
       return Promise.resolve()
     }
     getFeatureFlagResult(
@@ -302,6 +337,8 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
   exceptions.length = 0
   featureFlagResultCalls.length = 0
   posthogConstructorCalls.length = 0
+  posthogInstances.length = 0
+  pendingImmediateCaptures.length = 0
   for (const name of postHogEnvNames) delete process.env[name]
   process.env[isPackaged ? 'COMFY_DESKTOP_POSTHOG_API_KEY' : 'POSTHOG_API_KEY'] = 'test-key'
   process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] = '1'
@@ -1952,6 +1989,71 @@ describe('telemetry.sendSurveyResponse', () => {
 
     telemetry.releaseFirebasePendingConsensus()
     expect(captured.filter((c) => c.event === 'survey sent')).toHaveLength(0)
+  })
+
+  it('sends answers on a PostHog client of their own, made on the first send and reused', async () => {
+    telemetry.setConsentState('denied')
+    bindTestAnonymous('test-distinct-id')
+    expect(posthogInstances).toHaveLength(1)
+
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')).toBe(true)
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'Another app')).toBe(true)
+
+    expect(posthogInstances).toHaveLength(2)
+    expect(posthogConstructorCalls[1]).toEqual({
+      apiKey: 'test-key',
+      options: { host: DEFAULT_POSTHOG_HOST, disableGeoip: false }
+    })
+  })
+
+  it('still reports a sent answer when the main client fails a request meanwhile', async () => {
+    telemetry.setConsentState('denied')
+    bindTestAnonymous('test-distinct-id')
+    posthogClientMock.immediateCaptureOutcome = 'deferred'
+
+    const result = telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')
+    await vi.waitFor(() => expect(pendingImmediateCaptures).toHaveLength(1))
+    posthogInstances[0]!.emitError(new Error('flag request failed'))
+    pendingImmediateCaptures[0]!.accept()
+
+    expect(await result).toBe(true)
+  })
+
+  it('sends overlapping answers one after the other, each with its own result', async () => {
+    telemetry.setConsentState('denied')
+    bindTestAnonymous('test-distinct-id')
+    captured.length = 0
+    posthogClientMock.immediateCaptureOutcome = 'deferred'
+
+    const first = telemetry.sendSurveyResponse('survey-id', 'question-id', 'First app')
+    const second = telemetry.sendSurveyResponse('survey-id', 'question-id', 'Second app')
+    await vi.waitFor(() => expect(pendingImmediateCaptures).toHaveLength(1))
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(pendingImmediateCaptures).toHaveLength(1)
+
+    pendingImmediateCaptures[0]!.reportError()
+    expect(await first).toBe(false)
+
+    await vi.waitFor(() => expect(pendingImmediateCaptures).toHaveLength(2))
+    pendingImmediateCaptures[1]!.accept()
+    expect(await second).toBe(true)
+
+    expect(
+      captured
+        .filter((c) => c.event === 'survey sent')
+        .map((c) => c.properties?.['$survey_response_question-id'])
+    ).toEqual(['Second app'])
+  })
+
+  it('shuts the survey client down with the main client', async () => {
+    telemetry.setConsentState('denied')
+    bindTestAnonymous('test-distinct-id')
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')).toBe(true)
+
+    await telemetry.shutdown('quit')
+
+    expect(posthogInstances.map((instance) => instance.shutdownCalls)).toEqual([1, 1])
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')).toBe(false)
   })
 })
 
