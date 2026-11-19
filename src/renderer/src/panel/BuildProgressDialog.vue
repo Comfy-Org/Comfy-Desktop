@@ -352,7 +352,7 @@ async function cancel(): Promise<void> {
         type="button"
         variant="secondary"
         size="unset"
-        class="absolute top-px -right-[47px] size-9 rounded-full bg-white/10 p-0 text-white hover:bg-white/15"
+        class="absolute top-px -right-[47px] size-9 rounded-full modal-close-fill [--modal-close-card:rgb(37_37_37)] p-0 text-white"
         :aria-label="t('common.close')"
         data-testid="build-progress-close"
         @click="emit('close')"

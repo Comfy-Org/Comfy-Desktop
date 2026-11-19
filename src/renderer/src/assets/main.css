@@ -310,6 +310,31 @@
 
 :root {
   --titlebar-height: 37px;
+  --modal-close-fill: 50%;
+  --modal-close-fill-hover: 70%;
+  --modal-close-icon: 80%;
+  --modal-close-icon-hover: 100%;
+}
+
+.modal-close-fill {
+  background-color: color-mix(
+    in oklch,
+    var(--modal-close-card, var(--neutral-900)) var(--modal-close-fill),
+    transparent
+  );
+}
+.modal-close-fill:hover {
+  background-color: color-mix(
+    in oklch,
+    var(--modal-close-card, var(--neutral-900)) var(--modal-close-fill-hover),
+    transparent
+  );
+}
+.modal-close-fill > svg {
+  opacity: var(--modal-close-icon);
+}
+.modal-close-fill:hover > svg {
+  opacity: var(--modal-close-icon-hover);
 }
 
 [data-reka-menu-content] {

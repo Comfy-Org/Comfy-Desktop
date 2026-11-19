@@ -173,7 +173,7 @@ const footerStats = computed<string[]>(() =>
       type="button"
       variant="muted-textonly"
       size="icon"
-      class="dlm-close absolute top-0 right-0 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
+      class="dlm-close absolute top-0 right-0 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--modal-surface-bg)] text-white hover:text-white"
       :aria-label="t('common.close')"
       @click="bridge?.close()"
     >

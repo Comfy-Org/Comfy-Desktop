@@ -85,7 +85,7 @@ const sizeStyleClass = computed(() => {
       class="base-modal-close absolute z-2"
       :class="
         closeOutside
-          ? 'top-0 -right-12 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white'
+          ? 'top-0 -right-12 size-9 rounded-full modal-close-fill [--modal-close-card:var(--modal-surface-bg)] text-white hover:text-white'
           : 'top-3.5 right-3.5'
       "
       :aria-label="$t('common.close')"

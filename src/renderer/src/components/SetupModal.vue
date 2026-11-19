@@ -84,7 +84,7 @@ const hostProps = computed(() =>
           size="icon"
           variant="muted-textonly"
           type="button"
-          class="setup-modal-close absolute top-0 -right-12 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white max-[860px]:top-3 max-[860px]:right-3"
+          class="setup-modal-close absolute top-0 -right-12 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--color-neutral-900)] text-white hover:text-white max-[860px]:top-3 max-[860px]:right-3"
           :aria-label="$t('common.close')"
           :title="closeTitle ?? $t('common.close')"
           @click="emit('close')"

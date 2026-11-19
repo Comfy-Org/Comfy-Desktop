@@ -53,7 +53,7 @@ onMounted(() => {
     <Button
       variant="muted-textonly"
       size="icon"
-      class="announce-close absolute top-0 -right-12 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
+      class="announce-close absolute top-0 -right-12 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--color-neutral-900)] text-white hover:text-white"
       type="button"
       :aria-label="$t('common.close')"
       data-testid="announcement-close"
