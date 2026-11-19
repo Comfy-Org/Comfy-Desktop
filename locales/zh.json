@@ -966,7 +966,6 @@
         "模型即开即用，并已验证商业许可",
         "预装热门自定义节点包"
       ],
-      "maybeLater": "稍后再说",
       "tryCta": "免费试用云端",
       "imageAlt": "云端驱动的风景插图"
     },
@@ -1846,7 +1845,8 @@
   },
   "feedback": {
     "modalLabel": "发送反馈",
-    "loading": "正在加载反馈表单…"
+    "loading": "正在加载反馈表单…",
+    "failedTitle": "反馈表单未能加载"
   },
   "performanceTest": {
     "title": "性能测试",
@@ -2039,10 +2039,11 @@
     "filterErrored": "失败",
     "filterAriaLabel": "状态筛选",
     "retry": "重试",
-    "badgeFailed": "失败",
-    "badgeCancelled": "已取消",
     "footerActive": "{n} 个活动",
     "footerCompleted": "{n} 个已完成",
+    "footerFailed": "{n} 个失败",
+    "footerCancelled": "{n} 个已取消",
+    "progressAriaLabel": "{name} 的下载进度",
     "clearFinished": "清除已完成"
   },
   "instancePicker": {

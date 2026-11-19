@@ -966,7 +966,6 @@
         "Models ready to use, verified for commercial license",
         "Top custom node packs pre-installed"
       ],
-      "maybeLater": "Maybe Later",
       "tryCta": "Try Cloud For Free",
       "imageAlt": "Cloud-powered landscape illustration"
     },
@@ -1846,7 +1845,8 @@
   },
   "feedback": {
     "modalLabel": "Send Feedback",
-    "loading": "Loading feedback form…"
+    "loading": "Loading feedback form…",
+    "failedTitle": "Feedback form didn't load"
   },
   "performanceTest": {
     "title": "Performance Tests",
@@ -2039,10 +2039,11 @@
     "filterErrored": "Failed",
     "filterAriaLabel": "Status filter",
     "retry": "Retry",
-    "badgeFailed": "Failed",
-    "badgeCancelled": "Cancelled",
     "footerActive": "{n} active",
     "footerCompleted": "{n} completed",
+    "footerFailed": "{n} failed",
+    "footerCancelled": "{n} cancelled",
+    "progressAriaLabel": "Download progress for {name}",
     "clearFinished": "Clear finished"
   },
   "instancePicker": {
