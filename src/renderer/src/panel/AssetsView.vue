@@ -323,12 +323,8 @@ function placeSubtitle(option: AssetBuild): string | null {
 
 const revealFolderLabel = computed(() => t(revealInFolderKey(window.api.platform)))
 
-function revealPlaceFolder(option: AssetBuild): void {
-  placePickerOpen.value = false
-  void openPlaceFolder(option)
-}
-
 async function openPlaceFolder(option: AssetBuild): Promise<void> {
+  placePickerOpen.value = false
   const opened = await window.api
     .openOutputFolder(option.computer ? undefined : option.build.id)
     .catch(() => false)
@@ -1126,7 +1122,7 @@ function extensionOf(name: string): string {
                     class="size-6.5 rounded-md p-0 text-muted-foreground hover:bg-transparent hover:text-foreground"
                     :aria-label="`${revealFolderLabel}: ${option.build.name}`"
                     :data-testid="`assets-place-reveal-${option.build.id}`"
-                    @click="revealPlaceFolder(option)"
+                    @click="openPlaceFolder(option)"
                   >
                     <ScanSearch :size="15" aria-hidden="true" />
                   </Button>
