@@ -23,14 +23,14 @@ const benefits = computed<string[]>(() => {
   <DesktopDialogSurface
     :open="true"
     :aria-label="$t('firstUse.whyCloud.title')"
-    overlay-class="why-cloud-overlay fixed inset-0 z-60 grid place-items-center px-[clamp(32px,5vw,80px)] pt-[clamp(72px,10vh,132px)] pb-[clamp(80px,11vh,140px)] bg-neutral-800/70"
+    overlay-class="why-cloud-overlay fixed inset-0 z-60 grid place-items-center px-[clamp(32px,5vw,80px)] pt-[clamp(72px,10vh,132px)] pb-[clamp(80px,11vh,140px)] bg-black/70"
     content-class="why-cloud-content relative flex w-[min(100%,calc((100vh_-_clamp(152px,21vh,272px))_*_(916_/_445)))] max-w-[min(100%,calc(100vw_-_128px))] max-h-full aspect-[916/445] overflow-visible rounded-panel border border-solid border-neutral-100/8 bg-neutral-900"
     @close="emit('close')"
   >
     <Button
       variant="muted-textonly"
       size="icon"
-      class="why-cloud-close absolute top-0 -right-12 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
+      class="why-cloud-close absolute top-0 -right-12 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--color-neutral-900)] text-white hover:text-white"
       type="button"
       :aria-label="$t('common.close')"
       data-testid="why-cloud-close"
