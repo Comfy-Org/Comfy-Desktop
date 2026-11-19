@@ -431,6 +431,7 @@ async function exportResultsImage(): Promise<void> {
     <BaseModal
       :open="workflow.example.isPickerOpen"
       size="xl"
+      close-outside
       :aria-label="t('performanceTest.exampleWorkflowPickerTitle')"
       content-class="performance-test__example-modal"
       @close="workflow.example.isPickerOpen = false"
@@ -462,14 +463,6 @@ async function exportResultsImage(): Promise<void> {
         @select="workflow.example.selectedId = $event.value"
       />
       <template #footer>
-        <Button
-          variant="secondary"
-          size="lg"
-          type="button"
-          @click="workflow.example.isPickerOpen = false"
-        >
-          {{ t('common.cancel') }}
-        </Button>
         <Button
           variant="inverted"
           size="lg"

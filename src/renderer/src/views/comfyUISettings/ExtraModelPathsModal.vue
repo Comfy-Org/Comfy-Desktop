@@ -44,6 +44,7 @@ const revealFolderKey = revealInFolderKey(window.api?.platform)
   <BaseModal
     :open="open"
     size="md"
+    close-outside
     :aria-label="t('comfyUISettings.extraModelPathsModalTitle')"
     @close="emit('close')"
   >
