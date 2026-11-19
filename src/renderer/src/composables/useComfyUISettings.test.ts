@@ -475,6 +475,29 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     scope.stop()
   })
 
+  it('stop: a running build still offers Stop and stops it when its first details request fails', async () => {
+    const api = installMockApi({
+      getDetailSections: vi.fn().mockRejectedValue(new Error('details failed'))
+    })
+    markRunning('a', 'A')
+    dialogsSpies.confirm.mockResolvedValue('primary')
+    const { composable, scope } = mountComposable(makeInstall('a', 'A'))
+    await nextTick()
+    await Promise.resolve()
+    await Promise.resolve()
+    await nextTick()
+
+    expect(composable.error.value).toBe('details failed')
+    expect(composable.sectionsFresh.value).toBe(false)
+    const stop = composable.pinBottomActions.value.find((action) => action.id === 'stop')
+    expect(composable.pinBottomActions.value.map((action) => action.id)).toEqual(['stop'])
+
+    await composable.runAction(stop!)
+
+    expect(api.stopComfyUI).toHaveBeenCalledExactlyOnceWith('a')
+    scope.stop()
+  })
+
   it('stop: does not stop the backend or dismiss the preview when the confirm is cancelled', async () => {
     const api = installMockApi()
     markRunning('a', 'A')
