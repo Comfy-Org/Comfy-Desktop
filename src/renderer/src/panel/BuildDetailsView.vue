@@ -4,11 +4,19 @@ import { useI18n } from 'vue-i18n'
 import { LoaderCircle, OctagonAlert } from '@lucide/vue'
 import ComfyUISettingsContent from '../components/settings/ComfyUISettingsContent.vue'
 import StatusChip from '../components/ui/StatusChip.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
 import BuildUninstallFailed from './BuildUninstallFailed.vue'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
 import type { StorageSnapshot } from '../views/comfyUISettings/StoragePane.vue'
-import { uninstallFailureOf, useBuildProgress } from '../composables/useBuildProgress'
+import {
+  buildFailure,
+  launchFailed,
+  operationFailureOf,
+  operationTask,
+  uninstallFailureOf,
+  useBuildProgress
+} from '../composables/useBuildProgress'
 import { installTypeMetaForInstall } from '../lib/installTypeIcon'
 import { useInstallationStore } from '../stores/installationStore'
 import { useProgressStore } from '../stores/progressStore'
@@ -26,6 +34,7 @@ const emit = defineEmits<{
   back: []
   launch: [installation: Installation]
   'show-progress': [opts: ShowProgressOpts]
+  'view-error': [installation: Installation]
 }>()
 
 const { t } = useI18n()
@@ -33,11 +42,20 @@ const sessionStore = useSessionStore()
 const progressStore = useProgressStore()
 const installationStore = useInstallationStore()
 
-const { progress } = useBuildProgress(() => installation)
+const { progress, viewLogs } = useBuildProgress(() => installation)
 const uninstalling = computed(() => progress.value?.kind === 'uninstall')
+const updating = computed(() => progress.value?.kind === 'update')
+const working = computed(() => progress.value?.kind === 'working')
+const cardReplacesSettings = computed(() => uninstalling.value || updating.value || working.value)
 const uninstallFailure = computed(() => uninstallFailureOf(progressStore, installation.id))
-const uninstallReplacesSettings = computed(
-  () => uninstalling.value || uninstallFailure.value !== null
+const operationFailure = computed(() => operationFailureOf(progressStore, installation.id))
+const failedTaskTitle = computed(() => {
+  const op = progressStore.operations.get(installation.id)
+  return t('workingProgress.failedTitle', { task: op ? operationTask(op.title) : '' })
+})
+const settingsHidden = computed(
+  () =>
+    cardReplacesSettings.value || uninstallFailure.value !== null || operationFailure.value !== null
 )
 const tone = computed(() => homeBuildTones([installation], installationStore.installations)[0]!)
 
@@ -52,13 +70,47 @@ const metaLine = computed(() =>
   [whereLabel.value, t(typeMeta.value.labelKey), installation.version].filter(Boolean).join(' · ')
 )
 
+const failure = computed(() => buildFailure(installation, sessionStore, progressStore, t))
+const opensStartLogs = computed(
+  () => failure.value?.kind === 'didnt-start' && launchFailed(progressStore, installation.id)
+)
+const failureHint = computed(() => {
+  const kind = failure.value?.kind
+  if (!kind || kind === 'broken' || cardReplacesSettings.value) return ''
+  return opensStartLogs.value ? t('home.buildClickToViewLogs') : t('chooser.viewErrorTooltip')
+})
+const startNotice = computed(() => {
+  const kind = failure.value?.kind
+  if (kind !== 'didnt-start' && kind !== 'crashed') return null
+  return {
+    title:
+      kind === 'didnt-start'
+        ? t('installProgress.launchFailedTitle')
+        : t('comfyLifecycle.crashedTitle'),
+    reason:
+      sessionStore.errorInstances.get(installation.id)?.message ||
+      (launchFailed(progressStore, installation.id)
+        ? (progressStore.operations.get(installation.id)?.error ?? '')
+        : '')
+  }
+})
+function openFailure(): void {
+  if (opensStartLogs.value) viewLogs()
+  else emit('view-error', installation)
+}
+
 const status = computed(() => {
   const id = installation.id
   if (uninstalling.value) {
     return { tone: 'quiet', label: 'uninstallProgress.status', spinning: true } as const
   }
-  if (sessionStore.errorInstances.has(id))
-    return { tone: 'bad', label: 'chooser.statusError' } as const
+  if (updating.value) {
+    return { tone: 'quiet', label: 'updateProgress.status', spinning: true } as const
+  }
+  if (working.value) {
+    return { tone: 'quiet', text: progress.value?.task ?? '', spinning: true } as const
+  }
+  if (failure.value) return { tone: 'bad', text: failure.value.label } as const
   if (sessionStore.isStopping(id))
     return { tone: 'quiet', label: 'chooser.statusStopping' } as const
   if (sessionStore.isLaunching(id)) {
@@ -92,9 +144,22 @@ onUnmounted(() => unsubscribeSettings?.())
               :id="TITLE_ID"
               class="m-0 flex min-w-0 text-display font-semibold tracking-[-0.055em] text-foreground"
             >
-              <span v-if="uninstallReplacesSettings" class="truncate">{{ installation.name }}</span>
+              <span v-if="settingsHidden" class="truncate">{{ installation.name }}</span>
             </h1>
-            <StatusChip v-if="status" class="build-details-status" :tone="status.tone">
+            <Tooltip v-if="failureHint" :text="failureHint" side="top" :delay-ms="500">
+              <button
+                type="button"
+                class="build-details-failure flex cursor-pointer rounded-full transition-opacity outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
+                data-testid="build-details-failure"
+                @click="openFailure"
+              >
+                <StatusChip class="build-details-status" tone="bad">
+                  <template #icon><OctagonAlert :size="11" aria-hidden="true" /></template>
+                  {{ failure?.label }}
+                </StatusChip>
+              </button>
+            </Tooltip>
+            <StatusChip v-else-if="status" class="build-details-status" :tone="status.tone">
               <template v-if="status.tone === 'bad'" #icon>
                 <OctagonAlert :size="11" aria-hidden="true" />
               </template>
@@ -105,7 +170,7 @@ onUnmounted(() => unsubscribeSettings?.())
                   aria-hidden="true"
                 />
               </template>
-              {{ t(status.label) }}
+              {{ 'text' in status ? status.text : t(status.label) }}
             </StatusChip>
           </div>
           <p
@@ -119,7 +184,7 @@ onUnmounted(() => unsubscribeSettings?.())
       </header>
 
       <HomeBuildCard
-        v-if="uninstalling"
+        v-if="cardReplacesSettings"
         class="shrink-0"
         :build="installation"
         :status="homeBuildStatus(installation, sessionStore)"
@@ -131,19 +196,38 @@ onUnmounted(() => unsubscribeSettings?.())
         @retry="progressStore.retryOperation(installation.id)"
         @dismiss="progressStore.dismissOperation(installation.id)"
       />
-      <ComfyUISettingsContent
-        v-else
-        :installation="installation"
-        :global-settings-snapshot="storage"
-        :page-actions-target="`#${ACTIONS_ID}`"
-        :page-title-target="`#${TITLE_ID}`"
-        class="min-h-0 flex-auto"
-        @show-progress="emit('show-progress', $event)"
-        @navigate-list="emit('back')"
-        @request-close="emit('back')"
-        @request-dismiss="emit('back')"
-        @primary-action="emit('launch', installation)"
+      <BuildUninstallFailed
+        v-else-if="operationFailure !== null"
+        kind="operation"
+        :title="failedTaskTitle"
+        :reason="operationFailure"
+        @retry="progressStore.retryOperation(installation.id)"
+        @dismiss="progressStore.dismissOperation(installation.id)"
       />
+      <template v-else>
+        <BuildUninstallFailed
+          v-if="startNotice"
+          class="mb-6"
+          kind="start"
+          :title="startNotice.title"
+          :reason="startNotice.reason"
+          :dismiss-label="null"
+          :retry-label="opensStartLogs ? t('installProgress.viewLogs') : t('chooser.menuViewError')"
+          @retry="openFailure"
+        />
+        <ComfyUISettingsContent
+          :installation="installation"
+          :global-settings-snapshot="storage"
+          :page-actions-target="`#${ACTIONS_ID}`"
+          :page-title-target="`#${TITLE_ID}`"
+          class="min-h-0 flex-auto"
+          @show-progress="emit('show-progress', $event)"
+          @navigate-list="emit('back')"
+          @request-close="emit('back')"
+          @request-dismiss="emit('back')"
+          @primary-action="emit('launch', installation)"
+        />
+      </template>
     </div>
   </div>
 </template>

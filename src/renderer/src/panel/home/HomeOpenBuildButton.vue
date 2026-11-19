@@ -6,6 +6,8 @@ import { Cloud, Laptop } from '@lucide/vue'
 import BaseMenuRadioItem from '../../components/ui/BaseMenuRadioItem.vue'
 import SplitButton from '../../components/ui/SplitButton.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
+import { buildFailure } from '../../composables/useBuildProgress'
+import { useProgressStore } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { isCloudBuild, runsOnThisComputer, type HomeBuildStatus } from './homeBuild'
 import type { Installation } from '../../types/ipc'
@@ -26,20 +28,14 @@ const { t } = useI18n()
 const open = ref(false)
 
 const sessionStore = useSessionStore()
+const progressStore = useProgressStore()
 
 function isLive(build: Installation): boolean {
   return runsOnThisComputer(build, statusOf(build))
 }
 
-function brokenReason(build: Installation): string | undefined {
-  return build.statusTag?.style === 'danger' ? build.statusTag.label : undefined
-}
-
 function problem(build: Installation): string | undefined {
-  return (
-    brokenReason(build) ??
-    (sessionStore.errorInstances.has(build.id) ? t('home.buildDidntStart') : undefined)
-  )
+  return buildFailure(build, sessionStore, progressStore, t)?.label
 }
 
 function onWindowBlur(): void {
@@ -77,7 +73,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
             as="button"
             type="button"
             :value="build.id"
-            :disabled="brokenReason(build) !== undefined"
+            :disabled="build.statusTag?.style === 'danger'"
             :check="false"
             class="group ui-select-option w-full"
             data-testid="home-open-build-option"

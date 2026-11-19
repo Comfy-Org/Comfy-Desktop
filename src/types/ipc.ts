@@ -1286,6 +1286,7 @@ export interface ElectronApi {
   onAppPageClosed(callback: () => void): () => void
   onAppOutputs(callback: (appId: string, outputs: AppOutputs | null) => void): () => void
   sendAppOutputAction(action: AppOutputAction): void
+  sendAppRequest(text: string): Promise<boolean>
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   openGlobalSettings(
     tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',

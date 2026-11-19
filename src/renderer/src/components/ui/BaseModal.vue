@@ -65,12 +65,12 @@ const sizeStyleClass = computed(() => {
     :dismiss-on-outside="dismissOnOutside"
     :prevent-scroll="preventScroll"
     :overlay-class="[
-      'base-modal-overlay fixed inset-0 z-60 grid place-items-center bg-neutral-800/70 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]',
+      'base-modal-overlay fixed inset-0 z-60 grid place-items-center bg-black/70 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]',
       { 'base-modal-overlay--blur backdrop-blur-[8px] backdrop-saturate-[115%]': blurOverlay }
     ]"
     :content-class="[
-      'base-modal-panel relative flex w-[var(--base-modal-width,var(--base-modal-width-md))] max-w-full flex-col rounded-panel border border-solid border-border bg-[var(--modal-surface-bg)] text-neutral-100 shadow-[var(--modal-surface-shadow)] [--base-modal-width-sm:480px] [--base-modal-width-md:640px] [--base-modal-width-lg:800px] [--base-modal-width-xl:min(1080px,92vw)] max-h-[clamp(360px,80vh,920px)]',
-      closeOutside ? 'overflow-visible' : 'overflow-hidden',
+      'base-modal-panel relative flex w-[var(--base-modal-width,var(--base-modal-width-md))] flex-col rounded-panel border border-solid border-border bg-[var(--modal-surface-bg)] text-neutral-100 shadow-[var(--modal-surface-shadow)] [--base-modal-width-sm:480px] [--base-modal-width-md:640px] [--base-modal-width-lg:800px] [--base-modal-width-xl:min(1080px,92vw)] max-h-[clamp(360px,80vh,920px)]',
+      closeOutside ? 'overflow-visible max-w-[calc(100vw_-_128px)]' : 'overflow-hidden max-w-full',
       sizeClass,
       sizeStyleClass,
       contentClass
@@ -85,7 +85,7 @@ const sizeStyleClass = computed(() => {
       class="base-modal-close absolute z-2"
       :class="
         closeOutside
-          ? 'top-0 -right-12 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white max-[860px]:top-3 max-[860px]:right-3'
+          ? 'top-0 -right-12 size-9 rounded-full modal-close-fill [--modal-close-card:var(--modal-surface-bg)] text-white hover:text-white'
           : 'top-3.5 right-3.5'
       "
       :aria-label="$t('common.close')"
@@ -94,10 +94,10 @@ const sizeStyleClass = computed(() => {
     >
       <X :size="18" />
     </Button>
-    <header
-      v-if="$slots.header"
-      class="base-modal-header border-b border-solid border-neutral-100/8 pt-5 pr-14 pb-3 pl-6"
-    >
+    <div v-if="$slots.media" class="base-modal-media">
+      <slot name="media" />
+    </div>
+    <header v-if="$slots.header" class="base-modal-header pt-5 pr-14 pl-6">
       <slot name="header" />
     </header>
     <div class="base-modal-body min-h-0 flex-auto overflow-y-auto px-6 py-4">
@@ -105,7 +105,7 @@ const sizeStyleClass = computed(() => {
     </div>
     <footer
       v-if="$slots.footer"
-      class="base-modal-footer flex items-center justify-end gap-2 border-t border-solid border-neutral-100/8 px-6 pt-3 pb-4"
+      class="base-modal-footer flex items-center justify-end gap-2 border-t border-solid border-neutral-100/8 p-6"
     >
       <slot name="footer" />
     </footer>
