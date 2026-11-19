@@ -118,6 +118,20 @@ describe('PerformanceTestView Run reason', () => {
     expect(runReason(wrapper)).toBe('Choose a workflow first.')
   })
 
+  it('says to wait, not to choose, while the first imported workflow is copied in', async () => {
+    scopedInstallations.value = [
+      { id: 'b1', name: 'Build 1', sourceCategory: 'local', status: 'installed' }
+    ]
+    vi.mocked(window.api.importPerformanceTestWorkflow).mockReturnValue(new Promise(() => {}))
+    const wrapper = mountView()
+    wrapper.getComponent(PerformanceTestBuildMenu).vm.$emit('update:modelValue', 'b1')
+    wrapper.getComponent(PerformanceTestWorkflowMenu).vm.$emit('import')
+    await nextTick()
+
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
+    expect(runReason(wrapper)).toBe('Wait for the workflow to be ready.')
+  })
+
   function runWrap(wrapper: ReturnType<typeof mountView>) {
     return wrapper.get('.performance-test__run').element.closest('.tooltip-wrap')!
   }
