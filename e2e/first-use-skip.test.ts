@@ -36,7 +36,7 @@ test('ToS + Change surfaces the waffle menu; Skip Onboarding reveals Home @real-
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible('li.item', { timeout: 10_000 })
-  expect(await popup.clickByText('li.item', 'Skip Onboarding')).toBe(true)
+  expect(await popup.clickByText('li.item', 'Skip onboarding')).toBe(true)
 
   await ctx.panel.waitForVisible('[data-testid="home-view"]', { timeout: 10_000 })
 

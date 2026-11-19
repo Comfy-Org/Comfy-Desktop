@@ -96,6 +96,29 @@ function baseInstall(overrides: Partial<InstallationRecord> = {}): InstallationR
   } as InstallationRecord
 }
 
+function setStableTarget(tag: string): void {
+  vi.mocked(releaseCache.getEffectiveInfo).mockImplementation((_repo, channel) =>
+    channel === 'stable'
+      ? {
+          installedTag: 'unknown',
+          baseTag: tag,
+          commitsAhead: 0,
+          latestTag: tag,
+          releaseName: tag,
+          checkedAt: Date.now()
+        }
+      : {
+          installedTag: 'unknown',
+          commitSha: 'def5678cafebabe',
+          baseTag: tag,
+          commitsAhead: 40,
+          latestTag: 'def5678',
+          releaseName: `${tag}+40`,
+          checkedAt: Date.now()
+        }
+  )
+}
+
 describe('updateSections — update-comfyui action payload', () => {
   beforeEach(() => {
     vi.mocked(releaseCache.getEffectiveInfo).mockReset()
@@ -170,6 +193,55 @@ describe('updateSections — update-comfyui action payload', () => {
     )
     expect(action!.data?.isDowngrade).toBe(false)
     expect(action!.progressTitle).toBe('standalone.updatingTitle')
+  })
+
+  it('calls stable an update, not a downgrade, from a master build behind the stable tag', () => {
+    setStableTarget('v0.46.0')
+    const action = getUpdateAction(
+      baseInstall({
+        updateChannel: 'latest',
+        comfyVersion: { commit: 'abc1234', baseTag: 'v0.45.0', commitsAhead: 27 }
+      } as Partial<InstallationRecord>),
+      'stable'
+    )
+    expect(action!.data?.isDowngrade).toBe(false)
+    expect(action!.progressTitle).not.toBe('standalone.downgradingTitle')
+  })
+
+  it('calls stable an update when the base tag is older and commitsAhead is unknown', () => {
+    setStableTarget('v0.46.0')
+    const action = getUpdateAction(
+      baseInstall({
+        comfyVersion: { commit: 'abc1234', baseTag: 'v0.45.0', commitsAhead: undefined }
+      } as Partial<InstallationRecord>),
+      'stable'
+    )
+    expect(action!.data?.isDowngrade).toBe(false)
+    expect(action!.progressTitle).toBe('standalone.updatingTitle')
+  })
+
+  it('still calls stable a downgrade from a master build past the stable tag', () => {
+    setStableTarget('v0.46.0')
+    const action = getUpdateAction(
+      baseInstall({
+        updateChannel: 'latest',
+        comfyVersion: { commit: 'abc1234', baseTag: 'v0.46.0', commitsAhead: 3 }
+      } as Partial<InstallationRecord>),
+      'stable'
+    )
+    expect(action!.data?.isDowngrade).toBe(true)
+  })
+
+  it('calls stable a downgrade from a build whose base tag is newer than the stable tag', () => {
+    setStableTarget('v0.46.0')
+    const action = getUpdateAction(
+      baseInstall({
+        comfyVersion: { commit: 'abc1234', baseTag: 'v0.47.0', commitsAhead: 0 }
+      } as Partial<InstallationRecord>),
+      'stable'
+    )
+    expect(action!.data?.isDowngrade).toBe(true)
+    expect(action!.progressTitle).toBe('standalone.downgradingTitle')
   })
 
   it('still carries actionData.channel when switching channels (regression guard for lifecycle:705)', () => {

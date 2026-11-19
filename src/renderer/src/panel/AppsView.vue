@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AppWindow, Search } from '@lucide/vue'
+import { AppWindow, ArrowUpRight, Search } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
+import AppBadges from './AppBadges.vue'
+import CoverRotation from '../components/CoverRotation.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
+import { badgeDescriptionIds } from './appCardBadges'
 import type { AppCard } from '../types/ipc'
 
 type LoadState = 'loading' | 'ready' | 'failed'
 
-const SKELETON_CARD_COUNT = 8
+const SKELETON_CARD_COUNT = 7
 
 const { revisit = 0 } = defineProps<{ revisit?: number }>()
 
@@ -30,6 +34,9 @@ const query = ref('')
 const openApp = ref<AppCard | null>(null)
 const coversThatFailed = reactive(new Set<string>())
 const cardButtons = new Map<string, HTMLElement>()
+const keyboardFocusedId = ref<string | null>(null)
+const hoveredId = ref<string | null>(null)
+const badgeIdPrefix = useId()
 
 let lastOpenedId: string | null = null
 let stopClosedUpdates: (() => void) | null = null
@@ -53,12 +60,44 @@ async function loadApps(): Promise<void> {
   }
 }
 
+const RHYTHM_GRID_CLASS =
+  'm-0 grid list-none grid-cols-2 gap-3.5 p-0 @3xl:grid-cols-6 @5xl:grid-cols-12'
+
+function rhythmSpanClass(index: number): string {
+  const medium = index % 5 < 2 ? '@3xl:col-span-3' : '@3xl:col-span-2'
+  const wide = index % 7 < 3 ? '@5xl:col-span-4' : '@5xl:col-span-3'
+  return `${medium} ${wide}`
+}
+
 function rememberCard(id: string, element: unknown): void {
   if (element instanceof HTMLElement) cardButtons.set(id, element)
   else cardButtons.delete(id)
 }
 
+function badgeIdPrefixFor(app: AppCard): string {
+  return `${badgeIdPrefix}-${app.id}`
+}
+
+function badgesDescribing(app: AppCard): string | undefined {
+  return badgeDescriptionIds(badgeIdPrefixFor(app), app.badges)
+}
+
+function noteCardFocus(app: AppCard, event: FocusEvent): void {
+  const card = event.currentTarget
+  keyboardFocusedId.value =
+    card instanceof HTMLElement && card.matches(':focus-visible') ? app.id : null
+}
+
+function playsCover(app: AppCard): boolean {
+  return (
+    app.coverPlayback === 'always' ||
+    hoveredId.value === app.id ||
+    keyboardFocusedId.value === app.id
+  )
+}
+
 function open(app: AppCard): void {
+  hoveredId.value = null
   lastOpenedId = app.id
   openApp.value = app
 }
@@ -107,12 +146,15 @@ onBeforeUnmount(() => {
       data-testid="apps-view"
     >
       <header class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
-        <h1 class="m-0 font-display text-display font-semibold text-foreground">
+        <h1 class="m-0 text-display font-semibold tracking-[-0.055em] text-foreground">
           {{ t('sidebar.apps') }}
         </h1>
       </header>
 
-      <div class="mx-auto flex min-h-8 w-full max-w-300 items-center gap-2 px-10 py-3">
+      <div
+        v-if="state === 'loading' || (state === 'ready' && apps.length > 0)"
+        class="mx-auto flex min-h-8 w-full max-w-300 items-center gap-2 px-10 py-3"
+      >
         <div class="ml-auto w-[220px]">
           <BaseInput
             v-model="query"
@@ -128,20 +170,17 @@ onBeforeUnmount(() => {
       <div class="mx-auto w-full max-w-300 px-10 pb-10">
         <ul
           v-if="state === 'loading'"
-          class="m-0 grid list-none grid-cols-2 gap-3.5 p-0 @3xl:grid-cols-3 @5xl:grid-cols-4"
+          :class="RHYTHM_GRID_CLASS"
           aria-busy="true"
           data-testid="apps-loading"
         >
           <li
             v-for="card in SKELETON_CARD_COUNT"
             :key="card"
-            class="rounded-card bg-[rgb(29_29_29/0.72)] p-1"
+            class="min-w-0"
+            :class="rhythmSpanClass(card - 1)"
           >
-            <Skeleton class="aspect-[505/316] w-full rounded-control" />
-            <div class="flex flex-col gap-1.5 px-1.5 pt-3 pb-2.5">
-              <Skeleton class="h-3.5 w-1/2 rounded-min" />
-              <Skeleton class="h-3.5 w-4/5 rounded-min opacity-60" />
-            </div>
+            <Skeleton class="aspect-square w-full rounded-card" />
           </li>
         </ul>
 
@@ -166,14 +205,14 @@ onBeforeUnmount(() => {
           </Button>
         </div>
 
-        <div
+        <EmptyState
           v-else-if="apps.length === 0"
-          class="flex flex-col items-center justify-center gap-2 pt-24 text-center"
+          class="pt-24"
           data-testid="apps-empty"
-        >
-          <h2 class="m-0 text-heading font-semibold text-foreground">{{ t('apps.emptyTitle') }}</h2>
-          <p class="m-0 text-ui text-muted-foreground">{{ t('apps.emptyBody') }}</p>
-        </div>
+          :icon="AppWindow"
+          :title="t('apps.emptyTitle')"
+          :text="t('apps.emptyBody')"
+        />
 
         <p
           v-else-if="matchingApps.length === 0"
@@ -183,29 +222,35 @@ onBeforeUnmount(() => {
           {{ t('apps.noMatches', { query: query.trim() }) }}
         </p>
 
-        <ul
-          v-else
-          class="m-0 grid list-none grid-cols-2 gap-3.5 p-0 @3xl:grid-cols-3 @5xl:grid-cols-4"
-          data-testid="apps-grid"
-        >
-          <li v-for="app in matchingApps" :key="app.id" class="min-w-0">
+        <ul v-else :class="RHYTHM_GRID_CLASS" data-testid="apps-grid">
+          <li
+            v-for="(app, index) in matchingApps"
+            :key="app.id"
+            class="min-w-0"
+            :class="rhythmSpanClass(index)"
+          >
             <button
               :ref="(element) => rememberCard(app.id, element)"
               type="button"
-              class="group flex size-full cursor-pointer flex-col rounded-card border-0 bg-[rgb(29_29_29/0.72)] p-1 text-left outline-none transition-colors duration-150 hover:bg-card-hover focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+              class="group relative block aspect-square w-full cursor-pointer overflow-hidden rounded-card border-0 bg-[rgb(235_235_235/0.05)] p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              :aria-describedby="badgesDescribing(app)"
               :data-testid="`app-card-${app.id}`"
               @click="open(app)"
+              @focus="noteCardFocus(app, $event)"
+              @blur="keyboardFocusedId = null"
+              @mouseenter="hoveredId = app.id"
+              @mouseleave="hoveredId = null"
             >
               <span
-                class="relative block aspect-[505/316] w-full overflow-hidden rounded-control bg-[rgb(235_235_235/0.05)]"
+                class="absolute inset-0 block overflow-hidden transition-transform duration-600 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04] group-focus-visible:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100 motion-reduce:group-focus-visible:scale-100"
+                data-testid="app-card-picture"
               >
-                <img
-                  v-if="app.coverUrl && !coversThatFailed.has(app.id)"
-                  :src="app.coverUrl"
-                  alt=""
-                  loading="lazy"
-                  class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                  @error="coversThatFailed.add(app.id)"
+                <CoverRotation
+                  v-if="app.covers.length > 0 && !coversThatFailed.has(app.id)"
+                  :pictures="app.covers"
+                  :paused="!playsCover(app)"
+                  load-on-play
+                  @broken="coversThatFailed.add(app.id)"
                 />
                 <span
                   v-else
@@ -214,10 +259,38 @@ onBeforeUnmount(() => {
                 >
                   <AppWindow :size="28" :stroke-width="1.5" aria-hidden="true" />
                 </span>
+                <AppBadges
+                  v-if="app.badges?.length"
+                  :badges="app.badges"
+                  :description-id-prefix="badgeIdPrefixFor(app)"
+                  :revealed="keyboardFocusedId === app.id"
+                  class="absolute top-2 left-2 max-w-[calc(100%-1rem)]"
+                />
               </span>
-              <span class="flex min-w-0 flex-col px-1.5 pt-2.5 pb-1.5">
-                <span class="truncate text-ui font-medium text-foreground">{{ app.title }}</span>
-                <span class="truncate text-ui text-subtle-foreground">{{ app.description }}</span>
+              <span
+                class="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgb(0_0_0/0.7),rgb(0_0_0/0.55)_28%,transparent_60%)]"
+                aria-hidden="true"
+                data-testid="app-card-scrim"
+              />
+              <span
+                class="absolute top-3 right-3 grid size-8 scale-90 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-100 group-hover:opacity-100 group-hover:delay-100 group-focus-visible:scale-100 group-focus-visible:opacity-100 motion-reduce:scale-100 motion-reduce:transition-none"
+                aria-hidden="true"
+                data-testid="app-card-go"
+              >
+                <ArrowUpRight :size="16" :stroke-width="2.25" />
+              </span>
+              <span class="absolute inset-x-3.5 bottom-3 grid">
+                <span
+                  data-testid="app-card-name"
+                  class="truncate text-sm/[17px] font-semibold text-white transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] group-hover:-translate-y-4.5 group-focus-visible:-translate-y-4.5 motion-reduce:transition-none"
+                >
+                  {{ app.title }}
+                </span>
+                <span
+                  class="translate-y-1.5 self-end truncate text-xs/4 text-white/78 opacity-0 transition-[opacity,translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100 motion-reduce:translate-y-0 motion-reduce:transition-none"
+                >
+                  {{ app.description }}
+                </span>
               </span>
             </button>
           </li>

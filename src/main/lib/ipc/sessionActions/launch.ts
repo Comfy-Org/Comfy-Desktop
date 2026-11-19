@@ -50,6 +50,7 @@ import {
   resolveLauncherModelDirs,
   createSessionPath,
   buildLaunchEnv,
+  getAppVersion,
   checkRebootMarker,
   makeSendProgress,
   makeSendOutput,
@@ -106,6 +107,7 @@ import {
 } from '../../agentRequirementsLaunch'
 import type { PrefetchRequest } from '../../agentRequirementsLaunch'
 import { startAgentPrefetch } from '../../agentPrefetch'
+import { agentClientContext } from '../../agentClientContext'
 import {
   FRONTEND_PACKAGE,
   createAgentStartWatcher,
@@ -115,6 +117,7 @@ import {
   readFrontendPin,
   readOverrideState,
   reportAgentCoreFailure,
+  reportCacheRescued,
   reportOverrideDecision
 } from '../../agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from '../../agentRequirementsOverride'
@@ -165,7 +168,7 @@ import {
   writeCampaignRecord
 } from '../../coreBetaCampaignFlags'
 import { getIdClass } from '../../deviceId'
-import { outputDirOverride } from '../../outputFolders'
+import { launchFoldersOf, outputDirOverride } from '../../outputFolders'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
 export function desktopFeatureFlags(
@@ -180,6 +183,14 @@ export function desktopFeatureFlags(
     flags.enable_telemetry = 'true'
   }
   return flags
+}
+
+async function launchClientContext(): ReturnType<typeof agentClientContext> {
+  try {
+    return await agentClientContext(settings.get('telemetryEnabled') === true, getAppVersion())
+  } catch {
+    return undefined
+  }
 }
 
 function fullSha(value: unknown): string | null {
@@ -1411,7 +1422,8 @@ async function runLaunch(
           status: i18n.t('launch.agentRequirements.failed')
         })
         reportAgentCoreFailure(installationId, report, indexKind(settings.getMirrorConfig()))
-      }
+      },
+      (step) => reportCacheRescued(installationId, step, indexKind(settings.getMirrorConfig()))
     )
     if (abort.signal.aborted) {
       startHandedBack()
@@ -1539,9 +1551,11 @@ async function runLaunch(
     return { ok: false, message: i18n.t('errors.executableNotFound', { cmd: launchCmd.cmd ?? '' }) }
   }
 
+  const clientContext = await launchClientContext()
+
   if (launchCmd.skipPortWait) {
     const sendOutput = makeSendOutput(sender, sessionId)
-    const launchEnv = buildLaunchEnv(inst)
+    const launchEnv = buildLaunchEnv(inst, undefined, clientContext)
 
     const { logStream, execTap, hwTap, assetsTap, agentTap, tracker } = await guardLaunchSetup(
       () => {
@@ -1598,6 +1612,7 @@ async function runLaunch(
         mode,
         installationName: inst.name,
         coreBetaArgs: coreBeta.applied.map(toBetaArgView),
+        launchFolders: launchFoldersOf(inst, launchCmd),
         getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
         flushTelemetry: () => {
           execTap.flushSummary()
@@ -1833,7 +1848,7 @@ async function runLaunch(
   if (abort.signal.aborted) return { ok: false, cancelled: true }
 
   const sessionPath = createSessionPath()
-  const launchEnv = buildLaunchEnv(inst, sessionPath)
+  const launchEnv = buildLaunchEnv(inst, sessionPath, clientContext)
   const sendOutput = makeSendOutput(sender, sessionId)
 
   const { logStream, execTap, hwTap, assetsTap, agentTap, tracker } = await guardLaunchSetup(
@@ -2147,6 +2162,7 @@ async function runLaunch(
       mode,
       installationName: inst.name,
       coreBetaArgs: coreBeta.applied.map(toBetaArgView),
+      launchFolders: launchFoldersOf(inst, launchCmd),
       getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
       flushTelemetry: () => {
         execTap.flushSummary()

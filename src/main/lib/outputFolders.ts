@@ -1,6 +1,7 @@
 import fs from 'fs'
 import fsp from 'fs/promises'
 import type { Dirent } from 'fs'
+import os from 'os'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { ipcMain, nativeImage, net, protocol, shell } from 'electron'
@@ -9,16 +10,25 @@ import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import type { ComfyOutputFile } from '../apps/outputRequest'
 import { assetKind } from './assets'
+import { searchTerm } from './assetSearch'
 import { copyImageToClipboard } from './clipboardImage'
 import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
-import { installOutputDir } from './models'
-import { sourceMap } from './ipc/shared'
-import type { AssetSummary, LocalAssetListing } from '../../types/ipc'
+import { installInputDir, installOutputDir } from './models'
+import { _runningSessions, sourceMap } from './ipc/shared'
+import type {
+  AssetKind,
+  AssetSummary,
+  LocalAssetListing,
+  LocalAssetPageRequest,
+  OutputFolderPaths
+} from '../../types/ipc'
 
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
 
 const LIST_LOCAL_CHANNEL = 'assets:list-local'
+const FOLDERS_CHANNEL = 'assets:output-folders'
+const OPEN_FOLDER_CHANNEL = 'assets:open-output-folder'
 export const MAX_LOCAL_ASSETS = 500
 export const MAX_FOLDER_DEPTH = 6
 const THUMBNAIL_SIZE = 480
@@ -58,6 +68,50 @@ function outputDirFor(inst: InstallationRecord, sharedDir: string): string | nul
   return outputDirOverride(inst, sharedDir) ?? installOutputDir(inst.installPath)
 }
 
+export function sharedInputDir(): string {
+  return (settings.get('inputDir') as string | undefined) || settings.defaults.inputDir
+}
+
+function inputDirFor(inst: InstallationRecord): string | null {
+  if (!hasOutputFolder(inst)) return null
+  if ((inst.useSharedInput as boolean | undefined) !== false) return sharedInputDir()
+  return (inst.inputDir as string | undefined) || installInputDir(inst.installPath)
+}
+
+export interface ComfyFolders {
+  output: string | null
+  input: string | null
+}
+
+const NO_FOLDERS: ComfyFolders = { output: null, input: null }
+
+function lastArgValue(args: readonly string[], flag: string): string | null {
+  let value: string | undefined
+  for (const [i, arg] of args.entries()) {
+    if (arg === flag) value = args[i + 1]
+    else if (arg.startsWith(`${flag}=`)) value = arg.slice(flag.length + 1)
+  }
+  return value || null
+}
+
+export function launchFoldersOf(
+  inst: InstallationRecord,
+  launch: { args?: readonly string[]; skipSharedPaths?: boolean }
+): ComfyFolders {
+  if (launch.skipSharedPaths || !launch.args || !hasOutputFolder(inst)) return NO_FOLDERS
+  return {
+    output: lastArgValue(launch.args, '--output-directory') ?? installOutputDir(inst.installPath),
+    input: lastArgValue(launch.args, '--input-directory') ?? installInputDir(inst.installPath)
+  }
+}
+
+export function comfyFoldersOf(inst: InstallationRecord | null): ComfyFolders {
+  if (!inst) return { output: sharedOutputDir(), input: sharedInputDir() }
+  const running = _runningSessions.get(inst.id)
+  if (running) return running.launchFolders ?? NO_FOLDERS
+  return { output: outputDirFor(inst, sharedOutputDir()), input: inputDirFor(inst) }
+}
+
 async function realDir(dir: string): Promise<string | null> {
   const real = await fsp.realpath(dir).catch(() => null)
   if (!real) return null
@@ -84,6 +138,23 @@ async function findOutputFolders(): Promise<OutputFolders> {
   allowedRoots = all
   allowedRootsAt = Date.now()
   return { all, shared, ofBuild }
+}
+
+export async function outputFolderPaths(): Promise<OutputFolderPaths> {
+  const shared = sharedOutputDir()
+  const ofBuild: Record<string, string> = {}
+  for (const inst of await installations.list()) {
+    const dir = outputDirFor(inst, shared)
+    if (dir) ofBuild[inst.id] = dir
+  }
+  return { home: os.homedir(), shared, ofBuild }
+}
+
+export async function openOutputFolder(installationId?: string): Promise<boolean> {
+  const { shared, ofBuild } = await findOutputFolders()
+  const folder = installationId === undefined ? shared : ofBuild.get(installationId)
+  if (!folder) return false
+  return (await shell.openPath(folder)) === ''
 }
 
 export async function listOutputFolders(): Promise<string[]> {
@@ -145,6 +216,19 @@ export async function revealOutputFile(target: string): Promise<boolean> {
   if (!file) return false
   shell.showItemInFolder(file)
   return true
+}
+
+export async function openOutputFile(target: string): Promise<boolean> {
+  const file = await outputFilePath(target)
+  if (!file) return false
+  const opened = opensInApp(file) && (await shell.openPath(file)) === ''
+  if (!opened) shell.showItemInFolder(file)
+  return true
+}
+
+function opensInApp(file: string): boolean {
+  const kind = assetKind(file)
+  return kind !== null && SERVED_KINDS.has(kind) && path.extname(file).toLowerCase() !== '.svg'
 }
 
 export async function trashOutputFile(target: string): Promise<boolean> {
@@ -209,7 +293,46 @@ async function addMediaFacts(asset: AssetSummary): Promise<void> {
   Object.assign(asset, await mediaFactsFromFile(asset.id, asset.kind))
 }
 
-export async function listLocalAssets(installationId?: string): Promise<LocalAssetListing> {
+const LOCAL_KINDS: readonly AssetKind[] = ['image', 'video', 'audio', '3d']
+const FIRST_LOCAL_PAGE: LocalAssetPageRequest = {
+  offset: 0,
+  limit: MAX_LOCAL_ASSETS,
+  order: 'newest'
+}
+
+function isCount(value: unknown, min: number, max: number): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max
+}
+
+export function localPageRequest(value: unknown): LocalAssetPageRequest {
+  if (!value || typeof value !== 'object') return FIRST_LOCAL_PAGE
+  const { offset, limit, order, kind, search } = value as Record<string, unknown>
+  const knownKind = LOCAL_KINDS.find((known) => known === kind)
+  const term = searchTerm(search)
+  return isCount(offset, 0, Number.MAX_SAFE_INTEGER) &&
+    isCount(limit, 1, MAX_LOCAL_ASSETS) &&
+    (order === 'newest' || order === 'oldest') &&
+    (kind === undefined || knownKind) &&
+    term !== null
+    ? { offset, limit, order, ...(knownKind && { kind: knownKind }), ...(term && { search: term }) }
+    : FIRST_LOCAL_PAGE
+}
+
+function countKinds(assets: AssetSummary[]): LocalAssetListing['counts'] {
+  const counts = { all: assets.length, image: 0, video: 0, audio: 0, '3d': 0 }
+  for (const { kind } of assets) if (kind) counts[kind]++
+  return counts
+}
+
+function nameContains(search: string): (asset: AssetSummary) => boolean {
+  const term = search.toLowerCase()
+  return (asset) => asset.name.toLowerCase().includes(term)
+}
+
+export async function listLocalAssets(
+  installationId?: string,
+  page: LocalAssetPageRequest = FIRST_LOCAL_PAGE
+): Promise<LocalAssetListing> {
   const folders = await findOutputFolders()
   const folder = installationId === undefined ? folders.shared : folders.ofBuild.get(installationId)
   const files = folder ? await collectMediaFiles(folder) : []
@@ -220,14 +343,16 @@ export async function listLocalAssets(installationId?: string): Promise<LocalAss
     const modifiedMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0
     found.push(localSummary(file, stat.size, modifiedMs))
   })
-  const newest = found
-    .sort((a, b) => b.createdAt!.localeCompare(a.createdAt!))
-    .slice(0, MAX_LOCAL_ASSETS)
-  await runPool(newest, STATS_AT_ONCE, addMediaFacts)
-  return {
-    assets: newest,
-    truncated: found.length > MAX_LOCAL_ASSETS
-  }
+  const direction = page.order === 'oldest' ? 1 : -1
+  const named = page.search ? found.filter(nameContains(page.search)) : found
+  const matching = page.kind ? named.filter((asset) => asset.kind === page.kind) : named
+  const shown = matching
+    .sort(
+      (a, b) => direction * (a.createdAt!.localeCompare(b.createdAt!) || a.id.localeCompare(b.id))
+    )
+    .slice(page.offset, page.offset + page.limit)
+  await runPool(shown, STATS_AT_ONCE, addMediaFacts)
+  return { assets: shown, total: matching.length, counts: countKinds(named) }
 }
 
 function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeImage | null {
@@ -239,15 +364,23 @@ function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeI
   }
 }
 
-async function makeThumbnail(file: string, sizeBytes: number): Promise<Buffer | null> {
-  const size = { width: THUMBNAIL_SIZE, height: THUMBNAIL_SIZE }
+async function makeThumbnail(
+  file: string,
+  sizeBytes: number,
+  longSide: number
+): Promise<Buffer | null> {
+  const size = { width: longSide, height: longSide }
   const image =
     process.platform === 'linux'
       ? linuxThumbnailSource(file, sizeBytes)
       : await nativeImage.createThumbnailFromPath(file, size).catch(() => null)
-  if (!image || image.isEmpty()) return null
+  return image ? scaledJpeg(image, longSide) : null
+}
+
+function scaledJpeg(image: Electron.NativeImage, longSide: number): Buffer | null {
+  if (image.isEmpty()) return null
   const { width, height } = image.getSize()
-  const scale = Math.min(1, THUMBNAIL_SIZE / Math.max(width, height))
+  const scale = Math.min(1, longSide / Math.max(width, height))
   const scaled =
     scale < 1
       ? image.resize({
@@ -271,15 +404,15 @@ async function fewAtATime<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
-async function thumbnailFor(file: string): Promise<Buffer | null> {
+async function thumbnailFor(file: string, longSide = THUMBNAIL_SIZE): Promise<Buffer | null> {
   const stat = await fsp.stat(file).catch(() => null)
   if (!stat) return null
-  const key = `${file}\n${stat.mtimeMs}`
+  const key = `${file}\n${stat.mtimeMs}\n${longSide}`
   const cached = thumbnails.get(key)
   if (cached) return cached
   let making = thumbnailsInFlight.get(key)
   if (!making) {
-    making = fewAtATime(() => makeThumbnail(file, stat.size))
+    making = fewAtATime(() => makeThumbnail(file, stat.size, longSide))
       .then((made) => {
         if (made) {
           thumbnails.set(key, made)
@@ -300,6 +433,22 @@ async function thumbnailFor(file: string): Promise<Buffer | null> {
     return await Promise.race([making, tooSlow])
   } finally {
     clearTimeout(timer)
+  }
+}
+
+function jpegDataUrl(jpeg: Buffer | null): string | null {
+  return jpeg ? `data:image/jpeg;base64,${jpeg.toString('base64')}` : null
+}
+
+export async function thumbnailDataUrl(file: string, longSide: number): Promise<string | null> {
+  return jpegDataUrl(await thumbnailFor(file, longSide))
+}
+
+export function thumbnailDataUrlFromBytes(bytes: Uint8Array, longSide: number): string | null {
+  try {
+    return jpegDataUrl(scaledJpeg(nativeImage.createFromBuffer(Buffer.from(bytes)), longSide))
+  } catch {
+    return null
   }
 }
 
@@ -356,7 +505,14 @@ export function registerOutputFilesScheme(): void {
 
 export function registerOutputFolderHandlers(): void {
   protocol.handle(OUTPUT_FILES_SCHEME, serveOutputFile)
-  ipcMain.handle(LIST_LOCAL_CHANNEL, (_event, installationId: unknown) =>
-    listLocalAssets(typeof installationId === 'string' ? installationId : undefined)
+  ipcMain.handle(FOLDERS_CHANNEL, () => outputFolderPaths())
+  ipcMain.handle(OPEN_FOLDER_CHANNEL, (_event, installationId: unknown) =>
+    openOutputFolder(typeof installationId === 'string' ? installationId : undefined)
+  )
+  ipcMain.handle(LIST_LOCAL_CHANNEL, (_event, installationId: unknown, page: unknown) =>
+    listLocalAssets(
+      typeof installationId === 'string' ? installationId : undefined,
+      localPageRequest(page)
+    )
   )
 }

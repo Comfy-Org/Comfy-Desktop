@@ -56,6 +56,7 @@ import {
   reapOrphanedAgentUv
 } from './agentRequirementsLaunch'
 import { installFilteredRequirementsDetailed, runUvPipDetailed } from './pip'
+import * as telemetry from './telemetry'
 import type * as ChildProcessModule from 'child_process'
 
 const alive = (pid: number): boolean => {
@@ -66,6 +67,12 @@ const alive = (pid: number): boolean => {
     return false
   }
 }
+
+const reapedEvents = (): unknown[] =>
+  vi
+    .mocked(telemetry.emit)
+    .mock.calls.filter(([event]) => event === 'comfy.desktop.agent_requirements_orphan_reaped')
+    .map(([, props]) => props)
 
 const comm = (pid: number): string => {
   try {
@@ -101,6 +108,9 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
 
   beforeEach(() => {
     Object.assign(fakePs, { answer: null, fails: null, calls: 0, inFlight: 0, mostInFlight: 0 })
+    vi.spyOn(telemetry, 'emit')
+      .mockClear()
+      .mockImplementation((() => {}) as unknown as typeof telemetry.emit)
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-uv-reaper-'))
     fakeUv = path.join(dir, 'bin', 'uv')
     fs.mkdirSync(path.dirname(fakeUv))
@@ -120,11 +130,31 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
   it('kills the process group of a uv a killed Desktop left running, and removes its record', async () => {
     const { pid, startedAt } = await start(fakeUv, ['60'], 'uv')
     const file = record(pid, startedAt)
+    record(2 ** 22 + 1, Date.now() - 2 * 60 * 60_000)
 
     await reapOrphanedAgentUv(dir)
 
     expect(alive(pid), 'the orphan no longer holds the environment').toBe(false)
     expect(fs.existsSync(file)).toBe(false)
+    expect(reapedEvents(), 'the stale record next to it killed nothing').toEqual([{ killed: 1 }])
+  })
+
+  it('does not count a uv that outlived the kill, and keeps its record for a later start', async () => {
+    const { pid, startedAt } = await start(fakeUv, ['60'], 'uv')
+    const file = record(pid, startedAt)
+    const realKill = process.kill.bind(process)
+    const kill = vi
+      .spyOn(process, 'kill')
+      .mockImplementation((target, signal) => (signal === 0 ? realKill(target, 0) : true))
+    try {
+      await reapOrphanedAgentUv(dir)
+    } finally {
+      kill.mockRestore()
+    }
+
+    expect(alive(pid)).toBe(true)
+    expect(fs.existsSync(file)).toBe(true)
+    expect(reapedEvents()).toEqual([])
   })
 
   it.each([
@@ -139,6 +169,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
 
     expect(alive(pid), 'a recycled pid is someone else’s process').toBe(true)
     expect(fs.existsSync(file)).toBe(false)
+    expect(reapedEvents(), 'nothing was killed, so nothing is reported').toEqual([])
   })
 
   it('removes a corrupt record without signalling anything, even when the pid looks like uv', async () => {
@@ -158,6 +189,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
         'pid 0 or -1 signals a whole process group, and 1 is init'
       ).toEqual([])
       expect(files.filter((file) => fs.existsSync(file))).toEqual([])
+      expect(reapedEvents()).toEqual([])
     } finally {
       kill.mockRestore()
       fakePs.answer = null
@@ -171,6 +203,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
 
     expect(fakePs.calls, 'the real ps was asked').toBe(1)
     expect(fs.existsSync(file)).toBe(false)
+    expect(reapedEvents()).toEqual([])
   })
 
   it.each([
@@ -188,6 +221,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
 
         expect(fs.existsSync(file), 'an uncertain check proves nothing').toBe(true)
         expect(kill).not.toHaveBeenCalled()
+        expect(reapedEvents()).toEqual([])
       } finally {
         kill.mockRestore()
       }
@@ -201,6 +235,7 @@ describe.skipIf(process.platform === 'win32')('reapOrphanedAgentUv', { timeout: 
 
     expect(fakePs.calls, 'no agent uv runs that long').toBe(0)
     expect(fs.existsSync(file)).toBe(false)
+    expect(reapedEvents()).toEqual([])
   })
 
   it('checks every record at once, so a hold waits on one ps bound however many are stuck', async () => {

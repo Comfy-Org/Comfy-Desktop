@@ -311,6 +311,40 @@ describe('resolveLocalVersion', () => {
     })
   })
 
+  it('keeps the ancestor tag for a master build the latest tag already contains (v0.45.0+27, not v0.46.0)', async () => {
+    mockedFindNearestTag.mockImplementation(async (_repo, ref) => {
+      if (ref === 'abc1234') return 'v0.45.0'
+      if (ref === 'v0.46.0') return 'v0.46.0'
+      if (ref === 'v0.46.0~1') return 'v0.45.0'
+      return undefined
+    })
+    mockedFindLatestVersionTag.mockResolvedValue('v0.46.0')
+    mockedCountCommitsAhead.mockImplementation(async (_repo, base, target) => {
+      if (base === 'v0.45.0' && target === 'abc1234') return 27
+      if (base === 'v0.45.0' && target === 'v0.46.0') return 54
+      return undefined
+    })
+    mockedIsAncestorOf.mockImplementation(async (_repo, ancestor, descendant) => {
+      if (ancestor === 'v0.45.0' && descendant === 'v0.46.0') return true
+      if (ancestor === 'abc1234' && descendant === 'v0.46.0') return true
+      return false
+    })
+    mockedCountUniqueCommits.mockImplementation(async (_repo, ref1, ref2) => {
+      if (ref1 === 'v0.46.0' && ref2 === 'abc1234') return 27
+      if (ref1 === 'abc1234' && ref2 === 'v0.46.0') return 0
+      return undefined
+    })
+
+    const result = await resolveLocalVersion('/repo', 'abc1234')
+    expect(result).toEqual({
+      commit: 'abc1234',
+      baseTag: 'v0.45.0',
+      commitsAhead: 27,
+      baseTagVerified: true
+    })
+    expect(mockedFindMergeBase).not.toHaveBeenCalled()
+  })
+
   it('uses fallbackTag when no git tags exist', async () => {
     mockedFindNearestTag.mockResolvedValue(undefined)
     mockedFindLatestVersionTag.mockResolvedValue(undefined)

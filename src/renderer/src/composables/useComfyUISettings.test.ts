@@ -1,7 +1,7 @@
 import { createTestingPinia } from '@pinia/testing'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { effectScope, nextTick, ref, type Ref } from 'vue'
+import { effectScope, isProxy, nextTick, ref, type Ref } from 'vue'
 
 vi.mock('vue-i18n', async (importOriginal) =>
   (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
@@ -475,6 +475,29 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     scope.stop()
   })
 
+  it('stop: a running build still offers Stop and stops it when its first details request fails', async () => {
+    const api = installMockApi({
+      getDetailSections: vi.fn().mockRejectedValue(new Error('details failed'))
+    })
+    markRunning('a', 'A')
+    dialogsSpies.confirm.mockResolvedValue('primary')
+    const { composable, scope } = mountComposable(makeInstall('a', 'A'))
+    await nextTick()
+    await Promise.resolve()
+    await Promise.resolve()
+    await nextTick()
+
+    expect(composable.error.value).toBe('details failed')
+    expect(composable.sectionsFresh.value).toBe(false)
+    const stop = composable.pinBottomActions.value.find((action) => action.id === 'stop')
+    expect(composable.pinBottomActions.value.map((action) => action.id)).toEqual(['stop'])
+
+    await composable.runAction(stop!)
+
+    expect(api.stopComfyUI).toHaveBeenCalledExactlyOnceWith('a')
+    scope.stop()
+  })
+
   it('stop: does not stop the backend or dismiss the preview when the confirm is cancelled', async () => {
     const api = installMockApi()
     markRunning('a', 'A')
@@ -673,6 +696,56 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     expect(api.stopComfyUI).not.toHaveBeenCalled()
     expect(api.runAction).toHaveBeenCalledTimes(1)
     expect(api.runAction).toHaveBeenCalledWith('a', 'update-comfyui', undefined)
+    scope.stop()
+  })
+
+  it('sends a channel card action read from the loaded sections as plain data Electron can clone (DESK-398)', async () => {
+    const updateAction = {
+      id: 'update-comfyui',
+      label: 'Update Now',
+      showProgress: true,
+      data: { channel: 'latest', isDowngrade: false },
+      confirm: { message: 'Update?' }
+    } as ActionDef
+    const api = installMockApi({
+      getDetailSections: vi.fn().mockResolvedValue([
+        {
+          tab: 'update',
+          title: 'Update Channel',
+          fields: [
+            {
+              id: 'updateChannel',
+              label: 'Channel',
+              editType: 'channel-cards',
+              value: 'latest',
+              options: [{ value: 'latest', label: 'Latest', data: { actions: [updateAction] } }]
+            }
+          ]
+        } as unknown as DetailSection
+      ]),
+      runAction: vi.fn().mockResolvedValue({ ok: true })
+    })
+    dialogsSpies.confirm.mockResolvedValue('primary')
+    const onShowProgress = vi.fn()
+    const { composable, scope } = mountComposable(makeInstall('a', 'A'), onShowProgress)
+    await nextTick()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const field = composable.sections.value[0]!.fields![0] as unknown as {
+      options: { data: { actions: ActionDef[] } }[]
+    }
+    const cardAction = field.options[0]!.data.actions[0]!
+    expect(isProxy(cardAction.data)).toBe(true)
+
+    await composable.runAction(cardAction)
+    const opts = onShowProgress.mock.calls[0]?.[0] as ShowProgressOpts
+    await opts.apiCall()
+
+    const sent = api.runAction.mock.calls[0]![2] as Record<string, unknown>
+    expect(isProxy(sent)).toBe(false)
+    expect(structuredClone(sent)).toEqual({ channel: 'latest', isDowngrade: false })
+    expect(isProxy(opts.actionData)).toBe(false)
     scope.stop()
   })
 

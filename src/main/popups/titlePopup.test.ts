@@ -136,7 +136,19 @@ describe('buildTitlePopupMenuItems', () => {
     const entry = makeEntry({ firstUseMode: 'post-consent' })
     const items = buildTitlePopupMenuItems(entry)
     expect(items).toHaveLength(1)
-    expect(items[0]).toMatchObject({ id: 'skip-onboarding' })
+    expect(items[0]).toMatchObject({ id: 'skip-onboarding', label: 'Skip onboarding' })
+  })
+
+  it('labels the build window menu in sentence case', () => {
+    const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
+    expect(items.flatMap((item) => (item.label ? [item.label] : []))).toEqual([
+      'Performance tests',
+      'Benchmarks',
+      'Desktop Settings',
+      'Reset zoom (144%)',
+      'Close window',
+      'Quit Desktop'
+    ])
   })
 
   it('the Desktop window menu holds only Performance tests and Benchmarks, with icons', () => {
@@ -163,7 +175,7 @@ describe('buildTitlePopupMenuItems', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1' }))
     expect(items.some((item) => item.icon)).toBe(false)
     expect(items[0]).toMatchObject({
-      label: 'Performance Tests',
+      label: 'Performance tests',
       labelKey: 'fileMenu.performanceTest'
     })
   })
@@ -215,7 +227,7 @@ describe('buildTitlePopupMenuItems', () => {
     const resetZoom = zoomed.find((i) => i.id === 'reset-zoom')
     expect(resetZoom).toBeDefined()
     expect(resetZoom).toMatchObject({
-      label: 'Reset Zoom (144%)',
+      label: 'Reset zoom (144%)',
       labelKey: 'fileMenu.resetZoom',
       labelParams: { percent: 144 }
     })

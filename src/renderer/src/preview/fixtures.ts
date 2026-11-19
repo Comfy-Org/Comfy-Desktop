@@ -280,19 +280,19 @@ export const APP_CARDS: AppCard[] = [
     id: 'image-upscaler',
     title: 'Image upscaler',
     description: 'Make a small picture four times larger without losing detail.',
-    coverUrl: null
+    covers: []
   },
   {
     id: 'background-remover',
     title: 'Background remover',
     description: 'Cut a subject out of its background in one step.',
-    coverUrl: null
+    covers: []
   },
   {
     id: 'sketch-to-image',
     title: 'Sketch to image',
     description: 'Turn a rough drawing into a finished picture.',
-    coverUrl: null
+    covers: []
   }
 ]
 

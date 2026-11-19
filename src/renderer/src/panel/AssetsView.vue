@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
+import { refDebounced, useLocalStorage, useResizeObserver, useScroll } from '@vueuse/core'
 import { DropdownMenuRadioGroup, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import {
   Box,
@@ -11,13 +11,14 @@ import {
   Copy,
   Download,
   Ellipsis,
+  ExternalLink,
   File,
-  FolderOpen,
-  Laptop,
+  Folder,
   LayoutGrid,
   LayoutDashboard,
   Music,
   RefreshCw,
+  ScanSearch,
   Search,
   Play,
   Trash2
@@ -54,7 +55,9 @@ import type {
   AssetSummary,
   CloudAssetLookup,
   CloudAssetPage,
-  Installation
+  Installation,
+  LocalAssetListing,
+  OutputFolderPaths
 } from '../types/ipc'
 import type { ContextMenuItem } from '../types/context-menu'
 
@@ -89,6 +92,8 @@ const SKELETON_COUNT = 8
 const CLOUD_PAGE_SIZES = [50, 100, 200] as const
 const DEFAULT_PAGE_SIZE = 100
 const PAGE_CACHE_TTL_MS = 30 * 60_000
+const SEARCH_DEBOUNCE_MS = 300
+const MAX_SEARCH_LENGTH = 200
 const PREFETCH_DEADLINE_MS = 1000
 const NAME_TOOLTIP_DELAY_MS = 600
 const MIN_CARD_WIDTH = 240
@@ -126,6 +131,10 @@ void dashboardScope.initialize()
 
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
+const listedSearch = refDebounced(
+  computed(() => [...searchQuery.value.trim()].slice(0, MAX_SEARCH_LENGTH).join('')),
+  SEARCH_DEBOUNCE_MS
+)
 const signingIn = ref(false)
 const downloading = ref(new Set<string>())
 const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
@@ -133,6 +142,7 @@ const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newes
 const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
 const searchOpen = ref(false)
+const placePickerOpen = ref(false)
 const toolbarRow = useTemplateRef<HTMLElement>('toolbarRow')
 const toolbarCompactness = ref(0)
 const SEARCH_AS_ICON = 1
@@ -145,10 +155,10 @@ const pendingFocus = ref<string | null>(focusName)
 const focusMiss = ref<{ name: string; checked: boolean } | null>(null)
 const lookedUpDetail = ref<GalleryAsset | null>(null)
 const detailKey = ref<string | null>(null)
-const truncated = ref(false)
 const pageSize = ref(DEFAULT_PAGE_SIZE)
 const currentPage = ref(1)
-const cloudTotal = ref(0)
+const assetTotal = ref(0)
+const localCounts = ref<LocalAssetListing['counts'] | null>(null)
 const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 
@@ -252,18 +262,89 @@ const selectedBuild = computed<AssetBuild | null>(() => {
   )
 })
 
+watch(selectedBuild, (build) => {
+  if (!build) placePickerOpen.value = false
+})
+
 function choosePlace(id: string): void {
   pickedPlace.value = id
   focusMiss.value = null
   savedPlace.value = id
 }
 
-function buildStatusLabel({ cloud, computer, state }: AssetBuild): string {
-  if (computer) return t('assets.outputFolder')
-  return t('assets.buildStatus', {
-    where: t(cloud ? 'assets.buildWhere.cloud' : 'assets.buildWhere.local'),
-    state: t(`assets.buildState.${state}`)
-  })
+const placeGroups = computed(() =>
+  (['cloud', 'computer'] as const)
+    .map((id) => ({
+      id,
+      label: t(`assets.placeGroup.${id}`),
+      options: assetBuilds.value.filter((option) => option.cloud === (id === 'cloud'))
+    }))
+    .filter((group) => group.options.length > 0)
+)
+
+const outputFolders = ref<OutputFolderPaths | null>(null)
+const outputFoldersLoaded = ref(false)
+let outputFoldersRequest = 0
+
+watch(
+  () => localBuilds.value.map((build) => build.id).join('\n'),
+  async () => {
+    const request = ++outputFoldersRequest
+    const folders = await window.api.listOutputFolders().catch(() => null)
+    if (request !== outputFoldersRequest) return
+    outputFolders.value = folders
+    outputFoldersLoaded.value = true
+  },
+  { immediate: true }
+)
+
+function folderPathOf({ build, computer }: AssetBuild): string | null {
+  const folders = outputFolders.value
+  if (!folders) return null
+  return (computer ? folders.shared : folders.ofBuild[build.id]) ?? null
+}
+
+const SHORT_PATH_LENGTH = 34
+
+function homePath(folder: string): string {
+  const home = outputFolders.value?.home
+  if (!home) return folder
+  const rest = folder.slice(home.length)
+  return folder.startsWith(home) && (rest === '' || rest[0] === '/' || rest[0] === '\\')
+    ? `~${rest}`
+    : folder
+}
+
+function shortPath(folder: string): string {
+  const shown = homePath(folder)
+  if (shown.length <= SHORT_PATH_LENGTH) return shown
+  const separator = shown.includes('\\') && !shown.includes('/') ? '\\' : '/'
+  const parts = shown.split(separator)
+  return parts.length > 3
+    ? [parts[0], '…', ...parts.slice(-2)].join(separator)
+    : `…${shown.slice(-SHORT_PATH_LENGTH)}`
+}
+
+function placeSubtitle(option: AssetBuild): string | null {
+  if (option.cloud) return t(`assets.buildState.${option.state}`)
+  if (!outputFoldersLoaded.value) return null
+  const folder = folderPathOf(option)
+  return folder ? shortPath(folder) : ''
+}
+
+const revealFolderLabel = computed(() => t(revealInFolderKey(window.api.platform)))
+
+async function openPlaceFolder(option: AssetBuild): Promise<void> {
+  placePickerOpen.value = false
+  const opened = await window.api
+    .openOutputFolder(option.computer ? undefined : option.build.id)
+    .catch(() => false)
+  if (!opened) {
+    await modal.alert({
+      title: t('assets.openFolderFailed'),
+      message: folderPathOf(option) ?? option.build.name
+    })
+  }
 }
 
 const kinds: KindFilter[] = ['all', 'image', 'video', '3d', 'audio']
@@ -284,22 +365,12 @@ function cardKey(asset: GalleryAsset): string {
   return `${asset.source}:${asset.id}`
 }
 
-const searchedAssets = computed(() => {
-  const query = searchQuery.value.trim().toLowerCase()
-  return query
-    ? assets.value.filter((asset) => asset.name.toLowerCase().includes(query))
-    : assets.value
-})
-
-const pageCount = computed(() => Math.max(1, Math.ceil(cloudTotal.value / pageSize.value)))
-const pagedCloud = computed(() => !!selectedBuild.value?.cloud && pageCount.value > 1)
-const showPagination = computed(() => !!selectedBuild.value?.cloud && cloudTotal.value > 0)
+const pageCount = computed(() => Math.max(1, Math.ceil(assetTotal.value / pageSize.value)))
+const showPagination = computed(() => !!selectedBuild.value && assetTotal.value > 0)
 
 function kindCount(kind: KindFilter): number | undefined {
   if (selectedBuild.value?.cloud) return undefined
-  return kind === 'all'
-    ? searchedAssets.value.length
-    : searchedAssets.value.filter((asset) => asset.kind === kind).length
+  return localCounts.value?.[kind]
 }
 
 const kindOptions = computed(() =>
@@ -335,7 +406,7 @@ watch(
 )
 
 const visibleAssets = computed(() => {
-  const filtered = searchedAssets.value.filter(
+  const filtered = assets.value.filter(
     (asset) => kindFilter.value === 'all' || asset.kind === kindFilter.value
   )
   const direction = sortOrder.value === 'newest' ? -1 : 1
@@ -414,9 +485,6 @@ interface EmptyState {
 
 const emptyState = computed<EmptyState>(() => {
   if (failed.value) return { title: t('assets.loadFailed'), body: '' }
-  if (assets.value.length > 0 && pagedCloud.value) {
-    return { title: t('assets.noMatchesOnPage'), body: t('assets.noMatchesOnPageHint') }
-  }
   const noMatches = { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
   if (assets.value.length > 0) return noMatches
   if (!authStore.isSignedIn && selectedBuild.value?.cloud) {
@@ -429,7 +497,7 @@ const emptyState = computed<EmptyState>(() => {
   if (selectedBuild.value?.cloud && !cloudBuild.value) {
     return { title: t('assets.noCloudBuildTitle'), body: t('assets.noCloudBuildBody') }
   }
-  if (selectedBuild.value?.cloud && kindFilter.value !== 'all') return noMatches
+  if (kindFilter.value !== 'all' || listedSearch.value) return noMatches
   return {
     title: t('assets.emptyTitle'),
     body: t('assets.emptyBody')
@@ -450,7 +518,7 @@ const pageCursors = new Map<number, string>()
 
 function resetCloudPageNumbers(): void {
   pageCursors.clear()
-  cloudTotal.value = 0
+  assetTotal.value = 0
   cloudTotalIsLowerBound.value = false
 }
 
@@ -461,15 +529,15 @@ function resetCloudPaging(): void {
 }
 
 function recordCloudPage(page: CloudAssetPage, pageNumber: number): void {
-  if (page.total !== null && (!page.nextCursor || cloudTotal.value === 0)) {
-    cloudTotal.value = page.total
+  if (page.total !== null && (!page.nextCursor || assetTotal.value === 0)) {
+    assetTotal.value = page.total
     cloudTotalIsLowerBound.value = page.totalIsLowerBound === true
   }
   if (!page.nextCursor) return
   pageCursors.set(pageNumber + 1, page.nextCursor)
   const minimum = pageNumber * pageSize.value + 1
-  if (minimum > cloudTotal.value) {
-    cloudTotal.value = minimum
+  if (minimum > assetTotal.value) {
+    assetTotal.value = minimum
     cloudTotalIsLowerBound.value = true
   }
 }
@@ -477,7 +545,16 @@ function recordCloudPage(page: CloudAssetPage, pageNumber: number): void {
 function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage> {
   const kind = kindFilter.value === 'all' ? undefined : kindFilter.value
   const after = pageCursors.get(pageNumber)
-  const key = [loadKey.value, cloudId, sortOrder.value, kind, pageSize.value, pageNumber].join('\n')
+  const search = listedSearch.value || undefined
+  const key = JSON.stringify([
+    loadKey.value,
+    cloudId,
+    sortOrder.value,
+    kind,
+    search,
+    pageSize.value,
+    pageNumber
+  ])
   const cached = pageCache.get(key)
   if (cached && Date.now() - cached.savedAt < PAGE_CACHE_TTL_MS) return cached.page
   for (const replacedKey of pagesInFlight.keys()) pageCache.delete(replacedKey)
@@ -488,7 +565,8 @@ function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage>
       limit: pageSize.value,
       order: sortOrder.value,
       ...(after && { after }),
-      kind
+      kind,
+      search
     })
     .then((listed) => listed ?? Promise.reject(new Error('a newer page replaced this one')))
   pageCache.set(key, { savedAt: Date.now(), page })
@@ -501,6 +579,17 @@ function cloudPage(cloudId: string, pageNumber: number): Promise<CloudAssetPage>
     if (pageCache.get(key)?.page === page) pageCache.delete(key)
   })
   return page
+}
+
+function localPage(selected: AssetBuild, pageNumber: number): Promise<LocalAssetListing> {
+  const kind = kindFilter.value === 'all' ? undefined : kindFilter.value
+  return window.api.listLocalAssets(selected.computer ? undefined : selected.build.id, {
+    offset: (pageNumber - 1) * pageSize.value,
+    limit: pageSize.value,
+    order: sortOrder.value,
+    kind,
+    search: listedSearch.value || undefined
+  })
 }
 
 function prefetchPage(cloudId: string, pageNumber: number): void {
@@ -539,7 +628,6 @@ async function loadAssets(userAsked = false): Promise<void> {
   const selected = selectedBuild.value
   const cloud = selected?.cloud ? cloudBuild.value : null
   failed.value = false
-  truncated.value = false
   cloudScanLimit.value = undefined
   if (!selected || (selected.cloud && (!cloud || !authStore.isSignedIn))) {
     assets.value = []
@@ -557,13 +645,18 @@ async function loadAssets(userAsked = false): Promise<void> {
     const pageNumber = currentPage.value
     const wanted = pendingFocus.value ?? focusMiss.value?.name
     const [listed, lookup] = await Promise.all([
-      cloud
-        ? cloudPage(cloud.id, pageNumber)
-        : window.api.listLocalAssets(selected.computer ? undefined : selected.build.id),
+      cloud ? cloudPage(cloud.id, pageNumber) : localPage(selected, pageNumber),
       cloud && wanted ? lookUpCloudAsset(cloud.id, wanted) : null
     ])
-    if (current !== requestId || (cloud && pageNumber !== currentPage.value)) return
-    if ('total' in listed) {
+    if (current !== requestId || pageNumber !== currentPage.value) return
+    if ('counts' in listed) {
+      localCounts.value = listed.counts
+      assetTotal.value = listed.total
+      if (pageNumber > pageCount.value) {
+        currentPage.value = pageCount.value
+        return
+      }
+    } else {
       if (pageNumber > 1 && listed.total === null && !listed.nextCursor) {
         resetCloudPaging()
         currentPage.value = 1
@@ -579,7 +672,6 @@ async function loadAssets(userAsked = false): Promise<void> {
       cloudScanLimit.value = listed.scanLimit
     }
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
-    truncated.value = 'truncated' in listed && listed.truncated
     if (cloud && pendingFocus.value && pendingFocus.value !== wanted) {
       void loadAssets(userAsked)
       return
@@ -619,25 +711,28 @@ const loadKey = computed(() => {
 const listedCloudId = computed(() =>
   selectedBuild.value?.cloud ? cloudBuild.value?.id : undefined
 )
-const cloudQuery = computed(() =>
-  selectedBuild.value?.cloud ? [sortOrder.value, kindFilter.value, pageSize.value].join('\n') : ''
+const listQuery = computed(() =>
+  selectedBuild.value
+    ? [sortOrder.value, kindFilter.value, listedSearch.value, pageSize.value].join('\n')
+    : ''
 )
 
 watch([loadKey, listedCloudId], () => {
   resetCloudPaging()
+  localCounts.value = null
   currentPage.value = 1
   focusMiss.value = null
   lookedUpDetail.value = null
   detailKey.value = null
 })
-watch(cloudQuery, () => {
+watch(listQuery, () => {
   resetCloudPageNumbers()
   currentPage.value = 1
 })
 let reloadAskedByUser = false
 
 watch(
-  [loadKey, listedCloudId, cloudQuery, currentPage],
+  [loadKey, listedCloudId, listQuery, currentPage],
   () => {
     scrollToTop()
     assets.value = []
@@ -731,6 +826,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
     savedIn: isLocal(asset) ? folderOf(asset.id) : null,
+    mainAction: isLocal(asset) ? null : 'download',
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
@@ -810,17 +906,51 @@ function folderOf(file: string): string {
   return file.slice(0, Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')))
 }
 
-function reveal(asset: GalleryAsset): void {
-  void window.api.revealAsset(asset.source, asset.id)
+async function reveal(asset: GalleryAsset): Promise<void> {
+  const shown = await window.api.revealAsset(asset.source, asset.id).catch(() => false)
+  if (!shown) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
+}
+
+const OPENS_IN_APP: readonly (AssetKind | null)[] = ['image', 'video', 'audio']
+
+function mainAction(asset: GalleryAsset): 'download' | 'open' | null {
+  if (!isLocal(asset)) return 'download'
+  const vector = asset.name.toLowerCase().endsWith('.svg')
+  return OPENS_IN_APP.includes(asset.kind) && !vector ? 'open' : null
+}
+
+async function openLocally(asset: GalleryAsset): Promise<void> {
+  const opened = await window.api.openAsset(asset.source, asset.id).catch(() => false)
+  if (!opened) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
+}
+
+function cardTool(asset: GalleryAsset) {
+  const action = mainAction(asset)
+  if (action === 'open') {
+    return { id: 'open-file', label: t('assets.open'), icon: ExternalLink, run: openLocally }
+  }
+  if (action === null) {
+    return {
+      id: 'reveal',
+      label: t(revealInFolderKey(window.api.platform)),
+      icon: ScanSearch,
+      run: reveal
+    }
+  }
+  return { id: 'download', label: t('assets.download'), icon: Download, run: download }
 }
 
 const assetMenuItems = computed<ContextMenuItem[]>(() => {
   const asset = assetMenu.value?.asset
   if (!asset) return []
+  const action = mainAction(asset)
   return [
-    { id: 'download', label: t('assets.download'), icon: Download },
+    ...(action === 'open' ? [{ id: 'open', label: t('assets.open'), icon: ExternalLink }] : []),
+    ...(action === 'download'
+      ? [{ id: 'download', label: t('assets.download'), icon: Download }]
+      : []),
     ...(isLocal(asset)
-      ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: FolderOpen }]
+      ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: ScanSearch }]
       : []),
     ...(asset.kind === 'image' && asset.previewUrl
       ? [{ id: 'copy', label: t('assets.copy'), icon: Copy }]
@@ -867,8 +997,10 @@ async function moveToTrash(asset: GalleryAsset): Promise<void> {
   })
   if (!confirmed) return
   const removed = await window.api.trashAsset(asset.source, asset.id).catch(() => false)
-  if (removed) assets.value = assets.value.filter((other) => cardKey(other) !== cardKey(asset))
-  else await modal.alert({ title: t('assets.deleteFailed'), message: asset.name })
+  if (removed) {
+    assets.value = assets.value.filter((other) => cardKey(other) !== cardKey(asset))
+    void loadAssets()
+  } else await modal.alert({ title: t('assets.deleteFailed'), message: asset.name })
 }
 
 async function runAssetAction(action: string): Promise<void> {
@@ -876,7 +1008,8 @@ async function runAssetAction(action: string): Promise<void> {
   assetMenu.value = null
   if (!asset) return
   if (action === 'download') await download(asset)
-  else if (action === 'reveal') await window.api.revealAsset(asset.source, asset.id)
+  else if (action === 'open') await openLocally(asset)
+  else if (action === 'reveal') await reveal(asset)
   else if (action === 'copy') await copy(asset)
   else if (action === 'delete') await moveToTrash(asset)
 }
@@ -916,7 +1049,7 @@ function extensionOf(name: string): string {
     data-testid="assets-view"
   >
     <header class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
-      <h1 class="m-0 font-display text-display font-semibold text-foreground">
+      <h1 class="m-0 text-display font-semibold tracking-[-0.055em] text-foreground">
         {{ t('sidebar.assets') }}
       </h1>
     </header>
@@ -932,6 +1065,7 @@ function extensionOf(name: string): string {
       >
         <Menu
           v-if="selectedBuild"
+          v-model:open="placePickerOpen"
           :modal="false"
           align="start"
           :side-offset="6"
@@ -946,7 +1080,7 @@ function extensionOf(name: string): string {
               data-testid="assets-build-picker"
             >
               <component
-                :is="selectedBuild.cloud ? Cloud : Laptop"
+                :is="selectedBuild.cloud ? Cloud : Folder"
                 :size="14"
                 class="shrink-0 text-muted-foreground"
                 aria-hidden="true"
@@ -955,50 +1089,95 @@ function extensionOf(name: string): string {
               <ChevronDown :size="13" class="shrink-0 text-muted-foreground" aria-hidden="true" />
             </button>
           </template>
-          <div
-            class="px-[9px] pt-[12.5px] pb-[8.6px] text-[11px]/[15.4px] font-medium tracking-[0.88px] text-subtle-foreground uppercase"
-          >
-            {{ t('assets.browseAssetsOf') }}
-          </div>
           <DropdownMenuRadioGroup
             :model-value="selectedBuild.build.id"
             class="flex flex-col gap-0.5"
           >
-            <MenuRadioItem
-              v-for="option in assetBuilds"
-              :key="option.build.id"
-              as="button"
-              type="button"
-              :value="option.build.id"
-              class="min-h-0 gap-2.5 rounded-lg px-2.5 py-2 data-highlighted:bg-[rgb(255_255_255/0.06)] data-[state=checked]:bg-[rgb(255_255_255/0.06)]"
-              :data-testid="`assets-build-${option.build.id}`"
-              @select="choosePlace(option.build.id)"
-            >
-              <span
-                class="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-[rgb(240_240_240/0.07)] text-muted-foreground"
+            <template v-for="group in placeGroups" :key="group.id">
+              <div
+                class="px-[9px] pt-[12.5px] pb-[8.6px] text-[11px]/[15.4px] font-medium tracking-[0.88px] text-subtle-foreground uppercase"
+                :data-testid="`assets-place-group-${group.id}`"
               >
-                <component :is="option.cloud ? Cloud : Laptop" :size="15" aria-hidden="true" />
-              </span>
-              <span class="flex min-w-0 flex-1 flex-col text-left">
-                <span class="truncate text-[13px]/5 text-foreground">{{ option.build.name }}</span>
-                <span
-                  class="flex h-4 items-center gap-1.5 text-[12px]/[16.2px] text-subtle-foreground"
+                {{ group.label }}
+              </div>
+              <div
+                v-for="option in group.options"
+                :key="option.build.id"
+                class="group/place relative"
+              >
+                <MenuRadioItem
+                  as="button"
+                  type="button"
+                  :value="option.build.id"
+                  class="min-h-0 w-full gap-2.5 rounded-lg px-2.5 py-2 data-highlighted:bg-accent data-[state=checked]:bg-muted"
+                  :class="
+                    !option.cloud &&
+                    'pr-15 group-hover/place:bg-accent [&>svg:last-child]:absolute [&>svg:last-child]:right-2.5'
+                  "
+                  :data-testid="`assets-build-${option.build.id}`"
+                  @select="choosePlace(option.build.id)"
                 >
                   <span
-                    class="size-1.5 shrink-0 rounded-[3px]"
-                    :class="option.state === 'running' ? 'bg-success' : 'bg-subtle-foreground'"
+                    class="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-[rgb(240_240_240/0.07)] text-muted-foreground"
+                  >
+                    <component :is="option.cloud ? Cloud : Folder" :size="15" aria-hidden="true" />
+                  </span>
+                  <span class="flex min-w-0 flex-1 flex-col text-left">
+                    <span class="truncate text-[13px]/5 text-foreground">{{
+                      option.build.name
+                    }}</span>
+                    <span
+                      class="flex h-4 min-w-0 items-center gap-1.5 text-[12px]/[16.2px] text-subtle-foreground"
+                      :data-testid="`assets-place-subtitle-${option.build.id}`"
+                    >
+                      <span
+                        v-if="option.cloud"
+                        class="size-1.5 shrink-0 rounded-[3px]"
+                        :class="option.state === 'running' ? 'bg-success' : 'bg-subtle-foreground'"
+                        aria-hidden="true"
+                      />
+                      <Skeleton
+                        v-if="placeSubtitle(option) === null"
+                        class="h-3 w-36 rounded-sm"
+                        :data-testid="`assets-place-subtitle-loading-${option.build.id}`"
+                      />
+                      <Tooltip
+                        v-else-if="!option.cloud"
+                        :text="folderPathOf(option) ?? ''"
+                        class="min-w-0"
+                      >
+                        <span class="truncate">{{ placeSubtitle(option) }}</span>
+                      </Tooltip>
+                      <span v-else class="truncate">{{ placeSubtitle(option) }}</span>
+                    </span>
+                  </span>
+                  <Check
+                    v-if="option.build.id === selectedBuild.build.id"
+                    :size="14"
+                    class="shrink-0 text-foreground"
                     aria-hidden="true"
                   />
-                  {{ buildStatusLabel(option) }}
-                </span>
-              </span>
-              <Check
-                v-if="option.build.id === selectedBuild.build.id"
-                :size="14"
-                class="shrink-0 text-foreground"
-                aria-hidden="true"
-              />
-            </MenuRadioItem>
+                </MenuRadioItem>
+                <Tooltip
+                  v-if="!option.cloud"
+                  :text="revealFolderLabel"
+                  class="absolute top-1/2 right-7.5 -translate-y-1/2"
+                >
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="icon-sm"
+                    tabindex="-1"
+                    class="size-6.5 rounded-md"
+                    :aria-label="`${revealFolderLabel}: ${option.build.name}`"
+                    :data-testid="`assets-place-reveal-${option.build.id}`"
+                    @click="openPlaceFolder(option)"
+                  >
+                    <ScanSearch :size="15" aria-hidden="true" />
+                  </Button>
+                </Tooltip>
+              </div>
+            </template>
           </DropdownMenuRadioGroup>
         </Menu>
         <Skeleton
@@ -1364,13 +1543,13 @@ function extensionOf(name: string): string {
             <button
               type="button"
               :class="ASSET_TOOL_CLASS"
-              :aria-label="t('assets.download')"
-              :title="t('assets.download')"
+              :aria-label="cardTool(asset).label"
+              :title="cardTool(asset).label"
               :disabled="downloading.has(cardKey(asset))"
-              :data-testid="`asset-download-${asset.id}`"
-              @click="download(asset)"
+              :data-testid="`asset-${cardTool(asset).id}-${asset.id}`"
+              @click="cardTool(asset).run(asset)"
             >
-              <Download :size="14" aria-hidden="true" />
+              <component :is="cardTool(asset).icon" :size="14" aria-hidden="true" />
             </button>
             <button
               type="button"
@@ -1388,13 +1567,6 @@ function extensionOf(name: string): string {
         </li>
       </ul>
       <p
-        v-if="truncated && !showSkeleton"
-        class="m-0 mt-6 text-center text-ui text-subtle-foreground"
-        data-testid="assets-truncated"
-      >
-        {{ t('assets.truncated', assets.length) }}
-      </p>
-      <p
         v-if="cloudScanLimit !== undefined && !showSkeleton"
         class="m-0 mt-6 text-center text-ui text-subtle-foreground"
         data-testid="assets-scan-limit"
@@ -1405,7 +1577,7 @@ function extensionOf(name: string): string {
         v-if="showPagination"
         v-model:page="currentPage"
         v-model:page-size="pageSize"
-        :total="cloudTotal"
+        :total="assetTotal"
         :total-is-lower-bound="cloudTotalIsLowerBound"
         :page-sizes="CLOUD_PAGE_SIZES"
       />

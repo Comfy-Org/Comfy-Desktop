@@ -5,9 +5,10 @@ import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import {
-  Camera,
+  Plus,
   ChevronRight,
   Download,
+  History,
   MoreHorizontal,
   RotateCcw,
   Trash2,
@@ -36,6 +37,7 @@ import type {
 import SnapshotRow from './SnapshotRow.vue'
 import SnapshotDiffView from '../../components/SnapshotDiffView.vue'
 import BaseAccordion from '../../components/ui/BaseAccordion.vue'
+import EmptyState from '../../components/ui/EmptyState.vue'
 import OperationErrorDetail from '../../components/ui/OperationErrorDetail.vue'
 import { humanizeOpStatus } from '../../lib/progressStatusLabel'
 
@@ -52,9 +54,13 @@ interface ActiveOperation {
 interface Props {
   installationId: string
   activeOperation?: ActiveOperation | null
+  toolbarTarget?: string
 }
 
-const props = withDefaults(defineProps<Props>(), { activeOperation: null })
+const props = withDefaults(defineProps<Props>(), {
+  activeOperation: null,
+  toolbarTarget: undefined
+})
 
 const emit = defineEmits<{
   'run-action': [action: ActionDef]
@@ -185,6 +191,10 @@ watch(restoreInFlight, (yes) => {
 type TimelineItem =
   | { kind: 'snapshot'; snapshot: SnapshotSummary; snapshotIndex: number }
   | { kind: 'copy'; event: CopyEvent }
+
+const isEmpty = computed<boolean>(
+  () => !loading.value && !loadError.value && timeline.value.length === 0 && !showRestoreCard.value
+)
 
 const timeline = computed<TimelineItem[]>(() => {
   const out: TimelineItem[] = []
@@ -555,7 +565,10 @@ async function handleImport(): Promise<void> {
 
 <template>
   <div class="snapshots-view flex flex-col gap-3">
-    <header class="snapshots-view-header flex items-center justify-between gap-3">
+    <header
+      v-show="!toolbarTarget || latestRelative"
+      class="snapshots-view-header flex items-center justify-between gap-3"
+    >
       <span
         class="snapshots-view-latest text-[13px] leading-4 text-[var(--color-subtle-foreground)]"
       >
@@ -563,53 +576,55 @@ async function handleImport(): Promise<void> {
           {{ t('snapshots.latestLabel') }}
           {{ latestRelative }}
         </template>
-        <template v-else>
-          {{ t('snapshots.noneYet') }}
-        </template>
       </span>
-      <div class="snapshots-view-toolbar inline-flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="textonly"
-          size="md"
-          class="snapshots-view-toolbtn gap-1.5 px-2.5"
-          :aria-label="t('snapshots.importSnapshots')"
-          :data-testid="TID.snapshotsImport"
-          @click="handleImport"
-        >
-          <Upload :size="14" aria-hidden="true" />
-          <span>{{ t('snapshots.importSnapshots') }}</span>
-        </Button>
-        <Button
-          type="button"
-          variant="textonly"
-          size="md"
-          class="snapshots-view-toolbtn gap-1.5 px-2.5"
-          :disabled="snapshots.length === 0"
-          :aria-label="t('snapshots.exportAllSnapshots')"
-          :data-testid="TID.snapshotsExportAll"
-          @click="handleExportAll"
-        >
-          <Download :size="14" aria-hidden="true" />
-          <span>{{ t('snapshots.exportAllSnapshots') }}</span>
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="md"
-          class="snapshots-view-toolbtn gap-1.5 px-3"
-          :disabled="showRestoreCard"
-          :aria-label="t('snapshots.createSnapshot')"
-          :data-testid="TID.snapshotsSaveCta"
-          @click="handleSave"
-        >
-          <Camera :size="14" aria-hidden="true" />
-          <span>{{ t('snapshots.createSnapshot') }}</span>
-        </Button>
-      </div>
+      <Teleport defer :to="toolbarTarget" :disabled="!toolbarTarget">
+        <div class="snapshots-view-toolbar inline-flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="textonly"
+            size="md"
+            class="snapshots-view-toolbtn gap-1.5 px-2.5"
+            :aria-label="t('snapshots.importSnapshots')"
+            :data-testid="TID.snapshotsImport"
+            @click="handleImport"
+          >
+            <Upload :size="14" aria-hidden="true" />
+            <span>{{ t('snapshots.importSnapshots') }}</span>
+          </Button>
+          <Button
+            v-if="snapshots.length > 0"
+            type="button"
+            variant="textonly"
+            size="md"
+            class="snapshots-view-toolbtn gap-1.5 px-2.5"
+            :aria-label="t('snapshots.exportAllSnapshots')"
+            :data-testid="TID.snapshotsExportAll"
+            @click="handleExportAll"
+          >
+            <Download :size="14" aria-hidden="true" />
+            <span>{{ t('snapshots.exportAllSnapshots') }}</span>
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            class="snapshots-view-toolbtn gap-1.5 px-3"
+            :disabled="showRestoreCard"
+            :aria-label="t('snapshots.createSnapshot')"
+            :data-testid="TID.snapshotsSaveCta"
+            @click="handleSave"
+          >
+            <Plus :size="14" aria-hidden="true" />
+            <span>{{ t('snapshots.createSnapshot') }}</span>
+          </Button>
+        </div>
+      </Teleport>
     </header>
 
-    <div class="snapshots-panel flex flex-col rounded-[14px] bg-card p-1.5">
+    <div
+      class="snapshots-panel flex flex-col"
+      :class="{ 'rounded-[14px] bg-card p-1.5': !isEmpty }"
+    >
       <div
         v-if="showRestoreCard"
         ref="topCardRef"
@@ -793,28 +808,13 @@ async function handleImport(): Promise<void> {
           {{ t('common.retry') }}
         </Button>
       </div>
-      <div
-        v-else-if="timeline.length === 0 && !showRestoreCard"
-        class="snapshots-view-empty flex flex-col items-center gap-3 px-6 py-10 text-center"
-      >
-        <span
-          class="inline-flex size-10 items-center justify-center rounded-[10px] bg-[color-mix(in_oklch,var(--color-foreground)_6%,transparent)] text-text-muted"
-          aria-hidden="true"
-        >
-          <Camera :size="18" />
-        </span>
-        <p class="m-0 max-w-[340px] text-[13px] text-text-muted">{{ t('snapshots.empty') }}</p>
-        <Button
-          type="button"
-          variant="secondary"
-          size="md"
-          class="gap-1.5 px-3"
-          @click="handleSave"
-        >
-          <Camera :size="14" aria-hidden="true" />
-          <span>{{ t('snapshots.createSnapshot') }}</span>
-        </Button>
-      </div>
+      <EmptyState
+        v-else-if="isEmpty"
+        class="snapshots-view-empty px-6 py-16"
+        :icon="History"
+        :title="t('snapshots.noneYet')"
+        :text="t('snapshots.emptyBody')"
+      />
 
       <ul
         v-if="timeline.length > 0"

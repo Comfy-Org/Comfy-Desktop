@@ -9,9 +9,9 @@ import {
   ChevronDown,
   Download,
   File,
-  FolderSearch,
   Images,
   Music,
+  ScanSearch,
   Workflow,
   X
 } from '@lucide/vue'
@@ -41,6 +41,7 @@ export interface OutputDetailItem {
   savedIn?: string | null
   inCloud?: boolean
   workflow?: boolean
+  mainAction: 'download' | null
   loadModel?: () => Promise<Uint8Array | null>
 }
 
@@ -328,6 +329,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
       <div class="mt-auto flex flex-col gap-2">
         <Button
+          v-if="item.mainAction === 'download'"
           type="button"
           variant="inverted"
           size="md"
@@ -337,6 +339,18 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         >
           <Download :size="15" aria-hidden="true" />
           {{ t('assets.download') }}
+        </Button>
+        <Button
+          v-if="item.mainAction === null"
+          type="button"
+          variant="inverted"
+          size="md"
+          class="gap-1.5 text-[13px]/5"
+          data-testid="output-detail-show-in-folder"
+          @click="emit('show-in-folder', index)"
+        >
+          <ScanSearch :size="15" aria-hidden="true" />
+          {{ t(revealKey) }}
         </Button>
         <Button
           v-if="item.workflow"
@@ -349,18 +363,6 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         >
           <Workflow :size="15" aria-hidden="true" />
           {{ t('assets.detail.openWorkflow') }}
-        </Button>
-        <Button
-          v-if="item.savedIn"
-          type="button"
-          variant="secondary"
-          size="md"
-          class="gap-1.5 text-[13px]/5"
-          data-testid="output-detail-show-in-folder"
-          @click="emit('show-in-folder', index)"
-        >
-          <FolderSearch :size="15" aria-hidden="true" />
-          {{ t(revealKey) }}
         </Button>
         <Button
           v-if="item.inCloud"

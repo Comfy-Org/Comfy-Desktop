@@ -54,7 +54,7 @@ test('Auto start picked in a Home build menu saves that build and shows on its t
     .poll(() => ctx.panel.exists(`${TILE} [data-testid="home-build-starts-with-desktop"]`))
     .toBe(true)
 
-  await pickAutoStartLine('Turn off Auto start')
+  await pickAutoStartLine('Turn off auto start')
 
   await expect.poll(savedAutoStart).toBe('none')
   await expect.poll(() => ctx.panel.textOf(TILE_STATUS)).toBe('Ready')

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowRight, ChevronRight } from '@lucide/vue'
+import { AppWindow, ArrowRight, ChevronRight } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
+import EmptyState from '../components/ui/EmptyState.vue'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
@@ -24,7 +25,7 @@ import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AppCard, CatalogWorkflow, Installation } from '../types/ipc'
+import type { AppCard, AppCover, CatalogWorkflow, Installation } from '../types/ipc'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 
 type LoadState = 'loading' | 'ready' | 'unavailable'
@@ -119,12 +120,14 @@ const carouselIsLoading = computed(() =>
     : appsState.value === 'checking' || appsState.value === 'loading'
 )
 
-function coverOf(app: AppCard): string | null {
-  return app.coverUrl
+function coversOf(app: AppCard): readonly AppCover[] {
+  return app.covers
 }
 
-function thumbnailOf(workflow: CatalogWorkflow): string | null {
+function thumbnailOf(workflow: CatalogWorkflow): readonly AppCover[] {
   return workflow.thumbnailUrl
+    ? [{ url: workflow.thumbnailUrl, stillUrl: workflow.thumbnailUrl }]
+    : []
 }
 
 async function loadWorkflows(): Promise<void> {
@@ -169,7 +172,7 @@ onMounted(() => {
 
     <div class="mx-auto w-full max-w-300 px-10 pb-16">
       <h1
-        class="m-0 pt-[152px] text-center text-[34px]/10 font-semibold tracking-[-0.055em] text-foreground"
+        class="m-0 pt-[152px] text-center text-display font-semibold tracking-[-0.055em] text-foreground"
       >
         {{ t('home.title') }}
       </h1>
@@ -192,7 +195,7 @@ onMounted(() => {
           v-else-if="appsState === 'ready'"
           kind="apps"
           :cards="apps"
-          :picture-of="coverOf"
+          :pictures-of="coversOf"
           @open="emit('open-app', $event)"
         />
         <div
@@ -207,19 +210,19 @@ onMounted(() => {
             {{ t('home.retry') }}
           </Button>
         </div>
-        <div
+        <EmptyState
           v-else-if="appsState === 'empty'"
-          class="flex h-75 flex-col items-center justify-center gap-1 text-center"
+          class="h-75 justify-center"
           data-testid="home-apps-empty"
-        >
-          <p class="m-0 text-[13px]/5 font-medium text-foreground">{{ t('apps.emptyTitle') }}</p>
-          <p class="m-0 text-[13px]/5 text-muted-foreground">{{ t('apps.emptyBody') }}</p>
-        </div>
+          :icon="AppWindow"
+          :title="t('apps.emptyTitle')"
+          :text="t('apps.emptyBody')"
+        />
         <HomeCarousel
           v-else-if="state === 'ready'"
           kind="workflows"
           :cards="workflows"
-          :picture-of="thumbnailOf"
+          :pictures-of="thumbnailOf"
           @open="openWorkflow"
         />
         <div

@@ -35,7 +35,7 @@ export function useInstallCta(
 
   const label = computed(() => {
     if (runningInThisWindow.value) return t('instancePicker.restart')
-    if (runningElsewhere.value) return t('instancePicker.switch')
+    if (runningElsewhere.value) return t('instancePicker.openRunning')
     return t('instancePicker.open')
   })
 
