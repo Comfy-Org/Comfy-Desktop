@@ -265,7 +265,7 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
     expect(modalMock.confirm).toHaveBeenCalledTimes(1)
     const confirmArgs = modalMock.confirm.mock.calls[0][0]
     expect(confirmArgs.title).toBe('Uninstall')
-    expect(confirmArgs.message).toContain('permanently removes this ComfyUI installation')
+    expect(confirmArgs.message).toContain('permanently removes this ComfyUI build')
     expect(confirmArgs.message).toContain('/tmp/my')
     expect(confirmArgs.confirmLabel).toBe('Uninstall')
     expect(confirmArgs.confirmStyle).toBe('danger')
