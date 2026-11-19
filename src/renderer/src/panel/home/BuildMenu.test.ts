@@ -9,6 +9,7 @@ import HomeBuildCard from './HomeBuildCard.vue'
 import ChooserInstallTile from '../../views/chooser/ChooserInstallTile.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import DialogHost from '../../components/DialogHost.vue'
+import ModalDialog from '../../components/ModalDialog.vue'
 import { provideBuildMenuHost, type BuildMenuHost } from './useBuildMenu'
 import { homeBuildStatus } from './homeBuild'
 import { provideBuildLogs } from '../../composables/useBuildProgress'
@@ -842,9 +843,13 @@ describe('Build menu', () => {
     await builds.get('.chooser-tile-kebab').trigger('click')
     await press(document.querySelector('[data-testid="build-menu-view-error"]')!)
 
+    mounted.push(mount(ModalDialog, { attachTo: document.body }))
+    await vi.waitFor(() => expect(document.querySelector('[role="alertdialog"]')).not.toBeNull())
+    const alert = document.querySelector<HTMLElement>('[role="alertdialog"]')!
+
     expect(viewLogs).not.toHaveBeenCalled()
-    expect(useModal().state.visible).toBe(true)
-    expect(useModal().state.title).toBe('Error')
+    expect(alert.checkVisibility()).toBe(true)
+    expect(alert.querySelector('.base-alert-title')!.textContent?.trim()).toBe('Error')
     useModal().dismiss()
   })
 
