@@ -1,0 +1,172 @@
+import { watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useModal } from './useModal'
+import { useProgressStore } from '../stores/progressStore'
+import { useInstallationStore } from '../stores/installationStore'
+import { TID } from '../../../shared/testIds'
+import type { ActionResult, PortConflictInfo, ShowProgressOpts } from '../types/ipc'
+
+type Relaunch = (opts: ShowProgressOpts) => unknown
+
+type PortChoice = 'use-next-port' | 'stop-other'
+
+export function portConflictTitleKey(conflict: PortConflictInfo): string {
+  if (!conflict.priorBusy) return 'errors.portConflictTitle'
+  if (conflict.priorSurvivors) return 'errors.priorSurvivorsTitle'
+  if (conflict.priorUnknown) return 'errors.priorProcessUnknownTitle'
+  return 'errors.priorProcessBusyTitle'
+}
+
+function stopLabelKey(conflict: PortConflictInfo): string {
+  if (!conflict.priorBusy) return 'errors.portConflictKill'
+  return conflict.priorSurvivors ? 'errors.priorSurvivorsStop' : 'errors.priorProcessBusyStop'
+}
+
+export function usePortConflictPrompt(
+  relaunch: Relaunch
+): (installationId: string) => Promise<void> {
+  const { t } = useI18n()
+  const modal = useModal()
+  const progressStore = useProgressStore()
+  const installationStore = useInstallationStore()
+
+  async function whenModalFree(): Promise<void> {
+    while (modal.state.visible) {
+      await new Promise<void>((resolve) => {
+        const stop = watch(
+          () => modal.state.visible,
+          (visible) => {
+            if (visible) return
+            stop()
+            resolve()
+          }
+        )
+      })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+  }
+
+  async function restart(
+    installationId: string,
+    title: string,
+    returnTo: string | undefined,
+    apiCall: () => Promise<ActionResult>
+  ): Promise<void> {
+    const running = progressStore.operations.get(installationId)
+    if (running && !running.finished) {
+      const name = installationStore.getById(installationId)?.name ?? title
+      await whenModalFree()
+      await modal.alert({
+        title: t('workingProgress.relaunchSkippedTitle', { name }),
+        message: t('workingProgress.relaunchSkippedMessage', { name })
+      })
+      return
+    }
+    relaunch({ installationId, title, apiCall, cancellable: true, returnTo, opKind: 'launch' })
+  }
+
+  async function stopBusyPrior(conflict: PortConflictInfo): Promise<boolean> {
+    await whenModalFree()
+    const messageKey = conflict.priorSurvivors
+      ? 'errors.priorSurvivorsConfirmMessage'
+      : conflict.priorUnknown
+        ? 'errors.priorProcessUnknownConfirmMessage'
+        : 'errors.priorProcessBusyConfirmMessage'
+    return modal.confirm({
+      title: t(portConflictTitleKey(conflict)),
+      message: t(messageKey),
+      confirmLabel: t(stopLabelKey(conflict)),
+      confirmStyle: 'danger'
+    })
+  }
+
+  async function askPortChoice(
+    conflict: PortConflictInfo,
+    message: string
+  ): Promise<PortChoice | null> {
+    const title = t(portConflictTitleKey(conflict))
+    const useNextLabel = t('errors.portConflictUsePort')
+    const stopLabel = t(stopLabelKey(conflict))
+    await whenModalFree()
+    if (conflict.nextPort && conflict.isComfy) {
+      const picked = await modal.choose({
+        title,
+        message,
+        primaryLabel: useNextLabel,
+        secondaryLabel: stopLabel,
+        testIds: {
+          action: TID.progressPortConflictUsePort,
+          secondary: TID.progressPortConflictKill
+        }
+      })
+      if (picked === 'primary') return 'use-next-port'
+      return picked === 'secondary' ? 'stop-other' : null
+    }
+    if (conflict.nextPort || conflict.isComfy) {
+      const onlyNext = !!conflict.nextPort
+      const confirmed = await modal.confirm({
+        title,
+        message,
+        confirmLabel: onlyNext ? useNextLabel : stopLabel,
+        confirmStyle: onlyNext ? 'primary' : 'danger',
+        testIds: {
+          action: onlyNext ? TID.progressPortConflictUsePort : TID.progressPortConflictKill
+        }
+      })
+      if (!confirmed) return null
+      return onlyNext ? 'use-next-port' : 'stop-other'
+    }
+    await modal.alert({ title, message })
+    return null
+  }
+
+  return async function resolvePortConflict(installationId: string): Promise<void> {
+    const op = progressStore.operations.get(installationId)
+    const conflict = op?.result?.portConflict
+    if (!op || !conflict) return
+    const { title, returnTo } = op
+    const launchAgain = (): Promise<ActionResult> => window.api.runAction(installationId, 'launch')
+    const retry = op.opKind === 'launch' && op.apiCall ? op.apiCall : launchAgain
+    const message = op.result?.message ?? ''
+    let current: PortConflictInfo = conflict
+    let shown = message
+    for (;;) {
+      const choice = await askPortChoice(current, shown)
+      if (choice === 'use-next-port' && current.nextPort) {
+        const port = current.nextPort
+        await restart(installationId, title, returnTo, () =>
+          window.api.runAction(installationId, 'launch', { portOverride: port })
+        )
+        return
+      }
+      if (choice !== 'stop-other') return
+      if (current.priorBusy) {
+        if (!(await stopBusyPrior(current))) continue
+        await restart(installationId, title, returnTo, () =>
+          window.api.runAction(installationId, 'launch', { stopBusyPriorProcess: true })
+        )
+        return
+      }
+      await whenModalFree()
+      const confirmed = await modal.confirm({
+        title: t('errors.portConflictKillConfirmTitle'),
+        message: t('errors.portConflictKillConfirmMessage'),
+        confirmLabel: t('errors.portConflictKill'),
+        confirmStyle: 'danger'
+      })
+      if (!confirmed) continue
+      const killed = await window.api.killPortProcess(current.port).catch(() => ({ ok: false }))
+      if (killed.ok) {
+        await restart(installationId, title, returnTo, retry)
+        return
+      }
+      shown = t('errors.portConflictKillFailed', { port: current.port })
+      current = { ...current, isComfy: false }
+      if (!current.nextPort) {
+        await whenModalFree()
+        await modal.alert({ title: t(portConflictTitleKey(current)), message: shown })
+        return
+      }
+    }
+  }
+}

@@ -147,6 +147,7 @@ export function buildElectronApi(): ElectronApi {
       return () => ipcRenderer.removeListener('apps:outputs', handler)
     },
     sendAppOutputAction: (action) => ipcRenderer.send('apps:output-action', action),
+    sendAppRequest: (text) => ipcRenderer.invoke('apps:send-request', text),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     openGlobalSettings: (tab, opts) =>
       ipcRenderer.send(
