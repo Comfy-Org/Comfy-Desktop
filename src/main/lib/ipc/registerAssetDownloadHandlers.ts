@@ -1,7 +1,19 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { get as getInstallation } from '../../installations'
+import type { InstallationRecord } from '../../installations'
+import * as settings from '../../settings'
 import { startAssetDownload } from '../comfyDownloadManager'
-import { autoDownloadDir } from '../outputFolders'
+
+function resolveOutputDir(inst: InstallationRecord): string | null {
+  if ((inst.autoDownloadOutputs as boolean | undefined) === false) return null
+  if ((inst.useSharedOutputDir as boolean | undefined) !== false) {
+    return (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
+  }
+  const custom = inst.outputDir as string | undefined
+  return custom && custom.trim() !== ''
+    ? custom
+    : (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
+}
 
 export function registerAssetDownloadHandlers(opts: {
   findInstallationIdForWindow: (win: BrowserWindow) => string | undefined
@@ -18,7 +30,7 @@ export function registerAssetDownloadHandlers(opts: {
       if (!installationId) return false
       const inst = await getInstallation(installationId)
       if (!inst) return false
-      const outputDir = autoDownloadDir(inst)
+      const outputDir = resolveOutputDir(inst)
       if (!outputDir) return false
       return startAssetDownload(win, url, filename, outputDir, authToken, event.sender)
     }

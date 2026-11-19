@@ -152,7 +152,6 @@ const pageSize = ref(DEFAULT_PAGE_SIZE)
 const currentPage = ref(1)
 const assetTotal = ref(0)
 const localCounts = ref<LocalAssetListing['counts'] | null>(null)
-const downloadedCopies = ref(new Map<string, string>())
 const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 
@@ -581,29 +580,6 @@ function localPage(selected: AssetBuild, pageNumber: number): Promise<LocalAsset
   })
 }
 
-async function findDownloadedCopies(
-  cloudId: string,
-  listed: GalleryAsset[],
-  request: number,
-  keepFound = false
-): Promise<void> {
-  const wanted = listed.map(({ id, name, sizeBytes, createdAt }) => ({
-    id,
-    name,
-    sizeBytes,
-    createdAt
-  }))
-  const found = await window.api
-    .findDownloadedOutputs(cloudId, wanted)
-    .catch((): Record<string, string> => ({}))
-  if (request !== requestId) return
-  const matches = listed.flatMap((asset) => {
-    const file = Object.hasOwn(found, asset.id) ? found[asset.id] : undefined
-    return typeof file === 'string' ? [[cardKey(asset), file] as const] : []
-  })
-  downloadedCopies.value = new Map([...(keepFound ? downloadedCopies.value : []), ...matches])
-}
-
 function prefetchPage(cloudId: string, pageNumber: number): void {
   if (pageNumber > pageCount.value) return
   prefetchHandle = requestIdleCallback(() => void cloudPage(cloudId, pageNumber).catch(() => {}), {
@@ -684,7 +660,6 @@ async function loadAssets(userAsked = false): Promise<void> {
       cloudScanLimit.value = listed.scanLimit
     }
     assets.value = listed.assets.map((asset) => ({ ...asset, source }))
-    if (cloud) void findDownloadedCopies(cloud.id, withLookedUpDetail(assets.value), current)
     if (cloud && pendingFocus.value && pendingFocus.value !== wanted) {
       void loadAssets(userAsked)
       return
@@ -731,7 +706,6 @@ const listQuery = computed(() =>
 watch([loadKey, listedCloudId], () => {
   resetCloudPaging()
   localCounts.value = null
-  downloadedCopies.value = new Map()
   currentPage.value = 1
   focusMiss.value = null
   lookedUpDetail.value = null
@@ -837,8 +811,8 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     tags: asset.tags,
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
-    savedIn: savedFolderOf(asset),
-    mainAction: fileOnDisk(asset) ? null : 'download',
+    savedIn: isLocal(asset) ? folderOf(asset.id) : null,
+    mainAction: isLocal(asset) ? null : 'download',
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
@@ -856,17 +830,9 @@ function openDetail(asset: GalleryAsset): void {
   detailKey.value = cardKey(asset)
 }
 
-function withLookedUpDetail(listed: GalleryAsset[]): GalleryAsset[] {
-  const lookedUp = lookedUpDetail.value
-  return lookedUp && lookedUp.source !== LOCAL_ASSETS_SOURCE ? [...listed, lookedUp] : listed
-}
-
 function openLookedUpDetail(asset: AssetSummary, source: string): void {
   lookedUpDetail.value = { ...asset, source }
   detailKey.value = cardKey(lookedUpDetail.value)
-  if (source !== LOCAL_ASSETS_SOURCE) {
-    void findDownloadedCopies(source, [lookedUpDetail.value], requestId, true)
-  }
 }
 
 async function closeDetail(): Promise<void> {
@@ -926,43 +892,22 @@ function folderOf(file: string): string {
   return file.slice(0, Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')))
 }
 
-function savedFolderOf(asset: GalleryAsset): string | null {
-  const file = fileOnDisk(asset)
-  return file ? folderOf(file) : null
-}
-
-function fileOnDisk(asset: GalleryAsset): string | null {
-  return isLocal(asset) ? asset.id : (downloadedCopies.value.get(cardKey(asset)) ?? null)
-}
-
 async function reveal(asset: GalleryAsset): Promise<void> {
-  const file = fileOnDisk(asset)
-  const shown = file
-    ? await window.api.revealAsset(LOCAL_ASSETS_SOURCE, file).catch(() => false)
-    : false
+  const shown = await window.api.revealAsset(asset.source, asset.id).catch(() => false)
   if (!shown) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
 }
 
 const OPENS_IN_APP: readonly (AssetKind | null)[] = ['image', 'video', 'audio']
 
 function mainAction(asset: GalleryAsset): 'download' | 'open' | null {
-  if (!fileOnDisk(asset)) return 'download'
+  if (!isLocal(asset)) return 'download'
   const vector = asset.name.toLowerCase().endsWith('.svg')
   return OPENS_IN_APP.includes(asset.kind) && !vector ? 'open' : null
 }
 
 async function openLocally(asset: GalleryAsset): Promise<void> {
-  const file = fileOnDisk(asset)
-  const opened = file
-    ? await window.api.openAsset(LOCAL_ASSETS_SOURCE, file).catch(() => false)
-    : false
-  if (opened) return
-  if (!isLocal(asset)) {
-    downloadedCopies.value = new Map(
-      [...downloadedCopies.value].filter(([key]) => key !== cardKey(asset))
-    )
-  }
-  await modal.alert({ title: t('assets.openFailed'), message: asset.name })
+  const opened = await window.api.openAsset(asset.source, asset.id).catch(() => false)
+  if (!opened) await modal.alert({ title: t('assets.openFailed'), message: asset.name })
 }
 
 function cardTool(asset: GalleryAsset) {
@@ -990,7 +935,7 @@ const assetMenuItems = computed<ContextMenuItem[]>(() => {
     ...(action === 'download'
       ? [{ id: 'download', label: t('assets.download'), icon: Download }]
       : []),
-    ...(fileOnDisk(asset)
+    ...(isLocal(asset)
       ? [{ id: 'reveal', label: t(revealInFolderKey(window.api.platform)), icon: ScanSearch }]
       : []),
     ...(asset.kind === 'image' && asset.previewUrl

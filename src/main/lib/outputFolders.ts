@@ -15,7 +15,6 @@ import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installInputDir, installOutputDir } from './models'
 import { _runningSessions, sourceMap } from './ipc/shared'
-import { isPanelSender } from '../host/registry'
 import type {
   AssetKind,
   AssetSummary,
@@ -27,7 +26,6 @@ import type {
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
 
 const LIST_LOCAL_CHANNEL = 'assets:list-local'
-const FIND_DOWNLOADED_CHANNEL = 'assets:find-downloaded'
 const FOLDERS_CHANNEL = 'assets:output-folders'
 const OPEN_FOLDER_CHANNEL = 'assets:open-output-folder'
 export const MAX_LOCAL_ASSETS = 500
@@ -38,7 +36,6 @@ const THUMBNAILS_AT_ONCE = 2
 export const THUMBNAIL_WAIT_MS = 1500
 const STATS_AT_ONCE = 32
 const ROOTS_FRESH_MS = 5000
-const ROOTS_RECHECK_MS = 1000
 const MAX_LINUX_THUMBNAIL_SOURCE_BYTES = 40 * 1024 * 1024
 const SERVED_KINDS = new Set(['image', 'video', 'audio'])
 const READ_WITHOUT_FOLLOWING =
@@ -49,7 +46,6 @@ const thumbnailsInFlight = new Map<string, Promise<Buffer | null>>()
 const thumbnailQueue: (() => void)[] = []
 let thumbnailsRunning = 0
 let allowedRoots: string[] = []
-let downloadRoots: string[] = []
 let allowedRootsAt = 0
 
 export function sharedOutputDir(): string {
@@ -64,13 +60,6 @@ export function outputDirOverride(inst: InstallationRecord, sharedDir: string): 
 export function hasOutputFolder(inst: InstallationRecord): boolean {
   const source = sourceMap[inst.sourceId]
   return source?.category === 'local' && !source.managesOwnPaths
-}
-
-export function autoDownloadDir(inst: InstallationRecord): string | null {
-  if ((inst.autoDownloadOutputs as boolean | undefined) === false) return null
-  if ((inst.useSharedOutputDir as boolean | undefined) !== false) return sharedOutputDir()
-  const custom = inst.outputDir as string | undefined
-  return custom && custom.trim() !== '' ? custom : sharedOutputDir()
 }
 
 function outputDirFor(inst: InstallationRecord, sharedDir: string): string | null {
@@ -135,39 +124,16 @@ interface OutputFolders {
   ofBuild: Map<string, string>
 }
 
-async function realHome(): Promise<string> {
-  return (await realDir(os.homedir())) ?? os.homedir()
-}
-
-function holdsHome(dir: string, home: string): boolean {
-  return isInsideRoot(home, dir)
-}
-
-let foldersInFlight: Promise<OutputFolders> | null = null
-
-function findOutputFolders(): Promise<OutputFolders> {
-  foldersInFlight ??= scanOutputFolders().finally(() => {
-    foldersInFlight = null
-  })
-  return foldersInFlight
-}
-
-async function scanOutputFolders(): Promise<OutputFolders> {
+async function findOutputFolders(): Promise<OutputFolders> {
   const sharedDir = sharedOutputDir()
   const shared = await realDir(sharedDir)
   const ofBuild = new Map<string, string>()
-  const downloadedTo: string[] = []
   for (const inst of await installations.list()) {
     const dir = outputDirFor(inst, sharedDir)
     const real = dir ? await realDir(dir) : null
     if (real) ofBuild.set(inst.id, real)
-    const downloads = hasOutputFolder(inst) ? null : autoDownloadDir(inst)
-    const realDownloads = downloads ? await realDir(downloads) : null
-    if (realDownloads) downloadedTo.push(realDownloads)
   }
   const all = [...new Set([...(shared ? [shared] : []), ...ofBuild.values()])]
-  const home = await realHome()
-  downloadRoots = downloadedTo.filter((dir) => !holdsHome(dir, home))
   allowedRoots = all
   allowedRootsAt = Date.now()
   return { all, shared, ofBuild }
@@ -244,28 +210,15 @@ export async function comfyOutputPath(
   return (await hasSameBytes(real, bytes)) ? real : null
 }
 
-async function openableFilePath(target: string): Promise<string | null> {
-  if (!path.isAbsolute(target)) return null
-  const real = await fsp.realpath(target).catch(() => null)
-  if (!real) return null
-  const inside = (): boolean =>
-    [...allowedRoots, ...downloadRoots].some((root) => isInsideRoot(real, root))
-  const age = Date.now() - allowedRootsAt
-  if (age > ROOTS_FRESH_MS || (!inside() && age > ROOTS_RECHECK_MS)) await findOutputFolders()
-  if (!inside()) return null
-  const stat = await fsp.stat(real).catch(() => null)
-  return stat?.isFile() ? real : null
-}
-
 export async function revealOutputFile(target: string): Promise<boolean> {
-  const file = await openableFilePath(target)
+  const file = await outputFilePath(target)
   if (!file) return false
   shell.showItemInFolder(file)
   return true
 }
 
 export async function openOutputFile(target: string): Promise<boolean> {
-  const file = await openableFilePath(target)
+  const file = await outputFilePath(target)
   if (!file) return false
   const opened = opensInApp(file) && (await shell.openPath(file)) === ''
   if (!opened) shell.showItemInFolder(file)
@@ -366,110 +319,6 @@ function countKinds(assets: AssetSummary[]): LocalAssetListing['counts'] {
   const counts = { all: assets.length, image: 0, video: 0, audio: 0, '3d': 0 }
   for (const { kind } of assets) if (kind) counts[kind]++
   return counts
-}
-
-export interface OutputCopyQuery {
-  id: string
-  name: string
-  sizeBytes: number | null
-  createdAt: string | null
-}
-
-const SAVED_BEFORE_MADE_SLACK_MS = 60_000
-
-const MAX_COPY_QUERIES = 500
-
-function copyQueries(value: unknown): OutputCopyQuery[] {
-  if (!Array.isArray(value)) return []
-  return value.slice(0, MAX_COPY_QUERIES).flatMap((item: unknown) => {
-    if (!item || typeof item !== 'object') return []
-    const { id, name, sizeBytes, createdAt } = item as Record<string, unknown>
-    return typeof id === 'string' &&
-      typeof name === 'string' &&
-      (sizeBytes === null || isCount(sizeBytes, 0, Number.MAX_SAFE_INTEGER)) &&
-      (createdAt === null || typeof createdAt === 'string')
-      ? [{ id, name, sizeBytes, createdAt }]
-      : []
-  })
-}
-
-interface DownloadedCandidate {
-  file: string
-  size: number
-  savedMs: number
-}
-
-function withoutCopyNumber(name: string): string {
-  return name.replace(/ \(\d+\)(?=\.[^.]+$)/, '')
-}
-
-export async function findDownloadedOutputs(
-  installationId: string,
-  wanted: OutputCopyQuery[]
-): Promise<Record<string, string>> {
-  const inst = (await installations.list()).find((each) => each.id === installationId)
-  const dir = inst && !hasOutputFolder(inst) ? autoDownloadDir(inst) : null
-  const root = dir ? await realDir(dir) : null
-  const dated = wanted.filter(
-    (item) => item.sizeBytes !== null && item.createdAt && !Number.isNaN(Date.parse(item.createdAt))
-  )
-  if (!root || dated.length === 0 || holdsHome(root, await realHome())) return {}
-  const names = new Set(dated.map((item) => item.name))
-  const exact = new Map<string, DownloadedCandidate[]>()
-  const renamed = new Map<string, DownloadedCandidate[]>()
-  const add = (
-    index: Map<string, DownloadedCandidate[]>,
-    name: string,
-    item: DownloadedCandidate
-  ) => {
-    const list = index.get(name)
-    if (list) list.push(item)
-    else index.set(name, [item])
-  }
-  for (const file of await downloadIndex(root)) {
-    const name = path.basename(file)
-    const stripped = withoutCopyNumber(name)
-    if (!names.has(name) && !names.has(stripped)) continue
-    const stat = await fsp.lstat(file).catch(() => null)
-    if (!stat?.isFile()) continue
-    const candidate = { file, size: stat.size, savedMs: stat.mtimeMs }
-    add(exact, name, candidate)
-    if (stripped !== name) add(renamed, stripped, candidate)
-  }
-  const found: Record<string, string> = Object.create(null)
-  const taken = new Set<string>()
-  const assign = (index: Map<string, DownloadedCandidate[]>): void => {
-    for (const item of dated) {
-      if (found[item.id]) continue
-      const madeMs = Date.parse(item.createdAt!)
-      const copy = index
-        .get(item.name)
-        ?.find(
-          (candidate) =>
-            !taken.has(candidate.file) &&
-            candidate.size === item.sizeBytes &&
-            candidate.savedMs >= madeMs - SAVED_BEFORE_MADE_SLACK_MS
-        )
-      if (!copy) continue
-      taken.add(copy.file)
-      found[item.id] = copy.file
-    }
-  }
-  assign(exact)
-  assign(renamed)
-  return { ...found }
-}
-
-const downloadIndexes = new Map<string, Promise<string[]>>()
-
-function downloadIndex(root: string): Promise<string[]> {
-  const walking = downloadIndexes.get(root)
-  if (walking) return walking
-  const files = collectMediaFiles(root)
-    .catch((): string[] => [])
-    .finally(() => downloadIndexes.delete(root))
-  downloadIndexes.set(root, files)
-  return files
 }
 
 export async function listLocalAssets(
@@ -647,11 +496,6 @@ export function registerOutputFilesScheme(): void {
 
 export function registerOutputFolderHandlers(): void {
   protocol.handle(OUTPUT_FILES_SCHEME, serveOutputFile)
-  ipcMain.handle(FIND_DOWNLOADED_CHANNEL, (event, installationId: unknown, wanted: unknown) =>
-    isPanelSender(event.sender) && typeof installationId === 'string'
-      ? findDownloadedOutputs(installationId, copyQueries(wanted))
-      : {}
-  )
   ipcMain.handle(FOLDERS_CHANNEL, () => outputFolderPaths())
   ipcMain.handle(OPEN_FOLDER_CHANNEL, (_event, installationId: unknown) =>
     openOutputFolder(typeof installationId === 'string' ? installationId : undefined)

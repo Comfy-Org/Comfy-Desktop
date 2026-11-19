@@ -25,7 +25,6 @@ const listLocalAssets = vi.fn()
 const downloadAsset = vi.fn()
 const revealAsset = vi.fn()
 const openAsset = vi.fn()
-const findDownloadedOutputs = vi.fn()
 const openOutputFolder = vi.fn()
 const copyAsset = vi.fn()
 const readAssetModel = vi.fn()
@@ -240,7 +239,6 @@ beforeEach(() => {
   listLocalAssets.mockResolvedValue([])
   openAsset.mockResolvedValue(true)
   revealAsset.mockResolvedValue(true)
-  findDownloadedOutputs.mockResolvedValue({})
   openOutputFolder.mockResolvedValue(true)
   listWorkspaces.mockResolvedValue([
     { id: 'me', name: 'Personal Workspace', type: 'personal' },
@@ -267,7 +265,6 @@ beforeEach(() => {
     downloadAsset,
     revealAsset,
     openAsset,
-    findDownloadedOutputs,
     openOutputFolder,
     listOutputFolders: async () => ({
       home: '/Users/me',
@@ -909,20 +906,6 @@ describe('AssetsView', () => {
     expect(wrapper.find('[data-testid="asset-reveal-/out/notes.txt"]').exists()).toBe(true)
   })
 
-  it('offers Download again when a saved Cloud copy does not open', async () => {
-    findDownloadedOutputs.mockResolvedValue({ saved: '/out/saved.png' })
-    openAsset.mockResolvedValue(false)
-    const wrapper = await mountAssets()
-    await signInWith([asset('saved', 'saved.png', 'image')])
-    await flushPromises()
-
-    await wrapper.get('[data-testid="asset-open-file-saved"]').trigger('click')
-    await flushPromises()
-
-    expect(alert).toHaveBeenCalledOnce()
-    expect(wrapper.find('[data-testid="asset-download-saved"]').exists()).toBe(true)
-  })
-
   it('tells the user when a file on this computer does not open', async () => {
     openAsset.mockResolvedValue(false)
     const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
@@ -934,25 +917,6 @@ describe('AssetsView', () => {
       title: "Couldn't open asset",
       message: 'forest.png'
     })
-  })
-
-  it('opens a Cloud output that Auto-Download already saved, and downloads one it did not', async () => {
-    findDownloadedOutputs.mockResolvedValue({ saved: '/out/saved.png' })
-    const wrapper = await mountAssets()
-    await signInWith([
-      asset('saved', 'saved.png', 'image', { sizeBytes: 2048 }),
-      asset('older', 'older.png', 'image')
-    ])
-    await flushPromises()
-
-    expect(findDownloadedOutputs).toHaveBeenLastCalledWith('cloud', [
-      { id: 'saved', name: 'saved.png', sizeBytes: 2048, createdAt: null },
-      { id: 'older', name: 'older.png', sizeBytes: 1024, createdAt: null }
-    ])
-    await wrapper.get('[data-testid="asset-open-file-saved"]').trigger('click')
-    expect(openAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/saved.png')
-    await wrapper.get('[data-testid="asset-download-older"]').trigger('click')
-    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('cloud', 'older', 'older.png')
   })
 
   it('downloads a Cloud file through the Cloud build', async () => {
@@ -1596,23 +1560,6 @@ describe('AssetsView', () => {
 
     expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/forest.png')
     expect(openAsset).not.toHaveBeenCalled()
-  })
-
-  it('gives a Cloud output that Auto-Download already saved Show in Finder in the viewer, and one it did not Download', async () => {
-    findDownloadedOutputs.mockResolvedValue({ saved: '/out/saved.png' })
-    const wrapper = await mountAssets()
-    await signInWith([asset('saved', 'saved.png', 'image'), asset('older', 'older.png', 'image')])
-    await flushPromises()
-
-    await wrapper.get('[data-testid="asset-open-saved"]').trigger('click')
-    await flushPromises()
-    expect(viewer()!.querySelector('[data-testid="output-detail-download"]')).toBeNull()
-    viewer()!.querySelector<HTMLElement>('[data-testid="output-detail-show-in-folder"]')!.click()
-    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', '/out/saved.png')
-
-    await press('ArrowRight')
-    expect(viewer()!.querySelector('[data-testid="output-detail-show-in-folder"]')).toBeNull()
-    expect(viewer()!.querySelector('[data-testid="output-detail-download"]')).not.toBeNull()
   })
 
   it('gives a file at the top of the disk Show in Finder in the viewer, even with no folder to show', async () => {
