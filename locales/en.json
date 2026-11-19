@@ -44,7 +44,7 @@
     "retry": "Try again",
     "emptyTitle": "No apps yet",
     "emptyBody": "New apps will show up here.",
-    "noMatches": "No apps match “{query}”",
+    "noMatchesHint": "Try another word.",
     "allApps": "All apps",
     "request": {
       "bandTitle": "Missing an app?",
@@ -514,7 +514,11 @@
     "clear": "Clear",
     "active": "active",
     "error": "Error",
-    "retry": "Retry"
+    "retry": "Retry",
+    "nothingMatches": "Nothing matches",
+    "nothingMatchesHint": "Try another word, or clear the filters to see everything.",
+    "clearFilters": "Clear filters",
+    "clearSearch": "Clear search"
   },
   "comfybuilder": {
     "build": "Build",
@@ -1974,14 +1978,12 @@
     "missing": "Unavailable",
     "durationRange": "Duration range (min → max)",
     "durationRangeHint": "Each line shows the fastest and slowest run, with the average marked.",
-    "noMatches": "No runs match these filters",
     "loadError": "Could not load performance test results",
     "loadErrorHint": "Check the folder and try again.",
     "refreshButton": "Refresh",
     "emptyTitle": "No performance test results yet",
     "emptyHint": "Complete a Performance Test to add a run.",
     "openPerformanceTest": "Open Performance Test",
-    "noMatchesHint": "Try another search or filter.",
     "filterAll": "All",
     "filterWorkspace": "Workspace",
     "filterBuild": "Build",
