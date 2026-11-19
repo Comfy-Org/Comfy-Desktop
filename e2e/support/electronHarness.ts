@@ -248,9 +248,17 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
       if (!marked.__e2eRendererLossLogged) {
         marked.__e2eRendererLossLogged = true
         electronApp.on('render-process-gone', (_event, contents, details) => {
-          const url = contents.isDestroyed() ? '(destroyed)' : contents.getURL()
+          const pageWithoutSecrets = (): string => {
+            if (contents.isDestroyed()) return '(destroyed)'
+            try {
+              const { protocol, host, pathname } = new URL(contents.getURL())
+              return `${protocol}//${host}${pathname}`
+            } catch {
+              return '(unparsed)'
+            }
+          }
           console.error(
-            `[e2e-harness] renderer gone reason=${details.reason} exitCode=${details.exitCode} url=${url}`
+            `[e2e-harness] renderer gone reason=${details.reason} exitCode=${details.exitCode} page=${pageWithoutSecrets()}`
           )
         })
         electronApp.on('child-process-gone', (_event, details) => {
