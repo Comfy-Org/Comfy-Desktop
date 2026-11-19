@@ -176,9 +176,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
     <div
       class="dlm-card box-border flex min-w-0 flex-auto flex-col overflow-hidden rounded-panel border border-solid border-[var(--modal-surface-border)] bg-[var(--modal-surface-bg)] [box-shadow:var(--shadow-highlight)]"
     >
-      <header
-        class="dlm-modal-header flex items-center justify-between gap-3 border-b border-solid border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] px-6 pt-5 pb-3"
-      >
+      <header class="dlm-modal-header flex items-center justify-between gap-3 px-6 pt-5">
         <h2 class="dlm-title m-0 text-title font-semibold text-foreground">
           {{ t('downloadsTab.title') }}
         </h2>
@@ -192,14 +190,14 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
             type="single"
             :allow-empty="false"
             roving-focus
-            class="dlm-filterbar sticky -top-4 z-2 -mx-6 -mt-4 mb-2 border-b border-solid border-border bg-background px-6 pt-3 pb-2.5"
+            class="dlm-filterbar mb-3 inline-flex shrink-0 gap-0.5 self-start rounded-[10px] bg-secondary p-[3px]"
             :aria-label="t('downloadsTab.filterAriaLabel')"
           >
             <ToggleGroupItem
               v-for="f in visibleFilters"
               :key="f.key"
               :value="f.key"
-              class="dlm-filter-chip flex-1 text-xs"
+              class="dlm-filter-chip h-[26px] rounded-[7px] px-[11px] text-[13px] whitespace-nowrap hover:bg-transparent hover:text-foreground data-[state=on]:bg-accent data-[state=on]:hover:bg-accent"
               :class="{ active: filter === f.key }"
               >{{ f.label }}</ToggleGroupItem
             >
@@ -212,7 +210,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
             :text="t('downloadsTab.emptyHint')"
           />
 
-          <ul v-else :key="filter" class="dlm-list m-0 flex list-none flex-col gap-0.5 p-0">
+          <ul v-else :key="filter" class="dlm-list m-0 -mx-3 flex list-none flex-col gap-0.5 p-0">
             <li
               v-for="d in filtered"
               :key="d.id ?? d.url"
@@ -230,7 +228,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                   'dlm-leading inline-flex flex-none items-center justify-center',
                   isCompletedImage(d)
                     ? 'dlm-thumb size-10 overflow-hidden rounded-lg bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]'
-                    : 'size-9'
+                    : 'size-8'
                 ]"
               >
                 <DownloadThumbnail :entry="d" :fetcher="fetchThumbnail">
