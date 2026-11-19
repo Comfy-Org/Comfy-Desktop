@@ -158,7 +158,6 @@ const detailKey = ref<string | null>(null)
 const pageSize = ref(DEFAULT_PAGE_SIZE)
 const currentPage = ref(1)
 const assetTotal = ref(0)
-const localCounts = ref<LocalAssetListing['counts'] | null>(null)
 const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 
@@ -368,16 +367,10 @@ function cardKey(asset: GalleryAsset): string {
 const pageCount = computed(() => Math.max(1, Math.ceil(assetTotal.value / pageSize.value)))
 const showPagination = computed(() => !!selectedBuild.value && assetTotal.value > 0)
 
-function kindCount(kind: KindFilter): number | undefined {
-  if (selectedBuild.value?.cloud) return undefined
-  return localCounts.value?.[kind]
-}
-
 const kindOptions = computed(() =>
   kinds.map((kind) => ({
     value: kind,
     label: t(`assets.kind.${kind}`),
-    count: kindCount(kind),
     testId: `assets-kind-${kind}`
   }))
 )
@@ -399,11 +392,7 @@ async function fitToolbar(): Promise<void> {
 }
 
 useResizeObserver(toolbarRow, () => void fitToolbar())
-watch(
-  [selectedBuild, searchOpen, () => kindOptions.value.map((option) => option.count).join()],
-  () => void fitToolbar(),
-  { flush: 'post' }
-)
+watch([selectedBuild, searchOpen], () => void fitToolbar(), { flush: 'post' })
 
 const visibleAssets = computed(() => {
   const filtered = assets.value.filter(
@@ -650,7 +639,6 @@ async function loadAssets(userAsked = false): Promise<void> {
     ])
     if (current !== requestId || pageNumber !== currentPage.value) return
     if ('counts' in listed) {
-      localCounts.value = listed.counts
       assetTotal.value = listed.total
       if (pageNumber > pageCount.value) {
         currentPage.value = pageCount.value
@@ -719,7 +707,6 @@ const listQuery = computed(() =>
 
 watch([loadKey, listedCloudId], () => {
   resetCloudPaging()
-  localCounts.value = null
   currentPage.value = 1
   focusMiss.value = null
   lookedUpDetail.value = null
@@ -1207,11 +1194,6 @@ function extensionOf(name: string): string {
                 data-testid="assets-kind-menu"
               >
                 {{ currentKind.label }}
-                <span
-                  v-if="currentKind.count !== undefined"
-                  class="text-subtle-foreground tabular-nums"
-                  >{{ currentKind.count }}</span
-                >
                 <ChevronDown :size="14" aria-hidden="true" />
               </Button>
             </template>
@@ -1227,11 +1209,6 @@ function extensionOf(name: string): string {
                 @select.prevent="kindFilter = option.value"
               >
                 <span class="flex-1 text-left">{{ option.label }}</span>
-                <span
-                  v-if="option.count !== undefined"
-                  class="text-subtle-foreground tabular-nums"
-                  >{{ option.count }}</span
-                >
                 <Check v-if="kindFilter === option.value" :size="15" aria-hidden="true" />
               </MenuRadioItem>
             </DropdownMenuRadioGroup>
