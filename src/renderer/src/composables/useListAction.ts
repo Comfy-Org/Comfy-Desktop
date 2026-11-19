@@ -54,7 +54,8 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       REQUIRES_STOPPED.has(action.id) && action.id !== 'migrate-to-standalone'
     const wasRunning = sessionStore.isRunning(inst.id)
 
-    if (!(await actionGuard.checkBeforeAction(inst.id, action.label))) return
+    const guardOpts = action.id === 'launch' ? { proceedAfterCancel: false } : undefined
+    if (!(await actionGuard.checkBeforeAction(inst.id, action.label, guardOpts))) return
 
     if (action.confirm || (requiresStoppedGuard && wasRunning)) {
       const willStopMsg =

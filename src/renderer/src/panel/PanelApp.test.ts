@@ -1394,6 +1394,120 @@ describe('PanelApp', () => {
     await flushPromises()
   })
 
+  describe('opening a build while it is starting', () => {
+    type Api = Record<string, ReturnType<typeof vi.fn>>
+    const api = (): Api => (window as unknown as { api: Api }).api
+
+    function markLaunching(): void {
+      const launching = api().onInstanceLaunching.mock.calls.map(
+        (call) => call[0] as (data: { installationId: string; installationName: string }) => void
+      )
+      launching.forEach((cb) => cb({ installationId: 'test-id', installationName: 'Test' }))
+    }
+
+    async function mountDashboard(): Promise<ReturnType<typeof mountPanel>> {
+      mockState.installations = [SAMPLE_INSTALL]
+      api().getListActions.mockResolvedValue([
+        { id: 'launch', label: 'Start', style: 'primary', showProgress: true }
+      ])
+      api().runAction.mockReturnValue(new Promise(() => {}))
+      Object.assign(api(), { onInstallProgress: vi.fn(() => () => {}) })
+      window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+      const wrapper = mountPanel()
+      await flushPromises()
+      return wrapper
+    }
+
+    async function startFromHome(wrapper: ReturnType<typeof mountPanel>): Promise<void> {
+      await wrapper.get('[data-testid="home-build"][data-build-id="test-id"]').trigger('click')
+      await flushPromises()
+      markLaunching()
+      await flushPromises()
+      expect(api().runAction).toHaveBeenCalledTimes(1)
+    }
+
+    function progressDialog(): Element | null {
+      return document.body.querySelector('[data-testid="build-progress-dialog"]')
+    }
+
+    afterEach(async () => {
+      document.body
+        .querySelector<HTMLButtonElement>('[data-testid="build-progress-close"]')
+        ?.click()
+      await flushPromises()
+    })
+
+    it('a pick from Home shows the start logs instead of starting it again', async () => {
+      const wrapper = await mountDashboard()
+      await startFromHome(wrapper)
+
+      wrapper.getComponent({ name: 'HomeView' }).vm.$emit('pick', SAMPLE_INSTALL)
+      await flushPromises()
+
+      expect(api().runAction).toHaveBeenCalledTimes(1)
+      expect(mockModal.confirm).not.toHaveBeenCalled()
+      expect(api().cancelOperation).not.toHaveBeenCalled()
+      expect(progressDialog()).not.toBeNull()
+    })
+
+    it('a Builds tile shows the start logs instead of starting it again', async () => {
+      const wrapper = await mountDashboard()
+      await startFromHome(wrapper)
+
+      wrapper.getComponent({ name: 'ChooserView' }).vm.$emit('pick', SAMPLE_INSTALL)
+      await flushPromises()
+
+      expect(api().runAction).toHaveBeenCalledTimes(1)
+      expect(mockModal.confirm).not.toHaveBeenCalled()
+      expect(progressDialog()).not.toBeNull()
+    })
+
+    it('Open on the build page shows the start logs instead of starting it again', async () => {
+      const wrapper = await mountDashboard()
+      await startFromHome(wrapper)
+      await showBuilds(wrapper)
+      wrapper.getComponent({ name: 'ChooserView' }).vm.$emit('open-details', SAMPLE_INSTALL)
+      await flushPromises()
+
+      wrapper.getComponent({ name: 'BuildDetailsView' }).vm.$emit('launch', SAMPLE_INSTALL)
+      await flushPromises()
+
+      expect(api().runAction).toHaveBeenCalledTimes(1)
+      expect(mockModal.confirm).not.toHaveBeenCalled()
+      expect(progressDialog()).not.toBeNull()
+      expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(true)
+    })
+
+    it('focuses the window of a build starting elsewhere, and starts nothing', async () => {
+      const wrapper = await mountDashboard()
+      markLaunching()
+      api().focusComfyWindow.mockResolvedValue(true)
+
+      await wrapper.get('[data-testid="home-build"][data-build-id="test-id"]').trigger('click')
+      await flushPromises()
+
+      expect(api().focusComfyWindow).toHaveBeenCalledWith('test-id')
+      expect(api().runAction).not.toHaveBeenCalled()
+      expect(mockModal.confirm).not.toHaveBeenCalled()
+      expect(progressDialog()).toBeNull()
+      expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+    })
+
+    it('opens the build page of a build starting with no window and no logs here', async () => {
+      const wrapper = await mountDashboard()
+      markLaunching()
+      api().focusComfyWindow.mockResolvedValue(false)
+
+      await wrapper.get('[data-testid="home-build"][data-build-id="test-id"]').trigger('click')
+      await flushPromises()
+
+      expect(api().runAction).not.toHaveBeenCalled()
+      expect(mockModal.confirm).not.toHaveBeenCalled()
+      expect(progressDialog()).toBeNull()
+      expect(wrapper.get('[data-testid="build-details"]').text()).toContain('Test Install')
+    })
+  })
+
   it('Launch in the build menu starts a build that crashed with its window still open', async () => {
     mockState.installations = [SAMPLE_INSTALL]
     const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api

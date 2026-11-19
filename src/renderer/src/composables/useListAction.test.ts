@@ -226,6 +226,43 @@ describe('useListAction.executeAction onGuardsPassed hook', () => {
     expect(showProgress).not.toHaveBeenCalled()
   })
 
+  it('asks the busy guard to stop a launch once it cancels the start', async () => {
+    const { executeAction } = useListAction('chooser', { showProgress: vi.fn() })
+
+    await executeAction(INSTALL, LAUNCH_ACTION)
+
+    expect(mockCheckBeforeAction).toHaveBeenCalledWith('inst-launch', LAUNCH_ACTION.label, {
+      proceedAfterCancel: false
+    })
+  })
+
+  it('does not launch again after the busy guard cancelled the start', async () => {
+    mockCheckBeforeAction.mockResolvedValueOnce(false)
+    const showProgress = vi.fn()
+    const { executeAction } = useListAction('chooser', { showProgress })
+
+    await executeAction(INSTALL, LAUNCH_ACTION)
+
+    expect(showProgress).not.toHaveBeenCalled()
+    expect(mockRunAction).not.toHaveBeenCalled()
+  })
+
+  it('keeps the busy guard proceeding after a cancel for actions other than launch', async () => {
+    const showProgress = vi.fn()
+    const { executeAction } = useListAction('chooser', { showProgress })
+    const updateAction: ListAction = {
+      id: 'update-comfyui',
+      label: 'Update',
+      enabled: true,
+      showProgress: true
+    }
+
+    await executeAction(INSTALL, updateAction)
+
+    expect(mockCheckBeforeAction).toHaveBeenCalledWith('inst-launch', 'Update', undefined)
+    expect(showProgress).toHaveBeenCalledOnce()
+  })
+
   it('does NOT fire onGuardsPassed when the busy guard cancels', async () => {
     mockCheckBeforeAction.mockResolvedValueOnce(false)
     const onGuardsPassed = vi.fn()

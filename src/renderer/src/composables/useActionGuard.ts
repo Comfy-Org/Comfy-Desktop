@@ -9,7 +9,11 @@ export function useActionGuard() {
   const progressStore = useProgressStore()
   const modal = useModal()
 
-  async function checkBeforeAction(installationId: string, actionLabel: string): Promise<boolean> {
+  async function checkBeforeAction(
+    installationId: string,
+    actionLabel: string,
+    opts: { proceedAfterCancel?: boolean } = {}
+  ): Promise<boolean> {
     const activeSession = sessionStore.activeSessions.get(installationId)
     const isBusy =
       sessionStore.isLaunching(installationId) ||
@@ -33,6 +37,7 @@ export function useActionGuard() {
       ) {
         await new Promise((r) => setTimeout(r, 100))
       }
+      if (opts.proceedAfterCancel === false) return false
     }
 
     return true

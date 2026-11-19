@@ -95,6 +95,27 @@ describe('useActionGuard.checkBeforeAction', () => {
     expect(await pending).toBe(true)
   })
 
+  it('stops after the cancel when asked not to proceed, as a launch does', async () => {
+    sessionState.launching.add(INSTALL_ID)
+    mockConfirm.mockResolvedValue(true)
+
+    const ok = await useActionGuard().checkBeforeAction(INSTALL_ID, 'Start', {
+      proceedAfterCancel: false
+    })
+
+    expect(mockCancelOperation).toHaveBeenCalledWith(INSTALL_ID)
+    expect(ok).toBe(false)
+  })
+
+  it('still proceeds when the install is idle and asked not to proceed after a cancel', async () => {
+    const ok = await useActionGuard().checkBeforeAction(INSTALL_ID, 'Start', {
+      proceedAfterCancel: false
+    })
+
+    expect(ok).toBe(true)
+    expect(mockConfirm).not.toHaveBeenCalled()
+  })
+
   it('exits the poll on the 10s deadline even if the op never clears', async () => {
     sessionState.activeSessions.set(INSTALL_ID, { label: 'Stuck' })
     progressState.info.set(INSTALL_ID, { status: 's', percent: -1 })
