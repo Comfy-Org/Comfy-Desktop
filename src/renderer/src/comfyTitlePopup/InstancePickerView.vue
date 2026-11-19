@@ -26,6 +26,7 @@ import type {
   ShowProgressOpts,
   SnapshotListData
 } from '../types/ipc'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 interface PickerInstall {
   id: string
@@ -517,7 +518,8 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
       >
         <div class="picker-list-section flex min-h-0 flex-auto flex-col overflow-hidden">
           <div
-            class="picker-list-section-title mb-3.5 flex flex-none items-center pt-3 pr-[18px] pb-0 pl-4 text-[14px] leading-5 font-medium text-neutral-100 opacity-70"
+            class="picker-list-section-title mb-3.5 flex flex-none items-center pt-3 pr-[18px] pb-0 pl-4"
+            :class="SECTION_TITLE_CLASS"
           >
             {{ $t('instancePicker.instances')
             }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" />

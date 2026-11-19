@@ -23,6 +23,7 @@ import type {
   VersionStatRow,
   VersionStatsValue
 } from '../../types/ipc'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 interface Props {
   sections: DetailSection[]
@@ -181,7 +182,7 @@ function fieldOwnsLabel(field: DetailField): boolean {
 
 const sectionTitleClass = computed(() =>
   props.readonly
-    ? 'pt-2 pb-1 m-0 leading-[1.5] text-[11px] font-semibold tracking-[0.04em] uppercase text-text-muted opacity-55'
+    ? `pt-2 pb-1 m-0 ${SECTION_TITLE_CLASS}`
     : 'leading-[1.5] text-[length:var(--takeover-fs-body)] font-medium text-text-muted'
 )
 
@@ -231,7 +232,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         class="settings-v2-section-head flex min-w-0 flex-col gap-1.5"
       >
         <h3
-          class="settings-v2-section-title m-0 flex items-center px-0 pt-0 pb-1 text-[11px] leading-4 font-semibold tracking-[0.04em] text-text-muted uppercase [&>span]:opacity-55"
+          class="settings-v2-section-title m-0 flex items-center px-0 pt-0 pb-1"
+          :class="SECTION_TITLE_CLASS"
         >
           <span>{{ section.title }}</span>
         </h3>

@@ -10,6 +10,7 @@ const START_DECISION: NavDecision = { verb: 'start', primaryLabel: NAV_LABEL.sta
 const RESTART_DECISION: NavDecision = { verb: 'restart', primaryLabel: NAV_LABEL.restart }
 const FOCUS_DECISION: NavDecision = { verb: 'focus', primaryLabel: NAV_LABEL.openRunning }
 import type { SnapshotListData } from '../types/ipc'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 vi.mock('../views/comfyUISettings/ConsoleTerminalPane.vue', () => ({
   default: {
@@ -186,6 +187,9 @@ describe('comfyTitlePopup/InstancePickerView', () => {
         runningInstallationIds: []
       })
       expect(wrapper.get('.picker-list-section-title').text()).toBe('Builds')
+      expect(wrapper.get('.picker-list-section-title').classes()).toEqual(
+        expect.arrayContaining(SECTION_TITLE_CLASS.split(' '))
+      )
       expect(wrapper.find('.picker-new-install').exists()).toBe(false)
       expect(wrapper.find('.picker-left-footer').exists()).toBe(false)
     })

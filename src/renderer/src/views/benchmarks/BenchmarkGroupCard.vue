@@ -23,6 +23,7 @@ import {
   type RunComparison
 } from '../../lib/benchmarkGroups'
 import BenchmarkSessionName from './BenchmarkSessionName.vue'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 const props = defineProps<{
   group: BenchmarkGroup
@@ -317,11 +318,7 @@ function toggleBaseline(id: string): void {
         variant="textonly"
         size="unset"
         class="benchmarks__group-toggle -ml-1 min-w-0 max-w-[60%] shrink gap-1.5 rounded-lg px-1 py-1 hover:bg-transparent"
-        :class="
-          groupName
-            ? 'text-[14px] font-semibold text-foreground'
-            : 'text-[11px] font-semibold tracking-[0.06em] text-subtle-foreground uppercase'
-        "
+        :class="groupName ? 'text-[14px] font-semibold text-foreground' : SECTION_TITLE_CLASS"
         type="button"
         :title="groupLabel"
         :aria-expanded="!collapsed"

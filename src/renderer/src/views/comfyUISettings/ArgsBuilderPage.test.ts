@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import ArgsBuilderPage from './ArgsBuilderPage.vue'
 import type { ComfyArgDef } from '../../types/ipc'
 import { TELEMETRY_ACTION_EVENT_NAME } from '../../lib/telemetry'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 const SCHEMA: ComfyArgDef[] = [
   {
@@ -120,6 +121,7 @@ describe('ArgsBuilderPage — exclusive group dropdown', () => {
     const wrapper = await mountPage()
     const label = wrapper.find('.args-page-cluster-label')
     expect(label.exists()).toBe(true)
+    expect(label.classes()).toEqual(expect.arrayContaining(SECTION_TITLE_CLASS.split(' ')))
     expect(label.text()).toContain('--cpu')
     expect(label.text()).toContain('--gpu-only')
     expect(label.text()).toContain('--lowvram')

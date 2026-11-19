@@ -7,6 +7,7 @@ import { nextTick } from 'vue'
 import { useSessionStore } from '../../stores/sessionStore'
 import StatusFactPanel from './StatusFactPanel.vue'
 import type { DetailSection, Installation } from '../../types/ipc'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 beforeEach(() => {
   setActivePinia(createTestingPinia({ stubActions: false }))
@@ -151,6 +152,9 @@ describe('StatusFactPanel — running details', () => {
 
     const titles = wrapper.findAll('.status-fact-group-title').map((n) => n.text())
     expect(titles).toContain('Running details')
+    for (const title of wrapper.findAll('.status-fact-group-title')) {
+      expect(title.classes()).toEqual(expect.arrayContaining(SECTION_TITLE_CLASS.split(' ')))
+    }
     expect(wrapper.text()).toContain('8188')
   })
 

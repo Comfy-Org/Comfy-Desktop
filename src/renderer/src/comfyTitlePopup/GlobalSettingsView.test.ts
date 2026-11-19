@@ -4,6 +4,7 @@ import { nextTick } from 'vue'
 
 import { useModal } from '../composables/useModal'
 import GlobalSettingsView from './GlobalSettingsView.vue'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 interface BridgeState {
   updateFieldCalls: Array<{ id: string; value: unknown }>
@@ -333,6 +334,9 @@ describe('GlobalSettingsView', () => {
     const bridge = installMockBridge()
     bridge.browseFolderReturn = '/picked/installs'
     const wrapper = await openFolders()
+    for (const title of wrapper.findAll('.gs-micro-title')) {
+      expect(title.classes()).toEqual(expect.arrayContaining(SECTION_TITLE_CLASS.split(' ')))
+    }
     expect(wrapper.findAll('.gs-micro-title').map((el) => el.text())).toEqual([
       'Default Install Location',
       'Shared Folders',
