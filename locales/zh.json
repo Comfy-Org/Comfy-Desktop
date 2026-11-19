@@ -47,14 +47,17 @@
     "noMatches": "没有与“{query}”匹配的应用",
     "allApps": "全部应用",
     "request": {
-      "tile": "告诉我们你想要什么应用…",
+      "bandTitle": "没有你想要的应用？",
+      "bandBody": "你的想法决定我们接下来做哪些应用。",
       "ask": "提出应用需求",
       "title": "你想要什么应用？",
+      "intro": "你的想法会帮助我们决定下一个做什么。",
       "placeholder": "说说它要用什么生成什么",
       "send": "发送",
       "sending": "正在发送…",
       "failed": "没能发送你的需求，请重试。",
-      "thanks": "谢谢，我们已收到你的需求。"
+      "thanks": "谢谢，我们已收到你的需求。",
+      "done": "完成"
     },
     "badge": {
       "withDescription": "{text}：{description}"
