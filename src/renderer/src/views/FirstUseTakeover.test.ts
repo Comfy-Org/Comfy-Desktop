@@ -21,6 +21,7 @@ vi.mock('../components/TermsModal.vue', () => ({
 }))
 
 import FirstUseTakeover from './FirstUseTakeover.vue'
+import { useModal } from '../composables/useModal'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { SetupPlan } from '../lib/setupPlan'
 import type { SetupConsent } from '../lib/setupConsent'
@@ -101,6 +102,7 @@ function installApi(overrides: ApiOverrides = {}): void {
 }
 
 beforeEach(() => {
+  useModal().dismiss()
   vi.mocked(emitTelemetryAction).mockClear()
   installApi()
 })
@@ -259,6 +261,7 @@ describe('Set up, the first screen', () => {
     await flushPromises()
 
     expect(w.emitted('change')).toEqual([[expect.any(Object), '/Volumes/Big/ComfyUI']])
+    expect(w.emitted('location-change')).toEqual([['/Volumes/Big/ComfyUI']])
   })
 
   it('keeps the free space of the folder picked last when an earlier lookup lands late', async () => {
@@ -285,6 +288,60 @@ describe('Set up, the first screen', () => {
     await flushPromises()
 
     expect(text(w, 'setup-location-meta')).not.toContain('Only')
+  })
+
+  it('refuses a picked folder inside another build and offers Change location again', async () => {
+    const browseFolder = vi
+      .fn()
+      .mockResolvedValueOnce('/Users/ada/ComfyUI-Installs/Studio/inner')
+      .mockResolvedValueOnce('/Volumes/Big/ComfyUI')
+    const validateInstallPath = vi.fn(async (path: string) =>
+      path.includes('/Studio/') ? ['insideExistingInstall'] : []
+    )
+    Object.assign(window.api, { browseFolder, validateInstallPath })
+    const w = await mountSetup()
+    type Exposed = { browseInstallLocation: () => Promise<void> }
+    const picking = (w.vm as unknown as Exposed).browseInstallLocation()
+    await flushPromises()
+
+    const modal = useModal()
+    expect(modal.state.visible).toBe(true)
+    expect(modal.state.title).toBe("Couldn't add this build")
+    expect(modal.state.message).toContain('overlaps with an existing build')
+    expect(modal.state.buttonLabel).toBe('Change location')
+    expect(w.emitted('location-change')).toBeUndefined()
+
+    modal.close(true)
+    await picking
+    await flushPromises()
+
+    expect(browseFolder).toHaveBeenLastCalledWith('/Users/ada/ComfyUI-Installs/Studio/inner')
+    expect(w.emitted('location-change')).toEqual([['/Volumes/Big/ComfyUI']])
+    await agree(w)
+    await install(w)
+    const [plan] = w.emitted('install')![0] as [SetupPlan]
+    expect(plan.installRoot).toBe('/Volumes/Big/ComfyUI')
+  })
+
+  it('keeps the old folder when a refused folder is closed with the ×', async () => {
+    Object.assign(window.api, {
+      browseFolder: vi.fn().mockResolvedValue('/Users/ada/ComfyUI-Installs/Studio/inner'),
+      validateInstallPath: vi.fn().mockResolvedValue(['insideExistingInstall'])
+    })
+    const w = await mountSetup()
+    const picking = (
+      w.vm as unknown as { browseInstallLocation: () => Promise<void> }
+    ).browseInstallLocation()
+    await flushPromises()
+    useModal().dismiss()
+    await picking
+
+    expect(window.api.browseFolder).toHaveBeenCalledTimes(1)
+    expect(w.emitted('location-change')).toBeUndefined()
+    await agree(w)
+    await install(w)
+    const [plan] = w.emitted('install')![0] as [SetupPlan]
+    expect(plan.installRoot).toBe('/Users/ada/ComfyUI-Installs')
   })
 
   it('keeps the plan when the folder picker is cancelled', async () => {

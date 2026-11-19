@@ -114,6 +114,7 @@ const {
   completeFirstUseAndDismiss,
   handleSetupInstall,
   handleSetupChange,
+  handleSetupLocationChange,
   handleNewInstallConsentChange,
   handleFirstUseChainMigrate,
   handleNewInstallTakeoverClose,
@@ -656,6 +657,7 @@ onUnmounted(() => {
         :saved-plan="savedSetup?.plan ?? null"
         @install="handleSetupInstall"
         @change="handleSetupChange"
+        @location-change="handleSetupLocationChange"
         @complete-skip="completeFirstUseAndDismiss"
         @chain-migrate="handleFirstUseChainMigrate"
       />

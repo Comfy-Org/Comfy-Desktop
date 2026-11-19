@@ -37,6 +37,7 @@ export interface FirstUseChainApi {
   completeFirstUseAndDismiss: () => Promise<void>
   handleSetupInstall: (plan: SetupPlan) => Promise<void>
   handleSetupChange: (consent: SetupConsent, pickedInstallRoot?: string) => Promise<void>
+  handleSetupLocationChange: (installRoot: string) => void
   handleNewInstallConsentChange: (accepted: boolean) => void
   handleFirstUseChainMigrate: (payload?: { express?: boolean }) => Promise<void>
   handleNewInstallTakeoverClose: () => Promise<void>
@@ -244,6 +245,15 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     await opts.openFirstUseTakeover()
   }
 
+  function handleSetupLocationChange(installRoot: string): void {
+    const saved = savedSetup.value
+    if (!saved) return
+    savedSetup.value = {
+      plan: { ...saved.plan, installRoot },
+      draft: { ...saved.draft, instPath: installRoot }
+    }
+  }
+
   async function handleNewInstallSaveSetup(saved: SavedSetup): Promise<void> {
     savedSetup.value = saved
     await handleNewInstallBackToSetup()
@@ -359,6 +369,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     completeFirstUseAndDismiss,
     handleSetupInstall,
     handleSetupChange,
+    handleSetupLocationChange,
     handleNewInstallConsentChange,
     handleFirstUseChainMigrate,
     handleNewInstallTakeoverClose,

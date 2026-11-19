@@ -45,6 +45,28 @@ export function trackGuardrailBlocked(guardrailType: string, flow: string, stage
   })
 }
 
+export async function locationIssueMessage(
+  path: string,
+  flow: string,
+  stage: string,
+  t: (key: string) => string
+): Promise<string | null> {
+  let issues: PathIssue[]
+  try {
+    issues = await window.api.validateInstallPath(path)
+  } catch {
+    return null
+  }
+  for (const issue of issues) {
+    const keys = pathIssueI18nKeys[issue]
+    if (keys) {
+      trackGuardrailBlocked(toPathGuardrail(issue), flow, stage)
+      return t(keys.message)
+    }
+  }
+  return null
+}
+
 export async function showPathIssueAlerts(
   issues: PathIssue[],
   flow: string,

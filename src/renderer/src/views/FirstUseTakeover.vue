@@ -26,6 +26,8 @@ import {
   type SetupPlan
 } from '../lib/setupPlan'
 import type { SystemInfo } from '../../../types/ipc'
+import { useModal } from '../composables/useModal'
+import { locationIssueMessage } from '../lib/installHelpers'
 
 type Step = 'setup' | 'mirrors'
 type SetupAction = 'install' | 'change' | 'skip'
@@ -36,11 +38,13 @@ const props = defineProps<{ consent?: SetupConsent | null; savedPlan?: SetupPlan
 const emit = defineEmits<{
   install: [plan: SetupPlan]
   change: [consent: SetupConsent, pickedInstallRoot?: string]
+  'location-change': [installRoot: string]
   'complete-skip': []
   'chain-migrate': [{ express: boolean }]
 }>()
 
 const { t } = useI18n()
+const modal = useModal()
 
 const ROW_CLASS = 'grid h-4 grid-cols-[147px_minmax(0,1fr)_auto] items-center text-[13px]/4'
 const CONSENT_ROW_CLASS = 'flex w-fit cursor-pointer items-center gap-2.5 text-xs/[15px]'
@@ -325,10 +329,22 @@ function retryPlan(): void {
 async function browseInstallLocation(): Promise<void> {
   const current = plan.value
   if (!current) return
-  const chosen = await window.api.browseFolder(current.installRoot || undefined)
+  let chosen = await window.api.browseFolder(current.installRoot || undefined)
+  while (chosen) {
+    const issue = await locationIssueMessage(chosen, 'first_use', 'browse', t)
+    if (!issue) break
+    const pickAgain = await modal.notice({
+      title: t('errors.cannotAdd'),
+      message: issue,
+      actionLabel: t('errors.changeLocation')
+    })
+    if (!pickAgain) return
+    chosen = await window.api.browseFolder(chosen)
+  }
   if (!chosen || plan.value !== current) return
   plan.value = { ...current, installRoot: chosen }
   pickedInstallRoot.value = chosen
+  emit('location-change', chosen)
   diskFree.value = null
   const gen = openGeneration
   void window.api

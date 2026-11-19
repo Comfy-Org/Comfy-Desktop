@@ -511,6 +511,27 @@ describe('useFirstUseChain — Set up', () => {
     expect(unref(chain.api!.savedSetup)?.plan).toEqual(saved.plan)
   })
 
+  it('keeps a folder picked with Change location in the setup saved in Change', async () => {
+    const chain = mountChain()
+    const saved = savedSetup(changedPlan())
+    await chain.api!.handleNewInstallSaveSetup(saved)
+
+    chain.api!.handleSetupLocationChange('/Volumes/Big/ComfyUI')
+
+    expect(unref(chain.api!.savedSetup)?.plan.installRoot).toBe('/Volumes/Big/ComfyUI')
+    await chain.api!.handleSetupChange(setupConsent({ acceptedTos: true }), '/Volumes/Big/ComfyUI')
+    const handoff = chain.api!.hooks.consumeSetupHandoff()
+    expect(handoff?.restore?.instPath).toBe('/Volumes/Big/ComfyUI')
+    expect(handoff?.restore?.instName).toBe(saved.draft.instName)
+    expect(handoff?.installRoot).toBe('/Volumes/Big/ComfyUI')
+  })
+
+  it('has nothing to update when no setup was saved in Change', () => {
+    const chain = mountChain()
+    chain.api!.handleSetupLocationChange('/Volumes/Big/ComfyUI')
+    expect(unref(chain.api!.savedSetup)).toBeNull()
+  })
+
   it('installs the setup saved in Change under its name, and forgets it once first use is done', async () => {
     const chain = mountChain()
     const saved = savedSetup(changedPlan())
