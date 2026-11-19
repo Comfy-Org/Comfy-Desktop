@@ -10,6 +10,7 @@ import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import type { ComfyOutputFile } from '../apps/outputRequest'
 import { assetKind } from './assets'
+import { searchTerm } from './assetSearch'
 import { copyImageToClipboard } from './clipboardImage'
 import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
@@ -305,13 +306,15 @@ function isCount(value: unknown, min: number, max: number): value is number {
 
 export function localPageRequest(value: unknown): LocalAssetPageRequest {
   if (!value || typeof value !== 'object') return FIRST_LOCAL_PAGE
-  const { offset, limit, order, kind } = value as Record<string, unknown>
+  const { offset, limit, order, kind, search } = value as Record<string, unknown>
   const knownKind = LOCAL_KINDS.find((known) => known === kind)
+  const term = searchTerm(search)
   return isCount(offset, 0, Number.MAX_SAFE_INTEGER) &&
     isCount(limit, 1, MAX_LOCAL_ASSETS) &&
     (order === 'newest' || order === 'oldest') &&
-    (kind === undefined || knownKind)
-    ? { offset, limit, order, ...(knownKind && { kind: knownKind }) }
+    (kind === undefined || knownKind) &&
+    term !== null
+    ? { offset, limit, order, ...(knownKind && { kind: knownKind }), ...(term && { search: term }) }
     : FIRST_LOCAL_PAGE
 }
 
@@ -319,6 +322,11 @@ function countKinds(assets: AssetSummary[]): LocalAssetListing['counts'] {
   const counts = { all: assets.length, image: 0, video: 0, audio: 0, '3d': 0 }
   for (const { kind } of assets) if (kind) counts[kind]++
   return counts
+}
+
+function nameContains(search: string): (asset: AssetSummary) => boolean {
+  const term = search.toLowerCase()
+  return (asset) => asset.name.toLowerCase().includes(term)
 }
 
 export async function listLocalAssets(
@@ -336,14 +344,15 @@ export async function listLocalAssets(
     found.push(localSummary(file, stat.size, modifiedMs))
   })
   const direction = page.order === 'oldest' ? 1 : -1
-  const matching = page.kind ? found.filter((asset) => asset.kind === page.kind) : found
+  const named = page.search ? found.filter(nameContains(page.search)) : found
+  const matching = page.kind ? named.filter((asset) => asset.kind === page.kind) : named
   const shown = matching
     .sort(
       (a, b) => direction * (a.createdAt!.localeCompare(b.createdAt!) || a.id.localeCompare(b.id))
     )
     .slice(page.offset, page.offset + page.limit)
   await runPool(shown, STATS_AT_ONCE, addMediaFacts)
-  return { assets: shown, total: matching.length, counts: countKinds(found) }
+  return { assets: shown, total: matching.length, counts: countKinds(named) }
 }
 
 function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeImage | null {

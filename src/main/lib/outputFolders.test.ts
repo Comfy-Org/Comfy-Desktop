@@ -462,6 +462,25 @@ describe('listLocalAssets', () => {
     expect(page.counts).toEqual({ all: 4, image: 3, video: 1, audio: 0, '3d': 0 })
   })
 
+  it('searches every file name, in any case, before it pages and counts', async () => {
+    write(path.join(sharedDir, 'Forest-1.png'), 'x', new Date('2026-10-01T00:00:00Z'))
+    write(path.join(sharedDir, 'forest-2.mp4'), 'x', new Date('2026-10-02T00:00:00Z'))
+    write(path.join(sharedDir, 'night', 'forest-3.png'), 'x', new Date('2026-10-03T00:00:00Z'))
+    write(path.join(sharedDir, 'sea.png'), 'x', new Date('2026-10-04T00:00:00Z'))
+
+    const page = await listLocalAssets(undefined, {
+      offset: 1,
+      limit: 1,
+      order: 'newest',
+      kind: 'image',
+      search: 'FOREST'
+    })
+
+    expect(page.assets.map((a) => a.name)).toEqual(['Forest-1.png'])
+    expect(page.total).toBe(2)
+    expect(page.counts).toEqual({ all: 3, image: 2, video: 1, audio: 0, '3d': 0 })
+  })
+
   it('keeps files with the same time in one order, so no file shows on two pages', async () => {
     const same = new Date('2026-10-01T00:00:00Z')
     for (const name of ['c.png', 'a.png', 'd.png', 'b.png'])
@@ -487,6 +506,21 @@ describe('listLocalAssets', () => {
       limit: 10,
       order: 'oldest',
       kind: '3d'
+    })
+    expect(
+      localPageRequest({ offset: 40, limit: 10, order: 'newest', search: ' ' }),
+      'a blank search filters nothing and keeps the page'
+    ).toEqual({ offset: 40, limit: 10, order: 'newest' })
+    expect(
+      localPageRequest({ offset: 0, limit: 10, order: 'newest', search: '🌲'.repeat(200) }),
+      'the length counts characters, not code units'
+    ).toEqual({ offset: 0, limit: 10, order: 'newest', search: '🌲'.repeat(200) })
+    expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: 3 })).toEqual(first)
+    expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: ' sea ' })).toEqual({
+      offset: 0,
+      limit: 10,
+      order: 'newest',
+      search: 'sea'
     })
   })
 

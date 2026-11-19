@@ -135,8 +135,6 @@
     "signIn": "Log in to Comfy Cloud",
     "noCloudBuildTitle": "This workspace has no Comfy Cloud build",
     "noCloudBuildBody": "Restart Comfy Desktop to add Comfy Cloud back.",
-    "noMatchesOnPage": "No matching assets on this page",
-    "noMatchesOnPageHint": "Try another page, type or search.",
     "cloudScanLimit": "Type filters cover the first {limit} Cloud outputs in this sort order.",
     "pagination": {
       "label": "Pages",
