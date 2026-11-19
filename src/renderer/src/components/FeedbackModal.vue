@@ -134,6 +134,7 @@ watch(
       <div
         v-else-if="failed"
         class="absolute inset-0 z-1 flex flex-col items-center justify-center gap-3 px-10 text-center"
+        role="alert"
         data-testid="feedback-failed"
       >
         <h2 class="m-0 text-heading font-semibold text-foreground">

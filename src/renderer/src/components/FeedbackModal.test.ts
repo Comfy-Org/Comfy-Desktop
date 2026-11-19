@@ -160,6 +160,7 @@ describe('FeedbackModal', () => {
     const failed = document.querySelector('[data-testid="feedback-failed"]')
     expect(failed?.textContent).toContain("Feedback form didn't load")
     expect(failed?.textContent).toContain('Check your internet connection, then try again.')
+    expect(failed?.getAttribute('role')).toBe('alert')
 
     document.querySelector<HTMLButtonElement>('[data-testid="feedback-retry"]')!.click()
     await flushPromises()
@@ -175,6 +176,24 @@ describe('FeedbackModal', () => {
     await vi.advanceTimersByTimeAsync(10_000)
     expect(document.querySelector('.feedback-modal-loading')).toBeNull()
     expect(document.querySelector('[data-testid="feedback-failed"]')).toBeNull()
+  })
+
+  it('says the form did not load again when a retry also gets no onReady for ten seconds', async () => {
+    await mountFeedback()
+    const widget = vi.mocked(createWidget).mock.results[0]!.value
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    document.querySelector<HTMLButtonElement>('[data-testid="feedback-retry"]')!.click()
+    await flushPromises()
+    expect(widget.refresh).toHaveBeenCalledOnce()
+
+    await vi.advanceTimersByTimeAsync(9999)
+    expect(document.querySelector('.feedback-modal-loading')).not.toBeNull()
+    expect(document.querySelector('[data-testid="feedback-failed"]')).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(document.querySelector('.feedback-modal-loading')).toBeNull()
+    expect(document.querySelector('[data-testid="feedback-failed"]')).not.toBeNull()
   })
 
   it('never shows the failure once the form is ready', async () => {
