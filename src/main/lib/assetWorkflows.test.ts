@@ -232,6 +232,23 @@ describe('a file in Comfy Cloud', () => {
     ).toEqual([`bytes=0-${PART_BYTES - 1}`, `bytes=${PART_BYTES}-`])
   })
 
+  it('uses the whole file when the server sends it for the rest of a file a little over 4 MB', async () => {
+    mocks.cloudAccessToken.mockResolvedValue('token')
+    mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/clip')
+    const whole = `${'\u0000'.repeat(PART_BYTES - 10)}${SAVED_WORKFLOW}`
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const range = (init.headers as Record<string, string>)['Range']
+        return range === `bytes=${PART_BYTES}-`
+          ? new Response(whole, { status: 200 })
+          : partial(whole.slice(0, PART_BYTES), whole.length)
+      })
+    )
+
+    expect(await hasWorkflow('inst-cloud', 'asset-8')).toBe(true)
+  })
+
   it('reads only the start of a large Cloud PNG, where ComfyUI saves its workflow', async () => {
     mocks.cloudAccessToken.mockResolvedValue('token')
     mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/big.png')

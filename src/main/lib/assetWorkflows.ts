@@ -74,6 +74,7 @@ async function cloudParts(assetId: string, accessToken: string): Promise<Uint8Ar
   if (size === null || size <= PART_BYTES || isPng(head)) return [head]
   if (size <= PART_BYTES * 2) {
     const restResponse = await rangeOf(url, `bytes=${PART_BYTES}-`, deadline)
+    if (restResponse.status === 200) return [await firstBytes(restResponse, PART_BYTES * 2)]
     if (restResponse.status !== 206) return null
     return [Buffer.concat([head, await firstBytes(restResponse, PART_BYTES)])]
   }
