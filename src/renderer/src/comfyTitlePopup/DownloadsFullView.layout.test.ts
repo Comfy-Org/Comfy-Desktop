@@ -86,6 +86,24 @@ describe('DownloadsFullView layout', () => {
     }
   })
 
+  it('draws no line under the filter bar: spacing separates it from the list, and the only lines are the footer rule and the row dividers', async () => {
+    await mountView()
+    const filterbar = document.querySelector<HTMLElement>('.dlm-filterbar')!
+    expect(getComputedStyle(filterbar).position).not.toBe('sticky')
+    expect(box('.dlm-list').top - box('.dlm-filterbar').bottom).toBe(12)
+    const card = document.querySelector('.dlm-card')!
+    const lines: string[] = []
+    for (const el of card.querySelectorAll<HTMLElement>('*')) {
+      const style = getComputedStyle(el)
+      for (const side of ['Top', 'Bottom'] as const) {
+        if (style.getPropertyValue(`border-${side.toLowerCase()}-width`) !== '0px') {
+          lines.push(`${el.classList[0]}:${side}`)
+        }
+      }
+    }
+    expect(lines).toEqual(['dlm-row:Top', 'dlm-row:Top', 'dlm-modal-footer:Top'])
+  })
+
   it('sizes the tabs to their names instead of stretching them across the card', async () => {
     await mountView()
     const tabs = [...document.querySelectorAll('.dlm-filter-chip')].map(
