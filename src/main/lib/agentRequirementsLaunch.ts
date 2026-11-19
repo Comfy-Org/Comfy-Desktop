@@ -854,9 +854,26 @@ const FRONTEND_BACKUP_PREFIX = '.launch-frontend-backup-'
 const FRONTEND_MODULE = FRONTEND_PACKAGE.replace(/-/g, '_')
 const isFrontendDistInfo = (entry: string): boolean =>
   entry.startsWith(`${FRONTEND_MODULE}-`) && entry.endsWith('.dist-info')
-const restoringInstalls = new Set<string>()
+const restoringInstalls = new Map<string, Promise<boolean>>()
 
-export async function restoreCoreFrontend(
+export function restoreCoreFrontend(
+  installation: InstallationRecord,
+  sendOutput: (text: string) => void,
+  signal?: AbortSignal
+): Promise<boolean> {
+  const running = restoringInstalls.get(installation.installPath)
+  if (running) {
+    sendOutput(`\nWaiting for another launch to finish putting ${FRONTEND_PACKAGE} back…\n`)
+    return running
+  }
+  const restore = restoreFrontendOnce(installation, sendOutput, signal).finally(() =>
+    restoringInstalls.delete(installation.installPath)
+  )
+  restoringInstalls.set(installation.installPath, restore)
+  return restore
+}
+
+async function restoreFrontendOnce(
   installation: InstallationRecord,
   sendOutput: (text: string) => void,
   signal?: AbortSignal
@@ -873,11 +890,6 @@ export async function restoreCoreFrontend(
   const tag = attemptTag()
   const reqPath = path.join(installation.installPath, `.launch-frontend-restore-${tag}-src.txt`)
   const backupDir = path.join(installation.installPath, `${FRONTEND_BACKUP_PREFIX}${tag}`)
-  if (restoringInstalls.has(installation.installPath)) {
-    sendOutput(`\nAnother launch is already putting ${FRONTEND_PACKAGE} back; skipping\n`)
-    return false
-  }
-  restoringInstalls.add(installation.installPath)
   try {
     await removeScratch(installation.installPath, (name) => name.startsWith(FRONTEND_BACKUP_PREFIX))
     const savedFrom = await backUpFrontend(pythonPath, backupDir)
@@ -909,7 +921,6 @@ export async function restoreCoreFrontend(
   } finally {
     void fs.promises.unlink(reqPath).catch(() => {})
     void fs.promises.rm(backupDir, { recursive: true, force: true }).catch(() => {})
-    restoringInstalls.delete(installation.installPath)
   }
 }
 

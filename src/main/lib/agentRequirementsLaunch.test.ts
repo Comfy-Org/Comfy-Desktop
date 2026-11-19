@@ -3126,7 +3126,7 @@ describe('restoreCoreFrontend', () => {
     await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
   })
 
-  it('skips a second restore of the same install while the first is still running', async () => {
+  it('makes a second restore of the same install wait for the first and share its result', async () => {
     const inst = managedInstall()
     writeCore('comfyui-frontend-package==1.28.7\n')
     const sitePackages = installedFrontend()
@@ -3143,13 +3143,30 @@ describe('restoreCoreFrontend', () => {
     const first = restoreCoreFrontend(inst, vi.fn())
     await vi.waitFor(() => expect(firstStarted).toBe(true))
 
-    expect(await restoreCoreFrontend(inst, vi.fn()), 'the second restore skips').toBe(false)
-    expect(mockInstall).toHaveBeenCalledTimes(1)
+    let secondSettled = false
+    const second = restoreCoreFrontend(inst, vi.fn()).finally(() => {
+      secondSettled = true
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(secondSettled, 'the second launch waits while uv is still running').toBe(false)
     finishFirst()
 
+    expect(await second).toBe(false)
     expect(await first).toBe(false)
+    expect(mockInstall).toHaveBeenCalledTimes(1)
     expect(read(sitePackages, 'comfyui_frontend_package/__init__.py')).toBe('old init')
     await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('runs uv once for two restores of the same install started together', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    installedFrontend()
+
+    expect(
+      await Promise.all([restoreCoreFrontend(inst, vi.fn()), restoreCoreFrontend(inst, vi.fn())])
+    ).toEqual([true, true])
+    expect(mockInstall).toHaveBeenCalledTimes(1)
   })
 
   it('runs the restore again once the earlier restore of the install has finished', async () => {
