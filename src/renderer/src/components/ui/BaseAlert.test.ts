@@ -176,9 +176,12 @@ describe('BaseAlert', async () => {
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
-  it('does NOT render the header close icon by default', async () => {
-    const wrapper = await mountAlert()
-    expect(wrapper.find('[data-testid="base-alert-close-icon"]').exists()).toBe(false)
+  it('always shows the round close outside the panel, also without showCloseIcon', async () => {
+    const wrapper = await mountAlert({ showCancel: true })
+    const close = wrapper.find('[data-testid="base-alert-close-icon"]')
+    expect(close.exists()).toBe(true)
+    await close.trigger('click')
+    expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
   it('emits `cancel` on ESC when showCloseIcon is true (close icon is a cancel affordance)', async () => {

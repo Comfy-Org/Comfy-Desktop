@@ -11,6 +11,8 @@ const modalMock = {
   select: vi.fn(),
   confirmWithOptions: vi.fn()
 }
+const dialogsMock = vi.hoisted(() => ({ confirm: vi.fn() }))
+vi.mock('./useDialogs', () => ({ useDialogs: () => dialogsMock }))
 vi.mock('./useModal', () => ({
   useModal: () => modalMock
 }))
@@ -250,11 +252,11 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
   beforeEach(() => {
     apiMock.getDetailSections.mockClear()
     apiMock.runAction.mockClear()
-    modalMock.confirm.mockReset()
+    dialogsMock.confirm.mockReset()
   })
 
-  it('shows the confirm modal without calling getDetailSections', async () => {
-    modalMock.confirm.mockResolvedValue(true)
+  it('shows the shared confirm box, with the folder in its own box, without calling getDetailSections', async () => {
+    dialogsMock.confirm.mockResolvedValue('primary')
     const onShowProgress = vi.fn<(opts: ShowProgressOpts) => void>()
     const inst = makeInstall({ name: 'My Install', installPath: '/tmp/my' })
     const { menu } = mountHarnessWithProgress(inst, onShowProgress)
@@ -262,17 +264,20 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
     await menu.triggerAction('delete', inst)
 
     expect(apiMock.getDetailSections).not.toHaveBeenCalled()
-    expect(modalMock.confirm).toHaveBeenCalledTimes(1)
-    const confirmArgs = modalMock.confirm.mock.calls[0][0]
+    expect(dialogsMock.confirm).toHaveBeenCalledTimes(1)
+    const confirmArgs = dialogsMock.confirm.mock.calls[0][0]
     expect(confirmArgs.title).toBe('Uninstall')
-    expect(confirmArgs.message).toContain('permanently removes this ComfyUI installation')
-    expect(confirmArgs.message).toContain('/tmp/my')
+    expect(confirmArgs.message).toContain('permanently removes this ComfyUI build')
+    expect(confirmArgs.message).toContain('This cannot be undone. Other installs are not affected.')
+    expect(confirmArgs.message).not.toContain('\n')
+    expect(confirmArgs.hint).toBe('/tmp/my')
+    expect(confirmArgs.messageDetails).toBeUndefined()
     expect(confirmArgs.confirmLabel).toBe('Uninstall')
-    expect(confirmArgs.confirmStyle).toBe('danger')
+    expect(confirmArgs.tone).toBe('danger')
   })
 
   it('on confirm true, emits showProgress with the correct shape and does not pre-run the action', async () => {
-    modalMock.confirm.mockResolvedValue(true)
+    dialogsMock.confirm.mockResolvedValue('primary')
     const onShowProgress = vi.fn<(opts: ShowProgressOpts) => void>()
     const inst = makeInstall({ name: 'My Install', installPath: '/tmp/my' })
     const { menu } = mountHarnessWithProgress(inst, onShowProgress)
@@ -282,7 +287,7 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
     expect(onShowProgress).toHaveBeenCalledTimes(1)
     const opts = onShowProgress.mock.calls[0][0]
     expect(opts.installationId).toBe(inst.id)
-    expect(opts.title).toBe('Uninstall - My Install')
+    expect(opts.title).toBe('Uninstall · My Install')
     expect(opts.cancellable).toBe(true)
     expect(opts.returnTo).toBe('list')
     expect(opts.destroysInstance).toBe(true)
@@ -291,7 +296,7 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
   })
 
   it('on confirm cancel, does not emit showProgress and does not call runAction', async () => {
-    modalMock.confirm.mockResolvedValue(false)
+    dialogsMock.confirm.mockResolvedValue('cancel')
     const onShowProgress = vi.fn<(opts: ShowProgressOpts) => void>()
     const inst = makeInstall()
     const { menu } = mountHarnessWithProgress(inst, onShowProgress)
@@ -544,7 +549,7 @@ describe('useInstallContextMenu - promote to workspace', () => {
 
     expect(menu.isPromotingToWorkspace(inst)).toBe(true)
     expect(findItem(menu.ctxMenuItems.value, 'promote-to-workspace')).toMatchObject({
-      label: 'Creating...',
+      label: 'Creating…',
       disabled: true
     })
 
@@ -696,5 +701,76 @@ describe('useInstallContextMenu - stop and close the build window', () => {
       title: 'Stop',
       message: 'close failed'
     })
+  })
+})
+
+describe('useInstallContextMenu - error details for a build that went wrong', () => {
+  function mountViewError(onStartAgain?: (inst: Installation) => void) {
+    let menu!: ReturnType<typeof useInstallContextMenu>
+    let session!: ReturnType<typeof useSessionStore>
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    _harnessSetup = () => {
+      menu = useInstallContextMenu({ onStartAgain })
+      session = useSessionStore()
+    }
+    mount(HarnessComponent, { global: { plugins: [pinia] } })
+    _harnessSetup = null
+    return { menu, session }
+  }
+
+  beforeEach(() => {
+    modalMock.alert.mockReset()
+    modalMock.confirm.mockReset()
+  })
+
+  it('names a start that failed with no start logs, shows its reason and offers Try again', async () => {
+    modalMock.confirm.mockResolvedValue(true)
+    const onStartAgain = vi.fn()
+    const inst = makeInstall()
+    const { menu, session } = mountViewError(onStartAgain)
+    session.errorInstances.set(inst.id, {
+      installationName: inst.name,
+      startFailed: true,
+      message: 'Port 8188 is in use'
+    })
+
+    menu.viewError(inst)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(modalMock.alert).not.toHaveBeenCalled()
+    expect(modalMock.confirm).toHaveBeenCalledWith({
+      title: "ComfyUI didn't start",
+      message: 'Port 8188 is in use',
+      confirmLabel: 'Try again',
+      confirmStyle: 'primary'
+    })
+    expect(onStartAgain).toHaveBeenCalledWith(inst)
+  })
+
+  it('does not start again when the details are closed', async () => {
+    modalMock.confirm.mockResolvedValue(false)
+    const onStartAgain = vi.fn()
+    const inst = makeInstall()
+    const { menu, session } = mountViewError(onStartAgain)
+    session.errorInstances.set(inst.id, { installationName: inst.name, startFailed: true })
+
+    menu.viewError(inst)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(onStartAgain).not.toHaveBeenCalled()
+  })
+
+  it('keeps a crash as Error details with no Try again', () => {
+    const inst = makeInstall()
+    const { menu, session } = mountViewError(vi.fn())
+    session.errorInstances.set(inst.id, { installationName: inst.name, exitCode: 1 })
+
+    menu.viewError(inst)
+
+    expect(modalMock.confirm).not.toHaveBeenCalled()
+    expect(modalMock.alert).toHaveBeenCalledWith(expect.objectContaining({ title: 'Error' }))
   })
 })

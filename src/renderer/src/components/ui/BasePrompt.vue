@@ -53,6 +53,13 @@ const emit = defineEmits<{
 const TITLE_ID = `base-prompt-title-${useId()}`
 const inputId = `base-prompt-input-${useId()}`
 
+const SMALL_MODAL_PANEL = [
+  'base-prompt-panel',
+  '[&>.base-modal-header]:pt-5 [&>.base-modal-header]:pr-5 [&>.base-modal-header]:pl-5',
+  '[&>.base-modal-body]:px-5 [&>.base-modal-body]:pt-4 [&>.base-modal-body]:pb-5',
+  '[&>.base-modal-footer]:px-5 [&>.base-modal-footer]:py-4'
+]
+
 const linkClass =
   '[&_.modal-link]:cursor-pointer [&_.modal-link]:text-[var(--action)] [&_.modal-link]:underline'
 
@@ -96,7 +103,7 @@ watch(
     :dismiss-on-escape="dismissOnEscape"
     :dismiss-on-outside="dismissOnOutside"
     :show-close-button="false"
-    content-class="base-prompt-panel"
+    :content-class="SMALL_MODAL_PANEL"
     @close="cancel"
   >
     <template #header>
@@ -108,7 +115,7 @@ watch(
       </h2>
     </template>
 
-    <div class="base-prompt-body flex flex-col gap-3.5 text-sm leading-[1.5] text-text-muted">
+    <div class="base-prompt-body flex flex-col gap-5 text-sm leading-[1.5] text-text-muted">
       <div
         v-if="message"
         class="base-prompt-message whitespace-pre-line select-text [&_strong]:font-semibold [&_strong]:text-text"
@@ -117,17 +124,17 @@ watch(
         v-html="linkifiedMessage"
       ></div>
 
-      <div v-if="messageDetails.length" class="base-prompt-details flex flex-col gap-2">
+      <div v-if="messageDetails.length" class="base-prompt-details flex flex-col gap-5">
         <div
           v-for="(group, gi) in messageDetails"
           :key="gi"
-          class="base-prompt-detail-group flex flex-col gap-1"
+          class="base-prompt-detail-group flex flex-col gap-2"
         >
           <span class="base-prompt-detail-label" :class="SECTION_TITLE_CLASS">{{
             group.label
           }}</span>
           <div
-            class="base-prompt-detail-recessed max-h-[200px] overflow-y-auto rounded-lg border border-solid border-neutral-100/8 bg-neutral-100/4 px-2.5 py-2"
+            class="base-prompt-detail-recessed max-h-[200px] overflow-y-auto rounded-lg bg-[var(--surface)] px-2.5 py-2"
             @click="handleModalLinkClick"
           >
             <div
@@ -141,7 +148,7 @@ watch(
         </div>
       </div>
 
-      <div class="base-prompt-field flex flex-col gap-1">
+      <div class="base-prompt-field flex flex-col gap-2">
         <label :for="inputId" class="base-prompt-field-label text-[13px] font-semibold text-text">
           {{ inputLabel ?? $t('common.name') }}
         </label>
@@ -150,7 +157,7 @@ watch(
           v-model="inputValue"
           data-initial-focus
           type="text"
-          class="base-prompt-input mt-1.5 w-full"
+          class="base-prompt-input w-full"
           :placeholder="placeholder"
           :aria-invalid="error ? true : undefined"
           :data-testid="testIdInput ?? TID.basePromptInput"

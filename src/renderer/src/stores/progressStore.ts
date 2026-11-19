@@ -13,6 +13,7 @@ import type {
   ShowProgressOpts,
   Unsubscribe
 } from '../types/ipc'
+import { progressActionName } from '../lib/progressTitle'
 
 export interface Operation {
   title: string
@@ -34,6 +35,7 @@ export interface Operation {
   done: boolean
   error: string | null
   finished: boolean
+  superseded: boolean
   cancelRequested: boolean
   result: ActionResult | null
   actionId?: string
@@ -60,6 +62,15 @@ export const useProgressStore = defineStore('progress', () => {
       if (session) session.message = data.message
     }
   })
+
+  function supersedeFailedLaunch(data: { installationId: string }): void {
+    const op = operations.get(data.installationId)
+    if (!op || !op.finished || op.opKind !== 'launch' || !op.error) return
+    cleanupOperation(data.installationId)
+    op.superseded = true
+  }
+  window.api.onInstanceLaunching?.(supersedeFailedLaunch)
+  window.api.onInstanceStarted?.(supersedeFailedLaunch)
 
   function emitOpResult(
     op: Operation,
@@ -139,7 +150,7 @@ export const useProgressStore = defineStore('progress', () => {
     cleanupOperation(installationId)
 
     sessionStore.startSession(installationId)
-    const sessionLabel = title.split(' — ')[0] || t('progress.working')
+    const sessionLabel = progressActionName(title) || t('progress.working')
     sessionStore.setActiveSession(installationId, sessionLabel)
 
     const op: Operation = {
@@ -162,6 +173,7 @@ export const useProgressStore = defineStore('progress', () => {
       done: false,
       error: null,
       finished: false,
+      superseded: false,
       cancelRequested: false,
       result: null,
       actionId,

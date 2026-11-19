@@ -76,7 +76,7 @@ describe('useLocalInstanceGuard', () => {
     await guard.checkBeforeLaunch('target')
 
     expect(mockConfirm.mock.calls[0]![0].messageDetails[0].items).toEqual([
-      'Performance Test: Test Install',
+      'Performance test: Test Install',
       'Other'
     ])
   })
@@ -92,7 +92,7 @@ describe('useLocalInstanceGuard', () => {
     await guard.checkBeforeLaunch('target')
 
     expect(mockConfirm.mock.calls[0]![0].messageDetails[0].items).toEqual([
-      'Performance Test: Test Install'
+      'Performance test: Test Install'
     ])
   })
 

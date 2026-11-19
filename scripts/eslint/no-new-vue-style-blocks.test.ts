@@ -35,7 +35,7 @@ function expectForbidden(source: string, file?: string, count = 1) {
   }
 }
 
-const frozenFile = 'src/renderer/src/comfyTitlePopup/DownloadsFullView.vue'
+const frozenFile = 'src/renderer/src/comfyTitlePopup/globalSettings/GitHubLinkCard.vue'
 const frozenSource = readFileSync(resolve(root, frozenFile), 'utf8')
 const frozenBlock = frozenSource.slice(frozenSource.indexOf('<style>')).trim()
 
@@ -97,14 +97,14 @@ describe('no new Vue style blocks', () => {
   it.each([
     'src/renderer/src/NewComponent.vue',
     'src/renderer/src/comfyTitlePopup/NewComponent.vue',
-    'src/renderer/src/views/DownloadsFullView.vue',
-    'another-checkout/src/renderer/src/comfyTitlePopup/DownloadsFullView.vue'
+    'src/renderer/src/views/GitHubLinkCard.vue',
+    'another-checkout/src/renderer/src/comfyTitlePopup/globalSettings/GitHubLinkCard.vue'
   ])('does not transfer an exception to %s', (file) => {
     expectForbidden(frozenBlock, file)
   })
 
   it.each([
-    frozenBlock.replace('32px', '64px'),
+    frozenBlock.replace('200%', '300%'),
     frozenBlock.replace('</style>', '.new { color: red }\n</style>'),
     frozenBlock.replace('<style>', '<style scoped>'),
     '<style src="./replacement.css" />'

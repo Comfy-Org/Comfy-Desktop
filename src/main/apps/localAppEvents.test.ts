@@ -58,6 +58,26 @@ const BUILD = 'studio'
 const RUN = '0b1c2d3e-aaaa-bbbb-cccc-0123456789ab'
 const OTHER_RUN = 'ffffffff-aaaa-bbbb-cccc-0123456789ab'
 const T0 = 1_800_000_000_000
+const PROMPT_WORDS = 'a-cat-in-a-red-hat'
+const REFUSAL_MESSAGE = `Polling aborted due to error: Task failed: ${JSON.stringify({
+  id: 'cgt-20261118-0001',
+  status: 'failed',
+  content: { prompt: PROMPT_WORDS },
+  error: {
+    code: 'OutputVideoSensitiveContentDetected',
+    message: 'The output video may contain sensitive information.'
+  }
+})}`
+
+const ECHOED_PROMPT_FAILURE = `Polling aborted due to error: Task failed: ${JSON.stringify({
+  id: 'gen-1',
+  state: 'failed',
+  failure_reason: 'Internal service error',
+  request: { prompt: 'A poster saying content moderated' }
+})}\n`
+
+const DEEP_ARRAYS = `${'['.repeat(20_000)}${']'.repeat(20_000)}`
+const DEEP_TEXT_ANSWER = `Gemini answered with text: {"result": ${DEEP_ARRAYS}}`
 
 function message(type: string, data: Record<string, unknown> = {}, promptId = RUN): unknown {
   return { type, data: { prompt_id: promptId, ...data } }
@@ -151,6 +171,111 @@ describe('run_finished', () => {
 
     expect(sent(RUN_FINISHED_EVENT)).toEqual([expect.objectContaining(expected)])
     expect(JSON.stringify(sdkCaptures)).not.toContain('/dev/x')
+  })
+
+  it.each([
+    ['Exception', REFUSAL_MESSAGE, 'exception'],
+    [
+      'RuntimeError',
+      `ByteDance request failed. Code: InputImageSensitiveContentDetected, message: ${PROMPT_WORDS}`,
+      'runtime_error'
+    ]
+  ])(
+    'sends a run a partner refused for its content as refused, with the %s error class and no message text',
+    (exceptionType, exceptionMessage, errorClass) => {
+      runAccepted(RUN, BUILD, APP, T0)
+      noteRunMessage(message('execution_start', { timestamp: T0 }))
+      noteRunMessage(
+        message('execution_error', {
+          node_id: '12',
+          node_type: 'ByteDanceSeedanceNode',
+          exception_type: exceptionType,
+          exception_message: exceptionMessage,
+          timestamp: T0 + 30_000
+        })
+      )
+
+      expect(sent(RUN_FINISHED_EVENT)).toEqual([
+        expect.objectContaining({
+          app_id: APP,
+          where: 'local',
+          outcome: 'refused',
+          error_class: errorClass,
+          run_seconds: 30
+        })
+      ])
+      const wire = JSON.stringify(sdkCaptures)
+      expect(wire).not.toContain(PROMPT_WORDS)
+      expect(wire).not.toContain('SensitiveContentDetected')
+      expect(wire).not.toContain('Task failed')
+    }
+  )
+
+  it('keeps a run that broke on its own as failed', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_start', { timestamp: T0 }))
+    noteRunMessage(
+      message('execution_error', {
+        exception_type: 'KeyError',
+        exception_message: "'clip_vision'",
+        timestamp: T0 + 1_000
+      })
+    )
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ outcome: 'failed', error_class: 'key_error' })
+    ])
+  })
+
+  it('keeps a failed run whose echoed prompt names a refusal status as failed', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_start', { timestamp: T0 }))
+    noteRunMessage(
+      message('execution_error', {
+        exception_type: 'Exception',
+        exception_message: ECHOED_PROMPT_FAILURE,
+        timestamp: T0 + 1_000
+      })
+    )
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ outcome: 'failed', error_class: 'exception' })
+    ])
+  })
+
+  it('keeps a failed run whose message nests JSON 20,000 deep as failed', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    noteRunMessage(message('execution_start', { timestamp: T0 }))
+    expect(() =>
+      noteRunMessage(
+        message('execution_error', {
+          exception_type: 'ValueError',
+          exception_message: DEEP_TEXT_ANSWER,
+          timestamp: T0 + 1_000
+        })
+      )
+    ).not.toThrow()
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ outcome: 'failed', error_class: 'value_error' })
+    ])
+  })
+
+  it('sends a refused run that ended before Desktop read its prompt id as refused', () => {
+    noteRunMessage(message('execution_start', { timestamp: T0 + 1_000 }))
+    noteRunMessage(
+      message('execution_error', {
+        exception_type: 'Exception',
+        exception_message: REFUSAL_MESSAGE,
+        timestamp: T0 + 4_000
+      })
+    )
+    runAccepted(RUN, BUILD, APP, T0)
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({ outcome: 'refused', error_class: 'exception' })
+    ])
+    expect(JSON.stringify(sdkCaptures)).not.toContain(PROMPT_WORDS)
   })
 
   it('sends one event per run, however many end messages arrive', () => {
@@ -409,6 +534,89 @@ describe('runEndFromHistory', () => {
     })
   })
 
+  it('reads a run a partner refused for its content as refused, with its error class', () => {
+    const end = runEndFromHistory(
+      entry('error', [
+        ['execution_start', { prompt_id: RUN, timestamp: T0 }],
+        [
+          'execution_error',
+          {
+            prompt_id: RUN,
+            node_id: '12',
+            exception_type: 'Exception',
+            exception_message: REFUSAL_MESSAGE,
+            timestamp: T0 + 30_000
+          }
+        ]
+      ])
+    )
+    expect(end).toEqual({
+      outcome: 'refused',
+      errorClass: 'exception',
+      startedAt: T0,
+      at: T0 + 30_000
+    })
+  })
+
+  it('reads an API error whose type is a content policy violation as refused', () => {
+    expect(
+      runEndFromHistory(
+        entry('error', [
+          [
+            'execution_error',
+            {
+              prompt_id: RUN,
+              exception_type: 'Exception',
+              exception_message: 'API Error: Request blocked. (Type: content_policy_violation)'
+            }
+          ]
+        ])
+      )
+    ).toMatchObject({ outcome: 'refused', errorClass: 'exception' })
+  })
+
+  it('reads a failed run whose echoed prompt names a refusal status as failed', () => {
+    expect(
+      runEndFromHistory(
+        entry('error', [
+          [
+            'execution_error',
+            {
+              prompt_id: RUN,
+              exception_type: 'Exception',
+              exception_message: ECHOED_PROMPT_FAILURE
+            }
+          ]
+        ])
+      )
+    ).toMatchObject({ outcome: 'failed', errorClass: 'exception' })
+  })
+
+  it('reads a failed run whose message nests JSON 20,000 deep as failed', () => {
+    expect(
+      runEndFromHistory(
+        entry('error', [
+          [
+            'execution_error',
+            {
+              prompt_id: RUN,
+              exception_type: 'ValueError',
+              exception_message: DEEP_TEXT_ANSWER
+            }
+          ]
+        ])
+      )
+    ).toMatchObject({ outcome: 'failed', errorClass: 'value_error' })
+  })
+
+  it('reads a run that failed with no message as failed', () => {
+    expect(
+      runEndFromHistory(
+        entry('error', [['execution_error', { prompt_id: RUN, exception_type: 'Exception' }]])
+      )
+    ).toMatchObject({ outcome: 'failed', errorClass: 'exception' })
+  })
+
   it('reads a run that was stopped as cancelled', () => {
     expect(
       runEndFromHistory(
@@ -468,6 +676,49 @@ describe('runEndFromHistory', () => {
     ['a status it does not know', entry('running', [])]
   ])('says nothing for %s', (_what, historyEntry) => {
     expect(runEndFromHistory(historyEntry)).toBeNull()
+  })
+})
+
+describe('run_finished for a refused run read from history', () => {
+  beforeEach(allowTelemetry)
+
+  it('sends refused with its error class and no message text', () => {
+    runAccepted(RUN, BUILD, APP, T0)
+    const fromHistory = runEndFromHistory({
+      outputs: {},
+      status: {
+        status_str: 'error',
+        completed: true,
+        messages: [
+          ['execution_start', { prompt_id: RUN, timestamp: T0 + 1_000 }],
+          [
+            'execution_error',
+            {
+              prompt_id: RUN,
+              exception_type: 'Exception',
+              exception_message: REFUSAL_MESSAGE,
+              timestamp: T0 + 21_000
+            }
+          ]
+        ]
+      }
+    })
+
+    settleRun(RUN, fromHistory, { outcome: 'failed', errorClass: COMFYUI_EXITED, at: T0 + 30_000 })
+
+    expect(sent(RUN_FINISHED_EVENT)).toEqual([
+      expect.objectContaining({
+        app_id: APP,
+        where: 'local',
+        outcome: 'refused',
+        error_class: 'exception',
+        run_seconds: 20,
+        queue_seconds: 1
+      })
+    ])
+    const wire = JSON.stringify(sdkCaptures)
+    expect(wire).not.toContain(PROMPT_WORDS)
+    expect(wire).not.toContain('SensitiveContentDetected')
   })
 })
 

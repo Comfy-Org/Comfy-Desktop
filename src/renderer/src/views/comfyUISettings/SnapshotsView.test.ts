@@ -102,7 +102,7 @@ describe('comfyUISettings/SnapshotsView', () => {
     expect(w.find(`[data-testid="${TID.snapshotsOpCard}"]`).exists()).toBe(false)
     expect(w.find('.snapshots-rail-node.is-save').exists()).toBe(false)
     const cta = w.find(`[data-testid="${TID.snapshotsSaveCta}"]`)
-    expect(cta.text()).toContain('Create Snapshot')
+    expect(cta.text()).toContain('Create snapshot')
     expect(cta.attributes('disabled')).toBeUndefined()
   })
 

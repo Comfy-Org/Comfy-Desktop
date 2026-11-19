@@ -129,7 +129,7 @@ async function openFullDownloads(): Promise<void> {
     .toBe(true)
   await popup.waitForSelector('.downloads-link', { timeout: 10_000 })
   await waitForStableBounds()
-  expect(await popup.clickByText('.downloads-link', 'View All')).toBe(true)
+  expect(await popup.clickByText('.downloads-link', 'View all')).toBe(true)
   await popup.waitForSelector('.dlm-panel', { timeout: 10_000 })
 }
 
@@ -287,7 +287,7 @@ test('network interruption preserves staged bytes and Retry resumes them @real-c
   server.configure(job.file, { failAfterBytes: undefined })
   server.clearLog()
   const sizeBeforeRetry = await fileSize(part)
-  expect(await clickRowButton(job.file, 'Retry')).toBe(true)
+  expect(await clickRowButton(job.file, 'Try again')).toBe(true)
   await expectRowStatus(job.file, 'is-completed')
   await expectCompletedOnDisk(job)
 

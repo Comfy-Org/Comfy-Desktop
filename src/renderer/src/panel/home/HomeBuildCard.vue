@@ -20,6 +20,7 @@ import {
   type HomeBuildTone
 } from './homeBuild'
 import {
+  buildFailure,
   inPlaceTaskLabel,
   launchFailed,
   useBuildProgress
@@ -65,12 +66,15 @@ const busyTestId = computed(() => {
   if (working.value) return 'home-build-working'
   return starting.value ? 'home-build-starting' : 'home-build-installing'
 })
-const broken = computed(() => {
-  if (build.statusTag?.style === 'danger') return build.statusTag.label
-  const startFailed = sessionStore.errorInstances.get(build.id)?.startFailed === true
-  const failed = launchFailed(progressStore, build.id) || startFailed
-  return failed ? t('home.buildDidntStart') : undefined
-})
+const failure = computed(() => buildFailure(build, sessionStore, progressStore, t))
+const broken = computed(() =>
+  failure.value?.kind === 'broken' || failure.value?.kind === 'didnt-start'
+    ? failure.value.label
+    : undefined
+)
+const startFailedLogs = computed(
+  () => build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id)
+)
 
 const toneStyle = computed(() => HOME_BUILD_TONES[tone])
 const statusLabel = computed(() => {
@@ -117,12 +121,7 @@ const updateNote = computed(() =>
 const subtitle = computed(() => (uninstalling.value ? install.detail.value : detail.value))
 const openHint = computed(() => {
   if (!canOpen.value) return ''
-  if (
-    busy.value ||
-    (build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id))
-  ) {
-    return t('home.buildClickToViewLogs')
-  }
+  if (busy.value || startFailedLogs.value) return t('home.buildClickToViewLogs')
   if (
     broken.value ||
     isLive.value ||
@@ -168,9 +167,8 @@ function openContextMenu(event: MouseEvent): void {
 
 <template>
   <div
-    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
+    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
     :class="canOpen && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
-    :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
     :data-testid="testId"
     :data-build-id="build.id"
     @click="onClick"

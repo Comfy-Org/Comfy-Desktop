@@ -6,7 +6,8 @@ import {
   FIREBASE_SESSION_INJECTION_OWNER_FIELD,
   injectFirebaseSession,
   isFirebaseSessionInjectionRecordOwnedBy,
-  releaseFirebaseSessionInjection
+  releaseFirebaseSessionInjection,
+  WEB_SESSION_CREATE_TIMEOUT_MS
 } from './inject'
 
 const ORIGIN = 'https://cloud.comfy.org'
@@ -35,6 +36,26 @@ describe('buildIndexedDbInjectScript', () => {
   it('reloads the page after the IDB write commits', () => {
     const script = buildIndexedDbInjectScript(SAMPLE_USER, 'AIzaTEST', ORIGIN, OWNER)
     expect(script).toContain('location.reload()')
+  })
+
+  it('creates the web session from the new ID token before reloading', () => {
+    const script = buildIndexedDbInjectScript(SAMPLE_USER, 'AIzaTEST', ORIGIN, OWNER)
+    const create = script.indexOf("fetch('/api/auth/session'")
+    expect(create).toBeGreaterThan(script.indexOf('if (!committed || !isCurrent()) return false'))
+    expect(create).toBeLessThan(script.indexOf('location.reload()'))
+    expect(script).toContain("method: 'POST'")
+    expect(script).toContain("credentials: 'include'")
+    expect(script).toContain("Authorization: 'Bearer ' + idToken")
+    expect(script).toContain('userValue.stsTokenManager.accessToken')
+    expect(script).toContain(`AbortSignal.timeout(${WEB_SESSION_CREATE_TIMEOUT_MS})`)
+  })
+
+  it('does not reload for a flow superseded while the web session was being created', () => {
+    const script = buildIndexedDbInjectScript(SAMPLE_USER, 'AIzaTEST', ORIGIN, OWNER)
+    const afterCreate = script.slice(script.indexOf("fetch('/api/auth/session'"))
+    expect(afterCreate.indexOf('if (!isCurrent()) return false')).toBeLessThan(
+      afterCreate.indexOf('location.reload()')
+    )
   })
 
   it('is parseable as JavaScript', () => {

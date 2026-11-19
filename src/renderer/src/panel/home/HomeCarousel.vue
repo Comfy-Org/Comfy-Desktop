@@ -25,6 +25,8 @@ const ARC_REACH = 2
 const OFFSTAGE = ARC_REACH + 1
 const DRAG_PIXELS_PER_CARD = 150
 const DRAG_START_PIXELS = 6
+const WHEEL_PIXELS_PER_CARD = 40
+const WHEEL_GESTURE_GAP_MS = 180
 const ARC_SLOTS: Record<number, ArcSlot> = {
   0: { transform: 'translateX(0) rotateY(0deg) scale(1)', opacity: 1, dim: 0, layer: 3 },
   1: {
@@ -204,7 +206,32 @@ function startDrag(event: PointerEvent): void {
   window.addEventListener('pointercancel', stopDrag)
 }
 
-onBeforeUnmount(stopDrag)
+let wheelDistance = 0
+let wheelTurned = false
+let wheelGestureTimer: ReturnType<typeof setTimeout> | undefined
+
+function endWheelGesture(): void {
+  wheelDistance = 0
+  wheelTurned = false
+}
+
+function onWheel(event: WheelEvent): void {
+  const sideways = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX
+  if (sideways === 0 || (!event.shiftKey && Math.abs(event.deltaY) > Math.abs(sideways))) return
+  event.preventDefault()
+  clearTimeout(wheelGestureTimer)
+  wheelGestureTimer = setTimeout(endWheelGesture, WHEEL_GESTURE_GAP_MS)
+  if (wheelTurned) return
+  wheelDistance += sideways
+  if (Math.abs(wheelDistance) < WHEEL_PIXELS_PER_CARD) return
+  wheelTurned = true
+  moveTo(frontPosition.value + Math.sign(wheelDistance))
+}
+
+onBeforeUnmount(() => {
+  stopDrag()
+  clearTimeout(wheelGestureTimer)
+})
 
 async function turn(direction: number): Promise<void> {
   const focused = document.activeElement
@@ -224,7 +251,12 @@ function activate(placed: { card: Card; offset: number }): void {
 </script>
 
 <template>
-  <div class="group/arc relative" @keydown.left.prevent="turn(-1)" @keydown.right.prevent="turn(1)">
+  <div
+    class="group/arc relative"
+    @keydown.left.prevent="turn(-1)"
+    @keydown.right.prevent="turn(1)"
+    @wheel="onWheel"
+  >
     <ul
       ref="arc"
       class="relative m-0 h-75 w-full touch-pan-y list-none p-0 select-none [perspective:3000px]"
@@ -293,14 +325,27 @@ function activate(placed: { card: Card; offset: number }): void {
           >
             <ArrowUpRight :size="16" :stroke-width="2.25" />
           </span>
-          <span
-            class="absolute inset-x-3.5 bottom-4 flex flex-col"
-            data-testid="home-carousel-name"
-          >
-            <span class="truncate text-sm/[17px] font-medium text-white">
+          <span class="absolute inset-x-3.5 bottom-4 grid" data-testid="home-carousel-name">
+            <span
+              class="truncate text-sm/[17px] font-medium text-white transition-[translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] motion-reduce:transition-none"
+              :class="
+                placed.offset === 0 &&
+                placed.card.description &&
+                'group-hover/card:-translate-y-[18px] group-focus-visible/card:-translate-y-[18px]'
+              "
+              data-testid="home-carousel-title"
+            >
               {{ placed.card.title }}
             </span>
-            <span v-if="placed.card.description" class="truncate text-[13px]/[18px] text-white/70">
+            <span
+              v-if="placed.card.description"
+              class="translate-y-1.5 self-end truncate text-[13px]/[18px] text-white/70 opacity-0 transition-[opacity,translate] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [grid-area:1/1] motion-reduce:transition-none"
+              :class="
+                placed.offset === 0 &&
+                'group-hover/card:translate-y-0 group-hover/card:opacity-100 group-focus-visible/card:translate-y-0 group-focus-visible/card:opacity-100'
+              "
+              data-testid="home-carousel-description"
+            >
               {{ placed.card.description }}
             </span>
           </span>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Switch from '@comfyorg/design-system/switch/Switch'
+import ToggleSwitch from './ui/ToggleSwitch.vue'
 import { Check } from '@lucide/vue'
 import type { SnapshotDetailData } from '../types/ipc'
 import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
@@ -91,7 +91,7 @@ function onCheckboxToggle(id: string, checked: boolean): void {
         :key="cb.id"
         class="mig-option flex cursor-pointer items-center gap-2.5 text-[length:var(--takeover-fs-body)] text-neutral-200"
       >
-        <Switch
+        <ToggleSwitch
           class="mt-2"
           :model-value="cb.checked"
           @update:model-value="onCheckboxToggle(cb.id, $event)"

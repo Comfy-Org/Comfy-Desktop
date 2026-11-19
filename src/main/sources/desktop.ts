@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { shell } from 'electron'
-import { untrackAction } from '../lib/actions'
+import { revealInFolderLabel, untrackAction } from '../lib/actions'
 import { findDesktopExecutable } from '../lib/desktopDetect'
 import { t } from '../lib/i18n'
 import type { InstallationRecord } from '../installations'
@@ -129,7 +129,7 @@ export const desktop: SourcePlugin = {
           },
           {
             id: 'open-folder',
-            label: t('actions.openDirectory'),
+            label: revealInFolderLabel(),
             style: 'default',
             enabled: !!installation.installPath
           },

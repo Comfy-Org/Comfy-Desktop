@@ -397,3 +397,30 @@ describe('ArgsBuilderPage — args.changed telemetry', () => {
     }
   })
 })
+
+describe('ArgsBuilderPage — flag switch', () => {
+  it('uses the shared ToggleSwitch for every flag row', async () => {
+    const wrapper = await mountPage()
+    const switches = wrapper.findAll('.args-page-arg-row button[role="switch"]')
+    expect(switches.length).toBeGreaterThan(0)
+    for (const toggle of switches) {
+      expect(toggle.attributes('data-slot')).toBe('toggle-switch')
+      expect(toggle.find('[data-slot="toggle-switch-knob"]').exists()).toBe(true)
+    }
+    expect(wrapper.find('.args-page-switch-thumb').exists()).toBe(false)
+  })
+
+  it('keeps the flag name as the accessible label and flips aria-checked on click', async () => {
+    const wrapper = await mountPage()
+    const toggle = wrapper.find('button[role="switch"][aria-label="--port"]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+
+    await toggle.trigger('click')
+    await flushPromises()
+
+    expect(lastUpdate(wrapper)).toContain('--port')
+    expect(
+      wrapper.find('button[role="switch"][aria-label="--port"]').attributes('aria-checked')
+    ).toBe('true')
+  })
+})

@@ -185,6 +185,30 @@ describe('Set up, the first screen', () => {
     expect(w.find('[data-testid="setup-agree-hint"]').exists()).toBe(false)
   })
 
+  it('reads Checking… while it works out the setup, and still points at the terms', async () => {
+    const sources = await window.api.getSources()
+    let finishChecking: (value: typeof sources) => void = () => {}
+    window.api.getSources = vi.fn(
+      () =>
+        new Promise<typeof sources>((resolve) => {
+          finishChecking = resolve
+        })
+    )
+    const w = await mountSetup()
+    const button = () => w.find('[data-testid="setup-install"]')
+
+    expect(button().text()).toBe('Checking…')
+    expect(button().attributes('aria-busy')).toBe('true')
+    await install(w)
+    expect(w.emitted('install')).toBeUndefined()
+    expect(text(w, 'setup-agree-hint')).toBe('Agree to install.')
+
+    finishChecking(sources)
+    await flushPromises()
+    expect(button().text()).toBe('Install')
+    expect(button().attributes('aria-busy')).toBeUndefined()
+  })
+
   it('installs the plan it showed, after saving the consent choices', async () => {
     const w = await mountSetup()
     await setChecked(w.find('[data-testid="setup-consent-beta"] [role="checkbox"]'), false)

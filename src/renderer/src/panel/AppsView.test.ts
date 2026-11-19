@@ -339,22 +339,97 @@ describe('AppsView', () => {
     expect(wrapper.find('[data-testid="app-card-genjutsu"]').exists()).toBe(true)
 
     await wrapper.get('input').setValue('spreadsheet')
-    expect(wrapper.get('[data-testid="apps-no-matches"] p').text()).toBe(
-      'No apps match “spreadsheet”'
-    )
+    const empty = wrapper.get('[data-testid="apps-no-matches"]')
+    expect(empty.get('h2').text()).toBe('Nothing matches')
+    expect(empty.get('p').text()).toBe('Try another word.')
+    expect(empty.text()).not.toContain('filters')
   })
 
-  it('ends the list with a square tile that asks what app the person wants', async () => {
+  it('clears the search from the Nothing matches state', async () => {
+    const wrapper = await mountApps()
+    const allCards = wrapper.findAll('[data-testid="apps-grid"] button').length
+
+    await wrapper.get('input').setValue('spreadsheet')
+    const clear = wrapper.get('[data-testid="apps-clear-search"]')
+    expect(clear.text()).toBe('Clear search')
+    await clear.trigger('click')
+
+    expect(wrapper.get<HTMLInputElement>('input').element.value).toBe('')
+    expect(wrapper.find('[data-testid="apps-no-matches"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="apps-grid"] button')).toHaveLength(allCards)
+  })
+
+  it('ends the list with a band that asks what app the person wants', async () => {
     const wrapper = await mountApps()
     const items = wrapper.findAll('[data-testid="apps-grid"] > li')
-    const tile = wrapper.get('[data-testid="app-request-open"]')
-    const box = tile.element.getBoundingClientRect()
+    const band = wrapper.get('[data-testid="app-request-open"]')
 
     expect(items).toHaveLength(4)
     expect(items.at(-1)!.attributes('data-testid')).toBe('app-request-tile')
-    expect(tile.text()).toBe('Tell us what app you want…')
-    expect(box.width / box.height).toBeCloseTo(1, 2)
+    expect(band.text()).toContain('Missing an app?')
+    expect(band.text()).toContain('Ask for an app')
+    expect(
+      band.find('[data-testid="app-request-action"]').attributes('aria-hidden')
+    ).toBeUndefined()
+    expect(wrapper.findAll('[data-testid="app-request-thumbs"] img')).toHaveLength(2)
     wrapper.unmount()
+  })
+
+  it('fills the free space beside the last row of cards, or takes a full row under a full one', async () => {
+    const pool = [CUTOUT, HDR, GENJUTSU]
+    for (const width of [WIDE_PAGE_WIDTH, MEDIUM_PAGE_WIDTH, NARROW_PAGE_WIDTH]) {
+      page.style.width = `${width}px`
+      for (let count = 1; count <= 8; count++) {
+        const list = Array.from({ length: count }, (_, index) => ({
+          ...pool[index % pool.length]!,
+          id: `card-${index}`
+        }))
+        const wrapper = await mountApps(list)
+        const grid = wrapper.get('[data-testid="apps-grid"]').element.getBoundingClientRect()
+        const cards = list.map((app) =>
+          wrapper.get(`[data-testid="app-card-${app.id}"]`).element.getBoundingClientRect()
+        )
+        const last = cards.at(-1)!
+        const smallest = Math.min(...cards.map((card) => card.width))
+        const gap = parseFloat(
+          getComputedStyle(wrapper.get('[data-testid="apps-grid"]').element).columnGap
+        )
+        const band = wrapper.get('[data-testid="app-request-open"]').element.getBoundingClientRect()
+        const label = `${width}px, ${count} cards`
+
+        if (grid.right - last.right - gap >= smallest - 1) {
+          expect(band.top, label).toBeCloseTo(last.top, 0)
+          expect(band.left, label).toBeCloseTo(last.right + gap, 0)
+          expect(band.width, label).toBeLessThanOrEqual(smallest + 0.5)
+          expect(band.height, label).toBeCloseTo(band.width, 0)
+          const bandMiddle = band.left + band.width / 2
+          for (const part of ['app-request-thumbs', 'app-request-label']) {
+            const box = wrapper.get(`[data-testid="${part}"]`).element.getBoundingClientRect()
+            expect(box.left + box.width / 2, `${label}, ${part}`).toBeCloseTo(bandMiddle, 0)
+          }
+        } else {
+          expect(band.left, label).toBeCloseTo(grid.left, 0)
+          expect(band.right, label).toBeCloseTo(grid.right, 0)
+          expect(band.top, label).toBeGreaterThan(last.bottom)
+        }
+        const body = wrapper.get('[data-testid="app-request-body"]').element as HTMLElement
+        const besideCards = Math.abs(band.top - last.top) < 1
+        expect(getComputedStyle(body).display !== 'none', label).toBe(
+          besideCards || band.width >= 576
+        )
+        if (getComputedStyle(body).display !== 'none') {
+          expect(body.scrollHeight, label).toBeLessThanOrEqual(body.clientHeight + 1)
+          expect(body.getBoundingClientRect().bottom, label).toBeLessThanOrEqual(band.bottom)
+        }
+        for (const part of wrapper.get('[data-testid="app-request-open"]').element.children) {
+          const box = part.getBoundingClientRect()
+          expect(box.left, label).toBeGreaterThanOrEqual(band.left)
+          expect(box.right, label).toBeLessThanOrEqual(band.right + 0.5)
+          expect(box.bottom, label).toBeLessThanOrEqual(band.bottom + 0.5)
+        }
+        wrapper.unmount()
+      }
+    }
   })
 
   it('opens the request window from the tile', async () => {
@@ -367,7 +442,7 @@ describe('AppsView', () => {
     expect(document.body.textContent).toContain('What app do you want?')
     expect(document.querySelector('[data-testid="app-request-input"]')).not.toBeNull()
 
-    document.querySelector<HTMLButtonElement>('[data-testid="app-request-cancel"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-testid="base-modal-close"]')!.click()
     await expect.poll(() => document.querySelector('[data-testid="app-request-input"]')).toBeNull()
     wrapper.unmount()
   })

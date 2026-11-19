@@ -388,13 +388,12 @@ describe('BenchmarksView', () => {
       '1 session · 5 runs'
     ])
     expect(texts(wrapper, 'thead th')).toEqual([
-      '',
       'Session',
       'Workflow',
       'Build',
       'Median and range',
       'Median ↑',
-      'Vs baseline',
+      'Compared to baseline',
       ''
     ])
     expect(rowIds(wrapper)).toEqual(['13', '12', '9'])
@@ -452,7 +451,7 @@ describe('BenchmarksView', () => {
     await search(wrapper, 'stable 0.3.55')
     expect(rowIds(wrapper)).toEqual(['9'])
     expect(vsLabels(wrapper)).toEqual(['1.53× slower'])
-    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs baseline')
+    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Compared to baseline')
     expect(group(wrapper).get('.benchmarks__reference-hidden').text()).toBe(
       'Compared with session 13, which the filters hide.'
     )
@@ -477,7 +476,7 @@ describe('BenchmarksView', () => {
 
     await rowAction(wrapper, '12', '.benchmarks__set-baseline')
     expect(vsLabels(wrapper)).toEqual(['1.11× faster', 'Baseline', '1.38× slower'])
-    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs baseline')
+    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Compared to baseline')
     expect(group(wrapper).get('.benchmarks__group-foot').text()).toContain(
       'Speed = baseline time ÷ run time'
     )
@@ -485,7 +484,7 @@ describe('BenchmarksView', () => {
 
     await search(wrapper, 'stable 0.3.55')
     expect(vsLabels(wrapper)).toEqual(['1.38× slower'])
-    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs baseline')
+    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Compared to baseline')
     expect(group(wrapper).get('.benchmarks__reference-hidden').text()).toBe(
       'Compared with session 12, which the filters hide.'
     )
@@ -498,7 +497,7 @@ describe('BenchmarksView', () => {
 
     await group(wrapper).get('.benchmarks__reset-baseline').trigger('click')
     expect(vsLabels(wrapper)).toEqual(['Fastest', '1.60× slower', '1.80× slower'])
-    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs baseline')
+    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Compared to baseline')
   })
 
   it('calls equally fast runs the same speed', async () => {
@@ -697,11 +696,10 @@ describe('BenchmarksView', () => {
     await closeMenu()
 
     expect(texts(wrapper, 'thead th')).toEqual([
-      '',
       'Session',
       'Build',
       'Median ↑',
-      'Vs baseline',
+      'Compared to baseline',
       ''
     ])
     expect(wrapper.find('.benchmarks__bar-cell').exists()).toBe(false)
@@ -724,14 +722,13 @@ describe('BenchmarksView', () => {
     await closeMenu()
 
     expect(texts(wrapper, 'thead th')).toEqual([
-      '',
       'Session',
       'Workflow',
       'Median and range',
       'Average',
       'Custom Score',
       'Median ↑',
-      'Vs baseline',
+      'Compared to baseline',
       ''
     ])
     expect(texts(wrapper, '.benchmarks__best')).toEqual(['2 s'])
@@ -742,7 +739,7 @@ describe('BenchmarksView', () => {
     await groupAction(wrapper, '.benchmarks__export-group')
     const svg = createResultsPngMock.mock.calls.at(-1)![0]
     expect(svg).toContain('Custom Score: 13')
-    expect(svg).toContain('GPU / Hardware: NVIDIA RTX 4090')
+    expect(svg).toContain('GPU / hardware: NVIDIA RTX 4090')
     expect(svg).toContain('Duration range')
   })
 
@@ -769,7 +766,9 @@ describe('BenchmarksView', () => {
       'landscape.json'
     ])
     expect(wrapper.find('.benchmarks__workflow').exists()).toBe(false)
-    expect(texts(wrapper, 'thead th', 'benchmark-group-portrait.json')).toContain('Vs baseline')
+    expect(texts(wrapper, 'thead th', 'benchmark-group-portrait.json')).toContain(
+      'Compared to baseline'
+    )
 
     await chooseOption(wrapper, 'group-by', 'None')
     expect(wrapper.findAll('.benchmarks__group')).toHaveLength(1)
@@ -867,7 +866,7 @@ describe('BenchmarksView', () => {
     expect(wrapper.find('[data-testid="benchmark-row-9"]').exists()).toBe(true)
 
     await search(wrapper, 'nothing here')
-    expect(wrapper.get('.benchmarks__no-results').text()).toContain('No runs match these filters')
+    expect(wrapper.get('.benchmarks__no-results').text()).toContain('Nothing matches')
 
     await search(wrapper, '')
     await chooseOption(wrapper, 'hardware', 'Apple M3 Max')
@@ -878,6 +877,24 @@ describe('BenchmarksView', () => {
     expect(wrapper.findAll('.benchmarks__group')).toHaveLength(1)
   })
 
+  it('says Nothing matches with a Clear filters button that resets the search and every filter', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const allRows = wrapper.findAll('[data-testid^="benchmark-row-"]').length
+
+    await chooseOption(wrapper, 'hardware', 'Apple M3 Max')
+    await search(wrapper, 'nothing here')
+    const empty = wrapper.get('.benchmarks__no-results')
+    expect(empty.get('h2').text()).toBe('Nothing matches')
+    expect(empty.text()).toContain('Try another word, or clear the filters to see everything.')
+
+    await wrapper.get('[data-testid="benchmarks-clear-filters"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.benchmarks__no-results').exists()).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('.benchmarks__search input').element.value).toBe('')
+    expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(allRows)
+  })
+
   it('labels unmanaged workspaces and unknown hardware', async () => {
     useBenchmarks([
       { ...run('31', 'mystery.json', 1, { gpu: null }), workspace: { id: null, name: null } }
@@ -886,8 +903,8 @@ describe('BenchmarksView', () => {
 
     expect(wrapper.get('.benchmarks__group-toggle').text()).toBe('Unknown hardware')
     expect(wrapper.get('.benchmarks__group-meta').text()).toBe('1 session · 5 runs')
-    expect(await menuOptions(wrapper, 'workspace')).toEqual(['All', 'Unmanaged'])
-    await chooseOption(wrapper, 'workspace', 'Unmanaged')
+    expect(await menuOptions(wrapper, 'workspace')).toEqual(['All', 'No workspace'])
+    await chooseOption(wrapper, 'workspace', 'No workspace')
     expect(wrapper.find('[data-testid="benchmark-row-31"]').exists()).toBe(true)
   })
 
@@ -934,7 +951,7 @@ describe('BenchmarksView', () => {
     await groupAction(wrapper, '.benchmarks__select-group')
     expect(wrapper.get('.benchmarks__selected-count').text()).toBe('3 selected')
     let svg = await exportSelection(wrapper)
-    expect(svg).toContain('Relative speed factor = baseline duration / run duration.')
+    expect(svg).toContain('2× faster means the run took half the baseline')
     expect(svg).toContain('1.11× Faster')
     expect(svg).toContain('1.00× Baseline')
 

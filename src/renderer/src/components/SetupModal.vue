@@ -48,7 +48,7 @@ const hostProps = computed(() =>
         dismissOnEscape: props.dismissOnEscape,
         dismissOnOutside: false,
         overlayClass: [
-          'setup-modal-overlay fixed inset-0 z-50 grid overflow-y-auto bg-black/60 p-6 animate-fade-in motion-reduce:animate-none',
+          'setup-modal-overlay fixed inset-0 z-50 grid overflow-y-auto bg-black/70 p-6 animate-fade-in motion-reduce:animate-none',
           props.anchorTop ? 'justify-items-center items-start' : 'place-items-center'
         ].join(' '),
         contentClass: 'setup-modal-surface relative max-w-full outline-none'
@@ -84,7 +84,7 @@ const hostProps = computed(() =>
           size="icon"
           variant="muted-textonly"
           type="button"
-          class="setup-modal-close absolute top-0 -right-12 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white max-[860px]:top-3 max-[860px]:right-3"
+          class="setup-modal-close absolute top-0 -right-12 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--color-neutral-900)] text-white hover:text-white max-[860px]:top-3 max-[860px]:right-3"
           :aria-label="$t('common.close')"
           :title="closeTitle ?? $t('common.close')"
           @click="emit('close')"
@@ -93,8 +93,8 @@ const hostProps = computed(() =>
         </Button>
 
         <div
-          class="setup-modal-body min-h-0 flex-auto overflow-y-auto px-8 pt-7 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          :class="anchorTop ? 'pb-4' : 'pb-6'"
+          class="setup-modal-body min-h-0 flex-auto overflow-y-auto px-5 pt-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          :class="anchorTop ? 'pb-4' : 'pb-5'"
         >
           <h2
             v-if="title"
@@ -110,7 +110,7 @@ const hostProps = computed(() =>
 
         <footer
           v-if="$slots.footer"
-          class="setup-modal-foot flex min-h-16 flex-none items-center gap-2 px-8 py-3 [box-shadow:inset_0_1px_0_rgb(255_255_255/0.08)]"
+          class="setup-modal-foot flex flex-none items-center gap-2 border-t border-solid border-[rgb(255_255_255/0.08)] px-5 py-4"
         >
           <slot name="footer" />
         </footer>

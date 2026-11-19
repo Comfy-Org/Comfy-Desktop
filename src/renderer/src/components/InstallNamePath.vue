@@ -3,6 +3,9 @@ import Input from '@comfyorg/design-system/input/Input'
 import Button from '@comfyorg/design-system/button/Button'
 import type { PathIssue, DiskSpaceInfo } from '../types/ipc'
 import PathDiskInfo from './PathDiskInfo.vue'
+import { revealInFolderKey } from '../composables/usePlatform'
+
+const revealFolderKey = revealInFolderKey(window.api?.platform)
 
 defineProps<{
   name: string
@@ -48,8 +51,8 @@ defineEmits<{
           variant="link"
           type="button"
           class="path-open block min-w-0 max-w-full truncate py-0 text-left"
-          :title="$t('actions.openDirectory')"
-          :aria-label="`${$t('actions.openDirectory')}: ${path}`"
+          :title="$t(revealFolderKey)"
+          :aria-label="`${$t(revealFolderKey)}: ${path}`"
           @click="$emit('open')"
         >
           {{ path }}
