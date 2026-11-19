@@ -262,8 +262,8 @@
     "nothingMatches": "Nothing matches",
     "nothingMatchesHint": "Try another word, or clear the filters to see everything.",
     "clearFilters": "Clear filters",
-    "noBuildsTitle": "Set up where your work runs",
-    "noBuildsBody": "A build is ComfyUI with its own version, custom nodes and models. Install one on this computer, or run on Comfy Cloud with nothing to install.",
+    "noBuildsTitle": "No builds yet",
+    "noBuildsBody": "Install ComfyUI on this computer, or run it on Comfy Cloud.",
     "filterLabel": "Source filter"
   },
   "titleBar": {
@@ -1432,7 +1432,7 @@
     "snapshotNoFile": "No snapshot file specified."
   },
   "snapshots": {
-    "empty": "No snapshots yet. Snapshots are captured automatically when ComfyUI starts.",
+    "emptyBody": "Snapshots are captured automatically when ComfyUI starts.",
     "createSnapshot": "Create Snapshot",
     "changesInSnapshot": "What changed in this snapshot",
     "ifYouRestore": "What restoring this would change",

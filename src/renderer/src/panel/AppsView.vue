@@ -8,6 +8,7 @@ import AppPageHost from './AppPageHost.vue'
 import AppBadges from './AppBadges.vue'
 import CoverRotation from '../components/CoverRotation.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { badgeDescriptionIds } from './appCardBadges'
 import type { AppCard } from '../types/ipc'
@@ -131,7 +132,10 @@ onBeforeUnmount(() => {
         </h1>
       </header>
 
-      <div class="mx-auto flex min-h-8 w-full max-w-300 items-center gap-2 px-10 py-3">
+      <div
+        v-if="state === 'loading' || (state === 'ready' && apps.length > 0)"
+        class="mx-auto flex min-h-8 w-full max-w-300 items-center gap-2 px-10 py-3"
+      >
         <div class="ml-auto w-[220px]">
           <BaseInput
             v-model="query"
@@ -185,14 +189,14 @@ onBeforeUnmount(() => {
           </Button>
         </div>
 
-        <div
+        <EmptyState
           v-else-if="apps.length === 0"
-          class="flex flex-col items-center justify-center gap-2 pt-24 text-center"
+          class="pt-24"
           data-testid="apps-empty"
-        >
-          <h2 class="m-0 text-heading font-semibold text-foreground">{{ t('apps.emptyTitle') }}</h2>
-          <p class="m-0 text-ui text-muted-foreground">{{ t('apps.emptyBody') }}</p>
-        </div>
+          :icon="AppWindow"
+          :title="t('apps.emptyTitle')"
+          :text="t('apps.emptyBody')"
+        />
 
         <p
           v-else-if="matchingApps.length === 0"
