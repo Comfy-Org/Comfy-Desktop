@@ -25,7 +25,11 @@ const LAYER_CLASS: Record<Role, string> = {
   poster: 'z-0'
 }
 
-const { pictures, paused = false, loadOnPlay = false } = defineProps<{
+const {
+  pictures,
+  paused = false,
+  loadOnPlay = false
+} = defineProps<{
   pictures: readonly AppCover[]
   paused?: boolean
   loadOnPlay?: boolean

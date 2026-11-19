@@ -183,6 +183,7 @@ describe('AppsView', () => {
   it("shows each card's still and loads no moving cover while the mouse is not over it", async () => {
     const wrapper = await mountApps([{ ...HDR, covers: [MOVING] }])
     const card = wrapper.get('[data-testid="app-card-sdr-to-hdr"]')
+    await userEvent.hover(wrapper.get('input').element)
 
     await expect
       .poll(() => card.get('img[data-cover="shown"]').attributes('data-loaded'))
@@ -210,7 +211,8 @@ describe('AppsView', () => {
   it('plays the moving cover while the card has keyboard focus and stops when focus leaves', async () => {
     const wrapper = await mountApps([{ ...HDR, covers: [MOVING] }])
     const card = wrapper.get('[data-testid="app-card-sdr-to-hdr"]')
-    expect(playingOf(card)).toBe('false')
+    await userEvent.hover(wrapper.get('input').element)
+    await expect.poll(() => playingOf(card)).toBe('false')
 
     wrapper.get('input').element.focus()
     await userEvent.tab()
@@ -232,6 +234,7 @@ describe('AppsView', () => {
     ])
     const always = wrapper.get('[data-testid="app-card-remove-background"]')
     const onHover = wrapper.get('[data-testid="app-card-sdr-to-hdr"]')
+    await userEvent.hover(wrapper.get('input').element)
 
     await expect.poll(() => playingOf(always)).toBe('true')
     await expect.poll(() => srcOf(always, 'shown')).toBe(MOVING.url)
