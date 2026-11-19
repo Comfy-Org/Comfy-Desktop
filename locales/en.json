@@ -52,6 +52,8 @@
       "title": "What app do you want?",
       "placeholder": "Say what it should make, from what",
       "send": "Send",
+      "sending": "Sending…",
+      "failed": "Couldn't send your request. Try again.",
       "thanks": "Thanks. We got your request."
     },
     "badge": {

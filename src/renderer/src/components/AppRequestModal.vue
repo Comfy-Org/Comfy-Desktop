@@ -3,12 +3,12 @@ import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import BaseModal from './ui/BaseModal.vue'
-import { emitTelemetryAction } from '../lib/telemetry'
 
-const APP_REQUEST_SURVEY_ID = '01a1f22e-d672-0000-a5ce-85d8a1d81406'
-const APP_REQUEST_QUESTION_ID = '0f16a789-5c8e-4871-b44e-ec11c54b8c9b'
+type RequestStatus = 'idle' | 'sending' | 'sent' | 'failed'
+
 const APP_REQUEST_MAX_LENGTH = 500
 const AUTOCLOSE_MS = 2000
+const IME_COMPOSING_KEY_CODE = 229
 
 const props = defineProps<{ open: boolean }>()
 
@@ -16,11 +16,18 @@ const emit = defineEmits<{ close: [] }>()
 
 const { t } = useI18n()
 const titleId = `app-request-title-${useId()}`
+const errorId = `app-request-error-${useId()}`
 const request = ref('')
-const sent = ref(false)
+const status = ref<RequestStatus>('idle')
+let attempt = 0
 let autocloseTimer: ReturnType<typeof setTimeout> | null = null
 
-const canSend = computed(() => !sent.value && request.value.trim().length > 0)
+const sending = computed(() => status.value === 'sending')
+const sent = computed(() => status.value === 'sent')
+const failed = computed(() => status.value === 'failed')
+const canSend = computed(
+  () => (status.value === 'idle' || failed.value) && request.value.trim().length > 0
+)
 
 function clearAutoclose(): void {
   if (autocloseTimer != null) {
@@ -29,22 +36,45 @@ function clearAutoclose(): void {
   }
 }
 
-function close(): void {
+function abandonAttempt(): void {
+  attempt++
   clearAutoclose()
+}
+
+function close(): void {
+  abandonAttempt()
   emit('close')
 }
 
-function send(): void {
+async function deliver(text: string): Promise<boolean> {
+  try {
+    return (await window.api.sendAppRequest(text)) === true
+  } catch {
+    return false
+  }
+}
+
+async function send(): Promise<void> {
   if (!canSend.value) return
-  sent.value = true
-  emitTelemetryAction('survey sent', {
-    $survey_id: APP_REQUEST_SURVEY_ID,
-    [`$survey_response_${APP_REQUEST_QUESTION_ID}`]: request.value.trim()
-  })
+  const current = ++attempt
+  status.value = 'sending'
+  const delivered = await deliver(request.value.trim())
+  if (current !== attempt) return
+  if (!delivered) {
+    status.value = 'failed'
+    return
+  }
+  status.value = 'sent'
   autocloseTimer = setTimeout(() => {
     autocloseTimer = null
     emit('close')
   }, AUTOCLOSE_MS)
+}
+
+function sendFromKeyboard(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === IME_COMPOSING_KEY_CODE) return
+  event.preventDefault()
+  void send()
 }
 
 watch(
@@ -52,9 +82,9 @@ watch(
   (isOpen, wasOpen) => {
     if (isOpen && !wasOpen) {
       request.value = ''
-      sent.value = false
+      status.value = 'idle'
     }
-    if (!isOpen) clearAutoclose()
+    if (!isOpen) abandonAttempt()
   },
   { immediate: true }
 )
@@ -82,19 +112,31 @@ watch(
     >
       {{ t('apps.request.thanks') }}
     </p>
-    <textarea
-      v-else
-      v-model="request"
-      data-initial-focus
-      rows="4"
-      :maxlength="APP_REQUEST_MAX_LENGTH"
-      :aria-labelledby="titleId"
-      :placeholder="t('apps.request.placeholder')"
-      class="w-full resize-none rounded-lg border border-solid border-border bg-transparent px-3 py-2 text-sm leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-      data-testid="app-request-input"
-      @keydown.meta.enter.prevent="send"
-      @keydown.ctrl.enter.prevent="send"
-    />
+    <div v-else class="flex flex-col gap-2">
+      <textarea
+        v-model="request"
+        data-initial-focus
+        rows="4"
+        :maxlength="APP_REQUEST_MAX_LENGTH"
+        :readonly="sending"
+        :aria-labelledby="titleId"
+        :aria-describedby="failed ? errorId : undefined"
+        :placeholder="t('apps.request.placeholder')"
+        class="w-full resize-none rounded-lg border border-solid border-border bg-transparent px-3 py-2 text-sm leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        data-testid="app-request-input"
+        @keydown.meta.enter="sendFromKeyboard"
+        @keydown.ctrl.enter="sendFromKeyboard"
+      />
+      <p
+        v-if="failed"
+        :id="errorId"
+        class="m-0 text-[13px] leading-[1.5] text-destructive"
+        role="alert"
+        data-testid="app-request-error"
+      >
+        {{ t('apps.request.failed') }}
+      </p>
+    </div>
 
     <template v-if="!sent" #footer>
       <Button
@@ -114,7 +156,7 @@ watch(
         data-testid="app-request-send"
         @click="send"
       >
-        {{ t('apps.request.send') }}
+        {{ sending ? t('apps.request.sending') : t('apps.request.send') }}
       </Button>
     </template>
   </BaseModal>

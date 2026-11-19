@@ -222,8 +222,7 @@ function opsFlagPersonProperties(): Record<string, string> {
 }
 
 const PRE_CONSENT_ALLOWED_EVENTS: ReadonlySet<string> = new Set([
-  'comfy.desktop.first_use.consent_decision',
-  'survey sent'
+  'comfy.desktop.first_use.consent_decision'
 ])
 
 function isAllowedToFire(event: string): boolean {
@@ -869,6 +868,44 @@ function deliverEvent(
   } catch {
     return false
   }
+}
+
+const SURVEY_SENT_EVENT = 'survey sent'
+const SURVEY_RESPONSE_MAX_LENGTH = 2048
+
+export async function sendSurveyResponse(
+  surveyId: string,
+  questionId: string,
+  response: string
+): Promise<boolean> {
+  const properties: TelemetryContext = {
+    $survey_id: surveyId,
+    [`$survey_response_${questionId}`]: response.slice(0, SURVEY_RESPONSE_MAX_LENGTH)
+  }
+  recordIpcInvocation(`telemetry:${SURVEY_SENT_EVENT}`, properties)
+  const sender = client
+  const surveyDistinctId = distinctId
+  if (!canEmit() || !sender || !surveyDistinctId) return false
+  if (!_checkRateLimit(SURVEY_SENT_EVENT)) return false
+  if (firebaseWritesQuarantined()) return false
+  const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+  let failed = false
+  const stopWatchingErrors = sender.on('error', () => {
+    failed = true
+  })
+  _recordCapturedEvent(SURVEY_SENT_EVENT)
+  try {
+    await sender.captureImmediate({
+      distinctId: surveyDistinctId,
+      event: SURVEY_SENT_EVENT,
+      properties: scrubProperties(merged)
+    })
+  } catch {
+    failed = true
+  } finally {
+    stopWatchingErrors()
+  }
+  return !failed
 }
 
 export function captureFirstLaunch(properties: TelemetryContext = {}): void {
