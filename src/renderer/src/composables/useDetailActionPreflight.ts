@@ -27,6 +27,7 @@ import {
   runPromptChain,
   runSelectChain
 } from './actionShoppingList'
+import { progressTitle } from '../lib/progressTitle'
 
 export interface PreparedDetailAction {
   action: ActionDef
@@ -112,7 +113,7 @@ export function useDetailActionPreflight() {
     const rawTitle = (action.progressTitle || action.label).replace(/\{(\w+)\}/g, (_, k: string) =>
       String((action.data as Record<string, unknown>)?.[k] ?? k)
     )
-    const title = `${rawTitle} — ${inst.name}`
+    const title = progressTitle(rawTitle, inst.name)
     const isRestart = action.id === 'restart'
     const needsSelfStop = wasRunning && requiresStoppedGuard && !isRestart
     const wantsRelaunch = needsSelfStop && IN_PLACE_RELAUNCH.has(action.id)

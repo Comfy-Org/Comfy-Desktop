@@ -26,6 +26,7 @@ import SnapshotDisclosure from './SnapshotDisclosure.vue'
 import { toHardwareCards } from '../lib/setupOptionCards'
 import { BaseSelect, type BaseSelectOption } from './ui'
 import { emitTelemetryAction, toVariantBucket } from '../lib/telemetry'
+import { progressTitle } from '../lib/progressTitle'
 
 const emit = defineEmits<{ created: [opts: ShowProgressOpts] }>()
 
@@ -107,11 +108,11 @@ const summaryEntries = computed<SummaryEntry[]>(() => {
   const p = preview.value
   const n = p.newestSnapshot
   return [
-    { label: t('list.snapshotSourceName'), value: p.installationName || '—' },
+    { label: t('list.snapshotSourceName'), value: p.installationName || t('common.unknown') },
     { label: t('list.snapshotCount'), value: String(p.snapshotCount) },
-    { label: t('track.version'), value: n.comfyuiVersion || '—' },
-    { label: t('snapshots.variant'), value: n.comfyui.variant || '—' },
-    { label: t('snapshots.pythonVersion'), value: n.pythonVersion || '—' },
+    { label: t('track.version'), value: n.comfyuiVersion || t('common.unknown') },
+    { label: t('snapshots.variant'), value: n.comfyui.variant || t('common.unknown') },
+    { label: t('snapshots.pythonVersion'), value: n.pythonVersion || t('common.unknown') },
     { label: t('snapshots.capturedAt'), value: formatDate(n.createdAt) }
   ]
 })
@@ -306,7 +307,7 @@ async function create(): Promise<void> {
       creating.value = false
       emit('created', {
         installationId: result.entry.id,
-        title: `${t('newInstall.installing')} — ${result.entry.name}`,
+        title: progressTitle(t('newInstall.installing'), result.entry.name),
         apiCall: () => window.api.installInstance(result.entry!.id),
         cancellable: true,
         autoLaunchOnFinish: true,
@@ -532,7 +533,9 @@ defineExpose({ create, canCreate, creating, hasPreview })
                   >
                 </div>
               </div>
-              <div v-else class="load-snapshot-empty text-[13px] text-text-muted">—</div>
+              <div v-else class="load-snapshot-empty text-[13px] text-text-muted">
+                {{ t('common.none') }}
+              </div>
             </SnapshotDisclosure>
             <SnapshotDisclosure
               v-model:open="pipExpanded"
@@ -559,7 +562,9 @@ defineExpose({ create, canCreate, creating, hasPreview })
                   >
                 </div>
               </div>
-              <div v-else class="load-snapshot-empty text-[13px] text-text-muted">—</div>
+              <div v-else class="load-snapshot-empty text-[13px] text-text-muted">
+                {{ t('common.none') }}
+              </div>
             </SnapshotDisclosure>
             <SnapshotDisclosure
               v-model:open="timelineExpanded"

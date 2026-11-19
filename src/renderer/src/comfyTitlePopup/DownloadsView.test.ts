@@ -256,7 +256,7 @@ describe('comfyTitlePopup/DownloadsView', () => {
     const { default: DownloadsView } = await import('./DownloadsView.vue')
     const wrapper = mount(DownloadsView, { props: { state: EMPTY_STATE } })
     await flushPromises()
-    expect(wrapper.find('.downloads-link').text()).toBe('View All Downloads')
+    expect(wrapper.find('.downloads-link').text()).toBe('View all downloads')
     await wrapper.find('.downloads-link').trigger('click')
     expect(bridgeState.openDownloadsModalCalls).toBe(1)
     expect(bridgeState.openSettingsTabCalls).toEqual([])
