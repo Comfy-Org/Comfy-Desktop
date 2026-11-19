@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import PerformanceTestView from './PerformanceTestView.vue'
 import PerformanceTestBuildMenu from './performanceTest/PerformanceTestBuildMenu.vue'
+import PerformanceTestWorkflowMenu from './performanceTest/PerformanceTestWorkflowMenu.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 
 const scopedInstallations = vi.hoisted(() => ({ value: [] as unknown[] }))
@@ -42,13 +43,21 @@ function mountView() {
 
 beforeEach(() => {
   scopedInstallations.value = []
+  const methods = new Map<PropertyKey, ReturnType<typeof vi.fn>>()
   window.api = new Proxy(
     {},
     {
-      get: (_, method) =>
-        String(method).startsWith('on')
-          ? vi.fn(() => vi.fn())
-          : vi.fn().mockResolvedValue(undefined)
+      get: (_, method) => {
+        if (!methods.has(method)) {
+          methods.set(
+            method,
+            String(method).startsWith('on')
+              ? vi.fn(() => vi.fn())
+              : vi.fn().mockResolvedValue(undefined)
+          )
+        }
+        return methods.get(method)
+      }
     }
   ) as unknown as typeof window.api
 })
@@ -107,6 +116,33 @@ describe('PerformanceTestView Run reason', () => {
 
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
     expect(runReason(wrapper)).toBe('Choose a workflow first.')
+  })
+
+  function runWrap(wrapper: ReturnType<typeof mountView>) {
+    return wrapper.get('.performance-test__run').element.closest('.tooltip-wrap')!
+  }
+
+  it('lets keyboard users reach the reason while Run is blocked', () => {
+    const wrapper = mountView()
+
+    expect(runWrap(wrapper).getAttribute('tabindex')).toBe('0')
+  })
+
+  it('drops the extra tab stop once Run is available', async () => {
+    scopedInstallations.value = [
+      { id: 'b1', name: 'Build 1', sourceCategory: 'local', status: 'installed' }
+    ]
+    vi.mocked(window.api.importPerformanceTestWorkflow).mockResolvedValue({
+      ok: true,
+      filePath: '/workflows/flow.json'
+    } as Awaited<ReturnType<typeof window.api.importPerformanceTestWorkflow>>)
+    const wrapper = mountView()
+    wrapper.getComponent(PerformanceTestBuildMenu).vm.$emit('update:modelValue', 'b1')
+    wrapper.getComponent(PerformanceTestWorkflowMenu).vm.$emit('import')
+    await flushPromises()
+
+    expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
+    expect(runWrap(wrapper).hasAttribute('tabindex')).toBe(false)
   })
 })
 

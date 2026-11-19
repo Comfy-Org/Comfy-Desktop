@@ -267,7 +267,13 @@ async function exportResultsImage(): Promise<void> {
                 run.stage === 'stopping' ? t('performanceTest.stopping') : t('performanceTest.stop')
               }}
             </Button>
-            <Tooltip v-else class="ml-auto" :text="runBlockedReason" :disabled="canRun">
+            <Tooltip
+              v-else
+              class="ml-auto"
+              :text="runBlockedReason"
+              :disabled="canRun"
+              :tabindex="!canRun && runBlockedReason ? 0 : undefined"
+            >
               <Button
                 class="performance-test__run min-w-20 gap-1.5 px-3 text-[13px]/5"
                 variant="inverted"
