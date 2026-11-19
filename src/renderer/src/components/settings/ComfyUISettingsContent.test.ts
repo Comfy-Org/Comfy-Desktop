@@ -7,6 +7,7 @@ import type { Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'
 import '../../assets/main.css'
 import { TID } from '../../../../shared/testIds'
+import '../../assets/main.css'
 import ComfyUISettingsContent from './ComfyUISettingsContent.vue'
 
 const useComfyUISettingsState = {
@@ -134,6 +135,45 @@ describe('ComfyUISettingsContent', () => {
       expect(wrapper.find('.settings-v2-footer').exists()).toBe(false)
 
       wrapper.unmount()
+      target.remove()
+    })
+
+    it('wraps the tab tools under the tabs when the page is too narrow', async () => {
+      const target = document.createElement('div')
+      target.id = 'page-actions'
+      document.body.append(target)
+      const host = document.createElement('div')
+      host.style.width = '452px'
+      document.body.append(host)
+
+      const wrapper = mount(ComfyUISettingsContent, {
+        props: {
+          installation: SAMPLE_INSTALL,
+          initialTab: 'snapshots',
+          activeOperation: null,
+          pageActionsTarget: '#page-actions'
+        },
+        global: { plugins: [getActivePinia() ?? createPinia()] },
+        attachTo: host
+      })
+      await flushPromises()
+      const tools = document.getElementById('settings-v2-tab-tools')!
+      const filler = document.createElement('div')
+      filler.style.width = '200px'
+      filler.style.height = '32px'
+      tools.append(filler)
+      await nextTick()
+
+      const row = host.querySelector<HTMLElement>('.settings-v2-tabrow')!.getBoundingClientRect()
+      const placed = filler.getBoundingClientRect()
+      expect(placed.right).toBeLessThanOrEqual(row.right + 0.5)
+      expect(placed.left).toBeGreaterThanOrEqual(row.left - 0.5)
+      const tabs = host.querySelector<HTMLElement>('.settings-v2-tabs')!.getBoundingClientRect()
+      expect(tabs.width + 200, 'the fixture is too narrow for one line').toBeGreaterThan(row.width)
+      expect(placed.top, 'the tools wrap below the tabs').toBeGreaterThanOrEqual(tabs.bottom - 0.5)
+
+      wrapper.unmount()
+      host.remove()
       target.remove()
     })
 

@@ -1113,4 +1113,16 @@ describe('BenchmarksView', () => {
     await wrapper.get('.benchmarks__open-performance-test').trigger('click')
     expect(navigatePanelMock).toHaveBeenCalledExactlyOnceWith('performance-test')
   })
+
+  it('reloads an empty folder from the empty state, with no toolbar', async () => {
+    useBenchmarks([])
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.benchmarks__toolbar').exists()).toBe(false)
+    useBenchmarks(sampleBenchmarks)
+    await wrapper.get('[data-testid="benchmarks-empty-refresh"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(5)
+  })
 })

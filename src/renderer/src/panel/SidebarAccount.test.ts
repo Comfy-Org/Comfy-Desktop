@@ -112,13 +112,24 @@ describe('SidebarAccount', () => {
     expect(signIn.attributes('disabled')).toBeUndefined()
   })
 
-  it('shrinks to a named icon on the collapsed sidebar', async () => {
+  it('shrinks to a named icon on the collapsed sidebar, with the log-in card folded away and out of reach', async () => {
     const { wrapper } = await mountAccount(SIGNED_OUT, true)
 
-    expect(wrapper.text()).toBe('')
+    expect(wrapper.get('[data-testid="sidebar-signin-card"]').attributes()).toHaveProperty('inert')
+    expect(wrapper.get('[data-testid="sidebar-signin-icon"]').attributes()).not.toHaveProperty(
+      'inert'
+    )
+    expect(wrapper.findAll('[data-testid="devplatform-account-signin"]')).toHaveLength(1)
     expect(wrapper.get('[data-testid="devplatform-account-signin"]').attributes('title')).toBe(
       'Log in'
     )
+  })
+
+  it('keeps the log-in icon out of reach while the sidebar is open', async () => {
+    const { wrapper } = await mountAccount(SIGNED_OUT)
+
+    expect(wrapper.get('[data-testid="sidebar-signin-icon"]').attributes()).toHaveProperty('inert')
+    expect(wrapper.findAll('[data-testid="devplatform-account-signin"]')).toHaveLength(1)
   })
 
   it('shows the current workspace on the trigger', async () => {

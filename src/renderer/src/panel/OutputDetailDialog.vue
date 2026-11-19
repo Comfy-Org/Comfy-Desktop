@@ -9,9 +9,9 @@ import {
   ChevronDown,
   Download,
   File,
-  FolderSearch,
   Images,
   Music,
+  ScanSearch,
   Workflow,
   X
 } from '@lucide/vue'
@@ -359,7 +359,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           data-testid="output-detail-show-in-folder"
           @click="emit('show-in-folder', index)"
         >
-          <FolderSearch :size="15" aria-hidden="true" />
+          <ScanSearch :size="15" aria-hidden="true" />
           {{ t(revealKey) }}
         </Button>
         <Button

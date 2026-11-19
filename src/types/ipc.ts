@@ -246,9 +246,23 @@ export interface CloudAssetPage {
   scanLimit?: number
 }
 
+export interface LocalAssetPageRequest {
+  offset: number
+  limit: number
+  order: AssetOrder
+  kind?: AssetKind
+}
+
+export interface OutputFolderPaths {
+  home: string
+  shared: string | null
+  ofBuild: Record<string, string>
+}
+
 export interface LocalAssetListing {
   assets: AssetSummary[]
-  truncated: boolean
+  total: number
+  counts: Record<'all' | AssetKind, number>
 }
 
 export interface BuildStorageSnapshot {
@@ -1245,7 +1259,9 @@ export interface ElectronApi {
   navigatePanel(page: DashboardPage): void
   openPageInNewWindow(page: NewWindowDashboardPage): void
   listAssets(installationId: string, page: CloudAssetPageRequest): Promise<CloudAssetPage | null>
-  listLocalAssets(installationId?: string): Promise<LocalAssetListing>
+  listLocalAssets(installationId?: string, page?: LocalAssetPageRequest): Promise<LocalAssetListing>
+  listOutputFolders(): Promise<OutputFolderPaths>
+  openOutputFolder(installationId?: string): Promise<boolean>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
   findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>

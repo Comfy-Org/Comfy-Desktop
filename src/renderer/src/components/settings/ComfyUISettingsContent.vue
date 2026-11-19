@@ -780,68 +780,87 @@ defineExpose({
 <template>
   <Tabs :model-value="activeTab" as-child @update:model-value="onTabValueChange">
     <div ref="root" class="settings-v2-content flex min-h-0 flex-1 flex-col">
-      <TabsList as-child>
-        <nav
-          ref="tabStrip"
-          class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-x-auto overscroll-x-contain [scrollbar-width:none]"
-          :class="[
-            'w-fit gap-0.5 rounded-[10px] bg-secondary p-[3px]',
-            isPage ? 'max-w-full' : 'mx-5 max-w-[calc(100%-2.5rem)]',
-            {
-              'is-subpage-active opacity-60': subPage !== null,
-              '[mask-image:linear-gradient(to_right,black_calc(100%-40px),transparent)]':
-                tabsHiddenEnd && !tabsHiddenStart,
-              '[mask-image:linear-gradient(to_left,black_calc(100%-40px),transparent)]':
-                tabsHiddenStart && !tabsHiddenEnd,
-              '[mask-image:linear-gradient(to_right,transparent,black_40px,black_calc(100%-40px),transparent)]':
-                tabsHiddenStart && tabsHiddenEnd
-            }
-          ]"
-          :aria-label="t('comfyUISettings.title')"
-          @scroll.passive="measureTabStrip"
-        >
-          <Tooltip
-            v-for="tab in tabs"
-            :key="tab.key"
-            :text="tab.tooltip ?? tab.label"
-            side="bottom"
-            :disabled="!tab.tooltip"
+      <div
+        class="settings-v2-tabrow"
+        :class="
+          isPage ? 'flex min-w-0 shrink-0 flex-wrap items-center justify-between gap-3' : 'contents'
+        "
+      >
+        <TabsList as-child>
+          <nav
+            ref="tabStrip"
+            class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-x-auto overscroll-x-contain [scrollbar-width:none]"
+            :class="[
+              'w-fit gap-0.5 rounded-[10px] bg-secondary p-[3px]',
+              isPage ? 'max-w-full' : 'mx-5 max-w-[calc(100%-2.5rem)]',
+              {
+                'is-subpage-active opacity-60': subPage !== null,
+                '[mask-image:linear-gradient(to_right,black_calc(100%-40px),transparent)]':
+                  tabsHiddenEnd && !tabsHiddenStart,
+                '[mask-image:linear-gradient(to_left,black_calc(100%-40px),transparent)]':
+                  tabsHiddenStart && !tabsHiddenEnd,
+                '[mask-image:linear-gradient(to_right,transparent,black_40px,black_calc(100%-40px),transparent)]':
+                  tabsHiddenStart && tabsHiddenEnd
+              }
+            ]"
+            :aria-label="t('comfyUISettings.title')"
+            @scroll.passive="measureTabStrip"
           >
-            <TabsTrigger
-              :value="tab.key"
-              variant="panel"
-              :disabled="opInflight && activeTab !== tab.key"
-              class="settings-v2-tab group/settings-tab shrink-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate"
-              :class="[
-                {
-                  'is-active': activeTab === tab.key,
-                  'is-locked': opInflight && activeTab !== tab.key
-                },
-                'm-0 h-[26px] rounded-[7px] border-0 bg-transparent px-[11px] py-0 text-[13px] font-normal text-muted-foreground hover:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground'
-              ]"
-              :data-testid="TID.settingsTab(tab.key)"
-              @click="selectTab(tab.key)"
+            <Tooltip
+              v-for="tab in tabs"
+              :key="tab.key"
+              :text="tab.tooltip ?? tab.label"
+              side="bottom"
+              :disabled="!tab.tooltip"
             >
-              <span
-                v-if="tab.key === 'update' && showUpdateBadge"
-                class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center"
+              <TabsTrigger
+                :value="tab.key"
+                variant="panel"
+                :disabled="opInflight && activeTab !== tab.key"
+                class="settings-v2-tab group/settings-tab shrink-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate"
+                :class="[
+                  {
+                    'is-active': activeTab === tab.key,
+                    'is-locked': opInflight && activeTab !== tab.key
+                  },
+                  'm-0 h-[26px] rounded-[7px] border-0 bg-transparent px-[11px] py-0 text-[13px] font-normal text-muted-foreground hover:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground'
+                ]"
+                :data-testid="TID.settingsTab(tab.key)"
+                @click="selectTab(tab.key)"
               >
                 <span
                   v-if="tab.key === 'update' && showUpdateBadge"
-                  :class="[
-                    activeTab === tab.key
-                      ? 'border-neutral-700'
-                      : 'border-[var(--modal-surface-bg)]'
-                  ]"
-                  class="settings-v2-tab-badge box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
-                  aria-hidden="true"
-                ></span>
-              </span>
-              <span>{{ tab.label }}</span>
-            </TabsTrigger>
-          </Tooltip>
-        </nav>
-      </TabsList>
+                  class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center"
+                >
+                  <span
+                    v-if="tab.key === 'update' && showUpdateBadge"
+                    :class="[
+                      activeTab === tab.key
+                        ? 'border-neutral-700'
+                        : 'border-[var(--modal-surface-bg)]'
+                    ]"
+                    class="settings-v2-tab-badge box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
+                    aria-hidden="true"
+                  ></span>
+                </span>
+                <span>{{ tab.label }}</span>
+              </TabsTrigger>
+            </Tooltip>
+          </nav>
+        </TabsList>
+        <Transition
+          enter-active-class="transition-opacity duration-150 ease-out"
+          leave-active-class="transition-opacity duration-150 ease-out"
+          enter-from-class="opacity-0"
+          leave-to-class="opacity-0"
+        >
+          <div
+            v-if="isPage && activeTab === 'snapshots' && installation"
+            id="settings-v2-tab-tools"
+            class="settings-v2-tab-tools ml-auto flex shrink-0 items-center"
+          ></div>
+        </Transition>
+      </div>
 
       <TabsContent :value="activeTab" as-child force-mount>
         <section
@@ -911,6 +930,7 @@ defineExpose({
                   <SnapshotsView
                     :installation-id="installation.id"
                     :active-operation="activeOperation"
+                    :toolbar-target="isPage ? '#settings-v2-tab-tools' : undefined"
                     @run-action="handleSnapshotAction"
                     @refresh-all="handleSnapshotsRefresh"
                     @op-cancel="emit('op-cancel')"
