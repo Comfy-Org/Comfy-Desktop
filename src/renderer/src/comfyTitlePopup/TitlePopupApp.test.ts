@@ -215,7 +215,7 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
     bridgeState.configCallbacks.forEach((cb) =>
       cb({
         kind: 'menu',
-        items: [{ id: 'open-feedback', label: 'Send Feedback' }],
+        items: [{ id: 'open-feedback', label: 'Send feedback' }],
         theme: { bg: '#262729', text: '#dddddd' }
       })
     )

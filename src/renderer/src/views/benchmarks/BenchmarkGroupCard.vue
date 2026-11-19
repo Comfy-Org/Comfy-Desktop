@@ -125,6 +125,10 @@ function barPercent(value: number | null): number {
   return Math.min(100, Math.max(0, (value / props.group.scaleMaximum) * 100))
 }
 
+function sessionMeta(benchmark: PerformanceTestBenchmark): string {
+  return `${props.formatDate(benchmark.createdAt)} · ${t('benchmarks.runCount', benchmark.measuredJobCount)}`
+}
+
 function rangeStyle(benchmark: PerformanceTestBenchmark): Record<string, string> | null {
   const fastest = benchmark.fastestJobDurationSeconds
   const slowest = benchmark.slowestJobDurationSeconds
@@ -305,13 +309,13 @@ function toggleBaseline(id: string): void {
 <template>
   <section
     class="benchmarks__group min-w-0"
-    :class="collapsed ? 'benchmarks__group--collapsed rounded-[14px] bg-card pr-2 pl-4' : ''"
+    :class="collapsed ? 'benchmarks__group--collapsed rounded-[14px] bg-card pr-2.5 pl-[18px]' : ''"
     :data-testid="`benchmark-group-${groupName || 'all'}`"
     :aria-label="groupLabel"
   >
     <div
       class="benchmarks__group-head flex items-center gap-2"
-      :class="collapsed ? 'min-h-12' : 'mb-1.5 min-h-8 pr-2 pl-4'"
+      :class="collapsed ? 'min-h-12' : 'mb-1.5 min-h-8 pr-2.5 pl-[18px]'"
     >
       <Button
         variant="textonly"
@@ -377,23 +381,21 @@ function toggleBaseline(id: string): void {
     <template v-if="!collapsed">
       <p
         v-if="groupBy === 'workflow' && group.buildCount === 1"
-        class="benchmarks__single-note m-0 mb-2 pl-4 text-[13px] text-muted-foreground"
+        class="benchmarks__single-note m-0 mb-2 pl-[18px] text-[13px] text-muted-foreground"
       >
         {{ t('benchmarks.singleRun') }}
       </p>
 
-      <div class="benchmarks__group-box rounded-[14px] bg-card pt-3 pr-4 pb-2 pl-14">
-        <div class="benchmarks__table-scroll scroll-visible -mr-2 -ml-12 overflow-x-auto">
+      <div class="benchmarks__group-box rounded-[14px] bg-card pt-3 pb-2">
+        <div
+          class="benchmarks__table-scroll scroll-visible overflow-x-auto ![scrollbar-gutter:auto]"
+        >
           <table
-            class="benchmarks__table w-full border-separate border-spacing-0 [--bench-line:color-mix(in_oklch,var(--color-foreground)_8%,transparent)] text-left text-[13px] [&_td]:px-2 [&_td]:py-2 [&_td]:whitespace-nowrap [&_th]:h-9 [&_th]:px-2 [&_th]:text-[12px] [&_th]:font-medium [&_th]:tracking-[0.01em] [&_th]:whitespace-nowrap [&_th]:text-subtle-foreground [&_th]:shadow-[inset_0_-1px_0_var(--bench-line)] [&_td]:bg-card [&_th]:bg-card [&_td:first-child]:rounded-l-lg [&_td:last-child]:rounded-r-lg [&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_var(--bench-line)] [&_tbody_tr:hover>td]:bg-[color-mix(in_oklch,var(--color-foreground)_3.5%,var(--color-card))] [&_tbody_tr:hover>td]:shadow-none [&_tbody_tr:hover+tr>td]:shadow-none [&_tbody_tr.benchmarks__row--selected>td]:shadow-none [&_tbody_tr.benchmarks__row--selected+tr>td]:shadow-none"
+            class="benchmarks__table w-full border-separate border-spacing-0 [--bench-line:color-mix(in_oklch,var(--color-foreground)_8%,transparent)] text-left text-[13px] [&_td]:px-2 [&_td]:py-2 [&_td]:whitespace-nowrap [&_th]:h-9 [&_th]:px-2 [&_th]:text-[12px] [&_th]:font-medium [&_th]:tracking-[0.01em] [&_th]:whitespace-nowrap [&_th]:text-subtle-foreground [&_th]:shadow-[inset_0_-1px_0_var(--bench-line)] [&_td]:bg-card [&_th]:bg-card [&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_var(--bench-line)] [&_tbody_tr:hover>td]:bg-[color-mix(in_oklch,var(--color-foreground)_3.5%,var(--color-card))] [&_tbody_tr:hover>td]:shadow-none [&_tbody_tr:hover+tr>td]:shadow-none [&_tbody_tr.benchmarks__row--selected>td]:shadow-none [&_tbody_tr.benchmarks__row--selected+tr>td]:shadow-none"
           >
             <thead>
               <tr>
-                <th
-                  class="sticky left-0 z-[1] w-10 !px-0"
-                  :aria-label="t('benchmarks.selection')"
-                />
-                <th class="sticky left-10 z-[1]" :aria-sort="ariaSort('id')">
+                <th class="sticky left-0 z-[1] !pl-[18px]" :aria-sort="ariaSort('id')">
                   <Button
                     variant="textonly"
                     size="unset"
@@ -467,7 +469,7 @@ function toggleBaseline(id: string): void {
                     {{ column.label }} {{ sortIndicator(column.key) }}
                   </Button>
                 </th>
-                <th class="sticky right-46 z-[1] text-right" :aria-sort="ariaSort(metric)">
+                <th class="sticky right-[234px] z-[1] text-right" :aria-sort="ariaSort(metric)">
                   <Button
                     variant="textonly"
                     size="unset"
@@ -479,12 +481,12 @@ function toggleBaseline(id: string): void {
                   </Button>
                 </th>
                 <th
-                  class="benchmarks__vs-head sticky right-10 z-[1] w-36 min-w-36 !pr-9 text-right"
+                  class="benchmarks__vs-head sticky right-[42px] z-[1] w-48 min-w-48 !pr-9 text-right"
                 >
                   {{ t('benchmarks.vsBaseline') }}
                 </th>
                 <th
-                  class="sticky right-0 z-[1] w-10 min-w-10 !px-1"
+                  class="sticky right-0 z-[1] w-[42px] min-w-[42px] !pr-2.5 !pl-0"
                   :aria-label="t('benchmarks.actions')"
                 />
               </tr>
@@ -505,11 +507,15 @@ function toggleBaseline(id: string): void {
                 @dragover="dragOver($event, row.benchmark.id)"
                 @drop="drop($event, row.benchmark.id)"
               >
-                <td class="sticky left-0 z-[1] w-10 !pr-0 !pl-1.5">
-                  <div class="flex items-center gap-1">
+                <td
+                  class="benchmarks__session sticky left-0 z-[1] max-w-[254px] min-w-40 !pr-14 !pl-[18px]"
+                >
+                  <div
+                    class="benchmarks__select absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-1"
+                  >
                     <span
                       :ref="(element) => rememberGrip(row.benchmark.id, element)"
-                      class="benchmarks__grip inline-flex flex-none cursor-grab rounded text-subtle-foreground focus-visible:opacity-100 focus-visible:outline-1 focus-visible:outline-[var(--focus-ring)] active:cursor-grabbing"
+                      class="benchmarks__grip inline-flex h-7 w-5 flex-none cursor-grab items-center justify-center rounded text-subtle-foreground focus-visible:opacity-100 focus-visible:outline-1 focus-visible:outline-[var(--focus-ring)] active:cursor-grabbing"
                       :class="
                         group.manual ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100'
                       "
@@ -539,18 +545,20 @@ function toggleBaseline(id: string): void {
                       @update:model-value="emit('toggleSelected', row.benchmark.id)"
                     />
                   </div>
-                </td>
-                <td class="benchmarks__session sticky left-10 z-[1] max-w-65">
-                  <BenchmarkSessionName
-                    :ref="(component) => rememberSessionName(row.benchmark.id, component)"
-                    :name="row.benchmark.id"
-                    :label="t('benchmarks.editSessionName', { session: row.benchmark.id })"
-                    :rename="(name) => renameSession(row.benchmark, name)"
-                  />
-                  <span class="benchmarks__session-meta block text-xs text-muted-foreground">
-                    {{ formatDate(row.benchmark.createdAt) }} ·
-                    {{ t('benchmarks.runCount', row.benchmark.measuredJobCount) }}
-                  </span>
+                  <div class="benchmarks__session-body max-w-[180px] min-w-0">
+                    <BenchmarkSessionName
+                      :ref="(component) => rememberSessionName(row.benchmark.id, component)"
+                      :name="row.benchmark.id"
+                      :label="t('benchmarks.editSessionName', { session: row.benchmark.id })"
+                      :rename="(name) => renameSession(row.benchmark, name)"
+                    />
+                    <span
+                      class="benchmarks__session-meta block truncate text-xs text-muted-foreground"
+                      :title="sessionMeta(row.benchmark)"
+                    >
+                      {{ sessionMeta(row.benchmark) }}
+                    </span>
+                  </div>
                 </td>
                 <td
                   v-if="workflowColumn && groupBy !== 'workflow'"
@@ -630,7 +638,7 @@ function toggleBaseline(id: string): void {
                   {{ formatColumnValue(row.benchmark, column.key) }}
                 </td>
                 <td
-                  class="benchmarks__value sticky right-46 z-[1] text-right font-semibold tabular-nums"
+                  class="benchmarks__value sticky right-[234px] z-[1] text-right font-semibold tabular-nums"
                 >
                   <span v-if="row.value === null" class="font-normal text-subtle-foreground"
                     >—</span
@@ -638,7 +646,7 @@ function toggleBaseline(id: string): void {
                   <template v-else>{{ formatSeconds(row.value) }}</template>
                 </td>
                 <td
-                  class="benchmarks__vs sticky right-10 z-[1] w-36 min-w-36 text-right text-xs text-muted-foreground"
+                  class="benchmarks__vs sticky right-[42px] z-[1] w-48 min-w-48 text-right text-xs text-muted-foreground"
                 >
                   <span class="flex items-center justify-end gap-1">
                     <span
@@ -696,7 +704,9 @@ function toggleBaseline(id: string): void {
                     <span v-else class="size-6 shrink-0" aria-hidden="true" />
                   </span>
                 </td>
-                <td class="sticky right-0 z-[1] w-10 min-w-10 !px-1 text-right">
+                <td
+                  class="benchmarks__row-tools sticky right-0 z-[1] w-[42px] min-w-[42px] !pr-2.5 !pl-0 text-right"
+                >
                   <Menu
                     :modal="false"
                     align="end"

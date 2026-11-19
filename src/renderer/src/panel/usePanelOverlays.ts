@@ -15,6 +15,7 @@ import { stopsWithItsWindow, useConfirmStopTask } from '../composables/useBuildP
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { progressActionName } from '../lib/progressTitle'
 
 export type PanelKey =
   | 'comfy'
@@ -277,7 +278,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
   }
 
   async function handleShowProgress(showOpts: ShowProgressOpts): Promise<void> {
-    const operationName = showOpts.title.split(' — ')[0] || showOpts.title
+    const operationName = progressActionName(showOpts.title)
     if (runsInBackground(showOpts)) {
       const settled =
         showOpts.opKind === 'launch'
