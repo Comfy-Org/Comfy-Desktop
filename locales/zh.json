@@ -552,19 +552,10 @@
     "snapshotNameHint": "类似 < > : \" / \\ | ? * 的字符将被移除",
     "snapshotRelease": "版本",
     "snapshotOriginalRelease": "快照版本：{tag}",
-    "snapshotDevice": "设备",
     "snapshotHardwareMismatch": "该快照创建于 {snapshotDevice}。检测到你的硬件为 {detectedDevice}。已预选适合你硬件的推荐版本。",
     "view": "管理",
     "console": "控制台",
     "viewProgress": "查看进度"
-  },
-  "quickInstall": {
-    "title": "安装 ComfyUI",
-    "grandTitle": "快速安装",
-    "grandSubtitle": "为检测到的硬件安装最新版 ComfyUI。",
-    "desc": "我们将安装最新版 ComfyUI。请在下方确认你的 GPU 类型。",
-    "selectVariant": "选择你的 GPU",
-    "confirmInstall": "安装 ComfyUI"
   },
   "loadSnapshot": {
     "grandTitle": "加载快照",
@@ -577,7 +568,6 @@
     "grandTitle": "安装新构建",
     "grandSubtitle": "设置全新的 ComfyUI 安装。选择来源、命名并完成配置。",
     "installMethod": "安装方式",
-    "installLocation": "安装位置",
     "addInstallation": "添加构建",
     "loading": "正在加载…",
     "detectingGpu": "正在检测 GPU…",
@@ -2025,7 +2015,8 @@
     "retry": "重试",
     "showInFolder": "在 Finder 中显示",
     "remove": "从列表中移除",
-    "viewAllInSettings": "查看所有下载",
+    "viewAll": "查看全部",
+    "viewAllLabel": "查看所有下载",
     "completed": "已完成",
     "thumbnailAlt": "{name} 的缩略图"
   },

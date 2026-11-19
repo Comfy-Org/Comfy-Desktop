@@ -40,18 +40,18 @@ defineExpose({ open })
   >
     <LoadSnapshotForm ref="formRef" :key="openCount" class="mt-4" @created="handleCreated" />
 
-    <template v-if="formRef?.hasPreview" #footer>
+    <template #footer>
       <span class="flex-1" />
       <Button
         type="button"
         size="lg"
         variant="inverted"
         class="load-snapshot-create min-w-[104px]"
-        :disabled="!formRef.canCreate"
-        @click="formRef.create()"
+        :disabled="!formRef?.canCreate"
+        @click="formRef?.create()"
       >
         {{
-          formRef.creating ? `${$t('newInstall.installing')}…` : $t('list.snapshotCreateInstall')
+          formRef?.creating ? `${$t('newInstall.installing')}…` : $t('list.snapshotCreateInstall')
         }}
       </Button>
     </template>

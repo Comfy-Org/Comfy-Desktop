@@ -1,4 +1,5 @@
-import type { RumErrorEvent } from '@datadog/browser-rum'
+import type { RumBeforeSend, RumErrorEvent } from '@datadog/browser-rum'
+import { scrubPII } from '../../../shared/piiScrub'
 
 export const DATADOG_BUNDLE_BASE_URL = 'app://app'
 
@@ -21,40 +22,31 @@ export function normalizeDatadogBundlePaths(value: string | undefined): string |
   return normalized
 }
 
-const PII_PATH_PATTERNS = [
-  /([A-Za-z]:[\\/]Users[\\/])[^\\/]+?(?=[\\/]|$)/g,
-  /(\/Users\/)[^\\/]+?(?=\/|$)/g,
-  /(\/home\/)[^\\/]+?(?=\/|$)/g
-]
-
 const URL_QUERY_PATTERN = /(https?:\/\/[^\s?#"')]+)\?[^\s"')]*/gi
 const DATA_URI_PATTERN = /data:[^\s"')]+/gi
 
-export function scrubPII(value: string): string {
-  let scrubbed = value
-  for (const pattern of PII_PATH_PATTERNS) {
-    scrubbed = scrubbed.replace(pattern, (_match, prefix: string) => `${prefix}[REDACTED]`)
-  }
-  return scrubbed
+export function scrubRumText(value: string): string {
+  return scrubPII(value)
     .replace(URL_QUERY_PATTERN, (_match, address: string) => `${address}?[REDACTED]`)
     .replace(DATA_URI_PATTERN, 'data:[REDACTED]')
 }
 
 export function normalizeRumErrorEvent(event: RumErrorEvent): void {
-  event.error.message = scrubPII(event.error.message)
+  event.error.message = scrubRumText(event.error.message)
   event.error.stack = normalizeDatadogBundlePaths(event.error.stack)
   if (event.error.stack) {
-    event.error.stack = scrubPII(event.error.stack)
-  }
-  for (const cause of event.error.causes || []) {
-    cause.stack = normalizeDatadogBundlePaths(cause.stack)
-    if (cause.stack) {
-      cause.stack = scrubPII(cause.stack)
-    }
+    event.error.stack = scrubRumText(event.error.stack)
   }
   if (event.error.resource?.url) {
     event.error.resource.url =
       normalizeDatadogBundlePaths(event.error.resource.url) || event.error.resource.url
-    event.error.resource.url = scrubPII(event.error.resource.url)
+    event.error.resource.url = scrubRumText(event.error.resource.url)
   }
+}
+
+export const rumBeforeSend: RumBeforeSend = (event) => {
+  if (event.type !== 'error') return true
+  if (event.error.causes?.length) return false
+  normalizeRumErrorEvent(event)
+  return true
 }

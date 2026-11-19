@@ -120,6 +120,12 @@ export default defineConfig([
             "CallExpression[callee.property.name='loadURL']:matches([callee.object.name='comfyContents'], [callee.object.property.name='webContents'][callee.object.object.property.name='comfyView'])",
           message:
             'Navigate a build window through navigatorFor(entry) in src/main/host/buildNavigator.ts. It decides which request wins when a refresh, retry, restart or workspace switch overlap.'
+        },
+        {
+          selector:
+            "CallExpression:matches([callee.name='get'], [callee.property.name='get'])[arguments.0.value='telemetryEnabled']",
+          message:
+            'Read telemetry consent with settings.telemetryConsent(). settings.get can serve a stale settings.json.bak when settings.json is unreadable.'
         }
       ]
     }

@@ -337,6 +337,10 @@
   opacity: var(--modal-close-icon-hover);
 }
 
+.config-input:has([data-autofocused]:not([aria-invalid='true'])) {
+  box-shadow: none;
+}
+
 [data-reka-menu-content] {
   background-color: var(--color-popover);
   padding: 4px;
