@@ -344,7 +344,8 @@ let unsubAppUpdatePromptRestart: (() => void) | null = null
 let unsubAppUpdateUserActionFailed: (() => void) | null = null
 const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
-const { triggerAction: triggerInstallAction } = useInstallContextMenu({
+const { triggerAction: triggerInstallAction, viewError: viewBuildError } = useInstallContextMenu({
+  onStartAgain: (inst) => launchFromBuildDetails(inst),
   onManage: (inst, manageOpts) => {
     const autoAction = manageOpts?.autoAction ?? null
     const initialTab = manageOpts?.initialTab
@@ -588,6 +589,7 @@ onUnmounted(() => {
               @back="closeBuildDetails"
               @launch="launchFromBuildDetails"
               @show-progress="handleShowProgress"
+              @view-error="viewBuildError"
             />
             <ChooserView
               :visible="dashboardHomePage === 'chooser' && !buildDetailsInstall"
@@ -595,7 +597,6 @@ onUnmounted(() => {
               @open-details="openBuildDetails"
               @show-new-install="handleChooserShowNewInstall"
               @show-build-import="switchPanel($event, 'chooser')"
-              @show-progress="handleShowProgress"
             />
           </div>
 

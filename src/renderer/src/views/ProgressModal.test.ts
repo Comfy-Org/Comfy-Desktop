@@ -30,6 +30,7 @@ interface MockApi {
   getInstallations: ReturnType<typeof vi.fn>
   onInstallationsChanged: ReturnType<typeof vi.fn>
   onInstallationsVersionsUpdated: ReturnType<typeof vi.fn>
+  onInstanceStarted?: ReturnType<typeof vi.fn>
 }
 
 function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
@@ -538,6 +539,27 @@ describe('ProgressModal — brand branch state transitions', () => {
     })
     expect(body.selectorText('.brand-progress__error-actions')).toContain('Restart ComfyUI')
     expect(body.selectorText('.brand-progress__error-actions')).not.toContain('Try again')
+  })
+
+  it('keeps a failed start and its actions on screen when the build starts from another window', async () => {
+    let startedElsewhere: (data: { installationId: string }) => void = () => {}
+    installMockApi({
+      onInstanceStarted: vi.fn((cb: (data: { installationId: string }) => void) => {
+        startedElsewhere = cb
+        return () => {}
+      })
+    })
+    const { body } = await mountWithOp('inst-1', {
+      finished: true,
+      error: 'Port 8188 is in use',
+      opKind: 'launch'
+    })
+
+    startedElsewhere({ installationId: 'inst-1' })
+    await flushPromises()
+
+    expect(body.text()).toContain('Port 8188 is in use')
+    expect(body.selectorText('.brand-progress__error-actions')).toContain('Restart ComfyUI')
   })
 
   it('renders Back (no Try again) on a destroy op error', async () => {

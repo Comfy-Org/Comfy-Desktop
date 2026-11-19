@@ -703,3 +703,74 @@ describe('useInstallContextMenu - stop and close the build window', () => {
     })
   })
 })
+
+describe('useInstallContextMenu - error details for a build that went wrong', () => {
+  function mountViewError(onStartAgain?: (inst: Installation) => void) {
+    let menu!: ReturnType<typeof useInstallContextMenu>
+    let session!: ReturnType<typeof useSessionStore>
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    _harnessSetup = () => {
+      menu = useInstallContextMenu({ onStartAgain })
+      session = useSessionStore()
+    }
+    mount(HarnessComponent, { global: { plugins: [pinia] } })
+    _harnessSetup = null
+    return { menu, session }
+  }
+
+  beforeEach(() => {
+    modalMock.alert.mockReset()
+    modalMock.confirm.mockReset()
+  })
+
+  it('names a start that failed with no start logs, shows its reason and offers Start again', async () => {
+    modalMock.confirm.mockResolvedValue(true)
+    const onStartAgain = vi.fn()
+    const inst = makeInstall()
+    const { menu, session } = mountViewError(onStartAgain)
+    session.errorInstances.set(inst.id, {
+      installationName: inst.name,
+      startFailed: true,
+      message: 'Port 8188 is in use'
+    })
+
+    menu.viewError(inst)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(modalMock.alert).not.toHaveBeenCalled()
+    expect(modalMock.confirm).toHaveBeenCalledWith({
+      title: "ComfyUI didn't start",
+      message: 'Port 8188 is in use',
+      confirmLabel: 'Start again',
+      confirmStyle: 'primary'
+    })
+    expect(onStartAgain).toHaveBeenCalledWith(inst)
+  })
+
+  it('does not start again when the details are closed', async () => {
+    modalMock.confirm.mockResolvedValue(false)
+    const onStartAgain = vi.fn()
+    const inst = makeInstall()
+    const { menu, session } = mountViewError(onStartAgain)
+    session.errorInstances.set(inst.id, { installationName: inst.name, startFailed: true })
+
+    menu.viewError(inst)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(onStartAgain).not.toHaveBeenCalled()
+  })
+
+  it('keeps a crash as Error details with no Start again', () => {
+    const inst = makeInstall()
+    const { menu, session } = mountViewError(vi.fn())
+    session.errorInstances.set(inst.id, { installationName: inst.name, exitCode: 1 })
+
+    menu.viewError(inst)
+
+    expect(modalMock.confirm).not.toHaveBeenCalled()
+    expect(modalMock.alert).toHaveBeenCalledWith(expect.objectContaining({ title: 'Error' }))
+  })
+})
