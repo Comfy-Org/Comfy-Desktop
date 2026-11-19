@@ -140,7 +140,7 @@ export function launchFailed(
   installationId: string
 ): boolean {
   const op = progressStore.operations.get(installationId)
-  return !!op && op.opKind === 'launch' && op.finished && !!op.error
+  return !!op && op.opKind === 'launch' && op.finished && !!op.error && !op.superseded
 }
 
 export type BuildFailureKind = 'broken' | 'didnt-start' | 'crashed' | 'error'

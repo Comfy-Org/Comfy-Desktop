@@ -7,6 +7,7 @@ import type { ActionResult, ProgressData } from '../types/ipc'
 import type * as TelemetryModule from '../lib/telemetry'
 import { useProgressStore } from './progressStore'
 import { useSessionStore } from './sessionStore'
+import { launchFailed } from '../composables/useBuildProgress'
 
 vi.mock('vue-i18n', async (importOriginal) =>
   (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
@@ -27,6 +28,7 @@ stubWindowApi({
   cancelOperation: vi.fn(),
   stopComfyUI: vi.fn(),
   getRunningInstances: vi.fn().mockResolvedValue([]),
+  onInstanceLaunching: vi.fn(() => vi.fn()),
   onInstanceStarted: vi.fn(() => vi.fn()),
   onInstanceStopped: vi.fn(() => vi.fn()),
   onComfyExited: vi.fn(() => vi.fn()),
@@ -560,26 +562,59 @@ describe('useProgressStore', () => {
 })
 
 describe('a later start supersedes a failed one', () => {
+  type Recovery = (data: { installationId: string }) => void
   function freshStore() {
     setActivePinia(createTestingPinia({ stubActions: false }))
     const store = useProgressStore()
-    const started = vi
-      .mocked(window.api.onInstanceStarted)
-      .mock.calls.at(-1)![0] as unknown as (data: { installationId: string }) => void
-    return { store, started }
+    const lastListener = (fn: unknown) =>
+      vi.mocked(fn as (cb: Recovery) => void).mock.calls.at(-1)![0]
+    return {
+      store,
+      launching: lastListener(window.api.onInstanceLaunching),
+      started: lastListener(window.api.onInstanceStarted)
+    }
   }
 
   function finishedOp(opKind: string, error: string | null) {
-    return { opKind, finished: true, cancelRequested: false, error } as never
+    return {
+      opKind,
+      finished: true,
+      superseded: false,
+      cancelRequested: false,
+      error,
+      terminalOutput: 'Port 8188 is in use\n'
+    } as never
   }
 
-  it('drops the failed start once the build starts again', () => {
+  it('retires the failed start from status but keeps its diagnostics once the build starts again', () => {
+    for (const recovery of ['launching', 'started'] as const) {
+      const fresh = freshStore()
+      fresh.store.operations.set('a', finishedOp('launch', 'Port 8188 is in use'))
+      expect(launchFailed(fresh.store, 'a')).toBe(true)
+
+      fresh[recovery]({ installationId: 'a' })
+      fresh[recovery]({ installationId: 'a' })
+
+      expect(launchFailed(fresh.store, 'a')).toBe(false)
+      const op = fresh.store.operations.get('a')!
+      expect(op.error).toBe('Port 8188 is in use')
+      expect(op.terminalOutput).toBe('Port 8188 is in use\n')
+    }
+  })
+
+  it('lets a new start from this window replace the superseded one', () => {
     const { store, started } = freshStore()
     store.operations.set('a', finishedOp('launch', 'Port 8188 is in use'))
-
     started({ installationId: 'a' })
 
-    expect(store.operations.has('a')).toBe(false)
+    store.startOperation({
+      installationId: 'a',
+      title: 'Starting',
+      opKind: 'launch',
+      apiCall: () => new Promise<ActionResult>(() => {})
+    })
+
+    expect(store.operations.get('a')).toMatchObject({ finished: false, superseded: false })
   })
 
   it('keeps a failed install and a start still in progress', () => {
@@ -588,6 +623,7 @@ describe('a later start supersedes a failed one', () => {
     store.operations.set('b', {
       opKind: 'launch',
       finished: false,
+      superseded: false,
       cancelRequested: false,
       error: null
     } as never)
@@ -595,7 +631,7 @@ describe('a later start supersedes a failed one', () => {
     started({ installationId: 'a' })
     started({ installationId: 'b' })
 
-    expect(store.operations.has('a')).toBe(true)
-    expect(store.operations.has('b')).toBe(true)
+    expect(store.operations.get('a')).toMatchObject({ error: 'Disk full', superseded: false })
+    expect(store.operations.get('b')).toMatchObject({ finished: false, superseded: false })
   })
 })

@@ -34,6 +34,7 @@ export interface Operation {
   done: boolean
   error: string | null
   finished: boolean
+  superseded: boolean
   cancelRequested: boolean
   result: ActionResult | null
   actionId?: string
@@ -65,7 +66,7 @@ export const useProgressStore = defineStore('progress', () => {
     const op = operations.get(data.installationId)
     if (!op || !op.finished || op.opKind !== 'launch' || !op.error) return
     cleanupOperation(data.installationId)
-    operations.delete(data.installationId)
+    op.superseded = true
   }
   window.api.onInstanceLaunching?.(supersedeFailedLaunch)
   window.api.onInstanceStarted?.(supersedeFailedLaunch)
@@ -171,6 +172,7 @@ export const useProgressStore = defineStore('progress', () => {
       done: false,
       error: null,
       finished: false,
+      superseded: false,
       cancelRequested: false,
       result: null,
       actionId,

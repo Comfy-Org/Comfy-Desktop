@@ -172,7 +172,7 @@ describe('BuildDetailsView', () => {
         event === 'started' ? 'Running' : 'Starting…'
       )
       expect(wrapper.find('[data-testid="build-start-failed"]').exists()).toBe(false)
-      expect(useProgressStore().operations.has('a')).toBe(false)
+      expect(useProgressStore().operations.get('a')?.error).toBe('Port 8188 is in use')
     }
   )
 
