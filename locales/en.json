@@ -2025,7 +2025,8 @@
     "retry": "Try again",
     "showInFolder": "Show in Finder",
     "remove": "Remove from list",
-    "viewAllInSettings": "View all downloads",
+    "viewAll": "View all",
+    "viewAllLabel": "View all downloads",
     "completed": "Completed",
     "thumbnailAlt": "Thumbnail of {name}"
   },

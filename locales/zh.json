@@ -2025,7 +2025,8 @@
     "retry": "重试",
     "showInFolder": "在 Finder 中显示",
     "remove": "从列表中移除",
-    "viewAllInSettings": "查看所有下载",
+    "viewAll": "查看全部",
+    "viewAllLabel": "查看所有下载",
     "completed": "已完成",
     "thumbnailAlt": "{name} 的缩略图"
   },
