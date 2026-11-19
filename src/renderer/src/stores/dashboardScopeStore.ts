@@ -8,8 +8,6 @@ import {
 } from '../../../shared/workspaces'
 import { useAuthStore } from './authStore'
 
-/** Dashboard browsing scope is independent of the workspace used for remote operations.
- * All New Instance entry points read this live state; settings synchronize windows and launches. */
 export const useDashboardScopeStore = defineStore('dashboardScope', () => {
   const authStore = useAuthStore()
   const selectedWorkspaceId = ref(PERSONAL_WORKSPACE_ID)
@@ -21,6 +19,7 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
   let preferenceRevision = 0
   let pendingWrite: { workspaceId: string } | undefined
   let disposed = false
+  let chosenWorkspaceId: string | undefined
 
   const membershipKnown = computed(
     () => authStore.workspacesLoaded && !authStore.loadingWorkspaces && !authStore.workspacesError
@@ -33,8 +32,6 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
     const candidate = preferred || fallback
     if (candidate === PERSONAL_WORKSPACE_ID || !membershipKnown.value) return candidate
 
-    // Only a successful catalog response establishes lost membership. The
-    // authenticated workspace can itself be stale, so validate the fallback too.
     const workspace =
       authStore.workspaces.find((workspace) => workspace.id === candidate) ??
       authStore.workspaces.find((workspace) => workspace.id === fallback)
@@ -42,6 +39,7 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
   }
 
   function applySelection(workspaceId: string): void {
+    if (workspaceId !== chosenWorkspaceId) chosenWorkspaceId = undefined
     selectedWorkspaceId.value = workspaceId
     if (
       !initialized.value ||
@@ -57,8 +55,6 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
     void window.api
       .setSetting(DASHBOARD_WORKSPACE_SETTING, workspaceId)
       .then(() => {
-        // Keep the last confirmed value on failure, so a delayed settings echo
-        // cannot roll back a newer live selection whose write failed.
         if (pendingWrite === write && preferenceRevision === seen)
           persistedWorkspaceId = workspaceId
       })
@@ -71,7 +67,9 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
   function selectWorkspace(workspaceId: string): void {
     selectionChanged = true
     preferenceRevision += 1
-    applySelection(resolveWorkspaceId(workspaceId))
+    const resolved = resolveWorkspaceId(workspaceId)
+    if (resolved !== selectedWorkspaceId.value) chosenWorkspaceId = resolved
+    applySelection(resolved)
   }
 
   function savedWorkspaceId(): string | undefined {
@@ -92,7 +90,7 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
           applySelection(resolveWorkspaceId(savedWorkspaceId()))
         }
       })
-      .catch(() => {}) // A failed read supplies no replacement preference.
+      .catch(() => {})
     return preferenceRead
   }
 
@@ -108,7 +106,6 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
     initialization ??= (async () => {
       let reading = readPreference()
       await Promise.all([reading, authStore.whenReady()])
-      // A broadcast can supersede the initial read while IPC is in flight.
       while (reading !== preferenceRead) {
         reading = preferenceRead
         await reading
@@ -118,8 +115,6 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
       applySelection(
         resolveWorkspaceId(selectionChanged ? selectedWorkspaceId.value : savedWorkspaceId())
       )
-      // Membership validates the restored selection in the background. Local
-      // browsing and opening a wizard never wait on a Cloud request.
       if (
         authStore.isSignedIn &&
         selectedWorkspaceId.value !== PERSONAL_WORKSPACE_ID &&
@@ -141,6 +136,7 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
     (next, previous) => {
       if (!initialized.value || !next.loaded) return
       if (!next.signedIn) {
+        chosenWorkspaceId = undefined
         applySelection(PERSONAL_WORKSPACE_ID)
         return
       }
@@ -154,8 +150,6 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
       if (!previous.loaded) {
         applySelection(resolveWorkspaceId(selectedWorkspaceId.value))
       } else if (selectedWorkspaceId.value === previous.workspaceId) {
-        // Follow an authenticated switch only when browsing that workspace;
-        // an independent Personal/team selection remains local to the dashboard.
         applySelection(resolveWorkspaceId(next.workspaceId))
       }
       void authStore.fetchWorkspaces()
@@ -168,5 +162,11 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
     }
   })
 
-  return { selectedWorkspaceId, initialized, initialize, selectWorkspace }
+  function takeChosenSelection(): boolean {
+    const chosen = chosenWorkspaceId === selectedWorkspaceId.value
+    chosenWorkspaceId = undefined
+    return chosen
+  }
+
+  return { selectedWorkspaceId, initialized, initialize, selectWorkspace, takeChosenSelection }
 })

@@ -3,6 +3,7 @@ import type { BrowserWindow } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { configDir } from './paths'
+import { defaultWindowBoundsUnderCursor } from './defaultWindowSize'
 
 export interface WindowBounds {
   x: number
@@ -39,11 +40,8 @@ export async function flushWindowState(): Promise<void> {
 export function saveWindowBounds(installationId: string, window: BrowserWindow): void {
   const state = getWindowStateCache()
   const maximized = window.isMaximized()
-  const bounds = window.getBounds()
-  state[installationId] = {
-    ...(maximized ? (state[installationId] ?? bounds) : bounds),
-    maximized
-  }
+  const bounds = maximized ? window.getNormalBounds() : window.getBounds()
+  state[installationId] = { ...bounds, maximized }
   if (flushTimer) clearTimeout(flushTimer)
   flushTimer = setTimeout(flushWindowState, 500)
 }
@@ -52,11 +50,12 @@ export function getSavedBounds(installationId: string): WindowBounds | undefined
   return getWindowStateCache()[installationId]
 }
 
-export function getWindowOptions(
-  installationId: string
-): Partial<Electron.BrowserWindowConstructorOptions> {
+export function getWindowOptions(installationId: string): Electron.Rectangle {
   const saved = getSavedBounds(installationId)
-  if (!saved) return { width: 1280, height: 900 }
+  if (!saved) {
+    const { x, y, width, height } = defaultWindowBoundsUnderCursor()
+    return { x, y, width, height }
+  }
 
   const savedRect = { x: saved.x, y: saved.y, width: saved.width, height: saved.height }
   const display = screen.getDisplayMatching(savedRect)

@@ -35,14 +35,10 @@ describe('gitSource.getTerminalEnv', () => {
   it('activates the tracked venvPath and never references standalone-env', () => {
     const installPath = path.join('repos', 'comfy')
     const venvPath = path.join(installPath, '.venv')
-    // resolveVenvPython + findMainPy treat everything as present.
     existsSyncSpy.mockReturnValue(true)
 
     const env = gitSource.getTerminalEnv!(asInstall({ installPath, venvPath }))
-    // Opens on the ComfyUI code folder (where main.py lives) — here installPath.
     expect(env).toEqual({ cwd: installPath, venvDir: venvPath, promptName: '.venv' })
-    // No pip override: a git venv ships its own pip; the bug was aliasing pip to
-    // a nonexistent standalone-env/uv.exe.
     expect(env?.pip).toBeUndefined()
   })
 
@@ -100,19 +96,16 @@ describe('portable.getTerminalEnv', () => {
 
   it('puts the embedded python on PATH and routes pip through it', () => {
     const root = path.join('C:', 'portable')
-    // findPortableRoot succeeds when <installPath>/python_embeded exists.
     existsSyncSpy.mockImplementation((p) => p === path.join(root, 'python_embeded'))
 
     const env = portable.getTerminalEnv!(asInstall({ installPath: root }))
     const embedded = path.join(root, 'python_embeded')
     expect(env).toEqual({
-      // Opens on the ComfyUI code folder, not the portable root.
       cwd: path.join(root, 'ComfyUI'),
       pathPrepends: [embedded, path.join(embedded, 'Scripts')],
       promptName: 'python_embeded',
       pip: { exe: path.join(embedded, 'python.exe'), args: ['-s', '-m', 'pip'] }
     })
-    // A portable build has no venv to activate.
     expect(env?.venvDir).toBeUndefined()
   })
 

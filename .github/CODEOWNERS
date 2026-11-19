@@ -21,4 +21,4 @@
 # Root-anchored rule so the top-level AGENTS.md has an explicit DRI (a bare
 # `**/`-prefixed pattern doesn't match a repo-root file in every CODEOWNERS
 # reader).
-/AGENTS.md                                        @benceruleanlu @deepme987 @Kosinkadink
+/AGENTS.md                                        @benceruleanlu

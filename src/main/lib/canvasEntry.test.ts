@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// `canvasEntry` only pulls `getSessionStartedAt` from `./ipc/shared`. Mock the
-// module so the server-ready anchor is controllable and we don't drag in
-// electron / the live session registry.
 const getSessionStartedAt = vi.fn<(installationId: string) => number | null>()
 vi.mock('./ipc/shared', () => ({
   getSessionStartedAt: (installationId: string) => getSessionStartedAt(installationId)
@@ -52,8 +49,8 @@ describe('canvasEntry', () => {
   it('dedups per installation_id, not globally', () => {
     noteCanvasRendered('inst-1')
     noteCanvasRendered('inst-2')
-    noteCanvasRendered('inst-1') // deduped
-    noteCanvasRendered('inst-2') // deduped
+    noteCanvasRendered('inst-1')
+    noteCanvasRendered('inst-2')
     expect(canvasEvents()).toHaveLength(2)
     expect(canvasEvents().map((c) => c.ctx.installation_id)).toEqual(['inst-1', 'inst-2'])
   })
@@ -67,9 +64,7 @@ describe('canvasEntry', () => {
   })
 
   it('records a failed load and BYPASSES the first-render dedup (distinct signal)', () => {
-    // A successful render claims the dedup slot...
     noteCanvasRendered('inst-1')
-    // ...but a failed load for the same id still emits — it is not deduped.
     noteCanvasRendered('inst-1', { loadFailed: true })
     expect(canvasEvents()).toHaveLength(2)
 
@@ -79,10 +74,9 @@ describe('canvasEntry', () => {
   })
 
   it('a failed load does not consume the success dedup slot', () => {
-    // Failed load first; the subsequent successful render must still emit once.
     noteCanvasRendered('inst-1', { loadFailed: true })
     noteCanvasRendered('inst-1')
-    noteCanvasRendered('inst-1') // now deduped
+    noteCanvasRendered('inst-1')
     const successes = canvasEvents().filter((c) => c.ctx.load_failed === false)
     const failures = canvasEvents().filter((c) => c.ctx.load_failed === true)
     expect(failures).toHaveLength(1)

@@ -7,7 +7,19 @@ import globals from 'globals'
 import { configs as tseslintConfigs, parser as tseslintParser } from 'typescript-eslint'
 import vueParser from 'vue-eslint-parser'
 
+import noComments from './scripts/eslint/no-comments'
+import noNewVueStyleBlocks from './scripts/eslint/no-new-vue-style-blocks'
+
 const extraFileExtensions = ['.vue']
+
+const publishedApiSpecs = ['./src/types/comfyDesktopBridge.ts']
+
+const useOpenExternalHelper =
+  'Use openExternalUrl or tryOpenExternalUrl from src/main/lib/openExternal.ts. They hand the OS only http, https and mailto links.'
+
+const desktop = {
+  rules: { 'no-comments': noComments, 'no-new-vue-style-blocks': noNewVueStyleBlocks }
+}
 
 const commonParserOptions = {
   parser: tseslintParser,
@@ -49,6 +61,8 @@ export default defineConfig([
   },
   {
     files: ['./**/*.vue'],
+    plugins: { desktop },
+    rules: { 'desktop/no-new-vue-style-blocks': 'error' },
     languageOptions: {
       globals: { ...globals.browser },
       parser: vueParser,
@@ -61,9 +75,12 @@ export default defineConfig([
   eslintConfigPrettier,
   {
     plugins: {
+      desktop,
       'unused-imports': unusedImports
     },
     rules: {
+      'desktop/no-comments': 'error',
+      '@typescript-eslint/ban-ts-comment': ['error', { 'ts-expect-error': false }],
       'no-empty': ['error', { allowEmptyCatch: true }],
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': 'off',
@@ -82,5 +99,54 @@ export default defineConfig([
       'vue/no-use-v-else-with-v-for': 'error',
       'vue/one-component-per-file': 'error'
     }
+  },
+  {
+    files: publishedApiSpecs,
+    rules: { 'desktop/no-comments': ['error', { allowDocComments: true }] }
+  },
+  {
+    files: ['./src/main/**/*.ts'],
+    ignores: ['./src/main/lib/webContentsViewLifetime.ts', './src/main/**/*.test.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "NewExpression[callee.name='WebContentsView']",
+          message:
+            'Create the view with createWebContentsView. Electron crashes the app at quit when a WebContentsView is garbage-collected while its webContents is alive.'
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='loadURL']:matches([callee.object.name='comfyContents'], [callee.object.property.name='webContents'][callee.object.object.property.name='comfyView'])",
+          message:
+            'Navigate a build window through navigatorFor(entry) in src/main/host/buildNavigator.ts. It decides which request wins when a refresh, retry, restart or workspace switch overlap.'
+        }
+      ]
+    }
+  },
+  {
+    files: ['./src/**/*.{ts,vue}'],
+    ignores: ['./src/main/lib/openExternal.ts', './src/**/*.test.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        { object: 'shell', property: 'openExternal', message: useOpenExternalHelper }
+      ]
+    }
+  },
+  {
+    files: ['./src/{main,preload,shared}/**/*.ts'],
+    ignores: ['./src/main/lib/openExternal.ts', './src/**/*.test.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        { property: 'openExternal', message: useOpenExternalHelper }
+      ]
+    }
+  },
+  {
+    files: ['./e2e/support/**/*.cjs'],
+    languageOptions: { globals: { ...globals.node } },
+    rules: { '@typescript-eslint/no-require-imports': 'off' }
   }
 ])

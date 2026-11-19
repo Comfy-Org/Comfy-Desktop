@@ -1,5 +1,3 @@
-// The splash must target the comfyView's WebContents, not the parent BrowserWindow (hidden behind views).
-
 import { describe, it, expect, vi } from 'vitest'
 import * as i18n from './i18n'
 import { showSplashPage } from './relaunchPage'

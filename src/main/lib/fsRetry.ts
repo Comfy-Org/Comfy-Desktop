@@ -3,7 +3,6 @@ import { promises as fs } from 'fs'
 const RENAME_LOCK_CODES = new Set(['EPERM', 'EACCES', 'EBUSY'])
 const RENAME_RETRY_TOTAL_MS = 30_000
 
-/** Retry a rename while Windows releases process, antivirus, or indexer handles. */
 export async function renameWithLockRetry(
   src: string,
   dst: string,

@@ -1,57 +1,25 @@
 <script setup lang="ts">
-// Height-animated disclosure via a CSS `grid-template-rows: 0fr → 1fr`
-// transition, which covers the exact content height without a max-height cap.
+import { usePreferredReducedMotion } from '@vueuse/core'
+import TransitionCollapse from '@comfyorg/design-system/transition/TransitionCollapse'
 
-interface Props {
-  open: boolean
-  duration?: number
-}
+defineOptions({ inheritAttrs: false })
 
-withDefaults(defineProps<Props>(), { duration: 220 })
+withDefaults(defineProps<{ open: boolean; duration?: number }>(), { duration: 220 })
+const reducedMotion = usePreferredReducedMotion()
 </script>
 
 <template>
-  <div
-    class="ui-accordion"
-    :class="{ 'is-open': open }"
-    :style="{ '--ui-accordion-duration': `${duration}ms` }"
-    :data-state="open ? 'open' : 'closed'"
-  >
-    <!-- `inert` removes the collapsed content from the focus order and
-         the a11y tree, so Tab doesn't land on hidden buttons. -->
-    <div class="ui-accordion-inner" :aria-hidden="!open" :inert="!open || undefined">
+  <TransitionCollapse :duration="duration" :disable="reducedMotion === 'reduce'">
+    <div
+      v-show="open"
+      v-bind="$attrs"
+      class="ui-accordion"
+      :class="{ 'is-open': open }"
+      :data-state="open ? 'open' : 'closed'"
+      :aria-hidden="!open"
+      :inert="!open || undefined"
+    >
       <slot />
     </div>
-  </div>
+  </TransitionCollapse>
 </template>
-
-<style scoped>
-.ui-accordion {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows var(--ui-accordion-duration) cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.ui-accordion.is-open {
-  grid-template-rows: 1fr;
-}
-
-/* `min-height: 0` lets the grid track collapse to 0fr (Firefox quirk). */
-.ui-accordion-inner {
-  min-height: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition: opacity var(--ui-accordion-duration) ease;
-}
-
-.ui-accordion.is-open .ui-accordion-inner {
-  opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ui-accordion,
-  .ui-accordion-inner {
-    transition-duration: 0ms;
-  }
-}
-</style>

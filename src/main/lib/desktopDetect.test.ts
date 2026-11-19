@@ -124,7 +124,6 @@ describe('detectDesktopInstall', () => {
       const s = p.toString()
       if (s === basePath) return true
       if (s === path.join(basePath, '.comfyui-desktop-2')) return true
-      // models/user would otherwise match: assert the marker short-circuits.
       if (s === path.join(basePath, 'models')) return true
       if (s === path.join(basePath, 'user')) return true
       return false

@@ -1,13 +1,8 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { useDialogs } from './useDialogs'
 
-// `cancel()` must resolve with a kind-specific falsy value (prompt/actionSheet
-// → null, alert → undefined, confirm → false), or callers checking one shape
-// fall through and fire the action anyway.
-
 describe('useDialogs cancel contract', () => {
   beforeEach(() => {
-    // The composable backs a module-level singleton; settle any dangling promise.
     const { cancel } = useDialogs()
     cancel()
   })
@@ -46,8 +41,6 @@ describe('useDialogs cancel contract', () => {
   it('opening a new dialog while one is in-flight resolves the previous with its kind-appropriate cancel value', async () => {
     const { prompt, confirm } = useDialogs()
     const previous = prompt({ title: 'Prev', message: 'M' })
-    // Opening confirm cancels the prompt, which must resolve `null` (its
-    // shape), not `false` (confirm's).
     confirm({ title: 'New', message: 'M' })
     await expect(previous).resolves.toBeNull()
   })

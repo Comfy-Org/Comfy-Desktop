@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
+import Input from '@comfyorg/design-system/input/Input'
 import BaseModal from './BaseModal.vue'
+import Button from '@comfyorg/design-system/button/Button'
 import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'
 import { TID } from '../../../../shared/testIds'
 import type { ModalDetailGroup } from '../../types/ipc'
-
-// Prompt primitive (title, message, text input, Cancel + primary) built on
-// BaseModal. Two-way `open` via `v-model:open`.
 
 interface Props {
   open: boolean
@@ -17,9 +16,7 @@ interface Props {
   confirmLabel?: string
   cancelLabel?: string
   inputLabel?: string
-  /** Truthy requires a non-empty value; a string overrides the error copy. */
   required?: boolean | string
-  /** Recessed sub-blocks below the message (e.g. release notes). */
   messageDetails?: ModalDetailGroup[]
   size?: 'sm' | 'md' | 'lg' | 'xl'
   dismissOnEscape?: boolean
@@ -52,9 +49,12 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
-const TITLE_ID = 'base-prompt-title'
+const TITLE_ID = `base-prompt-title-${useId()}`
+const inputId = `base-prompt-input-${useId()}`
 
-const inputRef = ref<HTMLInputElement | null>(null)
+const linkClass =
+  '[&_.modal-link]:cursor-pointer [&_.modal-link]:text-[var(--action)] [&_.modal-link]:underline'
+
 const inputValue = ref('')
 const error = ref('')
 
@@ -81,10 +81,6 @@ watch(
     if (isOpen && !wasOpen) {
       inputValue.value = props.defaultValue
       error.value = ''
-      void nextTick(() => {
-        inputRef.value?.focus()
-        inputRef.value?.select()
-      })
     }
   },
   { immediate: true }
@@ -103,170 +99,89 @@ watch(
     @close="cancel"
   >
     <template #header>
-      <h2 :id="TITLE_ID" class="base-prompt-title">{{ title }}</h2>
+      <h2
+        :id="TITLE_ID"
+        class="base-prompt-title m-0 text-base leading-[1.3] font-semibold text-neutral-100"
+      >
+        {{ title }}
+      </h2>
     </template>
 
-    <div class="base-prompt-body">
+    <div class="base-prompt-body flex flex-col gap-3.5 text-sm leading-[1.5] text-text-muted">
       <div
         v-if="message"
-        class="base-prompt-message"
+        class="base-prompt-message whitespace-pre-line select-text [&_strong]:font-semibold [&_strong]:text-text"
+        :class="linkClass"
         @click="handleModalLinkClick"
         v-html="linkifiedMessage"
       ></div>
 
-      <div v-if="messageDetails.length" class="base-prompt-details">
-        <div v-for="(group, gi) in messageDetails" :key="gi" class="base-prompt-detail-group">
-          <span class="base-prompt-detail-label">{{ group.label }}</span>
-          <div class="base-prompt-detail-recessed" @click="handleModalLinkClick">
+      <div v-if="messageDetails.length" class="base-prompt-details flex flex-col gap-2">
+        <div
+          v-for="(group, gi) in messageDetails"
+          :key="gi"
+          class="base-prompt-detail-group flex flex-col gap-1"
+        >
+          <span
+            class="base-prompt-detail-label text-xs leading-[1.5] font-semibold tracking-[0.04em] text-text-muted uppercase"
+            >{{ group.label }}</span
+          >
+          <div
+            class="base-prompt-detail-recessed max-h-[200px] overflow-y-auto rounded-lg border border-solid border-neutral-100/8 bg-neutral-100/4 px-2.5 py-2"
+            @click="handleModalLinkClick"
+          >
             <div
               v-for="(item, ii) in group.items"
               :key="ii"
-              class="base-prompt-detail-item"
+              class="base-prompt-detail-item text-[13px] leading-[1.45] text-neutral-100"
+              :class="linkClass"
               v-html="linkify(item)"
             ></div>
           </div>
         </div>
       </div>
 
-      <div class="base-prompt-field">
-        <label class="base-prompt-field-label">
+      <div class="base-prompt-field flex flex-col gap-1">
+        <label :for="inputId" class="base-prompt-field-label text-[13px] font-semibold text-text">
           {{ inputLabel ?? $t('common.name') }}
         </label>
-        <input
-          ref="inputRef"
+        <Input
+          :id="inputId"
           v-model="inputValue"
+          data-initial-focus
           type="text"
-          class="base-prompt-input"
+          class="base-prompt-input mt-1.5 w-full"
           :placeholder="placeholder"
+          :aria-invalid="error ? true : undefined"
           :data-testid="testIdInput ?? TID.basePromptInput"
+          @focus="($event.target as HTMLInputElement).select()"
           @keydown.enter.prevent.stop="submit"
         />
-        <div v-if="error" class="base-prompt-error">{{ error }}</div>
+        <div v-if="error" class="base-prompt-error min-h-3 text-[13px] text-danger">
+          {{ error }}
+        </div>
       </div>
     </div>
 
     <template #footer>
-      <button type="button" :data-testid="testIdCancel ?? TID.basePromptCancel" @click="cancel">
-        {{ cancelLabel ?? $t('common.cancel') }}
-      </button>
-      <button
+      <Button
         type="button"
-        class="primary"
+        variant="secondary"
+        size="lg"
+        :data-testid="testIdCancel ?? TID.basePromptCancel"
+        @click="cancel"
+      >
+        {{ cancelLabel ?? $t('common.cancel') }}
+      </Button>
+      <Button
+        type="button"
+        variant="inverted"
+        size="lg"
         :data-testid="testIdAction ?? TID.basePromptAction"
         @click="submit"
       >
         {{ confirmLabel ?? $t('modal.ok') }}
-      </button>
+      </Button>
     </template>
   </BaseModal>
 </template>
-
-<style scoped>
-.base-prompt-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--neutral-100);
-}
-
-.base-prompt-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text-muted);
-}
-
-.base-prompt-message {
-  white-space: pre-line;
-  user-select: text;
-}
-
-.base-prompt-message :deep(strong) {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.base-prompt-message :deep(.modal-link) {
-  color: var(--accent);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.base-prompt-details {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.base-prompt-detail-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.base-prompt-detail-label {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
-.base-prompt-detail-recessed {
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--neutral-100) 4%, transparent);
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.base-prompt-detail-item {
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--neutral-100);
-}
-
-.base-prompt-detail-item :deep(.modal-link) {
-  color: var(--accent);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.base-prompt-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.base-prompt-field-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.base-prompt-input {
-  width: 100%;
-  padding: 8px 10px;
-  font-size: 14px;
-  border-radius: 8px;
-  border: 1px solid var(--chooser-surface-border);
-  background: color-mix(in oklab, var(--neutral-100) 4%, transparent);
-  color: var(--neutral-100);
-  transition: border-color 0.12s ease;
-}
-
-.base-prompt-input:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.base-prompt-error {
-  font-size: 13px;
-  color: var(--danger);
-  min-height: 12px;
-}
-</style>

@@ -3,7 +3,6 @@ import { isIllegalPostHogDistinctId, normalizeOpaqueIdentifier } from './opaqueI
 
 describe('isIllegalPostHogDistinctId', () => {
   it.each([
-    // Case-insensitive entries match in any casing.
     'anonymous',
     'ANONYMOUS',
     'guest',
@@ -16,33 +15,24 @@ describe('isIllegalPostHogDistinctId', () => {
     'undefined',
     'true',
     'False',
-    // Case-sensitive entries match only in their listed casing.
     '[object Object]',
     'NaN',
     'None',
     'none',
     'null',
     '0',
-    // Blank identities can never merge.
     '',
     '   '
   ])('flags %j as illegal', (value) => {
     expect(isIllegalPostHogDistinctId(value)).toBe(true)
   })
 
-  it.each([
-    // Other casings of the case-sensitive entries stay legal.
-    'NONE',
-    'NULL',
-    'nan',
-    '[object object]',
-    // Near-misses of illegal values stay legal.
-    '00',
-    'anonymous-2',
-    'user-123'
-  ])('keeps %j legal', (value) => {
-    expect(isIllegalPostHogDistinctId(value)).toBe(false)
-  })
+  it.each(['NONE', 'NULL', 'nan', '[object object]', '00', 'anonymous-2', 'user-123'])(
+    'keeps %j legal',
+    (value) => {
+      expect(isIllegalPostHogDistinctId(value)).toBe(false)
+    }
+  )
 })
 
 describe('normalizeOpaqueIdentifier', () => {

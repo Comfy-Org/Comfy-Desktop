@@ -36,11 +36,6 @@ interface UpdatePillsApi {
   handleInstallUpdatePill: () => void
 }
 
-/**
- * Title-bar status pills. The app-update pill shows on `ready`/`available`/`downloading`
- * (hidden when `kind` is null). The install-update pill fires on the active install's
- * update status tag, gated on `!isInstallLess`.
- */
 export function useUpdatePills(opts: UseUpdatePillsOpts): UpdatePillsApi {
   const { t } = useI18n()
   const appUpdateState = ref<AppUpdateState>({ kind: null, version: null, autoUpdate: true })
@@ -54,11 +49,9 @@ export function useUpdatePills(opts: UseUpdatePillsOpts): UpdatePillsApi {
     if (!s.kind) return null
     if (s.kind === 'ready') return t('titleBar.desktopUpdateReady')
     if (s.kind === 'downloading') return t('titleBar.desktopUpdateDownloading')
-    // 'available' only fires with auto-updates OFF.
     return t('titleBar.desktopUpdateAvailable')
   })
 
-  /** Adds the version to the tooltip when known, keeping the pill itself compact. */
   const appUpdatePillTooltip = computed<string>(() => {
     const label = appUpdatePillLabel.value
     if (!label) return ''
@@ -66,7 +59,6 @@ export function useUpdatePills(opts: UseUpdatePillsOpts): UpdatePillsApi {
     return v ? t('titleBar.desktopUpdateWithVersion', { label, version: v }) : label
   })
 
-  /** "Update {version}" when a target version is known, else generic "Update available". */
   const installUpdatePillLabel = computed<string>(() => {
     const v = installUpdateState.value.version
     return v

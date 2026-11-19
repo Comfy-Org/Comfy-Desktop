@@ -1,0 +1,61 @@
+name: Real ComfyUI
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-comfy-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.event.label.name != 'run-real-comfy' && github.run_id || 'suite' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  real-comfy:
+    name: Real ComfyUI (windows)
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-real-comfy'
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch bootstrap Python
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm run bootstrap:fetch
+
+      - name: Bundle app
+        run: pnpm exec electron-vite build
+
+      - name: Run real ComfyUI tests
+        env:
+          REAL_COMFY_VARIANT: cpu
+        run: pnpm run test:e2e:real-comfy
+
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-real-comfy-failure
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

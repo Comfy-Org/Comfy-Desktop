@@ -33,7 +33,6 @@ describe('buildCopyLinkBannerScript', () => {
   it('emits only the Open-again sentinel (copy never reaches main)', () => {
     const script = buildCopyLinkBannerScript(url, labels)
     expect(script).toContain(JSON.stringify(OPEN_LINK_SENTINEL))
-    // Copy is in-page only — no console sentinel a remote page could abuse.
     expect(script).not.toContain('__comfyCopyLoginLink')
   })
 
@@ -45,15 +44,14 @@ describe('buildCopyLinkBannerScript', () => {
 
   it('renders Lucide icons and swaps copy → check on success', () => {
     const script = buildCopyLinkBannerScript(url, labels)
-    expect(script).toContain('M20 6 9 17l-5-5') // check
-    expect(script).toContain('M15 3h6v6') // external-link
+    expect(script).toContain('M20 6 9 17l-5-5')
+    expect(script).toContain('M15 3h6v6')
     expect(script).toContain('ICON_TICK')
     expect(script).toContain('ICON_COPY')
   })
 
   it('is parseable as JavaScript', () => {
     const script = buildCopyLinkBannerScript(url, labels)
-    // `Function` surfaces syntax errors without executing.
     expect(() => new Function(script)).not.toThrow()
   })
 

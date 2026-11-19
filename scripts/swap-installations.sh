@@ -1,53 +1,7 @@
 #!/usr/bin/env bash
-#
-# Manipulate the launcher's installations.json / settings.json for QA.
-#
-# One tool covers three needs:
-#
-#   1. Snapshot profiles (save / load / list / delete)
-#        Stored under "<data>/test-profiles/" so you can flip between
-#        configurations (multi-install, primary-only, etc.).
-#
-#   2. First-use takeover scenarios (first-use <scenario>)
-#        Flips firstUseCompleted in settings.json and optionally seeds
-#        installations.json so the takeover re-runs in a chosen state.
-#        firstUseDetection reads installations.json to compute
-#        { skipPick, hasLegacyDesktop }:
-#
-#          skipPick = true  - ANY install present beyond Cloud / Legacy
-#                             Desktop. T&C accept skips the cloud-vs-local
-#                             fork and emits 'complete-skip' (bug #476
-#                             was Cloud being auto-launched here).
-#          skipPick = false - Only Cloud / Legacy Desktop. T&C accept
-#                             advances to the cloud-vs-local pick step.
-#          hasLegacyDesktop - A sourceId='desktop' install was auto-
-#                             tracked. Picking Local opens the migrate-
-#                             vs-install-new sub-step.
-#
-#   3. Recover after testing (restore / merge / list-backups)
-#        Every mutating action drops timestamped .bak files. Plus a
-#        legacy installations.json.bak / settings.json.bak that is
-#        only written the first time, so the very first/original
-#        snapshot is preserved across repeat runs.
-#
-# Close the app before any mutating action - the launcher will
-# overwrite settings.json / installations.json on its own save cycle.
-#
-# Usage:
-#   ./swap-installations.sh save <name>
-#   ./swap-installations.sh load <name>
-#   ./swap-installations.sh empty
-#   ./swap-installations.sh primary-only
-#   ./swap-installations.sh list
-#   ./swap-installations.sh delete <name>
-#   ./swap-installations.sh first-use {status|reset|fresh|returning|legacy|complete}
-#   ./swap-installations.sh restore [<timestamp>|latest]   # default = original
-#   ./swap-installations.sh merge   [<timestamp>|latest]   # default = original
-#   ./swap-installations.sh list-backups
 
 set -euo pipefail
 
-# --- Resolve data + config directories (matches paths.ts logic) ---
 if [[ "$(uname)" == "Darwin" ]]; then
   DATA_DIR="${HOME}/Library/Application Support/comfyui-desktop-2"
   CONFIG_DIR="$DATA_DIR"
@@ -60,8 +14,6 @@ INSTALLATIONS_FILE="$DATA_DIR/installations.json"
 SETTINGS_FILE="$CONFIG_DIR/settings.json"
 PROFILES_DIR="$DATA_DIR/test-profiles"
 
-# Sentinel marker stamped on installs the script adds itself, so repeat
-# runs reuse the entry rather than stacking duplicates.
 SENTINEL_KEY="_firstUseHelperSentinel"
 RETURNING_SENTINEL="returning"
 LEGACY_SENTINEL="legacy"
@@ -74,12 +26,10 @@ if [[ -z "$ACTION" ]]; then
   exit 1
 fi
 
-# --- Running-app guard (skip read-only actions) ---
 is_read_only=false
 case "$ACTION" in
   list|list-backups) is_read_only=true ;;
   first-use)
-    # 'first-use status' is read-only; defer to the handler.
     is_read_only=true
     ;;
 esac
@@ -101,7 +51,6 @@ require_name() {
 
 profile_path() { echo "$PROFILES_DIR/$1.json"; }
 
-# Backup helper - timestamped + legacy single-slot (created only once).
 backup_file() {
   local path="$1"
   [[ -f "$path" ]] || return 0
@@ -116,10 +65,6 @@ backup_file() {
   fi
 }
 
-# Resolve a backup file:
-#   ''/'original'           -> <path>.bak
-#   'latest'                -> newest timestamped .bak
-#   <yyyyMMdd-HHmmss>       -> that specific timestamped .bak
 resolve_backup() {
   local path="$1"
   local selector="${2:-}"
@@ -154,8 +99,6 @@ restore_from_backup() {
   cp "$backup" "$path"
   echo "Restored $(basename "$path") from $(basename "$backup")"
 }
-
-# --- First-use scenarios -------------------------------------------------
 
 set_first_use_completed() {
   local value="$1"
@@ -400,7 +343,6 @@ invoke_first_use() {
   esac
 }
 
-# --- Dispatcher ----------------------------------------------------------
 case "$ACTION" in
   save)
     require_name

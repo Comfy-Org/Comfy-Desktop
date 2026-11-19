@@ -145,7 +145,6 @@ describe('initCoreBetaFlags', () => {
       serve({ desktop_campaigns: value(true, REGISTRY), [KEY]: value('enrol', AGENT) })
       idClass = cls
       await initCoreBetaFlags({ distinctId: 'other-id', betaEnabled })
-      // On a beta-off boot this is the first use after beta is turned on.
       const { registry, answers } = await getCoreBetaCampaigns()
       expect(registry).toEqual(REGISTRY)
       expect(answers.get(KEY), 'a member still holds on the saved answer').toMatchObject({
@@ -211,7 +210,6 @@ describe('initCoreBetaCampaigns', () => {
       [NEW_KEY]: value('enrol', AGENT)
     })
     await initCoreBetaFlags({ distinctId: 'id', betaEnabled: true })
-    // The saved registry answered the boot; the refresh lands in the background.
     await new Promise((resolve) => setImmediate(resolve))
     const { registry, answers } = await getCoreBetaCampaigns()
     expect(registry).toEqual(FRESH)

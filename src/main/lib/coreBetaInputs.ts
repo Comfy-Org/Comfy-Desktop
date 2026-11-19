@@ -1,4 +1,3 @@
-/** Cheap, synchronous Core beta facts, shared by the launch and the settings preview. */
 import path from 'path'
 import { gitDirPresence, readGitHead, resolveGitDir } from './git'
 import { coreGateVersion, coreRecordCurrent } from './version'
@@ -7,15 +6,6 @@ import type { CoreVersionState } from './coreBetaGrants'
 import type { InstallationRecord } from '../installations'
 import type { LaunchCommand } from '../types/sources'
 
-/** Establish what the launching checkout is, failing closed at every step, because each step
- *  has an absence meaning "we could not look" alongside the one meaning "there is nothing here".
- *  Exactly one state is the latter: no `.git` entry at all, i.e. the standalone/archive install
- *  with nothing to contradict the record. A `.git` that cannot be stat-ed, one that yields no
- *  git directory (a worktree/submodule pointer missing its `gitdir:` line), and a git directory
- *  whose HEAD would not read are all git-managed checkouts we failed to inspect.
- *  {@link coreRecordCurrent} grants on `not-git` and refuses `unreadable`, so collapsing any of
- *  the three into it — as a bare `readGitHead` call does, and as a bare `resolveGitDir(…) ===
- *  null` test does one layer below that — is what made the gate fail open. */
 export function resolveCoreCheckout(comfyuiDir: string): CoreCheckout {
   switch (gitDirPresence(comfyuiDir)) {
     case 'absent':
@@ -30,7 +20,6 @@ export function resolveCoreCheckout(comfyuiDir: string): CoreCheckout {
   }
 }
 
-/** Splits Desktop's `... -s <main.py>` prefix from the user's args; `null` without that pair. */
 export function splitLaunchCommand(launchCmd: Pick<LaunchCommand, 'args' | 'cwd'>): {
   prefixArgs: string[]
   userArgs: string[]
@@ -50,7 +39,6 @@ export function splitLaunchCommand(launchCmd: Pick<LaunchCommand, 'args' | 'cwd'
   }
 }
 
-/** The core release as the version gate reads it, for the checkout being launched. */
 export function coreVersionState(
   inst: InstallationRecord,
   checkout: CoreCheckout

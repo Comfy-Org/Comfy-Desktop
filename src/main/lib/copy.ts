@@ -31,8 +31,7 @@ export async function copyDirWithProgress(
   src: string,
   dest: string,
   onProgress:
-    | ((copied: number, total: number, elapsedSecs: number, etaSecs: number) => void)
-    | null,
+    ((copied: number, total: number, elapsedSecs: number, etaSecs: number) => void) | null,
   options?: { signal?: AbortSignal }
 ): Promise<void> {
   const { files, symlinks } = await collectFiles(src)
@@ -76,7 +75,6 @@ export async function copyDirWithProgress(
     i += concurrency
   }
 
-  // Recreate symlinks, rewriting absolute targets that point inside src
   for (const rel of symlinks) {
     if (signal?.aborted) throw new Error('Cancelled')
     const srcLink = path.join(src, rel)

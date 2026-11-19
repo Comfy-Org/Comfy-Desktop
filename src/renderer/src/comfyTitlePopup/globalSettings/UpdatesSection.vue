@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Button from '@comfyorg/design-system/button/Button'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SettingsSectionList from '../../views/comfyUISettings/SettingsSectionList.vue'
@@ -50,7 +51,7 @@ function normalizeVersion(raw: string | undefined | null): string {
 
 const targetVersionLabel = computed(() => {
   if (props.state.version) return formatVersionLabel(props.state.version)
-  return t('appUpdate.fallbackVersion', 'this update')
+  return t('appUpdate.fallbackVersion')
 })
 
 const statusSentence = computed(() => {
@@ -81,7 +82,7 @@ const statusSentence = computed(() => {
         'Update available'
       )
     default:
-      return t('appUpdate.panelIdleTitle', 'Comfy Desktop is up to date')
+      return t('appUpdate.panelIdleTitle')
   }
 })
 
@@ -132,15 +133,15 @@ const preferenceSections = computed<DetailSection[]>(() =>
 )
 
 const primaryActionLabel = computed(() => {
-  if (props.checking) return t('settings.checkingForUpdates', 'Checking…')
-  if (props.isDownloading) return t('appUpdate.downloading', 'Downloading…')
+  if (props.checking) return t('settings.checkingForUpdates')
+  if (props.isDownloading) return t('appUpdate.downloading')
   switch (props.state.kind) {
     case 'ready':
-      return t('appUpdate.restartNow', 'Restart & update')
+      return t('appUpdate.restartNow')
     case 'available':
-      return t('appUpdate.download', 'Download')
+      return t('appUpdate.download')
     default:
-      return t('settings.checkForUpdates', 'Check for updates')
+      return t('settings.checkForUpdates')
   }
 })
 
@@ -171,63 +172,100 @@ const progressDetail = computed<string | null>(() => {
 </script>
 
 <template>
-  <div class="updates-section">
-    <div class="updates-card">
-      <div class="updates-card-body">
-        <p class="updates-status" :class="statusTone">
+  <div class="updates-section flex flex-col gap-3">
+    <div
+      class="updates-card overflow-hidden rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)]"
+    >
+      <div class="updates-card-body flex flex-col gap-2 px-3.5 pt-3.5 pb-3">
+        <p
+          class="updates-status m-0 text-[14px] leading-5 font-semibold"
+          :class="[
+            statusTone,
+            statusTone === 'downloading'
+              ? 'text-[var(--accent-primary,#0b8ce9)]'
+              : statusTone === 'update'
+                ? 'text-[var(--action)]'
+                : 'text-neutral-100'
+          ]"
+        >
           {{ statusSentence }}
         </p>
 
-        <div v-if="installedDetail || lastCheckedDetail || latestDetail" class="updates-details">
-          <span v-if="installedDetail" class="updates-detail">{{ installedDetail }}</span>
-          <span v-if="lastCheckedDetail" class="updates-detail" :title="lastCheckedDetail.title">{{
-            lastCheckedDetail.text
-          }}</span>
-          <span v-if="latestDetail" class="updates-detail is-highlight">{{ latestDetail }}</span>
+        <div
+          v-if="installedDetail || lastCheckedDetail || latestDetail"
+          class="updates-details flex flex-col gap-0.5"
+        >
+          <span
+            v-if="installedDetail"
+            class="updates-detail text-[12px] leading-[17px] text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-[var(--action)]"
+            >{{ installedDetail }}</span
+          >
+          <span
+            v-if="lastCheckedDetail"
+            class="updates-detail text-[12px] leading-[17px] text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-[var(--action)]"
+            :title="lastCheckedDetail.title"
+            >{{ lastCheckedDetail.text }}</span
+          >
+          <span
+            v-if="latestDetail"
+            class="updates-detail is-highlight text-[12px] leading-[17px] text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-[var(--action)]"
+            >{{ latestDetail }}</span
+          >
         </div>
 
-        <p v-if="systemManaged" class="updates-note">
-          {{
-            t(
-              'appUpdate.systemManagedNote',
-              'Updates for this install are delivered through your system package manager.'
-            )
-          }}
+        <p
+          v-if="systemManaged"
+          class="updates-note m-0 text-[11px] leading-4 text-text-muted opacity-85"
+        >
+          {{ t('appUpdate.systemManagedNote') }}
         </p>
 
-        <div v-if="isDownloading" class="updates-progress">
-          <div class="progress-bar-track" :class="{ indeterminate: percent === null }">
+        <div v-if="isDownloading" class="updates-progress flex flex-col gap-1 pt-1">
+          <div
+            class="updates-progress-track relative mb-4 h-1 w-full overflow-hidden rounded-[9999px]"
+            :class="
+              percent === null
+                ? 'indeterminate bg-[linear-gradient(90deg,color-mix(in_oklab,var(--neutral-100)_6%,transparent)_0%,var(--accent-primary,#0b8ce9)_50%,color-mix(in_oklab,var(--neutral-100)_6%,transparent)_100%)] [background-size:200%_100%] animate-[progress-indeterminate_1.4s_linear_infinite]'
+                : 'bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]'
+            "
+          >
             <div
               v-if="percent !== null"
-              class="progress-bar-fill"
+              class="updates-progress-fill absolute inset-y-0 left-0 h-full rounded bg-[var(--accent-primary,#0b8ce9)] transition-[width] duration-[120ms] ease-[ease]"
               :style="{ width: percent + '%' }"
             ></div>
           </div>
-          <div class="updates-progress-detail">
+          <div class="updates-progress-detail flex justify-between text-[11px] text-text-muted">
             <span v-if="percent !== null">{{ percent }}%</span>
             <span v-if="progressDetail">{{ progressDetail }}</span>
           </div>
         </div>
       </div>
 
-      <div class="updates-card-footer">
-        <button
+      <div
+        class="updates-card-footer flex flex-wrap items-center justify-end gap-2 border-t border-solid border-[var(--border-hover)] px-3.5 pt-2.5 pb-3"
+      >
+        <Button
           v-if="showSecondaryCheck"
           type="button"
-          class="updates-action"
+          variant="secondary"
+          size="md"
+          class="updates-action shrink-0"
           :disabled="actionsDisabled"
           @click="emit('check-for-update')"
         >
-          {{ t('settings.checkForUpdates', 'Check for updates') }}
-        </button>
-        <button
+          {{ t('settings.checkForUpdates') }}
+        </Button>
+        <Button
           type="button"
-          class="updates-action accent"
+          variant="inverted"
+          size="md"
+          class="updates-action shrink-0"
           :disabled="actionsDisabled"
           @click="emit('update-now')"
         >
           {{ primaryActionLabel }}
-        </button>
+        </Button>
       </div>
     </div>
 
@@ -240,152 +278,7 @@ const progressDetail = computed<string | null>(() => {
   </div>
 </template>
 
-<style scoped>
-.updates-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.updates-card {
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: var(--brand-surface-bg);
-  overflow: hidden;
-}
-
-.updates-card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 14px 12px;
-}
-
-.updates-status {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-  color: var(--neutral-100);
-}
-
-.updates-status.update {
-  color: var(--accent);
-}
-
-.updates-status.downloading {
-  color: var(--accent-primary, #0b8ce9);
-}
-
-.updates-details {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.updates-detail {
-  font-size: 12px;
-  line-height: 17px;
-  color: var(--text-muted);
-}
-
-.updates-detail.is-highlight {
-  color: var(--accent);
-  font-weight: 500;
-}
-
-.updates-note {
-  margin: 0;
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--text-muted);
-  opacity: 0.85;
-}
-
-.updates-card-footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px 12px;
-  border-top: 1px solid var(--border-hover);
-}
-
-.updates-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  height: 32px;
-  min-height: 32px;
-  padding: 0 16px;
-  border-radius: 8px;
-  border: 1px solid var(--chooser-surface-border);
-  background: var(--brand-surface-bg);
-  color: var(--neutral-100);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
-  box-sizing: border-box;
-  transition: background-color 100ms ease;
-}
-
-.updates-action:hover:not(:disabled),
-.updates-action:focus-visible:not(:disabled) {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-.updates-action.accent {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.updates-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.updates-action.accent:disabled:hover {
-  background: var(--brand-surface-bg-hover);
-}
-.updates-progress {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-top: 4px;
-}
-
-.progress-bar-track {
-  position: relative;
-  height: 4px;
-  border-radius: 9999px;
-  background: color-mix(in oklab, var(--neutral-100) 6%, transparent);
-  overflow: hidden;
-}
-
-.progress-bar-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  background: var(--accent-primary, #0b8ce9);
-  transition: width 120ms ease;
-}
-
-.progress-bar-track.indeterminate {
-  background: linear-gradient(
-    90deg,
-    color-mix(in oklab, var(--neutral-100) 6%, transparent) 0%,
-    var(--accent-primary, #0b8ce9) 50%,
-    color-mix(in oklab, var(--neutral-100) 6%, transparent) 100%
-  );
-  background-size: 200% 100%;
-  animation: progress-indeterminate 1.4s linear infinite;
-}
-
+<style>
 @keyframes progress-indeterminate {
   0% {
     background-position: 200% 0;
@@ -393,12 +286,5 @@ const progressDetail = computed<string | null>(() => {
   100% {
     background-position: -200% 0;
   }
-}
-
-.updates-progress-detail {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--text-muted);
 }
 </style>

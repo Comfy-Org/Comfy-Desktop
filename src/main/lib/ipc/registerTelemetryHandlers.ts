@@ -1,6 +1,3 @@
-// IPC for renderer-originated telemetry: the renderer routes through main so
-// identity, consent, and dedup live in one place. Capture messages are
-// fire-and-forget (ipcMain.on).
 import { ipcMain, type IpcMainEvent, type WebContents, type WebFrameMain } from 'electron'
 import { comfyWindows, findEntryByComfySender, type ComfyWindowEntry } from '../../host/registry'
 import * as mainTelemetry from '../telemetry'
@@ -78,12 +75,6 @@ function isTelemetryValue(v: unknown): v is mainTelemetry.TelemetryValue {
 const MAX_TELEMETRY_KEYS = 128
 const MAX_TELEMETRY_ARRAY_ITEMS = 128
 const MAX_TELEMETRY_STRING_LENGTH = 2048
-// Explicit allow-list of event-property keys that carry a single
-// pre-serialized JSON string legitimately exceeding the scalar clamp. The
-// renderer size-guards them via `serializeForTelemetry` (omits + flags
-// `*_truncated` when over budget) and they are PII-safe summaries, so they get
-// a larger ceiling. Gated by an allow-list rather than a `_json` suffix so a
-// renderer can't bypass the tight clamp by renaming an arbitrary field.
 const MAX_TELEMETRY_JSON_STRING_LENGTH = 768 * 1024
 const LARGE_JSON_TELEMETRY_KEYS: ReadonlySet<string> = new Set([
   'installs_json',
@@ -111,9 +102,6 @@ function asTelemetryValueArray(v: unknown): mainTelemetry.TelemetryValue[] | nul
   return out
 }
 
-// `allowLargeJsonStrings` is only for event properties: the larger `_json`
-// ceiling must not apply to person properties, where PostHog caps the whole
-// record at 512 KB total.
 function asTelemetryObject(
   value: unknown,
   allowArrays: true,
@@ -151,7 +139,6 @@ function asTelemetryObject(
   return out
 }
 
-// Per-key filter to the TelemetryContext contract.
 function asProps(value: unknown): mainTelemetry.TelemetryContext {
   return asTelemetryObject(value, true, true)
 }
@@ -167,26 +154,6 @@ function asPersonProps(value: unknown): Record<string, mainTelemetry.TelemetryVa
   return asTelemetryObject(value, false, false)
 }
 
-/**
- * Platform axes (`client` / `deployment`) for relayed events are
- * HOST-AUTHORITATIVE, never trusted from the payload:
- *
- * - `client` is stripped from every relayed payload so the SDK default
- *   ('desktop') applies. Anything arriving over this IPC channel was by
- *   definition emitted from inside the desktop app — but a hosted frontend
- *   bundle that also runs in a browser (the cloud frontend) registers
- *   `client` as a posthog-js super property, and if a future EventSink-style
- *   tap ever forwards posthog-js state through the bridge, its value
- *   ('web') would be wrong here.
- * - `deployment` is resolved from the SENDER: a hosted ComfyUI frontend
- *   doesn't know (and shouldn't have to know) whether its install is local,
- *   cloud, or remote, but main does — via the comfyView → install
- *   attachment. Per-sender (not a process-global default) so two windows in
- *   different modes tag correctly. When the sender resolves, its value
- *   overwrites any payload `deployment` for the same reason as `client`.
- *   Launcher-UI senders have no comfyView entry and stay untagged — their
- *   events are app-level, not deployment-scoped.
- */
 function deploymentForSender(sender: WebContents | undefined): mainTelemetry.Deployment | null {
   if (!sender) return null
   return mainTelemetry.asDeployment(findEntryByComfySender(sender)?.sourceCategory)
@@ -199,8 +166,6 @@ function withPlatformAxes(
   delete properties['client']
   const deployment = deploymentForSender(sender)
   if (deployment !== null) return { ...properties, deployment }
-  // Unknown sender (launcher UI, popouts): a payload deployment may pass
-  // through, but only if it's a valid axis value — junk is stripped.
   if (mainTelemetry.asDeployment(properties['deployment']) === null) {
     delete properties['deployment']
   }
@@ -307,7 +272,6 @@ async function getProactiveGreetingAdmission(
     notifyProactiveGreetingAdmissionChanged(event.sender)
     return 'allowed'
   } catch {
-    // The request and response can contain credentials. Reject without logging.
     return 'denied'
   } finally {
     verifyingLocalViews.delete(event.sender)
@@ -327,9 +291,7 @@ function notifyProactiveGreetingAdmissionChanged(contents: WebContents): void {
   if (contents.isDestroyed()) return
   try {
     contents.send('telemetry:proactive-greeting-admission-changed')
-  } catch {
-    // The hosted view can close before the notification is sent.
-  }
+  } catch {}
 }
 
 export function registerTelemetryHandlers(): void {
@@ -398,8 +360,6 @@ export function registerTelemetryHandlers(): void {
     mainTelemetry.registerPersonProperties(props)
   })
 
-  // Auth consensus validates trusted Cloud and scoped, main-verified loopback
-  // reporters after this handler proves the message came from the main frame.
   ipcMain.on('telemetry:firebaseAuthState', (event, payload: unknown) => {
     const frame = firebaseAuthReporterFrame(event)
     if (!frame) return
@@ -416,7 +376,6 @@ export function registerTelemetryHandlers(): void {
       { processId: frame.processId, routingId: frame.routingId },
       state
     )
-    // This view can join or leave the admitted actor without changing process consensus.
     const canVerifyChanged =
       canVerify && getUnverifiedLocalFirebaseSignInReport(event.sender) !== previousReport
     const actorChanged = actor !== null && isProactiveGreetingSender(event, actor) !== wasAdmitted
@@ -425,8 +384,6 @@ export function registerTelemetryHandlers(): void {
     }
   })
 
-  // Flag lookup for renderer A/B branches; awaits the boot fetch so a query
-  // landing before it settles still gets the real variant. null → control.
   ipcMain.handle('telemetry:getExperimentFlag', async (_event, key: unknown) => {
     const flagKey = asString(key)
     if (!flagKey) return null
@@ -434,7 +391,6 @@ export function registerTelemetryHandlers(): void {
     return value === undefined ? null : value
   })
 
-  // Exposure event; per-session dedup is enforced main-side.
   ipcMain.on('telemetry:recordExposure', (_event, payload: unknown) => {
     if (!payload || typeof payload !== 'object') return
     const p = payload as Record<string, unknown>

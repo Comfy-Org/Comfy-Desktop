@@ -240,12 +240,9 @@ describe('comfyPreload template input asset bridge', () => {
     })
     await bridge.downloadTemplateInputAsset('template-a', 'asset-a')
 
-    // The first job fails, which is when the id mapping is dropped.
     downloadProgressHandler()({}, downloadProgress('download-1', 'error'))
     const callsBeforeRetry = callback.mock.calls.length
 
-    // A retry from the tray mints a new id this renderer has never seen. The
-    // host names the input on the event, so it still reaches the view.
     downloadProgressHandler()(
       {},
       {
@@ -443,6 +440,7 @@ describe('comfyPreload auth bridge', () => {
 
     await Auth.getState()
     await Auth.getWorkspaceToken('ws-1')
+    await Auth.getPartnerNodeToken?.('ws-1')
     await Auth.requestSignIn()
     await Auth.signOut()
     await Auth.switchWorkspace('ws-2')
@@ -450,10 +448,28 @@ describe('comfyPreload auth bridge', () => {
     expect(mocks.invoke.mock.calls).toEqual([
       ['desktop2-auth:get-state'],
       ['desktop2-auth:get-workspace-token', 'ws-1'],
+      ['desktop2-auth:get-partner-node-token', 'ws-1'],
       ['desktop2-auth:request-sign-in'],
       ['desktop2-auth:sign-out'],
       ['desktop2-auth:switch-workspace', 'ws-2']
     ])
+  })
+
+  it('asks Desktop for a billing handoff with the workspace, receiver, intent and amount in order', async () => {
+    const answer = { status: 'issued', entryUrl: 'https://billing.comfy.org/handoff' }
+    mocks.invoke.mockResolvedValue(answer)
+
+    await expect(
+      hostedBridge().Auth.issueBillingHandoff?.('ws-1', 'billing_web', 'top-up', 2500)
+    ).resolves.toBe(answer)
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      'desktop2-auth:issue-billing-handoff',
+      'ws-1',
+      'billing_web',
+      'top-up',
+      2500
+    )
   })
 
   it('delivers session changes until unsubscribed', () => {
