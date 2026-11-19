@@ -93,6 +93,7 @@ const CLOUD_PAGE_SIZES = [50, 100, 200] as const
 const DEFAULT_PAGE_SIZE = 100
 const PAGE_CACHE_TTL_MS = 30 * 60_000
 const SEARCH_DEBOUNCE_MS = 300
+const MAX_SEARCH_LENGTH = 200
 const PREFETCH_DEADLINE_MS = 1000
 const NAME_TOOLTIP_DELAY_MS = 600
 const MIN_CARD_WIDTH = 240
@@ -131,7 +132,7 @@ void dashboardScope.initialize()
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const listedSearch = refDebounced(
-  computed(() => searchQuery.value.trim()),
+  computed(() => searchQuery.value.trim().slice(0, MAX_SEARCH_LENGTH)),
   SEARCH_DEBOUNCE_MS
 )
 const signingIn = ref(false)

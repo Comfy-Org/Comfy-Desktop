@@ -720,6 +720,36 @@ describe('AssetsView', () => {
     expect(wrapper.find('[data-testid="assets-pagination"]').text()).toContain('1–1 of 1')
   })
 
+  it('lists every output again from page 1 when the search is cleared', async () => {
+    const wrapper = await mountAssets(
+      Array.from({ length: 150 }, (_, i) =>
+        asset(`f${i}`, i === 140 ? 'lighthouse.png' : `frame-${i}.png`, 'image')
+      )
+    )
+    const input = wrapper.get('input')
+    await input.setValue('light')
+    await vi.waitFor(() => expect(assetNames(wrapper)).toEqual(['lighthouse.png']))
+    const readsBefore = localPages.length
+
+    await input.setValue('')
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="assets-pagination"]').text()).toContain('1–100 of 150')
+    )
+
+    expect(localPages.slice(readsBefore)).toEqual([{ offset: 0, limit: 100, order: 'newest' }])
+    expect(assetNames(wrapper)).toContain('frame-0.png')
+  })
+
+  it('sends at most the first 200 characters of a long search', async () => {
+    const wrapper = await mountAssets([asset('a', 'lighthouse.png', 'image')])
+    const readsBefore = localPages.length
+
+    await wrapper.get('input').setValue('l'.repeat(250))
+    await vi.waitFor(() => expect(localPages.length).toBeGreaterThan(readsBefore))
+
+    expect(localPages.at(-1)?.search).toBe('l'.repeat(200))
+  })
+
   it('shows each folder in its file manager from the picker', async () => {
     const wrapper = await mountAssets([], {
       builds: [sharedBuild('a', 'Shared A'), localBuild('lab', 'Video Lab')]
