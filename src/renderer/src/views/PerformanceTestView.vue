@@ -35,12 +35,14 @@ import PerformanceTestRunCountField from './performanceTest/PerformanceTestRunCo
 import PerformanceTestSystemFacts from './performanceTest/PerformanceTestSystemFacts.vue'
 import PerformanceTestWorkflowMenu from './performanceTest/PerformanceTestWorkflowMenu.vue'
 import { durationLabels, systemFactLabels } from './performanceTest/labels'
+import { revealInFolderKey } from '../composables/usePlatform'
 
 const emit = defineEmits<{
   'run-active-change': [active: boolean]
 }>()
 
 const { t } = useI18n()
+const revealFolderKey = revealInFolderKey(window.api?.platform)
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const { selectedWorkspaceId, scopedInstallations } = useWorkspaceInstallScope(
@@ -366,13 +368,11 @@ async function exportResultsImage(): Promise<void> {
                   variant="muted-textonly"
                   size="unset"
                   type="button"
-                  :title="t('performanceTest.openResultsFolder')"
+                  :title="t(revealFolderKey)"
                   @click="openResultsFolder"
                 >
                   <FolderOpen :size="15" aria-hidden="true" />
-                  <span class="@max-[640px]:sr-only">{{
-                    t('performanceTest.openResultsFolder')
-                  }}</span>
+                  <span class="@max-[640px]:sr-only">{{ t(revealFolderKey) }}</span>
                 </Button>
                 <Button
                   v-if="canExport"

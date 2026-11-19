@@ -1,9 +1,9 @@
 import { computed, inject, provide, type Component, type InjectionKey } from 'vue'
-import { CircleStop, Play, RotateCw, ScrollText, X } from '@lucide/vue'
+import { CircleStop, Info, OctagonAlert, Play, RotateCw, ScrollText, X } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { until } from '@vueuse/core'
 import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
-import { buildProgressOf, useBuildProgress } from '../../composables/useBuildProgress'
+import { buildProgressOf, launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
 import { useCanPromoteToWorkspace } from '../../composables/useCanPromoteToWorkspace'
 import {
   isPromotingToWorkspace,
@@ -53,7 +53,7 @@ function startsGroup(entries: BuildMenuEntry[], items: BuildMenuEntry[]): void {
   items.push(...entries)
 }
 
-export function useBuildMenu(build: () => Installation) {
+export function useBuildMenu(build: () => Installation, opts: { whyCloud?: () => boolean } = {}) {
   const { t } = useI18n()
   const host = inject(BUILD_MENU_HOST, NO_HOST)
   const modal = useModal()
@@ -70,7 +70,8 @@ export function useBuildMenu(build: () => Installation) {
     onShowProgress: (opts) => void host.showProgress(opts),
     onUpdate: runQuickUpdate,
     canPromoteToWorkspace: useCanPromoteToWorkspace(),
-    autoStart: useAutoStartBuild()
+    autoStart: useAutoStartBuild(),
+    onStartAgain: (inst) => host.launch(inst)
   })
   const status = computed(() => homeBuildStatus(build(), sessionStore))
   const canLaunch = computed(
@@ -83,6 +84,16 @@ export function useBuildMenu(build: () => Installation) {
 
   function isLocal(inst: Installation): boolean {
     return inst.sourceCategory !== 'cloud'
+  }
+
+  function hasError(inst: Installation): boolean {
+    return sessionStore.errorInstances.has(inst.id) || inst.statusTag?.style === 'danger'
+  }
+
+  function viewError(inst: Installation): void {
+    if (!sessionStore.errorInstances.has(inst.id)) return installMenu.viewDanger(inst)
+    if (launchFailed(progressStore, inst.id)) return install.viewLogs()
+    installMenu.viewError(inst)
   }
 
   function isStarting(inst: Installation): boolean {
@@ -100,6 +111,9 @@ export function useBuildMenu(build: () => Installation) {
     const items: BuildMenuEntry[] = []
 
     const now: BuildMenuEntry[] = []
+    if (!progress && hasError(inst)) {
+      now.push({ id: 'view-error', label: t('chooser.menuViewError'), icon: OctagonAlert })
+    }
     if (progress) {
       if (progress.kind !== 'uninstall') {
         now.push({ id: 'view-logs', label: t('installProgress.viewLogs'), icon: ScrollText })
@@ -146,12 +160,13 @@ export function useBuildMenu(build: () => Installation) {
       items
     )
 
-    startsGroup(
-      existing.filter(
-        (item) => item.id !== 'stop' && item.id !== 'delete' && item.id !== 'auto-start'
-      ),
-      items
+    const rest = existing.filter(
+      (item) => item.id !== 'stop' && item.id !== 'delete' && item.id !== 'auto-start'
     )
+    if (opts.whyCloud?.()) {
+      rest.push({ id: 'why-cloud', label: t('chooser.menuWhyTryCloud'), icon: Info })
+    }
+    startsGroup(rest, items)
     startsGroup(
       existing.filter((item) => item.id === 'delete'),
       items
@@ -198,6 +213,8 @@ export function useBuildMenu(build: () => Installation) {
         return
       case 'cancel':
         return install.progress.value ? install.cancel() : cancelLeftStart(inst)
+      case 'view-error':
+        return viewError(inst)
       case 'restart':
         if (canLaunch.value) return restart(inst)
         return

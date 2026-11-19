@@ -339,9 +339,24 @@ describe('AppsView', () => {
     expect(wrapper.find('[data-testid="app-card-genjutsu"]').exists()).toBe(true)
 
     await wrapper.get('input').setValue('spreadsheet')
-    expect(wrapper.get('[data-testid="apps-no-matches"] p').text()).toBe(
-      'No apps match “spreadsheet”'
-    )
+    const empty = wrapper.get('[data-testid="apps-no-matches"]')
+    expect(empty.get('h2').text()).toBe('Nothing matches')
+    expect(empty.get('p').text()).toBe('Try another word.')
+    expect(empty.text()).not.toContain('filters')
+  })
+
+  it('clears the search from the Nothing matches state', async () => {
+    const wrapper = await mountApps()
+    const allCards = wrapper.findAll('[data-testid="apps-grid"] button').length
+
+    await wrapper.get('input').setValue('spreadsheet')
+    const clear = wrapper.get('[data-testid="apps-clear-search"]')
+    expect(clear.text()).toBe('Clear search')
+    await clear.trigger('click')
+
+    expect(wrapper.get<HTMLInputElement>('input').element.value).toBe('')
+    expect(wrapper.find('[data-testid="apps-no-matches"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="apps-grid"] button')).toHaveLength(allCards)
   })
 
   it('ends the list with a band that asks what app the person wants', async () => {

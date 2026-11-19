@@ -3,9 +3,10 @@ import Button from '@comfyorg/design-system/button/Button'
 import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import { computed, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Ellipsis, Info, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
+import { Check, Ellipsis, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
 import {
+  buildFailure,
   inPlaceTaskLabel,
   launchFailed,
   useBuildProgress
@@ -48,8 +49,6 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   pick: [installation: Installation]
   'open-details': [installation: Installation]
-  'view-error': [installation: Installation]
-  'view-danger': [installation: Installation]
   'why-cloud': []
 }>()
 
@@ -60,10 +59,8 @@ const inst = computed(() => props.installation)
 const install = useBuildProgress(() => props.installation)
 const progressStore = useProgressStore()
 
-function viewError(): void {
-  if (launchFailed(progressStore, inst.value.id)) install.viewLogs()
-  else emit('view-error', inst.value)
-}
+const failure = computed(() => buildFailure(inst.value, sessionStore, progressStore, t))
+
 const isBusy = computed(() => install.progress.value !== null)
 const isUninstalling = computed(() => install.progress.value?.kind === 'uninstall')
 const isUpdatingHere = computed(() => {
@@ -113,6 +110,11 @@ const hasError = computed(() =>
   props.lifecycleStatus == null
     ? sessionStore.errorInstances.has(inst.value.id)
     : props.lifecycleStatus === 'error'
+)
+const errorLabel = computed(() =>
+  failure.value && inst.value.statusTag?.style !== 'danger'
+    ? failure.value.label
+    : t('chooser.statusError')
 )
 
 const canActivate = computed(
@@ -172,7 +174,7 @@ const statusPill = computed<{
   return null
 })
 
-const showWhyCloudTrigger = computed(
+const offersWhyCloud = computed(
   () =>
     props.showWhyCloud &&
     !hasError.value &&
@@ -372,30 +374,14 @@ function openContextMenu(event: MouseEvent): void {
           />
           <span class="truncate">{{ progressLabel }}</span>
         </span>
-        <Button
-          v-else-if="hasError && canActivate"
-          variant="destructive-textonly"
-          size="unset"
-          type="button"
-          class="chooser-tile-error-badge pointer-events-auto h-4 gap-1 text-xs/4 font-medium"
-          :title="t('chooser.viewErrorTooltip')"
-          @click.stop="viewError"
+        <span
+          v-else-if="(hasError || dangerTag) && canActivate"
+          class="flex min-w-0 items-center gap-1.5 text-destructive"
+          :class="hasError ? 'chooser-tile-error-badge' : 'chooser-tile-danger-tag'"
         >
-          <OctagonAlert :size="12" />
-          {{ t('chooser.statusError') }}
-        </Button>
-        <Button
-          v-else-if="dangerTag && canActivate"
-          variant="destructive-textonly"
-          size="unset"
-          type="button"
-          class="chooser-tile-danger-tag pointer-events-auto h-4 min-w-0 gap-1 text-xs/4 font-medium"
-          :title="t('chooser.viewErrorTooltip')"
-          @click.stop="emit('view-danger', inst)"
-        >
-          <OctagonAlert :size="12" />
-          <span class="truncate">{{ dangerTag.label }}</span>
-        </Button>
+          <OctagonAlert :size="12" class="shrink-0" aria-hidden="true" />
+          <span class="truncate">{{ hasError ? errorLabel : dangerTag?.label }}</span>
+        </span>
         <span
           v-else-if="statusPill"
           class="chooser-tile-status flex min-w-0 items-center gap-1.5"
@@ -442,19 +428,6 @@ function openContextMenu(event: MouseEvent): void {
           class="chooser-tile-name mt-0 block max-w-full min-w-0 text-[15px]/[21px] font-semibold text-foreground [&.tooltip-wrap]:block"
           :text="inst.name"
         />
-        <Tooltip v-if="showWhyCloudTrigger" class="flex-none" :text="t('firstUse.whyTryCloud')">
-          <Button
-            variant="muted-textonly"
-            size="icon-sm"
-            type="button"
-            class="chooser-tile-why-cloud pointer-events-auto flex-none"
-            :aria-label="t('firstUse.whyTryCloud')"
-            :data-testid="TID.dashboardTileWhyCloud(inst.id)"
-            @click.stop="emit('why-cloud')"
-          >
-            <Info :size="13" />
-          </Button>
-        </Tooltip>
       </div>
       <div
         v-if="metaLine || updateNote"
@@ -495,6 +468,8 @@ function openContextMenu(event: MouseEvent): void {
       :anchor="menuAnchor"
       :align="moreButton ? 'end' : 'start'"
       :return-focus="menuReturnFocus"
+      :why-cloud="offersWhyCloud"
+      @why-cloud="emit('why-cloud')"
     />
   </div>
 </template>
