@@ -267,7 +267,7 @@ describe('useInstallContextMenu - delete fast path (regression for #582)', () =>
     expect(dialogsMock.confirm).toHaveBeenCalledTimes(1)
     const confirmArgs = dialogsMock.confirm.mock.calls[0][0]
     expect(confirmArgs.title).toBe('Uninstall')
-    expect(confirmArgs.message).toContain('permanently removes this ComfyUI installation')
+    expect(confirmArgs.message).toContain('permanently removes this ComfyUI build')
     expect(confirmArgs.message).toContain('This cannot be undone. Other installs are not affected.')
     expect(confirmArgs.message).not.toContain('\n')
     expect(confirmArgs.hint).toBe('/tmp/my')
@@ -724,7 +724,7 @@ describe('useInstallContextMenu - error details for a build that went wrong', ()
     modalMock.confirm.mockReset()
   })
 
-  it('names a start that failed with no start logs, shows its reason and offers Start again', async () => {
+  it('names a start that failed with no start logs, shows its reason and offers Try again', async () => {
     modalMock.confirm.mockResolvedValue(true)
     const onStartAgain = vi.fn()
     const inst = makeInstall()
@@ -743,7 +743,7 @@ describe('useInstallContextMenu - error details for a build that went wrong', ()
     expect(modalMock.confirm).toHaveBeenCalledWith({
       title: "ComfyUI didn't start",
       message: 'Port 8188 is in use',
-      confirmLabel: 'Start again',
+      confirmLabel: 'Try again',
       confirmStyle: 'primary'
     })
     expect(onStartAgain).toHaveBeenCalledWith(inst)
@@ -763,7 +763,7 @@ describe('useInstallContextMenu - error details for a build that went wrong', ()
     expect(onStartAgain).not.toHaveBeenCalled()
   })
 
-  it('keeps a crash as Error details with no Start again', () => {
+  it('keeps a crash as Error details with no Try again', () => {
     const inst = makeInstall()
     const { menu, session } = mountViewError(vi.fn())
     session.errorInstances.set(inst.id, { installationName: inst.name, exitCode: 1 })

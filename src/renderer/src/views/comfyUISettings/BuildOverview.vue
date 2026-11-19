@@ -18,6 +18,7 @@ import { useSessionStore } from '../../stores/sessionStore'
 import type { ActionDef, Installation } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
 import { channelAction, splitVersion, type BuildOverviewModel } from './overviewModel'
+import { revealInFolderKey } from '../../composables/usePlatform'
 
 const {
   installation,
@@ -36,6 +37,7 @@ const {
 const emit = defineEmits<{ action: [action: ActionDef] }>()
 
 const { t } = useI18n()
+const revealFolderKey = revealInFolderKey(window.api?.platform)
 const sessionStore = useSessionStore()
 
 const pickedChannel = ref(model.currentChannel)
@@ -481,8 +483,8 @@ function openLocation(): void {
                 variant="muted-textonly"
                 size="icon"
                 class="size-7 shrink-0"
-                :aria-label="t('buildOverview.openFolder')"
-                :title="t('buildOverview.openFolder')"
+                :aria-label="t(revealFolderKey)"
+                :title="t(revealFolderKey)"
                 data-testid="build-overview-open-folder"
                 @click="openLocation"
               >

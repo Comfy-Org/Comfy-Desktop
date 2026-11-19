@@ -20,7 +20,7 @@ import {
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import { fileLabel, modalSubtitle, statusKindClass } from '../lib/downloadFormatters'
-import { revealInFolderLabel } from '../composables/usePlatform'
+import { revealInFolderKey } from '../composables/usePlatform'
 import type {
   PopupDownloadAction,
   PopupDownloadEntry as DownloadEntry,
@@ -39,7 +39,7 @@ interface PopupBridge {
 }
 
 const bridge = (window as unknown as { __comfyTitlePopup?: PopupBridge }).__comfyTitlePopup
-const revealLabel = computed(() => revealInFolderLabel(bridge?.platform))
+const revealLabel = computed(() => t(revealInFolderKey(bridge?.platform)))
 
 const props = defineProps<{ state: DownloadsState }>()
 

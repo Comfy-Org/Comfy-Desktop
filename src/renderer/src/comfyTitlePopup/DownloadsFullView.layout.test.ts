@@ -135,7 +135,7 @@ describe('DownloadsFullView layout', () => {
     expect(trailing[0]!.right).toBe(clear - 18)
   })
 
-  it('gives every row the same labelled secondary action: Pause, Resume, Show in Finder and Retry share variant, height and right edge', async () => {
+  it('gives every row the same labelled secondary action: Pause, Resume, Show in Finder and Try again share variant, height and right edge', async () => {
     await mountView({
       ...state,
       active: [
@@ -159,13 +159,13 @@ describe('DownloadsFullView layout', () => {
       'Pause',
       'Resume',
       'Show in Finder',
-      'Retry'
+      'Try again'
     ])
     expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual([
       'Pause',
       'Resume',
       null,
-      'Retry'
+      'Try again'
     ])
     for (const b of buttons) expect(b.querySelector('svg')!.getBoundingClientRect().width).toBe(14)
     expect(buttons[0]!.querySelector('.lucide-pause')).not.toBeNull()
