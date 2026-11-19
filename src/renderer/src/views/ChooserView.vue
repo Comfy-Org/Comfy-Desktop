@@ -13,10 +13,11 @@ import { useInstallingBuilds } from '../composables/useBuildProgress'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { Plus, RefreshCw, Search } from '@lucide/vue'
+import { Plus, RefreshCw, Search, Server } from '@lucide/vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import SplitButton from '../components/ui/SplitButton.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
@@ -141,8 +142,13 @@ watch(whereOptions, (options) => {
 const hasFilters = computed(
   () => searchQuery.value.trim().length > 0 || activeFilter.value !== 'all'
 )
-const showNoMatches = computed(() => scopedVisibleInstalls.value.length === 0 && hasFilters.value)
-const showNoBuilds = computed(() => scopedVisibleInstalls.value.length === 0 && !hasFilters.value)
+const hasNoBuilds = computed(() => scopedInstalls.value.length === 0)
+const showNoMatches = computed(
+  () => !hasNoBuilds.value && scopedVisibleInstalls.value.length === 0 && hasFilters.value
+)
+const showNoBuilds = computed(
+  () => hasNoBuilds.value || (scopedVisibleInstalls.value.length === 0 && !hasFilters.value)
+)
 
 function clearFilters(): void {
   searchQuery.value = ''
@@ -239,7 +245,7 @@ const gridHandlers = {
   >
     <div class="mx-auto w-full max-w-300 px-10 pb-24">
       <header class="chooser-header flex items-end justify-between gap-6 pt-9 pb-6">
-        <h1 class="m-0 text-[22px]/[1.4] font-semibold tracking-[-0.01em] text-foreground">
+        <h1 class="m-0 text-display font-semibold tracking-[-0.055em] text-foreground">
           {{ t('chooser.buildsTitle') }}
         </h1>
         <SplitButton
@@ -277,6 +283,7 @@ const gridHandlers = {
 
       <div class="chooser-toolbar mb-5 flex min-h-8 flex-wrap items-center gap-2">
         <SegmentedControl
+          v-if="!hasNoBuilds"
           v-model="activeFilter"
           :options="whereOptions"
           :label="t('chooser.whereLabel')"
@@ -302,7 +309,7 @@ const gridHandlers = {
               }"
             />
           </Button>
-          <div class="w-38">
+          <div v-if="!hasNoBuilds" class="w-38">
             <BaseSelect
               v-model="sortOrder"
               :options="sortOptions"
@@ -310,7 +317,7 @@ const gridHandlers = {
               compact
             />
           </div>
-          <div class="chooser-search w-[220px]">
+          <div v-if="!hasNoBuilds" class="chooser-search w-[220px]">
             <BaseInput
               v-model="searchQuery"
               class="h-8 [&_input]:text-[13px]"
@@ -345,18 +352,13 @@ const gridHandlers = {
         {{ t('common.loading') }}
       </div>
 
-      <section
+      <EmptyState
         v-else-if="showNoMatches"
-        class="chooser-empty flex flex-col items-center gap-3 px-6 py-16 text-center"
+        class="chooser-empty px-6 py-16"
+        :icon="Server"
+        :title="t('chooser.nothingMatches')"
+        :text="t('chooser.nothingMatchesHint')"
       >
-        <div class="flex flex-col gap-1.5">
-          <h2 class="m-0 text-[16px]/6 font-semibold text-foreground">
-            {{ t('chooser.nothingMatches') }}
-          </h2>
-          <p class="m-0 text-[13px]/5 text-muted-foreground">
-            {{ t('chooser.nothingMatchesHint') }}
-          </p>
-        </div>
         <Button
           type="button"
           variant="secondary"
@@ -366,31 +368,15 @@ const gridHandlers = {
         >
           {{ t('chooser.clearFilters') }}
         </Button>
-      </section>
+      </EmptyState>
 
-      <section
+      <EmptyState
         v-else-if="showNoBuilds"
-        class="chooser-no-builds flex flex-col items-center gap-3 px-6 py-16 text-center"
-      >
-        <div class="flex max-w-[420px] flex-col gap-1.5">
-          <h2 class="m-0 text-[16px]/6 font-semibold text-foreground">
-            {{ t('chooser.noBuildsTitle') }}
-          </h2>
-          <p class="m-0 text-[13px]/5 text-muted-foreground">
-            {{ t('chooser.noBuildsBody') }}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="inverted"
-          size="md"
-          class="gap-1.5 px-3 text-[13px]/5"
-          @click="handleNewInstallClick"
-        >
-          <Plus :size="15" aria-hidden="true" />
-          {{ t('chooser.newBuild') }}
-        </Button>
-      </section>
+        class="chooser-no-builds px-6 py-16"
+        :icon="Server"
+        :title="t('chooser.noBuildsTitle')"
+        :text="t('chooser.noBuildsBody')"
+      />
 
       <ChooserFamilyGrid
         v-else

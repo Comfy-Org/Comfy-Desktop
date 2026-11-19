@@ -204,8 +204,7 @@ async function signOut(): Promise<void> {
         type="button"
         variant="textonly"
         size="unset"
-        class="h-12 w-full rounded-lg text-ui font-medium hover:bg-secondary data-[state=open]:bg-secondary"
-        :class="collapsed ? 'justify-center p-1' : 'justify-start gap-3 px-3'"
+        class="h-12 w-full justify-start gap-3 rounded-lg px-2 text-ui font-medium hover:bg-secondary data-[state=open]:bg-secondary"
         data-testid="workspace-switcher-trigger"
         :aria-label="currentWorkspaceName"
         :title="collapsed ? currentWorkspaceName : undefined"
@@ -215,12 +214,19 @@ async function signOut(): Promise<void> {
           :workspace-name="currentWorkspaceName"
           :subscription-tier="currentWorkspaceTier"
         />
-        <template v-if="!collapsed">
-          <span class="min-w-0 flex-1 truncate text-left" data-testid="workspace-switcher-name">{{
-            currentWorkspaceName
-          }}</span>
-          <Ellipsis class="text-muted-foreground" :size="16" aria-hidden="true" />
-        </template>
+        <Transition
+          enter-active-class="transition-opacity duration-180 delay-30 ease-out"
+          enter-from-class="opacity-0"
+          leave-active-class="transition-opacity duration-150 ease-out"
+          leave-to-class="opacity-0"
+        >
+          <span v-if="!collapsed" class="flex min-w-0 flex-1 items-center gap-3 text-nowrap">
+            <span class="min-w-0 flex-1 truncate text-left" data-testid="workspace-switcher-name">{{
+              currentWorkspaceName
+            }}</span>
+            <Ellipsis class="shrink-0 text-muted-foreground" :size="16" aria-hidden="true" />
+          </span>
+        </Transition>
       </Button>
     </PopoverTrigger>
 

@@ -85,12 +85,12 @@ onUnmounted(() => unsubscribeSettings?.())
 <template>
   <div class="build-details flex min-h-0 w-full flex-auto flex-col" data-testid="build-details">
     <div class="mx-auto flex min-h-0 w-full max-w-300 flex-auto flex-col px-10">
-      <header class="flex shrink-0 flex-wrap items-center gap-x-[18px] gap-y-3 pt-6 pb-6">
+      <header class="flex shrink-0 flex-wrap items-center gap-x-[18px] gap-y-3 pt-9 pb-6">
         <div class="min-w-0 flex-1 basis-60">
           <div class="flex min-w-0 items-center gap-2">
             <h1
               :id="TITLE_ID"
-              class="m-0 flex min-w-0 font-display text-display font-semibold text-foreground"
+              class="m-0 flex min-w-0 text-display font-semibold tracking-[-0.055em] text-foreground"
             >
               <span v-if="uninstallReplacesSettings" class="truncate">{{ installation.name }}</span>
             </h1>

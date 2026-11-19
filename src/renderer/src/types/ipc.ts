@@ -1,6 +1,9 @@
 export type {
   DashboardPage,
+  AppBadge,
+  AppBadgeWords,
   AppCard,
+  AppCover,
   AppOutputAction,
   AppOutputs,
   AppPagePlacement,
@@ -9,6 +12,8 @@ export type {
   AssetSummary,
   CloudAssetPage,
   LocalAssetListing,
+  LocalAssetPageRequest,
+  OutputFolderPaths,
   CatalogWorkflow,
   CloudAssetLookup,
   Unsubscribe,

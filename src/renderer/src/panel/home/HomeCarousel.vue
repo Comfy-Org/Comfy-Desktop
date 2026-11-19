@@ -1,7 +1,15 @@
-<script setup lang="ts" generic="Card extends { id: string; title: string; description: string }">
-import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+<script
+  setup
+  lang="ts"
+  generic="Card extends Pick<AppCard, 'id' | 'title' | 'description' | 'badges'>"
+>
+import { computed, nextTick, onBeforeUnmount, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from '@lucide/vue'
+import AppBadges from '../AppBadges.vue'
+import { badgeDescriptionIds } from '../appCardBadges'
+import CoverRotation from '../../components/CoverRotation.vue'
+import type { AppCard, AppCover } from '../../types/ipc'
 
 interface ArcSlot {
   transform: string
@@ -39,10 +47,10 @@ const ARC_SLOTS: Record<number, ArcSlot> = {
   }
 }
 
-const { cards, kind, pictureOf } = defineProps<{
+const { cards, kind, picturesOf } = defineProps<{
   cards: readonly Card[]
   kind: 'apps' | 'workflows'
-  pictureOf: (card: Card) => string | null
+  picturesOf: (card: Card) => readonly AppCover[]
 }>()
 
 const emit = defineEmits<{ open: [card: Card] }>()
@@ -51,8 +59,23 @@ const { t } = useI18n()
 
 const frontPosition = ref(0)
 const jumpedAcross = ref(new Set<string>())
-const loadedPictures = ref(new Set<string>())
 const brokenPictures = ref(new Set<string>())
+const keyboardFocusedId = ref<string | null>(null)
+const badgeIdPrefix = useId()
+
+function badgeIdPrefixFor(card: Card): string {
+  return `${badgeIdPrefix}-${card.id}`
+}
+
+function badgesDescribing(card: Card): string | undefined {
+  return badgeDescriptionIds(badgeIdPrefixFor(card), card.badges)
+}
+
+function noteCardFocus(card: Card, event: FocusEvent): void {
+  const button = event.currentTarget
+  keyboardFocusedId.value =
+    button instanceof HTMLElement && button.matches(':focus-visible') ? card.id : null
+}
 
 const listsApps = computed(() => kind === 'apps')
 const wraps = computed(() => cards.length > ARC_REACH * 2)
@@ -133,11 +156,7 @@ function slotStyle(offset: number): Record<string, string> {
 }
 
 function showsPicture(card: Card): boolean {
-  return pictureOf(card) !== null && !brokenPictures.value.has(card.id)
-}
-
-function markPictureLoaded(card: Card): void {
-  loadedPictures.value = new Set(loadedPictures.value).add(card.id)
+  return picturesOf(card).length > 0 && !brokenPictures.value.has(card.id)
 }
 
 function markPictureBroken(card: Card): void {
@@ -225,23 +244,21 @@ function activate(placed: { card: Card; offset: number }): void {
           ]"
           :style="slotStyle(placed.offset)"
           :aria-label="labelFor(placed)"
+          :aria-describedby="badgesDescribing(placed.card)"
           :aria-current="placed.offset === 0 ? 'true' : undefined"
           :aria-hidden="placed.onStage ? undefined : 'true'"
           :tabindex="placed.onStage ? undefined : -1"
           data-testid="home-carousel-card"
           :data-arc-offset="placed.offset"
           @click="activate(placed)"
+          @focus="noteCardFocus(placed.card, $event)"
+          @blur="keyboardFocusedId = null"
         >
-          <img
+          <CoverRotation
             v-if="showsPicture(placed.card)"
-            :src="pictureOf(placed.card) ?? undefined"
-            alt=""
-            draggable="false"
-            class="absolute inset-0 size-full object-cover transition-opacity duration-300 motion-reduce:transition-none"
-            :class="loadedPictures.has(placed.card.id) ? 'opacity-100' : 'opacity-0'"
-            :data-loaded="loadedPictures.has(placed.card.id)"
-            @load="markPictureLoaded(placed.card)"
-            @error="markPictureBroken(placed.card)"
+            :pictures="picturesOf(placed.card)"
+            :paused="placed.offset !== 0"
+            @broken="markPictureBroken(placed.card)"
           />
           <span
             v-else
@@ -256,6 +273,13 @@ function activate(placed: { card: Card; offset: number }): void {
           <span
             class="absolute inset-0 bg-linear-to-t from-black/75 via-black/40 via-30% to-transparent to-55%"
             aria-hidden="true"
+          />
+          <AppBadges
+            v-if="placed.card.badges?.length"
+            :badges="placed.card.badges"
+            :description-id-prefix="badgeIdPrefixFor(placed.card)"
+            :revealed="keyboardFocusedId === placed.card.id"
+            class="absolute top-3 left-3 max-w-[calc(100%-4.25rem)]"
           />
           <span
             class="absolute top-3 right-3 grid size-8 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"

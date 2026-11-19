@@ -44,6 +44,7 @@ import { registerEmbeddedSessionHandlers } from './registerEmbeddedSessionHandle
 import { registerCatalogHandlers } from './registerCatalogHandlers'
 import { registerAppsHandlers } from './registerAppsHandlers'
 import { registerAppsLocalHandlers } from './registerAppsLocalHandlers'
+import { registerAppsAssetsHandlers } from './registerAppsAssetsHandlers'
 import { registerAppsOutputsHandlers } from './registerAppsOutputsHandlers'
 import { registerAppsTelemetryHandlers } from './registerAppsTelemetryHandlers'
 import { reconcileAdoptedSettings } from '../desktopAdopt'
@@ -296,6 +297,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerAppsHandlers()
   registerAppsLocalHandlers()
   registerAppsOutputsHandlers()
+  registerAppsAssetsHandlers()
   registerAppsTelemetryHandlers()
   return startupRecovery.then(() => undefined)
 }

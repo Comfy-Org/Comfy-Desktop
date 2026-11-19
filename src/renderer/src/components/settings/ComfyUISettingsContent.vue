@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
   HardDrive,
+  Folder,
   SlidersHorizontal,
   RefreshCw,
   History,
@@ -23,16 +24,16 @@ import {
   Copy,
   CopyPlus,
   FolderOpen,
-  Share2,
   ArrowRightLeft,
   Pencil,
   Trash2,
   CircleStop,
   EyeOff,
   Settings2,
-  Repeat2,
   Server,
-  Ellipsis
+  Ellipsis,
+  Download,
+  SquareArrowOutUpRight
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import { useComfyUISettings } from '../../composables/useComfyUISettings'
@@ -264,9 +265,9 @@ const ALL_TABS: TabDef[] = [
   {
     key: 'storage',
     sectionTab: 'storage',
-    label: t('comfyUISettings.tabStorage'),
-    icon: HardDrive,
-    tooltip: t('tooltips.tabStorage')
+    label: t('comfyUISettings.tabFolders'),
+    icon: Folder,
+    tooltip: t('tooltips.tabFolders')
   },
   {
     key: 'config',
@@ -308,7 +309,7 @@ function tabHasContent(tab: TabDef): boolean {
 const tabs = computed<TabDef[]>(() =>
   ALL_TABS.filter(tabHasContent).map((tab) =>
     isCloud.value && tab.key === 'config'
-      ? { ...tab, label: t('comfyUISettings.tabStorage'), icon: HardDrive }
+      ? { ...tab, label: t('comfyUISettings.tabCloudStorage'), icon: HardDrive }
       : tab
   )
 )
@@ -526,8 +527,8 @@ function navIcon(labelKey: string): Component {
     case 'instancePicker.restart':
     case 'instancePicker.restartToApply':
       return RotateCcw
-    case 'instancePicker.switch':
-      return Repeat2
+    case 'instancePicker.openRunning':
+      return SquareArrowOutUpRight
     case 'instancePicker.open':
       return Play
     default:
@@ -546,15 +547,6 @@ const primaryActionIcon = computed<Component>(() =>
   hasPendingRestart.value ? RotateCcw : navIconFor(primaryDecision.value.primaryLabel)
 )
 
-const stopAction = computed<ActionDef | undefined>(() =>
-  pinBottomActions.value.find((a) => a.id === 'stop')
-)
-const caretActions = computed<MenuAction[]>(() => {
-  const verb = primaryDecision.value.verb
-  if (!stopAction.value || (verb !== 'focus' && verb !== 'restart')) return []
-  return [{ ...stopAction.value, icon: actionIcon('stop') }]
-})
-
 function actionIcon(id: string): Component {
   switch (id) {
     case 'update-comfyui':
@@ -569,7 +561,7 @@ function actionIcon(id: string): Component {
     case 'reveal-in-folder':
       return FolderOpen
     case 'share':
-      return Share2
+      return Download
     case 'migrate-to-standalone':
     case 'migrate':
       return ArrowRightLeft
@@ -589,15 +581,44 @@ function actionIcon(id: string): Component {
   }
 }
 
+const NOW_ACTION_IDS = new Set(['stop'])
+
 const pinBottomMenuActions = computed<MenuAction[]>(() => {
-  const firstDanger = pinBottomActions.value.findIndex((action) => action.style === 'danger')
-  return pinBottomActions.value.map((action, index) => ({
-    ...action,
-    icon: actionIcon(action.id),
-    style: action.id === 'untrack' || action.id === 'remove' ? undefined : action.style,
-    separator: index === firstDanger
-  }))
+  const actions = sectionsFresh.value
+    ? pinBottomActions.value
+    : pinBottomActions.value.filter((action) => NOW_ACTION_IDS.has(action.id))
+  const now = actions.filter((action) => NOW_ACTION_IDS.has(action.id))
+  const rest = actions.filter((action) => !NOW_ACTION_IDS.has(action.id) && action.id !== 'delete')
+  const last = actions.filter((action) => action.id === 'delete')
+  return [now, rest, last]
+    .filter((group) => group.length > 0)
+    .flatMap((group, groupIndex) =>
+      group.map((action, index) => ({
+        ...action,
+        icon: actionIcon(action.id),
+        style: action.id === 'delete' ? ('danger' as const) : undefined,
+        separator: groupIndex > 0 && index === 0
+      }))
+    )
 })
+
+const ctaWrap = useTemplateRef<HTMLElement>('ctaWrap')
+
+function focusLostToMenu(): boolean {
+  const active = document.activeElement
+  return !active || active === document.body || !!active.closest('.more-menu')
+}
+
+watch(
+  () => pinBottomMenuActions.value.length,
+  async (count) => {
+    if (count > 0 || !moreMenuOpen.value) return
+    closeMoreMenu()
+    await nextTick()
+    if (!focusLostToMenu()) return
+    ctaWrap.value?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus()
+  }
+)
 
 function handlePrimaryAction(): void {
   const selectedInstall = installation.value
@@ -606,18 +627,6 @@ function handlePrimaryAction(): void {
     clearPendingRestart(selectedInstall.id)
   }
   emit('primary-action', primaryDecision.value)
-}
-
-const caretMenuOpen = ref(false)
-function toggleCaretMenu(): void {
-  caretMenuOpen.value = !caretMenuOpen.value
-}
-function closeCaretMenu(): void {
-  caretMenuOpen.value = false
-}
-function handleCaretPick(action: ActionDef): void {
-  if (!installation.value) return
-  void runAction(action)
 }
 
 const opInflight = computed(() => props.activeOperation != null && !props.activeOperation.done)
@@ -768,75 +777,94 @@ defineExpose({
 <template>
   <Tabs :model-value="activeTab" as-child @update:model-value="onTabValueChange">
     <div ref="root" class="settings-v2-content flex min-h-0 flex-1 flex-col">
-      <TabsList as-child>
-        <nav
-          ref="tabs"
-          v-sliding-pill="isPage ? 'bg-accent' : 'bg-secondary'"
-          class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-hidden"
-          :class="[
-            isPage
-              ? 'w-fit gap-0.5 rounded-[10px] bg-secondary p-[3px]'
-              : '@container/settings-tabs gap-1.5 border-b border-solid border-[var(--chooser-surface-border)] p-3',
-            { 'is-subpage-active opacity-60': subPage !== null }
-          ]"
-          :aria-label="t('comfyUISettings.title')"
-        >
-          <Tooltip
-            v-for="tab in tabs"
-            :key="tab.key"
-            :text="tab.tooltip ?? tab.label"
-            side="bottom"
-            :disabled="tab.tooltip ? false : !isTabLabelHidden(tab.key)"
+      <div
+        class="settings-v2-tabrow"
+        :class="
+          isPage ? 'flex min-w-0 shrink-0 flex-wrap items-center justify-between gap-3' : 'contents'
+        "
+      >
+        <TabsList as-child>
+          <nav
+            ref="tabs"
+            v-sliding-pill="isPage ? 'bg-accent' : 'bg-secondary'"
+            class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-hidden"
+            :class="[
+              isPage
+                ? 'w-fit gap-0.5 rounded-[10px] bg-secondary p-[3px]'
+                : '@container/settings-tabs gap-1.5 border-b border-solid border-[var(--chooser-surface-border)] p-3',
+              { 'is-subpage-active opacity-60': subPage !== null }
+            ]"
+            :aria-label="t('comfyUISettings.title')"
           >
-            <TabsTrigger
-              :value="tab.key"
-              variant="panel"
-              :disabled="opInflight && activeTab !== tab.key"
-              class="settings-v2-tab group/settings-tab min-w-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:gap-0 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:px-2 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)>span:not(.settings-v2-tab-icon-wrap)]:hidden"
-              :class="[
-                {
-                  'is-active': activeTab === tab.key,
-                  'is-locked': opInflight && activeTab !== tab.key
-                },
-                isPage &&
-                  'm-0 h-[26px] rounded-[7px] border-0 bg-transparent px-[11px] py-0 text-[13px] font-normal text-muted-foreground hover:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground'
-              ]"
-              :data-testid="TID.settingsTab(tab.key)"
-              @click="selectTab(tab.key)"
+            <Tooltip
+              v-for="tab in tabs"
+              :key="tab.key"
+              :text="tab.tooltip ?? tab.label"
+              side="bottom"
+              :disabled="tab.tooltip ? false : !isTabLabelHidden(tab.key)"
             >
-              <span
-                v-if="!isPage || (tab.key === 'update' && showUpdateBadge)"
-                class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center"
+              <TabsTrigger
+                :value="tab.key"
+                variant="panel"
+                :disabled="opInflight && activeTab !== tab.key"
+                class="settings-v2-tab group/settings-tab min-w-0 gap-1.5 [-webkit-app-region:no-drag] [&>span:not(.settings-v2-tab-icon-wrap)]:min-w-0 [&>span:not(.settings-v2-tab-icon-wrap)]:truncate [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:gap-0 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)]:px-2 [@container_settings-tabs_(width<=640px)]:[&:not(.is-active)>span:not(.settings-v2-tab-icon-wrap)]:hidden"
+                :class="[
+                  {
+                    'is-active': activeTab === tab.key,
+                    'is-locked': opInflight && activeTab !== tab.key
+                  },
+                  isPage &&
+                    'm-0 h-[26px] rounded-[7px] border-0 bg-transparent px-[11px] py-0 text-[13px] font-normal text-muted-foreground hover:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground'
+                ]"
+                :data-testid="TID.settingsTab(tab.key)"
+                @click="selectTab(tab.key)"
               >
-                <component
-                  :is="tab.icon"
-                  v-if="!isPage"
-                  :size="14"
-                  aria-hidden="true"
-                  class="settings-v2-tab-icon shrink-0 opacity-85"
-                />
                 <span
-                  v-if="tab.key === 'update' && showUpdateBadge"
-                  :class="[
-                    activeTab === tab.key
-                      ? 'border-neutral-700'
-                      : 'border-[var(--modal-surface-bg)]',
-                    !isPage && 'absolute -right-px -bottom-px'
-                  ]"
-                  class="settings-v2-tab-badge box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
-                  aria-hidden="true"
-                ></span>
-              </span>
-              <span>{{ tab.label }}</span>
-            </TabsTrigger>
-          </Tooltip>
-        </nav>
-      </TabsList>
+                  v-if="!isPage || (tab.key === 'update' && showUpdateBadge)"
+                  class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center"
+                >
+                  <component
+                    :is="tab.icon"
+                    v-if="!isPage"
+                    :size="14"
+                    aria-hidden="true"
+                    class="settings-v2-tab-icon shrink-0 opacity-85"
+                  />
+                  <span
+                    v-if="tab.key === 'update' && showUpdateBadge"
+                    :class="[
+                      activeTab === tab.key
+                        ? 'border-neutral-700'
+                        : 'border-[var(--modal-surface-bg)]',
+                      !isPage && 'absolute -right-px -bottom-px'
+                    ]"
+                    class="settings-v2-tab-badge box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
+                    aria-hidden="true"
+                  ></span>
+                </span>
+                <span>{{ tab.label }}</span>
+              </TabsTrigger>
+            </Tooltip>
+          </nav>
+        </TabsList>
+        <Transition
+          enter-active-class="transition-opacity duration-150 ease-out"
+          leave-active-class="transition-opacity duration-150 ease-out"
+          enter-from-class="opacity-0"
+          leave-to-class="opacity-0"
+        >
+          <div
+            v-if="isPage && activeTab === 'snapshots' && installation"
+            id="settings-v2-tab-tools"
+            class="settings-v2-tab-tools ml-auto flex shrink-0 items-center"
+          ></div>
+        </Transition>
+      </div>
 
       <TabsContent :value="activeTab" as-child force-mount>
         <section
           class="settings-v2-body scroll-visible relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto"
-          :class="isPage ? 'pt-5 pb-8' : 'p-4'"
+          :class="isPage ? '-mx-1 px-1 pt-5 pb-8' : 'p-4'"
         >
           <p
             v-if="!installation"
@@ -901,6 +929,7 @@ defineExpose({
                   <SnapshotsView
                     :installation-id="installation.id"
                     :active-operation="activeOperation"
+                    :toolbar-target="isPage ? '#settings-v2-tab-tools' : undefined"
                     @run-action="handleSnapshotAction"
                     @refresh-all="handleSnapshotsRefresh"
                     @op-cancel="emit('op-cancel')"
@@ -1107,7 +1136,7 @@ defineExpose({
                       <template v-else>
                         <SettingsSectionList
                           :sections="visibleSections"
-                          :columns="isStartupArgsPage"
+                          :stacked="isStartupArgsPage"
                           :installation-id="installation?.id"
                           :running-action-ids="runningActionIds"
                           :pending-restart-field-ids="pendingRestartFieldIds"
@@ -1163,19 +1192,15 @@ defineExpose({
             </span>
           </Transition>
 
-          <div
-            class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto]"
-            :class="{ 'has-caret': caretActions.length > 0 }"
-          >
+          <div ref="ctaWrap" class="settings-v2-cta-wrap relative inline-flex flex-[0_1_auto]">
             <Button
               variant="inverted"
               size="md"
               type="button"
-              class="settings-v2-relaunch flex-[0_1_auto] [&.is-split]:rounded-r-none"
+              class="settings-v2-relaunch flex-[0_1_auto]"
               :class="[
                 isPage ? 'gap-1.5 px-3 text-[13px]/5' : 'min-w-[200px]',
-                { 'is-pending-restart': hasPendingRestart },
-                { 'is-split': caretActions.length > 0 }
+                { 'is-pending-restart': hasPendingRestart }
               ]"
               :disabled="!installation || opBlocksFooter"
               :data-testid="TID.pickerPrimaryCta"
@@ -1189,32 +1214,6 @@ defineExpose({
               />
               <span>{{ primaryActionLabel }}</span>
             </Button>
-            <template v-if="caretActions.length > 0">
-              <Button
-                variant="inverted"
-                size="icon"
-                type="button"
-                class="settings-v2-cta-caret rounded-l-none border-l border-solid border-background/20"
-                data-more-trigger
-                :class="{ 'is-active brightness-[0.94]': caretMenuOpen }"
-                aria-haspopup="menu"
-                :aria-expanded="caretMenuOpen"
-                :aria-label="t('instancePicker.moreWindowOptions')"
-                :disabled="!installation || opBlocksFooter"
-                :data-testid="TID.pickerNewWindow"
-                @click="toggleCaretMenu"
-              >
-                <component :is="menuChevron" :size="14" />
-              </Button>
-              <MoreMenu
-                :open="caretMenuOpen"
-                :anchor="footerRef?.querySelector<HTMLElement>('.settings-v2-cta-caret')"
-                :actions="caretActions"
-                :heading="t('instancePicker.windowOptions')"
-                @close="closeCaretMenu"
-                @pick="handleCaretPick"
-              />
-            </template>
           </div>
 
           <div class="settings-v2-more-wrap relative inline-flex">
@@ -1228,9 +1227,7 @@ defineExpose({
               aria-haspopup="menu"
               :aria-expanded="moreMenuOpen"
               :aria-label="t('comfyUISettings.more')"
-              :disabled="
-                !installation || pinBottomActions.length === 0 || opInflight || !sectionsFresh
-              "
+              :disabled="!installation || pinBottomMenuActions.length === 0 || opInflight"
               :data-testid="TID.pickerMoreTrigger"
               @click="toggleMoreMenu"
             >

@@ -1,7 +1,9 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type {
   ComfyDesktop2AuthState,
+  ComfyDesktopAssetFailure,
+  ComfyDesktopHostedAssetsBridge,
   ComfyDesktopHostedAuthBridge,
   ComfyDesktopHostedLocalBridge,
   ComfyDesktopHostedOutputsBridge,
@@ -54,7 +56,28 @@ const outputs: ComfyDesktopHostedOutputsBridge = {
   }
 }
 
+const NO_PATH: ComfyDesktopAssetFailure = { error: 'no-path' }
+
+function pathOfFile(file: File): string {
+  try {
+    return webUtils.getPathForFile(file)
+  } catch {
+    return ''
+  }
+}
+
+const assets: ComfyDesktopHostedAssetsBridge = {
+  recent: (request) => ipcRenderer.invoke('apps-assets:recent', request),
+  fromFile: async (file, request) => {
+    const filePath = pathOfFile(file)
+    return filePath ? ipcRenderer.invoke('apps-assets:from-path', filePath, request) : NO_PATH
+  },
+  read: (ref) => ipcRenderer.invoke('apps-assets:read', ref),
+  valueFor: (ref, request) => ipcRenderer.invoke('apps-assets:value-for', ref, request)
+}
+
 contextBridge.exposeInMainWorld('comfyDesktopAuth', auth)
 contextBridge.exposeInMainWorld('comfyDesktopLocal', local)
 contextBridge.exposeInMainWorld('comfyDesktopTelemetry', telemetry)
 contextBridge.exposeInMainWorld('comfyDesktopOutputs', outputs)
+contextBridge.exposeInMainWorld('comfyDesktopAssets', assets)

@@ -4,6 +4,7 @@ import path from 'path'
 import { execFile } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import * as settings from '../settings'
+import * as telemetry from './telemetry'
 import { VALID_PIP_NAME, installFilteredRequirementsDetailed, runUvPipDetailed } from './pip'
 import type { UvPipResult } from './pip'
 import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
@@ -13,17 +14,19 @@ import {
   FRONTEND_PACKAGE,
   agentGoBehindAgent,
   coreFrontendVersion,
-  effectiveAgentRequirements,
+  resolveOverride,
   coreFileInstalled,
   installedConstraints,
   isRevertedFor,
   corePinsPlaceholderAgent,
+  coreLeavesAgentUnpinned,
   keepableAgent,
   normalizePackageName,
   overrideSignature,
   parseInstalled,
   parseAgentRequirementsOverride,
-  pinsOverBareLines
+  pinsOverBareLines,
+  placeholderAgentFloor
 } from './agentRequirementsOverride'
 import type {
   AgentOverrideState,
@@ -31,6 +34,7 @@ import type {
   OverrideDecision,
   OverridePins,
   OverrideRefusal,
+  PlaceholderFloor,
   PrefetchReport
 } from './agentRequirementsOverride'
 
@@ -143,28 +147,36 @@ async function goneWithin(pid: number, ms: number): Promise<boolean> {
 export async function reapOrphanedAgentUv(installPath: string): Promise<void> {
   if (process.platform === 'win32') return
   const names = await fs.promises.readdir(installPath).catch((): string[] => [])
-  await Promise.all(
+  const reaped = await Promise.all(
     names
       .filter((entry) => entry.startsWith(UV_RECORD_PREFIX))
       .map((name) => reapRecord(path.join(installPath, name)))
   )
+  const killed = reaped.filter(Boolean).length
+  if (killed === 0) return
+  try {
+    telemetry.emit('comfy.desktop.agent_requirements_orphan_reaped', { killed })
+  } catch {}
 }
 
-async function reapRecord(record: string): Promise<void> {
+async function reapRecord(record: string): Promise<boolean> {
   let keep = false
+  let killed = false
   try {
     const { pid, startedAt } = JSON.parse(await fs.promises.readFile(record, 'utf-8'))
     const valid = Number.isInteger(pid) && pid > 1 && Number.isFinite(startedAt)
-    if (valid && runningOwnUv.has(pid)) return
+    if (valid && runningOwnUv.has(pid)) return false
     const fresh = valid && Date.now() - startedAt < RECORD_MAX_AGE_MS
     const identity = fresh ? await recordedUvIdentity(pid, startedAt) : 'other'
     keep = identity === 'unknown'
     if (identity === 'match') {
       killGroup(pid)
       keep = !(await goneWithin(pid, FORCE_STOP_TIMEOUT_MS))
+      killed = !keep
     }
   } catch {}
   if (!keep) await fs.promises.rm(record, { force: true }).catch(() => {})
+  return killed
 }
 
 type InstallOutcome =
@@ -382,7 +394,8 @@ export async function installAgentRequirements(
   override?: unknown,
   overrideState: AgentOverrideState | null = null,
   onDeferred?: (request: PrefetchRequest, deferral: Deferral) => void,
-  onCoreFailed?: (report: InstallReport) => void
+  onCoreFailed?: (report: InstallReport) => void,
+  onCacheRescued?: (step: 'core' | 'override') => void
 ): Promise<OverrideDecision | undefined> {
   sendOutput('\nInstalling agent requirements…\n')
   let onlineLeft = ONLINE_BUDGET_MS
@@ -413,6 +426,7 @@ export async function installAgentRequirements(
       const late =
         fetched.stage === 'fetch' && fetched.run.report.outcome === 'timed_out' && !signal?.aborted
       const retried = late && (await cacheHoldsAll()).ok ? await fromCache() : null
+      if (retried?.ok) onCacheRescued?.(reqPath === plan.reqPath ? 'core' : 'override')
       return retried?.ok ? { ...retried, online: true } : { ...fetched.run, online: true }
     }
     if (fetched.kind !== 'fetched') {
@@ -429,6 +443,8 @@ export async function installAgentRequirements(
   }
   let deferred = false
   let kept: string | null = null
+  let floor: PlaceholderFloor | null = null
+  let floorQueued = false
   const defer = async (coreMissing: boolean): Promise<void> => {
     if (deferred || !onDeferred) return
     deferred = true
@@ -437,7 +453,13 @@ export async function installAgentRequirements(
       : null
     if (signal?.aborted || (coreMissing && coreText === null)) return
     const steps = [
-      ...(coreText === null ? [] : [{ text: coreText }]),
+      ...(coreText === null
+        ? []
+        : [
+            floor && floorQueued && floor.coreText === coreText
+              ? { text: coreText, constraints: floor.agentFloor }
+              : { text: coreText }
+          ]),
       ...(overrideStep ? [overrideStep] : [])
     ]
     const placeholder = corePinsPlaceholderAgent(
@@ -472,8 +494,15 @@ export async function installAgentRequirements(
     )
     return { ...decision, kept }
   }
-  const core = await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`)
+  if (decision === undefined) {
+    floor = await installedPlaceholderFloor(plan, signal)
+    if (signal?.aborted) return decision
+  }
+  const ran = await runCore(plan, run, floor, sendOutput, signal)
+  const core = ran.result
+  floorQueued = ran.floor === 'deferred'
   if (signal?.aborted) return decision
+  if (core.ok && ran.floor === 'deferred') await defer(true)
   if (!core.ok) {
     if (cannotDownload(core)) onCoreFailed?.(core.report)
     else await defer(true)
@@ -487,6 +516,66 @@ export async function installAgentRequirements(
     await run(plan.reqPath, `.launch-agent-reqs-${attemptTag()}.txt`, undefined, false)
   }
   return retried
+}
+
+async function installedPlaceholderFloor(
+  plan: AgentRequirementsInstall,
+  signal?: AbortSignal
+): Promise<PlaceholderFloor | null> {
+  const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => null)
+  if (coreText === null || !coreLeavesAgentUnpinned(coreText)) return null
+  const listed = await listInstalled(plan, signal)
+  return listed === null ? null : placeholderAgentFloor(coreText, listed)
+}
+
+type FloorOutcome = 'none' | 'applied' | 'deferred' | 'rejected'
+
+async function runCore(
+  plan: AgentRequirementsInstall,
+  run: CachedRun,
+  floor: PlaceholderFloor | null,
+  sendOutput: (text: string) => void,
+  signal?: AbortSignal
+): Promise<{ result: CachedResult; floor: FloorOutcome }> {
+  const tag = attemptTag()
+  const tempName = `.launch-agent-reqs-${tag}.txt`
+  const asListed = async (): Promise<CachedResult> => run(plan.reqPath, tempName)
+  if (!floor) return { result: await asListed(), floor: 'none' }
+  const name = `.launch-agent-reqs-floor-${tag}-constraints.txt`
+  const at = path.join(plan.installPath, name)
+  let floored: CachedResult
+  try {
+    await fs.promises.writeFile(at, floor.constraints, { encoding: 'utf-8', flag: 'wx' })
+    sendOutput(
+      `Replacing the placeholder ${floor.placeholder} with a released agent: ComfyUI's agent requirements name the agent without a version\n`
+    )
+    floored = await run(plan.reqPath, tempName, { name, text: floor.constraints })
+  } catch {
+    if (signal?.aborted) return { result: cancelledRun(), floor: 'none' }
+    return { result: await asListed(), floor: 'none' }
+  } finally {
+    void fs.promises.unlink(at).catch(() => {})
+  }
+  if (floored.ok) return { result: floored, floor: 'applied' }
+  if (signal?.aborted) return { result: floored, floor: 'none' }
+  sendOutput(
+    `Couldn't install a released agent over ${floor.placeholder}; installing ComfyUI's agent requirements as listed\n`
+  )
+  return { result: await asListed(), floor: floorFailure(floored) }
+}
+
+function floorFailure(floored: CachedResult): FloorOutcome {
+  if (floored.report.outcome === 'spawn_error') return 'none'
+  return cannotDownload(floored) ? 'rejected' : 'deferred'
+}
+
+function cancelledRun(): CachedResult {
+  return {
+    ok: false,
+    online: false,
+    output: '',
+    report: { outcome: 'cancelled', exitCode: null, elapsedMs: 0, budgetMs: 0, errorTail: null }
+  }
 }
 
 export async function installedWorkingAgent(
@@ -532,26 +621,15 @@ async function tryOverride(
   const parsed = parseAgentRequirementsOverride(raw)
   if (parsed.kind === 'none') return undefined
   if (parsed.kind === 'refused') return refuse(sendOutput, parsed.reason)
-  const { pins } = parsed
-  if (isRevertedFor(state, pins)) {
+  if (isRevertedFor(state, parsed.pins)) {
     const coreText = await fs.promises.readFile(plan.reqPath, 'utf-8').catch(() => '')
-    const stuck = pinsOverBareLines(coreText, pins)
-    sendOutput(
-      `agent version override ${overrideSignature(pins)} failed before; ` +
-        (stuck.size
-          ? `ComfyUI's requirements don't pin ${[...stuck.keys()].join(', ')}, so they can't take ${overrideSignature(stuck)} back if it went in\n`
-          : "using ComfyUI's versions\n")
-    )
-    return {
-      decision: 'reverted',
-      reason: 'previously_failed',
-      pins,
-      ...(stuck.size ? { staysInstalled: stuck } : {})
-    }
+    return previouslyFailed(sendOutput, coreText, parsed.pins)
   }
-  const ready = await prepareOverride(plan, pins, signal)
-  if (ready.kind === 'refused') return refuse(sendOutput, ready.reason, pins)
-  const { coreText, text, constraints, listed } = ready
+  const ready = await prepareOverride(plan, parsed.pins, state, signal)
+  if (ready.kind === 'refused') return refuse(sendOutput, ready.reason, ready.pins)
+  if (ready.kind === 'reverted') return previouslyFailed(sendOutput, ready.coreText, ready.pins)
+  const { coreText, text, constraints, listed, pins } = ready
+  const frontendDropped = parsed.pins.has(FRONTEND_PACKAGE) && !pins.has(FRONTEND_PACKAGE)
   prepare(text, constraints, pins)
   const tag = attemptTag()
   const constraintsName = `.launch-agent-reqs-override-${tag}-constraints.txt`
@@ -559,6 +637,11 @@ async function tryOverride(
   const constraintsPath = path.join(plan.installPath, constraintsName)
   try {
     if (!coreFileInstalled(coreText, listed)) return refuse(sendOutput, 'core_first', pins)
+    if (frontendDropped) {
+      sendOutput(
+        `The override's ${FRONTEND_PACKAGE} is not newer than ComfyUI's; keeping ComfyUI's\n`
+      )
+    }
     await fs.promises.writeFile(overridePath, text, 'utf-8')
     await fs.promises.writeFile(constraintsPath, constraints, 'utf-8')
     sendOutput(`Applying agent version override ${overrideSignature(pins)}\n`)
@@ -583,7 +666,27 @@ async function tryOverride(
     sendOutput(
       `⚠ comfy-agent-go ${behind.go} is older than ${behind.name} ${behind.agent}; the agent will run its bundled agent, not the Go one\n`
     )
-  return { decision: 'applied', pins }
+  return { decision: 'applied', pins, ...(frontendDropped && { reason: 'frontend_not_newer' }) }
+}
+
+function previouslyFailed(
+  sendOutput: (text: string) => void,
+  coreText: string,
+  pins: OverridePins
+): OverrideDecision {
+  const stuck = pinsOverBareLines(coreText, pins)
+  sendOutput(
+    `agent version override ${overrideSignature(pins)} failed before; ` +
+      (stuck.size
+        ? `ComfyUI's requirements don't pin ${[...stuck.keys()].join(', ')}, so they can't take ${overrideSignature(stuck)} back if it went in\n`
+        : "using ComfyUI's versions\n")
+  )
+  return {
+    decision: 'reverted',
+    reason: 'previously_failed',
+    pins,
+    ...(stuck.size ? { staysInstalled: stuck } : {})
+  }
 }
 
 const LIST_TIMEOUT_MS = 30_000
@@ -634,12 +737,21 @@ function refuse(
 }
 
 type PreparedOverride =
-  | { kind: 'refused'; reason: OverrideRefusal }
-  | { kind: 'ready'; coreText: string; text: string; constraints: string; listed: string }
+  | { kind: 'refused'; reason: OverrideRefusal; pins: OverridePins }
+  | { kind: 'reverted'; coreText: string; pins: OverridePins }
+  | {
+      kind: 'ready'
+      coreText: string
+      text: string
+      constraints: string
+      listed: string
+      pins: OverridePins
+    }
 
 async function prepareOverride(
   plan: AgentRequirementsInstall,
   pins: OverridePins,
+  state: AgentOverrideState | null,
   signal: AbortSignal | undefined,
   untilExit = false
 ): Promise<PreparedOverride> {
@@ -647,17 +759,21 @@ async function prepareOverride(
   try {
     coreText = await fs.promises.readFile(plan.reqPath, 'utf-8')
   } catch {
-    return { kind: 'refused', reason: 'check_failed' }
+    return { kind: 'refused', reason: 'check_failed', pins }
   }
   const mainText = await fs.promises
     .readFile(path.join(path.dirname(plan.reqPath), CORE_REQUIREMENTS), 'utf-8')
     .catch(() => '')
-  const effective = effectiveAgentRequirements(coreText, pins, mainText)
-  if (effective.kind === 'refused') return effective
+  const resolved = resolveOverride(coreText, pins, mainText)
+  if (resolved.kind === 'refused') return { ...resolved, pins }
+  if (isRevertedFor(state, resolved.pins))
+    return { kind: 'reverted', coreText, pins: resolved.pins }
   const listed = await listInstalled(plan, signal, untilExit)
-  const constraints = listed === null ? null : installedConstraints(listed, pins, coreText)
-  if (listed === null || constraints === null) return { kind: 'refused', reason: 'check_failed' }
-  return { kind: 'ready', coreText, text: effective.text, constraints, listed }
+  const constraints = listed === null ? null : installedConstraints(listed, resolved.pins, coreText)
+  if (listed === null || constraints === null) {
+    return { kind: 'refused', reason: 'check_failed', pins: resolved.pins }
+  }
+  return { ...resolved, kind: 'ready', coreText, constraints, listed }
 }
 
 export async function prepareAgentPrefetch(
@@ -690,14 +806,14 @@ async function preparePrefetch(
   try {
     const parsed = parseAgentRequirementsOverride(raw)
     if (parsed.kind === 'pins' && !isRevertedFor(state, parsed.pins)) {
-      const ready = await prepareOverride(plan, parsed.pins, signal, true)
+      const ready = await prepareOverride(plan, parsed.pins, state, signal, true)
       if (ready.kind === 'ready') {
         const { coreText, text, constraints, listed } = ready
         const core = coreFileInstalled(coreText, listed) ? [] : [{ text: coreText }]
         return {
           plan,
           steps: [...core, { text, constraints }],
-          signature: overrideSignature(parsed.pins),
+          signature: overrideSignature(ready.pins),
           eager: true
         }
       }
@@ -842,9 +958,20 @@ export async function holdAgentPrefetch(installPath: string): Promise<() => void
 
 const UV_DOWNLOADING_LINE = /^\s*Downloading\s/
 const UV_DOWNLOADED_LINE = /^\s*Downloaded\s/
+const UV_DOWNLOADING_SIZE = /^\s*Downloading\s+\S+\s+\(([\d.]+)\s*(B|KiB|MiB|GiB)\)/
+const BYTES_PER_UNIT: Record<string, number> = { B: 1, KiB: 1024, MiB: 1024 ** 2, GiB: 1024 ** 3 }
 const DRY_RUN_ADDED = /^ \+ (\S+==\S+)$/
 const COMPILED_PIN = /^([A-Za-z0-9][\w.-]*)==(\S+)$/
 const WOULD_DOWNLOAD = /^Would download /m
+
+function downloadingBytes(output: string): number {
+  let bytes = 0
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(UV_DOWNLOADING_SIZE)
+    if (match) bytes += Number(match[1]) * BYTES_PER_UNIT[match[2]!]!
+  }
+  return Math.round(bytes)
+}
 
 async function runPrefetch(
   request: PrefetchRequest,
@@ -862,6 +989,8 @@ async function runPrefetch(
     elapsedMs: Date.now() - startedAt,
     downloadsStarted: lines(UV_DOWNLOADING_LINE),
     downloadsFinished: lines(UV_DOWNLOADED_LINE),
+    downloadedBytes: fetches.reduce((sum, run) => sum + downloadingBytes(run.output), 0),
+    fetchMs: fetches.reduce((sum, run) => sum + run.report.elapsedMs, 0),
     errorTail: run?.report.errorTail ?? null,
     uvVersion
   })

@@ -46,6 +46,9 @@
     "emptyBody": "新应用会显示在这里。",
     "noMatches": "没有与“{query}”匹配的应用",
     "allApps": "全部应用",
+    "badge": {
+      "withDescription": "{text}：{description}"
+    },
     "pageLoading": "正在加载{app}",
     "pageFailedTitle": "{app}未能加载",
     "local": {
@@ -69,15 +72,12 @@
   "assets": {
     "kindLabel": "资产类型",
     "buildPickerLabel": "构建",
-    "browseAssetsOf": "浏览以下构建的资产",
+    "placeGroup": {
+      "cloud": "Comfy Cloud",
+      "computer": "这台电脑"
+    },
     "cloud": "Comfy Cloud",
     "sharedFolder": "共享文件夹",
-    "outputFolder": "输出文件夹",
-    "buildStatus": "{where} · {state}",
-    "buildWhere": {
-      "local": "本地",
-      "cloud": "云端"
-    },
     "buildState": {
       "running": "运行中",
       "starting": "启动中",
@@ -111,6 +111,9 @@
     "loadFailed": "无法加载资产",
     "download": "下载",
     "downloadFailed": "无法下载资产",
+    "open": "打开",
+    "openFailed": "无法打开资产",
+    "openFolderFailed": "无法打开文件夹",
     "moreActions": "更多操作",
     "showInFinder": "在 Finder 中显示",
     "showInExplorer": "在文件资源管理器中显示",
@@ -132,9 +135,6 @@
     "signIn": "登录 Comfy Cloud",
     "noCloudBuildTitle": "此工作区没有 Comfy Cloud 构建",
     "noCloudBuildBody": "重启 Comfy Desktop 以重新添加 Comfy Cloud。",
-    "truncated": "仅显示最新的 {count} 个文件。",
-    "noMatchesOnPage": "此页没有匹配的资产",
-    "noMatchesOnPageHint": "试试其他页面、类型或搜索词。",
     "cloudScanLimit": "类型筛选涵盖当前排序下的前 {limit} 个云端输出。",
     "pagination": {
       "label": "页面",
@@ -182,7 +182,6 @@
     "buildRunning": "运行中",
     "buildStarting": "启动中",
     "buildReady": "就绪",
-    "buildAlwaysOn": "始终在线",
     "buildDidntStart": "未能启动",
     "buildInstalling": "正在安装 ComfyUI",
     "buildStartingComfyUI": "正在启动 ComfyUI",
@@ -262,8 +261,8 @@
     "nothingMatches": "没有匹配项",
     "nothingMatchesHint": "换个关键词试试，或清除筛选条件查看全部内容。",
     "clearFilters": "清除筛选",
-    "noBuildsTitle": "设置工作的运行位置",
-    "noBuildsBody": "构建是拥有独立版本、自定义节点和模型的 ComfyUI。你可以在此电脑上安装一个，也可以直接在 Comfy Cloud 上运行，无需安装。",
+    "noBuildsTitle": "还没有构建",
+    "noBuildsBody": "在此电脑上安装 ComfyUI，或在 Comfy Cloud 上运行。",
     "filterLabel": "来源筛选"
   },
   "titleBar": {
@@ -308,7 +307,8 @@
     "tabConfig": "启动参数",
     "tabOverview": "概览",
     "tabSnapshots": "快照",
-    "tabStorage": "存储",
+    "tabFolders": "文件夹",
+    "tabCloudStorage": "存储",
     "tabTerminal": "终端",
     "relaunch": "重新启动",
     "more": "更多",
@@ -321,7 +321,6 @@
     "yamlTag": "YAML",
     "includeSharedDirs": "包含共享目录",
     "manageSharedDirs": "在桌面设置中管理共享目录",
-    "manageShort": "管理",
     "refreshCustomPaths": "刷新状态",
     "extraModelPathsModalTitle": "自定义模型路径",
     "extraModelPathsModalNote": "只读 —— ComfyUI 会搜索这些目录，但启动器不会管理它们。请编辑 extra_model_paths.yaml 以更改它们。",
@@ -416,6 +415,7 @@
     "directoriesDesc": "所有构建共享的模型目录。放在这里的模型可供每个 ComfyUI 构建使用，避免重复下载。新下载的模型会保存到下载目录。",
     "addDir": "添加共享目录",
     "removeDir": "移除",
+    "changeDir": "更改文件夹",
     "primary": "下载",
     "default": "默认",
     "makePrimary": "用于模型下载",
@@ -427,8 +427,7 @@
     "removeInstanceDirConfirm": "这不会删除任何文件。你之后可以从此列表重新添加该目录。",
     "removeDirTitle": "要移除共享模型目录吗？",
     "removeDirConfirm": "这不会删除任何文件。你之后可以从此列表重新添加该目录。",
-    "moreActions": "更多操作",
-    "addInstanceDir": "添加目录"
+    "moreActions": "更多操作"
   },
   "common": {
     "back": "返回",
@@ -842,7 +841,7 @@
     "community": "社区",
     "storageTab": "文件夹",
     "sharedDirectories": "共享目录",
-    "storageSharedHint": "这些文件夹由所有构建共享。每个构建可在自己的“存储”标签页中选择是否使用。",
+    "storageSharedHint": "这些文件夹由所有构建共享。每个构建可在自己的“文件夹”标签页中选择是否使用。",
     "installLocation": "默认安装位置",
     "updatesTab": "更新",
     "diagnostics": "诊断",
@@ -1084,7 +1083,6 @@
     "untrack": "忘记",
     "untrackConfirmTitle": "忘记实例",
     "untrackConfirmMessage": "这会从应用中移除该实例。文件不会被删除。",
-    "share": "分享",
     "rename": "重命名",
     "renameTitle": "重命名实例",
     "renameMessage": "输入此实例的新名称。"
@@ -1432,12 +1430,12 @@
     "snapshotNoFile": "未指定快照文件。"
   },
   "snapshots": {
-    "empty": "还没有快照。ComfyUI 启动时会自动捕获快照。",
+    "emptyBody": "ComfyUI 启动时会自动捕获快照。",
     "createSnapshot": "创建快照",
     "changesInSnapshot": "此快照中发生的更改",
     "ifYouRestore": "恢复此快照将改变的内容",
     "noSnapshotsToShare": "还没有可分享的快照。",
-    "shareFailed": "无法分享快照。",
+    "shareFailed": "无法导出快照。",
     "current": "当前",
     "triggerBoot": "启动",
     "triggerRestart": "Manager",
@@ -1727,7 +1725,7 @@
     "console": "在此构建文件夹中运行的交互式 shell。无论 ComfyUI 正在运行还是已停止都可使用。",
     "tabOverview": "一览此构建：ComfyUI 及其更新通道、PyTorch、磁盘占用、Python 以及安装位置。",
     "tabConfig": "启动时传递给 ComfyUI 的命令行参数——端口、低显存模式、自定义目录和其他启动覆盖项。",
-    "tabStorage": "显示此构建及其读取的共享模型、输入和输出目录的磁盘占用。",
+    "tabFolders": "此构建读取模型、输入和输出的位置：共享文件夹以及仅属于此构建的文件夹。",
     "standalone": "自包含构建，带有自己的 Python 和依赖。易于更新和管理。",
     "portable": "官方 Windows 便携版，内置 Python。可从单个文件夹运行，无需系统级安装。",
     "git": "从 ComfyUI 仓库克隆的基于 git 的安装。需要系统中安装 git 和 Python。",
@@ -1737,9 +1735,10 @@
     "launchMode": "选择 ComfyUI 的运行方式：在自己的应用窗口中运行，或仅作为控制台进程运行。",
     "browserPartition": "控制此构建是与其他构建共享浏览器缓存（cookies、本地存储），还是保留独立缓存。",
     "sharedDirs": "所有构建共享的输入和输出目录。",
-    "sharedModels": "所有构建共享的模型文件夹，避免重复下载模型。新下载的模型会保存到下载文件夹；下载文件夹在使用中时无法移除，请先选择其他下载文件夹。所有构建默认包含这些目录；每个构建也可以在自己的存储设置中添加仅属于自己的目录。",
-    "sharedDirectories": "全局输入和输出文件夹，在此处的修改对所有构建生效。每个构建可在自己的存储设置中独立选择使用共享输入文件夹、共享输出文件夹，还是自己的文件夹。",
+    "sharedModels": "所有构建共享的模型文件夹，避免重复下载模型。新下载的模型会保存到下载文件夹；下载文件夹在使用中时无法移除，请先选择其他下载文件夹。所有构建默认包含这些目录；每个构建也可以在自己的“文件夹”标签页中添加仅属于自己的目录。",
+    "sharedDirectories": "全局输入和输出文件夹，在此处的修改对所有构建生效。每个构建可在自己的“文件夹”标签页中独立选择使用共享输入文件夹、共享输出文件夹，还是自己的文件夹。",
     "modelsPrimary": "新下载的模型会保存在这里。",
+    "modelsShared": "所有构建共享此目录。可在桌面设置中更改。",
     "instanceOwnModelsDir": "此构建自己的模型文件夹。它始终会被使用，且不会与其他构建共享。",
     "sharedDir": "在你所有的 ComfyUI 构建之间共享。",
     "instanceModels": "此构建读取的所有模型目录：它包含的共享目录、专为此构建添加的目录，以及它自己的内部 models 文件夹。",
@@ -1767,7 +1766,7 @@
     "managerSecurityLevel": "控制 ComfyUI-Manager 允许安装哪些节点包。级别越严格，越会阻止高风险安装，尤其是在使用 --listen 将 ComfyUI 暴露到网络时。下次启动时生效。",
     "managerNetworkMode": "控制此安装中 ComfyUI-Manager 的联网方式。选择“个人云”可在 ComfyUI 通过 --listen 暴露时（例如你自己的云 GPU 机器）允许安装节点包。下次启动时生效。",
     "betaFeaturesNeedTelemetry": "Beta 功能需要在设置中确认数据共享，即使遥测当前已开启。",
-    "sharedFolders": "所有构建都可使用的文件夹，避免重复下载模型。新模型会下载到标记为“下载”的文件夹；可通过“用于下载”选择其他文件夹。每个构建可在自己的存储标签页中选择是否使用共享的输入和输出文件夹，也可以添加仅供自己使用的模型文件夹。"
+    "sharedFolders": "所有构建都可使用的文件夹，避免重复下载模型。新模型会下载到标记为“下载”的文件夹；可通过“用于下载”选择其他文件夹。每个构建可在自己的“文件夹”标签页中选择是否使用共享的输入和输出文件夹，也可以添加仅供自己使用的模型文件夹。"
   },
   "envVars": {
     "name": "名称",
@@ -2029,11 +2028,9 @@
     "latestOnGithub": "GitHub 最新版",
     "open": "启动",
     "restart": "重启",
-    "switch": "切换",
+    "openRunning": "打开",
     "openCloud": "打开云端",
     "openRemote": "打开远程",
-    "windowOptions": "窗口选项",
-    "moreWindowOptions": "窗口选项",
     "restartConfirmTitle": "重启此构建？",
     "restartConfirmDetail": "重启将停止正在运行的会话。工作流中任何未保存的工作都会丢失。",
     "restartConfirmAction": "重启",

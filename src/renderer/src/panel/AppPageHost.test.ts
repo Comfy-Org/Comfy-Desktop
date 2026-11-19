@@ -447,6 +447,42 @@ describe('AppPageHost outputs', () => {
     expect(outputDialog()).toBeNull()
   })
 
+  it('gives a result on this computer only Show in Finder as its main button, before Open workflow', async () => {
+    await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [{ ...first!, savedOn: 'computer', folder: '/Users/me/ComfyUI/output/apps' }, second!],
+      index: 0
+    })
+
+    expect(inOutputDialog('output-detail-download')).toBeNull()
+    const buttons = [
+      ...outputDialog()!.querySelectorAll<HTMLElement>('[data-testid^="output-detail-"]')
+    ]
+      .map((element) => element.dataset.testid)
+      .filter((id) => id === 'output-detail-show-in-folder' || id === 'output-detail-workflow')
+    expect(buttons).toEqual(['output-detail-show-in-folder', 'output-detail-workflow'])
+  })
+
+  it('keeps Download for a Cloud result and for a result on this computer whose folder Desktop does not know', async () => {
+    await mountHost()
+    const [first, second] = TWO_CUTOUTS.items
+    await showOutputs('remove-background', {
+      items: [
+        { ...first!, savedOn: 'cloud' },
+        { ...second!, savedOn: 'computer' }
+      ],
+      index: 1
+    })
+
+    expect(inOutputDialog('output-detail-download')).not.toBeNull()
+
+    inOutputDialog('output-detail-thumb-0')!.click()
+    await flushPromises()
+
+    expect(inOutputDialog('output-detail-download')).not.toBeNull()
+  })
+
   it('closes the dialog when the page that sent the outputs is replaced', async () => {
     const revoke = vi.spyOn(URL, 'revokeObjectURL')
     await mountHost()

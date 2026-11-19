@@ -141,11 +141,32 @@ export interface Installation {
 export type DashboardPage =
   'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
 
+export type AppBadgeStyle = 'crown' | 'chip' | 'label'
+
+export interface AppBadgeWords {
+  en: string
+  'zh-CN'?: string
+}
+
+export interface AppBadge {
+  id: string
+  style: AppBadgeStyle
+  text: AppBadgeWords
+  description?: AppBadgeWords
+}
+
+export interface AppCover {
+  url: string
+  stillUrl: string | null
+}
+
 export interface AppCard {
   id: string
   title: string
   description: string
-  coverUrl: string | null
+  covers: AppCover[]
+  badges?: AppBadge[]
+  coverPlayback?: 'always'
 }
 
 export type AppPageStatus = 'loading' | 'ready' | 'failed'
@@ -216,6 +237,7 @@ export interface CloudAssetPageRequest {
   limit: number
   order: AssetOrder
   kind?: AssetKind
+  search?: string
 }
 
 export interface CloudAssetPage {
@@ -226,9 +248,24 @@ export interface CloudAssetPage {
   scanLimit?: number
 }
 
+export interface LocalAssetPageRequest {
+  offset: number
+  limit: number
+  order: AssetOrder
+  kind?: AssetKind
+  search?: string
+}
+
+export interface OutputFolderPaths {
+  home: string
+  shared: string | null
+  ofBuild: Record<string, string>
+}
+
 export interface LocalAssetListing {
   assets: AssetSummary[]
-  truncated: boolean
+  total: number
+  counts: Record<'all' | AssetKind, number>
 }
 
 export interface BuildStorageSnapshot {
@@ -1181,6 +1218,7 @@ export interface ElectronApi {
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
   logsSnapshot(installationId: string): Promise<string>
+  openLogsWindow(installationId: string): Promise<void>
   validateInstallPath(targetPath: string): Promise<PathIssue[]>
   getInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
   cancelInstallationSize(): Promise<void>
@@ -1225,9 +1263,12 @@ export interface ElectronApi {
   navigatePanel(page: DashboardPage): void
   openPageInNewWindow(page: NewWindowDashboardPage): void
   listAssets(installationId: string, page: CloudAssetPageRequest): Promise<CloudAssetPage | null>
-  listLocalAssets(installationId?: string): Promise<LocalAssetListing>
+  listLocalAssets(installationId?: string, page?: LocalAssetPageRequest): Promise<LocalAssetListing>
+  listOutputFolders(): Promise<OutputFolderPaths>
+  openOutputFolder(installationId?: string): Promise<boolean>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   revealAsset(source: string, assetId: string): Promise<boolean>
+  openAsset(source: string, assetId: string): Promise<boolean>
   findCloudAsset(installationId: string, name: string): Promise<CloudAssetLookup>
   copyAsset(source: string, assetId: string): Promise<boolean>
   readAssetModel(source: string, assetId: string): Promise<Uint8Array | null>
