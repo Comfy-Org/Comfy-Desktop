@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import { useSessionStore } from '../stores/sessionStore'
+import { useProgressStore, type Operation } from '../stores/progressStore'
 import { provideBuildLogs } from '../composables/useBuildProgress'
 import type { Installation } from '../types/ipc'
 import { TID } from '../../../shared/testIds'
@@ -23,6 +24,7 @@ interface MockApi {
   getRunningInstances: ReturnType<typeof vi.fn>
   getLastCrashError: ReturnType<typeof vi.fn>
   returnToDashboard: ReturnType<typeof vi.fn>
+  openLogsWindow: ReturnType<typeof vi.fn>
   onInstanceLaunching: ReturnType<typeof vi.fn>
   onInstanceLaunchFailed: ReturnType<typeof vi.fn>
   onInstanceStarted: ReturnType<typeof vi.fn>
@@ -39,6 +41,7 @@ function installMockApi(overrides: Partial<MockApi> = {}): MockApi {
     getRunningInstances: vi.fn().mockResolvedValue([]),
     getLastCrashError: vi.fn().mockResolvedValue(null),
     returnToDashboard: vi.fn().mockResolvedValue(true),
+    openLogsWindow: vi.fn().mockResolvedValue(undefined),
     onInstanceLaunching: vi.fn(() => () => {}),
     onInstanceLaunchFailed: vi.fn(() => () => {}),
     onInstanceStarted: vi.fn(() => () => {}),
@@ -484,6 +487,14 @@ describe('ComfyLifecycleView', () => {
       expect(wrapper.find('.lifecycle-placeholder__build').text()).toBe('My Local Install')
     })
 
+    it('shows no build line for an unnamed build, even with a version', async () => {
+      const { wrapper } = mountWithLogs({ ...SAMPLE_INSTALL, name: '', version: 'v0.3.62' })
+      useSessionStore().launchingInstances.set('inst-1', { installationName: '' })
+      await flushPromises()
+      expect(wrapper.find('.lifecycle-placeholder').exists()).toBe(true)
+      expect(wrapper.find('.lifecycle-placeholder__build').exists()).toBe(false)
+    })
+
     it('shows no build line when there is no installation', async () => {
       const { wrapper } = mountWithLogs(null)
       useSessionStore().launchingInstances.set('inst-1', { installationName: '' })
@@ -492,9 +503,22 @@ describe('ComfyLifecycleView', () => {
       expect(wrapper.find('.lifecycle-placeholder__build').exists()).toBe(false)
     })
 
+    function seedLocalLaunchOperation(): void {
+      useProgressStore().operations.set('inst-1', {
+        opKind: 'launch',
+        finished: false,
+        steps: null,
+        activePhase: null,
+        flatPercent: -1,
+        flatStatus: '',
+        cancelRequested: false
+      } as unknown as Operation)
+    }
+
     it('offers View logs only after 15 seconds of starting, and opens the build logs', async () => {
       vi.useFakeTimers()
       const { wrapper, viewLogs } = mountWithLogs()
+      seedLocalLaunchOperation()
       useSessionStore().launchingInstances.set('inst-1', { installationName: 'My Local Install' })
       await flushPromises()
       const logs = () => wrapper.find(`[data-testid="${TID.lifecycleViewLogs}"]`)
@@ -506,6 +530,23 @@ describe('ComfyLifecycleView', () => {
       expect(logs().text()).toBe('View logs')
       await logs().trigger('click')
       expect(viewLogs).toHaveBeenCalledWith('inst-1')
+      const api = (window as unknown as { api: MockApi }).api
+      expect(api.openLogsWindow).not.toHaveBeenCalled()
+    })
+
+    it('opens the log window when the launch has no local progress operation', async () => {
+      vi.useFakeTimers()
+      const { wrapper, viewLogs } = mountWithLogs()
+      useSessionStore().launchingInstances.set('inst-1', { installationName: 'My Local Install' })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(15_000)
+      const logs = wrapper.find(`[data-testid="${TID.lifecycleViewLogs}"]`)
+      expect(logs.exists()).toBe(true)
+      await logs.trigger('click')
+      await flushPromises()
+      const api = (window as unknown as { api: MockApi }).api
+      expect(api.openLogsWindow).toHaveBeenCalledExactlyOnceWith('inst-1')
+      expect(viewLogs).not.toHaveBeenCalled()
     })
 
     it('does not offer View logs while stopping, however long it takes', async () => {

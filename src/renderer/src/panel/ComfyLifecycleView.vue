@@ -4,7 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { RefreshCcw, Loader2, ArrowLeft } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { useSessionStore } from '../stores/sessionStore'
-import { useViewBuildLogs } from '../composables/useBuildProgress'
+import { useProgressStore } from '../stores/progressStore'
+import { buildProgressOf, useViewBuildLogs } from '../composables/useBuildProgress'
 import {
   useReturnToDashboardConfirm,
   type ReturnToDashboardReason
@@ -28,6 +29,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const sessionStore = useSessionStore()
+const progressStore = useProgressStore()
 
 type LifecycleState = 'running' | 'launching' | 'stopping' | 'crashed' | 'stopped' | 'unknown'
 
@@ -191,6 +193,7 @@ const placeholderTitle = computed<string>(() => {
 
 const placeholderBuildLine = computed<string>(() => {
   const version = props.installation?.version
+  if (!installationName.value) return ''
   return [installationName.value, version && version !== 'unknown' ? version : '']
     .filter(Boolean)
     .join(' · ')
@@ -224,6 +227,12 @@ watch(
 onBeforeUnmount(clearSlowLaunchTimer)
 
 const viewBuildLogs = useViewBuildLogs()
+
+async function viewLaunchLogs(): Promise<void> {
+  const id = props.installationId
+  if (buildProgressOf(progressStore, id)) viewBuildLogs(id)
+  else await window.api.openLogsWindow(id)
+}
 </script>
 
 <template>
@@ -337,7 +346,7 @@ const viewBuildLogs = useViewBuildLogs()
             variant="secondary"
             class="lifecycle-placeholder__logs mt-2 flex-none"
             :data-testid="TID.lifecycleViewLogs"
-            @click="viewBuildLogs(installationId)"
+            @click="viewLaunchLogs"
           >
             {{ $t('launch.viewLogs') }}
           </Button>
