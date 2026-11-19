@@ -259,4 +259,79 @@ describe('DownloadsFullView layout', () => {
       [...document.querySelectorAll('.dlm-footer-stat')].map((stat) => stat.textContent!.trim())
     ).toEqual(['1 active', '1 completed', '1 failed'])
   })
+  it('scrolls the modal body through ten downloads so the last row and its actions are reachable', async () => {
+    const recent = Array.from({ length: 10 }, (_, i) => ({
+      id: `done-${i}`,
+      url: `https://example.com/done-${i}`,
+      filename: `model-${i}.safetensors`,
+      savePath: `/models/model-${i}.safetensors`,
+      progress: 1,
+      status: 'completed' as const,
+      createdAt: 10 - i
+    }))
+    const view = await mountView({ active: [], recent })
+    view.element.parentElement!.style.height = '100%'
+    await new Promise(requestAnimationFrame)
+    expect(box('.dlm-panel').height).toBe(560)
+    const body = document.querySelector<HTMLElement>('.dlm-modal-body')!
+    const list = document.querySelector<HTMLElement>('.dlm-list')!
+    const rows = [...list.querySelectorAll<HTMLElement>(':scope > .dlm-row')]
+    expect(rows).toHaveLength(10)
+    expect(body.scrollHeight).toBeGreaterThan(body.clientHeight)
+    expect(list.scrollHeight).toBe(list.clientHeight)
+    const rowsHeight = rows.reduce((sum, row) => sum + row.getBoundingClientRect().height, 0)
+    expect(box('.dlm-list').height).toBe(rowsHeight)
+
+    body.scrollTop = body.scrollHeight
+    await new Promise(requestAnimationFrame)
+    const last = rows.at(-1)!
+    expect(last.textContent).toContain('model-9.safetensors')
+    const visible = body.getBoundingClientRect()
+    for (const action of last.querySelectorAll<HTMLElement>('.dlm-primary .dlm-btn, .dlm-x')) {
+      const r = action.getBoundingClientRect()
+      expect(r.top).toBeGreaterThanOrEqual(visible.top)
+      expect(r.bottom).toBeLessThanOrEqual(visible.bottom)
+      expect(r.bottom).toBeLessThanOrEqual(box('.dlm-list').bottom)
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      expect(action.contains(hit)).toBe(true)
+    }
+  })
+
+  it('reports a cancelled download as cancelled in the footer, not as failed', async () => {
+    await mountView({
+      active: state.active,
+      recent: [
+        {
+          id: 'cancelled',
+          url: 'https://example.com/cancelled',
+          filename: 'ltx-video.safetensors',
+          progress: 0.3,
+          status: 'cancelled'
+        }
+      ]
+    })
+    const stats = () =>
+      [...document.querySelectorAll('.dlm-footer-stat')].map((stat) => stat.textContent!.trim())
+    expect(stats()).toEqual(['1 active', '1 cancelled'])
+    expect(document.querySelector('.dlm-modal-footer')!.textContent).not.toMatch(/failed/)
+  })
+
+  it('counts failed and cancelled downloads separately in the footer', async () => {
+    await mountView({
+      active: [],
+      recent: [
+        ...state.recent,
+        {
+          id: 'cancelled',
+          url: 'https://example.com/cancelled',
+          filename: 'ltx-video.safetensors',
+          progress: 0.3,
+          status: 'cancelled'
+        }
+      ]
+    })
+    expect(
+      [...document.querySelectorAll('.dlm-footer-stat')].map((stat) => stat.textContent!.trim())
+    ).toEqual(['1 completed', '1 failed', '1 cancelled'])
+  })
 })

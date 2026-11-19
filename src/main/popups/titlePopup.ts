@@ -801,13 +801,18 @@ function kindIsCentered(kind: TitlePopupKind): kind is CenteredCardKind {
   return kind === POPUP_KIND.globalSettings || kind === POPUP_KIND.downloadsFull
 }
 
+export const CENTERED_CARD_CLOSE_GUTTER = 48
+const CENTERED_CARD_EDGE_MARGIN = 16
+
 function computeCenteredCardBounds(
   kind: CenteredCardKind,
   parent: BrowserWindow
 ): { x: number; y: number; width: number; height: number } {
   const clamp = CENTERED_CARD_CLAMPS[kind]
   const { width: cw, height: ch } = parent.getContentBounds()
+  const room = Math.max(0, cw - 2 * (CENTERED_CARD_CLOSE_GUTTER + CENTERED_CARD_EDGE_MARGIN))
   const width = Math.min(
+    room,
     clamp.maxWidth,
     Math.max(clamp.minWidth, Math.round(cw * clamp.widthRatio))
   )
@@ -822,8 +827,6 @@ function computeCenteredCardBounds(
   )
   return { x, y, width, height }
 }
-
-export const CENTERED_CARD_CLOSE_GUTTER = 48
 
 function withOutsideCloseGutter(bounds: { x: number; y: number; width: number; height: number }): {
   x: number

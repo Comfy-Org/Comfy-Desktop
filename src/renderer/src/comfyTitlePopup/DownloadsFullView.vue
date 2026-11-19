@@ -73,6 +73,8 @@ const completedCount = computed(() => finished.value.filter((d) => d.status === 
 const errorCount = computed(
   () => finished.value.filter((d) => d.status === 'error' || d.status === 'cancelled').length
 )
+const failedCount = computed(() => finished.value.filter((d) => d.status === 'error').length)
+const cancelledCount = computed(() => finished.value.filter((d) => d.status === 'cancelled').length)
 const finishedCount = computed(() => finished.value.length)
 
 const filtered = computed<DownloadEntry[]>(() => {
@@ -156,7 +158,8 @@ const footerStats = computed<string[]>(() =>
   [
     activeCount.value > 0 && t('downloadsTab.footerActive', { n: activeCount.value }),
     completedCount.value > 0 && t('downloadsTab.footerCompleted', { n: completedCount.value }),
-    errorCount.value > 0 && t('downloadsTab.footerFailed', { n: errorCount.value })
+    failedCount.value > 0 && t('downloadsTab.footerFailed', { n: failedCount.value }),
+    cancelledCount.value > 0 && t('downloadsTab.footerCancelled', { n: cancelledCount.value })
   ].filter((stat): stat is string => typeof stat === 'string')
 )
 </script>
@@ -217,7 +220,7 @@ const footerStats = computed<string[]>(() =>
           <ul
             v-else
             :key="filter"
-            class="dlm-list m-0 grid list-none grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-x-1.5 overflow-hidden rounded-[14px] bg-card p-0"
+            class="dlm-list m-0 grid shrink-0 list-none grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-x-1.5 overflow-hidden rounded-[14px] bg-card p-0"
           >
             <li
               v-for="d in filtered"

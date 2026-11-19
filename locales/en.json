@@ -2039,6 +2039,7 @@
     "footerActive": "{n} active",
     "footerCompleted": "{n} completed",
     "footerFailed": "{n} failed",
+    "footerCancelled": "{n} cancelled",
     "progressAriaLabel": "Download progress for {name}",
     "clearFinished": "Clear finished"
   },
