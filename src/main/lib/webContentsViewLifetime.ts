@@ -1,5 +1,7 @@
 import { WebContentsView } from 'electron'
 
+import { keepOnDesktopPage } from './desktopPageLock'
+
 const viewsWithLiveWebContents = new Set<WebContentsView>()
 
 export function createWebContentsView(
@@ -10,6 +12,14 @@ export function createWebContentsView(
   view.webContents.once('destroyed', () => {
     releaseAfterNativeDestructionCompletes(view)
   })
+  return view
+}
+
+export function createDesktopPageView(
+  options?: Electron.WebContentsViewConstructorOptions
+): WebContentsView {
+  const view = createWebContentsView(options)
+  keepOnDesktopPage(view.webContents)
   return view
 }
 

@@ -1,7 +1,8 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import type { WebContentsView } from 'electron'
 import path from 'path'
-import { createWebContentsView } from '../lib/webContentsViewLifetime'
+import { keepOnDesktopPage } from '../lib/desktopPageLock'
+import { createDesktopPageView, createWebContentsView } from '../lib/webContentsViewLifetime'
 import type { DatadogForwardedError } from '../../types/ipc'
 import type { NewWindowDashboardPage } from '../../shared/dashboardPages'
 import type { InstallationRecord } from '../installations'
@@ -421,10 +422,11 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     }
   })
   comfyWindow.setMenuBarVisibility(false)
+  keepOnDesktopPage(comfyWindow.webContents)
 
   prewarmTitlePopup(comfyWindow)
 
-  const titleBarView = createWebContentsView({
+  const titleBarView = createDesktopPageView({
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

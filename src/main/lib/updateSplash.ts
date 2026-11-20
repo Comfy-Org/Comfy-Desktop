@@ -1,4 +1,5 @@
 import { BrowserWindow } from 'electron'
+import { keepOnDesktopPage } from './desktopPageLock'
 import { SPLASH_DESKTOP } from './theme'
 import { showSplashPage } from './relaunchPage'
 import * as i18n from './i18n'
@@ -24,6 +25,8 @@ export function showUpdateInstallSplash(): UpdateInstallSplash {
       contextIsolation: true
     }
   })
+
+  keepOnDesktopPage(win.webContents)
 
   win.once('ready-to-show', () => {
     if (win.isDestroyed()) return

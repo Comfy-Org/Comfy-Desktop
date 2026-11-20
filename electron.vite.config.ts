@@ -30,6 +30,7 @@ export default defineConfig({
           comfyPreload: resolve(__dirname, 'src/preload/comfyPreload.ts'),
           appsPreload: resolve(__dirname, 'src/preload/appsPreload.ts'),
           terminalPreload: resolve(__dirname, 'src/preload/terminalPreload.ts'),
+          overlayPreload: resolve(__dirname, 'src/preload/overlayPreload.ts'),
           comfyTitleBarPreload: resolve(__dirname, 'src/preload/comfyTitleBarPreload.ts'),
           comfyTitlePopupPreload: resolve(__dirname, 'src/preload/comfyTitlePopupPreload.ts'),
           comfyTitleTooltipPreload: resolve(__dirname, 'src/preload/comfyTitleTooltipPreload.ts'),

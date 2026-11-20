@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
   const webContents = {
+    on: vi.fn(),
     once: vi.fn(),
+    getURL: vi.fn(() => ''),
+    setWindowOpenHandler: vi.fn(),
     executeJavaScript: vi.fn(async () => {})
   }
   const window = {
