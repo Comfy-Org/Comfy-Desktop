@@ -295,6 +295,48 @@ describe('Set up, the first screen', () => {
     expect(w.emitted('install')).toEqual([[savedPlan]])
   })
 
+  it('keeps Detected on the default hardware saved in Change, even when no option is marked recommended', async () => {
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        variant: {
+          value: 'win-amd',
+          label: 'AMD',
+          data: { variantId: 'win-amd', downloadFiles: [] }
+        }
+      },
+      installRoot: '/Users/ada/ComfyUI-Installs',
+      downloadBytes: 0,
+      requiredBytes: 0,
+      hardwareDetected: true
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+
+    expect(text(w, 'setup-row-hardware')).toContain('Detected')
+  })
+
+  it('leaves hardware picked by hand in Change without Detected', async () => {
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        variant: {
+          value: 'win-gpu',
+          label: 'NVIDIA',
+          data: { variantId: 'win-gpu', downloadFiles: [] }
+        }
+      },
+      installRoot: '/Users/ada/ComfyUI-Installs',
+      downloadBytes: 0,
+      requiredBytes: 0,
+      hardwareDetected: false
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+
+    expect(text(w, 'setup-row-hardware')).not.toContain('Detected')
+  })
+
   it('names a team build saved in Change by its build and hardware, not as detected', async () => {
     const w = mount(FirstUseTakeover, {
       props: {

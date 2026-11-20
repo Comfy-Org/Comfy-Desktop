@@ -21,6 +21,7 @@ export interface SetupPlan {
   name?: string
   workspaceId?: string
   workspaceBuild?: WorkspaceBuildChoice
+  hardwareDetected?: boolean
 }
 
 export interface NewInstallSetup {

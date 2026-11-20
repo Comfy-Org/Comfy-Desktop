@@ -330,6 +330,7 @@ describe('InstallWizardModal heading', () => {
       name: 'Studio',
       downloadBytes: 400,
       requiredBytes: 900,
+      hardwareDetected: false,
       selections: { variant: expect.objectContaining({ value: 'cpu' }) }
     })
     expect(saved?.draft.instName).toBe('Studio')

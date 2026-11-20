@@ -1309,6 +1309,7 @@ function sourcePlan(source: Source): SetupPlan {
     installRoot: instPath.value,
     downloadBytes: downloadBytesOf(picked.variant),
     requiredBytes: estimatedInstallSize.value,
+    hardwareDetected: isDefaultPick(picked.variant, fieldOptions.value.get('variant') ?? []),
     ...(instName.value.trim() ? { name: instName.value.trim() } : {}),
     ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
   }

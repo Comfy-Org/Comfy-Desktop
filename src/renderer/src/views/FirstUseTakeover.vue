@@ -123,7 +123,9 @@ const hardwareDetected = computed(
   () =>
     !!variant.value &&
     !workspaceBuild.value &&
-    (!props.savedPlan || variant.value.recommended === true)
+    (!props.savedPlan ||
+      props.savedPlan.hardwareDetected === true ||
+      variant.value.recommended === true)
 )
 const hardwareNote = computed(() =>
   hardwareNoteKey({
