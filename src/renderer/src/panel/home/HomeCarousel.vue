@@ -234,7 +234,7 @@ function onWheel(event: WheelEvent): void {
   wheelDistance += sideways
   if (!upOrDown && Math.abs(wheelDistance) < WHEEL_PIXELS_PER_CARD) return
   wheelTurned = true
-  moveTo(frontPosition.value + Math.sign(wheelDistance))
+  moveTo(frontPosition.value + Math.sign(upOrDown ? sideways : wheelDistance))
 }
 
 onBeforeUnmount(() => {

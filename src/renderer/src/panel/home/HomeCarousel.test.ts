@@ -253,6 +253,14 @@ describe('HomeCarousel trackpad and wheel', () => {
     expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
   })
 
+  it('turns the way the wheel rolls, even after a short sideways drift the other way', async () => {
+    const wrapper = mountCarousel()
+
+    swipe(wrapper, [{ deltaX: -30 }, { deltaY: 4 }])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
+  })
+
   it('turns only one card for a fast run of wheel notches', async () => {
     const wrapper = mountCarousel()
 
