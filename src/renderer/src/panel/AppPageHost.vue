@@ -205,7 +205,7 @@ onBeforeUnmount(() => {
 <template>
   <section
     ref="host"
-    class="relative min-h-0 w-full flex-auto overflow-hidden rounded-shell"
+    class="@container relative min-h-0 w-full flex-auto overflow-hidden rounded-shell"
     :aria-label="title"
     :aria-busy="status === 'loading'"
     :data-status="status ?? 'pending'"
@@ -226,7 +226,7 @@ onBeforeUnmount(() => {
     >
       <span class="sr-only">{{ t('apps.pageLoading', { app: title }) }}</span>
       <div
-        class="flex w-90 shrink-0 flex-col gap-3 rounded-shell bg-sidebar-background px-5 pt-4 pb-5"
+        class="flex w-90 shrink-0 flex-col gap-3 rounded-shell bg-sidebar-background px-5 pt-4 pb-5 @max-[60rem]:w-75"
       >
         <Skeleton class="h-6 w-2/3 rounded-md" />
         <Skeleton class="mt-2 aspect-3/2 w-full rounded-card" />

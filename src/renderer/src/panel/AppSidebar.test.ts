@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { userEvent } from 'vitest/browser'
+import { page as browserPage, userEvent } from 'vitest/browser'
 import { createPinia, setActivePinia } from 'pinia'
 
 import '../assets/main.css'
@@ -204,6 +204,34 @@ describe('AppSidebar', () => {
 
     await wrapper.setProps({ makeRoom: true })
     expect(sidebar.attributes('data-collapsed')).toBe('true')
+  })
+
+  it('hides while an app is open in a window narrower than the lg breakpoint, and comes back when it widens', async () => {
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'apps', activeBuildId: null },
+      attachTo: document.body
+    })
+    await flushPromises()
+    const sidebar = wrapper.get('[data-testid="app-sidebar"]')
+    try {
+      await browserPage.viewport(1023, 800)
+      expect(sidebar.isVisible()).toBe(true)
+
+      await wrapper.setProps({ makeRoom: true })
+      expect(sidebar.isVisible()).toBe(false)
+
+      await browserPage.viewport(1024, 800)
+      expect(sidebar.isVisible()).toBe(true)
+
+      await browserPage.viewport(800, 800)
+      expect(sidebar.isVisible()).toBe(false)
+
+      await wrapper.setProps({ makeRoom: false })
+      expect(sidebar.isVisible()).toBe(true)
+    } finally {
+      wrapper.unmount()
+      await browserPage.viewport(414, 896)
+    }
   })
 
   it('leaves Apps out when the switch cannot be read', async () => {

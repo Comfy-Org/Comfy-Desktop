@@ -276,7 +276,10 @@ function openSettings(): void {
 <template>
   <aside
     class="app-sidebar flex shrink-0 flex-col overflow-hidden rounded-shell bg-sidebar-background px-3 py-2 transition-[width] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-    :class="collapsed ? 'w-16 duration-300' : 'w-[244px] duration-260'"
+    :class="[
+      collapsed ? 'w-16 duration-300' : 'w-[244px] duration-260',
+      makeRoom && 'max-lg:hidden'
+    ]"
     :aria-label="t('sidebar.navigation')"
     data-testid="app-sidebar"
     :data-collapsed="collapsed"
