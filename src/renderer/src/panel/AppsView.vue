@@ -25,6 +25,7 @@ const startWith = defineModel<AppCard | null>('startWith', { default: null })
 
 const emit = defineEmits<{
   'app-open-change': [open: boolean]
+  'current-app': [app: AppCard | null]
   'view-in-assets': [name: string]
 }>()
 
@@ -195,7 +196,10 @@ watch(
   () => void closeApp()
 )
 
-watch(openApp, (app) => emit('app-open-change', app !== null))
+watch(openApp, (app) => {
+  emit('app-open-change', app !== null)
+  emit('current-app', app)
+})
 
 watch(
   startWith,
