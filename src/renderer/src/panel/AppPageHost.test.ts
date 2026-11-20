@@ -144,7 +144,9 @@ describe('AppPageHost', () => {
     const wrapper = await mountHost('loading')
 
     expect(wrapper.get('[data-testid="app-page-loading"]').isVisible()).toBe(true)
-    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toBe('Loading Remove Background')
+    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toContain(
+      'Loading Remove Background'
+    )
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-busy')).toBe('true')
 
     tellStatus('ready')
@@ -187,6 +189,25 @@ describe('AppPageHost', () => {
       width: PAGE_WIDTH - 308,
       height: PAGE_HEIGHT
     })
+  })
+
+  it('keeps the 300px placeholder controls on a page exactly 960px wide, as the app page does', async () => {
+    const wrapper = await mountHost('loading')
+    page.style.width = '960px'
+    await nextFrame()
+    const [controls] = placeholderPanes(wrapper)
+
+    expect(controls?.width).toBe(300)
+  })
+
+  it('offers the way back to all apps while the app is still loading', async () => {
+    const wrapper = await mountHost('loading')
+
+    const back = wrapper.get('[data-testid="app-page-loading-back"]')
+    expect(back.text()).toBe('All apps')
+    await back.trigger('click')
+
+    expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
   it('says the app did not load, loads it again on Try again, and offers the way back', async () => {
@@ -285,7 +306,7 @@ describe('AppPageHost', () => {
       'sdr-to-hdr',
       expect.objectContaining({ justOpened: true })
     )
-    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toBe('Loading SDR to HDR')
+    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toContain('Loading SDR to HDR')
   })
 
   it('swaps the app for a still frame while a menu covers part of it, then brings it back', async () => {
