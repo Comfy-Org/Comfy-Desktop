@@ -1297,6 +1297,101 @@ describe('joining a job under a stricter URL policy', () => {
     await flush()
   })
 
+  it('refuses the join and keeps the old policy when the upgrade cannot be saved', async () => {
+    const { isSecurePublicDownloadUrl } = await import('./downloadUrlPolicy')
+    mod._test_resetModelDownloadsInit()
+    const base = path.join(os.tmpdir(), 'cdm-policy-join-unsaved')
+    const finalPath = path.join(base, 'checkpoints', 'unsaved.safetensors')
+    const url = 'http://127.0.0.1:9000/unsaved.safetensors'
+    scanForStagedDownloads.mockResolvedValueOnce({
+      unsafeFinalPaths: [],
+      downloads: [
+        {
+          meta: {
+            version: 2,
+            url,
+            expectedSize: 1000,
+            directory: 'checkpoints',
+            filename: 'unsaved.safetensors',
+            installationId: null
+          },
+          finalPath,
+          stagedBytes: 100
+        }
+      ]
+    })
+    await mod.initializeModelDownloads()
+    const row = activeRows().find((r) => r.filename === 'unsaved.safetensors')!
+    ensureStagedPlaceholder.mockReturnValueOnce(false)
+    const joined = await mod.startManagedModelJob({
+      url,
+      filename: 'unsaved.safetensors',
+      directory: 'checkpoints',
+      destinationBaseDir: base,
+      validateUrl: isSecurePublicDownloadUrl
+    })
+    await expect(joined.completion).resolves.toMatchObject({ status: 'error' })
+    const before = transfers.length
+    expect(mod.resumeModelDownload(row.id!)).toBe(true)
+    await waitForTransfers(before + 1)
+    expect(transfers.find((t) => t.opts.finalPath === finalPath)!.opts.validateUrl).toBeUndefined()
+    mod.cancelModelDownload(row.id!)
+    await flush()
+    mod._test_resetModelDownloadsInit()
+  })
+
+  it('upgrades a job that is still starting and saves the stricter policy', async () => {
+    const { isSecurePublicDownloadUrl } = await import('./downloadUrlPolicy')
+    const name = uniqueName()
+    const base = path.join(os.tmpdir(), 'cdm-policy-join-starting')
+    const url = `http://127.0.0.1:9000/${name}`
+    const finalPath = path.join(base, 'checkpoints', name)
+    let releaseMkdir!: () => void
+    const held = new Promise<void>((r) => {
+      releaseMkdir = r
+    })
+    const realMkdir = fs.promises.mkdir
+    const mkdirSpy = vi.spyOn(fs.promises, 'mkdir').mockImplementation(async (dir, opts) => {
+      if (dir === path.dirname(finalPath)) await held
+      return realMkdir(dir, opts)
+    })
+    try {
+      ensureStagedPlaceholder.mockClear()
+      const before = transfers.length
+      const starting = mod.startManagedModelJob({
+        url,
+        filename: name,
+        directory: 'checkpoints',
+        destinationBaseDir: base
+      })
+      await vi.waitFor(() =>
+        expect(mkdirSpy).toHaveBeenCalledWith(path.dirname(finalPath), { recursive: true })
+      )
+      const joined = await mod.startManagedModelJob({
+        url,
+        filename: name,
+        directory: 'checkpoints',
+        destinationBaseDir: base,
+        validateUrl: isSecurePublicDownloadUrl
+      })
+      expect(ensureStagedPlaceholder).not.toHaveBeenCalled()
+      releaseMkdir()
+      const first = await starting
+      expect(joined.id).toBe(first.id)
+      expect(ensureStagedPlaceholder.mock.calls.at(-1)).toEqual([
+        finalPath,
+        expect.objectContaining({ urlPolicy: 'secure-public' })
+      ])
+      await waitForTransfers(before + 1)
+      expect(transfers[transfers.length - 1]!.opts.validateUrl).toBe(isSecurePublicDownloadUrl)
+      mod.cancelModelDownload(first.id)
+      await flush()
+    } finally {
+      releaseMkdir()
+      mkdirSpy.mockRestore()
+    }
+  })
+
   it('joins normally when the policies match', async () => {
     const { isSecurePublicDownloadUrl } = await import('./downloadUrlPolicy')
     const name = uniqueName()
