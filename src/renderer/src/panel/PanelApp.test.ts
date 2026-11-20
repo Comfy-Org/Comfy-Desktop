@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
 import type {
   ExampleWorkflowDownload,
@@ -365,6 +365,7 @@ function installMockApi(initial?: {
       return () => {}
     }),
     onOpenAnnouncement: vi.fn(() => () => {}),
+    onShowHomePage: vi.fn(() => () => {}),
     openExternal: state.openExternal,
     getAppVersion: state.getAppVersion,
     onSettingsChanged: vi.fn(() => () => {}),
@@ -3848,6 +3849,7 @@ describe('PanelApp', () => {
 describe('PanelApp home tour', () => {
   let openAnnouncement: () => void = () => {}
   let replayChanged: (state: { id: number; pending: boolean; finished: boolean }) => void = () => {}
+  let showHomePage: () => void = () => {}
 
   function homeTour(): HTMLElement | null {
     return document.querySelector<HTMLElement>('[data-testid="home-tour"]')
@@ -3872,6 +3874,10 @@ describe('PanelApp home tour', () => {
         return () => {}
       }),
       closeAnnouncement: vi.fn(),
+      onShowHomePage: vi.fn((cb: () => void) => {
+        showHomePage = cb
+        return () => {}
+      }),
       getHomeTourReplay: vi.fn(async () => ({ id: 0, pending: false })),
       requestHomeTourReplay: vi.fn(async () => 1),
       finishHomeTour: vi.fn(async () => {}),
@@ -3992,34 +3998,16 @@ describe('PanelApp home tour', () => {
     await expect.poll(() => vi.mocked(window.api.showHome).mock.calls.length).toBe(1)
   })
 
-  it('goes back to Home when a replay waits and this dashboard is on another page', async () => {
+  it('shows the Home page when main brings this dashboard forward for a replay', async () => {
     const { wrapper } = mountWithTour({ homeTourDone: true })
     await expect.poll(() => useHomeTour().loaded.value).toBe(true)
     await wrapper.get('[data-testid="app-sidebar-assets"]').trigger('click')
     await flushPromises()
-    const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
-    onTestFinished(() => focused.mockRestore())
-
-    replayChanged({ id: 1, pending: true, finished: false })
-
-    await expect.poll(() => vi.mocked(window.api.navigatePanel).mock.calls).toContainEqual(['home'])
-    await expect.poll(homeTour).not.toBeNull()
-  })
-
-  it('waits for a dashboard on another page to come to the front before taking it Home for a replay', async () => {
-    const { wrapper } = mountWithTour({ homeTourDone: true })
-    await expect.poll(() => useHomeTour().loaded.value).toBe(true)
-    await wrapper.get('[data-testid="app-sidebar-assets"]').trigger('click')
-    await flushPromises()
-    const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
-    onTestFinished(() => focused.mockRestore())
-
     replayChanged({ id: 1, pending: true, finished: false })
     await flushPromises()
-    expect(window.api.navigatePanel).not.toHaveBeenCalledWith('home')
+    expect(homeTour()).toBeNull()
 
-    focused.mockReturnValue(true)
-    window.dispatchEvent(new Event('focus'))
+    showHomePage()
 
     await expect.poll(() => vi.mocked(window.api.navigatePanel).mock.calls).toContainEqual(['home'])
     await expect.poll(homeTour).not.toBeNull()

@@ -1533,6 +1533,7 @@ export interface ElectronApi {
   onSuggestChineseMirrors(callback: () => void): Unsubscribe
   onSettingsChanged(callback: (data: { key: string }) => void): Unsubscribe
   onHomeTourReplayChanged(callback: (state: HomeTourReplayState) => void): Unsubscribe
+  onShowHomePage(callback: () => void): Unsubscribe
   onPanelSwitch(callback: (data: { panel: string; installationId?: string }) => void): Unsubscribe
   onPanelTriggerOverlay(
     callback: (data: {

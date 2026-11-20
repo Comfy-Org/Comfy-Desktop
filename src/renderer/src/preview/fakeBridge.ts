@@ -514,6 +514,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     onSuggestChineseMirrors: listen('onSuggestChineseMirrors'),
     onSettingsChanged: listen('onSettingsChanged'),
     onHomeTourReplayChanged: listen('onHomeTourReplayChanged'),
+    onShowHomePage: listen('onShowHomePage'),
     onPanelSwitch: listen('onPanelSwitch'),
     onPanelTriggerOverlay: listen('onPanelTriggerOverlay')
   })

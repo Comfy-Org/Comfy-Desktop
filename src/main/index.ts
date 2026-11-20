@@ -718,7 +718,8 @@ ipcMain.on('comfy-window:show-home', (event) => {
 ipcMain.on('comfy-panel:show-home', (event) => {
   if (!findHostWindowByPanelSender(event.sender)) return
   recordIpcInvocation('comfy-panel:show-home')
-  openOrFocusHomeHostWindow()
+  const panelView = findEntryByHostWindow(openOrFocusHomeHostWindow())?.panelView
+  if (panelView) sendToPanelDeferred(panelView, 'comfy-panel:show-home-page', {})
 })
 
 async function prepareBuildWindowFocus(

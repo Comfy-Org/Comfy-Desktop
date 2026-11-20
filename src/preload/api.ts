@@ -571,6 +571,11 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('settings-changed', handler)
       return () => ipcRenderer.removeListener('settings-changed', handler)
     },
+    onShowHomePage: (callback) => {
+      const handler = () => callback()
+      ipcRenderer.on('comfy-panel:show-home-page', handler)
+      return () => ipcRenderer.removeListener('comfy-panel:show-home-page', handler)
+    },
     onHomeTourReplayChanged: (callback) => {
       const handler = (_event: IpcRendererEvent, state: unknown) =>
         callback(state as HomeTourReplayState)
