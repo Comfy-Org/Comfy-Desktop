@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
+import { userEvent } from 'vitest/browser'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -83,5 +84,33 @@ describe('build cards have no border', () => {
   it('Builds tile', async () => {
     const el = await mountWithHost(() => h(ChooserInstallTile, { installation: BUILD }))
     expect(borderWidths(el)).toEqual(NONE)
+  })
+})
+
+const CARDS = [
+  ['Home build card', () => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'iris' })],
+  ['Builds tile', () => h(ChooserInstallTile, { installation: BUILD })]
+] as const
+
+describe('build cards have a glass surface', () => {
+  beforeEach(() => {
+    document.documentElement.dataset.theme = 'dark'
+    return () => delete document.documentElement.dataset.theme
+  })
+
+  it.each(CARDS)(
+    '%s is a see-through card fill with a top sheen and highlight',
+    async (_, render) => {
+      const style = getComputedStyle(await mountWithHost(render))
+      expect(style.backgroundColor).toBe('oklab(0.23 0 0 / 0.75)')
+      expect(style.backgroundImage).toMatch(/^linear-gradient\(.+, rgba\(0, 0, 0, 0\) 40%\)$/)
+      expect(style.boxShadow).toBe('oklch(1 0 0 / 0.06) 0px 1px 0px 0px inset')
+    }
+  )
+
+  it.each(CARDS)('%s turns to the card hover fill under the pointer', async (_, render) => {
+    const el = await mountWithHost(render)
+    await userEvent.hover(el, { force: true })
+    await expect.poll(() => getComputedStyle(el).backgroundColor).toBe('oklab(0.265 0 0 / 0.8)')
   })
 })
