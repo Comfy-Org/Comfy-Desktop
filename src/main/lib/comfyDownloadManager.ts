@@ -692,6 +692,27 @@ function acquireModelJobLease(pending: PendingDownload, cleanup?: () => void): (
   }
 }
 
+function adoptJoinerUrlPolicy(
+  existing: PendingDownload,
+  joiner: DownloadUrlCheck | undefined
+): boolean {
+  if (joiner === undefined || joiner === existing.validateUrl) return true
+  const name = downloadUrlPolicyName(joiner)
+  if (existing.validateUrl !== undefined || name === undefined) return false
+  if (existing.transport && !existing.suspended) return false
+  existing.validateUrl = joiner
+  const retry = retryParamsById.get(existing.id)
+  if (retry) retry.validateUrl = joiner
+  return ensureStagedPlaceholder(existing.savePath, {
+    version: 2,
+    url: existing.url,
+    expectedSize: existing.expectedSize ?? 0,
+    directory: existing.directory,
+    filename: existing.filename,
+    urlPolicy: name
+  })
+}
+
 function joinModelJob(existing: PendingDownload, opts: ModelJobOptions): ModelJobHandle {
   if (opts.window && opts.window !== existing.window && !opts.window.isDestroyed()) {
     existing.subscriberWindows.add(opts.window)
@@ -1043,6 +1064,11 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
       ) {
         const error = `Another download is already writing ${filename} from a different source`
         return rejectJob(error)
+      }
+      if (!adoptJoinerUrlPolicy(active, opts.validateUrl)) {
+        return rejectJob(
+          `Another download is already writing ${filename} under a less strict URL policy`
+        )
       }
       retryParamsById.delete(id)
       createdAtById.delete(id)
