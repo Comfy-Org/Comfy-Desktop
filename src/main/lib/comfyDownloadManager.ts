@@ -33,6 +33,8 @@ import { ModelDownloadTelemetry, type ModelDownloadSource } from './modelDownloa
 import { isQuitInProgress } from './quit-state'
 import { resolveRedirects } from './redirectResolver'
 import {
+  downloadUrlPolicyByName,
+  downloadUrlPolicyName,
   isPermittedChain,
   isPermittedDownloadUrl,
   isPermittedPageDownloadChain,
@@ -628,13 +630,15 @@ function resolveServerFilename(item: Electron.DownloadItem): string | null {
 function findPendingForItem(item: Electron.DownloadItem): PendingDownload | undefined {
   const candidates = [...item.getURLChain(), item.getURL()].filter(Boolean)
   for (const u of candidates) {
-    const pending = activeJobsForUrl(u).find((p) => p.kind === 'asset' && !p.item)
-    if (pending) return pending
-  }
-  for (const u of candidates) {
     for (const pending of pendingDownloads.values()) {
       if (pending.kind === 'asset' && !pending.item && pending.fetchUrl === u) return pending
     }
+  }
+  for (const u of candidates) {
+    const pending = activeJobsForUrl(u).find(
+      (p) => p.kind === 'asset' && !p.item && p.fetchUrl === undefined
+    )
+    if (pending) return pending
   }
   return undefined
 }
@@ -1119,7 +1123,8 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
       directory,
       filename,
       installationId: resolvedInstallId ?? undefined,
-      sha256
+      sha256,
+      urlPolicy: downloadUrlPolicyName(opts.validateUrl)
     })
     pending.starting = false
     if (!staged) {
@@ -2305,6 +2310,7 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       installationId: meta.installationId ?? null,
       expectedSize: meta.expectedSize > 0 ? meta.expectedSize : undefined,
       sha256: meta.sha256,
+      validateUrl: downloadUrlPolicyByName(meta.urlPolicy),
       settleJob,
       completion,
       lastProgress: progress,
@@ -2321,6 +2327,7 @@ async function doInitializeModelDownloads(): Promise<ModelDownloadStartupSafety>
       installationId: meta.installationId ?? null,
       savePath: finalPath,
       sha256: meta.sha256,
+      validateUrl: downloadUrlPolicyByName(meta.urlPolicy),
       destinationBaseDir: deriveDestinationBaseDir(finalPath, meta.directory)
     })
     reportProgress(progress)
