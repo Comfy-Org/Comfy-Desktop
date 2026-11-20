@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isPermittedChain,
+  isPermittedPageDownloadChain,
   isPermittedDownloadUrl,
   isPermittedRedirect,
   isSameOrigin,
@@ -190,5 +191,31 @@ describe('sameOriginCheck', () => {
 
   it('allows nothing when no origin is known', () => {
     expect(sameOriginCheck([null])('http://127.0.0.1:8188/api/view')).toBe(false)
+  })
+})
+
+describe('isPermittedPageDownloadChain', () => {
+  it('allows in-page blob and data downloads', () => {
+    expect(isPermittedPageDownloadChain(['blob:http://127.0.0.1:8188/1234'])).toBe(true)
+    expect(isPermittedPageDownloadChain(['data:application/json,{}'])).toBe(true)
+  })
+
+  it('allows a network download whose every hop passes the baseline', () => {
+    expect(isPermittedPageDownloadChain(['http://127.0.0.1:8188/api/view?filename=a.png'])).toBe(
+      true
+    )
+    expect(
+      isPermittedPageDownloadChain(['https://a.example/x.png', 'https://cdn.example/x.png'])
+    ).toBe(true)
+  })
+
+  it.each([
+    [['http://169.254.169.254/latest/meta-data/']],
+    [['https://a.example/x.png', 'http://169.254.169.254/x.png']],
+    [['https://a.example/x.png', 'http://a.example/x.png']],
+    [['file:///etc/passwd']],
+    [[]]
+  ])('refuses %j', (chain) => {
+    expect(isPermittedPageDownloadChain(chain)).toBe(false)
   })
 })

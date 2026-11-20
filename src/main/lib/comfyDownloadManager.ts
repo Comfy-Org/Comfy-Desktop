@@ -35,6 +35,7 @@ import { resolveRedirects } from './redirectResolver'
 import {
   isPermittedChain,
   isPermittedDownloadUrl,
+  isPermittedPageDownloadChain,
   isSecurePublicDownloadUrl,
   type DownloadUrlCheck
 } from './downloadUrlPolicy'
@@ -1720,6 +1721,11 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       item.setSavePath(pending.tempPath!)
       attachDownloadListeners(item, pending)
     } else {
+      const generalChain = item.getURLChain()
+      if (!isPermittedPageDownloadChain(generalChain.length > 0 ? generalChain : [item.getURL()])) {
+        item.cancel()
+        return
+      }
       const suggestedName = item.getFilename()
       const downloadsDir = app.getPath('downloads')
       const remembered = settings.get('lastSaveDialogDir')

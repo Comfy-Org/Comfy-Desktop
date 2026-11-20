@@ -1511,3 +1511,31 @@ describe('download URL policy', () => {
     }
   })
 })
+
+describe('page-initiated download URL policy', () => {
+  it('cancels a page download whose redirect chain leaves the policy, before any dialog', () => {
+    let willDownload:
+      ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
+    const session = {
+      on: vi.fn((event: string, handler: typeof willDownload) => {
+        if (event === 'will-download') willDownload = handler
+      })
+    } as unknown as Electron.Session
+    mod.attachSessionDownloadHandler(session)
+    const cancel = vi.fn()
+    const setSavePath = vi.fn()
+    const item = {
+      getURLChain: () => [
+        'https://page.example/save.png',
+        'http://169.254.169.254/latest/meta-data/'
+      ],
+      getURL: () => 'http://169.254.169.254/latest/meta-data/',
+      getFilename: () => 'save.png',
+      cancel,
+      setSavePath
+    } as unknown as Electron.DownloadItem
+    willDownload!({}, item, null)
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(setSavePath).not.toHaveBeenCalled()
+  })
+})

@@ -94,6 +94,13 @@ export function isPermittedChain(chain: readonly string[], validateUrl: Download
   return true
 }
 
+const LOCAL_DOWNLOAD_SCHEMES = new Set(['blob:', 'data:'])
+
+export function isPermittedPageDownloadChain(chain: readonly string[]): boolean {
+  const local = chain.every((url) => LOCAL_DOWNLOAD_SCHEMES.has(parse(url)?.protocol ?? ''))
+  return (chain.length > 0 && local) || isPermittedChain(chain, isPermittedDownloadUrl)
+}
+
 export function originOf(raw: unknown): string | null {
   const url = parse(raw)
   if (!url || (url.protocol !== 'https:' && url.protocol !== 'http:')) return null

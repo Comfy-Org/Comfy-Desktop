@@ -10,7 +10,14 @@ vi.mock('./templateModels', () => ({
   loadTemplateJson: (...a: unknown[]) => loadTemplateJson(...a)
 }))
 
+const downloadMock = vi.hoisted(() => vi.fn())
+vi.mock('../../lib/download', () => ({ download: downloadMock }))
+
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import {
+  downloadTemplateInputAssets,
   resolveInputDir,
   resolveTemplateInputAssetAvailability,
   resolveTemplateInputAssetSnapshot,
@@ -248,5 +255,32 @@ describe('resolveTemplateInputAssetAvailability', () => {
         { access }
       )
     ).resolves.toEqual([{ filename: 'private.png', status: 'unknown' }])
+  })
+})
+
+describe('downloadTemplateInputAssets URL policy', () => {
+  it('downloads template input assets under the HTTPS policy', async () => {
+    const inputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'template-input-policy-'))
+    downloadMock.mockReset().mockImplementation(async (_url: string, dest: string) => dest)
+    try {
+      const rec = {
+        id: 'i-policy',
+        useSharedInput: false,
+        inputDir
+      } as unknown as InstallationRecord
+      await downloadTemplateInputAssets(
+        rec,
+        { nodes: [loadNode('LoadImage', 'policy-example.png')] },
+        () => {}
+      )
+      expect(downloadMock).toHaveBeenCalledTimes(1)
+      const [url, , , options] = downloadMock.mock.calls[0]!
+      expect(url).toBe(`${TEMPLATE_INPUT_BASE}/policy-example.png`)
+      expect(options.validateUrl(url)).toBe(true)
+      expect(options.validateUrl('http://169.254.169.254/latest/meta-data/')).toBe(false)
+      expect(options.validateUrl(url.replace('https:', 'http:'))).toBe(false)
+    } finally {
+      fs.rmSync(inputDir, { recursive: true, force: true })
+    }
   })
 })

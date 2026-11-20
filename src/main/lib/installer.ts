@@ -4,6 +4,7 @@ import { formatDownloadDetail, formatTime } from './util'
 import { t } from './i18n'
 import type { Cache } from './cache'
 import { isDownloadComplete } from './download'
+import { isSecurePublicDownloadUrl } from './downloadUrlPolicy'
 import type { DownloadProgress } from './download'
 import type { ExtractProgress } from './extract'
 
@@ -15,7 +16,11 @@ export interface InstallerContext {
     url: string,
     dest: string,
     onProgress: ((p: DownloadProgress) => void) | null,
-    options?: { signal?: AbortSignal; expectedSize?: number }
+    options?: {
+      signal?: AbortSignal
+      expectedSize?: number
+      validateUrl?: (url: string) => boolean
+    }
   ) => Promise<string>
   cache: Cache
   extract: (
@@ -182,7 +187,7 @@ export async function downloadAndExtract(
                 status: t('installer.downloading', { progress: formatDownloadDetail(p) })
               })
             },
-            { signal, expectedSize }
+            { signal, expectedSize, validateUrl: isSecurePublicDownloadUrl }
           )
           cache.evict()
         }
@@ -300,7 +305,11 @@ export async function downloadAndExtractMulti(
                   })
                 })
               },
-              { signal, expectedSize: file.size || undefined }
+              {
+                signal,
+                expectedSize: file.size || undefined,
+                validateUrl: isSecurePublicDownloadUrl
+              }
             )
             completedBytes += file.size || 0
           }

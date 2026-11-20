@@ -256,6 +256,7 @@ async function addMediaFacts(summary: AssetSummary, deadline: AbortSignal): Prom
   try {
     const res = await fetch(summary.previewUrl, {
       headers: { Range: `bytes=0-${limit - 1}` },
+      redirect: 'error',
       signal: AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), deadline])
     })
     if (!res.ok) return

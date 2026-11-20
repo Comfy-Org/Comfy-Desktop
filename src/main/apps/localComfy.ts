@@ -10,6 +10,7 @@ import { getEntryByInstallationId } from '../host/registry'
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import { startManagedModelJob } from '../lib/comfyDownloadManager'
+import { isSecurePublicDownloadUrl } from '../lib/downloadUrlPolicy'
 import { probeQueue } from '../lib/comfyProcessRecord'
 import type { QueueAnswer } from '../lib/comfyProcessRecord'
 import { recordCrash } from '../lib/crashBuffer'
@@ -775,6 +776,7 @@ async function downloadInto(
     installationId,
     source: 'app',
     appId,
+    validateUrl: isSecurePublicDownloadUrl,
     onProgress: downloadProgress(model.name)
   })
   try {

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
+  startPopupDownload,
   isCheckoutUrl,
   isLikelyDownloadUrl,
   POPUP_ALLOWED_PREFIXES,
@@ -112,5 +113,27 @@ describe('isLikelyDownloadUrl (regression for #582 cloud zip handoff)', () => {
 
   it('matching is case-insensitive (.ZIP works too)', () => {
     expect(isLikelyDownloadUrl('https://example.com/FILE.ZIP')).toBe(true)
+  })
+})
+
+describe('startPopupDownload', () => {
+  it('hands a permitted URL to the session', () => {
+    const session = { downloadURL: vi.fn() }
+    expect(
+      startPopupDownload(session, 'https://huggingface.co/o/r/resolve/main/m.safetensors')
+    ).toBe(true)
+    expect(session.downloadURL).toHaveBeenCalledWith(
+      'https://huggingface.co/o/r/resolve/main/m.safetensors'
+    )
+  })
+
+  it.each([
+    'http://169.254.169.254/latest/meta-data/model.safetensors',
+    'https://user:pw@huggingface.co/m.safetensors',
+    'http://0.0.0.0:8188/m.safetensors'
+  ])('refuses %s', (url) => {
+    const session = { downloadURL: vi.fn() }
+    expect(startPopupDownload(session, url)).toBe(false)
+    expect(session.downloadURL).not.toHaveBeenCalled()
   })
 })

@@ -27,6 +27,12 @@ interface Helpers {
     finalPath: string
     policy: Policy
   }): Promise<TransferOutcome>
+  runDownload(opts: {
+    url: string
+    destPath: string
+    policy: Policy
+  }): Promise<{ ok: true } | { ok: false; error: string }>
+  runFetchJSON(url: string): Promise<{ ok: true; data: unknown } | { ok: false; error: string }>
 }
 
 let app: ElectronApplication
@@ -55,6 +61,19 @@ function runModelTransfer(
       opts
     )
   )
+}
+
+function helper<K extends 'runDownload' | 'runFetchJSON'>(
+  name: K,
+  arg: Parameters<Helpers[K]>[0]
+): ReturnType<Helpers[K]> {
+  return evalWithRetry(() =>
+    app.evaluate(
+      (_electron, [n, a]) =>
+        (globalThis as unknown as { __e2e: Record<string, (x: unknown) => unknown> }).__e2e[n]!(a),
+      [name, arg] as const
+    )
+  ) as ReturnType<Helpers[K]>
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -166,4 +185,52 @@ test('model transfer refuses a disallowed first URL @windows @macos @linux', asy
     error: 'Download failed: the download URL is not allowed'
   })
   expect(existsSync(finalPath)).toBe(false)
+})
+
+test('download() follows a permitted redirect and writes the file @windows @macos @linux', async () => {
+  const destPath = path.join(scratch, 'dl-allowed', 'bundle.bin')
+  const result = await helper('runDownload', {
+    url: origin.redirectUrl(`${target.base('localhost')}/file`),
+    destPath,
+    policy: 'permitted'
+  })
+  expect(result).toEqual({ ok: true })
+  expect(await readFile(destPath, 'utf-8')).toBe('target-body')
+})
+
+test('download() checks every redirect hop on the real network stack @windows @macos @linux', async () => {
+  const destPath = path.join(scratch, 'dl-refused', 'bundle.bin')
+  const hop = `http://user:secret@localhost:${new URL(target.base()).port}/file`
+  const result = await helper('runDownload', {
+    url: origin.redirectUrl(hop),
+    destPath,
+    policy: 'permitted'
+  })
+  expect(result).toEqual({
+    ok: false,
+    error: 'Download failed: redirected to a URL that is not allowed'
+  })
+  expect(target.requests).toHaveLength(0)
+  expect(existsSync(destPath)).toBe(false)
+})
+
+test('download() refuses a plain-HTTP public hop under the secure policy @windows @macos @linux', async () => {
+  const destPath = path.join(scratch, 'dl-secure', 'bundle.bin')
+  const result = await helper('runDownload', {
+    url: origin.redirectUrl('http://download-url-policy.invalid/bundle.bin'),
+    destPath,
+    policy: 'secure-public'
+  })
+  expect(result).toEqual({
+    ok: false,
+    error: 'Download failed: redirected to a URL that is not allowed'
+  })
+})
+
+test('fetchJSON() refuses a disallowed redirect hop @windows @macos @linux', async () => {
+  const hop = `http://user:secret@localhost:${new URL(target.base()).port}/file`
+  const result = await helper('runFetchJSON', origin.redirectUrl(hop))
+  expect(result.ok).toBe(false)
+  expect(result.ok ? '' : result.error).toContain('not allowed')
+  expect(target.requests).toHaveLength(0)
 })

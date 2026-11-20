@@ -243,9 +243,16 @@ describe('registerTemplateInputAssetHandlers', () => {
       sender,
       {
         existingFilePolicy: 'skip',
-        templateInput: { templateId: 'template-1', assetId: declaredAsset.assetId }
+        templateInput: { templateId: 'template-1', assetId: declaredAsset.assetId },
+        validateUrl: expect.any(Function)
       }
     )
+    const { validateUrl } = mocks.startManagedAssetDownload.mock.calls[0]![6] as {
+      validateUrl: (url: string) => boolean
+    }
+    expect(validateUrl('https://raw.example/input/a.png')).toBe(true)
+    expect(validateUrl('http://raw.example/input/a.png')).toBe(false)
+    expect(validateUrl('http://169.254.169.254/latest/meta-data/')).toBe(false)
   })
 
   it('normalizes a rejected managed-download admission as unavailable', async () => {

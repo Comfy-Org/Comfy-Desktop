@@ -41,7 +41,11 @@ export interface InstallTools {
     url: string,
     dest: string,
     onProgress: ((p: DownloadProgress) => void) | null,
-    options?: { signal?: AbortSignal; expectedSize?: number }
+    options?: {
+      signal?: AbortSignal
+      expectedSize?: number
+      validateUrl?: (url: string) => boolean
+    }
   ) => Promise<string>
   cache: Cache
   extract: (

@@ -3,6 +3,11 @@ import fs from 'fs'
 import path from 'path'
 import * as settings from '../settings'
 import { r2MirrorUrl } from './r2Mirror'
+import {
+  isPermittedDownloadUrl,
+  isPermittedRedirect,
+  type DownloadUrlCheck
+} from './downloadUrlPolicy'
 
 export interface DownloadProgress {
   percent: number
@@ -25,7 +30,7 @@ export interface DownloadOptions {
   signal?: AbortSignal
   expectedSize?: number
   idleTimeoutMs?: number
-  validateUrl?: (url: string) => boolean
+  validateUrl?: DownloadUrlCheck
   _skipMirror?: boolean
   _maxRedirects?: number
 }
@@ -73,12 +78,12 @@ export function download(
     signal,
     expectedSize,
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
-    validateUrl,
+    validateUrl = isPermittedDownloadUrl,
     _maxRedirects = 5,
     _skipMirror = false
   } = opts
 
-  if (validateUrl && !validateUrl(url)) {
+  if (!validateUrl(url)) {
     return Promise.reject(new Error(`Download URL is not allowed: ${url}`))
   }
 
@@ -146,7 +151,7 @@ export function download(
       } catch {}
     }
 
-    const request = net.request(url)
+    const request = net.request({ url, redirect: 'manual' })
     request.setHeader('User-Agent', 'ComfyUI-Desktop-2')
     if (resumeFrom > 0 && existingMeta?.etag) {
       request.setHeader('Range', `bytes=${resumeFrom}-`)
@@ -211,36 +216,33 @@ export function download(
       if (signal) signal.removeEventListener('abort', onAbort)
     }
 
-    request.on('response', (response) => {
-      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+    let redirectsLeft = _maxRedirects
+    let currentUrl = url
+    request.on('redirect', (_status, _method, redirectUrl) => {
+      const refuse = (message: string): void => {
         cleanup()
-        if (_maxRedirects <= 0) {
-          safeReject(new Error('Download failed: too many redirects'))
-          return
-        }
-        const rawLocation = response.headers.location
-        const loc = Array.isArray(rawLocation) ? rawLocation[0] : rawLocation
-        if (!loc) {
-          safeReject(new Error('Download failed: empty redirect location'))
-          return
-        }
-        let redirectUrl: string
-        try {
-          redirectUrl = new URL(loc, url).toString()
-        } catch {
-          safeReject(new Error(`Download failed: invalid redirect location ${loc}`))
-          return
-        }
-        download(redirectUrl, destPath, onProgress, {
-          signal,
-          expectedSize,
-          idleTimeoutMs,
-          validateUrl,
-          _maxRedirects: _maxRedirects - 1
-        }).then(safeResolve, safeReject)
+        aborted = true
+        request.abort()
+        safeReject(new Error(message))
+      }
+      if (redirectsLeft <= 0) {
+        refuse('Download failed: too many redirects')
         return
       }
+      redirectsLeft--
+      if (!redirectUrl) {
+        refuse('Download failed: empty redirect location')
+        return
+      }
+      if (!isPermittedRedirect(currentUrl, redirectUrl, validateUrl)) {
+        refuse('Download failed: redirected to a URL that is not allowed')
+        return
+      }
+      currentUrl = redirectUrl
+      request.followRedirect()
+    })
 
+    request.on('response', (response) => {
       const isResumed = response.statusCode === 206 && resumeFrom > 0
       if (!isResumed && response.statusCode !== 200) {
         cleanup()

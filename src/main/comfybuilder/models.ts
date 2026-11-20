@@ -138,6 +138,7 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
     let lastReportBytes = 0
     const jobOptions: ModelJobOptions = {
       url: model.downloadUrl,
+      validateUrl: isSecureDownloadUrl,
       filename: model.filename,
       directory: model.type,
       installationId,

@@ -9,7 +9,9 @@ interface FakeRequest extends EventEmitter {
   setHeader: ReturnType<typeof vi.fn>
   end: ReturnType<typeof vi.fn>
   abort: ReturnType<typeof vi.fn>
+  followRedirect: ReturnType<typeof vi.fn>
   __url: string
+  __redirect: string | undefined
 }
 
 const requests: FakeRequest[] = []
@@ -24,12 +26,14 @@ vi.mock('../settings', () => ({
 
 vi.mock('electron', () => ({
   net: {
-    request: vi.fn((url: string) => {
+    request: vi.fn((arg: string | { url: string; redirect?: string }) => {
       const req = Object.assign(new EventEmitter(), {
         setHeader: vi.fn(),
         end: vi.fn(),
         abort: vi.fn(),
-        __url: url
+        followRedirect: vi.fn(),
+        __url: typeof arg === 'string' ? arg : arg.url,
+        __redirect: typeof arg === 'string' ? undefined : arg.redirect
       }) as FakeRequest
       requests.push(req)
       return req
@@ -171,12 +175,13 @@ describe('download — no-progress watchdog', () => {
     const dest = path.join(tmpDir, 'redirected.safetensors')
     const p = download(URL, dest, null, { idleTimeoutMs: 150 })
     const rejection = expect(p).rejects.toThrow('Download stalled: no data for 0s')
-    requests[0]!.emit('response', makeResponse(302, '', { location: `${URL}?redirected=1` }))
+    requests[0]!.emit('redirect', 302, 'GET', `${URL}?redirected=1`)
+    expect(requests[0]!.followRedirect).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(0)
-    openStreaming(requests[1]!, 100)
+    openStreaming(requests[0]!, 100)
     await vi.advanceTimersByTimeAsync(150)
     await rejection
-    expect(requests[1]!.abort).toHaveBeenCalled()
+    expect(requests[0]!.abort).toHaveBeenCalled()
   })
 
   it('does not fire while bytes keep arriving (timer rearms per chunk)', async () => {
@@ -212,12 +217,82 @@ describe('download URL policy', () => {
     const dest = path.join(tmpDir, 'artifact.tar.gz')
     const validateUrl = (url: string): boolean => new URL(url).protocol === 'https:'
     const result = download('https://storage.example/artifact', dest, null, { validateUrl })
-    requests[0]!.emit(
-      'response',
-      makeResponse(302, '', { location: 'http://storage.example/artifact' })
-    )
+    requests[0]!.emit('redirect', 302, 'GET', 'http://storage.example/artifact')
 
     await expect(result).rejects.toThrow(/not allowed/i)
     expect(requests).toHaveLength(1)
+    expect(requests[0]!.followRedirect).not.toHaveBeenCalled()
+    expect(requests[0]!.abort).toHaveBeenCalled()
+  })
+
+  it('handles redirects itself instead of letting Chromium follow them', async () => {
+    const dest = path.join(tmpDir, 'artifact.bin')
+    void download('https://storage.example/artifact', dest, null).catch(() => {})
+    expect(requests[0]!.__redirect).toBe('manual')
+  })
+
+  it('applies the baseline policy to the first URL when the caller supplies none', async () => {
+    const dest = path.join(tmpDir, 'artifact.bin')
+    await expect(download('file:///etc/passwd', dest, null)).rejects.toThrow(/not allowed/i)
+    await expect(download('http://169.254.169.254/latest/meta-data/', dest, null)).rejects.toThrow(
+      /not allowed/i
+    )
+    expect(requests).toHaveLength(0)
+  })
+
+  it.each([
+    ['instance metadata', 'http://169.254.169.254/latest/meta-data/'],
+    ['embedded credentials', 'https://user:pw@cdn.example/artifact'],
+    ['non-http scheme', 'file:///etc/passwd'],
+    ['HTTPS to HTTP downgrade', 'http://cdn.example/artifact']
+  ])('refuses a redirect hop to %s with the baseline policy', async (_label, hop) => {
+    const dest = path.join(tmpDir, 'artifact.bin')
+    const result = download('https://storage.example/artifact', dest, null)
+    requests[0]!.emit('redirect', 302, 'GET', hop)
+    await expect(result).rejects.toThrow('Download failed: redirected to a URL that is not allowed')
+    expect(requests[0]!.followRedirect).not.toHaveBeenCalled()
+    expect(fs.existsSync(dest)).toBe(false)
+  })
+
+  it('checks every hop and keeps the original URL as the resume identity', async () => {
+    const dest = path.join(tmpDir, 'artifact.bin')
+    const seen: string[] = []
+    const validateUrl = (url: string): boolean => {
+      seen.push(url)
+      return !url.includes('blocked')
+    }
+    const result = download('https://storage.example/artifact', dest, null, { validateUrl })
+    const req = requests[0]!
+    req.emit('redirect', 302, 'GET', 'https://cdn.example/hop/1')
+    req.emit('redirect', 302, 'GET', 'https://cdn.example/hop/2')
+    expect(req.followRedirect).toHaveBeenCalledTimes(2)
+    req.emit('redirect', 302, 'GET', 'https://cdn.example/blocked')
+    await expect(result).rejects.toThrow(/not allowed/i)
+    expect(seen).toEqual([
+      'https://storage.example/artifact',
+      'https://cdn.example/hop/1',
+      'https://cdn.example/hop/2',
+      'https://cdn.example/blocked'
+    ])
+  })
+
+  it('follows a permitted redirect on the same request and completes', async () => {
+    const dest = path.join(tmpDir, 'artifact.bin')
+    const result = download('https://storage.example/artifact', dest, null)
+    const req = requests[0]!
+    req.emit('redirect', 302, 'GET', 'https://cdn.example/blob')
+    req.emit('response', makeResponse(200, 'payload'))
+    await expect(result).resolves.toBe(dest)
+    expect(requests).toHaveLength(1)
+    expect(fs.readFileSync(dest, 'utf-8')).toBe('payload')
+  })
+
+  it('fails after too many redirects', async () => {
+    const dest = path.join(tmpDir, 'artifact.bin')
+    const result = download('https://storage.example/artifact', dest, null, { _maxRedirects: 2 })
+    const req = requests[0]!
+    for (let i = 0; i < 3; i++) req.emit('redirect', 302, 'GET', `https://cdn.example/hop/${i}`)
+    await expect(result).rejects.toThrow('Download failed: too many redirects')
+    expect(req.followRedirect).toHaveBeenCalledTimes(2)
   })
 })

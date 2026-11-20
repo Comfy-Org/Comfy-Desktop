@@ -166,6 +166,16 @@ describe('template model download task', () => {
     forgetTemplateDownload('present-1')
   })
 
+  it('starts template model jobs under the HTTPS policy', async () => {
+    start('policy-1')
+    await vi.waitFor(() => expect(startManagedModelJob).toHaveBeenCalled())
+    const opts = startManagedModelJob.mock.calls[0]![0] as { validateUrl: (url: string) => boolean }
+    expect(opts.validateUrl('https://huggingface.co/o/r/resolve/main/m.safetensors')).toBe(true)
+    expect(opts.validateUrl('http://huggingface.co/o/r/resolve/main/m.safetensors')).toBe(false)
+    expect(opts.validateUrl('http://169.254.169.254/latest/meta-data/')).toBe(false)
+    forgetTemplateDownload('policy-1')
+  })
+
   it('forgetTemplateDownload aborts an in-flight task, releases its model jobs and drops its state', async () => {
     start('forget-1')
     await vi.waitFor(() => expect(startManagedModelJob).toHaveBeenCalled())
