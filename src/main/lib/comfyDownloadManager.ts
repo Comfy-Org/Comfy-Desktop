@@ -699,17 +699,23 @@ function adoptJoinerUrlPolicy(
   const name = downloadUrlPolicyName(joiner)
   if (existing.validateUrl !== undefined || name === undefined) return false
   if (existing.transport && !existing.suspended) return false
+  if (
+    !existing.starting &&
+    !ensureStagedPlaceholder(existing.savePath, {
+      version: 2,
+      url: existing.url,
+      expectedSize: existing.expectedSize ?? 0,
+      directory: existing.directory,
+      filename: existing.filename,
+      urlPolicy: name
+    })
+  ) {
+    return false
+  }
   existing.validateUrl = joiner
   const retry = retryParamsById.get(existing.id)
   if (retry) retry.validateUrl = joiner
-  return ensureStagedPlaceholder(existing.savePath, {
-    version: 2,
-    url: existing.url,
-    expectedSize: existing.expectedSize ?? 0,
-    directory: existing.directory,
-    filename: existing.filename,
-    urlPolicy: name
-  })
+  return true
 }
 
 function joinModelJob(existing: PendingDownload, opts: ModelJobOptions): ModelJobHandle {
@@ -1147,7 +1153,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
       filename,
       installationId: resolvedInstallId ?? undefined,
       sha256,
-      urlPolicy: downloadUrlPolicyName(opts.validateUrl)
+      urlPolicy: downloadUrlPolicyName(pending.validateUrl)
     })
     pending.starting = false
     if (!staged) {
