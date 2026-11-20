@@ -5825,7 +5825,26 @@ describe('prior ComfyUI process handling at launch', () => {
       expect(res.ok).toBe(false)
       expect(res.message).toBe(`Process exited with code 1${HINT}\n\n${C10_NOT_FOUND.trim()}`)
       expect(_runningSessions.has('dll-exit-before-ready')).toBe(false)
+      expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([
+        expect.objectContaining({ exit_code: 1 })
+      ])
     })
+  })
+
+  it('fails a start killed by a signal whose output stays open after its port answered', async () => {
+    setArgs()
+    launchHarness.waitForPort = async () => {
+      children[0]!.emit('exit', null, 'SIGKILL')
+    }
+
+    const res = await handleLaunch(ctxFor('signal-exit-before-ready'))
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe('Process exited with signal SIGKILL')
+    expect(_runningSessions.has('signal-exit-before-ready')).toBe(false)
+    expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([
+      expect.objectContaining({ exit_code: null, signal: 'SIGKILL' })
+    ])
   })
 
   describe('an asset database from a newer ComfyUI', () => {
