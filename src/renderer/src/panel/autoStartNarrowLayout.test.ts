@@ -343,11 +343,6 @@ describe('Builds page grid', () => {
     expect(tile.querySelectorAll('[data-testid="build-update-open"]')).toHaveLength(
       state === 'update' || state === 'running with an update' ? 1 : 0
     )
-    const metaLine = tile.querySelector('.chooser-tile-meta-line')
-    if (metaLine) {
-      expect(boxOf(metaLine).height, 'meta line height').toBe(17)
-      expect(fullyShown(metaLine.firstElementChild!), 'version is not cut off').toBe(true)
-    }
     const note = tile.querySelector('[data-testid="build-update-note"]')
     if (note) {
       await vi.waitFor(() =>
@@ -356,6 +351,13 @@ describe('Builds page grid', () => {
         )
       )
       expect(note.querySelector('svg')).not.toBeNull()
+    }
+    const metaLine = tile.querySelector('.chooser-tile-meta-line')
+    if (metaLine) {
+      expect(boxOf(metaLine).height, 'meta line height').toBe(17)
+      await vi.waitFor(() =>
+        expect(fullyShown(metaLine.firstElementChild!), 'version is not cut off').toBe(true)
+      )
     }
     if (state === 'running with an update') {
       expect(tile.querySelector('.chooser-tile-body .truncate')!.textContent?.trim()).toBe(
