@@ -3,6 +3,7 @@ import path from 'path'
 
 import type { ModelJobHandle, ModelJobOptions, ModelJobOutcome } from '../lib/comfyDownloadManager'
 import { isSecureDownloadUrl, isValidSha256, normalizeSha256 } from './integrity'
+import { isSecurePublicDownloadUrl } from '../lib/downloadUrlPolicy'
 import type { ModelDescriptor, StageProgress } from './types'
 
 export type StageModelsErrorKind = 'invalid-model' | 'model-checksum-mismatch' | 'model-conflict'
@@ -138,7 +139,7 @@ export async function stageModels(opts: StageModelsOptions): Promise<void> {
     let lastReportBytes = 0
     const jobOptions: ModelJobOptions = {
       url: model.downloadUrl,
-      validateUrl: isSecureDownloadUrl,
+      validateUrl: isSecurePublicDownloadUrl,
       filename: model.filename,
       directory: model.type,
       installationId,
