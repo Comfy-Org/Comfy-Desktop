@@ -1632,7 +1632,7 @@
   "devPlatform": {
     "signIn": {
       "cta": "登录",
-      "waiting": "请在浏览器中完成登录"
+      "waiting": "请在浏览器中继续"
     },
     "account": {
       "installationInProgressTitle": "安装正在进行中",

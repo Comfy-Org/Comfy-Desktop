@@ -138,7 +138,7 @@ describe('SidebarAccount', () => {
     expect(signIn.text()).toBe('Log in')
     expect(signIn.attributes('disabled')).toBeUndefined()
     expect(wrapper.get('[data-testid="sidebar-signin-body"]').text()).toBe(
-      'Finish signing in in your browser'
+      'Continue in your browser'
     )
   })
 

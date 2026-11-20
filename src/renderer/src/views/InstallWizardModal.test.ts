@@ -2437,7 +2437,7 @@ describe('InstallWizardModal Change setup', () => {
     await pickSource(wrapper, 'workspace-install-source-managed')
 
     expect(wrapper.get('[data-testid="managed-signin-status"]').text()).toBe(
-      'Finish signing in in your browser'
+      'Continue in your browser'
     )
     expect(sourceOption(wrapper, 'workspace-install-source-managed').disabled).toBe(false)
     await pickSource(wrapper, 'workspace-install-source-managed')
