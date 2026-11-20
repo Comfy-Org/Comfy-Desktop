@@ -277,6 +277,7 @@ export function buildElectronApi(): ElectronApi {
     relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
     resetZoom: () => ipcRenderer.invoke('reset-zoom'),
     getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
+    getChassisType: () => ipcRenderer.invoke('get-chassis-type'),
     getInstallationDdContext: (installationId: string) =>
       ipcRenderer.invoke('get-installation-dd-context', installationId),
     getInstallsInventory: () => ipcRenderer.invoke('get-installs-inventory'),

@@ -390,6 +390,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
       ...machine.systemInfo,
       installation_count: installations.length
     }),
+    getChassisType: async () => machine.chassisType,
     getInstallationDdContext: async () => null,
     getInstallsInventory: async () => ({
       total_install_count: installations.length,
