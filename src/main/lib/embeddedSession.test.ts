@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { ComfyDesktop2AuthState } from '../../types/comfyDesktopBridge'
 import type * as WorkspaceTokenModule from '../cloud/workspaceToken'
 
 const mocks = vi.hoisted(() => ({
@@ -81,6 +82,8 @@ function mintedFor(workspaceId: string): string {
 }
 
 const MINTED = mintedFor('ws-1')
+const NOT_LOCAL: ComfyDesktop2AuthState = { status: 'disabled', reason: 'not_local' }
+const OFF: ComfyDesktop2AuthState = { status: 'disabled', reason: 'off' }
 
 function partnerNodeFor(workspaceId: string): string {
   return jwt({ sub: 'user-1', workspace_id: workspaceId, aud: 'comfy-partner-node', sid: 's-1' })
@@ -187,7 +190,7 @@ describe('embeddedSession', () => {
   ])('refuses %s', async (_name, comfyUrl, options: ViewOptions) => {
     const { event } = view(comfyUrl, options)
 
-    await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
+    await expect(stateForSender(event)).resolves.toEqual(NOT_LOCAL)
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
     await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBeNull()
     expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
@@ -302,7 +305,7 @@ describe('embeddedSession', () => {
   })
 
   it.each([
-    ['a remote view', 'http://192.168.1.20:8188', 'ws-2', ACCESS, { status: 'disabled' }],
+    ['a remote view', 'http://192.168.1.20:8188', 'ws-2', ACCESS, NOT_LOCAL],
     ['a signed-out session', 'http://127.0.0.1:8000', 'ws-2', null, { status: 'signed_out' }],
     ['an empty workspace', 'http://127.0.0.1:8000', '', ACCESS, undefined],
     ['a non-string workspace', 'http://127.0.0.1:8000', 42, ACCESS, undefined]
@@ -345,15 +348,22 @@ describe('embeddedSession', () => {
       senderFrame: { processId: 1, routingId: 1, url: 'http://127.0.0.1:8000' }
     } as unknown as EmbeddedSessionSender
 
-    await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
+    await expect(stateForSender(event)).resolves.toEqual(NOT_LOCAL)
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
+  })
+
+  it('tells a remote view it is not local, without reading the ops flag', async () => {
+    mocks.enabled = false
+    const { event } = view('http://192.168.1.20:8188')
+
+    await expect(stateForSender(event)).resolves.toEqual(NOT_LOCAL)
   })
 
   it('stays disabled while the ops flag is off', async () => {
     mocks.enabled = false
     const { event } = view('http://127.0.0.1:8000')
 
-    await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
+    await expect(stateForSender(event)).resolves.toEqual(OFF)
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
     await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBeNull()
     expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
@@ -397,7 +407,7 @@ describe('embeddedSession', () => {
     const remote = view('http://192.168.1.20:8188')
 
     await stateForSender(local.event)
-    await expect(stateForSender(remote.event)).resolves.toEqual({ status: 'disabled' })
+    await expect(stateForSender(remote.event)).resolves.toEqual(NOT_LOCAL)
 
     expect(disabledEvents()).toEqual([])
   })
@@ -785,7 +795,7 @@ describe('the hosted Apps page', () => {
   it('gets nothing while Apps is switched off', async () => {
     const { event } = appsPage()
 
-    await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
+    await expect(stateForSender(event)).resolves.toEqual(OFF)
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
     await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBeNull()
     expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()

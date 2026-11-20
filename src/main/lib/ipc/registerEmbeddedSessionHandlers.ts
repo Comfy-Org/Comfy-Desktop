@@ -1,7 +1,11 @@
 import { app, ipcMain } from 'electron'
 
 import { findEntryByComfySender } from '../../host/registry'
-import type { ComfyDesktop2AuthState } from '../../../types/comfyDesktopBridge'
+import type {
+  ComfyDesktop2AuthState,
+  ComfyDesktop2SignInResult
+} from '../../../types/comfyDesktopBridge'
+import { SignInFailure } from '../../cloud/signInFailure'
 import {
   billingHandoffForSender,
   EMBEDDED_SESSION_CHANNELS,
@@ -27,12 +31,16 @@ export function registerEmbeddedSessionHandlers(): void {
 
   ipcMain.handle(
     EMBEDDED_SESSION_CHANNELS.requestSignIn,
-    async (event): Promise<ComfyDesktop2AuthState> => {
-      if ((await stateForSender(event)).status === 'disabled') return { status: 'disabled' }
+    async (event): Promise<ComfyDesktop2SignInResult> => {
+      const state = await stateForSender(event)
+      if (state.status === 'disabled') return state
       return reportHostSignIn(async () => {
         await signInToCloud()
         return stateForSender(event)
-      })
+      }).catch(async (error: unknown): Promise<ComfyDesktop2SignInResult> => ({
+        ...(await stateForSender(event)),
+        signInFailure: error instanceof SignInFailure ? error.reason : 'unknown'
+      }))
     }
   )
 

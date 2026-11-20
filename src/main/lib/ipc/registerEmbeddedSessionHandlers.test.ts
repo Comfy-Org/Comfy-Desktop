@@ -138,18 +138,42 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
     }
   )
 
-  it('passes the sign-in failure back to the view', async () => {
-    mocks.stateForSender.mockResolvedValue(SIGNED_OUT)
-    const failure = new SignInFailure('Loopback OAuth callback timed out', 'timeout')
-    mocks.signInToCloud.mockRejectedValue(failure)
+  it.for<{ name: string; failure: Error; signInFailure: string }>([
+    {
+      name: 'a cancelled sign-in',
+      failure: new SignInFailure('access_denied', 'cancelled'),
+      signInFailure: 'cancelled'
+    },
+    {
+      name: 'a timed-out sign-in',
+      failure: new SignInFailure('Loopback OAuth callback timed out', 'timeout'),
+      signInFailure: 'timeout'
+    },
+    { name: 'an unclassified error', failure: new Error('boom'), signInFailure: 'unknown' }
+  ])(
+    'resolves $name with the view state and why it failed',
+    async ({ failure, signInFailure }) => {
+      mocks.stateForSender.mockResolvedValue(SIGNED_OUT)
+      mocks.signInToCloud.mockRejectedValue(failure)
 
-    await expect(requestSignIn()({})).rejects.toBe(failure)
+      await expect(requestSignIn()({})).resolves.toEqual({ status: 'signed_out', signInFailure })
+    }
+  )
+
+  it('resolves a failed sign-in with the state the view is in by then', async () => {
+    mocks.stateForSender.mockResolvedValueOnce(SIGNED_OUT).mockResolvedValue(SIGNED_IN)
+    mocks.signInToCloud.mockRejectedValue(new SignInFailure('superseded', 'cancelled'))
+
+    await expect(requestSignIn()({})).resolves.toEqual({
+      ...SIGNED_IN,
+      signInFailure: 'cancelled'
+    })
   })
 
-  it('reports nothing while the embedded session is disabled', async () => {
-    mocks.stateForSender.mockResolvedValue({ status: 'disabled' })
+  it('reports nothing while the embedded session is disabled, and says why', async () => {
+    mocks.stateForSender.mockResolvedValue({ status: 'disabled', reason: 'not_local' })
 
-    await expect(requestSignIn()({})).resolves.toEqual({ status: 'disabled' })
+    await expect(requestSignIn()({})).resolves.toEqual({ status: 'disabled', reason: 'not_local' })
 
     expect(mocks.signInToCloud).not.toHaveBeenCalled()
     expect(mocks.emit).not.toHaveBeenCalled()

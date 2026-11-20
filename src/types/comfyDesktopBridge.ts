@@ -107,11 +107,13 @@ export type ComfyDesktop2FirebaseAuthState =
 
 /**
  * Desktop's own Comfy account session, as the hosted local ComfyUI view sees it.
- * `disabled` means Desktop does not share its session with this view (ops flag
- * off, or the view is not a trusted loopback ComfyUI).
+ * `disabled` means Desktop does not share its session with this view: `reason`
+ * is `not_local` when the view is not a local install's own loopback ComfyUI
+ * (for example a Remote Connection), `off` when sharing is turned off, and
+ * absent on Desktop builds before it.
  */
 export type ComfyDesktop2AuthState =
-  | { status: 'disabled' }
+  | { status: 'disabled'; reason?: 'off' | 'not_local' }
   | { status: 'signed_out' }
   | {
       status: 'signed_in'
@@ -120,6 +122,20 @@ export type ComfyDesktop2AuthState =
       email?: string
       workspaceId?: string
     }
+
+export type ComfyDesktop2SignInFailure =
+  | 'cancelled'
+  | 'timeout'
+  | 'idp_error'
+  | 'server_error'
+  | 'network'
+  | 'browser_unavailable'
+  | 'unknown'
+
+/** `signInFailure` says why a sign-in did not complete; older Desktop builds reject instead. */
+export type ComfyDesktop2SignInResult = ComfyDesktop2AuthState & {
+  signInFailure?: ComfyDesktop2SignInFailure
+}
 
 export type ComfyDesktop2BillingHandoffReceiver = 'billing_web' | 'platform'
 
@@ -142,7 +158,7 @@ export interface ComfyDesktop2AuthBridge {
    *  workspace token. Absent on Desktop builds before it. */
   getPartnerNodeToken?(workspaceId: string): Promise<string | null>
   /** Runs Desktop's browser sign-in and resolves with the resulting state. */
-  requestSignIn(): Promise<ComfyDesktop2AuthState>
+  requestSignIn(): Promise<ComfyDesktop2SignInResult>
   /** Signs Desktop out of its account (every view follows) and resolves with
    *  the resulting state; Desktop may keep the session if an install needs it. */
   signOut(): Promise<ComfyDesktop2AuthState>
