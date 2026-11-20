@@ -13,7 +13,7 @@ const PRIMARY_CTA_URL = `https://comfy.org/platform/comfy-api${UTM}`
 const HERO_VIDEO_URL = 'https://media.comfy.org/website/comfy-api/hero_v1.mp4'
 const HERO_POSTER_URL = 'https://media.comfy.org/website/comfy-api/hero-poster_v1.webp'
 
-const emit = defineEmits<{ close: []; 'take-tour': [] }>()
+const emit = defineEmits<{ close: [] }>()
 
 const videoRef = ref<HTMLVideoElement | null>(null)
 const isMuted = ref(true)
@@ -115,15 +115,6 @@ onMounted(() => {
         <footer
           class="announce-footer flex items-center justify-end gap-4 border-t border-solid border-neutral-100/8 pt-[clamp(1rem,1.5vw,1.5rem)]"
         >
-          <Button
-            size="lg"
-            variant="muted-textonly"
-            type="button"
-            data-testid="announcement-take-tour"
-            @click="emit('take-tour')"
-          >
-            {{ $t('homeTour.replay') }}
-          </Button>
           <Button
             size="lg"
             variant="inverted"

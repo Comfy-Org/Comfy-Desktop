@@ -91,7 +91,7 @@ interface Bridge {
   onDownloadsChanged: (cb: (state: DownloadsTrayState) => void) => () => void
   clickDownloadsTray: (anchor: MenuAnchor) => void
   clickFeedback: () => void
-  clickAnnouncement: () => void
+  openWhatsNewMenu: (anchor: { x: number; y: number }) => void
   clickRefreshInstance: () => void
   clickHome: () => void
   resetZoom: () => void
@@ -170,8 +170,28 @@ function handleResetZoom(): void {
 const announcementUnread = ref(false)
 let unsubAnnouncementSettings: (() => void) | null = null
 
+const BELL_NUDGE_MS = 700
+const bellNudging = ref(false)
+let bellNudgeTimer: ReturnType<typeof setTimeout> | null = null
+
+function nudgeBell(): void {
+  if (bellNudgeTimer) clearTimeout(bellNudgeTimer)
+  bellNudging.value = true
+  bellNudgeTimer = setTimeout(() => {
+    bellNudging.value = false
+    bellNudgeTimer = null
+  }, BELL_NUDGE_MS)
+}
+
+async function nudgeBellWhenTourEnds(): Promise<void> {
+  try {
+    if ((await window.api?.getSetting?.('homeTourDone')) === true) nudgeBell()
+  } catch {}
+}
+
 function handleAnnouncement(): void {
-  bridge?.clickAnnouncement()
+  if (announcementUnread.value) void window.api?.setSetting?.('comfyApiAnnouncementSeen', true)
+  handleWhatsNewMenu()
 }
 
 async function refreshAnnouncementUnread(): Promise<void> {
@@ -187,11 +207,13 @@ onMounted(() => {
   unsubAnnouncementSettings =
     window.api?.onSettingsChanged?.(({ key }) => {
       if (key === 'comfyApiAnnouncementSeen') void refreshAnnouncementUnread()
+      if (key === 'homeTourDone') void nudgeBellWhenTourEnds()
     }) ?? null
 })
 
 onUnmounted(() => {
   unsubAnnouncementSettings?.()
+  if (bellNudgeTimer) clearTimeout(bellNudgeTimer)
 })
 
 const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
@@ -215,12 +237,14 @@ const {
   downloadsTrayLabel,
   downloadsStartedAt,
   handleFileMenu,
+  handleWhatsNewMenu,
   handleDownloadsTray
 } = useTitleBarMenus({
   bridge,
   hideTip,
   fileBtnRef,
-  downloadsBtnRef
+  downloadsBtnRef,
+  whatsNewBtnRef: announcementBtnRef
 })
 
 const betaNotice = useBetaActivationNotice({
@@ -439,8 +463,8 @@ onUnmounted(() => {
         v-if="!isFirstUseLockdown"
         ref="announcementBtn"
         type="button"
-        class="title-menu-button title-menu-button--icon title-announcement-button relative"
-        :class="titleMenuButtonClass"
+        class="title-menu-button title-menu-button--icon title-announcement-button relative [&.is-nudging_svg]:origin-[50%_10%] [&.is-nudging_svg]:animate-bell-nudge motion-reduce:[&.is-nudging_svg]:animate-bell-fade"
+        :class="[titleMenuButtonClass, { 'is-nudging': bellNudging }]"
         v-bind="tooltipAttrs(t('titleBar.announcementTooltip'), t('titleBar.announcement'))"
         @click="handleAnnouncement"
       >

@@ -21,6 +21,7 @@ import todesktop from '@todesktop/runtime'
 import * as ipc from './lib/ipc'
 import { getAppVersion } from './lib/ipc'
 import { recordHomeTourAudience } from './lib/homeTourAudience'
+import { requestHomeTourReplay } from './lib/ipc/registerHomeTourHandlers'
 import type { ExitCallbackInfo } from './lib/ipc'
 import { closeAllPopouts } from './lib/popoutWindows'
 import { disposeAllTerminals } from './lib/terminal'
@@ -194,7 +195,6 @@ import {
   destroyPanelView,
   ensurePanelView,
   focusActiveBody,
-  openAnnouncement,
   prewarmAttachedPanel,
   refreshComfyTabBody,
   registerPanelViewIpc,
@@ -688,12 +688,6 @@ ipcMain.on('comfy-window:click-feedback', (event) => {
   triggerOpenFeedback(found.entry.windowKey, 'titlebar')
 })
 
-ipcMain.on('comfy-window:click-announcement', (event) => {
-  const found = findEntryByTitleBarSender(event.sender)
-  if (!found) return
-  openAnnouncement(found.entry.windowKey)
-})
-
 ipcMain.on('comfy-window:new-chooser-window', (event) => {
   openChooserHostWindow('comfy', {
     nearWindow: findEntryByTitleBarSender(event.sender)?.entry.window
@@ -715,12 +709,16 @@ ipcMain.on('comfy-window:show-home', (event) => {
   openOrFocusHomeHostWindow()
 })
 
-ipcMain.on('comfy-panel:show-home', (event) => {
-  if (!findHostWindowByPanelSender(event.sender)) return
-  recordIpcInvocation('comfy-panel:show-home')
-  const panelView = findEntryByHostWindow(openOrFocusHomeHostWindow())?.panelView
+function startHomeTour(fromWindowKey: number): void {
+  requestHomeTourReplay()
+  const from = comfyWindows.get(fromWindowKey)
+  const home =
+    from && isChooserHost(from) && !from.window.isDestroyed()
+      ? from.window
+      : openOrFocusHomeHostWindow()
+  const panelView = findEntryByHostWindow(home)?.panelView
   if (panelView) sendToPanelDeferred(panelView, 'comfy-panel:show-home-page', {})
-})
+}
 
 async function prepareBuildWindowFocus(
   entry: ComfyWindowEntry,
@@ -1144,6 +1142,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         }),
       setActivePanel,
       triggerOpenFeedback,
+      startHomeTour,
       resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),
       sendToPanelDeferred,
       ensurePanelViewForEntry: (entry) =>

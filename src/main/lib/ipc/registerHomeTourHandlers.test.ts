@@ -18,12 +18,15 @@ function call(channel: string, ...args: unknown[]): unknown {
 }
 
 describe('home tour replay handlers', () => {
+  let request: () => number = () => 0
+
   beforeEach(async () => {
     vi.resetModules()
     handlers.clear()
     broadcast.mockClear()
-    const { registerHomeTourHandlers } = await import('./registerHomeTourHandlers')
-    registerHomeTourHandlers()
+    const handlersModule = await import('./registerHomeTourHandlers')
+    handlersModule.registerHomeTourHandlers()
+    request = handlersModule.requestHomeTourReplay
   })
 
   it('has no replay waiting at first', () => {
@@ -31,8 +34,8 @@ describe('home tour replay handlers', () => {
   })
 
   it('gives each replay request a new id and tells every window', () => {
-    expect(call('request-home-tour-replay')).toBe(1)
-    expect(call('request-home-tour-replay')).toBe(2)
+    expect(request()).toBe(1)
+    expect(request()).toBe(2)
 
     expect(call('get-home-tour-replay')).toEqual({ id: 2, pending: true })
     expect(broadcast).toHaveBeenLastCalledWith('home-tour-replay-changed', {
@@ -43,7 +46,7 @@ describe('home tour replay handlers', () => {
   })
 
   it('clears the replay that the finished tour showed, and tells every window the tour is done', () => {
-    const id = call('request-home-tour-replay')
+    const id = request()
     call('finish-home-tour', id)
 
     expect(call('get-home-tour-replay')).toEqual({ id: 1, pending: false })
@@ -55,15 +58,15 @@ describe('home tour replay handlers', () => {
   })
 
   it('keeps a newer replay when an older one finishes', () => {
-    const older = call('request-home-tour-replay')
-    call('request-home-tour-replay')
+    const older = request()
+    request()
     call('finish-home-tour', older)
 
     expect(call('get-home-tour-replay')).toEqual({ id: 2, pending: true })
   })
 
   it('keeps a waiting replay when an automatic tour finishes', () => {
-    call('request-home-tour-replay')
+    request()
     call('finish-home-tour', null)
 
     expect(call('get-home-tour-replay')).toEqual({ id: 1, pending: true })

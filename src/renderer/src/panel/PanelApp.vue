@@ -53,7 +53,6 @@ import {
 import { provideBuildLogs } from '../composables/useBuildProgress'
 import { provideBuildMenuHost } from './home/useBuildMenu'
 import HomeTour from './home/HomeTour.vue'
-import { useHomeTour } from './home/useHomeTour'
 import { useDialogs } from '../composables/useDialogs'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
@@ -81,7 +80,6 @@ useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
 const { feedbackOpen, feedbackHiddenFields, closeFeedback } = useSendFeedback()
 const { announcementOpen, closeAnnouncement } = useAnnouncement()
-const homeTour = useHomeTour()
 const dialogs = useDialogs()
 
 function showHomePage(): void {
@@ -95,18 +93,6 @@ onMounted(() => {
   unsubShowHomePage = window.api.onShowHomePage(showHomePage)
 })
 onUnmounted(() => unsubShowHomePage?.())
-
-async function takeHomeTour(): Promise<void> {
-  closeAnnouncement()
-  if (showSidebar.value) {
-    window.api.navigatePanel('home')
-    handleSidebarNavigate('home')
-    await homeTour.replay()
-    return
-  }
-  await homeTour.replay()
-  window.api.showHome()
-}
 
 const installation = computed<Installation | null>(() =>
   installationId ? (installationStore.getById(installationId) ?? null) : null
@@ -709,11 +695,7 @@ onUnmounted(() => {
       :hidden-fields="feedbackHiddenFields"
       @close="closeFeedback"
     />
-    <AnnouncementModal
-      v-if="announcementOpen"
-      @close="closeAnnouncement"
-      @take-tour="void takeHomeTour()"
-    />
+    <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
     <HomeTour :active="homeTourCanShow" :interrupted="homeTourInterrupted" />
 
     <ModalDialog />

@@ -1398,9 +1398,7 @@ export interface ElectronApi {
   setSetting<K extends KnownSettingKey>(key: K, value: KnownSettings[K]): Promise<void>
   getSetting<K extends KnownSettingKey>(key: K): Promise<KnownSettings[K]>
   getHomeTourReplay(): Promise<{ id: number; pending: boolean }>
-  requestHomeTourReplay(): Promise<number>
   finishHomeTour(shownReplayId: number | null): Promise<void>
-  showHome(): void
 
   getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
   acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>

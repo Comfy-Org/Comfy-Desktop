@@ -3879,15 +3879,13 @@ describe('PanelApp home tour', () => {
         return () => {}
       }),
       getHomeTourReplay: vi.fn(async () => ({ id: 0, pending: false })),
-      requestHomeTourReplay: vi.fn(async () => 1),
       finishHomeTour: vi.fn(async () => {}),
       onHomeTourReplayChanged: vi.fn(
         (cb: (state: { id: number; pending: boolean; finished: boolean }) => void) => {
           replayChanged = cb
           return () => {}
         }
-      ),
-      showHome: vi.fn()
+      )
     })
     window.history.replaceState({}, '', `/?${query}`)
     const wrapper = mountPanel()
@@ -3965,37 +3963,6 @@ describe('PanelApp home tour', () => {
     await flushPromises()
 
     expect(homeTour()).toBeNull()
-  })
-
-  it("Take the tour in What's new closes the dialog and shows the tour again", async () => {
-    mountWithTour({ homeTourDone: true })
-    await flushPromises()
-    openAnnouncement()
-    await expect
-      .poll(() => document.querySelector('[data-testid="announcement-take-tour"]'))
-      .not.toBeNull()
-
-    document.querySelector<HTMLElement>('[data-testid="announcement-take-tour"]')!.click()
-
-    await expect.poll(homeTour).not.toBeNull()
-    expect(window.api.closeAnnouncement).toHaveBeenCalled()
-    expect(window.api.navigatePanel).toHaveBeenCalledWith('home')
-    expect(window.api.showHome).not.toHaveBeenCalled()
-  })
-
-  it('Take the tour over a running build asks main to replay the tour on Home', async () => {
-    mountWithTour({ homeTourDone: true }, 'installationId=test-id&firstUseCompleted=true')
-    await flushPromises()
-    openAnnouncement()
-    await expect
-      .poll(() => document.querySelector('[data-testid="announcement-take-tour"]'))
-      .not.toBeNull()
-
-    document.querySelector<HTMLElement>('[data-testid="announcement-take-tour"]')!.click()
-
-    await expect.poll(() => vi.mocked(window.api.requestHomeTourReplay).mock.calls.length).toBe(1)
-    expect(window.api.navigatePanel).not.toHaveBeenCalledWith('home')
-    await expect.poll(() => vi.mocked(window.api.showHome).mock.calls.length).toBe(1)
   })
 
   it('shows the Home page when main brings this dashboard forward for a replay', async () => {

@@ -261,9 +261,7 @@ export function buildElectronApi(): ElectronApi {
     setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
     getSetting: (key) => ipcRenderer.invoke('get-setting', key),
     getHomeTourReplay: () => ipcRenderer.invoke('get-home-tour-replay'),
-    requestHomeTourReplay: () => ipcRenderer.invoke('request-home-tour-replay'),
     finishHomeTour: (shownReplayId) => ipcRenderer.invoke('finish-home-tour', shownReplayId),
-    showHome: () => ipcRenderer.send('comfy-panel:show-home'),
     getPendingBetaNotice: (installationId) =>
       ipcRenderer.invoke('get-pending-beta-notice', installationId),
     acknowledgeBetaNotice: (installationId, shownArgs) =>

@@ -90,20 +90,9 @@ async function finish(): Promise<void> {
   }
 }
 
-async function replay(): Promise<void> {
-  await loading
-  replays.value += 1
-  done.value = false
-  try {
-    pendingReplayId = await window.api.requestHomeTourReplay()
-  } catch (err) {
-    console.warn('[home-tour] could not share the replay request:', err)
-  }
-}
-
 export function useHomeTour() {
   loading ??= load()
-  return { audience, done, loaded, replays, finish, replay, markShown }
+  return { audience, done, loaded, replays, finish, markShown }
 }
 
 export function __resetHomeTourForTest(): void {

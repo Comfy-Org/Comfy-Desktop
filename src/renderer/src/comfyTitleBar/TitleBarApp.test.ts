@@ -41,6 +41,7 @@ interface MockBridgeState {
   setPanelCalls: string[]
   newWindowCalls: number
   fileMenuAnchors: { x: number; y: number }[]
+  whatsNewMenuAnchors: { x: number; y: number }[]
   fileMenuDismisses: number
   appUpdatePillClicks: number
   installUpdatePillClicks: number
@@ -91,6 +92,7 @@ function installMockBridge(
     setPanelCalls: [],
     newWindowCalls: 0,
     fileMenuAnchors: [],
+    whatsNewMenuAnchors: [],
     fileMenuDismisses: 0,
     appUpdatePillClicks: 0,
     installUpdatePillClicks: 0,
@@ -121,6 +123,9 @@ function installMockBridge(
     },
     openFileMenu: (anchor: { x: number; y: number }) => {
       state.fileMenuAnchors.push(anchor)
+    },
+    openWhatsNewMenu: (anchor: { x: number; y: number }) => {
+      state.whatsNewMenuAnchors.push(anchor)
     },
     dismissFileMenu: () => {
       state.fileMenuDismisses += 1
@@ -397,6 +402,67 @@ describe('TitleBarApp', () => {
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(true)
     expect(wrapper.find('.title-install-pill').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  describe('the bell', () => {
+    let settingsChanged: (data: { key: string }) => void = () => {}
+    const settings = new Map<string, unknown>()
+    let setSetting: ReturnType<typeof vi.fn>
+
+    beforeEach(() => {
+      settings.clear()
+      setSetting = vi.fn(async (key: string, value: unknown) => {
+        settings.set(key, value)
+      })
+      ;(window as unknown as { api: unknown }).api = {
+        getSetting: vi.fn(async (key: string) => settings.get(key)),
+        setSetting,
+        onSettingsChanged: (cb: (data: { key: string }) => void) => {
+          settingsChanged = cb
+          return () => {}
+        }
+      }
+    })
+
+    it("opens the What's new menu under the bell and clears its dot", async () => {
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp, { attachTo: document.body })
+      await flushPromises()
+      expect(wrapper.find('.title-announcement-dot').exists()).toBe(true)
+
+      await wrapper.find('.title-announcement-button').trigger('click')
+
+      expect(bridgeState.whatsNewMenuAnchors.length).toBe(1)
+      expect(bridgeState.fileMenuAnchors.length).toBe(0)
+      expect(setSetting).toHaveBeenCalledWith('comfyApiAnnouncementSeen', true)
+      wrapper.unmount()
+    })
+
+    it('nudges the bell once when the tour ends', async () => {
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp, { attachTo: document.body })
+      await flushPromises()
+      const bell = () => wrapper.find('.title-announcement-button')
+
+      settings.set('homeTourDone', true)
+      settingsChanged({ key: 'homeTourDone' })
+      await expect.poll(() => bell().classes()).toContain('is-nudging')
+      await expect.poll(() => bell().classes(), { timeout: 2000 }).not.toContain('is-nudging')
+      wrapper.unmount()
+    })
+
+    it('does not nudge the bell when the tour is set to show again', async () => {
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp, { attachTo: document.body })
+      await flushPromises()
+
+      settings.set('homeTourDone', false)
+      settingsChanged({ key: 'homeTourDone' })
+      await flushPromises()
+
+      expect(wrapper.find('.title-announcement-button').classes()).not.toContain('is-nudging')
+      wrapper.unmount()
+    })
   })
 
   describe('Home button and the ☰ on the right', () => {

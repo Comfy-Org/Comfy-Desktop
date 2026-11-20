@@ -25,16 +25,11 @@ interface ReplayRecord {
 let replayRecord: ReplayRecord = { id: 0, pending: false }
 let readReplay = async (): Promise<ReplayRecord> => replayRecord
 let replayChanged: (state: ReplayRecord & { finished: boolean }) => void = () => {}
-const requestHomeTourReplay = vi.fn(async (): Promise<number> => {
-  replayRecord = { id: replayRecord.id + 1, pending: true }
-  return replayRecord.id
-})
 const finishHomeTour = vi.fn(async (_shownReplayId: number | null): Promise<void> => {})
 stubWindowApi({
   getSetting,
   setSetting,
   getHomeTourReplay: () => readReplay(),
-  requestHomeTourReplay,
   finishHomeTour,
   onHomeTourReplayChanged: (callback: (state: ReplayRecord & { finished: boolean }) => void) => {
     replayChanged = callback
@@ -117,7 +112,6 @@ beforeEach(() => {
   telemetry.length = 0
   replayRecord = { id: 0, pending: false }
   readReplay = async () => replayRecord
-  requestHomeTourReplay.mockClear()
   finishHomeTour.mockClear()
   window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, recordTelemetry)
   __resetHomeTourForTest()
@@ -205,7 +199,7 @@ describe('HomeTour', () => {
     }
     expect(tourCard()?.textContent).toContain('Assets')
     expect(tourCard()?.textContent).toContain('Everything you generate is saved here.')
-    expect(tourCard()?.textContent).toContain('Replay this tour from the bell in the title bar.')
+    expect(tourCard()?.textContent).toContain('Find the tour again in the bell menu.')
     expect(button('skip')).not.toBeVisible()
     expect(button('next')?.innerText.trim()).toBe('Done')
 
@@ -247,7 +241,7 @@ describe('HomeTour', () => {
     await settle()
     expect(tourCard()).toBeNull()
 
-    await useHomeTour().replay()
+    replayChanged({ id: 1, pending: true, finished: false })
     await waitForCard()
     expect(setSetting).not.toHaveBeenCalled()
   })
@@ -402,7 +396,7 @@ describe('HomeTour', () => {
     await wrapper.setProps({ active: false })
     await expect.poll(() => tourCard()).toBeNull()
 
-    await useHomeTour().replay()
+    replayChanged({ id: 1, pending: true, finished: false })
     await wrapper.setProps({ active: true })
 
     await expect.poll(() => tourCard()?.textContent).toContain('1 of 8')
@@ -453,7 +447,7 @@ describe('HomeTour', () => {
     mountTour()
     await tourStateLoaded()
 
-    await useHomeTour().replay()
+    replayChanged({ id: 1, pending: true, finished: false })
     await waitForCard()
     await userEvent.click(button('skip')!)
     await expect.poll(() => finishHomeTour.mock.calls).toContainEqual([1])
