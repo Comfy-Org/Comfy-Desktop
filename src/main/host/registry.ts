@@ -55,7 +55,6 @@ export interface ComfyWindowEntry {
   layoutViews: () => void
   comfyUrl: string
   installationId: string | null
-  constructedPartition: string | null
   firstUseMode: FirstUseMode
   titleBarText: string
   sourceCategory: string | null

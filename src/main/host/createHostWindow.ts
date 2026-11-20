@@ -636,10 +636,6 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     layoutViews,
     comfyUrl: '',
     installationId: null,
-    constructedPartition:
-      typeof opts.comfyWebPreferences.partition === 'string'
-        ? opts.comfyWebPreferences.partition
-        : null,
     firstUseMode: 'none',
     titleBarText: opts.initialTitleBarText,
     sourceCategory: opts.initialSourceCategory,
@@ -738,12 +734,7 @@ export function buildComfyView(
   return comfyView
 }
 
-export function rebuildComfyViewIfNeeded(
-  entry: ComfyWindowEntry,
-  installation: InstallationRecord
-): void {
-  const expectedPartition = expectedPartitionFor(installation)
-  if (entry.constructedPartition === expectedPartition) return
+export function replaceComfyView(entry: ComfyWindowEntry, installation: InstallationRecord): void {
   if (entry.window.isDestroyed()) return
 
   const oldView = entry.comfyView
@@ -753,7 +744,7 @@ export function rebuildComfyViewIfNeeded(
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, '../preload/comfyPreload.js'),
-      partition: expectedPartition
+      partition: expectedPartitionFor(installation)
     },
     entry.windowKey
   )
@@ -762,7 +753,6 @@ export function rebuildComfyViewIfNeeded(
   entry.window.contentView.removeChildView(oldView)
   if (!oldView.webContents.isDestroyed()) oldView.webContents.close()
   entry.comfyView = newView
-  entry.constructedPartition = expectedPartition
 }
 
 export function getChooserHostTheme(): { bg: string; text: string } {

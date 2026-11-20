@@ -169,7 +169,7 @@ import {
   expectedPartitionFor,
   openChooserHostWindow,
   quitsOnceEveryWindowClosed,
-  rebuildComfyViewIfNeeded,
+  replaceComfyView,
   setHostWindowFactories
 } from './host/createHostWindow'
 import { attachInstall, setAttachFactories, type ZoomResetSource } from './host/attach'
@@ -469,7 +469,7 @@ function onLaunch({
   if (claimedKey !== undefined) {
     const claimed = comfyWindows.get(claimedKey)
     if (claimed && !claimed.window.isDestroyed() && isChooserHost(claimed)) {
-      rebuildComfyViewIfNeeded(claimed, installation)
+      replaceComfyView(claimed, installation)
       destroyPanelView(claimed)
       const ok = attachInstall(claimed, { installation, comfyUrl, isLocal: !url })
       if (ok) {

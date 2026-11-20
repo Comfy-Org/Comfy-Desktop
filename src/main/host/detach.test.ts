@@ -99,7 +99,6 @@ function makeEntry(window: FakeWindow): ComfyWindowEntry {
     layoutViews: () => {},
     comfyUrl: '',
     installationId: null,
-    constructedPartition: null,
     firstUseMode: 'none',
     titleBarText: '',
     sourceCategory: null,

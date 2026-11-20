@@ -98,7 +98,6 @@ function makeEntry(
     },
     comfyUrl: '',
     installationId: opts.installationId ?? null,
-    constructedPartition: null,
     firstUseMode: 'none',
     titleBarText: '',
     sourceCategory: null,

@@ -89,7 +89,6 @@ function makeEntry(
     layoutViews: () => {},
     comfyUrl: '',
     installationId: opts.installationId ?? null,
-    constructedPartition: null,
     firstUseMode: opts.firstUseMode ?? 'none',
     titleBarText: '',
     sourceCategory: null,

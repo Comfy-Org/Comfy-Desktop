@@ -2,6 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 
 import type * as SettingsModule from '../settings'
 
+const { fakeComfyView } = vi.hoisted(() => ({
+  fakeComfyView: (options?: Electron.WebContentsViewConstructorOptions) => ({
+    options,
+    setBackgroundColor: vi.fn(),
+    setVisible: vi.fn(),
+    webContents: {
+      session: {},
+      on: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+      isDestroyed: () => false,
+      close: vi.fn()
+    }
+  })
+}))
+
 const mocks = vi.hoisted(() => ({
   appsBuildRunning: false,
   stopAppsBuilds: vi.fn(async () => {}),
@@ -47,6 +62,19 @@ vi.mock('../lib/windowState', () => ({
   saveWindowBounds: vi.fn()
 }))
 
+vi.mock('../lib/webContentsViewLifetime', () => ({
+  createWebContentsView: vi.fn((options: Electron.WebContentsViewConstructorOptions) =>
+    fakeComfyView(options)
+  )
+}))
+vi.mock('../lib/firebaseAuthIdentity', () => ({ trackFirebaseAuthReporter: vi.fn() }))
+vi.mock('../lib/sessionPermissions', () => ({ guardPermissionRequests: vi.fn() }))
+vi.mock('../lib/contextMenu', () => ({ attachContextMenu: vi.fn() }))
+vi.mock('../lib/comfyDownloadManager', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  attachSessionDownloadHandler: vi.fn()
+}))
+
 vi.mock('../apps/localComfy', () => ({
   hasBuildsRunningForAppsOnly: () => mocks.appsBuildRunning,
   stopEveryBuildRunningForAppsOnly: () => mocks.stopAppsBuilds()
@@ -83,6 +111,7 @@ import {
   shouldBailAfterCloseChoice,
   shouldBailAfterConsult,
   quitsOnceEveryWindowClosed,
+  replaceComfyView,
   shouldShowInstallCloseConfirm
 } from './createHostWindow'
 
@@ -148,6 +177,27 @@ describe('expectedPartitionFor', () => {
     const inst = makeInstallation({ id: 'with spaces & symbols' } as Partial<InstallationRecord>)
     ;(inst as unknown as { browserPartition: string }).browserPartition = 'unique'
     expect(expectedPartitionFor(inst)).toBe('persist:with spaces & symbols')
+  })
+})
+
+describe('replaceComfyView', () => {
+  it('gives a reused dashboard window a new page even when the install uses the same partition', () => {
+    const oldView = fakeComfyView({ webPreferences: { partition: 'persist:shared' } })
+    const contentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
+    const entry = {
+      windowKey: 1,
+      window: { isDestroyed: () => false, contentView },
+      comfyView: oldView
+    } as unknown as ComfyWindowEntry
+
+    replaceComfyView(entry, makeInstallation())
+
+    const newView = entry.comfyView as unknown as ReturnType<typeof fakeComfyView>
+    expect(newView).not.toBe(oldView)
+    expect(newView.options?.webPreferences?.partition).toBe('persist:shared')
+    expect(oldView.webContents.close).toHaveBeenCalledOnce()
+    expect(contentView.removeChildView).toHaveBeenCalledWith(oldView)
+    expect(contentView.addChildView).toHaveBeenCalledWith(newView)
   })
 })
 
