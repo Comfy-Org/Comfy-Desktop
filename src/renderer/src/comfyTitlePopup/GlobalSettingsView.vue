@@ -320,6 +320,7 @@ onMounted(() => {
       >
         <template v-if="activeTab === 'general'">
           <SettingsSectionList
+            class="gs-language [&_.settings-v2-field]:flex-row [&_.settings-v2-field]:items-center [&_.settings-v2-field]:justify-between [&_.settings-v2-field]:gap-3 [&_.settings-v2-field>:last-child]:w-50 [&_.settings-v2-field>:last-child]:flex-none"
             :sections="languageSections"
             @update-field="handleUpdateField"
             @open-path="handleOpenPath"
