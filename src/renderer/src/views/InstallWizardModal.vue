@@ -13,6 +13,7 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
+  Pencil,
   Check,
   Download,
   FileArchive,
@@ -1853,8 +1854,13 @@ defineExpose({ open })
         <label
           class="config-label flex items-center gap-2.5 text-[13px] leading-4 text-text-muted"
           for="inst-name-standalone"
-          ><Tag :size="15" aria-hidden="true" />{{ $t('common.name') }}</label
-        >
+          ><Tag :size="15" aria-hidden="true" />{{ $t('common.name')
+          }}<Pencil
+            :size="11"
+            class="-ml-1 text-subtle-foreground"
+            aria-hidden="true"
+            data-testid="install-name-edit-hint"
+        /></label>
         <InstallNameInput
           v-model="instName"
           :placeholder="suggestedName || $t('common.namePlaceholder')"

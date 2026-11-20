@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
 import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
-import { Pencil } from '@lucide/vue'
 
 defineProps<{
   modelValue: string
@@ -17,7 +16,7 @@ const emit = defineEmits<{
 
 <template>
   <InputGroup
-    class="config-input -my-1.5 -ml-2.5 h-7 w-auto max-w-[360px] cursor-text bg-white/[0.04] pr-2.5 transition-colors duration-150 hover:bg-white/8 focus-within:bg-secondary"
+    class="config-input -my-1.5 -ml-2.5 h-7 w-auto max-w-[360px] cursor-text bg-transparent transition-colors duration-150 hover:bg-white/8 focus-within:bg-secondary"
     :class="{ 'config-input--invalid': error }"
   >
     <InputGroupInput
@@ -30,12 +29,6 @@ const emit = defineEmits<{
       :aria-invalid="!!error"
       :aria-describedby="error ? 'inst-name-error' : undefined"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
-    />
-    <Pencil
-      :size="12"
-      class="pointer-events-none shrink-0 text-subtle-foreground"
-      aria-hidden="true"
-      data-testid="install-name-edit-hint"
     />
   </InputGroup>
   <div
