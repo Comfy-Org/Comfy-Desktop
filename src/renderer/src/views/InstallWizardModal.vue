@@ -1850,7 +1850,7 @@ defineExpose({ open })
       data-testid="config-summary"
     >
       <div
-        class="config-name-card mt-4 rounded-[14px] bg-white/5 px-5 py-3"
+        class="config-name-card mt-4 rounded-[14px] bg-white/5 py-3 pr-3 pl-5"
         :class="SUMMARY_GRID_CLASS"
       >
         <label

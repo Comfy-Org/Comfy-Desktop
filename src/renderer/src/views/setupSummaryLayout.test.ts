@@ -307,6 +307,18 @@ describe.each([
     expect(Math.round(nameInput)).toBe(Math.round(newBuildName))
   })
 
+  it('keeps the Name field as far from the top of its box as from the right', async () => {
+    await browserPage.viewport(width, height)
+    await newBuildSummary()
+    const card = document.querySelector<HTMLElement>('.config-name-card')!.getBoundingClientRect()
+    const field = document
+      .querySelector<HTMLElement>('.config-name-card .config-input')!
+      .getBoundingClientRect()
+
+    expect(Math.round(card.right - field.right)).toBe(Math.round(field.top - card.top))
+    expect(Math.round(card.bottom - field.bottom)).toBe(Math.round(field.top - card.top))
+  })
+
   it('draws Browse as a filled secondary button, without an outline', async () => {
     await browserPage.viewport(width, height)
     const { box } = await newBuildSummary()
