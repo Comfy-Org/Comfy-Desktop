@@ -383,8 +383,7 @@ async function handleSave(): Promise<void> {
   } catch (err: unknown) {
     await dialogs.alert({
       title: t('snapshots.saveErrorTitle'),
-      message: (err as Error).message || String(err),
-      tone: 'danger'
+      message: (err as Error).message || String(err)
     })
     return
   }
@@ -446,8 +445,7 @@ async function handleDelete(filename: string): Promise<void> {
   } catch (err: unknown) {
     await dialogs.alert({
       title: t('snapshots.deleteErrorTitle'),
-      message: (err as Error).message || String(err),
-      tone: 'danger'
+      message: (err as Error).message || String(err)
     })
     return
   }
@@ -486,8 +484,7 @@ async function handleImport(): Promise<void> {
     if (preview.message) {
       await dialogs.alert({
         title: t('snapshots.importErrorTitle'),
-        message: preview.message,
-        tone: 'danger'
+        message: preview.message
       })
     }
     return
@@ -513,8 +510,7 @@ async function handleImport(): Promise<void> {
     if (diff.message) {
       await dialogs.alert({
         title: t('snapshots.importErrorTitle'),
-        message: diff.message,
-        tone: 'danger'
+        message: diff.message
       })
     }
     return
@@ -527,8 +523,7 @@ async function handleImport(): Promise<void> {
     if (importResult.message) {
       await dialogs.alert({
         title: t('snapshots.importErrorTitle'),
-        message: importResult.message,
-        tone: 'danger'
+        message: importResult.message
       })
     }
     return
