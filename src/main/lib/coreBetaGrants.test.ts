@@ -623,6 +623,108 @@ describe('parseCoreBetaGrants commit ranges', () => {
   })
 })
 
+describe('parseCoreBetaGrants release floor', () => {
+  const parse = (releaseFloor: unknown) =>
+    parseCoreBetaGrants(true, {
+      flags: [
+        { arg: '--enable-agent', commit_ranges: [[SHA_A, null]], release_floor: releaseFloor }
+      ]
+    })
+
+  it('keeps a release floor beside the commit ranges, without its v prefix', () => {
+    expect(parse('v0.42.4')).toEqual([
+      { arg: '--enable-agent', commitRanges: [[SHA_A, null]], releaseFloor: '0.42.4' }
+    ])
+  })
+
+  it.each([['not a version'], [42], [null]])('drops the entry when the floor is %s', (floor) => {
+    expect(parse(floor)).toEqual([])
+  })
+})
+
+describe('selectCoreBetaGrantArgs release floor', () => {
+  const head = 'e'.repeat(40)
+  const floorGrant: CoreBetaGrant = {
+    arg: '--enable-agent',
+    commitRanges: [[SHA_A, null]],
+    releaseFloor: '0.42.4'
+  }
+  const plainGrant: CoreBetaGrant = { arg: '--enable-agent', commitRanges: [[SHA_A, null]] }
+  const release = (overrides: Partial<CoreVersionState> = {}): CoreVersionState => ({
+    semver: '0.46.1',
+    exact: true,
+    verified: true,
+    current: true,
+    ...overrides
+  })
+
+  function select(
+    grant: CoreBetaGrant,
+    core: CoreVersionState,
+    ancestry: Record<string, boolean> = {},
+    commitHead: string | null = head
+  ) {
+    const withheld: string[] = []
+    const trace: string[] = []
+    const selected = selectCoreBetaGrantArgs(
+      [grant],
+      core,
+      true,
+      [],
+      { head: commitHead, ancestry: new Map(Object.entries(ancestry)) },
+      withheld,
+      (line) => trace.push(line)
+    )
+    return { selected, withheld, trace }
+  }
+
+  it('grants a verified current release at or above the floor when git could not relate the range', () => {
+    const { selected, trace } = select(floorGrant, release())
+    expect(selected).toEqual([floorGrant])
+    expect(trace).toEqual([
+      `[core-beta] commits --enable-agent: aaaaaaaaaaaa.. head=eeeeeeeeeeee in-range=release v0.46.1 >= v0.42.4`
+    ])
+  })
+
+  it('grants on the floor alone when there is no readable HEAD', () => {
+    expect(select(floorGrant, release(), {}, null).selected).toEqual([floorGrant])
+  })
+
+  it('grants exactly at the floor', () => {
+    expect(select(floorGrant, release({ semver: '0.42.4' })).selected).toEqual([floorGrant])
+  })
+
+  it.each([
+    ['below the floor', release({ semver: '0.42.3' }), '0.42.3'],
+    ['unverified', release({ verified: false }), '0.46.1'],
+    ['contradicted by the checkout', release({ current: false }), '0.46.1'],
+    ['of unknown version', release({ semver: null }), 'unknown']
+  ])('withholds a release %s, naming the floor', (_label, core, shown) => {
+    const { selected, withheld } = select(floorGrant, core)
+    expect(selected).toEqual([])
+    expect(withheld).toEqual([
+      `[core-beta] --enable-agent withheld: entry 1: commit range aaaaaaaaaaaa..: lower aaaaaaaaaaaa unresolved | core ${shown} is not a verified current v0.42.4+ release`
+    ])
+  })
+
+  it('leaves a grant without a floor exactly as before', () => {
+    const { selected, withheld, trace } = select(plainGrant, release())
+    expect(selected).toEqual([])
+    expect(withheld).toEqual([
+      '[core-beta] --enable-agent withheld: entry 1: commit range aaaaaaaaaaaa..: lower aaaaaaaaaaaa unresolved'
+    ])
+    expect(trace).toEqual([
+      '[core-beta] commits --enable-agent: aaaaaaaaaaaa.. head=eeeeeeeeeeee in-range=no'
+    ])
+  })
+
+  it('still reports in-range when the commit range matches', () => {
+    expect(select(floorGrant, release(), { [SHA_A]: true }).trace).toEqual([
+      '[core-beta] commits --enable-agent: aaaaaaaaaaaa.. head=eeeeeeeeeeee in-range=yes'
+    ])
+  })
+})
+
 describe('selectCoreBetaGrantArgs commit ranges', () => {
   const HEAD = 'e'.repeat(40)
   const versionGrant: CoreBetaGrant = { arg: '--enable-assets', minCoreVersion: '0.3.80' }

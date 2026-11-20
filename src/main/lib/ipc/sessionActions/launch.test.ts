@@ -1272,6 +1272,25 @@ describe('buildLaunchArgs core beta injection', () => {
     ])
   })
 
+  it('names the release floor in the record of a commit grant the floor let through', () => {
+    const lower = 'a'.repeat(40)
+    const floorGrant: CoreBetaGrant = {
+      arg: '--enable-assets',
+      commitRanges: [[lower, null]],
+      releaseFloor: '0.3.80'
+    }
+    const built = build({
+      schema: schemaOf('enable-assets'),
+      betaFlags: [floorGrant],
+      coreCommits: { head: 'e'.repeat(40), ancestry: new Map() }
+    })
+
+    expect(built.beta.applied).toEqual([floorGrant])
+    expect(built.beta.logRecords).toContain(
+      '[core-beta] --enable-assets (core 0.3.81 >= release floor 0.3.80, commit range unresolved, opted in)\n'
+    )
+  })
+
   it('reports the core version the grants were matched against', () => {
     expect(build({ schema: schemaOf('enable-assets') }).beta.coreVersion).toBe('0.3.81')
   })

@@ -144,6 +144,7 @@ import type { WriteStream } from 'fs'
 import {
   assetsFloorShas,
   commitGrantShas,
+  commitRangesMatch,
   getCoreBetaGrantsAsync,
   isCommitGrant,
   planCoreBetaArgs,
@@ -234,10 +235,13 @@ function noCoreBeta(optedIn: boolean): CoreBetaLaunch {
 function coreBetaLogRecord(
   grant: CoreBetaGrant,
   coreVersion: string | null,
-  coreHead: string | null
+  commits: CoreCommitState
 ): string {
+  if (isCommitGrant(grant) && !commitRangesMatch(grant, commits.ancestry)) {
+    return `[core-beta] ${grant.arg} (core ${coreVersion} >= release floor ${grant.releaseFloor}, commit range unresolved, opted in)\n`
+  }
   if (isCommitGrant(grant)) {
-    return `[core-beta] ${grant.arg} (core ${coreHead?.slice(0, 12)} in a granted commit range, opted in)\n`
+    return `[core-beta] ${grant.arg} (core ${commits.head?.slice(0, 12)} in a granted commit range, opted in)\n`
   }
   return `[core-beta] ${grant.arg} (core ${coreVersion} >= ${grant.minCoreVersion}, opted in)\n`
 }
@@ -307,7 +311,7 @@ export function buildLaunchArgs(input: {
       droppedUnsupported: plan.droppedUnsupported,
       logRecords: [
         `${plan.assetsRecord}\n`,
-        ...applied.map((grant) => coreBetaLogRecord(grant, coreVersion, input.coreCommits.head)),
+        ...applied.map((grant) => coreBetaLogRecord(grant, coreVersion, input.coreCommits)),
         ...plan.withheld.map((line) => `${line}\n`),
         ...plan.droppedUnsupported.map(
           (arg) => `[core-beta] ${arg} withheld: not supported by this core\n`
