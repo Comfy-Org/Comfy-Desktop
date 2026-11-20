@@ -96,10 +96,10 @@ watch(
 <template>
   <BaseModal
     :open="open"
-    size="md"
+    size="lg"
     close-outside
     :aria-labelledby="titleId"
-    content-class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto] min-[600px]:grid-cols-[232px_minmax(0,1fr)] [&_.base-modal-media]:hidden min-[600px]:[&_.base-modal-media]:block [&_.base-modal-media]:row-span-3 [&_.base-modal-media]:p-2 [&_.base-modal-body]:flex [&_.base-modal-body]:flex-col [&_.base-modal-footer]:p-4 [&_.base-modal-header]:border-b-0 [&_.base-modal-header]:pt-6 [&_.base-modal-header]:pb-0"
+    content-class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto] min-[600px]:grid-cols-[296px_minmax(0,1fr)] [&_.base-modal-media]:hidden min-[600px]:[&_.base-modal-media]:block [&_.base-modal-media]:row-span-3 [&_.base-modal-media]:p-2 [&_.base-modal-body]:flex [&_.base-modal-body]:flex-col [&_.base-modal-footer]:p-4 [&_.base-modal-header]:border-b-0 [&_.base-modal-header]:pt-6 [&_.base-modal-header]:pb-0"
     @close="close"
   >
     <template #media>
@@ -141,7 +141,7 @@ watch(
         :aria-labelledby="titleId"
         :aria-describedby="failed ? errorId : undefined"
         :placeholder="t('apps.request.placeholder')"
-        class="min-h-28 flex-1 resize-none leading-[1.5]"
+        class="min-h-28 flex-1 resize-none leading-[1.5] placeholder:text-subtle-foreground"
         data-testid="app-request-input"
         @keydown.meta.enter="sendFromKeyboard"
         @keydown.ctrl.enter="sendFromKeyboard"

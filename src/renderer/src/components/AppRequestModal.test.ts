@@ -254,6 +254,14 @@ describe('AppRequestModal', () => {
     expect(sendAppRequest).not.toHaveBeenCalled()
   })
 
+  it('shows the example text in a quieter grey than typed text, gone once typing starts', async () => {
+    await mountRequest()
+
+    expect(input().classList).toContain('placeholder:text-subtle-foreground')
+    expect(input().classList).not.toContain('placeholder:text-muted-foreground')
+    expect(input().placeholder).toBe('Say what it should make, from what')
+  })
+
   it('starts empty each time it opens', async () => {
     const wrapper = await mountRequest()
     await type('An app that colors line art')
@@ -278,7 +286,7 @@ describe('AppRequestModal', () => {
     expect(art.querySelector('img')?.getAttribute('alt')).toBe('')
     expect(art.textContent?.trim()).toBe('')
     const card = document.querySelector('.base-modal-panel')!.getBoundingClientRect()
-    expect(artBox.width).toBeCloseTo(216, 0)
+    expect(artBox.width).toBeCloseTo(280, 0)
     expect(artBox.left - card.left).toBeCloseTo(9, 0)
     expect(artBox.top - card.top).toBeCloseTo(9, 0)
     expect(card.bottom - artBox.bottom).toBeCloseTo(9, 0)
