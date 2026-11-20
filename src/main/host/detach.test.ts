@@ -503,6 +503,17 @@ describe('returning to the dashboard from a running ComfyUI', () => {
     expect(entry.detachInstall).not.toHaveBeenCalled()
   })
 
+  it('returns a running Remote Connection without asking, with keepComfyRunningWhenWindowCloses off', async () => {
+    mocks.keepComfyRunning = false
+    const entry = openRunningComfy()
+    entry.sourceCategory = 'remote'
+
+    await returnToDashboard(entry.windowKey)
+
+    expect(mocks.asked).toEqual([])
+    expect(entry.detachInstall).toHaveBeenCalledTimes(1)
+  })
+
   it('leaves it running and does not ask with keepComfyRunningWhenWindowCloses absent', async () => {
     const entry = openRunningComfy()
 
