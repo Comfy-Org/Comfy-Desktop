@@ -330,15 +330,22 @@ const PRODUCT_EVENT_UUID_NAMESPACE = Buffer.from('6ba7b8109dad11d180b400c04fd430
 function productEventUuid(event: string, fields: Record<string, TelemetryValue>): string {
   const sourceId =
     fields['mutation_id'] ?? fields['job_id'] ?? fields['turn_id'] ?? fields['thread_id']
+  const occurrence =
+    event === 'agent_session_started' ? `/resume=${fields['is_resume'] === true}` : ''
   const bytes = createHash('sha1')
     .update(PRODUCT_EVENT_UUID_NAMESPACE)
-    .update(`comfy.desktop.agent/${event}/${sourceId}`)
+    .update(`comfy.desktop.agent/${event}/${sourceId}${occurrence}`)
     .digest()
     .subarray(0, 16)
   bytes[6] = (bytes[6]! & 0x0f) | 0x50
   bytes[8] = (bytes[8]! & 0x3f) | 0x80
   const hex = bytes.toString('hex')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function productEventTimestamp(fields: Record<string, TelemetryValue>): Date | undefined {
+  const value = fields['occurred_at'] ?? fields['timestamp'] ?? fields['accepted_at']
+  return typeof value === 'string' ? new Date(value) : undefined
 }
 
 export function _resetProductEventBudgetForTest(): void {
@@ -478,7 +485,8 @@ export function createAgentTap(opts: AgentTapOptions): {
           telemetry.capture(
             parsed.event,
             { ...parsed.fields, ...productContext },
-            productEventUuid(parsed.event, parsed.fields)
+            productEventUuid(parsed.event, parsed.fields),
+            productEventTimestamp(parsed.fields)
           )
         ) {
           bucket.count++

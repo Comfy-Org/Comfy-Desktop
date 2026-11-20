@@ -835,15 +835,21 @@ function capturePersonProperties(
   return capture('comfy.desktop.person.set', properties)
 }
 
-export function capture(event: string, properties: TelemetryContext = {}, uuid?: string): boolean {
-  return captureEvent(event, properties, false, uuid)
+export function capture(
+  event: string,
+  properties: TelemetryContext = {},
+  uuid?: string,
+  timestamp?: Date
+): boolean {
+  return captureEvent(event, properties, false, uuid, timestamp)
 }
 
 function captureEvent(
   event: string,
   properties: TelemetryContext,
   forward: boolean,
-  uuid?: string
+  uuid?: string,
+  timestamp?: Date
 ): boolean {
   recordIpcInvocation(`telemetry:${event}`, properties)
   if (!canEmit() || !distinctId) return false
@@ -856,7 +862,7 @@ function captureEvent(
         event,
         properties,
         forward,
-        timestamp: new Date(),
+        timestamp: timestamp ?? new Date(),
         ...(uuid ? { uuid } : {})
       })
     )
@@ -864,7 +870,7 @@ function captureEvent(
     _recordCapturedEvent(event)
     return true
   }
-  if (!deliverEvent(event, properties, forward, null, uuid)) return false
+  if (!deliverEvent(event, properties, forward, timestamp ?? null, uuid)) return false
   _recordCapturedEvent(event)
   return true
 }
