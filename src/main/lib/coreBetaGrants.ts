@@ -138,9 +138,14 @@ export function parseCoreBetaGrants(
       if ('min_core_version' in candidate || 'max_core_version' in candidate) continue
       const commitRanges = parseCommitRanges(candidate.commit_ranges)
       if (commitRanges === null) continue
-      const releaseFloor = commitRanges.every(([, upper]) => upper === null)
+      const openRanges = commitRanges.every(([, upper]) => upper === null)
+      const releaseFloor = openRanges
         ? parseCoreVersion((candidate as { release_floor?: unknown }).release_floor)
         : null
+      if (releaseFloor === null && 'release_floor' in candidate) {
+        const why = openRanges ? 'not a version' : 'a commit range has an upper bound'
+        console.warn(`[core-beta] ${candidate.arg} release_floor ignored: ${why}`)
+      }
       flags.push({
         arg: candidate.arg,
         commitRanges,

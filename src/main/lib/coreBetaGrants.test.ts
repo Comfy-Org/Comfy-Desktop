@@ -691,6 +691,40 @@ describe('parseCoreBetaGrants release floor', () => {
   })
 })
 
+describe('parseCoreBetaGrants ignored release floor warning', () => {
+  function warningsFor(entry: object): string[] {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      parseCoreBetaGrants(true, { flags: [{ arg: '--enable-agent', ...entry }] })
+      return warn.mock.calls.map((call) => String(call[0]))
+    } finally {
+      warn.mockRestore()
+    }
+  }
+
+  it.each([
+    [
+      'a floor that is not a version',
+      { commit_ranges: [[SHA_A, null]], release_floor: 'nope' },
+      'not a version'
+    ],
+    [
+      'a floor beside an upper-bounded range',
+      { commit_ranges: [[SHA_A, SHA_B]], release_floor: '0.42.4' },
+      'a commit range has an upper bound'
+    ]
+  ])('warns once for %s', (_label, entry, why) => {
+    expect(warningsFor(entry)).toEqual([`[core-beta] --enable-agent release_floor ignored: ${why}`])
+  })
+
+  it.each([
+    ['a valid floor', { commit_ranges: [[SHA_A, null]], release_floor: '0.42.4' }],
+    ['no floor', { commit_ranges: [[SHA_A, SHA_B]] }]
+  ])('stays quiet for %s', (_label, entry) => {
+    expect(warningsFor(entry)).toEqual([])
+  })
+})
+
 describe('selectCoreBetaGrantArgs release floor', () => {
   const head = 'e'.repeat(40)
   const floorGrant: CoreBetaGrant = {
