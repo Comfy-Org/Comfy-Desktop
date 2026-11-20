@@ -6,8 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import '../assets/main.css'
 import AppSidebar from './AppSidebar.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
-import { appPageShown, sidebarHovered } from './appPageCover'
-import { forgetMovingCoversForTest } from './movingCovers'
+import { appPageShown, sidebarFocused, sidebarHovered } from './appPageCover'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -99,13 +98,13 @@ beforeEach(() => {
   __resetHomeTourForTest()
   appPageShown.value = false
   sidebarHovered.value = false
+  sidebarFocused.value = false
 })
 
 afterEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
-  forgetMovingCoversForTest()
 })
 
 async function mountSidebar(
@@ -351,64 +350,110 @@ describe('AppSidebar', () => {
     it('opens the tooltip of every app at once, with no delay', async () => {
       const wrapper = await mountWithAppOpen()
 
-      const delays = thumbnails(wrapper).map((button) =>
-        button.findComponent(Tooltip).props('delayMs')
-      )
+      const delays = wrapper
+        .findAll('[data-testid="app-sidebar-app-rail"] li')
+        .map((row) => row.findComponent(Tooltip).props('delayMs'))
       expect(delays).toEqual([0, 0, 0])
       wrapper.unmount()
     })
 
-    function preview(): HTMLImageElement | null {
-      return document.querySelector<HTMLImageElement>('[data-testid="app-sidebar-app-preview"]')
+    function preview(): HTMLElement | null {
+      return document.querySelector<HTMLElement>('[data-testid="app-sidebar-app-preview"]')
     }
 
-    function holdMovingCover(): { finish: () => void } {
-      let finish = () => {}
-      const decoding = new Promise<void>((resolve) => (finish = resolve))
-      vi.spyOn(HTMLImageElement.prototype, 'decode').mockImplementation(function (
-        this: HTMLImageElement
-      ) {
-        return this.src === PRODUCT_SWAP_MOVING ? decoding : Promise.resolve()
-      })
-      return { finish: () => finish() }
+    function previewSources(kind: 'still' | 'cover'): string[] {
+      return [...(preview()?.querySelectorAll(`img[data-kind="${kind}"]`) ?? [])].map(
+        (img) => img.getAttribute('src') ?? ''
+      )
     }
 
-    it('previews the still and name at once, then the moving cover once it has loaded, and keeps it for the next hover', async () => {
-      const moving = holdMovingCover()
+    it("previews the app's name and its covers with the cover player the gallery uses", async () => {
       const wrapper = await mountWithAppOpen()
-      const thumb = wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element
 
-      await userEvent.hover(thumb)
-      await vi.waitFor(() => expect(preview()?.getAttribute('src')).toBe(PRODUCT_SWAP_STILL))
+      await userEvent.hover(wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element)
+      await vi.waitFor(() => expect(previewSources('cover')).toEqual([PRODUCT_SWAP_MOVING]))
+
+      expect(preview()?.querySelector('[data-testid="cover-rotation"]')).not.toBeNull()
       expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Product Swap')
-
-      moving.finish()
-      await vi.waitFor(() => expect(preview()?.getAttribute('src')).toBe(PRODUCT_SWAP_MOVING))
-
-      await userEvent.unhover(thumb)
-      await vi.waitFor(() => expect(preview()).toBeNull())
-      await userEvent.hover(thumb)
-      await vi.waitFor(() => expect(preview()).not.toBeNull())
-      expect(preview()?.getAttribute('src')).toBe(PRODUCT_SWAP_MOVING)
       wrapper.unmount()
     })
 
-    it('previews only the still, and loads no moving cover, when reduced motion is preferred', async () => {
+    it('previews only the still when reduced motion is preferred', async () => {
       vi.stubGlobal('matchMedia', (query: string) => ({
         matches: query === '(prefers-reduced-motion: reduce)',
         media: query,
         addEventListener: () => {},
         removeEventListener: () => {}
       }))
-      const decode = vi.spyOn(HTMLImageElement.prototype, 'decode')
       const wrapper = await mountWithAppOpen()
 
       await userEvent.hover(wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element)
-      await vi.waitFor(() => expect(preview()?.getAttribute('src')).toBe(PRODUCT_SWAP_STILL))
+      await vi.waitFor(() => expect(previewSources('still')).toEqual([PRODUCT_SWAP_STILL]))
       await flushPromises()
 
-      expect(preview()?.getAttribute('src')).toBe(PRODUCT_SWAP_STILL)
-      expect(decode).not.toHaveBeenCalled()
+      expect(previewSources('cover')).toEqual([])
+      wrapper.unmount()
+    })
+
+    function tooltipTexts(): string[] {
+      return [...document.querySelectorAll('.tooltip-bubble')].map(
+        (bubble) => bubble.textContent ?? ''
+      )
+    }
+
+    it('opens the tooltip of a picture reached with the keyboard, and marks the sidebar as in use', async () => {
+      appPageShown.value = true
+      const wrapper = await mountWithAppOpen()
+      await userEvent.unhover(wrapper.get('[data-testid="app-sidebar"]').element)
+
+      await userEvent.keyboard('{Tab}')
+      const first = wrapper.get('[data-testid="app-sidebar-app-character-swap"]').element
+      expect(document.activeElement).toBe(first)
+      expect(sidebarFocused.value).toBe(true)
+      expect(tooltipTexts()).toEqual([])
+
+      appPageShown.value = false
+      await vi.waitFor(() => expect(tooltipTexts().join()).toContain('Character Swap'))
+
+      ;(document.activeElement as HTMLElement).blur()
+      await flushPromises()
+      expect(sidebarFocused.value).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('does not mark the sidebar as in use for a mouse click, and lets go once an app is picked', async () => {
+      const wrapper = await mountWithAppOpen()
+
+      await userEvent.click(wrapper.get('[data-testid="app-sidebar-app-sdr-to-hdr"]').element)
+      expect(sidebarFocused.value).toBe(false)
+
+      await userEvent.keyboard('{Shift>}{Tab}{/Shift}')
+      expect(document.activeElement).toBe(
+        wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element
+      )
+      expect(sidebarFocused.value).toBe(true)
+      await userEvent.keyboard('{Enter}')
+
+      expect(wrapper.emitted('switch-app')).toEqual([[PRODUCT_SWAP]])
+      expect(sidebarFocused.value).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('scrolls the open app into view, and the next one it switches to', async () => {
+      const scrolled: Array<string | null> = []
+      vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) {
+        scrolled.push(this.querySelector('button')?.getAttribute('aria-label') ?? null)
+      })
+      const wrapper = await mountWithAppOpen(SDR_TO_HDR)
+      expect(scrolled.at(-1)).toBe('SDR to HDR')
+
+      await wrapper.setProps({ appInProgress: CHARACTER_SWAP })
+      await flushPromises()
+
+      expect(scrolled.at(-1)).toBe('Character Swap')
+      expect(Element.prototype.scrollIntoView).toHaveBeenLastCalledWith(
+        expect.objectContaining({ block: 'nearest' })
+      )
       wrapper.unmount()
     })
   })

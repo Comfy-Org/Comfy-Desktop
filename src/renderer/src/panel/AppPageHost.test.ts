@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import '../assets/main.css'
 import AppPageHost from './AppPageHost.vue'
-import { appPageShown, sidebarHovered } from './appPageCover'
+import { appPageShown, sidebarFocused, sidebarHovered } from './appPageCover'
 import type { AppOutputAction, AppOutputs, AppPagePlacement, AppPageStatus } from '../types/ipc'
 
 const PAGE_LEFT = 260
@@ -91,6 +91,7 @@ beforeAll(() => browserPage.viewport(1280, 800))
 beforeEach(() => {
   vi.clearAllMocks()
   sidebarHovered.value = false
+  sidebarFocused.value = false
   stoppedListening = false
   stoppedListeningForOutputs = false
   page = document.createElement('div')
@@ -301,6 +302,29 @@ describe('AppPageHost', () => {
     sidebarHovered.value = false
     await vi.waitFor(() => expect(showAppPage).toHaveBeenCalledTimes(1))
     expect(appPageShown.value).toBe(true)
+  })
+
+  it('swaps the app for a still frame while the keyboard is in the sidebar, then brings it back', async () => {
+    await mountHost()
+    showAppPage.mockClear()
+
+    sidebarFocused.value = true
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
+    expect(appPageShown.value).toBe(false)
+
+    sidebarFocused.value = false
+    await vi.waitFor(() => expect(showAppPage).toHaveBeenCalledTimes(1))
+    expect(appPageShown.value).toBe(true)
+  })
+
+  it('shows no loading placeholder for an app that is up when no still frame could be taken', async () => {
+    captureAppPage.mockResolvedValue(null)
+    const wrapper = await mountHost()
+
+    sidebarHovered.value = true
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
+
+    expect(wrapper.find('[data-testid="app-page-loading"]').exists()).toBe(false)
   })
 
   it('starts loading another app picked from the sidebar at once, hidden, with the placeholder showing', async () => {

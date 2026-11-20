@@ -71,7 +71,6 @@ import {
   APP_PAGE_FAILED_EVENT,
   APP_PAGE_STATUS_CHANNEL,
   _resetForTest,
-  APP_PAGE_BUSY_SCRIPT,
   captureAppPage,
   hideAppPage,
   isAppPageBusy,
@@ -760,7 +759,7 @@ describe('whether the app page has a run going', () => {
     expect(await isAppPageBusy(panelContents())).toBe(true)
     ask.mockResolvedValue(false)
     expect(await isAppPageBusy(panelContents())).toBe(false)
-    expect(ask).toHaveBeenCalledWith(APP_PAGE_BUSY_SCRIPT)
+    expect(ask).toHaveBeenCalledWith(expect.stringContaining('.cs-toasts .cs-toast'))
   })
 
   it('counts a page that fails or does not answer in time as having none', async () => {

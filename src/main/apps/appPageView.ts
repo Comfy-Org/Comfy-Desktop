@@ -443,7 +443,7 @@ export async function captureAppPage(panel: WebContents): Promise<string | null>
 
 const BUSY_CHECK_TIMEOUT_MS = 1000
 
-export const APP_PAGE_BUSY_SCRIPT = `document.querySelector('.cs-toasts .cs-toast')!==null`
+const APP_PAGE_BUSY_SCRIPT = `document.querySelector('.cs-toasts .cs-toast')!==null`
 
 export async function isAppPageBusy(panel: WebContents): Promise<boolean> {
   const host = hostOf(panel)

@@ -17,7 +17,7 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useCoveredByPage } from '../composables/useCoveredByPage'
-import { appPageShown, sidebarHovered } from './appPageCover'
+import { appPageShown, sidebarFocused, sidebarHovered } from './appPageCover'
 import type {
   AppOutputAction,
   AppOutputs,
@@ -37,9 +37,10 @@ const { t } = useI18n()
 
 const host = useTemplateRef<HTMLElement>('host')
 const coveredByPage = useCoveredByPage(host)
-const covered = computed(() => coveredByPage.value || sidebarHovered.value)
+const covered = computed(() => coveredByPage.value || sidebarHovered.value || sidebarFocused.value)
 const status = ref<AppPageStatus | null>(null)
 const frozenFrame = ref<string | null>(null)
+const loadedHidden = ref(false)
 const outputs = shallowRef<OutputDetailItem[] | null>(null)
 const outputIndex = ref(0)
 const outputsShown = ref(0)
@@ -84,6 +85,7 @@ async function reveal(): Promise<void> {
   const placement = takePlacement()
   if (!placement) return
   appPageShown.value = true
+  loadedHidden.value = false
   const shown = await window.api.showAppPage(appId, placement)
   if (turn !== latestTurn) return
   status.value = shown
@@ -182,6 +184,7 @@ watch(
     releaseOutputs()
     if (covered.value) {
       status.value = 'loading'
+      loadedHidden.value = true
       void loadHidden()
     } else {
       status.value = null
@@ -234,7 +237,7 @@ onBeforeUnmount(() => {
       data-testid="app-page-frozen-frame"
     />
     <div
-      v-else-if="status === 'loading' || (status === 'ready' && covered)"
+      v-else-if="status === 'loading' || (status === 'ready' && loadedHidden)"
       class="flex size-full gap-2"
       data-testid="app-page-loading"
     >

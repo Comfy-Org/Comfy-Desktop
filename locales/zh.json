@@ -49,9 +49,9 @@
     "allApps": "全部应用",
     "switchWhileRunning": {
       "title": "切换到{app}？",
-      "body": "{current}仍在生成。切换后会继续运行，结果会保存到资产中。",
+      "body": "{current}仍在生成。",
       "switch": "切换",
-      "stay": "留下"
+      "stay": "留在这里"
     },
     "request": {
       "bandTitle": "没有你想要的应用？",

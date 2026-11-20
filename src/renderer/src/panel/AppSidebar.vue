@@ -33,7 +33,7 @@ import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { TOOLTIP_GATE } from '../components/ui/tooltipGate'
-import { appPageShown, sidebarHovered } from './appPageCover'
+import { appPageShown, sidebarFocused, sidebarHovered } from './appPageCover'
 import SidebarAccount from './SidebarAccount.vue'
 import SidebarCredits from './SidebarCredits.vue'
 import SidebarDesktopUpdate from './SidebarDesktopUpdate.vue'
@@ -261,6 +261,25 @@ function openPageMenu(event: MouseEvent, page: NewWindowDashboardPage): void {
   showPageMenu(event)
 }
 
+function noteFocusIn(event: FocusEvent): void {
+  sidebarFocused.value = event.target instanceof Element && event.target.matches(':focus-visible')
+}
+
+function noteFocusOut(event: FocusEvent): void {
+  const next = event.relatedTarget
+  const sidebar = event.currentTarget
+  if (!(next instanceof Node) || !(sidebar instanceof Node) || !sidebar.contains(next)) {
+    sidebarFocused.value = false
+  }
+}
+
+function switchApp(app: AppCard): void {
+  sidebarFocused.value = false
+  emit('switch-app', app)
+}
+
+onBeforeUnmount(() => (sidebarFocused.value = false))
+
 function openSettings(): void {
   emitTelemetryAction('comfy.desktop.sidebar.settings_opened', { from_page: activePage })
   window.api.openGlobalSettings()
@@ -276,12 +295,14 @@ function openSettings(): void {
     :data-collapsed="collapsed"
     @pointerenter="sidebarHovered = true"
     @pointerleave="sidebarHovered = false"
+    @focusin="noteFocusIn"
+    @focusout="noteFocusOut"
   >
     <SidebarAppRail
       v-if="makeRoom"
       :current-app="appInProgress"
       :apps="apps"
-      @switch-app="emit('switch-app', $event)"
+      @switch-app="switchApp"
     />
     <div
       v-else

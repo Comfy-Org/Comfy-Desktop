@@ -1572,9 +1572,7 @@ describe('PanelApp', () => {
     await vi.waitFor(() => expect(dialogButton('base-alert-action')).not.toBeNull())
 
     expect(document.body.textContent).toContain('Switch to Remove Background?')
-    expect(document.body.textContent).toContain(
-      'Upscale 4x is still making something. It keeps going after you switch, and the result goes to Assets.'
-    )
+    expect(document.body.textContent).toContain('Upscale 4x is still making something.')
     expect(dialogButton('base-alert-action')!.textContent?.trim()).toBe('Switch')
     expect(dialogButton('base-alert-cancel')!.textContent?.trim()).toBe('Stay')
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Upscale 4x')

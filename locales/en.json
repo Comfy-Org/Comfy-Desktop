@@ -49,7 +49,7 @@
     "allApps": "All apps",
     "switchWhileRunning": {
       "title": "Switch to {app}?",
-      "body": "{current} is still making something. It keeps going after you switch, and the result goes to Assets.",
+      "body": "{current} is still making something.",
       "switch": "Switch",
       "stay": "Stay"
     },
