@@ -259,6 +259,10 @@ const appsVisits = ref(0)
 const appIsOpen = ref(false)
 const assetsFocusName = ref<string | null>(null)
 const appPickedOnHome = ref<AppCard | null>(null)
+const appInProgress = ref<AppCard | null>(null)
+const sidebarAppInProgress = computed(() =>
+  sidebarPage.value === 'apps' ? null : appInProgress.value
+)
 
 function openAppFromHome(app: AppCard): void {
   appPickedOnHome.value = app
@@ -273,6 +277,17 @@ function handleSidebarClick(page: DashboardPage): void {
     emitTelemetryAction(SIDEBAR_PAGE_OPENED_EVENT, { page, from_page: fromPage })
   }
   handleSidebarNavigate(page)
+}
+
+function returnToApp(app: AppCard): void {
+  emitTelemetryAction(SIDEBAR_PAGE_OPENED_EVENT, {
+    page: 'apps',
+    from_page: sidebarPage.value,
+    to_app_in_progress: true
+  })
+  closeBuildDetails()
+  assetsFocusName.value = null
+  openAppFromHome(app)
 }
 
 function viewInAssets(name: string): void {
@@ -535,7 +550,9 @@ onUnmounted(() => {
         :active-page="sidebarPage"
         :active-build-id="sidebarBuildId"
         :make-room="appIsOpen"
+        :app-in-progress="sidebarAppInProgress"
         @navigate="handleSidebarClick"
+        @open-app="returnToApp"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
       />
@@ -573,6 +590,7 @@ onUnmounted(() => {
               v-model:start-with="appPickedOnHome"
               :revisit="appsVisits"
               @app-open-change="appIsOpen = $event"
+              @current-app="appInProgress = $event"
               @view-in-assets="viewInAssets"
             />
             <AssetsView

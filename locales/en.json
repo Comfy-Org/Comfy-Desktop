@@ -21,6 +21,7 @@
     "navigation": "Navigation",
     "home": "Home",
     "apps": "Apps",
+    "backToApp": "Back to {app}",
     "assets": "Assets",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",

@@ -11,7 +11,7 @@ import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
-import type { CreditBalanceState, DashboardPage, Installation } from '../types/ipc'
+import type { AppCard, CreditBalanceState, DashboardPage, Installation } from '../types/ipc'
 
 function build(over: Partial<Installation> & { id: string; name: string }): Installation {
   return { sourceLabel: 'Standalone', sourceCategory: 'local', ...over }
@@ -28,6 +28,13 @@ const CLOUD = build({
 })
 const NEW = build({ id: 'new', name: 'Video Lab', lastLaunchedAt: 300 })
 const TEAM = build({ id: 'team', name: 'Team Build', lastLaunchedAt: 400, workspaceId: 'ws-team' })
+
+const CHARACTER_SWAP: AppCard = {
+  id: 'character-swap',
+  title: 'Character Swap',
+  description: 'Put another character in a video.',
+  covers: []
+}
 
 const navigatePanel = vi.fn()
 const openGlobalSettings = vi.fn()
@@ -122,6 +129,60 @@ describe('AppSidebar', () => {
 
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
     expect(wrapper.emitted('navigate')).toEqual([['apps']])
+  })
+
+  it('names the app left open under Apps, and opens Apps on it', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'home', appInProgress: CHARACTER_SWAP }
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
+      'Home',
+      'Apps',
+      'Character Swap',
+      'Assets',
+      'Builds',
+      ''
+    ])
+    const row = wrapper.get('[data-testid="app-sidebar-app-in-progress"]')
+    expect(row.attributes('aria-label')).toBe('Back to Character Swap')
+    expect(row.attributes('aria-current')).toBeUndefined()
+
+    await row.trigger('click')
+
+    expect(wrapper.emitted('open-app')).toEqual([[CHARACTER_SWAP]])
+    expect(wrapper.emitted('navigate')).toBeUndefined()
+    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
+  })
+
+  it('names the app left open in the tooltip of its row on the folded rail', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'assets', appInProgress: CHARACTER_SWAP }
+    })
+    await flushPromises()
+    expect(tooltipOf(wrapper, 'app-sidebar-app-in-progress')).toBeUndefined()
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar-app-in-progress"]').text()).toBe('')
+    expect(tooltipOf(wrapper, 'app-sidebar-app-in-progress')).toBe('Back to Character Swap')
+  })
+
+  it('shows no app row with no app left open, or with Apps switched off', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    const none = await mountSidebar('home')
+    expect(none.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+
+    getAppsEnabled.mockResolvedValue(false)
+    const off = mount(AppSidebar, {
+      props: { activePage: 'home', appInProgress: CHARACTER_SWAP }
+    })
+    await flushPromises()
+    expect(off.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
   })
 
   it('folds to the rail while an app is open, lets the toggle reopen it, and keeps the saved choice', async () => {

@@ -559,6 +559,29 @@ describe('AppsView', () => {
     expect(wrapper.get('[data-testid="apps-view"]').isVisible()).toBe(true)
   })
 
+  it('tells the panel which app is open, and that none is once the person goes back to the cards', async () => {
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-sdr-to-hdr"]').trigger('click')
+    await flushPromises()
+
+    appPageClosed()
+    await flushPromises()
+
+    expect(wrapper.emitted('current-app')).toEqual([[HDR], [null]])
+  })
+
+  it('still counts the app as open when the person leaves the Apps page with it open', async () => {
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-genjutsu"]').trigger('click')
+    await flushPromises()
+
+    wrapper.unmount()
+
+    expect(wrapper.emitted('current-app')).toEqual([[GENJUTSU]])
+    expect(wrapper.emitted('app-open-change')).toEqual([[true], [false]])
+    expect(hideAppPage).toHaveBeenCalled()
+  })
+
   it('opens straight on the app that was picked on Home, over the whole Apps page', async () => {
     const pageBox = page.getBoundingClientRect()
     const wrapper = await mountApps([CUTOUT, HDR, GENJUTSU], { startWith: HDR })
