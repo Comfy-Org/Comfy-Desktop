@@ -2665,7 +2665,6 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    await chooseWorkflowItem(wrapper, '.performance-test__import-workflow')
     await wrapper.get('.performance-test__build-trigger').trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     ;(document.querySelector('.performance-test__build-option') as HTMLElement).dispatchEvent(
@@ -2673,6 +2672,7 @@ describe('PanelApp', () => {
     )
     await flushPromises()
     await waitForBuildMenuFocusReturn()
+    await chooseWorkflowItem(wrapper, '.performance-test__import-workflow')
     const runButton = wrapper.get('.performance-test__run')
     expect(runButton.attributes('disabled')).toBeUndefined()
 
@@ -2771,7 +2771,6 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    await chooseWorkflowItem(wrapper, '.performance-test__import-workflow')
     await wrapper.get('.performance-test__build-trigger').trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     ;(document.querySelector('.performance-test__build-option') as HTMLElement).dispatchEvent(
@@ -2779,6 +2778,7 @@ describe('PanelApp', () => {
     )
     await flushPromises()
     await waitForBuildMenuFocusReturn()
+    await chooseWorkflowItem(wrapper, '.performance-test__import-workflow')
 
     const runButton = wrapper.get('.performance-test__run')
     expect(runButton.attributes('disabled')).toBeUndefined()
@@ -2833,7 +2833,6 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    await chooseWorkflowItem(wrapper, '.performance-test__import-workflow')
     await wrapper.get('.performance-test__build-trigger').trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     ;(document.querySelector('.performance-test__build-option') as HTMLElement).dispatchEvent(
@@ -2841,6 +2840,7 @@ describe('PanelApp', () => {
     )
     await flushPromises()
     await waitForBuildMenuFocusReturn()
+    await chooseWorkflowItem(wrapper, '.performance-test__import-workflow')
     const telemetryEvents = captureTelemetry()
     await wrapper.get('.performance-test__run').trigger('click')
     await flushPromises()
@@ -3215,6 +3215,19 @@ describe('PanelApp', () => {
       )
       return flushPromises()
     }
+
+    await drag('dragenter', file)
+    expect(zone.classes(), 'no drop target before a build is picked').not.toContain(
+      'performance-test__drop-zone--dragging'
+    )
+    await drag('dragleave', file, document.body)
+
+    await wrapper.get('.performance-test__build-trigger').trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    ;(document.querySelector('.performance-test__build-option') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    )
+    await flushPromises()
 
     await drag('dragenter', text)
     expect(zone.classes()).not.toContain('performance-test__drop-zone--dragging')

@@ -88,7 +88,7 @@ import { scanCustomNodes } from '../../nodes'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import { clearCrash, recordCrash } from '../../crashBuffer'
 import { settleAutoStartOnFirstStart } from '../../firstBuildAutoStart'
-import type { ComfyExitedData } from '../../../../types/ipc'
+import type { BlockingSession, ComfyExitedData } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
 import { buildErrorFields, errorTail, findExceptionLine } from '../../../../shared/errorEvent'
 import {
@@ -869,24 +869,26 @@ export function _cleanupFailedLaunchSetup(
 const isLocalSource = (sourceId: string): boolean =>
   (sourceMap[sourceId]?.category ?? 'local') === 'local'
 
-export function otherLocalComfyUIs(sessionId: string, records: InstallationRecord[]): string[] {
+export function otherLocalComfyUIs(
+  sessionId: string,
+  records: InstallationRecord[]
+): BlockingSession[] {
   const ids = new Set([
     ..._runningSessions.keys(),
     ..._getActiveLaunchIds().filter((id) => _operationAborts.has(id))
   ])
   ids.delete(sessionId)
   for (const id of _getStoppingInstallationIds()) ids.add(id)
-  const names: string[] = []
-  const perfTests: string[] = []
+  const builds: BlockingSession[] = []
+  const perfTests: BlockingSession[] = []
   for (const id of ids) {
-    const perf = sessionKindOf(id) === 'performance_test'
     const inst = records.find((r) => r.id === installationIdOf(id))
     if (inst && !isLocalSource(inst.sourceId)) continue
     const name = inst?.name ?? _runningSessions.get(id)?.installationName ?? id
-    if (perf) perfTests.push(i18n.t('errors.performanceTestOfInstallation', { name }))
-    else names.push(`“${name}”`)
+    const target = sessionKindOf(id) === 'performance_test' ? perfTests : builds
+    target.push({ sessionId: id, name })
   }
-  return [...names, ...perfTests]
+  return [...builds, ...perfTests]
 }
 
 export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
@@ -896,18 +898,18 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
     const records = await installations.list()
     const others = otherLocalComfyUIs(sessionId, records)
     if (others.length > 0) {
-      appendLog(sessionId, `[launch] Performance Test refused: also running ${others.join(', ')}\n`)
+      appendLog(
+        sessionId,
+        `[launch] Performance Test refused: also running ${others.map((other) => other.sessionId).join(', ')}\n`
+      )
       telemetry.emit('comfy.desktop.performance_test.refused', {
         installation_id: installationId,
         other_count: others.length
       })
-      const names = new Intl.ListFormat(i18n.getLocale(), { type: 'conjunction' }).format(others)
       return {
         ok: false,
-        message:
-          others.length === 1
-            ? i18n.t('errors.performanceTestOtherInstanceRunningOne', { name: names })
-            : i18n.t('errors.performanceTestOtherInstanceRunning', { names })
+        message: i18n.t('errors.performanceTestOtherInstanceRunning'),
+        blockingSessions: others
       }
     }
   }
