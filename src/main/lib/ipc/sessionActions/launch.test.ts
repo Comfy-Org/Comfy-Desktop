@@ -5816,6 +5816,7 @@ describe('prior ComfyUI process handling at launch', () => {
       launchHarness.waitForPort = async () => {
         const first = children[0]!
         first.stderr.emit('data', Buffer.from(C10_NOT_FOUND))
+        first.emit('exit', 1, null)
         first.emit('close', 1, null)
         setImmediate(finishAudit)
       }
@@ -5831,10 +5832,14 @@ describe('prior ComfyUI process handling at launch', () => {
     })
   })
 
-  it('fails a start killed by a signal whose output stays open after its port answered', async () => {
+  it.each([
+    ['closes its output', true],
+    ['keeps its output open', false]
+  ])('fails a start killed by a signal that %s as its port answers', async (_name, closes) => {
     setArgs()
     launchHarness.waitForPort = async () => {
       children[0]!.emit('exit', null, 'SIGKILL')
+      if (closes) children[0]!.emit('close', null, 'SIGKILL')
     }
 
     const res = await handleLaunch(ctxFor('signal-exit-before-ready'))
@@ -5845,6 +5850,24 @@ describe('prior ComfyUI process handling at launch', () => {
     expect(eventsNamed('comfy.desktop.comfyui.boot_failed')).toEqual([
       expect.objectContaining({ exit_code: null, signal: 'SIGKILL' })
     ])
+  })
+
+  it('moves to the next port when a core that cannot bind exits as another process answers its port', async () => {
+    let attempt = 0
+    launchHarness.waitForPort = async () => {
+      attempt++
+      if (attempt > 1) return
+      const first = children[0]!
+      first.stderr.emit('data', Buffer.from('OSError: [Errno 98] Address already in use\n'))
+      first.emit('exit', 1, null)
+      first.emit('close', 1, null)
+    }
+
+    const res = await handleLaunch(ctxFor('port-answered-by-another'))
+
+    expect(res.ok).toBe(true)
+    expect(res.port).toBe(launchHarness.nextPort)
+    expect(children).toHaveLength(2)
   })
 
   describe('an asset database from a newer ComfyUI', () => {

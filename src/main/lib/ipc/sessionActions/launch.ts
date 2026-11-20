@@ -1970,7 +1970,6 @@ async function runLaunch(
         reject(new Error(`Failed to start${code}: ${launchCmd.cmd}`))
       })
       onProcessTerminated(spawned.proc, async (code, signal) => {
-        terminated = true
         exitCode = code
         exitSignal = signal
         if (!earlyExit) {
