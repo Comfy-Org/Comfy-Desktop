@@ -37,16 +37,20 @@ const SHARED_SYSTEM_INFO = {
   installations: []
 } satisfies Partial<SystemInfo>
 
+export const LATEST_STABLE_TAG = 'v0.42.4'
+
 function variantOption(
   variantId: string,
   label: string,
   downloadBytes: number,
   recommended = false
 ): FieldOption {
+  const sizeMB = Math.round(downloadBytes / 1024 ** 2)
   return {
     value: variantId,
     label,
     recommended,
+    description: `ComfyUI ${LATEST_STABLE_TAG.slice(1)}  ·  Python 3.13.12  ·  ${sizeMB} MB`,
     data: { variantId, downloadFiles: downloadBytes ? [{ size: downloadBytes }] : [] }
   }
 }
@@ -167,16 +171,20 @@ export function isPreviewPlatform(value: string | null): value is PreviewPlatfor
   return value === 'darwin' || value === 'win32' || value === 'linux'
 }
 
-export const LATEST_STABLE_TAG = 'v0.42.4'
-
 export const RELEASE_OPTIONS: FieldOption[] = [
   {
     value: 'stable',
     label: 'Stable',
+    description: 'Tested releases, recommended for most users',
     recommended: true,
     data: { latestStableTag: LATEST_STABLE_TAG }
   },
-  { value: 'latest', label: 'Latest on GitHub', data: {} }
+  {
+    value: 'latest',
+    label: 'Latest on GitHub',
+    description: 'Newest commits from the master branch',
+    data: {}
+  }
 ]
 
 export const COMFY_VERSION_OPTIONS: FieldOption[] = [

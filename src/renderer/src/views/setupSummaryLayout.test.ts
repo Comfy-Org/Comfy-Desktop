@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page as browserPage } from 'vitest/browser'
+import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -282,10 +282,11 @@ describe.each([
     const value = row.children[1] as HTMLElement
     const note = row.children[2] as HTMLElement
 
+    const noteText = note.querySelector<HTMLElement>('.truncated-text')!
+
     expect(value.textContent).toBe('Apple Silicon (MPS)')
-    expect(value.getBoundingClientRect().width).toBeGreaterThanOrEqual(value.scrollWidth)
-    expect(note.scrollWidth).toBeGreaterThan(note.clientWidth)
-    expect(note.title).toBe(longNote)
+    expect(value.scrollWidth).toBeLessThanOrEqual(value.clientWidth)
+    expect(noteText.scrollWidth).toBeGreaterThan(noteText.clientWidth)
     expect(Math.round(box.getBoundingClientRect().right - note.getBoundingClientRect().right)).toBe(
       parseFloat(getComputedStyle(box).paddingRight)
     )
@@ -305,6 +306,102 @@ describe.each([
     expect(Math.abs(button.top + button.height / 2 - (line.top + line.height / 2))).toBeLessThan(1)
     expect(Math.round(box.getBoundingClientRect().right - button.right)).toBe(
       parseFloat(getComputedStyle(box).paddingRight)
+    )
+  })
+})
+
+describe.each([
+  [1100, 860],
+  [800, 563]
+])('the New build Release and Hardware notes at %i × %i', (width, height) => {
+  const RELEASE_NOTE = 'Tested releases, recommended for most users'
+  const HARDWARE_NOTE = 'ComfyUI 0.46.1  ·  Python 3.13.12  ·  1229 MB'
+  const LONG_NOTE = 'A very long build description '.repeat(12).trim()
+
+  function describeOptions(release: string, hardware: string): void {
+    const options = window.api.getFieldOptions as ReturnType<typeof vi.fn>
+    const defaultOptions = options.getMockImplementation()!
+    options.mockImplementation(async (source: string, field: string) => {
+      const list = await defaultOptions(source, field)
+      if (field === 'release') return list.map((option) => ({ ...option, description: release }))
+      if (field === 'variant') return list.map((option) => ({ ...option, description: hardware }))
+      return list
+    })
+  }
+
+  function noteRows(box: HTMLElement): HTMLElement[] {
+    return [...box.querySelectorAll<HTMLElement>('.config-summary-row')].filter((row) =>
+      ['Release', 'Hardware'].includes(row.children[0].textContent!.trim())
+    )
+  }
+
+  function freeWidth(row: HTMLElement): number {
+    const value = row.children[1].getBoundingClientRect()
+    const gap = parseFloat(getComputedStyle(row.children[2]).marginLeft)
+    return row.getBoundingClientRect().right - value.right - gap
+  }
+
+  it('shows a description that fits in full, with no ellipsis and no tooltip', async () => {
+    await browserPage.viewport(width, height)
+    describeOptions(RELEASE_NOTE, HARDWARE_NOTE)
+    const { box } = await newBuildSummary()
+    const rows = noteRows(box)
+    expect(rows).toHaveLength(2)
+
+    for (const row of rows) {
+      const text = row.querySelector<HTMLElement>('.truncated-text')!
+      expect(text.scrollWidth).toBeLessThanOrEqual(text.clientWidth)
+      expect(Math.round(row.getBoundingClientRect().height)).toBe(16)
+    }
+    expect(rows[0].textContent).toContain(RELEASE_NOTE)
+
+    await userEvent.hover(rows[0].querySelector('.truncated-text')!)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+  })
+
+  it('cuts a very long description at the row edge, using all the free width after the value', async () => {
+    await browserPage.viewport(width, height)
+    describeOptions(RELEASE_NOTE, HARDWARE_NOTE)
+    const { box: shortBox } = await newBuildSummary()
+    const shortWidth = shortBox.getBoundingClientRect().width
+    const dialogWidth = shortBox.closest('[role="dialog"]')!.getBoundingClientRect().width
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
+    document.body.innerHTML = ''
+
+    describeOptions(LONG_NOTE, LONG_NOTE)
+    const { box } = await newBuildSummary()
+    const boxEdge = box.getBoundingClientRect()
+
+    expect(boxEdge.width).toBe(shortWidth)
+    expect(box.closest('[role="dialog"]')!.getBoundingClientRect().width).toBe(dialogWidth)
+    for (const row of noteRows(box)) {
+      const value = row.children[1] as HTMLElement
+      const text = row.querySelector<HTMLElement>('.truncated-text')!
+      const shown = text.getBoundingClientRect()
+
+      expect(Math.round(row.getBoundingClientRect().height)).toBe(16)
+      expect(value.scrollWidth).toBeLessThanOrEqual(value.clientWidth)
+      expect(text.scrollWidth).toBeGreaterThan(text.clientWidth)
+      expect(getComputedStyle(text).textOverflow).toBe('ellipsis')
+      expect(Math.abs(shown.width - freeWidth(row))).toBeLessThan(1)
+      expect(Math.round(boxEdge.right - shown.right)).toBe(
+        parseFloat(getComputedStyle(box).paddingRight)
+      )
+    }
+  })
+
+  it('shows the full description on hover when it is cut, and keeps it in the row text', async () => {
+    await browserPage.viewport(width, height)
+    describeOptions(LONG_NOTE, LONG_NOTE)
+    const { box } = await newBuildSummary()
+    const [release] = noteRows(box)
+    const text = release.querySelector<HTMLElement>('.truncated-text')!
+
+    expect(text.textContent!.trim()).toBe(LONG_NOTE)
+    await userEvent.hover(text)
+    await vi.waitFor(() =>
+      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(LONG_NOTE)
     )
   })
 })
