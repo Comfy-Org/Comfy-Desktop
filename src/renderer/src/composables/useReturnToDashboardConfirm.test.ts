@@ -45,9 +45,9 @@ describe('useReturnToDashboardConfirm', () => {
     const result = await confirmReturnToDashboard(makeInstallation(), 'running')
 
     expect(mockConfirm).toHaveBeenCalledWith({
-      title: 'Return to Home?',
+      title: 'Back to Home?',
       message: 'This will stop the current ComfyUI.',
-      confirmLabel: 'Return to Home',
+      confirmLabel: 'Back to Home',
       confirmStyle: 'danger'
     })
     expect(result).toBe(true)

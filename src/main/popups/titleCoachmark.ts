@@ -189,7 +189,7 @@ function ensureCoachmarkPopup(parent: BrowserWindow): CoachmarkPopupEntry {
   return entry
 }
 
-function repositionAndShow(
+function repositionCoachmark(
   entry: CoachmarkPopupEntry,
   bubble: { width: number; height: number }
 ): void {
@@ -203,6 +203,14 @@ function repositionAndShow(
   entry.view.popup.setBounds(bounds)
   const beakPayload: CoachmarkBeakPayload = { beakFraction, cardCentreInView }
   entry.view.popup.webContents.send('comfy-titletooltip:set-beak', beakPayload)
+}
+
+function repositionAndShow(
+  entry: CoachmarkPopupEntry,
+  bubble: { width: number; height: number }
+): void {
+  if (!entry.pendingAnchor || entry.view.isDestroyed()) return
+  repositionCoachmark(entry, bubble)
   entry.view.showOnTop({ focus: true })
 }
 
@@ -286,7 +294,9 @@ export function registerTitleCoachmarkIpc(opts: {
       if (!ackToken || ackToken !== entry.pendingConfigToken) return
       const width = typeof payload?.width === 'number' && payload.width > 0 ? payload.width : 0
       const height = typeof payload?.height === 'number' && payload.height > 0 ? payload.height : 0
-      if (entry.pendingAnchor) repositionAndShow(entry, { width, height })
+      if (entry.pendingAnchor) repositionCoachmark(entry, { width, height })
+      if (entry.view.pendingShowTimer === null) return
+      entry.view.showOnTop({ focus: true })
     }
   )
 

@@ -251,7 +251,7 @@ test("Apps lists the website's apps as cards, without the one that opens another
 
   await ctx.panel.waitForVisible(APPS_GRID)
   await expect
-    .poll(() => ctx.panel.allText(`${APPS_GRID} button span.font-medium`), LONG_WAIT)
+    .poll(() => ctx.panel.allText(`${APPS_GRID} [data-testid="app-card-name"]`), LONG_WAIT)
     .toEqual(['Remove Background', 'Down For Now'])
 })
 

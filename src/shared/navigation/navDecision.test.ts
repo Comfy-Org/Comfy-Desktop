@@ -90,7 +90,7 @@ describe('decideNavigation — every build opens in its own window', () => {
   it('Dashboard → build running elsewhere: focus its window, label Switch', () => {
     expect(decisionFor('dashboard', 'instance', 'running-elsewhere')).toEqual({
       verb: 'focus',
-      primaryLabel: NAV_LABEL.switch
+      primaryLabel: NAV_LABEL.openRunning
     })
     expect(decisionFor('dashboard', 'cloud', 'running-elsewhere').verb).toBe('focus')
   })
@@ -168,7 +168,7 @@ describe('decideNavigation — every build opens in its own window', () => {
   it('Cloud window → build running elsewhere: focus its window', () => {
     expect(decisionFor('cloud', 'cloud', 'running-elsewhere')).toEqual({
       verb: 'focus',
-      primaryLabel: NAV_LABEL.switch
+      primaryLabel: NAV_LABEL.openRunning
     })
     expect(decisionFor('cloud', 'instance', 'running-elsewhere').verb).toBe('focus')
   })
@@ -201,12 +201,8 @@ describe('nav/caret i18n keys', () => {
     }
   })
 
-  it('component nav/caret keys resolve in locales/en.json', () => {
-    const componentKeys = [
-      'instancePicker.openRemote',
-      'instancePicker.windowOptions',
-      'instancePicker.moreWindowOptions'
-    ]
+  it('component nav keys resolve in locales/en.json', () => {
+    const componentKeys = ['instancePicker.openRemote']
     for (const key of componentKeys) {
       expect(resolves(key), `missing i18n key: ${key}`).toBe(true)
     }

@@ -16,6 +16,7 @@ const {
   shownInFolder,
   trashed,
   copiedImage,
+  openedPath,
   runningSessions
 } = await vi.hoisted(async () => {
   const nodeFs = await import('node:fs')
@@ -38,6 +39,7 @@ const {
     shownInFolder: vi.fn(),
     trashed: vi.fn(async (file: string) => nodeFs.rmSync(file)),
     copiedImage: vi.fn(),
+    openedPath: vi.fn(async (_file: string) => ''),
     runningSessions: new Map<string, { launchFolders?: { output: string; input: string } }>()
   }
 })
@@ -46,6 +48,7 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
   shell: {
     showItemInFolder: (file: string) => shownInFolder(file),
+    openPath: (file: string) => openedPath(file),
     trashItem: (file: string) => trashed(file)
   },
   clipboard: { write: async (items: unknown[]) => copiedImage(items) },
@@ -86,7 +89,7 @@ vi.mock('./models', () => ({
 }))
 vi.mock('./assets', () => ({
   assetKind: (name: string) =>
-    ({ png: 'image', mp4: 'video', webm: 'video', wav: 'audio', glb: '3d' })[
+    ({ png: 'image', svg: 'image', mp4: 'video', webm: 'video', wav: 'audio', glb: '3d' })[
       name.split('.').pop() ?? ''
     ] ?? null
 }))
@@ -102,9 +105,13 @@ import {
   hasOutputFolder,
   launchFoldersOf,
   revealOutputFile,
+  openOutputFile,
   trashOutputFile,
   listLocalAssets,
+  localPageRequest,
   listOutputFolders,
+  outputFolderPaths,
+  openOutputFolder,
   outputDirOverride,
   outputFilePath,
   outputFileUrl,
@@ -300,6 +307,33 @@ describe('listOutputFolders', () => {
   })
 })
 
+describe('outputFolderPaths and openOutputFolder', () => {
+  it('names the shared folder and each build folder, and opens only those', async () => {
+    installs.mockResolvedValue([
+      { id: 'Test Instance', sourceId: 'standalone', useSharedOutput: false, outputDir: ownDir }
+    ])
+
+    const folders = await outputFolderPaths()
+
+    expect(folders.shared).toBe(sharedDir)
+    expect(folders.ofBuild).toEqual({ 'Test Instance': ownDir })
+    expect(await openOutputFolder()).toBe(true)
+    expect(await openOutputFolder('Test Instance')).toBe(true)
+    expect(await openOutputFolder('unknown'), 'an unknown build opens nothing').toBe(false)
+    expect(openedPath.mock.calls).toEqual([[sharedDir], [ownDir]])
+  })
+
+  it('names a folder that does not exist yet, so the picker can still show it', async () => {
+    const notYet = path.join(root, 'not-created-yet')
+    installs.mockResolvedValue([
+      { id: 'New', sourceId: 'standalone', useSharedOutput: false, outputDir: notYet }
+    ])
+
+    expect((await outputFolderPaths()).ofBuild).toEqual({ New: notYet })
+    expect(await openOutputFolder('New'), 'a missing folder does not open').toBe(false)
+  })
+})
+
 describe('listLocalAssets', () => {
   it("lists the media in the picked build's output folder and its subfolders, newest first", async () => {
     write(path.join(sharedDir, 'old.png'), 'x', new Date('2026-10-01T00:00:00Z'))
@@ -310,10 +344,11 @@ describe('listLocalAssets', () => {
     write(path.join(sharedDir, '.hidden.png'))
     write(path.join(sharedDir, '.cache', 'inside-hidden.png'))
 
-    const { assets, truncated } = await listLocalAssets('Test Instance')
+    const { assets, total, counts } = await listLocalAssets('Test Instance')
 
     expect(assets.map((a) => a.name)).toEqual(['new.mp4', 'mesh.glb', 'old.png'])
-    expect(truncated).toBe(false)
+    expect(total).toBe(3)
+    expect(counts).toEqual({ all: 3, image: 1, video: 1, audio: 0, '3d': 1 })
     const newVideo = path.join(sharedDir, 'video', 'new.mp4')
     expect(assets[0]).toEqual({
       id: newVideo,
@@ -392,15 +427,101 @@ describe('listLocalAssets', () => {
     }
   })
 
-  it('keeps only the newest files when the folders are very large, and says the list was cut', async () => {
+  it('reads a very large folder one page at a time and counts every file', async () => {
     for (let i = 0; i <= MAX_LOCAL_ASSETS; i++)
       write(path.join(sharedDir, `f${i}.png`), '', new Date(Date.UTC(2026, 0, 1, 0, 0, i)))
 
-    const { assets, truncated } = await listLocalAssets('Test Instance')
+    const first = await listLocalAssets('Test Instance')
+    const last = await listLocalAssets('Test Instance', {
+      offset: MAX_LOCAL_ASSETS,
+      limit: MAX_LOCAL_ASSETS,
+      order: 'newest'
+    })
 
-    expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
-    expect(assets.map((a) => a.name)).not.toContain('f0.png')
-    expect(truncated).toBe(true)
+    expect(first.assets).toHaveLength(MAX_LOCAL_ASSETS)
+    expect(first.assets.map((a) => a.name)).not.toContain('f0.png')
+    expect(first.total).toBe(MAX_LOCAL_ASSETS + 1)
+    expect(last.assets.map((a) => a.name)).toEqual(['f0.png'])
+  })
+
+  it('pages oldest first and keeps only the asked kind, still counting every kind', async () => {
+    write(path.join(sharedDir, 'a.png'), 'x', new Date('2026-10-01T00:00:00Z'))
+    write(path.join(sharedDir, 'b.mp4'), 'x', new Date('2026-10-02T00:00:00Z'))
+    write(path.join(sharedDir, 'c.png'), 'x', new Date('2026-10-03T00:00:00Z'))
+    write(path.join(sharedDir, 'd.png'), 'x', new Date('2026-10-04T00:00:00Z'))
+
+    const page = await listLocalAssets(undefined, {
+      offset: 1,
+      limit: 1,
+      order: 'oldest',
+      kind: 'image'
+    })
+
+    expect(page.assets.map((a) => a.name)).toEqual(['c.png'])
+    expect(page.total).toBe(3)
+    expect(page.counts).toEqual({ all: 4, image: 3, video: 1, audio: 0, '3d': 0 })
+  })
+
+  it('searches every file name, in any case, before it pages and counts', async () => {
+    write(path.join(sharedDir, 'Forest-1.png'), 'x', new Date('2026-10-01T00:00:00Z'))
+    write(path.join(sharedDir, 'forest-2.mp4'), 'x', new Date('2026-10-02T00:00:00Z'))
+    write(path.join(sharedDir, 'night', 'forest-3.png'), 'x', new Date('2026-10-03T00:00:00Z'))
+    write(path.join(sharedDir, 'sea.png'), 'x', new Date('2026-10-04T00:00:00Z'))
+
+    const page = await listLocalAssets(undefined, {
+      offset: 1,
+      limit: 1,
+      order: 'newest',
+      kind: 'image',
+      search: 'FOREST'
+    })
+
+    expect(page.assets.map((a) => a.name)).toEqual(['Forest-1.png'])
+    expect(page.total).toBe(2)
+    expect(page.counts).toEqual({ all: 3, image: 2, video: 1, audio: 0, '3d': 0 })
+  })
+
+  it('keeps files with the same time in one order, so no file shows on two pages', async () => {
+    const same = new Date('2026-10-01T00:00:00Z')
+    for (const name of ['c.png', 'a.png', 'd.png', 'b.png'])
+      write(path.join(sharedDir, name), 'x', same)
+
+    const page = (offset: number) =>
+      listLocalAssets(undefined, { offset, limit: 2, order: 'newest' })
+    const names = [...(await page(0)).assets, ...(await page(2)).assets].map((a) => a.name)
+
+    expect(names).toEqual(['d.png', 'c.png', 'b.png', 'a.png'])
+  })
+
+  it('reads the first page for a page request it does not understand', () => {
+    const first = { offset: 0, limit: MAX_LOCAL_ASSETS, order: 'newest' }
+    expect(localPageRequest(undefined)).toEqual(first)
+    expect(localPageRequest({ offset: -1, limit: 10, order: 'newest' })).toEqual(first)
+    expect(localPageRequest({ offset: 0, limit: MAX_LOCAL_ASSETS + 1, order: 'newest' })).toEqual(
+      first
+    )
+    expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', kind: 'pdf' })).toEqual(first)
+    expect(localPageRequest({ offset: 20, limit: 10, order: 'oldest', kind: '3d' })).toEqual({
+      offset: 20,
+      limit: 10,
+      order: 'oldest',
+      kind: '3d'
+    })
+    expect(
+      localPageRequest({ offset: 40, limit: 10, order: 'newest', search: ' ' }),
+      'a blank search filters nothing and keeps the page'
+    ).toEqual({ offset: 40, limit: 10, order: 'newest' })
+    expect(
+      localPageRequest({ offset: 0, limit: 10, order: 'newest', search: '🌲'.repeat(200) }),
+      'the length counts characters, not code units'
+    ).toEqual({ offset: 0, limit: 10, order: 'newest', search: '🌲'.repeat(200) })
+    expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: 3 })).toEqual(first)
+    expect(localPageRequest({ offset: 0, limit: 10, order: 'newest', search: ' sea ' })).toEqual({
+      offset: 0,
+      limit: 10,
+      order: 'newest',
+      search: 'sea'
+    })
   })
 
   it('keeps a new nested output when the shared folder has 5,000 older files', async () => {
@@ -411,11 +532,11 @@ describe('listLocalAssets', () => {
       new Date('2026-11-02T00:00:00Z')
     )
 
-    const { assets, truncated } = await listLocalAssets()
+    const { assets, total } = await listLocalAssets()
 
     expect(assets[0]?.name).toBe('newest.png')
     expect(assets).toHaveLength(MAX_LOCAL_ASSETS)
-    expect(truncated).toBe(true)
+    expect(total).toBe(5_001)
   })
 
   it('does not follow links to folders or files outside, or walk without end', async () => {
@@ -428,7 +549,7 @@ describe('listLocalAssets', () => {
     write(path.join(deep, 'too-deep.png'))
     fs.symlinkSync(path.join(outsideDir, 'secret.png'), path.join(sharedDir, 'linked.png'))
 
-    expect(await listLocalAssets('Test Instance')).toEqual({ assets: [], truncated: false })
+    expect(await listLocalAssets('Test Instance')).toMatchObject({ assets: [], total: 0 })
   })
 })
 
@@ -717,5 +838,47 @@ describe('acting on a file from its card', () => {
     expect(await copiedItem?.items['image/png']?.text()).toBe('png bytes')
     expect(await trashOutputFile(inside)).toBe(true)
     expect(fs.existsSync(inside), 'the picture left the output folder').toBe(false)
+  })
+
+  it('shows an SVG in its folder instead of handing it to a browser', async () => {
+    const vector = path.join(sharedDir, 'logo.svg')
+    write(vector)
+
+    expect(await openOutputFile(vector)).toBe(true)
+    expect(openedPath).not.toHaveBeenCalled()
+    expect(shownInFolder).toHaveBeenCalledExactlyOnceWith(vector)
+  })
+
+  it('never hands a file that is not a picture, clip or sound to an app', async () => {
+    const script = path.join(sharedDir, 'run.command')
+    write(script)
+
+    expect(await openOutputFile(script)).toBe(true)
+    expect(openedPath).not.toHaveBeenCalled()
+    expect(shownInFolder).toHaveBeenCalledExactlyOnceWith(script)
+  })
+
+  it('opens a file in its default app, and shows a 3D file or a file no app opens in its folder', async () => {
+    const picture = path.join(sharedDir, 'portrait.png')
+    const mesh = path.join(sharedDir, 'mesh.glb')
+    const outside = path.join(outsideDir, 'secret.png')
+    write(picture)
+    write(mesh)
+    write(outside)
+
+    expect(await openOutputFile(outside), 'a file outside is not opened').toBe(false)
+    expect(openedPath).not.toHaveBeenCalled()
+
+    expect(await openOutputFile(picture)).toBe(true)
+    expect(openedPath).toHaveBeenCalledExactlyOnceWith(picture)
+    expect(shownInFolder).not.toHaveBeenCalled()
+
+    expect(await openOutputFile(mesh)).toBe(true)
+    expect(openedPath, 'a 3D file is not handed to an app').toHaveBeenCalledOnce()
+    expect(shownInFolder).toHaveBeenCalledExactlyOnceWith(mesh)
+
+    openedPath.mockResolvedValueOnce('No application knows how to open this file')
+    expect(await openOutputFile(picture)).toBe(true)
+    expect(shownInFolder).toHaveBeenLastCalledWith(picture)
   })
 })

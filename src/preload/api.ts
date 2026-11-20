@@ -4,6 +4,7 @@ import type {
   AppOutputs,
   AppPageStatus,
   ElectronApi,
+  HomeTourReplayState,
   ResolvedTheme,
   AdoptPromptRequest
 } from '../types/ipc'
@@ -57,6 +58,8 @@ export function buildElectronApi(): ElectronApi {
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),
     logsSnapshot: (installationId: string): Promise<string> =>
       ipcRenderer.invoke('logs-snapshot', installationId),
+    openLogsWindow: (installationId: string): Promise<void> =>
+      ipcRenderer.invoke('logs-popout-open', installationId),
     validateInstallPath: (targetPath) => ipcRenderer.invoke('validate-install-path', targetPath),
     getInstallationSize: (installationId) =>
       ipcRenderer.invoke('get-installation-size', installationId),
@@ -98,20 +101,27 @@ export function buildElectronApi(): ElectronApi {
     closeHostWindow: () => ipcRenderer.invoke('close-host-window'),
     returnToDashboard: () => ipcRenderer.invoke('return-to-dashboard'),
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
-    closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     openPageInNewWindow: (page) => ipcRenderer.send('comfy-window:open-page-in-new-window', page),
     listAssets: (installationId, page) => ipcRenderer.invoke('assets:list', installationId, page),
-    listLocalAssets: (installationId?: string) =>
-      ipcRenderer.invoke('assets:list-local', installationId),
+    listLocalAssets: (installationId, page) =>
+      ipcRenderer.invoke('assets:list-local', installationId, page),
+    listOutputFolders: () => ipcRenderer.invoke('assets:output-folders'),
+    openOutputFolder: (installationId) =>
+      ipcRenderer.invoke('assets:open-output-folder', installationId),
     downloadAsset: (source, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
     revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),
+    openAsset: (source, assetId) => ipcRenderer.invoke('assets:open', source, assetId),
     findCloudAsset: (installationId, name) =>
       ipcRenderer.invoke('assets:find', installationId, name),
     copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),
     readAssetModel: (source, assetId) => ipcRenderer.invoke('assets:read-model', source, assetId),
+    hasAssetWorkflow: (source, assetId) =>
+      ipcRenderer.invoke('assets:has-workflow', source, assetId),
+    openAssetWorkflow: (source, assetId, name, build) =>
+      ipcRenderer.invoke('assets:open-workflow', source, assetId, name, build),
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
@@ -141,6 +151,7 @@ export function buildElectronApi(): ElectronApi {
       return () => ipcRenderer.removeListener('apps:outputs', handler)
     },
     sendAppOutputAction: (action) => ipcRenderer.send('apps:output-action', action),
+    sendAppRequest: (text) => ipcRenderer.invoke('apps:send-request', text),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     openGlobalSettings: (tab, opts) =>
       ipcRenderer.send(
@@ -166,11 +177,6 @@ export function buildElectronApi(): ElectronApi {
       }
       ipcRenderer.on('comfy-panel:open-feedback', handler)
       return () => ipcRenderer.removeListener('comfy-panel:open-feedback', handler)
-    },
-    onOpenAnnouncement: (callback) => {
-      const handler = (): void => callback()
-      ipcRenderer.on('comfy-panel:open-announcement', handler)
-      return () => ipcRenderer.removeListener('comfy-panel:open-announcement', handler)
     },
     onCloseRequest: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>
@@ -248,6 +254,8 @@ export function buildElectronApi(): ElectronApi {
     getMediaSections: () => ipcRenderer.invoke('get-media-sections'),
     setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
     getSetting: (key) => ipcRenderer.invoke('get-setting', key),
+    getHomeTourReplay: () => ipcRenderer.invoke('get-home-tour-replay'),
+    finishHomeTour: (shownReplayId) => ipcRenderer.invoke('finish-home-tour', shownReplayId),
     getPendingBetaNotice: (installationId) =>
       ipcRenderer.invoke('get-pending-beta-notice', installationId),
     acknowledgeBetaNotice: (installationId, shownArgs) =>
@@ -270,6 +278,7 @@ export function buildElectronApi(): ElectronApi {
     relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
     resetZoom: () => ipcRenderer.invoke('reset-zoom'),
     getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
+    getChassisType: () => ipcRenderer.invoke('get-chassis-type'),
     getInstallationDdContext: (installationId: string) =>
       ipcRenderer.invoke('get-installation-dd-context', installationId),
     getInstallsInventory: () => ipcRenderer.invoke('get-installs-inventory'),
@@ -553,6 +562,17 @@ export function buildElectronApi(): ElectronApi {
       const handler = (_event: IpcRendererEvent, data: unknown) => callback(data as { key: string })
       ipcRenderer.on('settings-changed', handler)
       return () => ipcRenderer.removeListener('settings-changed', handler)
+    },
+    onShowHomePage: (callback) => {
+      const handler = () => callback()
+      ipcRenderer.on('comfy-panel:show-home-page', handler)
+      return () => ipcRenderer.removeListener('comfy-panel:show-home-page', handler)
+    },
+    onHomeTourReplayChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, state: unknown) =>
+        callback(state as HomeTourReplayState)
+      ipcRenderer.on('home-tour-replay-changed', handler)
+      return () => ipcRenderer.removeListener('home-tour-replay-changed', handler)
     },
     onPanelSwitch: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>

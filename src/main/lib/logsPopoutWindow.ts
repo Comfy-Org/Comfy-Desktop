@@ -97,7 +97,7 @@ export async function openLogsPopout(installationId: string): Promise<void> {
   let label = 'Comfy Logs'
   try {
     const inst = await installations.get(installationId)
-    if (inst?.name) label = `Comfy Logs — ${inst.name}`
+    if (inst?.name) label = `Comfy Logs · ${inst.name}`
   } catch {}
 
   const win = new BrowserWindow({
@@ -120,12 +120,13 @@ export async function openLogsPopout(installationId: string): Promise<void> {
   })
 
   const html =
-    `<!DOCTYPE html><html class="m-0 h-full bg-[var(--logs-popout-bg)] p-0" style="--logs-popout-bg:${COMFY_BG};"><head><meta charset="utf-8"><title>${label}</title>` +
+    `<!DOCTYPE html><html class="m-0 h-full bg-[var(--logs-popout-bg)] p-0" style="--logs-popout-bg:${COMFY_BG};"><head><meta charset="utf-8"><title>Comfy Logs</title>` +
     `<style>${standaloneWindowStyles}</style>` +
     `</head><body class="m-0 h-full bg-[var(--logs-popout-bg)] p-0"></body></html>`
   void win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
 
   win.webContents.once('did-finish-load', () => {
+    win.setTitle(label)
     void win.webContents.executeJavaScript(buildPopoutScript(installationId)).catch(() => {})
   })
 }

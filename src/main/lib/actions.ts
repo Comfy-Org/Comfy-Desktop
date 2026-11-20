@@ -92,10 +92,16 @@ export function renameAction(currentName: string): ActionDef {
   }
 }
 
+export function revealInFolderLabel(platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'darwin') return t('assets.showInFinder')
+  if (platform === 'win32') return t('assets.showInExplorer')
+  return t('assets.showInFolder')
+}
+
 export function openFolderAction(installPath: string): ActionDef {
   return {
     id: 'open-folder',
-    label: t('actions.openDirectory'),
+    label: revealInFolderLabel(),
     style: 'default',
     enabled: !!installPath
   }

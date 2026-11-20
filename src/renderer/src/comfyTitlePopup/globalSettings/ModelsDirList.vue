@@ -7,6 +7,7 @@ import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import { FileText, Folder, FolderLock, MoreHorizontal, Plus } from '@lucide/vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 import StorageTag from '../../components/StorageTag.vue'
+import { revealInFolderKey } from '../../composables/usePlatform'
 
 interface ModelsDir {
   path: string
@@ -36,6 +37,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const revealFolderKey = revealInFolderKey(window.api?.platform)
 const actionClass = 'models-dir-action size-7 shrink-0 rounded-md'
 const nameClass =
   'models-dir-name static block min-w-0 max-w-full whitespace-normal [overflow-wrap:anywhere] gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono text-[12.5px] leading-[18px] font-normal text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0'
@@ -155,9 +157,7 @@ const rows = computed(() =>
               variant="textonly"
               size="unset"
               :class="nameClass"
-              :title="
-                row.isExtra ? t('comfyUISettings.viewCustomPathDetails') : t('models.openDir')
-              "
+              :title="row.isExtra ? t('comfyUISettings.viewCustomPathDetails') : t(revealFolderKey)"
               @click.stop="row.isExtra ? emit('details', row.index) : emit('open', row.index)"
             >
               {{ row.path }}

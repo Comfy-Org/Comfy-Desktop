@@ -3,6 +3,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import Tabs from '@comfyorg/design-system/tabs/Tabs'
 import TabsList from '@comfyorg/design-system/tabs/TabsList'
 import TabsTrigger from '@comfyorg/design-system/tabs/TabsTrigger'
+import { vSlidingPill } from '../components/ui/vSlidingPill'
 import TabsContent from '@comfyorg/design-system/tabs/TabsContent'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -275,7 +276,7 @@ onMounted(() => {
       type="button"
       variant="muted-textonly"
       size="icon"
-      class="gs-close absolute top-0 right-0 z-2 size-9 rounded-full bg-white/10 text-white hover:bg-white/18 hover:text-white"
+      class="gs-close absolute top-0 right-0 z-2 size-9 rounded-full modal-close-fill [--modal-close-card:var(--color-neutral-900)] text-white hover:text-white"
       :aria-label="t('common.close')"
       @click="bridge?.close()"
     >
@@ -295,6 +296,7 @@ onMounted(() => {
         </h2>
         <TabsList
           :key="requestedTabCount"
+          v-sliding-pill="'bg-secondary'"
           class="gs-tabs min-h-0 flex-col items-stretch gap-0.5 overflow-y-auto"
           :aria-label="t('settingsModal.tabGlobal')"
         >

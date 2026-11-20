@@ -200,6 +200,7 @@ const { syncLocale } = useAppLocale(popupLocaleSource())
 
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return
+  if (event.isComposing || event.defaultPrevented) return
   if (modalState.visible) return
   event.preventDefault()
   bridge?.close()
@@ -218,20 +219,20 @@ function measureAndRequestSize(): void {
   if (kind.value === 'downloads') {
     const headEl = document.querySelector('.downloads-head') as HTMLElement | null
     const listEl = document.querySelector('.downloads-list, .downloads-empty') as HTMLElement | null
-    const footEl = document.querySelector('.downloads-foot') as HTMLElement | null
-    if (!footEl || !listEl) return
+    if (!listEl) return
+    const cs = getComputedStyle(listEl)
     let listH: number
     if (listEl.classList.contains('downloads-list')) {
       let childrenH = 0
       for (const child of listEl.children) {
         childrenH += (child as HTMLElement).offsetHeight
       }
-      const cs = getComputedStyle(listEl)
       listH = childrenH + parseFloat(cs.paddingTop || '0') + parseFloat(cs.paddingBottom || '0')
     } else {
       listH = listEl.offsetHeight
     }
-    const total = (headEl?.offsetHeight ?? 0) + listH + footEl.offsetHeight + 2
+    listH += parseFloat(cs.marginTop || '0') + parseFloat(cs.marginBottom || '0')
+    const total = (headEl?.offsetHeight ?? 0) + listH + 2
     bridge?.requestSize(total)
     return
   }
@@ -319,17 +320,19 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="popup box-border m-0 h-full w-full overflow-hidden border border-solid border-border text-text select-none"
+    class="popup box-border m-0 h-full w-full overflow-hidden text-text select-none"
     :class="{
+      'border border-solid border-border': kind !== 'instance-picker',
       'is-menu rounded-lg bg-popover text-xs': kind === 'menu',
       'rounded-card bg-neutral-800 [box-shadow:var(--shadow-highlight)]':
-        kind !== 'menu' && kind !== 'global-settings',
-      'is-picker': kind === 'instance-picker',
+        kind !== 'menu' &&
+        kind !== 'instance-picker' &&
+        kind !== 'global-settings' &&
+        kind !== 'downloads-full',
+      'is-picker bg-transparent': kind === 'instance-picker',
       'is-global-settings': kind === 'global-settings',
       'is-downloads-full': kind === 'downloads-full',
-      'rounded-panel border-[var(--modal-surface-border)] bg-[var(--modal-surface-bg)]':
-        kind === 'instance-picker' || kind === 'downloads-full',
-      'border-0 bg-transparent': kind === 'global-settings'
+      'border-0 bg-transparent': kind === 'global-settings' || kind === 'downloads-full'
     }"
   >
     <MenuView v-if="kind === 'menu'" :items="items" @activate="handleActivate" />

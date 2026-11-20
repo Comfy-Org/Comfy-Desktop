@@ -1,5 +1,8 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
+
+import '../assets/main.css'
 
 import type { DiskSpaceInfo, FieldOption } from '../types/ipc'
 import TemplatePickerStep from './TemplatePickerStep.vue'
@@ -327,5 +330,91 @@ describe('TemplatePickerStep', () => {
     expect(img.classes()).not.toContain('tps__card-img--ready')
     await img.trigger('load')
     expect(img.classes()).toContain('tps__card-img--ready')
+  })
+})
+
+describe('TemplatePickerStep tab pill', () => {
+  const attached: VueWrapper[] = []
+
+  beforeEach(() => {
+    document.documentElement.dataset.theme = 'dark'
+  })
+
+  afterEach(() => {
+    while (attached.length) attached.pop()?.unmount()
+    delete document.documentElement.dataset.theme
+  })
+
+  function mountAttached() {
+    const wrapper = mount(TemplatePickerStep, {
+      props: {
+        options: [NONE, IMAGE_REC, IMAGE_ALT, VIDEO],
+        noneValue: 'none',
+        selectedValue: IMAGE_REC.value,
+        diskSpace: null,
+        diskSpaceLoading: false
+      },
+      attachTo: document.body
+    })
+    attached.push(wrapper)
+    return wrapper
+  }
+
+  function nextFrame(): Promise<void> {
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()))
+  }
+
+  async function settle() {
+    await flushPromises()
+    await nextTick()
+    await document.fonts.ready
+    await nextFrame()
+    await nextFrame()
+  }
+
+  function tabNamed(wrapper: VueWrapper, label: string): HTMLElement {
+    const tab = wrapper.findAll<HTMLElement>('[role="tab"]').find((t) => t.text().includes(label))
+    if (!tab) throw new Error(`no tab named ${label}`)
+    return tab.element
+  }
+
+  function expectPillCovers(pill: HTMLElement, tab: HTMLElement) {
+    expect(pill.hidden).toBe(false)
+    expect(pill.style.width).toBe(`${tab.offsetWidth}px`)
+    expect(pill.style.height).toBe(`${tab.offsetHeight}px`)
+    expect(pill.style.transform).toBe(`translate(${tab.offsetLeft}px, ${tab.offsetTop}px)`)
+  }
+
+  it('puts one pill under the picked modality tab', async () => {
+    const wrapper = mountAttached()
+    await settle()
+
+    const pills = wrapper.findAll<HTMLElement>('[data-testid="sliding-pill"]')
+    expect(pills).toHaveLength(1)
+    expectPillCovers(pills[0]!.element, tabNamed(wrapper, 'Image'))
+  })
+
+  it('moves the same pill to the modality tab the user picks', async () => {
+    const wrapper = mountAttached()
+    await settle()
+    const pill = wrapper.get<HTMLElement>('[data-testid="sliding-pill"]').element
+
+    tabNamed(wrapper, 'Video').click()
+    await settle()
+
+    expect(wrapper.get('[data-testid="sliding-pill"]').element).toBe(pill)
+    expectPillCovers(pill, tabNamed(wrapper, 'Video'))
+  })
+
+  it('paints the picked fill on the pill and keeps the template cards untouched', async () => {
+    const wrapper = mountAttached()
+    await settle()
+    const pill = wrapper.get<HTMLElement>('[data-testid="sliding-pill"]').element
+
+    expect(getComputedStyle(tabNamed(wrapper, 'Image')).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+    expect(getComputedStyle(pill).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    expect(wrapper.get('[role="radiogroup"]').find('[data-testid="sliding-pill"]').exists()).toBe(
+      false
+    )
   })
 })

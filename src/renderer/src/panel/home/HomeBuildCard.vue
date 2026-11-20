@@ -15,11 +15,18 @@ import {
   buildDeviceKind,
   isCloudBuild,
   isComfyCloud,
+  runsOnThisComputer,
   type HomeBuildStatus,
   type HomeBuildTone
 } from './homeBuild'
-import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import {
+  buildFailure,
+  inPlaceTaskLabel,
+  launchFailed,
+  useBuildProgress
+} from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
+import { useLocalDeviceKind } from '../../composables/useLocalDeviceKind'
 import { useProgressStore } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
@@ -28,42 +35,61 @@ const {
   build,
   status,
   tone,
-  autoStart = false
+  autoStart = false,
+  loggedOut = false
 } = defineProps<{
   build: Installation
   status: HomeBuildStatus
   tone: HomeBuildTone
   autoStart?: boolean
+  loggedOut?: boolean
 }>()
 
 const emit = defineEmits<{ open: [] }>()
 
 const { t } = useI18n()
+const localDeviceKind = useLocalDeviceKind()
 const install = useBuildProgress(() => build)
 const progressStore = useProgressStore()
 const sessionStore = useSessionStore()
 const busy = computed(() => install.progress.value !== null)
 const starting = computed(() => install.progress.value?.kind === 'launch')
 const uninstalling = computed(() => install.progress.value?.kind === 'uninstall')
+const updating = computed(() => install.progress.value?.kind === 'update')
+const working = computed(() => install.progress.value?.kind === 'working')
+const changesInPlace = computed(() => updating.value || working.value)
+const showsUpdateLock = computed(() => status === 'updating' && !changesInPlace.value)
 const promoting = computed(() => isPromotingToWorkspace(build))
 const canOpen = computed(
-  () => !uninstalling.value && !promoting.value && !isBuildOpenBlocked(status)
+  () =>
+    !uninstalling.value && !promoting.value && (changesInPlace.value || !isBuildOpenBlocked(status))
 )
 const busyTestId = computed(() => {
   if (uninstalling.value) return 'home-build-uninstalling'
+  if (updating.value) return 'home-build-updating'
+  if (working.value) return 'home-build-working'
   return starting.value ? 'home-build-starting' : 'home-build-installing'
 })
-const broken = computed(() => {
-  if (build.statusTag?.style === 'danger') return build.statusTag.label
-  const startFailed = sessionStore.errorInstances.get(build.id)?.startFailed === true
-  const failed = launchFailed(progressStore, build.id) || startFailed
-  return failed ? t('home.buildDidntStart') : undefined
-})
+const failure = computed(() => buildFailure(build, sessionStore, progressStore, t))
+const broken = computed(() =>
+  failure.value?.kind === 'broken' || failure.value?.kind === 'didnt-start'
+    ? failure.value.label
+    : undefined
+)
+const startFailedLogs = computed(
+  () => build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id)
+)
 
 const toneStyle = computed(() => HOME_BUILD_TONES[tone])
+const needsLogIn = computed(() => loggedOut && isCloudBuild(build))
+const restingLabel = computed(() =>
+  needsLogIn.value ? t('home.buildLogInToUse') : t('home.buildReady')
+)
 const statusLabel = computed(() => {
   if (install.progress.value?.cancelling) return t('installProgress.cancelling')
   if (uninstalling.value) return t('uninstallProgress.status')
+  const inPlace = install.progress.value ? inPlaceTaskLabel(install.progress.value, t) : null
+  if (inPlace !== null) return inPlace
   if (busy.value) {
     const phase = t(starting.value ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
     const percent = install.progress.value?.percent
@@ -75,15 +101,12 @@ const statusLabel = computed(() => {
   if (broken.value) return broken.value
   switch (status) {
     case 'running':
-      return t('home.buildRunning')
+      return isLive.value ? t('home.buildRunning') : restingLabel.value
     case 'starting':
       return t('home.buildStarting')
-    case 'always-on':
-      return t('home.buildAlwaysOn')
     case 'update':
     case 'ready':
-      if (isCloudBuild(build)) return t('home.buildAlwaysOn')
-      return autoStart ? t('home.autoStartOn') : t('home.buildReady')
+      return autoStart && !isCloudBuild(build) ? t('home.autoStartOn') : restingLabel.value
     default:
       return status satisfies never
   }
@@ -91,30 +114,37 @@ const statusLabel = computed(() => {
 const detail = computed(() =>
   isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
 )
-const isLive = computed(
-  () =>
-    status === 'running' || status === 'always-on' || (status === 'update' && isCloudBuild(build))
+const isLive = computed(() => runsOnThisComputer(build, status))
+const resting = computed(
+  () => status === 'ready' || status === 'update' || (status === 'running' && !isLive.value)
 )
-const resting = computed(() => status === 'ready' || status === 'update')
 const updateNote = computed(() =>
-  !uninstalling.value && status !== 'updating' && build.statusTag?.style === 'update'
+  !uninstalling.value &&
+  !changesInPlace.value &&
+  status !== 'updating' &&
+  build.statusTag?.style === 'update'
     ? t('chooser.updatePill')
     : ''
 )
 const subtitle = computed(() => (uninstalling.value ? install.detail.value : detail.value))
 const openHint = computed(() => {
   if (!canOpen.value) return ''
+  if (busy.value || startFailedLogs.value) return t('home.buildClickToViewLogs')
   if (
-    busy.value ||
-    (build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id))
-  ) {
-    return t('home.buildClickToViewLogs')
-  }
-  if (broken.value || isLive.value || status === 'starting' || build.sourceCategory === 'remote')
+    broken.value ||
+    isLive.value ||
+    status === 'starting' ||
+    build.sourceCategory === 'remote' ||
+    isCloudBuild(build)
+  )
     return t('home.buildClickToOpen')
   return t('home.buildClickToStart')
 })
 const testId = computed(() => (busy.value ? busyTestId.value : 'home-build'))
+const homeTourAnchor = computed(() => {
+  if (isCloudBuild(build)) return 'cloud-build'
+  return build.sourceCategory === 'local' ? 'local-build' : undefined
+})
 
 function onClick(): void {
   if (!canOpen.value) return
@@ -140,7 +170,7 @@ function openMoreMenu(event: MouseEvent): void {
 }
 
 function openContextMenu(event: MouseEvent): void {
-  if (status === 'updating') return
+  if (showsUpdateLock.value) return
   moreButton.value = null
   menuReturnFocus.value = openButton.value
   showMenuAtPointer(event)
@@ -149,11 +179,12 @@ function openContextMenu(event: MouseEvent): void {
 
 <template>
   <div
-    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
+    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
     :class="canOpen && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
-    :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
     :data-testid="testId"
     :data-build-id="build.id"
+    :data-home-tour="homeTourAnchor"
+    :data-build-running="status === 'running' || status === 'starting' ? 'true' : undefined"
     @click="onClick"
     @contextmenu.prevent="openContextMenu"
   >
@@ -186,7 +217,7 @@ function openContextMenu(event: MouseEvent): void {
     />
     <BuildDeviceArt
       class="pointer-events-none relative shrink-0"
-      :kind="buildDeviceKind(build)"
+      :kind="buildDeviceKind(build, localDeviceKind)"
       :glow="toneStyle.glow"
     />
     <span
@@ -222,7 +253,7 @@ function openContextMenu(event: MouseEvent): void {
           aria-hidden="true"
           data-testid="home-build-starts-with-desktop"
         />
-        <Check v-else-if="resting" :size="12" aria-hidden="true" />
+        <Check v-else-if="resting && !needsLogIn" :size="12" aria-hidden="true" />
         <span class="truncate">{{ statusLabel }}</span>
       </span>
       <span
@@ -242,7 +273,7 @@ function openContextMenu(event: MouseEvent): void {
       </span>
     </span>
     <Button
-      v-if="status !== 'updating'"
+      v-if="!showsUpdateLock"
       type="button"
       variant="muted-textonly"
       size="unset"
@@ -263,7 +294,7 @@ function openContextMenu(event: MouseEvent): void {
       data-testid="home-build-progress"
     />
     <BuildMenu
-      v-if="status !== 'updating' && menuAnchor"
+      v-if="!showsUpdateLock && menuAnchor"
       v-model:open="menuOpen"
       :build="build"
       :anchor="menuAnchor"

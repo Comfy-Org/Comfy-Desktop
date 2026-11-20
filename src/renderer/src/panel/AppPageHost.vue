@@ -107,6 +107,10 @@ function outputKind(mimeType: string): AssetKind | null {
   return kind === 'image' || kind === 'video' || kind === 'audio' ? kind : null
 }
 
+function savedFolder(output: AppOutputs['items'][number]): string | null {
+  return output.savedOn === 'computer' ? output.folder || null : null
+}
+
 function releaseOutputs(): void {
   const shown = outputs.value
   if (!shown) return
@@ -128,8 +132,9 @@ function showOutputs(shown: AppOutputs): void {
     previewUrl: URL.createObjectURL(new Blob([output.bytes], { type: output.mimeType })),
     thumbnailUrl: null,
     workflow: output.workflow,
-    savedIn: output.savedOn === 'computer' ? (output.folder ?? null) : null,
-    inCloud: output.savedOn === 'cloud'
+    savedIn: savedFolder(output),
+    inCloud: output.savedOn === 'cloud',
+    mainAction: savedFolder(output) ? null : 'download'
   }))
   outputIndex.value = shown.index
   outputsShown.value += 1

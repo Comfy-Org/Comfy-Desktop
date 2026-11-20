@@ -67,7 +67,7 @@ describe('useInstallCta', () => {
     expect(cta.label.value).toBe('Restart')
   })
 
-  it('returns Switch when the install is running in ANOTHER host window (issue #749)', () => {
+  it('returns Open when the install is running in ANOTHER host window (issue #749)', () => {
     sessionState.running.add('inst-B')
     const cta = useInstallCta(ref(installation('inst-B')), {
       activeInstallationId: ref<string | null>('inst-A')
@@ -76,17 +76,17 @@ describe('useInstallCta', () => {
     expect(cta.runningInThisWindow.value).toBe(false)
     expect(cta.runningElsewhere.value).toBe(true)
     expect(cta.restartInPlace.value).toBe(false)
-    expect(cta.label.value).toBe('Switch')
+    expect(cta.label.value).toBe('Open')
   })
 
-  it('returns Switch for a running install on an install-less (dashboard) host', () => {
+  it('returns Open for a running install on an install-less (dashboard) host', () => {
     sessionState.running.add('inst-A')
     const cta = useInstallCta(ref(installation('inst-A')), {
       activeInstallationId: ref<string | null>(null)
     })
     expect(cta.runningInThisWindow.value).toBe(false)
     expect(cta.runningElsewhere.value).toBe(true)
-    expect(cta.label.value).toBe('Switch')
+    expect(cta.label.value).toBe('Open')
   })
 
   it('handles a null installation prop without throwing', () => {
@@ -116,7 +116,7 @@ describe('useInstallCta', () => {
     const cta = useInstallCta(inst, { activeInstallationId: active })
     expect(cta.label.value).toBe('Restart')
     active.value = null
-    expect(cta.label.value).toBe('Switch')
+    expect(cta.label.value).toBe('Open')
   })
 
   it('returns Restart when the install is LAUNCHING in this host window', () => {
@@ -131,7 +131,7 @@ describe('useInstallCta', () => {
     expect(cta.label.value).toBe('Restart')
   })
 
-  it('returns Switch when the install is LAUNCHING in another host window', () => {
+  it('returns Open when the install is LAUNCHING in another host window', () => {
     setLaunching(new Set<string>(['inst-B']))
     const cta = useInstallCta(ref(installation('inst-B')), {
       activeInstallationId: ref<string | null>('inst-A')
@@ -139,7 +139,7 @@ describe('useInstallCta', () => {
     expect(cta.runningAnywhere.value).toBe(true)
     expect(cta.runningInThisWindow.value).toBe(false)
     expect(cta.runningElsewhere.value).toBe(true)
-    expect(cta.label.value).toBe('Switch')
+    expect(cta.label.value).toBe('Open')
   })
 
   it('keeps Restart across the launching → running handoff in the same window', () => {

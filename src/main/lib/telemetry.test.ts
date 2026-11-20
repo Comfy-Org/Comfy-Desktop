@@ -75,8 +75,22 @@ const featureFlagResultCalls: Array<{
 }> = []
 const posthogConstructorCalls: Array<{ apiKey: string; options: Record<string, unknown> }> = []
 
+interface MockPostHogClient {
+  shutdownCalls: number
+  emitError(error: Error): void
+}
+const posthogInstances: MockPostHogClient[] = []
+
+interface PendingImmediateCapture {
+  call: CapturedCall
+  accept(): void
+  reportError(): void
+}
+const pendingImmediateCaptures: PendingImmediateCapture[] = []
+
 const posthogClientMock = vi.hoisted(() => ({
   failNextCaptures: 0,
+  immediateCaptureOutcome: 'sent' as 'sent' | 'rejected' | 'reported-error' | 'deferred',
   failNextFlushes: 0,
   autoFailNextIdentifies: 0,
   featureFlagResult: undefined as
@@ -97,9 +111,15 @@ vi.mock('posthog-node', () => ({
   PostHog: class {
     private listeners = new Map<string, Set<(...args: unknown[]) => void>>()
     private queuedIdentifies: Array<Record<string, unknown>> = []
+    shutdownCalls = 0
 
     constructor(apiKey: string, options: Record<string, unknown>) {
       posthogConstructorCalls.push({ apiKey, options })
+      posthogInstances.push(this)
+    }
+
+    emitError(error: Error): void {
+      this.emit('error', error)
     }
 
     on(event: string, listener: (...args: unknown[]) => void): () => void {
@@ -115,6 +135,31 @@ vi.mock('posthog-node', () => ({
       if (posthogClientMock.failNextCaptures > 0) {
         posthogClientMock.failNextCaptures--
         throw new Error('sdk rejected capture')
+      }
+      captured.push(call)
+    }
+    async captureImmediate(call: CapturedCall): Promise<void> {
+      if (posthogClientMock.immediateCaptureOutcome === 'rejected') {
+        throw new Error('sdk rejected immediate capture')
+      }
+      if (posthogClientMock.immediateCaptureOutcome === 'reported-error') {
+        this.emit('error', new Error('batch request failed'))
+        return
+      }
+      if (posthogClientMock.immediateCaptureOutcome === 'deferred') {
+        return new Promise<void>((resolve) => {
+          pendingImmediateCaptures.push({
+            call,
+            accept: () => {
+              captured.push(call)
+              resolve()
+            },
+            reportError: () => {
+              this.emit('error', new Error('batch request failed'))
+              resolve()
+            }
+          })
+        })
       }
       captured.push(call)
     }
@@ -151,6 +196,7 @@ vi.mock('posthog-node', () => ({
       return Promise.resolve()
     }
     shutdown(): Promise<void> {
+      this.shutdownCalls++
       return Promise.resolve()
     }
     getFeatureFlagResult(
@@ -291,6 +337,8 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
   exceptions.length = 0
   featureFlagResultCalls.length = 0
   posthogConstructorCalls.length = 0
+  posthogInstances.length = 0
+  pendingImmediateCaptures.length = 0
   for (const name of postHogEnvNames) delete process.env[name]
   process.env[isPackaged ? 'COMFY_DESKTOP_POSTHOG_API_KEY' : 'POSTHOG_API_KEY'] = 'test-key'
   process.env['COMFY_DESKTOP_POSTHOG_ENABLED'] = '1'
@@ -311,6 +359,7 @@ afterEach(() => {
   anonymousIdentityMock.index = 0
   anonymousIdentityMock.fail = false
   posthogClientMock.failNextCaptures = 0
+  posthogClientMock.immediateCaptureOutcome = 'sent'
   posthogClientMock.failNextFlushes = 0
   posthogClientMock.autoFailNextIdentifies = 0
   posthogClientMock.featureFlagResult = undefined
@@ -1820,6 +1869,239 @@ describe('telemetry consent state (3-state)', () => {
     expect(identifies.at(-1)?.properties?.$set).not.toHaveProperty('plan')
     expect(identifies.at(-1)?.properties?.$set).not.toHaveProperty('locale')
     expect(identifies.at(-1)?.properties?.$set_once).toBeUndefined()
+  })
+})
+
+describe('telemetry.sendSurveyResponse', () => {
+  const SURVEY_KEYS = {
+    $survey_id: 'survey-id',
+    '$survey_response_question-id': 'An app that colors line art'
+  }
+
+  beforeEach(() => {
+    setupTelemetry({ consent: null, bind: null })
+  })
+
+  it.each(['denied', 'undecided'] as const)(
+    'sends the answer the person submitted while consent is %s, and nothing else',
+    async (state) => {
+      telemetry.setConsentState(state)
+      bindTestAnonymous('test-distinct-id')
+      captured.length = 0
+
+      telemetry.capture('comfy.desktop.session.started', {})
+      const sent = await telemetry.sendSurveyResponse(
+        'survey-id',
+        'question-id',
+        'An app that colors line art'
+      )
+
+      expect(sent).toBe(true)
+      expect(captured.map((c) => c.event)).toEqual(['survey sent'])
+      expect(captured[0]).toMatchObject({
+        distinctId: 'test-distinct-id',
+        properties: { ...SURVEY_KEYS, app_version: '0.0.0', $process_person_profile: false }
+      })
+    }
+  )
+
+  it('keeps survey answers out of the consent-gated capture path', () => {
+    telemetry.setConsentState('denied')
+    bindTestAnonymous('test-distinct-id')
+    captured.length = 0
+
+    expect(telemetry.capture('survey sent', SURVEY_KEYS)).toBe(false)
+    expect(captured).toHaveLength(0)
+  })
+
+  it('cuts a long answer to 2048 characters', async () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('test-distinct-id')
+    captured.length = 0
+
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'x'.repeat(3000))).toBe(
+      true
+    )
+
+    expect(captured[0]?.properties?.['$survey_response_question-id']).toBe('x'.repeat(2048))
+  })
+
+  it('returns false and sends nothing when PostHog is turned off', async () => {
+    setupTelemetry({ consent: 'granted', env: { COMFY_DESKTOP_POSTHOG_ENABLED: '0' } })
+
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')).toBe(false)
+    expect(posthogConstructorCalls).toHaveLength(0)
+    expect(captured).toHaveLength(0)
+  })
+
+  it('returns false and sends nothing without a distinct id', async () => {
+    telemetry.setConsentState('granted')
+
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')).toBe(false)
+    expect(captured).toHaveLength(0)
+  })
+
+  it('returns false when PostHog rejects the immediate capture', async () => {
+    telemetry.setConsentState('denied')
+    bindTestAnonymous('test-distinct-id')
+    captured.length = 0
+    posthogClientMock.immediateCaptureOutcome = 'rejected'
+
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')).toBe(false)
+    expect(captured).toHaveLength(0)
+  })
+
+  it('returns false when PostHog reports that the request failed', async () => {
+    telemetry.setConsentState('denied')
+    bindTestAnonymous('test-distinct-id')
+    captured.length = 0
+    posthogClientMock.immediateCaptureOutcome = 'reported-error'
+
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')).toBe(false)
+
+    posthogClientMock.immediateCaptureOutcome = 'sent'
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')).toBe(true)
+  })
+
+  it('stops sending once the answer hits the per-event rate limit', async () => {
+    telemetry.setConsentState('denied')
+    bindTestAnonymous('test-distinct-id')
+    captured.length = 0
+
+    for (let i = 0; i < 60; i++) {
+      expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', `An app ${i}`)).toBe(
+        true
+      )
+    }
+
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'One more')).toBe(false)
+    expect(captured.filter((c) => c.event === 'survey sent')).toHaveLength(60)
+    expect(captured.map((c) => c.event)).not.toContain('comfy.desktop.telemetry.rate_limited')
+  })
+
+  it('returns false and sends nothing while the signed-in identity is being confirmed', async () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('test-distinct-id')
+    telemetry.applyFirebaseUserConsensus('user-123')
+    telemetry.applyFirebasePendingConsensus()
+    captured.length = 0
+
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')).toBe(false)
+
+    telemetry.releaseFirebasePendingConsensus()
+    expect(captured.filter((c) => c.event === 'survey sent')).toHaveLength(0)
+  })
+
+  it('drops a queued answer when identity confirmation starts before its turn to send', async () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('test-distinct-id')
+    telemetry.applyFirebaseUserConsensus('user-123')
+    captured.length = 0
+    posthogClientMock.immediateCaptureOutcome = 'deferred'
+
+    const first = telemetry.sendSurveyResponse('survey-id', 'question-id', 'First app')
+    const second = telemetry.sendSurveyResponse('survey-id', 'question-id', 'Second app')
+    await vi.waitFor(() => expect(pendingImmediateCaptures).toHaveLength(1))
+    telemetry.applyFirebasePendingConsensus()
+    pendingImmediateCaptures[0]!.accept()
+
+    expect(await first).toBe(true)
+    expect(await second).toBe(false)
+    expect(pendingImmediateCaptures).toHaveLength(1)
+    expect(
+      captured
+        .filter((c) => c.event === 'survey sent')
+        .map((c) => c.properties?.['$survey_response_question-id'])
+    ).toEqual(['First app'])
+  })
+
+  it('drops a queued answer when a different user is confirmed before its turn to send', async () => {
+    telemetry.setConsentState('granted')
+    bindTestAnonymous('test-distinct-id')
+    telemetry.applyFirebaseUserConsensus('user-a')
+    captured.length = 0
+    posthogClientMock.immediateCaptureOutcome = 'deferred'
+
+    const first = telemetry.sendSurveyResponse('survey-id', 'question-id', 'First app')
+    const second = telemetry.sendSurveyResponse('survey-id', 'question-id', 'Second app')
+    await vi.waitFor(() => expect(pendingImmediateCaptures).toHaveLength(1))
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.applyFirebaseUserConsensus('user-b')
+    pendingImmediateCaptures[0]!.accept()
+
+    expect(await first).toBe(true)
+    expect(await second).toBe(false)
+    expect(pendingImmediateCaptures).toHaveLength(1)
+    expect(
+      captured
+        .filter((c) => c.event === 'survey sent')
+        .map((c) => c.properties?.['$survey_response_question-id'])
+    ).toEqual(['First app'])
+  })
+
+  it('sends answers on a PostHog client of their own, made on the first send and reused', async () => {
+    telemetry.setConsentState('denied')
+    bindTestAnonymous('test-distinct-id')
+    expect(posthogInstances).toHaveLength(1)
+
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')).toBe(true)
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'Another app')).toBe(true)
+
+    expect(posthogInstances).toHaveLength(2)
+    expect(posthogConstructorCalls[1]).toEqual({
+      apiKey: 'test-key',
+      options: { host: DEFAULT_POSTHOG_HOST, disableGeoip: false }
+    })
+  })
+
+  it('still reports a sent answer when the main client fails a request meanwhile', async () => {
+    telemetry.setConsentState('denied')
+    bindTestAnonymous('test-distinct-id')
+    posthogClientMock.immediateCaptureOutcome = 'deferred'
+
+    const result = telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')
+    await vi.waitFor(() => expect(pendingImmediateCaptures).toHaveLength(1))
+    posthogInstances[0]!.emitError(new Error('flag request failed'))
+    pendingImmediateCaptures[0]!.accept()
+
+    expect(await result).toBe(true)
+  })
+
+  it('sends overlapping answers one after the other, each with its own result', async () => {
+    telemetry.setConsentState('denied')
+    bindTestAnonymous('test-distinct-id')
+    captured.length = 0
+    posthogClientMock.immediateCaptureOutcome = 'deferred'
+
+    const first = telemetry.sendSurveyResponse('survey-id', 'question-id', 'First app')
+    const second = telemetry.sendSurveyResponse('survey-id', 'question-id', 'Second app')
+    await vi.waitFor(() => expect(pendingImmediateCaptures).toHaveLength(1))
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(pendingImmediateCaptures).toHaveLength(1)
+
+    pendingImmediateCaptures[0]!.reportError()
+    expect(await first).toBe(false)
+
+    await vi.waitFor(() => expect(pendingImmediateCaptures).toHaveLength(2))
+    pendingImmediateCaptures[1]!.accept()
+    expect(await second).toBe(true)
+
+    expect(
+      captured
+        .filter((c) => c.event === 'survey sent')
+        .map((c) => c.properties?.['$survey_response_question-id'])
+    ).toEqual(['Second app'])
+  })
+
+  it('shuts the survey client down with the main client', async () => {
+    telemetry.setConsentState('denied')
+    bindTestAnonymous('test-distinct-id')
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')).toBe(true)
+
+    await telemetry.shutdown('quit')
+
+    expect(posthogInstances.map((instance) => instance.shutdownCalls)).toEqual([1, 1])
+    expect(await telemetry.sendSurveyResponse('survey-id', 'question-id', 'An app')).toBe(false)
   })
 })
 

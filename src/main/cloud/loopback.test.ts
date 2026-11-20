@@ -1,6 +1,7 @@
 import http from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 import { startLoopbackListener, type LoopbackListener } from './loopback'
+import { SignInFailure } from './signInFailure'
 
 function get(url: string): Promise<{ status: number; body: string; contentType?: string }> {
   return new Promise((resolve, reject) => {
@@ -91,5 +92,28 @@ describe('loopback listener', () => {
       name: 'SignInFailure',
       reason: 'timeout'
     })
+  })
+  it('stops listening with the reason the app gave for ending the wait', async () => {
+    const abort = new AbortController()
+    listener = await startLoopbackListener({
+      expectedState: 'st',
+      timeoutMs: 5000,
+      signal: abort.signal
+    })
+    const redirectUri = listener.redirectUri
+
+    abort.abort(new SignInFailure('Sign-in restarted from Comfy Desktop', 'restarted'))
+
+    await expect(listener.waitForCode()).rejects.toMatchObject({ reason: 'restarted' })
+    await expect(get(`${redirectUri}?state=st&code=late`)).rejects.toThrow()
+  })
+
+  it('refuses to start for a sign-in that was already ended', async () => {
+    const abort = new AbortController()
+    abort.abort(new SignInFailure('Sign-in restarted from Comfy Desktop', 'restarted'))
+
+    await expect(
+      startLoopbackListener({ expectedState: 'st', timeoutMs: 5000, signal: abort.signal })
+    ).rejects.toMatchObject({ reason: 'restarted' })
   })
 })

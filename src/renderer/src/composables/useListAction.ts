@@ -1,8 +1,10 @@
+import { relaunchAfterAction, stopThenRun } from '../lib/relaunchAfterAction'
 import { useI18n } from 'vue-i18n'
 import { useModal } from './useModal'
 import { useActionGuard } from './useActionGuard'
 import { useLocalInstanceGuard } from './useLocalInstanceGuard'
 import { useSessionStore } from '../stores/sessionStore'
+import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction, toErrorBucket } from '../lib/telemetry'
 import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/progressOpKind'
 import {
@@ -12,6 +14,7 @@ import {
 } from '../lib/stopWarning'
 import { REQUIRES_STOPPED } from '../types/ipc'
 import type { Installation, ListAction, ActionResult, ShowProgressOpts } from '../types/ipc'
+import { progressTitle } from '../lib/progressTitle'
 
 export interface ListActionCallbacks {
   showProgress: (opts: ShowProgressOpts) => void
@@ -30,6 +33,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
   const actionGuard = useActionGuard()
   const localInstanceGuard = useLocalInstanceGuard()
   const sessionStore = useSessionStore()
+  const progressStore = useProgressStore()
 
   async function executeAction(
     inst: Installation,
@@ -113,7 +117,7 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
       })
       callbacks.showProgress({
         installationId: inst.id,
-        title: `${t('desktop.migrating')} — ${inst.name}`,
+        title: progressTitle(t('desktop.migrating'), inst.name),
         apiCall: async () => {
           const migrateResult = await window.api.runAction(inst.id, 'migrate-to-standalone')
           if (!migrateResult.ok || !migrateResult.newInstallationId) return migrateResult
@@ -147,17 +151,19 @@ export function useListAction(uiSurface: string, callbacks: ListActionCallbacks)
         action.id === 'launch' || action.id === 'restart' || wantsRelaunch
       const apiCall = needsSelfStop
         ? async () => {
-            await stopAndWaitForExit(inst.id, isRunning)
-            const result = await runAction()
-            if (wantsRelaunch && result?.ok !== false) {
-              await window.api.runAction(inst.id, 'launch')
-            }
-            return result
+            const result = await stopThenRun(
+              inst.id,
+              isRunning,
+              () => progressStore.operations.get(inst.id)?.cancelRequested === true,
+              runAction
+            )
+            if (result.cancelled) return result
+            return wantsRelaunch ? relaunchAfterAction(inst.id, result) : result
           }
         : runAction
       callbacks.showProgress({
         installationId: inst.id,
-        title: `${action.progressTitle || action.label} — ${inst.name}`,
+        title: progressTitle(action.progressTitle || action.label, inst.name),
         apiCall,
         cancellable: !!action.cancellable,
         triggersInstanceStart,

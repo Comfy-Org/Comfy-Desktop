@@ -74,6 +74,7 @@ vi.mock('../host/registry', () => ({
 vi.mock('./outputFolders', () => ({
   outputFilePath: (target: string) => outputFile(target),
   revealOutputFile: vi.fn(),
+  openOutputFile: vi.fn(),
   copyOutputImage: vi.fn(),
   trashOutputFile: (target: string) => trashOutputFile(target)
 }))
@@ -301,6 +302,26 @@ describe('listAssets', () => {
     expect(page.total).toBe(10_002)
   })
 
+  it('asks Cloud for names that contain the search, with a capped total and cursors', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        assets: [{ id: 'a1', name: 'forest-1.png' }],
+        total: 240,
+        has_more: true,
+        next_cursor: 'forest-2'
+      })
+    )
+
+    const page = await listAssets('cloud-1', { ...FIRST_PAGE, search: 'forest' })
+
+    const query = new URL(fetchMock.mock.calls[0]![0]).searchParams
+    expect(query.get('name_contains')).toBe('forest')
+    expect(query.get('capped_total')).toBe('true')
+    expect(page).toMatchObject({ total: 240, nextCursor: 'forest-2' })
+  })
+
   it('rejects a continuing Cloud page with no next cursor', async () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue('token')
@@ -464,6 +485,27 @@ describe('listAssets', () => {
 
       expect(offsetsAsked, "page 2 uses the first window's own read").toHaveLength(6)
       expect(second.assets[0]!.name).toBe('mesh-503.glb')
+    })
+
+    it('scans only the outputs whose names contain the search, and reads again for a new search', async () => {
+      cloudOfOutputs(1200)
+      const slot = {}
+      const signal = new AbortController().signal
+      const threeD = { ...FIRST_PAGE, limit: 5, kind: '3d' } as const
+
+      await listAssets('cloud-1', { ...threeD, search: 'mesh' }, signal, slot)
+      const searched = fetchMock.mock.calls.map(([url]) =>
+        new URL(url as string).searchParams.get('name_contains')
+      )
+      expect(searched).toEqual(['mesh', 'mesh', 'mesh'])
+
+      fetchMock.mockClear()
+      await listAssets('cloud-1', { ...threeD, offset: 5, search: 'out' }, signal, slot)
+      expect(
+        fetchMock,
+        'a later page of another search does not reuse the old read'
+      ).toHaveBeenCalled()
+      expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.get('name_contains')).toBe('out')
     })
 
     it('keeps only one copy when Cloud returns the same output across two scan pages', async () => {
@@ -1196,6 +1238,27 @@ describe('the list handler', () => {
     expect(signals).toHaveLength(2)
   })
 
+  it('sends Cloud the search without its outer spaces', async () => {
+    cloudListThatWaits()
+    registerAssetsHandlers()
+
+    await handlers.get('assets:list')!({ sender: {} }, 'cloud-1', {
+      ...FIRST_PAGE,
+      search: '  forest '
+    })
+
+    expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.get('name_contains')).toBe('forest')
+  })
+
+  it('lists every Cloud output for a blank search', async () => {
+    cloudListThatWaits()
+    registerAssetsHandlers()
+
+    await handlers.get('assets:list')!({ sender: {} }, 'cloud-1', { ...FIRST_PAGE, search: '  ' })
+
+    expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.has('name_contains')).toBe(false)
+  })
+
   it.each([
     ['no page', undefined],
     ['a negative offset', { ...FIRST_PAGE, offset: -1 }],
@@ -1203,7 +1266,9 @@ describe('the list handler', () => {
     ['an empty cursor', { ...FIRST_PAGE, offset: 100, after: '' }],
     ['a page larger than Cloud allows here', { ...FIRST_PAGE, limit: 500 }],
     ['an unknown order', { ...FIRST_PAGE, order: 'random' }],
-    ['an unknown type', { ...FIRST_PAGE, kind: 'font' }]
+    ['an unknown type', { ...FIRST_PAGE, kind: 'font' }],
+    ['a search that is not text', { ...FIRST_PAGE, search: 7 }],
+    ['a very long search', { ...FIRST_PAGE, search: 'a'.repeat(201) }]
   ])('asks Cloud nothing for %s', async (_case, page) => {
     registerAssetsHandlers()
 

@@ -12,6 +12,7 @@ let installPath: string
 const INSTALL_ID = 'inst-progress-error-test'
 const INSTALL_NAME = 'Progress Error Me'
 const MARKER_FILENAME = '.comfyui-desktop-2'
+const REASON = '[data-testid="build-operation-failed-reason"]'
 
 const LONG_ERROR = Array.from({ length: 80 })
   .map(
@@ -47,7 +48,7 @@ test.afterAll(async () => {
   if (installPath) await rm(installPath, { recursive: true, force: true })
 })
 
-test('ProgressModal error block caps its height and scrolls @windows @macos @linux', async () => {
+test('A long task error on the build page caps its height and scrolls @windows @macos @linux', async () => {
   await ctx.panel.evaluate<void>(`(async () => {
     await window.__e2eRenderer.injectProgressError({
       installationId: ${JSON.stringify(INSTALL_ID)},
@@ -56,7 +57,19 @@ test('ProgressModal error block caps its height and scrolls @windows @macos @lin
     })
   })()`)
 
-  await ctx.panel.waitForVisible(byTestId(TID.progressErrorMessage), { timeout: 10_000 })
+  await expect
+    .poll(
+      () =>
+        ctx.panel.evaluate<boolean>(
+          `window.__e2eRenderer.hasErrorInstance(${JSON.stringify(INSTALL_ID)})`
+        ),
+      { timeout: 10_000, intervals: [100, 200] }
+    )
+    .toBe(true)
+  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(INSTALL_ID)))).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="build-menu-manage"]', { timeout: 5_000 })
+  expect(await ctx.panel.click('[data-testid="build-menu-manage"]')).toBe(true)
+  await ctx.panel.waitForVisible(REASON, { timeout: 10_000 })
 
   const layout = await ctx.panel.evaluate<{
     clientHeight: number
@@ -65,7 +78,7 @@ test('ProgressModal error block caps its height and scrolls @windows @macos @lin
     overflowY: string
     textLength: number
   }>(`(() => {
-    const el = document.querySelector('${byTestId(TID.progressErrorMessage)}')
+    const el = document.querySelector('${REASON}')
     if (!el) return null
     const cs = getComputedStyle(el)
     const maxH = parseFloat(cs.maxHeight)
@@ -78,7 +91,7 @@ test('ProgressModal error block caps its height and scrolls @windows @macos @lin
     }
   })()`)
 
-  expect(layout, 'progress error message element layout query returned null').not.toBeNull()
+  expect(layout, 'task error element layout query returned null').not.toBeNull()
   expect(layout.textLength).toBeGreaterThan(2_000)
   expect(layout.clientHeight, 'error block should not exceed the 240px clamp').toBeLessThanOrEqual(
     241

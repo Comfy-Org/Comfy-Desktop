@@ -215,7 +215,7 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
     bridgeState.configCallbacks.forEach((cb) =>
       cb({
         kind: 'menu',
-        items: [{ id: 'open-feedback', label: 'Send Feedback' }],
+        items: [{ id: 'open-feedback', label: 'Send feedback' }],
         theme: { bg: '#262729', text: '#dddddd' }
       })
     )
@@ -261,6 +261,34 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await flushPromises()
     expect(bridgeState.closeCalls).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('stays open when Escape only ends an input method composition', async () => {
+    const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
+    const wrapper = mount(TitlePopupApp, { attachTo: document.body })
+    await flushPromises()
+    const composingEscape = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      isComposing: true,
+      cancelable: true
+    })
+    window.dispatchEvent(composingEscape)
+    await flushPromises()
+    expect(bridgeState.closeCalls).toBe(0)
+    expect(composingEscape.defaultPrevented).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('stays open when Escape was already handled, as when it cancels a rename', async () => {
+    const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
+    const wrapper = mount(TitlePopupApp, { attachTo: document.body })
+    await flushPromises()
+    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
+    handled.preventDefault()
+    window.dispatchEvent(handled)
+    await flushPromises()
+    expect(bridgeState.closeCalls).toBe(0)
     wrapper.unmount()
   })
 

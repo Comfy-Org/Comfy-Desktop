@@ -9,10 +9,13 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import TermsModal from '../components/TermsModal.vue'
 import TermsConsentRow from '../components/TermsConsentRow.vue'
 import InlineRichText from '../components/InlineRichText.vue'
+import InfoTooltip from '../components/InfoTooltip.vue'
+import SetupSummaryRow from '../components/SetupSummaryRow.vue'
 import BuildDeviceArt from '../panel/home/BuildDeviceArt.vue'
-import { deviceKindForPlatform } from '../panel/home/homeBuild'
+import { useLocalDeviceKind } from '../composables/useLocalDeviceKind'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { formatSize } from '../lib/formatting'
+import { SUMMARY_BOX_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
 import { saveSetupConsent, type SetupConsent } from '../lib/setupConsent'
 import {
   displayPath,
@@ -42,7 +45,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const ROW_CLASS = 'grid h-4 grid-cols-[147px_minmax(0,1fr)_auto] items-center text-[13px]/4'
 const CONSENT_ROW_CLASS = 'flex w-fit cursor-pointer items-center gap-2.5 text-xs/[15px]'
 const CHECKBOX_CLASS =
   'size-5 rounded-[5px] border-0 bg-white/6 text-[#070709] data-[state=checked]:bg-[#f1f1f3] [&_i]:size-3'
@@ -50,6 +52,7 @@ const LINK_CLASS =
   'inline h-auto p-0 align-baseline text-xs/[15px] font-normal text-foreground underline underline-offset-2 hover:bg-transparent'
 
 const platform = window.api.platform
+const localDeviceKind = useLocalDeviceKind()
 const step = ref<Step>('setup')
 const plan = ref<SetupPlan | null>(null)
 const planState = ref<'loading' | 'ready' | 'unavailable'>('loading')
@@ -133,43 +136,37 @@ const location = computed(() =>
   displayPath(installLocation(plan.value?.installRoot ?? '', platform), platform)
 )
 const locationParts = computed(() => splitPathTail(location.value))
+const migrating = computed(() => hasLegacyDesktop.value && migrateExisting.value)
 const lowDisk = computed(
   () =>
+    !migrating.value &&
     diskFree.value !== null &&
     !!plan.value?.requiredBytes &&
     diskFree.value < plan.value.requiredBytes
 )
 const locationMeta = computed(() => {
   if (diskFree.value === null || !plan.value) return ''
-  const values = {
-    free: formatSize(diskFree.value),
-    required: formatSize(plan.value.requiredBytes)
-  }
-  if (!plan.value.requiredBytes) return t('setup.free', values)
-  return t(lowDisk.value ? 'setup.notEnoughSpace' : 'setup.freeRequired', values)
+  const free = formatSize(diskFree.value)
+  return lowDisk.value
+    ? t('diskSpace.insufficientForInstall', {
+        free,
+        required: formatSize(plan.value.requiredBytes)
+      })
+    : t('diskSpace.free', { size: free })
 })
 const version = computed(() => {
   if (!plan.value) return ''
   if (workspaceBuild.value) return workspaceBuild.value.buildName
   const tag = planVersion(plan.value)
-  const channel = plan.value.selections.release?.label ?? ''
-  return tag
-    ? t('setup.versionValue', { version: tag, channel })
-    : t('setup.versionChannel', { channel })
+  return tag ? t('setup.versionValue', { version: tag }) : t('standalone.comfyui')
 })
-const downloadSize = computed(() => formatSize(plan.value?.downloadBytes ?? 0))
-const footerSummary = computed(() =>
-  plan.value?.downloadBytes
-    ? t('setup.downloadRequired', {
-        download: downloadSize.value,
-        required: formatSize(plan.value.requiredBytes)
-      })
-    : ''
+const channel = computed(() =>
+  workspaceBuild.value ? '' : (plan.value?.selections.release?.label ?? '')
 )
-const migrating = computed(() => hasLegacyDesktop.value && migrateExisting.value)
 const installBlocked = computed(
   () => !migrating.value && (planState.value !== 'ready' || unsupportedReason.value !== '')
 )
+const planChecking = computed(() => !migrating.value && planState.value === 'loading')
 const isChinese = computed(() => locale.value.startsWith('zh'))
 
 function applyBetaEntryRule(): void {
@@ -477,7 +474,7 @@ defineExpose({ open, resetContinue })
           />
           <BuildDeviceArt
             class="relative h-[80px] w-[124px] shrink-0"
-            :kind="deviceKindForPlatform(platform)"
+            :kind="localDeviceKind"
             glow="#46464A"
           />
           <div class="relative ml-6 flex min-w-0 flex-1 flex-col">
@@ -508,23 +505,25 @@ defineExpose({ open, resetContinue })
         </section>
 
         <section
-          class="mt-3 flex flex-col gap-8 rounded-[14px] border border-white/7 bg-[rgb(230_230_230/0.04)] py-5 pr-[31px] pl-[33px]"
+          class="mt-3"
+          :class="SUMMARY_BOX_CLASS"
           :aria-label="t('setup.summary')"
           data-testid="setup-summary"
         >
           <template v-if="planState !== 'unavailable'">
-            <div :class="ROW_CLASS" data-testid="setup-row-hardware">
-              <span class="flex items-center gap-2.5 text-subtle-foreground">
-                <Zap :size="13" :stroke-width="1.75" aria-hidden="true" />{{ t('setup.hardware') }}
-              </span>
+            <SetupSummaryRow
+              :icon="Zap"
+              :label="t('setup.hardware')"
+              data-testid="setup-row-hardware"
+            >
               <span class="truncate text-foreground" data-testid="setup-hardware">
                 {{ hardware || t('setup.checking') }}
               </span>
               <span
-                class="ml-4 text-right whitespace-nowrap"
-                :class="
+                :class="[
+                  SUMMARY_META_CLASS,
                   unsupportedReason || hardwareWarning ? 'text-[#f0b135]' : 'text-subtle-foreground'
-                "
+                ]"
                 :title="unsupportedReason || hardwareWarning || undefined"
               >
                 {{
@@ -537,13 +536,12 @@ defineExpose({ open, resetContinue })
                         : ''
                 }}
               </span>
-            </div>
-            <div :class="ROW_CLASS" data-testid="setup-row-location">
-              <span class="flex items-center gap-2.5 text-subtle-foreground">
-                <HardDrive :size="13" :stroke-width="1.75" aria-hidden="true" />{{
-                  t('setup.location')
-                }}
-              </span>
+            </SetupSummaryRow>
+            <SetupSummaryRow
+              :icon="HardDrive"
+              :label="t('setup.location')"
+              data-testid="setup-row-location"
+            >
               <span
                 v-if="location"
                 class="flex min-w-0 text-foreground"
@@ -555,26 +553,27 @@ defineExpose({ open, resetContinue })
               </span>
               <span v-else class="truncate text-foreground">{{ t('setup.checking') }}</span>
               <span
-                class="ml-4 text-right whitespace-nowrap"
-                :class="lowDisk ? 'text-[#f0b135]' : 'text-subtle-foreground'"
+                :class="[SUMMARY_META_CLASS, lowDisk ? 'text-[#f0b135]' : 'text-subtle-foreground']"
                 data-testid="setup-location-meta"
               >
                 {{ locationMeta }}
               </span>
-            </div>
-            <div :class="ROW_CLASS" data-testid="setup-row-version">
-              <span class="flex items-center gap-2.5 text-subtle-foreground">
-                <Package :size="13" :stroke-width="1.75" aria-hidden="true" />{{
-                  t('setup.version')
-                }}
-              </span>
+            </SetupSummaryRow>
+            <SetupSummaryRow
+              :icon="Package"
+              :label="t('setup.version')"
+              data-testid="setup-row-version"
+            >
               <span class="truncate text-foreground" data-testid="setup-version">{{
                 version || t('setup.checking')
               }}</span>
-              <span class="ml-4 text-right whitespace-nowrap text-subtle-foreground">
-                {{ downloadSize ? t('setup.download', { size: downloadSize }) : '' }}
+              <span
+                :class="[SUMMARY_META_CLASS, 'max-w-[220px] truncate text-subtle-foreground']"
+                :title="channel || undefined"
+              >
+                {{ channel }}
               </span>
-            </div>
+            </SetupSummaryRow>
           </template>
           <div
             v-else
@@ -595,7 +594,7 @@ defineExpose({ open, resetContinue })
           </div>
         </section>
 
-        <div class="mt-9 flex flex-col gap-2.5 pl-8">
+        <div class="mt-9 flex flex-col gap-2.5 pl-5">
           <label
             v-if="hasLegacyDesktop"
             :class="CONSENT_ROW_CLASS"
@@ -664,7 +663,25 @@ defineExpose({ open, resetContinue })
           >
             {{ unsupportedReason }}
           </span>
-          <span v-else class="text-xs/[15px] text-subtle-foreground">{{ footerSummary }}</span>
+          <span
+            v-else-if="!migrating && plan && plan.downloadBytes > 0"
+            class="inline-flex items-center text-xs/[15px] text-muted-foreground"
+          >
+            <span data-testid="setup-download-size">{{
+              t('setup.download', { size: formatSize(plan.downloadBytes) })
+            }}</span>
+            <InfoTooltip
+              v-if="plan.requiredBytes > 0"
+              icon="info"
+              data-testid="setup-download-info"
+              :text="
+                t('setup.installSpaceTip', {
+                  download: formatSize(plan.downloadBytes),
+                  required: formatSize(plan.requiredBytes)
+                })
+              "
+            />
+          </span>
           <Button
             v-if="skipPick"
             type="button"
@@ -681,18 +698,25 @@ defineExpose({ open, resetContinue })
             variant="inverted"
             size="unset"
             class="h-9 gap-2 rounded-[10px] bg-[#f1f1f3] px-4 text-[13px]/4 font-normal text-[#070709] hover:bg-white"
+            :class="planChecking && 'cursor-progress'"
             :aria-disabled="installBlocked || undefined"
-            :aria-busy="busy || undefined"
+            :aria-busy="busy || planChecking || undefined"
             data-testid="setup-install"
             @click="request('install')"
           >
             <Loader2
-              v-if="busy"
+              v-if="busy || planChecking"
               :size="14"
               class="animate-spin [animation-duration:750ms]"
               aria-hidden="true"
             />
-            {{ migrating ? t('setup.migrate') : t('setup.install') }}
+            {{
+              planChecking
+                ? t('setup.checking')
+                : migrating
+                  ? t('setup.migrate')
+                  : t('setup.install')
+            }}
           </Button>
         </div>
       </template>

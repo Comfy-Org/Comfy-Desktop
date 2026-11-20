@@ -1,15 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  ArrowDownToLine,
-  Bell,
-  House,
-  Menu as MenuIcon,
-  MessageSquarePlus,
-  RotateCw,
-  ZoomIn
-} from '@lucide/vue'
+import { ArrowDownToLine, Bell, House, Menu as MenuIcon, RotateCw, ZoomIn } from '@lucide/vue'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
 import { useTitleBarMenus } from './useTitleBarMenus'
 import { useTitleBarIdentity } from './useTitleBarIdentity'
@@ -22,13 +14,7 @@ const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
 
 type ComfyPanelKey =
-  | 'comfy'
-  | 'performance-test'
-  | 'benchmarks'
-  | 'new-install'
-  | 'track'
-  | 'load-snapshot'
-  | 'quick-install'
+  'comfy' | 'performance-test' | 'benchmarks' | 'new-install' | 'track' | 'load-snapshot'
 
 type CoachmarkKind = 'beta-notice'
 
@@ -105,7 +91,7 @@ interface Bridge {
   onDownloadsChanged: (cb: (state: DownloadsTrayState) => void) => () => void
   clickDownloadsTray: (anchor: MenuAnchor) => void
   clickFeedback: () => void
-  clickAnnouncement: () => void
+  openWhatsNewMenu: (anchor: { x: number; y: number }) => void
   clickRefreshInstance: () => void
   clickHome: () => void
   resetZoom: () => void
@@ -124,10 +110,10 @@ const titleInstallPillClass = [
 ].join(' ')
 
 const titleHomeButtonClass =
-  '[-webkit-app-region:no-drag] inline-flex h-7 shrink-0 items-center gap-2 rounded-control border border-solid border-transparent bg-transparent py-0 pr-2.5 pl-2 [font-family:inherit] text-[13px] leading-5 font-normal text-[var(--titlebar-icon)] opacity-85 cursor-pointer transition-[background-color,opacity] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&]:hover:opacity-100 [.title-bar.is-hover-active_&]:hover:bg-secondary focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-1'
+  '[-webkit-app-region:no-drag] inline-flex h-7 shrink-0 items-center gap-2 rounded-control border border-solid border-transparent bg-transparent py-0 pr-2.5 pl-2 [font-family:inherit] text-[13px] leading-5 font-normal text-[var(--titlebar-icon)] opacity-85 cursor-pointer transition-[background-color,opacity] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&]:hover:opacity-100 [.title-bar.is-hover-active_&]:hover:bg-secondary [.title-bar.is-light.is-hover-active_&]:hover:bg-[rgba(0,0,0,0.06)] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-1'
 
 const titleDownloadsBadgeClass =
-  'pointer-events-none absolute -top-1 -right-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-[999px] bg-[var(--action,#60a5fa)] px-1 py-0 text-[9px] leading-none font-bold text-white tabular-nums [box-shadow:0_0_0_2px_var(--titlebar-bg-active,var(--titlebar-bg,var(--neutral-900)))] [.title-bar:not(.is-light)_&:not(.is-unseen,.is-error)]:text-background [&.is-unseen]:bg-[#22c55e] [&.is-error]:bg-[var(--danger)] [.title-downloads-tray.has-active_&]:animate-[title-downloads-pulse_1.6s_ease-in-out_infinite] [.title-downloads-tray.is-flashing_&]:[animation:title-downloads-flash_0.55s_cubic-bezier(0.2,0.9,0.3,1.4)_1,title-downloads-pulse_1.6s_ease-in-out_infinite_0.6s]'
+  'pointer-events-none absolute -top-1 -right-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-[999px] bg-[var(--action,#60a5fa)] px-1 py-0 text-[9px] leading-none font-bold text-white tabular-nums [box-shadow:0_0_0_2px_var(--titlebar-bg-active,var(--titlebar-bg,var(--neutral-900)))] [.title-bar:not(.is-light)_&:not(.is-unseen,.is-error)]:text-background [.title-bar.is-light_&:not(.is-unseen,.is-error)]:bg-[var(--titlebar-icon)] [.title-bar.is-light_&:not(.is-unseen,.is-error)]:text-[var(--titlebar-bg-active)] [&.is-unseen]:bg-[#22c55e] [&.is-error]:bg-[var(--danger)] [.title-downloads-tray.has-active_&]:animate-[title-downloads-pulse_1.6s_ease-in-out_infinite] [.title-downloads-tray.is-flashing_&]:[animation:title-downloads-flash_0.55s_cubic-bezier(0.2,0.9,0.3,1.4)_1,title-downloads-pulse_1.6s_ease-in-out_infinite_0.6s]'
 
 const isMac = ref(bridge?.isMac() ?? false)
 const isLinux = ref(bridge?.isLinux() ?? false)
@@ -168,10 +154,6 @@ const showZoomReset = computed(
   () => zoomLevel.value !== 0 && !isInstallLess.value && !isFirstUseLockdown.value
 )
 
-function handleFeedback(): void {
-  bridge?.clickFeedback()
-}
-
 function handleRefreshInstance(): void {
   bridge?.clickRefreshInstance()
 }
@@ -185,31 +167,37 @@ function handleResetZoom(): void {
   bridge?.resetZoom()
 }
 
-const announcementUnread = ref(false)
-let unsubAnnouncementSettings: (() => void) | null = null
+let unsubTourSettings: (() => void) | null = null
 
-function handleAnnouncement(): void {
-  bridge?.clickAnnouncement()
+const BELL_NUDGE_MS = 700
+const bellNudging = ref(false)
+let bellNudgeTimer: ReturnType<typeof setTimeout> | null = null
+
+function nudgeBell(): void {
+  if (bellNudgeTimer) clearTimeout(bellNudgeTimer)
+  bellNudging.value = true
+  bellNudgeTimer = setTimeout(() => {
+    bellNudging.value = false
+    bellNudgeTimer = null
+  }, BELL_NUDGE_MS)
 }
 
-async function refreshAnnouncementUnread(): Promise<void> {
+async function nudgeBellWhenTourEnds(): Promise<void> {
   try {
-    announcementUnread.value = (await window.api?.getSetting?.('comfyApiAnnouncementSeen')) !== true
-  } catch {
-    announcementUnread.value = false
-  }
+    if ((await window.api?.getSetting?.('homeTourDone')) === true) nudgeBell()
+  } catch {}
 }
 
 onMounted(() => {
-  void refreshAnnouncementUnread()
-  unsubAnnouncementSettings =
+  unsubTourSettings =
     window.api?.onSettingsChanged?.(({ key }) => {
-      if (key === 'comfyApiAnnouncementSeen') void refreshAnnouncementUnread()
+      if (key === 'homeTourDone') void nudgeBellWhenTourEnds()
     }) ?? null
 })
 
 onUnmounted(() => {
-  unsubAnnouncementSettings?.()
+  unsubTourSettings?.()
+  if (bellNudgeTimer) clearTimeout(bellNudgeTimer)
 })
 
 const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
@@ -233,12 +221,14 @@ const {
   downloadsTrayLabel,
   downloadsStartedAt,
   handleFileMenu,
+  handleWhatsNewMenu,
   handleDownloadsTray
 } = useTitleBarMenus({
   bridge,
   hideTip,
   fileBtnRef,
-  downloadsBtnRef
+  downloadsBtnRef,
+  whatsNewBtnRef: announcementBtnRef
 })
 
 const betaNotice = useBetaActivationNotice({
@@ -374,7 +364,7 @@ onUnmounted(() => {
 
 <template>
   <header
-    class="title-bar relative box-border grid h-screen w-screen grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] px-3 py-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&.is-mac]:pl-[78px] [&.is-mac.is-fullscreen]:pl-3 [&:not(.is-mac,.is-linux)]:pr-[140px] [&.is-linux]:[--title-controls-left:env(titlebar-area-x,0px)] [&.is-linux]:[--title-controls-right:calc(100vw_-_env(titlebar-area-x,0px)_-_env(titlebar-area-width,100vw))] [&.is-linux]:pl-[calc(var(--title-controls-left)_+_12px)] [&.is-linux]:pr-[calc(var(--title-controls-right)_+_12px)] [&:not(.is-light)]:border-b-border"
+    class="title-bar relative box-border grid h-screen w-screen grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] px-3 py-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&.is-mac]:pl-[78px] [&.is-mac.is-fullscreen]:pl-3 [&:not(.is-mac,.is-linux)]:pr-[140px] [&.is-linux]:[--title-controls-left:env(titlebar-area-x,0px)] [&.is-linux]:[--title-controls-right:calc(100vw_-_env(titlebar-area-x,0px)_-_env(titlebar-area-width,100vw))] [&.is-linux]:pl-[calc(var(--title-controls-left)_+_12px)] [&.is-linux]:pr-[calc(var(--title-controls-right)_+_12px)] [&:not(.is-light)]:border-b-border [&.is-light]:border-b-[color-mix(in_srgb,var(--titlebar-icon)_16%,transparent)]"
     :class="{
       'is-mac': isMac,
       'is-linux': isLinux,
@@ -457,27 +447,12 @@ onUnmounted(() => {
         v-if="!isFirstUseLockdown"
         ref="announcementBtn"
         type="button"
-        class="title-menu-button title-menu-button--icon title-announcement-button relative"
-        :class="titleMenuButtonClass"
+        class="title-menu-button title-menu-button--icon title-announcement-button relative [&.is-nudging_svg]:origin-[50%_10%] [&.is-nudging_svg]:animate-bell-nudge motion-reduce:[&.is-nudging_svg]:animate-bell-fade"
+        :class="[titleMenuButtonClass, { 'is-nudging': bellNudging }]"
         v-bind="tooltipAttrs(t('titleBar.announcementTooltip'), t('titleBar.announcement'))"
-        @click="handleAnnouncement"
+        @click="handleWhatsNewMenu"
       >
         <Bell :size="16" />
-        <span
-          v-if="announcementUnread"
-          class="title-announcement-dot pointer-events-none absolute top-[3px] right-1 size-1.5 rounded-[50%] bg-[var(--comfy-yellow,#ffd23f)] [box-shadow:0_0_0_1.5px_var(--titlebar-bg,rgba(0,0,0,0.5))]"
-          aria-hidden="true"
-        />
-      </button>
-      <button
-        v-if="!isFirstUseLockdown"
-        type="button"
-        class="title-menu-button title-menu-button--icon title-feedback-button"
-        :class="titleMenuButtonClass"
-        v-bind="tooltipAttrs(t('titleBar.feedbackTooltip'), t('titleBar.feedback'))"
-        @click="handleFeedback"
-      >
-        <MessageSquarePlus :size="16" />
       </button>
       <button
         v-if="!isFirstUseLockdown"

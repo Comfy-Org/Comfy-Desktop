@@ -132,6 +132,7 @@ export function toListedApp(entry: unknown, location: AppsLocation): ListedApp |
   const pageUrl = pageUrlFor(id, record.page, location)
   if (!pageUrl) return null
   const badges = badgesFrom(record.badges)
+  const coverPlayback = record.cover_playback === 'always' ? 'always' : null
   return {
     pageUrl,
     card: {
@@ -139,7 +140,8 @@ export function toListedApp(entry: unknown, location: AppsLocation): ListedApp |
       title,
       description: text(record.blurb) ?? '',
       covers: coversFor(record, location),
-      ...(badges && { badges })
+      ...(badges && { badges }),
+      ...(coverPlayback && { coverPlayback })
     }
   }
 }

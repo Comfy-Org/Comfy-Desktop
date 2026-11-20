@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import HomeView from './HomeView.vue'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useProgressStore } from '../stores/progressStore'
+import { useAuthStore } from '../stores/authStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { CatalogWorkflow, Installation } from '../types/ipc'
 
@@ -12,6 +13,7 @@ const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
 const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const getInstallations = vi.fn<() => Promise<Installation[]>>()
+const getAuthStatus = vi.fn<() => Promise<{ signedIn: boolean }>>()
 
 function workflow(id: string, title: string, thumbnailUrl: string | null = null): CatalogWorkflow {
   return { id, title, description: '', thumbnailUrl }
@@ -62,6 +64,7 @@ beforeEach(() => {
   openCatalogWorkflow.mockResolvedValue(true)
   getAppsEnabled.mockResolvedValue(false)
   getInstallations.mockResolvedValue([])
+  getAuthStatus.mockResolvedValue({ signedIn: false })
   ;(window as unknown as { api: unknown }).api = {
     listHomeWorkflows,
     openCatalogWorkflow,
@@ -73,7 +76,7 @@ beforeEach(() => {
     setSetting: vi.fn().mockResolvedValue(undefined),
     onSettingsChanged: vi.fn(() => () => {}),
     comfybuilder: {
-      getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+      getAuthStatus,
       onAuthChanged: vi.fn(() => () => {})
     }
   }
@@ -437,6 +440,7 @@ describe('Home example workflows', () => {
 
 describe('Home builds', () => {
   it('lists the three most recently used builds with what each is doing', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: true })
     getInstallations.mockResolvedValue([OLDEST, CLOUD, RUNNING, NEWEST])
     const wrapper = await openHome()
     useSessionStore().runningInstances.set(RUNNING.id, {
@@ -449,8 +453,53 @@ describe('Home builds', () => {
     expect(wrapper.findAll('[data-testid="home-build"]').map((card) => card.text())).toEqual([
       'ReadyMy Local 1Standalone · Update',
       'RunningVideo LabStandalone',
-      'Always onComfy CloudRTX 6000 Pro · 96 GB'
+      'ReadyComfy CloudRTX 6000 Pro · 96 GB'
     ])
+  })
+
+  it('shows an opened Comfy Cloud as Ready with no green dot, since it runs nothing here', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: true })
+    getInstallations.mockResolvedValue([CLOUD])
+    const wrapper = await openHome()
+    useSessionStore().runningInstances.set(CLOUD.id, {
+      installationId: CLOUD.id,
+      installationName: CLOUD.name,
+      mode: 'window'
+    })
+    await flushPromises()
+
+    const status = wrapper.get('[data-testid="home-build-status"]')
+    expect(status.text()).toBe('Ready')
+    expect(status.find('.rounded-full').exists()).toBe(false)
+  })
+
+  it('asks a logged-out user to log in to use Comfy Cloud, with no check, while local builds stay Ready', async () => {
+    getInstallations.mockResolvedValue([OLDEST, CLOUD])
+    const wrapper = await openHome()
+
+    const statusOn = (name: string) =>
+      wrapper
+        .findAll('[data-testid="home-build"]')
+        .find((card) => card.get('[data-testid="home-build-name"]').text() === name)!
+        .get('[data-testid="home-build-status"]')
+    const local = statusOn(OLDEST.name)
+    const cloud = statusOn(CLOUD.name)
+    expect(local.text()).toBe('Ready')
+    expect(cloud.text()).toBe('Log in to use')
+    expect(cloud.find('svg').exists(), 'no check: Cloud is not ready to use').toBe(false)
+  })
+
+  it('says Ready on Comfy Cloud once the user logs in', async () => {
+    getInstallations.mockResolvedValue([CLOUD])
+    const wrapper = await openHome()
+    expect(wrapper.get('[data-testid="home-build-status"]').text()).toBe('Log in to use')
+
+    useAuthStore().status = { signedIn: true }
+    await flushPromises()
+
+    const status = wrapper.get('[data-testid="home-build-status"]')
+    expect(status.text()).toBe('Ready')
+    expect(status.find('svg').exists()).toBe(true)
   })
 
   it('keeps Running on top of a running build with an update, and names the update at the bottom', async () => {
@@ -633,7 +682,7 @@ describe('Home builds', () => {
     await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull())
   })
 
-  it('lists every build of the workspace in the Open ComfyUI menu, with a dot only on live builds', async () => {
+  it('lists every build of the workspace in the Open ComfyUI menu, with a dot only on running builds', async () => {
     getInstallations.mockResolvedValue([OLDEST, CLOUD, RUNNING, NEWEST])
     const wrapper = await openHome()
     useSessionStore().runningInstances.set(RUNNING.id, {
@@ -662,7 +711,7 @@ describe('Home builds', () => {
             .querySelector('[data-testid="home-open-build-status-dot"]')
             ?.getAttribute('data-tone') ?? null
       )
-    ).toEqual([null, 'live', 'live', null])
+    ).toEqual([null, 'live', null, null])
   })
 
   it('marks a broken build red and keeps it from opening, with the reason on hover', async () => {
@@ -981,12 +1030,13 @@ describe('Home build auto start', () => {
     expect(wrapper.emitted('open-build')).toBeUndefined()
   })
 
-  it('keeps Always on for Comfy Cloud when it is the one that starts with Desktop', async () => {
+  it('says Ready, never Always on, for Comfy Cloud when it is the one that starts with Desktop', async () => {
+    getAuthStatus.mockResolvedValue({ signedIn: true })
     saved = CLOUD.id
     getInstallations.mockResolvedValue([OLDEST, CLOUD])
     const wrapper = await openHome()
 
-    expect(statusOf(wrapper, CLOUD.id)).toBe('Always on')
+    expect(statusOf(wrapper, CLOUD.id)).toBe('Ready')
     expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
     expect(startingWithDesktop(wrapper)).toEqual([])
   })

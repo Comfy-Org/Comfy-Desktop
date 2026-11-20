@@ -11,10 +11,11 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import WorkspaceAvatar from '../components/WorkspaceAvatar.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { useSelectedWorkspace } from '../composables/useSelectedWorkspace'
 import {
   isPersonalWorkspace,
   PERSONAL_WORKSPACE_ID,
-  workspaceContextId
+  workspaceScopeId
 } from '../../../shared/workspaces'
 import type { PlatformSettingsPage, Workspace } from '../../../types/ipc'
 
@@ -52,10 +53,6 @@ useEventListener(window, 'blur', () => {
   menuOpen.value = false
 })
 
-function scopeId(workspace: Workspace): string {
-  return isPersonalWorkspace(workspace) ? PERSONAL_WORKSPACE_ID : workspace.id
-}
-
 function planLabel(tier: string | null | undefined): string {
   if (!tier) return ''
   return (Object.hasOwn(PLAN_LABELS, tier) && PLAN_LABELS[tier]) || tier
@@ -65,19 +62,14 @@ function roleLabel(role: string): string {
   return (Object.hasOwn(roleLabels.value, role) && roleLabels.value[role]) || role
 }
 
-const currentWorkspace = computed(() =>
-  store.workspaces.find((workspace) => scopeId(workspace) === dashboardScope.selectedWorkspaceId)
-)
-const statusIsCurrent = computed(
-  () => workspaceContextId(store.status) === dashboardScope.selectedWorkspaceId
-)
+const {
+  workspace: currentWorkspace,
+  statusIsCurrent,
+  name: selectedWorkspaceName
+} = useSelectedWorkspace()
 const personalLabel = computed(() => t('devPlatform.workspace.personalLabel'))
-const currentWorkspaceName = computed(() =>
-  dashboardScope.selectedWorkspaceId === PERSONAL_WORKSPACE_ID
-    ? personalLabel.value
-    : (currentWorkspace.value?.name ??
-      (statusIsCurrent.value ? store.status.workspaceName : undefined) ??
-      t('devPlatform.workspace.switchLabel'))
+const currentWorkspaceName = computed(
+  () => selectedWorkspaceName.value ?? t('devPlatform.workspace.switchLabel')
 )
 const currentWorkspaceTier = computed(() => currentWorkspace.value?.subscriptionTier)
 const currentWorkspaceMeta = computed(() => {
@@ -120,7 +112,7 @@ const emptyMessage = computed(() =>
 )
 
 function isCurrent(workspace: Workspace): boolean {
-  return scopeId(workspace) === dashboardScope.selectedWorkspaceId
+  return workspaceScopeId(workspace) === dashboardScope.selectedWorkspaceId
 }
 
 watch(
@@ -174,7 +166,7 @@ function focusCurrentWorkspace(event: Event): void {
 }
 
 function selectWorkspace(workspace: Workspace): void {
-  if (!isCurrent(workspace)) dashboardScope.selectWorkspace(scopeId(workspace))
+  if (!isCurrent(workspace)) dashboardScope.selectWorkspace(workspaceScopeId(workspace))
   menuOpen.value = false
 }
 
@@ -204,8 +196,7 @@ async function signOut(): Promise<void> {
         type="button"
         variant="textonly"
         size="unset"
-        class="h-12 w-full rounded-lg text-ui font-medium hover:bg-secondary data-[state=open]:bg-secondary"
-        :class="collapsed ? 'justify-center p-1' : 'justify-start gap-3 px-3'"
+        class="h-12 w-full justify-start gap-3 rounded-lg px-2 text-ui font-medium hover:bg-secondary data-[state=open]:bg-secondary"
         data-testid="workspace-switcher-trigger"
         :aria-label="currentWorkspaceName"
         :title="collapsed ? currentWorkspaceName : undefined"
@@ -215,12 +206,19 @@ async function signOut(): Promise<void> {
           :workspace-name="currentWorkspaceName"
           :subscription-tier="currentWorkspaceTier"
         />
-        <template v-if="!collapsed">
-          <span class="min-w-0 flex-1 truncate text-left" data-testid="workspace-switcher-name">{{
-            currentWorkspaceName
-          }}</span>
-          <Ellipsis class="text-muted-foreground" :size="16" aria-hidden="true" />
-        </template>
+        <Transition
+          enter-active-class="transition-opacity duration-180 delay-30 ease-out"
+          enter-from-class="opacity-0"
+          leave-active-class="transition-opacity duration-150 ease-out"
+          leave-to-class="opacity-0"
+        >
+          <span v-if="!collapsed" class="flex min-w-0 flex-1 items-center gap-3 text-nowrap">
+            <span class="min-w-0 flex-1 truncate text-left" data-testid="workspace-switcher-name">{{
+              currentWorkspaceName
+            }}</span>
+            <Ellipsis class="shrink-0 text-muted-foreground" :size="16" aria-hidden="true" />
+          </span>
+        </Transition>
       </Button>
     </PopoverTrigger>
 
@@ -359,14 +357,14 @@ async function signOut(): Promise<void> {
             >
               <Button
                 v-for="workspace in filteredWorkspaces"
-                :key="scopeId(workspace)"
+                :key="workspaceScopeId(workspace)"
                 type="button"
                 variant="textonly"
                 size="unset"
                 role="option"
                 class="h-10 w-full shrink-0 justify-start gap-2 rounded-md px-2 py-1 text-left"
                 :aria-selected="isCurrent(workspace)"
-                :data-testid="`workspace-option-${scopeId(workspace)}`"
+                :data-testid="`workspace-option-${workspaceScopeId(workspace)}`"
                 @click="selectWorkspace(workspace)"
               >
                 <WorkspaceAvatar

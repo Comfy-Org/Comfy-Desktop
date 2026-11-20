@@ -119,6 +119,23 @@ describe('the apps Desktop lists', () => {
     })
   })
 
+  it('play the cover of an app the website set to always play, and leave every other app to play on hover', async () => {
+    mockedFetchJSON.mockResolvedValue([
+      websiteApp({ id: 'genjutsu', cover_playback: 'always' }),
+      websiteApp({ id: 'sdr-to-hdr', cover_playback: 'hover' }),
+      websiteApp({ id: 'product-swap', cover_playback: 'Always' }),
+      websiteApp({ id: 'product-ads', cover_playback: true }),
+      websiteApp({ id: 'extend-picture' })
+    ])
+
+    const [always, hover, capitalised, notText, unset] = await listApps()
+
+    expect(always?.coverPlayback).toBe('always')
+    for (const app of [hover, capitalised, notText, unset]) {
+      expect(app).not.toHaveProperty('coverPlayback')
+    }
+  })
+
   it('carry the badges the website set, in its order, with only the English and Chinese words', async () => {
     const badges = await badgesListed([
       { ...CROWN, text: { ...CROWN.text, ja: 'クレジット' }, tone: 'gold' },

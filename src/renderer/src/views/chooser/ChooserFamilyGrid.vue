@@ -11,18 +11,18 @@ const props = withDefaults(
     installations: Installation[]
     showFreeRunsPill?: boolean
     showWhyCloud?: boolean
+    loggedOut?: boolean
   }>(),
   {
     showFreeRunsPill: false,
-    showWhyCloud: false
+    showWhyCloud: false,
+    loggedOut: false
   }
 )
 
 const emit = defineEmits<{
   pick: [installation: Installation]
   'open-details': [installation: Installation]
-  'view-error': [installation: Installation]
-  'view-danger': [installation: Installation]
   'why-cloud': []
 }>()
 
@@ -103,11 +103,10 @@ function unlockTileSize(el: Element): void {
         :show-free-runs-pill="props.showFreeRunsPill && installation.sourceCategory === 'cloud'"
         :show-why-cloud="props.showWhyCloud && installation.sourceCategory === 'cloud'"
         :auto-start="autoStart.startsOnOpen(installation.id)"
+        :logged-out="props.loggedOut"
         @why-cloud="emit('why-cloud')"
         @pick="emit('pick', $event)"
         @open-details="emit('open-details', $event)"
-        @view-error="emit('view-error', $event)"
-        @view-danger="emit('view-danger', $event)"
       />
     </TransitionGroup>
   </div>

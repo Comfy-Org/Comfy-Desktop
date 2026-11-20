@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import type { BrowserWindow, WebContents, WebContentsView } from 'electron'
 import { _runningSessions, _isStopping, noteStartWindowClosed } from '../lib/ipc/shared'
 import type { FirstUseMode } from '../../shared/firstUseMode'
+import { isLocalInstall } from './localInstall'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
 import type { ViewKind } from '../../shared/viewKind'
 
@@ -15,9 +16,7 @@ export type ComfyPanelKey =
   | 'new-install'
   | 'track'
   | 'load-snapshot'
-  | 'quick-install'
   | 'progress'
-  | 'announcement'
 
 export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'comfy',
@@ -27,9 +26,7 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'new-install',
   'track',
   'load-snapshot',
-  'quick-install',
-  'progress',
-  'announcement'
+  'progress'
 ])
 
 export type BodyMode =
@@ -43,8 +40,6 @@ export type BodyMode =
   | 'new-install'
   | 'track'
   | 'load-snapshot'
-  | 'quick-install'
-  | 'announcement'
 
 export interface ComfyWindowEntry {
   windowKey: number
@@ -185,7 +180,7 @@ export function isInstallHost(
 export function shouldConfirmKillForEntry(
   entry: ComfyWindowEntry | null | undefined
 ): entry is ComfyWindowEntry & { installationId: string } {
-  return !!entry && isInstallHost(entry) && entry.sourceCategory === 'local'
+  return isLocalInstall(entry)
 }
 
 export function hasRunningSessionForEntry(

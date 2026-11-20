@@ -37,7 +37,7 @@ async function launchAndReadError(stderr: string): Promise<string | null> {
   await pickFromBuildsTileMenu(ctx!.panel, INSTALL_ID, 'launch')
   await expect.poll(() => hasActiveLaunch(ctx!.app, INSTALL_ID), { timeout: 60_000 }).toBe(false)
   await ctx!.panel.waitForVisible(NEW_ERROR_BADGE, { timeout: 30_000 })
-  expect(await ctx!.panel.click(NEW_ERROR_BADGE)).toBe(true)
+  await pickFromBuildsTileMenu(ctx!.panel, INSTALL_ID, 'view-error')
   await ctx!.panel.waitForVisible('[data-testid="build-progress-step-detail"]', {
     timeout: 10_000
   })

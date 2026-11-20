@@ -33,6 +33,10 @@ vi.mock('../stores/sessionStore', () => ({
   })
 }))
 
+vi.mock('../stores/progressStore', () => ({
+  useProgressStore: () => ({ operations: new Map() })
+}))
+
 vi.mock('../lib/telemetry', () => ({
   emitTelemetryAction: vi.fn(),
   toErrorBucket: () => 'unknown'

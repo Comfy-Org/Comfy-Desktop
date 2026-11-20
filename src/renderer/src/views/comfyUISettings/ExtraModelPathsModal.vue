@@ -4,6 +4,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import { FileText, RefreshCw } from '@lucide/vue'
 import BaseModal from '../../components/ui/BaseModal.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
+import { revealInFolderKey } from '../../composables/usePlatform'
 
 export interface ExtraModelPathDir {
   type: string
@@ -36,12 +37,14 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const revealFolderKey = revealInFolderKey(window.api?.platform)
 </script>
 
 <template>
   <BaseModal
     :open="open"
     size="md"
+    close-outside
     :aria-label="t('comfyUISettings.extraModelPathsModalTitle')"
     @close="emit('close')"
   >
@@ -133,7 +136,7 @@ const { t } = useI18n()
             "
             :title="
               d.dirExists
-                ? t('models.openDir')
+                ? t(revealFolderKey)
                 : t('comfyUISettings.dirMissingTitle', { dir: d.dir })
             "
             @click="emit('open-path', d.dir)"

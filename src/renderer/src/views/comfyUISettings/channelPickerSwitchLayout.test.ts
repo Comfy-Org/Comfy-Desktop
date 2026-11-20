@@ -40,13 +40,13 @@ const PANES = [
 const FIVE_MINUTES_AGO = Date.now() - 5 * 60 * 1000
 
 const UPDATE_ACTIONS: ActionDef[] = [
-  { id: 'update-comfyui', label: 'Update Now', style: 'primary', enabled: true },
-  { id: 'copy-update', label: 'Copy & Update', enabled: true }
+  { id: 'update-comfyui', label: 'Update now', style: 'primary', enabled: true },
+  { id: 'copy-update', label: 'Copy & update', enabled: true }
 ]
 
 const PYTORCH_ACTIONS: ActionDef[] = [
   { id: 'change-pytorch', label: 'Change PyTorch', style: 'primary', enabled: true },
-  { id: 'copy-pytorch', label: 'Copy & Change PyTorch', enabled: true }
+  { id: 'copy-pytorch', label: 'Copy & change PyTorch', enabled: true }
 ]
 
 function updatesSection(latest: { commitsAheadKnown: boolean }): DetailSection {
@@ -56,7 +56,7 @@ function updatesSection(latest: { commitsAheadKnown: boolean }): DetailSection {
     fields: [
       {
         id: 'updateChannel',
-        label: 'Update Channel',
+        label: 'Update channel',
         value: 'stable',
         editable: true,
         refreshSection: true,
@@ -243,11 +243,19 @@ async function pick(dropdownName: string, optionLabel: string): Promise<void> {
   await flushPromises()
 }
 
+async function measureInInterNotTheFallbackFont(): Promise<void> {
+  const faces = ['500 14px Inter', '12px Inter', 'italic 12px Inter']
+  await Promise.all(faces.map((face) => document.fonts.load(face)))
+  await document.fonts.ready
+  for (const face of faces) expect(document.fonts.check(face)).toBe(true)
+}
+
 beforeAll(async () => {
   const noListboxAnimation = document.createElement('style')
   noListboxAnimation.textContent = '.ui-select-listbox { animation: none !important; }'
   document.head.append(noListboxAnimation)
   await browserPage.viewport(1280, 900)
+  await measureInInterNotTheFallbackFont()
 })
 
 afterEach(() => {
@@ -259,16 +267,16 @@ describe.each(PANES)('the Update tab in $where ($width px)', ({ width }) => {
   it('keeps the status card, the label and the dropdown in place when Latest on GitHub is picked, while its commits ahead are computed and once they are known', async () => {
     const tab = await openUpdateTab(width, { commitsAheadKnown: false })
     const settled = fromTheCardDownToTheDropdowns('updateChannel')
-    expect(settled.map((box) => box.what)).toEqual(['status card', 'label', 'Update Channel'])
+    expect(settled.map((box) => box.what)).toEqual(['status card', 'label', 'Update channel'])
     expect(headline('updateChannel')).toBe('ComfyUI v0.3.75')
     expect(actionButtons('updateChannel')).toEqual([])
 
-    await pick('Update Channel', 'Latest on GitHub')
+    await pick('Update channel', 'Latest on GitHub')
     expect(headline('updateChannel')).toBe('ComfyUI v0.3.75 (a1b2c3d)')
     expect(only('.channel-picker-enriching').textContent).toContain('Computing commits ahead')
     expect(fromTheCardDownToTheDropdowns('updateChannel')).toEqual(settled)
     expect(statusCard('updateChannel').contains(only('.channel-picker-enriching'))).toBe(true)
-    expect(actionButtons('updateChannel')).toEqual(['Copy & Update', 'Update Now'])
+    expect(actionButtons('updateChannel')).toEqual(['Copy & update', 'Update now'])
     expect(
       only(`[data-testid="${TID.updateActionButton('update-comfyui')}"]`).getBoundingClientRect()
         .top
@@ -280,7 +288,7 @@ describe.each(PANES)('the Update tab in $where ($width px)', ({ width }) => {
     expect(onScreen('.channel-picker-enriching')).toEqual([])
     expect(fromTheCardDownToTheDropdowns('updateChannel')).toEqual(settled)
 
-    await pick('Update Channel', 'Stable — Current')
+    await pick('Update channel', 'Stable — Current')
     expect(headline('updateChannel')).toBe('ComfyUI v0.3.75')
     expect(actionButtons('updateChannel')).toEqual([])
     expect(fromTheCardDownToTheDropdowns('updateChannel')).toEqual(settled)
@@ -295,7 +303,7 @@ describe.each(PANES)('the Update tab in $where ($width px)', ({ width }) => {
 
     await pick('Backend', 'CUDA 12.8 (cu128)')
     expect(headline('pytorchStack')).toBe('PyTorch v2.11.0+cu128')
-    expect(actionButtons('pytorchStack')).toEqual(['Copy & Change PyTorch', 'Change PyTorch'])
+    expect(actionButtons('pytorchStack')).toEqual(['Copy & change PyTorch', 'Change PyTorch'])
     expect(fromTheCardDownToTheDropdowns('pytorchStack')).toEqual(settled)
 
     await pick('Backend', 'CPU')

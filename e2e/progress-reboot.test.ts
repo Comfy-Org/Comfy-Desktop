@@ -12,8 +12,8 @@ let installPath: string
 const INSTALL_ID = 'inst-reboot-errored-test'
 const INSTALL_NAME = 'Errored Reboot Install'
 const MARKER_FILENAME = '.comfyui-desktop-2'
-const PRE_EXISTING_ERROR = 'Earlier crash: ComfyUI exited with code 1'
-const OP_FAILURE_MESSAGE = 'Initial op failure: simulated launch failure'
+const OP_FAILURE_MESSAGE = 'Initial op failure: simulated pull failure'
+const FAILED = '[data-testid="build-operation-failed"]'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -42,37 +42,44 @@ test.afterAll(async () => {
   if (installPath) await rm(installPath, { recursive: true, force: true })
 })
 
-test('ProgressModal Reboot re-runs the same apiCall to recover an errored install @windows @macos @linux', async () => {
-  await ctx.panel.evaluate<void>(`(() => {
-    window.__e2eRenderer.seedErrorInstance({
-      installationId: ${JSON.stringify(INSTALL_ID)},
-      installationName: ${JSON.stringify(INSTALL_NAME)},
-      message: ${JSON.stringify(PRE_EXISTING_ERROR)},
-    })
-  })()`)
-  const seeded = await ctx.panel.evaluate<boolean>(
-    `window.__e2eRenderer.hasErrorInstance(${JSON.stringify(INSTALL_ID)})`
-  )
-  expect(seeded, 'seedErrorInstance must register the install in errorInstances').toBe(true)
-
+test('Try again on the build page re-runs the same apiCall after a task fails @windows @macos @linux', async () => {
   await ctx.panel.evaluate<void>(`(async () => {
     await window.__e2eRenderer.injectRetryableProgressError({
       installationId: ${JSON.stringify(INSTALL_ID)},
-      title: 'Launching ComfyUI',
+      title: 'Pulling changes',
       errorMessage: ${JSON.stringify(OP_FAILURE_MESSAGE)},
       failuresBeforeSuccess: 1,
     })
   })()`)
 
-  await ctx.panel.waitForVisible(byTestId(TID.progressErrorMessage), { timeout: 10_000 })
-  await ctx.panel.waitForVisible(byTestId(TID.progressReboot), { timeout: 10_000 })
+  await expect
+    .poll(
+      () =>
+        ctx.panel.evaluate<boolean>(
+          `window.__e2eRenderer.hasErrorInstance(${JSON.stringify(INSTALL_ID)})`
+        ),
+      { timeout: 10_000, intervals: [100, 200] }
+    )
+    .toBe(true)
+  expect(await ctx.panel.exists('.brand-progress')).toBe(false)
 
-  const beforeReboot = await ctx.panel.evaluate<number>(
+  expect(await ctx.panel.click(byTestId(TID.dashboardTileKebab(INSTALL_ID)))).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="build-menu-manage"]', { timeout: 5_000 })
+  expect(await ctx.panel.click('[data-testid="build-menu-manage"]')).toBe(true)
+
+  await ctx.panel.waitForVisible(FAILED, { timeout: 10_000 })
+  expect(
+    await ctx.panel.evaluate<string>(
+      `document.querySelector('[data-testid="build-operation-failed-reason"]')?.textContent ?? ''`
+    )
+  ).toContain(OP_FAILURE_MESSAGE)
+
+  const beforeRetry = await ctx.panel.evaluate<number>(
     `window.__e2eRenderer.getInjectedApiCallCount(${JSON.stringify(INSTALL_ID)})`
   )
-  expect(beforeReboot, 'apiCall must have run once for the seeded failure').toBe(1)
+  expect(beforeRetry, 'apiCall must have run once for the first failure').toBe(1)
 
-  expect(await ctx.panel.click(byTestId(TID.progressReboot))).toBe(true)
+  expect(await ctx.panel.click('[data-testid="build-operation-retry"]')).toBe(true)
 
   await expect
     .poll(
@@ -85,15 +92,6 @@ test('ProgressModal Reboot re-runs the same apiCall to recover an errored instal
     .toBeGreaterThanOrEqual(2)
 
   await expect
-    .poll(() => ctx.panel.exists(byTestId(TID.progressErrorMessage)), {
-      timeout: 10_000,
-      intervals: [100, 200]
-    })
-    .toBe(false)
-  await expect
-    .poll(() => ctx.panel.exists('.brand-progress'), {
-      timeout: 10_000,
-      intervals: [200, 500]
-    })
+    .poll(() => ctx.panel.exists(FAILED), { timeout: 10_000, intervals: [100, 200] })
     .toBe(false)
 })

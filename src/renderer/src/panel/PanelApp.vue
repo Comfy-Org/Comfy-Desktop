@@ -5,7 +5,6 @@ import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
-import AnnouncementModal from '../components/AnnouncementModal.vue'
 import AppSidebar from './AppSidebar.vue'
 import BuildProgressDialog from './BuildProgressDialog.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
@@ -19,10 +18,10 @@ import BenchmarksView from '../views/BenchmarksView.vue'
 import InstallWizardModal from '../views/InstallWizardModal.vue'
 import TrackModal from '../views/TrackModal.vue'
 import LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
-import QuickInstallModal from '../views/QuickInstallModal.vue'
 import FirstUseTakeover from '../views/FirstUseTakeover.vue'
 import MigrateConfirmTakeover from '../views/MigrateConfirmTakeover.vue'
 import { useTheme } from '../composables/useTheme'
+import { provideLocalDeviceKind } from '../composables/useLocalDeviceKind'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -34,7 +33,6 @@ import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
 import { useAppUpdatePrompts } from '../composables/useAppUpdatePrompts'
 import { useReturnToDashboardConfirm } from '../composables/useReturnToDashboardConfirm'
 import { useSendFeedback } from '../composables/useSendFeedback'
-import { useAnnouncement } from '../composables/useAnnouncement'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useDeepLinkRouter } from '../composables/useDeepLinkRouter'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
@@ -52,6 +50,8 @@ import {
 } from '../lib/progressTerminalPresets'
 import { provideBuildLogs } from '../composables/useBuildProgress'
 import { provideBuildMenuHost } from './home/useBuildMenu'
+import HomeTour from './home/HomeTour.vue'
+import { useDialogs } from '../composables/useDialogs'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
@@ -67,6 +67,7 @@ const urlFirstUseCompleted = params.get('firstUseCompleted') === 'true'
 const urlFirstUsePending = params.get('firstUseCompleted') === 'false'
 
 const sessionStore = useSessionStore()
+provideLocalDeviceKind()
 const installationStore = useInstallationStore()
 const launcherPrefs = useLauncherPrefs()
 void launcherPrefs.loadPrefs()
@@ -76,7 +77,19 @@ const modal = useModal()
 useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
 const { feedbackOpen, feedbackHiddenFields, closeFeedback } = useSendFeedback()
-const { announcementOpen, closeAnnouncement } = useAnnouncement()
+const dialogs = useDialogs()
+
+function showHomePage(): void {
+  if (!showSidebar.value || sidebarPage.value === 'home') return
+  window.api.navigatePanel('home')
+  handleSidebarNavigate('home')
+}
+
+let unsubShowHomePage: (() => void) | null = null
+onMounted(() => {
+  unsubShowHomePage = window.api.onShowHomePage(showHomePage)
+})
+onUnmounted(() => unsubShowHomePage?.())
 
 const installation = computed<Installation | null>(() =>
   installationId ? (installationStore.getById(installationId) ?? null) : null
@@ -91,7 +104,6 @@ const progressRef = ref<InstanceType<typeof ProgressModal> | null>(null)
 const newInstallRef = ref<InstanceType<typeof InstallWizardModal> | null>(null)
 const trackRef = ref<InstanceType<typeof TrackModal> | null>(null)
 const loadSnapshotRef = ref<InstanceType<typeof LoadSnapshotModal> | null>(null)
-const quickInstallRef = ref<InstanceType<typeof QuickInstallModal> | null>(null)
 const firstUseRef = ref<InstanceType<typeof FirstUseTakeover> | null>(null)
 const migrateTakeoverRef = ref<InstanceType<typeof MigrateConfirmTakeover> | null>(null)
 
@@ -126,11 +138,11 @@ overlays = usePanelOverlays({
   newInstallRef,
   trackRef,
   loadSnapshotRef,
-  quickInstallRef,
   firstUseRef,
   prepareChooserHostHandoff: (id) => chooserHandoff.prepareChooserHostHandoff(id),
   firstUseChain: firstUseChain.hooks,
   onBackgroundInstall: () => void showHome(),
+  onBuildCreated: (id) => landOnNewBuild(id),
   launchesInPlace: (id) => chooserHandoff.launchesInPlace(id)
 })
 const {
@@ -208,6 +220,46 @@ async function openBuildFromSidebar(inst: Installation): Promise<void> {
   openBuildDetails(inst)
 }
 
+const NEW_BUILD_REFRESH_DELAYS_MS = [0, 1000, 3000]
+
+function landOnNewBuild(id: string): void {
+  const startedIn = dashboardScope.selectedWorkspaceId
+  const open = (inst: Installation | undefined): boolean => {
+    if (!inst) return false
+    const stillWhereItStarted = dashboardScope.selectedWorkspaceId === startedIn
+    if (stillWhereItStarted && isInstallationInWorkspace(inst, startedIn)) {
+      void openBuildFromSidebar(inst)
+    }
+    return true
+  }
+  if (open(installationStore.getById(id))) return
+  let waiting = true
+  const land = (inst: Installation | undefined): boolean => {
+    if (!waiting || !open(inst)) return !waiting
+    waiting = false
+    stop()
+    return true
+  }
+  const stop = watch(
+    () => installationStore.getById(id),
+    (inst) => {
+      land(inst)
+    }
+  )
+  void (async () => {
+    for (const delay of NEW_BUILD_REFRESH_DELAYS_MS) {
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+      if (!waiting) return
+      await installationStore.fetchInstallations().catch(() => {})
+      if (land(installationStore.getById(id))) return
+    }
+    if (!waiting) return
+    waiting = false
+    stop()
+    console.warn('[builds] the copied build could not be listed, so its page was not opened', id)
+  })()
+}
+
 async function showHome(): Promise<void> {
   closeBuildDetails()
   dashboardHomePage.value = 'home'
@@ -219,6 +271,10 @@ const appsVisits = ref(0)
 const appIsOpen = ref(false)
 const assetsFocusName = ref<string | null>(null)
 const appPickedOnHome = ref<AppCard | null>(null)
+const appInProgress = ref<AppCard | null>(null)
+const sidebarAppInProgress = computed(() =>
+  sidebarPage.value === 'apps' ? null : appInProgress.value
+)
 
 function openAppFromHome(app: AppCard): void {
   appPickedOnHome.value = app
@@ -233,6 +289,17 @@ function handleSidebarClick(page: DashboardPage): void {
     emitTelemetryAction(SIDEBAR_PAGE_OPENED_EVENT, { page, from_page: fromPage })
   }
   handleSidebarNavigate(page)
+}
+
+function returnToApp(app: AppCard): void {
+  emitTelemetryAction(SIDEBAR_PAGE_OPENED_EVENT, {
+    page: 'apps',
+    from_page: sidebarPage.value,
+    to_app_in_progress: true
+  })
+  closeBuildDetails()
+  assetsFocusName.value = null
+  openAppFromHome(app)
 }
 
 function viewInAssets(name: string): void {
@@ -271,6 +338,21 @@ const showPanelBody = computed(() => {
 
 const showSidebar = computed(() => showPanelBody.value && sidebarPage.value !== null)
 
+const homeTourInterrupted = computed(
+  () => feedbackOpen.value || modal.state.visible || dialogs.state.open
+)
+
+const homeTourCanShow = computed(
+  () =>
+    showSidebar.value &&
+    sidebarPage.value === 'home' &&
+    currentOverlay.value === null &&
+    !feedbackOpen.value &&
+    buildProgressId.value === null &&
+    !modal.state.visible &&
+    !dialogs.state.open
+)
+
 const performanceTestRunActive = ref(false)
 
 chooserHandoff = useChooserHandoff({
@@ -300,9 +382,11 @@ let unsubCloseRequest: (() => void) | null = null
 let unsubReturnToDashboardRequest: (() => void) | null = null
 let unsubAppUpdatePromptRestart: (() => void) | null = null
 let unsubAppUpdateUserActionFailed: (() => void) | null = null
+let unsubAppPageClosed: (() => void) | null = null
 const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
-const { triggerAction: triggerInstallAction } = useInstallContextMenu({
+const { triggerAction: triggerInstallAction, viewError: viewBuildError } = useInstallContextMenu({
+  onStartAgain: (inst) => launchFromBuildDetails(inst),
   onManage: (inst, manageOpts) => {
     const autoAction = manageOpts?.autoAction ?? null
     const initialTab = manageOpts?.initialTab
@@ -362,7 +446,7 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
 watch(
   activePanel,
   (next) => {
-    const isOverlay = next === 'feedback' || next === 'announcement'
+    const isOverlay = next === 'feedback'
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay) return
     void nextTick(() => window.api.signalOverlayReady())
@@ -435,6 +519,10 @@ onMounted(async () => {
     })
   })
 
+  unsubAppPageClosed = window.api.onAppPageClosed(() => {
+    appInProgress.value = null
+  })
+
   try {
     const shouldOpenFirstUse =
       urlFirstUsePending ||
@@ -475,6 +563,7 @@ onUnmounted(() => {
   unsubReturnToDashboardRequest?.()
   unsubAppUpdatePromptRestart?.()
   unsubAppUpdateUserActionFailed?.()
+  unsubAppPageClosed?.()
   document.body.classList.remove('panel-overlay-mode')
   sessionStore.dispose()
   if (params.get('e2e') === '1') bindE2EPanelHooks(null)
@@ -494,7 +583,9 @@ onUnmounted(() => {
         :active-page="sidebarPage"
         :active-build-id="sidebarBuildId"
         :make-room="appIsOpen"
+        :app-in-progress="sidebarAppInProgress"
         @navigate="handleSidebarClick"
+        @open-app="returnToApp"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
       />
@@ -532,6 +623,7 @@ onUnmounted(() => {
               v-model:start-with="appPickedOnHome"
               :revisit="appsVisits"
               @app-open-change="appIsOpen = $event"
+              @current-app="appInProgress = $event"
               @view-in-assets="viewInAssets"
             />
             <AssetsView
@@ -546,6 +638,7 @@ onUnmounted(() => {
               @back="closeBuildDetails"
               @launch="launchFromBuildDetails"
               @show-progress="handleShowProgress"
+              @view-error="viewBuildError"
             />
             <ChooserView
               :visible="dashboardHomePage === 'chooser' && !buildDetailsInstall"
@@ -553,7 +646,6 @@ onUnmounted(() => {
               @open-details="openBuildDetails"
               @show-new-install="handleChooserShowNewInstall"
               @show-build-import="switchPanel($event, 'chooser')"
-              @show-progress="handleShowProgress"
             />
           </div>
 
@@ -600,12 +692,6 @@ onUnmounted(() => {
         @close="dismissTakeoverDirect"
         @show-progress="handleShowProgress"
       />
-      <QuickInstallModal
-        v-else-if="currentOverlay.component === 'quick-install'"
-        ref="quickInstallRef"
-        @close="dismissTakeoverDirect"
-        @show-progress="handleShowProgress"
-      />
       <FirstUseTakeover
         v-else-if="currentOverlay.component === 'first-use'"
         ref="firstUseRef"
@@ -629,7 +715,7 @@ onUnmounted(() => {
       :hidden-fields="feedbackHiddenFields"
       @close="closeFeedback"
     />
-    <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
+    <HomeTour :active="homeTourCanShow" :interrupted="homeTourInterrupted" />
 
     <ModalDialog />
     <DialogHost />

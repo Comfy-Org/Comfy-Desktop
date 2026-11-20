@@ -30,6 +30,7 @@ export interface OAuthOptions {
   timeoutMs?: number
   workspaceId?: string
   onAuthorizeUrl?: (url: string) => void
+  signal?: AbortSignal
 }
 
 interface TokenResponse {
@@ -40,7 +41,7 @@ interface TokenResponse {
 
 function resolveConfig(
   o: OAuthOptions
-): Required<Omit<OAuthOptions, 'workspaceId' | 'onAuthorizeUrl'>> {
+): Required<Omit<OAuthOptions, 'workspaceId' | 'onAuthorizeUrl' | 'signal'>> {
   return {
     authorizeUrl: o.authorizeUrl ?? CLOUD_CONFIG.authorizeUrl,
     tokenUrl: o.tokenUrl ?? CLOUD_CONFIG.tokenUrl,
@@ -128,7 +129,11 @@ export async function signIn(
   const codeChallenge = codeChallengeFromVerifier(codeVerifier)
   const state = generateState()
 
-  const listener = await startLoopbackListener({ expectedState: state, timeoutMs: cfg.timeoutMs })
+  const listener = await startLoopbackListener({
+    expectedState: state,
+    timeoutMs: cfg.timeoutMs,
+    signal: options.signal
+  })
   try {
     const authorizeUrl = buildAuthorizeUrl({
       authorizeUrl: cfg.authorizeUrl,

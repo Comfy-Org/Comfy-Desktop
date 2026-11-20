@@ -18,6 +18,8 @@ import { useSessionStore } from '../../stores/sessionStore'
 import type { ActionDef, Installation } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
 import { channelAction, splitVersion, type BuildOverviewModel } from './overviewModel'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
+import { revealInFolderKey } from '../../composables/usePlatform'
 
 const {
   installation,
@@ -36,6 +38,7 @@ const {
 const emit = defineEmits<{ action: [action: ActionDef] }>()
 
 const { t } = useI18n()
+const revealFolderKey = revealInFolderKey(window.api?.platform)
 const sessionStore = useSessionStore()
 
 const pickedChannel = ref(model.currentChannel)
@@ -171,9 +174,7 @@ function openLocation(): void {
               <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
             </Button>
           </template>
-          <DropdownMenuLabel
-            class="px-3 pt-1.5 pb-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
-          >
+          <DropdownMenuLabel class="px-3 pt-1.5 pb-1" :class="SECTION_TITLE_CLASS">
             {{ model.channelLabel }}
           </DropdownMenuLabel>
           <DropdownMenuRadioGroup
@@ -362,7 +363,8 @@ function openLocation(): void {
               <template v-for="group in torchGroups" :key="group.id">
                 <DropdownMenuLabel
                   v-if="showTorchGroupLabels || group === torchGroups[0]"
-                  class="px-3 pt-1.5 pb-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+                  class="px-3 pt-1.5 pb-1"
+                  :class="SECTION_TITLE_CLASS"
                 >
                   {{ showTorchGroupLabels ? group.label : model.torch?.label }}
                 </DropdownMenuLabel>
@@ -481,8 +483,8 @@ function openLocation(): void {
                 variant="muted-textonly"
                 size="icon"
                 class="size-7 shrink-0"
-                :aria-label="t('buildOverview.openFolder')"
-                :title="t('buildOverview.openFolder')"
+                :aria-label="t(revealFolderKey)"
+                :title="t(revealFolderKey)"
                 data-testid="build-overview-open-folder"
                 @click="openLocation"
               >

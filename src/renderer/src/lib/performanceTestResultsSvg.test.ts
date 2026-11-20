@@ -4,7 +4,7 @@ import { createPerformanceTestResultsSvg, estimateTextWidth } from './performanc
 describe('createPerformanceTestResultsSvg', () => {
   it('renders the result metrics and escapes system values as valid XML', () => {
     const svg = createPerformanceTestResultsSvg({
-      title: 'Performance Test: cat-workflow.json',
+      title: 'Performance test: cat-workflow.json',
       aggregateTitle: 'Run duration',
       systemInformationTitle: 'System information',
       testDateTime: 'Sep 11, 2026, 12:34 PM',
@@ -24,7 +24,7 @@ describe('createPerformanceTestResultsSvg', () => {
     expect(svg).toContain('role="img" aria-label="Comfy"')
     expect(svg).toContain('fill="#ffffff"')
     expect(svg).toContain('<path d="M170.474')
-    expect(svg).toContain('Performance Test: cat-workflow.json')
+    expect(svg).toContain('Performance test: cat-workflow.json')
     expect(svg).toContain('Sep 11, 2026, 12:34 PM')
     expect(svg).toContain('scale(0.65)')
     expect(svg).toContain('Median run · 5 measured · 0 failed')
@@ -37,7 +37,7 @@ describe('createPerformanceTestResultsSvg', () => {
 
   it('scales each duration bar against the slowest run and highlights only the median', () => {
     const svg = createPerformanceTestResultsSvg({
-      title: 'Performance Test: cat-workflow.json',
+      title: 'Performance test: cat-workflow.json',
       aggregateTitle: 'Run duration',
       systemInformationTitle: 'System information',
       testDateTime: 'Sep 11, 2026, 12:34 PM',
@@ -57,7 +57,7 @@ describe('createPerformanceTestResultsSvg', () => {
   it('shrinks a slow median so it stays clear of the duration chart', () => {
     const image = (median: string) =>
       createPerformanceTestResultsSvg({
-        title: 'Performance Test: video.json',
+        title: 'Performance test: video.json',
         aggregateTitle: 'Run duration',
         systemInformationTitle: 'System information',
         testDateTime: 'Sep 11, 2026, 12:34 PM',
@@ -79,7 +79,7 @@ describe('createPerformanceTestResultsSvg', () => {
 
   it('shortens long system values so they stay inside their column', () => {
     const svg = createPerformanceTestResultsSvg({
-      title: 'Performance Test: cat-workflow.json',
+      title: 'Performance test: cat-workflow.json',
       aggregateTitle: 'Run duration',
       systemInformationTitle: 'System information',
       testDateTime: 'Sep 11, 2026, 12:34 PM',

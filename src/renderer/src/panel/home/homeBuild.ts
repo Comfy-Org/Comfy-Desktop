@@ -1,22 +1,21 @@
 import { progressOpKindForActionId } from '../../lib/progressOpKind'
+import type { LocalDeviceKind } from '../../composables/useLocalDeviceKind'
 import type { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
 
 export type HomeBuildTone = 'ember' | 'iris' | 'tide'
-export type BuildDeviceKind = 'laptop' | 'pc-laptop' | 'monitor' | 'cloud'
-export type HomeBuildStatus =
-  'running' | 'starting' | 'stopping' | 'updating' | 'update' | 'always-on' | 'ready'
+export type BuildDeviceKind = LocalDeviceKind | 'cloud'
+export type HomeBuildStatus = 'running' | 'starting' | 'stopping' | 'updating' | 'update' | 'ready'
 
 export interface HomeBuildToneStyle {
   glow: string
   tint: string
-  border: string
 }
 
 export const HOME_BUILD_TONES: Record<HomeBuildTone, HomeBuildToneStyle> = {
-  ember: { glow: '#FA8746', tint: '232 126 66', border: '226 177 157' },
-  iris: { glow: '#989CFF', tint: '142 146 248', border: '177 186 226' },
-  tide: { glow: '#00C6E2', tint: '0 182 209', border: '147 196 216' }
+  ember: { glow: '#FA8746', tint: '232 126 66' },
+  iris: { glow: '#989CFF', tint: '142 146 248' },
+  tide: { glow: '#00C6E2', tint: '0 182 209' }
 }
 
 const LOCAL_TONES: readonly HomeBuildTone[] = ['ember', 'iris']
@@ -25,17 +24,9 @@ export function isCloudBuild(build: Installation): boolean {
   return build.sourceCategory === 'cloud'
 }
 
-export function deviceKindForPlatform(platform: string | undefined): BuildDeviceKind {
-  if (platform === 'win32') return 'pc-laptop'
-  if (platform === 'linux') return 'monitor'
-  return 'laptop'
-}
-
-export function buildDeviceKind(
-  build: Installation,
-  platform: string | undefined = window.api?.platform
-): BuildDeviceKind {
-  return isCloudBuild(build) ? 'cloud' : deviceKindForPlatform(platform)
+export function buildDeviceKind(build: Installation, localKind: LocalDeviceKind): BuildDeviceKind {
+  if (isCloudBuild(build)) return 'cloud'
+  return build.sourceCategory === 'remote' ? 'monitor' : localKind
 }
 
 export function isComfyCloud(build: Installation): boolean {
@@ -68,6 +59,14 @@ export function isBuildUpdating(build: Installation, actionId: string | undefine
   )
 }
 
+export function connectsElsewhere(build: Installation): boolean {
+  return build.sourceCategory === 'cloud' || build.sourceCategory === 'remote'
+}
+
+export function runsOnThisComputer(build: Installation, status: HomeBuildStatus): boolean {
+  return status === 'running' && !connectsElsewhere(build)
+}
+
 export function isBuildOpenBlocked(status: HomeBuildStatus): boolean {
   return status === 'stopping' || status === 'updating'
 }
@@ -84,7 +83,7 @@ export function homeBuildStatus(
   if (session.isLaunching(build.id)) return 'starting'
   if (session.isRunning(build.id)) return 'running'
   if (build.statusTag?.style === 'update') return 'update'
-  return isCloudBuild(build) ? 'always-on' : 'ready'
+  return 'ready'
 }
 
 function hostOf(address: string): string {

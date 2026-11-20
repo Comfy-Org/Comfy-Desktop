@@ -7,6 +7,7 @@ import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import { Folder, FolderOpen, MoreHorizontal, RotateCcw } from '@lucide/vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
 import StorageTag from '../../components/StorageTag.vue'
+import { revealInFolderKey } from '../../composables/usePlatform'
 
 type StorageDirRowVariant = 'panel' | 'grouped' | 'field'
 
@@ -41,6 +42,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const revealFolderKey = revealInFolderKey(window.api?.platform)
 const variantClass: Record<StorageDirRowVariant, string> = {
   panel: 'min-h-14 rounded-[14px] bg-white/5 py-1.5 pr-3 pl-[18px]',
   grouped:
@@ -98,7 +100,7 @@ function onMenuKeydown(event: KeyboardEvent): void {
             ? 'whitespace-normal [overflow-wrap:anywhere]'
             : 'overflow-hidden text-ellipsis whitespace-nowrap'
         "
-        :title="t('models.openDir')"
+        :title="t(revealFolderKey)"
         @click="emit('open')"
       >
         {{ path }}
