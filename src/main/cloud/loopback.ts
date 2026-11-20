@@ -128,6 +128,10 @@ function html(kind: 'success' | 'error' | 'invalid'): string {
 export function startLoopbackListener(options: LoopbackListenerOptions): Promise<LoopbackListener> {
   const { expectedState, timeoutMs, signal } = options
   return new Promise((resolveListener, rejectListener) => {
+    if (signal?.aborted) {
+      rejectListener(signal.reason)
+      return
+    }
     let settled = false
     let resolveCode!: (r: { code: string }) => void
     let rejectCode!: (e: Error) => void

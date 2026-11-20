@@ -125,6 +125,26 @@ describe('useAuthStore', () => {
       expect(store.signInPending).toBe(false)
     })
 
+    it('starts a new sign-in after sign-out drops the open one', async () => {
+      const dropped = browserSignIn()
+      const store = useAuthStore()
+      const first = store.signIn()
+      api.signOut.mockResolvedValue({ signedIn: false })
+      await store.signOut()
+      expect(store.signInPending).toBe(false)
+
+      const fresh = browserSignIn()
+      const second = store.signIn()
+      dropped.reject(new Error('Signed out while signing in'))
+      await expect(first).rejects.toThrow()
+
+      expect(api.signIn).toHaveBeenCalledTimes(2)
+      expect(store.signInPending).toBe(true)
+      fresh.resolve({ signedIn: true, workspaceId: 'w1' })
+      await expect(second).resolves.toMatchObject({ signedIn: true })
+      expect(store.signInPending).toBe(false)
+    })
+
     it('joins the open sign-in instead of asking main again', async () => {
       const browser = browserSignIn()
       const store = useAuthStore()

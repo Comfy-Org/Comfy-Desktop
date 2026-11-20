@@ -116,6 +116,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function signOut(): Promise<AuthStatus> {
     const next = await comfybuilderApi.signOut()
+    if (!next.signedIn) {
+      signInRequest = undefined
+      signInPending.value = false
+    }
     applyAuthoritativeStatus(next)
     return status.value
   }

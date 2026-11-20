@@ -107,4 +107,13 @@ describe('loopback listener', () => {
     await expect(listener.waitForCode()).rejects.toMatchObject({ reason: 'restarted' })
     await expect(get(`${redirectUri}?state=st&code=late`)).rejects.toThrow()
   })
+
+  it('refuses to start for a sign-in that was already ended', async () => {
+    const abort = new AbortController()
+    abort.abort(new SignInFailure('Sign-in restarted from Comfy Desktop', 'restarted'))
+
+    await expect(
+      startLoopbackListener({ expectedState: 'st', timeoutMs: 5000, signal: abort.signal })
+    ).rejects.toMatchObject({ reason: 'restarted' })
+  })
 })
