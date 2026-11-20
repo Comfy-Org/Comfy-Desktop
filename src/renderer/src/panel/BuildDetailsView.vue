@@ -7,7 +7,7 @@ import StatusChip from '../components/ui/StatusChip.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import BuildUninstallFailed from './BuildUninstallFailed.vue'
 import HomeBuildCard from './home/HomeBuildCard.vue'
-import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
+import { homeBuildStatus, homeBuildTone } from './home/homeBuild'
 import type { StorageSnapshot } from '../views/comfyUISettings/StoragePane.vue'
 import {
   buildFailure,
@@ -18,7 +18,6 @@ import {
   useBuildProgress
 } from '../composables/useBuildProgress'
 import { installTypeMetaForInstall } from '../lib/installTypeIcon'
-import { useInstallationStore } from '../stores/installationStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
@@ -40,7 +39,6 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const sessionStore = useSessionStore()
 const progressStore = useProgressStore()
-const installationStore = useInstallationStore()
 
 const { progress, viewLogs } = useBuildProgress(() => installation)
 const uninstalling = computed(() => progress.value?.kind === 'uninstall')
@@ -57,7 +55,7 @@ const settingsHidden = computed(
   () =>
     cardReplacesSettings.value || uninstallFailure.value !== null || operationFailure.value !== null
 )
-const tone = computed(() => homeBuildTones([installation], installationStore.installations)[0]!)
+const tone = computed(() => homeBuildTone(installation))
 
 const typeMeta = computed(() => installTypeMetaForInstall(installation))
 

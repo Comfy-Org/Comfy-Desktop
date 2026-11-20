@@ -45,7 +45,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   lifecycleStatus: undefined,
   showMenu: true,
-  tone: 'ember'
+  tone: 'iris'
 })
 
 const emit = defineEmits<{

@@ -70,7 +70,7 @@ function borderWidths(el: HTMLElement): string[] {
 const NONE = ['0px', '0px', '0px', '0px']
 
 describe('build cards have no border', () => {
-  it.each(['ember', 'iris', 'tide'] as const)('Home build card (%s)', async (tone) => {
+  it.each(['iris', 'tide'] as const)('Home build card (%s)', async (tone) => {
     const el = await mountWithHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone }))
     expect(borderWidths(el)).toEqual(NONE)
   })
