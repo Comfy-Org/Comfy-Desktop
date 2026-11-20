@@ -79,7 +79,7 @@
       "openNoCloud": "Add Comfy Cloud in Comfy Desktop first.",
       "openCloudFailed": "Comfy Desktop could not open Comfy Cloud.",
       "openNoWindow": "Comfy Desktop could not show the ComfyUI window.",
-      "openUnreadable": "Desktop could not read this file. Try again.",
+      "openUnreadable": "Comfy Desktop could not read this file. Try again.",
       "openNotTaken": "ComfyUI did not open the workflow."
     }
   },

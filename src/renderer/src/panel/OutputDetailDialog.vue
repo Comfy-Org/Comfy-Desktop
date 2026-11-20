@@ -72,6 +72,7 @@ const { t, locale } = useI18n()
 const revealKey = revealInFolderKey(window.api.platform)
 const preferredMotion = usePreferredReducedMotion()
 const filmstrip = useTemplateRef<HTMLOListElement>('filmstrip')
+const panel = useTemplateRef<HTMLElement>('panel')
 const natural = ref<{ width: number; height: number } | null>(null)
 const zoom = ref<Zoom>('fit')
 
@@ -85,6 +86,25 @@ const workflowChoices = computed<MenuItem[]>(() => {
     command: () => emit('open-workflow', index.value, build.id)
   }))
 })
+function openWorkflowHere(): void {
+  if (item.value.workflowOpening) return
+  emit('open-workflow', index.value, item.value.workflowBuilds?.[0]?.id)
+}
+
+function workflowButton(): HTMLElement | null {
+  return panel.value?.querySelector<HTMLElement>('[data-testid="output-detail-workflow"]') ?? null
+}
+
+watch(
+  () => item.value.workflowOpening === true,
+  async (opening) => {
+    if (!opening) return
+    await nextTick()
+    if (panel.value?.contains(document.activeElement)) return
+    workflowButton()?.focus()
+  }
+)
+
 const reducedMotion = computed(() => preferredMotion.value === 'reduce')
 const extension = computed(() => {
   const dot = item.value.name.lastIndexOf('.')
@@ -293,6 +313,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     </section>
 
     <aside
+      ref="panel"
       class="flex w-[clamp(280px,30%,360px)] shrink-0 flex-col gap-6 overflow-y-auto rounded-xl bg-card p-5"
       data-testid="output-detail-panel"
     >
@@ -366,6 +387,9 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           <ScanSearch :size="15" aria-hidden="true" />
           {{ t(revealKey) }}
         </Button>
+        <span class="sr-only" aria-live="polite" data-testid="output-detail-workflow-status">{{
+          item.workflowOpening ? t('assets.detail.openingWorkflow') : ''
+        }}</span>
         <Menu
           v-if="item.workflow && !item.workflowOpening && workflowChoices.length > 0"
           :items="workflowChoices"
@@ -397,13 +421,18 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           :class="{ invisible: !item.workflow }"
           :aria-hidden="item.workflow ? undefined : 'true'"
           :tabindex="item.workflow ? undefined : -1"
-          :disabled="!item.workflow || item.workflowOpening"
+          :disabled="!item.workflow"
+          :aria-disabled="item.workflowOpening ? 'true' : undefined"
           :aria-busy="item.workflowOpening ? 'true' : undefined"
           data-testid="output-detail-workflow"
-          @click="emit('open-workflow', index, item.workflowBuilds?.[0]?.id)"
+          @click="openWorkflowHere"
         >
           <template v-if="item.workflowOpening">
-            <LoaderCircle :size="15" class="motion-safe:animate-spin" aria-hidden="true" />
+            <LoaderCircle
+              :size="15"
+              class="animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+              aria-hidden="true"
+            />
             {{ t('assets.detail.openingWorkflow') }}
           </template>
           <template v-else>

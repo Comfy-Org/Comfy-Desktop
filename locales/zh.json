@@ -79,7 +79,7 @@
       "openNoCloud": "请先在 Comfy Desktop 中添加 Comfy Cloud。",
       "openCloudFailed": "Comfy Desktop 无法打开 Comfy Cloud。",
       "openNoWindow": "Comfy Desktop 无法显示 ComfyUI 窗口。",
-      "openUnreadable": "Desktop 无法读取此文件。请重试。",
+      "openUnreadable": "Comfy Desktop 无法读取此文件。请重试。",
       "openNotTaken": "ComfyUI 没有打开这个工作流。"
     }
   },

@@ -1767,13 +1767,18 @@ describe('AssetsView Open workflow', () => {
     const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
 
     await openViewer(wrapper, '/out/forest.png')
+    workflowButton()!.focus()
     workflowButton()!.click()
     await flushPromises()
 
     expect(viewer()).not.toBeNull()
     expect(workflowButton()?.textContent?.trim()).toBe('Opening…')
-    expect(workflowButton()?.hasAttribute('disabled')).toBe(true)
+    expect(workflowButton()?.getAttribute('aria-disabled')).toBe('true')
     expect(workflowButton()?.getAttribute('aria-busy')).toBe('true')
+    expect(document.activeElement, 'focus stays on the busy button').toBe(workflowButton())
+    expect(
+      document.querySelector('[data-testid="output-detail-workflow-status"]')?.textContent?.trim()
+    ).toBe('Opening…')
     workflowButton()!.click()
     expect(openAssetWorkflow).toHaveBeenCalledOnce()
 
@@ -1794,7 +1799,10 @@ describe('AssetsView Open workflow', () => {
     expect(alert).toHaveBeenCalledOnce()
     expect(viewer()).not.toBeNull()
     expect(workflowButton()?.textContent?.trim()).toBe('Open workflow')
-    expect(workflowButton()?.hasAttribute('disabled')).toBe(false)
+    expect(workflowButton()?.hasAttribute('aria-disabled')).toBe(false)
+    expect(
+      document.querySelector('[data-testid="output-detail-workflow-status"]')?.textContent?.trim()
+    ).toBe('')
   })
 
   it('shows Opening… in place of the build menu after you pick a build', async () => {
@@ -1811,7 +1819,10 @@ describe('AssetsView Open workflow', () => {
     await flushPromises()
 
     expect(workflowButton()?.textContent?.trim()).toBe('Opening…')
-    expect(workflowButton()?.hasAttribute('disabled')).toBe(true)
+    expect(workflowButton()?.getAttribute('aria-disabled')).toBe('true')
+    expect(document.activeElement, 'focus moves to the busy button, not out of the viewer').toBe(
+      workflowButton()
+    )
   })
 
   it('keeps the place of Open workflow while it checks the file, so the buttons do not move', async () => {
