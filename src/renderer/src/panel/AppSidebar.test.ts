@@ -7,6 +7,7 @@ import '../assets/main.css'
 import AppSidebar from './AppSidebar.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { appPageShown, sidebarHovered } from './appPageCover'
+import { forgetMovingCoversForTest } from './movingCovers'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -40,13 +41,16 @@ const CHARACTER_SWAP: AppCard = {
 const PRODUCT_SWAP_STILL =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 
+const PRODUCT_SWAP_MOVING =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='
+
 const PRODUCT_SWAP: AppCard = {
   id: 'product-swap',
   title: 'Product Swap',
   description: 'Swap the product in a photo.',
   covers: [
     {
-      url: 'https://example.test/product-swap.mp4',
+      url: PRODUCT_SWAP_MOVING,
       stillUrl: PRODUCT_SWAP_STILL
     }
   ]
@@ -99,6 +103,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  forgetMovingCoversForTest()
 })
 
 async function mountSidebar(
@@ -333,28 +340,86 @@ describe('AppSidebar', () => {
       wrapper.unmount()
     })
 
-    it('keeps Desktop Settings, Credits and the account at the bottom', async () => {
+    it('keeps Credits and the account at the bottom, and leaves Desktop Settings out', async () => {
       refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: 100 })
       const wrapper = await mountWithAppOpen()
 
-      const bottom = wrapper.get('[data-testid="app-sidebar-settings"]').element.parentElement
-      expect(bottom?.querySelector('[data-testid="app-sidebar-credits"]')).not.toBeNull()
-      expect(bottom?.querySelector('[data-testid="devplatform-account-signin"]')).not.toBeNull()
-      expect(bottom?.querySelector('[data-testid="app-sidebar-app-rail"]')).toBeNull()
+      expect(wrapper.find('[data-testid="app-sidebar-settings"]').exists()).toBe(false)
+      const rail = wrapper.get('[data-testid="app-sidebar-app-rail"]').element
+      const credits = wrapper.get('[data-testid="app-sidebar-credits"]').element
+      const account = wrapper.get('[data-testid="devplatform-account-signin"]').element
+      expect(rail.compareDocumentPosition(credits) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(
+        credits.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+
+      await wrapper.setProps({ makeRoom: false })
+      expect(wrapper.find('[data-testid="app-sidebar-settings"]').exists()).toBe(true)
       wrapper.unmount()
     })
 
-    it('previews the cover and name of an app on hover', async () => {
+    it('opens the tooltips of All apps and of every app at once, with no delay', async () => {
+      const wrapper = await mountWithAppOpen()
+
+      const delays = [
+        wrapper.get('[data-testid="app-sidebar-all-apps"]'),
+        ...thumbnails(wrapper)
+      ].map((button) => button.findComponent(Tooltip).props('delayMs'))
+      expect(delays).toEqual([0, 0, 0, 0])
+      wrapper.unmount()
+    })
+
+    function preview(): HTMLImageElement | null {
+      return document.querySelector<HTMLImageElement>('[data-testid="app-sidebar-app-preview"]')
+    }
+
+    function holdMovingCover(): { finish: () => void } {
+      let finish = () => {}
+      const decoding = new Promise<void>((resolve) => (finish = resolve))
+      vi.spyOn(HTMLImageElement.prototype, 'decode').mockImplementation(function (
+        this: HTMLImageElement
+      ) {
+        return this.src === PRODUCT_SWAP_MOVING ? decoding : Promise.resolve()
+      })
+      return { finish: () => finish() }
+    }
+
+    it('previews the still and name at once, then the moving cover once it has loaded, and keeps it for the next hover', async () => {
+      const moving = holdMovingCover()
+      const wrapper = await mountWithAppOpen()
+      const thumb = wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element
+
+      await userEvent.hover(thumb)
+      await vi.waitFor(() => expect(preview()?.getAttribute('src')).toBe(PRODUCT_SWAP_STILL))
+      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Product Swap')
+
+      moving.finish()
+      await vi.waitFor(() => expect(preview()?.getAttribute('src')).toBe(PRODUCT_SWAP_MOVING))
+
+      await userEvent.unhover(thumb)
+      await vi.waitFor(() => expect(preview()).toBeNull())
+      await userEvent.hover(thumb)
+      await vi.waitFor(() => expect(preview()).not.toBeNull())
+      expect(preview()?.getAttribute('src')).toBe(PRODUCT_SWAP_MOVING)
+      wrapper.unmount()
+    })
+
+    it('previews only the still, and loads no moving cover, when reduced motion is preferred', async () => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {}
+      }))
+      const decode = vi.spyOn(HTMLImageElement.prototype, 'decode')
       const wrapper = await mountWithAppOpen()
 
       await userEvent.hover(wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element)
+      await vi.waitFor(() => expect(preview()?.getAttribute('src')).toBe(PRODUCT_SWAP_STILL))
+      await flushPromises()
 
-      await vi.waitFor(() =>
-        expect(
-          document.querySelector('[data-testid="app-sidebar-app-preview"]')?.getAttribute('src')
-        ).toBe(PRODUCT_SWAP_STILL)
-      )
-      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Product Swap')
+      expect(preview()?.getAttribute('src')).toBe(PRODUCT_SWAP_STILL)
+      expect(decode).not.toHaveBeenCalled()
       wrapper.unmount()
     })
   })

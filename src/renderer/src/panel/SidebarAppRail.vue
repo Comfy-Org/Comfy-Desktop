@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { AppWindow } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Tooltip from '../components/ui/Tooltip.vue'
+import AppCoverPreview from './AppCoverPreview.vue'
 import { stillsOf } from '../lib/appStills'
 import { SIDEBAR_FACE_BUTTON_CLASS, SIDEBAR_HEADER_CLASS } from './sidebarClasses'
 import type { AppCard } from '../types/ipc'
@@ -36,6 +37,10 @@ function stillOf(app: AppCard): string | undefined {
   return brokenStills.has(app.id) ? undefined : stillsOf(app)[0]
 }
 
+function movingOf(app: AppCard): string | undefined {
+  return app.covers.find((cover) => cover.stillUrl && cover.url !== cover.stillUrl)?.url
+}
+
 function pick(app: AppCard): void {
   if (!isCurrent(app)) emit('switch-app', app)
 }
@@ -53,7 +58,12 @@ function pick(app: AppCard): void {
       @click="emit('all-apps')"
       @contextmenu.prevent="emit('all-apps-menu', $event)"
     >
-      <Tooltip :text="t('apps.allApps')" side="right" class="size-full items-center justify-center">
+      <Tooltip
+        :text="t('apps.allApps')"
+        side="right"
+        :delay-ms="0"
+        class="size-full items-center justify-center"
+      >
         <AppWindow :size="17" aria-hidden="true" />
       </Tooltip>
     </Button>
@@ -83,7 +93,7 @@ function pick(app: AppCard): void {
           :data-testid="`app-sidebar-app-${app.id}`"
           @click="pick(app)"
         >
-          <Tooltip :text="app.title" side="right" class="size-full">
+          <Tooltip :text="app.title" side="right" :delay-ms="0" class="size-full">
             <img
               v-if="stillOf(app)"
               :src="stillOf(app)"
@@ -99,16 +109,7 @@ function pick(app: AppCard): void {
               <AppWindow :size="15" aria-hidden="true" />
             </span>
             <template #content>
-              <span class="flex w-[200px] flex-col gap-1.5 py-1">
-                <img
-                  v-if="stillOf(app)"
-                  :src="stillOf(app)"
-                  alt=""
-                  class="aspect-[4/3] w-full rounded-[5px] object-cover"
-                  data-testid="app-sidebar-app-preview"
-                />
-                <span>{{ app.title }}</span>
-              </span>
+              <AppCoverPreview :title="app.title" :still="stillOf(app)" :moving="movingOf(app)" />
             </template>
           </Tooltip>
         </Button>

@@ -574,6 +574,7 @@ function openSettings(): void {
     <div class="mt-2 flex w-full shrink-0 flex-col gap-1">
       <SidebarDesktopUpdate :collapsed="collapsed" />
       <Button
+        v-if="!makeRoom"
         variant="muted-textonly"
         size="unset"
         class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
