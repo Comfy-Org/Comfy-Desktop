@@ -1,9 +1,4 @@
-import {
-  datadogRum,
-  type RumBeforeSend,
-  type RumErrorEvent,
-  type RumErrorEventDomainContext
-} from '@datadog/browser-rum'
+import { datadogRum, type RumBeforeSend, type RumErrorEvent } from '@datadog/browser-rum'
 import { scrubPII, scrubSecrets } from '../../../shared/piiScrub'
 
 export const DATADOG_BUNDLE_BASE_URL = 'app://app'
@@ -42,6 +37,8 @@ export function normalizeRumErrorEvent(event: RumErrorEvent): void {
   if (event.error.stack) {
     event.error.stack = scrubRumText(event.error.stack)
   }
+  const handlingStack = normalizeDatadogBundlePaths(event.error.handling_stack)
+  if (handlingStack) event.error.handling_stack = scrubRumText(handlingStack)
   if (event.error.resource?.url) {
     event.error.resource.url =
       normalizeDatadogBundlePaths(event.error.resource.url) || event.error.resource.url
@@ -63,19 +60,10 @@ export function flattenErrorWithCauses(error: RumErrorEvent['error']): Error {
   return flattened
 }
 
-const reReportedErrors = new WeakSet<object>()
-
-function scrubReReportHandlingStack(event: RumErrorEvent, reported: unknown): void {
-  if (!(reported instanceof Error) || !reReportedErrors.has(reported)) return
-  const handlingStack = normalizeDatadogBundlePaths(event.error.handling_stack)
-  if (handlingStack) event.error.handling_stack = scrubRumText(handlingStack)
-}
-
-export const rumBeforeSend: RumBeforeSend = (event, domainContext) => {
+export const rumBeforeSend: RumBeforeSend = (event) => {
   if (event.type !== 'error') return true
   if (event.error.causes?.length) {
     const flattened = flattenErrorWithCauses(event.error)
-    reReportedErrors.add(flattened)
     const context = {
       ...event.context,
       original_error_source: event.error.source,
@@ -85,6 +73,5 @@ export const rumBeforeSend: RumBeforeSend = (event, domainContext) => {
     return false
   }
   normalizeRumErrorEvent(event)
-  scrubReReportHandlingStack(event, (domainContext as RumErrorEventDomainContext).error)
   return true
 }

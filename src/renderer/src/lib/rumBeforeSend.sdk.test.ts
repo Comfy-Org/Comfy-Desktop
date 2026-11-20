@@ -27,6 +27,11 @@ function hidePage(): void {
   document.dispatchEvent(new Event('visibilitychange'))
 }
 
+const PACKAGED_HANDLING_STACK = [
+  'Error',
+  '  at <anonymous> @ file:///C:/Users/carol/AppData/Local/Programs/ComfyUI/resources/app.asar/out/renderer/assets/rendererBootstrap-x.js:1:2'
+].join('\n')
+
 test('the real RUM SDK sends a scrubbed error, and an error that wraps a cause once, flattened and scrubbed', async () => {
   captureIntake()
   datadogRum.init({
@@ -37,7 +42,10 @@ test('the real RUM SDK sends a scrubbed error, and an error that wraps a cause o
     sessionSampleRate: 100,
     sessionPersistence: 'local-storage',
     beforeSend: (event, context) => {
-      if (event.type === 'error') errorsSeenByBeforeSend.push(event.error.message)
+      if (event.type === 'error') {
+        errorsSeenByBeforeSend.push(event.error.message)
+        event.error.handling_stack = PACKAGED_HANDLING_STACK
+      }
       return rumBeforeSend(event, context)
     },
     trackResources: false,
@@ -80,6 +88,8 @@ test('the real RUM SDK sends a scrubbed error, and an error that wraps a cause o
   expect(sent).not.toContain('bob')
   expect(sent).not.toContain('alice')
   expect(sent).not.toContain('hunter2')
+  expect(sent).not.toContain('carol')
+  expect(sent).toContain('app://app/renderer/assets/rendererBootstrap-x.js:1:2')
   expect(sent).not.toContain('abcdefghijklmnop')
   expect(sent).toContain('app://app/renderer/assets/index-x.js:1:2')
   expect(sent).toContain('file:///home/[REDACTED]/plugins/inner-frame.js:3:4')
