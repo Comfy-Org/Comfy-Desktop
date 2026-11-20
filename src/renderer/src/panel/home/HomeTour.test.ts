@@ -599,6 +599,23 @@ describe('HomeTour', () => {
     expect(telemetry).not.toContain('comfy.desktop.home_tour.target_opened')
   })
 
+  it('does not finish the tour when an unrelated dialog opens right after a side-card click', async () => {
+    const { control, wrapper } = await goToAllBuilds()
+    const turned = vi.fn()
+    control.addEventListener('click', turned)
+
+    await userEvent.click(highlightedPart(), { position: { x: 20, y: 20 } })
+    await wrapper.setProps({ active: false, interrupted: true })
+    await settle()
+
+    expect(turned).toHaveBeenCalledTimes(1)
+    expect(setSetting).not.toHaveBeenCalled()
+    expect(telemetry).not.toContain('comfy.desktop.home_tour.target_opened')
+
+    await wrapper.setProps({ active: true, interrupted: false })
+    await expect.poll(() => tourCard()?.textContent).toContain('All your builds')
+  })
+
   it('forgets a click that opened nothing once the user moves on with Next', async () => {
     const { wrapper } = await goToAllBuilds()
 
