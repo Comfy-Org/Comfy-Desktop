@@ -772,7 +772,7 @@
     "detecting": "Detecting…",
     "noDetected": "No known install detected",
     "trackInstallation": "Add build",
-    "cannotTrack": "Cannot Add Build",
+    "cannotTrack": "Cannot add build",
     "version": "Version",
     "repository": "Repository",
     "branch": "Branch"

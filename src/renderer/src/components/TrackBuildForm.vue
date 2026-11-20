@@ -185,7 +185,13 @@ async function trackProbedInstall(probed: ProbeResult): Promise<void> {
     rawProbe.venvPath = venvOverride.value
   }
   const installPath = (rawProbe.installPath as string | undefined) || trackPath.value
-  const finalName = await window.api.getUniqueName(typedName || DEFAULT_INSTALL_NAME)
+  const finalName = await window.api
+    .getUniqueName(typedName || DEFAULT_INSTALL_NAME)
+    .catch(async (error: unknown) => {
+      await alertCannotTrack(error instanceof Error ? error.message : String(error))
+      return null
+    })
+  if (finalName === null) return
   if (typedName && finalName !== typedName) {
     if (name.value.trim() === typedName) {
       nameCheck++
@@ -202,10 +208,7 @@ async function trackProbedInstall(probed: ProbeResult): Promise<void> {
 
   const result = await window.api.trackInstallation(data)
   if (!result.ok) {
-    await modal.alert({
-      title: t('track.cannotTrack'),
-      message: result.message || ''
-    })
+    await alertCannotTrack(result.message || '')
     return
   }
   emitTelemetryAction('comfy.desktop.track_existing.saved', {
@@ -214,6 +217,10 @@ async function trackProbedInstall(probed: ProbeResult): Promise<void> {
     custom_name_used: typedName.length > 0
   })
   emit('saved')
+}
+
+async function alertCannotTrack(message: string): Promise<void> {
+  await modal.alert({ title: t('track.cannotTrack'), message })
 }
 
 defineExpose({ save, canSave })

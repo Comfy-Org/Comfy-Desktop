@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 
 import TrackModal from './TrackModal.vue'
+import { useModal } from '../composables/useModal'
 import type { ProbeResult } from '../types/ipc'
 
 interface MockApi {
@@ -410,6 +411,24 @@ describe('TrackModal — build name', () => {
     await flushPromises()
     const data = api.trackInstallation.mock.calls[0]![0] as Record<string, unknown>
     expect(data.name).toBe('Old portable')
+  })
+
+  it('shows the error and does not add the build when the name check fails on Add build', async () => {
+    const modal = useModal()
+    const { api, wrapper } = await openWithFolder()
+    api.getUniqueName.mockRejectedValueOnce(new Error('Could not read the builds list.'))
+
+    await trackButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(modal.state.visible).toBe(true)
+    expect(modal.state.title).toBe('Cannot add build')
+    expect(modal.state.message).toBe('Could not read the builds list.')
+    expect(api.trackInstallation).not.toHaveBeenCalled()
+
+    modal.dismiss()
+    await flushPromises()
+    expect(trackButton(wrapper).attributes('disabled')).toBeUndefined()
   })
 
   it('asks for a name when only spaces are typed', async () => {
