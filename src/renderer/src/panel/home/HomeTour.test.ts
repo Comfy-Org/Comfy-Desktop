@@ -638,6 +638,35 @@ describe('HomeTour', () => {
     expect(setSetting).not.toHaveBeenCalled()
   })
 
+  it('does not finish the tour when the feedback events follow a click on a carousel side card', async () => {
+    placeAnchors()
+    const carousel = anchors.find((el) => el.dataset['homeTour'] === 'apps-carousel')!
+    const sideCard = document.createElement('button')
+    sideCard.setAttribute('aria-current', 'false')
+    sideCard.style.cssText = 'position: absolute; left: 120px; top: 0; width: 80px; height: 40px'
+    const turned = vi.fn()
+    sideCard.addEventListener('click', turned)
+    carousel.append(sideCard)
+    const wrapper = mountTour()
+    await waitForCard()
+    for (let step = 0; step < 5; step++) {
+      await userEvent.click(button('next')!)
+    }
+    await expect.poll(() => tourCard()?.textContent).toContain('New: Apps')
+
+    await userEvent.click(highlightedPart(), { position: { x: 160, y: 20 } })
+    await wrapper.setProps({ active: false })
+    await wrapper.setProps({ active: false, interrupted: true })
+    await settle()
+
+    expect(turned).toHaveBeenCalledTimes(1)
+    expect(setSetting).not.toHaveBeenCalled()
+    expect(telemetry).not.toContain('comfy.desktop.home_tour.target_opened')
+
+    await wrapper.setProps({ active: true, interrupted: false })
+    await expect.poll(() => tourCard()?.textContent).toContain('New: Apps')
+  })
+
   it('forgets a click that opened nothing once the user moves on with Next', async () => {
     const { wrapper } = await goToAllBuilds()
 
