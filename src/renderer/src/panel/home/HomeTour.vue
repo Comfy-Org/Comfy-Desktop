@@ -20,7 +20,6 @@ import { useInstallationStore } from '../../stores/installationStore'
 import {
   HOME_TOUR_STEPS,
   findHomeTourAnchor,
-  isHomeTourAnchorOnScreen,
   type HomeTourAnchor,
   type HomeTourStep
 } from './homeTourSteps'
@@ -33,7 +32,7 @@ const TARGET_OPEN_WINDOW_MS = 1000
 
 const { t } = useI18n()
 const installationStore = useInstallationStore()
-const { audience, done, loaded, finish } = useHomeTour()
+const { audience, done, loaded, replays, finish } = useHomeTour()
 const titleId = useId()
 const bodyId = useId()
 const nextButton = useTemplateRef<{ $el: HTMLElement }>('nextButton')
@@ -88,7 +87,7 @@ async function start(): Promise<void> {
   await homeHasRendered()
   if (token !== startToken || !running.value) return
   const allSteps = HOME_TOUR_STEPS[audience.value]
-  const shown = allSteps.filter((s) => isHomeTourAnchorOnScreen(s.anchor))
+  const shown = allSteps.filter((s) => findHomeTourAnchor(s.anchor) !== null)
   if (shown.length === 0) return
   const resumed = resumeAnchor !== null
   const pausedAt = allSteps.findIndex((s) => s.anchor === resumeAnchor)
@@ -138,6 +137,12 @@ function end({ returnFocus }: { returnFocus: boolean }): void {
 }
 
 watch(running, (now) => (now ? void start() : stop()), { immediate: true })
+watch(replays, () => {
+  resumeAnchor = null
+})
+watch(step, (current) => {
+  if (current) findHomeTourAnchor(current.anchor)?.scrollIntoView({ block: 'nearest' })
+})
 watch(done, (isDone) => {
   if (isDone) resumeAnchor = null
 })

@@ -373,6 +373,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     },
     getSetting: async (key) => settings[key],
     getHomeTourReplay: async () => homeTourReplay,
+    showHome: () => {},
     setHomeTourReplay: async (pending) => {
       homeTourReplay = pending
       emit('onHomeTourReplayChanged', pending)

@@ -715,6 +715,12 @@ ipcMain.on('comfy-window:show-home', (event) => {
   openOrFocusHomeHostWindow()
 })
 
+ipcMain.on('comfy-panel:show-home', (event) => {
+  if (!findHostWindowByPanelSender(event.sender)) return
+  recordIpcInvocation('comfy-panel:show-home')
+  openOrFocusHomeHostWindow()
+})
+
 async function prepareBuildWindowFocus(
   entry: ComfyWindowEntry,
   requester?: BrowserWindow | null,

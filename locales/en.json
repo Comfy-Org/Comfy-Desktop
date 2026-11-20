@@ -234,8 +234,8 @@
       "body": "Click here to see all your builds."
     },
     "newBuild": {
-      "title": "Add a build",
-      "body": "Click + to add a new build."
+      "title": "New build",
+      "body": "Click + to start a new build."
     },
     "newApps": {
       "title": "New: Apps",

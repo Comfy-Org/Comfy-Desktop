@@ -19,6 +19,7 @@ const setSetting = vi.fn(async (key: string, value: unknown): Promise<void> => {
 })
 const unsubscribe = () => () => {}
 let replayPending = false
+let readReplay = async (): Promise<boolean> => replayPending
 let replayChanged: (pending: boolean) => void = () => {}
 const setHomeTourReplay = vi.fn(async (pending: boolean): Promise<void> => {
   replayPending = pending
@@ -26,7 +27,7 @@ const setHomeTourReplay = vi.fn(async (pending: boolean): Promise<void> => {
 stubWindowApi({
   getSetting,
   setSetting,
-  getHomeTourReplay: async () => replayPending,
+  getHomeTourReplay: () => readReplay(),
   setHomeTourReplay,
   onHomeTourReplayChanged: (callback: (pending: boolean) => void) => {
     replayChanged = callback
@@ -79,6 +80,11 @@ function mountTour() {
   return mount(HomeTour, { attachTo: host, props: { active: true } })
 }
 
+async function tourStateLoaded(): Promise<void> {
+  await expect.poll(() => useHomeTour().loaded.value).toBe(true)
+  await settle()
+}
+
 async function settle(): Promise<void> {
   await nextTick()
   await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
@@ -99,6 +105,7 @@ beforeEach(() => {
   setSetting.mockClear()
   telemetry.length = 0
   replayPending = false
+  readReplay = async () => replayPending
   setHomeTourReplay.mockClear()
   window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, recordTelemetry)
   __resetHomeTourForTest()
@@ -200,7 +207,7 @@ describe('HomeTour', () => {
     placeAnchors()
     mountTour()
     await settle()
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await tourStateLoaded()
 
     expect(tourCard()).toBeNull()
   })
@@ -262,7 +269,7 @@ describe('HomeTour', () => {
     placeAnchors()
     mountTour()
     await settle()
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await tourStateLoaded()
 
     expect(tourCard()).toBeNull()
   })
@@ -329,13 +336,90 @@ describe('HomeTour', () => {
     expect(offsets()).toEqual(before)
   })
 
-  it('leaves out a step whose part is below the visible window when the tour starts', async () => {
-    placeAnchors()
-    anchors.find((el) => el.dataset['homeTour'] === 'local-build')!.style.top = '2000px'
+  it('scrolls a part below the fold into view before it lights it up', async () => {
+    placeAnchors(ALL_ANCHORS.filter((anchor) => anchor !== 'home-builds'))
+    const homePage = document.createElement('div')
+    homePage.style.cssText =
+      'position: fixed; left: 600px; top: 0; width: 300px; height: 300px; overflow: auto'
+    const spacer = document.createElement('div')
+    spacer.style.height = '900px'
+    const builds = document.createElement('div')
+    builds.dataset['homeTour'] = 'home-builds'
+    builds.style.cssText = 'width: 200px; height: 80px'
+    homePage.append(spacer, builds)
+    document.body.append(homePage)
+    anchors.push(homePage)
     mountTour()
     await waitForCard()
 
-    expect(tourCard()?.textContent).toContain('1 of 7')
+    await expect.poll(() => homePage.scrollTop).toBeGreaterThan(0)
+    const rect = builds.getBoundingClientRect()
+    expect(rect.top).toBeGreaterThanOrEqual(0)
+    expect(rect.bottom).toBeLessThanOrEqual(300)
+  })
+
+  it('keeps Skip and Next on screen on the builds step in a 600px tall window', async () => {
+    await page.viewport(1200, 600)
+    try {
+      placeAnchors(ALL_ANCHORS.filter((anchor) => anchor !== 'home-builds'))
+      const builds = document.createElement('div')
+      builds.dataset['homeTour'] = 'home-builds'
+      builds.style.cssText = 'position: fixed; left: 300px; top: 460px; width: 900px; height: 120px'
+      document.body.append(builds)
+      anchors.push(builds)
+      mountTour()
+      await waitForCard()
+      await expect.poll(() => tourCard()!.getAnimations().length).toBe(0)
+
+      for (const name of ['skip', 'next'] as const) {
+        const rect = button(name)!.getBoundingClientRect()
+        expect(rect.top).toBeGreaterThanOrEqual(0)
+        expect(rect.bottom).toBeLessThanOrEqual(600)
+      }
+    } finally {
+      await page.viewport(1200, 800)
+    }
+  })
+
+  it('starts a replay at step 1 even when the tour was paused, and counts it as a new showing', async () => {
+    placeAnchors()
+    const wrapper = mountTour()
+    await waitForCard()
+    await userEvent.click(button('next')!)
+    await expect.poll(() => tourCard()?.textContent).toContain('Comfy Cloud')
+    await wrapper.setProps({ active: false })
+    await expect.poll(() => tourCard()).toBeNull()
+
+    await useHomeTour().replay()
+    await wrapper.setProps({ active: true })
+
+    await expect.poll(() => tourCard()?.textContent).toContain('1 of 8')
+    expect(telemetry.filter((name) => name === 'comfy.desktop.home_tour.shown')).toHaveLength(2)
+  })
+
+  it('keeps a replay asked for by another window while this window is still loading', async () => {
+    saved.set('homeTourDone', true)
+    let finishRead: (pending: boolean) => void = () => {}
+    readReplay = () => new Promise((resolve) => (finishRead = resolve))
+    placeAnchors()
+    mountTour()
+    await settle()
+
+    replayChanged(true)
+    finishRead(false)
+
+    await waitForCard()
+  })
+
+  it('hides the tour when another window finishes it', async () => {
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+
+    saved.set('homeTourDone', true)
+    replayChanged(false)
+
+    await expect.poll(() => tourCard()).toBeNull()
   })
 
   it('picks up at the next step when the part of the paused step is gone', async () => {

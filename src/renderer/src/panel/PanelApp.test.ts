@@ -154,7 +154,7 @@ vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
 }))
 import { mount, flushPromises } from '@vue/test-utils'
 import { reactive } from 'vue'
-import { __resetHomeTourForTest } from './home/useHomeTour'
+import { __resetHomeTourForTest, useHomeTour } from './home/useHomeTour'
 import { useDialogs } from '../composables/useDialogs'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
@@ -3872,7 +3872,8 @@ describe('PanelApp home tour', () => {
       closeAnnouncement: vi.fn(),
       getHomeTourReplay: vi.fn(async () => false),
       setHomeTourReplay: vi.fn(async () => {}),
-      onHomeTourReplayChanged: vi.fn(() => () => {})
+      onHomeTourReplayChanged: vi.fn(() => () => {}),
+      showHome: vi.fn()
     })
     window.history.replaceState({}, '', `/?${query}`)
     const wrapper = mountPanel()
@@ -3935,7 +3936,8 @@ describe('PanelApp home tour', () => {
   it('does not show once the tour is done', async () => {
     mountWithTour({ homeTourDone: true })
     await flushPromises()
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await expect.poll(() => useHomeTour().loaded.value).toBe(true)
+    await flushPromises()
 
     expect(homeTour()).toBeNull()
   })
@@ -3953,6 +3955,7 @@ describe('PanelApp home tour', () => {
     await expect.poll(homeTour).not.toBeNull()
     expect(window.api.closeAnnouncement).toHaveBeenCalled()
     expect(window.api.navigatePanel).toHaveBeenCalledWith('home')
+    expect(window.api.showHome).not.toHaveBeenCalled()
   })
 
   it('Take the tour over a running build asks main to replay the tour on Home', async () => {
@@ -3969,5 +3972,6 @@ describe('PanelApp home tour', () => {
       .poll(() => vi.mocked(window.api.setHomeTourReplay).mock.calls)
       .toContainEqual([true])
     expect(window.api.navigatePanel).not.toHaveBeenCalledWith('home')
+    await expect.poll(() => vi.mocked(window.api.showHome).mock.calls.length).toBe(1)
   })
 })

@@ -82,13 +82,16 @@ const { announcementOpen, closeAnnouncement } = useAnnouncement()
 const homeTour = useHomeTour()
 const dialogs = useDialogs()
 
-function takeHomeTour(): void {
+async function takeHomeTour(): Promise<void> {
   closeAnnouncement()
   if (showSidebar.value) {
     window.api.navigatePanel('home')
     handleSidebarNavigate('home')
+    await homeTour.replay()
+    return
   }
-  void homeTour.replay()
+  await homeTour.replay()
+  window.api.showHome()
 }
 
 const installation = computed<Installation | null>(() =>
@@ -691,7 +694,7 @@ onUnmounted(() => {
     <AnnouncementModal
       v-if="announcementOpen"
       @close="closeAnnouncement"
-      @take-tour="takeHomeTour"
+      @take-tour="void takeHomeTour()"
     />
     <HomeTour :active="homeTourCanShow" />
 
