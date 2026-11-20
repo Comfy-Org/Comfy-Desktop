@@ -116,7 +116,7 @@ function bestOf(found: Found): EmbeddedWorkflow | null {
   return null
 }
 
-function isPng(bytes: Uint8Array): boolean {
+export function isPng(bytes: Uint8Array): boolean {
   return PNG_SIGNATURE.every((byte, i) => bytes[i] === byte)
 }
 

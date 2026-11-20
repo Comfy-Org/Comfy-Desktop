@@ -166,6 +166,8 @@
       "openWorkflowFailed": "无法打开工作流",
       "openWorkflowNoReason": "ComfyUI 未能打开工作流。请重试。",
       "openingWorkflow": "正在打开…",
+      "openingInCloud": "正在 Comfy Cloud 中打开…",
+      "startingBuild": "正在启动 {name}…",
       "openWorkflowIn": "打开方式",
       "savedIn": "保存位置",
       "cloudAssets": "Comfy Cloud 资产",

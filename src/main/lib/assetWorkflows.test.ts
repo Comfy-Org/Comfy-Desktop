@@ -267,6 +267,32 @@ describe('a file in Comfy Cloud', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
+  it('skips the end of a large Cloud PNG when its start already holds the workflow', async () => {
+    mocks.cloudAccessToken.mockResolvedValue('token')
+    mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/still.png')
+    const textChunk = (key: string, text: string): Buffer => {
+      const data = Buffer.concat([Buffer.from(key), Buffer.from([0]), Buffer.from(text)])
+      const length = Buffer.alloc(4)
+      length.writeUInt32BE(data.length)
+      return Buffer.concat([length, Buffer.from('tEXt'), data, Buffer.alloc(4)])
+    }
+    const head = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      textChunk('workflow', JSON.stringify(GRAPH))
+    ])
+    const fetch = vi.fn(
+      async () =>
+        new Response(new Uint8Array(head), {
+          status: 206,
+          headers: { 'content-range': `bytes 0-${PART_BYTES - 1}/${PART_BYTES * 3}` }
+        })
+    )
+    vi.stubGlobal('fetch', fetch)
+
+    expect(await hasWorkflow('inst-cloud', 'asset-9')).toBe(true)
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
   it('finds the workflow at the end of a large animated PNG on this computer', async () => {
     const pngStart = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
     const frames = Buffer.alloc(PART_BYTES * 2, 0)

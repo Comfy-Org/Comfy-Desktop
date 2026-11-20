@@ -45,7 +45,8 @@ export interface OutputDetailItem {
   workflow?: boolean
   workflowBuilds?: { id: string; name: string }[]
   workflowSlot?: boolean
-  workflowOpening?: boolean
+  workflowBusy?: boolean
+  workflowStatus?: string
   mainAction: 'download' | null
   loadModel?: () => Promise<Uint8Array | null>
 }
@@ -87,7 +88,7 @@ const workflowChoices = computed<MenuItem[]>(() => {
   }))
 })
 function openWorkflowHere(): void {
-  if (item.value.workflowOpening) return
+  if (item.value.workflowBusy) return
   emit('open-workflow', index.value, item.value.workflowBuilds?.[0]?.id)
 }
 
@@ -96,7 +97,7 @@ function workflowButton(): HTMLElement | null {
 }
 
 watch(
-  () => item.value.workflowOpening === true,
+  () => item.value.workflowBusy === true,
   async (opening) => {
     if (!opening) return
     await nextTick()
@@ -388,10 +389,10 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           {{ t(revealKey) }}
         </Button>
         <span class="sr-only" aria-live="polite" data-testid="output-detail-workflow-status">{{
-          item.workflowOpening ? t('assets.detail.openingWorkflow') : ''
+          item.workflowStatus ?? ''
         }}</span>
         <Menu
-          v-if="item.workflow && !item.workflowOpening && workflowChoices.length > 0"
+          v-if="item.workflow && !item.workflowBusy && workflowChoices.length > 0"
           :items="workflowChoices"
           :modal="false"
           align="start"
@@ -422,18 +423,18 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           :aria-hidden="item.workflow ? undefined : 'true'"
           :tabindex="item.workflow ? undefined : -1"
           :disabled="!item.workflow"
-          :aria-disabled="item.workflowOpening ? 'true' : undefined"
-          :aria-busy="item.workflowOpening ? 'true' : undefined"
+          :aria-disabled="item.workflowBusy ? 'true' : undefined"
+          :aria-busy="item.workflowStatus ? 'true' : undefined"
           data-testid="output-detail-workflow"
           @click="openWorkflowHere"
         >
-          <template v-if="item.workflowOpening">
+          <template v-if="item.workflowStatus">
             <LoaderCircle
               :size="15"
               class="animate-spin [animation-duration:900ms] motion-reduce:animate-none"
               aria-hidden="true"
             />
-            {{ t('assets.detail.openingWorkflow') }}
+            {{ item.workflowStatus }}
           </template>
           <template v-else>
             <Workflow :size="15" aria-hidden="true" />

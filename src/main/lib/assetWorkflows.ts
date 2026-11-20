@@ -9,7 +9,7 @@ import { isPanelSender } from '../host/registry'
 import type { ComfyDesktopOpenInComfy } from '../../types/comfyDesktopBridge'
 import { LOCAL_ASSETS_SOURCE } from '../../types/ipc'
 import { cloudAccessToken, firstBytes, resolveCloudContentUrl } from './assets'
-import { readEmbeddedWorkflow } from './embeddedWorkflow'
+import { isPng, readEmbeddedWorkflow } from './embeddedWorkflow'
 import type { EmbeddedWorkflow } from './embeddedWorkflow'
 import * as i18n from './i18n'
 import { outputFilePath, READ_WITHOUT_FOLLOWING } from './outputFolders'
@@ -35,6 +35,10 @@ async function readPart(
   return new Uint8Array(buffer.buffer, buffer.byteOffset, bytesRead)
 }
 
+function headHoldsPngWorkflow(head: Uint8Array): boolean {
+  return isPng(head) && readEmbeddedWorkflow([head]) !== null
+}
+
 async function localParts(assetId: string): Promise<Uint8Array[] | null> {
   const file = await outputFilePath(assetId)
   if (!file) return null
@@ -47,6 +51,7 @@ async function localParts(assetId: string): Promise<Uint8Array[] | null> {
       const rest = await readPart(handle, PART_BYTES, size - PART_BYTES)
       return [Buffer.concat([head, rest])]
     }
+    if (headHoldsPngWorkflow(head)) return [head]
     const tailStart = Math.max(PART_BYTES, size - PART_BYTES)
     return [head, await readPart(handle, tailStart, size - tailStart)]
   } finally {
@@ -83,6 +88,7 @@ async function cloudParts(assetId: string, accessToken: string): Promise<Uint8Ar
     if (restResponse.status !== 206) return unread(restResponse)
     return [Buffer.concat([head, await firstBytes(restResponse, PART_BYTES)])]
   }
+  if (headHoldsPngWorkflow(head)) return [head]
   const tailResponse = await rangeOf(url, `bytes=-${PART_BYTES}`, deadline)
   if (!tailResponse.ok) return unread(tailResponse)
   if (tailResponse.status !== 206) return [head]

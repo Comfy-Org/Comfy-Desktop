@@ -162,7 +162,16 @@ const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 const workflowFound = ref(new Map<string, boolean>())
 const workflowChecks = ref(0)
-const openingWorkflow = ref<string | null>(null)
+interface OpeningWorkflow {
+  token: number
+  build: { id: string; name: string } | null
+  cloud: boolean
+  shown: boolean
+}
+
+const BUSY_LABEL_DELAY_MS = 300
+const openingWorkflows = ref(new Map<string, OpeningWorkflow>())
+let openToken = 0
 
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
@@ -820,7 +829,8 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     workflow: canOpenWorkflow(asset),
     workflowSlot: mayOpenWorkflow(asset),
     workflowBuilds: workflowBuildsOf(asset),
-    workflowOpening: openingWorkflow.value === cardKey(asset),
+    workflowBusy: openingWorkflows.value.has(cardKey(asset)),
+    workflowStatus: workflowStatusOf(asset),
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
@@ -902,14 +912,45 @@ watch(
 
 onBeforeUnmount(() => clearTimeout(workflowCheckTimer))
 
+function workflowStatusOf(asset: GalleryAsset): string | undefined {
+  const opening = openingWorkflows.value.get(cardKey(asset))
+  if (!opening?.shown) return undefined
+  if (opening.cloud) return t('assets.detail.openingInCloud')
+  if (opening.build && !sessionStore.isRunning(opening.build.id)) {
+    return t('assets.detail.startingBuild', { name: opening.build.name })
+  }
+  return t('assets.detail.openingWorkflow')
+}
+
+function updateOpening(key: string, token: number, next: OpeningWorkflow | null): void {
+  if (openingWorkflows.value.get(key)?.token !== token) return
+  const openings = new Map(openingWorkflows.value)
+  if (next) openings.set(key, next)
+  else openings.delete(key)
+  openingWorkflows.value = openings
+}
+
 async function openWorkflow(asset: GalleryAsset, build?: string): Promise<void> {
   const key = cardKey(asset)
-  if (openingWorkflow.value === key) return
-  openingWorkflow.value = key
+  if (openingWorkflows.value.has(key)) return
+  const token = ++openToken
+  const opening: OpeningWorkflow = {
+    token,
+    build: workflowBuildsOf(asset)?.find(({ id }) => id === build) ?? null,
+    cloud: !isLocal(asset),
+    shown: false
+  }
+  openingWorkflows.value = new Map(openingWorkflows.value).set(key, opening)
+  const showBusy = setTimeout(
+    () => updateOpening(key, token, { ...opening, shown: true }),
+    BUSY_LABEL_DELAY_MS
+  )
   const result = await window.api
     .openAssetWorkflow(asset.source, asset.id, asset.name, build)
     .catch(() => ({ opened: false, error: undefined }))
-  if (openingWorkflow.value === key) openingWorkflow.value = null
+  clearTimeout(showBusy)
+  updateOpening(key, token, null)
+  if (token !== openToken) return
   if (result.opened) {
     if (detailKey.value === key) await closeDetail()
     return
