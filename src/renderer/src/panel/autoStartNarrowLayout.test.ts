@@ -151,6 +151,29 @@ it('shortens Update available to Update when the line is tight on Home and Build
   }
 })
 
+it('keeps the version whole on Builds when the source label is long, shortening only the source', async () => {
+  const [, builds] = await mountHomeAndBuildsWith(
+    {
+      ...STUDIO,
+      sourceLabel: 'github.com/someone/a-very-long-comfyui-fork-name',
+      listPreview: undefined,
+      version: 'v0.3.68',
+      statusTag: { style: 'update', label: 'Update to v0.3.70' }
+    },
+    LARGE_WINDOW_WIDTH
+  )
+
+  const note = onlyIn(builds!, '[data-testid="build-update-note"]')
+  const line = note.parentElement!
+  await vi.waitFor(() => expect(note.textContent?.trim()).toBe('· Update'))
+  const [source, version] = Array.from(line.children) as HTMLElement[]
+  expect(fullyShown(source!)).toBe(false)
+  expect(version!.textContent?.trim()).toBe('· v0.3.68')
+  expect(fullyShown(version!)).toBe(true)
+  expect(fullyShown(note)).toBe(true)
+  expect(boxOf(line).height).toBe(17)
+})
+
 describe('Auto start on Home build cards in the smallest window with the sidebar open', () => {
   it('shows the whole status and leaves each name the width the card has after its picture', async () => {
     page.style.cssText = `position: absolute; left: 0; top: 0; width: ${HOME_WIDTH_IN_SMALLEST_WINDOW}px`

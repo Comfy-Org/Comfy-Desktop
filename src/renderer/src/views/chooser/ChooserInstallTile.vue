@@ -437,7 +437,8 @@ function openContextMenu(event: MouseEvent): void {
       <BuildMetaLine
         v-if="metaLine || showsUpdateNote"
         class="chooser-tile-meta-line mt-0.5"
-        :text="metaLine"
+        :text="leadingFact"
+        :trailing="trailingFact"
         :build-name="inst.name"
         :show-update="showsUpdateNote"
         @open-update="openInstallManager(inst, { initialTab: 'update' })"
