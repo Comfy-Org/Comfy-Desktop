@@ -41,10 +41,14 @@ defineProps<{
       {{ $t('diskSpace.checking') }}
     </template>
     <template v-else-if="diskSpace">
-      {{ $t('diskSpace.free', { size: formatFreeSpace(diskSpace.free) }) }}
-      <template v-if="estimatedSize > 0">
-        · {{ $t('diskSpace.estimatedRequired', { size: formatBytes(estimatedSize) }) }}
-      </template>
+      {{
+        estimatedSize > 0
+          ? $t('diskSpace.freeForInstall', {
+              free: formatFreeSpace(diskSpace.free),
+              required: formatBytes(estimatedSize)
+            })
+          : $t('diskSpace.free', { size: formatFreeSpace(diskSpace.free) })
+      }}
     </template>
   </div>
 </template>

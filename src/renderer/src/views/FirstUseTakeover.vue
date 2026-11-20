@@ -134,40 +134,41 @@ const location = computed(() =>
   displayPath(installLocation(plan.value?.installRoot ?? '', platform), platform)
 )
 const locationParts = computed(() => splitPathTail(location.value))
+const migrating = computed(() => hasLegacyDesktop.value && migrateExisting.value)
 const lowDisk = computed(
   () =>
+    !migrating.value &&
     diskFree.value !== null &&
     !!plan.value?.requiredBytes &&
     diskFree.value < plan.value.requiredBytes
 )
 const locationMeta = computed(() => {
   if (diskFree.value === null || !plan.value) return ''
-  const values = {
-    free: formatSize(diskFree.value),
-    required: formatSize(plan.value.requiredBytes)
-  }
-  if (!plan.value.requiredBytes) return t('setup.free', values)
-  return t(lowDisk.value ? 'setup.notEnoughSpace' : 'setup.freeRequired', values)
+  return t(lowDisk.value ? 'setup.notEnoughSpace' : 'setup.free', {
+    free: formatSize(diskFree.value)
+  })
 })
 const version = computed(() => {
   if (!plan.value) return ''
   if (workspaceBuild.value) return workspaceBuild.value.buildName
   const tag = planVersion(plan.value)
-  const channel = plan.value.selections.release?.label ?? ''
-  return tag
-    ? t('setup.versionValue', { version: tag, channel })
-    : t('setup.versionChannel', { channel })
+  return tag ? t('setup.versionValue', { version: tag }) : t('standalone.comfyui')
 })
-const downloadSize = computed(() => formatSize(plan.value?.downloadBytes ?? 0))
-const footerSummary = computed(() =>
-  plan.value?.downloadBytes
-    ? t('setup.downloadRequired', {
-        download: downloadSize.value,
-        required: formatSize(plan.value.requiredBytes)
-      })
-    : ''
+const channel = computed(() =>
+  workspaceBuild.value ? '' : (plan.value?.selections.release?.label ?? '')
 )
-const migrating = computed(() => hasLegacyDesktop.value && migrateExisting.value)
+const footerSummary = computed(() => {
+  if (!plan.value || migrating.value) return ''
+  const { downloadBytes, requiredBytes } = plan.value
+  if (downloadBytes > 0 && requiredBytes > 0) {
+    return t('setup.installSizes', {
+      download: formatSize(downloadBytes),
+      required: formatSize(requiredBytes)
+    })
+  }
+  if (requiredBytes > 0) return t('setup.installSpace', { required: formatSize(requiredBytes) })
+  return downloadBytes > 0 ? t('setup.download', { size: formatSize(downloadBytes) }) : ''
+})
 const installBlocked = computed(
   () => !migrating.value && (planState.value !== 'ready' || unsupportedReason.value !== '')
 )
@@ -572,8 +573,11 @@ defineExpose({ open, resetContinue })
               <span class="truncate text-foreground" data-testid="setup-version">{{
                 version || t('setup.checking')
               }}</span>
-              <span :class="[SUMMARY_META_CLASS, 'text-subtle-foreground']">
-                {{ downloadSize ? t('setup.download', { size: downloadSize }) : '' }}
+              <span
+                :class="[SUMMARY_META_CLASS, 'max-w-[220px] truncate text-subtle-foreground']"
+                :title="channel || undefined"
+              >
+                {{ channel }}
               </span>
             </SetupSummaryRow>
           </template>
@@ -665,7 +669,12 @@ defineExpose({ open, resetContinue })
           >
             {{ unsupportedReason }}
           </span>
-          <span v-else class="text-xs/[15px] text-subtle-foreground">{{ footerSummary }}</span>
+          <span
+            v-else-if="footerSummary"
+            class="text-xs/[15px] text-muted-foreground"
+            data-testid="setup-install-sizes"
+            >{{ footerSummary }}</span
+          >
           <Button
             v-if="skipPick"
             type="button"

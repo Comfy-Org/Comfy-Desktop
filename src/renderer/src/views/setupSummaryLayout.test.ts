@@ -145,6 +145,14 @@ async function firstRunSummary(): Promise<SummaryMetrics> {
   const rows = [...box.querySelectorAll<HTMLElement>('[data-testid^="setup-row-"]')]
   expect(rows).toHaveLength(3)
   const metrics = measure(box, rows)
+  const hardware = rows[0]
+  const label = document.createRange()
+  label.selectNodeContents(hardware.children[0])
+  const labelGap =
+    hardware.children[1].getBoundingClientRect().left - label.getBoundingClientRect().right
+  expect(labelGap).toBeGreaterThanOrEqual(8)
+  expect(labelGap).toBeLessThanOrEqual(24)
+  expect(Math.max(...metrics.rowGaps)).toBeLessThanOrEqual(20)
   const terms = document.querySelector('[data-testid="setup-consent-telemetry"]')!
   expect(Math.round(terms.getBoundingClientRect().left - box.getBoundingClientRect().left)).toBe(
     metrics.edges.left
@@ -298,7 +306,7 @@ describe.each([
     const note = location.children[2] as HTMLElement
     const browse = location.querySelector<HTMLElement>('[data-testid="config-summary-browse"]')!
 
-    expect(note.textContent).toContain('412 GB free · ~2.70 GB required')
+    expect(note.textContent).toContain('412 GB free, about 2.70 GB needed to install')
     expect(note.contains(browse)).toBe(true)
     const line = location.getBoundingClientRect()
     const button = browse.getBoundingClientRect()

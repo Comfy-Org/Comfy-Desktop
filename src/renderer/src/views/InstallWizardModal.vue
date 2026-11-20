@@ -80,7 +80,7 @@ import {
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
-import { SUMMARY_BOX_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
+import { SUMMARY_BOX_CLASS, SUMMARY_GRID_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
 import PathOpenButton from '../components/PathOpenButton.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
@@ -1242,8 +1242,11 @@ const diskShortLabel = computed(() => {
 })
 const locationMeta = computed(() => {
   const required = shownInstallSize.value
-  if (!diskFreeLabel.value || required <= 0 || diskShortLabel.value) return diskFreeLabel.value
-  return `${diskFreeLabel.value} · ${t('diskSpace.estimatedRequired', { size: formatBytes(required) })}`
+  if (diskSpaceLoading.value || !diskSpace.value || required <= 0) return diskFreeLabel.value
+  return t('diskSpace.freeForInstall', {
+    free: formatFreeSpace(diskSpace.value.free),
+    required: formatBytes(required)
+  })
 })
 
 let changeSetupDraft: ChangeSetupDraft | null = null
@@ -1792,7 +1795,8 @@ defineExpose({ open })
 
     <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
       <div
-        class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-5 py-3"
+        class="config-name-card mt-4 rounded-[14px] bg-white/5 px-5 py-3"
+        :class="SUMMARY_GRID_CLASS"
       >
         <label
           class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
@@ -1923,11 +1927,11 @@ defineExpose({ open })
               diskShortLabel ? 'text-[#f0b135]' : 'text-subtle-foreground'
             ]"
           >
-            <span class="min-w-0 truncate"
-              >{{ locationMeta }}<template v-if="locationMeta && diskShortLabel"> · </template
-              ><span v-if="diskShortLabel" class="config-path-required">{{
-                diskShortLabel
-              }}</span></span
+            <span
+              class="min-w-0 truncate"
+              :class="{ 'config-path-required': diskShortLabel }"
+              :title="locationMeta || undefined"
+              >{{ locationMeta }}</span
             >
             <Button
               size="sm"
