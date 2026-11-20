@@ -18,9 +18,20 @@ const setSetting = vi.fn(async (key: string, value: unknown): Promise<void> => {
   saved.set(key, value)
 })
 const unsubscribe = () => () => {}
+let replayPending = false
+let replayChanged: (pending: boolean) => void = () => {}
+const setHomeTourReplay = vi.fn(async (pending: boolean): Promise<void> => {
+  replayPending = pending
+})
 stubWindowApi({
   getSetting,
   setSetting,
+  getHomeTourReplay: async () => replayPending,
+  setHomeTourReplay,
+  onHomeTourReplayChanged: (callback: (pending: boolean) => void) => {
+    replayChanged = callback
+    return () => {}
+  },
   onInstallationsChanged: unsubscribe,
   onInstallationsVersionsUpdated: unsubscribe
 })
@@ -87,6 +98,8 @@ beforeEach(() => {
   getSetting.mockClear()
   setSetting.mockClear()
   telemetry.length = 0
+  replayPending = false
+  setHomeTourReplay.mockClear()
   window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, recordTelemetry)
   __resetHomeTourForTest()
   setActivePinia(createPinia())
@@ -220,6 +233,30 @@ describe('HomeTour', () => {
     expect(setSetting).not.toHaveBeenCalled()
   })
 
+  it('shows a finished tour when another window asks for a replay, and clears the request when it ends', async () => {
+    saved.set('homeTourDone', true)
+    placeAnchors()
+    mountTour()
+    await settle()
+    expect(tourCard()).toBeNull()
+
+    replayChanged(true)
+    await waitForCard()
+    await userEvent.click(button('skip')!)
+
+    await expect.poll(() => tourCard()).toBeNull()
+    expect(setHomeTourReplay).toHaveBeenCalledWith(false)
+  })
+
+  it('shows a finished tour in a window that opens while a replay is waiting', async () => {
+    saved.set('homeTourDone', true)
+    replayPending = true
+    placeAnchors()
+    mountTour()
+
+    await waitForCard()
+  })
+
   it('does not show the tour when no audience was ever recorded', async () => {
     saved.delete('homeTourAudience')
     placeAnchors()
@@ -316,24 +353,47 @@ describe('HomeTour', () => {
     expect(document.activeElement).toBe(field)
   })
 
-  it('counts a click on the highlighted part as done, and opens that part', async () => {
+  async function goToAllBuilds(): Promise<HTMLElement> {
     placeAnchors()
     const allBuilds = anchors.find((el) => el.dataset['homeTour'] === 'all-builds')!
-    const opened = vi.fn()
-    allBuilds.addEventListener('click', opened)
+    const control = document.createElement('button')
+    control.textContent = 'Builds'
+    control.style.cssText = 'position: absolute; left: 0; top: 0; width: 80px; height: 40px'
+    allBuilds.append(control)
     mountTour()
     await waitForCard()
     for (let step = 0; step < 3; step++) {
       await userEvent.click(button('next')!)
     }
     await expect.poll(() => tourCard()?.textContent).toContain('All your builds')
+    return control
+  }
 
-    await userEvent.click(document.querySelector<HTMLElement>('[data-testid="home-tour-target"]')!)
+  function highlightedPart(): HTMLElement {
+    return document.querySelector<HTMLElement>('[data-testid="home-tour-target"]')!
+  }
+
+  it('passes a click on the highlighted part to the control under it, and counts the tour as done', async () => {
+    const control = await goToAllBuilds()
+    const opened = vi.fn()
+    control.addEventListener('click', opened)
+
+    await userEvent.click(highlightedPart(), { position: { x: 20, y: 20 } })
 
     await expect.poll(() => tourCard()).toBeNull()
     expect(opened).toHaveBeenCalledTimes(1)
     expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
     expect(telemetry).toContain('comfy.desktop.home_tour.target_opened')
+  })
+
+  it('keeps the tour open when the click lands on a part of the highlight that opens nothing', async () => {
+    await goToAllBuilds()
+
+    await userEvent.click(highlightedPart(), { position: { x: 160, y: 20 } })
+
+    expect(tourCard()?.textContent).toContain('All your builds')
+    expect(setSetting).not.toHaveBeenCalled()
+    expect(telemetry).not.toContain('comfy.desktop.home_tour.target_opened')
   })
 
   it('dims everything except the highlighted part and hides the page behind from screen readers', async () => {

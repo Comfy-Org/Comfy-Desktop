@@ -3851,7 +3851,10 @@ describe('PanelApp home tour', () => {
     return document.querySelector<HTMLElement>('[data-testid="home-tour"]')
   }
 
-  function mountWithTour(settings: Record<string, unknown> = {}) {
+  function mountWithTour(
+    settings: Record<string, unknown> = {},
+    query = 'panel=chooser&firstUseCompleted=true'
+  ) {
     setActivePinia(createPinia())
     __resetLauncherPrefsForTest()
     __resetHomeTourForTest()
@@ -3866,9 +3869,12 @@ describe('PanelApp home tour', () => {
         openAnnouncement = cb
         return () => {}
       }),
-      closeAnnouncement: vi.fn()
+      closeAnnouncement: vi.fn(),
+      getHomeTourReplay: vi.fn(async () => false),
+      setHomeTourReplay: vi.fn(async () => {}),
+      onHomeTourReplayChanged: vi.fn(() => () => {})
     })
-    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    window.history.replaceState({}, '', `/?${query}`)
     const wrapper = mountPanel()
     return { wrapper, state }
   }
@@ -3947,5 +3953,21 @@ describe('PanelApp home tour', () => {
     await expect.poll(homeTour).not.toBeNull()
     expect(window.api.closeAnnouncement).toHaveBeenCalled()
     expect(window.api.navigatePanel).toHaveBeenCalledWith('home')
+  })
+
+  it('Take the tour over a running build asks main to replay the tour on Home', async () => {
+    mountWithTour({ homeTourDone: true }, 'installationId=test-id&firstUseCompleted=true')
+    await flushPromises()
+    openAnnouncement()
+    await expect
+      .poll(() => document.querySelector('[data-testid="announcement-take-tour"]'))
+      .not.toBeNull()
+
+    document.querySelector<HTMLElement>('[data-testid="announcement-take-tour"]')!.click()
+
+    await expect
+      .poll(() => vi.mocked(window.api.setHomeTourReplay).mock.calls)
+      .toContainEqual([true])
+    expect(window.api.navigatePanel).not.toHaveBeenCalledWith('home')
   })
 })

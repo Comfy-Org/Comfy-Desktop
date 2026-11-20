@@ -28,6 +28,7 @@ import { registerAppHandlers } from './registerAppHandlers'
 import { registerInstallationHandlers } from './registerInstallationHandlers'
 import { registerSnapshotHandlers } from './registerSnapshotHandlers'
 import { registerSettingsHandlers } from './registerSettingsHandlers'
+import { registerHomeTourHandlers } from './registerHomeTourHandlers'
 import { registerSessionHandlers } from './registerSessionHandlers'
 import { registerTerminalHandlers } from './registerTerminalHandlers'
 import { setTerminalEnvResolver } from '../terminal'
@@ -283,6 +284,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerInstallationHandlers()
   registerSnapshotHandlers()
   registerSettingsHandlers()
+  registerHomeTourHandlers()
   registerSessionHandlers()
   setTerminalEnvResolver((inst) => sourceMap[inst.sourceId]?.getTerminalEnv?.(inst) ?? null)
   registerTerminalHandlers()

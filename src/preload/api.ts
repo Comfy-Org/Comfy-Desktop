@@ -255,6 +255,8 @@ export function buildElectronApi(): ElectronApi {
     getMediaSections: () => ipcRenderer.invoke('get-media-sections'),
     setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
     getSetting: (key) => ipcRenderer.invoke('get-setting', key),
+    getHomeTourReplay: () => ipcRenderer.invoke('get-home-tour-replay'),
+    setHomeTourReplay: (pending) => ipcRenderer.invoke('set-home-tour-replay', pending),
     getPendingBetaNotice: (installationId) =>
       ipcRenderer.invoke('get-pending-beta-notice', installationId),
     acknowledgeBetaNotice: (installationId, shownArgs) =>
@@ -560,6 +562,11 @@ export function buildElectronApi(): ElectronApi {
       const handler = (_event: IpcRendererEvent, data: unknown) => callback(data as { key: string })
       ipcRenderer.on('settings-changed', handler)
       return () => ipcRenderer.removeListener('settings-changed', handler)
+    },
+    onHomeTourReplayChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, pending: unknown) => callback(pending === true)
+      ipcRenderer.on('home-tour-replay-changed', handler)
+      return () => ipcRenderer.removeListener('home-tour-replay-changed', handler)
     },
     onPanelSwitch: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>

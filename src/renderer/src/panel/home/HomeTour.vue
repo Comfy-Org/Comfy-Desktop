@@ -151,16 +151,38 @@ function skip(): void {
   end({ returnFocus: true })
 }
 
-function openTarget(): void {
+const CLICKABLE = 'button, a[href], [role="button"], [role="link"]'
+
+function elementUnderTarget(event: MouseEvent): Element | null {
+  const target = event.currentTarget as HTMLElement
+  const body = document.body.style
+  const bodyPointerEvents = body.pointerEvents
+  target.style.pointerEvents = 'none'
+  body.pointerEvents = 'auto'
+  const hit = document.elementFromPoint(event.clientX, event.clientY)
+  target.style.pointerEvents = ''
+  body.pointerEvents = bodyPointerEvents
+  return hit
+}
+
+function isClickable(hit: Element, anchor: HTMLElement): boolean {
+  const control = hit.closest(CLICKABLE)
+  if (control && anchor.contains(control)) return true
+  return getComputedStyle(hit).cursor === 'pointer'
+}
+
+function openTarget(event: MouseEvent): void {
   const current = step.value
-  if (!current) return
+  const anchor = current ? findHomeTourAnchor(current.anchor) : null
+  const hit = elementUnderTarget(event)
+  if (!anchor || !(hit instanceof HTMLElement) || !anchor.contains(hit)) return
+  if (!isClickable(hit, anchor)) return
   emitTelemetryAction('comfy.desktop.home_tour.target_opened', {
     audience: audience.value,
     step: position.value.current
   })
-  const target = findHomeTourAnchor(current.anchor)
   end({ returnFocus: false })
-  target?.click()
+  hit.click()
 }
 
 const hole = computed(() => {

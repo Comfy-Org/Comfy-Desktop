@@ -28,6 +28,18 @@ describe('recordHomeTourAudience', () => {
     expect(store.get('homeTourAudience')).toBe('updated')
   })
 
+  it('lets startup go on when the audience cannot be saved', () => {
+    const failingSet = vi.spyOn(store, 'set').mockImplementation(() => {
+      throw new Error('disk full')
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    expect(() => recordHomeTourAudience(true)).not.toThrow()
+    expect(warn).toHaveBeenCalled()
+    failingSet.mockRestore()
+    warn.mockRestore()
+  })
+
   it('keeps the audience it recorded on an earlier launch', () => {
     store.set('homeTourAudience', 'new')
     store.set('firstUseCompleted', true)

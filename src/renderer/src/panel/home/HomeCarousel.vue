@@ -262,7 +262,7 @@ function activate(placed: { card: Card; offset: number }): void {
       class="relative m-0 h-75 w-full touch-pan-y list-none p-0 select-none [perspective:3000px]"
       :class="dragging ? 'cursor-grabbing' : 'cursor-grab'"
       data-testid="home-carousel"
-      data-home-tour="apps-carousel"
+      :data-home-tour="listsApps ? 'apps-carousel' : undefined"
       @pointerdown="startDrag"
     >
       <li v-for="placed in arcCards" :key="placed.card.id" class="contents">

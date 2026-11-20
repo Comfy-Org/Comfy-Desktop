@@ -133,6 +133,10 @@ const openHint = computed(() => {
   return t('home.buildClickToStart')
 })
 const testId = computed(() => (busy.value ? busyTestId.value : 'home-build'))
+const homeTourAnchor = computed(() => {
+  if (isCloudBuild(build)) return 'cloud-build'
+  return build.sourceCategory === 'local' ? 'local-build' : undefined
+})
 
 function onClick(): void {
   if (!canOpen.value) return
@@ -171,7 +175,7 @@ function openContextMenu(event: MouseEvent): void {
     :class="canOpen && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
     :data-testid="testId"
     :data-build-id="build.id"
-    :data-home-tour="isCloudBuild(build) ? 'cloud-build' : 'local-build'"
+    :data-home-tour="homeTourAnchor"
     @click="onClick"
     @contextmenu.prevent="openContextMenu"
   >

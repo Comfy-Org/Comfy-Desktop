@@ -1383,6 +1383,8 @@ export interface ElectronApi {
   getUniqueName(baseName: string): Promise<string>
   setSetting<K extends KnownSettingKey>(key: K, value: KnownSettings[K]): Promise<void>
   getSetting<K extends KnownSettingKey>(key: K): Promise<KnownSettings[K]>
+  getHomeTourReplay(): Promise<boolean>
+  setHomeTourReplay(pending: boolean): Promise<void>
 
   getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
   acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>
@@ -1513,6 +1515,7 @@ export interface ElectronApi {
   onErrorDetail(callback: (data: ErrorDetailData) => void): Unsubscribe
   onSuggestChineseMirrors(callback: () => void): Unsubscribe
   onSettingsChanged(callback: (data: { key: string }) => void): Unsubscribe
+  onHomeTourReplayChanged(callback: (pending: boolean) => void): Unsubscribe
   onPanelSwitch(callback: (data: { panel: string; installationId?: string }) => void): Unsubscribe
   onPanelTriggerOverlay(
     callback: (data: {
