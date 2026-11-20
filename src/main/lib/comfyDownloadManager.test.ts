@@ -21,7 +21,7 @@ vi.mock('electron', () => ({
 }))
 
 const resolveRedirectsMock = vi.hoisted(() =>
-  vi.fn(async ({ url }: { url: string }) => ({ ok: true as const, url }))
+  vi.fn(async ({ url }: { url: string }) => ({ ok: true as const, url, sendCredentials: true }))
 )
 vi.mock('./redirectResolver', () => ({ resolveRedirects: resolveRedirectsMock }))
 
@@ -1391,16 +1391,14 @@ describe('download URL policy', () => {
     const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
     const url = 'https://cloud.comfy.org/api/view?filename=a.png'
     const signed = 'https://storage.example/bucket/a.png?sig=1'
-    resolveRedirectsMock.mockResolvedValueOnce({ ok: true, url: signed })
+    resolveRedirectsMock.mockResolvedValueOnce({ ok: true, url: signed, sendCredentials: false })
     const validateUrl = vi.fn((u: string) => u.startsWith('https://cloud.comfy.org/'))
     try {
       await expect(
         mod.startAssetDownload(win, url, 'a.png', outputDir, 'tok', undefined, { validateUrl })
       ).resolves.toBe(true)
       await vi.waitFor(() => expect(session.downloadURL).toHaveBeenCalledTimes(1))
-      expect(session.downloadURL).toHaveBeenCalledWith(signed, {
-        headers: { Authorization: 'Bearer tok' }
-      })
+      expect(session.downloadURL).toHaveBeenCalledWith(signed, undefined)
       const resolveCall = resolveRedirectsMock.mock.calls.at(-1)![0] as unknown as {
         url: string
         validateUrl: (u: string) => boolean
@@ -1537,5 +1535,132 @@ describe('page-initiated download URL policy', () => {
     willDownload!({}, item, null)
     expect(cancel).toHaveBeenCalledTimes(1)
     expect(setSavePath).not.toHaveBeenCalled()
+  })
+})
+
+describe('asset download credentials across redirects', () => {
+  function harness() {
+    let willDownload:
+      ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
+    const session = {
+      on: vi.fn((event: string, handler: typeof willDownload) => {
+        if (event === 'will-download') willDownload = handler
+      }),
+      downloadURL: vi.fn()
+    } as unknown as Electron.Session
+    const send = vi.fn()
+    const webContents = {
+      session,
+      send,
+      isDestroyed: () => false
+    } as unknown as Electron.WebContents
+    const win = {
+      isDestroyed: () => false,
+      setProgressBar: vi.fn(),
+      webContents
+    } as unknown as Electron.BrowserWindow
+    const progress = () =>
+      send.mock.calls
+        .filter(([channel]) => channel === 'desktop2-download-progress')
+        .map(([, p]) => p as { status: string; error?: string })
+    return { session, win, progress, getWillDownload: () => willDownload }
+  }
+
+  it('gives the resolver the bearer token and keeps it on a same-origin final URL', async () => {
+    const { session, win } = harness()
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const url = 'https://cloud.comfy.org/api/view?filename=s.png'
+    const final = 'https://cloud.comfy.org/api/view/final/s.png'
+    resolveRedirectsMock.mockResolvedValueOnce({ ok: true, url: final, sendCredentials: true })
+    try {
+      await mod.startAssetDownload(win, url, 's.png', outputDir, 'tok')
+      await vi.waitFor(() => expect(session.downloadURL).toHaveBeenCalledTimes(1))
+      expect(resolveRedirectsMock.mock.calls.at(-1)![0]).toMatchObject({
+        url,
+        headers: { Authorization: 'Bearer tok' }
+      })
+      expect(session.downloadURL).toHaveBeenCalledWith(final, {
+        headers: { Authorization: 'Bearer tok' }
+      })
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('drops the bearer token when the resolver left the original origin', async () => {
+    const { session, win } = harness()
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const url = 'https://cloud.comfy.org/api/view?filename=x.png'
+    const final = 'https://cloud.comfy.org/back/x.png'
+    resolveRedirectsMock.mockResolvedValueOnce({ ok: true, url: final, sendCredentials: false })
+    try {
+      await mod.startAssetDownload(win, url, 'x.png', outputDir, 'tok')
+      await vi.waitFor(() => expect(session.downloadURL).toHaveBeenCalledWith(final, undefined))
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('cancels an authenticated download that Chromium redirected to another origin', async () => {
+    const { session, win, progress, getWillDownload } = harness()
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const url = 'https://cloud.comfy.org/api/view?filename=y.png'
+    try {
+      await mod.startAssetDownload(win, url, 'y.png', outputDir, 'tok')
+      await vi.waitFor(() =>
+        expect(session.downloadURL).toHaveBeenCalledWith(url, {
+          headers: { Authorization: 'Bearer tok' }
+        })
+      )
+      const cancel = vi.fn()
+      const setSavePath = vi.fn()
+      const item = {
+        getURLChain: () => [url, 'https://elsewhere.example/y.png'],
+        getURL: () => 'https://elsewhere.example/y.png',
+        getContentDisposition: () => null,
+        cancel,
+        setSavePath,
+        on: vi.fn(),
+        once: vi.fn()
+      } as unknown as Electron.DownloadItem
+      getWillDownload()!({}, item, null)
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(setSavePath).not.toHaveBeenCalled()
+      expect(progress().at(-1)).toMatchObject({
+        status: 'error',
+        error: 'Download failed: an authenticated download was redirected to another origin'
+      })
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
+  it('lets an unauthenticated download follow a cross-origin redirect', async () => {
+    const { session, win, getWillDownload } = harness()
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const url = 'http://127.0.0.1:8188/api/view?filename=z.png'
+    try {
+      await mod.startAssetDownload(win, url, 'z.png', outputDir)
+      await vi.waitFor(() => expect(session.downloadURL).toHaveBeenCalledWith(url, undefined))
+      const cancel = vi.fn()
+      const setSavePath = vi.fn()
+      const item = {
+        getURLChain: () => [url, 'http://localhost:8188/z.png'],
+        getURL: () => 'http://localhost:8188/z.png',
+        getContentDisposition: () => null,
+        cancel,
+        setSavePath,
+        on: vi.fn(),
+        once: vi.fn(),
+        getTotalBytes: () => 0,
+        getReceivedBytes: () => 0,
+        isPaused: () => false
+      } as unknown as Electron.DownloadItem
+      getWillDownload()!({}, item, null)
+      expect(cancel).not.toHaveBeenCalled()
+      expect(setSavePath).toHaveBeenCalledTimes(1)
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
   })
 })

@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { R2_BASE_URL, R2_MIRROR_BASE_URL } from './r2Mirror'
 
 vi.mock('./paths', () => ({ cacheDir: () => '/tmp/desktop-test-cache' }))
@@ -211,5 +211,73 @@ describe('fetchJSON — URL policy', () => {
     }
     await expect(p).rejects.toThrow('Request failed: too many redirects')
     expect(requests[0]!.followRedirect).toHaveBeenCalledTimes(5)
+  })
+})
+
+describe('fetchJSON — GITHUB_TOKEN across redirects', () => {
+  const saved = process.env.GITHUB_TOKEN
+
+  beforeEach(() => {
+    requests.length = 0
+    _resetCacheForTest()
+    process.env.GITHUB_TOKEN = 'gh-secret'
+  })
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env.GITHUB_TOKEN
+    else process.env.GITHUB_TOKEN = saved
+  })
+
+  it('sends the token to api.github.com', async () => {
+    const p = fetchJSON('https://api.github.com/repos/o/r')
+    expect(requests[0]!.__headers['Authorization']).toBe('token gh-secret')
+    requests[0]!.emit('response', makeResponse(200, '{}'))
+    await p
+  })
+
+  it('keeps the token on a same-origin redirect', async () => {
+    const p = fetchJSON('https://api.github.com/repos/o/r')
+    requests[0]!.emit('redirect', 301, 'GET', 'https://api.github.com/repositories/1')
+    expect(requests[0]!.followRedirect).toHaveBeenCalledTimes(1)
+    expect(requests).toHaveLength(1)
+    requests[0]!.emit('response', makeResponse(200, '{"ok":1}'))
+    await expect(p).resolves.toEqual({ ok: 1 })
+  })
+
+  it('re-issues a cross-origin redirect as a new request without the token', async () => {
+    const p = fetchJSON('https://api.github.com/repos/o/r/tarball')
+    requests[0]!.emit('redirect', 302, 'GET', 'https://codeload.github.com/o/r/tar.gz/main')
+    expect(requests[0]!.followRedirect).not.toHaveBeenCalled()
+    expect(requests[0]!.abort).toHaveBeenCalled()
+    expect(requests[1]!.__url).toBe('https://codeload.github.com/o/r/tar.gz/main')
+    expect(requests[1]!.__headers['Authorization']).toBeUndefined()
+    requests[1]!.emit('response', makeResponse(200, '{"via":"codeload"}'))
+    await expect(p).resolves.toEqual({ via: 'codeload' })
+  })
+
+  it('never restores the token after leaving the origin, even back on api.github.com', async () => {
+    const p = fetchJSON('https://api.github.com/repos/o/r')
+    requests[0]!.emit('redirect', 302, 'GET', 'https://elsewhere.example/x')
+    requests[1]!.emit('redirect', 302, 'GET', 'https://api.github.com/repos/o/r2')
+    expect(requests[1]!.followRedirect).toHaveBeenCalledTimes(1)
+    expect(requests[1]!.__headers['Authorization']).toBeUndefined()
+    requests[1]!.emit('response', makeResponse(200, '{}'))
+    await p
+  })
+
+  it('keeps counting redirects across the re-issued request', async () => {
+    const p = fetchJSON('https://api.github.com/repos/o/r')
+    requests[0]!.emit('redirect', 302, 'GET', 'https://elsewhere.example/0')
+    for (let i = 1; i <= 5; i++) {
+      requests[1]!.emit('redirect', 302, 'GET', `https://elsewhere.example/${i}`)
+    }
+    await expect(p).rejects.toThrow('Request failed: too many redirects')
+  })
+
+  it('still refuses a disallowed hop when the token is set', async () => {
+    const p = fetchJSON('https://api.github.com/repos/o/r')
+    requests[0]!.emit('redirect', 302, 'GET', 'http://169.254.169.254/latest/meta-data/')
+    await expect(p).rejects.toThrow('Request redirected to a URL that is not allowed')
+    expect(requests).toHaveLength(1)
   })
 })

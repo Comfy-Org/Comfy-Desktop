@@ -1,5 +1,5 @@
 import { net } from 'electron'
-import { isPermittedRedirect, type DownloadUrlCheck } from './downloadUrlPolicy'
+import { isPermittedRedirect, isSameOrigin, type DownloadUrlCheck } from './downloadUrlPolicy'
 
 export interface ResolveRedirectsOptions {
   url: string
@@ -12,7 +12,8 @@ export interface ResolveRedirectsOptions {
   signal?: AbortSignal
 }
 
-export type ResolveRedirectsResult = { ok: true; url: string } | { ok: false; error: string }
+export type ResolveRedirectsResult =
+  { ok: true; url: string; sendCredentials: boolean } | { ok: false; error: string }
 
 const DEFAULT_MAX_REDIRECTS = 10
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -88,9 +89,17 @@ export async function resolveRedirects(
   if (!validateUrl(current)) {
     return { ok: false, error: 'Download failed: the download URL is not allowed' }
   }
+  let sendCredentials = true
   for (let hops = 0; ; hops++) {
-    const hop = await probe(current, session, headers, timeoutMs, signal)
-    if (hop.kind === 'final') return { ok: true, url: current }
+    sendCredentials &&= isSameOrigin(current, opts.url)
+    const hop = await probe(
+      current,
+      session,
+      sendCredentials ? headers : undefined,
+      timeoutMs,
+      signal
+    )
+    if (hop.kind === 'final') return { ok: true, url: current, sendCredentials }
     if (hop.kind === 'error') return { ok: false, error: hop.error }
     if (hops >= maxRedirects) return { ok: false, error: 'Download failed: too many redirects' }
     let next: string

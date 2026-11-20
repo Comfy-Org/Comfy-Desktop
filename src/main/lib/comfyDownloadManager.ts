@@ -36,6 +36,7 @@ import {
   isPermittedChain,
   isPermittedDownloadUrl,
   isPermittedPageDownloadChain,
+  isSameOrigin,
   isSecurePublicDownloadUrl,
   type DownloadUrlCheck
 } from './downloadUrlPolicy'
@@ -121,6 +122,7 @@ interface PendingDownload {
   sha256?: string
   validateUrl?: DownloadUrlCheck
   fetchUrl?: string
+  sentCredentials?: boolean
   explicitSession?: Electron.Session
   progressSubscribers?: Set<(receivedBytes: number, totalBytes: number) => void>
   settleJob?: (outcome: ModelJobOutcome) => void
@@ -1344,7 +1346,8 @@ export async function startManagedAssetDownload(
       return
     }
     pending.fetchUrl = resolved.url
-    sess.downloadURL(resolved.url, headers ? { headers } : undefined)
+    pending.sentCredentials = !!headers && resolved.sendCredentials
+    sess.downloadURL(resolved.url, pending.sentCredentials ? { headers } : undefined)
   })()
   return { status: 'accepted', downloadId: pending.id }
 }
@@ -1673,7 +1676,18 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
       pending.item = item
 
       const chain = item.getURLChain()
-      if (!isPermittedChain(chain.length > 0 ? chain : [item.getURL()], isPermittedDownloadUrl)) {
+      const followed = chain.length > 0 ? chain : [item.getURL()]
+      if (pending.sentCredentials && followed.some((hop) => !isSameOrigin(hop, pending.url))) {
+        item.cancel()
+        reportProgress({
+          ...pending.lastProgress,
+          status: 'error',
+          error: 'Download failed: an authenticated download was redirected to another origin'
+        })
+        unregisterPending(pending)
+        return
+      }
+      if (!isPermittedChain(followed, isPermittedDownloadUrl)) {
         item.cancel()
         reportProgress({
           ...pending.lastProgress,

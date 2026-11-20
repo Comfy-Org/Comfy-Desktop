@@ -3,7 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { cacheDir } from './paths'
 import { r2MirrorUrl } from './r2Mirror'
-import { isPermittedDownloadUrl, isPermittedRedirect } from './downloadUrlPolicy'
+import { isPermittedDownloadUrl, isPermittedRedirect, isSameOrigin } from './downloadUrlPolicy'
 import { writeFileSafe } from './safe-file'
 
 interface CacheEntry {
@@ -66,10 +66,26 @@ function _headerString(value: string | string[] | undefined): string | undefined
   return Array.isArray(value) ? value[0] : value
 }
 
+function githubTokenFor(url: string): string | undefined {
+  const token = process.env.GITHUB_TOKEN
+  if (!token) return undefined
+  try {
+    return new URL(url).hostname === 'api.github.com' ? token : undefined
+  } catch {
+    return undefined
+  }
+}
+
+interface HopState {
+  redirectsLeft: number
+  allowCredentials: boolean
+}
+
 function fetchJSONOnce(
   url: string,
   cached: CacheEntry | undefined,
-  cacheKey: string | undefined
+  cacheKey: string | undefined,
+  hop: HopState = { redirectsLeft: MAX_REDIRECTS, allowCredentials: true }
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     if (!isPermittedDownloadUrl(url)) {
@@ -79,20 +95,14 @@ function fetchJSONOnce(
     const request = net.request({ url, cache: 'no-cache', redirect: 'manual' })
     request.setHeader('User-Agent', 'ComfyUI-Desktop-2')
 
-    const ghToken = process.env.GITHUB_TOKEN
-    if (ghToken) {
-      try {
-        if (new URL(url).hostname === 'api.github.com') {
-          request.setHeader('Authorization', `token ${ghToken}`)
-        }
-      } catch {}
-    }
+    const ghToken = hop.allowCredentials ? githubTokenFor(url) : undefined
+    if (ghToken) request.setHeader('Authorization', `token ${ghToken}`)
 
     if (cached?.etag) {
       request.setHeader('If-None-Match', cached.etag)
     }
 
-    let redirectsLeft = MAX_REDIRECTS
+    let redirectsLeft = hop.redirectsLeft
     let currentUrl = url
     request.on('redirect', (_status, _method, redirectUrl) => {
       const refusal =
@@ -104,6 +114,14 @@ function fetchJSONOnce(
       if (refusal) {
         request.abort()
         reject(new Error(refusal))
+        return
+      }
+      if (ghToken && !isSameOrigin(currentUrl, redirectUrl)) {
+        request.abort()
+        fetchJSONOnce(redirectUrl, cached, cacheKey, {
+          redirectsLeft,
+          allowCredentials: false
+        }).then(resolve, reject)
         return
       }
       currentUrl = redirectUrl
