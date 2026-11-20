@@ -48,8 +48,12 @@ export interface SavedSetup {
 
 export class SetupPlanUnavailable extends Error {}
 
-function pickOption(options: FieldOption[]): FieldOption | undefined {
+export function defaultFieldOption(options: FieldOption[]): FieldOption | undefined {
   return options.find((o) => o.recommended) ?? options[0]
+}
+
+export function isDefaultPick(picked: FieldOption | undefined, options: FieldOption[]): boolean {
+  return !!picked && picked.value === defaultFieldOption(options)?.value
 }
 
 export function downloadBytesOf(variant: FieldOption | undefined): number {
@@ -80,7 +84,7 @@ export async function resolveSetupPlan(): Promise<SetupPlan> {
       field.id === 'release' ? { includeLatestStable: true } : undefined
     )
     if (field.id === 'comfyVersion' && options.length === 0) continue
-    const pick = pickOption(options ?? [])
+    const pick = defaultFieldOption(options ?? [])
     if (!pick) throw new SetupPlanUnavailable(`no options for ${field.id}`)
     selections[field.id] = pick
   }

@@ -46,9 +46,11 @@ import type {
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
 import {
   INSTALL_SPACE_FACTOR,
+  defaultFieldOption,
   downloadBytesOf,
   hardwareNoteKey,
   isCpuVariant,
+  isDefaultPick,
   machineName,
   selectedVersion,
   type ChangeSetupDraft,
@@ -888,9 +890,7 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
     heldFields.value.delete(field.id)
 
     if (options.length > 0) {
-      let defaultIndex = options.findIndex((opt) => opt.recommended)
-      if (defaultIndex < 0) defaultIndex = 0
-      const defaultOption = options[defaultIndex]
+      const defaultOption = defaultFieldOption(options)
       if (defaultOption) selections.value[field.id] = defaultOption
     } else {
       delete selections.value[field.id]
@@ -1660,7 +1660,7 @@ function standaloneHardwareRow(): SummaryRow {
   const note = hardwareNoteKey({
     unsupported: !!unsupportedReason.value,
     cpuOnly: isCpuVariant(variant),
-    detected: variant?.recommended === true
+    detected: isDefaultPick(variant, fieldOptions.value.get('variant') ?? [])
   })
   const caution = unsupportedReason.value || hardwareWarning.value
   return {

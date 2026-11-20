@@ -592,6 +592,43 @@ describe('InstallWizardModal heading', () => {
     }
   })
 
+  it('notes the default hardware as Detected, like first run, even when no option is marked recommended', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        value: 'win-amd',
+        label: 'AMD',
+        description: 'ComfyUI 0.46.1  ·  Python 3.13.12  ·  8655 MB',
+        data: { variantId: 'win-amd', downloadFiles: [{ size: 8655 * 1048576 }] }
+      },
+      {
+        value: 'win-cpu',
+        label: 'CPU',
+        description: 'ComfyUI 0.46.1  ·  Python 3.13.12  ·  612 MB',
+        data: { variantId: 'win-cpu', downloadFiles: [{ size: 612 * 1048576 }] }
+      }
+    ])
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    const hardwareRow = () => wrapper.get('[data-testid="config-summary-standalone-hardware"]')
+    expect(hardwareRow().text()).toBe('HardwareAMDDetected')
+
+    await showChangeSetup(wrapper)
+    await pickHardware(wrapper, 'CPU')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(hardwareRow().text()).toBe('HardwareCPUNo GPU acceleration')
+  })
+
   it('browses for a new location straight from the summary', async () => {
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()

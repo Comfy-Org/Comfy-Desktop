@@ -300,14 +300,14 @@ describe.each([
     expect(browse.borderTopWidth).toBe('0px')
   })
 
-  it('shows the rows, values and notes of the first-run summary, without long descriptions', async () => {
+  it('shows the rows, values and notes of the first-run summary, without long descriptions or recommended picks', async () => {
     await browserPage.viewport(width, height)
     const longNote = 'A very long build description '.repeat(12).trim()
     const options = window.api.getFieldOptions as ReturnType<typeof vi.fn>
     const defaultOptions = options.getMockImplementation()!
     options.mockImplementation(async (source: string, field: string) => {
       const list = await defaultOptions(source, field)
-      return list.map((option) => ({ ...option, description: longNote }))
+      return list.map((option) => ({ ...option, description: longNote, recommended: undefined }))
     })
     const lines = (rows: HTMLElement[]): string[][] =>
       rows.map((row) => [...row.children].map((cell) => cell.textContent!.trim()))
@@ -325,6 +325,7 @@ describe.each([
     expect(newBuildLines.map(([label]) => label)).toEqual(['Hardware', 'Location', 'Version'])
     expect(newBuildLines[0]).toEqual(firstRunLines[0])
     expect(newBuildLines[2]).toEqual(firstRunLines[2])
+    expect(newBuildLines[0]).toEqual(['Hardware', 'Apple Silicon (MPS)', 'Detected'])
     expect(newBuildLines[2]).toEqual(['Version', 'ComfyUI v0.42.4', 'Stable'])
     expect(box.textContent).not.toContain(longNote)
   })
