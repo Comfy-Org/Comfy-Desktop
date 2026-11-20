@@ -27,6 +27,10 @@ describe('restartLoadAbandoned', () => {
     expect(restartLoadAbandoned(target('inst-A'), 'inst-A', { token: 4 }, 3)).toBe(true)
   })
 
+  it('abandons when a relaunch was recorded after this restart began without one', () => {
+    expect(restartLoadAbandoned(target('inst-A'), 'inst-A', { token: 4 }, undefined)).toBe(true)
+  })
+
   it('abandons when the window was destroyed', () => {
     expect(restartLoadAbandoned(target('inst-A', true), 'inst-A', { token: 3 }, 3)).toBe(true)
   })
