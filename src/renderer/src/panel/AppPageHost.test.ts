@@ -144,8 +144,8 @@ describe('AppPageHost', () => {
     const wrapper = await mountHost('loading')
 
     expect(wrapper.get('[data-testid="app-page-loading"]').isVisible()).toBe(true)
-    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toContain(
-      'Loading Remove Background'
+    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toBe(
+      'Loading Remove Background All apps'
     )
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-busy')).toBe('true')
 
@@ -306,7 +306,9 @@ describe('AppPageHost', () => {
       'sdr-to-hdr',
       expect.objectContaining({ justOpened: true })
     )
-    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toContain('Loading SDR to HDR')
+    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toBe(
+      'Loading SDR to HDR All apps'
+    )
   })
 
   it('swaps the app for a still frame while a menu covers part of it, then brings it back', async () => {
