@@ -139,8 +139,7 @@ export function parseCoreBetaGrants(
       const commitRanges = parseCommitRanges(candidate.commit_ranges)
       if (commitRanges === null) continue
       let releaseFloor: string | null = null
-      if ('release_floor' in candidate) {
-        if (commitRanges.some(([, upper]) => upper !== null)) continue
+      if ('release_floor' in candidate && commitRanges.every(([, upper]) => upper === null)) {
         releaseFloor = parseCoreVersion(candidate.release_floor)
         if (releaseFloor === null) continue
       }
@@ -228,13 +227,6 @@ function commitRangeMatches(
   return upper === null || ancestry.get(upper) === false
 }
 
-function commitRangesMatch(
-  flag: CoreBetaCommitGrant,
-  ancestry: ReadonlyMap<string, boolean>
-): boolean {
-  return flag.commitRanges.some((range) => commitRangeMatches(range, ancestry))
-}
-
 const releaseAtFloor = (
   { semver: version, verified, current }: CoreVersionState,
   floor: string
@@ -272,10 +264,8 @@ function commitShortfall(
   commits: CoreCommitState,
   core: CoreVersionState
 ): string | null {
-  if (commitRangesMatch(flag, commits.ancestry)) return null
   const floor = flag.releaseFloor
-  const refuted = flag.commitRanges.every(([lower]) => commits.ancestry.get(lower) === false)
-  if (floor === undefined || refuted) return rangesShortfall(flag, commits)
+  if (floor === undefined) return rangesShortfall(flag, commits)
   if (releaseAtFloor(core, floor)) return null
   return `${rangesShortfall(flag, commits)} | core ${core.semver ?? 'unknown'} is not a verified current v${floor}+ release`
 }
@@ -324,8 +314,9 @@ export function selectCoreBetaGrantArgs(
     if (isCommitGrant(flag)) {
       const ranges = flag.commitRanges.map(formatCommitRange).join(' | ')
       const head = commits.head === null ? 'none' : commits.head.slice(0, 12)
-      shortfall = commitShortfall(flag, commits, core)
-      const inRange = commitRangesMatch(flag, commits.ancestry)
+      const matched = flag.commitRanges.some((range) => commitRangeMatches(range, commits.ancestry))
+      shortfall = matched ? null : commitShortfall(flag, commits, core)
+      const inRange = matched
         ? 'yes'
         : shortfall === null
           ? `release v${version} >= v${flag.releaseFloor}`

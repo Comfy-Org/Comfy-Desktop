@@ -641,7 +641,7 @@ describe('parseCoreBetaGrants release floor', () => {
     expect(parse(floor)).toEqual([])
   })
 
-  it('drops a floor on a range with an upper bound, since a floor cannot end a range', () => {
+  it('ignores the floor on an entry with an upper-bounded range, keeping its ranges', () => {
     expect(
       parseCoreBetaGrants(true, {
         flags: [
@@ -655,7 +655,15 @@ describe('parseCoreBetaGrants release floor', () => {
           }
         ]
       })
-    ).toEqual([])
+    ).toEqual([
+      {
+        arg: '--enable-agent',
+        commitRanges: [
+          [SHA_A, SHA_B],
+          [SHA_C, null]
+        ]
+      }
+    ])
   })
 
   it('ignores a floor on a version entry', () => {
@@ -753,24 +761,16 @@ describe('selectCoreBetaGrantArgs release floor', () => {
     ])
   })
 
-  it('does not let the floor override git proving every range absent', () => {
-    const { selected, withheld } = select(floorGrant, release(), { [SHA_A]: false })
-    expect(selected).toEqual([])
-    expect(withheld).toEqual([
-      '[core-beta] --enable-agent withheld: entry 1: commit range aaaaaaaaaaaa..: lower aaaaaaaaaaaa not contained'
+  it('grants on the floor even when git proved the range absent, as the assets floor does', () => {
+    const { selected, trace } = select(floorGrant, release(), { [SHA_A]: false })
+    expect(selected).toEqual([floorGrant])
+    expect(trace).toEqual([
+      '[core-beta] commits --enable-agent: aaaaaaaaaaaa.. head=eeeeeeeeeeee in-range=release v0.46.1 >= v0.42.4'
     ])
   })
 
-  it('applies the floor when git proved one range absent and could not relate another', () => {
-    const twoLineages: CoreBetaGrant = {
-      arg: '--enable-agent',
-      commitRanges: [
-        [SHA_A, null],
-        [SHA_C, null]
-      ],
-      releaseFloor: '0.42.4'
-    }
-    expect(select(twoLineages, release(), { [SHA_A]: false }).selected).toEqual([twoLineages])
+  it('grants a verified release some commits past its tag', () => {
+    expect(select(floorGrant, release({ exact: false })).selected).toEqual([floorGrant])
   })
 })
 
