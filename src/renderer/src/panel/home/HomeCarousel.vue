@@ -225,7 +225,8 @@ function onWheel(event: WheelEvent): void {
   const upOrDown = deltaX === 0
   const sideways = upOrDown ? deltaY : deltaX
   if (sideways === 0 || (!event.shiftKey && Math.abs(deltaY) > Math.abs(sideways))) return
-  if (upOrDown && !wheelTurned && (sideways < 0 ? atFirst.value : atLast.value)) return
+  if (upOrDown && !event.shiftKey && !wheelTurned && (sideways < 0 ? atFirst.value : atLast.value))
+    return
   event.preventDefault()
   clearTimeout(wheelGestureTimer)
   wheelGestureTimer = setTimeout(endWheelGesture, WHEEL_GESTURE_GAP_MS)

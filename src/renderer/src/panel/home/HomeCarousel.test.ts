@@ -286,6 +286,26 @@ describe('HomeCarousel trackpad and wheel', () => {
     expect(frontTitle(wrapper)).toBe('Open Extend Picture')
   })
 
+  it('keeps Shift and the wheel on the carousel at its first and last card, as before', async () => {
+    const wrapper = mountCarousel()
+
+    expect(swipe(wrapper, [{ deltaY: -100, shiftKey: true }])).toEqual([true])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open Product Swap')
+
+    vi.advanceTimersByTime(1000)
+    swipe(wrapper, [{ deltaY: 100 }])
+    vi.advanceTimersByTime(1000)
+    swipe(wrapper, [{ deltaY: 100 }])
+    vi.advanceTimersByTime(1000)
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open Extend Picture')
+
+    expect(swipe(wrapper, [{ deltaY: 100, shiftKey: true }])).toEqual([true])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open Extend Picture')
+  })
+
   it('still turns with a sideways trackpad swipe at the first card, as before', async () => {
     const wrapper = mountCarousel()
 
