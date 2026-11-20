@@ -71,6 +71,7 @@ import InstallNameInput from '../components/InstallNameInput.vue'
 import TrackBuildForm from '../components/TrackBuildForm.vue'
 import LoadSnapshotForm from '../components/LoadSnapshotForm.vue'
 import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
+import { useLocalDeviceKind } from '../composables/useLocalDeviceKind'
 import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
 import {
   toCardSelectOption as cardToSelectOption,
@@ -125,7 +126,7 @@ const systemInfo = ref<SystemInfo | null>(null)
 const machineUnsupported = ref(false)
 const unsupportedReason = ref('')
 const view = ref<'summary' | 'change'>('summary')
-const platform = window.api?.platform ?? 'darwin'
+const localDeviceKind = useLocalDeviceKind()
 const hardwareWarning = ref('')
 const saveDisabled = ref(true)
 const sourcesLoading = ref(false)
@@ -1816,7 +1817,7 @@ defineExpose({ open })
       >
         <SetupMachineIllustration
           class="h-[68px] w-[104px] flex-none max-[640px]:hidden"
-          :os="platform"
+          :kind="localDeviceKind"
           :bad="machineBlocked"
         />
         <span class="grid min-w-0">

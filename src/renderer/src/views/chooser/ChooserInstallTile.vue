@@ -12,6 +12,7 @@ import {
   useBuildProgress
 } from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
+import { useLocalDeviceKind } from '../../composables/useLocalDeviceKind'
 import { useProgressStore } from '../../stores/progressStore'
 import {
   buildDeviceKind,
@@ -53,6 +54,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const localDeviceKind = useLocalDeviceKind()
 const sessionStore = useSessionStore()
 
 const inst = computed(() => props.installation)
@@ -346,7 +348,7 @@ function openContextMenu(event: MouseEvent): void {
     <BuildDeviceArt
       v-else
       class="chooser-tile-icon pointer-events-none relative shrink-0"
-      :kind="buildDeviceKind(inst)"
+      :kind="buildDeviceKind(inst, localDeviceKind)"
       :glow="toneStyle.glow"
     />
 
