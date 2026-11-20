@@ -81,6 +81,7 @@ function parseJson(text: string): unknown {
   try {
     return JSON.parse(text)
   } catch {
+    if (!NON_FINITE_TOKENS.some((token) => text.includes(token))) return undefined
     try {
       return JSON.parse(withoutNonFinite(text))
     } catch {
