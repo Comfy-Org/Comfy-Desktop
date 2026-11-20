@@ -39,6 +39,7 @@ import SidebarCredits from './SidebarCredits.vue'
 import SidebarDesktopUpdate from './SidebarDesktopUpdate.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import { homeBuildStatus, isCloudBuild, runsOnThisComputer } from './home/homeBuild'
+import { useHomeTour } from './home/useHomeTour'
 import { useInstallList } from '../composables/useInstallList'
 import { buildFailure, buildProgressOf } from '../composables/useBuildProgress'
 import { useProgressStore } from '../stores/progressStore'
@@ -175,6 +176,20 @@ const { visibleInstalls } = useInstallList({
   installations: toRef(installationStore, 'installations')
 })
 const buildsPageActive = computed(() => activePage === 'chooser' && !activeBuildId)
+const { done: homeTourDone } = useHomeTour()
+const newBuildAlwaysShown = computed(() => buildsPageActive.value || !homeTourDone.value)
+
+const buildNameElements = new Map<string, HTMLElement>()
+
+function rememberBuildName(buildId: string, el: unknown): void {
+  if (el instanceof HTMLElement) buildNameElements.set(buildId, el)
+  else buildNameElements.delete(buildId)
+}
+
+function buildNameClipped(buildId: string): boolean {
+  const el = buildNameElements.get(buildId)
+  return !!el && el.scrollWidth > el.clientWidth
+}
 
 function isLive(build: Installation): boolean {
   return runsOnThisComputer(build, homeBuildStatus(build, sessionStore))
@@ -461,8 +476,8 @@ function openSettings(): void {
                 <Button
                   variant="muted-textonly"
                   size="unset"
-                  class="size-6 rounded-md p-0 opacity-0 group-hover/builds:opacity-100 focus-visible:opacity-100 hover:bg-secondary hover:text-foreground"
-                  :class="buildsPageActive && 'opacity-100'"
+                  class="size-6 rounded-md p-0 group-hover/builds:opacity-100 focus-visible:opacity-100 hover:bg-accent hover:text-foreground"
+                  :class="newBuildAlwaysShown ? 'opacity-100' : 'opacity-0'"
                   :aria-label="t('sidebar.newBuild')"
                   :data-testid="collapsed ? undefined : 'app-sidebar-new-build'"
                   data-home-tour="new-build"
@@ -525,10 +540,15 @@ function openSettings(): void {
                   </span>
                   <Tooltip
                     :text="failure ? `${build.name} · ${failure}` : build.name"
+                    :should-open="() => !!failure || buildNameClipped(build.id)"
                     side="right"
                     class="min-w-0 flex-1 items-center self-stretch"
                   >
-                    <span class="min-w-0 truncate text-left">{{ build.name }}</span>
+                    <span
+                      :ref="(el) => rememberBuildName(build.id, el)"
+                      class="min-w-0 truncate text-left"
+                      >{{ build.name }}</span
+                    >
                     <span v-if="failure" class="sr-only">· {{ failure }}</span>
                   </Tooltip>
                   <span
