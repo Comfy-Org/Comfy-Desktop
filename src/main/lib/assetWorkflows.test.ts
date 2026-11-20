@@ -249,21 +249,33 @@ describe('a file in Comfy Cloud', () => {
     expect(await hasWorkflow('inst-cloud', 'asset-8')).toBe(true)
   })
 
-  it('reads only the start of a large Cloud PNG, where ComfyUI saves its workflow', async () => {
+  it('reads the end of a large Cloud animated PNG, where SaveAnimatedPNG saves its workflow', async () => {
     mocks.cloudAccessToken.mockResolvedValue('token')
     mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/big.png')
     const pngStart = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-    const fetch = vi.fn(
-      async () =>
-        new Response(pngStart, {
-          status: 206,
-          headers: { 'content-range': `bytes 0-${PART_BYTES - 1}/${PART_BYTES * 3}` }
-        })
-    )
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const range = (init.headers as Record<string, string>)['Range']
+      const body = range === `bytes=-${PART_BYTES}` ? `comf\u0000${SAVED_WORKFLOW}` : pngStart
+      return new Response(body, {
+        status: 206,
+        headers: { 'content-range': `bytes 0-${PART_BYTES - 1}/${PART_BYTES * 3}` }
+      })
+    })
     vi.stubGlobal('fetch', fetch)
 
-    expect(await hasWorkflow('inst-cloud', 'asset-5')).toBe(false)
-    expect(fetch).toHaveBeenCalledOnce()
+    expect(await hasWorkflow('inst-cloud', 'asset-5')).toBe(true)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('finds the workflow at the end of a large animated PNG on this computer', async () => {
+    const pngStart = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    const frames = Buffer.alloc(PART_BYTES * 2, 0)
+    await savedFile(
+      'loop.png',
+      Buffer.concat([pngStart, frames, Buffer.from(`comf\u0000${SAVED_WORKFLOW}`)])
+    )
+
+    expect(await hasWorkflow(LOCAL, 'loop.png')).toBe(true)
   })
 
   it('says the read failed, not that there is no workflow, when Comfy Cloud does not answer', async () => {
@@ -277,7 +289,7 @@ describe('a file in Comfy Cloud', () => {
     expect(await hasWorkflow('inst-cloud', 'asset-7')).toBeNull()
     expect(await openWorkflow('inst-cloud', 'asset-7', 'fox.png')).toEqual({
       opened: false,
-      error: 'apps.local.openNotTaken'
+      error: 'apps.local.openUnreadable'
     })
     expect(mocks.openEmbeddedWorkflow).not.toHaveBeenCalled()
   })

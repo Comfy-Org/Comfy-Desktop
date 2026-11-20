@@ -1729,12 +1729,15 @@ describe('AssetsView Open workflow', () => {
     wrapper: Awaited<ReturnType<typeof mountAssets>>,
     id: string
   ): Promise<void> {
+    const checksBefore = hasAssetWorkflow.mock.calls.length
     await wrapper.get(`[data-testid="asset-open-${id}"]`).trigger('click')
-    await settle()
-  }
-
-  async function settle(): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, 200))
+    await flushPromises()
+    await vi.waitFor(() => {
+      const waitsForCheck = workflowButton()?.classList.contains('invisible') === true
+      if (waitsForCheck && hasAssetWorkflow.mock.calls.length === checksBefore) {
+        throw new Error('the shown file has not been checked yet')
+      }
+    })
     await flushPromises()
   }
 
@@ -1821,7 +1824,6 @@ describe('AssetsView Open workflow', () => {
     await flushPromises()
 
     expect(workflowButton()?.classList.contains('invisible')).toBe(false)
-    await settle()
     expect(hasAssetWorkflow).toHaveBeenCalledOnce()
   })
 
@@ -1889,7 +1891,7 @@ describe('AssetsView Open workflow', () => {
 
     await press('ArrowRight')
     await press('ArrowRight')
-    await settle()
+    await vi.waitFor(() => expect(hasAssetWorkflow).toHaveBeenCalled())
 
     expect(hasAssetWorkflow).toHaveBeenCalledExactlyOnceWith('local', '/out/c.png')
   })

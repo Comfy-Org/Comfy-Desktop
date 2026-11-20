@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { deflateSync } from 'node:zlib'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { isGraphWorkflow, readEmbeddedWorkflow } from './embeddedWorkflow'
 
@@ -202,6 +202,32 @@ describe('reading the workflow ComfyUI saved in a PNG', () => {
         links: []
       }
     })
+  })
+
+  it('reads the workflow from the end of a large animated PNG, and prefers it over a prompt at the start', () => {
+    const start = png(tEXt('prompt', JSON.stringify(PROMPT)))
+    const end = binary('fdAT', `comf\u0000workflow\u0000${JSON.stringify(GRAPH)}`, 'IEND')
+
+    expect(readEmbeddedWorkflow([start.subarray(0, start.length - 12), end])).toEqual({
+      format: 'graph',
+      data: GRAPH
+    })
+    expect(readEmbeddedWorkflow([start.subarray(0, start.length - 12), binary('fdAT')])).toEqual({
+      format: 'api',
+      data: PROMPT
+    })
+  })
+
+  it('skips a saved workflow with more than 5,000 nodes and says so in the log', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const huge = {
+      nodes: Array.from({ length: 5_001 }, (_, id) => ({ id, type: 'Note' })),
+      links: []
+    }
+
+    expect(readEmbeddedWorkflow([png(tEXt('workflow', JSON.stringify(huge)))])).toBeNull()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('5001 nodes'))
+    warn.mockRestore()
   })
 
   it('finds nothing in text that is not valid JSON', () => {

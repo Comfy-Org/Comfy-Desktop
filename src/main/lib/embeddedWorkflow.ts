@@ -29,12 +29,14 @@ function isGraphNode(value: unknown): boolean {
 export function isGraphWorkflow(value: unknown): value is Record<string, unknown> {
   if (!isRecord(value)) return false
   const nodes = value['nodes']
-  return (
-    Array.isArray(nodes) &&
-    nodes.length > 0 &&
-    nodes.length <= MAX_GRAPH_NODES &&
-    nodes.every(isGraphNode)
-  )
+  if (!Array.isArray(nodes) || nodes.length === 0) return false
+  if (nodes.length > MAX_GRAPH_NODES) {
+    console.warn(
+      `Skipped a saved workflow with ${nodes.length} nodes; the limit is ${MAX_GRAPH_NODES}.`
+    )
+    return false
+  }
+  return nodes.every(isGraphNode)
 }
 
 const NON_FINITE_TOKENS = ['-Infinity', 'Infinity', 'NaN']
@@ -114,7 +116,7 @@ function bestOf(found: Found): EmbeddedWorkflow | null {
   return null
 }
 
-export function isPng(bytes: Uint8Array): boolean {
+function isPng(bytes: Uint8Array): boolean {
   return PNG_SIGNATURE.every((byte, i) => bytes[i] === byte)
 }
 
@@ -250,11 +252,14 @@ function fromAnyBytes(bytes: Uint8Array, budget: ScanBudget): EmbeddedWorkflow |
 }
 
 export function readEmbeddedWorkflow(parts: Uint8Array[]): EmbeddedWorkflow | null {
-  const [head] = parts
-  if (head && isPng(head)) return fromPng(head)
+  const [head, ...rest] = parts
+  if (!head) return null
+  const png = isPng(head)
+  const fromHead = png ? fromPng(head) : null
+  if (fromHead?.format === 'graph') return fromHead
   const budget = { left: SCAN_BUDGET_BYTES }
-  let prompt: EmbeddedWorkflow | null = null
-  for (const part of parts) {
+  let prompt: EmbeddedWorkflow | null = fromHead
+  for (const part of png ? rest : parts) {
     const workflow = fromAnyBytes(part, budget)
     if (workflow?.format === 'graph') return workflow
     prompt ??= workflow
