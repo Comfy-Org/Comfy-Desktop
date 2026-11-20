@@ -514,6 +514,12 @@ export interface ActionResult {
   cancelled?: boolean
   running?: boolean
   newInstallationId?: string
+  blockingSessions?: BlockingSession[]
+}
+
+export interface BlockingSession {
+  sessionId: string
+  name: string
 }
 
 export interface PortConflictInfo {
@@ -1148,6 +1154,12 @@ export interface CloseComfyWindowOptions {
   keepDesktopOpen?: boolean
 }
 
+export interface HomeTourReplayState {
+  id: number
+  pending: boolean
+  finished: boolean
+}
+
 export interface ElectronApi {
   platform: NodeJS.Platform
 
@@ -1264,7 +1276,6 @@ export interface ElectronApi {
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
   closeCurrentPanel(): void
-  closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   openPageInNewWindow(page: NewWindowDashboardPage): void
@@ -1315,7 +1326,6 @@ export interface ElectronApi {
   setFirstUseMode(mode: FirstUseMode): void
   onFirstUseSkip(callback: () => void): Unsubscribe
   onOpenFeedback(callback: (data: { source: 'titlebar' | 'menu' }) => void): Unsubscribe
-  onOpenAnnouncement(callback: () => void): Unsubscribe
   onCloseRequest(callback: (data: { requestId: string }) => void): Unsubscribe
   respondCloseRequest(payload: { requestId: string; cleared?: boolean; defer?: boolean }): void
   ackCloseRequest(payload: { requestId: string }): void
@@ -1396,6 +1406,8 @@ export interface ElectronApi {
   getUniqueName(baseName: string): Promise<string>
   setSetting<K extends KnownSettingKey>(key: K, value: KnownSettings[K]): Promise<void>
   getSetting<K extends KnownSettingKey>(key: K): Promise<KnownSettings[K]>
+  getHomeTourReplay(): Promise<{ id: number; pending: boolean }>
+  finishHomeTour(shownReplayId: number | null): Promise<void>
 
   getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
   acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>
@@ -1527,6 +1539,8 @@ export interface ElectronApi {
   onErrorDetail(callback: (data: ErrorDetailData) => void): Unsubscribe
   onSuggestChineseMirrors(callback: () => void): Unsubscribe
   onSettingsChanged(callback: (data: { key: string }) => void): Unsubscribe
+  onHomeTourReplayChanged(callback: (state: HomeTourReplayState) => void): Unsubscribe
+  onShowHomePage(callback: () => void): Unsubscribe
   onPanelSwitch(callback: (data: { panel: string; installationId?: string }) => void): Unsubscribe
   onPanelTriggerOverlay(
     callback: (data: {

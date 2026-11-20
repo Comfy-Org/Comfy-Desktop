@@ -28,7 +28,6 @@ export type PanelKey =
   | 'track'
   | 'load-snapshot'
   | 'progress'
-  | 'announcement'
 
 const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'comfy',
@@ -40,8 +39,7 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'new-install',
   'track',
   'load-snapshot',
-  'progress',
-  'announcement'
+  'progress'
 ])
 
 const FLOW_PANELS: ReadonlySet<PanelKey> = new Set(['new-install', 'track', 'load-snapshot'])

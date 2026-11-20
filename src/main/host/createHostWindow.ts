@@ -454,7 +454,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     const activeComfyView = entry?.comfyView ?? comfyView
 
     const mode = entry ? computeBodyMode(entry) : 'comfy'
-    const isOverlayMode = mode === 'feedback' || mode === 'announcement'
+    const isOverlayMode = mode === 'feedback'
     const showPanel = mode !== 'comfy' && !(isOverlayMode && entry?.pendingOverlayReveal)
     if (showPanel && entry?.panelView) {
       entry.panelView.setBounds(bodyRect)
@@ -731,8 +731,7 @@ export function buildComfyView(
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {
-    const liveEntry = comfyWindows.get(windowKey)
-    if (!liveEntry || isChooserHost(liveEntry)) return
+    if (!comfyWindows.has(windowKey)) return
     e.preventDefault()
   })
   attachContextMenu(comfyWindow, comfyContents)

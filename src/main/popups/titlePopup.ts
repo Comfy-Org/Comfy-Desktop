@@ -50,6 +50,7 @@ import {
   maximizeIfPendingReveal,
   unhostedLaunches
 } from '../host/registry'
+import { isLocalInstall } from '../host/localInstall'
 import type { ComfyPanelKey, ComfyWindowEntry } from '../host/registry'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
 import {
@@ -481,6 +482,10 @@ function desktopWindowMenuItems(): TitlePopupMenuItem[] {
     },
     { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks', icon: 'benchmarks' }
   ]
+}
+
+export function buildWhatsNewMenuItems(): TitlePopupMenuItem[] {
+  return [{ id: 'take-tour', label: 'Take the tour', labelKey: 'homeTour.replay' }]
 }
 
 export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMenuItem[] {
@@ -1022,6 +1027,7 @@ export interface TitlePopupHostBindings {
   confirmAndCloseHostWindow: (parentWindow: BrowserWindow) => Promise<void> | void
   setActivePanel: (windowKey: number, panel: ComfyPanelKey) => void
   triggerOpenFeedback: (entryId: number, source: 'titlebar' | 'menu') => void
+  startHomeTour: (fromWindowKey: number) => void
   resetComfyZoom: (installationId: string) => void
   sendToPanelDeferred: (panelView: WebContentsView, channel: string, payload: unknown) => void
   ensurePanelViewForEntry: (entry: ComfyWindowEntry) => WebContentsView
@@ -1290,6 +1296,9 @@ export function activateTitlePopupMenuItem(
     }
   } else if (id === 'feedback') {
     bindings.triggerOpenFeedback(entry.parentEntryId, 'menu')
+  } else if (id === 'take-tour') {
+    releaseFocusToParent = parentEntry !== undefined && isChooserHost(parentEntry)
+    bindings.startHomeTour(entry.parentEntryId)
   } else if (id === 'reset-zoom') {
     if (parentEntry != null && parentEntry.installationId !== null) {
       bindings.resetComfyZoom(parentEntry.installationId)
@@ -1435,7 +1444,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 
   ipcMain.handle('desktop2-open-terminal', (event): boolean => {
     const parentEntry = findEntryByComfySender(event.sender)
-    if (!parentEntry?.installationId || parentEntry.sourceCategory !== 'local') return false
+    if (!isLocalInstall(parentEntry)) return false
     openInstancePickerForHost(
       parentEntry,
       parentEntry.windowKey,
@@ -1643,12 +1652,12 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 
   ipcMain.on(
     'comfy-window:open-title-menu',
-    (event, payload: { menu?: 'file'; anchor?: { x?: number; y?: number } }) => {
+    (event, payload: { menu?: 'file' | 'whats-new'; anchor?: { x?: number; y?: number } }) => {
       const found = findEntryByTitleBarSender(event.sender)
       if (!found) return
       const { id: windowKey, entry } = found
       if (entry.window.isDestroyed()) return
-      if (payload?.menu !== 'file') return
+      if (payload?.menu !== 'file' && payload?.menu !== 'whats-new') return
 
       const x = Math.max(0, Math.round(payload?.anchor?.x ?? 0))
       const y = Math.max(0, Math.round(payload?.anchor?.y ?? TITLEBAR_HEIGHT))
@@ -1657,7 +1666,8 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
         parent: entry.window,
         parentEntryId: windowKey,
         kind: 'menu',
-        items: buildTitlePopupMenuItems(entry),
+        items:
+          payload.menu === 'whats-new' ? buildWhatsNewMenuItems() : buildTitlePopupMenuItems(entry),
         anchor: { x, y },
         theme: entry.lastTheme,
         titleBarSender: entry.titleBarView.webContents

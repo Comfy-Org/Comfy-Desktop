@@ -144,19 +144,6 @@ describe('useAuthStore', () => {
       await expect(second).resolves.toMatchObject({ signedIn: true })
       expect(store.signInPending).toBe(false)
     })
-
-    it('joins the open sign-in instead of asking main again', async () => {
-      const browser = browserSignIn()
-      const store = useAuthStore()
-
-      const first = store.signIn()
-      const joined = store.joinSignIn()
-      browser.resolve({ signedIn: true })
-
-      await expect(joined).resolves.toMatchObject({ signedIn: true })
-      await first
-      expect(api.signIn).toHaveBeenCalledOnce()
-    })
   })
 
   it('stays signed in when main cancels sign-out', async () => {

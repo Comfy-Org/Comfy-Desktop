@@ -81,6 +81,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
   const listeners = new Map<string, Set<AnyListener>>()
   const authListeners = new Set<(status: AuthStatus) => void>()
   let auth = seed.auth ?? SIGNED_OUT
+  let homeTourReplay = { id: 0, pending: false }
   let lastActivityAt = performance.now()
 
   function noteActivity(): void {
@@ -247,7 +248,6 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     closeHostWindow: async () => true,
     returnToDashboard: async () => true,
     closeCurrentPanel: () => {},
-    closeAnnouncement: () => {},
     signalOverlayReady: () => {},
     navigatePanel: () => {},
     openPageInNewWindow: () => {},
@@ -373,6 +373,12 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
       emit('onSettingsChanged', { key })
     },
     getSetting: async (key) => settings[key],
+    getHomeTourReplay: async () => ({ ...homeTourReplay }),
+    finishHomeTour: async (shownReplayId) => {
+      if (shownReplayId === homeTourReplay.id)
+        homeTourReplay = { ...homeTourReplay, pending: false }
+      emit('onHomeTourReplayChanged', { ...homeTourReplay, finished: true })
+    },
 
     getPendingBetaNotice: async () => null,
     acknowledgeBetaNotice: async () => {},
@@ -461,7 +467,6 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     onCreditBalanceChanged: listen('onCreditBalanceChanged'),
     onFirstUseSkip: listen('onFirstUseSkip'),
     onOpenFeedback: listen('onOpenFeedback'),
-    onOpenAnnouncement: listen('onOpenAnnouncement'),
     onCloseRequest: listen('onCloseRequest'),
     onReturnToDashboardRequest: listen('onReturnToDashboardRequest'),
     onAdoptPrompt: listen('onAdoptPrompt'),
@@ -500,6 +505,8 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     onErrorDetail: listen('onErrorDetail'),
     onSuggestChineseMirrors: listen('onSuggestChineseMirrors'),
     onSettingsChanged: listen('onSettingsChanged'),
+    onHomeTourReplayChanged: listen('onHomeTourReplayChanged'),
+    onShowHomePage: listen('onShowHomePage'),
     onPanelSwitch: listen('onPanelSwitch'),
     onPanelTriggerOverlay: listen('onPanelTriggerOverlay')
   })

@@ -110,10 +110,6 @@ export const useAuthStore = defineStore('auth', () => {
     return attempt
   }
 
-  function joinSignIn(): Promise<AuthStatus> {
-    return signInRequest ?? signIn()
-  }
-
   async function signOut(): Promise<AuthStatus> {
     const next = await comfybuilderApi.signOut()
     if (!next.signedIn) {
@@ -184,6 +180,7 @@ export const useAuthStore = defineStore('auth', () => {
   })
 
   const isSignedIn = computed(() => status.value.signedIn)
+  const isSignedOut = computed(() => statusLoaded.value && !status.value.signedIn)
   const personalWorkspace = computed(() => workspaces.value.find(isPersonalWorkspace) ?? null)
 
   function sessionWorkspaceFor(dashboardWorkspaceId: string): string | null {
@@ -231,6 +228,7 @@ export const useAuthStore = defineStore('auth', () => {
     buildsError,
     workspaceSwitchFailure,
     isSignedIn,
+    isSignedOut,
     personalWorkspace,
     sessionWorkspaceFor,
     initializeWorkspaceContext,
@@ -239,7 +237,6 @@ export const useAuthStore = defineStore('auth', () => {
     whenReady: () => initialStatus,
     signInPending,
     signIn,
-    joinSignIn,
     signOut,
     fetchWorkspaces,
     switchWorkspace,

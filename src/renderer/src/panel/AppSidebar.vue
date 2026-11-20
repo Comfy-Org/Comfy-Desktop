@@ -14,8 +14,8 @@ import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
   AppWindow,
-  ArrowRight,
   Cloud,
+  CornerDownRight,
   House,
   Images,
   Laptop,
@@ -39,6 +39,7 @@ import SidebarCredits from './SidebarCredits.vue'
 import SidebarDesktopUpdate from './SidebarDesktopUpdate.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import { homeBuildStatus, isCloudBuild, runsOnThisComputer } from './home/homeBuild'
+import { useHomeTour } from './home/useHomeTour'
 import { useInstallList } from '../composables/useInstallList'
 import { buildFailure, buildProgressOf } from '../composables/useBuildProgress'
 import { useProgressStore } from '../stores/progressStore'
@@ -48,21 +49,24 @@ import { useSessionStore } from '../stores/sessionStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import type { NewWindowDashboardPage } from '../../../shared/dashboardPages'
-import type { DashboardPage, Installation } from '../types/ipc'
+import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
 const {
   activePage,
   activeBuildId = null,
-  makeRoom = false
+  makeRoom = false,
+  appInProgress = null
 } = defineProps<{
   activePage: DashboardPage
   activeBuildId?: string | null
   makeRoom?: boolean
+  appInProgress?: AppCard | null
 }>()
 
 const emit = defineEmits<{
   navigate: [page: DashboardPage]
   'open-build': [installation: Installation]
+  'open-app': [app: AppCard]
   'new-build': []
 }>()
 
@@ -172,6 +176,20 @@ const { visibleInstalls } = useInstallList({
   installations: toRef(installationStore, 'installations')
 })
 const buildsPageActive = computed(() => activePage === 'chooser' && !activeBuildId)
+const { done: homeTourDone } = useHomeTour()
+const newBuildAlwaysShown = computed(() => buildsPageActive.value || !homeTourDone.value)
+
+const buildNameElements = new Map<string, HTMLElement>()
+
+function rememberBuildName(buildId: string, el: unknown): void {
+  if (el instanceof HTMLElement) buildNameElements.set(buildId, el)
+  else buildNameElements.delete(buildId)
+}
+
+function buildNameClipped(buildId: string): boolean {
+  const el = buildNameElements.get(buildId)
+  return !!el && el.scrollWidth > el.clientWidth
+}
 
 function isLive(build: Installation): boolean {
   return runsOnThisComputer(build, homeBuildStatus(build, sessionStore))
@@ -210,6 +228,15 @@ const buildRows = computed(() =>
 function navigate(page: DashboardPage): void {
   emit('navigate', page)
   window.api.navigatePanel(page)
+}
+
+const backToAppLabel = computed(() =>
+  appInProgress ? t('sidebar.backToApp', { app: appInProgress.title }) : ''
+)
+
+function openAppInProgress(app: AppCard): void {
+  emit('open-app', app)
+  window.api.navigatePanel('apps')
 }
 
 const { open: buildMenuOpen, menuProps: buildMenuProps, show: showBuildMenu } = usePointMenu()
@@ -329,38 +356,63 @@ function openSettings(): void {
             {{ group.title }}
           </div>
         </template>
-        <Button
-          v-for="row in group.rows"
-          :key="row.page"
-          variant="muted-textonly"
-          size="unset"
-          class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-          :class="[
-            railRowSize,
-            row.page === activePage && 'bg-accent text-foreground hover:bg-accent'
-          ]"
-          :aria-current="row.page === activePage ? 'page' : undefined"
-          :aria-label="row.label"
-          :data-testid="`app-sidebar-${row.page}`"
-          @click="navigate(row.page)"
-          @contextmenu.prevent="openPageMenu($event, row.page)"
-        >
-          <Tooltip
-            :text="collapsed ? row.label : undefined"
-            side="right"
-            class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-            :class="railRowInset"
+        <template v-for="row in group.rows" :key="row.page">
+          <Button
+            variant="muted-textonly"
+            size="unset"
+            class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+            :class="[
+              railRowSize,
+              row.page === activePage && 'bg-accent text-foreground hover:bg-accent'
+            ]"
+            :aria-current="row.page === activePage ? 'page' : undefined"
+            :aria-label="row.label"
+            :data-testid="`app-sidebar-${row.page}`"
+            :data-home-tour="row.page === 'home' ? undefined : row.page"
+            @click="navigate(row.page)"
+            @contextmenu.prevent="openPageMenu($event, row.page)"
           >
-            <component :is="row.icon" :size="15" class="shrink-0" aria-hidden="true" />
-            <Transition v-bind="labelTransition">
-              <span
-                v-if="!collapsed"
-                class="min-w-0 flex-1 overflow-hidden text-left text-nowrap"
-                >{{ row.label }}</span
-              >
-            </Transition>
-          </Tooltip>
-        </Button>
+            <Tooltip
+              :text="collapsed ? row.label : undefined"
+              side="right"
+              class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+              :class="railRowInset"
+            >
+              <component :is="row.icon" :size="15" class="shrink-0" aria-hidden="true" />
+              <Transition v-bind="labelTransition">
+                <span
+                  v-if="!collapsed"
+                  class="min-w-0 flex-1 overflow-hidden text-left text-nowrap"
+                  >{{ row.label }}</span
+                >
+              </Transition>
+            </Tooltip>
+          </Button>
+          <Button
+            v-if="row.page === 'apps' && appInProgress"
+            variant="muted-textonly"
+            size="unset"
+            class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+            :class="railRowSize"
+            :aria-label="backToAppLabel"
+            data-testid="app-sidebar-app-in-progress"
+            @click="openAppInProgress(appInProgress)"
+          >
+            <Tooltip
+              :text="collapsed ? backToAppLabel : undefined"
+              side="right"
+              class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+              :class="railRowInset"
+            >
+              <CornerDownRight :size="15" class="shrink-0" aria-hidden="true" />
+              <Transition v-bind="labelTransition">
+                <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
+                  appInProgress.title
+                }}</span>
+              </Transition>
+            </Tooltip>
+          </Button>
+        </template>
         <div v-if="group.key === 'main'" class="grid shrink-0">
           <Transition v-bind="labelTransition">
             <Button
@@ -404,30 +456,35 @@ function openSettings(): void {
               class="flex min-h-0 w-[220px] flex-col gap-1 overflow-hidden text-nowrap"
               :data-testid="collapsed ? undefined : 'app-sidebar-builds'"
             >
-              <div class="mt-5.5 flex h-6.5 shrink-0 items-center justify-between pr-1 pl-3">
+              <div
+                class="group/builds mt-3.5 flex h-8 shrink-0 items-center rounded-lg pr-1"
+                :class="
+                  buildsPageActive
+                    ? 'bg-accent text-foreground'
+                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                "
+              >
                 <Button
                   variant="textonly"
                   size="unset"
-                  class="group/title -ml-1.5 h-[22px] gap-[5px] rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-transparent hover:text-foreground focus-visible:text-foreground aria-[current=page]:text-foreground"
+                  class="h-8 flex-1 justify-start gap-2.5 px-3 text-[13px]/5 font-normal text-inherit hover:bg-transparent hover:text-inherit"
                   :aria-current="buildsPageActive ? 'page' : undefined"
                   :data-testid="collapsed ? undefined : 'app-sidebar-chooser'"
+                  data-home-tour="all-builds"
                   @click="navigate('chooser')"
                   @contextmenu.prevent="openPageMenu($event, 'chooser')"
                 >
+                  <Server :size="15" class="shrink-0" aria-hidden="true" />
                   {{ t('sidebar.builds') }}
-                  <ArrowRight
-                    :size="12"
-                    :stroke-width="2.25"
-                    class="-translate-x-0.5 opacity-35 transition-[opacity,translate] duration-200 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 group-focus-visible/title:translate-x-0 group-focus-visible/title:opacity-100 group-aria-[current=page]/title:translate-x-0 group-aria-[current=page]/title:opacity-100 motion-reduce:transition-none"
-                    aria-hidden="true"
-                  />
                 </Button>
                 <Button
                   variant="muted-textonly"
                   size="unset"
-                  class="size-6 rounded-md p-0 hover:bg-secondary hover:text-foreground"
+                  class="size-6 rounded-md p-0 group-hover/builds:opacity-100 focus-visible:opacity-100 hover:bg-accent hover:text-foreground"
+                  :class="newBuildAlwaysShown ? 'opacity-100' : 'opacity-0'"
                   :aria-label="t('sidebar.newBuild')"
                   :data-testid="collapsed ? undefined : 'app-sidebar-new-build'"
+                  data-home-tour="new-build"
                   @click="emit('new-build')"
                 >
                   <Tooltip
@@ -452,7 +509,7 @@ function openSettings(): void {
                   :key="build.id"
                   variant="muted-textonly"
                   size="unset"
-                  class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+                  class="h-7 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[12.5px]/5 font-normal text-subtle-foreground hover:bg-secondary hover:text-foreground"
                   :class="build.id === activeBuildId && 'bg-accent text-foreground hover:bg-accent'"
                   :aria-current="build.id === activeBuildId ? 'page' : undefined"
                   :data-testid="`app-sidebar-build-${build.id}`"
@@ -487,10 +544,15 @@ function openSettings(): void {
                   </span>
                   <Tooltip
                     :text="failure ? `${build.name} · ${failure}` : build.name"
+                    :should-open="() => !!failure || buildNameClipped(build.id)"
                     side="right"
                     class="min-w-0 flex-1 items-center self-stretch"
                   >
-                    <span class="min-w-0 truncate text-left">{{ build.name }}</span>
+                    <span
+                      :ref="(el) => rememberBuildName(build.id, el)"
+                      class="min-w-0 truncate text-left"
+                      >{{ build.name }}</span
+                    >
                     <span v-if="failure" class="sr-only">· {{ failure }}</span>
                   </Tooltip>
                   <span

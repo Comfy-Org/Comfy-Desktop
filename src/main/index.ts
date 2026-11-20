@@ -20,6 +20,8 @@ import type { ChildProcess } from 'child_process'
 import todesktop from '@todesktop/runtime'
 import * as ipc from './lib/ipc'
 import { getAppVersion } from './lib/ipc'
+import { recordHomeTourAudience } from './lib/homeTourAudience'
+import { requestHomeTourReplay } from './lib/ipc/registerHomeTourHandlers'
 import type { ExitCallbackInfo } from './lib/ipc'
 import { closeAllPopouts } from './lib/popoutWindows'
 import { disposeAllTerminals } from './lib/terminal'
@@ -193,7 +195,6 @@ import {
   destroyPanelView,
   ensurePanelView,
   focusActiveBody,
-  openAnnouncement,
   prewarmAttachedPanel,
   refreshComfyTabBody,
   registerPanelViewIpc,
@@ -687,12 +688,6 @@ ipcMain.on('comfy-window:click-feedback', (event) => {
   triggerOpenFeedback(found.entry.windowKey, 'titlebar')
 })
 
-ipcMain.on('comfy-window:click-announcement', (event) => {
-  const found = findEntryByTitleBarSender(event.sender)
-  if (!found) return
-  openAnnouncement(found.entry.windowKey)
-})
-
 ipcMain.on('comfy-window:new-chooser-window', (event) => {
   openChooserHostWindow('comfy', {
     nearWindow: findEntryByTitleBarSender(event.sender)?.entry.window
@@ -713,6 +708,17 @@ ipcMain.on('comfy-window:show-home', (event) => {
   recordIpcInvocation('comfy-window:show-home')
   openOrFocusHomeHostWindow()
 })
+
+function startHomeTour(fromWindowKey: number): void {
+  requestHomeTourReplay()
+  const from = comfyWindows.get(fromWindowKey)
+  const home =
+    from && isChooserHost(from) && !from.window.isDestroyed()
+      ? from.window
+      : openOrFocusHomeHostWindow()
+  const panelView = findEntryByHostWindow(home)?.panelView
+  if (panelView) sendToPanelDeferred(panelView, 'comfy-panel:show-home-page', {})
+}
 
 async function prepareBuildWindowFocus(
   entry: ComfyWindowEntry,
@@ -961,6 +967,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     mainTelemetry.installAppHooks()
 
     const existingInstallation = hasCompletedFirstLaunch() || hasPersistedDeviceId()
+    recordHomeTourAudience(existingInstallation)
     const { legacyId } = await initDeviceId()
     clearLegacyIdentityRetryMarker()
     const installationId = getDeviceId()
@@ -1135,6 +1142,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         }),
       setActivePanel,
       triggerOpenFeedback,
+      startHomeTour,
       resetComfyZoom: (installationId) => comfyZoomResets.get(installationId)?.('menu'),
       sendToPanelDeferred,
       ensurePanelViewForEntry: (entry) =>

@@ -4,6 +4,7 @@ import type {
   AppOutputs,
   AppPageStatus,
   ElectronApi,
+  HomeTourReplayState,
   ResolvedTheme,
   AdoptPromptRequest
 } from '../types/ipc'
@@ -100,7 +101,6 @@ export function buildElectronApi(): ElectronApi {
     closeHostWindow: () => ipcRenderer.invoke('close-host-window'),
     returnToDashboard: () => ipcRenderer.invoke('return-to-dashboard'),
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
-    closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     openPageInNewWindow: (page) => ipcRenderer.send('comfy-window:open-page-in-new-window', page),
@@ -178,11 +178,6 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.on('comfy-panel:open-feedback', handler)
       return () => ipcRenderer.removeListener('comfy-panel:open-feedback', handler)
     },
-    onOpenAnnouncement: (callback) => {
-      const handler = (): void => callback()
-      ipcRenderer.on('comfy-panel:open-announcement', handler)
-      return () => ipcRenderer.removeListener('comfy-panel:open-announcement', handler)
-    },
     onCloseRequest: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>
         callback(data as { requestId: string })
@@ -259,6 +254,8 @@ export function buildElectronApi(): ElectronApi {
     getMediaSections: () => ipcRenderer.invoke('get-media-sections'),
     setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
     getSetting: (key) => ipcRenderer.invoke('get-setting', key),
+    getHomeTourReplay: () => ipcRenderer.invoke('get-home-tour-replay'),
+    finishHomeTour: (shownReplayId) => ipcRenderer.invoke('finish-home-tour', shownReplayId),
     getPendingBetaNotice: (installationId) =>
       ipcRenderer.invoke('get-pending-beta-notice', installationId),
     acknowledgeBetaNotice: (installationId, shownArgs) =>
@@ -565,6 +562,17 @@ export function buildElectronApi(): ElectronApi {
       const handler = (_event: IpcRendererEvent, data: unknown) => callback(data as { key: string })
       ipcRenderer.on('settings-changed', handler)
       return () => ipcRenderer.removeListener('settings-changed', handler)
+    },
+    onShowHomePage: (callback) => {
+      const handler = () => callback()
+      ipcRenderer.on('comfy-panel:show-home-page', handler)
+      return () => ipcRenderer.removeListener('comfy-panel:show-home-page', handler)
+    },
+    onHomeTourReplayChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, state: unknown) =>
+        callback(state as HomeTourReplayState)
+      ipcRenderer.on('home-tour-replay-changed', handler)
+      return () => ipcRenderer.removeListener('home-tour-replay-changed', handler)
     },
     onPanelSwitch: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>

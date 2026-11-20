@@ -30,8 +30,7 @@ vi.mock('electron', () => ({
 vi.mock('./oauth', async (importOriginal) => ({
   revoke: (await importOriginal<typeof OAuthModule>()).revoke,
   signIn: vi.fn(),
-  refresh: vi.fn(),
-  openAuthorizePage: vi.fn(() => Promise.resolve())
+  refresh: vi.fn()
 }))
 vi.mock('./workspaces', () => ({
   listWorkspaces: vi.fn(async () => [{ id: 'w-1', name: 'One', type: 'team', role: 'member' }]),
@@ -48,7 +47,7 @@ import * as mainTelemetry from '../lib/telemetry'
 import { isWorkspaceMintSwitchEnabled } from '../lib/workspaceMintSwitchFlag'
 import { statusFromAccessToken } from './claims'
 import { CLOUD_CONFIG } from './config'
-import { openAuthorizePage, refresh, signIn } from './oauth'
+import { refresh, signIn } from './oauth'
 import type * as OAuthModule from './oauth'
 import {
   CloudSession,
@@ -410,7 +409,6 @@ describe('CloudSession background token reads never open the browser', () => {
     ).resolves.toEqual([null, null])
 
     expect(signIn).not.toHaveBeenCalled()
-    expect(openAuthorizePage).not.toHaveBeenCalled()
     expect(onReturned).toHaveBeenCalledOnce()
     expect(session.currentWorkspaceId()).toBe('w1')
     expect(session.status()).toMatchObject({ workspaceId: 'w1' })
@@ -537,7 +535,6 @@ describe('CloudSession browser sign-in', () => {
     void session.login()
 
     expect(signIn).toHaveBeenCalledTimes(2)
-    expect(openAuthorizePage).not.toHaveBeenCalled()
   })
 
   it('restarts the browser sign-in on request and answers every caller with the new one', async () => {
@@ -559,7 +556,6 @@ describe('CloudSession browser sign-in', () => {
     await expect(first).resolves.toMatchObject({ signedIn: true, workspaceId: 'w1' })
     await expect(second).resolves.toMatchObject({ signedIn: true, workspaceId: 'w1' })
     expect(signIn).toHaveBeenCalledTimes(2)
-    expect(openAuthorizePage).not.toHaveBeenCalled()
     expect(session.isSignedIn()).toBe(true)
   })
 
@@ -636,7 +632,6 @@ describe('CloudSession.switchWorkspace with no browser', () => {
     await expect(session.switchWorkspace('wB')).resolves.toMatchObject({ workspaceId: 'wB' })
 
     expect(signIn).toHaveBeenCalledOnce()
-    expect(openAuthorizePage).not.toHaveBeenCalled()
     expect(mintRequests.map(({ workspaceId }) => workspaceId)).toEqual(['wB', 'wC'])
     expect(switchEvents()).toEqual([
       { outcome: 'minted' },
@@ -802,7 +797,6 @@ describe('CloudSession.switchWorkspace with no browser', () => {
       })
 
       expect(signIn).not.toHaveBeenCalled()
-      expect(openAuthorizePage).not.toHaveBeenCalled()
       expect(session.currentWorkspaceId()).toBe('w1')
       expect(switchEvents()).toEqual([{ outcome }])
       expect(browserEvents()).toEqual([])

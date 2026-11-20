@@ -35,6 +35,19 @@ async function readPart(
   return new Uint8Array(buffer.buffer, buffer.byteOffset, bytesRead)
 }
 
+function headHoldsPngWorkflow(head: Uint8Array): boolean {
+  return isPng(head) && readEmbeddedWorkflow([head])?.format === 'graph'
+}
+
+async function headOr(
+  head: Uint8Array,
+  readMore: () => Promise<Uint8Array[] | null>
+): Promise<Uint8Array[] | null> {
+  const parts = await readMore().catch(() => null)
+  if (parts) return parts
+  return isPng(head) && readEmbeddedWorkflow([head]) !== null ? [head] : null
+}
+
 async function localParts(assetId: string): Promise<Uint8Array[] | null> {
   const file = await outputFilePath(assetId)
   if (!file) return null
@@ -42,13 +55,14 @@ async function localParts(assetId: string): Promise<Uint8Array[] | null> {
   try {
     const { size } = await handle.stat()
     const head = await readPart(handle, 0, Math.min(size, PART_BYTES))
-    if (size <= PART_BYTES || isPng(head)) return [head]
+    if (size <= PART_BYTES || headHoldsPngWorkflow(head)) return [head]
     if (size <= PART_BYTES * 2) {
-      const rest = await readPart(handle, PART_BYTES, size - PART_BYTES)
-      return [Buffer.concat([head, rest])]
+      return headOr(head, async () => [
+        Buffer.concat([head, await readPart(handle, PART_BYTES, size - PART_BYTES)])
+      ])
     }
     const tailStart = Math.max(PART_BYTES, size - PART_BYTES)
-    return [head, await readPart(handle, tailStart, size - tailStart)]
+    return headOr(head, async () => [head, await readPart(handle, tailStart, size - tailStart)])
   } finally {
     await handle.close()
   }
@@ -63,25 +77,34 @@ async function rangeOf(url: string, range: string, deadline: AbortSignal): Promi
   return fetch(url, { headers: { Range: range }, redirect: 'error', signal: deadline })
 }
 
+async function unread(response: Response): Promise<null> {
+  await response.body?.cancel().catch(() => {})
+  return null
+}
+
 async function cloudParts(assetId: string, accessToken: string): Promise<Uint8Array[] | null> {
   const deadline = AbortSignal.timeout(READ_TIMEOUT_MS)
   const url = await resolveCloudContentUrl(assetId, accessToken, 'inline', deadline)
   if (!url) return null
   const headResponse = await rangeOf(url, `bytes=0-${PART_BYTES - 1}`, deadline)
-  if (!headResponse.ok) return null
+  if (!headResponse.ok) return unread(headResponse)
   const head = await firstBytes(headResponse, PART_BYTES)
   const size = headResponse.status === 206 ? totalSize(headResponse) : null
-  if (size === null || size <= PART_BYTES || isPng(head)) return [head]
+  if (size === null || size <= PART_BYTES || headHoldsPngWorkflow(head)) return [head]
   if (size <= PART_BYTES * 2) {
-    const restResponse = await rangeOf(url, `bytes=${PART_BYTES}-`, deadline)
-    if (restResponse.status === 200) return [await firstBytes(restResponse, PART_BYTES * 2)]
-    if (restResponse.status !== 206) return null
-    return [Buffer.concat([head, await firstBytes(restResponse, PART_BYTES)])]
+    return headOr(head, async () => {
+      const restResponse = await rangeOf(url, `bytes=${PART_BYTES}-`, deadline)
+      if (restResponse.status === 200) return [await firstBytes(restResponse, PART_BYTES * 2)]
+      if (restResponse.status !== 206) return unread(restResponse)
+      return [Buffer.concat([head, await firstBytes(restResponse, PART_BYTES)])]
+    })
   }
-  const tailResponse = await rangeOf(url, `bytes=-${PART_BYTES}`, deadline)
-  if (!tailResponse.ok) return null
-  if (tailResponse.status !== 206) return [head]
-  return [head, await firstBytes(tailResponse, PART_BYTES)]
+  return headOr(head, async () => {
+    const tailResponse = await rangeOf(url, `bytes=-${PART_BYTES}`, deadline)
+    if (!tailResponse.ok) return unread(tailResponse)
+    if (tailResponse.status !== 206) return [head]
+    return [head, await firstBytes(tailResponse, PART_BYTES)]
+  })
 }
 
 interface ReadFile {
@@ -141,7 +164,7 @@ async function openAssetWorkflow(
   const place = placeOf(source, build)
   if (!place) return { opened: false, error: i18n.t('apps.local.openUnknownBuild') }
   const read = await readAsset(source, assetId)
-  if (!read) return { opened: false, error: i18n.t('apps.local.openNotTaken') }
+  if (!read) return { opened: false, error: i18n.t('apps.local.openUnreadable') }
   if (!read.workflow) return { opened: false, error: i18n.t('apps.local.openNotWorkflow') }
   return openEmbeddedWorkflow(place, read.workflow, titleOf(name))
 }

@@ -27,6 +27,7 @@ import type { PerformanceTestResultsSummary } from '../types/ipc'
 import PerformanceTestBuildMenu, {
   type BuildOption
 } from './performanceTest/PerformanceTestBuildMenu.vue'
+import PerformanceTestBlockingBuilds from './performanceTest/PerformanceTestBlockingBuilds.vue'
 import PerformanceTestCard from './performanceTest/PerformanceTestCard.vue'
 import PerformanceTestLogs from './performanceTest/PerformanceTestLogs.vue'
 import PerformanceTestProgress from './performanceTest/PerformanceTestProgress.vue'
@@ -100,6 +101,7 @@ const runBlockedReason = computed(() => {
   return t('performanceTest.runWaitsForBuild')
 })
 const summary = computed(() => run.result?.resultsSummary ?? null)
+const runRefused = computed(() => run.blockingSessions.length > 0)
 const resultsFolder = computed(() => {
   const resultPath = run.result?.resultsSummaryPath ?? run.result?.resultPath
   return resultPath ? parentFolder(resultPath) : null
@@ -227,7 +229,7 @@ async function exportResultsImage(): Promise<void> {
               :locked="run.isBusy"
               :importing="workflow.isImporting"
               :deleting="workflow.isDeleting"
-              :can-choose-example="selectedBuildId !== null"
+              :build-selected="selectedBuildId !== null"
               :loading-examples="workflow.example.isPickerLoading"
               :downloading="workflow.example.download !== null"
               @choose-example="workflow.example.openPicker()"
@@ -408,17 +410,26 @@ async function exportResultsImage(): Promise<void> {
                 role="alert"
               >
                 <CircleAlert :size="16" class="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
-                <div class="min-w-0">
+                <div class="min-w-0 flex-1">
                   <p class="m-0 mb-1 text-[15px] font-medium text-foreground">
-                    {{ t('performanceTest.runFailedTitle') }}
+                    {{
+                      runRefused
+                        ? t('performanceTest.runRefusedTitle')
+                        : t('performanceTest.runFailedTitle')
+                    }}
                   </p>
                   <p
-                    class="performance-test__failure-message m-0 line-clamp-2 [overflow-wrap:anywhere]"
+                    class="performance-test__failure-message m-0 [overflow-wrap:anywhere]"
+                    :class="{ 'line-clamp-2': !runRefused }"
                     :title="run.failure"
                   >
                     {{ run.failure }}
                   </p>
-                  <p class="m-0 mt-1">{{ t('performanceTest.runFailedHint') }}</p>
+                  <PerformanceTestBlockingBuilds
+                    v-if="runRefused"
+                    :sessions="run.blockingSessions"
+                  />
+                  <p v-else class="m-0 mt-1">{{ t('performanceTest.runFailedHint') }}</p>
                 </div>
               </div>
               <PerformanceTestProgress
