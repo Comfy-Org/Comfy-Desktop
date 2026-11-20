@@ -212,8 +212,7 @@ export function useConfirmStopTask(): (installationId: string, name: string) => 
     const confirmed = await modal.confirm({
       title: t(`${copy}.cancelTitle`),
       message: t(`${copy}.cancelMessage`, { name, task: current.task }),
-      confirmLabel: t(`${copy}.cancelConfirm`),
-      confirmStyle: 'danger'
+      confirmLabel: t(`${copy}.cancelConfirm`)
     })
     if (!confirmed) return false
     if (progressStore.operations.get(installationId) !== op) return false

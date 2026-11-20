@@ -446,6 +446,28 @@ describe('Build menu', () => {
     await flushPromises()
   })
 
+  it.each(['restart', 'stop'])(
+    'shows %s of a running build as a plain item whose confirm button is white',
+    async (id) => {
+      const tile = await mountTile('running')
+      mounted.push(mount(ModalDialog, { attachTo: document.body }))
+      await tile.get('[data-testid="home-build-more"]').trigger('click')
+      await shownMenu()
+
+      const item = document.querySelector<HTMLElement>(`[data-testid="build-menu-${id}"]`)!
+      expect(item.className).not.toMatch(/destructive|danger/)
+
+      item.click()
+      const box = await confirmBox()
+      const action = box.querySelector<HTMLElement>('[data-testid="base-alert-action"]')!
+      expect(action.getAttribute('data-variant')).toBe('inverted')
+      expect(action.classList).not.toContain('bg-destructive')
+
+      useModal().dismiss()
+      await flushPromises()
+    }
+  )
+
   it.each(['Cancel', 'Escape'] as const)(
     'puts keyboard focus back on the ⋯ button after Uninstall is answered with %s',
     async (answer) => {

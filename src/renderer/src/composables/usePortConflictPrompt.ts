@@ -75,8 +75,7 @@ export function usePortConflictPrompt(
     return modal.confirm({
       title: t(portConflictTitleKey(conflict)),
       message: t(messageKey),
-      confirmLabel: t(stopLabelKey(conflict)),
-      confirmStyle: 'danger'
+      confirmLabel: t(stopLabelKey(conflict))
     })
   }
 
@@ -108,7 +107,6 @@ export function usePortConflictPrompt(
         title,
         message,
         confirmLabel: onlyNext ? useNextLabel : stopLabel,
-        confirmStyle: onlyNext ? 'primary' : 'danger',
         testIds: {
           action: onlyNext ? TID.progressPortConflictUsePort : TID.progressPortConflictKill
         }
@@ -151,8 +149,7 @@ export function usePortConflictPrompt(
       const confirmed = await modal.confirm({
         title: t('errors.portConflictKillConfirmTitle'),
         message: t('errors.portConflictKillConfirmMessage'),
-        confirmLabel: t('errors.portConflictKill'),
-        confirmStyle: 'danger'
+        confirmLabel: t('errors.portConflictKill')
       })
       if (!confirmed) continue
       const killed = await window.api.killPortProcess(current.port).catch(() => ({ ok: false }))

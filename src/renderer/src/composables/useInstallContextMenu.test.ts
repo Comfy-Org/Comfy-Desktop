@@ -678,7 +678,7 @@ describe('useInstallContextMenu - stop and close the build window', () => {
     expect(findItem(menu.ctxMenuItems.value, 'stop')).toBeUndefined()
   })
 
-  it('shows a danger confirm, stops the backend, and closes its window on confirm', async () => {
+  it('shows a white confirm, stops the backend, and closes its window on confirm', async () => {
     modalMock.confirm.mockResolvedValue(true)
     const inst = makeInstall()
     const { menu } = mountHarnessWithManage(() => {})
@@ -690,7 +690,7 @@ describe('useInstallContextMenu - stop and close the build window', () => {
     expect(args.title).toBe('Stop ComfyUI')
     expect(args.message).toBe('This will stop ComfyUI. Any unsaved work will be lost.')
     expect(args.confirmLabel).toBe('Stop')
-    expect(args.confirmStyle).toBe('danger')
+    expect(args.confirmStyle, 'Stop is not destructive, so its confirm is not red').toBeUndefined()
     expect(apiMock.stopComfyUI).toHaveBeenCalledTimes(1)
     expect(apiMock.stopComfyUI).toHaveBeenCalledWith(inst.id)
     expect(apiMock.closeComfyWindow).toHaveBeenCalledExactlyOnceWith(inst.id, {

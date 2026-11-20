@@ -59,16 +59,14 @@ export function useOverlay(): UseOverlayApi {
       return await modal.confirm({
         title: t('overlay.quitSetupTitle'),
         message: t('overlay.quitSetupMessage'),
-        confirmLabel: t('overlay.quitSetupConfirm'),
-        confirmStyle: 'danger'
+        confirmLabel: t('overlay.quitSetupConfirm')
       })
     }
     if (cur.kind === 'takeover' && cur.cancelCopyKey === 'discard-setup') {
       return await modal.confirm({
         title: t('overlay.discardSetupTitle'),
         message: t('overlay.discardSetupMessage'),
-        confirmLabel: t('overlay.discardSetupConfirm'),
-        confirmStyle: 'danger'
+        confirmLabel: t('overlay.discardSetupConfirm')
       })
     }
     const curName =
@@ -79,8 +77,7 @@ export function useOverlay(): UseOverlayApi {
     return await modal.confirm({
       title,
       message: t('overlay.cancelMessage'),
-      confirmLabel: t('overlay.cancelConfirm'),
-      confirmStyle: 'danger'
+      confirmLabel: t('overlay.cancelConfirm')
     })
   }
 

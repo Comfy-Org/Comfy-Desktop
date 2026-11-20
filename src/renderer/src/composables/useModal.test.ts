@@ -72,6 +72,25 @@ describe('useModal', () => {
 
       expect(modal.state.messageDetails).toEqual([])
     })
+
+    it('is white by default because only destructive confirms are red', () => {
+      modal.confirm({ title: 'T', message: 'M' })
+
+      expect(modal.state.confirmStyle).toBe('primary')
+    })
+
+    it('is red only when the caller asks for danger', () => {
+      modal.confirm({ title: 'T', message: 'M', confirmStyle: 'danger' })
+
+      expect(modal.state.confirmStyle).toBe('danger')
+    })
+
+    it('goes back to white after a danger confirm closes', () => {
+      modal.confirm({ title: 'T', message: 'M', confirmStyle: 'danger' })
+      modal.close(false)
+
+      expect(modal.state.confirmStyle).toBe('primary')
+    })
   })
 
   describe('prompt', () => {
@@ -130,6 +149,14 @@ describe('useModal', () => {
       modal.close(result)
 
       await expect(promise).resolves.toEqual(result)
+    })
+
+    it('is white by default and red only when the caller asks for danger', () => {
+      modal.confirmWithOptions({ title: 'T', message: 'M', options })
+      expect(modal.state.confirmStyle).toBe('primary')
+
+      modal.confirmWithOptions({ title: 'T', message: 'M', options, confirmStyle: 'danger' })
+      expect(modal.state.confirmStyle).toBe('danger')
     })
   })
 

@@ -45,8 +45,7 @@ async function stopSession(sessionId: string): Promise<void> {
   const confirmed = await dialogs.confirm({
     title: t('actions.stopConfirmTitle'),
     message: t('actions.stopConfirmMessage'),
-    confirmLabel: t('actions.stop'),
-    tone: 'danger'
+    confirmLabel: t('actions.stop')
   })
   if (!confirmed) return
   requestedStops.value = new Set([...requestedStops.value, sessionId])

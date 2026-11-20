@@ -66,7 +66,7 @@ export function useInstallContextMenu(
   const modal = useModal()
   const dialogs = useDialogs()
   const { confirmAndStop } = useStopAction({
-    confirm: (o) => modal.confirm({ ...o, confirmStyle: 'danger' }),
+    confirm: (o) => modal.confirm(o),
     alert: (o) => modal.alert(o)
   })
   const sessionStore = useSessionStore()

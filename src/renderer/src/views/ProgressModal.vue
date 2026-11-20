@@ -495,8 +495,7 @@ async function handleStopBusyPrior(): Promise<void> {
           ? 'errors.priorProcessUnknownConfirmMessage'
           : 'errors.priorProcessBusyConfirmMessage'
     ),
-    confirmLabel: t(survivors ? 'errors.priorSurvivorsStop' : 'errors.priorProcessBusyStop'),
-    confirmStyle: 'danger'
+    confirmLabel: t(survivors ? 'errors.priorSurvivorsStop' : 'errors.priorProcessBusyStop')
   })
   if (!confirmed) return
   resolvingConflict.value = true
@@ -519,8 +518,7 @@ async function handleKillProcess(port: number): Promise<void> {
   const confirmed = await modal.confirm({
     title: t('errors.portConflictKillConfirmTitle'),
     message: t('errors.portConflictKillConfirmMessage'),
-    confirmLabel: t('errors.portConflictKill'),
-    confirmStyle: 'danger'
+    confirmLabel: t('errors.portConflictKill')
   })
   if (!confirmed) return
   resolvingConflict.value = true

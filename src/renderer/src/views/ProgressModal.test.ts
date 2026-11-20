@@ -415,10 +415,10 @@ describe('ProgressModal — brand branch state transitions', () => {
 
     expect(mockModal.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
-        confirmLabel: 'Stop it and start this build',
-        confirmStyle: 'danger'
+        confirmLabel: 'Stop it and start this build'
       })
     )
+    expect(mockModal.confirm.mock.calls[0]![0]).not.toHaveProperty('confirmStyle')
     expect(api.killPortProcess).not.toHaveBeenCalled()
     expect(api.runAction).toHaveBeenCalledWith('inst-1', 'launch', { stopBusyPriorProcess: true })
   })
