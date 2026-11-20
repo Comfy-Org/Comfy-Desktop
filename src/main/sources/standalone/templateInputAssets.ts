@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import * as settings from '../../settings'
 import { download } from '../../lib/download'
+import { isSecurePublicDownloadUrl } from '../../lib/downloadUrlPolicy'
 import { stripQueryParams } from '../../lib/downloadFilename'
 import { loadTemplateJson } from './templateModels'
 import { TEMPLATE_INPUT_BASE } from './curatedTemplates'
@@ -206,7 +207,7 @@ export async function downloadTemplateInputAssets(
       continue
     } catch {}
     try {
-      await download(asset.url, destPath, null, { signal })
+      await download(asset.url, destPath, null, { signal, validateUrl: isSecurePublicDownloadUrl })
       results.push({ filename: asset.filename, downloaded: true })
       log(`[templates] Downloaded input asset ${asset.filename}.\n`)
     } catch (err) {

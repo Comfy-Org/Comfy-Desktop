@@ -39,7 +39,7 @@ type DownloadFn = (
   url: string,
   dest: string,
   onProgress: ((p: DownloadProgress) => void) | null,
-  options?: { signal?: AbortSignal; expectedSize?: number }
+  options?: { signal?: AbortSignal; expectedSize?: number; validateUrl?: (url: string) => boolean }
 ) => Promise<string>
 
 function makeCtx(overrides: {
@@ -403,5 +403,52 @@ describe('what the installer writes to the install log', () => {
       '[download] Downloading portable.7z\n',
       '[extract] Extracting portable.7z\n'
     ])
+  })
+})
+
+describe('installer download URL policy', () => {
+  function recordingDownload() {
+    return vi.fn<DownloadFn>(async (_url, dest) => {
+      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      fs.writeFileSync(dest, 'archive')
+      return dest
+    })
+  }
+
+  function expectSecurePolicy(download: ReturnType<typeof recordingDownload>): void {
+    for (const call of download.mock.calls) {
+      const validateUrl = call[3]?.validateUrl
+      expect(validateUrl).toBeTypeOf('function')
+      expect(validateUrl!('https://dl.example/env.7z')).toBe(true)
+      expect(validateUrl!('http://dl.example/env.7z')).toBe(false)
+      expect(validateUrl!('http://169.254.169.254/latest/meta-data/')).toBe(false)
+    }
+  }
+
+  it('downloads the environment bundle under the HTTPS policy', async () => {
+    const download = recordingDownload()
+    await downloadAndExtract(
+      'https://dl.example/env.7z',
+      tmpDir(),
+      'policy_single',
+      makeCtx({ download, cache: makeCache(tmpDir()), extract: vi.fn(async () => {}) })
+    )
+    expect(download).toHaveBeenCalledTimes(1)
+    expectSecurePolicy(download)
+  })
+
+  it('downloads every split bundle part under the HTTPS policy', async () => {
+    const download = recordingDownload()
+    await downloadAndExtractMulti(
+      [
+        { url: 'https://dl.example/env.7z.001', filename: 'env.7z.001', size: 7 },
+        { url: 'https://dl.example/env.7z.002', filename: 'env.7z.002', size: 7 }
+      ],
+      tmpDir(),
+      'policy_multi',
+      makeCtx({ download, cache: makeCache(tmpDir()), extract: vi.fn(async () => {}) })
+    )
+    expect(download).toHaveBeenCalledTimes(2)
+    expectSecurePolicy(download)
   })
 })

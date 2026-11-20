@@ -1,3 +1,5 @@
+import { isPermittedDownloadUrl } from './downloadUrlPolicy'
+
 const CHECKOUT_PREFIX = 'https://checkout.comfy.org/'
 
 export const POPUP_ALLOWED_PREFIXES = [
@@ -50,4 +52,13 @@ export function isLikelyDownloadUrl(url: string): boolean {
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
   const pathname = parsed.pathname.toLowerCase()
   return DOWNLOAD_FILE_EXTENSIONS.some((ext) => pathname.endsWith(ext))
+}
+
+export function startPopupDownload(
+  session: Pick<Electron.Session, 'downloadURL'>,
+  url: string
+): boolean {
+  if (!isPermittedDownloadUrl(url)) return false
+  session.downloadURL(url)
+  return true
 }

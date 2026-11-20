@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { startManagedModelJob, type ModelJobOutcome } from '../../lib/comfyDownloadManager'
+import { isSecurePublicDownloadUrl } from '../../lib/downloadUrlPolicy'
 import {
   areModelsPresent,
   getModelsBaseDir,
@@ -296,6 +297,7 @@ async function runTask(
               directory: f.directory,
               installationId: installation.id,
               source: 'template',
+              validateUrl: isSecurePublicDownloadUrl,
               isRetry: attemptCount++ > 0,
               onProgress: (receivedBytes, totalBytes) => {
                 f.received = receivedBytes

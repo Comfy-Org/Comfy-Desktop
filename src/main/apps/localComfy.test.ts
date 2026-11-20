@@ -2031,4 +2031,23 @@ describe('a model download an app asked for', () => {
 
     expect(started).toEqual([expect.objectContaining({ source: 'app', appId: APP })])
   })
+
+  it('downloads it under the HTTPS policy, redirect hops included', async () => {
+    const started: Record<string, unknown>[] = []
+    mocks.startModelJob = async (options) => {
+      started.push(options)
+      return {
+        id: 'job',
+        release: vi.fn(),
+        completion: Promise.resolve({ status: 'completed', savePath: '/models/x' })
+      }
+    }
+    running()
+    await localState(WANT)
+    await local.localDownload(asContents(page), BIREFNET, APP)
+    const validateUrl = started[0]!.validateUrl as (url: string) => boolean
+    expect(validateUrl('https://cdn-lfs.hf.co/x.safetensors')).toBe(true)
+    expect(validateUrl('http://cdn-lfs.hf.co/x.safetensors')).toBe(false)
+    expect(validateUrl('http://169.254.169.254/latest/meta-data/')).toBe(false)
+  })
 })

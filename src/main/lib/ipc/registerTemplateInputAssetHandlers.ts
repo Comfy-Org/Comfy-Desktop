@@ -16,6 +16,7 @@ import type {
   ComfyTemplateInputAssetDownload,
   ComfyTemplateInputAssetDownloadResult
 } from '../../../types/comfyDesktopBridge'
+import { isSecurePublicDownloadUrl } from '../downloadUrlPolicy'
 
 interface TemplateInputAssetHandlerOptions {
   findInstallationIdForWindow: (win: BrowserWindow) => string | undefined
@@ -130,7 +131,11 @@ export function registerTemplateInputAssetHandlers({
         inputDir,
         undefined,
         event.sender,
-        { existingFilePolicy: 'skip', templateInput: { templateId, assetId } }
+        {
+          existingFilePolicy: 'skip',
+          templateInput: { templateId, assetId },
+          validateUrl: isSecurePublicDownloadUrl
+        }
       )
       if (admission.status === 'already-present')
         return { status: admission.status, filename: asset.filename }

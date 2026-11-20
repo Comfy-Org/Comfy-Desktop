@@ -608,6 +608,7 @@ describe('listAssets', () => {
       v1: new Uint8Array(realFs.readFileSync(SAMPLE_VIDEO))
     }
     const rangesAsked: string[] = []
+    const redirectModes: (RequestRedirect | undefined)[] = []
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (url.includes('/assets?'))
         return jsonResponse({
@@ -625,6 +626,7 @@ describe('listAssets', () => {
           headers: { Location: `https://storage.googleapis.com/bucket/${id}?sig=1` }
         })
       rangesAsked.push(new Headers(init?.headers).get('Range') ?? '')
+      redirectModes.push(init?.redirect)
       const file = files[/bucket\/([^?]+)/.exec(url)![1]!]!
       return new Response(file, { status: 206 })
     })
@@ -645,6 +647,10 @@ describe('listAssets', () => {
     expect(rangesAsked.toSorted(), 'only the start of each file is asked for').toEqual([
       'bytes=0-524287',
       'bytes=0-65535'
+    ])
+    expect(redirectModes, 'signed preview URLs are fetched without following redirects').toEqual([
+      'error',
+      'error'
     ])
   })
 })

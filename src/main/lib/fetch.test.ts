@@ -8,7 +8,10 @@ vi.mock('./safe-file', () => ({ writeFileSafe: vi.fn() }))
 interface FakeRequest extends EventEmitter {
   setHeader: ReturnType<typeof vi.fn>
   end: ReturnType<typeof vi.fn>
+  abort: ReturnType<typeof vi.fn>
+  followRedirect: ReturnType<typeof vi.fn>
   __url: string
+  __redirect: string | undefined
   __headers: Record<string, string>
 }
 
@@ -16,14 +19,17 @@ const requests: FakeRequest[] = []
 
 vi.mock('electron', () => ({
   net: {
-    request: vi.fn((opts: { url: string }) => {
+    request: vi.fn((opts: { url: string; redirect?: string }) => {
       const headers: Record<string, string> = {}
       const req = Object.assign(new EventEmitter(), {
         setHeader: vi.fn((k: string, v: string) => {
           headers[k] = v
         }),
         end: vi.fn(),
+        abort: vi.fn(),
+        followRedirect: vi.fn(),
         __url: opts.url,
+        __redirect: opts.redirect,
         __headers: headers
       }) as FakeRequest
       requests.push(req)
@@ -154,5 +160,56 @@ describe('fetchJSON — mirror is not allowed to poison the cache', () => {
     expect(requests[0]!.__headers['If-None-Match']).toBe('"primary-etag-1"')
     requests[0]!.emit('response', makeResponse(304, ''))
     await expect(p2).resolves.toEqual({ v: 1 })
+  })
+})
+
+describe('fetchJSON — URL policy', () => {
+  beforeEach(() => {
+    requests.length = 0
+    _resetCacheForTest()
+  })
+
+  it('handles redirects itself instead of letting Chromium follow them', async () => {
+    const p = fetchJSON(PRIMARY)
+    expect(requests[0]!.__redirect).toBe('manual')
+    requests[0]!.emit('response', makeResponse(200, '{}'))
+    await p
+  })
+
+  it.each(['file:///etc/passwd', 'http://169.254.169.254/latest/meta-data/'])(
+    'refuses %s without a request',
+    async (url) => {
+      await expect(fetchJSON(url)).rejects.toThrow('Request URL is not allowed')
+      expect(requests).toHaveLength(0)
+    }
+  )
+
+  it('follows a permitted redirect on the same request', async () => {
+    const p = fetchJSON('https://api.github.com/repos/o/r')
+    requests[0]!.emit('redirect', 301, 'GET', 'https://api.github.com/repositories/1')
+    expect(requests[0]!.followRedirect).toHaveBeenCalledTimes(1)
+    requests[0]!.emit('response', makeResponse(200, '{"ok":true}'))
+    await expect(p).resolves.toEqual({ ok: true })
+  })
+
+  it.each([
+    ['instance metadata', 'http://169.254.169.254/latest/meta-data/'],
+    ['embedded credentials', 'https://user:pw@api.github.com/x'],
+    ['HTTPS to HTTP downgrade', 'http://api.github.com/x']
+  ])('refuses a redirect hop to %s', async (_label, hop) => {
+    const p = fetchJSON('https://api.github.com/repos/o/r')
+    requests[0]!.emit('redirect', 302, 'GET', hop)
+    await expect(p).rejects.toThrow('Request redirected to a URL that is not allowed')
+    expect(requests[0]!.followRedirect).not.toHaveBeenCalled()
+    expect(requests[0]!.abort).toHaveBeenCalled()
+  })
+
+  it('fails after too many redirects', async () => {
+    const p = fetchJSON('https://api.github.com/repos/o/r')
+    for (let i = 0; i < 6; i++) {
+      requests[0]!.emit('redirect', 302, 'GET', `https://api.github.com/hop/${i}`)
+    }
+    await expect(p).rejects.toThrow('Request failed: too many redirects')
+    expect(requests[0]!.followRedirect).toHaveBeenCalledTimes(5)
   })
 })

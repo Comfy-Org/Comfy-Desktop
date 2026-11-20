@@ -7,6 +7,8 @@ import type { BetaArgView } from '../../types/ipc'
 import { isPermittedDownloadUrl, isSecurePublicDownloadUrl } from './downloadUrlPolicy'
 import { resolveRedirects, type ResolveRedirectsResult } from './redirectResolver'
 import { startModelTransfer, type ModelTransferOutcome } from './modelDownloadTransport'
+import { download } from './download'
+import { fetchJSON } from './fetch'
 import { _test_setUpdateState, type AppUpdateState } from './updater'
 import {
   get as _releaseCacheGet,
@@ -108,6 +110,12 @@ export interface E2EHelpers {
     finalPath: string
     policy: E2EDownloadPolicy
   }): Promise<ModelTransferOutcome>
+  runDownload(opts: {
+    url: string
+    destPath: string
+    policy: E2EDownloadPolicy
+  }): Promise<{ ok: true } | { ok: false; error: string }>
+  runFetchJSON(url: string): Promise<{ ok: true; data: unknown } | { ok: false; error: string }>
 }
 
 export function registerE2EHooks(): void {
@@ -210,6 +218,21 @@ export function registerE2EHooks(): void {
         filename: finalPath.split(/[\\/]/).pop() ?? 'model.safetensors',
         validateUrl: e2ePolicies[policy]
       }).done
+    },
+    async runDownload({ url, destPath, policy }) {
+      try {
+        await download(url, destPath, null, { validateUrl: e2ePolicies[policy] })
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    },
+    async runFetchJSON(url) {
+      try {
+        return { ok: true, data: await fetchJSON(url, { refresh: true }) }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
     }
   }
   ;(globalThis as unknown as { __e2e: E2EHelpers }).__e2e = helpers

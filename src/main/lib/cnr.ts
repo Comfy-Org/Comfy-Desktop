@@ -3,6 +3,7 @@ import path from 'path'
 import os from 'os'
 import { fetchJSON } from './fetch'
 import { download } from './download'
+import { isSecurePublicDownloadUrl } from './downloadUrlPolicy'
 import { extract } from './extract'
 import * as telemetry from './telemetry'
 import { buildErrorFields } from '../../shared/errorEvent'
@@ -77,7 +78,7 @@ export async function installCnrNode(
 
     try {
       sendOutput(`Downloading ${nodeId}@${info.version}...\n`)
-      await download(info.downloadUrl, tmpZip, null)
+      await download(info.downloadUrl, tmpZip, null, { validateUrl: isSecurePublicDownloadUrl })
 
       sendOutput(`Extracting ${nodeId}@${info.version}...\n`)
       await fs.promises.mkdir(installPath, { recursive: true })
@@ -145,7 +146,7 @@ export async function switchCnrVersion(
 
     try {
       sendOutput(`Downloading ${nodeId}@${info.version}...\n`)
-      await download(info.downloadUrl, tmpZip, null)
+      await download(info.downloadUrl, tmpZip, null, { validateUrl: isSecurePublicDownloadUrl })
 
       sendOutput(`Extracting ${nodeId}@${info.version}...\n`)
       await fs.promises.mkdir(tmpExtract, { recursive: true })

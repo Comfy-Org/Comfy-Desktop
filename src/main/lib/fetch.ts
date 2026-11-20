@@ -3,6 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { cacheDir } from './paths'
 import { r2MirrorUrl } from './r2Mirror'
+import { isPermittedDownloadUrl, isPermittedRedirect } from './downloadUrlPolicy'
 import { writeFileSafe } from './safe-file'
 
 interface CacheEntry {
@@ -11,6 +12,7 @@ interface CacheEntry {
 }
 
 const MAX_CACHE_SIZE = 100
+const MAX_REDIRECTS = 5
 const CACHE_FILE = path.join(cacheDir(), 'fetch-cache.json')
 
 const _cache: Map<string, CacheEntry> = new Map()
@@ -70,7 +72,11 @@ function fetchJSONOnce(
   cacheKey: string | undefined
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const request = net.request({ url, cache: 'no-cache' })
+    if (!isPermittedDownloadUrl(url)) {
+      reject(new Error('Request URL is not allowed'))
+      return
+    }
+    const request = net.request({ url, cache: 'no-cache', redirect: 'manual' })
     request.setHeader('User-Agent', 'ComfyUI-Desktop-2')
 
     const ghToken = process.env.GITHUB_TOKEN
@@ -85,6 +91,24 @@ function fetchJSONOnce(
     if (cached?.etag) {
       request.setHeader('If-None-Match', cached.etag)
     }
+
+    let redirectsLeft = MAX_REDIRECTS
+    let currentUrl = url
+    request.on('redirect', (_status, _method, redirectUrl) => {
+      const refusal =
+        redirectsLeft-- <= 0
+          ? 'Request failed: too many redirects'
+          : !isPermittedRedirect(currentUrl, redirectUrl, isPermittedDownloadUrl)
+            ? 'Request redirected to a URL that is not allowed'
+            : null
+      if (refusal) {
+        request.abort()
+        reject(new Error(refusal))
+        return
+      }
+      currentUrl = redirectUrl
+      request.followRedirect()
+    })
 
     let data = ''
     request.on('response', (response) => {

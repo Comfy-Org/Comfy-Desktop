@@ -73,6 +73,8 @@ describe('stageModels', () => {
     expect(fs.readFileSync(dest)).toEqual(bytes)
     expect(jobs.start).toHaveBeenCalledTimes(1)
     const opts = jobs.start.mock.calls[0]![0]
+    expect(opts.validateUrl?.('https://cdn.example/v.pt')).toBe(true)
+    expect(opts.validateUrl?.('http://cdn.example/v.pt')).toBe(false)
     expect(opts).toMatchObject({
       url: 'https://x/v.pt',
       filename: 'v.pt',
