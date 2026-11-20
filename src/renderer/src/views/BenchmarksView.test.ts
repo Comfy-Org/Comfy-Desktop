@@ -754,6 +754,23 @@ describe('BenchmarksView', () => {
     expect(vsLabels(wrapper)).toEqual(['Fastest', '1.11× slower', '1.53× slower'])
   })
 
+  it('keeps a chosen baseline clearable after it becomes the fastest run', async () => {
+    const wrapper = await mountPortrait4090()
+    await row(wrapper, '12').get('[data-testid="benchmark-baseline-12"]').trigger('click')
+
+    await rowAction(wrapper, '13', '.benchmarks__delete-record')
+    useDialogs().confirmPrimary()
+    await flushPromises()
+
+    const chosen = row(wrapper, '12').get('[data-testid="benchmark-baseline-12"]')
+    expect(chosen.attributes('aria-pressed')).toBe('true')
+    expect(vsLabels(wrapper)[0]).toBe('Baseline')
+
+    await chosen.trigger('click')
+    expect(vsLabels(wrapper)).toEqual(['Fastest', '1.38× slower'])
+    expect(row(wrapper, '12').find('[data-testid="benchmark-baseline-12"]').exists()).toBe(false)
+  })
+
   it('reorders picked columns by dragging headers and with Alt+arrow keys', async () => {
     const wrapper = mountView()
     await flushPromises()

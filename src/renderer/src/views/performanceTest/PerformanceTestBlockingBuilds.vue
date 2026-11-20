@@ -3,8 +3,9 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Square } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
+import { useDialogs } from '../../composables/useDialogs'
 import { useSessionStore } from '../../stores/sessionStore'
-import { sessionKindOf } from '../../../../shared/performanceTestSession'
+import { installationIdOf, sessionKindOf } from '../../../../shared/performanceTestSession'
 import type { BlockingSession } from '../../types/ipc'
 
 const props = defineProps<{
@@ -12,13 +13,23 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const dialogs = useDialogs()
 const sessionStore = useSessionStore()
 const requestedStops = ref<ReadonlySet<string>>(new Set())
+
+function isPreparingLaunch(sessionId: string): boolean {
+  const installationId = installationIdOf(sessionId)
+  const operation = sessionStore.operationInstances.get(installationId)
+  return operation?.actionId === 'launch' && (operation.sessionId ?? installationId) === sessionId
+}
 
 const rows = computed(() =>
   props.sessions.map(({ sessionId, name }) => {
     const stopping = sessionStore.isStopping(sessionId) || requestedStops.value.has(sessionId)
-    const active = sessionStore.isRunning(sessionId) || sessionStore.isLaunching(sessionId)
+    const active =
+      sessionStore.isRunning(sessionId) ||
+      sessionStore.isLaunching(sessionId) ||
+      isPreparingLaunch(sessionId)
     return {
       sessionId,
       label:
@@ -31,6 +42,13 @@ const rows = computed(() =>
 )
 
 async function stopSession(sessionId: string): Promise<void> {
+  const confirmed = await dialogs.confirm({
+    title: t('actions.stopConfirmTitle'),
+    message: t('actions.stopConfirmMessage'),
+    confirmLabel: t('actions.stop'),
+    tone: 'danger'
+  })
+  if (!confirmed) return
   requestedStops.value = new Set([...requestedStops.value, sessionId])
   try {
     await window.api.cancelOperation(sessionId)

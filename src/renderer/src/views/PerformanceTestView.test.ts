@@ -5,9 +5,13 @@ import PerformanceTestView from './PerformanceTestView.vue'
 import PerformanceTestBuildMenu from './performanceTest/PerformanceTestBuildMenu.vue'
 import PerformanceTestWorkflowMenu from './performanceTest/PerformanceTestWorkflowMenu.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import { useDialogs } from '../composables/useDialogs'
 
 const scopedInstallations = vi.hoisted(() => ({ value: [] as unknown[] }))
 const runningSessions = vi.hoisted(() => new Set<string>())
+const operationInstances = vi.hoisted(
+  () => new Map<string, { actionId: string; sessionId?: string }>()
+)
 
 vi.mock('../stores/authStore', () => ({
   useAuthStore: () => ({ isSignedIn: false })
@@ -21,6 +25,7 @@ vi.mock('../stores/sessionStore', () => ({
     isLaunching: vi.fn(),
     isStopping: vi.fn(),
     isRunning: (id: string) => runningSessions.has(id),
+    operationInstances,
     startSession: vi.fn(),
     appendOutput: vi.fn()
   })
@@ -52,6 +57,7 @@ function mountView() {
 beforeEach(() => {
   scopedInstallations.value = []
   runningSessions.clear()
+  operationInstances.clear()
   const methods = new Map<PropertyKey, ReturnType<typeof vi.fn>>()
   window.api = new Proxy(
     {},
@@ -170,11 +176,12 @@ describe('PerformanceTestView Run reason', () => {
 })
 
 describe('PerformanceTestView refused by other running builds', () => {
-  it('lists each running build with its own Stop button', async () => {
+  it('lists each running or preparing build with a Stop button that asks first', async () => {
     scopedInstallations.value = [
       { id: 'b1', name: 'Build 1', sourceCategory: 'local', status: 'installed' }
     ]
-    runningSessions.add('b2').add('performance-test:b3')
+    runningSessions.add('performance-test:b3')
+    operationInstances.set('b2', { actionId: 'launch' })
     vi.mocked(window.api.importPerformanceTestWorkflow).mockResolvedValue({
       ok: true,
       filePath: '/workflows/flow.json'
@@ -203,7 +210,16 @@ describe('PerformanceTestView refused by other running builds', () => {
       'Performance test: Build 3 Stop'
     ])
 
+    const dialogs = useDialogs()
     await rows[1]!.get('.performance-test__blocking-build-stop').trigger('click')
+    expect(dialogs.state.kind).toBe('confirm')
+    expect(dialogs.state.confirm.title).toBe('Stop ComfyUI')
+    dialogs.cancel()
+    await flushPromises()
+    expect(window.api.stopComfyUI).not.toHaveBeenCalled()
+
+    await rows[1]!.get('.performance-test__blocking-build-stop').trigger('click')
+    dialogs.confirmPrimary()
     await flushPromises()
 
     expect(window.api.stopComfyUI).toHaveBeenCalledWith('performance-test:b3')

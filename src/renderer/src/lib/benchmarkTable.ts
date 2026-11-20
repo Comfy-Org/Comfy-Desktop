@@ -190,7 +190,7 @@ export function buildBenchmarkTable(input: BenchmarkTableInput): BenchmarkTableM
     measuredCount: measured.length,
     fastestId: fastest?.id ?? null,
     referenceId: reference?.id ?? null,
-    customBaseline: chosen !== null && chosen.id !== fastest?.id,
+    customBaseline: chosen !== null,
     comparisons,
     scaleMaximum: scaleValues.length > 0 ? Math.max(...scaleValues) : 1
   }
