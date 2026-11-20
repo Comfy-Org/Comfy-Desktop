@@ -23,7 +23,7 @@ import {
   hardwareNoteKey,
   isCpuVariant,
   machineName,
-  planVersion,
+  versionText,
   resolveSetupPlan,
   setupPlatform,
   splitPathTail,
@@ -123,9 +123,7 @@ const hardwareDetected = computed(
   () =>
     !!variant.value &&
     !workspaceBuild.value &&
-    (!props.savedPlan ||
-      props.savedPlan.hardwareDetected === true ||
-      variant.value.recommended === true)
+    (!props.savedPlan || (props.savedPlan.hardwareDetected ?? variant.value.recommended === true))
 )
 const hardwareNote = computed(() =>
   hardwareNoteKey({
@@ -167,8 +165,8 @@ const locationMeta = computed(() => {
 const version = computed(() => {
   if (!plan.value) return ''
   if (workspaceBuild.value) return workspaceBuild.value.buildName
-  const tag = planVersion(plan.value)
-  return tag ? t('setup.versionValue', { version: tag }) : t('standalone.comfyui')
+  const text = versionText(plan.value.selections)
+  return t(text.key, text.params)
 })
 const channel = computed(() =>
   workspaceBuild.value ? '' : (plan.value?.selections.release?.label ?? '')

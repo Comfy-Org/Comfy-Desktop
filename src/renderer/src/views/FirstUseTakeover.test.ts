@@ -287,7 +287,7 @@ describe('Set up, the first screen', () => {
     expect(window.api.getFieldOptions).not.toHaveBeenCalled()
     expect(text(w, 'setup-hardware')).toBe('CPU')
     expect(text(w, 'setup-row-location')).toContain('/Volumes/Studio SSD/ComfyUI')
-    expect(text(w, 'setup-version')).toContain('v0.43.0')
+    expect(text(w, 'setup-version')).toBe('ComfyUI v0.43.0 (nightly)')
     expect(text(w, 'setup-row-version')).toContain('Latest on GitHub')
 
     await agree(w)
@@ -335,6 +335,49 @@ describe('Set up, the first screen', () => {
     await flushPromises()
 
     expect(text(w, 'setup-row-hardware')).not.toContain('Detected')
+  })
+
+  it('keeps a saved not-detected flag even when the saved hardware is the recommended one', async () => {
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        variant: {
+          value: 'win-amd',
+          label: 'AMD',
+          recommended: true,
+          data: { variantId: 'win-amd', downloadFiles: [] }
+        }
+      },
+      installRoot: '/Users/ada/ComfyUI-Installs',
+      downloadBytes: 0,
+      requiredBytes: 0,
+      hardwareDetected: false
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+
+    expect(text(w, 'setup-row-hardware')).not.toContain('Detected')
+  })
+
+  it('falls back to the recommended mark for a saved plan without the detected flag', async () => {
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        variant: {
+          value: 'win-amd',
+          label: 'AMD',
+          recommended: true,
+          data: { variantId: 'win-amd', downloadFiles: [] }
+        }
+      },
+      installRoot: '/Users/ada/ComfyUI-Installs',
+      downloadBytes: 0,
+      requiredBytes: 0
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+
+    expect(text(w, 'setup-row-hardware')).toContain('Detected')
   })
 
   it('names a team build saved in Change by its build and hardware, not as detected', async () => {

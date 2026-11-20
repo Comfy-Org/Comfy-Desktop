@@ -52,7 +52,7 @@ import {
   isCpuVariant,
   isDefaultPick,
   machineName,
-  selectedVersion,
+  versionText,
   type ChangeSetupDraft,
   type NewInstallSetup,
   type SavedSetup,
@@ -132,6 +132,7 @@ const unsupportedReason = ref('')
 const view = ref<'summary' | 'change'>('summary')
 const localDeviceKind = useLocalDeviceKind()
 const hardwareWarning = ref('')
+const hardwarePickedByHand = ref(false)
 const saveDisabled = ref(true)
 const sourcesLoading = ref(false)
 const initializing = ref(false)
@@ -573,6 +574,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   changeSetupDraft = null
   hardwareValidation = null
   hardwareWarning.value = ''
+  hardwarePickedByHand.value = false
   resetDiskSpace()
   sourceError.value = ''
   authorizingWorkspace.value = false
@@ -892,6 +894,7 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
     if (options.length > 0) {
       const defaultOption = defaultFieldOption(options)
       if (defaultOption) selections.value[field.id] = defaultOption
+      if (field.id === 'variant') hardwarePickedByHand.value = false
     } else {
       delete selections.value[field.id]
     }
@@ -954,6 +957,9 @@ function supersedeFieldLoads(fromIndex: number): void {
 function selectCardOption(field: SourceField, fieldIndex: number, option: FieldOption): void {
   selections.value[field.id] = option
   if (field.id === 'variant') {
+    if (!isDefaultPick(option, fieldOptions.value.get(field.id) ?? [])) {
+      hardwarePickedByHand.value = true
+    }
     emitTelemetryAction('comfy.desktop.install.variant.selected', {
       variant_bucket: toVariantBucket(
         (option.data?.variantId as string | undefined) || option.value
@@ -1266,7 +1272,8 @@ function captureNewInstallSetup(): NewInstallSetup {
     sourceError: sourceError.value,
     instPath: instPath.value,
     selectedBuildId: selectedBuildId.value,
-    selectedBuildTargetId: selectedBuildTargetId.value
+    selectedBuildTargetId: selectedBuildTargetId.value,
+    hardwarePickedByHand: hardwarePickedByHand.value
   }
 }
 
@@ -1301,6 +1308,12 @@ function workspaceBuildPlan(build: Build): SetupPlan {
   }
 }
 
+function isDetectedHardware(variant: FieldOption | undefined): boolean {
+  return (
+    !hardwarePickedByHand.value && isDefaultPick(variant, fieldOptions.value.get('variant') ?? [])
+  )
+}
+
 function sourcePlan(source: Source): SetupPlan {
   const picked = rawSelections()
   return {
@@ -1309,7 +1322,7 @@ function sourcePlan(source: Source): SetupPlan {
     installRoot: instPath.value,
     downloadBytes: downloadBytesOf(picked.variant),
     requiredBytes: estimatedInstallSize.value,
-    hardwareDetected: isDefaultPick(picked.variant, fieldOptions.value.get('variant') ?? []),
+    hardwareDetected: isDetectedHardware(picked.variant),
     ...(instName.value.trim() ? { name: instName.value.trim() } : {}),
     ...(workspaceId.value ? { workspaceId: workspaceId.value } : {})
   }
@@ -1395,6 +1408,7 @@ async function restoreNewInstallSetup(setup: NewInstallSetup): Promise<void> {
   loadGeneration++
   heldFields.value.clear()
   selections.value = { ...setup.selections }
+  hardwarePickedByHand.value = setup.hardwarePickedByHand ?? false
   fieldOptions.value = new Map(setup.fieldOptions)
   fieldLoading.value = new Map(setup.fieldLoading)
   fieldErrors.value = new Map(setup.fieldErrors)
@@ -1656,21 +1670,28 @@ function fieldSummaryValue(field: SourceField): string {
   return selections.value[field.id]?.label ?? getSelectPlaceholder(field)
 }
 
+function hardwarePlaceholder(): string {
+  const field = currentSource.value?.fields.find((candidate) => candidate.id === 'variant')
+  const settled =
+    !!field &&
+    !fieldLoading.value.get(field.id) &&
+    (fieldOptions.value.has(field.id) || fieldErrors.value.has(field.id))
+  return settled ? getSelectPlaceholder(field) : t('setup.checking')
+}
+
 function standaloneHardwareRow(): SummaryRow {
   const variant = selections.value.variant
   const note = hardwareNoteKey({
     unsupported: !!unsupportedReason.value,
     cpuOnly: isCpuVariant(variant),
-    detected: isDefaultPick(variant, fieldOptions.value.get('variant') ?? [])
+    detected: isDetectedHardware(variant)
   })
   const caution = unsupportedReason.value || hardwareWarning.value
   return {
     key: 'standalone-hardware',
     icon: Zap,
     label: t('setup.hardware'),
-    value: fieldLoading.value.get('variant')
-      ? t('newInstall.loading')
-      : (variant?.label ?? t('setup.checking')),
+    value: variant?.label ?? hardwarePlaceholder(),
     meta: note ? t(note) : undefined,
     metaTitle: caution || undefined,
     metaWarning: !!caution
@@ -1679,16 +1700,12 @@ function standaloneHardwareRow(): SummaryRow {
 
 function standaloneVersionRow(): SummaryRow {
   const loading = fieldLoading.value.get('release') || fieldLoading.value.get('comfyVersion')
-  const tag = selectedVersion(selections.value)
+  const text = versionText(selections.value)
   return {
     key: 'standalone-version',
     icon: Package,
     label: t('setup.version'),
-    value: loading
-      ? t('newInstall.loading')
-      : tag
-        ? t('setup.versionValue', { version: tag })
-        : t('standalone.comfyui'),
+    value: loading ? t('newInstall.loading') : t(text.key, text.params),
     meta: selections.value.release?.label
   }
 }

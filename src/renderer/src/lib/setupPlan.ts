@@ -36,6 +36,7 @@ export interface NewInstallSetup {
   instPath: string
   selectedBuildId: string
   selectedBuildTargetId: string
+  hardwarePickedByHand?: boolean
 }
 
 export interface ChangeSetupDraft extends NewInstallSetup {
@@ -105,15 +106,22 @@ export function isCpuVariant(variant: FieldOption | undefined): boolean {
   return /(^|-)cpu($|-)/.test(id)
 }
 
-export function selectedVersion(selections: Record<string, FieldOption | undefined>): string {
+function selectedVersion(selections: Record<string, FieldOption | undefined>): string {
   const picked = selections.comfyVersion?.value
   if (picked) return picked
   const tag = selections.release?.data?.latestStableTag
   return typeof tag === 'string' ? tag : ''
 }
 
-export function planVersion(plan: SetupPlan): string {
-  return selectedVersion(plan.selections)
+export type VersionText =
+  | { key: 'setup.versionValue' | 'setup.versionValueNightly'; params: { version: string } }
+  | { key: 'standalone.comfyui'; params: Record<string, never> }
+
+export function versionText(selections: Record<string, FieldOption | undefined>): VersionText {
+  const version = selectedVersion(selections)
+  if (!version) return { key: 'standalone.comfyui', params: {} }
+  const nightly = selections.release?.value === 'latest'
+  return { key: nightly ? 'setup.versionValueNightly' : 'setup.versionValue', params: { version } }
 }
 
 export type HardwareNoteKey = 'setup.unsupported' | 'setup.noGpu' | 'setup.detected'

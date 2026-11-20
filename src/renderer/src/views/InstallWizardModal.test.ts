@@ -337,6 +337,71 @@ describe('InstallWizardModal heading', () => {
     wrapper.unmount()
   })
 
+  it('does not call the default hardware Detected after it was changed by hand and picked again', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'win-amd', label: 'AMD', data: { variantId: 'win-amd', downloadFiles: [] } },
+      {
+        value: 'win-nvidia',
+        label: 'NVIDIA',
+        data: { variantId: 'win-nvidia', downloadFiles: [] }
+      }
+    ])
+    const wrapper = mountModal({ hideBackToDashboard: true })
+    await wrapper.vm.open({ cameFromSetup: true, needsConsent: true, entrypoint: 'first_use' })
+    await flushPromises()
+
+    await pickHardware(wrapper, 'NVIDIA')
+    await pickHardware(wrapper, 'AMD')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+
+    const [saved] = savedSetups(wrapper)
+    expect(saved?.plan).toMatchObject({
+      hardwareDetected: false,
+      selections: { variant: expect.objectContaining({ value: 'win-amd' }) }
+    })
+    wrapper.unmount()
+  })
+
+  it('drops Detected from the summary once the hardware was changed by hand, even back to the default', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'win-amd', label: 'AMD', data: { variantId: 'win-amd', downloadFiles: [] } },
+      {
+        value: 'win-nvidia',
+        label: 'NVIDIA',
+        data: { variantId: 'win-nvidia', downloadFiles: [] }
+      }
+    ])
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+    const hardwareRow = () => wrapper.get('[data-testid="config-summary-standalone-hardware"]')
+    expect(hardwareRow().text()).toBe('HardwareAMDDetected')
+
+    await showChangeSetup(wrapper)
+    await pickHardware(wrapper, 'NVIDIA')
+    await pickHardware(wrapper, 'AMD')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(hardwareRow().text()).toBe('HardwareAMD')
+    wrapper.unmount()
+  })
+
   it('reopens Change on the setup saved before, ready to save again', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
@@ -628,6 +693,24 @@ describe('InstallWizardModal heading', () => {
     await flushPromises()
 
     expect(hardwareRow().text()).toBe('HardwareCPUNo GPU acceleration')
+  })
+
+  it('says no hardware options are available, instead of checking forever, when the catalog has none', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    const hardware = wrapper.get('[data-testid="config-summary-standalone-hardware"]').text()
+    expect(hardware).toBe('HardwareNo options available')
+    expect(hardware).not.toContain('Checking')
   })
 
   it('browses for a new location straight from the summary', async () => {
@@ -2017,6 +2100,36 @@ describe('InstallWizardModal Change setup', () => {
       .find((button) => button.attributes('data-state') === 'on')
       ?.text()
   }
+
+  it('marks the Latest on GitHub version as nightly, since it installs the newest commit', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_source: string, fieldId: string) =>
+        fieldId === 'release'
+          ? [
+              {
+                value: 'stable',
+                label: 'Stable',
+                recommended: true,
+                data: { latestStableTag: 'v0.22.3' }
+              },
+              { value: 'latest', label: 'Latest on GitHub', data: { latestStableTag: 'v0.22.3' } }
+            ]
+          : []
+    )
+    const wrapper = await openChangeSetup()
+    const versionRow = () => wrapper.get('[data-testid="config-summary-standalone-version"]').text()
+
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    expect(versionRow()).toBe('VersionComfyUI v0.22.3Stable')
+
+    await showChangeSetup(wrapper)
+    await pickRelease(wrapper, 'Latest on GitHub')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    expect(versionRow()).toBe('VersionComfyUI v0.22.3 (nightly)Latest on GitHub')
+  })
 
   it('picks the release with a segmented control and shows the version only for Stable', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
