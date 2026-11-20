@@ -6,7 +6,6 @@ import Button from '@comfyorg/design-system/button/Button'
 import Tooltip from '../components/ui/Tooltip.vue'
 import AppCoverPreview from './AppCoverPreview.vue'
 import { stillsOf } from '../lib/appStills'
-import { SIDEBAR_FACE_BUTTON_CLASS, SIDEBAR_HEADER_CLASS } from './sidebarClasses'
 import type { AppCard } from '../types/ipc'
 
 const { currentApp, apps } = defineProps<{
@@ -15,8 +14,6 @@ const { currentApp, apps } = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'all-apps': []
-  'all-apps-menu': [event: MouseEvent]
   'switch-app': [app: AppCard]
 }>()
 
@@ -47,30 +44,8 @@ function pick(app: AppCard): void {
 </script>
 
 <template>
-  <div :class="SIDEBAR_HEADER_CLASS">
-    <Button
-      variant="muted-textonly"
-      size="unset"
-      class="left-[5px] transition-[scale,background-color,color] duration-150 ease-out active:scale-90 motion-reduce:transition-none"
-      :class="SIDEBAR_FACE_BUTTON_CLASS"
-      :aria-label="t('apps.allApps')"
-      data-testid="app-sidebar-all-apps"
-      @click="emit('all-apps')"
-      @contextmenu.prevent="emit('all-apps-menu', $event)"
-    >
-      <Tooltip
-        :text="t('apps.allApps')"
-        side="right"
-        :delay-ms="0"
-        class="size-full items-center justify-center"
-      >
-        <AppWindow :size="17" aria-hidden="true" />
-      </Tooltip>
-    </Button>
-  </div>
-
   <nav
-    class="-mx-3 flex min-h-0 flex-1 scrollbar-hide flex-col overflow-x-hidden overflow-y-auto px-3"
+    class="-mx-3 mt-2 flex min-h-0 flex-1 scrollbar-hide flex-col overflow-x-hidden overflow-y-auto px-3"
     :aria-label="t('sidebar.apps')"
     data-testid="app-sidebar-app-rail"
   >

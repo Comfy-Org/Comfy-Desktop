@@ -262,13 +262,13 @@ describe('AppSidebar', () => {
       return wrapper.findAll('[data-testid="app-sidebar-app-rail"] button')
     }
 
-    it('shows All apps on top, then one picture per app in the list order', async () => {
+    it('shows only one picture per app in the list order, with nothing above them', async () => {
       const wrapper = await mountWithAppOpen()
 
-      expect(wrapper.get('[data-testid="app-sidebar-all-apps"]').attributes('aria-label')).toBe(
-        'All apps'
+      expect(wrapper.find('[data-testid="app-sidebar-all-apps"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="app-sidebar"]').element.firstElementChild).toBe(
+        wrapper.get('[data-testid="app-sidebar-app-rail"]').element
       )
-      expect(tooltipOf(wrapper, 'app-sidebar-all-apps')).toBe('All apps')
       expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
         'Character Swap',
         'Product Swap',
@@ -330,16 +330,6 @@ describe('AppSidebar', () => {
       wrapper.unmount()
     })
 
-    it('goes back to all apps from the Apps icon', async () => {
-      const wrapper = await mountWithAppOpen()
-
-      await wrapper.get('[data-testid="app-sidebar-all-apps"]').trigger('click')
-
-      expect(wrapper.emitted('navigate')).toEqual([['apps']])
-      expect(navigatePanel).toHaveBeenCalledWith('apps')
-      wrapper.unmount()
-    })
-
     it('keeps Credits and the account at the bottom, and leaves Desktop Settings out', async () => {
       refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: 100 })
       const wrapper = await mountWithAppOpen()
@@ -358,14 +348,13 @@ describe('AppSidebar', () => {
       wrapper.unmount()
     })
 
-    it('opens the tooltips of All apps and of every app at once, with no delay', async () => {
+    it('opens the tooltip of every app at once, with no delay', async () => {
       const wrapper = await mountWithAppOpen()
 
-      const delays = [
-        wrapper.get('[data-testid="app-sidebar-all-apps"]'),
-        ...thumbnails(wrapper)
-      ].map((button) => button.findComponent(Tooltip).props('delayMs'))
-      expect(delays).toEqual([0, 0, 0, 0])
+      const delays = thumbnails(wrapper).map((button) =>
+        button.findComponent(Tooltip).props('delayMs')
+      )
+      expect(delays).toEqual([0, 0, 0])
       wrapper.unmount()
     })
 

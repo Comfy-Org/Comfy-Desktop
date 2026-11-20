@@ -582,6 +582,11 @@ function mountPanel() {
   })
 }
 
+async function goBackToAllAppsFromThePage(): Promise<void> {
+  vi.mocked(window.api.onAppPageClosed).mock.calls.forEach(([appPageClosed]) => appPageClosed())
+  await flushPromises()
+}
+
 async function viewAnOutputInAssets(wrapper: ReturnType<typeof mountPanel>): Promise<void> {
   wrapper.findComponent(AppsView).vm.$emit('view-in-assets', 'cutout.png')
   await flushPromises()
@@ -1473,7 +1478,7 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
   })
 
-  it('goes back to all apps from the Apps icon while an app is open', async () => {
+  it("goes back to all apps from the app page's All apps link, with the sidebar open again", async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
@@ -1487,8 +1492,7 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
 
-    await wrapper.get('[data-testid="app-sidebar-all-apps"]').trigger('click')
-    await flushPromises()
+    await goBackToAllAppsFromThePage()
 
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)
@@ -1630,8 +1634,7 @@ describe('PanelApp', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
 
-    await wrapper.get('[data-testid="app-sidebar-all-apps"]').trigger('click')
-    await flushPromises()
+    await goBackToAllAppsFromThePage()
 
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)

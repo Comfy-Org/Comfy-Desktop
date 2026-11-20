@@ -39,7 +39,6 @@ import SidebarCredits from './SidebarCredits.vue'
 import SidebarDesktopUpdate from './SidebarDesktopUpdate.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import SidebarAppRail from './SidebarAppRail.vue'
-import { SIDEBAR_FACE_BUTTON_CLASS, SIDEBAR_HEADER_CLASS } from './sidebarClasses'
 import { homeBuildStatus, isCloudBuild, runsOnThisComputer } from './home/homeBuild'
 import { useHomeTour } from './home/useHomeTour'
 import { useInstallList } from '../composables/useInstallList'
@@ -282,11 +281,14 @@ function openSettings(): void {
       v-if="makeRoom"
       :current-app="appInProgress"
       :apps="apps"
-      @all-apps="navigate('apps')"
-      @all-apps-menu="openPageMenu($event, 'apps')"
       @switch-app="emit('switch-app', $event)"
     />
-    <div v-else ref="header" :class="SIDEBAR_HEADER_CLASS" data-testid="app-sidebar-header">
+    <div
+      v-else
+      ref="header"
+      class="relative mt-2 mb-3.5 h-9 w-full shrink-0"
+      data-testid="app-sidebar-header"
+    >
       <Transition v-bind="wordmarkTransition">
         <Button
           v-show="!collapsed"
@@ -305,8 +307,7 @@ function openSettings(): void {
           v-show="collapsed"
           variant="muted-textonly"
           size="unset"
-          class="group left-[5px]"
-          :class="SIDEBAR_FACE_BUTTON_CLASS"
+          class="group absolute inset-y-0 left-[5px] my-auto size-[30px] rounded-[7px] p-0 hover:bg-secondary hover:text-foreground"
           :data-testid="collapsed ? 'app-sidebar-toggle' : undefined"
           :aria-label="t('sidebar.expand')"
           aria-expanded="false"
@@ -332,8 +333,7 @@ function openSettings(): void {
           v-show="!collapsed"
           variant="muted-textonly"
           size="unset"
-          class="group right-0"
-          :class="SIDEBAR_FACE_BUTTON_CLASS"
+          class="group absolute inset-y-0 right-0 my-auto size-[30px] rounded-[7px] p-0 hover:bg-secondary hover:text-foreground"
           :data-testid="collapsed ? undefined : 'app-sidebar-toggle'"
           :aria-label="t('sidebar.collapse')"
           aria-expanded="true"

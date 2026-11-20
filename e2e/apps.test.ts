@@ -11,7 +11,6 @@ import { claimsOf, FakeCloud, reply, type BearerClaims } from './support/fakeClo
 
 const SIDEBAR_APPS = '[data-testid="app-sidebar-apps"]'
 const SIDEBAR_HOME = '[data-testid="app-sidebar-home"]'
-const RAIL_ALL_APPS = '[data-testid="app-sidebar-all-apps"]'
 const RAIL_CUTOUT = '[data-testid="app-sidebar-app-remove-background"]'
 const HOME_VIEW = '[data-testid="home-view"]'
 const HOME_APP_TITLES = '[data-testid="home-carousel-name"] > span:first-child'
@@ -345,7 +344,7 @@ test('An app whose page is down says so, and Try again opens it once the site an
 })
 
 test("Home shows the website's apps, and the one in front opens inside Desktop, not in the browser @macos @windows @linux", async () => {
-  expect(await ctx.panel.click(RAIL_ALL_APPS)).toBe(true)
+  expect(await new WebContentsPage(ctx.app, DOWN_PAGE).click('#back')).toBe(true)
   await ctx.panel.waitForVisible(SIDEBAR_HOME)
   expect(await ctx.panel.click(SIDEBAR_HOME)).toBe(true)
   await ctx.panel.waitForVisible(HOME_VIEW)
