@@ -292,6 +292,7 @@ describe('AppRequestModal', () => {
     expect(card.bottom - artBox.bottom).toBeCloseTo(9, 0)
     expect(getComputedStyle(art).borderTopLeftRadius).toBe('8px')
     expect(artBox.right).toBeLessThanOrEqual(title.left)
+    expect(card.width, 'the image grows, the form keeps its width').toBeCloseTo(704, 0)
     expect(artBox.top).toBeLessThanOrEqual(title.top)
 
     await page.viewport(520, 700)

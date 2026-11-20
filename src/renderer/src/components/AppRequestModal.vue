@@ -96,10 +96,10 @@ watch(
 <template>
   <BaseModal
     :open="open"
-    size="lg"
+    size="md"
     close-outside
     :aria-labelledby="titleId"
-    content-class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto] min-[600px]:grid-cols-[296px_minmax(0,1fr)] [&_.base-modal-media]:hidden min-[600px]:[&_.base-modal-media]:block [&_.base-modal-media]:row-span-3 [&_.base-modal-media]:p-2 [&_.base-modal-body]:flex [&_.base-modal-body]:flex-col [&_.base-modal-footer]:p-4 [&_.base-modal-header]:border-b-0 [&_.base-modal-header]:pt-6 [&_.base-modal-header]:pb-0"
+    content-class="w-[704px]! grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto] min-[600px]:grid-cols-[296px_minmax(0,1fr)] [&_.base-modal-media]:hidden min-[600px]:[&_.base-modal-media]:block [&_.base-modal-media]:row-span-3 [&_.base-modal-media]:p-2 [&_.base-modal-body]:flex [&_.base-modal-body]:flex-col [&_.base-modal-footer]:p-4 [&_.base-modal-header]:border-b-0 [&_.base-modal-header]:pt-6 [&_.base-modal-header]:pb-0"
     @close="close"
   >
     <template #media>
