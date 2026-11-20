@@ -215,9 +215,17 @@ function endWheelGesture(): void {
   wheelTurned = false
 }
 
+function wheelPixels(delta: number, mode: number): number {
+  return mode === WheelEvent.DOM_DELTA_PIXEL ? delta : delta * WHEEL_PIXELS_PER_CARD
+}
+
 function onWheel(event: WheelEvent): void {
-  const sideways = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX
-  if (sideways === 0 || (!event.shiftKey && Math.abs(event.deltaY) > Math.abs(sideways))) return
+  const deltaX = wheelPixels(event.deltaX, event.deltaMode)
+  const deltaY = wheelPixels(event.deltaY, event.deltaMode)
+  const upOrDown = deltaX === 0
+  const sideways = upOrDown ? deltaY : deltaX
+  if (sideways === 0 || (!event.shiftKey && Math.abs(deltaY) > Math.abs(sideways))) return
+  if (upOrDown && !wheelTurned && (sideways < 0 ? atFirst.value : atLast.value)) return
   event.preventDefault()
   clearTimeout(wheelGestureTimer)
   wheelGestureTimer = setTimeout(endWheelGesture, WHEEL_GESTURE_GAP_MS)

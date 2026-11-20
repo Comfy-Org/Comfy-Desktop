@@ -173,7 +173,7 @@ describe('HomeCarousel trackpad and wheel', () => {
 
   function swipe(
     wrapper: VueWrapper,
-    deltas: Array<{ deltaX?: number; deltaY?: number; shiftKey?: boolean }>
+    deltas: Array<{ deltaX?: number; deltaY?: number; deltaMode?: number; shiftKey?: boolean }>
   ) {
     const target = frontCard(wrapper).element
     return deltas.map((delta) => {
@@ -219,13 +219,78 @@ describe('HomeCarousel trackpad and wheel', () => {
     expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
   })
 
-  it('leaves an up or down scroll to the page', async () => {
+  it('turns with the mouse wheel alone, one card per notch gesture, in pixel units', async () => {
     const wrapper = mountCarousel()
 
-    const prevented = swipe(wrapper, [{ deltaY: 120 }, { deltaY: 120, deltaX: 4 }])
+    expect(swipe(wrapper, [{ deltaY: 100 }])).toEqual([true])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
+
+    vi.advanceTimersByTime(1000)
+    expect(swipe(wrapper, [{ deltaY: -100 }])).toEqual([true])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open Product Swap')
+  })
+
+  it('turns with the mouse wheel alone in line units', async () => {
+    const wrapper = mountCarousel()
+
+    expect(swipe(wrapper, [{ deltaY: 1, deltaMode: WheelEvent.DOM_DELTA_LINE }])).toEqual([true])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
+
+    vi.advanceTimersByTime(1000)
+    expect(swipe(wrapper, [{ deltaY: 3, deltaMode: WheelEvent.DOM_DELTA_LINE }])).toEqual([true])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open Extend Picture')
+  })
+
+  it('turns only one card for a fast run of wheel notches', async () => {
+    const wrapper = mountCarousel()
+
+    swipe(
+      wrapper,
+      Array.from({ length: 8 }, () => ({ deltaY: 100 }))
+    )
     await wrapper.vm.$nextTick()
 
-    expect(prevented).toEqual([false, false])
+    expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
+  })
+
+  it('keeps a mostly up or down trackpad swipe with some sideways drift for the page', async () => {
+    const wrapper = mountCarousel()
+
+    const prevented = swipe(wrapper, [{ deltaY: 120, deltaX: 4 }])
+    await wrapper.vm.$nextTick()
+
+    expect(prevented).toEqual([false])
+    expect(frontTitle(wrapper)).toBe('Open Product Swap')
+  })
+
+  it('leaves the wheel to the page once the carousel is at its first or last card', async () => {
+    const wrapper = mountCarousel()
+
+    expect(swipe(wrapper, [{ deltaY: -100 }])).toEqual([false])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open Product Swap')
+
+    swipe(wrapper, [{ deltaY: 100 }])
+    vi.advanceTimersByTime(1000)
+    swipe(wrapper, [{ deltaY: 100 }])
+    vi.advanceTimersByTime(1000)
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open Extend Picture')
+
+    expect(swipe(wrapper, [{ deltaY: 100 }])).toEqual([false])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open Extend Picture')
+  })
+
+  it('still turns with a sideways trackpad swipe at the first card, as before', async () => {
+    const wrapper = mountCarousel()
+
+    expect(swipe(wrapper, [{ deltaX: -30 }, { deltaX: -30 }])).toEqual([true, true])
+    await wrapper.vm.$nextTick()
     expect(frontTitle(wrapper)).toBe('Open Product Swap')
   })
 })
