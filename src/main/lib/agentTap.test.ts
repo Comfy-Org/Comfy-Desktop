@@ -684,6 +684,19 @@ describe('agentTap product events', () => {
     })
   })
 
+  it('uses one stable PostHog UUID for duplicate deliveries of a product event', () => {
+    const tap = createAgentTap(baseOpts)
+    tap.ingest(relayed(PRODUCT_FIXTURE[1]!), 'stdout')
+    tap.ingest(relayed(PRODUCT_FIXTURE[1]!), 'stderr')
+    tap.ingest(relayed(PRODUCT_FIXTURE[2]!), 'stderr')
+
+    const uuids = vi.mocked(telemetry.capture).mock.calls.map((call) => call[2])
+    expect(uuids).toHaveLength(3)
+    expect(uuids[0]).toMatch(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/)
+    expect(uuids[1]).toBe(uuids[0])
+    expect(uuids[2]).not.toBe(uuids[0])
+  })
+
   it('forwards the send id on agent_turn_started so a message joins its turn', () => {
     const clientMessageId = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
     ingest(turnStarted(` client_message_id=${clientMessageId}`))
