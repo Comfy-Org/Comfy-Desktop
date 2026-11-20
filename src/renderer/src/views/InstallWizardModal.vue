@@ -571,6 +571,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   resetDiskSpace()
   sourceError.value = ''
   authorizingWorkspace.value = false
+  abandonManagedSignIn()
   initializing.value = true
 
   try {
@@ -711,7 +712,7 @@ async function selectManagedInstallMode(): Promise<void> {
     const stillWanted = (): boolean => session === changeSetupSession && pick === managedSignInPick
     signingInForManaged.value = true
     try {
-      const status = await authStore.joinSignIn()
+      const status = await authStore.signIn()
       if (!status.signedIn) return
       authenticatedNow = true
     } catch {

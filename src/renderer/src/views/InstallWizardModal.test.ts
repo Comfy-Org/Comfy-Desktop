@@ -2389,7 +2389,7 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.find('.config-loading').exists()).toBe(false)
   })
 
-  it('drops the sign-in wait on Discard and reuses the open sign-in when Managed is picked again', async () => {
+  it('drops the sign-in wait on Discard and opens the browser again when Managed is picked again', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
     mockReleaseOptions()
     let finishSignIn: (status: unknown) => void = () => {}
@@ -2416,7 +2416,7 @@ describe('InstallWizardModal Change setup', () => {
     finishSignIn({ signedIn: true, workspaceId: 'personal-server-id', workspaceType: 'personal' })
     await flushPromises()
 
-    expect(window.api.comfybuilder.signIn).toHaveBeenCalledOnce()
+    expect(window.api.comfybuilder.signIn).toHaveBeenCalledTimes(2)
     expect(sourceChecked(wrapper, 'workspace-install-source-managed')).toBe('true')
     expect(wrapper.get('[data-testid="workspace-build-field"]').text()).toContain('Ready Build')
   })
@@ -2472,6 +2472,54 @@ describe('InstallWizardModal Change setup', () => {
 
     expect(sourceChecked(wrapper, 'install-source-git')).toBe('true')
     expect(sourceChecked(wrapper, 'workspace-install-source-managed')).toBe('false')
+    expect(window.api.comfybuilder.listBuilds).not.toHaveBeenCalled()
+  })
+
+  it('opens the browser again when Managed is picked while a sign-in from another page is open', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
+    mockReleaseOptions()
+    ;(window.api.comfybuilder.signIn as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise(() => {})
+    )
+    const wrapper = await openChangeSetup()
+    void useAuthStore()
+      .signIn()
+      .catch(() => {})
+    await flushPromises()
+    expect(window.api.comfybuilder.signIn).toHaveBeenCalledOnce()
+
+    await pickSource(wrapper, 'workspace-install-source-managed')
+
+    expect(window.api.comfybuilder.signIn).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="managed-signin-status"]').text()).toBe(
+      'Continue in your browser'
+    )
+  })
+
+  it('starts clean when reopened during a Cloud sign-in, and the old pick does not come back', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
+    mockReleaseOptions()
+    let finishSignIn: (status: unknown) => void = () => {}
+    ;(window.api.comfybuilder.signIn as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        finishSignIn = resolve
+      })
+    )
+    const wrapper = await openChangeSetup()
+    await pickSource(wrapper, 'workspace-install-source-managed')
+    expect(wrapper.find('[data-testid="managed-signin-status"]').exists()).toBe(true)
+
+    ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockResolvedValue({
+      supported: false,
+      error: 'No supported GPU'
+    })
+    wrapper.vm.open()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="managed-signin-status"]').exists()).toBe(false)
+
+    finishSignIn({ signedIn: true, workspaceId: 'personal-server-id', workspaceType: 'personal' })
+    await flushPromises()
+
     expect(window.api.comfybuilder.listBuilds).not.toHaveBeenCalled()
   })
 
