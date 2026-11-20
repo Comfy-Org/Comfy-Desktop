@@ -127,6 +127,14 @@ const install = async (w: Wrapper) => {
 }
 
 describe('Set up, the first screen', () => {
+  it('lists Hardware, then Version, with Location last', async () => {
+    const w = await mountSetup()
+
+    expect(
+      w.findAll('[data-testid^="setup-row-"]').map((row) => row.attributes('data-testid'))
+    ).toEqual(['setup-row-hardware', 'setup-row-version', 'setup-row-location'])
+  })
+
   it.each([
     ['Desktop', 'monitor'],
     ['Notebook', 'pc-laptop']

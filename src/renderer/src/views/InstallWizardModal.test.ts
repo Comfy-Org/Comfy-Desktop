@@ -520,7 +520,7 @@ describe('InstallWizardModal heading', () => {
     const rows = wrapper.findAll('.config-summary-row').map((row) => row.text())
     expect(wrapper.get('.config-name-card #inst-name-standalone').exists()).toBe(true)
     expect(rows[0]).toBe('HardwareApple Silicon (MPS)Detected')
-    expect(rows[1]).toContain('/home/user/ComfyUI')
+    expect(rows[2]).toContain('/home/user/ComfyUI')
     expect(wrapper.get('[data-testid="config-summary"]').text()).not.toContain('773 MB')
     expect(wrapper.find('#source-fields').exists()).toBe(false)
     expect(wrapper.get('.config-continue').text()).toBe('Install')
@@ -535,7 +535,7 @@ describe('InstallWizardModal heading', () => {
     expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(true)
   })
 
-  it('sums up a standalone build like first run: Hardware, Location, Version with the release as its note', async () => {
+  it('sums up a standalone build like first run: Hardware, Version with the release as its note, then Location', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         id: 'standalone',
@@ -579,9 +579,9 @@ describe('InstallWizardModal heading', () => {
     await flushPromises()
 
     const rows = wrapper.findAll('.config-summary-row')
-    expect(rows.map((row) => row.get('span').text())).toEqual(['Hardware', 'Location', 'Version'])
+    expect(rows.map((row) => row.get('span').text())).toEqual(['Hardware', 'Version', 'Location'])
     expect(rows[0].text()).toBe('HardwareAMDDetected')
-    expect(rows[2].text()).toBe('VersionComfyUI v0.46.1Stable')
+    expect(rows[1].text()).toBe('VersionComfyUI v0.46.1Stable')
     const summary = wrapper.get('[data-testid="config-summary"]').text()
     for (const description of [
       'Tested releases, recommended for most users',

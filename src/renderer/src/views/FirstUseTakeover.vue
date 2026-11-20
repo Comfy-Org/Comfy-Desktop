@@ -538,6 +538,21 @@ defineExpose({ open, resetContinue })
               </span>
             </SetupSummaryRow>
             <SetupSummaryRow
+              :icon="Package"
+              :label="t('setup.version')"
+              data-testid="setup-row-version"
+            >
+              <span class="truncate text-foreground" data-testid="setup-version">{{
+                version || t('setup.checking')
+              }}</span>
+              <span
+                :class="[SUMMARY_META_CLASS, 'max-w-[220px] truncate text-subtle-foreground']"
+                :title="channel || undefined"
+              >
+                {{ channel }}
+              </span>
+            </SetupSummaryRow>
+            <SetupSummaryRow
               :icon="HardDrive"
               :label="t('setup.location')"
               data-testid="setup-row-location"
@@ -557,21 +572,6 @@ defineExpose({ open, resetContinue })
                 data-testid="setup-location-meta"
               >
                 {{ locationMeta }}
-              </span>
-            </SetupSummaryRow>
-            <SetupSummaryRow
-              :icon="Package"
-              :label="t('setup.version')"
-              data-testid="setup-row-version"
-            >
-              <span class="truncate text-foreground" data-testid="setup-version">{{
-                version || t('setup.checking')
-              }}</span>
-              <span
-                :class="[SUMMARY_META_CLASS, 'max-w-[220px] truncate text-subtle-foreground']"
-                :title="channel || undefined"
-              >
-                {{ channel }}
               </span>
             </SetupSummaryRow>
           </template>

@@ -1736,9 +1736,7 @@ const showLocation = computed(() => !currentSource.value?.skipInstall)
 const summaryRows = computed<SummaryRow[]>(() => {
   const rows = fieldSummaryRows.value
   if (!showLocation.value) return rows
-  const location: SummaryRow = { key: LOCATION_ROW_KEY, icon: HardDrive, label: '', value: '' }
-  const at = currentSource.value?.id === 'standalone' && !managedBuildMode.value ? 1 : rows.length
-  return [...rows.slice(0, at), location, ...rows.slice(at)]
+  return [...rows, { key: LOCATION_ROW_KEY, icon: HardDrive, label: '', value: '' }]
 })
 
 const trackFormRef = ref<InstanceType<typeof TrackBuildForm> | null>(null)

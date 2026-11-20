@@ -340,11 +340,11 @@ describe.each([
     const { box } = await newBuildSummary()
     const newBuildLines = lines([...box.querySelectorAll<HTMLElement>('.config-summary-row')])
 
-    expect(newBuildLines.map(([label]) => label)).toEqual(['Hardware', 'Location', 'Version'])
+    expect(newBuildLines.map(([label]) => label)).toEqual(['Hardware', 'Version', 'Location'])
     expect(newBuildLines[0]).toEqual(firstRunLines[0])
-    expect(newBuildLines[2]).toEqual(firstRunLines[2])
+    expect(newBuildLines[1]).toEqual(firstRunLines[1])
     expect(newBuildLines[0]).toEqual(['Hardware', 'Apple Silicon (MPS)', 'Detected'])
-    expect(newBuildLines[2]).toEqual(['Version', 'ComfyUI v0.42.4', 'Stable'])
+    expect(newBuildLines[1]).toEqual(['Version', 'ComfyUI v0.42.4', 'Stable'])
     expect(box.textContent).not.toContain(longNote)
   })
 
