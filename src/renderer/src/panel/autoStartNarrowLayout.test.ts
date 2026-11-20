@@ -100,7 +100,7 @@ async function mountHomeAndBuildsWith(
   return [home, builds]
 }
 
-it('shows Update available with its icon beside the version on Home and Builds, keeping the line 17 px high', async () => {
+it('shows Update available beside the version on Home and Builds, as text only, keeping the line 17 px high', async () => {
   const wrappers = await mountHomeAndBuildsWith(
     {
       ...STUDIO,
@@ -115,7 +115,7 @@ it('shows Update available with its icon beside the version on Home and Builds, 
     const line = note.parentElement!
     const link = note.querySelector('[data-testid="build-update-open"]')!
     await vi.waitFor(() => expect(note.textContent?.trim()).toBe('· Update available'))
-    expect(link.querySelector('svg')).not.toBeNull()
+    expect(link.querySelector('svg')).toBeNull()
     expect(fullyShown(line.firstElementChild!)).toBe(true)
     expect(boxOf(line).height).toBe(17)
     expect(boxOf(link).height).toBeLessThanOrEqual(17)
@@ -125,7 +125,7 @@ it('shows Update available with its icon beside the version on Home and Builds, 
   }
 })
 
-it('collapses Update available to its icon with a tooltip when build metadata truncates on Home and Builds', async () => {
+it('shortens Update available to Update when the line is tight on Home and Builds', async () => {
   const wrappers = await mountHomeAndBuildsWith(
     {
       ...STUDIO,
@@ -140,28 +140,14 @@ it('collapses Update available to its icon with a tooltip when build metadata tr
     const note = onlyIn(wrapper, '[data-testid="build-update-note"]')
     const line = note.parentElement!
     const link = note.querySelector<HTMLElement>('[data-testid="build-update-open"]')!
-    await vi.waitFor(() => expect(note.textContent?.trim()).toBe('·'))
-    expect(link.querySelector('svg')).not.toBeNull()
+    await vi.waitFor(() => expect(note.textContent?.trim()).toBe('· Update'))
+    expect(link.querySelector('svg')).toBeNull()
     expect(link.getAttribute('aria-label')).toBe(
       'Update available: open Update for Flux Sandbox for the long weekend render'
     )
-    expect(fullyShown(line.firstElementChild!)).toBe(false)
     expect(fullyShown(note)).toBe(true)
     expect(boxOf(note).right).toBeLessThanOrEqual(boxOf(line).right + 0.5)
     expect(boxOf(line).height).toBe(17)
-
-    await userEvent.hover(link)
-    await vi.waitFor(
-      () =>
-        expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
-          'Update available'
-        ),
-      { timeout: 3000 }
-    )
-    await userEvent.unhover(link)
-    await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull(), {
-      timeout: 3000
-    })
   }
 })
 
@@ -346,11 +332,11 @@ describe('Builds page grid', () => {
     const note = tile.querySelector('[data-testid="build-update-note"]')
     if (note) {
       await vi.waitFor(() =>
-        expect(note.textContent?.trim(), 'Update available collapses to its icon when tight').toBe(
-          width === BUILDS_GRID_WIDTH_IN_SMALLEST_WINDOW ? '· Update available' : '·'
+        expect(note.textContent?.trim(), 'Update available shortens to Update when tight').toBe(
+          width === BUILDS_GRID_WIDTH_IN_SMALLEST_WINDOW ? '· Update available' : '· Update'
         )
       )
-      expect(note.querySelector('svg')).not.toBeNull()
+      expect(note.querySelector('svg')).toBeNull()
     }
     const metaLine = tile.querySelector('.chooser-tile-meta-line')
     if (metaLine) {

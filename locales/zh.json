@@ -289,6 +289,7 @@
     "filterCloud": "云端",
     "filterRemote": "远程",
     "updateAvailableOpen": "有可用更新：打开 {name} 的更新",
+    "updateShort": "更新",
     "migratePill": "迁移",
     "openInstall": "打开",
     "manageInstall": "管理",

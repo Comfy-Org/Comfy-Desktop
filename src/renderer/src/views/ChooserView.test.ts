@@ -747,7 +747,7 @@ describe('ChooserView', () => {
       expect(link.attributes('type')).toBe('button')
       expect(link.attributes('aria-label')).toBe('Update available: open Update for Updatable')
       expect(link.text()).toBe('Update available')
-      expect(link.find('svg').exists()).toBe(true)
+      expect(link.find('svg').exists()).toBe(false)
       await activate(link.element)
       await flushPromises()
 
