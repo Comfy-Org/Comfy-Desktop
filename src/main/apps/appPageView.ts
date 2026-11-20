@@ -429,13 +429,16 @@ export function hideAppPage(panel: WebContents): void {
   if (hosted) conceal(hosted)
 }
 
+const FROZEN_FRAME_JPEG_QUALITY = 90
+
 export async function captureAppPage(panel: WebContents): Promise<string | null> {
   const host = hostOf(panel)
   const hosted = host && hostedFor(host)
   if (!hosted || !isOnScreen(hosted)) return null
   try {
     const frame = await hosted.view.webContents.capturePage()
-    return frame.isEmpty() ? null : frame.toDataURL()
+    if (frame.isEmpty()) return null
+    return `data:image/jpeg;base64,${frame.toJPEG(FROZEN_FRAME_JPEG_QUALITY).toString('base64')}`
   } catch {
     return null
   }

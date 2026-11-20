@@ -726,9 +726,11 @@ describe('staying in step with the panel', () => {
   it('hands the panel a frame of the page only while it is on screen', async () => {
     hostedPage().webContents.capturePage.mockResolvedValue({
       isEmpty: () => false,
-      toDataURL: () => 'data:image/png;base64,frame'
+      toJPEG: () => Buffer.from('frame')
     })
-    expect(await captureAppPage(panelContents())).toBe('data:image/png;base64,frame')
+    expect(await captureAppPage(panelContents())).toBe(
+      `data:image/jpeg;base64,${Buffer.from('frame').toString('base64')}`
+    )
 
     hideAppPage(panelContents())
     expect(await captureAppPage(panelContents())).toBeNull()
