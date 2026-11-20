@@ -443,7 +443,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
 
-    expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · Update')
+    expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · Update available')
     expect(wrapper.get('.chooser-tile-body').text()).toMatch(/^Ready/)
     expect(wrapper.find('.chooser-tile-pill-update').exists()).toBe(false)
 
@@ -708,8 +708,79 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Updatable'))!
-    expect(tile.get('.chooser-tile-meta-line').text()).toMatch(/v0\.22\.3 · Update$/)
+    expect(tile.get('.chooser-tile-meta-line').text()).toMatch(/v0\.22\.3 · Update available$/)
     expect(tile.get('.chooser-tile-body').text()).toMatch(/^Ready/)
+  })
+
+  it.each([
+    ['a click', (link: HTMLElement) => userEvent.click(link)],
+    [
+      'Enter',
+      async (link: HTMLElement) => {
+        link.focus()
+        await userEvent.keyboard('{Enter}')
+      }
+    ],
+    [
+      'Space',
+      async (link: HTMLElement) => {
+        link.focus()
+        await userEvent.keyboard(' ')
+      }
+    ]
+  ])(
+    "opens the build's Update tab from Update available with %s, without starting or opening the build",
+    async (_how, activate) => {
+      const api = installMockApi([
+        makeInstall({
+          id: 'u',
+          name: 'Updatable',
+          version: 'v0.22.3',
+          statusTag: { style: 'update', label: 'Update v0.24.1', version: 'v0.24.1' }
+        })
+      ])
+      const { wrapper, host } = mountChooserInPanel()
+      await flushPromises()
+
+      const tile = wrapper.get(`[data-testid="${TID.dashboardTile('u')}"]`)
+      const link = tile.get<HTMLButtonElement>('[data-testid="build-update-open"]')
+      expect(link.attributes('type')).toBe('button')
+      expect(link.attributes('aria-label')).toBe('Update available: open Update for Updatable')
+      expect(link.text()).toBe('Update available')
+      expect(link.find('svg').exists()).toBe(true)
+      await activate(link.element)
+      await flushPromises()
+
+      expect(api.openInstancePicker).toHaveBeenCalledExactlyOnceWith({
+        installationId: 'u',
+        initialTab: 'update',
+        autoAction: null
+      })
+      expect(wrapper.emitted('pick')).toBeUndefined()
+      expect(wrapper.emitted('open-details')).toBeUndefined()
+      expect(host.launch).not.toHaveBeenCalled()
+      expect(host.openDetails).not.toHaveBeenCalled()
+    }
+  )
+
+  it('hides Update available while the build is being updated', async () => {
+    installMockApi([
+      makeInstall({
+        id: 'u',
+        name: 'Updatable',
+        version: 'v0.22.3',
+        statusTag: { style: 'update', label: 'Update v0.24.1', version: 'v0.24.1' }
+      })
+    ])
+    const wrapper = mountChooser()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="build-update-open"]').exists()).toBe(true)
+
+    useSessionStore().operationInstances.set('u', { actionId: 'update-comfyui' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-update-open"]').exists()).toBe(false)
+    expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · v0.22.3')
   })
 
   it('confirms an update over the Builds page from the ⋯ menu, without opening the build manager', async () => {

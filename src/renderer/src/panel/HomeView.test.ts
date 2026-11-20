@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -451,7 +452,7 @@ describe('Home builds', () => {
     await flushPromises()
 
     expect(wrapper.findAll('[data-testid="home-build"]').map((card) => card.text())).toEqual([
-      'ReadyMy Local 1Standalone · Update',
+      'ReadyMy Local 1Standalone · Update available',
       'RunningVideo LabStandalone',
       'ReadyComfy CloudRTX 6000 Pro · 96 GB'
     ])
@@ -514,7 +515,9 @@ describe('Home builds', () => {
 
     const card = wrapper.get('[data-testid="home-build"]')
     expect(card.get('[data-testid="home-build-status"]').text()).toBe('Running')
-    expect(card.get('[data-testid="home-build-detail"]').text()).toBe('Standalone · Update')
+    expect(card.get('[data-testid="home-build-detail"]').text()).toBe(
+      'Standalone · Update available'
+    )
     expect(card.get('[data-testid="home-build-open"]').attributes('aria-label')).toBe(
       'My Local 1, Running'
     )
@@ -530,7 +533,9 @@ describe('Home builds', () => {
     ])
     const wrapper = await openHome()
 
-    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe('v0.3.68 · Update')
+    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe(
+      'v0.3.68 · Update available'
+    )
   })
 
   it('starts a build with an update from its card, saying Ready on top', async () => {
@@ -542,6 +547,68 @@ describe('Home builds', () => {
     await card.get('[data-testid="home-build-open"]').trigger('click')
 
     expect(wrapper.emitted('pick')?.[0]?.[0]).toMatchObject({ id: NEWEST.id })
+  })
+
+  it.each([
+    ['a click', (link: HTMLElement) => userEvent.click(link)],
+    [
+      'Enter',
+      async (link: HTMLElement) => {
+        link.focus()
+        await userEvent.keyboard('{Enter}')
+      }
+    ],
+    [
+      'Space',
+      async (link: HTMLElement) => {
+        link.focus()
+        await userEvent.keyboard(' ')
+      }
+    ]
+  ])(
+    "opens the build's Update tab from Update available with %s, without starting the build",
+    async (_how, activate) => {
+      const openInstancePicker = vi.fn()
+      Object.assign(window.api, { openInstancePicker })
+      getInstallations.mockResolvedValue([NEWEST])
+      const wrapper = await openHome()
+
+      const link = wrapper.get<HTMLButtonElement>('[data-testid="build-update-open"]')
+      expect(link.attributes('type')).toBe('button')
+      expect(link.attributes('aria-label')).toBe('Update available: open Update for My Local 1')
+      expect(link.text()).toBe('Update available')
+      expect(link.find('svg').exists()).toBe(true)
+      await activate(link.element)
+      await flushPromises()
+
+      expect(openInstancePicker).toHaveBeenCalledExactlyOnceWith({
+        installationId: NEWEST.id,
+        initialTab: 'update',
+        autoAction: null
+      })
+      expect(wrapper.emitted('pick')).toBeUndefined()
+    }
+  )
+
+  it('hides Update available while the build updates in place', async () => {
+    Object.assign(window.api, {
+      onInstallProgress: vi.fn(() => () => {}),
+      onComfyOutput: vi.fn(() => () => {})
+    })
+    getInstallations.mockResolvedValue([NEWEST])
+    const wrapper = await openHome()
+    expect(wrapper.find('[data-testid="build-update-open"]').exists()).toBe(true)
+
+    useProgressStore().startOperation({
+      installationId: NEWEST.id,
+      title: 'Updating',
+      opKind: 'update',
+      apiCall: () => new Promise(() => {})
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-update-open"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="build-update-note"]').exists()).toBe(false)
   })
 
   it('keeps only the latest build and Cloud when the window is narrow', async () => {

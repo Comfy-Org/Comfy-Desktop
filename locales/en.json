@@ -288,7 +288,7 @@
     "filterLocal": "Local",
     "filterCloud": "Cloud",
     "filterRemote": "Remote",
-    "updatePill": "Update",
+    "updateAvailableOpen": "Update available: open Update for {name}",
     "migratePill": "Migrate",
     "openInstall": "Open",
     "manageInstall": "Manage",

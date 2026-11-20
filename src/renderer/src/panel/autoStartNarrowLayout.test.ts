@@ -86,28 +86,82 @@ function fullyShown(element: Element): boolean {
   return element.scrollWidth <= element.clientWidth && element.clientWidth > 0
 }
 
-it('keeps the update note visible when build metadata truncates on Home and Builds', async () => {
-  const studio: Installation = {
-    ...STUDIO,
-    sourceLabel: 'Standalone installation with a long name',
-    version: `v0.3.68+preview.${'weekend-render.'.repeat(4)}7`,
-    statusTag: { style: 'update', label: 'Update to v0.3.70' }
-  }
+async function mountHomeAndBuildsWith(
+  studio: Installation,
+  windowWidth: number
+): Promise<VueWrapper[]> {
   vi.mocked(window.api.getInstallations).mockResolvedValue([studio, PORTRAITS])
-  page.style.cssText = `position: absolute; left: 0; top: 0; width: ${LARGE_WINDOW_WIDTH - FRAME_AND_EXPANDED_SIDEBAR_WIDTH}px`
+  page.style.cssText = `position: absolute; left: 0; top: 0; width: ${windowWidth - FRAME_AND_EXPANDED_SIDEBAR_WIDTH}px`
   const home = track(mount(HomeView, { attachTo: page }))
   const builds = track(
     mount(ChooserFamilyGrid, { attachTo: page, props: { installations: [studio, PORTRAITS] } })
   )
   await flushPromises()
+  return [home, builds]
+}
 
-  for (const wrapper of [home, builds]) {
+it('shows Update available with its icon beside the version on Home and Builds, keeping the line 17 px high', async () => {
+  const wrappers = await mountHomeAndBuildsWith(
+    {
+      ...STUDIO,
+      version: 'v0.3.68',
+      statusTag: { style: 'update', label: 'Update to v0.3.70' }
+    },
+    WIDE_WINDOW_WIDTH
+  )
+
+  for (const wrapper of wrappers) {
     const note = onlyIn(wrapper, '[data-testid="build-update-note"]')
     const line = note.parentElement!
-    expect(note.textContent?.trim()).toBe('· Update')
+    const link = note.querySelector('[data-testid="build-update-open"]')!
+    await vi.waitFor(() => expect(note.textContent?.trim()).toBe('· Update available'))
+    expect(link.querySelector('svg')).not.toBeNull()
+    expect(fullyShown(line.firstElementChild!)).toBe(true)
+    expect(boxOf(line).height).toBe(17)
+    expect(boxOf(link).height).toBeLessThanOrEqual(17)
+    expect(getComputedStyle(link).color).not.toBe(getComputedStyle(line).color)
+    expect(getComputedStyle(link).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+    expect(getComputedStyle(link).borderTopWidth).toBe('0px')
+  }
+})
+
+it('collapses Update available to its icon with a tooltip when build metadata truncates on Home and Builds', async () => {
+  const wrappers = await mountHomeAndBuildsWith(
+    {
+      ...STUDIO,
+      sourceLabel: 'Standalone installation with a long name',
+      version: `v0.3.68+preview.${'weekend-render.'.repeat(4)}7`,
+      statusTag: { style: 'update', label: 'Update to v0.3.70' }
+    },
+    LARGE_WINDOW_WIDTH
+  )
+
+  for (const wrapper of wrappers) {
+    const note = onlyIn(wrapper, '[data-testid="build-update-note"]')
+    const line = note.parentElement!
+    const link = note.querySelector<HTMLElement>('[data-testid="build-update-open"]')!
+    await vi.waitFor(() => expect(note.textContent?.trim()).toBe('·'))
+    expect(link.querySelector('svg')).not.toBeNull()
+    expect(link.getAttribute('aria-label')).toBe(
+      'Update available: open Update for Flux Sandbox for the long weekend render'
+    )
     expect(fullyShown(line.firstElementChild!)).toBe(false)
     expect(fullyShown(note)).toBe(true)
     expect(boxOf(note).right).toBeLessThanOrEqual(boxOf(line).right + 0.5)
+    expect(boxOf(line).height).toBe(17)
+
+    await userEvent.hover(link)
+    await vi.waitFor(
+      () =>
+        expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
+          'Update available'
+        ),
+      { timeout: 3000 }
+    )
+    await userEvent.unhover(link)
+    await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull(), {
+      timeout: 3000
+    })
   }
 })
 
@@ -281,15 +335,34 @@ describe('Builds page grid', () => {
     }
     const tile = onlyIn(wrapper, `[data-testid="${TID.dashboardTile(STUDIO.id)}"]`)
     expect(tile.querySelector('.chooser-tile-launch')).toBeNull()
-    expect(tile.querySelectorAll('button:not(.chooser-tile-kebab)')).toHaveLength(
-      state === 'uninstalling' ? 0 : 1
+    expect(
+      tile.querySelectorAll(
+        'button:not(.chooser-tile-kebab):not([data-testid="build-update-open"])'
+      )
+    ).toHaveLength(state === 'uninstalling' ? 0 : 1)
+    expect(tile.querySelectorAll('[data-testid="build-update-open"]')).toHaveLength(
+      state === 'update' || state === 'running with an update' ? 1 : 0
     )
+    const metaLine = tile.querySelector('.chooser-tile-meta-line')
+    if (metaLine) {
+      expect(boxOf(metaLine).height, 'meta line height').toBe(17)
+      expect(fullyShown(metaLine.firstElementChild!), 'version is not cut off').toBe(true)
+    }
+    const note = tile.querySelector('[data-testid="build-update-note"]')
+    if (note) {
+      await vi.waitFor(() =>
+        expect(note.textContent?.trim(), 'Update available collapses to its icon when tight').toBe(
+          width === BUILDS_GRID_WIDTH_IN_SMALLEST_WINDOW ? '· Update available' : '·'
+        )
+      )
+      expect(note.querySelector('svg')).not.toBeNull()
+    }
     if (state === 'running with an update') {
       expect(tile.querySelector('.chooser-tile-body .truncate')!.textContent?.trim()).toBe(
         'Running'
       )
-      expect(tile.querySelector('.chooser-tile-meta-line')!.textContent?.trim()).toBe(
-        'Standalone · v0.3.68 · Update'
+      expect(tile.querySelector('.chooser-tile-meta-line')!.textContent?.trim()).toMatch(
+        /^Standalone · v0\.3\.68 ·/
       )
     }
     if (state === 'starting') {
