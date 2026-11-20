@@ -35,6 +35,24 @@ describe('SettingsSectionList', () => {
       expect(desc.text()).toContain('gitcode.com')
     })
 
+    it('renders the description as plain muted text with no coloured icon', () => {
+      const wrapper = mountList([
+        {
+          id: 'hardwareAcceleration',
+          label: 'Use hardware acceleration',
+          value: true,
+          editable: true,
+          editType: 'boolean',
+          description:
+            'Uses the GPU to render Comfy Desktop. Restart Comfy Desktop for changes to take effect.'
+        }
+      ])
+      const desc = wrapper.find('.settings-v2-field-description')
+      expect(desc.classes()).toContain('text-text-muted')
+      expect(desc.find('svg').exists()).toBe(false)
+      expect(desc.html()).not.toMatch(/--info|blue/)
+    })
+
     it('does not render the description block when none is attached', () => {
       const wrapper = mountList([
         {

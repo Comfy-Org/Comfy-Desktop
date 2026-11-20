@@ -546,15 +546,10 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 
             <p
               v-if="field.description"
-              class="settings-v2-field-description -mt-0.5 mb-0 flex items-start gap-1.5 text-[11.5px] leading-[1.45] text-text-muted"
+              class="settings-v2-field-description -mt-0.5 mb-0 text-[11.5px] leading-[1.45] text-text-muted"
               role="note"
             >
-              <ShieldAlert
-                :size="14"
-                class="settings-v2-field-description-icon mt-0.5 shrink-0 text-[var(--info,var(--neutral-100))]"
-                aria-hidden="true"
-              />
-              <span>{{ field.description }}</span>
+              {{ field.description }}
             </p>
           </div>
         </div>
