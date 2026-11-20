@@ -249,6 +249,20 @@ describe('reading the workflow ComfyUI saved in a PNG', () => {
     expect(readEmbeddedWorkflow([start.subarray(0, start.length - 12), tail])).toBeNull()
   })
 
+  it('stops after a fixed amount of work on many fake text chunks at the end of a large PNG', () => {
+    const length = new Uint8Array(4)
+    new DataView(length.buffer).setUint32(0, 1_048_576)
+    const fake = concat(length, encoder.encode('tEXtworkflow\u0000x'))
+    const tail = new Uint8Array(4_194_304)
+    for (let at = 0; at + fake.length <= 3_000_000; at += fake.length) tail.set(fake, at)
+    const start = png()
+    const parse = vi.spyOn(JSON, 'parse')
+
+    expect(readEmbeddedWorkflow([start.subarray(0, start.length - 12), tail])).toBeNull()
+    expect(parse.mock.calls.length).toBeLessThan(200)
+    parse.mockRestore()
+  })
+
   it('skips a saved workflow with more than 5,000 nodes and says so in the log', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const huge = {
