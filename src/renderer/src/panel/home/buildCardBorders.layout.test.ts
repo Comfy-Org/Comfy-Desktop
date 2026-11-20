@@ -24,6 +24,15 @@ const BUILD: Installation = {
   installPath: '/Users/someone/ComfyUI/Flux Sandbox'
 }
 
+const CLOUD_BUILD: Installation = {
+  ...BUILD,
+  id: 'cloud',
+  name: 'Comfy Cloud',
+  sourceId: 'cloud',
+  sourceLabel: 'Comfy Cloud',
+  sourceCategory: 'cloud'
+}
+
 const mounted: VueWrapper[] = []
 
 beforeEach(() => {
@@ -71,8 +80,8 @@ function borderWidths(el: HTMLElement): string[] {
 const NONE = ['0px', '0px', '0px', '0px']
 
 describe('build cards have no border', () => {
-  it.each(['iris', 'tide'] as const)('Home build card (%s)', async (tone) => {
-    const el = await mountWithHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone }))
+  it.each([BUILD, CLOUD_BUILD])('Home build card for $name', async (build) => {
+    const el = await mountWithHost(() => h(HomeBuildCard, { build, status: 'ready' }))
     expect(borderWidths(el)).toEqual(NONE)
   })
 
@@ -88,9 +97,16 @@ describe('build cards have no border', () => {
 })
 
 const CARDS = [
-  ['Home build card', () => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'iris' })],
+  ['Home build card', () => h(HomeBuildCard, { build: BUILD, status: 'ready' })],
   ['Builds tile', () => h(ChooserInstallTile, { installation: BUILD })]
 ] as const
+
+function tokenStyle(css: string): CSSStyleDeclaration {
+  const probe = document.createElement('div')
+  probe.style.cssText = css
+  document.body.append(probe)
+  return getComputedStyle(probe)
+}
 
 describe('build cards have a glass surface', () => {
   beforeEach(() => {
@@ -98,19 +114,35 @@ describe('build cards have a glass surface', () => {
     return () => delete document.documentElement.dataset.theme
   })
 
+  it('the sheen token is a visible color', () => {
+    expect(tokenStyle('color: var(--build-card-sheen)').color).not.toBe('rgba(0, 0, 0, 0)')
+  })
+
   it.each(CARDS)(
     '%s is a see-through card fill with a top sheen and highlight',
     async (_, render) => {
       const style = getComputedStyle(await mountWithHost(render))
-      expect(style.backgroundColor).toBe('oklab(0.23 0 0 / 0.75)')
-      expect(style.backgroundImage).toMatch(/^linear-gradient\(.+, rgba\(0, 0, 0, 0\) 40%\)$/)
-      expect(style.boxShadow).toBe('oklch(1 0 0 / 0.06) 0px 1px 0px 0px inset')
+      const tokens = tokenStyle(
+        [
+          'background-color: color-mix(in oklab, var(--color-card) 75%, transparent)',
+          'background-image: linear-gradient(180deg, var(--build-card-sheen), transparent 40%)',
+          'box-shadow: var(--shadow-highlight)'
+        ].join(';')
+      )
+      expect(style.backgroundImage).not.toBe('none')
+      expect(style.backgroundColor).toBe(tokens.backgroundColor)
+      expect(style.backgroundImage).toBe(tokens.backgroundImage)
+      expect(style.boxShadow).toBe(tokens.boxShadow)
     }
   )
 
   it.each(CARDS)('%s turns to the card hover fill under the pointer', async (_, render) => {
     const el = await mountWithHost(render)
+    const hoverFill = tokenStyle(
+      'background-color: color-mix(in oklab, var(--color-card-hover) 80%, transparent)'
+    ).backgroundColor
+    expect(getComputedStyle(el).backgroundColor).not.toBe(hoverFill)
     await userEvent.hover(el, { force: true })
-    await expect.poll(() => getComputedStyle(el).backgroundColor).toBe('oklab(0.265 0 0 / 0.8)')
+    await expect.poll(() => getComputedStyle(el).backgroundColor).toBe(hoverFill)
   })
 })

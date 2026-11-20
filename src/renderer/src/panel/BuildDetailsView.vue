@@ -7,7 +7,7 @@ import StatusChip from '../components/ui/StatusChip.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import BuildUninstallFailed from './BuildUninstallFailed.vue'
 import HomeBuildCard from './home/HomeBuildCard.vue'
-import { homeBuildStatus, homeBuildTone } from './home/homeBuild'
+import { homeBuildStatus } from './home/homeBuild'
 import type { StorageSnapshot } from '../views/comfyUISettings/StoragePane.vue'
 import {
   buildFailure,
@@ -55,7 +55,6 @@ const settingsHidden = computed(
   () =>
     cardReplacesSettings.value || uninstallFailure.value !== null || operationFailure.value !== null
 )
-const tone = computed(() => homeBuildTone(installation))
 
 const typeMeta = computed(() => installTypeMetaForInstall(installation))
 
@@ -186,7 +185,6 @@ onUnmounted(() => unsubscribeSettings?.())
         class="shrink-0"
         :build="installation"
         :status="homeBuildStatus(installation, sessionStore)"
-        :tone="tone"
       />
       <BuildUninstallFailed
         v-else-if="uninstallFailure !== null"

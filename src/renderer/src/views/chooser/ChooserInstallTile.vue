@@ -17,10 +17,10 @@ import { useProgressStore } from '../../stores/progressStore'
 import {
   buildDeviceKind,
   HOME_BUILD_TONES,
+  homeBuildTone,
   isBuildUpdating,
   connectsElsewhere,
-  isCloudBuild,
-  type HomeBuildTone
+  isCloudBuild
 } from '../../panel/home/homeBuild'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
@@ -37,15 +37,13 @@ interface Props {
   lifecycleStatus?: 'idle' | 'launching' | 'running' | 'stopping' | 'error'
   showMenu?: boolean
   showFreeRunsPill?: boolean
-  tone?: HomeBuildTone
   autoStart?: boolean
   loggedOut?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   lifecycleStatus: undefined,
-  showMenu: true,
-  tone: 'iris'
+  showMenu: true
 })
 
 const emit = defineEmits<{
@@ -87,7 +85,7 @@ const progressLabel = computed(() => {
     ? phase
     : t('installProgress.detail', { phase, percent: current.percent })
 })
-const toneStyle = computed(() => HOME_BUILD_TONES[props.tone])
+const toneStyle = computed(() => HOME_BUILD_TONES[homeBuildTone(props.installation)])
 
 const isRunning = computed(() =>
   props.lifecycleStatus == null
@@ -305,7 +303,7 @@ function openContextMenu(event: MouseEvent): void {
 <template>
   <div
     ref="tile"
-    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl bg-card/75 bg-[linear-gradient(180deg,var(--chooser-surface-border-hover),transparent_40%)] [box-shadow:var(--shadow-highlight)] px-[18px] transition-colors select-none"
+    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl bg-card/75 bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--shadow-highlight)] px-[18px] transition-colors select-none"
     :class="[statusClasses, canActivate && 'cursor-pointer hover:bg-card-hover/80']"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"

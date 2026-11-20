@@ -10,14 +10,14 @@ import BuildProgressBar from './BuildProgressBar.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import {
   HOME_BUILD_TONES,
+  homeBuildTone,
   isBuildOpenBlocked,
   homeBuildDetail,
   buildDeviceKind,
   isCloudBuild,
   isComfyCloud,
   runsOnThisComputer,
-  type HomeBuildStatus,
-  type HomeBuildTone
+  type HomeBuildStatus
 } from './homeBuild'
 import {
   buildFailure,
@@ -34,13 +34,11 @@ import type { Installation } from '../../types/ipc'
 const {
   build,
   status,
-  tone,
   autoStart = false,
   loggedOut = false
 } = defineProps<{
   build: Installation
   status: HomeBuildStatus
-  tone: HomeBuildTone
   autoStart?: boolean
   loggedOut?: boolean
 }>()
@@ -80,7 +78,7 @@ const startFailedLogs = computed(
   () => build.statusTag?.style !== 'danger' && launchFailed(progressStore, build.id)
 )
 
-const toneStyle = computed(() => HOME_BUILD_TONES[tone])
+const toneStyle = computed(() => HOME_BUILD_TONES[homeBuildTone(build)])
 const needsLogIn = computed(() => loggedOut && isCloudBuild(build))
 const restingLabel = computed(() =>
   needsLogIn.value ? t('home.buildLogInToUse') : t('home.buildReady')
@@ -179,7 +177,7 @@ function openContextMenu(event: MouseEvent): void {
 
 <template>
   <div
-    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl bg-card/75 bg-[linear-gradient(180deg,var(--chooser-surface-border-hover),transparent_40%)] [box-shadow:var(--shadow-highlight)] px-[18px] text-left transition-colors"
+    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl bg-card/75 bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--shadow-highlight)] px-[18px] text-left transition-colors"
     :class="canOpen && 'cursor-pointer hover:bg-card-hover/80'"
     :data-testid="testId"
     :data-build-id="build.id"

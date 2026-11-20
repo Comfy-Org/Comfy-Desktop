@@ -80,6 +80,7 @@
   --chooser-surface-bg-hover: rgba(255, 255, 255, 0.07);
   --chooser-surface-border: rgba(255, 255, 255, 0.05);
   --chooser-surface-border-hover: rgba(255, 255, 255, 0.1);
+  --build-card-sheen: rgba(255, 255, 255, 0.1);
 
   --modal-surface-bg: #27202d;
   --modal-surface-border: var(--chooser-surface-border);
@@ -159,6 +160,7 @@
   --chooser-surface-bg-hover: rgba(255, 255, 255, 0.07);
   --chooser-surface-border: rgba(255, 255, 255, 0.05);
   --chooser-surface-border-hover: rgba(255, 255, 255, 0.1);
+  --build-card-sheen: rgba(255, 255, 255, 0.1);
 
   --modal-surface-bg: #27202d;
   --modal-surface-border: var(--chooser-surface-border);
@@ -242,6 +244,7 @@
   --chooser-surface-bg-hover: oklch(1 0 0 / 0.07);
   --chooser-surface-border: var(--color-border);
   --chooser-surface-border-hover: var(--color-border-strong);
+  --build-card-sheen: var(--color-border-strong);
 
   --modal-surface-bg: var(--neutral-800);
   --modal-surface-border: var(--color-border);

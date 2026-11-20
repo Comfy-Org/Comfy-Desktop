@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUpdate, useTemplateRef, type ComponentPublicInstance } from 'vue'
 import ChooserInstallTile from './ChooserInstallTile.vue'
-import { homeBuildTone } from '../../panel/home/homeBuild'
 import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
 import type { Installation } from '../../types/ipc'
 
@@ -96,7 +95,6 @@ function unlockTileSize(el: Element): void {
         v-for="installation in props.installations"
         :key="`install:${installation.id}`"
         :installation="installation"
-        :tone="homeBuildTone(installation)"
         :show-free-runs-pill="props.showFreeRunsPill && installation.sourceCategory === 'cloud'"
         :show-why-cloud="props.showWhyCloud && installation.sourceCategory === 'cloud'"
         :auto-start="autoStart.startsOnOpen(installation.id)"

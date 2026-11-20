@@ -9,7 +9,7 @@ import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeNewBuildTile from './home/HomeNewBuildTile.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
-import { homeBuildStatus, homeBuildTone, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
+import { homeBuildStatus, isBuildOpenBlocked, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
 import { useInstallList } from '../composables/useInstallList'
 import { useAutoStartBuild } from '../composables/useAutoStartBuild'
@@ -295,7 +295,6 @@ onMounted(() => {
             <HomeBuildCard
               :build="build"
               :status="buildStatus(build)"
-              :tone="homeBuildTone(build)"
               :auto-start="autoStart.startsOnOpen(build.id)"
               :logged-out="authStore.isSignedOut"
               @open="openBuild(build)"

@@ -118,8 +118,7 @@ async function mountTile(state: State): Promise<VueWrapper> {
     withHost(() =>
       h(HomeBuildCard, {
         build: BUILD,
-        status: homeBuildStatus(BUILD, useSessionStore()),
-        tone: 'iris'
+        status: homeBuildStatus(BUILD, useSessionStore())
       })
     ),
     { attachTo: document.body }
@@ -300,7 +299,7 @@ describe('Build menu', () => {
     ]
   ] satisfies [string, Installation][])('offers no Auto start for %s', async (_name, build) => {
     const wrapper = mount(
-      withHost(() => h(HomeBuildCard, { build, status: 'ready', tone: 'iris' })),
+      withHost(() => h(HomeBuildCard, { build, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(wrapper)
@@ -317,7 +316,7 @@ describe('Build menu', () => {
       statusTag: { label: 'Update available', style: 'update' }
     }
     const wrapper = mount(
-      withHost(() => h(HomeBuildCard, { build, status: 'update', tone: 'iris' })),
+      withHost(() => h(HomeBuildCard, { build, status: 'update' })),
       { attachTo: document.body }
     )
     mounted.push(wrapper)
@@ -588,7 +587,7 @@ describe('Build menu', () => {
   it('hints Click to open on an idle remote build, on Home and on the Builds page', async () => {
     const remote: Installation = { ...BUILD, sourceCategory: 'remote' }
     const home = mount(
-      withHost(() => h(HomeBuildCard, { build: remote, status: 'ready', tone: 'iris' })),
+      withHost(() => h(HomeBuildCard, { build: remote, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(home)
@@ -643,7 +642,7 @@ describe('Build menu', () => {
     Object.assign(window.api, { cancelOperation, stopComfyUI: vi.fn(async () => {}) })
     useSessionStore().launchingInstances.set(BUILD.id, { installationName: BUILD.name })
     const tile = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'starting', tone: 'iris' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'starting' })),
       { attachTo: document.body }
     )
     mounted.push(tile)
@@ -662,7 +661,7 @@ describe('Build menu', () => {
     Object.assign(window.api, { cancelOperation, stopComfyUI: vi.fn(async () => {}) })
     useSessionStore().operationInstances.set(BUILD.id, { actionId: 'launch' })
     const tile = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'iris' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(tile)
@@ -686,7 +685,7 @@ describe('Build menu', () => {
     })
     useSessionStore().launchingInstances.set(performanceTest, { installationName: BUILD.name })
     const tile = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'iris' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(tile)
@@ -708,7 +707,7 @@ describe('Build menu', () => {
     Object.assign(window.api, { cancelOperation, stopComfyUI })
     useSessionStore().launchingInstances.set(BUILD.id, { installationName: BUILD.name })
     const tile = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'starting', tone: 'iris' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'starting' })),
       { attachTo: document.body }
     )
     mounted.push(tile)
@@ -731,7 +730,7 @@ describe('Build menu', () => {
       startFailed: true
     })
     const tile = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'iris' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(tile)
@@ -744,7 +743,7 @@ describe('Build menu', () => {
   it('still shows Ready after a running build crashed', async () => {
     useSessionStore().errorInstances.set(BUILD.id, { installationName: BUILD.name, exitCode: 1 })
     const tile = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'iris' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(tile)
@@ -768,7 +767,7 @@ describe('Build menu', () => {
 
   it("treats a build that didn't start the same on the Builds tile as on Home: Didn't start, Click to view logs, a click opens its start logs", async () => {
     const home = mount(
-      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'iris' })),
+      withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
       { attachTo: document.body }
     )
     mounted.push(home)
@@ -800,7 +799,7 @@ describe('Build menu', () => {
       const wrapper =
         where === 'home'
           ? mount(
-              withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'iris' })),
+              withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready' })),
               { attachTo: document.body }
             )
           : await mountBuildsTile('ready')
