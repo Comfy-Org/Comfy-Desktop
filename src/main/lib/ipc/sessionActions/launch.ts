@@ -237,7 +237,8 @@ function coreBetaLogRecord(
   coreHead: string | null
 ): string {
   if (isCommitGrant(grant)) {
-    return `[core-beta] ${grant.arg} (core ${coreHead?.slice(0, 12)} in a granted commit range, opted in)\n`
+    const floor = grant.releaseFloor === undefined ? '' : ` or a v${grant.releaseFloor}+ release`
+    return `[core-beta] ${grant.arg} (core ${coreHead?.slice(0, 12) ?? coreVersion} in a granted commit range${floor}, opted in)\n`
   }
   return `[core-beta] ${grant.arg} (core ${coreVersion} >= ${grant.minCoreVersion}, opted in)\n`
 }

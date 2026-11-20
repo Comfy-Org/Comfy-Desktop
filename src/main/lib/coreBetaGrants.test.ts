@@ -623,6 +623,219 @@ describe('parseCoreBetaGrants commit ranges', () => {
   })
 })
 
+describe('parseCoreBetaGrants release floor', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.mocked(console.warn).mockRestore()
+  })
+
+  const parse = (releaseFloor: unknown) =>
+    parseCoreBetaGrants(true, {
+      flags: [
+        { arg: '--enable-agent', commit_ranges: [[SHA_A, null]], release_floor: releaseFloor }
+      ]
+    })
+
+  it('keeps a release floor beside the commit ranges, without its v prefix', () => {
+    expect(parse('v0.42.4')).toEqual([
+      { arg: '--enable-agent', commitRanges: [[SHA_A, null]], releaseFloor: '0.42.4' }
+    ])
+  })
+
+  it.each([['not a version'], [42], [null]])(
+    'ignores a floor that is %s, keeping the ranges',
+    (floor) => {
+      expect(parse(floor)).toEqual([{ arg: '--enable-agent', commitRanges: [[SHA_A, null]] }])
+    }
+  )
+
+  it('keeps a floor beside several open ranges', () => {
+    const commitRanges = [
+      [SHA_A, null],
+      [SHA_C, null]
+    ]
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-agent', commit_ranges: commitRanges, release_floor: '0.42.4' }]
+      })
+    ).toEqual([{ arg: '--enable-agent', commitRanges, releaseFloor: '0.42.4' }])
+  })
+
+  it.each([
+    [
+      'a bounded range first',
+      [
+        [SHA_A, SHA_B],
+        [SHA_C, null]
+      ],
+      '0.42.4'
+    ],
+    [
+      'a bounded range last',
+      [
+        [SHA_C, null],
+        [SHA_A, SHA_B]
+      ],
+      '0.42.4'
+    ],
+    ['a bounded range and an invalid floor', [[SHA_A, SHA_B]], 'not a version']
+  ])('ignores the floor on an entry with %s, keeping its ranges', (_label, commitRanges, floor) => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-agent', commit_ranges: commitRanges, release_floor: floor }]
+      })
+    ).toEqual([{ arg: '--enable-agent', commitRanges }])
+  })
+
+  it('ignores a floor on a version entry', () => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-agent', min_core_version: '0.42.0', release_floor: '0.42.4' }]
+      })
+    ).toEqual([{ arg: '--enable-agent', minCoreVersion: '0.42.0' }])
+  })
+})
+
+describe('parseCoreBetaGrants ignored release floor warning', () => {
+  function warningsFor(entry: object): string[] {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      parseCoreBetaGrants(true, { flags: [{ arg: '--enable-agent', ...entry }] })
+      return warn.mock.calls.map((call) => String(call[0]))
+    } finally {
+      warn.mockRestore()
+    }
+  }
+
+  it.each([
+    [
+      'a floor that is not a version',
+      { commit_ranges: [[SHA_A, null]], release_floor: 'nope' },
+      'not a version'
+    ],
+    [
+      'a floor beside an upper-bounded range',
+      { commit_ranges: [[SHA_A, SHA_B]], release_floor: '0.42.4' },
+      'a commit range has an upper bound'
+    ]
+  ])('warns once for %s', (_label, entry, why) => {
+    expect(warningsFor(entry)).toEqual([`[core-beta] --enable-agent release_floor ignored: ${why}`])
+  })
+
+  it.each([
+    ['a valid floor', { commit_ranges: [[SHA_A, null]], release_floor: '0.42.4' }],
+    ['no floor', { commit_ranges: [[SHA_A, SHA_B]] }],
+    ['a floor on a version entry', { min_core_version: '0.42.0', release_floor: '0.42.4' }]
+  ])('stays quiet for %s', (_label, entry) => {
+    expect(warningsFor(entry)).toEqual([])
+  })
+})
+
+describe('selectCoreBetaGrantArgs release floor', () => {
+  const head = 'e'.repeat(40)
+  const floorGrant: CoreBetaGrant = {
+    arg: '--enable-agent',
+    commitRanges: [[SHA_A, null]],
+    releaseFloor: '0.42.4'
+  }
+  const plainGrant: CoreBetaGrant = { arg: '--enable-agent', commitRanges: [[SHA_A, null]] }
+  const release = (overrides: Partial<CoreVersionState> = {}): CoreVersionState => ({
+    semver: '0.46.1',
+    exact: true,
+    verified: true,
+    current: true,
+    ...overrides
+  })
+
+  function select(
+    grant: CoreBetaGrant,
+    core: CoreVersionState,
+    ancestry: Record<string, boolean> = {},
+    commitHead: string | null = head
+  ) {
+    const withheld: string[] = []
+    const trace: string[] = []
+    const selected = selectCoreBetaGrantArgs(
+      [grant],
+      core,
+      true,
+      [],
+      { head: commitHead, ancestry: new Map(Object.entries(ancestry)) },
+      withheld,
+      (line) => trace.push(line)
+    )
+    return { selected, withheld, trace }
+  }
+
+  it('grants a verified current release at or above the floor when git could not relate the range', () => {
+    const { selected, trace } = select(floorGrant, release())
+    expect(selected).toEqual([floorGrant])
+    expect(trace).toEqual([
+      `[core-beta] commits --enable-agent: aaaaaaaaaaaa.. head=eeeeeeeeeeee in-range=release v0.46.1 >= v0.42.4`
+    ])
+  })
+
+  it('grants on the floor alone when there is no readable HEAD', () => {
+    expect(select(floorGrant, release(), {}, null).selected).toEqual([floorGrant])
+  })
+
+  it('grants exactly at the floor', () => {
+    expect(select(floorGrant, release({ semver: '0.42.4' })).selected).toEqual([floorGrant])
+  })
+
+  it.each([
+    ['below the floor', release({ semver: '0.42.3' }), '0.42.3'],
+    ['unverified', release({ verified: false }), '0.46.1'],
+    ['contradicted by the checkout', release({ current: false }), '0.46.1'],
+    ['of unknown version', release({ semver: null }), 'unknown']
+  ])('withholds a release %s, naming the floor', (_label, core, shown) => {
+    const { selected, withheld, trace } = select(floorGrant, core)
+    expect(selected).toEqual([])
+    expect(trace).toEqual([
+      '[core-beta] commits --enable-agent: aaaaaaaaaaaa.. head=eeeeeeeeeeee in-range=no'
+    ])
+    expect(withheld).toEqual([
+      `[core-beta] --enable-agent withheld: entry 1: commit range aaaaaaaaaaaa..: lower aaaaaaaaaaaa unresolved | core ${shown} is not a verified current v0.42.4+ release`
+    ])
+  })
+
+  it('leaves a grant without a floor exactly as before', () => {
+    const { selected, withheld, trace } = select(plainGrant, release())
+    expect(selected).toEqual([])
+    expect(withheld).toEqual([
+      '[core-beta] --enable-agent withheld: entry 1: commit range aaaaaaaaaaaa..: lower aaaaaaaaaaaa unresolved'
+    ])
+    expect(trace).toEqual([
+      '[core-beta] commits --enable-agent: aaaaaaaaaaaa.. head=eeeeeeeeeeee in-range=no'
+    ])
+  })
+
+  it('grants an in-range checkout that fails the floor, through its commit range', () => {
+    const { selected, trace } = select(floorGrant, release({ semver: '0.1.0', verified: false }), {
+      [SHA_A]: true
+    })
+    expect(selected).toEqual([floorGrant])
+    expect(trace).toEqual([
+      '[core-beta] commits --enable-agent: aaaaaaaaaaaa.. head=eeeeeeeeeeee in-range=yes'
+    ])
+  })
+
+  it('grants on the floor even when git proved the range absent, as the assets floor does', () => {
+    const { selected, trace } = select(floorGrant, release(), { [SHA_A]: false })
+    expect(selected).toEqual([floorGrant])
+    expect(trace).toEqual([
+      '[core-beta] commits --enable-agent: aaaaaaaaaaaa.. head=eeeeeeeeeeee in-range=release v0.46.1 >= v0.42.4'
+    ])
+  })
+
+  it('grants a verified release some commits past its tag', () => {
+    expect(select(floorGrant, release({ exact: false })).selected).toEqual([floorGrant])
+  })
+})
+
 describe('selectCoreBetaGrantArgs commit ranges', () => {
   const HEAD = 'e'.repeat(40)
   const versionGrant: CoreBetaGrant = { arg: '--enable-assets', minCoreVersion: '0.3.80' }

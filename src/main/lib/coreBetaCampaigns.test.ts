@@ -391,6 +391,36 @@ describe('planCampaignArgs: enrol', () => {
     expect(args(planCampaignArgs(inRange))).toEqual(['--enable-agent'])
   })
 
+  it('enrols a verified release at the release floor when git could not relate the range', () => {
+    const grant = { arg: '--enable-agent', commit_ranges: [[SHA, null]] }
+    const enrolment = { epoch: 1, epochs: [1] }
+    const unresolved = { head: 'b'.repeat(40), ancestry: new Map<string, boolean>() }
+    const plan = (
+      extra: object,
+      core = { semver: '0.46.1', exact: true, verified: true, current: true }
+    ) =>
+      planCampaignArgs(
+        facts({
+          answers: new Map([
+            [KEY, answer('enrol', { grants: [{ ...grant, ...extra, enrolment }] })]
+          ]),
+          core,
+          commits: unresolved
+        })
+      )
+
+    expect(args(plan({ release_floor: '0.42.4' }))).toEqual(['--enable-agent'])
+    expect(plan({}).misses, 'without a floor the answer is unchanged').toMatchObject([
+      { reason: 'gates' }
+    ])
+    expect(
+      plan(
+        { release_floor: '0.42.4' },
+        { semver: '0.42.3', exact: true, verified: true, current: true }
+      ).misses
+    ).toMatchObject([{ reason: 'gates' }])
+  })
+
   it('applies nothing and records nothing when beta is off', () => {
     expect(planCampaignArgs(facts({ betaEnabled: false, records: member }))).toEqual({
       applied: [],
