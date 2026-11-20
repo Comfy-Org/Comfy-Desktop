@@ -157,6 +157,12 @@ export function suppressInstallOnQuit(): void {
   } catch {}
 }
 
+function forbidDowngrade(): void {
+  try {
+    electronAutoUpdater.allowDowngrade = false
+  } catch {}
+}
+
 export function syncInstallOnQuitPolicy(): void {
   try {
     electronAutoUpdater.autoInstallOnAppQuit =
@@ -190,6 +196,7 @@ function isStrictlyNewerVersion(offered: string | null | undefined, current: str
 
 function shouldIgnoreNonNewerVersion(version: string, stage: string): boolean {
   if (isStrictlyNewerVersion(version, app.getVersion())) return false
+  suppressInstallOnQuit()
   if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.ignored_not_newer', version)) {
     emitUpdateTelemetry('comfy.desktop.app_update.ignored_not_newer', version, {
       version,
@@ -265,6 +272,8 @@ function bindUpdaterEvents(): void {
   if (!updater) return
   _listenersBound = true
 
+  updater.on('checking-for-update', forbidDowngrade)
+
   updater.on('update-available', (info: unknown) => {
     const version = versionFromPayload(info)
     if (!version) return
@@ -307,7 +316,13 @@ function bindUpdaterEvents(): void {
   updater.on('update-downloaded', (event: unknown) => {
     const version = versionFromPayload(event)
     if (!version) return
-    if (shouldIgnoreNonNewerVersion(version, 'downloaded')) return
+    if (shouldIgnoreNonNewerVersion(version, 'downloaded')) {
+      _autoDownloadTriggeredFor = null
+      if (_appUpdateState.kind === 'downloading') {
+        _setUpdateState({ kind: null, version: null, autoUpdate: isAutoInstallEnabled() })
+      }
+      return
+    }
     _autoDownloadTriggeredFor = null
     if (_shouldEmitAppUpdateOnce('comfy.desktop.app_update.download_complete', version)) {
       emitUpdateTelemetry('comfy.desktop.app_update.download_complete', version, { version }, true)
@@ -365,10 +380,12 @@ function bindUpdaterEvents(): void {
     const transferred = typeof p.transferred === 'number' ? p.transferred : null
     const total = typeof p.total === 'number' ? p.total : null
     const bytesPerSecond = typeof p.bytesPerSecond === 'number' ? p.bytesPerSecond : null
+    const targetVersion = _appUpdateState.version ?? _autoDownloadTriggeredFor
+    if (!isStrictlyNewerVersion(targetVersion, app.getVersion())) return
     if (_appUpdateState.kind !== 'downloading' && _appUpdateState.kind !== 'ready') {
       _setUpdateState({
         kind: 'downloading',
-        version: _appUpdateState.version ?? _autoDownloadTriggeredFor,
+        version: targetVersion,
         autoUpdate: isAutoInstallEnabled()
       })
     }
@@ -408,6 +425,7 @@ async function checkForUpdate(
       return { available: false, error: UPDATER_UNAVAILABLE_MESSAGE }
     }
     bindUpdaterEvents()
+    forbidDowngrade()
     const result = await updater.checkForUpdates({
       source,
       disableUpdateReadyAction: true
