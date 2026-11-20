@@ -211,8 +211,8 @@ function clearSlowLaunchTimer(): void {
 }
 
 watch(
-  () => state.value === 'launching',
-  (launching) => {
+  () => [state.value === 'launching', props.installationId] as const,
+  ([launching]) => {
     clearSlowLaunchTimer()
     launchIsSlow.value = false
     if (!launching) return
@@ -335,7 +335,7 @@ async function viewLaunchLogs(): Promise<void> {
       >
         {{ placeholderBuildLine }}
       </p>
-      <div class="flex h-0 w-full justify-center overflow-visible">
+      <div class="flex h-0 w-full justify-center overflow-visible" aria-live="polite">
         <Transition
           enter-active-class="transition-[opacity,transform] duration-[280ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
           enter-from-class="translate-y-1 opacity-0"

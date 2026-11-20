@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, nextTick, ref } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -456,12 +456,15 @@ describe('ComfyLifecycleView', () => {
   })
 
   describe('starting placeholder', () => {
-    function mountWithLogs(installation: Installation | null = SAMPLE_INSTALL) {
+    function mountWithLogs(
+      installation: Installation | null = SAMPLE_INSTALL,
+      installationId = ref('inst-1')
+    ) {
       const viewLogs = vi.fn()
       const Host = defineComponent({
         setup() {
           provideBuildLogs(viewLogs)
-          return () => h(ComfyLifecycleView, { installationId: 'inst-1', installation })
+          return () => h(ComfyLifecycleView, { installationId: installationId.value, installation })
         }
       })
       return { wrapper: mount(Host), viewLogs }
@@ -571,6 +574,34 @@ describe('ComfyLifecycleView', () => {
         expect(viewLogs).not.toHaveBeenCalled()
       }
     )
+
+    it('announces View logs politely when it appears', async () => {
+      vi.useFakeTimers()
+      const { wrapper } = mountWithLogs()
+      useSessionStore().launchingInstances.set('inst-1', { installationName: 'My Local Install' })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(15_000)
+      const logs = wrapper.find(`[data-testid="${TID.lifecycleViewLogs}"]`)
+      expect(logs.element.closest('[aria-live]')?.getAttribute('aria-live')).toBe('polite')
+    })
+
+    it('restarts the 15 second wait when the view switches to another starting build', async () => {
+      vi.useFakeTimers()
+      const installationId = ref('inst-1')
+      const { wrapper } = mountWithLogs(SAMPLE_INSTALL, installationId)
+      const sessionStore = useSessionStore()
+      sessionStore.launchingInstances.set('inst-1', { installationName: 'My Local Install' })
+      sessionStore.launchingInstances.set('inst-2', { installationName: 'Other build' })
+      await flushPromises()
+      const logs = () => wrapper.find(`[data-testid="${TID.lifecycleViewLogs}"]`)
+      await vi.advanceTimersByTimeAsync(10_000)
+      installationId.value = 'inst-2'
+      await nextTick()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(logs().exists()).toBe(false)
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(logs().exists()).toBe(true)
+    })
 
     it('does not offer View logs while stopping, however long it takes', async () => {
       vi.useFakeTimers()
