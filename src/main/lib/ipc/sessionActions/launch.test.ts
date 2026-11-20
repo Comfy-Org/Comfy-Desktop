@@ -247,11 +247,16 @@ vi.mock('../../comfyProcessRecord', () => ({
   listRecords: () => []
 }))
 
-const vcRuntime = vi.hoisted(() => ({ missing: [] as string[], auditThrows: false }))
+const vcRuntime = vi.hoisted(() => ({
+  missing: [] as string[],
+  auditThrows: false,
+  auditGate: null as null | Promise<void>
+}))
 
 vi.mock('../../vcRuntimeAudit', async (importOriginal) => ({
   ...(await importOriginal<typeof VcRuntimeAuditModule>()),
   auditVcRuntime: async () => {
+    await vcRuntime.auditGate
     if (vcRuntime.auditThrows) throw new Error('System32 unreadable')
     return vcRuntime.missing
   }
@@ -5692,6 +5697,7 @@ describe('prior ComfyUI process handling at launch', () => {
     afterEach(() => {
       vcRuntime.missing = []
       vcRuntime.auditThrows = false
+      vcRuntime.auditGate = null
     })
 
     it.each([
@@ -5800,6 +5806,25 @@ describe('prior ComfyUI process handling at launch', () => {
       expect(res.message).toBe(
         `Process exited with code 3221226505 / 0xC0000409\n\n${C10_NOT_FOUND.trim()}`
       )
+    })
+
+    it('fails a start whose port answered while the runtime check of its exit was running', async () => {
+      setArgs()
+      vcRuntime.missing = ['vcruntime140_1.dll']
+      let finishAudit = (): void => {}
+      vcRuntime.auditGate = new Promise<void>((resolve) => (finishAudit = resolve))
+      launchHarness.waitForPort = async () => {
+        const first = children[0]!
+        first.stderr.emit('data', Buffer.from(C10_NOT_FOUND))
+        first.emit('close', 1, null)
+        setImmediate(finishAudit)
+      }
+
+      const res = await handleLaunch(ctxFor('dll-exit-before-ready'))
+
+      expect(res.ok).toBe(false)
+      expect(res.message).toBe(`Process exited with code 1${HINT}\n\n${C10_NOT_FOUND.trim()}`)
+      expect(_runningSessions.has('dll-exit-before-ready')).toBe(false)
     })
   })
 
