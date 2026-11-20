@@ -117,9 +117,9 @@ function stop(): void {
   rect.value = null
 }
 
-function end(): void {
+function end({ returnFocus }: { returnFocus: boolean }): void {
   resumeAnchor = null
-  restoreFocusOnClose = true
+  restoreFocusOnClose = returnFocus
   void finish()
 }
 
@@ -133,7 +133,7 @@ function next(): void {
   if (index.value === null) return
   if (isLast.value) {
     emitTelemetryAction('comfy.desktop.home_tour.completed', { audience: audience.value })
-    end()
+    end({ returnFocus: true })
     return
   }
   index.value += 1
@@ -148,7 +148,19 @@ function skip(): void {
     audience: audience.value,
     step: position.value.current
   })
-  end()
+  end({ returnFocus: true })
+}
+
+function openTarget(): void {
+  const current = step.value
+  if (!current) return
+  emitTelemetryAction('comfy.desktop.home_tour.target_opened', {
+    audience: audience.value,
+    step: position.value.current
+  })
+  const target = findHomeTourAnchor(current.anchor)
+  end({ returnFocus: false })
+  target?.click()
 }
 
 const hole = computed(() => {
@@ -193,13 +205,15 @@ function focusNext(event: Event): void {
         :style="{ top: `${hole.y}px`, height: `${hole.h}px`, left: `${hole.x + hole.w}px` }"
       />
       <div
-        class="pointer-events-none absolute rounded-xl ring-2 ring-ring"
+        class="pointer-events-auto absolute cursor-pointer rounded-xl ring-2 ring-ring"
+        data-testid="home-tour-target"
         :style="{
           left: `${hole.x}px`,
           top: `${hole.y}px`,
           width: `${hole.w}px`,
           height: `${hole.h}px`
         }"
+        @click="openTarget"
       />
     </div>
     <PopoverRoot :open="true" modal>

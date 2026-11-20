@@ -316,6 +316,26 @@ describe('HomeTour', () => {
     expect(document.activeElement).toBe(field)
   })
 
+  it('counts a click on the highlighted part as done, and opens that part', async () => {
+    placeAnchors()
+    const allBuilds = anchors.find((el) => el.dataset['homeTour'] === 'all-builds')!
+    const opened = vi.fn()
+    allBuilds.addEventListener('click', opened)
+    mountTour()
+    await waitForCard()
+    for (let step = 0; step < 3; step++) {
+      await userEvent.click(button('next')!)
+    }
+    await expect.poll(() => tourCard()?.textContent).toContain('All your builds')
+
+    await userEvent.click(document.querySelector<HTMLElement>('[data-testid="home-tour-target"]')!)
+
+    await expect.poll(() => tourCard()).toBeNull()
+    expect(opened).toHaveBeenCalledTimes(1)
+    expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
+    expect(telemetry).toContain('comfy.desktop.home_tour.target_opened')
+  })
+
   it('dims everything except the highlighted part and hides the page behind from screen readers', async () => {
     placeAnchors()
     mountTour()
