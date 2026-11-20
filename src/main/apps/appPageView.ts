@@ -27,9 +27,10 @@ export const APP_PAGE_FAILED_EVENT = 'comfy.desktop.apps.app_page_failed'
 
 const NAVIGATION_ABORTED = -3
 const FIRST_HTTP_ERROR_STATUS = 400
+const MAX_STRAY_LOADS = 1
 const PAGE_PERMISSIONS: ReadonlySet<string> = new Set(['clipboard-sanitized-write', 'fullscreen'])
 
-type PageFailure = 'http_status' | 'network' | 'crashed' | 'redirected'
+type PageFailure = 'http_status' | 'network' | 'crashed' | 'redirected' | 'replaced'
 
 export interface LoadedAppPage {
   appId: string
@@ -48,6 +49,7 @@ interface HostedPage {
   loaded: LoadedAppPage | null
   loadStarted: boolean
   loadingUrl: string | null
+  strayLoads: number
   routeBase: string | null
   documents: number
   status: AppPageStatus
@@ -208,6 +210,22 @@ function load(windowKey: number, hosted: HostedPage, url: string): void {
   void hosted.view.webContents.loadURL(url).catch(() => {})
 }
 
+function isStrayDocument(hosted: HostedPage, url: string): boolean {
+  return hosted.loadStarted && hosted.loadingUrl !== null && !isInAppRoute(hosted.loadingUrl, url)
+}
+
+function replaceStrayDocument(windowKey: number, hosted: HostedPage): void {
+  const pageUrl = hosted.appId === null ? null : pageUrlForListedApp(hosted.appId)
+  if (pageUrl === null || hosted.strayLoads >= MAX_STRAY_LOADS) {
+    hosted.loadStarted = false
+    hosted.loadingUrl = null
+    fail(windowKey, hosted, 'replaced')
+    return
+  }
+  hosted.strayLoads += 1
+  load(windowKey, hosted, pageUrl)
+}
+
 function closeForList(windowKey: number, hosted: HostedPage, pageStillShowsApp: boolean): void {
   if (!pageStillShowsApp) {
     hosted.appId = null
@@ -249,6 +267,7 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     loaded: null,
     loadStarted: false,
     loadingUrl: null,
+    strayLoads: 0,
     routeBase: null,
     documents: 0,
     status: 'loading',
@@ -276,12 +295,19 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
       return
     }
     steer(event, url, false)
+    if (hosted.loadStarted && isInAppsScope(location, url) && !isAppsListUrl(location, url)) {
+      hosted.loadingUrl = url
+    }
   })
   contents.setWindowOpenHandler(({ url }) => {
     openOutside(url)
     return { action: 'deny' }
   })
   contents.on('did-navigate', (_event, url, httpResponseCode) => {
+    if (isStrayDocument(hosted, url)) {
+      replaceStrayDocument(windowKey, hosted)
+      return
+    }
     commitDocument(hosted, url)
     dismissStaleOutputs(windowKey, hosted)
     if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
@@ -294,7 +320,8 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     dismissStaleOutputs(windowKey, hosted)
   })
   contents.on('dom-ready', () => {
-    if (hosted.status !== 'loading' || !isInAppsScope(location, contents.getURL())) return
+    if (hosted.status !== 'loading' || hosted.loadStarted) return
+    if (!isInAppsScope(location, contents.getURL())) return
     setStatus(windowKey, hosted, 'ready')
   })
   contents.on('did-fail-load', (_event, errorCode, _description, _url, isMainFrame) => {
@@ -411,6 +438,7 @@ export async function showAppPage(
   const retriesFailedPage = askedFresh && hosted.status === 'failed'
   if (hosted.appId !== appId || retriesFailedPage) {
     hosted.appId = appId
+    hosted.strayLoads = 0
     load(host.windowKey, hosted, pageUrl)
   }
   if (placement.justOpened) mainTelemetry.capture(APP_OPENED_EVENT, { app_id: appId })

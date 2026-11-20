@@ -839,6 +839,7 @@ describe('the app a hosted page has loaded', () => {
   it('keeps the app on the address its page was redirected to, through moves within it', async () => {
     await openCutout()
     const moved = `${APPS_URL}remove-background/v2/desktop.html`
+    hostedPage().webContents.emit('will-redirect', navigationEvent(), moved, false, true)
     finishLoading(moved)
     const page = hostedPage().webContents
 
@@ -987,6 +988,73 @@ describe('usage events from a hosted page that switches apps', () => {
 
     expect(await sending).toBe(false)
     expect(runsSent()).toEqual([])
+  })
+})
+
+describe('switching apps while the old page navigates on its own', () => {
+  beforeEach(() => {
+    mocks.pages.set(HDR, HDR_URL)
+  })
+
+  async function switchFromCutoutToHdr(): Promise<FakeContents> {
+    await openCutout()
+    finishLoading()
+    await showAppPage(panelContents(), HDR, PLACEMENT)
+    return hostedPage().webContents
+  }
+
+  function oldPageReloads(page: FakeContents): void {
+    page.url = CUTOUT_URL
+    page.emit('did-navigate', {}, CUTOUT_URL, 200)
+    page.emit('dom-ready')
+  }
+
+  it('keeps the old page hidden and loads the asked app again when the old page wins the race', async () => {
+    const page = await switchFromCutoutToHdr()
+
+    oldPageReloads(page)
+
+    expect(hostedPage().visible).toBe(false)
+    expect(lastStatusSentToPanel()).toBe('loading')
+    expect(loadedAppPage(page as unknown as WebContents)).toBeNull()
+    expect(page.loadURL).toHaveBeenCalledTimes(3)
+    expect(page.loadURL).toHaveBeenLastCalledWith(HDR_URL)
+
+    finishLoading(HDR_URL)
+
+    expect(hostedPage().visible).toBe(true)
+    expect(lastStatusSentToPanel()).toBe('ready')
+    expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: HDR, document: 2 })
+  })
+
+  it('says the page did not load when the old page wins the race twice', async () => {
+    const page = await switchFromCutoutToHdr()
+
+    oldPageReloads(page)
+    oldPageReloads(page)
+
+    expect(hostedPage().visible).toBe(false)
+    expect(lastStatusSentToPanel()).toBe('failed')
+    expect(page.loadURL).toHaveBeenCalledTimes(3)
+    expect(mocks.capture).toHaveBeenCalledWith(APP_PAGE_FAILED_EVENT, {
+      app_id: HDR,
+      reason: 'replaced'
+    })
+  })
+
+  it('loads the asked app on Try again after the old page won the race twice', async () => {
+    const page = await switchFromCutoutToHdr()
+    oldPageReloads(page)
+    oldPageReloads(page)
+
+    expect(await showAppPage(panelContents(), HDR, { ...PLACEMENT, retry: true })).toBe('loading')
+    expect(page.loadURL).toHaveBeenLastCalledWith(HDR_URL)
+
+    oldPageReloads(page)
+    expect(page.loadURL).toHaveBeenCalledTimes(5)
+
+    finishLoading(HDR_URL)
+    expect(lastStatusSentToPanel()).toBe('ready')
   })
 })
 
