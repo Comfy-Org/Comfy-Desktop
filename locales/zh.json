@@ -216,6 +216,51 @@
     "nextApp": "下一个应用",
     "retry": "重试"
   },
+  "homeTour": {
+    "buildsIntro": {
+      "title": "构建用于运行 ComfyUI",
+      "body": "构建是一份可以打开的 ComfyUI。大多数人只需要一个。"
+    },
+    "buildsRenamed": {
+      "title": "实例现在叫作构建",
+      "body": "你的 ComfyUI 实例现在叫作构建。它们保留原有的模型和设置。"
+    },
+    "cloudBuild": {
+      "title": "Comfy Cloud",
+      "body": "Comfy Cloud 无需设置。它在云端 GPU 上运行，因此任何电脑都能使用。"
+    },
+    "localBuild": {
+      "title": "本地构建",
+      "body": "本地构建在这台电脑上免费运行。你的文件保存在这台电脑上。"
+    },
+    "allBuilds": {
+      "title": "你的全部构建",
+      "body": "点击这里查看你的全部构建。"
+    },
+    "newBuild": {
+      "title": "新建构建",
+      "body": "点击 + 新建一个构建。"
+    },
+    "newApps": {
+      "title": "新功能：应用",
+      "body": "应用是现成的工具。选择一个，添加图片或文字，然后运行。"
+    },
+    "allApps": {
+      "title": "全部应用",
+      "body": "在这里查看全部应用。"
+    },
+    "assets": {
+      "title": "资产",
+      "body": "你生成的所有内容都保存在这里。"
+    },
+    "progress": "第 {current} 步，共 {total} 步",
+    "next": "下一步",
+    "back": "上一步",
+    "skip": "跳过",
+    "done": "完成",
+    "replayHint": "可在标题栏的铃铛菜单中再次找到本导览。",
+    "replay": "查看导览"
+  },
   "installType": {
     "standalone": "独立版",
     "cloud": "云端",
@@ -1064,16 +1109,6 @@
     "cannotStopMessage": "请等待 {name} 的“{task}”完成后再关闭窗口。",
     "relaunchSkippedTitle": "{name} 未启动",
     "relaunchSkippedMessage": "{name} 正在执行另一个任务，因此未启动。请在该任务完成后再次启动。"
-  },
-  "announcement": {
-    "comfyApi": {
-      "title": "Comfy API 现已推出",
-      "lead": "将你的 ComfyUI 工作流部署为生产环境 API。将工作流与其自定义节点和模型打包，部署为应用和工具可以调用的接口。你使用 ComfyUI 的方式不会有任何变化。",
-      "primaryCta": "了解 Comfy API",
-      "imageAlt": "Comfy API 公告",
-      "unmute": "取消静音",
-      "mute": "静音"
-    }
   },
   "tray": {
     "showApp": "显示 Comfy Desktop",

@@ -454,7 +454,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     const activeComfyView = entry?.comfyView ?? comfyView
 
     const mode = entry ? computeBodyMode(entry) : 'comfy'
-    const isOverlayMode = mode === 'feedback' || mode === 'announcement'
+    const isOverlayMode = mode === 'feedback'
     const showPanel = mode !== 'comfy' && !(isOverlayMode && entry?.pendingOverlayReveal)
     if (showPanel && entry?.panelView) {
       entry.panelView.setBounds(bodyRect)

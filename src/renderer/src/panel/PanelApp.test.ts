@@ -28,6 +28,7 @@ vi.mock('../main', () => ({
 
 vi.mock('../composables/useTheme', () => ({ useTheme: () => ({ theme: 'dark' }) }))
 const mockModal = {
+  state: reactive({ visible: false }),
   alert: vi.fn(),
   confirm: vi.fn(),
   close: vi.fn()
@@ -152,6 +153,10 @@ vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
   }
 }))
 import { mount, flushPromises } from '@vue/test-utils'
+import { reactive } from 'vue'
+import { __resetHomeTourForTest, useHomeTour } from './home/useHomeTour'
+import HomeTour from './home/HomeTour.vue'
+import { useDialogs } from '../composables/useDialogs'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
 import AppsView from './AppsView.vue'
@@ -359,7 +364,7 @@ function installMockApi(initial?: {
       state.openFeedbackCallbacks.push(cb)
       return () => {}
     }),
-    onOpenAnnouncement: vi.fn(() => () => {}),
+    onShowHomePage: vi.fn(() => () => {}),
     openExternal: state.openExternal,
     getAppVersion: state.getAppVersion,
     onSettingsChanged: vi.fn(() => () => {}),
@@ -635,16 +640,14 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    for (const panel of ['feedback', 'announcement']) {
-      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel }))
-      await flushPromises()
-      expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
-      expect(signalOverlayReady).toHaveBeenCalledTimes(panel === 'feedback' ? 1 : 2)
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'feedback' }))
+    await flushPromises()
+    expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
+    expect(signalOverlayReady).toHaveBeenCalledTimes(1)
 
-      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'comfy-lifecycle' }))
-      await flushPromises()
-      expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
-    }
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'comfy-lifecycle' }))
+    await flushPromises()
+    expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
 
     mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'feedback' }))
     await flushPromises()
@@ -3970,5 +3973,126 @@ describe('PanelApp', () => {
         .api
       expect(api.respondCloseRequest).toHaveBeenCalledWith({ requestId: 'req-2', defer: true })
     })
+  })
+})
+
+describe('PanelApp home tour', () => {
+  let replayChanged: (state: { id: number; pending: boolean; finished: boolean }) => void = () => {}
+  let showHomePage: () => void = () => {}
+
+  function homeTour(): HTMLElement | null {
+    return document.querySelector<HTMLElement>('[data-testid="home-tour"]')
+  }
+
+  function mountWithTour(
+    settings: Record<string, unknown> = {},
+    query = 'panel=chooser&firstUseCompleted=true'
+  ) {
+    setActivePinia(createPinia())
+    __resetLauncherPrefsForTest()
+    __resetHomeTourForTest()
+    useOverlay().current.value = null
+    mockModal.state.visible = false
+    const state = installMockApi({
+      installations: [SAMPLE_INSTALL],
+      settings: { homeTourAudience: 'new', ...settings }
+    })
+    Object.assign(window.api, {
+      onShowHomePage: vi.fn((cb: () => void) => {
+        showHomePage = cb
+        return () => {}
+      }),
+      getHomeTourReplay: vi.fn(async () => ({ id: 0, pending: false })),
+      finishHomeTour: vi.fn(async () => {}),
+      onHomeTourReplayChanged: vi.fn(
+        (cb: (state: { id: number; pending: boolean; finished: boolean }) => void) => {
+          replayChanged = cb
+          return () => {}
+        }
+      )
+    })
+    window.history.replaceState({}, '', `/?${query}`)
+    const wrapper = mountPanel()
+    return { wrapper, state }
+  }
+
+  afterEach(() => {
+    mockModal.state.visible = false
+    useDialogs().cancel()
+    __resetHomeTourForTest()
+  })
+
+  it('shows the tour on Home when nothing else is open', async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+  })
+
+  it('waits while Send feedback is open', async () => {
+    const { state } = mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    for (const cb of state.openFeedbackCallbacks) cb({ source: 'titlebar' })
+    await expect.poll(homeTour).toBeNull()
+  })
+
+  it('waits while a confirm dialog is open', async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    mockModal.state.visible = true
+    await expect.poll(homeTour).toBeNull()
+    mockModal.state.visible = false
+    await expect.poll(homeTour).not.toBeNull()
+  })
+
+  it('tells the tour that a dialog, not a highlighted click, took Home away', async () => {
+    const { wrapper } = mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+    expect(wrapper.findComponent(HomeTour).props('interrupted')).toBe(false)
+
+    mockModal.state.visible = true
+    await flushPromises()
+
+    expect(wrapper.findComponent(HomeTour).props('interrupted')).toBe(true)
+  })
+
+  it('waits while a prompt or alert dialog is open', async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    void useDialogs().alert({ title: 'Update ready', message: 'Restart to update.' })
+    await expect.poll(homeTour).toBeNull()
+  })
+
+  it('waits while a takeover is open', async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    useOverlay().current.value = { kind: 'takeover', component: 'track' }
+    await expect.poll(homeTour).toBeNull()
+  })
+
+  it('does not show once the tour is done', async () => {
+    mountWithTour({ homeTourDone: true })
+    await flushPromises()
+    await expect.poll(() => useHomeTour().loaded.value).toBe(true)
+    await flushPromises()
+
+    expect(homeTour()).toBeNull()
+  })
+
+  it('shows the Home page when main brings this dashboard forward for a replay', async () => {
+    const { wrapper } = mountWithTour({ homeTourDone: true })
+    await expect.poll(() => useHomeTour().loaded.value).toBe(true)
+    await wrapper.get('[data-testid="app-sidebar-assets"]').trigger('click')
+    await flushPromises()
+    replayChanged({ id: 1, pending: true, finished: false })
+    await flushPromises()
+    expect(homeTour()).toBeNull()
+
+    showHomePage()
+
+    await expect.poll(() => vi.mocked(window.api.navigatePanel).mock.calls).toContainEqual(['home'])
+    await expect.poll(homeTour).not.toBeNull()
   })
 })

@@ -77,13 +77,6 @@ describe('TitleBarApp on a light ComfyUI theme', () => {
     expect(badge.color).toBe(LIGHT_EDITOR.bg)
   })
 
-  it("fills the What's new dot with the editor text colour, ringed by the bar", async () => {
-    const w = await mountTitleBar(LIGHT_EDITOR)
-    const dot = style(w.get('.title-announcement-dot').element)
-    expect(dot.backgroundColor).toBe(LIGHT_EDITOR.text)
-    expect(dot.boxShadow).toContain(LIGHT_EDITOR.bg)
-  })
-
   it('keeps the bottom divider visible: a tint of the editor text, not white', async () => {
     const w = await mountTitleBar(LIGHT_EDITOR)
     const probe = document.createElement('div')
@@ -102,9 +95,6 @@ describe('TitleBarApp on a light ComfyUI theme', () => {
     document.body.append(probe)
     expect(badge.backgroundColor).toBe(style(probe).color)
     expect(badge.color).toBe(style(probe).backgroundColor)
-    expect(style(w.get('.title-announcement-dot').element).backgroundColor).not.toBe(
-      DARK_EDITOR.text
-    )
     probe.remove()
   })
 })

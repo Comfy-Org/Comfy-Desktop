@@ -20,6 +20,7 @@ export type {
   BetaActivationNotice,
   BetaArgView,
   CoreBetaArgs,
+  HomeTourReplayState,
   Installation,
   RunningInstance,
   PerformanceTestBenchmark,

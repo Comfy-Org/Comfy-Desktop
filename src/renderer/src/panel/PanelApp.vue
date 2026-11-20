@@ -5,7 +5,6 @@ import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
-import AnnouncementModal from '../components/AnnouncementModal.vue'
 import AppSidebar from './AppSidebar.vue'
 import BuildProgressDialog from './BuildProgressDialog.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
@@ -34,7 +33,6 @@ import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
 import { useAppUpdatePrompts } from '../composables/useAppUpdatePrompts'
 import { useReturnToDashboardConfirm } from '../composables/useReturnToDashboardConfirm'
 import { useSendFeedback } from '../composables/useSendFeedback'
-import { useAnnouncement } from '../composables/useAnnouncement'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useDeepLinkRouter } from '../composables/useDeepLinkRouter'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
@@ -52,6 +50,8 @@ import {
 } from '../lib/progressTerminalPresets'
 import { provideBuildLogs } from '../composables/useBuildProgress'
 import { provideBuildMenuHost } from './home/useBuildMenu'
+import HomeTour from './home/HomeTour.vue'
+import { useDialogs } from '../composables/useDialogs'
 import { provideAutoStartBuild } from '../composables/useAutoStartBuild'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
@@ -77,7 +77,19 @@ const modal = useModal()
 useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
 const { feedbackOpen, feedbackHiddenFields, closeFeedback } = useSendFeedback()
-const { announcementOpen, closeAnnouncement } = useAnnouncement()
+const dialogs = useDialogs()
+
+function showHomePage(): void {
+  if (!showSidebar.value || sidebarPage.value === 'home') return
+  window.api.navigatePanel('home')
+  handleSidebarNavigate('home')
+}
+
+let unsubShowHomePage: (() => void) | null = null
+onMounted(() => {
+  unsubShowHomePage = window.api.onShowHomePage(showHomePage)
+})
+onUnmounted(() => unsubShowHomePage?.())
 
 const installation = computed<Installation | null>(() =>
   installationId ? (installationStore.getById(installationId) ?? null) : null
@@ -326,6 +338,21 @@ const showPanelBody = computed(() => {
 
 const showSidebar = computed(() => showPanelBody.value && sidebarPage.value !== null)
 
+const homeTourInterrupted = computed(
+  () => feedbackOpen.value || modal.state.visible || dialogs.state.open
+)
+
+const homeTourCanShow = computed(
+  () =>
+    showSidebar.value &&
+    sidebarPage.value === 'home' &&
+    currentOverlay.value === null &&
+    !feedbackOpen.value &&
+    buildProgressId.value === null &&
+    !modal.state.visible &&
+    !dialogs.state.open
+)
+
 const performanceTestRunActive = ref(false)
 
 chooserHandoff = useChooserHandoff({
@@ -419,7 +446,7 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
 watch(
   activePanel,
   (next) => {
-    const isOverlay = next === 'feedback' || next === 'announcement'
+    const isOverlay = next === 'feedback'
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay) return
     void nextTick(() => window.api.signalOverlayReady())
@@ -688,7 +715,7 @@ onUnmounted(() => {
       :hidden-fields="feedbackHiddenFields"
       @close="closeFeedback"
     />
-    <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
+    <HomeTour :active="homeTourCanShow" :interrupted="homeTourInterrupted" />
 
     <ModalDialog />
     <DialogHost />

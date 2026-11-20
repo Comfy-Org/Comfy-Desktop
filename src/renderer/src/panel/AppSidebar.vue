@@ -354,6 +354,7 @@ function openSettings(): void {
             :aria-current="row.page === activePage ? 'page' : undefined"
             :aria-label="row.label"
             :data-testid="`app-sidebar-${row.page}`"
+            :data-home-tour="row.page === 'home' ? undefined : row.page"
             @click="navigate(row.page)"
             @contextmenu.prevent="openPageMenu($event, row.page)"
           >
@@ -448,6 +449,7 @@ function openSettings(): void {
                   class="group/title -ml-1.5 h-[22px] gap-[5px] rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-transparent hover:text-foreground focus-visible:text-foreground aria-[current=page]:text-foreground"
                   :aria-current="buildsPageActive ? 'page' : undefined"
                   :data-testid="collapsed ? undefined : 'app-sidebar-chooser'"
+                  data-home-tour="all-builds"
                   @click="navigate('chooser')"
                   @contextmenu.prevent="openPageMenu($event, 'chooser')"
                 >
@@ -465,6 +467,7 @@ function openSettings(): void {
                   class="size-6 rounded-md p-0 hover:bg-secondary hover:text-foreground"
                   :aria-label="t('sidebar.newBuild')"
                   :data-testid="collapsed ? undefined : 'app-sidebar-new-build'"
+                  data-home-tour="new-build"
                   @click="emit('new-build')"
                 >
                   <Tooltip

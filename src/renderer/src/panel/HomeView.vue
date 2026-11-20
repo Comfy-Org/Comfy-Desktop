@@ -259,6 +259,7 @@ onMounted(() => {
         class="@container/home-builds mt-[50px]"
         aria-labelledby="home-builds"
         data-testid="home-builds"
+        data-home-tour="home-builds"
       >
         <div class="mb-2.5 flex h-6 items-center justify-between">
           <h2 id="home-builds" class="m-0" :class="SECTION_TITLE_CLASS">

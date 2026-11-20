@@ -54,6 +54,8 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --animate-pop-in: pop-in 160ms var(--ease-out-expo);
   --animate-fade-in: fade-in 160ms ease-out;
+  --animate-bell-nudge: bell-nudge 600ms ease-out 1;
+  --animate-bell-fade: bell-fade 600ms ease-out 1;
   --animate-status-pulse: status-pulse 2s ease-out infinite;
   --animate-status-breathe: status-breathe 1.6s ease-in-out infinite;
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
@@ -76,6 +78,22 @@
   @keyframes fade-in {
     from {
       opacity: 0;
+    }
+  }
+  @keyframes bell-nudge {
+    20% {
+      transform: rotate(14deg);
+    }
+    45% {
+      transform: rotate(-10deg);
+    }
+    70% {
+      transform: rotate(5deg);
+    }
+  }
+  @keyframes bell-fade {
+    50% {
+      opacity: 0.45;
     }
   }
   @keyframes status-pulse {
