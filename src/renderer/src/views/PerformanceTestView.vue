@@ -7,6 +7,7 @@ import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import BaseModal from '../components/ui/BaseModal.vue'
+import Tooltip from '../components/ui/Tooltip.vue'
 import { usePerformanceTestRun } from '../composables/usePerformanceTestRun'
 import { usePerformanceTestWorkflow } from '../composables/usePerformanceTestWorkflow'
 import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScope'
@@ -90,6 +91,14 @@ const exportResultsError = ref<string | null>(null)
 const canRun = computed(() =>
   Boolean(selectedBuild.value && workflow.isReady && run.canStart(selectedBuild.value.id))
 )
+const runBlockedReason = computed(() => {
+  if (canRun.value) return undefined
+  if (!selectedBuild.value) return t('performanceTest.runNeedsBuild')
+  if (workflow.isImporting) return t('performanceTest.runWaitsForWorkflow')
+  if (!workflow.filePath) return t('performanceTest.runNeedsWorkflow')
+  if (!workflow.isReady) return t('performanceTest.runWaitsForWorkflow')
+  return t('performanceTest.runWaitsForBuild')
+})
 const summary = computed(() => run.result?.resultsSummary ?? null)
 const resultsFolder = computed(() => {
   const resultPath = run.result?.resultsSummaryPath ?? run.result?.resultPath
@@ -259,18 +268,25 @@ async function exportResultsImage(): Promise<void> {
                 run.stage === 'stopping' ? t('performanceTest.stopping') : t('performanceTest.stop')
               }}
             </Button>
-            <Button
+            <Tooltip
               v-else
-              class="performance-test__run ml-auto min-w-20 gap-1.5 px-3 text-[13px]/5"
-              variant="inverted"
-              size="md"
-              type="button"
-              :disabled="!canRun"
-              @click="startRun"
+              class="ml-auto"
+              :text="runBlockedReason"
+              :disabled="canRun"
+              :tabindex="!canRun && runBlockedReason ? 0 : undefined"
             >
-              <Play :size="14" fill="currentColor" aria-hidden="true" />
-              {{ t('performanceTest.run') }}
-            </Button>
+              <Button
+                class="performance-test__run min-w-20 gap-1.5 px-3 text-[13px]/5"
+                variant="inverted"
+                size="md"
+                type="button"
+                :disabled="!canRun"
+                @click="startRun"
+              >
+                <Play :size="14" fill="currentColor" aria-hidden="true" />
+                {{ t('performanceTest.run') }}
+              </Button>
+            </Tooltip>
           </div>
 
           <p

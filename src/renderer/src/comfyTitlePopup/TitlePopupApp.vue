@@ -219,20 +219,20 @@ function measureAndRequestSize(): void {
   if (kind.value === 'downloads') {
     const headEl = document.querySelector('.downloads-head') as HTMLElement | null
     const listEl = document.querySelector('.downloads-list, .downloads-empty') as HTMLElement | null
-    const footEl = document.querySelector('.downloads-foot') as HTMLElement | null
-    if (!footEl || !listEl) return
+    if (!listEl) return
+    const cs = getComputedStyle(listEl)
     let listH: number
     if (listEl.classList.contains('downloads-list')) {
       let childrenH = 0
       for (const child of listEl.children) {
         childrenH += (child as HTMLElement).offsetHeight
       }
-      const cs = getComputedStyle(listEl)
       listH = childrenH + parseFloat(cs.paddingTop || '0') + parseFloat(cs.paddingBottom || '0')
     } else {
       listH = listEl.offsetHeight
     }
-    const total = (headEl?.offsetHeight ?? 0) + listH + footEl.offsetHeight + 2
+    listH += parseFloat(cs.marginTop || '0') + parseFloat(cs.marginBottom || '0')
+    const total = (headEl?.offsetHeight ?? 0) + listH + 2
     bridge?.requestSize(total)
     return
   }

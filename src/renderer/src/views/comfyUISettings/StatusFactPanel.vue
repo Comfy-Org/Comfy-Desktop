@@ -8,6 +8,7 @@ import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import type { DetailField, DetailSection, Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useInlineTextEdit } from '../../composables/useInlineTextEdit'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 import { revealInFolderKey } from '../../composables/usePlatform'
 
 interface Props {
@@ -241,9 +242,7 @@ const groups = computed<FactGroup[]>(() => {
       :key="group.id"
       class="status-fact-group flex flex-col rounded-[14px] bg-card px-[18px] pt-1.5 pb-2"
     >
-      <h3
-        class="status-fact-group-title mt-2 mb-1 text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase opacity-70"
-      >
+      <h3 class="status-fact-group-title mt-2 mb-1" :class="SECTION_TITLE_CLASS">
         {{ group.title }}
       </h3>
       <dl class="status-fact-list m-0 flex flex-col">

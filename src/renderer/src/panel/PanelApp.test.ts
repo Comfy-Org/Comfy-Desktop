@@ -110,14 +110,6 @@ vi.mock('../views/LoadSnapshotModal.vue', () => ({
     methods: { open: vi.fn() }
   }
 }))
-vi.mock('../views/QuickInstallModal.vue', () => ({
-  default: {
-    name: 'QuickInstallModal',
-    emits: ['close', 'show-progress'],
-    template: '<div data-testid="quick-install-modal" />',
-    methods: { open: vi.fn() }
-  }
-}))
 vi.mock('../views/FirstUseTakeover.vue', () => ({
   default: {
     name: 'FirstUseTakeover',
@@ -3127,11 +3119,18 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="load-snapshot-modal"]').exists()).toBe(true)
   })
 
-  it('renders the quick-install takeover when initialised with panel=quick-install', async () => {
-    window.history.replaceState({}, '', '/?panel=quick-install&firstUseCompleted=true')
+  it('no longer knows the removed quick-install panel', async () => {
     const wrapper = mountPanel()
     await flushPromises()
-    expect(wrapper.find('[data-testid="quick-install-modal"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="comfy-lifecycle"]').exists()).toBe(true)
+
+    const events = captureTelemetry()
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'quick-install' }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="comfy-lifecycle"]').exists()).toBe(true)
+    expect(events.filter((e) => e.actionName === 'comfy.desktop.install.flow.opened')).toHaveLength(
+      0
+    )
   })
 
   it.each([
@@ -3140,11 +3139,6 @@ describe('PanelApp', () => {
       panel: 'load-snapshot',
       selector: '[data-testid="load-snapshot-modal"]',
       name: 'LoadSnapshotModal'
-    },
-    {
-      panel: 'quick-install',
-      selector: '[data-testid="quick-install-modal"]',
-      name: 'QuickInstallModal'
     },
     {
       panel: 'new-install',
@@ -3725,12 +3719,12 @@ describe('PanelApp', () => {
       mountPanel()
       await flushPromises()
       const events = captureTelemetry()
-      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'quick-install' }))
+      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'track' }))
       await flushPromises()
       const flowEvents = events.filter((e) => e.actionName === 'comfy.desktop.install.flow.opened')
       expect(flowEvents).toHaveLength(1)
       expect(flowEvents[0].context).toMatchObject({
-        flow: 'quick_install',
+        flow: 'track_existing',
         entrypoint: 'titlebar'
       })
     })
@@ -3743,8 +3737,7 @@ describe('PanelApp', () => {
       const cases: { panel: string; flow: string }[] = [
         { panel: 'new-install', flow: 'new_install' },
         { panel: 'track', flow: 'track_existing' },
-        { panel: 'load-snapshot', flow: 'load_snapshot' },
-        { panel: 'quick-install', flow: 'quick_install' }
+        { panel: 'load-snapshot', flow: 'load_snapshot' }
       ]
       for (const { panel } of cases) {
         mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel }))

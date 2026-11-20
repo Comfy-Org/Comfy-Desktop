@@ -14,13 +14,7 @@ const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
 
 type ComfyPanelKey =
-  | 'comfy'
-  | 'performance-test'
-  | 'benchmarks'
-  | 'new-install'
-  | 'track'
-  | 'load-snapshot'
-  | 'quick-install'
+  'comfy' | 'performance-test' | 'benchmarks' | 'new-install' | 'track' | 'load-snapshot'
 
 type CoachmarkKind = 'beta-notice'
 

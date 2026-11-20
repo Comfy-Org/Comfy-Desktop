@@ -13,6 +13,7 @@ import type { ComfyArgDef } from '../../types/ipc'
 import { parseArgs, serialize } from '../../lib/argsParser'
 import { emitTelemetryAction } from '../../lib/telemetry'
 import { scoreName } from '../../utils/fuzzyMatch'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 interface Props {
   installationId: string
@@ -438,9 +439,7 @@ function onRawChange(value: string): void {
         :key="category"
         class="args-page-category flex flex-col gap-1.5 [&+.args-page-category]:mt-3"
       >
-        <header
-          class="args-page-category-title mt-0 mr-0 mb-1 ml-0 text-[11px] font-semibold tracking-[0.08em] text-text-muted uppercase"
-        >
+        <header class="args-page-category-title mt-0 mr-0 mb-1 ml-0" :class="SECTION_TITLE_CLASS">
           {{ categoryLabel(category) }}
         </header>
 
@@ -451,9 +450,7 @@ function onRawChange(value: string): void {
         >
           <template v-if="item.kind === 'exclusive' && item.args && item.group">
             <div class="args-page-cluster flex min-w-0 flex-col gap-1">
-              <span
-                class="args-page-cluster-label my-0.5 mx-0 px-0.5 text-[11px] font-medium tracking-[0.06em] text-text-muted uppercase"
-              >
+              <span class="args-page-cluster-label my-0.5 mx-0" :class="SECTION_TITLE_CLASS">
                 {{ t('comfyUISettings.argsExclusiveLabel') }}:
                 <span
                   class="args-page-cluster-options [font-family:ui-monospace,SFMono-Regular,Menlo,monospace] normal-case tracking-normal text-[color-mix(in_srgb,var(--text-muted)_85%,transparent)]"

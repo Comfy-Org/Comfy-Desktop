@@ -2,6 +2,7 @@ import type { Component } from 'vue'
 import { Cpu, Gpu } from '@lucide/vue'
 import type { FieldOption } from '../types/ipc'
 import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
+import type { BaseSelectOption } from '../components/ui'
 import { getVariantImage, stripVariantPrefix } from './variants'
 import { isApiNodeTemplate } from './installHelpers'
 
@@ -19,6 +20,21 @@ export function toOptionCards(options: FieldOption[]): SetupOptionCard[] {
     credits: isApiNodeTemplate(option),
     image: getVariantImage(option)
   }))
+}
+
+export function toCardSelectOption(
+  card: SetupOptionCard,
+  recommendedBadge: string
+): BaseSelectOption {
+  return {
+    value: card.value,
+    label: card.label,
+    description: card.description,
+    disabled: card.disabled,
+    icon: card.icon,
+    testId: card.testId,
+    badge: card.recommended ? recommendedBadge : undefined
+  }
 }
 
 export function toHardwareCards(options: FieldOption[]): SetupOptionCard[] {

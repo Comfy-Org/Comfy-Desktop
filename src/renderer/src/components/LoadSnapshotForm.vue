@@ -21,9 +21,8 @@ import { getVariantGpuLabel, sortedCardOptions, findBestVariant } from '../lib/v
 import { triggerLabel as _triggerLabel, formatDate, formatNodeVersion } from '../lib/snapshots'
 import SetupFormRow from './SetupFormRow.vue'
 import InstallLocationRow from './InstallLocationRow.vue'
-import SetupOptionCards from './SetupOptionCards.vue'
 import SnapshotDisclosure from './SnapshotDisclosure.vue'
-import { toHardwareCards } from '../lib/setupOptionCards'
+import { toCardSelectOption, toHardwareCards } from '../lib/setupOptionCards'
 import { BaseSelect, type BaseSelectOption } from './ui'
 import { emitTelemetryAction, toVariantBucket } from '../lib/telemetry'
 import { progressTitle } from '../lib/progressTitle'
@@ -64,7 +63,11 @@ const cardRef = ref<HTMLElement | null>(null)
 const sortedVariants = computed(() =>
   sortedCardOptions(heldVariants.value?.options ?? variantOptions.value)
 )
-const variantCards = computed(() => toHardwareCards(sortedVariants.value))
+const variantSelectOptions = computed(() =>
+  toHardwareCards(sortedVariants.value).map((card) =>
+    toCardSelectOption(card, t('newInstall.recommended'))
+  )
+)
 const shownVariantValue = computed(
   () => (heldVariants.value?.selection ?? selectedVariant.value)?.value
 )
@@ -192,6 +195,10 @@ async function loadVariantOptions(): Promise<void> {
 
 watch(selectedRelease, () => {
   loadVariantOptions()
+})
+
+watch(preview, (next) => {
+  nodesExpanded.value = (next?.newestSnapshot.customNodes.length ?? 0) > 0
 })
 
 async function loadFromPath(filePath: string): Promise<void> {
@@ -349,14 +356,14 @@ defineExpose({ create, canCreate, creating, hasPreview })
 <template>
   <div
     ref="cardRef"
-    class="load-snapshot-card flex flex-col"
+    class="load-snapshot-card flex flex-col [&>.setup-form-row:last-child]:pb-0"
     @dragover="!preview && handleDragOver($event)"
     @dragleave="!preview && handleDragLeave($event)"
     @drop="!preview && handleDrop($event)"
   >
     <div
       v-if="!preview"
-      class="load-snapshot-dropzone my-3 flex min-h-[220px] flex-col items-center justify-center gap-2.5 rounded-[14px] border-2 border-dashed p-8 text-neutral-200 transition-[border-color,background] duration-160 ease-[ease] motion-reduce:transition-none"
+      class="load-snapshot-dropzone mt-3 flex min-h-[220px] flex-col items-center justify-center gap-2.5 rounded-[14px] border-2 border-dashed p-8 text-neutral-200 transition-[border-color,background] duration-160 ease-[ease] motion-reduce:transition-none"
       :class="[
         dragging
           ? 'load-snapshot-dropzone--active border-white/40 bg-white/6'
@@ -397,7 +404,7 @@ defineExpose({ create, canCreate, creating, hasPreview })
 
     <template v-else>
       <InstallLocationRow
-        class="load-snapshot-file"
+        class="load-snapshot-file [&_.config-path-input]:pl-4"
         :label="$t('loadSnapshot.file')"
         :icon="FileArchive"
         :path="preview.filePath"
@@ -426,7 +433,7 @@ defineExpose({ create, canCreate, creating, hasPreview })
 
       <SetupFormRow :label="$t('list.snapshotRelease')" :icon="Package">
         <BaseSelect
-          class="text-[13px]"
+          class="load-snapshot-release pl-3.5 text-[13px]"
           :model-value="selectedRelease?.value ?? ''"
           :options="releaseSelectOptions"
           :placeholder="releasePlaceholder"
@@ -446,14 +453,16 @@ defineExpose({ create, canCreate, creating, hasPreview })
         </p>
       </SetupFormRow>
 
-      <SetupFormRow :label="$t('list.snapshotDevice')" :icon="Zap" control-height="cards">
-        <SetupOptionCards
-          v-if="variantCards.length > 0"
-          :options="variantCards"
-          :selected-value="shownVariantValue"
-          :refreshing="variantLoading"
-          :aria-label="$t('list.snapshotDevice')"
-          @select="selectVariantByValue"
+      <SetupFormRow :label="$t('standalone.variant')" :icon="Zap">
+        <BaseSelect
+          v-if="variantSelectOptions.length > 0"
+          class="load-snapshot-hardware pl-3.5 text-[13px]"
+          :model-value="shownVariantValue ?? ''"
+          :options="variantSelectOptions"
+          :loading="variantLoading"
+          :disabled="variantLoading"
+          :aria-label="$t('standalone.variant')"
+          @update:model-value="selectVariantByValue"
         />
         <div
           v-else-if="variantLoading"

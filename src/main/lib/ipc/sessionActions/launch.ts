@@ -69,7 +69,7 @@ import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
 import { decodeExitCode } from '../../exitCodeInfo'
-import { auditVcRuntime } from '../../vcRuntimeAudit'
+import { auditVcRuntime, isDllLoadFailure } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
 import { createAssetsTap } from '../../assetsTap'
 import { createAgentTap } from '../../agentTap'
@@ -90,7 +90,7 @@ import { clearCrash, recordCrash } from '../../crashBuffer'
 import { settleAutoStartOnFirstStart } from '../../firstBuildAutoStart'
 import type { ComfyExitedData } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
-import { buildErrorFields, errorTail } from '../../../../shared/errorEvent'
+import { buildErrorFields, errorTail, findExceptionLine } from '../../../../shared/errorEvent'
 import {
   startBootPhases,
   recordBootPhase,
@@ -172,15 +172,12 @@ import { getIdClass } from '../../deviceId'
 import { launchFoldersOf, outputDirOverride } from '../../outputFolders'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
-export function desktopFeatureFlags(
-  inst: InstallationRecord,
-  telemetryEnabled: boolean
-): Record<string, string> {
+export function desktopFeatureFlags(inst: InstallationRecord): Record<string, string> {
   const flags: Record<string, string> = {
     show_signin_button: 'true',
     supports_terminal: 'false'
   }
-  if (inst.sourceId === 'standalone' && telemetryEnabled) {
+  if (inst.sourceId === 'standalone' && settings.telemetryConsent() === true) {
     flags.enable_telemetry = 'true'
   }
   return flags
@@ -188,7 +185,7 @@ export function desktopFeatureFlags(
 
 async function launchClientContext(): ReturnType<typeof agentClientContext> {
   try {
-    return await agentClientContext(settings.get('telemetryEnabled') === true, getAppVersion())
+    return await agentClientContext(settings.telemetryConsent() === true, getAppVersion())
   } catch {
     return undefined
   }
@@ -602,13 +599,16 @@ async function diagnoseCrash(
   return out
 }
 
-async function describeExitCode(code: number | null): Promise<string> {
+async function describeExitCode(code: number | null, stderr: string): Promise<string> {
   if (code == null) return 'unknown'
   const decoded = decodeExitCode(code)
-  if (!decoded) return String(code)
-  let out = `${decoded.code} / ${decoded.hex}`
-  if (decoded.kind === 'access-violation') {
+  const accessViolation = decoded?.kind === 'access-violation'
+  const dllFailure = !decoded && isDllLoadFailure(findExceptionLine(stderr) ?? '')
+  let out = decoded ? `${decoded.code} / ${decoded.hex}` : String(code)
+  if (accessViolation) {
     out += ' (memory access violation — usually a faulty or missing native library)'
+  }
+  if (accessViolation || dllFailure) {
     try {
       if ((await auditVcRuntime()).length > 0) {
         out +=
@@ -1290,9 +1290,7 @@ async function runLaunch(
             installationId,
             revision
           )
-          const flagEntries = Object.entries(
-            desktopFeatureFlags(inst, settings.get('telemetryEnabled') === true)
-          )
+          const flagEntries = Object.entries(desktopFeatureFlags(inst))
           for (const [key, value] of flagEntries) {
             if (key in registry) {
               desktopFlagArgs.push('--feature-flag', `${key}=${value}`)
@@ -1974,7 +1972,9 @@ async function runLaunch(
         exitSignal = signal
         if (!earlyExit) {
           const detail = spawned.getStderr().trim() ? `\n\n${spawned.getStderr().trim()}` : ''
-          const rendered = signal ? `signal ${signal}` : `code ${await describeExitCode(code)}`
+          const rendered = signal
+            ? `signal ${signal}`
+            : `code ${await describeExitCode(code, spawned.getStderr())}`
           earlyExit = `Process exited with ${rendered}${detail}`
           reject(new Error(earlyExit))
         }

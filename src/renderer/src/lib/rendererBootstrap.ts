@@ -1,5 +1,5 @@
-import { datadogRum, type RumBeforeSend } from '@datadog/browser-rum'
-import { normalizeRumErrorEvent } from './datadogPathNormalization'
+import { datadogRum } from '@datadog/browser-rum'
+import { rumBeforeSend } from './datadogPathNormalization'
 import {
   TELEMETRY_ACTION_EVENT_NAME,
   type TelemetryActionEventDetail,
@@ -69,13 +69,6 @@ const isDatadogConfigured =
 
 let isDatadogInitialized = false
 let bootstrapInvoked = false
-
-const datadogBeforeSend: RumBeforeSend = (event) => {
-  if (event.type === 'error') {
-    normalizeRumErrorEvent(event)
-  }
-  return true
-}
 
 function toDatadogTrackingConsent(enabled: boolean | undefined): DatadogTrackingConsent {
   return enabled === true ? 'granted' : 'not-granted'
@@ -245,7 +238,7 @@ async function initializeProviders(): Promise<void> {
         env: datadogEnv,
         version: datadogVersion || undefined,
         trackingConsent: toDatadogTrackingConsent(telemetryEnabled),
-        beforeSend: datadogBeforeSend,
+        beforeSend: rumBeforeSend,
         sessionSampleRate: parseSampleRate(
           import.meta.env.VITE_DATADOG_RUM_SESSION_SAMPLE_RATE,
           100
