@@ -1278,6 +1278,11 @@ describe('buildLaunchArgs core beta injection', () => {
       { ancestry: [true], verified: false, head: 'e'.repeat(40) },
       'eeeeeeeeeeee'
     ],
+    [
+      'its release floor with a readable HEAD',
+      { ancestry: [], verified: true, head: 'e'.repeat(40) },
+      'eeeeeeeeeeee'
+    ],
     ['its release floor with no git HEAD', { ancestry: [], verified: true, head: null }, '0.3.81']
   ])(
     'names the release floor in the record of a floor grant applied through %s',

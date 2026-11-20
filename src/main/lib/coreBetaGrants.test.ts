@@ -624,6 +624,14 @@ describe('parseCoreBetaGrants commit ranges', () => {
 })
 
 describe('parseCoreBetaGrants release floor', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.mocked(console.warn).mockRestore()
+  })
+
   const parse = (releaseFloor: unknown) =>
     parseCoreBetaGrants(true, {
       flags: [
@@ -719,7 +727,8 @@ describe('parseCoreBetaGrants ignored release floor warning', () => {
 
   it.each([
     ['a valid floor', { commit_ranges: [[SHA_A, null]], release_floor: '0.42.4' }],
-    ['no floor', { commit_ranges: [[SHA_A, SHA_B]] }]
+    ['no floor', { commit_ranges: [[SHA_A, SHA_B]] }],
+    ['a floor on a version entry', { min_core_version: '0.42.0', release_floor: '0.42.4' }]
   ])('stays quiet for %s', (_label, entry) => {
     expect(warningsFor(entry)).toEqual([])
   })
