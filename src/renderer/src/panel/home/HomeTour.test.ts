@@ -377,47 +377,79 @@ describe('HomeTour', () => {
     expect(document.activeElement).toBe(field)
   })
 
-  async function goToAllBuilds(): Promise<HTMLElement> {
+  async function goToAllBuilds() {
     placeAnchors()
     const allBuilds = anchors.find((el) => el.dataset['homeTour'] === 'all-builds')!
     const control = document.createElement('button')
-    control.textContent = 'Builds'
     control.style.cssText = 'position: absolute; left: 0; top: 0; width: 80px; height: 40px'
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    icon.setAttribute('width', '20')
+    icon.setAttribute('height', '20')
+    icon.style.cssText = 'position: absolute; left: 50px; top: 10px'
+    const stroke = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+    stroke.setAttribute('width', '20')
+    stroke.setAttribute('height', '20')
+    icon.append(stroke)
+    control.append(icon)
     allBuilds.append(control)
-    mountTour()
+    const wrapper = mountTour()
     await waitForCard()
     for (let step = 0; step < 3; step++) {
       await userEvent.click(button('next')!)
     }
     await expect.poll(() => tourCard()?.textContent).toContain('All your builds')
-    return control
+    return { control, wrapper }
   }
 
   function highlightedPart(): HTMLElement {
     return document.querySelector<HTMLElement>('[data-testid="home-tour-target"]')!
   }
 
-  it('passes a click on the highlighted part to the control under it, and counts the tour as done', async () => {
-    const control = await goToAllBuilds()
-    const opened = vi.fn()
+  it('passes a click on the highlighted part to the control under it, and counts the tour as done once that control opens something', async () => {
+    const { control, wrapper } = await goToAllBuilds()
+    const opened = vi.fn(() => void wrapper.setProps({ active: false }))
     control.addEventListener('click', opened)
 
     await userEvent.click(highlightedPart(), { position: { x: 20, y: 20 } })
 
     await expect.poll(() => tourCard()).toBeNull()
     expect(opened).toHaveBeenCalledTimes(1)
-    expect(setSetting).toHaveBeenCalledWith('homeTourDone', true)
+    await expect.poll(() => setSetting.mock.calls).toContainEqual(['homeTourDone', true])
     expect(telemetry).toContain('comfy.desktop.home_tour.target_opened')
   })
 
-  it('keeps the tour open when the click lands on a part of the highlight that opens nothing', async () => {
-    await goToAllBuilds()
+  it('passes a click on an icon inside the highlighted control to that control', async () => {
+    const { control } = await goToAllBuilds()
+    const opened = vi.fn()
+    control.addEventListener('click', opened)
 
-    await userEvent.click(highlightedPart(), { position: { x: 160, y: 20 } })
+    await userEvent.click(highlightedPart(), { position: { x: 64, y: 24 } })
 
+    await expect.poll(() => opened.mock.calls.length).toBe(1)
+  })
+
+  it('keeps the tour running when the click opens nothing, like a side card that only turns the carousel', async () => {
+    const { control } = await goToAllBuilds()
+    const moved = vi.fn()
+    control.addEventListener('click', moved)
+
+    await userEvent.click(highlightedPart(), { position: { x: 20, y: 20 } })
+    await settle()
+
+    expect(moved).toHaveBeenCalledTimes(1)
     expect(tourCard()?.textContent).toContain('All your builds')
     expect(setSetting).not.toHaveBeenCalled()
     expect(telemetry).not.toContain('comfy.desktop.home_tour.target_opened')
+  })
+
+  it('keeps the tour open when the click lands on a part of the highlight with nothing under it', async () => {
+    await goToAllBuilds()
+
+    await userEvent.click(highlightedPart(), { position: { x: 160, y: 20 } })
+    await settle()
+
+    expect(tourCard()?.textContent).toContain('All your builds')
+    expect(setSetting).not.toHaveBeenCalled()
   })
 
   it('dims everything except the highlighted part and hides the page behind from screen readers', async () => {

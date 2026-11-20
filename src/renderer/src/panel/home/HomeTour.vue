@@ -29,6 +29,7 @@ import { useHomeTour } from './useHomeTour'
 const { active } = defineProps<{ active: boolean }>()
 
 const HOLE_PADDING = 4
+const TARGET_OPEN_WINDOW_MS = 1000
 
 const { t } = useI18n()
 const installationStore = useInstallationStore()
@@ -56,6 +57,7 @@ let startToken = 0
 let resumeAnchor: HomeTourAnchor | null = null
 let focusBeforeTour: HTMLElement | null = null
 let restoreFocusOnClose = false
+let targetClick: { at: number; step: number } | null = null
 
 function sameRect(a: DOMRect | null, b: DOMRect | null): boolean {
   if (!a || !b) return a === b
@@ -109,6 +111,10 @@ function restoreFocus(event: Event): void {
 }
 
 function stop(): void {
+  const openedByTarget =
+    targetClick !== null && performance.now() - targetClick.at < TARGET_OPEN_WINDOW_MS
+  const openedStep = targetClick?.step ?? 0
+  targetClick = null
   startToken += 1
   cancelAnimationFrame(frame)
   if (step.value) resumeAnchor = step.value.anchor
@@ -116,6 +122,13 @@ function stop(): void {
   index.value = null
   tourSteps.value = []
   rect.value = null
+  if (openedByTarget) {
+    emitTelemetryAction('comfy.desktop.home_tour.target_opened', {
+      audience: audience.value,
+      step: openedStep
+    })
+    end({ returnFocus: false })
+  }
 }
 
 function end({ returnFocus }: { returnFocus: boolean }): void {
@@ -152,8 +165,6 @@ function skip(): void {
   end({ returnFocus: true })
 }
 
-const CLICKABLE = 'button, a[href], [role="button"], [role="link"]'
-
 function elementUnderTarget(event: MouseEvent): Element | null {
   const target = event.currentTarget as HTMLElement
   const body = document.body.style
@@ -166,24 +177,21 @@ function elementUnderTarget(event: MouseEvent): Element | null {
   return hit
 }
 
-function isClickable(hit: Element, anchor: HTMLElement): boolean {
-  const control = hit.closest(CLICKABLE)
-  if (control && anchor.contains(control)) return true
-  return getComputedStyle(hit).cursor === 'pointer'
-}
-
 function openTarget(event: MouseEvent): void {
   const current = step.value
   const anchor = current ? findHomeTourAnchor(current.anchor) : null
   const hit = elementUnderTarget(event)
-  if (!anchor || !(hit instanceof HTMLElement) || !anchor.contains(hit)) return
-  if (!isClickable(hit, anchor)) return
-  emitTelemetryAction('comfy.desktop.home_tour.target_opened', {
-    audience: audience.value,
-    step: position.value.current
-  })
-  end({ returnFocus: false })
-  hit.click()
+  if (!anchor || !hit || !anchor.contains(hit)) return
+  targetClick = { at: performance.now(), step: position.value.current }
+  hit.dispatchEvent(
+    new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: event.clientX,
+      clientY: event.clientY
+    })
+  )
 }
 
 const hole = computed(() => {
