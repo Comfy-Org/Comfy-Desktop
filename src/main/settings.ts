@@ -589,7 +589,7 @@ export function peekBetaFeaturesEnabled(): boolean {
 
 function betaFeaturesEnabledIn(settings: Partial<Settings>, unreadable: boolean): boolean {
   const stored = settings.betaFeaturesEnabled
-  if (typeof stored === 'boolean') return stored
+  if (typeof stored === 'boolean' && !unreadable) return stored
   return consentIn(settings, unreadable) === true
 }
 
