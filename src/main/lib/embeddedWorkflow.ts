@@ -37,10 +37,40 @@ export function isGraphWorkflow(value: unknown): value is Record<string, unknown
   )
 }
 
-const NON_FINITE_TOKEN = /"(?:\\.|[^"\\])*"|(?<![\w.-])(-?Infinity|NaN)(?![\w.])/g
+const NON_FINITE_TOKENS = ['-Infinity', 'Infinity', 'NaN']
+const TOKEN_BEFORE = /[\w.-]/
+const TOKEN_AFTER = /[\w.]/
+
+function bareTokenAt(text: string, at: number): string | null {
+  if (TOKEN_BEFORE.test(text[at - 1] ?? '')) return null
+  const token = NON_FINITE_TOKENS.find((candidate) => text.startsWith(candidate, at))
+  if (!token || TOKEN_AFTER.test(text[at + token.length] ?? '')) return null
+  return token
+}
 
 function withoutNonFinite(text: string): string {
-  return text.replace(NON_FINITE_TOKEN, (match, token) => (token ? 'null' : match))
+  const parts: string[] = []
+  let copiedTo = 0
+  let inString = false
+  for (let at = 0; at < text.length; at++) {
+    const char = text[at]
+    if (inString) {
+      if (char === '\\') at++
+      else if (char === '"') inString = false
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    const token = bareTokenAt(text, at)
+    if (!token) continue
+    parts.push(text.slice(copiedTo, at), 'null')
+    at += token.length - 1
+    copiedTo = at + 1
+  }
+  parts.push(text.slice(copiedTo))
+  return parts.join('')
 }
 
 function parseJson(text: string): unknown {

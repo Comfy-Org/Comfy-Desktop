@@ -187,12 +187,18 @@ describe('reading the workflow ComfyUI saved in a PNG', () => {
 
   it('reads a workflow with bare NaN and Infinity the way ComfyUI does, and keeps them inside text', () => {
     const text =
-      '{"nodes":[{"id":1,"type":"Note","widgets_values":[NaN,Infinity,-Infinity,"NaN and Infinity"]}],"links":[]}'
+      '{"nodes":[{"id":1,"type":"Note","widgets_values":[NaN,Infinity,-Infinity,"NaN and Infinity","say \\"NaN\\""]}],"links":[]}'
 
     expect(readEmbeddedWorkflow([png(tEXt('workflow', text))])).toEqual({
       format: 'graph',
       data: {
-        nodes: [{ id: 1, type: 'Note', widgets_values: [null, null, null, 'NaN and Infinity'] }],
+        nodes: [
+          {
+            id: 1,
+            type: 'Note',
+            widgets_values: [null, null, null, 'NaN and Infinity', 'say "NaN"']
+          }
+        ],
         links: []
       }
     })
