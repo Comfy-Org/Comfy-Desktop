@@ -1,9 +1,10 @@
 import { progressOpKindForActionId } from '../../lib/progressOpKind'
+import type { LocalDeviceKind } from '../../composables/useLocalDeviceKind'
 import type { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
 
 export type HomeBuildTone = 'ember' | 'iris' | 'tide'
-export type BuildDeviceKind = 'laptop' | 'pc-laptop' | 'monitor' | 'cloud'
+export type BuildDeviceKind = LocalDeviceKind | 'cloud'
 export type HomeBuildStatus = 'running' | 'starting' | 'stopping' | 'updating' | 'update' | 'ready'
 
 export interface HomeBuildToneStyle {
@@ -23,17 +24,9 @@ export function isCloudBuild(build: Installation): boolean {
   return build.sourceCategory === 'cloud'
 }
 
-export function deviceKindForPlatform(platform: string | undefined): BuildDeviceKind {
-  if (platform === 'win32') return 'pc-laptop'
-  if (platform === 'linux') return 'monitor'
-  return 'laptop'
-}
-
-export function buildDeviceKind(
-  build: Installation,
-  platform: string | undefined = window.api?.platform
-): BuildDeviceKind {
-  return isCloudBuild(build) ? 'cloud' : deviceKindForPlatform(platform)
+export function buildDeviceKind(build: Installation, localKind: LocalDeviceKind): BuildDeviceKind {
+  if (isCloudBuild(build)) return 'cloud'
+  return build.sourceCategory === 'remote' ? 'monitor' : localKind
 }
 
 export function isComfyCloud(build: Installation): boolean {

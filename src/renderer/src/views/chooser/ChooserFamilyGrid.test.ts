@@ -42,10 +42,10 @@ function spot(installation: Installation): { left: number; top: number } {
   return { left: el.offsetLeft, top: el.offsetTop }
 }
 
-async function mountGrid(installations: Installation[]): Promise<VueWrapper> {
+async function mountGrid(installations: Installation[], loggedOut = false): Promise<VueWrapper> {
   wrapper = mount(ChooserFamilyGrid, {
     attachTo: host,
-    props: { installations, isStoppedActionGated: () => false },
+    props: { installations, loggedOut, isStoppedActionGated: () => false },
     global: { stubs: { transition: false, 'transition-group': false } }
   })
   await flushPromises()
@@ -132,6 +132,15 @@ describe('Builds tile status', () => {
     expect(tile(CLOUD).textContent).not.toContain('Always on')
     expect(tile(CLOUD).textContent).toContain('Ready')
     expect(tile(CLOUD).querySelector('.rounded-full.bg-\\[\\#59d38c\\]')).toBeNull()
+  })
+
+  it('asks a logged-out user to log in to use Comfy Cloud, with no check, while local builds stay Ready', async () => {
+    await mountGrid(ALL, true)
+
+    expect(tile(CLOUD).textContent).toContain('Log in to use')
+    expect(tile(CLOUD).textContent).not.toContain('Ready')
+    expect(tile(CLOUD).querySelector('.lucide-check')).toBeNull()
+    expect(tile(FIRST_LOCAL).textContent).toContain('Ready')
   })
 
   it('shows an opened Comfy Cloud as Ready with no green dot, since it runs nothing here', async () => {

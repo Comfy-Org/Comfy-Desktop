@@ -32,6 +32,7 @@ import {
   resolvePickerSelectedInstallId,
   scopeInstancePicker,
   buildTitlePopupMenuItems,
+  buildWhatsNewMenuItems,
   computePopupHeight,
   parseGlobalSettingsTarget,
   registerTitlePopupIpc,
@@ -129,6 +130,14 @@ describe('computePopupHeight', () => {
       { id: 'benchmarks', label: 'Benchmarks', icon: 'benchmarks' }
     ])
     expect(h).toBe(68)
+  })
+})
+
+describe('buildWhatsNewMenuItems', () => {
+  it("lists Take the tour as the What's new menu item", () => {
+    expect(buildWhatsNewMenuItems()).toEqual([
+      { id: 'take-tour', label: 'Take the tour', labelKey: 'homeTour.replay' }
+    ])
   })
 })
 
@@ -315,6 +324,16 @@ describe('activateTitlePopupMenuItem', () => {
     expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith('comfy', {
       nearWindow: host.window
     })
+  })
+
+  it("starts the home tour from the What's new menu of the window it was chosen from", () => {
+    const host = makeEntry({ installationId: 'inst-1' })
+    comfyWindows.set(host.windowKey, host)
+    const bindings = { startHomeTour: vi.fn() } as unknown as TitlePopupHostBindings
+
+    activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'take-tour', bindings)
+
+    expect(bindings.startHomeTour).toHaveBeenCalledExactlyOnceWith(host.windowKey)
   })
 
   it('routes Reset Zoom through resetComfyZoom with the host installation id', () => {

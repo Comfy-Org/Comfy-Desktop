@@ -386,6 +386,7 @@ import { instanceModelPathsYaml } from '../../models'
 import { lookupEnMessage } from '../../localeTestHelper'
 import { previewCoreBetaArgs } from '../../coreBetaPreview'
 import type { ActionContext } from './types'
+import type { BlockingSession } from '../../../../types/ipc'
 import type * as ComfyDownloadManagerModule from '../../comfyDownloadManager'
 import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
@@ -3354,28 +3355,30 @@ describe('Performance Test guardrail', () => {
     fs.rmSync(installDir, { recursive: true, force: true })
   })
 
-  const refusalOne = (name: string): string =>
-    `errors.performanceTestOtherInstanceRunningOne ${JSON.stringify({ name })}`
-  const perfLabel = (name: string): string =>
-    `errors.performanceTestOfInstallation ${JSON.stringify({ name })}`
-
-  async function expectRefused(message: string, otherCount = 1): Promise<void> {
+  async function expectRefused(blockingSessions: BlockingSession[]): Promise<void> {
     const res = await handleLaunch(ctxFor('guard-bench', PERF))
-    expect(res).toEqual({ ok: false, message })
+    expect(res).toEqual({
+      ok: false,
+      message: 'errors.performanceTestOtherInstanceRunning',
+      blockingSessions
+    })
     expect(spawned, 'no ComfyUI was started').toBe(0)
     expect(events).toEqual([
       {
         event: 'comfy.desktop.performance_test.refused',
-        properties: { installation_id: 'guard-bench', other_count: otherCount }
+        properties: { installation_id: 'guard-bench', other_count: blockingSessions.length }
       }
     ])
     expect(_operationAborts.has(PERF), 'no operation slot claimed').toBe(false)
     expect(_getLaunchingInstallationIds()).not.toContain(PERF)
   }
 
+  const other = { sessionId: 'guard-other', name: 'Other Install' }
+  const otherPerf = { sessionId: 'performance-test:guard-other', name: 'Other Install' }
+
   it('refuses while another installation is running, and names it', async () => {
     runSession('guard-other', 'Other Install')
-    await expectRefused(refusalOne('“Other Install”'))
+    await expectRefused([other])
   })
 
   function preparing(id: string): void {
@@ -3386,7 +3389,7 @@ describe('Performance Test guardrail', () => {
 
   it('refuses while another installation is still preparing or starting', async () => {
     preparing('guard-other')
-    await expectRefused(refusalOne('“Other Install”'))
+    await expectRefused([other])
   })
 
   it('does not count a launch handler still running after its session was stopped', async () => {
@@ -3399,38 +3402,33 @@ describe('Performance Test guardrail', () => {
 
   it('refuses while another installation is stopping', async () => {
     _stoppingInstallationIds.add('guard-other')
-    await expectRefused(refusalOne('“Other Install”'))
+    await expectRefused([other])
   })
 
-  it('names a running Performance Test of another installation as one', async () => {
+  it('names a running Performance Test of another installation by its session', async () => {
     runSession('performance-test:guard-other', 'Other Install')
-    await expectRefused(refusalOne(perfLabel('Other Install')))
+    await expectRefused([otherPerf])
   })
 
   it("names another installation's Performance Test that is still starting by that installation", async () => {
     preparing('performance-test:guard-other')
-    await expectRefused(refusalOne(perfLabel('Other Install')))
+    await expectRefused([otherPerf])
   })
 
-  it('lists Performance Tests after the installations, so the list cannot read as one test of all', async () => {
+  it('lists Performance Tests after the installations', async () => {
     runSession('performance-test:guard-other', 'Other Install')
     runSession('guard-gone', 'Gone Install')
-    await expectRefused(
-      `errors.performanceTestOtherInstanceRunning ${JSON.stringify({
-        names: `“Gone Install” and ${perfLabel('Other Install')}`
-      })}`,
-      2
-    )
+    await expectRefused([{ sessionId: 'guard-gone', name: 'Gone Install' }, otherPerf])
   })
 
   it('counts an installation of an unknown source as local', async () => {
     runSession('guard-unknown', 'Unknown Source')
-    await expectRefused(refusalOne('“Unknown Source”'))
+    await expectRefused([{ sessionId: 'guard-unknown', name: 'Unknown Source' }])
   })
 
   it('counts a session whose installation record is gone, by its session name', async () => {
     runSession('guard-gone', 'Gone Install')
-    await expectRefused(refusalOne('“Gone Install”'))
+    await expectRefused([{ sessionId: 'guard-gone', name: 'Gone Install' }])
   })
 
   it('lets only one of two Performance Tests started together through', async () => {
@@ -3449,13 +3447,13 @@ describe('Performance Test guardrail', () => {
         properties: { installation_id: 'guard-other', other_count: 1 }
       }
     ])
-    expect(results[1]!.message).toBe(refusalOne(perfLabel('Bench')))
+    expect(results[1]!.blockingSessions).toEqual([{ sessionId: PERF, name: 'Bench' }])
     expect(spawned).toBe(1)
   })
 
   it('refuses while the same installation runs its own session', async () => {
     runSession('guard-bench', 'Bench')
-    await expectRefused(refusalOne('“Bench”'))
+    await expectRefused([{ sessionId: 'guard-bench', name: 'Bench' }])
   })
 
   it.each([
@@ -3490,7 +3488,7 @@ describe('Performance Test guardrail', () => {
 
   it('refuses while its own earlier run is still stopping', async () => {
     _stoppingInstallationIds.add(PERF)
-    await expectRefused(refusalOne(perfLabel('Bench')))
+    await expectRefused([{ sessionId: PERF, name: 'Bench' }])
   })
 
   it('does not count its own earlier run', async () => {
@@ -3562,12 +3560,7 @@ describe('Performance Test guardrail', () => {
   it('names every other ComfyUI running', async () => {
     runSession('guard-other', 'Other Install')
     _stoppingInstallationIds.add('guard-bench')
-    await expectRefused(
-      `errors.performanceTestOtherInstanceRunning ${JSON.stringify({
-        names: '“Other Install” and “Bench”'
-      })}`,
-      2
-    )
+    await expectRefused([other, { sessionId: 'guard-bench', name: 'Bench' }])
   })
 
   it.each([

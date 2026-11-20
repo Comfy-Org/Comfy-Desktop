@@ -91,6 +91,11 @@ beforeEach(() => {
   document.body.innerHTML = ''
 })
 
+function clickTwice(element: Element): void {
+  element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+  element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }))
+}
+
 describe('SidebarAccount', () => {
   it('offers to log in when signed out', async () => {
     const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT)
@@ -110,6 +115,110 @@ describe('SidebarAccount', () => {
 
     const signIn = wrapper.get('[data-testid="devplatform-account-signin"]')
     expect(signIn.attributes('disabled')).toBeUndefined()
+  })
+
+  function waitForBrowser(comfybuilder: ReturnType<typeof installApi>) {
+    let fail!: (error: Error) => void
+    comfybuilder.signIn.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        fail = reject
+      })
+    )
+    return (error: Error) => fail(error)
+  }
+
+  it('keeps Log in clickable while the browser sign-in is open, with a quiet hint', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT)
+    waitForBrowser(comfybuilder)
+
+    await wrapper.get('[data-testid="devplatform-account-signin"]').trigger('click')
+    await flushPromises()
+
+    const signIn = wrapper.get('[data-testid="devplatform-account-signin"]')
+    expect(signIn.text()).toBe('Log in')
+    expect(signIn.attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="sidebar-signin-body"]').text()).toBe(
+      'Continue in your browser'
+    )
+  })
+
+  it('restarts the sign-in when Log in is clicked again before it finishes', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT)
+    waitForBrowser(comfybuilder)
+    await wrapper.get('[data-testid="devplatform-account-signin"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="devplatform-account-signin"]').trigger('click')
+
+    expect(comfybuilder.signIn).toHaveBeenCalledTimes(2)
+  })
+
+  it('opens one sign-in for a double click, on the card and on the collapsed icon', async () => {
+    for (const collapsed of [false, true]) {
+      const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT, collapsed)
+      waitForBrowser(comfybuilder)
+      const signIn = wrapper.get('[data-testid="devplatform-account-signin"]')
+
+      clickTwice(signIn.element)
+
+      expect(comfybuilder.signIn).toHaveBeenCalledOnce()
+      wrapper.unmount()
+    }
+  })
+
+  it('drops the hint when the sign-in fails or times out', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT)
+    const fail = waitForBrowser(comfybuilder)
+    await wrapper.get('[data-testid="devplatform-account-signin"]').trigger('click')
+    await flushPromises()
+
+    fail(new Error('Loopback OAuth callback timed out'))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="sidebar-signin-body"]').text()).toBe(
+      'Sync and run on Comfy Cloud'
+    )
+    expect(
+      wrapper.get('[data-testid="devplatform-account-signin"]').attributes('disabled')
+    ).toBeUndefined()
+  })
+
+  it('signs in when the second attempt finishes', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT)
+    comfybuilder.signIn.mockRejectedValueOnce(new Error('timeout'))
+    await wrapper.get('[data-testid="devplatform-account-signin"]').trigger('click')
+    await flushPromises()
+
+    comfybuilder.signIn.mockResolvedValueOnce(SIGNED_IN)
+    await wrapper.get('[data-testid="devplatform-account-signin"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="workspace-switcher-trigger"]').exists()).toBe(true)
+  })
+
+  it('keeps the collapsed icon clickable during a sign-in started on another page', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT, true)
+    waitForBrowser(comfybuilder)
+
+    void useAuthStore()
+      .signIn()
+      .catch(() => {})
+    await flushPromises()
+
+    const icon = wrapper.get('[data-testid="devplatform-account-signin"]')
+    expect(icon.attributes('disabled')).toBeUndefined()
+    expect(icon.attributes('title')).toBe('Log in')
+    expect(useAuthStore().signInPending).toBe(true)
+  })
+
+  it('shows the account once a sign-in started on another page finishes', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_OUT)
+    comfybuilder.signIn.mockResolvedValueOnce(SIGNED_IN)
+
+    await useAuthStore().signIn()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="workspace-switcher-trigger"]').exists()).toBe(true)
   })
 
   it('shrinks to a named icon on the collapsed sidebar, with the log-in card folded away and out of reach', async () => {
