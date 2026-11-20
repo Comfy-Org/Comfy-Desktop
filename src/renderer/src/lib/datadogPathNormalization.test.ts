@@ -146,6 +146,41 @@ describe('rumBeforeSend', () => {
     })
   })
 
+  it('rewrites and scrubs the handling stack only on an error it re-reported', () => {
+    vi.useFakeTimers()
+    const addError = vi.spyOn(datadogRum, 'addError').mockImplementation(() => undefined)
+    send({
+      type: 'error',
+      error: {
+        message: 'wrapped',
+        source: 'source',
+        causes: [{ message: 'inner', source: 'source' }]
+      }
+    })
+    vi.runAllTimers()
+    const reported = addError.mock.calls[0]?.[0]
+    const handlingStack = [
+      'Error',
+      '  at <anonymous> @ file:///C:/Users/alice/AppData/Local/Programs/ComfyUI/resources/app.asar/out/renderer/assets/rendererBootstrap-x.js:1:2'
+    ].join('\n')
+    const reReport = {
+      type: 'error',
+      error: { message: 'wrapped', source: 'custom', handling_stack: handlingStack }
+    }
+    const unrelated = {
+      type: 'error',
+      error: { message: 'other', source: 'custom', handling_stack: handlingStack }
+    }
+
+    rumBeforeSend(reReport as never, { error: reported } as never)
+    rumBeforeSend(unrelated as never, { error: new Error('other') } as never)
+
+    expect(reReport.error.handling_stack).toBe(
+      'Error\n  at <anonymous> @ app://app/renderer/assets/rendererBootstrap-x.js:1:2'
+    )
+    expect(unrelated.error.handling_stack).toBe(handlingStack)
+  })
+
   it('flattens an error and its causes into one scrubbed error without a cause', () => {
     const flattened = flattenErrorWithCauses({
       message: 'wrapped at /home/bob/a',
