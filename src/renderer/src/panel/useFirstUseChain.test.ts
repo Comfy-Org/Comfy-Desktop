@@ -382,7 +382,7 @@ describe('useFirstUseChain — Set up', () => {
     expect(chain.changeInstallLocation).not.toHaveBeenCalled()
   })
 
-  it('still explains a build that cannot be added when the reason is empty', async () => {
+  it('still explains a build that cannot be added when the reason is empty, without pointing at the location', async () => {
     testApi.addInstallation = vi.fn().mockResolvedValue({ ok: false })
     stubWindowApi(testApi)
 
@@ -391,8 +391,24 @@ describe('useFirstUseChain — Set up', () => {
 
     expect(modal.alert).toHaveBeenCalledWith({
       title: "Couldn't add this build",
-      message: 'Something went wrong while adding it. Check the install location, then try again.'
+      message: 'Something went wrong while adding it. Try again.'
     })
+  })
+
+  it('points at the install location when the folder is the problem but no message came back', async () => {
+    testApi.addInstallation = vi.fn().mockResolvedValue({ ok: false, reason: 'location' })
+    stubWindowApi(testApi)
+    vi.mocked(modal.notice).mockResolvedValue(false)
+
+    const chain = mountChain()
+    await chain.api!.handleSetupInstall(setupPlan())
+
+    expect(modal.notice).toHaveBeenCalledWith({
+      title: "Couldn't add this build",
+      message: 'Something went wrong while adding it. Check the install location, then try again.',
+      actionLabel: 'Change location'
+    })
+    expect(chain.changeInstallLocation).not.toHaveBeenCalled()
   })
 
   it('opens Change on the folder picked on Set up', async () => {

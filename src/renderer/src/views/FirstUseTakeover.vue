@@ -333,7 +333,7 @@ async function browseInstallLocation(): Promise<void> {
     if (gen !== openGeneration) return
     if (check.ok && !check.issue) break
     const pickAgain = await modal.notice({
-      title: t('errors.cannotAdd'),
+      title: t('errors.cannotUseFolder'),
       message: check.ok && check.issue ? check.issue : t('errors.locationCheckFailed'),
       actionLabel: t('errors.changeLocation')
     })

@@ -18,8 +18,11 @@ export async function alertAddFailure(opts: {
   onChangeLocation?: () => unknown
 }): Promise<void> {
   const title = opts.title
-  const message = opts.failure.message || opts.t('errors.cannotAddDetail')
-  const changeLocation = opts.failure.reason === 'location' ? opts.onChangeLocation : undefined
+  const isLocation = opts.failure.reason === 'location'
+  const message =
+    opts.failure.message ||
+    opts.t(isLocation ? 'errors.cannotAddLocationDetail' : 'errors.cannotAddDetail')
+  const changeLocation = isLocation ? opts.onChangeLocation : undefined
   if (!changeLocation) {
     await opts.modal.alert({ title, message })
     return

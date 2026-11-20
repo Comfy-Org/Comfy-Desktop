@@ -331,7 +331,7 @@ describe('Set up, the first screen', () => {
 
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
-    expect(modal.state.title).toBe("Couldn't add this build")
+    expect(modal.state.title).toBe("Couldn't use this folder")
     expect(modal.state.message).toContain('overlaps with an existing build')
     expect(modal.state.buttonLabel).toBe('Change location')
     expect(w.emitted('location-change')).toBeUndefined()
@@ -386,7 +386,7 @@ describe('Set up, the first screen', () => {
 
     const modal = useModal()
     expect(modal.state.visible).toBe(true)
-    expect(modal.state.title).toBe("Couldn't add this build")
+    expect(modal.state.title).toBe("Couldn't use this folder")
     expect(modal.state.message).toBe(
       "Couldn't check this folder. Try again, or pick another location."
     )
