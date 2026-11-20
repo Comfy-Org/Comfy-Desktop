@@ -1634,7 +1634,8 @@
   },
   "devPlatform": {
     "signIn": {
-      "cta": "Log in"
+      "cta": "Log in",
+      "waiting": "Continue in your browser"
     },
     "account": {
       "installationInProgressTitle": "Installation in progress",
