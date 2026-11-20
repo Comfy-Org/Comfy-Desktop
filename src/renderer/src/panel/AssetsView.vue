@@ -950,7 +950,6 @@ async function openWorkflow(asset: GalleryAsset, build?: string): Promise<void> 
     .catch(() => ({ opened: false, error: undefined }))
   clearTimeout(showBusy)
   updateOpening(key, token, null)
-  if (token !== openToken) return
   if (result.opened) {
     if (detailKey.value === key) await closeDetail()
     return

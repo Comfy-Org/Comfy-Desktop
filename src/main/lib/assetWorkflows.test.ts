@@ -304,6 +304,33 @@ describe('a file in Comfy Cloud', () => {
     expect(await hasWorkflow(LOCAL, 'loop.png')).toBe(true)
   })
 
+  it('still reads the end of a large PNG whose start holds only a prompt, and opens the graph from the end', async () => {
+    const prompt = { '1': { class_type: 'SaveImage', inputs: {} } }
+    const promptChunk = Buffer.from(`prompt\u0000${JSON.stringify(prompt)}`)
+    const length = Buffer.alloc(4)
+    length.writeUInt32BE(promptChunk.length)
+    await savedFile(
+      'mixed.png',
+      Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        length,
+        Buffer.from('tEXt'),
+        promptChunk,
+        Buffer.alloc(4),
+        Buffer.alloc(PART_BYTES * 2, 0),
+        Buffer.from(`comf\u0000${SAVED_WORKFLOW}`)
+      ])
+    )
+
+    await openWorkflow(LOCAL, 'mixed.png', 'mixed.png', 'inst-lab')
+
+    expect(mocks.openEmbeddedWorkflow).toHaveBeenCalledExactlyOnceWith(
+      { where: 'local', build: 'inst-lab' },
+      { format: 'graph', data: GRAPH },
+      'mixed'
+    )
+  })
+
   it('says the read failed, not that there is no workflow, when Comfy Cloud does not answer', async () => {
     mocks.cloudAccessToken.mockResolvedValue('token')
     mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/fox')

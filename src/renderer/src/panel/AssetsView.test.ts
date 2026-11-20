@@ -1783,6 +1783,9 @@ describe('AssetsView Open workflow', () => {
       await flushPromises()
 
       expect(workflowButton()?.getAttribute('aria-disabled')).toBe('true')
+      expect(getComputedStyle(workflowButton()!).opacity, 'looks like a disabled button').toBe(
+        '0.5'
+      )
       expect(workflowButton()?.textContent?.trim()).toBe('Open workflow')
       expect(workflowButton()?.hasAttribute('aria-busy')).toBe(false)
       workflowButton()!.click()
@@ -1848,7 +1851,7 @@ describe('AssetsView Open workflow', () => {
     }
   })
 
-  it('ignores the result of an open that a newer open replaced, and never opens the first file twice', async () => {
+  it('never opens a file twice, closes the viewer only for the shown file, and tells about every failed open', async () => {
     hasAssetWorkflow.mockResolvedValue(true)
     const finishes: ((result: { opened: boolean; error?: string }) => void)[] = []
     openAssetWorkflow.mockImplementation(() => new Promise((resolve) => finishes.push(resolve)))
@@ -1870,12 +1873,18 @@ describe('AssetsView Open workflow', () => {
     await flushPromises()
     expect(openAssetWorkflow).toHaveBeenCalledTimes(2)
 
+    finishes[1]!({ opened: true })
+    await flushPromises()
+    expect(viewer(), 'b opened while a is shown, so the viewer stays').not.toBeNull()
+    expect(alert).not.toHaveBeenCalled()
+
     finishes[0]!({ opened: false, error: 'Lab did not start.' })
     await flushPromises()
-    expect(alert).not.toHaveBeenCalled()
-    finishes[1]!({ opened: false, error: 'Lab did not start.' })
-    await flushPromises()
-    expect(alert).toHaveBeenCalledOnce()
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: expect.any(String),
+      message: 'Lab did not start.'
+    })
+    expect(viewer()).not.toBeNull()
   })
 
   it('brings Open workflow back and keeps the viewer open when the workflow does not open', async () => {

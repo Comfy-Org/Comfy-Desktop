@@ -36,7 +36,7 @@ async function readPart(
 }
 
 function headHoldsPngWorkflow(head: Uint8Array): boolean {
-  return isPng(head) && readEmbeddedWorkflow([head]) !== null
+  return isPng(head) && readEmbeddedWorkflow([head])?.format === 'graph'
 }
 
 async function localParts(assetId: string): Promise<Uint8Array[] | null> {
