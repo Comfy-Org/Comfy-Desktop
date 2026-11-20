@@ -1549,12 +1549,43 @@ describe('version guard: reject non-newer offers (issue #1161)', () => {
       expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
 
       fire('update-available', { version: '1.1.9' })
+      expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+
       fire('download-progress', { percent: 50 })
       fire('update-downloaded', { updateInfo: { version: '1.1.9' } })
 
       expect(updater.getCurrentUpdateState().kind).toBeNull()
       expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
       expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+    })
+
+    it('an older build downloaded with no offer first is not installed on quit', async () => {
+      await bootUpdater()
+
+      fire('update-downloaded', { updateInfo: { version: '1.1.9' } })
+
+      expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+      expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+    })
+
+    it('an older build returned by a check is not installed on quit', async () => {
+      fakeUpdater.checkForUpdates = vi.fn(async () => ({ updateInfo: { version: '1.1.9' } }))
+      const updater = await bootUpdater()
+
+      expect(await updater.runCheck('auto-check')).toEqual({ available: false })
+      expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+    })
+
+    it('a newer build downloaded after an older one installs on quit even with no offer first', async () => {
+      const updater = await bootUpdater()
+
+      fire('update-available', { version: '1.1.9' })
+      expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+
+      fire('update-downloaded', { updateInfo: { version: '1.2.1' } })
+
+      expect(updater.getCurrentUpdateState().kind).toBe('ready')
+      expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
     })
 
     it('every update check turns off downgrades before the feed is compared', async () => {

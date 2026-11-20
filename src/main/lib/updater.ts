@@ -149,7 +149,7 @@ function isInstallerUIEnabled(): boolean {
 }
 
 let _installOnQuitSuppressedForSession = false
-let _nonNewerBuildSeen = false
+let _installOnQuitHeldForOlderBuild = false
 
 export function suppressInstallOnQuit(): void {
   _installOnQuitSuppressedForSession = true
@@ -168,20 +168,20 @@ export function syncInstallOnQuitPolicy(): void {
   try {
     electronAutoUpdater.autoInstallOnAppQuit =
       !_installOnQuitSuppressedForSession &&
-      !_nonNewerBuildSeen &&
+      !_installOnQuitHeldForOlderBuild &&
       !isStartupInstallEnabled() &&
       isAutoInstallEnabled()
   } catch {}
 }
 
 function holdInstallOnQuitForNonNewerBuild(): void {
-  _nonNewerBuildSeen = true
+  _installOnQuitHeldForOlderBuild = true
   syncInstallOnQuitPolicy()
 }
 
 function releaseInstallOnQuitForNewerBuild(): void {
-  if (!_nonNewerBuildSeen) return
-  _nonNewerBuildSeen = false
+  if (!_installOnQuitHeldForOlderBuild) return
+  _installOnQuitHeldForOlderBuild = false
   syncInstallOnQuitPolicy()
 }
 
