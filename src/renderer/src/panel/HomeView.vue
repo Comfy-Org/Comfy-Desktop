@@ -27,6 +27,7 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { AppCard, AppCover, CatalogWorkflow, Installation } from '../types/ipc'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 type LoadState = 'loading' | 'ready' | 'unavailable'
 
@@ -261,10 +262,7 @@ onMounted(() => {
         data-home-tour="home-builds"
       >
         <div class="mb-2.5 flex h-6 items-center justify-between">
-          <h2
-            id="home-builds"
-            class="m-0 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
-          >
+          <h2 id="home-builds" class="m-0" :class="SECTION_TITLE_CLASS">
             {{ t('sidebar.builds') }}
           </h2>
           <Button
