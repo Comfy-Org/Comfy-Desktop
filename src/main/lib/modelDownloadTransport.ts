@@ -4,6 +4,7 @@ import path from 'path'
 import * as settings from '../settings'
 import { r2MirrorUrl } from './r2Mirror'
 import {
+  downloadUrlPolicyName,
   isPermittedDownloadUrl,
   isPermittedRedirect,
   type DownloadUrlCheck
@@ -99,6 +100,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
 
   const stagingPath = stagingPathFor(finalPath)
   const metaPath = stagingMetaPathFor(finalPath)
+  const urlPolicy = downloadUrlPolicyName(validateUrl)
 
   let phase: 'active' | 'terminating' | 'settled' = 'active'
   const claim = (): boolean => {
@@ -264,7 +266,8 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
         directory,
         filename,
         installationId: installationId ?? undefined,
-        sha256: sha256 ?? undefined
+        sha256: sha256 ?? undefined,
+        urlPolicy
       })
       if (!durable) {
         failRetaining('Download failed: cannot write staging metadata')
@@ -466,7 +469,8 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           directory,
           filename,
           installationId: installationId ?? undefined,
-          sha256: sha256 ?? existingMeta?.sha256
+          sha256: sha256 ?? existingMeta?.sha256,
+          urlPolicy
         }
         if (!writeStagedMeta(metaPath, meta)) {
           failRetaining('Download failed: cannot write staging metadata')

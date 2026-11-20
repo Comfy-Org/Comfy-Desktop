@@ -1539,3 +1539,53 @@ describe('page-initiated download URL policy', () => {
     expect(setSavePath).not.toHaveBeenCalled()
   })
 })
+
+describe('asset download item ownership', () => {
+  it('gives an item to the job that requested its URL, not a job whose original URL matches', async () => {
+    let willDownload:
+      ((event: unknown, item: Electron.DownloadItem, webContents: null) => void) | undefined
+    const session = {
+      on: vi.fn((event: string, handler: typeof willDownload) => {
+        if (event === 'will-download') willDownload = handler
+      }),
+      downloadURL: vi.fn()
+    } as unknown as Electron.Session
+    const webContents = {
+      session,
+      send: vi.fn(),
+      isDestroyed: () => false
+    } as unknown as Electron.WebContents
+    const win = {
+      isDestroyed: () => false,
+      setProgressBar: vi.fn(),
+      webContents
+    } as unknown as Electron.BrowserWindow
+    const outputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'comfy-output-'))
+    const first = 'http://127.0.0.1:8188/api/view?filename=first.png'
+    const shared = 'http://127.0.0.1:8188/view/shared.png'
+    resolveRedirectsMock.mockResolvedValueOnce({ ok: true, url: shared })
+    resolveRedirectsMock.mockImplementationOnce(() => new Promise(() => {}))
+    try {
+      await mod.startAssetDownload(win, first, 'first.png', outputDir)
+      await vi.waitFor(() => expect(session.downloadURL).toHaveBeenCalledWith(shared, undefined))
+      await mod.startAssetDownload(win, shared, 'second.png', outputDir)
+      const setSavePath = vi.fn()
+      const item = {
+        getURLChain: () => [shared],
+        getURL: () => shared,
+        getContentDisposition: () => null,
+        setSavePath,
+        on: vi.fn(),
+        once: vi.fn(),
+        getTotalBytes: () => 0,
+        getReceivedBytes: () => 0,
+        isPaused: () => false
+      } as unknown as Electron.DownloadItem
+      willDownload!({}, item, null)
+      expect(setSavePath).toHaveBeenCalledTimes(1)
+      expect(path.basename(setSavePath.mock.calls[0]![0] as string)).toContain('first')
+    } finally {
+      await fs.promises.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+})
