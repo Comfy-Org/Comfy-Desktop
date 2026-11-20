@@ -303,8 +303,8 @@ function openContextMenu(event: MouseEvent): void {
 <template>
   <div
     ref="tile"
-    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl bg-card/75 bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--shadow-highlight)] px-[18px] transition-colors select-none"
-    :class="[statusClasses, canActivate && 'cursor-pointer hover:bg-card-hover/80']"
+    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 items-center gap-[18px] overflow-hidden rounded-2xl bg-card bg-[linear-gradient(180deg,var(--build-card-sheen),transparent_40%)] [box-shadow:var(--shadow-highlight)] px-[18px] transition-colors select-none"
+    :class="[statusClasses, canActivate && 'cursor-pointer hover:bg-card-hover']"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"
     @click="open"

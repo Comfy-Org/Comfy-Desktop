@@ -118,29 +118,24 @@ describe('build cards have a glass surface', () => {
     expect(tokenStyle('color: var(--build-card-sheen)').color).not.toBe('rgba(0, 0, 0, 0)')
   })
 
-  it.each(CARDS)(
-    '%s is a see-through card fill with a top sheen and highlight',
-    async (_, render) => {
-      const style = getComputedStyle(await mountWithHost(render))
-      const tokens = tokenStyle(
-        [
-          'background-color: color-mix(in oklab, var(--color-card) 75%, transparent)',
-          'background-image: linear-gradient(180deg, var(--build-card-sheen), transparent 40%)',
-          'box-shadow: var(--shadow-highlight)'
-        ].join(';')
-      )
-      expect(style.backgroundImage).not.toBe('none')
-      expect(style.backgroundColor).toBe(tokens.backgroundColor)
-      expect(style.backgroundImage).toBe(tokens.backgroundImage)
-      expect(style.boxShadow).toBe(tokens.boxShadow)
-    }
-  )
+  it.each(CARDS)('%s has the card fill with a top sheen and highlight', async (_, render) => {
+    const style = getComputedStyle(await mountWithHost(render))
+    const tokens = tokenStyle(
+      [
+        'background-color: var(--color-card)',
+        'background-image: linear-gradient(180deg, var(--build-card-sheen), transparent 40%)',
+        'box-shadow: var(--shadow-highlight)'
+      ].join(';')
+    )
+    expect(style.backgroundImage).not.toBe('none')
+    expect(style.backgroundColor).toBe(tokens.backgroundColor)
+    expect(style.backgroundImage).toBe(tokens.backgroundImage)
+    expect(style.boxShadow).toBe(tokens.boxShadow)
+  })
 
   it.each(CARDS)('%s turns to the card hover fill under the pointer', async (_, render) => {
     const el = await mountWithHost(render)
-    const hoverFill = tokenStyle(
-      'background-color: color-mix(in oklab, var(--color-card-hover) 80%, transparent)'
-    ).backgroundColor
+    const hoverFill = tokenStyle('background-color: var(--color-card-hover)').backgroundColor
     expect(getComputedStyle(el).backgroundColor).not.toBe(hoverFill)
     await userEvent.hover(el, { force: true })
     await expect.poll(() => getComputedStyle(el).backgroundColor).toBe(hoverFill)
