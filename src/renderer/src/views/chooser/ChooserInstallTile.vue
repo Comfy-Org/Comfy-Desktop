@@ -25,6 +25,7 @@ import Tooltip from '../../components/ui/Tooltip.vue'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from '../../panel/home/BuildMenu.vue'
 import BuildProgressBar from '../../panel/home/BuildProgressBar.vue'
+import BuildUpdateButton from '../../panel/home/BuildUpdateButton.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
 import { isBuildInstall } from '../../devplatform/buildState'
@@ -215,16 +216,13 @@ const leadingFact = computed(() =>
   isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
 
-const updateNote = computed(() =>
-  !isUninstalling.value &&
-  !isUpdatingHere.value &&
-  inst.value.statusTag?.style === 'update' &&
-  !isUpdating.value
-    ? t('chooser.updatePill')
-    : ''
+const showsUpdate = computed(
+  () =>
+    !isUninstalling.value &&
+    !isUpdatingHere.value &&
+    inst.value.statusTag?.style === 'update' &&
+    !isUpdating.value
 )
-
-const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
 
 const opensLogs = computed(
   () => isBusy.value || (!dangerTag.value && launchFailed(progressStore, inst.value.id))
@@ -270,6 +268,11 @@ function open(): void {
 
 const openButton = useTemplateRef<HTMLButtonElement>('openButton')
 const { open: menuOpen, menuProps, show: showMenuAtPointer, toggle: toggleMenu } = usePointMenu()
+const menuSpace = computed(() =>
+  canOpenMenu.value
+    ? ['group-hover/tile:pr-10', 'group-focus-within/tile:pr-10', menuOpen.value && 'pr-10']
+    : []
+)
 watch(canOpenMenu, (enabled) => {
   if (!enabled) menuOpen.value = false
 })
@@ -350,17 +353,11 @@ function openContextMenu(event: MouseEvent): void {
       :glow="toneStyle.glow"
     />
 
-    <div
-      class="chooser-tile-body pointer-events-none relative flex min-w-0 flex-1 flex-col"
-      :class="
-        canOpenMenu && [
-          'group-hover/tile:pr-10',
-          'group-focus-within/tile:pr-10',
-          menuOpen && 'pr-10'
-        ]
-      "
-    >
-      <div class="flex h-4 min-w-0 items-center gap-1.5 text-xs/4 text-muted-foreground">
+    <div class="chooser-tile-body pointer-events-none relative flex min-w-0 flex-1 flex-col">
+      <div
+        class="flex h-4 min-w-0 items-center gap-1.5 text-xs/4 text-muted-foreground"
+        :class="menuSpace"
+      >
         <span
           v-if="isBusy"
           class="chooser-tile-status flex min-w-0 items-center gap-1.5"
@@ -422,6 +419,7 @@ function openContextMenu(event: MouseEvent): void {
 
       <div
         class="chooser-tile-name-row mt-1 flex min-w-0 items-center gap-1.5 [&_.tooltip-wrap]:flex-none"
+        :class="menuSpace"
       >
         <TruncatedText
           class="chooser-tile-name mt-0 block max-w-full min-w-0 text-[15px]/[21px] font-semibold text-foreground [&.tooltip-wrap]:block"
@@ -429,13 +427,14 @@ function openContextMenu(event: MouseEvent): void {
         />
       </div>
       <div
-        v-if="metaLine || updateNote"
-        class="chooser-tile-meta-line mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
+        v-if="leadingFact || trailingFact || showsUpdate"
+        class="chooser-tile-meta-line mt-0.5 flex min-w-0 items-center text-xs/[17px] text-subtle-foreground"
+        :class="showsUpdate ? canOpenMenu && 'pr-7' : menuSpace"
       >
-        <span v-if="metaLine" class="min-w-0 truncate">{{ metaLine }}</span>
-        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
-          >{{ metaLine ? ' · ' : '' }}{{ updateNote }}</span
-        >
+        <span v-if="leadingFact" class="min-w-0 shrink-[99999] truncate">{{ leadingFact }}</span>
+        <span v-if="leadingFact && trailingFact" class="shrink-0 whitespace-pre"> · </span>
+        <span v-if="trailingFact" class="min-w-0 truncate">{{ trailingFact }}</span>
+        <BuildUpdateButton v-if="showsUpdate" class="ml-1.5" :build="inst" />
       </div>
     </div>
 

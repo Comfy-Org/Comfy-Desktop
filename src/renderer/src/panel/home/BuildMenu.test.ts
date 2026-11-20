@@ -75,6 +75,7 @@ beforeEach(() => {
     refreshCreditBalance: vi.fn().mockResolvedValue({ status: 'signed_out' }),
     onCreditBalanceChanged: vi.fn(() => () => {}),
     onAppPageClosed: vi.fn(() => () => {}),
+    getDetailSections: vi.fn().mockResolvedValue([]),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       onAuthChanged: vi.fn(() => () => {}),
@@ -311,7 +312,7 @@ describe('Build menu', () => {
     expect(await shownMenu()).not.toContain('auto-start')
   })
 
-  it('shows the update beside the version and keeps the whole tile as the primary button', async () => {
+  it('shows Update beside the version as its own button, and keeps the rest of the tile opening the build', async () => {
     const build: Installation = {
       ...BUILD,
       statusTag: { label: 'Update available', style: 'update' }
@@ -323,12 +324,52 @@ describe('Build menu', () => {
     mounted.push(wrapper)
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe('v0.42.4 · Update')
+    const detail = wrapper.get('[data-testid="home-build-detail"]')
+    expect(detail.get('.truncate').text()).toBe('v0.42.4')
+    const update = detail.get('[data-testid="build-update-button"]')
+    expect(update.text()).toBe('Update')
+    expect(update.attributes('aria-label')).toBe('Update Flux Sandbox')
+    expect(update.attributes('disabled')).toBeUndefined()
     const buttons = [...wrapper.element.querySelectorAll('button')].map((b) =>
       b.getAttribute('data-testid')
     )
-    expect(buttons).toEqual(['home-build-open', 'home-build-more'])
+    expect(buttons).toEqual(['home-build-open', 'build-update-button', 'home-build-more'])
   })
+
+  it.each(['Home', 'Builds'] as const)(
+    'holds Update on a running %s tile with the reason, and a press neither updates nor opens the build',
+    async (where) => {
+      const build: Installation = {
+        ...BUILD,
+        statusTag: { label: 'Update available', style: 'update' }
+      }
+      useInstallationStore().installations = [build]
+      useSessionStore().runningInstances.set(BUILD.id, { installationId: BUILD.id } as never)
+      const wrapper = mount(
+        withHost(() =>
+          where === 'Home'
+            ? h(HomeBuildCard, { build, status: 'running', tone: 'ember' })
+            : h(ChooserInstallTile, { installation: build })
+        ),
+        { attachTo: document.body }
+      )
+      mounted.push(wrapper)
+      await flushPromises()
+
+      const update = wrapper.get<HTMLButtonElement>('[data-testid="build-update-button"]')
+      expect(update.element.disabled).toBe(true)
+      expect(update.attributes('title')).toBe('Stop the running build first.')
+      await userEvent.click(update.element, { force: true })
+      await flushPromises()
+
+      expect(window.api.getDetailSections).not.toHaveBeenCalled()
+      expect(host.showProgress).not.toHaveBeenCalled()
+      expect(host.launch).not.toHaveBeenCalled()
+      expect(host.openDetails).not.toHaveBeenCalled()
+      const tile = wrapper.findComponent(where === 'Home' ? HomeBuildCard : ChooserInstallTile)
+      expect(tile.emitted(where === 'Home' ? 'open' : 'pick')).toBeUndefined()
+    }
+  )
 
   it('shows upload progress on Home and holds the tile and menu launch actions until it finishes', async () => {
     const signedIn = { signedIn: true, workspaceId: 'ws-1' }

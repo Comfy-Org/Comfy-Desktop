@@ -443,7 +443,9 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
 
-    expect(wrapper.get('.chooser-tile-meta-line').text()).toBe('Standalone · Update')
+    const meta = wrapper.get('.chooser-tile-meta-line')
+    expect(meta.get('.truncate').text()).toBe('Standalone')
+    expect(meta.get('[data-testid="build-update-button"]').text()).toBe('Update')
     expect(wrapper.get('.chooser-tile-body').text()).toMatch(/^Ready/)
     expect(wrapper.find('.chooser-tile-pill-update').exists()).toBe(false)
 
@@ -701,6 +703,7 @@ describe('ChooserView', () => {
       makeInstall({
         id: 'u',
         name: 'Updatable',
+        status: 'installed',
         version: 'v0.22.3',
         statusTag: { style: 'update', label: 'Update v0.24.1', version: 'v0.24.1' }
       })
@@ -708,9 +711,79 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Updatable'))!
-    expect(tile.get('.chooser-tile-meta-line').text()).toMatch(/v0\.22\.3 · Update$/)
+    const meta = tile.get('.chooser-tile-meta-line')
+    expect(meta.text()).toBe('Standalone · v0.22.3Update')
+    expect(meta.element.lastElementChild!.getAttribute('data-testid')).toBe('build-update-button')
     expect(tile.get('.chooser-tile-body').text()).toMatch(/^Ready/)
   })
+
+  function installUpdatableBuild() {
+    const api = installMockApi([
+      makeInstall({
+        id: 'u',
+        name: 'Updatable',
+        status: 'installed',
+        statusTag: { style: 'update', label: 'Update v0.44.2', version: 'v0.44.2' }
+      })
+    ])
+    api.getDetailSections.mockResolvedValue([
+      {
+        tab: 'update',
+        title: 'Updates',
+        actions: [
+          {
+            id: 'update-comfyui',
+            label: 'Update to v0.44.2',
+            style: 'primary',
+            enabled: true,
+            showProgress: true,
+            progressTitle: 'Updating to v0.44.2',
+            data: { version: '0.44.2' },
+            confirm: { title: 'Update ComfyUI', message: 'Update from v0.38.0 to v0.44.2?' }
+          }
+        ]
+      }
+    ])
+    mockDialogs.confirm.mockClear()
+    return api
+  }
+
+  it.each(['click', 'Enter', ' '] as const)(
+    'runs the ⋯ menu update from the Update button beside the version (%s), without opening or starting the build',
+    async (press) => {
+      const api = installUpdatableBuild()
+      const { wrapper, host } = mountChooserInPanel()
+      await flushPromises()
+
+      const button = wrapper.get<HTMLButtonElement>(
+        `[data-testid="${TID.dashboardTile('u')}"] [data-testid="build-update-button"]`
+      )
+      expect(button.attributes('aria-label')).toBe('Update Updatable')
+      if (press === 'click') {
+        await userEvent.click(button.element)
+      } else {
+        button.element.focus()
+        expect(document.activeElement).toBe(button.element)
+        await userEvent.keyboard(press === ' ' ? '{Space}' : '{Enter}')
+      }
+      await vi.waitFor(() => expect(host.showProgress).toHaveBeenCalledTimes(1))
+
+      expect(mockDialogs.confirm).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Update ComfyUI' })
+      )
+      expect(host.showProgress.mock.calls[0]?.[0]).toMatchObject({
+        installationId: 'u',
+        title: 'Updating to v0.44.2 · Updatable',
+        returnTo: 'list',
+        actionId: 'update-comfyui'
+      })
+      expect(wrapper.emitted('pick')).toBeUndefined()
+      expect(wrapper.emitted('open-details')).toBeUndefined()
+      expect(host.launch).not.toHaveBeenCalled()
+      expect(host.openDetails).not.toHaveBeenCalled()
+      expect(api.openInstancePicker).not.toHaveBeenCalled()
+    }
+  )
 
   it('confirms an update over the Builds page from the ⋯ menu, without opening the build manager', async () => {
     const api = installMockApi([

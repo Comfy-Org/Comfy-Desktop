@@ -7,6 +7,7 @@ import { usePointMenu } from '@comfyorg/design-system/lib/menu/usePointMenu'
 import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
+import BuildUpdateButton from './BuildUpdateButton.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import {
   HOME_BUILD_TONES,
@@ -110,13 +111,12 @@ const isLive = computed(() => runsOnThisComputer(build, status))
 const resting = computed(
   () => status === 'ready' || status === 'update' || (status === 'running' && !isLive.value)
 )
-const updateNote = computed(() =>
-  !uninstalling.value &&
-  !changesInPlace.value &&
-  status !== 'updating' &&
-  build.statusTag?.style === 'update'
-    ? t('chooser.updatePill')
-    : ''
+const showsUpdate = computed(
+  () =>
+    !uninstalling.value &&
+    !changesInPlace.value &&
+    status !== 'updating' &&
+    build.statusTag?.style === 'update'
 )
 const subtitle = computed(() => (uninstalling.value ? install.detail.value : detail.value))
 const openHint = computed(() => {
@@ -142,6 +142,11 @@ function onClick(): void {
 
 const openButton = useTemplateRef<HTMLButtonElement>('openButton')
 const { open: menuOpen, menuProps, show: showMenuAtPointer, toggle: toggleMenu } = usePointMenu()
+const menuSpace = computed(() => [
+  'group-hover:pr-10',
+  'group-has-[:focus-visible]:pr-10',
+  menuOpen.value && 'pr-10'
+])
 const moreButton = shallowRef<HTMLElement | null>(null)
 const menuReturnFocus = shallowRef<HTMLElement | null>(null)
 const menuAnchor = computed<BuildMenuAnchor | undefined>(() => {
@@ -206,13 +211,13 @@ function openContextMenu(event: MouseEvent): void {
       :kind="buildDeviceKind(build)"
       :glow="toneStyle.glow"
     />
-    <span
-      class="pointer-events-none relative flex min-w-0 flex-1 flex-col group-hover:pr-10 group-has-[:focus-visible]:pr-10"
-      :class="menuOpen && 'pr-10'"
-    >
+    <span class="pointer-events-none relative flex min-w-0 flex-1 flex-col">
       <span
         class="flex h-4 items-center gap-1.5 text-xs/4"
-        :class="canOpen && !busy && broken ? 'text-destructive' : 'text-muted-foreground'"
+        :class="[
+          menuSpace,
+          canOpen && !busy && broken ? 'text-destructive' : 'text-muted-foreground'
+        ]"
         data-testid="home-build-status"
       >
         <LoaderCircle
@@ -244,18 +249,18 @@ function openContextMenu(event: MouseEvent): void {
       </span>
       <span
         class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground"
+        :class="menuSpace"
         data-testid="home-build-name"
       >
         {{ build.name }}
       </span>
       <span
-        class="mt-0.5 flex min-w-0 text-xs/[17px] text-subtle-foreground"
+        class="mt-0.5 flex min-w-0 items-center text-xs/[17px] text-subtle-foreground"
+        :class="showsUpdate ? 'pr-7' : menuSpace"
         :data-testid="uninstalling ? 'home-build-install-detail' : 'home-build-detail'"
       >
         <span v-if="subtitle" class="min-w-0 truncate">{{ subtitle }}</span>
-        <span v-if="updateNote" class="shrink-0 whitespace-pre" data-testid="build-update-note"
-          >{{ subtitle ? ' · ' : '' }}{{ updateNote }}</span
-        >
+        <BuildUpdateButton v-if="showsUpdate" class="ml-1.5" :build="build" />
       </span>
     </span>
     <Button

@@ -235,6 +235,7 @@
     "filterCloud": "Cloud",
     "filterRemote": "Remote",
     "updatePill": "Update",
+    "updateBuild": "Update {name}",
     "migratePill": "Migrate",
     "openInstall": "Open",
     "manageInstall": "Manage",

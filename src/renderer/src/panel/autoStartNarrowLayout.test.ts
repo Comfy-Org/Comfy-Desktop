@@ -86,9 +86,10 @@ function fullyShown(element: Element): boolean {
   return element.scrollWidth <= element.clientWidth && element.clientWidth > 0
 }
 
-it('keeps the update note visible when build metadata truncates on Home and Builds', async () => {
+it('keeps the Update button whole when build metadata truncates on Home and Builds', async () => {
   const studio: Installation = {
     ...STUDIO,
+    status: 'installed',
     sourceLabel: 'Standalone installation with a long name',
     version: `v0.3.68+preview.${'weekend-render.'.repeat(4)}7`,
     statusTag: { style: 'update', label: 'Update to v0.3.70' }
@@ -102,13 +103,107 @@ it('keeps the update note visible when build metadata truncates on Home and Buil
   await flushPromises()
 
   for (const wrapper of [home, builds]) {
-    const note = onlyIn(wrapper, '[data-testid="build-update-note"]')
-    const line = note.parentElement!
-    expect(note.textContent?.trim()).toBe('· Update')
+    const update = onlyIn(wrapper, '[data-testid="build-update-button"]')
+    const line = update.parentElement!
+    expect(update.textContent?.trim()).toBe('Update')
     expect(fullyShown(line.firstElementChild!)).toBe(false)
-    expect(fullyShown(note)).toBe(true)
-    expect(boxOf(note).right).toBeLessThanOrEqual(boxOf(line).right + 0.5)
+    expect(fullyShown(update)).toBe(true)
+    expect(boxOf(update).right).toBeLessThanOrEqual(boxOf(line).right + 0.5)
   }
+})
+
+const UPDATABLE: Installation = {
+  ...STUDIO,
+  status: 'installed',
+  version: 'v0.3.68',
+  statusTag: { style: 'update', label: 'Update to v0.3.70' }
+}
+const UP_TO_DATE: Installation = { ...PORTRAITS, status: 'installed', version: 'v0.3.70' }
+
+interface UpdateSurface {
+  name: string
+  width: number
+  mount: () => VueWrapper
+  card: (id: string) => string
+  more: string
+  line: string
+}
+
+const UPDATE_SURFACES: UpdateSurface[] = [
+  ...[BUILDS_GRID_WIDTH_IN_SMALLEST_WINDOW, BUILDS_GRID_WIDTH_IN_LARGE_WINDOW].map((width) => ({
+    name: `Builds at ${width}px`,
+    width,
+    mount: () =>
+      mount(ChooserFamilyGrid, {
+        attachTo: page,
+        props: { installations: [UPDATABLE, UP_TO_DATE] }
+      }),
+    card: (id: string) => `[data-testid="${TID.dashboardTile(id)}"]`,
+    more: '.chooser-tile-kebab',
+    line: '.chooser-tile-meta-line'
+  })),
+  ...[HOME_WIDTH_IN_SMALLEST_WINDOW, LARGE_WINDOW_WIDTH - FRAME_AND_EXPANDED_SIDEBAR_WIDTH].map(
+    (width) => ({
+      name: `Home at ${width}px`,
+      width,
+      mount: () => mount(HomeView, { attachTo: page }),
+      card: (id: string) => `div[data-testid="home-build"][data-build-id="${id}"]`,
+      more: '[data-testid="home-build-more"]',
+      line: '[data-testid="home-build-detail"]'
+    })
+  )
+]
+
+function overlaps(a: DOMRect, b: DOMRect): boolean {
+  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+}
+
+describe('the Update button beside a build version', () => {
+  it.each(UPDATE_SURFACES.map((surface) => [surface.name, surface] as const))(
+    'on %s, leaves the card and its rows as they are, and stays put and clear of ⋯ on hover and focus',
+    async (_name, surface) => {
+      vi.mocked(window.api.getInstallations).mockResolvedValue([UPDATABLE, UP_TO_DATE])
+      vi.mocked(window.api.getSetting).mockResolvedValue(undefined)
+      page.style.cssText = `position: absolute; left: 0; top: 0; width: ${surface.width}px`
+      const wrapper = track(surface.mount())
+      await flushPromises()
+
+      const card = onlyIn(wrapper, surface.card(UPDATABLE.id)) as HTMLElement
+      const other = onlyIn(wrapper, surface.card(UP_TO_DATE.id)) as HTMLElement
+      const update = card.querySelector<HTMLElement>('[data-testid="build-update-button"]')!
+      const line = card.querySelector<HTMLElement>(surface.line)!
+      expect(update.getAttribute('aria-label')).toBe(`Update ${UPDATABLE.name}`)
+
+      const cardBox = boxOf(card)
+      expect(cardBox.height).toBe(100)
+      expect(boxOf(other).height).toBe(100)
+      expect(boxOf(line).height, 'the line under the name keeps its height').toBe(17)
+      expect(boxOf(line).top - cardBox.top).toBe(
+        boxOf(other.querySelector(surface.line)!).top - boxOf(other).top
+      )
+      const rest = boxOf(update)
+      expect(rest.top + rest.height / 2).toBeCloseTo(boxOf(line).top + boxOf(line).height / 2, 1)
+      expect(fullyShown(update)).toBe(true)
+      expect(rest.right).toBeLessThanOrEqual(cardBox.right - 18 + 0.5)
+      expect(card.scrollWidth, 'card does not overflow').toBeLessThanOrEqual(card.clientWidth)
+
+      await userEvent.hover(card.querySelector<HTMLElement>('.font-semibold')!, { force: true })
+      await vi.waitFor(() =>
+        expect(getComputedStyle(card.querySelector(surface.more)!).opacity).toBe('1')
+      )
+      expect(boxOf(update), 'Update stays put while the pointer is on the card').toEqual(rest)
+      expect(overlaps(boxOf(update), boxOf(card.querySelector(surface.more)!))).toBe(false)
+      await userEvent.unhover(card.querySelector<HTMLElement>('.font-semibold')!, { force: true })
+
+      update.focus({ focusVisible: true } as FocusOptions)
+      await userEvent.keyboard('{Shift>}{Tab}{/Shift}')
+      await userEvent.keyboard('{Tab}')
+      expect(document.activeElement).toBe(update)
+      expect(boxOf(update), 'Update stays put while it has keyboard focus').toEqual(rest)
+      expect(overlaps(boxOf(update), boxOf(card.querySelector(surface.more)!))).toBe(false)
+      expect(boxOf(card).height).toBe(100)
+    }
+  )
 })
 
 describe('Auto start on Home build cards in the smallest window with the sidebar open', () => {
@@ -217,7 +312,12 @@ const TILE_OPERATIONS: Partial<Record<TileState, Partial<Operation>>> = {
 async function buildsGridWithStudioIn(state: TileState, width: number): Promise<VueWrapper> {
   const withUpdate = state === 'update' || state === 'running with an update'
   const studio: Installation = withUpdate
-    ? { ...STUDIO, version: 'v0.3.68', statusTag: { style: 'update', label: 'Update to v0.3.70' } }
+    ? {
+        ...STUDIO,
+        status: 'installed',
+        version: 'v0.3.68',
+        statusTag: { style: 'update', label: 'Update to v0.3.70' }
+      }
     : STUDIO
   page.style.cssText = `position: absolute; left: 0; top: 0; width: ${width}px`
   const wrapper = track(
@@ -281,15 +381,19 @@ describe('Builds page grid', () => {
     }
     const tile = onlyIn(wrapper, `[data-testid="${TID.dashboardTile(STUDIO.id)}"]`)
     expect(tile.querySelector('.chooser-tile-launch')).toBeNull()
+    const withUpdate = state === 'update' || state === 'running with an update'
     expect(tile.querySelectorAll('button:not(.chooser-tile-kebab)')).toHaveLength(
-      state === 'uninstalling' ? 0 : 1
+      state === 'uninstalling' ? 0 : withUpdate ? 2 : 1
     )
+    if (withUpdate) {
+      const line = tile.querySelector('.chooser-tile-meta-line')!
+      expect(boxOf(line).height, 'the line under the name keeps its height').toBe(17)
+      expect(line.textContent?.trim()).toBe('Standalone · v0.3.68Update')
+      expect(fullyShown(line.querySelector('[data-testid="build-update-button"]')!)).toBe(true)
+    }
     if (state === 'running with an update') {
       expect(tile.querySelector('.chooser-tile-body .truncate')!.textContent?.trim()).toBe(
         'Running'
-      )
-      expect(tile.querySelector('.chooser-tile-meta-line')!.textContent?.trim()).toBe(
-        'Standalone · v0.3.68 · Update'
       )
     }
     if (state === 'starting') {
