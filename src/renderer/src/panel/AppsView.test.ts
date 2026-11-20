@@ -571,7 +571,6 @@ describe('AppsView', () => {
   })
 
   it('still counts the app as open when the person leaves the Apps page with it open', async () => {
-    // emitted() is empty once the component is unmounted, so listeners catch the events
     const currentApp = vi.fn()
     const openChange = vi.fn()
     listApps.mockReturnValue(Promise.resolve([CUTOUT, HDR, GENJUTSU]))
