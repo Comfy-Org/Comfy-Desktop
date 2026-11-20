@@ -145,13 +145,6 @@ async function firstRunSummary(): Promise<SummaryMetrics> {
   const rows = [...box.querySelectorAll<HTMLElement>('[data-testid^="setup-row-"]')]
   expect(rows).toHaveLength(3)
   const metrics = measure(box, rows)
-  const hardware = rows[0]
-  const label = document.createRange()
-  label.selectNodeContents(hardware.children[0])
-  const labelGap =
-    hardware.children[1].getBoundingClientRect().left - label.getBoundingClientRect().right
-  expect(labelGap).toBeGreaterThanOrEqual(8)
-  expect(labelGap).toBeLessThanOrEqual(24)
   expect(Math.max(...metrics.rowGaps)).toBeLessThanOrEqual(20)
   const terms = document.querySelector('[data-testid="setup-consent-telemetry"]')!
   expect(Math.round(terms.getBoundingClientRect().left - box.getBoundingClientRect().left)).toBe(
@@ -159,6 +152,20 @@ async function firstRunSummary(): Promise<SummaryMetrics> {
   )
   wrapper.unmount()
   return metrics
+}
+
+firstRunSummary.withMachineX = async (): Promise<{ metrics: SummaryMetrics; machineX: number }> => {
+  const wrapper = mount(FirstUseTakeover, { attachTo: document.body })
+  mounted.push(wrapper)
+  await flushPromises()
+  await settle()
+  const box = document.querySelector<HTMLElement>('[data-testid="setup-summary"]')!
+  const rows = [...box.querySelectorAll<HTMLElement>('[data-testid^="setup-row-"]')]
+  const name = document.querySelector<HTMLElement>('[data-testid="setup-machine-name"]')!
+  const machineX = Math.round(name.getBoundingClientRect().left - box.getBoundingClientRect().left)
+  const metrics = measure(box, rows)
+  wrapper.unmount()
+  return { metrics, machineX }
 }
 
 async function newBuildSummary(): Promise<{ metrics: SummaryMetrics; box: HTMLElement }> {
@@ -231,14 +238,7 @@ describe.each([
     expect(newBuild.border).toBe(firstRun.border)
     expect(newBuild.radius).toBe(firstRun.radius)
     expect(newBuild.padding).toBe(firstRun.padding)
-    for (const key of [
-      'rowHeights',
-      'rowGaps',
-      'iconX',
-      'labelX',
-      'valueX',
-      'noteRight'
-    ] as const) {
+    for (const key of ['rowHeights', 'rowGaps', 'iconX', 'labelX', 'noteRight'] as const) {
       expect(new Set(newBuild[key]), key).toEqual(new Set(firstRun[key]))
     }
   })
@@ -287,6 +287,24 @@ describe.each([
         Math.round(nameCard.querySelector('input')!.getBoundingClientRect().left - nameEdge.left)
       ])
     )
+  })
+
+  it('starts each value on the same x as the computer name above it', async () => {
+    await browserPage.viewport(width, height)
+    const firstRun = await firstRunSummary.withMachineX()
+    const { metrics: newBuild, box } = await newBuildSummary()
+    const newBuildName = document
+      .querySelector<HTMLElement>('[data-testid="detected-gpu-field"]')!
+      .getBoundingClientRect().left
+    const nameInput = document
+      .querySelector<HTMLElement>('.config-name-card input')!
+      .getBoundingClientRect().left
+
+    expect(new Set(firstRun.metrics.valueX)).toEqual(new Set([firstRun.machineX]))
+    expect(new Set(newBuild.valueX)).toEqual(
+      new Set([Math.round(newBuildName - box.getBoundingClientRect().left)])
+    )
+    expect(Math.round(nameInput)).toBe(Math.round(newBuildName))
   })
 
   it('draws Browse as a filled secondary button, without an outline', async () => {

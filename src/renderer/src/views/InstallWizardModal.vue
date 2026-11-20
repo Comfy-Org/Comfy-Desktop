@@ -1846,7 +1846,11 @@ defineExpose({ open })
       {{ sourceError }}
     </div>
 
-    <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
+    <div
+      v-if="view === 'summary'"
+      class="config-summary [--summary-label-width:132px] max-[640px]:[--summary-label-width:100px]"
+      data-testid="config-summary"
+    >
       <div
         class="config-name-card mt-4 rounded-[14px] bg-white/5 px-5 py-3"
         :class="SUMMARY_GRID_CLASS"
