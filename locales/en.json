@@ -1146,7 +1146,7 @@
     "deleteConfirmDetail": "Other installs are not affected.",
     "untrack": "Forget",
     "untrackConfirmTitle": "Forget build",
-    "untrackConfirmMessage": "This will remove the build from the app. The files will not be deleted.",
+    "untrackConfirmMessage": "This removes the build from the app. Its folder stays on your computer, and you can add it again with Add existing build.",
     "rename": "Rename",
     "renameTitle": "Rename build",
     "renameMessage": "Enter a new name for this build."

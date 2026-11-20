@@ -96,6 +96,18 @@ describe('runConfirmChain confirm colour', () => {
     expect(confirm.mock.calls[0]![0].tone).toBe(tone)
   })
 
+  it('asks to Forget a build with a white Forget button, since its files stay', async () => {
+    const forget = {
+      id: 'remove',
+      label: 'Forget',
+      style: 'default',
+      confirm: { title: 'Forget build', message: 'Its folder stays on your computer.' }
+    } as unknown as ActionDef
+    const confirm = vi.fn().mockResolvedValue('primary')
+    await runConfirmChain(forget, makeModal().modal, { confirm } as unknown as ConfirmDialogs)
+    expect(confirm.mock.calls[0]![0]).toMatchObject({ confirmLabel: 'Forget', tone: 'primary' })
+  })
+
   it.each([
     ['danger', 'danger'],
     ['default', 'primary'],

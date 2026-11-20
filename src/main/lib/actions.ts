@@ -33,7 +33,7 @@ export function untrackAction(): ActionDef {
   return {
     id: 'remove',
     label: t('actions.untrack'),
-    style: 'danger',
+    style: 'default',
     enabled: true,
     confirm: {
       title: t('actions.untrackConfirmTitle'),

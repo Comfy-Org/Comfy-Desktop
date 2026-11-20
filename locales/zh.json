@@ -1146,7 +1146,7 @@
     "deleteConfirmDetail": "其他安装不受影响。",
     "untrack": "忘记",
     "untrackConfirmTitle": "忘记构建",
-    "untrackConfirmMessage": "这会从应用中移除该构建。文件不会被删除。",
+    "untrackConfirmMessage": "这会从应用中移除该构建。它的文件夹会保留在你的电脑上，你可以通过“添加现有构建”重新添加。",
     "rename": "重命名",
     "renameTitle": "重命名构建",
     "renameMessage": "输入此构建的新名称。"
