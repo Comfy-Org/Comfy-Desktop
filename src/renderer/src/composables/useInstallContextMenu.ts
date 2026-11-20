@@ -222,7 +222,7 @@ export function useInstallContextMenu(
 
     const cluster: ContextMenuItem[] = []
     if (isLocalLikeInstall(inst) && sessionStore.isRunning(inst.id)) {
-      cluster.push({ id: 'stop', label: t('actions.stop'), icon: CircleStop, style: 'danger' })
+      cluster.push({ id: 'stop', label: t('actions.stop'), icon: CircleStop })
     }
     if (isLocalLikeInstall(inst) && (isInstalled(inst) || isBuildInstall(inst))) {
       cluster.push({

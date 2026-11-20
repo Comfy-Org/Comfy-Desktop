@@ -667,6 +667,18 @@ describe('useInstallContextMenu - stop and close the build window', () => {
     expect(findItem(running.ctxMenuItems.value, 'stop')).toBeTruthy()
   })
 
+  it('shows Stop as a plain item and Uninstall as the red one, since only Uninstall deletes', () => {
+    const inst = makeInstall()
+    const { menu } = mountHarness(inst, ({ session }) => {
+      session.runningInstances.set(inst.id, {
+        installationId: inst.id,
+        installationName: inst.name
+      } as never)
+    })
+    expect(findItem(menu.ctxMenuItems.value, 'stop')?.style).toBeUndefined()
+    expect(findItem(menu.ctxMenuItems.value, 'delete')?.style).toBe('danger')
+  })
+
   it('hides the Stop item for cloud installs (no local Python to stop)', () => {
     const inst = makeInstall({ sourceCategory: 'cloud' })
     const { menu } = mountHarness(inst, ({ session }) => {
