@@ -1357,7 +1357,7 @@ describe('version guard: reject non-newer offers (issue #1161)', () => {
     }))
   })
 
-  function fire(eventName: string, payload: unknown): void {
+  function fire(eventName: string, payload?: unknown): void {
     for (const cb of listeners[eventName] || []) cb(payload)
   }
 
@@ -1512,116 +1512,112 @@ describe('version guard: reject non-newer offers (issue #1161)', () => {
     expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
     expect(settingsStore['lastStartupUpdateAttemptVersion']).toBeUndefined()
   })
-})
 
-describe('downgrade guard: a test build offered an older public build', () => {
-  let listeners: Record<string, Array<(...args: unknown[]) => void>>
-  let settingsStore: Record<string, unknown>
-  let fakeUpdater: { on: ReturnType<typeof vi.fn>; checkForUpdates: ReturnType<typeof vi.fn> }
-  let electronUpdaterMock: { autoInstallOnAppQuit: boolean; allowDowngrade: boolean }
+  describe('a test build offered an older public build', () => {
+    let electronUpdaterMock: { autoInstallOnAppQuit: boolean; allowDowngrade: boolean }
 
-  const originalPlat = Object.getOwnPropertyDescriptor(process, 'platform')!
+    beforeEach(() => {
+      mockAppVersion = '1.2.0'
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+      electronUpdaterMock = { autoInstallOnAppQuit: true, allowDowngrade: true }
+      vi.doMock('electron-updater', () => ({ autoUpdater: electronUpdaterMock }))
+    })
 
-  beforeEach(() => {
-    vi.resetModules()
-    listeners = {}
-    settingsStore = {}
-    mockAppVersion = '1.2.0'
-    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
-    electronUpdaterMock = { autoInstallOnAppQuit: true, allowDowngrade: true }
-    fakeUpdater = {
-      on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
-        listeners[event] = listeners[event] || []
-        listeners[event].push(cb)
-      }) as ReturnType<typeof vi.fn>,
-      checkForUpdates: vi.fn(async () => ({ updateInfo: null }))
-    }
-    vi.doMock('@todesktop/runtime', () => ({ default: { autoUpdater: fakeUpdater } }))
-    vi.doMock('electron-updater', () => ({ autoUpdater: electronUpdaterMock }))
-    vi.doMock('./telemetry', () => ({
-      emit: vi.fn(),
-      bucketError: (s: string) => s,
-      deriveAppChannel: () => 'stable'
-    }))
-    vi.doMock('../settings', () => ({
-      get: vi.fn((key: string) =>
-        key === 'autoInstallUpdates' ? (settingsStore[key] ?? true) : settingsStore[key]
-      ),
-      set: vi.fn((key: string, value: unknown) => {
-        if (value === undefined) delete settingsStore[key]
-        else settingsStore[key] = value
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', originalPlatform)
+    })
+
+    it('download progress with no newer target stays idle', async () => {
+      const updater = await bootUpdater()
+
+      fire('download-progress', { percent: 3 })
+
+      expect(updater.getCurrentUpdateState().kind).toBeNull()
+    })
+
+    it('download progress for an older offered build stays idle', async () => {
+      const updater = await bootUpdater()
+
+      fire('update-available', { version: '1.1.9' })
+      fire('download-progress', { percent: 3 })
+
+      expect(updater.getCurrentUpdateState().kind).toBeNull()
+    })
+
+    it('an older build that finishes downloading is never staged or installed on quit', async () => {
+      const updater = await bootUpdater()
+      expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
+
+      fire('update-available', { version: '1.1.9' })
+      fire('download-progress', { percent: 50 })
+      fire('update-downloaded', { updateInfo: { version: '1.1.9' } })
+
+      expect(updater.getCurrentUpdateState().kind).toBeNull()
+      expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
+      expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+    })
+
+    it('every update check turns off downgrades before the feed is compared', async () => {
+      let allowDowngradeAtCheck: boolean | null = null
+      fakeUpdater.checkForUpdates = vi.fn(async () => {
+        allowDowngradeAtCheck = electronUpdaterMock.allowDowngrade
+        return { updateInfo: null }
       })
-    }))
-  })
+      const updater = await bootUpdater()
 
-  afterEach(() => {
-    Object.defineProperty(process, 'platform', originalPlat)
-  })
+      await updater.runCheck('manual-check')
+      expect(allowDowngradeAtCheck).toBe(false)
 
-  function fire(eventName: string, payload?: unknown): void {
-    for (const cb of listeners[eventName] || []) cb(payload)
-  }
-
-  it('download progress with no newer target stays idle', async () => {
-    const updater = await bootUpdater()
-
-    fire('download-progress', { percent: 3 })
-
-    expect(updater.getCurrentUpdateState().kind).toBeNull()
-  })
-
-  it('download progress for an older offered build stays idle', async () => {
-    const updater = await bootUpdater()
-
-    fire('update-available', { version: '1.1.9' })
-    fire('download-progress', { percent: 3 })
-
-    expect(updater.getCurrentUpdateState().kind).toBeNull()
-  })
-
-  it('an older build that finishes downloading is never staged or installed on quit', async () => {
-    const updater = await bootUpdater()
-    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
-
-    fire('update-available', { version: '1.1.9' })
-    fire('download-progress', { percent: 50 })
-    fire('update-downloaded', { updateInfo: { version: '1.1.9' } })
-
-    expect(updater.getCurrentUpdateState().kind).toBeNull()
-    expect(settingsStore['pendingDownloadedUpdateVersion']).toBeUndefined()
-    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
-  })
-
-  it('every update check turns off downgrades before the feed is compared', async () => {
-    let allowDowngradeAtCheck: boolean | null = null
-    fakeUpdater.checkForUpdates = vi.fn(async () => {
-      allowDowngradeAtCheck = electronUpdaterMock.allowDowngrade
-      return { updateInfo: null }
-    })
-    const updater = await bootUpdater()
-
-    await updater.runCheck('manual-check')
-    expect(allowDowngradeAtCheck).toBe(false)
-
-    electronUpdaterMock.allowDowngrade = true
-    fire('checking-for-update')
-    expect(electronUpdaterMock.allowDowngrade).toBe(false)
-  })
-
-  it('a newer build still downloads, becomes ready and installs on quit', async () => {
-    const updater = await bootUpdater()
-
-    fire('update-available', { version: '1.2.1' })
-    fire('download-progress', { percent: 50 })
-    expect(updater.getCurrentUpdateState()).toEqual({
-      kind: 'downloading',
-      version: '1.2.1',
-      autoUpdate: true
+      electronUpdaterMock.allowDowngrade = true
+      fire('checking-for-update')
+      expect(electronUpdaterMock.allowDowngrade).toBe(false)
     })
 
-    fire('update-downloaded', { updateInfo: { version: '1.2.1' } })
-    expect(updater.getCurrentUpdateState().kind).toBe('ready')
-    expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.2.1')
-    expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
+    it('a newer build still downloads, becomes ready and installs on quit', async () => {
+      const updater = await bootUpdater()
+
+      fire('update-available', { version: '1.2.1' })
+      fire('download-progress', { percent: 50 })
+      expect(updater.getCurrentUpdateState()).toEqual({
+        kind: 'downloading',
+        version: '1.2.1',
+        autoUpdate: true
+      })
+
+      fire('update-downloaded', { updateInfo: { version: '1.2.1' } })
+      expect(updater.getCurrentUpdateState().kind).toBe('ready')
+      expect(settingsStore['pendingDownloadedUpdateVersion']).toBe('1.2.1')
+      expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
+    })
+
+    it('a newer build offered after an older one in the same session installs on quit again', async () => {
+      const updater = await bootUpdater()
+
+      fire('update-available', { version: '1.1.9' })
+      fire('update-downloaded', { updateInfo: { version: '1.1.9' } })
+      expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(false)
+
+      fire('update-available', { version: '1.2.1' })
+      expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
+
+      fire('update-downloaded', { updateInfo: { version: '1.2.1' } })
+      expect(updater.getCurrentUpdateState().kind).toBe('ready')
+      expect(electronUpdaterMock.autoInstallOnAppQuit).toBe(true)
+    })
+
+    it('an older download event keeps the progress of a newer download in place', async () => {
+      const updater = await bootUpdater()
+
+      fire('update-available', { version: '1.2.1' })
+      fire('download-progress', { percent: 10 })
+      fire('update-downloaded', { updateInfo: { version: '1.1.9' } })
+      fire('download-progress', { percent: 20 })
+
+      expect(updater.getCurrentUpdateState()).toEqual({
+        kind: 'downloading',
+        version: '1.2.1',
+        autoUpdate: true
+      })
+    })
   })
 })
