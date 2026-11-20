@@ -60,7 +60,6 @@ const SDR_TO_HDR: AppCard = {
 }
 
 const navigatePanel = vi.fn()
-const listApps = vi.fn<() => Promise<AppCard[]>>()
 const openGlobalSettings = vi.fn()
 const openPageInNewWindow = vi.fn()
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
@@ -70,14 +69,12 @@ beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
   getAppsEnabled.mockResolvedValue(false)
-  listApps.mockResolvedValue([])
   refreshCreditBalance.mockResolvedValue({ status: 'signed_out' })
   ;(window as unknown as { api: unknown }).api = {
     navigatePanel,
     openGlobalSettings,
     openPageInNewWindow,
     getAppsEnabled,
-    listApps,
     getAppUpdateState: vi.fn().mockResolvedValue({ kind: null, version: null, autoUpdate: true }),
     onAppUpdateStateChanged: vi.fn(() => () => {}),
     getInstallations: vi.fn().mockResolvedValue([]),
@@ -184,6 +181,16 @@ describe('AppSidebar', () => {
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
   })
 
+  it('leaves out the row for the app left open while Apps itself is shown', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    const wrapper = mount(AppSidebar, {
+      props: { activePage: 'apps', appInProgress: CHARACTER_SWAP }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+  })
+
   it('names the app left open in the tooltip of its row on the folded rail', async () => {
     getAppsEnabled.mockResolvedValue(true)
     const wrapper = mount(AppSidebar, {
@@ -217,23 +224,27 @@ describe('AppSidebar', () => {
     const sidebar = wrapper.get('[data-testid="app-sidebar"]')
     expect(sidebar.attributes('data-collapsed')).toBe('false')
 
-    await wrapper.setProps({ makeRoom: true, currentApp: CHARACTER_SWAP })
+    await wrapper.setProps({ makeRoom: true, appInProgress: CHARACTER_SWAP })
     await flushPromises()
     expect(sidebar.attributes('data-collapsed')).toBe('true')
     expect(wrapper.find('[data-testid="app-sidebar-toggle"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="app-sidebar-header"]').exists()).toBe(false)
 
-    await wrapper.setProps({ makeRoom: false, currentApp: null })
+    await wrapper.setProps({ makeRoom: false, appInProgress: null })
     expect(sidebar.attributes('data-collapsed')).toBe('false')
     expect(wrapper.find('[data-testid="app-sidebar-toggle"]').exists()).toBe(true)
     expect(window.localStorage.getItem('comfy.desktop.sidebar.collapsed')).not.toBe('true')
   })
 
   describe('while an app is open', () => {
-    async function mountWithAppOpen(currentApp: AppCard | null = SDR_TO_HDR) {
-      listApps.mockResolvedValue([CHARACTER_SWAP, PRODUCT_SWAP, SDR_TO_HDR])
+    async function mountWithAppOpen(appInProgress: AppCard | null = SDR_TO_HDR) {
       const wrapper = mount(AppSidebar, {
-        props: { activePage: 'apps', makeRoom: true, currentApp },
+        props: {
+          activePage: 'apps',
+          makeRoom: true,
+          appInProgress,
+          apps: [CHARACTER_SWAP, PRODUCT_SWAP, SDR_TO_HDR]
+        },
         attachTo: document.body
       })
       await flushPromises()
@@ -275,10 +286,24 @@ describe('AppSidebar', () => {
       wrapper.unmount()
     })
 
-    it('still shows the open app when the list cannot be read', async () => {
-      listApps.mockRejectedValue(new Error('offline'))
+    it('waits for the list, so the open app never jumps to its place', async () => {
       const wrapper = mount(AppSidebar, {
-        props: { activePage: 'apps', makeRoom: true, currentApp: SDR_TO_HDR }
+        props: { activePage: 'apps', makeRoom: true, appInProgress: SDR_TO_HDR, apps: null }
+      })
+      await flushPromises()
+      expect(thumbnails(wrapper)).toEqual([])
+
+      await wrapper.setProps({ apps: [CHARACTER_SWAP, SDR_TO_HDR] })
+
+      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
+        'Character Swap',
+        'SDR to HDR'
+      ])
+    })
+
+    it('still shows the open app when the list could not be read', async () => {
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'apps', makeRoom: true, appInProgress: SDR_TO_HDR, apps: [] }
       })
       await flushPromises()
 

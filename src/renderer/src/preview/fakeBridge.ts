@@ -278,6 +278,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     listApps: async () => APP_CARDS,
     showAppPage: async () => 'ready',
     captureAppPage: async () => null,
+    isAppPageBusy: async () => false,
     hideAppPage: () => {},
     sendAppOutputAction: () => {},
     sendAppRequest: async () => true,

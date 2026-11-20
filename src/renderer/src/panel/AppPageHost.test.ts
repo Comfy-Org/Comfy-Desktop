@@ -303,6 +303,38 @@ describe('AppPageHost', () => {
     expect(appPageShown.value).toBe(true)
   })
 
+  it('starts loading another app picked from the sidebar at once, hidden, with the placeholder showing', async () => {
+    const wrapper = await mountHost()
+    sidebarHovered.value = true
+    await vi.waitFor(() => expect(hideAppPage).toHaveBeenCalledTimes(1))
+    showAppPage.mockClear()
+    showAppPage.mockResolvedValue('loading')
+
+    await wrapper.setProps({ appId: 'sdr-to-hdr', title: 'SDR to HDR' })
+    await flushPromises()
+
+    expect(showAppPage).toHaveBeenCalledTimes(1)
+    expect(showAppPage).toHaveBeenLastCalledWith(
+      'sdr-to-hdr',
+      expect.objectContaining({ justOpened: true, hidden: true })
+    )
+    expect(wrapper.find('[data-testid="app-page-frozen-frame"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-page-loading"]').text()).toBe('Loading SDR to HDR')
+    expect(appPageShown.value).toBe(false)
+
+    tellStatusOf('sdr-to-hdr', 'ready')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-page-loading"]').exists()).toBe(true)
+
+    sidebarHovered.value = false
+    await vi.waitFor(() => expect(showAppPage).toHaveBeenCalledTimes(2))
+    expect(showAppPage).toHaveBeenLastCalledWith(
+      'sdr-to-hdr',
+      expect.not.objectContaining({ hidden: true })
+    )
+    expect(appPageShown.value).toBe(true)
+  })
+
   it('leaves the app up for a menu that opens beside the host', async () => {
     await mountHost()
     const menu = document.createElement('div')

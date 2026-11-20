@@ -272,13 +272,25 @@ const appIsOpen = ref(false)
 const assetsFocusName = ref<string | null>(null)
 const appPickedOnHome = ref<AppCard | null>(null)
 const appInProgress = ref<AppCard | null>(null)
-const sidebarAppInProgress = computed(() =>
-  sidebarPage.value === 'apps' ? null : appInProgress.value
-)
+const listedApps = ref<AppCard[] | null>(null)
 
 function openAppFromHome(app: AppCard): void {
   appPickedOnHome.value = app
   dashboardHomePage.value = 'apps'
+}
+
+async function switchApp(app: AppCard): Promise<void> {
+  const current = appInProgress.value
+  if (current && (await window.api.isAppPageBusy().catch(() => false))) {
+    const choice = await dialogs.confirm({
+      title: t('apps.switchWhileRunning.title', { app: app.title }),
+      message: t('apps.switchWhileRunning.body', { current: current.title }),
+      confirmLabel: t('apps.switchWhileRunning.switch'),
+      cancelLabel: t('apps.switchWhileRunning.stay')
+    })
+    if (choice !== 'primary') return
+  }
+  openAppFromHome(app)
 }
 
 const SIDEBAR_PAGE_OPENED_EVENT = 'comfy.desktop.sidebar.page_opened'
@@ -583,11 +595,11 @@ onUnmounted(() => {
         :active-page="sidebarPage"
         :active-build-id="sidebarBuildId"
         :make-room="appIsOpen"
-        :app-in-progress="sidebarAppInProgress"
-        :current-app="appInProgress"
+        :app-in-progress="appInProgress"
+        :apps="listedApps"
         @navigate="handleSidebarClick"
         @open-app="returnToApp"
-        @switch-app="openAppFromHome"
+        @switch-app="switchApp"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
       />
@@ -626,6 +638,7 @@ onUnmounted(() => {
               :revisit="appsVisits"
               @app-open-change="appIsOpen = $event"
               @current-app="appInProgress = $event"
+              @apps-loaded="listedApps = $event"
               @view-in-assets="viewInAssets"
             />
             <AssetsView

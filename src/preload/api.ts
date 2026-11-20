@@ -129,6 +129,7 @@ export function buildElectronApi(): ElectronApi {
     listApps: () => ipcRenderer.invoke('apps:list'),
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
     captureAppPage: () => ipcRenderer.invoke('apps:capture-page'),
+    isAppPageBusy: () => ipcRenderer.invoke('apps:is-page-busy'),
     hideAppPage: () => ipcRenderer.send('apps:hide-page'),
     onAppPageStatusChanged: (callback) => {
       const handler = (

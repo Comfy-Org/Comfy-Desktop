@@ -39,6 +39,7 @@ import SidebarCredits from './SidebarCredits.vue'
 import SidebarDesktopUpdate from './SidebarDesktopUpdate.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import SidebarAppRail from './SidebarAppRail.vue'
+import { SIDEBAR_FACE_BUTTON_CLASS, SIDEBAR_HEADER_CLASS } from './sidebarClasses'
 import { homeBuildStatus, isCloudBuild, runsOnThisComputer } from './home/homeBuild'
 import { useHomeTour } from './home/useHomeTour'
 import { useInstallList } from '../composables/useInstallList'
@@ -57,13 +58,13 @@ const {
   activeBuildId = null,
   makeRoom = false,
   appInProgress = null,
-  currentApp = null
+  apps = null
 } = defineProps<{
   activePage: DashboardPage
   activeBuildId?: string | null
   makeRoom?: boolean
   appInProgress?: AppCard | null
-  currentApp?: AppCard | null
+  apps?: AppCard[] | null
 }>()
 
 const emit = defineEmits<{
@@ -279,17 +280,13 @@ function openSettings(): void {
   >
     <SidebarAppRail
       v-if="makeRoom"
-      :current-app="currentApp"
+      :current-app="appInProgress"
+      :apps="apps"
       @all-apps="navigate('apps')"
       @all-apps-menu="openPageMenu($event, 'apps')"
       @switch-app="emit('switch-app', $event)"
     />
-    <div
-      v-else
-      ref="header"
-      class="relative mt-2 mb-3.5 h-9 w-full shrink-0"
-      data-testid="app-sidebar-header"
-    >
+    <div v-else ref="header" :class="SIDEBAR_HEADER_CLASS" data-testid="app-sidebar-header">
       <Transition v-bind="wordmarkTransition">
         <Button
           v-show="!collapsed"
@@ -308,7 +305,8 @@ function openSettings(): void {
           v-show="collapsed"
           variant="muted-textonly"
           size="unset"
-          class="group absolute inset-y-0 left-[5px] my-auto size-[30px] rounded-[7px] p-0 hover:bg-secondary hover:text-foreground"
+          class="group left-[5px]"
+          :class="SIDEBAR_FACE_BUTTON_CLASS"
           :data-testid="collapsed ? 'app-sidebar-toggle' : undefined"
           :aria-label="t('sidebar.expand')"
           aria-expanded="false"
@@ -334,7 +332,8 @@ function openSettings(): void {
           v-show="!collapsed"
           variant="muted-textonly"
           size="unset"
-          class="group absolute inset-y-0 right-0 my-auto size-[30px] rounded-[7px] p-0 hover:bg-secondary hover:text-foreground"
+          class="group right-0"
+          :class="SIDEBAR_FACE_BUTTON_CLASS"
           :data-testid="collapsed ? undefined : 'app-sidebar-toggle'"
           :aria-label="t('sidebar.collapse')"
           aria-expanded="true"
@@ -392,7 +391,7 @@ function openSettings(): void {
             </Tooltip>
           </Button>
           <Button
-            v-if="row.page === 'apps' && appInProgress"
+            v-if="row.page === 'apps' && appInProgress && activePage !== 'apps'"
             variant="muted-textonly"
             size="unset"
             class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"

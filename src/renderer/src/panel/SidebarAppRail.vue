@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppWindow } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { stillsOf } from '../lib/appStills'
+import { SIDEBAR_FACE_BUTTON_CLASS, SIDEBAR_HEADER_CLASS } from './sidebarClasses'
 import type { AppCard } from '../types/ipc'
 
-const { currentApp } = defineProps<{ currentApp: AppCard | null }>()
+const { currentApp, apps } = defineProps<{
+  currentApp: AppCard | null
+  apps: AppCard[] | null
+}>()
 
 const emit = defineEmits<{
   'all-apps': []
@@ -16,16 +20,12 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const apps = ref<AppCard[]>([])
 const brokenStills = reactive(new Set<string>())
 
-onMounted(async () => {
-  apps.value = await window.api.listApps().catch(() => [])
-})
-
 const listedApps = computed(() => {
-  if (!currentApp || apps.value.some((app) => app.id === currentApp.id)) return apps.value
-  return [currentApp, ...apps.value]
+  if (!apps) return []
+  if (!currentApp || apps.some((app) => app.id === currentApp.id)) return apps
+  return [currentApp, ...apps]
 })
 
 function isCurrent(app: AppCard): boolean {
@@ -42,11 +42,12 @@ function pick(app: AppCard): void {
 </script>
 
 <template>
-  <div class="relative mt-2 mb-3.5 h-9 w-full shrink-0">
+  <div :class="SIDEBAR_HEADER_CLASS">
     <Button
       variant="muted-textonly"
       size="unset"
-      class="absolute inset-y-0 left-[5px] my-auto size-[30px] rounded-[7px] p-0 transition-[scale,background-color,color] duration-150 ease-out hover:bg-secondary hover:text-foreground active:scale-90 motion-reduce:transition-none"
+      class="left-[5px] transition-[scale,background-color,color] duration-150 ease-out active:scale-90 motion-reduce:transition-none"
+      :class="SIDEBAR_FACE_BUTTON_CLASS"
       :aria-label="t('apps.allApps')"
       data-testid="app-sidebar-all-apps"
       @click="emit('all-apps')"

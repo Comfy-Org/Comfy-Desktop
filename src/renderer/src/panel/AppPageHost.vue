@@ -89,6 +89,15 @@ async function reveal(): Promise<void> {
   status.value = shown
 }
 
+async function loadHidden(): Promise<void> {
+  const turn = ++latestTurn
+  const placement = takePlacement()
+  if (!placement) return
+  const loading = await window.api.showAppPage(appId, { ...placement, hidden: true })
+  if (turn !== latestTurn) return
+  status.value = loading
+}
+
 async function conceal(): Promise<void> {
   const turn = ++latestTurn
   const frame = status.value === 'ready' ? await window.api.captureAppPage() : null
@@ -169,10 +178,15 @@ watch(
   () => appId,
   () => {
     justOpened = true
-    status.value = null
     frozenFrame.value = null
     releaseOutputs()
-    if (!covered.value) void reveal()
+    if (covered.value) {
+      status.value = 'loading'
+      void loadHidden()
+    } else {
+      status.value = null
+      void reveal()
+    }
   }
 )
 
@@ -220,7 +234,7 @@ onBeforeUnmount(() => {
       data-testid="app-page-frozen-frame"
     />
     <div
-      v-else-if="status === 'loading'"
+      v-else-if="status === 'loading' || (status === 'ready' && covered)"
       class="flex size-full gap-2"
       data-testid="app-page-loading"
     >

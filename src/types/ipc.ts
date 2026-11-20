@@ -181,6 +181,7 @@ export interface AppPagePlacement {
   justOpened?: boolean
   retry?: boolean
   focus?: boolean
+  hidden?: boolean
 }
 
 export interface AppOutput {
@@ -1298,6 +1299,7 @@ export interface ElectronApi {
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
   captureAppPage(): Promise<string | null>
+  isAppPageBusy(): Promise<boolean>
   hideAppPage(): void
   onAppPageStatusChanged(
     callback: (appId: string | null, status: AppPageStatus) => void

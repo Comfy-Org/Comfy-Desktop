@@ -331,7 +331,7 @@ function isMeasure(value: unknown): value is number {
 
 function parsePlacement(raw: unknown): AppPagePlacement | null {
   if (!raw || typeof raw !== 'object') return null
-  const { x, y, width, height, cornerRadius, justOpened, retry, focus } = raw as Record<
+  const { x, y, width, height, cornerRadius, justOpened, retry, focus, hidden } = raw as Record<
     string,
     unknown
   >
@@ -345,7 +345,8 @@ function parsePlacement(raw: unknown): AppPagePlacement | null {
     cornerRadius,
     justOpened: justOpened === true,
     retry: retry === true,
-    focus: focus === true
+    focus: focus === true,
+    hidden: hidden === true
   }
 }
 
@@ -414,7 +415,7 @@ export async function showAppPage(
     load(host.windowKey, hosted, pageUrl)
   }
   if (placement.justOpened) mainTelemetry.capture(APP_OPENED_EVENT, { app_id: appId })
-  hosted.wanted = true
+  hosted.wanted = !placement.hidden
   hosted.focusWhenReady = hosted.focusWhenReady || askedFresh || placement.focus === true
   place(host.entry, hosted.view, placement)
   raiseAbovePanel(host.entry, hosted.view)
@@ -437,6 +438,31 @@ export async function captureAppPage(panel: WebContents): Promise<string | null>
     return frame.isEmpty() ? null : frame.toDataURL()
   } catch {
     return null
+  }
+}
+
+const BUSY_CHECK_TIMEOUT_MS = 1000
+
+export const APP_PAGE_BUSY_SCRIPT = `document.querySelector('.cs-toasts .cs-toast')!==null`
+
+export async function isAppPageBusy(panel: WebContents): Promise<boolean> {
+  const host = hostOf(panel)
+  const hosted = host && hostedFor(host)
+  if (!hosted?.loaded) return false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), BUSY_CHECK_TIMEOUT_MS)
+  })
+  try {
+    const answer: unknown = await Promise.race([
+      hosted.view.webContents.executeJavaScript(APP_PAGE_BUSY_SCRIPT),
+      timedOut
+    ])
+    return answer === true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
   }
 }
 

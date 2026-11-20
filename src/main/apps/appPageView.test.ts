@@ -71,8 +71,10 @@ import {
   APP_PAGE_FAILED_EVENT,
   APP_PAGE_STATUS_CHANNEL,
   _resetForTest,
+  APP_PAGE_BUSY_SCRIPT,
   captureAppPage,
   hideAppPage,
+  isAppPageBusy,
   loadedAppPage,
   sendAppOutputAction,
   showAppOutputs,
@@ -99,6 +101,7 @@ class FakeContents extends EventEmitter {
   send = vi.fn()
   focus = vi.fn()
   capturePage = vi.fn()
+  executeJavaScript = vi.fn()
   loadURL = vi.fn((url: string) => {
     this.url = url
     return Promise.resolve()
@@ -247,6 +250,20 @@ beforeEach(() => {
 })
 
 describe('opening an app', () => {
+  it('loads a page asked for hidden without showing it, and shows it once asked', async () => {
+    expect(await openCutout({ ...PLACEMENT, hidden: true })).toBe('loading')
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(CUTOUT_URL)
+
+    finishLoading()
+
+    expect(lastStatusSentToPanel()).toBe('ready')
+    expect(hostedPage().visible).toBe(false)
+
+    expect(await openCutout()).toBe('ready')
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(1)
+    expect(hostedPage().visible).toBe(true)
+  })
+
   it("loads the app's page hidden, then shows it where the panel placed it", async () => {
     expect(await openCutout()).toBe('loading')
     expect(hostedPage().webContents.loadURL).toHaveBeenCalledWith(CUTOUT_URL)
@@ -723,6 +740,50 @@ describe('staying in step with the panel', () => {
 
     expect(hostedPage().webContents.close).toHaveBeenCalled()
     expect(liveAppsPages()).toEqual([])
+  })
+})
+
+describe('whether the app page has a run going', () => {
+  it('says a page that has not loaded yet has none, without asking it', async () => {
+    await openCutout()
+
+    expect(await isAppPageBusy(panelContents())).toBe(false)
+    expect(hostedPage().webContents.executeJavaScript).not.toHaveBeenCalled()
+  })
+
+  it('asks the loaded page whether a run is still showing its progress', async () => {
+    await openCutout()
+    finishLoading()
+    const ask = hostedPage().webContents.executeJavaScript
+
+    ask.mockResolvedValue(true)
+    expect(await isAppPageBusy(panelContents())).toBe(true)
+    ask.mockResolvedValue(false)
+    expect(await isAppPageBusy(panelContents())).toBe(false)
+    expect(ask).toHaveBeenCalledWith(APP_PAGE_BUSY_SCRIPT)
+  })
+
+  it('counts a page that fails or does not answer in time as having none', async () => {
+    await openCutout()
+    finishLoading()
+    const ask = hostedPage().webContents.executeJavaScript
+
+    ask.mockRejectedValue(new Error('page gone'))
+    expect(await isAppPageBusy(panelContents())).toBe(false)
+
+    vi.useFakeTimers()
+    try {
+      ask.mockReturnValue(new Promise(() => {}))
+      const answer = isAppPageBusy(panelContents())
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(await answer).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says a window with no app page has none', async () => {
+    expect(await isAppPageBusy(panelContents())).toBe(false)
   })
 })
 
