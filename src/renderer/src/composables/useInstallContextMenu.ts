@@ -113,12 +113,24 @@ export function useInstallContextMenu(
     )
   }
 
+  function stoppedActionGatedReason(inst: Installation): string | undefined {
+    if (sessionStore.isStopping(inst.id)) return t('chooser.gatedReasonStopping')
+    if (sessionStore.isRunning(inst.id)) return t('chooser.stoppedActionGatedReason')
+    const op = progressStore.operations.get(inst.id)
+    if (!op || op.finished) return undefined
+    if (op.opKind === 'install' || op.chainSpan === 'install')
+      return t('chooser.gatedReasonInstalling')
+    if (op.opKind === 'launch') return t('chooser.gatedReasonStarting')
+    if (op.opKind === 'update') return t('chooser.gatedReasonUpdating')
+    return t('chooser.gatedReasonBusy')
+  }
+
   function getMenuItems(inst: Installation): ContextMenuItem[] {
     const items: ContextMenuItem[] = []
     const stoppedActionGated = isStoppedActionGated(inst)
     const supportsSnapshotActions =
       isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst) && !isBuildInstall(inst)
-    const gatedTitle = stoppedActionGated ? t('chooser.stoppedActionGatedReason') : undefined
+    const gatedTitle = stoppedActionGated ? stoppedActionGatedReason(inst) : undefined
 
     if (opts.onManage) {
       items.push({
@@ -442,6 +454,7 @@ export function useInstallContextMenu(
     viewError,
     viewDanger,
     isStoppedActionGated,
+    stoppedActionGatedReason,
     isPromotingToWorkspace
   }
 }

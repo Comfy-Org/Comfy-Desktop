@@ -32,6 +32,7 @@ import {
   resolvePickerSelectedInstallId,
   scopeInstancePicker,
   buildTitlePopupMenuItems,
+  buildWhatsNewMenuItems,
   computePopupHeight,
   parseGlobalSettingsTarget,
   registerTitlePopupIpc,
@@ -129,6 +130,14 @@ describe('computePopupHeight', () => {
       { id: 'benchmarks', label: 'Benchmarks', icon: 'benchmarks' }
     ])
     expect(h).toBe(68)
+  })
+})
+
+describe('buildWhatsNewMenuItems', () => {
+  it("lists Take the tour as the What's new menu item", () => {
+    expect(buildWhatsNewMenuItems()).toEqual([
+      { id: 'take-tour', label: 'Take the tour', labelKey: 'homeTour.replay' }
+    ])
   })
 })
 
@@ -315,6 +324,16 @@ describe('activateTitlePopupMenuItem', () => {
     expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith('comfy', {
       nearWindow: host.window
     })
+  })
+
+  it("starts the home tour from the What's new menu of the window it was chosen from", () => {
+    const host = makeEntry({ installationId: 'inst-1' })
+    comfyWindows.set(host.windowKey, host)
+    const bindings = { startHomeTour: vi.fn() } as unknown as TitlePopupHostBindings
+
+    activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'take-tour', bindings)
+
+    expect(bindings.startHomeTour).toHaveBeenCalledExactlyOnceWith(host.windowKey)
   })
 
   it('routes Reset Zoom through resetComfyZoom with the host installation id', () => {
@@ -977,6 +996,52 @@ describe('buildGlobalSettingsSnapshot telemetry grant', () => {
 
   it('does not grant on an explicit opt-out', () => {
     expect(snapshotWithConsent(false).telemetryGranted).toBe(false)
+  })
+})
+
+describe('desktop2-open-terminal', () => {
+  it('opens no instance picker for a Remote Connection', async () => {
+    const { ipcMain } = await import('electron')
+    const getInstancePickerInstalls = vi.fn(async () => [])
+    registerTitlePopupIpc({ getInstancePickerInstalls } as unknown as TitlePopupHostBindings)
+    const call = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.findLast(([name]) => name === 'desktop2-open-terminal')
+    const sender = {}
+    const windowKey = nextWindowKey()
+    comfyWindows.set(windowKey, {
+      windowKey,
+      installationId: 'inst-remote',
+      sourceCategory: 'remote',
+      comfyView: { webContents: sender },
+      titleBarView: { webContents: {} },
+      window: { isDestroyed: () => true }
+    } as unknown as ComfyWindowEntry)
+
+    expect(call![1]({ sender } as never)).toBe(false)
+    expect(getInstancePickerInstalls).not.toHaveBeenCalled()
+  })
+
+  it('hands a local install to the instance picker', async () => {
+    const { ipcMain } = await import('electron')
+    const getInstancePickerInstalls = vi.fn(async () => [])
+    registerTitlePopupIpc({ getInstancePickerInstalls } as unknown as TitlePopupHostBindings)
+    const call = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.findLast(([name]) => name === 'desktop2-open-terminal')
+    const sender = {}
+    const windowKey = nextWindowKey()
+    comfyWindows.set(windowKey, {
+      windowKey,
+      installationId: 'inst-local-terminal',
+      sourceCategory: 'local',
+      comfyView: { webContents: sender },
+      titleBarView: { webContents: {} },
+      window: { isDestroyed: () => true }
+    } as unknown as ComfyWindowEntry)
+
+    expect(call![1]({ sender } as never)).toBe(true)
+    expect(getInstancePickerInstalls).toHaveBeenCalledOnce()
   })
 })
 

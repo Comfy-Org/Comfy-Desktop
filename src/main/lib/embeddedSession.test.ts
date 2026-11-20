@@ -89,6 +89,7 @@ function partnerNodeFor(workspaceId: string): string {
 interface ViewOptions {
   frameUrl?: string
   installationId?: string | null
+  sourceCategory?: string | null
   subframe?: boolean
 }
 
@@ -103,6 +104,7 @@ function view(comfyUrl: string, options: ViewOptions = {}) {
   }
   mocks.entries.push({
     installationId: options.installationId === undefined ? 'inst-1' : options.installationId,
+    sourceCategory: options.sourceCategory === undefined ? 'local' : options.sourceCategory,
     comfyUrl,
     comfyView: { webContents }
   })
@@ -178,7 +180,10 @@ describe('embeddedSession', () => {
     ['an https host', 'https://cloud.comfy.org', {}],
     ['a view that navigated away', 'http://127.0.0.1:8000', { frameUrl: 'https://evil.example' }],
     ['a subframe', 'http://127.0.0.1:8000', { subframe: true }],
-    ['a view with no installation', 'http://127.0.0.1:8000', { installationId: null }]
+    ['a view with no installation', 'http://127.0.0.1:8000', { installationId: null }],
+    ['a Remote Connection on 127.0.0.1', 'http://127.0.0.1:8000', { sourceCategory: 'remote' }],
+    ['a Remote Connection on localhost', 'http://localhost:8188', { sourceCategory: 'remote' }],
+    ['an install of unknown source', 'http://127.0.0.1:8000', { sourceCategory: null }]
   ])('refuses %s', async (_name, comfyUrl, options: ViewOptions) => {
     const { event } = view(comfyUrl, options)
 
@@ -313,6 +318,16 @@ describe('embeddedSession', () => {
     else expect(state).toMatchObject({ status: 'signed_in', workspaceId: 'ws-1' })
   })
 
+  it('does not switch for a Remote Connection on a loopback URL', async () => {
+    const { event } = view('http://localhost:8188', { sourceCategory: 'remote' })
+    const switchWorkspace = vi.fn(async () => ({ status: { signedIn: true }, reached: true }))
+
+    await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual({
+      status: 'disabled'
+    })
+    expect(switchWorkspace).not.toHaveBeenCalled()
+  })
+
   it('does not switch while the ops flag is off', async () => {
     mocks.enabled = false
     const { event } = view('http://127.0.0.1:8000')
@@ -419,6 +434,7 @@ describe('embeddedSession', () => {
   it('broadcasts only to views it would serve', async () => {
     const local = view('http://127.0.0.1:8000')
     const remote = view('http://192.168.1.20:8188')
+    const loopbackRemote = view('http://localhost:8188', { sourceCategory: 'remote' })
 
     await broadcastEmbeddedSessionChanged()
 
@@ -429,6 +445,7 @@ describe('embeddedSession', () => {
       workspaceId: 'ws-1'
     })
     expect(remote.webContents.send).not.toHaveBeenCalled()
+    expect(loopbackRemote.webContents.send).not.toHaveBeenCalled()
   })
 
   it('broadcasts nothing while the ops flag is off', async () => {
@@ -658,7 +675,11 @@ describe('billingHandoffForSender', () => {
   it.each([
     ['a remote ComfyUI', 'http://192.168.1.20:8188', {}],
     ['a view that navigated away', 'http://127.0.0.1:8000', { frameUrl: 'https://evil.example' }],
-    ['a subframe', 'http://127.0.0.1:8000', { subframe: true }]
+    ['a subframe', 'http://127.0.0.1:8000', { subframe: true }],
+    ['a view with no installation', 'http://127.0.0.1:8000', { installationId: null }],
+    ['a Remote Connection on 127.0.0.1', 'http://127.0.0.1:8000', { sourceCategory: 'remote' }],
+    ['a Remote Connection on localhost', 'http://localhost:8188', { sourceCategory: 'remote' }],
+    ['an install of unknown source', 'http://127.0.0.1:8000', { sourceCategory: null }]
   ])('is disabled for %s', async (_name, comfyUrl, options: ViewOptions) => {
     respond(201, { entry_url: ENTRY_URL })
     const { event } = view(comfyUrl, options)

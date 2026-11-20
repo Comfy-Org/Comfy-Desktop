@@ -33,6 +33,7 @@ type TitleMenuKind = 'menu' | 'downloads' | 'instance-picker'
 
 interface TitleBarMenusBridge {
   openFileMenu: (anchor: MenuAnchor) => void
+  openWhatsNewMenu: (anchor: MenuAnchor) => void
   dismissFileMenu: () => void
   clickDownloadsTray: (anchor: MenuAnchor) => void
   onMenuOpened: (cb: (info: { menu: TitleMenuKind }) => void) => () => void
@@ -45,6 +46,7 @@ interface UseTitleBarMenusOpts {
   hideTip: () => void
   fileBtnRef: Readonly<ShallowRef<HTMLElement | null>>
   downloadsBtnRef: Readonly<ShallowRef<HTMLElement | null>>
+  whatsNewBtnRef: Readonly<ShallowRef<HTMLElement | null>>
 }
 
 interface TitleBarMenusApi {
@@ -58,6 +60,7 @@ interface TitleBarMenusApi {
   downloadsStartedAt: Ref<number>
   isInstancePickerOpen: Ref<boolean>
   handleFileMenu: () => void
+  handleWhatsNewMenu: () => void
   handleDownloadsTray: () => void
 }
 
@@ -116,18 +119,31 @@ export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
     return { x: base.x, y: base.y + DOWNLOADS_POPUP_GAP_BELOW_TRIGGER_PX }
   }
 
-  const isFileMenuOpen = computed(
+  const openedListMenu = ref<'file' | 'whats-new' | null>(null)
+  const isListMenuOpen = computed(
     () => isMenuOpen.value && !isDownloadsOpen.value && !isInstancePickerOpen.value
   )
 
-  function handleFileMenu(): void {
+  function toggleListMenu(menu: 'file' | 'whats-new', open: () => void): void {
     opts.hideTip()
-    if (isFileMenuOpen.value) {
+    const sameMenu = (openedListMenu.value ?? 'file') === menu
+    if (isListMenuOpen.value && sameMenu) {
       opts.bridge?.dismissFileMenu()
       return
     }
-    if (Date.now() - menuClosedAt.menu < MENU_REOPEN_GUARD_MS) return
-    opts.bridge?.openFileMenu(anchorBelow(opts.fileBtnRef.value))
+    if (sameMenu && Date.now() - menuClosedAt.menu < MENU_REOPEN_GUARD_MS) return
+    openedListMenu.value = menu
+    open()
+  }
+
+  function handleFileMenu(): void {
+    toggleListMenu('file', () => opts.bridge?.openFileMenu(anchorBelow(opts.fileBtnRef.value)))
+  }
+
+  function handleWhatsNewMenu(): void {
+    toggleListMenu('whats-new', () =>
+      opts.bridge?.openWhatsNewMenu(anchorBelow(opts.whatsNewBtnRef.value))
+    )
   }
 
   function handleDownloadsTray(): void {
@@ -205,6 +221,7 @@ export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
     downloadsTrayLabel,
     downloadsStartedAt,
     handleFileMenu,
+    handleWhatsNewMenu,
     handleDownloadsTray
   }
 }
