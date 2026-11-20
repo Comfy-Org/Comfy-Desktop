@@ -232,7 +232,7 @@ function onWheel(event: WheelEvent): void {
   wheelGestureTimer = setTimeout(endWheelGesture, WHEEL_GESTURE_GAP_MS)
   if (wheelTurned) return
   wheelDistance += sideways
-  if (Math.abs(wheelDistance) < WHEEL_PIXELS_PER_CARD) return
+  if (!upOrDown && Math.abs(wheelDistance) < WHEEL_PIXELS_PER_CARD) return
   wheelTurned = true
   moveTo(frontPosition.value + Math.sign(wheelDistance))
 }

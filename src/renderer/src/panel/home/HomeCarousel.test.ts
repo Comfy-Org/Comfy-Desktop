@@ -245,6 +245,14 @@ describe('HomeCarousel trackpad and wheel', () => {
     expect(frontTitle(wrapper)).toBe('Open Extend Picture')
   })
 
+  it('turns one card for a single small mouse wheel notch in pixel units', async () => {
+    const wrapper = mountCarousel()
+
+    expect(swipe(wrapper, [{ deltaY: 4 }])).toEqual([true])
+    await wrapper.vm.$nextTick()
+    expect(frontTitle(wrapper)).toBe('Open SDR to HDR')
+  })
+
   it('turns only one card for a fast run of wheel notches', async () => {
     const wrapper = mountCarousel()
 
