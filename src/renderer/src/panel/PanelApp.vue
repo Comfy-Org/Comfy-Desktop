@@ -326,6 +326,10 @@ const showPanelBody = computed(() => {
 
 const showSidebar = computed(() => showPanelBody.value && sidebarPage.value !== null)
 
+const homeTourInterrupted = computed(
+  () => announcementOpen.value || feedbackOpen.value || modal.state.visible || dialogs.state.open
+)
+
 const homeTourCanShow = computed(
   () =>
     showSidebar.value &&
@@ -696,7 +700,7 @@ onUnmounted(() => {
       @close="closeAnnouncement"
       @take-tour="void takeHomeTour()"
     />
-    <HomeTour :active="homeTourCanShow" :interrupted="announcementOpen || feedbackOpen" />
+    <HomeTour :active="homeTourCanShow" :interrupted="homeTourInterrupted" />
 
     <ModalDialog />
     <DialogHost />

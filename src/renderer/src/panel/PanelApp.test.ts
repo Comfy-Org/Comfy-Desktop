@@ -155,6 +155,7 @@ vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
 import { mount, flushPromises } from '@vue/test-utils'
 import { reactive } from 'vue'
 import { __resetHomeTourForTest, useHomeTour } from './home/useHomeTour'
+import HomeTour from './home/HomeTour.vue'
 import { useDialogs } from '../composables/useDialogs'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
@@ -3916,6 +3917,17 @@ describe('PanelApp home tour', () => {
     await expect.poll(homeTour).toBeNull()
     mockModal.state.visible = false
     await expect.poll(homeTour).not.toBeNull()
+  })
+
+  it('tells the tour that a dialog, not a highlighted click, took Home away', async () => {
+    const { wrapper } = mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+    expect(wrapper.findComponent(HomeTour).props('interrupted')).toBe(false)
+
+    mockModal.state.visible = true
+    await flushPromises()
+
+    expect(wrapper.findComponent(HomeTour).props('interrupted')).toBe(true)
   })
 
   it('waits while a prompt or alert dialog is open', async () => {
