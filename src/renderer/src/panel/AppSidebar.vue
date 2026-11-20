@@ -14,7 +14,6 @@ import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
   AppWindow,
-  ArrowRight,
   Cloud,
   House,
   Images,
@@ -408,19 +407,13 @@ function openSettings(): void {
                 <Button
                   variant="textonly"
                   size="unset"
-                  class="group/title -ml-1.5 h-[22px] gap-[5px] rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-transparent hover:text-foreground focus-visible:text-foreground aria-[current=page]:text-foreground"
+                  class="-ml-1.5 h-[22px] rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-secondary hover:text-foreground focus-visible:text-foreground aria-[current=page]:bg-accent aria-[current=page]:text-foreground"
                   :aria-current="buildsPageActive ? 'page' : undefined"
                   :data-testid="collapsed ? undefined : 'app-sidebar-chooser'"
                   @click="navigate('chooser')"
                   @contextmenu.prevent="openPageMenu($event, 'chooser')"
                 >
                   {{ t('sidebar.builds') }}
-                  <ArrowRight
-                    :size="12"
-                    :stroke-width="2.25"
-                    class="-translate-x-0.5 opacity-35 transition-[opacity,translate] duration-200 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 group-focus-visible/title:translate-x-0 group-focus-visible/title:opacity-100 group-aria-[current=page]/title:translate-x-0 group-aria-[current=page]/title:opacity-100 motion-reduce:transition-none"
-                    aria-hidden="true"
-                  />
                 </Button>
                 <Button
                   variant="muted-textonly"

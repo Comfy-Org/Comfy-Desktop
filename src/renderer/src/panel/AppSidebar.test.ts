@@ -562,6 +562,30 @@ describe('AppSidebar', () => {
       expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Builds'])
     })
 
+    it('shows the Builds title as a plain button named Builds, with no arrow', async () => {
+      const wrapper = await mountSidebar('home', [OLD])
+      const title = wrapper.get('[data-testid="app-sidebar-chooser"]')
+
+      expect(title.element.tagName).toBe('BUTTON')
+      expect(title.text()).toBe('Builds')
+      expect(title.attributes('aria-label')).toBeUndefined()
+      expect(title.find('svg').exists(), 'no arrow or other glyph').toBe(false)
+      expect(title.classes()).toContain('hover:bg-secondary')
+    })
+
+    it('opens the Builds page from the title with Enter and Space', async () => {
+      const wrapper = await mountSidebar('home', [OLD], null)
+      document.body.appendChild(wrapper.element)
+      const title = wrapper.get<HTMLButtonElement>('[data-testid="app-sidebar-chooser"]')
+
+      title.element.focus()
+      await userEvent.keyboard('{Enter}')
+      await userEvent.keyboard(' ')
+
+      expect(navigatePanel.mock.calls).toEqual([['chooser'], ['chooser']])
+      wrapper.unmount()
+    })
+
     it('puts the green dot only on a running build, even with no ComfyUI window open', async () => {
       expect(useSessionStore().activeSessions.size).toBe(0)
       useSessionStore().runningInstances.set(NEW.id, {
