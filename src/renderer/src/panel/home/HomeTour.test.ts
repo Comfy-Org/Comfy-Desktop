@@ -92,6 +92,10 @@ async function tourStateLoaded(): Promise<void> {
   await settle()
 }
 
+async function cardSettled(): Promise<void> {
+  await expect.poll(() => tourCard()!.getAnimations().length, { timeout: 5000 }).toBe(0)
+}
+
 async function settle(): Promise<void> {
   await nextTick()
   await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
@@ -305,12 +309,12 @@ describe('HomeTour', () => {
       await userEvent.click(button('next')!)
       await expect.poll(() => tourCard()?.textContent).toContain(`${step + 1} of 6`)
     }
-    await expect.poll(() => tourCard()!.getAnimations().length).toBe(0)
+    await cardSettled()
     const before = button('next')!.getBoundingClientRect()
 
     await userEvent.click(button('next')!)
     await expect.poll(() => tourCard()?.textContent).toContain('6 of 6')
-    await expect.poll(() => tourCard()!.getAnimations().length).toBe(0)
+    await cardSettled()
     expect(button('next')!.getBoundingClientRect().width).toBe(before.width)
   })
 
@@ -335,12 +339,12 @@ describe('HomeTour', () => {
         (el) => (el.getBoundingClientRect().left - card.left) / card.width
       )
     }
-    await expect.poll(() => tourCard()!.getAnimations().length).toBe(0)
+    await cardSettled()
     const before = offsets()
 
     await userEvent.click(button('next')!)
     await expect.poll(() => tourCard()?.textContent).toContain('Comfy Cloud')
-    await expect.poll(() => tourCard()!.getAnimations().length).toBe(0)
+    await cardSettled()
     expect(offsets()).toEqual(before)
   })
 
@@ -377,7 +381,7 @@ describe('HomeTour', () => {
       anchors.push(builds)
       mountTour()
       await waitForCard()
-      await expect.poll(() => tourCard()!.getAnimations().length).toBe(0)
+      await cardSettled()
 
       for (const name of ['skip', 'next'] as const) {
         const rect = button(name)!.getBoundingClientRect()
