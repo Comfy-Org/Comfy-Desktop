@@ -409,6 +409,20 @@ describe('HomeTour', () => {
     expect(telemetry.filter((name) => name === 'comfy.desktop.home_tour.shown')).toHaveLength(2)
   })
 
+  it('starts over at step 1 when another window asks for a replay while this window shows the tour', async () => {
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+    await userEvent.click(button('next')!)
+    await userEvent.click(button('next')!)
+    await expect.poll(() => tourCard()?.textContent).toContain('3 of 8')
+
+    replayChanged({ id: 1, pending: true, finished: false })
+
+    await expect.poll(() => tourCard()?.textContent).toContain('1 of 8')
+    expect(telemetry.filter((name) => name === 'comfy.desktop.home_tour.shown')).toHaveLength(2)
+  })
+
   it('keeps a replay asked for by another window while this window is still loading', async () => {
     saved.set('homeTourDone', true)
     let finishRead: (record: ReplayRecord) => void = () => {}

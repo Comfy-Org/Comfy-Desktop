@@ -155,6 +155,14 @@ function end({ returnFocus }: { returnFocus: boolean }): void {
 watch(running, (now) => (now ? void start() : stop()), { immediate: true })
 watch(replays, () => {
   paused = null
+  if (index.value === null) return
+  clearPendingOpen()
+  startToken += 1
+  cancelAnimationFrame(frame)
+  index.value = null
+  tourSteps.value = []
+  rect.value = null
+  void start()
 })
 watch(step, (current) => {
   if (current) findHomeTourAnchor(current.anchor)?.scrollIntoView({ block: 'nearest' })
