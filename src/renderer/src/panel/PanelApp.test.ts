@@ -581,6 +581,11 @@ function mountPanel() {
   })
 }
 
+async function showHomeFromMain(): Promise<void> {
+  vi.mocked(window.api.onShowHomePage).mock.calls.forEach(([showHomePage]) => showHomePage())
+  await flushPromises()
+}
+
 async function showBuilds(wrapper: ReturnType<typeof mountPanel>): Promise<void> {
   await wrapper.get('[data-testid="app-sidebar-chooser"]').trigger('click')
   await flushPromises()
@@ -1467,7 +1472,7 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
   })
 
-  it('goes back to all apps when Apps is picked again while an app is open', async () => {
+  it('goes back to all apps from the Apps icon while an app is open', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
     vi.mocked(window.api.listApps).mockResolvedValue([
@@ -1481,7 +1486,7 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
 
-    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await wrapper.get('[data-testid="app-sidebar-all-apps"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
@@ -1502,11 +1507,42 @@ describe('PanelApp', () => {
     await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
     expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
 
-    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
-    await flushPromises()
+    await showHomeFromMain()
 
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
     expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('false')
+  })
+
+  it('switches to another app from the rail in one click', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] },
+      { id: 'cutout', title: 'Remove Background', description: '', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="app-sidebar-app-upscale"]').attributes('aria-current')).toBe(
+      'page'
+    )
+
+    await wrapper.get('[data-testid="app-sidebar-app-cutout"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe(
+      'Remove Background'
+    )
+    expect(wrapper.get('[data-testid="app-sidebar-app-cutout"]').attributes('aria-current')).toBe(
+      'page'
+    )
+    expect(
+      wrapper.get('[data-testid="app-sidebar-app-upscale"]').attributes('aria-current')
+    ).toBeUndefined()
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
   })
 
   it('opens the app picked on Home inside Desktop, on the Apps page beside the folded sidebar', async () => {
@@ -1529,7 +1565,9 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Upscale 4x')
-    expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.get('[data-testid="app-sidebar-app-upscale"]').attributes('aria-current')).toBe(
+      'page'
+    )
     expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
     expect(window.api.openCatalogWorkflow).not.toHaveBeenCalled()
   })
@@ -1546,7 +1584,7 @@ describe('PanelApp', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
 
-    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await wrapper.get('[data-testid="app-sidebar-all-apps"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
@@ -1626,8 +1664,7 @@ describe('PanelApp', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
-    await flushPromises()
+    await showHomeFromMain()
 
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="app-sidebar-app-in-progress"]').text()).toBe('Upscale 4x')
@@ -1637,7 +1674,9 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Upscale 4x')
-    expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.get('[data-testid="app-sidebar-app-upscale"]').attributes('aria-current')).toBe(
+      'page'
+    )
     expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
     expect(window.api.navigatePanel).toHaveBeenLastCalledWith('apps')
     expect(
@@ -1701,8 +1740,7 @@ describe('PanelApp', () => {
     await flushPromises()
     await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
-    await flushPromises()
+    await showHomeFromMain()
     expect(wrapper.get('[data-testid="app-sidebar-app-in-progress"]').text()).toBe('Upscale 4x')
 
     await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
@@ -1735,8 +1773,7 @@ describe('PanelApp', () => {
     await flushPromises()
     await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
-    await flushPromises()
+    await showHomeFromMain()
     expect(wrapper.get('[data-testid="app-sidebar-app-in-progress"]').text()).toBe('Upscale 4x')
 
     vi.mocked(window.api.onAppPageClosed).mock.calls.forEach(([appPageClosed]) => appPageClosed())

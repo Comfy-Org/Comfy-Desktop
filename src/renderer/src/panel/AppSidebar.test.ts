@@ -37,7 +37,30 @@ const CHARACTER_SWAP: AppCard = {
   covers: []
 }
 
+const PRODUCT_SWAP_STILL =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+
+const PRODUCT_SWAP: AppCard = {
+  id: 'product-swap',
+  title: 'Product Swap',
+  description: 'Swap the product in a photo.',
+  covers: [
+    {
+      url: 'https://example.test/product-swap.mp4',
+      stillUrl: PRODUCT_SWAP_STILL
+    }
+  ]
+}
+
+const SDR_TO_HDR: AppCard = {
+  id: 'sdr-to-hdr',
+  title: 'SDR to HDR',
+  description: 'Turn a video into HDR.',
+  covers: []
+}
+
 const navigatePanel = vi.fn()
+const listApps = vi.fn<() => Promise<AppCard[]>>()
 const openGlobalSettings = vi.fn()
 const openPageInNewWindow = vi.fn()
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
@@ -47,12 +70,14 @@ beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
   getAppsEnabled.mockResolvedValue(false)
+  listApps.mockResolvedValue([])
   refreshCreditBalance.mockResolvedValue({ status: 'signed_out' })
   ;(window as unknown as { api: unknown }).api = {
     navigatePanel,
     openGlobalSettings,
     openPageInNewWindow,
     getAppsEnabled,
+    listApps,
     getAppUpdateState: vi.fn().mockResolvedValue({ kind: null, version: null, autoUpdate: true }),
     onAppUpdateStateChanged: vi.fn(() => () => {}),
     getInstallations: vi.fn().mockResolvedValue([]),
@@ -187,23 +212,126 @@ describe('AppSidebar', () => {
     expect(off.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
   })
 
-  it('folds to the rail while an app is open, lets the toggle reopen it, and keeps the saved choice', async () => {
+  it('folds to the app rail while an app is open, with no toggle, and keeps the saved choice', async () => {
     const wrapper = await mountSidebar('apps')
     const sidebar = wrapper.get('[data-testid="app-sidebar"]')
     expect(sidebar.attributes('data-collapsed')).toBe('false')
 
-    await wrapper.setProps({ makeRoom: true })
+    await wrapper.setProps({ makeRoom: true, currentApp: CHARACTER_SWAP })
+    await flushPromises()
     expect(sidebar.attributes('data-collapsed')).toBe('true')
+    expect(wrapper.find('[data-testid="app-sidebar-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-sidebar-header"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    await wrapper.setProps({ makeRoom: false, currentApp: null })
     expect(sidebar.attributes('data-collapsed')).toBe('false')
-
-    await wrapper.setProps({ makeRoom: false })
-    expect(sidebar.attributes('data-collapsed')).toBe('false')
+    expect(wrapper.find('[data-testid="app-sidebar-toggle"]').exists()).toBe(true)
     expect(window.localStorage.getItem('comfy.desktop.sidebar.collapsed')).not.toBe('true')
+  })
 
-    await wrapper.setProps({ makeRoom: true })
-    expect(sidebar.attributes('data-collapsed')).toBe('true')
+  describe('while an app is open', () => {
+    async function mountWithAppOpen(currentApp: AppCard | null = SDR_TO_HDR) {
+      listApps.mockResolvedValue([CHARACTER_SWAP, PRODUCT_SWAP, SDR_TO_HDR])
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'apps', makeRoom: true, currentApp },
+        attachTo: document.body
+      })
+      await flushPromises()
+      return wrapper
+    }
+
+    function thumbnails(wrapper: Awaited<ReturnType<typeof mountWithAppOpen>>) {
+      return wrapper.findAll('[data-testid="app-sidebar-app-rail"] button')
+    }
+
+    it('shows All apps on top, then one picture per app in the list order', async () => {
+      const wrapper = await mountWithAppOpen()
+
+      expect(wrapper.get('[data-testid="app-sidebar-all-apps"]').attributes('aria-label')).toBe(
+        'All apps'
+      )
+      expect(tooltipOf(wrapper, 'app-sidebar-all-apps')).toBe('All apps')
+      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
+        'Character Swap',
+        'Product Swap',
+        'SDR to HDR'
+      ])
+      expect(
+        wrapper.get('[data-testid="app-sidebar-app-product-swap"] img').attributes('src')
+      ).toBe(PRODUCT_SWAP_STILL)
+      expect(wrapper.find('[data-testid="app-sidebar-home"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="app-sidebar-assets"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('marks only the open app as the current one and keeps it in its place', async () => {
+      const wrapper = await mountWithAppOpen(PRODUCT_SWAP)
+
+      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-current') ?? null)).toEqual([
+        null,
+        'page',
+        null
+      ])
+      wrapper.unmount()
+    })
+
+    it('still shows the open app when the list cannot be read', async () => {
+      listApps.mockRejectedValue(new Error('offline'))
+      const wrapper = mount(AppSidebar, {
+        props: { activePage: 'apps', makeRoom: true, currentApp: SDR_TO_HDR }
+      })
+      await flushPromises()
+
+      expect(thumbnails(wrapper).map((thumb) => thumb.attributes('aria-label'))).toEqual([
+        'SDR to HDR'
+      ])
+    })
+
+    it('switches to another app in one click, and does nothing for the open one', async () => {
+      const wrapper = await mountWithAppOpen()
+
+      await wrapper.get('[data-testid="app-sidebar-app-sdr-to-hdr"]').trigger('click')
+      expect(wrapper.emitted('switch-app')).toBeUndefined()
+
+      await wrapper.get('[data-testid="app-sidebar-app-character-swap"]').trigger('click')
+      expect(wrapper.emitted('switch-app')).toEqual([[CHARACTER_SWAP]])
+      wrapper.unmount()
+    })
+
+    it('goes back to all apps from the Apps icon', async () => {
+      const wrapper = await mountWithAppOpen()
+
+      await wrapper.get('[data-testid="app-sidebar-all-apps"]').trigger('click')
+
+      expect(wrapper.emitted('navigate')).toEqual([['apps']])
+      expect(navigatePanel).toHaveBeenCalledWith('apps')
+      wrapper.unmount()
+    })
+
+    it('keeps Desktop Settings, Credits and the account at the bottom', async () => {
+      refreshCreditBalance.mockResolvedValue({ status: 'ready', cents: 100 })
+      const wrapper = await mountWithAppOpen()
+
+      const bottom = wrapper.get('[data-testid="app-sidebar-settings"]').element.parentElement
+      expect(bottom?.querySelector('[data-testid="app-sidebar-credits"]')).not.toBeNull()
+      expect(bottom?.querySelector('[data-testid="devplatform-account-signin"]')).not.toBeNull()
+      expect(bottom?.querySelector('[data-testid="app-sidebar-app-rail"]')).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('previews the cover and name of an app on hover', async () => {
+      const wrapper = await mountWithAppOpen()
+
+      await userEvent.hover(wrapper.get('[data-testid="app-sidebar-app-product-swap"]').element)
+
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector('[data-testid="app-sidebar-app-preview"]')?.getAttribute('src')
+        ).toBe(PRODUCT_SWAP_STILL)
+      )
+      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Product Swap')
+      wrapper.unmount()
+    })
   })
 
   it('leaves Apps out when the switch cannot be read', async () => {

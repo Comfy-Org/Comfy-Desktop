@@ -38,6 +38,7 @@ import SidebarAccount from './SidebarAccount.vue'
 import SidebarCredits from './SidebarCredits.vue'
 import SidebarDesktopUpdate from './SidebarDesktopUpdate.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
+import SidebarAppRail from './SidebarAppRail.vue'
 import { homeBuildStatus, isCloudBuild, runsOnThisComputer } from './home/homeBuild'
 import { useHomeTour } from './home/useHomeTour'
 import { useInstallList } from '../composables/useInstallList'
@@ -55,18 +56,21 @@ const {
   activePage,
   activeBuildId = null,
   makeRoom = false,
-  appInProgress = null
+  appInProgress = null,
+  currentApp = null
 } = defineProps<{
   activePage: DashboardPage
   activeBuildId?: string | null
   makeRoom?: boolean
   appInProgress?: AppCard | null
+  currentApp?: AppCard | null
 }>()
 
 const emit = defineEmits<{
   navigate: [page: DashboardPage]
   'open-build': [installation: Installation]
   'open-app': [app: AppCard]
+  'switch-app': [app: AppCard]
   'new-build': []
 }>()
 
@@ -80,16 +84,7 @@ const { t } = useI18n()
 provide(TOOLTIP_GATE, () => !appPageShown.value)
 
 const collapsedByChoice = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
-const reopenedWhileMakingRoom = ref(false)
-watch(
-  () => makeRoom,
-  () => {
-    reopenedWhileMakingRoom.value = false
-  }
-)
-const collapsed = computed(() =>
-  makeRoom ? !reopenedWhileMakingRoom.value : collapsedByChoice.value
-)
+const collapsed = computed(() => makeRoom || collapsedByChoice.value)
 const faceTransition = {
   enterActiveClass:
     'transition-[opacity,scale] duration-180 ease-out motion-reduce:transition-opacity',
@@ -123,8 +118,7 @@ const header = ref<HTMLElement | null>(null)
 
 function toggleCollapsed(): void {
   const toggleHadFocus = header.value?.contains(document.activeElement) ?? false
-  if (makeRoom) reopenedWhileMakingRoom.value = !reopenedWhileMakingRoom.value
-  else collapsedByChoice.value = !collapsedByChoice.value
+  collapsedByChoice.value = !collapsedByChoice.value
   if (toggleHadFocus) void nextTick(focusToggle)
 }
 
@@ -283,7 +277,15 @@ function openSettings(): void {
     @pointerenter="sidebarHovered = true"
     @pointerleave="sidebarHovered = false"
   >
+    <SidebarAppRail
+      v-if="makeRoom"
+      :current-app="currentApp"
+      @all-apps="navigate('apps')"
+      @all-apps-menu="openPageMenu($event, 'apps')"
+      @switch-app="emit('switch-app', $event)"
+    />
     <div
+      v-else
       ref="header"
       class="relative mt-2 mb-3.5 h-9 w-full shrink-0"
       data-testid="app-sidebar-header"
@@ -344,6 +346,7 @@ function openSettings(): void {
     </div>
 
     <nav
+      v-if="!makeRoom"
       class="flex min-h-0 w-full flex-1 scrollbar-hide flex-col gap-1 overflow-x-hidden overflow-y-auto"
     >
       <template v-for="group in groups" :key="group.key">
