@@ -306,7 +306,7 @@ describe.each([
     const note = location.children[2] as HTMLElement
     const browse = location.querySelector<HTMLElement>('[data-testid="config-summary-browse"]')!
 
-    expect(note.textContent).toContain('412 GB free, about 2.70 GB needed to install')
+    expect(note.textContent).toContain('412 GB free')
     expect(note.contains(browse)).toBe(true)
     const line = location.getBoundingClientRect()
     const button = browse.getBoundingClientRect()

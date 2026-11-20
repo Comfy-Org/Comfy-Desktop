@@ -42,8 +42,8 @@ defineProps<{
     </template>
     <template v-else-if="diskSpace">
       {{
-        estimatedSize > 0
-          ? $t('diskSpace.freeForInstall', {
+        diskSpace.free < estimatedSize
+          ? $t('diskSpace.insufficientForInstall', {
               free: formatFreeSpace(diskSpace.free),
               required: formatBytes(estimatedSize)
             })

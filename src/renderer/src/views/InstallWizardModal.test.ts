@@ -693,12 +693,12 @@ describe('InstallWizardModal install-location field', () => {
       return wrapper
     }
 
-    it('sits beside the free space when the build fits', async () => {
+    it('shows only the free space when the build fits', async () => {
       const wrapper = await openSummaryWithFreeSpace(500_000_000_000)
 
-      expect(wrapper.get('.config-summary-location').text()).toContain(
-        '466 GB free, about 16.76 GB needed to install'
-      )
+      const location = wrapper.get('.config-summary-location').text()
+      expect(location).toContain('466 GB free')
+      expect(location).not.toContain('16.76 GB')
       expect(wrapper.find('.config-path-required').exists()).toBe(false)
     })
 
@@ -707,7 +707,7 @@ describe('InstallWizardModal install-location field', () => {
 
       const location = wrapper.get('.config-summary-location').text()
       expect(wrapper.get('.config-path-required').text()).toBe(
-        '5 GB free, about 16.76 GB needed to install'
+        'Only 5 GB free, about 16.76 GB needed to install'
       )
       expect(location).toContain('5 GB free')
       expect(location.split('16.76 GB')).toHaveLength(2)

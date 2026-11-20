@@ -139,9 +139,7 @@ describe('Set up, the first screen', () => {
     expect(text(w, 'setup-location-meta')).toBe('412 GB free')
     expect(text(w, 'setup-version')).toBe('ComfyUI v0.42.4')
     expect(text(w, 'setup-row-version')).toContain('Stable')
-    expect(text(w, 'setup-install-sizes')).toBe(
-      'The 1.2 GB download needs about 2.7 GB of free disk space to unpack and install.'
-    )
+    expect(text(w, 'setup-download-size')).toBe('1.2 GB download')
     expect(text(w, 'setup-summary')).not.toMatch(/1\.2 GB|2\.7 GB|·/)
   })
 
@@ -291,9 +289,7 @@ describe('Set up, the first screen', () => {
     expect(text(w, 'setup-hardware')).toBe('Windows - NVIDIA (CUDA 12.8)')
     expect(text(w, 'setup-row-hardware')).not.toContain('Detected')
     expect(text(w, 'setup-version')).toBe('Ready Build')
-    expect(text(w, 'setup-install-sizes')).toBe(
-      'The 2.0 GB download needs about 4.5 GB of free disk space to unpack and install.'
-    )
+    expect(text(w, 'setup-download-size')).toBe('2.0 GB download')
   })
 
   it('opens every option with Change before the EULA is ticked, and saves nothing yet', async () => {
@@ -362,28 +358,28 @@ describe('Set up, the first screen', () => {
 
   it.each([
     [2849 * GB, '2.8 TB free'],
-    [1.5 * GB, 'Only 1.5 GB free'],
-    [0, 'Only 0 MB free']
+    [1.5 * GB, 'Only 1.5 GB free, about 2.7 GB needed to install'],
+    [0, 'Only 0 MB free, about 2.7 GB needed to install']
   ] as const)('shows %s bytes available beside the install path', async (free, expected) => {
     installApi({ free })
     const w = await mountSetup()
     expect(text(w, 'setup-location-meta')).toBe(expected)
-    expect(text(w, 'setup-install-sizes')).toContain('about 2.7 GB of free disk space')
+    expect(text(w, 'setup-download-size')).toBe('1.2 GB download')
   })
 
-  it('shows the install estimate even when the drive cannot report free space', async () => {
+  it('shows the download size even when the drive cannot report free space', async () => {
     window.api.getDiskSpace = vi.fn().mockRejectedValue(new Error('unavailable'))
     const w = await mountSetup()
     expect(text(w, 'setup-location-meta')).toBe('')
-    expect(text(w, 'setup-install-sizes')).toContain('about 2.7 GB of free disk space')
+    expect(text(w, 'setup-download-size')).toBe('1.2 GB download')
   })
 
   it.each([
-    [GB, 0, 'Setup downloads 1.0 GB.'],
-    [0, 3 * GB, 'Setup needs about 3.0 GB of free disk space.'],
+    [GB, 0, '1.0 GB download'],
+    [0, 3 * GB, ''],
     [0, 0, '']
   ] as const)(
-    'only describes available size estimates for a saved build',
+    'only shows the download label when the saved build has a download size',
     async (downloadBytes, requiredBytes, expected) => {
       const w = mount(FirstUseTakeover, {
         props: {
@@ -397,7 +393,7 @@ describe('Set up, the first screen', () => {
         }
       })
       await flushPromises()
-      const summary = w.find('[data-testid="setup-install-sizes"]')
+      const summary = w.find('[data-testid="setup-download-size"]')
       expect(summary.exists() ? summary.text() : '').toBe(expected)
     }
   )
@@ -438,7 +434,7 @@ describe('Set up, the first screen', () => {
     const migrate = await mountSetup({ hasLegacyDesktop: true })
     await agree(migrate)
     expect(text(migrate, 'setup-install')).toBe('Migrate')
-    expect(migrate.find('[data-testid="setup-install-sizes"]').exists()).toBe(false)
+    expect(migrate.find('[data-testid="setup-download-size"]').exists()).toBe(false)
     await install(migrate)
     expect(migrate.emitted('chain-migrate')).toEqual([[{ express: false }]])
     expect(migrate.emitted('install')).toBeUndefined()

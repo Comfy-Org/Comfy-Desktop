@@ -144,9 +144,13 @@ const lowDisk = computed(
 )
 const locationMeta = computed(() => {
   if (diskFree.value === null || !plan.value) return ''
-  return t(lowDisk.value ? 'setup.notEnoughSpace' : 'setup.free', {
-    free: formatSize(diskFree.value)
-  })
+  const free = formatSize(diskFree.value)
+  return lowDisk.value
+    ? t('diskSpace.insufficientForInstall', {
+        free,
+        required: formatSize(plan.value.requiredBytes)
+      })
+    : t('diskSpace.free', { size: free })
 })
 const version = computed(() => {
   if (!plan.value) return ''
@@ -157,18 +161,6 @@ const version = computed(() => {
 const channel = computed(() =>
   workspaceBuild.value ? '' : (plan.value?.selections.release?.label ?? '')
 )
-const footerSummary = computed(() => {
-  if (!plan.value || migrating.value) return ''
-  const { downloadBytes, requiredBytes } = plan.value
-  if (downloadBytes > 0 && requiredBytes > 0) {
-    return t('setup.installSizes', {
-      download: formatSize(downloadBytes),
-      required: formatSize(requiredBytes)
-    })
-  }
-  if (requiredBytes > 0) return t('setup.installSpace', { required: formatSize(requiredBytes) })
-  return downloadBytes > 0 ? t('setup.download', { size: formatSize(downloadBytes) }) : ''
-})
 const installBlocked = computed(
   () => !migrating.value && (planState.value !== 'ready' || unsupportedReason.value !== '')
 )
@@ -670,10 +662,10 @@ defineExpose({ open, resetContinue })
             {{ unsupportedReason }}
           </span>
           <span
-            v-else-if="footerSummary"
+            v-else-if="!migrating && plan && plan.downloadBytes > 0"
             class="text-xs/[15px] text-muted-foreground"
-            data-testid="setup-install-sizes"
-            >{{ footerSummary }}</span
+            data-testid="setup-download-size"
+            >{{ t('setup.download', { size: formatSize(plan.downloadBytes) }) }}</span
           >
           <Button
             v-if="skipPick"

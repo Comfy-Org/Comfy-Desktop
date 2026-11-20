@@ -1241,11 +1241,10 @@ const diskShortLabel = computed(() => {
   return t('newInstall.requiredSpace', { size: formatBytes(required) })
 })
 const locationMeta = computed(() => {
-  const required = shownInstallSize.value
-  if (diskSpaceLoading.value || !diskSpace.value || required <= 0) return diskFreeLabel.value
-  return t('diskSpace.freeForInstall', {
+  if (!diskShortLabel.value || !diskSpace.value) return diskFreeLabel.value
+  return t('diskSpace.insufficientForInstall', {
     free: formatFreeSpace(diskSpace.value.free),
-    required: formatBytes(required)
+    required: formatBytes(shownInstallSize.value)
   })
 })
 
