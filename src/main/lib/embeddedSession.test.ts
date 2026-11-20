@@ -355,6 +355,7 @@ describe('embeddedSession', () => {
     const { event } = view('http://192.168.1.20:8188')
 
     await expect(stateForSender(event)).resolves.toEqual(NOT_LOCAL)
+    expect(disabledEvents()).toEqual([])
   })
 
   it('stays disabled while the ops flag is off', async () => {

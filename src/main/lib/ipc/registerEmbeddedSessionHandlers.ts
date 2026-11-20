@@ -5,7 +5,7 @@ import type {
   ComfyDesktop2AuthState,
   ComfyDesktop2SignInResult
 } from '../../../types/comfyDesktopBridge'
-import { SignInFailure } from '../../cloud/signInFailure'
+import { signInFailureReport } from '../../cloud/signInFailure'
 import {
   billingHandoffForSender,
   EMBEDDED_SESSION_CHANNELS,
@@ -37,10 +37,13 @@ export function registerEmbeddedSessionHandlers(): void {
       return reportHostSignIn(async () => {
         await signInToCloud()
         return stateForSender(event)
-      }).catch(async (error: unknown): Promise<ComfyDesktop2SignInResult> => ({
-        ...(await stateForSender(event)),
-        signInFailure: error instanceof SignInFailure ? error.reason : 'unknown'
-      }))
+      }).catch(async (error: unknown): Promise<ComfyDesktop2SignInResult> => {
+        console.error('Sign-in requested by a ComfyUI page failed:', error)
+        return {
+          ...(await stateForSender(event)),
+          signInFailure: signInFailureReport(error).reason
+        }
+      })
     }
   )
 

@@ -137,7 +137,7 @@ export type ComfyDesktop2SignInFailure =
   | 'network'
   | 'browser_unavailable'
   | 'unknown'
-/** `signInFailure` says why a sign-in did not complete; older Desktop builds reject instead. */
+/** `signInFailure` is set when the sign-in failed with an error; older Desktop builds reject. */
 export type ComfyDesktop2SignInResult = ComfyDesktop2AuthState & {
   signInFailure?: ComfyDesktop2SignInFailure
 }

@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ComfyDesktop2AuthState } from '../../../types/comfyDesktopBridge'
+import type {
+  ComfyDesktop2AuthState,
+  ComfyDesktop2SignInFailure
+} from '../../../types/comfyDesktopBridge'
 import { SignInFailure } from '../../cloud/signInFailure'
 
 const mocks = vi.hoisted(() => ({
@@ -77,6 +80,7 @@ function reported(): unknown[] {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.spyOn(console, 'error').mockImplementation(() => undefined)
   mocks.handle.mockReset()
   registerEmbeddedSessionHandlers()
 })
@@ -138,7 +142,7 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
     }
   )
 
-  it.for<{ name: string; failure: Error; signInFailure: string }>([
+  it.for<{ name: string; failure: Error; signInFailure: ComfyDesktop2SignInFailure }>([
     {
       name: 'a cancelled sign-in',
       failure: new SignInFailure('access_denied', 'cancelled'),
@@ -155,6 +159,7 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
     mocks.signInToCloud.mockRejectedValue(failure)
 
     await expect(requestSignIn()({})).resolves.toEqual({ status: 'signed_out', signInFailure })
+    expect(console.error).toHaveBeenCalledWith(expect.any(String), failure)
   })
 
   it('resolves a failed sign-in with the state the view is in by then', async () => {
@@ -167,10 +172,13 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
     })
   })
 
-  it('reports nothing while the embedded session is disabled, and says why', async () => {
-    mocks.stateForSender.mockResolvedValue({ status: 'disabled', reason: 'not_local' })
+  it.for<ComfyDesktop2AuthState>([
+    { status: 'disabled', reason: 'not_local' },
+    { status: 'disabled', reason: 'off' }
+  ])('reports nothing while the embedded session is disabled ($reason)', async (disabled) => {
+    mocks.stateForSender.mockResolvedValue(disabled)
 
-    await expect(requestSignIn()({})).resolves.toEqual({ status: 'disabled', reason: 'not_local' })
+    await expect(requestSignIn()({})).resolves.toEqual(disabled)
 
     expect(mocks.signInToCloud).not.toHaveBeenCalled()
     expect(mocks.emit).not.toHaveBeenCalled()
