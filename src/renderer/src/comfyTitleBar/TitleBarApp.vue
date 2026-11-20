@@ -167,8 +167,7 @@ function handleResetZoom(): void {
   bridge?.resetZoom()
 }
 
-const announcementUnread = ref(false)
-let unsubAnnouncementSettings: (() => void) | null = null
+let unsubTourSettings: (() => void) | null = null
 
 const BELL_NUDGE_MS = 700
 const bellNudging = ref(false)
@@ -189,30 +188,15 @@ async function nudgeBellWhenTourEnds(): Promise<void> {
   } catch {}
 }
 
-function handleAnnouncement(): void {
-  if (announcementUnread.value) void window.api?.setSetting?.('comfyApiAnnouncementSeen', true)
-  handleWhatsNewMenu()
-}
-
-async function refreshAnnouncementUnread(): Promise<void> {
-  try {
-    announcementUnread.value = (await window.api?.getSetting?.('comfyApiAnnouncementSeen')) !== true
-  } catch {
-    announcementUnread.value = false
-  }
-}
-
 onMounted(() => {
-  void refreshAnnouncementUnread()
-  unsubAnnouncementSettings =
+  unsubTourSettings =
     window.api?.onSettingsChanged?.(({ key }) => {
-      if (key === 'comfyApiAnnouncementSeen') void refreshAnnouncementUnread()
       if (key === 'homeTourDone') void nudgeBellWhenTourEnds()
     }) ?? null
 })
 
 onUnmounted(() => {
-  unsubAnnouncementSettings?.()
+  unsubTourSettings?.()
   if (bellNudgeTimer) clearTimeout(bellNudgeTimer)
 })
 
@@ -466,14 +450,9 @@ onUnmounted(() => {
         class="title-menu-button title-menu-button--icon title-announcement-button relative [&.is-nudging_svg]:origin-[50%_10%] [&.is-nudging_svg]:animate-bell-nudge motion-reduce:[&.is-nudging_svg]:animate-bell-fade"
         :class="[titleMenuButtonClass, { 'is-nudging': bellNudging }]"
         v-bind="tooltipAttrs(t('titleBar.announcementTooltip'), t('titleBar.announcement'))"
-        @click="handleAnnouncement"
+        @click="handleWhatsNewMenu"
       >
         <Bell :size="16" />
-        <span
-          v-if="announcementUnread"
-          class="title-announcement-dot pointer-events-none absolute top-[3px] right-1 size-1.5 rounded-[50%] bg-[var(--comfy-yellow,#ffd23f)] [box-shadow:0_0_0_1.5px_var(--titlebar-bg,rgba(0,0,0,0.5))] [.title-bar.is-light_&]:bg-[var(--titlebar-icon)] [.title-bar.is-light_&]:[box-shadow:0_0_0_1.5px_var(--titlebar-bg-active)]"
-          aria-hidden="true"
-        />
       </button>
       <button
         v-if="!isFirstUseLockdown"

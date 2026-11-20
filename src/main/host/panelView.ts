@@ -155,7 +155,7 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   if (mode !== 'comfy') {
     ensurePanelView(windowKey, entry, mode)
   }
-  const isOverlay = mode === 'feedback' || mode === 'announcement'
+  const isOverlay = mode === 'feedback'
   entry.pendingOverlayReveal = isOverlay
   if (entry.overlayRevealTimer) clearTimeout(entry.overlayRevealTimer)
   entry.overlayRevealTimer = undefined
@@ -176,21 +176,6 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
     entry.titleBarView.webContents.send('comfy-titlebar:panel-changed', panel)
   }
   focusActiveBody(entry)
-}
-
-export function openAnnouncement(windowKey: number): void {
-  const entry = comfyWindows.get(windowKey)
-  if (!entry || entry.window.isDestroyed()) return
-  const mode = computeBodyMode(entry)
-  const overCanvas = mode === 'comfy'
-  const panelView =
-    entry.panelView ?? ensurePanelView(windowKey, entry, overCanvas ? 'announcement' : mode)
-  if (overCanvas) {
-    setActivePanel(windowKey, 'announcement')
-  } else {
-    focusActiveBody(entry)
-  }
-  sendToPanelDeferred(panelView, 'comfy-panel:open-announcement', {})
 }
 
 export function prewarmAttachedPanel(entry: ComfyWindowEntry): void {
@@ -254,15 +239,6 @@ export function registerPanelViewIpc(): void {
     for (const [id, entry] of comfyWindows) {
       if (entry.panelView?.webContents === event.sender) {
         setActivePanel(id, 'comfy')
-        return
-      }
-    }
-  })
-
-  ipcMain.on('comfy-window:close-announcement', (event) => {
-    for (const [id, entry] of comfyWindows) {
-      if (entry.panelView?.webContents === event.sender) {
-        if (entry.activePanel === 'announcement') setActivePanel(id, 'comfy')
         return
       }
     }

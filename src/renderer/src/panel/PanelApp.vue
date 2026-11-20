@@ -5,7 +5,6 @@ import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
-import AnnouncementModal from '../components/AnnouncementModal.vue'
 import AppSidebar from './AppSidebar.vue'
 import BuildProgressDialog from './BuildProgressDialog.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
@@ -34,7 +33,6 @@ import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
 import { useAppUpdatePrompts } from '../composables/useAppUpdatePrompts'
 import { useReturnToDashboardConfirm } from '../composables/useReturnToDashboardConfirm'
 import { useSendFeedback } from '../composables/useSendFeedback'
-import { useAnnouncement } from '../composables/useAnnouncement'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useDeepLinkRouter } from '../composables/useDeepLinkRouter'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
@@ -79,7 +77,6 @@ const modal = useModal()
 useAdoptPromptBridge()
 const { showAppUpdateRestartPrompt, showAppUpdateDownloadPrompt } = useAppUpdatePrompts()
 const { feedbackOpen, feedbackHiddenFields, closeFeedback } = useSendFeedback()
-const { announcementOpen, closeAnnouncement } = useAnnouncement()
 const dialogs = useDialogs()
 
 function showHomePage(): void {
@@ -327,7 +324,7 @@ const showPanelBody = computed(() => {
 const showSidebar = computed(() => showPanelBody.value && sidebarPage.value !== null)
 
 const homeTourInterrupted = computed(
-  () => announcementOpen.value || feedbackOpen.value || modal.state.visible || dialogs.state.open
+  () => feedbackOpen.value || modal.state.visible || dialogs.state.open
 )
 
 const homeTourCanShow = computed(
@@ -335,7 +332,6 @@ const homeTourCanShow = computed(
     showSidebar.value &&
     sidebarPage.value === 'home' &&
     currentOverlay.value === null &&
-    !announcementOpen.value &&
     !feedbackOpen.value &&
     buildProgressId.value === null &&
     !modal.state.visible &&
@@ -434,7 +430,7 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
 watch(
   activePanel,
   (next) => {
-    const isOverlay = next === 'feedback' || next === 'announcement'
+    const isOverlay = next === 'feedback'
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay) return
     void nextTick(() => window.api.signalOverlayReady())
@@ -695,7 +691,6 @@ onUnmounted(() => {
       :hidden-fields="feedbackHiddenFields"
       @close="closeFeedback"
     />
-    <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
     <HomeTour :active="homeTourCanShow" :interrupted="homeTourInterrupted" />
 
     <ModalDialog />

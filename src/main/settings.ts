@@ -44,7 +44,6 @@ export interface KnownSettings {
   minimaxAnnouncementSeen?: boolean
   cloudNodesAnnouncementSeen?: boolean
   comfyRouterAnnouncementSeen?: boolean
-  comfyApiAnnouncementSeen?: boolean
   hasSeenCentralPillHint?: boolean
   homeTourAudience?: 'new' | 'updated'
   homeTourDone?: boolean
@@ -172,7 +171,6 @@ const SETTINGS_SCHEMA = {
   minimaxAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   cloudNodesAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   comfyRouterAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
-  comfyApiAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   hasSeenCentralPillHint: { nullable: false, telemetry: { policy: 'omit' } },
   homeTourAudience: { nullable: false, telemetry: { policy: 'omit' } },
   homeTourDone: { nullable: false, telemetry: { policy: 'omit' } },

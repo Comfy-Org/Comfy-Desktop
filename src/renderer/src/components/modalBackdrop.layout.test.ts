@@ -7,7 +7,6 @@ import BaseModal from './ui/BaseModal.vue'
 import BaseAlert from './ui/BaseAlert.vue'
 import ModalDialog from './ModalDialog.vue'
 import SetupModal from './SetupModal.vue'
-import AnnouncementModal from './AnnouncementModal.vue'
 import WhyTryCloudModal from './WhyTryCloudModal.vue'
 import BuildProgressDialog from '../panel/BuildProgressDialog.vue'
 import { useModal } from '../composables/useModal'
@@ -72,10 +71,6 @@ describe('modal backdrops', () => {
       setupModal: await backdropOf(
         () => mount(SetupModal, { attachTo: document.body, props: { dialogLabel: 'Set up' } }),
         '.setup-modal-overlay'
-      ),
-      announcement: await backdropOf(
-        () => mount(AnnouncementModal, { attachTo: document.body }),
-        '.announce-overlay'
       ),
       whyCloud: await backdropOf(
         () => mount(WhyTryCloudModal, { attachTo: document.body }),

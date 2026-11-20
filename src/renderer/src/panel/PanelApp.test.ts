@@ -364,7 +364,6 @@ function installMockApi(initial?: {
       state.openFeedbackCallbacks.push(cb)
       return () => {}
     }),
-    onOpenAnnouncement: vi.fn(() => () => {}),
     onShowHomePage: vi.fn(() => () => {}),
     openExternal: state.openExternal,
     getAppVersion: state.getAppVersion,
@@ -641,16 +640,14 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    for (const panel of ['feedback', 'announcement']) {
-      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel }))
-      await flushPromises()
-      expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
-      expect(signalOverlayReady).toHaveBeenCalledTimes(panel === 'feedback' ? 1 : 2)
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'feedback' }))
+    await flushPromises()
+    expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
+    expect(signalOverlayReady).toHaveBeenCalledTimes(1)
 
-      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'comfy-lifecycle' }))
-      await flushPromises()
-      expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
-    }
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'comfy-lifecycle' }))
+    await flushPromises()
+    expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
 
     mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'feedback' }))
     await flushPromises()
@@ -3847,7 +3844,6 @@ describe('PanelApp', () => {
 })
 
 describe('PanelApp home tour', () => {
-  let openAnnouncement: () => void = () => {}
   let replayChanged: (state: { id: number; pending: boolean; finished: boolean }) => void = () => {}
   let showHomePage: () => void = () => {}
 
@@ -3869,11 +3865,6 @@ describe('PanelApp home tour', () => {
       settings: { homeTourAudience: 'new', ...settings }
     })
     Object.assign(window.api, {
-      onOpenAnnouncement: vi.fn((cb: () => void) => {
-        openAnnouncement = cb
-        return () => {}
-      }),
-      closeAnnouncement: vi.fn(),
       onShowHomePage: vi.fn((cb: () => void) => {
         showHomePage = cb
         return () => {}
@@ -3901,14 +3892,6 @@ describe('PanelApp home tour', () => {
   it('shows the tour on Home when nothing else is open', async () => {
     mountWithTour()
     await expect.poll(homeTour).not.toBeNull()
-  })
-
-  it("waits while What's new is open", async () => {
-    mountWithTour()
-    await expect.poll(homeTour).not.toBeNull()
-
-    openAnnouncement()
-    await expect.poll(homeTour).toBeNull()
   })
 
   it('waits while Send feedback is open', async () => {

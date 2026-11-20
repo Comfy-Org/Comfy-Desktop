@@ -1265,7 +1265,6 @@ export interface ElectronApi {
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
   closeCurrentPanel(): void
-  closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   openPageInNewWindow(page: NewWindowDashboardPage): void
@@ -1316,7 +1315,6 @@ export interface ElectronApi {
   setFirstUseMode(mode: FirstUseMode): void
   onFirstUseSkip(callback: () => void): Unsubscribe
   onOpenFeedback(callback: (data: { source: 'titlebar' | 'menu' }) => void): Unsubscribe
-  onOpenAnnouncement(callback: () => void): Unsubscribe
   onCloseRequest(callback: (data: { requestId: string }) => void): Unsubscribe
   respondCloseRequest(payload: { requestId: string; cleared?: boolean; defer?: boolean }): void
   ackCloseRequest(payload: { requestId: string }): void

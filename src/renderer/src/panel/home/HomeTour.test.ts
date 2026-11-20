@@ -1,6 +1,8 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import { mount } from '@vue/test-utils'
+import { config, mount } from '@vue/test-utils'
+import type { I18n } from 'vue-i18n'
+import zh from '@locales/zh.json'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -132,7 +134,7 @@ describe('HomeTour', () => {
     const card = await waitForCard()
     expect(card.textContent).toContain('Builds run ComfyUI')
     expect(card.textContent).toContain('1 of 8')
-    expect(button('back')).not.toBeVisible()
+    expect(button('back')).toBeNull()
     expect(document.activeElement).toBe(button('next'))
   })
 
@@ -200,7 +202,7 @@ describe('HomeTour', () => {
     expect(tourCard()?.textContent).toContain('Assets')
     expect(tourCard()?.textContent).toContain('Everything you generate is saved here.')
     expect(tourCard()?.textContent).toContain('Find the tour again in the bell menu.')
-    expect(button('skip')).not.toBeVisible()
+    expect(button('skip')).toBeNull()
     expect(button('next')?.innerText.trim()).toBe('Done')
 
     await userEvent.click(button('next')!)
@@ -323,23 +325,56 @@ describe('HomeTour', () => {
     }
   })
 
-  it('keeps Skip, Back and Next in the same place on every step', async () => {
+  it('keeps the footer on one line inside the card with the Chinese copy', async () => {
+    const i18n = config.global.plugins.find(
+      (plugin): plugin is I18n<object, object, object, string, false> =>
+        typeof plugin === 'object' && plugin !== null && 'global' in plugin
+    )!
+    i18n.global.setLocaleMessage('zh', zh)
+    i18n.global.locale.value = 'zh'
+    onTestFinished(() => {
+      i18n.global.locale.value = 'en'
+    })
     placeAnchors()
     mountTour()
     await waitForCard()
-    const offsets = () => {
-      const card = tourCard()!.getBoundingClientRect()
-      return [button('skip')!, button('next')!].map(
-        (el) => (el.getBoundingClientRect().left - card.left) / card.width
-      )
-    }
+    await userEvent.click(button('next')!)
+    await expect.poll(() => tourCard()?.textContent).toContain(zh.homeTour.cloudBuild.title)
     await cardSettled()
-    const before = offsets()
+
+    const card = tourCard()!.getBoundingClientRect()
+    const rects = (['skip', 'back', 'next'] as const).map((name) =>
+      button(name)!.getBoundingClientRect()
+    )
+    for (const rect of rects) {
+      expect(rect.left).toBeGreaterThanOrEqual(card.left)
+      expect(rect.right).toBeLessThanOrEqual(card.right)
+      expect(rect.top).toBeCloseTo(rects[0]!.top, 0)
+    }
+  })
+
+  it('puts Skip, Back and Next together on the right, with an even gap, and keeps Next in place', async () => {
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+    await cardSettled()
+    const card = () => tourCard()!.getBoundingClientRect()
+    const rectOf = (name: 'skip' | 'back' | 'next') => button(name)!.getBoundingClientRect()
+    const counter = tourCard()!.querySelector('.tabular-nums')!.getBoundingClientRect()
+
+    const nextRightOnFirstStep = card().right - rectOf('next').right
+    const skipToNext = rectOf('next').left - rectOf('skip').right
+    expect(counter.left - card().left).toBeLessThan(rectOf('skip').left - card().left)
+    expect(skipToNext).toBeGreaterThan(0)
+    expect(skipToNext).toBeLessThanOrEqual(12)
 
     await userEvent.click(button('next')!)
     await expect.poll(() => tourCard()?.textContent).toContain('Comfy Cloud')
     await cardSettled()
-    expect(offsets()).toEqual(before)
+
+    expect(rectOf('back').left - rectOf('skip').right).toBeCloseTo(skipToNext, 0)
+    expect(rectOf('next').left - rectOf('back').right).toBeCloseTo(skipToNext, 0)
+    expect(card().right - rectOf('next').right).toBeCloseTo(nextRightOnFirstStep, 0)
   })
 
   it('scrolls a part below the fold into view before it lights it up', async () => {

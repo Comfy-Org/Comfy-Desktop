@@ -424,17 +424,16 @@ describe('TitleBarApp', () => {
       }
     })
 
-    it("opens the What's new menu under the bell and clears its dot", async () => {
+    it("opens the What's new menu under the bell, with no dot on it", async () => {
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp, { attachTo: document.body })
       await flushPromises()
-      expect(wrapper.find('.title-announcement-dot').exists()).toBe(true)
+      expect(wrapper.find('.title-announcement-button span').exists()).toBe(false)
 
       await wrapper.find('.title-announcement-button').trigger('click')
 
       expect(bridgeState.whatsNewMenuAnchors.length).toBe(1)
       expect(bridgeState.fileMenuAnchors.length).toBe(0)
-      expect(setSetting).toHaveBeenCalledWith('comfyApiAnnouncementSeen', true)
       wrapper.unmount()
     })
 

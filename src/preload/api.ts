@@ -101,7 +101,6 @@ export function buildElectronApi(): ElectronApi {
     closeHostWindow: () => ipcRenderer.invoke('close-host-window'),
     returnToDashboard: () => ipcRenderer.invoke('return-to-dashboard'),
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
-    closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     openPageInNewWindow: (page) => ipcRenderer.send('comfy-window:open-page-in-new-window', page),
@@ -178,11 +177,6 @@ export function buildElectronApi(): ElectronApi {
       }
       ipcRenderer.on('comfy-panel:open-feedback', handler)
       return () => ipcRenderer.removeListener('comfy-panel:open-feedback', handler)
-    },
-    onOpenAnnouncement: (callback) => {
-      const handler = (): void => callback()
-      ipcRenderer.on('comfy-panel:open-announcement', handler)
-      return () => ipcRenderer.removeListener('comfy-panel:open-announcement', handler)
     },
     onCloseRequest: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>

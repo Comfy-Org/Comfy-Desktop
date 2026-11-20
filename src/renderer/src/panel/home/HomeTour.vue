@@ -338,41 +338,42 @@ function focusNext(event: Event): void {
             <span class="text-xs text-muted-foreground tabular-nums">
               {{ t('homeTour.progress', position) }}
             </span>
-            <span class="flex-1" />
-            <Button
-              :class="isLast && 'invisible'"
-              variant="muted-textonly"
-              size="md"
-              data-testid="home-tour-skip"
-              @click="skip"
-            >
-              {{ t('homeTour.skip') }}
-            </Button>
-            <Button
-              :class="position.current <= 1 && 'invisible'"
-              variant="secondary"
-              size="md"
-              data-testid="home-tour-back"
-              @click="back"
-            >
-              {{ t('homeTour.back') }}
-            </Button>
-            <Button
-              ref="nextButton"
-              variant="inverted"
-              size="md"
-              data-testid="home-tour-next"
-              @click="next"
-            >
-              <span class="grid">
-                <span class="col-start-1 row-start-1" :class="isLast && 'invisible'">
-                  {{ t('homeTour.next') }}
+            <div class="ml-auto flex items-center gap-2" data-testid="home-tour-buttons">
+              <Button
+                v-if="!isLast"
+                variant="muted-textonly"
+                size="md"
+                data-testid="home-tour-skip"
+                @click="skip"
+              >
+                {{ t('homeTour.skip') }}
+              </Button>
+              <Button
+                v-if="position.current > 1"
+                variant="secondary"
+                size="md"
+                data-testid="home-tour-back"
+                @click="back"
+              >
+                {{ t('homeTour.back') }}
+              </Button>
+              <Button
+                ref="nextButton"
+                variant="inverted"
+                size="md"
+                data-testid="home-tour-next"
+                @click="next"
+              >
+                <span class="grid">
+                  <span class="col-start-1 row-start-1" :class="isLast && 'invisible'">
+                    {{ t('homeTour.next') }}
+                  </span>
+                  <span class="col-start-1 row-start-1" :class="!isLast && 'invisible'">
+                    {{ t('homeTour.done') }}
+                  </span>
                 </span>
-                <span class="col-start-1 row-start-1" :class="!isLast && 'invisible'">
-                  {{ t('homeTour.done') }}
-                </span>
-              </span>
-            </Button>
+              </Button>
+            </div>
           </template>
         </CoachmarkCard>
       </PopoverContent>
