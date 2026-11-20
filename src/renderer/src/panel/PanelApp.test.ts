@@ -4005,4 +4005,23 @@ describe('PanelApp home tour', () => {
     await expect.poll(() => vi.mocked(window.api.navigatePanel).mock.calls).toContainEqual(['home'])
     await expect.poll(homeTour).not.toBeNull()
   })
+
+  it('waits for a dashboard on another page to come to the front before taking it Home for a replay', async () => {
+    const { wrapper } = mountWithTour({ homeTourDone: true })
+    await expect.poll(() => useHomeTour().loaded.value).toBe(true)
+    await wrapper.get('[data-testid="app-sidebar-assets"]').trigger('click')
+    await flushPromises()
+    const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+    onTestFinished(() => focused.mockRestore())
+
+    replayChanged({ id: 1, pending: true, finished: false })
+    await flushPromises()
+    expect(window.api.navigatePanel).not.toHaveBeenCalledWith('home')
+
+    focused.mockReturnValue(true)
+    window.dispatchEvent(new Event('focus'))
+
+    await expect.poll(() => vi.mocked(window.api.navigatePanel).mock.calls).toContainEqual(['home'])
+    await expect.poll(homeTour).not.toBeNull()
+  })
 })
