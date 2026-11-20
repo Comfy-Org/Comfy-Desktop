@@ -696,7 +696,7 @@ onUnmounted(() => {
       @close="closeAnnouncement"
       @take-tour="void takeHomeTour()"
     />
-    <HomeTour :active="homeTourCanShow" />
+    <HomeTour :active="homeTourCanShow" :interrupted="announcementOpen || feedbackOpen" />
 
     <ModalDialog />
     <DialogHost />

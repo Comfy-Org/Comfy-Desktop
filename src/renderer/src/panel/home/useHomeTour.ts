@@ -1,13 +1,15 @@
 import { ref } from 'vue'
 import type { HomeTourAudience } from './homeTourSteps'
+import type { HomeTourReplayState } from '../../types/ipc'
 
 const audience = ref<HomeTourAudience>('new')
 const done = ref(true)
 const loaded = ref(false)
 const replays = ref(0)
-let audienceRecorded = false
 let savedDone = true
-let replayHeardWhileLoading: boolean | null = null
+let pendingReplayId: number | null = null
+let shownReplayId: number | null = null
+let heardWhileLoading: HomeTourReplayState | null = null
 let loading: Promise<void> | null = null
 
 async function readSetting(key: 'homeTourAudience' | 'homeTourDone'): Promise<unknown> {
@@ -18,27 +20,27 @@ async function readSetting(key: 'homeTourAudience' | 'homeTourDone'): Promise<un
   }
 }
 
-async function readReplayPending(): Promise<boolean> {
+async function readReplay(): Promise<HomeTourReplayState> {
   try {
-    return (await window.api.getHomeTourReplay()) === true
+    return { ...(await window.api.getHomeTourReplay()), finished: false }
   } catch {
-    return false
+    return { id: 0, pending: false, finished: false }
   }
 }
 
-async function rereadSavedDone(): Promise<void> {
-  savedDone = !audienceRecorded || (await readSetting('homeTourDone')) === true
-  done.value = savedDone
+function applyReplay(state: HomeTourReplayState): void {
+  if (state.pending && state.id !== pendingReplayId) replays.value += 1
+  pendingReplayId = state.pending ? state.id : null
+  if (state.finished) savedDone = true
+  done.value = state.pending ? false : savedDone
 }
 
-function onReplayChanged(pending: boolean): void {
-  if (!loaded.value) replayHeardWhileLoading = pending
-  if (pending) {
-    replays.value += 1
-    done.value = false
+function onReplayChanged(state: HomeTourReplayState): void {
+  if (!loaded.value) {
+    heardWhileLoading = state
     return
   }
-  void rereadSavedDone()
+  applyReplay(state)
 }
 
 function listenForReplay(): void {
@@ -51,29 +53,29 @@ function listenForReplay(): void {
 
 async function load(): Promise<void> {
   listenForReplay()
-  const [savedAudience, savedDoneSetting, replayPendingAtLoad] = await Promise.all([
+  const [savedAudience, savedDoneSetting, replayAtLoad] = await Promise.all([
     readSetting('homeTourAudience'),
     readSetting('homeTourDone'),
-    readReplayPending()
+    readReplay()
   ])
-  audienceRecorded = savedAudience === 'new' || savedAudience === 'updated'
+  const audienceRecorded = savedAudience === 'new' || savedAudience === 'updated'
   audience.value = savedAudience === 'updated' ? 'updated' : 'new'
   savedDone = !audienceRecorded || savedDoneSetting === true
-  const replayPending = replayHeardWhileLoading ?? replayPendingAtLoad
-  done.value = replayPending ? false : savedDone
+  pendingReplayId = replayAtLoad.pending ? replayAtLoad.id : null
+  done.value = replayAtLoad.pending ? false : savedDone
   loaded.value = true
+  if (heardWhileLoading) applyReplay(heardWhileLoading)
+  heardWhileLoading = null
 }
 
-async function setReplayPending(pending: boolean): Promise<void> {
-  try {
-    await window.api.setHomeTourReplay(pending)
-  } catch (err) {
-    console.warn('[home-tour] could not share the replay request:', err)
-  }
+function markShown(): void {
+  shownReplayId = pendingReplayId
 }
 
 async function finish(): Promise<void> {
   await loading
+  const replayId = shownReplayId
+  shownReplayId = null
   savedDone = true
   done.value = true
   try {
@@ -81,19 +83,27 @@ async function finish(): Promise<void> {
   } catch (err) {
     console.warn('[home-tour] could not save the tour state:', err)
   }
-  await setReplayPending(false)
+  try {
+    await window.api.finishHomeTour(replayId)
+  } catch (err) {
+    console.warn('[home-tour] could not share the finished tour:', err)
+  }
 }
 
 async function replay(): Promise<void> {
   await loading
   replays.value += 1
   done.value = false
-  await setReplayPending(true)
+  try {
+    pendingReplayId = await window.api.requestHomeTourReplay()
+  } catch (err) {
+    console.warn('[home-tour] could not share the replay request:', err)
+  }
 }
 
 export function useHomeTour() {
   loading ??= load()
-  return { audience, done, loaded, replays, finish, replay }
+  return { audience, done, loaded, replays, finish, replay, markShown }
 }
 
 export function __resetHomeTourForTest(): void {
@@ -101,8 +111,9 @@ export function __resetHomeTourForTest(): void {
   done.value = true
   loaded.value = false
   replays.value = 0
-  audienceRecorded = false
   savedDone = true
-  replayHeardWhileLoading = null
+  pendingReplayId = null
+  shownReplayId = null
+  heardWhileLoading = null
   loading = null
 }

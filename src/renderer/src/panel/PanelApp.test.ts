@@ -3870,8 +3870,9 @@ describe('PanelApp home tour', () => {
         return () => {}
       }),
       closeAnnouncement: vi.fn(),
-      getHomeTourReplay: vi.fn(async () => false),
-      setHomeTourReplay: vi.fn(async () => {}),
+      getHomeTourReplay: vi.fn(async () => ({ id: 0, pending: false })),
+      requestHomeTourReplay: vi.fn(async () => 1),
+      finishHomeTour: vi.fn(async () => {}),
       onHomeTourReplayChanged: vi.fn(() => () => {}),
       showHome: vi.fn()
     })
@@ -3968,9 +3969,7 @@ describe('PanelApp home tour', () => {
 
     document.querySelector<HTMLElement>('[data-testid="announcement-take-tour"]')!.click()
 
-    await expect
-      .poll(() => vi.mocked(window.api.setHomeTourReplay).mock.calls)
-      .toContainEqual([true])
+    await expect.poll(() => vi.mocked(window.api.requestHomeTourReplay).mock.calls.length).toBe(1)
     expect(window.api.navigatePanel).not.toHaveBeenCalledWith('home')
     await expect.poll(() => vi.mocked(window.api.showHome).mock.calls.length).toBe(1)
   })

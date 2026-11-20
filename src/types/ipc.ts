@@ -1142,6 +1142,12 @@ export interface CloseComfyWindowOptions {
   keepDesktopOpen?: boolean
 }
 
+export interface HomeTourReplayState {
+  id: number
+  pending: boolean
+  finished: boolean
+}
+
 export interface ElectronApi {
   platform: NodeJS.Platform
 
@@ -1383,8 +1389,9 @@ export interface ElectronApi {
   getUniqueName(baseName: string): Promise<string>
   setSetting<K extends KnownSettingKey>(key: K, value: KnownSettings[K]): Promise<void>
   getSetting<K extends KnownSettingKey>(key: K): Promise<KnownSettings[K]>
-  getHomeTourReplay(): Promise<boolean>
-  setHomeTourReplay(pending: boolean): Promise<void>
+  getHomeTourReplay(): Promise<{ id: number; pending: boolean }>
+  requestHomeTourReplay(): Promise<number>
+  finishHomeTour(shownReplayId: number | null): Promise<void>
   showHome(): void
 
   getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
@@ -1516,7 +1523,7 @@ export interface ElectronApi {
   onErrorDetail(callback: (data: ErrorDetailData) => void): Unsubscribe
   onSuggestChineseMirrors(callback: () => void): Unsubscribe
   onSettingsChanged(callback: (data: { key: string }) => void): Unsubscribe
-  onHomeTourReplayChanged(callback: (pending: boolean) => void): Unsubscribe
+  onHomeTourReplayChanged(callback: (state: HomeTourReplayState) => void): Unsubscribe
   onPanelSwitch(callback: (data: { panel: string; installationId?: string }) => void): Unsubscribe
   onPanelTriggerOverlay(
     callback: (data: {

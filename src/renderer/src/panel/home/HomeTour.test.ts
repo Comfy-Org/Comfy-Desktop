@@ -18,18 +18,25 @@ const setSetting = vi.fn(async (key: string, value: unknown): Promise<void> => {
   saved.set(key, value)
 })
 const unsubscribe = () => () => {}
-let replayPending = false
-let readReplay = async (): Promise<boolean> => replayPending
-let replayChanged: (pending: boolean) => void = () => {}
-const setHomeTourReplay = vi.fn(async (pending: boolean): Promise<void> => {
-  replayPending = pending
+interface ReplayRecord {
+  id: number
+  pending: boolean
+}
+let replayRecord: ReplayRecord = { id: 0, pending: false }
+let readReplay = async (): Promise<ReplayRecord> => replayRecord
+let replayChanged: (state: ReplayRecord & { finished: boolean }) => void = () => {}
+const requestHomeTourReplay = vi.fn(async (): Promise<number> => {
+  replayRecord = { id: replayRecord.id + 1, pending: true }
+  return replayRecord.id
 })
+const finishHomeTour = vi.fn(async (_shownReplayId: number | null): Promise<void> => {})
 stubWindowApi({
   getSetting,
   setSetting,
   getHomeTourReplay: () => readReplay(),
-  setHomeTourReplay,
-  onHomeTourReplayChanged: (callback: (pending: boolean) => void) => {
+  requestHomeTourReplay,
+  finishHomeTour,
+  onHomeTourReplayChanged: (callback: (state: ReplayRecord & { finished: boolean }) => void) => {
     replayChanged = callback
     return () => {}
   },
@@ -104,9 +111,10 @@ beforeEach(() => {
   getSetting.mockClear()
   setSetting.mockClear()
   telemetry.length = 0
-  replayPending = false
-  readReplay = async () => replayPending
-  setHomeTourReplay.mockClear()
+  replayRecord = { id: 0, pending: false }
+  readReplay = async () => replayRecord
+  requestHomeTourReplay.mockClear()
+  finishHomeTour.mockClear()
   window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, recordTelemetry)
   __resetHomeTourForTest()
   setActivePinia(createPinia())
@@ -247,17 +255,17 @@ describe('HomeTour', () => {
     await settle()
     expect(tourCard()).toBeNull()
 
-    replayChanged(true)
+    replayChanged({ id: 4, pending: true, finished: false })
     await waitForCard()
     await userEvent.click(button('skip')!)
 
     await expect.poll(() => tourCard()).toBeNull()
-    expect(setHomeTourReplay).toHaveBeenCalledWith(false)
+    expect(finishHomeTour).toHaveBeenCalledWith(4)
   })
 
   it('shows a finished tour in a window that opens while a replay is waiting', async () => {
     saved.set('homeTourDone', true)
-    replayPending = true
+    replayRecord = { id: 3, pending: true }
     placeAnchors()
     mountTour()
 
@@ -399,14 +407,14 @@ describe('HomeTour', () => {
 
   it('keeps a replay asked for by another window while this window is still loading', async () => {
     saved.set('homeTourDone', true)
-    let finishRead: (pending: boolean) => void = () => {}
+    let finishRead: (record: ReplayRecord) => void = () => {}
     readReplay = () => new Promise((resolve) => (finishRead = resolve))
     placeAnchors()
     mountTour()
     await settle()
 
-    replayChanged(true)
-    finishRead(false)
+    replayChanged({ id: 1, pending: true, finished: false })
+    finishRead({ id: 0, pending: false })
 
     await waitForCard()
   })
@@ -416,10 +424,46 @@ describe('HomeTour', () => {
     mountTour()
     await waitForCard()
 
-    saved.set('homeTourDone', true)
-    replayChanged(false)
+    replayChanged({ id: 0, pending: false, finished: true })
 
     await expect.poll(() => tourCard()).toBeNull()
+  })
+
+  it('tells main which replay it showed when that replay ends', async () => {
+    saved.set('homeTourDone', true)
+    placeAnchors()
+    mountTour()
+    await tourStateLoaded()
+
+    await useHomeTour().replay()
+    await waitForCard()
+    await userEvent.click(button('skip')!)
+    await expect.poll(() => finishHomeTour.mock.calls).toContainEqual([1])
+  })
+
+  it('reports the automatic tour as showing no replay when it ends', async () => {
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+
+    await userEvent.click(button('skip')!)
+
+    await expect.poll(() => finishHomeTour.mock.calls).toContainEqual([null])
+  })
+
+  it('keeps showing a newer replay that arrives after this window finished an older one', async () => {
+    saved.set('homeTourDone', true)
+    placeAnchors()
+    mountTour()
+    await tourStateLoaded()
+    replayChanged({ id: 1, pending: true, finished: false })
+    await waitForCard()
+    await userEvent.click(button('skip')!)
+    await expect.poll(() => tourCard()).toBeNull()
+
+    replayChanged({ id: 2, pending: true, finished: true })
+
+    await waitForCard()
   })
 
   it('picks up at the next step when the part of the paused step is gone', async () => {
@@ -524,6 +568,28 @@ describe('HomeTour', () => {
     expect(tourCard()?.textContent).toContain('All your builds')
     expect(setSetting).not.toHaveBeenCalled()
     expect(telemetry).not.toContain('comfy.desktop.home_tour.target_opened')
+  })
+
+  it("does not count a click as done when What's new opens right after it", async () => {
+    const { wrapper } = await goToAllBuilds()
+
+    await userEvent.click(highlightedPart(), { position: { x: 20, y: 20 } })
+    await wrapper.setProps({ active: false, interrupted: true })
+    await settle()
+
+    expect(setSetting).not.toHaveBeenCalled()
+    expect(telemetry).not.toContain('comfy.desktop.home_tour.target_opened')
+  })
+
+  it('forgets a click that opened nothing once the user moves on with Next', async () => {
+    const { wrapper } = await goToAllBuilds()
+
+    await userEvent.click(highlightedPart(), { position: { x: 20, y: 20 } })
+    await userEvent.click(button('next')!)
+    await wrapper.setProps({ active: false })
+    await settle()
+
+    expect(setSetting).not.toHaveBeenCalled()
   })
 
   it('keeps the tour running when the control under the click is disabled', async () => {

@@ -13,37 +13,59 @@ vi.mock('electron', () => ({
 }))
 vi.mock('./broadcast', () => ({ _broadcastToRenderer: broadcast }))
 
-import { registerHomeTourHandlers } from './registerHomeTourHandlers'
-
 function call(channel: string, ...args: unknown[]): unknown {
   return handlers.get(channel)!({}, ...args)
 }
 
 describe('home tour replay handlers', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.resetModules()
     handlers.clear()
     broadcast.mockClear()
+    const { registerHomeTourHandlers } = await import('./registerHomeTourHandlers')
     registerHomeTourHandlers()
-    call('set-home-tour-replay', false)
-    broadcast.mockClear()
   })
 
   it('has no replay waiting at first', () => {
-    expect(call('get-home-tour-replay')).toBe(false)
+    expect(call('get-home-tour-replay')).toEqual({ id: 0, pending: false })
   })
 
-  it('keeps a replay asked for in one window and tells every window', () => {
-    call('set-home-tour-replay', true)
+  it('gives each replay request a new id and tells every window', () => {
+    expect(call('request-home-tour-replay')).toBe(1)
+    expect(call('request-home-tour-replay')).toBe(2)
 
-    expect(call('get-home-tour-replay')).toBe(true)
-    expect(broadcast).toHaveBeenCalledWith('home-tour-replay-changed', true)
+    expect(call('get-home-tour-replay')).toEqual({ id: 2, pending: true })
+    expect(broadcast).toHaveBeenLastCalledWith('home-tour-replay-changed', {
+      id: 2,
+      pending: true,
+      finished: false
+    })
   })
 
-  it('clears the replay once the tour ends and tells every window', () => {
-    call('set-home-tour-replay', true)
-    call('set-home-tour-replay', false)
+  it('clears the replay that the finished tour showed, and tells every window the tour is done', () => {
+    const id = call('request-home-tour-replay')
+    call('finish-home-tour', id)
 
-    expect(call('get-home-tour-replay')).toBe(false)
-    expect(broadcast).toHaveBeenLastCalledWith('home-tour-replay-changed', false)
+    expect(call('get-home-tour-replay')).toEqual({ id: 1, pending: false })
+    expect(broadcast).toHaveBeenLastCalledWith('home-tour-replay-changed', {
+      id: 1,
+      pending: false,
+      finished: true
+    })
+  })
+
+  it('keeps a newer replay when an older one finishes', () => {
+    const older = call('request-home-tour-replay')
+    call('request-home-tour-replay')
+    call('finish-home-tour', older)
+
+    expect(call('get-home-tour-replay')).toEqual({ id: 2, pending: true })
+  })
+
+  it('keeps a waiting replay when an automatic tour finishes', () => {
+    call('request-home-tour-replay')
+    call('finish-home-tour', null)
+
+    expect(call('get-home-tour-replay')).toEqual({ id: 1, pending: true })
   })
 })

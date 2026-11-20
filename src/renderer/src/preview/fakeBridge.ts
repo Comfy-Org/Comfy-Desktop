@@ -81,7 +81,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
   const listeners = new Map<string, Set<AnyListener>>()
   const authListeners = new Set<(status: AuthStatus) => void>()
   let auth = seed.auth ?? SIGNED_OUT
-  let homeTourReplay = false
+  let homeTourReplay = { id: 0, pending: false }
   let lastActivityAt = performance.now()
 
   function noteActivity(): void {
@@ -372,11 +372,17 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
       emit('onSettingsChanged', { key })
     },
     getSetting: async (key) => settings[key],
-    getHomeTourReplay: async () => homeTourReplay,
+    getHomeTourReplay: async () => ({ ...homeTourReplay }),
     showHome: () => {},
-    setHomeTourReplay: async (pending) => {
-      homeTourReplay = pending
-      emit('onHomeTourReplayChanged', pending)
+    requestHomeTourReplay: async () => {
+      homeTourReplay = { id: homeTourReplay.id + 1, pending: true }
+      emit('onHomeTourReplayChanged', { ...homeTourReplay, finished: false })
+      return homeTourReplay.id
+    },
+    finishHomeTour: async (shownReplayId) => {
+      if (shownReplayId === homeTourReplay.id)
+        homeTourReplay = { ...homeTourReplay, pending: false }
+      emit('onHomeTourReplayChanged', { ...homeTourReplay, finished: true })
     },
 
     getPendingBetaNotice: async () => null,

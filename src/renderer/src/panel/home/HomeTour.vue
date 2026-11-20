@@ -20,14 +20,14 @@ import { useInstallationStore } from '../../stores/installationStore'
 import { HOME_TOUR_STEPS, findHomeTourAnchor, type HomeTourStep } from './homeTourSteps'
 import { useHomeTour } from './useHomeTour'
 
-const { active } = defineProps<{ active: boolean }>()
+const { active, interrupted = false } = defineProps<{ active: boolean; interrupted?: boolean }>()
 
 const HOLE_PADDING = 4
 const TARGET_OPEN_WINDOW_MS = 1000
 
 const { t } = useI18n()
 const installationStore = useInstallationStore()
-const { audience, done, loaded, replays, finish } = useHomeTour()
+const { audience, done, loaded, replays, finish, markShown } = useHomeTour()
 const titleId = useId()
 const bodyId = useId()
 const nextButton = useTemplateRef<{ $el: HTMLElement }>('nextButton')
@@ -51,7 +51,7 @@ let startToken = 0
 let paused: { steps: HomeTourStep[]; index: number } | null = null
 let focusBeforeTour: HTMLElement | null = null
 let restoreFocusOnClose = false
-let targetClick: { at: number; step: number } | null = null
+let pendingOpen: { step: number; expires: ReturnType<typeof setTimeout> } | null = null
 
 function sameRect(a: DOMRect | null, b: DOMRect | null): boolean {
   if (!a || !b) return a === b
@@ -107,6 +107,7 @@ async function start(): Promise<void> {
   index.value = nearestPresentStep(startAt) ?? startAt
   focusBeforeTour = document.activeElement instanceof HTMLElement ? document.activeElement : null
   if (!resumed) {
+    markShown()
     emitTelemetryAction('comfy.desktop.home_tour.shown', { audience: audience.value })
   }
   trackAnchor()
@@ -120,11 +121,15 @@ function restoreFocus(event: Event): void {
   focusBeforeTour = null
 }
 
+function clearPendingOpen(): void {
+  if (pendingOpen) clearTimeout(pendingOpen.expires)
+  pendingOpen = null
+}
+
 function stop(): void {
-  const openedByTarget =
-    targetClick !== null && performance.now() - targetClick.at < TARGET_OPEN_WINDOW_MS
-  const openedStep = targetClick?.step ?? 0
-  targetClick = null
+  const openedByTarget = pendingOpen !== null && !interrupted
+  const openedStep = pendingOpen?.step ?? 0
+  clearPendingOpen()
   startToken += 1
   cancelAnimationFrame(frame)
   if (step.value && index.value !== null) paused = { steps: tourSteps.value, index: index.value }
@@ -160,6 +165,7 @@ watch(done, (isDone) => {
 onBeforeUnmount(stop)
 
 function next(): void {
+  clearPendingOpen()
   if (index.value === null) return
   const target = isLast.value ? null : presentStep(index.value + 1, 1)
   if (target === null) {
@@ -171,12 +177,14 @@ function next(): void {
 }
 
 function back(): void {
+  clearPendingOpen()
   if (index.value === null || index.value === 0) return
   const target = presentStep(index.value - 1, -1)
   if (target !== null) index.value = target
 }
 
 function skip(): void {
+  clearPendingOpen()
   emitTelemetryAction('comfy.desktop.home_tour.skipped', {
     audience: audience.value,
     step: position.value.current
@@ -196,28 +204,38 @@ function elementUnderTarget(event: MouseEvent): Element | null {
   return hit
 }
 
-function isDisabled(hit: Element): boolean {
-  const control = hit.closest('button, input, select, textarea, [aria-disabled]')
-  return (
-    !!control && (control.matches(':disabled') || control.getAttribute('aria-disabled') === 'true')
-  )
+const CONTROL = 'button, a[href], [role="button"], [role="link"]'
+
+function isDisabled(control: HTMLElement): boolean {
+  return control.matches(':disabled') || control.getAttribute('aria-disabled') === 'true'
+}
+
+function clickableArea(hit: Element, anchor: HTMLElement): HTMLElement | null {
+  let area: HTMLElement | null = null
+  for (let el: Element | null = hit; el && anchor.contains(el); el = el.parentElement) {
+    if (el instanceof HTMLElement && getComputedStyle(el).cursor === 'pointer') area = el
+  }
+  return area
+}
+
+function controlUnder(hit: Element, anchor: HTMLElement): HTMLElement | null {
+  const control = hit.closest<HTMLElement>(CONTROL)
+  if (control && anchor.contains(control)) return isDisabled(control) ? null : control
+  return clickableArea(hit, anchor)
 }
 
 function openTarget(event: MouseEvent): void {
   const current = step.value
   const anchor = current ? findHomeTourAnchor(current.anchor) : null
   const hit = elementUnderTarget(event)
-  if (!anchor || !hit || !anchor.contains(hit) || isDisabled(hit)) return
-  targetClick = { at: performance.now(), step: position.value.current }
-  hit.dispatchEvent(
-    new MouseEvent('click', {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: event.clientX,
-      clientY: event.clientY
-    })
-  )
+  const control = anchor && hit && anchor.contains(hit) ? controlUnder(hit, anchor) : null
+  if (!control) return
+  clearPendingOpen()
+  pendingOpen = {
+    step: position.value.current,
+    expires: setTimeout(() => (pendingOpen = null), TARGET_OPEN_WINDOW_MS)
+  }
+  control.click()
 }
 
 const hole = computed(() => {

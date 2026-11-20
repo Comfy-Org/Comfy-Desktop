@@ -4,6 +4,7 @@ import type {
   AppOutputs,
   AppPageStatus,
   ElectronApi,
+  HomeTourReplayState,
   ResolvedTheme,
   AdoptPromptRequest
 } from '../types/ipc'
@@ -256,7 +257,8 @@ export function buildElectronApi(): ElectronApi {
     setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
     getSetting: (key) => ipcRenderer.invoke('get-setting', key),
     getHomeTourReplay: () => ipcRenderer.invoke('get-home-tour-replay'),
-    setHomeTourReplay: (pending) => ipcRenderer.invoke('set-home-tour-replay', pending),
+    requestHomeTourReplay: () => ipcRenderer.invoke('request-home-tour-replay'),
+    finishHomeTour: (shownReplayId) => ipcRenderer.invoke('finish-home-tour', shownReplayId),
     showHome: () => ipcRenderer.send('comfy-panel:show-home'),
     getPendingBetaNotice: (installationId) =>
       ipcRenderer.invoke('get-pending-beta-notice', installationId),
@@ -565,7 +567,8 @@ export function buildElectronApi(): ElectronApi {
       return () => ipcRenderer.removeListener('settings-changed', handler)
     },
     onHomeTourReplayChanged: (callback) => {
-      const handler = (_event: IpcRendererEvent, pending: unknown) => callback(pending === true)
+      const handler = (_event: IpcRendererEvent, state: unknown) =>
+        callback(state as HomeTourReplayState)
       ipcRenderer.on('home-tour-replay-changed', handler)
       return () => ipcRenderer.removeListener('home-tour-replay-changed', handler)
     },
