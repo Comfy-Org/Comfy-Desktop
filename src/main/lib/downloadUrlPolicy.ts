@@ -109,3 +109,15 @@ export function sameOriginCheck(origins: Iterable<string | null>): DownloadUrlCh
   const allowed = new Set([...origins].filter((o): o is string => o !== null))
   return (raw) => isPermittedDownloadUrl(raw) && allowed.has(originOf(raw) ?? '')
 }
+
+export type DownloadUrlPolicyName = 'secure-public'
+
+export function downloadUrlPolicyName(
+  check: DownloadUrlCheck | undefined
+): DownloadUrlPolicyName | undefined {
+  return check === isSecurePublicDownloadUrl ? 'secure-public' : undefined
+}
+
+export function downloadUrlPolicyByName(name: unknown): DownloadUrlCheck | undefined {
+  return name === 'secure-public' ? isSecurePublicDownloadUrl : undefined
+}
