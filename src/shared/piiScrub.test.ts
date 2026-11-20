@@ -338,6 +338,12 @@ describe('piiScrub', () => {
       }
     )
 
+    it('ends a username the wider matching finds before a URL scheme inside it', () => {
+      expect(scrubPII('Traceback\\n\\Users\\alice see https://h/view?q=1')).toBe(
+        'Traceback\\n\\Users\\[REDACTED]https://h/view?q=1'
+      )
+    })
+
     it('still hides a username when a URL appears later on the same line', () => {
       expect(scrubPII('Traceback\\n\\Users\\alice\\x see https://docs')).toBe(
         'Traceback\\n\\Users\\[REDACTED]\\x see https://docs'

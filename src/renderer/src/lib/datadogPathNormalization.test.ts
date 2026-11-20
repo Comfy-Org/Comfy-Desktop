@@ -52,9 +52,13 @@ describe('scrubRumText', () => {
     [
       'Traceback\\n\\Users\\img data:image/png;base64,QUFBQUFB',
       'Traceback\\n\\Users\\[REDACTED]data:[REDACTED]'
+    ],
+    [
+      'Traceback\\n\\Users\\GET HTTPS://h/view?user=alice',
+      'Traceback\\n\\Users\\[REDACTED]HTTPS://h/view?[REDACTED]'
     ]
   ])(
-    'still hides a URL query or data URI that sits where a username could be: %s',
+    'still hides a URL query or data URI after a path only the wider matching reads: %s',
     (input, expected) => {
       expect(scrubRumText(input)).toBe(expected)
     }
