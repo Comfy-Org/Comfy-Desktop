@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { LayoutGrid, Trash2, Upload } from '@lucide/vue'
+import { LayoutGrid, Trash2, Upload, X } from '@lucide/vue'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
@@ -136,11 +136,13 @@ function drop(event: DragEvent): void {
         <MenuItem
           as="button"
           type="button"
-          class="performance-test__delete-workflow w-full text-danger"
+          class="performance-test__delete-workflow w-full"
+          :class="!downloading && 'text-danger'"
           :disabled="deleting"
           @select="emit('remove')"
         >
-          <Trash2 :size="15" aria-hidden="true" />
+          <X v-if="downloading" :size="15" aria-hidden="true" />
+          <Trash2 v-else :size="15" aria-hidden="true" />
           <span>{{
             downloading
               ? t('performanceTest.cancelExampleDownload')

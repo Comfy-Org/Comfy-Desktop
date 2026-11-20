@@ -1872,6 +1872,8 @@
     "preparingExampleWorkflow": "Preparing workflow and downloading required models…",
     "importFailed": "Could not import the workflow.",
     "deleteWorkflow": "Delete workflow",
+    "deleteWorkflowTitle": "Delete {workflow}?",
+    "deleteWorkflowMessage": "This deletes the copy saved for Performance tests. Your original file and results from earlier runs are kept.",
     "deleteFailed": "Could not delete the workflow.",
     "run": "Run",
     "runNeedsBuild": "Select a build first.",

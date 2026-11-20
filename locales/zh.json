@@ -1872,6 +1872,8 @@
     "preparingExampleWorkflow": "正在准备工作流并下载所需模型…",
     "importFailed": "无法导入工作流。",
     "deleteWorkflow": "删除工作流",
+    "deleteWorkflowTitle": "删除 {workflow}？",
+    "deleteWorkflowMessage": "这会删除为性能测试保存的副本。你的原始文件和之前运行的结果会保留。",
     "deleteFailed": "无法删除工作流。",
     "run": "运行",
     "runNeedsBuild": "请先选择一个构建。",
