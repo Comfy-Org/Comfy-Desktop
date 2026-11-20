@@ -28,19 +28,25 @@ interface Texts {
   version: string
   variant: string
   path: string
+  python: string
+  torch: string
 }
 
 const SHORT: Texts = {
   channel: 'Stable',
   version: 'v0.3.60',
   variant: 'Apple Silicon (MPS)',
-  path: '/builds/flux-studio'
+  path: '/builds/flux-studio',
+  python: '3.12.9',
+  torch: '2.8.0+cu128'
 }
 const LONG: Texts = {
   channel: 'Latest on GitHub, newest commits from the master branch',
   version: 'v0.3.60-128-g4f8b2e1c9d0a7b6e5f4c3d2a',
   variant: 'NVIDIA GeForce RTX 4090 Laptop GPU (CUDA 12.8, driver 572.16)',
-  path: LONG_PATH
+  path: LONG_PATH,
+  python: '3.13.0rc2+freethreaded (main, Oct 2026)',
+  torch: '2.10.0.dev20261119+cu132.nightly-unstable'
 }
 
 const STATES: Record<string, Partial<OverviewChannel>> = {
@@ -82,13 +88,13 @@ function model(
     torch: withTorchMenu
       ? {
           label: 'PyTorch',
-          current: '2.8.0+cu128',
+          current: texts.torch,
           groups: [
             {
               id: 'cu128',
               label: 'CUDA 12.8',
               versions: [
-                { value: 'a', version: '2.8.0+cu128', current: true, actions: [] },
+                { value: 'a', version: texts.torch, current: true, actions: [] },
                 { value: 'b', version: '2.7.1+cu128', current: false, actions: [changeTorch] }
               ]
             }
@@ -97,7 +103,7 @@ function model(
       : null,
     facts: {
       variant: { label: 'Variant', value: texts.variant },
-      python: { label: 'Python', value: '3.12.9' },
+      python: { label: 'Python', value: texts.python },
       pytorch: { label: 'PyTorch', value: '2.8.0' },
       location: { label: 'Location', value: texts.path }
     }
@@ -107,8 +113,9 @@ function model(
 interface Shape {
   comfyui: number
   location: number
-  pytorch: number
+  runtime: number
   disk: number
+  pytorch: number
   python: number
 }
 
@@ -141,8 +148,9 @@ async function measure(
     shape: {
       comfyui: height('build-overview-comfyui'),
       location: height('build-overview-facts'),
-      pytorch: height('build-overview-pytorch'),
+      runtime: height('build-overview-runtime'),
       disk: height('build-overview-disk'),
+      pytorch: height('build-overview-pytorch'),
       python: height('build-overview-python')
     }
   }
@@ -178,10 +186,46 @@ describe.each(Object.entries(WIDTHS))('BuildOverview keeps its shape (%s window)
     }
   })
 
-  it('keeps the three fact cards the same height as each other', async () => {
+  it('keeps the Python and PyTorch card the same height as On disk', async () => {
     const { shape } = await measure(width, LONG, STATES['update available'])
-    expect(shape.pytorch).toBe(shape.disk)
-    expect(shape.disk).toBe(shape.python)
+    expect(shape.runtime).toBe(shape.disk)
+    expect(shape.python).toBe(shape.pytorch)
+  })
+
+  it('groups Python and PyTorch side by side in one card, lined up row by row', async () => {
+    for (const texts of [SHORT, LONG]) {
+      for (const withMenu of [true, false]) {
+        const { root } = await measure(width, texts, STATES['up to date'], new Set(), withMenu)
+        const box = (selector: string): DOMRect =>
+          root.querySelector<HTMLElement>(selector)!.getBoundingClientRect()
+        const card = root.querySelector<HTMLElement>('[data-testid="build-overview-runtime"]')!
+        const python = card.querySelector<HTMLElement>('[data-testid="build-overview-python"]')!
+        const torch = card.querySelector<HTMLElement>('[data-testid="build-overview-pytorch"]')!
+        const label = `${texts === SHORT ? 'short' : 'long'}, menu: ${withMenu}`
+        expect(python, label).not.toBeNull()
+        expect(torch, label).not.toBeNull()
+        const p = python.getBoundingClientRect()
+        const tc = torch.getBoundingClientRect()
+        expect(p.top, label).toBe(tc.top)
+        expect(p.right, label).toBeLessThan(tc.left)
+        const lines = (el: HTMLElement): DOMRect[] =>
+          [...el.children].map((c) => c.getBoundingClientRect())
+        const [pLabel, pValue] = lines(python)
+        const [tLabel, tValue] = lines(torch)
+        expect(pLabel.top, label).toBe(tLabel.top)
+        expect(pValue.top, label).toBe(tValue.top)
+        expect(
+          Math.abs(
+            box('[data-testid="build-overview-variant"]').bottom -
+              python.lastElementChild!.getBoundingClientRect().bottom
+          ),
+          label
+        ).toBeLessThanOrEqual(1)
+        const c = card.getBoundingClientRect()
+        expect(c.top, label).toBe(box('[data-testid="build-overview-disk"]').top)
+        expect(c.width, label).toBeGreaterThan(box('[data-testid="build-overview-disk"]').width)
+      }
+    }
   })
 
   it('lines up the last line of the three fact cards, with or without a PyTorch menu', async () => {
@@ -211,6 +255,8 @@ describe.each(Object.entries(WIDTHS))('BuildOverview keeps its shape (%s window)
       )
     }
     oneLine('[data-testid="build-overview-variant"]')
+    oneLine('[data-testid="build-overview-python"] > span:nth-child(2)')
+    oneLine('[data-testid="build-overview-pytorch"] > span:nth-child(2)')
     oneLine('[data-testid="build-overview-comfyui-version"]')
     oneLine('[data-testid="build-overview-location"] .font-mono')
   })
@@ -230,7 +276,7 @@ describe('BuildOverview columns (wide window)', () => {
           box('build-overview-facts').getBoundingClientRect().bottom
         expect(Math.abs(bottomGap)).toBeLessThanOrEqual(0.5)
         expect(comfyui.getBoundingClientRect().top).toBe(
-          box('build-overview-pytorch').getBoundingClientRect().top
+          box('build-overview-runtime').getBoundingClientRect().top
         )
         expect(comfyui.scrollHeight).toBeLessThanOrEqual(comfyui.clientHeight)
       }
