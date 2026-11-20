@@ -81,6 +81,7 @@ function reported(): unknown[] {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  vi.spyOn(console, 'info').mockImplementation(() => undefined)
   mocks.handle.mockReset()
   registerEmbeddedSessionHandlers()
 })
@@ -170,7 +171,37 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
       status: 'signed_out',
       signInFailure
     })
-    expect(console.error).toHaveBeenCalledWith(expect.any(String), failure)
+  })
+
+  it.for<{ name: string; failure: Error; error: boolean }>([
+    {
+      name: 'a cancelled sign-in',
+      failure: new SignInFailure('access_denied', 'cancelled'),
+      error: false
+    },
+    {
+      name: 'a sign-in a sign-out cut short',
+      failure: new SignInFailure('Signed out while signing in', 'superseded'),
+      error: false
+    },
+    {
+      name: 'a timed-out sign-in',
+      failure: new SignInFailure('Loopback OAuth callback timed out', 'timeout'),
+      error: true
+    },
+    { name: 'an unclassified error', failure: new Error('boom'), error: true }
+  ])('logs $name as an error only when it is one ($error)', async ({ failure, error }) => {
+    mocks.stateForSender.mockResolvedValue(SIGNED_OUT)
+    mocks.signInToCloud.mockRejectedValue(failure)
+
+    await requestSignIn()({})
+
+    expect(vi.mocked(console.error).mock.calls).toEqual(
+      error ? [[expect.any(String), failure]] : []
+    )
+    expect(vi.mocked(console.info).mock.calls).toEqual(
+      error ? [] : [[expect.any(String), (failure as SignInFailure).reason]]
+    )
   })
 
   it('resolves a sign-in a sign-out cut short with the state the view is in by then', async () => {

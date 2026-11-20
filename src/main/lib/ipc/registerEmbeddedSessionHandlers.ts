@@ -18,6 +18,11 @@ import {
 import { reportHostSignIn } from '../hostSignInTelemetry'
 import { signInToCloud, signOutOfCloud, switchCloudWorkspace } from './registerDevPlatformHandlers'
 
+const SIGN_IN_ENDINGS_THAT_ARE_NOT_ERRORS: ReadonlySet<string> = new Set([
+  'cancelled',
+  'superseded'
+])
+
 export function registerEmbeddedSessionHandlers(): void {
   ipcMain.handle(EMBEDDED_SESSION_CHANNELS.getState, (event) => stateForSender(event))
 
@@ -38,11 +43,11 @@ export function registerEmbeddedSessionHandlers(): void {
         await signInToCloud()
         return stateForSender(event)
       }).catch(async (error: unknown): Promise<ComfyDesktop2SignInResult> => {
-        console.error('Sign-in requested by a ComfyUI page failed:', error)
-        return {
-          ...(await stateForSender(event)),
-          signInFailure: signInFailureReport(error).reason
-        }
+        const signInFailure = signInFailureReport(error).reason
+        if (SIGN_IN_ENDINGS_THAT_ARE_NOT_ERRORS.has(signInFailure))
+          console.info('Sign-in requested by a ComfyUI page ended:', signInFailure)
+        else console.error('Sign-in requested by a ComfyUI page failed:', error)
+        return { ...(await stateForSender(event)), signInFailure }
       })
     }
   )
