@@ -194,6 +194,7 @@
     "buildRunning": "Running",
     "buildStarting": "Starting",
     "buildReady": "Ready",
+    "buildLogInToUse": "Log in to use",
     "buildDidntStart": "Didn't start",
     "buildCrashed": "Crashed",
     "cloudHardware": "RTX 6000 Pro · 96 GB",

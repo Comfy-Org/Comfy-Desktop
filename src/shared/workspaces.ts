@@ -8,6 +8,10 @@ export function isPersonalWorkspace(workspace: { name?: string; type?: string })
   )
 }
 
+export function workspaceScopeId(workspace: { id: string; name?: string; type?: string }): string {
+  return isPersonalWorkspace(workspace) ? PERSONAL_WORKSPACE_ID : workspace.id
+}
+
 export function workspaceContextId(workspace: {
   workspaceId?: string
   workspaceName?: string

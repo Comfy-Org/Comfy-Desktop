@@ -180,6 +180,7 @@ export const useAuthStore = defineStore('auth', () => {
   })
 
   const isSignedIn = computed(() => status.value.signedIn)
+  const isSignedOut = computed(() => statusLoaded.value && !status.value.signedIn)
   const personalWorkspace = computed(() => workspaces.value.find(isPersonalWorkspace) ?? null)
 
   function sessionWorkspaceFor(dashboardWorkspaceId: string): string | null {
@@ -227,6 +228,7 @@ export const useAuthStore = defineStore('auth', () => {
     buildsError,
     workspaceSwitchFailure,
     isSignedIn,
+    isSignedOut,
     personalWorkspace,
     sessionWorkspaceFor,
     initializeWorkspaceContext,

@@ -372,6 +372,7 @@ const gridHandlers = {
         :installations="scopedVisibleInstalls"
         :show-free-runs-pill="showCloudFreeRunsPill"
         :show-why-cloud="showWhyCloud"
+        :logged-out="authStore.isSignedOut"
         v-on="gridHandlers"
       />
     </div>
