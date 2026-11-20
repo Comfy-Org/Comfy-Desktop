@@ -9,7 +9,8 @@ import { evalWithRetry } from './support/evalRetry'
 import { RedirectServer } from './support/redirectServer'
 
 type Policy = 'permitted' | 'secure-public'
-type ResolveResult = { ok: true; url: string } | { ok: false; error: string }
+type ResolveResult =
+  { ok: true; url: string; sendCredentials?: boolean } | { ok: false; error: string }
 type TransferOutcome =
   | { outcome: 'completed'; savePath: string; finalBytes: number }
   | { outcome: 'paused' }
@@ -33,6 +34,17 @@ interface Helpers {
     policy: Policy
   }): Promise<{ ok: true } | { ok: false; error: string }>
   runFetchJSON(url: string): Promise<{ ok: true; data: unknown } | { ok: false; error: string }>
+  runAssetDownload(opts: {
+    url: string
+    filename: string
+    outputDir: string
+    authToken?: string
+  }): Promise<{ status: string; error?: string; savePath?: string }>
+  rawSessionDownload(opts: {
+    url: string
+    headers: Record<string, string>
+    destPath: string
+  }): Promise<{ chain: string[]; state: string }>
 }
 
 let app: ElectronApplication
@@ -63,10 +75,9 @@ function runModelTransfer(
   )
 }
 
-function helper<K extends 'runDownload' | 'runFetchJSON'>(
-  name: K,
-  arg: Parameters<Helpers[K]>[0]
-): ReturnType<Helpers[K]> {
+function helper<
+  K extends 'runDownload' | 'runFetchJSON' | 'runAssetDownload' | 'rawSessionDownload'
+>(name: K, arg: Parameters<Helpers[K]>[0]): ReturnType<Helpers[K]> {
   return evalWithRetry(() =>
     app.evaluate(
       (_electron, [n, a]) =>
@@ -106,7 +117,7 @@ test.beforeEach(() => {
 test('redirect resolver follows a permitted cross-origin hop @windows @macos @linux', async () => {
   const final = `${target.base('localhost')}/file`
   const result = await resolveRedirects({ url: origin.redirectUrl(final), policy: 'permitted' })
-  expect(result).toEqual({ ok: true, url: final })
+  expect(result).toMatchObject({ ok: true, url: final })
   expect(origin.requestsTo('/redirect')).toHaveLength(1)
   expect(target.requestsTo('/file')).toHaveLength(1)
 })
@@ -233,4 +244,73 @@ test('fetchJSON() refuses a disallowed redirect hop @windows @macos @linux', asy
   expect(result.ok).toBe(false)
   expect(result.ok ? '' : result.error).toContain('not allowed')
   expect(target.requests).toHaveLength(0)
+})
+
+test.describe('credentials across redirects (D7)', () => {
+  const BEARER = 'Bearer d7-regression-token'
+
+  test('engine baseline: session.downloadURL forwards an explicit Authorization header across origins @windows @macos @linux', async () => {
+    const result = await helper('rawSessionDownload', {
+      url: origin.redirectUrl(`${target.base('localhost')}/file`),
+      headers: { Authorization: BEARER },
+      destPath: path.join(scratch, 'd7-raw', 'file.bin')
+    })
+    expect(result.state).toBe('completed')
+    expect(target.requestsTo('/file').map((r) => r.authorization)).toEqual([BEARER])
+  })
+
+  test('redirect resolver drops the bearer token on a cross-origin hop @windows @macos @linux', async () => {
+    const result = await resolveRedirects({
+      url: origin.redirectUrl(`${target.base('localhost')}/file`),
+      policy: 'permitted',
+      headers: { Authorization: BEARER }
+    })
+    expect(result).toMatchObject({ ok: true, sendCredentials: false })
+    expect(origin.requestsTo('/redirect').map((r) => r.authorization)).toEqual([BEARER])
+    expect(target.requestsTo('/file').map((r) => r.authorization)).toEqual([null])
+  })
+
+  test('redirect resolver keeps the bearer token on a same-origin hop @windows @macos @linux', async () => {
+    const result = await resolveRedirects({
+      url: origin.redirectUrl(`${origin.base()}/file`),
+      policy: 'permitted',
+      headers: { Authorization: BEARER }
+    })
+    expect(result).toMatchObject({ ok: true, sendCredentials: true })
+    expect(origin.requests.map((r) => [r.path, r.authorization])).toEqual([
+      ['/redirect', BEARER],
+      ['/file', BEARER]
+    ])
+  })
+
+  test('authenticated asset download does not forward the bearer token to the redirect target @windows @macos @linux', async () => {
+    const outputDir = path.join(scratch, 'd7-asset-cross')
+    const result = await helper('runAssetDownload', {
+      url: origin.redirectUrl(`${target.base('localhost')}/file`),
+      filename: 'cross.bin',
+      outputDir,
+      authToken: 'd7-regression-token'
+    })
+    expect(result.status).toBe('completed')
+    expect(origin.requestsTo('/redirect').every((r) => r.authorization === BEARER)).toBe(true)
+    const targetHits = target.requestsTo('/file')
+    expect(targetHits.length).toBeGreaterThan(0)
+    expect(targetHits.map((r) => r.authorization)).toEqual(targetHits.map(() => null))
+    expect(await readFile(result.savePath!, 'utf-8')).toBe('target-body')
+  })
+
+  test('authenticated asset download keeps the bearer token on a same-origin redirect @windows @macos @linux', async () => {
+    const outputDir = path.join(scratch, 'd7-asset-same')
+    const result = await helper('runAssetDownload', {
+      url: origin.redirectUrl(`${origin.base()}/file`),
+      filename: 'same.bin',
+      outputDir,
+      authToken: 'd7-regression-token'
+    })
+    expect(result.status).toBe('completed')
+    const fileHits = origin.requestsTo('/file')
+    expect(fileHits.length).toBeGreaterThan(0)
+    expect(fileHits.every((r) => r.authorization === BEARER)).toBe(true)
+    expect(await readFile(result.savePath!, 'utf-8')).toBe('origin-body')
+  })
 })

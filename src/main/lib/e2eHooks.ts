@@ -8,6 +8,8 @@ import { isPermittedDownloadUrl, isSecurePublicDownloadUrl } from './downloadUrl
 import { resolveRedirects, type ResolveRedirectsResult } from './redirectResolver'
 import { startModelTransfer, type ModelTransferOutcome } from './modelDownloadTransport'
 import { download } from './download'
+import { BrowserWindow, session as electronSession } from 'electron'
+import path from 'path'
 import { fetchJSON } from './fetch'
 import { _test_setUpdateState, type AppUpdateState } from './updater'
 import {
@@ -116,6 +118,17 @@ export interface E2EHelpers {
     policy: E2EDownloadPolicy
   }): Promise<{ ok: true } | { ok: false; error: string }>
   runFetchJSON(url: string): Promise<{ ok: true; data: unknown } | { ok: false; error: string }>
+  runAssetDownload(opts: {
+    url: string
+    filename: string
+    outputDir: string
+    authToken?: string
+  }): Promise<{ status: string; error?: string; savePath?: string }>
+  rawSessionDownload(opts: {
+    url: string
+    headers: Record<string, string>
+    destPath: string
+  }): Promise<{ chain: string[]; state: string }>
 }
 
 export function registerE2EHooks(): void {
@@ -233,6 +246,32 @@ export function registerE2EHooks(): void {
       } catch (err) {
         return { ok: false, error: (err as Error).message }
       }
+    },
+    async runAssetDownload({ url, filename, outputDir, authToken }) {
+      const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+      if (!win) return { status: 'no-window' }
+      const dm = await import('./comfyDownloadManager')
+      const admission = await dm.startManagedAssetDownload(win, url, filename, outputDir, authToken)
+      if (admission.status !== 'accepted') return { status: admission.status }
+      const terminal = new Set(['completed', 'error', 'cancelled'])
+      for (let i = 0; i < 300; i++) {
+        const row = dm.getAllDownloads().find((d) => d.id === admission.downloadId)
+        if (row && terminal.has(row.status)) {
+          return { status: row.status, error: row.error, savePath: row.savePath }
+        }
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      return { status: 'timeout' }
+    },
+    rawSessionDownload({ url, headers, destPath }) {
+      const sess = electronSession.fromPartition(`e2e-raw-download-${Date.now()}`)
+      return new Promise((resolve) => {
+        sess.once('will-download', (_event, item) => {
+          item.setSavePath(path.resolve(destPath))
+          item.once('done', (_e, state) => resolve({ chain: item.getURLChain(), state }))
+        })
+        sess.downloadURL(url, { headers })
+      })
     }
   }
   ;(globalThis as unknown as { __e2e: E2EHelpers }).__e2e = helpers
