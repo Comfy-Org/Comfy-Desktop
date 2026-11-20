@@ -1046,6 +1046,7 @@ describe('switching apps while the old page navigates on its own', () => {
     expect(hostedPage().visible).toBe(false)
     expect(lastStatusSentToPanel()).toBe('loading')
     expect(loadedApp()).toBeNull()
+    expect(page.loadURL).toHaveBeenCalledTimes(3)
     expect(page.loadURL).toHaveBeenLastCalledWith(HDR_URL)
   })
 
