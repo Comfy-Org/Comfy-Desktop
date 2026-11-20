@@ -155,7 +155,7 @@ watch(
     :title="state.title"
     :message="state.message"
     :show-cancel="isSimpleConfirm || isChoice"
-    :show-close-icon="state.type === 'alert'"
+    :show-close-icon="state.dismissAsCancel"
     :button-label="baseAlertButtonLabel"
     :tone="baseAlertTone"
     :secondary-label="isChoice ? state.secondaryLabel : undefined"
