@@ -427,23 +427,6 @@ function openLocation(): void {
 
         <section
           class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
-          aria-labelledby="build-overview-disk"
-          data-testid="build-overview-disk"
-        >
-          <span id="build-overview-disk" class="text-[12px]/4 text-muted-foreground">{{
-            t('buildOverview.onDisk')
-          }}</span>
-          <span
-            class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
-            >{{ diskUsage ?? '—' }}</span
-          >
-          <span v-if="diskFree" class="truncate text-[12px]/4 text-muted-foreground">{{
-            t('buildOverview.free', { size: diskFree })
-          }}</span>
-        </section>
-
-        <section
-          class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
           aria-labelledby="build-overview-python"
           data-testid="build-overview-python"
         >
@@ -456,6 +439,23 @@ function openLocation(): void {
           >
           <span class="truncate text-[12px]/4 text-muted-foreground">{{
             installation.sourceLabel
+          }}</span>
+        </section>
+
+        <section
+          class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
+          aria-labelledby="build-overview-disk"
+          data-testid="build-overview-disk"
+        >
+          <span id="build-overview-disk" class="text-[12px]/4 text-muted-foreground">{{
+            t('buildOverview.onDisk')
+          }}</span>
+          <span
+            class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
+            >{{ diskUsage ?? '—' }}</span
+          >
+          <span v-if="diskFree" class="truncate text-[12px]/4 text-muted-foreground">{{
+            t('buildOverview.free', { size: diskFree })
           }}</span>
         </section>
 
