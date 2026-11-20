@@ -505,7 +505,7 @@ defineExpose({ open, resetContinue })
         </section>
 
         <section
-          class="mt-3"
+          class="mt-3 [--summary-label-width:164px]"
           :class="SUMMARY_BOX_CLASS"
           :aria-label="t('setup.summary')"
           data-testid="setup-summary"
