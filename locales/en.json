@@ -297,7 +297,7 @@
     "menuMigrate": "Migrate to Standalone",
     "menuRestoreSnapshot": "Restore snapshot",
     "menuExportSnapshot": "Export snapshot",
-    "menuRevealInFolder": "Open Folder",
+    "menuRevealInFolder": "Open folder",
     "menuDelete": "Uninstall",
     "stoppedActionGatedReason": "Stop the running build first.",
     "gatedReasonStopping": "Wait for the build to stop.",
