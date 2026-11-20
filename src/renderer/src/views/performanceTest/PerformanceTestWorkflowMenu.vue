@@ -6,6 +6,7 @@ import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import FilterButton from '../../components/ui/FilterButton.vue'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../../lib/destructiveStyles'
 import type { PerformanceTestWorkflowSource } from '../../composables/usePerformanceTestWorkflow'
 
 const props = defineProps<{
@@ -139,7 +140,7 @@ function drop(event: DragEvent): void {
           as="button"
           type="button"
           class="performance-test__delete-workflow w-full"
-          :class="!downloading && 'text-danger'"
+          :class="!downloading && DESTRUCTIVE_MENU_ITEM_CLASS"
           :disabled="deleting"
           @select="emit('remove')"
         >

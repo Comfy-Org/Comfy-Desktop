@@ -20,6 +20,7 @@ import { useProgressStore, type Operation } from '../../stores/progressStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Installation } from '../../types/ipc'
 import { performanceTestSessionKey } from '../../../../shared/performanceTestSession'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../../lib/destructiveStyles'
 
 const BUILD: Installation = {
   id: 'flux',
@@ -432,6 +433,9 @@ describe('Build menu', () => {
     const red = items.filter((item) => item.classList.contains('text-destructive'))
     expect(red.map((item) => item.dataset.testid)).toEqual(['build-menu-delete'])
     expect(red[0]!.querySelector('svg[class*="lucide-trash"]')).not.toBeNull()
+    expect([...red[0]!.classList]).toEqual(
+      expect.arrayContaining(DESTRUCTIVE_MENU_ITEM_CLASS.split(' '))
+    )
 
     red[0]!.click()
     const box = await confirmBox()

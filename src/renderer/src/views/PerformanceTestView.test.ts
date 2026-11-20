@@ -7,6 +7,7 @@ import PerformanceTestBuildMenu from './performanceTest/PerformanceTestBuildMenu
 import PerformanceTestWorkflowMenu from './performanceTest/PerformanceTestWorkflowMenu.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useDialogs } from '../composables/useDialogs'
+import { DESTRUCTIVE_MENU_ITEM_CLASS } from '../lib/destructiveStyles'
 
 const scopedInstallations = vi.hoisted(() => ({ value: [] as unknown[] }))
 const runningSessions = vi.hoisted(() => new Set<string>())
@@ -372,7 +373,9 @@ describe('PerformanceTestWorkflowMenu last item', () => {
     const { wrapper, item } = await openMenu(false)
 
     expect(item.textContent).toContain('Delete workflow')
-    expect(item.classList).toContain('text-danger')
+    expect([...item.classList]).toEqual(
+      expect.arrayContaining(DESTRUCTIVE_MENU_ITEM_CLASS.split(' '))
+    )
     expect(item.querySelector('svg[class*="lucide-trash"]')).not.toBeNull()
     wrapper.unmount()
   })
@@ -381,7 +384,7 @@ describe('PerformanceTestWorkflowMenu last item', () => {
     const { wrapper, item } = await openMenu(true)
 
     expect(item.textContent).toContain('Cancel download')
-    expect(item.classList).not.toContain('text-danger')
+    expect(item.classList).not.toContain('text-destructive')
     expect(item.querySelector('svg[class*="lucide-trash"]')).toBeNull()
     wrapper.unmount()
   })
