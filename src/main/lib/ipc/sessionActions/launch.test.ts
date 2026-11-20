@@ -1273,9 +1273,12 @@ describe('buildLaunchArgs core beta injection', () => {
   })
 
   it.each([
-    ['its commit range', { lowerIn: true, verified: false, head: 'e'.repeat(40) }, 'eeeeeeeeeeee'],
-    ['its release floor', { verified: true, head: 'e'.repeat(40) }, 'eeeeeeeeeeee'],
-    ['its release floor with no git HEAD', { verified: true, head: null }, '0.3.81']
+    [
+      'its commit range',
+      { ancestry: [true], verified: false, head: 'e'.repeat(40) },
+      'eeeeeeeeeeee'
+    ],
+    ['its release floor with no git HEAD', { ancestry: [], verified: true, head: null }, '0.3.81']
   ])(
     'names the release floor in the record of a floor grant applied through %s',
     (_l, at, core) => {
@@ -1285,14 +1288,14 @@ describe('buildLaunchArgs core beta injection', () => {
         commitRanges: [[lower, null]],
         releaseFloor: '0.3.80'
       }
-      const ancestry = new Map<string, boolean>(
-        'lowerIn' in at ? [[lower, at.lowerIn as boolean]] : []
-      )
       const built = build({
         schema: schemaOf('enable-assets'),
         betaFlags: [floorGrant],
         coreVersionVerified: at.verified,
-        coreCommits: { head: at.head, ancestry }
+        coreCommits: {
+          head: at.head,
+          ancestry: new Map(at.ancestry.map((has) => [lower, has] as const))
+        }
       })
 
       expect(built.beta.applied).toEqual([floorGrant])

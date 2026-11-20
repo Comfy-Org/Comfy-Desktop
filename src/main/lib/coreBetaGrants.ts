@@ -138,11 +138,9 @@ export function parseCoreBetaGrants(
       if ('min_core_version' in candidate || 'max_core_version' in candidate) continue
       const commitRanges = parseCommitRanges(candidate.commit_ranges)
       if (commitRanges === null) continue
-      let releaseFloor: string | null = null
-      if ('release_floor' in candidate && commitRanges.every(([, upper]) => upper === null)) {
-        releaseFloor = parseCoreVersion(candidate.release_floor)
-        if (releaseFloor === null) continue
-      }
+      const releaseFloor = commitRanges.every(([, upper]) => upper === null)
+        ? parseCoreVersion((candidate as { release_floor?: unknown }).release_floor)
+        : null
       flags.push({
         arg: candidate.arg,
         commitRanges,
@@ -414,9 +412,6 @@ export interface CoreBetaPlan {
 
 const FORCED_OFF = 'forced off remotely'
 
-const releaseAtAssetsFloor = (core: CoreVersionState): boolean =>
-  releaseAtFloor(core, ASSETS_MIN_CORE_VERSION)
-
 function assetsDecided(
   grants: readonly CoreBetaGrant[],
   userArgs: readonly string[],
@@ -436,7 +431,9 @@ export function assetsFloorShas(
   schema: ComfyArgsSchema,
   core: CoreVersionState
 ): string[] {
-  const needed = assetsDecided(grants, userArgs, schema) === null && !releaseAtAssetsFloor(core)
+  const needed =
+    assetsDecided(grants, userArgs, schema) === null &&
+    !releaseAtFloor(core, ASSETS_MIN_CORE_VERSION)
   return needed ? [ASSETS_MIN_CORE_COMMIT] : []
 }
 
@@ -445,7 +442,7 @@ function assetsDecision(facts: CoreBetaFacts): Pick<CoreBetaPlan, 'assetsArgs' |
   let withheld = assetsDecided(grants, userArgs, schema)
   if (
     withheld === null &&
-    !releaseAtAssetsFloor(core) &&
+    !releaseAtFloor(core, ASSETS_MIN_CORE_VERSION) &&
     !commitRangeMatches([ASSETS_MIN_CORE_COMMIT, null], commits.ancestry)
   ) {
     const where = `core ${commits.head?.slice(0, 12) ?? core.semver ?? 'unknown'}`

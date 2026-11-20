@@ -637,33 +637,49 @@ describe('parseCoreBetaGrants release floor', () => {
     ])
   })
 
-  it.each([['not a version'], [42], [null]])('drops the entry when the floor is %s', (floor) => {
-    expect(parse(floor)).toEqual([])
-  })
+  it.each([['not a version'], [42], [null]])(
+    'ignores a floor that is %s, keeping the ranges',
+    (floor) => {
+      expect(parse(floor)).toEqual([{ arg: '--enable-agent', commitRanges: [[SHA_A, null]] }])
+    }
+  )
 
-  it('ignores the floor on an entry with an upper-bounded range, keeping its ranges', () => {
+  it('keeps a floor beside several open ranges', () => {
+    const commitRanges = [
+      [SHA_A, null],
+      [SHA_C, null]
+    ]
     expect(
       parseCoreBetaGrants(true, {
-        flags: [
-          {
-            arg: '--enable-agent',
-            commit_ranges: [
-              [SHA_A, SHA_B],
-              [SHA_C, null]
-            ],
-            release_floor: '0.42.4'
-          }
-        ]
+        flags: [{ arg: '--enable-agent', commit_ranges: commitRanges, release_floor: '0.42.4' }]
       })
-    ).toEqual([
-      {
-        arg: '--enable-agent',
-        commitRanges: [
-          [SHA_A, SHA_B],
-          [SHA_C, null]
-        ]
-      }
-    ])
+    ).toEqual([{ arg: '--enable-agent', commitRanges, releaseFloor: '0.42.4' }])
+  })
+
+  it.each([
+    [
+      'a bounded range first',
+      [
+        [SHA_A, SHA_B],
+        [SHA_C, null]
+      ],
+      '0.42.4'
+    ],
+    [
+      'a bounded range last',
+      [
+        [SHA_C, null],
+        [SHA_A, SHA_B]
+      ],
+      '0.42.4'
+    ],
+    ['a bounded range and an invalid floor', [[SHA_A, SHA_B]], 'not a version']
+  ])('ignores the floor on an entry with %s, keeping its ranges', (_label, commitRanges, floor) => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-agent', commit_ranges: commitRanges, release_floor: floor }]
+      })
+    ).toEqual([{ arg: '--enable-agent', commitRanges }])
   })
 
   it('ignores a floor on a version entry', () => {
@@ -733,8 +749,11 @@ describe('selectCoreBetaGrantArgs release floor', () => {
     ['contradicted by the checkout', release({ current: false }), '0.46.1'],
     ['of unknown version', release({ semver: null }), 'unknown']
   ])('withholds a release %s, naming the floor', (_label, core, shown) => {
-    const { selected, withheld } = select(floorGrant, core)
+    const { selected, withheld, trace } = select(floorGrant, core)
     expect(selected).toEqual([])
+    expect(trace).toEqual([
+      '[core-beta] commits --enable-agent: aaaaaaaaaaaa.. head=eeeeeeeeeeee in-range=no'
+    ])
     expect(withheld).toEqual([
       `[core-beta] --enable-agent withheld: entry 1: commit range aaaaaaaaaaaa..: lower aaaaaaaaaaaa unresolved | core ${shown} is not a verified current v0.42.4+ release`
     ])
