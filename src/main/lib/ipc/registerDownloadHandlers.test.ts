@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => ({
   openModelAccessPageWindow: vi.fn(),
   showItemInFolder: vi.fn(),
   getDeviceId: vi.fn(),
-  getIdClass: vi.fn()
+  getIdClass: vi.fn(),
+  startModelDownload: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -30,7 +31,7 @@ vi.mock('../comfyDownloadManager', () => ({
   pauseModelDownload: vi.fn(),
   resumeModelDownload: vi.fn(),
   retryDownload: vi.fn(),
-  startModelDownload: vi.fn()
+  startModelDownload: mocks.startModelDownload
 }))
 
 vi.mock('../modelAccessPage', () => ({
@@ -164,4 +165,73 @@ describe('registerDownloadHandlers install id bridge', () => {
       expect(requestInstallId()).toBeUndefined()
     }
   )
+})
+
+describe('desktop2-download-model URL validation', () => {
+  const win = { id: 7 }
+  const sender = { id: 1 }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.fromWebContents.mockReturnValue(win)
+    mocks.startModelDownload.mockResolvedValue(true)
+    registerDownloadHandlers()
+  })
+
+  const download = (payload: Record<string, unknown>): Promise<boolean> =>
+    Promise.resolve(
+      (
+        handler('desktop2-download-model') as unknown as (
+          event: { sender: unknown },
+          payload: Record<string, unknown>
+        ) => boolean | Promise<boolean>
+      )({ sender }, payload)
+    )
+
+  it('starts an HTTPS model download', async () => {
+    const url = 'https://huggingface.co/org/repo/resolve/main/model.safetensors'
+    await expect(
+      download({ url, filename: 'model.safetensors', directory: 'checkpoints' })
+    ).resolves.toBe(true)
+    expect(mocks.startModelDownload).toHaveBeenCalledWith(
+      win,
+      url,
+      'model.safetensors',
+      'checkpoints',
+      sender
+    )
+  })
+
+  it('allows plain HTTP to a loopback host', async () => {
+    await expect(
+      download({
+        url: 'http://127.0.0.1:9000/models/m.safetensors',
+        filename: 'm.safetensors',
+        directory: 'checkpoints'
+      })
+    ).resolves.toBe(true)
+  })
+
+  it.each([
+    ['plain HTTP to a public host', 'http://huggingface.co/model.safetensors'],
+    ['instance metadata', 'http://169.254.169.254/latest/meta-data/'],
+    ['file scheme', 'file:///etc/passwd'],
+    ['embedded credentials', 'https://user:pass@huggingface.co/model.safetensors'],
+    ['LAN host over HTTP', 'http://192.168.1.20/model.safetensors'],
+    ['not a URL', 'model.safetensors']
+  ])('refuses %s before starting a download', async (_label, url) => {
+    await expect(
+      download({ url, filename: 'model.safetensors', directory: 'checkpoints' })
+    ).resolves.toBe(false)
+    expect(mocks.startModelDownload).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['url', { url: 42, filename: 'm.safetensors', directory: 'checkpoints' }],
+    ['filename', { url: 'https://hf.co/m', filename: null, directory: 'checkpoints' }],
+    ['directory', { url: 'https://hf.co/m', filename: 'm.safetensors', directory: {} }]
+  ])('refuses a non-string %s', async (_field, payload) => {
+    await expect(download(payload)).resolves.toBe(false)
+    expect(mocks.startModelDownload).not.toHaveBeenCalled()
+  })
 })

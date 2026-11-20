@@ -4,6 +4,11 @@ import path from 'path'
 import * as settings from '../settings'
 import { r2MirrorUrl } from './r2Mirror'
 import {
+  isPermittedDownloadUrl,
+  isPermittedRedirect,
+  type DownloadUrlCheck
+} from './downloadUrlPolicy'
+import {
   installStagedAtFinal,
   quarantineOrphanStagedBytes,
   readStagedMeta,
@@ -37,6 +42,7 @@ export interface ModelTransferOptions {
   expectedSize?: number
   sha256?: string
   idleTimeoutMs?: number
+  validateUrl?: DownloadUrlCheck
   onProgress?: (p: ModelTransferProgress) => void
 }
 
@@ -87,6 +93,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     expectedSize,
     sha256,
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
+    validateUrl = isPermittedDownloadUrl,
     onProgress
   } = opts
 
@@ -183,6 +190,11 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     const gen = ++attemptGen
     const stale = (): boolean => phase !== 'active' || gen !== attemptGen
 
+    if (!validateUrl(attemptUrl)) {
+      failRetaining('Download failed: the download URL is not allowed')
+      return
+    }
+
     let resumeFrom = 0
     let existingMeta: StagedDownloadMeta | null = readStagedMeta(metaPath)
     let resumeValidator: { kind: 'etag' | 'last-modified'; value: string } | null = null
@@ -261,6 +273,7 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
     }
 
     let redirectsLeft = MAX_REDIRECTS
+    let currentUrl = attemptUrl
     let request: Electron.ClientRequest
     try {
       request = net.request({
@@ -300,6 +313,11 @@ export function startModelTransfer(opts: ModelTransferOptions): ModelTransferHan
           failRetaining('Download failed: empty redirect location')
           return
         }
+        if (!isPermittedRedirect(currentUrl, redirectUrl, validateUrl)) {
+          failRetaining('Download failed: redirected to a URL that is not allowed')
+          return
+        }
+        currentUrl = redirectUrl
         try {
           request.followRedirect()
         } catch (err) {

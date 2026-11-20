@@ -31,6 +31,13 @@ import {
 import { startModelTransfer, type ModelTransferHandle } from './modelDownloadTransport'
 import { ModelDownloadTelemetry, type ModelDownloadSource } from './modelDownloadTelemetry'
 import { isQuitInProgress } from './quit-state'
+import { resolveRedirects } from './redirectResolver'
+import {
+  isPermittedChain,
+  isPermittedDownloadUrl,
+  isSecurePublicDownloadUrl,
+  type DownloadUrlCheck
+} from './downloadUrlPolicy'
 
 export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
 
@@ -111,6 +118,8 @@ interface PendingDownload {
   installationId?: string | null
   expectedSize?: number
   sha256?: string
+  validateUrl?: DownloadUrlCheck
+  fetchUrl?: string
   explicitSession?: Electron.Session
   progressSubscribers?: Set<(receivedBytes: number, totalBytes: number) => void>
   settleJob?: (outcome: ModelJobOutcome) => void
@@ -296,6 +305,7 @@ interface RetryParams {
   installationId?: string | null
   savePath?: string
   sha256?: string
+  validateUrl?: DownloadUrlCheck
   destinationBaseDir?: string
   modelSource?: ModelDownloadSource
   appId?: string | null
@@ -618,6 +628,11 @@ function findPendingForItem(item: Electron.DownloadItem): PendingDownload | unde
     const pending = activeJobsForUrl(u).find((p) => p.kind === 'asset' && !p.item)
     if (pending) return pending
   }
+  for (const u of candidates) {
+    for (const pending of pendingDownloads.values()) {
+      if (pending.kind === 'asset' && !pending.item && pending.fetchUrl === u) return pending
+    }
+  }
   return undefined
 }
 
@@ -631,6 +646,7 @@ export interface ModelJobOptions {
   session?: Electron.Session
   expectedSize?: number
   sha256?: string
+  validateUrl?: DownloadUrlCheck
   destinationBaseDir?: string
   bypassRootLockFor?: string
   source?: ModelDownloadSource
@@ -789,6 +805,7 @@ async function runModelTransport(pending: PendingDownload): Promise<void> {
     session: sess,
     expectedSize: pending.expectedSize,
     sha256: pending.sha256,
+    ...(pending.validateUrl ? { validateUrl: pending.validateUrl } : {}),
     onProgress: ({ receivedBytes, totalBytes }) => {
       if (gen !== pending.attemptGen) return
       pending.telemetry?.updateBytes(receivedBytes, totalBytes)
@@ -904,6 +921,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     installationId: resolvedInstallId,
     savePath,
     sha256,
+    validateUrl: opts.validateUrl,
     destinationBaseDir: opts.destinationBaseDir,
     modelSource: opts.source,
     appId: opts.appId
@@ -936,6 +954,10 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     if (!isModelPathLocked(candidatePath, lockExemptKey)) return null
     const error = 'The model directory is busy while the installation is being updated'
     return rejectJob(error)
+  }
+
+  if (!(opts.validateUrl ?? isPermittedDownloadUrl)(url)) {
+    return rejectJob('The download URL is not allowed')
   }
 
   if (!isPathContained(savePath, baseDir)) {
@@ -1048,6 +1070,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
     installationId: resolvedInstallId,
     expectedSize: opts.expectedSize,
     sha256,
+    validateUrl: opts.validateUrl,
     explicitSession: opts.session,
     progressSubscribers: opts.onProgress ? new Set([opts.onProgress]) : undefined,
     settleJob,
@@ -1122,7 +1145,8 @@ export async function startModelDownload(
     window: win,
     senderContents,
     installationId,
-    source: 'comfyui'
+    source: 'comfyui',
+    validateUrl: isSecurePublicDownloadUrl
   })
   const active = pendingDownloads.get(handle.id)
   if (active) return true
@@ -1134,6 +1158,7 @@ export async function startModelDownload(
 export interface AssetDownloadOptions {
   existingFilePolicy?: 'deduplicate' | 'skip'
   templateInput?: ComfyTemplateInputReference
+  validateUrl?: DownloadUrlCheck
 }
 
 export type AssetDownloadAdmission =
@@ -1174,8 +1199,13 @@ export async function startManagedAssetDownload(
   outputDir: string,
   authToken?: string,
   senderContents?: Electron.WebContents,
-  { existingFilePolicy = 'deduplicate', templateInput }: AssetDownloadOptions = {}
+  {
+    existingFilePolicy = 'deduplicate',
+    templateInput,
+    validateUrl = isPermittedDownloadUrl
+  }: AssetDownloadOptions = {}
 ): Promise<AssetDownloadAdmission> {
+  if (!validateUrl(url)) return { status: 'not-started' }
   const safeFilename = sanitizeAssetFilename(filename, outputDir)
   if (!safeFilename) return { status: 'not-started' }
   if (existingFilePolicy === 'skip' && safeFilename !== filename) {
@@ -1216,6 +1246,7 @@ export async function startManagedAssetDownload(
     requestedSavePath,
     preserveRequestedFilename: existingFilePolicy === 'skip',
     templateInput,
+    validateUrl,
     outputDir,
     window: win,
     senderContents: senderContents !== win.webContents ? senderContents : undefined,
@@ -1282,17 +1313,38 @@ export async function startManagedAssetDownload(
     senderContents,
     savePath: requestedSavePath,
     existingFilePolicy,
-    templateInput
+    templateInput,
+    validateUrl
   })
 
   const sess = (senderContents || win.webContents).session
   attachSessionDownloadHandler(sess)
-  const downloadOptions = authToken
-    ? { headers: { Authorization: `Bearer ${authToken}` } }
-    : undefined
-  sess.downloadURL(url, downloadOptions)
+  const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined
+  const abort = new AbortController()
+  pending.abort = abort
 
   reportProgress(pending.lastProgress)
+  void (async () => {
+    const resolved = await resolveRedirects({
+      url,
+      session: sess,
+      headers,
+      validateUrl,
+      validateHop: isPermittedDownloadUrl,
+      signal: abort.signal
+    })
+    if (abort.signal.aborted || pendingDownloads.get(pending.id) !== pending || pending.item) {
+      return
+    }
+    pending.abort = undefined
+    if (!resolved.ok) {
+      reportProgress({ ...pending.lastProgress, status: 'error', error: resolved.error })
+      unregisterPending(pending)
+      return
+    }
+    pending.fetchUrl = resolved.url
+    sess.downloadURL(resolved.url, headers ? { headers } : undefined)
+  })()
   return { status: 'accepted', downloadId: pending.id }
 }
 
@@ -1619,6 +1671,18 @@ export function attachSessionDownloadHandler(sess: Electron.Session): void {
     if (pending) {
       pending.item = item
 
+      const chain = item.getURLChain()
+      if (!isPermittedChain(chain.length > 0 ? chain : [item.getURL()], isPermittedDownloadUrl)) {
+        item.cancel()
+        reportProgress({
+          ...pending.lastProgress,
+          status: 'error',
+          error: 'Download failed: redirected to a URL that is not allowed'
+        })
+        unregisterPending(pending)
+        return
+      }
+
       if (pending.tempPath && pending.outputDir && !pending.preserveRequestedFilename) {
         const serverName = resolveServerFilename(item)
         if (serverName) {
@@ -1877,7 +1941,8 @@ export function retryDownload(ref: string): boolean {
       sender,
       {
         existingFilePolicy: params.existingFilePolicy ?? 'deduplicate',
-        templateInput: params.templateInput
+        templateInput: params.templateInput,
+        validateUrl: params.validateUrl
       }
     )
   } else {
@@ -1889,6 +1954,7 @@ export function retryDownload(ref: string): boolean {
       senderContents: sender,
       installationId: params.installationId,
       sha256: params.sha256,
+      validateUrl: params.validateUrl,
       destinationBaseDir: params.destinationBaseDir,
       source: params.modelSource,
       appId: params.appId,
