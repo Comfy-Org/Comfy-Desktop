@@ -179,6 +179,24 @@ async function newBuildSummary(): Promise<{ metrics: SummaryMetrics; box: HTMLEl
   return { metrics: measure(box, rows), box }
 }
 
+function withNotes(notes: Record<string, string>): void {
+  const options = window.api.getFieldOptions as ReturnType<typeof vi.fn>
+  const defaultOptions = options.getMockImplementation()!
+  options.mockImplementation(async (source: string, field: string) => {
+    const list = await defaultOptions(source, field)
+    const note = notes[field]
+    return note === undefined ? list : list.map((option) => ({ ...option, description: note }))
+  })
+}
+
+function noteWithText(box: HTMLElement, text: string): HTMLElement {
+  const note = [...box.querySelectorAll<HTMLElement>('.config-summary-row .truncated-text')].find(
+    (candidate) => candidate.textContent === text
+  )
+  expect(note, text).toBeDefined()
+  return note!
+}
+
 const mounted: VueWrapper[] = []
 
 beforeEach(installApi)
@@ -215,6 +233,20 @@ it('explains install space when the download info icon is hovered or focused', a
   await userEvent.keyboard('{Escape}')
   await expect.poll(bubble).toBeNull()
   await expect.element(browserPage.getByTestId('setup-install')).toBeVisible()
+})
+
+it('gives medium Release and Hardware notes the free width instead of cutting them off', async () => {
+  await browserPage.viewport(1100, 860)
+  const releaseNote = 'Stable channel, tested with the latest ComfyUI frontend'
+  const hardwareNote = 'ComfyUI 0.42.4 with PyTorch nightly for Apple Silicon'
+  withNotes({ release: releaseNote, variant: hardwareNote })
+  const { box } = await newBuildSummary()
+
+  for (const text of [releaseNote, hardwareNote]) {
+    const note = noteWithText(box, text)
+    expect(note.scrollWidth, text).toBeLessThanOrEqual(note.clientWidth)
+    expect(note.getBoundingClientRect().width, text).toBeGreaterThan(220)
+  }
 })
 
 describe.each([
@@ -300,31 +332,30 @@ describe.each([
     expect(browse.borderTopWidth).toBe('0px')
   })
 
-  it('keeps the value readable when a row note is very long', async () => {
+  it('keeps the value readable when a row note is very long, and shows the full note on hover', async () => {
     await browserPage.viewport(width, height)
     const longNote = 'A very long build description '.repeat(12).trim()
-    const options = window.api.getFieldOptions as ReturnType<typeof vi.fn>
-    const defaultOptions = options.getMockImplementation()!
-    options.mockImplementation(async (source: string, field: string) => {
-      const list = await defaultOptions(source, field)
-      return field === 'variant'
-        ? list.map((option) => ({ ...option, description: longNote }))
-        : list
-    })
+    withNotes({ variant: longNote })
     const { box } = await newBuildSummary()
-    const row = [...box.querySelectorAll<HTMLElement>('.config-summary-row')].find(
-      (candidate) => candidate.children[2]?.textContent === longNote
-    )!
+    const note = noteWithText(box, longNote)
+    const row = note.closest<HTMLElement>('.config-summary-row')!
     const value = row.children[1] as HTMLElement
-    const note = row.children[2] as HTMLElement
+    const cell = row.children[2] as HTMLElement
 
     expect(value.textContent).toBe('Apple Silicon (MPS)')
-    expect(value.getBoundingClientRect().width).toBeGreaterThanOrEqual(value.scrollWidth)
+    expect(value.scrollWidth).toBeLessThanOrEqual(value.clientWidth)
     expect(note.scrollWidth).toBeGreaterThan(note.clientWidth)
-    expect(note.title).toBe(longNote)
-    expect(Math.round(box.getBoundingClientRect().right - note.getBoundingClientRect().right)).toBe(
+    expect(
+      note.getBoundingClientRect().left - value.getBoundingClientRect().right
+    ).toBeGreaterThanOrEqual(16)
+    expect(Math.round(box.getBoundingClientRect().right - cell.getBoundingClientRect().right)).toBe(
       parseFloat(getComputedStyle(box).paddingRight)
     )
+
+    await userEvent.hover(note)
+    await expect
+      .poll(() => document.querySelector('.tooltip-bubble')?.textContent)
+      .toContain(longNote)
   })
 
   it('puts the Location note and Browse on the Location line, right-aligned', async () => {

@@ -81,7 +81,13 @@ import {
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
-import { SUMMARY_BOX_CLASS, SUMMARY_GRID_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
+import TruncatedText from '../components/TruncatedText.vue'
+import {
+  SUMMARY_BOX_CLASS,
+  SUMMARY_GRID_CLASS,
+  SUMMARY_META_CLASS,
+  SUMMARY_NOTE_GRID_CLASS
+} from '../lib/setupSummary'
 import PathOpenButton from '../components/PathOpenButton.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
@@ -1899,13 +1905,12 @@ defineExpose({ open })
           class="config-summary-row"
           :icon="row.icon"
           :label="row.label"
+          :grid="row.meta ? SUMMARY_NOTE_GRID_CLASS : SUMMARY_GRID_CLASS"
         >
           <span class="truncate text-foreground">{{ row.value }}</span>
-          <span
-            :class="[SUMMARY_META_CLASS, 'max-w-[220px] min-w-0 truncate text-subtle-foreground']"
-            :title="row.meta"
-            >{{ row.meta }}</span
-          >
+          <span :class="[SUMMARY_META_CLASS, 'flex min-w-0 justify-end text-subtle-foreground']">
+            <TruncatedText :text="row.meta ?? ''" class="min-w-0" />
+          </span>
         </SetupSummaryRow>
         <SetupSummaryRow
           v-if="showLocation"
