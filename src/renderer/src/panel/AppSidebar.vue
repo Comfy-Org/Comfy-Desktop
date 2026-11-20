@@ -457,8 +457,12 @@ function openSettings(): void {
               :data-testid="collapsed ? undefined : 'app-sidebar-builds'"
             >
               <div
-                class="group/builds mt-3.5 flex h-8 shrink-0 items-center rounded-lg pr-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
-                :class="buildsPageActive && 'bg-accent text-foreground hover:bg-accent'"
+                class="group/builds mt-3.5 flex h-8 shrink-0 items-center rounded-lg pr-1"
+                :class="
+                  buildsPageActive
+                    ? 'bg-accent text-foreground'
+                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                "
               >
                 <Button
                   variant="textonly"

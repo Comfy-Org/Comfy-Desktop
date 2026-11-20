@@ -600,7 +600,10 @@ describe('AppSidebar', () => {
       expect(builds.text()).toBe('Builds')
       expect(builds.find('svg').exists(), 'Builds has an icon like the other rows').toBe(true)
       expect(builds.attributes('aria-current')).toBe('page')
-      expect(builds.element.parentElement!.classList).toContain('bg-accent')
+      expect([...builds.element.parentElement!.classList]).toEqual(
+        expect.arrayContaining(['bg-accent', 'text-foreground'])
+      )
+      expect(builds.element.parentElement!.classList).not.toContain('text-muted-foreground')
     })
 
     it('keeps New build out of sight until the Builds row is pointed at', async () => {
