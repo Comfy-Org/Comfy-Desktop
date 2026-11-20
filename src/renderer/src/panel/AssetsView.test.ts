@@ -1834,12 +1834,15 @@ describe('AssetsView Open workflow', () => {
     wrapper: Awaited<ReturnType<typeof mountAssets>>,
     id: string
   ): Promise<void> {
+    const checksBefore = hasAssetWorkflow.mock.calls.length
     await wrapper.get(`[data-testid="asset-open-${id}"]`).trigger('click')
-    await settle()
-  }
-
-  async function settle(): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, 200))
+    await flushPromises()
+    await vi.waitFor(() => {
+      const waitsForCheck = workflowButton()?.classList.contains('invisible') === true
+      if (waitsForCheck && hasAssetWorkflow.mock.calls.length === checksBefore) {
+        throw new Error('the shown file has not been checked yet')
+      }
+    })
     await flushPromises()
   }
 
@@ -1860,6 +1863,173 @@ describe('AssetsView Open workflow', () => {
       'lab'
     )
     expect(viewer()).toBeNull()
+  })
+
+  function statusText(): string {
+    return (
+      document
+        .querySelector('[data-testid="output-detail-workflow-status"]')
+        ?.textContent?.trim() ?? ''
+    )
+  }
+
+  it('turns Open workflow off at once, and says what it waits for only after 300 ms', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    let finish: (result: { opened: boolean }) => void = () => {}
+    openAssetWorkflow.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: [localBuild('lab', 'Lab')]
+    })
+    await openViewer(wrapper, '/out/forest.png')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      workflowButton()!.focus()
+      workflowButton()!.click()
+      await flushPromises()
+
+      expect(workflowButton()?.getAttribute('aria-disabled')).toBe('true')
+      expect(getComputedStyle(workflowButton()!).opacity, 'looks like a disabled button').toBe(
+        '0.5'
+      )
+      expect(workflowButton()?.textContent?.trim()).toBe('Open workflow')
+      expect(workflowButton()?.hasAttribute('aria-busy')).toBe(false)
+      workflowButton()!.click()
+      expect(openAssetWorkflow).toHaveBeenCalledOnce()
+
+      await vi.advanceTimersByTimeAsync(299)
+      expect(workflowButton()?.textContent?.trim()).toBe('Open workflow')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(workflowButton()?.textContent?.trim()).toBe('Starting Lab…')
+      expect(workflowButton()?.getAttribute('aria-busy')).toBe('true')
+      expect(statusText()).toBe('Starting Lab…')
+      expect(document.activeElement, 'focus stays on the busy button').toBe(workflowButton())
+
+      useSessionStore().runningInstances.set('lab', {} as never)
+      await flushPromises()
+      expect(workflowButton()?.textContent?.trim()).toBe('Opening…')
+      expect(viewer()).not.toBeNull()
+
+      finish({ opened: true })
+      await flushPromises()
+      expect(viewer()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never shows the busy label when the workflow opens within 300 ms', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    let finish: (result: { opened: boolean }) => void = () => {}
+    openAssetWorkflow.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+    await openViewer(wrapper, '/out/forest.png')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      workflowButton()!.click()
+      await vi.advanceTimersByTimeAsync(200)
+      expect(workflowButton()?.textContent?.trim()).toBe('Open workflow')
+      expect(statusText()).toBe('')
+      finish({ opened: true })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(200)
+
+      expect(viewer()).toBeNull()
+      expect(statusText()).toBe('')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says it opens in Comfy Cloud for a Cloud file', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    openAssetWorkflow.mockReturnValue(new Promise(() => {}))
+    window.localStorage.setItem('comfy.desktop.assets.place', 'cloud')
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
+    await signInWith([asset('c', 'cloud.png', 'image')])
+    await openViewer(wrapper, 'c')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      workflowButton()!.click()
+      await vi.advanceTimersByTimeAsync(300)
+
+      expect(workflowButton()?.textContent?.trim()).toBe('Opening in Comfy Cloud…')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never opens a file twice, closes the viewer only for the shown file, and tells about every failed open', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    const finishes: ((result: { opened: boolean; error?: string }) => void)[] = []
+    openAssetWorkflow.mockImplementation(() => new Promise((resolve) => finishes.push(resolve)))
+    const wrapper = await mountAssets([
+      asset('/out/a.png', 'a.png', 'image', { createdAt: '2026-11-02T00:00:00Z' }),
+      asset('/out/b.png', 'b.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
+    ])
+    await openViewer(wrapper, '/out/a.png')
+    workflowButton()!.click()
+    await flushPromises()
+
+    await press('ArrowRight')
+    await vi.waitFor(() => expect(hasAssetWorkflow).toHaveBeenCalledTimes(2))
+    await flushPromises()
+    workflowButton()!.click()
+    await flushPromises()
+    await press('ArrowLeft')
+    workflowButton()!.click()
+    await flushPromises()
+    expect(openAssetWorkflow).toHaveBeenCalledTimes(2)
+
+    finishes[1]!({ opened: true })
+    await flushPromises()
+    expect(viewer(), 'b opened while a is shown, so the viewer stays').not.toBeNull()
+    expect(alert).not.toHaveBeenCalled()
+
+    finishes[0]!({ opened: false, error: 'Lab did not start.' })
+    await flushPromises()
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: expect.any(String),
+      message: 'Lab did not start.'
+    })
+    expect(viewer()).not.toBeNull()
+  })
+
+  it('brings Open workflow back and keeps the viewer open when the workflow does not open', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    openAssetWorkflow.mockResolvedValueOnce({ opened: false, error: 'Lab did not start.' })
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await openViewer(wrapper, '/out/forest.png')
+    workflowButton()!.click()
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledOnce()
+    expect(viewer()).not.toBeNull()
+    expect(workflowButton()?.textContent?.trim()).toBe('Open workflow')
+    expect(workflowButton()?.hasAttribute('aria-disabled')).toBe(false)
+    expect(
+      document.querySelector('[data-testid="output-detail-workflow-status"]')?.textContent?.trim()
+    ).toBe('')
+  })
+
+  it('turns the build menu into the busy button after you pick a build, and keeps focus on it', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    openAssetWorkflow.mockReturnValue(new Promise(() => {}))
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: [sharedBuild('studio', 'Studio'), sharedBuild('lab', 'Lab')]
+    })
+
+    await openViewer(wrapper, '/out/forest.png')
+    workflowButton()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[1]!.click()
+    await flushPromises()
+
+    expect(workflowButton()?.getAttribute('aria-disabled')).toBe('true')
+    expect(document.activeElement, 'focus moves to the busy button, not out of the viewer').toBe(
+      workflowButton()
+    )
+    await vi.waitFor(() => expect(workflowButton()?.textContent?.trim()).toBe('Starting Lab…'))
   })
 
   it('keeps the place of Open workflow while it checks the file, so the buttons do not move', async () => {
@@ -1926,7 +2096,6 @@ describe('AssetsView Open workflow', () => {
     await flushPromises()
 
     expect(workflowButton()?.classList.contains('invisible')).toBe(false)
-    await settle()
     expect(hasAssetWorkflow).toHaveBeenCalledOnce()
   })
 
@@ -1994,7 +2163,7 @@ describe('AssetsView Open workflow', () => {
 
     await press('ArrowRight')
     await press('ArrowRight')
-    await settle()
+    await vi.waitFor(() => expect(hasAssetWorkflow).toHaveBeenCalled())
 
     expect(hasAssetWorkflow).toHaveBeenCalledExactlyOnceWith('local', '/out/c.png')
   })

@@ -80,6 +80,7 @@
       "openNoCloud": "Add Comfy Cloud in Comfy Desktop first.",
       "openCloudFailed": "Comfy Desktop could not open Comfy Cloud.",
       "openNoWindow": "Comfy Desktop could not show the ComfyUI window.",
+      "openUnreadable": "Comfy Desktop could not read this file. Try again.",
       "openNotTaken": "ComfyUI did not open the workflow."
     }
   },
@@ -165,6 +166,9 @@
       "openWorkflow": "Open workflow",
       "openWorkflowFailed": "Couldn't open workflow",
       "openWorkflowNoReason": "ComfyUI did not open the workflow. Try again.",
+      "openingWorkflow": "Opening…",
+      "openingInCloud": "Opening in Comfy Cloud…",
+      "startingBuild": "Starting {name}…",
       "openWorkflowIn": "Open in",
       "savedIn": "Saved in",
       "cloudAssets": "Comfy Cloud assets",

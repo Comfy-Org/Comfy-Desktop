@@ -43,6 +43,17 @@ import {
 
 const GRAPH = { nodes: [{ id: 1, type: 'SaveImage' }], links: [] }
 const SAVED_WORKFLOW = `workflow=${JSON.stringify(GRAPH)}`
+function pngChunk(type: string, key: string, text: string): Buffer {
+  const data = Buffer.from(`${key}\u0000${text}`)
+  const length = Buffer.alloc(4)
+  length.writeUInt32BE(data.length)
+  return Buffer.concat([length, Buffer.from(type), data, Buffer.alloc(4)])
+}
+
+const SAVED_COMF = pngChunk('comf', 'workflow', JSON.stringify(GRAPH))
+const PNG_START = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const PROMPT = { '1': { class_type: 'SaveImage', inputs: {} } }
+
 const EVENT = { sender: {} }
 const LOCAL = 'local'
 
@@ -195,6 +206,48 @@ describe('a file in Comfy Cloud', () => {
     expect(await hasWorkflow('inst-cloud', 'asset-3')).toBe(true)
   })
 
+  it('opens the prompt at the start of a large PNG when the end of it could not be read', async () => {
+    mocks.cloudAccessToken.mockResolvedValue('token')
+    mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/big.png')
+    const head = Buffer.concat([PNG_START, pngChunk('tEXt', 'prompt', JSON.stringify(PROMPT))])
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const range = (init.headers as Record<string, string>)['Range']
+      if (range === `bytes=-${PART_BYTES}`) return new Response('', { status: 503 })
+      return new Response(new Uint8Array(head), {
+        status: 206,
+        headers: { 'content-range': `bytes 0-${PART_BYTES - 1}/${PART_BYTES * 3}` }
+      })
+    })
+    vi.stubGlobal('fetch', fetch)
+
+    await openWorkflow('inst-cloud', 'asset-10', 'big.png')
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(mocks.openEmbeddedWorkflow).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      { format: 'api', data: PROMPT },
+      'big'
+    )
+  })
+
+  it('opens a Cloud PNG of 4 to 8 MB from its start, with no second request', async () => {
+    mocks.cloudAccessToken.mockResolvedValue('token')
+    mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/mid.png')
+    const head = Buffer.concat([PNG_START, pngChunk('tEXt', 'workflow', JSON.stringify(GRAPH))])
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const range = (init.headers as Record<string, string>)['Range']
+      if (range !== `bytes=0-${PART_BYTES - 1}`) return new Response('', { status: 503 })
+      return new Response(new Uint8Array(head), {
+        status: 206,
+        headers: { 'content-range': `bytes 0-${PART_BYTES - 1}/${PART_BYTES + 2_000_000}` }
+      })
+    })
+    vi.stubGlobal('fetch', fetch)
+
+    expect(await hasWorkflow('inst-cloud', 'asset-11')).toBe(true)
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
   it('never answers from what another Comfy Cloud sign-in read', async () => {
     mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/fox')
     const fetch = vi.fn(async () => new Response(`fLaC${SAVED_WORKFLOW}`, { status: 200 }))
@@ -249,21 +302,76 @@ describe('a file in Comfy Cloud', () => {
     expect(await hasWorkflow('inst-cloud', 'asset-8')).toBe(true)
   })
 
-  it('reads only the start of a large Cloud PNG, where ComfyUI saves its workflow', async () => {
+  it('reads the end of a large Cloud animated PNG, where SaveAnimatedPNG saves its workflow', async () => {
     mocks.cloudAccessToken.mockResolvedValue('token')
     mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/big.png')
     const pngStart = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const range = (init.headers as Record<string, string>)['Range']
+      const body = range === `bytes=-${PART_BYTES}` ? SAVED_COMF : pngStart
+      return new Response(new Uint8Array(body), {
+        status: 206,
+        headers: { 'content-range': `bytes 0-${PART_BYTES - 1}/${PART_BYTES * 3}` }
+      })
+    })
+    vi.stubGlobal('fetch', fetch)
+
+    expect(await hasWorkflow('inst-cloud', 'asset-5')).toBe(true)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('skips the end of a large Cloud PNG when its start already holds the workflow', async () => {
+    mocks.cloudAccessToken.mockResolvedValue('token')
+    mocks.resolveCloudContentUrl.mockResolvedValue('https://storage.googleapis.com/still.png')
+    const textChunk = (key: string, text: string): Buffer => {
+      const data = Buffer.concat([Buffer.from(key), Buffer.from([0]), Buffer.from(text)])
+      const length = Buffer.alloc(4)
+      length.writeUInt32BE(data.length)
+      return Buffer.concat([length, Buffer.from('tEXt'), data, Buffer.alloc(4)])
+    }
+    const head = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      textChunk('workflow', JSON.stringify(GRAPH))
+    ])
     const fetch = vi.fn(
       async () =>
-        new Response(pngStart, {
+        new Response(new Uint8Array(head), {
           status: 206,
           headers: { 'content-range': `bytes 0-${PART_BYTES - 1}/${PART_BYTES * 3}` }
         })
     )
     vi.stubGlobal('fetch', fetch)
 
-    expect(await hasWorkflow('inst-cloud', 'asset-5')).toBe(false)
+    expect(await hasWorkflow('inst-cloud', 'asset-9')).toBe(true)
     expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('finds the workflow at the end of a large animated PNG on this computer', async () => {
+    const pngStart = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    const frames = Buffer.alloc(PART_BYTES * 2, 0)
+    await savedFile('loop.png', Buffer.concat([pngStart, frames, SAVED_COMF]))
+
+    expect(await hasWorkflow(LOCAL, 'loop.png')).toBe(true)
+  })
+
+  it('still reads the end of a large PNG whose start holds only a prompt, and opens the graph from the end', async () => {
+    await savedFile(
+      'mixed.png',
+      Buffer.concat([
+        PNG_START,
+        pngChunk('tEXt', 'prompt', JSON.stringify(PROMPT)),
+        Buffer.alloc(PART_BYTES * 2, 0),
+        SAVED_COMF
+      ])
+    )
+
+    await openWorkflow(LOCAL, 'mixed.png', 'mixed.png', 'inst-lab')
+
+    expect(mocks.openEmbeddedWorkflow).toHaveBeenCalledExactlyOnceWith(
+      { where: 'local', build: 'inst-lab' },
+      { format: 'graph', data: GRAPH },
+      'mixed'
+    )
   })
 
   it('says the read failed, not that there is no workflow, when Comfy Cloud does not answer', async () => {
@@ -277,7 +385,7 @@ describe('a file in Comfy Cloud', () => {
     expect(await hasWorkflow('inst-cloud', 'asset-7')).toBeNull()
     expect(await openWorkflow('inst-cloud', 'asset-7', 'fox.png')).toEqual({
       opened: false,
-      error: 'apps.local.openNotTaken'
+      error: 'apps.local.openUnreadable'
     })
     expect(mocks.openEmbeddedWorkflow).not.toHaveBeenCalled()
   })

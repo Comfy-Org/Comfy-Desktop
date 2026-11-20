@@ -80,6 +80,7 @@
       "openNoCloud": "请先在 Comfy Desktop 中添加 Comfy Cloud。",
       "openCloudFailed": "Comfy Desktop 无法打开 Comfy Cloud。",
       "openNoWindow": "Comfy Desktop 无法显示 ComfyUI 窗口。",
+      "openUnreadable": "Comfy Desktop 无法读取此文件。请重试。",
       "openNotTaken": "ComfyUI 没有打开这个工作流。"
     }
   },
@@ -165,6 +166,9 @@
       "openWorkflow": "打开工作流",
       "openWorkflowFailed": "无法打开工作流",
       "openWorkflowNoReason": "ComfyUI 未能打开工作流。请重试。",
+      "openingWorkflow": "正在打开…",
+      "openingInCloud": "正在 Comfy Cloud 中打开…",
+      "startingBuild": "正在启动 {name}…",
       "openWorkflowIn": "打开方式",
       "savedIn": "保存位置",
       "cloudAssets": "Comfy Cloud 资产",

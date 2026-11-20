@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { deflateSync } from 'node:zlib'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { isGraphWorkflow, readEmbeddedWorkflow } from './embeddedWorkflow'
 
@@ -202,6 +202,77 @@ describe('reading the workflow ComfyUI saved in a PNG', () => {
         links: []
       }
     })
+  })
+
+  it('reads the workflow from the end of a large animated PNG, and prefers it over a prompt at the start', () => {
+    const start = png(tEXt('prompt', JSON.stringify(PROMPT)))
+    const end = concat(
+      binary('fdAT'),
+      chunk(
+        'comf',
+        concat(
+          encoder.encode('workflow'),
+          new Uint8Array([0]),
+          encoder.encode(JSON.stringify(GRAPH))
+        )
+      ),
+      chunk('IEND', new Uint8Array())
+    )
+
+    expect(readEmbeddedWorkflow([start.subarray(0, start.length - 12), end])).toEqual({
+      format: 'graph',
+      data: GRAPH
+    })
+    expect(readEmbeddedWorkflow([start.subarray(0, start.length - 12), binary('fdAT')])).toEqual({
+      format: 'api',
+      data: PROMPT
+    })
+  })
+
+  it('opens nothing when the end of a large animated PNG starts inside the workflow, so a subgraph never opens as the whole workflow', () => {
+    const subgraph = (id: string, note: string) => ({
+      id,
+      nodes: [{ id: 1, type: 'Note', widgets_values: [note] }],
+      links: []
+    })
+    const workflow = JSON.stringify({
+      ...GRAPH,
+      definitions: { subgraphs: [subgraph('a', 'x'.repeat(5000)), subgraph('b', 'y')] }
+    })
+    const saved = chunk(
+      'comf',
+      concat(encoder.encode('workflow'), new Uint8Array([0]), encoder.encode(workflow))
+    )
+    const start = png()
+    const tail = concat(saved, chunk('IEND', new Uint8Array())).subarray(4000)
+
+    expect(readEmbeddedWorkflow([start.subarray(0, start.length - 12), tail])).toBeNull()
+  })
+
+  it('stops after a fixed amount of work on many fake text chunks at the end of a large PNG', () => {
+    const length = new Uint8Array(4)
+    new DataView(length.buffer).setUint32(0, 1_048_576)
+    const fake = concat(length, encoder.encode('tEXtworkflow\u0000x'))
+    const tail = new Uint8Array(4_194_304)
+    for (let at = 0; at + fake.length <= 3_000_000; at += fake.length) tail.set(fake, at)
+    const start = png()
+    const parse = vi.spyOn(JSON, 'parse')
+
+    expect(readEmbeddedWorkflow([start.subarray(0, start.length - 12), tail])).toBeNull()
+    expect(parse.mock.calls.length).toBeLessThan(200)
+    parse.mockRestore()
+  })
+
+  it('skips a saved workflow with more than 5,000 nodes and says so in the log', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const huge = {
+      nodes: Array.from({ length: 5_001 }, (_, id) => ({ id, type: 'Note' })),
+      links: []
+    }
+
+    expect(readEmbeddedWorkflow([png(tEXt('workflow', JSON.stringify(huge)))])).toBeNull()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('5001 nodes'))
+    warn.mockRestore()
   })
 
   it('finds nothing in text that is not valid JSON', () => {
