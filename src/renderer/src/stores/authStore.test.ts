@@ -18,12 +18,18 @@ const api = {
 
 let authChangedCb: ((status: unknown) => void) | undefined
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (error: Error) => void
+} {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => {
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((done, fail) => {
     resolve = done
+    reject = fail
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 describe('useAuthStore', () => {
@@ -56,6 +62,101 @@ describe('useAuthStore', () => {
     const store = useAuthStore()
     await store.signIn()
     expect(store.status).toMatchObject({ signedIn: true, workspaceId: 'w1' })
+  })
+
+  describe('shared sign-in state', () => {
+    function browserSignIn() {
+      const browser = deferred<{ signedIn: boolean; workspaceId?: string }>()
+      api.signIn.mockReturnValue(browser.promise)
+      return browser
+    }
+
+    it('marks a sign-in as pending until the browser answers', async () => {
+      const browser = browserSignIn()
+      const store = useAuthStore()
+
+      const attempt = store.signIn()
+      expect(store.signInPending).toBe(true)
+      browser.resolve({ signedIn: true, workspaceId: 'w1' })
+      await attempt
+
+      expect(store.signInPending).toBe(false)
+      expect(store.isSignedIn).toBe(true)
+    })
+
+    it('clears the pending sign-in when it fails', async () => {
+      const browser = browserSignIn()
+      const store = useAuthStore()
+
+      const attempt = store.signIn()
+      browser.reject(new Error('server_error'))
+
+      await expect(attempt).rejects.toThrow('server_error')
+      expect(store.signInPending).toBe(false)
+      expect(store.isSignedIn).toBe(false)
+    })
+
+    it('asks main again on a second click, which restarts the browser sign-in', async () => {
+      const browser = browserSignIn()
+      const store = useAuthStore()
+
+      const first = store.signIn()
+      const second = store.signIn()
+      browser.resolve({ signedIn: true, workspaceId: 'w1' })
+
+      await expect(second).resolves.toMatchObject({ signedIn: true })
+      await expect(first).resolves.toMatchObject({ signedIn: true })
+      expect(api.signIn).toHaveBeenCalledTimes(2)
+      expect(store.isSignedIn).toBe(true)
+      expect(store.signInPending).toBe(false)
+    })
+
+    it('signs in on a new attempt after a failed one', async () => {
+      const browser = browserSignIn()
+      const store = useAuthStore()
+      const failed = store.signIn()
+      browser.reject(new Error('cancelled'))
+      await expect(failed).rejects.toThrow()
+
+      api.signIn.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
+      await store.signIn()
+
+      expect(store.isSignedIn).toBe(true)
+      expect(store.signInPending).toBe(false)
+    })
+
+    it('starts a new sign-in after sign-out drops the open one', async () => {
+      const dropped = browserSignIn()
+      const store = useAuthStore()
+      const first = store.signIn()
+      api.signOut.mockResolvedValue({ signedIn: false })
+      await store.signOut()
+      expect(store.signInPending).toBe(false)
+
+      const fresh = browserSignIn()
+      const second = store.signIn()
+      dropped.reject(new Error('Signed out while signing in'))
+      await expect(first).rejects.toThrow()
+
+      expect(api.signIn).toHaveBeenCalledTimes(2)
+      expect(store.signInPending).toBe(true)
+      fresh.resolve({ signedIn: true, workspaceId: 'w1' })
+      await expect(second).resolves.toMatchObject({ signedIn: true })
+      expect(store.signInPending).toBe(false)
+    })
+
+    it('joins the open sign-in instead of asking main again', async () => {
+      const browser = browserSignIn()
+      const store = useAuthStore()
+
+      const first = store.signIn()
+      const joined = store.joinSignIn()
+      browser.resolve({ signedIn: true })
+
+      await expect(joined).resolves.toMatchObject({ signedIn: true })
+      await first
+      expect(api.signIn).toHaveBeenCalledOnce()
+    })
   })
 
   it('stays signed in when main cancels sign-out', async () => {

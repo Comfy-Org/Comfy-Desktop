@@ -162,6 +162,9 @@
       "zoom": "Zoom",
       "zoomLevel": "Zoom: {level}",
       "openWorkflow": "Open workflow",
+      "openWorkflowFailed": "Couldn't open workflow",
+      "openWorkflowNoReason": "ComfyUI did not open the workflow. Try again.",
+      "openWorkflowIn": "Open in",
       "savedIn": "Saved in",
       "cloudAssets": "Comfy Cloud assets",
       "modelView": "3D view of {name}. Drag to turn it, scroll to zoom.",
@@ -1676,7 +1679,8 @@
   },
   "devPlatform": {
     "signIn": {
-      "cta": "Log in"
+      "cta": "Log in",
+      "waiting": "Continue in your browser"
     },
     "account": {
       "installationInProgressTitle": "Installation in progress",
