@@ -16,6 +16,7 @@ import {
   AppWindow,
   ArrowRight,
   Cloud,
+  CornerDownRight,
   House,
   Images,
   Laptop,
@@ -48,21 +49,24 @@ import { useSessionStore } from '../stores/sessionStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import type { NewWindowDashboardPage } from '../../../shared/dashboardPages'
-import type { DashboardPage, Installation } from '../types/ipc'
+import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
 const {
   activePage,
   activeBuildId = null,
-  makeRoom = false
+  makeRoom = false,
+  appInProgress = null
 } = defineProps<{
   activePage: DashboardPage
   activeBuildId?: string | null
   makeRoom?: boolean
+  appInProgress?: AppCard | null
 }>()
 
 const emit = defineEmits<{
   navigate: [page: DashboardPage]
   'open-build': [installation: Installation]
+  'open-app': [app: AppCard]
   'new-build': []
 }>()
 
@@ -212,6 +216,15 @@ function navigate(page: DashboardPage): void {
   window.api.navigatePanel(page)
 }
 
+const backToAppLabel = computed(() =>
+  appInProgress ? t('sidebar.backToApp', { app: appInProgress.title }) : ''
+)
+
+function openAppInProgress(app: AppCard): void {
+  emit('open-app', app)
+  window.api.navigatePanel('apps')
+}
+
 const { open: buildMenuOpen, menuProps: buildMenuProps, show: showBuildMenu } = usePointMenu()
 const buildMenuTarget = shallowRef<{ buildId: string; returnFocus: HTMLElement | null } | null>(
   null
@@ -329,39 +342,63 @@ function openSettings(): void {
             {{ group.title }}
           </div>
         </template>
-        <Button
-          v-for="row in group.rows"
-          :key="row.page"
-          variant="muted-textonly"
-          size="unset"
-          class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-          :class="[
-            railRowSize,
-            row.page === activePage && 'bg-accent text-foreground hover:bg-accent'
-          ]"
-          :aria-current="row.page === activePage ? 'page' : undefined"
-          :aria-label="row.label"
-          :data-testid="`app-sidebar-${row.page}`"
-          :data-home-tour="row.page === 'home' ? undefined : row.page"
-          @click="navigate(row.page)"
-          @contextmenu.prevent="openPageMenu($event, row.page)"
-        >
-          <Tooltip
-            :text="collapsed ? row.label : undefined"
-            side="right"
-            class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
-            :class="railRowInset"
+        <template v-for="row in group.rows" :key="row.page">
+          <Button
+            variant="muted-textonly"
+            size="unset"
+            class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+            :class="[
+              railRowSize,
+              row.page === activePage && 'bg-accent text-foreground hover:bg-accent'
+            ]"
+            :aria-current="row.page === activePage ? 'page' : undefined"
+            :aria-label="row.label"
+            :data-testid="`app-sidebar-${row.page}`"
+            :data-home-tour="row.page === 'home' ? undefined : row.page"
+            @click="navigate(row.page)"
+            @contextmenu.prevent="openPageMenu($event, row.page)"
           >
-            <component :is="row.icon" :size="15" class="shrink-0" aria-hidden="true" />
-            <Transition v-bind="labelTransition">
-              <span
-                v-if="!collapsed"
-                class="min-w-0 flex-1 overflow-hidden text-left text-nowrap"
-                >{{ row.label }}</span
-              >
-            </Transition>
-          </Tooltip>
-        </Button>
+            <Tooltip
+              :text="collapsed ? row.label : undefined"
+              side="right"
+              class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+              :class="railRowInset"
+            >
+              <component :is="row.icon" :size="15" class="shrink-0" aria-hidden="true" />
+              <Transition v-bind="labelTransition">
+                <span
+                  v-if="!collapsed"
+                  class="min-w-0 flex-1 overflow-hidden text-left text-nowrap"
+                  >{{ row.label }}</span
+                >
+              </Transition>
+            </Tooltip>
+          </Button>
+          <Button
+            v-if="row.page === 'apps' && appInProgress"
+            variant="muted-textonly"
+            size="unset"
+            class="h-8 shrink-0 justify-start rounded-lg px-0 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground transition-[width,margin,background-color,color] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+            :class="railRowSize"
+            :aria-label="backToAppLabel"
+            data-testid="app-sidebar-app-in-progress"
+            @click="openAppInProgress(appInProgress)"
+          >
+            <Tooltip
+              :text="collapsed ? backToAppLabel : undefined"
+              side="right"
+              class="size-full items-center gap-2.5 transition-[padding] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none"
+              :class="railRowInset"
+            >
+              <CornerDownRight :size="15" class="shrink-0" aria-hidden="true" />
+              <Transition v-bind="labelTransition">
+                <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
+                  appInProgress.title
+                }}</span>
+              </Transition>
+            </Tooltip>
+          </Button>
+        </template>
         <div v-if="group.key === 'main'" class="grid shrink-0">
           <Transition v-bind="labelTransition">
             <Button

@@ -271,6 +271,10 @@ const appsVisits = ref(0)
 const appIsOpen = ref(false)
 const assetsFocusName = ref<string | null>(null)
 const appPickedOnHome = ref<AppCard | null>(null)
+const appInProgress = ref<AppCard | null>(null)
+const sidebarAppInProgress = computed(() =>
+  sidebarPage.value === 'apps' ? null : appInProgress.value
+)
 
 function openAppFromHome(app: AppCard): void {
   appPickedOnHome.value = app
@@ -285,6 +289,17 @@ function handleSidebarClick(page: DashboardPage): void {
     emitTelemetryAction(SIDEBAR_PAGE_OPENED_EVENT, { page, from_page: fromPage })
   }
   handleSidebarNavigate(page)
+}
+
+function returnToApp(app: AppCard): void {
+  emitTelemetryAction(SIDEBAR_PAGE_OPENED_EVENT, {
+    page: 'apps',
+    from_page: sidebarPage.value,
+    to_app_in_progress: true
+  })
+  closeBuildDetails()
+  assetsFocusName.value = null
+  openAppFromHome(app)
 }
 
 function viewInAssets(name: string): void {
@@ -367,6 +382,7 @@ let unsubCloseRequest: (() => void) | null = null
 let unsubReturnToDashboardRequest: (() => void) | null = null
 let unsubAppUpdatePromptRestart: (() => void) | null = null
 let unsubAppUpdateUserActionFailed: (() => void) | null = null
+let unsubAppPageClosed: (() => void) | null = null
 const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
 const { triggerAction: triggerInstallAction, viewError: viewBuildError } = useInstallContextMenu({
@@ -503,6 +519,10 @@ onMounted(async () => {
     })
   })
 
+  unsubAppPageClosed = window.api.onAppPageClosed(() => {
+    appInProgress.value = null
+  })
+
   try {
     const shouldOpenFirstUse =
       urlFirstUsePending ||
@@ -543,6 +563,7 @@ onUnmounted(() => {
   unsubReturnToDashboardRequest?.()
   unsubAppUpdatePromptRestart?.()
   unsubAppUpdateUserActionFailed?.()
+  unsubAppPageClosed?.()
   document.body.classList.remove('panel-overlay-mode')
   sessionStore.dispose()
   if (params.get('e2e') === '1') bindE2EPanelHooks(null)
@@ -562,7 +583,9 @@ onUnmounted(() => {
         :active-page="sidebarPage"
         :active-build-id="sidebarBuildId"
         :make-room="appIsOpen"
+        :app-in-progress="sidebarAppInProgress"
         @navigate="handleSidebarClick"
+        @open-app="returnToApp"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
       />
@@ -600,6 +623,7 @@ onUnmounted(() => {
               v-model:start-with="appPickedOnHome"
               :revisit="appsVisits"
               @app-open-change="appIsOpen = $event"
+              @current-app="appInProgress = $event"
               @view-in-assets="viewInAssets"
             />
             <AssetsView

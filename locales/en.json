@@ -21,6 +21,7 @@
     "navigation": "Navigation",
     "home": "Home",
     "apps": "Apps",
+    "backToApp": "Back to {app}",
     "assets": "Assets",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
@@ -709,7 +710,7 @@
     "sizeLabel": "Disk usage",
     "sizeValue": "{size}",
     "sizeUnavailable": "Unknown",
-    "estimatedRequired": "~{size} required"
+    "insufficientForInstall": "Only {free} free, about {required} needed to install"
   },
   "pathValidation": {
     "insideAppBundleTitle": "Unsafe install location",
@@ -1043,13 +1044,9 @@
     "checking": "Checking…",
     "noGpu": "No GPU acceleration",
     "unsupported": "Not supported",
-    "free": "{free} free",
-    "freeRequired": "{free} free · ~{required} required",
-    "notEnoughSpace": "Only {free} free · ~{required} required",
-    "versionValue": "ComfyUI {version} · {channel}",
-    "versionChannel": "ComfyUI · {channel}",
+    "versionValue": "ComfyUI {version}",
     "download": "{size} download",
-    "downloadRequired": "{download} download · ~{required} required",
+    "installSpaceTip": "Allow about {required} of disk space to unpack and install the {download} download.",
     "unavailable": "Couldn't reach the ComfyUI download server. Check your connection, or pick a build with Change.",
     "retry": "Try again",
     "agreeToInstall": "Agree to install.",

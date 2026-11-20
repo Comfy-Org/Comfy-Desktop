@@ -9,6 +9,7 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import TermsModal from '../components/TermsModal.vue'
 import TermsConsentRow from '../components/TermsConsentRow.vue'
 import InlineRichText from '../components/InlineRichText.vue'
+import InfoTooltip from '../components/InfoTooltip.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
 import BuildDeviceArt from '../panel/home/BuildDeviceArt.vue'
 import { useLocalDeviceKind } from '../composables/useLocalDeviceKind'
@@ -135,40 +136,33 @@ const location = computed(() =>
   displayPath(installLocation(plan.value?.installRoot ?? '', platform), platform)
 )
 const locationParts = computed(() => splitPathTail(location.value))
+const migrating = computed(() => hasLegacyDesktop.value && migrateExisting.value)
 const lowDisk = computed(
   () =>
+    !migrating.value &&
     diskFree.value !== null &&
     !!plan.value?.requiredBytes &&
     diskFree.value < plan.value.requiredBytes
 )
 const locationMeta = computed(() => {
   if (diskFree.value === null || !plan.value) return ''
-  const values = {
-    free: formatSize(diskFree.value),
-    required: formatSize(plan.value.requiredBytes)
-  }
-  if (!plan.value.requiredBytes) return t('setup.free', values)
-  return t(lowDisk.value ? 'setup.notEnoughSpace' : 'setup.freeRequired', values)
+  const free = formatSize(diskFree.value)
+  return lowDisk.value
+    ? t('diskSpace.insufficientForInstall', {
+        free,
+        required: formatSize(plan.value.requiredBytes)
+      })
+    : t('diskSpace.free', { size: free })
 })
 const version = computed(() => {
   if (!plan.value) return ''
   if (workspaceBuild.value) return workspaceBuild.value.buildName
   const tag = planVersion(plan.value)
-  const channel = plan.value.selections.release?.label ?? ''
-  return tag
-    ? t('setup.versionValue', { version: tag, channel })
-    : t('setup.versionChannel', { channel })
+  return tag ? t('setup.versionValue', { version: tag }) : t('standalone.comfyui')
 })
-const downloadSize = computed(() => formatSize(plan.value?.downloadBytes ?? 0))
-const footerSummary = computed(() =>
-  plan.value?.downloadBytes
-    ? t('setup.downloadRequired', {
-        download: downloadSize.value,
-        required: formatSize(plan.value.requiredBytes)
-      })
-    : ''
+const channel = computed(() =>
+  workspaceBuild.value ? '' : (plan.value?.selections.release?.label ?? '')
 )
-const migrating = computed(() => hasLegacyDesktop.value && migrateExisting.value)
 const installBlocked = computed(
   () => !migrating.value && (planState.value !== 'ready' || unsupportedReason.value !== '')
 )
@@ -573,8 +567,11 @@ defineExpose({ open, resetContinue })
               <span class="truncate text-foreground" data-testid="setup-version">{{
                 version || t('setup.checking')
               }}</span>
-              <span :class="[SUMMARY_META_CLASS, 'text-subtle-foreground']">
-                {{ downloadSize ? t('setup.download', { size: downloadSize }) : '' }}
+              <span
+                :class="[SUMMARY_META_CLASS, 'max-w-[220px] truncate text-subtle-foreground']"
+                :title="channel || undefined"
+              >
+                {{ channel }}
               </span>
             </SetupSummaryRow>
           </template>
@@ -666,7 +663,25 @@ defineExpose({ open, resetContinue })
           >
             {{ unsupportedReason }}
           </span>
-          <span v-else class="text-xs/[15px] text-subtle-foreground">{{ footerSummary }}</span>
+          <span
+            v-else-if="!migrating && plan && plan.downloadBytes > 0"
+            class="inline-flex items-center text-xs/[15px] text-muted-foreground"
+          >
+            <span data-testid="setup-download-size">{{
+              t('setup.download', { size: formatSize(plan.downloadBytes) })
+            }}</span>
+            <InfoTooltip
+              v-if="plan.requiredBytes > 0"
+              icon="info"
+              data-testid="setup-download-info"
+              :text="
+                t('setup.installSpaceTip', {
+                  download: formatSize(plan.downloadBytes),
+                  required: formatSize(plan.requiredBytes)
+                })
+              "
+            />
+          </span>
           <Button
             v-if="skipPick"
             type="button"
