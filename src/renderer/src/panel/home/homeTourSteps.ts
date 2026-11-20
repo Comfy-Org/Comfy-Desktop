@@ -64,3 +64,14 @@ export function findHomeTourAnchor(anchor: HomeTourAnchor): HTMLElement | null {
   }
   return null
 }
+
+export function isHomeTourAnchorOnScreen(anchor: HomeTourAnchor): boolean {
+  const rect = findHomeTourAnchor(anchor)?.getBoundingClientRect()
+  if (!rect) return false
+  return (
+    rect.bottom > 0 &&
+    rect.right > 0 &&
+    rect.top < window.innerHeight &&
+    rect.left < window.innerWidth
+  )
+}

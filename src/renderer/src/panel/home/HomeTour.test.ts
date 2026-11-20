@@ -329,6 +329,30 @@ describe('HomeTour', () => {
     expect(offsets()).toEqual(before)
   })
 
+  it('leaves out a step whose part is below the visible window when the tour starts', async () => {
+    placeAnchors()
+    anchors.find((el) => el.dataset['homeTour'] === 'local-build')!.style.top = '2000px'
+    mountTour()
+    await waitForCard()
+
+    expect(tourCard()?.textContent).toContain('1 of 7')
+  })
+
+  it('picks up at the next step when the part of the paused step is gone', async () => {
+    placeAnchors()
+    const wrapper = mountTour()
+    await waitForCard()
+    await userEvent.click(button('next')!)
+    await expect.poll(() => tourCard()?.textContent).toContain('Comfy Cloud')
+
+    await wrapper.setProps({ active: false })
+    await expect.poll(() => tourCard()).toBeNull()
+    anchors.find((el) => el.dataset['homeTour'] === 'cloud-build')!.remove()
+    await wrapper.setProps({ active: true })
+
+    await expect.poll(() => tourCard()?.textContent).toContain('Local build')
+  })
+
   it('leaves out the steps for sidebar parts that are folded away', async () => {
     placeAnchors()
     const folded = anchors.find((el) => el.dataset['homeTour'] === 'all-builds')!

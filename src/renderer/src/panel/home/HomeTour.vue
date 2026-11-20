@@ -20,6 +20,7 @@ import { useInstallationStore } from '../../stores/installationStore'
 import {
   HOME_TOUR_STEPS,
   findHomeTourAnchor,
+  isHomeTourAnchorOnScreen,
   type HomeTourAnchor,
   type HomeTourStep
 } from './homeTourSteps'
@@ -84,14 +85,14 @@ async function start(): Promise<void> {
   const token = ++startToken
   await homeHasRendered()
   if (token !== startToken || !running.value) return
-  const shown = HOME_TOUR_STEPS[audience.value].filter((s) => findHomeTourAnchor(s.anchor) !== null)
+  const allSteps = HOME_TOUR_STEPS[audience.value]
+  const shown = allSteps.filter((s) => isHomeTourAnchorOnScreen(s.anchor))
   if (shown.length === 0) return
   const resumed = resumeAnchor !== null
+  const pausedAt = allSteps.findIndex((s) => s.anchor === resumeAnchor)
+  const resumeIndex = shown.findIndex((s) => allSteps.indexOf(s) >= pausedAt)
   tourSteps.value = shown
-  index.value = Math.max(
-    0,
-    shown.findIndex((s) => s.anchor === resumeAnchor)
-  )
+  index.value = resumeIndex === -1 ? shown.length - 1 : resumeIndex
   focusBeforeTour = document.activeElement instanceof HTMLElement ? document.activeElement : null
   if (!resumed) {
     emitTelemetryAction('comfy.desktop.home_tour.shown', { audience: audience.value })
