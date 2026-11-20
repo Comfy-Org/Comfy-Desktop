@@ -352,7 +352,7 @@ describe('ChannelPicker - change-pytorch footer action', () => {
   }
   const copyChangeAction = {
     id: 'copy-pytorch',
-    label: 'Copy & Change PyTorch',
+    label: 'Copy & change PyTorch',
     style: 'default',
     enabled: true,
     data: { stackId: 's-cpu-2.11' }
@@ -412,7 +412,7 @@ describe('ChannelPicker - change-pytorch footer action', () => {
     const copyButton = wrapper.find('[data-testid="update-action-copy-pytorch"]')
     expect(copyButton.exists()).toBe(true)
     expect(copyButton.attributes('data-variant')).not.toBe('accent')
-    expect(copyButton.text()).toContain('Copy & Change PyTorch')
+    expect(copyButton.text()).toContain('Copy & change PyTorch')
     const ids = wrapper
       .findAll('[data-testid^="update-action-"]')
       .map((b) => b.attributes('data-testid'))
@@ -437,7 +437,7 @@ describe('ChannelPicker - change-pytorch footer action', () => {
 
 describe('ChannelPicker - status card sized for every option', () => {
   const checkUpdate = { id: 'check-update', label: 'Check for updates', enabled: true }
-  const updateNow = { id: 'update-comfyui', label: 'Update Now', style: 'primary', enabled: true }
+  const updateNow = { id: 'update-comfyui', label: 'Update now', style: 'primary', enabled: true }
 
   function stable(): NonNullable<DetailField['options']>[number] {
     return {

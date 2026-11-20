@@ -1,5 +1,6 @@
 import { useSessionStore } from '../stores/sessionStore'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
+import { progressTitle } from '../lib/progressTitle'
 
 export interface InjectProgressErrorOpts {
   installationId: string
@@ -91,7 +92,7 @@ export function registerE2ERendererHooks(): void {
       const b = ensureBound()
       await b.showProgress({
         installationId,
-        title: title ?? `Failed op — ${installationId}`,
+        title: title ?? progressTitle('Failed op', installationId),
         opKind: 'generic',
         apiCall: () => Promise.resolve({ ok: false, message: errorMessage })
       })
@@ -100,7 +101,7 @@ export function registerE2ERendererHooks(): void {
       const b = ensureBound()
       await b.showProgress({
         installationId,
-        title: title ?? `Copy — ${installationId}`,
+        title: title ?? progressTitle('Copy', installationId),
         opKind: 'generic',
         apiCall: () =>
           Promise.resolve({
@@ -124,7 +125,7 @@ export function registerE2ERendererHooks(): void {
       injectedApiCallCounts.set(installationId, 0)
       await b.showProgress({
         installationId,
-        title: title ?? `Retryable failed op — ${installationId}`,
+        title: title ?? progressTitle('Retryable failed op', installationId),
         opKind: 'generic',
         apiCall: () => {
           const next = (injectedApiCallCounts.get(installationId) ?? 0) + 1
@@ -185,7 +186,7 @@ export function registerE2ERendererHooks(): void {
       })
       await b.showProgress({
         installationId,
-        title: title ?? `In-flight — ${installationId}`,
+        title: title ?? progressTitle('In-flight', installationId),
         opKind: opKind ?? 'generic',
         destroysInstance: destroysInstance ?? false,
         triggersInstanceStart: triggersInstanceStart ?? false,

@@ -11,7 +11,7 @@ export interface ProgressOverlay {
   onCancel?: () => void
 }
 
-export type FlowComponent = 'new-install' | 'track' | 'load-snapshot' | 'quick-install'
+export type FlowComponent = 'new-install' | 'track' | 'load-snapshot'
 
 export interface TakeoverOverlay {
   kind: 'takeover'

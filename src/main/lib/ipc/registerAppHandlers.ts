@@ -572,6 +572,18 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle('get-system-info', getSystemInfo)
 
+  let chassisType: Promise<string | null> | undefined
+  ipcMain.handle('get-chassis-type', () => {
+    chassisType ??= si
+      .chassis()
+      .then(({ type }) => type || null)
+      .catch(() => {
+        chassisType = undefined
+        return null
+      })
+    return chassisType
+  })
+
   async function probeHardware(): Promise<Record<string, unknown>> {
     const gpu = await detectGPUCached()
     const nvidiaCheck = gpu?.id === 'nvidia' ? await checkNvidiaDriver() : null

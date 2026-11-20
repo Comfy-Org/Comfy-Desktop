@@ -12,6 +12,7 @@ import {
   useBuildProgress
 } from '../../composables/useBuildProgress'
 import { isPromotingToWorkspace } from '../../composables/useInstallContextMenu'
+import { useLocalDeviceKind } from '../../composables/useLocalDeviceKind'
 import { useProgressStore } from '../../stores/progressStore'
 import {
   buildDeviceKind,
@@ -38,6 +39,7 @@ interface Props {
   showFreeRunsPill?: boolean
   tone?: HomeBuildTone
   autoStart?: boolean
+  loggedOut?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -53,6 +55,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const localDeviceKind = useLocalDeviceKind()
 const sessionStore = useSessionStore()
 
 const inst = computed(() => props.installation)
@@ -184,9 +187,11 @@ const offersWhyCloud = computed(
 )
 
 const startsWithDesktop = computed(() => props.autoStart && !isCloudBuild(inst.value))
-const restingLabel = computed(() =>
-  startsWithDesktop.value ? t('home.autoStartOn') : t('home.buildReady')
-)
+const needsLogIn = computed(() => props.loggedOut && isCloudBuild(inst.value))
+const restingLabel = computed(() => {
+  if (startsWithDesktop.value) return t('home.autoStartOn')
+  return needsLogIn.value ? t('home.buildLogInToUse') : t('home.buildReady')
+})
 
 const isFromBuild = computed(() => isBuildInstall(inst.value))
 
@@ -346,7 +351,7 @@ function openContextMenu(event: MouseEvent): void {
     <BuildDeviceArt
       v-else
       class="chooser-tile-icon pointer-events-none relative shrink-0"
-      :kind="buildDeviceKind(inst)"
+      :kind="buildDeviceKind(inst, localDeviceKind)"
       :glow="toneStyle.glow"
     />
 
@@ -407,7 +412,7 @@ function openContextMenu(event: MouseEvent): void {
             aria-hidden="true"
             :data-testid="`chooser-tile-starts-with-desktop-${inst.id}`"
           />
-          <Check v-else :size="12" class="shrink-0" aria-hidden="true" />
+          <Check v-else-if="!needsLogIn" :size="12" class="shrink-0" aria-hidden="true" />
           <span class="truncate">{{ restingLabel }}</span>
         </span>
         <span

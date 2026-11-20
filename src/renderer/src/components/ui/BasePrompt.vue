@@ -6,6 +6,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'
 import { TID } from '../../../../shared/testIds'
 import type { ModalDetailGroup } from '../../types/ipc'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 interface Props {
   open: boolean
@@ -129,10 +130,9 @@ watch(
           :key="gi"
           class="base-prompt-detail-group flex flex-col gap-2"
         >
-          <span
-            class="base-prompt-detail-label text-xs leading-[1.5] font-semibold tracking-[0.04em] text-text-muted uppercase"
-            >{{ group.label }}</span
-          >
+          <span class="base-prompt-detail-label" :class="SECTION_TITLE_CLASS">{{
+            group.label
+          }}</span>
           <div
             class="base-prompt-detail-recessed max-h-[200px] overflow-y-auto rounded-lg bg-[var(--surface)] px-2.5 py-2"
             @click="handleModalLinkClick"

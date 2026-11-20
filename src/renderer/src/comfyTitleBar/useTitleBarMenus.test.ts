@@ -23,6 +23,7 @@ function setup() {
   const closed: ((info: { menu: TitleMenuKind }) => void)[] = []
   const bridge: Bridge = {
     openFileMenu: vi.fn(),
+    openWhatsNewMenu: vi.fn(),
     dismissFileMenu: vi.fn(),
     clickDownloadsTray: vi.fn(),
     onMenuOpened: (cb) => {
@@ -43,7 +44,8 @@ function setup() {
         bridge: bridge as never,
         hideTip: () => {},
         fileBtnRef: nullRef,
-        downloadsBtnRef: nullRef
+        downloadsBtnRef: nullRef,
+        whatsNewBtnRef: nullRef
       })
       return () => h('div')
     }
@@ -88,5 +90,31 @@ describe('useTitleBarMenus — handleFileMenu toggle gate', () => {
     closeMenu('instance-picker')
     api.handleFileMenu()
     expect(bridge.openFileMenu).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("useTitleBarMenus — the bell opens the What's new menu", () => {
+  it("opens the What's new menu from the bell", () => {
+    const { api, bridge } = setup()
+    api.handleWhatsNewMenu()
+    expect(bridge.openWhatsNewMenu).toHaveBeenCalledTimes(1)
+    expect(bridge.openFileMenu).not.toHaveBeenCalled()
+  })
+
+  it("closes the What's new menu when the bell is clicked again", () => {
+    const { api, bridge, openMenu } = setup()
+    api.handleWhatsNewMenu()
+    openMenu('menu')
+    api.handleWhatsNewMenu()
+    expect(bridge.dismissFileMenu).toHaveBeenCalledTimes(1)
+  })
+
+  it("opens the file menu instead of closing when the What's new menu is open", () => {
+    const { api, bridge, openMenu } = setup()
+    api.handleWhatsNewMenu()
+    openMenu('menu')
+    api.handleFileMenu()
+    expect(bridge.openFileMenu).toHaveBeenCalledTimes(1)
+    expect(bridge.dismissFileMenu).not.toHaveBeenCalled()
   })
 })

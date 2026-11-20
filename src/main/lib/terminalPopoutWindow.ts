@@ -165,7 +165,7 @@ export async function openTerminalPopout(installationId: string): Promise<void> 
   let label = 'Comfy Terminal'
   try {
     const inst = await installations.get(installationId)
-    if (inst?.name) label = `Comfy Terminal — ${inst.name}`
+    if (inst?.name) label = `Comfy Terminal · ${inst.name}`
   } catch {}
 
   const win = new BrowserWindow({

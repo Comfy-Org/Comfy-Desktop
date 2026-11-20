@@ -344,7 +344,7 @@ describe('ChooserView', () => {
       makeInstall({
         id: 'a',
         name: 'Alpha',
-        statusTag: { style: 'danger', label: 'Folder Not Found', detail: 'Gone.' }
+        statusTag: { style: 'danger', label: 'Folder not found', detail: 'Gone.' }
       })
     ])
     const wrapper = mountChooser()
@@ -754,7 +754,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('open-details')).toBeUndefined()
     expect(host.showProgress.mock.calls[0]?.[0]).toMatchObject({
       installationId: 'u',
-      title: 'Updating to v0.44.2 — Updatable',
+      title: 'Updating to v0.44.2 · Updatable',
       returnTo: 'list',
       actionId: 'update-comfyui'
     })
@@ -781,7 +781,7 @@ describe('ChooserView', () => {
         name: 'Gone',
         statusTag: {
           style: 'danger',
-          label: 'Folder Not Found',
+          label: 'Folder not found',
           detail: 'Instance folder not found.\n\nC:/comfy/gone'
         }
       })
@@ -792,14 +792,14 @@ describe('ChooserView', () => {
     expect(tile.classes()).toContain('chooser-tile-errored')
     const tag = tile.find('.chooser-tile-danger-tag')
     expect(tag.exists()).toBe(true)
-    expect(tag.text()).toContain('Folder Not Found')
+    expect(tag.text()).toContain('Folder not found')
     expect(tile.find('.chooser-tile-error-badge').exists()).toBe(false)
     expect(tile.get('.chooser-tile-body').findAll('button')).toHaveLength(0)
 
     expect(await openBuildMenu(wrapper, 'nf')).toContain('view-error')
     await chooseFromBuildMenu('nf', 'view-error')
     expect(mockModal.alert).toHaveBeenCalledWith({
-      title: 'Folder Not Found',
+      title: 'Folder not found',
       message: 'Instance folder not found.\n\nC:/comfy/gone'
     })
     expect(wrapper.emitted('pick')).toBeUndefined()
@@ -1027,7 +1027,7 @@ describe('ChooserView', () => {
     buildMenuItem('local', 'promote-to-workspace')!.click()
     try {
       await wrapper.vm.$nextTick()
-      expect(tile.find('.chooser-tile-status--promoting').text()).toBe('Creating...')
+      expect(tile.find('.chooser-tile-status--promoting').text()).toBe('Creating…')
       expect(tile.find('.chooser-tile-status-spinner').exists()).toBe(true)
       expect(api.comfybuilder.promoteLocalInstance).toHaveBeenCalledExactlyOnceWith('local')
       expect(tile.find('[data-testid="chooser-tile-open"]').exists()).toBe(false)

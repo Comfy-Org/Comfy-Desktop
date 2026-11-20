@@ -1,7 +1,7 @@
 import { computed, onUnmounted, ref, shallowRef } from 'vue'
 import { useSessionStore } from '../stores/sessionStore'
 import { emitTelemetryAction } from '../lib/telemetry'
-import type { ActionResult, RunPerformanceTestWorkflowResult } from '../types/ipc'
+import type { ActionResult, BlockingSession, RunPerformanceTestWorkflowResult } from '../types/ipc'
 import { performanceTestSessionKey } from '../../../shared/performanceTestSession'
 
 export interface PerformanceTestRunRequest {
@@ -89,6 +89,7 @@ export function usePerformanceTestRun(t: Translate) {
   const request = shallowRef<PerformanceTestRunRequest | null>(null)
   const result = shallowRef<RunPerformanceTestWorkflowResult | null>(null)
   const failure = ref<string | null>(null)
+  const blockingSessions = shallowRef<BlockingSession[]>([])
   const logSessionId = ref<string | null>(null)
   const progressSessionId = ref<string | null>(null)
   const completedRuns = ref(0)
@@ -200,6 +201,7 @@ export function usePerformanceTestRun(t: Translate) {
     request.value = run
     result.value = null
     failure.value = null
+    blockingSessions.value = []
     progressSessionId.value = sessionId
     completedRuns.value = 0
     totalRuns.value = run.warmupRuns + run.measuredRuns
@@ -219,6 +221,7 @@ export function usePerformanceTestRun(t: Translate) {
       if (!launched.ok) {
         buildInstallationId.value = null
         if (!launched.cancelled) {
+          blockingSessions.value = launched.blockingSessions ?? []
           failure.value = launched.message || t('performanceTest.launchFailed')
           sessionStore.appendOutput(sessionId, failure.value)
         }
@@ -290,6 +293,7 @@ export function usePerformanceTestRun(t: Translate) {
     request,
     result,
     failure,
+    blockingSessions,
     logs,
     completedRuns,
     totalRuns,

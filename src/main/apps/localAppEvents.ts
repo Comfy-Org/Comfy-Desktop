@@ -1,5 +1,6 @@
 import * as mainTelemetry from '../lib/telemetry'
 import type { TelemetryContext } from '../lib/telemetry'
+import { isPartnerRefusal } from './partnerRefusal'
 
 export const RUN_FINISHED_EVENT = 'comfy.desktop.apps.run_finished'
 export const SETUP_EVENT = 'comfy.desktop.apps.setup'
@@ -16,7 +17,7 @@ const RUN_ENDS: Readonly<Record<string, RunOutcome>> = {
   execution_interrupted: 'cancelled'
 }
 
-export type RunOutcome = 'success' | 'failed' | 'cancelled'
+export type RunOutcome = 'success' | 'failed' | 'cancelled' | 'refused'
 export type SetupStage = 'install' | 'start'
 
 export interface RunEnd {
@@ -25,6 +26,8 @@ export interface RunEnd {
   at: number
   startedAt?: number
 }
+
+type RunEnding = Pick<RunEnd, 'outcome' | 'errorClass'>
 
 interface Run {
   buildId: string
@@ -73,6 +76,14 @@ export function errorClassOf(exceptionType: unknown): string | undefined {
     .replace(/_+/g, '_')
     .replace(/^_|_$/g, '')
     .toLowerCase()
+}
+
+function errorEndingOf(data: Record<string, unknown>): RunEnding {
+  const errorClass = errorClassOf(data['exception_type'])
+  return {
+    outcome: isPartnerRefusal(data['exception_message']) ? 'refused' : 'failed',
+    ...(errorClass ? { errorClass } : {})
+  }
 }
 
 function timeOf(data: Record<string, unknown>, now: number): number {
@@ -158,8 +169,7 @@ export function noteRunMessage(message: unknown, now = Date.now()): void {
   }
   const outcome = RUN_ENDS[type]
   if (!outcome || isBlockedBranch(type, data)) return
-  const errorClass = outcome === 'failed' ? errorClassOf(data['exception_type']) : undefined
-  const end: RunEnd = { outcome, at, ...(errorClass ? { errorClass } : {}) }
+  const end: RunEnd = { ...(type === 'execution_error' ? errorEndingOf(data) : { outcome }), at }
   if (!run) noteEarly(promptId, { end })
   else if (run.startedAt === undefined) run.heardEnd ??= end
   else finishRun(promptId, end)
@@ -185,19 +195,18 @@ export function runEndFromHistory(entry: unknown, now = Date.now()): RunEnd | nu
   const notices: unknown[] = Array.isArray(status['messages']) ? status['messages'] : []
   const messages = notices.filter((message) => !isBlockedNotice(message))
   const startedAt = messageTime(messages, 'execution_start')
-  const timed = (outcome: RunOutcome, type: string, errorClass?: string): RunEnd => ({
-    outcome,
+  const timed = (ending: RunEnding, type: string): RunEnd => ({
+    ...ending,
     at: messageTime(messages, type) ?? now,
-    ...(startedAt === undefined ? {} : { startedAt }),
-    ...(errorClass ? { errorClass } : {})
+    ...(startedAt === undefined ? {} : { startedAt })
   })
   if (messageOf(messages, 'execution_interrupted')) {
-    return timed('cancelled', 'execution_interrupted')
+    return timed({ outcome: 'cancelled' }, 'execution_interrupted')
   }
   const error = messageOf(messages, 'execution_error')
-  if (error) return timed('failed', 'execution_error', errorClassOf(error['exception_type']))
-  if (status['status_str'] === 'success') return timed('success', 'execution_success')
-  return status['status_str'] === 'error' ? timed('failed', 'execution_error') : null
+  if (error) return timed(errorEndingOf(error), 'execution_error')
+  if (status['status_str'] === 'success') return timed({ outcome: 'success' }, 'execution_success')
+  return status['status_str'] === 'error' ? timed({ outcome: 'failed' }, 'execution_error') : null
 }
 
 export function runsOn(buildId: string): string[] {

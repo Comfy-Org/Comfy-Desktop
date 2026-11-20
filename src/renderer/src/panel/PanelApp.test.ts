@@ -28,6 +28,7 @@ vi.mock('../main', () => ({
 
 vi.mock('../composables/useTheme', () => ({ useTheme: () => ({ theme: 'dark' }) }))
 const mockModal = {
+  state: reactive({ visible: false }),
   alert: vi.fn(),
   confirm: vi.fn(),
   close: vi.fn()
@@ -110,14 +111,6 @@ vi.mock('../views/LoadSnapshotModal.vue', () => ({
     methods: { open: vi.fn() }
   }
 }))
-vi.mock('../views/QuickInstallModal.vue', () => ({
-  default: {
-    name: 'QuickInstallModal',
-    emits: ['close', 'show-progress'],
-    template: '<div data-testid="quick-install-modal" />',
-    methods: { open: vi.fn() }
-  }
-}))
 vi.mock('../views/FirstUseTakeover.vue', () => ({
   default: {
     name: 'FirstUseTakeover',
@@ -160,6 +153,10 @@ vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
   }
 }))
 import { mount, flushPromises } from '@vue/test-utils'
+import { reactive } from 'vue'
+import { __resetHomeTourForTest, useHomeTour } from './home/useHomeTour'
+import HomeTour from './home/HomeTour.vue'
+import { useDialogs } from '../composables/useDialogs'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
 import AppsView from './AppsView.vue'
@@ -367,7 +364,7 @@ function installMockApi(initial?: {
       state.openFeedbackCallbacks.push(cb)
       return () => {}
     }),
-    onOpenAnnouncement: vi.fn(() => () => {}),
+    onShowHomePage: vi.fn(() => () => {}),
     openExternal: state.openExternal,
     getAppVersion: state.getAppVersion,
     onSettingsChanged: vi.fn(() => () => {}),
@@ -643,16 +640,14 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    for (const panel of ['feedback', 'announcement']) {
-      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel }))
-      await flushPromises()
-      expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
-      expect(signalOverlayReady).toHaveBeenCalledTimes(panel === 'feedback' ? 1 : 2)
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'feedback' }))
+    await flushPromises()
+    expect(document.body.classList.contains('panel-overlay-mode')).toBe(true)
+    expect(signalOverlayReady).toHaveBeenCalledTimes(1)
 
-      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'comfy-lifecycle' }))
-      await flushPromises()
-      expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
-    }
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'comfy-lifecycle' }))
+    await flushPromises()
+    expect(document.body.classList.contains('panel-overlay-mode')).toBe(false)
 
     mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'feedback' }))
     await flushPromises()
@@ -802,7 +797,7 @@ describe('PanelApp', () => {
         status: 'installed',
         statusTag: {
           style: 'danger',
-          label: 'Folder Not Found',
+          label: 'Folder not found',
           detail: 'The instance folder could not be found.'
         },
         workspaceId: 'workspace-1'
@@ -842,7 +837,7 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="performance-test"]').exists()).toBe(true)
-    expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance Tests')
+    expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance tests')
     expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
     expect(wrapper.find('.performance-test__workspace-select').exists()).toBe(false)
     expect(wrapper.find('.performance-test__setup').exists()).toBe(true)
@@ -1012,7 +1007,7 @@ describe('PanelApp', () => {
       3
     )
     expect(wrapper.get('.performance-test__logs').text()).toContain(
-      'Submitting 3 warm-up runs and 5 measured runs...'
+      'Submitting 3 warm-up runs and 5 measured runs…'
     )
     expect(wrapper.get('.performance-test__logs').text()).toContain(
       'Finished 5 measured runs (0 failed). Final response saved to '
@@ -1022,7 +1017,7 @@ describe('PanelApp', () => {
     )
     expect(api.savePerformanceTestLogs).toHaveBeenCalledWith(
       'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json',
-      expect.stringContaining('Submitting 3 warm-up runs and 5 measured runs...')
+      expect.stringContaining('Submitting 3 warm-up runs and 5 measured runs…')
     )
     expect(api.savePerformanceTestLogs.mock.calls[0]![1]).toContain(
       'Finished 5 measured runs (0 failed). Final response saved to '
@@ -1156,8 +1151,8 @@ describe('PanelApp', () => {
     expect(createResultsPngMock).toHaveBeenCalledTimes(1)
     const svg = createResultsPngMock.mock.calls[0]![0]
     expect(svg).toContain('<svg')
-    expect(svg).toContain('Performance Test: results-json-workflow.json')
-    expect(svg).not.toContain('Performance Test: cat-workflow.json')
+    expect(svg).toContain('Performance test: results-json-workflow.json')
+    expect(svg).not.toContain('Performance test: cat-workflow.json')
     expect(svg).toContain('role="img" aria-label="Comfy"')
     expect(svg).toContain('Median run · 7 measured · 2 failed')
     expect(svg).toContain('9.100 s')
@@ -1615,6 +1610,139 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)
+  })
+
+  it('names the app left open under Apps in the sidebar, and goes back to it from Home', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-sidebar-app-in-progress"]').text()).toBe('Upscale 4x')
+
+    const events = captureTelemetry()
+    await wrapper.get('[data-testid="app-sidebar-app-in-progress"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Upscale 4x')
+    expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+    expect(window.api.navigatePanel).toHaveBeenLastCalledWith('apps')
+    expect(
+      events
+        .filter(({ actionName }) => actionName === 'comfy.desktop.sidebar.page_opened')
+        .map(({ context }) => context)
+    ).toEqual([{ page: 'apps', from_page: 'home', to_app_in_progress: true }])
+  })
+
+  it('goes back to the app left open from Benchmarks', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
+    await flushPromises()
+
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'benchmarks' }))
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-app-in-progress"]').trigger('click')
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'chooser' }))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Upscale 4x')
+  })
+
+  it('drops the app from the sidebar once the person goes back to all apps', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
+    const appPageWentBackToAllApps = vi.mocked(window.api.onAppPageClosed).mock.calls.at(-1)![0]
+    appPageWentBackToAllApps()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+  })
+
+  it('keeps the app left open in the sidebar after a look at all apps without opening one', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="app-sidebar-app-in-progress"]').text()).toBe('Upscale 4x')
+
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar-app-in-progress"]').text()).toBe('Upscale 4x')
+
+    await wrapper.get('[data-testid="app-sidebar-app-in-progress"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Upscale 4x')
+  })
+
+  it('drops the app from the sidebar when its page closes while the person is on Home', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="app-sidebar-app-in-progress"]').text()).toBe('Upscale 4x')
+
+    vi.mocked(window.api.onAppPageClosed).mock.calls.forEach(([appPageClosed]) => appPageClosed())
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
   })
 
   it('opens Home from the sidebar and returns to the list of builds', async () => {
@@ -2537,7 +2665,6 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    await chooseWorkflowItem(wrapper, '.performance-test__import-workflow')
     await wrapper.get('.performance-test__build-trigger').trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     ;(document.querySelector('.performance-test__build-option') as HTMLElement).dispatchEvent(
@@ -2545,6 +2672,7 @@ describe('PanelApp', () => {
     )
     await flushPromises()
     await waitForBuildMenuFocusReturn()
+    await chooseWorkflowItem(wrapper, '.performance-test__import-workflow')
     const runButton = wrapper.get('.performance-test__run')
     expect(runButton.attributes('disabled')).toBeUndefined()
 
@@ -2643,7 +2771,6 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    await chooseWorkflowItem(wrapper, '.performance-test__import-workflow')
     await wrapper.get('.performance-test__build-trigger').trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     ;(document.querySelector('.performance-test__build-option') as HTMLElement).dispatchEvent(
@@ -2651,6 +2778,7 @@ describe('PanelApp', () => {
     )
     await flushPromises()
     await waitForBuildMenuFocusReturn()
+    await chooseWorkflowItem(wrapper, '.performance-test__import-workflow')
 
     const runButton = wrapper.get('.performance-test__run')
     expect(runButton.attributes('disabled')).toBeUndefined()
@@ -2705,7 +2833,6 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    await chooseWorkflowItem(wrapper, '.performance-test__import-workflow')
     await wrapper.get('.performance-test__build-trigger').trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     ;(document.querySelector('.performance-test__build-option') as HTMLElement).dispatchEvent(
@@ -2713,6 +2840,7 @@ describe('PanelApp', () => {
     )
     await flushPromises()
     await waitForBuildMenuFocusReturn()
+    await chooseWorkflowItem(wrapper, '.performance-test__import-workflow')
     const telemetryEvents = captureTelemetry()
     await wrapper.get('.performance-test__run').trigger('click')
     await flushPromises()
@@ -2764,7 +2892,7 @@ describe('PanelApp', () => {
     await flushPromises()
     expect(api.stopComfyUI).toHaveBeenCalledWith('performance-test:workspace-install')
     expect(stopButton.attributes('disabled')).toBe('')
-    expect(stopButton.text()).toBe('Stopping...')
+    expect(stopButton.text()).toBe('Stopping…')
     expect(
       telemetryEvents.filter(
         (event) => event.actionName === 'comfy.desktop.performance_test.stopped'
@@ -3003,7 +3131,7 @@ describe('PanelApp', () => {
 
     await wrapper.get('.performance-test__run').trigger('click')
     await flushPromises()
-    expect(wrapper.get('.performance-test__progress-heading').text()).toBe('Starting the build...')
+    expect(wrapper.get('.performance-test__progress-heading').text()).toBe('Starting the build…')
     expect(wrapper.find('.performance-test__progress-detail').exists()).toBe(false)
 
     finishLaunch({ ok: true })
@@ -3088,6 +3216,19 @@ describe('PanelApp', () => {
       return flushPromises()
     }
 
+    await drag('dragenter', file)
+    expect(zone.classes(), 'no drop target before a build is picked').not.toContain(
+      'performance-test__drop-zone--dragging'
+    )
+    await drag('dragleave', file, document.body)
+
+    await wrapper.get('.performance-test__build-trigger').trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    ;(document.querySelector('.performance-test__build-option') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+    )
+    await flushPromises()
+
     await drag('dragenter', text)
     expect(zone.classes()).not.toContain('performance-test__drop-zone--dragging')
 
@@ -3127,11 +3268,18 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="load-snapshot-modal"]').exists()).toBe(true)
   })
 
-  it('renders the quick-install takeover when initialised with panel=quick-install', async () => {
-    window.history.replaceState({}, '', '/?panel=quick-install&firstUseCompleted=true')
+  it('no longer knows the removed quick-install panel', async () => {
     const wrapper = mountPanel()
     await flushPromises()
-    expect(wrapper.find('[data-testid="quick-install-modal"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="comfy-lifecycle"]').exists()).toBe(true)
+
+    const events = captureTelemetry()
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'quick-install' }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="comfy-lifecycle"]').exists()).toBe(true)
+    expect(events.filter((e) => e.actionName === 'comfy.desktop.install.flow.opened')).toHaveLength(
+      0
+    )
   })
 
   it.each([
@@ -3140,11 +3288,6 @@ describe('PanelApp', () => {
       panel: 'load-snapshot',
       selector: '[data-testid="load-snapshot-modal"]',
       name: 'LoadSnapshotModal'
-    },
-    {
-      panel: 'quick-install',
-      selector: '[data-testid="quick-install-modal"]',
-      name: 'QuickInstallModal'
     },
     {
       panel: 'new-install',
@@ -3609,7 +3752,7 @@ describe('PanelApp', () => {
     expect(api.openInstancePicker).not.toHaveBeenCalled()
   })
 
-  it('shows the "Desktop Update Ready" confirm modal when a restart-prompt event arrives, and installs on confirm', async () => {
+  it('shows the "Desktop update ready" confirm modal when a restart-prompt event arrives, and installs on confirm', async () => {
     mockModal.confirm.mockResolvedValueOnce(true)
     mountPanel()
     await flushPromises()
@@ -3621,8 +3764,8 @@ describe('PanelApp', () => {
 
     expect(mockModal.confirm).toHaveBeenCalledTimes(1)
     expect(mockModal.confirm.mock.calls[0]?.[0]).toMatchObject({
-      title: 'Desktop Update Ready',
-      confirmLabel: 'Restart & Update'
+      title: 'Desktop update ready',
+      confirmLabel: 'Restart & update'
     })
     expect(mockState.installUpdate).toHaveBeenCalledTimes(1)
   })
@@ -3641,7 +3784,7 @@ describe('PanelApp', () => {
     expect(mockState.installUpdate).not.toHaveBeenCalled()
   })
 
-  it('shows the "Desktop Update Available" confirm modal when a download-prompt event arrives, and downloads on confirm', async () => {
+  it('shows the "Desktop update available" confirm modal when a download-prompt event arrives, and downloads on confirm', async () => {
     mockModal.confirm.mockResolvedValueOnce(true)
     mountPanel()
     await flushPromises()
@@ -3653,7 +3796,7 @@ describe('PanelApp', () => {
 
     expect(mockModal.confirm).toHaveBeenCalledTimes(1)
     expect(mockModal.confirm.mock.calls[0]?.[0]).toMatchObject({
-      title: 'Desktop Update Available',
+      title: 'Desktop update available',
       confirmLabel: 'Download'
     })
     expect(mockState.downloadUpdate).toHaveBeenCalledTimes(1)
@@ -3669,7 +3812,7 @@ describe('PanelApp', () => {
 
     expect(mockModal.confirm).toHaveBeenCalledTimes(1)
     expect(mockModal.confirm.mock.calls[0]?.[0]).toMatchObject({
-      title: 'Desktop Update Ready'
+      title: 'Desktop update ready'
     })
     expect(mockState.installUpdate).toHaveBeenCalledTimes(1)
   })
@@ -3683,7 +3826,7 @@ describe('PanelApp', () => {
 
     expect(mockModal.alert).toHaveBeenCalledTimes(1)
     expect(mockModal.alert.mock.calls[0]?.[0]).toMatchObject({
-      title: 'Desktop Update Error',
+      title: 'Desktop update error',
       message: 'network down'
     })
   })
@@ -3725,12 +3868,12 @@ describe('PanelApp', () => {
       mountPanel()
       await flushPromises()
       const events = captureTelemetry()
-      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'quick-install' }))
+      mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'track' }))
       await flushPromises()
       const flowEvents = events.filter((e) => e.actionName === 'comfy.desktop.install.flow.opened')
       expect(flowEvents).toHaveLength(1)
       expect(flowEvents[0].context).toMatchObject({
-        flow: 'quick_install',
+        flow: 'track_existing',
         entrypoint: 'titlebar'
       })
     })
@@ -3743,8 +3886,7 @@ describe('PanelApp', () => {
       const cases: { panel: string; flow: string }[] = [
         { panel: 'new-install', flow: 'new_install' },
         { panel: 'track', flow: 'track_existing' },
-        { panel: 'load-snapshot', flow: 'load_snapshot' },
-        { panel: 'quick-install', flow: 'quick_install' }
+        { panel: 'load-snapshot', flow: 'load_snapshot' }
       ]
       for (const { panel } of cases) {
         mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel }))
@@ -3844,5 +3986,126 @@ describe('PanelApp', () => {
         .api
       expect(api.respondCloseRequest).toHaveBeenCalledWith({ requestId: 'req-2', defer: true })
     })
+  })
+})
+
+describe('PanelApp home tour', () => {
+  let replayChanged: (state: { id: number; pending: boolean; finished: boolean }) => void = () => {}
+  let showHomePage: () => void = () => {}
+
+  function homeTour(): HTMLElement | null {
+    return document.querySelector<HTMLElement>('[data-testid="home-tour"]')
+  }
+
+  function mountWithTour(
+    settings: Record<string, unknown> = {},
+    query = 'panel=chooser&firstUseCompleted=true'
+  ) {
+    setActivePinia(createPinia())
+    __resetLauncherPrefsForTest()
+    __resetHomeTourForTest()
+    useOverlay().current.value = null
+    mockModal.state.visible = false
+    const state = installMockApi({
+      installations: [SAMPLE_INSTALL],
+      settings: { homeTourAudience: 'new', ...settings }
+    })
+    Object.assign(window.api, {
+      onShowHomePage: vi.fn((cb: () => void) => {
+        showHomePage = cb
+        return () => {}
+      }),
+      getHomeTourReplay: vi.fn(async () => ({ id: 0, pending: false })),
+      finishHomeTour: vi.fn(async () => {}),
+      onHomeTourReplayChanged: vi.fn(
+        (cb: (state: { id: number; pending: boolean; finished: boolean }) => void) => {
+          replayChanged = cb
+          return () => {}
+        }
+      )
+    })
+    window.history.replaceState({}, '', `/?${query}`)
+    const wrapper = mountPanel()
+    return { wrapper, state }
+  }
+
+  afterEach(() => {
+    mockModal.state.visible = false
+    useDialogs().cancel()
+    __resetHomeTourForTest()
+  })
+
+  it('shows the tour on Home when nothing else is open', async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+  })
+
+  it('waits while Send feedback is open', async () => {
+    const { state } = mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    for (const cb of state.openFeedbackCallbacks) cb({ source: 'titlebar' })
+    await expect.poll(homeTour).toBeNull()
+  })
+
+  it('waits while a confirm dialog is open', async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    mockModal.state.visible = true
+    await expect.poll(homeTour).toBeNull()
+    mockModal.state.visible = false
+    await expect.poll(homeTour).not.toBeNull()
+  })
+
+  it('tells the tour that a dialog, not a highlighted click, took Home away', async () => {
+    const { wrapper } = mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+    expect(wrapper.findComponent(HomeTour).props('interrupted')).toBe(false)
+
+    mockModal.state.visible = true
+    await flushPromises()
+
+    expect(wrapper.findComponent(HomeTour).props('interrupted')).toBe(true)
+  })
+
+  it('waits while a prompt or alert dialog is open', async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    void useDialogs().alert({ title: 'Update ready', message: 'Restart to update.' })
+    await expect.poll(homeTour).toBeNull()
+  })
+
+  it('waits while a takeover is open', async () => {
+    mountWithTour()
+    await expect.poll(homeTour).not.toBeNull()
+
+    useOverlay().current.value = { kind: 'takeover', component: 'track' }
+    await expect.poll(homeTour).toBeNull()
+  })
+
+  it('does not show once the tour is done', async () => {
+    mountWithTour({ homeTourDone: true })
+    await flushPromises()
+    await expect.poll(() => useHomeTour().loaded.value).toBe(true)
+    await flushPromises()
+
+    expect(homeTour()).toBeNull()
+  })
+
+  it('shows the Home page when main brings this dashboard forward for a replay', async () => {
+    const { wrapper } = mountWithTour({ homeTourDone: true })
+    await expect.poll(() => useHomeTour().loaded.value).toBe(true)
+    await wrapper.get('[data-testid="app-sidebar-assets"]').trigger('click')
+    await flushPromises()
+    replayChanged({ id: 1, pending: true, finished: false })
+    await flushPromises()
+    expect(homeTour()).toBeNull()
+
+    showHomePage()
+
+    await expect.poll(() => vi.mocked(window.api.navigatePanel).mock.calls).toContainEqual(['home'])
+    await expect.poll(homeTour).not.toBeNull()
   })
 })

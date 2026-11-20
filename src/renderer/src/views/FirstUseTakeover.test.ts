@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setChecked } from './testHelpers'
 
@@ -21,6 +21,8 @@ vi.mock('../components/TermsModal.vue', () => ({
 }))
 
 import FirstUseTakeover from './FirstUseTakeover.vue'
+import { provideLocalDeviceKind } from '../composables/useLocalDeviceKind'
+import BuildDeviceArt from '../panel/home/BuildDeviceArt.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { SetupPlan } from '../lib/setupPlan'
 import type { SetupConsent } from '../lib/setupConsent'
@@ -125,6 +127,26 @@ const install = async (w: Wrapper) => {
 }
 
 describe('Set up, the first screen', () => {
+  it.each([
+    ['Desktop', 'monitor'],
+    ['Notebook', 'pc-laptop']
+  ])('draws a Windows %s as a %s beside the detected hardware', async (chassis, expected) => {
+    installApi({ platform: 'win32' })
+    window.api.getChassisType = vi.fn().mockResolvedValue(chassis)
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          provideLocalDeviceKind()
+          return () => h(FirstUseTakeover)
+        }
+      })
+    )
+    await flushPromises()
+    expect(wrapper.getComponent(BuildDeviceArt).props('kind')).toBe(expected)
+    expect(window.api.getChassisType).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
   it('shows what will be installed on this Mac before anything is chosen', async () => {
     const w = await mountSetup()
 
@@ -136,9 +158,11 @@ describe('Set up, the first screen', () => {
     expect(text(w, 'setup-machine')).toContain('36 GB memory')
     expect(text(w, 'setup-row-hardware')).toContain('Apple Silicon (MPS)')
     expect(text(w, 'setup-row-location')).toContain('~/ComfyUI-Installs/ComfyUI')
-    expect(text(w, 'setup-row-location')).toContain('412 GB free · ~2.7 GB required')
-    expect(text(w, 'setup-row-version')).toContain('ComfyUI v0.42.4 · Stable')
-    expect(text(w, 'setup-row-version')).toContain('1.2 GB download')
+    expect(text(w, 'setup-location-meta')).toBe('412 GB free')
+    expect(text(w, 'setup-version')).toBe('ComfyUI v0.42.4')
+    expect(text(w, 'setup-row-version')).toContain('Stable')
+    expect(text(w, 'setup-download-size')).toBe('1.2 GB download')
+    expect(text(w, 'setup-summary')).not.toMatch(/1\.2 GB|2\.7 GB|·/)
   })
 
   it('names the computer the way the platform does', async () => {
@@ -256,7 +280,7 @@ describe('Set up, the first screen', () => {
     expect(text(w, 'setup-hardware')).toBe('CPU')
     expect(text(w, 'setup-row-location')).toContain('/Volumes/Studio SSD/ComfyUI')
     expect(text(w, 'setup-version')).toContain('v0.43.0')
-    expect(text(w, 'setup-version')).toContain('Latest on GitHub')
+    expect(text(w, 'setup-row-version')).toContain('Latest on GitHub')
 
     await agree(w)
     await install(w)
@@ -287,6 +311,7 @@ describe('Set up, the first screen', () => {
     expect(text(w, 'setup-hardware')).toBe('Windows - NVIDIA (CUDA 12.8)')
     expect(text(w, 'setup-row-hardware')).not.toContain('Detected')
     expect(text(w, 'setup-version')).toBe('Ready Build')
+    expect(text(w, 'setup-download-size')).toBe('2.0 GB download')
   })
 
   it('opens every option with Change before the EULA is ticked, and saves nothing yet', async () => {
@@ -353,11 +378,48 @@ describe('Set up, the first screen', () => {
     expect(w.find('[data-testid="setup-agree-hint"]').exists()).toBe(true)
   })
 
-  it('warns in the location row when the disk is too small', async () => {
-    installApi({ free: 1.5 * GB })
+  it.each([
+    [2849 * GB, '2.8 TB free'],
+    [1.5 * GB, 'Only 1.5 GB free, about 2.7 GB needed to install'],
+    [0, 'Only 0 MB free, about 2.7 GB needed to install']
+  ] as const)('shows %s bytes available beside the install path', async (free, expected) => {
+    installApi({ free })
     const w = await mountSetup()
-    expect(text(w, 'setup-location-meta')).toBe('Only 1.5 GB free · ~2.7 GB required')
+    expect(text(w, 'setup-location-meta')).toBe(expected)
+    expect(text(w, 'setup-download-size')).toBe('1.2 GB download')
   })
+
+  it('shows the download size even when the drive cannot report free space', async () => {
+    window.api.getDiskSpace = vi.fn().mockRejectedValue(new Error('unavailable'))
+    const w = await mountSetup()
+    expect(text(w, 'setup-location-meta')).toBe('')
+    expect(text(w, 'setup-download-size')).toBe('1.2 GB download')
+  })
+
+  it.each([
+    [GB, 0, '1.0 GB download'],
+    [0, 3 * GB, ''],
+    [0, 0, '']
+  ] as const)(
+    'only shows the download label when the saved build has a download size',
+    async (downloadBytes, requiredBytes, expected) => {
+      const w = mount(FirstUseTakeover, {
+        props: {
+          savedPlan: {
+            sourceId: 'standalone',
+            selections: {},
+            installRoot: '/builds',
+            downloadBytes,
+            requiredBytes
+          }
+        }
+      })
+      await flushPromises()
+      const summary = w.find('[data-testid="setup-download-size"]')
+      expect(summary.exists() ? summary.text() : '').toBe(expected)
+      expect(w.find('[data-testid="setup-download-info"]').exists()).toBe(false)
+    }
+  )
 
   it('offers a retry and Change when the download server cannot be reached', async () => {
     installApi({ releaseFails: true })
@@ -395,6 +457,7 @@ describe('Set up, the first screen', () => {
     const migrate = await mountSetup({ hasLegacyDesktop: true })
     await agree(migrate)
     expect(text(migrate, 'setup-install')).toBe('Migrate')
+    expect(migrate.find('[data-testid="setup-download-size"]').exists()).toBe(false)
     await install(migrate)
     expect(migrate.emitted('chain-migrate')).toEqual([[{ express: false }]])
     expect(migrate.emitted('install')).toBeUndefined()

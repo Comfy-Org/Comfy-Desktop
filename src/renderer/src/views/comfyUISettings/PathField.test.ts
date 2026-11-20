@@ -21,7 +21,7 @@ describe('PathField', () => {
   it('renders a clickable StorageDirRow for browse-only paths', async () => {
     const wrapper = mountField({
       id: 'cacheDir',
-      label: 'Cache Directory',
+      label: 'Cache directory',
       value: '/home/user/.cache/comfy',
       editType: 'path',
       editable: true,
@@ -38,7 +38,7 @@ describe('PathField', () => {
   it('does not call openPath when the browse-only path is empty', async () => {
     const wrapper = mountField({
       id: 'cacheDir',
-      label: 'Cache Directory',
+      label: 'Cache directory',
       value: '',
       editType: 'path',
       editable: true,

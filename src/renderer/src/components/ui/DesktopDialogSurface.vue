@@ -61,6 +61,17 @@ function onOpenAutoFocus(event: Event): void {
   const target = content.querySelector<HTMLElement>('[data-initial-focus]')
   target?.focus()
   if (content.ownerDocument.activeElement !== target) content.focus()
+  else if (target) markAutofocused(target)
+}
+
+function markAutofocused(target: HTMLElement): void {
+  target.dataset.autofocused = ''
+  const events = ['input', 'pointerdown', 'blur'] as const
+  const clear = (): void => {
+    delete target.dataset.autofocused
+    for (const name of events) target.removeEventListener(name, clear)
+  }
+  for (const name of events) target.addEventListener(name, clear)
 }
 </script>
 

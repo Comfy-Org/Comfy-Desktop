@@ -21,6 +21,7 @@
     "navigation": "导航",
     "home": "主页",
     "apps": "应用",
+    "backToApp": "返回{app}",
     "assets": "资产",
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
@@ -79,6 +80,7 @@
       "openNoCloud": "请先在 Comfy Desktop 中添加 Comfy Cloud。",
       "openCloudFailed": "Comfy Desktop 无法打开 Comfy Cloud。",
       "openNoWindow": "Comfy Desktop 无法显示 ComfyUI 窗口。",
+      "openUnreadable": "Comfy Desktop 无法读取此文件。请重试。",
       "openNotTaken": "ComfyUI 没有打开这个工作流。"
     }
   },
@@ -99,7 +101,7 @@
       "audio": "音频"
     },
     "refresh": "刷新资产",
-    "search": "按名称搜索...",
+    "search": "按名称搜索…",
     "viewOptions": "视图选项",
     "layoutLabel": "布局",
     "layout": {
@@ -162,6 +164,12 @@
       "zoom": "缩放",
       "zoomLevel": "缩放：{level}",
       "openWorkflow": "打开工作流",
+      "openWorkflowFailed": "无法打开工作流",
+      "openWorkflowNoReason": "ComfyUI 未能打开工作流。请重试。",
+      "openingWorkflow": "正在打开…",
+      "openingInCloud": "正在 Comfy Cloud 中打开…",
+      "startingBuild": "正在启动 {name}…",
+      "openWorkflowIn": "打开方式",
       "savedIn": "保存位置",
       "cloudAssets": "Comfy Cloud 资产",
       "modelView": "{name} 的 3D 视图。拖动可旋转，滚动可缩放。",
@@ -190,6 +198,7 @@
     "buildRunning": "运行中",
     "buildStarting": "启动中",
     "buildReady": "就绪",
+    "buildLogInToUse": "登录后使用",
     "buildDidntStart": "未能启动",
     "buildCrashed": "已崩溃",
     "buildInstalling": "正在安装 ComfyUI",
@@ -211,6 +220,51 @@
     "previousApp": "上一个应用",
     "nextApp": "下一个应用",
     "retry": "重试"
+  },
+  "homeTour": {
+    "buildsIntro": {
+      "title": "构建用于运行 ComfyUI",
+      "body": "构建是一份可以打开的 ComfyUI。大多数人只需要一个。"
+    },
+    "buildsRenamed": {
+      "title": "实例现在叫作构建",
+      "body": "你的 ComfyUI 实例现在叫作构建。它们保留原有的模型和设置。"
+    },
+    "cloudBuild": {
+      "title": "Comfy Cloud",
+      "body": "Comfy Cloud 无需设置。它在云端 GPU 上运行，因此任何电脑都能使用。"
+    },
+    "localBuild": {
+      "title": "本地构建",
+      "body": "本地构建在这台电脑上免费运行。你的文件保存在这台电脑上。"
+    },
+    "allBuilds": {
+      "title": "你的全部构建",
+      "body": "点击这里查看你的全部构建。"
+    },
+    "newBuild": {
+      "title": "新建构建",
+      "body": "点击 + 新建一个构建。"
+    },
+    "newApps": {
+      "title": "新功能：应用",
+      "body": "应用是现成的工具。选择一个，添加图片或文字，然后运行。"
+    },
+    "allApps": {
+      "title": "全部应用",
+      "body": "在这里查看全部应用。"
+    },
+    "assets": {
+      "title": "资产",
+      "body": "你生成的所有内容都保存在这里。"
+    },
+    "progress": "第 {current} 步，共 {total} 步",
+    "next": "下一步",
+    "back": "上一步",
+    "skip": "跳过",
+    "done": "完成",
+    "replayHint": "可在标题栏的铃铛菜单中再次找到本导览。",
+    "replay": "查看导览"
   },
   "installType": {
     "standalone": "独立版",
@@ -246,6 +300,11 @@
     "menuRevealInFolder": "打开文件夹",
     "menuDelete": "卸载",
     "stoppedActionGatedReason": "请先停止正在运行的构建。",
+    "gatedReasonStopping": "请等待构建停止。",
+    "gatedReasonInstalling": "请等待安装完成。",
+    "gatedReasonStarting": "请等待构建启动。",
+    "gatedReasonUpdating": "请等待更新完成。",
+    "gatedReasonBusy": "请等待当前任务完成。",
     "busyActionGatedReason": "请等待此构建上的当前任务完成。",
     "statusRunning": "运行中",
     "statusLaunching": "正在启动…",
@@ -514,6 +573,8 @@
     "active": "当前",
     "error": "错误",
     "retry": "重试",
+    "unknown": "未知",
+    "none": "无",
     "nothingMatches": "没有匹配项",
     "nothingMatchesHint": "换个关键词试试，或清除筛选条件查看全部内容。",
     "clearFilters": "清除筛选",
@@ -550,19 +611,10 @@
     "snapshotNameHint": "类似 < > : \" / \\ | ? * 的字符将被移除",
     "snapshotRelease": "版本",
     "snapshotOriginalRelease": "快照版本：{tag}",
-    "snapshotDevice": "设备",
     "snapshotHardwareMismatch": "该快照创建于 {snapshotDevice}。检测到你的硬件为 {detectedDevice}。已预选适合你硬件的推荐版本。",
     "view": "管理",
     "console": "控制台",
     "viewProgress": "查看进度"
-  },
-  "quickInstall": {
-    "title": "安装 ComfyUI",
-    "grandTitle": "快速安装",
-    "grandSubtitle": "为检测到的硬件安装最新版 ComfyUI。",
-    "desc": "我们将安装最新版 ComfyUI。请在下方确认你的 GPU 类型。",
-    "selectVariant": "选择你的 GPU",
-    "confirmInstall": "安装 ComfyUI"
   },
   "loadSnapshot": {
     "grandTitle": "加载快照",
@@ -575,7 +627,6 @@
     "grandTitle": "安装新构建",
     "grandSubtitle": "设置全新的 ComfyUI 安装。选择来源、命名并完成配置。",
     "installMethod": "安装方式",
-    "installLocation": "安装位置",
     "addInstallation": "添加构建",
     "loading": "正在加载…",
     "detectingGpu": "正在检测 GPU…",
@@ -606,9 +657,9 @@
     "selectWorkspaceBuild": "选择构建",
     "noCompatibleBuilds": "没有可安装的兼容构建。",
     "refreshWorkspaceBuilds": "刷新构建",
-    "refreshingWorkspaceBuilds": "正在刷新构建...",
+    "refreshingWorkspaceBuilds": "正在刷新构建…",
     "viewBuildsOnline": "在线查看构建",
-    "waitingForWorkspaceAuthorization": "正在等待工作区授权...如果浏览器提示，请在浏览器中完成授权。",
+    "waitingForWorkspaceAuthorization": "正在等待工作区授权…如果浏览器提示，请在浏览器中完成授权。",
     "buildReleaseValue": "版本 v{version}",
     "buildCreatorValue": "创建者 {creator}",
     "buildRelease": "最新版本",
@@ -663,8 +714,8 @@
     "calculatingSize": "正在计算…",
     "sizeLabel": "磁盘占用",
     "sizeValue": "{size}",
-    "sizeUnavailable": "—",
-    "estimatedRequired": "约需 {size}"
+    "sizeUnavailable": "未知",
+    "insufficientForInstall": "仅剩 {free} 可用，安装约需 {required}"
   },
   "pathValidation": {
     "insideAppBundleTitle": "不安全的安装位置",
@@ -998,13 +1049,9 @@
     "checking": "正在检查…",
     "noGpu": "无 GPU 加速",
     "unsupported": "不受支持",
-    "free": "可用 {free}",
-    "freeRequired": "可用 {free} · 需要约 {required}",
-    "notEnoughSpace": "仅剩 {free} · 需要约 {required}",
-    "versionValue": "ComfyUI {version} · {channel}",
-    "versionChannel": "ComfyUI · {channel}",
+    "versionValue": "ComfyUI {version}",
     "download": "下载 {size}",
-    "downloadRequired": "下载 {download} · 需要约 {required}",
+    "installSpaceTip": "下载大小为 {download}，解压和安装需要约 {required} 的可用磁盘空间。",
     "unavailable": "无法连接 ComfyUI 下载服务器。请检查网络连接，或通过“更改”选择版本。",
     "retry": "重试",
     "agreeToInstall": "同意后才能安装。",
@@ -1067,16 +1114,6 @@
     "cannotStopMessage": "请等待 {name} 的“{task}”完成后再关闭窗口。",
     "relaunchSkippedTitle": "{name} 未启动",
     "relaunchSkippedMessage": "{name} 正在执行另一个任务，因此未启动。请在该任务完成后再次启动。"
-  },
-  "announcement": {
-    "comfyApi": {
-      "title": "Comfy API 现已推出",
-      "lead": "将你的 ComfyUI 工作流部署为生产环境 API。将工作流与其自定义节点和模型打包，部署为应用和工具可以调用的接口。你使用 ComfyUI 的方式不会有任何变化。",
-      "primaryCta": "了解 Comfy API",
-      "imageAlt": "Comfy API 公告",
-      "unmute": "取消静音",
-      "mute": "静音"
-    }
   },
   "tray": {
     "showApp": "显示 Comfy Desktop",
@@ -1634,7 +1671,8 @@
   },
   "devPlatform": {
     "signIn": {
-      "cta": "登录"
+      "cta": "登录",
+      "waiting": "请在浏览器中继续"
     },
     "account": {
       "installationInProgressTitle": "安装正在进行中",
@@ -1652,7 +1690,7 @@
       "promoteToWorkspace": "上传构建",
       "promoteToWorkspaceHint": "将此构建上传到 Comfy Developer Platform。",
       "readMore": "了解更多",
-      "promoting": "正在创建...",
+      "promoting": "正在创建…",
       "promoteFailedTitle": "无法上传构建",
       "promoteFailedMessage": "无法在 Comfy Developer Platform 中创建草稿。"
     },
@@ -1730,9 +1768,7 @@
     "priorScanUnavailable": "Comfy Desktop 无法检查此构建之前的 ComfyUI 是否仍在运行（无法读取进程列表），而端口 {port} 正被占用。现在启动可能会失败，因为之前的 ComfyUI 可能占用此构建的数据库。如果该进程是之前的 ComfyUI，请结束它，或稍后重试。",
     "priorScanRecent": "Comfy Desktop 无法检查此构建刚刚退出的 ComfyUI 是否正在重新启动（无法读取进程列表）。现在启动可能会失败，因为正在重新启动的 ComfyUI 可能已经占用此构建的数据库。请几分钟后重试。",
     "priorProcessUnverified": "此构建之前的 ComfyUI（PID {pid}）仍在运行，且 Comfy Desktop 无法确认可以安全地停止它。现在启动会失败，因为它占用此构建的数据库。请结束该进程后重试。",
-    "performanceTestOtherInstanceRunningOne": "性能测试需要单独运行，以免其他构建争用 GPU 和内存。请先在 Comfy Desktop 中停止{name}，或等待其完成启动或停止，然后重新运行测试。",
-    "performanceTestOtherInstanceRunning": "性能测试需要单独运行，以免其他构建争用 GPU 和内存。请先在 Comfy Desktop 中停止{names}，或等待它们完成启动或停止，然后重新运行测试。",
-    "performanceTestOfInstallation": "“{name}”的性能测试",
+    "performanceTestOtherInstanceRunning": "性能测试应单独运行，以免其他程序争用 GPU 和内存。请先停止正在运行的构建，然后重新运行测试。",
     "duplicateName": "名为“{name}”的构建已存在。请选择其他名称。",
     "nameRequired": "请输入名称。",
     "unknownSource": "此构建的来源类型无法识别。它可能由其他版本创建。请删除并重新安装。",
@@ -1855,7 +1891,7 @@
     "selectInstancePlaceholder": "选择构建",
     "chooseWorkflow": "工作流",
     "chooseExampleWorkflow": "选择示例工作流",
-    "loadingExampleWorkflows": "正在加载示例工作流...",
+    "loadingExampleWorkflows": "正在加载示例工作流…",
     "importApiWorkflow": "导入 API 工作流",
     "orDropJson": "或拖入 .json 文件",
     "exampleTag": "示例",
@@ -1871,14 +1907,18 @@
     "exampleModelsFailed": "无法下载此工作流所需的全部模型。",
     "exampleModelsNoSpace": "磁盘空间不足，无法下载此工作流的模型。",
     "cancelExampleDownload": "取消下载",
-    "importingWorkflow": "正在导入工作流...",
-    "preparingExampleWorkflow": "正在准备工作流并下载所需模型...",
+    "importingWorkflow": "正在导入工作流…",
+    "preparingExampleWorkflow": "正在准备工作流并下载所需模型…",
     "importFailed": "无法导入工作流。",
     "deleteWorkflow": "删除工作流",
     "deleteFailed": "无法删除工作流。",
     "run": "运行",
+    "runNeedsBuild": "请先选择一个构建。",
+    "runNeedsWorkflow": "请先选择一个工作流。",
+    "runWaitsForWorkflow": "请等待工作流准备就绪。",
+    "runWaitsForBuild": "请等待构建启动完成。",
     "stop": "停止",
-    "stopping": "正在停止...",
+    "stopping": "正在停止…",
     "stopFailed": "无法停止构建。",
     "measurementSettings": "运行次数",
     "warmupRuns": "预热运行次数",
@@ -1906,19 +1946,21 @@
     "architecture": "架构",
     "imageTitle": "性能测试：{workflowName}",
     "exportResultsImage": "导出结果",
-    "exportingImage": "正在导出图像...",
+    "exportingImage": "正在导出图像…",
     "exportImageFailed": "无法导出结果图像。",
     "launchFailed": "无法启动构建。",
-    "submittingRuns": "正在提交 {warmupCount} 次预热运行和 {count} 次测量运行...",
+    "submittingRuns": "正在提交 {warmupCount} 次预热运行和 {count} 次测量运行…",
     "completedRuns": "已完成 {count} 次测量运行（{failed} 次失败）。最终响应已保存到 {path}",
     "submitFailed": "无法提交基准工作流。",
     "chooseWorkflowPlaceholder": "选择工作流",
     "buildTriggerLabel": "构建：{build}",
     "workflowTriggerLabel": "工作流：{workflow}",
     "resultContext": "在 {build} 上运行 {workflow}",
-    "startingBuild": "正在启动构建...",
+    "startingBuild": "正在启动构建…",
     "runFailedTitle": "测试未完成",
     "runFailedHint": "详情请查看下方日志。",
+    "runRefusedTitle": "性能测试未启动",
+    "blockingBuildStopped": "已停止",
     "runNumber": "第 {current} / {total} 次运行",
     "resultsEmptyTitle": "暂无结果",
     "medianSummary": "中位运行 · {count} 次测量 · {failed} 次失败",
@@ -1930,10 +1972,11 @@
     "title": "性能比较",
     "openFolder": "选择文件夹",
     "refresh": "刷新会话",
-    "searchPlaceholder": "搜索工作流、构建或硬件...",
+    "searchPlaceholder": "搜索工作流、构建或硬件…",
     "columns": "列",
     "columnsToDisplay": "要显示的列",
-    "unmanagedWorkspace": "未管理",
+    "measures": "测量值",
+    "unmanagedWorkspace": "无工作区",
     "unknownHardware": "未知硬件",
     "session": "会话",
     "dateTime": "日期 / 时间",
@@ -1962,12 +2005,12 @@
     "reorderColumnHint": "拖动以重新排序。也可以按 Alt+左箭头或 Alt+右箭头。",
     "comparisonImageTitle": "基准比较",
     "exportResultsImage": "导出结果",
-    "exportingImage": "正在导出图像...",
+    "exportingImage": "正在导出图像…",
     "exportImageFailed": "无法导出比较图像。",
     "metric": "指标",
     "baseline": "基准",
     "relativePerformance": "相对速度",
-    "relativePerformanceHint": "选择基准。相对速度系数 = 基准耗时 / 运行耗时。",
+    "relativePerformanceHint": "选择一个基准。快 2 倍表示该运行用时为基准的一半。",
     "faster": "更快",
     "slower": "更慢",
     "same": "速度相同",
@@ -1987,17 +2030,11 @@
     "filterWorkflow": "工作流",
     "compareBy": "比较依据",
     "groupMeta": "{sessions} · {runs}",
-    "groupBy": "分组依据",
-    "groupByNone": "无",
     "allRuns": "所有运行",
     "sessionCount": "{count} 个会话 | {count} 个会话",
     "runCount": "{count} 次运行 | {count} 次运行",
-    "groupActions": "{workflow} 的更多操作",
-    "selectGroup": "选择所有运行",
-    "exportGroup": "导出此组",
-    "singleRun": "此处只有一个构建运行过此工作流。在另一个构建上运行它即可比较。",
     "metricAndRange": "{metric}及范围",
-    "vsBaseline": "对比基准",
+    "vsBaseline": "与基准相比",
     "selection": "已选运行",
     "reorderRun": "重新排列会话 {session}",
     "noMeasuredRuns": "没有测量的运行",
@@ -2006,7 +2043,6 @@
     "moreActions": "会话 {session} 的更多操作",
     "setBaseline": "设为基准",
     "renameSession": "重命名会话",
-    "speedFormula": "速度 = 基准耗时 ÷ 运行耗时",
     "resetBaseline": "重置基准",
     "selectedCount": "已选择 {count} 项",
     "exportLimit": "最多 {max} 次运行",
@@ -2023,7 +2059,8 @@
     "retry": "重试",
     "showInFolder": "在 Finder 中显示",
     "remove": "从列表中移除",
-    "viewAllInSettings": "查看所有下载",
+    "viewAll": "查看全部",
+    "viewAllLabel": "查看所有下载",
     "completed": "已完成",
     "thumbnailAlt": "{name} 的缩略图"
   },

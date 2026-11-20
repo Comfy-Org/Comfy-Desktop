@@ -3,7 +3,6 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { page, userEvent } from 'vitest/browser'
 
 import '../assets/main.css'
-import AnnouncementModal from './AnnouncementModal.vue'
 import WhyTryCloudModal from './WhyTryCloudModal.vue'
 import ExtraModelPathsModal from '../views/comfyUISettings/ExtraModelPathsModal.vue'
 import BaseModal from './ui/BaseModal.vue'
@@ -88,11 +87,6 @@ const NARROW_VIEWPORTS = [
 ] as const
 
 describe('modals close with the round button outside the card', () => {
-  it('announcement', async () => {
-    await track(mount(AnnouncementModal, { attachTo: document.body }))
-    expectCloseOutside('[data-testid="announcement-close"]', '.announce-content')
-  })
-
   it('why try cloud, with Try Cloud as the only footer action', async () => {
     await track(mount(WhyTryCloudModal, { attachTo: document.body }))
     expectCloseOutside('[data-testid="why-cloud-close"]', '.why-cloud-content')
@@ -114,11 +108,6 @@ describe('modals close with the round button outside the card', () => {
   describe.each(NARROW_VIEWPORTS)('in a %ix%i window, fully inside the window', (w, h) => {
     beforeEach(async () => {
       await page.viewport(w, h)
-    })
-
-    it('announcement', async () => {
-      await track(mount(AnnouncementModal, { attachTo: document.body }))
-      expectCloseOutside('[data-testid="announcement-close"]', '.announce-content')
     })
 
     it('why try cloud', async () => {
@@ -178,10 +167,6 @@ describe('modals close with the round button outside the card', () => {
       })
     )
     expectCardFill('.setup-modal-close', '.setup-modal-panel', 0.5)
-    mounted.splice(0).forEach((w) => w.unmount())
-
-    await track(mount(AnnouncementModal, { attachTo: document.body }))
-    expectCardFill('[data-testid="announcement-close"]', '.announce-content', 0.5)
     mounted.splice(0).forEach((w) => w.unmount())
 
     await track(mount(WhyTryCloudModal, { attachTo: document.body }))

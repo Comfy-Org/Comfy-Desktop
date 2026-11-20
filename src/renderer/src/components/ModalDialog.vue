@@ -12,6 +12,7 @@ import MigrateConfirmBody from './MigrateConfirmBody.vue'
 import BaseAlert from './ui/BaseAlert.vue'
 import { linkify, handleModalLinkClick } from '../lib/modalLinkify'
 import { formatNodeVersion } from '../lib/snapshots'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 const { t } = useI18n()
 
@@ -251,7 +252,7 @@ watch(
                 $t('snapshots.variant')
               }}</span>
               <span class="dialog-value text-[14px] text-text select-text">{{
-                state.snapshotPreview.comfyui.variant || '—'
+                state.snapshotPreview.comfyui.variant || $t('common.unknown')
               }}</span>
             </div>
             <div
@@ -269,7 +270,8 @@ watch(
 
           <div class="dialog-subsection mt-2.5">
             <div
-              class="dialog-subsection-title mb-1.5 flex cursor-pointer select-none items-center justify-between text-[13px] font-semibold text-text-muted"
+              class="dialog-subsection-title mb-1.5 flex cursor-pointer select-none items-center justify-between"
+              :class="SECTION_TITLE_CLASS"
               @click="spNodesExpanded = !spNodesExpanded"
             >
               <span
@@ -306,13 +308,16 @@ watch(
                   >
                 </div>
               </div>
-              <div v-else class="dialog-empty text-[14px] text-text-muted">—</div>
+              <div v-else class="dialog-empty text-[14px] text-text-muted">
+                {{ $t('common.none') }}
+              </div>
             </template>
           </div>
 
           <div class="dialog-subsection mt-2.5">
             <div
-              class="dialog-subsection-title mb-1.5 flex cursor-pointer select-none items-center justify-between text-[13px] font-semibold text-text-muted"
+              class="dialog-subsection-title mb-1.5 flex cursor-pointer select-none items-center justify-between"
+              :class="SECTION_TITLE_CLASS"
               @click="spPipExpanded = !spPipExpanded"
             >
               <span
@@ -342,7 +347,9 @@ watch(
                   >
                 </div>
               </div>
-              <div v-else class="dialog-empty text-[14px] text-text-muted">—</div>
+              <div v-else class="dialog-empty text-[14px] text-text-muted">
+                {{ $t('common.none') }}
+              </div>
             </template>
           </div>
         </template>
@@ -357,10 +364,9 @@ watch(
                 gi === state.messageDetails.length - 1 && !state.checkboxes.length ? 'mb-0' : 'mb-5'
               "
             >
-              <span
-                class="dialog-detail-label mb-2 block text-[13px] font-semibold text-text uppercase"
-                >{{ group.label }}</span
-              >
+              <span class="dialog-detail-label mb-2 block" :class="SECTION_TITLE_CLASS">{{
+                group.label
+              }}</span>
               <div
                 class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md bg-[var(--surface)] px-3 py-2"
                 @click="handleModalLinkClick"
@@ -485,10 +491,9 @@ watch(
             :key="gi"
             class="dialog-detail-group mb-5"
           >
-            <span
-              class="dialog-detail-label mb-2 block text-[13px] font-semibold text-text uppercase"
-              >{{ group.label }}</span
-            >
+            <span class="dialog-detail-label mb-2 block" :class="SECTION_TITLE_CLASS">{{
+              group.label
+            }}</span>
             <div
               class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md bg-[var(--surface)] px-3 py-2"
               @click="handleModalLinkClick"

@@ -211,7 +211,7 @@ function contentPath(assetId: string, disposition: ContentDisposition): string {
   return `/api/assets/${encodeURIComponent(assetId)}/content?disposition=${disposition}`
 }
 
-async function resolveCloudContentUrl(
+export async function resolveCloudContentUrl(
   assetId: string,
   accessToken: string,
   disposition: ContentDisposition,
@@ -229,7 +229,7 @@ async function resolveCloudContentUrl(
   }
 }
 
-async function firstBytes(response: Response, limit: number): Promise<Uint8Array> {
+export async function firstBytes(response: Response, limit: number): Promise<Uint8Array> {
   const reader = response.body?.getReader()
   if (!reader) return new Uint8Array()
   const chunks: Uint8Array[] = []
@@ -359,7 +359,7 @@ export async function findCloudAsset(
   return lookUpCloudAsset(accessToken, name).catch(() => LOOKUP_INCOMPLETE)
 }
 
-async function cloudAccessToken(installationId: string): Promise<string | null> {
+export async function cloudAccessToken(installationId: string): Promise<string | null> {
   const inst = await installations.get(installationId)
   if (!inst || sourceMap[inst.sourceId]?.category !== 'cloud') return null
   return getCloudSession().getAccessToken()
