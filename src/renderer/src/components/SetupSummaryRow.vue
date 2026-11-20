@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
+import { SUMMARY_GRID_CLASS } from '../lib/setupSummary'
 
 defineProps<{ label: string; icon: Component }>()
 </script>
 
 <template>
-  <div class="grid h-4 grid-cols-[148px_minmax(0,1fr)_auto] items-center text-[13px]/4">
+  <div class="h-4 text-[13px]/4" :class="SUMMARY_GRID_CLASS">
     <span class="flex items-center gap-2.5 text-text-muted">
       <component :is="icon" class="flex-none" :size="15" aria-hidden="true" />{{ label }}
     </span>
