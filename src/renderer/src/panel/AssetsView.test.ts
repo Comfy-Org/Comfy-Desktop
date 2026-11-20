@@ -1760,6 +1760,60 @@ describe('AssetsView Open workflow', () => {
     expect(viewer()).toBeNull()
   })
 
+  it('keeps the viewer open and shows Opening… until ComfyUI has the workflow', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    let finish: (result: { opened: boolean }) => void = () => {}
+    openAssetWorkflow.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await openViewer(wrapper, '/out/forest.png')
+    workflowButton()!.click()
+    await flushPromises()
+
+    expect(viewer()).not.toBeNull()
+    expect(workflowButton()?.textContent?.trim()).toBe('Opening…')
+    expect(workflowButton()?.hasAttribute('disabled')).toBe(true)
+    expect(workflowButton()?.getAttribute('aria-busy')).toBe('true')
+    workflowButton()!.click()
+    expect(openAssetWorkflow).toHaveBeenCalledOnce()
+
+    finish({ opened: true })
+    await flushPromises()
+    expect(viewer()).toBeNull()
+  })
+
+  it('brings Open workflow back and keeps the viewer open when the workflow does not open', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    openAssetWorkflow.mockResolvedValueOnce({ opened: false, error: 'Lab did not start.' })
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
+
+    await openViewer(wrapper, '/out/forest.png')
+    workflowButton()!.click()
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledOnce()
+    expect(viewer()).not.toBeNull()
+    expect(workflowButton()?.textContent?.trim()).toBe('Open workflow')
+    expect(workflowButton()?.hasAttribute('disabled')).toBe(false)
+  })
+
+  it('shows Opening… in place of the build menu after you pick a build', async () => {
+    hasAssetWorkflow.mockResolvedValue(true)
+    openAssetWorkflow.mockReturnValue(new Promise(() => {}))
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: [sharedBuild('studio', 'Studio'), sharedBuild('lab', 'Lab')]
+    })
+
+    await openViewer(wrapper, '/out/forest.png')
+    workflowButton()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[1]!.click()
+    await flushPromises()
+
+    expect(workflowButton()?.textContent?.trim()).toBe('Opening…')
+    expect(workflowButton()?.hasAttribute('disabled')).toBe(true)
+  })
+
   it('keeps the place of Open workflow while it checks the file, so the buttons do not move', async () => {
     let answer: (found: boolean) => void = () => {}
     hasAssetWorkflow.mockReturnValue(new Promise<boolean>((resolve) => (answer = resolve)))

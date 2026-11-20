@@ -162,6 +162,7 @@ const cloudTotalIsLowerBound = ref(false)
 const cloudScanLimit = ref<number | undefined>()
 const workflowFound = ref(new Map<string, boolean>())
 const workflowChecks = ref(0)
+const openingWorkflow = ref<string | null>(null)
 
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
@@ -819,6 +820,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     workflow: canOpenWorkflow(asset),
     workflowSlot: mayOpenWorkflow(asset),
     workflowBuilds: workflowBuildsOf(asset),
+    workflowOpening: openingWorkflow.value === cardKey(asset),
     loadModel:
       asset.kind === '3d' ? () => window.api.readAssetModel(asset.source, asset.id) : undefined
   }))
@@ -901,11 +903,17 @@ watch(
 onBeforeUnmount(() => clearTimeout(workflowCheckTimer))
 
 async function openWorkflow(asset: GalleryAsset, build?: string): Promise<void> {
-  await closeDetail()
+  const key = cardKey(asset)
+  if (openingWorkflow.value === key) return
+  openingWorkflow.value = key
   const result = await window.api
     .openAssetWorkflow(asset.source, asset.id, asset.name, build)
     .catch(() => ({ opened: false, error: undefined }))
-  if (result.opened) return
+  if (openingWorkflow.value === key) openingWorkflow.value = null
+  if (result.opened) {
+    if (detailKey.value === key) await closeDetail()
+    return
+  }
   await modal.alert({
     title: t('assets.detail.openWorkflowFailed'),
     message: result.error ?? t('assets.detail.openWorkflowNoReason')

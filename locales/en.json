@@ -165,6 +165,7 @@
       "openWorkflow": "Open workflow",
       "openWorkflowFailed": "Couldn't open workflow",
       "openWorkflowNoReason": "ComfyUI did not open the workflow. Try again.",
+      "openingWorkflow": "Opening…",
       "openWorkflowIn": "Open in",
       "savedIn": "Saved in",
       "cloudAssets": "Comfy Cloud assets",

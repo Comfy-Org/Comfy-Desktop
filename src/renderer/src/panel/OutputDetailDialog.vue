@@ -10,6 +10,7 @@ import {
   Download,
   File,
   Images,
+  LoaderCircle,
   Music,
   ScanSearch,
   Workflow,
@@ -44,6 +45,7 @@ export interface OutputDetailItem {
   workflow?: boolean
   workflowBuilds?: { id: string; name: string }[]
   workflowSlot?: boolean
+  workflowOpening?: boolean
   mainAction: 'download' | null
   loadModel?: () => Promise<Uint8Array | null>
 }
@@ -365,7 +367,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           {{ t(revealKey) }}
         </Button>
         <Menu
-          v-if="item.workflow && workflowChoices.length > 0"
+          v-if="item.workflow && !item.workflowOpening && workflowChoices.length > 0"
           :items="workflowChoices"
           :modal="false"
           align="start"
@@ -395,12 +397,19 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           :class="{ invisible: !item.workflow }"
           :aria-hidden="item.workflow ? undefined : 'true'"
           :tabindex="item.workflow ? undefined : -1"
-          :disabled="!item.workflow"
+          :disabled="!item.workflow || item.workflowOpening"
+          :aria-busy="item.workflowOpening ? 'true' : undefined"
           data-testid="output-detail-workflow"
           @click="emit('open-workflow', index, item.workflowBuilds?.[0]?.id)"
         >
-          <Workflow :size="15" aria-hidden="true" />
-          {{ t('assets.detail.openWorkflow') }}
+          <template v-if="item.workflowOpening">
+            <LoaderCircle :size="15" class="motion-safe:animate-spin" aria-hidden="true" />
+            {{ t('assets.detail.openingWorkflow') }}
+          </template>
+          <template v-else>
+            <Workflow :size="15" aria-hidden="true" />
+            {{ t('assets.detail.openWorkflow') }}
+          </template>
         </Button>
         <Button
           v-if="item.inCloud"
