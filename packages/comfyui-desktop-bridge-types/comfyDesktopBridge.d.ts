@@ -129,6 +129,8 @@ export type ComfyDesktop2AuthState =
     }
 export type ComfyDesktop2SignInFailure =
   | 'cancelled'
+  | 'restarted'
+  | 'superseded'
   | 'timeout'
   | 'idp_error'
   | 'server_error'

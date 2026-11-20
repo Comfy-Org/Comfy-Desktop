@@ -150,15 +150,12 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
       signInFailure: 'timeout'
     },
     { name: 'an unclassified error', failure: new Error('boom'), signInFailure: 'unknown' }
-  ])(
-    'resolves $name with the view state and why it failed',
-    async ({ failure, signInFailure }) => {
-      mocks.stateForSender.mockResolvedValue(SIGNED_OUT)
-      mocks.signInToCloud.mockRejectedValue(failure)
+  ])('resolves $name with the view state and why it failed', async ({ failure, signInFailure }) => {
+    mocks.stateForSender.mockResolvedValue(SIGNED_OUT)
+    mocks.signInToCloud.mockRejectedValue(failure)
 
-      await expect(requestSignIn()({})).resolves.toEqual({ status: 'signed_out', signInFailure })
-    }
-  )
+    await expect(requestSignIn()({})).resolves.toEqual({ status: 'signed_out', signInFailure })
+  })
 
   it('resolves a failed sign-in with the state the view is in by then', async () => {
     mocks.stateForSender.mockResolvedValueOnce(SIGNED_OUT).mockResolvedValue(SIGNED_IN)

@@ -325,9 +325,9 @@ describe('embeddedSession', () => {
     const { event } = view('http://localhost:8188', { sourceCategory: 'remote' })
     const switchWorkspace = vi.fn(async () => ({ status: { signedIn: true }, reached: true }))
 
-    await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual({
-      status: 'disabled'
-    })
+    await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual(
+      NOT_LOCAL
+    )
     expect(switchWorkspace).not.toHaveBeenCalled()
   })
 
@@ -336,9 +336,7 @@ describe('embeddedSession', () => {
     const { event } = view('http://127.0.0.1:8000')
     const switchWorkspace = vi.fn(async () => ({ status: { signedIn: true }, reached: true }))
 
-    await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual({
-      status: 'disabled'
-    })
+    await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual(OFF)
     expect(switchWorkspace).not.toHaveBeenCalled()
   })
 
