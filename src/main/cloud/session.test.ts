@@ -557,6 +557,32 @@ describe('CloudSession browser sign-in', () => {
     expect(openAuthorizePage).not.toHaveBeenCalled()
   })
 
+  it('cancels the browser wait so a fresh login can start right away', async () => {
+    mocked(signIn).mockImplementation(
+      (options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () =>
+            reject(new SignInFailure('Sign-in was cancelled in Comfy Desktop', 'cancelled'))
+          )
+        })
+    )
+    const session = new CloudSession()
+
+    const first = session.login()
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    session.cancelLogin()
+
+    await expect(first).rejects.toMatchObject({ reason: 'cancelled' })
+    browserSignInReturns(signedInResult(grantOn('w1')))
+    await expect(session.login()).resolves.toMatchObject({ signedIn: true })
+    expect(signIn).toHaveBeenCalledTimes(2)
+    expect(openAuthorizePage).not.toHaveBeenCalled()
+  })
+
+  it('ignores a cancel when no login is waiting', () => {
+    expect(() => new CloudSession().cancelLogin()).not.toThrow()
+  })
+
   it('does not persist browser auth that finishes after logout', async () => {
     const pending = deferred<Awaited<ReturnType<typeof signIn>>>()
     mocked(signIn).mockReturnValue(pending.promise)

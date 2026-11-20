@@ -54,6 +54,7 @@ import {
 
 export const DEVPLATFORM_CHANNELS = {
   signIn: 'comfybuilder:signIn',
+  cancelSignIn: 'comfybuilder:cancelSignIn',
   signOut: 'comfybuilder:signOut',
   getAuthStatus: 'comfybuilder:getAuthStatus',
   authChanged: 'comfybuilder:authChanged',
@@ -202,6 +203,8 @@ export function registerDevPlatformHandlers(): void {
   const promoting = new Set<string>()
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.signIn, (): Promise<AuthStatus> => signInToCloud())
+
+  ipcMain.handle(DEVPLATFORM_CHANNELS.cancelSignIn, (): void => session.cancelLogin())
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.signOut, (event): Promise<AuthStatus> =>
     signOutOfCloud(

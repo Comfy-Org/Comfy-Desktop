@@ -689,30 +689,42 @@ async function initializeLocalInstall(gen: number, requestedSource?: Source): Pr
   }
 }
 
-let pendingSignIn: ReturnType<typeof authStore.signIn> | null = null
+const signingInForManaged = ref(false)
+const waitingForManagedSignIn = computed(() => signingInForManaged.value && authStore.signInPending)
 
-function signInOnce(): ReturnType<typeof authStore.signIn> {
-  pendingSignIn ??= authStore.signIn().finally(() => {
-    pendingSignIn = null
-  })
-  return pendingSignIn
+async function cancelManagedSignIn(): Promise<void> {
+  await authStore.cancelSignIn().catch(() => {})
 }
 
 async function selectManagedInstallMode(): Promise<void> {
   if (authorizingWorkspace.value || managedBuildMode.value) return
   let authenticatedNow = false
   if (!authStore.isSignedIn) {
+    if (signingInForManaged.value) {
+      void authStore.signIn().catch(() => {})
+      return
+    }
     const session = changeSetupSession
-    authorizingWorkspace.value = true
+    signingInForManaged.value = true
     try {
-      const status = await signInOnce()
+      const status = await authStore.joinSignIn()
       if (!status.signedIn) return
       authenticatedNow = true
-      if (workspaceId.value === PERSONAL_WORKSPACE_ID) await authStore.fetchWorkspaces()
     } catch {
       return
     } finally {
-      authorizingWorkspace.value = false
+      if (session === changeSetupSession) signingInForManaged.value = false
+    }
+    if (session !== changeSetupSession) return
+    if (workspaceId.value === PERSONAL_WORKSPACE_ID) {
+      authorizingWorkspace.value = true
+      try {
+        await authStore.fetchWorkspaces()
+      } catch {
+        return
+      } finally {
+        authorizingWorkspace.value = false
+      }
     }
     if (session !== changeSetupSession) return
   }
@@ -1391,6 +1403,7 @@ async function discardChangeSetup(): Promise<void> {
   buildImportChoice.value = null
   setupBeforeServer = null
   authorizingWorkspace.value = false
+  signingInForManaged.value = false
   if (!draft) return
   instName.value = draft.instName
   await restoreNewInstallSetup(draft)
@@ -1506,7 +1519,12 @@ const startFrom = computed<StartFrom>(() =>
   buildImportChoice.value || usesExistingServer.value ? 'existing' : 'new'
 )
 
-const choiceLocked = computed(() => authorizingWorkspace.value || submittingExisting.value)
+const choiceLocked = computed(
+  () =>
+    authorizingWorkspace.value ||
+    (signingInForManaged.value && authStore.waitingForBrowser) ||
+    submittingExisting.value
+)
 const startFromLocked = computed(() => choiceLocked.value || !setupPicked.value)
 const showsHardwareWarning = computed(() => !!hardwareWarning.value && startFrom.value === 'new')
 
@@ -1754,6 +1772,24 @@ defineExpose({ open })
       data-testid="workspace-authorization-status"
     >
       {{ $t('newInstall.waitingForWorkspaceAuthorization') }}
+    </div>
+    <div
+      v-else-if="waitingForManagedSignIn"
+      class="mt-4 flex w-full items-center justify-between gap-3 text-[13px] leading-[1.4] text-neutral-200"
+      role="status"
+      data-testid="managed-signin-status"
+    >
+      <span :class="spinnerClass">{{ $t('devPlatform.signIn.waiting') }}</span>
+      <Button
+        size="sm"
+        variant="secondary"
+        type="button"
+        class="flex-none rounded-lg px-3"
+        data-testid="managed-signin-cancel"
+        @click="cancelManagedSignIn"
+      >
+        {{ $t('devPlatform.signIn.cancel') }}
+      </Button>
     </div>
     <div
       v-if="sourceError && !buildImportChoice"

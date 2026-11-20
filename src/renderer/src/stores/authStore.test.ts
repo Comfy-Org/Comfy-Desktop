@@ -3,10 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 
 import { stubWindowApi } from '../lib/stubWindowApi'
-import { useAuthStore } from './authStore'
+import { SIGN_IN_RETRY_AFTER_MS, useAuthStore } from './authStore'
 
 const api = {
   signIn: vi.fn(),
+  cancelSignIn: vi.fn(),
   signOut: vi.fn(),
   getAuthStatus: vi.fn(),
   onAuthChanged: vi.fn(() => () => {}),
@@ -18,12 +19,18 @@ const api = {
 
 let authChangedCb: ((status: unknown) => void) | undefined
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (error: Error) => void
+} {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => {
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((done, fail) => {
     resolve = done
+    reject = fail
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 describe('useAuthStore', () => {
@@ -56,6 +63,151 @@ describe('useAuthStore', () => {
     const store = useAuthStore()
     await store.signIn()
     expect(store.status).toMatchObject({ signedIn: true, workspaceId: 'w1' })
+  })
+
+  describe('sign-in waiting state', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    function browserSignIn() {
+      const browser = deferred<{ signedIn: boolean; workspaceId?: string }>()
+      api.signIn.mockReturnValue(browser.promise)
+      api.cancelSignIn.mockImplementation(async () => {
+        browser.reject(new Error('Sign-in was cancelled in Comfy Desktop'))
+      })
+      return browser
+    }
+
+    it('waits for the browser after a click, then clears on cancel', async () => {
+      browserSignIn()
+      const store = useAuthStore()
+
+      const attempt = store.signIn()
+      expect(store.signInPending).toBe(true)
+      expect(store.waitingForBrowser).toBe(true)
+
+      await store.cancelSignIn()
+      await expect(attempt).rejects.toThrow('cancelled')
+      expect(api.cancelSignIn).toHaveBeenCalledOnce()
+      expect(store.signInPending).toBe(false)
+      expect(store.waitingForBrowser).toBe(false)
+      expect(store.isSignedIn).toBe(false)
+    })
+
+    it('clears the wait when sign-in fails', async () => {
+      const browser = browserSignIn()
+      const store = useAuthStore()
+
+      const attempt = store.signIn()
+      browser.reject(new Error('server_error'))
+
+      await expect(attempt).rejects.toThrow('server_error')
+      expect(store.signInPending).toBe(false)
+      expect(store.isSignedIn).toBe(false)
+    })
+
+    it('clears the wait when the browser sign-in times out', async () => {
+      const browser = browserSignIn()
+      const store = useAuthStore()
+
+      const attempt = store.signIn()
+      browser.reject(new Error('Loopback OAuth callback timed out'))
+
+      await expect(attempt).rejects.toThrow('timed out')
+      expect(store.signInPending).toBe(false)
+      expect(store.waitingForBrowser).toBe(false)
+    })
+
+    it('lets the user try again when they come back to the window without finishing', async () => {
+      browserSignIn()
+      const store = useAuthStore()
+
+      void store.signIn().catch(() => {})
+      window.dispatchEvent(new Event('focus'))
+
+      expect(store.signInPending).toBe(true)
+      expect(store.waitingForBrowser).toBe(false)
+    })
+
+    it('lets the user try again when the browser never takes the focus', async () => {
+      vi.useFakeTimers()
+      browserSignIn()
+      const store = useAuthStore()
+
+      void store.signIn().catch(() => {})
+      vi.advanceTimersByTime(SIGN_IN_RETRY_AFTER_MS - 1)
+      expect(store.waitingForBrowser).toBe(true)
+      vi.advanceTimersByTime(1)
+
+      expect(store.signInPending).toBe(true)
+      expect(store.waitingForBrowser).toBe(false)
+    })
+
+    it('opens the browser again on a second click and finishes with the one sign-in', async () => {
+      const browser = browserSignIn()
+      const store = useAuthStore()
+
+      const first = store.signIn()
+      window.dispatchEvent(new Event('focus'))
+      const second = store.signIn()
+      expect(store.waitingForBrowser).toBe(true)
+      browser.resolve({ signedIn: true, workspaceId: 'w1' })
+
+      await expect(second).resolves.toMatchObject({ signedIn: true })
+      await expect(first).resolves.toMatchObject({ signedIn: true })
+      expect(api.signIn).toHaveBeenCalledTimes(2)
+      expect(store.isSignedIn).toBe(true)
+      expect(store.signInPending).toBe(false)
+    })
+
+    it('signs in on a new attempt after a cancelled one', async () => {
+      browserSignIn()
+      const store = useAuthStore()
+      const cancelled = store.signIn()
+      await store.cancelSignIn()
+      await expect(cancelled).rejects.toThrow()
+
+      api.signIn.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
+      await store.signIn()
+
+      expect(store.isSignedIn).toBe(true)
+      expect(store.signInPending).toBe(false)
+    })
+
+    it('joins the open sign-in instead of opening the browser again', async () => {
+      const browser = browserSignIn()
+      const store = useAuthStore()
+
+      const first = store.signIn()
+      const joined = store.joinSignIn()
+      browser.resolve({ signedIn: true })
+
+      await expect(joined).resolves.toMatchObject({ signedIn: true })
+      await first
+      expect(api.signIn).toHaveBeenCalledOnce()
+    })
+
+    it('does not ask main to cancel when nothing is waiting', async () => {
+      const store = useAuthStore()
+
+      await store.cancelSignIn()
+
+      expect(api.cancelSignIn).not.toHaveBeenCalled()
+    })
+
+    it('starts with no sign-in waiting, so a restart never keeps the button off', () => {
+      browserSignIn()
+      void useAuthStore()
+        .signIn()
+        .catch(() => {})
+      setActivePinia(createPinia())
+
+      const restarted = useAuthStore()
+
+      expect(restarted.signInPending).toBe(false)
+      expect(restarted.waitingForBrowser).toBe(false)
+    })
   })
 
   it('stays signed in when main cancels sign-out', async () => {

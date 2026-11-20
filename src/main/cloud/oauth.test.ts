@@ -197,6 +197,16 @@ describe('oauth.signIn', () => {
     expect(status.signedIn).toBe(true)
   })
 
+  it('ends the browser wait as cancelled when the app cancels the sign-in', async () => {
+    const abort = new AbortController()
+    vi.mocked(shell.openExternal).mockImplementation(async () => abort.abort())
+
+    await expect(signIn({ ...opts, timeoutMs: 5000, signal: abort.signal })).rejects.toMatchObject({
+      name: 'SignInFailure',
+      reason: 'cancelled'
+    })
+  })
+
   it('asks for the partner-node, workspace mint and billing write scopes by default', async () => {
     stub(200, { access_token: 'tok', refresh_token: 'r1', expires_in: 3600 })
     let requested: string[] = []

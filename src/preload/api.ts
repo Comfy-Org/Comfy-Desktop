@@ -284,6 +284,7 @@ export function buildElectronApi(): ElectronApi {
 
     comfybuilder: {
       signIn: () => ipcRenderer.invoke('comfybuilder:signIn'),
+      cancelSignIn: () => ipcRenderer.invoke('comfybuilder:cancelSignIn'),
       signOut: () => ipcRenderer.invoke('comfybuilder:signOut'),
       getAuthStatus: () => ipcRenderer.invoke('comfybuilder:getAuthStatus'),
       onAuthChanged: (callback) => {

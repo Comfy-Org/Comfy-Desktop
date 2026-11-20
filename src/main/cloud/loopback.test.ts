@@ -92,4 +92,30 @@ describe('loopback listener', () => {
       reason: 'timeout'
     })
   })
+  it('stops listening and reports cancelled when the sign-in is cancelled in the app', async () => {
+    const abort = new AbortController()
+    listener = await startLoopbackListener({
+      expectedState: 'st',
+      timeoutMs: 5000,
+      signal: abort.signal
+    })
+    const redirectUri = listener.redirectUri
+
+    abort.abort()
+
+    await expect(listener.waitForCode()).rejects.toMatchObject({
+      name: 'SignInFailure',
+      reason: 'cancelled'
+    })
+    await expect(get(`${redirectUri}?state=st&code=late`)).rejects.toThrow()
+  })
+
+  it('refuses to start when the sign-in was cancelled before it began', async () => {
+    const abort = new AbortController()
+    abort.abort()
+
+    await expect(
+      startLoopbackListener({ expectedState: 'st', timeoutMs: 5000, signal: abort.signal })
+    ).rejects.toMatchObject({ name: 'SignInFailure', reason: 'cancelled' })
+  })
 })

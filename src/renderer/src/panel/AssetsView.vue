@@ -135,7 +135,6 @@ const listedSearch = refDebounced(
   computed(() => [...searchQuery.value.trim()].slice(0, MAX_SEARCH_LENGTH).join('')),
   SEARCH_DEBOUNCE_MS
 )
-const signingIn = ref(false)
 const downloading = ref(new Set<string>())
 const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
 const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newest')
@@ -856,15 +855,7 @@ function coolNameTooltips(): void {
 onBeforeUnmount(() => clearTimeout(warmTimer))
 
 async function signIn(): Promise<void> {
-  if (signingIn.value) return
-  signingIn.value = true
-  try {
-    await authStore.signIn()
-  } catch {
-    return
-  } finally {
-    signingIn.value = false
-  }
+  await authStore.signIn().catch(() => {})
 }
 
 async function download(asset: GalleryAsset): Promise<void> {
@@ -1402,7 +1393,8 @@ function extensionOf(name: string): string {
           variant="inverted"
           size="md"
           class="mt-6 px-4 text-[13px]/5"
-          :disabled="signingIn"
+          :disabled="authStore.waitingForBrowser"
+          :loading="authStore.waitingForBrowser"
           data-testid="assets-empty-action"
           @click="emptyState.action.run"
         >

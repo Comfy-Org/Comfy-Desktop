@@ -11,6 +11,8 @@ import type {
 import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import type { Build } from '../devplatform/types'
 
+export const SIGN_IN_RETRY_AFTER_MS = 20_000
+
 export const useAuthStore = defineStore('auth', () => {
   const status = ref<AuthStatus>({ signedIn: false })
   const statusLoaded = ref(false)
@@ -27,6 +29,10 @@ export const useAuthStore = defineStore('auth', () => {
   const workspaceSwitchFailure = ref<WorkspaceSwitchFailure>()
   let latestSwitch = 0
   const comfybuilderApi = (window as Window & { api: ElectronApi }).api.comfybuilder
+  const signInPending = ref(false)
+  const signInRetryable = ref(false)
+  let signInRequest: Promise<AuthStatus> | undefined
+  let signInRetryTimer: ReturnType<typeof setTimeout> | undefined
 
   let revision = 0
   let workspaceContextInitialized = false
@@ -87,11 +93,53 @@ export const useAuthStore = defineStore('auth', () => {
     return next
   }
 
-  async function signIn(): Promise<AuthStatus> {
-    const next = await comfybuilderApi.signIn()
-    applyAuthoritativeStatus(next)
-    return next
+  function waitForBrowser(): void {
+    signInRetryable.value = false
+    clearTimeout(signInRetryTimer)
+    signInRetryTimer = setTimeout(allowSignInRetry, SIGN_IN_RETRY_AFTER_MS)
   }
+
+  function allowSignInRetry(): void {
+    if (signInPending.value) signInRetryable.value = true
+  }
+
+  function endSignIn(): void {
+    clearTimeout(signInRetryTimer)
+    signInRequest = undefined
+    signInPending.value = false
+    signInRetryable.value = false
+  }
+
+  function signIn(): Promise<AuthStatus> {
+    const request = comfybuilderApi.signIn()
+    waitForBrowser()
+    if (signInRequest) {
+      request.catch(() => {})
+      return signInRequest
+    }
+    signInPending.value = true
+    const attempt = request
+      .then((next) => {
+        applyAuthoritativeStatus(next)
+        return next
+      })
+      .finally(() => {
+        if (signInRequest === attempt) endSignIn()
+      })
+    signInRequest = attempt
+    return attempt
+  }
+
+  function joinSignIn(): Promise<AuthStatus> {
+    return signInRequest ?? signIn()
+  }
+
+  async function cancelSignIn(): Promise<void> {
+    if (!signInPending.value) return
+    await comfybuilderApi.cancelSignIn()
+  }
+
+  window.addEventListener('focus', allowSignInRetry)
 
   async function signOut(): Promise<AuthStatus> {
     const next = await comfybuilderApi.signOut()
@@ -156,9 +204,12 @@ export const useAuthStore = defineStore('auth', () => {
 
   onScopeDispose(() => {
     unsubscribe?.()
+    window.removeEventListener('focus', allowSignInRetry)
+    clearTimeout(signInRetryTimer)
   })
 
   const isSignedIn = computed(() => status.value.signedIn)
+  const waitingForBrowser = computed(() => signInPending.value && !signInRetryable.value)
   const personalWorkspace = computed(() => workspaces.value.find(isPersonalWorkspace) ?? null)
 
   function sessionWorkspaceFor(dashboardWorkspaceId: string): string | null {
@@ -212,7 +263,11 @@ export const useAuthStore = defineStore('auth', () => {
     resetWorkspaceContext,
     fetchStatus,
     whenReady: () => initialStatus,
+    signInPending,
+    waitingForBrowser,
     signIn,
+    joinSignIn,
+    cancelSignIn,
     signOut,
     fetchWorkspaces,
     switchWorkspace,

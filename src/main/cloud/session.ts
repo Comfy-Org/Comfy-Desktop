@@ -142,6 +142,7 @@ export class CloudSession {
   private mintBlockedUntil = 0
   private loginInFlight: Promise<AuthStatus> | null = null
   private loginAuthorizeUrl: string | null = null
+  private loginAbort: AbortController | null = null
   private viewConsentOpen = false
   private returnedToAnchorHandler: (() => void) | null = null
   private readonly revocations = new Revocations()
@@ -167,15 +168,22 @@ export class CloudSession {
     }
     this.switching = null
     const generation = ++this.authGeneration
-    const login = this.signInAtGeneration(generation).finally(() => {
+    const abort = new AbortController()
+    const login = this.signInAtGeneration(generation, abort.signal).finally(() => {
       if (this.loginInFlight === login) this.clearPendingLogin()
     })
     this.loginInFlight = login
+    this.loginAbort = abort
     return login
   }
 
-  private async signInAtGeneration(generation: number): Promise<AuthStatus> {
+  cancelLogin(): void {
+    this.loginAbort?.abort()
+  }
+
+  private async signInAtGeneration(generation: number, signal: AbortSignal): Promise<AuthStatus> {
     const { tokens, status } = await reportedSignIn('sign_in', {
+      signal,
       onAuthorizeUrl: (url) => {
         if (generation === this.authGeneration) this.loginAuthorizeUrl = url
       }
@@ -212,6 +220,7 @@ export class CloudSession {
   private clearPendingLogin(): void {
     this.loginInFlight = null
     this.loginAuthorizeUrl = null
+    this.loginAbort = null
   }
 
   logout(reason: SignOutReason = 'user'): void {

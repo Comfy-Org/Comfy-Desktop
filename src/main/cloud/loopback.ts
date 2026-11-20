@@ -6,6 +6,7 @@ import { idpCallbackFailure, SignInFailure } from './signInFailure'
 export interface LoopbackListenerOptions {
   expectedState: string
   timeoutMs: number
+  signal?: AbortSignal
 }
 
 export interface LoopbackListener {
@@ -125,7 +126,7 @@ function html(kind: 'success' | 'error' | 'invalid'): string {
 }
 
 export function startLoopbackListener(options: LoopbackListenerOptions): Promise<LoopbackListener> {
-  const { expectedState, timeoutMs } = options
+  const { expectedState, timeoutMs, signal } = options
   return new Promise((resolveListener, rejectListener) => {
     let settled = false
     let resolveCode!: (r: { code: string }) => void
@@ -139,6 +140,7 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
     let server: Server | null = null
     const close = (): void => {
       clearTimeout(timeoutHandle)
+      signal?.removeEventListener('abort', cancel)
       if (server) {
         try {
           server.close()
@@ -170,6 +172,14 @@ export function startLoopbackListener(options: LoopbackListenerOptions): Promise
       () => fail(new SignInFailure('Loopback OAuth callback timed out', 'timeout')),
       timeoutMs
     )
+    function cancel(): void {
+      fail(new SignInFailure('Sign-in was cancelled in Comfy Desktop', 'cancelled'))
+    }
+    if (signal?.aborted) {
+      cancel()
+      return
+    }
+    signal?.addEventListener('abort', cancel, { once: true })
 
     function handle(req: IncomingMessage, res: ServerResponse): void {
       const remote = req.socket.remoteAddress ?? ''
