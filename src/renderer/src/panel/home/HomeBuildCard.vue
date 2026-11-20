@@ -256,7 +256,7 @@ function openContextMenu(event: MouseEvent): void {
       </span>
       <span
         class="mt-0.5 flex min-w-0 items-center text-xs/[17px] text-subtle-foreground"
-        :class="showsUpdate ? 'pr-7' : menuSpace"
+        :class="!showsUpdate && menuSpace"
         :data-testid="uninstalling ? 'home-build-install-detail' : 'home-build-detail'"
       >
         <span v-if="subtitle" class="min-w-0 truncate">{{ subtitle }}</span>

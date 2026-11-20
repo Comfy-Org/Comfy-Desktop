@@ -22,7 +22,7 @@ function onClick(): void {
     type="button"
     variant="inverted"
     size="unset"
-    class="pointer-events-auto relative -my-px h-[19px] shrink-0 rounded-full px-2 text-[11px]/none font-medium focus-visible:ring-2 disabled:pointer-events-auto disabled:cursor-default"
+    class="pointer-events-auto relative z-10 -my-px h-[19px] shrink-0 rounded-full px-2 text-[11px]/none font-medium focus-visible:ring-2 disabled:pointer-events-auto disabled:cursor-default"
     :disabled="update.disabled"
     :title="update.title"
     :aria-label="t('chooser.updateBuild', { name: build.name })"

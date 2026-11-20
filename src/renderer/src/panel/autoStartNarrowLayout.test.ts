@@ -158,6 +158,40 @@ function overlaps(a: DOMRect, b: DOMRect): boolean {
   return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
 }
 
+function expectClearOfMore(update: HTMLElement, more: HTMLElement): void {
+  expect(
+    overlaps(boxOf(update), boxOf(more.querySelector('svg')!)),
+    'Update and ⋯ do not touch'
+  ).toBe(false)
+  const box = boxOf(update)
+  const round = box.height / 2
+  for (const [x, y] of [
+    [box.left + round, box.top + 1],
+    [box.right - round, box.top + 1],
+    [box.left + round, box.bottom - 1],
+    [box.right - round, box.bottom - 1],
+    [box.left + 1, box.top + round],
+    [box.right - 1, box.top + round]
+  ] as const) {
+    expect(document.elementFromPoint(x, y), `Update takes the press at ${x},${y}`).toBe(update)
+  }
+  const moreBox = boxOf(more)
+  expect(
+    document
+      .elementFromPoint(moreBox.left + moreBox.width / 2, moreBox.top + moreBox.height / 2)
+      ?.closest('button')
+  ).toBe(more)
+}
+
+function separatorWidth(line: Element): number {
+  const text = line.querySelector('.truncate')!.firstChild!
+  const at = text.textContent!.indexOf(' · ')
+  const range = document.createRange()
+  range.setStart(text, at)
+  range.setEnd(text, at + 3)
+  return range.getBoundingClientRect().width
+}
+
 describe('the Update button beside a build version', () => {
   it.each(UPDATE_SURFACES.map((surface) => [surface.name, surface] as const))(
     'on %s, leaves the card and its rows as they are, and stays put and clear of ⋯ on hover and focus',
@@ -186,13 +220,22 @@ describe('the Update button beside a build version', () => {
       expect(fullyShown(update)).toBe(true)
       expect(rest.right).toBeLessThanOrEqual(cardBox.right - 18 + 0.5)
       expect(card.scrollWidth, 'card does not overflow').toBeLessThanOrEqual(card.clientWidth)
+      const facts = line.querySelector('.truncate')!
+      const otherLine = other.querySelector(surface.line)!
+      expect(fullyShown(facts), `"${facts.textContent}" shows whole beside Update`).toBe(true)
+      expect(fullyShown(otherLine.querySelector('.truncate')!)).toBe(true)
+      if (facts.textContent!.includes(' · ')) {
+        expect(separatorWidth(line), 'the dot has the same spacing as the other card').toBe(
+          separatorWidth(otherLine)
+        )
+      }
 
       await userEvent.hover(card.querySelector<HTMLElement>('.font-semibold')!, { force: true })
       await vi.waitFor(() =>
         expect(getComputedStyle(card.querySelector(surface.more)!).opacity).toBe('1')
       )
       expect(boxOf(update), 'Update stays put while the pointer is on the card').toEqual(rest)
-      expect(overlaps(boxOf(update), boxOf(card.querySelector(surface.more)!))).toBe(false)
+      expectClearOfMore(update, card.querySelector<HTMLElement>(surface.more)!)
       await userEvent.unhover(card.querySelector<HTMLElement>('.font-semibold')!, { force: true })
 
       update.focus({ focusVisible: true } as FocusOptions)
@@ -200,7 +243,7 @@ describe('the Update button beside a build version', () => {
       await userEvent.keyboard('{Tab}')
       expect(document.activeElement).toBe(update)
       expect(boxOf(update), 'Update stays put while it has keyboard focus').toEqual(rest)
-      expect(overlaps(boxOf(update), boxOf(card.querySelector(surface.more)!))).toBe(false)
+      expectClearOfMore(update, card.querySelector<HTMLElement>(surface.more)!)
       expect(boxOf(card).height).toBe(100)
     }
   )

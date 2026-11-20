@@ -216,6 +216,8 @@ const leadingFact = computed(() =>
   isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
 
+const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
+
 const showsUpdate = computed(
   () =>
     !isUninstalling.value &&
@@ -427,13 +429,11 @@ function openContextMenu(event: MouseEvent): void {
         />
       </div>
       <div
-        v-if="leadingFact || trailingFact || showsUpdate"
+        v-if="metaLine || showsUpdate"
         class="chooser-tile-meta-line mt-0.5 flex min-w-0 items-center text-xs/[17px] text-subtle-foreground"
-        :class="showsUpdate ? canOpenMenu && 'pr-7' : menuSpace"
+        :class="!showsUpdate && menuSpace"
       >
-        <span v-if="leadingFact" class="min-w-0 shrink-[99999] truncate">{{ leadingFact }}</span>
-        <span v-if="leadingFact && trailingFact" class="shrink-0 whitespace-pre"> · </span>
-        <span v-if="trailingFact" class="min-w-0 truncate">{{ trailingFact }}</span>
+        <span v-if="metaLine" class="min-w-0 truncate">{{ metaLine }}</span>
         <BuildUpdateButton v-if="showsUpdate" class="ml-1.5" :build="inst" />
       </div>
     </div>
