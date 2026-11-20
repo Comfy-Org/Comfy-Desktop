@@ -1686,6 +1686,62 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
   })
 
+  it('keeps the app left open in the sidebar after a look at all apps without opening one', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="app-sidebar-app-in-progress"]').text()).toBe('Upscale 4x')
+
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar-app-in-progress"]').text()).toBe('Upscale 4x')
+
+    await wrapper.get('[data-testid="app-sidebar-app-in-progress"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Upscale 4x')
+  })
+
+  it('drops the app from the sidebar when its page closes while the person is on Home', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', covers: [] }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="app-sidebar-app-in-progress"]').text()).toBe('Upscale 4x')
+
+    vi.mocked(window.api.onAppPageClosed).mock.calls.forEach(([appPageClosed]) => appPageClosed())
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-sidebar-app-in-progress"]').exists()).toBe(false)
+  })
+
   it('opens Home from the sidebar and returns to the list of builds', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()

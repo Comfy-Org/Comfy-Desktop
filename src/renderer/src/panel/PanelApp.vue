@@ -355,6 +355,7 @@ let unsubCloseRequest: (() => void) | null = null
 let unsubReturnToDashboardRequest: (() => void) | null = null
 let unsubAppUpdatePromptRestart: (() => void) | null = null
 let unsubAppUpdateUserActionFailed: (() => void) | null = null
+let unsubAppPageClosed: (() => void) | null = null
 const { confirmReturnToDashboard } = useReturnToDashboardConfirm()
 
 const { triggerAction: triggerInstallAction, viewError: viewBuildError } = useInstallContextMenu({
@@ -491,6 +492,10 @@ onMounted(async () => {
     })
   })
 
+  unsubAppPageClosed = window.api.onAppPageClosed(() => {
+    appInProgress.value = null
+  })
+
   try {
     const shouldOpenFirstUse =
       urlFirstUsePending ||
@@ -531,6 +536,7 @@ onUnmounted(() => {
   unsubReturnToDashboardRequest?.()
   unsubAppUpdatePromptRestart?.()
   unsubAppUpdateUserActionFailed?.()
+  unsubAppPageClosed?.()
   document.body.classList.remove('panel-overlay-mode')
   sessionStore.dispose()
   if (params.get('e2e') === '1') bindE2EPanelHooks(null)
