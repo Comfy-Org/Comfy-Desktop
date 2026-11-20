@@ -49,6 +49,7 @@ export type {
   ShowProgressOpts,
   SystemInfo,
   ActionResult,
+  BlockingSession,
   ComfyArgDef,
   PortConflictInfo,
   AddResult,

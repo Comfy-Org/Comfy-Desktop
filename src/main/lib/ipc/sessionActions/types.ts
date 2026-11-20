@@ -1,4 +1,5 @@
 import type { InstallationRecord } from '../shared'
+import type { BlockingSession } from '../../../../types/ipc'
 
 export interface ActionContext {
   event: Electron.IpcMainInvokeEvent
@@ -19,4 +20,5 @@ export interface ActionResult {
   url?: string
   portConflict?: Record<string, unknown>
   newInstallationId?: string
+  blockingSessions?: BlockingSession[]
 }

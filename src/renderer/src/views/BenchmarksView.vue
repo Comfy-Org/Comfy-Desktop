@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
+import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import {
@@ -33,23 +34,19 @@ import {
   MAX_BENCHMARK_COMPARISON_EXPORT_RUNS
 } from '../lib/benchmarkComparisonSvg'
 import {
-  benchmarkGroupKey,
-  buildBenchmarkGroups,
+  buildBenchmarkTable,
   DURATION_KEYS,
   DURATION_LABEL_KEYS,
   formatSeconds,
-  GROUP_BY_OPTIONS,
   isDurationKey,
-  isGroupBy,
   machineKey,
   machineLabels,
   type ColumnSort,
-  type DurationKey,
-  type GroupBy
-} from '../lib/benchmarkGroups'
+  type DurationKey
+} from '../lib/benchmarkTable'
 import { createResultsPng } from '../lib/performanceTestResultsSvg'
 import { useDialogs } from '../composables/useDialogs'
-import BenchmarkGroupCard from './benchmarks/BenchmarkGroupCard.vue'
+import BenchmarkTable from './benchmarks/BenchmarkTable.vue'
 import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 interface MenuOption {
@@ -62,6 +59,12 @@ const UNMANAGED_WORKSPACE = '__unmanaged__'
 const IDENTITY_COLUMN_KEYS = ['workflowName', 'id', 'hardware.deviceName']
 const RANGE_COLUMN_KEY = 'range'
 const VS_BASELINE_COLUMN_KEY = 'vsBaseline'
+const MEASURE_PICKER_ORDER: readonly DurationKey[] = [
+  'fastestJobDurationSeconds',
+  'slowestJobDurationSeconds',
+  'averageJobDurationSeconds',
+  'medianJobDurationSeconds'
+]
 const COLUMN_PICKER_ORDER = [
   'instance.name',
   'workspace.name',
@@ -87,12 +90,10 @@ const workspaceFilter = ref('')
 const buildFilter = ref('')
 const machineFilter = ref('')
 const workflowFilter = ref('')
-const groupBy = ref<GroupBy>('none')
 const metric = ref<DurationKey>('medianJobDurationSeconds')
 const columnSort = ref<ColumnSort>({ key: 'medianJobDurationSeconds', ascending: true })
-const manualOrders = ref<Record<string, string[]>>({})
-const baselineIds = ref<Record<string, string>>({})
-const collapsedGroupKeys = ref<ReadonlySet<string>>(new Set())
+const manualOrder = ref<string[] | null>(null)
+const baselineId = ref<string | null>(null)
 const selectedIds = ref<ReadonlySet<string>>(new Set())
 const visibleColumnKeys = ref<ReadonlySet<string>>(
   new Set(['instance.name', 'workflowName', RANGE_COLUMN_KEY])
@@ -222,19 +223,26 @@ const columnPickerRows = computed(() => {
   const optional = availableColumnKeys.value.filter((key) => key !== 'instance.name')
   const keys = [
     'id',
-    ...(groupBy.value === 'workflow' ? [] : ['workflowName']),
+    'workflowName',
     ...(availableColumnKeys.value.includes('instance.name') ? ['instance.name'] : []),
     RANGE_COLUMN_KEY,
     ...optional,
     VS_BASELINE_COLUMN_KEY
   ]
   const alwaysShown = new Set(['id', metric.value, VS_BASELINE_COLUMN_KEY])
-  return keys.map((key) => ({
+  const toRow = (key: string) => ({
     key,
     label: columnLabel(key),
     locked: alwaysShown.has(key),
     visible: alwaysShown.has(key) || visibleColumnKeys.value.has(key)
-  }))
+  })
+  return {
+    measures: MEASURE_PICKER_ORDER.filter((key) => keys.includes(key)).map(toRow),
+    columns: keys
+      .filter((key) => !isDurationKey(key))
+      .map(toRow)
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }
 })
 const extraColumns = computed(() => {
   const position = new Map(columnOrder.value.map((key, index) => [key, index]))
@@ -323,22 +331,6 @@ const toolbarMenus = computed(() => [
     )
   },
   {
-    key: 'group-by',
-    label: t('benchmarks.groupBy'),
-    value: groupBy.value,
-    set: setGroupBy,
-    options: GROUP_BY_OPTIONS.map((value) => ({
-      value,
-      label: t(
-        {
-          none: 'benchmarks.groupByNone',
-          workflow: 'benchmarks.filterWorkflow',
-          hardware: 'benchmarks.filterHardware'
-        }[value]
-      )
-    }))
-  },
-  {
     key: 'compare-by',
     label: t('benchmarks.compareBy'),
     value: metric.value,
@@ -347,7 +339,7 @@ const toolbarMenus = computed(() => [
   }
 ])
 
-const VIEW_MENU_KEYS = new Set(['group-by', 'compare-by'])
+const VIEW_MENU_KEYS = new Set(['compare-by'])
 
 const toolbarMenuGroups = computed(() => [
   {
@@ -387,28 +379,23 @@ function isVisible(benchmark: PerformanceTestBenchmark): boolean {
   )
 }
 
-const groups = computed(() =>
-  buildBenchmarkGroups({
+const table = computed(() =>
+  buildBenchmarkTable({
     benchmarks: benchmarks.value,
-    groupBy: groupBy.value,
     isVisible,
     metric: metric.value,
     sort: columnSort.value,
     valueOf: fieldValue,
-    manualOrders: manualOrders.value,
-    baselineIds: baselineIds.value
+    manualOrder: manualOrder.value,
+    baselineId: baselineId.value
   })
 )
 const selectedRuns = computed(() =>
-  groups.value.flatMap((group) => group.rows.filter(({ id }) => selectedIds.value.has(id)))
+  (table.value?.rows ?? []).filter(({ id }) => selectedIds.value.has(id))
 )
 const selectionOverLimit = computed(
   () => selectedRuns.value.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS
 )
-
-function setGroupBy(value: string): void {
-  if (isGroupBy(value)) groupBy.value = value
-}
 
 function setMetric(value: string): void {
   if (!isDurationKey(value)) return
@@ -416,33 +403,19 @@ function setMetric(value: string): void {
   metric.value = value
 }
 
-function sortBy(key: string, fromManualGroup: boolean): void {
+function sortBy(key: string): void {
   const current = columnSort.value
   columnSort.value =
-    current.key === key && !fromManualGroup
+    current.key === key && manualOrder.value === null
       ? { key, ascending: !current.ascending }
       : { key, ascending: isDurationKey(key) }
-  manualOrders.value = {}
-}
-
-function setManualOrder(groupKey: string, order: string[]): void {
-  manualOrders.value = { ...manualOrders.value, [groupKey]: order }
-}
-
-function toggleCollapsed(groupKey: string): void {
-  const next = new Set(collapsedGroupKeys.value)
-  if (!next.delete(groupKey)) next.add(groupKey)
-  collapsedGroupKeys.value = next
+  manualOrder.value = null
 }
 
 function toggleSelected(id: string): void {
   const next = new Set(selectedIds.value)
   if (!next.delete(id)) next.add(id)
   selectedIds.value = next
-}
-
-function selectRuns(runs: PerformanceTestBenchmark[]): void {
-  selectedIds.value = new Set([...selectedIds.value, ...runs.map(({ id }) => id)])
 }
 
 function clearFilters(): void {
@@ -458,16 +431,6 @@ function clearSelection(): void {
   exportError.value = null
 }
 
-function setBaseline(groupKey: string, id: string): void {
-  baselineIds.value = { ...baselineIds.value, [groupKey]: id }
-}
-
-function resetBaseline(groupKey: string): void {
-  const next = { ...baselineIds.value }
-  delete next[groupKey]
-  baselineIds.value = next
-}
-
 function isBestAmong(
   runs: PerformanceTestBenchmark[],
   benchmark: PerformanceTestBenchmark,
@@ -480,10 +443,7 @@ function isBestAmong(
 
 async function exportRuns(runs: PerformanceTestBenchmark[]): Promise<void> {
   if (runs.length === 0 || runs.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS) return
-  const groupKeys = new Set(runs.map((run) => benchmarkGroupKey(run, groupBy.value)))
-  const onlyGroup =
-    groupKeys.size === 1 ? groups.value.find((group) => groupKeys.has(group.key)) : undefined
-  const relativeGroup = onlyGroup?.customBaseline ? onlyGroup : undefined
+  const relativeTable = table.value?.customBaseline ? table.value : null
   isExporting.value = true
   exportError.value = null
   try {
@@ -492,7 +452,7 @@ async function exportRuns(runs: PerformanceTestBenchmark[]): Promise<void> {
       metricTitle: t('benchmarks.metric'),
       durationRangeTitle: t('benchmarks.durationRange'),
       durationRangeHint: t('benchmarks.durationRangeHint'),
-      relativeSpeed: relativeGroup
+      relativeSpeed: relativeTable
         ? {
             title: t('benchmarks.relativePerformance'),
             hint: t('benchmarks.relativePerformanceHint'),
@@ -502,7 +462,7 @@ async function exportRuns(runs: PerformanceTestBenchmark[]): Promise<void> {
         : undefined,
       exportDateTime: dateFormatter.format(new Date()),
       runs: runs.map((benchmark, index) => {
-        const comparison = relativeGroup?.comparisons.get(benchmark.id)
+        const comparison = relativeTable?.comparisons.get(benchmark.id)
         return {
           color: SERIES_COLORS[index % SERIES_COLORS.length]!,
           properties: exportColumns.value.map((column) => ({
@@ -558,9 +518,8 @@ function applyBenchmarks(list: PerformanceTestBenchmark[]): void {
 
 function resetViewState(): void {
   selectedIds.value = new Set()
-  baselineIds.value = {}
-  manualOrders.value = {}
-  collapsedGroupKeys.value = new Set()
+  baselineId.value = null
+  manualOrder.value = null
 }
 
 async function loadBenchmarks(folderPath?: string): Promise<void> {
@@ -611,12 +570,8 @@ function replaceSessionId(oldId: string, newId: string): void {
     benchmark.id === oldId ? { ...benchmark, id: newId } : benchmark
   )
   selectedIds.value = new Set([...selectedIds.value].map(swap))
-  baselineIds.value = Object.fromEntries(
-    Object.entries(baselineIds.value).map(([key, id]) => [key, swap(id)])
-  )
-  manualOrders.value = Object.fromEntries(
-    Object.entries(manualOrders.value).map(([key, order]) => [key, order.map(swap)])
-  )
+  if (baselineId.value !== null) baselineId.value = swap(baselineId.value)
+  manualOrder.value = manualOrder.value?.map(swap) ?? null
 }
 
 async function showRenameError(message?: string): Promise<void> {
@@ -800,27 +755,44 @@ onActivated(() => {
                     <SlidersHorizontal :size="15" aria-hidden="true" />
                   </Button>
                 </template>
-                <DropdownMenuLabel
-                  class="benchmarks__columns-title px-3 pt-1.5 pb-1"
-                  :class="SECTION_TITLE_CLASS"
+                <template
+                  v-for="(section, index) in [
+                    {
+                      class: 'benchmarks__columns-measures',
+                      title: t('benchmarks.measures'),
+                      rows: columnPickerRows.measures
+                    },
+                    {
+                      class: 'benchmarks__columns-title',
+                      title: t('benchmarks.columnsToDisplay'),
+                      rows: columnPickerRows.columns
+                    }
+                  ]"
+                  :key="section.class"
                 >
-                  {{ t('benchmarks.columnsToDisplay') }}
-                </DropdownMenuLabel>
-                <DropdownMenuCheckboxItem
-                  v-for="row in columnPickerRows"
-                  :key="row.key"
-                  :model-value="row.visible"
-                  :disabled="row.locked"
-                  class="flex min-h-8 cursor-default items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-none data-disabled:text-muted-foreground data-highlighted:bg-accent"
-                  :data-testid="`benchmark-column-${row.key}`"
-                  @update:model-value="(visible) => setColumnVisible(row.key, visible === true)"
-                  @select="(event) => event.preventDefault()"
-                >
-                  <span class="flex-1 truncate text-left">{{ row.label }}</span>
-                  <DropdownMenuItemIndicator>
-                    <Check :size="15" aria-hidden="true" />
-                  </DropdownMenuItemIndicator>
-                </DropdownMenuCheckboxItem>
+                  <MenuSeparator v-if="index > 0" />
+                  <DropdownMenuLabel
+                    class="px-3 pt-1.5 pb-1"
+                    :class="[section.class, SECTION_TITLE_CLASS]"
+                  >
+                    {{ section.title }}
+                  </DropdownMenuLabel>
+                  <DropdownMenuCheckboxItem
+                    v-for="row in section.rows"
+                    :key="row.key"
+                    :model-value="row.visible"
+                    :disabled="row.locked"
+                    class="flex min-h-8 cursor-default items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-none data-disabled:text-muted-foreground data-highlighted:bg-accent"
+                    :data-testid="`benchmark-column-${row.key}`"
+                    @update:model-value="(visible) => setColumnVisible(row.key, visible === true)"
+                    @select="(event) => event.preventDefault()"
+                  >
+                    <span class="flex-1 truncate text-left">{{ row.label }}</span>
+                    <DropdownMenuItemIndicator>
+                      <Check :size="15" aria-hidden="true" />
+                    </DropdownMenuItemIndicator>
+                  </DropdownMenuCheckboxItem>
+                </template>
               </Menu>
             </div>
           </div>
@@ -897,7 +869,7 @@ onActivated(() => {
           </div>
         </EmptyState>
         <EmptyState
-          v-else-if="groups.length === 0"
+          v-else-if="!table"
           class="benchmarks__no-results px-6 py-16"
           :icon="ChartColumn"
           :title="t('common.nothingMatches')"
@@ -914,39 +886,27 @@ onActivated(() => {
             {{ t('common.clearFilters') }}
           </Button>
         </EmptyState>
-        <div v-else class="benchmarks__groups flex flex-col gap-2">
-          <BenchmarkGroupCard
-            v-for="group in groups"
-            :key="group.key"
-            :class="{ 'not-first:mt-4': !collapsedGroupKeys.has(group.key) }"
-            :group="group"
-            :group-by="groupBy"
-            :machine-label="machineNames.get(group.machineKey) ?? t('benchmarks.unknownHardware')"
-            :metric="metric"
-            :sort="columnSort"
-            :build-column="buildColumnVisible"
-            :workflow-column="workflowColumnVisible"
-            :range-column="rangeColumnVisible"
-            :extra-columns="extraColumns"
-            :selected-ids="selectedIds"
-            :deleting-ids="deletingIds"
-            :collapsed="collapsedGroupKeys.has(group.key)"
-            :exporting="isExporting"
-            :format-date="formatDate"
-            :format-column-value="formatColumnValue"
-            :rename-session="renameSession"
-            @toggle-collapsed="toggleCollapsed(group.key)"
-            @sort="(key) => sortBy(key, group.manual)"
-            @toggle-selected="toggleSelected"
-            @select-all="selectRuns(group.rows)"
-            @export="exportRuns(group.rows)"
-            @set-baseline="(id) => setBaseline(group.key, id)"
-            @reset-baseline="resetBaseline(group.key)"
-            @reorder="(order) => setManualOrder(group.key, order)"
-            @reorder-columns="(keys) => (columnOrder = keys)"
-            @delete="deleteSession"
-          />
-        </div>
+        <BenchmarkTable
+          v-else
+          :table="table"
+          :metric="metric"
+          :sort="columnSort"
+          :build-column="buildColumnVisible"
+          :workflow-column="workflowColumnVisible"
+          :range-column="rangeColumnVisible"
+          :extra-columns="extraColumns"
+          :selected-ids="selectedIds"
+          :deleting-ids="deletingIds"
+          :format-date="formatDate"
+          :format-column-value="formatColumnValue"
+          :rename-session="renameSession"
+          @sort="sortBy"
+          @toggle-selected="toggleSelected"
+          @baseline="(id) => (baselineId = id)"
+          @reorder="(order) => (manualOrder = order)"
+          @reorder-columns="(keys) => (columnOrder = keys)"
+          @delete="deleteSession"
+        />
 
         <div
           v-if="selectedRuns.length > 0 || exportError"

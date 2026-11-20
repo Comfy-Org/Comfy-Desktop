@@ -511,6 +511,12 @@ export interface ActionResult {
   cancelled?: boolean
   running?: boolean
   newInstallationId?: string
+  blockingSessions?: BlockingSession[]
+}
+
+export interface BlockingSession {
+  sessionId: string
+  name: string
 }
 
 export interface PortConflictInfo {

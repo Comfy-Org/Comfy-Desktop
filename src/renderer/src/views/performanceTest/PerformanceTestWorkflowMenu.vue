@@ -15,7 +15,7 @@ const props = defineProps<{
   locked: boolean
   importing: boolean
   deleting: boolean
-  canChooseExample: boolean
+  buildSelected: boolean
   loadingExamples: boolean
   downloading: boolean
 }>()
@@ -34,8 +34,10 @@ function carriesFiles(event: DragEvent): boolean {
   return event.dataTransfer?.types.includes('Files') ?? false
 }
 
+const acceptsDrop = (): boolean => props.buildSelected && !props.locked
+
 function enterDrag(event: DragEvent): void {
-  isDragging.value = !props.locked && carriesFiles(event)
+  isDragging.value = acceptsDrop() && carriesFiles(event)
 }
 
 function leaveDrag(event: DragEvent): void {
@@ -47,7 +49,7 @@ function leaveDrag(event: DragEvent): void {
 function drop(event: DragEvent): void {
   isDragging.value = false
   const file = event.dataTransfer?.files[0]
-  if (file && !props.locked) emit('import-file', file)
+  if (file && acceptsDrop()) emit('import-file', file)
 }
 </script>
 
@@ -108,7 +110,7 @@ function drop(event: DragEvent): void {
         as="button"
         type="button"
         class="performance-test__example-workflow w-full"
-        :disabled="!canChooseExample || importing || loadingExamples"
+        :disabled="!buildSelected || importing || loadingExamples"
         @select="emit('choose-example')"
       >
         <LayoutGrid :size="15" aria-hidden="true" />
@@ -122,7 +124,7 @@ function drop(event: DragEvent): void {
         as="button"
         type="button"
         class="performance-test__import-workflow w-full"
-        :disabled="importing"
+        :disabled="!buildSelected || importing"
         @select="emit('import')"
       >
         <Upload :size="15" aria-hidden="true" />

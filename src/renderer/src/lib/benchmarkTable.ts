@@ -18,10 +18,6 @@ export const DURATION_KEYS = [
 
 export type DurationKey = (typeof DURATION_KEYS)[number]
 
-export const GROUP_BY_OPTIONS = ['none', 'workflow', 'hardware'] as const
-
-export type GroupBy = (typeof GROUP_BY_OPTIONS)[number]
-
 export const DURATION_LABEL_KEYS: Record<DurationKey, string> = {
   fastestJobDurationSeconds: 'benchmarks.fastest',
   averageJobDurationSeconds: 'benchmarks.average',
@@ -39,14 +35,10 @@ export interface RunComparison {
   kind: RelativeSpeedKind
 }
 
-export interface BenchmarkGroup {
-  key: string
-  workflowName: string
-  machineKey: string
+export interface BenchmarkTableModel {
   members: PerformanceTestBenchmark[]
   rows: PerformanceTestBenchmark[]
   manual: boolean
-  buildCount: number
   measuredCount: number
   fastestId: string | null
   referenceId: string | null
@@ -55,9 +47,8 @@ export interface BenchmarkGroup {
   scaleMaximum: number
 }
 
-export interface BenchmarkGroupsInput {
+export interface BenchmarkTableInput {
   benchmarks: readonly PerformanceTestBenchmark[]
-  groupBy: GroupBy
   isVisible: (benchmark: PerformanceTestBenchmark) => boolean
   metric: DurationKey
   sort: ColumnSort
@@ -65,8 +56,8 @@ export interface BenchmarkGroupsInput {
     benchmark: PerformanceTestBenchmark,
     key: string
   ) => PerformanceTestResultValue | undefined
-  manualOrders: Readonly<Record<string, readonly string[]>>
-  baselineIds: Readonly<Record<string, string>>
+  manualOrder: readonly string[] | null
+  baselineId: string | null
 }
 
 const PLATFORM_NAMES: Record<string, string> = {
@@ -87,16 +78,6 @@ export function formatSeconds(value: number | null): string {
 export function machineKey(benchmark: PerformanceTestBenchmark): string {
   const { gpu, cpu, memoryGb, platform } = benchmark.machine
   return JSON.stringify([gpu, cpu, memoryGb, platform])
-}
-
-export function isGroupBy(value: string): value is GroupBy {
-  return (GROUP_BY_OPTIONS as readonly string[]).includes(value)
-}
-
-export function benchmarkGroupKey(benchmark: PerformanceTestBenchmark, groupBy: GroupBy): string {
-  if (groupBy === 'workflow') return JSON.stringify(['workflow', benchmark.workflowName])
-  if (groupBy === 'hardware') return JSON.stringify(['hardware', machineKey(benchmark)])
-  return 'all'
 }
 
 export function machineLabels(
@@ -161,47 +142,31 @@ export function moveRunInOrder(order: readonly string[], id: string, targetId: s
   return next
 }
 
-function newestRunTime(members: readonly PerformanceTestBenchmark[]): number {
-  return Math.max(
-    0,
-    ...members.map((benchmark) =>
-      benchmark.createdAt === null ? 0 : Date.parse(benchmark.createdAt) || 0
-    )
-  )
-}
-
-function orderMembers(
-  members: readonly PerformanceTestBenchmark[],
-  input: BenchmarkGroupsInput,
-  manualIds: readonly string[] | undefined
-): PerformanceTestBenchmark[] {
-  const sorted = [...members].sort((a, b) =>
+function orderMembers(input: BenchmarkTableInput): PerformanceTestBenchmark[] {
+  const sorted = [...input.benchmarks].sort((a, b) =>
     compareFieldValues(
       input.valueOf(a, input.sort.key),
       input.valueOf(b, input.sort.key),
       input.sort.ascending
     )
   )
-  if (!manualIds) return sorted
-  const manualIndex = new Map(manualIds.map((id, index) => [id, index]))
+  if (!input.manualOrder) return sorted
+  const manualIndex = new Map(input.manualOrder.map((id, index) => [id, index]))
   const position = (benchmark: PerformanceTestBenchmark): number =>
     manualIndex.get(benchmark.id) ?? Number.MAX_SAFE_INTEGER
   return sorted.sort((a, b) => position(a) - position(b))
 }
 
-function buildGroup(
-  key: string,
-  members: PerformanceTestBenchmark[],
-  input: BenchmarkGroupsInput
-): BenchmarkGroup {
-  const { metric } = input
-  const manualIds = input.manualOrders[key]
-  const ordered = orderMembers(members, input, manualIds)
+export function buildBenchmarkTable(input: BenchmarkTableInput): BenchmarkTableModel | null {
+  const { benchmarks: members, metric } = input
+  const ordered = orderMembers(input)
+  const rows = ordered.filter(input.isVisible)
+  if (rows.length === 0) return null
   const measured = members
     .filter((benchmark) => benchmark[metric] !== null)
     .sort((a, b) => a[metric]! - b[metric]!)
   const fastest = measured[0] ?? null
-  const chosen = measured.find((benchmark) => benchmark.id === input.baselineIds[key]) ?? null
+  const chosen = measured.find((benchmark) => benchmark.id === input.baselineId) ?? null
   const reference = chosen ?? fastest
   const referenceDuration = reference?.[metric] ?? null
   const comparisons = new Map(
@@ -219,13 +184,9 @@ function buildGroup(
     )
   )
   return {
-    key,
-    workflowName: members[0]!.workflowName,
-    machineKey: machineKey(members[0]!),
     members: ordered,
-    rows: ordered.filter(input.isVisible),
-    manual: manualIds !== undefined,
-    buildCount: new Set(members.map((benchmark) => benchmark.instance.id)).size,
+    rows,
+    manual: input.manualOrder !== null,
     measuredCount: measured.length,
     fastestId: fastest?.id ?? null,
     referenceId: reference?.id ?? null,
@@ -233,18 +194,4 @@ function buildGroup(
     comparisons,
     scaleMaximum: scaleValues.length > 0 ? Math.max(...scaleValues) : 1
   }
-}
-
-export function buildBenchmarkGroups(input: BenchmarkGroupsInput): BenchmarkGroup[] {
-  const membersByKey = new Map<string, PerformanceTestBenchmark[]>()
-  for (const benchmark of input.benchmarks) {
-    const key = benchmarkGroupKey(benchmark, input.groupBy)
-    const members = membersByKey.get(key)
-    if (members) members.push(benchmark)
-    else membersByKey.set(key, [benchmark])
-  }
-  return [...membersByKey]
-    .map(([key, members]) => buildGroup(key, members, input))
-    .filter((group) => group.rows.length > 0)
-    .sort((a, b) => newestRunTime(b.members) - newestRunTime(a.members))
 }
