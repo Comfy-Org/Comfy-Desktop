@@ -1193,7 +1193,20 @@ describe('PanelApp', () => {
         })
     )
     const runActionCalls = api.runAction.mock.calls.length
-    await chooseWorkflowItem(wrapper, '.performance-test__delete-workflow')
+    await openWorkflowMenu(wrapper)
+    workflowMenuItem('.performance-test__delete-workflow')!.click()
+    await flushPromises()
+    const confirmDelete = await vi.waitFor(() => {
+      const action = document.querySelector<HTMLElement>(
+        '[role="alertdialog"] [data-testid="base-alert-action"]'
+      )
+      if (!action) throw new Error('Delete workflow confirm is not open yet')
+      return action
+    })
+    expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
+    expect(confirmDelete.textContent?.trim()).toBe('Delete workflow')
+    confirmDelete.click()
+    await flushPromises()
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBe('')
     await wrapper.get('.performance-test__run').trigger('click')
     expect(api.runAction).toHaveBeenCalledTimes(runActionCalls)
