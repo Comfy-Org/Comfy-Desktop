@@ -7,7 +7,7 @@ async function installAppI18nAfterTestFileMocksRegister(): Promise<void> {
   config.global.plugins = [...(config.global.plugins ?? []), createAppI18n()]
 }
 
-async function restCursorLeftByEarlierFilesInTheCorner(): Promise<void> {
+async function parkCursorInTheCorner(): Promise<void> {
   const corner = document.createElement('div')
   corner.style.cssText = 'position: fixed; right: 0; bottom: 0; width: 4px; height: 4px'
   document.body.append(corner)
@@ -16,7 +16,7 @@ async function restCursorLeftByEarlierFilesInTheCorner(): Promise<void> {
 }
 
 beforeAll(installAppI18nAfterTestFileMocksRegister)
-beforeAll(restCursorLeftByEarlierFilesInTheCorner)
+beforeAll(parkCursorInTheCorner)
 
 enableAutoUnmount(afterEach)
 
