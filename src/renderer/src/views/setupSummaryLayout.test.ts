@@ -319,6 +319,16 @@ describe.each([
     expect(Math.round(card.bottom - field.bottom)).toBe(Math.round(field.top - card.top))
   })
 
+  it('lines Change up on the right with Browse and the notes below it', async () => {
+    await browserPage.viewport(width, height)
+    const { box } = await newBuildSummary()
+    const right = (el: Element) => Math.round(el.getBoundingClientRect().right)
+    const change = document.querySelector('[data-testid="config-change-setup"]')!
+    const browse = box.querySelector('[data-testid="config-summary-browse"]')!
+
+    expect(right(change)).toBe(right(browse))
+  })
+
   it('draws Browse as a filled secondary button, without an outline', async () => {
     await browserPage.viewport(width, height)
     const { box } = await newBuildSummary()

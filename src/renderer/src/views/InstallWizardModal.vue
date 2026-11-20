@@ -1867,7 +1867,7 @@ defineExpose({ open })
       </div>
 
       <div
-        class="config-machine relative mt-3 flex items-center gap-5 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
+        class="config-machine relative mt-3 flex items-center gap-5 overflow-hidden rounded-[14px] py-6 pr-5 pl-7 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
         :class="machineBlocked && 'config-machine--unsupported'"
       >
         <SetupMachineIllustration
