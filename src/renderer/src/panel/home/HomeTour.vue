@@ -17,12 +17,7 @@ import CoachmarkCard from '@comfyorg/design-system/card/CoachmarkCard'
 import PopoverContent from '@comfyorg/design-system/popover/PopoverContent'
 import { emitTelemetryAction } from '../../lib/telemetry'
 import { useInstallationStore } from '../../stores/installationStore'
-import {
-  HOME_TOUR_STEPS,
-  findHomeTourAnchor,
-  type HomeTourAnchor,
-  type HomeTourStep
-} from './homeTourSteps'
+import { HOME_TOUR_STEPS, findHomeTourAnchor, type HomeTourStep } from './homeTourSteps'
 import { useHomeTour } from './useHomeTour'
 
 const { active } = defineProps<{ active: boolean }>()
@@ -53,7 +48,7 @@ const isLast = computed(() => position.value.current === position.value.total)
 const rect = shallowRef<DOMRect | null>(null)
 let frame = 0
 let startToken = 0
-let resumeAnchor: HomeTourAnchor | null = null
+let paused: { steps: HomeTourStep[]; index: number } | null = null
 let focusBeforeTour: HTMLElement | null = null
 let restoreFocusOnClose = false
 let targetClick: { at: number; step: number } | null = null
@@ -63,11 +58,26 @@ function sameRect(a: DOMRect | null, b: DOMRect | null): boolean {
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
 }
 
+function presentStep(from: number, direction: 1 | -1): number | null {
+  for (let i = from; i >= 0 && i < tourSteps.value.length; i += direction) {
+    if (findHomeTourAnchor(tourSteps.value[i]!.anchor)) return i
+  }
+  return null
+}
+
+function nearestPresentStep(from: number): number | null {
+  return presentStep(from, 1) ?? presentStep(from, -1)
+}
+
 function trackAnchor(): void {
   const current = step.value
   const next = current
     ? (findHomeTourAnchor(current.anchor)?.getBoundingClientRect() ?? null)
     : null
+  if (!next && index.value !== null) {
+    const replacement = nearestPresentStep(index.value)
+    if (replacement !== null && replacement !== index.value) index.value = replacement
+  }
   if (!sameRect(rect.value, next)) rect.value = next
   frame = requestAnimationFrame(trackAnchor)
 }
@@ -86,14 +96,15 @@ async function start(): Promise<void> {
   const token = ++startToken
   await homeHasRendered()
   if (token !== startToken || !running.value) return
-  const allSteps = HOME_TOUR_STEPS[audience.value]
-  const shown = allSteps.filter((s) => findHomeTourAnchor(s.anchor) !== null)
+  const resumed = paused !== null
+  const shown =
+    paused?.steps ??
+    HOME_TOUR_STEPS[audience.value].filter((s) => findHomeTourAnchor(s.anchor) !== null)
+  const startAt = paused?.index ?? 0
   if (shown.length === 0) return
-  const resumed = resumeAnchor !== null
-  const pausedAt = allSteps.findIndex((s) => s.anchor === resumeAnchor)
-  const resumeIndex = shown.findIndex((s) => allSteps.indexOf(s) >= pausedAt)
+  paused = null
   tourSteps.value = shown
-  index.value = resumeIndex === -1 ? shown.length - 1 : resumeIndex
+  index.value = nearestPresentStep(startAt) ?? startAt
   focusBeforeTour = document.activeElement instanceof HTMLElement ? document.activeElement : null
   if (!resumed) {
     emitTelemetryAction('comfy.desktop.home_tour.shown', { audience: audience.value })
@@ -116,7 +127,7 @@ function stop(): void {
   targetClick = null
   startToken += 1
   cancelAnimationFrame(frame)
-  if (step.value) resumeAnchor = step.value.anchor
+  if (step.value && index.value !== null) paused = { steps: tourSteps.value, index: index.value }
   if (card.value?.$el.contains(document.activeElement)) restoreFocusOnClose = true
   index.value = null
   tourSteps.value = []
@@ -131,35 +142,38 @@ function stop(): void {
 }
 
 function end({ returnFocus }: { returnFocus: boolean }): void {
-  resumeAnchor = null
+  paused = null
   restoreFocusOnClose = returnFocus
   void finish()
 }
 
 watch(running, (now) => (now ? void start() : stop()), { immediate: true })
 watch(replays, () => {
-  resumeAnchor = null
+  paused = null
 })
 watch(step, (current) => {
   if (current) findHomeTourAnchor(current.anchor)?.scrollIntoView({ block: 'nearest' })
 })
 watch(done, (isDone) => {
-  if (isDone) resumeAnchor = null
+  if (isDone) paused = null
 })
 onBeforeUnmount(stop)
 
 function next(): void {
   if (index.value === null) return
-  if (isLast.value) {
+  const target = isLast.value ? null : presentStep(index.value + 1, 1)
+  if (target === null) {
     emitTelemetryAction('comfy.desktop.home_tour.completed', { audience: audience.value })
     end({ returnFocus: true })
     return
   }
-  index.value += 1
+  index.value = target
 }
 
 function back(): void {
-  if (index.value !== null && index.value > 0) index.value -= 1
+  if (index.value === null || index.value === 0) return
+  const target = presentStep(index.value - 1, -1)
+  if (target !== null) index.value = target
 }
 
 function skip(): void {
@@ -182,11 +196,18 @@ function elementUnderTarget(event: MouseEvent): Element | null {
   return hit
 }
 
+function isDisabled(hit: Element): boolean {
+  const control = hit.closest('button, input, select, textarea, [aria-disabled]')
+  return (
+    !!control && (control.matches(':disabled') || control.getAttribute('aria-disabled') === 'true')
+  )
+}
+
 function openTarget(event: MouseEvent): void {
   const current = step.value
   const anchor = current ? findHomeTourAnchor(current.anchor) : null
   const hit = elementUnderTarget(event)
-  if (!anchor || !hit || !anchor.contains(hit)) return
+  if (!anchor || !hit || !anchor.contains(hit) || isDisabled(hit)) return
   targetClick = { at: performance.now(), step: position.value.current }
   hit.dispatchEvent(
     new MouseEvent('click', {

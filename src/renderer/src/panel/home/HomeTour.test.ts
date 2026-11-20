@@ -526,6 +526,45 @@ describe('HomeTour', () => {
     expect(telemetry).not.toContain('comfy.desktop.home_tour.target_opened')
   })
 
+  it('keeps the tour running when the control under the click is disabled', async () => {
+    const { control, wrapper } = await goToAllBuilds()
+    control.disabled = true
+    control.addEventListener('click', () => void wrapper.setProps({ active: false }))
+
+    await userEvent.click(highlightedPart(), { position: { x: 20, y: 20 } })
+    await settle()
+
+    expect(tourCard()?.textContent).toContain('All your builds')
+    expect(setSetting).not.toHaveBeenCalled()
+  })
+
+  it('moves on to the next step when the part of the current step disappears', async () => {
+    placeAnchors()
+    mountTour()
+    await waitForCard()
+    await userEvent.click(button('next')!)
+    await userEvent.click(button('next')!)
+    await expect.poll(() => tourCard()?.textContent).toContain('Local build')
+
+    anchors.find((el) => el.dataset['homeTour'] === 'local-build')!.remove()
+
+    await expect.poll(() => tourCard()?.textContent).toContain('All your builds')
+  })
+
+  it('keeps the same steps after a pause, even when another part appears meanwhile', async () => {
+    placeAnchors(ALL_ANCHORS.filter((anchor) => anchor !== 'apps-carousel'))
+    const wrapper = mountTour()
+    await waitForCard()
+    expect(tourCard()?.textContent).toContain('1 of 7')
+
+    await wrapper.setProps({ active: false })
+    await expect.poll(() => tourCard()).toBeNull()
+    placeAnchors(['apps-carousel'])
+    await wrapper.setProps({ active: true })
+
+    await expect.poll(() => tourCard()?.textContent).toContain('1 of 7')
+  })
+
   it('keeps the tour open when the click lands on a part of the highlight with nothing under it', async () => {
     await goToAllBuilds()
 
