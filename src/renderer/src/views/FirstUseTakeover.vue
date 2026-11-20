@@ -9,6 +9,7 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import TermsModal from '../components/TermsModal.vue'
 import TermsConsentRow from '../components/TermsConsentRow.vue'
 import InlineRichText from '../components/InlineRichText.vue'
+import InfoTooltip from '../components/InfoTooltip.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
 import BuildDeviceArt from '../panel/home/BuildDeviceArt.vue'
 import { useLocalDeviceKind } from '../composables/useLocalDeviceKind'
@@ -664,10 +665,23 @@ defineExpose({ open, resetContinue })
           </span>
           <span
             v-else-if="!migrating && plan && plan.downloadBytes > 0"
-            class="text-xs/[15px] text-muted-foreground"
-            data-testid="setup-download-size"
-            >{{ t('setup.download', { size: formatSize(plan.downloadBytes) }) }}</span
+            class="inline-flex items-center text-xs/[15px] text-muted-foreground"
           >
+            <span data-testid="setup-download-size">{{
+              t('setup.download', { size: formatSize(plan.downloadBytes) })
+            }}</span>
+            <InfoTooltip
+              v-if="plan.requiredBytes > 0"
+              icon="info"
+              data-testid="setup-download-info"
+              :text="
+                t('setup.installSpaceTip', {
+                  download: formatSize(plan.downloadBytes),
+                  required: formatSize(plan.requiredBytes)
+                })
+              "
+            />
+          </span>
           <Button
             v-if="skipPick"
             type="button"

@@ -417,6 +417,7 @@ describe('Set up, the first screen', () => {
       await flushPromises()
       const summary = w.find('[data-testid="setup-download-size"]')
       expect(summary.exists() ? summary.text() : '').toBe(expected)
+      expect(w.find('[data-testid="setup-download-info"]').exists()).toBe(false)
     }
   )
 

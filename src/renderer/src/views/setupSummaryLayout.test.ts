@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page as browserPage } from 'vitest/browser'
+import { page as browserPage, userEvent } from 'vitest/browser'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -187,6 +187,34 @@ afterEach(async () => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.innerHTML = ''
   await browserPage.viewport(1100, 860)
+})
+
+it('explains install space when the download info icon is hovered or focused', async () => {
+  await browserPage.viewport(800, 563)
+  const wrapper = mount(FirstUseTakeover, { attachTo: document.body })
+  mounted.push(wrapper)
+  await flushPromises()
+  await settle()
+
+  const bubble = () => document.querySelector('.tooltip-bubble')
+  const tip = 'Allow about 2.7 GB of disk space to unpack and install the 1.2 GB download.'
+  await expect
+    .element(browserPage.getByTestId('setup-download-size'))
+    .toHaveTextContent('1.2 GB download')
+  expect(bubble()).toBeNull()
+
+  await browserPage.getByTestId('setup-download-info').hover()
+  await expect.poll(() => bubble()?.textContent).toContain(tip)
+  await browserPage.getByTestId('setup-screen').hover({ position: { x: 4, y: 4 } })
+  await expect.poll(bubble).toBeNull()
+
+  document
+    .querySelector<HTMLElement>('[data-testid="setup-download-info"] [role="button"]')!
+    .focus()
+  await expect.poll(() => bubble()?.textContent).toContain(tip)
+  await userEvent.keyboard('{Escape}')
+  await expect.poll(bubble).toBeNull()
+  await expect.element(browserPage.getByTestId('setup-install')).toBeVisible()
 })
 
 describe.each([
