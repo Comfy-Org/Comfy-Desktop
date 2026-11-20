@@ -616,6 +616,28 @@ describe('HomeTour', () => {
     await expect.poll(() => tourCard()?.textContent).toContain('All your builds')
   })
 
+  it('does not finish the tour when another page opens just after a side-card click', async () => {
+    const { wrapper } = await goToAllBuilds()
+
+    await userEvent.click(highlightedPart(), { position: { x: 20, y: 20 } })
+    await wrapper.setProps({ active: false })
+    await settle()
+
+    expect(setSetting).not.toHaveBeenCalled()
+    expect(telemetry).not.toContain('comfy.desktop.home_tour.target_opened')
+  })
+
+  it('does not finish the tour when Home hides before feedback is marked open after a side-card click', async () => {
+    const { wrapper } = await goToAllBuilds()
+
+    await userEvent.click(highlightedPart(), { position: { x: 20, y: 20 } })
+    await wrapper.setProps({ active: false })
+    await wrapper.setProps({ active: false, interrupted: true })
+    await settle()
+
+    expect(setSetting).not.toHaveBeenCalled()
+  })
+
   it('forgets a click that opened nothing once the user moves on with Next', async () => {
     const { wrapper } = await goToAllBuilds()
 

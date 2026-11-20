@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
 import type {
   ExampleWorkflowDownload,
@@ -3847,6 +3847,7 @@ describe('PanelApp', () => {
 
 describe('PanelApp home tour', () => {
   let openAnnouncement: () => void = () => {}
+  let replayChanged: (state: { id: number; pending: boolean; finished: boolean }) => void = () => {}
 
   function homeTour(): HTMLElement | null {
     return document.querySelector<HTMLElement>('[data-testid="home-tour"]')
@@ -3874,7 +3875,12 @@ describe('PanelApp home tour', () => {
       getHomeTourReplay: vi.fn(async () => ({ id: 0, pending: false })),
       requestHomeTourReplay: vi.fn(async () => 1),
       finishHomeTour: vi.fn(async () => {}),
-      onHomeTourReplayChanged: vi.fn(() => () => {}),
+      onHomeTourReplayChanged: vi.fn(
+        (cb: (state: { id: number; pending: boolean; finished: boolean }) => void) => {
+          replayChanged = cb
+          return () => {}
+        }
+      ),
       showHome: vi.fn()
     })
     window.history.replaceState({}, '', `/?${query}`)
@@ -3984,5 +3990,19 @@ describe('PanelApp home tour', () => {
     await expect.poll(() => vi.mocked(window.api.requestHomeTourReplay).mock.calls.length).toBe(1)
     expect(window.api.navigatePanel).not.toHaveBeenCalledWith('home')
     await expect.poll(() => vi.mocked(window.api.showHome).mock.calls.length).toBe(1)
+  })
+
+  it('goes back to Home when a replay waits and this dashboard is on another page', async () => {
+    const { wrapper } = mountWithTour({ homeTourDone: true })
+    await expect.poll(() => useHomeTour().loaded.value).toBe(true)
+    await wrapper.get('[data-testid="app-sidebar-assets"]').trigger('click')
+    await flushPromises()
+    const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    onTestFinished(() => focused.mockRestore())
+
+    replayChanged({ id: 1, pending: true, finished: false })
+
+    await expect.poll(() => vi.mocked(window.api.navigatePanel).mock.calls).toContainEqual(['home'])
+    await expect.poll(homeTour).not.toBeNull()
   })
 })

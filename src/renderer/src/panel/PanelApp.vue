@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useEventListener } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
@@ -81,6 +82,16 @@ const { feedbackOpen, feedbackHiddenFields, closeFeedback } = useSendFeedback()
 const { announcementOpen, closeAnnouncement } = useAnnouncement()
 const homeTour = useHomeTour()
 const dialogs = useDialogs()
+
+function showHomeForWaitingReplay(): void {
+  if (!homeTour.replayWaiting.value || !showSidebar.value || sidebarPage.value === 'home') return
+  if (!document.hasFocus()) return
+  window.api.navigatePanel('home')
+  handleSidebarNavigate('home')
+}
+
+watch(homeTour.replayWaiting, showHomeForWaitingReplay)
+useEventListener(window, 'focus', showHomeForWaitingReplay)
 
 async function takeHomeTour(): Promise<void> {
   closeAnnouncement()

@@ -6,6 +6,7 @@ const audience = ref<HomeTourAudience>('new')
 const done = ref(true)
 const loaded = ref(false)
 const replays = ref(0)
+const replayWaiting = ref(false)
 let savedDone = true
 let pendingReplayId: number | null = null
 let shownReplayId: number | null = null
@@ -29,7 +30,11 @@ async function readReplay(): Promise<HomeTourReplayState> {
 }
 
 function applyReplay(state: HomeTourReplayState): void {
-  if (state.pending && state.id !== pendingReplayId) replays.value += 1
+  if (state.pending && state.id !== pendingReplayId) {
+    replays.value += 1
+    replayWaiting.value = true
+  }
+  if (!state.pending) replayWaiting.value = false
   pendingReplayId = state.pending ? state.id : null
   if (state.finished) savedDone = true
   done.value = state.pending ? false : savedDone
@@ -62,6 +67,7 @@ async function load(): Promise<void> {
   audience.value = savedAudience === 'updated' ? 'updated' : 'new'
   savedDone = !audienceRecorded || savedDoneSetting === true
   pendingReplayId = replayAtLoad.pending ? replayAtLoad.id : null
+  replayWaiting.value = replayAtLoad.pending
   done.value = replayAtLoad.pending ? false : savedDone
   loaded.value = true
   if (heardWhileLoading) applyReplay(heardWhileLoading)
@@ -70,12 +76,14 @@ async function load(): Promise<void> {
 
 function markShown(): void {
   shownReplayId = pendingReplayId
+  replayWaiting.value = false
 }
 
 async function finish(): Promise<void> {
   await loading
   const replayId = shownReplayId
   shownReplayId = null
+  replayWaiting.value = false
   savedDone = true
   done.value = true
   try {
@@ -103,7 +111,7 @@ async function replay(): Promise<void> {
 
 export function useHomeTour() {
   loading ??= load()
-  return { audience, done, loaded, replays, finish, replay, markShown }
+  return { audience, done, loaded, replays, replayWaiting, finish, replay, markShown }
 }
 
 export function __resetHomeTourForTest(): void {
@@ -111,6 +119,7 @@ export function __resetHomeTourForTest(): void {
   done.value = true
   loaded.value = false
   replays.value = 0
+  replayWaiting.value = false
   savedDone = true
   pendingReplayId = null
   shownReplayId = null

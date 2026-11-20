@@ -23,7 +23,6 @@ import { useHomeTour } from './useHomeTour'
 const { active, interrupted = false } = defineProps<{ active: boolean; interrupted?: boolean }>()
 
 const HOLE_PADDING = 4
-const TARGET_OPEN_WINDOW_MS = 1000
 
 const { t } = useI18n()
 const installationStore = useInstallationStore()
@@ -51,7 +50,7 @@ let startToken = 0
 let paused: { steps: HomeTourStep[]; index: number } | null = null
 let focusBeforeTour: HTMLElement | null = null
 let restoreFocusOnClose = false
-let pendingOpen: { step: number; expires: ReturnType<typeof setTimeout> } | null = null
+let clickInProgress: { step: number } | null = null
 
 function sameRect(a: DOMRect | null, b: DOMRect | null): boolean {
   if (!a || !b) return a === b
@@ -122,13 +121,12 @@ function restoreFocus(event: Event): void {
 }
 
 function clearPendingOpen(): void {
-  if (pendingOpen) clearTimeout(pendingOpen.expires)
-  pendingOpen = null
+  clickInProgress = null
 }
 
 function stop(): void {
-  const openedByTarget = pendingOpen !== null && !interrupted
-  const openedStep = pendingOpen?.step ?? 0
+  const openedByTarget = clickInProgress !== null && !interrupted
+  const openedStep = clickInProgress?.step ?? 0
   clearPendingOpen()
   startToken += 1
   cancelAnimationFrame(frame)
@@ -243,7 +241,7 @@ function chooseBuildCard(card: HTMLElement): void {
   if (running) card.click()
 }
 
-function openTarget(event: MouseEvent): void {
+async function openTarget(event: MouseEvent): Promise<void> {
   const current = step.value
   const anchor = current ? findHomeTourAnchor(current.anchor) : null
   const hit = elementUnderTarget(event)
@@ -254,12 +252,10 @@ function openTarget(event: MouseEvent): void {
   }
   const control = anchor && hit && anchor.contains(hit) ? controlUnder(hit, anchor) : null
   if (!control) return
-  clearPendingOpen()
-  pendingOpen = {
-    step: position.value.current,
-    expires: setTimeout(() => (pendingOpen = null), TARGET_OPEN_WINDOW_MS)
-  }
+  clickInProgress = { step: position.value.current }
   control.click()
+  await nextTick()
+  clickInProgress = null
 }
 
 const hole = computed(() => {
@@ -312,7 +308,7 @@ function focusNext(event: Event): void {
           width: `${hole.w}px`,
           height: `${hole.h}px`
         }"
-        @click="openTarget"
+        @click="void openTarget($event)"
       />
     </div>
     <PopoverRoot :open="true" modal>
