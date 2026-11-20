@@ -249,6 +249,22 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
       { stage: 'completed', host: 'desktop' }
     ])
   })
+
+  it('resolves both a request and its repeat when the shared sign-in is cancelled', async () => {
+    let cancel!: (failure: SignInFailure) => void
+    const pending = new Promise<void>((_resolve, reject) => (cancel = reject))
+    mocks.signInToCloud.mockReturnValue(pending)
+    mocks.stateForSender.mockResolvedValue(SIGNED_OUT)
+
+    const first = requestSignIn()({})
+    await vi.waitFor(() => expect(mocks.signInToCloud).toHaveBeenCalledTimes(1))
+    const repeat = requestSignIn()({})
+    await vi.waitFor(() => expect(mocks.signInToCloud).toHaveBeenCalledTimes(2))
+    cancel(new SignInFailure('access_denied', 'cancelled'))
+
+    const cancelled = { status: 'signed_out', signInFailure: 'cancelled' }
+    await expect(Promise.all([first, repeat])).resolves.toStrictEqual([cancelled, cancelled])
+  })
 })
 
 describe('desktop2-auth:switch-workspace', () => {
