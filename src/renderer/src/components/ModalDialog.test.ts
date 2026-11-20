@@ -96,11 +96,11 @@ describe('ModalDialog shared controls', () => {
     await expect(result).resolves.toBe(true)
   })
 
-  it('retains destructive styling for a simple danger-solid confirmation', async () => {
+  it('retains destructive styling for a simple danger confirmation', async () => {
     const result = modal.confirm({
       title: 'Delete installation',
       message: 'Delete files?',
-      confirmStyle: 'danger-solid'
+      confirmStyle: 'danger'
     })
     await settle()
     const action = getElement<HTMLButtonElement>('[data-testid="base-alert-action"]')
