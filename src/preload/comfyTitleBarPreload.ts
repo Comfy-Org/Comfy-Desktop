@@ -4,13 +4,7 @@ import { buildElectronApi } from './api'
 import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode'
 
 export type ComfyPanelKey =
-  | 'comfy'
-  | 'performance-test'
-  | 'benchmarks'
-  | 'new-install'
-  | 'track'
-  | 'load-snapshot'
-  | 'quick-install'
+  'comfy' | 'performance-test' | 'benchmarks' | 'new-install' | 'track' | 'load-snapshot'
 
 export type CoachmarkKind = 'beta-notice'
 
@@ -69,7 +63,7 @@ export interface ComfyTitleBarBridge {
   onDownloadsChanged(cb: (state: DownloadsTrayState) => void): () => void
   clickDownloadsTray(anchor: TitleMenuAnchor): void
   clickFeedback(): void
-  clickAnnouncement(): void
+  openWhatsNewMenu(anchor: TitleMenuAnchor): void
   clickRefreshInstance(): void
   clickHome(): void
   resetZoom(): void
@@ -253,8 +247,8 @@ const bridge: ComfyTitleBarBridge = {
   clickFeedback: () => {
     ipcRenderer.send('comfy-window:click-feedback')
   },
-  clickAnnouncement: () => {
-    ipcRenderer.send('comfy-window:click-announcement')
+  openWhatsNewMenu: (anchor) => {
+    ipcRenderer.send('comfy-window:open-title-menu', { menu: 'whats-new', anchor })
   },
   clickRefreshInstance: () => {
     ipcRenderer.send('comfy-window:click-refresh-instance')

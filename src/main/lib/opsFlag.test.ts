@@ -219,6 +219,39 @@ describe('makeOpsFlag persistence', () => {
     expect(readFlagsFile()).toBe(stored)
   })
 
+  it('get answers from the saved value at once, while getLive waits for the boot fetch', async () => {
+    writeFlagsFile(
+      JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
+    )
+    const flag = makePersistedFlag()
+    let release: (v: unknown) => void = () => {}
+    getOpsFlagResult.mockReturnValue(
+      new Promise((r) => {
+        release = r
+      })
+    )
+    await flag.init({ distinctId: 'anon' })
+    expect(await flag.get()).toBe('disabled')
+    let answered = false
+    const live = flag.getLive().finally(() => {
+      answered = true
+    })
+    await settle()
+    expect(answered, 'still waiting for the boot fetch').toBe(false)
+    release(flagResult('degraded'))
+    expect(await live).toBe('degraded')
+  })
+
+  it('getLive falls back to the saved value when the boot fetch is unreachable', async () => {
+    writeFlagsFile(
+      JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })
+    )
+    const flag = makePersistedFlag()
+    getOpsFlagResult.mockResolvedValue(unreachable())
+    await flag.init({ distinctId: 'anon' })
+    expect(await flag.getLive()).toBe('disabled')
+  })
+
   it('overwrites the persisted entry when the fetch resolves a defined result', async () => {
     writeFlagsFile(
       JSON.stringify({ 'test-flag': { value: 'disabled', payload: null, fetchedAt: NOW } })

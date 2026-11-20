@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { page } from 'vitest/browser'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import '../assets/main.css'
 import { stubWindowApi } from '../lib/stubWindowApi'
 import AppRequestModal from './AppRequestModal.vue'
 
@@ -128,6 +130,22 @@ describe('AppRequestModal', () => {
     expect(thanks()?.textContent).toContain('Thanks. We got your request.')
   })
 
+  it('thanks the person in the middle of the window and closes right away from Done', async () => {
+    const wrapper = await mountRequest()
+    sendAppRequest.mockResolvedValue(true)
+    await type('An app that colors line art')
+    sendButton().click()
+    await flushPromises()
+
+    const body = document.querySelector('.base-modal-body')!.getBoundingClientRect()
+    const note = thanks()!.getBoundingClientRect()
+    expect(note.top - body.top).toBeCloseTo(body.bottom - note.bottom, 0)
+    expect(document.querySelectorAll('.base-modal-footer button')).toHaveLength(1)
+
+    document.querySelector<HTMLButtonElement>('[data-testid="app-request-done"]')!.click()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
   it('treats a failed send call like a request that was not accepted', async () => {
     await mountRequest()
     sendAppRequest.mockRejectedValueOnce(new Error('ipc failed'))
@@ -166,7 +184,7 @@ describe('AppRequestModal', () => {
 
     sendButton().click()
     await flushPromises()
-    document.querySelector<HTMLButtonElement>('[data-testid="app-request-cancel"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-testid="base-modal-close"]')!.click()
     await flushPromises()
     expect(wrapper.emitted('close')).toHaveLength(1)
 
@@ -224,11 +242,12 @@ describe('AppRequestModal', () => {
     expect(input()).not.toBeNull()
   })
 
-  it('closes on Cancel without sending anything', async () => {
+  it('closes from the round × without sending anything, with Send as the only footer button', async () => {
     const wrapper = await mountRequest()
     await type('An app that colors line art')
+    expect(document.querySelectorAll('.base-modal-footer button')).toHaveLength(1)
 
-    document.querySelector<HTMLButtonElement>('[data-testid="app-request-cancel"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-testid="base-modal-close"]')!.click()
     await flushPromises()
 
     expect(wrapper.emitted('close')).toHaveLength(1)
@@ -246,5 +265,30 @@ describe('AppRequestModal', () => {
 
     expect(input().value).toBe('')
     expect(sendButton().disabled).toBe(true)
+  })
+
+  it('shows an app example beside the form on a wide window, hidden from screen readers, and drops it when narrow', async () => {
+    await page.viewport(900, 700)
+    await mountRequest()
+    const art = document.querySelector('[data-testid="app-request-art"]')!
+    const artBox = art.getBoundingClientRect()
+    const title = document.querySelector('h2')!.getBoundingClientRect()
+
+    expect(art.getAttribute('aria-hidden')).toBe('true')
+    expect(art.querySelector('img')?.getAttribute('alt')).toBe('')
+    expect(art.textContent?.trim()).toBe('')
+    const card = document.querySelector('.base-modal-panel')!.getBoundingClientRect()
+    expect(artBox.width).toBeCloseTo(216, 0)
+    expect(artBox.left - card.left).toBeCloseTo(9, 0)
+    expect(artBox.top - card.top).toBeCloseTo(9, 0)
+    expect(card.bottom - artBox.bottom).toBeCloseTo(9, 0)
+    expect(getComputedStyle(art).borderTopLeftRadius).toBe('8px')
+    expect(artBox.right).toBeLessThanOrEqual(title.left)
+    expect(artBox.top).toBeLessThanOrEqual(title.top)
+
+    await page.viewport(520, 700)
+    await expect.poll(() => art.getBoundingClientRect().width).toBe(0)
+    expect(input().getBoundingClientRect().width).toBeGreaterThan(0)
+    await page.viewport(1280, 800)
   })
 })

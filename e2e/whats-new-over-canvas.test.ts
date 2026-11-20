@@ -5,11 +5,11 @@ import { test, expect } from '@playwright/test'
 import { keepOnlyComfyHostWindow } from './support/comfyHostWindow'
 import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
+import { isPopupVisible, titlePopupPage, waitForWebContents } from './support/cdpPages'
 import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 
 const INSTALL_NAME = "What's New Fixture"
 const BELL = '.title-announcement-button'
-const WHATS_NEW_CLOSE = '[data-testid="announcement-close"]'
 
 let ctx: AppContext
 let installPath: string
@@ -58,7 +58,7 @@ async function panelViewVisible(): Promise<boolean> {
   })
 }
 
-test("What's New shows over the live canvas and closing brings the canvas back @linux @macos", async () => {
+test("the bell opens the What's new menu over the live canvas and leaves the canvas showing @linux @macos", async () => {
   await clickInstallTile(ctx.panel, INSTALL_NAME)
   await ctx.panel.waitFor(
     async () =>
@@ -71,12 +71,13 @@ test("What's New shows over the live canvas and closing brings the canvas back @
   )
   await keepOnlyComfyHostWindow(ctx.app)
   await expect.poll(panelViewVisible, { timeout: 30_000 }).toBe(false)
+  await waitForWebContents(ctx.app, 'comfyTitlePopup.html', 10_000)
 
   expect(await ctx.titleBar.click(BELL)).toBe(true)
-  await ctx.panel.waitForVisible(WHATS_NEW_CLOSE)
-  await expect.poll(panelViewVisible).toBe(true)
 
-  expect(await ctx.panel.click(WHATS_NEW_CLOSE)).toBe(true)
-  await expect.poll(panelViewVisible).toBe(false)
-  expect(await ctx.panel.exists(WHATS_NEW_CLOSE)).toBe(false)
+  await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), { timeout: 5_000 })
+    .toBe(true)
+  await expect.poll(() => titlePopupPage(ctx.app).allText('li.item')).toEqual(['Take the tour'])
+  expect(await panelViewVisible()).toBe(false)
 })

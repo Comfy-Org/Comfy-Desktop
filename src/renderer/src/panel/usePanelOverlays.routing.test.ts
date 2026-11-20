@@ -34,7 +34,6 @@ describe('where a task on a build shows its progress', () => {
             newInstallRef: ref(null),
             trackRef: ref(null),
             loadSnapshotRef: ref(null),
-            quickInstallRef: ref(null),
             firstUseRef: ref(null),
             firstUseChain: {
               shouldForceTakeover: () => forcesTakeover,

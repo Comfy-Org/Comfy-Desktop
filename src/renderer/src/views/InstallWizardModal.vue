@@ -71,17 +71,24 @@ import InstallNameInput from '../components/InstallNameInput.vue'
 import TrackBuildForm from '../components/TrackBuildForm.vue'
 import LoadSnapshotForm from '../components/LoadSnapshotForm.vue'
 import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
+import { useLocalDeviceKind } from '../composables/useLocalDeviceKind'
 import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
-import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
+import {
+  toCardSelectOption as cardToSelectOption,
+  toHardwareCards,
+  toOptionCards
+} from '../lib/setupOptionCards'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
+import { SUMMARY_BOX_CLASS, SUMMARY_GRID_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
 import PathOpenButton from '../components/PathOpenButton.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { formatBytes, formatFreeSpace } from '../lib/formatting'
 import type { Build, BuildTarget } from '../devplatform/types'
+import { progressTitle } from '../lib/progressTitle'
 
 const emit = defineEmits<{
   close: []
@@ -119,7 +126,7 @@ const systemInfo = ref<SystemInfo | null>(null)
 const machineUnsupported = ref(false)
 const unsupportedReason = ref('')
 const view = ref<'summary' | 'change'>('summary')
-const platform = window.api?.platform ?? 'darwin'
+const localDeviceKind = useLocalDeviceKind()
 const hardwareWarning = ref('')
 const saveDisabled = ref(true)
 const sourcesLoading = ref(false)
@@ -565,6 +572,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   resetDiskSpace()
   sourceError.value = ''
   authorizingWorkspace.value = false
+  abandonManagedSignIn()
   initializing.value = true
 
   try {
@@ -683,30 +691,46 @@ async function initializeLocalInstall(gen: number, requestedSource?: Source): Pr
   }
 }
 
-let pendingSignIn: ReturnType<typeof authStore.signIn> | null = null
+const signingInForManaged = ref(false)
+const waitingForManagedSignIn = computed(() => signingInForManaged.value && authStore.signInPending)
+let managedSignInPick = 0
 
-function signInOnce(): ReturnType<typeof authStore.signIn> {
-  pendingSignIn ??= authStore.signIn().finally(() => {
-    pendingSignIn = null
-  })
-  return pendingSignIn
+function abandonManagedSignIn(): void {
+  managedSignInPick++
+  signingInForManaged.value = false
 }
 
 async function selectManagedInstallMode(): Promise<void> {
   if (authorizingWorkspace.value || managedBuildMode.value) return
   let authenticatedNow = false
   if (!authStore.isSignedIn) {
+    if (signingInForManaged.value) {
+      void authStore.signIn().catch(() => {})
+      return
+    }
     const session = changeSetupSession
-    authorizingWorkspace.value = true
+    const pick = ++managedSignInPick
+    const stillWanted = (): boolean => session === changeSetupSession && pick === managedSignInPick
+    signingInForManaged.value = true
     try {
-      const status = await signInOnce()
+      const status = await authStore.signIn()
       if (!status.signedIn) return
       authenticatedNow = true
-      if (workspaceId.value === PERSONAL_WORKSPACE_ID) await authStore.fetchWorkspaces()
     } catch {
       return
     } finally {
-      authorizingWorkspace.value = false
+      if (stillWanted()) signingInForManaged.value = false
+    }
+    if (!stillWanted()) return
+    if (workspaceId.value === PERSONAL_WORKSPACE_ID) {
+      authorizingWorkspace.value = true
+      try {
+        await authStore.fetchWorkspaces()
+      } catch {
+        return
+      } finally {
+        authorizingWorkspace.value = false
+      }
     }
     if (session !== changeSetupSession) return
   }
@@ -740,6 +764,7 @@ async function loadSources(): Promise<void> {
 }
 
 async function selectSourceCard(source: Source): Promise<void> {
+  abandonManagedSignIn()
   if (managedBuildMode.value) {
     workspaceInstallMode.value = 'public'
     resetSourceState(null)
@@ -1004,7 +1029,7 @@ async function handOffInstall(result: InstallBuildResult, failureTitle: string):
     })
     emit('show-progress', {
       installationId: result.entry.id,
-      title: `${t('newInstall.installing')} - ${result.entry.name}`,
+      title: progressTitle(t('newInstall.installing'), result.entry.name),
       apiCall: () => window.api.installInstance(result.entry!.id),
       autoLaunchOnFinish: true,
       opKind: 'install'
@@ -1218,9 +1243,11 @@ const diskShortLabel = computed(() => {
   return t('newInstall.requiredSpace', { size: formatBytes(required) })
 })
 const locationMeta = computed(() => {
-  const required = shownInstallSize.value
-  if (!diskFreeLabel.value || required <= 0 || diskShortLabel.value) return diskFreeLabel.value
-  return `${diskFreeLabel.value} · ${t('diskSpace.estimatedRequired', { size: formatBytes(required) })}`
+  if (!diskShortLabel.value || !diskSpace.value) return diskFreeLabel.value
+  return t('diskSpace.insufficientForInstall', {
+    free: formatFreeSpace(diskSpace.value.free),
+    required: formatBytes(shownInstallSize.value)
+  })
 })
 
 let changeSetupDraft: ChangeSetupDraft | null = null
@@ -1385,6 +1412,7 @@ async function discardChangeSetup(): Promise<void> {
   buildImportChoice.value = null
   setupBeforeServer = null
   authorizingWorkspace.value = false
+  abandonManagedSignIn()
   if (!draft) return
   instName.value = draft.instName
   await restoreNewInstallSetup(draft)
@@ -1542,6 +1570,7 @@ const existingCards = computed<SetupOptionCard[]>(() => {
 const selectedExistingCard = computed(() => buildImportChoice.value ?? selectedSourceCard.value)
 
 function chooseBuildImport(flow: BuildImportFlow): void {
+  abandonManagedSignIn()
   if (buildImportChoice.value === flow) return
   buildImportChoice.value = flow
   emitTelemetryAction('comfy.desktop.install.flow.opened', {
@@ -1583,15 +1612,7 @@ function selectCardOptionByValue(field: SourceField, fieldIndex: number, value: 
 }
 
 function toCardSelectOption(card: SetupOptionCard): BaseSelectOption {
-  return {
-    value: card.value,
-    label: card.label,
-    description: card.description,
-    disabled: card.disabled,
-    icon: card.icon,
-    testId: card.testId,
-    badge: card.recommended ? t('newInstall.recommended') : undefined
-  }
+  return cardToSelectOption(card, t('newInstall.recommended'))
 }
 
 const existingSelectOptions = computed(() => existingCards.value.map(toCardSelectOption))
@@ -1745,7 +1766,6 @@ defineExpose({ open })
     :anchor-top="view === 'change'"
     :brand-backdrop="useTakeoverHost"
     :closable="view === 'summary' && !hideBackToDashboard"
-    :close-title="$t('common.backToDashboard')"
     data-testid="new-build-modal"
     @close="emit('close')"
   >
@@ -1759,6 +1779,14 @@ defineExpose({ open })
       {{ $t('newInstall.waitingForWorkspaceAuthorization') }}
     </div>
     <div
+      v-else-if="waitingForManagedSignIn"
+      class="mt-4 w-full text-[13px] leading-[1.4] text-subtle-foreground"
+      role="status"
+      data-testid="managed-signin-status"
+    >
+      {{ $t('devPlatform.signIn.waiting') }}
+    </div>
+    <div
       v-if="sourceError && !buildImportChoice"
       class="config-error mt-4 text-[13px] leading-[1.4] text-[var(--danger)]"
       role="alert"
@@ -1768,7 +1796,8 @@ defineExpose({ open })
 
     <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
       <div
-        class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
+        class="config-name-card mt-4 rounded-[14px] bg-white/5 px-5 py-3"
+        :class="SUMMARY_GRID_CLASS"
       >
         <label
           class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
@@ -1789,7 +1818,7 @@ defineExpose({ open })
       >
         <SetupMachineIllustration
           class="h-[68px] w-[104px] flex-none max-[640px]:hidden"
-          :os="platform"
+          :kind="localDeviceKind"
           :bad="machineBlocked"
         />
         <span class="grid min-w-0">
@@ -1859,71 +1888,81 @@ defineExpose({ open })
         </Button>
       </div>
 
-      <dl
-        class="config-summary-list m-0 mt-3 flex flex-col"
+      <section
+        class="config-summary-list mt-3"
+        :class="SUMMARY_BOX_CLASS"
         :aria-label="$t('newInstall.installSummary')"
       >
         <SetupSummaryRow
           v-for="row in summaryRows"
           :key="row.key"
+          class="config-summary-row"
           :icon="row.icon"
           :label="row.label"
         >
-          <span class="grid min-w-0 flex-1 gap-1">
-            <span class="truncate text-[13px] leading-5 text-neutral-100">{{ row.value }}</span>
-            <span v-if="row.meta" class="truncate text-[12px] leading-4 text-text-muted">{{
-              row.meta
-            }}</span>
-          </span>
+          <span class="truncate text-foreground">{{ row.value }}</span>
+          <span
+            :class="[SUMMARY_META_CLASS, 'max-w-[220px] min-w-0 truncate text-subtle-foreground']"
+            :title="row.meta"
+            >{{ row.meta }}</span
+          >
         </SetupSummaryRow>
         <SetupSummaryRow
           v-if="showLocation"
-          class="config-summary-location"
+          class="config-summary-row config-summary-location"
           :icon="HardDrive"
           :label="$t('common.location')"
         >
-          <div class="grid min-w-0 flex-1 gap-1" data-testid="config-summary-path">
+          <span class="flex min-w-0" data-testid="config-summary-path">
             <PathOpenButton
               v-if="instPath"
-              class="leading-5"
+              class="leading-4"
               :path="instPath"
               @open="handleOpenInstPath"
             />
-            <span v-if="locationMeta" class="truncate text-[12px] leading-4 text-text-muted">{{
-              locationMeta
-            }}</span>
-            <span
-              v-if="diskShortLabel"
-              class="config-path-required text-[12px] leading-4 text-[var(--warning)]"
-              >{{ diskShortLabel }}</span
-            >
-            <PathDiskInfo
-              issues-only
-              :path-issues="pathIssues"
-              :disk-space-loading="diskSpaceLoading"
-              :disk-space="diskSpace"
-              :estimated-size="estimatedInstallSize"
-            />
-          </div>
-          <Button
-            size="sm"
-            variant="textonly"
-            type="button"
-            class="config-path-browse flex-none rounded-lg px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
-            data-testid="config-summary-browse"
-            @click="handleBrowse"
+          </span>
+          <span
+            class="flex min-w-0 items-center justify-end gap-3"
+            :class="[
+              SUMMARY_META_CLASS,
+              diskShortLabel ? 'text-[#f0b135]' : 'text-subtle-foreground'
+            ]"
           >
-            {{ $t('common.browse') }}
-          </Button>
+            <span
+              class="min-w-0 truncate"
+              :class="{ 'config-path-required': diskShortLabel }"
+              :title="locationMeta || undefined"
+              >{{ locationMeta }}</span
+            >
+            <Button
+              size="sm"
+              variant="secondary"
+              type="button"
+              class="config-path-browse -my-1 flex-none rounded-lg px-3"
+              data-testid="config-summary-browse"
+              @click="handleBrowse"
+            >
+              {{ $t('common.browse') }}
+            </Button>
+          </span>
         </SetupSummaryRow>
         <div
           v-if="initializing && summaryRows.length === 0"
-          class="config-loading px-3.5 py-3 text-[13px] text-text-muted"
+          class="config-loading h-4 text-[13px]/4 text-subtle-foreground"
           :class="spinnerClass"
         >
           {{ $t('newInstall.loading') }}
         </div>
-      </dl>
+      </section>
+      <div v-if="showLocation" class="px-1">
+        <PathDiskInfo
+          issues-only
+          :path-issues="pathIssues"
+          :disk-space-loading="diskSpaceLoading"
+          :disk-space="diskSpace"
+          :estimated-size="estimatedInstallSize"
+        />
+      </div>
     </div>
 
     <div

@@ -6,6 +6,8 @@ const harness = vi.hoisted(() => ({
   mirrors: { pypiMirror: undefined as string | undefined, useChineseMirrors: false },
   answers: new Map<string, unknown>(),
   registry: [] as { key: string; args: string[] }[],
+  campaignRecords: {} as Record<string, unknown>,
+  campaignReads: [] as unknown[],
   idClass: 'machine_derived',
   runs: [] as { request: unknown; finish: (report: unknown) => void; done?: boolean }[],
   busy: false,
@@ -30,7 +32,11 @@ vi.mock('../settings', () => ({
 }))
 
 vi.mock('./coreBetaCampaignFlags', () => ({
-  getCoreBetaCampaigns: async () => ({ registry: harness.registry, answers: harness.answers })
+  getCoreBetaCampaigns: async (opts: unknown) => {
+    harness.campaignReads.push(opts)
+    return { registry: harness.registry, answers: harness.answers }
+  },
+  readCampaignRecords: () => harness.campaignRecords
 }))
 
 vi.mock('./deviceId', () => ({ getIdClass: () => harness.idClass }))
@@ -117,6 +123,8 @@ beforeEach(() => {
   harness.mirrors = { pypiMirror: undefined, useChineseMirrors: false }
   harness.answers = new Map()
   harness.registry = [{ key: 'agent', args: ['--enable-agent'] }]
+  harness.campaignRecords = {}
+  harness.campaignReads = []
   harness.idClass = 'machine_derived'
   harness.runs = []
   harness.busy = false
@@ -197,6 +205,20 @@ describe('prefetchEnrolledAgents', () => {
       ]
     ])
     harness.plannable = new Set(['/a', '/b'])
+  })
+
+  it("downloads a member's campaign override from the live answers after the campaign stops enrolling", async () => {
+    harness.records = new Map([['a', { id: 'a', installPath: '/a' }]])
+    harness.answers = new Map([['agent', { ...ENROL, enrol: false }]])
+    harness.campaignRecords = { agent: { '--enable-agent': { epoch: 1, enrolledAt: Date.now() } } }
+
+    const done = prefetchEnrolledAgents()
+    await vi.waitFor(() => expect(harness.runs).toHaveLength(1))
+    harness.runs[0]!.finish(null)
+    await done
+
+    expect(harness.campaignReads).toEqual([{ live: true }])
+    expect(harness.runs[0]!.request).toMatchObject({ signature: 'comfy-agent==0.1.0rc3' })
   })
 
   it('downloads for every install that can take the agent, one install at a time', async () => {

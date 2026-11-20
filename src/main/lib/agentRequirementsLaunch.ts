@@ -8,6 +8,7 @@ import * as telemetry from './telemetry'
 import { VALID_PIP_NAME, installFilteredRequirementsDetailed, runUvPipDetailed } from './pip'
 import type { UvPipResult } from './pip'
 import { getActivePythonPath, getActiveUvPath } from './pythonEnv'
+import { findSitePackages } from '../sources/standalone/envPaths'
 import type { InstallationRecord } from '../installations'
 import { stripAnsi } from './stderrTail'
 import {
@@ -849,7 +850,30 @@ function revertOnInstall(
 
 const FRONTEND_RESTORE_TIMEOUT_MS = 60_000
 
-export async function restoreCoreFrontend(
+const FRONTEND_BACKUP_PREFIX = '.launch-frontend-backup-'
+const FRONTEND_MODULE = FRONTEND_PACKAGE.replace(/-/g, '_')
+const isFrontendDistInfo = (entry: string): boolean =>
+  entry.startsWith(`${FRONTEND_MODULE}-`) && entry.endsWith('.dist-info')
+const restoringInstalls = new Map<string, Promise<boolean>>()
+
+export function restoreCoreFrontend(
+  installation: InstallationRecord,
+  sendOutput: (text: string) => void,
+  signal?: AbortSignal
+): Promise<boolean> {
+  const running = restoringInstalls.get(installation.installPath)
+  if (running) {
+    sendOutput(`\nWaiting for another launch to finish putting ${FRONTEND_PACKAGE} back…\n`)
+    return running
+  }
+  const restore = restoreFrontendOnce(installation, sendOutput, signal).finally(() =>
+    restoringInstalls.delete(installation.installPath)
+  )
+  restoringInstalls.set(installation.installPath, restore)
+  return restore
+}
+
+async function restoreFrontendOnce(
   installation: InstallationRecord,
   sendOutput: (text: string) => void,
   signal?: AbortSignal
@@ -865,7 +889,10 @@ export async function restoreCoreFrontend(
   if (version === null) return true
   const tag = attemptTag()
   const reqPath = path.join(installation.installPath, `.launch-frontend-restore-${tag}-src.txt`)
+  const backupDir = path.join(installation.installPath, `${FRONTEND_BACKUP_PREFIX}${tag}`)
   try {
+    await removeScratch(installation.installPath, (name) => name.startsWith(FRONTEND_BACKUP_PREFIX))
+    const savedFrom = await backUpFrontend(pythonPath, backupDir)
     await fs.promises.writeFile(reqPath, `${FRONTEND_PACKAGE}==${version}\n`, 'utf-8')
     sendOutput(`\nPutting ComfyUI's ${FRONTEND_PACKAGE}==${version} back…\n`)
     const restored = await runBoundedInstall(
@@ -883,11 +910,45 @@ export async function restoreCoreFrontend(
       signal,
       { extraArgs: ['--no-deps'] }
     )
+    if (!restored.ok && savedFrom !== null) {
+      sendOutput(`Putting back any ${FRONTEND_PACKAGE} files the failed restore removed\n`)
+      await putBackMissingFiles(backupDir, savedFrom)
+    }
     return restored.ok
-  } catch {
+  } catch (err) {
+    console.warn('frontend restore: kept the installed frontend:', err)
     return false
   } finally {
     void fs.promises.unlink(reqPath).catch(() => {})
+    void fs.promises.rm(backupDir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+async function backUpFrontend(pythonPath: string, backupDir: string): Promise<string | null> {
+  const sitePackages = findSitePackages(path.dirname(path.dirname(pythonPath)))
+  if (sitePackages === null) return null
+  const listed = await fs.promises.readdir(sitePackages).catch((err: NodeJS.ErrnoException) => {
+    if (err.code === 'ENOENT') return []
+    throw err
+  })
+  const entries = listed.filter((entry) => entry === FRONTEND_MODULE || isFrontendDistInfo(entry))
+  if (entries.length === 0) return null
+  for (const entry of entries) {
+    await fs.promises.cp(path.join(sitePackages, entry), path.join(backupDir, entry), {
+      recursive: true
+    })
+  }
+  return sitePackages
+}
+
+async function putBackMissingFiles(backupDir: string, sitePackages: string): Promise<void> {
+  for (const entry of await fs.promises.readdir(backupDir)) {
+    await fs.promises
+      .cp(path.join(backupDir, entry), path.join(sitePackages, entry), {
+        recursive: true,
+        force: false
+      })
+      .catch((err: unknown) => console.warn(`frontend restore: could not put back ${entry}:`, err))
   }
 }
 

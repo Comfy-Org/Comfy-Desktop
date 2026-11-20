@@ -23,7 +23,7 @@ describe('SettingsSectionList', () => {
       const wrapper = mountList([
         {
           id: 'useChineseMirrors',
-          label: 'Use Chinese Mirrors (Git & PyPI)',
+          label: 'Use Chinese mirrors (Git & PyPI)',
           value: true,
           editable: true,
           editType: 'boolean',
@@ -35,11 +35,29 @@ describe('SettingsSectionList', () => {
       expect(desc.text()).toContain('gitcode.com')
     })
 
+    it('renders the description as plain muted text with no coloured icon', () => {
+      const wrapper = mountList([
+        {
+          id: 'hardwareAcceleration',
+          label: 'Use hardware acceleration',
+          value: true,
+          editable: true,
+          editType: 'boolean',
+          description:
+            'Uses the GPU to render Comfy Desktop. Restart Comfy Desktop for changes to take effect.'
+        }
+      ])
+      const desc = wrapper.find('.settings-v2-field-description')
+      expect(desc.classes()).toContain('text-text-muted')
+      expect(desc.find('svg').exists()).toBe(false)
+      expect(desc.html()).not.toMatch(/--info|blue/)
+    })
+
     it('does not render the description block when none is attached', () => {
       const wrapper = mountList([
         {
           id: 'useChineseMirrors',
-          label: 'Use Chinese Mirrors (Git & PyPI)',
+          label: 'Use Chinese mirrors (Git & PyPI)',
           value: false,
           editable: true,
           editType: 'boolean'
@@ -52,7 +70,7 @@ describe('SettingsSectionList', () => {
       const wrapper = mountList([
         {
           id: 'pypiMirror',
-          label: 'PyPI Mirror URL',
+          label: 'PyPI mirror URL',
           value: '',
           editable: true,
           editType: 'text',
@@ -69,7 +87,7 @@ describe('SettingsSectionList', () => {
       const wrapper = mountList([
         {
           id: 'useChineseMirrors',
-          label: 'Use Chinese Mirrors (Git & PyPI)',
+          label: 'Use Chinese mirrors (Git & PyPI)',
           value: false,
           editable: true,
           editType: 'boolean',
@@ -311,8 +329,8 @@ describe('SettingsSectionList', () => {
       editType: 'text'
     }
     const pairedFields: DetailField[] = [
-      { ...launchField, id: 'launchMode', label: 'Launch Mode', rowGroup: 'launch-window' },
-      { ...launchField, id: 'browserPartition', label: 'Browser Cache', rowGroup: 'launch-window' }
+      { ...launchField, id: 'launchMode', label: 'Launch mode', rowGroup: 'launch-window' },
+      { ...launchField, id: 'browserPartition', label: 'Browser cache', rowGroup: 'launch-window' }
     ]
 
     function mountSections(sections: DetailSection[], stacked: boolean) {
@@ -321,11 +339,11 @@ describe('SettingsSectionList', () => {
 
     it('puts a titled section heading above its fields as an uppercase label', () => {
       const wrapper = mountSections(
-        [{ title: 'Launch Settings', description: 'How the build starts.', fields: [launchField] }],
+        [{ title: 'Launch settings', description: 'How the build starts.', fields: [launchField] }],
         true
       )
       const heading = wrapper.find('h3')
-      expect(heading.text()).toBe('Launch Settings')
+      expect(heading.text()).toBe('Launch settings')
       expect(heading.classes()).toContain('uppercase')
       expect(wrapper.find('.settings-v2-section').classes()).not.toContain('grid')
       expect(wrapper.find('.settings-v2-section-body').classes()).toContain('flex-col')
@@ -334,7 +352,7 @@ describe('SettingsSectionList', () => {
 
     it('shows the section description once, under the heading', () => {
       const wrapper = mountSections(
-        [{ title: 'Launch Settings', description: 'How the build starts.', fields: [launchField] }],
+        [{ title: 'Launch settings', description: 'How the build starts.', fields: [launchField] }],
         true
       )
       const descriptions = wrapper.findAll('.settings-v2-section-desc')
@@ -343,20 +361,20 @@ describe('SettingsSectionList', () => {
     })
 
     it('pairs grouped fields in two columns with a 16px gap when they wrap', () => {
-      const wrapper = mountSections([{ title: 'Launch Settings', fields: pairedFields }], true)
+      const wrapper = mountSections([{ title: 'Launch settings', fields: pairedFields }], true)
       const paired = wrapper.findAll('.settings-v2-field-row.is-paired')
       expect(paired).toHaveLength(1)
       expect(paired[0]!.classes()).toEqual(expect.arrayContaining(['gap-4']))
     })
 
     it('pairs grouped fields when the layout is not stacked', () => {
-      const wrapper = mountSections([{ title: 'Launch Settings', fields: pairedFields }], false)
+      const wrapper = mountSections([{ title: 'Launch settings', fields: pairedFields }], false)
       expect(wrapper.findAll('.settings-v2-field-row.is-paired')).toHaveLength(1)
     })
 
     it('leaves the layout unchanged when stacked is off', () => {
       const wrapper = mountSections(
-        [{ title: 'Launch Settings', description: 'How the build starts.', fields: [launchField] }],
+        [{ title: 'Launch settings', description: 'How the build starts.', fields: [launchField] }],
         false
       )
       expect(wrapper.find('h3').exists()).toBe(false)

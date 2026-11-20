@@ -28,6 +28,7 @@ import { registerAppHandlers } from './registerAppHandlers'
 import { registerInstallationHandlers } from './registerInstallationHandlers'
 import { registerSnapshotHandlers } from './registerSnapshotHandlers'
 import { registerSettingsHandlers } from './registerSettingsHandlers'
+import { registerHomeTourHandlers } from './registerHomeTourHandlers'
 import { registerSessionHandlers } from './registerSessionHandlers'
 import { registerTerminalHandlers } from './registerTerminalHandlers'
 import { setTerminalEnvResolver } from '../terminal'
@@ -40,6 +41,7 @@ import {
   registerCreditBalanceHandlers
 } from './registerCreditBalanceHandlers'
 import { registerAssetsHandlers } from '../assets'
+import { registerAssetWorkflowHandlers } from '../assetWorkflows'
 import { registerEmbeddedSessionHandlers } from './registerEmbeddedSessionHandlers'
 import { registerCatalogHandlers } from './registerCatalogHandlers'
 import { registerAppsHandlers } from './registerAppsHandlers'
@@ -283,6 +285,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerInstallationHandlers()
   registerSnapshotHandlers()
   registerSettingsHandlers()
+  registerHomeTourHandlers()
   registerSessionHandlers()
   setTerminalEnvResolver((inst) => sourceMap[inst.sourceId]?.getTerminalEnv?.(inst) ?? null)
   registerTerminalHandlers()
@@ -292,6 +295,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerDevPlatformHandlers()
   registerCreditBalanceHandlers()
   registerAssetsHandlers()
+  registerAssetWorkflowHandlers()
   registerEmbeddedSessionHandlers()
   registerCatalogHandlers()
   registerAppsHandlers()

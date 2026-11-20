@@ -6,11 +6,15 @@ import Button from '@comfyorg/design-system/button/Button'
 const {
   reason,
   title = '',
-  kind = 'uninstall'
+  kind = 'uninstall',
+  dismissLabel = '',
+  retryLabel = ''
 } = defineProps<{
   reason: string
   title?: string
-  kind?: 'uninstall' | 'operation'
+  kind?: 'uninstall' | 'operation' | 'start'
+  dismissLabel?: string | null
+  retryLabel?: string
 }>()
 
 const emit = defineEmits<{ retry: []; dismiss: [] }>()
@@ -20,7 +24,7 @@ const { t } = useI18n()
 
 <template>
   <section
-    class="flex shrink-0 items-center gap-4 rounded-2xl border border-destructive/25 bg-[rgb(137_137_137/0.05)] px-5 py-4"
+    class="flex shrink-0 items-center gap-4 rounded-[14px] bg-[color-mix(in_oklch,var(--color-destructive)_9%,color-mix(in_oklch,var(--color-foreground)_6%,var(--color-content-background)))] px-[18px] py-4"
     role="alert"
     :data-testid="`build-${kind}-failed`"
   >
@@ -33,6 +37,7 @@ const { t } = useI18n()
           {{ title || t('uninstallProgress.failedTitle') }}
         </h2>
         <p
+          v-if="reason"
           class="m-0 mt-1 max-h-60 overflow-y-auto text-[13px]/5 break-words whitespace-pre-line text-muted-foreground select-text"
           :data-testid="`build-${kind}-failed-reason`"
         >
@@ -42,6 +47,7 @@ const { t } = useI18n()
     </div>
     <div class="flex shrink-0 items-center gap-2">
       <Button
+        v-if="dismissLabel !== null"
         type="button"
         variant="muted-textonly"
         size="unset"
@@ -49,7 +55,7 @@ const { t } = useI18n()
         :data-testid="`build-${kind}-dismiss`"
         @click="emit('dismiss')"
       >
-        {{ t('uninstallProgress.dismiss') }}
+        {{ dismissLabel || t('uninstallProgress.dismiss') }}
       </Button>
       <Button
         type="button"
@@ -59,7 +65,7 @@ const { t } = useI18n()
         :data-testid="`build-${kind}-retry`"
         @click="emit('retry')"
       >
-        {{ t('uninstallProgress.tryAgain') }}
+        {{ retryLabel || t('uninstallProgress.tryAgain') }}
       </Button>
     </div>
   </section>

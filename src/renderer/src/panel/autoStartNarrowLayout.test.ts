@@ -309,8 +309,8 @@ describe('Builds page grid', () => {
     const tile = onlyIn(wrapper, `[data-testid="${TID.dashboardTile(STUDIO.id)}"]`)
     const area = tile.querySelector('[data-testid="chooser-tile-open"]')!
     const tileBox = boxOf(tile)
-    expect(boxOf(area).width).toBeCloseTo(tileBox.width - 2, 0)
-    expect(boxOf(area).height).toBeCloseTo(tileBox.height - 2, 0)
+    expect(boxOf(area).width).toBeCloseTo(tileBox.width, 0)
+    expect(boxOf(area).height).toBeCloseTo(tileBox.height, 0)
     for (const element of [
       tile.querySelector('.chooser-tile-name')!,
       tile.querySelector('.chooser-tile-icon')!

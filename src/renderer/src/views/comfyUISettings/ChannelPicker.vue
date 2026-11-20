@@ -9,6 +9,7 @@ import type { VersionStatRow } from './VersionStatPanel.vue'
 import { formatRelativeFromMs } from '../../lib/datetime'
 import type { ActionDef, DetailField, DetailFieldOption } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 interface Props {
   field: DetailField
@@ -309,10 +310,24 @@ function statusOf(option: DetailFieldOption | undefined, selected: boolean): Opt
   }
 }
 
+function withRoomForCommitsAhead(option: DetailFieldOption): DetailFieldOption {
+  const latest = previewOf(option)?.latestVersion ?? ''
+  return {
+    ...option,
+    data: { ...option.data, latestVersion: latest.replace(/ \(([^)]+)\)$/, ' + 00 commits ($1)') }
+  }
+}
+
 const selectedFirstThenEveryOtherOption = computed<OptionStatus[]>(() => {
   const selected = selectedOption.value
-  const others = (props.field.options ?? []).filter((option) => option !== selected)
-  return [statusOf(selected, true), ...others.map((option) => statusOf(option, false))]
+  const options = props.field.options ?? []
+  const others = options.filter((option) => option !== selected)
+  const enriching = options.filter((option) => previewOf(option)?.enriching === true)
+  return [
+    statusOf(selected, true),
+    ...others.map((option) => statusOf(option, false)),
+    ...enriching.map((option) => statusOf(withRoomForCommitsAhead(option), false))
+  ]
 })
 
 const checkUpdateAction = computed<ActionDef | undefined>(() =>
@@ -568,7 +583,8 @@ function actionClass(
 
     <div class="channel-picker-card mt-4 flex flex-col gap-3">
       <h3
-        class="channel-picker-channel-header m-0 inline-flex items-center gap-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+        class="channel-picker-channel-header m-0 inline-flex items-center gap-1"
+        :class="SECTION_TITLE_CLASS"
       >
         {{ field.label }}
         <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />

@@ -696,8 +696,8 @@ describe.skipIf(!gitAvailable())('installing a standalone build', () => {
       { phase: 'download', label: 'Download' },
       { phase: 'extract', label: 'Extract' },
       { phase: 'setup', label: 'Set up environment' },
-      { phase: 'restore-nodes', label: 'Restore Nodes' },
-      { phase: 'restore-pip', label: 'Restore Packages' }
+      { phase: 'restore-nodes', label: 'Restore nodes' },
+      { phase: 'restore-pip', label: 'Restore packages' }
     ])
     expect(reportedPhases()).toEqual([
       'download',

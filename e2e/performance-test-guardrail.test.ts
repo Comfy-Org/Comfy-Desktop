@@ -22,6 +22,7 @@ test.setTimeout(180_000)
 interface LaunchResult {
   ok: boolean
   message?: string
+  blockingSessions?: Array<{ sessionId: string; name: string }>
 }
 
 async function launch(installationId: string, sessionKey: string): Promise<LaunchResult> {
@@ -103,7 +104,8 @@ test('a Performance Test is refused while another installation runs, and named @
   const perf = await launch(BENCH_ID, PERF_SESSION)
 
   expect(perf.ok).toBe(false)
-  expect(perf.message).toContain('Stop “Other Install” in Comfy Desktop, or wait for it to finish')
+  expect(perf.message).toContain('Stop the running builds then run the test again.')
+  expect(perf.blockingSessions).toEqual([{ sessionId: OTHER_ID, name: 'Other Install' }])
   expect(await events('comfy.desktop.performance_test.refused')).toEqual([
     expect.objectContaining({ installation_id: BENCH_ID, other_count: 1 })
   ])

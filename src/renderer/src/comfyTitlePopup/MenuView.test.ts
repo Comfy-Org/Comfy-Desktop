@@ -5,7 +5,7 @@ import MenuView from './MenuView.vue'
 import type { TitlePopupMenuItem } from '../../../types/ipc'
 
 const items: TitlePopupMenuItem[] = [
-  { id: 'performance-test', label: 'Performance Tests' },
+  { id: 'performance-test', label: 'Performance tests' },
   { id: 'benchmarks', label: 'Benchmarks' },
   { kind: 'separator' },
   { id: 'settings', label: 'Settings' }
@@ -40,13 +40,13 @@ describe('MenuView keyboard', () => {
   it('moves through the items with the arrow keys, skipping the separator and wrapping', () => {
     mountMenu()
     press('ArrowDown')
-    expect(focusedLabel()).toBe('Performance Tests')
+    expect(focusedLabel()).toBe('Performance tests')
     press('ArrowDown')
     expect(focusedLabel()).toBe('Benchmarks')
     press('ArrowDown')
     expect(focusedLabel()).toBe('Settings')
     press('ArrowDown')
-    expect(focusedLabel()).toBe('Performance Tests')
+    expect(focusedLabel()).toBe('Performance tests')
     press('ArrowUp')
     expect(focusedLabel()).toBe('Settings')
   })
@@ -56,7 +56,7 @@ describe('MenuView keyboard', () => {
     press('End')
     expect(focusedLabel()).toBe('Settings')
     press('Home')
-    expect(focusedLabel()).toBe('Performance Tests')
+    expect(focusedLabel()).toBe('Performance tests')
   })
 
   it('opens the focused item with Enter or Space', () => {

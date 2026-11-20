@@ -8,8 +8,8 @@ import BuildOverview from './BuildOverview.vue'
 import type { BuildOverviewModel, OverviewChannel } from './overviewModel'
 import type { ActionDef, Installation } from '../../types/ipc'
 
-const updateNow: ActionDef = { id: 'update-comfyui', label: 'Update Now', style: 'primary' }
-const copyUpdate: ActionDef = { id: 'copy-update', label: 'Copy & Update' }
+const updateNow: ActionDef = { id: 'update-comfyui', label: 'Update now', style: 'primary' }
+const copyUpdate: ActionDef = { id: 'copy-update', label: 'Copy & update' }
 const checkUpdate: ActionDef = { id: 'check-update', label: 'Check for updates' }
 const changeTorch: ActionDef = { id: 'change-pytorch', label: 'Change PyTorch' }
 
@@ -62,7 +62,7 @@ function model(
   withTorchMenu = true
 ): BuildOverviewModel {
   return {
-    channelLabel: 'Update Channel',
+    channelLabel: 'Update channel',
     currentChannel: 'stable',
     channels: [
       {

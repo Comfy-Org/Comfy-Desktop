@@ -62,24 +62,23 @@ test('chooser shows the seeded tile @windows @macos @linux', async () => {
   ).toBe(INSTALL_NAME)
 })
 
-test('Uninstall from the ⋯ menu asks inside the menu without invoking get-detail-sections @windows @macos @linux', async () => {
+test('Uninstall from the ⋯ menu asks in the shared confirm box, with the folder, without invoking get-detail-sections @windows @macos @linux', async () => {
   await resetIpcInvocations(ctx.app, 'get-detail-sections')
 
   await pickFromBuildsTileMenu(ctx.panel, INSTALL_ID, 'delete')
 
-  await ctx.panel.waitForVisible(buildMenuItem('confirm-uninstall'), { timeout: 5_000 })
-  expect(await ctx.panel.textOf('[data-testid="build-menu-uninstall-question"]')).toContain(
-    INSTALL_NAME
-  )
+  await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
+  expect(await ctx.panel.exists(buildMenuItem('delete')), 'the menu closed').toBe(false)
+  expect(await ctx.panel.textOf('[role="alertdialog"]')).toContain(installPath)
 
   const invocations = await getIpcInvocations(ctx.app, 'get-detail-sections')
   expect(invocations, 'Delete dispatch must not call get-detail-sections').toEqual([])
 })
 
 test('Confirm removes the install directory and tile @windows @macos @linux', async () => {
-  const confirmClicked = await ctx.panel.click(buildMenuItem('confirm-uninstall'))
-  expect(confirmClicked, 'confirm menu item click dispatched').toBe(true)
-  expect(await ctx.panel.exists(byTestId(TID.baseAlertAction)), 'no second dialog').toBe(false)
+  expect(await ctx.panel.click(byTestId(TID.baseAlertAction)), 'confirm click dispatched').toBe(
+    true
+  )
 
   await ctx.panel.waitFor(
     async () => !(await ctx.panel.exists(byTestId(TID.dashboardTile(INSTALL_ID)))),

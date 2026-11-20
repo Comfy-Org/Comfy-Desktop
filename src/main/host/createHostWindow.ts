@@ -155,7 +155,7 @@ const APP_ICON = path.join(__dirname, '..', '..', 'assets', 'Comfy_Logo_x256.png
 const APP_VERSION = getAppVersion()
 
 export const CHOOSER_HOST_TITLE_TEXT = 'Comfy Desktop'
-export const CHOOSER_HOST_WINDOW_TITLE = `${CHOOSER_HOST_TITLE_TEXT} — v${APP_VERSION}`
+export const CHOOSER_HOST_WINDOW_TITLE = `${CHOOSER_HOST_TITLE_TEXT} · v${APP_VERSION}`
 
 const CHOOSER_HOST_BOUNDS_KEY = 'chooser'
 
@@ -454,7 +454,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     const activeComfyView = entry?.comfyView ?? comfyView
 
     const mode = entry ? computeBodyMode(entry) : 'comfy'
-    const isOverlayMode = mode === 'feedback' || mode === 'announcement'
+    const isOverlayMode = mode === 'feedback'
     const showPanel = mode !== 'comfy' && !(isOverlayMode && entry?.pendingOverlayReveal)
     if (showPanel && entry?.panelView) {
       entry.panelView.setBounds(bodyRect)
@@ -731,8 +731,7 @@ export function buildComfyView(
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {
-    const liveEntry = comfyWindows.get(windowKey)
-    if (!liveEntry || isChooserHost(liveEntry)) return
+    if (!comfyWindows.has(windowKey)) return
     e.preventDefault()
   })
   attachContextMenu(comfyWindow, comfyContents)

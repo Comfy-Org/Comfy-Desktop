@@ -32,7 +32,7 @@ test('long dropdown descriptions wrap, and Escape closes one layer at a time @wi
     await waitForWebContents(ctx.app, POPUP)
     const popup = titlePopupPage(ctx.app)
 
-    const trigger = 'button.ui-select-trigger[aria-label="Manager Security Level"]'
+    const trigger = 'button.ui-select-trigger[aria-label="Manager security level"]'
     await popup.waitForVisible(trigger, { timeout: 15_000 })
     await popup.clickUntilVisible(trigger, LIST, { timeout: 10_000 })
     const overflow = await popup.evaluate<number>(

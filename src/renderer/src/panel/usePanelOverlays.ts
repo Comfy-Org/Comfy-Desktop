@@ -3,7 +3,6 @@ import type ProgressModal from '../views/ProgressModal.vue'
 import type InstallWizardModal from '../views/InstallWizardModal.vue'
 import type TrackModal from '../views/TrackModal.vue'
 import type LoadSnapshotModal from '../views/LoadSnapshotModal.vue'
-import type QuickInstallModal from '../views/QuickInstallModal.vue'
 import type FirstUseTakeover from '../views/FirstUseTakeover.vue'
 import type { ChangeSetupDraft } from '../lib/setupPlan'
 import { useOverlay, type FlowComponent, type Overlay } from '../composables/useOverlay'
@@ -16,6 +15,7 @@ import { stopsWithItsWindow, useConfirmStopTask } from '../composables/useBuildP
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { progressActionName } from '../lib/progressTitle'
 
 export type PanelKey =
   | 'comfy'
@@ -27,9 +27,7 @@ export type PanelKey =
   | 'new-install'
   | 'track'
   | 'load-snapshot'
-  | 'quick-install'
   | 'progress'
-  | 'announcement'
 
 const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'comfy',
@@ -41,21 +39,13 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'new-install',
   'track',
   'load-snapshot',
-  'quick-install',
-  'progress',
-  'announcement'
+  'progress'
 ])
 
-const FLOW_PANELS: ReadonlySet<PanelKey> = new Set([
-  'new-install',
-  'track',
-  'load-snapshot',
-  'quick-install'
-])
+const FLOW_PANELS: ReadonlySet<PanelKey> = new Set(['new-install', 'track', 'load-snapshot'])
 
 const FLOW_TELEMETRY_NAMES: Record<FlowComponent, string> = {
   'new-install': 'new_install',
-  'quick-install': 'quick_install',
   track: 'track_existing',
   'load-snapshot': 'load_snapshot'
 }
@@ -94,7 +84,6 @@ export interface UsePanelOverlaysOpts {
   newInstallRef: Ref<InstanceType<typeof InstallWizardModal> | null>
   trackRef: Ref<InstanceType<typeof TrackModal> | null>
   loadSnapshotRef: Ref<InstanceType<typeof LoadSnapshotModal> | null>
-  quickInstallRef: Ref<InstanceType<typeof QuickInstallModal> | null>
   firstUseRef: Ref<InstanceType<typeof FirstUseTakeover> | null>
 }
 
@@ -135,15 +124,8 @@ export function firstUseModeForOverlaySwap(
 }
 
 export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysApi {
-  const {
-    installationId,
-    progressRef,
-    newInstallRef,
-    trackRef,
-    loadSnapshotRef,
-    quickInstallRef,
-    firstUseRef
-  } = opts
+  const { installationId, progressRef, newInstallRef, trackRef, loadSnapshotRef, firstUseRef } =
+    opts
   const progressStore = useProgressStore()
   const installationStore = useInstallationStore()
   const dashboardScope = useDashboardScopeStore()
@@ -294,7 +276,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
   }
 
   async function handleShowProgress(showOpts: ShowProgressOpts): Promise<void> {
-    const operationName = showOpts.title.split(' — ')[0] || showOpts.title
+    const operationName = progressActionName(showOpts.title)
     if (runsInBackground(showOpts)) {
       const settled =
         showOpts.opKind === 'launch'
@@ -357,7 +339,6 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       })
     } else if (component === 'track') trackRef.value?.open()
     else if (component === 'load-snapshot') loadSnapshotRef.value?.open()
-    else if (component === 'quick-install') await quickInstallRef.value?.open()
   }
 
   async function openFirstUseTakeover(): Promise<void> {

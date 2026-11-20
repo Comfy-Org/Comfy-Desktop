@@ -58,7 +58,8 @@ import {
 import type { PrefetchRequest } from './agentRequirementsLaunch'
 import type { PrefetchReport } from './agentRequirementsOverride'
 import { installFilteredRequirementsDetailed, runUvPipDetailed } from './pip'
-import { getUvPath, getVenvPythonPath, getLegacyVenvUvPath } from './pythonEnv'
+import { getUvPath, getVenvDir, getVenvPythonPath, getLegacyVenvUvPath } from './pythonEnv'
+import { findSitePackages } from '../sources/standalone/envPaths'
 import type { InstallationRecord } from '../installations'
 import type * as ChildProcessModule from 'child_process'
 
@@ -3014,6 +3015,312 @@ describe('restoreCoreFrontend', () => {
     writeCore('comfyui-frontend-package>=1.0\n')
     expect(await restoreCoreFrontend(inst, vi.fn()), 'a range').toBe(true)
     expect(mockInstall).not.toHaveBeenCalled()
+  })
+
+  const installedFrontend = (envRoot = getVenvDir(installDir)): string => {
+    fs.mkdirSync(path.join(envRoot, 'lib', 'python3.12'), { recursive: true })
+    const sitePackages = findSitePackages(envRoot)!
+    for (const [file, text] of Object.entries({
+      'comfyui_frontend_package/__init__.py': 'old init',
+      'comfyui_frontend_package/static/index.html': 'old index',
+      'comfyui_frontend_package/static/locked.js': 'old locked',
+      'comfyui_frontend_package-1.28.8.dist-info/METADATA': 'Version: 1.28.8',
+      'comfyui_frontend_package_extra/__init__.py': 'not the frontend',
+      'torch/__init__.py': 'not the frontend'
+    })) {
+      fs.mkdirSync(path.dirname(path.join(sitePackages, file)), { recursive: true })
+      fs.writeFileSync(path.join(sitePackages, file), text)
+    }
+    return sitePackages
+  }
+
+  const removeHalfTheFrontend = (sitePackages: string) => async () => {
+    fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package/__init__.py'))
+    fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package/static/index.html'))
+    fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info/METADATA'))
+    fs.writeFileSync(path.join(sitePackages, 'comfyui_frontend_package/static/locked.js'), 'kept')
+    return { code: 2, output: 'error: failed to remove file: Access is denied. (os error 5)' }
+  }
+
+  const backupEntriesLeft = (): string[] =>
+    fs.readdirSync(installDir).filter((name) => name.startsWith('.launch'))
+
+  const read = (sitePackages: string, file: string): string | null =>
+    fs.existsSync(path.join(sitePackages, file))
+      ? fs.readFileSync(path.join(sitePackages, file), 'utf-8')
+      : null
+
+  it('puts back the frontend files a failed restore removed, leaving the ones it could not', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    mockInstall.mockImplementationOnce(removeHalfTheFrontend(sitePackages))
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    expect(read(sitePackages, 'comfyui_frontend_package/__init__.py')).toBe('old init')
+    expect(read(sitePackages, 'comfyui_frontend_package/static/index.html')).toBe('old index')
+    expect(read(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info/METADATA')).toBe(
+      'Version: 1.28.8'
+    )
+    expect(
+      read(sitePackages, 'comfyui_frontend_package/static/locked.js'),
+      'a file uv could not remove is left as it is'
+    ).toBe('kept')
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('puts back the frontend of a legacy envs/default install', async () => {
+    touch(getUvPath(installDir))
+    const legacyEnv = path.join(installDir, 'envs', 'default')
+    touch(
+      process.platform === 'win32'
+        ? path.join(legacyEnv, 'Scripts', 'python.exe')
+        : path.join(legacyEnv, 'bin', 'python3')
+    )
+    const inst = { installPath: installDir } as unknown as InstallationRecord
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend(legacyEnv)
+    mockInstall.mockImplementationOnce(removeHalfTheFrontend(sitePackages))
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    expect(read(sitePackages, 'comfyui_frontend_package/__init__.py')).toBe('old init')
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('keeps the installed frontend without running uv when it cannot be copied aside', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    const cp = vi.spyOn(fs.promises, 'cp').mockRejectedValueOnce(new Error('EBUSY'))
+    try {
+      expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    } finally {
+      cp.mockRestore()
+    }
+    expect(mockInstall).not.toHaveBeenCalled()
+    expect(read(sitePackages, 'comfyui_frontend_package/__init__.py')).toBe('old init')
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('removes a backup a crashed restore left behind before backing up again', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    const orphan = path.join(installDir, '.launch-frontend-backup-999-1')
+    fs.mkdirSync(path.join(orphan, 'comfyui_frontend_package'), { recursive: true })
+    fs.writeFileSync(path.join(orphan, 'comfyui_frontend_package', '__init__.py'), 'orphan')
+    let leftDuringRestore: string[] = []
+    mockInstall.mockImplementationOnce(async () => {
+      leftDuringRestore = backupEntriesLeft().filter((name) =>
+        name.startsWith('.launch-frontend-backup-')
+      )
+      return { code: 0, output: '' }
+    })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(true)
+    expect(leftDuringRestore, "only this attempt's backup is present while uv runs").toHaveLength(1)
+    expect(leftDuringRestore).not.toContain('.launch-frontend-backup-999-1')
+    expect(fs.existsSync(path.join(sitePackages, 'comfyui_frontend_package/__init__.py'))).toBe(
+      true
+    )
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('makes a second restore of the same install wait for the first and share its result', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    let finishFirst: () => void = () => {}
+    let firstStarted = false
+    mockInstall.mockImplementationOnce(async () => {
+      firstStarted = true
+      await new Promise<void>((resolve) => {
+        finishFirst = resolve
+      })
+      fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package/__init__.py'))
+      return { code: 2, output: '' }
+    })
+    const first = restoreCoreFrontend(inst, vi.fn())
+    await vi.waitFor(() => expect(firstStarted).toBe(true))
+
+    let secondSettled = false
+    const second = restoreCoreFrontend(inst, vi.fn()).finally(() => {
+      secondSettled = true
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(secondSettled, 'the second launch waits while uv is still running').toBe(false)
+    finishFirst()
+
+    expect(await second).toBe(false)
+    expect(await first).toBe(false)
+    expect(mockInstall).toHaveBeenCalledTimes(1)
+    expect(read(sitePackages, 'comfyui_frontend_package/__init__.py')).toBe('old init')
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('runs uv once for two restores of the same install started together', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    installedFrontend()
+
+    expect(
+      await Promise.all([restoreCoreFrontend(inst, vi.fn()), restoreCoreFrontend(inst, vi.fn())])
+    ).toEqual([true, true])
+    expect(mockInstall).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs the restore again once the earlier restore of the install has finished', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    installedFrontend()
+    mockInstall.mockResolvedValueOnce({ code: 2, output: '' })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(true)
+    expect(mockInstall).toHaveBeenCalledTimes(2)
+  })
+
+  it('puts the old files back when the restore fails after writing part of the new version', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    mockInstall.mockImplementationOnce(async () => {
+      fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info'), {
+        recursive: true
+      })
+      fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package/static/index.html'))
+      fs.mkdirSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.7.dist-info'))
+      return { code: 2, output: '' }
+    })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    expect(read(sitePackages, 'comfyui_frontend_package/static/index.html')).toBe('old index')
+    expect(read(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info/METADATA')).toBe(
+      'Version: 1.28.8'
+    )
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('puts back the frontend files a cancelled restore removed', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    const abort = new AbortController()
+    mockInstall.mockImplementationOnce(async () => {
+      await removeHalfTheFrontend(sitePackages)()
+      abort.abort()
+      return { code: 0, output: '' }
+    })
+
+    expect(await restoreCoreFrontend(inst, vi.fn(), abort.signal)).toBe(false)
+    expect(read(sitePackages, 'comfyui_frontend_package/__init__.py')).toBe('old init')
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('keeps putting entries back after one of them fails', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    mockInstall.mockImplementationOnce(removeHalfTheFrontend(sitePackages))
+    const copy = fs.promises.cp.bind(fs.promises)
+    let failedPutBack: string | null = null
+    const cp = vi.spyOn(fs.promises, 'cp').mockImplementation(((
+      from: string,
+      to: string,
+      options: fs.CopyOptions
+    ) => {
+      if (path.dirname(to) === sitePackages && failedPutBack === null) {
+        failedPutBack = path.basename(to)
+        return Promise.reject(new Error('EBUSY'))
+      }
+      return copy(from, to, options)
+    }) as typeof fs.promises.cp)
+    try {
+      expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    } finally {
+      cp.mockRestore()
+    }
+    const other =
+      failedPutBack === 'comfyui_frontend_package'
+        ? 'comfyui_frontend_package-1.28.8.dist-info/METADATA'
+        : 'comfyui_frontend_package/__init__.py'
+    expect(read(sitePackages, other), `put back after ${failedPutBack} failed`).not.toBeNull()
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('leaves the new frontend alone when the restore succeeds', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    mockInstall.mockImplementationOnce(async () => {
+      fs.rmSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info'), {
+        recursive: true
+      })
+      return { code: 0, output: '' }
+    })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(true)
+    expect(
+      fs.existsSync(path.join(sitePackages, 'comfyui_frontend_package-1.28.8.dist-info'))
+    ).toBe(false)
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('copies aside only the frontend package and its dist-info', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    installedFrontend()
+    const cp = vi.spyOn(fs.promises, 'cp')
+    try {
+      await restoreCoreFrontend(inst, vi.fn())
+      expect(cp.mock.calls.map(([from]) => path.basename(String(from))).sort()).toEqual([
+        'comfyui_frontend_package',
+        'comfyui_frontend_package-1.28.8.dist-info'
+      ])
+    } finally {
+      cp.mockRestore()
+    }
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('keeps the installed frontend without running uv when site-packages cannot be listed', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const sitePackages = installedFrontend()
+    const listDir = fs.promises.readdir.bind(fs.promises) as (dir: string) => Promise<string[]>
+    const readdir = vi
+      .spyOn(fs.promises, 'readdir')
+      .mockImplementation(((dir: string) =>
+        dir === sitePackages
+          ? Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }))
+          : listDir(dir)) as unknown as typeof fs.promises.readdir)
+    try {
+      expect(await restoreCoreFrontend(inst, vi.fn())).toBe(false)
+    } finally {
+      readdir.mockRestore()
+    }
+    expect(mockInstall).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(backupEntriesLeft()).toEqual([]))
+  })
+
+  it('runs the restore when the env has no site-packages directory yet', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    fs.mkdirSync(path.join(getVenvDir(installDir), 'lib', 'python3.12'), { recursive: true })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(true)
+    expect(mockInstall).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs the restore when site-packages holds no frontend', async () => {
+    const inst = managedInstall()
+    writeCore('comfyui-frontend-package==1.28.7\n')
+    const venv = getVenvDir(installDir)
+    fs.mkdirSync(path.join(venv, 'lib', 'python3.12'), { recursive: true })
+    fs.mkdirSync(findSitePackages(venv)!, { recursive: true })
+
+    expect(await restoreCoreFrontend(inst, vi.fn())).toBe(true)
+    expect(mockInstall).toHaveBeenCalledTimes(1)
   })
 
   it('drops the record for an install with no uv', async () => {

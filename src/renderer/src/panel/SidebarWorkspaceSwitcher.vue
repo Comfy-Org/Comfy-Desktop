@@ -11,10 +11,11 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import WorkspaceAvatar from '../components/WorkspaceAvatar.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { useSelectedWorkspace } from '../composables/useSelectedWorkspace'
 import {
   isPersonalWorkspace,
   PERSONAL_WORKSPACE_ID,
-  workspaceContextId
+  workspaceScopeId
 } from '../../../shared/workspaces'
 import type { PlatformSettingsPage, Workspace } from '../../../types/ipc'
 
@@ -52,10 +53,6 @@ useEventListener(window, 'blur', () => {
   menuOpen.value = false
 })
 
-function scopeId(workspace: Workspace): string {
-  return isPersonalWorkspace(workspace) ? PERSONAL_WORKSPACE_ID : workspace.id
-}
-
 function planLabel(tier: string | null | undefined): string {
   if (!tier) return ''
   return (Object.hasOwn(PLAN_LABELS, tier) && PLAN_LABELS[tier]) || tier
@@ -65,19 +62,14 @@ function roleLabel(role: string): string {
   return (Object.hasOwn(roleLabels.value, role) && roleLabels.value[role]) || role
 }
 
-const currentWorkspace = computed(() =>
-  store.workspaces.find((workspace) => scopeId(workspace) === dashboardScope.selectedWorkspaceId)
-)
-const statusIsCurrent = computed(
-  () => workspaceContextId(store.status) === dashboardScope.selectedWorkspaceId
-)
+const {
+  workspace: currentWorkspace,
+  statusIsCurrent,
+  name: selectedWorkspaceName
+} = useSelectedWorkspace()
 const personalLabel = computed(() => t('devPlatform.workspace.personalLabel'))
-const currentWorkspaceName = computed(() =>
-  dashboardScope.selectedWorkspaceId === PERSONAL_WORKSPACE_ID
-    ? personalLabel.value
-    : (currentWorkspace.value?.name ??
-      (statusIsCurrent.value ? store.status.workspaceName : undefined) ??
-      t('devPlatform.workspace.switchLabel'))
+const currentWorkspaceName = computed(
+  () => selectedWorkspaceName.value ?? t('devPlatform.workspace.switchLabel')
 )
 const currentWorkspaceTier = computed(() => currentWorkspace.value?.subscriptionTier)
 const currentWorkspaceMeta = computed(() => {
@@ -120,7 +112,7 @@ const emptyMessage = computed(() =>
 )
 
 function isCurrent(workspace: Workspace): boolean {
-  return scopeId(workspace) === dashboardScope.selectedWorkspaceId
+  return workspaceScopeId(workspace) === dashboardScope.selectedWorkspaceId
 }
 
 watch(
@@ -174,7 +166,7 @@ function focusCurrentWorkspace(event: Event): void {
 }
 
 function selectWorkspace(workspace: Workspace): void {
-  if (!isCurrent(workspace)) dashboardScope.selectWorkspace(scopeId(workspace))
+  if (!isCurrent(workspace)) dashboardScope.selectWorkspace(workspaceScopeId(workspace))
   menuOpen.value = false
 }
 
@@ -365,14 +357,14 @@ async function signOut(): Promise<void> {
             >
               <Button
                 v-for="workspace in filteredWorkspaces"
-                :key="scopeId(workspace)"
+                :key="workspaceScopeId(workspace)"
                 type="button"
                 variant="textonly"
                 size="unset"
                 role="option"
                 class="h-10 w-full shrink-0 justify-start gap-2 rounded-md px-2 py-1 text-left"
                 :aria-selected="isCurrent(workspace)"
-                :data-testid="`workspace-option-${scopeId(workspace)}`"
+                :data-testid="`workspace-option-${workspaceScopeId(workspace)}`"
                 @click="selectWorkspace(workspace)"
               >
                 <WorkspaceAvatar

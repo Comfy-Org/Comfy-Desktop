@@ -60,4 +60,53 @@ describe('the failed task card', () => {
 
     expect(Math.abs(centerY(retry) - centerY(card))).toBeLessThanOrEqual(1)
   })
+
+  it('has no border, the card radius and paddings, and a fill', () => {
+    const card = mountCard('fatal: the remote end hung up unexpectedly')
+    const style = getComputedStyle(card)
+
+    expect(style.borderTopWidth).toBe('0px')
+    expect(style.borderRadius).toBe('14px')
+    expect([style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft]).toEqual([
+      '16px',
+      '18px',
+      '16px',
+      '18px'
+    ])
+    expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+  })
+
+  it('keeps Dismiss and Try again by default', () => {
+    const card = mountCard('A file is in use.')
+
+    expect([...card.querySelectorAll('button')].map((b) => b.textContent?.trim())).toEqual([
+      'Dismiss',
+      'Try again'
+    ])
+  })
+})
+
+describe('the start notice', () => {
+  it('has one action with its own label and no reason line when none is known', async () => {
+    host = document.createElement('div')
+    document.body.append(host)
+    wrapper = mount(BuildUninstallFailed, {
+      props: {
+        reason: '',
+        title: "ComfyUI didn't start",
+        kind: 'start',
+        dismissLabel: null,
+        retryLabel: 'View logs'
+      },
+      attachTo: host
+    })
+    const card = wrapper.element as HTMLElement
+
+    expect([...card.querySelectorAll('button')].map((b) => b.textContent?.trim())).toEqual([
+      'View logs'
+    ])
+    expect(card.querySelector('[data-testid="build-start-failed-reason"]')).toBeNull()
+    await wrapper.get('[data-testid="build-start-retry"]').trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+  })
 })

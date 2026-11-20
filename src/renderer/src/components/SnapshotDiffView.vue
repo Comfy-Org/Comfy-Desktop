@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { ChevronDown } from '@lucide/vue'
 import type { SnapshotDiffResult } from '../types/ipc'
 import { formatNodeVersion } from '../lib/snapshots'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 const props = defineProps<{
   diff: SnapshotDiffResult
@@ -30,9 +31,7 @@ function formatVersion(v: { formattedVersion: string }): string {
 
 <template>
   <div v-if="diff.comfyuiChanged && diff.comfyui" class="diff-section mb-2 last:mb-0">
-    <div
-      class="diff-section-title mb-1 text-[11px] font-medium text-text-muted uppercase tracking-[0.04em]"
-    >
+    <div class="diff-section-title mb-1" :class="SECTION_TITLE_CLASS">
       {{ t('snapshots.comfyuiVersion') }}
     </div>
     <div
@@ -43,9 +42,7 @@ function formatVersion(v: { formattedVersion: string }): string {
   </div>
 
   <div v-if="diff.updateChannelChanged && diff.updateChannel" class="diff-section mb-2 last:mb-0">
-    <div
-      class="diff-section-title mb-1 text-[11px] font-medium text-text-muted uppercase tracking-[0.04em]"
-    >
+    <div class="diff-section-title mb-1" :class="SECTION_TITLE_CLASS">
       {{ t('snapshots.updateChannel') }}
     </div>
     <div
@@ -57,12 +54,13 @@ function formatVersion(v: { formattedVersion: string }): string {
 
   <div v-if="nodeChangeCount > 0" class="diff-section mb-2 last:mb-0">
     <div
-      class="diff-section-title text-[11px] font-medium text-text-muted uppercase tracking-[0.04em]"
-      :class="
+      class="diff-section-title"
+      :class="[
+        SECTION_TITLE_CLASS,
         collapsible
           ? 'is-toggle mb-0 flex cursor-pointer select-none items-center gap-1 py-[3px] hover:text-text'
           : 'mb-1'
-      "
+      ]"
       @click="collapsible ? (nodesOpen = !nodesOpen) : null"
     >
       <ChevronDown
@@ -109,12 +107,13 @@ function formatVersion(v: { formattedVersion: string }): string {
 
   <div v-if="pipChangeCount > 0" class="diff-section mb-2 last:mb-0">
     <div
-      class="diff-section-title text-[11px] font-medium text-text-muted uppercase tracking-[0.04em]"
-      :class="
+      class="diff-section-title"
+      :class="[
+        SECTION_TITLE_CLASS,
         collapsible
           ? 'is-toggle mb-0 flex cursor-pointer select-none items-center gap-1 py-[3px] hover:text-text'
           : 'mb-1'
-      "
+      ]"
       @click="collapsible ? (pipsOpen = !pipsOpen) : null"
     >
       <ChevronDown

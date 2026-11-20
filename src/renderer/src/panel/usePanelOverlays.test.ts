@@ -32,7 +32,6 @@ function mountOverlays(installationId: string): ReturnType<typeof usePanelOverla
           newInstallRef: ref(null),
           trackRef: ref(null),
           loadSnapshotRef: ref(null),
-          quickInstallRef: ref(null),
           firstUseRef: ref(null)
         })
         return () => h('div')

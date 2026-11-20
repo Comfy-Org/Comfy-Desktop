@@ -488,7 +488,7 @@ describe('a port conflict when a build starts', () => {
     await startIntoConflict()
 
     await press(TID.progressPortConflictKill)
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Stop Existing Process'))
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Stop existing process'))
     await press(TID.baseAlertCancel)
 
     await vi.waitFor(() => expect(onPage(TID.progressPortConflictUsePort)).not.toBeNull())

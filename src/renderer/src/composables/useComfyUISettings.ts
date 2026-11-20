@@ -483,7 +483,7 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
     if (!diskSpace.value) return null
     return {
       label: t('comfyUISettings.diskUsage'),
-      value: '—'
+      value: t('common.unknown')
     }
   })
 
