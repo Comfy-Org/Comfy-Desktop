@@ -14,7 +14,6 @@ import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
   AppWindow,
-  ArrowRight,
   Cloud,
   CornerDownRight,
   House,
@@ -442,29 +441,28 @@ function openSettings(): void {
               class="flex min-h-0 w-[220px] flex-col gap-1 overflow-hidden text-nowrap"
               :data-testid="collapsed ? undefined : 'app-sidebar-builds'"
             >
-              <div class="mt-5.5 flex h-6.5 shrink-0 items-center justify-between pr-1 pl-3">
+              <div
+                class="group/builds mt-3.5 flex h-8 shrink-0 items-center rounded-lg pr-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                :class="buildsPageActive && 'bg-accent text-foreground hover:bg-accent'"
+              >
                 <Button
                   variant="textonly"
                   size="unset"
-                  class="group/title -ml-1.5 h-[22px] gap-[5px] rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-transparent hover:text-foreground focus-visible:text-foreground aria-[current=page]:text-foreground"
+                  class="h-8 flex-1 justify-start gap-2.5 px-3 text-[13px]/5 font-normal text-inherit hover:bg-transparent hover:text-inherit"
                   :aria-current="buildsPageActive ? 'page' : undefined"
                   :data-testid="collapsed ? undefined : 'app-sidebar-chooser'"
                   data-home-tour="all-builds"
                   @click="navigate('chooser')"
                   @contextmenu.prevent="openPageMenu($event, 'chooser')"
                 >
+                  <Server :size="15" class="shrink-0" aria-hidden="true" />
                   {{ t('sidebar.builds') }}
-                  <ArrowRight
-                    :size="12"
-                    :stroke-width="2.25"
-                    class="-translate-x-0.5 opacity-35 transition-[opacity,translate] duration-200 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 group-focus-visible/title:translate-x-0 group-focus-visible/title:opacity-100 group-aria-[current=page]/title:translate-x-0 group-aria-[current=page]/title:opacity-100 motion-reduce:transition-none"
-                    aria-hidden="true"
-                  />
                 </Button>
                 <Button
                   variant="muted-textonly"
                   size="unset"
-                  class="size-6 rounded-md p-0 hover:bg-secondary hover:text-foreground"
+                  class="size-6 rounded-md p-0 opacity-0 group-hover/builds:opacity-100 focus-visible:opacity-100 hover:bg-secondary hover:text-foreground"
+                  :class="buildsPageActive && 'opacity-100'"
                   :aria-label="t('sidebar.newBuild')"
                   :data-testid="collapsed ? undefined : 'app-sidebar-new-build'"
                   data-home-tour="new-build"
@@ -492,7 +490,7 @@ function openSettings(): void {
                   :key="build.id"
                   variant="muted-textonly"
                   size="unset"
-                  class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+                  class="h-7 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[12.5px]/5 font-normal text-subtle-foreground hover:bg-secondary hover:text-foreground"
                   :class="build.id === activeBuildId && 'bg-accent text-foreground hover:bg-accent'"
                   :aria-current="build.id === activeBuildId ? 'page' : undefined"
                   :data-testid="`app-sidebar-build-${build.id}`"
