@@ -338,6 +338,12 @@ describe('piiScrub', () => {
       }
     )
 
+    it('still hides a username when a URL appears later on the same line', () => {
+      expect(scrubPII('Traceback\\n\\Users\\alice\\x see https://docs')).toBe(
+        'Traceback\\n\\Users\\[REDACTED]\\x see https://docs'
+      )
+    })
+
     it('redacts the segment after a /users/ URL path', () => {
       expect(scrubPII('https://api.example.com/users/me/keys')).toBe(
         'https://api.example.com/users/[REDACTED]/keys'

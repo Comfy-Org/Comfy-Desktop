@@ -44,7 +44,7 @@ const SECRET_REPLACEMENTS: [RegExp, string | ((...args: string[]) => string)][] 
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 
-const URL_SCHEME = /^(?:https?|data):/i
+const URL_SCHEME = /(?:https?|data):/i
 
 type Span = [start: number, end: number]
 
@@ -54,7 +54,10 @@ function nameSpansFromEveryStart(pattern: RegExp, text: string): Span[] {
   for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
     const [whole, root = '', escapedSep, rawSep = ''] = match
     const nameStart = match.index + root.length + (escapedSep ?? rawSep).length
-    if (!URL_SCHEME.test(text.slice(nameStart))) spans.push([nameStart, match.index + whole.length])
+    const name = text.slice(nameStart, match.index + whole.length)
+    const schemeAt = name.search(URL_SCHEME)
+    if (schemeAt !== 0)
+      spans.push([nameStart, schemeAt < 0 ? nameStart + name.length : nameStart + schemeAt])
     pattern.lastIndex = match.index + 1
   }
   return spans
