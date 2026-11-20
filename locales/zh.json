@@ -193,6 +193,7 @@
     "buildRunning": "运行中",
     "buildStarting": "启动中",
     "buildReady": "就绪",
+    "buildLogInToUse": "登录后使用",
     "buildDidntStart": "未能启动",
     "buildCrashed": "已崩溃",
     "buildInstalling": "正在安装 ComfyUI",

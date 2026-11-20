@@ -16,7 +16,8 @@ import type {
   Installation,
   LocalAssetListing,
   LocalAssetPageRequest,
-  RunningInstance
+  RunningInstance,
+  Workspace
 } from '../types/ipc'
 
 const listAssets = vi.fn()
@@ -553,7 +554,7 @@ describe('AssetsView', () => {
       'Cloud runs nowhere on this computer, so it has no green dot'
     ).toBe(null)
     expect(buildRows(), 'no Shared folder when no build saves there').toEqual([
-      'Comfy Cloud Ready',
+      'Comfy Cloud Personal',
       'My Local 1 ~/My Local 1/output',
       'Video Lab /Volumes/Work/Video Lab/output'
     ])
@@ -591,7 +592,78 @@ describe('AssetsView', () => {
 
     await openBuildPicker(wrapper)
 
-    expect(buildRows()).toEqual(['Comfy Cloud Ready', 'My Local 1 ~/My Local 1/output'])
+    expect(buildRows()).toEqual([
+      'Comfy Cloud Log in to see your assets',
+      'My Local 1 ~/My Local 1/output'
+    ])
+  })
+
+  describe('the line under Comfy Cloud in the place picker', () => {
+    function cloudSubtitle(): string {
+      return shownText(document.querySelector('[data-testid="assets-place-subtitle-cloud"]'))
+    }
+
+    it('names the workspace you browse: the team picked in the sidebar, then Personal', async () => {
+      signedInToPersonalWithTeamDashboard()
+      const wrapper = await mountAssets([], { builds: [localBuild('lab'), cloudBuild('cloud')] })
+
+      await openBuildPicker(wrapper)
+      expect(cloudSubtitle()).toBe('Team B')
+      await press('Escape')
+
+      useDashboardScopeStore().selectWorkspace('personal')
+      await flushPromises()
+      await openBuildPicker(wrapper)
+      expect(cloudSubtitle()).toBe('Personal')
+    })
+
+    it('shows a loading bar while the team name loads, then the team name', async () => {
+      let answer: (workspaces: Workspace[]) => void = () => {}
+      listWorkspaces.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+      signedInToPersonalWithTeamDashboard()
+      const wrapper = await mountAssets([], { builds: [localBuild('lab'), cloudBuild('cloud')] })
+
+      await openBuildPicker(wrapper)
+      expect(
+        document.querySelector('[data-testid="assets-place-subtitle-loading-cloud"]'),
+        'a loading bar, not a guess'
+      ).not.toBe(null)
+
+      answer([
+        { id: 'me', name: 'Personal Workspace', type: 'personal', role: 'owner' },
+        { id: 'team-b', name: 'Team B', type: 'team', role: 'member' }
+      ])
+      await flushPromises()
+
+      expect(cloudSubtitle()).toBe('Team B')
+    })
+
+    it('asks a logged-out user to log in', async () => {
+      const wrapper = await mountAssets([], { builds: [localBuild('lab'), cloudBuild('cloud')] })
+
+      await openBuildPicker(wrapper)
+
+      expect(cloudSubtitle()).toBe('Log in to see your assets')
+    })
+
+    it('shows the account email when the workspace list fails to load', async () => {
+      listWorkspaces.mockRejectedValue(new Error('offline'))
+      getAuthStatus.mockResolvedValue({
+        signedIn: true,
+        email: 'me@example.com',
+        workspaceId: 'team-b',
+        workspaceType: 'team'
+      })
+      getSetting.mockImplementation(async (key: string) =>
+        key === 'dashboardWorkspaceId' ? 'team-b' : undefined
+      )
+      const wrapper = await mountAssets([], { builds: [localBuild('lab'), cloudBuild('cloud')] })
+
+      await openBuildPicker(wrapper)
+
+      expect(useAuthStore().workspacesError).toBe(true)
+      expect(cloudSubtitle()).toBe('me@example.com')
+    })
   })
 
   it('opens on a build it can list, not on a running build that keeps its files to itself', async () => {
@@ -875,7 +947,7 @@ describe('AssetsView', () => {
     expect(assetNames(wrapper)).toEqual(['forest.png'])
     await openBuildPicker(wrapper)
     expect(buildRows()).toEqual([
-      'Comfy Cloud Ready',
+      'Comfy Cloud Log in to see your assets',
       'Shared folder ~/ComfyUI/output',
       'Video Lab /Volumes/Work/Video Lab/output'
     ])

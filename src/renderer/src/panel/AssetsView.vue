@@ -39,6 +39,7 @@ import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useModal } from '../composables/useModal'
 import { revealInFolderKey } from '../composables/usePlatform'
+import { useSelectedWorkspace } from '../composables/useSelectedWorkspace'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -325,8 +326,19 @@ function shortPath(folder: string): string {
     : `…${shown.slice(-SHORT_PATH_LENGTH)}`
 }
 
+const { name: workspaceName } = useSelectedWorkspace()
+
+function cloudSubtitle(): string | null {
+  if (authStore.isSignedOut) return t('assets.signedOutTitle')
+  if (!authStore.isSignedIn) return null
+  if (workspaceName.value) return workspaceName.value
+  return authStore.workspacesLoaded || authStore.workspacesError
+    ? (authStore.status.email ?? '')
+    : null
+}
+
 function placeSubtitle(option: AssetBuild): string | null {
-  if (option.cloud) return t('home.buildReady')
+  if (option.cloud) return cloudSubtitle()
   if (!outputFoldersLoaded.value) return null
   const folder = folderPathOf(option)
   return folder ? shortPath(folder) : ''

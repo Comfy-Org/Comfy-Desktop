@@ -35,12 +35,14 @@ const {
   build,
   status,
   tone,
-  autoStart = false
+  autoStart = false,
+  loggedOut = false
 } = defineProps<{
   build: Installation
   status: HomeBuildStatus
   tone: HomeBuildTone
   autoStart?: boolean
+  loggedOut?: boolean
 }>()
 
 const emit = defineEmits<{ open: [] }>()
@@ -79,6 +81,10 @@ const startFailedLogs = computed(
 )
 
 const toneStyle = computed(() => HOME_BUILD_TONES[tone])
+const needsLogIn = computed(() => loggedOut && isCloudBuild(build))
+const restingLabel = computed(() =>
+  needsLogIn.value ? t('home.buildLogInToUse') : t('home.buildReady')
+)
 const statusLabel = computed(() => {
   if (install.progress.value?.cancelling) return t('installProgress.cancelling')
   if (uninstalling.value) return t('uninstallProgress.status')
@@ -95,12 +101,12 @@ const statusLabel = computed(() => {
   if (broken.value) return broken.value
   switch (status) {
     case 'running':
-      return isLive.value ? t('home.buildRunning') : t('home.buildReady')
+      return isLive.value ? t('home.buildRunning') : restingLabel.value
     case 'starting':
       return t('home.buildStarting')
     case 'update':
     case 'ready':
-      return autoStart && !isCloudBuild(build) ? t('home.autoStartOn') : t('home.buildReady')
+      return autoStart && !isCloudBuild(build) ? t('home.autoStartOn') : restingLabel.value
     default:
       return status satisfies never
   }
@@ -241,7 +247,7 @@ function openContextMenu(event: MouseEvent): void {
           aria-hidden="true"
           data-testid="home-build-starts-with-desktop"
         />
-        <Check v-else-if="resting" :size="12" aria-hidden="true" />
+        <Check v-else-if="resting && !needsLogIn" :size="12" aria-hidden="true" />
         <span class="truncate">{{ statusLabel }}</span>
       </span>
       <span

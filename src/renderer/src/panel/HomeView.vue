@@ -22,6 +22,7 @@ import {
 import { isPromotingToWorkspace } from '../composables/useInstallContextMenu'
 import { useProgressStore } from '../stores/progressStore'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
+import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -52,6 +53,7 @@ const { visibleInstalls } = useInstallList({
   installations: toRef(installationStore, 'installations')
 })
 const dashboardScope = useDashboardScopeStore()
+const authStore = useAuthStore()
 void dashboardScope.initialize()
 const workspaceBuilds = computed(() =>
   visibleInstalls.value.filter((build) =>
@@ -295,6 +297,7 @@ onMounted(() => {
               :status="buildStatus(build)"
               :tone="buildTones[index]!"
               :auto-start="autoStart.startsOnOpen(build.id)"
+              :logged-out="authStore.isSignedOut"
               @open="openBuild(build)"
             />
           </li>
