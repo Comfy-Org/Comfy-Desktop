@@ -276,17 +276,20 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     outputs: null,
     forget: registerAppsPage(contents)
   }
-  const steer = (event: Event, url: string, pageStillShowsApp: boolean): void => {
+  const steer = (event: Event, url: string, pageStillShowsApp: boolean): boolean => {
     if (isAppsListUrl(location, url)) {
       event.preventDefault()
       closeForList(windowKey, hosted, pageStillShowsApp)
-      return
+      return false
     }
-    if (isInAppsScope(location, url)) return
+    if (isInAppsScope(location, url)) return true
     event.preventDefault()
     openOutside(url)
+    return false
   }
-  contents.on('will-navigate', (event, url) => steer(event, url, true))
+  contents.on('will-navigate', (event, url) => {
+    steer(event, url, true)
+  })
   contents.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
     if (!isMainFrame) return
     if (hosted.status === 'loading' && !isInAppsScope(location, url)) {
@@ -294,10 +297,8 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
       fail(windowKey, hosted, 'redirected')
       return
     }
-    steer(event, url, false)
-    if (hosted.loadStarted && isInAppsScope(location, url) && !isAppsListUrl(location, url)) {
-      hosted.loadingUrl = url
-    }
+    const letThrough = steer(event, url, false)
+    if (letThrough && hosted.loadStarted && !event.initiator) hosted.loadingUrl = url
   })
   contents.setWindowOpenHandler(({ url }) => {
     openOutside(url)

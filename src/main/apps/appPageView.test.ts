@@ -196,8 +196,11 @@ function finishLoading(url = CUTOUT_URL, httpStatus = 200): void {
   contents.emit('dom-ready')
 }
 
-function navigationEvent(): { preventDefault: ReturnType<typeof vi.fn> } {
-  return { preventDefault: vi.fn() }
+function navigationEvent(initiator: object | null = null): {
+  preventDefault: ReturnType<typeof vi.fn>
+  initiator: object | null
+} {
+  return { preventDefault: vi.fn(), initiator }
 }
 
 function sentToPanel(channel: string): unknown[][] {
@@ -1003,6 +1006,10 @@ describe('switching apps while the old page navigates on its own', () => {
     return hostedPage().webContents
   }
 
+  function loadedApp(): ReturnType<typeof loadedAppPage> {
+    return loadedAppPage(hostedPage().webContents as unknown as WebContents)
+  }
+
   function oldPageReloads(page: FakeContents): void {
     page.url = CUTOUT_URL
     page.emit('did-navigate', {}, CUTOUT_URL, 200)
@@ -1016,7 +1023,7 @@ describe('switching apps while the old page navigates on its own', () => {
 
     expect(hostedPage().visible).toBe(false)
     expect(lastStatusSentToPanel()).toBe('loading')
-    expect(loadedAppPage(page as unknown as WebContents)).toBeNull()
+    expect(loadedApp()).toBeNull()
     expect(page.loadURL).toHaveBeenCalledTimes(3)
     expect(page.loadURL).toHaveBeenLastCalledWith(HDR_URL)
 
@@ -1024,7 +1031,22 @@ describe('switching apps while the old page navigates on its own', () => {
 
     expect(hostedPage().visible).toBe(true)
     expect(lastStatusSentToPanel()).toBe('ready')
-    expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: HDR, document: 2 })
+    expect(loadedApp()).toEqual({ appId: HDR, document: 2 })
+  })
+
+  it('keeps the old page hidden when its own navigation is redirected while the asked app loads', async () => {
+    const page = await switchFromCutoutToHdr()
+    const redirectedTo = `${APPS_URL}remove-background/v2/desktop.html`
+
+    page.emit('will-redirect', navigationEvent(page.mainFrame), redirectedTo, false, true)
+    page.url = redirectedTo
+    page.emit('did-navigate', {}, redirectedTo, 200)
+    page.emit('dom-ready')
+
+    expect(hostedPage().visible).toBe(false)
+    expect(lastStatusSentToPanel()).toBe('loading')
+    expect(loadedApp()).toBeNull()
+    expect(page.loadURL).toHaveBeenLastCalledWith(HDR_URL)
   })
 
   it('says the page did not load when the old page wins the race twice', async () => {
