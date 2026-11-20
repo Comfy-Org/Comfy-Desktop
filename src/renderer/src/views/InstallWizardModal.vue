@@ -1834,7 +1834,7 @@ defineExpose({ open })
             :class="
               machineBlocked
                 ? 'text-[16px] leading-6 break-words text-[var(--danger)]'
-                : 'truncate text-neutral-100'
+                : 'line-clamp-2 break-words text-neutral-100'
             "
             data-testid="detected-gpu-field"
             >{{ machineTitle }}</span

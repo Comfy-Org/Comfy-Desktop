@@ -477,13 +477,13 @@ defineExpose({ open, resetContinue })
             :kind="localDeviceKind"
             glow="#46464A"
           />
-          <div class="relative ml-6 flex min-w-0 flex-1 flex-col">
+          <div class="relative mr-4 ml-6 flex min-w-0 flex-1 flex-col">
             <span class="flex h-[15px] items-center gap-1.5 text-xs/[15px] text-muted-foreground">
               <Check :size="11" :stroke-width="2" aria-hidden="true" />
               {{ t('setup.detected') }}
             </span>
             <span
-              class="mt-[5px] truncate text-[22px]/[27px] font-semibold text-foreground"
+              class="mt-[5px] line-clamp-2 text-[22px]/[27px] font-semibold break-words text-foreground"
               data-testid="setup-machine-name"
             >
               {{ machine || t('setup.thisComputer') }}

@@ -127,6 +127,29 @@ const install = async (w: Wrapper) => {
 }
 
 describe('Set up, the first screen', () => {
+  it('wraps a long computer name onto two lines and keeps it clear of Change', async () => {
+    const longName =
+      'Intel(R) Xeon(R) Platinum 8480+ Processor @ 2.10GHz with a very long model name'
+    vi.mocked(window.api.getSystemInfo).mockResolvedValue({
+      gpu_label: longName,
+      gpu_model: longName,
+      cpu_model: longName,
+      total_memory_gb: 16,
+      gpu_tier: 'high'
+    } as never)
+    const w = mount(FirstUseTakeover, { attachTo: document.body })
+    await flushPromises()
+
+    const name = w.get('[data-testid="setup-machine-name"]').element as HTMLElement
+    const change = w.get('[data-testid="setup-change"]').element as HTMLElement
+    expect(name.textContent?.trim()).toBe(longName)
+    expect(name.classList).toContain('line-clamp-2')
+    expect(name.classList).not.toContain('truncate')
+    expect(name.parentElement!.classList, 'gap before Change').toContain('mr-4')
+    expect(change.parentElement).toBe(name.parentElement!.parentElement)
+    w.unmount()
+  })
+
   it.each([
     ['Desktop', 'monitor'],
     ['Notebook', 'pc-laptop']
