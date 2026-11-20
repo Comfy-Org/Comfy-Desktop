@@ -1822,6 +1822,8 @@ describe('AssetsView Open workflow', () => {
     try {
       workflowButton()!.click()
       await vi.advanceTimersByTimeAsync(200)
+      expect(workflowButton()?.textContent?.trim()).toBe('Open workflow')
+      expect(statusText()).toBe('')
       finish({ opened: true })
       await flushPromises()
       await vi.advanceTimersByTimeAsync(200)

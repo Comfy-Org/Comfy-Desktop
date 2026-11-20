@@ -17,6 +17,7 @@ const CLOSE_BRACE = 0x7d
 const QUOTE = 0x22
 const BACKSLASH = 0x5c
 const utf8 = new TextDecoder('utf-8', { fatal: false })
+const encoder = new TextEncoder()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -181,6 +182,13 @@ function chunkText(
   return body ? utf8.decode(body) : null
 }
 
+function collectChunk(type: string, data: Uint8Array, found: Found, budget: InflateBudget): void {
+  const named = chunkKey(data)
+  if (!named || (named.key !== 'workflow' && named.key !== 'prompt')) return
+  const text = chunkText(type, data, named.keyEnd, budget)
+  if (text !== null) collect(parseJson(text), found)
+}
+
 function fromPng(bytes: Uint8Array): EmbeddedWorkflow | null {
   const found: Found = { graph: null, api: null }
   const budget = { left: MAX_INFLATED_BYTES }
@@ -190,16 +198,28 @@ function fromPng(bytes: Uint8Array): EmbeddedWorkflow | null {
     const type = latin1(bytes.subarray(at + 4, at + 8))
     const start = at + 8
     if (type === 'IEND' || start + length > bytes.length) break
-    if (TEXT_CHUNKS.has(type)) {
-      const data = bytes.subarray(start, start + length)
-      const named = chunkKey(data)
-      const text =
-        named && (named.key === 'workflow' || named.key === 'prompt')
-          ? chunkText(type, data, named.keyEnd, budget)
-          : null
-      if (text !== null) collect(parseJson(text), found)
-    }
+    if (TEXT_CHUNKS.has(type))
+      collectChunk(type, bytes.subarray(start, start + length), found, budget)
     at = start + length + 4
+  }
+  return bestOf(found)
+}
+
+function fromPngTail(bytes: Uint8Array): EmbeddedWorkflow | null {
+  const found: Found = { graph: null, api: null }
+  const budget = { left: MAX_INFLATED_BYTES }
+  for (const type of TEXT_CHUNKS) {
+    const marker = encoder.encode(type)
+    let at = bytes.indexOf(marker[0]!, 4)
+    while (at >= 0 && !found.graph) {
+      const isMarker = marker.every((byte, i) => bytes[at + i] === byte)
+      const start = at + 4
+      const length = isMarker ? readUint32(bytes, at - 4) : -1
+      if (length >= 0 && start + length <= bytes.length) {
+        collectChunk(type, bytes.subarray(start, start + length), found, budget)
+      }
+      at = bytes.indexOf(marker[0]!, at + 1)
+    }
   }
   return bestOf(found)
 }
@@ -260,7 +280,7 @@ export function readEmbeddedWorkflow(parts: Uint8Array[]): EmbeddedWorkflow | nu
   const budget = { left: SCAN_BUDGET_BYTES }
   let prompt: EmbeddedWorkflow | null = fromHead
   for (const part of png ? rest : parts) {
-    const workflow = fromAnyBytes(part, budget)
+    const workflow = png ? fromPngTail(part) : fromAnyBytes(part, budget)
     if (workflow?.format === 'graph') return workflow
     prompt ??= workflow
   }

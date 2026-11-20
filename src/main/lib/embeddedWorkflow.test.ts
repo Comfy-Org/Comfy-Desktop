@@ -206,7 +206,18 @@ describe('reading the workflow ComfyUI saved in a PNG', () => {
 
   it('reads the workflow from the end of a large animated PNG, and prefers it over a prompt at the start', () => {
     const start = png(tEXt('prompt', JSON.stringify(PROMPT)))
-    const end = binary('fdAT', `comf\u0000workflow\u0000${JSON.stringify(GRAPH)}`, 'IEND')
+    const end = concat(
+      binary('fdAT'),
+      chunk(
+        'comf',
+        concat(
+          encoder.encode('workflow'),
+          new Uint8Array([0]),
+          encoder.encode(JSON.stringify(GRAPH))
+        )
+      ),
+      chunk('IEND', new Uint8Array())
+    )
 
     expect(readEmbeddedWorkflow([start.subarray(0, start.length - 12), end])).toEqual({
       format: 'graph',
@@ -216,6 +227,26 @@ describe('reading the workflow ComfyUI saved in a PNG', () => {
       format: 'api',
       data: PROMPT
     })
+  })
+
+  it('opens nothing when the end of a large animated PNG starts inside the workflow, so a subgraph never opens as the whole workflow', () => {
+    const subgraph = (id: string, note: string) => ({
+      id,
+      nodes: [{ id: 1, type: 'Note', widgets_values: [note] }],
+      links: []
+    })
+    const workflow = JSON.stringify({
+      ...GRAPH,
+      definitions: { subgraphs: [subgraph('a', 'x'.repeat(5000)), subgraph('b', 'y')] }
+    })
+    const saved = chunk(
+      'comf',
+      concat(encoder.encode('workflow'), new Uint8Array([0]), encoder.encode(workflow))
+    )
+    const start = png()
+    const tail = concat(saved, chunk('IEND', new Uint8Array())).subarray(4000)
+
+    expect(readEmbeddedWorkflow([start.subarray(0, start.length - 12), tail])).toBeNull()
   })
 
   it('skips a saved workflow with more than 5,000 nodes and says so in the log', () => {

@@ -39,6 +39,15 @@ function headHoldsPngWorkflow(head: Uint8Array): boolean {
   return isPng(head) && readEmbeddedWorkflow([head])?.format === 'graph'
 }
 
+async function headOr(
+  head: Uint8Array,
+  readMore: () => Promise<Uint8Array[] | null>
+): Promise<Uint8Array[] | null> {
+  const parts = await readMore().catch(() => null)
+  if (parts) return parts
+  return isPng(head) && readEmbeddedWorkflow([head]) !== null ? [head] : null
+}
+
 async function localParts(assetId: string): Promise<Uint8Array[] | null> {
   const file = await outputFilePath(assetId)
   if (!file) return null
@@ -46,14 +55,14 @@ async function localParts(assetId: string): Promise<Uint8Array[] | null> {
   try {
     const { size } = await handle.stat()
     const head = await readPart(handle, 0, Math.min(size, PART_BYTES))
-    if (size <= PART_BYTES) return [head]
+    if (size <= PART_BYTES || headHoldsPngWorkflow(head)) return [head]
     if (size <= PART_BYTES * 2) {
-      const rest = await readPart(handle, PART_BYTES, size - PART_BYTES)
-      return [Buffer.concat([head, rest])]
+      return headOr(head, async () => [
+        Buffer.concat([head, await readPart(handle, PART_BYTES, size - PART_BYTES)])
+      ])
     }
-    if (headHoldsPngWorkflow(head)) return [head]
     const tailStart = Math.max(PART_BYTES, size - PART_BYTES)
-    return [head, await readPart(handle, tailStart, size - tailStart)]
+    return headOr(head, async () => [head, await readPart(handle, tailStart, size - tailStart)])
   } finally {
     await handle.close()
   }
@@ -81,18 +90,21 @@ async function cloudParts(assetId: string, accessToken: string): Promise<Uint8Ar
   if (!headResponse.ok) return unread(headResponse)
   const head = await firstBytes(headResponse, PART_BYTES)
   const size = headResponse.status === 206 ? totalSize(headResponse) : null
-  if (size === null || size <= PART_BYTES) return [head]
+  if (size === null || size <= PART_BYTES || headHoldsPngWorkflow(head)) return [head]
   if (size <= PART_BYTES * 2) {
-    const restResponse = await rangeOf(url, `bytes=${PART_BYTES}-`, deadline)
-    if (restResponse.status === 200) return [await firstBytes(restResponse, PART_BYTES * 2)]
-    if (restResponse.status !== 206) return unread(restResponse)
-    return [Buffer.concat([head, await firstBytes(restResponse, PART_BYTES)])]
+    return headOr(head, async () => {
+      const restResponse = await rangeOf(url, `bytes=${PART_BYTES}-`, deadline)
+      if (restResponse.status === 200) return [await firstBytes(restResponse, PART_BYTES * 2)]
+      if (restResponse.status !== 206) return unread(restResponse)
+      return [Buffer.concat([head, await firstBytes(restResponse, PART_BYTES)])]
+    })
   }
-  if (headHoldsPngWorkflow(head)) return [head]
-  const tailResponse = await rangeOf(url, `bytes=-${PART_BYTES}`, deadline)
-  if (!tailResponse.ok) return unread(tailResponse)
-  if (tailResponse.status !== 206) return [head]
-  return [head, await firstBytes(tailResponse, PART_BYTES)]
+  return headOr(head, async () => {
+    const tailResponse = await rangeOf(url, `bytes=-${PART_BYTES}`, deadline)
+    if (!tailResponse.ok) return unread(tailResponse)
+    if (tailResponse.status !== 206) return [head]
+    return [head, await firstBytes(tailResponse, PART_BYTES)]
+  })
 }
 
 interface ReadFile {
