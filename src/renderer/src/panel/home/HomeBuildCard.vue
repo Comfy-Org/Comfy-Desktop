@@ -176,6 +176,7 @@ function openContextMenu(event: MouseEvent): void {
     :data-testid="testId"
     :data-build-id="build.id"
     :data-home-tour="homeTourAnchor"
+    :data-build-running="status === 'running' || status === 'starting' ? 'true' : undefined"
     @click="onClick"
     @contextmenu.prevent="openContextMenu"
   >

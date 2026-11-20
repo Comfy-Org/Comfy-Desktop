@@ -627,6 +627,42 @@ describe('HomeTour', () => {
     expect(setSetting).not.toHaveBeenCalled()
   })
 
+  async function goToCloudBuild(running: boolean) {
+    placeAnchors()
+    const card = anchors.find((el) => el.dataset['homeTour'] === 'cloud-build')!
+    card.dataset['buildId'] = 'cloud'
+    if (running) card.dataset['buildRunning'] = 'true'
+    const opened = vi.fn()
+    card.addEventListener('click', opened)
+    mountTour()
+    await waitForCard()
+    await userEvent.click(button('next')!)
+    await expect.poll(() => tourCard()?.textContent).toContain('Comfy Cloud')
+    return opened
+  }
+
+  it('ends the tour and brings a running build forward when its highlighted card is clicked', async () => {
+    const opened = await goToCloudBuild(true)
+
+    await userEvent.click(highlightedPart(), { position: { x: 20, y: 20 } })
+
+    await expect.poll(() => tourCard()).toBeNull()
+    expect(opened).toHaveBeenCalledTimes(1)
+    await expect.poll(() => setSetting.mock.calls).toContainEqual(['homeTourDone', true])
+    expect(telemetry).toContain('comfy.desktop.home_tour.target_opened')
+  })
+
+  it('ends the tour without starting a stopped build when its highlighted card is clicked', async () => {
+    const opened = await goToCloudBuild(false)
+
+    await userEvent.click(highlightedPart(), { position: { x: 20, y: 20 } })
+
+    await expect.poll(() => tourCard()).toBeNull()
+    expect(opened).not.toHaveBeenCalled()
+    await expect.poll(() => setSetting.mock.calls).toContainEqual(['homeTourDone', true])
+    expect(telemetry).not.toContain('comfy.desktop.home_tour.target_opened')
+  })
+
   it('keeps the tour running when the control under the click is disabled', async () => {
     const { control, wrapper } = await goToAllBuilds()
     control.disabled = true

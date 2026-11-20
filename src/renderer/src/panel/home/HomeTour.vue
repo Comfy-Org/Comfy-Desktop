@@ -232,10 +232,26 @@ function controlUnder(hit: Element, anchor: HTMLElement): HTMLElement | null {
   return clickableArea(hit, anchor)
 }
 
+function chooseBuildCard(card: HTMLElement): void {
+  const running = card.dataset['buildRunning'] === 'true'
+  clearPendingOpen()
+  emitTelemetryAction(
+    running ? 'comfy.desktop.home_tour.target_opened' : 'comfy.desktop.home_tour.completed',
+    { audience: audience.value, step: position.value.current }
+  )
+  end({ returnFocus: !running })
+  if (running) card.click()
+}
+
 function openTarget(event: MouseEvent): void {
   const current = step.value
   const anchor = current ? findHomeTourAnchor(current.anchor) : null
   const hit = elementUnderTarget(event)
+  const card = hit?.closest<HTMLElement>('[data-build-id]')
+  if (anchor && card && anchor.contains(card)) {
+    chooseBuildCard(card)
+    return
+  }
   const control = anchor && hit && anchor.contains(hit) ? controlUnder(hit, anchor) : null
   if (!control) return
   clearPendingOpen()
