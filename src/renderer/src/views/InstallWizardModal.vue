@@ -1849,12 +1849,9 @@ defineExpose({ open })
       class="config-summary [--summary-label-width:132px] max-[640px]:[--summary-label-width:100px]"
       data-testid="config-summary"
     >
-      <div
-        class="config-name-card mt-4 rounded-[14px] bg-white/5 px-5 py-3"
-        :class="SUMMARY_GRID_CLASS"
-      >
+      <div class="config-name-card mt-4 rounded-[14px] bg-white/5 p-5" :class="SUMMARY_GRID_CLASS">
         <label
-          class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
+          class="config-label flex items-center gap-2.5 text-[13px] leading-4 text-text-muted"
           for="inst-name-standalone"
           ><Tag :size="15" aria-hidden="true" />{{ $t('common.name') }}</label
         >
