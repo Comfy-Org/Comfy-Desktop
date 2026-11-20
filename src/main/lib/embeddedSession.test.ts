@@ -350,7 +350,7 @@ describe('embeddedSession', () => {
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
   })
 
-  it('tells a remote view it is not local, without reading the ops flag', async () => {
+  it('tells a remote view it is not local, and reports no ops-flag refusal', async () => {
     mocks.enabled = false
     const { event } = view('http://192.168.1.20:8188')
 

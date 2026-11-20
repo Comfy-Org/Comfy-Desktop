@@ -153,22 +153,35 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
       failure: new SignInFailure('Loopback OAuth callback timed out', 'timeout'),
       signInFailure: 'timeout'
     },
+    {
+      name: 'a refused token exchange',
+      failure: new SignInFailure('OAuth token request failed: 503 down', 'server_error', {
+        httpStatus: 503,
+        oauthError: 'temporarily_unavailable'
+      }),
+      signInFailure: 'server_error'
+    },
     { name: 'an unclassified error', failure: new Error('boom'), signInFailure: 'unknown' }
   ])('resolves $name with the view state and why it failed', async ({ failure, signInFailure }) => {
     mocks.stateForSender.mockResolvedValue(SIGNED_OUT)
     mocks.signInToCloud.mockRejectedValue(failure)
 
-    await expect(requestSignIn()({})).resolves.toEqual({ status: 'signed_out', signInFailure })
+    await expect(requestSignIn()({})).resolves.toStrictEqual({
+      status: 'signed_out',
+      signInFailure
+    })
     expect(console.error).toHaveBeenCalledWith(expect.any(String), failure)
   })
 
-  it('resolves a failed sign-in with the state the view is in by then', async () => {
-    mocks.stateForSender.mockResolvedValueOnce(SIGNED_OUT).mockResolvedValue(SIGNED_IN)
-    mocks.signInToCloud.mockRejectedValue(new SignInFailure('superseded', 'cancelled'))
+  it('resolves a sign-in a sign-out cut short with the state the view is in by then', async () => {
+    mocks.stateForSender.mockResolvedValueOnce(SIGNED_IN).mockResolvedValue(SIGNED_OUT)
+    mocks.signInToCloud.mockRejectedValue(
+      new SignInFailure('Signed out while signing in', 'superseded')
+    )
 
-    await expect(requestSignIn()({})).resolves.toEqual({
-      ...SIGNED_IN,
-      signInFailure: 'cancelled'
+    await expect(requestSignIn()({})).resolves.toStrictEqual({
+      status: 'signed_out',
+      signInFailure: 'superseded'
     })
   })
 
