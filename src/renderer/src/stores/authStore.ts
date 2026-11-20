@@ -110,10 +110,6 @@ export const useAuthStore = defineStore('auth', () => {
     return attempt
   }
 
-  function joinSignIn(): Promise<AuthStatus> {
-    return signInRequest ?? signIn()
-  }
-
   async function signOut(): Promise<AuthStatus> {
     const next = await comfybuilderApi.signOut()
     if (!next.signedIn) {
@@ -239,7 +235,6 @@ export const useAuthStore = defineStore('auth', () => {
     whenReady: () => initialStatus,
     signInPending,
     signIn,
-    joinSignIn,
     signOut,
     fetchWorkspaces,
     switchWorkspace,
