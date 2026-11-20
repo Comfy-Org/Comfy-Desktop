@@ -571,14 +571,22 @@ describe('AppsView', () => {
   })
 
   it('still counts the app as open when the person leaves the Apps page with it open', async () => {
-    const wrapper = await mountApps()
+    // emitted() is empty once the component is unmounted, so listeners catch the events
+    const currentApp = vi.fn()
+    const openChange = vi.fn()
+    listApps.mockReturnValue(Promise.resolve([CUTOUT, HDR, GENJUTSU]))
+    const wrapper = mount(AppsView, {
+      attachTo: page,
+      props: { 'onCurrent-app': currentApp, 'onApp-open-change': openChange }
+    })
+    await flushPromises()
     await wrapper.get('[data-testid="app-card-genjutsu"]').trigger('click')
     await flushPromises()
 
     wrapper.unmount()
 
-    expect(wrapper.emitted('current-app')).toEqual([[GENJUTSU]])
-    expect(wrapper.emitted('app-open-change')).toEqual([[true], [false]])
+    expect(currentApp.mock.calls).toEqual([[GENJUTSU]])
+    expect(openChange.mock.calls).toEqual([[true], [false]])
     expect(hideAppPage).toHaveBeenCalled()
   })
 
