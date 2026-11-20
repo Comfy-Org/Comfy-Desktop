@@ -12,6 +12,7 @@ import { normalizePlatform } from '../../composables/usePlatform'
 import { decideTerminalKeyAction } from '../../../../shared/terminalShortcuts'
 import ContextMenu from '../../components/ContextMenu.vue'
 import type { ContextMenuItem } from '../../types/context-menu'
+import { SECTION_TITLE_CLASS } from '../../lib/sectionTitle'
 
 interface Props {
   installationId: string | null
@@ -245,10 +246,9 @@ onBeforeUnmount(teardown)
       >
         <span /><span /><span />
       </span>
-      <span
-        class="console-header-title text-[11px] font-medium tracking-[0.06em] text-[color-mix(in_srgb,var(--text-muted)_88%,transparent)] uppercase"
-        >{{ t('console.shellLabel') }}</span
-      >
+      <span class="console-header-title" :class="SECTION_TITLE_CLASS">{{
+        t('console.shellLabel')
+      }}</span>
     </header>
     <div
       class="console-viewport relative min-h-0 flex-auto bg-neutral-800 [box-shadow:inset_0_1px_0_color-mix(in_srgb,white_3%,transparent)]"

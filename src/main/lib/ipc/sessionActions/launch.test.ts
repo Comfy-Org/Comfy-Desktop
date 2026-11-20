@@ -247,6 +247,16 @@ vi.mock('../../comfyProcessRecord', () => ({
   listRecords: () => []
 }))
 
+const vcRuntime = vi.hoisted(() => ({ missing: [] as string[], auditThrows: false }))
+
+vi.mock('../../vcRuntimeAudit', async (importOriginal) => ({
+  ...(await importOriginal<typeof VcRuntimeAuditModule>()),
+  auditVcRuntime: async () => {
+    if (vcRuntime.auditThrows) throw new Error('System32 unreadable')
+    return vcRuntime.missing
+  }
+}))
+
 vi.mock('../../comfy-args', async (importOriginal) => {
   const actual = await importOriginal<typeof ComfyArgsModule>()
   return {
@@ -418,6 +428,7 @@ import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
 import type * as CoreBetaAncestryModule from '../../coreBetaAncestry'
 import type * as HardwareTapModule from '../../hardwareTap'
 import type * as PipModule from '../../pip'
+import type * as VcRuntimeAuditModule from '../../vcRuntimeAudit'
 import { getUvPath, getVenvPythonPath } from '../../pythonEnv'
 import {
   _resetAgentPrefetchesForTest,
@@ -440,25 +451,43 @@ type FakeChild = EventEmitter & {
 }
 
 describe('desktopFeatureFlags', () => {
+  const withConsent = (consent: boolean | undefined): void => {
+    vi.spyOn(settingsModule, 'telemetryConsent').mockReturnValue(consent)
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('always injects the unconditional desktop flags', () => {
-    const flags = desktopFeatureFlags(installOf('standalone'), false)
+    withConsent(false)
+    const flags = desktopFeatureFlags(installOf('standalone'))
     expect(flags.show_signin_button).toBe('true')
     expect(flags.supports_terminal).toBe('false')
   })
 
   it('injects enable_telemetry only for standalone installs that opted in', () => {
-    expect(desktopFeatureFlags(installOf('standalone'), true).enable_telemetry).toBe('true')
+    withConsent(true)
+    expect(desktopFeatureFlags(installOf('standalone')).enable_telemetry).toBe('true')
   })
 
-  it('omits enable_telemetry when telemetry is disabled (default off)', () => {
-    expect(desktopFeatureFlags(installOf('standalone'), false)).not.toHaveProperty(
-      'enable_telemetry'
-    )
+  it.each([false, undefined])('omits enable_telemetry with telemetry consent %s', (consent) => {
+    withConsent(consent)
+    expect(desktopFeatureFlags(installOf('standalone'))).not.toHaveProperty('enable_telemetry')
+  })
+
+  it('omits enable_telemetry when settings serve a consent the accessor withholds', () => {
+    settingsModule.set('telemetryEnabled', true)
+    onTestFinished(() => settingsModule.set('telemetryEnabled', undefined))
+    expect(settingsModule.get('telemetryEnabled'), 'settings serve the opt-in').toBe(true)
+    withConsent(undefined)
+    expect(desktopFeatureFlags(installOf('standalone'))).not.toHaveProperty('enable_telemetry')
   })
 
   it('omits enable_telemetry for non-standalone installs even when opted in', () => {
-    expect(desktopFeatureFlags(installOf('portable'), true)).not.toHaveProperty('enable_telemetry')
-    expect(desktopFeatureFlags(installOf('git'), true)).not.toHaveProperty('enable_telemetry')
+    withConsent(true)
+    expect(desktopFeatureFlags(installOf('portable'))).not.toHaveProperty('enable_telemetry')
+    expect(desktopFeatureFlags(installOf('git'))).not.toHaveProperty('enable_telemetry')
   })
 })
 
@@ -1546,6 +1575,7 @@ describe('core beta report placement', () => {
       launchHarness.busyPorts = []
     })
     afterEach(() => {
+      vi.restoreAllMocks()
       settingsModule.set('telemetryEnabled', undefined)
       setHardwareProbe(null)
       launchHarness.busyPorts = null
@@ -1562,13 +1592,21 @@ describe('core beta report placement', () => {
     })
 
     it('still launches, without the context, when reading consent throws', async () => {
-      const readSetting = settingsModule.get
-      vi.spyOn(settingsModule, 'get').mockImplementation((key) => {
-        if (key === 'telemetryEnabled') throw new Error('EPERM: settings.json write failed')
-        return readSetting(key)
+      vi.spyOn(settingsModule, 'telemetryConsent').mockImplementation(() => {
+        throw new Error('EPERM: settings.json write failed')
       })
       const res = await handleLaunch(ctxFor(`harness-client-context-throws-${pathName}`))
       expect(res.ok, 'a failed consent read must not fail the launch').toBe(true)
+      expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
+      expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CONTEXT')
+    })
+
+    it('sends none when settings serve a consent the accessor withholds', async () => {
+      settingsModule.set('telemetryEnabled', true)
+      vi.spyOn(settingsModule, 'telemetryConsent').mockReturnValue(undefined)
+      setHardwareProbe(async () => ({ gpu_tier: 'mid' }))
+      const res = await handleLaunch(ctxFor(`harness-client-context-withheld-${pathName}`))
+      expect(res.ok).toBe(true)
       expect(spawnEnv, 'ComfyUI was spawned').toBeDefined()
       expect(spawnEnv).not.toHaveProperty('AGENT_CLIENT_CONTEXT')
     })
@@ -5575,11 +5613,11 @@ describe('prior ComfyUI process handling at launch', () => {
     )
   })
 
-  const failBootWith = (stderr: string): void => {
+  const failBootWith = (stderr: string, exitCode = 1): void => {
     launchHarness.waitForPort = async () => {
       const first = children[0]!
       first.stderr.emit('data', Buffer.from(stderr))
-      first.emit('close', 1, null)
+      first.emit('close', exitCode, null)
       return new Promise<void>(() => {})
     }
   }
@@ -5641,6 +5679,128 @@ describe('prior ComfyUI process handling at launch', () => {
     )
     const [failed] = eventsNamed('comfy.desktop.comfyui.boot_failed')
     expect(failed).toMatchObject({ assets_startup_failure: null })
+  })
+
+  describe('a DLL that fails to load at start', () => {
+    const C10_NOT_FOUND =
+      'OSError: [WinError 126] The specified module could not be found. Error loading ' +
+      '"C:\\ComfyUI\\.venv\\Lib\\site-packages\\torch\\lib\\c10.dll" or one of its dependencies.\n'
+    const HINT =
+      '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
+      'installing the latest redistributable may fix this'
+
+    afterEach(() => {
+      vcRuntime.missing = []
+      vcRuntime.auditThrows = false
+    })
+
+    it.each([
+      [
+        'torch c10.dll after a traceback',
+        'Traceback (most recent call last):\n' +
+          '  File "C:\\ComfyUI\\main.py", line 266, in <module>\n' +
+          '    import torch\n' +
+          C10_NOT_FOUND
+      ],
+      [
+        'a localized DLL init failure',
+        'OSError: [WinError 1114] 动态链接库(DLL)初始化例程失败。 Error loading "c10.dll".\n'
+      ],
+      ['an extension module', 'ImportError: DLL load failed while importing _C: not found\n'],
+      [
+        'a library loaded through ctypes',
+        "FileNotFoundError: Could not find module 'aimdo.dll' (or one of its dependencies).\n"
+      ]
+    ])('adds the VC++ runtime hint for %s when the runtime is missing', async (_name, stderr) => {
+      setArgs()
+      vcRuntime.missing = ['vcruntime140_1.dll']
+      failBootWith(stderr)
+
+      const res = await handleLaunch(ctxFor('dll-runtime-missing'))
+
+      expect(res.message).toBe(`Process exited with code 1${HINT}\n\n${stderr.trim()}`)
+    })
+
+    it('leaves the message alone when the runtime is present', async () => {
+      setArgs()
+      failBootWith(C10_NOT_FOUND)
+
+      const res = await handleLaunch(ctxFor('dll-runtime-present'))
+
+      expect(res.message).toBe(`Process exited with code 1\n\n${C10_NOT_FOUND.trim()}`)
+    })
+
+    it('leaves a failure that names no DLL alone even when the runtime is missing', async () => {
+      setArgs()
+      vcRuntime.missing = ['msvcp140.dll']
+      failBootWith('Traceback (most recent call last):\nRuntimeError: CUDA error\n')
+
+      const res = await handleLaunch(ctxFor('dll-other-failure'))
+
+      expect(res.message).toBe(
+        'Process exited with code 1\n\nTraceback (most recent call last):\nRuntimeError: CUDA error'
+      )
+    })
+
+    it('adds no hint when the DLL message is not on an exception line', async () => {
+      setArgs()
+      vcRuntime.missing = ['msvcp140.dll']
+      const stderr = "Could not find module 'aimdo.dll' (or one of its dependencies).\n"
+      failBootWith(stderr)
+
+      const res = await handleLaunch(ctxFor('dll-unprefixed'))
+
+      expect(res.message).toBe(`Process exited with code 1\n\n${stderr.trim()}`)
+    })
+
+    it('ignores a DLL failure the start survived when another error ends it', async () => {
+      setArgs()
+      vcRuntime.missing = ['msvcp140.dll']
+      const stderr =
+        'ImportError: DLL load failed while importing _ext: module not found.\n' +
+        'Cannot import custom_nodes/some_node module for custom nodes\n' +
+        'Traceback (most recent call last):\nRuntimeError: CUDA error\n'
+      failBootWith(stderr)
+
+      const res = await handleLaunch(ctxFor('dll-survived'))
+
+      expect(res.message).toBe(`Process exited with code 1\n\n${stderr.trim()}`)
+    })
+
+    it('leaves the message alone when the runtime check fails', async () => {
+      setArgs()
+      vcRuntime.auditThrows = true
+      failBootWith(C10_NOT_FOUND)
+
+      const res = await handleLaunch(ctxFor('dll-audit-throws'))
+
+      expect(res.message).toBe(`Process exited with code 1\n\n${C10_NOT_FOUND.trim()}`)
+    })
+
+    it('keeps the hint on an access-violation exit', async () => {
+      setArgs()
+      vcRuntime.missing = ['vcruntime140.dll']
+      failBootWith('Fatal Python error: Segmentation fault\n', 0xc0000005)
+
+      const res = await handleLaunch(ctxFor('dll-access-violation'))
+
+      expect(res.message).toBe(
+        'Process exited with code 3221225477 / 0xC0000005 (memory access violation — usually a ' +
+          `faulty or missing native library)${HINT}\n\nFatal Python error: Segmentation fault`
+      )
+    })
+
+    it('adds no DLL hint to a native crash code that is not an access violation', async () => {
+      setArgs()
+      vcRuntime.missing = ['vcruntime140.dll']
+      failBootWith(C10_NOT_FOUND, 0xc0000409)
+
+      const res = await handleLaunch(ctxFor('dll-stack-overrun'))
+
+      expect(res.message).toBe(
+        `Process exited with code 3221226505 / 0xC0000409\n\n${C10_NOT_FOUND.trim()}`
+      )
+    })
   })
 
   describe('an asset database from a newer ComfyUI', () => {

@@ -938,7 +938,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       })
     }
 
-    const telemetrySetting = settings.get('telemetryEnabled') as boolean | undefined
+    const telemetrySetting = settings.telemetryConsent()
     const initialConsent: mainTelemetry.ConsentState =
       telemetrySetting === true ? 'granted' : telemetrySetting === false ? 'denied' : 'undecided'
     let priorSessionUnclean = false

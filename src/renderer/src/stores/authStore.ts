@@ -27,6 +27,8 @@ export const useAuthStore = defineStore('auth', () => {
   const workspaceSwitchFailure = ref<WorkspaceSwitchFailure>()
   let latestSwitch = 0
   const comfybuilderApi = (window as Window & { api: ElectronApi }).api.comfybuilder
+  const signInPending = ref(false)
+  let signInRequest: Promise<AuthStatus> | undefined
 
   let revision = 0
   let workspaceContextInitialized = false
@@ -87,14 +89,37 @@ export const useAuthStore = defineStore('auth', () => {
     return next
   }
 
-  async function signIn(): Promise<AuthStatus> {
-    const next = await comfybuilderApi.signIn()
-    applyAuthoritativeStatus(next)
-    return next
+  function signIn(): Promise<AuthStatus> {
+    const request = comfybuilderApi.signIn()
+    if (signInRequest) {
+      request.catch(() => {})
+      return signInRequest
+    }
+    signInPending.value = true
+    const attempt = request
+      .then((next) => {
+        applyAuthoritativeStatus(next)
+        return next
+      })
+      .finally(() => {
+        if (signInRequest !== attempt) return
+        signInRequest = undefined
+        signInPending.value = false
+      })
+    signInRequest = attempt
+    return attempt
+  }
+
+  function joinSignIn(): Promise<AuthStatus> {
+    return signInRequest ?? signIn()
   }
 
   async function signOut(): Promise<AuthStatus> {
     const next = await comfybuilderApi.signOut()
+    if (!next.signedIn) {
+      signInRequest = undefined
+      signInPending.value = false
+    }
     applyAuthoritativeStatus(next)
     return status.value
   }
@@ -212,7 +237,9 @@ export const useAuthStore = defineStore('auth', () => {
     resetWorkspaceContext,
     fetchStatus,
     whenReady: () => initialStatus,
+    signInPending,
     signIn,
+    joinSignIn,
     signOut,
     fetchWorkspaces,
     switchWorkspace,

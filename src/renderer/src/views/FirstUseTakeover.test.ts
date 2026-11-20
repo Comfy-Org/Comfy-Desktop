@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setChecked } from './testHelpers'
 
@@ -22,6 +22,8 @@ vi.mock('../components/TermsModal.vue', () => ({
 
 import FirstUseTakeover from './FirstUseTakeover.vue'
 import { useModal } from '../composables/useModal'
+import { provideLocalDeviceKind } from '../composables/useLocalDeviceKind'
+import BuildDeviceArt from '../panel/home/BuildDeviceArt.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { SetupPlan } from '../lib/setupPlan'
 import type { SetupConsent } from '../lib/setupConsent'
@@ -128,6 +130,26 @@ const install = async (w: Wrapper) => {
 }
 
 describe('Set up, the first screen', () => {
+  it.each([
+    ['Desktop', 'monitor'],
+    ['Notebook', 'pc-laptop']
+  ])('draws a Windows %s as a %s beside the detected hardware', async (chassis, expected) => {
+    installApi({ platform: 'win32' })
+    window.api.getChassisType = vi.fn().mockResolvedValue(chassis)
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          provideLocalDeviceKind()
+          return () => h(FirstUseTakeover)
+        }
+      })
+    )
+    await flushPromises()
+    expect(wrapper.getComponent(BuildDeviceArt).props('kind')).toBe(expected)
+    expect(window.api.getChassisType).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
   it('shows what will be installed on this Mac before anything is chosen', async () => {
     const w = await mountSetup()
 

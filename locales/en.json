@@ -162,6 +162,9 @@
       "zoom": "Zoom",
       "zoomLevel": "Zoom: {level}",
       "openWorkflow": "Open workflow",
+      "openWorkflowFailed": "Couldn't open workflow",
+      "openWorkflowNoReason": "ComfyUI did not open the workflow. Try again.",
+      "openWorkflowIn": "Open in",
       "savedIn": "Saved in",
       "cloudAssets": "Comfy Cloud assets",
       "modelView": "3D view of {name}. Drag to turn it, scroll to zoom.",
@@ -246,6 +249,11 @@
     "menuRevealInFolder": "Open Folder",
     "menuDelete": "Uninstall",
     "stoppedActionGatedReason": "Stop the running build first.",
+    "gatedReasonStopping": "Wait for the build to stop.",
+    "gatedReasonInstalling": "Wait for the install to finish.",
+    "gatedReasonStarting": "Wait for the build to start.",
+    "gatedReasonUpdating": "Wait for the update to finish.",
+    "gatedReasonBusy": "Wait for the current task to finish.",
     "busyActionGatedReason": "Wait for the current task on this build to finish.",
     "statusRunning": "Running",
     "statusLaunching": "Starting…",
@@ -1627,7 +1635,8 @@
   },
   "devPlatform": {
     "signIn": {
-      "cta": "Log in"
+      "cta": "Log in",
+      "waiting": "Continue in your browser"
     },
     "account": {
       "installationInProgressTitle": "Installation in progress",
@@ -1873,6 +1882,10 @@
     "deleteWorkflow": "Delete workflow",
     "deleteFailed": "Could not delete the workflow.",
     "run": "Run",
+    "runNeedsBuild": "Select a build first.",
+    "runNeedsWorkflow": "Choose a workflow first.",
+    "runWaitsForWorkflow": "Wait for the workflow to be ready.",
+    "runWaitsForBuild": "Wait for the build to finish starting.",
     "stop": "Stop",
     "stopping": "Stopping…",
     "stopFailed": "Could not stop the build.",

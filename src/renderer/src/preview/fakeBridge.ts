@@ -269,6 +269,8 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     findCloudAsset: async () => ({ status: 'absent' }),
     copyAsset: async () => true,
     readAssetModel: async () => null,
+    hasAssetWorkflow: async () => false,
+    openAssetWorkflow: async () => ({ opened: true }),
     trashAsset: async () => true,
     listHomeWorkflows: async () => HOME_WORKFLOWS,
     openCatalogWorkflow: async () => true,
@@ -390,6 +392,7 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
       ...machine.systemInfo,
       installation_count: installations.length
     }),
+    getChassisType: async () => machine.chassisType,
     getInstallationDdContext: async () => null,
     getInstallsInventory: async () => ({
       total_install_count: installations.length,

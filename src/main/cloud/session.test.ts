@@ -524,23 +524,6 @@ describe('CloudSession browser sign-in', () => {
     expect(session.currentWorkspaceId()).toBe('w3')
   })
 
-  it('reopens the pending sign-in page when login is requested again', async () => {
-    mocked(signIn).mockImplementation(async (options) => {
-      options?.onAuthorizeUrl?.('https://cloud.test/authorize?state=s1')
-      return new Promise(() => {})
-    })
-    const session = new CloudSession()
-
-    void session.login()
-    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
-    void session.login()
-
-    expect(signIn).toHaveBeenCalledOnce()
-    expect(openAuthorizePage).toHaveBeenCalledExactlyOnceWith(
-      'https://cloud.test/authorize?state=s1'
-    )
-  })
-
   it('does not reopen a sign-in page after logout', async () => {
     mocked(signIn).mockImplementation(async (options) => {
       options?.onAuthorizeUrl?.('https://cloud.test/authorize?state=s1')
@@ -555,6 +538,76 @@ describe('CloudSession browser sign-in', () => {
 
     expect(signIn).toHaveBeenCalledTimes(2)
     expect(openAuthorizePage).not.toHaveBeenCalled()
+  })
+
+  it('restarts the browser sign-in on request and answers every caller with the new one', async () => {
+    let attempt = 0
+    mocked(signIn).mockImplementation((options) => {
+      attempt += 1
+      if (attempt === 2) return Promise.resolve(signedInResult(grantOn('w1')))
+      options?.onAuthorizeUrl?.('https://cloud.test/authorize?state=s1')
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(options.signal?.reason))
+      })
+    })
+    const session = new CloudSession()
+
+    const first = session.login()
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    const second = session.login()
+
+    await expect(first).resolves.toMatchObject({ signedIn: true, workspaceId: 'w1' })
+    await expect(second).resolves.toMatchObject({ signedIn: true, workspaceId: 'w1' })
+    expect(signIn).toHaveBeenCalledTimes(2)
+    expect(openAuthorizePage).not.toHaveBeenCalled()
+    expect(session.isSignedIn()).toBe(true)
+  })
+
+  it('reports a restarted browser wait as restarted, not as failed', async () => {
+    let attempt = 0
+    mocked(signIn).mockImplementation((options) => {
+      attempt += 1
+      if (attempt === 2) return Promise.resolve(signedInResult(grantOn('w1')))
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(options.signal?.reason))
+      })
+    })
+    const session = new CloudSession()
+
+    const first = session.login()
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    void session.login()
+    await first
+
+    expect(mainTelemetry.emit).toHaveBeenCalledWith(SESSION_SIGN_IN_EVENT, {
+      purpose: 'sign_in',
+      outcome: 'restarted'
+    })
+    expect(mainTelemetry.emit).not.toHaveBeenCalledWith(
+      SESSION_SIGN_IN_EVENT,
+      expect.objectContaining({ outcome: 'failed' })
+    )
+  })
+
+  it('drops the browser wait on logout and tags it as superseded', async () => {
+    mocked(signIn).mockImplementation(
+      (options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(options.signal?.reason))
+        })
+    )
+    const session = new CloudSession()
+
+    const login = session.login()
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    session.logout()
+
+    await expect(login).rejects.toMatchObject({ reason: 'superseded' })
+    expect(signIn).toHaveBeenCalledOnce()
+    expect(mainTelemetry.emit).toHaveBeenCalledWith(SESSION_SIGN_IN_EVENT, {
+      purpose: 'sign_in',
+      outcome: 'superseded'
+    })
   })
 
   it('does not persist browser auth that finishes after logout', async () => {

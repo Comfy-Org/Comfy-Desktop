@@ -71,6 +71,7 @@ import InstallNameInput from '../components/InstallNameInput.vue'
 import TrackBuildForm from '../components/TrackBuildForm.vue'
 import LoadSnapshotForm from '../components/LoadSnapshotForm.vue'
 import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
+import { useLocalDeviceKind } from '../composables/useLocalDeviceKind'
 import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
 import {
   toCardSelectOption as cardToSelectOption,
@@ -126,7 +127,7 @@ const systemInfo = ref<SystemInfo | null>(null)
 const machineUnsupported = ref(false)
 const unsupportedReason = ref('')
 const view = ref<'summary' | 'change'>('summary')
-const platform = window.api?.platform ?? 'darwin'
+const localDeviceKind = useLocalDeviceKind()
 const hardwareWarning = ref('')
 const saveDisabled = ref(true)
 const sourcesLoading = ref(false)
@@ -699,30 +700,46 @@ async function initializeLocalInstall(gen: number, requestedSource?: Source): Pr
   }
 }
 
-let pendingSignIn: ReturnType<typeof authStore.signIn> | null = null
+const signingInForManaged = ref(false)
+const waitingForManagedSignIn = computed(() => signingInForManaged.value && authStore.signInPending)
+let managedSignInPick = 0
 
-function signInOnce(): ReturnType<typeof authStore.signIn> {
-  pendingSignIn ??= authStore.signIn().finally(() => {
-    pendingSignIn = null
-  })
-  return pendingSignIn
+function abandonManagedSignIn(): void {
+  managedSignInPick++
+  signingInForManaged.value = false
 }
 
 async function selectManagedInstallMode(): Promise<void> {
   if (authorizingWorkspace.value || managedBuildMode.value) return
   let authenticatedNow = false
   if (!authStore.isSignedIn) {
+    if (signingInForManaged.value) {
+      void authStore.signIn().catch(() => {})
+      return
+    }
     const session = changeSetupSession
-    authorizingWorkspace.value = true
+    const pick = ++managedSignInPick
+    const stillWanted = (): boolean => session === changeSetupSession && pick === managedSignInPick
+    signingInForManaged.value = true
     try {
-      const status = await signInOnce()
+      const status = await authStore.joinSignIn()
       if (!status.signedIn) return
       authenticatedNow = true
-      if (workspaceId.value === PERSONAL_WORKSPACE_ID) await authStore.fetchWorkspaces()
     } catch {
       return
     } finally {
-      authorizingWorkspace.value = false
+      if (stillWanted()) signingInForManaged.value = false
+    }
+    if (!stillWanted()) return
+    if (workspaceId.value === PERSONAL_WORKSPACE_ID) {
+      authorizingWorkspace.value = true
+      try {
+        await authStore.fetchWorkspaces()
+      } catch {
+        return
+      } finally {
+        authorizingWorkspace.value = false
+      }
     }
     if (session !== changeSetupSession) return
   }
@@ -756,6 +773,7 @@ async function loadSources(): Promise<void> {
 }
 
 async function selectSourceCard(source: Source): Promise<void> {
+  abandonManagedSignIn()
   if (managedBuildMode.value) {
     workspaceInstallMode.value = 'public'
     resetSourceState(null)
@@ -1409,6 +1427,7 @@ async function discardChangeSetup(): Promise<void> {
   buildImportChoice.value = null
   setupBeforeServer = null
   authorizingWorkspace.value = false
+  abandonManagedSignIn()
   if (!draft) return
   instName.value = draft.instName
   await restoreNewInstallSetup(draft)
@@ -1566,6 +1585,7 @@ const existingCards = computed<SetupOptionCard[]>(() => {
 const selectedExistingCard = computed(() => buildImportChoice.value ?? selectedSourceCard.value)
 
 function chooseBuildImport(flow: BuildImportFlow): void {
+  abandonManagedSignIn()
   if (buildImportChoice.value === flow) return
   buildImportChoice.value = flow
   emitTelemetryAction('comfy.desktop.install.flow.opened', {
@@ -1774,6 +1794,14 @@ defineExpose({ open })
       {{ $t('newInstall.waitingForWorkspaceAuthorization') }}
     </div>
     <div
+      v-else-if="waitingForManagedSignIn"
+      class="mt-4 w-full text-[13px] leading-[1.4] text-subtle-foreground"
+      role="status"
+      data-testid="managed-signin-status"
+    >
+      {{ $t('devPlatform.signIn.waiting') }}
+    </div>
+    <div
       v-if="sourceError && !buildImportChoice"
       class="config-error mt-4 text-[13px] leading-[1.4] text-[var(--danger)]"
       role="alert"
@@ -1804,7 +1832,7 @@ defineExpose({ open })
       >
         <SetupMachineIllustration
           class="h-[68px] w-[104px] flex-none max-[640px]:hidden"
-          :os="platform"
+          :kind="localDeviceKind"
           :bad="machineBlocked"
         />
         <span class="grid min-w-0">

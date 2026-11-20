@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { deviceKindForChassis } from '../../composables/useLocalDeviceKind'
 import { buildDeviceKind, homeBuildStatus, homeBuildTones, runsOnThisComputer } from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
@@ -6,20 +7,31 @@ const build = (sourceCategory: string): Installation =>
   ({ id: 'b', name: 'Build', sourceCategory }) as unknown as Installation
 
 describe('buildDeviceKind', () => {
-  it('draws a local build as the computer this platform usually runs on', () => {
-    expect(buildDeviceKind(build('local'), 'darwin')).toBe('laptop')
-    expect(buildDeviceKind(build('local'), 'win32')).toBe('pc-laptop')
-    expect(buildDeviceKind(build('local'), 'linux')).toBe('monitor')
+  it.each([
+    ['win32', 'Desktop', 'monitor'],
+    ['win32', 'Tower', 'monitor'],
+    ['win32', 'Notebook', 'pc-laptop'],
+    ['win32', 'Convertible', 'pc-laptop'],
+    ['darwin', 'Notebook', 'laptop'],
+    ['darwin', 'Desktop', 'monitor'],
+    ['linux', 'Laptop', 'pc-laptop'],
+    ['linux', 'Mini PC', 'monitor'],
+    ['win32', 'Unknown', 'monitor'],
+    ['darwin', null, 'monitor']
+  ] as const)('draws a local build on %s with chassis %s as %s', (platform, chassis, expected) => {
+    const localKind = deviceKindForChassis(platform, chassis)
+    expect(buildDeviceKind(build('local'), localKind)).toBe(expected)
   })
 
-  it('draws a cloud build as the cloud on every platform', () => {
-    for (const platform of ['darwin', 'win32', 'linux']) {
-      expect(buildDeviceKind(build('cloud'), platform)).toBe('cloud')
+  it.each(['laptop', 'pc-laptop', 'monitor'] as const)(
+    'draws a cloud build as the cloud on %s',
+    (localKind) => {
+      expect(buildDeviceKind(build('cloud'), localKind)).toBe('cloud')
     }
-  })
+  )
 
-  it('falls back to the laptop when the platform is unknown', () => {
-    expect(buildDeviceKind(build('local'), undefined)).toBe('laptop')
+  it('uses a generic display for a remote server reached from a laptop', () => {
+    expect(buildDeviceKind(build('remote'), 'pc-laptop')).toBe('monitor')
   })
 })
 

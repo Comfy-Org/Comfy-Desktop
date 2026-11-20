@@ -11,7 +11,7 @@ import TermsConsentRow from '../components/TermsConsentRow.vue'
 import InlineRichText from '../components/InlineRichText.vue'
 import SetupSummaryRow from '../components/SetupSummaryRow.vue'
 import BuildDeviceArt from '../panel/home/BuildDeviceArt.vue'
-import { deviceKindForPlatform } from '../panel/home/homeBuild'
+import { useLocalDeviceKind } from '../composables/useLocalDeviceKind'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { formatSize } from '../lib/formatting'
 import { SUMMARY_BOX_CLASS, SUMMARY_META_CLASS } from '../lib/setupSummary'
@@ -55,6 +55,7 @@ const LINK_CLASS =
   'inline h-auto p-0 align-baseline text-xs/[15px] font-normal text-foreground underline underline-offset-2 hover:bg-transparent'
 
 const platform = window.api.platform
+const localDeviceKind = useLocalDeviceKind()
 const step = ref<Step>('setup')
 const plan = ref<SetupPlan | null>(null)
 const planState = ref<'loading' | 'ready' | 'unavailable'>('loading')
@@ -519,7 +520,7 @@ defineExpose({ open, resetContinue, browseInstallLocation })
           />
           <BuildDeviceArt
             class="relative h-[80px] w-[124px] shrink-0"
-            :kind="deviceKindForPlatform(platform)"
+            :kind="localDeviceKind"
             glow="#46464A"
           />
           <div class="relative ml-6 flex min-w-0 flex-1 flex-col">

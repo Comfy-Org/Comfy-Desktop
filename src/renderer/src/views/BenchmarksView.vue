@@ -50,6 +50,7 @@ import {
 import { createResultsPng } from '../lib/performanceTestResultsSvg'
 import { useDialogs } from '../composables/useDialogs'
 import BenchmarkGroupCard from './benchmarks/BenchmarkGroupCard.vue'
+import { SECTION_TITLE_CLASS } from '../lib/sectionTitle'
 
 interface MenuOption {
   value: string
@@ -800,7 +801,8 @@ onActivated(() => {
                   </Button>
                 </template>
                 <DropdownMenuLabel
-                  class="benchmarks__columns-title px-3 pt-1.5 pb-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+                  class="benchmarks__columns-title px-3 pt-1.5 pb-1"
+                  :class="SECTION_TITLE_CLASS"
                 >
                   {{ t('benchmarks.columnsToDisplay') }}
                 </DropdownMenuLabel>
