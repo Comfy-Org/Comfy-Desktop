@@ -140,7 +140,7 @@ describe('Set up, the first screen', () => {
     expect(text(w, 'setup-version')).toBe('ComfyUI v0.42.4')
     expect(text(w, 'setup-row-version')).toContain('Stable')
     expect(text(w, 'setup-install-sizes')).toBe(
-      'Setup downloads 1.2 GB and needs about 2.7 GB of free disk space.'
+      'The 1.2 GB download needs about 2.7 GB of free disk space to unpack and install.'
     )
     expect(text(w, 'setup-summary')).not.toMatch(/1\.2 GB|2\.7 GB|·/)
   })
@@ -292,7 +292,7 @@ describe('Set up, the first screen', () => {
     expect(text(w, 'setup-row-hardware')).not.toContain('Detected')
     expect(text(w, 'setup-version')).toBe('Ready Build')
     expect(text(w, 'setup-install-sizes')).toBe(
-      'Setup downloads 2.0 GB and needs about 4.5 GB of free disk space.'
+      'The 2.0 GB download needs about 4.5 GB of free disk space to unpack and install.'
     )
   })
 

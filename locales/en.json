@@ -1003,7 +1003,7 @@
     "versionValue": "ComfyUI {version}",
     "download": "Setup downloads {size}.",
     "installSpace": "Setup needs about {required} of free disk space.",
-    "installSizes": "Setup downloads {download} and needs about {required} of free disk space.",
+    "installSizes": "The {download} download needs about {required} of free disk space to unpack and install.",
     "unavailable": "Couldn't reach the ComfyUI download server. Check your connection, or pick a build with Change.",
     "retry": "Try again",
     "agreeToInstall": "Agree to install.",
