@@ -32,8 +32,6 @@ const secondaryClass =
   'border-neutral-500 bg-transparent text-neutral-100 enabled:hover:bg-[var(--brand-surface-bg)] enabled:hover:text-neutral-100'
 const primaryClass =
   'rounded-[var(--radius-control)] border-comfy-yellow bg-comfy-yellow text-neutral-900 enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] disabled:hover:bg-comfy-yellow focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))]'
-const dangerClass =
-  'brand-progress__footer-btn--danger hover:border-[var(--semantic-danger,#ff7a7a)] focus-visible:border-[var(--semantic-danger,#ff7a7a)] focus-visible:bg-[color-mix(in_srgb,var(--semantic-danger,#ff7a7a)_14%,transparent)] hover:focus-visible:bg-[var(--brand-surface-bg)]'
 
 interface Props {
   installationId: string | null
@@ -518,7 +516,8 @@ async function handleKillProcess(port: number): Promise<void> {
   const confirmed = await modal.confirm({
     title: t('errors.portConflictKillConfirmTitle'),
     message: t('errors.portConflictKillConfirmMessage'),
-    confirmLabel: t('errors.portConflictKill')
+    confirmLabel: t('errors.portConflictKill'),
+    confirmStyle: 'danger'
   })
   if (!confirmed) return
   resolvingConflict.value = true
@@ -869,7 +868,7 @@ defineExpose({ startOperation, showOperation })
                 size="unset"
                 variant="textonly"
                 type="button"
-                :class="[footerButtonClass, secondaryClass, dangerClass]"
+                :class="[footerButtonClass, secondaryClass]"
                 :data-testid="TID.progressPortConflictKill"
                 @click="handleKillProcess(currentOp.result.portConflict.port)"
               >

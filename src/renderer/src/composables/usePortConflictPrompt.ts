@@ -149,7 +149,8 @@ export function usePortConflictPrompt(
       const confirmed = await modal.confirm({
         title: t('errors.portConflictKillConfirmTitle'),
         message: t('errors.portConflictKillConfirmMessage'),
-        confirmLabel: t('errors.portConflictKill')
+        confirmLabel: t('errors.portConflictKill'),
+        confirmStyle: 'danger'
       })
       if (!confirmed) continue
       const killed = await window.api.killPortProcess(current.port).catch(() => ({ ok: false }))
