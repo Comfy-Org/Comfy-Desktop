@@ -640,6 +640,31 @@ describe('parseCoreBetaGrants release floor', () => {
   it.each([['not a version'], [42], [null]])('drops the entry when the floor is %s', (floor) => {
     expect(parse(floor)).toEqual([])
   })
+
+  it('drops a floor on a range with an upper bound, since a floor cannot end a range', () => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [
+          {
+            arg: '--enable-agent',
+            commit_ranges: [
+              [SHA_A, SHA_B],
+              [SHA_C, null]
+            ],
+            release_floor: '0.42.4'
+          }
+        ]
+      })
+    ).toEqual([])
+  })
+
+  it('ignores a floor on a version entry', () => {
+    expect(
+      parseCoreBetaGrants(true, {
+        flags: [{ arg: '--enable-agent', min_core_version: '0.42.0', release_floor: '0.42.4' }]
+      })
+    ).toEqual([{ arg: '--enable-agent', minCoreVersion: '0.42.0' }])
+  })
 })
 
 describe('selectCoreBetaGrantArgs release floor', () => {
@@ -718,10 +743,34 @@ describe('selectCoreBetaGrantArgs release floor', () => {
     ])
   })
 
-  it('still reports in-range when the commit range matches', () => {
-    expect(select(floorGrant, release(), { [SHA_A]: true }).trace).toEqual([
+  it('grants an in-range checkout that fails the floor, through its commit range', () => {
+    const { selected, trace } = select(floorGrant, release({ semver: '0.1.0', verified: false }), {
+      [SHA_A]: true
+    })
+    expect(selected).toEqual([floorGrant])
+    expect(trace).toEqual([
       '[core-beta] commits --enable-agent: aaaaaaaaaaaa.. head=eeeeeeeeeeee in-range=yes'
     ])
+  })
+
+  it('does not let the floor override git proving every range absent', () => {
+    const { selected, withheld } = select(floorGrant, release(), { [SHA_A]: false })
+    expect(selected).toEqual([])
+    expect(withheld).toEqual([
+      '[core-beta] --enable-agent withheld: entry 1: commit range aaaaaaaaaaaa..: lower aaaaaaaaaaaa not contained'
+    ])
+  })
+
+  it('applies the floor when git proved one range absent and could not relate another', () => {
+    const twoLineages: CoreBetaGrant = {
+      arg: '--enable-agent',
+      commitRanges: [
+        [SHA_A, null],
+        [SHA_C, null]
+      ],
+      releaseFloor: '0.42.4'
+    }
+    expect(select(twoLineages, release(), { [SHA_A]: false }).selected).toEqual([twoLineages])
   })
 })
 

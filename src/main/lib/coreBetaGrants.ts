@@ -140,6 +140,7 @@ export function parseCoreBetaGrants(
       if (commitRanges === null) continue
       let releaseFloor: string | null = null
       if ('release_floor' in candidate) {
+        if (commitRanges.some(([, upper]) => upper !== null)) continue
         releaseFloor = parseCoreVersion(candidate.release_floor)
         if (releaseFloor === null) continue
       }
@@ -227,7 +228,7 @@ function commitRangeMatches(
   return upper === null || ancestry.get(upper) === false
 }
 
-export function commitRangesMatch(
+function commitRangesMatch(
   flag: CoreBetaCommitGrant,
   ancestry: ReadonlyMap<string, boolean>
 ): boolean {
@@ -273,7 +274,8 @@ function commitShortfall(
 ): string | null {
   if (commitRangesMatch(flag, commits.ancestry)) return null
   const floor = flag.releaseFloor
-  if (floor === undefined) return rangesShortfall(flag, commits)
+  const refuted = flag.commitRanges.every(([lower]) => commits.ancestry.get(lower) === false)
+  if (floor === undefined || refuted) return rangesShortfall(flag, commits)
   if (releaseAtFloor(core, floor)) return null
   return `${rangesShortfall(flag, commits)} | core ${core.semver ?? 'unknown'} is not a verified current v${floor}+ release`
 }
