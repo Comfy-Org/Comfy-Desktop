@@ -79,6 +79,19 @@ afterAll(() => {
   fs.rmSync(tmpRoot, { recursive: true, force: true })
 })
 
+function failReads(...failing: string[]): void {
+  vi.spyOn(Atomics, 'wait').mockReturnValue('timed-out')
+  const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
+  vi.spyOn(fs, 'readFileSync').mockImplementation(((p: fs.PathOrFileDescriptor, opts?: unknown) => {
+    if (typeof p === 'string' && failing.includes(p)) {
+      const err = new Error('fake EPERM') as NodeJS.ErrnoException
+      err.code = 'EPERM'
+      throw err
+    }
+    return realRead(p, opts as BufferEncoding)
+  }) as typeof fs.readFileSync)
+}
+
 describe('settings unset/default semantics', () => {
   it('treats undefined as unset and falls back to default', () => {
     settings.set('onAppClose', 'quit')
@@ -722,47 +735,31 @@ describe('resolveBetaFeaturesEnabled', () => {
     vi.restoreAllMocks()
   })
 
-  it.each([true, false])(
-    'retains a stored %s from a backup when the primary is unreadable',
-    (choice) => {
-      fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-      fs.writeFileSync(settingsPath, JSON.stringify({ betaFeaturesEnabled: !choice }))
-      fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ betaFeaturesEnabled: choice }))
+  it.each([
+    ['an opt-out', { betaFeaturesEnabled: false, telemetryEnabled: true }],
+    ['an opt-in', { betaFeaturesEnabled: true }],
+    ['an opt-in and a telemetry opt-in', { betaFeaturesEnabled: true, telemetryEnabled: true }]
+  ])('keeps beta off with %s in the backup when the primary is unreadable', (_label, backup) => {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+    const primary = JSON.stringify({ betaFeaturesEnabled: true, telemetryEnabled: true })
+    fs.writeFileSync(settingsPath, primary)
+    fs.writeFileSync(settingsPath + '.bak', JSON.stringify(backup))
+    failReads(settingsPath)
 
-      const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
-      vi.spyOn(fs, 'readFileSync').mockImplementation(((
-        p: fs.PathOrFileDescriptor,
-        opts?: unknown
-      ) => {
-        if (p === settingsPath) {
-          const err = new Error('fake EPERM') as NodeJS.ErrnoException
-          err.code = 'EPERM'
-          throw err
-        }
-        return realRead(p, opts as BufferEncoding)
-      }) as typeof fs.readFileSync)
+    expect(settings.telemetryConsent(), 'consent is withheld').toBeUndefined()
+    expect(settings.resolveBetaFeaturesEnabled(), 'resolve').toBe(false)
+    expect(settings.peekBetaFeaturesEnabled(), 'peek').toBe(false)
 
-      expect(settings.resolveBetaFeaturesEnabled()).toBe(choice)
-    }
-  )
+    vi.restoreAllMocks()
+    expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(primary)
+  })
 
   it('does not enroll from a stale telemetry backup when the primary is unreadable', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify({ telemetryEnabled: false }))
     fs.writeFileSync(settingsPath + '.bak', JSON.stringify({ telemetryEnabled: true }))
 
-    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
-    vi.spyOn(fs, 'readFileSync').mockImplementation(((
-      p: fs.PathOrFileDescriptor,
-      opts?: unknown
-    ) => {
-      if (p === settingsPath) {
-        const err = new Error('fake EPERM') as NodeJS.ErrnoException
-        err.code = 'EPERM'
-        throw err
-      }
-      return realRead(p, opts as BufferEncoding)
-    }) as typeof fs.readFileSync)
+    failReads(settingsPath)
 
     expect(settings.resolveBetaFeaturesEnabled()).toBe(false)
 
@@ -999,22 +996,6 @@ describe('settings.json and its .bak both unreadable', () => {
 })
 
 describe('telemetryConsent', () => {
-  function failReads(...failing: string[]): void {
-    vi.spyOn(Atomics, 'wait').mockReturnValue('timed-out')
-    const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
-    vi.spyOn(fs, 'readFileSync').mockImplementation(((
-      p: fs.PathOrFileDescriptor,
-      opts?: unknown
-    ) => {
-      if (typeof p === 'string' && failing.includes(p)) {
-        const err = new Error('fake EPERM') as NodeJS.ErrnoException
-        err.code = 'EPERM'
-        throw err
-      }
-      return realRead(p, opts as BufferEncoding)
-    }) as typeof fs.readFileSync)
-  }
-
   afterEach(() => {
     vi.restoreAllMocks()
   })
